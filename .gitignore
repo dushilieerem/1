@@ -1,1 +1,29 @@
+#claude code缓存
 CLAUDE.md
+.claude
+
+#pycharm缓存
+.idea
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 构建产物
+build/
+dist/
+*.egg
+
+# 实验输出（由 main.py 生成，不入库）
+ResearchEngine/output/
+*.db
+
+# 行情数据（体积大，不入库；放 MarketData/ 目录）
+MarketData/
+
+#日志文件
+

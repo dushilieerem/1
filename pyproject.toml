@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ygquant"
+version = "0.1.0"
+description = "一站式 AI 量化投研平台 - QuantCore + ResearchEngine"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "YGQuant" }]
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "PyYAML>=6.0",
+    "matplotlib>=3.7",
+    "pyarrow>=14.0",
+]
+
+[project.optional-dependencies]
+akshare = ["akshare>=1.10"]
+clickhouse = ["clickhouse-driver>=0.2"]
+numba = ["numba>=0.58"]
+test = ["pytest>=7.0"]
+all = [
+    "akshare>=1.10",
+    "clickhouse-driver>=0.2",
+    "numba>=0.58",
+]
+
+[tool.setuptools.packages.find]
+# 同时在 QuantCore / ResearchEngine 两个目录下发现 Python 包
+where = ["QuantCore", "ResearchEngine"]
+
+[tool.pytest.ini_options]
+testpaths = ["QuantCore/tests", "ResearchEngine/tests"]
+python_files = ["test_*.py"]

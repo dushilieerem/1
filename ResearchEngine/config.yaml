@@ -1,0 +1,27 @@
+# ResearchEngine 实验配置示例
+# 研究员可修改本文件后重新运行 main.py
+
+# 数据源：MarketData 目录（一个字段一个 parquet 的宽表面板）
+# 指向文件 -> WideCSVProvider；目录含 *.parquet -> FieldParquetProvider；否则逐只 CSV
+data_dir: ../MarketData
+
+# 股票池名称（对应 universe.csv 的 pool；无 universe.csv 时用全部标的）
+benchmark: CSI500
+
+# 组合构建
+rebalance: daily       # daily / weekly / monthly（样本仅 21 天，用 weekly 才有足够调仓点）
+n_groups: 5             # 分位数
+long_short: false        # 是否多空对冲
+ic_horizon: 5           # IC 远期收益天数
+periods_per_year: 252   # 年化周期数
+
+# 交易成本（供 BacktestEngine 演示使用）
+commission: 0.0003
+slippage: 0.001
+
+# 计算后端
+compute_backend: python
+
+# 结果存储与输出
+storage: csv
+output_path: ./output/alpha101_result

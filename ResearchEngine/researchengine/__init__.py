@@ -21,6 +21,7 @@ from researchengine.result.manager import ResultManager
 from researchengine.result.storage import (
     CSVStorage,
     ClickHouseStorage,
+    ParquetStorage,
     ResultStorage,
     SQLiteStorage,
 )
@@ -33,6 +34,7 @@ __all__ = [
     "ResultManager",
     "ResultStorage",
     "CSVStorage",
+    "ParquetStorage",
     "SQLiteStorage",
     "ClickHouseStorage",
     "build_factor_portfolio",

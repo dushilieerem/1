@@ -154,6 +154,42 @@ def test_csv_storage_roundtrip(tmp_path):
     assert len(loaded.equity_curve) == 3
 
 
+def test_parquet_storage_roundtrip(tmp_path):
+    from researchengine import ParquetStorage
+
+    eq = pd.Series([1.0, 1.05, 1.1], index=pd.bdate_range("2022-01-03", periods=3))
+    fv = pd.DataFrame(
+        {"S000": [0.1, 0.2, 0.3], "S001": [0.4, 0.5, 0.6]},
+        index=pd.bdate_range("2022-01-03", periods=3),
+    )
+    pos = pd.DataFrame(
+        {"S000": [0.5, 0.5, 0.0], "S001": [-0.5, -0.5, 0.0]},
+        index=pd.bdate_range("2022-01-03", periods=3),
+    )
+    result = ResultManager(
+        metrics={"sharpe": 1.2, "ic": 0.05},
+        equity_curve=eq,
+        factor_values=fv,
+        positions=pos,
+        storage=ParquetStorage(),
+    )
+    out = tmp_path / "result"
+    result.save(str(out))
+    # 大表走 parquet，小文件走 csv/json
+    assert (out / "metrics.csv").exists()
+    assert (out / "equity_curve.csv").exists()
+    assert (out / "factor_values.parquet").exists()
+    assert (out / "positions.parquet").exists()
+    assert (out / "meta.json").exists()
+
+    loaded = ParquetStorage().read(str(out))
+    assert loaded.metrics["sharpe"] == 1.2
+    assert loaded.metrics["ic"] == 0.05
+    assert len(loaded.equity_curve) == 3
+    assert loaded.factor_values.shape == fv.shape
+    assert loaded.positions.shape == pos.shape
+
+
 def test_sqlite_storage_roundtrip(tmp_path):
     eq = pd.Series([1.0, 1.05, 1.1], index=pd.bdate_range("2022-01-03", periods=3))
     result = ResultManager(
@@ -193,3 +229,35 @@ def test_plot_group_ic(tmp_path):
     assert plot_group_ic(
         small_fv, small_fr, tmp_path / "none.png", n_groups=5
     ) is None
+
+
+# ---------------- 组合构建 ----------------
+
+def test_build_factor_portfolio_weights():
+    from researchengine.portfolio import build_factor_portfolio
+
+    rng = np.random.default_rng(0)
+    dates = pd.bdate_range("2022-01-03", periods=10)
+    symbols = [f"S{i:03d}" for i in range(20)]
+    fv = pd.DataFrame(rng.normal(0, 1, (10, 20)), index=dates, columns=symbols)
+    close = pd.DataFrame(
+        100.0 * np.exp(np.cumsum(rng.normal(0, 0.02, (10, 20)), axis=0)),
+        index=dates, columns=symbols,
+    )
+    # 多空对冲：做多 top stock_num + 做空 bottom stock_num，每日权重和 ≈ 0
+    _, _, pos = build_factor_portfolio(
+        fv, close, rebalance="daily", stock_num=5, long_short=True
+    )
+    assert (pos.sum(axis=1).abs() < 1e-9).all()
+    assert (pos.abs() <= 1.0).all().all()
+    # 实际单边持仓 = stock_num 只（多空各 5，共 10 只非零）
+    assert (pos.abs().gt(0).sum(axis=1) <= 2 * 5).all()
+
+    # 只做多：做多 top stock_num，每日权重和 ≈ 1
+    _, _, pos_long = build_factor_portfolio(
+        fv, close, rebalance="daily", stock_num=5, long_short=False
+    )
+    assert ((pos_long.sum(axis=1) - 1.0).abs() < 1e-9).all()
+    assert (pos_long >= 0).all().all()
+    # 实际持仓 = stock_num 只
+    assert (pos_long.gt(0).sum(axis=1) == 5).all()

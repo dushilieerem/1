@@ -41,10 +41,11 @@ from quantcore.metric.context import MetricContext
 from researchengine.config import ConfigManager
 from researchengine.portfolio import build_factor_portfolio, forward_returns
 from researchengine.result.manager import ResultManager
-from researchengine.result.storage import CSVStorage, SQLiteStorage
+from researchengine.result.storage import CSVStorage, ParquetStorage, SQLiteStorage
 
 _STORAGE_MAP = {
     "csv": CSVStorage,
+    "parquet": ParquetStorage,
     "sqlite": SQLiteStorage,
 }
 
@@ -111,16 +112,19 @@ class Experiment:
         """执行完整实验流程，返回 :class:`ResultManager`。"""
         # ① 读取配置 / 构建引擎
         self._build_engines()
+        print("① 读取配置 / 构建引擎 完毕")
 
         # ② 取面板一次，因子与组合复用（懒加载：只读因子/组合真正用到的字段）
         panels = self._data_engine.get_panels(self.start_date, self.end_date)
         symbols = resolve_universe(self._data_engine, self.universe)
         panel = Panel(panels, symbols=symbols)
+        print("数据读取完毕")
 
         # ③a 因子计算（复用已取面板）
         factor_values = self._factor_engine.compute_panel(self.factor.name, panel)
         if factor_values.empty:
             raise RuntimeError("因子计算结果为空，请检查数据源/区间/universe。")
+        print("因子值计算完毕")
 
         # 取收盘价宽表，构造远期收益与组合（触发 close 懒加载）
         if "close" not in panel:
@@ -134,7 +138,7 @@ class Experiment:
             factor_values,
             close_panel,
             rebalance=self.config.get("rebalance", "monthly"),
-            n_groups=int(self.config.get("n_groups", 5)),
+            stock_num=int(self.config.get("stock_num", 100)),
             long_short=bool(self.config.get("long_short", True)),
         )
 
@@ -148,6 +152,7 @@ class Experiment:
             periods_per_year=int(self.config.get("periods_per_year", 252)),
         )
         metrics = self._metric_engine.calculate_all(ctx)
+        print("指标计算完毕")
 
         # ④ 得到结果
         storage = self._build_storage()
@@ -165,6 +170,7 @@ class Experiment:
                 "end_date": self.end_date,
             },
         )
+        print("结果保存完毕")
 
         # ⑤ 保存结果 + 累计收益-回撤图
         out_path = self.config.get("output_path")

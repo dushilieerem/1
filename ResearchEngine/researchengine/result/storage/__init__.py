@@ -2,12 +2,14 @@
 
 from researchengine.result.storage.base import ResultStorage
 from researchengine.result.storage.csv_storage import CSVStorage
+from researchengine.result.storage.parquet_storage import ParquetStorage
 from researchengine.result.storage.sqlite_storage import SQLiteStorage
 from researchengine.result.storage.clickhouse_storage import ClickHouseStorage
 
 __all__ = [
     "ResultStorage",
     "CSVStorage",
+    "ParquetStorage",
     "SQLiteStorage",
     "ClickHouseStorage",
 ]

@@ -12,6 +12,35 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
+
+
+def _rowwise_corr(a, b, mask, min_n: int):
+    """按行算 Pearson 相关（仅 mask=True 处参与；样本不足或方差为 0 返回 NaN）。
+
+    a, b : (T, N) float64；mask : (T, N) bool。
+    返回长度 T 的 IC 数组（NaN 表示该行该组无有效 IC）。
+
+    注：不使用 ``np.nanmean``，避免空行（该组当日无成员）触发
+    ``RuntimeWarning: Mean of empty slice``；改用 masked 求和 + 安全除法，
+    空行结果随后由 ``cnt < min_n`` 置为 NaN。
+    """
+    with np.errstate(all="ignore"):
+        cnt = np.sum(mask, axis=1)
+        # 安全均值：空行用 1 占位避免 0 除（其结果随后被 cnt<min_n 置 NaN）
+        safe_cnt = np.where(cnt > 0, cnt, 1)
+        am = np.sum(np.where(mask, a, 0.0), axis=1, keepdims=True) / safe_cnt[:, None]
+        bm = np.sum(np.where(mask, b, 0.0), axis=1, keepdims=True) / safe_cnt[:, None]
+        ac = np.where(mask, a - am, 0.0)
+        bc = np.where(mask, b - bm, 0.0)
+        num = np.sum(ac * bc, axis=1)
+        den = np.sqrt(np.sum(ac * ac, axis=1) * np.sum(bc * bc, axis=1))
+        corr = num / den
+        corr[cnt < min_n] = np.nan
+        corr[den == 0] = np.nan
+    return corr
+
 
 def plot_equity_drawdown(equity_curve, path, title: str = "累计收益 - 回撤") -> str | None:
     """绘制累计收益-回撤双轴图并保存为 PNG。
@@ -96,7 +125,7 @@ def plot_group_ic(
     """绘制分组 IC 柱状图：按因子值分位分组，各组组内 IC 均值。
 
     每个截面按因子值升序分 N 组（Q1=因子值最低 … QN=最高），在组内计算因子值
-    与远期收益的截面相关（组内 IC），再对日期取均值，柱状展示--定位因子预测力
+    与远期收益的截面相关（组内 IC），再对日期取均值，柱状展示——定位因子预测力
     集中在哪些因子值区间。
 
     Parameters
@@ -144,32 +173,43 @@ def plot_group_ic(
 
     min_per_group = 5  # 组内相关至少需要的样本数
     use_rank = method == "rank"
-    group_ic_vals = {g: [] for g in range(1, n_groups + 1)}  # 组号 -> 各日 IC 列表
 
-    # 逐日：按因子值升序分 N 组，组内算 IC
-    for date in fv.index:
-        f_row = fv.loc[date]
-        r_row = fr.loc[date]
-        valid = f_row.notna() & r_row.notna()
-        f_row = f_row[valid]
-        r_row = r_row[valid]
-        n = len(f_row)
-        if n < n_groups * min_per_group:
+    # ---- 向量化：一次性算出每日每标的的分组号（无逐日 Python 循环）----
+    valid = fv.notna() & fr.notna()
+    n_per_day = valid.sum(axis=1).to_numpy()
+    # 仅在有效单元格上按行升序排名（method="first" 避免并列跨组）
+    ranks = fv.where(valid).rank(axis=1, ascending=True, method="first")
+    ranks_np = ranks.to_numpy().astype(float)
+    n_np = n_per_day[:, None].astype(float)
+    with np.errstate(all="ignore"):
+        # 组号 1..n_groups；无效位置为 NaN（后续 mask 自然排除）
+        group_np = (ranks_np - 1) * n_groups // n_np + 1
+    # 整日有效样本不足 -> 全 NaN（等价原逐日 continue）
+    group_np[n_per_day < n_groups * min_per_group, :] = np.nan
+
+    fv_np = fv.to_numpy(dtype="float")
+    fr_np = fr.to_numpy(dtype="float")
+
+    group_ic_vals = {g: [] for g in range(1, n_groups + 1)}  # 组号 -> 各日 IC 列表
+    for g in range(1, n_groups + 1):
+        mask = group_np == g  # (T, N) bool
+        if not mask.any():
             continue
-        # 升序排名：1 = 因子值最小 -> Q1；method="first" 避免并列跨组
-        ranks = f_row.rank(ascending=True, method="first")
-        group = ((ranks - 1) * n_groups // n).astype(int) + 1  # 1..n_groups
-        for g in range(1, n_groups + 1):
-            mask = group == g
-            if int(mask.sum()) < min_per_group:
-                continue
-            fg = f_row[mask]
-            rg = r_row[mask]
-            if fg.std() == 0 or rg.std() == 0:
-                continue
-            ic = fg.rank().corr(rg.rank()) if use_rank else fg.corr(rg)
-            if ic == ic:  # 非 NaN
-                group_ic_vals[g].append(float(ic))
+        if use_rank:
+            # 组内排名（Spearman）：在组内有效值上按行排名
+            a = np.where(mask, fv_np, np.nan)
+            b = np.where(mask, fr_np, np.nan)
+            a = pd.DataFrame(a, index=fv.index, columns=fv.columns).rank(
+                axis=1, method="average"
+            ).to_numpy()
+            b = pd.DataFrame(b, index=fv.index, columns=fv.columns).rank(
+                axis=1, method="average"
+            ).to_numpy()
+        else:
+            a, b = fv_np, fr_np
+        ic_per_day = _rowwise_corr(a, b, mask, min_per_group)
+        valid_ics = ic_per_day[~np.isnan(ic_per_day)]
+        group_ic_vals[g].extend(float(x) for x in valid_ics)
 
     # 各组 IC 取日期均值
     group_ic = {g: sum(v) / len(v) for g, v in group_ic_vals.items() if v}

@@ -34,19 +34,19 @@ def _returns(ctx: MetricContext) -> pd.Series:
 
 
 class AnnualReturn(BaseMetric):
-    """年化收益率。``calculate(equity_curve)``"""
+    """年化收益率（算术年化：日均收益 × 年化周期数）。
+
+    匹配固定本金累计口径（不复利）：年化盈亏 = 日均收益 × 年化周期数。
+    收益率优先取 ``ctx.returns``，缺则由 ``equity_curve`` 推导。
+    """
 
     name = "annual_return"
 
     def calculate(self, ctx: MetricContext) -> float:
-        eq = ctx.equity_curve
-        if eq is None or eq.empty or len(eq) < 2:
+        r = _returns(ctx)
+        if r.empty:
             return _NAN
-        total = eq.iloc[-1] / eq.iloc[0] - 1.0
-        n = len(eq) - 1
-        if n <= 0:
-            return _NAN
-        return float((1.0 + total) ** (ctx.periods_per_year / n) - 1.0)
+        return float(r.mean() * ctx.periods_per_year)
 
 
 # ---------------- 风险类 ----------------

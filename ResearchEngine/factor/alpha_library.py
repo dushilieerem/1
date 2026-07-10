@@ -26,3 +26,23 @@ class AlphaLibrary(FactorLibrary):
 
     def marketcap(self):
         return -self.total_mv
+
+    def macdboll(self):
+        ema12 = self.close.ewm(span=12).mean()
+        ema26 = self.close.ewm(span=26).mean()
+        dif = ema12 - ema26
+        dea = dif.ewm(span=9).mean()
+        macd = dif - dea
+
+        mid = self.close.rolling(20).mean()
+        std = self.close.rolling(20).std()
+
+        upper = mid + 2 * std
+        lower = mid - 2 * std
+
+        boll_pos = (self.close - lower) / (upper - lower)
+
+        return macd * (1 - boll_pos)
+
+    def futureRes(self):
+        return self.close.shift(-1) - self.close

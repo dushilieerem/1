@@ -9,10 +9,11 @@ data_dir: ../MarketData
 benchmark: CSI500
 
 # 组合构建
-rebalance: daily       # daily / weekly / monthly（样本仅 21 天，用 weekly 才有足够调仓点）
-n_groups: 5             # 分位数
-long_short: false        # 是否多空对冲
-ic_horizon: 5           # IC 远期收益天数
+rebalance: daily        # daily / weekly / monthly（样本仅 21 天，用 weekly 才有足够调仓点）
+stock_num: 100          # 单边最多持仓数（做多 top N / 做空 bottom N；不足时取 min）
+n_groups: 5             # 分组评估用（分组 IC 图），不影响买入数
+long_short: false       # 是否多空对冲
+ic_horizon: 1           # IC 远期收益天数
 periods_per_year: 252   # 年化周期数
 
 # 交易成本（供 BacktestEngine 演示使用）
@@ -22,6 +23,6 @@ slippage: 0.001
 # 计算后端
 compute_backend: python
 
-# 结果存储与输出
-storage: csv
+# 结果存储与输出（大表用 parquet 提速；需要 csv 可改回 csv）
+storage: parquet
 output_path: ./output/alpha101_result

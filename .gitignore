@@ -24,6 +24,7 @@ ResearchEngine/output/
 
 # 行情数据（体积大，不入库；放 MarketData/ 目录）
 MarketData/
+MarketData.7z
 
 #日志文件
 

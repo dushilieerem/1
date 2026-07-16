@@ -1,6 +1,6 @@
 """``MetricContext`` - 指标计算的输入上下文。
 
-``docs/04-类设计.md`` 中 ``BaseMetric.calculate(data)`` 单参签名无法表达 IC 这类
+``docs/04-features/FEAT-001-quantcore-core/04-class-design.md`` 中 ``BaseMetric.calculate(data)`` 单参签名无法表达 IC 这类
 需要「因子值 + 远期收益」双序列的指标。因此用一个上下文对象把所有可能的输入聚合
 在一起，每个指标按需取用。这是对文档签名的工程化补充，语义不变：
 

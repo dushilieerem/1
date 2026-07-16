@@ -1,6 +1,6 @@
 """``ResultStorage`` - 存储后端抽象。
 
-依据 ``docs/04-类设计.md`` ResultManager 节：
+依据 ``docs/04-features/FEAT-002-research-engine/04-class-design.md`` ResultManager 节：
 
     属性：
       name: str                       -- "csv" | "sqlite" | "clickhouse"

@@ -1,6 +1,6 @@
 """ResearchEngine - 投资研究层（用户入口）。
 
-依据 ``docs/03-模块.md`` 划分为四个模块 + 核心对象 Experiment：
+依据 ``docs/04-features/FEAT-002-research-engine/03-modules.md`` 划分为四个模块 + 核心对象 Experiment：
 
 - ``Experiment``         - 核心对象，一次实验
 - ``ExperimentManager``   - 整个 ResearchEngine 的核心（编排）
@@ -15,7 +15,7 @@ from researchengine.config import ConfigManager
 from researchengine.experiment import Experiment
 from researchengine.factor_loader import FactorLoader
 from researchengine.manager import ExperimentManager
-from researchengine.plotting import plot_equity_drawdown, plot_group_ic
+from researchengine.plotting import plot_equity_drawdown, plot_group_ic, plot_ic_analysis
 from researchengine.portfolio import build_factor_portfolio, build_close_panel
 from researchengine.result.manager import ResultManager
 from researchengine.result.storage import (
@@ -41,4 +41,5 @@ __all__ = [
     "build_close_panel",
     "plot_equity_drawdown",
     "plot_group_ic",
+    "plot_ic_analysis",
 ]

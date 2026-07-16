@@ -1,6 +1,6 @@
 """``ExperimentManager`` - ResearchEngine 的核心，负责组织实验流程。
 
-依据 ``docs/04-类设计.md`` ExperimentManager 节与 ``docs/05-运行流程图.md``：
+依据 ``docs/04-features/FEAT-002-research-engine/04-class-design.md`` ExperimentManager 节与 ``docs/04-features/FEAT-002-research-engine/05-runtime-flow.md``：
 
     属性：
       experiments: Dict[str, Experiment]

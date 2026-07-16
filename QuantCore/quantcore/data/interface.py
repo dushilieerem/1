@@ -1,6 +1,6 @@
 """``IDataProvider`` - 数据源抽象接口。
 
-依据 ``docs/04-类设计.md`` DataEngine 节：
+依据 ``docs/04-features/FEAT-001-quantcore-core/04-class-design.md`` DataEngine 节：
 
     属性：
       name: str                  -- 数据源名称（如 "csv", "wind"）
@@ -90,4 +90,3 @@ class IDataProvider(ABC):
                 if f in bars.columns:
                     per_field[f][symbol] = bars[f]
         return {f: pd.DataFrame(d) for f, d in per_field.items()}
-

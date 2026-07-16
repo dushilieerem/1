@@ -1,6 +1,6 @@
 """``MatchingEngine`` - 撮合引擎。
 
-依据 ``docs/04-类设计.md`` BacktestEngine 节与 ``docs/05-运行流程图.md`` 第 4.1 节：
+依据 ``docs/04-features/FEAT-001-quantcore-core/04-class-design.md`` BacktestEngine 节与 ``docs/04-features/FEAT-001-quantcore-core/05-runtime-flow.md`` 第 4.1 节：
 
     方法：
       match(order: Order, bars: DataFrame) -> List[Fill]

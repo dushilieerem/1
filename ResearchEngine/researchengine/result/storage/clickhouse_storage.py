@@ -18,7 +18,7 @@ class ClickHouseStorage(ResultStorage):
         self,
         host: str = "localhost",
         port: int = 9000,
-        database: str = "ygquant",
+        database: str = "svquant",
         user: str = "default",
         password: str = "",
     ) -> None:

@@ -1,6 +1,6 @@
 """``ComputeBackend`` - 因子计算后端抽象。
 
-依据 ``docs/04-类设计.md`` FactorEngine 节：
+依据 ``docs/04-features/FEAT-001-quantcore-core/04-class-design.md`` FactorEngine 节：
 
     属性：
       name: str                  -- "python" | "numba" | "cpp" | "gpu"

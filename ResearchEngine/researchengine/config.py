@@ -1,6 +1,6 @@
 """``ConfigManager`` - 统一配置读取。
 
-依据 ``docs/04-类设计.md`` ConfigManager 节：
+依据 ``docs/04-features/FEAT-002-research-engine/04-class-design.md`` ConfigManager 节：
 
     属性：
       config: dict

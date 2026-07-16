@@ -1,6 +1,6 @@
 """``TransactionCost`` - 手续费与滑点模型。
 
-依据 ``docs/04-类设计.md`` BacktestEngine 节：
+依据 ``docs/04-features/FEAT-001-quantcore-core/04-class-design.md`` BacktestEngine 节：
 
     属性：
       commission_rate: float

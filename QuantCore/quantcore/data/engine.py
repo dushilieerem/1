@@ -1,6 +1,6 @@
 """``DataEngine`` - 统一数据读取引擎。
 
-依据 ``docs/04-类设计.md`` DataEngine 节：
+依据 ``docs/04-features/FEAT-001-quantcore-core/04-class-design.md`` DataEngine 节：
 
     属性：
       provider: IDataProvider    -- 统一通过接口调用，不关心具体来源

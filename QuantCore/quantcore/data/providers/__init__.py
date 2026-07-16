@@ -1,6 +1,6 @@
 """具体数据源实现（各自实现 ``IDataProvider``）。
 
-依据 ``docs/04-类设计.md`` DataEngine 节，包含五个 provider：
+依据 ``docs/04-features/FEAT-001-quantcore-core/04-class-design.md`` DataEngine 节，包含五个 provider：
 
 - :class:`CSVDataProvider`       - 读取本地 CSV 文件
 - :class:`ParquetProvider`       - 读取列式存储 Parquet 文件

@@ -231,6 +231,81 @@ def test_plot_group_ic(tmp_path):
     ) is None
 
 
+# ---------------- IC 分析四联图 ----------------
+
+def test_plot_ic_analysis(tmp_path):
+    from researchengine.plotting import _daily_ic_series, plot_ic_analysis
+
+    rng = np.random.default_rng(11)
+    dates = pd.bdate_range("2022-01-03", periods=120)
+    symbols = [f"S{i:03d}" for i in range(30)]
+    # 高因子 -> 高收益，IC 为正
+    fv = pd.DataFrame(rng.normal(0, 1, (120, 30)), index=dates, columns=symbols)
+    fr = fv * 0.2 + pd.DataFrame(
+        rng.normal(0, 1, (120, 30)), index=dates, columns=symbols
+    )
+
+    png = plot_ic_analysis(fv, fr, tmp_path / "ic_analysis.png", window=60)
+    assert png is not None
+    assert Path(png).exists()
+
+    # 每日 IC 序列与 IC 指标同口径（截面 corrwith 逐行）
+    ic = _daily_ic_series(fv, fr)
+    assert len(ic) == 120
+    ref = fv.corrwith(fr, axis=1).dropna().mean()
+    assert abs(ic.mean() - ref) < 1e-12
+
+    # rank 口径（RankIC）也能出图
+    assert plot_ic_analysis(
+        fv, fr, tmp_path / "ic_rank.png", method="rank"
+    ) is not None
+
+    # 样本不足（空 DataFrame / 不足 2 日）-> None 不报错
+    assert plot_ic_analysis(
+        pd.DataFrame(), pd.DataFrame(), tmp_path / "none.png"
+    ) is None
+
+
+# ---------------- 收益-回撤图 + 年度统计表 ----------------
+
+def test_plot_equity_drawdown_yearly_table(tmp_path):
+    from researchengine.plotting import plot_equity_drawdown, _yearly_stats
+
+    # 跨 3 年净值：2017 涨 / 2018 跌 / 2019 涨（确定性日收益）
+    dates = pd.bdate_range("2017-01-03", "2019-12-31")
+    r = np.where(
+        dates.year == 2017, 0.0004,
+        np.where(dates.year == 2018, -0.0003, 0.0005),
+    )
+    eq = pd.Series(np.cumprod(1.0 + r), index=dates)
+
+    # 带年度表出图
+    png = plot_equity_drawdown(eq, tmp_path / "ed.png", show_yearly_table=True)
+    assert png is not None and Path(png).exists()
+
+    years, stats = _yearly_stats(eq, periods_per_year=252)
+    assert years == [2017, 2018, 2019]
+    # 方向：涨年正、跌年负
+    assert stats["年化"][0] > 0 and stats["年化"][1] < 0 and stats["年化"][2] > 0
+    # 非首年用上一年末净值 -> 等比日收益的年化 = (1+r)^252 - 1（与当年交易日数无关）
+    assert abs(stats["年化"][1] - (0.9997 ** 252 - 1)) < 1e-9
+    assert abs(stats["年化"][2] - (1.0005 ** 252 - 1)) < 1e-9
+    # 回撤非正；2018 全年下行 -> 回撤最深
+    assert all(v <= 0 for v in stats["回撤"])
+    assert stats["回撤"][1] <= stats["回撤"][0] and stats["回撤"][1] <= stats["回撤"][2]
+    # calmar = 年化 / |回撤|
+    for i in range(3):
+        if not np.isnan(stats["calmar"][i]):
+            assert abs(stats["calmar"][i] - stats["年化"][i] / abs(stats["回撤"][i])) < 1e-12
+
+    # 关表也能出图
+    png2 = plot_equity_drawdown(eq, tmp_path / "ed2.png", show_yearly_table=False)
+    assert png2 is not None and Path(png2).exists()
+
+    # 空数据 -> None 不报错
+    assert plot_equity_drawdown(pd.Series(dtype=float), tmp_path / "none.png") is None
+
+
 # ---------------- 组合构建 ----------------
 
 def test_build_factor_portfolio_weights():

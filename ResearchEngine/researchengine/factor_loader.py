@@ -1,6 +1,6 @@
 """``FactorLoader`` - 动态加载因子文件。
 
-依据 ``docs/04-类设计.md`` FactorLoader 节：
+依据 ``docs/04-features/FEAT-002-research-engine/04-class-design.md`` FactorLoader 节：
 
     属性：
       factor_dir: str
@@ -28,7 +28,11 @@ from quantcore.factor.base import BaseFactor, FactorLibrary, library_factors
 class FactorLoader:
     """动态因子加载器。"""
 
-    def __init__(self, factor_dir: str = "factor") -> None:
+    def __init__(self, factor_dir: str | None = None) -> None:
+        if factor_dir is None:
+            from researchengine.assets import factor_library_dir
+
+            factor_dir = str(factor_library_dir())
         self.factor_dir: str = factor_dir
         self.factors: Dict[str, BaseFactor] = {}
 

@@ -20,6 +20,20 @@ periods_per_year: 252   # 年化周期数
 commission: 0.0003
 slippage: 0.001
 
+# 回测适配器（可插拔后端）
+#   engine: native（自研向量化，与 build_factor_portfolio 逐位等价）| vectorbt（需 pip install vectorbt）
+#   成本默认 0 -> 不改默认结果；需要扣成本时设 commission_rate/slippage_rate
+backtest:
+  engine: native
+  initial_capital: 1000000
+  # commission_rate: 0.0003
+  # slippage_rate: 0.001
+
+# 因子评估增强（默认开启；分层回测/多空/三因子归因/分行业IC/IR，缺数据自动跳过）
+#   基准 = 市值加权全市场（自构造，复用 total_mv），三因子 MKT 同源
+#   factor_analysis.enabled: false  # 关闭可加速纯回测
+#   n_layered_groups: 5             # 分层组数（缺省回落 n_groups）
+
 # 计算后端
 compute_backend: python
 

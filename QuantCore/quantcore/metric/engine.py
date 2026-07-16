@@ -1,6 +1,6 @@
 """``MetricEngine`` - 指标统一入口。
 
-依据 ``docs/04-类设计.md`` MetricEngine 节与 ``docs/05-运行流程图.md`` 第 5 节：
+依据 ``docs/04-features/FEAT-001-quantcore-core/04-class-design.md`` MetricEngine 节与 ``docs/04-features/FEAT-001-quantcore-core/05-runtime-flow.md`` 第 5 节：
 
     属性：
       metrics: Dict[str, BaseMetric]

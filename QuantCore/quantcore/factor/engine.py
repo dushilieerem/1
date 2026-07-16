@@ -1,6 +1,6 @@
 """``FactorEngine`` - 面板因子计算引擎（VectorEngine 模型）。
 
-依据 ``docs/04-类设计.md`` FactorEngine 节与 ``docs/04-engine-design.md §2``：
+依据 ``docs/04-features/FEAT-001-quantcore-core/04-class-design.md`` FactorEngine 节与 ``docs/05-architecture/engine-design.md §2``：
 
     属性：
       factors: Dict[str, BaseFactor]

@@ -1,6 +1,6 @@
 """``BaseMetric`` - 指标抽象基类。
 
-依据 ``docs/04-类设计.md`` MetricEngine 节：
+依据 ``docs/04-features/FEAT-001-quantcore-core/04-class-design.md`` MetricEngine 节：
 
     属性：
       name: str                  -- 指标名称（如 "sharpe", "annual_return"）

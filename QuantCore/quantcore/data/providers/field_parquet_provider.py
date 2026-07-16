@@ -39,6 +39,12 @@ from quantcore.data.interface import IDataProvider
 #:   布尔: is_st / limit_up
 #: 非面板文件（如 stock_info），跳过
 _SKIP = {"stock_info", "test"}
+_UNIVERSE_FILES = {
+    "CSI300": "CSI300_constituents.parquet",
+    "CSI500": "CSI500_constituents.parquet",
+    "CSI1000": "CSI1000_constituents.parquet",
+    "SSE50": "SSE50_constituents.parquet",
+}
 
 
 class _LazyPanels:
@@ -153,6 +159,28 @@ class FieldParquetProvider(IDataProvider):
         return filter_by_date(out, start, end)
 
     def get_universe(self, date: Optional[str] = None) -> List[str]:
+        """返回股票池成分；池名取最新一期成分，日期查询仍回退全市场。
+
+        ``IDataProvider`` 的参数名为 ``date``，但上层 ``resolve_universe`` 也用它
+        传入 ``CSI500`` 等池名。字段 parquet 数据目录中的指数成分文件按日期保存，
+        此处取最新一期有效成分；逐日调入调出需要由上层持仓掩码处理，不能仅靠列筛选
+        正确表达。
+        """
+        pool = str(date).upper() if date is not None else None
+        if pool in _UNIVERSE_FILES:
+            path = self.data_dir / "benchmark" / _UNIVERSE_FILES[pool]
+            if not path.exists():
+                raise FileNotFoundError(f"股票池 {pool} 缺少成分文件: {path}")
+            frame = pd.read_parquet(path)
+            if frame.empty:
+                return []
+            latest = frame.iloc[-1]
+            return [
+                str(symbol).split(".", 1)[0]
+                for symbol, included in latest.items()
+                if included == 1
+            ]
+
         # 读 close 字段 schema 取列名（不读数据），无 close 则取首个
         import pyarrow.parquet as pq
 

@@ -1,6 +1,6 @@
 """标准指标实现（各自实现 ``BaseMetric``）。
 
-依据 ``docs/04-类设计.md`` MetricEngine 节，共 10 个指标，分四类：
+依据 ``docs/04-features/FEAT-001-quantcore-core/04-class-design.md`` MetricEngine 节，共 10 个指标，分四类：
 
 - 收益类：``AnnualReturn``
 - 风险类：``SharpeRatio`` / ``SortinoRatio`` / ``CalmarRatio`` / ``MaxDrawdown`` / ``Volatility``

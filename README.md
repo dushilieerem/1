@@ -1,4 +1,4 @@
-# YGQuant
+# SVQuant
 
 #### 介绍
 一站式AI量化投研平台
@@ -16,7 +16,7 @@ ResearchEngine（用户入口）  ->  QuantCore（底层引擎）  ->  Historica
 - **ResearchEngine** - 投资研究层：ExperimentManager / Experiment / FactorLoader / ConfigManager / ResultManager
 - **TradingEngine** - 交易层（待实现）
 
-详见 `docs/`。
+文档总入口见 `docs/README.md`。
 
 #### 安装教程
 
@@ -40,7 +40,7 @@ ResearchEngine（用户入口）  ->  QuantCore（底层引擎）  ->  Historica
    > 数据为 Wind/Choice 风格宽表（3 行表头/GBK/OHLCV+市值）。无真实数据时可
    > `python ResearchEngine/examples/gen_data.py` 生成样本。
 
-2. 研究员自定义因子：在 `ResearchEngine/factor/` 下新建 `*.py`，定义 `BaseFactor` 子类并实现 `compute(data: Panel)`（面板模式，`data.close` 取宽表），修改 `examples/main.py` 调用即可。
+2. 研究员自定义因子：在 `Factor/libraries/` 下新建 `*.py`，定义 `BaseFactor` 子类并实现 `compute(data: Panel)`（面板模式，`data.close` 取宽表），修改 `examples/main.py` 调用即可。
 
 3. 核心抽象（Experiment）：
 

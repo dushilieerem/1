@@ -2,6 +2,8 @@
 
 import pandas as pd
 
+from quantcore.data.providers.field_parquet_provider import FieldParquetProvider
+
 from quantcore import CSVDataProvider, DataEngine
 
 
@@ -45,3 +47,19 @@ def test_data_engine_universe_pool(tmp_path):
     engine = DataEngine(CSVDataProvider(tmp_path))
     assert set(engine.get_universe("CSI500")) == {"600001", "600002"}
     assert set(engine.get_symbols()) == {"600001", "600002"}
+
+
+def test_field_parquet_provider_uses_latest_index_constituents(tmp_path):
+    pd.DataFrame({
+        "datetime": pd.to_datetime(["2024-01-02"]),
+        "000001": [10.0], "000002": [20.0], "000003": [30.0],
+    }).to_parquet(tmp_path / "close.parquet", index=False)
+    benchmark = tmp_path / "benchmark"
+    benchmark.mkdir()
+    pd.DataFrame(
+        {"000001.SZ": [1, 0], "000002.SZ": [0, 1], "000003.SZ": [0, 1]},
+        index=pd.to_datetime(["2024-01-01", "2024-06-01"]),
+    ).to_parquet(benchmark / "CSI500_constituents.parquet")
+
+    provider = FieldParquetProvider(tmp_path)
+    assert provider.get_universe("CSI500") == ["000002", "000003"]

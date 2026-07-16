@@ -1,6 +1,6 @@
 """``Panel`` + ``BaseFactor`` - 面板因子抽象基类（VectorEngine 模型）。
 
-依据 ``docs/04-engine-design.md §2`` VectorEngine：因子在整张 ``日期×标的``
+依据 ``docs/05-architecture/engine-design.md §2`` VectorEngine：因子在整张 ``日期×标的``
 宽表上一次性向量化计算，**不逐只循环**。这与 ResearchEngine 的宽表数据形态一致。
 
 **契约**：
@@ -279,4 +279,3 @@ def library_factors(library: "FactorLibrary") -> "dict[str, _MethodFactor]":
         name: _MethodFactor(name, library.author, library, method)
         for name, method in library._factor_methods().items()
     }
-

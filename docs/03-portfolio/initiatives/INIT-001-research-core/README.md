@@ -13,15 +13,8 @@
 - `FEAT-001`：QuantCore 核心基础设施
 - `FEAT-002`：ResearchEngine 研究服务
 - `FEAT-003`：回测适配层
-<<<<<<< HEAD
 - `FEAT-006`：事件驱动策略回测引擎
-=======
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
 ## 文档
 
 - `domain-design.md`：研究核心领域设计。
-<<<<<<< HEAD
-=======
-
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815

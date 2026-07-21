@@ -33,7 +33,6 @@ from quantcore.backtest.adapter import (
     BacktestSignals,
     FactorGroupStrategy,
     FactorQuantileStrategy,
-<<<<<<< HEAD
     FactorPortfolioStrategy,
     Universe,
     TopN,
@@ -41,8 +40,6 @@ from quantcore.backtest.adapter import (
     EveryNTradingDays,
     factor,
     signal,
-=======
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
     IBacktestEngine,
     ICalendar,
     IDataFeed,
@@ -97,7 +94,6 @@ __all__ = [
     "BacktestConfig",
     "FactorQuantileStrategy",
     "FactorGroupStrategy",
-<<<<<<< HEAD
     "FactorPortfolioStrategy",
     "Universe",
     "TopN",
@@ -105,8 +101,6 @@ __all__ = [
     "EveryNTradingDays",
     "factor",
     "signal",
-=======
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
     "NativeEngine",
     "PandasCalendar",
     "get_backtest_engine",

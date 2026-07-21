@@ -1,12 +1,7 @@
 # ResearchEngine HTTP API（FastAPI）
 
-<<<<<<< HEAD
 > 文档版本：v2.1
 > 最后更新：2026-07-20
-=======
-> 文档版本：v2.0
-> 最后更新：2026-07-15
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 > 关联：`02-architecture.md`（无状态设计）、`03-modules.md`（模块职责）
 
 ---
@@ -57,20 +52,11 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
 |------|------|------|------|
 | 系统 | GET | `/api/health` | 健康检查 |
 | 因子回测 | POST | `/api/backtest/factor` | 因子选股回测（系统内置选股策略） |
-<<<<<<< HEAD
 | 策略回测 | POST | `/api/backtest/strategy` | 自定义策略回测（用户提供完整策略逻辑） |
 
 > 因子管理、行业分析、政策分析等非回测功能由前端或独立数据服务提供，不属于 ResearchEngine。
 >
 > 当前 MVP 仅提供同步端点。异步提交、任务查询和结果持久化尚未实现，不能调用文档中不存在的 `/async` 或 `run_id` 查询接口。
-=======
-| 因子回测 | POST | `/api/backtest/factor/async` | 异步因子回测 |
-| 策略回测 | POST | `/api/backtest/strategy` | 自定义策略回测（用户提供完整策略逻辑） |
-| 策略回测 | POST | `/api/backtest/strategy/async` | 异步策略回测 |
-| 回测 | GET | `/api/backtest/{run_id}` | 查询回测状态/结果（通用） |
-
-> 因子管理、行业分析、政策分析等非回测功能由前端或独立数据服务提供，不属于 ResearchEngine。
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
 ---
 
@@ -118,14 +104,10 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
   // ─── 6. 分层与调仓 ───
   "rebalance_days": 15,              // 每 15 个交易日调仓一次
   "groups": 5,                       // 因子等权分 5 组；主组合为最高组
-<<<<<<< HEAD
   "benchmark": "CSI500",             // CSI300 | CSI500 | CSI1000 | SSE50
 
   // ─── 7. 分析深度 ───
   "analysis_level": "core"           // core=核心回测（默认） | full=额外分层、FF3、行业曲线
-=======
-  "benchmark": "CSI500"              // CSI300 | CSI500 | CSI1000 | SSE50
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 }
 ```
 
@@ -146,14 +128,9 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
 | `commission_rate` | number | 否 | `0.0003` | 佣金率。 |
 | `stamp_tax` | number | 否 | `0.001` | 卖出印花税率。 |
 | `slippage_rate` | number | 否 | `0.001` | 滑点率。 |
-<<<<<<< HEAD
 | `analysis_level` | enum | 否 | `core` | `core` 计算核心回测、汇总指标和各分组区间收益；`full` 才额外计算 IC/IR 时序、FF3 与行业曲线。 |
 
 净值、基准、超额收益和各分组区间收益固定返回；`full` 在此基础上增加 IC/IR 时序、FF3 与行业曲线。
-=======
-
-净值、分层、基准及超额收益均固定返回，前端不再通过开关控制。
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
 **响应**：
 ```jsonc
@@ -181,11 +158,7 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
     { "year": 2021, "return_value": 0.18 }
   ],
 
-<<<<<<< HEAD
   // ─── 5. 因子分组收益（core 与 full 均返回；其余深度字段仅 full 返回）───
-=======
-  // ─── 5. 分层回测（因子回测特有，默认 5 组）───
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
   "factor_analysis": {
     "ic_mean": 0.0032, "ic_std": 0.051, "rank_ic_mean": 0.0115,
     "layered_returns": {
@@ -235,7 +208,6 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
     "portfolio_type": "long_short",
     "rebalance_days": 15, "groups": 5, "benchmark": "CSI500",
     "filter_limit_up": true,
-<<<<<<< HEAD
     "filter_suspended": true,
     "timings_seconds": {
       "engine_setup": 0.001,
@@ -246,9 +218,6 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
       "factor_analysis": 0.0,
       "api_total": 2.133
     }
-=======
-    "filter_suspended": true
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
   },
 
   // ─── 7. 错误信息 ───
@@ -264,20 +233,12 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
 | `equity_curve` | array/null | 主组合净值点：`date`、`value`、`drawdown`。 |
 | `drawdowns` | array | 最大的 10 段回撤区间。 |
 | `annual_returns` | array | 各年度收益。 |
-<<<<<<< HEAD
 | `factor_analysis` | object | `core` 与 `full` 均返回 `layered_returns`（各组区间收益、组间价差）和分组净值；仅 `full` 返回 IC/IR 时序、FF3 与行业序列，核心模式中这些数组为空。 |
-=======
-| `factor_analysis` | object | IC、Rank IC、全市场分层净值，以及前端诊断图所需的 IC、IR 和行业序列。 |
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 | `benchmark_curve` | array/null | 所选基准的归一化净值点。 |
 | `excess_return` | number/null | 主组合相对基准的区间超额收益。 |
 | `date_range` | object | 实际回测起止日期。 |
 | `final_equity` | number/null | 主组合最终净值。 |
-<<<<<<< HEAD
 | `meta` | object/null | 实际使用的因子、股票池、调仓天数、分组数、基准和 `timings_seconds` 分段耗时（秒）。 |
-=======
-| `meta` | object/null | 实际使用的因子、股票池、调仓天数、分组数与基准。 |
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 | `error` | string/null | 业务或因子代码错误信息；成功时为 `null`。 |
 
 > **因子代码出错不抛 500**：语法错 / 导入错 / 因子名不存在 / 运行错 → `error` 字段填充，HTTP 200，
@@ -285,11 +246,8 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
 >
 > **默认成本结构**：佣金 3‱ + 印花税 1‰（卖出）+ 滑点 1‰，对标 A 股市场实际交易成本。
 >
-<<<<<<< HEAD
 > **性能模式**：未传 `analysis_level` 时默认 `core`，适用于同步快速回测，并保留各分组区间收益；需要行业与归因诊断时显式传 `full`。当前 `CSI300`、`CSI500`、`CSI1000`、`SSE50` 按最新一期指数成分筛选，历史逐日成分调整尚未建模。
 >
-=======
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 > **参数迁移**：因子回测不再接受 `backtest_period`、`data_dir`、`backtest_engine`、`initial_capital`、
 > `include_equity`、`include_factor_values`、`include_positions`、`rebalance` 和 `stock_num`。服务端统一使用
 > 配置的数据目录及 Native 回测后端；传入已移除字段会返回 `422`。
@@ -300,53 +258,25 @@ IC 分布图由前端使用 `ic_series[].value` 自行分桶。行业主数据�
 `stock_info.parquet` 缺失有效的 `code/symbol/ts_code -> industry` 映射时，两个行业曲线数组为空而回测不失败。
 行业曲线均使用固定本金净值，行业分组按日、在行业内独立分组。
 
-<<<<<<< HEAD
-=======
-#### `POST /api/backtest/factor/async`
-
-异步提交因子回测。请求体同 `POST /api/backtest/factor`。
-
-```json
-{
-  "run_id": "bt_f_20260715_abcdef",
-  "status": "pending",
-  "created_at": "2026-07-15T10:30:00Z"
-}
-```
-
----
-
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 ### 4.3 策略回测
 
 策略回测适用于**自定义策略逻辑**——用户提供完整的策略代码（含信号生成逻辑），
 系统执行回测。当因子回测的 FactorQuantileStrategy 不满足需求时使用。
 
-<<<<<<< HEAD
 除自由编写 `generate_signals()` 外，也支持结构化的 `FactorPortfolioStrategy`：用户在同一个
 Python 类中定义多个 `@factor` 因子函数与唯一 `@signal` 组合公式，平台自动执行 Top-N 选股、
 等权和调仓，仍走本端点与向量化回测后端。
 
-=======
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 #### `POST /api/backtest/strategy`
 
 **请求**：
 ```jsonc
 {
-<<<<<<< HEAD
   // ─── 推荐：结构化因子组合策略代码 ───
   "strategy_code": "from quantcore import EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, factor, signal\n\nclass SmallCapMomentumStrategy(FactorPortfolioStrategy):\n    selector = TopN(30)\n    weighting = EqualWeight()\n    rebalance = EveryNTradingDays(20)\n\n    @factor\n    def momentum_20d(self):\n        return self.close.pct_change(20)\n\n    @factor\n    def value_ep(self):\n        return 1.0 / self.pe_ttm\n\n    @signal\n    def score(self):\n        return 0.6 * self.rank(self.momentum_20d()) + 0.4 * self.rank(self.value_ep())",
 
   // ─── 结构化策略通常无需额外参数 ───
   "strategy_params": {},
-=======
-  // ─── 策略代码（必须实现 generate_signals 方法）───
-  "strategy_code": "import pandas as pd\nclass MyStrategy:\n    def __init__(self, factor_values, close, params=None):\n        self.factor_values = factor_values\n        self.params = params or {}\n    def generate_signals(self):\n        top_n = self.params.get('top_n', 50)\n        ranks = self.factor_values.rank(axis=1, ascending=False)\n        weights = pd.DataFrame(0.0, index=self.factor_values.index, columns=self.factor_values.columns)\n        weights[ranks <= top_n] = 1.0 / top_n\n        return weights",
-
-  // ─── 策略参数（透传给策略 __init__ 的 params）───
-  "strategy_params": { "top_n": 50 },
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
   // ─── 因子代码（可选，策略可能需要因子值作为输入）───
   "factor_code": null,
@@ -369,7 +299,6 @@ Python 类中定义多个 `@factor` 因子函数与唯一 `@signal` 组合公式
 }
 ```
 
-<<<<<<< HEAD
 **请求参数**：
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
@@ -416,8 +345,6 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
 该模式无需提交 `factor_code` 或 `factor_name`；所有因子都定义在 `strategy_code` 中。策略源码
 中的 `universe` 声明仅供展示，实际回测股票池仍使用请求的 `universe` 字段。
 
-=======
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 **响应**：
 ```jsonc
 {
@@ -425,12 +352,8 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
   "metrics": {
     "sharpe": 1.25, "annual_return": 0.38, "max_drawdown": -0.20,
     "volatility": 0.28, "calmar": 1.90, "win_rate": 0.52,
-<<<<<<< HEAD
     "total_return": 1.50, "turnover": 0.18,
     "ic": null, "rank_ic": null
-=======
-    "total_return": 1.50, "trade_count": 36
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
   },
 
   // ─── 2. 净值曲线 ───
@@ -459,7 +382,6 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
 }
 ```
 
-<<<<<<< HEAD
 `metrics` 固定包含标准指标：`annual_return`、`sharpe`、`sortino`、`calmar`、
 `max_drawdown`、`volatility`、`win_rate`、`turnover` 与 `total_return`；无可用输入的指标返回 `null`。
 策略回测不计算因子诊断，因此 `ic`、`rank_ic` 通常为 `null`。
@@ -467,64 +389,15 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
 策略源码、因子源码、数据读取或回测运行错误均返回 HTTP `200`，并写入 `error` 字段；
 此时 `meta` 为 `null`。请求体类型、枚举值或未知字段不合法时由接口契约返回 HTTP `422`。
 
-=======
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 **与因子回测的关键区别**：
 
 | 维度 | 因子回测 | 策略回测 |
 |------|---------|---------|
 | 策略逻辑 | 系统内置 FactorQuantileStrategy | 用户自定义 |
-<<<<<<< HEAD
 | 调仓、选股、仓位 | 系统参数控制 | 由策略代码输出的目标权重控制 |
 | `factor_analysis` | ✅ 有（IC/IR/分层） | ❌ 无 |
 | `factor_code` | ✅ 必填 | ❌ 可选 |
 
-=======
-| `rebalance` | ✅ 有 | ❌ 由策略代码控制 |
-| `stock_num` | ✅ 有 | ❌ 由策略代码控制 |
-| `long_short` | ✅ 有 | ❌ 由策略代码控制 |
-| `factor_analysis` | ✅ 有（IC/IR/分层） | ❌ 无 |
-| `factor_code` | ✅ 必填 | ❌ 可选 |
-
-#### `POST /api/backtest/strategy/async`
-
-异步提交策略回测。请求体同 `POST /api/backtest/strategy`。
-
-```json
-{
-  "run_id": "bt_s_20260715_xyz",
-  "status": "pending",
-  "created_at": "2026-07-15T10:30:00Z"
-}
-```
-
----
-
-### 4.4 异步回测通用查询
-
-#### `GET /api/backtest/{run_id}`
-
-查询任何异步回测（因子或策略）的状态与结果。
-
-```json
-{
-  "run_id": "bt_f_20260715_abcdef",
-  "status": "completed",
-  "progress": 1.0,
-  "result": { ... },
-  "error": null
-}
-```
-
-`status` 取值：`pending` → `running` → `completed` | `failed`
-
-> 异步结果不持久化在 ResearchEngine 内。如需持久化，前端应：
-> 1. 轮询 `GET /api/backtest/{run_id}` 获取结果
-> 2. 自行存储到数据库
-
----
-
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 ## 5. 数据目录
 
 `data_dir` 优先级：请求字段 → env `SVQUANT_DATA_DIR` → `/data/market`。
@@ -550,14 +423,7 @@ ResearchEngine/researchengine/api/
   schemas.py           Pydantic 请求/响应模型（仅回测相关）
   serializers.py       pandas/指标 → JSON（NaN→null、净值→点、PNG→b64）
   runner.py            核心：编译因子代码 → 跑回测 → 序列化结果
-<<<<<<< HEAD
   routes.py             GET /api/health、POST /api/backtest/factor、POST /api/backtest/strategy
-=======
-  routes/
-    __init__.py         路由注册
-    health.py           GET /api/health
-    backtest.py         POST /api/backtest（同步 + 异步）
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 ```
 
 ---
@@ -570,22 +436,6 @@ ResearchEngine/researchengine/api/
 FastAPI 把同步路由丢线程池执行，不阻塞事件循环，大回测（数十秒~分钟级）跑在线程池里，
 不卡其他请求。
 
-<<<<<<< HEAD
-=======
-### 7.2 异步回测
-
-`POST /api/backtest/factor/async` 和 `POST /api/backtest/strategy/async` 立即返回
-`run_id`，后台线程执行，前端轮询 `GET /api/backtest/{run_id}` 取结果。
-
-**注意**：异步结果存储在实例内存中。如果：
-- 实例重启 → 结果丢失
-- 请求被负载均衡分发到不同实例 → 轮询不到结果
-
-**生产建议**：使用外部结果存储（Redis / DB），或前端直接存结果。
-
----
-
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 ## 8. 安全说明 ⚠️
 
 执行用户提交的 Python 源码 = 任意代码执行。安全模型：

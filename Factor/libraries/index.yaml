@@ -2,7 +2,6 @@
 # 前端读取此文件展示因子列表，提交回测时读取对应 .py 文件内容
 
 version: 1
-<<<<<<< HEAD
 updated: 2026-07-20
 total_factors: 610
 
@@ -20,12 +19,6 @@ libraries:
       alpha360: "qlib_alpha360_{字段名}{0-59}，共 360 个"
     fields: [open, high, low, close, volume, amount]
 
-=======
-updated: 2026-07-15
-total_factors: 92
-
-libraries:
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
   momentum_lib:
     file: momentum_lib.py
     class: MomentumLib

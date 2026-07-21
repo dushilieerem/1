@@ -22,10 +22,7 @@ from __future__ import annotations
 from typing import Callable, Optional
 from pathlib import Path
 import math
-<<<<<<< HEAD
 import time
-=======
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
 import pandas as pd
 
@@ -293,7 +290,6 @@ class Experiment:
 
         return out
 
-<<<<<<< HEAD
     def _run_core_group_analysis(
         self, factor_values: pd.DataFrame, close_panel: pd.DataFrame,
     ) -> dict:
@@ -307,8 +303,6 @@ class Experiment:
         )
         return {"layered_equity": layered_equity(returns)}
 
-=======
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
     def _load_industry_map(self) -> Optional[pd.Series]:
         """读 ``stock_info.parquet`` -> ``{code: industry}``。无文件返回 None。
 
@@ -403,10 +397,7 @@ class Experiment:
         bt_result = get_backtest_engine(bt_config.engine).run(
             strategy.generate_signals(), bt_config
         )
-<<<<<<< HEAD
         timings["signal_and_backtest"] = time.perf_counter() - started_at
-=======
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
         equity, returns, positions = (
             bt_result.equity_curve,
             bt_result.returns,
@@ -446,7 +437,6 @@ class Experiment:
         print("结果保存完毕")
 
         # ④b 因子评估增强：分层/多空/基准/三因子归因/分行业IC（数据齐才做，失败不阻断）
-<<<<<<< HEAD
         started_at = time.perf_counter()
         analysis_level = self.config.get("factor_analysis.level", "full")
         if analysis_level == "full":
@@ -462,10 +452,6 @@ class Experiment:
         result.meta["timings_seconds"] = {
             name: round(value, 6) for name, value in timings.items()
         }
-=======
-        factor_analysis = self._run_factor_analysis(panel, factor_values, close_panel, fwd)
-        result.factor_analysis = factor_analysis
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
         _reg = factor_analysis.get("ff3_regression")
         if _reg and _reg.get("n_obs", 0) > 0 and not math.isnan(_reg.get("alpha", float("nan"))):
             result.set_metric("ff3_alpha", _reg["alpha"])

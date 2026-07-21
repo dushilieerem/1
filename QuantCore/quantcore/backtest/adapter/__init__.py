@@ -21,7 +21,6 @@ from quantcore.backtest.adapter.native_engine import NativeEngine
 from quantcore.backtest.adapter.registry import get_backtest_engine
 from quantcore.backtest.adapter.signals import BacktestConfig, BacktestSignals
 from quantcore.backtest.adapter.strategies import FactorGroupStrategy, FactorQuantileStrategy
-<<<<<<< HEAD
 from quantcore.backtest.adapter.factor_strategy import (
     EqualWeight,
     EveryNTradingDays,
@@ -31,8 +30,6 @@ from quantcore.backtest.adapter.factor_strategy import (
     factor,
     signal,
 )
-=======
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
 # 形式化：现有事件驱动类作为虚拟子类满足契约（不改其源码、不改行为）。
 # 向量化后端不直接用 IPortfolio/IExecution；这是为未来事件驱动自研引擎（EventEngine）锁定契约。
@@ -58,7 +55,6 @@ __all__ = [
     "PandasCalendar",
     "FactorGroupStrategy",
     "FactorQuantileStrategy",
-<<<<<<< HEAD
     "FactorPortfolioStrategy",
     "Universe",
     "TopN",
@@ -66,8 +62,6 @@ __all__ = [
     "EveryNTradingDays",
     "factor",
     "signal",
-=======
->>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
     "NativeEngine",
     "get_backtest_engine",
 ]

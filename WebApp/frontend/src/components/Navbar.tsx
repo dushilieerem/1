@@ -1,0 +1,258 @@
+import { useEffect, useState } from "react";
+import { Link, NavLink, useLocation } from "react-router-dom";
+import { Bell, ChevronDown, LogOut, Search, Sparkles } from "lucide-react";
+import { FACTOR_NAV_ITEMS, NAV_ITEMS, STRATEGY_NAV_ITEMS } from "@/data/nav";
+import {
+  type AuthUser,
+  fetchMe,
+  getStoredUser,
+  logout,
+  subscribeAuth,
+} from "@/lib/auth";
+
+function isFactorRoute(pathname: string) {
+  return pathname === "/factor" || pathname.startsWith("/factor/");
+}
+
+function isStrategyRoute(pathname: string) {
+  return pathname === "/strategy" || pathname.startsWith("/strategy/");
+}
+
+function NavDropdown({
+  label,
+  active,
+  items,
+}: {
+  label: string;
+  active: boolean;
+  items: readonly { to: string; label: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`inline-flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+          active || open
+            ? "bg-red-50 text-red-600"
+            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+        }`}
+      >
+        {label}
+        <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-label="关闭菜单"
+            className="fixed inset-0 z-40 cursor-default"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute left-0 top-full z-50 min-w-[11rem] pt-1">
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+              {items.map(({ to, label: itemLabel }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  onClick={() => setOpen(false)}
+                  className={({ isActive }) =>
+                    `block px-4 py-2.5 text-sm transition ${
+                      isActive
+                        ? "bg-red-50 font-medium text-red-600"
+                        : "text-slate-700 hover:bg-slate-50 hover:text-red-600"
+                    }`
+                  }
+                >
+                  {itemLabel}
+                </NavLink>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function UserMenu({ user }: { user: AuthUser }) {
+  const [open, setOpen] = useState(false);
+  const initial = (user.display_name || user.username || "?").slice(0, 1).toUpperCase();
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+      >
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-red-500 to-rose-600 text-xs font-bold text-white">
+          {initial}
+        </span>
+        <span className="hidden max-w-[7rem] truncate sm:inline">{user.display_name || user.username}</span>
+        <ChevronDown className="h-4 w-4 text-slate-400" />
+      </button>
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-label="关闭用户菜单"
+            className="fixed inset-0 z-40 cursor-default"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute right-0 top-full z-50 min-w-[10rem] pt-1">
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+              <div className="border-b border-slate-100 px-4 py-2 text-xs text-slate-500">
+                {user.role === "admin" ? "管理员" : "用户"} · {user.username}
+              </div>
+              <Link
+                to="/community/mine"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                我的发帖
+              </Link>
+              <Link
+                to="/community/favorites"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                我的收藏
+              </Link>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                onClick={() => {
+                  setOpen(false);
+                  logout();
+                  // 整页回首页，清掉内存里的检测列表
+                  window.location.assign("/");
+                }}
+              >
+                <LogOut className="h-4 w-4" />
+                退出登录
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function Navbar() {
+  const { pathname } = useLocation();
+  const factorActive = isFactorRoute(pathname);
+  const strategyActive = isStrategyRoute(pathname);
+  const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
+
+  useEffect(() => {
+    const unsub = subscribeAuth(() => setUser(getStoredUser()));
+    void fetchMe().then((u) => setUser(u));
+    const onFocus = () => {
+      setUser(getStoredUser());
+      void fetchMe().then((u) => setUser(u));
+    };
+    window.addEventListener("focus", onFocus);
+    return () => {
+      unsub();
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
+
+  return (
+    <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
+      <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-8 px-6">
+        <NavLink to="/" className="flex shrink-0 items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-sm font-extrabold text-white shadow-sm">
+            SV
+          </div>
+          <span className="text-lg font-bold tracking-tight text-slate-900">SVQuant</span>
+        </NavLink>
+
+        <nav className="hidden items-center gap-1 md:flex">
+          <NavLink
+            to="/"
+            end
+            className={({ isActive }) =>
+              `rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                isActive
+                  ? "bg-red-50 text-red-600"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`
+            }
+          >
+            首页
+          </NavLink>
+          {user ? (
+            <>
+              {NAV_ITEMS.filter((x) => x.to !== "/").map(({ to, label }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) =>
+                    `rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                      isActive
+                        ? "bg-red-50 text-red-600"
+                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    }`
+                  }
+                >
+                  {label}
+                </NavLink>
+              ))}
+              <NavDropdown label="策略" active={strategyActive} items={STRATEGY_NAV_ITEMS} />
+              <NavDropdown label="因子" active={factorActive} items={FACTOR_NAV_ITEMS} />
+            </>
+          ) : null}
+        </nav>
+
+        <div className="ml-auto flex items-center gap-3">
+          <div className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 lg:flex lg:w-72">
+            <Search className="h-4 w-4 shrink-0 text-slate-400" />
+            <input
+              type="search"
+              placeholder="搜索数据表、因子、策略…"
+              className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+            />
+            <button
+              type="button"
+              className="flex shrink-0 items-center gap-1 rounded-md bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-white"
+            >
+              <Sparkles className="h-3 w-3" />
+              AI
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="通知"
+          >
+            <Bell className="h-5 w-5" />
+            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
+          </button>
+
+          {user ? (
+            <UserMenu user={user} />
+          ) : (
+            <Link
+              to="/login"
+              className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              登录
+            </Link>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}

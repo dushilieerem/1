@@ -1,0 +1,811 @@
+version: 1
+updated: '2026-07-21'
+total_factors: 84
+libraries:
+  custom_lib:
+    file: custom_lib.py
+    class: CustomLib
+    description: 用户自定义因子（按 owner_id 隔离）
+    author: NBQuant
+    tags:
+    - custom
+    factors:
+    - name: EDIT_BEFORE
+      method_name: u1_EDIT_BEFORE
+      owner_id: 1
+      description: 改之后对照·10日收益
+      explain: 改之后对照·10日收益
+      params: {}
+      tags:
+      - custom
+    - name: RISK_ADJ_MOM_20
+      method_name: u3_RISK_ADJ_MOM_20
+      owner_id: 3
+      description: 20日收益/20日波动：风险调整动量
+      explain: 20日收益/20日波动：风险调整动量
+      params: {}
+      tags:
+      - custom
+  momentum_lib:
+    file: momentum_lib.py
+    class: MomentumLib
+    description: 动量/趋势类因子
+    author: YGQuant
+    tags:
+    - momentum
+    - trend
+    - reversal
+    factors:
+    - name: momentum_5d
+      description: 5日动量
+      params:
+        window: 5
+      tags:
+      - momentum
+      - short_term
+      explain: 5 日动量：过去 window 日收益率。
+      formula: self.close.pct_change(window)
+    - name: momentum_10d
+      description: 10日动量
+      params:
+        window: 10
+      tags:
+      - momentum
+      - short_term
+      explain: 10 日动量。
+      formula: self.close.pct_change(window)
+    - name: momentum_20d
+      description: 20日动量（月）
+      params:
+        window: 20
+      tags:
+      - momentum
+      - mid_term
+      explain: 20 日动量（约月）。
+      formula: self.close.pct_change(window)
+    - name: momentum_60d
+      description: 60日动量（季）
+      params:
+        window: 60
+      tags:
+      - momentum
+      - mid_term
+      explain: 60 日动量（约季）。
+      formula: self.close.pct_change(window)
+    - name: momentum_120d
+      description: 120日动量（半年）
+      params:
+        window: 120
+      tags:
+      - momentum
+      - long_term
+      explain: 120 日动量（约半年）。
+      formula: self.close.pct_change(window)
+    - name: momentum_250d
+      description: 250日动量（年）
+      params:
+        window: 250
+      tags:
+      - momentum
+      - long_term
+      explain: 250 日动量（约年）。
+      formula: self.close.pct_change(window)
+    - name: momentum_ratio
+      description: 动量比：短期/长期
+      params:
+        short: 5
+        long: 20
+      tags:
+      - momentum
+      - composite
+      explain: 动量比：短期动量 / 长期动量。
+      formula: short_ret / (long_ret + 1e-10)
+    - name: momentum_acceleration
+      description: 动量加速度：短期-长期
+      params:
+        fast: 5
+        slow: 20
+      tags:
+      - momentum
+      - composite
+      explain: 动量加速度：短期动量 - 长期动量。
+      formula: self.close.pct_change(fast) - self.close.pct_change(slow)
+    - name: momentum_decay
+      description: 指数衰减动量
+      params:
+        window: 20
+        decay: 0.9
+      tags:
+      - momentum
+      - composite
+      explain: 指数衰减动量：对每日收益率加权平均，越近权重越高。
+      formula: 'ret.rolling(window).apply(lambda x: (x * weights).sum(), raw=True)'
+    - name: momentum_risk_adjusted
+      description: 风险调整动量：收益/波动
+      params:
+        window: 20
+      tags:
+      - momentum
+      - risk_adj
+      explain: 风险调整动量：收益率 / 波动率。
+      formula: ret / (vol + 1e-10)
+    - name: reversal_1d
+      description: 1日反转
+      params: {}
+      tags:
+      - reversal
+      - short_term
+      explain: 1 日反转。
+      formula: -self.close.pct_change(1)
+    - name: reversal_5d
+      description: 5日反转
+      params:
+        window: 5
+      tags:
+      - reversal
+      - short_term
+      explain: 5 日反转。
+      formula: -self.close.pct_change(window)
+    - name: reversal_20d
+      description: 20日反转
+      params:
+        window: 20
+      tags:
+      - reversal
+      - mid_term
+      explain: 20 日反转。
+      formula: -self.close.pct_change(window)
+    - name: reversal_60d
+      description: 60日反转
+      params:
+        window: 60
+      tags:
+      - reversal
+      - long_term
+      explain: 60 日反转。
+      formula: -self.close.pct_change(window)
+    - name: reversal_industry_neutral
+      description: 行业中性反转
+      params:
+        window: 20
+      tags:
+      - reversal
+      - industry_neutral
+      explain: 行业中性反转：减去行业均值。
+      formula: raw
+    - name: trend_strength
+      description: 趋势强度：收盘/均价
+      params:
+        window: 20
+      tags:
+      - trend
+      explain: 趋势强度：当前价 / 均价。
+      formula: self.close / self.close.rolling(window).mean()
+    - name: trend_position
+      description: 趋势位置：价格在区间位置
+      params:
+        window: 60
+      tags:
+      - trend
+      explain: 趋势位置：（当前价 - 最低价）/（最高价 - 最低价）。
+      formula: (self.close - ll) / (hh - ll + 1e-10)
+    - name: trend_consistency
+      description: 趋势一致性：上涨天数占比
+      params:
+        window: 10
+      tags:
+      - trend
+      explain: 趋势一致性：上涨天数占比。
+      formula: up.rolling(window).mean()
+  value_lib:
+    file: value_lib.py
+    class: ValueLib
+    description: 价值/估值类因子
+    author: YGQuant
+    tags:
+    - value
+    - fundamental
+    factors:
+    - name: ep_ttm
+      description: EP因子：滚动市盈率倒数
+      params: {}
+      tags:
+      - value
+      - earnings
+      explain: EP 因子：滚动市盈率倒数。
+      formula: 1.0 / self.pe_ttm
+    - name: ep
+      description: EP因子：静态市盈率倒数
+      params: {}
+      tags:
+      - value
+      - earnings
+      explain: EP 因子：静态市盈率倒数。
+      formula: 1.0 / self.pe
+      unavailable: true
+      unavailable_reason: 数据不可用：RE 无 pe 字段
+    - name: bp
+      description: BP因子：市净率倒数
+      params: {}
+      tags:
+      - value
+      - book
+      explain: BP 因子：市净率倒数。
+      formula: 1.0 / self.pb
+    - name: sp_ttm
+      description: SP因子：滚动市销率倒数
+      params: {}
+      tags:
+      - value
+      - sales
+      explain: SP 因子：滚动市销率倒数。
+      formula: 1.0 / self.ps_ttm
+    - name: cp_ttm
+      description: CP因子：滚动市现率倒数
+      params: {}
+      tags:
+      - value
+      - cashflow
+      explain: CP 因子：滚动市现率倒数。
+      formula: 1.0 / self.pcf_ttm
+      unavailable: true
+      unavailable_reason: 数据不可用：RE 无 pcf_ttm 字段
+    - name: composite_value
+      description: 综合价值因子：EP+BP+SP等权
+      params: {}
+      tags:
+      - value
+      - composite
+      explain: 综合价值因子：EP + BP + SP 等权合成。
+      formula: (ep + bp + sp) / 3
+    - name: value_vs_growth
+      description: 价值vs成长：EP
+      params: {}
+      tags:
+      - value
+      - growth
+      explain: 价值 vs 成长：EP / (1 + 增长率)。
+      formula: ep / (1 + growth)
+      unavailable: true
+      unavailable_reason: 数据不可用：RE 无增长率字段
+    - name: earnings_yield
+      description: 盈利收益率：EP的ZSCORE
+      params: {}
+      tags:
+      - value
+      - earnings
+      explain: 盈利收益率：EP 的 ZSCORE。
+      formula: (ep - ep.mean()) / ep.std()
+    - name: dividend_yield
+      description: 股息率
+      params: {}
+      tags:
+      - value
+      - dividend
+      explain: 股息率。
+      formula: self.dv_ttm
+      unavailable: true
+      unavailable_reason: 数据不可用：RE 无股息率字段
+    - name: dividend_cover
+      description: 股息覆盖
+      params: {}
+      tags:
+      - value
+      - dividend
+      explain: 股息覆盖：净利润 / 分红。
+      formula: ni / dividend
+      unavailable: true
+      unavailable_reason: 数据不可用：RE 无净利润/分红字段
+    - name: peg
+      description: PEG
+      params: {}
+      tags:
+      - value
+      - growth
+      explain: PEG：市盈率 / 增长率。
+      formula: pe / growth
+      unavailable: true
+      unavailable_reason: 数据不可用：RE 无增长率字段
+    - name: ev_ebitda
+      description: EV/EBITDA倒数
+      params: {}
+      tags:
+      - value
+      - composite
+      explain: EV/EBITDA 倒数。
+      formula: 1.0 / ev_ebitda
+      unavailable: true
+      unavailable_reason: 数据不可用：RE 无 EV/EBITDA 字段
+    - name: ln_cap
+      description: 对数市值
+      params: {}
+      tags:
+      - size
+      explain: 对数市值。
+      formula: 'self.total_mv.apply(lambda x: -x)'
+    - name: small_size
+      description: 小市值：负总市值
+      params: {}
+      tags:
+      - size
+      explain: 小市值：负总市值。
+      formula: -self.total_mv
+  technical_lib:
+    file: technical_lib.py
+    class: TechnicalLib
+    description: 技术指标类因子
+    author: YGQuant
+    tags:
+    - technical
+    - indicator
+    factors:
+    - name: sma_5
+      description: 5日均线乖离率
+      params:
+        window: 5
+      tags:
+      - ma
+      - short_term
+      explain: 5 日均线乖离率：（收盘价 - 均线）/ 均线。
+      formula: (self.close - ma) / ma
+    - name: sma_20
+      description: 20日均线乖离率
+      params:
+        window: 20
+      tags:
+      - ma
+      - mid_term
+      explain: 20 日均线乖离率。
+      formula: (self.close - ma) / ma
+    - name: sma_60
+      description: 60日均线乖离率
+      params:
+        window: 60
+      tags:
+      - ma
+      - long_term
+      explain: 60 日均线乖离率。
+      formula: (self.close - ma) / ma
+    - name: ma_cross
+      description: 均线交叉：快/慢-1
+      params:
+        fast: 5
+        slow: 20
+      tags:
+      - ma
+      - cross
+      explain: 均线交叉：短期均线 / 长期均线 - 1。
+      formula: ma_fast / ma_slow - 1
+    - name: ma_distance
+      description: 均线距离：(快-慢)/慢
+      params:
+        fast: 5
+        slow: 20
+      tags:
+      - ma
+      - cross
+      explain: 均线距离：(短期 - 长期) / 长期。
+      formula: (ma_fast - ma_slow) / ma_slow
+    - name: rsi_6
+      description: 6日RSI
+      params:
+        window: 6
+      tags:
+      - rsi
+      - short_term
+      explain: 6 日 RSI。
+      formula: 100 - 100 / (1 + rs)
+    - name: rsi_14
+      description: 14日RSI
+      params:
+        window: 14
+      tags:
+      - rsi
+      - mid_term
+      explain: 14 日 RSI。
+      formula: 100 - 100 / (1 + rs)
+    - name: rsi_24
+      description: 24日RSI
+      params:
+        window: 24
+      tags:
+      - rsi
+      - long_term
+      explain: 24 日 RSI。
+      formula: 100 - 100 / (1 + rs)
+    - name: macd
+      description: MACD
+      params:
+        fast: 12
+        slow: 26
+        signal: 9
+      tags:
+      - macd
+      explain: MACD 因子。
+      formula: dif - dea
+    - name: macd_signal
+      description: MACD信号线归一化
+      params:
+        fast: 12
+        slow: 26
+        signal: 9
+      tags:
+      - macd
+      explain: MACD 信号线：DIF - DEA 的归一化。
+      formula: (dif - dea) / (dif.abs().mean() + 1e-10)
+    - name: macd_cross
+      description: MACD金叉死叉
+      params:
+        fast: 12
+        slow: 26
+        signal: 9
+      tags:
+      - macd
+      explain: MACD 金叉死叉信号。
+      formula: cross
+    - name: bollinger_position
+      description: 布林带位置：(收盘-下轨)/(上轨-下轨)
+      params:
+        window: 20
+        n_std: 2.0
+      tags:
+      - bollinger
+      explain: 布林带位置：（收盘价 - 下轨）/（上轨 - 下轨）。
+      formula: (self.close - lower) / (upper - lower + 1e-10)
+    - name: bollinger_width
+      description: 布林带宽度
+      params:
+        window: 20
+        n_std: 2.0
+      tags:
+      - bollinger
+      explain: 布林带宽度：（上轨 - 下轨）/ 中轨。
+      formula: (2 * n_std * std) / mid
+    - name: bollinger_breakout
+      description: 布林带突破信号
+      params:
+        window: 20
+        n_std: 2.0
+      tags:
+      - bollinger
+      explain: 布林带突破：收盘价超出上轨为 1，低于下轨为 -1，否则 0。
+      formula: breakout
+    - name: kdj_k
+      description: KDJ-K值
+      params:
+        window: 9
+      tags:
+      - kdj
+      explain: KDJ K 值。
+      formula: (self.close - ll) / (hh - ll + 1e-10) * 100
+    - name: kdj_d
+      description: KDJ-D值
+      params:
+        window: 9
+        k_smooth: 3
+      tags:
+      - kdj
+      explain: KDJ D 值。
+      formula: k.rolling(k_smooth).mean()
+    - name: stoch_rsi
+      description: 随机RSI
+      params:
+        window: 14
+      tags:
+      - rsi
+      - stochastic
+      explain: 随机 RSI。
+      formula: (rsi - ll) / (hh - ll + 1e-10)
+    - name: price_pattern_doji
+      description: 十字星形态
+      params: {}
+      tags:
+      - pattern
+      explain: 十字星形态。
+      formula: (body / (shadow + 1e-10) < 0.1).astype(float)
+    - name: price_pattern_hammer
+      description: 锤子线形态
+      params: {}
+      tags:
+      - pattern
+      explain: 锤子线形态。
+      formula: ((lower_shadow > body * 2) & (upper_shadow < body * 0.5)).astype(float)
+  volatility_lib:
+    file: volatility_lib.py
+    class: VolatilityLib
+    description: 波动率/风险类因子
+    author: YGQuant
+    tags:
+    - volatility
+    - risk
+    factors:
+    - name: volatility_5d
+      description: 5日波动率
+      params:
+        window: 5
+      tags:
+      - vol
+      - short_term
+      explain: 5 日波动率。
+      formula: self.close.pct_change().rolling(window).std()
+    - name: volatility_20d
+      description: 20日波动率
+      params:
+        window: 20
+      tags:
+      - vol
+      - mid_term
+      explain: 20 日波动率。
+      formula: self.close.pct_change().rolling(window).std()
+    - name: volatility_60d
+      description: 60日波动率
+      params:
+        window: 60
+      tags:
+      - vol
+      - mid_term
+      explain: 60 日波动率。
+      formula: self.close.pct_change().rolling(window).std()
+    - name: volatility_120d
+      description: 120日波动率
+      params:
+        window: 120
+      tags:
+      - vol
+      - long_term
+      explain: 120 日波动率。
+      formula: self.close.pct_change().rolling(window).std()
+    - name: volatility_250d
+      description: 250日波动率（年化）
+      params:
+        window: 250
+      tags:
+      - vol
+      - long_term
+      explain: 250 日波动率（年化）。
+      formula: self.close.pct_change().rolling(window).std()
+    - name: volatility_ratio
+      description: 波动率比：短期/长期
+      params:
+        short: 5
+        long: 20
+      tags:
+      - vol
+      - ratio
+      explain: 波动率比：短期波动 / 长期波动。
+      formula: short_vol / (long_vol + 1e-10)
+    - name: volatility_stability
+      description: 波动率稳定性
+      params:
+        window: 60
+      tags:
+      - vol
+      - stability
+      explain: 波动率稳定性：波动率的负波动率。
+      formula: -vol.pct_change().rolling(window).std()
+    - name: cvar_5
+      description: CVaR 5%：条件风险价值
+      params:
+        window: 20
+      tags:
+      - risk
+      - tail
+      explain: CVaR 5%：条件风险价值（最差 5% 收益的均值）。
+      formula: ret.rolling(window).apply(
+    - name: max_drawdown_20d
+      description: 20日最大回撤
+      params:
+        window: 20
+      tags:
+      - risk
+      - drawdown
+      explain: 20 日最大回撤。
+      formula: (self.close - rolling_max) / rolling_max
+    - name: downside_vol
+      description: 下行波动率
+      params:
+        window: 20
+      tags:
+      - risk
+      - downside
+      explain: 下行波动率：只考虑负收益的波动率。
+      formula: neg_ret.rolling(window).std()
+    - name: idiosyncratic_vol_20d
+      description: 特异波动率
+      params:
+        window: 20
+      tags:
+      - vol
+      - residual
+      explain: 特异波动率：残差波动率（简化版）。
+      formula: residual.rolling(window).std()
+    - name: price_range
+      description: 价格区间：(高-低)/收盘
+      params:
+        window: 5
+      tags:
+      - vol
+      - range
+      explain: 价格区间：（最高 - 最低）/ 收盘价。
+      formula: (self.high.rolling(window).max() - self.low.rolling(window).min())
+        / self.close
+    - name: high_low_ratio
+      description: 高低比
+      params:
+        window: 5
+      tags:
+      - vol
+      - range
+      explain: 高低比：（最高 - 最低）/ 均价。
+      formula: (self.high - self.low) / (avg + 1e-10)
+    - name: intraday_volatility
+      description: 日内振幅：(高-低)/开盘
+      params: {}
+      tags:
+      - vol
+      - intraday
+      explain: 日内振幅：（最高 - 最低）/ 开盘价。
+      formula: (self.high - self.low) / self.open
+    - name: gap
+      description: 跳空：(开盘-昨收)/昨收
+      params: {}
+      tags:
+      - gap
+      explain: 跳空：（开盘价 - 昨收）/ 昨收。
+      formula: self.open / self.close.shift(1) - 1
+  trading_lib:
+    file: trading_lib.py
+    class: TradingLib
+    description: 量价/资金流类因子
+    author: YGQuant
+    tags:
+    - volume
+    - trading
+    - moneyflow
+    factors:
+    - name: volume_5d
+      description: 5日均量比
+      params:
+        window: 5
+      tags:
+      - volume
+      - short_term
+      explain: 5 日均量：成交量 / 过去 window 日均量。
+      formula: self.volume / self.volume.rolling(window).mean()
+    - name: volume_20d
+      description: 20日均量比
+      params:
+        window: 20
+      tags:
+      - volume
+      - mid_term
+      explain: 20 日均量。
+      formula: self.volume / self.volume.rolling(window).mean()
+    - name: volume_60d
+      description: 60日均量比
+      params:
+        window: 60
+      tags:
+      - volume
+      - long_term
+      explain: 60 日均量。
+      formula: self.volume / self.volume.rolling(window).mean()
+    - name: volume_std
+      description: 成交量波动ZSCORE
+      params:
+        window: 20
+      tags:
+      - volume
+      - volatility
+      explain: 成交量波动：成交量的 ZSCORE。
+      formula: (vol - vol.rolling(window).mean()) / vol.rolling(window).std()
+    - name: volume_shock
+      description: 成交量突变
+      params:
+        window: 5
+      tags:
+      - volume
+      - shock
+      explain: 成交量突变：当日量 / 前 window 日最小量。
+      formula: self.volume / self.volume.rolling(window).min()
+    - name: amount_5d
+      description: 5日成交额比
+      params:
+        window: 5
+      tags:
+      - amount
+      - short_term
+      explain: 5 日成交额比。
+      formula: self.amount / self.amount.rolling(window).mean()
+    - name: amount_20d
+      description: 20日成交额比
+      params:
+        window: 20
+      tags:
+      - amount
+      - mid_term
+      explain: 20 日成交额比。
+      formula: self.amount / self.amount.rolling(window).mean()
+    - name: turnover_5d
+      description: 5日平均换手率
+      params:
+        window: 5
+      tags:
+      - turnover
+      - short_term
+      explain: 5 日平均换手率。
+      formula: self.turnover.rolling(window).mean()
+    - name: turnover_20d
+      description: 20日平均换手率
+      params:
+        window: 20
+      tags:
+      - turnover
+      - mid_term
+      explain: 20 日平均换手率。
+      formula: self.turnover.rolling(window).mean()
+    - name: turnover_std
+      description: 换手率波动
+      params:
+        window: 20
+      tags:
+      - turnover
+      - volatility
+      explain: 换手率波动。
+      formula: self.turnover.rolling(window).std()
+    - name: volume_price_corr
+      description: 量价相关性：成交与价格的相关系数
+      params:
+        window: 10
+      tags:
+      - volume
+      - price
+      - correlation
+      explain: 量价相关性：成交量和价格的相关系数。
+      formula: ret.rolling(window).corr(vol)
+    - name: volume_confirmation
+      description: 量能确认：涨放量跌缩量
+      params:
+        window: 5
+      tags:
+      - volume
+      - price
+      - confirmation
+      explain: 量能确认：上涨时放量，下跌时缩量。
+      formula: ret * vol_ratio
+    - name: volume_price_trend
+      description: 量价趋势：价格×量能
+      params:
+        window: 20
+      tags:
+      - volume
+      - price
+      - trend
+      explain: 量价趋势：价格趋势 × 量能趋势。
+      formula: price_trend * vol_trend
+    - name: volume_divergence
+      description: 量价背离：价创新高量没跟上
+      params:
+        window: 10
+      tags:
+      - volume
+      - price
+      - divergence
+      explain: 量价背离：价格创新高但量能没跟上。
+      formula: (price_high.astype(float) * (1 - vol_avg)) * (-1)
+    - name: money_flow
+      description: 资金流：价格变动×成交量
+      params:
+        window: 5
+      tags:
+      - moneyflow
+      explain: 资金流：价格变动 × 成交量。
+      formula: (ret * self.volume).rolling(window).sum()
+    - name: net_buy_ratio
+      description: 净买入比
+      params:
+        window: 5
+      tags:
+      - moneyflow
+      explain: 净买入比。
+      formula: (buy_sum - sell_sum) / (buy_sum + sell_sum + 1e-10)

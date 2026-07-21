@@ -1,0 +1,579 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  ArrowUpDown,
+  BarChart3,
+  Database,
+  Layers,
+  RefreshCw,
+  Search,
+  TrendingUp,
+  Zap,
+} from "lucide-react";
+import { LABELS } from "@/lib/factorCatalog";
+import { openOrCreateForFactor } from "@/lib/detectStore";
+
+type PeriodKey = "3m" | "1y" | "3y";
+type SortKey =
+  | "name_cn"
+  | "ic_mean"
+  | "rank_ic"
+  | "annual_return"
+  | "max_drawdown"
+  | "q1_turnover"
+  | "win_rate"
+  | "sharpe"
+  | "q1_return"
+  | "q5_return"
+  | "long_short_spread";
+
+type DashRow = {
+  factor_name: string;
+  name_cn?: string;
+  library?: string;
+  ic_mean?: number | null;
+  rank_ic?: number | null;
+  ir?: number | null;
+  q1_return?: number | null;
+  q5_return?: number | null;
+  long_short_spread?: number | null;
+  q1_turnover?: number | null;
+  win_rate?: number | null;
+  coverage_pool?: number | null;
+  sharpe?: number | null;
+  annual_return?: number | null;
+  max_drawdown?: number | null;
+  error?: string | null;
+  computed_at?: string;
+};
+
+const UNIVERSES = [
+  { value: "CSI300", label: "沪深300" },
+  { value: "CSI500", label: "中证500" },
+  { value: "CSI1000", label: "中证1000" },
+  { value: "SSE50", label: "上证50" },
+] as const;
+
+const PERIODS: { key: PeriodKey; label: string }[] = [
+  { key: "3m", label: "近3月" },
+  { key: "1y", label: "近1年" },
+  { key: "3y", label: "近3年" },
+];
+
+function tone(v: number | null | undefined) {
+  if (v == null || Number.isNaN(v)) return "text-slate-400";
+  if (Math.abs(v) < 0.01) return "text-slate-500";
+  return v > 0 ? "text-red-600 font-semibold" : "text-emerald-600 font-semibold";
+}
+
+function fmtPct(v: number | null | undefined) {
+  if (v == null || Number.isNaN(v)) return "—";
+  const sign = v > 0 ? "+" : "";
+  return `${sign}${v.toFixed(2)}%`;
+}
+
+/** IC / RankIC：库内按百分数存（22.87 → 0.2287），界面用小数 */
+function fmtIc(v: number | null | undefined) {
+  if (v == null || Number.isNaN(v)) return "—";
+  const d = v / 100;
+  const sign = d > 0 ? "+" : "";
+  return `${sign}${d.toFixed(4)}`;
+}
+
+function fmtNum(v: number | null | undefined) {
+  if (v == null || Number.isNaN(v)) return "—";
+  return v.toFixed(3);
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  hint,
+  accent,
+}: {
+  icon: typeof BarChart3;
+  label: string;
+  value: string;
+  hint: string;
+  accent: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm text-slate-500">{label}</p>
+          <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">{value}</p>
+          <p className="mt-1 text-xs text-slate-400">{hint}</p>
+        </div>
+        <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${accent}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function FactorDashboardPage() {
+  const navigate = useNavigate();
+  const [universe, setUniverse] = useState("CSI300");
+  const [period, setPeriod] = useState<PeriodKey>("3y");
+  const [filterUp, setFilterUp] = useState(true);
+  const [library, setLibrary] = useState<string>("全部");
+  const [query, setQuery] = useState("");
+  const [rows, setRows] = useState<DashRow[]>([]);
+  const [job, setJob] = useState<{ status?: string; done?: number; total?: number; current?: string }>({});
+  const [loading, setLoading] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("ic_mean");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [err, setErr] = useState<string | null>(null);
+
+  const [hideErrors, setHideErrors] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const qs = new URLSearchParams({
+        universe,
+        period,
+        filter_limit_up: filterUp ? "1" : "0",
+        filter_suspended: "1",
+      });
+      if (library !== "全部") {
+        const key = Object.entries(LABELS).find(([, v]) => v === library)?.[0];
+        if (key) qs.set("library", key);
+      }
+      const res = await fetch(`/api/factor/dashboard?${qs}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setRows(data.rows || []);
+      setJob(data.job || {});
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [universe, period, filterUp, library]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    if (job.status !== "running") return;
+    const t = window.setInterval(async () => {
+      try {
+        const r = await fetch("/api/factor/dashboard/status");
+        const j = await r.json();
+        setJob(j);
+        if (j.status === "done" || j.status === "failed") void load();
+      } catch {
+        /* ignore */
+      }
+    }, 2000);
+    return () => window.clearInterval(t);
+  }, [job.status, load]);
+
+  const onRefresh = async () => {
+    setErr(null);
+    try {
+      const res = await fetch("/api/factor/dashboard/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          universe,
+          period,
+          filter_limit_up: filterUp,
+          filter_suspended: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+      setJob(data.job || { status: "running" });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let list = rows;
+    if (hideErrors) {
+      list = list.filter((r) => !r.error);
+    }
+    if (q) {
+      list = list.filter(
+        (r) =>
+          (r.factor_name || "").toLowerCase().includes(q) ||
+          (r.name_cn || "").toLowerCase().includes(q),
+      );
+    }
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...list].sort((a, b) => {
+      if (sortKey === "name_cn") {
+        return dir * String(a.name_cn || a.factor_name).localeCompare(String(b.name_cn || b.factor_name), "zh");
+      }
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      const an = typeof av === "number" ? av : -Infinity;
+      const bn = typeof bv === "number" ? bv : -Infinity;
+      return dir * (an - bn);
+    });
+  }, [rows, query, sortKey, sortDir, hideErrors]);
+
+  const errCount = useMemo(() => rows.filter((r) => !!r.error).length, [rows]);
+  const okRows = useMemo(() => filtered.filter((r) => !r.error && r.ic_mean != null), [filtered]);
+  const avgIc = useMemo(() => {
+    if (!okRows.length) return null;
+    return okRows.reduce((s, r) => s + (r.ic_mean || 0), 0) / okRows.length;
+  }, [okRows]);
+  const strongIc = useMemo(() => okRows.filter((r) => Math.abs(r.ic_mean || 0) >= 2).length, [okRows]);
+
+  const toggleSort = (k: SortKey) => {
+    if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(k);
+      setSortDir("desc");
+    }
+  };
+
+  const SortTh = ({
+    k,
+    label,
+    align = "left",
+  }: {
+    k: SortKey;
+    label: string;
+    align?: "left" | "right";
+  }) => (
+    <th
+      className={`cursor-pointer whitespace-nowrap px-4 py-3 ${
+        align === "right" ? "text-right" : "text-left"
+      }`}
+      onClick={() => toggleSort(k)}
+    >
+      <span
+        className={`inline-flex items-center gap-1 text-xs font-semibold tracking-wide ${
+          align === "right" ? "ml-auto" : ""
+        } ${sortKey === k ? "text-red-600" : "text-slate-500"}`}
+      >
+        {label}
+        <ArrowUpDown className={`h-3.5 w-3.5 shrink-0 ${sortKey === k ? "opacity-100" : "opacity-40"}`} />
+      </span>
+    </th>
+  );
+
+  const uniLabel = UNIVERSES.find((u) => u.value === universe)?.label || universe;
+  const periodLabel = PERIODS.find((p) => p.key === period)?.label || period;
+
+  return (
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-red-50/50 via-white to-slate-50">
+      <div className="mx-auto max-w-[1440px] px-6 py-8">
+        <section className="relative mb-6 overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-white to-red-50/60 p-8 shadow-sm">
+          <div
+            className="pointer-events-none absolute inset-0 opacity-30"
+            style={{
+              backgroundImage:
+                "radial-gradient(circle at 1px 1px, rgb(148 163 184 / 0.35) 1px, transparent 0)",
+              backgroundSize: "22px 22px",
+            }}
+          />
+          <div className="relative flex flex-wrap items-start justify-between gap-6">
+            <div className="max-w-2xl">
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">因子面板</h1>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                批量看全因子表现（YGQuant RE 回测聚合）。单因子可调参深度检测请用
+                <Link to="/factor/detect" className="mx-1 font-medium text-red-600 hover:underline">
+                  因子检测
+                </Link>
+                。
+              </p>
+              <p className="mt-3 text-xs text-slate-400">
+                {uniLabel} · {periodLabel} · {filterUp ? "过滤涨停" : "不过滤涨停"} · 已算{" "}
+                {okRows.length}/{filtered.length}
+                {loading ? " · 加载中…" : ""}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void onRefresh()}
+              disabled={job.status === "running"}
+              className="relative inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${job.status === "running" ? "animate-spin" : ""}`} />
+              {job.status === "running"
+                ? `计算中 ${job.done ?? 0}/${job.total ?? "?"} ${job.current || ""}`
+                : "刷新指标（调 RE）"}
+            </button>
+          </div>
+        </section>
+
+        <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            icon={Layers}
+            label="缓存因子"
+            value={`${filtered.length}`}
+            hint={`成功 ${okRows.length} · 失败 ${filtered.length - okRows.length}`}
+            accent="bg-blue-50 text-blue-600"
+          />
+          <StatCard
+            icon={TrendingUp}
+            label="平均 IC"
+            value={avgIc == null ? "—" : fmtIc(avgIc)}
+            hint="当前筛选下 IC 均值"
+            accent="bg-rose-50 text-rose-600"
+          />
+          <StatCard
+            icon={Zap}
+            label="|IC| ≥ 0.02"
+            value={`${strongIc}`}
+            hint="相对较强预测力"
+            accent="bg-amber-50 text-amber-600"
+          />
+          <StatCard
+            icon={Database}
+            label="已计算"
+            value={`${okRows.length}`}
+            hint={filterUp ? "过滤涨停口径" : "不过滤涨停口径"}
+            accent="bg-violet-50 text-violet-600"
+          />
+        </section>
+
+        <div className="mb-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="w-16 shrink-0 text-xs text-slate-400">分类</span>
+            {["全部", ...Object.values(LABELS)].map((lab) => (
+              <button
+                key={lab}
+                type="button"
+                onClick={() => setLibrary(lab)}
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  library === lab ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {lab}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="w-16 shrink-0 text-xs text-slate-400">股票池</span>
+            {UNIVERSES.map((u) => (
+              <button
+                key={u.value}
+                type="button"
+                onClick={() => setUniverse(u.value)}
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  universe === u.value ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {u.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="w-16 shrink-0 text-xs text-slate-400">涨跌停</span>
+            <button
+              type="button"
+              onClick={() => setFilterUp(false)}
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                !filterUp ? "bg-red-600 text-white" : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              不过滤
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterUp(true)}
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                filterUp ? "bg-red-600 text-white" : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              过滤涨停
+            </button>
+            {!filterUp && filtered.length === 0 && (
+              <span className="text-[11px] text-amber-600">
+                该口径尚未批算；点右上角「刷新指标」拉取（约数十分钟）
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="w-16 shrink-0 text-xs text-slate-400">周期</span>
+            {PERIODS.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => setPeriod(p.key)}
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  period === p.key
+                    ? "bg-red-50 text-red-600 ring-1 ring-red-200"
+                    : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {err && <p className="mb-3 text-sm text-red-600">{err}</p>}
+
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">因子表现总览</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {errCount > 0 && (
+                <label className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={hideErrors}
+                    onChange={(e) => setHideErrors(e.target.checked)}
+                  />
+                  隐藏不可用/失败
+                </label>
+              )}
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-1.5">
+                <Search className="h-3.5 w-3.5 text-slate-400" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="搜索因子名称、代码…"
+                  className="w-48 bg-transparent text-sm outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1080px] text-left text-sm">
+              <thead className="bg-slate-50/80">
+                <tr className="border-b border-slate-100">
+                  <SortTh k="name_cn" label="因子" />
+                  <th className="whitespace-nowrap px-4 py-3 text-xs font-semibold tracking-wide text-slate-500">
+                    子类
+                  </th>
+                  <SortTh k="ic_mean" label="IC均值" align="right" />
+                  <SortTh k="rank_ic" label="RankIC" align="right" />
+                  <SortTh k="annual_return" label="年化" align="right" />
+                  <SortTh k="max_drawdown" label="最大回撤" align="right" />
+                  <SortTh k="q1_turnover" label="换手" align="right" />
+                  <SortTh k="win_rate" label="胜率" align="right" />
+                  <SortTh k="sharpe" label="Sharpe" align="right" />
+                  <SortTh k="q1_return" label="Q1分层" align="right" />
+                  <SortTh k="q5_return" label="Q5分层" align="right" />
+                  <SortTh k="long_short_spread" label="多空差" align="right" />
+                  <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold tracking-wide text-slate-500">
+                    操作
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((r) => {
+                  const win = r.win_rate ?? r.coverage_pool;
+                  const lib = LABELS[r.library || ""] || r.library || "—";
+                  return (
+                    <tr
+                      key={r.factor_name}
+                      className="group border-b border-slate-100 transition hover:bg-slate-50/80"
+                    >
+                      <td className="px-4 py-3.5">
+                        <div className="min-w-[12rem]">
+                          <p className="font-medium text-slate-900 group-hover:text-red-600">
+                            {r.name_cn || r.factor_name}
+                          </p>
+                          <code className="mt-0.5 block font-mono text-[11px] text-slate-400">
+                            {r.factor_name}
+                          </code>
+                          {r.error ? (
+                            <p
+                              className={`mt-1 max-w-xs truncate text-[10px] ${
+                                r.error.includes("数据不可用")
+                                  ? "font-medium text-amber-600"
+                                  : "text-red-500"
+                              }`}
+                              title={r.error}
+                            >
+                              {r.error.includes("数据不可用")
+                                ? r.error.length > 48
+                                  ? `${r.error.slice(0, 48)}…`
+                                  : r.error
+                                : r.error.includes("422")
+                                  ? "旧缓存失效，等待重算或点刷新"
+                                  : r.error.length > 48
+                                    ? `${r.error.slice(0, 48)}…`
+                                    : r.error}
+                            </p>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3.5">
+                        <span className="inline-flex whitespace-nowrap rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-500/20">
+                          {lib}
+                        </span>
+                      </td>
+                      <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.ic_mean)}`}>
+                        {fmtIc(r.ic_mean)}
+                      </td>
+                      <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.rank_ic)}`}>
+                        {fmtIc(r.rank_ic)}
+                      </td>
+                      <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.annual_return)}`}>
+                        {fmtPct(r.annual_return)}
+                      </td>
+                      <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.max_drawdown)}`}>
+                        {fmtPct(r.max_drawdown)}
+                      </td>
+                      <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.q1_turnover)}`}>
+                        {fmtPct(r.q1_turnover)}
+                      </td>
+                      <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(win)}`}>
+                        {fmtPct(win)}
+                      </td>
+                      <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.sharpe)}`}>
+                        {fmtNum(r.sharpe)}
+                      </td>
+                      <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.q1_return)}`}>
+                        {fmtPct(r.q1_return)}
+                      </td>
+                      <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.q5_return)}`}>
+                        {fmtPct(r.q5_return)}
+                      </td>
+                      <td
+                        className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.long_short_spread)}`}
+                      >
+                        {fmtPct(r.long_short_spread)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void openOrCreateForFactor(
+                              r.factor_name,
+                              r.name_cn || r.factor_name,
+                            ).then((p) => navigate(`/factor/detect/${p.id}`));
+                          }}
+                          className="text-xs font-semibold text-red-600 opacity-0 transition group-hover:opacity-100 hover:text-red-700"
+                        >
+                          检测 →
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!filtered.length && (
+                  <tr>
+                    <td colSpan={13} className="px-4 py-16 text-center text-sm text-slate-400">
+                      暂无缓存。点右上角「刷新指标」从 YGQuant 拉取当前组合（约需较长时间）。
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

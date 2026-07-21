@@ -1,0 +1,36 @@
+# 依赖与构建
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+*.egg-info/
+
+# 密钥与本机配置（必须保留 .env.example）
+backend/.env
+**/.env
+!**/.env.example
+
+# 运行产物 / 缓存（面板 SQLite、日志、批跑）
+backend/output/
+*.sqlite
+*.sqlite-journal
+*.log
+
+# 本机笔记文档（不入库；接口说明在 backend/factor/）
+docs/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.tmp
+_tmp_*
+
+# 其它
+*.pem
+*.key

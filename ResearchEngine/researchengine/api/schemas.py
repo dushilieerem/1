@@ -45,6 +45,7 @@ class FactorBacktestRequest(BaseModel):
     stamp_tax: float = 0.001
     #: 滑点率（默认 1‰）
     slippage_rate: float = 0.001
+<<<<<<< HEAD
     #: core 只计算回测和汇总指标；full 额外计算分层、FF3、行业曲线
     analysis_level: Literal["core", "full"] = Field(
         "core", description="core | full"
@@ -58,6 +59,15 @@ class StrategyBacktestRequest(BaseModel):
     strategy_code: str = Field(..., description="策略 Python 源码")
     #: 策略参数（透传给策略 __init__ 的 params）
     strategy_params: "dict[str, object]" = Field(default_factory=dict)
+=======
+class StrategyBacktestRequest(BaseModel):
+    """``POST /api/backtest/strategy`` 请求。"""
+
+    #: 策略 Python 源码（必须实现 generate_signals 方法）
+    strategy_code: str = Field(..., description="策略 Python 源码")
+    #: 策略参数（透传给策略 __init__ 的 params）
+    strategy_params: "dict[str, object]" = {}
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
     #: 因子代码（可选，策略可能需要因子值作为输入）
     factor_code: Optional[str] = None
     #: 因子名（可选，与 factor_code 搭配使用）
@@ -68,9 +78,13 @@ class StrategyBacktestRequest(BaseModel):
     #: 数据目录；缺省走 env ``SVQUANT_DATA_DIR`` 或 ``<repo>/MarketData``
     data_dir: Optional[str] = None
     #: 回测后端：``native`` | ``vectorbt``
+<<<<<<< HEAD
     backtest_engine: Literal["native", "vectorbt"] = Field(
         "native", description="native | vectorbt"
     )
+=======
+    backtest_engine: str = Field("native", description="native | vectorbt")
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
     commission_rate: float = 0.0
     slippage_rate: float = 0.0
     initial_capital: float = 1_000_000.0
@@ -196,7 +210,10 @@ class FactorBacktestMeta(BaseModel):
     benchmark: str
     filter_limit_up: bool
     filter_suspended: bool
+<<<<<<< HEAD
     timings_seconds: "dict[str, float]" = {}
+=======
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
 
 class StrategyBacktestMeta(BaseModel):

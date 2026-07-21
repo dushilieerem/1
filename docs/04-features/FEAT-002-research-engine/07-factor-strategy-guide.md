@@ -1,11 +1,18 @@
 # 因子与策略编写规范
 
+<<<<<<< HEAD
 > 文档版本：v1.1
 > 最后更新：2026-07-20
 > 适用平台：SVQuant ResearchEngine v2.0
 > 目标读者：量化研究员
 >
 > 项目地址：[SVQuant · 因子研究](http://192.168.3.32:9530/)
+=======
+> 文档版本：v1.0
+> 最后更新：2026-07-15
+> 适用平台：SVQuant ResearchEngine v2.0
+> 目标读者：量化研究员
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
 ---
 
@@ -452,6 +459,7 @@ class 库名(FactorLibrary):
 
 ---
 
+<<<<<<< HEAD
 ## 7. 策略代码编写规范
 
 策略回测使用 `POST /api/backtest/strategy`；完整请求与响应见 `06-research-api.md`。当前 MVP 是**向量化目标权重策略**：策略只决定每天每个标的的目标权重，行情对齐、回测、成本和指标全部由 ResearchEngine 与 QuantCore 处理。
@@ -498,11 +506,68 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
 ### 7.2 自由信号策略接口
 
 策略源码必须且只能定义一个带 `generate_signals()` 的类，构造函数必须接受以下关键字参数：
+=======
+## 7. 策略编写规范
+
+### 7.1 默认策略（无需编写）
+
+SVQuant 内置 **FactorQuantileStrategy**（因子分位选股策略），按以下规则自动构建组合：
+
+1. 按因子值从高到低排序
+2. 取前 `stock_num` 只股票
+3. 按因子值加权或等权分配权重
+4. 按 `rebalance` 频率调仓
+
+只需指定参数即可：
+
+```json
+{
+    "factor_code": "...",
+    "factor_name": "momentum_5d",
+    "universe": "CSI500",
+    "rebalance": "monthly",
+    "stock_num": 100,
+    "long_short": true
+}
+```
+
+这是绝大多数场景的推荐方式。
+
+### 7.2 策略参数说明
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `rebalance` | str | `monthly` | 调仓频率：`monthly` \| `weekly` \| `daily` |
+| `stock_num` | int | 100 | 持仓标的数量 |
+| `long_short` | bool | true | `true`=多空各半 \| `false`=只做多 |
+| `commission_rate` | float | 0.0 | 手续费率（如 0.0003 = 万三） |
+| `slippage_rate` | float | 0.0 | 滑点率（如 0.001 = 千一） |
+| `initial_capital` | float | 1000000 | 初始资金（元） |
+
+### 7.3 调仓规则
+
+| 参数 | 行为 |
+|------|------|
+| `rebalance=monthly` | 每月第一个交易日调仓 |
+| `rebalance=weekly` | 每周一调仓（如周一非交易日则顺延） |
+| `rebalance=daily` | 每个交易日调仓 |
+| `long_short=true` | 多头买入 top `stock_num/2` 只，空头卖出 bottom `stock_num/2` 只 |
+| `long_short=false` | 仅做多，买入 top `stock_num` 只 |
+
+---
+
+## 8. 自定义策略（高级）
+
+如需完全自定义策略逻辑（非简单的因子分位选股），可编写策略代码提交。
+
+### 8.1 策略接口
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
 ```python
 import pandas as pd
 
 class MyStrategy:
+<<<<<<< HEAD
     def __init__(self, factor_values: pd.DataFrame, close: pd.DataFrame, params=None):
         self.factor_values = factor_values
         self.close = close
@@ -530,10 +595,27 @@ class MyStrategy:
 - 输出会被回测引擎与行情数据对齐；不要返回价格、订单、交易记录或 `BacktestSignals` 对象。
 
 ### 7.4 推荐示例：因子 Top-N 等权
+=======
+    """自定义策略。"""
+    
+    def __init__(self, factor_values: pd.DataFrame, close: pd.DataFrame,
+                 params: dict = None):
+        self.factor_values = factor_values
+        self.close = close
+        self.params = params or {}
+    
+    def generate_signals(self) -> pd.DataFrame:
+        """生成目标权重信号（日期×标的）。"""
+        pass
+```
+
+### 8.2 自定义策略示例
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
 ```python
 import pandas as pd
 
+<<<<<<< HEAD
 class TopNStrategy:
     def __init__(self, factor_values, close, params=None):
         self.factor_values = factor_values
@@ -576,10 +658,25 @@ class PriceMomentumStrategy:
         momentum = self.close.pct_change(window)
         ranks = momentum.rank(axis=1, ascending=False, method="first")
         weights = pd.DataFrame(0.0, index=self.close.index, columns=self.close.columns)
+=======
+class MyStrategy:
+    """等权买入因子值最高的 top 50 只。"""
+    
+    def __init__(self, factor_values, close, params=None):
+        self.factor_values = factor_values
+        self.params = params or {"top_n": 50}
+    
+    def generate_signals(self):
+        top_n = self.params["top_n"]
+        ranks = self.factor_values.rank(axis=1, ascending=False)
+        weights = pd.DataFrame(0.0, index=self.factor_values.index,
+                               columns=self.factor_values.columns)
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
         weights[ranks <= top_n] = 1.0 / top_n
         return weights
 ```
 
+<<<<<<< HEAD
 ### 7.6 禁止与注意事项
 
 - 不要定义多个带 `generate_signals()` 的类；服务会将其视为不明确的策略并返回业务错误。
@@ -593,6 +690,15 @@ class PriceMomentumStrategy:
 ## 8. 完整示例
 
 ### 8.1 用户创建因子的完整流程
+=======
+> 自定义策略为高级功能，默认使用 FactorQuantileStrategy 即可满足大多数需求。
+
+---
+
+## 9. 完整示例
+
+### 9.1 用户创建因子的完整流程
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
 **Step 1**：在前台点击"新建因子库" → 输入"动量因子"
 
@@ -634,10 +740,16 @@ response = requests.post(f"{RE_API}/api/backtest/factor", json={
     "universe": "CSI500",
     "start": "2020-01-01",
     "end": "2025-12-31",
+<<<<<<< HEAD
     "portfolio_type": "long_only",
     "rebalance_days": 20,
     "groups": 5,
     "benchmark": "CSI300"
+=======
+    "rebalance": "monthly",
+    "stock_num": 100,
+    "long_short": True,
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 })
 
 result = response.json()
@@ -646,7 +758,11 @@ print(f"夏普率: {result['metrics']['sharpe']:.2f}")
 
 ---
 
+<<<<<<< HEAD
 ## 9. 常见问题
+=======
+## 10. 常见问题
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
 ### Q1: 因子代码出错怎么办？
 
@@ -690,14 +806,21 @@ def momentum(self, window=5):  # window 是参数，默认 5
 
 ### Q5: 如何测试因子是否写对了？
 
+<<<<<<< HEAD
 将因子代码通过 `POST /api/backtest/factor` 提交，查看返回的指标和净值曲线。如果 `error` 字段不为空，根据错误信息修正代码。
+=======
+将因子代码通过 `POST /api/backtest` 提交，查看返回的指标和净值曲线。如果 `error` 字段不为空，根据错误信息修正代码。
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
 ### Q6: 因子值需要做标准化吗？
 
 不需要。系统内部会对因子值进行排序/分位处理，不会直接使用原始因子值。
+<<<<<<< HEAD
 
 ### Q7: 策略代码执行失败为什么仍返回 200？
 
 策略或因子源码的编译、运行和回测错误会写入 `error`，以便前端统一展示业务错误；
 请求字段不合法、枚举值不合法或包含未知字段时才返回 HTTP `422`。策略回测成功的必要条件是
 HTTP `200` 且 `error` 为 `null`。
+=======
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815

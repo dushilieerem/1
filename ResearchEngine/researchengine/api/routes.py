@@ -43,12 +43,17 @@ def backtest_strategy(req: StrategyBacktestRequest) -> StrategyBacktestResponse:
 
 
 def _builtin_factors() -> "list[FactorInfo]":
+<<<<<<< HEAD
     """枚举内置因子库的方法；加载失败返回空列表。"""
+=======
+    """枚举 ``alpha_library`` 的因子方法；加载失败返回空列表。"""
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
     try:
         from researchengine import FactorLoader
         from researchengine.assets import factor_library_dir
 
         loader = FactorLoader(factor_dir=str(factor_library_dir()))
+<<<<<<< HEAD
         factors = []
         for module_name in ("alpha_library", "qlib_alpha"):
             library = loader.load(module_name)
@@ -57,5 +62,13 @@ def _builtin_factors() -> "list[FactorInfo]":
                 for n, m in library._factor_methods().items()
             )
         return factors
+=======
+        library = loader.load("alpha_library")
+        methods = library._factor_methods()
+        return [
+            FactorInfo(name=n, description=(m.__doc__ or "").strip() or None)
+            for n, m in methods.items()
+        ]
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
     except Exception:  # noqa: BLE001  无内置库或路径变化时不阻塞 API
         return []

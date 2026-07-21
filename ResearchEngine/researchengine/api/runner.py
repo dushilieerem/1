@@ -14,7 +14,10 @@ import os
 import shutil
 import sys
 import tempfile
+<<<<<<< HEAD
 import time
+=======
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -175,8 +178,12 @@ def _load_factor_from_code(factor_code: str, factor_name: str):
 
 
 def _build_config(commission_rate, slippage_rate, stamp_tax=None,
+<<<<<<< HEAD
                   rebalance_days=None, groups=None, long_short=None,
                   analysis_level: str = "core"):
+=======
+                  rebalance_days=None, groups=None, long_short=None):
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
     """由参数构建 :class:`ConfigManager`（不设 output_path -> 不落盘）。"""
     from researchengine import ConfigManager
 
@@ -198,7 +205,10 @@ def _build_config(commission_rate, slippage_rate, stamp_tax=None,
     cfg.set("backtest.slippage_rate", slippage_rate)
     cfg.set("periods_per_year", 252)
     cfg.set("compute_backend", "python")
+<<<<<<< HEAD
     cfg.set("factor_analysis.level", analysis_level)
+=======
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
     return cfg
 
 
@@ -428,7 +438,10 @@ def _compute_equity_with_drawdown(equity: pd.Series) -> list[EquityPoint]:
 
 def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestResponse:
     """因子回测：因子代码 + 参数 -> 指标 + 净值 + 因子分析。"""
+<<<<<<< HEAD
     started_at = time.perf_counter()
+=======
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
     try:
         from researchengine import ExperimentManager
 
@@ -444,7 +457,10 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
             rebalance_days=req.rebalance_days,
             groups=req.groups,
             long_short=long_short,
+<<<<<<< HEAD
             analysis_level=req.analysis_level,
+=======
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
         )
         mgr = ExperimentManager()
         exp = mgr.create(
@@ -475,6 +491,7 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
     # 分年收益
     annual_returns = _compute_annual_returns(equity) if equity is not None else []
 
+<<<<<<< HEAD
     # 深度因子分析仅在请求显式要求时计算，避免其拖慢核心回测。
     metrics = metrics_to_dict(result.metrics)
     analysis = getattr(result, "factor_analysis", {})
@@ -521,6 +538,49 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
                 analysis.get("industry_group_equity", {})
             ),
         )
+=======
+    # 因子分析
+    metrics = metrics_to_dict(result.metrics)
+    analysis = getattr(result, "factor_analysis", {})
+    layered_equity = analysis.get("layered_equity", pd.DataFrame())
+    ic_series = analysis.get("ic_series", pd.DataFrame())
+    cumulative_ic = analysis.get("cumulative_ic", pd.Series(dtype=float))
+    rolling_ir = analysis.get("rolling_ir", pd.Series(dtype=float))
+    factor_analysis = FactorAnalysis(
+        ic_mean=metrics.get("ic"),
+        ic_std=metrics.get("ic_std"),
+        rank_ic_mean=metrics.get("rank_ic"),
+        layered_returns={
+            "groups": req.groups,
+            **{
+                f"layer{number}": float(layered_equity.iloc[-1, number - 1] - 1)
+                for number in range(1, req.groups + 1)
+            },
+            "spread": float(layered_equity.iloc[-1, -1] - layered_equity.iloc[-1, 0])
+            if not layered_equity.empty else None,
+            "long_short_return": metrics.get("total_return"),
+        },
+        cumulative_series=_layered_equity_to_points(layered_equity),
+        definition={
+            "ic_type": "pearson",
+            "forward_return_days": 1,
+            "signal_lag_days": 0,
+            "rolling_ir_window": 60,
+            "groups": req.groups,
+            "industry_return_method": "equal_weight_fixed_capital",
+            "industry_grouping_method": "daily_cross_sectional_equal_weight_fixed_capital",
+        },
+        ic_series=_ic_points(ic_series),
+        cumulative_ic_series=_value_points(cumulative_ic),
+        rolling_ir_series=_rolling_ir_points(rolling_ir),
+        industry_equity_curves=_industry_equity_to_response(
+            analysis.get("industry_equity", {})
+        ),
+        industry_group_equity_curves=_industry_group_equity_to_response(
+            analysis.get("industry_group_equity", {})
+        ),
+    )
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
     benchmark_equity = _load_benchmark_equity(req.benchmark, equity.index)
     benchmark_curve = _compute_equity_with_drawdown(benchmark_equity)
     common_dates = equity.index.intersection(benchmark_equity.index)
@@ -549,10 +609,13 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
             benchmark=req.benchmark,
             filter_limit_up=req.filter_limit_up,
             filter_suspended=req.filter_suspended,
+<<<<<<< HEAD
             timings_seconds={
                 **result.meta.get("timings_seconds", {}),
                 "api_total": round(time.perf_counter() - started_at, 6),
             },
+=======
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
         ),
         error=None,
     )
@@ -561,10 +624,15 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
 def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestResponse:
     """策略回测：自定义策略代码 -> 指标 + 净值。"""
     try:
+<<<<<<< HEAD
+=======
+        from quantcore.backtest.adapter.strategies import StrategyFromCode
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
         from quantcore.backtest.adapter import get_backtest_engine
         from quantcore.backtest.adapter.signals import BacktestConfig, BacktestSignals
 
         # 编译策略代码
+<<<<<<< HEAD
         namespace = {"__name__": "user_strategy"}
         exec(compile(req.strategy_code, '<strategy>', 'exec'), namespace)
         strategy_classes = [
@@ -603,10 +671,37 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
             from quantcore.data._util import resolve_universe
             from quantcore.factor.base import Panel
             from quantcore.factor.engine import FactorEngine
+=======
+        namespace = {}
+        exec(compile(req.strategy_code, '<strategy>', 'exec'), namespace)
+        strategy_class = None
+        for name, obj in namespace.items():
+            if isinstance(obj, type) and name != 'MyStrategy' and \
+               hasattr(obj, 'generate_signals'):
+                strategy_class = obj
+                break
+        if strategy_class is None:
+            # 查找第一个有 generate_signals 的类
+            for name, obj in namespace.items():
+                if isinstance(obj, type) and hasattr(obj, 'generate_signals'):
+                    strategy_class = obj
+                    break
+        if strategy_class is None:
+            raise ValueError("策略代码中未找到包含 generate_signals 方法的类")
+
+        # 加载因子（可选）
+        factor_values = None
+        if req.factor_code and req.factor_name:
+            factor = _load_factor_from_code(req.factor_code, req.factor_name)
+            # 获取数据并计算因子值
+            from quantcore import DataEngine, FieldParquetProvider
+            from quantcore.factor import FactorEngine
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
             data_dir = _resolve_data_dir(req.data_dir)
             provider = FieldParquetProvider(data_dir)
             data_engine = DataEngine(provider=provider)
+<<<<<<< HEAD
             panels = Panel(
                 data_engine.get_panels(req.start, req.end),
                 symbols=resolve_universe(provider, req.universe),
@@ -649,6 +744,27 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
             raise TypeError(
                 "generate_signals 必须返回 pandas.DataFrame 或 BacktestSignals"
             )
+=======
+            panels = data_engine.get_panels(req.start, req.end)
+            factor_engine = FactorEngine()
+            factor_values = factor_engine.compute_panel(factor.name, panels)
+            close = panels.close
+        else:
+            data_dir = _resolve_data_dir(req.data_dir)
+            from quantcore import DataEngine, FieldParquetProvider
+            provider = FieldParquetProvider(data_dir)
+            data_engine = DataEngine(provider=provider)
+            panels = data_engine.get_panels(req.start, req.end)
+            close = panels.close
+
+        # 实例化策略
+        strategy = strategy_class(
+            factor_values=factor_values if factor_values is not None else close,
+            close=close,
+            params=req.strategy_params,
+        )
+        signals = strategy.generate_signals()
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
         # 跑回测
         bt_config = BacktestConfig(
@@ -657,6 +773,13 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
             commission_rate=req.commission_rate,
             slippage_rate=req.slippage_rate,
         )
+<<<<<<< HEAD
+=======
+        bt_signals = BacktestSignals(
+            target_weights=signals,
+            close=close,
+        )
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
         bt_engine = get_backtest_engine(req.backtest_engine)
         bt_result = bt_engine.run(bt_signals, bt_config)
 
@@ -664,12 +787,20 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
         returns = bt_result.returns
 
         # 算指标
+<<<<<<< HEAD
         from quantcore.metric.context import MetricContext
         from quantcore.metric.engine import MetricEngine
 
         metric_engine = MetricEngine()
         ctx = MetricContext(
             equity_curve=equity,
+=======
+        from quantcore.metric import MetricEngine, MetricContext
+
+        metric_engine = MetricEngine()
+        ctx = MetricContext(
+            equity=equity,
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
             returns=returns,
             factor_values=factor_values,
             forward_returns=None,
@@ -685,9 +816,12 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
         )
 
     final_equity = float(equity.iloc[-1]) if equity is not None and len(equity) else None
+<<<<<<< HEAD
     metrics = metrics_to_dict(metrics)
     if equity is not None and len(equity):
         metrics["total_return"] = float(equity.iloc[-1] / equity.iloc[0] - 1)
+=======
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
     equity_points = None
     if req.include_equity and equity is not None:
@@ -701,14 +835,22 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
         positions = _sample_positions(bt_result.positions)
 
     return StrategyBacktestResponse(
+<<<<<<< HEAD
         metrics=metrics,
+=======
+        metrics=metrics_to_dict(metrics),
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
         equity_curve=equity_points,
         drawdowns=drawdowns,
         annual_returns=annual_returns,
         date_range=DateRange(**date_range_from(equity)),
         final_equity=final_equity,
         meta=StrategyBacktestMeta(
+<<<<<<< HEAD
             strategy=strategy_class.__name__,
+=======
+            strategy=req.strategy_code.split("\n")[0] if req.strategy_code else "custom",
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
             universe=req.universe,
             backtest_engine=req.backtest_engine,
         ),

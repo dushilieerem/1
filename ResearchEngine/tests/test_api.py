@@ -21,6 +21,7 @@ def amount_20d(self, window: int = 20):
 def combo_factor(self):
     return 0.5 * self.volume_20d() + 0.5 * self.amount_20d()'''
 
+<<<<<<< HEAD
 STRATEGY_CODE = '''import pandas as pd
 
 class EqualWeightMomentum:
@@ -57,6 +58,8 @@ class CompositeFactorStrategy(FactorPortfolioStrategy):
     def score(self):
         return 0.6 * self.rank(self.momentum_20d()) + 0.4 * self.rank(self.value_ep())'''
 
+=======
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 
 @pytest.fixture()
 def market_data_dir(tmp_path, monkeypatch):
@@ -86,9 +89,12 @@ def market_data_dir(tmp_path, monkeypatch):
         {"000300_close": np.linspace(4000.0, 4300.0, len(dates))}, index=dates
     )
     benchmark.to_parquet(benchmark_dir / "index_000300.parquet")
+<<<<<<< HEAD
     pd.DataFrame(
         {symbol: [1] for symbol in symbols}, index=[dates[-1]]
     ).to_parquet(benchmark_dir / "CSI500_constituents.parquet")
+=======
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
     monkeypatch.setenv("SVQUANT_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("SVQUANT_BACKTEST_CACHE_DIR", str(tmp_path / "backtest_cache"))
     return tmp_path
@@ -103,7 +109,10 @@ def _request_payload():
         "rebalance_days": 15,
         "groups": 3,
         "benchmark": "CSI300",
+<<<<<<< HEAD
         "analysis_level": "full",
+=======
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
     }
 
 
@@ -154,6 +163,7 @@ def test_factor_backtest_without_industry_mapping_returns_empty_curves(market_da
     assert cached_response.json() == body
 
 
+<<<<<<< HEAD
 def test_factor_backtest_defaults_to_core_analysis(market_data_dir):
     payload = _request_payload()
     payload.pop("analysis_level")
@@ -168,6 +178,8 @@ def test_factor_backtest_defaults_to_core_analysis(market_data_dir):
     assert body["meta"]["timings_seconds"]["api_total"] >= 0
 
 
+=======
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815
 def test_data_change_invalidates_cache(market_data_dir):
     first = client.post("/api/backtest/factor", json=_request_payload())
     assert first.headers["X-SVQuant-Cache"] == "MISS"
@@ -196,6 +208,7 @@ def test_invalid_factor_code_returns_error(market_data_dir):
     )
     assert response.status_code == 200
     assert response.json()["error"] is not None
+<<<<<<< HEAD
 
 
 def test_strategy_backtest_with_submitted_factor_and_positions(market_data_dir):
@@ -257,3 +270,5 @@ def test_structured_factor_portfolio_strategy_backtest(market_data_dir):
     assert body["error"] is None
     assert body["meta"]["strategy"] == "CompositeFactorStrategy"
     assert body["positions"]
+=======
+>>>>>>> 1544f0a2bd4345928dd291091f4bbbdae0e06815

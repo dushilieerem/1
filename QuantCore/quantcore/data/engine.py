@@ -69,3 +69,12 @@ class DataEngine:
     ) -> "dict[str, pd.DataFrame]":
         """获取多字段宽表面板，委托给当前 provider。"""
         return self._require_provider().get_panels(start, end, fields)
+
+    def get_index(
+        self,
+        name: str,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """读取指数行情，委托给当前 provider。"""
+        return self._require_provider().get_index(name, start, end)

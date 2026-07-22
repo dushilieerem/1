@@ -47,8 +47,8 @@ def quantile_groups(
     """
     if n_groups < 2:
         raise ValueError(f"n_groups 至少为 2，得到 {n_groups}")
-    # pct rank: 每个值在当日截面的分位 (0,1]，NaN 保持 NaN
-    ranks = group_values.rank(axis=1, pct=True, method="average")
+    # 同分值按标的列顺序打破并列，确保每组始终有确定成员和连续收益曲线。
+    ranks = group_values.rank(axis=1, pct=True, method="first")
     groups = np.ceil(ranks * n_groups).clip(upper=n_groups)
     groups = groups.where(group_values.notna())
     return groups.astype("Int64")  # 可空整数

@@ -16,9 +16,18 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 import pandas as pd
+
+
+class IndexPanel:
+    """单个指数的日线行情。"""
+
+    def __init__(self, data: pd.DataFrame) -> None:
+        for field in ("open", "high", "low", "close", "volume"):
+            if field in data:
+                setattr(self, field, data[field])
 
 
 class Panel:
@@ -32,11 +41,18 @@ class Panel:
     过滤列（同样懒执行 + 缓存）。
     """
 
-    def __init__(self, fields, symbols=None) -> None:
+    def __init__(
+        self,
+        fields,
+        symbols=None,
+        index_loader: Callable[[str], pd.DataFrame] | None = None,
+    ) -> None:
         # 用 object.__setattr__ 绕过自定义 __getattr__，避免属性查找回环
         object.__setattr__(self, "_fields", fields)
         object.__setattr__(self, "_symbols", symbols)
         object.__setattr__(self, "_cache", {})
+        object.__setattr__(self, "_index_loader", index_loader)
+        object.__setattr__(self, "_index_cache", {})
 
     def _get(self, name: str) -> pd.DataFrame:
         cache = object.__getattribute__(self, "_cache")
@@ -59,6 +75,17 @@ class Panel:
 
     def __getitem__(self, name: str) -> pd.DataFrame:
         return self._get(name)
+
+    def index(self, name: str) -> IndexPanel:
+        """按名称懒加载指数行情。"""
+        cache = object.__getattribute__(self, "_index_cache")
+        name = name.upper()
+        if name not in cache:
+            loader = object.__getattribute__(self, "_index_loader")
+            if loader is None:
+                raise AttributeError("当前数据源不支持指数行情")
+            cache[name] = IndexPanel(loader(name))
+        return cache[name]
 
     def __contains__(self, name: str) -> bool:
         return name in object.__getattribute__(self, "_fields")
@@ -165,7 +192,11 @@ class FactorLibrary:
       - 估值：``self.pe_ttm`` / ``self.pb`` / ``self.ps_ttm``
       - 布尔：``self.is_st`` / ``self.limit_up``
 
-      均为 ``日期×标的`` 宽表，按需懒加载；不在列表里的字段用 ``self["字段"]``。
+      - 指数：``self.csi300.close`` / ``self.csi500.close`` /
+        ``self.csi1000.close`` / ``self.sse50.close``（日线 Series）
+
+      股票字段为 ``日期×标的`` 宽表，指数为按日期索引的 Series；均按需懒加载。
+      不在列表里的股票字段用 ``self["字段"]``。
     - 方法的参数（如 ``window``）即因子参数，带默认值；
     - 辅助方法用 ``_`` 前缀，不会被当成因子。
     """
@@ -252,6 +283,23 @@ class FactorLibrary:
     def limit_up(self) -> pd.DataFrame:
         """是否涨停。"""
         return self._panel.limit_up
+
+    # 指数（日线 Series，按交易日索引）
+    @property
+    def csi300(self) -> IndexPanel:
+        return self._panel.index("CSI300")
+
+    @property
+    def csi500(self) -> IndexPanel:
+        return self._panel.index("CSI500")
+
+    @property
+    def csi1000(self) -> IndexPanel:
+        return self._panel.index("CSI1000")
+
+    @property
+    def sse50(self) -> IndexPanel:
+        return self._panel.index("SSE50")
 
     @property
     def fields(self) -> list:

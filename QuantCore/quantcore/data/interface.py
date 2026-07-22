@@ -90,3 +90,12 @@ class IDataProvider(ABC):
                 if f in bars.columns:
                     per_field[f][symbol] = bars[f]
         return {f: pd.DataFrame(d) for f, d in per_field.items()}
+
+    def get_index(
+        self,
+        name: str,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """读取指数行情；不支持的数据源保持默认实现。"""
+        raise NotImplementedError(f"{self.name} 不支持读取指数行情")

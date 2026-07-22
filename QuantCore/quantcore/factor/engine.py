@@ -67,7 +67,11 @@ class FactorEngine:
         panels = data_provider.get_panels(start, end, fields)
         # 按 universe 过滤列（懒执行：仅因子访问到的字段才真正读盘+过滤）
         symbols = resolve_universe(data_provider, universe)
-        return Panel(panels, symbols=symbols)
+        return Panel(
+            panels,
+            symbols=symbols,
+            index_loader=lambda name: data_provider.get_index(name, start, end),
+        )
 
     def compute_panel(self, factor_name: str, panel: Panel) -> pd.DataFrame:
         """在已构建好的 ``Panel`` 上计算单个因子，返回 ``日期×标的`` 宽表。

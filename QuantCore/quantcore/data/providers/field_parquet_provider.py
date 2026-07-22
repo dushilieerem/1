@@ -45,6 +45,12 @@ _UNIVERSE_FILES = {
     "CSI1000": "CSI1000_constituents.parquet",
     "SSE50": "SSE50_constituents.parquet",
 }
+_INDEX_FILES = {
+    "CSI300": "index_000300.parquet",
+    "CSI500": "index_000905.parquet",
+    "CSI1000": "index_000852.parquet",
+    "SSE50": "index_000016.parquet",
+}
 
 
 class _LazyPanels:
@@ -136,6 +142,29 @@ class FieldParquetProvider(IDataProvider):
                 raise KeyError(f"缺少字段文件: {missing}，可用: {available}")
             available = list(fields)
         return _LazyPanels(self, available, start, end)
+
+    def get_index(
+        self,
+        name: str,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """读取基准指数日线，返回以日期为索引的 OHLCV 表。"""
+        try:
+            filename = _INDEX_FILES[name.upper()]
+        except KeyError as exc:
+            raise KeyError(f"不支持的指数 {name!r}，可用: {list(_INDEX_FILES)}") from exc
+        path = self.data_dir / "benchmark" / filename
+        if not path.is_file():
+            raise FileNotFoundError(f"缺少指数行情文件: {path}")
+        frame = pd.read_parquet(path)
+        prefix = filename.removeprefix("index_").removesuffix(".parquet")
+        frame = frame.rename(columns={
+            f"{prefix}_{field}": field
+            for field in ("open", "high", "low", "close", "volume")
+        })
+        frame.index = pd.to_datetime(frame.index)
+        return filter_by_date(frame.sort_index(), start, end)
 
     # -- 逐只接口（从面板切出单只，向后兼容）--
     def get_bars(

@@ -236,7 +236,8 @@ def quality_score(self):
 
 ## 4. 可用数据字段
 
-以下字段可通过 `self.<字段>` 在因子方法中访问。
+以下为当前 `MarketData/` 根目录中已接入因子面板的股票字段，可通过
+`self.<字段>` 在因子方法中访问。每个字段均为“交易日 × 股票代码”的宽表。
 
 ### 4.1 价格数据
 
@@ -246,8 +247,6 @@ def quality_score(self):
 | `high` | float | 最高价（元） | 11.20 |
 | `low` | float | 最低价（元） | 10.30 |
 | `close` | float | 收盘价（元） | 10.80 |
-| `pre_close` | float | 前收盘价（元） | 10.50 |
-| `adj_factor` | float | 复权因子 | 1.5 |
 
 ### 4.2 成交数据
 
@@ -271,10 +270,8 @@ def quality_score(self):
 | 字段 | 类型 | 说明 | 示例值 |
 |------|------|------|--------|
 | `pe_ttm` | float | 滚动市盈率 | 15.0 |
-| `pe` | float | 市盈率（静态） | 14.5 |
 | `pb` | float | 市净率 | 2.0 |
 | `ps_ttm` | float | 滚动市销率 | 1.5 |
-| `pcf_ttm` | float | 滚动市现率 | 8.0 |
 
 ### 4.5 状态标记
 
@@ -282,10 +279,33 @@ def quality_score(self):
 |------|------|------|--------|
 | `is_st` | int8 | 是否 ST（1/0/NA） | 0 |
 | `limit_up` | int8 | 是否涨停（1/0/NA） | 0 |
-| `limit_down` | int8 | 是否跌停（1/0/NA） | 0 |
-| `is_suspended` | int8 | 是否停牌（1/0/NA） | 0 |
 
-### 4.6 访问不存在字段
+### 4.6 基准指数行情
+
+基准指数数据存放在 `MarketData/benchmark/`。可通过 `self.<指数>.close` 等方式
+在因子方法中访问；各字段均为以交易日为索引的 `pandas.Series`。
+
+| 指数 | 指数代码 | 文件 | 收盘价列 |
+|------|----------|------|----------|
+| 上证 50 | `000016` | `index_000016.parquet` | `self.sse50.close` |
+| 沪深 300 | `000300` | `index_000300.parquet` | `self.csi300.close` |
+| 中证 500 | `000905` | `index_000905.parquet` | `self.csi500.close` |
+| 中证 1000 | `000852` | `index_000852.parquet` | `self.csi1000.close` |
+
+每个指数还提供 `open`、`high`、`low`、`volume`。与股票宽表逐日计算时，使用
+`axis=0` 使指数序列按日期对齐：
+
+```python
+def relative_strength_vs_csi300(self, window=20):
+    stock_return = self.close.pct_change(window)
+    index_return = self.csi300.close.pct_change(window)
+    return stock_return.sub(index_return, axis=0)
+```
+
+提交回测时，它们仍可作为 `benchmark` 选择（`SSE50`、`CSI300`、`CSI500`、
+`CSI1000`）。
+
+### 4.7 访问不存在字段
 
 ```python
 # 用 self.fields 查看当前所有可用字段

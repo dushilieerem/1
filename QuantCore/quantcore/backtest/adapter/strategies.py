@@ -133,7 +133,8 @@ class FactorGroupStrategy(IStrategy):
         fv = self._factor_values.loc[common_dates, common_symbols]
         close = self._close.loc[common_dates, common_symbols]
 
-        ranks = fv.rank(axis=1, pct=True, method="average")
+        # 同分值按标的列顺序打破并列，保证各组连续且可复现。
+        ranks = fv.rank(axis=1, pct=True, method="first")
         group_no = np.ceil(ranks * self._groups).clip(upper=self._groups)
         valid = fv.notna()
         top = (group_no == self._groups) & valid

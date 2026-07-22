@@ -68,3 +68,21 @@ def test_factor_portfolio_strategy_requires_one_signal():
 
     with pytest.raises(ValueError, match="@signal"):
         MissingSignal().generate_signals(_panel())
+
+
+def test_factor_portfolio_strategy_all_equal_score_breaks_ties_by_column_order():
+    class AllEqualScore(FactorPortfolioStrategy):
+        selector = TopN(2)
+        rebalance = EveryNTradingDays(1)
+
+        @factor
+        def alpha(self):
+            return self.close - self.close
+
+        @signal
+        def score(self):
+            return self.alpha()
+
+    target = AllEqualScore().generate_signals(_panel()).target_weights
+    assert target.iloc[:, :2].eq(0.5).all().all()
+    assert target.iloc[:, 2:].eq(0.0).all().all()

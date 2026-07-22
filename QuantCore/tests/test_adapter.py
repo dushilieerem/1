@@ -83,6 +83,17 @@ def test_factor_quantile_strategy_long_only():
     assert (tw.gt(0).sum(axis=1) == 5).all()
 
 
+def test_factor_quantile_strategy_all_equal_factor_breaks_ties_by_column_order():
+    """全相等因子按列顺序稳定选出 Top-N。"""
+    fv, close = _make_panel()
+    fv.loc[:, :] = 0.0
+    weights = FactorQuantileStrategy(
+        fv, close, rebalance="daily", stock_num=5, long_short=False
+    ).generate_signals().target_weights
+    assert weights.iloc[:, :5].eq(0.2).all().all()
+    assert weights.iloc[:, 5:].eq(0.0).all().all()
+
+
 # ---------------- PandasCalendar ----------------
 
 def test_calendar_rebalance_mask():
@@ -108,6 +119,19 @@ def test_factor_group_strategy_uses_top_group():
     weights = signals.target_weights
     assert (weights.iloc[[0, 3, 6, 9]].sum(axis=1) - 1.0).abs().max() < 1e-9
     assert weights.iloc[1].isna().all()
+
+
+def test_factor_group_strategy_all_equal_factor_breaks_ties_by_column_order():
+    """全相等因子按列顺序稳定分配最高组与最低组。"""
+    fv, close = _make_panel(n_dates=10, n_sym=20)
+    fv.loc[:, :] = 0.0
+    signals = FactorGroupStrategy(
+        fv, close, groups=2, rebalance_days=3, long_short=True
+    ).generate_signals()
+    weights = signals.target_weights
+    rebalance_weights = weights.iloc[[0, 3, 6, 9]]
+    assert rebalance_weights.iloc[:, :10].eq(-0.1).all().all()
+    assert rebalance_weights.iloc[:, 10:].eq(0.1).all().all()
 
 
 # ---------------- NativeEngine ----------------

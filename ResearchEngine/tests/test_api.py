@@ -24,14 +24,13 @@ def combo_factor(self):
 STRATEGY_CODE = '''import pandas as pd
 
 class EqualWeightMomentum:
-    def __init__(self, factor_values, close, params=None):
-        self.factor_values = factor_values
+    def __init__(self, close):
         self.close = close
-        self.params = params or {}
 
     def generate_signals(self):
-        top_n = self.params.get("top_n", 3)
-        ranks = self.factor_values.rank(axis=1, ascending=False, method="first")
+        top_n = 3
+        momentum = self.close.pct_change(20)
+        ranks = momentum.rank(axis=1, ascending=False, method="first")
         weights = pd.DataFrame(0.0, index=self.close.index, columns=self.close.columns)
         weights[ranks <= top_n] = 1.0 / top_n
         return weights'''
@@ -140,6 +139,27 @@ def test_factor_backtest_groups_and_benchmark(market_data_dir):
     assert body["excess_return"] is not None
 
 
+def test_factor_backtest_accesses_csi300_close(market_data_dir):
+    payload = _request_payload()
+    payload["factor_code"] = '''def relative_to_csi300(self):
+    return self.close.pct_change(5).sub(self.csi300.close.pct_change(5), axis=0)'''
+    payload["factor_name"] = "relative_to_csi300"
+    response = client.post("/api/backtest/factor", json=payload)
+    assert response.status_code == 200
+    assert response.json()["error"] is None
+
+
+def test_factor_backtest_rejects_index_series_as_stock_factor(market_data_dir):
+    payload = _request_payload()
+    payload["factor_code"] = '''def index_close(self):
+    return self.csi300.close'''
+    payload["factor_name"] = "index_close"
+    response = client.post("/api/backtest/factor", json=payload)
+    assert response.status_code == 200
+    body = response.json()
+    assert "不能直接作为股票因子返回" in body["error"]
+
+
 def test_factor_backtest_without_industry_mapping_returns_empty_curves(market_data_dir):
     (market_data_dir / "stock_info.parquet").unlink()
     response = client.post("/api/backtest/factor", json=_request_payload())
@@ -198,14 +218,11 @@ def test_invalid_factor_code_returns_error(market_data_dir):
     assert response.json()["error"] is not None
 
 
-def test_strategy_backtest_with_submitted_factor_and_positions(market_data_dir):
+def test_strategy_backtest_returns_equity_and_positions(market_data_dir):
     response = client.post(
         "/api/backtest/strategy",
         json={
             "strategy_code": STRATEGY_CODE,
-            "strategy_params": {"top_n": 3},
-            "factor_code": COMBO_FACTOR_CODE,
-            "factor_name": "combo_factor",
             "include_positions": True,
         },
     )
@@ -215,7 +232,6 @@ def test_strategy_backtest_with_submitted_factor_and_positions(market_data_dir):
     assert body["meta"] == {
         "strategy": "EqualWeightMomentum",
         "universe": "CSI500",
-        "backtest_engine": "native",
     }
     assert body["metrics"]["total_return"] is not None
     assert len(body["equity_curve"]) > 0
@@ -235,6 +251,18 @@ def test_strategy_backtest_rejects_unknown_fields(market_data_dir):
     response = client.post(
         "/api/backtest/strategy",
         json={"strategy_code": STRATEGY_CODE, "unknown": True},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "removed_field",
+    ["strategy_params", "factor_code", "factor_name", "data_dir", "backtest_engine", "include_equity"],
+)
+def test_strategy_backtest_rejects_removed_request_fields(market_data_dir, removed_field):
+    response = client.post(
+        "/api/backtest/strategy",
+        json={"strategy_code": STRATEGY_CODE, removed_field: "legacy"},
     )
     assert response.status_code == 422
 

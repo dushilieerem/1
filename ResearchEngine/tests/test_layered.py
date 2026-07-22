@@ -57,6 +57,18 @@ def test_quantile_groups_insufficient_no_error():
     assert g.notna().all().all()
 
 
+def test_quantile_groups_all_equal_breaks_ties_by_column_order():
+    """所有有效因子值相同时，按列顺序稳定地打破并列。"""
+    fv = pd.DataFrame(
+        [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]],
+        index=pd.bdate_range("2022-01-03", periods=2),
+        columns=["A", "B", "C"],
+    )
+    groups = quantile_groups(fv, n_groups=3)
+    assert groups.iloc[0].tolist() == [1, 2, 3]
+    assert groups.iloc[1].tolist() == [1, 2, 3]
+
+
 def test_quantile_groups_invalid_n():
     with pytest.raises(ValueError):
         quantile_groups(pd.DataFrame([[1.0]]), n_groups=1)
@@ -143,6 +155,15 @@ def test_layered_returns_nan_factor():
     lr = layered_returns(fv, close, n_groups=2, rebalance="monthly")
     # Q1 原含 S0-S4，S0 失效后剩 S1-S4（4只等权），仍涨1%
     assert abs(lr["Q1"].iloc[0] - 0.01) < 1e-9
+
+
+def test_layered_returns_all_equal_factor_breaks_ties_by_column_order():
+    """全相等因子仍按列顺序分组，保持各层收益曲线连续。"""
+    fv, close = _make_panel(periods=5, n=10)
+    fv.loc[:, :] = 0.0
+    returns = layered_returns(fv, close, n_groups=2, rebalance="daily")
+    assert (returns["Q1"] - 0.01).abs().lt(1e-12).all()
+    assert (returns["Q2"] - 0.02).abs().lt(1e-12).all()
 
 
 def test_long_short_missing_column():

@@ -275,26 +275,16 @@ Python 类中定义多个 `@factor` 因子函数与唯一 `@signal` 组合公式
   // ─── 推荐：结构化因子组合策略代码 ───
   "strategy_code": "from quantcore import EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, factor, signal\n\nclass SmallCapMomentumStrategy(FactorPortfolioStrategy):\n    selector = TopN(30)\n    weighting = EqualWeight()\n    rebalance = EveryNTradingDays(20)\n\n    @factor\n    def momentum_20d(self):\n        return self.close.pct_change(20)\n\n    @factor\n    def value_ep(self):\n        return 1.0 / self.pe_ttm\n\n    @signal\n    def score(self):\n        return 0.6 * self.rank(self.momentum_20d()) + 0.4 * self.rank(self.value_ep())",
 
-  // ─── 结构化策略通常无需额外参数 ───
-  "strategy_params": {},
-
-  // ─── 因子代码（可选，策略可能需要因子值作为输入）───
-  "factor_code": null,
-  "factor_name": null,
-
   // ─── 回测范围 ───
   "universe": "CSI500",
   "start": null, "end": null,
-  "data_dir": null,
 
   // ─── 回测参数 ───
-  "backtest_engine": "native",
   "commission_rate": 0.0,
   "slippage_rate": 0.0,
   "initial_capital": 1000000,
 
   // ─── 返回控制 ───
-  "include_equity": true,
   "include_positions": false
 }
 ```
@@ -304,18 +294,14 @@ Python 类中定义多个 `@factor` 因子函数与唯一 `@signal` 组合公式
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
 | `strategy_code` | string | 是 | — | 完整 Python 源码；推荐定义一个 `FactorPortfolioStrategy` 子类。高级自由策略则必须且只能定义一个包含 `generate_signals()` 的类。 |
-| `strategy_params` | object | 否 | `{}` | 自由策略原样传入构造函数的 `params`；结构化策略首版不使用。 |
-| `factor_code` / `factor_name` | string/null | 否 | `null` | 自由策略必须同时提供才计算因子并传入 `factor_values`；结构化策略应在 `strategy_code` 内定义 `@factor`，无需传入。 |
 | `universe` | string | 否 | `CSI500` | 传给数据提供者解析的股票池名称。 |
 | `start` / `end` | string/null | 否 | `null` | 回测区间，格式 `YYYY-MM-DD`。 |
-| `data_dir` | string/null | 否 | `null` | 行情目录；缺省依次使用 `SVQUANT_DATA_DIR` 与仓库 `MarketData/`。 |
-| `backtest_engine` | enum | 否 | `native` | `native` 或 `vectorbt`。`vectorbt` 需要已安装可选依赖。 |
 | `commission_rate` / `slippage_rate` | number | 否 | `0.0` | 按成交额计的费率与滑点率。 |
 | `initial_capital` | number | 否 | `1000000` | 初始资金。 |
-| `include_equity` | boolean | 否 | `true` | 是否返回逐日净值曲线。 |
 | `include_positions` | boolean | 否 | `false` | 是否返回采样后的持仓权重快照。 |
 
-未知字段会返回 HTTP `422`，不允许静默忽略。
+服务端统一使用配置的数据目录和 Native 回测后端，并始终返回逐日净值曲线。`strategy_params`、
+`factor_code`、`factor_name`、`data_dir`、`backtest_engine` 和 `include_equity` 已移除；传入这些字段或其他未知字段会返回 HTTP `422`，不允许静默忽略。
 
 **结构化因子组合策略示例**：
 
@@ -342,8 +328,9 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
         return 0.6 * self.rank(self.momentum_20d()) + 0.4 * self.rank(self.value_ep())
 ```
 
-该模式无需提交 `factor_code` 或 `factor_name`；所有因子都定义在 `strategy_code` 中。策略源码
-中的 `universe` 声明仅供展示，实际回测股票池仍使用请求的 `universe` 字段。
+所有策略所需因子均在 `strategy_code` 中定义。策略源码中的 `universe` 声明仅供展示，实际回测
+股票池仍使用请求的 `universe` 字段。自由策略由服务注入 `close` 收盘价面板，例如
+`__init__(self, close)`；其余行情字段或多因子组合应使用 `FactorPortfolioStrategy` 在策略代码中声明。
 
 **响应**：
 ```jsonc
@@ -370,8 +357,7 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
   "final_equity": 2.50,
   "meta": {
     "strategy": "MyStrategy",
-    "universe": "CSI500",
-    "backtest_engine": "native"
+    "universe": "CSI500"
   },
 
   // ─── 6. 可选数据 ───
@@ -382,11 +368,48 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
 }
 ```
 
-`metrics` 固定包含标准指标：`annual_return`、`sharpe`、`sortino`、`calmar`、
-`max_drawdown`、`volatility`、`win_rate`、`turnover` 与 `total_return`；无可用输入的指标返回 `null`。
-策略回测不计算因子诊断，因此 `ic`、`rank_ic` 通常为 `null`。
+**响应字段**：
 
-策略源码、因子源码、数据读取或回测运行错误均返回 HTTP `200`，并写入 `error` 字段；
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `metrics` | object | 否 | 标准绩效指标对象，字段见下表；无可用输入的单项指标为 `null`。 |
+| `equity_curve` | array | 是 | 逐日净值及回撤，始终尝试返回；无可用净值数据时为 `null`。 |
+| `drawdowns` | array | 否 | 最大的 10 段回撤区间；无回撤时为空数组。 |
+| `annual_returns` | array | 否 | 按自然年聚合的收益；无数据时为空数组。 |
+| `date_range` | object | 否 | 实际参与回测的数据起止日期。 |
+| `final_equity` | number | 是 | 回测结束日的组合净值。 |
+| `meta` | object | 是 | 成功时的策略名称和实际股票池；业务错误时为 `null`。 |
+| `positions` | array | 是 | `include_positions=true` 时返回的采样持仓快照，否则为 `null`。 |
+| `error` | string | 是 | 业务或策略代码错误信息；成功时为 `null`。 |
+
+`metrics` 字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `annual_return` | number/null | 年化收益率。 |
+| `sharpe` | number/null | 年化夏普比率。 |
+| `sortino` | number/null | 年化索提诺比率。 |
+| `calmar` | number/null | 年化收益与最大回撤的比率。 |
+| `max_drawdown` | number/null | 最大回撤率。 |
+| `volatility` | number/null | 年化波动率。 |
+| `win_rate` | number/null | 日收益为正的交易日占比。 |
+| `turnover` | number/null | 平均换手率。 |
+| `total_return` | number/null | 回测区间累计收益率。 |
+| `ic` / `rank_ic` | number/null | 策略回测不计算因子诊断，通常为 `null`。 |
+
+嵌套对象字段：
+
+| 对象 | 字段 | 类型 | 说明 |
+|------|------|------|------|
+| `equity_curve[]` | `date`、`value`、`drawdown` | string、number、number/null | 交易日、归一化净值和相对历史高点的回撤。 |
+| `drawdowns[]` | `start`、`end`、`peak`、`trough`、`recovery`、`depth`、`days` | string、string/null、number/null、number/null、string/null、number、integer | 回撤的开始、结束、峰值、谷值、恢复日、深度和持续天数。 |
+| `annual_returns[]` | `year`、`return_value` | integer、number | 自然年及该年度收益率。 |
+| `date_range` | `start`、`end` | string/null、string/null | 实际数据起止日期。 |
+| `meta` | `strategy`、`universe` | string、string | 策略类名及实际使用的股票池。 |
+| `positions[]` | `date`、`holdings` | string、array | 持仓快照日期及该日持仓列表。 |
+| `positions[].holdings[]` | `symbol`、`weight` | string、number | 证券代码和目标权重。 |
+
+策略源码、数据读取或回测运行错误均返回 HTTP `200`，并写入 `error` 字段；
 此时 `meta` 为 `null`。请求体类型、枚举值或未知字段不合法时由接口契约返回 HTTP `422`。
 
 **与因子回测的关键区别**：
@@ -396,11 +419,11 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
 | 策略逻辑 | 系统内置 FactorQuantileStrategy | 用户自定义 |
 | 调仓、选股、仓位 | 系统参数控制 | 由策略代码输出的目标权重控制 |
 | `factor_analysis` | ✅ 有（IC/IR/分层） | ❌ 无 |
-| `factor_code` | ✅ 必填 | ❌ 可选 |
+| 因子定义 | 请求中提交因子代码 | 在 `strategy_code` 中定义 |
 
 ## 5. 数据目录
 
-`data_dir` 优先级：请求字段 → env `SVQUANT_DATA_DIR` → `/data/market`。
+策略回测不接受 `data_dir`；服务端按部署配置读取共享只读市场数据（当前优先使用 env `SVQUANT_DATA_DIR`，否则使用默认市场数据目录）。
 
 所有实例挂载同一份只读数据：
 

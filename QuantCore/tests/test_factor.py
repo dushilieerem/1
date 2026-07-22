@@ -3,9 +3,10 @@
 import numpy as np
 import pandas as pd
 
-from quantcore import BaseFactor, FactorEngine
+from quantcore import BaseFactor, FactorEngine, FactorLibrary, FieldParquetProvider
 from quantcore import DataEngine
 from quantcore import CSVDataProvider
+from quantcore.factor.base import library_factors
 
 
 class _Momentum(BaseFactor):
@@ -58,3 +59,33 @@ def test_factor_engine_missing_factor():
     except KeyError:
         return
     raise AssertionError("应报 KeyError")
+
+
+class _RelativeStrength(FactorLibrary):
+    def relative_to_csi300(self):
+        return self.close.pct_change().sub(self.csi300.close.pct_change(), axis=0)
+
+
+def test_factor_library_accesses_csi300_close(tmp_path):
+    dates = pd.bdate_range("2022-01-03", periods=3)
+    pd.DataFrame({"datetime": dates, "A": [10.0, 11.0, 12.0]}).to_parquet(
+        tmp_path / "close.parquet", index=False
+    )
+    benchmark = tmp_path / "benchmark"
+    benchmark.mkdir()
+    pd.DataFrame(
+        {"000300_close": [100.0, 105.0, 110.0], "000300_open": [100.0, 105.0, 110.0],
+         "000300_high": [100.0, 105.0, 110.0], "000300_low": [100.0, 105.0, 110.0],
+         "000300_volume": [1.0, 1.0, 1.0]},
+        index=dates,
+    ).to_parquet(benchmark / "index_000300.parquet")
+
+    library = _RelativeStrength()
+    engine = FactorEngine()
+    for factor in library_factors(library).values():
+        engine.register(factor)
+
+    values = engine.compute(
+        "relative_to_csi300", DataEngine(FieldParquetProvider(tmp_path)), ["A"]
+    )
+    assert np.isclose(values["A"].iloc[-1], 12 / 11 - 110 / 105)

@@ -338,7 +338,13 @@ class Experiment:
         started_at = time.perf_counter()
         panels = self._data_engine.get_panels(self.start_date, self.end_date)
         symbols = resolve_universe(self._data_engine, self.universe)
-        panel = Panel(panels, symbols=symbols)
+        panel = Panel(
+            panels,
+            symbols=symbols,
+            index_loader=lambda name: self._data_engine.get_index(
+                name, self.start_date, self.end_date
+            ),
+        )
         timings["panel_setup"] = time.perf_counter() - started_at
         print("数据读取完毕")
 
@@ -355,6 +361,12 @@ class Experiment:
             raise RuntimeError("数据中缺少 close 字段，无法构建组合。")
         started_at = time.perf_counter()
         close_panel = panel.close
+        common_symbols = factor_values.columns.intersection(close_panel.columns)
+        if len(common_symbols) == 0:
+            raise ValueError(
+                "因子返回值未包含股票池中的标的。指数序列（如 self.csi300.close）"
+                "不能直接作为股票因子返回；请与 self.close 按日期对齐后构造股票宽表。"
+            )
         horizon = int(self.config.get("ic_horizon", 1))
         fwd = forward_returns(close_panel, horizon=horizon)
 

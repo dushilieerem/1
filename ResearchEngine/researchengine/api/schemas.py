@@ -56,26 +56,12 @@ class StrategyBacktestRequest(BaseModel):
 
     #: 策略 Python 源码（必须实现 generate_signals 方法）
     strategy_code: str = Field(..., description="策略 Python 源码")
-    #: 策略参数（透传给策略 __init__ 的 params）
-    strategy_params: "dict[str, object]" = Field(default_factory=dict)
-    #: 因子代码（可选，策略可能需要因子值作为输入）
-    factor_code: Optional[str] = None
-    #: 因子名（可选，与 factor_code 搭配使用）
-    factor_name: Optional[str] = None
     universe: str = "CSI500"
     start: Optional[str] = None
     end: Optional[str] = None
-    #: 数据目录；缺省走 env ``SVQUANT_DATA_DIR`` 或 ``<repo>/MarketData``
-    data_dir: Optional[str] = None
-    #: 回测后端：``native`` | ``vectorbt``
-    backtest_engine: Literal["native", "vectorbt"] = Field(
-        "native", description="native | vectorbt"
-    )
     commission_rate: float = 0.0
     slippage_rate: float = 0.0
     initial_capital: float = 1_000_000.0
-    #: 返回净值点序列（前端画图用）
-    include_equity: bool = True
     #: 返回持仓权重（前端画持仓图用）
     include_positions: bool = False
 
@@ -203,7 +189,6 @@ class StrategyBacktestMeta(BaseModel):
     """策略回测元信息。"""
     strategy: str
     universe: str
-    backtest_engine: str
 
 
 class FactorBacktestResponse(BaseModel):

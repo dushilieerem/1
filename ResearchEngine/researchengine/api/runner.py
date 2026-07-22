@@ -484,20 +484,26 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
         ic_series = analysis.get("ic_series", pd.DataFrame())
         cumulative_ic = analysis.get("cumulative_ic", pd.Series(dtype=float))
         rolling_ir = analysis.get("rolling_ir", pd.Series(dtype=float))
+        has_layered_groups = len(layered_equity.columns) >= req.groups
+        layered_returns = {
+            "groups": req.groups,
+            "long_short_return": metrics.get("total_return"),
+        }
+        if has_layered_groups:
+            layered_returns.update({
+                f"layer{number}": float(layered_equity.iloc[-1, number - 1] - 1)
+                for number in range(1, req.groups + 1)
+            })
+            layered_returns["spread"] = float(
+                layered_equity.iloc[-1, -1] - layered_equity.iloc[-1, 0]
+            )
+        else:
+            layered_returns["spread"] = None
         factor_analysis = FactorAnalysis(
             ic_mean=metrics.get("ic"),
             ic_std=metrics.get("ic_std"),
             rank_ic_mean=metrics.get("rank_ic"),
-            layered_returns={
-                "groups": req.groups,
-                **{
-                    f"layer{number}": float(layered_equity.iloc[-1, number - 1] - 1)
-                    for number in range(1, req.groups + 1)
-                },
-                "spread": float(layered_equity.iloc[-1, -1] - layered_equity.iloc[-1, 0])
-                if not layered_equity.empty else None,
-                "long_short_return": metrics.get("total_return"),
-            },
+            layered_returns=layered_returns,
             cumulative_series=_layered_equity_to_points(layered_equity),
             definition={
                 "ic_type": "pearson",
@@ -578,68 +584,27 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
         strategy_class = strategy_classes[0]
         from quantcore.backtest.adapter.factor_strategy import FactorPortfolioStrategy
 
-        # 结构化因子组合策略直接基于 Panel 计算所有因子；保留既有自定义策略路径。
-        if issubclass(strategy_class, FactorPortfolioStrategy):
-            data_dir = _resolve_data_dir(req.data_dir)
-            from quantcore import DataEngine, FieldParquetProvider
-            from quantcore.data._util import resolve_universe
-            from quantcore.factor.base import Panel
+        data_dir = _resolve_data_dir(None)
+        from quantcore import DataEngine, FieldParquetProvider
+        from quantcore.data._util import resolve_universe
+        from quantcore.factor.base import Panel
 
-            provider = FieldParquetProvider(data_dir)
-            data_engine = DataEngine(provider=provider)
-            panels = Panel(
-                data_engine.get_panels(req.start, req.end),
-                symbols=resolve_universe(provider, req.universe),
-            )
-            close = panels.close
-            factor_values = None
+        provider = FieldParquetProvider(data_dir)
+        data_engine = DataEngine(provider=provider)
+        panels = Panel(
+            data_engine.get_panels(req.start, req.end),
+            symbols=resolve_universe(provider, req.universe),
+            index_loader=lambda name: data_engine.get_index(name, req.start, req.end),
+        )
+        close = panels.close
+        factor_values = None
+
+        # 结构化策略在策略源码内定义因子；自由策略接收收盘价面板自行生成信号。
+        if issubclass(strategy_class, FactorPortfolioStrategy):
             strategy = strategy_class()
             signals = strategy.generate_signals(panels)
-        elif req.factor_code and req.factor_name:
-            factor_values = None
-            factor = _load_factor_from_code(req.factor_code, req.factor_name)
-            # 获取数据并计算因子值
-            from quantcore import DataEngine, FieldParquetProvider
-            from quantcore.data._util import resolve_universe
-            from quantcore.factor.base import Panel
-            from quantcore.factor.engine import FactorEngine
-
-            data_dir = _resolve_data_dir(req.data_dir)
-            provider = FieldParquetProvider(data_dir)
-            data_engine = DataEngine(provider=provider)
-            panels = Panel(
-                data_engine.get_panels(req.start, req.end),
-                symbols=resolve_universe(provider, req.universe),
-            )
-            factor_engine = FactorEngine()
-            factor_engine.register(factor)
-            factor_values = factor_engine.compute_panel(factor.name, panels)
-            close = panels.close
-            strategy = strategy_class(
-                factor_values=factor_values,
-                close=close,
-                params=req.strategy_params,
-            )
-            signals = strategy.generate_signals()
         else:
-            factor_values = None
-            data_dir = _resolve_data_dir(req.data_dir)
-            from quantcore import DataEngine, FieldParquetProvider
-            from quantcore.data._util import resolve_universe
-            provider = FieldParquetProvider(data_dir)
-            data_engine = DataEngine(provider=provider)
-            from quantcore.factor.base import Panel
-
-            panels = Panel(
-                data_engine.get_panels(req.start, req.end),
-                symbols=resolve_universe(provider, req.universe),
-            )
-            close = panels.close
-            strategy = strategy_class(
-                factor_values=close,
-                close=close,
-                params=req.strategy_params,
-            )
+            strategy = strategy_class(close=close)
             signals = strategy.generate_signals()
         if isinstance(signals, BacktestSignals):
             bt_signals = signals
@@ -652,12 +617,12 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
 
         # 跑回测
         bt_config = BacktestConfig(
-            engine=req.backtest_engine,
+            engine="native",
             initial_capital=req.initial_capital,
             commission_rate=req.commission_rate,
             slippage_rate=req.slippage_rate,
         )
-        bt_engine = get_backtest_engine(req.backtest_engine)
+        bt_engine = get_backtest_engine("native")
         bt_result = bt_engine.run(bt_signals, bt_config)
 
         equity = bt_result.equity_curve
@@ -689,9 +654,7 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
     if equity is not None and len(equity):
         metrics["total_return"] = float(equity.iloc[-1] / equity.iloc[0] - 1)
 
-    equity_points = None
-    if req.include_equity and equity is not None:
-        equity_points = _compute_equity_with_drawdown(equity)
+    equity_points = _compute_equity_with_drawdown(equity) if equity is not None else None
 
     drawdowns = _compute_drawdowns(equity) if equity is not None else []
     annual_returns = _compute_annual_returns(equity) if equity is not None else []
@@ -710,7 +673,6 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
         meta=StrategyBacktestMeta(
             strategy=strategy_class.__name__,
             universe=req.universe,
-            backtest_engine=req.backtest_engine,
         ),
         positions=positions,
         error=None,

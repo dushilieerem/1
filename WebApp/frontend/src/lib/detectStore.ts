@@ -99,9 +99,14 @@ export function resolveBacktestRange(cfg: DetectProjectConfig): { start: string;
   if (cfg.rangeMode === "custom") {
     return { start: cfg.startDate, end: cfg.endDate };
   }
+  return periodToStartEnd(cfg.backtestPeriod || "3y");
+}
+
+/** 自定义因子试算等：仅用 period 字符串 */
+export function periodToStartEnd(period: string): { start: string; end: string } {
   const end = parseYmd(RE_MARKET_END);
   const start = new Date(end);
-  const p = cfg.backtestPeriod || "3y";
+  const p = period || "3y";
   if (p === "1d") start.setDate(start.getDate() - 1);
   else if (p === "5d") start.setDate(start.getDate() - 5);
   else if (p === "10d") start.setDate(start.getDate() - 10);

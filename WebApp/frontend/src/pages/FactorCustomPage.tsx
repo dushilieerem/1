@@ -7,8 +7,12 @@ import {
   extractMethod,
   loadFactors,
   loadLibrarySource,
+  toLogicalMethodBody,
 } from "@/lib/factorCatalog";
 import { authHeaders, getStoredUser } from "@/lib/auth";
+import { periodToStartEnd } from "@/lib/detectStore";
+import { ygBacktestFactor } from "@/lib/ygApi";
+import { FactorCodeEditor } from "@/components/FactorCodeEditor";
 
 function wrapFullDef(name: string, desc: string, bodyLines: string): string {
   const indented = bodyLines
@@ -78,6 +82,12 @@ type TrialStats = {
   turnover?: number | null;
 };
 
+function numOrNull(x: unknown): number | null {
+  if (x == null) return null;
+  const v = Number(x);
+  return Number.isFinite(v) ? v : null;
+}
+
 export function FactorCustomPage() {
   const navigate = useNavigate();
   const { name: routeName } = useParams<{ name?: string }>();
@@ -126,10 +136,11 @@ export function FactorCustomPage() {
         if (!meta) throw new Error(`未找到自定义因子：${editName}`);
         const src = await loadLibrarySource(meta.libraryFile);
         const method = extractMethod(src, meta.methodName || editName);
+        const logical = toLogicalMethodBody(method.trim() || DEFAULT_CODE, editName);
         if (cancelled) return;
         setName(editName);
         setDescription(meta.description || meta.explain || editName);
-        setBody(method.trim() || DEFAULT_CODE);
+        setBody(logical);
         setTab("free");
         setTestedBody(null);
         setTestedDesc(null);
@@ -205,20 +216,42 @@ export function FactorCustomPage() {
     setTrialErr(null);
     setErr(null);
     try {
-      const res = await fetch("/api/factor/custom/trial", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
-          body: body.trim(),
-          name: name.trim(),
-          universe: trialUniverse,
-          period: trialPeriod,
-        }),
+      const code = body.trim();
+      const factorName = name.trim();
+      const { start, end } = periodToStartEnd(trialPeriod);
+      // 与因子检测「进行检测」同一条 RE 接口；默认 core 更快
+      const res = await ygBacktestFactor({
+        factor_code: code,
+        factor_name: factorName,
+        portfolio_type: "long_short",
+        universe: trialUniverse,
+        start,
+        end,
+        filter_limit_up: true,
+        filter_suspended: true,
+        benchmark: trialUniverse,
+        groups: 5,
+        rebalance_days: 20,
+        commission_rate: 0.0003,
+        stamp_tax: 0.001,
+        slippage_rate: 0.001,
+        analysis_level: "core",
       });
-      const j = await res.json();
-      if (!res.ok || j.error) throw new Error(j.error || `HTTP ${res.status}`);
-      setTrialStats(j.stats || null);
-      setTestedBody(String(j.body || body).trim());
+      if (res.error != null && String(res.error).trim() !== "") {
+        throw new Error(String(res.error));
+      }
+      // 仅以 RE 返回 error===null 为通过（见 06-research-api.md）；不再加额外指标判断
+      const metrics = res.metrics || {};
+      const fa = res.factor_analysis || {};
+      setTrialStats({
+        ic: numOrNull(metrics.ic) ?? numOrNull(fa.ic_mean),
+        rank_ic: numOrNull(metrics.rank_ic) ?? numOrNull(fa.rank_ic_mean),
+        sharpe: numOrNull(metrics.sharpe),
+        annual_return: numOrNull(metrics.annual_return),
+        max_drawdown: numOrNull(metrics.max_drawdown),
+        turnover: numOrNull(metrics.turnover),
+      });
+      setTestedBody(code);
       setTestedDesc(description.trim());
     } catch (e) {
       setTrialErr(e instanceof Error ? e.message : String(e));
@@ -302,6 +335,9 @@ export function FactorCustomPage() {
               <div className="mb-4 grid gap-3 sm:grid-cols-2">
                 <label className="block text-xs font-medium text-slate-500">
                   因子代码
+                  {isEdit && (
+                    <span className="ml-1 font-normal text-slate-400">（入库后不可改）</span>
+                  )}
                   <input
                     value={name}
                     disabled={isEdit}
@@ -321,7 +357,7 @@ export function FactorCustomPage() {
                       setDescription(e.target.value);
                       setTestedDesc(null);
                     }}
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm outline-none ring-violet-200 focus:ring-2"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none ring-violet-200 focus:ring-2"
                   />
                 </label>
               </div>
@@ -349,17 +385,14 @@ export function FactorCustomPage() {
 
               <label className="block text-xs font-medium text-slate-500">
                 完整函数（须含 def，函数名与因子代码一致）
-                <textarea
+                <FactorCodeEditor
                   value={body}
-                  onChange={(e) => {
-                    setBody(e.target.value);
+                  onChange={(v) => {
+                    setBody(v);
                     setTestedBody(null);
                     setTestedDesc(null);
                     setTrialErr(null);
                   }}
-                  rows={12}
-                  spellCheck={false}
-                  className="mt-1 w-full rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white px-3 py-3 font-mono text-sm outline-none ring-violet-200 focus:ring-2"
                 />
               </label>
               {nameMismatchHint && <p className="mt-2 text-xs text-amber-700">{nameMismatchHint}</p>}
@@ -389,7 +422,11 @@ export function FactorCustomPage() {
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   <select
                     value={trialUniverse}
-                    onChange={(e) => setTrialUniverse(e.target.value)}
+                    onChange={(e) => {
+                      setTrialUniverse(e.target.value);
+                      setTestedBody(null);
+                      setTestedDesc(null);
+                    }}
                     className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs"
                   >
                     <option value="CSI300">沪深300</option>
@@ -405,7 +442,11 @@ export function FactorCustomPage() {
                     <button
                       key={d.v}
                       type="button"
-                      onClick={() => setTrialPeriod(d.v)}
+                      onClick={() => {
+                        setTrialPeriod(d.v);
+                        setTestedBody(null);
+                        setTestedDesc(null);
+                      }}
                       className={`h-8 rounded-lg px-2.5 text-xs font-semibold ${
                         trialPeriod === d.v
                           ? "bg-slate-900 text-white"
@@ -416,11 +457,6 @@ export function FactorCustomPage() {
                     </button>
                   ))}
                 </div>
-                {isEdit && (
-                  <p className="mb-2 text-[11px] text-slate-500">
-                    修改后须重新检测通过再保存；直接返回不会改动库里的原公式。
-                  </p>
-                )}
                 {trialErr && <p className="mb-2 text-xs text-red-600">{trialErr}</p>}
                 {trialPassed && (
                   <p className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">

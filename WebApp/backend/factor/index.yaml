@@ -1,6 +1,6 @@
 version: 1
-updated: '2026-07-21'
-total_factors: 86
+updated: '2026-07-22'
+total_factors: 89
 libraries:
   custom_lib:
     file: custom_lib.py
@@ -26,11 +26,19 @@ libraries:
       params: {}
       tags:
       - custom
-    - name: aaaa
-      method_name: u5_aaaa
+    - name: Oversold_stable_with_momentum
+      method_name: u5_Oversold_stable_with_momentum
       owner_id: 5
       description: 5日收益示意
       explain: 5日收益示意
+      params: {}
+      tags:
+      - custom
+    - name: RET_20D_OK
+      method_name: u5_RET_20D_OK
+      owner_id: 5
+      description: 20日涨跌幅
+      explain: 20日涨跌幅
       params: {}
       tags:
       - custom
@@ -39,6 +47,22 @@ libraries:
       owner_id: 5
       description: 成交量相对20日均量比
       explain: 成交量相对20日均量比
+      params: {}
+      tags:
+      - custom
+    - name: aaaaa
+      method_name: u6_aaaaa
+      owner_id: 6
+      description: 5日收益示意
+      explain: 5日收益示意
+      params: {}
+      tags:
+      - custom
+    - name: Oversold_stable_with_momentum
+      method_name: u6_Oversold_stable_with_momentum
+      owner_id: 6
+      description: 波谷缩量企稳 + 5日动量（个股分数）
+      explain: 波谷缩量企稳 + 5日动量（个股分数）
       params: {}
       tags:
       - custom

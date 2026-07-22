@@ -174,6 +174,28 @@ export function extractDefName(source: string): string | null {
   return m ? m[1] : null;
 }
 
+/**
+ * 编辑页展示：把物理方法名 u{id}_{logical} 改写成逻辑名，
+ * 用户只写/看逻辑名；入库时后端再换成物理名。
+ */
+export function toLogicalMethodBody(methodSource: string, logicalName: string): string {
+  const logical = (logicalName || "").trim();
+  if (!logical || !methodSource.trim()) return methodSource;
+  let out = methodSource.replace(
+    new RegExp(`^(\\s*def\\s+)u\\d+_${logical.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s*\\()`, "m"),
+    `$1${logical}$2`,
+  );
+  // 若已是逻辑名则不变；若 def 名恰好等于 logical 也保持
+  const def = extractDefName(out);
+  if (def && def !== logical && def.endsWith(`_${logical}`)) {
+    out = out.replace(
+      new RegExp(`^(\\s*def\\s+)${def.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s*\\()`, "m"),
+      `$1${logical}$2`,
+    );
+  }
+  return out;
+}
+
 /** 展开公式：优先多行有效语句；并把签名默认参数代入 */
 export function formatFactorFormula(methodSource: string, extraParams?: Record<string, string | number>): string {
   const defaults = { ...parseSignatureDefaults(methodSource), ...(extraParams || {}) };

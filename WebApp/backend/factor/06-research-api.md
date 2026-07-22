@@ -263,16 +263,20 @@ IC 分布图由前端使用 `ic_series[].value` 自行分桶。行业主数据�
 策略回测适用于**自定义策略逻辑**——用户提供完整的策略代码（含信号生成逻辑），
 系统执行回测。当因子回测的 FactorQuantileStrategy 不满足需求时使用。
 
+除自由编写 `generate_signals()` 外，也支持结构化的 `FactorPortfolioStrategy`：用户在同一个
+Python 类中定义多个 `@factor` 因子函数与唯一 `@signal` 组合公式，平台自动执行 Top-N 选股、
+等权和调仓，仍走本端点与向量化回测后端。
+
 #### `POST /api/backtest/strategy`
 
 **请求**：
 ```jsonc
 {
-  // ─── 策略代码（必须实现 generate_signals 方法）───
-  "strategy_code": "import pandas as pd\n\nclass MyStrategy:\n    def __init__(self, factor_values, close, params=None):\n        self.factor_values = factor_values\n        self.close = close\n        self.params = params or {}\n\n    def generate_signals(self):\n        top_n = self.params.get('top_n', 50)\n        ranks = self.factor_values.rank(axis=1, ascending=False, method='first')\n        weights = pd.DataFrame(0.0, index=self.close.index, columns=self.close.columns)\n        weights[ranks <= top_n] = 1.0 / top_n\n        return weights",
+  // ─── 推荐：结构化因子组合策略代码 ───
+  "strategy_code": "from quantcore import EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, factor, signal\n\nclass SmallCapMomentumStrategy(FactorPortfolioStrategy):\n    selector = TopN(30)\n    weighting = EqualWeight()\n    rebalance = EveryNTradingDays(20)\n\n    @factor\n    def momentum_20d(self):\n        return self.close.pct_change(20)\n\n    @factor\n    def value_ep(self):\n        return 1.0 / self.pe_ttm\n\n    @signal\n    def score(self):\n        return 0.6 * self.rank(self.momentum_20d()) + 0.4 * self.rank(self.value_ep())",
 
-  // ─── 策略参数（透传给策略 __init__ 的 params）───
-  "strategy_params": { "top_n": 50 },
+  // ─── 结构化策略通常无需额外参数 ───
+  "strategy_params": {},
 
   // ─── 因子代码（可选，策略可能需要因子值作为输入）───
   "factor_code": null,
@@ -299,9 +303,9 @@ IC 分布图由前端使用 `ic_series[].value` 自行分桶。行业主数据�
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
-| `strategy_code` | string | 是 | — | 完整 Python 源码；必须且只能定义一个包含 `generate_signals()` 的策略类。 |
-| `strategy_params` | object | 否 | `{}` | 原样传入策略构造函数的 `params`。 |
-| `factor_code` / `factor_name` | string/null | 否 | `null` | 必须同时提供才计算因子并传入 `factor_values`；两者任一缺失时，`factor_values` 等于收盘价宽表。 |
+| `strategy_code` | string | 是 | — | 完整 Python 源码；推荐定义一个 `FactorPortfolioStrategy` 子类。高级自由策略则必须且只能定义一个包含 `generate_signals()` 的类。 |
+| `strategy_params` | object | 否 | `{}` | 自由策略原样传入构造函数的 `params`；结构化策略首版不使用。 |
+| `factor_code` / `factor_name` | string/null | 否 | `null` | 自由策略必须同时提供才计算因子并传入 `factor_values`；结构化策略应在 `strategy_code` 内定义 `@factor`，无需传入。 |
 | `universe` | string | 否 | `CSI500` | 传给数据提供者解析的股票池名称。 |
 | `start` / `end` | string/null | 否 | `null` | 回测区间，格式 `YYYY-MM-DD`。 |
 | `data_dir` | string/null | 否 | `null` | 行情目录；缺省依次使用 `SVQUANT_DATA_DIR` 与仓库 `MarketData/`。 |
@@ -312,6 +316,34 @@ IC 分布图由前端使用 `ic_series[].value` 自行分桶。行业主数据�
 | `include_positions` | boolean | 否 | `false` | 是否返回采样后的持仓权重快照。 |
 
 未知字段会返回 HTTP `422`，不允许静默忽略。
+
+**结构化因子组合策略示例**：
+
+```python
+from quantcore import (
+    EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, factor, signal,
+)
+
+class SmallCapMomentumStrategy(FactorPortfolioStrategy):
+    selector = TopN(30)
+    weighting = EqualWeight()
+    rebalance = EveryNTradingDays(20)
+
+    @factor
+    def momentum_20d(self):
+        return self.close.pct_change(20)
+
+    @factor
+    def value_ep(self):
+        return 1.0 / self.pe_ttm
+
+    @signal
+    def score(self):
+        return 0.6 * self.rank(self.momentum_20d()) + 0.4 * self.rank(self.value_ep())
+```
+
+该模式无需提交 `factor_code` 或 `factor_name`；所有因子都定义在 `strategy_code` 中。策略源码
+中的 `universe` 声明仅供展示，实际回测股票池仍使用请求的 `universe` 字段。
 
 **响应**：
 ```jsonc

@@ -57,3 +57,23 @@ body {
 .stagger-3 {
   animation-delay: 0.18s;
 }
+
+/* Community — editorial red/white shell */
+.community-shell {
+  --community-bg: #f3f5f8;
+  --community-accent: #ef4444;
+  background-color: var(--community-bg);
+}
+
+.community-post-row {
+  transform: translateY(0);
+}
+
+.community-post-row:hover {
+  transform: translateY(-1px);
+}
+
+.community-tab-underline {
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+

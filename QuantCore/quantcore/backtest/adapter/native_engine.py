@@ -35,9 +35,13 @@ class NativeEngine(IBacktestEngine):
         port_ret = (held * ret).sum(axis=1)
 
         # 可选成本（默认 0 -> 与 build_factor_portfolio 逐位一致）
-        if config.commission_rate or config.slippage_rate:
-            turnover = held.diff().abs().sum(axis=1).fillna(0.0)
-            port_ret = port_ret - turnover * (config.commission_rate + config.slippage_rate)
+        if config.commission_rate or config.slippage_rate or config.stamp_tax:
+            weight_change = held.diff().fillna(0.0)
+            turnover = weight_change.abs().sum(axis=1)
+            sell_turnover = (-weight_change.clip(upper=0.0)).sum(axis=1)
+            port_ret = port_ret - turnover * (
+                config.commission_rate + config.slippage_rate
+            ) - sell_turnover * config.stamp_tax
 
         # 去掉首日（无持仓）
         port_ret = port_ret.iloc[1:]

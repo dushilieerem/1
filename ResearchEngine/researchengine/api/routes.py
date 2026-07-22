@@ -50,7 +50,13 @@ def _builtin_factors() -> "list[FactorInfo]":
 
         loader = FactorLoader(factor_dir=str(factor_library_dir()))
         factors = []
-        for module_name in ("alpha_library", "qlib_alpha"):
+        for module_name in (
+            "alpha_library",
+            "qlib_alpha",
+            "jq_compat_technical",
+            "jq_compat_risk",
+            "jq_compat_emotion",
+        ):
             library = loader.load(module_name)
             factors.extend(
                 FactorInfo(name=n, description=(m.__doc__ or "").strip() or None)

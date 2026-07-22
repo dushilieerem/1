@@ -39,6 +39,7 @@ def test_backtest_config_defaults():
     assert cfg.engine == "native"
     assert cfg.commission_rate == 0.0
     assert cfg.slippage_rate == 0.0
+    assert cfg.stamp_tax == 0.0
     assert cfg.periods_per_year == 252
 
 
@@ -145,6 +146,17 @@ def test_native_engine_run_shapes():
     assert res.positions.shape[1] == 20
     # 固定本金口径：首值靠近 1.0
     assert abs(res.equity_curve.iloc[0] - 1.0) < 2.0
+
+
+def test_native_engine_only_charges_stamp_tax_on_sells():
+    dates = pd.date_range("2024-01-01", periods=3, freq="D")
+    close = pd.DataFrame({"A": [100.0, 100.0, 100.0]}, index=dates)
+    target = pd.DataFrame({"A": [1.0, 0.0, 0.0]}, index=dates)
+    signals = BacktestSignals(target_weights=target, close=close)
+
+    result = NativeEngine().run(signals, BacktestConfig(stamp_tax=0.001))
+
+    assert result.returns.iloc[-1] == pytest.approx(-0.001)
 
 
 def test_native_engine_parity_with_build_factor_portfolio():

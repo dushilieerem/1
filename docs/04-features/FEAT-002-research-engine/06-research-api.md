@@ -278,9 +278,11 @@ Python 类中定义多个 `@factor` 因子函数与唯一 `@signal` 组合公式
   // ─── 回测范围 ───
   "universe": "CSI500",
   "start": null, "end": null,
+  "benchmark": "CSI300",
 
   // ─── 回测参数 ───
   "commission_rate": 0.0,
+  "stamp_tax": 0.001,
   "slippage_rate": 0.0,
   "initial_capital": 1000000,
 
@@ -296,7 +298,9 @@ Python 类中定义多个 `@factor` 因子函数与唯一 `@signal` 组合公式
 | `strategy_code` | string | 是 | — | 完整 Python 源码；推荐定义一个 `FactorPortfolioStrategy` 子类。高级自由策略则必须且只能定义一个包含 `generate_signals()` 的类。 |
 | `universe` | string | 否 | `CSI500` | 传给数据提供者解析的股票池名称。 |
 | `start` / `end` | string/null | 否 | `null` | 回测区间，格式 `YYYY-MM-DD`。 |
+| `benchmark` | enum | 否 | `CSI300` | 对比基准：`CSI300`、`CSI500`、`CSI1000` 或 `SSE50`。 |
 | `commission_rate` / `slippage_rate` | number | 否 | `0.0` | 按成交额计的费率与滑点率。 |
+| `stamp_tax` | number | 否 | `0.001` | 卖出印花税率，按卖出成交额计提。 |
 | `initial_capital` | number | 否 | `1000000` | 初始资金。 |
 | `include_positions` | boolean | 否 | `false` | 是否返回采样后的持仓权重快照。 |
 
@@ -355,9 +359,12 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
   // ─── 5. 元信息 ───
   "date_range": { "start": "2017-01-04", "end": "2026-04-30" },
   "final_equity": 2.50,
+  "benchmark_curve": [ { "date": "2017-01-04", "value": 1.0, "drawdown": 0.0 }, ... ],
+  "excess_return": 0.12,
   "meta": {
     "strategy": "MyStrategy",
-    "universe": "CSI500"
+    "universe": "CSI500",
+    "benchmark": "CSI300"
   },
 
   // ─── 6. 可选数据 ───
@@ -378,6 +385,8 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
 | `annual_returns` | array | 否 | 按自然年聚合的收益；无数据时为空数组。 |
 | `date_range` | object | 否 | 实际参与回测的数据起止日期。 |
 | `final_equity` | number | 是 | 回测结束日的组合净值。 |
+| `benchmark_curve` | array | 是 | 基准指数的逐日归一化净值及回撤；基准数据读取失败时整体以 `error` 返回。 |
+| `excess_return` | number | 是 | 策略累计收益率减去基准累计收益率。 |
 | `meta` | object | 是 | 成功时的策略名称和实际股票池；业务错误时为 `null`。 |
 | `positions` | array | 是 | `include_positions=true` 时返回的采样持仓快照，否则为 `null`。 |
 | `error` | string | 是 | 业务或策略代码错误信息；成功时为 `null`。 |
@@ -402,10 +411,11 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
 | 对象 | 字段 | 类型 | 说明 |
 |------|------|------|------|
 | `equity_curve[]` | `date`、`value`、`drawdown` | string、number、number/null | 交易日、归一化净值和相对历史高点的回撤。 |
+| `benchmark_curve[]` | `date`、`value`、`drawdown` | string、number、number/null | 基准指数的交易日、归一化净值和相对历史高点的回撤。 |
 | `drawdowns[]` | `start`、`end`、`peak`、`trough`、`recovery`、`depth`、`days` | string、string/null、number/null、number/null、string/null、number、integer | 回撤的开始、结束、峰值、谷值、恢复日、深度和持续天数。 |
 | `annual_returns[]` | `year`、`return_value` | integer、number | 自然年及该年度收益率。 |
 | `date_range` | `start`、`end` | string/null、string/null | 实际数据起止日期。 |
-| `meta` | `strategy`、`universe` | string、string | 策略类名及实际使用的股票池。 |
+| `meta` | `strategy`、`universe`、`benchmark` | string、string、string | 策略类名、实际使用的股票池和基准指数。 |
 | `positions[]` | `date`、`holdings` | string、array | 持仓快照日期及该日持仓列表。 |
 | `positions[].holdings[]` | `symbol`、`weight` | string、number | 证券代码和目标权重。 |
 
@@ -418,6 +428,7 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
 |------|---------|---------|
 | 策略逻辑 | 系统内置 FactorQuantileStrategy | 用户自定义 |
 | 调仓、选股、仓位 | 系统参数控制 | 由策略代码输出的目标权重控制 |
+| 基准对比 | ✅ 基准净值与超额收益 | ✅ 基准净值与超额收益 |
 | `factor_analysis` | ✅ 有（IC/IR/分层） | ❌ 无 |
 | 因子定义 | 请求中提交因子代码 | 在 `strategy_code` 中定义 |
 

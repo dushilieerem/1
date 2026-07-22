@@ -19,7 +19,10 @@ Factor/libraries/
 ├── technical_lib.py
 ├── volatility_lib.py
 ├── trading_lib.py
-└── alpha_library.py
+├── alpha_library.py
+├── jq_compat_technical.py  # 聚宽兼容技术因子（第一批）
+├── jq_compat_risk.py       # 聚宽兼容风险因子（第一批）
+└── jq_compat_emotion.py    # 聚宽兼容情绪因子
 ```
 
 每个 `.py` 文件包含一个 `FactorLibrary` 子类，每个公开方法为一个因子：

@@ -620,6 +620,7 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
             engine="native",
             initial_capital=req.initial_capital,
             commission_rate=req.commission_rate,
+            stamp_tax=req.stamp_tax,
             slippage_rate=req.slippage_rate,
         )
         bt_engine = get_backtest_engine("native")
@@ -658,6 +659,20 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
 
     drawdowns = _compute_drawdowns(equity) if equity is not None else []
     annual_returns = _compute_annual_returns(equity) if equity is not None else []
+    try:
+        benchmark_equity = _load_benchmark_equity(req.benchmark, equity.index)
+    except Exception as exc:  # noqa: BLE001
+        return StrategyBacktestResponse(
+            error=f"{type(exc).__name__}: {exc}",
+            meta=None,
+        )
+    benchmark_curve = _compute_equity_with_drawdown(benchmark_equity)
+    common_dates = equity.index.intersection(benchmark_equity.index)
+    excess_return = None
+    if len(common_dates):
+        strategy_return = equity.loc[common_dates[-1]] / equity.loc[common_dates[0]] - 1
+        benchmark_return = benchmark_equity.loc[common_dates[-1]] / benchmark_equity.loc[common_dates[0]] - 1
+        excess_return = float(strategy_return - benchmark_return)
 
     positions = None
     if req.include_positions and bt_result.positions is not None:
@@ -670,9 +685,12 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
         annual_returns=annual_returns,
         date_range=DateRange(**date_range_from(equity)),
         final_equity=final_equity,
+        benchmark_curve=benchmark_curve,
+        excess_return=excess_return,
         meta=StrategyBacktestMeta(
             strategy=strategy_class.__name__,
             universe=req.universe,
+            benchmark=req.benchmark,
         ),
         positions=positions,
         error=None,

@@ -59,7 +59,11 @@ class StrategyBacktestRequest(BaseModel):
     universe: str = "CSI500"
     start: Optional[str] = None
     end: Optional[str] = None
+    #: 对比基准
+    benchmark: Literal["CSI300", "CSI500", "CSI1000", "SSE50"] = "CSI300"
     commission_rate: float = 0.0
+    #: 印花税率（仅卖出时按成交额计提）
+    stamp_tax: float = 0.001
     slippage_rate: float = 0.0
     initial_capital: float = 1_000_000.0
     #: 返回持仓权重（前端画持仓图用）
@@ -189,6 +193,7 @@ class StrategyBacktestMeta(BaseModel):
     """策略回测元信息。"""
     strategy: str
     universe: str
+    benchmark: str
 
 
 class FactorBacktestResponse(BaseModel):
@@ -237,6 +242,10 @@ class StrategyBacktestResponse(BaseModel):
     date_range: DateRange = DateRange()
     # 最终净值
     final_equity: Optional[float] = None
+    # 基准净值曲线
+    benchmark_curve: Optional[list[EquityPoint]] = None
+    # 策略相对基准的区间超额收益
+    excess_return: Optional[float] = None
     # 元信息
     meta: Optional[StrategyBacktestMeta] = None
     # 持仓快照（可选）

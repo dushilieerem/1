@@ -223,6 +223,8 @@ def test_strategy_backtest_returns_equity_and_positions(market_data_dir):
         "/api/backtest/strategy",
         json={
             "strategy_code": STRATEGY_CODE,
+            "benchmark": "CSI300",
+            "stamp_tax": 0.001,
             "include_positions": True,
         },
     )
@@ -232,9 +234,12 @@ def test_strategy_backtest_returns_equity_and_positions(market_data_dir):
     assert body["meta"] == {
         "strategy": "EqualWeightMomentum",
         "universe": "CSI500",
+        "benchmark": "CSI300",
     }
     assert body["metrics"]["total_return"] is not None
     assert len(body["equity_curve"]) > 0
+    assert len(body["benchmark_curve"]) > 0
+    assert body["excess_return"] is not None
     assert body["positions"]
 
 
@@ -245,6 +250,16 @@ def test_strategy_backtest_returns_business_error_for_invalid_contract(market_da
     )
     assert response.status_code == 200
     assert "generate_signals" in response.json()["error"]
+
+
+def test_strategy_backtest_returns_business_error_when_benchmark_is_unavailable(market_data_dir):
+    (market_data_dir / "benchmark" / "index_000300.parquet").unlink()
+    response = client.post(
+        "/api/backtest/strategy",
+        json={"strategy_code": STRATEGY_CODE, "benchmark": "CSI300"},
+    )
+    assert response.status_code == 200
+    assert "index_000300.parquet" in response.json()["error"]
 
 
 def test_strategy_backtest_rejects_unknown_fields(market_data_dir):

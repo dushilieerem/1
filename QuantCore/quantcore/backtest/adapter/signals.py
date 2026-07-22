@@ -51,7 +51,8 @@ class BacktestConfig:
     """回测配置（后端无关）。
 
     成本默认 0，与 ``build_factor_portfolio`` 现状（不扣成本）逐位一致；显式给
-    ``commission_rate`` / ``slippage_rate`` 时两个后端都计入。
+    ``commission_rate`` / ``slippage_rate`` 时两个后端都计入；``stamp_tax`` 仅由
+    Native 后端在卖出时计入。
 
     Notes
     -----
@@ -70,6 +71,8 @@ class BacktestConfig:
     min_commission: float = 0.0
     #: 滑点率（按成交额）
     slippage_rate: float = 0.0
+    #: 印花税率（按卖出成交额；仅 Native 支持）
+    stamp_tax: float = 0.0
     #: 频率字符串，vectorbt 年化用（日线默认 ``"1D"``）
     freq: str = "1D"
     #: 年化周期数（日线 252）

@@ -2,10 +2,69 @@
 # 前端读取此文件展示因子列表，提交回测时读取对应 .py 文件内容
 
 version: 1
-updated: 2026-07-20
-total_factors: 610
+updated: 2026-07-22
+total_factors: 668
 
 libraries:
+  jq_compat_emotion:
+    file: jq_compat_emotion.py
+    class: JoinQuantEmotionLibrary
+    description: "聚宽兼容情绪因子（原生复算）"
+    author: SVQuant
+    tags: [joinquant_compatible, emotion]
+    factor_count: 36
+    source_snapshot: "get_all_factors 及因子公式文本导出"
+    verification: implemented
+
+  jq_compat_risk:
+    file: jq_compat_risk.py
+    class: JoinQuantRiskLibrary
+    description: "聚宽兼容风险因子（第一批，原生复算）"
+    author: SVQuant
+    tags: [joinquant_compatible, risk]
+    factor_count: 12
+    source_snapshot: "get_all_factors 文本导出（260 项，待补版本）"
+    verification: implemented
+    factors:
+      - { name: jq_kurtosis20, source_name: Kurtosis20, description: "个股收益的20日峰度" }
+      - { name: jq_kurtosis60, source_name: Kurtosis60, description: "个股收益的60日峰度" }
+      - { name: jq_kurtosis120, source_name: Kurtosis120, description: "个股收益的120日峰度" }
+      - { name: jq_sharpe_ratio_20, source_name: sharpe_ratio_20, description: "20日夏普比率" }
+      - { name: jq_sharpe_ratio_60, source_name: sharpe_ratio_60, description: "60日夏普比率" }
+      - { name: jq_sharpe_ratio_120, source_name: sharpe_ratio_120, description: "120日夏普比率" }
+      - { name: jq_skewness20, source_name: Skewness20, description: "个股收益的20日偏度" }
+      - { name: jq_skewness60, source_name: Skewness60, description: "个股收益的60日偏度" }
+      - { name: jq_skewness120, source_name: Skewness120, description: "个股收益的120日偏度" }
+      - { name: jq_variance20, source_name: Variance20, description: "20日收益方差" }
+      - { name: jq_variance60, source_name: Variance60, description: "60日收益方差" }
+      - { name: jq_variance120, source_name: Variance120, description: "120日收益方差" }
+
+  jq_compat_technical:
+    file: jq_compat_technical.py
+    class: JoinQuantTechnicalLibrary
+    description: "聚宽兼容技术指标（第一批，原生复算）"
+    author: SVQuant
+    tags: [joinquant_compatible, technical]
+    factor_count: 15
+    source_snapshot: "get_all_factors 文本导出（260 项，待补版本）"
+    verification: implemented
+    factors:
+      - { name: jq_boll_down, source_name: boll_down, description: "下轨线（布林线）指标" }
+      - { name: jq_boll_up, source_name: boll_up, description: "上轨线（布林线）指标" }
+      - { name: jq_ema5, source_name: EMA5, description: "5日指数移动均线" }
+      - { name: jq_emac10, source_name: EMAC10, description: "10日指数移动均线" }
+      - { name: jq_emac12, source_name: EMAC12, description: "12日指数移动均线" }
+      - { name: jq_emac20, source_name: EMAC20, description: "20日指数移动均线" }
+      - { name: jq_emac26, source_name: EMAC26, description: "26日指数移动均线" }
+      - { name: jq_emac120, source_name: EMAC120, description: "120日指数移动均线" }
+      - { name: jq_mac5, source_name: MAC5, description: "5日移动均线" }
+      - { name: jq_mac10, source_name: MAC10, description: "10日移动均线" }
+      - { name: jq_mac20, source_name: MAC20, description: "20日移动均线" }
+      - { name: jq_mac60, source_name: MAC60, description: "60日移动均线" }
+      - { name: jq_mac120, source_name: MAC120, description: "120日移动均线" }
+      - { name: jq_macdc, source_name: MACDC, description: "平滑异同移动平均线" }
+      - { name: jq_mfi14, source_name: MFI14, description: "资金流量指标" }
+
   qlib_alpha:
     file: qlib_alpha.py
     class: QlibAlphaLibrary

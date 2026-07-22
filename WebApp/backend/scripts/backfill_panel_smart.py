@@ -4,7 +4,7 @@
 比整组 82 因子全刷快很多。修代码后建议先停掉旧的整组 backfill，再跑本脚本。
 
 用法:
-  conda activate NBquant
+  conda activate SVQuant
   cd /d E:\\quant-lab\\SVQuant\\backend
   python scripts/backfill_panel_smart.py
 """

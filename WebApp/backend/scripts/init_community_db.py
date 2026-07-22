@@ -2,7 +2,7 @@
 """初始化社区 Postgres：建表 + 种子 admin。
 
 用法:
-  conda activate NBquant
+  conda activate SVQuant
   cd /d E:\\quant-lab\\SVQuant\\backend
   python scripts/init_community_db.py
 """

@@ -100,8 +100,9 @@ function FactorRow({
       .then((src) => {
         if (cancelled) return;
         const method = extractMethod(src, factor.methodName || factor.name);
+        // 展示完整 def … 方法（含函数名），与 RE 写法一致
         const fromSrc = formatFactorFormula(method, factor.params);
-        setFormula(fromSrc || factor.formula || method);
+        setFormula(fromSrc || method || factor.formula || "");
       })
       .catch(() => {
         if (!cancelled) setFormula(factor.formula || "");

@@ -6,7 +6,7 @@
 以及库中仍有 error、或成功但 q1 为空的行对应因子。
 
 用法:
-  conda activate NBquant
+  conda activate SVQuant
   cd /d E:\\quant-lab\\SVQuant\\backend
   python scripts/recompute_broken_factors.py
   python scripts/recompute_broken_factors.py --names ep,gap

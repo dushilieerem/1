@@ -3,36 +3,54 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, FlaskConical, Play, Sparkles } from "lucide-react";
 import {
   clearFactorCache,
-  extractEditableBody,
+  extractDefName,
   extractMethod,
   loadFactors,
   loadLibrarySource,
 } from "@/lib/factorCatalog";
 import { authHeaders, getStoredUser } from "@/lib/auth";
 
+function wrapFullDef(name: string, desc: string, bodyLines: string): string {
+  const indented = bodyLines
+    .split("\n")
+    .map((ln) => (ln.trim() ? `    ${ln}` : ln))
+    .join("\n");
+  return `def ${name}(self):\n    """${desc}"""\n${indented}`;
+}
+
 const TEMPLATES = [
   {
     id: "ret5",
     label: "5日收益",
     name: "RET_5D",
-    body: "return self.close.pct_change(5)",
     desc: "近5日涨跌幅",
+    code: wrapFullDef("RET_5D", "近5日涨跌幅", "return self.close.pct_change(5)"),
   },
   {
     id: "ma20",
     label: "20日均线偏离",
     name: "MA_DEV_20",
-    body: "ma = self.close.rolling(20).mean()\nreturn self.close / ma - 1",
     desc: "收盘相对20日均线偏离",
+    code: wrapFullDef(
+      "MA_DEV_20",
+      "收盘相对20日均线偏离",
+      "ma = self.close.rolling(20).mean()\nreturn self.close / ma - 1",
+    ),
   },
   {
     id: "vol20",
     label: "20日波动",
     name: "VOL_20",
-    body: "return self.close.pct_change().rolling(20).std()",
     desc: "20日收益波动率",
+    code: wrapFullDef(
+      "VOL_20",
+      "20日收益波动率",
+      "return self.close.pct_change().rolling(20).std()",
+    ),
   },
 ] as const;
+
+const DEFAULT_CODE = wrapFullDef("RET_5D_DEMO", "5日收益示意", "return self.close.pct_change(5)");
 
 const MODE_TABS = [
   { id: "template" as const, label: "多日收益" },
@@ -68,7 +86,7 @@ export function FactorCustomPage() {
 
   const [name, setName] = useState("RET_5D_DEMO");
   const [description, setDescription] = useState("5日收益示意");
-  const [body, setBody] = useState("return self.close.pct_change(5)");
+  const [body, setBody] = useState(DEFAULT_CODE);
   const [tab, setTab] = useState<(typeof MODE_TABS)[number]["id"]>("free");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(isEdit);
@@ -85,9 +103,14 @@ export function FactorCustomPage() {
 
   useEffect(() => {
     if (!getStoredUser()) {
-      navigate(`/login?next=${encodeURIComponent(isEdit ? `/factor/library/custom/${encodeURIComponent(editName)}` : "/factor/library/custom/new")}`, {
-        replace: true,
-      });
+      navigate(
+        `/login?next=${encodeURIComponent(
+          isEdit
+            ? `/factor/library/custom/${encodeURIComponent(editName)}`
+            : "/factor/library/custom/new",
+        )}`,
+        { replace: true },
+      );
     }
   }, [navigate, isEdit, editName]);
 
@@ -103,11 +126,10 @@ export function FactorCustomPage() {
         if (!meta) throw new Error(`未找到自定义因子：${editName}`);
         const src = await loadLibrarySource(meta.libraryFile);
         const method = extractMethod(src, meta.methodName || editName);
-        const editable = extractEditableBody(method);
         if (cancelled) return;
         setName(editName);
         setDescription(meta.description || meta.explain || editName);
-        setBody(editable || "return self.close.pct_change(5)");
+        setBody(method.trim() || DEFAULT_CODE);
         setTab("free");
         setTestedBody(null);
         setTestedDesc(null);
@@ -123,32 +145,38 @@ export function FactorCustomPage() {
     };
   }, [isEdit, editName]);
 
-  const preview = useMemo(() => {
-    const b = body.trim();
-    if (!b) return "";
-    if (b.includes("def ")) return b;
-    const lines = b
-      .split("\n")
-      .map((ln) => (ln.trim() ? `    ${ln}` : ln))
-      .join("\n");
-    return `def ${name || "my_factor"}(self):\n    """${description || name}"""\n${lines}`;
-  }, [body, name, description]);
+  const defName = useMemo(() => extractDefName(body), [body]);
+  const nameMatch = Boolean(name.trim() && defName && defName === name.trim());
+  const nameMismatchHint = useMemo(() => {
+    const code = name.trim();
+    if (!body.trim()) return null;
+    if (!defName) return "请写完整函数：以 def 函数名(self): 开头";
+    if (!code) return "请填写因子代码";
+    if (defName !== code) return `因子代码「${code}」与 def 函数名「${defName}」不一致`;
+    return null;
+  }, [body, name, defName]);
+
+  const preview = useMemo(() => body.trim(), [body]);
 
   const trialPassed = Boolean(
     testedBody &&
       testedBody === body.trim() &&
       testedDesc != null &&
-      testedDesc === description.trim(),
+      testedDesc === description.trim() &&
+      nameMatch,
   );
+
+  const canTrial = Boolean(body.trim() && name.trim() && nameMatch && !trialBusy);
 
   const applyTemplate = (t: (typeof TEMPLATES)[number]) => {
     if (!isEdit) setName(t.name);
     setDescription(t.desc);
-    setBody(t.body);
+    setBody(t.code);
     setTab(t.id === "ret5" ? "template" : t.id === "ma20" ? "ma" : "vol");
     setTestedBody(null);
     setTestedDesc(null);
     setTrialStats(null);
+    setTrialErr(null);
   };
 
   const onModeTab = (id: (typeof MODE_TABS)[number]["id"]) => {
@@ -159,14 +187,20 @@ export function FactorCustomPage() {
   };
 
   const insertSnippet = (s: string) => {
-    setBody((prev) =>
-      prev.trim() ? `${prev}${s.startsWith(".") ? s : `\n${s}`}` : s.startsWith(".") ? `self.close${s}` : s,
-    );
+    setBody((prev) => {
+      const snippet = s.startsWith(".") ? (prev.includes("self.close") ? s : `self.close${s}`) : s;
+      if (!prev.trim()) return snippet;
+      return `${prev.replace(/\s*$/, "")}\n    ${snippet}`;
+    });
     setTestedBody(null);
     setTestedDesc(null);
   };
 
   const onTrial = async () => {
+    if (nameMismatchHint) {
+      setTrialErr(nameMismatchHint);
+      return;
+    }
     setTrialBusy(true);
     setTrialErr(null);
     setErr(null);
@@ -175,8 +209,8 @@ export function FactorCustomPage() {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
-          body,
-          name: name.trim() || "trial_factor",
+          body: body.trim(),
+          name: name.trim(),
           universe: trialUniverse,
           period: trialPeriod,
         }),
@@ -201,19 +235,26 @@ export function FactorCustomPage() {
       setErr(isEdit ? "请先点「测试」重新试算通过后再保存" : "请先点「测试」试算通过后再提交");
       return;
     }
+    if (nameMismatchHint) {
+      setErr(nameMismatchHint);
+      return;
+    }
     setBusy(true);
     setErr(null);
     setMsg(null);
     try {
-      const res = await fetch(isEdit ? `/api/factor/custom/${encodeURIComponent(editName)}` : "/api/factor/custom", {
-        method: isEdit ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
-          name,
-          body: testedBody || body,
-          description,
-        }),
-      });
+      const res = await fetch(
+        isEdit ? `/api/factor/custom/${encodeURIComponent(editName)}` : "/api/factor/custom",
+        {
+          method: isEdit ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify({
+            name,
+            body: testedBody || body,
+            description,
+          }),
+        },
+      );
       const j = (await res.json()) as { ok?: boolean; error?: string; name?: string };
       if (!res.ok || j.error) throw new Error(j.error || `HTTP ${res.status}`);
       clearFactorCache();
@@ -307,18 +348,24 @@ export function FactorCustomPage() {
               </div>
 
               <label className="block text-xs font-medium text-slate-500">
-                计算表达式
+                完整函数（须含 def，函数名与因子代码一致）
                 <textarea
                   value={body}
                   onChange={(e) => {
                     setBody(e.target.value);
                     setTestedBody(null);
                     setTestedDesc(null);
+                    setTrialErr(null);
                   }}
-                  rows={9}
+                  rows={12}
+                  spellCheck={false}
                   className="mt-1 w-full rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white px-3 py-3 font-mono text-sm outline-none ring-violet-200 focus:ring-2"
                 />
               </label>
+              {nameMismatchHint && <p className="mt-2 text-xs text-amber-700">{nameMismatchHint}</p>}
+              {nameMatch && (
+                <p className="mt-2 text-xs text-emerald-600">函数名与因子代码一致：{defName}</p>
+              )}
             </section>
 
             <section className="flex flex-col gap-4">
@@ -330,8 +377,9 @@ export function FactorCustomPage() {
                   </div>
                   <button
                     type="button"
-                    disabled={trialBusy || !body.trim()}
+                    disabled={!canTrial}
                     onClick={() => void onTrial()}
+                    title={nameMismatchHint || undefined}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                   >
                     <Play className="h-3.5 w-3.5" />
@@ -376,7 +424,7 @@ export function FactorCustomPage() {
                 {trialErr && <p className="mb-2 text-xs text-red-600">{trialErr}</p>}
                 {trialPassed && (
                   <p className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> 试算通过（RE）
+                    <CheckCircle2 className="h-3.5 w-3.5" /> 试算通过
                   </p>
                 )}
                 {trialStats && (

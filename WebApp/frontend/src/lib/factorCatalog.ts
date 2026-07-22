@@ -168,9 +168,19 @@ export function extractReturnExpr(methodSource: string): string {
   return "";
 }
 
+/** 从完整方法源码解析 def 函数名 */
+export function extractDefName(source: string): string | null {
+  const m = source.match(/^\s*def\s+([A-Za-z_]\w*)\s*\(/m);
+  return m ? m[1] : null;
+}
+
 /** 展开公式：优先多行有效语句；并把签名默认参数代入 */
 export function formatFactorFormula(methodSource: string, extraParams?: Record<string, string | number>): string {
   const defaults = { ...parseSignatureDefaults(methodSource), ...(extraParams || {}) };
+  // 完整 def 方法：保留函数头，只做参数替换
+  if (/^\s*def\s+/m.test(methodSource)) {
+    return applyParams(methodSource.trim(), defaults);
+  }
   const lines = methodSource.split(/\r?\n/).slice(1);
   const stmts: string[] = [];
   let inDoc = false;

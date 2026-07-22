@@ -1,6 +1,6 @@
 version: 1
 updated: '2026-07-21'
-total_factors: 84
+total_factors: 86
 libraries:
   custom_lib:
     file: custom_lib.py
@@ -23,6 +23,22 @@ libraries:
       owner_id: 3
       description: 20日收益/20日波动：风险调整动量
       explain: 20日收益/20日波动：风险调整动量
+      params: {}
+      tags:
+      - custom
+    - name: aaaa
+      method_name: u5_aaaa
+      owner_id: 5
+      description: 5日收益示意
+      explain: 5日收益示意
+      params: {}
+      tags:
+      - custom
+    - name: VOL_RATIO_20
+      method_name: u5_VOL_RATIO_20
+      owner_id: 5
+      description: 成交量相对20日均量比
+      explain: 成交量相对20日均量比
       params: {}
       tags:
       - custom

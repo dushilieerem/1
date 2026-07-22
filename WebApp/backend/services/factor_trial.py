@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 
@@ -22,11 +23,13 @@ def trial_via_re(
     code = (body or "").strip()
     if not code:
         raise ValueError("计算表达式不能为空")
-    # 允许只写 return …，补成方法体
     if not code.lstrip().startswith("def "):
-        if "return" not in code:
-            code = f"return {code}"
-        code = f"def {factor_name}(self):\n    \"\"\"trial\"\"\"\n    " + "\n    ".join(code.splitlines())
+        raise ValueError("请写完整函数，例如 def RET_5D_DEMO(self): ...")
+    m = re.search(r"^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", code, flags=re.M)
+    if not m:
+        raise ValueError("无法解析函数名，请检查 def 写法")
+    if m.group(1) != factor_name:
+        raise ValueError(f"因子代码「{factor_name}」须与函数名「{m.group(1)}」一致")
 
     payload = build_factor_backtest_payload(
         factor_code=code,

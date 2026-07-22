@@ -20,7 +20,7 @@ SVQuant/
 
 ## 依赖（仅「自己部署」时需要）
 
-- Python 3.10+（建议 conda 建环境，例如 `conda create -n svquant python=3.11`）
+- Python 3.10+（建议 conda：`conda create -n SVQuant python=3.11`）
 - 本机 Postgres，库名建议 `svquant`（见 `.env.example`）
 - 能访问 `192.168.3.64:9527`（`/api/health` 应返回正常）
 
@@ -31,7 +31,7 @@ cd backend
 copy .env.example .env
 # 编辑 .env：DATABASE_URL / JWT_SECRET / ADMIN_PASSWORD 等（填你自己机器上的库）
 
-conda activate svquant
+conda activate SVQuant
 pip install -r requirements.txt
 python scripts/init_community_db.py
 ```
@@ -41,7 +41,7 @@ python scripts/init_community_db.py
 ```powershell
 # 终端 1 — 后端
 cd backend
-conda activate svquant
+conda activate SVQuant
 python -u api_server.py
 
 # 终端 2 — 前端

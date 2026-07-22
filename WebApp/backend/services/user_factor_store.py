@@ -61,25 +61,27 @@ def resolve_db_user_id(user: dict[str, Any]) -> int:
     return int(row["id"])
 
 
+def _extract_def_name(body: str) -> str | None:
+    m = re.search(r"^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", body or "", flags=re.M)
+    return m.group(1) if m else None
+
+
 def _normalize_body(body: str, name: str, description: str = "") -> str:
     e = (body or "").strip()
     if not e:
         raise ValueError("表达式不能为空")
     doc = (description or name).replace("\\", "\\\\").replace('"""', "'''")
-    if "def " not in e:
+    if not e.lstrip().startswith("def "):
+        # 兼容旧数据：仅函数体时自动包一层
         if "return" not in e:
             e = f"return {e}"
         e = f'def {name}(self):\n    """{doc}"""\n    ' + e.replace("\n", "\n    ")
-    else:
-        # 统一方法名为逻辑名（磁盘写入时再换成 method_name）
-        e = re.sub(
-            rf"^def\s+{re.escape(name)}\s*\(",
-            f"def {name}(",
-            e,
-            count=1,
-            flags=re.M,
-        )
-        e = re.sub(r"^def\s+[A-Za-z_][A-Za-z0-9_]*\s*\(", f"def {name}(", e, count=1, flags=re.M)
+        return e
+    def_name = _extract_def_name(e)
+    if not def_name:
+        raise ValueError("请写完整函数，例如 def RET_5D_DEMO(self): ...")
+    if def_name != name:
+        raise ValueError(f"因子代码「{name}」须与函数名「{def_name}」一致")
     return e
 
 

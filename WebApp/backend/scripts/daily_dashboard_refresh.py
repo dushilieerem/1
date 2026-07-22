@@ -2,7 +2,7 @@
 """SVQuant 因子面板日更：调 YGQuant RE，结果写入本地 SQLite。
 
 用法:
-  conda activate NBquant
+  conda activate SVQuant
   cd /d E:\\quant-lab\\SVQuant\\backend
   python scripts/daily_dashboard_refresh.py
   python scripts/daily_dashboard_refresh.py --combo CSI300:3y

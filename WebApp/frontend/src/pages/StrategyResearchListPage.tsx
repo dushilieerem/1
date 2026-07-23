@@ -1,0 +1,316 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { Pencil, Plus, Trash2 } from "lucide-react";
+import { getStoredUser, subscribeAuth } from "@/lib/auth";
+import {
+  clearStrategyClientCache,
+  createStrategyProject,
+  deleteStrategyProject,
+  listVisibleStrategyProjects,
+  openStrategyInNewTab,
+  saveStrategyProject,
+  type StrategyProject,
+} from "@/lib/strategyStore";
+
+export function StrategyResearchListPage() {
+  const [projects, setProjects] = useState<StrategyProject[]>([]);
+  const [query, setQuery] = useState("");
+  const [nameModal, setNameModal] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [renameTarget, setRenameTarget] = useState<StrategyProject | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameErr, setRenameErr] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<StrategyProject | null>(null);
+  const [createErr, setCreateErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  const refresh = () => {
+    setLoading(true);
+    setErr(null);
+    void listVisibleStrategyProjects()
+      .then(setProjects)
+      .catch((e) => {
+        setProjects([]);
+        setErr(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  useEffect(() => {
+    let lastUid = getStoredUser()?.id ?? null;
+    return subscribeAuth(() => {
+      const uid = getStoredUser()?.id ?? null;
+      if (uid === lastUid) return;
+      lastUid = uid;
+      clearStrategyClientCache();
+      refresh();
+    });
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return projects;
+    return projects.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q),
+    );
+  }, [projects, query]);
+
+  const openCreate = () => {
+    setProjectName("");
+    setCreateErr(null);
+    setNameModal(true);
+  };
+
+  const confirmCreate = () => {
+    const title = projectName.trim();
+    if (!title) {
+      setCreateErr("请填写策略名称");
+      return;
+    }
+    void createStrategyProject(title)
+      .then((p) => {
+        setNameModal(false);
+        setProjectName("");
+        setCreateErr(null);
+        openStrategyInNewTab(p.id);
+        refresh();
+      })
+      .catch((e) => setCreateErr(e instanceof Error ? e.message : String(e)));
+  };
+
+  const openRename = (p: StrategyProject) => {
+    setRenameTarget(p);
+    setRenameValue(p.name);
+    setRenameErr(null);
+  };
+
+  const confirmRename = () => {
+    if (!renameTarget) return;
+    const title = renameValue.trim();
+    if (!title) {
+      setRenameErr("名称不能为空");
+      return;
+    }
+    void saveStrategyProject({
+      ...renameTarget,
+      name: title,
+      description: title,
+    })
+      .then(() => {
+        setRenameTarget(null);
+        setRenameValue("");
+        setRenameErr(null);
+        refresh();
+      })
+      .catch((e) => setRenameErr(e instanceof Error ? e.message : String(e)));
+  };
+
+  return (
+    <div className="min-h-[calc(100vh-4rem)] bg-slate-50/80">
+      <div className="mx-auto max-w-[1200px] px-6 py-8">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">策略研究</h1>
+            <p className="mt-1 text-sm text-slate-600">
+              新建策略后配置参数并回测
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={openCreate}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" />
+            新建策略
+          </button>
+        </div>
+
+        <div className="mb-4">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索策略名称…"
+            className="w-full max-w-md rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200"
+          />
+        </div>
+
+        {err && <p className="mb-3 text-sm text-red-600">{err}</p>}
+        {loading && <p className="mb-3 text-sm text-slate-400">加载中…</p>}
+
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-slate-100 bg-slate-50 text-xs text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">策略名称</th>
+                <th className="px-4 py-3 font-medium">最后修改</th>
+                <th className="px-4 py-3 font-medium">回测次数</th>
+                <th className="px-4 py-3 text-right font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filtered.map((p) => (
+                <tr key={p.id} className="hover:bg-slate-50/80">
+                  <td className="px-4 py-3 font-medium text-slate-900">{p.name}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-600">
+                    {p.updatedAt?.replace("T", " ").slice(0, 19)}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums text-slate-700">{p.runCount}</td>
+                  <td className="px-4 py-3 text-right text-xs">
+                    <button
+                      type="button"
+                      className="mr-3 font-medium text-blue-600 hover:underline"
+                      onClick={() => openStrategyInNewTab(p.id)}
+                    >
+                      回测
+                    </button>
+                    <Link
+                      to={`/strategy/research/${p.id}/history`}
+                      className="mr-3 font-medium text-blue-600 hover:underline"
+                    >
+                      历史
+                    </Link>
+                    <button
+                      type="button"
+                      className="mr-3 inline-flex align-middle text-slate-400 hover:text-blue-600"
+                      onClick={() => openRename(p)}
+                      title="改名"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex text-slate-400 hover:text-red-600"
+                      onClick={() => setDeleteTarget(p)}
+                      title="删除"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {!filtered.length && !loading && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-16 text-center text-slate-400">
+                    暂无策略，点击「新建策略」开始
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {nameModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="text-lg font-bold text-slate-900">新建策略</h2>
+            <input
+              autoFocus
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmCreate();
+              }}
+              placeholder="策略名称"
+              className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200"
+            />
+            {createErr && <p className="mt-2 text-sm text-red-600">{createErr}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setNameModal(false)}
+                className="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={confirmCreate}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                创建
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {renameTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="text-lg font-bold text-slate-900">重命名策略</h2>
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmRename();
+              }}
+              placeholder="策略名称"
+              className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200"
+            />
+            {renameErr && <p className="mt-2 text-sm text-red-600">{renameErr}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRenameTarget(null)}
+                className="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={confirmRename}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+            <p className="text-sm text-slate-700">
+              确认删除「{deleteTarget.name}」？回测记录将一并删除。
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void deleteStrategyProject(deleteTarget.id)
+                    .then(() => {
+                      setDeleteTarget(null);
+                      refresh();
+                    })
+                    .catch((e) =>
+                      window.alert(e instanceof Error ? e.message : String(e)),
+                    );
+                }}
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   BarChart2,
   ChevronDown,
@@ -13,8 +13,9 @@ import {
   X,
 } from "lucide-react";
 import { FactorFormula } from "@/components/FactorFormula";
-import { authHeaders, getStoredUser, subscribeAuth } from "@/lib/auth";
+import { authHeaders, getStoredUser, prepareAuthHandoff, subscribeAuth } from "@/lib/auth";
 import {
+  DYNAMIC_FACTOR_LIBS,
   FILTER_TABS,
   LABELS,
   clearFactorCache,
@@ -24,7 +25,7 @@ import {
   loadLibrarySource,
   type FactorMeta,
 } from "@/lib/factorCatalog";
-import { openOrCreateForFactor } from "@/lib/detectStore";
+import { openOrCreateForFactor, openDetectInNewTab } from "@/lib/detectStore";
 
 const PAGE_SIZE = 15;
 
@@ -36,6 +37,10 @@ const TAB_ACTIVE: Record<string, string> = {
   "波动/风险": "bg-amber-600 text-white shadow-md shadow-amber-200",
   "量价/成交": "bg-orange-600 text-white shadow-md shadow-orange-200",
   自定义: "bg-emerald-600 text-white shadow-md shadow-emerald-200",
+  聚宽情绪: "bg-rose-600 text-white shadow-md shadow-rose-200",
+  聚宽风险: "bg-red-700 text-white shadow-md shadow-red-200",
+  聚宽技术: "bg-fuchsia-600 text-white shadow-md shadow-fuchsia-200",
+  Qlib特征: "bg-indigo-600 text-white shadow-md shadow-indigo-200",
 };
 
 const ROW_ACCENT: Record<string, string> = {
@@ -45,6 +50,10 @@ const ROW_ACCENT: Record<string, string> = {
   "波动/风险": "border-l-amber-500",
   "量价/成交": "border-l-orange-500",
   自定义: "border-l-emerald-500",
+  聚宽情绪: "border-l-rose-500",
+  聚宽风险: "border-l-red-600",
+  聚宽技术: "border-l-fuchsia-500",
+  Qlib特征: "border-l-indigo-500",
 };
 
 const ROW_BADGE: Record<string, string> = {
@@ -54,6 +63,10 @@ const ROW_BADGE: Record<string, string> = {
   "波动/风险": "bg-amber-50 text-amber-800",
   "量价/成交": "bg-orange-50 text-orange-700",
   自定义: "bg-emerald-50 text-emerald-700",
+  聚宽情绪: "bg-rose-50 text-rose-700",
+  聚宽风险: "bg-red-50 text-red-800",
+  聚宽技术: "bg-fuchsia-50 text-fuchsia-700",
+  Qlib特征: "bg-indigo-50 text-indigo-700",
 };
 
 const COUNT_PILL: Record<string, string> = {
@@ -63,6 +76,10 @@ const COUNT_PILL: Record<string, string> = {
   "波动/风险": "text-amber-700",
   "量价/成交": "text-orange-600",
   自定义: "text-emerald-600",
+  聚宽情绪: "text-rose-600",
+  聚宽风险: "text-red-700",
+  聚宽技术: "text-fuchsia-600",
+  Qlib特征: "text-indigo-600",
 };
 
 function pageNumbers(current: number, total: number): (number | "…")[] {
@@ -86,7 +103,6 @@ function FactorRow({
   onToggle: () => void;
   onDeleted?: () => void;
 }) {
-  const navigate = useNavigate();
   const isCustom = factor.library === "custom_lib";
   const accent = ROW_ACCENT[factor.libraryLabel] ?? "border-l-slate-300";
   const badge = ROW_BADGE[factor.libraryLabel] ?? "bg-slate-100 text-slate-600";
@@ -96,6 +112,12 @@ function FactorRow({
   useEffect(() => {
     if (!expanded) return;
     let cancelled = false;
+    if (DYNAMIC_FACTOR_LIBS.has(factor.library)) {
+      setFormula(
+        `# ${factor.description}\n# 动态注册特征（${factor.libraryFile}）；检测时由 RE library_name=qlib_alpha 加载`,
+      );
+      return;
+    }
     void loadLibrarySource(factor.libraryFile)
       .then((src) => {
         if (cancelled) return;
@@ -105,7 +127,7 @@ function FactorRow({
         setFormula(fromSrc || method || factor.formula || "");
       })
       .catch(() => {
-        if (!cancelled) setFormula(factor.formula || "");
+        if (!cancelled) setFormula(factor.formula || factor.description || "");
       });
     return () => {
       cancelled = true;
@@ -115,7 +137,7 @@ function FactorRow({
   const onDetect = (e: React.MouseEvent) => {
     e.stopPropagation();
     void openOrCreateForFactor(factor.name, factor.description).then((p) => {
-      navigate(`/factor/detect/${p.id}`);
+      openDetectInNewTab(p.id);
     });
   };
 
@@ -315,6 +337,9 @@ export function FactorLibraryPage() {
               </Link>
               <Link
                 to="/factor/detect"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => prepareAuthHandoff()}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-800"
               >
                 <BarChart2 className="h-4 w-4" />

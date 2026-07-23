@@ -2,7 +2,6 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Eye, MessageCircle, Star } from "lucide-react";
 import {
-  excerpt,
   formatPostTime,
   sectionBar,
   type CommunityPost,
@@ -164,9 +163,6 @@ export function PostListItem({
           {post.title}
         </h2>
       </div>
-      <p className="mt-2.5 line-clamp-2 text-sm leading-relaxed text-slate-500">
-        {excerpt(post.body || post.code_snippet || "", 160)}
-      </p>
       <div className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
         {showAuthor && (
           <span className="inline-flex items-center gap-1.5 text-slate-500">

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactECharts from "echarts-for-react";
 import {
   Activity,
@@ -8,9 +8,12 @@ import {
   Clock,
   Layers,
   LineChart,
+  Share2,
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
+import { getStoredUser } from "@/lib/auth";
+import { buildFactorDetectShareDraft } from "@/lib/communityShare";
 import {
   CHART,
   QUANTILE_PALETTE,
@@ -154,6 +157,7 @@ function mddMarkLine(troughDate: string) {
 
 export function FactorDetectReportPage() {
   const { runId = "" } = useParams();
+  const navigate = useNavigate();
   const [rec, setRec] = useState<DetectRunRecord | null | undefined>(() =>
     runId ? peekRun(runId) ?? undefined : undefined,
   );
@@ -528,6 +532,24 @@ export function FactorDetectReportPage() {
         ? `${result.date_range.start} ~ ${result.date_range.end}`
         : "—";
 
+  const shareToCommunity = () => {
+    const next = `/community/new?section=factor`;
+    if (!getStoredUser()) {
+      navigate(`/login?next=${encodeURIComponent(next)}`);
+      return;
+    }
+    const draft = buildFactorDetectShareDraft({
+      name: rec.description || "因子检测",
+      rangeLabel,
+      universeLabel: optionLabel(req?.universe || "", DETECT_UNIVERSE_OPTIONS),
+      benchmarkLabel: optionLabel(req?.benchmark || "", DETECT_BENCHMARK_OPTIONS),
+      metrics: result?.metrics,
+      excessReturn: result?.excess_return,
+      factorCode: req?.factor_code,
+    });
+    navigate(next, { state: draft });
+  };
+
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-slate-50 to-white">
       {/* 顶栏：标题 + 元信息卡片（对齐 NBQuant） */}
@@ -545,14 +567,29 @@ export function FactorDetectReportPage() {
               {" / 检测报告"}
             </p>
             <h1 className="mt-0.5 text-lg font-bold text-slate-900">{rec.description}</h1>
-            <p className="font-mono text-xs text-slate-500">{rec.factorName}</p>
+            {rec.factorName &&
+            rec.factorName !== "combo_factor" &&
+            rec.factorName !== "custom_combo" &&
+            rec.factorName !== rec.description ? (
+              <p className="font-mono text-xs text-slate-500">{rec.factorName}</p>
+            ) : null}
           </div>
-          <Link
-            to={`/factor/detect/${rec.projectId}/history`}
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
-          >
-            检测列表
-          </Link>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={shareToCommunity}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              分享到社区
+            </button>
+            <Link
+              to={`/factor/detect/${rec.projectId}/history`}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+            >
+              检测列表
+            </Link>
+          </div>
         </div>
 
         <div className="mx-auto grid max-w-[1400px] grid-cols-2 gap-2 px-6 pb-3 sm:grid-cols-3 lg:grid-cols-5">

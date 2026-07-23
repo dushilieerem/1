@@ -11,7 +11,7 @@ from quantcore import FactorLibrary
 class TechnicalLib(FactorLibrary):
     """技术因子集合。"""
 
-    author = "YGQuant"
+    author = "SVQuant"
 
     # ==================== 均线 ====================
 
@@ -93,8 +93,8 @@ class TechnicalLib(FactorLibrary):
         dif = ema_fast - ema_slow
         dea = dif.ewm(span=signal).mean()
         hist = dif - dea
-        # raw=True 时窗口是 ndarray，不能用 .iloc
-        return hist.rolling(2).apply(lambda x: float(x[-1] - x[0]), raw=True)
+        cross = hist.rolling(2).apply(lambda x: x.iloc[-1] - x.iloc[0], raw=True)
+        return cross
 
     # ==================== 布林带 ====================
 
@@ -137,12 +137,8 @@ class TechnicalLib(FactorLibrary):
         return k.rolling(k_smooth).mean()
 
     def stoch_rsi(self, window: int = 14):
-        """随机 RSI（单方法自包含，不依赖 self.rsi_14）。"""
-        delta = self.close.diff()
-        gain = delta.clip(lower=0).rolling(window).mean()
-        loss = -delta.clip(upper=0).rolling(window).mean()
-        rs = gain / (loss + 1e-10)
-        rsi = 100 - 100 / (1 + rs)
+        """随机 RSI。"""
+        rsi = self.rsi_14(window=window)
         hh = rsi.rolling(window).max()
         ll = rsi.rolling(window).min()
         return (rsi - ll) / (hh - ll + 1e-10)

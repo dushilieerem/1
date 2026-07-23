@@ -11,6 +11,8 @@ export type AuthUser = {
 
 const TOKEN_KEY = "svquant_token";
 const USER_KEY = "svquant_user";
+/** 新标签打开检测页时的短暂鉴权交接（localStorage，用完即删） */
+const HANDOFF_KEY = "svquant_auth_handoff";
 
 type AuthListener = () => void;
 const listeners = new Set<AuthListener>();
@@ -19,6 +21,7 @@ const listeners = new Set<AuthListener>();
  * 登录态放在 sessionStorage：每个浏览器标签页独立账号。
  * 多开标签测 admin/max/maruixiang 时不会互相覆盖 token，
  * 也不会出现「顶栏显示 A、请求却用 B 的令牌」。
+ * 新开「检测」标签通过 prepareAuthHandoff 短时交接，无需重新登录。
  */
 function authStore(): Storage {
   return sessionStorage;
@@ -46,8 +49,46 @@ function migrateAuthFromLocalStorage() {
   }
 }
 
-migrateAuthFromLocalStorage();
+/** 消费新标签交接包：写入本标签 sessionStorage 后删除 */
+function consumeAuthHandoff() {
+  try {
+    if (sessionStorage.getItem(TOKEN_KEY)) {
+      localStorage.removeItem(HANDOFF_KEY);
+      return;
+    }
+    const raw = localStorage.getItem(HANDOFF_KEY);
+    if (!raw) return;
+    localStorage.removeItem(HANDOFF_KEY);
+    const data = JSON.parse(raw) as { token?: string; user?: string; t?: number };
+    if (!data.token || !data.user) return;
+    if (data.t != null && Date.now() - data.t > 60_000) return;
+    sessionStorage.setItem(TOKEN_KEY, data.token);
+    sessionStorage.setItem(USER_KEY, data.user);
+  } catch {
+    /* ignore */
+  }
+}
 
+migrateAuthFromLocalStorage();
+consumeAuthHandoff();
+
+/**
+ * 打开新标签前调用：把当前登录态短时写入 localStorage，
+ * 新标签启动时 consumeAuthHandoff 读入，避免重新登录。
+ */
+export function prepareAuthHandoff() {
+  try {
+    const token = sessionStorage.getItem(TOKEN_KEY);
+    const user = sessionStorage.getItem(USER_KEY);
+    if (!token || !user) return;
+    localStorage.setItem(
+      HANDOFF_KEY,
+      JSON.stringify({ token, user, t: Date.now() }),
+    );
+  } catch {
+    /* ignore */
+  }
+}
 function notify() {
   listeners.forEach((fn) => fn());
 }

@@ -12,19 +12,18 @@
 ## 2. 存储结构
 
 ```text
-factor/
+Factor/libraries/
 ├── index.yaml                 # 因子索引与元数据
-├── custom_lib.py              # 自定义因子同步产物（方法名 u{user_id}_{name}）
 ├── momentum_lib.py            # 因子库
 ├── value_lib.py
 ├── technical_lib.py
 ├── volatility_lib.py
 ├── trading_lib.py
-└── alpha_library.py
+├── alpha_library.py
+├── jq_compat_technical.py  # 聚宽兼容技术因子（第一批）
+├── jq_compat_risk.py       # 聚宽兼容风险因子（第一批）
+└── jq_compat_emotion.py    # 聚宽兼容情绪因子
 ```
-
-**自定义因子：** Postgres 表 `user_custom_factors` 为权威（按 `user_id` 隔离）；
-`custom_lib.py` / `index.yaml` 的 `owner_id` + `method_name` 为同步产物。API 列表/源码只返回当前用户；面板批跑跳过 `custom_lib`。
 
 每个 `.py` 文件包含一个 `FactorLibrary` 子类，每个公开方法为一个因子：
 

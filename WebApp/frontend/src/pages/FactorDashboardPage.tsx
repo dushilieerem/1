@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   ArrowUpDown,
   BarChart3,
@@ -11,7 +11,7 @@ import {
   Zap,
 } from "lucide-react";
 import { LABELS } from "@/lib/factorCatalog";
-import { openOrCreateForFactor } from "@/lib/detectStore";
+import { openOrCreateForFactor, openDetectInNewTab } from "@/lib/detectStore";
 
 type PeriodKey = "3m" | "1y" | "3y";
 type SortKey =
@@ -115,7 +115,6 @@ function StatCard({
 }
 
 export function FactorDashboardPage() {
-  const navigate = useNavigate();
   const [universe, setUniverse] = useState("CSI300");
   const [period, setPeriod] = useState<PeriodKey>("3y");
   const [filterUp, setFilterUp] = useState(true);
@@ -552,7 +551,7 @@ export function FactorDashboardPage() {
                             void openOrCreateForFactor(
                               r.factor_name,
                               r.name_cn || r.factor_name,
-                            ).then((p) => navigate(`/factor/detect/${p.id}`));
+                            ).then((p) => openDetectInNewTab(p.id));
                           }}
                           className="text-xs font-semibold text-red-600 opacity-0 transition group-hover:opacity-100 hover:text-red-700"
                         >

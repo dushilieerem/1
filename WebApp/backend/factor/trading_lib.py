@@ -11,7 +11,7 @@ from quantcore import FactorLibrary
 class TradingLib(FactorLibrary):
     """量价因子集合。"""
 
-    author = "YGQuant"
+    author = "SVQuant"
 
     # ==================== 成交量 ====================
 

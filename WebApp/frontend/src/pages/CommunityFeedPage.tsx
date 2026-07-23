@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Bookmark, PenLine, UserRound } from "lucide-react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { PenLine, Search } from "lucide-react";
 import { getStoredUser } from "@/lib/auth";
 import {
   SECTION_META,
   listCommunityPosts,
   listHotPosts,
   type CommunityPost,
+  type CommunityPostSort,
 } from "@/lib/communityApi";
 import {
   CommunityPageShell,
@@ -17,21 +18,82 @@ import {
   SectionDot,
 } from "@/components/community/communityUi";
 
-/** 社区 Feed：主栏列表 + 右侧热门 */
+const VALID_SECTIONS = new Set(SECTION_META.map((s) => s.id));
+
+const SORT_OPTIONS: { id: CommunityPostSort; label: string }[] = [
+  { id: "views", label: "浏览数最多" },
+  { id: "favorites", label: "收藏数最多" },
+  { id: "newest", label: "最新发布" },
+];
+
+function normalizeSection(raw: string | null): string {
+  if (!raw || !VALID_SECTIONS.has(raw as (typeof SECTION_META)[number]["id"])) {
+    return "all";
+  }
+  return raw;
+}
+
+function normalizeSort(raw: string | null): CommunityPostSort {
+  if (raw === "favorites" || raw === "newest" || raw === "views") return raw;
+  return "views";
+}
+
+/** 社区 Feed：主栏列表 + 右侧热门；分区 / 搜索 / 排序经 URL 同步 */
 export function CommunityFeedPage() {
   const navigate = useNavigate();
-  const [section, setSection] = useState<string>("all");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const section = normalizeSection(searchParams.get("section"));
+  const sort = normalizeSort(searchParams.get("sort"));
+  const qFromUrl = (searchParams.get("q") || "").trim();
+  const [qDraft, setQDraft] = useState(qFromUrl);
   const [items, setItems] = useState<CommunityPost[]>([]);
   const [hot, setHot] = useState<CommunityPost[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
+  const sectionLabel =
+    SECTION_META.find((s) => s.id === section)?.label ?? "全部";
+
+  useEffect(() => {
+    setQDraft(qFromUrl);
+  }, [qFromUrl]);
+
+  const writeParams = (
+    nextSection: string,
+    nextQ: string,
+    nextSort: CommunityPostSort = sort,
+  ) => {
+    const params: Record<string, string> = {};
+    if (nextSection !== "all") params.section = nextSection;
+    const qq = nextQ.trim();
+    if (qq) params.q = qq;
+    if (nextSort !== "views") params.sort = nextSort;
+    setSearchParams(params, { replace: true });
+  };
+
+  const setSection = (id: string) => {
+    writeParams(normalizeSection(id), qFromUrl, sort);
+  };
+
+  const setSort = (id: CommunityPostSort) => {
+    writeParams(section, qFromUrl, id);
+  };
+
+  const submitSearch = (raw?: string) => {
+    writeParams(section, (raw ?? qDraft).trim(), sort);
+  };
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setErr(null);
-    void listCommunityPosts({ section, limit: 50 })
+    void listCommunityPosts({
+      section,
+      q: qFromUrl || undefined,
+      sort,
+      limit: 50,
+    })
       .then((data) => {
         if (cancelled) return;
         setItems(data.items);
@@ -49,13 +111,18 @@ export function CommunityFeedPage() {
     return () => {
       cancelled = true;
     };
-  }, [section]);
+  }, [section, qFromUrl, sort]);
 
   useEffect(() => {
     let cancelled = false;
-    void listHotPosts(10)
+    void listHotPosts(10, section)
       .then((data) => {
-        if (!cancelled) setHot(data.items);
+        if (cancelled) return;
+        const list =
+          section === "all"
+            ? data.items
+            : data.items.filter((p) => p.section === section);
+        setHot(list);
       })
       .catch(() => {
         if (!cancelled) setHot([]);
@@ -63,11 +130,14 @@ export function CommunityFeedPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [section]);
 
   const officialPinned = useMemo(
-    () => (section === "all" ? items.filter((p) => p.section === "official").slice(0, 5) : []),
-    [items, section],
+    () =>
+      section === "all" && !qFromUrl
+        ? items.filter((p) => p.section === "official").slice(0, 5)
+        : [],
+    [items, section, qFromUrl],
   );
 
   const feedItems = useMemo(() => {
@@ -81,7 +151,11 @@ export function CommunityFeedPage() {
       navigate(`/login?next=${encodeURIComponent("/community/new")}`);
       return;
     }
-    navigate("/community/new");
+    const next =
+      section !== "all"
+        ? `/community/new?section=${encodeURIComponent(section)}`
+        : "/community/new";
+    navigate(next);
   };
 
   return (
@@ -89,33 +163,15 @@ export function CommunityFeedPage() {
       <div className="border-b border-slate-200/80 bg-white/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-[1180px] flex-col gap-5 px-5 py-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex min-w-0 flex-1 flex-col gap-4">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <p className="text-xs font-medium tracking-wide text-red-500/90">
-                  COMMUNITY
-                </p>
-                <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
-                  SVQuant 社区
-                </h1>
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs">
-                <Link
-                  to="/community/favorites"
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-                >
-                  <Bookmark className="h-3.5 w-3.5" />
-                  收藏
-                </Link>
-                <Link
-                  to="/community/mine"
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-                >
-                  <UserRound className="h-3.5 w-3.5" />
-                  我的
-                </Link>
-              </div>
+            <div>
+              <p className="text-xs font-medium tracking-wide text-red-500/90">
+                COMMUNITY
+              </p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+                SVQuant 社区
+              </h1>
             </div>
-            <nav className="flex flex-wrap items-center gap-1">
+            <nav className="flex flex-wrap items-center gap-1" aria-label="社区分区">
               {SECTION_META.map((s) => {
                 const active = section === s.id;
                 return (
@@ -123,6 +179,7 @@ export function CommunityFeedPage() {
                     key={s.id}
                     type="button"
                     onClick={() => setSection(s.id)}
+                    aria-current={active ? "page" : undefined}
                     className={`relative rounded-lg px-3 py-2 text-sm transition ${
                       active
                         ? "font-semibold text-red-600"
@@ -139,6 +196,42 @@ export function CommunityFeedPage() {
                 );
               })}
             </nav>
+            <form
+              className="flex max-w-xl items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                submitSearch();
+              }}
+            >
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={qDraft}
+                  onChange={(e) => setQDraft(e.target.value)}
+                  placeholder="搜索标题、正文或代码…"
+                  className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-red-300 focus:ring-2 focus:ring-red-100"
+                />
+              </div>
+              <button
+                type="submit"
+                className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                搜索
+              </button>
+              {qFromUrl ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQDraft("");
+                    writeParams(section, "", sort);
+                  }}
+                  className="shrink-0 rounded-lg px-2 py-2 text-sm text-slate-500 transition hover:text-slate-800"
+                >
+                  清除
+                </button>
+              ) : null}
+            </form>
           </div>
           <PrimaryButton onClick={goNew} className="shrink-0 self-start lg:self-auto">
             <PenLine className="h-4 w-4" />
@@ -184,8 +277,37 @@ export function CommunityFeedPage() {
           )}
 
           <CommunityPanel>
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
-              <span className="text-sm font-semibold text-slate-800">最新发布</span>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-3">
+              <div className="flex min-w-0 flex-wrap items-center gap-3">
+                {qFromUrl || section !== "all" ? (
+                  <span className="text-sm font-semibold text-slate-800">
+                    {qFromUrl ? `搜索「${qFromUrl}」` : sectionLabel}
+                  </span>
+                ) : null}
+                <div
+                  className="flex items-center gap-1 rounded-lg bg-slate-50 p-0.5"
+                  role="group"
+                  aria-label="帖子排序"
+                >
+                  {SORT_OPTIONS.map((opt) => {
+                    const active = sort === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setSort(opt.id)}
+                        className={`rounded-md px-2.5 py-1 text-xs transition ${
+                          active
+                            ? "bg-white font-medium text-slate-800 shadow-sm"
+                            : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <span className="text-xs text-slate-400">
                 {loading ? "加载中…" : `共 ${total} 篇`}
               </span>
@@ -193,11 +315,48 @@ export function CommunityFeedPage() {
 
             {!loading && !err && feedItems.length === 0 && (
               <div className="px-5 py-20 text-center">
-                <p className="text-lg font-semibold text-slate-800">还没有帖子</p>
-                <p className="mt-1.5 text-sm text-slate-500">分享一条策略思路或因子笔记吧</p>
-                <PrimaryButton onClick={goNew} className="mt-6">
-                  写第一帖
-                </PrimaryButton>
+                <p className="text-lg font-semibold text-slate-800">
+                  {qFromUrl
+                    ? "没有匹配的帖子"
+                    : section === "all"
+                      ? "还没有帖子"
+                      : `「${sectionLabel}」暂无帖子`}
+                </p>
+                <p className="mt-1.5 text-sm text-slate-500">
+                  {qFromUrl
+                    ? "换个关键词试试，或清除搜索看全部"
+                    : section === "all"
+                      ? "分享一条策略思路或因子笔记吧"
+                      : "换个分区看看，或发一篇到本分区"}
+                </p>
+                <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                  {qFromUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQDraft("");
+                        writeParams(section, "", sort);
+                      }}
+                      className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
+                    >
+                      清除搜索
+                    </button>
+                  ) : null}
+                  {section !== "all" && !qFromUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setSection("all")}
+                      className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
+                    >
+                      查看全部
+                    </button>
+                  )}
+                  {!qFromUrl && (
+                    <PrimaryButton onClick={goNew}>
+                      {section === "all" ? "写第一帖" : "发到本分区"}
+                    </PrimaryButton>
+                  )}
+                </div>
               </div>
             )}
 
@@ -214,7 +373,9 @@ export function CommunityFeedPage() {
         <aside className="space-y-4 animate-fade-up stagger-1">
           <CommunityPanel className="p-4">
             <h2 className="text-sm font-bold tracking-tight text-slate-900">热门帖子</h2>
-            <p className="mt-0.5 text-[11px] text-slate-400">按浏览量</p>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              {section === "all" ? "全站 · 按浏览量" : `${sectionLabel} · 按浏览量`}
+            </p>
             <ol className="mt-4 space-y-3">
               {hot.length === 0 && (
                 <li className="text-xs text-slate-400">暂无数据</li>

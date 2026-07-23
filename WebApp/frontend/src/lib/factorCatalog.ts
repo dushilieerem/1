@@ -23,9 +23,16 @@ export const LABELS: Record<string, string> = {
   technical_lib: "技术指标",
   volatility_lib: "波动/风险",
   trading_lib: "量价/成交",
+  jq_compat_emotion: "聚宽情绪",
+  jq_compat_risk: "聚宽风险",
+  jq_compat_technical: "聚宽技术",
+  qlib_alpha: "Qlib特征",
 };
 
 export const FILTER_TABS = ["全部", ...Object.values(LABELS)] as const;
+
+/** 动态注册、无法从 .py 静态抽取方法体的库（检测走 RE library_name） */
+export const DYNAMIC_FACTOR_LIBS = new Set(["qlib_alpha"]);
 
 let cache: FactorMeta[] | null = null;
 
@@ -49,6 +56,7 @@ export async function loadFactors(force = false): Promise<FactorMeta[]> {
           description?: string;
           explain?: string;
           formula?: string;
+          source_name?: string;
           params?: Record<string, string | number>;
           tags?: string[];
         }>;
@@ -58,7 +66,7 @@ export async function loadFactors(force = false): Promise<FactorMeta[]> {
   const out: FactorMeta[] = [];
   for (const [key, lib] of Object.entries(raw.libraries || {})) {
     for (const f of lib.factors || []) {
-      const desc = f.description || f.name;
+      const desc = f.description || f.source_name || f.name;
       const params = f.params || {};
       const explainRaw = f.explain || desc;
       out.push({

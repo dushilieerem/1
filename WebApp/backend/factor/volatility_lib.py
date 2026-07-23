@@ -11,7 +11,7 @@ from quantcore import FactorLibrary
 class VolatilityLib(FactorLibrary):
     """波动率因子集合。"""
 
-    author = "YGQuant"
+    author = "SVQuant"
 
     # ==================== 历史波动率 ====================
 
@@ -50,20 +50,10 @@ class VolatilityLib(FactorLibrary):
 
     def cvar_5(self, window: int = 20):
         """CVaR 5%：条件风险价值（最差 5% 收益的均值）。"""
-        import numpy as np
-
         ret = self.close.pct_change()
-
-        def _cvar(x):
-            arr = np.asarray(x, dtype=float)
-            arr = arr[np.isfinite(arr)]
-            if arr.size == 0:
-                return np.nan
-            q = np.nanquantile(arr, 0.05)
-            tail = arr[arr <= q]
-            return float(np.nanmean(tail)) if tail.size else np.nan
-
-        return ret.rolling(window).apply(_cvar, raw=True)
+        return ret.rolling(window).apply(
+            lambda x: x[x < x.quantile(0.05)].mean(), raw=True
+        )
 
     def max_drawdown_20d(self, window: int = 20):
         """20 日最大回撤。"""
@@ -101,6 +91,5 @@ class VolatilityLib(FactorLibrary):
         return (self.high - self.low) / self.open
 
     def gap(self):
-        """跳空：（开盘价 - 昨收）/ 昨收。"""
-        prev_close = self.close.shift(1)
-        return self.open / prev_close - 1
+        """跳空：（开盘价 - 前收盘价）/ 前收盘价。"""
+        return self.open / self.pre_close - 1

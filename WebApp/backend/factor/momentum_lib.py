@@ -11,7 +11,7 @@ from quantcore import FactorLibrary
 class MomentumLib(FactorLibrary):
     """动量因子集合。"""
 
-    author = "YGQuant"
+    author = "SVQuant"
 
     # ==================== 简单动量 ====================
 

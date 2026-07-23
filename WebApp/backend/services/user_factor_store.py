@@ -407,8 +407,10 @@ def delete_user_factor(user_id: int, name: str) -> dict[str, Any]:
 
 
 def filtered_index_yaml(owner_id: int | None) -> str:
-    """公共库全量；custom_lib 仅当前用户（未登录则空）。"""
-    index = _load_index()
+    """公共库全量；custom_lib 仅当前用户（未登录则空）。缺 factors 的库自动展开。"""
+    from services.factor_catalog_expand import expand_index
+
+    index = expand_index(_load_index())
     libs = index.get("libraries") or {}
     custom = libs.get("custom_lib")
     if custom is not None:
@@ -422,7 +424,6 @@ def filtered_index_yaml(owner_id: int | None) -> str:
             }
         libs = {**libs, "custom_lib": custom}
         index = {**index, "libraries": libs}
-        # 重算 total
         index["total_factors"] = sum(
             len((lib or {}).get("factors") or []) for lib in libs.values()
         )

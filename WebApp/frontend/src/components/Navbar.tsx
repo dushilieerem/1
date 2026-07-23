@@ -9,6 +9,7 @@ import {
   logout,
   subscribeAuth,
 } from "@/lib/auth";
+import { unreadNotificationCount } from "@/lib/communityApi";
 
 function isFactorRoute(pathname: string) {
   return pathname === "/factor" || pathname.startsWith("/factor/");
@@ -114,6 +115,20 @@ function UserMenu({ user }: { user: AuthUser }) {
                 {user.role === "admin" ? "管理员" : "用户"} · {user.username}
               </div>
               <Link
+                to="/community/me"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                个人中心
+              </Link>
+              <Link
+                to="/community/messages"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                消息
+              </Link>
+              <Link
                 to="/community/mine"
                 onClick={() => setOpen(false)}
                 className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
@@ -133,7 +148,6 @@ function UserMenu({ user }: { user: AuthUser }) {
                 onClick={() => {
                   setOpen(false);
                   logout();
-                  // 整页回首页，清掉内存里的检测列表
                   window.location.assign("/");
                 }}
               >
@@ -153,6 +167,7 @@ export function Navbar() {
   const factorActive = isFactorRoute(pathname);
   const strategyActive = isStrategyRoute(pathname);
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
+  const [unread, setUnread] = useState(0);
 
   useEffect(() => {
     const unsub = subscribeAuth(() => setUser(getStoredUser()));
@@ -167,6 +182,32 @@ export function Navbar() {
       window.removeEventListener("focus", onFocus);
     };
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setUnread(0);
+      return;
+    }
+    let cancelled = false;
+    const pull = () => {
+      void unreadNotificationCount()
+        .then((d) => {
+          if (!cancelled) setUnread(d.total || 0);
+        })
+        .catch(() => {
+          if (!cancelled) setUnread(0);
+        });
+    };
+    pull();
+    const t = window.setInterval(pull, 60_000);
+    const onFocus = () => pull();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [user, pathname]);
 
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
@@ -232,14 +273,20 @@ export function Navbar() {
             </button>
           </div>
 
-          <button
-            type="button"
-            className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-            aria-label="通知"
-          >
-            <Bell className="h-5 w-5" />
-            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
-          </button>
+          {user ? (
+            <Link
+              to="/community/messages"
+              className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              aria-label="消息"
+            >
+              <Bell className="h-5 w-5" />
+              {unread > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 inline-flex min-w-[1.05rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-4 text-white ring-2 ring-white">
+                  {unread > 99 ? "99+" : unread}
+                </span>
+              )}
+            </Link>
+          ) : null}
 
           {user ? (
             <UserMenu user={user} />

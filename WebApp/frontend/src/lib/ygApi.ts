@@ -81,9 +81,12 @@ export type YgBacktestResponse = {
   error?: string | null;
 };
 
-/** 对齐 FACTOR-BACKTEST-API.md；勿传已移除字段（会 422） */
+/** 对齐 06-research-api.md §4.2；勿传已移除字段（会 422） */
 export type YgBacktestRequest = {
-  factor_code: string;
+  /** 自定义/本地抽码；纯 RE 内置单因子可不传 */
+  factor_code?: string;
+  /** RE 内置库名；单库字符串，跨库数组 */
+  library_name?: string | string[];
   factor_name?: string;
   portfolio_type?: string;
   universe?: string;
@@ -101,8 +104,55 @@ export type YgBacktestRequest = {
   analysis_level?: "core" | "full";
 };
 
+/** 去掉空 factor_code，避免纯 library_name 请求被脏字段干扰 */
+export function serializeYgFactorBody(body: YgBacktestRequest): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...body };
+  if (out.factor_code == null || String(out.factor_code).trim() === "") {
+    delete out.factor_code;
+  }
+  if (out.library_name == null) {
+    delete out.library_name;
+  }
+  return out;
+}
+
 export async function ygBacktestFactor(body: YgBacktestRequest, signal?: AbortSignal) {
   const res = await fetch("/yg-api/api/backtest/factor", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(serializeYgFactorBody(body)),
+    signal,
+  });
+  const text = await res.text();
+  let data: YgBacktestResponse;
+  try {
+    data = JSON.parse(text) as YgBacktestResponse;
+  } catch {
+    throw new Error(res.ok ? "响应不是 JSON" : `HTTP ${res.status}: ${text.slice(0, 200)}`);
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+  return data;
+}
+
+/** 策略回测：对齐 06-research-api.md §4.3 */
+export type YgStrategyBacktestRequest = {
+  strategy_code: string;
+  universe?: string;
+  start?: string | null;
+  end?: string | null;
+  benchmark?: string;
+  commission_rate?: number;
+  stamp_tax?: number;
+  slippage_rate?: number;
+  initial_capital?: number;
+  include_positions?: boolean;
+};
+
+export async function ygBacktestStrategy(
+  body: YgStrategyBacktestRequest,
+  signal?: AbortSignal,
+) {
+  const res = await fetch("/yg-api/api/backtest/strategy", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

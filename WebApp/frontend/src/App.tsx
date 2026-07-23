@@ -9,6 +9,10 @@ import { FactorDetectHistoryPage } from "./pages/FactorDetectHistoryPage";
 import { FactorDetectReportPage } from "./pages/FactorDetectReportPage";
 import { FactorCustomPage } from "./pages/FactorCustomPage";
 import { FactorDashboardPage } from "./pages/FactorDashboardPage";
+import { StrategyResearchListPage } from "./pages/StrategyResearchListPage";
+import { StrategyBacktestPage } from "./pages/StrategyBacktestPage";
+import { StrategyReportPage } from "./pages/StrategyReportPage";
+import { StrategyHistoryPage } from "./pages/StrategyHistoryPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
@@ -17,6 +21,8 @@ import { CommunityNewPage } from "./pages/CommunityNewPage";
 import { CommunityPostPage } from "./pages/CommunityPostPage";
 import { CommunityFavoritesPage } from "./pages/CommunityFavoritesPage";
 import { CommunityMyPostsPage } from "./pages/CommunityMyPostsPage";
+import { CommunityMessagesPage } from "./pages/CommunityMessagesPage";
+import { CommunityMePage } from "./pages/CommunityMePage";
 
 function Authed({ children }: { children: React.ReactNode }) {
   return <RequireAuth>{children}</RequireAuth>;
@@ -32,8 +38,11 @@ export default function App() {
 
         <Route path="/community" element={<Authed><CommunityFeedPage /></Authed>} />
         <Route path="/community/new" element={<Authed><CommunityNewPage /></Authed>} />
+        <Route path="/community/post/:id/edit" element={<Authed><CommunityNewPage /></Authed>} />
         <Route path="/community/favorites" element={<Authed><CommunityFavoritesPage /></Authed>} />
         <Route path="/community/mine" element={<Authed><CommunityMyPostsPage /></Authed>} />
+        <Route path="/community/messages" element={<Authed><CommunityMessagesPage /></Authed>} />
+        <Route path="/community/me" element={<Authed><CommunityMePage /></Authed>} />
         <Route path="/community/post/:id" element={<Authed><CommunityPostPage /></Authed>} />
 
         <Route
@@ -50,18 +59,10 @@ export default function App() {
         />
 
         <Route path="/strategy" element={<Authed><Navigate to="/strategy/research" replace /></Authed>} />
-        <Route
-          path="/strategy/research"
-          element={
-            <Authed>
-              <PlaceholderPage
-                title="策略研究"
-                hint="策略研究模块建设中。"
-                cta={{ to: "/factor/detect", label: "先做因子检测" }}
-              />
-            </Authed>
-          }
-        />
+        <Route path="/strategy/research" element={<Authed><StrategyResearchListPage /></Authed>} />
+        <Route path="/strategy/research/report/:runId" element={<Authed><StrategyReportPage /></Authed>} />
+        <Route path="/strategy/research/:projectId/history" element={<Authed><StrategyHistoryPage /></Authed>} />
+        <Route path="/strategy/research/:projectId" element={<Authed><StrategyBacktestPage /></Authed>} />
         <Route
           path="/strategy/library"
           element={<Authed><PlaceholderPage title="策略库" hint="占位：策略库。" /></Authed>}

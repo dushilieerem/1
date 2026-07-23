@@ -1,5 +1,5 @@
 import type { YgBacktestRequest, YgBacktestResponse } from "./ygApi";
-import { authHeaders, assertAuthConsistency, getStoredUser, subscribeAuth } from "./auth";
+import { authHeaders, assertAuthConsistency, getStoredUser, subscribeAuth, prepareAuthHandoff } from "./auth";
 
 export type WeightMode = "sum" | "product" | "custom";
 export type RangeMode = "period" | "custom";
@@ -65,6 +65,8 @@ export const DETECT_BENCHMARK_OPTIONS = [
 ] as const;
 
 export const DETECT_PERIOD_OPTIONS = [
+  { code: "10y", label: "近10年" },
+  { code: "5y", label: "近5年" },
   { code: "3y", label: "近3年" },
   { code: "1y", label: "近1年" },
   { code: "6m", label: "近6个月" },
@@ -99,14 +101,14 @@ export function resolveBacktestRange(cfg: DetectProjectConfig): { start: string;
   if (cfg.rangeMode === "custom") {
     return { start: cfg.startDate, end: cfg.endDate };
   }
-  return periodToStartEnd(cfg.backtestPeriod || "3y");
+  return periodToStartEnd(cfg.backtestPeriod || "10y");
 }
 
 /** 自定义因子试算等：仅用 period 字符串 */
 export function periodToStartEnd(period: string): { start: string; end: string } {
   const end = parseYmd(RE_MARKET_END);
   const start = new Date(end);
-  const p = period || "3y";
+  const p = period || "10y";
   if (p === "1d") start.setDate(start.getDate() - 1);
   else if (p === "5d") start.setDate(start.getDate() - 5);
   else if (p === "10d") start.setDate(start.getDate() - 10);
@@ -114,8 +116,28 @@ export function periodToStartEnd(period: string): { start: string; end: string }
   else if (p === "6m") start.setMonth(start.getMonth() - 6);
   else if (p === "3m") start.setMonth(start.getMonth() - 3);
   else if (p === "1y") start.setFullYear(start.getFullYear() - 1);
-  else start.setFullYear(start.getFullYear() - 3);
+  else if (p === "3y") start.setFullYear(start.getFullYear() - 3);
+  else if (p === "5y") start.setFullYear(start.getFullYear() - 5);
+  else start.setFullYear(start.getFullYear() - 10); // 10y 默认
   return { start: fmtDate(start), end: fmtDate(end) };
+}
+
+/** 切入自定义区间时的默认起止（空值才填充） */
+export function defaultCustomRangeDates(period = "10y"): { startDate: string; endDate: string } {
+  const r = periodToStartEnd(period);
+  return { startDate: r.start, endDate: r.end };
+}
+
+/** 保证 end >= start；返回修正后的一对日期 */
+export function clampDateRange(
+  startDate: string,
+  endDate: string,
+  changed: "start" | "end",
+): { startDate: string; endDate: string } {
+  if (!startDate || !endDate) return { startDate, endDate };
+  if (endDate >= startDate) return { startDate, endDate };
+  if (changed === "start") return { startDate, endDate: startDate };
+  return { startDate: endDate, endDate };
 }
 
 export const PORTFOLIO_TYPE_OPTIONS = [
@@ -159,9 +181,9 @@ export function defaultConfig(factorCodes: string[] = []): DetectProjectConfig {
       : `def combo_factor(self):\n    """自定义组合"""\n    return self.close.pct_change(5)`,
     portfolioType: "long_short",
     rangeMode: "period",
-    backtestPeriod: "3y",
-    startDate: "2022-01-01",
-    endDate: "2024-12-31",
+    backtestPeriod: "10y",
+    startDate: periodToStartEnd("10y").start,
+    endDate: periodToStartEnd("10y").end,
     universe: "CSI300",
     benchmark: "CSI300",
     groups: 5,
@@ -183,7 +205,7 @@ function normalizeProject(
     cfg.rangeMode =
       cfg.startDate && cfg.endDate && !cfg.backtestPeriod ? "custom" : "period";
   }
-  if (!cfg.backtestPeriod) cfg.backtestPeriod = "3y";
+  if (!cfg.backtestPeriod) cfg.backtestPeriod = "10y";
   if (cfg.analysisLevel !== "core" && cfg.analysisLevel !== "full") {
     cfg.analysisLevel = "core";
   }
@@ -290,11 +312,12 @@ export async function listProjects(): Promise<DetectProject[]> {
 
 export async function listVisibleProjects(): Promise<DetectProject[]> {
   ensureCacheOwner();
+  // 与策略研究一致：展示全部项目（含社区克隆后尚未检测的）
   const data = await apiJson<{
     projects: DetectProject[];
     user_id?: number;
     username?: string;
-  }>("/api/detect/projects?visible=1");
+  }>("/api/detect/projects");
   const me = getStoredUser();
   if (
     me &&
@@ -458,15 +481,65 @@ export async function loadLastResult(): Promise<DetectRunRecord | null> {
   return null;
 }
 
+/** 单因子检测配置：预选该因子 + 赋权相加（不用「自定义组合」塞整段代码） */
+function singleFactorDetectConfig(
+  factorName: string,
+  base?: Partial<DetectProjectConfig>,
+): DetectProjectConfig {
+  const codes = [factorName];
+  const cfg = { ...defaultConfig(codes), ...(base || {}) };
+  cfg.factorCodes = codes;
+  cfg.weightMode = "sum";
+  cfg.weights = equalWeights(1);
+  cfg.powers = equalPowers(1);
+  cfg.customCombine = `def combo_factor(self):\n    """单因子"""\n    return self.${factorName}()`;
+  return cfg;
+}
+
 export async function openOrCreateForFactor(
   factorName: string,
   description: string,
 ): Promise<DetectProject> {
   ensureCacheOwner();
+  const name = (factorName || "").trim();
+  if (!name) throw new Error("因子名为空");
   const list = await listProjects();
-  const existing = list.find((p) => p.factorName === factorName && !p.sample);
-  if (existing) return existing;
-  return createProject(factorName, description);
+  const existing = list.find((p) => p.factorName === name && !p.sample);
+  if (existing) {
+    // 修好旧「社区克隆→自定义组合、未选因子」的脏项目
+    existing.config = singleFactorDetectConfig(name, existing.config);
+    existing.description = description || existing.description;
+    return saveProject(existing);
+  }
+  const created = await createProject(name, description);
+  created.config = singleFactorDetectConfig(name, created.config);
+  return saveProject(created);
+}
+
+/** 社区克隆：始终新建检测项目（不复用已有同名项目） */
+export async function createDetectProjectForClone(
+  factorCode: string,
+  displayName: string,
+): Promise<DetectProject> {
+  ensureCacheOwner();
+  const code = (factorCode || "").trim();
+  if (!code) throw new Error("因子名为空");
+  const title = (displayName || code).trim() || code;
+  const created = await createProject(code, title, title);
+  created.config = singleFactorDetectConfig(code, created.config);
+  return saveProject(created);
+}
+
+/** 新标签打开检测配置页（原页不动；带登录交接，无需重登） */
+export function openDetectInNewTab(projectId: string) {
+  const path = `/factor/detect/${encodeURIComponent(projectId)}`;
+  prepareAuthHandoff();
+  const win = window.open(path, "_blank");
+  if (!win) {
+    window.alert(
+      "浏览器拦截了新标签页。请允许本站弹出窗口后，再点「检测」。当前页面不会跳转。",
+    );
+  }
 }
 
 export function optionLabel(

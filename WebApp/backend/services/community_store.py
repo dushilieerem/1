@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-"""社区：帖子 + 评论 + 收藏。"""
+"""社区：帖子 + 评论（两层）+ 赞踩 + 收藏 + 通知。"""
 from __future__ import annotations
 
+import json
+import re
 from datetime import datetime
 from typing import Any
 
@@ -15,6 +17,11 @@ SECTION_LABELS = {
     "hotspot": "热点分析",
     "official": "官方",
 }
+# Feed 排序：浏览数 / 收藏数 / 最新（默认浏览最多）
+POST_SORTS = ("views", "favorites", "newest")
+NOTIF_TYPES = ("reply", "mention", "like")
+MAX_COMMENT_IMAGES = 3
+_MENTION_RE = re.compile(r"@([^\s@]{1,32})")
 
 
 def ensure_posts_schema() -> None:
@@ -67,8 +74,65 @@ def ensure_posts_schema() -> None:
             )
             """
         )
+        try:
+            conn.execute(
+                "ALTER TABLE post_comments ADD COLUMN IF NOT EXISTS parent_id BIGINT"
+            )
+        except Exception:
+            pass
+        try:
+            conn.execute(
+                "ALTER TABLE post_comments ADD COLUMN IF NOT EXISTS images JSONB DEFAULT '[]'::jsonb"
+            )
+        except Exception:
+            pass
+        try:
+            conn.execute(
+                "ALTER TABLE post_comments ADD COLUMN IF NOT EXISTS reply_to_comment_id BIGINT"
+            )
+        except Exception:
+            pass
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_post_comments_post ON post_comments (post_id, created_at ASC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_post_comments_parent ON post_comments (parent_id)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS comment_votes (
+              user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              comment_id    BIGINT NOT NULL REFERENCES post_comments(id) ON DELETE CASCADE,
+              value         SMALLINT NOT NULL,
+              created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              PRIMARY KEY (user_id, comment_id),
+              CONSTRAINT comment_votes_value_chk CHECK (value IN (-1, 1))
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_comment_votes_comment ON comment_votes (comment_id)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notifications (
+              id            BIGSERIAL PRIMARY KEY,
+              user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              actor_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              type          TEXT NOT NULL,
+              post_id       BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+              comment_id    BIGINT REFERENCES post_comments(id) ON DELETE CASCADE,
+              created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              read_at       TIMESTAMPTZ,
+              CONSTRAINT notifications_type_chk CHECK (type IN ('reply','mention','like'))
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id, created_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications (user_id) WHERE read_at IS NULL"
         )
         conn.execute(
             """
@@ -82,6 +146,14 @@ def ensure_posts_schema() -> None:
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_post_favorites_user ON post_favorites (user_id, created_at DESC)"
+        )
+        # 清理历史「自己收藏自己」；收藏数按 COUNT 实时算，删行即回落
+        conn.execute(
+            """
+            DELETE FROM post_favorites f
+            USING posts p
+            WHERE f.post_id = p.id AND f.user_id = p.author_id
+            """
         )
 
 
@@ -116,11 +188,52 @@ def _row_to_post(row: dict[str, Any], *, favorited: bool | None = None) -> dict[
     return out
 
 
+def _parse_images(raw: Any) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            return []
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for item in raw:
+        if isinstance(item, str) and item.strip():
+            out.append(item.strip())
+        if len(out) >= MAX_COMMENT_IMAGES:
+            break
+    return out
+
+
+def _normalize_images(images: list[str] | None) -> list[str]:
+    if not images:
+        return []
+    out: list[str] = []
+    for item in images:
+        s = str(item or "").strip()
+        if not s:
+            continue
+        # 限制单张体积（粗略：dataURL 字符数）
+        if len(s) > 900_000:
+            raise ValueError("评论图片过大，请压缩后重试")
+        out.append(s)
+        if len(out) >= MAX_COMMENT_IMAGES:
+            break
+    return out
+
+
 def _row_to_comment(row: dict[str, Any]) -> dict[str, Any]:
-    return {
+    out: dict[str, Any] = {
         "id": row["id"],
         "post_id": row["post_id"],
         "body": row["body"],
+        "parent_id": row.get("parent_id"),
+        "images": _parse_images(row.get("images")),
+        "like_count": int(row.get("like_count") or 0),
+        "dislike_count": int(row.get("dislike_count") or 0),
+        "my_vote": int(row["my_vote"]) if row.get("my_vote") is not None else 0,
         "created_at": _iso(row.get("created_at")),
         "author": {
             "id": row.get("author_id"),
@@ -128,6 +241,92 @@ def _row_to_comment(row: dict[str, Any]) -> dict[str, Any]:
             "display_name": row.get("display_name") or row.get("username"),
         },
     }
+    if row.get("reply_to_username") or row.get("reply_to_display_name"):
+        out["reply_to"] = {
+            "id": row.get("reply_to_author_id"),
+            "username": row.get("reply_to_username"),
+            "display_name": row.get("reply_to_display_name")
+            or row.get("reply_to_username"),
+        }
+    return out
+
+
+def _insert_notification(
+    conn: Any,
+    *,
+    user_id: int,
+    actor_id: int,
+    typ: str,
+    post_id: int,
+    comment_id: int | None,
+) -> None:
+    if user_id == actor_id:
+        return
+    if typ not in NOTIF_TYPES:
+        return
+    conn.execute(
+        """
+        INSERT INTO notifications (user_id, actor_id, type, post_id, comment_id)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (user_id, actor_id, typ, post_id, comment_id),
+    )
+
+
+def _resolve_root_parent(
+    conn: Any, post_id: int, parent_id: int
+) -> tuple[int, dict[str, Any]]:
+    """任意回复上卷到一级评论；返回 (root_id, 被回复评论行)。"""
+    parent = conn.execute(
+        """
+        SELECT id, post_id, parent_id, author_id, body
+        FROM post_comments
+        WHERE id = %s AND status = 'published'
+        """,
+        (int(parent_id),),
+    ).fetchone()
+    if not parent or int(parent["post_id"]) != int(post_id):
+        raise ValueError("回复的评论不存在")
+    target = dict(parent)
+    root_id = int(parent["id"])
+    if parent.get("parent_id"):
+        root_id = int(parent["parent_id"])
+        # 校验 root 仍存在
+        root = conn.execute(
+            """
+            SELECT id FROM post_comments
+            WHERE id = %s AND post_id = %s AND status = 'published' AND parent_id IS NULL
+            """,
+            (root_id, post_id),
+        ).fetchone()
+        if not root:
+            raise ValueError("回复的评论不存在")
+    return root_id, target
+
+
+def _find_mentioned_user_ids(conn: Any, body: str, *, exclude_id: int) -> list[int]:
+    names = []
+    for m in _MENTION_RE.finditer(body or ""):
+        name = (m.group(1) or "").strip()
+        if name and name not in names:
+            names.append(name)
+    if not names:
+        return []
+    ids: list[int] = []
+    for name in names[:10]:
+        row = conn.execute(
+            """
+            SELECT id FROM users
+            WHERE username = %s OR display_name = %s
+            LIMIT 1
+            """,
+            (name, name),
+        ).fetchone()
+        if row and int(row["id"]) != int(exclude_id):
+            uid = int(row["id"])
+            if uid not in ids:
+                ids.append(uid)
+    return ids
 
 
 def seed_sample_posts() -> int:
@@ -198,14 +397,37 @@ _POST_SELECT = """
 """
 
 
+def _search_pattern(q: str | None) -> str | None:
+    """标题/正文/代码模糊搜索；转义 LIKE 通配符。"""
+    raw = (q or "").strip()
+    if not raw:
+        return None
+    raw = raw[:80]
+    escaped = (
+        raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    )
+    return f"%{escaped}%"
+
+
 def list_posts(
     *,
     section: str | None = None,
+    q: str | None = None,
+    sort: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
     limit = max(1, min(100, int(limit)))
     offset = max(0, int(offset))
+    sort_key = (sort or "views").strip().lower()
+    if sort_key not in POST_SORTS:
+        raise ValueError(f"无效排序: {sort}")
+    if sort_key == "favorites":
+        order_by = "COALESCE(fc.cnt, 0) DESC, p.created_at DESC, p.id DESC"
+    elif sort_key == "newest":
+        order_by = "p.created_at DESC, p.id DESC"
+    else:
+        order_by = "p.view_count DESC, p.created_at DESC, p.id DESC"
     params: list[Any] = []
     where = "WHERE p.status = 'published'"
     if section and section != "all":
@@ -213,13 +435,23 @@ def list_posts(
             raise ValueError(f"无效分区: {section}")
         where += " AND p.section = %s"
         params.append(section)
+    pattern = _search_pattern(q)
+    if pattern:
+        where += (
+            " AND ("
+            "p.title ILIKE %s ESCAPE '\\' OR "
+            "p.body ILIKE %s ESCAPE '\\' OR "
+            "COALESCE(p.code_snippet, '') ILIKE %s ESCAPE '\\'"
+            ")"
+        )
+        params.extend([pattern, pattern, pattern])
     params.extend([limit, offset])
     with get_conn() as conn:
         rows = conn.execute(
             f"""
             {_POST_SELECT}
             {where}
-            ORDER BY p.created_at DESC
+            ORDER BY {order_by}
             LIMIT %s OFFSET %s
             """,
             params,
@@ -234,22 +466,32 @@ def list_posts(
         "total": int(total),
         "limit": limit,
         "offset": offset,
+        "sort": sort_key,
+        "q": (q or "").strip()[:80] or None,
         "sections": [{"id": k, "label": v} for k, v in SECTION_LABELS.items()],
         "items": [_row_to_post(dict(r)) for r in rows],
     }
 
 
-def list_hot_posts(*, limit: int = 10) -> dict[str, Any]:
+def list_hot_posts(*, limit: int = 10, section: str | None = None) -> dict[str, Any]:
     limit = max(1, min(30, int(limit)))
+    params: list[Any] = []
+    where = "WHERE p.status = 'published'"
+    if section and section != "all":
+        if section not in SECTIONS:
+            raise ValueError(f"无效分区: {section}")
+        where += " AND p.section = %s"
+        params.append(section)
+    params.append(limit)
     with get_conn() as conn:
         rows = conn.execute(
             f"""
             {_POST_SELECT}
-            WHERE p.status = 'published'
+            {where}
             ORDER BY p.view_count DESC, p.created_at DESC
             LIMIT %s
             """,
-            (limit,),
+            params,
         ).fetchall()
     return {"ok": True, "items": [_row_to_post(dict(r)) for r in rows]}
 
@@ -334,7 +576,89 @@ def create_post(
     return {"ok": True, "post": _row_to_post(dict(full))}
 
 
-def list_comments(post_id: int) -> dict[str, Any]:
+def update_post(
+    user_id: int,
+    post_id: int,
+    *,
+    title: str,
+    body: str,
+    section: str,
+    code_snippet: str | None = None,
+    author_role: str = "user",
+) -> dict[str, Any]:
+    """作者原地更新；同一帖 id，评论/收藏/浏览数保留。"""
+    title = (title or "").strip()
+    body = (body or "").strip()
+    section = (section or "").strip()
+    code = (code_snippet or "").strip() or None
+    if not title:
+        raise ValueError("标题不能为空")
+    if len(title) > 120:
+        raise ValueError("标题过长（最多 120 字）")
+    if section not in SECTIONS:
+        raise ValueError(f"无效分区，可选: {', '.join(SECTIONS)}")
+    if section == "official" and author_role != "admin":
+        raise ValueError("仅管理员可发布官方内容")
+    if not body and not code:
+        raise ValueError("正文与代码不能同时为空")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, author_id, status FROM posts WHERE id = %s",
+            (post_id,),
+        ).fetchone()
+        if not row or row["status"] != "published":
+            raise KeyError(f"post not found: {post_id}")
+        if int(row["author_id"]) != int(user_id) and author_role != "admin":
+            raise PermissionError("只能编辑自己的帖子")
+        conn.execute(
+            """
+            UPDATE posts
+            SET title = %s, body = %s, section = %s, code_snippet = %s,
+                updated_at = NOW()
+            WHERE id = %s
+            """,
+            (title, body, section, code, post_id),
+        )
+        full = conn.execute(
+            f"""
+            {_POST_SELECT}
+            WHERE p.id = %s
+            """,
+            (post_id,),
+        ).fetchone()
+    return {"ok": True, "post": _row_to_post(dict(full))}
+
+
+def delete_post(
+    user_id: int,
+    post_id: int,
+    *,
+    author_role: str = "user",
+) -> dict[str, Any]:
+    """作者软删除（hidden）；Feed 不再展示，评论/收藏记录仍挂在原帖上但不对外。"""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, author_id, status FROM posts WHERE id = %s",
+            (post_id,),
+        ).fetchone()
+        if not row or row["status"] != "published":
+            raise KeyError(f"post not found: {post_id}")
+        if int(row["author_id"]) != int(user_id) and author_role != "admin":
+            raise PermissionError("只能删除自己的帖子")
+        conn.execute(
+            """
+            UPDATE posts
+            SET status = 'hidden', updated_at = NOW()
+            WHERE id = %s
+            """,
+            (post_id,),
+        )
+    return {"ok": True, "id": int(post_id)}
+
+
+def list_comments(
+    post_id: int, *, viewer_id: int | None = None
+) -> dict[str, Any]:
     with get_conn() as conn:
         exists = conn.execute(
             "SELECT id FROM posts WHERE id = %s AND status = 'published'",
@@ -344,59 +668,335 @@ def list_comments(post_id: int) -> dict[str, Any]:
             raise KeyError(f"post not found: {post_id}")
         rows = conn.execute(
             """
-            SELECT c.*, u.username, u.display_name
+            SELECT c.*, u.username, u.display_name,
+                   pu.id AS reply_to_author_id,
+                   pu.username AS reply_to_username,
+                   pu.display_name AS reply_to_display_name,
+                   COALESCE(lk.cnt, 0) AS like_count,
+                   COALESCE(dk.cnt, 0) AS dislike_count,
+                   mv.value AS my_vote
             FROM post_comments c
             JOIN users u ON u.id = c.author_id
+            LEFT JOIN post_comments rtc ON rtc.id = c.reply_to_comment_id
+            LEFT JOIN users pu ON pu.id = rtc.author_id
+            LEFT JOIN (
+              SELECT comment_id, COUNT(*) AS cnt FROM comment_votes
+              WHERE value = 1 GROUP BY comment_id
+            ) lk ON lk.comment_id = c.id
+            LEFT JOIN (
+              SELECT comment_id, COUNT(*) AS cnt FROM comment_votes
+              WHERE value = -1 GROUP BY comment_id
+            ) dk ON dk.comment_id = c.id
+            LEFT JOIN comment_votes mv
+              ON mv.comment_id = c.id AND mv.user_id = %s
             WHERE c.post_id = %s AND c.status = 'published'
-            ORDER BY c.created_at ASC
+            ORDER BY
+              COALESCE(lk.cnt, 0) DESC,
+              c.created_at ASC
             """,
-            (post_id,),
+            (viewer_id if viewer_id is not None else -1, post_id),
         ).fetchall()
     items = [_row_to_comment(dict(r)) for r in rows]
     return {"ok": True, "total": len(items), "items": items}
 
 
-def create_comment(post_id: int, author_id: int, body: str) -> dict[str, Any]:
+def create_comment(
+    post_id: int,
+    author_id: int,
+    body: str,
+    *,
+    parent_id: int | None = None,
+    images: list[str] | None = None,
+) -> dict[str, Any]:
     body = (body or "").strip()
-    if not body:
+    imgs = _normalize_images(images)
+    if not body and not imgs:
         raise ValueError("评论不能为空")
     if len(body) > 2000:
         raise ValueError("评论过长（最多 2000 字）")
     with get_conn() as conn:
         exists = conn.execute(
-            "SELECT id FROM posts WHERE id = %s AND status = 'published'",
+            "SELECT id, author_id FROM posts WHERE id = %s AND status = 'published'",
             (post_id,),
         ).fetchone()
         if not exists:
             raise KeyError(f"post not found: {post_id}")
+        post_author_id = int(exists["author_id"])
+
+        root_id: int | None = None
+        reply_target: dict[str, Any] | None = None
+        reply_to_comment_id: int | None = None
+        if parent_id is not None:
+            root_id, reply_target = _resolve_root_parent(conn, post_id, int(parent_id))
+            reply_to_comment_id = int(reply_target["id"])
+
         row = conn.execute(
             """
-            INSERT INTO post_comments (post_id, author_id, body, status)
-            VALUES (%s, %s, %s, 'published')
+            INSERT INTO post_comments
+              (post_id, author_id, body, status, parent_id, images, reply_to_comment_id)
+            VALUES (%s, %s, %s, 'published', %s, %s::jsonb, %s)
             RETURNING id
             """,
-            (post_id, author_id, body),
+            (
+                post_id,
+                author_id,
+                body,
+                root_id,
+                json.dumps(imgs),
+                reply_to_comment_id,
+            ),
         ).fetchone()
+        cid = int(row["id"])
+
+        # 消息语义：
+        # - reply「回复我的」= 别人在我的帖子下发一级评论
+        # - mention「@我的」= 别人回复了我的某条评论（二级）
+        if reply_target is None:
+            # 一级评论 → 通知楼主（不含自己）
+            _insert_notification(
+                conn,
+                user_id=post_author_id,
+                actor_id=author_id,
+                typ="reply",
+                post_id=post_id,
+                comment_id=cid,
+            )
+        else:
+            # 回复某人的评论 → 通知被回复者
+            _insert_notification(
+                conn,
+                user_id=int(reply_target["author_id"]),
+                actor_id=author_id,
+                typ="mention",
+                post_id=post_id,
+                comment_id=cid,
+            )
+
         full = conn.execute(
             """
-            SELECT c.*, u.username, u.display_name
+            SELECT c.*, u.username, u.display_name,
+                   pu.id AS reply_to_author_id,
+                   pu.username AS reply_to_username,
+                   pu.display_name AS reply_to_display_name,
+                   0 AS like_count, 0 AS dislike_count, NULL AS my_vote
             FROM post_comments c
             JOIN users u ON u.id = c.author_id
+            LEFT JOIN post_comments rtc ON rtc.id = c.reply_to_comment_id
+            LEFT JOIN users pu ON pu.id = rtc.author_id
             WHERE c.id = %s
             """,
-            (row["id"],),
+            (cid,),
         ).fetchone()
     return {"ok": True, "comment": _row_to_comment(dict(full))}
 
 
+def set_comment_vote(
+    user_id: int, comment_id: int, value: int
+) -> dict[str, Any]:
+    """value: 1 赞 / -1 踩 / 0 取消。"""
+    value = int(value)
+    if value not in (-1, 0, 1):
+        raise ValueError("无效投票")
+    with get_conn() as conn:
+        c = conn.execute(
+            """
+            SELECT id, post_id, author_id, status FROM post_comments WHERE id = %s
+            """,
+            (comment_id,),
+        ).fetchone()
+        if not c or c["status"] != "published":
+            raise KeyError(f"comment not found: {comment_id}")
+
+        prev = conn.execute(
+            """
+            SELECT value FROM comment_votes
+            WHERE user_id = %s AND comment_id = %s
+            """,
+            (user_id, comment_id),
+        ).fetchone()
+        prev_val = int(prev["value"]) if prev else 0
+
+        if value == 0:
+            conn.execute(
+                "DELETE FROM comment_votes WHERE user_id = %s AND comment_id = %s",
+                (user_id, comment_id),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO comment_votes (user_id, comment_id, value)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id, comment_id) DO UPDATE SET value = EXCLUDED.value
+                """,
+                (user_id, comment_id, value),
+            )
+            # 首次赞（或从踩/无切换到赞）通知作者
+            if value == 1 and prev_val != 1:
+                _insert_notification(
+                    conn,
+                    user_id=int(c["author_id"]),
+                    actor_id=user_id,
+                    typ="like",
+                    post_id=int(c["post_id"]),
+                    comment_id=int(c["id"]),
+                )
+
+        like_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM comment_votes WHERE comment_id = %s AND value = 1",
+            (comment_id,),
+        ).fetchone()["c"]
+        dislike_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM comment_votes WHERE comment_id = %s AND value = -1",
+            (comment_id,),
+        ).fetchone()["c"]
+        my = conn.execute(
+            "SELECT value FROM comment_votes WHERE user_id = %s AND comment_id = %s",
+            (user_id, comment_id),
+        ).fetchone()
+    return {
+        "ok": True,
+        "comment_id": comment_id,
+        "like_count": int(like_count),
+        "dislike_count": int(dislike_count),
+        "my_vote": int(my["value"]) if my else 0,
+    }
+
+
+def list_notifications(
+    user_id: int,
+    *,
+    typ: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    limit = max(1, min(100, int(limit)))
+    offset = max(0, int(offset))
+    params: list[Any] = [user_id]
+    where = "WHERE n.user_id = %s"
+    if typ:
+        if typ not in NOTIF_TYPES:
+            raise ValueError(f"无效类型: {typ}")
+        where += " AND n.type = %s"
+        params.append(typ)
+    params.extend([limit, offset])
+    with get_conn() as conn:
+        total = conn.execute(
+            f"SELECT COUNT(*) AS c FROM notifications n {where}",
+            params[:-2],
+        ).fetchone()["c"]
+        rows = conn.execute(
+            f"""
+            SELECT n.*,
+                   a.username AS actor_username,
+                   a.display_name AS actor_display_name,
+                   p.title AS post_title,
+                   c.body AS comment_body
+            FROM notifications n
+            JOIN users a ON a.id = n.actor_id
+            JOIN posts p ON p.id = n.post_id
+            LEFT JOIN post_comments c ON c.id = n.comment_id
+            {where}
+            ORDER BY n.created_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            params,
+        ).fetchall()
+    items = []
+    for r in rows:
+        d = dict(r)
+        items.append(
+            {
+                "id": d["id"],
+                "type": d["type"],
+                "post_id": d["post_id"],
+                "comment_id": d.get("comment_id"),
+                "post_title": d.get("post_title") or "",
+                "comment_body": (d.get("comment_body") or "")[:120],
+                "created_at": _iso(d.get("created_at")),
+                "read_at": _iso(d.get("read_at")),
+                "actor": {
+                    "id": d["actor_id"],
+                    "username": d.get("actor_username"),
+                    "display_name": d.get("actor_display_name")
+                    or d.get("actor_username"),
+                },
+            }
+        )
+    return {"ok": True, "total": int(total), "items": items}
+
+
+def unread_notification_count(user_id: int) -> dict[str, Any]:
+    with get_conn() as conn:
+        total = conn.execute(
+            """
+            SELECT COUNT(*) AS c FROM notifications
+            WHERE user_id = %s AND read_at IS NULL
+            """,
+            (user_id,),
+        ).fetchone()["c"]
+        rows = conn.execute(
+            """
+            SELECT type, COUNT(*) AS c FROM notifications
+            WHERE user_id = %s AND read_at IS NULL
+            GROUP BY type
+            """,
+            (user_id,),
+        ).fetchall()
+    by_type = {t: 0 for t in NOTIF_TYPES}
+    for r in rows:
+        by_type[str(r["type"])] = int(r["c"])
+    return {"ok": True, "total": int(total), "by_type": by_type}
+
+
+def mark_notifications_read(
+    user_id: int,
+    *,
+    ids: list[int] | None = None,
+    typ: str | None = None,
+    all_unread: bool = False,
+) -> dict[str, Any]:
+    with get_conn() as conn:
+        if all_unread:
+            conn.execute(
+                """
+                UPDATE notifications SET read_at = NOW()
+                WHERE user_id = %s AND read_at IS NULL
+                """,
+                (user_id,),
+            )
+        elif ids:
+            conn.execute(
+                """
+                UPDATE notifications SET read_at = NOW()
+                WHERE user_id = %s AND id = ANY(%s) AND read_at IS NULL
+                """,
+                (user_id, list(ids)),
+            )
+        elif typ:
+            if typ not in NOTIF_TYPES:
+                raise ValueError(f"无效类型: {typ}")
+            conn.execute(
+                """
+                UPDATE notifications SET read_at = NOW()
+                WHERE user_id = %s AND type = %s AND read_at IS NULL
+                """,
+                (user_id, typ),
+            )
+        else:
+            raise ValueError("请指定 ids / type / all")
+    return unread_notification_count(user_id)
+
+
 def add_favorite(user_id: int, post_id: int) -> dict[str, Any]:
     with get_conn() as conn:
-        exists = conn.execute(
-            "SELECT id FROM posts WHERE id = %s AND status = 'published'",
+        row = conn.execute(
+            "SELECT id, author_id FROM posts WHERE id = %s AND status = 'published'",
             (post_id,),
         ).fetchone()
-        if not exists:
+        if not row:
             raise KeyError(f"post not found: {post_id}")
+        if int(row["author_id"]) == int(user_id):
+            raise ValueError("不能收藏自己的帖子")
         conn.execute(
             """
             INSERT INTO post_favorites (user_id, post_id)

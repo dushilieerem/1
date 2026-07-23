@@ -1,21 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { FileText, Plus, Trash2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { FileText, Pencil, Plus, Trash2 } from "lucide-react";
 import {
   clearDetectClientCache,
   createProject,
   deleteProject,
   listVisibleProjects,
+  openDetectInNewTab,
+  saveProject,
   type DetectProject,
 } from "@/lib/detectStore";
 import { getStoredUser, subscribeAuth } from "@/lib/auth";
 
 export function FactorDetectListPage() {
-  const navigate = useNavigate();
   const [projects, setProjects] = useState<DetectProject[]>([]);
   const [query, setQuery] = useState("");
   const [nameModal, setNameModal] = useState(false);
   const [projectName, setProjectName] = useState("");
+  const [renameTarget, setRenameTarget] = useState<DetectProject | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameErr, setRenameErr] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DetectProject | null>(null);
   const [createErr, setCreateErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -74,9 +78,39 @@ export function FactorDetectListPage() {
     void createProject("custom_combo", title, title)
       .then((p) => {
         setNameModal(false);
-        navigate(`/factor/detect/${p.id}`);
+        setProjectName("");
+        setCreateErr(null);
+        openDetectInNewTab(p.id);
+        refresh();
       })
       .catch((e) => setCreateErr(e instanceof Error ? e.message : String(e)));
+  };
+
+  const openRename = (p: DetectProject) => {
+    setRenameTarget(p);
+    setRenameValue(p.name);
+    setRenameErr(null);
+  };
+
+  const confirmRename = () => {
+    if (!renameTarget) return;
+    const title = renameValue.trim();
+    if (!title) {
+      setRenameErr("名称不能为空");
+      return;
+    }
+    void saveProject({
+      ...renameTarget,
+      name: title,
+      description: title,
+    })
+      .then(() => {
+        setRenameTarget(null);
+        setRenameValue("");
+        setRenameErr(null);
+        refresh();
+      })
+      .catch((e) => setRenameErr(e instanceof Error ? e.message : String(e)));
   };
 
   return (
@@ -86,7 +120,7 @@ export function FactorDetectListPage() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">因子检测</h1>
             <p className="mt-1 text-sm text-slate-600">
-              已完成检测的因子会出现在此列表；也可新建后配置并运行
+              新建或社区克隆后会出现在此列表；配置并运行后可查看报告
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -144,7 +178,6 @@ export function FactorDetectListPage() {
                           </span>
                         ) : null}
                       </div>
-                      <code className="text-xs text-slate-400">{p.factorName}</code>
                     </td>
                     <td className="px-4 py-3">
                       <span className="rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
@@ -169,14 +202,24 @@ export function FactorDetectListPage() {
                         检测列表
                       </Link>
                       {!p.sample ? (
-                        <button
-                          type="button"
-                          className="inline-flex text-slate-400 hover:text-red-600"
-                          onClick={() => setDeleteTarget(p)}
-                          title="删除"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="mr-3 inline-flex align-middle text-slate-400 hover:text-blue-600"
+                            onClick={() => openRename(p)}
+                            title="改名"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex text-slate-400 hover:text-red-600"
+                            onClick={() => setDeleteTarget(p)}
+                            title="删除"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </>
                       ) : null}
                     </td>
                   </tr>
@@ -219,6 +262,41 @@ export function FactorDetectListPage() {
                   onClick={confirmCreate}
                 >
                   创建
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {renameTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+              <h2 className="text-lg font-bold text-slate-900">重命名检测</h2>
+              <input
+                className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") confirmRename();
+                }}
+                placeholder="检测名称"
+                autoFocus
+              />
+              {renameErr && <p className="mt-2 text-xs text-red-600">{renameErr}</p>}
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                  onClick={() => setRenameTarget(null)}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white"
+                  onClick={confirmRename}
+                >
+                  保存
                 </button>
               </div>
             </div>

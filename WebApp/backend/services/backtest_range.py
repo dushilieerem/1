@@ -61,8 +61,9 @@ def period_to_start_end(period: str, *, end: datetime | None = None) -> tuple[st
 
 def build_factor_backtest_payload(
     *,
-    factor_code: str,
+    factor_code: str | None = None,
     factor_name: str,
+    library_name: str | list[str] | None = None,
     universe: str = "CSI300",
     period: str = "3y",
     filter_limit_up: bool = True,
@@ -75,8 +76,7 @@ def build_factor_backtest_payload(
     end: datetime | None = None,
 ) -> dict:
     start_s, end_s = period_to_start_end(period, end=end)
-    return {
-        "factor_code": factor_code,
+    payload: dict = {
         "factor_name": factor_name,
         "portfolio_type": portfolio_type,
         "universe": universe,
@@ -89,3 +89,11 @@ def build_factor_backtest_payload(
         "benchmark": benchmark or universe,
         "analysis_level": analysis_level,
     }
+    code = (factor_code or "").strip()
+    if code:
+        payload["factor_code"] = code
+    if library_name:
+        payload["library_name"] = library_name
+    if "factor_code" not in payload and not library_name:
+        raise ValueError("factor_code 与 library_name 至少提供其一")
+    return payload

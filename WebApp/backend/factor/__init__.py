@@ -1,5 +1,3 @@
-"""YGQuant 公共因子目录（docs/factor）。
-
-自定义因子写在 ``custom_lib.py``；公共库为 momentum/value/technical/…。
-检测/回测由 ResearchEngine 执行，不依赖本地 panel。
+"""示例因子库。研究员在此目录下新增 ``*.py`` 因子文件，每个文件定义一个
+``BaseFactor`` 子类，即可被 :class:`researchengine.factor_loader.FactorLoader` 动态加载。
 """

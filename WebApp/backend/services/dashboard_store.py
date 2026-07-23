@@ -23,6 +23,16 @@ DB_PATH = OUTPUT_DIR / "metrics.sqlite"
 JOB_PATH = OUTPUT_DIR / "job.json"
 RE_URL = "http://192.168.3.64:9527/api/backtest/factor"
 RULES_VERSION = "yg_v1"
+# 与前端 detectComboCode.RE_BUILTIN_LIBS / 06-research-api.md 对齐
+RE_BUILTIN_LIBS = frozenset(
+    {
+        "alpha_library",
+        "qlib_alpha",
+        "jq_compat_technical",
+        "jq_compat_risk",
+        "jq_compat_emotion",
+    }
+)
 
 _job_lock = threading.Lock()
 _job_thread: threading.Thread | None = None
@@ -89,11 +99,21 @@ def _connect() -> sqlite3.Connection:
 
 
 def load_factor_index() -> list[dict]:
-    """面板只跑官方库；跳过 custom_lib / 带 owner_id 的私有因子。"""
-    raw = yaml.safe_load((FACTOR_DIR / "index.yaml").read_text(encoding="utf-8")) or {}
+    """面板只跑官方库；跳过 custom_lib / 带 owner_id 的私有因子。
+
+    自动展开 yaml 未列全的库；Qlib 动态注册特征暂不进面板批跑
+    （方法体无法从源码静态抽取，且数量过大）。
+    """
+    from services.factor_catalog_expand import expand_index
+
+    raw = expand_index(
+        yaml.safe_load((FACTOR_DIR / "index.yaml").read_text(encoding="utf-8")) or {}
+    )
     out: list[dict] = []
     for lib_key, lib in (raw.get("libraries") or {}).items():
         if lib_key == "custom_lib":
+            continue
+        if lib_key == "qlib_alpha":
             continue
         for f in lib.get("factors") or []:
             if f.get("owner_id") is not None:
@@ -457,21 +477,35 @@ def _run_batch(
                     conn.commit()
                     time.sleep(0.05)
                     continue
-                if not py_path.exists():
-                    raise FileNotFoundError(str(py_path))
-                code = extract_method(py_path.read_text(encoding="utf-8"), name)
-                data = call_yg_backtest(
-                    build_factor_backtest_payload(
-                        factor_code=code,
-                        factor_name=name,
-                        universe=universe,
-                        period=period,
-                        filter_limit_up=filter_limit_up,
-                        filter_suspended=filter_suspended,
-                        # 部分股票池在 core 下不返回 factor_analysis/分层，面板必须用 full
-                        analysis_level="full",
+                lib_key = (f.get("library") or "").strip()
+                if lib_key in RE_BUILTIN_LIBS:
+                    data = call_yg_backtest(
+                        build_factor_backtest_payload(
+                            factor_name=name,
+                            library_name=lib_key,
+                            universe=universe,
+                            period=period,
+                            filter_limit_up=filter_limit_up,
+                            filter_suspended=filter_suspended,
+                            # 部分股票池在 core 下不返回 factor_analysis/分层，面板必须用 full
+                            analysis_level="full",
+                        )
                     )
-                )
+                else:
+                    if not py_path.exists():
+                        raise FileNotFoundError(str(py_path))
+                    code = extract_method(py_path.read_text(encoding="utf-8"), name)
+                    data = call_yg_backtest(
+                        build_factor_backtest_payload(
+                            factor_code=code,
+                            factor_name=name,
+                            universe=universe,
+                            period=period,
+                            filter_limit_up=filter_limit_up,
+                            filter_suspended=filter_suspended,
+                            analysis_level="full",
+                        )
+                    )
                 mapped = map_yg_response(data)
                 upsert_row(conn, {**base, **mapped})
             except Exception as exc:

@@ -4,8 +4,9 @@ import { ArrowLeft, BarChart3, Loader2, Play, Plus, Save, X } from "lucide-react
 import { FactorPickerModal } from "@/components/FactorPickerModal";
 import {
   buildComboFunction,
-  buildDetectFactorCode,
+  buildYgFactorRequestParts,
   extractEntryName,
+  isReBuiltinLib,
 } from "@/lib/detectComboCode";
 import {
   DETECT_ANALYSIS_LEVEL_OPTIONS,
@@ -13,6 +14,8 @@ import {
   DETECT_PERIOD_OPTIONS,
   DETECT_UNIVERSE_OPTIONS,
   PORTFOLIO_TYPE_OPTIONS,
+  clampDateRange,
+  defaultCustomRangeDates,
   equalPowers,
   equalWeights,
   getProject,
@@ -108,6 +111,12 @@ export function FactorDetectPage() {
           const meta = byName.get(code);
           if (!meta) {
             bodies.push(`# 未找到因子 ${code}`);
+            continue;
+          }
+          if (isReBuiltinLib(meta.library)) {
+            bodies.push(
+              `# RE库 ${meta.library} · ${code}（由 library_name 加载完整库，含私有辅助）`,
+            );
             continue;
           }
           let src = fileCache.get(meta.libraryFile);
@@ -212,8 +221,10 @@ export function FactorDetectPage() {
   const onRun = useCallback(async () => {
     if (!project || !cfg) return;
     setRunError(null);
-    if (!cfg.factorCodes.length) {
-      const msg = "请先在上方添加因子；组合函数只负责合成已选因子";
+    const customOnly =
+      cfg.weightMode === "custom" && Boolean(cfg.customCombine?.trim());
+    if (!cfg.factorCodes.length && !customOnly) {
+      const msg = "请先在上方添加因子，或使用自定义组合函数";
       setRunError(msg);
       pushLog(msg);
       return;
@@ -227,9 +238,15 @@ export function FactorDetectPage() {
       entryName: "combo_factor",
       title: project.name,
     });
-    const factorCode = buildDetectFactorCode(methodBodies, combo);
     const entryName = extractEntryName(combo, project.factorName || "combo_factor");
-    if (!factorCode.trim()) {
+    const parts = buildYgFactorRequestParts({
+      factors: catalog,
+      factorCodes: cfg.factorCodes,
+      methodBodies,
+      comboFn: combo,
+      entryName,
+    });
+    if (!parts.factor_code && !parts.library_name) {
       const msg = "因子代码为空，无法检测";
       setRunError(msg);
       pushLog(msg);
@@ -245,12 +262,19 @@ export function FactorDetectPage() {
     tickRef.current = window.setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 400);
     saveProject(project);
     pushLog("开始调用回测引擎 POST /yg-api/api/backtest/factor …");
-    pushLog(`入口 ${entryName}`);
+    pushLog(`入口 ${parts.factor_name}`);
+    if (parts.library_name) {
+      const libs = Array.isArray(parts.library_name)
+        ? parts.library_name.join(", ")
+        : parts.library_name;
+      pushLog(`library_name=${libs}${parts.factor_code ? " + factor_code" : "（无 factor_code）"}`);
+    } else {
+      pushLog("仅 factor_code（本地/自定义抽码）");
+    }
     try {
       const { start, end } = resolveBacktestRange(cfg);
       const req: YgBacktestRequest = {
-        factor_code: factorCode,
-        factor_name: entryName,
+        ...parts,
         portfolio_type: cfg.portfolioType,
         universe: cfg.universe,
         start,
@@ -277,7 +301,7 @@ export function FactorDetectPage() {
       }
       const rec = await saveDetectRun({
         projectId: project.id,
-        factorName: entryName,
+        factorName: parts.factor_name,
         description: project.name,
         request: req,
         result: res,
@@ -311,7 +335,7 @@ export function FactorDetectPage() {
       setRunning(false);
       setElapsed(Math.floor((Date.now() - t0) / 1000));
     }
-  }, [project, cfg, methodBodies, navigate, pushLog]);
+  }, [project, cfg, methodBodies, catalog, navigate, pushLog]);
 
   if (project === undefined) {
     return <div className="p-10 text-center text-slate-400">加载中…</div>;
@@ -358,7 +382,11 @@ export function FactorDetectPage() {
           </button>
           <button
             type="button"
-            disabled={running || !cfg.factorCodes.length}
+            disabled={
+              running ||
+              (!cfg.factorCodes.length &&
+                !(cfg.weightMode === "custom" && cfg.customCombine?.trim()))
+            }
             onClick={() => void onRun()}
             className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
           >
@@ -532,7 +560,19 @@ export function FactorDetectPage() {
                   回测区间
                   <select
                     value={cfg.rangeMode}
-                    onChange={(e) => patchConfig({ rangeMode: e.target.value as RangeMode })}
+                    onChange={(e) => {
+                      const mode = e.target.value as RangeMode;
+                      if (mode === "custom") {
+                        const fill = defaultCustomRangeDates(cfg.backtestPeriod || "10y");
+                        patchConfig({
+                          rangeMode: mode,
+                          startDate: cfg.startDate || fill.startDate,
+                          endDate: cfg.endDate || fill.endDate,
+                        });
+                      } else {
+                        patchConfig({ rangeMode: mode });
+                      }
+                    }}
                     className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
                   >
                     <option value="period">预设周期</option>
@@ -561,7 +601,11 @@ export function FactorDetectPage() {
                       <input
                         type="date"
                         value={cfg.startDate}
-                        onChange={(e) => patchConfig({ startDate: e.target.value })}
+                        max={cfg.endDate || undefined}
+                        onChange={(e) => {
+                          const startDate = e.target.value;
+                          patchConfig(clampDateRange(startDate, cfg.endDate, "start"));
+                        }}
                         className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
                       />
                     </label>
@@ -570,7 +614,11 @@ export function FactorDetectPage() {
                       <input
                         type="date"
                         value={cfg.endDate}
-                        onChange={(e) => patchConfig({ endDate: e.target.value })}
+                        min={cfg.startDate || undefined}
+                        onChange={(e) => {
+                          const endDate = e.target.value;
+                          patchConfig(clampDateRange(cfg.startDate, endDate, "end"));
+                        }}
                         className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
                       />
                     </label>

@@ -104,8 +104,9 @@ export function FactorDetectHistoryPage() {
                           {String(r.finishedAt || "").replace("T", " ").slice(0, 19)}
                         </td>
                         <td className="px-4 py-3">
-                          <p className="font-semibold text-slate-900">{r.description}</p>
-                          <code className="text-xs text-slate-400">{r.factorName}</code>
+                          <p className="font-semibold text-slate-900">
+                            {r.description || project?.name || "—"}
+                          </p>
                         </td>
                         <td className="px-4 py-3 tabular-nums">
                           {pct(typeof ic === "number" ? ic : null)}

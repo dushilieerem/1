@@ -47,7 +47,7 @@ export function CommunityMyPostsPage() {
   return (
     <CommunityPageShell>
       <div className="mx-auto max-w-[880px] px-5 py-6 animate-fade-up">
-        <CommunityBackLink />
+        <CommunityBackLink to="/community/me" label="返回个人主页" />
         <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="text-xs font-medium tracking-wide text-red-500/90">MY POSTS</p>

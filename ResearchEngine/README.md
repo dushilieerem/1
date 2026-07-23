@@ -105,6 +105,10 @@ uvicorn researchengine.api.app:app --reload   # Swagger UI: http://localhost:800
   "factor_name": "momentum", "universe": "CSI500",
   "rebalance_days": 15, "groups": 5, "benchmark": "CSI500" }
 // -> { "metrics": {...}, "equity_curve": [{date,value}...], "final_equity": ..., "error": null }
+
+// 内置因子库：不传 factor_code
+{ "library_name": "jq_compat_risk", "factor_name": "jq_kurtosis60",
+  "universe": "CSI500", "rebalance_days": 15, "groups": 5, "benchmark": "CSI500" }
 ```
 
 因子代码出错 -> `error` 字段填充，HTTP 200（不抛 500）。详见顶层 `docs/04-features/FEAT-002-research-engine/06-research-api.md`。

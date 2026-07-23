@@ -7,7 +7,7 @@
 ## 1. 设计原则
 
 因子是**可执行代码**，不是数据：代码保存在 `.py` 文件，名称、描述和参数等元数据由
-`index.yaml` 管理；前端负责因子库展示与管理，ResearchEngine 只接收因子函数体并执行回测。
+`index.yaml` 管理；前端负责因子库展示与管理。ResearchEngine 对内置因子加载完整库，对用户自定义因子接收单个函数体并执行回测。
 
 ## 2. 存储结构
 
@@ -61,16 +61,16 @@ libraries:
 ## 4. 与 ResearchEngine 的关系
 
 ```text
-前端读取 index.yaml 与因子库文件
+内置因子：前端读取 index.yaml，传 library_name + factor_name
         ↓
-提取待回测因子的方法体 + 因子名
+ResearchEngine 加载完整因子库并回测
+
+用户自定义因子：前端传单个函数体 + factor_name
         ↓
-POST /api/backtest/factor
-        ↓
-ResearchEngine 编译、分层回测并返回结果
+ResearchEngine 生成临时 FactorLibrary 并回测
 ```
 
-当前 API 的 `factor_code` 只接收**因子函数体**；服务端自动补全 `FactorLibrary` 类定义。
+当前 API 的两种来源必须二选一：内置因子传 `library_name` 与 `factor_name`，由服务端加载完整库；用户自定义因子传 `factor_code` 与 `factor_name`，其中 `factor_code` 只接收**单个因子函数体**，服务端自动补全 `FactorLibrary` 类定义。
 
 ## 5. API 接口文档
 

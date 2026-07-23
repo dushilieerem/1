@@ -11,6 +11,7 @@ from quantcore.backtest.adapter.calendar import PandasCalendar
 from quantcore.backtest.adapter.interfaces import ICalendar, IStrategy
 from quantcore.backtest.adapter.signals import BacktestSignals
 from quantcore.factor.base import FactorLibrary, Panel
+from quantcore.factor.tool import normalize, rank, winsorize, zscore
 
 
 def factor(method: Callable) -> Callable:
@@ -89,29 +90,22 @@ class FactorPortfolioStrategy(FactorLibrary, IStrategy):
     @staticmethod
     def rank(values: pd.DataFrame) -> pd.DataFrame:
         """按交易日进行横截面百分位排名。"""
-        return values.rank(axis=1, pct=True, method="average")
+        return rank(values)
 
     @staticmethod
     def zscore(values: pd.DataFrame) -> pd.DataFrame:
         """按交易日横截面标准化；常数行返回 0。"""
-        mean = values.mean(axis=1)
-        std = values.std(axis=1, ddof=0).replace(0, pd.NA)
-        return values.sub(mean, axis=0).div(std, axis=0).fillna(0.0)
+        return zscore(values)
 
     @staticmethod
     def winsorize(values: pd.DataFrame, lower: float = 0.01, upper: float = 0.99) -> pd.DataFrame:
         """按交易日横截面去极值。"""
-        if not 0 <= lower < upper <= 1:
-            raise ValueError("winsorize 要求 0 <= lower < upper <= 1")
-        low = values.quantile(lower, axis=1)
-        high = values.quantile(upper, axis=1)
-        return values.clip(lower=low, upper=high, axis=0)
+        return winsorize(values, lower, upper)
 
     @staticmethod
     def normalize(values: pd.DataFrame) -> pd.DataFrame:
         """按交易日将绝对值和归一化为 1；全零行保持 0。"""
-        total = values.abs().sum(axis=1).replace(0, pd.NA)
-        return values.div(total, axis=0).fillna(0.0)
+        return normalize(values)
 
     def generate_signals(self, panel: Optional[Panel] = None) -> BacktestSignals:
         if panel is None:

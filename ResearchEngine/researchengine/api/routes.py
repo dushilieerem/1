@@ -46,17 +46,12 @@ def _builtin_factors() -> "list[FactorInfo]":
     """枚举内置因子库的方法；加载失败返回空列表。"""
     try:
         from researchengine import FactorLoader
+        from researchengine.api.runner import BUILTIN_FACTOR_LIBRARIES
         from researchengine.assets import factor_library_dir
 
         loader = FactorLoader(factor_dir=str(factor_library_dir()))
         factors = []
-        for module_name in (
-            "alpha_library",
-            "qlib_alpha",
-            "jq_compat_technical",
-            "jq_compat_risk",
-            "jq_compat_emotion",
-        ):
+        for module_name in sorted(BUILTIN_FACTOR_LIBRARIES):
             library = loader.load(module_name)
             factors.extend(
                 FactorInfo(name=n, description=(m.__doc__ or "").strip() or None)

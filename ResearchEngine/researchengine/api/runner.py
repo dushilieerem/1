@@ -50,6 +50,15 @@ from researchengine.api.serializers import (
 )
 
 
+BUILTIN_FACTOR_LIBRARIES = frozenset({
+    "alpha_library",
+    "qlib_alpha",
+    "jq_compat_technical",
+    "jq_compat_risk",
+    "jq_compat_emotion",
+})
+
+
 def _cache_enabled() -> bool:
     return os.environ.get("SVQUANT_BACKTEST_CACHE_ENABLED", "true").lower() not in {
         "0", "false", "no",
@@ -141,7 +150,9 @@ def _wrap_factor_code(factor_code: str) -> str:
     return wrapped
 
 
-def _load_factor_from_code(factor_code: str, factor_name: str):
+def _load_factor_from_code(
+    factor_code: str, factor_name: str, library_names: list[str] | None = None,
+):
     """把因子源码写到临时文件，用 :class:`FactorLoader` 加载，取出指定因子。
 
     因子对象本身是内存中的活实例，临时文件加载完即可清理。
@@ -158,7 +169,8 @@ def _load_factor_from_code(factor_code: str, factor_name: str):
 
     try:
         loader = FactorLoader(factor_dir=str(tmpdir))
-        loader.load(mod_name)
+        library = loader.load(mod_name)
+        _attach_builtin_library_methods(library, library_names or [])
         if factor_name not in loader.factors:
             raise KeyError(
                 f"因子 {factor_name!r} 未找到；可用: {list(loader.factors)}"
@@ -172,6 +184,49 @@ def _load_factor_from_code(factor_code: str, factor_name: str):
         except ValueError:
             pass
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _attach_builtin_library_methods(target_library, library_names: list[str]) -> None:
+    """将内置库因子作为用户组合因子的方法依赖注入临时库。"""
+    from quantcore.factor.base import library_factors
+    from researchengine import FactorLoader
+
+    for library_name in library_names:
+        if library_name not in BUILTIN_FACTOR_LIBRARIES:
+            raise ValueError(
+                f"不支持的内置因子库 {library_name!r}；可用: "
+                f"{sorted(BUILTIN_FACTOR_LIBRARIES)}"
+            )
+
+        source_library = FactorLoader().load(library_name)
+        for factor_name, factor in library_factors(source_library).items():
+            if hasattr(target_library, factor_name):
+                raise ValueError(f"内置因子 {factor_name!r} 与自定义因子方法重名")
+
+            def builtin_method(_factor=factor, _target=target_library):
+                return _factor.compute(_target._panel)
+
+            setattr(target_library, factor_name, builtin_method)
+
+
+def _load_factor_from_builtin_library(library_name: str, factor_name: str):
+    """从登记的内置因子库加载指定因子，不执行前端提交的源码。"""
+    if library_name not in BUILTIN_FACTOR_LIBRARIES:
+        raise ValueError(
+            f"不支持的内置因子库 {library_name!r}；可用: "
+            f"{sorted(BUILTIN_FACTOR_LIBRARIES)}"
+        )
+
+    from researchengine import FactorLoader
+
+    loader = FactorLoader()
+    loader.load(library_name)
+    if factor_name not in loader.factors:
+        raise KeyError(
+            f"因子 {factor_name!r} 不在内置库 {library_name!r} 中；"
+            f"可用: {list(loader.factors)}"
+        )
+    return loader.factors[factor_name]
 
 
 def _build_config(commission_rate, slippage_rate, stamp_tax=None,
@@ -432,7 +487,11 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
     try:
         from researchengine import ExperimentManager
 
-        factor = _load_factor_from_code(req.factor_code, req.factor_name)
+        factor = (
+            _load_factor_from_code(req.factor_code, req.factor_name, req.library_names)
+            if req.factor_code is not None
+            else _load_factor_from_builtin_library(req.library_names[0], req.factor_name)
+        )
 
         # 组合方式映射
         long_short = req.portfolio_type == "long_short"

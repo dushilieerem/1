@@ -21,6 +21,9 @@ def amount_20d(self, window: int = 20):
 def combo_factor(self):
     return 0.5 * self.volume_20d() + 0.5 * self.amount_20d()'''
 
+BUILTIN_COMBO_FACTOR_CODE = '''def combo_factor(self):
+    return 0.5 * self.jq_kurtosis20() + 0.5 * self.qlib_alpha158_kmid()'''
+
 STRATEGY_CODE = '''import pandas as pd
 
 class EqualWeightMomentum:
@@ -65,6 +68,9 @@ def market_data_dir(tmp_path, monkeypatch):
     symbols = [f"S{i:03d}" for i in range(12)]
     close = 100.0 * np.exp(np.cumsum(rng.normal(0, 0.02, (90, 12)), axis=0))
     for name, values in (
+        ("open", close * 0.995),
+        ("high", close * 1.01),
+        ("low", close * 0.99),
         ("close", close),
         ("volume", rng.uniform(1e6, 1e7, (90, 12))),
         ("amount", rng.uniform(1e8, 1e9, (90, 12))),
@@ -137,6 +143,43 @@ def test_factor_backtest_groups_and_benchmark(market_data_dir):
     assert set(industry_groups[0]["points"][-1]["groups"]) == {"G1", "G2", "G3"}
     assert len(body["benchmark_curve"]) > 0
     assert body["excess_return"] is not None
+
+
+def test_factor_backtest_loads_builtin_factor_library(market_data_dir):
+    payload = _request_payload()
+    payload.pop("factor_code")
+    payload.update({
+        "library_name": "jq_compat_risk",
+        "factor_name": "jq_kurtosis60",
+    })
+    response = client.post("/api/backtest/factor", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["error"] is None
+
+
+def test_factor_backtest_custom_factor_can_combine_builtin_library_methods(market_data_dir):
+    payload = _request_payload()
+    payload.update({
+        "factor_code": BUILTIN_COMBO_FACTOR_CODE,
+        "factor_name": "combo_factor",
+        "library_name": ["jq_compat_risk", "qlib_alpha"],
+    })
+    response = client.post("/api/backtest/factor", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["error"] is None
+
+
+def test_factor_backtest_requires_exactly_one_factor_source(market_data_dir):
+    payload = _request_payload()
+    payload.pop("factor_code")
+    assert client.post("/api/backtest/factor", json=payload).status_code == 422
+
+    payload = _request_payload()
+    payload.pop("factor_code")
+    payload["library_name"] = ["jq_compat_risk", "qlib_alpha"]
+    assert client.post("/api/backtest/factor", json=payload).status_code == 422
 
 
 def test_factor_backtest_accesses_csi300_close(market_data_dir):

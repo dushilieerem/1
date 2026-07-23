@@ -74,18 +74,21 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
 
 ### 4.2 因子回测
 
-因子回测适用于**因子选股研究**——用户提交因子代码，系统使用内置 FactorQuantileStrategy
-按因子值排序选股，生成组合净值。
+因子回测适用于**因子选股研究**——系统使用内置 FactorQuantileStrategy 按因子值排序选股，生成组合净值。直接回测服务端内置因子时使用 `library_name` 加 `factor_name`；用户上传自定义因子时使用 `factor_code` 加 `factor_name`，还可附带一个或多个 `library_name` 以组合内置因子。
 
 #### `POST /api/backtest/factor`
 
 **请求**：
 ```jsonc
 {
-  // ─── 1. 因子代码（用户编写） ───
-  // 只需传函数体，系统自动补全 import 和 class 头
+  // ─── 1. 用户自定义因子 ───
+  // 只传一个函数；系统自动补全 import 和 FactorLibrary class 头
   "factor_code": "def momentum(self, window=5):\n    return self.close.pct_change(window)",
   "factor_name": "momentum",
+
+  // 直接执行内置因子时：删除 factor_code，改传以下字段
+  // "library_name": "jq_compat_risk",
+  // "factor_name": "jq_kurtosis60",
 
   // ─── 2. 组合构建方式 ───
   "portfolio_type": "long_short",     // long_only=纯多头 | long_short=多空组合
@@ -115,7 +118,8 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
-| `factor_code` | string | 是 | — | 因子函数体；系统自动包装为 `FactorLibrary`。 |
+| `factor_code` | string | 条件必填 | — | 用户自定义因子的函数体；系统自动包装为 `FactorLibrary`。未提供时执行内置因子。 |
+| `library_name` | string / string[] | 条件必填 | — | 直接执行内置因子时传单个库名；自定义因子可传单个或多个库名以调用其中方法。当前支持 `alpha_library`、`qlib_alpha`、`jq_compat_technical`、`jq_compat_risk`、`jq_compat_emotion`。 |
 | `factor_name` | string | 否 | `alpha101` | 要执行的因子方法名，须与代码中的函数名一致。 |
 | `portfolio_type` | string | 否 | `long_short` | `long_only` 为最高组纯多头；`long_short` 为最高组做多、最低组做空。 |
 | `universe` | string | 否 | `CSI_ALL` | 股票池，如 `CSI300`、`CSI500`、`CSI1000`。 |
@@ -131,6 +135,37 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
 | `analysis_level` | enum | 否 | `core` | `core` 计算核心回测、汇总指标和各分组区间收益；`full` 才额外计算 IC/IR 时序、FF3 与行业曲线。 |
 
 净值、基准、超额收益和各分组区间收益固定返回；`full` 在此基础上增加 IC/IR 时序、FF3 与行业曲线。
+
+不传 `factor_code` 时，`library_name` 必须是单个库名。内置因子库请求示例：
+
+```json
+{
+  "library_name": "jq_compat_risk",
+  "factor_name": "jq_kurtosis60"
+}
+```
+
+用户自定义因子仍只传单个函数。若传入一个或多个 `library_name`，服务端会加载完整库并把其中公开因子方法注入模板，因此组合函数可以直接调用 `self.jq_ar()`、`self.qlib_alpha158_kmid()` 等方法。内置库私有辅助函数不会暴露给前端，但会在原库中正常执行。
+
+```jsonc
+{
+  "factor_code": "def combo_factor(self):\n    return 0.5 * self.jq_ar() + 0.5 * self.jq_arbr()",
+  "factor_name": "combo_factor",
+  "library_name": "jq_compat_emotion"
+}
+```
+
+跨库组合时传数组：
+
+```jsonc
+{
+  "factor_code": "def combo_factor(self):\n    return 0.5 * self.jq_kurtosis20() + 0.5 * self.qlib_alpha158_kmid()",
+  "factor_name": "combo_factor",
+  "library_name": ["jq_compat_risk", "qlib_alpha"]
+}
+```
+
+两个字段都不提供、直接执行内置因子时传多个库名、传入未登记库名或不同库存在同名因子时，请求不会执行回测。
 
 **响应**：
 ```jsonc
@@ -511,12 +546,10 @@ CORS 当前开发期放开（`allow_origins=["*"]`），生产应收紧到前端
 ### 前端负责
 
 ```python
-# 前端管理因子代码（从自己的因子库中取出）
+# 用户上传自定义因子时：只取一个函数，不要附带 class/import
 factor_code = """
-from quantcore import FactorLibrary
-class MyFactors(FactorLibrary):
-    def momentum(self, window=5):
-        return self.close.pct_change(window)
+def momentum(self, window=5):
+    return self.close.pct_change(window)
 """
 
 # 组装请求，调用 ResearchEngine（因子回测）
@@ -524,15 +557,23 @@ response = requests.post("http://re-cluster:8000/api/backtest/factor", json={
     "factor_code": factor_code,
     "factor_name": "momentum",
     "universe": "CSI500",
-    "rebalance": "monthly",
-    "stock_num": 100,
-    "long_short": True,
-    ...
+    "rebalance_days": 20,
+    "portfolio_type": "long_short",
 })
 
 # 前端决定是否存储结果
 result = response.json()
 save_to_database(result)  # 前端存自己数据库
+```
+
+```python
+# 平台内置因子：不传 factor_code，服务端从完整因子库加载
+response = requests.post("http://re-cluster:8000/api/backtest/factor", json={
+    "library_name": "jq_compat_risk",
+    "factor_name": "jq_kurtosis60",
+    "universe": "CSI500",
+    "rebalance_days": 20,
+})
 ```
 
 ---

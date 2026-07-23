@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # ---------------- 请求 ----------------
@@ -18,8 +18,10 @@ class FactorBacktestRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    #: Python 源码：定义 ``FactorLibrary`` 子类（方法即因子）或 ``BaseFactor`` 子类
-    factor_code: str = Field(..., description="因子 Python 源码")
+    #: 用户自定义因子的函数源码；未提供时执行内置因子
+    factor_code: Optional[str] = Field(None, description="自定义因子 Python 函数源码")
+    #: 内置因子库名；自定义因子可传一个或多个库以复用其中的方法
+    library_name: Optional[str | list[str]] = Field(None, description="内置因子库名")
     #: 要跑的因子名（FactorLibrary 的方法名，或 BaseFactor 的 ``name``）
     factor_name: str = Field("alpha101", description="因子名")
     #: 组合构建方式：long_only=纯多头 | long_short=多空组合
@@ -49,6 +51,25 @@ class FactorBacktestRequest(BaseModel):
     analysis_level: Literal["core", "full"] = Field(
         "core", description="core | full"
     )
+
+    @model_validator(mode="after")
+    def validate_factor_source(self):
+        """内置因子或自定义因子必须有明确来源。"""
+        libraries = self.library_names
+        if self.factor_code is None and not libraries:
+            raise ValueError("未提供 factor_code 时必须提供 library_name")
+        if self.factor_code is None and len(libraries) != 1:
+            raise ValueError("直接执行内置因子时 library_name 必须是单个库名")
+        if len(libraries) != len(set(libraries)):
+            raise ValueError("library_name 不可包含重复库名")
+        return self
+
+    @property
+    def library_names(self) -> list[str]:
+        """统一将单个库名和多库列表转换为列表。"""
+        if self.library_name is None:
+            return []
+        return [self.library_name] if isinstance(self.library_name, str) else self.library_name
 class StrategyBacktestRequest(BaseModel):
     """``POST /api/backtest/strategy`` 请求。"""
 

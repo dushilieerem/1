@@ -107,7 +107,7 @@ uvicorn researchengine.api.app:app --reload   # Swagger UI: http://localhost:800
 // -> { "metrics": {...}, "equity_curve": [{date,value}...], "final_equity": ..., "error": null }
 
 // 内置因子库：不传 factor_code
-{ "library_name": "risk_indicators", "factor_name": "kurtosis60",
+{ "library_name": "jq_compat_risk", "factor_name": "jq_kurtosis60",
   "universe": "CSI500", "rebalance_days": 15, "groups": 5, "benchmark": "CSI500" }
 ```
 

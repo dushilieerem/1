@@ -1,7 +1,8 @@
-"""Alpha158 / Alpha360 特征库。
+"""Qlib Alpha158 / Alpha360 特征库的 Pandas 复刻。
 
-因子名使用 ``alpha158_`` 或 ``alpha360_`` 前缀，后接特征名的小写形式，例如
-``alpha158_kmid``。
+特征定义与 Microsoft Qlib 的 ``Alpha158DL``、``Alpha360DL`` 一致，但不依赖
+Qlib 运行时。因子名使用 ``qlib_alpha158_`` 或 ``qlib_alpha360_`` 前缀，后接
+Qlib 原始特征名的小写形式，例如 ``qlib_alpha158_kmid``。
 """
 
 from __future__ import annotations
@@ -40,10 +41,10 @@ def _linear_residual(values: np.ndarray) -> float:
     return float(values[-1] - np.polyval(np.polyfit(np.arange(len(values)), values, 1), len(values) - 1))
 
 
-class AlphaFeatureLibrary(FactorLibrary):
-    """Alpha158（158 个）与 Alpha360（360 个）标准特征。"""
+class QlibAlphaLibrary(FactorLibrary):
+    """Qlib Alpha158（158 个）与 Alpha360（360 个）标准特征。"""
 
-    author = "SVQuant"
+    author = "Microsoft Qlib / SVQuant"
 
     def _vwap(self) -> pd.DataFrame:
         """优先使用原始 VWAP；缺失时按成交额/成交量推导。"""
@@ -52,13 +53,13 @@ class AlphaFeatureLibrary(FactorLibrary):
         return self.amount / (self.volume + EPSILON)
 
 
-def _add_factor(name: str, description: str, calculator: Callable[[AlphaFeatureLibrary], pd.DataFrame]) -> None:
-    def factor(self: AlphaFeatureLibrary) -> pd.DataFrame:
+def _add_factor(name: str, description: str, calculator: Callable[[QlibAlphaLibrary], pd.DataFrame]) -> None:
+    def factor(self: QlibAlphaLibrary) -> pd.DataFrame:
         return calculator(self)
 
     factor.__name__ = name
     factor.__doc__ = description
-    setattr(AlphaFeatureLibrary, name, factor)
+    setattr(QlibAlphaLibrary, name, factor)
 
 
 def _add_alpha360_factors() -> None:
@@ -72,17 +73,17 @@ def _add_alpha360_factors() -> None:
     }
     for field_name, getter in fields.items():
         for day in range(60):
-            name = f"alpha360_{field_name}{day}"
+            name = f"qlib_alpha360_{field_name}{day}"
             if field_name == "volume":
                 _add_factor(
                     name,
-                    f"Alpha360 VOLUME{day}。",
+                    f"Qlib Alpha360 VOLUME{day}。",
                     lambda lib, getter=getter, day=day: getter(lib).shift(day) / (lib.volume + EPSILON),
                 )
             else:
                 _add_factor(
                     name,
-                    f"Alpha360 {field_name.upper()}{day}。",
+                    f"Qlib Alpha360 {field_name.upper()}{day}。",
                     lambda lib, getter=getter, day=day: getter(lib).shift(day) / lib.close,
                 )
 
@@ -100,7 +101,7 @@ def _add_alpha158_factors() -> None:
         "ksft2": lambda lib: (2 * lib.close - lib.high - lib.low) / (lib.high - lib.low + EPSILON),
     }
     for suffix, calculator in kbar.items():
-        _add_factor(f"alpha158_{suffix}", f"Alpha158 {suffix.upper()}。", calculator)
+        _add_factor(f"qlib_alpha158_{suffix}", f"Qlib Alpha158 {suffix.upper()}。", calculator)
 
     for field_name, getter in {
         "open": lambda lib: lib.open,
@@ -109,8 +110,8 @@ def _add_alpha158_factors() -> None:
         "vwap": lambda lib: lib._vwap(),
     }.items():
         _add_factor(
-            f"alpha158_{field_name}0",
-            f"Alpha158 {field_name.upper()}0。",
+            f"qlib_alpha158_{field_name}0",
+            f"Qlib Alpha158 {field_name.upper()}0。",
             lambda lib, getter=getter: getter(lib) / lib.close,
         )
 
@@ -153,8 +154,8 @@ def _add_alpha158_factors() -> None:
         }
         for suffix, calculator in factors.items():
             _add_factor(
-                f"alpha158_{suffix}{window}",
-                f"Alpha158 {suffix.upper()}{window}。",
+                f"qlib_alpha158_{suffix}{window}",
+                f"Qlib Alpha158 {suffix.upper()}{window}。",
                 calculator,
             )
 

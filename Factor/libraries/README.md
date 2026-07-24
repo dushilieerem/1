@@ -4,8 +4,6 @@
 > 最后更新：2026-07-17
 > 适用范围：公共因子库（PublicAlphaLibrary）
 
-> 因子名称、公式要点、参数、依赖字段和兼容范围见[《SVQuant 内置因子库总览》](../因子库总览.md)。
-
 ## 1. 设计原则
 
 因子是**可执行代码**，不是数据：代码保存在 `.py` 文件，名称、描述和参数等元数据由
@@ -22,9 +20,9 @@ Factor/libraries/
 ├── volatility_lib.py
 ├── trading_lib.py
 ├── alpha_library.py
-├── technical_indicators.py # 技术指标（第一批）
-├── risk_indicators.py      # 风险指标（第一批）
-└── emotion_indicators.py   # 情绪指标
+├── jq_compat_technical.py  # 聚宽兼容技术因子（第一批）
+├── jq_compat_risk.py       # 聚宽兼容风险因子（第一批）
+└── jq_compat_emotion.py    # 聚宽兼容情绪因子
 ```
 
 每个 `.py` 文件包含一个 `FactorLibrary` 子类，每个公开方法为一个因子：

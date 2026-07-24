@@ -1,13 +1,17 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, Fragment, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactECharts from "echarts-for-react";
 import {
   BarChart3,
+  ChevronDown,
+  ChevronRight,
   Clock,
   Layers,
+  ListOrdered,
   Share2,
   TrendingDown,
   TrendingUp,
+  Wallet,
 } from "lucide-react";
 import {
   CHART,
@@ -27,13 +31,18 @@ import {
   optionLabel,
   type StrategyRunRecord,
 } from "@/lib/strategyStore";
+import type { YgRebalanceLog, YgRebalanceTrade } from "@/lib/ygApi";
 
-type ReportTab = "equity" | "overview";
+type ReportTab = "equity" | "overview" | "trades" | "holdings";
 
 const NAV: { id: ReportTab; label: string; icon: typeof TrendingDown }[] = [
   { id: "equity", label: "累计收益与回撤", icon: TrendingDown },
   { id: "overview", label: "绩效概览", icon: BarChart3 },
+  { id: "trades", label: "交易明细", icon: ListOrdered },
+  { id: "holdings", label: "历史持仓", icon: Wallet },
 ];
+
+const TRADE_PAGE_SIZE = 50;
 
 function pct(x?: number | null) {
   if (x == null || Number.isNaN(x)) return "—";
@@ -43,8 +52,57 @@ function num(x?: number | null) {
   if (x == null || Number.isNaN(x)) return "—";
   return x.toFixed(3);
 }
+function wgt(x?: number | null) {
+  if (x == null || Number.isNaN(x)) return "—";
+  return `${(x * 100).toFixed(2)}%`;
+}
 function toCumPct(nav: number) {
   return (nav - 1) * 100;
+}
+
+function sideLabel(side: string) {
+  const s = side.toLowerCase();
+  if (s === "buy") return "买入";
+  if (s === "sell") return "卖出";
+  return side || "—";
+}
+
+/** 按调仓日志累积目标权重 → 各调仓日收盘后持仓 */
+function holdingsFromRebalanceLogs(logs: YgRebalanceLog[]) {
+  const book = new Map<string, number>();
+  const rows: Array<{
+    date: string;
+    holdings: Array<{ symbol: string; weight: number }>;
+  }> = [];
+  for (const log of logs) {
+    for (const t of log.trades || []) {
+      const sym = String(t.symbol || "").trim();
+      if (!sym) continue;
+      const w = Number(t.target_weight);
+      if (!Number.isFinite(w) || Math.abs(w) < 1e-12) book.delete(sym);
+      else book.set(sym, w);
+    }
+    rows.push({
+      date: log.date,
+      holdings: [...book.entries()]
+        .map(([symbol, weight]) => ({ symbol, weight }))
+        .sort(
+          (a, b) =>
+            b.weight - a.weight || a.symbol.localeCompare(b.symbol, "en"),
+        ),
+    });
+  }
+  return rows;
+}
+
+function flattenTrades(logs: YgRebalanceLog[]) {
+  const rows: Array<YgRebalanceTrade & { date: string }> = [];
+  for (const log of logs) {
+    for (const t of log.trades || []) {
+      rows.push({ ...t, date: log.date });
+    }
+  }
+  return rows;
 }
 
 function resolveUniverse(rec: StrategyRunRecord | null | undefined): string {
@@ -119,6 +177,8 @@ export function StrategyReportPage() {
   const navigate = useNavigate();
   const [rec, setRec] = useState<StrategyRunRecord | null | undefined>(undefined);
   const [tab, setTab] = useState<ReportTab>("equity");
+  const [tradePage, setTradePage] = useState(1);
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -138,6 +198,68 @@ export function StrategyReportPage() {
   const result = rec?.result;
   const m = result?.metrics;
   const req = rec?.request;
+  const rebalanceLogs = useMemo(
+    () => (result?.rebalance_logs || []) as YgRebalanceLog[],
+    [result],
+  );
+  const flatTrades = useMemo(
+    () => flattenTrades(rebalanceLogs),
+    [rebalanceLogs],
+  );
+  const holdingRows = useMemo(
+    () => holdingsFromRebalanceLogs(rebalanceLogs),
+    [rebalanceLogs],
+  );
+  const rebSummary = useMemo(() => {
+    let buys = 0;
+    let sells = 0;
+    for (const t of flatTrades) {
+      const s = String(t.side || "").toLowerCase();
+      if (s === "buy") buys += 1;
+      else if (s === "sell") sells += 1;
+    }
+    return {
+      days: rebalanceLogs.length,
+      tradeRows: flatTrades.length,
+      buys,
+      sells,
+    };
+  }, [flatTrades, rebalanceLogs.length]);
+
+  useEffect(() => {
+    setTradePage(1);
+    setExpandedDates(new Set());
+  }, [runId]);
+
+  const tradePageCount = Math.max(
+    1,
+    Math.ceil(flatTrades.length / TRADE_PAGE_SIZE) || 1,
+  );
+  const tradeSlice = useMemo(() => {
+    const page = Math.min(Math.max(1, tradePage), tradePageCount);
+    const start = (page - 1) * TRADE_PAGE_SIZE;
+    return flatTrades.slice(start, start + TRADE_PAGE_SIZE);
+  }, [flatTrades, tradePage, tradePageCount]);
+
+  const toggleExpand = (date: string) => {
+    setExpandedDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
+  };
+
+  const expandAllHoldings = () => {
+    setExpandedDates(new Set(holdingRows.map((r) => r.date)));
+  };
+  const collapseAllHoldings = () => {
+    setExpandedDates(new Set());
+  };
+
+  const emptyRebHint = req?.include_rebalance_logs
+    ? "本次回测未返回调仓记录（可能无权重变化）"
+    : "本次回测未请求调仓日志。请在参数设置勾选「返回调仓日志」后重新回测。";
 
   const curveDates = useMemo(
     () => result?.equity_curve?.map((p) => p.date) || [],
@@ -403,14 +525,39 @@ export function StrategyReportPage() {
       metrics: m,
       excessReturn: result?.excess_return,
       strategyCode: req?.strategy_code,
+      returnTo: `/strategy/research/report/${rec.id || runId}`,
+      returnLabel: "返回策略回测报告",
     });
     navigate(next, { state: draft });
   };
 
+  const highlightMetrics: Array<{
+    key: string;
+    label: string;
+    value: string;
+    valueClass: string;
+  }> = [
+    {
+      key: "annual",
+      label: "年化",
+      value: m?.annual_return != null ? pct(m.annual_return) : "—",
+      valueClass: "text-sky-700",
+    },
+    {
+      key: "mdd",
+      label: "最大回撤",
+      value: m?.max_drawdown != null ? pct(m.max_drawdown) : "—",
+      valueClass: "text-rose-700",
+    },
+    {
+      key: "sharpe",
+      label: "Sharpe",
+      value: m?.sharpe != null ? num(m.sharpe) : "—",
+      valueClass: "text-violet-700",
+    },
+  ];
+
   const candidates: Array<[string, string | null]> = [
-    ["年化", m?.annual_return != null ? pct(m.annual_return) : null],
-    ["夏普", m?.sharpe != null ? num(m.sharpe) : null],
-    ["最大回撤", m?.max_drawdown != null ? pct(m.max_drawdown) : null],
     [
       "波动",
       m?.volatility != null || m?.annual_vol != null
@@ -440,10 +587,10 @@ export function StrategyReportPage() {
     metricCards.length > 0
       ? metricCards
       : [
-          ["年化", "—"],
-          ["夏普", "—"],
-          ["最大回撤", "—"],
+          ["累计收益", "—"],
+          ["波动", "—"],
           ["胜率", "—"],
+          ["超额", "—"],
         ];
 
   return (
@@ -492,36 +639,54 @@ export function StrategyReportPage() {
           </div>
         </div>
 
-        <div className="mx-auto grid max-w-[1400px] grid-cols-2 gap-2 px-6 pb-3 sm:grid-cols-3 lg:grid-cols-5">
-          <MetaChip
-            icon={<Clock className="h-3.5 w-3.5 text-blue-500" />}
-            label="区间"
-            value={rangeLabel}
-          />
-          <MetaChip
-            icon={<Layers className="h-3.5 w-3.5 text-amber-500" />}
-            label="股票池"
-            value={optionLabel(uniCode, STRATEGY_UNIVERSE_OPTIONS)}
-          />
-          <MetaChip
-            icon={<TrendingUp className="h-3.5 w-3.5 text-teal-500" />}
-            label="基准"
-            value={optionLabel(bmCode, STRATEGY_BENCHMARK_OPTIONS)}
-          />
-          <MetaChip
-            icon={<BarChart3 className="h-3.5 w-3.5 text-slate-500" />}
-            label="运行耗时"
-            value={`${rec.elapsedSec}s`}
-          />
-          <MetaChip
-            icon={<TrendingDown className="h-3.5 w-3.5 text-rose-500" />}
-            label="起始资金"
-            value={
-              req?.initial_capital != null
-                ? req.initial_capital.toLocaleString("zh-CN")
-                : "—"
-            }
-          />
+        <div className="mx-auto w-full max-w-[1400px] space-y-2 px-6 pb-4">
+          <div
+            className="grid gap-2"
+            style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
+          >
+            <ReportStatCard
+              label="区间"
+              value={rangeLabel}
+              icon={<Clock className="h-3.5 w-3.5 text-blue-500" />}
+            />
+            <ReportStatCard
+              label="股票池"
+              value={optionLabel(uniCode, STRATEGY_UNIVERSE_OPTIONS)}
+              icon={<Layers className="h-3.5 w-3.5 text-amber-500" />}
+            />
+            <ReportStatCard
+              label="基准"
+              value={optionLabel(bmCode, STRATEGY_BENCHMARK_OPTIONS)}
+              icon={<TrendingUp className="h-3.5 w-3.5 text-teal-500" />}
+            />
+            <ReportStatCard
+              label="运行耗时"
+              value={`${rec.elapsedSec}s`}
+              icon={<BarChart3 className="h-3.5 w-3.5 text-slate-500" />}
+            />
+            <ReportStatCard
+              label="起始资金"
+              value={
+                req?.initial_capital != null
+                  ? req.initial_capital.toLocaleString("zh-CN")
+                  : "—"
+              }
+              icon={<TrendingDown className="h-3.5 w-3.5 text-rose-500" />}
+            />
+          </div>
+          <div
+            className="grid gap-2"
+            style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
+          >
+            {highlightMetrics.map((item) => (
+              <ReportStatCard
+                key={item.key}
+                label={item.label}
+                value={item.value}
+                valueClassName={item.valueClass}
+              />
+            ))}
+          </div>
         </div>
       </div>
 
@@ -605,17 +770,12 @@ export function StrategyReportPage() {
 
             {tab === "overview" && (
               <div className="space-y-5">
-                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <section
+                  className="grid gap-2"
+                  style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
+                >
                   {shownCards.map(([k, v]) => (
-                    <div
-                      key={k}
-                      className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm"
-                    >
-                      <p className="text-xs text-slate-500">{k}</p>
-                      <p className="mt-1 text-lg font-bold tabular-nums text-slate-900">
-                        {v}
-                      </p>
-                    </div>
+                    <ReportStatCard key={k} label={k} value={v} />
                   ))}
                 </section>
 
@@ -682,6 +842,225 @@ export function StrategyReportPage() {
                 )}
               </div>
             )}
+
+            {tab === "trades" && (
+              <div className="space-y-4">
+                <p className="text-xs leading-relaxed text-slate-500">
+                  信号日目标权重变化对应的买卖方向（非成交价/数量）。未勾选「返回调仓日志」的历史回测此处为空。
+                </p>
+                {flatTrades.length === 0 ? (
+                  <section className={chartCardClass()}>
+                    <p className="py-16 text-center text-sm text-slate-400">
+                      {emptyRebHint}
+                    </p>
+                  </section>
+                ) : (
+                  <>
+                    <section className="grid gap-3 sm:grid-cols-4">
+                      {(
+                        [
+                          ["调仓日", String(rebSummary.days)],
+                          ["变动笔数", String(rebSummary.tradeRows)],
+                          ["买入", String(rebSummary.buys)],
+                          ["卖出", String(rebSummary.sells)],
+                        ] as const
+                      ).map(([k, v]) => (
+                        <div
+                          key={k}
+                          className="rounded-xl border border-slate-200/90 bg-white p-3 shadow-sm"
+                        >
+                          <p className="text-xs text-slate-500">{k}</p>
+                          <p className="mt-1 text-lg font-bold tabular-nums text-slate-900">
+                            {v}
+                          </p>
+                        </div>
+                      ))}
+                    </section>
+
+                    <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-slate-50 text-xs text-slate-500">
+                            <tr>
+                              <th className="px-4 py-2.5 font-medium">日期</th>
+                              <th className="px-4 py-2.5 font-medium">股票代码</th>
+                              <th className="px-4 py-2.5 font-medium">买卖操作</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {tradeSlice.map((t, i) => {
+                              const side = String(t.side || "").toLowerCase();
+                              const buy = side === "buy";
+                              const sell = side === "sell";
+                              return (
+                                <tr
+                                  key={`${t.date}-${t.symbol}-${i}`}
+                                  className="border-t border-slate-100 hover:bg-slate-50/80"
+                                >
+                                  <td className="px-4 py-2.5 font-mono text-xs text-slate-600">
+                                    {t.date}
+                                  </td>
+                                  <td className="px-4 py-2.5 font-mono text-xs text-slate-800">
+                                    {t.symbol || "—"}
+                                  </td>
+                                  <td
+                                    className={`px-4 py-2.5 text-sm font-medium ${
+                                      buy
+                                        ? "text-red-600"
+                                        : sell
+                                          ? "text-emerald-600"
+                                          : "text-slate-600"
+                                    }`}
+                                  >
+                                    {sideLabel(t.side)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      {tradePageCount > 1 && (
+                        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-500">
+                          <span>
+                            第 {Math.min(tradePage, tradePageCount)} / {tradePageCount} 页
+                            · 共 {flatTrades.length} 笔
+                          </span>
+                          <button
+                            type="button"
+                            disabled={tradePage <= 1}
+                            onClick={() => setTradePage((p) => Math.max(1, p - 1))}
+                            className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50 disabled:opacity-40"
+                          >
+                            上一页
+                          </button>
+                          <button
+                            type="button"
+                            disabled={tradePage >= tradePageCount}
+                            onClick={() =>
+                              setTradePage((p) => Math.min(tradePageCount, p + 1))
+                            }
+                            className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50 disabled:opacity-40"
+                          >
+                            下一页
+                          </button>
+                        </div>
+                      )}
+                    </section>
+                  </>
+                )}
+              </div>
+            )}
+
+            {tab === "holdings" && (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs leading-relaxed text-slate-500">
+                    各调仓日调整后的目标持仓（由调仓日志推算）。点击行可展开/收起明细。
+                  </p>
+                  {holdingRows.length > 0 && (
+                    <div className="flex gap-2 text-xs">
+                      <button
+                        type="button"
+                        onClick={expandAllHoldings}
+                        className="rounded border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-50"
+                      >
+                        全部展开
+                      </button>
+                      <button
+                        type="button"
+                        onClick={collapseAllHoldings}
+                        className="rounded border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-50"
+                      >
+                        全部收起
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {holdingRows.length === 0 ? (
+                  <section className={chartCardClass()}>
+                    <p className="py-16 text-center text-sm text-slate-400">
+                      {emptyRebHint}
+                    </p>
+                  </section>
+                ) : (
+                  <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-slate-50 text-xs text-slate-500">
+                        <tr>
+                          <th className="w-10 px-3 py-2.5" />
+                          <th className="px-3 py-2.5 font-medium">日期</th>
+                          <th className="px-3 py-2.5 font-medium">持仓表</th>
+                          <th className="px-3 py-2.5 text-right font-medium">权重</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {holdingRows.map((row) => {
+                          const open = expandedDates.has(row.date);
+                          const n = row.holdings.length;
+                          return (
+                            <Fragment key={row.date}>
+                              <tr
+                                className="cursor-pointer border-t border-slate-100 hover:bg-slate-50/80"
+                                onClick={() => toggleExpand(row.date)}
+                              >
+                                <td className="px-3 py-2.5 text-blue-600">
+                                  {open ? (
+                                    <ChevronDown className="h-4 w-4" />
+                                  ) : (
+                                    <ChevronRight className="h-4 w-4" />
+                                  )}
+                                </td>
+                                <td className="px-3 py-2.5 font-mono text-xs text-slate-700">
+                                  {row.date}
+                                </td>
+                                <td className="px-3 py-2.5 text-slate-600">
+                                  持有 {n} 只证券
+                                </td>
+                                <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">
+                                  —
+                                </td>
+                              </tr>
+                              {open &&
+                                (n === 0 ? (
+                                  <tr className="border-t border-slate-50 bg-slate-50/40">
+                                    <td />
+                                    <td
+                                      colSpan={3}
+                                      className="px-3 py-3 text-xs text-slate-400"
+                                    >
+                                      该日无持仓
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  row.holdings.map((h) => (
+                                    <tr
+                                      key={`${row.date}-${h.symbol}`}
+                                      className="border-t border-slate-50 bg-slate-50/40"
+                                    >
+                                      <td />
+                                      <td className="px-3 py-1.5 font-mono text-[11px] text-slate-400">
+                                        {row.date}
+                                      </td>
+                                      <td className="px-3 py-1.5 font-mono text-xs text-slate-800">
+                                        {h.symbol}
+                                      </td>
+                                      <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">
+                                        {wgt(h.weight)}
+                                      </td>
+                                    </tr>
+                                  ))
+                                ))}
+                            </Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </section>
+                )}
+              </div>
+            )}
           </main>
         </div>
       </div>
@@ -689,21 +1068,27 @@ export function StrategyReportPage() {
   );
 }
 
-function MetaChip({
-  icon,
+function ReportStatCard({
   label,
   value,
+  icon,
+  valueClassName = "text-slate-900",
 }: {
-  icon: ReactNode;
   label: string;
   value: string;
+  icon?: ReactNode;
+  valueClassName?: string;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/80 px-2.5 py-1.5">
-      {icon}
-      <div className="min-w-0">
-        <p className="text-[10px] text-slate-400">{label}</p>
-        <p className="truncate text-xs font-semibold text-slate-800">{value}</p>
+    <div className="flex min-h-[58px] min-w-0 w-full items-center gap-2 rounded-lg border border-slate-200/90 bg-white px-3 py-2 shadow-sm">
+      {icon ? <span className="shrink-0">{icon}</span> : null}
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] text-slate-500">{label}</p>
+        <p
+          className={`truncate text-sm font-semibold tabular-nums leading-snug ${valueClassName}`}
+        >
+          {value}
+        </p>
       </div>
     </div>
   );

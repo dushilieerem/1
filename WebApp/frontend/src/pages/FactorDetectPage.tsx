@@ -284,9 +284,9 @@ export function FactorDetectPage() {
         benchmark: cfg.benchmark,
         groups: Math.min(5, Math.max(1, cfg.groups || 5)),
         rebalance_days: cfg.rebalanceDays,
-        commission_rate: 0.0003,
-        stamp_tax: 0.001,
-        slippage_rate: 0.001,
+        commission_rate: cfg.commissionRate,
+        stamp_tax: cfg.stampTax,
+        slippage_rate: cfg.slippageRate,
         analysis_level: cfg.analysisLevel || "core",
       };
       pushLog(`区间 ${start} → ${end} · 分析深度 ${req.analysis_level}`);
@@ -674,6 +674,43 @@ export function FactorDetectPage() {
                     max={60}
                     value={cfg.rebalanceDays}
                     onChange={(e) => patchConfig({ rebalanceDays: Number(e.target.value) || 20 })}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                  />
+                </label>
+                <label className="text-xs text-slate-500">
+                  佣金率
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min={0}
+                    value={cfg.commissionRate}
+                    onChange={(e) =>
+                      patchConfig({ commissionRate: Number(e.target.value) || 0 })
+                    }
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                  />
+                </label>
+                <label className="text-xs text-slate-500">
+                  印花税
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min={0}
+                    value={cfg.stampTax}
+                    onChange={(e) => patchConfig({ stampTax: Number(e.target.value) || 0 })}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                  />
+                </label>
+                <label className="text-xs text-slate-500">
+                  滑点率
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min={0}
+                    value={cfg.slippageRate}
+                    onChange={(e) =>
+                      patchConfig({ slippageRate: Number(e.target.value) || 0 })
+                    }
                     className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
                   />
                 </label>

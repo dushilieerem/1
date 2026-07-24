@@ -208,9 +208,46 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 limit = int((qs.get("limit") or ["50"])[0])
                 offset = int((qs.get("offset") or ["0"])[0])
+                status = (qs.get("status") or ["published"])[0]
                 self._send_json(
-                    list_my_posts(int(user["id"]), limit=limit, offset=offset)
+                    list_my_posts(
+                        int(user["id"]),
+                        status=status,
+                        limit=limit,
+                        offset=offset,
+                    )
                 )
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/community/moderation":
+            from services.auth_store import user_from_authorization
+            from services.community_store import list_moderation_posts
+
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                kind = (qs.get("kind") or ["hidden"])[0]
+                limit = int((qs.get("limit") or ["50"])[0])
+                offset = int((qs.get("offset") or ["0"])[0])
+                self._send_json(
+                    list_moderation_posts(
+                        author_role=str(user.get("role") or "user"),
+                        kind=kind,
+                        limit=limit,
+                        offset=offset,
+                    )
+                )
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 403)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
             except Exception as exc:
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
@@ -445,6 +482,7 @@ class Handler(BaseHTTPRequestHandler):
                             post_id,
                             bump_view=bump_view,
                             viewer_id=int(viewer["id"]) if viewer else None,
+                            viewer_role=str((viewer or {}).get("role") or "user"),
                         )
                     )
                     return
@@ -454,6 +492,7 @@ class Handler(BaseHTTPRequestHandler):
                         list_comments(
                             post_id,
                             viewer_id=int(viewer["id"]) if viewer else None,
+                            viewer_role=str((viewer or {}).get("role") or "user"),
                         )
                     )
                     return
@@ -475,6 +514,50 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
             return
+
+        if path == "/api/agent/usage/me":
+            from services.agent_store import usage_summary_for_user
+            from services.auth_store import user_from_authorization
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                self._send_json(usage_summary_for_user(int(user["id"])))
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+
+        if path == "/api/agent/usage":
+            from services.agent_store import usage_admin_summary
+            from services.auth_store import user_from_authorization
+
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                if user.get("role") != "admin":
+                    self._send_json({"error": "仅管理员可查看"}, 403)
+                    return
+                days_raw = (qs.get("days") or ["7"])[0]
+                try:
+                    days = int(days_raw)
+                except ValueError:
+                    days = 7
+                self._send_json(usage_admin_summary(days=days))
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+
         self._send_json({"error": "not found"}, 404)
 
     def do_POST(self) -> None:
@@ -710,9 +793,47 @@ class Handler(BaseHTTPRequestHandler):
                         section=str(body.get("section") or ""),
                         code_snippet=(str(body["code_snippet"]) if body.get("code_snippet") else None),
                         author_role=str(user.get("role") or "user"),
+                        status=str(body.get("status") or "published"),
                     )
                 )
             except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/agent/runs":
+            from services.agent_runtime import start_run
+            from services.auth_store import user_from_authorization
+            from services.llm_client import LlmError
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                skills = body.get("skills")
+                if skills is not None and not isinstance(skills, list):
+                    self._send_json({"error": "skills 须为数组"}, 400)
+                    return
+                context = body.get("context")
+                if context is not None and not isinstance(context, dict):
+                    self._send_json({"error": "context 须为对象"}, 400)
+                    return
+                self._send_json(
+                    start_run(
+                        user_id=int(user["id"]),
+                        goal=str(body.get("goal") or ""),
+                        skills=[str(s) for s in skills] if skills else None,
+                        context=context or {},
+                        mode=str(body.get("mode") or "single"),
+                        crew=str(body.get("crew") or "") or None,
+                    )
+                )
+            except PermissionError as exc:
+                msg = str(exc)
+                self._send_json({"error": msg}, 403 if "配额" in msg else 401)
+            except (ValueError, LlmError) as exc:
                 self._send_json({"error": str(exc)}, 400)
             except Exception as exc:
                 traceback.print_exc()
@@ -815,11 +936,37 @@ class Handler(BaseHTTPRequestHandler):
                 if parts[1] == "favorite":
                     self._send_json(add_favorite(int(user["id"]), post_id))
                     return
+                if parts[1] == "moderate":
+                    from services.community_store import moderate_post
+
+                    pinned = body.get("pinned")
+                    status = body.get("status")
+                    self._send_json(
+                        moderate_post(
+                            post_id,
+                            author_role=str(user.get("role") or "user"),
+                            pinned=None if pinned is None else bool(pinned),
+                            status=None if status is None else str(status),
+                        )
+                    )
+                    return
+                if parts[1] == "purge":
+                    from services.community_store import purge_post
+
+                    self._send_json(
+                        purge_post(
+                            post_id,
+                            author_role=str(user.get("role") or "user"),
+                        )
+                    )
+                    return
                 self._send_json({"error": "not found"}, 404)
             except KeyError:
                 self._send_json({"error": "not found"}, 404)
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, 400)
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 403)
             except Exception as exc:
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
@@ -901,6 +1048,9 @@ class Handler(BaseHTTPRequestHandler):
                             str(body["code_snippet"]) if body.get("code_snippet") else None
                         ),
                         author_role=str(user.get("role") or "user"),
+                        status=(
+                            str(body["status"]) if body.get("status") is not None else None
+                        ),
                     )
                 )
             except PermissionError as exc:
@@ -1116,6 +1266,7 @@ def main() -> None:
         pass
     try:
         from services.auth_store import ensure_schema, seed_admin
+        from services.agent_store import ensure_ai_usage_schema
         from services.community_store import ensure_posts_schema, seed_sample_posts
         from services.detect_store import ensure_detect_schema, reassign_misowned_named_projects
         from services.strategy_store import ensure_strategy_schema
@@ -1126,6 +1277,7 @@ def main() -> None:
 
         ensure_schema()
         seed_admin()
+        ensure_ai_usage_schema()
         ensure_posts_schema()
         n = seed_sample_posts()
         ensure_user_factors_schema()
@@ -1134,6 +1286,7 @@ def main() -> None:
         ensure_strategy_schema()
         moved = reassign_misowned_named_projects()
         print("  auth  → postgres users 就绪")
+        print("  agent → ai_usage 就绪")
         print(f"  community → posts 就绪" + (f"（种子 {n} 条）" if n else ""))
         print(
             f"  user_custom_factors 就绪"
@@ -1174,6 +1327,7 @@ def main() -> None:
     print("  GET  /api/community/hot")
     print("  GET  /api/community/favorites")
     print("  GET  /api/community/my-posts")
+    print("  GET  /api/community/moderation")
     print("  GET  /api/community/notifications")
     print("  GET  /api/community/notifications/unread-count")
     print("  POST /api/community/notifications/read")
@@ -1183,6 +1337,8 @@ def main() -> None:
     print("  DELETE /api/community/posts/{id}")
     print("  GET  /api/community/posts/{id}/comments")
     print("  POST /api/community/posts/{id}/comments")
+    print("  POST /api/community/posts/{id}/moderate")
+    print("  POST /api/community/posts/{id}/purge")
     print("  POST /api/community/comments/{id}/vote")
     print("  POST /api/community/posts/{id}/favorite")
     print("  DELETE /api/community/posts/{id}/favorite")
@@ -1202,6 +1358,9 @@ def main() -> None:
     print("  POST /api/strategy/runs")
     print("  GET  /api/strategy/runs/{id}")
     print("  DELETE /api/strategy/runs/{id}")
+    print("  POST /api/agent/runs")
+    print("  GET  /api/agent/usage/me")
+    print("  GET  /api/agent/usage")
     print("=" * 48)
     server.serve_forever()
 

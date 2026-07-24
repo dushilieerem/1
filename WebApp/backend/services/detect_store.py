@@ -91,6 +91,9 @@ def _default_config(factor_codes: list[str] | None = None) -> dict[str, Any]:
         "filterLimitUp": True,
         "filterSuspended": True,
         "analysisLevel": "core",
+        "commissionRate": 0.0003,
+        "stampTax": 0.001,
+        "slippageRate": 0.001,
     }
 
 

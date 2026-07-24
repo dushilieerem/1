@@ -21,6 +21,9 @@ export function StrategyResearchListPage() {
   const [renameValue, setRenameValue] = useState("");
   const [renameErr, setRenameErr] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StrategyProject | null>(null);
+  const [batchDeleteIds, setBatchDeleteIds] = useState<string[] | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [deleting, setDeleting] = useState(false);
   const [createErr, setCreateErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -29,7 +32,16 @@ export function StrategyResearchListPage() {
     setLoading(true);
     setErr(null);
     void listVisibleStrategyProjects()
-      .then(setProjects)
+      .then((list) => {
+        setProjects(list);
+        setSelectedIds((prev) => {
+          const next = new Set<string>();
+          for (const id of prev) {
+            if (list.some((p) => p.id === id)) next.add(id);
+          }
+          return next;
+        });
+      })
       .catch((e) => {
         setProjects([]);
         setErr(e instanceof Error ? e.message : String(e));
@@ -48,6 +60,7 @@ export function StrategyResearchListPage() {
       if (uid === lastUid) return;
       lastUid = uid;
       clearStrategyClientCache();
+      setSelectedIds(new Set());
       refresh();
     });
   }, []);
@@ -61,6 +74,29 @@ export function StrategyResearchListPage() {
         p.description.toLowerCase().includes(q),
     );
   }, [projects, query]);
+
+  const allSelected =
+    filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id));
+
+  const toggleOne = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleAll = (checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const p of filtered) {
+        if (checked) next.add(p.id);
+        else next.delete(p.id);
+      }
+      return next;
+    });
+  };
 
   const openCreate = () => {
     setProjectName("");
@@ -112,6 +148,19 @@ export function StrategyResearchListPage() {
       .catch((e) => setRenameErr(e instanceof Error ? e.message : String(e)));
   };
 
+  const confirmBatchDelete = () => {
+    if (!batchDeleteIds?.length) return;
+    setDeleting(true);
+    void Promise.all(batchDeleteIds.map((id) => deleteStrategyProject(id)))
+      .then(() => {
+        setBatchDeleteIds(null);
+        setSelectedIds(new Set());
+        refresh();
+      })
+      .catch((e) => window.alert(e instanceof Error ? e.message : String(e)))
+      .finally(() => setDeleting(false));
+  };
+
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50/80">
       <div className="mx-auto max-w-[1200px] px-6 py-8">
@@ -132,13 +181,23 @@ export function StrategyResearchListPage() {
           </button>
         </div>
 
-        <div className="mb-4">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索策略名称…"
             className="w-full max-w-md rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200"
           />
+          {selectedIds.size > 0 ? (
+            <button
+              type="button"
+              onClick={() => setBatchDeleteIds([...selectedIds])}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 shadow-sm hover:bg-red-50"
+            >
+              <Trash2 className="h-4 w-4" />
+              删除所选（{selectedIds.size}）
+            </button>
+          ) : null}
         </div>
 
         {err && <p className="mb-3 text-sm text-red-600">{err}</p>}
@@ -148,6 +207,16 @@ export function StrategyResearchListPage() {
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-100 bg-slate-50 text-xs text-slate-500">
               <tr>
+                <th className="w-10 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    disabled={!filtered.length}
+                    onChange={(e) => toggleAll(e.target.checked)}
+                    aria-label="全选"
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40"
+                  />
+                </th>
                 <th className="px-4 py-3 font-medium">策略名称</th>
                 <th className="px-4 py-3 font-medium">最后修改</th>
                 <th className="px-4 py-3 font-medium">回测次数</th>
@@ -157,6 +226,15 @@ export function StrategyResearchListPage() {
             <tbody className="divide-y divide-slate-100">
               {filtered.map((p) => (
                 <tr key={p.id} className="hover:bg-slate-50/80">
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(p.id)}
+                      onChange={(e) => toggleOne(p.id, e.target.checked)}
+                      aria-label={`选择 ${p.name}`}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </td>
                   <td className="px-4 py-3 font-medium text-slate-900">{p.name}</td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">
                     {p.updatedAt?.replace("T", " ").slice(0, 19)}
@@ -197,7 +275,7 @@ export function StrategyResearchListPage() {
               ))}
               {!filtered.length && !loading && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-16 text-center text-slate-400">
+                  <td colSpan={5} className="px-4 py-16 text-center text-slate-400">
                     暂无策略，点击「新建策略」开始
                   </td>
                 </tr>
@@ -297,6 +375,11 @@ export function StrategyResearchListPage() {
                   void deleteStrategyProject(deleteTarget.id)
                     .then(() => {
                       setDeleteTarget(null);
+                      setSelectedIds((prev) => {
+                        const next = new Set(prev);
+                        next.delete(deleteTarget.id);
+                        return next;
+                      });
                       refresh();
                     })
                     .catch((e) =>
@@ -306,6 +389,34 @@ export function StrategyResearchListPage() {
                 className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"
               >
                 删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {batchDeleteIds && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+            <p className="text-sm text-slate-700">
+              确认删除所选 {batchDeleteIds.length} 个策略？回测记录将一并删除。
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setBatchDeleteIds(null)}
+                className="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-60"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={confirmBatchDelete}
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {deleting ? "删除中…" : "删除"}
               </button>
             </div>
           </div>

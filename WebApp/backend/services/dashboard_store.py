@@ -33,6 +33,21 @@ RE_BUILTIN_LIBS = frozenset(
         "jq_compat_emotion",
     }
 )
+# 面板批跑只允许这些官方库；禁止 custom_lib / 他人自定义（含公开到因子库的）
+PANEL_OFFICIAL_LIBS = frozenset(
+    {
+        "momentum_lib",
+        "value_lib",
+        "technical_lib",
+        "volatility_lib",
+        "trading_lib",
+        "jq_compat_emotion",
+        "jq_compat_risk",
+        "jq_compat_technical",
+        "qlib_alpha",
+        "alpha_library",
+    }
+)
 
 _job_lock = threading.Lock()
 _job_thread: threading.Thread | None = None
@@ -98,11 +113,13 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
-def load_factor_index() -> list[dict]:
-    """面板只跑官方库；跳过 custom_lib / 带 owner_id 的私有因子。
+def load_factor_index(*, include_qlib: bool = True) -> list[dict]:
+    """面板只跑官方公开库（PANEL_OFFICIAL_LIBS）。
 
-    自动展开 yaml 未列全的库；Qlib 动态注册特征暂不进面板批跑
-    （方法体无法从源码静态抽取，且数量过大）。
+    明确排除：
+    - custom_lib（用户自定义，即使写进因子库 / 带 owner_id）
+    - 任意带 owner_id 的条目
+    - 未在白名单内的其它库
     """
     from services.factor_catalog_expand import expand_index
 
@@ -111,12 +128,15 @@ def load_factor_index() -> list[dict]:
     )
     out: list[dict] = []
     for lib_key, lib in (raw.get("libraries") or {}).items():
-        if lib_key == "custom_lib":
+        if lib_key not in PANEL_OFFICIAL_LIBS:
             continue
-        if lib_key == "qlib_alpha":
+        if lib_key == "qlib_alpha" and not include_qlib:
             continue
         for f in lib.get("factors") or []:
+            # 双保险：官方库内也不应出现个人因子
             if f.get("owner_id") is not None:
+                continue
+            if f.get("owner") or f.get("user_id") is not None:
                 continue
             out.append(
                 {
@@ -129,6 +149,51 @@ def load_factor_index() -> list[dict]:
                 }
             )
     return [x for x in out if x.get("name")]
+
+
+def _blank_metrics(*, error: str | None) -> dict:
+    """失败/不可用：只写 error，数值一律置空，禁止编造。"""
+    return {
+        "ic_mean": None,
+        "ic_std": None,
+        "ir": None,
+        "rank_ic": None,
+        "q1_return": None,
+        "q5_return": None,
+        "long_short_spread": None,
+        "q1_turnover": None,
+        "q5_turnover": None,
+        "coverage_pool": None,
+        "coverage_total": None,
+        "win_rate": None,
+        "volatility": None,
+        "sharpe": None,
+        "annual_return": None,
+        "max_drawdown": None,
+        "error": (error or "")[:500] or None,
+    }
+
+
+def row_is_ok(conn: sqlite3.Connection, *, factor_name: str, universe: str, period: str,
+              filter_limit_up: bool, filter_suspended: bool) -> bool:
+    r = conn.execute(
+        """
+        SELECT 1 FROM factor_dashboard_metrics
+        WHERE factor_name=? AND universe=? AND period=?
+          AND filter_limit_up=? AND filter_suspended=? AND rules_version=?
+          AND error IS NULL AND ic_mean IS NOT NULL
+        LIMIT 1
+        """,
+        [
+            factor_name,
+            universe,
+            period,
+            1 if filter_limit_up else 0,
+            1 if filter_suspended else 0,
+            RULES_VERSION,
+        ],
+    ).fetchone()
+    return r is not None
 
 
 def extract_method(source: str, method_name: str) -> str:
@@ -399,8 +464,21 @@ def _run_batch(
     filter_suspended: bool,
     limit: int | None,
     only_names: list[str] | None = None,
+    skip_ok: bool = False,
+    analysis_level: str = "core",
+    include_qlib: bool = True,
+    libraries: list[str] | None = None,
 ) -> None:
-    factors = load_factor_index()
+    """批跑面板指标。
+
+    - analysis_level 默认 core：面板所需 IC/分层/年化等标量均在 core 返回（见 06-research-api.md）
+    - skip_ok：已有成功行（无 error 且 ic_mean 非空）则跳过，保留旧结果
+    - 失败只写 error + 空指标，不编造数字
+    """
+    factors = load_factor_index(include_qlib=include_qlib)
+    if libraries:
+        lib_set = set(libraries)
+        factors = [f for f in factors if f.get("library") in lib_set]
     if only_names:
         want = set(only_names)
         factors = [f for f in factors if f["name"] in want]
@@ -412,14 +490,20 @@ def _run_batch(
             "status": "running",
             "universe": universe,
             "period": period,
+            "filter_limit_up": filter_limit_up,
             "done": 0,
             "total": total,
+            "skipped": 0,
+            "failed": 0,
             "current": None,
+            "analysis_level": analysis_level,
             "started_at": datetime.now(timezone.utc).isoformat(),
             "error": None,
         }
     )
     conn = _connect()
+    skipped = 0
+    failed = 0
     try:
         for i, f in enumerate(factors):
             name = f["name"]
@@ -428,9 +512,13 @@ def _run_batch(
                     "status": "running",
                     "universe": universe,
                     "period": period,
+                    "filter_limit_up": filter_limit_up,
                     "done": i,
                     "total": total,
+                    "skipped": skipped,
+                    "failed": failed,
                     "current": name,
+                    "analysis_level": analysis_level,
                     "started_at": read_job().get("started_at"),
                     "error": None,
                 }
@@ -451,32 +539,23 @@ def _run_batch(
             try:
                 if f.get("unavailable"):
                     reason = (f.get("unavailable_reason") or "数据不可用").strip()
-                    upsert_row(
-                        conn,
-                        {
-                            **base,
-                            "ic_mean": None,
-                            "ic_std": None,
-                            "ir": None,
-                            "rank_ic": None,
-                            "q1_return": None,
-                            "q5_return": None,
-                            "long_short_spread": None,
-                            "q1_turnover": None,
-                            "q5_turnover": None,
-                            "coverage_pool": None,
-                            "coverage_total": None,
-                            "win_rate": None,
-                            "volatility": None,
-                            "sharpe": None,
-                            "annual_return": None,
-                            "max_drawdown": None,
-                            "error": reason[:500],
-                        },
-                    )
+                    upsert_row(conn, {**base, **_blank_metrics(error=reason)})
                     conn.commit()
-                    time.sleep(0.05)
+                    failed += 1
+                    time.sleep(0.02)
                     continue
+
+                if skip_ok and row_is_ok(
+                    conn,
+                    factor_name=name,
+                    universe=universe,
+                    period=period,
+                    filter_limit_up=filter_limit_up,
+                    filter_suspended=filter_suspended,
+                ):
+                    skipped += 1
+                    continue
+
                 lib_key = (f.get("library") or "").strip()
                 if lib_key in RE_BUILTIN_LIBS:
                     data = call_yg_backtest(
@@ -487,8 +566,7 @@ def _run_batch(
                             period=period,
                             filter_limit_up=filter_limit_up,
                             filter_suspended=filter_suspended,
-                            # 部分股票池在 core 下不返回 factor_analysis/分层，面板必须用 full
-                            analysis_level="full",
+                            analysis_level=analysis_level,
                         )
                     )
                 else:
@@ -503,46 +581,37 @@ def _run_batch(
                             period=period,
                             filter_limit_up=filter_limit_up,
                             filter_suspended=filter_suspended,
-                            analysis_level="full",
+                            analysis_level=analysis_level,
                         )
                     )
                 mapped = map_yg_response(data)
-                upsert_row(conn, {**base, **mapped})
+                if mapped.get("error"):
+                    # RE 业务错误：只记原因，清空数值
+                    upsert_row(
+                        conn,
+                        {**base, **_blank_metrics(error=str(mapped["error"]))},
+                    )
+                    failed += 1
+                else:
+                    upsert_row(conn, {**base, **mapped})
             except Exception as exc:
                 traceback.print_exc()
-                upsert_row(
-                    conn,
-                    {
-                        **base,
-                        "ic_mean": None,
-                        "ic_std": None,
-                        "ir": None,
-                        "rank_ic": None,
-                        "q1_return": None,
-                        "q5_return": None,
-                        "long_short_spread": None,
-                        "q1_turnover": None,
-                        "q5_turnover": None,
-                        "coverage_pool": None,
-                        "coverage_total": None,
-                        "win_rate": None,
-                        "volatility": None,
-                        "sharpe": None,
-                        "annual_return": None,
-                        "max_drawdown": None,
-                        "error": str(exc)[:500],
-                    },
-                )
+                upsert_row(conn, {**base, **_blank_metrics(error=str(exc))})
+                failed += 1
             conn.commit()
-            time.sleep(0.2)
+            time.sleep(0.15)
         write_job(
             {
                 "status": "done",
                 "universe": universe,
                 "period": period,
+                "filter_limit_up": filter_limit_up,
                 "done": total,
                 "total": total,
+                "skipped": skipped,
+                "failed": failed,
                 "current": None,
+                "analysis_level": analysis_level,
                 "finished_at": datetime.now(timezone.utc).isoformat(),
                 "error": None,
             }
@@ -560,6 +629,8 @@ def start_refresh(
     filter_limit_up: bool = True,
     filter_suspended: bool = True,
     limit: int | None = None,
+    skip_ok: bool = True,
+    analysis_level: str = "core",
 ) -> dict:
     global _job_thread
     with _job_lock:
@@ -574,6 +645,8 @@ def start_refresh(
                 "filter_limit_up": filter_limit_up,
                 "filter_suspended": filter_suspended,
                 "limit": limit,
+                "skip_ok": skip_ok,
+                "analysis_level": analysis_level,
             },
             daemon=True,
         )

@@ -141,6 +141,54 @@ export function extractMethod(source: string, methodName: string): string {
   return out.map((ln) => (ln.length >= n ? ln.slice(n) : ln)).join("\n").trim();
 }
 
+/** 列出源码中类内全部方法名（含私有 _xxx） */
+export function listClassMethodNames(source: string): string[] {
+  const lines = source.split(/\r?\n/);
+  let classIndent = -1;
+  const names: string[] = [];
+  for (const line of lines) {
+    const cm = /^(\s*)class\s+\w+/.exec(line);
+    if (cm) {
+      classIndent = cm[1].length;
+      continue;
+    }
+    if (classIndent < 0) continue;
+    if (line.trim() && !/^\s/.test(line) && !line.startsWith(" ".repeat(classIndent))) {
+      // 离开该类（顶格其它内容）
+      if (!line.startsWith(" ".repeat(classIndent + 1)) && /^class\s|^\S/.test(line.trim() ? line : "x")) {
+        /* keep scanning; multiple classes rare */
+      }
+    }
+    const dm = /^(\s*)def\s+([A-Za-z_]\w*)\s*\(/.exec(line);
+    if (!dm) continue;
+    if (dm[1].length <= classIndent) continue;
+    names.push(dm[2]);
+  }
+  return names;
+}
+
+/**
+ * 抽出公开因子 + 同类全部私有辅助（策略克隆用；策略 API 不支持 library_name）。
+ */
+export function extractFactorWithHelpers(source: string, methodName: string): string {
+  const names = listClassMethodNames(source);
+  if (!names.includes(methodName)) {
+    // 退回单方法（文件可能无 class 包裹）
+    return extractMethod(source, methodName);
+  }
+  const helpers = names.filter((n) => n.startsWith("_"));
+  const parts: string[] = [];
+  for (const h of helpers) {
+    try {
+      parts.push(extractMethod(source, h));
+    } catch {
+      /* skip */
+    }
+  }
+  parts.push(extractMethod(source, methodName));
+  return parts.filter(Boolean).join("\n\n");
+}
+
 /** 把 params / 签名默认值填进公式，避免 window 等占位符导致多条一模一样 */
 export function applyParams(text: string, params: Record<string, string | number>): string {
   if (!text) return text;

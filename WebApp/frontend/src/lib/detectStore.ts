@@ -24,6 +24,10 @@ export type DetectProjectConfig = {
   filterSuspended: boolean;
   /** core=核心检测 | full=全量检测，对应 RE analysis_level */
   analysisLevel: AnalysisLevel;
+  /** 对标 RE /yg-api：佣金率 / 卖出印花税 / 滑点率 */
+  commissionRate: number;
+  stampTax: number;
+  slippageRate: number;
 };
 
 export type DetectProject = {
@@ -191,6 +195,9 @@ export function defaultConfig(factorCodes: string[] = []): DetectProjectConfig {
     filterLimitUp: true,
     filterSuspended: true,
     analysisLevel: "core",
+    commissionRate: 0.0003,
+    stampTax: 0.001,
+    slippageRate: 0.001,
   };
 }
 
@@ -210,6 +217,15 @@ function normalizeProject(
     cfg.analysisLevel = "core";
   }
   cfg.groups = Math.min(5, Math.max(1, Number(cfg.groups) || 5));
+  if (typeof cfg.commissionRate !== "number" || Number.isNaN(cfg.commissionRate)) {
+    cfg.commissionRate = base.commissionRate;
+  }
+  if (typeof cfg.stampTax !== "number" || Number.isNaN(cfg.stampTax)) {
+    cfg.stampTax = base.stampTax;
+  }
+  if (typeof cfg.slippageRate !== "number" || Number.isNaN(cfg.slippageRate)) {
+    cfg.slippageRate = base.slippageRate;
+  }
   return { ...raw, config: cfg };
 }
 

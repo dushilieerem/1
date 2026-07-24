@@ -18,11 +18,14 @@ import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { CommunityFeedPage } from "./pages/CommunityFeedPage";
 import { CommunityNewPage } from "./pages/CommunityNewPage";
+import { CommunityAiAssistPage } from "./pages/CommunityAiAssistPage";
 import { CommunityPostPage } from "./pages/CommunityPostPage";
 import { CommunityFavoritesPage } from "./pages/CommunityFavoritesPage";
 import { CommunityMyPostsPage } from "./pages/CommunityMyPostsPage";
 import { CommunityMessagesPage } from "./pages/CommunityMessagesPage";
 import { CommunityMePage } from "./pages/CommunityMePage";
+import { CommunityModPage } from "./pages/CommunityModPage";
+import { CommunityDraftsPage } from "./pages/CommunityDraftsPage";
 
 function Authed({ children }: { children: React.ReactNode }) {
   return <RequireAuth>{children}</RequireAuth>;
@@ -36,14 +39,17 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
-        <Route path="/community" element={<Authed><CommunityFeedPage /></Authed>} />
+        <Route path="/community" element={<CommunityFeedPage />} />
         <Route path="/community/new" element={<Authed><CommunityNewPage /></Authed>} />
+        <Route path="/community/ai-assist" element={<Authed><CommunityAiAssistPage /></Authed>} />
         <Route path="/community/post/:id/edit" element={<Authed><CommunityNewPage /></Authed>} />
         <Route path="/community/favorites" element={<Authed><CommunityFavoritesPage /></Authed>} />
         <Route path="/community/mine" element={<Authed><CommunityMyPostsPage /></Authed>} />
+        <Route path="/community/drafts" element={<Authed><CommunityDraftsPage /></Authed>} />
         <Route path="/community/messages" element={<Authed><CommunityMessagesPage /></Authed>} />
         <Route path="/community/me" element={<Authed><CommunityMePage /></Authed>} />
-        <Route path="/community/post/:id" element={<Authed><CommunityPostPage /></Authed>} />
+        <Route path="/community/mod" element={<Authed><CommunityModPage /></Authed>} />
+        <Route path="/community/post/:id" element={<CommunityPostPage />} />
 
         <Route
           path="/data"

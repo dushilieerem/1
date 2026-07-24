@@ -13,6 +13,8 @@ import {
   X,
 } from "lucide-react";
 import { FactorFormula } from "@/components/FactorFormula";
+import { PageJump } from "@/components/PageJump";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { authHeaders, getStoredUser, prepareAuthHandoff, subscribeAuth } from "@/lib/auth";
 import {
   DYNAMIC_FACTOR_LIBS,
@@ -103,6 +105,7 @@ function FactorRow({
   onToggle: () => void;
   onDeleted?: () => void;
 }) {
+  const confirm = useConfirm();
   const isCustom = factor.library === "custom_lib";
   const accent = ROW_ACCENT[factor.libraryLabel] ?? "border-l-slate-300";
   const badge = ROW_BADGE[factor.libraryLabel] ?? "bg-slate-100 text-slate-600";
@@ -143,7 +146,13 @@ function FactorRow({
 
   const onDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm(`从列表下线「${factor.description}」？`)) return;
+    const ok = await confirm({
+      title: "下线因子",
+      message: `从列表下线「${factor.description}」？`,
+      confirmLabel: "下线",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       const r = await fetch(`/api/factor/custom/${encodeURIComponent(factor.name)}`, {
@@ -395,41 +404,46 @@ export function FactorLibraryPage() {
         </div>
 
         {totalPages > 1 && (
-          <div className="mt-6 flex items-center justify-center gap-1">
-            <button
-              type="button"
-              disabled={pageSafe <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="rounded-lg border border-slate-200 bg-white p-2 disabled:opacity-40"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            {pageNumbers(pageSafe, totalPages).map((n, i) =>
-              n === "…" ? (
-                <span key={`e${i}`} className="px-2 text-slate-400">
-                  …
-                </span>
-              ) : (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setPage(n)}
-                  className={`min-w-9 rounded-lg px-2 py-1.5 text-sm font-medium ${
-                    n === pageSafe ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100"
-                  }`}
-                >
-                  {n}
-                </button>
-              ),
-            )}
-            <button
-              type="button"
-              disabled={pageSafe >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="rounded-lg border border-slate-200 bg-white p-2 disabled:opacity-40"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={pageSafe <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="rounded-lg border border-slate-200 bg-white p-2 disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              {pageNumbers(pageSafe, totalPages).map((n, i) =>
+                n === "…" ? (
+                  <span key={`e${i}`} className="px-2 text-slate-400">
+                    …
+                  </span>
+                ) : (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setPage(n)}
+                    className={`min-w-9 rounded-lg px-2 py-1.5 text-sm font-medium ${
+                      n === pageSafe
+                        ? "bg-slate-900 text-white"
+                        : "bg-white text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ),
+              )}
+              <button
+                type="button"
+                disabled={pageSafe >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="rounded-lg border border-slate-200 bg-white p-2 disabled:opacity-40"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+            <PageJump page={pageSafe} totalPages={totalPages} onJump={setPage} />
           </div>
         )}
       </div>

@@ -88,10 +88,58 @@ export type YgFactorRequestParts = {
   factor_name: string;
 };
 
+/** 从单方法体取最后一个 return 表达式；多语句则返回 null */
+function lastReturnExpr(methodSrc: string): string | null {
+  const lines = methodSrc.replace(/\r\n/g, "\n").split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = /^\s*return\s+(.+?)\s*$/.exec(lines[i]);
+    if (m) return m[1].replace(/\s+#.*$/, "").trim();
+  }
+  return null;
+}
+
+function methodDefName(methodSrc: string): string | null {
+  const m = /^\s*def\s+([A-Za-z_]\w*)\s*\(/.exec(methodSrc);
+  return m?.[1] ?? null;
+}
+
+/**
+ * RE 文档要求自定义 factor_code「只传单个函数」。
+ * 有 library_name 时，把本地简单因子的 return 内联进 combo，避免多 def。
+ */
+export function inlineLocalMethodsIntoCombo(
+  comboFn: string,
+  localBodies: string[],
+): string {
+  let combo = comboFn.trim();
+  if (!combo || !localBodies.length) return combo;
+
+  for (const body of localBodies) {
+    const name = methodDefName(body);
+    const expr = lastReturnExpr(body);
+    if (!name || !expr) continue;
+    // 仅当方法体除 docstring/注释外基本是单 return 时内联
+    const stripped = body
+      .replace(/^\s*def\s+\w+\s*\([^)]*\)\s*:\s*/m, "")
+      .replace(/"""[\s\S]*?"""/g, "")
+      .replace(/'''[\s\S]*?'''/g, "")
+      .replace(/^\s*#.*$/gm, "")
+      .trim();
+    if (!/^return\s+/.test(stripped) || stripped.includes("\n")) continue;
+    const re = new RegExp(
+      `self\\.${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\(\\s*\\)`,
+      "g",
+    );
+    combo = combo.replace(re, `(${expr})`);
+  }
+  return combo;
+}
+
 /**
  * 组装发给 RE 的因子字段。
  * - RE 内置库走 library_name（完整库含私有辅助）
  * - 本地 / 自定义仍抽码进 factor_code
+ * - 本地 + library_name：尽量内联成单函数（对齐 RE「只传一个函数」）
  */
 export function buildYgFactorRequestParts(opts: {
   factors: FactorMeta[];
@@ -129,9 +177,22 @@ export function buildYgFactorRequestParts(opts: {
   const localBodies = opts.methodBodies
     .map((m) => m.trim())
     .filter((m) => m && !m.startsWith("# RE库"));
-  const factorCode = needsLocalCode || customOnly
-    ? buildDetectFactorCode(localBodies, opts.comboFn)
-    : opts.comboFn.trim();
+
+  let factorCode: string;
+  if (needsLocalCode && builtinLibs.length > 0) {
+    // 混合：优先单函数内联
+    const inlined = inlineLocalMethodsIntoCombo(opts.comboFn, localBodies);
+    const stillCallsLocal = localMetas.some((m) =>
+      new RegExp(`self\\.${m.name}\\s*\\(`).test(inlined),
+    );
+    factorCode = stillCallsLocal
+      ? buildDetectFactorCode(localBodies, opts.comboFn)
+      : inlined.trim();
+  } else if (needsLocalCode || customOnly) {
+    factorCode = buildDetectFactorCode(localBodies, opts.comboFn);
+  } else {
+    factorCode = opts.comboFn.trim();
+  }
 
   const parts: YgFactorRequestParts = {
     factor_name: opts.entryName,

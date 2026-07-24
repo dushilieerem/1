@@ -1,6 +1,6 @@
 version: 1
-updated: '2026-07-23'
-total_factors: 119
+updated: '2026-07-24'
+total_factors: 122
 libraries:
   jq_compat_emotion:
     file: jq_compat_emotion.py
@@ -781,6 +781,30 @@ libraries:
       owner_id: 3
       description: 20日收益/20日波动：风险调整动量
       explain: 20日收益/20日波动：风险调整动量
+      params: {}
+      tags:
+      - custom
+    - name: band_location
+      method_name: u4_band_location
+      owner_id: 4
+      description: 布林带内位置
+      explain: 布林带内位置
+      params: {}
+      tags:
+      - custom
+    - name: phantom_gap
+      method_name: u4_phantom_gap
+      owner_id: 4
+      description: 隔夜幽灵跳空
+      explain: 隔夜幽灵跳空
+      params: {}
+      tags:
+      - custom
+    - name: realized_vol_20d
+      method_name: u4_realized_vol_20d
+      owner_id: 4
+      description: 波动率因子小记：高波 / 低波分别怎么用
+      explain: 波动率因子小记：高波 / 低波分别怎么用
       params: {}
       tags:
       - custom

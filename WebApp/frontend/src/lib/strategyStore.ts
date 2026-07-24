@@ -31,6 +31,8 @@ export type StrategyProjectConfig = {
   initial_capital: number;
   top_n: number;
   rebalance_days: number;
+  /** 回测请求：是否拉取 rebalance_logs */
+  include_rebalance_logs: boolean;
   strategy_code: string;
 };
 
@@ -82,6 +84,7 @@ export function defaultStrategyConfig(): StrategyProjectConfig {
     initial_capital: 1_000_000,
     top_n: 30,
     rebalance_days: 20,
+    include_rebalance_logs: true,
     strategy_code: DEFAULT_STRATEGY_CODE,
   };
 }
@@ -111,6 +114,10 @@ export function normalizeStrategyConfig(
       typeof c.rebalance_days === "number" && c.rebalance_days > 0
         ? c.rebalance_days
         : d.rebalance_days,
+    include_rebalance_logs:
+      typeof c.include_rebalance_logs === "boolean"
+        ? c.include_rebalance_logs
+        : d.include_rebalance_logs,
     strategy_code: (c.strategy_code || "").trim()
       ? String(c.strategy_code)
       : d.strategy_code,
@@ -203,8 +210,8 @@ export async function createStrategyProjectFromCode(opts: {
   description?: string;
   strategyCode: string;
 }): Promise<StrategyProject> {
-  const raw = (opts.strategyCode || "").trim();
-  if (!raw) throw new Error("没有策略代码可克隆");
+  const { resolveStrategyCloneSource } = await import("./communityClone");
+  const raw = await resolveStrategyCloneSource(opts.strategyCode || "");
   const code = wrapFactorCodeAsStrategy(raw);
   const project = await createStrategyProject(
     opts.name,

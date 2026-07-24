@@ -218,12 +218,32 @@ export function CommentThread({
       onNeedLogin();
       return;
     }
-    const name = c.author.display_name || c.author.username || "用户";
     setReplyTo(c);
-    setBody((prev) => (prev.trim().startsWith("@") ? prev : `@${name} `));
+    // 不自动往正文塞 @：回复走「回复我的」；要 @ 请双击头像
     requestAnimationFrame(() => {
       boxRef.current?.focus();
       boxRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  };
+
+  /** 双击头像 / 名字：插入 @登录名（进消息「@我的」） */
+  const insertMention = (c: CommunityComment) => {
+    if (!canInteract) {
+      onNeedLogin();
+      return;
+    }
+    const uname = (c.author.username || c.author.display_name || "").trim();
+    if (!uname) return;
+    const token = `@${uname}`;
+    setBody((prev) => {
+      const t = prev.trimEnd();
+      if (t.includes(token)) return prev.endsWith(" ") || prev === "" ? prev : `${prev} `;
+      if (!t) return `${token} `;
+      return `${t} ${token} `;
+    });
+    requestAnimationFrame(() => {
+      boxRef.current?.focus();
+      boxRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
   };
 
@@ -246,15 +266,9 @@ export function CommentThread({
     setErr(null);
     setSubmitting(true);
     try {
-      let text = body.trim();
-      if (replyTo) {
-        const name =
-          replyTo.author.display_name || replyTo.author.username || "用户";
-        if (!text.includes(`@${name}`)) text = `@${name} ${text}`;
-      }
-      // parentId：始终传被回复评论 id，后端会压到一级
+      // 正文原样提交；回复关系只靠 parentId，不再强制加 @
       await onSubmitComment({
-        body: text,
+        body: body.trim(),
         parentId: replyTo?.id ?? null,
         images,
       });
@@ -282,12 +296,26 @@ export function CommentThread({
         } ${compact ? "py-2" : "py-1"}`}
       >
         <div className="flex gap-2.5">
-          {!compact && <AuthorAvatar name={name} size="md" />}
+          {!compact && (
+            <AuthorAvatar
+              name={name}
+              size="md"
+              title={`双击插入 @${c.author.username || name}`}
+              onDoubleClick={() => insertMention(c)}
+            />
+          )}
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
               {compact ? (
                 <span className="font-medium text-slate-600">
-                  {name}
+                  <button
+                    type="button"
+                    title={`双击插入 @${c.author.username || name}`}
+                    onDoubleClick={() => insertMention(c)}
+                    className="font-medium text-slate-600 hover:text-red-600"
+                  >
+                    {name}
+                  </button>
                   {replyName ? (
                     <>
                       {" "}
@@ -299,7 +327,14 @@ export function CommentThread({
                 </span>
               ) : (
                 <>
-                  <span className="font-medium text-slate-700">{name}</span>
+                  <button
+                    type="button"
+                    title={`双击插入 @${c.author.username || name}`}
+                    onDoubleClick={() => insertMention(c)}
+                    className="font-medium text-slate-700 hover:text-red-600"
+                  >
+                    {name}
+                  </button>
                   {isAuthor && (
                     <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-600 ring-1 ring-inset ring-red-100">
                       作者
@@ -411,7 +446,6 @@ export function CommentThread({
                   type="button"
                   onClick={() => {
                     setReplyTo(null);
-                    setBody((p) => p.replace(/^@\S+\s*/, ""));
                   }}
                   className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-red-100"
                 >
@@ -424,7 +458,9 @@ export function CommentThread({
               ref={boxRef}
               className={fieldClassName("min-h-[88px] resize-y")}
               placeholder={
-                replyTo ? "写下回复，可附图…" : "写下你的看法… 可 @用户名 或附图"
+                replyTo
+                  ? "写下回复… 双击头像可 @对方（进「@我的」）；点回复本身进「回复我的」"
+                  : "写下你的看法… 双击头像插入 @用户名（对方「@我的」会收到）或附图"
               }
               value={body}
               onChange={(e) => setBody(e.target.value)}

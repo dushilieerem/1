@@ -111,9 +111,6 @@ function UserMenu({ user }: { user: AuthUser }) {
           />
           <div className="absolute right-0 top-full z-50 min-w-[10rem] pt-1">
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-              <div className="border-b border-slate-100 px-4 py-2 text-xs text-slate-500">
-                {user.role === "admin" ? "管理员" : "用户"} · {user.username}
-              </div>
               <Link
                 to="/community/me"
                 onClick={() => setOpen(false)}
@@ -136,12 +133,28 @@ function UserMenu({ user }: { user: AuthUser }) {
                 我的发帖
               </Link>
               <Link
+                to="/community/drafts"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                草稿箱
+              </Link>
+              <Link
                 to="/community/favorites"
                 onClick={() => setOpen(false)}
                 className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
               >
                 我的收藏
               </Link>
+              {user.role === "admin" ? (
+                <Link
+                  to="/community/mod"
+                  onClick={() => setOpen(false)}
+                  className="block px-4 py-2.5 text-sm font-medium text-sky-800 hover:bg-sky-50"
+                >
+                  管理仓
+                </Link>
+              ) : null}
               <button
                 type="button"
                 className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
@@ -233,9 +246,22 @@ export function Navbar() {
           >
             首页
           </NavLink>
+          <NavLink
+            to="/community"
+            className={({ isActive }) =>
+              `rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                isActive
+                  ? "bg-red-50 text-red-600"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`
+            }
+          >
+            社区
+          </NavLink>
           {user ? (
             <>
-              {NAV_ITEMS.filter((x) => x.to !== "/").map(({ to, label }) => (
+              {NAV_ITEMS.filter((x) => x.to !== "/" && x.to !== "/community").map(
+                ({ to, label }) => (
                 <NavLink
                   key={to}
                   to={to}
@@ -292,7 +318,11 @@ export function Navbar() {
             <UserMenu user={user} />
           ) : (
             <Link
-              to="/login"
+              to={
+                pathname.startsWith("/community")
+                  ? `/login?next=${encodeURIComponent(pathname)}`
+                  : "/login"
+              }
               className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               登录

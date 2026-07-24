@@ -1,5 +1,6 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Sparkles } from "lucide-react";
 import { getStoredUser } from "@/lib/auth";
 import {
   SECTION_META,
@@ -9,6 +10,11 @@ import {
   type CommunitySection,
 } from "@/lib/communityApi";
 import type { CommunityShareDraft } from "@/lib/communityShare";
+import {
+  stashAiAssistInbound,
+  takeAiAssistOutbound,
+} from "@/lib/communityAiAssist";
+import { useConfirm } from "@/components/ConfirmDialog";
 import {
   CommunityBackLink,
   CommunityPageShell,
@@ -36,6 +42,7 @@ function initialSection(
 export function CommunityNewPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const askConfirm = useConfirm();
   const { id: editIdRaw } = useParams();
   const editId = Number(editIdRaw || 0);
   const isEdit = Number.isFinite(editId) && editId > 0;
@@ -58,10 +65,30 @@ export function CommunityNewPage() {
   );
   const [body, setBody] = useState(() => draft.body || "");
   const [code, setCode] = useState(() => draft.code_snippet || "");
+  const [postStatus, setPostStatus] = useState<"draft" | "published">("published");
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [draftSaving, setDraftSaving] = useState(false);
   const [bootLoading, setBootLoading] = useState(isEdit);
+  const [savedEditId, setSavedEditId] = useState(isEdit ? editId : 0);
+  const [aiAssisted, setAiAssisted] = useState(false);
+  const [savedHint, setSavedHint] = useState("");
+  const restoreFromAiRef = useRef(false);
   const fromShare = !!draft.shareDraft && !isEdit;
+  const isDraftDoc = postStatus === "draft";
+  const workingId = savedEditId > 0 ? savedEditId : isEdit ? editId : 0;
+  const busy = loading || draftSaving;
+
+  useEffect(() => {
+    const back = takeAiAssistOutbound();
+    if (!back) return;
+    restoreFromAiRef.current = true;
+    setTitle((back.title || "").slice(0, 120));
+    setBody(back.body || "");
+    if (back.section) setSection(back.section);
+    if (back.code_snippet != null) setCode(back.code_snippet);
+    if (back.aiAssisted) setAiAssisted(true);
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -84,10 +111,17 @@ export function CommunityNewPage() {
         if (p.author?.id != null && user.id !== p.author.id && user.role !== "admin") {
           throw new Error("只能编辑自己的帖子");
         }
-        setTitle(p.title || "");
-        setSection(p.section);
-        setBody(p.body || "");
-        setCode(p.code_snippet || "");
+        setPostStatus(p.status === "draft" ? "draft" : "published");
+        setSavedEditId(p.id);
+        // 从 AI 助手带回时不要用服务端旧稿覆盖
+        if (restoreFromAiRef.current) {
+          restoreFromAiRef.current = false;
+        } else {
+          setTitle(p.title || "");
+          setSection(p.section);
+          setBody(p.body || "");
+          setCode(p.code_snippet || "");
+        }
       })
       .catch((ex) => {
         if (!cancelled) {
@@ -116,34 +150,97 @@ export function CommunityNewPage() {
     );
   }
 
-  const onSubmit = async (e: FormEvent) => {
-    e.preventDefault();
+  const buildPayload = (status: "draft" | "published") => ({
+    title: title.trim(),
+    body: body.trim(),
+    section,
+    code_snippet: code.trim() || undefined,
+    status,
+  });
+
+  const save = async (status: "draft" | "published") => {
     setErr(null);
-    setLoading(true);
+    if (status === "draft") {
+      const ok = await askConfirm({
+        title: "保存草稿",
+        message:
+          workingId > 0
+            ? "确定将当前内容保存为草稿吗？"
+            : "确定保存为草稿吗？保存后将进入该草稿的编辑页。",
+        confirmLabel: "保存",
+        cancelLabel: "再想想",
+      });
+      if (!ok) return;
+    }
+    if (status === "draft") setDraftSaving(true);
+    else setLoading(true);
     try {
-      const payload = {
-        title: title.trim(),
-        body: body.trim(),
-        section,
-        code_snippet: code.trim() || undefined,
-      };
-      const data = isEdit
-        ? await updateCommunityPost(editId, payload)
-        : await createCommunityPost(payload);
-      navigate(`/community/post/${data.post.id}`, { replace: true });
+      const payload = buildPayload(status);
+      let data;
+      if (workingId > 0) {
+        data = await updateCommunityPost(workingId, payload);
+      } else {
+        data = await createCommunityPost(payload);
+        setSavedEditId(data.post.id);
+      }
+      setPostStatus(data.post.status === "draft" ? "draft" : "published");
+      if (status === "draft") {
+        const editPath = `/community/post/${data.post.id}/edit`;
+        // 已在该草稿编辑页：不跳转，避免整页重载冲掉体验
+        if (location.pathname === editPath) {
+          setSavedHint("草稿已保存");
+          window.setTimeout(() => setSavedHint(""), 2000);
+        } else {
+          navigate(editPath, { replace: true });
+        }
+      } else {
+        navigate(`/community/post/${data.post.id}`, { replace: true });
+      }
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : String(ex));
     } finally {
       setLoading(false);
+      setDraftSaving(false);
     }
   };
 
-  const cancelTo = isEdit ? `/community/post/${editId}` : "/community";
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    await save("published");
+  };
+
+  const cancelTo = isDraftDoc
+    ? "/community/drafts"
+    : workingId > 0 && !isDraftDoc
+      ? `/community/post/${workingId}`
+      : draft.returnTo || "/community";
+  const backLabel = isDraftDoc
+    ? "返回草稿箱"
+    : workingId > 0 && !isDraftDoc
+      ? "返回帖子"
+      : draft.returnLabel || (fromShare ? "返回报告" : "返回社区");
+  const onCancel = () => {
+    navigate(cancelTo);
+  };
+
+  const openAiAssist = () => {
+    const returnTo = workingId
+      ? `/community/post/${workingId}/edit`
+      : "/community/new";
+    stashAiAssistInbound({
+      title,
+      body,
+      section,
+      code_snippet: code,
+      returnTo,
+    });
+    navigate("/community/ai-assist");
+  };
 
   return (
     <CommunityPageShell>
       <div className="mx-auto max-w-[1440px] px-4 py-5 animate-fade-up sm:px-6 lg:px-8">
-        <CommunityBackLink to={cancelTo} />
+        <CommunityBackLink to={cancelTo} label={backLabel} />
 
         {bootLoading ? (
           <p className="mt-8 text-center text-sm text-slate-500">加载帖子…</p>
@@ -153,16 +250,28 @@ export function CommunityNewPage() {
               <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-red-50/50 to-transparent px-5 py-4 sm:px-6">
                 <div>
                   <p className="text-xs font-medium tracking-wide text-red-500/90">
-                    {isEdit
-                      ? "EDIT POST"
-                      : fromShare
-                        ? "SHARE TO COMMUNITY"
-                        : "NEW POST"}
+                    {isDraftDoc
+                      ? "DRAFT"
+                      : isEdit
+                        ? "EDIT POST"
+                        : fromShare
+                          ? "SHARE TO COMMUNITY"
+                          : "NEW POST"}
                   </p>
                   <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
-                    {isEdit ? "编辑帖子" : fromShare ? "分享到社区" : "发布帖子"}
+                    {isDraftDoc
+                      ? "编辑草稿"
+                      : isEdit
+                        ? "编辑帖子"
+                        : fromShare
+                          ? "分享到社区"
+                          : "发布帖子"}
                   </h1>
-                  {isEdit ? (
+                  {isDraftDoc ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      草稿仅自己可见；发布后进入社区 Feed
+                    </p>
+                  ) : isEdit ? (
                     <p className="mt-1 text-xs text-slate-500">
                       保存后仍是同一帖；评论、收藏、浏览数不会清零
                     </p>
@@ -172,15 +281,36 @@ export function CommunityNewPage() {
                     </p>
                   ) : null}
                 </div>
-                <div className="flex items-center gap-3">
-                  <Link
-                    to={cancelTo}
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                  <button
+                    type="button"
+                    onClick={onCancel}
                     className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
                   >
                     取消
-                  </Link>
-                  <PrimaryButton type="submit" disabled={loading || !!err && isEdit && !title}>
-                    {loading ? "保存中…" : isEdit ? "保存修改" : "发布"}
+                  </button>
+                  {(isDraftDoc || !isEdit) && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void save("draft")}
+                      className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      {draftSaving
+                        ? "保存中…"
+                        : savedHint
+                          ? savedHint
+                          : "存草稿"}
+                    </button>
+                  )}
+                  <PrimaryButton type="submit" disabled={busy || (!!err && isEdit && !title && !isDraftDoc)}>
+                    {loading
+                      ? "发布中…"
+                      : isDraftDoc
+                        ? "发布"
+                        : isEdit
+                          ? "保存修改"
+                          : "发布"}
                   </PrimaryButton>
                 </div>
               </div>
@@ -197,7 +327,7 @@ export function CommunityNewPage() {
                       onChange={(e) => setTitle(e.target.value)}
                       maxLength={120}
                       placeholder="一句话说清你的分享"
-                      required
+                      required={!isDraftDoc}
                     />
                   </label>
 
@@ -225,6 +355,32 @@ export function CommunityNewPage() {
                       })}
                     </div>
                   </fieldset>
+
+                  <div className="rounded-xl border border-red-100 bg-gradient-to-br from-red-50/80 to-white p-4 shadow-sm">
+                    <p className="text-[11px] font-medium tracking-wide text-red-500/90">
+                      AI 辅助
+                    </p>
+                    <h3 className="mt-0.5 text-sm font-semibold text-slate-900">
+                      发帖助手
+                    </h3>
+                    <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
+                      带着当前标题与正文进入助手页，润色或审校后再带回这里发布。
+                    </p>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={openAiAssist}
+                      className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-red-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      打开 AI 发帖助手
+                    </button>
+                    {aiAssisted && (
+                      <p className="mt-2 text-xs text-amber-700">
+                        已使用过 AI 辅助，仍可继续手工修改
+                      </p>
+                    )}
+                  </div>
 
                   <div>
                     <div className="mb-1.5 flex items-baseline justify-between gap-2">
@@ -261,18 +417,6 @@ export function CommunityNewPage() {
                     placeholder="直接写正文；可粘贴图片，选中文字后点链接可加网址"
                   />
                 </section>
-              </div>
-
-              <div className="sticky bottom-0 flex items-center justify-end gap-3 border-t border-slate-100 bg-white/95 px-5 py-3.5 backdrop-blur-sm sm:px-6">
-                <Link
-                  to={cancelTo}
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-                >
-                  取消
-                </Link>
-                <PrimaryButton type="submit" disabled={loading}>
-                  {loading ? "保存中…" : isEdit ? "保存修改" : "发布"}
-                </PrimaryButton>
               </div>
             </CommunityPanel>
           </form>

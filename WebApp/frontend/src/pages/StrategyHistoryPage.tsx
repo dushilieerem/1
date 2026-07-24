@@ -9,6 +9,7 @@ import {
   type StrategyProject,
   type StrategyRunRecord,
 } from "@/lib/strategyStore";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 function pct(x?: number | null) {
   if (x == null || Number.isNaN(x)) return "—";
@@ -31,6 +32,7 @@ function runUniverse(r: StrategyRunRecord): string {
 
 export function StrategyHistoryPage() {
   const { projectId = "" } = useParams();
+  const confirm = useConfirm();
   const [project, setProject] = useState<StrategyProject | null>(null);
   const [runs, setRuns] = useState<StrategyRunRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -150,9 +152,15 @@ export function StrategyHistoryPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              if (window.confirm("删除这条回测记录？")) {
-                                void deleteStrategyRun(r.id).then(refresh);
-                              }
+                              void (async () => {
+                                const ok = await confirm({
+                                  title: "删除记录",
+                                  message: "删除这条回测记录？",
+                                  confirmLabel: "删除",
+                                  danger: true,
+                                });
+                                if (ok) void deleteStrategyRun(r.id).then(refresh);
+                              })();
                             }}
                             className="font-medium text-red-600 hover:underline"
                           >

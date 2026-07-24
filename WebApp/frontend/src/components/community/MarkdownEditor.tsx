@@ -219,8 +219,16 @@ export function MarkdownEditor({
 
   useEffect(() => {
     if (!editor) return;
-    if (value === "" && !editor.isEmpty) {
-      editor.commands.clearContent(true);
+    const next = plainToHtml(value);
+    const cur = editor.getHTML();
+    if (!next) {
+      if (!editor.isEmpty) {
+        editor.commands.clearContent(false);      }
+      return;
+    }
+    // 外部写入（如 Agent 润色）时同步进 TipTap；避免与输入回环互相覆盖
+    if (next !== cur) {
+      editor.commands.setContent(next, { emitUpdate: false });
     }
   }, [editor, value]);
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { PenLine, Search } from "lucide-react";
-import { getStoredUser } from "@/lib/auth";
+import { getStoredUser, subscribeAuth } from "@/lib/auth";
 import {
   SECTION_META,
   listCommunityPosts,
@@ -51,6 +51,9 @@ export function CommunityFeedPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [user, setUser] = useState(() => getStoredUser());
+
+  useEffect(() => subscribeAuth(() => setUser(getStoredUser())), []);
 
   const sectionLabel =
     SECTION_META.find((s) => s.id === section)?.label ?? "全部";
@@ -134,17 +137,17 @@ export function CommunityFeedPage() {
 
   const officialPinned = useMemo(
     () =>
-      section === "all" && !qFromUrl
-        ? items.filter((p) => p.section === "official").slice(0, 5)
+      !qFromUrl
+        ? items.filter((p) => p.is_pinned).slice(0, 8)
         : [],
-    [items, section, qFromUrl],
+    [items, qFromUrl],
   );
 
   const feedItems = useMemo(() => {
-    if (section !== "all" || officialPinned.length === 0) return items;
+    if (officialPinned.length === 0) return items;
     const pinnedIds = new Set(officialPinned.map((p) => p.id));
     return items.filter((p) => !pinnedIds.has(p.id));
-  }, [items, section, officialPinned]);
+  }, [items, officialPinned]);
 
   const goNew = () => {
     if (!getStoredUser()) {
@@ -242,6 +245,19 @@ export function CommunityFeedPage() {
 
       <div className="mx-auto grid max-w-[1180px] gap-5 px-5 py-6 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="min-w-0 space-y-4 animate-fade-up">
+          {!user ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
+              <span>游客可浏览帖子；发帖、评论、收藏、克隆需登录。</span>
+              <Link
+                to={`/login?next=${encodeURIComponent(
+                  `/community${searchParams.toString() ? `?${searchParams}` : ""}`,
+                )}`}
+                className="shrink-0 font-semibold text-red-600 hover:underline"
+              >
+                去登录
+              </Link>
+            </div>
+          ) : null}
           {err && (
             <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
               {err}
@@ -254,7 +270,6 @@ export function CommunityFeedPage() {
                 <span className="rounded-md bg-sky-500 px-1.5 py-0.5 text-[11px] font-semibold text-white">
                   置顶
                 </span>
-                <span className="text-xs font-medium text-sky-800/70">官方公告</span>
               </div>
               <ul className="divide-y divide-slate-100">
                 {officialPinned.map((post) => (

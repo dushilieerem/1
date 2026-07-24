@@ -42,7 +42,7 @@ def ensure_schema() -> None:
               role            TEXT NOT NULL DEFAULT 'user',
               status          TEXT NOT NULL DEFAULT 'active',
               display_name    TEXT,
-              ai_quota_daily  INTEGER NOT NULL DEFAULT 50,
+              ai_quota_daily  INTEGER NOT NULL DEFAULT 200,
               created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
               updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
               CONSTRAINT users_role_chk CHECK (role IN ('user', 'admin')),
@@ -74,7 +74,7 @@ def _public_user(row: dict[str, Any]) -> dict[str, Any]:
         "role": row["role"],
         "status": row["status"],
         "display_name": row.get("display_name") or row["username"],
-        "ai_quota_daily": row.get("ai_quota_daily", 50),
+        "ai_quota_daily": row.get("ai_quota_daily", 200),
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
     }
 

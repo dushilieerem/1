@@ -8,6 +8,7 @@ import {
   type DetectProject,
   type DetectRunRecord,
 } from "@/lib/detectStore";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 function pct(x?: number | null) {
   if (x == null || Number.isNaN(x)) return "—";
@@ -20,6 +21,7 @@ function num(x?: number | null) {
 
 export function FactorDetectHistoryPage() {
   const { projectId = "" } = useParams();
+  const confirm = useConfirm();
   const [project, setProject] = useState<DetectProject | null | undefined>(() =>
     projectId ? peekProject(projectId) ?? undefined : undefined,
   );
@@ -125,9 +127,15 @@ export function FactorDetectHistoryPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              if (window.confirm("删除这条检测记录？")) {
-                                void deleteRun(r.id).then(refresh);
-                              }
+                              void (async () => {
+                                const ok = await confirm({
+                                  title: "删除记录",
+                                  message: "删除这条检测记录？",
+                                  confirmLabel: "删除",
+                                  danger: true,
+                                });
+                                if (ok) void deleteRun(r.id).then(refresh);
+                              })();
                             }}
                             className="font-medium text-red-600 hover:underline"
                           >

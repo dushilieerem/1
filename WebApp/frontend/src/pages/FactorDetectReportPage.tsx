@@ -546,6 +546,10 @@ export function FactorDetectReportPage() {
       metrics: result?.metrics,
       excessReturn: result?.excess_return,
       factorCode: req?.factor_code,
+      libraryName: req?.library_name,
+      factorName: req?.factor_name,
+      returnTo: `/factor/detect/report/${rec.id || runId}`,
+      returnLabel: "返回因子检测报告",
     });
     navigate(next, { state: draft });
   };

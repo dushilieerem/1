@@ -237,16 +237,23 @@ export function wrapFactorCodeAsStrategy(raw: string): string {
     return `${STRATEGY_IMPORTS}\n\n${defaultParamsBlock()}\n\n${code}\n`;
   }
 
+  const publicDefs = defs.filter((n) => !n.startsWith("_"));
   const scoreName =
-    defs.find((n) => n !== "combo_factor") || defs[defs.length - 1];
+    publicDefs.find((n) => n !== "combo_factor") ||
+    publicDefs[publicDefs.length - 1] ||
+    defs[defs.length - 1];
 
-  // 给每个顶层 def 加 @factor（已有装饰器则不动）
+  // 仅给公开方法加 @factor；私有 _xxx 保持普通方法供调用
   const lines = code.replace(/\r\n/g, "\n").split("\n");
   const outLines: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const defMatch = /^(\s*)def\s+([A-Za-z_]\w*)\s*\(/.exec(line);
-    if (defMatch && defs.includes(defMatch[2])) {
+    if (
+      defMatch &&
+      defs.includes(defMatch[2]) &&
+      !defMatch[2].startsWith("_")
+    ) {
       const prev = outLines.length ? outLines[outLines.length - 1].trim() : "";
       if (!/^@(?:factor|signal)\b/.test(prev)) {
         outLines.push(`${defMatch[1]}@factor`);

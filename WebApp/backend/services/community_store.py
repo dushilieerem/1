@@ -61,6 +61,21 @@ def ensure_posts_schema() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_posts_views ON posts (view_count DESC)"
         )
+        try:
+            conn.execute(
+                "ALTER TABLE posts ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        except Exception:
+            pass
+        try:
+            conn.execute(
+                "ALTER TABLE posts ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ"
+            )
+        except Exception:
+            pass
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_posts_pinned ON posts (is_pinned DESC, pinned_at DESC NULLS LAST)"
+        )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS post_comments (
@@ -147,6 +162,15 @@ def ensure_posts_schema() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_post_favorites_user ON post_favorites (user_id, created_at DESC)"
         )
+        # 历史 mention 实为「点回复评论」；迁到 reply。此后 mention 仅用于正文 @
+        conn.execute(
+            """
+            UPDATE notifications
+            SET type = 'reply'
+            WHERE type = 'mention'
+              AND created_at < TIMESTAMPTZ '2026-07-24 00:00:00+08'
+            """
+        )
         # 清理历史「自己收藏自己」；收藏数按 COUNT 实时算，删行即回落
         conn.execute(
             """
@@ -175,6 +199,8 @@ def _row_to_post(row: dict[str, Any], *, favorited: bool | None = None) -> dict[
         "comment_count": int(row.get("comment_count") or 0),
         "favorite_count": int(row.get("favorite_count") or 0),
         "status": row.get("status") or "published",
+        "is_pinned": bool(row.get("is_pinned")),
+        "pinned_at": _iso(row.get("pinned_at")),
         "created_at": _iso(row.get("created_at")),
         "updated_at": _iso(row.get("updated_at")),
         "author": {
@@ -305,6 +331,7 @@ def _resolve_root_parent(
 
 
 def _find_mentioned_user_ids(conn: Any, body: str, *, exclude_id: int) -> list[int]:
+    """正文 @用户名 / @显示名 → user id（优先 username）。"""
     names = []
     for m in _MENTION_RE.finditer(body or ""):
         name = (m.group(1) or "").strip()
@@ -315,13 +342,14 @@ def _find_mentioned_user_ids(conn: Any, body: str, *, exclude_id: int) -> list[i
     ids: list[int] = []
     for name in names[:10]:
         row = conn.execute(
-            """
-            SELECT id FROM users
-            WHERE username = %s OR display_name = %s
-            LIMIT 1
-            """,
-            (name, name),
+            "SELECT id FROM users WHERE username = %s LIMIT 1",
+            (name,),
         ).fetchone()
+        if not row:
+            row = conn.execute(
+                "SELECT id FROM users WHERE display_name = %s LIMIT 1",
+                (name,),
+            ).fetchone()
         if row and int(row["id"]) != int(exclude_id):
             uid = int(row["id"])
             if uid not in ids:
@@ -422,12 +450,13 @@ def list_posts(
     sort_key = (sort or "views").strip().lower()
     if sort_key not in POST_SORTS:
         raise ValueError(f"无效排序: {sort}")
+    pin_first = "p.is_pinned DESC, p.pinned_at DESC NULLS LAST, "
     if sort_key == "favorites":
-        order_by = "COALESCE(fc.cnt, 0) DESC, p.created_at DESC, p.id DESC"
+        order_by = f"{pin_first}COALESCE(fc.cnt, 0) DESC, p.created_at DESC, p.id DESC"
     elif sort_key == "newest":
-        order_by = "p.created_at DESC, p.id DESC"
+        order_by = f"{pin_first}p.created_at DESC, p.id DESC"
     else:
-        order_by = "p.view_count DESC, p.created_at DESC, p.id DESC"
+        order_by = f"{pin_first}p.view_count DESC, p.created_at DESC, p.id DESC"
     params: list[Any] = []
     where = "WHERE p.status = 'published'"
     if section and section != "all":
@@ -501,9 +530,30 @@ def get_post(
     *,
     bump_view: bool = True,
     viewer_id: int | None = None,
+    viewer_role: str = "user",
 ) -> dict[str, Any]:
+    admin = viewer_role == "admin"
     with get_conn() as conn:
-        if bump_view:
+        # 先取行判断权限；草稿仅作者/admin 可见，不计浏览
+        raw = conn.execute(
+            "SELECT id, author_id, status FROM posts WHERE id = %s",
+            (post_id,),
+        ).fetchone()
+        if not raw:
+            raise KeyError(f"post not found: {post_id}")
+        st = str(raw["status"] or "")
+        author_id = int(raw["author_id"])
+        is_author = viewer_id is not None and int(viewer_id) == author_id
+        if st == "draft":
+            if not (is_author or admin):
+                raise KeyError(f"post not found: {post_id}")
+        elif st == "hidden":
+            if not admin:
+                raise KeyError(f"post not found: {post_id}")
+        elif st != "published":
+            raise KeyError(f"post not found: {post_id}")
+
+        if bump_view and st == "published":
             conn.execute(
                 """
                 UPDATE posts SET view_count = view_count + 1, updated_at = NOW()
@@ -514,12 +564,12 @@ def get_post(
         row = conn.execute(
             f"""
             {_POST_SELECT}
-            WHERE p.id = %s AND p.status = 'published'
+            WHERE p.id = %s
             """,
             (post_id,),
         ).fetchone()
         favorited = None
-        if viewer_id is not None and row:
+        if viewer_id is not None and row and st == "published":
             fav = conn.execute(
                 """
                 SELECT 1 FROM post_favorites
@@ -533,6 +583,36 @@ def get_post(
     return {"ok": True, "post": _row_to_post(dict(row), favorited=favorited)}
 
 
+def _normalize_post_fields(
+    *,
+    title: str,
+    body: str,
+    section: str,
+    code_snippet: str | None,
+    author_role: str,
+    as_draft: bool,
+) -> tuple[str, str, str, str | None]:
+    title = (title or "").strip()
+    body = (body or "").strip()
+    section = (section or "").strip() or "strategy"
+    code = (code_snippet or "").strip() or None
+    if len(title) > 120:
+        raise ValueError("标题过长（最多 120 字）")
+    if section not in SECTIONS:
+        raise ValueError(f"无效分区，可选: {', '.join(SECTIONS)}")
+    if section == "official" and author_role != "admin":
+        raise ValueError("仅管理员可发布官方内容")
+    if as_draft:
+        if not title:
+            title = "未命名草稿"
+        return title, body, section, code
+    if not title:
+        raise ValueError("标题不能为空")
+    if not body and not code:
+        raise ValueError("正文与代码不能同时为空")
+    return title, body, section, code
+
+
 def create_post(
     author_id: int,
     *,
@@ -541,29 +621,27 @@ def create_post(
     section: str,
     code_snippet: str | None = None,
     author_role: str = "user",
+    status: str = "published",
 ) -> dict[str, Any]:
-    title = (title or "").strip()
-    body = (body or "").strip()
-    section = (section or "").strip()
-    code = (code_snippet or "").strip() or None
-    if not title:
-        raise ValueError("标题不能为空")
-    if len(title) > 120:
-        raise ValueError("标题过长（最多 120 字）")
-    if section not in SECTIONS:
-        raise ValueError(f"无效分区，可选: {', '.join(SECTIONS)}")
-    if section == "official" and author_role != "admin":
-        raise ValueError("仅管理员可发布官方内容")
-    if not body and not code:
-        raise ValueError("正文与代码不能同时为空")
+    status = (status or "published").strip().lower()
+    if status not in ("published", "draft"):
+        raise ValueError("status 仅支持 published / draft")
+    title, body, section, code = _normalize_post_fields(
+        title=title,
+        body=body,
+        section=section,
+        code_snippet=code_snippet,
+        author_role=author_role,
+        as_draft=status == "draft",
+    )
     with get_conn() as conn:
         row = conn.execute(
             """
             INSERT INTO posts (author_id, section, title, body, code_snippet, status)
-            VALUES (%s, %s, %s, %s, %s, 'published')
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (author_id, section, title, body, code),
+            (author_id, section, title, body, code, status),
         ).fetchone()
         pid = int(row["id"])
         full = conn.execute(
@@ -585,39 +663,47 @@ def update_post(
     section: str,
     code_snippet: str | None = None,
     author_role: str = "user",
+    status: str | None = None,
 ) -> dict[str, Any]:
-    """作者原地更新；同一帖 id，评论/收藏/浏览数保留。"""
-    title = (title or "").strip()
-    body = (body or "").strip()
-    section = (section or "").strip()
-    code = (code_snippet or "").strip() or None
-    if not title:
-        raise ValueError("标题不能为空")
-    if len(title) > 120:
-        raise ValueError("标题过长（最多 120 字）")
-    if section not in SECTIONS:
-        raise ValueError(f"无效分区，可选: {', '.join(SECTIONS)}")
-    if section == "official" and author_role != "admin":
-        raise ValueError("仅管理员可发布官方内容")
-    if not body and not code:
-        raise ValueError("正文与代码不能同时为空")
+    """作者原地更新；草稿可续写/发布，已发布帖改内容（不可降为草稿）。"""
     with get_conn() as conn:
         row = conn.execute(
             "SELECT id, author_id, status FROM posts WHERE id = %s",
             (post_id,),
         ).fetchone()
-        if not row or row["status"] != "published":
+        if not row:
+            raise KeyError(f"post not found: {post_id}")
+        cur_status = str(row["status"] or "")
+        if cur_status not in ("published", "draft"):
             raise KeyError(f"post not found: {post_id}")
         if int(row["author_id"]) != int(user_id) and author_role != "admin":
             raise PermissionError("只能编辑自己的帖子")
+
+        next_status = cur_status
+        if status is not None:
+            want = str(status).strip().lower()
+            if want not in ("published", "draft"):
+                raise ValueError("status 仅支持 published / draft")
+            if cur_status == "published" and want == "draft":
+                raise ValueError("已发布帖不能改回草稿")
+            next_status = want
+
+        title, body, section, code = _normalize_post_fields(
+            title=title,
+            body=body,
+            section=section,
+            code_snippet=code_snippet,
+            author_role=author_role,
+            as_draft=next_status == "draft",
+        )
         conn.execute(
             """
             UPDATE posts
             SET title = %s, body = %s, section = %s, code_snippet = %s,
-                updated_at = NOW()
+                status = %s, updated_at = NOW()
             WHERE id = %s
             """,
-            (title, body, section, code, post_id),
+            (title, body, section, code, next_status, post_id),
         )
         full = conn.execute(
             f"""
@@ -635,16 +721,19 @@ def delete_post(
     *,
     author_role: str = "user",
 ) -> dict[str, Any]:
-    """作者软删除（hidden）；Feed 不再展示，评论/收藏记录仍挂在原帖上但不对外。"""
+    """已发布 → 软删 hidden；草稿 → 直接删除。"""
     with get_conn() as conn:
         row = conn.execute(
             "SELECT id, author_id, status FROM posts WHERE id = %s",
             (post_id,),
         ).fetchone()
-        if not row or row["status"] != "published":
+        if not row or row["status"] not in ("published", "draft"):
             raise KeyError(f"post not found: {post_id}")
         if int(row["author_id"]) != int(user_id) and author_role != "admin":
             raise PermissionError("只能删除自己的帖子")
+        if row["status"] == "draft":
+            conn.execute("DELETE FROM posts WHERE id = %s", (post_id,))
+            return {"ok": True, "id": int(post_id), "purged": True}
         conn.execute(
             """
             UPDATE posts
@@ -656,14 +745,84 @@ def delete_post(
     return {"ok": True, "id": int(post_id)}
 
 
-def list_comments(
-    post_id: int, *, viewer_id: int | None = None
+def moderate_post(
+    post_id: int,
+    *,
+    author_role: str = "user",
+    pinned: bool | None = None,
+    status: str | None = None,
 ) -> dict[str, Any]:
+    """管理员：置顶/取消置顶、下架/恢复。"""
+    if author_role != "admin":
+        raise PermissionError("仅管理员可操作")
+    if pinned is None and status is None:
+        raise ValueError("请指定 pinned 或 status")
+    if status is not None and status not in ("published", "hidden"):
+        raise ValueError("status 仅支持 published / hidden")
     with get_conn() as conn:
-        exists = conn.execute(
-            "SELECT id FROM posts WHERE id = %s AND status = 'published'",
+        row = conn.execute(
+            "SELECT id, status, is_pinned FROM posts WHERE id = %s",
             (post_id,),
         ).fetchone()
+        if not row:
+            raise KeyError(f"post not found: {post_id}")
+        if status is not None:
+            conn.execute(
+                """
+                UPDATE posts
+                SET status = %s, updated_at = NOW()
+                WHERE id = %s
+                """,
+                (status, post_id),
+            )
+        if pinned is not None:
+            if pinned:
+                conn.execute(
+                    """
+                    UPDATE posts
+                    SET is_pinned = TRUE,
+                        pinned_at = COALESCE(pinned_at, NOW()),
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (post_id,),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE posts
+                    SET is_pinned = FALSE, pinned_at = NULL, updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (post_id,),
+                )
+        full = conn.execute(
+            f"""
+            {_POST_SELECT}
+            WHERE p.id = %s
+            """,
+            (post_id,),
+        ).fetchone()
+    return {"ok": True, "post": _row_to_post(dict(full))}
+
+
+def list_comments(
+    post_id: int,
+    *,
+    viewer_id: int | None = None,
+    viewer_role: str = "user",
+) -> dict[str, Any]:
+    with get_conn() as conn:
+        if viewer_role == "admin":
+            exists = conn.execute(
+                "SELECT id FROM posts WHERE id = %s AND status IN ('published', 'hidden')",
+                (post_id,),
+            ).fetchone()
+        else:
+            exists = conn.execute(
+                "SELECT id FROM posts WHERE id = %s AND status = 'published'",
+                (post_id,),
+            ).fetchone()
         if not exists:
             raise KeyError(f"post not found: {post_id}")
         rows = conn.execute(
@@ -749,28 +908,42 @@ def create_comment(
         cid = int(row["id"])
 
         # 消息语义：
-        # - reply「回复我的」= 别人在我的帖子下发一级评论
-        # - mention「@我的」= 别人回复了我的某条评论（二级）
-        if reply_target is None:
-            # 一级评论 → 通知楼主（不含自己）
+        # - reply「回复我的」= 一级评论通知楼主，或点「回复」且正文未 @ 对方
+        # - mention「@我的」= 正文出现 @用户名/@显示名（优先于 reply，避免挤进「回复」栏）
+        mentioned = set(
+            _find_mentioned_user_ids(conn, body, exclude_id=author_id)
+        )
+        for uid in mentioned:
             _insert_notification(
                 conn,
-                user_id=post_author_id,
-                actor_id=author_id,
-                typ="reply",
-                post_id=post_id,
-                comment_id=cid,
-            )
-        else:
-            # 回复某人的评论 → 通知被回复者
-            _insert_notification(
-                conn,
-                user_id=int(reply_target["author_id"]),
+                user_id=uid,
                 actor_id=author_id,
                 typ="mention",
                 post_id=post_id,
                 comment_id=cid,
             )
+
+        if reply_target is None:
+            if post_author_id not in mentioned:
+                _insert_notification(
+                    conn,
+                    user_id=post_author_id,
+                    actor_id=author_id,
+                    typ="reply",
+                    post_id=post_id,
+                    comment_id=cid,
+                )
+        else:
+            target_uid = int(reply_target["author_id"])
+            if target_uid not in mentioned:
+                _insert_notification(
+                    conn,
+                    user_id=target_uid,
+                    actor_id=author_id,
+                    typ="reply",
+                    post_id=post_id,
+                    comment_id=cid,
+                )
 
         full = conn.execute(
             """
@@ -1050,31 +1223,107 @@ def list_favorites(user_id: int, *, limit: int = 50, offset: int = 0) -> dict[st
     }
 
 
-def list_my_posts(user_id: int, *, limit: int = 50, offset: int = 0) -> dict[str, Any]:
+def list_my_posts(
+    user_id: int,
+    *,
+    status: str = "published",
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    status_key = (status or "published").strip().lower()
+    if status_key not in ("published", "draft"):
+        raise ValueError("status 仅支持 published / draft")
     limit = max(1, min(100, int(limit)))
     offset = max(0, int(offset))
     with get_conn() as conn:
         total = conn.execute(
             """
             SELECT COUNT(*) AS c FROM posts
-            WHERE author_id = %s AND status = 'published'
+            WHERE author_id = %s AND status = %s
             """,
-            (user_id,),
+            (user_id, status_key),
+        ).fetchone()["c"]
+        order = (
+            "p.updated_at DESC, p.id DESC"
+            if status_key == "draft"
+            else "p.created_at DESC, p.id DESC"
+        )
+        rows = conn.execute(
+            f"""
+            {_POST_SELECT}
+            WHERE p.author_id = %s AND p.status = %s
+            ORDER BY {order}
+            LIMIT %s OFFSET %s
+            """,
+            (user_id, status_key, limit, offset),
+        ).fetchall()
+    return {
+        "ok": True,
+        "status": status_key,
+        "total": int(total),
+        "items": [_row_to_post(dict(r)) for r in rows],
+    }
+
+
+def list_moderation_posts(
+    *,
+    author_role: str = "user",
+    kind: str = "hidden",
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """管理仓：已下架 / 已置顶。"""
+    if author_role != "admin":
+        raise PermissionError("仅管理员可查看")
+    kind_key = (kind or "hidden").strip().lower()
+    if kind_key not in ("hidden", "pinned"):
+        raise ValueError("kind 仅支持 hidden / pinned")
+    limit = max(1, min(100, int(limit)))
+    offset = max(0, int(offset))
+    if kind_key == "hidden":
+        where = "WHERE p.status = 'hidden'"
+        order = "p.updated_at DESC, p.id DESC"
+    else:
+        where = "WHERE p.is_pinned = TRUE AND p.status = 'published'"
+        order = "p.pinned_at DESC NULLS LAST, p.id DESC"
+    with get_conn() as conn:
+        total = conn.execute(
+            f"SELECT COUNT(*) AS c FROM posts p {where}",
         ).fetchone()["c"]
         rows = conn.execute(
             f"""
             {_POST_SELECT}
-            WHERE p.author_id = %s AND p.status = 'published'
-            ORDER BY p.created_at DESC
+            {where}
+            ORDER BY {order}
             LIMIT %s OFFSET %s
             """,
-            (user_id, limit, offset),
+            (limit, offset),
         ).fetchall()
     return {
         "ok": True,
+        "kind": kind_key,
         "total": int(total),
         "items": [_row_to_post(dict(r)) for r in rows],
     }
+
+
+def purge_post(
+    post_id: int,
+    *,
+    author_role: str = "user",
+) -> dict[str, Any]:
+    """管理员彻底删除（级联评论/收藏/通知）。"""
+    if author_role != "admin":
+        raise PermissionError("仅管理员可彻底删除")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM posts WHERE id = %s",
+            (post_id,),
+        ).fetchone()
+        if not row:
+            raise KeyError(f"post not found: {post_id}")
+        conn.execute("DELETE FROM posts WHERE id = %s", (post_id,))
+    return {"ok": True, "id": int(post_id), "purged": True}
 
 
 # 示例帖：每分区 2 条，标题作幂等键

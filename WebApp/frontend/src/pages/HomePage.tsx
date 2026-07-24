@@ -105,7 +105,7 @@ export function HomePage() {
             <h2 className="text-2xl font-bold text-slate-900">平台能力</h2>
             <p className="mt-1 text-sm text-slate-500">覆盖研究主链路：选因子 → 检测 → 复盘 → 分享</p>
           </div>
-          <Link to={user ? "/community" : "/login?next=/community"} className="text-sm font-medium text-red-600">
+          <Link to="/community" className="text-sm font-medium text-red-600">
             逛社区 →
           </Link>
         </div>

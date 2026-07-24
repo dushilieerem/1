@@ -22,8 +22,8 @@ const TABS: { id: NotificationType; label: string }[] = [
 ];
 
 function typeLabel(t: NotificationType) {
-  if (t === "reply") return "在你的帖子下发表了评论";
-  if (t === "mention") return "回复了你的评论";
+  if (t === "reply") return "回复了你";
+  if (t === "mention") return "在评论里 @了你";
   return "赞了你的评论";
 }
 

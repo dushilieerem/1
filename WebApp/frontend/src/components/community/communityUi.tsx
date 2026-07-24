@@ -37,16 +37,40 @@ export function SectionPill({
 export function AuthorAvatar({
   name,
   size = "sm",
+  title,
+  onDoubleClick,
 }: {
   name: string;
   size?: "sm" | "md";
+  title?: string;
+  onDoubleClick?: () => void;
 }) {
   const letter = (name || "?").slice(0, 1).toUpperCase();
   const dim = size === "md" ? "h-8 w-8 text-xs" : "h-5 w-5 text-[10px]";
+  const interactive = Boolean(onDoubleClick);
   return (
     <span
-      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-200 to-slate-300 font-semibold text-slate-700 ${dim}`}
-      aria-hidden
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      title={title}
+      onDoubleClick={onDoubleClick}
+      onKeyDown={
+        interactive
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onDoubleClick?.();
+              }
+            }
+          : undefined
+      }
+      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-200 to-slate-300 font-semibold text-slate-700 ${dim} ${
+        interactive
+          ? "cursor-pointer outline-none ring-offset-1 hover:ring-2 hover:ring-red-200 focus-visible:ring-2 focus-visible:ring-red-300"
+          : ""
+      }`}
+      aria-hidden={!interactive}
+      aria-label={interactive ? title || `插入 @${name}` : undefined}
     >
       {letter}
     </span>

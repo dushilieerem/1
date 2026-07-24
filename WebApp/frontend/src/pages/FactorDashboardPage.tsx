@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowUpDown,
   BarChart3,
@@ -10,8 +10,20 @@ import {
   TrendingUp,
   Zap,
 } from "lucide-react";
-import { LABELS } from "@/lib/factorCatalog";
+import {
+  DYNAMIC_FACTOR_LIBS,
+  LABELS,
+  extractMethod,
+  loadFactors,
+  loadLibrarySource,
+} from "@/lib/factorCatalog";
 import { openOrCreateForFactor, openDetectInNewTab } from "@/lib/detectStore";
+import { getStoredUser } from "@/lib/auth";
+import {
+  buildBuiltinFactorShareStub,
+  buildFactorPanelShareDraft,
+} from "@/lib/communityShare";
+import { PageJump } from "@/components/PageJump";
 
 type PeriodKey = "3m" | "1y" | "3y";
 type SortKey =
@@ -59,6 +71,37 @@ const PERIODS: { key: PeriodKey; label: string }[] = [
   { key: "1y", label: "近1年" },
   { key: "3y", label: "近3年" },
 ];
+
+const PAGE_SIZE = 50;
+
+async function resolvePanelShareCode(
+  factorName: string,
+  library?: string | null,
+): Promise<string> {
+  const fname = factorName.trim();
+  const lib = (library || "").trim();
+  if (!fname) return "";
+  if (lib && DYNAMIC_FACTOR_LIBS.has(lib)) {
+    return buildBuiltinFactorShareStub(fname, lib);
+  }
+  try {
+    const factors = await loadFactors();
+    const meta =
+      factors.find((f) => f.name === fname && (!lib || f.library === lib)) ||
+      factors.find((f) => f.name === fname);
+    if (!meta) {
+      return lib ? buildBuiltinFactorShareStub(fname, lib) : "";
+    }
+    if (DYNAMIC_FACTOR_LIBS.has(meta.library)) {
+      return buildBuiltinFactorShareStub(fname, meta.library);
+    }
+    const src = await loadLibrarySource(meta.libraryFile);
+    const method = extractMethod(src, meta.methodName || meta.name).trim();
+    return method || buildBuiltinFactorShareStub(fname, meta.library);
+  } catch {
+    return lib ? buildBuiltinFactorShareStub(fname, lib) : "";
+  }
+}
 
 function tone(v: number | null | undefined) {
   if (v == null || Number.isNaN(v)) return "text-slate-400";
@@ -115,6 +158,7 @@ function StatCard({
 }
 
 export function FactorDashboardPage() {
+  const navigate = useNavigate();
   const [universe, setUniverse] = useState("CSI300");
   const [period, setPeriod] = useState<PeriodKey>("3y");
   const [filterUp, setFilterUp] = useState(true);
@@ -126,8 +170,10 @@ export function FactorDashboardPage() {
   const [sortKey, setSortKey] = useState<SortKey>("ic_mean");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [err, setErr] = useState<string | null>(null);
+  const [shareBusy, setShareBusy] = useState<string | null>(null);
 
   const [hideErrors, setHideErrors] = useState(true);
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -221,6 +267,17 @@ export function FactorDashboardPage() {
     });
   }, [rows, query, sortKey, sortDir, hideErrors]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [universe, period, filterUp, library, query, hideErrors, sortKey, sortDir]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageSafe = Math.min(page, pageCount);
+  const paged = useMemo(() => {
+    const start = (pageSafe - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, pageSafe]);
+
   const errCount = useMemo(() => rows.filter((r) => !!r.error).length, [rows]);
   const okRows = useMemo(() => filtered.filter((r) => !r.error && r.ic_mean != null), [filtered]);
   const avgIc = useMemo(() => {
@@ -265,6 +322,53 @@ export function FactorDashboardPage() {
 
   const uniLabel = UNIVERSES.find((u) => u.value === universe)?.label || universe;
   const periodLabel = PERIODS.find((p) => p.key === period)?.label || period;
+
+  const shareRowToCommunity = async (r: DashRow) => {
+    const next = `/community/new?section=factor`;
+    if (!getStoredUser()) {
+      navigate(`/login?next=${encodeURIComponent(next)}`);
+      return;
+    }
+    if (r.error) {
+      window.alert("该因子面板指标失败，无法分享。请先刷新或换组合。");
+      return;
+    }
+    setShareBusy(r.factor_name);
+    try {
+      const factorCode = await resolvePanelShareCode(r.factor_name, r.library);
+      const libKey = r.library || "";
+      const draft = buildFactorPanelShareDraft({
+        name: r.name_cn || r.factor_name,
+        factorName: r.factor_name,
+        libraryName: libKey || null,
+        libraryLabel: libKey ? LABELS[libKey] || libKey : null,
+        universeLabel: uniLabel,
+        periodLabel,
+        filterLabel: filterUp ? "过滤涨停" : "不过滤涨停",
+        metrics: {
+          ic_mean: r.ic_mean,
+          rank_ic: r.rank_ic,
+          ir: r.ir,
+          annual_return: r.annual_return,
+          max_drawdown: r.max_drawdown,
+          sharpe: r.sharpe,
+          win_rate: r.win_rate ?? r.coverage_pool,
+          q1_return: r.q1_return,
+          q5_return: r.q5_return,
+          long_short_spread: r.long_short_spread,
+          q1_turnover: r.q1_turnover,
+        },
+        factorCode,
+        returnTo: "/factor/dashboard",
+        returnLabel: "返回因子面板",
+      });
+      navigate(next, { state: draft });
+    } catch (ex) {
+      window.alert(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setShareBusy(null);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-red-50/50 via-white to-slate-50">
@@ -463,13 +567,13 @@ export function FactorDashboardPage() {
                   <SortTh k="q1_return" label="Q1分层" align="right" />
                   <SortTh k="q5_return" label="Q5分层" align="right" />
                   <SortTh k="long_short_spread" label="多空差" align="right" />
-                  <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold tracking-wide text-slate-500">
+                  <th className="whitespace-nowrap px-3 py-3 text-center text-xs font-semibold tracking-wide text-slate-500">
                     操作
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => {
+                {paged.map((r) => {
                   const win = r.win_rate ?? r.coverage_pool;
                   const lib = LABELS[r.library || ""] || r.library || "—";
                   return (
@@ -544,19 +648,33 @@ export function FactorDashboardPage() {
                       >
                         {fmtPct(r.long_short_spread)}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3.5 text-right">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void openOrCreateForFactor(
-                              r.factor_name,
-                              r.name_cn || r.factor_name,
-                            ).then((p) => openDetectInNewTab(p.id));
-                          }}
-                          className="text-xs font-semibold text-red-600 opacity-0 transition group-hover:opacity-100 hover:text-red-700"
-                        >
-                          检测 →
-                        </button>
+                      <td className="whitespace-nowrap px-3 py-3.5 text-center">
+                        <div className="inline-flex min-w-[7.5rem] items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            disabled={shareBusy === r.factor_name || !!r.error}
+                            onClick={() => void shareRowToCommunity(r)}
+                            className="rounded-md px-2 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50 hover:text-red-700 disabled:opacity-40"
+                            title="分享到社区"
+                          >
+                            {shareBusy === r.factor_name ? "…" : "分享"}
+                          </button>
+                          <span className="text-slate-300" aria-hidden>
+                            |
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void openOrCreateForFactor(
+                                r.factor_name,
+                                r.name_cn || r.factor_name,
+                              ).then((p) => openDetectInNewTab(p.id));
+                            }}
+                            className="rounded-md px-2 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50 hover:text-red-700"
+                          >
+                            检测
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -571,6 +689,36 @@ export function FactorDashboardPage() {
               </tbody>
             </table>
           </div>
+          {filtered.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
+              <span>
+                共 {filtered.length} 条 · 每页 {PAGE_SIZE} · 第 {pageSafe}/{pageCount} 页
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={pageSafe <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  上一页
+                </button>
+                <button
+                  type="button"
+                  disabled={pageSafe >= pageCount}
+                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  下一页
+                </button>
+                <PageJump
+                  page={pageSafe}
+                  totalPages={pageCount}
+                  onJump={setPage}
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

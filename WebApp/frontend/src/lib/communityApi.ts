@@ -14,6 +14,8 @@ export type CommunityPost = {
   favorite_count?: number;
   favorited?: boolean;
   status: string;
+  is_pinned?: boolean;
+  pinned_at?: string | null;
   created_at: string | null;
   updated_at?: string | null;
   author: {
@@ -149,6 +151,7 @@ export async function createCommunityPost(payload: {
   body: string;
   section: CommunitySection;
   code_snippet?: string;
+  status?: "draft" | "published";
 }) {
   const res = await fetch("/api/community/posts", {
     method: "POST",
@@ -168,6 +171,7 @@ export async function updateCommunityPost(
     body: string;
     section: CommunitySection;
     code_snippet?: string;
+    status?: "draft" | "published";
   },
 ) {
   const res = await fetch(`/api/community/posts/${id}`, {
@@ -187,6 +191,22 @@ export async function deleteCommunityPost(id: number) {
     headers: { ...authHeaders() },
   });
   return parseJson<{ ok: boolean; id: number }>(res);
+}
+
+/** 管理员：置顶 / 下架 / 恢复 */
+export async function moderateCommunityPost(
+  id: number,
+  payload: { pinned?: boolean; status?: "published" | "hidden" },
+) {
+  const res = await fetch(`/api/community/posts/${id}/moderate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+  return parseJson<{ ok: boolean; post: CommunityPost }>(res);
 }
 
 export async function listComments(postId: number) {
@@ -314,15 +334,55 @@ export async function listMyFavorites(opts?: { limit?: number; offset?: number }
   return parseJson<{ ok: boolean; total: number; items: CommunityPost[] }>(res);
 }
 
-export async function listMyPosts(opts?: { limit?: number; offset?: number }) {
+export async function listMyPosts(opts?: {
+  status?: "published" | "draft";
+  limit?: number;
+  offset?: number;
+}) {
   const q = new URLSearchParams();
+  if (opts?.status) q.set("status", opts.status);
   if (opts?.limit != null) q.set("limit", String(opts.limit));
   if (opts?.offset != null) q.set("offset", String(opts.offset));
   const qs = q.toString();
   const res = await fetch(`/api/community/my-posts${qs ? `?${qs}` : ""}`, {
     headers: { ...authHeaders() },
   });
-  return parseJson<{ ok: boolean; total: number; items: CommunityPost[] }>(res);
+  return parseJson<{
+    ok: boolean;
+    status?: string;
+    total: number;
+    items: CommunityPost[];
+  }>(res);
+}
+
+export type ModerationKind = "hidden" | "pinned";
+
+export async function listModerationPosts(opts?: {
+  kind?: ModerationKind;
+  limit?: number;
+  offset?: number;
+}) {
+  const q = new URLSearchParams();
+  q.set("kind", opts?.kind || "hidden");
+  if (opts?.limit != null) q.set("limit", String(opts.limit));
+  if (opts?.offset != null) q.set("offset", String(opts.offset));
+  const res = await fetch(`/api/community/moderation?${q}`, {
+    headers: { ...authHeaders() },
+  });
+  return parseJson<{
+    ok: boolean;
+    kind: ModerationKind;
+    total: number;
+    items: CommunityPost[];
+  }>(res);
+}
+
+export async function purgeCommunityPost(id: number) {
+  const res = await fetch(`/api/community/posts/${id}/purge`, {
+    method: "POST",
+    headers: { ...authHeaders() },
+  });
+  return parseJson<{ ok: boolean; id: number; purged: boolean }>(res);
 }
 
 export function formatPostTime(iso: string | null | undefined) {

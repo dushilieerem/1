@@ -284,6 +284,7 @@ export function StrategyBacktestPage() {
       slippage_rate: cfg.slippage_rate,
       initial_capital: cfg.initial_capital,
       include_positions: false,
+      include_rebalance_logs: cfg.include_rebalance_logs,
     };
     try {
       // 草稿：回测跑通后再落库；失败则不建策略项目
@@ -608,6 +609,24 @@ export function StrategyBacktestPage() {
                   />
                 </label>
               </div>
+              <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-200"
+                  checked={cfg.include_rebalance_logs}
+                  onChange={(e) =>
+                    patchCfg({ include_rebalance_logs: e.target.checked }, "left")
+                  }
+                />
+                <span>
+                  <span className="block text-xs font-medium text-slate-700">
+                    返回调仓日志
+                  </span>
+                  <span className="mt-0.5 block text-[11px] leading-snug text-slate-400">
+                    记录各信号日目标权重变化，写入报告「交易明细 / 历史持仓」；非成交回报
+                  </span>
+                </span>
+              </label>
             </section>
           </div>
         </aside>

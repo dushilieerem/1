@@ -67,6 +67,20 @@ export type YgFactorAnalysis = {
   industry_group_equity_curves?: YgIndustryGroupEquityCurve[] | null;
 };
 
+/** 策略回测：单笔目标权重变化（非成交回报） */
+export type YgRebalanceTrade = {
+  symbol: string;
+  side: string;
+  previous_weight: number;
+  target_weight: number;
+  weight_change: number;
+};
+
+export type YgRebalanceLog = {
+  date: string;
+  trades: YgRebalanceTrade[];
+};
+
 export type YgBacktestResponse = {
   metrics?: Record<string, number | null>;
   equity_curve?: YgCurvePoint[] | null;
@@ -78,6 +92,12 @@ export type YgBacktestResponse = {
   date_range?: { start?: string; end?: string } | null;
   final_equity?: number | null;
   meta?: Record<string, unknown> | null;
+  positions?: Array<{
+    date: string;
+    holdings: Array<{ symbol: string; weight: number }>;
+  }> | null;
+  /** include_rebalance_logs=true 时返回 */
+  rebalance_logs?: YgRebalanceLog[] | null;
   error?: string | null;
 };
 
@@ -146,6 +166,8 @@ export type YgStrategyBacktestRequest = {
   slippage_rate?: number;
   initial_capital?: number;
   include_positions?: boolean;
+  /** 是否返回目标权重变化的调仓日志（默认 false；研究页可勾选） */
+  include_rebalance_logs?: boolean;
 };
 
 export async function ygBacktestStrategy(

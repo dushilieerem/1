@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Bell, Bookmark, FileText, UserRound } from "lucide-react";
+import { Bell, Bookmark, FilePenLine, FileText, Shield, UserRound } from "lucide-react";
 import { getStoredUser } from "@/lib/auth";
+import { getMyAgentUsage } from "@/lib/agentApi";
 import {
   CommunityBackLink,
   CommunityPageShell,
@@ -22,6 +23,12 @@ const LINKS = [
     icon: FileText,
   },
   {
+    to: "/community/drafts",
+    label: "草稿箱",
+    desc: "未发布的草稿 · 继续编辑或删除",
+    icon: FilePenLine,
+  },
+  {
     to: "/community/favorites",
     label: "我的收藏",
     desc: "收藏过的社区内容",
@@ -31,8 +38,30 @@ const LINKS = [
 
 export function CommunityMePage() {
   const [user] = useState(() => getStoredUser());
+  const [agentLine, setAgentLine] = useState<string | null>(null);
   const name = user?.display_name || user?.username || "用户";
   const initial = name.slice(0, 1).toUpperCase();
+  const links =
+    user?.role === "admin"
+      ? [
+          ...LINKS,
+          {
+            to: "/community/mod",
+            label: "管理仓",
+            desc: "已下架 · 已置顶 · Agent 用量 · 恢复 / 彻底删除",
+            icon: Shield,
+          },
+        ]
+      : LINKS;
+
+  useEffect(() => {
+    if (!user) return;
+    void getMyAgentUsage()
+      .then((u) =>
+        setAgentLine(`Agent 今日 ${u.used_today}/${u.quota_daily}（剩余 ${u.remaining}）`),
+      )
+      .catch(() => setAgentLine(null));
+  }, [user]);
 
   return (
     <CommunityPageShell>
@@ -56,12 +85,15 @@ export function CommunityMePage() {
                   {user?.role === "admin" ? "管理员" : "用户"}
                   {user?.username ? ` · ${user.username}` : ""}
                 </p>
+                {agentLine && (
+                  <p className="mt-1 text-xs text-slate-400">{agentLine}</p>
+                )}
               </div>
             </div>
           </div>
 
           <ul className="divide-y divide-slate-100">
-            {LINKS.map((item) => {
+            {links.map((item) => {
               const Icon = item.icon;
               return (
                 <li key={item.to}>

@@ -105,8 +105,10 @@ def run_one(
     *,
     filter_limit_up: bool,
     limit: int | None,
+    skip_ok: bool = False,
+    analysis_level: str = "core",
 ) -> dict:
-    log(f"=== 开始 {universe} / {period} / filter_up={filter_limit_up} limit={limit} ===")
+    log(f"=== 开始 {universe} / {period} / filter_up={filter_limit_up} limit={limit} skip_ok={skip_ok} level={analysis_level} ===")
     # 同步跑（日更脚本不依赖 api_server 线程，避免服务重启打断）
     ds._run_batch(
         universe=universe,
@@ -114,6 +116,8 @@ def run_one(
         filter_limit_up=filter_limit_up,
         filter_suspended=True,
         limit=limit,
+        skip_ok=skip_ok,
+        analysis_level=analysis_level,
     )
     job = ds.read_job()
     log(f"=== 结束 {universe}/{period}/filter_up={filter_limit_up} status={job.get('status')} error={job.get('error')} ===")
@@ -138,6 +142,17 @@ def main() -> None:
     ap.add_argument("--all-default", action="store_true", help="4 池 × 3 周期全量（仅过滤开）")
     ap.add_argument("--no-filter-up", action="store_true", help="单组/多 combo 时关闭涨停过滤")
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument(
+        "--skip-ok",
+        action="store_true",
+        help="跳过已成功行（补算用；全量日更不要加）",
+    )
+    ap.add_argument(
+        "--analysis-level",
+        default="core",
+        choices=("core", "full"),
+        help="默认 core（面板标量足够且更快）",
+    )
     args = ap.parse_args()
 
     # (universe, period, filter_limit_up)
@@ -160,14 +175,21 @@ def main() -> None:
         filt = not args.no_filter_up
         jobs = [(u, p, filt) for u, p in DEFAULT_COMBOS]
 
-    log(f"日更启动 jobs={len(jobs)} limit={args.limit}")
+    log(f"日更启动 jobs={len(jobs)} limit={args.limit} skip_ok={args.skip_ok} level={args.analysis_level}")
     for i, (u, p, f) in enumerate(jobs, 1):
         log(f"  [{i}/{len(jobs)}] {u} {p} filter_up={f}")
     log(f"SQLite → {ds.DB_PATH}")
 
     failed = 0
     for u, p, filt in jobs:
-        job = run_one(u, p, filter_limit_up=filt, limit=args.limit)
+        job = run_one(
+            u,
+            p,
+            filter_limit_up=filt,
+            limit=args.limit,
+            skip_ok=args.skip_ok,
+            analysis_level=args.analysis_level,
+        )
         if job.get("status") == "failed":
             failed += 1
 

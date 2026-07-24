@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Eye, FlaskConical, LineChart, MessageCircle, Pencil, Star, Trash2 } from "lucide-react";
+import { Eye, EyeOff, FlaskConical, LineChart, MessageCircle, Pencil, Pin, Star, Trash2 } from "lucide-react";
 import { getStoredUser } from "@/lib/auth";
+import { useConfirm } from "@/components/ConfirmDialog";
 import {
   addFavorite,
   createComment,
@@ -9,6 +10,7 @@ import {
   formatPostTime,
   getCommunityPost,
   listComments,
+  moderateCommunityPost,
   removeFavorite,
   takeViewBump,
   type CommunityComment,
@@ -43,6 +45,7 @@ export function CommunityPostPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const user = getStoredUser();
+  const confirm = useConfirm();
   const [post, setPost] = useState<CommunityPost | null>(null);
   const [comments, setComments] = useState<CommunityComment[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -53,6 +56,7 @@ export function CommunityPostPage() {
   const [favErr, setFavErr] = useState<string | null>(null);
   const [highlightId, setHighlightId] = useState<number | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [modBusy, setModBusy] = useState(false);
 
   const postId = Number(id);
   const focusComment = Number(searchParams.get("comment") || 0);
@@ -72,14 +76,20 @@ export function CommunityPostPage() {
     setLoading(true);
     setErr(null);
     setFavErr(null);
-    void Promise.all([
-      getCommunityPost(postId, { bump: takeViewBump(postId) }),
-      listComments(postId),
-    ])
-      .then(([postData, commentData]) => {
+    void getCommunityPost(postId, { bump: takeViewBump(postId) })
+      .then(async (postData) => {
         if (cancelled) return;
+        if (postData.post.status === "draft") {
+          navigate(`/community/post/${postId}/edit`, { replace: true });
+          return;
+        }
         setPost(postData.post);
-        setComments(commentData.items);
+        try {
+          const commentData = await listComments(postId);
+          if (!cancelled) setComments(commentData.items);
+        } catch {
+          if (!cancelled) setComments([]);
+        }
       })
       .catch((ex) => {
         if (!cancelled) {
@@ -93,7 +103,7 @@ export function CommunityPostPage() {
     return () => {
       cancelled = true;
     };
-  }, [postId]);
+  }, [postId, navigate]);
 
   useEffect(() => {
     if (!focusComment || loading || comments.length === 0) return;
@@ -204,9 +214,13 @@ export function CommunityPostPage() {
 
   const onDelete = async () => {
     if (!post) return;
-    if (!window.confirm("确认删除该帖子？")) {
-      return;
-    }
+    const ok = await confirm({
+      title: "删除帖子",
+      message: "确认删除该帖子？",
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (!ok) return;
     setDeleteBusy(true);
     setFavErr(null);
     try {
@@ -216,6 +230,40 @@ export function CommunityPostPage() {
       setFavErr(ex instanceof Error ? ex.message : String(ex));
     } finally {
       setDeleteBusy(false);
+    }
+  };
+
+  const onModerate = async (payload: {
+    pinned?: boolean;
+    status?: "published" | "hidden";
+  }) => {
+    if (!post) return;
+    if (payload.status === "hidden") {
+      const ok = await confirm({
+        title: "下架帖子",
+        message: "确认下架该帖？Feed 将不再展示（管理员仍可打开并恢复）。",
+        confirmLabel: "下架",
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    if (payload.status === "published") {
+      const ok = await confirm({
+        title: "恢复显示",
+        message: `确认恢复「${post.title}」？恢复后将重新出现在社区 Feed。`,
+        confirmLabel: "恢复",
+      });
+      if (!ok) return;
+    }
+    setModBusy(true);
+    setFavErr(null);
+    try {
+      const data = await moderateCommunityPost(post.id, payload);
+      setPost(data.post);
+    } catch (ex) {
+      setFavErr(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setModBusy(false);
     }
   };
 
@@ -244,17 +292,86 @@ export function CommunityPostPage() {
     post.author.display_name || post.author.username || "匿名";
   const favorited = !!post.favorited;
   const isOwnPost = !!(user && post.author?.id != null && post.author.id === user.id);
+  const isAdmin = user?.role === "admin";
+  const isHidden = post.status === "hidden";
 
   return (
     <CommunityPageShell>
       <div className="mx-auto max-w-[1120px] space-y-5 px-5 py-6 animate-fade-up">
         <CommunityBackLink />
 
+        {isHidden && isAdmin ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <span>该帖已下架，游客与普通用户不可见。</span>
+            <button
+              type="button"
+              disabled={modBusy}
+              onClick={() => void onModerate({ status: "published" })}
+              className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-60"
+            >
+              恢复显示
+            </button>
+          </div>
+        ) : null}
+
         <CommunityPanel>
           <header className="border-b border-slate-100 px-6 py-6 sm:px-8">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <SectionPill section={post.section} label={post.section_label} />
               <div className="flex flex-wrap items-center gap-2">
+                <SectionPill section={post.section} label={post.section_label} />
+                {post.is_pinned ? (
+                  <span className="rounded-md bg-sky-500 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                    置顶
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {isAdmin ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={modBusy}
+                      onClick={() =>
+                        void onModerate({ pinned: !post.is_pinned })
+                      }
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-800 transition hover:bg-sky-100 disabled:opacity-60"
+                    >
+                      <Pin className="h-4 w-4" />
+                      {post.is_pinned ? "取消置顶" : "置顶"}
+                    </button>
+                    {isHidden ? (
+                      <button
+                        type="button"
+                        disabled={modBusy}
+                        onClick={() => void onModerate({ status: "published" })}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60"
+                      >
+                        <Eye className="h-4 w-4" />
+                        恢复显示
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={modBusy}
+                        onClick={() => void onModerate({ status: "hidden" })}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-sm font-medium text-amber-700 transition hover:bg-amber-50 disabled:opacity-60"
+                      >
+                        <EyeOff className="h-4 w-4" />
+                        下架
+                      </button>
+                    )}
+                    {!isOwnPost ? (
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/community/post/${post.id}/edit`)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                      >
+                        <Pencil className="h-4 w-4" />
+                        编辑
+                      </button>
+                    ) : null}
+                  </>
+                ) : null}
                 {isOwnPost ? (
                   <>
                     <button
@@ -265,15 +382,17 @@ export function CommunityPostPage() {
                       <Pencil className="h-4 w-4" />
                       编辑
                     </button>
-                    <button
-                      type="button"
-                      disabled={deleteBusy}
-                      onClick={() => void onDelete()}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-60"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      {deleteBusy ? "删除中…" : "删除"}
-                    </button>
+                    {!isHidden ? (
+                      <button
+                        type="button"
+                        disabled={deleteBusy}
+                        onClick={() => void onDelete()}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-60"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        {deleteBusy ? "删除中…" : "删除"}
+                      </button>
+                    ) : null}
                     <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5 text-sm text-slate-400">
                       <Star className="h-4 w-4" />
                       收藏 {post.favorite_count ?? 0}
@@ -282,7 +401,7 @@ export function CommunityPostPage() {
                 ) : (
                   <button
                     type="button"
-                    disabled={favBusy}
+                    disabled={favBusy || isHidden}
                     onClick={() => void onToggleFavorite()}
                     className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:opacity-60 ${
                       favorited

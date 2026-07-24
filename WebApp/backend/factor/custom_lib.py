@@ -32,6 +32,22 @@ class CustomLib(FactorLibrary):
         vol = self.close.pct_change().rolling(20).std()
         return ret / (vol + 1e-8)
 
+    def u4_band_location(self):
+        """布林带内位置"""
+        mid = self.close.rolling(20).mean()
+        sd = self.close.rolling(20).std()
+        up = mid + 2 * sd
+        dn = mid - 2 * sd
+        return (self.close - dn) / (up - dn).replace(0, float("nan"))
+
+    def u4_phantom_gap(self):
+        """隔夜幽灵跳空"""
+        return self.open / self.close.shift(1) - 1
+
+    def u4_realized_vol_20d(self):
+        ret = self.close.pct_change()
+        return ret.rolling(20).std()
+
     def u5_Oversold_stable_with_momentum(self):
         """波谷缩量企稳 + 5日动量（个股分数）"""
         lookback = 20

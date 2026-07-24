@@ -87,8 +87,8 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
   "factor_name": "momentum",
 
   // 直接执行内置因子时：删除 factor_code，改传以下字段
-  // "library_name": "jq_compat_risk",
-  // "factor_name": "jq_kurtosis60",
+  // "library_name": "risk_indicators",
+  // "factor_name": "kurtosis60",
 
   // ─── 2. 组合构建方式 ───
   "portfolio_type": "long_short",     // long_only=纯多头 | long_short=多空组合
@@ -119,7 +119,7 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
 | `factor_code` | string | 条件必填 | — | 用户自定义因子的函数体；系统自动包装为 `FactorLibrary`。未提供时执行内置因子。 |
-| `library_name` | string / string[] | 条件必填 | — | 直接执行内置因子时传单个库名；自定义因子可传单个或多个库名以调用其中方法。当前支持 `alpha_library`、`qlib_alpha`、`jq_compat_technical`、`jq_compat_risk`、`jq_compat_emotion`。 |
+| `library_name` | string / string[] | 条件必填 | — | 直接执行内置因子时传单个库名；自定义因子可传单个或多个库名以调用其中方法。当前支持 `alpha_library`、`alpha_features`、`technical_indicators`、`risk_indicators`、`emotion_indicators`。 |
 | `factor_name` | string | 否 | `alpha101` | 要执行的因子方法名，须与代码中的函数名一致。 |
 | `portfolio_type` | string | 否 | `long_short` | `long_only` 为最高组纯多头；`long_short` 为最高组做多、最低组做空。 |
 | `universe` | string | 否 | `CSI_ALL` | 股票池，如 `CSI300`、`CSI500`、`CSI1000`。 |
@@ -140,18 +140,18 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
 
 ```json
 {
-  "library_name": "jq_compat_risk",
-  "factor_name": "jq_kurtosis60"
+  "library_name": "risk_indicators",
+  "factor_name": "kurtosis60"
 }
 ```
 
-用户自定义因子仍只传单个函数。若传入一个或多个 `library_name`，服务端会加载完整库并把其中公开因子方法注入模板，因此组合函数可以直接调用 `self.jq_ar()`、`self.qlib_alpha158_kmid()` 等方法。内置库私有辅助函数不会暴露给前端，但会在原库中正常执行。
+用户自定义因子仍只传单个函数。若传入一个或多个 `library_name`，服务端会加载完整库并把其中公开因子方法注入模板，因此组合函数可以直接调用 `self.ar()`、`self.alpha158_kmid()` 等方法。内置库私有辅助函数不会暴露给前端，但会在原库中正常执行。
 
 ```jsonc
 {
-  "factor_code": "def combo_factor(self):\n    return 0.5 * self.jq_ar() + 0.5 * self.jq_arbr()",
+  "factor_code": "def combo_factor(self):\n    return 0.5 * self.ar() + 0.5 * self.arbr()",
   "factor_name": "combo_factor",
-  "library_name": "jq_compat_emotion"
+  "library_name": "emotion_indicators"
 }
 ```
 
@@ -159,9 +159,9 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
 
 ```jsonc
 {
-  "factor_code": "def combo_factor(self):\n    return 0.5 * self.jq_kurtosis20() + 0.5 * self.qlib_alpha158_kmid()",
+  "factor_code": "def combo_factor(self):\n    return 0.5 * self.kurtosis20() + 0.5 * self.alpha158_kmid()",
   "factor_name": "combo_factor",
-  "library_name": ["jq_compat_risk", "qlib_alpha"]
+  "library_name": ["risk_indicators", "alpha_features"]
 }
 ```
 
@@ -322,7 +322,8 @@ Python 类中定义多个 `@factor` 因子函数与唯一 `@signal` 组合公式
   "initial_capital": 1000000,
 
   // ─── 返回控制 ───
-  "include_positions": false
+  "include_positions": false,
+  "include_rebalance_logs": true
 }
 ```
 
@@ -338,6 +339,7 @@ Python 类中定义多个 `@factor` 因子函数与唯一 `@signal` 组合公式
 | `stamp_tax` | number | 否 | `0.001` | 卖出印花税率，按卖出成交额计提。 |
 | `initial_capital` | number | 否 | `1000000` | 初始资金。 |
 | `include_positions` | boolean | 否 | `false` | 是否返回采样后的持仓权重快照。 |
+| `include_rebalance_logs` | boolean | 否 | `false` | 是否返回仅含实际目标权重变化的调仓日志。 |
 
 服务端统一使用配置的数据目录和 Native 回测后端，并始终返回逐日净值曲线。`strategy_params`、
 `factor_code`、`factor_name`、`data_dir`、`backtest_engine` 和 `include_equity` 已移除；传入这些字段或其他未知字段会返回 HTTP `422`，不允许静默忽略。
@@ -404,6 +406,39 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
 
   // ─── 6. 可选数据 ───
   "positions": null,
+  "rebalance_logs": [
+    {
+      "date": "2024-01-02",
+      "trades": [
+        {
+          "symbol": "000001.SZ",
+          "side": "buy",
+          "previous_weight": 0.0,
+          "target_weight": 0.333333,
+          "weight_change": 0.333333
+        },
+        {
+          "symbol": "600519.SH",
+          "side": "buy",
+          "previous_weight": 0.0,
+          "target_weight": 0.333333,
+          "weight_change": 0.333333
+        }
+      ]
+    },
+    {
+      "date": "2024-01-23",
+      "trades": [
+        {
+          "symbol": "000001.SZ",
+          "side": "sell",
+          "previous_weight": 0.333333,
+          "target_weight": 0.0,
+          "weight_change": -0.333333
+        }
+      ]
+    }
+  ],
 
   // ─── 7. 错误信息 ───
   "error": null
@@ -424,6 +459,7 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
 | `excess_return` | number | 是 | 策略累计收益率减去基准累计收益率。 |
 | `meta` | object | 是 | 成功时的策略名称和实际股票池；业务错误时为 `null`。 |
 | `positions` | array | 是 | `include_positions=true` 时返回的采样持仓快照，否则为 `null`。 |
+| `rebalance_logs` | array | 是 | `include_rebalance_logs=true` 时返回的调仓日志，否则为 `null`。日志反映信号日的目标权重变化，不代表独立的成交回报。 |
 | `error` | string | 是 | 业务或策略代码错误信息；成功时为 `null`。 |
 
 `metrics` 字段：
@@ -453,6 +489,8 @@ class SmallCapMomentumStrategy(FactorPortfolioStrategy):
 | `meta` | `strategy`、`universe`、`benchmark` | string、string、string | 策略类名、实际使用的股票池和基准指数。 |
 | `positions[]` | `date`、`holdings` | string、array | 持仓快照日期及该日持仓列表。 |
 | `positions[].holdings[]` | `symbol`、`weight` | string、number | 证券代码和目标权重。 |
+| `rebalance_logs[]` | `date`、`trades` | string、array | 调仓信号日及该日发生权重变化的交易列表。 |
+| `rebalance_logs[].trades[]` | `symbol`、`side`、`previous_weight`、`target_weight`、`weight_change` | string、string、number、number、number | 标的、买入/卖出方向、调整前后目标权重及权重变化。 |
 
 策略源码、数据读取或回测运行错误均返回 HTTP `200`，并写入 `error` 字段；
 此时 `meta` 为 `null`。请求体类型、枚举值或未知字段不合法时由接口契约返回 HTTP `422`。
@@ -569,8 +607,8 @@ save_to_database(result)  # 前端存自己数据库
 ```python
 # 平台内置因子：不传 factor_code，服务端从完整因子库加载
 response = requests.post("http://re-cluster:8000/api/backtest/factor", json={
-    "library_name": "jq_compat_risk",
-    "factor_name": "jq_kurtosis60",
+    "library_name": "risk_indicators",
+    "factor_name": "kurtosis60",
     "universe": "CSI500",
     "rebalance_days": 20,
 })

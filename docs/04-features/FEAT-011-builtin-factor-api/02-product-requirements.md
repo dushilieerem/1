@@ -9,6 +9,6 @@
 
 ## 验收
 
-1. `jq_compat_risk` 中依赖 `_returns` 的 `jq_kurtosis60` 可只凭库名和因子名完成回测。
-2. 自定义 `combo_factor` 可在同一函数内调用 `self.jq_kurtosis20()` 与 `self.qlib_alpha158_kmid()` 并成功回测。
+1. `risk_indicators` 中依赖 `_returns` 的 `kurtosis60` 可只凭库名和因子名完成回测。
+2. 自定义 `combo_factor` 可在同一函数内调用 `self.kurtosis20()` 与 `self.alpha158_kmid()` 并成功回测。
 3. 现有单函数自定义因子请求保持成功；未登记库名、未知因子名返回可读业务错误，不能导入任意模块。

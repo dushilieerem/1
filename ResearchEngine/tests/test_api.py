@@ -22,7 +22,7 @@ def combo_factor(self):
     return 0.5 * self.volume_20d() + 0.5 * self.amount_20d()'''
 
 BUILTIN_COMBO_FACTOR_CODE = '''def combo_factor(self):
-    return 0.5 * self.jq_kurtosis20() + 0.5 * self.qlib_alpha158_kmid()'''
+    return 0.5 * self.kurtosis20() + 0.5 * self.alpha158_kmid()'''
 
 STRATEGY_CODE = '''import pandas as pd
 
@@ -149,8 +149,8 @@ def test_factor_backtest_loads_builtin_factor_library(market_data_dir):
     payload = _request_payload()
     payload.pop("factor_code")
     payload.update({
-        "library_name": "jq_compat_risk",
-        "factor_name": "jq_kurtosis60",
+        "library_name": "risk_indicators",
+        "factor_name": "kurtosis60",
     })
     response = client.post("/api/backtest/factor", json=payload)
 
@@ -163,7 +163,7 @@ def test_factor_backtest_custom_factor_can_combine_builtin_library_methods(marke
     payload.update({
         "factor_code": BUILTIN_COMBO_FACTOR_CODE,
         "factor_name": "combo_factor",
-        "library_name": ["jq_compat_risk", "qlib_alpha"],
+        "library_name": ["risk_indicators", "alpha_features"],
     })
     response = client.post("/api/backtest/factor", json=payload)
 
@@ -178,7 +178,7 @@ def test_factor_backtest_requires_exactly_one_factor_source(market_data_dir):
 
     payload = _request_payload()
     payload.pop("factor_code")
-    payload["library_name"] = ["jq_compat_risk", "qlib_alpha"]
+    payload["library_name"] = ["risk_indicators", "alpha_features"]
     assert client.post("/api/backtest/factor", json=payload).status_code == 422
 
 
@@ -284,6 +284,25 @@ def test_strategy_backtest_returns_equity_and_positions(market_data_dir):
     assert len(body["benchmark_curve"]) > 0
     assert body["excess_return"] is not None
     assert body["positions"]
+    assert body["rebalance_logs"] is None
+
+
+def test_strategy_backtest_returns_rebalance_logs_on_demand(market_data_dir):
+    response = client.post(
+        "/api/backtest/strategy",
+        json={
+            "strategy_code": STRATEGY_CODE,
+            "benchmark": "CSI300",
+            "include_rebalance_logs": True,
+        },
+    )
+
+    assert response.status_code == 200
+    logs = response.json()["rebalance_logs"]
+    assert logs
+    trade = logs[0]["trades"][0]
+    assert set(trade) == {"symbol", "side", "previous_weight", "target_weight", "weight_change"}
+    assert trade["side"] in {"buy", "sell"}
 
 
 def test_strategy_backtest_returns_business_error_for_invalid_contract(market_data_dir):
@@ -343,3 +362,21 @@ def test_structured_factor_portfolio_strategy_backtest(market_data_dir):
     assert body["error"] is None
     assert body["meta"]["strategy"] == "CompositeFactorStrategy"
     assert body["positions"]
+
+
+def test_factor_api_reads_current_market_data_layout(market_data_dir):
+    import shutil
+
+    current = market_data_dir / "current"
+    panels = current / "panels"
+    metadata = current / "metadata"
+    panels.mkdir(parents=True)
+    metadata.mkdir()
+    for path in market_data_dir.glob("*.parquet"):
+        target_dir = metadata if path.name == "stock_info.parquet" else panels
+        shutil.copy2(path, target_dir / path.name)
+    shutil.copytree(market_data_dir / "benchmark", current / "benchmark")
+
+    response = client.post("/api/backtest/factor", json=_request_payload())
+    assert response.status_code == 200
+    assert response.json()["error"] is None

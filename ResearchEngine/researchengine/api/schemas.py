@@ -89,6 +89,7 @@ class StrategyBacktestRequest(BaseModel):
     initial_capital: float = 1_000_000.0
     #: 返回持仓权重（前端画持仓图用）
     include_positions: bool = False
+    include_rebalance_logs: bool = False
 
 
 # ---------------- 响应 ----------------
@@ -123,6 +124,19 @@ class Holding(BaseModel):
 class PositionSnapshot(BaseModel):
     date: str
     holdings: list[Holding]
+
+
+class RebalanceTrade(BaseModel):
+    symbol: str
+    side: Literal["buy", "sell"]
+    previous_weight: float
+    target_weight: float
+    weight_change: float
+
+
+class RebalanceLog(BaseModel):
+    date: str
+    trades: list[RebalanceTrade]
 
 
 class DateRange(BaseModel):
@@ -271,6 +285,7 @@ class StrategyBacktestResponse(BaseModel):
     meta: Optional[StrategyBacktestMeta] = None
     # 持仓快照（可选）
     positions: Optional[list[PositionSnapshot]] = None
+    rebalance_logs: Optional[list[RebalanceLog]] = None
     # 错误信息
     error: Optional[str] = None
 

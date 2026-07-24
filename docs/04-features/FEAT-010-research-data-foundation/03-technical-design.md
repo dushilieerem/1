@@ -12,7 +12,7 @@ MarketData/（字段 Parquet + 数据清单）
 FieldParquetProvider / DataEngine → Panel → FactorEngine / ResearchEngine
 ```
 
-沿用 `FieldParquetProvider` 的“一个字段一个 Parquet”模式。新增数据转换任务属于数据模块；`QuantCore` 只读取标准字段并向因子层提供面板；`ResearchEngine` 不管理数据源凭据或数据资产。
+沿用 `FieldParquetProvider` 的“一个字段一个 Parquet”模式。历史数据由 `MarketData/DataIngestion/` 批量采集后发布；`QuantCore` 只读取标准字段并向因子层提供面板；`ResearchEngine` 不管理数据源凭据或数据资产。实时或临时高频查询可使用 `WindProvider`，但不得替代历史回测的可复现数据发布。
 
 ## 存储与字段契约
 
@@ -20,18 +20,18 @@ FieldParquetProvider / DataEngine → Panel → FactorEngine / ResearchEngine
 
 ```text
 MarketData/
-  fundamentals_raw.parquet            # 受控原始披露记录
-  net_profit_ttm.parquet              # 公告日点时日频面板
-  total_assets.parquet
-  total_liabilities.parquet
-  operating_revenue_ttm.parquet
-  ...
-  adj_factor.parquet
-  close_unadjusted.parquet
-  is_suspended.parquet
-  listing_status.parquet
-  market_return_all_a.parquet
-  data_manifest.yaml
+  DataIngestion/                      # Wind 历史数据采集工具（入库）
+  current/                            # API 当前只读数据版本（不入库）
+    panels/                           # 字段 Parquet：日期 × 标的
+      net_profit_ttm.parquet
+      total_assets.parquet
+      adj_factor.parquet
+      is_suspended.parquet
+      listing_status.parquet
+      market_return_all_a.parquet
+    benchmark/                         # 指数与成分数据
+    metadata/                          # stock_info、字段说明等非面板数据
+  releases/                           # 后续不可变历史发布版本（不入库）
 ```
 
 字段字典和数据资产清单的评审基线分别见 `05-field-dictionary.md`、`06-data-catalog.md`。实现时将其机读副本随每个发布版本输出；价格字段必须标注复权口径，财务字段必须标注单季/累计/TTM 与点时规则。

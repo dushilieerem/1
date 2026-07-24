@@ -67,7 +67,7 @@ model:
   class_path: my_models.return_model.ReturnPredictor
   params: {lookback: 20, seed: 42}
 dataset:
-  features: [qlib_alpha158_kdj_k, qlib_alpha158_roc5]
+  features: [alpha158_kdj_k, alpha158_roc5]
   label: forward_return_5d
   availability: close
 split:
@@ -126,4 +126,4 @@ backtest:
 
 ## 架构决策
 
-该 Feature 采用“框架无关预测模型插件 + 平台统一编排与回测”的长期边界，详见 `../../06-decisions/ADR-008-为什么采用框架无关的预测模型接口.md`。
+该 Feature 采用“框架无关预测模型插件 + 平台统一编排与回测”的长期边界，详见 `../../06-decisions/ADR-009-为什么采用框架无关的预测模型接口.md`。

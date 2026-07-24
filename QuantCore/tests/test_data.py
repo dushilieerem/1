@@ -63,3 +63,34 @@ def test_field_parquet_provider_uses_latest_index_constituents(tmp_path):
 
     provider = FieldParquetProvider(tmp_path)
     assert provider.get_universe("CSI500") == ["000002", "000003"]
+
+
+def test_field_parquet_provider_resolves_market_data_current_directory(tmp_path):
+    panels = tmp_path / "current" / "panels"
+    panels.mkdir(parents=True)
+    pd.DataFrame({
+        "datetime": pd.to_datetime(["2024-01-02"]), "000001": [10.0],
+    }).to_parquet(panels / "close.parquet", index=False)
+    benchmark = tmp_path / "current" / "benchmark"
+    benchmark.mkdir()
+    pd.DataFrame({"000001.SZ": [1]}).to_parquet(
+        benchmark / "CSI500_constituents.parquet"
+    )
+
+    provider = FieldParquetProvider(tmp_path)
+    assert provider.get_panels(fields=["close"])["close"].iloc[0, 0] == 10.0
+    assert provider.get_universe("CSI500") == ["000001"]
+
+
+def test_field_parquet_provider_reads_legacy_pandas_datetime_index(tmp_path):
+    frame = pd.DataFrame(
+        {"000001": [10.0, 11.0]},
+        index=pd.to_datetime(["2024-01-02", "2024-01-03"]),
+    )
+    frame.index.name = "datetime"
+    frame.to_parquet(tmp_path / "close.parquet")
+
+    panel = FieldParquetProvider(tmp_path).get_panels(fields=["close"])["close"]
+    assert panel.index.name == "datetime"
+    assert panel.index.tolist() == frame.index.tolist()
+    assert panel.loc[pd.Timestamp("2024-01-03"), "000001"] == 11.0

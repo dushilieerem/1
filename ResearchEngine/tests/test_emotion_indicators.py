@@ -1,4 +1,4 @@
-"""聚宽兼容情绪因子的确定性验证。"""
+"""情绪因子的确定性验证。"""
 
 import numpy as np
 import pandas as pd
@@ -25,43 +25,43 @@ def _panel() -> Panel:
     })
 
 
-def test_jq_compat_emotion_library_registers_all_catalogued_factors():
+def test_emotion_indicator_library_registers_all_catalogued_factors():
     loader = FactorLoader()
-    library = loader.load("jq_compat_emotion")
+    library = loader.load("emotion_indicators")
 
     assert len(library_factors(library)) == 36
-    assert "jq_atr14" in loader.factors
-    assert "jq_wvad" in loader.factors
+    assert "atr14" in loader.factors
+    assert "wvad" in loader.factors
 
 
-def test_jq_compat_emotion_formulae_match_reference():
+def test_emotion_indicator_formulae_match_reference():
     loader = FactorLoader()
-    loader.load("jq_compat_emotion")
+    loader.load("emotion_indicators")
     panel = _panel()
 
-    vroc12 = loader.factors["jq_vroc12"].compute(panel)
+    vroc12 = loader.factors["vroc12"].compute(panel)
     pd.testing.assert_frame_equal(vroc12, panel.volume.pct_change(12) * 100)
 
-    tvma20 = loader.factors["jq_tvma20"].compute(panel)
+    tvma20 = loader.factors["tvma20"].compute(panel)
     pd.testing.assert_frame_equal(tvma20, panel.amount.rolling(20).mean())
 
-    davol5 = loader.factors["jq_davol5"].compute(panel)
+    davol5 = loader.factors["davol5"].compute(panel)
     expected_davol5 = panel.turnover.rolling(5).mean() / panel.turnover.rolling(120).mean()
     pd.testing.assert_frame_equal(davol5, expected_davol5)
 
 
-def test_jq_compat_emotion_factors_return_panel_shape():
+def test_emotion_indicators_return_panel_shape():
     loader = FactorLoader()
-    loader.load("jq_compat_emotion")
+    loader.load("emotion_indicators")
     panel = _panel()
 
     for factor in loader.factors.values():
         assert factor.compute(panel).shape == panel.close.shape
 
 
-def test_factor_api_lists_jq_compat_emotion_features():
+def test_factor_api_lists_emotion_indicators():
     from researchengine.api.routes import _builtin_factors
 
     names = {factor.name for factor in _builtin_factors()}
-    assert "jq_psy" in names
-    assert "jq_vmacd" in names
+    assert "psy" in names
+    assert "vmacd" in names

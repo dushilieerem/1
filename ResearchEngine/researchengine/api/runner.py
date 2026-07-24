@@ -37,6 +37,8 @@ from researchengine.api.schemas import (
     Holding,
     LayeredPoint,
     PositionSnapshot,
+    RebalanceLog,
+    RebalanceTrade,
     StrategyBacktestMeta,
     StrategyBacktestRequest,
     StrategyBacktestResponse,
@@ -52,10 +54,10 @@ from researchengine.api.serializers import (
 
 BUILTIN_FACTOR_LIBRARIES = frozenset({
     "alpha_library",
-    "qlib_alpha",
-    "jq_compat_technical",
-    "jq_compat_risk",
-    "jq_compat_emotion",
+    "alpha_features",
+    "technical_indicators",
+    "risk_indicators",
+    "emotion_indicators",
 })
 
 
@@ -133,6 +135,13 @@ def _resolve_data_dir(req_data_dir: Optional[str]) -> str:
     # researchengine/__init__.py -> 上三层 = 仓库根
     repo_root = Path(researchengine.__file__).resolve().parent.parent.parent
     return str(repo_root / "MarketData")
+
+
+def _resolve_current_data_dir() -> Path:
+    """返回当前已发布数据目录，兼容旧版扁平 MarketData。"""
+    data_dir = Path(_resolve_data_dir(None))
+    current_dir = data_dir / "current"
+    return current_dir if current_dir.is_dir() else data_dir
 
 
 def _wrap_factor_code(factor_code: str) -> str:
@@ -267,7 +276,7 @@ _BENCHMARK_FILES = {
 
 def _load_benchmark_equity(benchmark: str, dates: pd.DatetimeIndex) -> pd.Series:
     """加载指数收盘价并对齐、归一化为净值序列。"""
-    path = Path(_resolve_data_dir(None)) / "benchmark" / _BENCHMARK_FILES[benchmark]
+    path = _resolve_current_data_dir() / "benchmark" / _BENCHMARK_FILES[benchmark]
     frame = pd.read_parquet(path)
     close_col = next(col for col in frame.columns if col.endswith("_close"))
     series = frame[close_col]
@@ -457,6 +466,29 @@ def _sample_positions(
         sampled.append(PositionSnapshot(date=date_str, holdings=holdings))
 
     return sampled
+
+
+def _serialize_rebalance_logs(logs: pd.DataFrame | None) -> list[RebalanceLog] | None:
+    """按调仓日期聚合日志，供 Web 端按需展示。"""
+    if logs is None or logs.empty:
+        return None
+
+    result = []
+    for date, trades in logs.groupby(level=0, sort=True):
+        result.append(RebalanceLog(
+            date=pd.Timestamp(date).strftime("%Y-%m-%d"),
+            trades=[
+                RebalanceTrade(
+                    symbol=str(row.symbol),
+                    side=row.side,
+                    previous_weight=float(row.previous_weight),
+                    target_weight=float(row.target_weight),
+                    weight_change=float(row.weight_change),
+                )
+                for row in trades.itertuples(index=False)
+            ],
+        ))
+    return result
 
 
 def _compute_equity_with_drawdown(equity: pd.Series) -> list[EquityPoint]:
@@ -736,6 +768,9 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
     positions = None
     if req.include_positions and bt_result.positions is not None:
         positions = _sample_positions(bt_result.positions)
+    rebalance_logs = None
+    if req.include_rebalance_logs:
+        rebalance_logs = _serialize_rebalance_logs(bt_result.rebalance_logs)
 
     return StrategyBacktestResponse(
         metrics=metrics,
@@ -752,5 +787,6 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
             benchmark=req.benchmark,
         ),
         positions=positions,
+        rebalance_logs=rebalance_logs,
         error=None,
     )

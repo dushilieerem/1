@@ -12,7 +12,7 @@ import pandas as pd
 
 from quantcore.backtest.adapter.interfaces import IBacktestEngine
 from quantcore.backtest.adapter.signals import BacktestConfig, BacktestSignals
-from quantcore.backtest.result import BacktestResult
+from quantcore.backtest.result import BacktestResult, rebalance_logs_from_targets
 
 
 class NativeEngine(IBacktestEngine):
@@ -53,4 +53,5 @@ class NativeEngine(IBacktestEngine):
             equity_curve=equity,
             returns=port_ret,
             positions=positions,
+            rebalance_logs=rebalance_logs_from_targets(target),
         )

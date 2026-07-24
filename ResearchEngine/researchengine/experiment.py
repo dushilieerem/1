@@ -160,7 +160,10 @@ class Experiment:
             # 文件 -> 宽表 CSV；目录里有 *.parquet -> 字段 parquet；否则逐只 CSV
             if os.path.isfile(data_dir):
                 provider = WideCSVProvider(data_dir)
-            elif os.path.isdir(data_dir) and any(Path(data_dir).glob("*.parquet")):
+            elif os.path.isdir(data_dir) and (
+                any(Path(data_dir).glob("*.parquet"))
+                or (Path(data_dir) / "current" / "panels").is_dir()
+            ):
                 provider = FieldParquetProvider(data_dir)
             else:
                 provider = CSVDataProvider(data_dir)
@@ -308,8 +311,13 @@ class Experiment:
 
         ``stock_info`` 是非面板文件（被 :class:`FieldParquetProvider` 跳过），单独读。
         """
-        data_dir = self.config.get("data_dir", "./data")
-        p = Path(data_dir) / "stock_info.parquet"
+        data_dir = Path(self.config.get("data_dir", "./data"))
+        if (data_dir / "current").is_dir():
+            data_dir = data_dir / "current"
+        p = data_dir / "metadata" / "stock_info.parquet"
+        if not p.exists():
+            # 兼容旧版扁平数据目录。
+            p = data_dir / "stock_info.parquet"
         if not p.exists():
             return None
         try:

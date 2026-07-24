@@ -26,7 +26,9 @@ Factor/backtest_results/
 *.db
 
 # 行情数据（体积大，不入库；放 MarketData/ 目录）
-MarketData/
+MarketData/*
+!MarketData/DataIngestion/
+!MarketData/DataIngestion/**
 
 # 压缩包文件
 *.7z

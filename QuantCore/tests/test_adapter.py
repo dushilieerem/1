@@ -148,6 +148,18 @@ def test_native_engine_run_shapes():
     assert abs(res.equity_curve.iloc[0] - 1.0) < 2.0
 
 
+def test_native_engine_records_rebalance_logs():
+    index = pd.bdate_range("2024-01-02", periods=3)
+    close = pd.DataFrame({"A": [10.0, 11.0, 12.0], "B": [10.0, 10.0, 10.0]}, index=index)
+    target = pd.DataFrame({"A": [0.5, float("nan"), 0.0], "B": [0.5, float("nan"), 1.0]}, index=index)
+
+    result = NativeEngine().run(BacktestSignals(target_weights=target, close=close), BacktestConfig())
+
+    assert result.rebalance_logs is not None
+    assert result.rebalance_logs.loc[index[0], "side"].tolist() == ["buy", "buy"]
+    assert result.rebalance_logs.loc[index[2], "side"].tolist() == ["sell", "buy"]
+
+
 def test_native_engine_only_charges_stamp_tax_on_sells():
     dates = pd.date_range("2024-01-01", periods=3, freq="D")
     close = pd.DataFrame({"A": [100.0, 100.0, 100.0]}, index=dates)

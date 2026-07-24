@@ -1,4 +1,4 @@
-"""聚宽兼容风险因子的确定性验证。"""
+"""风险因子的确定性验证。"""
 
 import numpy as np
 import pandas as pd
@@ -17,34 +17,34 @@ def _panel() -> Panel:
     return Panel({"close": close})
 
 
-def test_jq_compat_risk_library_registers_first_batch():
+def test_risk_indicator_library_registers_first_batch():
     loader = FactorLoader()
-    library = loader.load("jq_compat_risk")
+    library = loader.load("risk_indicators")
 
     assert len(library_factors(library)) == 12
-    assert "jq_sharpe_ratio_120" in loader.factors
-    assert "jq_variance20" in loader.factors
+    assert "sharpe_ratio_120" in loader.factors
+    assert "variance20" in loader.factors
 
 
-def test_jq_compat_risk_formulae_match_reference():
+def test_risk_indicator_formulae_match_reference():
     loader = FactorLoader()
-    loader.load("jq_compat_risk")
+    loader.load("risk_indicators")
     panel = _panel()
     returns = panel.close.pct_change()
 
-    variance = loader.factors["jq_variance20"].compute(panel)
+    variance = loader.factors["variance20"].compute(panel)
     pd.testing.assert_frame_equal(variance, returns.rolling(20).var() * 252)
 
-    sharpe = loader.factors["jq_sharpe_ratio_20"].compute(panel)
+    sharpe = loader.factors["sharpe_ratio_20"].compute(panel)
     expected_sharpe = (
         returns.rolling(20).mean() * 252 - 0.04
     ) / (returns.rolling(20).std() * np.sqrt(252))
     pd.testing.assert_frame_equal(sharpe, expected_sharpe)
 
 
-def test_factor_api_lists_jq_compat_risk_features():
+def test_factor_api_lists_risk_indicators():
     from researchengine.api.routes import _builtin_factors
 
     names = {factor.name for factor in _builtin_factors()}
-    assert "jq_kurtosis120" in names
-    assert "jq_variance120" in names
+    assert "kurtosis120" in names
+    assert "variance120" in names

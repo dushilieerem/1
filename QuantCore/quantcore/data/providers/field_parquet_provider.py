@@ -98,6 +98,15 @@ class FieldParquetProvider(IDataProvider):
         self.data_dir = Path(data_dir)
         if not self.data_dir.is_dir():
             raise NotADirectoryError(f"parquet 目录不存在: {self.data_dir}")
+        # MarketData 根目录采用 ``current/`` 指向当前已发布数据版本；保留传入
+        # 旧版扁平目录及直接传入 current 目录的兼容性。
+        current_dir = self.data_dir / "current"
+        if current_dir.is_dir():
+            self.data_dir = current_dir
+        panels_dir = self.data_dir / "panels"
+        self._panels_dir = panels_dir if panels_dir.is_dir() else self.data_dir
+        benchmark_dir = self.data_dir / "benchmark"
+        self._benchmark_dir = benchmark_dir if benchmark_dir.is_dir() else self.data_dir / "benchmark"
         #: 文件名 -> 标准字段名 的映射（仅本目录实际存在的）
         self._field_files: dict = self._scan_fields()
         #: 字段数据缓存 {field: DataFrame}
@@ -105,7 +114,7 @@ class FieldParquetProvider(IDataProvider):
 
     def _scan_fields(self) -> dict:
         result = {}
-        for p in self.data_dir.glob("*.parquet"):
+        for p in self._panels_dir.glob("*.parquet"):
             if p.stem in _SKIP:
                 continue
             result[p.stem] = p   # 文件名即字段名
@@ -120,10 +129,17 @@ class FieldParquetProvider(IDataProvider):
         path = self._field_files[field]
         table = pq.read_table(path).replace_schema_metadata({})
         df = table.to_pandas()
-        # 'datetime' 列做日期索引（无则取首列）
-        idx_col = "datetime" if "datetime" in df.columns else df.columns[0]
+        # 新文件通常将日期显式写为 ``datetime`` 列；历史 Pandas Parquet 在移除
+        # metadata 后会把索引保留为 ``__index_level_0__`` 列。
+        if "datetime" in df.columns:
+            idx_col = "datetime"
+        elif "__index_level_0__" in df.columns:
+            idx_col = "__index_level_0__"
+        else:
+            idx_col = df.columns[0]
         df = df.set_index(idx_col)
         df.index = pd.to_datetime(df.index)
+        df.index.name = "datetime"
         df = df.sort_index()
         self._cache[field] = df
         return df
@@ -154,7 +170,7 @@ class FieldParquetProvider(IDataProvider):
             filename = _INDEX_FILES[name.upper()]
         except KeyError as exc:
             raise KeyError(f"不支持的指数 {name!r}，可用: {list(_INDEX_FILES)}") from exc
-        path = self.data_dir / "benchmark" / filename
+        path = self._benchmark_dir / filename
         if not path.is_file():
             raise FileNotFoundError(f"缺少指数行情文件: {path}")
         frame = pd.read_parquet(path)
@@ -197,7 +213,7 @@ class FieldParquetProvider(IDataProvider):
         """
         pool = str(date).upper() if date is not None else None
         if pool in _UNIVERSE_FILES:
-            path = self.data_dir / "benchmark" / _UNIVERSE_FILES[pool]
+            path = self._benchmark_dir / _UNIVERSE_FILES[pool]
             if not path.exists():
                 raise FileNotFoundError(f"股票池 {pool} 缺少成分文件: {path}")
             frame = pd.read_parquet(path)

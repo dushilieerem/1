@@ -1,4 +1,4 @@
-"""聚宽兼容技术因子的确定性验证。"""
+"""技术因子的确定性验证。"""
 
 import numpy as np
 import pandas as pd
@@ -23,51 +23,51 @@ def _panel() -> Panel:
     })
 
 
-def test_jq_compat_technical_library_registers_first_batch():
+def test_technical_indicator_library_registers_first_batch():
     loader = FactorLoader()
-    library = loader.load("jq_compat_technical")
+    library = loader.load("technical_indicators")
 
     factors = library_factors(library)
     assert len(factors) == 15
     assert set(factors) == {
-        "jq_boll_down", "jq_boll_up", "jq_ema5", "jq_emac10", "jq_emac12",
-        "jq_emac20", "jq_emac26", "jq_emac120", "jq_mac5", "jq_mac10",
-        "jq_mac20", "jq_mac60", "jq_mac120", "jq_macdc", "jq_mfi14",
+        "boll_down", "boll_up", "ema5", "emac10", "emac12",
+        "emac20", "emac26", "emac120", "mac5", "mac10",
+        "mac20", "mac60", "mac120", "macdc", "mfi14",
     }
 
 
-def test_jq_compat_technical_formulae_match_reference():
+def test_technical_indicator_formulae_match_reference():
     loader = FactorLoader()
-    loader.load("jq_compat_technical")
+    loader.load("technical_indicators")
     panel = _panel()
 
-    ema5 = loader.factors["jq_ema5"].compute(panel)
+    ema5 = loader.factors["ema5"].compute(panel)
     pd.testing.assert_frame_equal(
         ema5, panel.close.ewm(span=5, adjust=False).mean() / panel.close
     )
 
-    mac20 = loader.factors["jq_mac20"].compute(panel)
+    mac20 = loader.factors["mac20"].compute(panel)
     pd.testing.assert_frame_equal(mac20, panel.close.rolling(20).mean() / panel.close)
 
-    boll_up = loader.factors["jq_boll_up"].compute(panel)
+    boll_up = loader.factors["boll_up"].compute(panel)
     expected_boll_up = (
         panel.close.rolling(20).mean() + 2 * panel.close.rolling(20).std()
     ) / panel.close
     pd.testing.assert_frame_equal(boll_up, expected_boll_up)
 
 
-def test_jq_compat_technical_factors_return_panel_shape():
+def test_technical_indicators_return_panel_shape():
     loader = FactorLoader()
-    loader.load("jq_compat_technical")
+    loader.load("technical_indicators")
     panel = _panel()
 
     for factor in loader.factors.values():
         assert factor.compute(panel).shape == panel.close.shape
 
 
-def test_factor_api_lists_jq_compat_technical_features():
+def test_factor_api_lists_technical_indicators():
     from researchengine.api.routes import _builtin_factors
 
     names = {factor.name for factor in _builtin_factors()}
-    assert "jq_boll_up" in names
-    assert "jq_mac120" in names
+    assert "boll_up" in names
+    assert "mac120" in names

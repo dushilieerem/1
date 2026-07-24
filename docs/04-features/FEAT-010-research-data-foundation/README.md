@@ -21,4 +21,6 @@
 
 ## 当前结论
 
-现有 `MarketData/` 声明包含日线 OHLC、成交量、成交额、换手率、市值/股本、PE/PB/PS 和部分指数数据；本 Feature 不重复采集这些字段，但会在 DATA-001 盘点中确认其口径、许可与质量。第一阶段聚焦带公告日的财务三表、字段字典和数据清单，这是基础、质量、成长和每股因子可信计算的前置条件。
+现有 `MarketData/` 已迁移为 `current/panels`、`current/benchmark` 与 `current/metadata` 三类运行时数据目录。`FieldParquetProvider("MarketData")` 可自动解析该目录，并兼容旧版扁平 Parquet；`DataEngine` 继续通过 `IDataProvider` 向因子和回测屏蔽存储及供应商差异。真实因子回测 API 已验证可从当前目录读取行情与基准。
+
+数据访问基础已经交付，但本 Feature 仍保持“待批准”：DATA-001 的口径/许可盘点，以及公告日财务、复权、交易状态、市场基准和完整发布清单尚未完成。历史数据采集工具位于 `MarketData/DataIngestion/`；点时财务数据的授权和样本确认仍是进入后续开发的阻塞项。

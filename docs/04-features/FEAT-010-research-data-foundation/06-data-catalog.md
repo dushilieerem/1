@@ -4,7 +4,7 @@
 
 ## 1. 清单与发布规则
 
-- 每次完整数据发布在 `MarketData/releases/<data_version>/` 下生成；运行时目录可通过 `SVQUANT_DATA_DIR` 指向该版本。
+- 每次完整数据发布在 `MarketData/releases/<data_version>/` 下生成；`MarketData/current/` 是 API 的活动版本目录，`SVQUANT_DATA_DIR` 可指向 `MarketData/` 根目录，由读取层自动解析 `current/`。
 - 每个发布必须包含 `data_manifest.yaml`、字段字典副本、质量报告和所有已声明字段文件。清单记录文件 SHA-256、行列规模、日期区间、证券覆盖、来源版本和生成时间。
 - 标准面板文件为 `<field>.parquet`，首列/索引为 `datetime`，其余列为规范化证券代码；原始受控数据不进入 Git，也不与运行时面板混放。
 - `已存在（待盘点）` 仅表示项目声明已有相应文件；在质量盘点完成前，不能作为字段覆盖或授权已确认的证据。
@@ -13,10 +13,10 @@
 
 | ID | 数据资产 / 建议路径 | 内容与关键字段 | 粒度 / 格式 | 来源与授权状态 | 发布验收 |
 |---|---|---|---|---|---|
-| DATA-001 | `panels/{field}.parquet` | 既有 OHLC、成交量额、换手率、市值股本、PE/PB/PS、ST、涨停 | 日 × 证券，字段宽表 | 已存在（待盘点） | 对每个文件核对复权口径、日期区间、证券代码和缺失率 |
+| DATA-001 | `current/panels/{field}.parquet` | 既有 OHLC、成交量额、换手率、市值股本、PE/PB/PS、ST、涨停 | 日 × 证券，字段宽表 | 已迁移，口径/许可待盘点 | 对每个文件核对复权口径、日期区间、证券代码和缺失率 |
 | DATA-002 | `raw/fundamentals.parquet` | 原始三表记录及第 5 节必填元数据 | 披露记录长表 | 待授权 | 抽样核对报告期、公告日、单位、修订链和供应商版本 |
 | DATA-003 | `panels/{financial_field}.parquet` | 第 05 文档第 3 节所有财务标准字段 | 日 × 证券，字段宽表 | 由 DATA-002 转换 | 公告日前不可见；修订后切换；TTM 缺季为空 |
-| DATA-004 | `panels/close_unadjusted.parquet`、`adj_factor.parquet`、`close_forward_adjusted.parquet`、`close_backward_adjusted.parquet` | 原始价格、累计复权因子和两种复权价 | 日 × 证券，字段宽表 | 待授权 / 待确认现有数据 | 抽样复算复权公式；明确基日、企业行为处理和价格单位 |
+| DATA-004 | `current/panels/adj_factor.parquet` 与前复权价格面板 | 累计复权因子与前复权开高低收价格 | 日 × 证券，字段宽表 | 待授权 / 待确认现有数据 | 抽样复算复权公式；明确基日、企业行为处理和价格单位 |
 | DATA-005 | `panels/listing_status.parquet`、`is_suspended.parquet`、`is_tradable.parquet` | 上市、停牌与交易可行状态 | 日 × 证券，字段宽表 | 待授权 | 抽样覆盖 IPO、停牌、复牌、退市与涨跌停边界 |
 | DATA-006 | `panels/market_return_all_a.parquet` | 全 A 市场收益单列面板或日期序列 | 日，Parquet | 由 DATA-001/004/005 派生 | 用 t-1 流通市值复算抽样日期；记录成分和剔除规则 |
 | DATA-007 | `metadata/security_master.parquet` | `symbol`、证券名称、上市/退市日期、代码变更关系 | 证券 / 生效区间，长表 | 待授权 / 待确认 | 证券代码可与所有面板列一一对应，历史代码变更可追溯 |

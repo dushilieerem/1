@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""社区：帖子 + 评论（两层）+ 赞踩 + 收藏 + 通知。"""
+"""社区：帖子 + 评论（两层）+ 赞踩 + 收藏 + 通知 + 举报。"""
 from __future__ import annotations
 
 import json
@@ -22,6 +22,17 @@ POST_SORTS = ("views", "favorites", "newest")
 NOTIF_TYPES = ("reply", "mention", "like")
 MAX_COMMENT_IMAGES = 3
 _MENTION_RE = re.compile(r"@([^\s@]{1,32})")
+
+REPORT_REASONS = ("spam", "abuse", "illegal", "misinfo", "other")
+REPORT_REASON_LABELS = {
+    "spam": "垃圾广告",
+    "abuse": "辱骂骚扰",
+    "illegal": "违法违规",
+    "misinfo": "虚假误导",
+    "other": "其他",
+}
+REPORT_STATUSES = ("open", "resolved", "dismissed")
+REPORT_TARGET_TYPES = ("post", "comment")
 
 
 def ensure_posts_schema() -> None:
@@ -71,6 +82,10 @@ def ensure_posts_schema() -> None:
             conn.execute(
                 "ALTER TABLE posts ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ"
             )
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE posts ADD COLUMN IF NOT EXISTS platform_ref JSONB")
         except Exception:
             pass
         conn.execute(
@@ -179,6 +194,44 @@ def ensure_posts_schema() -> None:
             WHERE f.post_id = p.id AND f.user_id = p.author_id
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS community_reports (
+              id            BIGSERIAL PRIMARY KEY,
+              reporter_id   BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              target_type   TEXT NOT NULL,
+              post_id       BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+              comment_id    BIGINT REFERENCES post_comments(id) ON DELETE CASCADE,
+              reason        TEXT NOT NULL,
+              detail        TEXT NOT NULL DEFAULT '',
+              status        TEXT NOT NULL DEFAULT 'open',
+              created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              resolved_at   TIMESTAMPTZ,
+              resolver_id   BIGINT REFERENCES users(id),
+              CONSTRAINT community_reports_target_chk
+                CHECK (target_type IN ('post','comment')),
+              CONSTRAINT community_reports_reason_chk
+                CHECK (reason IN ('spam','abuse','illegal','misinfo','other')),
+              CONSTRAINT community_reports_status_chk
+                CHECK (status IN ('open','resolved','dismissed'))
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_open_uniq
+            ON community_reports (
+              reporter_id, target_type, post_id, COALESCE(comment_id, 0)
+            )
+            WHERE status = 'open'
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_reports_status_created
+            ON community_reports (status, created_at DESC)
+            """
+        )
 
 
 def _iso(val: Any) -> Any:
@@ -207,11 +260,53 @@ def _row_to_post(row: dict[str, Any], *, favorited: bool | None = None) -> dict[
             "id": row.get("author_id"),
             "username": row.get("username"),
             "display_name": row.get("display_name") or row.get("username"),
+            "avatar_url": row.get("avatar_url") or None,
         },
     }
+    pref = _parse_platform_ref(row.get("platform_ref"))
+    if pref is not None:
+        out["platform_ref"] = pref
     if favorited is not None:
         out["favorited"] = favorited
     return out
+
+
+def _parse_platform_ref(raw: Any) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            return None
+    if not isinstance(raw, dict):
+        return None
+    from services.agent_metrics_trust import normalize_platform_ref
+
+    return normalize_platform_ref(raw)
+
+
+def _dump_platform_ref(raw: Any) -> Any:
+    """写入 JSONB；空则 NULL。"""
+    from psycopg.types.json import Json
+
+    from services.agent_metrics_trust import normalize_platform_ref
+
+    ref = normalize_platform_ref(raw) if raw is not None else None
+    if not ref:
+        return None
+    return Json(ref)
+
+
+def get_post_platform_ref(post_id: int) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT platform_ref FROM posts WHERE id = %s",
+            (int(post_id),),
+        ).fetchone()
+    if not row:
+        return None
+    return _parse_platform_ref(row.get("platform_ref"))
 
 
 def _parse_images(raw: Any) -> list[str]:
@@ -265,6 +360,7 @@ def _row_to_comment(row: dict[str, Any]) -> dict[str, Any]:
             "id": row.get("author_id"),
             "username": row.get("username"),
             "display_name": row.get("display_name") or row.get("username"),
+            "avatar_url": row.get("avatar_url") or None,
         },
     }
     if row.get("reply_to_username") or row.get("reply_to_display_name"):
@@ -410,7 +506,7 @@ def seed_sample_posts() -> int:
 
 
 _POST_SELECT = """
-    SELECT p.*, u.username, u.display_name,
+    SELECT p.*, u.username, u.display_name, u.avatar_url,
            COALESCE(cc.cnt, 0) AS comment_count,
            COALESCE(fc.cnt, 0) AS favorite_count
     FROM posts p
@@ -622,6 +718,7 @@ def create_post(
     code_snippet: str | None = None,
     author_role: str = "user",
     status: str = "published",
+    platform_ref: Any = None,
 ) -> dict[str, Any]:
     status = (status or "published").strip().lower()
     if status not in ("published", "draft"):
@@ -634,14 +731,15 @@ def create_post(
         author_role=author_role,
         as_draft=status == "draft",
     )
+    pref = _dump_platform_ref(platform_ref)
     with get_conn() as conn:
         row = conn.execute(
             """
-            INSERT INTO posts (author_id, section, title, body, code_snippet, status)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO posts (author_id, section, title, body, code_snippet, status, platform_ref)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (author_id, section, title, body, code, status),
+            (author_id, section, title, body, code, status, pref),
         ).fetchone()
         pid = int(row["id"])
         full = conn.execute(
@@ -664,11 +762,17 @@ def update_post(
     code_snippet: str | None = None,
     author_role: str = "user",
     status: str | None = None,
+    platform_ref: Any = None,
+    clear_platform_ref: bool = False,
 ) -> dict[str, Any]:
-    """作者原地更新；草稿可续写/发布，已发布帖改内容（不可降为草稿）。"""
+    """作者原地更新；草稿可续写/发布，已发布帖改内容（不可降为草稿）。
+
+    platform_ref：传入 dict 则覆盖；clear_platform_ref=True 清空；
+    二者皆否且未传有效引用时保留原列。
+    """
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, author_id, status FROM posts WHERE id = %s",
+            "SELECT id, author_id, status, platform_ref FROM posts WHERE id = %s",
             (post_id,),
         ).fetchone()
         if not row:
@@ -696,14 +800,23 @@ def update_post(
             author_role=author_role,
             as_draft=next_status == "draft",
         )
+        if clear_platform_ref:
+            pref = None
+        elif platform_ref is not None:
+            pref = _dump_platform_ref(platform_ref)
+            if pref is None and platform_ref:
+                # 传入了但规范化失败：保留原值
+                pref = row.get("platform_ref")
+        else:
+            pref = row.get("platform_ref")
         conn.execute(
             """
             UPDATE posts
             SET title = %s, body = %s, section = %s, code_snippet = %s,
-                status = %s, updated_at = NOW()
+                status = %s, platform_ref = %s, updated_at = NOW()
             WHERE id = %s
             """,
-            (title, body, section, code, next_status, post_id),
+            (title, body, section, code, next_status, pref, post_id),
         )
         full = conn.execute(
             f"""
@@ -827,7 +940,7 @@ def list_comments(
             raise KeyError(f"post not found: {post_id}")
         rows = conn.execute(
             """
-            SELECT c.*, u.username, u.display_name,
+            SELECT c.*, u.username, u.display_name, u.avatar_url,
                    pu.id AS reply_to_author_id,
                    pu.username AS reply_to_username,
                    pu.display_name AS reply_to_display_name,
@@ -947,7 +1060,7 @@ def create_comment(
 
         full = conn.execute(
             """
-            SELECT c.*, u.username, u.display_name,
+            SELECT c.*, u.username, u.display_name, u.avatar_url,
                    pu.id AS reply_to_author_id,
                    pu.username AS reply_to_username,
                    pu.display_name AS reply_to_display_name,
@@ -1304,6 +1417,224 @@ def list_moderation_posts(
         "kind": kind_key,
         "total": int(total),
         "items": [_row_to_post(dict(r)) for r in rows],
+    }
+
+
+def _row_to_report(row: dict[str, Any]) -> dict[str, Any]:
+    reason = str(row.get("reason") or "")
+    return {
+        "id": int(row["id"]),
+        "target_type": row["target_type"],
+        "post_id": int(row["post_id"]),
+        "comment_id": int(row["comment_id"]) if row.get("comment_id") is not None else None,
+        "reason": reason,
+        "reason_label": REPORT_REASON_LABELS.get(reason, reason),
+        "detail": row.get("detail") or "",
+        "status": row.get("status") or "open",
+        "created_at": _iso(row.get("created_at")),
+        "resolved_at": _iso(row.get("resolved_at")),
+        "post_title": row.get("post_title") or "",
+        "comment_body": (row.get("comment_body") or "")[:200],
+        "reporter": {
+            "id": row.get("reporter_id"),
+            "username": row.get("reporter_username"),
+            "display_name": row.get("reporter_display_name"),
+        },
+        "resolver_id": row.get("resolver_id"),
+    }
+
+
+def create_report(
+    reporter_id: int,
+    *,
+    target_type: str,
+    post_id: int,
+    comment_id: int | None = None,
+    reason: str,
+    detail: str = "",
+) -> dict[str, Any]:
+    tt = (target_type or "").strip().lower()
+    if tt not in REPORT_TARGET_TYPES:
+        raise ValueError("target_type 仅支持 post / comment")
+    rk = (reason or "").strip().lower()
+    if rk not in REPORT_REASONS:
+        raise ValueError("无效举报原因")
+    detail_s = (detail or "").strip()[:500]
+    cid = int(comment_id) if comment_id is not None else None
+    if tt == "comment" and not cid:
+        raise ValueError("举报评论须指定 comment_id")
+    if tt == "post":
+        cid = None
+
+    with get_conn() as conn:
+        post = conn.execute(
+            "SELECT id, author_id, status FROM posts WHERE id = %s",
+            (int(post_id),),
+        ).fetchone()
+        if not post:
+            raise KeyError(f"post not found: {post_id}")
+        if post["status"] not in ("published", "hidden"):
+            raise ValueError("该帖不可举报")
+        if tt == "post" and int(post["author_id"]) == int(reporter_id):
+            raise ValueError("不能举报自己的帖子")
+
+        if tt == "comment":
+            crow = conn.execute(
+                """
+                SELECT id, author_id, post_id, status
+                FROM post_comments WHERE id = %s
+                """,
+                (cid,),
+            ).fetchone()
+            if not crow or int(crow["post_id"]) != int(post_id):
+                raise KeyError(f"comment not found: {cid}")
+            if crow["status"] != "published":
+                raise ValueError("该评论不可举报")
+            if int(crow["author_id"]) == int(reporter_id):
+                raise ValueError("不能举报自己的评论")
+
+        exists = conn.execute(
+            """
+            SELECT id FROM community_reports
+            WHERE reporter_id = %s
+              AND target_type = %s
+              AND post_id = %s
+              AND COALESCE(comment_id, 0) = COALESCE(%s, 0)
+              AND status = 'open'
+            LIMIT 1
+            """,
+            (int(reporter_id), tt, int(post_id), cid),
+        ).fetchone()
+        if exists:
+            raise ValueError("你已举报过该内容，请等待处理")
+
+        row = conn.execute(
+            """
+            INSERT INTO community_reports (
+              reporter_id, target_type, post_id, comment_id, reason, detail
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id, target_type, post_id, comment_id, reason, detail, status, created_at
+            """,
+            (int(reporter_id), tt, int(post_id), cid, rk, detail_s),
+        ).fetchone()
+
+    return {
+        "ok": True,
+        "report": {
+            "id": int(row["id"]),
+            "target_type": row["target_type"],
+            "post_id": int(row["post_id"]),
+            "comment_id": int(row["comment_id"]) if row.get("comment_id") is not None else None,
+            "reason": row["reason"],
+            "reason_label": REPORT_REASON_LABELS.get(str(row["reason"]), str(row["reason"])),
+            "detail": row.get("detail") or "",
+            "status": row.get("status") or "open",
+            "created_at": _iso(row.get("created_at")),
+        },
+    }
+
+
+def list_reports(
+    *,
+    author_role: str = "user",
+    status: str = "open",
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    if author_role != "admin":
+        raise PermissionError("仅管理员可查看举报")
+    st = (status or "open").strip().lower()
+    if st not in REPORT_STATUSES and st != "all":
+        raise ValueError("status 仅支持 open / resolved / dismissed / all")
+    limit = max(1, min(100, int(limit)))
+    offset = max(0, int(offset))
+    where = "" if st == "all" else "WHERE r.status = %s"
+    params_count: list[Any] = [] if st == "all" else [st]
+    params_list: list[Any] = list(params_count) + [limit, offset]
+    with get_conn() as conn:
+        total = conn.execute(
+            f"SELECT COUNT(*) AS c FROM community_reports r {where}",
+            tuple(params_count),
+        ).fetchone()["c"]
+        rows = conn.execute(
+            f"""
+            SELECT
+              r.id, r.target_type, r.post_id, r.comment_id,
+              r.reason, r.detail, r.status, r.created_at, r.resolved_at,
+              r.reporter_id, r.resolver_id,
+              p.title AS post_title,
+              c.body AS comment_body,
+              u.username AS reporter_username,
+              u.display_name AS reporter_display_name
+            FROM community_reports r
+            JOIN posts p ON p.id = r.post_id
+            JOIN users u ON u.id = r.reporter_id
+            LEFT JOIN post_comments c ON c.id = r.comment_id
+            {where}
+            ORDER BY r.created_at DESC, r.id DESC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(params_list),
+        ).fetchall()
+    return {
+        "ok": True,
+        "status": st,
+        "total": int(total),
+        "items": [_row_to_report(dict(r)) for r in rows],
+    }
+
+
+def resolve_report(
+    report_id: int,
+    *,
+    author_role: str = "user",
+    resolver_id: int,
+    status: str = "resolved",
+) -> dict[str, Any]:
+    if author_role != "admin":
+        raise PermissionError("仅管理员可处理举报")
+    st = (status or "resolved").strip().lower()
+    if st not in ("resolved", "dismissed"):
+        raise ValueError("status 仅支持 resolved / dismissed")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, status FROM community_reports WHERE id = %s",
+            (int(report_id),),
+        ).fetchone()
+        if not row:
+            raise KeyError(f"report not found: {report_id}")
+        if row["status"] != "open":
+            raise ValueError("该举报已处理")
+        updated = conn.execute(
+            """
+            UPDATE community_reports
+            SET status = %s, resolved_at = NOW(), resolver_id = %s
+            WHERE id = %s
+            RETURNING id, target_type, post_id, comment_id, reason, detail,
+                      status, created_at, resolved_at, resolver_id
+            """,
+            (st, int(resolver_id), int(report_id)),
+        ).fetchone()
+    return {
+        "ok": True,
+        "report": {
+            "id": int(updated["id"]),
+            "target_type": updated["target_type"],
+            "post_id": int(updated["post_id"]),
+            "comment_id": int(updated["comment_id"])
+            if updated.get("comment_id") is not None
+            else None,
+            "reason": updated["reason"],
+            "reason_label": REPORT_REASON_LABELS.get(
+                str(updated["reason"]), str(updated["reason"])
+            ),
+            "detail": updated.get("detail") or "",
+            "status": updated["status"],
+            "created_at": _iso(updated.get("created_at")),
+            "resolved_at": _iso(updated.get("resolved_at")),
+            "resolver_id": updated.get("resolver_id"),
+        },
     }
 
 

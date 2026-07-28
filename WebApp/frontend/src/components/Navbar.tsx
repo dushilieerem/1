@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { Bell, ChevronDown, LogOut, Search, Sparkles } from "lucide-react";
-import { FACTOR_NAV_ITEMS, NAV_ITEMS, STRATEGY_NAV_ITEMS } from "@/data/nav";
+import { FACTOR_NAV_ITEMS, DATA_NAV_ITEMS, NAV_ITEMS, STRATEGY_NAV_ITEMS } from "@/data/nav";
 import {
   type AuthUser,
   fetchMe,
@@ -17,6 +17,10 @@ function isFactorRoute(pathname: string) {
 
 function isStrategyRoute(pathname: string) {
   return pathname === "/strategy" || pathname.startsWith("/strategy/");
+}
+
+function isDataRoute(pathname: string) {
+  return pathname === "/data" || pathname.startsWith("/data/");
 }
 
 function NavDropdown({
@@ -119,42 +123,13 @@ function UserMenu({ user }: { user: AuthUser }) {
                 个人中心
               </Link>
               <Link
-                to="/community/messages"
+                to={`/u/${encodeURIComponent(user.username)}`}
                 onClick={() => setOpen(false)}
                 className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
               >
-                消息
+                公开主页
               </Link>
-              <Link
-                to="/community/mine"
-                onClick={() => setOpen(false)}
-                className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
-              >
-                我的发帖
-              </Link>
-              <Link
-                to="/community/drafts"
-                onClick={() => setOpen(false)}
-                className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
-              >
-                草稿箱
-              </Link>
-              <Link
-                to="/community/favorites"
-                onClick={() => setOpen(false)}
-                className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
-              >
-                我的收藏
-              </Link>
-              {user.role === "admin" ? (
-                <Link
-                  to="/community/mod"
-                  onClick={() => setOpen(false)}
-                  className="block px-4 py-2.5 text-sm font-medium text-sky-800 hover:bg-sky-50"
-                >
-                  管理仓
-                </Link>
-              ) : null}
+              <div className="my-1 border-t border-slate-100" />
               <button
                 type="button"
                 className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
@@ -179,6 +154,7 @@ export function Navbar() {
   const { pathname } = useLocation();
   const factorActive = isFactorRoute(pathname);
   const strategyActive = isStrategyRoute(pathname);
+  const dataActive = isDataRoute(pathname);
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   const [unread, setUnread] = useState(0);
 
@@ -276,6 +252,7 @@ export function Navbar() {
                   {label}
                 </NavLink>
               ))}
+              <NavDropdown label="数据" active={dataActive} items={DATA_NAV_ITEMS} />
               <NavDropdown label="策略" active={strategyActive} items={STRATEGY_NAV_ITEMS} />
               <NavDropdown label="因子" active={factorActive} items={FACTOR_NAV_ITEMS} />
             </>
@@ -301,7 +278,7 @@ export function Navbar() {
 
           {user ? (
             <Link
-              to="/community/messages"
+              to="/community/me?tab=messages"
               className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
               aria-label="消息"
             >

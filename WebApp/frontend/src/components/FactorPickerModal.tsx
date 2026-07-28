@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, Search, X } from "lucide-react";
-import { FILTER_TABS, loadFactors, type FactorMeta } from "@/lib/factorCatalog";
+import { filterTabsFromFactors, loadFactors, type FactorMeta } from "@/lib/factorCatalog";
 
 interface Props {
   open: boolean;
@@ -31,11 +31,14 @@ export function FactorPickerModal({ open, selected, onClose, onConfirm }: Props)
     void loadFactors()
       .then((fs) => {
         setFactors(fs);
-        setExpanded([...new Set(fs.map((f) => f.libraryLabel))]);
+        const tabs = filterTabsFromFactors(fs).filter((t) => t !== "全部");
+        setExpanded(tabs);
       })
       .catch(() => setFactors([]))
       .finally(() => setLoading(false));
   }, [open, selected]);
+
+  const categoryTabs = useMemo(() => filterTabsFromFactors(factors), [factors]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -57,8 +60,14 @@ export function FactorPickerModal({ open, selected, onClose, onConfirm }: Props)
       list.push(f);
       map.set(f.libraryLabel, list);
     }
-    return Array.from(map.entries());
-  }, [filtered]);
+    // 与分类 Tab 同序：动量优先，不跟 yaml 原始顺序
+    const order = categoryTabs.filter((t) => t !== "全部");
+    const rank = (lab: string) => {
+      const i = order.indexOf(lab);
+      return i >= 0 ? i : order.length + 1;
+    };
+    return Array.from(map.entries()).sort((a, b) => rank(a[0]) - rank(b[0]));
+  }, [filtered, categoryTabs]);
 
   const toggle = (code: string) => {
     setPicked((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
@@ -88,7 +97,7 @@ export function FactorPickerModal({ open, selected, onClose, onConfirm }: Props)
               />
             </div>
             <div className="mb-3 flex flex-wrap gap-1.5">
-              {FILTER_TABS.map((t) => (
+              {categoryTabs.map((t) => (
                 <button
                   key={t}
                   type="button"

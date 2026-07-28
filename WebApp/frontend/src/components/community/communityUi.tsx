@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Eye, MessageCircle, Star } from "lucide-react";
 import {
   formatPostTime,
@@ -36,18 +36,42 @@ export function SectionPill({
 
 export function AuthorAvatar({
   name,
+  src,
   size = "sm",
   title,
+  className = "",
   onDoubleClick,
 }: {
   name: string;
-  size?: "sm" | "md";
+  src?: string | null;
+  size?: "sm" | "md" | "lg" | "xl";
   title?: string;
+  className?: string;
   onDoubleClick?: () => void;
 }) {
   const letter = (name || "?").slice(0, 1).toUpperCase();
-  const dim = size === "md" ? "h-8 w-8 text-xs" : "h-5 w-5 text-[10px]";
+  const dim =
+    size === "xl"
+      ? "h-20 w-20 text-2xl"
+      : size === "lg"
+        ? "h-14 w-14 text-lg"
+        : size === "md"
+          ? "h-8 w-8 text-xs"
+          : "h-5 w-5 text-[10px]";
   const interactive = Boolean(onDoubleClick);
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        title={title}
+        onDoubleClick={onDoubleClick}
+        className={`inline-block shrink-0 rounded-full object-cover ring-2 ring-white ${dim} ${
+          interactive ? "cursor-pointer" : ""
+        } ${className}`}
+      />
+    );
+  }
   return (
     <span
       role={interactive ? "button" : undefined}
@@ -64,11 +88,11 @@ export function AuthorAvatar({
             }
           : undefined
       }
-      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-200 to-slate-300 font-semibold text-slate-700 ${dim} ${
+      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-200 to-slate-300 font-semibold text-slate-700 ring-2 ring-white ${dim} ${
         interactive
-          ? "cursor-pointer outline-none ring-offset-1 hover:ring-2 hover:ring-red-200 focus-visible:ring-2 focus-visible:ring-red-300"
+          ? "cursor-pointer outline-none ring-offset-1 hover:ring-red-200 focus-visible:ring-2 focus-visible:ring-red-300"
           : ""
-      }`}
+      } ${className}`}
       aria-hidden={!interactive}
       aria-label={interactive ? title || `插入 @${name}` : undefined}
     >
@@ -174,23 +198,55 @@ export function PostListItem({
   post: CommunityPost;
   showAuthor?: boolean;
 }) {
+  const navigate = useNavigate();
   const authorName =
     post.author.display_name || post.author.username || "匿名";
+  const authorPath = post.author.username
+    ? `/u/${encodeURIComponent(post.author.username)}`
+    : null;
   return (
     <Link
       to={`/community/post/${post.id}`}
-      className="community-post-row group block px-5 py-5 transition hover:bg-slate-50/90"
+      className="community-post-row group block px-5 py-4 transition hover:bg-slate-50/90 sm:px-6"
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <SectionPill section={post.section} label={post.section_label} />
-        <h2 className="text-base font-semibold tracking-tight text-slate-900 transition group-hover:text-red-600">
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 shrink-0">
+          <SectionPill section={post.section} label={post.section_label} />
+        </span>
+        <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-snug tracking-tight text-slate-900 transition group-hover:text-red-600">
           {post.title}
         </h2>
       </div>
-      <div className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
         {showAuthor && (
-          <span className="inline-flex items-center gap-1.5 text-slate-500">
-            <AuthorAvatar name={authorName} />
+          <span
+            role={authorPath ? "link" : undefined}
+            tabIndex={authorPath ? 0 : undefined}
+            className={`inline-flex items-center gap-1.5 text-slate-500 ${
+              authorPath ? "cursor-pointer hover:text-red-600" : ""
+            }`}
+            onClick={
+              authorPath
+                ? (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    navigate(authorPath);
+                  }
+                : undefined
+            }
+            onKeyDown={
+              authorPath
+                ? (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      navigate(authorPath);
+                    }
+                  }
+                : undefined
+            }
+          >
+            <AuthorAvatar name={authorName} src={post.author.avatar_url} />
             {authorName}
           </span>
         )}

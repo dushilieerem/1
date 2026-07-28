@@ -18,10 +18,9 @@ import { useConfirm } from "@/components/ConfirmDialog";
 import { authHeaders, getStoredUser, prepareAuthHandoff, subscribeAuth } from "@/lib/auth";
 import {
   DYNAMIC_FACTOR_LIBS,
-  FILTER_TABS,
-  LABELS,
   clearFactorCache,
   extractMethod,
+  filterTabsFromFactors,
   formatFactorFormula,
   loadFactors,
   loadLibrarySource,
@@ -39,10 +38,10 @@ const TAB_ACTIVE: Record<string, string> = {
   "波动/风险": "bg-amber-600 text-white shadow-md shadow-amber-200",
   "量价/成交": "bg-orange-600 text-white shadow-md shadow-orange-200",
   自定义: "bg-emerald-600 text-white shadow-md shadow-emerald-200",
-  聚宽情绪: "bg-rose-600 text-white shadow-md shadow-rose-200",
-  聚宽风险: "bg-red-700 text-white shadow-md shadow-red-200",
-  聚宽技术: "bg-fuchsia-600 text-white shadow-md shadow-fuchsia-200",
-  Qlib特征: "bg-indigo-600 text-white shadow-md shadow-indigo-200",
+  情绪因子: "bg-rose-600 text-white shadow-md shadow-rose-200",
+  风险因子: "bg-red-700 text-white shadow-md shadow-red-200",
+  技术指标库: "bg-fuchsia-600 text-white shadow-md shadow-fuchsia-200",
+  "Alpha158/360": "bg-indigo-600 text-white shadow-md shadow-indigo-200",
 };
 
 const ROW_ACCENT: Record<string, string> = {
@@ -52,10 +51,10 @@ const ROW_ACCENT: Record<string, string> = {
   "波动/风险": "border-l-amber-500",
   "量价/成交": "border-l-orange-500",
   自定义: "border-l-emerald-500",
-  聚宽情绪: "border-l-rose-500",
-  聚宽风险: "border-l-red-600",
-  聚宽技术: "border-l-fuchsia-500",
-  Qlib特征: "border-l-indigo-500",
+  情绪因子: "border-l-rose-500",
+  风险因子: "border-l-red-600",
+  技术指标库: "border-l-fuchsia-500",
+  "Alpha158/360": "border-l-indigo-500",
 };
 
 const ROW_BADGE: Record<string, string> = {
@@ -65,10 +64,10 @@ const ROW_BADGE: Record<string, string> = {
   "波动/风险": "bg-amber-50 text-amber-800",
   "量价/成交": "bg-orange-50 text-orange-700",
   自定义: "bg-emerald-50 text-emerald-700",
-  聚宽情绪: "bg-rose-50 text-rose-700",
-  聚宽风险: "bg-red-50 text-red-800",
-  聚宽技术: "bg-fuchsia-50 text-fuchsia-700",
-  Qlib特征: "bg-indigo-50 text-indigo-700",
+  情绪因子: "bg-rose-50 text-rose-700",
+  风险因子: "bg-red-50 text-red-800",
+  技术指标库: "bg-fuchsia-50 text-fuchsia-700",
+  "Alpha158/360": "bg-indigo-50 text-indigo-700",
 };
 
 const COUNT_PILL: Record<string, string> = {
@@ -78,10 +77,10 @@ const COUNT_PILL: Record<string, string> = {
   "波动/风险": "text-amber-700",
   "量价/成交": "text-orange-600",
   自定义: "text-emerald-600",
-  聚宽情绪: "text-rose-600",
-  聚宽风险: "text-red-700",
-  聚宽技术: "text-fuchsia-600",
-  Qlib特征: "text-indigo-600",
+  情绪因子: "text-rose-600",
+  风险因子: "text-red-700",
+  技术指标库: "text-fuchsia-600",
+  "Alpha158/360": "text-indigo-600",
 };
 
 function pageNumbers(current: number, total: number): (number | "…")[] {
@@ -117,7 +116,7 @@ function FactorRow({
     let cancelled = false;
     if (DYNAMIC_FACTOR_LIBS.has(factor.library)) {
       setFormula(
-        `# ${factor.description}\n# 动态注册特征（${factor.libraryFile}）；检测时由 RE library_name=qlib_alpha 加载`,
+        `# ${factor.description}\n# 动态注册特征（${factor.libraryFile}）；检测时由 RE library_name=${factor.library} 加载`,
       );
       return;
     }
@@ -268,11 +267,17 @@ export function FactorLibraryPage() {
     });
   }, []);
 
+  const categoryTabs = useMemo(() => filterTabsFromFactors(factors), [factors]);
+
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
     for (const f of factors) c[f.libraryLabel] = (c[f.libraryLabel] || 0) + 1;
     return c;
   }, [factors]);
+
+  useEffect(() => {
+    if (tab !== "全部" && !categoryTabs.includes(tab)) setTab("全部");
+  }, [categoryTabs, tab]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -315,7 +320,9 @@ export function FactorLibraryPage() {
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-3 text-xs font-semibold">
-                {Object.values(LABELS).map((label) => (
+                {categoryTabs
+                  .filter((label) => label !== "全部")
+                  .map((label) => (
                   <span key={label} className={COUNT_PILL[label] || "text-slate-500"}>
                     {label.split("/")[0]} {counts[label] || 0}
                   </span>
@@ -359,7 +366,7 @@ export function FactorLibraryPage() {
         </div>
 
         <div className="mb-4 flex flex-wrap gap-2">
-          {FILTER_TABS.map((t) => (
+          {categoryTabs.map((t) => (
             <button
               key={t}
               type="button"

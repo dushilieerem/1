@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   ChevronDown,
+  Flag,
   ImagePlus,
   MessageCircle,
   ThumbsDown,
@@ -20,7 +21,8 @@ import {
   voteComment,
 } from "@/lib/communityApi";
 import { compressImageFile } from "@/lib/imageCompress";
-import { AuthorAvatar, PrimaryButton, fieldClassName } from "@/components/community/communityUi";
+import { PrimaryButton, fieldClassName } from "@/components/community/communityUi";
+import { AuthorAvatarWithCard } from "@/components/community/AuthorProfileCard";
 import { ImageLightbox } from "@/components/community/ImageLightbox";
 
 const PREVIEW_REPLY_N = 2;
@@ -77,6 +79,7 @@ function VoteBar({
   comment,
   onChanged,
   onReply,
+  onReport,
   disabled,
 }: {
   comment: CommunityComment;
@@ -86,6 +89,7 @@ function VoteBar({
     my_vote: number;
   }) => void;
   onReply: () => void;
+  onReport?: () => void;
   disabled?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
@@ -142,6 +146,17 @@ function VoteBar({
         <MessageCircle className="h-3.5 w-3.5" />
         回复
       </button>
+      {onReport ? (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onReport}
+          className="inline-flex items-center gap-1 transition hover:text-amber-700 disabled:opacity-50"
+        >
+          <Flag className="h-3.5 w-3.5" />
+          举报
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -160,14 +175,17 @@ export function CommentThread({
   postAuthorId,
   highlightId,
   canInteract,
+  currentUserId,
   onNeedLogin,
   onCommentsChange,
   onSubmitComment,
+  onReportComment,
 }: {
   comments: CommunityComment[];
   postAuthorId?: number;
   highlightId?: number | null;
   canInteract: boolean;
+  currentUserId?: number | null;
   onNeedLogin: () => void;
   onCommentsChange: (next: CommunityComment[]) => void;
   onSubmitComment: (payload: {
@@ -175,6 +193,7 @@ export function CommentThread({
     parentId: number | null;
     images: string[];
   }) => Promise<void>;
+  onReportComment?: (comment: CommunityComment) => void;
 }) {
   const [replyTo, setReplyTo] = useState<CommunityComment | null>(null);
   const [body, setBody] = useState("");
@@ -296,21 +315,20 @@ export function CommentThread({
         } ${compact ? "py-2" : "py-1"}`}
       >
         <div className="flex gap-2.5">
-          {!compact && (
-            <AuthorAvatar
-              name={name}
-              size="md"
-              title={`双击插入 @${c.author.username || name}`}
-              onDoubleClick={() => insertMention(c)}
-            />
-          )}
+          <AuthorAvatarWithCard
+            username={c.author.username}
+            name={name}
+            src={c.author.avatar_url}
+            size={compact ? "sm" : "md"}
+            onDoubleClick={() => insertMention(c)}
+          />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
               {compact ? (
                 <span className="font-medium text-slate-600">
                   <button
                     type="button"
-                    title={`双击插入 @${c.author.username || name}`}
+                    title="双击插入 @"
                     onDoubleClick={() => insertMention(c)}
                     className="font-medium text-slate-600 hover:text-red-600"
                   >
@@ -329,7 +347,7 @@ export function CommentThread({
                 <>
                   <button
                     type="button"
-                    title={`双击插入 @${c.author.username || name}`}
+                    title="双击插入 @"
                     onDoubleClick={() => insertMention(c)}
                     className="font-medium text-slate-700 hover:text-red-600"
                   >
@@ -365,6 +383,18 @@ export function CommentThread({
               disabled={!canInteract}
               onReply={() => startReply(c)}
               onChanged={(p) => patchComment(c.id, p)}
+              onReport={
+                onReportComment &&
+                (!currentUserId || c.author.id !== currentUserId)
+                  ? () => {
+                      if (!canInteract) {
+                        onNeedLogin();
+                        return;
+                      }
+                      onReportComment(c);
+                    }
+                  : undefined
+              }
             />
           </div>
         </div>

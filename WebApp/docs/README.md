@@ -4,6 +4,7 @@
 
 | 文件 | 说明 |
 |------|------|
+| [`DATABASE.md`](./DATABASE.md) | **数据库说明**（Postgres + 面板 SQLite：表 / 字段 / 样例；脚本可刷新） |
 | [`CHECKLIST.md`](./CHECKLIST.md) | 当前周打勾表（7.27～7.31） |
 | [`CHECKLIST-2026-07-20-24.md`](./CHECKLIST-2026-07-20-24.md) | 上周归档 |
 | [`社区-预期功能说明.md`](./社区-预期功能说明.md) | 社区目标态 |

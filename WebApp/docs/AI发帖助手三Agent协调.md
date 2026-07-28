@@ -1,7 +1,7 @@
 # SVQuant 多 Agent 交互设计（Skills 优先 · 相互影响）
 
-> 落地位置：`WebApp`（本文档随 web_app 入库）  
-> 状态：已实现社区发帖 crew（2026-07-24）  
+> 落地位置：`WebApp`
+> 状态：已实现社区发帖 crew
 > 对齐：INIT-003 `AgentTask` 语义（goal / plan / steps / status）
 
 **多个有角色的 Agent 围绕同一块共享黑板协作**——Writer 改文案、Critic 查虚报、Router 建议分区，彼此能 **驳回 / 回写 / 要求对方重跑**。对外仍叫 SVQuant Agent；对内是 **Skills 注册表 + 编排器**。
@@ -39,9 +39,6 @@ graph TD
   H --> I[写入Board分区]
   I --> J[定稿写回编辑器]
 ```
-
-**为何「按 flags 删改」不指回「润色标题正文」？**  
-那是 Writer 的**另一条技能**：首轮用 `polish_*` 整篇润色；被打回后只用 `strip_unverifiable` 按异议删改，避免整篇重写冲掉已改好的结构。回流箭头进 **Critic 再审**，不是再开一轮润色。
 
 ### 三个 Agent 分别是什么
 
@@ -127,12 +124,4 @@ POST /api/agent/runs
 - blocked：Critic `block`（如承诺收益）— 不跑 Router，等人手改  
 - needs_review：修订轮次用尽仍有异议 — 保留 flags，可带草稿回编辑器，需人工处理后再发
 
----
 
-## 边界（明确不做）
-
-- 本版不接 ResearchEngine 回测 Skill  
-- 不做自由招聘 Agent / 开放聊天室  
-- 不做独立 `/admin` Agent SPA  
-
-以后加研究能力 = **注册新 Skill**，不必重写编排壳。

@@ -12,6 +12,8 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from typing import Any
+
 import yaml
 
 from services.backtest_range import build_factor_backtest_payload
@@ -23,9 +25,15 @@ DB_PATH = OUTPUT_DIR / "metrics.sqlite"
 JOB_PATH = OUTPUT_DIR / "job.json"
 RE_URL = "http://192.168.3.64:9527/api/backtest/factor"
 RULES_VERSION = "yg_v1"
-# 与前端 detectComboCode.RE_BUILTIN_LIBS / 06-research-api.md 对齐
+# 与前端 detectComboCode.RE_BUILTIN_LIBS / 同事 factor 库对齐
+# 需走 library_name：含私有辅助或动态注册方法，无法单抽 factor_code
 RE_BUILTIN_LIBS = frozenset(
     {
+        "emotion_indicators",
+        "risk_indicators",
+        "technical_indicators",
+        "alpha_features",
+        # 旧名保留：历史帖/缓存可能仍引用
         "alpha_library",
         "qlib_alpha",
         "jq_compat_technical",
@@ -41,11 +49,10 @@ PANEL_OFFICIAL_LIBS = frozenset(
         "technical_lib",
         "volatility_lib",
         "trading_lib",
-        "jq_compat_emotion",
-        "jq_compat_risk",
-        "jq_compat_technical",
-        "qlib_alpha",
-        "alpha_library",
+        "emotion_indicators",
+        "risk_indicators",
+        "technical_indicators",
+        "alpha_features",
     }
 )
 
@@ -57,6 +64,23 @@ def _ensure_dirs() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
+VERIFY_STATUSES = frozenset({"pending", "passed", "failed"})
+
+
+def _ensure_verify_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS factor_verify_status (
+          factor_name TEXT PRIMARY KEY,
+          status TEXT NOT NULL DEFAULT 'pending',
+          note TEXT NOT NULL DEFAULT '',
+          updated_at TEXT NOT NULL,
+          updated_by TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+
+
 def _migrate_columns(conn: sqlite3.Connection) -> None:
     existing = {r[1] for r in conn.execute("PRAGMA table_info(factor_dashboard_metrics)")}
     for col, typ in (
@@ -66,6 +90,7 @@ def _migrate_columns(conn: sqlite3.Connection) -> None:
     ):
         if col not in existing:
             conn.execute(f"ALTER TABLE factor_dashboard_metrics ADD COLUMN {col} {typ}")
+    _ensure_verify_table(conn)
 
 
 def _connect() -> sqlite3.Connection:
@@ -130,7 +155,7 @@ def load_factor_index(*, include_qlib: bool = True) -> list[dict]:
     for lib_key, lib in (raw.get("libraries") or {}).items():
         if lib_key not in PANEL_OFFICIAL_LIBS:
             continue
-        if lib_key == "qlib_alpha" and not include_qlib:
+        if lib_key in ("qlib_alpha", "alpha_features") and not include_qlib:
             continue
         for f in lib.get("factors") or []:
             # 双保险：官方库内也不应出现个人因子
@@ -368,6 +393,38 @@ def write_job(data: dict) -> None:
         raise last_exc
 
 
+def prune_orphan_metrics(*, include_qlib: bool = True) -> dict:
+    """删除不在当前官方目录中的面板缓存行（旧库改名/下线后的孤儿）。"""
+    names = {f["name"] for f in load_factor_index(include_qlib=include_qlib)}
+    conn = _connect()
+    existing = [
+        r[0]
+        for r in conn.execute(
+            "SELECT DISTINCT factor_name FROM factor_dashboard_metrics"
+        ).fetchall()
+    ]
+    orphans = [n for n in existing if n not in names]
+    deleted = 0
+    if orphans:
+        # SQLite 变量上限保守分批
+        chunk = 400
+        for i in range(0, len(orphans), chunk):
+            part = orphans[i : i + chunk]
+            placeholders = ",".join("?" for _ in part)
+            cur = conn.execute(
+                f"DELETE FROM factor_dashboard_metrics WHERE factor_name IN ({placeholders})",
+                part,
+            )
+            deleted += cur.rowcount
+        conn.commit()
+    conn.close()
+    return {
+        "catalog": len(names),
+        "orphan_names": len(orphans),
+        "deleted_rows": deleted,
+    }
+
+
 def query_metrics(
     *,
     universe: str,
@@ -376,6 +433,7 @@ def query_metrics(
     filter_suspended: bool,
     library: str | None = None,
 ) -> dict:
+    catalog = {f["name"]: f for f in load_factor_index(include_qlib=True)}
     conn = _connect()
     sql = """
       SELECT * FROM factor_dashboard_metrics
@@ -393,7 +451,30 @@ def query_metrics(
         sql += " AND library=?"
         args.append(library)
     rows = [dict(r) for r in conn.execute(sql, args).fetchall()]
+    verify_map = {
+        str(r["factor_name"]): {
+            "status": str(r["status"] or "pending"),
+            "note": str(r["note"] or ""),
+            "updated_at": str(r["updated_at"] or ""),
+            "updated_by": str(r["updated_by"] or ""),
+        }
+        for r in conn.execute(
+            "SELECT factor_name, status, note, updated_at, updated_by FROM factor_verify_status"
+        )
+    }
     conn.close()
+    # 只返回当前目录因子，避免旧缓存把「缓存因子」数撑到 1000+
+    rows = [r for r in rows if r.get("factor_name") in catalog]
+    for r in rows:
+        name = str(r.get("factor_name") or "")
+        v = verify_map.get(name) or {}
+        r["verify_status"] = v.get("status") or "pending"
+        r["verify_note"] = v.get("note") or ""
+        r["verify_updated_at"] = v.get("updated_at") or ""
+        r["verify_updated_by"] = v.get("updated_by") or ""
+    pending = sum(1 for r in rows if r.get("verify_status") == "pending")
+    passed = sum(1 for r in rows if r.get("verify_status") == "passed")
+    failed = sum(1 for r in rows if r.get("verify_status") == "failed")
     return {
         "universe": universe,
         "period": period,
@@ -403,7 +484,189 @@ def query_metrics(
         "count": len(rows),
         "rows": rows,
         "job": read_job(),
+        "catalog_size": len(catalog),
+        "verify_summary": {
+            "pending": pending,
+            "passed": passed,
+            "failed": failed,
+        },
         "note": "",
+    }
+
+
+def _fmt_ic(x: float | None) -> str | None:
+    """面板 IC 按百分数点存：2.50 → 0.0250。"""
+    if x is None:
+        return None
+    try:
+        return f"{float(x) / 100.0:.4f}"
+    except (TypeError, ValueError):
+        return None
+
+
+def _fmt_pct_from_panel(x: float | None) -> str | None:
+    """面板库内存百分数点（如 33.07），展示为 +33.07%。"""
+    if x is None:
+        return None
+    try:
+        v = float(x)
+        sign = "+" if v > 0 else ""
+        return f"{sign}{v:.2f}%"
+    except (TypeError, ValueError):
+        return None
+
+
+def _fmt_num(x: float | None) -> str | None:
+    if x is None:
+        return None
+    try:
+        return f"{float(x):.2f}"
+    except (TypeError, ValueError):
+        return None
+
+
+def lookup_panel_metric(
+    *,
+    factor_name: str,
+    universe: str = "CSI300",
+    period: str = "3y",
+    filter_limit_up: bool = True,
+    filter_suspended: bool = True,
+) -> dict[str, Any] | None:
+    """按因子×池×周期查面板缓存一行，组装成 platform_ref 形状。找不到返回 None。"""
+    name = (factor_name or "").strip()
+    uni = (universe or "CSI300").strip() or "CSI300"
+    per = (period or "3y").strip() or "3y"
+    if not name:
+        return None
+    conn = _connect()
+    row = conn.execute(
+        """
+        SELECT * FROM factor_dashboard_metrics
+        WHERE factor_name=? AND universe=? AND period=?
+          AND filter_limit_up=? AND filter_suspended=? AND rules_version=?
+        """,
+        (
+            name,
+            uni,
+            per,
+            1 if filter_limit_up else 0,
+            1 if filter_suspended else 0,
+            RULES_VERSION,
+        ),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return None
+    r = dict(row)
+    if r.get("error"):
+        return None
+    display: dict[str, str] = {}
+    put = lambda k, v: display.__setitem__(k, v) if v else None
+    put("IC均值", _fmt_ic(r.get("ic_mean")))
+    put("Rank IC", _fmt_ic(r.get("rank_ic")))
+    put("IR", _fmt_num(r.get("ir")))
+    put("年化", _fmt_pct_from_panel(r.get("annual_return")))
+    put("最大回撤", _fmt_pct_from_panel(r.get("max_drawdown")))
+    put("夏普", _fmt_num(r.get("sharpe")))
+    wr = r.get("win_rate")
+    if wr is None:
+        wr = r.get("coverage_pool")
+    put("胜率", _fmt_pct_from_panel(wr))
+    put("Q1收益", _fmt_pct_from_panel(r.get("q1_return")))
+    put("Q5收益", _fmt_pct_from_panel(r.get("q5_return")))
+    put("多空价差", _fmt_pct_from_panel(r.get("long_short_spread")))
+    put("Q1换手", _fmt_pct_from_panel(r.get("q1_turnover")))
+    if not display:
+        return None
+    # metrics 用小数口径（与分享稿一致：面板百分数点 /100）
+    def _div100(x: Any) -> float | None:
+        if x is None:
+            return None
+        try:
+            return float(x) / 100.0
+        except (TypeError, ValueError):
+            return None
+
+    def _f(x: Any) -> float | None:
+        if x is None:
+            return None
+        try:
+            return float(x)
+        except (TypeError, ValueError):
+            return None
+
+    name_cn = str(r.get("name_cn") or name)
+    return {
+        "source": "factor_panel",
+        "label": f"因子面板 · {name_cn} · {uni} · {per}",
+        "factor_name": name,
+        "universe": uni,
+        "period": per,
+        "universe_code": uni,
+        "period_code": per,
+        "library": (str(r.get("library") or "").strip() or None),
+        "filter_limit_up": bool(filter_limit_up),
+        "metrics_display": display,
+        "metrics": {
+            k: v
+            for k, v in {
+                "ic_mean": _div100(r.get("ic_mean")),
+                "rank_ic": _div100(r.get("rank_ic")),
+                "ir": _f(r.get("ir")),
+                "annual_return": _div100(r.get("annual_return")),
+                "max_drawdown": _div100(r.get("max_drawdown")),
+                "sharpe": _f(r.get("sharpe")),
+                "win_rate": _div100(wr),
+            }.items()
+            if v is not None
+        },
+    }
+
+
+def set_verify_status(
+    *,
+    factor_name: str,
+    status: str,
+    note: str = "",
+    updated_by: str = "",
+) -> dict:
+    name = (factor_name or "").strip()
+    st = (status or "").strip().lower()
+    if not name:
+        raise ValueError("factor_name 不能为空")
+    if st not in VERIFY_STATUSES:
+        raise ValueError("status 须为 pending / passed / failed")
+    catalog = {f["name"] for f in load_factor_index(include_qlib=True)}
+    if name not in catalog:
+        raise ValueError(f"因子不在官方面板目录：{name}")
+    now = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    conn = _connect()
+    conn.execute(
+        """
+        INSERT INTO factor_verify_status (factor_name, status, note, updated_at, updated_by)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(factor_name) DO UPDATE SET
+          status=excluded.status,
+          note=excluded.note,
+          updated_at=excluded.updated_at,
+          updated_by=excluded.updated_by
+        """,
+        (name, st, str(note or ""), now, str(updated_by or "")),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT factor_name, status, note, updated_at, updated_by FROM factor_verify_status WHERE factor_name=?",
+        (name,),
+    ).fetchone()
+    conn.close()
+    return {
+        "ok": True,
+        "factor_name": name,
+        "verify_status": str(row["status"]),
+        "verify_note": str(row["note"] or ""),
+        "verify_updated_at": str(row["updated_at"] or ""),
+        "verify_updated_by": str(row["updated_by"] or ""),
     }
 
 

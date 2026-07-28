@@ -1,4 +1,5 @@
 import type { CommunitySection } from "./communityApi";
+import type { PlatformMetricsRef } from "./communityShare";
 
 const IN_KEY = "svquant_ai_assist_in";
 const OUT_KEY = "svquant_ai_assist_out";
@@ -9,6 +10,7 @@ export type AiAssistInbound = {
   section: CommunitySection;
   code_snippet?: string;
   returnTo: string;
+  platform_ref?: PlatformMetricsRef;
 };
 
 export type AiAssistOutbound = {

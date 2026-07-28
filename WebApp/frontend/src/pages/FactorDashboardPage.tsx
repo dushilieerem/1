@@ -5,20 +5,21 @@ import {
   BarChart3,
   Database,
   Layers,
-  RefreshCw,
   Search,
   TrendingUp,
   Zap,
 } from "lucide-react";
 import {
   DYNAMIC_FACTOR_LIBS,
-  LABELS,
   extractMethod,
+  filterTabsFromFactors,
+  labelForLibrary,
+  libraryKeyFromLabel,
   loadFactors,
   loadLibrarySource,
 } from "@/lib/factorCatalog";
 import { openOrCreateForFactor, openDetectInNewTab } from "@/lib/detectStore";
-import { getStoredUser } from "@/lib/auth";
+import { authHeaders, getStoredUser } from "@/lib/auth";
 import {
   buildBuiltinFactorShareStub,
   buildFactorPanelShareDraft,
@@ -26,6 +27,7 @@ import {
 import { PageJump } from "@/components/PageJump";
 
 type PeriodKey = "3m" | "1y" | "3y";
+type VerifyStatus = "pending" | "passed" | "failed";
 type SortKey =
   | "name_cn"
   | "ic_mean"
@@ -57,7 +59,37 @@ type DashRow = {
   max_drawdown?: number | null;
   error?: string | null;
   computed_at?: string;
+  verify_status?: VerifyStatus | string;
+  verify_note?: string;
 };
+
+const VERIFY_OPTIONS: { value: VerifyStatus; label: string; className: string }[] = [
+  {
+    value: "pending",
+    label: "待验证",
+    className: "bg-amber-50 text-amber-800 ring-amber-200",
+  },
+  {
+    value: "passed",
+    label: "已通过",
+    className: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+  },
+  {
+    value: "failed",
+    label: "未通过",
+    className: "bg-rose-50 text-rose-800 ring-rose-200",
+  },
+];
+
+function normalizeVerify(v?: string | null): VerifyStatus {
+  if (v === "passed" || v === "failed") return v;
+  return "pending";
+}
+
+function verifyMeta(status?: string | null) {
+  const st = normalizeVerify(status);
+  return VERIFY_OPTIONS.find((o) => o.value === st) || VERIFY_OPTIONS[0];
+}
 
 const UNIVERSES = [
   { value: "CSI300", label: "沪深300" },
@@ -159,21 +191,42 @@ function StatCard({
 
 export function FactorDashboardPage() {
   const navigate = useNavigate();
+  const user = getStoredUser();
+  const isAdmin = user?.role === "admin";
   const [universe, setUniverse] = useState("CSI300");
   const [period, setPeriod] = useState<PeriodKey>("3y");
   const [filterUp, setFilterUp] = useState(true);
   const [library, setLibrary] = useState<string>("全部");
   const [query, setQuery] = useState("");
+  const [verifyFilter, setVerifyFilter] = useState<"all" | VerifyStatus>("all");
   const [rows, setRows] = useState<DashRow[]>([]);
+  const [verifySummary, setVerifySummary] = useState({
+    pending: 0,
+    passed: 0,
+    failed: 0,
+  });
   const [job, setJob] = useState<{ status?: string; done?: number; total?: number; current?: string }>({});
   const [loading, setLoading] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("ic_mean");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [err, setErr] = useState<string | null>(null);
   const [shareBusy, setShareBusy] = useState<string | null>(null);
+  const [verifyBusy, setVerifyBusy] = useState<string | null>(null);
 
   const [hideErrors, setHideErrors] = useState(true);
   const [page, setPage] = useState(1);
+  /** 分类 Tab 跟当前 index.yaml 实际库走（面板不含自定义） */
+  const [categoryTabs, setCategoryTabs] = useState<string[]>(["全部"]);
+
+  useEffect(() => {
+    void loadFactors(true)
+      .then((fs) => {
+        const tabs = filterTabsFromFactors(fs.filter((f) => f.library !== "custom_lib"));
+        setCategoryTabs(tabs);
+        setLibrary((cur) => (tabs.includes(cur) ? cur : "全部"));
+      })
+      .catch(() => setCategoryTabs(["全部"]));
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -186,7 +239,7 @@ export function FactorDashboardPage() {
         filter_suspended: "1",
       });
       if (library !== "全部") {
-        const key = Object.entries(LABELS).find(([, v]) => v === library)?.[0];
+        const key = libraryKeyFromLabel(library);
         if (key) qs.set("library", key);
       }
       const res = await fetch(`/api/factor/dashboard?${qs}`);
@@ -194,6 +247,12 @@ export function FactorDashboardPage() {
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setRows(data.rows || []);
       setJob(data.job || {});
+      const vs = data.verify_summary || {};
+      setVerifySummary({
+        pending: Number(vs.pending) || 0,
+        passed: Number(vs.passed) || 0,
+        failed: Number(vs.failed) || 0,
+      });
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -220,32 +279,14 @@ export function FactorDashboardPage() {
     return () => window.clearInterval(t);
   }, [job.status, load]);
 
-  const onRefresh = async () => {
-    setErr(null);
-    try {
-      const res = await fetch("/api/factor/dashboard/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          universe,
-          period,
-          filter_limit_up: filterUp,
-          filter_suspended: true,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
-      setJob(data.job || { status: "running" });
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    }
-  };
-
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = rows;
     if (hideErrors) {
       list = list.filter((r) => !r.error);
+    }
+    if (verifyFilter !== "all") {
+      list = list.filter((r) => normalizeVerify(r.verify_status) === verifyFilter);
     }
     if (q) {
       list = list.filter(
@@ -265,11 +306,11 @@ export function FactorDashboardPage() {
       const bn = typeof bv === "number" ? bv : -Infinity;
       return dir * (an - bn);
     });
-  }, [rows, query, sortKey, sortDir, hideErrors]);
+  }, [rows, query, sortKey, sortDir, hideErrors, verifyFilter]);
 
   useEffect(() => {
     setPage(1);
-  }, [universe, period, filterUp, library, query, hideErrors, sortKey, sortDir]);
+  }, [universe, period, filterUp, library, query, hideErrors, sortKey, sortDir, verifyFilter]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageSafe = Math.min(page, pageCount);
@@ -341,9 +382,12 @@ export function FactorDashboardPage() {
         name: r.name_cn || r.factor_name,
         factorName: r.factor_name,
         libraryName: libKey || null,
-        libraryLabel: libKey ? LABELS[libKey] || libKey : null,
+        libraryLabel: libKey ? labelForLibrary(libKey) : null,
         universeLabel: uniLabel,
         periodLabel,
+        universeCode: universe,
+        periodCode: period,
+        filterLimitUp: filterUp,
         filterLabel: filterUp ? "过滤涨停" : "不过滤涨停",
         metrics: {
           ic_mean: r.ic_mean,
@@ -367,6 +411,57 @@ export function FactorDashboardPage() {
       window.alert(ex instanceof Error ? ex.message : String(ex));
     } finally {
       setShareBusy(null);
+    }
+  };
+
+  const onChangeVerify = async (factorName: string, status: VerifyStatus) => {
+    const u = getStoredUser();
+    if (!u) {
+      navigate(`/login?next=${encodeURIComponent("/factor/dashboard")}`);
+      return;
+    }
+    if (u.role !== "admin") {
+      window.alert("仅管理员可修改校验状态");
+      return;
+    }
+    setVerifyBusy(factorName);
+    try {
+      const res = await fetch("/api/factor/dashboard/verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(),
+        },
+        body: JSON.stringify({ factor_name: factorName, status }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setRows((prev) =>
+        prev.map((r) =>
+          r.factor_name === factorName
+            ? {
+                ...r,
+                verify_status: data.verify_status || status,
+                verify_note: data.verify_note || "",
+              }
+            : r,
+        ),
+      );
+      setVerifySummary((prev) => {
+        const old = normalizeVerify(
+          rows.find((r) => r.factor_name === factorName)?.verify_status,
+        );
+        const next = { ...prev };
+        if (old !== status) {
+          next[old] = Math.max(0, (next[old] || 0) - 1);
+          next[status] = (next[status] || 0) + 1;
+        }
+        return next;
+      });
+    } catch (ex) {
+      window.alert(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setVerifyBusy(null);
     }
   };
 
@@ -395,20 +490,18 @@ export function FactorDashboardPage() {
               <p className="mt-3 text-xs text-slate-400">
                 {uniLabel} · {periodLabel} · {filterUp ? "过滤涨停" : "不过滤涨停"} · 已算{" "}
                 {okRows.length}/{filtered.length}
+                {" · "}
+                <span className="text-amber-700">待验证 {verifySummary.pending}</span>
+                {" · "}
+                <span className="text-emerald-700">已通过 {verifySummary.passed}</span>
+                {" · "}
+                <span className="text-rose-700">未通过 {verifySummary.failed}</span>
                 {loading ? " · 加载中…" : ""}
+                {job.status === "running"
+                  ? ` · 后台计算中 ${job.done ?? 0}/${job.total ?? "?"} ${job.current || ""}`
+                  : ""}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => void onRefresh()}
-              disabled={job.status === "running"}
-              className="relative inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${job.status === "running" ? "animate-spin" : ""}`} />
-              {job.status === "running"
-                ? `计算中 ${job.done ?? 0}/${job.total ?? "?"} ${job.current || ""}`
-                : "刷新指标（调 RE）"}
-            </button>
           </div>
         </section>
 
@@ -446,7 +539,7 @@ export function FactorDashboardPage() {
         <div className="mb-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="w-16 shrink-0 text-xs text-slate-400">分类</span>
-            {["全部", ...Object.values(LABELS)].map((lab) => (
+            {categoryTabs.map((lab) => (
               <button
                 key={lab}
                 type="button"
@@ -496,7 +589,7 @@ export function FactorDashboardPage() {
             </button>
             {!filterUp && filtered.length === 0 && (
               <span className="text-[11px] text-amber-600">
-                该口径尚未批算；点右上角「刷新指标」拉取（约数十分钟）
+                该口径暂无缓存数据
               </span>
             )}
           </div>
@@ -514,6 +607,35 @@ export function FactorDashboardPage() {
                 }`}
               >
                 {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="w-16 shrink-0 text-xs text-slate-400">校验</span>
+            {(
+              [
+                { value: "all" as const, label: "全部" },
+                ...VERIFY_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+              ] as { value: "all" | VerifyStatus; label: string }[]
+            ).map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => setVerifyFilter(o.value)}
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  verifyFilter === o.value
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {o.label}
+                {o.value === "pending"
+                  ? ` ${verifySummary.pending}`
+                  : o.value === "passed"
+                    ? ` ${verifySummary.passed}`
+                    : o.value === "failed"
+                      ? ` ${verifySummary.failed}`
+                      : ""}
               </button>
             ))}
           </div>
@@ -550,10 +672,13 @@ export function FactorDashboardPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1080px] text-left text-sm">
+            <table className="w-full min-w-[1200px] text-left text-sm">
               <thead className="bg-slate-50/80">
                 <tr className="border-b border-slate-100">
                   <SortTh k="name_cn" label="因子" />
+                  <th className="whitespace-nowrap px-3 py-3 text-xs font-semibold tracking-wide text-slate-500">
+                    校验
+                  </th>
                   <th className="whitespace-nowrap px-4 py-3 text-xs font-semibold tracking-wide text-slate-500">
                     子类
                   </th>
@@ -567,7 +692,7 @@ export function FactorDashboardPage() {
                   <SortTh k="q1_return" label="Q1分层" align="right" />
                   <SortTh k="q5_return" label="Q5分层" align="right" />
                   <SortTh k="long_short_spread" label="多空差" align="right" />
-                  <th className="whitespace-nowrap px-3 py-3 text-center text-xs font-semibold tracking-wide text-slate-500">
+                  <th className="sticky right-0 z-10 whitespace-nowrap bg-slate-50/95 px-3 py-3 text-center text-xs font-semibold tracking-wide text-slate-500 shadow-[-6px_0_8px_-6px_rgba(15,23,42,0.12)]">
                     操作
                   </th>
                 </tr>
@@ -575,7 +700,8 @@ export function FactorDashboardPage() {
               <tbody>
                 {paged.map((r) => {
                   const win = r.win_rate ?? r.coverage_pool;
-                  const lib = LABELS[r.library || ""] || r.library || "—";
+                  const lib = labelForLibrary(r.library || "", r.library || "—");
+                  const vm = verifyMeta(r.verify_status);
                   return (
                     <tr
                       key={r.factor_name}
@@ -610,6 +736,35 @@ export function FactorDashboardPage() {
                             </p>
                           ) : null}
                         </div>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-3.5">
+                        {isAdmin ? (
+                          <select
+                            value={normalizeVerify(r.verify_status)}
+                            disabled={verifyBusy === r.factor_name}
+                            onChange={(e) =>
+                              void onChangeVerify(
+                                r.factor_name,
+                                e.target.value as VerifyStatus,
+                              )
+                            }
+                            className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ring-1 ring-inset outline-none disabled:opacity-60 ${vm.className}`}
+                            title="跨平台对比校验状态（仅管理员可改）"
+                          >
+                            {VERIFY_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ring-1 ring-inset ${vm.className}`}
+                            title="仅管理员可修改校验状态"
+                          >
+                            {vm.label}
+                          </span>
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3.5">
                         <span className="inline-flex whitespace-nowrap rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-500/20">
@@ -648,7 +803,7 @@ export function FactorDashboardPage() {
                       >
                         {fmtPct(r.long_short_spread)}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-3.5 text-center">
+                      <td className="sticky right-0 z-10 whitespace-nowrap bg-white px-3 py-3.5 text-center shadow-[-6px_0_8px_-6px_rgba(15,23,42,0.12)] group-hover:bg-slate-50/95">
                         <div className="inline-flex min-w-[7.5rem] items-center justify-center gap-1">
                           <button
                             type="button"
@@ -681,8 +836,8 @@ export function FactorDashboardPage() {
                 })}
                 {!filtered.length && (
                   <tr>
-                    <td colSpan={13} className="px-4 py-16 text-center text-sm text-slate-400">
-                      暂无缓存。点右上角「刷新指标」从 YGQuant 拉取当前组合（约需较长时间）。
+                    <td colSpan={14} className="px-4 py-16 text-center text-sm text-slate-400">
+                      暂无缓存数据
                     </td>
                   </tr>
                 )}

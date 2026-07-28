@@ -6,6 +6,10 @@ export type AuthUser = {
   status: string;
   display_name?: string;
   ai_quota_daily?: number;
+  avatar_url?: string | null;
+  cover_url?: string | null;
+  headline?: string;
+  bio?: string;
   created_at?: string | null;
 };
 
@@ -99,6 +103,7 @@ export function subscribeAuth(fn: AuthListener): () => void {
 }
 
 export function getToken(): string | null {
+  consumeAuthHandoff();
   try {
     return authStore().getItem(TOKEN_KEY);
   } catch {
@@ -107,6 +112,7 @@ export function getToken(): string | null {
 }
 
 export function getStoredUser(): AuthUser | null {
+  consumeAuthHandoff();
   try {
     const raw = authStore().getItem(USER_KEY);
     if (!raw) return null;
@@ -128,6 +134,12 @@ export function setSession(token: string, user: AuthUser) {
     /* ignore */
   }
   notify();
+}
+
+export function patchStoredUser(patch: Partial<AuthUser>) {
+  const cur = getStoredUser();
+  if (!cur) return;
+  setSession(getToken() || "", { ...cur, ...patch });
 }
 
 export function clearSession() {

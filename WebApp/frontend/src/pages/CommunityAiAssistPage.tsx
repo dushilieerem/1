@@ -82,6 +82,12 @@ export function CommunityAiAssistPage() {
   const [aiDraft, setAiDraft] = useState<AiDraft | null>(null);
   const [aiFlags, setAiFlags] = useState<AgentFlag[]>([]);
   const [aiHint, setAiHint] = useState<string | null>(null);
+  // 仅在未验证 / 冲突时提示用户；已挂平台引用（verified）不刷绿条
+  const [dataTrust, setDataTrust] = useState<{
+    status?: string;
+    summary?: string;
+    label?: string;
+  } | null>(null);
 
   const [workTitle, setWorkTitle] = useState("");
   const [workBody, setWorkBody] = useState("");
@@ -164,29 +170,26 @@ export function CommunityAiAssistPage() {
     setAiFlags([]);
     setBusy(mode);
     try {
+      const ctx = {
+        title: draftTitle,
+        body: draftBody,
+        section: draftSection,
+        code_snippet: inbound?.code_snippet || "",
+        platform_ref: inbound?.platform_ref,
+      };
       const data =
         mode === "quick"
           ? await runAgent({
               mode: "single",
               goal: "润色标题与正文",
               skills: ["polish_title", "polish_body"],
-              context: {
-                title: draftTitle,
-                body: draftBody,
-                section: draftSection,
-                code_snippet: "",
-              },
+              context: ctx,
             })
           : await runAgent({
               mode: "multi",
               crew: "community_post",
               goal: "把草稿整理成可发社区帖",
-              context: {
-                title: draftTitle,
-                body: draftBody,
-                section: draftSection,
-                code_snippet: "",
-              },
+              context: ctx,
             });
 
       if (data.usage) {
@@ -197,6 +200,22 @@ export function CommunityAiAssistPage() {
         });
       }
       setAiFlags(data.board?.flags || []);
+      const arts = data.board?.artifacts as
+        | {
+            data_trust?: { status?: string; summary?: string };
+            platform_ref?: { label?: string };
+          }
+        | undefined;
+      const st = arts?.data_trust?.status;
+      if (st === "unverified" || st === "conflict") {
+        setDataTrust({
+          status: st,
+          summary: arts?.data_trust?.summary,
+          label: arts?.platform_ref?.label || inbound?.platform_ref?.label,
+        });
+      } else {
+        setDataTrust(null);
+      }
 
       if (data.status === "blocked" || data.error) {
         setErr(
@@ -326,6 +345,27 @@ export function CommunityAiAssistPage() {
         <p className="mt-2 text-xs text-slate-400">
           快速润色：改写标题和正文。深度审校：改写并检查夸大表述，必要时建议分区。
         </p>
+
+        {dataTrust &&
+          (dataTrust.status === "unverified" ||
+            dataTrust.status === "conflict") && (
+          <div
+            className={`mt-3 rounded-lg border px-3 py-2 text-xs ${
+              dataTrust.status === "conflict"
+                ? "border-amber-200 bg-amber-50 text-amber-950"
+                : "border-slate-200 bg-slate-50 text-slate-700"
+            }`}
+          >
+            <span className="font-semibold">
+              {dataTrust.status === "conflict"
+                ? "引用冲突"
+                : "指标未经验证"}
+            </span>
+            {dataTrust.summary ? (
+              <span className="mt-0.5 block opacity-90">{dataTrust.summary}</span>
+            ) : null}
+          </div>
+        )}
 
         {err && (
           <p className="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">

@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Eye, EyeOff, FlaskConical, LineChart, MessageCircle, Pencil, Pin, Star, Trash2 } from "lucide-react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Eye, EyeOff, Flag, FlaskConical, LineChart, MessageCircle, Pencil, Pin, Sparkles, Star, Trash2 } from "lucide-react";
 import { getStoredUser } from "@/lib/auth";
+import { runAgent, type AgentFlag } from "@/lib/agentApi";
 import { useConfirm } from "@/components/ConfirmDialog";
 import {
   addFavorite,
   createComment,
+  createCommunityReport,
   deleteCommunityPost,
   formatPostTime,
   getCommunityPost,
@@ -15,6 +17,7 @@ import {
   takeViewBump,
   type CommunityComment,
   type CommunityPost,
+  type ReportTargetType,
 } from "@/lib/communityApi";
 import { resolveCommunityCloneTarget } from "@/lib/communityClone";
 import {
@@ -28,17 +31,35 @@ import {
 } from "@/lib/strategyStore";
 import type { CommunityCloneState } from "@/pages/FactorCustomPage";
 import {
-  AuthorAvatar,
   CommunityBackLink,
   CommunityPageShell,
   CommunityPanel,
   SectionPill,
 } from "@/components/community/communityUi";
+import { AuthorAvatarWithCard } from "@/components/community/AuthorProfileCard";
 import {
   HighlightedCodeBlock,
   MarkdownBody,
 } from "@/components/community/MarkdownBody";
 import { CommentThread } from "@/components/community/CommentThread";
+import { ReportDialog } from "@/components/community/ReportDialog";
+
+function normalizeSummaryMd(raw: string): string {
+  let s = (raw || "").trim();
+  if (!s) return s;
+  if (s.includes("\\n") && !s.includes("\n")) {
+    s = s.replace(/\\n/g, "\n");
+  }
+  s = s.replace(/^```(?:markdown|md)?\s*/i, "").replace(/\s*```$/i, "");
+  const titles = ["背景", "方法或观点", "方法", "观点", "结论", "局限"];
+  for (const t of titles) {
+    s = s.replace(
+      new RegExp(`^(?:#{1,6}\\s*)?(?:\\*\\*)?${t}(?:\\*\\*)?\\s*[:：]?\\s*$`, "gm"),
+      `## ${t}`,
+    );
+  }
+  return s.trim();
+}
 
 export function CommunityPostPage() {
   const { id } = useParams();
@@ -57,6 +78,14 @@ export function CommunityPostPage() {
   const [highlightId, setHighlightId] = useState<number | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [modBusy, setModBusy] = useState(false);
+  const [reportTarget, setReportTarget] = useState<{
+    type: ReportTargetType;
+    commentId?: number;
+  } | null>(null);
+  const [tldrBusy, setTldrBusy] = useState(false);
+  const [tldrErr, setTldrErr] = useState<string | null>(null);
+  const [tldrSummary, setTldrSummary] = useState<string | null>(null);
+  const [tldrFlags, setTldrFlags] = useState<AgentFlag[]>([]);
 
   const postId = Number(id);
   const focusComment = Number(searchParams.get("comment") || 0);
@@ -118,6 +147,49 @@ export function CommunityPostPage() {
       window.clearTimeout(clear);
     };
   }, [focusComment, loading, comments.length]);
+
+  const onGenerateTldr = async () => {
+    if (!post) return;
+    if (!user) {
+      navigate(`/login?next=${encodeURIComponent(`/community/post/${post.id}`)}`);
+      return;
+    }
+    setTldrErr(null);
+    setTldrBusy(true);
+    try {
+      const res = await runAgent({
+        mode: "multi",
+        crew: "community_read",
+        goal: "为社区帖生成 TL;DR 摘要",
+        context: {
+          post_id: post.id,
+          title: post.title || "",
+          body: post.body || "",
+          code_snippet: post.code_snippet || "",
+          with_risks: true,
+          ...(post.platform_ref ? { platform_ref: post.platform_ref } : {}),
+        },
+      });
+      if (!res.ok) {
+        throw new Error(res.error || "生成摘要失败");
+      }
+      const md =
+        res.outputs?.summary_md ||
+        res.board?.summary_md ||
+        "";
+      if (!md.trim()) {
+        throw new Error("摘要为空，请重试");
+      }
+      setTldrSummary(normalizeSummaryMd(md));
+      setTldrFlags(
+        (res.outputs?.flags || res.board?.flags || []) as AgentFlag[],
+      );
+    } catch (ex) {
+      setTldrErr(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setTldrBusy(false);
+    }
+  };
 
   const onToggleFavorite = async () => {
     if (!post) return;
@@ -297,24 +369,27 @@ export function CommunityPostPage() {
 
   return (
     <CommunityPageShell>
-      <div className="mx-auto max-w-[1120px] space-y-5 px-5 py-6 animate-fade-up">
-        <CommunityBackLink />
+      {/* 知乎式：主栏左移、右侧栏给摘要；主栏仍 max-w 1120，卡片宽度不变 */}
+      <div className="mx-auto max-w-[1440px] px-5 py-6 animate-fade-up">
+        <div className="flex items-start gap-5">
+          <div className="w-full min-w-0 max-w-[1120px] space-y-5">
+            <CommunityBackLink />
 
-        {isHidden && isAdmin ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <span>该帖已下架，游客与普通用户不可见。</span>
-            <button
-              type="button"
-              disabled={modBusy}
-              onClick={() => void onModerate({ status: "published" })}
-              className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-60"
-            >
-              恢复显示
-            </button>
-          </div>
-        ) : null}
+            {isHidden && isAdmin ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <span>该帖已下架，游客与普通用户不可见。</span>
+                <button
+                  type="button"
+                  disabled={modBusy}
+                  onClick={() => void onModerate({ status: "published" })}
+                  className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-60"
+                >
+                  恢复显示
+                </button>
+              </div>
+            ) : null}
 
-        <CommunityPanel>
+            <CommunityPanel>
           <header className="border-b border-slate-100 px-6 py-6 sm:px-8">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
@@ -399,24 +474,44 @@ export function CommunityPostPage() {
                     </span>
                   </>
                 ) : (
-                  <button
-                    type="button"
-                    disabled={favBusy || isHidden}
-                    onClick={() => void onToggleFavorite()}
-                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:opacity-60 ${
-                      favorited
-                        ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                        : "border-slate-200 bg-white text-slate-600 hover:border-amber-200 hover:bg-amber-50/60 hover:text-amber-700"
-                    }`}
-                  >
-                    <Star
-                      className={`h-4 w-4 ${favorited ? "fill-amber-500 text-amber-500" : ""}`}
-                    />
-                    {favorited ? "已收藏" : "收藏"}
-                    <span className="text-xs opacity-70">
-                      {post.favorite_count ?? 0}
-                    </span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      disabled={favBusy || isHidden}
+                      onClick={() => void onToggleFavorite()}
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:opacity-60 ${
+                        favorited
+                          ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-amber-200 hover:bg-amber-50/60 hover:text-amber-700"
+                      }`}
+                    >
+                      <Star
+                        className={`h-4 w-4 ${favorited ? "fill-amber-500 text-amber-500" : ""}`}
+                      />
+                      {favorited ? "已收藏" : "收藏"}
+                      <span className="text-xs opacity-70">
+                        {post.favorite_count ?? 0}
+                      </span>
+                    </button>
+                    {!isHidden ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!user) {
+                            navigate(
+                              `/login?next=${encodeURIComponent(`/community/post/${post.id}`)}`,
+                            );
+                            return;
+                          }
+                          setReportTarget({ type: "post" });
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:border-amber-200 hover:bg-amber-50/60 hover:text-amber-800"
+                      >
+                        <Flag className="h-4 w-4" />
+                        举报
+                      </button>
+                    ) : null}
+                  </>
                 )}
               </div>
             </div>
@@ -425,7 +520,12 @@ export function CommunityPostPage() {
             </h1>
             <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-slate-500">
               <span className="inline-flex items-center gap-2 font-medium text-slate-700">
-                <AuthorAvatar name={authorName} size="md" />
+                <AuthorAvatarWithCard
+                  username={post.author.username}
+                  name={authorName}
+                  src={post.author.avatar_url}
+                  size="md"
+                />
                 {authorName}
               </span>
               <span>发布于 {formatPostTime(post.created_at)}</span>
@@ -491,6 +591,7 @@ export function CommunityPostPage() {
             postAuthorId={post.author.id}
             highlightId={highlightId}
             canInteract={!!user}
+            currentUserId={user?.id}
             onNeedLogin={() =>
               navigate(
                 `/login?next=${encodeURIComponent(`/community/post/${post.id}`)}`,
@@ -508,9 +609,96 @@ export function CommunityPostPage() {
                 comment_count: (post.comment_count || 0) + 1,
               });
             }}
+            onReportComment={(c) => {
+              setReportTarget({ type: "comment", commentId: c.id });
+            }}
           />
         </CommunityPanel>
+          </div>
+
+          <aside className="sticky top-24 hidden w-[300px] shrink-0 self-start pt-8 xl:block">
+            <div className="space-y-3">
+              <button
+                type="button"
+                disabled={tldrBusy || isHidden}
+                onClick={() => void onGenerateTldr()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200/80 bg-white px-3 py-1.5 text-sm font-semibold text-sky-800 shadow-sm transition hover:bg-sky-50 disabled:opacity-60"
+              >
+                <Sparkles className="h-4 w-4" />
+                {tldrBusy ? "生成中…" : tldrSummary ? "重新生成" : "生成摘要"}
+              </button>
+              {tldrErr ? <p className="text-sm text-red-600">{tldrErr}</p> : null}
+              {tldrSummary ? (
+                <div className="max-h-[calc(100vh-8rem)] overflow-y-auto rounded-xl border border-slate-200/80 bg-white px-3.5 py-3 shadow-sm">
+                  <MarkdownBody
+                    source={tldrSummary}
+                    forceMarkdown
+                    className="text-[13px] leading-6 [&_h2]:mb-1.5 [&_h2]:mt-3 [&_h2]:text-[15px] [&_h2]:first:mt-0 [&_li]:leading-6 [&_p]:mb-2 [&_p]:leading-6"
+                  />
+                  {tldrFlags.length > 0 ? (
+                    <div className="mt-3 border-t border-slate-100 pt-2">
+                      <p className="mb-1 text-[12px] font-medium text-slate-600">阅读提示</p>
+                      <ul className="space-y-1 text-[12px] leading-relaxed text-slate-500">
+                        {tldrFlags.map((f, i) => (
+                          <li key={`${f.code || "flag"}-${i}`}>
+                            · {f.message || f.code || "阅读提示"}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="rounded-lg bg-white/70 px-3.5 py-3 text-[13px] leading-relaxed text-slate-500">
+                  AI 读帖助手会提炼背景、方法与结论，并标出阅读时需注意的局限。点上方即可生成短摘要。
+                </p>
+              )}
+            </div>
+          </aside>
+        </div>
       </div>
+
+      <div className="fixed bottom-5 right-5 z-30 w-[min(20rem,calc(100vw-2rem))] space-y-2 xl:hidden">
+        <button
+          type="button"
+          disabled={tldrBusy || isHidden}
+          onClick={() => void onGenerateTldr()}
+          className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-white px-3.5 py-2 text-sm font-semibold text-sky-800 shadow-md transition hover:bg-sky-50 disabled:opacity-60"
+        >
+          <Sparkles className="h-4 w-4" />
+          {tldrBusy ? "生成中…" : tldrSummary ? "重新生成" : "生成摘要"}
+        </button>
+        {tldrErr ? (
+          <p className="rounded-lg bg-white px-3 py-2 text-sm text-red-600 shadow">{tldrErr}</p>
+        ) : null}
+        {tldrSummary ? (
+          <div className="max-h-[40vh] overflow-y-auto rounded-xl border border-slate-200 bg-white px-3.5 py-3 shadow-lg">
+            <h2 className="mb-2 text-sm font-semibold text-slate-800">AI 摘要</h2>
+            <MarkdownBody
+              source={tldrSummary}
+              forceMarkdown
+              className="text-[13px] leading-6 [&_h2]:mb-1.5 [&_h2]:mt-3 [&_h2]:text-[15px] [&_h2]:first:mt-0"
+            />
+          </div>
+        ) : null}
+      </div>
+
+      <ReportDialog
+        open={!!reportTarget}
+        targetType={reportTarget?.type || "post"}
+        onClose={() => setReportTarget(null)}
+        onSubmit={async ({ reason, detail }) => {
+          if (!reportTarget || !post) return;
+          await createCommunityReport({
+            target_type: reportTarget.type,
+            post_id: post.id,
+            comment_id:
+              reportTarget.type === "comment" ? reportTarget.commentId : null,
+            reason,
+            detail,
+          });
+        }}
+      />
     </CommunityPageShell>
   );
 }

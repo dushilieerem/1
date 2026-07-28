@@ -51,6 +51,7 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
 | 模块 | 方法 | 端点 | 说明 |
 |------|------|------|------|
 | 系统 | GET | `/api/health` | 健康检查 |
+| 市场数据 | GET | `/api/market-data/daily/{symbol}` | 指定股票的历史日线 OHLC |
 | 因子回测 | POST | `/api/backtest/factor` | 因子选股回测（系统内置选股策略） |
 | 策略回测 | POST | `/api/backtest/strategy` | 自定义策略回测（用户提供完整策略逻辑） |
 
@@ -72,7 +73,27 @@ uvicorn researchengine.api.app:app --reload      # 开发（热重载）
 
 ---
 
-### 4.2 因子回测
+### 4.2 市场数据
+
+#### `GET /api/market-data/daily/{symbol}`
+
+返回当前已发布市场数据中的指定股票完整日线。`start`、`end` 为可选 `YYYY-MM-DD` 查询参数，边界包含在内；未提供时返回全部可用区间。
+
+```json
+{
+  "symbol": "000001.SZ",
+  "bars": [
+    {"date": "2024-01-02", "open": 10.1, "high": 10.5, "low": 10.0, "close": 10.3}
+  ],
+  "date_range": {"start": "2024-01-02", "end": "2024-06-28"}
+}
+```
+
+服务仅返回 OHLC 均完整的交易日。代码不存在或区间内没有完整日线时返回 `404`；数据目录或任一 OHLC 字段不可读时返回 `503`；倒置的 `start`、`end` 返回 `422`。本端点只读取已发布历史 Parquet，不提供实时行情、复权切换、成交量或技术指标。
+
+---
+
+### 4.3 因子回测
 
 因子回测适用于**因子选股研究**——系统使用内置 FactorQuantileStrategy 按因子值排序选股，生成组合净值。直接回测服务端内置因子时使用 `library_name` 加 `factor_name`；用户上传自定义因子时使用 `factor_code` 加 `factor_name`，还可附带一个或多个 `library_name` 以组合内置因子。
 
@@ -293,7 +314,7 @@ IC 分布图由前端使用 `ic_series[].value` 自行分桶。行业主数据�
 `stock_info.parquet` 缺失有效的 `code/symbol/ts_code -> industry` 映射时，两个行业曲线数组为空而回测不失败。
 行业曲线均使用固定本金净值，行业分组按日、在行业内独立分组。
 
-### 4.3 策略回测
+### 4.4 策略回测
 
 策略回测适用于**自定义策略逻辑**——用户提供完整的策略代码（含信号生成逻辑），
 系统执行回测。当因子回测的 FactorQuantileStrategy 不满足需求时使用。

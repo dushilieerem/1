@@ -1,8 +1,13 @@
 import type { WeightMode } from "./detectStore";
 import type { FactorMeta } from "./factorCatalog";
 
-/** ResearchEngine 支持 library_name 加载的完整内置库（含私有 _xxx） */
+/** ResearchEngine 支持 library_name 加载的完整内置库（含私有 _xxx / 动态注册） */
 export const RE_BUILTIN_LIBS = new Set([
+  "emotion_indicators",
+  "risk_indicators",
+  "technical_indicators",
+  "alpha_features",
+  // 旧名兼容
   "alpha_library",
   "qlib_alpha",
   "jq_compat_technical",

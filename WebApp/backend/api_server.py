@@ -252,6 +252,35 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
             return
+        if path == "/api/community/reports":
+            from services.auth_store import user_from_authorization
+            from services.community_store import list_reports
+
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                status = (qs.get("status") or ["open"])[0]
+                limit = int((qs.get("limit") or ["50"])[0])
+                offset = int((qs.get("offset") or ["0"])[0])
+                self._send_json(
+                    list_reports(
+                        author_role=str(user.get("role") or "user"),
+                        status=status,
+                        limit=limit,
+                        offset=offset,
+                    )
+                )
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 403)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
         if path == "/api/community/notifications":
             from services.auth_store import user_from_authorization
             from services.community_store import list_notifications
@@ -515,16 +544,104 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
 
+        if path.startswith("/api/users/") and path.endswith("/posts"):
+            from services.auth_store import user_from_authorization
+            from services.profile_store import list_user_posts
+            from urllib.parse import unquote as _unq
+
+            rest = _unq(path[len("/api/users/") : -len("/posts")]).strip("/")
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                limit = int((qs.get("limit") or ["20"])[0])
+                offset = int((qs.get("offset") or ["0"])[0])
+                section = (qs.get("section") or [None])[0]
+                user_from_authorization(self._auth_header())
+                self._send_json(
+                    list_user_posts(
+                        rest, limit=limit, offset=offset, section=section
+                    )
+                )
+            except KeyError:
+                self._send_json({"error": "用户不存在"}, 404)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+
+        if path.startswith("/api/users/") and (
+            path.endswith("/following") or path.endswith("/followers")
+        ):
+            from services.auth_store import user_from_authorization
+            from services.profile_store import list_user_follows
+            from urllib.parse import unquote as _unq
+
+            kind = "following" if path.endswith("/following") else "followers"
+            suffix = f"/{kind}"
+            rest = _unq(path[len("/api/users/") : -len(suffix)]).strip("/")
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                limit = int((qs.get("limit") or ["30"])[0])
+                offset = int((qs.get("offset") or ["0"])[0])
+                viewer = user_from_authorization(self._auth_header())
+                self._send_json(
+                    list_user_follows(
+                        rest,
+                        kind=kind,
+                        viewer_id=int(viewer["id"]) if viewer else None,
+                        limit=limit,
+                        offset=offset,
+                    )
+                )
+            except KeyError:
+                self._send_json({"error": "用户不存在"}, 404)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+
+        if path.startswith("/api/users/"):
+            from services.auth_store import user_from_authorization
+            from services.profile_store import get_public_profile
+            from urllib.parse import unquote as _unq
+
+            rest = _unq(path[len("/api/users/") :]).strip("/")
+            if "/" in rest or not rest:
+                self._send_json({"error": "not found"}, 404)
+                return
+            try:
+                viewer = user_from_authorization(self._auth_header())
+                self._send_json(
+                    get_public_profile(
+                        rest,
+                        viewer_id=int(viewer["id"]) if viewer else None,
+                    )
+                )
+            except KeyError:
+                self._send_json({"error": "用户不存在"}, 404)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+
         if path == "/api/agent/usage/me":
             from services.agent_store import usage_summary_for_user
             from services.auth_store import user_from_authorization
 
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                days = int((qs.get("days") or ["7"])[0] or 7)
+            except ValueError:
+                days = 7
             try:
                 user = user_from_authorization(self._auth_header())
                 if not user:
                     self._send_json({"error": "未登录"}, 401)
                     return
-                self._send_json(usage_summary_for_user(int(user["id"])))
+                self._send_json(usage_summary_for_user(int(user["id"]), days=days))
             except PermissionError as exc:
                 self._send_json({"error": str(exc)}, 401)
             except Exception as exc:
@@ -776,6 +893,35 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
             return
+        if path == "/api/factor/dashboard/verify":
+            from services.auth_store import user_from_authorization
+            from services.dashboard_store import set_verify_status
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                if user.get("role") != "admin":
+                    self._send_json({"error": "仅管理员可修改校验状态"}, 403)
+                    return
+                updated_by = str(
+                    user.get("username") or user.get("display_name") or user.get("id") or ""
+                )
+                self._send_json(
+                    set_verify_status(
+                        factor_name=str(body.get("factor_name") or ""),
+                        status=str(body.get("status") or ""),
+                        note=str(body.get("note") or ""),
+                        updated_by=updated_by,
+                    )
+                )
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
         if path == "/api/community/posts":
             from services.auth_store import user_from_authorization
             from services.community_store import create_post
@@ -794,10 +940,150 @@ class Handler(BaseHTTPRequestHandler):
                         code_snippet=(str(body["code_snippet"]) if body.get("code_snippet") else None),
                         author_role=str(user.get("role") or "user"),
                         status=str(body.get("status") or "published"),
+                        platform_ref=body.get("platform_ref"),
                     )
                 )
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/community/reports":
+            from services.auth_store import user_from_authorization
+            from services.community_store import create_report
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                comment_raw = body.get("comment_id")
+                comment_id = None
+                if comment_raw is not None and str(comment_raw).strip() != "":
+                    comment_id = int(comment_raw)
+                self._send_json(
+                    create_report(
+                        int(user["id"]),
+                        target_type=str(body.get("target_type") or ""),
+                        post_id=int(body.get("post_id") or 0),
+                        comment_id=comment_id,
+                        reason=str(body.get("reason") or ""),
+                        detail=str(body.get("detail") or ""),
+                    )
+                )
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path.startswith("/api/community/reports/") and path.endswith("/resolve"):
+            from services.auth_store import user_from_authorization
+            from services.community_store import resolve_report
+
+            rest = unquote(path[len("/api/community/reports/") : -len("/resolve")]).strip("/")
+            try:
+                report_id = int(rest)
+            except ValueError:
+                self._send_json({"error": "invalid report id"}, 400)
+                return
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                self._send_json(
+                    resolve_report(
+                        report_id,
+                        author_role=str(user.get("role") or "user"),
+                        resolver_id=int(user["id"]),
+                        status=str(body.get("status") or "resolved"),
+                    )
+                )
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 403)
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/profile/me":
+            from services.auth_store import user_from_authorization
+            from services.profile_store import update_my_profile
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                kwargs: dict = {}
+                if "display_name" in body:
+                    kwargs["display_name"] = body.get("display_name")
+                if "headline" in body:
+                    kwargs["headline"] = body.get("headline")
+                if "bio" in body:
+                    kwargs["bio"] = body.get("bio")
+                if "avatar_url" in body:
+                    kwargs["avatar_url"] = body.get("avatar_url")
+                if "cover_url" in body:
+                    kwargs["cover_url"] = body.get("cover_url")
+                self._send_json(update_my_profile(int(user["id"]), **kwargs))
+            except KeyError:
+                self._send_json({"error": "用户不存在"}, 404)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path.startswith("/api/users/") and path.endswith("/follow"):
+            from services.auth_store import user_from_authorization
+            from services.profile_store import follow_user
+            from urllib.parse import unquote as _unq
+
+            rest = _unq(path[len("/api/users/") : -len("/follow")]).strip("/")
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                self._send_json(follow_user(int(user["id"]), rest))
+            except KeyError:
+                self._send_json({"error": "用户不存在"}, 404)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/agent/usage/quota":
+            from services.agent_store import set_user_ai_quota
+            from services.auth_store import user_from_authorization
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                self._send_json(
+                    set_user_ai_quota(
+                        author_role=str(user.get("role") or "user"),
+                        user_id=int(body.get("user_id") or 0),
+                        quota_daily=int(body.get("quota_daily")),
+                    )
+                )
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 403)
+            except KeyError:
+                self._send_json({"error": "用户不存在"}, 404)
+            except (TypeError, ValueError) as exc:
+                self._send_json({"error": str(exc) or "参数无效"}, 400)
             except Exception as exc:
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
@@ -1051,6 +1337,8 @@ class Handler(BaseHTTPRequestHandler):
                         status=(
                             str(body["status"]) if body.get("status") is not None else None
                         ),
+                        platform_ref=body.get("platform_ref"),
+                        clear_platform_ref=bool(body.get("clear_platform_ref")),
                     )
                 )
             except PermissionError as exc:
@@ -1112,6 +1400,24 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json({"error": "未登录"}, 401)
                     return
                 self._send_json(remove_favorite(int(user["id"]), post_id))
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path.startswith("/api/users/") and path.endswith("/follow"):
+            from services.auth_store import user_from_authorization
+            from services.profile_store import unfollow_user
+            from urllib.parse import unquote as _unq
+
+            rest = _unq(path[len("/api/users/") : -len("/follow")]).strip("/")
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                self._send_json(unfollow_user(int(user["id"]), rest))
+            except KeyError:
+                self._send_json({"error": "用户不存在"}, 404)
             except Exception as exc:
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
@@ -1277,6 +1583,9 @@ def main() -> None:
 
         ensure_schema()
         seed_admin()
+        from services.profile_store import ensure_schema as ensure_profile_schema
+
+        ensure_profile_schema()
         ensure_ai_usage_schema()
         ensure_posts_schema()
         n = seed_sample_posts()
@@ -1314,6 +1623,13 @@ def main() -> None:
     print("  POST /api/auth/register")
     print("  POST /api/auth/login")
     print("  GET  /api/auth/me")
+    print("  GET  /api/users/{username}")
+    print("  GET  /api/users/{username}/posts")
+    print("  GET  /api/users/{username}/following")
+    print("  GET  /api/users/{username}/followers")
+    print("  POST /api/profile/me")
+    print("  POST /api/users/{username}/follow")
+    print("  DELETE /api/users/{username}/follow")
     print("  GET  /api/factor/index")
     print("  GET  /api/factor/file/{name}.py")
     print("  POST /api/factor/custom")
@@ -1323,11 +1639,15 @@ def main() -> None:
     print("  GET  /api/factor/dashboard")
     print("  GET  /api/factor/dashboard/status")
     print("  POST /api/factor/dashboard/refresh")
+    print("  POST /api/factor/dashboard/verify")
     print("  GET  /api/community/posts")
     print("  GET  /api/community/hot")
     print("  GET  /api/community/favorites")
     print("  GET  /api/community/my-posts")
     print("  GET  /api/community/moderation")
+    print("  GET  /api/community/reports")
+    print("  POST /api/community/reports")
+    print("  POST /api/community/reports/{id}/resolve")
     print("  GET  /api/community/notifications")
     print("  GET  /api/community/notifications/unread-count")
     print("  POST /api/community/notifications/read")
@@ -1361,6 +1681,7 @@ def main() -> None:
     print("  POST /api/agent/runs")
     print("  GET  /api/agent/usage/me")
     print("  GET  /api/agent/usage")
+    print("  POST /api/agent/usage/quota")
     print("=" * 48)
     server.serve_forever()
 

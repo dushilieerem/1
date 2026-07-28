@@ -53,6 +53,16 @@ def ensure_schema() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_users_status ON users (status)"
         )
+        for col_sql in (
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_url TEXT",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS headline TEXT",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT",
+        ):
+            try:
+                conn.execute(col_sql)
+            except Exception:
+                pass
 
 
 def hash_password(password: str) -> str:
@@ -75,6 +85,10 @@ def _public_user(row: dict[str, Any]) -> dict[str, Any]:
         "status": row["status"],
         "display_name": row.get("display_name") or row["username"],
         "ai_quota_daily": row.get("ai_quota_daily", 200),
+        "avatar_url": row.get("avatar_url") or None,
+        "cover_url": row.get("cover_url") or None,
+        "headline": row.get("headline") or "",
+        "bio": row.get("bio") or "",
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
     }
 

@@ -22,6 +22,10 @@ class CustomLib(FactorLibrary):
         ret = self.close.pct_change()
         return ret.rolling(20).std()
 
+    def u1_stock_mom_20(self):
+        """个股近 20 日累计收益动量（可克隆到因子检测）"""
+        return self.close.pct_change(20)
+
     def u3_realized_vol_20d(self):
         ret = self.close.pct_change()
         return ret.rolling(20).std()

@@ -39,11 +39,16 @@ export type AgentRunResult = {
     votes?: { agent?: string; decision?: string; reason?: string }[];
     artifacts?: Record<string, unknown>;
     section?: string;
+    summary_md?: string;
+    source_post_id?: number | null;
+    truncated?: boolean;
   };
   outputs: {
     title?: string;
     body?: string;
     section?: string;
+    summary_md?: string;
+    flags?: AgentFlag[];
   };
   usage: {
     tokens_in: number;
@@ -63,7 +68,21 @@ export type AgentUsageMe = {
   used_today: number;
   remaining: number;
   day: string;
+  days?: number;
+  totals?: {
+    calls: number;
+    runs: number;
+    tokens_in: number;
+    tokens_out: number;
+  };
+  by_day?: {
+    day: string;
+    calls: number;
+    tokens_in: number;
+    tokens_out: number;
+  }[];
   by_skill?: { skill: string; calls: number; tokens_in: number; tokens_out: number }[];
+  by_skill_today?: { skill: string; calls: number; tokens_in: number; tokens_out: number }[];
 };
 
 export type AgentUsageAdmin = {
@@ -77,6 +96,11 @@ export type AgentUsageAdmin = {
   by_user: {
     user_id: number;
     username: string;
+    display_name?: string | null;
+    role?: string;
+    quota_daily: number;
+    used_today: number;
+    remaining?: number;
     calls: number;
     tokens_in: number;
     tokens_out: number;
@@ -107,6 +131,17 @@ export async function runAgent(payload: {
     body?: string;
     section?: string;
     code_snippet?: string;
+    post_id?: number;
+    with_risks?: boolean;
+    platform_ref?: {
+      source?: string;
+      label?: string;
+      factor_name?: string;
+      universe?: string;
+      period?: string;
+      metrics_display?: Record<string, string>;
+      metrics?: Record<string, number | null | undefined>;
+    };
   };
 }): Promise<AgentRunResult> {
   const res = await fetch("/api/agent/runs", {
@@ -120,8 +155,8 @@ export async function runAgent(payload: {
   return readJson<AgentRunResult>(res);
 }
 
-export async function getMyAgentUsage(): Promise<AgentUsageMe> {
-  const res = await fetch("/api/agent/usage/me", {
+export async function getMyAgentUsage(days = 7): Promise<AgentUsageMe> {
+  const res = await fetch(`/api/agent/usage/me?days=${days}`, {
     headers: { ...authHeaders() },
   });
   return readJson<AgentUsageMe>(res);
@@ -132,4 +167,23 @@ export async function getAdminAgentUsage(days = 7): Promise<AgentUsageAdmin> {
     headers: { ...authHeaders() },
   });
   return readJson<AgentUsageAdmin>(res);
+}
+
+export async function setUserAgentQuota(userId: number, quotaDaily: number) {
+  const res = await fetch("/api/agent/usage/quota", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ user_id: userId, quota_daily: quotaDaily }),
+  });
+  return readJson<{
+    ok: boolean;
+    user: {
+      user_id: number;
+      username: string;
+      display_name?: string;
+      quota_daily: number;
+      used_today: number;
+      remaining: number;
+    };
+  }>(res);
 }

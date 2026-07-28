@@ -1,7 +1,11 @@
 export const NAV_ITEMS = [
   { to: "/", label: "首页" },
-  { to: "/data", label: "数据" },
   { to: "/community", label: "社区" },
+] as const;
+
+export const DATA_NAV_ITEMS = [
+  { to: "/data/kline", label: "K线面板" },
+  { to: "/data/watchlist", label: "自选股组合（待开发）" },
 ] as const;
 
 export const STRATEGY_NAV_ITEMS = [

@@ -104,21 +104,24 @@ function looksLikeHtml(source: string): boolean {
 export function MarkdownBody({
   source,
   className = "",
+  /** 读帖摘要等场景：强制按 Markdown 解析，避免模型夹杂尖括号被当成 HTML */
+  forceMarkdown = false,
 }: {
   source: string;
   className?: string;
+  forceMarkdown?: boolean;
 }) {
   const text = source.trim();
   const [preview, setPreview] = useState<string | null>(null);
   const html = useMemo(() => {
-    if (!text || !looksLikeHtml(text)) return null;
+    if (forceMarkdown || !text || !looksLikeHtml(text)) return null;
     const clean = DOMPurify.sanitize(text, {
       USE_PROFILES: { html: true },
       ADD_DATA_URI_TAGS: ["img"],
       ADD_ATTR: ["class", "style"],
     });
     return highlightHtmlCodeBlocks(clean);
-  }, [text]);
+  }, [text, forceMarkdown]);
 
   const onClickImg = (e: MouseEvent<HTMLElement>) => {
     const t = e.target;

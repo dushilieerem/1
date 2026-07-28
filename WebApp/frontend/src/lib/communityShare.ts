@@ -1,5 +1,21 @@
 import type { CommunitySection } from "@/lib/communityApi";
 
+/** 发帖助手 / Critic：平台结果引用（有则背书数字） */
+export type PlatformMetricsRef = {
+  source: "factor_panel" | "factor_detect" | "strategy_report" | string;
+  label: string;
+  factor_name?: string;
+  universe?: string;
+  period?: string;
+  /** 面板查库用码，如 CSI300 / 3y */
+  universe_code?: string;
+  period_code?: string;
+  library?: string;
+  filter_limit_up?: boolean;
+  metrics_display: Record<string, string>;
+  metrics?: Record<string, number | null | undefined>;
+};
+
 /** 发帖页 location.state 预填（报告分享 / 其它入口） */
 export type CommunityShareDraft = {
   shareDraft?: true;
@@ -11,6 +27,8 @@ export type CommunityShareDraft = {
   /** 取消 / 左上角返回：回到分享来源页（检测报告 / 策略报告） */
   returnTo?: string;
   returnLabel?: string;
+  /** 面板/报告带来的真源指标；AI 助手只认这个 */
+  platform_ref?: PlatformMetricsRef;
 };
 
 function pct(x?: number | null) {
@@ -95,6 +113,17 @@ export function buildFactorDetectShareDraft(input: {
 
   const code = resolveShareFactorCode(input);
 
+  const metrics_display: Record<string, string> = {};
+  const put = (k: string, v: string | null | undefined) => {
+    if (v != null && String(v).trim()) metrics_display[k] = String(v);
+  };
+  put("年化", pct(m?.annual_return) || undefined);
+  put("夏普", num(m?.sharpe) || undefined);
+  put("最大回撤", pct(m?.max_drawdown) || undefined);
+  put("Rank IC", num(m?.rank_ic ?? m?.ic) || undefined);
+  put("胜率", pct(m?.win_rate) || undefined);
+  put("超额", pct(input.excessReturn) || undefined);
+
   return {
     shareDraft: true,
     section: "factor",
@@ -103,6 +132,24 @@ export function buildFactorDetectShareDraft(input: {
     code_snippet: code || undefined,
     returnTo: input.returnTo,
     returnLabel: input.returnLabel,
+    platform_ref: Object.keys(metrics_display).length
+      ? {
+          source: "factor_detect",
+          label: `因子检测 · ${titleBase}${input.universeLabel ? ` · ${input.universeLabel}` : ""}${input.rangeLabel ? ` · ${input.rangeLabel}` : ""}`,
+          factor_name: titleBase,
+          universe: input.universeLabel,
+          period: input.rangeLabel,
+          metrics_display,
+          metrics: {
+            annual_return: m?.annual_return ?? undefined,
+            sharpe: m?.sharpe ?? undefined,
+            max_drawdown: m?.max_drawdown ?? undefined,
+            rank_ic: m?.rank_ic ?? m?.ic ?? undefined,
+            win_rate: m?.win_rate ?? undefined,
+            excess_return: input.excessReturn ?? undefined,
+          },
+        }
+      : undefined,
   };
 }
 
@@ -191,6 +238,34 @@ export function buildStrategyShareDraft(input: {
     code_snippet: (input.strategyCode || "").trim() || undefined,
     returnTo: input.returnTo,
     returnLabel: input.returnLabel,
+    platform_ref: (() => {
+      const metrics_display: Record<string, string> = {};
+      const put = (k: string, v: string | null | undefined) => {
+        if (v != null && String(v).trim()) metrics_display[k] = String(v);
+      };
+      put("年化", pct(m?.annual_return) || undefined);
+      put("夏普", num(m?.sharpe) || undefined);
+      put("最大回撤", pct(m?.max_drawdown) || undefined);
+      put("胜率", pct(m?.win_rate) || undefined);
+      put("累计收益", pct(m?.total_return ?? m?.cumulative_return) || undefined);
+      put("超额", pct(input.excessReturn) || undefined);
+      if (!Object.keys(metrics_display).length) return undefined;
+      return {
+        source: "strategy_report" as const,
+        label: `策略回测 · ${titleBase}${input.universeLabel ? ` · ${input.universeLabel}` : ""}${input.rangeLabel ? ` · ${input.rangeLabel}` : ""}`,
+        universe: input.universeLabel,
+        period: input.rangeLabel,
+        metrics_display,
+        metrics: {
+          annual_return: m?.annual_return ?? undefined,
+          sharpe: m?.sharpe ?? undefined,
+          max_drawdown: m?.max_drawdown ?? undefined,
+          win_rate: m?.win_rate ?? undefined,
+          total_return: m?.total_return ?? m?.cumulative_return ?? undefined,
+          excess_return: input.excessReturn ?? undefined,
+        },
+      };
+    })(),
   };
 }
 
@@ -214,6 +289,9 @@ export function buildFactorPanelShareDraft(input: {
   libraryLabel?: string | null;
   universeLabel?: string;
   periodLabel?: string;
+  universeCode?: string;
+  periodCode?: string;
+  filterLimitUp?: boolean;
   filterLabel?: string;
   metrics?: {
     ic_mean?: number | null;
@@ -279,6 +357,30 @@ export function buildFactorPanelShareDraft(input: {
     factorName: fname,
   });
 
+  const metrics_display: Record<string, string> = {};
+  const put = (k: string, v: string | null | undefined) => {
+    if (v != null && String(v).trim()) metrics_display[k] = String(v);
+  };
+  put("IC均值", panelIc(m?.ic_mean) || undefined);
+  put("Rank IC", panelIc(m?.rank_ic) || undefined);
+  put("IR", num(m?.ir) || undefined);
+  put("年化", panelPct(m?.annual_return) || undefined);
+  put("最大回撤", panelPct(m?.max_drawdown) || undefined);
+  put("夏普", num(m?.sharpe) || undefined);
+  put("胜率", panelPct(m?.win_rate) || undefined);
+  put("Q1收益", panelPct(m?.q1_return) || undefined);
+  put("Q5收益", panelPct(m?.q5_return) || undefined);
+  put("多空价差", panelPct(m?.long_short_spread) || undefined);
+  put("Q1换手", panelPct(m?.q1_turnover) || undefined);
+
+  const labelParts = [
+    "因子面板",
+    display,
+    input.universeLabel,
+    input.periodLabel,
+    input.filterLabel,
+  ].filter(Boolean);
+
   return {
     shareDraft: true,
     section: "factor",
@@ -287,5 +389,29 @@ export function buildFactorPanelShareDraft(input: {
     code_snippet: code || undefined,
     returnTo: input.returnTo,
     returnLabel: input.returnLabel,
+    platform_ref: Object.keys(metrics_display).length
+      ? {
+          source: "factor_panel",
+          label: labelParts.join(" · "),
+          factor_name: fname,
+          universe: input.universeLabel,
+          period: input.periodLabel,
+          universe_code: input.universeCode,
+          period_code: input.periodCode,
+          library: input.libraryName || undefined,
+          filter_limit_up: input.filterLimitUp,
+          metrics_display,
+          metrics: {
+            // 展示用小数 IC；库内百分数点 → /100
+            ic_mean: m?.ic_mean != null ? m.ic_mean / 100 : undefined,
+            rank_ic: m?.rank_ic != null ? m.rank_ic / 100 : undefined,
+            ir: m?.ir ?? undefined,
+            annual_return: m?.annual_return != null ? m.annual_return / 100 : undefined,
+            max_drawdown: m?.max_drawdown != null ? m.max_drawdown / 100 : undefined,
+            sharpe: m?.sharpe ?? undefined,
+            win_rate: m?.win_rate != null ? m.win_rate / 100 : undefined,
+          },
+        }
+      : undefined,
   };
 }

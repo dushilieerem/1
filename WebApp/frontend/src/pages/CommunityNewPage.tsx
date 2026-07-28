@@ -65,6 +65,7 @@ export function CommunityNewPage() {
   );
   const [body, setBody] = useState(() => draft.body || "");
   const [code, setCode] = useState(() => draft.code_snippet || "");
+  const [platformRef] = useState(() => draft.platform_ref);
   const [postStatus, setPostStatus] = useState<"draft" | "published">("published");
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -156,6 +157,7 @@ export function CommunityNewPage() {
     section,
     code_snippet: code.trim() || undefined,
     status,
+    ...(platformRef ? { platform_ref: platformRef } : {}),
   });
 
   const save = async (status: "draft" | "published") => {
@@ -210,7 +212,7 @@ export function CommunityNewPage() {
   };
 
   const cancelTo = isDraftDoc
-    ? "/community/drafts"
+    ? "/community/me?tab=drafts"
     : workingId > 0 && !isDraftDoc
       ? `/community/post/${workingId}`
       : draft.returnTo || "/community";
@@ -233,6 +235,7 @@ export function CommunityNewPage() {
       section,
       code_snippet: code,
       returnTo,
+      platform_ref: platformRef,
     });
     navigate("/community/ai-assist");
   };

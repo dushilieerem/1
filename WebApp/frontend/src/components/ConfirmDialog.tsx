@@ -14,6 +14,8 @@ export type ConfirmOptions = {
   cancelLabel?: string;
   /** 确认按钮用危险色（删除等） */
   danger?: boolean;
+  /** 仅「确定」按钮（成功提示等） */
+  alert?: boolean;
 };
 
 type AskConfirm = (opts: ConfirmOptions | string) => Promise<boolean>;
@@ -35,6 +37,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         confirmLabel: normalized.confirmLabel || "确定",
         cancelLabel: normalized.cancelLabel || "取消",
         danger: !!normalized.danger,
+        alert: !!normalized.alert,
         resolve,
       });
     });
@@ -56,7 +59,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         <div
           className="fixed inset-0 z-[200] flex items-start justify-center bg-slate-900/40 px-4 pt-[16vh] sm:pt-[18vh]"
           role="presentation"
-          onClick={() => finish(false)}
+          onClick={() => finish(!!pending.alert)}
         >
           <div
             role="dialog"
@@ -83,16 +86,19 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
               {pending.message}
             </p>
             <div className="mt-5 flex justify-end gap-2">
+              {!pending.alert ? (
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => finish(false)}
+                  className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  {pending.cancelLabel}
+                </button>
+              ) : null}
               <button
                 type="button"
-                autoFocus
-                onClick={() => finish(false)}
-                className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                {pending.cancelLabel}
-              </button>
-              <button
-                type="button"
+                autoFocus={!!pending.alert}
                 onClick={() => finish(true)}
                 className={`rounded-lg px-3.5 py-2 text-sm font-semibold text-white transition ${
                   pending.danger

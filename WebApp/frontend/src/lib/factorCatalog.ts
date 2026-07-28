@@ -17,22 +17,64 @@ export type FactorMeta = {
 };
 
 export const LABELS: Record<string, string> = {
-  custom_lib: "自定义",
+  // 检测选因子 / 面板分类：动量优先，再经典库，再同事新库，自定义靠后
   momentum_lib: "动量/趋势",
   value_lib: "价值/估值",
   technical_lib: "技术指标",
   volatility_lib: "波动/风险",
   trading_lib: "量价/成交",
+  emotion_indicators: "情绪因子",
+  risk_indicators: "风险因子",
+  technical_indicators: "技术指标库",
+  alpha_features: "Alpha158/360",
+  custom_lib: "自定义",
+};
+
+/** 旧库名仅用于历史帖/缓存展示，不再作为分类 Tab */
+export const LEGACY_LABELS: Record<string, string> = {
   jq_compat_emotion: "聚宽情绪",
   jq_compat_risk: "聚宽风险",
   jq_compat_technical: "聚宽技术",
   qlib_alpha: "Qlib特征",
+  alpha_library: "Alpha库",
 };
 
+/** 与 index.yaml libraries 常见顺序一致；Tab 只展示实际出现的库 */
+export const LIBRARY_TAB_ORDER = Object.keys(LABELS);
+
+export function labelForLibrary(key: string, fallback?: string): string {
+  return LABELS[key] || LEGACY_LABELS[key] || fallback || key;
+}
+
+export function libraryKeyFromLabel(label: string): string | undefined {
+  const hit = Object.entries(LABELS).find(([, v]) => v === label);
+  if (hit) return hit[0];
+  const legacy = Object.entries(LEGACY_LABELS).find(([, v]) => v === label);
+  return legacy?.[0];
+}
+
+/** 按当前目录实际库生成「全部 + 分类」Tab（去掉 index 里没有的） */
+export function filterTabsFromLibraries(libraryKeys: Iterable<string>): string[] {
+  const present = new Set(libraryKeys);
+  const ordered = LIBRARY_TAB_ORDER.filter((k) => present.has(k)).map((k) => LABELS[k]);
+  for (const k of present) {
+    if (!(k in LABELS)) {
+      const lab = labelForLibrary(k);
+      if (!ordered.includes(lab)) ordered.push(lab);
+    }
+  }
+  return ["全部", ...ordered];
+}
+
+export function filterTabsFromFactors(factors: FactorMeta[]): string[] {
+  return filterTabsFromLibraries(factors.map((f) => f.library));
+}
+
+/** @deprecated 请用 filterTabsFromFactors；保留避免旧引用炸裂 */
 export const FILTER_TABS = ["全部", ...Object.values(LABELS)] as const;
 
 /** 动态注册、无法从 .py 静态抽取方法体的库（检测走 RE library_name） */
-export const DYNAMIC_FACTOR_LIBS = new Set(["qlib_alpha"]);
+export const DYNAMIC_FACTOR_LIBS = new Set(["alpha_features", "qlib_alpha"]);
 
 let cache: FactorMeta[] | null = null;
 
@@ -78,7 +120,7 @@ export async function loadFactors(force = false): Promise<FactorMeta[]> {
         params,
         library: key,
         libraryFile: lib.file,
-        libraryLabel: LABELS[key] || lib.description || key,
+        libraryLabel: labelForLibrary(key, lib.description || key),
         tags: f.tags,
         ownerId: f.owner_id,
       });

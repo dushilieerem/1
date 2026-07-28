@@ -18,10 +18,25 @@ export type CommunityPost = {
   pinned_at?: string | null;
   created_at: string | null;
   updated_at?: string | null;
+  /** 面板/检测/策略分享落库的真源指标 */
+  platform_ref?: {
+    source?: string;
+    label?: string;
+    factor_name?: string;
+    universe?: string;
+    period?: string;
+    universe_code?: string;
+    period_code?: string;
+    library?: string;
+    filter_limit_up?: boolean | null;
+    metrics_display?: Record<string, string>;
+    metrics?: Record<string, number | null | undefined>;
+  } | null;
   author: {
     id?: number;
     username?: string;
     display_name?: string;
+    avatar_url?: string | null;
   };
 };
 
@@ -39,6 +54,7 @@ export type CommunityComment = {
     id?: number;
     username?: string;
     display_name?: string;
+    avatar_url?: string | null;
   };
   reply_to?: {
     id?: number;
@@ -152,6 +168,7 @@ export async function createCommunityPost(payload: {
   section: CommunitySection;
   code_snippet?: string;
   status?: "draft" | "published";
+  platform_ref?: CommunityPost["platform_ref"];
 }) {
   const res = await fetch("/api/community/posts", {
     method: "POST",
@@ -172,6 +189,7 @@ export async function updateCommunityPost(
     section: CommunitySection;
     code_snippet?: string;
     status?: "draft" | "published";
+    platform_ref?: CommunityPost["platform_ref"];
   },
 ) {
   const res = await fetch(`/api/community/posts/${id}`, {
@@ -356,6 +374,85 @@ export async function listMyPosts(opts?: {
 }
 
 export type ModerationKind = "hidden" | "pinned";
+
+export type ReportReason = "spam" | "abuse" | "illegal" | "misinfo" | "other";
+export type ReportStatus = "open" | "resolved" | "dismissed";
+export type ReportTargetType = "post" | "comment";
+
+export const REPORT_REASON_OPTIONS: { id: ReportReason; label: string }[] = [
+  { id: "spam", label: "垃圾广告" },
+  { id: "abuse", label: "辱骂骚扰" },
+  { id: "illegal", label: "违法违规" },
+  { id: "misinfo", label: "虚假误导" },
+  { id: "other", label: "其他" },
+];
+
+export type CommunityReport = {
+  id: number;
+  target_type: ReportTargetType;
+  post_id: number;
+  comment_id?: number | null;
+  reason: ReportReason | string;
+  reason_label?: string;
+  detail?: string;
+  status: ReportStatus | string;
+  created_at: string | null;
+  resolved_at?: string | null;
+  post_title?: string;
+  comment_body?: string;
+  reporter?: {
+    id?: number;
+    username?: string;
+    display_name?: string;
+  };
+};
+
+export async function createCommunityReport(payload: {
+  target_type: ReportTargetType;
+  post_id: number;
+  comment_id?: number | null;
+  reason: ReportReason;
+  detail?: string;
+}) {
+  const res = await fetch("/api/community/reports", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  return parseJson<{ ok: boolean; report: CommunityReport }>(res);
+}
+
+export async function listCommunityReports(opts?: {
+  status?: ReportStatus | "all";
+  limit?: number;
+  offset?: number;
+}) {
+  const q = new URLSearchParams();
+  q.set("status", opts?.status || "open");
+  if (opts?.limit != null) q.set("limit", String(opts.limit));
+  if (opts?.offset != null) q.set("offset", String(opts.offset));
+  const res = await fetch(`/api/community/reports?${q}`, {
+    headers: { ...authHeaders() },
+  });
+  return parseJson<{
+    ok: boolean;
+    status: string;
+    total: number;
+    items: CommunityReport[];
+  }>(res);
+}
+
+export async function resolveCommunityReport(
+  id: number,
+  status: "resolved" | "dismissed" = "resolved",
+) {
+  const res = await fetch(`/api/community/reports/${id}/resolve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ status }),
+  });
+  return parseJson<{ ok: boolean; report: CommunityReport }>(res);
+}
 
 export async function listModerationPosts(opts?: {
   kind?: ModerationKind;

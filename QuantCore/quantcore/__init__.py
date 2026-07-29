@@ -4,7 +4,7 @@
 
 - ``data``      : DataEngine    - 统一数据读取，对 Research 暴露 ``IDataProvider``
 - ``factor``    : FactorEngine  - 因子计算，Research 只写因子逻辑
-- ``backtest``  : BacktestEngine - 交易模拟，不计算任何指标
+- ``backtest``  : EventBacktestEngine 与向量化回测
 - ``metric``    : MetricEngine  - 所有指标的统一入口（非常重要）
 """
 
@@ -22,12 +22,17 @@ from quantcore.data.providers import (
 from quantcore.factor.backend import ComputeBackend, PythonBackend, get_backend
 from quantcore.factor.base import BaseFactor, FactorLibrary, Panel
 from quantcore.factor.engine import FactorEngine
-from quantcore.backtest.engine import BacktestEngine
-from quantcore.backtest.cost import TransactionCost
-from quantcore.backtest.matching import MatchingEngine
-from quantcore.backtest.order import Fill, Order
-from quantcore.backtest.portfolio import Portfolio, Position
 from quantcore.backtest.result import BacktestResult
+from quantcore.backtest.event import (
+    EventBacktestConfig,
+    EventBacktestEngine,
+    EventBacktestResult,
+    EventFill,
+    EventOrder,
+    EventStrategy,
+    PositionSnapshot,
+    StrategyContext,
+)
 from quantcore.backtest.adapter import (
     BacktestConfig,
     BacktestSignals,
@@ -74,13 +79,14 @@ __all__ = [
     "ComputeBackend",
     "PythonBackend",
     # Backtest
-    "BacktestEngine",
-    "MatchingEngine",
-    "TransactionCost",
-    "Order",
-    "Fill",
-    "Position",
-    "Portfolio",
+    "EventBacktestConfig",
+    "EventBacktestEngine",
+    "EventBacktestResult",
+    "EventFill",
+    "EventOrder",
+    "EventStrategy",
+    "PositionSnapshot",
+    "StrategyContext",
     "BacktestResult",
     # Backtest Adapter（可插拔后端）
     "IBacktestEngine",

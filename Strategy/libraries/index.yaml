@@ -57,3 +57,25 @@ strategies:
       v1:
         file: donchian_breakout_v1.py
         entrypoint: DonchianBreakoutStrategy
+
+  donchian_a_share_event:
+    name: 唐奇安 A 股突破趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [breakout, trend, a_share, long_only, event]
+    versions:
+      v1:
+        file: donchian_a_share_event_v1.py
+        entrypoint: DonchianAShareEventStrategy
+
+  wilder_adx_rsi_atr_a_share_event:
+    name: Wilder ADX RSI ATR A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [adx, dmi, rsi, atr, trend, a_share, long_only, event]
+    versions:
+      v1:
+        file: wilder_adx_rsi_atr_a_share_event_v1.py
+        entrypoint: WilderAdxRsiAtrAShareEventStrategy

@@ -12,7 +12,7 @@ ResearchEngine（用户入口）  ->  QuantCore（底层引擎）  ->  Historica
               （阶段一/二 CLI/SDK，阶段三 Web SaaS）
 ```
 
-- **QuantCore** - 底层量化引擎：DataEngine / FactorEngine / BacktestEngine / MetricEngine
+- **QuantCore** - 底层量化引擎：DataEngine / FactorEngine / EventBacktestEngine / MetricEngine
 - **ResearchEngine** - 投资研究层：ExperimentManager / Experiment / FactorLoader / ConfigManager / ResultManager
 - **TradingEngine** - 交易层（待实现）
 
@@ -34,7 +34,7 @@ ResearchEngine（用户入口）  ->  QuantCore（底层引擎）  ->  Historica
 1. 运行端到端示例（读取根目录 `data/price.CSV` 宽表面板）：
 
    ```bash
-   python ResearchEngine/examples/main.py   # 跑通 因子->指标 全流程 + BacktestEngine 演示
+   python ResearchEngine/examples/main.py   # 跑通 因子->指标 全流程
    ```
 
    > 数据为 Wind/Choice 风格宽表（3 行表头/GBK/OHLCV+市值）。无真实数据时可

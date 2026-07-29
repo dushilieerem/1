@@ -1,15 +1,23 @@
 """唐奇安突破策略：仅持有创 60 日新高的股票。"""
 
-import pandas as pd
+from quantcore import (
+    EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, factor, signal,
+)
 
 
-class DonchianBreakoutStrategy:
+class DonchianBreakoutStrategy(FactorPortfolioStrategy):
     """以收盘价突破过去 60 日高点作为趋势入场信号。"""
 
-    def __init__(self, close: pd.DataFrame):
-        self.close = close
+    selector = TopN(5000)
+    weighting = EqualWeight()
+    rebalance = EveryNTradingDays(1)
 
-    def generate_signals(self) -> pd.DataFrame:
+    @factor
+    def breakout_score_60d(self):
+        """仅对创 60 日新高的标的返回收盘价分数。"""
         channel_high = self.close.rolling(60, min_periods=60).max()
-        selected = self.close.ge(channel_high) & channel_high.notna()
-        return selected.div(selected.sum(axis=1), axis=0).fillna(0.0)
+        return self.close.where(self.close.ge(channel_high) & channel_high.notna())
+
+    @signal
+    def score(self):
+        return self.breakout_score_60d()

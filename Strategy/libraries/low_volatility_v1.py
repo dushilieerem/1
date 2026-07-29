@@ -1,15 +1,22 @@
 """低波动策略：持有过去 20 日收益波动最低的十只股票。"""
 
-import pandas as pd
+from quantcore import (
+    EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, factor, signal,
+)
 
 
-class LowVolatilityStrategy:
+class LowVolatilityStrategy(FactorPortfolioStrategy):
     """以 20 日收益标准差为风险分数，等权配置低波动 Top10。"""
 
-    def __init__(self, close: pd.DataFrame):
-        self.close = close
+    selector = TopN(10)
+    weighting = EqualWeight()
+    rebalance = EveryNTradingDays(1)
 
-    def generate_signals(self) -> pd.DataFrame:
-        volatility = self.close.pct_change().rolling(20).std()
-        selected = volatility.rank(axis=1, ascending=True, method="first").le(10) & volatility.notna()
-        return selected.div(selected.sum(axis=1), axis=0).fillna(0.0)
+    @factor
+    def negative_volatility_20d(self):
+        """过去 20 日收益波动率的相反数，波动越低分数越高。"""
+        return -self.close.pct_change().rolling(20).std()
+
+    @signal
+    def score(self):
+        return self.negative_volatility_20d()

@@ -25,7 +25,6 @@ from typing import List, Optional, Protocol, Sequence, runtime_checkable
 import pandas as pd
 
 from quantcore.backtest.adapter.signals import BacktestConfig, BacktestSignals
-from quantcore.backtest.order import Fill, Order
 from quantcore.factor.base import Panel
 
 
@@ -92,9 +91,7 @@ class IDataFeed(ABC):
 class IPortfolio(ABC):
     """组合状态契约（事件引擎用）。
 
-    现有 :class:`quantcore.backtest.portfolio.Portfolio` 是其参考实现（见
-    :mod:`quantcore.backtest.adapter` 的虚拟子类注册）；向量化后端不直接使用，仅在事件驱动
-    自研引擎中作为可插拔件。
+    向量化后端不直接使用；日频 EventEngine 使用独立的现金账本实现。
     """
 
     @abstractmethod
@@ -102,7 +99,7 @@ class IPortfolio(ABC):
         """更新最新盯市价格。"""
 
     @abstractmethod
-    def update(self, fill: Fill) -> None:
+    def update(self, fill: object) -> None:
         """根据成交回报更新现金与持仓。"""
 
     @abstractmethod
@@ -118,12 +115,11 @@ class IPortfolio(ABC):
 class IExecution(ABC):
     """撮合 / 成本契约（事件引擎用）。
 
-    现有 :class:`quantcore.backtest.matching.MatchingEngine`（配合
-    :class:`quantcore.backtest.cost.TransactionCost`）是其参考实现；向量化后端内化、不直接用。
+    向量化后端内化执行；事件引擎按市场规则和执行模型实现。
     """
 
     @abstractmethod
-    def match(self, order: Order, bar, timestamp: "object | None" = None) -> List[Fill]:
+    def match(self, order: object, bar, timestamp: "object | None" = None) -> List[object]:
         """对单个订单撮合，返回成交回报列表。"""
 
 

@@ -13,7 +13,7 @@
 - `04-class-design.md`：类设计
 - `05-runtime-flow.md`：运行流程
 - `06-research-api.md`：HTTP API 索引；每个端点的独立契约文档位于 `06-research-api/`
-- `07-factor-strategy-guide.md`：因子与策略编写指南
+- `07-factor-strategy-guide.md`：因子与策略编写指南入口；按因子、向量化策略、事件策略、示例和前端映射拆分为独立文档
 - `08-factor-analysis-api-extension.md`：因子分析序列与行业曲线 API 增量交付材料
 - `09-factor-analysis-api-verification.md`：因子分析 API 增量验证记录
 - `10-strategy-backtest-api-verification.md`：策略回测 API MVP 验证记录

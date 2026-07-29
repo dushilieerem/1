@@ -28,7 +28,6 @@ import pandas as pd
 
 from quantcore import (
     BaseFactor,
-    BacktestEngine,  # noqa: F401  (可选用)
     CSVDataProvider,
     DataEngine,
     FactorEngine,
@@ -381,7 +380,7 @@ class Experiment:
         # ③b 组合净值（适配器：默认 native 与 build_factor_portfolio 逐位等价；
         #    config 设 backtest.engine=vectorbt 走 vectorbt 后端。
         #    成本从 backtest.* 读，默认 0 -> 不改默认结果；与历史 commission/slippage
-        #    （旧 BacktestEngine 演示用）解耦。）
+        #    （与事件驱动订单执行解耦。）
         from quantcore.backtest.adapter import (
             BacktestConfig,
             FactorGroupStrategy,

@@ -87,7 +87,7 @@ class EventBacktestEngine:
 ## 7. 兼容、迁移与回滚
 
 - 现有因子和向量化策略 API 保持不变，默认仍使用 NativeEngine。
-- 旧 `BacktestEngine` 的公开行为先保持，逐步由 EventEngine 吸收；不得在首个版本删除。
+- 已删除旧 `BacktestEngine` 演示实现及其公开入口；新事件策略一律使用 `EventBacktestEngine`。向量化 API 与其 `IBacktestEngine` 契约保持不变。
 - 前端用 `engine_mode: vectorized | event` 显式选择，默认 `vectorized`；未满足事件数据前置条件时拒绝运行并提示原因。
 - 采用 Feature Flag `event_backtest_enabled`。出现结果偏差或稳定性问题时关闭 Flag，原向量化服务不受影响。
 

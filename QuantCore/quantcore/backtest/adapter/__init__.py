@@ -31,14 +31,6 @@ from quantcore.backtest.adapter.factor_strategy import (
     signal,
 )
 
-# 形式化：现有事件驱动类作为虚拟子类满足契约（不改其源码、不改行为）。
-# 向量化后端不直接用 IPortfolio/IExecution；这是为未来事件驱动自研引擎（EventEngine）锁定契约。
-from quantcore.backtest.matching import MatchingEngine
-from quantcore.backtest.portfolio import Portfolio
-
-IPortfolio.register(Portfolio)
-IExecution.register(MatchingEngine)
-
 __all__ = [
     # 信号 / 配置
     "BacktestSignals",

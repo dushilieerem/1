@@ -1,9 +1,13 @@
-"""HTTP 路由：``/api/health``、``/api/backtest/factor``、``/api/backtest/strategy``。"""
+"""HTTP 路由：健康检查、回测与只读日线行情。"""
 
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Response
 
+from researchengine.api.market_data import get_daily_bars, get_symbols
+from researchengine.api.ai_factor import generate_factor
 from researchengine.api.runner import run_factor_backtest, run_strategy_backtest
 from researchengine.api.schemas import (
     FactorBacktestRequest,
@@ -11,8 +15,14 @@ from researchengine.api.schemas import (
     FactorInfo,
     FactorListResponse,
     HealthResponse,
+    DailyBarsResponse,
+    SymbolListResponse,
     StrategyBacktestRequest,
     StrategyBacktestResponse,
+    StrategyInfo,
+    StrategyListResponse,
+    FactorGenerationRequest,
+    FactorGenerationResponse,
 )
 
 router = APIRouter(prefix="/api")
@@ -28,6 +38,36 @@ def health() -> HealthResponse:
 def list_factors() -> FactorListResponse:
     """列内置因子（``alpha_library`` 的方法名 + docstring），供 UI 下拉。"""
     return FactorListResponse(factors=_builtin_factors())
+
+
+@router.get("/strategies", response_model=StrategyListResponse)
+def list_strategies() -> StrategyListResponse:
+    """列出项目级策略目录中的当前版本，不执行策略源码。"""
+    from researchengine.strategy_catalog import StrategyCatalog
+
+    return StrategyListResponse(
+        strategies=[StrategyInfo.model_validate(item) for item in StrategyCatalog().list_assets()]
+    )
+
+
+@router.get("/market-data/daily/{symbol}", response_model=DailyBarsResponse)
+def daily_bars(
+    symbol: str, start: date | None = None, end: date | None = None
+) -> DailyBarsResponse:
+    """返回指定股票在已发布历史数据中的完整日线 OHLC。"""
+    return get_daily_bars(symbol, start, end)
+
+
+@router.get("/market-data/symbols", response_model=SymbolListResponse)
+def list_market_data_symbols() -> SymbolListResponse:
+    """列出当前已发布市场数据中可查询的全部股票代码。"""
+    return get_symbols()
+
+
+@router.post("/ai/factor-generations", response_model=FactorGenerationResponse)
+def generate_factor_draft(req: FactorGenerationRequest) -> FactorGenerationResponse:
+    """自然语言 -> 经静态校验的因子函数草稿；不会执行代码或回测。"""
+    return generate_factor(req)
 
 
 @router.post("/backtest/factor", response_model=FactorBacktestResponse)

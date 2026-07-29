@@ -1,0 +1,59 @@
+# SVQuant 项目级策略库索引
+# 源码版本与本文件一同纳入 Git；回测可通过 strategy_id + strategy_version 引用。
+
+version: 2
+strategies:
+  dual_moving_average:
+    name: 双均线趋势
+    strategy_type: trend
+    execution_mode: vectorized
+    current_version: v1
+    tags: [trend, moving_average, long_only]
+    versions:
+      v1:
+        file: dual_moving_average_v1.py
+        entrypoint: DualMovingAverageStrategy
+
+  cross_sectional_momentum:
+    name: 截面动量 Top10
+    strategy_type: momentum
+    execution_mode: vectorized
+    current_version: v1
+    tags: [momentum, cross_sectional, long_only]
+    versions:
+      v1:
+        file: cross_sectional_momentum_v1.py
+        entrypoint: CrossSectionalMomentumStrategy
+
+  short_term_reversal:
+    name: 短期反转 Top10
+    strategy_type: reversal
+    execution_mode: vectorized
+    current_version: v1
+    tags: [reversal, cross_sectional, long_only]
+    versions:
+      v1:
+        file: short_term_reversal_v1.py
+        entrypoint: ShortTermReversalStrategy
+
+  low_volatility:
+    name: 低波动 Top10
+    strategy_type: low_volatility
+    execution_mode: vectorized
+    current_version: v1
+    tags: [low_volatility, defensive, long_only]
+    versions:
+      v1:
+        file: low_volatility_v1.py
+        entrypoint: LowVolatilityStrategy
+
+  donchian_breakout:
+    name: 唐奇安突破
+    strategy_type: trend
+    execution_mode: vectorized
+    current_version: v1
+    tags: [breakout, trend, long_only]
+    versions:
+      v1:
+        file: donchian_breakout_v1.py
+        entrypoint: DonchianBreakoutStrategy

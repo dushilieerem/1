@@ -661,9 +661,26 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
         from quantcore.backtest.adapter import get_backtest_engine
         from quantcore.backtest.adapter.signals import BacktestConfig, BacktestSignals
 
+        strategy_id = None
+        strategy_version = None
+        code_hash = None
+        strategy_code = req.strategy_code
+        expected_entrypoint = None
+        if req.strategy_id is not None:
+            from researchengine.strategy_catalog import StrategyCatalog
+
+            asset = StrategyCatalog().load(req.strategy_id, req.strategy_version)
+            if asset.execution_mode != "vectorized":
+                raise ValueError("当前 /api/backtest/strategy 仅支持 vectorized 策略")
+            strategy_code = asset.source_code
+            strategy_id = asset.strategy_id
+            strategy_version = asset.version
+            code_hash = asset.code_hash
+            expected_entrypoint = asset.entrypoint
+
         # 编译策略代码
         namespace = {"__name__": "user_strategy"}
-        exec(compile(req.strategy_code, '<strategy>', 'exec'), namespace)
+        exec(compile(strategy_code, '<strategy>', 'exec'), namespace)
         strategy_classes = [
             obj for obj in namespace.values()
             if isinstance(obj, type)
@@ -673,6 +690,8 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
         if len(strategy_classes) != 1:
             raise ValueError("策略代码必须且只能定义一个包含 generate_signals 方法的类")
         strategy_class = strategy_classes[0]
+        if expected_entrypoint is not None and strategy_class.__name__ != expected_entrypoint:
+            raise ValueError("策略索引 entrypoint 与源码中的策略类不一致")
         from quantcore.backtest.adapter.factor_strategy import FactorPortfolioStrategy
 
         data_dir = _resolve_data_dir(None)
@@ -785,6 +804,9 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
             strategy=strategy_class.__name__,
             universe=req.universe,
             benchmark=req.benchmark,
+            strategy_id=strategy_id,
+            strategy_version=strategy_version,
+            code_hash=code_hash,
         ),
         positions=positions,
         rebalance_logs=rebalance_logs,

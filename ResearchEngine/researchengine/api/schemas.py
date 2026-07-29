@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from typing import Literal, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -76,7 +77,11 @@ class StrategyBacktestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     #: 策略 Python 源码（必须实现 generate_signals 方法）
-    strategy_code: str = Field(..., description="策略 Python 源码")
+    strategy_code: Optional[str] = Field(None, description="策略 Python 源码")
+    #: 已保存策略的索引 ID；与 ``strategy_code`` 二选一
+    strategy_id: Optional[str] = Field(None, description="Strategy/libraries/index.yaml 中的策略 ID")
+    #: 已保存策略版本；省略时使用索引声明的 current_version
+    strategy_version: Optional[str] = Field(None, description="已保存策略的版本号")
     universe: str = "CSI500"
     start: Optional[str] = None
     end: Optional[str] = None
@@ -90,6 +95,14 @@ class StrategyBacktestRequest(BaseModel):
     #: 返回持仓权重（前端画持仓图用）
     include_positions: bool = False
     include_rebalance_logs: bool = False
+
+    @model_validator(mode="after")
+    def validate_strategy_source(self):
+        if bool(self.strategy_code) == bool(self.strategy_id):
+            raise ValueError("strategy_code 与 strategy_id 必须且只能提供一个")
+        if self.strategy_version is not None and self.strategy_id is None:
+            raise ValueError("strategy_version 只能与 strategy_id 一起使用")
+        return self
 
 
 # ---------------- 响应 ----------------
@@ -229,6 +242,23 @@ class StrategyBacktestMeta(BaseModel):
     strategy: str
     universe: str
     benchmark: str
+    strategy_id: Optional[str] = None
+    strategy_version: Optional[str] = None
+    code_hash: Optional[str] = None
+
+
+class StrategyInfo(BaseModel):
+    id: str
+    name: str
+    strategy_type: str
+    execution_mode: Literal["vectorized", "event"]
+    current_version: str
+    entrypoint: str
+    tags: list[str] = []
+
+
+class StrategyListResponse(BaseModel):
+    strategies: list[StrategyInfo]
 
 
 class FactorBacktestResponse(BaseModel):
@@ -303,3 +333,95 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     version: str = "2.0.0"
     engines: list[str] = ["native", "vectorbt"]
+
+
+class DailyBar(BaseModel):
+    """单个标的的完整日线 OHLC 数据点。"""
+
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+
+
+class DailyBarsResponse(BaseModel):
+    """``GET /api/market-data/daily/{symbol}`` 响应。"""
+
+    symbol: str
+    name: str
+    bars: list[DailyBar]
+    date_range: DateRange
+
+
+# ---------------- AI 因子生成 ----------------
+
+
+class FactorGenerationContext(BaseModel):
+    """自然语言因子生成的非敏感研究上下文。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    universe: Optional[str] = None
+    frequency: Literal["1d"] = "1d"
+    allowed_library_names: list[str] = []
+    preferred_factor_name: Optional[str] = None
+
+
+class FactorGenerationRequest(BaseModel):
+    """``POST /api/ai/factor-generations`` 请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    prompt: str = Field(..., min_length=1, max_length=2000)
+    context: FactorGenerationContext = FactorGenerationContext()
+    idempotency_key: UUID
+
+
+class GeneratedFactor(BaseModel):
+    """经静态校验的单个因子函数草稿。"""
+
+    factor_name: str
+    factor_code: str
+    description: str
+    used_fields: list[str]
+    used_library_methods: list[str] = []
+    assumptions: list[str] = []
+    warnings: list[str] = []
+
+
+class FactorGenerationValidation(BaseModel):
+    status: Literal["passed", "failed"]
+    capability_catalog_version: str
+    errors: list[str] = []
+    warnings: list[str] = []
+
+
+class FactorGenerationMeta(BaseModel):
+    model_alias: str
+    prompt_version: str
+    latency_ms: int
+
+
+class FactorGenerationResponse(BaseModel):
+    """AI 因子生成结果；拒绝的结果不会返回可回测代码。"""
+
+    generation_id: str
+    status: Literal["ready", "rejected"]
+    factor: Optional[GeneratedFactor] = None
+    validation: FactorGenerationValidation
+    meta: FactorGenerationMeta
+
+
+class StockInfo(BaseModel):
+    """股票代码与名称。"""
+
+    symbol: str
+    name: str
+
+
+class SymbolListResponse(BaseModel):
+    """``GET /api/market-data/symbols`` 响应。"""
+
+    symbols: list[StockInfo]
+    unmapped_count: int = 0

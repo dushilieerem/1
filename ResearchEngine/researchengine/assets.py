@@ -23,3 +23,10 @@ def backtest_cache_dir() -> Path:
             _repo_root() / "Factor" / "backtest_results",
         )
     )
+
+
+def strategy_library_dir() -> Path:
+    """返回项目级策略库目录，可由 ``SVQUANT_STRATEGY_DIR`` 覆盖。"""
+    return Path(
+        os.environ.get("SVQUANT_STRATEGY_DIR", _repo_root() / "Strategy" / "libraries")
+    )

@@ -29,6 +29,9 @@ Factor/backtest_results/
 MarketData/*
 !MarketData/DataIngestion/
 !MarketData/DataIngestion/**
+!MarketData/README.md
+MarketData/DataIngestion/**/__pycache__/
+MarketData/DataIngestion/**/*.py[cod]
 
 # 压缩包文件
 *.7z
@@ -36,3 +39,5 @@ MarketData/*
 #日志文件
 
 AGENTS.md
+*.rar
+.Codex/

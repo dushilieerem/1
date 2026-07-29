@@ -16,7 +16,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="SVQuant Research API",
         version="2.0.0",
-        description="因子回测 + 策略回测 API。提交代码 -> 回测 -> 返回指标与净值。详见 /docs（Swagger）。",
+        description="因子/策略回测与已发布市场数据查询 API。详见 /docs（Swagger）。",
     )
     # 开发期放开跨域；生产应收紧 allow_origins 到前端域名
     app.add_middleware(

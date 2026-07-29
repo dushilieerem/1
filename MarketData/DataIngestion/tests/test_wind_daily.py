@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT))
 
 from data_ingestion.wind_daily import (  # noqa: E402
     WIND_DAILY_FIELDS,
+    _require_nonempty_panel,
     _wind_data_to_panel,
     download_daily_panels,
 )
@@ -36,3 +37,10 @@ def test_download_rejects_unknown_field_before_connecting(tmp_path):
 
 def test_daily_field_map_covers_required_existing_market_fields():
     assert {"open", "high", "low", "close", "volume", "amount", "turnover"} <= set(WIND_DAILY_FIELDS)
+
+
+def test_wind_panel_requires_at_least_one_valid_value():
+    with pytest.raises(ValueError, match="float_mv.*任何有效值"):
+        _require_nonempty_panel(pd.DataFrame({"000001": [None, None]}), "float_mv")
+
+    _require_nonempty_panel(pd.DataFrame({"000001": [None, 1.0]}), "float_mv")

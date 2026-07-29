@@ -474,7 +474,7 @@ class 库名(FactorLibrary):
 
 ## 7. 策略代码编写规范
 
-策略回测使用 `POST /api/backtest/strategy`；完整请求与响应见 `06-research-api.md`。当前 MVP 是**向量化目标权重策略**：策略只决定每天每个标的的目标权重，行情对齐、回测、成本和指标全部由 ResearchEngine 与 QuantCore 处理。
+策略回测使用 `POST /api/backtest/strategy`；完整请求与响应见 [策略回测 API](06-research-api/backtest-strategy.md)。当前 MVP 是**向量化目标权重策略**：策略只决定每天每个标的的目标权重，行情对齐、回测、成本和指标全部由 ResearchEngine 与 QuantCore 处理。
 
 ### 7.1 推荐：结构化因子组合策略
 

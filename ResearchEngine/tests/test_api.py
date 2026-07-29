@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from researchengine.api import app
+from researchengine.api.market_data import _market_symbol, _panel_symbol
 
 
 client = TestClient(app)
@@ -82,6 +83,7 @@ def market_data_dir(tmp_path, monkeypatch):
 
     pd.DataFrame({
         "code": symbols,
+        "name": [f"股票{i:03d}" for i in range(12)],
         "industry": ["银行"] * 6 + ["医药"] * 6,
     }).to_parquet(tmp_path / "stock_info.parquet", index=False)
 
@@ -116,6 +118,56 @@ def test_health():
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_daily_bars_returns_filtered_ohlc(market_data_dir):
+    response = client.get(
+        "/api/market-data/daily/S000",
+        params={"start": "2022-01-05", "end": "2022-01-07"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["symbol"] == "S000"
+    assert body["name"] == "股票000"
+    assert len(body["bars"]) == 3
+    assert body["date_range"] == {"start": "2022-01-05", "end": "2022-01-07"}
+    assert set(body["bars"][0]) == {"date", "open", "high", "low", "close"}
+    assert body["bars"][0]["open"] == pytest.approx(body["bars"][0]["close"] * 0.995)
+
+
+def test_market_data_symbols_returns_sorted_stock_codes(market_data_dir):
+    response = client.get("/api/market-data/symbols")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "symbols": [
+            {"symbol": f"S{i:03d}", "name": f"股票{i:03d}"}
+            for i in range(12)
+        ],
+        "unmapped_count": 0,
+    }
+
+
+def test_market_symbol_conversion():
+    assert _market_symbol("000001") == "000001.SZ"
+    assert _market_symbol("600519") == "600519.SH"
+    assert _market_symbol("430047") == "430047.BJ"
+    assert _panel_symbol("000001.SZ") == "000001"
+
+
+def test_daily_bars_returns_not_found_or_invalid_range(market_data_dir):
+    assert client.get("/api/market-data/daily/UNKNOWN").status_code == 404
+    assert client.get(
+        "/api/market-data/daily/S000",
+        params={"start": "2022-01-07", "end": "2022-01-05"},
+    ).status_code == 422
+
+
+def test_daily_bars_returns_service_unavailable_when_field_missing(market_data_dir):
+    (market_data_dir / "high.parquet").unlink()
+    response = client.get("/api/market-data/daily/S000")
+    assert response.status_code == 503
 
 
 def test_factor_backtest_groups_and_benchmark(market_data_dir):
@@ -278,6 +330,9 @@ def test_strategy_backtest_returns_equity_and_positions(market_data_dir):
         "strategy": "EqualWeightMomentum",
         "universe": "CSI500",
         "benchmark": "CSI300",
+        "strategy_id": None,
+        "strategy_version": None,
+        "code_hash": None,
     }
     assert body["metrics"]["total_return"] is not None
     assert len(body["equity_curve"]) > 0
@@ -303,6 +358,105 @@ def test_strategy_backtest_returns_rebalance_logs_on_demand(market_data_dir):
     trade = logs[0]["trades"][0]
     assert set(trade) == {"symbol", "side", "previous_weight", "target_weight", "weight_change"}
     assert trade["side"] in {"buy", "sell"}
+
+
+def test_strategy_catalog_lists_and_runs_saved_version(market_data_dir, tmp_path, monkeypatch):
+    strategy_dir = tmp_path / "strategies"
+    strategy_dir.mkdir()
+    (strategy_dir / "equal_weight_v1.py").write_text(STRATEGY_CODE, encoding="utf-8")
+    (strategy_dir / "index.yaml").write_text(
+        """version: 2
+strategies:
+  equal_weight:
+    name: 等权动量
+    strategy_type: momentum
+    execution_mode: vectorized
+    current_version: v1
+    tags: [momentum]
+    versions:
+      v1:
+        file: equal_weight_v1.py
+        entrypoint: EqualWeightMomentum
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SVQUANT_STRATEGY_DIR", str(strategy_dir))
+
+    listed = client.get("/api/strategies")
+    assert listed.status_code == 200
+    assert listed.json() == {
+        "strategies": [{
+            "id": "equal_weight",
+            "name": "等权动量",
+            "strategy_type": "momentum",
+            "execution_mode": "vectorized",
+            "current_version": "v1",
+            "entrypoint": "EqualWeightMomentum",
+            "tags": ["momentum"],
+        }]
+    }
+
+    response = client.post(
+        "/api/backtest/strategy",
+        json={"strategy_id": "equal_weight"},
+    )
+    body = response.json()
+    assert response.status_code == 200
+    assert body["error"] is None
+    assert body["meta"]["strategy_id"] == "equal_weight"
+    assert body["meta"]["strategy_version"] == "v1"
+    assert len(body["meta"]["code_hash"]) == 64
+
+
+def test_strategy_catalog_rejects_unknown_version_and_mixed_source(market_data_dir, tmp_path, monkeypatch):
+    strategy_dir = tmp_path / "strategies"
+    strategy_dir.mkdir()
+    (strategy_dir / "index.yaml").write_text(
+        """version: 2
+strategies:
+  empty:
+    name: 空策略
+    strategy_type: test
+    execution_mode: vectorized
+    current_version: v1
+    versions:
+      v1:
+        file: missing.py
+        entrypoint: Missing
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SVQUANT_STRATEGY_DIR", str(strategy_dir))
+
+    response = client.post("/api/backtest/strategy", json={"strategy_id": "empty"})
+    assert response.status_code == 200
+    assert "策略源码不存在" in response.json()["error"]
+
+    response = client.post(
+        "/api/backtest/strategy",
+        json={"strategy_id": "empty", "strategy_code": STRATEGY_CODE},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "strategy_id",
+    [
+        "dual_moving_average",
+        "cross_sectional_momentum",
+        "short_term_reversal",
+        "low_volatility",
+        "donchian_breakout",
+    ],
+)
+def test_builtin_strategy_library_entries_run_with_close_panel(market_data_dir, strategy_id):
+    response = client.post("/api/backtest/strategy", json={"strategy_id": strategy_id})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["error"] is None
+    assert body["meta"]["strategy_id"] == strategy_id
+    assert body["meta"]["strategy_version"] == "v1"
 
 
 def test_strategy_backtest_returns_business_error_for_invalid_contract(market_data_dir):

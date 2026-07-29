@@ -56,6 +56,12 @@ def _wind_data_to_panel(data, codes: Sequence[str]) -> pd.DataFrame:
     return frame
 
 
+def _require_nonempty_panel(panel: pd.DataFrame, field: str) -> None:
+    """拒绝将 Wind 未返回有效值的字段发布为成功产物。"""
+    if panel.empty or not panel.notna().any().any():
+        raise ValueError(f"Wind 字段 {field} 未返回任何有效值，不能发布")
+
+
 def download_daily_panels(
     symbols: Sequence[str],
     start: str,
@@ -101,6 +107,7 @@ def download_daily_panels(
                 )
                 pieces.append(_wind_data_to_panel(data, code_chunk))
             panel = pd.concat(pieces, axis=1).sort_index().sort_index(axis=1)
+            _require_nonempty_panel(panel, field)
             panel.to_parquet(target)
             manifest_assets.append({
                 "field": field,

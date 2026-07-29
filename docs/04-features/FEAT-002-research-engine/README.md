@@ -12,7 +12,7 @@
 - `03-modules.md`：模块职责
 - `04-class-design.md`：类设计
 - `05-runtime-flow.md`：运行流程
-- `06-research-api.md`：HTTP API
+- `06-research-api.md`：HTTP API 索引；每个端点的独立契约文档位于 `06-research-api/`
 - `07-factor-strategy-guide.md`：因子与策略编写指南
 - `08-factor-analysis-api-extension.md`：因子分析序列与行业曲线 API 增量交付材料
 - `09-factor-analysis-api-verification.md`：因子分析 API 增量验证记录

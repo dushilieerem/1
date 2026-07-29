@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from researchengine.api import app
 from researchengine.api.market_data import _market_symbol, _panel_symbol
+from researchengine.api.runner import _sample_positions, _serialize_rebalance_logs
 
 
 client = TestClient(app)
@@ -356,8 +357,34 @@ def test_strategy_backtest_returns_rebalance_logs_on_demand(market_data_dir):
     logs = response.json()["rebalance_logs"]
     assert logs
     trade = logs[0]["trades"][0]
-    assert set(trade) == {"symbol", "side", "previous_weight", "target_weight", "weight_change"}
+    assert set(trade) == {"symbol", "name", "side", "previous_weight", "target_weight", "weight_change"}
     assert trade["side"] in {"buy", "sell"}
+
+
+def test_strategy_response_instruments_include_exchange_code_and_name():
+    stock_names = {"000001": "平安银行"}
+    positions = pd.DataFrame(
+        {"000001": [1.0]}, index=pd.to_datetime(["2024-01-02"])
+    )
+    logs = pd.DataFrame(
+        [{
+            "symbol": "000001",
+            "side": "buy",
+            "previous_weight": 0.0,
+            "target_weight": 1.0,
+            "weight_change": 1.0,
+        }],
+        index=pd.to_datetime(["2024-01-02"]),
+    )
+
+    holding = _sample_positions(positions, stock_names)[0].holdings[0]
+    trade = _serialize_rebalance_logs(logs, stock_names)[0].trades[0]
+
+    assert holding.model_dump() == {
+        "symbol": "000001.SZ", "name": "平安银行", "weight": 1.0,
+    }
+    assert trade.model_dump()["symbol"] == "000001.SZ"
+    assert trade.model_dump()["name"] == "平安银行"
 
 
 def test_strategy_catalog_lists_and_runs_saved_version(market_data_dir, tmp_path, monkeypatch):

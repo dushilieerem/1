@@ -131,6 +131,7 @@ class AnnualReturn(BaseModel):
 
 class Holding(BaseModel):
     symbol: str
+    name: str
     weight: float
 
 
@@ -141,6 +142,7 @@ class PositionSnapshot(BaseModel):
 
 class RebalanceTrade(BaseModel):
     symbol: str
+    name: str
     side: Literal["buy", "sell"]
     previous_weight: float
     target_weight: float

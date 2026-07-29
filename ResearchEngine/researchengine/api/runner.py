@@ -440,8 +440,19 @@ def _compute_annual_returns(equity: pd.Series) -> list[AnnualReturn]:
     return result
 
 
+def _display_instrument(symbol: object, stock_names: dict[str, str]) -> tuple[str, str]:
+    """将面板代码转换为 API 代码，并查询证券名称。"""
+    from researchengine.api.market_data import _market_symbol
+
+    panel_symbol = str(symbol)
+    return _market_symbol(panel_symbol), stock_names[panel_symbol]
+
+
 def _sample_positions(
-    positions: pd.DataFrame | None, max_snapshots: int = 60, top_n: int = 20
+    positions: pd.DataFrame | None,
+    stock_names: dict[str, str],
+    max_snapshots: int = 60,
+    top_n: int = 20,
 ) -> list[PositionSnapshot] | None:
     """对持仓权重进行采样，减少传输量。"""
     if positions is None or len(positions) == 0:
@@ -459,34 +470,38 @@ def _sample_positions(
         sorted_row = row.dropna().sort_values(ascending=False)
         top = sorted_row.head(top_n)
 
-        holdings = [
-            Holding(symbol=str(sym), weight=float(w))
-            for sym, w in top.items()
-        ]
+        holdings = []
+        for sym, weight in top.items():
+            symbol, name = _display_instrument(sym, stock_names)
+            holdings.append(Holding(symbol=symbol, name=name, weight=float(weight)))
         sampled.append(PositionSnapshot(date=date_str, holdings=holdings))
 
     return sampled
 
 
-def _serialize_rebalance_logs(logs: pd.DataFrame | None) -> list[RebalanceLog] | None:
+def _serialize_rebalance_logs(
+    logs: pd.DataFrame | None, stock_names: dict[str, str]
+) -> list[RebalanceLog] | None:
     """按调仓日期聚合日志，供 Web 端按需展示。"""
     if logs is None or logs.empty:
         return None
 
     result = []
     for date, trades in logs.groupby(level=0, sort=True):
+        serialized_trades = []
+        for row in trades.itertuples(index=False):
+            symbol, name = _display_instrument(row.symbol, stock_names)
+            serialized_trades.append(RebalanceTrade(
+                symbol=symbol,
+                name=name,
+                side=row.side,
+                previous_weight=float(row.previous_weight),
+                target_weight=float(row.target_weight),
+                weight_change=float(row.weight_change),
+            ))
         result.append(RebalanceLog(
             date=pd.Timestamp(date).strftime("%Y-%m-%d"),
-            trades=[
-                RebalanceTrade(
-                    symbol=str(row.symbol),
-                    side=row.side,
-                    previous_weight=float(row.previous_weight),
-                    target_weight=float(row.target_weight),
-                    weight_change=float(row.weight_change),
-                )
-                for row in trades.itertuples(index=False)
-            ],
+            trades=serialized_trades,
         ))
     return result
 
@@ -707,6 +722,8 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
             index_loader=lambda name: data_engine.get_index(name, req.start, req.end),
         )
         close = panels.close
+        from researchengine.api.market_data import _get_stock_names
+        stock_names = _get_stock_names()
         factor_values = None
 
         # 结构化策略在策略源码内定义因子；自由策略接收收盘价面板自行生成信号。
@@ -786,10 +803,10 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
 
     positions = None
     if req.include_positions and bt_result.positions is not None:
-        positions = _sample_positions(bt_result.positions)
+        positions = _sample_positions(bt_result.positions, stock_names)
     rebalance_logs = None
     if req.include_rebalance_logs:
-        rebalance_logs = _serialize_rebalance_logs(bt_result.rebalance_logs)
+        rebalance_logs = _serialize_rebalance_logs(bt_result.rebalance_logs, stock_names)
 
     return StrategyBacktestResponse(
         metrics=metrics,

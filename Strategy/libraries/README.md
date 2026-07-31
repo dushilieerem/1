@@ -36,3 +36,11 @@ strategies:
 | `markowitz_min_variance` | 60/120 日正动量预筛后，按 120 日协方差构建月度最小方差组合 | `close`；仅研究用途，使用请求传入的静态股票池 |
 
 `markowitz_min_variance` 的 v1 不模拟动态指数成分、ST/停牌/涨跌停和盘中订单执行，也不代表完整的 A 股实盘策略；这些能力将在数据与事件回测条件具备后以新版本补齐。
+
+## 事件策略研究候选
+
+`appel_macd_a_share_event` 与 `bollinger_mean_reversion_a_share_event` 已迁移为 SVQuant 日频事件策略。二者仅以 OHLC 生成信号，股票池须由回测请求按历史时点准备；历史指数成分、ST 与上市状态数据接入前，均仅用于研究验证。
+
+`wilder_rsi_classic_a_share_event` 使用 Wilder RSI(14)、200 日均线和持仓均价的 -8%/+20% 风控；日频信号按下一开盘成交。它不替代历史股票池、ST、停牌和上市状态过滤，数据面板必须先提供这些边界。
+
+`oneil_canslim_lite_a_share_event` 是无基本面数据的 CANSLIM 研究版：只使用 250 日相对强度、简化月线基底突破和沪深 300 的 250 日均线确定满仓或半仓，并在每年首次满足数据窗口的月度调度日调仓。它不包含 C/A/I/S 因子，也不处理 ST、停牌、退市、上市天数或真正的杯柄形态。

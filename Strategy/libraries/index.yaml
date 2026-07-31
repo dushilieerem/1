@@ -112,3 +112,47 @@ strategies:
       v1:
         file: wilder_adx_rsi_atr_a_share_event_v1.py
         entrypoint: WilderAdxRsiAtrAShareEventStrategy
+
+  wilder_rsi_classic_a_share_event:
+    name: 韦尔斯·怀尔德 RSI 经典 A 股均值回归
+    strategy_type: reversal
+    execution_mode: event
+    current_version: v1
+    tags: [wilder, rsi, mean_reversion, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: wilder_rsi_classic_a_share_event_v1.py
+        entrypoint: WilderRsiClassicAShareEventStrategy
+
+  oneil_canslim_lite_a_share_event:
+    name: 欧奈尔 CANSLIM Lite A 股选股
+    strategy_type: momentum
+    execution_mode: event
+    current_version: v1
+    tags: [oneil, canslim, momentum, breakout, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: oneil_canslim_lite_a_share_event_v1.py
+        entrypoint: OneilCanslimLiteAShareEventStrategy
+
+  appel_macd_a_share_event:
+    name: 阿佩尔 MACD A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [macd, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: appel_macd_a_share_event_v1.py
+        entrypoint: AppelMacdAShareEventStrategy
+
+  bollinger_mean_reversion_a_share_event:
+    name: 布林带 A 股均值回归
+    strategy_type: reversal
+    execution_mode: event
+    current_version: v1
+    tags: [bollinger, mean_reversion, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: bollinger_mean_reversion_a_share_event_v1.py
+        entrypoint: BollingerMeanReversionAShareEventStrategy

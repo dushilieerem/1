@@ -108,3 +108,24 @@ def test_donchian_style_signal_uses_previous_close_and_target_value():
 
     assert result.fills[0].timestamp == dates[3].to_pydatetime()
     assert result.fills[0].quantity == 100
+
+
+def test_portfolio_average_cost_tracks_open_fills_and_clears_after_exit():
+    seen = []
+
+    class Strategy:
+        def initialize(self, context):
+            def trade(ctx):
+                if ctx.current_dt.date().isoformat() == "2024-01-02":
+                    ctx.orders.target_quantity("A", 100)
+                elif ctx.current_dt.date().isoformat() == "2024-01-03":
+                    seen.append(ctx.portfolio.average_cost("A"))
+                elif ctx.current_dt.date().isoformat() == "2024-01-04":
+                    ctx.orders.close("A")
+
+            context.schedule.daily(trade)
+
+    result = EventBacktestEngine(_panels(), EventBacktestConfig(initial_capital=10_000)).run(Strategy())
+
+    assert seen == [10.0]
+    assert result.position_snapshots[-1].positions["A"] == 0

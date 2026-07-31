@@ -121,6 +121,10 @@ class PortfolioView:
     def quantity(self, symbol: str) -> int:
         return self._ledger.positions.get(symbol, 0)
 
+    def average_cost(self, symbol: str) -> float | None:
+        """返回当前持仓的成交均价；无持仓时返回 ``None``。"""
+        return self._ledger.average_cost.get(symbol)
+
 
 class StrategyContext:
     def __init__(self, data: DataView, orders: OrderService, portfolio: PortfolioView) -> None:

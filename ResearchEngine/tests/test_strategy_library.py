@@ -91,3 +91,30 @@ def test_wilder_event_strategy_runs_with_standard_amount_panel():
     result = EventBacktestEngine(panels).run(namespace[asset.entrypoint]())
 
     assert len(result.equity_curve) == len(dates)
+
+
+@pytest.mark.parametrize(
+    ("strategy_id", "entrypoint"),
+    [
+        ("appel_macd_a_share_event", "AppelMacdAShareEventStrategy"),
+        ("bollinger_mean_reversion_a_share_event", "BollingerMeanReversionAShareEventStrategy"),
+    ],
+)
+def test_new_a_share_event_strategies_run_with_ohlc_panels(strategy_id, entrypoint):
+    asset = StrategyCatalog().load(strategy_id)
+    namespace = {"__name__": f"{strategy_id}_test"}
+    exec(compile(asset.source_code, asset.entrypoint, "exec"), namespace)
+    dates = pd.date_range("2024-01-02", periods=150, freq="B")
+    benchmark = pd.Series(range(100, 250), index=dates, dtype=float)
+    stock = pd.Series([20 + index * 0.25 + (index % 6) * 0.5 for index in range(150)], index=dates)
+    panels = {
+        "open": pd.DataFrame({"000300.SH": benchmark, "000001.SZ": stock}, index=dates),
+        "high": pd.DataFrame({"000300.SH": benchmark + 1, "000001.SZ": stock + 1}, index=dates),
+        "low": pd.DataFrame({"000300.SH": benchmark - 1, "000001.SZ": stock - 1}, index=dates),
+        "close": pd.DataFrame({"000300.SH": benchmark, "000001.SZ": stock}, index=dates),
+    }
+
+    result = EventBacktestEngine(panels).run(namespace[entrypoint]())
+
+    assert len(result.equity_curve) == len(dates)
+    assert result.assumptions["data_visibility"] == "previous_close"

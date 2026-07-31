@@ -24,6 +24,7 @@ class EventBacktestConfig:
 class _Ledger:
     cash: float
     positions: dict[str, int] = field(default_factory=dict)
+    average_cost: dict[str, float] = field(default_factory=dict)
     sellable: dict[str, int] = field(default_factory=dict)
     bought_today: dict[str, int] = field(default_factory=dict)
 
@@ -122,13 +123,21 @@ class EventBacktestEngine:
         commission = max(value * self.config.commission_rate, self.config.min_commission)
         stamp_tax = value * self.config.stamp_tax_rate if side == "sell" else 0.0
         if side == "buy":
+            current_quantity = ledger.positions.get(order.symbol, 0)
+            current_cost = ledger.average_cost.get(order.symbol, 0.0)
             ledger.cash -= value + commission
-            ledger.positions[order.symbol] = ledger.positions.get(order.symbol, 0) + quantity
+            ledger.positions[order.symbol] = current_quantity + quantity
+            ledger.average_cost[order.symbol] = (
+                (current_quantity * current_cost + quantity * price)
+                / ledger.positions[order.symbol]
+            )
             ledger.bought_today[order.symbol] = ledger.bought_today.get(order.symbol, 0) + quantity
         else:
             ledger.cash += value - commission - stamp_tax
             ledger.positions[order.symbol] -= quantity
             ledger.sellable[order.symbol] -= quantity
+            if ledger.positions[order.symbol] == 0:
+                ledger.average_cost.pop(order.symbol, None)
         order.status, order.side = "filled", side
         return EventFill(order.order_id, order.symbol, side, quantity, price, date.to_pydatetime(), commission, stamp_tax)
 

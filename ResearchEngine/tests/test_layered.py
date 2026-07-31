@@ -1,6 +1,6 @@
 """分层回测底座测试。
 
-口径对齐 NativeEngine：固定本金、shift(1) 持有、组内等权。用确定性收益验证数值。
+口径对齐 NativeEngine：首日信号、次日收盘建仓归零、后续收盘到收盘收益、组内等权。
 """
 
 from __future__ import annotations
@@ -89,14 +89,13 @@ def _make_panel(periods=10, n=10):
 
 
 def test_layered_returns_equal_weight():
-    """Q1(S0-S4, 日涨1%) 收益 0.01/日；Q2(S5-S9, 日涨2%) 收益 0.02/日。"""
+    """建仓日归零，之后 Q1/Q2 分别按 1%/2% 的日收益计算。"""
     fv, close = _make_panel()
     lr = layered_returns(fv, close, n_groups=2, rebalance="monthly")
-    # 去首日（无持仓）后，每日收益恒定
-    assert abs(lr["Q1"].iloc[0] - 0.01) < 1e-12
-    assert abs(lr["Q2"].iloc[0] - 0.02) < 1e-12
-    assert (abs(lr["Q1"] - 0.01) < 1e-12).all()
-    assert (abs(lr["Q2"] - 0.02) < 1e-12).all()
+    assert lr["Q1"].iloc[0] == pytest.approx(0.0)
+    assert lr["Q2"].iloc[0] == pytest.approx(0.0)
+    assert (abs(lr["Q1"].iloc[1:] - 0.01) < 1e-12).all()
+    assert (abs(lr["Q2"].iloc[1:] - 0.02) < 1e-12).all()
 
 
 def test_layered_equity_cumsum():
@@ -104,11 +103,11 @@ def test_layered_equity_cumsum():
     fv, close = _make_panel(periods=10)
     lr = layered_returns(fv, close, n_groups=2, rebalance="monthly")
     le = layered_equity(lr)
-    # 9 个有效收益日（10 行去首日）
-    assert abs(le["Q1"].iloc[-1] - (1.0 + 0.01 * 9)) < 1e-9
-    assert abs(le["Q2"].iloc[-1] - (1.0 + 0.02 * 9)) < 1e-9
+    # 9 个结果日：首个建仓日为 0，其后 8 个有效收益日。
+    assert abs(le["Q1"].iloc[-1] - (1.0 + 0.01 * 8)) < 1e-9
+    assert abs(le["Q2"].iloc[-1] - (1.0 + 0.02 * 8)) < 1e-9
     # 首值 = 1.0
-    assert abs(le["Q1"].iloc[0] - 1.01) < 1e-9
+    assert abs(le["Q1"].iloc[0] - 1.0) < 1e-9
 
 
 def test_layered_rebalance_daily():
@@ -116,7 +115,7 @@ def test_layered_rebalance_daily():
     fv, close = _make_panel()
     lr_m = layered_returns(fv, close, n_groups=2, rebalance="monthly")
     lr_d = layered_returns(fv, close, n_groups=2, rebalance="daily")
-    # 因子恒定 -> 分组不变 -> 收益逐位相等
+    # 因子恒定 -> 分组不变 -> 收益逐位相等（含建仓日 0）。
     pd.testing.assert_series_equal(lr_m["Q1"], lr_d["Q1"])
 
 
@@ -125,7 +124,8 @@ def test_long_short_returns():
     fv, close = _make_panel()
     lr = layered_returns(fv, close, n_groups=2, rebalance="monthly")
     ls = long_short_returns(lr)  # 默认 QN - Q1 = Q2 - Q1
-    assert (abs(ls - 0.01) < 1e-12).all()
+    assert ls.iloc[0] == pytest.approx(0.0)
+    assert (abs(ls.iloc[1:] - 0.01) < 1e-12).all()
     # 显式指定
     ls2 = long_short_returns(lr, q_low=1, q_high=2)
     pd.testing.assert_series_equal(ls, ls2)
@@ -138,7 +138,8 @@ def test_long_short_custom_groups():
     ls = long_short_returns(lr)
     assert ls.name is None or "Q" not in str(ls.name)
     # Q5(值6-10,涨2%) - Q1(值1-2,涨1%) ≈ 0.01
-    assert abs(ls.iloc[0] - 0.01) < 1e-9
+    assert ls.iloc[0] == pytest.approx(0.0)
+    assert abs(ls.iloc[1] - 0.01) < 1e-9
 
 
 # ---------------- 边界 / 降级 ----------------
@@ -153,8 +154,9 @@ def test_layered_returns_nan_factor():
     fv, close = _make_panel(periods=5, n=10)
     fv.iloc[0, 0] = np.nan  # S0 首日 NaN
     lr = layered_returns(fv, close, n_groups=2, rebalance="monthly")
-    # Q1 原含 S0-S4，S0 失效后剩 S1-S4（4只等权），仍涨1%
-    assert abs(lr["Q1"].iloc[0] - 0.01) < 1e-9
+    # Q1 原含 S0-S4，S0 失效后剩 S1-S4（4只等权）；建仓日归零，后续仍涨 1%。
+    assert lr["Q1"].iloc[0] == pytest.approx(0.0)
+    assert abs(lr["Q1"].iloc[1] - 0.01) < 1e-9
 
 
 def test_layered_returns_all_equal_factor_breaks_ties_by_column_order():
@@ -162,8 +164,9 @@ def test_layered_returns_all_equal_factor_breaks_ties_by_column_order():
     fv, close = _make_panel(periods=5, n=10)
     fv.loc[:, :] = 0.0
     returns = layered_returns(fv, close, n_groups=2, rebalance="daily")
-    assert (returns["Q1"] - 0.01).abs().lt(1e-12).all()
-    assert (returns["Q2"] - 0.02).abs().lt(1e-12).all()
+    assert returns.iloc[0].tolist() == pytest.approx([0.0, 0.0])
+    assert (returns["Q1"].iloc[1:] - 0.01).abs().lt(1e-12).all()
+    assert (returns["Q2"].iloc[1:] - 0.02).abs().lt(1e-12).all()
 
 
 def test_long_short_missing_column():

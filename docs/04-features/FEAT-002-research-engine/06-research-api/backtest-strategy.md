@@ -1,32 +1,38 @@
 # POST /api/backtest/strategy
 
-用于自定义策略逻辑。可提交带 `generate_signals()` 的自由策略，使用 `FactorPortfolioStrategy` 定义多个 `@factor` 和唯一 `@signal` 的结构化因子组合策略，或引用 `Strategy/libraries/index.yaml` 中已保存的向量化策略版本。
+用于向量化或事件驱动策略。通过 `engine_mode` 显式选择：`vectorized`（默认）支持 `generate_signals()` 与 `FactorPortfolioStrategy`；`event` 支持实现 `initialize(context)` 的日频事件策略。引用策略目录时，请求模式必须与资产的 `execution_mode` 一致。
 
 ```jsonc
 {
+  "engine_mode": "vectorized",
   "strategy_code": "class MyStrategy: ...",
   "universe": "CSI500",
   "start": null, "end": null,
   "benchmark": "CSI300",
   "commission_rate": 0.0, "stamp_tax": 0.001,
   "slippage_rate": 0.0, "initial_capital": 1000000,
-  "include_positions": false, "include_rebalance_logs": true
+  "include_positions": false, "include_rebalance_logs": true,
+  "include_execution_timeline": true
 }
 ```
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `strategy_code` | string/null | — | 完整 Python 源码；与 `strategy_id` 二选一。 |
+| `engine_mode` | enum | `vectorized` | `vectorized` 或 `event`；决定策略契约和回测引擎。 |
 | `strategy_id` | string/null | — | 已保存策略 ID；与 `strategy_code` 二选一。 |
 | `strategy_version` | string/null | `null` | 已保存策略版本；省略时使用 `index.yaml` 中的 `current_version`。 |
 | `universe` | string | `CSI500` | 股票池。 |
+| `universe_snapshot` | object/null | `null` | WebApp 已鉴权并解析的静态证券池快照；仅向量化模式支持，且与 `universe` 至多传一个。 |
 | `start` / `end` | string/null | `null` | 回测区间，格式 `YYYY-MM-DD`。 |
 | `benchmark` | enum | `CSI300` | `CSI300`、`CSI500`、`CSI1000` 或 `SSE50`。 |
+| `benchmark_snapshot` | object/null | `null` | WebApp 已鉴权并解析的固定权重组合基准快照；仅向量化模式支持，且与 `benchmark` 至多传一个。 |
 | `commission_rate` / `slippage_rate` | number | `0.0` | 按成交额的费率与滑点率。 |
 | `stamp_tax` | number | `0.001` | 卖出印花税率。 |
 | `initial_capital` | number | `1000000` | 初始资金。 |
 | `include_positions` | boolean | `false` | 返回持仓权重快照。 |
 | `include_rebalance_logs` | boolean | `false` | 返回目标权重变化日志。 |
+| `include_execution_timeline` | boolean | `false` | 返回统一执行时间线；向量化策略包含目标权重变更，事件策略包含订单、成交、账户快照和审计事件。 |
 
 ## 成功响应示例
 
@@ -122,7 +128,11 @@
 | `meta` | object/`null` | 本次回测实际采用的策略、股票池与基准信息。执行失败时为 `null`。 |
 | `positions` | object[]/`null` | 仅当请求 `include_positions=true` 且存在持仓时返回；为控制体积，最多采样 60 个日期，每日只保留权重最高的 20 个标的。 |
 | `rebalance_logs` | object[]/`null` | 仅当请求 `include_rebalance_logs=true` 且有调仓记录时返回，按调仓日聚合。 |
+| `execution_timeline` | object[]/`null` | 仅当请求 `include_execution_timeline=true` 时返回，条目为 `{timestamp, type, payload}`，按执行顺序排列；Web 应优先消费此字段。 |
+| `orders` / `fills` / `event_positions` / `events` / `assumptions` | object[]/object/`null` | 仅事件模式返回：订单、成交、账户快照、调度审计轨迹和执行假设。 |
 | `error` | string/`null` | 业务执行错误信息；成功时为 `null`。 |
+
+当使用资产快照时，`meta.universe` 为资产 ID，`meta.universe_asset`、`meta.benchmark_asset` 返回解析版本、内容哈希和成分数量。事件驱动模式当前拒绝 `universe_snapshot`、`benchmark_snapshot`，以避免错误宣称已经支持同一资产接入。
 
 ### `metrics` 指标
 
@@ -149,6 +159,7 @@
 | 已保存策略元信息（`meta`） | `strategy_id`、`strategy_version`、`code_hash` | 仅通过 `strategy_id` 运行时有值：策略 ID、实际使用版本和源码 SHA-256 哈希；直接提交源码时均为 `null`。 |
 | 持仓快照（`positions`） | `date`、`holdings` | `holdings` 是 `{symbol, name, weight}` 数组。`symbol` 为带交易所后缀的代码（如 `000001.SZ`），`name` 为证券名称，`weight` 为目标持仓权重。 |
 | 调仓日志（`rebalance_logs`） | `date`、`trades` | `trades` 为 `{symbol, name, side, previous_weight, target_weight, weight_change}` 数组；`symbol` 与 `name` 的口径同持仓快照，`side` 取 `buy` 或 `sell`。 |
+| 执行时间线（`execution_timeline`） | `timestamp`、`type`、`payload` | 向量化策略的 `type` 为 `rebalance`，`payload.trades` 与调仓日志字段一致；事件策略的 `type` 为 `order`、`fill`、`position` 或 `audit`，完整明细位于 `payload`。 |
 
 ## 业务错误响应示例
 

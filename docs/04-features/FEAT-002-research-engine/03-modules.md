@@ -80,7 +80,7 @@ run_backtest(
    ↓
 5. 构建 FactorQuantileStrategy → 目标权重
    ↓
-6. 回测适配器（Native / VectorBT）→ 净值 / 收益 / 持仓
+6. NativeEngine → 净值 / 收益 / 持仓
    ↓
 7. MetricEngine 计算指标
    ↓

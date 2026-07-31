@@ -63,7 +63,7 @@ researchengine/runner.py
 BacktestParams
 ────────────────
 属性：
-  backtest_engine: str       # native | vectorbt
+  backtest_engine: str       # native
   rebalance: str             # monthly | weekly | daily
   stock_num: int             # 持仓数量
   long_short: bool           # 是否多空

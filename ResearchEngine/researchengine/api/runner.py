@@ -1,7 +1,7 @@
 """核心：因子代码字符串 -> 回测 -> 序列化结果。
 
 复用 :class:`researchengine.FactorLoader` + :class:`researchengine.ExperimentManager`
-+ 回测适配器（默认 native，可 vectorbt），**不新写回测逻辑**，只把 SDK 调用包成可被
++ Native 回测适配器，**不新写回测逻辑**，只把 SDK 调用包成可被
 HTTP 路由调用的纯函数。
 
 所有异常（语法错 / 导入错 / 运行错 / 因子名不存在）-> ``BacktestResponse.error``（HTTP 200），
@@ -42,6 +42,10 @@ from researchengine.api.schemas import (
     StrategyBacktestMeta,
     StrategyBacktestRequest,
     StrategyBacktestResponse,
+    EventFillInfo,
+    EventOrderInfo,
+    EventPositionSnapshot,
+    ExecutionTimelineItem,
     RollingIRPoint,
     ValuePoint,
 )
@@ -287,6 +291,71 @@ def _load_benchmark_equity(benchmark: str, dates: pd.DatetimeIndex) -> pd.Series
     return series / series.iloc[0]
 
 
+def _resolve_research_assets(req):
+    """校验 WebApp 已解析的可选资产快照，不访问用户资产存储。"""
+    universe_snapshot = req.universe_snapshot
+    benchmark_snapshot = req.benchmark_snapshot
+    universe = req.universe
+    if universe_snapshot is not None:
+        universe = list(universe_snapshot.symbols)
+        from quantcore import DataEngine, FieldParquetProvider
+
+        engine = DataEngine(FieldParquetProvider(_resolve_data_dir(None)))
+        available = set(engine.get_panels(req.start, req.end, fields=["close"])["close"].columns)
+        missing = [symbol for symbol in universe if symbol not in available]
+        if missing:
+            raise ValueError(f"证券池包含行情中不存在的证券: {', '.join(missing)}")
+    return universe, universe_snapshot, benchmark_snapshot
+
+
+def _custom_benchmark_equity(snapshot, dates: pd.DatetimeIndex) -> pd.Series:
+    """从已发布 close 面板计算静态组合基准，并严格校验价格可得性。"""
+    from quantcore import DataEngine, FieldParquetProvider
+
+    engine = DataEngine(FieldParquetProvider(_resolve_data_dir(None)))
+    close = engine.get_panels(None, None, fields=["close"])["close"].reindex(dates)
+    weights = pd.Series(snapshot.weights, dtype=float)
+    missing = [symbol for symbol in weights.index if symbol not in close.columns]
+    if missing:
+        raise ValueError(f"组合基准缺少价格的证券: {', '.join(missing)}")
+    prices = close.loc[:, weights.index]
+    if prices.dropna(how="all").empty:
+        raise ValueError("组合基准与回测区间没有重叠数据")
+    if prices.iloc[0].isna().any():
+        raise ValueError("组合基准首个有效日期存在缺失价格")
+    returns = prices.pct_change().iloc[1:]
+    if returns.isna().any().any():
+        raise ValueError("组合基准价格缺失，无法计算收益")
+    return pd.concat([
+        pd.Series([1.0], index=prices.index[:1]),
+        (1.0 + returns.dot(weights)).cumprod(),
+    ])
+
+
+def _benchmark_equity(benchmark: str, snapshot, dates: pd.DatetimeIndex) -> pd.Series:
+    return (
+        _custom_benchmark_equity(snapshot, dates)
+        if snapshot is not None else _load_benchmark_equity(benchmark, dates)
+    )
+
+
+def _asset_meta(snapshot):
+    if snapshot is None:
+        return None
+    meta = {
+        "id": snapshot.asset_id,
+        "version": snapshot.version,
+        "content_hash": snapshot.content_hash,
+    }
+    if hasattr(snapshot, "symbols"):
+        return {**meta, "constituent_count": len(snapshot.symbols), "membership_mode": snapshot.membership_mode}
+    return {**meta, "constituent_count": len(snapshot.weights), "pricing": snapshot.pricing}
+
+
+def _persisted_asset(snapshot):
+    return snapshot.model_dump() if snapshot is not None else None
+
+
 def _layered_equity_to_points(equity: pd.DataFrame) -> list[LayeredPoint]:
     """分层净值宽表转为前端消费的逐日对象。"""
     points = []
@@ -506,6 +575,59 @@ def _serialize_rebalance_logs(
     return result
 
 
+def _serialize_vectorized_execution_timeline(
+    logs: pd.DataFrame | None, stock_names: dict[str, str],
+) -> list[ExecutionTimelineItem] | None:
+    """将向量化目标权重变化映射为统一执行时间线。"""
+    rebalance_logs = _serialize_rebalance_logs(logs, stock_names)
+    if rebalance_logs is None:
+        return None
+    return [
+        ExecutionTimelineItem(
+            timestamp=f"{log.date}T00:00:00",
+            type="rebalance",
+            payload={"trades": [trade.model_dump() for trade in log.trades]},
+        )
+        for log in rebalance_logs
+    ]
+
+
+def _serialize_event_execution_timeline(
+    orders: list[EventOrderInfo],
+    fills: list[EventFillInfo],
+    positions: list[EventPositionSnapshot],
+    events: list[dict[str, object]],
+) -> list[ExecutionTimelineItem] | None:
+    """按日频事件顺序合并订单、成交、账户快照与审计事件。"""
+    items: list[tuple[str, int, ExecutionTimelineItem]] = []
+    event_priority = {
+        "SESSION_OPEN": 0,
+        "SCHEDULED_CALLBACK": 10,
+        "ORDER_REJECTED": 30,
+        "FILL": 30,
+        "SESSION_CLOSE": 50,
+    }
+    for event in events:
+        timestamp = str(event["timestamp"])
+        items.append((timestamp, event_priority.get(str(event["type"]), 20), ExecutionTimelineItem(
+            timestamp=timestamp, type="audit", payload=event,
+        )))
+    for order in orders:
+        if order.submitted_at is not None:
+            items.append((order.submitted_at, 20, ExecutionTimelineItem(
+                timestamp=order.submitted_at, type="order", payload=order.model_dump(),
+            )))
+    for fill in fills:
+        items.append((fill.timestamp, 30, ExecutionTimelineItem(
+            timestamp=fill.timestamp, type="fill", payload=fill.model_dump(),
+        )))
+    for position in positions:
+        items.append((position.timestamp, 40, ExecutionTimelineItem(
+            timestamp=position.timestamp, type="position", payload=position.model_dump(),
+        )))
+    return [item for _, _, item in sorted(items, key=lambda entry: (entry[0], entry[1]))] or None
+
+
 def _compute_equity_with_drawdown(equity: pd.Series) -> list[EquityPoint]:
     """计算净值点序列，包含回撤值。"""
     points = equity_to_points(equity)
@@ -534,6 +656,8 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
     try:
         from researchengine import ExperimentManager
 
+        universe, universe_snapshot, benchmark_snapshot = _resolve_research_assets(req)
+
         factor = (
             _load_factor_from_code(req.factor_code, req.factor_name, req.library_names)
             if req.factor_code is not None
@@ -561,6 +685,11 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
             config=cfg,
         )
         result = mgr.run(exp)  # ResultManager
+        if universe_snapshot is not None or benchmark_snapshot is not None:
+            result.meta["research_assets"] = {
+                **({"universe": _persisted_asset(universe_snapshot)} if universe_snapshot else {}),
+                **({"benchmark": _persisted_asset(benchmark_snapshot)} if benchmark_snapshot else {}),
+            }
     except Exception as exc:  # noqa: BLE001  任何错都回前端
         return FactorBacktestResponse(
             error=f"{type(exc).__name__}: {exc}",
@@ -633,7 +762,10 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
                 analysis.get("industry_group_equity", {})
             ),
         )
-    benchmark_equity = _load_benchmark_equity(req.benchmark, equity.index)
+    try:
+        benchmark_equity = _benchmark_equity(req.benchmark, benchmark_snapshot, equity.index)
+    except Exception as exc:  # noqa: BLE001
+        return FactorBacktestResponse(error=f"{type(exc).__name__}: {exc}", meta=None)
     benchmark_curve = _compute_equity_with_drawdown(benchmark_equity)
     common_dates = equity.index.intersection(benchmark_equity.index)
     excess_return = None
@@ -654,7 +786,7 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
         excess_return=excess_return,
         meta=FactorBacktestMeta(
             factor=req.factor_name,
-            universe=req.universe,
+            universe=req.universe if universe_snapshot is None else universe_snapshot.asset_id,
             portfolio_type=req.portfolio_type,
             rebalance_days=req.rebalance_days,
             groups=req.groups,
@@ -665,6 +797,8 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
                 **result.meta.get("timings_seconds", {}),
                 "api_total": round(time.perf_counter() - started_at, 6),
             },
+            universe_asset=_asset_meta(universe_snapshot),
+            benchmark_asset=_asset_meta(benchmark_snapshot),
         ),
         error=None,
     )
@@ -676,6 +810,8 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
         from quantcore.backtest.adapter import get_backtest_engine
         from quantcore.backtest.adapter.signals import BacktestConfig, BacktestSignals
 
+        universe, universe_snapshot, benchmark_snapshot = _resolve_research_assets(req)
+
         strategy_id = None
         strategy_version = None
         code_hash = None
@@ -685,8 +821,11 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
             from researchengine.strategy_catalog import StrategyCatalog
 
             asset = StrategyCatalog().load(req.strategy_id, req.strategy_version)
-            if asset.execution_mode != "vectorized":
-                raise ValueError("当前 /api/backtest/strategy 仅支持 vectorized 策略")
+            if asset.execution_mode != req.engine_mode:
+                raise ValueError(
+                    f"策略 {req.strategy_id} 的 execution_mode 为 {asset.execution_mode}，"
+                    f"与请求 engine_mode={req.engine_mode} 不一致"
+                )
             strategy_code = asset.source_code
             strategy_id = asset.strategy_id
             strategy_version = asset.version
@@ -700,13 +839,18 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
             obj for obj in namespace.values()
             if isinstance(obj, type)
             and obj.__module__ == "user_strategy"
-            and hasattr(obj, "generate_signals")
+            and hasattr(obj, "generate_signals" if req.engine_mode == "vectorized" else "initialize")
         ]
         if len(strategy_classes) != 1:
-            raise ValueError("策略代码必须且只能定义一个包含 generate_signals 方法的类")
+            method = "generate_signals" if req.engine_mode == "vectorized" else "initialize"
+            raise ValueError(f"策略代码必须且只能定义一个包含 {method} 方法的类")
         strategy_class = strategy_classes[0]
         if expected_entrypoint is not None and strategy_class.__name__ != expected_entrypoint:
             raise ValueError("策略索引 entrypoint 与源码中的策略类不一致")
+        if req.engine_mode == "event":
+            return _run_event_strategy_backtest(
+                req, strategy_class, strategy_id, strategy_version, code_hash
+            )
         from quantcore.backtest.adapter.factor_strategy import FactorPortfolioStrategy
 
         data_dir = _resolve_data_dir(None)
@@ -718,7 +862,7 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
         data_engine = DataEngine(provider=provider)
         panels = Panel(
             data_engine.get_panels(req.start, req.end),
-            symbols=resolve_universe(provider, req.universe),
+            symbols=resolve_universe(provider, universe),
             index_loader=lambda name: data_engine.get_index(name, req.start, req.end),
         )
         close = panels.close
@@ -787,7 +931,7 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
     drawdowns = _compute_drawdowns(equity) if equity is not None else []
     annual_returns = _compute_annual_returns(equity) if equity is not None else []
     try:
-        benchmark_equity = _load_benchmark_equity(req.benchmark, equity.index)
+        benchmark_equity = _benchmark_equity(req.benchmark, benchmark_snapshot, equity.index)
     except Exception as exc:  # noqa: BLE001
         return StrategyBacktestResponse(
             error=f"{type(exc).__name__}: {exc}",
@@ -807,6 +951,11 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
     rebalance_logs = None
     if req.include_rebalance_logs:
         rebalance_logs = _serialize_rebalance_logs(bt_result.rebalance_logs, stock_names)
+    execution_timeline = None
+    if req.include_execution_timeline:
+        execution_timeline = _serialize_vectorized_execution_timeline(
+            bt_result.rebalance_logs, stock_names,
+        )
 
     return StrategyBacktestResponse(
         metrics=metrics,
@@ -819,13 +968,116 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
         excess_return=excess_return,
         meta=StrategyBacktestMeta(
             strategy=strategy_class.__name__,
-            universe=req.universe,
+            universe=req.universe if universe_snapshot is None else universe_snapshot.asset_id,
             benchmark=req.benchmark,
+            universe_asset=_asset_meta(universe_snapshot),
+            benchmark_asset=_asset_meta(benchmark_snapshot),
+            engine_mode="vectorized",
             strategy_id=strategy_id,
             strategy_version=strategy_version,
             code_hash=code_hash,
         ),
         positions=positions,
         rebalance_logs=rebalance_logs,
+        execution_timeline=execution_timeline,
         error=None,
     )
+
+
+def _run_event_strategy_backtest(
+    req: StrategyBacktestRequest,
+    strategy_class,
+    strategy_id: str | None,
+    strategy_version: str | None,
+    code_hash: str | None,
+) -> StrategyBacktestResponse:
+    """运行日频事件策略，并将审计结果转成 API 契约。"""
+    try:
+        from quantcore import DataEngine, FieldParquetProvider
+        from quantcore.backtest.event import EventBacktestConfig, EventBacktestEngine
+        from quantcore.data._util import resolve_universe
+        from quantcore.metric.context import MetricContext
+        from quantcore.metric.engine import MetricEngine
+
+        provider = FieldParquetProvider(_resolve_data_dir(None))
+        data_engine = DataEngine(provider=provider)
+        strategy = strategy_class()
+        required_fields = set(getattr(strategy, "required_fields", ())) | {"open", "high", "low", "close"}
+        panels = data_engine.get_panels(req.start, req.end, fields=sorted(required_fields))
+        symbols = resolve_universe(provider, req.universe)
+        event_panels = {field: panels[field].reindex(columns=symbols) for field in required_fields}
+        index = data_engine.get_index(req.benchmark, req.start, req.end)
+        benchmark_symbol = getattr(strategy, "benchmark_symbol", None)
+        if benchmark_symbol:
+            event_panels["close"] = event_panels["close"].copy()
+            event_panels["close"][benchmark_symbol] = index["close"].reindex(event_panels["close"].index)
+
+        result = EventBacktestEngine(
+            event_panels,
+            EventBacktestConfig(
+                initial_capital=req.initial_capital,
+                commission_rate=req.commission_rate,
+                stamp_tax_rate=req.stamp_tax,
+            ),
+        ).run(strategy)
+        equity = result.equity_curve
+        metrics = metrics_to_dict(MetricEngine().calculate_all(MetricContext(
+            equity_curve=equity, returns=result.returns, periods_per_year=252,
+        )))
+        metrics["total_return"] = float(equity.iloc[-1] / equity.iloc[0] - 1)
+        benchmark_equity = _load_benchmark_equity(req.benchmark, equity.index)
+        common_dates = equity.index.intersection(benchmark_equity.index)
+        excess_return = None
+        if len(common_dates):
+            excess_return = float(
+                equity.loc[common_dates[-1]] / equity.loc[common_dates[0]]
+                - benchmark_equity.loc[common_dates[-1]] / benchmark_equity.loc[common_dates[0]]
+            )
+        orders = [EventOrderInfo(
+            order_id=order.order_id, symbol=order.symbol, quantity=order.quantity,
+            target_value=order.target_value, side=order.side, status=order.status,
+            reason_code=order.reason_code,
+            submitted_at=order.submitted_at.isoformat() if order.submitted_at else None,
+        ) for order in result.orders]
+        fills = [EventFillInfo(
+            order_id=fill.order_id, symbol=fill.symbol, side=fill.side,
+            quantity=fill.quantity, price=fill.price, timestamp=fill.timestamp.isoformat(),
+            commission=fill.commission, stamp_tax=fill.stamp_tax,
+        ) for fill in result.fills]
+        event_positions = [EventPositionSnapshot(
+            timestamp=snapshot.timestamp.isoformat(), cash=snapshot.cash,
+            total_value=snapshot.total_value, positions=snapshot.positions,
+            sellable_quantities=snapshot.sellable_quantities,
+        ) for snapshot in result.position_snapshots]
+        events = [{
+            key: value.isoformat() if hasattr(value, "isoformat") else value
+            for key, value in event.items()
+        } for event in result.events]
+        execution_timeline = None
+        if req.include_execution_timeline:
+            execution_timeline = _serialize_event_execution_timeline(
+                orders, fills, event_positions, events,
+            )
+        return StrategyBacktestResponse(
+            metrics=metrics,
+            equity_curve=_compute_equity_with_drawdown(equity),
+            drawdowns=_compute_drawdowns(equity),
+            annual_returns=_compute_annual_returns(equity),
+            date_range=DateRange(**date_range_from(equity)),
+            final_equity=float(equity.iloc[-1]),
+            benchmark_curve=_compute_equity_with_drawdown(benchmark_equity),
+            excess_return=excess_return,
+            meta=StrategyBacktestMeta(
+                strategy=strategy_class.__name__, universe=req.universe,
+                benchmark=req.benchmark, engine_mode="event", strategy_id=strategy_id,
+                strategy_version=strategy_version, code_hash=code_hash,
+            ),
+            orders=orders,
+            fills=fills,
+            event_positions=event_positions,
+            events=events,
+            assumptions=result.assumptions,
+            execution_timeline=execution_timeline,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return StrategyBacktestResponse(error=f"{type(exc).__name__}: {exc}")

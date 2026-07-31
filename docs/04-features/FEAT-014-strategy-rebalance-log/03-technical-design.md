@@ -2,7 +2,9 @@
 
 ## 模块边界
 
-`QuantCore.backtest` 从 `BacktestSignals.target_weights` 生成统一日志并存入 `BacktestResult.rebalance_logs`。Native 和 VectorBT 后端共用该生成逻辑。`ResearchEngine.api` 只负责按请求开关序列化。
+`QuantCore.backtest` 从 `BacktestSignals.target_weights` 生成统一日志并存入 `BacktestResult.rebalance_logs`。NativeEngine 复用该生成逻辑。`ResearchEngine.api` 只负责按请求开关序列化。
+
+`ResearchEngine.api` 同时提供按需的 `execution_timeline` 兼容层。向量化模式将 `rebalance_logs` 映射为 `type=rebalance`；事件模式按时间合并订单、成交、账户快照和审计事件。该字段不改变既有 `rebalance_logs` 语义，供 Web 作为唯一展示数据源。
 
 ## 数据规则
 

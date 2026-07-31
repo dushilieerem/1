@@ -13,7 +13,7 @@ Web 用户需要以自然语言生成可回测因子。现有 `ResearchEngine` �
 
 生产回测执行须使用受限子进程或容器；静态校验不作为执行隔离的替代品。
 
-首期 Provider 固定为字节火山方舟 Coding API（Base URL 由服务端配置），模型别名为 `deepseek-v4-flash`。真实 API Key 只保存在密钥管理服务或部署环境变量中，绝不进入仓库、文档或浏览器。
+首期 Provider 固定为字节火山方舟 AgentPlan API（Base URL 由服务端配置），模型别名为 `ark-code-latest`。真实 API Key 只保存在密钥管理服务或部署环境变量中，绝不进入仓库、文档或浏览器。
 
 ## 备选方案
 

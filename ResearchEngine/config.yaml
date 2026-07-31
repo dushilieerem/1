@@ -20,8 +20,8 @@ periods_per_year: 252   # 年化周期数
 commission: 0.0003
 slippage: 0.001
 
-# 回测适配器（可插拔后端）
-#   engine: native（自研向量化，与 build_factor_portfolio 逐位等价）| vectorbt（需 pip install vectorbt）
+# Native 向量化回测
+#   engine: native（自研向量化，与 build_factor_portfolio 逐位等价）
 #   成本默认 0 -> 不改默认结果；需要扣成本时设 commission_rate/slippage_rate
 backtest:
   engine: native

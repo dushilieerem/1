@@ -3,8 +3,7 @@
 含两套回测：
 
 - **事件驱动** :mod:`quantcore.backtest.event`：A 股日频 EventEngine。
-- **向量化适配层** :mod:`quantcore.backtest.adapter`：可插拔后端（Native / VectorBT），
-  ResearchEngine 实际走这条。详见 ``docs/04-features/FEAT-003-backtest-adapter/03-technical-design.md``。
+- **向量化适配层** :mod:`quantcore.backtest.adapter`：NativeEngine，供 ResearchEngine 使用。
 """
 
 from quantcore.backtest.event import EventBacktestConfig, EventBacktestEngine

@@ -8,6 +8,8 @@ from fastapi import APIRouter, Response
 
 from researchengine.api.market_data import get_daily_bars, get_symbols
 from researchengine.api.ai_factor import generate_factor
+from researchengine.api.ai_strategy import generate_strategy
+from researchengine.api.ai_interpretation import interpret_backtest
 from researchengine.api.runner import run_factor_backtest, run_strategy_backtest
 from researchengine.api.schemas import (
     FactorBacktestRequest,
@@ -23,6 +25,10 @@ from researchengine.api.schemas import (
     StrategyListResponse,
     FactorGenerationRequest,
     FactorGenerationResponse,
+    StrategyGenerationRequest,
+    StrategyGenerationResponse,
+    BacktestInterpretationRequest,
+    BacktestInterpretationResponse,
 )
 
 router = APIRouter(prefix="/api")
@@ -31,7 +37,7 @@ router = APIRouter(prefix="/api")
 @router.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     """健康检查。"""
-    return HealthResponse(status="ok", version="2.0.0", engines=["native", "vectorbt"])
+    return HealthResponse(status="ok", version="2.0.0", engines=["native"])
 
 
 @router.get("/factors", response_model=FactorListResponse)
@@ -68,6 +74,18 @@ def list_market_data_symbols() -> SymbolListResponse:
 def generate_factor_draft(req: FactorGenerationRequest) -> FactorGenerationResponse:
     """自然语言 -> 经静态校验的因子函数草稿；不会执行代码或回测。"""
     return generate_factor(req)
+
+
+@router.post("/ai/strategy-generations", response_model=StrategyGenerationResponse)
+def generate_strategy_draft(req: StrategyGenerationRequest) -> StrategyGenerationResponse:
+    """自然语言 -> 经静态校验的向量化策略草稿；不会执行代码或回测。"""
+    return generate_strategy(req)
+
+
+@router.post("/ai/backtest-interpretations", response_model=BacktestInterpretationResponse)
+def interpret_backtest_result(req: BacktestInterpretationRequest) -> BacktestInterpretationResponse:
+    """对成功的因子或向量化策略回测快照生成可追溯的研究解读。"""
+    return interpret_backtest(req)
 
 
 @router.post("/backtest/factor", response_model=FactorBacktestResponse)

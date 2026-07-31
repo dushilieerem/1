@@ -331,6 +331,7 @@ def test_strategy_backtest_returns_equity_and_positions(market_data_dir):
         "strategy": "EqualWeightMomentum",
         "universe": "CSI500",
         "benchmark": "CSI300",
+        "engine_mode": "vectorized",
         "strategy_id": None,
         "strategy_version": None,
         "code_hash": None,
@@ -339,8 +340,37 @@ def test_strategy_backtest_returns_equity_and_positions(market_data_dir):
     assert len(body["equity_curve"]) > 0
     assert len(body["benchmark_curve"]) > 0
     assert body["excess_return"] is not None
+    assert body["equity_curve"][0]["value"] == pytest.approx(1.0)
+    assert body["benchmark_curve"][0]["value"] == pytest.approx(1.0)
     assert body["positions"]
     assert body["rebalance_logs"] is None
+
+
+def test_strategy_backtest_routes_catalog_event_strategy_to_event_engine(market_data_dir):
+    response = client.post(
+        "/api/backtest/strategy",
+        json={"strategy_id": "donchian_a_share_event", "engine_mode": "event"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["error"] is None
+    assert body["meta"]["engine_mode"] == "event"
+    assert body["event_positions"]
+    assert body["events"]
+    assert body["orders"] == []
+    assert body["fills"] == []
+    assert body["assumptions"]["execution"] == "same_session_open_after_before_open"
+
+
+def test_strategy_backtest_rejects_mismatched_catalog_engine_mode(market_data_dir):
+    response = client.post(
+        "/api/backtest/strategy",
+        json={"strategy_id": "donchian_a_share_event", "engine_mode": "vectorized"},
+    )
+
+    assert response.status_code == 200
+    assert "execution_mode" in response.json()["error"]
 
 
 def test_strategy_backtest_returns_rebalance_logs_on_demand(market_data_dir):
@@ -359,6 +389,41 @@ def test_strategy_backtest_returns_rebalance_logs_on_demand(market_data_dir):
     trade = logs[0]["trades"][0]
     assert set(trade) == {"symbol", "name", "side", "previous_weight", "target_weight", "weight_change"}
     assert trade["side"] in {"buy", "sell"}
+
+
+def test_strategy_backtest_returns_vectorized_execution_timeline_on_demand(market_data_dir):
+    response = client.post(
+        "/api/backtest/strategy",
+        json={"strategy_code": STRATEGY_CODE, "include_execution_timeline": True},
+    )
+
+    assert response.status_code == 200
+    timeline = response.json()["execution_timeline"]
+    assert timeline
+    assert timeline[0]["type"] == "rebalance"
+    assert timeline[0]["payload"]["trades"]
+
+
+def test_strategy_backtest_returns_event_execution_timeline_on_demand(market_data_dir):
+    strategy_code = '''class DailyBuy:
+    def initialize(self, context):
+        context.schedule.daily(self.rebalance)
+
+    def rebalance(self, context):
+        context.orders.target_quantity("S000", 100)'''
+    response = client.post(
+        "/api/backtest/strategy",
+        json={
+            "strategy_code": strategy_code,
+            "engine_mode": "event",
+            "include_execution_timeline": True,
+        },
+    )
+
+    assert response.status_code == 200
+    timeline = response.json()["execution_timeline"]
+    assert timeline
+    assert {item["type"] for item in timeline} >= {"audit", "order", "fill", "position"}
 
 
 def test_strategy_response_instruments_include_exchange_code_and_name():

@@ -154,7 +154,7 @@ ResearchEngine                  QuantCore
     ├── 编译因子代码 ────────────►  │ FactorLibrary (动态执行)
     ├── 编译策略代码 ────────────►  │ Strategy (动态执行)
     ├── 请求数据 ───────────────►  │ DataEngine / FieldParquetProvider
-    ├── 跑回测 ─────────────────►  │ NativeEngine / VectorBTEngine
+    ├── 跑回测 ─────────────────►  │ NativeEngine
     ├── 计算指标 ────────────────►  │ MetricEngine
     │                              │
     │  (序列化结果返回前端)         │

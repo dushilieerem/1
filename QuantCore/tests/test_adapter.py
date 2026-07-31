@@ -1,4 +1,4 @@
-"""回测适配层测试：接口、策略、NativeEngine、VectorBTEngine、注册表。"""
+"""回测适配层测试：接口、策略、NativeEngine 与注册表。"""
 
 import numpy as np
 import pandas as pd
@@ -144,8 +144,22 @@ def test_native_engine_run_shapes():
     assert isinstance(res, BacktestResult)
     assert len(res.equity_curve) == len(res.returns)
     assert res.positions.shape[1] == 20
-    # 固定本金口径：首值靠近 1.0
-    assert abs(res.equity_curve.iloc[0] - 1.0) < 2.0
+    # 第二个交易日收盘完成建仓，作为净值 1.0 的共同起点。
+    assert res.equity_curve.iloc[0] == pytest.approx(1.0)
+    assert res.returns.iloc[0] == pytest.approx(0.0)
+
+
+def test_native_engine_starts_return_after_close_build_date():
+    dates = pd.bdate_range("2024-01-02", periods=4)
+    close = pd.DataFrame({"A": [100.0, 110.0, 121.0, 133.1]}, index=dates)
+    target = pd.DataFrame({"A": [1.0, float("nan"), float("nan"), float("nan")]}, index=dates)
+
+    result = NativeEngine().run(BacktestSignals(target_weights=target, close=close), BacktestConfig())
+
+    assert result.returns.index.tolist() == dates[1:].tolist()
+    assert result.returns.tolist() == pytest.approx([0.0, 0.1, 0.1])
+    assert result.equity_curve.tolist() == pytest.approx([1.0, 1.1, 1.2])
+    assert result.positions.loc[dates[1], "A"] == pytest.approx(1.0)
 
 
 def test_native_engine_records_rebalance_logs():
@@ -161,9 +175,9 @@ def test_native_engine_records_rebalance_logs():
 
 
 def test_native_engine_only_charges_stamp_tax_on_sells():
-    dates = pd.date_range("2024-01-01", periods=3, freq="D")
-    close = pd.DataFrame({"A": [100.0, 100.0, 100.0]}, index=dates)
-    target = pd.DataFrame({"A": [1.0, 0.0, 0.0]}, index=dates)
+    dates = pd.date_range("2024-01-01", periods=4, freq="D")
+    close = pd.DataFrame({"A": [100.0, 100.0, 100.0, 100.0]}, index=dates)
+    target = pd.DataFrame({"A": [1.0, 0.0, 0.0, 0.0]}, index=dates)
     signals = BacktestSignals(target_weights=target, close=close)
 
     result = NativeEngine().run(signals, BacktestConfig(stamp_tax=0.001))
@@ -196,52 +210,11 @@ def test_registry_native():
     assert isinstance(eng, NativeEngine)
 
 
-def test_registry_vectorbt_lazy():
-    """get_backtest_engine('vectorbt') 返回实例化对象（不触发 vectorbt import）。"""
-    eng = get_backtest_engine("vectorbt")
-    assert isinstance(eng, IBacktestEngine)
-    assert eng.name == "vectorbt"
-
-
 def test_registry_unknown_raises():
     with pytest.raises(ValueError):
         get_backtest_engine("nonsense")
 
 
-# ---------------- VectorBTEngine（需 vectorbt）----------------
-
-vbt = pytest.importorskip("vectorbt")  # noqa: F841  未装则跳过以下用例
-
-
-def test_vectorbt_engine_smoke():
-    fv, close = _make_panel(n_dates=20, n_sym=15)
-    sig = FactorQuantileStrategy(
-        fv, close, rebalance="weekly", stock_num=3, long_short=True
-    ).generate_signals()
-    res = get_backtest_engine("vectorbt").run(sig, BacktestConfig(engine="vectorbt"))
-    assert isinstance(res, BacktestResult)
-    assert len(res.equity_curve) > 0
-    assert res.positions is not None
-    assert res.positions.shape[1] == 15
-
-
-def test_native_vs_vectorbt_parity():
-    """两后端在 cost=0 同信号下结果接近（松容差：vectorbt 撮合时序与 shift(1) 约定有 1 bar 偏差）。"""
-    fv, close = _make_panel(n_dates=40, n_sym=30, seed=3)
-    sig = FactorQuantileStrategy(
-        fv, close, rebalance="weekly", stock_num=5, long_short=True
-    ).generate_signals()
-    nat = NativeEngine().run(sig, BacktestConfig())
-    vbt_res = get_backtest_engine("vectorbt").run(sig, BacktestConfig(engine="vectorbt"))
-    assert len(nat.equity_curve) == len(vbt_res.equity_curve)
-    common = nat.equity_curve.index.intersection(vbt_res.equity_curve.index)
-    corr = float(np.corrcoef(
-        nat.equity_curve.loc[common].to_numpy(),
-        vbt_res.equity_curve.loc[common].to_numpy(),
-    )[0, 1])
-    assert corr > 0.95
-    # 终值相对误差 < 5%
-    rel = abs(nat.equity_curve.iloc[-1] - vbt_res.equity_curve.iloc[-1]) / abs(
-        nat.equity_curve.iloc[-1]
-    )
-    assert rel < 0.05
+def test_registry_rejects_removed_vectorbt_backend():
+    with pytest.raises(ValueError, match="未知回测后端"):
+        get_backtest_engine("vectorbt")

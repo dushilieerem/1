@@ -9,7 +9,7 @@ class WilderAdxRsiAtrAShareEventStrategy:
     """日频现金多头策略；历史股票池、ST 与上市天数须在面板准备阶段过滤。"""
 
     execution_mode = "event"
-    required_fields = frozenset({"open", "high", "low", "close", "money"})
+    required_fields = frozenset({"open", "high", "low", "close", "amount"})
     required_market_state = frozenset({"suspended", "limit_up", "limit_down"})
     execution_assumptions = frozenset({"daily_open", "no_slippage"})
 
@@ -36,13 +36,14 @@ class WilderAdxRsiAtrAShareEventStrategy:
         holdings = set(context.portfolio.positions)
         universe = self.universe or [symbol for symbol in context.data.symbols if symbol != self.benchmark_symbol]
         symbols = list(dict.fromkeys(universe + list(holdings)))
-        history = context.data.history(symbols + [self.benchmark_symbol], ["close", "high", "low", "money"], 160)
-        if len(history["close"]) < 120 or self.benchmark_symbol not in history["close"]:
+        history = context.data.history(symbols, ["close", "high", "low", "amount"], 160)
+        benchmark_history = context.data.history([self.benchmark_symbol], ["close"], 120)
+        if len(history["close"]) < 120 or self.benchmark_symbol not in benchmark_history["close"]:
             return
 
         metrics = self._metrics(history, symbols)
         survivors = self._exit_positions(context, metrics, holdings)
-        if not self._market_allows_entry(history["close"]):
+        if not self._market_allows_entry(benchmark_history["close"]):
             return
 
         slots = self.max_holdings - len(survivors)
@@ -91,7 +92,7 @@ class WilderAdxRsiAtrAShareEventStrategy:
             close = history["close"][symbol].dropna()
             high = history["high"][symbol].reindex(close.index)
             low = history["low"][symbol].reindex(close.index)
-            money = history["money"][symbol].reindex(close.index)
+            money = history["amount"][symbol].reindex(close.index)
             if len(close) < 80 or high.isna().any() or low.isna().any() or money.isna().any():
                 continue
             indicators = self._indicators(high, low, close)

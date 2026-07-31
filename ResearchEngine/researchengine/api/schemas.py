@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Literal, Optional
 from uuid import UUID
 
@@ -13,6 +14,54 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # ---------------- 请求 ----------------
+
+class UniverseSnapshotInput(BaseModel):
+    """由 WebApp 鉴权、解析后传入的静态证券池快照。"""
+
+    model_config = ConfigDict(extra="forbid")
+    asset_id: str = Field(min_length=1)
+    version: str = Field(min_length=1)
+    content_hash: str = Field(min_length=1)
+    symbols: list[str] = Field(min_length=1)
+    membership_mode: Literal["static"] = "static"
+
+    @model_validator(mode="after")
+    def validate_symbols(self):
+        if not all(symbol.strip() for symbol in self.symbols):
+            raise ValueError("证券池快照含空证券代码")
+        if len(self.symbols) != len(set(self.symbols)):
+            raise ValueError("证券池快照的证券代码不可重复")
+        return self
+
+
+class BenchmarkSnapshotInput(BaseModel):
+    """由 WebApp 鉴权、解析后传入的固定权重组合基准快照。"""
+
+    model_config = ConfigDict(extra="forbid")
+    asset_id: str = Field(min_length=1)
+    version: str = Field(min_length=1)
+    content_hash: str = Field(min_length=1)
+    weights: dict[str, float] = Field(min_length=1)
+    pricing: Literal["close_to_close"] = "close_to_close"
+
+    @model_validator(mode="after")
+    def validate_weights(self):
+        if not all(symbol.strip() for symbol in self.weights):
+            raise ValueError("组合基准快照含空证券代码")
+        if not all(math.isfinite(weight) and weight >= 0 for weight in self.weights.values()):
+            raise ValueError("组合基准快照的权重必须为有限非负数")
+        if not math.isclose(sum(self.weights.values()), 1.0, abs_tol=1e-8):
+            raise ValueError("组合基准快照的权重之和必须为 1")
+        return self
+
+
+class ResolvedAssetMeta(BaseModel):
+    id: str
+    version: str
+    content_hash: str
+    constituent_count: int
+    membership_mode: Optional[Literal["static"]] = None
+    pricing: Optional[Literal["close_to_close"]] = None
 
 class FactorBacktestRequest(BaseModel):
     """``POST /api/backtest/factor`` 请求。"""
@@ -29,6 +78,7 @@ class FactorBacktestRequest(BaseModel):
     portfolio_type: str = Field("long_short", description="long_only | long_short")
     #: 股票池
     universe: str = Field("CSI_ALL", description="CSI_ALL | CSI300 | CSI500 | CSI1000 | CSI2000 | SSE50")
+    universe_snapshot: Optional[UniverseSnapshotInput] = None
     #: 自定义回测区间
     start: Optional[str] = None
     end: Optional[str] = None
@@ -42,6 +92,7 @@ class FactorBacktestRequest(BaseModel):
     groups: int = Field(5, ge=2, le=10, description="因子分层数，2-10 组")
     #: 对比基准
     benchmark: Literal["CSI300", "CSI500", "CSI1000", "SSE50"] = "CSI300"
+    benchmark_snapshot: Optional[BenchmarkSnapshotInput] = None
     #: 手续费率（默认 3‱）
     commission_rate: float = 0.0003
     #: 印花税率（默认 1‰，仅卖出）
@@ -71,11 +122,22 @@ class FactorBacktestRequest(BaseModel):
         if self.library_name is None:
             return []
         return [self.library_name] if isinstance(self.library_name, str) else self.library_name
+
+    @model_validator(mode="after")
+    def validate_asset_refs(self):
+        if self.universe_snapshot is not None and "universe" in self.model_fields_set:
+            raise ValueError("universe 与 universe_snapshot 至多提供一个")
+        if self.benchmark_snapshot is not None and "benchmark" in self.model_fields_set:
+            raise ValueError("benchmark 与 benchmark_snapshot 至多提供一个")
+        return self
+
 class StrategyBacktestRequest(BaseModel):
     """``POST /api/backtest/strategy`` 请求。"""
 
     model_config = ConfigDict(extra="forbid")
 
+    #: 回测引擎模式；省略时保持既有向量化策略行为。
+    engine_mode: Literal["vectorized", "event"] = "vectorized"
     #: 策略 Python 源码（必须实现 generate_signals 方法）
     strategy_code: Optional[str] = Field(None, description="策略 Python 源码")
     #: 已保存策略的索引 ID；与 ``strategy_code`` 二选一
@@ -83,10 +145,12 @@ class StrategyBacktestRequest(BaseModel):
     #: 已保存策略版本；省略时使用索引声明的 current_version
     strategy_version: Optional[str] = Field(None, description="已保存策略的版本号")
     universe: str = "CSI500"
+    universe_snapshot: Optional[UniverseSnapshotInput] = None
     start: Optional[str] = None
     end: Optional[str] = None
     #: 对比基准
     benchmark: Literal["CSI300", "CSI500", "CSI1000", "SSE50"] = "CSI300"
+    benchmark_snapshot: Optional[BenchmarkSnapshotInput] = None
     commission_rate: float = 0.0
     #: 印花税率（仅卖出时按成交额计提）
     stamp_tax: float = 0.001
@@ -95,6 +159,8 @@ class StrategyBacktestRequest(BaseModel):
     #: 返回持仓权重（前端画持仓图用）
     include_positions: bool = False
     include_rebalance_logs: bool = False
+    #: 返回统一执行时间线，供 Web 同时展示向量化调仓与事件策略成交过程。
+    include_execution_timeline: bool = False
 
     @model_validator(mode="after")
     def validate_strategy_source(self):
@@ -102,6 +168,12 @@ class StrategyBacktestRequest(BaseModel):
             raise ValueError("strategy_code 与 strategy_id 必须且只能提供一个")
         if self.strategy_version is not None and self.strategy_id is None:
             raise ValueError("strategy_version 只能与 strategy_id 一起使用")
+        if self.universe_snapshot is not None and "universe" in self.model_fields_set:
+            raise ValueError("universe 与 universe_snapshot 至多提供一个")
+        if self.benchmark_snapshot is not None and "benchmark" in self.model_fields_set:
+            raise ValueError("benchmark 与 benchmark_snapshot 至多提供一个")
+        if self.engine_mode == "event" and (self.universe_snapshot is not None or self.benchmark_snapshot is not None):
+            raise ValueError("事件驱动策略暂不支持 universe_snapshot 或 benchmark_snapshot")
         return self
 
 
@@ -237,6 +309,8 @@ class FactorBacktestMeta(BaseModel):
     filter_limit_up: bool
     filter_suspended: bool
     timings_seconds: "dict[str, float]" = {}
+    universe_asset: Optional[ResolvedAssetMeta] = Field(None, exclude_if=lambda value: value is None)
+    benchmark_asset: Optional[ResolvedAssetMeta] = Field(None, exclude_if=lambda value: value is None)
 
 
 class StrategyBacktestMeta(BaseModel):
@@ -244,9 +318,12 @@ class StrategyBacktestMeta(BaseModel):
     strategy: str
     universe: str
     benchmark: str
+    engine_mode: Literal["vectorized", "event"] = "vectorized"
     strategy_id: Optional[str] = None
     strategy_version: Optional[str] = None
     code_hash: Optional[str] = None
+    universe_asset: Optional[ResolvedAssetMeta] = Field(None, exclude_if=lambda value: value is None)
+    benchmark_asset: Optional[ResolvedAssetMeta] = Field(None, exclude_if=lambda value: value is None)
 
 
 class StrategyInfo(BaseModel):
@@ -257,6 +334,44 @@ class StrategyInfo(BaseModel):
     current_version: str
     entrypoint: str
     tags: list[str] = []
+
+
+class EventOrderInfo(BaseModel):
+    order_id: str
+    symbol: str
+    quantity: Optional[int] = None
+    target_value: Optional[float] = None
+    side: Optional[str] = None
+    status: str
+    reason_code: Optional[str] = None
+    submitted_at: Optional[str] = None
+
+
+class EventFillInfo(BaseModel):
+    order_id: str
+    symbol: str
+    side: str
+    quantity: int
+    price: float
+    timestamp: str
+    commission: float
+    stamp_tax: float
+
+
+class EventPositionSnapshot(BaseModel):
+    timestamp: str
+    cash: float
+    total_value: float
+    positions: "dict[str, int]" = {}
+    sellable_quantities: "dict[str, int]" = {}
+
+
+class ExecutionTimelineItem(BaseModel):
+    """统一的策略执行时间线条目。"""
+
+    timestamp: str
+    type: str
+    payload: "dict[str, object]" = {}
 
 
 class StrategyListResponse(BaseModel):
@@ -318,6 +433,13 @@ class StrategyBacktestResponse(BaseModel):
     # 持仓快照（可选）
     positions: Optional[list[PositionSnapshot]] = None
     rebalance_logs: Optional[list[RebalanceLog]] = None
+    execution_timeline: Optional[list[ExecutionTimelineItem]] = None
+    # 事件驱动模式的订单、成交和审计轨迹；向量化模式均为 null。
+    orders: Optional[list[EventOrderInfo]] = None
+    fills: Optional[list[EventFillInfo]] = None
+    event_positions: Optional[list[EventPositionSnapshot]] = None
+    events: Optional[list["dict[str, object]"]] = None
+    assumptions: Optional["dict[str, str]"] = None
     # 错误信息
     error: Optional[str] = None
 
@@ -334,7 +456,7 @@ class FactorListResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str = "ok"
     version: str = "2.0.0"
-    engines: list[str] = ["native", "vectorbt"]
+    engines: list[str] = ["native"]
 
 
 class DailyBar(BaseModel):
@@ -413,6 +535,145 @@ class FactorGenerationResponse(BaseModel):
     factor: Optional[GeneratedFactor] = None
     validation: FactorGenerationValidation
     meta: FactorGenerationMeta
+
+
+# ---------------- AI 向量化策略生成 ----------------
+
+
+class StrategyGenerationContext(BaseModel):
+    """自然语言策略生成的非敏感研究上下文。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    universe: Optional[str] = None
+    frequency: Literal["1d"] = "1d"
+    preferred_strategy_name: Optional[str] = None
+
+
+class StrategyGenerationRequest(BaseModel):
+    """``POST /api/ai/strategy-generations`` 请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    prompt: str = Field(..., min_length=1, max_length=2000)
+    context: StrategyGenerationContext = StrategyGenerationContext()
+    idempotency_key: UUID
+
+
+class GeneratedStrategy(BaseModel):
+    """经静态校验的自由向量化策略草稿。"""
+
+    strategy_name: str
+    strategy_code: str
+    description: str
+    used_fields: list[str]
+    assumptions: list[str] = []
+    warnings: list[str] = []
+
+
+class StrategyGenerationValidation(BaseModel):
+    status: Literal["passed", "failed"]
+    capability_catalog_version: str
+    errors: list[str] = []
+    warnings: list[str] = []
+
+
+class StrategyGenerationMeta(BaseModel):
+    model_alias: str
+    prompt_version: str
+    latency_ms: int
+
+
+class StrategyGenerationResponse(BaseModel):
+    """AI 策略生成结果；拒绝结果不会返回可回测代码。"""
+
+    generation_id: str
+    status: Literal["ready", "rejected"]
+    strategy: Optional[GeneratedStrategy] = None
+    validation: StrategyGenerationValidation
+    meta: StrategyGenerationMeta
+
+
+# ---------------- AI 回测解读 ----------------
+
+
+class BacktestInterpretationRequest(BaseModel):
+    """``POST /api/ai/backtest-interpretations`` 请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    backtest_type: Literal["factor", "strategy"]
+    result: dict[str, object]
+    run_context: dict[str, object] = Field(default_factory=dict)
+    focus: Literal["overall", "risk", "robustness", "factor", "execution"] = "overall"
+    question: Optional[str] = Field(None, min_length=1, max_length=500)
+    idempotency_key: UUID
+
+
+class BacktestEvidenceItem(BaseModel):
+    evidence_id: str
+    category: Literal["identity", "coverage", "performance", "risk", "stability", "execution", "factor", "assumption"]
+    label: str
+    value: Optional[float | int | str | bool] = None
+    unit: Optional[str] = None
+    status: Literal["observed", "derived", "unknown", "not_applicable"]
+    source_paths: list[str] = []
+    limitations: list[str] = []
+
+
+class BacktestEvidencePackage(BaseModel):
+    schema_version: str
+    result_fingerprint: str
+    coverage: Literal["complete", "partial", "insufficient"]
+    warnings: list[str] = []
+    items: list[BacktestEvidenceItem]
+
+
+class BacktestFinding(BaseModel):
+    finding_id: str
+    candidate_id: str
+    severity: Literal["info", "warning", "critical"]
+    title: str
+    explanation: str
+    evidence_refs: list[str]
+    confidence: Literal["high", "medium", "low"]
+    limitations: list[str] = []
+
+
+class BacktestExperiment(BaseModel):
+    experiment_id: str
+    priority: int
+    hypothesis: str
+    primary_variable: str
+    expected_direction: list[str]
+    tradeoffs: list[str]
+    validation_method: str
+    pass_criteria: list[str]
+    evidence_refs: list[str]
+    manual_only: bool = True
+
+
+class BacktestInterpretation(BaseModel):
+    summary: str
+    findings: list[BacktestFinding] = []
+    experiments: list[BacktestExperiment] = []
+
+
+class BacktestInterpretationMeta(BaseModel):
+    model_alias: str
+    prompt_version: str
+    diagnostic_catalog_version: str
+    latency_ms: int
+
+
+class BacktestInterpretationResponse(BaseModel):
+    interpretation_id: str
+    status: Literal["ready", "insufficient", "rejected"]
+    mode: Literal["llm_grounded", "deterministic_fallback", "not_applicable"]
+    evidence: BacktestEvidencePackage
+    interpretation: Optional[BacktestInterpretation] = None
+    disclaimer: str
+    meta: BacktestInterpretationMeta
 
 
 class StockInfo(BaseModel):

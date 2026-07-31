@@ -3,7 +3,7 @@
 把 :func:`researchengine.portfolio.build_factor_portfolio` 里「因子值 -> 目标权重」的部分
 提炼成一个 :class:`IStrategy`：每个调仓日按因子值截面排名，做多因子值最大的 ``stock_num`` 只
 （等权）；若 ``long_short`` 另做空因子值最小的 ``stock_num`` 只。产出 ``BacktestSignals``，
-交由 :class:`NativeEngine` / :class:`VectorBTEngine` 模拟。
+交由 :class:`NativeEngine` 模拟。
 
 ``stock_num`` 为单边持仓上限；有效标的不足时取 ``min(stock_num, 有效数)``（long_only）
 或 ``min(stock_num, 有效数//2)``（long_short，避免多空持仓重叠）。

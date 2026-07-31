@@ -92,7 +92,7 @@ Step 6  构建策略 → 回测适配器
          )
          signals = strategy.generate_signals()
          
-         engine_name = params.backtest_engine  # native | vectorbt
+         engine_name = "native"
          config = BacktestConfig(
              engine=engine_name,
              initial_capital=params.initial_capital,
@@ -145,10 +145,8 @@ FactorQuantileStrategy.generate_signals(panel) → BacktestSignals(target_weight
               IBacktestEngine.run(signals, config)
               ┌──────────────┴──────────────┐
               ▼                              ▼
-        NativeEngine                   VectorBTEngine
-   （自研向量化，默认，            （懒加载 vectorbt，
-     与 build_factor_portfolio       from_orders targetpercent）
-     逐位等价）
+        NativeEngine（自研向量化，默认，
+          与 build_factor_portfolio 逐位等价）
               │                              │
               └──────────────┬───────────────┘
                              ▼
@@ -174,7 +172,7 @@ FactorQuantileStrategy.generate_signals(panel) → BacktestSignals(target_weight
   │                           │  ① 编译因子代码            │
   │                           │  ② 初始化 QuantCore       │
   │                           │  ③ 取面板 + 算因子         │
-  │                           │  ④ 跑回测（Native/VBT）    │
+  │                           │  ④ 跑回测（Native）        │
   │                           │  ⑤ 算指标                 │
   │                           │  ⑥ 序列化结果              │
   │                           │                           │
@@ -224,7 +222,7 @@ FactorQuantileStrategy.generate_signals(panel) → BacktestSignals(target_weight
 | **结果不持久化** | 结果序列化后返回前端，由前端决定存储策略 |
 | **水平扩展** | 多实例部署，负载均衡分发，shared-nothing |
 | **错误不抛 500** | 因子代码错误 → `error` 字段填充，HTTP 200 返回 |
-| **回测经适配器** | `IBacktestEngine` 契约，native（默认）| vectorbt，参数切换 |
+| **回测经适配器** | `IBacktestEngine` 契约，统一由 native 执行 |
 | **指标在 MetricEngine** | Runner 不算指标，委托 QuantCore MetricEngine |
 | **HTTP 是薄层** | `researchengine.api` 只调 BacktestRunner，不新增回测逻辑 |
 | **QuantCore 无感** | ResearchEngine 只调用 QuantCore，不关心其内部实现 |

@@ -33,8 +33,8 @@ def market_weighted_returns(
 ) -> pd.Series:
     """市值加权全市场日收益（MKT / 基准）。
 
-    每个调仓日按 ``total_mv`` 归一化得权重，``t`` 收盘定权 -> ``t+1`` 起持有，
-    口径与 :class:`NativeEngine` 一致（固定本金、shift(1)）。
+    每个调仓日按 ``total_mv`` 归一化得权重，``t+1`` 收盘建仓并作为净值起点，
+    ``t+2`` 起持有；口径与 :class:`NativeEngine` 一致（固定本金）。
 
     Parameters
     ----------
@@ -64,7 +64,8 @@ def market_weighted_returns(
     safe_sum = np.where(mv_sum > 0, mv_sum, 1.0)
     weight = np.where(mv_sum > 0, mv_np / safe_sum, np.nan)
     weight = np.where(reb_np, weight, np.nan)
-    held = pd.DataFrame(weight, index=close.index, columns=close.columns).ffill().shift(1).fillna(0.0)
+    executed = pd.DataFrame(weight, index=close.index, columns=close.columns).ffill().shift(1).fillna(0.0)
+    held = executed.shift(1).fillna(0.0)
     port_ret = (held * ret).sum(axis=1)
     return port_ret.iloc[1:].dropna()
 

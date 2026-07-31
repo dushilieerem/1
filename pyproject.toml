@@ -22,14 +22,12 @@ dependencies = [
 akshare = ["akshare>=1.10"]
 clickhouse = ["clickhouse-driver>=0.2"]
 numba = ["numba>=0.58"]
-vectorbt = ["vectorbt>=1.0"]
 api = ["fastapi>=0.110", "uvicorn>=0.29"]
 test = ["pytest>=7.0"]
 all = [
     "akshare>=1.10",
     "clickhouse-driver>=0.2",
     "numba>=0.58",
-    "vectorbt>=1.0",
     "fastapi>=0.110",
     "uvicorn>=0.29",
 ]

@@ -46,7 +46,7 @@ class LLMProvider(Protocol):
     ) -> ProviderResult: ...
 ```
 
-部署通过 `AI_FACTOR_PROVIDER` 和 `AI_FACTOR_MODEL_ALIAS` 选择适配器；真实供应商模型名、Base URL 和 Key 只存在服务端密钥配置。首期固定使用字节火山方舟 AgentPlan API，默认模型为 `deepseek-v4-flash-260425`，Base URL 为 `https://ark.cn-beijing.volces.com/api/plan/v3`。接口抽象仅用于避免调用点与供应商耦合，不提前实现多供应商路由。
+部署通过 `AI_FACTOR_PROVIDER` 和 `AI_FACTOR_MODEL_ALIAS` 选择适配器；真实供应商模型名、Base URL 和 Key 只存在服务端密钥配置。首期固定使用字节火山方舟 AgentPlan API，默认模型为 `ark-code-latest`，Base URL 为 `https://ark.cn-beijing.volces.com/api/plan/v3`。接口抽象仅用于避免调用点与供应商耦合，不提前实现多供应商路由。
 
 部署配置只允许由服务端注入；严禁将真实 Key 写入代码、文档、前端构建变量或测试固件：
 
@@ -54,7 +54,7 @@ class LLMProvider(Protocol):
 |---|---|
 | `AI_FACTOR_PROVIDER` | `volcengine_ark` |
 | `AI_FACTOR_BASE_URL` | `https://ark.cn-beijing.volces.com/api/plan/v3` |
-| `AI_FACTOR_MODEL_ALIAS` | `deepseek-v4-flash-260425`（可由部署配置覆盖） |
+| `AI_FACTOR_MODEL_ALIAS` | `ark-code-latest`（可由部署配置覆盖） |
 | `AI_FACTOR_API_KEY` / `ARK_API_KEY` | 密钥管理服务或部署环境变量；兼容火山方舟 SDK 的 `ARK_API_KEY`，不入库、不写入日志 |
 
 ## 生成与校验流程

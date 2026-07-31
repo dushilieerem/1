@@ -1,8 +1,8 @@
-"""回测适配层：可插拔后端（Native / VectorBT）。
+"""回测适配层：Native 向量化回测后端。
 
 把「策略产出目标权重 -> 后端模拟 -> 净值/收益/持仓」做成后端无关的契约：
 ResearchEngine 只调 :func:`get_backtest_engine` + :class:`IBacktestEngine.run`，
-切后端 = 换 config，因子代码与公共 API 零改动。
+因子代码与公共 API 通过统一契约调用 NativeEngine。
 
 详见 ``docs/04-features/FEAT-003-backtest-adapter/03-technical-design.md``。
 """

@@ -109,7 +109,7 @@ def _settings_from_env() -> ProviderSettings:
             "AI_FACTOR_BASE_URL", "https://ark.cn-beijing.volces.com/api/plan/v3"
         ).rstrip("/"),
         api_key=api_key,
-        model=os.environ.get("AI_FACTOR_MODEL_ALIAS", "deepseek-v4-flash-260425"),
+        model=os.environ.get("AI_FACTOR_MODEL_ALIAS", "ark-code-latest"),
     )
 
 

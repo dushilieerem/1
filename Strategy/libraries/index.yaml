@@ -3,6 +3,28 @@
 
 version: 2
 strategies:
+  turtle_trading_maotai:
+    name: 贵州茅台日频海龟交易
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [turtle, donchian, atr, trend, maotai, a_share, long_only, event]
+    versions:
+      v1:
+        file: turtle_trading_maotai_v1.py
+        entrypoint: TurtleTradingMaotaiStrategy
+
+  ma_13_26_maotai:
+    name: 贵州茅台 13/26 日双均线
+    strategy_type: trend
+    execution_mode: vectorized
+    current_version: v1
+    tags: [trend, moving_average, maotai, long_only]
+    versions:
+      v1:
+        file: ma_13_26_maotai_v1.py
+        entrypoint: Ma1326MaotaiStrategy
+
   dual_moving_average:
     name: 双均线趋势
     strategy_type: trend
@@ -46,6 +68,17 @@ strategies:
       v1:
         file: low_volatility_v1.py
         entrypoint: LowVolatilityStrategy
+
+  markowitz_min_variance:
+    name: Markowitz 最小方差（研究版）
+    strategy_type: minimum_variance
+    execution_mode: vectorized
+    current_version: v1
+    tags: [markowitz, minimum_variance, research_only, static_universe, long_only]
+    versions:
+      v1:
+        file: markowitz_min_variance_v1.py
+        entrypoint: MarkowitzMinVarianceStrategy
 
   donchian_breakout:
     name: 唐奇安突破

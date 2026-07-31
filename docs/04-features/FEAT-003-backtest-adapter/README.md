@@ -7,7 +7,7 @@
 
 ## 目标
 
-通过统一契约接入 Native 与 VectorBT 后端，使 ResearchEngine 切换后端时不修改因子和策略代码。
+通过统一契约接入 NativeEngine，使 ResearchEngine 的因子与策略回测共用自研向量化实现。
 
 ## 文档索引
 
@@ -16,4 +16,3 @@
 ## 文档缺口
 
 该 Feature 在新工作流建立前已完成，Proposal、Requirements、Project Plan 和 Verification 后续按需要补录。
-

@@ -27,8 +27,7 @@ ResearchEngine（用户入口）
    QuantCore（底层引擎：data / factor / metric / backtest.adapter）
 ```
 
-回测经 `QuantCore.backtest.adapter` 可插拔后端（`native` 自研向量化 / `vectorbt`）完成，
-config `backtest.engine` 切换，因子代码与公共 API 不变。详见顶层
+回测统一经 `QuantCore.backtest.adapter` 的 `native` 自研向量化引擎完成。详见顶层
 `docs/04-features/FEAT-003-backtest-adapter/03-technical-design.md`、`docs/04-features/FEAT-002-research-engine/06-research-api.md`。
 
 ## 模块结构
@@ -86,7 +85,7 @@ python ResearchEngine/examples/main.py
 4. `ExperimentManager.create(...)` 创建实验
 5. `experiment.run()`：
    - `data_engine.get_panels` 取宽表面板 -> `factor_engine.compute_panel` 算因子值
-   - `FactorQuantileStrategy` 产出目标权重 -> 回测适配器（`native` | `vectorbt`）-> 净值/收益/持仓
+   - `FactorQuantileStrategy` 产出目标权重 -> NativeEngine -> 净值/收益/持仓
    - `MetricEngine.calculate_all(MetricContext)` 算 10 指标（年化/Sharpe/Sortino/Calmar/最大回撤/波动率/IC/RankIC/胜率/换手）
 6. `ResultManager.save()` 保存结果到 `output/`（`output_path` 非空时）
 
@@ -150,7 +149,7 @@ result = experiment.run()
 | `n_groups` | 分组评估数（分组 IC 图） |
 | `long_short` | 是否多空对冲 |
 | `ic_horizon` | IC 远期收益天数 |
-| `backtest.engine` | 回测后端 `native`（默认，自研向量化）| `vectorbt` |
+| `backtest.engine` | 回测后端 `native`（唯一的自研向量化引擎） |
 | `backtest.initial_capital` / `backtest.commission_rate` / `backtest.slippage_rate` | 回测成本（默认 0，不改默认结果） |
 | `storage` | 结果存储 csv/parquet/sqlite/clickhouse |
 | `output_path` | 结果输出目录 |
@@ -165,7 +164,7 @@ result = experiment.run()
 - `docs/04-features/FEAT-002-research-engine/06-research-api.md`
 
 跨模块设计：
-- `docs/04-features/FEAT-003-backtest-adapter/03-technical-design.md` - 回测适配层（Native / VectorBT 双后端）
+- `docs/04-features/FEAT-003-backtest-adapter/03-technical-design.md` - Native 向量化回测设计
 
 ## 测试
 

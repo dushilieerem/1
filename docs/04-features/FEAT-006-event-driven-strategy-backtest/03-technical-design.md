@@ -5,7 +5,7 @@
 保留现有向量化 `IBacktestEngine.run(BacktestSignals, BacktestConfig)`，新增独立的、策略无关的事件策略契约与 `EventBacktestEngine`。两者共享数据层、市场规则、成本模型、`BacktestResult` 和指标层，但**不共享策略代码接口**。事件内核根据能力画像组合时钟、数据、账户、规则和执行模型，不含任何策略名称、因子公式或品种白名单。
 
 ```text
-快速研究：StrategyCode → target_weights → NativeEngine / VectorBTEngine
+快速研究：StrategyCode → target_weights → NativeEngine
 复杂研究：EventStrategyCode + StrategyRequirements
                     ↓ capability validation
              EngineProfile → EventBacktestEngine
@@ -74,7 +74,7 @@ class EventBacktestEngine:
 
 ## 6. API 与结果
 
-新增独立端点（名称待 API 评审确认）：`POST /api/backtest/event-strategy`。请求包括策略代码、参数、市场规则配置、数据集引用、回测区间、初始资金和成本配置；不得复用现有向量化 `/api/backtest/strategy` 的 `generate_signals` 契约。
+复用 `POST /api/backtest/strategy`，以请求中的 `engine_mode: "vectorized" | "event"` 显式分流。两种模式共用策略资产引用、回测区间、初始资金和成本字段，但不共用策略代码契约：`vectorized` 需要 `generate_signals()`，`event` 需要 `initialize(context)`。目录策略的 `execution_mode` 必须与请求一致；不一致时返回业务错误。
 
 响应在现有指标/净值之外增加：
 

@@ -7,7 +7,7 @@ GET /api/health
 ```
 
 ```json
-{ "status": "ok", "version": "2.0.0", "engines": ["native", "vectorbt"] }
+{ "status": "ok", "version": "2.0.0", "engines": ["native"] }
 ```
 
 响应 `200` 表示 API 进程可响应。该端点不验证市场数据目录、可选引擎依赖或回测任务是否可用。

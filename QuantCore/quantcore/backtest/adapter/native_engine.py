@@ -30,25 +30,27 @@ class NativeEngine(IBacktestEngine):
 
         ret = close.pct_change(fill_method=None)
 
-        # 实际持有权重 = 上一日收盘的目标权重（t 收盘调仓，t+1 起持有），区间内 ffill
-        held = target.ffill().shift(1).fillna(0.0)
+        # t 收盘生成信号，t+1 收盘成交并作为净值起点，t+2 起承担价格收益。
+        executed = target.ffill().shift(1).fillna(0.0)
+        held = executed.shift(1).fillna(0.0)
         port_ret = (held * ret).sum(axis=1)
 
         # 可选成本（默认 0 -> 与 build_factor_portfolio 逐位一致）
         if config.commission_rate or config.slippage_rate or config.stamp_tax:
-            weight_change = held.diff().fillna(0.0)
+            # 成交成本记入随后的持有期，保证建仓日净值为 1。
+            weight_change = executed.diff().fillna(0.0).shift(1).fillna(0.0)
             turnover = weight_change.abs().sum(axis=1)
             sell_turnover = (-weight_change.clip(upper=0.0)).sum(axis=1)
             port_ret = port_ret - turnover * (
                 config.commission_rate + config.slippage_rate
             ) - sell_turnover * config.stamp_tax
 
-        # 去掉首日（无持仓）
+        # 去掉信号日；首个保留日为收盘建仓日，收益为 0。
         port_ret = port_ret.iloc[1:]
         port_ret = port_ret.dropna()
 
         equity = 1.0 + port_ret.cumsum()
-        positions = held.loc[port_ret.index].copy()
+        positions = executed.loc[port_ret.index].copy()
         return BacktestResult(
             equity_curve=equity,
             returns=port_ret,

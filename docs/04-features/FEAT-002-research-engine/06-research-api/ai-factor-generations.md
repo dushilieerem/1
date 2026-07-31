@@ -71,7 +71,7 @@
     "warnings": []
   },
   "meta": {
-    "model_alias": "deepseek-v4-flash-260425",
+    "model_alias": "ark-code-latest",
     "prompt_version": "v1",
     "latency_ms": 2468
   }
@@ -108,7 +108,7 @@
     "warnings": []
   },
   "meta": {
-    "model_alias": "deepseek-v4-flash-260425",
+    "model_alias": "ark-code-latest",
     "prompt_version": "v1",
     "latency_ms": 1810
   }
@@ -167,7 +167,7 @@
 | `ARK_API_KEY` | 二选一 | 火山方舟 API Key；与官方 SDK 命名一致。 |
 | `AI_FACTOR_API_KEY` | 二选一 | AI 因子服务专用 Key 名，优先级高于 `ARK_API_KEY`。 |
 | `AI_FACTOR_BASE_URL` | 否 | `https://ark.cn-beijing.volces.com/api/plan/v3`。 |
-| `AI_FACTOR_MODEL_ALIAS` | 否 | `deepseek-v4-flash-260425`。 |
+| `AI_FACTOR_MODEL_ALIAS` | 否 | `ark-code-latest`。 |
 
 调用会优先请求 `response_format.json_schema`。已验证的模型若明确拒绝该参数，服务自动降级为受控提示词 JSON，再由本地 JSON、AST 与编译校验把关；不会因该兼容性降级跳过本地校验。
 

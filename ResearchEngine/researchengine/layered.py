@@ -2,7 +2,7 @@
 
 按任意截面值（因子值 / 市值 / 账面市值比）把标的分 N 组，各组等权持有至下一调仓日，
 计算各组累计净值与多空收益。净值数学与 :class:`quantcore.backtest.adapter.NativeEngine`
-逐位一致（固定本金 ``equity = 1.0 + port_ret.cumsum()``、``t`` 收盘分组 -> ``t+1`` 起持有），
+逐位一致（固定本金 ``equity = 1.0 + port_ret.cumsum()``、``t`` 收盘分组、``t+1`` 收盘建仓归零、``t+2`` 起计收益），
 供分层回测图、分市值分层、SMB/HML 因子构造复用。
 
 入口：
@@ -61,10 +61,10 @@ def layered_returns(
     rebalance: str = "monthly",
     calendar: Optional[PandasCalendar] = None,
 ) -> pd.DataFrame:
-    """各组日收益（等权），调仓日更新分组，``t`` 收盘定权 -> ``t+1`` 起持有。
+    """各组日收益（等权）：``t`` 收盘定组，``t+1`` 收盘建仓并归零。
 
-    口径与 :class:`NativeEngine` 一致：目标权重在调仓日确定、区间内 ffill、
-    ``shift(1)`` 后乘以个股日收益；固定本金，组内等权。
+    口径与 :class:`NativeEngine` 一致：目标权重在调仓日确定，``t+1`` 收盘成交，
+    ``t+2`` 起按收盘到收盘收益计入；固定本金，组内等权。
 
     Parameters
     ----------
@@ -102,15 +102,16 @@ def layered_returns(
         n_in = mask.sum(axis=1, keepdims=True)         # (T,1) 组内成员数
         safe_n = np.where(n_in > 0, n_in, 1.0)
         weight = mask / safe_n                          # 等权
-        # 仅调仓日更新权重 -> ffill 到下一调仓日 -> shift(1) 持有时序
+        # 仅调仓日更新权重 -> t+1 收盘成交 -> t+2 起承担收益。
         weight = np.where(reb_np, weight, np.nan)
         weight = pd.DataFrame(weight, index=gv.index, columns=gv.columns)
-        held = weight.ffill().shift(1).fillna(0.0)
+        executed = weight.ffill().shift(1).fillna(0.0)
+        held = executed.shift(1).fillna(0.0)
         group_ret = (held * ret).sum(axis=1)
         out[f"Q{g}"] = group_ret
 
     result = pd.DataFrame(out)
-    result = result.iloc[1:]  # 去首日（pct_change 首日 NaN、无持仓）
+    result = result.iloc[1:]  # 去信号日；首个保留日是收盘建仓日，收益为 0。
     return result.dropna(how="all")
 
 

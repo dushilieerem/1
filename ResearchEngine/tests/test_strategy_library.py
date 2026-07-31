@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
+import numpy as np
 
 from quantcore import EventBacktestEngine
 from researchengine.strategy_catalog import StrategyCatalog
@@ -11,15 +13,31 @@ from researchengine.strategy_catalog import StrategyCatalog
 def test_builtin_strategies_match_their_declared_execution_contract():
     """内置策略必须与策略索引声明的执行模式一致。"""
     namespace = {"__name__": "strategy_contract_test"}
-    from quantcore import FactorPortfolioStrategy
-
     for asset in (StrategyCatalog().load(item["id"]) for item in StrategyCatalog().list_assets()):
         exec(compile(asset.source_code, asset.entrypoint, "exec"), namespace)
         strategy_class = namespace[asset.entrypoint]
         if asset.execution_mode == "vectorized":
-            assert issubclass(strategy_class, FactorPortfolioStrategy)
+            assert callable(getattr(strategy_class, "generate_signals", None))
         else:
             assert callable(getattr(strategy_class, "initialize", None))
+
+
+def test_markowitz_min_variance_strategy_builds_monthly_capped_weights():
+    asset = StrategyCatalog().load("markowitz_min_variance")
+    namespace = {"__name__": "markowitz_strategy_test"}
+    exec(compile(asset.source_code, asset.entrypoint, "exec"), namespace)
+    dates = pd.bdate_range("2023-01-02", periods=150)
+    rng = np.random.default_rng(7)
+    returns = rng.normal(0.001, 0.0001, size=(len(dates), 20))
+    close = pd.DataFrame(100.0 * np.exp(np.cumsum(returns, axis=0)), index=dates)
+
+    target = namespace[asset.entrypoint](close).generate_signals().target_weights
+    rebalance_rows = target.dropna(how="all")
+
+    assert len(rebalance_rows) == len(dates.to_series().groupby([dates.year, dates.month]).head(1))
+    assert (rebalance_rows.iloc[-1] >= 0).all()
+    assert rebalance_rows.iloc[-1].sum() == pytest.approx(1.0)
+    assert rebalance_rows.iloc[-1].max() <= 0.0800001
 
 
 def test_donchian_a_share_event_strategy_runs_with_event_engine():
@@ -33,7 +51,7 @@ def test_donchian_a_share_event_strategy_runs_with_event_engine():
         field: pd.DataFrame({"000300.SH": benchmark, "000001.SZ": stock}, index=dates)
         for field in ("open", "high", "low", "close")
     }
-    panels["money"] = pd.DataFrame({"000300.SH": 100_000_000, "000001.SZ": 50_000_000}, index=dates)
+    panels["amount"] = pd.DataFrame({"000300.SH": 100_000_000, "000001.SZ": 50_000_000}, index=dates)
 
     result = EventBacktestEngine(panels).run(namespace[asset.entrypoint]())
 
@@ -53,3 +71,23 @@ def test_wilder_event_strategy_calculates_complete_indicator_set():
 
     assert {"atr", "plus_di", "minus_di", "adx", "rsi"}.issubset(indicators)
     assert indicators.iloc[-1].notna().all()
+
+
+def test_wilder_event_strategy_runs_with_standard_amount_panel():
+    asset = StrategyCatalog().load("wilder_adx_rsi_atr_a_share_event")
+    namespace = {"__name__": "wilder_event_run_test"}
+    exec(compile(asset.source_code, asset.entrypoint, "exec"), namespace)
+    dates = pd.date_range("2024-01-02", periods=160, freq="B")
+    benchmark = pd.Series(range(100, 260), index=dates, dtype=float)
+    stock = pd.Series(range(10, 170), index=dates, dtype=float)
+    panels = {
+        field: pd.DataFrame({"000300.SH": benchmark, "000001.SZ": stock}, index=dates)
+        for field in ("open", "high", "low", "close")
+    }
+    panels["amount"] = pd.DataFrame(
+        {"000300.SH": 100_000_000, "000001.SZ": 50_000_000}, index=dates
+    )
+
+    result = EventBacktestEngine(panels).run(namespace[asset.entrypoint]())
+
+    assert len(result.equity_curve) == len(dates)

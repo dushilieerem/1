@@ -9,7 +9,7 @@ class DonchianAShareEventStrategy:
     """日频长仓突破策略；股票池和市场状态须由回测数据面板事先按历史时点过滤。"""
 
     execution_mode = "event"
-    required_fields = frozenset({"open", "high", "low", "close", "money"})
+    required_fields = frozenset({"open", "high", "low", "close", "amount"})
     required_market_state = frozenset({"suspended", "limit_up", "limit_down"})
 
     def __init__(
@@ -33,14 +33,15 @@ class DonchianAShareEventStrategy:
 
     def rebalance(self, context) -> None:
         symbols = self.universe or [symbol for symbol in context.data.symbols if symbol != self.benchmark_symbol]
-        history = context.data.history(symbols + [self.benchmark_symbol], ["close", "high", "low", "money"], 121)
-        if len(history["close"]) < 121 or self.benchmark_symbol not in history["close"]:
+        history = context.data.history(symbols, ["close", "high", "low", "amount"], 121)
+        benchmark_history = context.data.history([self.benchmark_symbol], ["close"], 120)
+        if len(history["close"]) < 121 or self.benchmark_symbol not in benchmark_history["close"]:
             return
 
         metrics = self._metrics(history, symbols)
         holdings = set(context.portfolio.positions)
         survivors = self._exit_positions(context, metrics, holdings)
-        if not self._market_allows_entry(history["close"]):
+        if not self._market_allows_entry(benchmark_history["close"]):
             return
 
         slots = self.max_holdings - len(survivors)
@@ -81,7 +82,7 @@ class DonchianAShareEventStrategy:
             close = history["close"][symbol].dropna()
             high = history["high"][symbol].reindex(close.index)
             low = history["low"][symbol].reindex(close.index)
-            money = history["money"][symbol].reindex(close.index)
+            money = history["amount"][symbol].reindex(close.index)
             if len(close) < 61 or high.isna().any() or low.isna().any() or money.isna().any():
                 continue
             true_range = pd.concat([high - low, (high - close.shift()).abs(), (low - close.shift()).abs()], axis=1).max(axis=1)

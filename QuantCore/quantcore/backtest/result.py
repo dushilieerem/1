@@ -48,7 +48,7 @@ class BacktestResult:
     """回测结果（仅原始数据，不含任何指标）。
 
     ``portfolio`` 为兼容旧结果结构保留；向量化适配器
-    （``NativeEngine`` / ``VectorBTEngine``）不填该字段，置 ``None``，
+    （``NativeEngine``）不填该字段，置 ``None``，
     直接填 ``returns`` / ``positions``。``returns`` 未显式给时由 ``equity_curve`` 派生。
     """
 

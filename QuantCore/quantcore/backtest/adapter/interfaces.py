@@ -3,9 +3,9 @@
 六个领域接口 + :class:`IBacktestEngine` 适配器契约，对应 ``docs/04-features/FEAT-003-backtest-adapter/03-technical-design.md``：
 
 ================  =====================================================  ====================
-接口              职责                                                   在两个后端中的角色
+接口              职责                                                   在 Native / 事件路径中的角色
 ================  =====================================================  ====================
-``IStrategy``     策略产出向量化信号（目标权重）                          **共享主契约**（两后端都吃）
+``IStrategy``     策略产出向量化信号（目标权重）                          NativeEngine 的主契约
 ``IDataFeed``     行情面板来源（= 现有 DataEngine / IDataProvider）        共享输入
 ``ICalendar``     交易日 / 调仓日历                                       策略与事件引擎用
 ``IPortfolio``    组合状态契约                                            事件引擎可插拔件；向量化后端内化
@@ -13,7 +13,7 @@
 ``IMetrics``     指标计算（= 现有 MetricEngine）                          共享输出消费方
 ================  =====================================================  ====================
 
-向量化后端（Native / VectorBT）只遵守顶层 :meth:`IBacktestEngine.run` 契约，内化
+Native 向量化后端遵守顶层 :meth:`IBacktestEngine.run` 契约，内化
 portfolio / execution / calendar；事件驱动自研引擎（未来 EventEngine）才把后三者当可插拔件。
 """
 
@@ -31,9 +31,8 @@ from quantcore.factor.base import Panel
 class IStrategy(ABC):
     """策略接口（向量化信号模式）。
 
-    策略把市场面板转化为「目标权重」宽表，后端引擎据此模拟。这是 vectorbt 与自研引擎
-    共同消费的主契约--vectorbt 跑不了 bar 回调，故事件驱动 ``on_bar`` 式策略留待未来
-    EventEngine，不在本适配器。
+    策略把市场面板转化为「目标权重」宽表，由 NativeEngine 据此模拟。事件驱动
+    ``on_bar`` 式策略留待 EventEngine，不在本适配器。
     """
 
     #: 策略名称
@@ -138,8 +137,8 @@ class IMetrics(Protocol):
 class IBacktestEngine(ABC):
     """回测后端适配器契约。
 
-    两个后端（Native / VectorBT）实现同一接口：吃策略信号 + 配置，产出
-    :class:`quantcore.backtest.result.BacktestResult`。**切后端 = 换实现，ResearchEngine 无感。**
+    NativeEngine 实现该接口：吃策略信号 + 配置，产出
+    :class:`quantcore.backtest.result.BacktestResult`。
     """
 
     #: 后端名

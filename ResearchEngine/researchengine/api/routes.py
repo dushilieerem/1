@@ -6,7 +6,12 @@ from datetime import date
 
 from fastapi import APIRouter, Response
 
-from researchengine.api.market_data import get_daily_bars, get_symbols
+from researchengine.api.market_data import (
+    get_daily_bars,
+    get_index_constituents,
+    get_indices,
+    get_symbols,
+)
 from researchengine.api.ai_factor import generate_factor
 from researchengine.api.ai_strategy import generate_strategy
 from researchengine.api.ai_interpretation import interpret_backtest
@@ -18,6 +23,8 @@ from researchengine.api.schemas import (
     FactorListResponse,
     HealthResponse,
     DailyBarsResponse,
+    IndexConstituentsResponse,
+    IndexListResponse,
     SymbolListResponse,
     StrategyBacktestRequest,
     StrategyBacktestResponse,
@@ -68,6 +75,21 @@ def daily_bars(
 def list_market_data_symbols() -> SymbolListResponse:
     """列出当前已发布市场数据中可查询的全部股票代码。"""
     return get_symbols()
+
+
+@router.get("/market-data/indices", response_model=IndexListResponse)
+def list_market_data_indices() -> IndexListResponse:
+    """列出当前已发布市场数据中可查询的全部内置股指。"""
+    return get_indices()
+
+
+@router.get(
+    "/market-data/indices/{code}/constituents",
+    response_model=IndexConstituentsResponse,
+)
+def list_index_constituents(code: str) -> IndexConstituentsResponse:
+    """返回指定股指在当前数据版本中的最新一期成分股。"""
+    return get_index_constituents(code)
 
 
 @router.post("/ai/factor-generations", response_model=FactorGenerationResponse)

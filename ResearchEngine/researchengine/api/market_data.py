@@ -14,6 +14,9 @@ from researchengine.api.schemas import (
     DailyBar,
     DailyBarsResponse,
     DateRange,
+    IndexConstituentsResponse,
+    IndexInfo,
+    IndexListResponse,
     StockInfo,
     SymbolListResponse,
 )
@@ -22,6 +25,12 @@ from researchengine.api.schemas import (
 _DATA_ENGINES: dict[Path, DataEngine] = {}
 _STOCK_NAMES: dict[Path, dict[str, str]] = {}
 _OHLC_FIELDS = ("open", "high", "low", "close")
+_INDEXES = {
+    "CSI300": IndexInfo(code="000300.SH", name="沪深300"),
+    "CSI500": IndexInfo(code="000905.SH", name="中证500"),
+    "CSI1000": IndexInfo(code="000852.SH", name="中证1000"),
+    "SSE50": IndexInfo(code="000016.SH", name="上证50"),
+}
 
 
 def _market_symbol(symbol: str) -> str:
@@ -157,4 +166,56 @@ def get_symbols() -> SymbolListResponse:
     return SymbolListResponse(
         symbols=[StockInfo(symbol=_market_symbol(symbol), name=names[symbol]) for symbol in available_symbols],
         unmapped_count=len(set(symbols).difference(names)),
+    )
+
+
+def _resolve_index(code: str) -> str:
+    """将对外股指代码解析为 QuantCore 的内置基准标识。"""
+    normalized = code.upper()
+    for identifier, index in _INDEXES.items():
+        if normalized in {identifier, index.code}:
+            return identifier
+    raise HTTPException(status_code=404, detail=f"未找到股指代码 {code}")
+
+
+def get_indices() -> IndexListResponse:
+    """返回当前已发布市场数据中可用的全部内置股指。"""
+    available = []
+    try:
+        engine = _get_data_engine()
+        for identifier, index in _INDEXES.items():
+            try:
+                if not engine.get_index(identifier).empty:
+                    available.append(index)
+            except FileNotFoundError:
+                continue
+    except (NotADirectoryError, KeyError) as exc:
+        raise HTTPException(status_code=503, detail=f"股指数据不可用: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001 - 读取失败不可伪造股指列表
+        raise HTTPException(status_code=503, detail=f"股指数据读取失败: {exc}") from exc
+
+    if not available:
+        raise HTTPException(status_code=503, detail="没有可用的股指数据")
+    return IndexListResponse(indices=sorted(available, key=lambda index: index.code))
+
+
+def get_index_constituents(code: str) -> IndexConstituentsResponse:
+    """返回指定内置股指在当前发布版本中的最新一期成分股。"""
+    identifier = _resolve_index(code)
+    try:
+        constituents = _get_data_engine().get_universe(identifier)
+        names = _get_stock_names()
+    except (FileNotFoundError, NotADirectoryError, KeyError) as exc:
+        raise HTTPException(status_code=503, detail=f"股指成分数据不可用: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001 - 读取失败不可伪造成分股
+        raise HTTPException(status_code=503, detail=f"股指成分数据读取失败: {exc}") from exc
+
+    available_symbols = sorted(set(constituents).intersection(names))
+    return IndexConstituentsResponse(
+        index=_INDEXES[identifier],
+        constituents=[
+            StockInfo(symbol=_market_symbol(symbol), name=names[symbol])
+            for symbol in available_symbols
+        ],
+        unmapped_count=len(set(constituents).difference(names)),
     )

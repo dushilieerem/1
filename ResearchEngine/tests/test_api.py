@@ -97,6 +97,13 @@ def market_data_dir(tmp_path, monkeypatch):
     pd.DataFrame(
         {symbol: [1] for symbol in symbols}, index=[dates[-1]]
     ).to_parquet(benchmark_dir / "CSI500_constituents.parquet")
+    pd.DataFrame(
+        {
+            symbol: [1, int(symbol in {"S000", "S001"})]
+            for symbol in symbols
+        },
+        index=[dates[-2], dates[-1]],
+    ).to_parquet(benchmark_dir / "CSI300_constituents.parquet")
     monkeypatch.setenv("SVQUANT_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("SVQUANT_BACKTEST_CACHE_DIR", str(tmp_path / "backtest_cache"))
     return tmp_path
@@ -148,6 +155,33 @@ def test_market_data_symbols_returns_sorted_stock_codes(market_data_dir):
         ],
         "unmapped_count": 0,
     }
+
+
+def test_market_data_indices_returns_available_indices(market_data_dir):
+    response = client.get("/api/market-data/indices")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "indices": [{"code": "000300.SH", "name": "沪深300"}],
+    }
+
+
+def test_index_constituents_returns_latest_snapshot(market_data_dir):
+    response = client.get("/api/market-data/indices/000300.SH/constituents")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "index": {"code": "000300.SH", "name": "沪深300"},
+        "constituents": [
+            {"symbol": "S000", "name": "股票000"},
+            {"symbol": "S001", "name": "股票001"},
+        ],
+        "unmapped_count": 0,
+    }
+
+
+def test_index_constituents_rejects_unknown_code(market_data_dir):
+    assert client.get("/api/market-data/indices/000001.SH/constituents").status_code == 404
 
 
 def test_market_symbol_conversion():

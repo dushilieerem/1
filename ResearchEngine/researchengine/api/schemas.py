@@ -688,3 +688,24 @@ class SymbolListResponse(BaseModel):
 
     symbols: list[StockInfo]
     unmapped_count: int = 0
+
+
+class IndexInfo(BaseModel):
+    """已发布股指的代码与名称。"""
+
+    code: str
+    name: str
+
+
+class IndexListResponse(BaseModel):
+    """``GET /api/market-data/indices`` 响应。"""
+
+    indices: list[IndexInfo]
+
+
+class IndexConstituentsResponse(BaseModel):
+    """``GET /api/market-data/indices/{code}/constituents`` 响应。"""
+
+    index: IndexInfo
+    constituents: list[StockInfo]
+    unmapped_count: int = 0

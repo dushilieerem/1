@@ -27,6 +27,8 @@ uvicorn researchengine.api.app:app --reload
 | AI 回测解读 | POST | `/api/ai/backtest-interpretations` | [AI 回测解读与优化建议](06-research-api/ai-backtest-interpretations.md) |
 | 市场数据 | GET | `/api/market-data/symbols` | [股票代码列表](06-research-api/market-data-symbols.md) |
 | 市场数据 | GET | `/api/market-data/daily/{symbol}` | [个股日线](06-research-api/market-data-daily.md) |
+| 市场数据 | GET | `/api/market-data/indices` | [股指列表](06-research-api/market-data-indices.md) |
+| 市场数据 | GET | `/api/market-data/indices/{code}/constituents` | [股指成分股](06-research-api/market-data-index-constituents.md) |
 | 因子回测 | POST | `/api/backtest/factor` | [因子回测](06-research-api/backtest-factor.md) |
 | 策略资产 | GET | `/api/strategies` | [策略目录](06-research-api/strategy-list.md) |
 | 策略回测 | POST | `/api/backtest/strategy` | [策略回测](06-research-api/backtest-strategy.md) |

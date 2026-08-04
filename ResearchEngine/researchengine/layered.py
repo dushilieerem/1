@@ -2,7 +2,7 @@
 
 按任意截面值（因子值 / 市值 / 账面市值比）把标的分 N 组，各组等权持有至下一调仓日，
 计算各组累计净值与多空收益。净值数学与 :class:`quantcore.backtest.adapter.NativeEngine`
-逐位一致（固定本金 ``equity = 1.0 + port_ret.cumsum()``、``t`` 收盘分组、``t+1`` 收盘建仓归零、``t+2`` 起计收益），
+一致（``t`` 收盘分组对应 ``t -> t+1`` 收益、第二个交易日曲线归一、后续复利），
 供分层回测图、分市值分层、SMB/HML 因子构造复用。
 
 入口：
@@ -63,8 +63,8 @@ def layered_returns(
 ) -> pd.DataFrame:
     """各组日收益（等权）：``t`` 收盘定组，``t+1`` 收盘建仓并归零。
 
-    口径与 :class:`NativeEngine` 一致：目标权重在调仓日确定，``t+1`` 收盘成交，
-    ``t+2`` 起按收盘到收盘收益计入；固定本金，组内等权。
+    口径与 :class:`NativeEngine` 一致：前一交易日的分组承担当日收盘到收盘收益；
+    曲线在第二个交易日归一，组内等权、后续复利。
 
     Parameters
     ----------
@@ -102,21 +102,22 @@ def layered_returns(
         n_in = mask.sum(axis=1, keepdims=True)         # (T,1) 组内成员数
         safe_n = np.where(n_in > 0, n_in, 1.0)
         weight = mask / safe_n                          # 等权
-        # 仅调仓日更新权重 -> t+1 收盘成交 -> t+2 起承担收益。
+        # 仅调仓日更新权重；前一日分组承担当日收盘收益。
         weight = np.where(reb_np, weight, np.nan)
         weight = pd.DataFrame(weight, index=gv.index, columns=gv.columns)
-        executed = weight.ffill().shift(1).fillna(0.0)
-        held = executed.shift(1).fillna(0.0)
+        held = weight.ffill().shift(1).fillna(0.0)
         group_ret = (held * ret).sum(axis=1)
         out[f"Q{g}"] = group_ret
 
     result = pd.DataFrame(out)
-    result = result.iloc[1:]  # 去信号日；首个保留日是收盘建仓日，收益为 0。
+    result = result.iloc[1:]  # 去信号日；第二个交易日作为展示曲线起点。
+    if not result.empty:
+        result.iloc[0] = 0.0
     return result.dropna(how="all")
 
 
 def layered_equity(layered_returns_df: pd.DataFrame) -> pd.DataFrame:
-    """各组累计净值 = ``1 + 日收益累加``（固定本金口径）。
+    """各组累计净值 = ``(1 + 日收益).cumprod()``。
 
     Parameters
     ----------
@@ -128,7 +129,7 @@ def layered_equity(layered_returns_df: pd.DataFrame) -> pd.DataFrame:
     pd.DataFrame
         各组累计净值，首值 1.0。
     """
-    return 1.0 + layered_returns_df.cumsum()
+    return (1.0 + layered_returns_df).cumprod()
 
 
 def long_short_returns(

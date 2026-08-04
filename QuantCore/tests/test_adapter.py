@@ -144,9 +144,9 @@ def test_native_engine_run_shapes():
     assert isinstance(res, BacktestResult)
     assert len(res.equity_curve) == len(res.returns)
     assert res.positions.shape[1] == 20
-    # 第二个交易日收盘完成建仓，作为净值 1.0 的共同起点。
+    # 第二个交易日曲线归一为 1；收益仍保留首日信号对应的持有期。
     assert res.equity_curve.iloc[0] == pytest.approx(1.0)
-    assert res.returns.iloc[0] == pytest.approx(0.0)
+    assert res.returns.iloc[0] != pytest.approx(0.0)
 
 
 def test_native_engine_starts_return_after_close_build_date():
@@ -157,8 +157,8 @@ def test_native_engine_starts_return_after_close_build_date():
     result = NativeEngine().run(BacktestSignals(target_weights=target, close=close), BacktestConfig())
 
     assert result.returns.index.tolist() == dates[1:].tolist()
-    assert result.returns.tolist() == pytest.approx([0.0, 0.1, 0.1])
-    assert result.equity_curve.tolist() == pytest.approx([1.0, 1.1, 1.2])
+    assert result.returns.tolist() == pytest.approx([0.1, 0.1, 0.1])
+    assert result.equity_curve.tolist() == pytest.approx([1.0, 1.1, 1.21])
     assert result.positions.loc[dates[1], "A"] == pytest.approx(1.0)
 
 
@@ -182,7 +182,8 @@ def test_native_engine_only_charges_stamp_tax_on_sells():
 
     result = NativeEngine().run(signals, BacktestConfig(stamp_tax=0.001))
 
-    assert result.returns.iloc[-1] == pytest.approx(-0.001)
+    # 目标权重在次日开始承担收益，卖出发生在第二个保留日。
+    assert result.returns.iloc[1] == pytest.approx(-0.001)
 
 
 def test_native_engine_parity_with_build_factor_portfolio():

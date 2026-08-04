@@ -407,6 +407,59 @@ def test_strategy_backtest_rejects_mismatched_catalog_engine_mode(market_data_di
     assert "execution_mode" in response.json()["error"]
 
 
+def test_event_strategy_reports_symbols_missing_from_selected_universe(market_data_dir):
+    response = client.post(
+        "/api/backtest/strategy",
+        json={
+            "strategy_code": '''class SingleStockStrategy:
+    required_symbols = frozenset({"S999"})
+
+    def initialize(self, context):
+        pass''',
+            "engine_mode": "event",
+            "universe": "CSI500",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["error"] == (
+        "ValueError: 策略所需标的不在所选股票池 CSI500: ['S999']；"
+        "请调整股票池或策略标的后重试"
+    )
+
+
+def test_event_strategy_accepts_exchange_code_against_raw_panel_symbols(market_data_dir):
+    for field in ("open", "high", "low", "close"):
+        path = market_data_dir / f"{field}.parquet"
+        panel = pd.read_parquet(path)
+        panel["600519"] = 100.0
+        panel.to_parquet(path, index=False)
+    constituents_path = market_data_dir / "benchmark" / "CSI300_constituents.parquet"
+    constituents = pd.read_parquet(constituents_path)
+    constituents["600519"] = 1
+    constituents.to_parquet(constituents_path)
+
+    response = client.post(
+        "/api/backtest/strategy",
+        json={
+            "strategy_code": '''class SingleStockStrategy:
+    required_symbols = frozenset({"600519.SH"})
+
+    def initialize(self, context):
+        context.schedule.daily(self.rebalance)
+
+    def rebalance(self, context):
+        context.orders.target_quantity("600519.SH", 100)''',
+            "engine_mode": "event",
+            "universe": "CSI300",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["error"] is None
+    assert response.json()["fills"][0]["symbol"] == "600519.SH"
+
+
 def test_strategy_backtest_returns_rebalance_logs_on_demand(market_data_dir):
     response = client.post(
         "/api/backtest/strategy",

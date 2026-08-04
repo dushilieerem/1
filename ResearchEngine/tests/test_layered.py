@@ -99,13 +99,13 @@ def test_layered_returns_equal_weight():
 
 
 def test_layered_equity_cumsum():
-    """累计净值 = 1 + 日收益累加（固定本金口径）。"""
+    """累计净值按日收益复利计算。"""
     fv, close = _make_panel(periods=10)
     lr = layered_returns(fv, close, n_groups=2, rebalance="monthly")
     le = layered_equity(lr)
     # 9 个结果日：首个建仓日为 0，其后 8 个有效收益日。
-    assert abs(le["Q1"].iloc[-1] - (1.0 + 0.01 * 8)) < 1e-9
-    assert abs(le["Q2"].iloc[-1] - (1.0 + 0.02 * 8)) < 1e-9
+    assert abs(le["Q1"].iloc[-1] - 1.01 ** 8) < 1e-9
+    assert abs(le["Q2"].iloc[-1] - 1.02 ** 8) < 1e-9
     # 首值 = 1.0
     assert abs(le["Q1"].iloc[0] - 1.0) < 1e-9
 

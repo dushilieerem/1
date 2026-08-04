@@ -101,3 +101,21 @@ class TradingLib(FactorLibrary):
         buy_sum = buy_vol.rolling(window).sum()
         sell_sum = sell_vol.rolling(window).sum()
         return (buy_sum - sell_sum) / (buy_sum + sell_sum + 1e-10)
+
+    def obv(self):
+        """能量潮：按收盘涨跌累计成交量，起始值为 0。"""
+        direction = (
+            self.close.diff().gt(0).astype(float)
+            - self.close.diff().lt(0).astype(float)
+        )
+        return (direction * self.volume).cumsum()
+
+    def chaikin_money_flow(self, window: int = 21):
+        """Chaikin 资金流：量价累积/派发在窗口内的成交量加权均值。"""
+        multiplier = ((self.close - self.low) - (self.high - self.close)) / (
+            self.high - self.low + 1e-10
+        )
+        return (
+            (multiplier * self.volume).rolling(window).sum()
+            / self.volume.rolling(window).sum()
+        )

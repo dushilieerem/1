@@ -156,3 +156,47 @@ strategies:
       v1:
         file: bollinger_mean_reversion_a_share_event_v1.py
         entrypoint: BollingerMeanReversionAShareEventStrategy
+
+  lane_stochastic_a_share_event:
+    name: 乔治·莱恩 KD 随机指标 A 股趋势过滤
+    strategy_type: reversal
+    execution_mode: event
+    current_version: v1
+    tags: [lane, stochastic, kd, reversal, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: lane_stochastic_a_share_event_v1.py
+        entrypoint: LaneStochasticAShareEventStrategy
+
+  hosoda_ichimoku_a_share_event:
+    name: 细田悟一 一目均衡表 A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [hosoda, ichimoku, cloud, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: hosoda_ichimoku_a_share_event_v1.py
+        entrypoint: HosodaIchimokuAShareEventStrategy
+
+  donchian_bullish_ma_alignment_a_share_event:
+    name: 唐奇安风格均线多头排列 A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [donchian, moving_average, bullish_alignment, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: donchian_bullish_ma_alignment_a_share_event_v1.py
+        entrypoint: DonchianBullishMaAlignmentAShareEventStrategy
+
+  simons_pairs_trading_research:
+    name: 西蒙斯风格配对交易（研究版）
+    strategy_type: statistical_arbitrage
+    execution_mode: vectorized
+    current_version: v1
+    tags: [simons, pairs_trading, statistical_arbitrage, market_neutral, long_short, research_only]
+    versions:
+      v1:
+        file: simons_pairs_trading_research_v1.py
+        entrypoint: SimonsPairsTradingResearchStrategy

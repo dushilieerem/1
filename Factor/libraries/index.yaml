@@ -3,7 +3,7 @@
 
 version: 1
 updated: 2026-07-22
-total_factors: 668
+total_factors: 672
 
 libraries:
   emotion_indicators:
@@ -297,6 +297,14 @@ libraries:
         description: "随机RSI"
         params: { window: 14 }
         tags: [rsi, stochastic]
+      - name: cci
+        description: "商品通道指数：典型价格偏离程度"
+        params: { window: 20 }
+        tags: [cci, momentum]
+      - name: williams_r
+        description: "Williams %R：收盘在近期区间的位置"
+        params: { window: 14 }
+        tags: [williams_r, momentum]
       - name: price_pattern_doji
         description: "十字星形态"
         params: {}
@@ -445,3 +453,11 @@ libraries:
         description: "净买入比"
         params: { window: 5 }
         tags: [moneyflow]
+      - name: obv
+        description: "能量潮：按涨跌累计成交量"
+        params: {}
+        tags: [volume, cumulative]
+      - name: chaikin_money_flow
+        description: "Chaikin资金流：量价累积/派发"
+        params: { window: 21 }
+        tags: [moneyflow, volume]

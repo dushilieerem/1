@@ -1005,7 +1005,21 @@ def _run_event_strategy_backtest(
         required_fields = set(getattr(strategy, "required_fields", ())) | {"open", "high", "low", "close"}
         panels = data_engine.get_panels(req.start, req.end, fields=sorted(required_fields))
         symbols = resolve_universe(provider, req.universe)
-        event_panels = {field: panels[field].reindex(columns=symbols) for field in required_fields}
+        from researchengine.api.market_data import _market_symbol
+
+        symbol_mapping = {symbol: _market_symbol(symbol) for symbol in symbols}
+        symbols = [symbol_mapping[symbol] for symbol in symbols]
+        required_symbols = set(getattr(strategy, "required_symbols", ()))
+        missing_symbols = sorted(required_symbols - set(symbols))
+        if missing_symbols:
+            raise ValueError(
+                f"策略所需标的不在所选股票池 {req.universe}: {missing_symbols}；"
+                "请调整股票池或策略标的后重试"
+            )
+        event_panels = {
+            field: panels[field].reindex(columns=symbol_mapping).rename(columns=symbol_mapping)
+            for field in required_fields
+        }
         index = data_engine.get_index(req.benchmark, req.start, req.end)
         benchmark_symbol = getattr(strategy, "benchmark_symbol", None)
         if benchmark_symbol:

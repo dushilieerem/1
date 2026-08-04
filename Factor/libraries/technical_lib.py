@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import numpy as np
+
 from quantcore import FactorLibrary
 
 
@@ -142,6 +144,21 @@ class TechnicalLib(FactorLibrary):
         hh = rsi.rolling(window).max()
         ll = rsi.rolling(window).min()
         return (rsi - ll) / (hh - ll + 1e-10)
+
+    def cci(self, window: int = 20):
+        """商品通道指数：典型价格偏离其平均值的程度。"""
+        typical_price = (self.high + self.low + self.close) / 3
+        mean = typical_price.rolling(window).mean()
+        mean_deviation = typical_price.rolling(window).apply(
+            lambda values: np.mean(np.abs(values - values.mean())), raw=True
+        )
+        return (typical_price - mean) / (0.015 * mean_deviation + 1e-10)
+
+    def williams_r(self, window: int = 14):
+        """Williams %R：收盘价在近期高低区间中的位置。"""
+        highest_high = self.high.rolling(window).max()
+        lowest_low = self.low.rolling(window).min()
+        return -100 * (highest_high - self.close) / (highest_high - lowest_low + 1e-10)
 
     # ==================== 价格形态 ====================
 

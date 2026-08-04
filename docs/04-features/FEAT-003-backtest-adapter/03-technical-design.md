@@ -18,16 +18,17 @@
 
 ## 收盘成交时序
 
-统一采用收盘价成交：首个交易日收盘生成信号，第二个交易日收盘成交并将净值归一为 1，第三个交易日开始计算收盘到收盘收益。
+统一采用前一日信号对应下一交易日收盘收益：首个交易日收盘生成信号，第二个交易日的收益由首日目标权重承担；净值曲线在第二个交易日归一为 1，第三个交易日起展示收盘到收盘复利收益。
 
 ```python
-executed = target.ffill().shift(1).fillna(0.0)  # t+1 收盘成交
-held = executed.shift(1).fillna(0.0)            # t+2 起承担收益
+held = target.ffill().shift(1).fillna(0.0)       # t 日目标权重承担 t -> t+1 收益
 port_ret = (held * close.pct_change()).sum(axis=1).iloc[1:].dropna()
-equity = 1.0 + port_ret.cumsum()
+display_ret = port_ret.copy()
+display_ret.iloc[0] = 0.0                         # 次日曲线归一
+equity = (1.0 + display_ret).cumprod()
 ```
 
-交易成本按实际成交权重变化计算，并计入随后的持有期，使建仓日与基准都从 0% 开始展示。
+交易成本按实际持仓权重变化计算，并计入对应持有期。因子分组与指标层可复用该统一时序；市值/因子导入必须保留完整精度，避免 `qcut` 分位边界被显示精度破坏。
 
 ## 使用方式
 

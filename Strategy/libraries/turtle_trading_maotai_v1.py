@@ -11,6 +11,7 @@ class TurtleTradingMaotaiStrategy:
     """以 20 日突破入场、10 日低点或 2N 止损离场的单标的海龟策略。"""
 
     symbol = "600519.SH"
+    required_symbols = frozenset({symbol})
     entry_window = 20
     exit_window = 10
     atr_window = 20

@@ -1,9 +1,18 @@
 import type { YgBacktestRequest, YgBacktestResponse } from "./ygApi";
 import { authHeaders, assertAuthConsistency, getStoredUser, subscribeAuth, prepareAuthHandoff } from "./auth";
+import { renameMethodDef } from "./factorCatalog";
 
 export type WeightMode = "sum" | "product" | "custom";
 export type RangeMode = "period" | "custom";
 export type AnalysisLevel = "core" | "full";
+
+/** 检测页「新建因子」草稿（未入库；带色展示；报告可入库） */
+export type DraftDetectFactor = {
+  name: string;
+  description: string;
+  category: string;
+  body: string;
+};
 
 export type DetectProjectConfig = {
   factorCodes: string[];
@@ -28,6 +37,8 @@ export type DetectProjectConfig = {
   commissionRate: number;
   stampTax: number;
   slippageRate: number;
+  /** 新建因子草稿；有值时为单因子自定义模式 */
+  draftFactor?: DraftDetectFactor | null;
 };
 
 export type DetectProject = {
@@ -51,6 +62,8 @@ export type DetectRunRecord = {
   result: YgBacktestResponse;
   finishedAt: string;
   elapsedSec: number;
+  /** 本次为新建自定义因子检测时带上，报告页可入库 */
+  draftFactor?: DraftDetectFactor | null;
 };
 
 export const DETECT_UNIVERSE_OPTIONS = [
@@ -86,7 +99,22 @@ export const DETECT_ANALYSIS_LEVEL_OPTIONS = [
   { code: "full" as const, label: "全量检测" },
 ] as const;
 
-export const RE_MARKET_END = "2026-01-01";
+export const RE_MARKET_END = (() => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+})();
+
+/** 预设周期 end：日历今天（RE 无数据日会自动裁到行情末日，不报错） */
+export function reMarketEndToday(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 function parseYmd(s: string): Date {
   const [y, m, d] = s.split("-").map(Number);
@@ -100,7 +128,7 @@ function fmtDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-/** 预设周期 → start/end（end 固定为 RE 行情截止日） */
+/** 预设周期 → start/end（end 为当天，随日历滚动） */
 export function resolveBacktestRange(cfg: DetectProjectConfig): { start: string; end: string } {
   if (cfg.rangeMode === "custom") {
     return { start: cfg.startDate, end: cfg.endDate };
@@ -110,7 +138,7 @@ export function resolveBacktestRange(cfg: DetectProjectConfig): { start: string;
 
 /** 自定义因子试算等：仅用 period 字符串 */
 export function periodToStartEnd(period: string): { start: string; end: string } {
-  const end = parseYmd(RE_MARKET_END);
+  const end = parseYmd(reMarketEndToday());
   const start = new Date(end);
   const p = period || "10y";
   if (p === "1d") start.setDate(start.getDate() - 1);
@@ -543,6 +571,57 @@ export async function createDetectProjectForClone(
   const title = (displayName || code).trim() || code;
   const created = await createProject(code, title, title);
   created.config = singleFactorDetectConfig(code, created.config);
+  return saveProject(created);
+}
+
+/**
+ * 社区克隆 → 因子检测：新建检测项目，以「新建因子」草稿模式承载源码（琥珀色单因子，报告可入库）。
+ */
+export async function createDetectProjectFromSnippet(opts: {
+  /** 检测项目显示名 */
+  title: string;
+  code: string;
+  /** 因子代码名（须与函数 def 一致；会改写源码 def 名） */
+  name: string;
+  description: string;
+  category: string;
+}): Promise<DetectProject> {
+  ensureCacheOwner();
+  const code = (opts.code || "").trim();
+  if (!code) throw new Error("该帖没有代码片段");
+  const name = (opts.name || "").trim();
+  if (!name) throw new Error("请填写因子代码名");
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new Error("因子代码名须为字母开头的标识符（字母/数字/下划线）");
+  }
+  const description = (opts.description || "").trim() || name;
+  const category = (opts.category || "").trim() || "其他";
+  const title = (opts.title || description).trim() || name;
+
+  let body = renameMethodDef(code, name);
+  if (!/^\s*def\s+/m.test(body)) {
+    const doc = description.replace(/\\/g, "\\\\").replace(/"""/g, "'''");
+    const indented = body
+      .split("\n")
+      .map((ln) => (ln.trim() ? `    ${ln}` : ln))
+      .join("\n");
+    body = `def ${name}(self):\n    """${doc}"""\n${indented}\n`;
+  }
+
+  const created = await createProject(name, title, title);
+  created.config = {
+    ...defaultConfig([name]),
+    factorCodes: [name],
+    weightMode: "sum",
+    weights: equalWeights(1),
+    powers: equalPowers(1),
+    draftFactor: {
+      name,
+      description,
+      category,
+      body,
+    },
+  };
   return saveProject(created);
 }
 

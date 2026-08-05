@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""刷新 WebApp/docs/DATABASE.md（表清单 / 字段 / 脱敏样例）。
+"""刷新 WebApp/docs/DATABASE(持续更新).md（表清单 / 字段 / 脱敏样例）。
 
 用法（在 backend 目录）::
 
@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT.parent / "docs"
-OUT = DOCS / "DATABASE.md"
+OUT = DOCS / "DATABASE(持续更新).md"
 PANEL_DB = ROOT / "output" / "factor_dashboard" / "metrics.sqlite"
 
 MAX_STR = 120
@@ -42,7 +42,35 @@ SAMPLE_COLS: dict[str, tuple[str, ...]] = {
     "detect_runs": ("id", "user_id", "project_id", "factor_name", "finished_at", "elapsed_sec"),
     "strategy_projects": ("id", "user_id", "name", "run_count", "updated_at"),
     "strategy_runs": ("id", "user_id", "project_id", "name", "finished_at", "elapsed_sec"),
+    "news_items": (
+        "id",
+        "source",
+        "category",
+        "title",
+        "published_at",
+        "is_flash",
+        "is_featured",
+    ),
     "user_custom_factors": ("id", "user_id", "name", "method_name", "created_at"),
+    "user_factor_libraries": ("id", "user_id", "name", "updated_at"),
+    "user_library_factors": ("id", "user_id", "library_id", "name", "category_label", "updated_at"),
+    "user_strategy_libraries": ("id", "user_id", "name", "updated_at"),
+    "user_library_strategies": (
+        "id",
+        "user_id",
+        "library_id",
+        "name",
+        "description",
+        "source_run_id",
+        "archive_finished_at",
+    ),
+    "kh_collections": ("id", "name", "pipeline", "chunk_strategy", "status", "updated_at"),
+    "kh_documents": ("id", "collection_id", "title", "chunk_strategy", "status", "updated_at"),
+    "kh_chunks": ("id", "document_id", "ordinal", "created_at"),
+    "kh_files": ("id", "title", "file_name", "collection_id", "created_at"),
+    "kh_chats": ("id", "name", "model_name", "updated_at"),
+    "kh_model_providers": ("id", "provider_key", "display_name", "updated_at"),
+    "kh_default_models": ("id", "role_key", "provider_key", "model_name", "updated_at"),
     "notifications": ("id", "user_id", "actor_id", "type", "post_id", "read_at", "created_at"),
     "community_reports": ("id", "reporter_id", "target_type", "post_id", "reason", "status", "created_at"),
     "ai_usage": ("id", "user_id", "skill", "tokens_in", "tokens_out", "created_at"),
@@ -69,9 +97,21 @@ PURPOSES: dict[str, str] = {
     "users": "账号与资料：登录、角色、AI 日配额、公开主页头像/封面/简介。",
     "user_follows": "用户关注关系（关注者 → 被关注者）。",
     "user_custom_factors": "用户自定义因子元数据（`.py` 另存磁盘；本表记归属与可见性）。",
+    "user_factor_libraries": "用户自建因子库（文件夹）；与内置库同级，按 user 隔离。",
+    "user_library_factors": "用户因子库内的因子条目（含代码正文、分类、说明）。",
+    "user_strategy_libraries": "用户自建策略库（文件夹）；与内置库同级，按 user 隔离。",
+    "user_library_strategies": "用户策略库内入库快照（含策略说明、回测归档 JSON；与研究侧 run 脱钩）。",
+    "kh_collections": "KnowledgeHub 知识库集合（:9531；类型 pipeline + 分块策略）。",
+    "kh_documents": "KnowledgeHub 文档（正文 / 分块策略 / status / enabled / parse_error）。",
+    "kh_chunks": "KnowledgeHub 文档切片（ordinal + text + meta JSONB）；检索读此表。",
+    "kh_files": "KnowledgeHub 文件管理页登记（可关联 collection）。",
+    "kh_chats": "KnowledgeHub 聊天应用配置（开场白、系统提示、关联知识库 ids）。",
+    "kh_model_providers": "模型供应商（通义/OpenAI 兼容等；存 base_url / api_key）。",
+    "kh_default_models": "默认模型角色（llm / embedding / rerank …）。",
     "posts": "社区帖（正文 / 代码 / 分区 / 状态 / 置顶）。",
     "post_comments": "帖评论与楼中楼回复。",
     "comment_votes": "评论赞/踩（每用户每评论一票）。",
+    "post_votes": "帖赞/踩（每用户每帖一票）。",
     "post_favorites": "用户收藏帖。",
     "notifications": "站内通知（回复、@、系统等）。",
     "community_reports": "举报帖/评论；管理仓处理队列。",
@@ -80,6 +120,7 @@ PURPOSES: dict[str, str] = {
     "detect_runs": "因子检测一次运行结果摘要 / 状态。",
     "strategy_projects": "策略研究项目配置与归属。",
     "strategy_runs": "策略回测一次运行结果摘要 / 状态。",
+    "news_items": "资讯聚合条目（多源快讯/市场/公告等；真源 ingest upsert）。",
     "factor_dashboard_metrics": "因子面板指标缓存（因子×池×周期×过滤规则）；RE 算完写入，非行情库。",
     "factor_verify_status": "因子跨平台对比校验状态（按因子名：pending/passed/failed），与指标行解耦。",
 }
@@ -117,6 +158,129 @@ FIELD_HINTS: dict[str, dict[str, str]] = {
         "created_at": "创建",
         "updated_at": "更新",
     },
+    "user_factor_libraries": {
+        "id": "主键",
+        "user_id": "所有者",
+        "name": "库名（同用户唯一）",
+        "created_at": "创建",
+        "updated_at": "更新",
+    },
+    "user_library_factors": {
+        "id": "主键",
+        "library_id": "所属 `user_factor_libraries.id`",
+        "user_id": "所有者（冗余，便于按用户唯一名）",
+        "name": "因子标识名（同用户唯一）",
+        "method_name": "Python 方法名",
+        "body": "因子源码",
+        "description": "中文说明",
+        "category_label": "分类标签",
+        "created_at": "创建",
+        "updated_at": "更新",
+    },
+    "user_strategy_libraries": {
+        "id": "主键",
+        "user_id": "所有者",
+        "name": "库名（同用户唯一）",
+        "created_at": "创建",
+        "updated_at": "更新",
+    },
+    "user_library_strategies": {
+        "id": "主键",
+        "library_id": "所属 `user_strategy_libraries.id`",
+        "user_id": "所有者",
+        "name": "策略名（同用户唯一）",
+        "code_id": "关联代码标识（若有）",
+        "body": "策略源码快照",
+        "description": "策略说明（入库时填写，列表副标题）",
+        "category_label": "分类标签",
+        "source_run_id": "来源研究 run id（仅溯源，不随研究侧变更）",
+        "archive_request": "入库时回测请求快照 JSON",
+        "archive_result": "入库时回测结果快照 JSON",
+        "archive_elapsed_sec": "入库快照耗时秒",
+        "archive_finished_at": "入库快照完成时间",
+        "created_at": "创建",
+        "updated_at": "更新",
+    },
+    "kh_collections": {
+        "id": "主键",
+        "name": "知识库名（唯一）",
+        "description": "说明",
+        "pipeline": "类型 general/qa/manual/…",
+        "chunk_strategy": "分块策略 id",
+        "status": "active 等",
+        "created_by": "创建人 users.id（可空）",
+        "created_at": "创建",
+        "updated_at": "更新",
+    },
+    "kh_documents": {
+        "id": "主键",
+        "collection_id": "所属 kh_collections.id",
+        "title": "标题（可重命名）",
+        "source_type": "file / text",
+        "body": "原文",
+        "file_name": "上传文件名",
+        "file_size": "字节",
+        "chunk_strategy": "分块策略",
+        "status": "draft / parsing / ready / failed",
+        "enabled": "是否参与 search/ask（false=停用）",
+        "parse_error": "最近一次解析失败原因",
+        "version": "ingest 版本",
+        "created_by": "上传人（可空）",
+        "created_at": "创建",
+        "updated_at": "更新",
+    },
+    "kh_chunks": {
+        "id": "主键",
+        "document_id": "kh_documents.id",
+        "ordinal": "片序",
+        "text": "切片正文",
+        "meta": "如 title 等 JSONB",
+        "created_at": "创建",
+    },
+    "kh_files": {
+        "id": "主键",
+        "title": "标题",
+        "file_name": "文件名",
+        "file_size": "字节",
+        "body": "文本内容",
+        "collection_id": "可选关联知识库",
+        "created_by": "上传人",
+        "created_at": "创建",
+        "updated_at": "更新",
+    },
+    "kh_chats": {
+        "id": "主键",
+        "name": "聊天应用名",
+        "description": "说明",
+        "opener": "开场白",
+        "system_prompt": "系统提示（可含 {knowledge}）",
+        "empty_response": "无检索时回复",
+        "collection_ids": "关联知识库 id 列表 JSONB",
+        "model_name": "可选覆盖模型名",
+        "temperature": "采样温度",
+        "top_p": "top_p",
+        "max_tokens": "最大 token",
+        "created_by": "创建人",
+        "created_at": "创建",
+        "updated_at": "更新",
+    },
+    "kh_model_providers": {
+        "id": "主键",
+        "provider_key": "供应商 key（唯一）",
+        "display_name": "显示名",
+        "base_url": "API Base URL",
+        "api_key": "密钥（勿导出明文到文档样例）",
+        "models": "模型列表 JSONB",
+        "created_at": "创建",
+        "updated_at": "更新",
+    },
+    "kh_default_models": {
+        "id": "主键",
+        "role_key": "llm / embedding / rerank …",
+        "provider_key": "供应商 key",
+        "model_name": "模型名",
+        "updated_at": "更新",
+    },
     "posts": {
         "id": "主键",
         "author_id": "作者",
@@ -128,6 +292,7 @@ FIELD_HINTS: dict[str, dict[str, str]] = {
         "view_count": "浏览次数",
         "is_pinned": "是否置顶",
         "pinned_at": "置顶时间",
+        "platform_ref": "平台引用 JSON（面板指标 / 回测引用，供读帖 TL;DR 校验）",
         "created_at": "创建",
         "updated_at": "更新",
     },
@@ -147,6 +312,12 @@ FIELD_HINTS: dict[str, dict[str, str]] = {
     "comment_votes": {
         "user_id": "投票用户",
         "comment_id": "评论",
+        "value": "1 赞 / -1 踩",
+        "created_at": "时间",
+    },
+    "post_votes": {
+        "user_id": "投票用户",
+        "post_id": "帖",
         "value": "1 赞 / -1 踩",
         "created_at": "时间",
     },
@@ -238,6 +409,23 @@ FIELD_HINTS: dict[str, dict[str, str]] = {
         "finished_at": "结束时间",
         "elapsed_sec": "耗时秒",
         "created_at": "时间",
+    },
+    "news_items": {
+        "id": "主键",
+        "title": "标题",
+        "summary": "摘要",
+        "body": "正文（电报多为全文；东财可抓 HTML；巨潮多为 PDF 说明）",
+        "published_at": "发布时间（巨潮常为披露日 00:00）",
+        "source": "`cls` / `eastmoney` / `cninfo` / `10jqka` / `wallstreetcn` / `bloomberg`",
+        "category": "`flash` / `market` / `announce` / `research` / `policy` / `global`",
+        "url": "源站或 PDF 链接",
+        "symbols": "关联代码 JSONB 数组",
+        "themes": "题材标签 JSONB 数组",
+        "industries": "行业标签 JSONB 数组",
+        "raw_hash": "去重键（同源同条唯一）",
+        "is_flash": "是否进电报流",
+        "is_featured": "是否头条卡",
+        "created_at": "入库时间",
     },
     "factor_dashboard_metrics": {
         "factor_name": "因子名",
@@ -418,7 +606,8 @@ def render(pg: dict[str, Any], sq: dict[str, Any]) -> str:
     )
     a(
         "> **边界：** SVQuant **不存行情 bars**；"
-        "因子面板指标在本机 SQLite；账号 / 社区 / 检测 / 策略在 PostgreSQL。"
+        "因子面板指标在本机 SQLite；账号 / 社区 / 检测 / 策略 / **KnowledgeHub（`kh_*`）** 在 PostgreSQL。"
+        "旧 `kb_*` 已删除，勿再建。"
     )
     a("")
     a("---")
@@ -429,7 +618,7 @@ def render(pg: dict[str, Any], sq: dict[str, Any]) -> str:
     a("|----|------|-------------|--------|------|")
     a(
         f"| **主库** | PostgreSQL | `.env` → `DATABASE_URL`（`svquant`） | "
-        f"**{len(pg)}** | 用户、社区、Agent 用量、检测/策略 |"
+        f"**{len(pg)}** | 用户、社区、Agent、检测/策略、KnowledgeHub |"
     )
     a(
         f"| **因子面板缓存** | SQLite | `backend/output/factor_dashboard/metrics.sqlite` | "
@@ -491,9 +680,15 @@ def render(pg: dict[str, Any], sq: dict[str, Any]) -> str:
     a("- 连接：`services/db.py`")
     a(
         "- 建表：`auth_store` / `profile_store` / `community_store` / "
-        "`agent_store` / `detect_store` / `strategy_store` / `user_factor_store`"
+        "`agent_store` / `detect_store` / `strategy_store` / `user_factor_store` / "
+        "`user_library_store` / `user_strategy_library_store`"
     )
     a("- 面板：`services/dashboard_store.py`")
+    a("")
+    a(
+        "> **不在库内：** AI 因子/策略生成历史目前仅浏览器 `localStorage` "
+        "（按 `userId` 隔离 key），未落 Postgres；后续计费对接服务端时再补表。"
+    )
     a("")
     a("---")
     a("")
@@ -581,9 +776,12 @@ def render(pg: dict[str, Any], sq: dict[str, Any]) -> str:
     a("| 日期 | 说明 |")
     a("|------|------|")
     a(
-        f"| {now[:10]} | 初版 / 刷新：Postgres {len(pg)} 表 + 面板 SQLite "
-        f"{len(sq)} 表；含字段与脱敏样例 |"
+        f"| {now[:10]} | 刷新：补全用户因子/策略库 4 表 + `user_library_strategies` "
+        f"入库快照列；`posts.platform_ref`；Postgres **{len(pg)}** 表 + SQLite "
+        f"**{len(sq)}** 表；注明 AI 生成历史暂未落库 |"
     )
+    a("| 2026-07-30 | 策略库入库快照列：`source_run_id` / `archive_*`；策略说明 `description` |")
+    a("| 2026-07-28 | 初版：Postgres + 面板 SQLite；含 `factor_verify_status` / `post_votes` |")
     a("")
     return "\n".join(A)
 

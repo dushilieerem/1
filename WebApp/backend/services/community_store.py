@@ -17,8 +17,8 @@ SECTION_LABELS = {
     "hotspot": "热点分析",
     "official": "官方",
 }
-# Feed 排序：浏览数 / 收藏数 / 最新（默认浏览最多）
-POST_SORTS = ("views", "favorites", "newest")
+# Feed 排序：浏览数 / 收藏数 / 点赞数 / 最新（默认浏览最多）
+POST_SORTS = ("views", "favorites", "likes", "newest")
 NOTIF_TYPES = ("reply", "mention", "like")
 MAX_COMMENT_IMAGES = 3
 _MENTION_RE = re.compile(r"@([^\s@]{1,32})")
@@ -177,6 +177,21 @@ def ensure_posts_schema() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_post_favorites_user ON post_favorites (user_id, created_at DESC)"
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS post_votes (
+              user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              post_id       BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+              value         SMALLINT NOT NULL,
+              created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              PRIMARY KEY (user_id, post_id),
+              CONSTRAINT post_votes_value_chk CHECK (value IN (-1, 1))
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_post_votes_post ON post_votes (post_id)"
+        )
         # 历史 mention 实为「点回复评论」；迁到 reply。此后 mention 仅用于正文 @
         conn.execute(
             """
@@ -240,7 +255,12 @@ def _iso(val: Any) -> Any:
     return val
 
 
-def _row_to_post(row: dict[str, Any], *, favorited: bool | None = None) -> dict[str, Any]:
+def _row_to_post(
+    row: dict[str, Any],
+    *,
+    favorited: bool | None = None,
+    my_vote: int | None = None,
+) -> dict[str, Any]:
     out: dict[str, Any] = {
         "id": row["id"],
         "section": row["section"],
@@ -251,6 +271,8 @@ def _row_to_post(row: dict[str, Any], *, favorited: bool | None = None) -> dict[
         "view_count": int(row.get("view_count") or 0),
         "comment_count": int(row.get("comment_count") or 0),
         "favorite_count": int(row.get("favorite_count") or 0),
+        "like_count": int(row.get("like_count") or 0),
+        "dislike_count": int(row.get("dislike_count") or 0),
         "status": row.get("status") or "published",
         "is_pinned": bool(row.get("is_pinned")),
         "pinned_at": _iso(row.get("pinned_at")),
@@ -268,6 +290,8 @@ def _row_to_post(row: dict[str, Any], *, favorited: bool | None = None) -> dict[
         out["platform_ref"] = pref
     if favorited is not None:
         out["favorited"] = favorited
+    if my_vote is not None:
+        out["my_vote"] = int(my_vote)
     return out
 
 
@@ -508,7 +532,9 @@ def seed_sample_posts() -> int:
 _POST_SELECT = """
     SELECT p.*, u.username, u.display_name, u.avatar_url,
            COALESCE(cc.cnt, 0) AS comment_count,
-           COALESCE(fc.cnt, 0) AS favorite_count
+           COALESCE(fc.cnt, 0) AS favorite_count,
+           COALESCE(lk.cnt, 0) AS like_count,
+           COALESCE(dk.cnt, 0) AS dislike_count
     FROM posts p
     JOIN users u ON u.id = p.author_id
     LEFT JOIN (
@@ -518,6 +544,14 @@ _POST_SELECT = """
     LEFT JOIN (
       SELECT post_id, COUNT(*) AS cnt FROM post_favorites GROUP BY post_id
     ) fc ON fc.post_id = p.id
+    LEFT JOIN (
+      SELECT post_id, COUNT(*) AS cnt FROM post_votes
+      WHERE value = 1 GROUP BY post_id
+    ) lk ON lk.post_id = p.id
+    LEFT JOIN (
+      SELECT post_id, COUNT(*) AS cnt FROM post_votes
+      WHERE value = -1 GROUP BY post_id
+    ) dk ON dk.post_id = p.id
 """
 
 
@@ -549,6 +583,8 @@ def list_posts(
     pin_first = "p.is_pinned DESC, p.pinned_at DESC NULLS LAST, "
     if sort_key == "favorites":
         order_by = f"{pin_first}COALESCE(fc.cnt, 0) DESC, p.created_at DESC, p.id DESC"
+    elif sort_key == "likes":
+        order_by = f"{pin_first}COALESCE(lk.cnt, 0) DESC, p.created_at DESC, p.id DESC"
     elif sort_key == "newest":
         order_by = f"{pin_first}p.created_at DESC, p.id DESC"
     else:
@@ -665,6 +701,7 @@ def get_post(
             (post_id,),
         ).fetchone()
         favorited = None
+        my_vote: int | None = None
         if viewer_id is not None and row and st == "published":
             fav = conn.execute(
                 """
@@ -674,9 +711,20 @@ def get_post(
                 (viewer_id, post_id),
             ).fetchone()
             favorited = fav is not None
+            vote = conn.execute(
+                """
+                SELECT value FROM post_votes
+                WHERE user_id = %s AND post_id = %s
+                """,
+                (viewer_id, post_id),
+            ).fetchone()
+            my_vote = int(vote["value"]) if vote else 0
     if not row:
         raise KeyError(f"post not found: {post_id}")
-    return {"ok": True, "post": _row_to_post(dict(row), favorited=favorited)}
+    return {
+        "ok": True,
+        "post": _row_to_post(dict(row), favorited=favorited, my_vote=my_vote),
+    }
 
 
 def _normalize_post_fields(
@@ -1148,6 +1196,93 @@ def set_comment_vote(
     }
 
 
+def set_post_vote(user_id: int, post_id: int, value: int) -> dict[str, Any]:
+    """value: 1 赞 / -1 踩 / 0 取消。点赞通知作者；点踩不通知。"""
+    value = int(value)
+    if value not in (-1, 0, 1):
+        raise ValueError("无效投票")
+    with get_conn() as conn:
+        p = conn.execute(
+            """
+            SELECT id, author_id, status FROM posts WHERE id = %s
+            """,
+            (post_id,),
+        ).fetchone()
+        if not p or p["status"] != "published":
+            raise KeyError(f"post not found: {post_id}")
+
+        # 自己的帖不可赞踩：静默返回当前计数
+        if int(p["author_id"]) == int(user_id):
+            like_count = conn.execute(
+                "SELECT COUNT(*) AS c FROM post_votes WHERE post_id = %s AND value = 1",
+                (post_id,),
+            ).fetchone()["c"]
+            dislike_count = conn.execute(
+                "SELECT COUNT(*) AS c FROM post_votes WHERE post_id = %s AND value = -1",
+                (post_id,),
+            ).fetchone()["c"]
+            return {
+                "ok": True,
+                "post_id": post_id,
+                "like_count": int(like_count),
+                "dislike_count": int(dislike_count),
+                "my_vote": 0,
+            }
+
+        prev = conn.execute(
+            """
+            SELECT value FROM post_votes
+            WHERE user_id = %s AND post_id = %s
+            """,
+            (user_id, post_id),
+        ).fetchone()
+        prev_val = int(prev["value"]) if prev else 0
+
+        if value == 0:
+            conn.execute(
+                "DELETE FROM post_votes WHERE user_id = %s AND post_id = %s",
+                (user_id, post_id),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO post_votes (user_id, post_id, value)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id, post_id) DO UPDATE SET value = EXCLUDED.value
+                """,
+                (user_id, post_id, value),
+            )
+            if value == 1 and prev_val != 1:
+                _insert_notification(
+                    conn,
+                    user_id=int(p["author_id"]),
+                    actor_id=user_id,
+                    typ="like",
+                    post_id=int(p["id"]),
+                    comment_id=None,
+                )
+
+        like_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM post_votes WHERE post_id = %s AND value = 1",
+            (post_id,),
+        ).fetchone()["c"]
+        dislike_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM post_votes WHERE post_id = %s AND value = -1",
+            (post_id,),
+        ).fetchone()["c"]
+        my = conn.execute(
+            "SELECT value FROM post_votes WHERE user_id = %s AND post_id = %s",
+            (user_id, post_id),
+        ).fetchone()
+    return {
+        "ok": True,
+        "post_id": post_id,
+        "like_count": int(like_count),
+        "dislike_count": int(dislike_count),
+        "my_vote": int(my["value"]) if my else 0,
+    }
+
+
 def list_notifications(
     user_id: int,
     *,
@@ -1175,6 +1310,7 @@ def list_notifications(
             SELECT n.*,
                    a.username AS actor_username,
                    a.display_name AS actor_display_name,
+                   a.avatar_url AS actor_avatar_url,
                    p.title AS post_title,
                    c.body AS comment_body
             FROM notifications n
@@ -1205,6 +1341,7 @@ def list_notifications(
                     "username": d.get("actor_username"),
                     "display_name": d.get("actor_display_name")
                     or d.get("actor_username"),
+                    "avatar_url": d.get("actor_avatar_url") or None,
                 },
             }
         )
@@ -1375,6 +1512,101 @@ def list_my_posts(
         "status": status_key,
         "total": int(total),
         "items": [_row_to_post(dict(r)) for r in rows],
+    }
+
+
+def ops_summary(*, author_role: str = "user", days: int = 7) -> dict[str, Any]:
+    """管理仓运营看板：近 N 日发帖 / 互动 / 举报待办 + AI 调用（admin only）。"""
+    if author_role != "admin":
+        raise PermissionError("仅管理员可查看")
+    ensure_posts_schema()
+    days = max(1, min(90, int(days)))
+    with get_conn() as conn:
+        posts_7d = conn.execute(
+            """
+            SELECT COUNT(*)::int AS c
+            FROM posts
+            WHERE status = 'published'
+              AND created_at >= NOW() - (%s * INTERVAL '1 day')
+            """,
+            (days,),
+        ).fetchone()["c"]
+        comments_7d = conn.execute(
+            """
+            SELECT COUNT(*)::int AS c
+            FROM post_comments
+            WHERE status = 'published'
+              AND created_at >= NOW() - (%s * INTERVAL '1 day')
+            """,
+            (days,),
+        ).fetchone()["c"]
+        favorites_7d = conn.execute(
+            """
+            SELECT COUNT(*)::int AS c
+            FROM post_favorites
+            WHERE created_at >= NOW() - (%s * INTERVAL '1 day')
+            """,
+            (days,),
+        ).fetchone()["c"]
+        likes_7d = conn.execute(
+            """
+            SELECT (
+              (SELECT COUNT(*)::int FROM comment_votes
+               WHERE value = 1
+                 AND created_at >= NOW() - (%s * INTERVAL '1 day'))
+              +
+              (SELECT COUNT(*)::int FROM post_votes
+               WHERE value = 1
+                 AND created_at >= NOW() - (%s * INTERVAL '1 day'))
+            ) AS c
+            """,
+            (days, days),
+        ).fetchone()["c"]
+        reports_open = conn.execute(
+            """
+            SELECT COUNT(*)::int AS c
+            FROM community_reports
+            WHERE status = 'open'
+            """
+        ).fetchone()["c"]
+        posts_by_day_rows = conn.execute(
+            """
+            SELECT to_char(d::date, 'YYYY-MM-DD') AS day, COALESCE(p.c, 0)::int AS posts
+            FROM generate_series(
+              (CURRENT_DATE - (%s - 1) * INTERVAL '1 day')::date,
+              CURRENT_DATE::date,
+              '1 day'::interval
+            ) AS d
+            LEFT JOIN (
+              SELECT created_at::date AS day, COUNT(*)::int AS c
+              FROM posts
+              WHERE status = 'published'
+                AND created_at >= CURRENT_DATE - (%s - 1) * INTERVAL '1 day'
+              GROUP BY created_at::date
+            ) p ON p.day = d::date
+            ORDER BY d
+            """,
+            (days, days),
+        ).fetchall()
+
+    from services.agent_store import usage_admin_summary
+
+    ai = usage_admin_summary(days=days)
+    interactions_7d = int(comments_7d) + int(favorites_7d) + int(likes_7d)
+    return {
+        "ok": True,
+        "days": days,
+        "posts_7d": int(posts_7d),
+        "comments_7d": int(comments_7d),
+        "favorites_7d": int(favorites_7d),
+        "likes_7d": int(likes_7d),
+        "interactions_7d": interactions_7d,
+        "reports_open": int(reports_open),
+        "ai_calls_7d": int((ai.get("totals") or {}).get("calls") or 0),
+        "ai_users_7d": int((ai.get("totals") or {}).get("users") or 0),
+        "ai_tokens_7d": int((ai.get("totals") or {}).get("tokens_in") or 0)
+        + int((ai.get("totals") or {}).get("tokens_out") or 0),
+        "by_day": [dict(r) for r in posts_by_day_rows],
     }
 
 

@@ -1,7 +1,9 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+  /* 资讯标题：中文优先，避免 Inter 数字加粗 + 系统宋体/黑体混排发胖 */
+  --font-news: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
@@ -19,6 +21,11 @@ body {
   color: #0f172a;
   background: #f8fafc;
   -webkit-font-smoothing: antialiased;
+}
+
+.font-news {
+  font-family: var(--font-news);
+  font-synthesis: none;
 }
 
 ::selection {

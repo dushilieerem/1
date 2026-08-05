@@ -183,6 +183,20 @@ export function buildYgFactorRequestParts(opts: {
     .map((m) => m.trim())
     .filter((m) => m && !m.startsWith("# RE库"));
 
+  // 单本地/自定义因子 + 直通组合 → 只传该因子函数本身（入口名=因子名）
+  if (
+    metas.length === 1 &&
+    needsLocalCode &&
+    builtinLibs.length === 0 &&
+    localBodies.length === 1 &&
+    isPassthroughCombo(opts.comboFn, metas[0].name)
+  ) {
+    return {
+      factor_name: metas[0].name,
+      factor_code: localBodies[0],
+    };
+  }
+
   let factorCode: string;
   if (needsLocalCode && builtinLibs.length > 0) {
     // 混合：优先单函数内联

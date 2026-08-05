@@ -57,7 +57,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {children}
       {pending ? (
         <div
-          className="fixed inset-0 z-[200] flex items-start justify-center bg-slate-900/40 px-4 pt-[16vh] sm:pt-[18vh]"
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/40 px-4"
           role="presentation"
           onClick={() => finish(!!pending.alert)}
         >

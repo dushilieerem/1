@@ -1,0 +1,202 @@
+# SVQuant 项目级策略库索引
+# 源码版本与本文件一同纳入 Git；回测可通过 strategy_id + strategy_version 引用。
+
+version: 2
+strategies:
+  turtle_trading_maotai:
+    name: 贵州茅台日频海龟交易
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [turtle, donchian, atr, trend, maotai, a_share, long_only, event]
+    versions:
+      v1:
+        file: turtle_trading_maotai_v1.py
+        entrypoint: TurtleTradingMaotaiStrategy
+
+  ma_13_26_maotai:
+    name: 贵州茅台 13/26 日双均线
+    strategy_type: trend
+    execution_mode: vectorized
+    current_version: v1
+    tags: [trend, moving_average, maotai, long_only]
+    versions:
+      v1:
+        file: ma_13_26_maotai_v1.py
+        entrypoint: Ma1326MaotaiStrategy
+
+  dual_moving_average:
+    name: 双均线趋势
+    strategy_type: trend
+    execution_mode: vectorized
+    current_version: v1
+    tags: [trend, moving_average, long_only]
+    versions:
+      v1:
+        file: dual_moving_average_v1.py
+        entrypoint: DualMovingAverageStrategy
+
+  cross_sectional_momentum:
+    name: 截面动量 Top10
+    strategy_type: momentum
+    execution_mode: vectorized
+    current_version: v1
+    tags: [momentum, cross_sectional, long_only]
+    versions:
+      v1:
+        file: cross_sectional_momentum_v1.py
+        entrypoint: CrossSectionalMomentumStrategy
+
+  short_term_reversal:
+    name: 短期反转 Top10
+    strategy_type: reversal
+    execution_mode: vectorized
+    current_version: v1
+    tags: [reversal, cross_sectional, long_only]
+    versions:
+      v1:
+        file: short_term_reversal_v1.py
+        entrypoint: ShortTermReversalStrategy
+
+  low_volatility:
+    name: 低波动 Top10
+    strategy_type: low_volatility
+    execution_mode: vectorized
+    current_version: v1
+    tags: [low_volatility, defensive, long_only]
+    versions:
+      v1:
+        file: low_volatility_v1.py
+        entrypoint: LowVolatilityStrategy
+
+  markowitz_min_variance:
+    name: Markowitz 最小方差（研究版）
+    strategy_type: minimum_variance
+    execution_mode: vectorized
+    current_version: v1
+    tags: [markowitz, minimum_variance, research_only, static_universe, long_only]
+    versions:
+      v1:
+        file: markowitz_min_variance_v1.py
+        entrypoint: MarkowitzMinVarianceStrategy
+
+  donchian_breakout:
+    name: 唐奇安突破
+    strategy_type: trend
+    execution_mode: vectorized
+    current_version: v1
+    tags: [breakout, trend, long_only]
+    versions:
+      v1:
+        file: donchian_breakout_v1.py
+        entrypoint: DonchianBreakoutStrategy
+
+  donchian_a_share_event:
+    name: 唐奇安 A 股突破趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [breakout, trend, a_share, long_only, event]
+    versions:
+      v1:
+        file: donchian_a_share_event_v1.py
+        entrypoint: DonchianAShareEventStrategy
+
+  wilder_adx_rsi_atr_a_share_event:
+    name: Wilder ADX RSI ATR A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [adx, dmi, rsi, atr, trend, a_share, long_only, event]
+    versions:
+      v1:
+        file: wilder_adx_rsi_atr_a_share_event_v1.py
+        entrypoint: WilderAdxRsiAtrAShareEventStrategy
+
+  wilder_rsi_classic_a_share_event:
+    name: 韦尔斯·怀尔德 RSI 经典 A 股均值回归
+    strategy_type: reversal
+    execution_mode: event
+    current_version: v1
+    tags: [wilder, rsi, mean_reversion, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: wilder_rsi_classic_a_share_event_v1.py
+        entrypoint: WilderRsiClassicAShareEventStrategy
+
+  oneil_canslim_lite_a_share_event:
+    name: 欧奈尔 CANSLIM Lite A 股选股
+    strategy_type: momentum
+    execution_mode: event
+    current_version: v1
+    tags: [oneil, canslim, momentum, breakout, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: oneil_canslim_lite_a_share_event_v1.py
+        entrypoint: OneilCanslimLiteAShareEventStrategy
+
+  appel_macd_a_share_event:
+    name: 阿佩尔 MACD A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [macd, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: appel_macd_a_share_event_v1.py
+        entrypoint: AppelMacdAShareEventStrategy
+
+  bollinger_mean_reversion_a_share_event:
+    name: 布林带 A 股均值回归
+    strategy_type: reversal
+    execution_mode: event
+    current_version: v1
+    tags: [bollinger, mean_reversion, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: bollinger_mean_reversion_a_share_event_v1.py
+        entrypoint: BollingerMeanReversionAShareEventStrategy
+
+  lane_stochastic_a_share_event:
+    name: 乔治·莱恩 KD 随机指标 A 股趋势过滤
+    strategy_type: reversal
+    execution_mode: event
+    current_version: v1
+    tags: [lane, stochastic, kd, reversal, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: lane_stochastic_a_share_event_v1.py
+        entrypoint: LaneStochasticAShareEventStrategy
+
+  hosoda_ichimoku_a_share_event:
+    name: 细田悟一 一目均衡表 A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [hosoda, ichimoku, cloud, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: hosoda_ichimoku_a_share_event_v1.py
+        entrypoint: HosodaIchimokuAShareEventStrategy
+
+  donchian_bullish_ma_alignment_a_share_event:
+    name: 唐奇安风格均线多头排列 A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [donchian, moving_average, bullish_alignment, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: donchian_bullish_ma_alignment_a_share_event_v1.py
+        entrypoint: DonchianBullishMaAlignmentAShareEventStrategy
+
+  simons_pairs_trading_research:
+    name: 西蒙斯风格配对交易（研究版）
+    strategy_type: statistical_arbitrage
+    execution_mode: vectorized
+    current_version: v1
+    tags: [simons, pairs_trading, statistical_arbitrage, market_neutral, long_short, research_only]
+    versions:
+      v1:
+        file: simons_pairs_trading_research_v1.py
+        entrypoint: SimonsPairsTradingResearchStrategy

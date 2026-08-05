@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, BarChart3, Loader2, Play, Plus, Save, X } from "lucide-react";
+import { FactorCodeEditor } from "@/components/FactorCodeEditor";
 import { FactorPickerModal } from "@/components/FactorPickerModal";
 import {
   buildComboFunction,
@@ -25,11 +26,55 @@ import {
   saveProject,
   type AnalysisLevel,
   type DetectProject,
+  type DraftDetectFactor,
   type RangeMode,
   type WeightMode,
 } from "@/lib/detectStore";
-import { extractMethod, loadFactors, loadLibrarySource, renameMethodDef, type FactorMeta } from "@/lib/factorCatalog";
+import {
+  builtinCategoryLabelsFromFactors,
+  extractMethod,
+  loadFactors,
+  loadLibrarySource,
+  renameMethodDef,
+  type FactorMeta,
+} from "@/lib/factorCatalog";
+import {
+  listAllUserLibraryFactors,
+  userLibraryFactorToMeta,
+} from "@/lib/userFactorLibraries";
 import { ygBacktestFactor, type YgBacktestRequest } from "@/lib/ygApi";
+
+const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function draftBodyTemplate(name: string, description: string): string {
+  const doc = (description || name).replace(/\\/g, "\\\\").replace(/"""/g, "'''");
+  return `def ${name}(self):\n    """${doc}"""\n    return self.close.pct_change(5)\n`;
+}
+
+/** 自定义组合编辑器：展示「因子实现 + 组合」；写回时只抽出组合部分 */
+function extractCustomCombineFromEditor(
+  full: string,
+  factorCodes: string[],
+  methodBodies: string[],
+): string {
+  const text = (full || "").replace(/\r\n/g, "\n");
+  const methods = methodBodies.map((m) => m.trim()).filter(Boolean).join("\n\n");
+  if (methods) {
+    const trimmed = text.trimStart();
+    if (trimmed.startsWith(methods)) {
+      return trimmed.slice(methods.length).replace(/^\n+/, "");
+    }
+  }
+  const factorSet = new Set(factorCodes);
+  const re = /^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (!factorSet.has(m[1])) {
+      return text.slice(m.index);
+    }
+  }
+  return text.trim();
+}
 
 export function FactorDetectPage() {
   const { projectId = "" } = useParams();
@@ -40,6 +85,11 @@ export function FactorDetectPage() {
   const [catalog, setCatalog] = useState<FactorMeta[]>([]);
   const [methodBodies, setMethodBodies] = useState<string[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createDesc, setCreateDesc] = useState("");
+  const [createCategory, setCreateCategory] = useState("");
+  const [createErr, setCreateErr] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
   const [savedHint, setSavedHint] = useState("");
@@ -49,6 +99,8 @@ export function FactorDetectPage() {
   const tickRef = useRef<number | null>(null);
 
   const cfg = project?.config;
+  const draftFactor = cfg?.draftFactor ?? null;
+  const isDraftMode = Boolean(draftFactor?.name);
 
   const pushLog = useCallback((line: string) => {
     const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
@@ -78,24 +130,80 @@ export function FactorDetectPage() {
       setProject(p);
       const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
       setLogs((prev) => (prev.length ? prev : [`[${ts}] 已加载项目：${p.name}`]));
-      void loadFactors()
-        .then(setCatalog)
-        .catch(() => setCatalog([]));
+      void Promise.all([
+        loadFactors().catch(() => [] as FactorMeta[]),
+        listAllUserLibraryFactors()
+          .then((rows) => rows.map(userLibraryFactorToMeta))
+          .catch(() => [] as FactorMeta[]),
+      ]).then(([builtin, userFs]) => {
+        if (cancelled) return;
+        const byName = new Map<string, FactorMeta>();
+        for (const f of builtin) {
+          if (f.library !== "custom_lib") byName.set(f.name, f);
+        }
+        for (const f of userFs) byName.set(f.name, f);
+        setCatalog([...byName.values()]);
+      });
     })();
     return () => {
       cancelled = true;
     };
   }, [projectId]);
 
+  // 已入库的草稿：去掉琥珀色，按普通库因子展示
+  useEffect(() => {
+    const draftName = project?.config?.draftFactor?.name;
+    if (!draftName || !catalog.length) return;
+    const inUserLib = catalog.some(
+      (f) => f.name === draftName && f.library.startsWith("user_lib_"),
+    );
+    if (!inUserLib) return;
+    setProject((prev) => {
+      if (!prev?.config?.draftFactor?.name) return prev;
+      if (prev.config.draftFactor.name !== draftName) return prev;
+      const name = prev.config.draftFactor.name;
+      const codes = prev.config.factorCodes.length
+        ? prev.config.factorCodes
+        : [name];
+      const next = {
+        ...prev,
+        config: {
+          ...prev.config,
+          draftFactor: null,
+          factorCodes: codes,
+          weightMode: "sum" as const,
+          weights: equalWeights(codes.length),
+          powers: equalPowers(codes.length),
+        },
+      };
+      void saveProject(next);
+      return next;
+    });
+  }, [catalog, project?.config?.draftFactor?.name, project?.id]);
+
+  const categoryOptions = useMemo(() => {
+    const cats = builtinCategoryLabelsFromFactors(
+      catalog.filter((f) => !f.library.startsWith("user_lib_")),
+    );
+    return [...cats, "其他"];
+  }, [catalog]);
+
   const factorLabel = useCallback(
     (code: string) => {
+      if (draftFactor && draftFactor.name === code) {
+        return draftFactor.description || draftFactor.name;
+      }
       const f = catalog.find((x) => x.name === code);
       return f?.explain || f?.description || code;
     },
-    [catalog],
+    [catalog, draftFactor],
   );
 
   useEffect(() => {
+    if (isDraftMode && draftFactor) {
+      setMethodBodies([draftFactor.body || ""]);
+      return;
+    }
     if (!cfg?.factorCodes.length) {
       setMethodBodies([]);
       return;
@@ -111,6 +219,10 @@ export function FactorDetectPage() {
           const meta = byName.get(code);
           if (!meta) {
             bodies.push(`# 未找到因子 ${code}`);
+            continue;
+          }
+          if (meta.body) {
+            bodies.push(renameMethodDef(meta.body, code));
             continue;
           }
           if (isReBuiltinLib(meta.library)) {
@@ -137,7 +249,7 @@ export function FactorDetectPage() {
     return () => {
       cancelled = true;
     };
-  }, [cfg?.factorCodes, catalog, pushLog]);
+  }, [cfg?.factorCodes, catalog, pushLog, isDraftMode, draftFactor]);
 
   const comboFn = useMemo(() => {
     if (!cfg) return "";
@@ -153,6 +265,35 @@ export function FactorDetectPage() {
   }, [cfg, project?.name]);
 
   const methodsText = methodBodies.join("\n\n");
+
+  /** 多于 1 个因子才显示合成参数 */
+  const showSynthesis = !isDraftMode && (cfg?.factorCodes.length ?? 0) > 1;
+
+  /** 右侧统一代码区：单因子只看因子函数；多因子看实现+组合；自定义=实现(只读前缀)+可编辑组合 */
+  const unifiedCode = useMemo(() => {
+    if (!cfg) return "";
+    if (isDraftMode && draftFactor) return draftFactor.body || "";
+    const methods = methodsText.trim();
+    if (cfg.weightMode === "custom") {
+      const combo = (cfg.customCombine || "").trim();
+      if (!methods) return combo || "# 请先选择因子，再写组合函数";
+      return combo ? `${methods}\n\n${combo}` : `${methods}\n\n# 请在下方编写组合函数 combo_factor`;
+    }
+    const n = cfg.factorCodes.length;
+    if (n === 0) return "# 请先选择因子";
+    if (n === 1) {
+      const body = methodBodies[0]?.trim() || "";
+      if (body.startsWith("# RE库")) {
+        return `${body}\n# 提交时走 library_name，不传 factor_code`;
+      }
+      return body || `# 未找到因子 ${cfg.factorCodes[0]}`;
+    }
+    const combo = comboFn.trim();
+    return [methods, combo].filter(Boolean).join("\n\n");
+  }, [cfg, isDraftMode, draftFactor, methodBodies, methodsText, comboFn]);
+
+  const codeEditable =
+    Boolean(isDraftMode && draftFactor) || cfg?.weightMode === "custom";
 
   const patchConfig = (partial: Partial<NonNullable<DetectProject["config"]>>) => {
     setProject((prev) => {
@@ -182,14 +323,91 @@ export function FactorDetectPage() {
       return {
         ...prev,
         factorName: codes.length === 1 ? codes[0] : "combo_factor",
-        config: { ...prev.config, factorCodes: codes, weights, powers, customCombine },
+        config: {
+          ...prev.config,
+          factorCodes: codes,
+          weights,
+          powers,
+          customCombine,
+          draftFactor: null,
+        },
       };
     });
   };
 
   const removeFactor = (code: string) => {
     if (!cfg) return;
+    if (draftFactor && draftFactor.name === code) {
+      setProject((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          factorName: "combo_factor",
+          config: {
+            ...prev.config,
+            factorCodes: [],
+            weights: [],
+            powers: [],
+            draftFactor: null,
+          },
+        };
+      });
+      return;
+    }
     applyFactors(cfg.factorCodes.filter((c) => c !== code));
+  };
+
+  const confirmCreateFactor = () => {
+    setCreateErr(null);
+    const name = createName.trim();
+    const description = createDesc.trim();
+    const category = createCategory.trim();
+    if (!name) {
+      setCreateErr("请填写因子代码名");
+      return;
+    }
+    if (!NAME_RE.test(name)) {
+      setCreateErr("代码名须为字母开头的标识符（字母/数字/下划线）");
+      return;
+    }
+    if (!description) {
+      setCreateErr("请填写中文解释");
+      return;
+    }
+    if (!category) {
+      setCreateErr("请选择分类");
+      return;
+    }
+    if (catalog.some((f) => f.name === name)) {
+      setCreateErr(`因子「${name}」已存在，请换一个代码名`);
+      return;
+    }
+    const draft: DraftDetectFactor = {
+      name,
+      description,
+      category,
+      body: draftBodyTemplate(name, description),
+    };
+    setProject((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        factorName: name,
+        config: {
+          ...prev.config,
+          factorCodes: [name],
+          weights: [100],
+          powers: [1],
+          weightMode: "sum",
+          draftFactor: draft,
+        },
+      };
+    });
+    setCreateOpen(false);
+    setCreateName("");
+    setCreateDesc("");
+    setCreateCategory("其他");
+    pushLog(`已新建自定义因子：${name}（检测后可入库）`);
   };
 
   const setWeightMode = (mode: WeightMode) => {
@@ -221,28 +439,56 @@ export function FactorDetectPage() {
   const onRun = useCallback(async () => {
     if (!project || !cfg) return;
     setRunError(null);
+    const draft = cfg.draftFactor;
     const customOnly =
       cfg.weightMode === "custom" && Boolean(cfg.customCombine?.trim());
-    if (!cfg.factorCodes.length && !customOnly) {
+    if (!cfg.factorCodes.length && !customOnly && !draft) {
       const msg = "请先在上方添加因子，或使用自定义组合函数";
       setRunError(msg);
       pushLog(msg);
       return;
     }
+    if (draft) {
+      const body = (draft.body || "").trim();
+      if (!body) {
+        const msg = "请先编写因子代码";
+        setRunError(msg);
+        pushLog(msg);
+        return;
+      }
+    }
+    const catalogForBuild: FactorMeta[] = draft
+      ? [
+          ...catalog,
+          {
+            name: draft.name,
+            methodName: draft.name,
+            description: draft.description,
+            explain: draft.description,
+            formula: "",
+            params: {},
+            library: "draft_lib",
+            libraryFile: "",
+            libraryLabel: draft.category,
+            body: draft.body,
+          },
+        ]
+      : catalog;
+    const bodiesForBuild = draft ? [draft.body] : methodBodies;
     const combo = buildComboFunction({
-      mode: cfg.weightMode,
-      factorCodes: cfg.factorCodes,
-      weights: cfg.weights,
-      powers: cfg.powers,
+      mode: draft ? "sum" : cfg.weightMode,
+      factorCodes: draft ? [draft.name] : cfg.factorCodes,
+      weights: draft ? [100] : cfg.weights,
+      powers: draft ? [1] : cfg.powers,
       customCombine: cfg.customCombine,
       entryName: "combo_factor",
       title: project.name,
     });
     const entryName = extractEntryName(combo, project.factorName || "combo_factor");
     const parts = buildYgFactorRequestParts({
-      factors: catalog,
-      factorCodes: cfg.factorCodes,
-      methodBodies,
+      factors: catalogForBuild,
+      factorCodes: draft ? [draft.name] : cfg.factorCodes,
+      methodBodies: bodiesForBuild,
       comboFn: combo,
       entryName,
     });
@@ -261,16 +507,15 @@ export function FactorDetectPage() {
     const t0 = Date.now();
     tickRef.current = window.setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 400);
     saveProject(project);
-    pushLog("开始调用回测引擎 POST /yg-api/api/backtest/factor …");
-    pushLog(`入口 ${parts.factor_name}`);
-    if (parts.library_name) {
-      const libs = Array.isArray(parts.library_name)
-        ? parts.library_name.join(", ")
-        : parts.library_name;
-      pushLog(`library_name=${libs}${parts.factor_code ? " + factor_code" : "（无 factor_code）"}`);
-    } else {
-      pushLog("仅 factor_code（本地/自定义抽码）");
-    }
+    pushLog("开始检测 · 调用 ResearchEngine 因子回测");
+    const entryHint = parts.library_name
+      ? `入口 ${parts.factor_name} · RE 库 ${
+          Array.isArray(parts.library_name)
+            ? parts.library_name.join(", ")
+            : parts.library_name
+        }${parts.factor_code ? " + 本地源码" : ""}`
+      : `入口 ${parts.factor_name} · 仅本地/自定义源码`;
+    pushLog(entryHint);
     try {
       const { start, end } = resolveBacktestRange(cfg);
       const req: YgBacktestRequest = {
@@ -289,7 +534,9 @@ export function FactorDetectPage() {
         slippage_rate: cfg.slippageRate,
         analysis_level: cfg.analysisLevel || "core",
       };
-      pushLog(`区间 ${start} → ${end} · 分析深度 ${req.analysis_level}`);
+      pushLog(
+        `区间 ${start} → ${end} · 池 ${cfg.universe} · 深度 ${req.analysis_level}`,
+      );
       const res = await ygBacktestFactor(req, ac.signal);
       const elapsedSec = Math.floor((Date.now() - t0) / 1000);
       if (res.error) {
@@ -299,14 +546,19 @@ export function FactorDetectPage() {
         pushLog("不会跳转报告页 · 请改组合函数或单因子代码后重试");
         return;
       }
+      const saveReq = {
+        ...req,
+        ...(draft ? { _svquantDraftFactor: draft } : {}),
+      } as YgBacktestRequest & { _svquantDraftFactor?: DraftDetectFactor };
       const rec = await saveDetectRun({
         projectId: project.id,
         factorName: parts.factor_name,
         description: project.name,
-        request: req,
+        request: saveReq,
         result: res,
         finishedAt: new Date().toISOString(),
         elapsedSec,
+        draftFactor: draft || null,
       });
       pushLog(`完成 ${elapsedSec}s，跳转报告`);
       navigate(`/factor/detect/report/${rec.id}`);
@@ -412,31 +664,79 @@ export function FactorDetectPage() {
           <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5 text-sm">
             {/* 1. 添加因子 */}
             <section>
-              <h2 className="mb-3 text-sm font-bold text-blue-600">1. 添加因子</h2>
-              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
-                {cfg.factorCodes.map((c) => (
-                  <span
-                    key={c}
-                    className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm"
-                    title={factorLabel(c)}
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-sm font-bold text-blue-600">1. 添加因子</h2>
+                {!isDraftMode ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreateErr(null);
+                      setCreateName("");
+                      setCreateDesc("");
+                      setCreateCategory("");
+                      setCreateOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100"
                   >
-                    <span className="truncate font-medium text-slate-800">{factorLabel(c)}</span>
-                    <button type="button" onClick={() => removeFactor(c)} className="shrink-0 text-slate-400 hover:text-red-500">
+                    <Plus className="h-3.5 w-3.5" />
+                    新建因子
+                  </button>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                {isDraftMode && draftFactor ? (
+                  <span
+                    className="inline-flex max-w-[260px] items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs shadow-sm"
+                    title={draftFactor.name}
+                  >
+                    <span className="truncate font-medium text-amber-900">
+                      {draftFactor.description || draftFactor.name}
+                    </span>
+                    <code className="shrink-0 text-[10px] text-amber-700/80">
+                      {draftFactor.name}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => removeFactor(draftFactor.name)}
+                      className="shrink-0 text-amber-600 hover:text-red-500"
+                    >
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </span>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setPickerOpen(true)}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-dashed border-blue-300 bg-blue-50/50 text-blue-600 transition hover:border-blue-400 hover:bg-blue-50"
-                >
-                  <Plus className="h-5 w-5" />
-                </button>
+                ) : (
+                  <>
+                    {cfg.factorCodes.map((c) => (
+                      <span
+                        key={c}
+                        className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm"
+                        title={factorLabel(c)}
+                      >
+                        <span className="truncate font-medium text-slate-800">
+                          {factorLabel(c)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeFactor(c)}
+                          className="shrink-0 text-slate-400 hover:text-red-500"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setPickerOpen(true)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-dashed border-blue-300 bg-blue-50/50 text-blue-600 transition hover:border-blue-400 hover:bg-blue-50"
+                    >
+                      <Plus className="h-5 w-5" />
+                    </button>
+                  </>
+                )}
               </div>
             </section>
 
-            {/* 2. 权重 */}
+            {/* 2. 权重（多因子才显示） */}
+            {showSynthesis ? (
             <section>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm font-bold text-blue-600">2. 因子合成参数设置</h2>
@@ -531,10 +831,13 @@ export function FactorDetectPage() {
                 </p>
               )}
             </section>
+            ) : null}
 
             {/* 3. 组合构建 */}
             <section>
-              <h2 className="mb-3 text-sm font-bold text-blue-600">3. 组合构建</h2>
+              <h2 className="mb-3 text-sm font-bold text-blue-600">
+                {showSynthesis ? "3" : "2"}. 组合构建
+              </h2>
               <label className="block text-xs text-slate-500">
                 组合类型 portfolio_type
                 <select
@@ -554,7 +857,9 @@ export function FactorDetectPage() {
 
             {/* 4. 参数设置 */}
             <section>
-              <h2 className="mb-3 text-sm font-bold text-blue-600">4. 参数设置</h2>
+              <h2 className="mb-3 text-sm font-bold text-blue-600">
+                {showSynthesis ? "4" : "3"}. 参数设置
+              </h2>
               <div className="grid grid-cols-2 gap-3">
                 <label className={`text-xs text-slate-500 ${cfg.rangeMode === "custom" ? "col-span-2" : ""}`}>
                   回测区间
@@ -754,34 +1059,57 @@ export function FactorDetectPage() {
         </aside>
 
         <div className="flex min-h-0 flex-col gap-3">
-          <section className="flex min-h-0 flex-[2] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-100 px-4 py-2">
-              <span className="text-xs font-semibold text-slate-600">对应函数（只读）</span>
-            </div>
-            <pre className="min-h-[140px] flex-1 overflow-auto bg-slate-50 p-4 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-slate-800">
-              {methodsText || "# 请先选择因子"}
-            </pre>
-          </section>
-
-          <section className="flex min-h-0 flex-[2] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2">
-              <span className="text-xs font-semibold text-slate-600">组合函数</span>
-              <span className="text-[11px] text-slate-400">
-                {cfg.weightMode === "custom" ? "可编辑" : "自动生成 · 只读"}
+          <section
+            className={`flex min-h-0 flex-[4] flex-col overflow-hidden rounded-xl border bg-white shadow-sm ${
+              isDraftMode ? "border-amber-200" : "border-slate-200"
+            }`}
+          >
+            <div
+              className={`flex items-center justify-between border-b px-4 py-2 ${
+                isDraftMode
+                  ? "border-amber-100 bg-amber-50/60"
+                  : "border-slate-100"
+              }`}
+            >
+              <span
+                className={`text-xs font-semibold ${
+                  isDraftMode ? "text-amber-900" : "text-slate-600"
+                }`}
+              >
+                {isDraftMode && draftFactor
+                  ? `因子代码 · ${draftFactor.name}`
+                  : cfg.weightMode === "custom" || cfg.factorCodes.length > 1
+                    ? "因子代码（实现 + 组合）"
+                    : "因子代码"}
               </span>
+              {cfg.weightMode === "custom" ? (
+                <span className="text-[11px] text-slate-400">
+                  上方因子实现自动带入 · 请改组合函数
+                </span>
+              ) : !codeEditable ? (
+                <span className="text-[11px] text-slate-400">自动生成 · 只读</span>
+              ) : null}
             </div>
-            {cfg.weightMode === "custom" ? (
-              <textarea
-                value={cfg.customCombine}
-                onChange={(e) => patchConfig({ customCombine: e.target.value })}
-                spellCheck={false}
-                className="min-h-[140px] flex-1 resize-none bg-slate-50 p-4 font-mono text-[12.5px] leading-relaxed text-slate-800 outline-none"
+            <div className="min-h-0 flex-1 p-2">
+              <FactorCodeEditor
+                value={unifiedCode}
+                onChange={(v) => {
+                  if (isDraftMode && draftFactor) {
+                    patchConfig({ draftFactor: { ...draftFactor, body: v } });
+                  } else if (cfg.weightMode === "custom") {
+                    patchConfig({
+                      customCombine: extractCustomCombineFromEditor(
+                        v,
+                        cfg.factorCodes,
+                        methodBodies,
+                      ),
+                    });
+                  }
+                }}
+                readOnly={!codeEditable}
+                height="100%"
               />
-            ) : (
-              <pre className="min-h-[140px] flex-1 overflow-auto bg-slate-50 p-4 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-slate-800">
-                {comboFn}
-              </pre>
-            )}
+            </div>
           </section>
 
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -802,7 +1130,7 @@ export function FactorDetectPage() {
                 <span className="font-semibold">检测未通过：</span>
                 {runError}
                 <span className="mt-1 block text-red-500/90">
-                  对方返回 HTTP 200 且 error 非空时不会跳转报告；请改代码后重新点「进行检测」。
+                  ResearchEngine 返回成功但带 error 时不会跳转报告；请改代码后重新点「进行检测」。
                 </span>
               </div>
             )}
@@ -837,6 +1165,73 @@ export function FactorDetectPage() {
           pushLog(`已选择 ${codes.length} 个因子`);
         }}
       />
+
+      {createOpen ? (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">新建因子</h3>
+              <button
+                type="button"
+                onClick={() => setCreateOpen(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3 text-sm">
+              <label className="block text-xs text-slate-500">
+                因子代码名
+                <input
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm outline-none focus:border-blue-400"
+                />
+              </label>
+              <label className="block text-xs text-slate-500">
+                中文解释
+                <input
+                  value={createDesc}
+                  onChange={(e) => setCreateDesc(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                />
+              </label>
+              <label className="block text-xs text-slate-500">
+                分类
+                <select
+                  value={createCategory}
+                  onChange={(e) => setCreateCategory(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                >
+                  <option value="">请选择</option>
+                  {categoryOptions.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {createErr ? <p className="text-xs text-red-600">{createErr}</p> : null}
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCreateOpen(false)}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={confirmCreateFactor}
+                className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                确定
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

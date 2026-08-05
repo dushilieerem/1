@@ -4,17 +4,40 @@ import {
   Activity,
   Bell,
   Bookmark,
+  BookOpen,
+  ChevronLeft,
   ChevronRight,
   FilePenLine,
   FileText,
   Gauge,
   LayoutDashboard,
+  Newspaper,
   Shield,
   UserRound,
+  Users,
+  X,
 } from "lucide-react";
-import { getStoredUser } from "@/lib/auth";
+import { getStoredUser, prepareAuthHandoff } from "@/lib/auth";
 import { getMyAgentUsage, type AgentUsageMe } from "@/lib/agentApi";
-import { AuthorAvatar, CommunityPageShell } from "@/components/community/communityUi";
+import { useConfirm } from "@/components/ConfirmDialog";
+import {
+  clearBrowseHistory,
+  listBrowseHistory,
+  removeBrowseHistoryItem,
+  type BrowseKind,
+} from "@/lib/browseHistory";
+import { getNews, type NewsItem } from "@/lib/newsApi";
+import {
+  getCommunityPost,
+  type CommunityPost,
+} from "@/lib/communityApi";
+import { NewsFeedCard } from "@/components/NewsFeedCard";
+import { PageJump } from "@/components/PageJump";
+import {
+  AuthorAvatar,
+  CommunityPageShell,
+  PostListItem,
+} from "@/components/community/communityUi";
 import {
   MeDraftsPanel,
   MeFavoritesPanel,
@@ -31,6 +54,8 @@ export type MeTab =
   | "mine"
   | "drafts"
   | "favorites"
+  | "news-history"
+  | "community-history"
   | "mod";
 
 const TAB_IDS: MeTab[] = [
@@ -40,6 +65,8 @@ const TAB_IDS: MeTab[] = [
   "mine",
   "drafts",
   "favorites",
+  "news-history",
+  "community-history",
   "mod",
 ];
 
@@ -63,13 +90,19 @@ const SIDE_NAV: {
   { id: "mine", label: "我的发帖", icon: FileText },
   { id: "drafts", label: "草稿箱", icon: FilePenLine },
   { id: "favorites", label: "我的收藏", icon: Bookmark },
+  { id: "news-history", label: "资讯浏览历史", icon: Newspaper },
+  { id: "community-history", label: "社区浏览历史", icon: Users },
   { id: "mod", label: "管理仓", icon: Shield, adminOnly: true },
 ];
+
+/** 知识库独立站（可用 VITE_KH_URL 覆盖） */
+const KH_URL =
+  (import.meta.env.VITE_KH_URL as string | undefined)?.trim() ||
+  "http://192.168.3.32:9531/";
 
 const QUICK_LINKS: {
   id: MeTab;
   title: string;
-  desc: string;
   icon: typeof Bell;
   iconWrap: string;
   card: string;
@@ -77,7 +110,6 @@ const QUICK_LINKS: {
   {
     id: "messages",
     title: "消息中心",
-    desc: "回复 · @ · 赞踩通知",
     icon: Bell,
     iconWrap: "bg-sky-500 text-white shadow-sky-200/80",
     card: "from-sky-50/90 to-white hover:border-sky-200",
@@ -85,7 +117,6 @@ const QUICK_LINKS: {
   {
     id: "mine",
     title: "我的发帖",
-    desc: "已发布内容与管理",
     icon: FileText,
     iconWrap: "bg-violet-500 text-white shadow-violet-200/80",
     card: "from-violet-50/90 to-white hover:border-violet-200",
@@ -93,7 +124,6 @@ const QUICK_LINKS: {
   {
     id: "drafts",
     title: "草稿箱",
-    desc: "未发布草稿继续写",
     icon: FilePenLine,
     iconWrap: "bg-amber-500 text-white shadow-amber-200/80",
     card: "from-amber-50/90 to-white hover:border-amber-200",
@@ -101,12 +131,250 @@ const QUICK_LINKS: {
   {
     id: "favorites",
     title: "我的收藏",
-    desc: "收藏过的帖子",
     icon: Bookmark,
     iconWrap: "bg-emerald-500 text-white shadow-emerald-200/80",
     card: "from-emerald-50/90 to-white hover:border-emerald-200",
   },
+  {
+    id: "news-history",
+    title: "资讯浏览历史",
+    icon: Newspaper,
+    iconWrap: "bg-rose-500 text-white shadow-rose-200/80",
+    card: "from-rose-50/90 to-white hover:border-rose-200",
+  },
+  {
+    id: "community-history",
+    title: "社区浏览历史",
+    icon: Users,
+    iconWrap: "bg-indigo-500 text-white shadow-indigo-200/80",
+    card: "from-indigo-50/90 to-white hover:border-indigo-200",
+  },
 ];
+
+const HISTORY_PAGE_SIZE = 10;
+
+function MeBrowseHistoryPanel({
+  kind,
+  title,
+  emptyHint,
+}: {
+  kind: BrowseKind;
+  title: string;
+  emptyHint: string;
+}) {
+  const confirm = useConfirm();
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [histTotal, setHistTotal] = useState(0);
+  const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
+  const [posts, setPosts] = useState<CommunityPost[]>([]);
+  const [missing, setMissing] = useState(0);
+
+  const totalPages = Math.max(1, Math.ceil(histTotal / HISTORY_PAGE_SIZE));
+  const pageSafe = Math.min(page, totalPages);
+
+  const refresh = async (pageNum: number) => {
+    setLoading(true);
+    const histAll = listBrowseHistory(kind);
+    setHistTotal(histAll.length);
+    const tp = Math.max(1, Math.ceil(histAll.length / HISTORY_PAGE_SIZE));
+    const p = Math.min(Math.max(1, pageNum), tp);
+    if (p !== pageNum) setPage(p);
+    const slice = histAll.slice(
+      (p - 1) * HISTORY_PAGE_SIZE,
+      p * HISTORY_PAGE_SIZE,
+    );
+    if (slice.length === 0) {
+      setNewsItems([]);
+      setPosts([]);
+      setMissing(0);
+      setLoading(false);
+      return;
+    }
+    if (kind === "news") {
+      const settled = await Promise.all(
+        slice.map((h) =>
+          getNews(h.id)
+            .then((it) => ({ ok: true as const, it }))
+            .catch(() => ({ ok: false as const })),
+        ),
+      );
+      const ok = settled.filter((x) => x.ok).map((x) => x.it);
+      setNewsItems(ok);
+      setPosts([]);
+      setMissing(settled.length - ok.length);
+    } else {
+      const settled = await Promise.all(
+        slice.map((h) =>
+          getCommunityPost(Number(h.id), { bump: false })
+            .then((r) => ({ ok: true as const, post: r.post }))
+            .catch(() => ({ ok: false as const })),
+        ),
+      );
+      const ok = settled.filter((x) => x.ok).map((x) => x.post);
+      setPosts(ok);
+      setNewsItems([]);
+      setMissing(settled.length - ok.length);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    setPage(1);
+  }, [kind]);
+
+  useEffect(() => {
+    void refresh(page);
+  }, [kind, page]);
+
+  const removeOne = async (id: number | string, label: string) => {
+    const ok = await confirm({
+      title: "移除浏览记录",
+      message: `确认从历史中移除「${label}」？`,
+      confirmLabel: "移除",
+      danger: true,
+    });
+    if (!ok) return;
+    removeBrowseHistoryItem(kind, id);
+    const nextTotal = listBrowseHistory(kind).length;
+    const nextPages = Math.max(1, Math.ceil(nextTotal / HISTORY_PAGE_SIZE));
+    if (page > nextPages) setPage(nextPages);
+    else void refresh(page);
+  };
+
+  const clearAll = async () => {
+    const ok = await confirm({
+      title: "清空浏览历史",
+      message: `确认清空全部${kind === "news" ? "资讯" : "社区"}浏览记录？`,
+      confirmLabel: "清空",
+      danger: true,
+    });
+    if (!ok) return;
+    clearBrowseHistory(kind);
+    setPage(1);
+    void refresh(1);
+  };
+
+  const empty = !loading && histTotal === 0;
+  const hasItems = histTotal > 0;
+
+  const pager =
+    !loading && histTotal > HISTORY_PAGE_SIZE ? (
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+        <button
+          type="button"
+          disabled={pageSafe <= 1 || loading}
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          上一页
+        </button>
+        <span className="px-2 text-sm tabular-nums text-slate-600">
+          {pageSafe} / {totalPages}
+        </span>
+        <button
+          type="button"
+          disabled={pageSafe >= totalPages || loading}
+          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          下一页
+          <ChevronRight className="h-4 w-4" />
+        </button>
+        <PageJump page={pageSafe} totalPages={totalPages} onJump={setPage} />
+      </div>
+    ) : null;
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 px-5 py-4">
+        <h1 className="text-base font-semibold text-slate-900">{title}</h1>
+        {hasItems ? (
+          <span className="text-xs text-slate-400">
+            共 {histTotal} 条
+            {totalPages > 1 ? ` · 第 ${pageSafe}/${totalPages} 页` : ""}
+          </span>
+        ) : null}
+        {hasItems ? (
+          <button
+            type="button"
+            onClick={() => void clearAll()}
+            className="ml-auto text-xs text-slate-400 hover:text-rose-600"
+          >
+            清空
+          </button>
+        ) : null}
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-5">
+        {loading ? (
+          <p className="py-16 text-center text-sm text-slate-400">加载中…</p>
+        ) : empty ? (
+          <p className="py-16 text-center text-sm text-slate-400">{emptyHint}</p>
+        ) : kind === "news" ? (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {newsItems.map((it) => (
+                <div key={it.id} className="relative min-w-0">
+                  <button
+                    type="button"
+                    title="从历史中移除"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void removeOne(it.id, it.title);
+                    }}
+                    className="absolute right-3 top-3 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-400 shadow-sm transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                  <NewsFeedCard item={it} />
+                </div>
+              ))}
+            </div>
+            {missing > 0 ? (
+              <p className="pt-3 text-center text-[11px] text-slate-400">
+                本页 {missing} 条已失效或无法加载
+              </p>
+            ) : null}
+            {pager}
+          </>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {posts.map((p) => (
+                <div
+                  key={p.id}
+                  className="relative min-w-0 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm"
+                >
+                  <button
+                    type="button"
+                    title="从历史中移除"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void removeOne(p.id, p.title);
+                    }}
+                    className="absolute right-2 top-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-400 shadow-sm transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                  <PostListItem post={p} />
+                </div>
+              ))}
+            </div>
+            {missing > 0 ? (
+              <p className="pt-3 text-center text-[11px] text-slate-400">
+                本页 {missing} 条已失效或无法加载
+              </p>
+            ) : null}
+            {pager}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function CommunityMePage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -189,7 +457,7 @@ export function CommunityMePage() {
             </div>
           </div>
 
-          <nav className="flex-1 space-y-1 p-2.5">
+          <nav className="flex-1 space-y-1 overflow-y-auto p-2.5">
             {sideNav.map((item) => {
               const Icon = item.icon;
               const active = tab === item.id;
@@ -204,12 +472,30 @@ export function CommunityMePage() {
                       : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                   }`}
                 >
-                  <Icon className={`h-4 w-4 ${active ? "text-white" : "text-slate-400"}`} />
-                  {item.label}
+                  <Icon
+                    className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-slate-400"}`}
+                  />
+                  <span className="leading-snug">{item.label}</span>
                 </button>
               );
             })}
           </nav>
+
+          {isAdmin ? (
+            <div className="px-2.5 pb-2">
+              <button
+                type="button"
+                onClick={() => {
+                  prepareAuthHandoff();
+                  window.open(KH_URL, "_blank", "noopener,noreferrer");
+                }}
+                className="flex w-full items-center gap-2.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-left text-sm font-medium text-sky-800 transition hover:bg-sky-100"
+              >
+                <BookOpen className="h-4 w-4 text-sky-600" />
+                知识库平台
+              </button>
+            </div>
+          ) : null}
 
           <div className="border-t border-slate-100 p-3">
             <Link
@@ -224,7 +510,6 @@ export function CommunityMePage() {
         <main className="min-w-0 flex-1 overflow-hidden p-3 sm:p-4 lg:p-5">
           {tab === "workspace" ? (
             <div className="h-full overflow-auto animate-fade-up">
-              {/* 欢迎横幅：浅色 */}
               <section className="relative mb-5 overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-sky-50/80 to-amber-50/70 p-6 shadow-sm sm:p-7">
                 <div
                   className="pointer-events-none absolute inset-0 opacity-60"
@@ -241,9 +526,6 @@ export function CommunityMePage() {
                   <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
                     你好，{name}
                   </h1>
-                  <p className="mt-2 max-w-md text-sm text-slate-500">
-                    管理发帖、草稿、消息与 AI 用量；公开主页请从右上角菜单进入。
-                  </p>
                 </div>
               </section>
 
@@ -271,10 +553,6 @@ export function CommunityMePage() {
                       <ChevronRight className="h-3.5 w-3.5" />
                     </span>
                   </div>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    剩余 {usage?.remaining ?? "—"}
-                    {usage?.day ? ` · ${usage.day}` : ""}
-                  </p>
                   <div className="mt-2.5 h-2 overflow-hidden rounded-full bg-slate-100">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-red-500 via-rose-500 to-orange-400 transition-all"
@@ -295,7 +573,7 @@ export function CommunityMePage() {
                       key={item.id}
                       type="button"
                       onClick={() => setTab(item.id)}
-                      className={`group flex items-start gap-3.5 rounded-2xl border border-slate-200/70 bg-gradient-to-br p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${item.card}`}
+                      className={`group flex items-center gap-3.5 rounded-2xl border border-slate-200/70 bg-gradient-to-br p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${item.card}`}
                     >
                       <span
                         className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-md ${item.iconWrap}`}
@@ -304,12 +582,11 @@ export function CommunityMePage() {
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-semibold text-slate-900">{item.title}</p>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {item.title}
+                          </p>
                           <ChevronRight className="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500" />
                         </div>
-                        <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
-                          {item.desc}
-                        </p>
                       </div>
                     </button>
                   );
@@ -323,6 +600,20 @@ export function CommunityMePage() {
               {tab === "mine" && <MePostsPanel />}
               {tab === "drafts" && <MeDraftsPanel />}
               {tab === "favorites" && <MeFavoritesPanel />}
+              {tab === "news-history" && (
+                <MeBrowseHistoryPanel
+                  kind="news"
+                  title="资讯浏览历史"
+                  emptyHint="打开资讯详情后会出现在这里"
+                />
+              )}
+              {tab === "community-history" && (
+                <MeBrowseHistoryPanel
+                  kind="community"
+                  title="社区浏览历史"
+                  emptyHint="打开社区帖子后会出现在这里"
+                />
+              )}
               {tab === "mod" && isAdmin && <MeModPanel />}
             </div>
           )}

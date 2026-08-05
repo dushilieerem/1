@@ -32,6 +32,7 @@ import {
   PrimaryButton,
   SectionDot,
 } from "@/components/community/communityUi";
+import { PageJump } from "@/components/PageJump";
 
 const PAGE_SIZE = 10;
 
@@ -380,11 +381,11 @@ export function CommunityProfilePage() {
                       ))}
                     </div>
                     {pageCount > 1 ? (
-                      <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 sm:px-6">
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 sm:px-6">
                         <p className="text-xs text-slate-400">
                           第 {page} / {pageCount} 页 · 每页 {PAGE_SIZE} 条
                         </p>
-                        <div className="flex gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <button
                             type="button"
                             disabled={page <= 1}
@@ -403,6 +404,11 @@ export function CommunityProfilePage() {
                             下一页
                             <ChevronRight className="h-3.5 w-3.5" />
                           </button>
+                          <PageJump
+                            page={page}
+                            totalPages={pageCount}
+                            onJump={setPage}
+                          />
                         </div>
                       </div>
                     ) : null}

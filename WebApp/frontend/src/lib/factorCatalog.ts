@@ -14,10 +14,16 @@ export type FactorMeta = {
   libraryLabel: string;
   tags?: string[];
   ownerId?: number;
+  /** 用户库因子：直接带源码，无需读文件 */
+  body?: string;
+  userLibraryId?: number;
+  userLibraryName?: string;
+  /** 用户库因子行 id（删除用） */
+  userLibraryFactorId?: number;
 };
 
 export const LABELS: Record<string, string> = {
-  // 检测选因子 / 面板分类：动量优先，再经典库，再同事新库，自定义靠后
+  // 检测选因子 / 面板分类：动量优先，再经典库，再同事新库
   momentum_lib: "动量/趋势",
   value_lib: "价值/估值",
   technical_lib: "技术指标",
@@ -41,6 +47,18 @@ export const LEGACY_LABELS: Record<string, string> = {
 
 /** 与 index.yaml libraries 常见顺序一致；Tab 只展示实际出现的库 */
 export const LIBRARY_TAB_ORDER = Object.keys(LABELS);
+
+/** 内置因子库分类键（不含「自定义」） */
+export const BUILTIN_LIBRARY_KEYS = LIBRARY_TAB_ORDER.filter(
+  (k) => k !== "custom_lib",
+);
+
+export function builtinCategoryLabelsFromFactors(factors: FactorMeta[]): string[] {
+  const present = new Set(
+    factors.filter((f) => f.library !== "custom_lib").map((f) => f.library),
+  );
+  return BUILTIN_LIBRARY_KEYS.filter((k) => present.has(k)).map((k) => LABELS[k]);
+}
 
 export function labelForLibrary(key: string, fallback?: string): string {
   return LABELS[key] || LEGACY_LABELS[key] || fallback || key;

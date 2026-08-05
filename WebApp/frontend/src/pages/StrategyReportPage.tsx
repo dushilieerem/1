@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, Fragment, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactECharts from "echarts-for-react";
 import {
+  Archive,
   BarChart3,
   ChevronDown,
   ChevronRight,
@@ -9,10 +10,12 @@ import {
   Layers,
   ListOrdered,
   Share2,
+  Sparkles,
   TrendingDown,
   TrendingUp,
   Wallet,
 } from "lucide-react";
+import { AiBacktestInterpretDialog } from "@/components/AiBacktestInterpretDialog";
 import {
   CHART,
   areaGradient,
@@ -22,8 +25,12 @@ import {
   darkTooltip,
   legendBase,
 } from "@/components/chartTheme";
-import { getStoredUser } from "@/lib/auth";
+import { getStoredUser, prepareAuthHandoff } from "@/lib/auth";
 import { buildStrategyShareDraft } from "@/lib/communityShare";
+import {
+  STRATEGY_ARCHIVE_CATEGORIES,
+  type StrategyArchiveCategory,
+} from "@/lib/strategyLibraryApi";
 import {
   STRATEGY_BENCHMARK_OPTIONS,
   STRATEGY_UNIVERSE_OPTIONS,
@@ -31,18 +38,31 @@ import {
   optionLabel,
   type StrategyRunRecord,
 } from "@/lib/strategyStore";
-import type { YgRebalanceLog, YgRebalanceTrade } from "@/lib/ygApi";
+import {
+  addStrategyToUserLibrary,
+  getLibraryStrategyArchive,
+  listUserStrategyLibraries,
+  type UserStrategyLibrary,
+} from "@/lib/userStrategyLibraries";
+import type {
+  YgEventFill,
+  YgEventPositionSnap,
+  YgRebalanceLog,
+  YgRebalanceTrade,
+} from "@/lib/ygApi";
 
-type ReportTab = "equity" | "overview" | "trades" | "holdings";
+type ReportTab = "equity" | "overview" | "trades" | "holdings" | "ai";
 
 const NAV: { id: ReportTab; label: string; icon: typeof TrendingDown }[] = [
   { id: "equity", label: "累计收益与回撤", icon: TrendingDown },
   { id: "overview", label: "绩效概览", icon: BarChart3 },
   { id: "trades", label: "交易明细", icon: ListOrdered },
   { id: "holdings", label: "历史持仓", icon: Wallet },
+  { id: "ai", label: "AI 解读", icon: Sparkles },
 ];
 
 const TRADE_PAGE_SIZE = 50;
+const HOLDINGS_PAGE_SIZE = 30;
 
 function pct(x?: number | null) {
   if (x == null || Number.isNaN(x)) return "—";
@@ -56,8 +76,24 @@ function wgt(x?: number | null) {
   if (x == null || Number.isNaN(x)) return "—";
   return `${(x * 100).toFixed(2)}%`;
 }
-function toCumPct(nav: number) {
-  return (nav - 1) * 100;
+
+/**
+ * 净值序列 → 累计收益 %。
+ * 向量化多为相对净值（≈1 起）；事件引擎常返回绝对资金（如 1e6）。
+ * 若仍按 (v-1)*100，会把 100 万画成约 1 亿%。
+ */
+function seriesToCumPct(
+  values: Array<number | null | undefined>,
+): Array<number | null> {
+  const first = values.find(
+    (v): v is number => typeof v === "number" && Number.isFinite(v) && v !== 0,
+  );
+  if (first == null) return values.map(() => null);
+  const absolute = Math.abs(first) > 10;
+  return values.map((v) => {
+    if (v == null || !Number.isFinite(v)) return null;
+    return absolute ? (v / first - 1) * 100 : (v - 1) * 100;
+  });
 }
 
 function sideLabel(side: string) {
@@ -67,25 +103,69 @@ function sideLabel(side: string) {
   return side || "—";
 }
 
-/** 按调仓日志累积目标权重 → 各调仓日收盘后持仓 */
-function holdingsFromRebalanceLogs(logs: YgRebalanceLog[]) {
-  const book = new Map<string, number>();
+function tsToDate(ts?: string | null): string {
+  if (!ts) return "—";
+  return String(ts).slice(0, 10);
+}
+
+function money(x?: number | null) {
+  if (x == null || Number.isNaN(x)) return "—";
+  return x.toLocaleString("zh-CN", {
+    maximumFractionDigits: 2,
+  });
+}
+
+/** 事件日终快照 → 持仓行（仅保留有仓日） */
+function holdingsFromEventPositions(snaps: YgEventPositionSnap[]) {
   const rows: Array<{
     date: string;
-    holdings: Array<{ symbol: string; weight: number }>;
+    cash: number | null;
+    totalValue: number | null;
+    holdings: Array<{ symbol: string; quantity: number }>;
+  }> = [];
+  for (const snap of snaps) {
+    const pos = snap.positions || {};
+    const holdings = Object.entries(pos)
+      .map(([symbol, quantity]) => ({
+        symbol,
+        quantity: Number(quantity) || 0,
+      }))
+      .filter((h) => Math.abs(h.quantity) > 1e-12)
+      .sort((a, b) => a.symbol.localeCompare(b.symbol, "en"));
+    if (!holdings.length) continue;
+    rows.push({
+      date: tsToDate(snap.timestamp),
+      cash: typeof snap.cash === "number" ? snap.cash : null,
+      totalValue: typeof snap.total_value === "number" ? snap.total_value : null,
+      holdings,
+    });
+  }
+  return rows;
+}
+
+/** 按调仓日志累积目标权重 → 各调仓日收盘后持仓 */
+function holdingsFromRebalanceLogs(logs: YgRebalanceLog[]) {
+  const book = new Map<string, { weight: number; name: string }>();
+  const rows: Array<{
+    date: string;
+    holdings: Array<{ symbol: string; name: string; weight: number }>;
   }> = [];
   for (const log of logs) {
     for (const t of log.trades || []) {
       const sym = String(t.symbol || "").trim();
       if (!sym) continue;
       const w = Number(t.target_weight);
+      const nm = String(t.name || "").trim();
       if (!Number.isFinite(w) || Math.abs(w) < 1e-12) book.delete(sym);
-      else book.set(sym, w);
+      else {
+        const prev = book.get(sym);
+        book.set(sym, { weight: w, name: nm || prev?.name || "" });
+      }
     }
     rows.push({
       date: log.date,
       holdings: [...book.entries()]
-        .map(([symbol, weight]) => ({ symbol, weight }))
+        .map(([symbol, { weight, name }]) => ({ symbol, name, weight }))
         .sort(
           (a, b) =>
             b.weight - a.weight || a.symbol.localeCompare(b.symbol, "en"),
@@ -173,17 +253,34 @@ function mddMarkLine(troughDate: string) {
 }
 
 export function StrategyReportPage() {
-  const { runId = "" } = useParams();
+  const { runId = "", archiveStrategyId = "" } = useParams();
   const navigate = useNavigate();
+  const isArchiveSnap = Boolean(archiveStrategyId.trim());
   const [rec, setRec] = useState<StrategyRunRecord | null | undefined>(undefined);
   const [tab, setTab] = useState<ReportTab>("equity");
   const [tradePage, setTradePage] = useState(1);
+  const [holdingsPage, setHoldingsPage] = useState(1);
   const [expandedDates, setExpandedDates] = useState<Set<string>>(() => new Set());
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [userLibs, setUserLibs] = useState<UserStrategyLibrary[]>([]);
+  const [archiveLibId, setArchiveLibId] = useState<number | "">("");
+  const [archiveName, setArchiveName] = useState("");
+  const [archiveDesc, setArchiveDesc] = useState("");
+  const [archiveCategory, setArchiveCategory] = useState<
+    StrategyArchiveCategory | ""
+  >("");
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveErr, setArchiveErr] = useState<string | null>(null);
+  const [archiveOk, setArchiveOk] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setRec(undefined);
-    void getStrategyRun(runId)
+    const archId = Number(archiveStrategyId);
+    void (isArchiveSnap
+      ? getLibraryStrategyArchive(archId)
+      : getStrategyRun(runId)
+    )
       .then((r) => {
         if (!cancelled) setRec(r);
       })
@@ -193,13 +290,28 @@ export function StrategyReportPage() {
     return () => {
       cancelled = true;
     };
-  }, [runId]);
+  }, [runId, archiveStrategyId, isArchiveSnap]);
 
   const result = rec?.result;
   const m = result?.metrics;
   const req = rec?.request;
+  const isEventRun = useMemo(() => {
+    if (req?.engine_mode === "event") return true;
+    const r = result as Record<string, unknown> | undefined;
+    if (!r) return false;
+    return (
+      Array.isArray(r.fills) ||
+      Array.isArray(r.orders) ||
+      Array.isArray(r.event_positions)
+    );
+  }, [req, result]);
+
   const rebalanceLogs = useMemo(
     () => (result?.rebalance_logs || []) as YgRebalanceLog[],
+    [result],
+  );
+  const eventFills = useMemo(
+    () => (Array.isArray(result?.fills) ? result!.fills! : []) as YgEventFill[],
     [result],
   );
   const flatTrades = useMemo(
@@ -209,6 +321,15 @@ export function StrategyReportPage() {
   const holdingRows = useMemo(
     () => holdingsFromRebalanceLogs(rebalanceLogs),
     [rebalanceLogs],
+  );
+  const eventHoldingRows = useMemo(
+    () =>
+      holdingsFromEventPositions(
+        (Array.isArray(result?.event_positions)
+          ? result!.event_positions!
+          : []) as YgEventPositionSnap[],
+      ),
+    [result],
   );
   const rebSummary = useMemo(() => {
     let buys = 0;
@@ -226,20 +347,64 @@ export function StrategyReportPage() {
     };
   }, [flatTrades, rebalanceLogs.length]);
 
+  const fillSummary = useMemo(() => {
+    let buys = 0;
+    let sells = 0;
+    const days = new Set<string>();
+    for (const f of eventFills) {
+      const s = String(f.side || "").toLowerCase();
+      if (s === "buy") buys += 1;
+      else if (s === "sell") sells += 1;
+      days.add(tsToDate(f.timestamp));
+    }
+    days.delete("—");
+    return {
+      days: days.size,
+      tradeRows: eventFills.length,
+      buys,
+      sells,
+    };
+  }, [eventFills]);
+
   useEffect(() => {
     setTradePage(1);
+    setHoldingsPage(1);
     setExpandedDates(new Set());
   }, [runId]);
 
+  const tradeSourceLen = isEventRun ? eventFills.length : flatTrades.length;
   const tradePageCount = Math.max(
     1,
-    Math.ceil(flatTrades.length / TRADE_PAGE_SIZE) || 1,
+    Math.ceil(tradeSourceLen / TRADE_PAGE_SIZE) || 1,
   );
   const tradeSlice = useMemo(() => {
     const page = Math.min(Math.max(1, tradePage), tradePageCount);
     const start = (page - 1) * TRADE_PAGE_SIZE;
     return flatTrades.slice(start, start + TRADE_PAGE_SIZE);
   }, [flatTrades, tradePage, tradePageCount]);
+  const fillSlice = useMemo(() => {
+    const page = Math.min(Math.max(1, tradePage), tradePageCount);
+    const start = (page - 1) * TRADE_PAGE_SIZE;
+    return eventFills.slice(start, start + TRADE_PAGE_SIZE);
+  }, [eventFills, tradePage, tradePageCount]);
+
+  const holdingsSourceLen = isEventRun
+    ? eventHoldingRows.length
+    : holdingRows.length;
+  const holdingsPageCount = Math.max(
+    1,
+    Math.ceil(holdingsSourceLen / HOLDINGS_PAGE_SIZE) || 1,
+  );
+  const holdingsSlice = useMemo(() => {
+    const page = Math.min(Math.max(1, holdingsPage), holdingsPageCount);
+    const start = (page - 1) * HOLDINGS_PAGE_SIZE;
+    return holdingRows.slice(start, start + HOLDINGS_PAGE_SIZE);
+  }, [holdingRows, holdingsPage, holdingsPageCount]);
+  const eventHoldingsSlice = useMemo(() => {
+    const page = Math.min(Math.max(1, holdingsPage), holdingsPageCount);
+    const start = (page - 1) * HOLDINGS_PAGE_SIZE;
+    return eventHoldingRows.slice(start, start + HOLDINGS_PAGE_SIZE);
+  }, [eventHoldingRows, holdingsPage, holdingsPageCount]);
 
   const toggleExpand = (date: string) => {
     setExpandedDates((prev) => {
@@ -251,22 +416,36 @@ export function StrategyReportPage() {
   };
 
   const expandAllHoldings = () => {
-    setExpandedDates(new Set(holdingRows.map((r) => r.date)));
+    const rows = isEventRun ? eventHoldingsSlice : holdingsSlice;
+    setExpandedDates(new Set(rows.map((r) => r.date)));
   };
   const collapseAllHoldings = () => {
     setExpandedDates(new Set());
   };
 
-  const emptyRebHint = req?.include_rebalance_logs
-    ? "本次回测未返回调仓记录（可能无权重变化）"
-    : "本次回测未请求调仓日志。请在参数设置勾选「返回调仓日志」后重新回测。";
+  const emptyRebHint = (() => {
+    const flags = result as Record<string, unknown> | undefined;
+    if (flags?._rebalance_logs_dropped) {
+      return `该次回测曾返回 ${flags._rebalance_logs_total ?? "若干"} 条调仓日志，但旧版入库时被裁掉。请勾选「返回调仓日志」后重新回测（现已改存完整明细）。`;
+    }
+    if (isEventRun) {
+      if (eventFills.length === 0 && eventHoldingRows.length === 0) {
+        return "事件回测无成交 / 持仓快照（可能整段空仓，或旧记录未保存事件明细）。";
+      }
+      return "暂无数据";
+    }
+    if (req?.include_rebalance_logs) {
+      return "本次回测未返回调仓记录（可能无权重变化）";
+    }
+    return "本次回测未请求调仓日志。请在参数设置勾选「返回调仓日志」后重新回测。";
+  })();
 
   const curveDates = useMemo(
     () => result?.equity_curve?.map((p) => p.date) || [],
     [result],
   );
   const stratPct = useMemo(
-    () => (result?.equity_curve || []).map((p) => toCumPct(p.value)),
+    () => seriesToCumPct((result?.equity_curve || []).map((p) => p.value)),
     [result],
   );
   const benchPct = useMemo(() => {
@@ -275,10 +454,7 @@ export function StrategyReportPage() {
     const benchMap = new Map(
       (result?.benchmark_curve || []).map((p) => [p.date, p.value]),
     );
-    return c.map((p) => {
-      const bv = benchMap.get(p.date);
-      return bv == null ? null : toCumPct(bv);
-    });
+    return seriesToCumPct(c.map((p) => benchMap.get(p.date)));
   }, [result]);
   const hasBench = benchPct.some((v) => v != null);
   const ddPct = useMemo(
@@ -490,12 +666,16 @@ export function StrategyReportPage() {
   if (!rec) {
     return (
       <div className="mx-auto max-w-lg px-6 py-20 text-center">
-        <p className="text-slate-600">没有找到回测结果。</p>
+        <p className="text-slate-600">
+          {isArchiveSnap
+            ? "没有找到入库报告（可能是旧数据仅保存了代码）。"
+            : "没有找到回测结果。"}
+        </p>
         <Link
-          to="/strategy/research"
+          to={isArchiveSnap ? "/strategy/library" : "/strategy/research"}
           className="mt-4 inline-block text-sm font-medium text-blue-600 underline"
         >
-          返回策略研究
+          {isArchiveSnap ? "返回策略库" : "返回策略研究"}
         </Link>
       </div>
     );
@@ -529,6 +709,87 @@ export function StrategyReportPage() {
       returnLabel: "返回策略回测报告",
     });
     navigate(next, { state: draft });
+  };
+
+  const openArchive = () => {
+    if (isArchiveSnap || rec?.immutable) return;
+    if (!getStoredUser()) {
+      prepareAuthHandoff();
+      navigate(
+        `/login?next=${encodeURIComponent(`/strategy/research/report/${runId}`)}`,
+      );
+      return;
+    }
+    setArchiveErr(null);
+    setArchiveOk(null);
+    setArchiveName("");
+    setArchiveDesc("");
+    setArchiveCategory("");
+    setArchiveLibId("");
+    setArchiveOpen(true);
+    void listUserStrategyLibraries()
+      .then((libs) => {
+        setUserLibs(libs);
+        if (libs.length === 1) setArchiveLibId(libs[0].id);
+      })
+      .catch((e) => {
+        setArchiveErr(e instanceof Error ? e.message : String(e));
+      });
+  };
+
+  const confirmArchive = async () => {
+    if (!rec || isArchiveSnap || rec.immutable) return;
+    const title = archiveName.trim();
+    if (!title) {
+      setArchiveErr("请填写策略名称");
+      return;
+    }
+    const desc = archiveDesc.trim();
+    if (!desc) {
+      setArchiveErr("请填写策略说明");
+      return;
+    }
+    if (desc.length > 40) {
+      setArchiveErr("策略说明最多 40 字");
+      return;
+    }
+    if (archiveLibId === "" || archiveLibId == null) {
+      setArchiveErr("请选择要放入的策略库");
+      return;
+    }
+    if (!archiveCategory) {
+      setArchiveErr("请选择分类");
+      return;
+    }
+    const code = String(req?.strategy_code || "").trim();
+    if (!code) {
+      setArchiveErr("该次回测没有策略代码，无法入库");
+      return;
+    }
+    setArchiveBusy(true);
+    setArchiveErr(null);
+    try {
+      await addStrategyToUserLibrary(Number(archiveLibId), {
+        name: title,
+        body: code,
+        description: desc,
+        categoryLabel: archiveCategory,
+        codeId: title,
+        sourceRunId: rec.id,
+        archiveRequest: { ...(req as Record<string, unknown>) },
+        archiveResult: { ...(result as Record<string, unknown>) },
+        archiveElapsedSec: rec.elapsedSec,
+        archiveFinishedAt: rec.finishedAt,
+      });
+      const libName =
+        userLibs.find((l) => l.id === Number(archiveLibId))?.name || "策略库";
+      setArchiveOk(`已入库到「${libName}」：${title}（含本次回测快照）`);
+      setArchiveOpen(false);
+    } catch (e) {
+      setArchiveErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setArchiveBusy(false);
+    }
   };
 
   const highlightMetrics: Array<{
@@ -599,45 +860,96 @@ export function StrategyReportPage() {
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-3 px-6 py-3">
           <div>
             <p className="text-sm text-slate-500">
-              <Link to="/strategy/research" className="hover:text-blue-600">
-                策略研究
-              </Link>
-              {" / "}
-              <Link
-                to={`/strategy/research/${rec.projectId}`}
-                className="hover:text-blue-600"
-              >
-                {rec.name || rec.description}
-              </Link>
-              {" / 回测报告"}
+              {isArchiveSnap || rec.immutable ? (
+                <>
+                  <Link to="/strategy/library" className="hover:text-blue-600">
+                    策略库
+                  </Link>
+                  {rec.libraryName ? (
+                    <>
+                      {" / "}
+                      <span>{rec.libraryName}</span>
+                    </>
+                  ) : null}
+                  {" / 入库报告"}
+                </>
+              ) : (
+                <>
+                  <Link to="/strategy/research" className="hover:text-blue-600">
+                    策略研究
+                  </Link>
+                  {" / "}
+                  <Link
+                    to={`/strategy/research/${rec.projectId}`}
+                    className="hover:text-blue-600"
+                  >
+                    {rec.name || rec.description}
+                  </Link>
+                  {" / 回测报告"}
+                </>
+              )}
             </p>
             <h1 className="mt-0.5 text-lg font-bold text-slate-900">
               {rec.name || rec.description}
+              {isArchiveSnap || rec.immutable ? (
+                <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">
+                  入库快照 · 只读
+                </span>
+              ) : null}
             </h1>
           </div>
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={shareToCommunity}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
-            >
-              <Share2 className="h-3.5 w-3.5" />
-              分享到社区
-            </button>
-            <Link
-              to={`/strategy/research/${rec.projectId}/history`}
-              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
-            >
-              历史记录
-            </Link>
-            <Link
-              to={`/strategy/research/${rec.projectId}`}
-              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
-            >
-              返回配置
-            </Link>
+            {isArchiveSnap || rec.immutable ? null : (
+              <button
+                type="button"
+                onClick={openArchive}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-teal-300 bg-teal-50 px-3 py-1.5 text-sm font-medium text-teal-900 hover:bg-teal-100"
+              >
+                <Archive className="h-3.5 w-3.5" />
+                入库
+              </button>
+            )}
+            {isArchiveSnap || rec.immutable ? (
+              <Link
+                to="/strategy/library"
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+              >
+                返回策略库
+              </Link>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={shareToCommunity}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                  分享到社区
+                </button>
+                <Link
+                  to={`/strategy/research/${rec.projectId}/history`}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+                >
+                  历史记录
+                </Link>
+                <Link
+                  to={`/strategy/research/${rec.projectId}?runId=${encodeURIComponent(rec.id)}`}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+                >
+                  返回配置
+                </Link>
+              </>
+            )}
           </div>
         </div>
+
+        {archiveOk ? (
+          <div className="mx-auto max-w-[1400px] px-6 pb-2">
+            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              {archiveOk}
+            </p>
+          </div>
+        ) : null}
 
         <div className="mx-auto w-full max-w-[1400px] space-y-2 px-6 pb-4">
           <div
@@ -845,10 +1157,132 @@ export function StrategyReportPage() {
 
             {tab === "trades" && (
               <div className="space-y-4">
-                <p className="text-xs leading-relaxed text-slate-500">
-                  信号日目标权重变化对应的买卖方向（非成交价/数量）。未勾选「返回调仓日志」的历史回测此处为空。
-                </p>
-                {flatTrades.length === 0 ? (
+                {isEventRun ? (
+                  eventFills.length === 0 ? (
+                    <section className={chartCardClass()}>
+                      <p className="py-16 text-center text-sm text-slate-400">
+                        {emptyRebHint}
+                      </p>
+                    </section>
+                  ) : (
+                    <>
+                      <section className="grid gap-3 sm:grid-cols-4">
+                        {(
+                          [
+                            ["成交日", String(fillSummary.days)],
+                            ["成交笔数", String(fillSummary.tradeRows)],
+                            ["买入", String(fillSummary.buys)],
+                            ["卖出", String(fillSummary.sells)],
+                          ] as const
+                        ).map(([k, v]) => (
+                          <div
+                            key={k}
+                            className="rounded-xl border border-slate-200/90 bg-white p-3 shadow-sm"
+                          >
+                            <p className="text-xs text-slate-500">{k}</p>
+                            <p className="mt-1 text-lg font-bold tabular-nums text-slate-900">
+                              {v}
+                            </p>
+                          </div>
+                        ))}
+                      </section>
+                      <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-50 text-xs text-slate-500">
+                              <tr>
+                                <th className="px-4 py-2.5 font-medium">日期</th>
+                                <th className="px-4 py-2.5 font-medium">标的</th>
+                                <th className="px-4 py-2.5 font-medium">方向</th>
+                                <th className="px-4 py-2.5 text-right font-medium">
+                                  数量
+                                </th>
+                                <th className="px-4 py-2.5 text-right font-medium">
+                                  价格
+                                </th>
+                                <th className="px-4 py-2.5 text-right font-medium">
+                                  佣金
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {fillSlice.map((f, i) => {
+                                const side = String(f.side || "").toLowerCase();
+                                const buy = side === "buy";
+                                const sell = side === "sell";
+                                return (
+                                  <tr
+                                    key={`${f.order_id || i}-${f.symbol}-${i}`}
+                                    className="border-t border-slate-100 hover:bg-slate-50/80"
+                                  >
+                                    <td className="px-4 py-2.5 font-mono text-xs text-slate-600">
+                                      {tsToDate(f.timestamp)}
+                                    </td>
+                                    <td className="px-4 py-2.5 font-mono text-xs text-slate-800">
+                                      {f.symbol || "—"}
+                                    </td>
+                                    <td
+                                      className={`px-4 py-2.5 text-sm font-medium ${
+                                        buy
+                                          ? "text-red-600"
+                                          : sell
+                                            ? "text-emerald-600"
+                                            : "text-slate-600"
+                                      }`}
+                                    >
+                                      {sideLabel(String(f.side || ""))}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">
+                                      {f.quantity ?? "—"}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">
+                                      {f.price != null
+                                        ? Number(f.price).toFixed(2)
+                                        : "—"}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right tabular-nums text-slate-500">
+                                      {money(f.commission)}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        {tradePageCount > 1 && (
+                          <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-500">
+                            <span>
+                              第 {Math.min(tradePage, tradePageCount)} /{" "}
+                              {tradePageCount} 页 · 共 {eventFills.length} 笔
+                            </span>
+                            <button
+                              type="button"
+                              disabled={tradePage <= 1}
+                              onClick={() =>
+                                setTradePage((p) => Math.max(1, p - 1))
+                              }
+                              className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50 disabled:opacity-40"
+                            >
+                              上一页
+                            </button>
+                            <button
+                              type="button"
+                              disabled={tradePage >= tradePageCount}
+                              onClick={() =>
+                                setTradePage((p) =>
+                                  Math.min(tradePageCount, p + 1),
+                                )
+                              }
+                              className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50 disabled:opacity-40"
+                            >
+                              下一页
+                            </button>
+                          </div>
+                        )}
+                      </section>
+                    </>
+                  )
+                ) : flatTrades.length === 0 ? (
                   <section className={chartCardClass()}>
                     <p className="py-16 text-center text-sm text-slate-400">
                       {emptyRebHint}
@@ -883,7 +1317,7 @@ export function StrategyReportPage() {
                           <thead className="bg-slate-50 text-xs text-slate-500">
                             <tr>
                               <th className="px-4 py-2.5 font-medium">日期</th>
-                              <th className="px-4 py-2.5 font-medium">股票代码</th>
+                              <th className="px-4 py-2.5 font-medium">标的</th>
                               <th className="px-4 py-2.5 font-medium">买卖操作</th>
                             </tr>
                           </thead>
@@ -900,8 +1334,15 @@ export function StrategyReportPage() {
                                   <td className="px-4 py-2.5 font-mono text-xs text-slate-600">
                                     {t.date}
                                   </td>
-                                  <td className="px-4 py-2.5 font-mono text-xs text-slate-800">
-                                    {t.symbol || "—"}
+                                  <td className="px-4 py-2.5 text-xs text-slate-800">
+                                    <span className="font-mono">
+                                      {t.symbol || "—"}
+                                    </span>
+                                    {t.name ? (
+                                      <span className="ml-1.5 text-slate-500">
+                                        {t.name}
+                                      </span>
+                                    ) : null}
                                   </td>
                                   <td
                                     className={`px-4 py-2.5 text-sm font-medium ${
@@ -923,13 +1364,15 @@ export function StrategyReportPage() {
                       {tradePageCount > 1 && (
                         <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-500">
                           <span>
-                            第 {Math.min(tradePage, tradePageCount)} / {tradePageCount} 页
-                            · 共 {flatTrades.length} 笔
+                            第 {Math.min(tradePage, tradePageCount)} /{" "}
+                            {tradePageCount} 页 · 共 {flatTrades.length} 笔
                           </span>
                           <button
                             type="button"
                             disabled={tradePage <= 1}
-                            onClick={() => setTradePage((p) => Math.max(1, p - 1))}
+                            onClick={() =>
+                              setTradePage((p) => Math.max(1, p - 1))
+                            }
                             className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50 disabled:opacity-40"
                           >
                             上一页
@@ -938,7 +1381,9 @@ export function StrategyReportPage() {
                             type="button"
                             disabled={tradePage >= tradePageCount}
                             onClick={() =>
-                              setTradePage((p) => Math.min(tradePageCount, p + 1))
+                              setTradePage((p) =>
+                                Math.min(tradePageCount, p + 1),
+                              )
                             }
                             className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50 disabled:opacity-40"
                           >
@@ -955,10 +1400,10 @@ export function StrategyReportPage() {
             {tab === "holdings" && (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs leading-relaxed text-slate-500">
-                    各调仓日调整后的目标持仓（由调仓日志推算）。点击行可展开/收起明细。
-                  </p>
-                  {holdingRows.length > 0 && (
+                  <div />
+                  {(isEventRun
+                    ? eventHoldingRows.length > 0
+                    : holdingRows.length > 0) && (
                     <div className="flex gap-2 text-xs">
                       <button
                         type="button"
@@ -978,7 +1423,112 @@ export function StrategyReportPage() {
                   )}
                 </div>
 
-                {holdingRows.length === 0 ? (
+                {isEventRun ? (
+                  eventHoldingRows.length === 0 ? (
+                    <section className={chartCardClass()}>
+                      <p className="py-16 text-center text-sm text-slate-400">
+                        {emptyRebHint}
+                      </p>
+                    </section>
+                  ) : (
+                    <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-50 text-xs text-slate-500">
+                          <tr>
+                            <th className="w-10 px-3 py-2.5" />
+                            <th className="px-3 py-2.5 font-medium">日期</th>
+                            <th className="px-3 py-2.5 font-medium">持仓</th>
+                            <th className="px-3 py-2.5 text-right font-medium">
+                              总权益
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {eventHoldingsSlice.map((row) => {
+                            const open = expandedDates.has(row.date);
+                            const n = row.holdings.length;
+                            return (
+                              <Fragment key={row.date}>
+                                <tr
+                                  className="cursor-pointer border-t border-slate-100 hover:bg-slate-50/80"
+                                  onClick={() => toggleExpand(row.date)}
+                                >
+                                  <td className="px-3 py-2.5 text-blue-600">
+                                    {open ? (
+                                      <ChevronDown className="h-4 w-4" />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4" />
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2.5 font-mono text-xs text-slate-700">
+                                    {row.date}
+                                  </td>
+                                  <td className="px-3 py-2.5 text-slate-600">
+                                    持有 {n} 只 · 现金 {money(row.cash)}
+                                  </td>
+                                  <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
+                                    {money(row.totalValue)}
+                                  </td>
+                                </tr>
+                                {open &&
+                                  row.holdings.map((h) => (
+                                    <tr
+                                      key={`${row.date}-${h.symbol}`}
+                                      className="border-t border-slate-50 bg-slate-50/40"
+                                    >
+                                      <td />
+                                      <td className="px-3 py-1.5 font-mono text-[11px] text-slate-400">
+                                        {row.date}
+                                      </td>
+                                      <td className="px-3 py-1.5 font-mono text-xs text-slate-800">
+                                        {h.symbol}
+                                      </td>
+                                      <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">
+                                        {h.quantity} 股
+                                      </td>
+                                    </tr>
+                                  ))}
+                              </Fragment>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      {holdingsPageCount > 1 && (
+                        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-500">
+                          <span>
+                            第 {Math.min(holdingsPage, holdingsPageCount)} /{" "}
+                            {holdingsPageCount} 页 · 共{" "}
+                            {eventHoldingRows.length} 日
+                          </span>
+                          <button
+                            type="button"
+                            disabled={holdingsPage <= 1}
+                            onClick={() => {
+                              setHoldingsPage((p) => Math.max(1, p - 1));
+                              setExpandedDates(new Set());
+                            }}
+                            className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50 disabled:opacity-40"
+                          >
+                            上一页
+                          </button>
+                          <button
+                            type="button"
+                            disabled={holdingsPage >= holdingsPageCount}
+                            onClick={() => {
+                              setHoldingsPage((p) =>
+                                Math.min(holdingsPageCount, p + 1),
+                              );
+                              setExpandedDates(new Set());
+                            }}
+                            className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50 disabled:opacity-40"
+                          >
+                            下一页
+                          </button>
+                        </div>
+                      )}
+                    </section>
+                  )
+                ) : holdingRows.length === 0 ? (
                   <section className={chartCardClass()}>
                     <p className="py-16 text-center text-sm text-slate-400">
                       {emptyRebHint}
@@ -996,7 +1546,7 @@ export function StrategyReportPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {holdingRows.map((row) => {
+                        {holdingsSlice.map((row) => {
                           const open = expandedDates.has(row.date);
                           const n = row.holdings.length;
                           return (
@@ -1043,8 +1593,13 @@ export function StrategyReportPage() {
                                       <td className="px-3 py-1.5 font-mono text-[11px] text-slate-400">
                                         {row.date}
                                       </td>
-                                      <td className="px-3 py-1.5 font-mono text-xs text-slate-800">
-                                        {h.symbol}
+                                      <td className="px-3 py-1.5 text-xs text-slate-800">
+                                        <span className="font-mono">{h.symbol}</span>
+                                        {h.name ? (
+                                          <span className="ml-1.5 text-slate-500">
+                                            {h.name}
+                                          </span>
+                                        ) : null}
                                       </td>
                                       <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">
                                         {wgt(h.weight)}
@@ -1057,13 +1612,168 @@ export function StrategyReportPage() {
                         })}
                       </tbody>
                     </table>
+                    {holdingsPageCount > 1 && (
+                      <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-500">
+                        <span>
+                          第 {Math.min(holdingsPage, holdingsPageCount)} /{" "}
+                          {holdingsPageCount} 页 · 共 {holdingRows.length} 个调仓日
+                        </span>
+                        <button
+                          type="button"
+                          disabled={holdingsPage <= 1}
+                          onClick={() => {
+                            setHoldingsPage((p) => Math.max(1, p - 1));
+                            setExpandedDates(new Set());
+                          }}
+                          className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50 disabled:opacity-40"
+                        >
+                          上一页
+                        </button>
+                        <button
+                          type="button"
+                          disabled={holdingsPage >= holdingsPageCount}
+                          onClick={() => {
+                            setHoldingsPage((p) =>
+                              Math.min(holdingsPageCount, p + 1),
+                            );
+                            setExpandedDates(new Set());
+                          }}
+                          className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50 disabled:opacity-40"
+                        >
+                          下一页
+                        </button>
+                      </div>
+                    )}
                   </section>
                 )}
               </div>
             )}
+
+            {tab === "ai" ? (
+              <AiBacktestInterpretDialog
+                variant="panel"
+                backtestType="strategy"
+                result={
+                  result && typeof result === "object"
+                    ? (result as unknown as Record<string, unknown>)
+                    : null
+                }
+                runContext={{
+                  validation_scheme: "in_sample",
+                  commission_rate:
+                    req &&
+                    typeof (req as { commission_rate?: number }).commission_rate ===
+                      "number"
+                      ? (req as { commission_rate: number }).commission_rate
+                      : undefined,
+                  stamp_tax:
+                    req && typeof (req as { stamp_tax?: number }).stamp_tax === "number"
+                      ? (req as { stamp_tax: number }).stamp_tax
+                      : undefined,
+                  slippage_rate:
+                    req &&
+                    typeof (req as { slippage_rate?: number }).slippage_rate ===
+                      "number"
+                      ? (req as { slippage_rate: number }).slippage_rate
+                      : undefined,
+                }}
+              />
+            ) : null}
           </main>
         </div>
       </div>
+
+      {archiveOpen ? (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-900">策略入库</h3>
+            <label className="mt-4 block text-xs text-slate-500">
+              目标策略库
+              <select
+                value={archiveLibId === "" ? "" : String(archiveLibId)}
+                onChange={(e) =>
+                  setArchiveLibId(e.target.value ? Number(e.target.value) : "")
+                }
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              >
+                <option value="">请选择</option>
+                {userLibs.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="mt-3 block text-xs text-slate-500">
+              分类
+              <select
+                value={archiveCategory}
+                onChange={(e) =>
+                  setArchiveCategory(
+                    (e.target.value || "") as StrategyArchiveCategory | "",
+                  )
+                }
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              >
+                <option value="">请选择</option>
+                {STRATEGY_ARCHIVE_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="mt-3 block text-xs text-slate-500">
+              策略名称
+              <input
+                value={archiveName}
+                onChange={(e) => {
+                  setArchiveName(e.target.value);
+                  setArchiveErr(null);
+                }}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400"
+              />
+            </label>
+            <label className="mt-3 block text-xs text-slate-500">
+              <span className="flex items-center justify-between gap-2">
+                <span>策略说明</span>
+                <span className="tabular-nums text-slate-400">
+                  {archiveDesc.length}/40
+                </span>
+              </span>
+              <input
+                value={archiveDesc}
+                maxLength={40}
+                onChange={(e) => {
+                  setArchiveDesc(e.target.value.slice(0, 40));
+                  setArchiveErr(null);
+                }}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400"
+              />
+            </label>
+            {archiveErr ? (
+              <p className="mt-2 text-xs text-red-600">{archiveErr}</p>
+            ) : null}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setArchiveOpen(false)}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={archiveBusy || userLibs.length === 0}
+                onClick={() => void confirmArchive()}
+                className="rounded-lg bg-teal-700 px-5 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
+              >
+                {archiveBusy ? "入库中…" : "确定入库"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

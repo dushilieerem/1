@@ -9,6 +9,8 @@
 | [`CHECKLIST-2026-07-20-24.md`](./CHECKLIST-2026-07-20-24.md) | 上周归档 |
 | [`社区-预期功能说明.md`](./社区-预期功能说明.md) | 社区目标态 |
 | [`社区-已实现功能说明.md`](./社区-已实现功能说明.md) | 社区已上线 + 截图 |
+| [`K线看板设计.md`](./K线看板设计.md) | 数据栏 K 线面板设计 |
+| [`资讯页设计.md`](./资讯页设计.md) | 资讯导航 / 布局 / 六源 / 管道 |
 | [`community-agent-polish-examples.md`](./community-agent-polish-examples.md) | Agent 润色试稿 + 真模型前后对比 |
 | [`multi-agent-design.md`](./multi-agent-design.md) | 多 Agent（Skills + 黑板回流）设计与用法 |
 | [`community-screenshots/`](./community-screenshots/) | UI 截图 |

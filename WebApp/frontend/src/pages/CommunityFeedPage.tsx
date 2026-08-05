@@ -22,6 +22,7 @@ const VALID_SECTIONS = new Set(SECTION_META.map((s) => s.id));
 
 const SORT_OPTIONS: { id: CommunityPostSort; label: string }[] = [
   { id: "views", label: "浏览数最多" },
+  { id: "likes", label: "点赞最多" },
   { id: "favorites", label: "收藏数最多" },
   { id: "newest", label: "最新发布" },
 ];
@@ -34,7 +35,14 @@ function normalizeSection(raw: string | null): string {
 }
 
 function normalizeSort(raw: string | null): CommunityPostSort {
-  if (raw === "favorites" || raw === "newest" || raw === "views") return raw;
+  if (
+    raw === "favorites" ||
+    raw === "newest" ||
+    raw === "views" ||
+    raw === "likes"
+  ) {
+    return raw;
+  }
   return "views";
 }
 
@@ -247,7 +255,7 @@ export function CommunityFeedPage() {
         <div className="min-w-0 space-y-4 animate-fade-up">
           {!user ? (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
-              <span>游客可浏览帖子；发帖、评论、收藏、克隆需登录。</span>
+              <span>游客可浏览帖子；发帖、评论、赞踩、收藏、克隆需登录。</span>
               <Link
                 to={`/login?next=${encodeURIComponent(
                   `/community${searchParams.toString() ? `?${searchParams}` : ""}`,

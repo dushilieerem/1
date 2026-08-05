@@ -195,6 +195,68 @@ export async function fetchMarketSymbols(): Promise<MarketSymbol[]> {
   return list;
 }
 
+export type MarketIndex = {
+  code: string;
+  name: string;
+};
+
+const _indicesCache: { at: number; list: MarketIndex[] } = { at: 0, list: [] };
+const _constituentsCache = new Map<
+  string,
+  { at: number; list: MarketSymbol[] }
+>();
+const INDICES_TTL_MS = 30 * 60_000;
+const CONSTITUENTS_TTL_MS = 30 * 60_000;
+
+function parseIndicesPayload(raw: unknown): MarketIndex[] {
+  if (!Array.isArray(raw)) return [];
+  const out: MarketIndex[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as { code?: unknown; name?: unknown };
+    const code = String(o.code ?? "").trim();
+    if (!code) continue;
+    out.push({ code, name: String(o.name ?? "").trim() || code });
+  }
+  return out;
+}
+
+/** 内置股指列表（RE docs: GET /api/market-data/indices） */
+export async function fetchMarketIndices(): Promise<MarketIndex[]> {
+  const now = Date.now();
+  if (_indicesCache.list.length && now - _indicesCache.at < INDICES_TTL_MS) {
+    return _indicesCache.list;
+  }
+  const res = await fetch("/yg-api/api/market-data/indices");
+  const data = await parseJson<{ indices?: unknown }>(res);
+  const list = parseIndicesPayload(data.indices);
+  _indicesCache.at = now;
+  _indicesCache.list = list;
+  return list;
+}
+
+/** 股指最新一期成分（兼容 000300.SH / CSI300） */
+export async function fetchIndexConstituents(
+  code: string,
+): Promise<MarketSymbol[]> {
+  const key = String(code || "").trim();
+  if (!key) throw new Error("缺少股指代码");
+  const now = Date.now();
+  const hit = _constituentsCache.get(key);
+  if (hit && now - hit.at < CONSTITUENTS_TTL_MS) return hit.list;
+
+  const res = await fetch(
+    `/yg-api/api/market-data/indices/${encodeURIComponent(key)}/constituents`,
+  );
+  const data = await parseJson<{
+    index?: { code?: string; name?: string };
+    constituents?: unknown;
+  }>(res);
+  const list = parseSymbolsPayload(data.constituents);
+  _constituentsCache.set(key, { at: now, list });
+  return list;
+}
+
 /**
  * 拉取日线。文档推荐交易所后缀（如 000001.SZ）；六位裸码仍兼容。
  */

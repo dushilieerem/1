@@ -16,7 +16,17 @@ import {
   periodToStartEnd,
   type RangeMode,
 } from "./detectStore";
-import { DEFAULT_STRATEGY_CODE, wrapFactorCodeAsStrategy } from "./strategyCodeSync";
+import {
+  DEFAULT_STRATEGY_CODE,
+  inferEngineModeFromCode,
+  parseParamsFromCode,
+  wrapBuiltinLibraryStrategy,
+  wrapFactorCodeAsStrategy,
+} from "./strategyCodeSync";
+import type { StrategyWeightMode } from "./strategyFactorSync";
+import type { YgStrategyEngineMode } from "./ygApi";
+
+export type StrategyEngineMode = YgStrategyEngineMode;
 
 export type StrategyProjectConfig = {
   universe: string;
@@ -33,7 +43,21 @@ export type StrategyProjectConfig = {
   rebalance_days: number;
   /** 回测请求：是否拉取 rebalance_logs */
   include_rebalance_logs: boolean;
+  /** 执行模式：vectorized | event（对应 API engine_mode） */
+  engine_mode: StrategyEngineMode;
   strategy_code: string;
+  /** 信号因子积木 id（策略页左侧选择） */
+  signal_factor_ids: string[];
+  /** 与 signal_factor_ids 对齐的权重（百分比，合计约 100） */
+  signal_factor_weights: number[];
+  /** 赋幂相乘时的幂次 */
+  signal_factor_powers: number[];
+  /** 合成模式：赋权相加 / 赋幂相乘 / 自定义 */
+  signal_weight_mode: StrategyWeightMode;
+  /** 临时因子中文释义：方法名 → 释义（仅策略研究用） */
+  signal_temp_labels?: Record<string, string>;
+  /** 从平台策略库打开时：library:{id}，用于复用研究项目 */
+  library_ref?: string;
 };
 
 export type StrategyProject = {
@@ -43,6 +67,8 @@ export type StrategyProject = {
   createdAt: string;
   updatedAt: string;
   runCount: number;
+  /** 系统预置样例，不可删除 */
+  sample?: boolean;
   config: StrategyProjectConfig;
 };
 
@@ -55,6 +81,12 @@ export type StrategyRunRecord = {
   result: YgBacktestResponse;
   finishedAt: string;
   elapsedSec: number;
+  /** 策略库入库快照：只读，不可改 */
+  immutable?: boolean;
+  sourceRunId?: string;
+  libraryId?: number;
+  libraryStrategyId?: number;
+  libraryName?: string;
 };
 
 export const STRATEGY_UNIVERSE_OPTIONS = DETECT_UNIVERSE_OPTIONS;
@@ -85,7 +117,13 @@ export function defaultStrategyConfig(): StrategyProjectConfig {
     top_n: 30,
     rebalance_days: 20,
     include_rebalance_logs: true,
+    engine_mode: "vectorized",
     strategy_code: DEFAULT_STRATEGY_CODE,
+    signal_factor_ids: [],
+    signal_factor_weights: [],
+    signal_factor_powers: [],
+    signal_weight_mode: "sum",
+    signal_temp_labels: {},
   };
 }
 
@@ -118,9 +156,44 @@ export function normalizeStrategyConfig(
       typeof c.include_rebalance_logs === "boolean"
         ? c.include_rebalance_logs
         : d.include_rebalance_logs,
+    engine_mode:
+      c.engine_mode === "event" || c.engine_mode === "vectorized"
+        ? c.engine_mode
+        : inferEngineModeFromCode(
+            (c.strategy_code || "").trim()
+              ? String(c.strategy_code)
+              : d.strategy_code,
+          ),
     strategy_code: (c.strategy_code || "").trim()
       ? String(c.strategy_code)
       : d.strategy_code,
+    signal_factor_ids: Array.isArray(c.signal_factor_ids)
+      ? c.signal_factor_ids.map(String).filter(Boolean)
+      : d.signal_factor_ids,
+    signal_factor_weights: Array.isArray(c.signal_factor_weights)
+      ? c.signal_factor_weights.map((w) =>
+          typeof w === "number" && Number.isFinite(w) ? w : 0,
+        )
+      : d.signal_factor_weights,
+    signal_factor_powers: Array.isArray(c.signal_factor_powers)
+      ? c.signal_factor_powers.map((p) =>
+          typeof p === "number" && Number.isFinite(p) ? p : 1,
+        )
+      : d.signal_factor_powers,
+    signal_weight_mode:
+      c.signal_weight_mode === "product" || c.signal_weight_mode === "custom"
+        ? c.signal_weight_mode
+        : "sum",
+    signal_temp_labels:
+      c.signal_temp_labels && typeof c.signal_temp_labels === "object"
+        ? Object.fromEntries(
+            Object.entries(c.signal_temp_labels).map(([k, v]) => [
+              String(k),
+              String(v ?? ""),
+            ]),
+          )
+        : {},
+    library_ref: c.library_ref ? String(c.library_ref) : undefined,
   };
 }
 
@@ -211,18 +284,69 @@ export async function createStrategyProjectFromCode(opts: {
   strategyCode: string;
 }): Promise<StrategyProject> {
   const { resolveStrategyCloneSource } = await import("./communityClone");
+  const { parseLibrarySignalSelection } = await import("./strategyFactorSync");
+  const { loadFactors } = await import("./factorCatalog");
   const raw = await resolveStrategyCloneSource(opts.strategyCode || "");
-  const code = wrapFactorCodeAsStrategy(raw);
+  const mode = inferEngineModeFromCode(raw);
+  const code =
+    mode === "event"
+      ? wrapBuiltinLibraryStrategy(raw)
+      : wrapFactorCodeAsStrategy(raw);
+  const signal =
+    mode === "event"
+      ? { ids: [] as string[], weights: [] as number[], powers: [] as number[], weightMode: "sum" as const }
+      : parseLibrarySignalSelection(code);
+  const parsed = parseParamsFromCode(code);
+  const catalog = await loadFactors(true).catch(() => []);
+  const catalogNames = new Set<string>();
+  for (const f of catalog) {
+    catalogNames.add(f.name);
+    if (f.methodName) catalogNames.add(f.methodName);
+  }
+  const signal_temp_labels: Record<string, string> = {};
+  for (const id of signal.ids) {
+    if (!catalogNames.has(id)) signal_temp_labels[id] = id;
+  }
   const project = await createStrategyProject(
     opts.name,
     opts.description || opts.name,
   );
+  const base = defaultStrategyConfig();
   return saveStrategyProject({
     ...project,
-    config: {
+    config: normalizeStrategyConfig({
       ...project.config,
+      engine_mode: mode,
       strategy_code: code,
-    },
+      universe: parsed.universe || base.universe,
+      benchmark: parsed.benchmark || base.benchmark,
+      rangeMode: parsed.range_mode === "custom" ? "custom" : "period",
+      backtestPeriod: parsed.backtest_period || base.backtestPeriod,
+      startDate: parsed.start_date || base.startDate,
+      endDate: parsed.end_date || base.endDate,
+      commission_rate:
+        typeof parsed.commission_rate === "number"
+          ? parsed.commission_rate
+          : base.commission_rate,
+      stamp_tax:
+        typeof parsed.stamp_tax === "number" ? parsed.stamp_tax : base.stamp_tax,
+      slippage_rate:
+        typeof parsed.slippage_rate === "number"
+          ? parsed.slippage_rate
+          : base.slippage_rate,
+      initial_capital:
+        typeof parsed.initial_capital === "number"
+          ? parsed.initial_capital
+          : base.initial_capital,
+      top_n: parsed.top_n ?? base.top_n,
+      rebalance_days: parsed.rebalance_days ?? base.rebalance_days,
+      signal_factor_ids: signal.ids,
+      signal_factor_weights: signal.weights,
+      signal_factor_powers: signal.powers,
+      signal_weight_mode: signal.weightMode,
+      signal_temp_labels,
+      include_rebalance_logs: true,
+    }),
   });
 }
 

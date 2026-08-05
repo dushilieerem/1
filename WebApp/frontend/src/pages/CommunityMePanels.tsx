@@ -24,6 +24,7 @@ import {
 import {
   deleteCommunityPost,
   formatPostTime,
+  getCommunityOpsSummary,
   getCommunityPost,
   listCommunityReports,
   listModerationPosts,
@@ -36,6 +37,7 @@ import {
   resolveCommunityReport,
   unreadNotificationCount,
   type CommunityNotification,
+  type CommunityOpsSummary,
   type CommunityPost,
   type CommunityReport,
   type ModerationKind,
@@ -55,10 +57,10 @@ const MSG_TABS: { id: NotificationType; label: string }[] = [
   { id: "like", label: "收到的赞" },
 ];
 
-function typeLabel(t: NotificationType) {
+function typeLabel(t: NotificationType, commentId?: number | null) {
   if (t === "reply") return "回复了你";
   if (t === "mention") return "在评论里 @了你";
-  return "赞了你的评论";
+  return commentId ? "赞了你的评论" : "赞了你的帖子";
 }
 
 function PanelChrome({
@@ -146,18 +148,46 @@ export function MeMessagesPanel() {
     }
   };
 
+  const markAllRead = async () => {
+    try {
+      const res = await markNotificationsRead({ all: true });
+      setCounts(res.by_type || {});
+      setItems((prev) =>
+        prev.map((x) => ({
+          ...x,
+          read_at: x.read_at || new Date().toISOString(),
+        })),
+      );
+    } catch (ex) {
+      window.alert(ex instanceof Error ? ex.message : String(ex));
+    }
+  };
+
+  const totalUnread =
+    (counts.reply || 0) + (counts.mention || 0) + (counts.like || 0);
+
   return (
     <PanelChrome
       title="消息中心"
       subtitle="点开一条后进入帖子详情"
       actions={
-        <button
-          type="button"
-          onClick={() => void markTabRead()}
-          className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 transition hover:bg-white hover:text-red-600"
-        >
-          本栏标为已读
-        </button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => void markTabRead()}
+            className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 transition hover:bg-white hover:text-red-600"
+          >
+            本栏标为已读
+          </button>
+          <button
+            type="button"
+            disabled={totalUnread <= 0}
+            onClick={() => void markAllRead()}
+            className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            一键已读
+          </button>
+        </div>
       }
     >
       <nav className="flex gap-1 border-b border-slate-100 bg-white px-3">
@@ -215,11 +245,17 @@ export function MeMessagesPanel() {
                     !n.read_at ? "bg-rose-50/40" : ""
                   }`}
                 >
-                  <AuthorAvatar name={actor} size="md" />
+                  <AuthorAvatar
+                    name={actor}
+                    src={n.actor.avatar_url}
+                    size="md"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-slate-800">
                       <span className="font-semibold">{actor}</span>{" "}
-                      <span className="text-slate-600">{typeLabel(n.type)}</span>
+                      <span className="text-slate-600">
+                        {typeLabel(n.type, n.comment_id)}
+                      </span>
                     </p>
                     {n.comment_body && (
                       <p className="mt-1 line-clamp-2 text-xs text-slate-500">
@@ -492,9 +528,10 @@ export function MeFavoritesPanel() {
 }
 
 type ModTab = ModerationKind | "reports";
-type ModSection = "posts" | "usage";
+type ModSection = "ops" | "posts" | "usage";
 
 const MOD_SECTIONS: { id: ModSection; label: string }[] = [
+  { id: "ops", label: "运营看板" },
   { id: "posts", label: "帖子管理" },
   { id: "usage", label: "各用户用量汇总" },
 ];
@@ -507,7 +544,7 @@ const MOD_TABS: { id: ModTab; label: string }[] = [
 
 export function MeModPanel() {
   const confirm = useConfirm();
-  const [section, setSection] = useState<ModSection>("posts");
+  const [section, setSection] = useState<ModSection>("ops");
   const [kind, setKind] = useState<ModTab>("reports");
   const [items, setItems] = useState<CommunityPost[]>([]);
   const [reports, setReports] = useState<CommunityReport[]>([]);
@@ -517,6 +554,8 @@ export function MeModPanel() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [agentUsage, setAgentUsage] = useState<AgentUsageAdmin | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
+  const [opsSummary, setOpsSummary] = useState<CommunityOpsSummary | null>(null);
+  const [opsLoading, setOpsLoading] = useState(false);
   const [quotaDrafts, setQuotaDrafts] = useState<Record<number, string>>({});
   const [quotaBusyId, setQuotaBusyId] = useState<number | null>(null);
   const [previewPost, setPreviewPost] = useState<CommunityPost | null>(null);
@@ -547,6 +586,20 @@ export function MeModPanel() {
       setTotal(0);
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const reloadOps = useCallback(async () => {
+    setOpsLoading(true);
+    setErr(null);
+    try {
+      const data = await getCommunityOpsSummary(7);
+      setOpsSummary(data);
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : String(ex));
+      setOpsSummary(null);
+    } finally {
+      setOpsLoading(false);
     }
   }, []);
 
@@ -620,7 +673,11 @@ export function MeModPanel() {
   };
 
   useEffect(() => {
-    if (section === "posts") {
+    if (section === "ops") {
+      setPreviewPost(null);
+      setPreviewReport(null);
+      void reloadOps();
+    } else if (section === "posts") {
       setPreviewPost(null);
       setPreviewReport(null);
       void reload(kind);
@@ -629,7 +686,7 @@ export function MeModPanel() {
       setPreviewReport(null);
       void reloadUsage();
     }
-  }, [section, kind, reload, reloadUsage]);
+  }, [section, kind, reload, reloadOps, reloadUsage]);
 
   const openPostPreview = async (
     postId: number,
@@ -760,6 +817,40 @@ export function MeModPanel() {
         ? "暂无下架帖"
         : "暂无置顶帖";
 
+  const openReportsFromOps = () => {
+    closePreview();
+    setSection("posts");
+    setKind("reports");
+  };
+
+  const opsChartOption = useMemo(() => {
+    const days = opsSummary?.by_day || [];
+    return {
+      grid: { left: 36, right: 12, top: 24, bottom: 28 },
+      tooltip: { trigger: "axis" },
+      xAxis: {
+        type: "category",
+        data: days.map((d) => d.day.slice(5)),
+        axisLabel: { color: "#64748b", fontSize: 11 },
+      },
+      yAxis: {
+        type: "value",
+        minInterval: 1,
+        axisLabel: { color: "#94a3b8", fontSize: 11 },
+        splitLine: { lineStyle: { color: "#f1f5f9" } },
+      },
+      series: [
+        {
+          name: "发帖",
+          type: "bar",
+          data: days.map((d) => d.posts),
+          itemStyle: { color: "#ef4444", borderRadius: [3, 3, 0, 0] },
+          barMaxWidth: 28,
+        },
+      ],
+    };
+  }, [opsSummary]);
+
   return (
     <PanelChrome title="管理仓">
       <div className="border-b border-slate-100 bg-white px-5 py-3 sm:px-6">
@@ -793,7 +884,82 @@ export function MeModPanel() {
         </p>
       )}
 
-      {section === "usage" ? (
+      {section === "ops" ? (
+        opsLoading ? (
+          <p className="px-5 py-16 text-center text-sm text-slate-400">加载中…</p>
+        ) : !opsSummary ? (
+          <p className="px-5 py-16 text-center text-sm text-slate-400">
+            暂无运营数据
+          </p>
+        ) : (
+          <div className="space-y-5 px-5 py-5 sm:px-6">
+            <p className="text-sm text-slate-500">
+              近 {opsSummary.days} 日总览 · 仅管理员可见
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-xl border border-slate-200 bg-white px-4 py-4">
+                <p className="text-xs font-medium text-slate-500">近 7 日发帖</p>
+                <p className="mt-2 text-3xl font-semibold tabular-nums text-slate-900">
+                  {opsSummary.posts_7d}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">已发布帖</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white px-4 py-4">
+                <p className="text-xs font-medium text-slate-500">近 7 日互动</p>
+                <p className="mt-2 text-3xl font-semibold tabular-nums text-slate-900">
+                  {opsSummary.interactions_7d}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  评 {opsSummary.comments_7d} · 藏 {opsSummary.favorites_7d} · 赞{" "}
+                  {opsSummary.likes_7d}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openReportsFromOps}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-4 text-left transition hover:border-red-200 hover:bg-red-50/40"
+              >
+                <p className="text-xs font-medium text-slate-500">举报待办</p>
+                <p className="mt-2 text-3xl font-semibold tabular-nums text-slate-900">
+                  {opsSummary.reports_open}
+                </p>
+                <p className="mt-1 text-xs text-red-600">点击查看举报队列 →</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  closePreview();
+                  setSection("usage");
+                }}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-4 text-left transition hover:border-slate-300 hover:bg-slate-50"
+              >
+                <p className="text-xs font-medium text-slate-500">AI 调用</p>
+                <p className="mt-2 text-3xl font-semibold tabular-nums text-slate-900">
+                  {opsSummary.ai_calls_7d}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  {opsSummary.ai_users_7d} 人 · token≈{opsSummary.ai_tokens_7d}
+                </p>
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-4">
+              <div className="mb-2">
+                <p className="text-sm font-medium text-slate-800">近 7 日发帖</p>
+              </div>
+              {(opsSummary.by_day || []).length === 0 ? (
+                <p className="py-10 text-center text-sm text-slate-400">暂无按日数据</p>
+              ) : (
+                <ReactECharts
+                  option={opsChartOption}
+                  style={{ height: 220, width: "100%" }}
+                  opts={{ renderer: "canvas" }}
+                />
+              )}
+            </div>
+          </div>
+        )
+      ) : section === "usage" ? (
         usageLoading ? (
           <p className="px-5 py-16 text-center text-sm text-slate-400">加载中…</p>
         ) : !agentUsage || agentUsage.by_user.length === 0 ? (

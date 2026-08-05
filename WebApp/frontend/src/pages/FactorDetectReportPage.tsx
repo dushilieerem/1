@@ -9,9 +9,12 @@ import {
   Layers,
   LineChart,
   Share2,
+  Sparkles,
   TrendingDown,
   TrendingUp,
+  Archive,
 } from "lucide-react";
+import { AiBacktestInterpretDialog } from "@/components/AiBacktestInterpretDialog";
 import { getStoredUser } from "@/lib/auth";
 import { buildFactorDetectShareDraft } from "@/lib/communityShare";
 import {
@@ -29,14 +32,30 @@ import { IndustryDetectPanel } from "@/components/factor/IndustryDetectPanel";
 import {
   DETECT_BENCHMARK_OPTIONS,
   DETECT_UNIVERSE_OPTIONS,
+  getProject,
   getRun,
   loadLastResult,
   optionLabel,
   peekRun,
+  saveProject,
   type DetectRunRecord,
+  type DraftDetectFactor,
 } from "@/lib/detectStore";
+import {
+  addFactorToUserLibrary,
+  listAllUserLibraryFactors,
+  listUserFactorLibraries,
+  type UserFactorLibrary,
+} from "@/lib/userFactorLibraries";
 
-type ReportTab = "equity" | "groups" | "ic" | "industry" | "overview";
+function draftFromRun(rec: DetectRunRecord | null | undefined): DraftDetectFactor | null {
+  if (!rec) return null;
+  if (rec.draftFactor?.name) return rec.draftFactor;
+  const req = rec.request as { _svquantDraftFactor?: DraftDetectFactor } | undefined;
+  return req?._svquantDraftFactor?.name ? req._svquantDraftFactor : null;
+}
+
+type ReportTab = "equity" | "groups" | "ic" | "industry" | "overview" | "ai";
 
 const NAV: { id: ReportTab; label: string; icon: typeof LineChart }[] = [
   { id: "equity", label: "累计收益与回撤", icon: TrendingDown },
@@ -44,9 +63,10 @@ const NAV: { id: ReportTab; label: string; icon: typeof LineChart }[] = [
   { id: "ic", label: "IC", icon: Activity },
   { id: "industry", label: "行业", icon: Building2 },
   { id: "overview", label: "绩效概览", icon: BarChart3 },
+  { id: "ai", label: "AI 解读", icon: Sparkles },
 ];
 
-const CORE_TABS: ReportTab[] = ["equity", "groups", "overview"];
+const CORE_TABS: ReportTab[] = ["equity", "groups", "overview", "ai"];
 
 function hasIcData(rec: DetectRunRecord | null | undefined): boolean {
   const fa = rec?.result?.factor_analysis;
@@ -162,6 +182,34 @@ export function FactorDetectReportPage() {
     runId ? peekRun(runId) ?? undefined : undefined,
   );
   const [tab, setTab] = useState<ReportTab>("equity");
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [userLibs, setUserLibs] = useState<UserFactorLibrary[]>([]);
+  const [archiveLibId, setArchiveLibId] = useState<number | "">("");
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveErr, setArchiveErr] = useState<string | null>(null);
+  const [archiveOk, setArchiveOk] = useState<string | null>(null);
+  const [archivedNames, setArchivedNames] = useState<Set<string>>(() => new Set());
+
+  const draftFactorRaw = useMemo(() => draftFromRun(rec ?? null), [rec]);
+  const draftFactor =
+    draftFactorRaw && !archivedNames.has(draftFactorRaw.name)
+      ? draftFactorRaw
+      : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    void listAllUserLibraryFactors()
+      .then((rows) => {
+        if (cancelled) return;
+        setArchivedNames(new Set(rows.map((r) => r.name)));
+      })
+      .catch(() => {
+        /* ignore */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rec?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -184,6 +232,67 @@ export function FactorDetectReportPage() {
       cancelled = true;
     };
   }, [runId]);
+
+  const openArchive = () => {
+    setArchiveErr(null);
+    setArchiveOk(null);
+    setArchiveLibId("");
+    setArchiveOpen(true);
+    void listUserFactorLibraries()
+      .then((libs) => {
+        setUserLibs(libs);
+      })
+      .catch((e) => {
+        setUserLibs([]);
+        setArchiveErr(e instanceof Error ? e.message : String(e));
+      });
+  };
+
+  const confirmArchive = async () => {
+    if (!draftFactor) return;
+    if (archiveLibId === "" || archiveLibId == null) {
+      setArchiveErr("请选择要放入的因子库");
+      return;
+    }
+    setArchiveBusy(true);
+    setArchiveErr(null);
+    try {
+      await addFactorToUserLibrary(Number(archiveLibId), {
+        name: draftFactor.name,
+        body: draftFactor.body,
+        description: draftFactor.description,
+        categoryLabel: draftFactor.category || "其他",
+      });
+      const libName =
+        userLibs.find((l) => l.id === Number(archiveLibId))?.name || "因子库";
+      setArchiveOk(`已入库到「${libName}」`);
+      setArchiveOpen(false);
+      setArchivedNames((prev) => new Set([...prev, draftFactor.name]));
+      // 检测项目去掉草稿标记 → 再进检测页显示普通样式
+      if (rec?.projectId) {
+        const proj = await getProject(rec.projectId);
+        if (proj?.config?.draftFactor?.name === draftFactor.name) {
+          await saveProject({
+            ...proj,
+            config: {
+              ...proj.config,
+              draftFactor: null,
+              factorCodes: proj.config.factorCodes.length
+                ? proj.config.factorCodes
+                : [draftFactor.name],
+              weightMode: "sum",
+              weights: [100],
+              powers: [1],
+            },
+          });
+        }
+      }
+    } catch (e) {
+      setArchiveErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setArchiveBusy(false);
+    }
+  };
 
   const visibleNav = useMemo(() => visibleNavFor(rec), [rec]);
 
@@ -393,7 +502,8 @@ export function FactorDetectReportPage() {
               {
                 name: "基准",
                 type: "line" as const,
-                smooth: true,
+                // Supermind 对比口径：基准用折线（非平滑曲线）
+                smooth: false,
                 symbol: "none" as const,
                 z: 1,
                 lineStyle: { width: 2.5, color: CHART.bench },
@@ -579,6 +689,16 @@ export function FactorDetectReportPage() {
             ) : null}
           </div>
           <div className="flex gap-2">
+            {draftFactor ? (
+              <button
+                type="button"
+                onClick={openArchive}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100"
+              >
+                <Archive className="h-3.5 w-3.5" />
+                入库
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={shareToCommunity}
@@ -595,6 +715,14 @@ export function FactorDetectReportPage() {
             </Link>
           </div>
         </div>
+
+        {archiveOk ? (
+          <div className="mx-auto max-w-[1400px] px-6 pb-2">
+            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              {archiveOk}
+            </p>
+          </div>
+        ) : null}
 
         <div className="mx-auto grid max-w-[1400px] grid-cols-2 gap-2 px-6 pb-3 sm:grid-cols-3 lg:grid-cols-5">
           <MetaChip icon={<Clock className="h-3.5 w-3.5 text-blue-500" />} label="区间" value={rangeLabel} />
@@ -784,9 +912,85 @@ export function FactorDetectReportPage() {
                 )}
               </div>
             )}
+
+            {tab === "ai" ? (
+              <AiBacktestInterpretDialog
+                variant="panel"
+                backtestType="factor"
+                result={
+                  result && typeof result === "object"
+                    ? (result as unknown as Record<string, unknown>)
+                    : null
+                }
+                runContext={{
+                  validation_scheme: "in_sample",
+                  commission_rate:
+                    req &&
+                    typeof (req as { commission_rate?: number }).commission_rate ===
+                      "number"
+                      ? (req as { commission_rate: number }).commission_rate
+                      : undefined,
+                  stamp_tax:
+                    req && typeof (req as { stamp_tax?: number }).stamp_tax === "number"
+                      ? (req as { stamp_tax: number }).stamp_tax
+                      : undefined,
+                  slippage_rate:
+                    req &&
+                    typeof (req as { slippage_rate?: number }).slippage_rate ===
+                      "number"
+                      ? (req as { slippage_rate: number }).slippage_rate
+                      : undefined,
+                }}
+              />
+            ) : null}
           </main>
         </div>
       </div>
+
+      {archiveOpen ? (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-900">因子入库</h3>
+            <label className="mt-4 block text-xs text-slate-500">
+              目标因子库
+              <select
+                value={archiveLibId === "" ? "" : String(archiveLibId)}
+                onChange={(e) =>
+                  setArchiveLibId(e.target.value ? Number(e.target.value) : "")
+                }
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              >
+                <option value="">请选择</option>
+                {userLibs.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {archiveErr ? (
+              <p className="mt-2 text-xs text-red-600">{archiveErr}</p>
+            ) : null}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setArchiveOpen(false)}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={archiveBusy || userLibs.length === 0}
+                onClick={() => void confirmArchive()}
+                className="rounded-lg bg-amber-600 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+              >
+                {archiveBusy ? "入库中…" : "确定入库"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -5,8 +5,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  FolderOpen,
   Layers,
-  Pencil,
   Plus,
   Search,
   Trash2,
@@ -15,34 +15,34 @@ import {
 import { FactorFormula } from "@/components/FactorFormula";
 import { PageJump } from "@/components/PageJump";
 import { useConfirm } from "@/components/ConfirmDialog";
-import { authHeaders, getStoredUser, prepareAuthHandoff, subscribeAuth } from "@/lib/auth";
+import {
+  getStoredUser,
+  prepareAuthHandoff,
+  subscribeAuth,
+} from "@/lib/auth";
 import {
   DYNAMIC_FACTOR_LIBS,
+  builtinCategoryLabelsFromFactors,
   clearFactorCache,
   extractMethod,
-  filterTabsFromFactors,
   formatFactorFormula,
   loadFactors,
   loadLibrarySource,
   type FactorMeta,
 } from "@/lib/factorCatalog";
 import { openOrCreateForFactor, openDetectInNewTab } from "@/lib/detectStore";
+import {
+  createUserFactorLibrary,
+  deleteFactorFromUserLibrary,
+  deleteUserFactorLibrary,
+  listLibraryFactors,
+  listUserFactorLibraries,
+  userLibraryFactorToMeta,
+  type UserFactorLibrary,
+} from "@/lib/userFactorLibraries";
 
 const PAGE_SIZE = 15;
-
-const TAB_ACTIVE: Record<string, string> = {
-  全部: "bg-slate-900 text-white shadow-md",
-  "动量/趋势": "bg-blue-600 text-white shadow-md shadow-blue-200",
-  "价值/估值": "bg-violet-600 text-white shadow-md shadow-violet-200",
-  技术指标: "bg-sky-600 text-white shadow-md shadow-sky-200",
-  "波动/风险": "bg-amber-600 text-white shadow-md shadow-amber-200",
-  "量价/成交": "bg-orange-600 text-white shadow-md shadow-orange-200",
-  自定义: "bg-emerald-600 text-white shadow-md shadow-emerald-200",
-  情绪因子: "bg-rose-600 text-white shadow-md shadow-rose-200",
-  风险因子: "bg-red-700 text-white shadow-md shadow-red-200",
-  技术指标库: "bg-fuchsia-600 text-white shadow-md shadow-fuchsia-200",
-  "Alpha158/360": "bg-indigo-600 text-white shadow-md shadow-indigo-200",
-};
+const BUILTIN_KEY = "__builtin__";
 
 const ROW_ACCENT: Record<string, string> = {
   "动量/趋势": "border-l-blue-500",
@@ -50,11 +50,11 @@ const ROW_ACCENT: Record<string, string> = {
   技术指标: "border-l-sky-500",
   "波动/风险": "border-l-amber-500",
   "量价/成交": "border-l-orange-500",
-  自定义: "border-l-emerald-500",
   情绪因子: "border-l-rose-500",
   风险因子: "border-l-red-600",
   技术指标库: "border-l-fuchsia-500",
   "Alpha158/360": "border-l-indigo-500",
+  其他: "border-l-slate-400",
 };
 
 const ROW_BADGE: Record<string, string> = {
@@ -63,11 +63,11 @@ const ROW_BADGE: Record<string, string> = {
   技术指标: "bg-sky-50 text-sky-700",
   "波动/风险": "bg-amber-50 text-amber-800",
   "量价/成交": "bg-orange-50 text-orange-700",
-  自定义: "bg-emerald-50 text-emerald-700",
   情绪因子: "bg-rose-50 text-rose-700",
   风险因子: "bg-red-50 text-red-800",
   技术指标库: "bg-fuchsia-50 text-fuchsia-700",
   "Alpha158/360": "bg-indigo-50 text-indigo-700",
+  其他: "bg-slate-100 text-slate-600",
 };
 
 const COUNT_PILL: Record<string, string> = {
@@ -76,7 +76,6 @@ const COUNT_PILL: Record<string, string> = {
   技术指标: "text-sky-600",
   "波动/风险": "text-amber-700",
   "量价/成交": "text-orange-600",
-  自定义: "text-emerald-600",
   情绪因子: "text-rose-600",
   风险因子: "text-red-700",
   技术指标库: "text-fuchsia-600",
@@ -87,7 +86,9 @@ function pageNumbers(current: number, total: number): (number | "…")[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
   const pages: (number | "…")[] = [1];
   if (current > 3) pages.push("…");
-  for (let n = Math.max(2, current - 1); n <= Math.min(total - 1, current + 1); n++) pages.push(n);
+  for (let n = Math.max(2, current - 1); n <= Math.min(total - 1, current + 1); n++) {
+    pages.push(n);
+  }
   if (current < total - 2) pages.push("…");
   pages.push(total);
   return pages;
@@ -97,15 +98,13 @@ function FactorRow({
   factor,
   expanded,
   onToggle,
-  onDeleted,
+  onDelete,
 }: {
   factor: FactorMeta;
   expanded: boolean;
   onToggle: () => void;
-  onDeleted?: () => void;
+  onDelete?: () => void;
 }) {
-  const confirm = useConfirm();
-  const isCustom = factor.library === "custom_lib";
   const accent = ROW_ACCENT[factor.libraryLabel] ?? "border-l-slate-300";
   const badge = ROW_BADGE[factor.libraryLabel] ?? "bg-slate-100 text-slate-600";
   const [formula, setFormula] = useState(factor.formula);
@@ -114,54 +113,45 @@ function FactorRow({
   useEffect(() => {
     if (!expanded) return;
     let cancelled = false;
+    if (factor.body) {
+      setFormula(formatFactorFormula(factor.body));
+      return;
+    }
     if (DYNAMIC_FACTOR_LIBS.has(factor.library)) {
       setFormula(
         `# ${factor.description}\n# 动态注册特征（${factor.libraryFile}）；检测时由 RE library_name=${factor.library} 加载`,
       );
       return;
     }
+    if (!factor.libraryFile) {
+      setFormula(factor.formula || "# 无源码");
+      return;
+    }
     void loadLibrarySource(factor.libraryFile)
       .then((src) => {
         if (cancelled) return;
-        const method = extractMethod(src, factor.methodName || factor.name);
-        // 展示完整 def … 方法（含函数名），与 RE 写法一致
-        const fromSrc = formatFactorFormula(method, factor.params);
-        setFormula(fromSrc || method || factor.formula || "");
+        const method = factor.methodName || factor.name;
+        const body = extractMethod(src, method);
+        setFormula(body ? formatFactorFormula(body) : factor.formula);
       })
       .catch(() => {
-        if (!cancelled) setFormula(factor.formula || factor.description || "");
+        if (!cancelled) setFormula(factor.formula);
       });
     return () => {
       cancelled = true;
     };
   }, [expanded, factor]);
 
-  const onDetect = (e: React.MouseEvent) => {
+  const onDetect = async (e: { stopPropagation: () => void }) => {
     e.stopPropagation();
-    void openOrCreateForFactor(factor.name, factor.description).then((p) => {
-      openDetectInNewTab(p.id);
-    });
-  };
-
-  const onDelete = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const ok = await confirm({
-      title: "下线因子",
-      message: `从列表下线「${factor.description}」？`,
-      confirmLabel: "下线",
-      danger: true,
-    });
-    if (!ok) return;
+    if (busy) return;
     setBusy(true);
     try {
-      const r = await fetch(`/api/factor/custom/${encodeURIComponent(factor.name)}`, {
-        method: "DELETE",
-        headers: { ...authHeaders() },
-      });
-      const j = (await r.json()) as { error?: string };
-      if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
-      clearFactorCache();
-      onDeleted?.();
+      const p = await openOrCreateForFactor(
+        factor.name,
+        factor.explain || factor.description || factor.name,
+      );
+      openDetectInNewTab(p.id);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : String(err));
     } finally {
@@ -171,65 +161,54 @@ function FactorRow({
 
   return (
     <div
-      className={`group overflow-hidden rounded-xl border border-slate-200/90 border-l-[3px] bg-white shadow-sm transition hover:shadow-md ${accent} ${
-        expanded ? "ring-1 ring-slate-200" : ""
-      }`}
+      className={`overflow-hidden rounded-xl border border-slate-200 border-l-4 bg-white shadow-sm ${accent}`}
     >
-      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-3.5 text-left">
-        <div
-          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition ${
-            expanded ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500 group-hover:bg-slate-200"
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50/80"
+      >
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-slate-400 transition ${
+            expanded ? "rotate-0" : "-rotate-90"
           }`}
-        >
-          <ChevronDown className={`h-4 w-4 transition ${expanded ? "rotate-180" : ""}`} />
-        </div>
+        />
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-500">
-              {factor.name}
-            </code>
+          <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700">
+            {factor.name}
+          </code>
+          <div className="mt-1 truncate text-sm font-medium text-slate-800">
+            {factor.explain || factor.description}
           </div>
-          <p className="mt-0.5 line-clamp-1 text-sm text-slate-700">{factor.explain || "暂无简介"}</p>
         </div>
-        {/* 右侧固定槽位：分类徽章 | 编辑/删除(占位) | 检测 — 保证各行对齐 */}
-        <div
-          className="flex shrink-0 items-center gap-2"
-          onClick={(e) => e.stopPropagation()}
+        <span
+          className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${badge}`}
         >
-          <span
-            className={`inline-flex h-7 min-w-[4.75rem] items-center justify-center rounded-md px-2 text-[10px] font-semibold ${badge}`}
-          >
-            {isCustom ? "自定义" : factor.libraryLabel}
-          </span>
-          <div className="flex h-7 w-[4.25rem] items-center justify-end gap-0.5">
-            {isCustom ? (
-              <>
-                <Link
-                  to={`/factor/library/custom/${encodeURIComponent(factor.name)}`}
-                  className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                  title="编辑"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </Link>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={(e) => void onDelete(e)}
-                  className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600"
-                  title="删除"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </>
-            ) : null}
-          </div>
+          {factor.libraryLabel}
+        </span>
+        <div
+          className="flex shrink-0 items-center gap-1.5"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
           <button
             type="button"
+            disabled={busy}
             onClick={onDetect}
-            className="inline-flex h-7 min-w-[3.25rem] items-center justify-center rounded-lg bg-red-50 px-2.5 text-xs font-semibold text-red-600 transition hover:bg-red-100"
+            className="inline-flex h-7 min-w-[3.25rem] items-center justify-center rounded-lg bg-red-50 px-2.5 text-xs font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-40"
           >
             检测
           </button>
+          {onDelete ? (
+            <button
+              type="button"
+              title="删除"
+              onClick={() => void onDelete()}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
         </div>
       </button>
       {expanded && (
@@ -242,18 +221,63 @@ function FactorRow({
 }
 
 export function FactorLibraryPage() {
+  const confirm = useConfirm();
   const [factors, setFactors] = useState<FactorMeta[]>([]);
+  const [userLibs, setUserLibs] = useState<UserFactorLibrary[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<string>("全部");
+  const [activeLib, setActiveLib] = useState<string>(BUILTIN_KEY);
+  const [category, setCategory] = useState<string>("全部");
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [user, setUser] = useState(() => getStoredUser());
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createErr, setCreateErr] = useState<string | null>(null);
+  const [createBusy, setCreateBusy] = useState(false);
+  const [userLibFactors, setUserLibFactors] = useState<FactorMeta[]>([]);
 
-  const reload = () =>
+  const builtinFactors = useMemo(
+    () => factors.filter((f) => f.library !== "custom_lib"),
+    [factors],
+  );
+
+  const builtinCategories = useMemo(
+    () => builtinCategoryLabelsFromFactors(builtinFactors),
+    [builtinFactors],
+  );
+
+  const categoryFilters = useMemo(() => {
+    if (activeLib === BUILTIN_KEY) {
+      return ["全部", ...builtinCategories];
+    }
+    const present = new Set(userLibFactors.map((f) => f.libraryLabel));
+    const ordered = [
+      ...builtinCategories.filter((c) => present.has(c)),
+      ...(present.has("其他") ? ["其他"] : []),
+    ];
+    for (const lab of present) {
+      if (!ordered.includes(lab)) ordered.push(lab);
+    }
+    return ["全部", ...ordered];
+  }, [activeLib, builtinCategories, userLibFactors]);
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const f of builtinFactors) {
+      c[f.libraryLabel] = (c[f.libraryLabel] || 0) + 1;
+    }
+    return c;
+  }, [builtinFactors]);
+
+  const reload = () => {
     void loadFactors(true)
       .then(setFactors)
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    void listUserFactorLibraries()
+      .then(setUserLibs)
+      .catch(() => setUserLibs([]));
+  };
 
   useEffect(() => {
     reload();
@@ -267,22 +291,35 @@ export function FactorLibraryPage() {
     });
   }, []);
 
-  const categoryTabs = useMemo(() => filterTabsFromFactors(factors), [factors]);
-
-  const counts = useMemo(() => {
-    const c: Record<string, number> = {};
-    for (const f of factors) c[f.libraryLabel] = (c[f.libraryLabel] || 0) + 1;
-    return c;
-  }, [factors]);
+  useEffect(() => {
+    if (!categoryFilters.includes(category)) setCategory("全部");
+  }, [categoryFilters, category]);
 
   useEffect(() => {
-    if (tab !== "全部" && !categoryTabs.includes(tab)) setTab("全部");
-  }, [categoryTabs, tab]);
+    if (activeLib === BUILTIN_KEY) {
+      setUserLibFactors([]);
+      return;
+    }
+    const libId = Number(activeLib);
+    if (!Number.isFinite(libId)) return;
+    let cancelled = false;
+    void listLibraryFactors(libId)
+      .then((rows) => {
+        if (!cancelled) setUserLibFactors(rows.map(userLibraryFactorToMeta));
+      })
+      .catch(() => {
+        if (!cancelled) setUserLibFactors([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeLib]);
 
   const filtered = useMemo(() => {
+    const source = activeLib === BUILTIN_KEY ? builtinFactors : userLibFactors;
     const q = query.trim().toLowerCase();
-    return factors.filter((f) => {
-      if (tab !== "全部" && f.libraryLabel !== tab) return false;
+    return source.filter((f) => {
+      if (category !== "全部" && f.libraryLabel !== category) return false;
       if (!q) return true;
       return (
         f.name.toLowerCase().includes(q) ||
@@ -290,7 +327,7 @@ export function FactorLibraryPage() {
         f.explain.toLowerCase().includes(q)
       );
     });
-  }, [factors, query, tab]);
+  }, [activeLib, builtinFactors, userLibFactors, query, category]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageSafe = Math.min(page, totalPages);
@@ -298,7 +335,92 @@ export function FactorLibraryPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [query, tab]);
+    setExpanded(null);
+  }, [query, category, activeLib]);
+
+  const openCreate = () => {
+    if (!user) {
+      window.location.href = "/login?next=/factor/library";
+      return;
+    }
+    setCreateName("");
+    setCreateErr(null);
+    setCreateOpen(true);
+  };
+
+  const confirmCreate = async () => {
+    const title = createName.trim();
+    if (!title) {
+      setCreateErr("请填写因子库名称");
+      return;
+    }
+    setCreateBusy(true);
+    setCreateErr(null);
+    try {
+      const lib = await createUserFactorLibrary(title);
+      setUserLibs((prev) => [lib, ...prev.filter((x) => x.id !== lib.id)]);
+      setActiveLib(String(lib.id));
+      setCreateOpen(false);
+    } catch (e) {
+      setCreateErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCreateBusy(false);
+    }
+  };
+
+  const onDeleteLib = async (lib: UserFactorLibrary) => {
+    const ok = await confirm({
+      title: "删除因子库",
+      message: `确认删除「${lib.name}」？库内因子（若有）将一并移除。`,
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteUserFactorLibrary(lib.id);
+      setUserLibs((prev) => prev.filter((x) => x.id !== lib.id));
+      if (activeLib === String(lib.id)) setActiveLib(BUILTIN_KEY);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const onDeleteFactor = async (f: FactorMeta) => {
+    const libId = f.userLibraryId;
+    const factorId = f.userLibraryFactorId;
+    if (libId == null || factorId == null) return;
+    const ok = await confirm({
+      title: "删除因子",
+      message: `确认从库中删除「${f.name}」？`,
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteFactorFromUserLibrary(libId, factorId);
+      setUserLibFactors((prev) =>
+        prev.filter((x) => x.userLibraryFactorId !== factorId),
+      );
+      setUserLibs((prev) =>
+        prev.map((l) =>
+          l.id === libId
+            ? {
+                ...l,
+                factorCount: Math.max(0, (l.factorCount || 1) - 1),
+              }
+            : l,
+        ),
+      );
+      if (expanded === f.name) setExpanded(null);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const activeLibTitle =
+    activeLib === BUILTIN_KEY
+      ? "内置因子库"
+      : userLibs.find((l) => String(l.id) === activeLib)?.name || "因子库";
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50/80">
@@ -313,20 +435,25 @@ export function FactorLibraryPage() {
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold text-slate-900">因子库</h1>
-                  <p className="text-sm text-slate-500">
-                    点击行展开公式 · 共 {factors.length} 个
-                    {err ? ` · ${err}` : ""}
-                  </p>
+                  {err ? (
+                    <p className="text-sm text-red-500">{err}</p>
+                  ) : null}
                 </div>
               </div>
-              <div className="mt-3 flex flex-wrap gap-3 text-xs font-semibold">
-                {categoryTabs
-                  .filter((label) => label !== "全部")
-                  .map((label) => (
-                  <span key={label} className={COUNT_PILL[label] || "text-slate-500"}>
-                    {label.split("/")[0]} {counts[label] || 0}
-                  </span>
-                ))}
+              <div className="mt-3 text-xs text-slate-500">
+                <span className="font-semibold text-slate-700">
+                  内置因子分类及数量：
+                </span>
+                <span className="ml-2 inline-flex flex-wrap gap-3 font-semibold">
+                  {builtinCategories.map((label) => (
+                    <span
+                      key={label}
+                      className={COUNT_PILL[label] || "text-slate-500"}
+                    >
+                      {label.split("/")[0]} {counts[label] || 0}
+                    </span>
+                  ))}
+                </span>
               </div>
             </div>
             <div className="relative flex flex-wrap items-center gap-2">
@@ -344,13 +471,14 @@ export function FactorLibraryPage() {
                   </button>
                 )}
               </div>
-              <Link
-                to="/factor/library/custom/new"
+              <button
+                type="button"
+                onClick={openCreate}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
               >
                 <Plus className="h-4 w-4" />
-                新增因子
-              </Link>
+                新增因子库
+              </button>
               <Link
                 to="/factor/detect"
                 target="_blank"
@@ -365,95 +493,216 @@ export function FactorLibraryPage() {
           </div>
         </div>
 
-        <div className="mb-4 flex flex-wrap gap-2">
-          {categoryTabs.map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
-                tab === t ? TAB_ACTIVE[t] || "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              {t === "全部" ? t : `${t}因子`.replace("因子因子", "因子")}
-            </button>
-          ))}
-        </div>
-
-        {!user && tab === "自定义" ? (
-          <p className="mb-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            自定义因子按账号隔离，请先{" "}
-            <Link to="/login?next=/factor/library" className="font-semibold underline">
-              登录
-            </Link>{" "}
-            后查看与新增。
-          </p>
-        ) : null}
-
-        <div className="mb-3 flex items-center justify-between text-xs text-slate-500">
-          <span>当前 {filtered.length} 个</span>
-          <span>
-            {(pageSafe - 1) * PAGE_SIZE + 1}-{Math.min(pageSafe * PAGE_SIZE, filtered.length)} / {filtered.length}
-          </span>
-        </div>
-
-        <div className="space-y-2">
-          {slice.map((f) => (
-            <FactorRow
-              key={`${f.library}:${f.name}`}
-              factor={f}
-              expanded={expanded === f.name}
-              onToggle={() => setExpanded((v) => (v === f.name ? null : f.name))}
-              onDeleted={reload}
-            />
-          ))}
-          {!slice.length && <p className="py-16 text-center text-sm text-slate-400">无匹配因子</p>}
-        </div>
-
-        {totalPages > 1 && (
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                disabled={pageSafe <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="rounded-lg border border-slate-200 bg-white p-2 disabled:opacity-40"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              {pageNumbers(pageSafe, totalPages).map((n, i) =>
-                n === "…" ? (
-                  <span key={`e${i}`} className="px-2 text-slate-400">
-                    …
-                  </span>
-                ) : (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setPage(n)}
-                    className={`min-w-9 rounded-lg px-2 py-1.5 text-sm font-medium ${
-                      n === pageSafe
-                        ? "bg-slate-900 text-white"
-                        : "bg-white text-slate-600 hover:bg-slate-100"
+        <div className="flex gap-5">
+          {/* 左侧：因子库列表 */}
+          <aside className="w-52 shrink-0">
+            <div className="sticky top-20 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-3 py-2.5 text-xs font-semibold text-slate-500">
+                因子库
+              </div>
+              <nav className="max-h-[calc(100vh-14rem)] space-y-0.5 overflow-y-auto p-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveLib(BUILTIN_KEY)}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-medium transition ${
+                    activeLib === BUILTIN_KEY
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <FolderOpen className="h-4 w-4 shrink-0 opacity-80" />
+                  <span className="truncate">内置因子库</span>
+                </button>
+                {userLibs.map((lib) => (
+                  <div
+                    key={lib.id}
+                    className={`group flex items-center gap-0.5 rounded-lg ${
+                      activeLib === String(lib.id) ? "bg-slate-900" : ""
                     }`}
                   >
-                    {n}
+                    <button
+                      type="button"
+                      onClick={() => setActiveLib(String(lib.id))}
+                      className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-medium transition ${
+                        activeLib === String(lib.id)
+                          ? "text-white"
+                          : "text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <FolderOpen className="h-4 w-4 shrink-0 opacity-80" />
+                      <span className="truncate">{lib.name}</span>
+                    </button>
+                    <button
+                      type="button"
+                      title="删除"
+                      onClick={() => void onDeleteLib(lib)}
+                      className={`mr-1 rounded-md p-1.5 opacity-0 transition group-hover:opacity-100 ${
+                        activeLib === String(lib.id)
+                          ? "text-white/70 hover:bg-white/10 hover:text-white"
+                          : "text-slate-400 hover:bg-red-50 hover:text-red-500"
+                      }`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </nav>
+            </div>
+          </aside>
+
+          {/* 右侧：分类筛选 + 因子列表 */}
+          <div className="min-w-0 flex-1">
+            <div className="mb-3 flex flex-wrap items-center gap-3">
+              <span className="text-xs font-medium text-slate-500">分类筛选</span>
+              <div className="flex flex-wrap gap-1.5">
+                {categoryFilters.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setCategory(c)}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+                      category === c
+                        ? "bg-slate-800 text-white"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    {c}
                   </button>
-                ),
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-3 flex items-center justify-between text-xs text-slate-500">
+              <span>
+                {activeLibTitle} · 当前 {filtered.length} 个
+              </span>
+              <span>
+                {(pageSafe - 1) * PAGE_SIZE + 1}-
+                {Math.min(pageSafe * PAGE_SIZE, filtered.length)} /{" "}
+                {filtered.length}
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {slice.map((f) => (
+                <FactorRow
+                  key={`${f.library}:${f.name}:${f.userLibraryFactorId ?? ""}`}
+                  factor={f}
+                  expanded={expanded === f.name}
+                  onToggle={() =>
+                    setExpanded((v) => (v === f.name ? null : f.name))
+                  }
+                  onDelete={
+                    activeLib !== BUILTIN_KEY &&
+                    f.userLibraryFactorId != null &&
+                    f.userLibraryId != null
+                      ? () => void onDeleteFactor(f)
+                      : undefined
+                  }
+                />
+              ))}
+              {!slice.length && (
+                <p className="py-16 text-center text-sm text-slate-400">
+                  {activeLib === BUILTIN_KEY
+                    ? "无匹配因子"
+                    : "该因子库暂无因子，可在「因子检测 → 新建因子 → 报告入库」添加"}
+                </p>
               )}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={pageSafe <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="rounded-lg border border-slate-200 bg-white p-2 disabled:opacity-40"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  {pageNumbers(pageSafe, totalPages).map((n, i) =>
+                    n === "…" ? (
+                      <span key={`e${i}`} className="px-1 text-slate-400">
+                        …
+                      </span>
+                    ) : (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setPage(n)}
+                        className={`min-w-[2rem] rounded-lg px-2 py-1.5 text-sm ${
+                          n === pageSafe
+                            ? "bg-slate-900 text-white"
+                            : "border border-slate-200 bg-white text-slate-700"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ),
+                  )}
+                  <button
+                    type="button"
+                    disabled={pageSafe >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    className="rounded-lg border border-slate-200 bg-white p-2 disabled:opacity-40"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+                <PageJump page={pageSafe} total={totalPages} onJump={setPage} />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {createOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+            <h3 className="text-sm font-semibold text-slate-900">新增因子库</h3>
+            <label className="mt-4 block text-xs font-medium text-slate-600">
+              因子库名称
+              <input
+                autoFocus
+                value={createName}
+                onChange={(e) => {
+                  setCreateName(e.target.value);
+                  setCreateErr(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void confirmCreate();
+                  }
+                }}
+                placeholder="例如 A / 我的研究库"
+                className="mt-1.5 h-9 w-full rounded-lg border border-slate-200 px-2.5 text-sm outline-none focus:border-slate-400"
+              />
+            </label>
+            {createErr ? (
+              <p className="mt-2 text-xs text-red-500">{createErr}</p>
+            ) : null}
+            <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
-                disabled={pageSafe >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                className="rounded-lg border border-slate-200 bg-white p-2 disabled:opacity-40"
+                onClick={() => setCreateOpen(false)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600"
               >
-                <ChevronRight className="h-4 w-4" />
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={createBusy}
+                onClick={() => void confirmCreate()}
+                className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+              >
+                创建
               </button>
             </div>
-            <PageJump page={pageSafe} totalPages={totalPages} onJump={setPage} />
           </div>
-        )}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

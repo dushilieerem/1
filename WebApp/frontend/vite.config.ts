@@ -15,6 +15,10 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 9530,
     strictPort: true,
+    // Avoid stale/corrupt Chromium disk-cache after C: filled up (ERR_CACHE_READ_FAILURE).
+    headers: {
+      "Cache-Control": "no-store",
+    },
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8766",

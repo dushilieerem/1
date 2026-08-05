@@ -174,9 +174,6 @@ export function FactorDetectListPage() {
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">因子检测</h1>
-            <p className="mt-1 text-sm text-slate-600">
-              新建或社区克隆后会出现在此列表；配置并运行后可查看报告
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -185,7 +182,7 @@ export function FactorDetectListPage() {
               className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
             >
               <Plus className="h-4 w-4" />
-              新建因子
+              新建检测
             </button>
             <Link
               to="/factor/library"
@@ -201,7 +198,7 @@ export function FactorDetectListPage() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索因子名称…"
+            placeholder="搜索检测名称…"
             className="w-full max-w-md rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200"
           />
           {selectedIds.size > 0 ? (
@@ -234,7 +231,7 @@ export function FactorDetectListPage() {
                       className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40"
                     />
                   </th>
-                  <th className="px-4 py-3">因子名称</th>
+                  <th className="px-4 py-3">检测名称</th>
                   <th className="px-4 py-3">类型</th>
                   <th className="px-4 py-3">最后修改时间</th>
                   <th className="px-4 py-3">检测次数</th>
@@ -255,11 +252,16 @@ export function FactorDetectListPage() {
                         />
                       ) : null}
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-slate-900">{p.name}</p>
+                    <td className="max-w-[280px] px-4 py-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <p
+                          className="truncate font-semibold text-slate-900"
+                          title={p.name}
+                        >
+                          {p.name}
+                        </p>
                         {p.sample ? (
-                          <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                          <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
                             样例
                           </span>
                         ) : null}
@@ -313,7 +315,7 @@ export function FactorDetectListPage() {
                 {!filtered.length && (
                   <tr>
                     <td colSpan={6} className="px-4 py-16 text-center text-slate-400">
-                      暂无项目，点击「新建因子」开始
+                      暂无项目，点击「新建检测」开始
                     </td>
                   </tr>
                 )}

@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Eye, MessageCircle, Star } from "lucide-react";
+import { Eye, MessageCircle, Star, ThumbsDown, ThumbsUp } from "lucide-react";
 import {
   formatPostTime,
   sectionBar,
@@ -258,6 +258,14 @@ export function PostListItem({
         <span className="inline-flex items-center gap-1">
           <MessageCircle className="h-3.5 w-3.5" />
           {post.comment_count ?? 0}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <ThumbsUp className="h-3.5 w-3.5" />
+          {post.like_count ?? 0}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <ThumbsDown className="h-3.5 w-3.5" />
+          {post.dislike_count ?? 0}
         </span>
         <span className="inline-flex items-center gap-1">
           <Star className="h-3.5 w-3.5" />

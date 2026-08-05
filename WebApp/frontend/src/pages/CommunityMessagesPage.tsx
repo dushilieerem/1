@@ -21,10 +21,10 @@ const TABS: { id: NotificationType; label: string }[] = [
   { id: "like", label: "收到的赞" },
 ];
 
-function typeLabel(t: NotificationType) {
+function typeLabel(t: NotificationType, commentId?: number | null) {
   if (t === "reply") return "回复了你";
   if (t === "mention") return "在评论里 @了你";
-  return "赞了你的评论";
+  return commentId ? "赞了你的评论" : "赞了你的帖子";
 }
 
 export function CommunityMessagesPage() {
@@ -92,6 +92,21 @@ export function CommunityMessagesPage() {
     }
   };
 
+  const markAllRead = async () => {
+    try {
+      const res = await markNotificationsRead({ all: true });
+      setCounts(res.by_type || {});
+      setItems((prev) =>
+        prev.map((x) => ({ ...x, read_at: x.read_at || new Date().toISOString() })),
+      );
+    } catch (ex) {
+      window.alert(ex instanceof Error ? ex.message : String(ex));
+    }
+  };
+
+  const totalUnread =
+    (counts.reply || 0) + (counts.mention || 0) + (counts.like || 0);
+
   return (
     <CommunityPageShell>
       <div className="mx-auto max-w-[880px] px-5 py-6 animate-fade-up">
@@ -107,13 +122,23 @@ export function CommunityMessagesPage() {
                 消息
               </h1>
             </div>
-            <button
-              type="button"
-              onClick={() => void markTabRead()}
-              className="text-xs font-medium text-slate-500 hover:text-red-600"
-            >
-              本栏标为已读
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void markTabRead()}
+                className="text-xs font-medium text-slate-500 hover:text-red-600"
+              >
+                本栏标为已读
+              </button>
+              <button
+                type="button"
+                disabled={totalUnread <= 0}
+                onClick={() => void markAllRead()}
+                className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                一键已读
+              </button>
+            </div>
           </div>
 
           <nav className="flex gap-1 border-b border-slate-100 px-3 sm:px-4">
@@ -172,11 +197,17 @@ export function CommunityMessagesPage() {
                         !n.read_at ? "bg-red-50/30" : ""
                       }`}
                     >
-                      <AuthorAvatar name={actor} size="md" />
+                      <AuthorAvatar
+                        name={actor}
+                        src={n.actor.avatar_url}
+                        size="md"
+                      />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-slate-800">
                           <span className="font-semibold">{actor}</span>{" "}
-                          <span className="text-slate-600">{typeLabel(n.type)}</span>
+                          <span className="text-slate-600">
+                            {typeLabel(n.type, n.comment_id)}
+                          </span>
                         </p>
                         {n.comment_body && (
                           <p className="mt-1 line-clamp-2 text-xs text-slate-500">

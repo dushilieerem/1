@@ -70,6 +70,8 @@ export type YgFactorAnalysis = {
 /** 策略回测：单笔目标权重变化（非成交回报） */
 export type YgRebalanceTrade = {
   symbol: string;
+  /** 证券简称；新版 RE 返回 */
+  name?: string | null;
   side: string;
   previous_weight: number;
   target_weight: number;
@@ -79,6 +81,45 @@ export type YgRebalanceTrade = {
 export type YgRebalanceLog = {
   date: string;
   trades: YgRebalanceTrade[];
+};
+
+export type YgHolding = {
+  symbol: string;
+  name?: string | null;
+  weight: number;
+};
+
+/** 事件回测：订单 */
+export type YgEventOrder = {
+  order_id?: string;
+  symbol?: string;
+  quantity?: number | null;
+  target_value?: number | null;
+  side?: string;
+  status?: string;
+  reason_code?: string | null;
+  submitted_at?: string;
+};
+
+/** 事件回测：成交 */
+export type YgEventFill = {
+  order_id?: string;
+  symbol?: string;
+  side?: string;
+  quantity?: number | null;
+  price?: number | null;
+  timestamp?: string;
+  commission?: number | null;
+  stamp_tax?: number | null;
+};
+
+/** 事件回测：日终账户快照 */
+export type YgEventPositionSnap = {
+  timestamp?: string;
+  cash?: number | null;
+  total_value?: number | null;
+  positions?: Record<string, number> | null;
+  sellable_quantities?: Record<string, number> | null;
 };
 
 export type YgBacktestResponse = {
@@ -94,10 +135,16 @@ export type YgBacktestResponse = {
   meta?: Record<string, unknown> | null;
   positions?: Array<{
     date: string;
-    holdings: Array<{ symbol: string; weight: number }>;
+    holdings: YgHolding[];
   }> | null;
-  /** include_rebalance_logs=true 时返回 */
+  /** include_rebalance_logs=true 时返回（向量化） */
   rebalance_logs?: YgRebalanceLog[] | null;
+  /** 事件模式明细（与 include_rebalance_logs 无关） */
+  orders?: YgEventOrder[] | null;
+  fills?: YgEventFill[] | null;
+  event_positions?: YgEventPositionSnap[] | null;
+  events?: Array<Record<string, unknown>> | null;
+  assumptions?: Record<string, unknown> | null;
   error?: string | null;
 };
 
@@ -133,6 +180,7 @@ export function serializeYgFactorBody(body: YgBacktestRequest): Record<string, u
   if (out.library_name == null) {
     delete out.library_name;
   }
+  delete out._svquantDraftFactor;
   return out;
 }
 
@@ -154,9 +202,17 @@ export async function ygBacktestFactor(body: YgBacktestRequest, signal?: AbortSi
   return data;
 }
 
-/** 策略回测：对齐 06-research-api.md §4.3 */
+/** 策略回测：对齐 06-research-api.md + Strategy/libraries/backtest-strategy.md */
+export type YgStrategyEngineMode = "vectorized" | "event";
+
 export type YgStrategyBacktestRequest = {
-  strategy_code: string;
+  /** 与 strategy_id 二选一 */
+  strategy_code?: string;
+  /** 平台库策略 ID（RE 侧 index.yaml） */
+  strategy_id?: string;
+  strategy_version?: string;
+  /** vectorized（默认）| event；须与策略契约一致 */
+  engine_mode?: YgStrategyEngineMode;
   universe?: string;
   start?: string | null;
   end?: string | null;
@@ -170,14 +226,37 @@ export type YgStrategyBacktestRequest = {
   include_rebalance_logs?: boolean;
 };
 
+export function serializeYgStrategyBody(
+  body: YgStrategyBacktestRequest,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...body };
+  const code = out.strategy_code != null ? String(out.strategy_code).trim() : "";
+  const sid = out.strategy_id != null ? String(out.strategy_id).trim() : "";
+  if (!code) delete out.strategy_code;
+  else out.strategy_code = code;
+  if (!sid) delete out.strategy_id;
+  else out.strategy_id = sid;
+  if (out.strategy_version == null || String(out.strategy_version).trim() === "") {
+    delete out.strategy_version;
+  }
+  const mode = out.engine_mode != null ? String(out.engine_mode).trim() : "";
+  if (mode === "event" || mode === "vectorized") out.engine_mode = mode;
+  else delete out.engine_mode;
+  return out;
+}
+
 export async function ygBacktestStrategy(
   body: YgStrategyBacktestRequest,
   signal?: AbortSignal,
 ) {
+  const payload = serializeYgStrategyBody(body);
+  if (!payload.strategy_code && !payload.strategy_id) {
+    throw new Error("strategy_code 与 strategy_id 至少提供其一");
+  }
   const res = await fetch("/yg-api/api/backtest/strategy", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
     signal,
   });
   const text = await res.text();

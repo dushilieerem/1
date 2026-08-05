@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """预设周期 → RE 接受的 start/end（RE 已移除 backtest_period）。
 
-同事 RE 行情当前只到 2026-01-01；预设周期均以该日为 end 往前推，
-避免用「今天」导致区间落在无数据段。RE 数据更新后改 RE_MARKET_END 或环境变量即可。
+同事 RE 行情会滚动更新；预设周期默认以「今天」为 end 往前推。
+可用环境变量 RE_MARKET_END=YYYY-MM-DD 固定截止日。传今天时若无数据，RE 会裁到实际末日，不报错。
 """
 from __future__ import annotations
 
@@ -12,11 +12,15 @@ from datetime import datetime, timedelta
 
 
 def re_market_end() -> datetime:
-    """RE 可用行情截止日；可用环境变量 RE_MARKET_END=YYYY-MM-DD 覆盖。"""
+    """RE 可用行情截止日；可用环境变量 RE_MARKET_END=YYYY-MM-DD 覆盖。
+
+    未设置时用「今天」：请求可传今天，RE 会裁到实际行情末日，不 422。
+    """
     raw = (os.environ.get("RE_MARKET_END") or "").strip()
     if raw:
         return datetime.strptime(raw[:10], "%Y-%m-%d")
-    return datetime(2026, 1, 1)
+    now = datetime.now()
+    return datetime(now.year, now.month, now.day)
 
 
 def period_to_start_end(period: str, *, end: datetime | None = None) -> tuple[str, str]:

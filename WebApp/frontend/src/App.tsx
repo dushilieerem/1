@@ -7,17 +7,19 @@ import { FactorDetectPage } from "./pages/FactorDetectPage";
 import { FactorDetectListPage } from "./pages/FactorDetectListPage";
 import { FactorDetectHistoryPage } from "./pages/FactorDetectHistoryPage";
 import { FactorDetectReportPage } from "./pages/FactorDetectReportPage";
-import { FactorCustomPage } from "./pages/FactorCustomPage";
 import { FactorDashboardPage } from "./pages/FactorDashboardPage";
+import { AiFactorGeneratePage } from "./pages/AiFactorGeneratePage";
+import { AiStrategyGeneratePage } from "./pages/AiStrategyGeneratePage";
 import { StrategyResearchListPage } from "./pages/StrategyResearchListPage";
 import { StrategyBacktestPage } from "./pages/StrategyBacktestPage";
 import { StrategyReportPage } from "./pages/StrategyReportPage";
 import { StrategyHistoryPage } from "./pages/StrategyHistoryPage";
+import { StrategyLibraryPage } from "./pages/StrategyLibraryPage";
 import { DataKlinePanelPage } from "./pages/DataKlinePanelPage";
 import { DataSearchResultsPage } from "./pages/DataSearchResultsPage";
 import { DataSymbolOverviewPage } from "./pages/DataSymbolOverviewPage";
 import { DataSymbolChartPage } from "./pages/DataSymbolChartPage";
-import { PlaceholderPage } from "./pages/PlaceholderPage";
+import { WatchlistPage } from "./pages/WatchlistPage";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { CommunityFeedPage } from "./pages/CommunityFeedPage";
@@ -28,6 +30,8 @@ import { CommunityMePage } from "./pages/CommunityMePage";
 import { CommunityProfilePage } from "./pages/CommunityProfilePage";
 import { CommunityProfileEditPage } from "./pages/CommunityProfileEditPage";
 import { CommunityProfileFollowsPage } from "./pages/CommunityProfileFollowsPage";
+import { NewsPage } from "./pages/NewsPage";
+import { NewsDetailPage } from "./pages/NewsDetailPage";
 
 function Authed({ children }: { children: React.ReactNode }) {
   return <RequireAuth>{children}</RequireAuth>;
@@ -42,6 +46,8 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
 
         <Route path="/community" element={<CommunityFeedPage />} />
+        <Route path="/news" element={<NewsPage />} />
+        <Route path="/news/:id" element={<NewsDetailPage />} />
         <Route path="/community/new" element={<Authed><CommunityNewPage /></Authed>} />
         <Route path="/community/ai-assist" element={<Authed><CommunityAiAssistPage /></Authed>} />
         <Route path="/community/post/:id/edit" element={<Authed><CommunityNewPage /></Authed>} />
@@ -71,7 +77,7 @@ export default function App() {
         />
         <Route
           path="/data/watchlist"
-          element={<Authed><PlaceholderPage title="自选股组合" hint="待开发。" /></Authed>}
+          element={<Authed><WatchlistPage /></Authed>}
         />
         <Route
           path="/data/symbol/:code/chart"
@@ -89,18 +95,22 @@ export default function App() {
         <Route path="/strategy/research/:projectId" element={<Authed><StrategyBacktestPage /></Authed>} />
         <Route
           path="/strategy/library"
-          element={<Authed><PlaceholderPage title="策略库" hint="占位：策略库。" /></Authed>}
+          element={<Authed><StrategyLibraryPage /></Authed>}
+        />
+        <Route
+          path="/strategy/library/archive/:archiveStrategyId"
+          element={<Authed><StrategyReportPage /></Authed>}
         />
         <Route
           path="/strategy/ai"
-          element={<Authed><PlaceholderPage title="AI辅助策略设计" hint="占位入口。" /></Authed>}
+          element={<Authed><AiStrategyGeneratePage /></Authed>}
         />
 
         <Route path="/factor" element={<Authed><Navigate to="/factor/library" replace /></Authed>} />
         <Route path="/factor/library" element={<Authed><FactorLibraryPage /></Authed>} />
-        <Route path="/factor/library/custom/new" element={<Authed><FactorCustomPage /></Authed>} />
-        <Route path="/factor/library/custom/:name" element={<Authed><FactorCustomPage /></Authed>} />
-        <Route path="/factor/custom/new" element={<Navigate to="/factor/library/custom/new" replace />} />
+        <Route path="/factor/library/custom/new" element={<Navigate to="/factor/library" replace />} />
+        <Route path="/factor/library/custom/:name" element={<Navigate to="/factor/library" replace />} />
+        <Route path="/factor/custom/new" element={<Navigate to="/factor/library" replace />} />
 
         <Route path="/factor/detect" element={<Authed><FactorDetectListPage /></Authed>} />
         <Route path="/factor/detect/report/:runId" element={<Authed><FactorDetectReportPage /></Authed>} />
@@ -110,7 +120,7 @@ export default function App() {
         <Route path="/factor/dashboard" element={<Authed><FactorDashboardPage /></Authed>} />
         <Route
           path="/factor/ai"
-          element={<Authed><PlaceholderPage title="AI因子推荐" hint="占位入口。" /></Authed>}
+          element={<Authed><AiFactorGeneratePage /></Authed>}
         />
         <Route path="/factor/strategy" element={<Navigate to="/factor/dashboard" replace />} />
 

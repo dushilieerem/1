@@ -9,7 +9,7 @@ import {
   logout,
   subscribeAuth,
 } from "@/lib/auth";
-import { unreadNotificationCount } from "@/lib/communityApi";
+import { unreadNotificationCount, UNREAD_CHANGED_EVENT } from "@/lib/communityApi";
 
 function isFactorRoute(pathname: string) {
   return pathname === "/factor" || pathname.startsWith("/factor/");
@@ -91,6 +91,7 @@ function NavDropdown({
 function UserMenu({ user }: { user: AuthUser }) {
   const [open, setOpen] = useState(false);
   const initial = (user.display_name || user.username || "?").slice(0, 1).toUpperCase();
+  const avatar = (user.avatar_url || "").trim();
 
   return (
     <div className="relative">
@@ -99,9 +100,17 @@ function UserMenu({ user }: { user: AuthUser }) {
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
       >
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-red-500 to-rose-600 text-xs font-bold text-white">
-          {initial}
-        </span>
+        {avatar ? (
+          <img
+            src={avatar}
+            alt=""
+            className="h-7 w-7 rounded-full object-cover ring-1 ring-slate-200"
+          />
+        ) : (
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-red-500 to-rose-600 text-xs font-bold text-white">
+            {initial}
+          </span>
+        )}
         <span className="hidden max-w-[7rem] truncate sm:inline">{user.display_name || user.username}</span>
         <ChevronDown className="h-4 w-4 text-slate-400" />
       </button>
@@ -190,11 +199,21 @@ export function Navbar() {
     pull();
     const t = window.setInterval(pull, 60_000);
     const onFocus = () => pull();
+    const onUnreadChanged = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ total?: number }>).detail;
+      if (typeof detail?.total === "number") {
+        setUnread(detail.total);
+      } else {
+        pull();
+      }
+    };
     window.addEventListener("focus", onFocus);
+    window.addEventListener(UNREAD_CHANGED_EVENT, onUnreadChanged);
     return () => {
       cancelled = true;
       window.clearInterval(t);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener(UNREAD_CHANGED_EVENT, onUnreadChanged);
     };
   }, [user, pathname]);
 
@@ -234,10 +253,23 @@ export function Navbar() {
           >
             社区
           </NavLink>
+          <NavLink
+            to="/news"
+            className={({ isActive }) =>
+              `rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                isActive || pathname.startsWith("/news/")
+                  ? "bg-red-50 text-red-600"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`
+            }
+          >
+            资讯
+          </NavLink>
           {user ? (
             <>
-              {NAV_ITEMS.filter((x) => x.to !== "/" && x.to !== "/community").map(
-                ({ to, label }) => (
+              {NAV_ITEMS.filter(
+                (x) => x.to !== "/" && x.to !== "/community" && x.to !== "/news",
+              ).map(({ to, label }) => (
                 <NavLink
                   key={to}
                   to={to}

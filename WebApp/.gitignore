@@ -15,6 +15,7 @@ backend/.env
 
 # 运行产物 / 缓存（面板 SQLite、日志、批跑）
 backend/output/
+backend/data/
 *.sqlite
 *.sqlite-journal
 *.log

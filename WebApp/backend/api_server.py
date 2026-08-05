@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import sys
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -16,6 +17,10 @@ HOST = "0.0.0.0"
 PORT = 8766
 ROOT = Path(__file__).resolve().parent
 FACTOR_DIR = ROOT / "factor"
+# 知识库后端包在 WebApp/KnowledgeHub/backend/knowledge_hub
+_KH_BACKEND = ROOT.parent / "KnowledgeHub" / "backend"
+if _KH_BACKEND.is_dir() and str(_KH_BACKEND) not in sys.path:
+    sys.path.insert(0, str(_KH_BACKEND))
 
 
 def _parse_body(handler: BaseHTTPRequestHandler) -> dict:
@@ -104,6 +109,117 @@ class Handler(BaseHTTPRequestHandler):
             raw = filtered_index_yaml(owner_id).encode("utf-8")
             self._send_bytes(raw, "text/yaml; charset=utf-8")
             return
+        if path == "/api/factor/libraries":
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.user_library_store import list_user_libraries
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"ok": True, "libraries": []})
+                    return
+                uid = resolve_db_user_id(user)
+                self._send_json({"ok": True, "libraries": list_user_libraries(uid)})
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/watchlists":
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.watchlist_store import list_watchlists
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"ok": True, "watchlists": []})
+                    return
+                uid = resolve_db_user_id(user)
+                self._send_json({"ok": True, "watchlists": list_watchlists(uid)})
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        m_wl_syms = None
+        if path.startswith("/api/watchlists/") and path.endswith("/symbols"):
+            mid = unquote(path[len("/api/watchlists/") : -len("/symbols")]).strip("/")
+            if mid.isdigit():
+                m_wl_syms = int(mid)
+        if m_wl_syms is not None:
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.watchlist_store import list_watchlist_symbols
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                symbols = list_watchlist_symbols(
+                    resolve_db_user_id(user), m_wl_syms
+                )
+                self._send_json({"ok": True, "symbols": symbols})
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/factor/libraries/factors":
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.user_library_store import list_all_user_library_factors
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"ok": True, "factors": []})
+                    return
+                uid = resolve_db_user_id(user)
+                self._send_json(
+                    {"ok": True, "factors": list_all_user_library_factors(uid)}
+                )
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path.startswith("/api/factor/libraries/") and path.endswith("/factors"):
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.user_library_store import list_library_factors
+
+            mid = unquote(path[len("/api/factor/libraries/") : -len("/factors")]).strip(
+                "/"
+            )
+            try:
+                lib_id = int(mid)
+            except ValueError:
+                self._send_json({"error": "invalid library id"}, 400)
+                return
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                factors = list_library_factors(resolve_db_user_id(user), lib_id)
+                self._send_json({"ok": True, "factors": factors})
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
         if path.startswith("/api/factor/file/"):
             name = unquote(path[len("/api/factor/file/") :])
             if ".." in name or "/" in name or "\\" in name:
@@ -141,6 +257,64 @@ class Handler(BaseHTTPRequestHandler):
             from services.dashboard_store import read_job
 
             self._send_json(read_job())
+            return
+        if path == "/api/news":
+            from services.news_store import list_news
+
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                category = (qs.get("category") or [None])[0] or None
+                source = (qs.get("source") or [None])[0] or None
+                q = (qs.get("q") or [None])[0] or None
+                mode = (qs.get("mode") or [None])[0] or None
+                theme = qs.get("theme") or None
+                symbol = qs.get("symbol") or None
+                industry = qs.get("industry") or None
+                limit = int((qs.get("limit") or ["50"])[0])
+                offset = int((qs.get("offset") or ["0"])[0])
+                self._send_json(
+                    list_news(
+                        category=category,
+                        source=source,
+                        q=q,
+                        mode=mode,
+                        theme=theme,
+                        symbol=symbol,
+                        industry=industry,
+                        limit=limit,
+                        offset=offset,
+                    )
+                )
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/news/dict":
+            from services.news_tag_dict import dict_snapshot
+
+            try:
+                self._send_json({"ok": True, **dict_snapshot()})
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path.startswith("/api/news/"):
+            from services.news_store import get_news
+
+            rid = unquote(path[len("/api/news/") :]).strip("/")
+            # POST enrich 走 do_POST；此处仅 GET 详情
+            if not rid.isdigit():
+                self._send_json({"error": "invalid id"}, 400)
+                return
+            try:
+                self._send_json(get_news(int(rid)))
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/community/posts":
             from services.community_store import list_posts
@@ -281,6 +455,34 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
             return
+        if path == "/api/community/ops/summary":
+            from services.auth_store import user_from_authorization
+            from services.community_store import ops_summary
+
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                try:
+                    days = int((qs.get("days") or ["7"])[0] or 7)
+                except ValueError:
+                    days = 7
+                self._send_json(
+                    ops_summary(
+                        author_role=str(user.get("role") or "user"),
+                        days=days,
+                    )
+                )
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 403)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
         if path == "/api/community/notifications":
             from services.auth_store import user_from_authorization
             from services.community_store import list_notifications
@@ -360,6 +562,143 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(list_strategy_projects(uid, visible_only=visible))
             except PermissionError as exc:
                 self._send_json({"error": str(exc)}, 401)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/strategy/library":
+            from services.auth_store import user_from_authorization
+            from services.strategy_library_store import list_builtin_strategies
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                self._send_json(list_builtin_strategies())
+            except FileNotFoundError as exc:
+                self._send_json({"error": str(exc)}, 404)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/strategy/libraries":
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.user_strategy_library_store import (
+                list_user_strategy_libraries,
+            )
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"ok": True, "libraries": []})
+                    return
+                uid = resolve_db_user_id(user)
+                self._send_json(
+                    {"ok": True, "libraries": list_user_strategy_libraries(uid)}
+                )
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path.startswith("/api/strategy/libraries/") and path.endswith(
+            "/strategies"
+        ):
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.user_strategy_library_store import list_library_strategies
+
+            mid = unquote(
+                path[len("/api/strategy/libraries/") : -len("/strategies")]
+            ).strip("/")
+            try:
+                lib_id = int(mid)
+            except ValueError:
+                self._send_json({"error": "invalid library id"}, 400)
+                return
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"ok": True, "strategies": []})
+                    return
+                uid = resolve_db_user_id(user)
+                self._send_json(
+                    {
+                        "ok": True,
+                        "strategies": list_library_strategies(uid, lib_id),
+                    }
+                )
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        # GET /api/strategy/library-strategies/{id}/archive — 入库冻结报告
+        if path.startswith("/api/strategy/library-strategies/") and path.endswith(
+            "/archive"
+        ):
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.user_strategy_library_store import (
+                get_library_strategy_archive,
+            )
+
+            raw_id = unquote(
+                path[len("/api/strategy/library-strategies/") : -len("/archive")]
+            ).strip("/")
+            try:
+                sid = int(raw_id)
+            except ValueError:
+                self._send_json({"error": "invalid strategy id"}, 400)
+                return
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                self._send_json(
+                    get_library_strategy_archive(resolve_db_user_id(user), sid)
+                )
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 404)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path.startswith("/api/strategy/library/"):
+            from services.auth_store import user_from_authorization
+            from services.strategy_library_store import get_strategy_source
+
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                sid = unquote(path[len("/api/strategy/library/") :]).strip("/")
+                if not sid or "/" in sid:
+                    self._send_json({"error": "无效 strategy_id"}, 400)
+                    return
+                ver = (qs.get("version") or [None])[0]
+                self._send_json(get_strategy_source(sid, version=ver))
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except KeyError as exc:
+                self._send_json({"error": str(exc)}, 404)
+            except FileNotFoundError as exc:
+                self._send_json({"error": str(exc)}, 404)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
             except Exception as exc:
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
@@ -675,6 +1014,37 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
 
+        if path.startswith("/api/kh"):
+            # 公开文档页（无需登录），对齐同事 Research API /docs
+            if path in ("/api/kh/docs", "/api/kh/docs/"):
+                from knowledge_hub.openapi_docs import swagger_html
+
+                self._send_bytes(
+                    swagger_html().encode("utf-8"),
+                    "text/html; charset=utf-8",
+                )
+                return
+            if path == "/api/kh/openapi.json":
+                from knowledge_hub.openapi_docs import openapi_spec
+
+                self._send_json(openapi_spec())
+                return
+
+            from knowledge_hub.http_handlers import handle_kh_get
+            from services.auth_store import user_from_authorization
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if handle_kh_get(path, user=user, send_json=self._send_json):
+                    return
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+                return
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+                return
+
         self._send_json({"error": "not found"}, 404)
 
     def do_POST(self) -> None:
@@ -772,6 +1142,81 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
             return
+        if path == "/api/strategy/libraries":
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.user_strategy_library_store import (
+                create_user_strategy_library,
+            )
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                lib = create_user_strategy_library(
+                    resolve_db_user_id(user),
+                    str(body.get("name") or ""),
+                )
+                self._send_json({"ok": True, "library": lib})
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path.startswith("/api/strategy/libraries/") and path.endswith(
+            "/strategies"
+        ):
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.user_strategy_library_store import add_library_strategy
+
+            mid = unquote(
+                path[len("/api/strategy/libraries/") : -len("/strategies")]
+            ).strip("/")
+            try:
+                lib_id = int(mid)
+            except ValueError:
+                self._send_json({"error": "invalid library id"}, 400)
+                return
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                strat = add_library_strategy(
+                    resolve_db_user_id(user),
+                    lib_id,
+                    name=str(body.get("name") or ""),
+                    body=str(body.get("body") or body.get("strategy_code") or ""),
+                    description=str(body.get("description") or ""),
+                    category_label=str(body.get("categoryLabel") or "其他"),
+                    code_id=str(body.get("codeId") or ""),
+                    source_run_id=str(body.get("sourceRunId") or body.get("source_run_id") or ""),
+                    archive_request=body.get("archiveRequest") or body.get("archive_request"),
+                    archive_result=body.get("archiveResult") or body.get("archive_result"),
+                    archive_elapsed_sec=body.get("archiveElapsedSec")
+                    if body.get("archiveElapsedSec") is not None
+                    else body.get("archive_elapsed_sec"),
+                    archive_finished_at=(
+                        str(body.get("archiveFinishedAt") or body.get("archive_finished_at") or "")
+                        or None
+                    ),
+                )
+                self._send_json({"ok": True, "strategy": strat})
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
         if path == "/api/strategy/runs":
             from services.auth_store import user_from_authorization
             from services.strategy_store import save_run as save_strategy_run
@@ -823,6 +1268,157 @@ class Handler(BaseHTTPRequestHandler):
                 )
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, 401)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/factor/libraries":
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.user_library_store import create_user_library
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                lib = create_user_library(
+                    resolve_db_user_id(user),
+                    str(body.get("name") or ""),
+                )
+                self._send_json({"ok": True, "library": lib})
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/watchlists":
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.watchlist_store import create_watchlist
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                wl = create_watchlist(
+                    resolve_db_user_id(user),
+                    str(body.get("name") or ""),
+                )
+                self._send_json({"ok": True, "watchlist": wl})
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path.startswith("/api/watchlists/") and path.endswith("/symbols/batch"):
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.watchlist_store import add_watchlist_symbols_batch
+
+            mid = unquote(
+                path[len("/api/watchlists/") : -len("/symbols/batch")]
+            ).strip("/")
+            try:
+                wl_id = int(mid)
+            except ValueError:
+                self._send_json({"error": "invalid watchlist id"}, 400)
+                return
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                items = body.get("items")
+                if not isinstance(items, list):
+                    items = []
+                result = add_watchlist_symbols_batch(
+                    resolve_db_user_id(user), wl_id, items
+                )
+                self._send_json(result)
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path.startswith("/api/watchlists/") and path.endswith("/symbols"):
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.watchlist_store import add_watchlist_symbol
+
+            mid = unquote(path[len("/api/watchlists/") : -len("/symbols")]).strip("/")
+            try:
+                wl_id = int(mid)
+            except ValueError:
+                self._send_json({"error": "invalid watchlist id"}, 400)
+                return
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                sym = add_watchlist_symbol(
+                    resolve_db_user_id(user),
+                    wl_id,
+                    str(body.get("symbol") or ""),
+                    str(body.get("name") or ""),
+                )
+                self._send_json({"ok": True, "symbol": sym})
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path.startswith("/api/factor/libraries/") and path.endswith("/factors"):
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.user_library_store import add_library_factor
+
+            mid = unquote(path[len("/api/factor/libraries/") : -len("/factors")]).strip(
+                "/"
+            )
+            try:
+                lib_id = int(mid)
+            except ValueError:
+                self._send_json({"error": "invalid library id"}, 400)
+                return
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                factor = add_library_factor(
+                    resolve_db_user_id(user),
+                    lib_id,
+                    name=str(body.get("name") or ""),
+                    body=str(body.get("body") or body.get("expression") or ""),
+                    description=str(body.get("description") or ""),
+                    category_label=str(body.get("categoryLabel") or body.get("category") or "其他"),
+                )
+                self._send_json({"ok": True, "factor": factor})
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
             except Exception as exc:
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
@@ -889,6 +1485,51 @@ class Handler(BaseHTTPRequestHandler):
                         limit=int(body["limit"]) if body.get("limit") is not None else None,
                     )
                 )
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/news/ingest":
+            from services.news_ingest import FETCHERS, UNSUPPORTED_SOURCES, ingest_news
+
+            try:
+                raw_sources = body.get("sources")
+                sources = None
+                allowed = set(FETCHERS) | set(UNSUPPORTED_SOURCES)
+                if isinstance(raw_sources, list):
+                    sources = [str(s).strip() for s in raw_sources if str(s).strip()]
+                    bad = [s for s in sources if s not in allowed]
+                    if bad:
+                        self._send_json(
+                            {
+                                "error": f"unsupported sources: {', '.join(bad)}",
+                                "supported": list(FETCHERS.keys()),
+                                "unsupported": UNSUPPORTED_SOURCES,
+                            },
+                            400,
+                        )
+                        return
+                elif isinstance(raw_sources, str) and raw_sources.strip():
+                    sources = [s.strip() for s in raw_sources.split(",") if s.strip()]
+                limit = int(body.get("limit") or body.get("limit_per_source") or 12)
+                self._send_json(ingest_news(sources=sources, limit_per_source=limit))
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path.startswith("/api/news/") and path.endswith("/enrich"):
+            from services.news_ingest import enrich_news_body
+
+            mid = unquote(path[len("/api/news/") : -len("/enrich")]).strip("/")
+            if not mid.isdigit():
+                self._send_json({"error": "invalid id"}, 400)
+                return
+            try:
+                self._send_json(enrich_news_body(int(mid)))
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
             except Exception as exc:
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
@@ -1222,6 +1863,15 @@ class Handler(BaseHTTPRequestHandler):
                 if parts[1] == "favorite":
                     self._send_json(add_favorite(int(user["id"]), post_id))
                     return
+                if parts[1] == "vote":
+                    from services.community_store import set_post_vote
+
+                    self._send_json(
+                        set_post_vote(
+                            int(user["id"]), post_id, int(body.get("value", 0))
+                        )
+                    )
+                    return
                 if parts[1] == "moderate":
                     from services.community_store import moderate_post
 
@@ -1257,6 +1907,21 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
             return
+        if path.startswith("/api/kh"):
+            from knowledge_hub.http_handlers import handle_kh_post
+            from services.auth_store import user_from_authorization
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if handle_kh_post(path, body, user=user, send_json=self._send_json):
+                    return
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+                return
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+                return
         self._send_json({"error": "not found"}, 404)
 
     def do_PUT(self) -> None:
@@ -1265,6 +1930,41 @@ class Handler(BaseHTTPRequestHandler):
             body = _parse_body(self)
         except json.JSONDecodeError:
             self._send_json({"error": "invalid JSON"}, 400)
+            return
+        if path.startswith("/api/watchlists/"):
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.watchlist_store import rename_watchlist
+
+            mid = unquote(path[len("/api/watchlists/") :]).strip("/")
+            if "/" in mid:
+                self._send_json({"error": "not found"}, 404)
+                return
+            try:
+                wl_id = int(mid)
+            except ValueError:
+                self._send_json({"error": "invalid watchlist id"}, 400)
+                return
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                wl = rename_watchlist(
+                    resolve_db_user_id(user),
+                    wl_id,
+                    str(body.get("name") or ""),
+                )
+                self._send_json({"ok": True, "watchlist": wl})
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/detect/projects/"):
             from services.auth_store import user_from_authorization
@@ -1380,6 +2080,21 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
             return
+        if path.startswith("/api/kh"):
+            from knowledge_hub.http_handlers import handle_kh_put
+            from services.auth_store import user_from_authorization
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if handle_kh_put(path, body, user=user, send_json=self._send_json):
+                    return
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+                return
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+                return
         self._send_json({"error": "not found"}, 404)
 
     def do_DELETE(self) -> None:
@@ -1536,6 +2251,183 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
             return
+        if path.startswith("/api/strategy/libraries/"):
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.user_strategy_library_store import (
+                delete_library_strategy,
+                delete_user_strategy_library,
+            )
+
+            rest = unquote(path[len("/api/strategy/libraries/") :]).strip("/")
+            # DELETE /api/strategy/libraries/{libId}/strategies/{strategyId}
+            if "/strategies/" in rest:
+                lib_part, _, strat_part = rest.partition("/strategies/")
+                try:
+                    lib_id = int(lib_part.strip("/"))
+                    strategy_id = int(strat_part.strip("/"))
+                except ValueError:
+                    self._send_json({"error": "invalid id"}, 400)
+                    return
+                try:
+                    user = user_from_authorization(self._auth_header())
+                    if not user:
+                        self._send_json({"error": "未登录"}, 401)
+                        return
+                    self._send_json(
+                        delete_library_strategy(
+                            resolve_db_user_id(user), lib_id, strategy_id
+                        )
+                    )
+                except PermissionError as exc:
+                    self._send_json({"error": str(exc)}, 401)
+                except KeyError:
+                    self._send_json({"error": "not found"}, 404)
+                except Exception as exc:
+                    traceback.print_exc()
+                    self._send_json({"error": str(exc)}, 500)
+                return
+
+            try:
+                lib_id = int(rest)
+            except ValueError:
+                self._send_json({"error": "invalid library id"}, 400)
+                return
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                self._send_json(
+                    delete_user_strategy_library(resolve_db_user_id(user), lib_id)
+                )
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path.startswith("/api/watchlists/"):
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.watchlist_store import (
+                delete_watchlist,
+                delete_watchlist_symbol,
+            )
+
+            rest = unquote(path[len("/api/watchlists/") :]).strip("/")
+            # DELETE /api/watchlists/{id}/symbols/{symbol}
+            if "/symbols/" in rest:
+                wl_part, _, sym_part = rest.partition("/symbols/")
+                try:
+                    wl_id = int(wl_part.strip("/"))
+                except ValueError:
+                    self._send_json({"error": "invalid watchlist id"}, 400)
+                    return
+                symbol = sym_part.strip("/")
+                if not symbol:
+                    self._send_json({"error": "missing symbol"}, 400)
+                    return
+                try:
+                    user = user_from_authorization(self._auth_header())
+                    if not user:
+                        self._send_json({"error": "未登录"}, 401)
+                        return
+                    self._send_json(
+                        delete_watchlist_symbol(
+                            resolve_db_user_id(user), wl_id, symbol
+                        )
+                    )
+                except PermissionError as exc:
+                    self._send_json({"error": str(exc)}, 401)
+                except KeyError:
+                    self._send_json({"error": "not found"}, 404)
+                except ValueError as exc:
+                    self._send_json({"error": str(exc)}, 400)
+                except Exception as exc:
+                    traceback.print_exc()
+                    self._send_json({"error": str(exc)}, 500)
+                return
+
+            try:
+                wl_id = int(rest)
+            except ValueError:
+                self._send_json({"error": "invalid watchlist id"}, 400)
+                return
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                self._send_json(delete_watchlist(resolve_db_user_id(user), wl_id))
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path.startswith("/api/factor/libraries/"):
+            from services.auth_store import user_from_authorization
+            from services.user_factor_store import resolve_db_user_id
+            from services.user_library_store import (
+                delete_library_factor,
+                delete_user_library,
+            )
+
+            rest = unquote(path[len("/api/factor/libraries/") :]).strip("/")
+            # DELETE /api/factor/libraries/{libId}/factors/{factorId}
+            if "/factors/" in rest:
+                lib_part, _, factor_part = rest.partition("/factors/")
+                try:
+                    lib_id = int(lib_part.strip("/"))
+                    factor_id = int(factor_part.strip("/"))
+                except ValueError:
+                    self._send_json({"error": "invalid id"}, 400)
+                    return
+                try:
+                    user = user_from_authorization(self._auth_header())
+                    if not user:
+                        self._send_json({"error": "未登录"}, 401)
+                        return
+                    self._send_json(
+                        delete_library_factor(
+                            resolve_db_user_id(user), lib_id, factor_id
+                        )
+                    )
+                except PermissionError as exc:
+                    self._send_json({"error": str(exc)}, 401)
+                except KeyError:
+                    self._send_json({"error": "not found"}, 404)
+                except Exception as exc:
+                    traceback.print_exc()
+                    self._send_json({"error": str(exc)}, 500)
+                return
+
+            try:
+                lib_id = int(rest)
+            except ValueError:
+                self._send_json({"error": "invalid library id"}, 400)
+                return
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                self._send_json(
+                    delete_user_library(resolve_db_user_id(user), lib_id)
+                )
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+            except KeyError:
+                self._send_json({"error": "not found"}, 404)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
         if path.startswith("/api/factor/custom/"):
             from services.auth_store import user_from_authorization
             from services.factor_store import delete_custom_factor
@@ -1558,6 +2450,21 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
             return
+        if path.startswith("/api/kh"):
+            from knowledge_hub.http_handlers import handle_kh_delete
+            from services.auth_store import user_from_authorization
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if handle_kh_delete(path, user=user, send_json=self._send_json):
+                    return
+            except PermissionError as exc:
+                self._send_json({"error": str(exc)}, 401)
+                return
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+                return
         self._send_json({"error": "not found"}, 404)
 
 
@@ -1590,6 +2497,24 @@ def main() -> None:
         ensure_posts_schema()
         n = seed_sample_posts()
         ensure_user_factors_schema()
+        from services.user_library_store import ensure_user_libraries_schema
+
+        ensure_user_libraries_schema()
+        from services.user_strategy_library_store import (
+            ensure_user_strategy_libraries_schema,
+        )
+
+        ensure_user_strategy_libraries_schema()
+        from services.watchlist_store import ensure_watchlist_schema
+
+        ensure_watchlist_schema()
+        from services.news_store import ensure_news_schema, seed_sample_news
+
+        ensure_news_schema()
+        news_n = seed_sample_news()
+        from knowledge_hub.store import ensure_kh_schema
+
+        ensure_kh_schema()
         mig = migrate_legacy_custom_to_admin()
         ensure_detect_schema()
         ensure_strategy_schema()
@@ -1601,6 +2526,17 @@ def main() -> None:
             f"  user_custom_factors 就绪"
             + (f"（迁移 {mig.get('migrated', 0)}）" if mig.get("migrated") else "")
         )
+        print("  user_factor_libraries 就绪")
+        print("  user_strategy_libraries 就绪")
+        print("  user_watchlists 就绪")
+        print(f"  news_items 就绪" + (f"（种子 {news_n} 条）" if news_n else ""))
+        try:
+            from services.news_ingest import start_news_ingest_scheduler
+
+            start_news_ingest_scheduler()
+        except Exception as exc:
+            print(f"  news ingest scheduler 跳过: {exc}")
+        print("  kh_* 知识库平台表 就绪")
         print("  detect_projects / detect_runs 就绪")
         print("  strategy_projects / strategy_runs 就绪")
         if moved:
@@ -1631,6 +2567,21 @@ def main() -> None:
     print("  POST /api/users/{username}/follow")
     print("  DELETE /api/users/{username}/follow")
     print("  GET  /api/factor/index")
+    print("  GET  /api/factor/libraries")
+    print("  POST /api/factor/libraries")
+    print("  DELETE /api/factor/libraries/{id}")
+    print("  DELETE /api/factor/libraries/{id}/factors/{factorId}")
+    print("  GET  /api/factor/libraries/factors")
+    print("  GET  /api/factor/libraries/{id}/factors")
+    print("  POST /api/factor/libraries/{id}/factors")
+    print("  GET  /api/watchlists")
+    print("  POST /api/watchlists")
+    print("  PUT  /api/watchlists/{id}")
+    print("  DELETE /api/watchlists/{id}")
+    print("  GET  /api/watchlists/{id}/symbols")
+    print("  POST /api/watchlists/{id}/symbols")
+    print("  POST /api/watchlists/{id}/symbols/batch")
+    print("  DELETE /api/watchlists/{id}/symbols/{symbol}")
     print("  GET  /api/factor/file/{name}.py")
     print("  POST /api/factor/custom")
     print("  PUT  /api/factor/custom/{name}")
@@ -1641,6 +2592,10 @@ def main() -> None:
     print("  POST /api/factor/dashboard/refresh")
     print("  POST /api/factor/dashboard/verify")
     print("  GET  /api/community/posts")
+    print("  GET  /api/news")
+    print("  GET  /api/news/dict")
+    print("  GET  /api/news/{id}")
+    print("  POST /api/news/ingest")
     print("  GET  /api/community/hot")
     print("  GET  /api/community/favorites")
     print("  GET  /api/community/my-posts")
@@ -1660,6 +2615,7 @@ def main() -> None:
     print("  POST /api/community/posts/{id}/moderate")
     print("  POST /api/community/posts/{id}/purge")
     print("  POST /api/community/comments/{id}/vote")
+    print("  POST /api/community/posts/{id}/vote")
     print("  POST /api/community/posts/{id}/favorite")
     print("  DELETE /api/community/posts/{id}/favorite")
     print("  GET  /api/detect/projects")
@@ -1671,6 +2627,13 @@ def main() -> None:
     print("  GET  /api/detect/runs/{id}")
     print("  DELETE /api/detect/runs/{id}")
     print("  GET  /api/strategy/projects")
+    print("  GET  /api/strategy/library")
+    print("  GET  /api/strategy/library/{id}")
+    print("  GET  /api/strategy/libraries")
+    print("  POST /api/strategy/libraries")
+    print("  DELETE /api/strategy/libraries/{id}")
+    print("  DELETE /api/strategy/libraries/{id}/strategies/{strategyId}")
+    print("  GET  /api/strategy/libraries/{id}/strategies")
     print("  POST /api/strategy/projects")
     print("  PUT  /api/strategy/projects/{id}")
     print("  DELETE /api/strategy/projects/{id}")

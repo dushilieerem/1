@@ -37,7 +37,7 @@ export function StrategyResearchListPage() {
         setSelectedIds((prev) => {
           const next = new Set<string>();
           for (const id of prev) {
-            if (list.some((p) => p.id === id)) next.add(id);
+            if (list.some((p) => p.id === id && !p.sample)) next.add(id);
           }
           return next;
         });
@@ -67,16 +67,25 @@ export function StrategyResearchListPage() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.description.toLowerCase().includes(q),
-    );
+    const list = !q
+      ? projects
+      : projects.filter(
+          (p) =>
+            p.name.toLowerCase().includes(q) ||
+            p.description.toLowerCase().includes(q),
+        );
+    // 样例始终沉底（与因子检测「5日动量样例」一致）
+    return [...list].sort((a, b) => Number(!!a.sample) - Number(!!b.sample));
   }, [projects, query]);
 
-  const allSelected =
-    filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id));
+  const deletableFiltered = useMemo(
+    () => filtered.filter((p) => !p.sample),
+    [filtered],
+  );
+
+  const allDeletableSelected =
+    deletableFiltered.length > 0 &&
+    deletableFiltered.every((p) => selectedIds.has(p.id));
 
   const toggleOne = (id: string, checked: boolean) => {
     setSelectedIds((prev) => {
@@ -90,7 +99,7 @@ export function StrategyResearchListPage() {
   const toggleAll = (checked: boolean) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      for (const p of filtered) {
+      for (const p of deletableFiltered) {
         if (checked) next.add(p.id);
         else next.delete(p.id);
       }
@@ -107,7 +116,7 @@ export function StrategyResearchListPage() {
   const confirmCreate = () => {
     const title = projectName.trim();
     if (!title) {
-      setCreateErr("请填写策略名称");
+      setCreateErr("请填写检测名称");
       return;
     }
     void createStrategyProject(title)
@@ -167,9 +176,6 @@ export function StrategyResearchListPage() {
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">策略研究</h1>
-            <p className="mt-1 text-sm text-slate-600">
-              新建策略后配置参数并回测
-            </p>
           </div>
           <button
             type="button"
@@ -177,7 +183,7 @@ export function StrategyResearchListPage() {
             className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
           >
             <Plus className="h-4 w-4" />
-            新建策略
+            新建检测
           </button>
         </div>
 
@@ -185,7 +191,7 @@ export function StrategyResearchListPage() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索策略名称…"
+            placeholder="搜索检测名称…"
             className="w-full max-w-md rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200"
           />
           {selectedIds.size > 0 ? (
@@ -210,14 +216,14 @@ export function StrategyResearchListPage() {
                 <th className="w-10 px-4 py-3">
                   <input
                     type="checkbox"
-                    checked={allSelected}
-                    disabled={!filtered.length}
+                    checked={allDeletableSelected}
+                    disabled={!deletableFiltered.length}
                     onChange={(e) => toggleAll(e.target.checked)}
                     aria-label="全选"
                     className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40"
                   />
                 </th>
-                <th className="px-4 py-3 font-medium">策略名称</th>
+                <th className="px-4 py-3 font-medium">检测名称</th>
                 <th className="px-4 py-3 font-medium">最后修改</th>
                 <th className="px-4 py-3 font-medium">回测次数</th>
                 <th className="px-4 py-3 text-right font-medium">操作</th>
@@ -227,15 +233,26 @@ export function StrategyResearchListPage() {
               {filtered.map((p) => (
                 <tr key={p.id} className="hover:bg-slate-50/80">
                   <td className="px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(p.id)}
-                      onChange={(e) => toggleOne(p.id, e.target.checked)}
-                      aria-label={`选择 ${p.name}`}
-                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
+                    {!p.sample ? (
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(p.id)}
+                        onChange={(e) => toggleOne(p.id, e.target.checked)}
+                        aria-label={`选择 ${p.name}`}
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    ) : null}
                   </td>
-                  <td className="px-4 py-3 font-medium text-slate-900">{p.name}</td>
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    <div className="flex items-center gap-2">
+                      <span>{p.name}</span>
+                      {p.sample ? (
+                        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                          样例
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">
                     {p.updatedAt?.replace("T", " ").slice(0, 19)}
                   </td>
@@ -254,29 +271,33 @@ export function StrategyResearchListPage() {
                     >
                       历史
                     </Link>
-                    <button
-                      type="button"
-                      className="mr-3 inline-flex align-middle text-slate-400 hover:text-blue-600"
-                      onClick={() => openRename(p)}
-                      title="改名"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-flex text-slate-400 hover:text-red-600"
-                      onClick={() => setDeleteTarget(p)}
-                      title="删除"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {!p.sample ? (
+                      <>
+                        <button
+                          type="button"
+                          className="mr-3 inline-flex align-middle text-slate-400 hover:text-blue-600"
+                          onClick={() => openRename(p)}
+                          title="改名"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex text-slate-400 hover:text-red-600"
+                          onClick={() => setDeleteTarget(p)}
+                          title="删除"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </>
+                    ) : null}
                   </td>
                 </tr>
               ))}
               {!filtered.length && !loading && (
                 <tr>
                   <td colSpan={5} className="px-4 py-16 text-center text-slate-400">
-                    暂无策略，点击「新建策略」开始
+                    暂无检测，点击「新建检测」开始
                   </td>
                 </tr>
               )}
@@ -288,7 +309,7 @@ export function StrategyResearchListPage() {
       {nameModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
-            <h2 className="text-lg font-bold text-slate-900">新建策略</h2>
+            <h2 className="text-lg font-bold text-slate-900">新建检测</h2>
             <input
               autoFocus
               value={projectName}
@@ -296,7 +317,7 @@ export function StrategyResearchListPage() {
               onKeyDown={(e) => {
                 if (e.key === "Enter") confirmCreate();
               }}
-              placeholder="策略名称"
+              placeholder="检测名称"
               className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200"
             />
             {createErr && <p className="mt-2 text-sm text-red-600">{createErr}</p>}
@@ -323,7 +344,7 @@ export function StrategyResearchListPage() {
       {renameTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
-            <h2 className="text-lg font-bold text-slate-900">重命名策略</h2>
+            <h2 className="text-lg font-bold text-slate-900">重命名检测</h2>
             <input
               autoFocus
               value={renameValue}
@@ -331,7 +352,7 @@ export function StrategyResearchListPage() {
               onKeyDown={(e) => {
                 if (e.key === "Enter") confirmRename();
               }}
-              placeholder="策略名称"
+              placeholder="检测名称"
               className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200"
             />
             {renameErr && <p className="mt-2 text-sm text-red-600">{renameErr}</p>}

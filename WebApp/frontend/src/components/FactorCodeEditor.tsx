@@ -156,6 +156,7 @@ type Props = {
   className?: string;
   height?: string;
   variant?: "light" | "dark";
+  readOnly?: boolean;
 };
 
 /** Python 编辑器：语法高亮 + 行号 + Tab 缩进 */
@@ -165,6 +166,7 @@ export function FactorCodeEditor({
   className = "",
   height = "280px",
   variant = "light",
+  readOnly = false,
 }: Props) {
   const dark = variant === "dark";
   return (
@@ -195,6 +197,7 @@ export function FactorCodeEditor({
           height={height === "100%" ? "100%" : height}
           style={{ height: "100%" }}
           theme={dark ? "dark" : "light"}
+          editable={!readOnly}
           extensions={[
             python(),
             keymap.of([indentWithTab]),
@@ -202,17 +205,18 @@ export function FactorCodeEditor({
             dark ? darkTheme : lightTheme,
             EditorView.lineWrapping,
             cmPlaceholder("def my_factor(self):\n    return self.close.pct_change(20)"),
+            ...(readOnly ? [EditorView.editable.of(false)] : []),
           ]}
           basicSetup={{
             lineNumbers: true,
             foldGutter: false,
-            highlightActiveLine: true,
+            highlightActiveLine: !readOnly,
             highlightSelectionMatches: false,
             bracketMatching: true,
             autocompletion: false,
             indentOnInput: true,
           }}
-          onChange={onChange}
+          onChange={readOnly ? () => undefined : onChange}
         />
       </div>
     </div>

@@ -42,7 +42,13 @@ function filterBars(daily: MarketDaily, key: RangeKey) {
   return bars.filter((b) => b.date >= s);
 }
 
-export function SymbolOverviewPanel({ symbol }: { symbol: string }) {
+export function SymbolOverviewPanel({
+  symbol,
+  chartFrom,
+}: {
+  symbol: string;
+  chartFrom?: string;
+}) {
   const code = symbol.trim();
   const [daily, setDaily] = useState<MarketDaily | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -186,7 +192,9 @@ export function SymbolOverviewPanel({ symbol }: { symbol: string }) {
               </p>
             </div>
             <Link
-              to={`/data/symbol/${encodeURIComponent(code)}/chart`}
+              to={`/data/symbol/${encodeURIComponent(code)}/chart${
+                chartFrom ? `?from=${encodeURIComponent(chartFrom)}` : ""
+              }`}
               className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
             >
               查看 K 线图

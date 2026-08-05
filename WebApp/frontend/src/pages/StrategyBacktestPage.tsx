@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
   BarChart3,
@@ -8,16 +8,32 @@ import {
   Save,
 } from "lucide-react";
 import { FactorCodeEditor } from "@/components/FactorCodeEditor";
+import { StrategySignalFactorsPanel } from "@/components/StrategySignalFactorsPanel";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { configFromRunRequest } from "@/lib/strategyLibraryApi";
 import { ygBacktestStrategy } from "@/lib/ygApi";
 import {
   applyParamsToCode,
+  DEFAULT_EVENT_STRATEGY_CODE,
+  DEFAULT_STRATEGY_CODE,
   parseParamsFromCode,
 } from "@/lib/strategyCodeSync";
+import {
+  FACTORS_BEGIN,
+  FACTORS_END,
+  applySignalFactorsToCode,
+  normalizeSignalPowers,
+  normalizeSignalWeights,
+  resolveStrategyFactorBodies,
+  usesFactorPortfolioTemplate,
+  type StrategyWeightMode,
+} from "@/lib/strategyFactorSync";
 import {
   STRATEGY_DRAFT_ID,
   clearStrategyCloneDraft,
   createStrategyProject,
   getStrategyProject,
+  getStrategyRun,
   normalizeStrategyConfig,
   peekStrategyCloneDraft,
   resolveStrategyRange,
@@ -29,6 +45,7 @@ import {
   STRATEGY_UNIVERSE_OPTIONS,
   clampDateRange,
   defaultCustomRangeDates,
+  type StrategyEngineMode,
   type StrategyProject,
   type StrategyProjectConfig,
 } from "@/lib/strategyStore";
@@ -38,6 +55,7 @@ function fieldClass(extra = "") {
 }
 
 function syncParams(cfg: StrategyProjectConfig) {
+  const range = resolveStrategyRange(cfg);
   return {
     universe: cfg.universe,
     benchmark: cfg.benchmark,
@@ -47,13 +65,24 @@ function syncParams(cfg: StrategyProjectConfig) {
     initial_capital: cfg.initial_capital,
     top_n: cfg.top_n,
     rebalance_days: cfg.rebalance_days,
+    range_mode: cfg.rangeMode === "custom" ? ("custom" as const) : ("period" as const),
+    backtest_period: cfg.backtestPeriod || "10y",
+    start_date: range.start || cfg.startDate || "",
+    end_date: range.end || cfg.endDate || "",
   };
+}
+
+function syncCodeFromLeft(cfg: StrategyProjectConfig): string {
+  return applyParamsToCode(cfg.strategy_code, syncParams(cfg));
 }
 
 export function StrategyBacktestPage() {
   const { projectId = "" } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const isDraft = projectId === STRATEGY_DRAFT_ID;
+  const snapshotRunId = searchParams.get("runId")?.trim() || "";
   const [project, setProject] = useState<StrategyProject | null>(null);
   const [cfg, setCfg] = useState<StrategyProjectConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,8 +91,10 @@ export function StrategyBacktestPage() {
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
+  const [factorSyncing, setFactorSyncing] = useState(false);
   const syncLock = useRef<"left" | "right" | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const factorSyncGen = useRef(0);
 
   const pushLog = (msg: string) => {
     const t = new Date().toLocaleTimeString("zh-CN", { hour12: false });
@@ -88,16 +119,7 @@ export function StrategyBacktestPage() {
       });
       const synced = {
         ...config,
-        strategy_code: applyParamsToCode(config.strategy_code, {
-          universe: config.universe,
-          benchmark: config.benchmark,
-          commission_rate: config.commission_rate,
-          stamp_tax: config.stamp_tax,
-          slippage_rate: config.slippage_rate,
-          initial_capital: config.initial_capital,
-          top_n: config.top_n,
-          rebalance_days: config.rebalance_days,
-        }),
+        strategy_code: syncCodeFromLeft(config),
       };
       if (!cancelled) {
         setProject({
@@ -118,38 +140,36 @@ export function StrategyBacktestPage() {
       };
     }
 
-    void getStrategyProject(projectId)
-      .then((p) => {
+    void (async () => {
+      try {
+        const p = await getStrategyProject(projectId);
         if (cancelled) return;
-        const config = normalizeStrategyConfig(p.config);
-        // 旧项目代码块缺印花税/基准时，用表单默认值写回一次
+        let config = normalizeStrategyConfig(p.config);
+        if (snapshotRunId) {
+          const run = await getStrategyRun(snapshotRunId);
+          if (cancelled) return;
+          if (run.projectId !== p.id) {
+            throw new Error("该回测不属于当前检测项目");
+          }
+          config = normalizeStrategyConfig(configFromRunRequest(run.request));
+        }
         const synced = {
           ...config,
-          strategy_code: applyParamsToCode(config.strategy_code, {
-            universe: config.universe,
-            benchmark: config.benchmark,
-            commission_rate: config.commission_rate,
-            stamp_tax: config.stamp_tax,
-            slippage_rate: config.slippage_rate,
-            initial_capital: config.initial_capital,
-            top_n: config.top_n,
-            rebalance_days: config.rebalance_days,
-          }),
+          strategy_code: syncCodeFromLeft(config),
         };
         setProject({ ...p, config: synced });
         setCfg(synced);
-      })
-      .catch((e) => {
+      } catch (e) {
         if (!cancelled) setLoadErr(e instanceof Error ? e.message : String(e));
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
       abortRef.current?.abort();
     };
-  }, [projectId, isDraft]);
+  }, [projectId, isDraft, snapshotRunId]);
 
   useEffect(() => {
     if (!running) return;
@@ -166,7 +186,7 @@ export function StrategyBacktestPage() {
         syncLock.current = "left";
         next = {
           ...next,
-          strategy_code: applyParamsToCode(next.strategy_code, syncParams(next)),
+          strategy_code: syncCodeFromLeft(next),
         };
         queueMicrotask(() => {
           syncLock.current = null;
@@ -174,6 +194,110 @@ export function StrategyBacktestPage() {
       }
       return next;
     });
+  };
+
+  /** 选因子 / 改权重 / 改合成模式：拉全库源码 → 重写 @factor（及可选 @signal） */
+  const applySignalFactorSelection = (next: {
+    ids: string[];
+    weights: number[];
+    powers: number[];
+    weightMode: StrategyWeightMode;
+    tempLabels?: Record<string, string>;
+    forceRewriteSignal?: boolean;
+  }) => {
+    const ids = next.ids;
+    const w = normalizeSignalWeights(ids, next.weights);
+    const powers = normalizeSignalPowers(ids, next.powers);
+    const mode = next.weightMode;
+    const labels = next.tempLabels ?? cfg?.signal_temp_labels ?? {};
+    const idsKey = ids.join("\0");
+    const prevIdsKey = (cfg?.signal_factor_ids || []).join("\0");
+    const idsUnchanged = idsKey === prevIdsKey && ids.length > 0;
+    const rewriteSignal =
+      next.forceRewriteSignal === true || mode !== "custom";
+
+    setCfg((prev) =>
+      prev
+        ? {
+            ...prev,
+            signal_factor_ids: ids,
+            signal_factor_weights: w,
+            signal_factor_powers: powers,
+            signal_weight_mode: mode,
+            signal_temp_labels: labels,
+          }
+        : prev,
+    );
+
+    const gen = ++factorSyncGen.current;
+    setFactorSyncing(true);
+    void (async () => {
+      try {
+        let bodies: string;
+        if (idsUnchanged && cfg?.strategy_code && !next.forceRewriteSignal) {
+          const marked = cfg.strategy_code.match(
+            new RegExp(
+              `${FACTORS_BEGIN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[\\s\\S]*?${FACTORS_END.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+            ),
+          );
+          if (marked) {
+            bodies = marked[0]
+              .replace(FACTORS_BEGIN, "")
+              .replace(FACTORS_END, "")
+              .replace(/^\n|\n$/g, "");
+          } else {
+            bodies = await resolveStrategyFactorBodies(ids, {
+              fallbackCode: cfg?.strategy_code,
+              tempLabels: labels,
+            });
+          }
+        } else {
+          bodies = await resolveStrategyFactorBodies(ids, {
+            fallbackCode: cfg?.strategy_code,
+            tempLabels: labels,
+          });
+        }
+        if (gen !== factorSyncGen.current) return;
+        setCfg((prev) => {
+          if (!prev) return prev;
+          syncLock.current = "left";
+          const nextCfg = {
+            ...prev,
+            signal_factor_ids: ids,
+            signal_factor_weights: w,
+            signal_factor_powers: powers,
+            signal_weight_mode: mode,
+            signal_temp_labels: labels,
+          };
+          const code = applyParamsToCode(
+            applySignalFactorsToCode(prev.strategy_code, ids, w, bodies, {
+              mode,
+              powers,
+              rewriteSignal,
+            }),
+            syncParams(nextCfg),
+          );
+          queueMicrotask(() => {
+            syncLock.current = null;
+          });
+          return { ...nextCfg, strategy_code: code };
+        });
+        if (!idsUnchanged) {
+          pushLog(`已同步 ${ids.length} 个信号因子到代码`);
+        } else if (next.forceRewriteSignal) {
+          pushLog(
+            mode === "custom"
+              ? "已切换自定义组合 · 请在右侧 @signal 中编写合成逻辑"
+              : `已切换合成模式：${mode === "product" ? "赋幂相乘" : "赋权相加"}`,
+          );
+        }
+      } catch (e) {
+        if (gen !== factorSyncGen.current) return;
+        pushLog(`同步因子失败：${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        if (gen === factorSyncGen.current) setFactorSyncing(false);
+      }
+    })();
   };
 
   const onCodeChange = (code: string) => {
@@ -196,6 +320,11 @@ export function StrategyBacktestPage() {
         initial_capital: parsed.initial_capital ?? prev.initial_capital,
         top_n: parsed.top_n ?? prev.top_n,
         rebalance_days: parsed.rebalance_days ?? prev.rebalance_days,
+        rangeMode: parsed.range_mode ?? prev.rangeMode,
+        backtestPeriod: parsed.backtest_period ?? prev.backtestPeriod,
+        startDate:
+          parsed.start_date !== undefined ? parsed.start_date : prev.startDate,
+        endDate: parsed.end_date !== undefined ? parsed.end_date : prev.endDate,
       };
     });
     queueMicrotask(() => {
@@ -255,6 +384,53 @@ export function StrategyBacktestPage() {
     }
   };
 
+  const switchEngineMode = async (mode: StrategyEngineMode) => {
+    if (!cfg || mode === cfg.engine_mode) return;
+    const toEvent = mode === "event";
+    const ok = await confirm({
+      title: "切换执行模式",
+      message: toEvent
+        ? "切换到事件模式将替换为事件策略模板，并清空因子积木。是否继续？"
+        : "切换到向量化模式将替换为组合策略模板，当前代码会被覆盖。是否继续？",
+      confirmLabel: "继续切换",
+    });
+    if (!ok) return;
+    const shell = {
+      universe: cfg.universe,
+      benchmark: cfg.benchmark,
+      rangeMode: cfg.rangeMode,
+      backtestPeriod: toEvent
+        ? cfg.backtestPeriod || "3y"
+        : cfg.backtestPeriod || "10y",
+      startDate: cfg.startDate,
+      endDate: cfg.endDate,
+      commission_rate: cfg.commission_rate,
+      stamp_tax: cfg.stamp_tax,
+      slippage_rate: cfg.slippage_rate,
+      initial_capital: cfg.initial_capital,
+      top_n: cfg.top_n,
+      rebalance_days: cfg.rebalance_days,
+      include_rebalance_logs: cfg.include_rebalance_logs,
+      library_ref: cfg.library_ref,
+    };
+    const next = normalizeStrategyConfig({
+      ...shell,
+      engine_mode: mode,
+      strategy_code: toEvent
+        ? DEFAULT_EVENT_STRATEGY_CODE
+        : DEFAULT_STRATEGY_CODE,
+      signal_factor_ids: [],
+      signal_factor_weights: [],
+      signal_factor_powers: [],
+      signal_temp_labels: {},
+      signal_weight_mode: "sum",
+    });
+    setCfg({
+      ...next,
+      strategy_code: syncCodeFromLeft(next),
+    });
+  };
+
   const onRun = async () => {
     if (!project || !cfg || running) return;
     const code = cfg.strategy_code.trim();
@@ -269,12 +445,17 @@ export function StrategyBacktestPage() {
     }
     setRunning(true);
     setLogs([]);
-    pushLog("开始策略回测…");
+    pushLog(
+      cfg.engine_mode === "event"
+        ? "开始事件策略回测…"
+        : "开始策略回测…",
+    );
     const ac = new AbortController();
     abortRef.current = ac;
     const t0 = performance.now();
     const req = {
       strategy_code: code,
+      engine_mode: cfg.engine_mode,
       universe: cfg.universe,
       start: range.start,
       end: range.end,
@@ -397,7 +578,62 @@ export function StrategyBacktestPage() {
         <aside className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5 text-sm">
             <section>
-              <h2 className="mb-3 text-sm font-bold text-blue-600">参数设置</h2>
+              <h2 className="mb-2 text-sm font-bold text-blue-600">执行模式</h2>
+              <div className="flex flex-wrap gap-1.5">
+                {(
+                  [
+                    { id: "vectorized" as const, label: "向量化" },
+                    { id: "event" as const, label: "事件" },
+                  ] as const
+                ).map((opt) => {
+                  const active = cfg.engine_mode === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => void switchEngineMode(opt.id)}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                        active
+                          ? opt.id === "event"
+                            ? "bg-teal-700 text-white"
+                            : "bg-slate-800 text-white"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            {cfg.engine_mode === "event" ? null : usesFactorPortfolioTemplate(
+                cfg.strategy_code,
+              ) ? (
+              <StrategySignalFactorsPanel
+                factorIds={cfg.signal_factor_ids}
+                weights={cfg.signal_factor_weights}
+                powers={cfg.signal_factor_powers}
+                weightMode={cfg.signal_weight_mode}
+                tempLabels={cfg.signal_temp_labels}
+                syncing={factorSyncing}
+                onChange={applySignalFactorSelection}
+              />
+            ) : (
+              <section className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-3 py-2.5">
+                <h2 className="text-sm font-bold text-slate-400">因子选择 + 权重</h2>
+                <p className="mt-1 text-[11px] leading-snug text-slate-400">
+                  当前为 <code className="text-slate-500">generate_signals()</code>{" "}
+                  自由策略，左侧因子积木已隐藏；请直接改右侧代码。
+                  平台策略库已统一为 FactorPortfolio 模板，可从策略库重新打开以刷新。
+                </p>
+              </section>
+            )}
+
+            <section>
+              <h2 className="mb-3 text-sm font-bold text-blue-600">
+                {cfg.engine_mode === "event" ? "回测参数" : "3. 参数设置"}
+              </h2>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block text-xs text-slate-500">
                   股票池
@@ -510,43 +746,52 @@ export function StrategyBacktestPage() {
                     </label>
                   </>
                 )}
-                <label className="block text-xs text-slate-500">
-                  持仓数
-                  <input
-                    type="number"
-                    step="1"
-                    min={1}
-                    className={fieldClass("mt-1")}
-                    value={cfg.top_n}
-                    onChange={(e) =>
-                      patchCfg(
-                        { top_n: Math.max(1, Math.round(Number(e.target.value) || 1)) },
-                        "left",
-                      )
-                    }
-                  />
-                </label>
-                <label className="block text-xs text-slate-500">
-                  调仓周期（交易日）
-                  <input
-                    type="number"
-                    step="1"
-                    min={1}
-                    className={fieldClass("mt-1")}
-                    value={cfg.rebalance_days}
-                    onChange={(e) =>
-                      patchCfg(
-                        {
-                          rebalance_days: Math.max(
-                            1,
-                            Math.round(Number(e.target.value) || 1),
-                          ),
-                        },
-                        "left",
-                      )
-                    }
-                  />
-                </label>
+                {cfg.engine_mode === "event" ? null : (
+                  <>
+                    <label className="block text-xs text-slate-500">
+                      持仓数
+                      <input
+                        type="number"
+                        step="1"
+                        min={1}
+                        className={fieldClass("mt-1")}
+                        value={cfg.top_n}
+                        onChange={(e) =>
+                          patchCfg(
+                            {
+                              top_n: Math.max(
+                                1,
+                                Math.round(Number(e.target.value) || 1),
+                              ),
+                            },
+                            "left",
+                          )
+                        }
+                      />
+                    </label>
+                    <label className="block text-xs text-slate-500">
+                      调仓周期（交易日）
+                      <input
+                        type="number"
+                        step="1"
+                        min={1}
+                        className={fieldClass("mt-1")}
+                        value={cfg.rebalance_days}
+                        onChange={(e) =>
+                          patchCfg(
+                            {
+                              rebalance_days: Math.max(
+                                1,
+                                Math.round(Number(e.target.value) || 1),
+                              ),
+                            },
+                            "left",
+                          )
+                        }
+                      />
+                    </label>
+                  </>
+                )}
                 <label className="block text-xs text-slate-500">
                   佣金率
                   <input
@@ -609,24 +854,24 @@ export function StrategyBacktestPage() {
                   />
                 </label>
               </div>
-              <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2.5">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-200"
-                  checked={cfg.include_rebalance_logs}
-                  onChange={(e) =>
-                    patchCfg({ include_rebalance_logs: e.target.checked }, "left")
-                  }
-                />
-                <span>
-                  <span className="block text-xs font-medium text-slate-700">
+              {cfg.engine_mode === "event" ? null : (
+                <label className="mt-3 flex cursor-pointer items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2.5">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-200"
+                    checked={cfg.include_rebalance_logs}
+                    onChange={(e) =>
+                      patchCfg(
+                        { include_rebalance_logs: e.target.checked },
+                        "left",
+                      )
+                    }
+                  />
+                  <span className="text-xs font-medium text-slate-700">
                     返回调仓日志
                   </span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-slate-400">
-                    记录各信号日目标权重变化，写入报告「交易明细 / 历史持仓」；非成交回报
-                  </span>
-                </span>
-              </label>
+                </label>
+              )}
             </section>
           </div>
         </aside>
@@ -634,7 +879,14 @@ export function StrategyBacktestPage() {
         <div className="flex min-h-0 flex-col gap-3">
           <section className="flex min-h-0 flex-[3] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-4 py-2">
-              <span className="text-xs font-semibold text-slate-600">策略代码</span>
+              <span className="text-xs font-semibold text-slate-600">
+                策略代码
+                {cfg.engine_mode === "event" ? (
+                  <span className="ml-2 rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-800">
+                    事件
+                  </span>
+                ) : null}
+              </span>
             </div>
             <div className="min-h-0 flex-1 p-2">
               <FactorCodeEditor

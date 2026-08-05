@@ -1,7 +1,8 @@
 # SVQuant 数据库说明
 
-> **最后刷新：** 2026-07-28 10:37
-> **边界：** SVQuant **不存行情 bars**；因子面板指标在本机 SQLite；账号 / 社区 / 检测 / 策略在 PostgreSQL。
+> **最后刷新：** 2026-08-05 13:51（Asia/Shanghai）  
+> **怎么更新：** 在 `WebApp/backend` 执行 `python scripts/refresh_database_docs.py`。脚本会重写本文件的表清单 / 字段 / 行数 / 样例；表用途与字段说明改脚本顶部的 `PURPOSES` / `FIELD_HINTS`。
+> **边界：** SVQuant **不存行情 bars**；因子面板指标在本机 SQLite；账号 / 社区 / 检测 / 策略 / **KnowledgeHub（`kh_*`）** 在 PostgreSQL。旧 `kb_*` 已删除，勿再建。
 
 ---
 
@@ -9,34 +10,51 @@
 
 | 库 | 引擎 | 连接 / 路径 | 表数量 | 用途 |
 |----|------|-------------|--------|------|
-| **主库** | PostgreSQL | `.env` → `DATABASE_URL`（`svquant`） | **14** | 用户、社区、Agent 用量、检测/策略 |
+| **主库** | PostgreSQL | `.env` → `DATABASE_URL`（`svquant`） | **31** | 用户、社区、Agent、检测/策略、KnowledgeHub |
 | **因子面板缓存** | SQLite | `backend/output/factor_dashboard/metrics.sqlite` | **2** | 面板 IC/夏普等 + 跨平台校验状态 |
 
 ### PostgreSQL 表一览
 
 | 表名 | 约行数 | 作用（一句话） |
 |------|--------|----------------|
-| `ai_usage` | 102 | Agent 调用流水（按 skill 一行）；日配额按当日行数计。 |
-| `comment_votes` | 5 | 评论赞/踩（每用户每评论一票）。 |
+| `ai_usage` | 147 | Agent 调用流水（按 skill 一行）；日配额按当日行数计。 |
+| `comment_votes` | 6 | 评论赞/踩（每用户每评论一票）。 |
 | `community_reports` | 6 | 举报帖/评论；管理仓处理队列。 |
-| `detect_projects` | 79 | 因子检测项目配置与归属。 |
-| `detect_runs` | 111 | 因子检测一次运行结果摘要 / 状态。 |
-| `notifications` | 26 | 站内通知（回复、@、系统等）。 |
+| `detect_projects` | 88 | 因子检测项目配置与归属。 |
+| `detect_runs` | 109 | 因子检测一次运行结果摘要 / 状态。 |
+| `kh_chat_messages` | 16 | — |
+| `kh_chats` | 2 | KnowledgeHub 聊天应用配置（开场白、系统提示、关联知识库 ids）。 |
+| `kh_chunks` | 161 | KnowledgeHub 文档切片（ordinal + text + meta JSONB）；检索读此表。 |
+| `kh_collections` | 4 | KnowledgeHub 知识库集合（:9531；类型 pipeline + 分块策略）。 |
+| `kh_conversations` | 7 | — |
+| `kh_default_models` | 6 | 默认模型角色（llm / embedding / rerank …）。 |
+| `kh_documents` | 4 | KnowledgeHub 文档（正文 / 分块策略 / status / enabled / parse_error）。 |
+| `kh_files` | 0 | KnowledgeHub 文件管理页登记（可关联 collection）。 |
+| `kh_model_providers` | 1 | 模型供应商（通义/OpenAI 兼容等；存 base_url / api_key）。 |
+| `news_items` | 1492 | 资讯聚合条目（多源快讯/市场/公告等；真源 ingest upsert）。 |
+| `notifications` | 40 | 站内通知（回复、@、系统等）。 |
 | `post_comments` | 34 | 帖评论与楼中楼回复。 |
 | `post_favorites` | 5 | 用户收藏帖。 |
-| `posts` | 53 | 社区帖（正文 / 代码 / 分区 / 状态 / 置顶）。 |
-| `strategy_projects` | 17 | 策略研究项目配置与归属。 |
-| `strategy_runs` | 20 | 策略回测一次运行结果摘要 / 状态。 |
-| `user_custom_factors` | 14 | 用户自定义因子元数据（`.py` 另存磁盘；本表记归属与可见性）。 |
+| `post_votes` | 9 | 帖赞/踩（每用户每帖一票）。 |
+| `posts` | 63 | 社区帖（正文 / 代码 / 分区 / 状态 / 置顶）。 |
+| `strategy_projects` | 67 | 策略研究项目配置与归属。 |
+| `strategy_runs` | 69 | 策略回测一次运行结果摘要 / 状态。 |
+| `user_custom_factors` | 0 | 用户自定义因子元数据（`.py` 另存磁盘；本表记归属与可见性）。 |
+| `user_factor_libraries` | 3 | 用户自建因子库（文件夹）；与内置库同级，按 user 隔离。 |
 | `user_follows` | 3 | 用户关注关系（关注者 → 被关注者）。 |
-| `users` | 6 | 账号与资料：登录、角色、AI 日配额、公开主页头像/封面/简介。 |
+| `user_library_factors` | 8 | 用户因子库内的因子条目（含代码正文、分类、说明）。 |
+| `user_library_strategies` | 2 | 用户策略库内入库快照（含策略说明、回测归档 JSON；与研究侧 run 脱钩）。 |
+| `user_strategy_libraries` | 4 | 用户自建策略库（文件夹）；与内置库同级，按 user 隔离。 |
+| `user_watchlist_symbols` | 40 | — |
+| `user_watchlists` | 6 | — |
+| `users` | 9 | 账号与资料：登录、角色、AI 日配额、公开主页头像/封面/简介。 |
 
 ### SQLite 表一览
 
 | 表名 | 约行数 | 作用（一句话） |
 |------|--------|----------------|
 | `factor_dashboard_metrics` | 15912 | 因子面板指标缓存（因子×池×周期×过滤规则）；RE 算完写入，非行情库。 |
-| `factor_verify_status` | 1 | 因子跨平台对比校验状态（按因子名：pending/passed/failed），与指标行解耦。 |
+| `factor_verify_status` | 2 | 因子跨平台对比校验状态（按因子名：pending/passed/failed），与指标行解耦。 |
 
 ---
 
@@ -69,8 +87,10 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 代码入口：
 
 - 连接：`services/db.py`
-- 建表：`auth_store` / `profile_store` / `community_store` / `agent_store` / `detect_store` / `strategy_store` / `user_factor_store`
+- 建表：`auth_store` / `profile_store` / `community_store` / `agent_store` / `detect_store` / `strategy_store` / `user_factor_store` / `user_library_store` / `user_strategy_library_store`
 - 面板：`services/dashboard_store.py`
+
+> **不在库内：** AI 因子/策略生成历史目前仅浏览器 `localStorage` （按 `userId` 隔离 key），未落 Postgres；后续计费对接服务端时再补表。
 
 ---
 
@@ -81,7 +101,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** Agent 调用流水（按 skill 一行）；日配额按当日行数计。
 
 - 主键：`id`
-- 当前行数：约 **102**
+- 当前行数：约 **147**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -121,7 +141,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 评论赞/踩（每用户每评论一票）。
 
 - 主键：`user_id`, `comment_id`
-- 当前行数：约 **5**
+- 当前行数：约 **6**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -200,7 +220,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 因子检测项目配置与归属。
 
 - 主键：`user_id`, `id`
-- 当前行数：约 **79**
+- 当前行数：约 **88**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -243,7 +263,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 因子检测一次运行结果摘要 / 状态。
 
 - 主键：`user_id`, `id`
-- 当前行数：约 **111**
+- 当前行数：约 **109**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -280,12 +300,394 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 ]
 ```
 
+### `kh_chat_messages`
+
+**作用：** （待补）
+
+- 主键：`id`
+- 当前行数：约 **16**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO |  |
+| `chat_id` | `bigint` | NO |  |
+| `role` | `text` | NO |  |
+| `content` | `text` | NO |  |
+| `meta` | `jsonb` | NO |  |
+| `created_at` | `timestamp with time zone` | NO |  |
+| `conversation_id` | `bigint` | YES |  |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "id": 9,
+    "chat_id": 1,
+    "role": "user",
+    "content": "alpha 101",
+    "meta": "{}",
+    "created_at": "2026-08-04 10:27:19.896902+08:00",
+    "conversation_id": 6
+  },
+  {
+    "id": 10,
+    "chat_id": 1,
+    "role": "assistant",
+    "content": "检索预览 Top5",
+    "meta": "{\"hits\": [{\"meta\": {\"title\": \"`marketcap`\", \"embeddingDim\": 1024, \"embeddingModel\": \"qwen3.7-text-embedding\"}, \"text\": \"…",
+    "created_at": "2026-08-04 10:27:19.998867+08:00",
+    "conversation_id": 6
+  }
+]
+```
+
+### `kh_chats`
+
+**作用：** KnowledgeHub 聊天应用配置（开场白、系统提示、关联知识库 ids）。
+
+- 主键：`id`
+- 当前行数：约 **2**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO | 主键 |
+| `name` | `text` | NO | 聊天应用名 |
+| `description` | `text` | NO | 说明 |
+| `opener` | `text` | NO | 开场白 |
+| `system_prompt` | `text` | NO | 系统提示（可含 {knowledge}） |
+| `empty_response` | `text` | NO | 无检索时回复 |
+| `collection_ids` | `jsonb` | NO | 关联知识库 id 列表 JSONB |
+| `model_name` | `text` | NO | 可选覆盖模型名 |
+| `temperature` | `real` | YES | 采样温度 |
+| `top_p` | `real` | YES | top_p |
+| `max_tokens` | `integer` | YES | 最大 token |
+| `created_by` | `bigint` | YES | 创建人 |
+| `created_at` | `timestamp with time zone` | NO | 创建 |
+| `updated_at` | `timestamp with time zone` | NO | 更新 |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "id": 1,
+    "name": "1",
+    "model_name": "",
+    "updated_at": "2026-08-05 13:41:53.105762+08:00"
+  },
+  {
+    "id": 2,
+    "name": "2",
+    "model_name": "",
+    "updated_at": "2026-08-04 14:13:07.304183+08:00"
+  }
+]
+```
+
+### `kh_chunks`
+
+**作用：** KnowledgeHub 文档切片（ordinal + text + meta JSONB）；检索读此表。
+
+- 主键：`id`
+- 当前行数：约 **161**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO | 主键 |
+| `document_id` | `bigint` | NO | kh_documents.id |
+| `ordinal` | `integer` | NO | 片序 |
+| `text` | `text` | NO | 切片正文 |
+| `meta` | `jsonb` | NO | 如 title 等 JSONB |
+| `created_at` | `timestamp with time zone` | NO | 创建 |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "id": 350,
+    "document_id": 1,
+    "ordinal": 0,
+    "created_at": "2026-08-03 16:29:05.082891+08:00"
+  },
+  {
+    "id": 351,
+    "document_id": 3,
+    "ordinal": 0,
+    "created_at": "2026-08-03 16:35:26.658114+08:00"
+  }
+]
+```
+
+### `kh_collections`
+
+**作用：** KnowledgeHub 知识库集合（:9531；类型 pipeline + 分块策略）。
+
+- 主键：`id`
+- 当前行数：约 **4**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO | 主键 |
+| `name` | `text` | NO | 知识库名（唯一） |
+| `description` | `text` | NO | 说明 |
+| `pipeline` | `text` | NO | 类型 general/qa/manual/… |
+| `chunk_strategy` | `text` | NO | 分块策略 id |
+| `status` | `text` | NO | active 等 |
+| `created_by` | `bigint` | YES | 创建人 users.id（可空） |
+| `created_at` | `timestamp with time zone` | NO | 创建 |
+| `updated_at` | `timestamp with time zone` | NO | 更新 |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "id": 1,
+    "name": "???-111539",
+    "pipeline": "manual",
+    "chunk_strategy": "markdown_heading",
+    "status": "active",
+    "updated_at": "2026-08-03 11:15:39.685452+08:00"
+  },
+  {
+    "id": 9,
+    "name": "因子手册v2",
+    "pipeline": "general",
+    "chunk_strategy": "markdown_heading",
+    "status": "active",
+    "updated_at": "2026-08-03 14:00:43.364442+08:00"
+  }
+]
+```
+
+### `kh_conversations`
+
+**作用：** （待补）
+
+- 主键：`id`
+- 当前行数：约 **7**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO |  |
+| `chat_id` | `bigint` | NO |  |
+| `title` | `text` | NO |  |
+| `created_at` | `timestamp with time zone` | NO |  |
+| `updated_at` | `timestamp with time zone` | NO |  |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "id": 5,
+    "chat_id": 1,
+    "title": "新会话",
+    "created_at": "2026-08-04 10:24:49.663818+08:00",
+    "updated_at": "2026-08-04 10:24:49.663818+08:00"
+  },
+  {
+    "id": 6,
+    "chat_id": 1,
+    "title": "alpha 101",
+    "created_at": "2026-08-04 10:27:07.975220+08:00",
+    "updated_at": "2026-08-04 10:27:19.998867+08:00"
+  }
+]
+```
+
+### `kh_default_models`
+
+**作用：** 默认模型角色（llm / embedding / rerank …）。
+
+- 主键：`id`
+- 当前行数：约 **6**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO | 主键 |
+| `role_key` | `text` | NO | llm / embedding / rerank … |
+| `provider_key` | `text` | NO | 供应商 key |
+| `model_name` | `text` | NO | 模型名 |
+| `updated_at` | `timestamp with time zone` | NO | 更新 |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "id": 1,
+    "role_key": "llm",
+    "provider_key": "openai-compatible",
+    "model_name": "qwen3.7-flash",
+    "updated_at": "2026-08-03 15:30:44.695141+08:00"
+  },
+  {
+    "id": 2,
+    "role_key": "embedding",
+    "provider_key": "openai-compatible",
+    "model_name": "qwen3.7-text-embedding",
+    "updated_at": "2026-08-03 15:30:44.695141+08:00"
+  }
+]
+```
+
+### `kh_documents`
+
+**作用：** KnowledgeHub 文档（正文 / 分块策略 / status / enabled / parse_error）。
+
+- 主键：`id`
+- 当前行数：约 **4**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO | 主键 |
+| `collection_id` | `bigint` | NO | 所属 kh_collections.id |
+| `title` | `text` | NO | 标题（可重命名） |
+| `source_type` | `text` | NO | file / text |
+| `body` | `text` | NO | 原文 |
+| `file_name` | `text` | NO | 上传文件名 |
+| `file_size` | `bigint` | NO | 字节 |
+| `chunk_strategy` | `text` | NO | 分块策略 |
+| `status` | `text` | NO | draft / parsing / ready / failed |
+| `version` | `integer` | NO | ingest 版本 |
+| `created_by` | `bigint` | YES | 上传人（可空） |
+| `created_at` | `timestamp with time zone` | NO | 创建 |
+| `updated_at` | `timestamp with time zone` | NO | 更新 |
+| `enabled` | `boolean` | NO | 是否参与 search/ask（false=停用） |
+| `parse_error` | `text` | NO | 最近一次解析失败原因 |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "id": 2,
+    "collection_id": 4,
+    "title": "因子库总览",
+    "chunk_strategy": "markdown_heading",
+    "status": "ready",
+    "updated_at": "2026-08-03 16:22:39.600223+08:00"
+  },
+  {
+    "id": 1,
+    "collection_id": 1,
+    "title": "????",
+    "chunk_strategy": "markdown_heading",
+    "status": "ready",
+    "updated_at": "2026-08-03 16:29:05.082891+08:00"
+  }
+]
+```
+
+### `kh_files`
+
+**作用：** KnowledgeHub 文件管理页登记（可关联 collection）。
+
+- 主键：`id`
+- 当前行数：约 **0**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO | 主键 |
+| `title` | `text` | NO | 标题 |
+| `file_name` | `text` | NO | 文件名 |
+| `file_size` | `bigint` | NO | 字节 |
+| `body` | `text` | NO | 文本内容 |
+| `collection_id` | `bigint` | YES | 可选关联知识库 |
+| `created_by` | `bigint` | YES | 上传人 |
+| `created_at` | `timestamp with time zone` | NO | 创建 |
+| `updated_at` | `timestamp with time zone` | NO | 更新 |
+
+### `kh_model_providers`
+
+**作用：** 模型供应商（通义/OpenAI 兼容等；存 base_url / api_key）。
+
+- 主键：`id`
+- 当前行数：约 **1**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO | 主键 |
+| `provider_key` | `text` | NO | 供应商 key（唯一） |
+| `display_name` | `text` | NO | 显示名 |
+| `base_url` | `text` | NO | API Base URL |
+| `api_key` | `text` | NO | 密钥（勿导出明文到文档样例） |
+| `models` | `jsonb` | NO | 模型列表 JSONB |
+| `created_at` | `timestamp with time zone` | NO | 创建 |
+| `updated_at` | `timestamp with time zone` | NO | 更新 |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "id": 1,
+    "provider_key": "openai-compatible",
+    "display_name": "OpenAI 兼容 / 通义",
+    "updated_at": "2026-08-03 15:26:32.407079+08:00"
+  }
+]
+```
+
+### `news_items`
+
+**作用：** 资讯聚合条目（多源快讯/市场/公告等；真源 ingest upsert）。
+
+- 主键：`id`
+- 当前行数：约 **1492**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO | 主键 |
+| `title` | `text` | NO | 标题 |
+| `summary` | `text` | NO | 摘要 |
+| `body` | `text` | NO | 正文（电报多为全文；东财可抓 HTML；巨潮多为 PDF 说明） |
+| `published_at` | `timestamp with time zone` | NO | 发布时间（巨潮常为披露日 00:00） |
+| `source` | `text` | NO | `cls` / `eastmoney` / `cninfo` / `10jqka` / `wallstreetcn` / `bloomberg` |
+| `category` | `text` | NO | `flash` / `market` / `announce` / `research` / `policy` / `global` |
+| `url` | `text` | NO | 源站或 PDF 链接 |
+| `symbols` | `jsonb` | NO | 关联代码 JSONB 数组 |
+| `themes` | `jsonb` | NO | 题材标签 JSONB 数组 |
+| `industries` | `jsonb` | NO | 行业标签 JSONB 数组 |
+| `raw_hash` | `text` | NO | 去重键（同源同条唯一） |
+| `is_flash` | `boolean` | NO | 是否进电报流 |
+| `is_featured` | `boolean` | NO | 是否头条卡 |
+| `created_at` | `timestamp with time zone` | NO | 入库时间 |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "id": 617,
+    "source": "cls",
+    "category": "flash",
+    "title": "财联社8月4日电，奥本海默将沃尔玛股票调降至“跑赢大盘”评级。",
+    "published_at": "2026-08-04 20:23:05+08:00",
+    "is_flash": true,
+    "is_featured": false
+  },
+  {
+    "id": 618,
+    "source": "cls",
+    "category": "flash",
+    "title": "【风口研报·公司】半导体12英寸硅片产线加速扩产，这家公司卡位半导体级硅片设备、2026年订单储备充足；这家云方向细分龙头注销式回购占公司总资产5%、较当前市价溢价近50%，受益AI应用拉动效益明显",
+    "published_at": "2026-08-04 20:21:17+08:00",
+    "is_flash": true,
+    "is_featured": false
+  }
+]
+```
+
 ### `notifications`
 
 **作用：** 站内通知（回复、@、系统等）。
 
 - 主键：`id`
-- 当前行数：约 **26**
+- 当前行数：约 **40**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -393,12 +795,45 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 ]
 ```
 
+### `post_votes`
+
+**作用：** 帖赞/踩（每用户每帖一票）。
+
+- 主键：`user_id`, `post_id`
+- 当前行数：约 **9**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `user_id` | `bigint` | NO | 投票用户 |
+| `post_id` | `bigint` | NO | 帖 |
+| `value` | `smallint` | NO | 1 赞 / -1 踩 |
+| `created_at` | `timestamp with time zone` | NO | 时间 |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "user_id": 1,
+    "post_id": 30,
+    "value": 1,
+    "created_at": "2026-07-30 10:40:34.142635+08:00"
+  },
+  {
+    "user_id": 1,
+    "post_id": 64,
+    "value": 1,
+    "created_at": "2026-07-30 10:39:07.921225+08:00"
+  }
+]
+```
+
 ### `posts`
 
 **作用：** 社区帖（正文 / 代码 / 分区 / 状态 / 置顶）。
 
 - 主键：`id`
-- 当前行数：约 **53**
+- 当前行数：约 **63**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -414,6 +849,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 | `updated_at` | `timestamp with time zone` | NO | 更新 |
 | `is_pinned` | `boolean` | NO | 是否置顶 |
 | `pinned_at` | `timestamp with time zone` | YES | 置顶时间 |
+| `platform_ref` | `jsonb` | YES | 平台引用 JSON（面板指标 / 回测引用，供读帖 TL;DR 校验） |
 
 **样例（脱敏 / 截断）：**
 
@@ -430,14 +866,14 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
     "created_at": "2026-07-23 11:43:01.351571+08:00"
   },
   {
-    "id": 23,
-    "author_id": 1,
-    "section": "hotspot",
-    "title": "两融降温超 2500 亿：杠杆回落，交易结构在变健康？",
+    "id": 35,
+    "author_id": 4,
+    "section": "strategy",
+    "title": "真他妈沙比",
     "status": "published",
-    "view_count": 1,
+    "view_count": 5,
     "is_pinned": false,
-    "created_at": "2026-07-23 11:43:01.635413+08:00"
+    "created_at": "2026-07-24 10:27:48.419935+08:00"
   }
 ]
 ```
@@ -447,7 +883,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 策略研究项目配置与归属。
 
 - 主键：`user_id`, `id`
-- 当前行数：约 **17**
+- 当前行数：约 **67**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -459,24 +895,25 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 | `run_count` | `integer` | NO | 历史运行次数 |
 | `created_at` | `timestamp with time zone` | NO | 创建 |
 | `updated_at` | `timestamp with time zone` | NO | 更新 |
+| `is_sample` | `boolean` | NO |  |
 
 **样例（脱敏 / 截断）：**
 
 ```json
 [
   {
+    "id": "sample_momentum_20d",
+    "user_id": 1,
+    "name": "多因子合成 样例",
+    "run_count": 0,
+    "updated_at": "2026-07-29 14:53:21.322136+08:00"
+  },
+  {
     "id": "8af672d6-26fd-4aba-9c2b-60d18a71eec5",
     "user_id": 4,
     "name": "2",
     "run_count": 5,
     "updated_at": "2026-07-24 16:42:32.766831+08:00"
-  },
-  {
-    "id": "88b8f5f2-bb2c-4121-bc82-56d55c256b49",
-    "user_id": 4,
-    "name": "wa",
-    "run_count": 2,
-    "updated_at": "2026-07-22 17:52:37.935992+08:00"
   }
 ]
 ```
@@ -486,7 +923,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 策略回测一次运行结果摘要 / 状态。
 
 - 主键：`user_id`, `id`
-- 当前行数：约 **20**
+- 当前行数：约 **69**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -528,7 +965,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 用户自定义因子元数据（`.py` 另存磁盘；本表记归属与可见性）。
 
 - 主键：`id`
-- 当前行数：约 **14**
+- 当前行数：约 **0**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -541,23 +978,36 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 | `created_at` | `timestamp with time zone` | NO | 创建 |
 | `updated_at` | `timestamp with time zone` | NO | 更新 |
 
+### `user_factor_libraries`
+
+**作用：** 用户自建因子库（文件夹）；与内置库同级，按 user 隔离。
+
+- 主键：`id`
+- 当前行数：约 **3**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO | 主键 |
+| `user_id` | `bigint` | NO | 所有者 |
+| `name` | `text` | NO | 库名（同用户唯一） |
+| `created_at` | `timestamp with time zone` | NO | 创建 |
+| `updated_at` | `timestamp with time zone` | NO | 更新 |
+
 **样例（脱敏 / 截断）：**
 
 ```json
 [
   {
     "id": 1,
-    "user_id": 1,
-    "name": "EDIT_BEFORE",
-    "method_name": "u1_EDIT_BEFORE",
-    "created_at": "2026-07-21 10:24:35.222971+08:00"
+    "user_id": 5,
+    "name": "Test",
+    "updated_at": "2026-07-29 18:29:04.218170+08:00"
   },
   {
-    "id": 2,
-    "user_id": 3,
-    "name": "RISK_ADJ_MOM_20",
-    "method_name": "u3_RISK_ADJ_MOM_20",
-    "created_at": "2026-07-21 16:18:12.313811+08:00"
+    "id": 3,
+    "user_id": 4,
+    "name": "B",
+    "updated_at": "2026-07-30 13:42:58.363122+08:00"
   }
 ]
 ```
@@ -592,12 +1042,214 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 ]
 ```
 
+### `user_library_factors`
+
+**作用：** 用户因子库内的因子条目（含代码正文、分类、说明）。
+
+- 主键：`id`
+- 当前行数：约 **8**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO | 主键 |
+| `library_id` | `bigint` | NO | 所属 `user_factor_libraries.id` |
+| `user_id` | `bigint` | NO | 所有者（冗余，便于按用户唯一名） |
+| `name` | `text` | NO | 因子标识名（同用户唯一） |
+| `method_name` | `text` | NO | Python 方法名 |
+| `body` | `text` | NO | 因子源码 |
+| `description` | `text` | NO | 中文说明 |
+| `category_label` | `text` | NO | 分类标签 |
+| `created_at` | `timestamp with time zone` | NO | 创建 |
+| `updated_at` | `timestamp with time zone` | NO | 更新 |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "id": 1,
+    "user_id": 5,
+    "library_id": 2,
+    "name": "mom_7d",
+    "category_label": "动量/趋势",
+    "updated_at": "2026-07-29 18:58:22.116226+08:00"
+  },
+  {
+    "id": 2,
+    "user_id": 5,
+    "library_id": 2,
+    "name": "realized_vol_20d",
+    "category_label": "波动/风险",
+    "updated_at": "2026-07-30 09:05:17.776041+08:00"
+  }
+]
+```
+
+### `user_library_strategies`
+
+**作用：** 用户策略库内入库快照（含策略说明、回测归档 JSON；与研究侧 run 脱钩）。
+
+- 主键：`id`
+- 当前行数：约 **2**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO | 主键 |
+| `library_id` | `bigint` | NO | 所属 `user_strategy_libraries.id` |
+| `user_id` | `bigint` | NO | 所有者 |
+| `name` | `text` | NO | 策略名（同用户唯一） |
+| `code_id` | `text` | NO | 关联代码标识（若有） |
+| `body` | `text` | NO | 策略源码快照 |
+| `description` | `text` | NO | 策略说明（入库时填写，列表副标题） |
+| `category_label` | `text` | NO | 分类标签 |
+| `created_at` | `timestamp with time zone` | NO | 创建 |
+| `updated_at` | `timestamp with time zone` | NO | 更新 |
+| `source_run_id` | `text` | NO | 来源研究 run id（仅溯源，不随研究侧变更） |
+| `archive_request` | `jsonb` | YES | 入库时回测请求快照 JSON |
+| `archive_result` | `jsonb` | YES | 入库时回测结果快照 JSON |
+| `archive_elapsed_sec` | `double precision` | YES | 入库快照耗时秒 |
+| `archive_finished_at` | `timestamp with time zone` | YES | 入库快照完成时间 |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "id": 8,
+    "user_id": 5,
+    "library_id": 5,
+    "name": "唐奇安",
+    "description": "1年回测",
+    "source_run_id": "745f28a6-0ca2-4a4a-9a63-d12e456d3b21",
+    "archive_finished_at": "2026-07-30 17:29:19.006383+08:00"
+  },
+  {
+    "id": 9,
+    "user_id": 5,
+    "library_id": 5,
+    "name": "LowVol20",
+    "description": "稳定策略",
+    "source_run_id": "7569b165-aaee-434a-b006-cc577132f5a2",
+    "archive_finished_at": "2026-07-31 15:33:13.183918+08:00"
+  }
+]
+```
+
+### `user_strategy_libraries`
+
+**作用：** 用户自建策略库（文件夹）；与内置库同级，按 user 隔离。
+
+- 主键：`id`
+- 当前行数：约 **4**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO | 主键 |
+| `user_id` | `bigint` | NO | 所有者 |
+| `name` | `text` | NO | 库名（同用户唯一） |
+| `created_at` | `timestamp with time zone` | NO | 创建 |
+| `updated_at` | `timestamp with time zone` | NO | 更新 |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "id": 2,
+    "user_id": 4,
+    "name": "OP",
+    "updated_at": "2026-07-30 11:39:12.983301+08:00"
+  },
+  {
+    "id": 4,
+    "user_id": 1,
+    "name": "AA",
+    "updated_at": "2026-07-30 12:28:56.456727+08:00"
+  }
+]
+```
+
+### `user_watchlist_symbols`
+
+**作用：** （待补）
+
+- 主键：`id`
+- 当前行数：约 **40**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO |  |
+| `watchlist_id` | `bigint` | NO |  |
+| `user_id` | `bigint` | NO |  |
+| `symbol` | `text` | NO |  |
+| `name` | `text` | NO |  |
+| `created_at` | `timestamp with time zone` | NO |  |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "id": 1,
+    "watchlist_id": 1,
+    "user_id": 5,
+    "symbol": "600001.SH",
+    "name": "邯郸钢铁",
+    "created_at": "2026-07-31 15:57:19.046989+08:00"
+  },
+  {
+    "id": 2,
+    "watchlist_id": 1,
+    "user_id": 5,
+    "symbol": "600002.SH",
+    "name": "齐鲁石化",
+    "created_at": "2026-07-31 15:57:24.008089+08:00"
+  }
+]
+```
+
+### `user_watchlists`
+
+**作用：** （待补）
+
+- 主键：`id`
+- 当前行数：约 **6**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO |  |
+| `user_id` | `bigint` | NO |  |
+| `name` | `text` | NO |  |
+| `created_at` | `timestamp with time zone` | NO |  |
+| `updated_at` | `timestamp with time zone` | NO |  |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "id": 2,
+    "user_id": 4,
+    "name": "11",
+    "created_at": "2026-07-31 15:51:53.832405+08:00",
+    "updated_at": "2026-07-31 15:51:53.832405+08:00"
+  },
+  {
+    "id": 3,
+    "user_id": 5,
+    "name": "11",
+    "created_at": "2026-07-31 15:58:01.405674+08:00",
+    "updated_at": "2026-07-31 15:58:01.405674+08:00"
+  }
+]
+```
+
 ### `users`
 
 **作用：** 账号与资料：登录、角色、AI 日配额、公开主页头像/封面/简介。
 
 - 主键：`id`
-- 当前行数：约 **6**
+- 当前行数：约 **9**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -630,13 +1282,13 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
     "created_at": "2026-07-20 18:13:26.563906+08:00"
   },
   {
-    "id": 3,
-    "username": "maruixiang",
-    "display_name": "maruixiang",
+    "id": 6,
+    "username": "zwb",
+    "display_name": "zwb",
     "role": "user",
     "status": "active",
     "ai_quota_daily": 200,
-    "created_at": "2026-07-20 18:20:23.457146+08:00"
+    "created_at": "2026-07-21 19:02:56.349391+08:00"
   }
 ]
 ```
@@ -716,7 +1368,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 
 **作用：** 因子跨平台对比校验状态（按因子名：pending/passed/failed），与指标行解耦。
 
-- 当前行数：约 **1**
+- 当前行数：约 **2**
 - 主键：`factor_name`
 
 | 字段 | 类型 | NOT NULL | 说明 |
@@ -737,6 +1389,13 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
     "note": "",
     "updated_at": "2026-07-28T10:36:27+08:00",
     "updated_by": "smoke"
+  },
+  {
+    "factor_name": "earnings_yield",
+    "status": "failed",
+    "note": "",
+    "updated_at": "2026-07-28T10:44:35+08:00",
+    "updated_by": "admin"
   }
 ]
 ```
@@ -747,4 +1406,6 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 
 | 日期 | 说明 |
 |------|------|
-| 2026-07-28 | 初版 / 刷新：Postgres 14 表 + 面板 SQLite 2 表；含字段与脱敏样例 |
+| 2026-08-05 | 刷新：补全用户因子/策略库 4 表 + `user_library_strategies` 入库快照列；`posts.platform_ref`；Postgres **31** 表 + SQLite **2** 表；注明 AI 生成历史暂未落库 |
+| 2026-07-30 | 策略库入库快照列：`source_run_id` / `archive_*`；策略说明 `description` |
+| 2026-07-28 | 初版：Postgres + 面板 SQLite；含 `factor_verify_status` / `post_votes` |

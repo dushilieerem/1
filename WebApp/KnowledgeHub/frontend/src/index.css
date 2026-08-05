@@ -1,0 +1,218 @@
+@import "tailwindcss";
+
+:root {
+  --kh-ink: #0b1f2a;
+  --kh-ink-soft: #1a3a4a;
+  --kh-teal: #0f9d8a;
+  --kh-teal-deep: #0b7a6c;
+  --kh-cyan: #2eb8c9;
+  --kh-amber: #e8a317;
+  --kh-amber-soft: #f6e7c1;
+  --kh-mist: #e8f4f1;
+  --kh-panel: rgba(255, 255, 255, 0.78);
+  --kh-panel-solid: #ffffff;
+  --kh-line: rgba(15, 61, 74, 0.1);
+  --kh-font: "Manrope", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --kh-display: "Sora", "Noto Sans SC", "PingFang SC", sans-serif;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--kh-font);
+  color: var(--kh-ink);
+  background-color: #eef6f4;
+  background-image:
+    radial-gradient(900px 480px at 8% -10%, rgba(46, 184, 201, 0.28), transparent 55%),
+    radial-gradient(780px 420px at 92% 0%, rgba(232, 163, 23, 0.18), transparent 50%),
+    radial-gradient(700px 500px at 70% 100%, rgba(15, 157, 138, 0.16), transparent 55%),
+    linear-gradient(180deg, #f4fbf9 0%, #eef6f4 40%, #e9f2ef 100%);
+  background-attachment: fixed;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.35;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'%3E%3Cg fill='none' stroke='%230f3d4a' stroke-opacity='0.06' stroke-width='1'%3E%3Cpath d='M36 2v68M2 36h68'/%3E%3Ccircle cx='36' cy='36' r='10'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+.kh-display {
+  font-family: var(--kh-display);
+  letter-spacing: -0.02em;
+}
+
+.kh-panel {
+  background: var(--kh-panel);
+  border: 1px solid var(--kh-line);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 10px 30px rgba(11, 31, 42, 0.06);
+}
+
+.kh-card {
+  background: var(--kh-panel-solid);
+  border: 1px solid var(--kh-line);
+  border-radius: 1rem;
+  box-shadow: 0 8px 24px rgba(11, 31, 42, 0.05);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+}
+
+.kh-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(15, 157, 138, 0.35);
+  box-shadow: 0 14px 32px rgba(11, 31, 42, 0.1);
+}
+
+.kh-card-kb {
+  background:
+    linear-gradient(145deg, rgba(15, 157, 138, 0.12), transparent 42%),
+    #fff;
+}
+
+.kh-card-chat {
+  background:
+    linear-gradient(145deg, rgba(232, 163, 23, 0.14), transparent 42%),
+    #fff;
+}
+
+.kh-btn-primary {
+  background: linear-gradient(135deg, var(--kh-teal) 0%, var(--kh-teal-deep) 100%);
+  color: #fff;
+  border: none;
+  box-shadow: 0 8px 18px rgba(15, 157, 138, 0.28);
+}
+
+.kh-btn-primary:hover {
+  filter: brightness(1.05);
+}
+
+.kh-btn-primary:disabled {
+  opacity: 0.5;
+  filter: none;
+}
+
+.kh-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.5rem;
+  border: 1px solid var(--kh-line);
+  background:
+    linear-gradient(120deg, rgba(11, 31, 42, 0.92), rgba(15, 122, 108, 0.88)),
+    radial-gradient(circle at 80% 20%, rgba(232, 163, 23, 0.35), transparent 40%);
+  color: #f5fffc;
+  box-shadow: 0 18px 40px rgba(11, 31, 42, 0.18);
+}
+
+.kh-hero::after {
+  content: "";
+  position: absolute;
+  right: -40px;
+  top: -60px;
+  width: 280px;
+  height: 280px;
+  border-radius: 40% 60% 55% 45%;
+  background: radial-gradient(circle, rgba(46, 184, 201, 0.45), transparent 65%);
+  pointer-events: none;
+}
+
+.kh-fade-in {
+  animation: khFadeIn 420ms ease both;
+}
+
+@keyframes khFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes khPulseSoft {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.kh-empty-orb {
+  animation: khPulseSoft 2.8s ease-in-out infinite;
+}
+
+.kh-md {
+  line-height: 1.65;
+}
+
+.kh-md > :first-child {
+  margin-top: 0;
+}
+
+.kh-md > :last-child {
+  margin-bottom: 0;
+}
+
+.kh-md p {
+  margin: 0.55em 0;
+}
+
+.kh-md ul,
+.kh-md ol {
+  margin: 0.45em 0;
+  padding-left: 1.25rem;
+}
+
+.kh-md li {
+  margin: 0.2em 0;
+}
+
+.kh-md strong {
+  font-weight: 600;
+  color: var(--kh-ink);
+}
+
+.kh-md code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86em;
+  padding: 0.1em 0.35em;
+  border-radius: 0.3rem;
+  background: var(--kh-mist);
+  color: var(--kh-teal-deep);
+}
+
+.kh-md pre {
+  margin: 0.65em 0;
+  padding: 0.75rem 0.9rem;
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  background: #0b1f2a;
+  color: #e8f4f1;
+}
+
+.kh-md pre code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 0.82em;
+}

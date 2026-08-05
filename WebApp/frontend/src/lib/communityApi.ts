@@ -12,7 +12,10 @@ export type CommunityPost = {
   view_count: number;
   comment_count?: number;
   favorite_count?: number;
+  like_count?: number;
+  dislike_count?: number;
   favorited?: boolean;
+  my_vote?: number;
   status: string;
   is_pinned?: boolean;
   pinned_at?: string | null;
@@ -78,6 +81,7 @@ export type CommunityNotification = {
     id?: number;
     username?: string;
     display_name?: string;
+    avatar_url?: string | null;
   };
 };
 
@@ -106,7 +110,7 @@ async function parseJson<T>(res: Response): Promise<T> {
   return data as T;
 }
 
-export type CommunityPostSort = "views" | "favorites" | "newest";
+export type CommunityPostSort = "views" | "favorites" | "likes" | "newest";
 
 export async function listCommunityPosts(opts?: {
   section?: string;
@@ -272,6 +276,24 @@ export async function voteComment(commentId: number, value: 1 | -1 | 0) {
   }>(res);
 }
 
+export async function votePost(postId: number, value: 1 | -1 | 0) {
+  const res = await fetch(`/api/community/posts/${postId}/vote`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ value }),
+  });
+  return parseJson<{
+    ok: boolean;
+    post_id: number;
+    like_count: number;
+    dislike_count: number;
+    my_vote: number;
+  }>(res);
+}
+
 export async function listNotifications(opts?: {
   type?: NotificationType;
   limit?: number;
@@ -301,6 +323,18 @@ export async function unreadNotificationCount() {
   }>(res);
 }
 
+/** 通知 Navbar 等立刻刷新铃铛未读数 */
+export const UNREAD_CHANGED_EVENT = "svquant:notifications-unread-changed";
+
+export function notifyUnreadChanged(total?: number) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(UNREAD_CHANGED_EVENT, {
+      detail: { total },
+    }),
+  );
+}
+
 export async function markNotificationsRead(opts: {
   ids?: number[];
   type?: NotificationType;
@@ -314,11 +348,13 @@ export async function markNotificationsRead(opts: {
     },
     body: JSON.stringify(opts),
   });
-  return parseJson<{
+  const data = await parseJson<{
     ok: boolean;
     total: number;
     by_type: Record<string, number>;
   }>(res);
+  notifyUnreadChanged(data.total);
+  return data;
 }
 
 export async function addFavorite(postId: number) {
@@ -440,6 +476,30 @@ export async function listCommunityReports(opts?: {
     total: number;
     items: CommunityReport[];
   }>(res);
+}
+
+export type CommunityOpsSummary = {
+  ok: boolean;
+  days: number;
+  posts_7d: number;
+  comments_7d: number;
+  favorites_7d: number;
+  likes_7d: number;
+  interactions_7d: number;
+  reports_open: number;
+  ai_calls_7d: number;
+  ai_users_7d: number;
+  ai_tokens_7d: number;
+  by_day?: { day: string; posts: number }[];
+};
+
+export async function getCommunityOpsSummary(days = 7) {
+  const q = new URLSearchParams();
+  q.set("days", String(days));
+  const res = await fetch(`/api/community/ops/summary?${q}`, {
+    headers: { ...authHeaders() },
+  });
+  return parseJson<CommunityOpsSummary>(res);
 }
 
 export async function resolveCommunityReport(

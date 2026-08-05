@@ -94,12 +94,22 @@ export function isCommunityShareStub(code: string): boolean {
 }
 
 /**
- * 策略克隆用源码：公用库命中则拉本地真实实现（含 _ 辅助）。
+ * 策略克隆用源码：已是完整策略则原样返回；
+ * 否则公用库命中则拉本地真实实现（含 _ 辅助）。
  * qlib_alpha 动态特征按命名规则展开公式（策略 API 无 library_name）。
  */
 export async function resolveStrategyCloneSource(codeSnippet: string): Promise<string> {
   const code = (codeSnippet || "").trim();
   if (!code) throw new Error("该帖没有代码片段，无法克隆到策略研究");
+
+  // 帖子已是完整策略：不要按首个 def 当成单因子去「展开」
+  const looksFullStrategy =
+    /FactorPortfolioStrategy/.test(code) ||
+    /def\s+generate_signals\s*\(/.test(code) ||
+    (/^\s*class\s+\w+/m.test(code) && /@factor\b/.test(code));
+  if (looksFullStrategy) {
+    return code;
+  }
 
   const target = await resolveCommunityCloneTarget(code);
   if (target.kind === "public" || target.kind === "owned_custom") {

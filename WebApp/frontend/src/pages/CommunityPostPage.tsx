@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Eye, EyeOff, Flag, FlaskConical, LineChart, MessageCircle, Pencil, Pin, Sparkles, Star, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Flag, FlaskConical, LineChart, MessageCircle, Pencil, Pin, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, X } from "lucide-react";
 import { getStoredUser } from "@/lib/auth";
 import { runAgent, type AgentFlag } from "@/lib/agentApi";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -15,21 +15,25 @@ import {
   moderateCommunityPost,
   removeFavorite,
   takeViewBump,
+  votePost,
   type CommunityComment,
   type CommunityPost,
   type ReportTargetType,
 } from "@/lib/communityApi";
-import { resolveCommunityCloneTarget } from "@/lib/communityClone";
+import { pushBrowseHistory } from "@/lib/browseHistory";
 import {
-  createDetectProjectForClone,
+  createDetectProjectFromSnippet,
   openDetectInNewTab,
 } from "@/lib/detectStore";
-import { extractDefName } from "@/lib/factorCatalog";
+import {
+  builtinCategoryLabelsFromFactors,
+  loadFactors,
+} from "@/lib/factorCatalog";
+import { listAllUserLibraryFactors } from "@/lib/userFactorLibraries";
 import {
   createStrategyProjectFromCode,
   openStrategyInNewTab,
 } from "@/lib/strategyStore";
-import type { CommunityCloneState } from "@/pages/FactorCustomPage";
 import {
   CommunityBackLink,
   CommunityPageShell,
@@ -73,8 +77,18 @@ export function CommunityPostPage() {
   const [loading, setLoading] = useState(true);
   const [cloneBusy, setCloneBusy] = useState(false);
   const [cloneErr, setCloneErr] = useState<string | null>(null);
+  const [cloneModalOpen, setCloneModalOpen] = useState(false);
+  const [cloneName, setCloneName] = useState("");
+  const [cloneDesc, setCloneDesc] = useState("");
+  const [cloneCategory, setCloneCategory] = useState("其他");
+  const [cloneFormErr, setCloneFormErr] = useState<string | null>(null);
+  const [categoryOptions, setCategoryOptions] = useState<string[]>(["其他"]);
+  const [takenFactorNames, setTakenFactorNames] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [favBusy, setFavBusy] = useState(false);
   const [favErr, setFavErr] = useState<string | null>(null);
+  const [voteBusy, setVoteBusy] = useState(false);
   const [highlightId, setHighlightId] = useState<number | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [modBusy, setModBusy] = useState(false);
@@ -113,6 +127,13 @@ export function CommunityPostPage() {
           return;
         }
         setPost(postData.post);
+        pushBrowseHistory({
+          kind: "community",
+          id: postData.post.id,
+          title: postData.post.title || "（无标题）",
+          href: `/community/post/${postData.post.id}`,
+          subtitle: postData.post.author_name || postData.post.author_username,
+        });
         try {
           const commentData = await listComments(postId);
           if (!cancelled) setComments(commentData.items);
@@ -219,6 +240,33 @@ export function CommunityPostPage() {
     }
   };
 
+  const onCastVote = async (next: 1 | -1) => {
+    if (!post || voteBusy || post.status === "hidden") return;
+    if (!user) {
+      navigate(`/login?next=${encodeURIComponent(`/community/post/${post.id}`)}`);
+      return;
+    }
+    // 自己的帖不可赞踩：静默忽略，不弹错
+    if (post.author?.id != null && post.author.id === user.id) return;
+    const my = post.my_vote ?? 0;
+    const value = (my === next ? 0 : next) as 1 | -1 | 0;
+    setVoteBusy(true);
+    setFavErr(null);
+    try {
+      const res = await votePost(post.id, value);
+      setPost({
+        ...post,
+        like_count: res.like_count,
+        dislike_count: res.dislike_count,
+        my_vote: res.my_vote,
+      });
+    } catch (ex) {
+      setFavErr(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setVoteBusy(false);
+    }
+  };
+
   const onCloneToDetect = async () => {
     if (!post) return;
     if (!user) {
@@ -226,35 +274,100 @@ export function CommunityPostPage() {
       return;
     }
     setCloneErr(null);
+    setCloneFormErr(null);
+    const code = (post.code_snippet || "").trim();
+    if (!code) {
+      setCloneErr("该帖没有代码片段，无法克隆到因子检测");
+      return;
+    }
+    setCloneName("");
+    setCloneDesc("");
+    setCloneCategory("");
+    setCloneModalOpen(true);
+
+    void Promise.all([
+      loadFactors(true).catch(() => []),
+      listAllUserLibraryFactors().catch(() => []),
+    ]).then(([fs, userRows]) => {
+      const cats = builtinCategoryLabelsFromFactors(
+        fs.filter((f) => f.library !== "custom_lib"),
+      );
+      setCategoryOptions([...cats, "其他"]);
+      const taken = new Set<string>();
+      for (const f of fs) {
+        if (f.library === "custom_lib") continue;
+        taken.add(f.name);
+        if (f.methodName) taken.add(f.methodName);
+      }
+      for (const r of userRows) taken.add(r.name);
+      setTakenFactorNames(taken);
+    });
+  };
+
+  const confirmCloneToDetect = async () => {
+    if (!post) return;
+    setCloneFormErr(null);
+    const name = cloneName.trim();
+    const description = cloneDesc.trim();
+    const category = cloneCategory.trim();
+    if (!name) {
+      setCloneFormErr("请填写因子代码名");
+      return;
+    }
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+      setCloneFormErr("代码名须为字母开头的标识符（字母/数字/下划线）");
+      return;
+    }
+    if (!description) {
+      setCloneFormErr("请填写中文解释");
+      return;
+    }
+    if (!category) {
+      setCloneFormErr("请选择分类");
+      return;
+    }
+    if (takenFactorNames.has(name)) {
+      setCloneFormErr(
+        `「${name}」与内置或已有因子库重名，请重新命名后再确定`,
+      );
+      return;
+    }
     setCloneBusy(true);
     try {
-      const code = post.code_snippet || "";
-      const target = await resolveCommunityCloneTarget(code);
-      const fallbackName =
-        target.kind === "custom"
-          ? target.defName || `社区因子 ${post.id}`
-          : target.factor.description || target.factor.name;
-      const displayName = (post.title || "").trim().slice(0, 80) || fallbackName;
-
-      if (target.kind === "public" || target.kind === "owned_custom") {
-        // 始终新建检测项目；已入库自定义因子也直接进检测并预选
-        const factorCode = target.factor.name;
-        const p = await createDetectProjectForClone(factorCode, displayName);
-        openDetectInNewTab(p.id);
+      // 再拉一次，避免弹窗打开后别人刚入库导致漏检
+      const [fs, userRows] = await Promise.all([
+        loadFactors(true).catch(() => []),
+        listAllUserLibraryFactors().catch(() => []),
+      ]);
+      const taken = new Set<string>();
+      for (const f of fs) {
+        if (f.library === "custom_lib") continue;
+        taken.add(f.name);
+        if (f.methodName) taken.add(f.methodName);
+      }
+      for (const r of userRows) taken.add(r.name);
+      if (taken.has(name)) {
+        setTakenFactorNames(taken);
+        setCloneFormErr(
+          `「${name}」与内置或已有因子库重名，请重新命名后再确定`,
+        );
         return;
       }
-      const defName = target.defName || extractDefName(code) || `community_${post.id}`;
-      const state: CommunityCloneState = {
-        communityClone: true,
-        postId: post.id,
-        title: post.title,
-        body: code.trim(),
-        name: defName,
-        description: post.title,
-      };
-      navigate("/factor/library/custom/new", { state });
+
+      const code = post.code_snippet || "";
+      const displayName =
+        (post.title || "").trim().slice(0, 80) || description || name;
+      const p = await createDetectProjectFromSnippet({
+        title: displayName,
+        code,
+        name,
+        description,
+        category,
+      });
+      setCloneModalOpen(false);
+      openDetectInNewTab(p.id);
     } catch (ex) {
-      setCloneErr(ex instanceof Error ? ex.message : String(ex));
+      setCloneFormErr(ex instanceof Error ? ex.message : String(ex));
     } finally {
       setCloneBusy(false);
     }
@@ -363,6 +476,7 @@ export function CommunityPostPage() {
   const authorName =
     post.author.display_name || post.author.username || "匿名";
   const favorited = !!post.favorited;
+  const myVote = post.my_vote ?? 0;
   const isOwnPost = !!(user && post.author?.id != null && post.author.id === user.id);
   const isAdmin = user?.role === "admin";
   const isHidden = post.status === "hidden";
@@ -447,6 +561,59 @@ export function CommunityPostPage() {
                     ) : null}
                   </>
                 ) : null}
+                {isOwnPost ? (
+                  <>
+                    <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5 text-sm text-slate-400">
+                      <ThumbsUp className="h-4 w-4" />
+                      赞
+                      <span className="text-xs opacity-70">{post.like_count ?? 0}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5 text-sm text-slate-400">
+                      <ThumbsDown className="h-4 w-4" />
+                      踩
+                      <span className="text-xs opacity-70">
+                        {post.dislike_count ?? 0}
+                      </span>
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      disabled={voteBusy || isHidden}
+                      onClick={() => void onCastVote(1)}
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:opacity-60 ${
+                        myVote === 1
+                          ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-red-200 hover:bg-red-50/60 hover:text-red-700"
+                      }`}
+                    >
+                      <ThumbsUp
+                        className={`h-4 w-4 ${myVote === 1 ? "fill-red-500 text-red-500" : ""}`}
+                      />
+                      赞
+                      <span className="text-xs opacity-70">{post.like_count ?? 0}</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={voteBusy || isHidden}
+                      onClick={() => void onCastVote(-1)}
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:opacity-60 ${
+                        myVote === -1
+                          ? "border-slate-300 bg-slate-100 text-slate-800 hover:bg-slate-200"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
+                      }`}
+                    >
+                      <ThumbsDown
+                        className={`h-4 w-4 ${myVote === -1 ? "fill-slate-600 text-slate-700" : ""}`}
+                      />
+                      踩
+                      <span className="text-xs opacity-70">
+                        {post.dislike_count ?? 0}
+                      </span>
+                    </button>
+                  </>
+                )}
                 {isOwnPost ? (
                   <>
                     <button
@@ -537,6 +704,14 @@ export function CommunityPostPage() {
                 <MessageCircle className="h-3.5 w-3.5" />
                 {post.comment_count ?? comments.length}
               </span>
+              <span className="inline-flex items-center gap-1">
+                <ThumbsUp className="h-3.5 w-3.5" />
+                {post.like_count ?? 0}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <ThumbsDown className="h-3.5 w-3.5" />
+                {post.dislike_count ?? 0}
+              </span>
             </div>
             {favErr && <p className="mt-2 text-sm text-red-600">{favErr}</p>}
           </header>
@@ -550,15 +725,17 @@ export function CommunityPostPage() {
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold text-slate-800">代码</h2>
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={cloneBusy}
-                    onClick={() => void onCloneToDetect()}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-1.5 text-sm font-semibold text-white shadow-sm shadow-red-200/50 transition hover:bg-red-400 active:scale-[0.98] disabled:opacity-60"
-                  >
-                    <FlaskConical className="h-4 w-4" />
-                    {cloneBusy ? "处理中…" : "克隆到因子检测"}
-                  </button>
+                  {post.section !== "strategy" ? (
+                    <button
+                      type="button"
+                      disabled={cloneBusy}
+                      onClick={() => void onCloneToDetect()}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-1.5 text-sm font-semibold text-white shadow-sm shadow-red-200/50 transition hover:bg-red-400 active:scale-[0.98] disabled:opacity-60"
+                    >
+                      <FlaskConical className="h-4 w-4" />
+                      {cloneBusy ? "处理中…" : "克隆到因子检测"}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     disabled={cloneBusy}
@@ -575,7 +752,9 @@ export function CommunityPostPage() {
             </div>
           ) : (
             <div className="border-t border-slate-100 px-6 py-4 text-sm text-slate-400 sm:px-8">
-              本帖无代码片段，无法克隆到因子检测或策略研究。
+              {post.section === "strategy"
+                ? "本帖无代码片段，无法克隆到策略研究。"
+                : "本帖无代码片段，无法克隆到因子检测或策略研究。"}
             </div>
           )}
         </CommunityPanel>
@@ -699,6 +878,86 @@ export function CommunityPostPage() {
           });
         }}
       />
+
+      {cloneModalOpen ? (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">新建因子</h3>
+              <button
+                type="button"
+                onClick={() => setCloneModalOpen(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3 text-sm">
+              <label className="block text-xs text-slate-500">
+                因子代码名
+                <input
+                  value={cloneName}
+                  onChange={(e) => {
+                    setCloneName(e.target.value);
+                    const n = e.target.value.trim();
+                    if (n && takenFactorNames.has(n)) {
+                      setCloneFormErr(
+                        `「${n}」与内置或已有因子库重名，请重新命名后再确定`,
+                      );
+                    } else if (cloneFormErr?.includes("重名")) {
+                      setCloneFormErr(null);
+                    }
+                  }}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm outline-none focus:border-blue-400"
+                />
+              </label>
+              <label className="block text-xs text-slate-500">
+                中文解释
+                <input
+                  value={cloneDesc}
+                  onChange={(e) => setCloneDesc(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                />
+              </label>
+              <label className="block text-xs text-slate-500">
+                分类
+                <select
+                  value={cloneCategory}
+                  onChange={(e) => setCloneCategory(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                >
+                  <option value="">请选择</option>
+                  {categoryOptions.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {cloneFormErr ? (
+                <p className="text-xs text-red-600">{cloneFormErr}</p>
+              ) : null}
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCloneModalOpen(false)}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={cloneBusy}
+                onClick={() => void confirmCloneToDetect()}
+                className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {cloneBusy ? "处理中…" : "确定"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </CommunityPageShell>
   );
 }

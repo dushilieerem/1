@@ -8,7 +8,7 @@ import pytest
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT))
 
-from data_ingestion.wind_daily import (  # noqa: E402
+from data_ingestion.wind.daily import (  # noqa: E402
     WIND_DAILY_FIELDS,
     _require_nonempty_panel,
     _wind_data_to_panel,

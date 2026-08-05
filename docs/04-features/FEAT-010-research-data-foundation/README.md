@@ -18,6 +18,7 @@
 - `04-project-plan.md`：任务拆解、排期、风险、里程碑与 DoR。
 - `05-field-dictionary.md`：标准字段、单位、口径、点时可见性与变更控制。
 - `06-data-catalog.md`：数据资产、发布清单、质量验收与授权待确认项。
+- `07-ifind-trading-calendar.md`：iFinD 全 A 股交易日历的交易所映射、下载起始日与质量规则。
 
 ## 当前结论
 

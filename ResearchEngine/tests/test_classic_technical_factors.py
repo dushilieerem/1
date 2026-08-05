@@ -8,10 +8,10 @@ from researchengine import FactorLoader
 
 
 def _panel() -> Panel:
-    dates = pd.bdate_range("2024-01-02", periods=25)
+    dates = pd.bdate_range("2024-01-02", periods=30)
     columns = ["A", "B"]
     close = pd.DataFrame(
-        np.arange(10, 60, dtype=float).reshape(25, 2), index=dates, columns=columns
+        np.arange(10, 70, dtype=float).reshape(30, 2), index=dates, columns=columns
     )
     return Panel({"high": close + 2, "low": close - 1, "close": close, "volume": close * 100})
 
@@ -42,9 +42,39 @@ def test_classic_technical_factor_formulae_match_reference():
     pd.testing.assert_frame_equal(loader.factors["chaikin_money_flow"].compute(panel), expected_cmf)
 
 
+def test_trend_and_momentum_factor_formulae_match_reference():
+    loader = FactorLoader()
+    panel = _panel()
+    loader.load("technical_lib")
+
+    expected_aroon_up = 100 * (
+        25 - panel.high.rolling(26).apply(lambda values: np.argmax(values[::-1]), raw=True)
+    ) / 25
+    pd.testing.assert_frame_equal(loader.factors["aroon_up"].compute(panel), expected_aroon_up)
+
+    expected_aroon_down = 100 * (
+        25 - panel.low.rolling(26).apply(lambda values: np.argmin(values[::-1]), raw=True)
+    ) / 25
+    pd.testing.assert_frame_equal(loader.factors["aroon_down"].compute(panel), expected_aroon_down)
+
+    expected_dpo = panel.close.shift(11) - panel.close.rolling(20).mean()
+    pd.testing.assert_frame_equal(loader.factors["dpo"].compute(panel), expected_dpo)
+
+    delta = panel.close.diff()
+    up_sum = delta.clip(lower=0).rolling(20).sum()
+    down_sum = (-delta.clip(upper=0)).rolling(20).sum()
+    expected_cmo = 100 * (up_sum - down_sum) / (up_sum + down_sum + 1e-10)
+    pd.testing.assert_frame_equal(
+        loader.factors["chande_momentum_oscillator"].compute(panel), expected_cmo
+    )
+
+
 def test_classic_technical_factors_are_discoverable():
     loader = FactorLoader()
     loader.load("technical_lib")
     loader.load("trading_lib")
 
-    assert {"cci", "williams_r", "obv", "chaikin_money_flow"}.issubset(loader.factors)
+    assert {
+        "cci", "williams_r", "obv", "chaikin_money_flow", "aroon_up",
+        "aroon_down", "dpo", "chande_momentum_oscillator",
+    }.issubset(loader.factors)

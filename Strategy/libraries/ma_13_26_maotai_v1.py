@@ -7,6 +7,7 @@ class Ma1326MaotaiStrategy:
     """快均线上穿慢均线时满仓持有贵州茅台，否则清仓。"""
 
     symbol = "600519.SH"
+    fixed_symbols = (symbol,)
 
     def __init__(self, close: pd.DataFrame):
         self.close = close

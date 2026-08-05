@@ -160,6 +160,32 @@ class TechnicalLib(FactorLibrary):
         lowest_low = self.low.rolling(window).min()
         return -100 * (highest_high - self.close) / (highest_high - lowest_low + 1e-10)
 
+    def aroon_up(self, window: int = 26):
+        """Aroon Up：距离近期最高价出现时间的趋势强度。"""
+        periods_since_high = self.high.rolling(window).apply(
+            lambda values: np.argmax(values[::-1]), raw=True
+        )
+        return 100 * (window - 1 - periods_since_high) / (window - 1)
+
+    def aroon_down(self, window: int = 26):
+        """Aroon Down：距离近期最低价出现时间的趋势强度。"""
+        periods_since_low = self.low.rolling(window).apply(
+            lambda values: np.argmin(values[::-1]), raw=True
+        )
+        return 100 * (window - 1 - periods_since_low) / (window - 1)
+
+    def dpo(self, window: int = 20):
+        """去趋势价格振荡器：移位收盘价减去当期均线。"""
+        displacement = window // 2 + 1
+        return self.close.shift(displacement) - self.close.rolling(window).mean()
+
+    def chande_momentum_oscillator(self, window: int = 20):
+        """Chande 动量振荡器：窗口内涨跌价格变动的归一化差。"""
+        delta = self.close.diff()
+        up_sum = delta.clip(lower=0).rolling(window).sum()
+        down_sum = (-delta.clip(upper=0)).rolling(window).sum()
+        return 100 * (up_sum - down_sum) / (up_sum + down_sum + 1e-10)
+
     # ==================== 价格形态 ====================
 
     def price_pattern_doji(self):

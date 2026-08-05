@@ -63,7 +63,17 @@ quality_report: quality_report.json
 
 `status` 仅允许为 `ready`、`blocked`、`deprecated`。因子或回测依赖的字段不是 `ready` 时，加载层必须报告缺少字段及其数据资产 ID，不能降级为零值或替代口径。
 
-## 5. 责任与待确认项
+交易日历按交易所分别发布为 `calendar/SH.parquet`、`calendar/SZ.parquet`、`calendar/BJ.parquet`。iFinD `/api/v1/get_trade_dates` 的 `marketcode` 固定为 `SH=212001`、`SZ=212100`、`BJ=212300`；每份日历记录请求区间、生成时间、源版本和哈希。
+
+所有 iFinD 数据资产均采用“CSV 先行、Parquet 发布”流程：`sources/ifind/` 中保留可人工检查的 CSV 分区，只有通过质量门禁的数据才生成 `releases/<version>/` 和 `current/` 下的 Parquet。CSV 分区的请求参数、来源版本、数据量和哈希必须记录在采集 checkpoint / 发布清单中。
+
+## 5. iFinD 日线复权协议记录
+
+`/api/v1/history_data` 的全 A 股 OHLC 请求使用 `reqBody.codes`、`startdate`、`enddate`、`indicators` 和可选 `functionpara`。经超级命令生成协议确认：省略 `functionpara.CPS` 为不复权，`CPS: "1"` 为后复权，`CPS: "2"` 为前复权。该规则仅适用于此 HTTP endpoint；不得用其他接口或 SDK 的同名参数规则替代。
+
+不复权、前复权、后复权的原始数据分别保存，发布清单必须记录其 `endpoint`、`functionpara`、价格口径、源版本和对应超级命令确认记录。任何一个候选版本的标准 `open`、`high`、`low`、`close` 只允许声明一种明确口径。
+
+## 6. 责任与待确认项
 
 | 项目 | 建议责任角色 | 当前状态 | 进入开发前的完成标准 |
 |---|---|---|---|

@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from researchengine.api import app
 from researchengine.api.market_data import _market_symbol, _panel_symbol
-from researchengine.api.runner import _sample_positions, _serialize_rebalance_logs
+from researchengine.api.runner import _display_instrument, _sample_positions, _serialize_rebalance_logs
 
 
 client = TestClient(app)
@@ -90,8 +90,15 @@ def market_data_dir(tmp_path, monkeypatch):
 
     benchmark_dir = tmp_path / "benchmark"
     benchmark_dir.mkdir()
+    benchmark_close = np.linspace(4000.0, 4300.0, len(dates))
     benchmark = pd.DataFrame(
-        {"000300_close": np.linspace(4000.0, 4300.0, len(dates))}, index=dates
+        {
+            "000300_open": benchmark_close * 0.995,
+            "000300_high": benchmark_close * 1.01,
+            "000300_low": benchmark_close * 0.99,
+            "000300_close": benchmark_close,
+        },
+        index=dates,
     )
     benchmark.to_parquet(benchmark_dir / "index_000300.parquet")
     pd.DataFrame(
@@ -397,6 +404,30 @@ def test_strategy_backtest_routes_catalog_event_strategy_to_event_engine(market_
     assert body["assumptions"]["execution"] == "same_session_open_after_before_open"
 
 
+def test_strategy_backtest_injects_benchmark_ohlc_for_ichimoku(market_data_dir):
+    response = client.post(
+        "/api/backtest/strategy",
+        json={"strategy_id": "hosoda_ichimoku_a_share_event", "engine_mode": "event"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["error"] is None
+
+
+def test_event_strategy_reports_missing_benchmark_ohlc_field(market_data_dir):
+    path = market_data_dir / "benchmark" / "index_000300.parquet"
+    benchmark = pd.read_parquet(path).drop(columns="000300_open")
+    benchmark.to_parquet(path)
+
+    response = client.post(
+        "/api/backtest/strategy",
+        json={"strategy_id": "hosoda_ichimoku_a_share_event", "engine_mode": "event"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["error"] == "ValueError: 基准 CSI300 缺少日线字段: ['open']"
+
+
 def test_strategy_backtest_rejects_mismatched_catalog_engine_mode(market_data_dir):
     response = client.post(
         "/api/backtest/strategy",
@@ -412,7 +443,7 @@ def test_event_strategy_reports_symbols_missing_from_selected_universe(market_da
         "/api/backtest/strategy",
         json={
             "strategy_code": '''class SingleStockStrategy:
-    required_symbols = frozenset({"S999"})
+    fixed_symbols = ("S999",)
 
     def initialize(self, context):
         pass''',
@@ -422,10 +453,7 @@ def test_event_strategy_reports_symbols_missing_from_selected_universe(market_da
     )
 
     assert response.status_code == 200
-    assert response.json()["error"] == (
-        "ValueError: 策略所需标的不在所选股票池 CSI500: ['S999']；"
-        "请调整股票池或策略标的后重试"
-    )
+    assert response.json()["error"] == "ValueError: 策略固定标的行情不可用: ['S999']"
 
 
 def test_event_strategy_accepts_exchange_code_against_raw_panel_symbols(market_data_dir):
@@ -443,7 +471,7 @@ def test_event_strategy_accepts_exchange_code_against_raw_panel_symbols(market_d
         "/api/backtest/strategy",
         json={
             "strategy_code": '''class SingleStockStrategy:
-    required_symbols = frozenset({"600519.SH"})
+    fixed_symbols = ("600519.SH",)
 
     def initialize(self, context):
         context.schedule.daily(self.rebalance)
@@ -458,6 +486,153 @@ def test_event_strategy_accepts_exchange_code_against_raw_panel_symbols(market_d
     assert response.status_code == 200
     assert response.json()["error"] is None
     assert response.json()["fills"][0]["symbol"] == "600519.SH"
+    assert response.json()["meta"]["trading_symbols"] == ["600519.SH"]
+
+
+def test_fixed_event_strategy_ignores_selected_universe(market_data_dir):
+    response = client.post(
+        "/api/backtest/strategy",
+        json={
+            "strategy_code": '''class SingleStockStrategy:
+    fixed_symbols = ("S002",)
+
+    def initialize(self, context):
+        context.schedule.daily(self.rebalance)
+
+    def rebalance(self, context):
+        context.orders.target_quantity("S002", 100)''',
+            "engine_mode": "event",
+            "universe": "CSI300",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["error"] is None
+    assert response.json()["fills"][0]["symbol"] == "S002"
+
+
+def test_legacy_event_symbol_ignores_selected_universe(market_data_dir):
+    response = client.post(
+        "/api/backtest/strategy",
+        json={
+            "strategy_code": '''class SingleStockStrategy:
+    def __init__(self):
+        self.symbol = "S002"
+
+    def initialize(self, context):
+        context.schedule.daily(self.rebalance)
+
+    def rebalance(self, context):
+        context.orders.target_quantity(self.symbol, 100)''',
+            "engine_mode": "event",
+            "universe": "CSI300",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["error"] is None
+    assert response.json()["meta"]["trading_symbols"] == ["S002"]
+
+
+def test_declared_symbols_ignores_selected_universe(market_data_dir):
+    response = client.post(
+        "/api/backtest/strategy",
+        json={
+            "strategy_code": '''class BasketStrategy:
+    symbols = ("S002", "S003")
+
+    def initialize(self, context):
+        context.schedule.daily(self.rebalance)
+
+    def rebalance(self, context):
+        context.orders.target_quantity("S002", 100)''',
+            "engine_mode": "event",
+            "universe": "CSI300",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["error"] is None
+    assert response.json()["meta"]["trading_symbols"] == ["S002", "S003"]
+
+
+def test_pair_strategy_ignores_selected_universe(market_data_dir):
+    response = client.post(
+        "/api/backtest/strategy",
+        json={
+            "strategy_code": '''import pandas as pd
+
+class PairStrategy:
+    pair_symbols = ("S002", "S003")
+
+    def __init__(self, close):
+        self.close = close
+
+    def generate_signals(self):
+        assert list(self.close.columns) == ["S002", "S003"]
+        return pd.DataFrame(0.0, index=self.close.index, columns=self.close.columns)''',
+            "universe": "CSI300",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["error"] is None
+    assert response.json()["meta"]["trading_symbols"] == ["S002", "S003"]
+
+
+def test_legacy_pair_strategy_ignores_selected_universe(market_data_dir):
+    response = client.post(
+        "/api/backtest/strategy",
+        json={
+            "strategy_code": '''import pandas as pd
+
+class PairStrategy:
+    def __init__(self, close, stock_a="S002", stock_b="S003"):
+        self.close = close
+        self.stock_a = stock_a
+        self.stock_b = stock_b
+
+    def generate_signals(self):
+        assert list(self.close.columns) == ["S002", "S003"]
+        return pd.DataFrame(0.0, index=self.close.index, columns=self.close.columns)''',
+            "universe": "CSI300",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["error"] is None
+    assert response.json()["meta"]["trading_symbols"] == ["S002", "S003"]
+
+
+def test_vectorized_strategy_receives_exchange_code_columns(market_data_dir):
+    path = market_data_dir / "close.parquet"
+    close = pd.read_parquet(path)
+    close["600519"] = 100.0
+    close.to_parquet(path, index=False)
+    constituents_path = market_data_dir / "benchmark" / "CSI300_constituents.parquet"
+    constituents = pd.read_parquet(constituents_path)
+    constituents["600519"] = 1
+    constituents.to_parquet(constituents_path)
+
+    response = client.post(
+        "/api/backtest/strategy",
+        json={
+            "strategy_code": '''import pandas as pd
+
+class ExchangeCodeStrategy:
+    def __init__(self, close):
+        self.close = close
+
+    def generate_signals(self):
+        assert "600519.SH" in self.close.columns
+        assert "600519" not in self.close.columns
+        return pd.DataFrame(0.0, index=self.close.index, columns=self.close.columns)''',
+            "universe": "CSI300",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["error"] is None
 
 
 def test_strategy_backtest_returns_rebalance_logs_on_demand(market_data_dir):
@@ -537,6 +712,12 @@ def test_strategy_response_instruments_include_exchange_code_and_name():
     }
     assert trade.model_dump()["symbol"] == "000001.SZ"
     assert trade.model_dump()["name"] == "平安银行"
+
+
+def test_display_instrument_accepts_exchange_code_panel_symbol():
+    assert _display_instrument("600519.SH", {"600519": "贵州茅台"}) == (
+        "600519.SH", "贵州茅台",
+    )
 
 
 def test_strategy_catalog_lists_and_runs_saved_version(market_data_dir, tmp_path, monkeypatch):

@@ -322,6 +322,7 @@ class StrategyBacktestMeta(BaseModel):
     strategy_id: Optional[str] = None
     strategy_version: Optional[str] = None
     code_hash: Optional[str] = None
+    trading_symbols: Optional[list[str]] = Field(None, exclude_if=lambda value: value is None)
     universe_asset: Optional[ResolvedAssetMeta] = Field(None, exclude_if=lambda value: value is None)
     benchmark_asset: Optional[ResolvedAssetMeta] = Field(None, exclude_if=lambda value: value is None)
 

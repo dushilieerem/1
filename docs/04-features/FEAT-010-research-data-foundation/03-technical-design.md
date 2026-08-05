@@ -55,6 +55,27 @@ MarketData/
 
 当前 `current/` 是运行时活动版本目录；后续发布流程先在 `releases/<data_version>/` 完成校验，再以原子方式切换 `current/`，避免 API 读到部分更新的数据。
 
+### iFinD `history_data` 日线协议（已由超级命令确认）
+
+全 A 股日线 OHLC 使用 `POST https://quantapi.51ifind.com/api/v1/history_data`，请求体外层为 `{"reqBody": ...}`。`reqBody` 至少包含显式证券代码列表 `codes`、`startdate`、`enddate` 与 `indicators: "open,high,low,close"`。该 endpoint 的复权参数以超级命令实际协议为唯一准则：省略 `functionpara.CPS` 为不复权，`CPS: "1"` 为后复权，`CPS: "2"` 为前复权。
+
+此映射不得套用其他 iFinD 历史行情 endpoint 或旧版 SDK 文档的 `CPS` 含义。采集器须分别记录 endpoint、完整 `functionpara`、超级命令协议确认日期和供应商版本；三种口径分别落入原始数据目录，未经发布规则确认不得覆盖同一标准字段面板。
+
+全 A 股下载任务使用 `POST /api/v1/get_trade_dates` 获取交易日历，固定 `functionpara: {"mode": "1", "dateType": "0", "period": "D", "dateFormat": "0"}`。交易所与 iFinD `marketcode` 映射为：`SH → 212001`、`SZ → 212100`、`BJ → 212300`。三份日历独立保存并进行差异检查；按证券所属交易所选择下载窗口，不假定三地日历恒等。
+
+### iFinD CSV 优先落盘规则
+
+所有 iFinD 下载结果先写入 `MarketData/sources/ifind/` 下按数据域、交易所和时间窗口分区的 UTF-8 CSV；不得由 HTTP 响应直接写入 `current/` 或 `releases/` 的 Parquet。CSV 经字段名、证券代码、日期、重复记录、OHLC 关系、缺失率和请求覆盖区间检查后，才转换为候选发布版本中的标准字段 Parquet。每个 CSV 分区对应的请求参数、`dataVol`、来源版本、生成时间和内容哈希由 checkpoint / manifest 记录；CSV 用于人工查看和问题追溯，Parquet 用于研究运行时读取。
+
+### iFinD 全量与日增量任务
+
+每类 iFinD 数据均提供两个独立命令入口，并复用同一下载、标准化、CSV 落盘和质量检查实现：
+
+- **全量回填命令**：显式接收证券池版本、起止日期和字段组；按预算切分为可断点续传的历史批次，生成或补齐指定历史区间。
+- **收盘后日增量命令**：由定时任务每天收盘并确认数据完整后运行；根据三地交易日历确定最近一个已完成交易日，只下载该日期尚未完成的分区。非交易日、已完成分区或行情未最终落定时安全退出，不重复计量或覆盖已验证数据。
+
+日增量任务不得按本机日历日盲目请求“今天”。它必须记录运行时间、目标交易日、各交易所状态、实际 `dataVol` 和 CSV 分区哈希，并通过相同质量门禁后才允许进入后续 Parquet 发布。调度器是外部运行方式，不得把账号凭据、调度配置或 token 写入代码仓库。
+
 ## 测试策略
 
 - 单元测试：字段映射、公告日边界、TTM/同比、修订版本、复权转换与缺字段异常。

@@ -12,7 +12,7 @@ from typing import Sequence
 import pandas as pd
 import yaml
 
-from data_ingestion.panel_quality import inspect_panels
+from data_ingestion.shared.panel_quality import inspect_panels
 
 
 FIELD_MAP = {
@@ -202,7 +202,7 @@ def append_valuation_panels(
 
 
 def _parse_args() -> argparse.Namespace:
-    market_data_root = Path(__file__).resolve().parents[2]
+    market_data_root = Path(__file__).resolve().parents[3]
     parser = argparse.ArgumentParser(description=__doc__)
     symbol_source = parser.add_mutually_exclusive_group(required=True)
     symbol_source.add_argument("--symbols-file", type=Path)
@@ -221,7 +221,7 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
-    market_data_root = Path(__file__).resolve().parents[2]
+    market_data_root = Path(__file__).resolve().parents[3]
     if args.all_symbols:
         symbols = [path.stem for path in sorted(args.bars_dir.glob("*.csv"))]
     else:

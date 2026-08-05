@@ -8,7 +8,11 @@
 MarketData/
 ├── DataIngestion/            # 采集工具（纳入 Git）
 │   ├── akshare_bars/         # AkShare 日线增量采集脚本；data/、logs/ 为运行产物
-│   └── data_ingestion/       # 本文所述的 Wind 历史采集与标准化代码
+│   └── data_ingestion/       # 按数据源组织的采集、校验与发布代码
+│       ├── akshare/          # AkShare 原始日线校验、候选版本与运行时资产发布
+│       ├── ifind/            # iFinD HTTP 数据采集（全量回填与日增量）
+│       ├── wind/             # Wind 历史日频下载
+│       └── shared/           # 跨数据源复用的标准面板质量检查
 ├── current/                  # 当前运行时数据版本（不纳入 Git）
 │   ├── panels/               # 一个字段一个 日期 × 标的 Parquet
 │   ├── benchmark/            # 指数与成分数据
@@ -19,13 +23,17 @@ MarketData/
 
 `FieldParquetProvider("MarketData")` 会自动解析 `current/panels` 与 `current/benchmark`，因此 API 的 `SVQUANT_DATA_DIR` 可继续指向 `MarketData`。
 
+## iFinD HTTP 数据采集
+
+iFinD 的交易日历、全 A 证券池、后复权 OHLC 全量回填和收盘后日增量说明已独立维护在 [data_ingestion/ifind/README.md](data_ingestion/ifind/README.md)。
+
 ## Wind 日频下载
 
 在配置 WindPy 的环境中执行：
 
 ```powershell
 cd MarketData/DataIngestion
-python -m data_ingestion.wind_daily `
+python -m data_ingestion.wind.daily `
   --symbols-file symbols.txt `
   --start 2020-01-01 --end 2024-12-31 `
   --output ../current/panels
@@ -52,7 +60,7 @@ AkShare 原始日线在转换为标准面板前运行以下检查。报告仅写
 
 ```powershell
 cd MarketData/DataIngestion
-python -m data_ingestion.akshare_quality `
+python -m data_ingestion.akshare.quality `
   --as-of 2026-07-23 `
   --report ../sources/akshare/01_meta/quality_reports/daily_bars_20260723.json
 ```
@@ -65,7 +73,7 @@ python -m data_ingestion.akshare_quality `
 
 ```powershell
 cd MarketData/DataIngestion
-python -m data_ingestion.panel_quality `
+python -m data_ingestion.shared.panel_quality `
   --report ../current/metadata/quality_reports/current_panels.json
 ```
 
@@ -75,7 +83,7 @@ AkShare 是当前主历史来源。先将通过质量门禁的证券范围生成
 
 ```powershell
 cd MarketData/DataIngestion
-python -m data_ingestion.akshare_publish `
+python -m data_ingestion.akshare.publish `
   --symbols-file symbols.txt `
   --start 2025-01-01 --end 2025-12-31 `
   --data-version akshare-2025-sample-v1 `
@@ -87,7 +95,7 @@ python -m data_ingestion.akshare_publish `
 候选版本生成后，可追加 `valuation/wide` 中已验证的总/流通市值、总/流通股本及 PE/PB/PS；这些字段按既有 OHLC 交易日历对齐，早期或缺失记录保留为 `NaN`：
 
 ```powershell
-python -m data_ingestion.akshare_publish `
+python -m data_ingestion.akshare.publish `
   --all-symbols --append-valuations `
   --start 1990-01-01 --end 2026-07-23 `
   --data-version akshare-full-hfq-v1 `
@@ -99,7 +107,7 @@ python -m data_ingestion.akshare_publish `
 候选版本已具备面板字段后，可从 AkShare 原始库补齐 API 读取所需的四个核心指数、历史成分矩阵及证券主数据：
 
 ```powershell
-python -m data_ingestion.akshare_runtime_assets `
+python -m data_ingestion.akshare.runtime_assets `
   --source-root ../sources/akshare `
   --release ../releases/akshare-full-hfq-v1
 ```

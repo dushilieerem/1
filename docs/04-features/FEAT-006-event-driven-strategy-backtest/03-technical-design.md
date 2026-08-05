@@ -49,6 +49,12 @@ class EventBacktestEngine:
             profile: EngineProfile) -> BacktestResult: ...
 ```
 
+### 3.1 交易标的范围契约
+
+策略可在类级声明 `fixed_symbols`（单标的或固定篮子）、`pair_symbols`（配对策略）或 `symbols`（固定篮子）。API 在读取行情前优先使用这些标的，不受请求 `universe` 的限制，并校验每个标的在当前数据快照中可用；请求股票池仍作为性能展示或比较口径保留，但不限制固定标的下单。为兼容已有单标的事件策略，未声明上述字段但实例提供非空 `symbol` 字符串时，API 将该值视为单个固定标的；对向量化策略，构造函数中 `stock_a`、`stock_b` 或 `symbol` 的字符串默认值也会被识别为固定标的。`benchmark_symbol` 不属于交易标的，不参与该解析。新策略仍应优先显式使用 `fixed_symbols` 或 `pair_symbols`。
+
+未声明上述字段的策略继续以请求 `universe` 解析可交易范围。策略代码对外统一使用交易所代码（如 `600519.SH`）；API 在数据边界将底层六位代码标准化后再交给策略。响应 `meta.trading_symbols` 仅在策略声明固定标的时返回，用于前端明确展示实际交易范围。
+
 策略源码的适配方式为：源码可定义模块级 `initialize(context)`、`requirements()` 和回调函数；受控加载器把它们包装为 `EventStrategy`。`context` 服务由引擎注入，禁止策略直接构造数据提供者、撮合器或组合对象。
 
 ## 4. 事件顺序与成交模型

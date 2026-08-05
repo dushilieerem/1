@@ -10,6 +10,7 @@ HTTP 路由调用的纯函数。
 
 from __future__ import annotations
 
+import inspect
 import os
 import shutil
 import sys
@@ -308,6 +309,86 @@ def _resolve_research_assets(req):
     return universe, universe_snapshot, benchmark_snapshot
 
 
+def _declared_strategy_symbols(strategy) -> tuple[str, ...]:
+    """读取策略声明的固定交易标的，兼容旧单标的 ``symbol`` 属性。"""
+    symbols: list[str] = []
+    for field in ("fixed_symbols", "pair_symbols", "symbols"):
+        declared = getattr(strategy, field, ())
+        if declared is None:
+            continue
+        if isinstance(declared, str):
+            raise ValueError(f"策略 {field} 必须为证券代码序列，不能是字符串")
+        try:
+            values = list(declared)
+        except TypeError as exc:
+            raise ValueError(f"策略 {field} 必须为证券代码序列") from exc
+        if any(not isinstance(symbol, str) or not symbol for symbol in values):
+            raise ValueError(f"策略 {field} 包含无效证券代码")
+        symbols.extend(values)
+    if not symbols:
+        symbol = getattr(strategy, "symbol", None)
+        if isinstance(symbol, str) and symbol:
+            symbols.append(symbol)
+    if not symbols:
+        try:
+            parameters = inspect.signature(strategy.__init__).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        pair = [
+            parameters[name].default
+            for name in ("stock_a", "stock_b")
+            if name in parameters and isinstance(parameters[name].default, str)
+        ]
+        if len(pair) == 2:
+            symbols.extend(pair)
+        else:
+            symbol = parameters.get("symbol")
+            if symbol is not None and isinstance(symbol.default, str) and symbol.default:
+                symbols.append(symbol.default)
+    return tuple(dict.fromkeys(symbols))
+
+
+def _resolve_strategy_symbols(provider, universe, strategy) -> tuple[list[str], dict[str, str], tuple[str, ...]]:
+    """优先解析策略固定标的；否则沿用请求股票池。"""
+    from quantcore.data._util import resolve_universe
+    from researchengine.api.market_data import _market_symbol, _panel_symbol
+
+    declared_symbols = _declared_strategy_symbols(strategy)
+    if declared_symbols:
+        raw_symbols = [_panel_symbol(symbol) for symbol in declared_symbols]
+        available_symbols = set(provider.get_symbols())
+        missing_symbols = [symbol for symbol, raw in zip(declared_symbols, raw_symbols) if raw not in available_symbols]
+        if missing_symbols:
+            raise ValueError(f"策略固定标的行情不可用: {sorted(missing_symbols)}")
+        return raw_symbols, dict(zip(raw_symbols, declared_symbols)), declared_symbols
+
+    raw_symbols = resolve_universe(provider, universe)
+    return raw_symbols, {symbol: _market_symbol(symbol) for symbol in raw_symbols}, ()
+
+
+class _StrategyPanels:
+    """向量化策略的懒加载行情视图，统一输出交易所代码列名。"""
+
+    def __init__(self, panels, raw_symbols: list[str], symbol_mapping: dict[str, str]) -> None:
+        self._panels = panels
+        self._raw_symbols = raw_symbols
+        self._symbol_mapping = symbol_mapping
+        self._cache: dict[str, pd.DataFrame] = {}
+
+    def __contains__(self, field: str) -> bool:
+        return field in self._panels
+
+    def __iter__(self):
+        return iter(self._panels)
+
+    def __getitem__(self, field: str) -> pd.DataFrame:
+        if field not in self._cache:
+            self._cache[field] = self._panels[field].reindex(
+                columns=self._raw_symbols
+            ).rename(columns=self._symbol_mapping)
+        return self._cache[field]
+
+
 def _custom_benchmark_equity(snapshot, dates: pd.DatetimeIndex) -> pd.Series:
     """从已发布 close 面板计算静态组合基准，并严格校验价格可得性。"""
     from quantcore import DataEngine, FieldParquetProvider
@@ -511,9 +592,9 @@ def _compute_annual_returns(equity: pd.Series) -> list[AnnualReturn]:
 
 def _display_instrument(symbol: object, stock_names: dict[str, str]) -> tuple[str, str]:
     """将面板代码转换为 API 代码，并查询证券名称。"""
-    from researchengine.api.market_data import _market_symbol
+    from researchengine.api.market_data import _market_symbol, _panel_symbol
 
-    panel_symbol = str(symbol)
+    panel_symbol = _panel_symbol(str(symbol))
     return _market_symbol(panel_symbol), stock_names[panel_symbol]
 
 
@@ -855,14 +936,17 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
 
         data_dir = _resolve_data_dir(None)
         from quantcore import DataEngine, FieldParquetProvider
-        from quantcore.data._util import resolve_universe
         from quantcore.factor.base import Panel
 
         provider = FieldParquetProvider(data_dir)
         data_engine = DataEngine(provider=provider)
+        raw_symbols, symbol_mapping, declared_symbols = _resolve_strategy_symbols(
+            provider, universe, strategy_class
+        )
         panels = Panel(
-            data_engine.get_panels(req.start, req.end),
-            symbols=resolve_universe(provider, universe),
+            _StrategyPanels(
+                data_engine.get_panels(req.start, req.end), raw_symbols, symbol_mapping
+            ),
             index_loader=lambda name: data_engine.get_index(name, req.start, req.end),
         )
         close = panels.close
@@ -976,6 +1060,7 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
             strategy_id=strategy_id,
             strategy_version=strategy_version,
             code_hash=code_hash,
+            trading_symbols=list(declared_symbols) or None,
         ),
         positions=positions,
         rebalance_logs=rebalance_logs,
@@ -995,7 +1080,6 @@ def _run_event_strategy_backtest(
     try:
         from quantcore import DataEngine, FieldParquetProvider
         from quantcore.backtest.event import EventBacktestConfig, EventBacktestEngine
-        from quantcore.data._util import resolve_universe
         from quantcore.metric.context import MetricContext
         from quantcore.metric.engine import MetricEngine
 
@@ -1004,27 +1088,27 @@ def _run_event_strategy_backtest(
         strategy = strategy_class()
         required_fields = set(getattr(strategy, "required_fields", ())) | {"open", "high", "low", "close"}
         panels = data_engine.get_panels(req.start, req.end, fields=sorted(required_fields))
-        symbols = resolve_universe(provider, req.universe)
-        from researchengine.api.market_data import _market_symbol
-
-        symbol_mapping = {symbol: _market_symbol(symbol) for symbol in symbols}
-        symbols = [symbol_mapping[symbol] for symbol in symbols]
-        required_symbols = set(getattr(strategy, "required_symbols", ()))
-        missing_symbols = sorted(required_symbols - set(symbols))
-        if missing_symbols:
-            raise ValueError(
-                f"策略所需标的不在所选股票池 {req.universe}: {missing_symbols}；"
-                "请调整股票池或策略标的后重试"
-            )
+        raw_symbols, symbol_mapping, declared_symbols = _resolve_strategy_symbols(
+            provider, req.universe, strategy
+        )
         event_panels = {
-            field: panels[field].reindex(columns=symbol_mapping).rename(columns=symbol_mapping)
+            field: panels[field].reindex(columns=raw_symbols).rename(columns=symbol_mapping)
             for field in required_fields
         }
         index = data_engine.get_index(req.benchmark, req.start, req.end)
         benchmark_symbol = getattr(strategy, "benchmark_symbol", None)
         if benchmark_symbol:
-            event_panels["close"] = event_panels["close"].copy()
-            event_panels["close"][benchmark_symbol] = index["close"].reindex(event_panels["close"].index)
+            required_index_fields = {"open", "high", "low", "close"}
+            missing_index_fields = required_index_fields - set(index.columns)
+            if missing_index_fields:
+                raise ValueError(
+                    f"基准 {req.benchmark} 缺少日线字段: {sorted(missing_index_fields)}"
+                )
+            for field in required_index_fields:
+                event_panels[field] = event_panels[field].copy()
+                event_panels[field][benchmark_symbol] = index[field].reindex(
+                    event_panels[field].index
+                )
 
         result = EventBacktestEngine(
             event_panels,
@@ -1085,6 +1169,7 @@ def _run_event_strategy_backtest(
                 strategy=strategy_class.__name__, universe=req.universe,
                 benchmark=req.benchmark, engine_mode="event", strategy_id=strategy_id,
                 strategy_version=strategy_version, code_hash=code_hash,
+                trading_symbols=list(declared_symbols) or None,
             ),
             orders=orders,
             fills=fills,

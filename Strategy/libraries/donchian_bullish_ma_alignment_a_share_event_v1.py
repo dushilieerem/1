@@ -11,6 +11,7 @@ class DonchianBullishMaAlignmentAShareEventStrategy:
     execution_mode = "event"
     required_fields = frozenset({"open", "close"})
     required_market_state = frozenset({"suspended", "limit_up", "limit_down"})
+    fixed_symbols = ("000858.SZ",)
 
     def __init__(
         self,

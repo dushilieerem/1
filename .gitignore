@@ -41,3 +41,4 @@ MarketData/DataIngestion/**/*.py[cod]
 AGENTS.md
 *.rar
 .Codex/
+tmp/

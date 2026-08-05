@@ -11,6 +11,7 @@ class SimonsPairsTradingResearchStrategy:
     """按价格比 Z-score 构建等名义多空配对，未模拟借券、保证金和融券成本。"""
 
     execution_mode = "vectorized"
+    pair_symbols = ("600519.SH", "000858.SZ")
 
     def __init__(
         self,

@@ -8,10 +8,10 @@ import pandas as pd
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT))
 
-from data_ingestion.akshare_quality import inspect_bars  # noqa: E402
-from data_ingestion.akshare_publish import append_valuation_panels, publish_daily_bars  # noqa: E402
-from data_ingestion.akshare_runtime_assets import append_runtime_assets  # noqa: E402
-from data_ingestion.panel_quality import inspect_panels  # noqa: E402
+from data_ingestion.akshare.quality import inspect_bars  # noqa: E402
+from data_ingestion.akshare.publish import append_valuation_panels, publish_daily_bars  # noqa: E402
+from data_ingestion.akshare.runtime_assets import append_runtime_assets  # noqa: E402
+from data_ingestion.shared.panel_quality import inspect_panels  # noqa: E402
 
 
 def _write_bar(path: Path, rows: list[str], header: str | None = None) -> None:

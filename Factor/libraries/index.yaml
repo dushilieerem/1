@@ -3,7 +3,7 @@
 
 version: 1
 updated: 2026-07-22
-total_factors: 672
+total_factors: 676
 
 libraries:
   emotion_indicators:
@@ -305,6 +305,22 @@ libraries:
         description: "Williams %R：收盘在近期区间的位置"
         params: { window: 14 }
         tags: [williams_r, momentum]
+      - name: aroon_up
+        description: "Aroon Up：距离近期最高价出现时间的趋势强度"
+        params: { window: 26 }
+        tags: [aroon, trend]
+      - name: aroon_down
+        description: "Aroon Down：距离近期最低价出现时间的趋势强度"
+        params: { window: 26 }
+        tags: [aroon, trend]
+      - name: dpo
+        description: "去趋势价格振荡器"
+        params: { window: 20 }
+        tags: [dpo, cycle]
+      - name: chande_momentum_oscillator
+        description: "Chande动量振荡器"
+        params: { window: 20 }
+        tags: [cmo, momentum]
       - name: price_pattern_doji
         description: "十字星形态"
         params: {}

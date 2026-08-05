@@ -105,7 +105,7 @@ def inspect_bars(
 
 
 def _parse_args() -> argparse.Namespace:
-    market_data_root = Path(__file__).resolve().parents[2]
+    market_data_root = Path(__file__).resolve().parents[3]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--bars-dir",

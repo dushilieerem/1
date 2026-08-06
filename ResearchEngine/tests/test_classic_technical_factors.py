@@ -69,6 +69,40 @@ def test_trend_and_momentum_factor_formulae_match_reference():
     )
 
 
+def test_directional_and_accumulation_factor_formulae_match_reference():
+    loader = FactorLoader()
+    panel = _panel()
+    loader.load("technical_lib")
+
+    previous_close = panel.close.shift()
+    true_range = panel.high - panel.low
+    true_range = true_range.where(true_range >= (panel.high - previous_close).abs(), (panel.high - previous_close).abs())
+    true_range = true_range.where(true_range >= (panel.low - previous_close).abs(), (panel.low - previous_close).abs())
+    up_move = panel.high.diff()
+    down_move = -panel.low.diff()
+    positive_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+    negative_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+    positive = 100 * positive_dm.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean() / (
+        true_range.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean() + 1e-10
+    )
+    negative = 100 * negative_dm.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean() / (
+        true_range.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean() + 1e-10
+    )
+    pd.testing.assert_frame_equal(loader.factors["positive_directional_index"].compute(panel), positive)
+    pd.testing.assert_frame_equal(loader.factors["negative_directional_index"].compute(panel), negative)
+
+    expected_adx = (
+        100 * (positive - negative).abs() / (positive + negative + 1e-10)
+    ).ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
+    pd.testing.assert_frame_equal(loader.factors["average_directional_index"].compute(panel), expected_adx)
+
+    multiplier = ((panel.close - panel.low) - (panel.high - panel.close)) / (panel.high - panel.low + 1e-10)
+    pd.testing.assert_frame_equal(
+        loader.factors["accumulation_distribution"].compute(panel),
+        (multiplier * panel.volume).cumsum(),
+    )
+
+
 def test_classic_technical_factors_are_discoverable():
     loader = FactorLoader()
     loader.load("technical_lib")
@@ -77,4 +111,6 @@ def test_classic_technical_factors_are_discoverable():
     assert {
         "cci", "williams_r", "obv", "chaikin_money_flow", "aroon_up",
         "aroon_down", "dpo", "chande_momentum_oscillator",
+        "positive_directional_index", "negative_directional_index",
+        "average_directional_index", "accumulation_distribution",
     }.issubset(loader.factors)

@@ -18,4 +18,8 @@ KD 策略位于 `Strategy/libraries/lane_stochastic_a_share_event_v1.py`，使�
 
 Aroon 与 KST 分别位于 `Strategy/libraries/chande_aroon_a_share_event_v1.py` 和 `Strategy/libraries/pring_kst_a_share_event_v1.py`。两者仅通过事件 `DataView` 读取 OHLC 和沪深 300 基准日线：Aroon 用当前日加此前 25 日的极值距离计算 Up/Down；KST 使用 10/15/20/30 日 ROC 的 10/10/10/15 日平滑、1/2/3/4 加权及 9 日信号线。策略按前一收盘生成信号、下一开盘成交，持仓上限十只、单只目标 9%。原聚宽版的历史指数成分、ST、上市日期和实时交易状态不在策略内模拟，仍由数据面板和事件引擎承载。
 
+12-1 动量、小盘价值和红利低波狗股分别位于 `jegadeesh_titman_12_1_a_share_event_v1.py`、`fama_french_small_value_a_share_event_v1.py` 和 `dogs_of_the_dow_low_vol_a_share_event_v1.py`。前两者在月度首个交易日从前收盘可见的 `close`、`amount`、`industry` 及所需点时估值字段构建截面；行业字段必须是日期×证券面板，不能用当前行业回填历史。狗股策略仅在一月的首个交易日执行，读取前收盘的 `close`、`pe_ratio` 和 `dividend_yield`。三者均不在源码中猜测 ST、上市日期或停牌状态，停牌和涨跌停成交限制由事件引擎市场状态面板处理。
+
+三重滤网位于 `elder_triple_screen_a_share_event_v1.py`，只读取前一收盘可见的 OHLC。策略将日线收盘重采样为周线，以周 MA5>MA10 判断趋势；KDJ 使用 9 日 RSV 及 1/3 指数平滑的 K/D，K<30 且金叉时入场。策略日频提交订单，由事件引擎在下一开盘按 A 股现金多头规则执行。
+
 聂夫低市盈率策略位于 `Strategy/libraries/neff_low_pe_a_share_event_v1.py`，读取 `pe_ratio`、`dividend_yield` 和 `inc_net_profit_year_on_year` 面板字段，按 PE、盈利增速、股息率及“总回报率/PE”筛选，月度等权持有最多十只。戴维斯双击策略位于 `Strategy/libraries/davis_double_play_a_share_event_v1.py`，读取 `pe_ratio`、`roe` 和 `inc_net_profit_year_on_year`，以当前 PE 在历史面板中的分位识别低估值，并保留高估值或盈利转负退出规则。两者均不把缺失基本面填零，基本面数据的点时质量由上游数据面板负责。

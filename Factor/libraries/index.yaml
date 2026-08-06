@@ -3,7 +3,7 @@
 
 version: 1
 updated: 2026-07-22
-total_factors: 676
+total_factors: 680
 
 libraries:
   emotion_indicators:
@@ -321,6 +321,22 @@ libraries:
         description: "Chande动量振荡器"
         params: { window: 20 }
         tags: [cmo, momentum]
+      - name: positive_directional_index
+        description: "正向方向指标（+DI）"
+        params: { window: 14 }
+        tags: [dmi, trend]
+      - name: negative_directional_index
+        description: "负向方向指标（-DI）"
+        params: { window: 14 }
+        tags: [dmi, trend]
+      - name: average_directional_index
+        description: "平均趋向指标（ADX）"
+        params: { window: 14 }
+        tags: [adx, trend]
+      - name: accumulation_distribution
+        description: "累积/派发线"
+        params: {}
+        tags: [volume, moneyflow, cumulative]
       - name: price_pattern_doji
         description: "十字星形态"
         params: {}

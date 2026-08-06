@@ -186,6 +186,48 @@ class TechnicalLib(FactorLibrary):
         down_sum = (-delta.clip(upper=0)).rolling(window).sum()
         return 100 * (up_sum - down_sum) / (up_sum + down_sum + 1e-10)
 
+    def _true_range(self):
+        previous_close = self.close.shift()
+        first = self.high - self.low
+        second = (self.high - previous_close).abs()
+        third = (self.low - previous_close).abs()
+        result = first.where(first >= second, second)
+        return result.where(result >= third, third)
+
+    def _directional_indices(self, window: int):
+        up_move = self.high.diff()
+        down_move = -self.low.diff()
+        positive_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+        negative_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+        alpha = 1 / window
+        true_range = self._true_range().ewm(alpha=alpha, adjust=False, min_periods=window).mean()
+        positive = positive_dm.ewm(alpha=alpha, adjust=False, min_periods=window).mean()
+        negative = negative_dm.ewm(alpha=alpha, adjust=False, min_periods=window).mean()
+        return 100 * positive / (true_range + 1e-10), 100 * negative / (true_range + 1e-10)
+
+    def positive_directional_index(self, window: int = 14):
+        """正向方向指标：Wilder 平滑后的上行方向运动强度。"""
+        positive, _ = self._directional_indices(window)
+        return positive
+
+    def negative_directional_index(self, window: int = 14):
+        """负向方向指标：Wilder 平滑后的下行方向运动强度。"""
+        _, negative = self._directional_indices(window)
+        return negative
+
+    def average_directional_index(self, window: int = 14):
+        """平均趋向指标：趋势强度，不区分涨跌方向。"""
+        positive, negative = self._directional_indices(window)
+        dx = 100 * (positive - negative).abs() / (positive + negative + 1e-10)
+        return dx.ewm(alpha=1 / window, adjust=False, min_periods=window).mean()
+
+    def accumulation_distribution(self):
+        """累积/派发线：按收盘位置加权累计成交量。"""
+        multiplier = ((self.close - self.low) - (self.high - self.close)) / (
+            self.high - self.low + 1e-10
+        )
+        return (multiplier * self.volume).cumsum()
+
     # ==================== 价格形态 ====================
 
     def price_pattern_doji(self):

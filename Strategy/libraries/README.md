@@ -48,3 +48,5 @@ strategies:
 `chande_aroon_a_share_event` 与 `pring_kst_a_share_event` 分别使用 Aroon(25) 趋势交叉和 KST(10/15/20/30 ROC) 多周期动量交叉，在沪深 300 市场过滤通过时构建最多十只、单只 9% 的现金多头组合。两者均只读取前一收盘可见的 OHLC，并于下一开盘成交；历史指数成分、ST、上市日期和交易状态由输入数据面板及事件引擎提供，因此当前仅用于研究验证。
 
 `neff_low_pe_a_share_event` 使用 PE、盈利增速、股息率和总回报率/PE 筛选低估值价值股；`davis_double_play_a_share_event` 使用历史 PE 分位、盈利增速和 ROE 筛选价值成长股。两者均按月度调仓、最多十只等权持有，基本面字段必须由点时数据面板提供，缺失值不会自动填充。
+
+`jegadeesh_titman_12_1_a_share_event` 使用行业内 12-1/6-1 动量和低波动评分；`fama_french_small_value_a_share_event` 使用行业内低 PB、低 PE 与小流通市值评分。两者都要求点时的行业、流动性和基本面面板。`dogs_of_the_dow_low_vol_a_share_event` 每年一月按高股息前 30% 内的低波动筛选；`elder_triple_screen_a_share_event` 以周 MA5/10、日线 KDJ(9,3,3) 实现三重滤网。四者均为日频本地研究资产，并不替代历史证券状态或数据质量校验。

@@ -55,7 +55,7 @@ def test_backfill_writes_only_all_a_calendar_and_replays_raw_response(tmp_path):
     assert backfill_calendar(CachedClient(), tmp_path, "2021-08-04", "2021-08-06") == 0
 
 
-def test_update_requires_backfill_and_resumes_from_all_a(tmp_path):
+def test_update_requires_backfill_and_resumes_from_all_a(tmp_path, capsys):
     with pytest.raises(FileNotFoundError, match="统一交易日历"):
         update_calendar(_Client(), tmp_path, "2021-08-10")
 
@@ -63,6 +63,7 @@ def test_update_requires_backfill_and_resumes_from_all_a(tmp_path):
     backfill_calendar(client, tmp_path, "2021-08-04", "2021-08-06")
     assert update_calendar(client, tmp_path, "2021-08-10") == 0
     assert client.calls[-1][1]["startdate"] == "2021-08-07"
+    assert "查询区间：2021-08-07 至 2021-08-10" in capsys.readouterr().out
 
 
 def test_build_from_existing_sz_creates_full_all_a_calendar(tmp_path):

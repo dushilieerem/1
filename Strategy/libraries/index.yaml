@@ -288,3 +288,91 @@ strategies:
       v1:
         file: elder_triple_screen_a_share_event_v1.py
         entrypoint: ElderTripleScreenAShareEventStrategy
+
+  wilder_parabolic_sar_a_share_event:
+    name: 威尔斯·威尔德抛物线 SAR A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [wilder, parabolic_sar, sar, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: wilder_parabolic_sar_a_share_event_v1.py
+        entrypoint: WilderParabolicSarAShareEventStrategy
+
+  fama_french_carhart_multi_factor_a_share_event:
+    name: Fama-French/Carhart 多因子 A 股策略
+    strategy_type: multi_factor
+    execution_mode: event
+    current_version: v1
+    tags: [fama, french, carhart, small_cap, value, momentum, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: fama_french_carhart_multi_factor_a_share_event_v1.py
+        entrypoint: FamaFrenchCarhartMultiFactorAShareEventStrategy
+
+  keltner_channel_breakout_a_share_event:
+    name: 凯特纳通道 A 股趋势突破
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [keltner, channel, atr, breakout, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: keltner_channel_breakout_a_share_event_v1.py
+        entrypoint: KeltnerChannelBreakoutAShareEventStrategy
+
+  williams_percent_r_a_share_event:
+    name: Williams %R A 股趋势内超卖反转
+    strategy_type: reversal
+    execution_mode: event
+    current_version: v1
+    tags: [williams, percent_r, oscillator, reversal, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: williams_percent_r_a_share_event_v1.py
+        entrypoint: WilliamsPercentRAShareEventStrategy
+
+  de_bondt_thaler_long_term_reversal_a_share_event:
+    name: 德邦特—塞勒 A 股长期反转
+    strategy_type: reversal
+    execution_mode: event
+    current_version: v1
+    tags: [de_bondt, thaler, reversal, value, industry_neutral, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: de_bondt_thaler_long_term_reversal_a_share_event_v1.py
+        entrypoint: DeBondtThalerLongTermReversalAShareEventStrategy
+
+  haugen_heins_low_volatility_a_share_event:
+    name: 豪根—海因斯 A 股低波动异象
+    strategy_type: low_volatility
+    execution_mode: event
+    current_version: v1
+    tags: [haugen, heins, low_volatility, downside_risk, drawdown, industry_neutral, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: haugen_heins_low_volatility_a_share_event_v1.py
+        entrypoint: HaugenHeinsLowVolatilityAShareEventStrategy
+
+  piotroski_f_score_a_share_event:
+    name: Piotroski F-Score A 股会计质量
+    strategy_type: quality_value
+    execution_mode: event
+    current_version: v1
+    tags: [piotroski, f_score, accounting_quality, value, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: piotroski_f_score_a_share_event_v1.py
+        entrypoint: PiotroskiFScoreAShareEventStrategy
+
+  dividend_growth_a_share_event:
+    name: A 股股息增长
+    strategy_type: dividend_growth
+    execution_mode: event
+    current_version: v1
+    tags: [dividend, dividend_growth, quality, value, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: dividend_growth_a_share_event_v1.py
+        entrypoint: DividendGrowthAShareEventStrategy

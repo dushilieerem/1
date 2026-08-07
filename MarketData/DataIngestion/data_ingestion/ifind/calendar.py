@@ -124,9 +124,17 @@ def update_calendar(client: CalendarClient, output_root: Path, as_of: str) -> in
     if not existing:
         raise FileNotFoundError(f"缺少全量统一交易日历，请先执行 backfill：{path}")
     start = (date.fromisoformat(max(existing)) + timedelta(days=1)).isoformat()
+    print(f"[calendar] 当前最后交易日：{max(existing)}；目标截至：{as_of}", flush=True)
     if start > as_of:
+        print("[calendar] 交易日历已经是最新，无需下载", flush=True)
         return 0
-    return write_calendar_csv(path, fetch_trade_dates(client, start, as_of, calendar_raw_path(output_root, start, as_of)))
+    raw_path = calendar_raw_path(output_root, start, as_of)
+    source = "重放已缓存 JSON" if raw_path.is_file() else "正在请求 iFinD"
+    print(f"[calendar] 查询区间：{start} 至 {as_of}；{source}", flush=True)
+    dates = fetch_trade_dates(client, start, as_of, raw_path)
+    added = write_calendar_csv(path, dates)
+    print(f"[calendar] 返回 {len(dates)} 个交易日；新增 {added} 个；已写入 {path}", flush=True)
+    return added
 
 
 def build_calendar_from_existing_sz(output_root: Path) -> int:

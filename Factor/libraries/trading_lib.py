@@ -119,3 +119,34 @@ class TradingLib(FactorLibrary):
             (multiplier * self.volume).rolling(window).sum()
             / self.volume.rolling(window).sum()
         )
+
+    def positive_volume_index(self, base_value: float = 1000.0):
+        """正量指标：仅在成交量增加时累计收盘收益。"""
+        factor = (1 + self.close.pct_change()).where(
+            self.volume > self.volume.shift(), 1.0
+        ).fillna(1.0)
+        return base_value * factor.cumprod()
+
+    def negative_volume_index(self, base_value: float = 1000.0):
+        """负量指标：仅在成交量减少时累计收盘收益。"""
+        factor = (1 + self.close.pct_change()).where(
+            self.volume < self.volume.shift(), 1.0
+        ).fillna(1.0)
+        return base_value * factor.cumprod()
+
+    def chaikin_oscillator(self, fast: int = 3, slow: int = 10):
+        """Chaikin Oscillator：累积/派发线的快慢 EMA 差。"""
+        multiplier = ((self.close - self.low) - (self.high - self.close)) / (
+            self.high - self.low + 1e-10
+        )
+        accumulation_distribution = (multiplier * self.volume).cumsum()
+        return (
+            accumulation_distribution.ewm(span=fast, adjust=False).mean()
+            - accumulation_distribution.ewm(span=slow, adjust=False).mean()
+        )
+
+    def volume_oscillator(self, short: int = 5, long: int = 20):
+        """成交量振荡器：短期与长期平均成交量的百分比差。"""
+        short_average = self.volume.rolling(short).mean()
+        long_average = self.volume.rolling(long).mean()
+        return (short_average / (long_average + 1e-10) - 1) * 100

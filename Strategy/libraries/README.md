@@ -50,3 +50,9 @@ strategies:
 `neff_low_pe_a_share_event` 使用 PE、盈利增速、股息率和总回报率/PE 筛选低估值价值股；`davis_double_play_a_share_event` 使用历史 PE 分位、盈利增速和 ROE 筛选价值成长股。两者均按月度调仓、最多十只等权持有，基本面字段必须由点时数据面板提供，缺失值不会自动填充。
 
 `jegadeesh_titman_12_1_a_share_event` 使用行业内 12-1/6-1 动量和低波动评分；`fama_french_small_value_a_share_event` 使用行业内低 PB、低 PE 与小流通市值评分。两者都要求点时的行业、流动性和基本面面板。`dogs_of_the_dow_low_vol_a_share_event` 每年一月按高股息前 30% 内的低波动筛选；`elder_triple_screen_a_share_event` 以周 MA5/10、日线 KDJ(9,3,3) 实现三重滤网。四者均为日频本地研究资产，并不替代历史证券状态或数据质量校验。
+
+`wilder_parabolic_sar_a_share_event` 使用威尔德标准 SAR 递推、按多头安全边际每周构建候选池，并在日频反转时退出。`fama_french_carhart_multi_factor_a_share_event` 以小市值、低 PB 与 12-1 动量作月度截面评分；其市值和 PB 必须是点时面板，不能使用最新快照回填历史。
+
+`keltner_channel_breakout_a_share_event` 使用 EMA20 与 Wilder ATR10 的两倍构建通道，在上轨突破时入场；`williams_percent_r_a_share_event` 在 60 日趋势向上时，以 14 日 %R 的超卖上穿构建反转信号。两者均只适用于日频研究，并由事件引擎处理开盘成交及 A 股可成交性约束。
+
+`piotroski_f_score_a_share_event` 在低 PB 股票中以九项会计质量信号筛选月度组合；`dividend_growth_a_share_event` 要求连续五年现金分红且最近一年不降，并在中等股息率股票中选股。两者均依赖公告日点时财务数据；后者还依赖逐笔 `dividend_cash_per_share` 分红事件。数据版本未发布这些字段时会明确拒绝运行，当前仅用于研究验证。

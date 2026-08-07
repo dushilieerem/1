@@ -5,12 +5,15 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-from data_ingestion.ifind.market_data_download import LIQUIDITY, PRICE
+from data_ingestion.ifind.market_data_download import ADJUSTMENTS, LIQUIDITY, PRICE, price_group
 
-DAILY_COLUMNS = ("date", "thscode", "exchange", "open", "high", "low", "close", "volume", "amount", "turnover", "adjustment", "source")
+WIDE_FIELDS = ("open", "high", "low", "close", "volume", "amount", "turnover")
+DEFAULT_WORKERS = max(1, min(4, os.cpu_count() or 1))
 
 
 def _date(value: str) -> str:
@@ -56,35 +59,159 @@ def _load(path: Path, group: dict, exchange: str) -> dict[tuple[str, str], dict[
     return {(str(row["date"]), str(row["thscode"])): row for row in rows}
 
 
-def build_daily_csv(output_root: Path) -> dict[str, int]:
-    price_paths = _paths(output_root / "prices" / "hfq" / "raw")
+def _merge_partition(job: tuple[Path, Path | None, Path | None]) -> list[dict[str, object]]:
+    relative, price_path, liquidity_path = job
+    exchange = relative.parts[0]
+    prices = _load(price_path, PRICE, exchange) if price_path else {}
+    liquidity = _load(liquidity_path, LIQUIDITY, exchange) if liquidity_path else {}
+    rows: list[dict[str, object]] = []
+    for key in sorted(set(prices) | set(liquidity)):
+        price, liquid = prices.get(key, {}), liquidity.get(key, {})
+        source = price or liquid
+        rows.append({"date": source["date"], "thscode": source["thscode"], "exchange": source["exchange"], **{field: price.get(field, "") for field in ("open", "high", "low", "close", "adjustment")}, **{field: liquid.get(field, "") for field in ("volume", "amount", "turnover")}, "source": "ifind"})
+    return rows
+
+
+def _parallel_merge(jobs: list[tuple[Path, Path | None, Path | None]], workers: int):
+    if workers == 1:
+        yield from map(_merge_partition, jobs)
+        return
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        yield from executor.map(_merge_partition, jobs, chunksize=8)
+
+
+def _jobs_for_date(output_root: Path, as_of: str, adjustment: str) -> list[tuple[Path, Path | None, Path | None]]:
+    price_paths = {relative: path for relative, path in _paths(output_root.joinpath(*price_group(adjustment)["root"], "raw")).items() if relative.parts[1] == f"{as_of}_{as_of}"}
+    liquidity_paths = {relative: path for relative, path in _paths(output_root / "liquidity" / "raw").items() if relative.parts[1] == f"{as_of}_{as_of}"}
+    return [(relative, price_paths.get(relative), liquidity_paths.get(relative)) for relative in sorted(set(price_paths) | set(liquidity_paths), key=str)]
+
+
+def _wide_columns(universe_path: Path) -> tuple[str, ...]:
+    with universe_path.open(encoding="utf-8-sig", newline="") as stream:
+        symbols = [row["thscode"] for row in csv.DictReader(stream)]
+    if len(symbols) != len(set(symbols)):
+        raise ValueError(f"证券池存在重复证券代码：{universe_path}")
+    return ("date", *(f"{symbol}__{field}" for symbol in symbols for field in WIDE_FIELDS))
+
+
+def _headers(columns: tuple[str, ...]) -> tuple[list[str], list[str]]:
+    symbols, fields = ["date"], [""]
+    for column in columns[1:]:
+        symbol, field = column.rsplit("__", 1)
+        symbols.append(symbol)
+        fields.append(field)
+    return symbols, fields
+
+
+def _write_row(writer: csv.writer, columns: tuple[str, ...], row: dict[str, object]) -> None:
+    writer.writerow([row["date"], *(row.get(column, "") for column in columns[1:])])
+
+
+def _wide_rows(partition_rows: list[list[dict[str, object]]]) -> dict[str, dict[str, object]]:
+    result: dict[str, dict[str, object]] = {}
+    for rows in partition_rows:
+        for row in rows:
+            target = result.setdefault(str(row["date"]), {"date": row["date"]})
+            for field in WIDE_FIELDS:
+                value = row.get(field)
+                if value not in (None, ""):
+                    column = f"{row['thscode']}__{field}"
+                    if column in target:
+                        raise ValueError(f"原始 JSON 存在重复 date + thscode + field：{row['date']} {column}")
+                    target[column] = value
+    return result
+
+
+def build_daily_csv(output_root: Path, workers: int = DEFAULT_WORKERS, universe_path: Path | None = None, adjustment: str = "hfq") -> dict[str, int]:
+    if workers <= 0:
+        raise ValueError("workers 必须大于零")
+    price_paths = _paths(output_root.joinpath(*price_group(adjustment)["root"], "raw"))
     liquidity_paths = _paths(output_root / "liquidity" / "raw")
-    output_path = output_root / "daily.csv"
+    universe_path = universe_path or output_root / "universe" / "a_share_5537.csv"
+    columns = _wide_columns(universe_path)
+    output_path = output_root / f"market_data_{adjustment}.csv"
     temporary_path = output_path.with_suffix(".csv.tmp")
     summary = {"rows": 0, "partitions": 0}
+    partitions = sorted(set(price_paths) | set(liquidity_paths), key=str)
+    windows: dict[str, list[tuple[Path, Path | None, Path | None]]] = {}
+    for relative in partitions:
+        windows.setdefault(relative.parts[1], []).append((relative, price_paths.get(relative), liquidity_paths.get(relative)))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with temporary_path.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=DAILY_COLUMNS)
-        writer.writeheader()
-        for relative in sorted(set(price_paths) | set(liquidity_paths), key=str):
-            exchange = relative.parts[0]
-            prices = _load(price_paths[relative], PRICE, exchange) if relative in price_paths else {}
-            liquidity = _load(liquidity_paths[relative], LIQUIDITY, exchange) if relative in liquidity_paths else {}
-            for key in sorted(set(prices) | set(liquidity)):
-                price, liquid = prices.get(key, {}), liquidity.get(key, {})
-                source = price or liquid
-                writer.writerow({"date": source["date"], "thscode": source["thscode"], "exchange": source["exchange"], **{field: price.get(field, "") for field in ("open", "high", "low", "close", "adjustment")}, **{field: liquid.get(field, "") for field in ("volume", "amount", "turnover")}, "source": "ifind"})
+        writer = csv.writer(stream)
+        writer.writerows(_headers(columns))
+        for window_number, window in enumerate(sorted(windows), start=1):
+            jobs = windows[window]
+            print(f"[market_data_csv] 第 {window_number}/{len(windows)} 个日期窗口：正在汇总 {window}", flush=True)
+            parsed_partitions = list(_parallel_merge(jobs, workers))
+            summary["partitions"] += len(parsed_partitions)
+            for row in _wide_rows(parsed_partitions).values():
+                _write_row(writer, columns, row)
                 summary["rows"] += 1
-            summary["partitions"] += 1
     temporary_path.replace(output_path)
+    print(f"[market_data_csv] 已完成：{summary['rows']} 行，写入 {output_path}", flush=True)
+    return summary
+
+
+def update_daily_csv(output_root: Path, as_of: str, workers: int = DEFAULT_WORKERS, universe_path: Path | None = None, adjustment: str = "hfq") -> dict[str, int]:
+    """以指定日期的 raw JSON 覆盖完整 CSV 中同日记录，不重解析历史 JSON。"""
+    if workers <= 0:
+        raise ValueError("workers 必须大于零")
+    universe_path = universe_path or output_root / "universe" / "a_share_5537.csv"
+    columns = _wide_columns(universe_path)
+    output_path = output_root / f"market_data_{adjustment}.csv"
+    if not output_path.is_file():
+        print("[market_data_csv] 完整 CSV 不存在，改为全量重建", flush=True)
+        return build_daily_csv(output_root, workers, universe_path, adjustment)
+    with output_path.open(encoding="utf-8-sig", newline="") as source:
+        reader = csv.reader(source)
+        if tuple(next(reader, [])) != tuple(_headers(columns)[0]) or tuple(next(reader, [])) != tuple(_headers(columns)[1]):
+            print("[market_data_csv] 现有 CSV 不是当前宽表结构，改为全量重建", flush=True)
+            return build_daily_csv(output_root, workers, universe_path, adjustment)
+    jobs = _jobs_for_date(output_root, as_of, adjustment)
+    partition_rows: list[list[dict[str, object]]] = []
+    for number, rows in enumerate(_parallel_merge(jobs, workers), start=1):
+        print(f"[market_data_csv] 第 {number}/{len(jobs)} 批：正在解析 {as_of} 的增量 JSON", flush=True)
+        partition_rows.append(rows)
+    delta = _wide_rows(partition_rows).get(as_of)
+    if delta is None:
+        print(f"[market_data_csv] 未找到 {as_of} 的原始 JSON，CSV 不变", flush=True)
+        return {"rows": 0, "replaced_rows": 0, "partitions": len(jobs)}
+    temporary_path = output_path.with_suffix(".csv.tmp")
+    summary = {"rows": 0, "replaced_rows": 1, "partitions": len(jobs)}
+    with output_path.open(encoding="utf-8-sig", newline="") as source, temporary_path.open("w", encoding="utf-8", newline="") as target:
+        reader = csv.reader(source)
+        next(reader, None)
+        next(reader, None)
+        writer = csv.writer(target)
+        writer.writerows(_headers(columns))
+        for row in reader:
+            if row and row[0] == as_of:
+                continue
+            writer.writerow(row)
+            summary["rows"] += 1
+            if summary["rows"] % 1_000_000 == 0:
+                print(f"[market_data_csv] 正在写入历史 CSV：{summary['rows']} 行", flush=True)
+        _write_row(writer, columns, delta)
+        summary["rows"] += 1
+    temporary_path.replace(output_path)
+    print(f"[market_data_csv] 已完成当日更新：替换 1 行，写入 {output_path}", flush=True)
     return summary
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("command", nargs="?", choices=("rebuild", "update"), default="rebuild")
     parser.add_argument("--output-root", type=Path, default=Path(__file__).resolve().parents[3] / "sources" / "ifind")
+    parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
+    parser.add_argument("--as-of", help="日增量目标日，格式 YYYY-MM-DD")
+    parser.add_argument("--universe", type=Path)
+    parser.add_argument("--adjustment", choices=ADJUSTMENTS, default="hfq", help="价格复权方式：hfq=后复权，qfq=前复权，none=不复权")
     args = parser.parse_args()
-    print(json.dumps(build_daily_csv(args.output_root), ensure_ascii=False))
+    if args.command == "update" and not args.as_of:
+        raise SystemExit("update 必须提供 --as-of")
+    result = update_daily_csv(args.output_root, args.as_of, args.workers, args.universe, args.adjustment) if args.command == "update" else build_daily_csv(args.output_root, args.workers, args.universe, args.adjustment)
+    print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":

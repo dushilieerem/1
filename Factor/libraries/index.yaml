@@ -3,7 +3,7 @@
 
 version: 1
 updated: 2026-07-22
-total_factors: 680
+total_factors: 688
 
 libraries:
   emotion_indicators:
@@ -409,6 +409,22 @@ libraries:
         description: "日内振幅：(高-低)/开盘"
         params: {}
         tags: [vol, intraday]
+      - name: parkinson_volatility
+        description: "Parkinson波动率：高低价区间估计"
+        params: { window: 20 }
+        tags: [vol, range, parkinson]
+      - name: garman_klass_volatility
+        description: "Garman-Klass波动率：OHLC估计"
+        params: { window: 20 }
+        tags: [vol, range, ohlc]
+      - name: rogers_satchell_volatility
+        description: "Rogers-Satchell波动率：允许趋势漂移的OHLC估计"
+        params: { window: 20 }
+        tags: [vol, range, ohlc]
+      - name: chaikin_volatility
+        description: "Chaikin波动率：日内振幅EMA变动"
+        params: { ema_window: 10, change_window: 10 }
+        tags: [vol, range, chaikin]
       - name: gap
         description: "跳空：(开盘-前收盘)/前收盘"
         params: {}
@@ -493,3 +509,19 @@ libraries:
         description: "Chaikin资金流：量价累积/派发"
         params: { window: 21 }
         tags: [moneyflow, volume]
+      - name: positive_volume_index
+        description: "正量指标：成交量增加日累计收益"
+        params: { base_value: 1000.0 }
+        tags: [volume, cumulative, pvi]
+      - name: negative_volume_index
+        description: "负量指标：成交量减少日累计收益"
+        params: { base_value: 1000.0 }
+        tags: [volume, cumulative, nvi]
+      - name: chaikin_oscillator
+        description: "Chaikin振荡器：累积/派发线快慢EMA差"
+        params: { fast: 3, slow: 10 }
+        tags: [moneyflow, momentum]
+      - name: volume_oscillator
+        description: "成交量振荡器：短长均量百分比差"
+        params: { short: 5, long: 20 }
+        tags: [volume, oscillator]

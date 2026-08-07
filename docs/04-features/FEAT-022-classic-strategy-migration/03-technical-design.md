@@ -22,4 +22,14 @@ Aroon 与 KST 分别位于 `Strategy/libraries/chande_aroon_a_share_event_v1.py`
 
 三重滤网位于 `elder_triple_screen_a_share_event_v1.py`，只读取前一收盘可见的 OHLC。策略将日线收盘重采样为周线，以周 MA5>MA10 判断趋势；KDJ 使用 9 日 RSV 及 1/3 指数平滑的 K/D，K<30 且金叉时入场。策略日频提交订单，由事件引擎在下一开盘按 A 股现金多头规则执行。
 
+抛物线 SAR 位于 `wilder_parabolic_sar_a_share_event_v1.py`，每周一以截至前一收盘的 120 日 OHLC 计算威尔德 SAR；多头时限制 SAR 不高于前两日低点，空头时不低于前两日高点，反转日将 SAR 设为前一趋势极点。候选池按 `close/SAR-1` 排序；每日只追踪候选和持仓，出现趋势转空或收盘低于 SAR 时提交平仓订单。
+
+Fama-French/Carhart 多因子策略位于 `fama_french_carhart_multi_factor_a_share_event_v1.py`，在每月首个交易日对截至前一收盘的点时 `market_cap`、`pb_ratio` 和 260 日 `close` 做截面评分。它不读取或估计当前财报、ST、上市天数或实时涨跌停；市值、PB 与证券状态的历史口径由上游面板负责，订单可成交性由事件引擎处理。
+
+凯特纳通道和 Williams %R 分别位于 `keltner_channel_breakout_a_share_event_v1.py` 与 `williams_percent_r_a_share_event_v1.py`，仅通过事件 `DataView` 读取截至前一收盘的 OHLC。凯特纳通道采用 EMA20 和 Wilder ATR10；Williams %R 使用 14 日最高/最低价及 60 日趋势过滤。两者以日频订单在下一开盘成交，停牌、涨跌停与 T+1 由事件引擎统一处理。
+
+德邦特—塞勒长期反转与豪根—海因斯低波动异象策略分别位于 `de_bondt_thaler_long_term_reversal_a_share_event_v1.py` 与 `haugen_heins_low_volatility_a_share_event_v1.py`。两者在每月首个交易日仅从 `DataView` 的前一收盘快照读取 `close`、`amount`、`industry`、`pe_ratio`、`pb_ratio` 和 `circulating_market_cap`。长期反转用 757 日价格窗口的 36-1 收益、3 个月恢复及 120 日波动率构建行业内 70%/20%/10% 得分；低波动策略用 121 日价格窗口的总波动、负收益下行波动和最大回撤构建行业内 50%/30%/20% 得分。历史行业、估值与市值必须由点时面板提供，不能以当前值回填；ST、上市时间、停牌、涨跌停和盘中调度约束不由策略源码模拟。
+
+Piotroski F-Score 与股息增长策略分别位于 `piotroski_f_score_a_share_event_v1.py` 与 `dividend_growth_a_share_event_v1.py`。F-Score 从前一收盘可见的 `total_assets`、`total_liabilities`、`current_assets`、`current_liabilities`、`total_shares`、收入/成本/净利润/经营现金流 TTM、`pb` 和 `total_mv` 面板计算九项得分；当前值与约 90 个交易日前的点时可见值比较。股息增长从 `dividend_cash_per_share` 事件面板按自然年聚合近五年每股现金分红，并结合点时 `dividend_yield`、`pe_ttm` 和 `total_mv` 过滤。两者依赖 ADR-008 的公告日可见性，字段缺失或财务覆盖不足时不生成候选；不使用聚宽的实时证券状态或当日可成交性近似。
+
 聂夫低市盈率策略位于 `Strategy/libraries/neff_low_pe_a_share_event_v1.py`，读取 `pe_ratio`、`dividend_yield` 和 `inc_net_profit_year_on_year` 面板字段，按 PE、盈利增速、股息率及“总回报率/PE”筛选，月度等权持有最多十只。戴维斯双击策略位于 `Strategy/libraries/davis_double_play_a_share_event_v1.py`，读取 `pe_ratio`、`roe` 和 `inc_net_profit_year_on_year`，以当前 PE 在历史面板中的分位识别低估值，并保留高估值或盈利转负退出规则。两者均不把缺失基本面填零，基本面数据的点时质量由上游数据面板负责。

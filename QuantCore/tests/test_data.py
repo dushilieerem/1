@@ -94,3 +94,57 @@ def test_field_parquet_provider_reads_legacy_pandas_datetime_index(tmp_path):
     assert panel.index.name == "datetime"
     assert panel.index.tolist() == frame.index.tolist()
     assert panel.loc[pd.Timestamp("2024-01-03"), "000001"] == 11.0
+
+
+def test_field_parquet_provider_reads_ifind_combined_market_data(tmp_path):
+    columns = pd.MultiIndex.from_product(
+        [["000001.SZ", "600000.SH"], ["open", "high", "low", "close", "volume", "amount", "turnover"]]
+    )
+    frame = pd.DataFrame(
+        [[row * 14 + column for column in range(14)] for row in range(2)],
+        index=pd.to_datetime(["2024-01-02", "2024-01-03"]),
+        columns=columns,
+    )
+    frame.index.name = "date"
+    path = tmp_path / "market_data.parquet"
+    frame.to_parquet(path)
+
+    provider = FieldParquetProvider(path)
+    panels = provider.get_panels(fields=["open", "close", "turnover"])
+
+    assert provider.get_symbols() == ["000001", "600000"]
+    assert panels["close"].index.name == "datetime"
+    assert list(panels["close"].columns) == ["000001", "600000"]
+    assert panels["turnover"].loc[pd.Timestamp("2024-01-03"), "600000"] == 27
+    assert list(provider.get_bars("000001.SZ", fields=["open", "close"]).columns) == ["open", "close"]
+    assert provider.get_bars("000001", fields=["close"]).iloc[0, 0] == 3
+
+
+def test_field_parquet_provider_prefers_combined_market_data_in_panels_directory(tmp_path):
+    panels_dir = tmp_path / "current" / "panels"
+    panels_dir.mkdir(parents=True)
+    columns = pd.MultiIndex.from_product([["000001.SZ"], ["open", "close"]])
+    frame = pd.DataFrame([[1.0, 2.0]], index=pd.to_datetime(["2024-01-02"]), columns=columns)
+    frame.index.name = "date"
+    frame.to_parquet(panels_dir / "market_data.parquet")
+
+    provider = FieldParquetProvider(tmp_path)
+    assert provider.get_panels(fields=["close"])["close"].iloc[0, 0] == 2.0
+
+
+def test_field_parquet_provider_keeps_non_market_fields_with_combined_file(tmp_path):
+    panels_dir = tmp_path / "current" / "panels"
+    panels_dir.mkdir(parents=True)
+    dates = pd.to_datetime(["2024-01-02"])
+    combined = pd.DataFrame(
+        [[10.0]], index=dates, columns=pd.MultiIndex.from_tuples([("000001.SZ", "close")])
+    )
+    combined.index.name = "date"
+    combined.to_parquet(panels_dir / "market_data.parquet")
+    pd.DataFrame({"datetime": dates, "000001": [2.0]}).to_parquet(
+        panels_dir / "pb.parquet", index=False
+    )
+
+    panels = FieldParquetProvider(tmp_path).get_panels(fields=["close", "pb"])
+    assert list(panels["close"].columns) == ["000001"]
+    assert panels["pb"].iloc[0, 0] == 2.0

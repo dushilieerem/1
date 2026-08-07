@@ -158,7 +158,11 @@ class Experiment:
             data_dir = self.config.get("data_dir", "./data")
             # 文件 -> 宽表 CSV；目录里有 *.parquet -> 字段 parquet；否则逐只 CSV
             if os.path.isfile(data_dir):
-                provider = WideCSVProvider(data_dir)
+                provider = (
+                    FieldParquetProvider(data_dir)
+                    if Path(data_dir).suffix.lower() == ".parquet"
+                    else WideCSVProvider(data_dir)
+                )
             elif os.path.isdir(data_dir) and (
                 any(Path(data_dir).glob("*.parquet"))
                 or (Path(data_dir) / "current" / "panels").is_dir()

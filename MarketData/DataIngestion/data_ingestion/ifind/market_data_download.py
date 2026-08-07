@@ -16,7 +16,9 @@ from data_ingestion.ifind.client import IFindClient
 from data_ingestion.ifind.raw import load_or_fetch_json
 
 EXCHANGES = ("SH", "SZ", "BJ")
-PRICE = {"name": "price", "fields": ("open", "high", "low", "close"), "root": ("prices", "hfq"), "functionpara": {"CPS": "1"}}
+ADJUSTMENTS = ("hfq", "qfq", "none")
+PRICE_FUNCTIONPARA = {"hfq": {"CPS": "1"}, "qfq": {"CPS": "2"}, "none": None}
+PRICE = {"name": "price_hfq", "kind": "price", "fields": ("open", "high", "low", "close"), "root": ("prices", "hfq"), "functionpara": {"CPS": "1"}}
 LIQUIDITY = {"name": "liquidity", "fields": ("volume", "amt", "turn"), "root": ("liquidity",), "functionpara": None}
 DEFAULT_SYMBOLS_PER_REQUEST = 100
 DEFAULT_TRADING_DAYS_PER_REQUEST = 10
@@ -25,6 +27,12 @@ DEFAULT_MAX_ESTIMATED_POINTS = 120_000_000
 
 class MarketDataClient(Protocol):
     def post(self, path: str, payload: dict) -> dict: ...
+
+
+def price_group(adjustment: str) -> dict:
+    if adjustment not in ADJUSTMENTS:
+        raise ValueError(f"不支持的复权方式：{adjustment}")
+    return {"name": f"price_{adjustment}", "kind": "price", "fields": ("open", "high", "low", "close"), "root": ("prices", adjustment), "functionpara": PRICE_FUNCTIONPARA[adjustment]}
 
 
 def chunks(values: list[str], size: int) -> Iterator[list[str]]:
@@ -59,13 +67,13 @@ def raw_path(output_root: Path, group: dict, exchange: str, start: str, end: str
     return output_root.joinpath(*group["root"], "raw", exchange, f"{start}_{end}", f"symbols_{sequence:05d}.json")
 
 
-def run_download(client: MarketDataClient, output_root: Path, universe_path: Path, start: str, end: str, symbols_per_request: int, trading_days_per_request: int, max_estimated_points: int) -> dict[str, dict[str, int]]:
+def run_download(client: MarketDataClient, output_root: Path, universe_path: Path, start: str, end: str, symbols_per_request: int, trading_days_per_request: int, max_estimated_points: int, adjustment: str = "hfq") -> dict[str, dict[str, int]]:
     dates = read_trade_dates(calendar_path(output_root), start, end)
     date_batches = list(chunks(dates, trading_days_per_request))
     symbols_by_exchange = {exchange: list(chunks(read_universe_symbols(universe_path, exchange), symbols_per_request)) for exchange in EXCHANGES}
     total_batches = sum(len(date_batches) * len(symbol_batches) for symbol_batches in symbols_by_exchange.values())
     result: dict[str, dict[str, int]] = {}
-    for group in (PRICE, LIQUIDITY):
+    for group in (price_group(adjustment), LIQUIDITY):
         summary = {"raw_partitions": 0, "data_vol": 0, "estimated_points": 0, "skipped": 0}
         batch_number = 0
         for exchange in EXCHANGES:
@@ -108,13 +116,14 @@ def main() -> None:
     parser.add_argument("--symbols-per-request", type=int, default=DEFAULT_SYMBOLS_PER_REQUEST)
     parser.add_argument("--trading-days-per-request", type=int, default=DEFAULT_TRADING_DAYS_PER_REQUEST)
     parser.add_argument("--max-estimated-points", type=int, default=DEFAULT_MAX_ESTIMATED_POINTS)
+    parser.add_argument("--adjustment", choices=ADJUSTMENTS, default="hfq", help="价格复权方式：hfq=后复权，qfq=前复权，none=不复权")
     args = parser.parse_args()
     if args.command == "backfill" and (not args.start or not args.end):
         raise SystemExit("backfill 必须提供 --start 和 --end")
     start = args.start if args.command == "backfill" else args.as_of or datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
     end = args.end if args.command == "backfill" else start
     universe = args.universe or args.output_root / "universe" / "a_share_5537.csv"
-    print(json.dumps(run_download(IFindClient.from_environment(), args.output_root, universe, start, end, args.symbols_per_request, args.trading_days_per_request if args.command == "backfill" else 1, args.max_estimated_points), ensure_ascii=False))
+    print(json.dumps(run_download(IFindClient.from_environment(), args.output_root, universe, start, end, args.symbols_per_request, args.trading_days_per_request if args.command == "backfill" else 1, args.max_estimated_points, args.adjustment), ensure_ascii=False))
 
 
 if __name__ == "__main__":

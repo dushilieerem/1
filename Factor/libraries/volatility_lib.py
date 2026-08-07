@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import numpy as np
+
 from quantcore import FactorLibrary
 
 
@@ -89,6 +91,33 @@ class VolatilityLib(FactorLibrary):
     def intraday_volatility(self):
         """日内振幅：（最高 - 最低）/ 开盘价。"""
         return (self.high - self.low) / self.open
+
+    def parkinson_volatility(self, window: int = 20):
+        """Parkinson 波动率：基于高低价区间的波动率估计。"""
+        variance = np.log(self.high / self.low).pow(2).rolling(window).mean() / (4 * np.log(2))
+        return np.sqrt(variance)
+
+    def garman_klass_volatility(self, window: int = 20):
+        """Garman-Klass 波动率：基于开高低收价格的波动率估计。"""
+        high_low = np.log(self.high / self.low)
+        close_open = np.log(self.close / self.open)
+        variance = (
+            0.5 * high_low.pow(2) - (2 * np.log(2) - 1) * close_open.pow(2)
+        ).rolling(window).mean()
+        return np.sqrt(variance.clip(lower=0))
+
+    def rogers_satchell_volatility(self, window: int = 20):
+        """Rogers-Satchell 波动率：允许价格存在趋势漂移的 OHLC 估计。"""
+        variance = (
+            np.log(self.high / self.close) * np.log(self.high / self.open)
+            + np.log(self.low / self.close) * np.log(self.low / self.open)
+        ).rolling(window).mean()
+        return np.sqrt(variance.clip(lower=0))
+
+    def chaikin_volatility(self, ema_window: int = 10, change_window: int = 10):
+        """Chaikin 波动率：高低价振幅 EMA 的变动百分比。"""
+        high_low_average = (self.high - self.low).ewm(span=ema_window, adjust=False).mean()
+        return (high_low_average / high_low_average.shift(change_window) - 1) * 100
 
     def gap(self):
         """跳空：（开盘价 - 前收盘价）/ 前收盘价。"""

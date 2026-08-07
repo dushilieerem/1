@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 from typing import List, Optional, Sequence
 
@@ -96,7 +97,16 @@ class FieldParquetProvider(IDataProvider):
     def __init__(self, data_dir: str | Path) -> None:
         require_optional("pyarrow", "FieldParquetProvider 需要 pyarrow")
         self.data_dir = Path(data_dir)
-        if not self.data_dir.is_dir():
+        self._combined_file: Path | None = None
+        self._combined_columns: dict[str, list[tuple[str, str]]] = {}
+        self._combined_index_column: str | None = None
+        if self.data_dir.is_file():
+            if self.data_dir.suffix.lower() != ".parquet":
+                raise ValueError(f"只支持 parquet 合并面板文件: {self.data_dir}")
+            self._combined_file = self.data_dir
+            self._scan_combined_file()
+            self.data_dir = self.data_dir.parent
+        elif not self.data_dir.is_dir():
             raise NotADirectoryError(f"parquet 目录不存在: {self.data_dir}")
         # MarketData 根目录采用 ``current/`` 指向当前已发布数据版本；保留传入
         # 旧版扁平目录及直接传入 current 目录的兼容性。
@@ -105,6 +115,11 @@ class FieldParquetProvider(IDataProvider):
             self.data_dir = current_dir
         panels_dir = self.data_dir / "panels"
         self._panels_dir = panels_dir if panels_dir.is_dir() else self.data_dir
+        if self._combined_file is None:
+            combined_file = self._panels_dir / "market_data.parquet"
+            if combined_file.is_file():
+                self._combined_file = combined_file
+                self._scan_combined_file()
         benchmark_dir = self.data_dir / "benchmark"
         self._benchmark_dir = benchmark_dir if benchmark_dir.is_dir() else self.data_dir / "benchmark"
         #: 文件名 -> 标准字段名 的映射（仅本目录实际存在的）
@@ -115,10 +130,51 @@ class FieldParquetProvider(IDataProvider):
     def _scan_fields(self) -> dict:
         result = {}
         for p in self._panels_dir.glob("*.parquet"):
-            if p.stem in _SKIP:
+            if p.stem in _SKIP or p == self._combined_file:
                 continue
             result[p.stem] = p   # 文件名即字段名
+        if self._combined_file is not None:
+            result.update({field: self._combined_file for field in self._combined_columns})
         return result
+
+    def _scan_combined_file(self) -> None:
+        """识别 iFinD 合并宽表中的 ``(证券代码, 字段)`` 列。"""
+        import pyarrow.parquet as pq
+
+        schema = pq.read_schema(self._combined_file)
+        metadata = schema.pandas_metadata or {}
+        index_columns = metadata.get("index_columns", [])
+        if index_columns and isinstance(index_columns[0], str):
+            self._combined_index_column = index_columns[0]
+
+        for column in schema.names:
+            try:
+                symbol, field = ast.literal_eval(column)
+            except (SyntaxError, ValueError, TypeError):
+                continue
+            if isinstance(symbol, str) and isinstance(field, str):
+                self._combined_columns.setdefault(field, []).append((column, symbol))
+
+        if not self._combined_columns:
+            raise ValueError(
+                f"合并 parquet 不包含 '(证券代码, 字段)' 两级列: {self._combined_file}"
+            )
+
+    def _combined_symbol(self, symbol: str) -> str:
+        """将六位代码匹配到合并面板中的交易所代码。"""
+        available = self._combined_columns.get(
+            "close", next(iter(self._combined_columns))
+        )
+        symbols = [item[1] for item in available]
+        if symbol in symbols:
+            return symbol
+        base = str(symbol).split(".", 1)[0]
+        return next((item for item in symbols if item.split(".", 1)[0] == base), symbol)
+
+    @staticmethod
+    def _standard_symbol(symbol: str) -> str:
+        """将供应商交易所代码归一为平台既有的六位代码。"""
+        return str(symbol).split(".", 1)[0]
 
     # -- 读单个字段（绕过 categorical 元数据）--
     def _read_field(self, field: str) -> pd.DataFrame:
@@ -127,6 +183,19 @@ class FieldParquetProvider(IDataProvider):
         import pyarrow.parquet as pq
 
         path = self._field_files[field]
+        if field in self._combined_columns:
+            columns = self._combined_columns[field]
+            names = [name for name, _ in columns]
+            index_column = self._combined_index_column or "date"
+            table = pq.read_table(path, columns=[*names, index_column]).replace_schema_metadata({})
+            df = table.to_pandas().set_index(index_column)
+            df.columns = [self._standard_symbol(symbol) for _, symbol in columns]
+            df.index = pd.to_datetime(df.index)
+            df.index.name = "datetime"
+            df = df.sort_index()
+            self._cache[field] = df
+            return df
+
         table = pq.read_table(path).replace_schema_metadata({})
         df = table.to_pandas()
         # 新文件通常将日期显式写为 ``datetime`` 列；历史 Pandas Parquet 在移除
@@ -195,8 +264,9 @@ class FieldParquetProvider(IDataProvider):
         for f in fields:
             if f in self._field_files:
                 df = self._read_field(f)
-                if symbol in df.columns:
-                    cols[f] = df[symbol]
+                column = self._standard_symbol(symbol) if f in self._combined_columns else symbol
+                if column in df.columns:
+                    cols[f] = df[column]
         if not cols:
             return pd.DataFrame()
         out = pd.DataFrame(cols)
@@ -220,14 +290,19 @@ class FieldParquetProvider(IDataProvider):
             if frame.empty:
                 return []
             latest = frame.iloc[-1]
-            return [
-                str(symbol).split(".", 1)[0]
-                for symbol, included in latest.items()
-                if included == 1
-            ]
+            symbols = [str(symbol) for symbol, included in latest.items() if included == 1]
+            if self._combined_file is not None:
+                return [self._standard_symbol(symbol) for symbol in symbols]
+            return [symbol.split(".", 1)[0] for symbol in symbols]
 
         # 读 close 字段 schema 取列名（不读数据），无 close 则取首个
         import pyarrow.parquet as pq
+
+        if self._combined_file is not None:
+            field = "close" if "close" in self._combined_columns else next(
+                iter(self._combined_columns)
+            )
+            return [self._standard_symbol(symbol) for _, symbol in self._combined_columns[field]]
 
         field = "close" if "close" in self._field_files else next(
             iter(self._field_files)

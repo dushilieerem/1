@@ -42,3 +42,4 @@ AGENTS.md
 *.rar
 .Codex/
 tmp/
+MarketData/DataIngestion/.tmp/

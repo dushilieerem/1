@@ -1,5 +1,7 @@
 from pathlib import Path
 import sys
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -7,16 +9,20 @@ import pytest
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT))
 
-from data_ingestion.ifind.calendar import (  # noqa: E402
+from data_ingestion.ifind.calendar.pipeline import (  # noqa: E402
     backfill_calendar,
     build_calendar_from_existing_sz,
     calendar_path,
     calendar_raw_path,
+    default_update_as_of,
     extract_trade_dates,
     fetch_trade_dates,
     read_calendar_dates,
     update_calendar,
 )
+
+
+SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 class _Client:
@@ -40,6 +46,14 @@ def test_fetch_trade_dates_uses_only_sz_marketcode(tmp_path):
 
     assert dates == ["2021-08-04", "2021-08-05", "2021-08-06"]
     assert client.calls[0][1]["marketcode"] == "212100"
+
+
+def test_default_update_as_of_waits_for_ifind_daily_data():
+    before_ready = datetime(2026, 8, 10, 16, 59, tzinfo=SHANGHAI)
+    ready = datetime(2026, 8, 10, 17, 0, tzinfo=SHANGHAI)
+
+    assert default_update_as_of(before_ready) == "2026-08-09"
+    assert default_update_as_of(ready) == "2026-08-10"
 
 
 def test_backfill_writes_only_all_a_calendar_and_replays_raw_response(tmp_path):

@@ -10,7 +10,7 @@ MarketData/
 │   ├── akshare_bars/         # AkShare 日线增量采集脚本；data/、logs/ 为运行产物
 │   └── data_ingestion/       # 按数据源组织的采集、校验与发布代码
 │       ├── akshare/          # AkShare 原始日线校验、候选版本与运行时资产发布
-│       ├── ifind/            # iFinD HTTP 数据采集（全量回填与日增量）
+│       ├── ifind/            # iFinD HTTP 数据管道（按公共层和数据域分包）
 │       ├── wind/             # Wind 历史日频下载
 │       └── shared/           # 跨数据源复用的标准面板质量检查
 ├── current/                  # 当前运行时数据版本（不纳入 Git）

@@ -22,6 +22,7 @@ Factor/libraries/
 ├── volatility_lib.py
 ├── trading_lib.py
 ├── alpha_library.py
+├── worldquant_alpha101.py # WorldQuant Alpha 101（alpha001-alpha101）
 ├── technical_indicators.py # 技术指标（第一批）
 ├── risk_indicators.py      # 风险指标（第一批）
 └── emotion_indicators.py   # 情绪指标

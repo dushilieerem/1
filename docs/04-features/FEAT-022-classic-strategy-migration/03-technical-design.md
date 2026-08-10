@@ -33,3 +33,10 @@ Fama-French/Carhart 多因子策略位于 `fama_french_carhart_multi_factor_a_sh
 Piotroski F-Score 与股息增长策略分别位于 `piotroski_f_score_a_share_event_v1.py` 与 `dividend_growth_a_share_event_v1.py`。F-Score 从前一收盘可见的 `total_assets`、`total_liabilities`、`current_assets`、`current_liabilities`、`total_shares`、收入/成本/净利润/经营现金流 TTM、`pb` 和 `total_mv` 面板计算九项得分；当前值与约 90 个交易日前的点时可见值比较。股息增长从 `dividend_cash_per_share` 事件面板按自然年聚合近五年每股现金分红，并结合点时 `dividend_yield`、`pe_ttm` 和 `total_mv` 过滤。两者依赖 ADR-008 的公告日可见性，字段缺失或财务覆盖不足时不生成候选；不使用聚宽的实时证券状态或当日可成交性近似。
 
 聂夫低市盈率策略位于 `Strategy/libraries/neff_low_pe_a_share_event_v1.py`，读取 `pe_ratio`、`dividend_yield` 和 `inc_net_profit_year_on_year` 面板字段，按 PE、盈利增速、股息率及“总回报率/PE”筛选，月度等权持有最多十只。戴维斯双击策略位于 `Strategy/libraries/davis_double_play_a_share_event_v1.py`，读取 `pe_ratio`、`roe` 和 `inc_net_profit_year_on_year`，以当前 PE 在历史面板中的分位识别低估值，并保留高估值或盈利转负退出规则。两者均不把缺失基本面填零，基本面数据的点时质量由上游数据面板负责。
+
+本轮四个策略的源码与接口如下：
+
+- `granville_obv_a_share_event:v1` 位于 `Strategy/libraries/granville_obv_a_share_event_v1.py`。事件策略在月度首个交易日读取前收盘可见的 `close`、`volume`、`amount`、`industry`、PE/PB 和流通市值；OBV 以收盘方向累计成交量，使用 121 日窗口和 20 日线性斜率。历史股票池、ST、停牌、上市日期和涨跌停不在源码内猜测，缺少字段即拒绝运行。
+- `chaikin_accumulation_distribution_a_share_event:v1` 位于 `Strategy/libraries/chaikin_accumulation_distribution_a_share_event_v1.py`。事件策略使用前收盘可见的 OHLCV、成交额、行业、估值和流通市值，按 81 日窗口计算资金流乘数、A/D、EMA3/EMA10、CMF20 和行业评分；订单由事件引擎在下一交易日开盘成交。
+- `dual_thrust_a_share:v1` 位于 `Strategy/libraries/dual_thrust_a_share_v1.py`。它采用 `BacktestSignals`，以 `open/high/low/close` 和前一日可见的成交额/市值数据生成周度候选池及日度目标权重，`NativeEngine` 使用下一交易日收益。原稿的当日 09:45 盘中价无法由当前接口读取，因此 v1 的 close-vs-open 触发是明确的研究近似，不作为实盘执行策略。
+- `net_operating_assets_anomaly_a_share_event:v1` 位于 `Strategy/libraries/net_operating_assets_anomaly_a_share_event_v1.py`。事件策略按月读取不晚于前一收盘的点时资产负债表、PE、市值和价格；使用最多 260 日历史寻找最近可见的基本面值，但不向前填充或把缺失核心字段置零。回测回滚方式仍为从 `index.yaml` 移除对应条目，保留源码版本不覆盖。

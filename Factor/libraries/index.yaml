@@ -2,10 +2,20 @@
 # 前端读取此文件展示因子列表，提交回测时读取对应 .py 文件内容
 
 version: 1
-updated: 2026-07-22
-total_factors: 688
+updated: 2026-08-10
+total_factors: 836
 
 libraries:
+  classic_indicators:
+    file: classic_indicators.py
+    class: ClassicIndicatorLibrary
+    description: "经典日线技术、量价与波动指标"
+    author: SVQuant
+    tags: [technical, volume_price, volatility]
+    factor_count: 47
+    source_snapshot: "用户提供的指标字段与公式表"
+    verification: implemented
+
   emotion_indicators:
     file: emotion_indicators.py
     class: EmotionIndicatorLibrary
@@ -77,6 +87,28 @@ libraries:
       alpha158: "alpha158_{特征名小写}，共 158 个"
       alpha360: "alpha360_{字段名}{0-59}，共 360 个"
     fields: [open, high, low, close, volume, amount]
+
+  alpha_library:
+    file: alpha_library.py
+    class: AlphaLibrary
+    description: "兼容旧版示例因子库"
+    author: SVQuant
+    tags: [legacy, example]
+    factor_count: 5
+    verification: legacy
+
+  worldquant_alpha101:
+    file: worldquant_alpha101.py
+    class: WorldQuantAlpha101Library
+    description: "WorldQuant 101 Formulaic Alphas（SVQuant 原生复算）"
+    author: SVQuant
+    tags: [worldquant, alpha101, technical, volume_price]
+    factor_count: 101
+    naming: "alpha001-alpha101"
+    source_snapshot: "Kakushadze 101 Formulaic Alphas arXiv:1601.00991"
+    verification: implemented
+    fields: [open, high, low, close, volume]
+    optional_fields: [amount, vwap, cap, total_mv, sector, industry, subindustry]
 
   momentum_lib:
     file: momentum_lib.py

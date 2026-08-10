@@ -50,8 +50,8 @@
     <section>
       <h2>公共基础数据</h2>
       <div class="source-grid">
-        <article class="source"><h3>统一交易日历</h3><p>只下载深交所日历，作为全 A 的唯一交易日序列。</p><code>get_trade_dates → calendar/raw/ALL_A/*.json<br>→ calendar/ALL_A.csv → ALL_A.parquet</code></article>
-        <article class="source"><h3>全 A 证券池</h3><p>5,537 只股票，提供 CSV 宽表的完整列空间。</p><code>基础函数 → universe/raw/*.json<br>→ universe/a_share_5537.csv → a_share_5537.parquet</code></article>
+        <article class="source"><h3>统一交易日历</h3><p>只下载深交所日历，作为全 A 的唯一交易日序列。</p><code>get_trade_dates → calendar/raw/ALL_A/*.json<br>→ calendar/calendar_all_a.csv → calendar_all_a.parquet</code></article>
+        <article class="source"><h3>全 A 证券主表</h3><p>每日各读取一次 p03291 在市、已摘牌与退市整理板块，校验 thscode 互斥后直接联合。</p><code>data_pool p03291 → LISTED/*.json + DELISTED/*.json + DELISTING/*.json<br>→ a_share.csv → a_share.parquet</code></article>
       </div>
     </section>
 
@@ -85,7 +85,7 @@
         <article class="subflow"><h3>首次回填 / 历史修复</h3><div class="command">*_download backfill → *_csv rebuild → *_parquet</div><p>CSV 脚本并行解析全部 raw JSON，重新构建完整宽表。</p></article>
         <article class="subflow"><h3>每日收盘后更新</h3><div class="daily"><div class="daily-step"><b>1</b><br>calendar update</div><div class="daily-step"><b>2</b><br>market_data_download update</div><div class="daily-step"><b>3</b><br>date_sequence_download update</div><div class="daily-step"><b>4</b><br>两个 CSV update</div><div class="daily-step"><b>5</b><br>两个 Parquet</div></div><p style="margin-top:14px">CSV 的 <code>update</code> 只解析当天 raw JSON，并替换宽表中同一天的一行。</p></article>
       </div>
-      <div class="note"><strong>当前待优化：市场行情 Parquet 转换</strong>当前实现使用 pandas 一次性读取超宽 <code>market_data.csv</code>，已出现内存不足。需要改为流式/分块写入的 Parquet 转换方案。</div>
+      <div class="note"><strong>全 A 主表更新规则</strong><code>a_share.csv</code> 保持既有扁平列结构：每日校验 LISTED、DELISTED 与 DELISTING 三张快照的 <code>thscode</code> 必须两两互斥；发现交集立即报错，不构建日期 × 证券成员矩阵。</div>
     </section>
   </main>
 </body>

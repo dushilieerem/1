@@ -11,9 +11,11 @@ from pathlib import Path
 from typing import Iterator, Protocol
 from zoneinfo import ZoneInfo
 
-from data_ingestion.ifind.calendar import calendar_path
-from data_ingestion.ifind.client import IFindClient
-from data_ingestion.ifind.raw import load_or_fetch_json
+from data_ingestion.ifind.calendar.pipeline import calendar_path
+from data_ingestion.ifind.common.client import IFindClient
+from data_ingestion.ifind.common.paths import DEFAULT_OUTPUT_ROOT
+from data_ingestion.ifind.common.raw import load_or_fetch_json
+from data_ingestion.ifind.universe.pipeline import existing_universe_path
 
 EXCHANGES = ("SH", "SZ", "BJ")
 ADJUSTMENTS = ("hfq", "qfq", "none")
@@ -45,7 +47,12 @@ def chunks(values: list[str], size: int) -> Iterator[list[str]]:
 
 def read_universe_symbols(path: Path, exchange: str) -> list[str]:
     with path.open("r", encoding="utf-8-sig", newline="") as stream:
-        symbols = [row["thscode"] for row in csv.DictReader(stream) if row.get("exchange") == exchange]
+        symbols = []
+        for row in csv.DictReader(stream):
+            thscode = str(row.get("thscode", "")).strip()
+            row_exchange = str(row.get("exchange", "")).strip() or thscode.rsplit(".", 1)[-1]
+            if thscode and row_exchange == exchange:
+                symbols.append(thscode)
     if not symbols or len(symbols) != len(set(symbols)):
         raise ValueError(f"证券池 {exchange} 缺失或存在重复代码：{path}")
     return symbols
@@ -108,7 +115,7 @@ def run_download(client: MarketDataClient, output_root: Path, universe_path: Pat
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("backfill", "update"))
-    parser.add_argument("--output-root", type=Path, default=Path(__file__).resolve().parents[3] / "sources" / "ifind")
+    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--universe", type=Path)
     parser.add_argument("--start")
     parser.add_argument("--end")
@@ -122,7 +129,7 @@ def main() -> None:
         raise SystemExit("backfill 必须提供 --start 和 --end")
     start = args.start if args.command == "backfill" else args.as_of or datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
     end = args.end if args.command == "backfill" else start
-    universe = args.universe or args.output_root / "universe" / "a_share_5537.csv"
+    universe = args.universe or existing_universe_path(args.output_root)
     print(json.dumps(run_download(IFindClient.from_environment(), args.output_root, universe, start, end, args.symbols_per_request, args.trading_days_per_request if args.command == "backfill" else 1, args.max_estimated_points, args.adjustment), ensure_ascii=False))
 
 

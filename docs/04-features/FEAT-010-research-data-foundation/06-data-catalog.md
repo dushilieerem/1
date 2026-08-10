@@ -31,6 +31,7 @@
 | DATA-007 | `metadata/security_master.parquet` | `symbol`、证券名称、上市/退市日期、代码变更关系 | 证券 / 生效区间，长表 | 待授权 / 待确认 | 证券代码可与所有面板列一一对应，历史代码变更可追溯 |
 | DATA-008 | `releases/<version>/data_manifest.yaml` | 发布、来源、字段、文件、质量和授权摘要 | YAML | 本 Feature 生成 | 哈希齐全、字典版本匹配、所有必需资产状态为 `ready` |
 | DATA-009 | `releases/<version>/quality_report.json` | 覆盖率、连续性、异常、映射和审计样本结果 | JSON | 本 Feature 生成 | 未解决的阻断错误为零；警告有责任人与处置说明 |
+| DATA-010 | `sources/ifind/universe/a_share.csv` | iFinD `p03291` 在市、已摘牌与退市整理板块联合的历史全 A 证券主表（列：`thscode`、`name`） | 证券，CSV / Parquet | iFinD 授权数据，许可待确认 | 在市、已摘牌必须非空，退市整理允许为空；`thscode` 唯一；同日三类 raw 快照 `thscode` 两两互斥；任意交集必须阻断落盘 |
 
 ## 3. 后续数据资产（不属于 MVP 准入）
 

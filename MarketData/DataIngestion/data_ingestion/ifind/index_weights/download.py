@@ -10,12 +10,13 @@ from pathlib import Path
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
-from data_ingestion.ifind.calendar import calendar_path
-from data_ingestion.ifind.client import IFindClient
-from data_ingestion.ifind.raw import load_or_fetch_json
+from data_ingestion.ifind.calendar.pipeline import calendar_path
+from data_ingestion.ifind.common.client import IFindClient
+from data_ingestion.ifind.common.paths import DEFAULT_OUTPUT_ROOT
+from data_ingestion.ifind.common.raw import load_or_fetch_json
 
 REPORT_NAME = "p03563"
-OUTPUT_FIELDS = ("p03563_f001", "p03563_f002", "p03563_f003", "p03563_f004")
+OUTPUT_FIELDS = ("p03563_f002", "p03563_f004")
 
 
 class IndexWeightsClient(Protocol):
@@ -59,7 +60,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("backfill", "update"))
     parser.add_argument("--index", default="000300.SH", help="iFinD 指数代码，默认 000300.SH（沪深 300）")
-    parser.add_argument("--output-root", type=Path, default=Path(__file__).resolve().parents[3] / "sources" / "ifind")
+    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--start")
     parser.add_argument("--end")
     parser.add_argument("--as-of")

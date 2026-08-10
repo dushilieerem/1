@@ -10,7 +10,9 @@ from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-from data_ingestion.ifind.date_sequence_download import SOURCE_FIELDS
+from data_ingestion.ifind.common.paths import DEFAULT_OUTPUT_ROOT
+from data_ingestion.ifind.date_sequence.download import SOURCE_FIELDS
+from data_ingestion.ifind.universe.pipeline import existing_universe_path
 
 CSV_FIELDS = ("float_mv", "pe", "pb", "industry_sw", "industry_sw_code", "limit_status")
 FIELD_MAP = dict(zip(SOURCE_FIELDS, CSV_FIELDS, strict=True))
@@ -100,7 +102,7 @@ def build_date_sequence_csv(output_root: Path, workers: int = DEFAULT_WORKERS, u
     if workers <= 0:
         raise ValueError("workers 必须大于零")
     raw_root = output_root / "date_sequence" / "raw"
-    universe_path = universe_path or output_root / "universe" / "a_share_5537.csv"
+    universe_path = universe_path or existing_universe_path(output_root)
     columns = _wide_columns(universe_path)
     output_path = output_root / "date_sequence.csv"
     temporary_path = output_path.with_suffix(".csv.tmp")
@@ -130,7 +132,7 @@ def update_date_sequence_csv(output_root: Path, as_of: str, workers: int = DEFAU
     if workers <= 0:
         raise ValueError("workers 必须大于零")
     raw_root = output_root / "date_sequence" / "raw"
-    universe_path = universe_path or output_root / "universe" / "a_share_5537.csv"
+    universe_path = universe_path or existing_universe_path(output_root)
     columns = _wide_columns(universe_path)
     output_path = output_root / "date_sequence.csv"
     if not output_path.is_file():
@@ -175,7 +177,7 @@ def update_date_sequence_csv(output_root: Path, as_of: str, workers: int = DEFAU
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", nargs="?", choices=("rebuild", "update"), default="rebuild")
-    parser.add_argument("--output-root", type=Path, default=Path(__file__).resolve().parents[3] / "sources" / "ifind")
+    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     parser.add_argument("--as-of", help="日增量目标日，格式 YYYY-MM-DD")
     parser.add_argument("--universe", type=Path)

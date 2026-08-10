@@ -1,4 +1,4 @@
-"""将 iFinD 指数成分股权重原始 JSON 汇总为完整 CSV，不调用 iFinD。"""
+"""将 iFinD 指数成分股权重原始 JSON 汇总为日期 × 股票宽表 CSV。"""
 
 from __future__ import annotations
 
@@ -7,9 +7,10 @@ import csv
 import json
 from pathlib import Path
 
-from data_ingestion.ifind.index_weights_download import OUTPUT_FIELDS
+from data_ingestion.ifind.common.paths import DEFAULT_OUTPUT_ROOT
+from data_ingestion.ifind.index_weights.download import OUTPUT_FIELDS
 
-CSV_COLUMNS = ("date", "index_code", *OUTPUT_FIELDS, "source")
+SYMBOL_FIELD, WEIGHT_FIELD = OUTPUT_FIELDS
 
 
 def _table_rows(table: dict) -> list[dict[str, object]]:
@@ -35,11 +36,44 @@ def normalize_index_weights_response(response: dict, date: str, index_code: str)
         rows = [row for item in candidate if isinstance(item, dict) for row in _table_rows(item)]
     else:
         raise ValueError("iFinD 指数权重返回缺少数据表")
-    return [{"date": date, "index_code": index_code, **{field: row.get(field, "") for field in OUTPUT_FIELDS}, "source": "ifind"} for row in rows]
+    normalized: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for row in rows:
+        symbol = row.get(SYMBOL_FIELD)
+        if not isinstance(symbol, str) or not symbol:
+            raise ValueError(f"iFinD 指数权重返回无效证券代码：{index_code} {date}")
+        if symbol in seen:
+            raise ValueError(f"iFinD 指数权重返回重复证券代码：{index_code} {date} {symbol}")
+        seen.add(symbol)
+        normalized.append({"date": date, "thscode": symbol, "weight": row.get(WEIGHT_FIELD, "")})
+    return normalized
 
 
 def _raw_paths(output_root: Path, index_code: str) -> list[Path]:
     return sorted((output_root / "index_weights" / "raw" / index_code).glob("*.json"))
+
+
+def _wide_rows(paths: list[Path], index_code: str) -> tuple[list[str], list[dict[str, object]]]:
+    symbols: set[str] = set()
+    rows: list[dict[str, object]] = []
+    for number, path in enumerate(paths, start=1):
+        print(f"[index_weights_csv] 第 {number}/{len(paths)} 日：正在汇总 {path.stem}", flush=True)
+        with path.open(encoding="utf-8") as raw_stream:
+            normalized = normalize_index_weights_response(json.load(raw_stream), path.stem, index_code)
+        row: dict[str, object] = {"date": path.stem}
+        for item in normalized:
+            symbol = str(item["thscode"])
+            symbols.add(symbol)
+            row[symbol] = item["weight"]
+        rows.append(row)
+    return sorted(symbols), rows
+
+
+def _write_wide_csv(path: Path, symbols: list[str], rows: list[dict[str, object]]) -> None:
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=("date", *symbols))
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def build_index_weights_csv(output_root: Path, index_code: str) -> dict[str, int]:
@@ -47,16 +81,9 @@ def build_index_weights_csv(output_root: Path, index_code: str) -> dict[str, int
     output_path = output_root / "index_weights" / f"{index_code}.csv"
     temporary_path = output_path.with_suffix(".csv.tmp")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    summary = {"rows": 0, "partitions": len(paths)}
-    with temporary_path.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=CSV_COLUMNS)
-        writer.writeheader()
-        for number, path in enumerate(paths, start=1):
-            print(f"[index_weights_csv] 第 {number}/{len(paths)} 日：正在汇总 {path.stem}", flush=True)
-            with path.open(encoding="utf-8") as raw_stream:
-                rows = normalize_index_weights_response(json.load(raw_stream), path.stem, index_code)
-            writer.writerows(rows)
-            summary["rows"] += len(rows)
+    symbols, rows = _wide_rows(paths, index_code)
+    summary = {"rows": len(rows), "partitions": len(paths)}
+    _write_wide_csv(temporary_path, symbols, rows)
     temporary_path.replace(output_path)
     print(f"[index_weights_csv] 已完成：{summary['rows']} 行，写入 {output_path}", flush=True)
     return summary
@@ -72,22 +99,22 @@ def update_index_weights_csv(output_root: Path, index_code: str, as_of: str) -> 
         print(f"[index_weights_csv] 未找到 {as_of} 的原始 JSON，CSV 不变", flush=True)
         return {"rows": 0, "replaced_rows": 0, "partitions": 0}
     with raw_file.open(encoding="utf-8") as stream:
-        delta = normalize_index_weights_response(json.load(stream), as_of, index_code)
+        normalized = normalize_index_weights_response(json.load(stream), as_of, index_code)
+    delta = {"date": as_of, **{str(row["thscode"]): row["weight"] for row in normalized}}
     temporary_path = output_path.with_suffix(".csv.tmp")
-    summary = {"rows": 0, "replaced_rows": 1, "partitions": 1}
-    with output_path.open(encoding="utf-8-sig", newline="") as source, temporary_path.open("w", encoding="utf-8", newline="") as target:
+    with output_path.open(encoding="utf-8-sig", newline="") as source:
         reader = csv.DictReader(source)
-        if tuple(reader.fieldnames or ()) != CSV_COLUMNS:
-            raise ValueError(f"现有 CSV 列结构不正确：{output_path}")
-        writer = csv.DictWriter(target, fieldnames=CSV_COLUMNS)
-        writer.writeheader()
-        for row in reader:
-            if row["date"] != as_of:
-                writer.writerow(row)
-                summary["rows"] += 1
-        writer.writerows(delta)
-        summary["rows"] += len(delta)
+        if not reader.fieldnames or reader.fieldnames[0] != "date":
+            print("[index_weights_csv] 现有 CSV 不是当前宽表结构，改为全量重建", flush=True)
+            return build_index_weights_csv(output_root, index_code)
+        existing_symbols = reader.fieldnames[1:]
+        rows = [row for row in reader if row["date"] != as_of]
+    symbols = [*existing_symbols, *sorted(set(delta) - {"date", *existing_symbols})]
+    rows.append(delta)
+    rows.sort(key=lambda row: str(row["date"]))
+    _write_wide_csv(temporary_path, symbols, rows)
     temporary_path.replace(output_path)
+    summary = {"rows": len(rows), "replaced_rows": 1, "partitions": 1}
     print(f"[index_weights_csv] 已完成当日更新：替换 {as_of}，写入 {output_path}", flush=True)
     return summary
 
@@ -96,7 +123,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", nargs="?", choices=("rebuild", "update"), default="rebuild")
     parser.add_argument("--index", default="000300.SH")
-    parser.add_argument("--output-root", type=Path, default=Path(__file__).resolve().parents[3] / "sources" / "ifind")
+    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--as-of")
     args = parser.parse_args()
     if args.command == "update" and not args.as_of:

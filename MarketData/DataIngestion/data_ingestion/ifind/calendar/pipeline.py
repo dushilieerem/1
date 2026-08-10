@@ -5,20 +5,26 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Iterable, Protocol
 from zoneinfo import ZoneInfo
 
-from data_ingestion.ifind.client import IFindClient
-from data_ingestion.ifind.raw import load_or_fetch_json
+from data_ingestion.ifind.common.client import IFindClient
+from data_ingestion.ifind.common.paths import DEFAULT_OUTPUT_ROOT
+from data_ingestion.ifind.common.raw import load_or_fetch_json
 
 
 CALENDAR_ID = "ALL_A"
+CALENDAR_FILE_STEM = "calendar_all_a"
+CALENDAR_CSV_FILENAME = f"{CALENDAR_FILE_STEM}.csv"
+CALENDAR_PARQUET_FILENAME = f"{CALENDAR_FILE_STEM}.parquet"
 PRIMARY_EXCHANGE = "SZ"
 PRIMARY_MARKETCODE = "212100"
 PRIMARY_START_DATE = "1990-12-01"
 CALENDAR_COLUMNS = ("date", "exchange", "is_trade_day", "source", "marketcode")
+SHANGHAI_TIMEZONE = ZoneInfo("Asia/Shanghai")
+IFIND_DATA_READY_TIME = time(hour=17)
 
 
 class CalendarClient(Protocol):
@@ -53,7 +59,7 @@ def extract_trade_dates(response: dict) -> list[str]:
 
 
 def calendar_path(output_root: Path) -> Path:
-    return output_root / "calendar" / f"{CALENDAR_ID}.csv"
+    return output_root / "calendar" / CALENDAR_CSV_FILENAME
 
 
 def calendar_raw_path(output_root: Path, start: str, end: str) -> Path:
@@ -104,6 +110,23 @@ def fetch_trade_dates(client: CalendarClient, start: str, end: str, raw_response
     return extract_trade_dates(response)
 
 
+def default_update_as_of(now: datetime | None = None) -> str:
+    """返回 iFinD 日数据默认允许写入的截止日期。
+
+    iFinD 的日数据通常在 A 股收盘后约两小时才可用。17:00 前运行
+    日增量任务时，只处理前一自然日，避免把尚未完成的数据日期加入日历。
+    """
+    current = datetime.now(SHANGHAI_TIMEZONE) if now is None else now
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=SHANGHAI_TIMEZONE)
+    else:
+        current = current.astimezone(SHANGHAI_TIMEZONE)
+    target = current.date()
+    if current.time() < IFIND_DATA_READY_TIME:
+        target -= timedelta(days=1)
+    return target.isoformat()
+
+
 def backfill_calendar(client: CalendarClient, output_root: Path, start: str, end: str) -> int:
     effective_start = max(start, PRIMARY_START_DATE)
     if effective_start > end:
@@ -138,7 +161,7 @@ def update_calendar(client: CalendarClient, output_root: Path, as_of: str) -> in
 
 
 def build_calendar_from_existing_sz(output_root: Path) -> int:
-    """一次性迁移：由已有 SZ.csv 重建唯一维护的 ALL_A.csv，不访问网络。"""
+    """一次性迁移：由已有 SZ.csv 重建唯一维护的 calendar_all_a.csv，不访问网络。"""
     source_path = output_root / "calendar" / "SZ.csv"
     if not source_path.is_file():
         raise FileNotFoundError(f"缺少可迁移的深交所交易日历：{source_path}")
@@ -148,10 +171,10 @@ def build_calendar_from_existing_sz(output_root: Path) -> int:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("backfill", "update", "build-from-existing-sz"))
-    parser.add_argument("--output-root", type=Path, default=Path(__file__).resolve().parents[3] / "sources" / "ifind")
+    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--start", help="全量回填起始日，格式 YYYY-MM-DD")
     parser.add_argument("--end", help="全量回填截止日，格式 YYYY-MM-DD")
-    parser.add_argument("--as-of", help="日增量截至日期，默认上海时区当天")
+    parser.add_argument("--as-of", help="日增量截至日期；未指定时上海时间 17:00 前取前一日，17:00 起取当天")
     return parser.parse_args()
 
 
@@ -164,7 +187,7 @@ def main() -> None:
             raise SystemExit("backfill 必须提供 --start 和 --end")
         result = backfill_calendar(IFindClient.from_environment(), args.output_root, args.start, args.end)
     else:
-        as_of = args.as_of or datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+        as_of = args.as_of or default_update_as_of()
         result = update_calendar(IFindClient.from_environment(), args.output_root, as_of)
     print(json.dumps({"command": args.command, "new_trade_dates": {CALENDAR_ID: result}}, ensure_ascii=False))
 

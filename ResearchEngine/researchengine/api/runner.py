@@ -60,9 +60,11 @@ from researchengine.api.serializers import (
 BUILTIN_FACTOR_LIBRARIES = frozenset({
     "alpha_library",
     "alpha_features",
+    "worldquant_alpha101",
     "technical_indicators",
     "risk_indicators",
     "emotion_indicators",
+    "classic_indicators",
 })
 
 

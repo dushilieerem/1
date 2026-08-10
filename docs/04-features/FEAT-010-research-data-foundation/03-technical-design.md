@@ -63,9 +63,28 @@ MarketData/
 
 全 A 股下载任务使用 `POST /api/v1/get_trade_dates` 获取交易日历，固定 `functionpara: {"mode": "1", "dateType": "0", "period": "D", "dateFormat": "0"}`。交易所与 iFinD `marketcode` 映射为：`SH → 212001`、`SZ → 212100`、`BJ → 212300`。三份日历独立保存并进行差异检查；按证券所属交易所选择下载窗口，不假定三地日历恒等。
 
+### iFinD `p03291` 全 A 证券主表协议
+
+全 A 证券主表使用 `POST /api/v1/data_pool`，每日对同一个目标日请求三次：在市板块 `001005010`、已摘牌板块 `001005334011`、退市整理板块 `001005334025`。三次请求均固定 `reportname: p03291`、`functionpara.iv_type: allcontract`、`outputpara: p03291_f002,p03291_f003`；`p03291_f002` 为证券代码，`p03291_f003` 为证券名称。
+
+原始响应按状态分区保存；同日三张快照通过 `thscode` 互斥校验后直接联合为原有扁平证券主表：
+
+```text
+sources/ifind/universe/raw/LISTED/<date>.json
+sources/ifind/universe/raw/DELISTED/<date>.json
+sources/ifind/universe/raw/DELISTING/<date>.json
+sources/ifind/universe/a_share.csv
+```
+
+`a_share.csv` 的列固定为 `thscode` 和 `name`，分别对应 `p03291_f002` 与 `p03291_f003`；交易所从证券代码后缀派生。交易所名称、上市日期、板块和上市状态等字段不在该请求中返回，不写入证券池 CSV，后续由独立数据资产提供。
+
+同一日期的三张 raw 各只下载一次，重复运行直接重放缓存。在市与已摘牌快照必须非空；退市整理快照允许为空，供应商返回的 `-4001 / no data` 原始响应按空快照缓存，但其他错误不得降级。构建 CSV 时取最新的同日快照，先校验三张快照的 `thscode` 集合两两互斥；只要存在任意交集就报错并拒绝落盘，不能用状态优先级覆盖异常。通过校验后直接联合三张列表。该 CSV 是历史证券集合，不是日期 × 证券成员矩阵；需要某日成员资格时，应结合可用的上市/退市生效日期或状态面板派生。
+
 ### iFinD CSV 优先落盘规则
 
 所有 iFinD 下载结果先写入 `MarketData/sources/ifind/` 下按数据域、交易所和时间窗口分区的 UTF-8 CSV；不得由 HTTP 响应直接写入 `current/` 或 `releases/` 的 Parquet。CSV 经字段名、证券代码、日期、重复记录、OHLC 关系、缺失率和请求覆盖区间检查后，才转换为候选发布版本中的标准字段 Parquet。每个 CSV 分区对应的请求参数、`dataVol`、来源版本、生成时间和内容哈希由 checkpoint / manifest 记录；CSV 用于人工查看和问题追溯，Parquet 用于研究运行时读取。
+
+指数权重使用 `POST /api/v1/data_pool` 的 `p03563`，`functionpara` 只含 `date`、`index_name`，`outputpara` 固定为 `p03563_f002,p03563_f004`。两字段分别映射证券代码与权重。每个指数的 CSV 与 Parquet 都采用日期索引、股票代码列的宽表结构；权重保持 iFinD 百分比原值，非成分股为空值。
 
 ### iFinD 全量与日增量任务
 

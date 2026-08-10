@@ -49,7 +49,7 @@ def health() -> HealthResponse:
 
 @router.get("/factors", response_model=FactorListResponse)
 def list_factors() -> FactorListResponse:
-    """列内置因子（``alpha_library`` 的方法名 + docstring），供 UI 下拉。"""
+    """列出已登记内置因子库的方法与 docstring，供 UI 下拉。"""
     return FactorListResponse(factors=_builtin_factors())
 
 

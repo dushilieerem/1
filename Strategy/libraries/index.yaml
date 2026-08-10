@@ -376,3 +376,47 @@ strategies:
       v1:
         file: dividend_growth_a_share_event_v1.py
         entrypoint: DividendGrowthAShareEventStrategy
+
+  granville_obv_a_share_event:
+    name: 约瑟夫·格兰维尔 OBV 能量潮 A 股策略
+    strategy_type: volume_trend
+    execution_mode: event
+    current_version: v1
+    tags: [granville, obv, volume, trend, industry_neutral, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: granville_obv_a_share_event_v1.py
+        entrypoint: GranvilleObvAShareEventStrategy
+
+  chaikin_accumulation_distribution_a_share_event:
+    name: 马克·蔡金 A 股累积派发与振荡器策略
+    strategy_type: money_flow
+    execution_mode: event
+    current_version: v1
+    tags: [chaikin, accumulation_distribution, oscillator, money_flow, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: chaikin_accumulation_distribution_a_share_event_v1.py
+        entrypoint: ChaikinAccumulationDistributionAShareEventStrategy
+
+  dual_thrust_a_share:
+    name: Dual Thrust 双重推力 A 股研究策略
+    strategy_type: breakout
+    execution_mode: vectorized
+    current_version: v1
+    tags: [dual_thrust, breakout, volatility_range, a_share, long_only, vectorized, research_only]
+    versions:
+      v1:
+        file: dual_thrust_a_share_v1.py
+        entrypoint: DualThrustAShareStrategy
+
+  net_operating_assets_anomaly_a_share_event:
+    name: 净营运资产异象 A 股策略
+    strategy_type: quality_value
+    execution_mode: event
+    current_version: v1
+    tags: [net_operating_assets, noa, accounting_anomaly, quality, value, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: net_operating_assets_anomaly_a_share_event_v1.py
+        entrypoint: NetOperatingAssetsAnomalyAShareEventStrategy

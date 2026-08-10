@@ -14,6 +14,19 @@ API_BASE_URL = "https://quantapi.51ifind.com"
 class IFindRequestError(RuntimeError):
     """iFinD 请求或返回业务错误。"""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        errorcode: object = None,
+        errmsg: str | None = None,
+        response: dict | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.errorcode = errorcode
+        self.errmsg = errmsg
+        self.response = response
+
 
 class IFindClient:
     """使用 refresh token 按需获取 access token 的最小 HTTP 客户端。"""
@@ -41,8 +54,13 @@ class IFindClient:
             headers={"access_token": self._access_token},
         )
         if response.get("errorcode", 0) != 0:
+            errorcode = response.get("errorcode")
+            errmsg = str(response.get("errmsg", "未知错误"))
             raise IFindRequestError(
-                f"iFinD 请求失败（{response.get('errorcode')}）：{response.get('errmsg', '未知错误')}"
+                f"iFinD 请求失败（{errorcode}）：{errmsg}",
+                errorcode=errorcode,
+                errmsg=errmsg,
+                response=response,
             )
         return response
 

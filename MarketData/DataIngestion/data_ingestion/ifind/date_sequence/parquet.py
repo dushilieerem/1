@@ -6,12 +6,13 @@ import argparse
 import json
 from pathlib import Path
 
-from data_ingestion.ifind.market_data_parquet import csv_to_parquet
+from data_ingestion.ifind.common.paths import DEFAULT_OUTPUT_ROOT
+from data_ingestion.ifind.market_data.parquet import csv_to_parquet
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-root", type=Path, default=Path(__file__).resolve().parents[3] / "sources" / "ifind")
+    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     args = parser.parse_args()
     print(json.dumps(csv_to_parquet(args.output_root / "date_sequence.csv", args.output_root / "date_sequence.parquet", "date_sequence_parquet"), ensure_ascii=False))
 

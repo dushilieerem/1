@@ -11,6 +11,15 @@ class JsonClient(Protocol):
     def post(self, path: str, payload: dict) -> dict: ...
 
 
+def save_json_response(raw_path: Path, response: dict) -> None:
+    """原子保存 iFinD 原始 JSON 响应。"""
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = raw_path.with_suffix(raw_path.suffix + ".tmp")
+    with temporary_path.open("w", encoding="utf-8") as stream:
+        json.dump(response, stream, ensure_ascii=False)
+    temporary_path.replace(raw_path)
+
+
 def load_or_fetch_json(client: JsonClient, raw_path: Path, path: str, payload: dict) -> dict:
     """优先重放已落盘响应；首次请求成功后立即保存，再交给调用方解析。"""
     if raw_path.is_file():
@@ -21,9 +30,5 @@ def load_or_fetch_json(client: JsonClient, raw_path: Path, path: str, payload: d
         return response
 
     response = client.post(path, payload)
-    raw_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = raw_path.with_suffix(raw_path.suffix + ".tmp")
-    with temporary_path.open("w", encoding="utf-8") as stream:
-        json.dump(response, stream, ensure_ascii=False)
-    temporary_path.replace(raw_path)
+    save_json_response(raw_path, response)
     return response

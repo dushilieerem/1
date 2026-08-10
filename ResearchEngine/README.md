@@ -47,6 +47,7 @@ researchengine/
 
 ../Factor/libraries/     # 研究员写入的因子库
 ├── alpha_library.py    # AlphaLibrary（alpha101/alpha158/marketcap/macdboll/futureRes）
+├── worldquant_alpha101.py # WorldQuant Alpha 101（alpha001-alpha101）
 examples/
 ├── main.py             # 端到端入口（CLI/SDK）
 └── gen_data.py         # 生成宽表样本数据

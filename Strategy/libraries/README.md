@@ -56,3 +56,9 @@ strategies:
 `keltner_channel_breakout_a_share_event` 使用 EMA20 与 Wilder ATR10 的两倍构建通道，在上轨突破时入场；`williams_percent_r_a_share_event` 在 60 日趋势向上时，以 14 日 %R 的超卖上穿构建反转信号。两者均只适用于日频研究，并由事件引擎处理开盘成交及 A 股可成交性约束。
 
 `piotroski_f_score_a_share_event` 在低 PB 股票中以九项会计质量信号筛选月度组合；`dividend_growth_a_share_event` 要求连续五年现金分红且最近一年不降，并在中等股息率股票中选股。两者均依赖公告日点时财务数据；后者还依赖逐笔 `dividend_cash_per_share` 分红事件。数据版本未发布这些字段时会明确拒绝运行，当前仅用于研究验证。
+
+`granville_obv_a_share_event` 使用收盘方向累计成交量、20 日标准化斜率和行业评分；`chaikin_accumulation_distribution_a_share_event` 使用资金流乘数、A/D、EMA3/EMA10 和 CMF20。两者均为月度事件策略，依赖前收盘可见的 OHLCV、成交额、行业、估值和流通市值面板，缺少字段时拒绝运行。
+
+`dual_thrust_a_share` 使用前 N 日波动区间和当日开盘锚定上下轨生成向量化目标权重，并按周更新流动性候选池。原始策略的 09:45 盘中信号在 v1 中近似为当日收盘信号，结果仅用于研究验证。
+
+`net_operating_assets_anomaly_a_share_event` 使用点时资产负债表计算 NOA/总资产，按月度 NOA 升序构建组合；核心字段缺失时不以零值填充。

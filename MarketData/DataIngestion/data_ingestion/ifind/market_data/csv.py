@@ -10,7 +10,9 @@ from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-from data_ingestion.ifind.market_data_download import ADJUSTMENTS, LIQUIDITY, PRICE, price_group
+from data_ingestion.ifind.common.paths import DEFAULT_OUTPUT_ROOT
+from data_ingestion.ifind.market_data.download import ADJUSTMENTS, LIQUIDITY, PRICE, price_group
+from data_ingestion.ifind.universe.pipeline import existing_universe_path
 
 WIDE_FIELDS = ("open", "high", "low", "close", "volume", "amount", "turnover")
 DEFAULT_WORKERS = max(1, min(4, os.cpu_count() or 1))
@@ -127,7 +129,7 @@ def build_daily_csv(output_root: Path, workers: int = DEFAULT_WORKERS, universe_
         raise ValueError("workers 必须大于零")
     price_paths = _paths(output_root.joinpath(*price_group(adjustment)["root"], "raw"))
     liquidity_paths = _paths(output_root / "liquidity" / "raw")
-    universe_path = universe_path or output_root / "universe" / "a_share_5537.csv"
+    universe_path = universe_path or existing_universe_path(output_root)
     columns = _wide_columns(universe_path)
     output_path = output_root / f"market_data_{adjustment}.csv"
     temporary_path = output_path.with_suffix(".csv.tmp")
@@ -157,7 +159,7 @@ def update_daily_csv(output_root: Path, as_of: str, workers: int = DEFAULT_WORKE
     """以指定日期的 raw JSON 覆盖完整 CSV 中同日记录，不重解析历史 JSON。"""
     if workers <= 0:
         raise ValueError("workers 必须大于零")
-    universe_path = universe_path or output_root / "universe" / "a_share_5537.csv"
+    universe_path = universe_path or existing_universe_path(output_root)
     columns = _wide_columns(universe_path)
     output_path = output_root / f"market_data_{adjustment}.csv"
     if not output_path.is_file():
@@ -202,7 +204,7 @@ def update_daily_csv(output_root: Path, as_of: str, workers: int = DEFAULT_WORKE
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", nargs="?", choices=("rebuild", "update"), default="rebuild")
-    parser.add_argument("--output-root", type=Path, default=Path(__file__).resolve().parents[3] / "sources" / "ifind")
+    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     parser.add_argument("--as-of", help="日增量目标日，格式 YYYY-MM-DD")
     parser.add_argument("--universe", type=Path)

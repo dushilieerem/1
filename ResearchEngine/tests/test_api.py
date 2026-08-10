@@ -252,6 +252,19 @@ def test_factor_backtest_loads_builtin_factor_library(market_data_dir):
     assert response.json()["error"] is None
 
 
+def test_factor_backtest_loads_classic_indicator_library(market_data_dir):
+    payload = _request_payload()
+    payload.pop("factor_code")
+    payload.update({
+        "library_name": "classic_indicators",
+        "factor_name": "bbi",
+    })
+    response = client.post("/api/backtest/factor", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["error"] is None
+
+
 def test_factor_backtest_custom_factor_can_combine_builtin_library_methods(market_data_dir):
     payload = _request_payload()
     payload.update({

@@ -186,6 +186,62 @@ class TechnicalLib(FactorLibrary):
         down_sum = (-delta.clip(upper=0)).rolling(window).sum()
         return 100 * (up_sum - down_sum) / (up_sum + down_sum + 1e-10)
 
+    def ultimate_oscillator(self, short: int = 7, medium: int = 14, long: int = 28):
+        """终极振荡器：多周期买压与真实波幅的加权动量。"""
+        previous_close = self.close.shift()
+        minimum = self.low.where(self.low <= previous_close, previous_close)
+        maximum = self.high.where(self.high >= previous_close, previous_close)
+        buying_pressure = self.close - minimum
+        true_range = maximum - minimum
+
+        def average(window: int):
+            return buying_pressure.rolling(window).sum() / (
+                true_range.rolling(window).sum() + 1e-10
+            )
+
+        return 100 * (4 * average(short) + 2 * average(medium) + average(long)) / 7
+
+    def fisher_transform(self, window: int = 10):
+        """费舍尔变换：滚动中点价格归一化后的非线性振荡器。"""
+        midpoint = (self.high + self.low) / 2
+        lowest = midpoint.rolling(window).min()
+        highest = midpoint.rolling(window).max()
+        price_range = highest - lowest
+        normalized = (
+            2 * (midpoint - lowest) / (price_range + 1e-10) - 1
+        ).where(price_range > 0, 0.0)
+        normalized = normalized.clip(-0.999999, 0.999999)
+        return 0.5 * np.log((1 + normalized) / (1 - normalized))
+
+    def ease_of_movement(self, window: int = 14, volume_divisor: float = 100000000.0):
+        """简化移动容易度：价格位移相对成交量和振幅的滚动均值。"""
+        distance_moved = ((self.high + self.low) / 2).diff()
+        box_ratio = (self.volume / volume_divisor) / (
+            self.high - self.low + 1e-10
+        )
+        one_period = distance_moved / (box_ratio + 1e-10)
+        return one_period.rolling(window).mean()
+
+    def relative_vigor_index(self, window: int = 10):
+        """相对活力指数：收盘—开盘动量相对高低价区间的平滑比值。"""
+        close_open = self.close - self.open
+        high_low = self.high - self.low
+        numerator = (
+            close_open
+            + 2 * close_open.shift(1)
+            + 2 * close_open.shift(2)
+            + close_open.shift(3)
+        ) / 6
+        denominator = (
+            high_low
+            + 2 * high_low.shift(1)
+            + 2 * high_low.shift(2)
+            + high_low.shift(3)
+        ) / 6
+        return numerator.rolling(window).mean() / (
+            denominator.rolling(window).mean() + 1e-10
+        )
+
     def _true_range(self):
         previous_close = self.close.shift()
         first = self.high - self.low

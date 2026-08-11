@@ -57,6 +57,14 @@ class DataEngine:
         """获取股票池，委托给当前 provider。"""
         return self._require_provider().get_universe(date)
 
+    def get_universe_at(self, name: str, as_of: str | pd.Timestamp) -> List[str]:
+        """获取指定时点的命名股票池；不支持历史快照时兼容旧 provider。"""
+        provider = self._require_provider()
+        resolver = getattr(provider, "get_universe_at", None)
+        if callable(resolver):
+            return resolver(name, as_of)
+        return provider.get_universe(name)
+
     def get_symbols(self) -> List[str]:
         """获取全部已知标的，委托给当前 provider。"""
         return self._require_provider().get_symbols()

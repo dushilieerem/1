@@ -43,6 +43,39 @@ def test_factor_engine_compute(tmp_path):
     assert wide["B"].iloc[-1] < 0
 
 
+def test_factor_engine_freezes_named_universe_at_first_backtest_day(tmp_path):
+    dates = pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"])
+    pd.DataFrame({
+        "datetime": dates,
+        "A": [10.0, 11.0, 12.0],
+        "B": [20.0, 19.0, 18.0],
+        "C": [30.0, 31.0, 32.0],
+    }).to_parquet(tmp_path / "close.parquet", index=False)
+    benchmark = tmp_path / "benchmark"
+    benchmark.mkdir()
+    pd.DataFrame(
+        {
+            "A": [0.5, float("nan")],
+            "B": [0.5, 0.5],
+            "C": [float("nan"), 0.5],
+        },
+        index=pd.to_datetime(["2023-12-29", "2024-01-03"]),
+    ).to_parquet(benchmark / "index_weights_000905.SH.parquet")
+
+    engine = FactorEngine()
+    engine.register(_Momentum())
+    values = engine.compute(
+        "mom",
+        DataEngine(FieldParquetProvider(tmp_path)),
+        "CSI500",
+        start="2024-01-01",
+        end="2024-01-04",
+        fields=["close"],
+    )
+
+    assert list(values.columns) == ["A", "B"]
+
+
 def test_factor_engine_register_type_check():
     fe = FactorEngine()
     try:
@@ -74,11 +107,10 @@ def test_factor_library_accesses_csi300_close(tmp_path):
     benchmark = tmp_path / "benchmark"
     benchmark.mkdir()
     pd.DataFrame(
-        {"000300_close": [100.0, 105.0, 110.0], "000300_open": [100.0, 105.0, 110.0],
-         "000300_high": [100.0, 105.0, 110.0], "000300_low": [100.0, 105.0, 110.0],
-         "000300_volume": [1.0, 1.0, 1.0]},
+        {"close": [100.0, 105.0, 110.0], "open": [100.0, 105.0, 110.0],
+         "high": [100.0, 105.0, 110.0], "low": [100.0, 105.0, 110.0]},
         index=dates,
-    ).to_parquet(benchmark / "index_000300.parquet")
+    ).to_parquet(benchmark / "index_price_000300.SH.parquet")
 
     library = _RelativeStrength()
     engine = FactorEngine()

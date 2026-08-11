@@ -25,13 +25,15 @@
 | DATA-001 | `current/panels/{field}.parquet` | 既有 OHLC、成交量额、换手率、市值股本、PE/PB/PS、ST、涨停 | 日 × 证券，字段宽表 | 已迁移，口径/许可待盘点 | 对每个文件核对复权口径、日期区间、证券代码和缺失率 |
 | DATA-002 | `raw/fundamentals.parquet` | 原始三表记录及第 5 节必填元数据 | 披露记录长表 | 待授权 | 抽样核对报告期、公告日、单位、修订链和供应商版本 |
 | DATA-003 | `panels/{financial_field}.parquet` | 第 05 文档第 3 节所有财务标准字段 | 日 × 证券，字段宽表 | 由 DATA-002 转换 | 公告日前不可见；修订后切换；TTM 缺季为空 |
-| DATA-004 | `current/panels/adj_factor.parquet` 与前复权价格面板 | 累计复权因子与前复权开高低收价格 | 日 × 证券，字段宽表 | 待授权 / 待确认现有数据 | 抽样复算复权公式；明确基日、企业行为处理和价格单位 |
+| DATA-004 | `current/panels/adj_factor.parquet` | 累计复权因子；前复权价格面板延期 | 日 × 证券，字段宽表 | 待授权 / 待确认现有数据 | 抽样复算复权公式；明确基日和企业行为处理；前复权另行评审 |
 | DATA-005 | `panels/listing_status.parquet`、`is_suspended.parquet`、`is_tradable.parquet` | 上市、停牌与交易可行状态 | 日 × 证券，字段宽表 | 待授权 | 抽样覆盖 IPO、停牌、复牌、退市与涨跌停边界 |
 | DATA-006 | `panels/market_return_all_a.parquet` | 全 A 市场收益单列面板或日期序列 | 日，Parquet | 由 DATA-001/004/005 派生 | 用 t-1 流通市值复算抽样日期；记录成分和剔除规则 |
 | DATA-007 | `metadata/security_master.parquet` | `symbol`、证券名称、上市/退市日期、代码变更关系 | 证券 / 生效区间，长表 | 待授权 / 待确认 | 证券代码可与所有面板列一一对应，历史代码变更可追溯 |
 | DATA-008 | `releases/<version>/data_manifest.yaml` | 发布、来源、字段、文件、质量和授权摘要 | YAML | 本 Feature 生成 | 哈希齐全、字典版本匹配、所有必需资产状态为 `ready` |
 | DATA-009 | `releases/<version>/quality_report.json` | 覆盖率、连续性、异常、映射和审计样本结果 | JSON | 本 Feature 生成 | 未解决的阻断错误为零；警告有责任人与处置说明 |
 | DATA-010 | `sources/ifind/universe/a_share.csv` | iFinD `p03291` 在市、已摘牌与退市整理板块联合的历史全 A 证券主表（列：`thscode`、`name`） | 证券，CSV / Parquet | iFinD 授权数据，许可待确认 | 在市、已摘牌必须非空，退市整理允许为空；`thscode` 唯一；同日三类 raw 快照 `thscode` 两两互斥；任意交集必须阻断落盘 |
+| DATA-011 | `sources/ifind/index/index_weights/index_weights_<index>.parquet` | iFinD `p03563` 指数成分与权重 | 日期 × 股票宽表 | iFinD 授权数据，许可待确认 | 非成分为空；权重保持供应商百分比原值；代码唯一 |
+| DATA-012 | `sources/ifind/index/index_price/index_price_<index>.parquet` | iFinD `history_data` 指数 OHLC | 日期 × OHLC | iFinD 授权数据，许可待确认 | 单指数请求；字段仅为 OHLC；日期唯一且满足价格关系校验 |
 
 ## 3. 后续数据资产（不属于 MVP 准入）
 
@@ -72,7 +74,7 @@ quality_report: quality_report.json
 
 `/api/v1/history_data` 的全 A 股 OHLC 请求使用 `reqBody.codes`、`startdate`、`enddate`、`indicators` 和可选 `functionpara`。经超级命令生成协议确认：省略 `functionpara.CPS` 为不复权，`CPS: "1"` 为后复权，`CPS: "2"` 为前复权。该规则仅适用于此 HTTP endpoint；不得用其他接口或 SDK 的同名参数规则替代。
 
-不复权、前复权、后复权的原始数据分别保存，发布清单必须记录其 `endpoint`、`functionpara`、价格口径、源版本和对应超级命令确认记录。任何一个候选版本的标准 `open`、`high`、`low`、`close` 只允许声明一种明确口径。
+当前分别保存后复权回测行情和未复权 WebApp 展示价格，发布清单必须记录其 `endpoint`、`functionpara`、价格口径、源版本和对应超级命令确认记录。前复权暂不采集。任何一个候选版本的标准 `open`、`high`、`low`、`close` 只允许声明一种明确口径。
 
 ## 6. 责任与待确认项
 

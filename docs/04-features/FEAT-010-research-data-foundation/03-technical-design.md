@@ -59,7 +59,23 @@ MarketData/
 
 全 A 股日线 OHLC 使用 `POST https://quantapi.51ifind.com/api/v1/history_data`，请求体外层为 `{"reqBody": ...}`。`reqBody` 至少包含显式证券代码列表 `codes`、`startdate`、`enddate` 与 `indicators: "open,high,low,close"`。该 endpoint 的复权参数以超级命令实际协议为唯一准则：省略 `functionpara.CPS` 为不复权，`CPS: "1"` 为后复权，`CPS: "2"` 为前复权。
 
-此映射不得套用其他 iFinD 历史行情 endpoint 或旧版 SDK 文档的 `CPS` 含义。采集器须分别记录 endpoint、完整 `functionpara`、超级命令协议确认日期和供应商版本；三种口径分别落入原始数据目录，未经发布规则确认不得覆盖同一标准字段面板。
+此映射不得套用其他 iFinD 历史行情 endpoint 或旧版 SDK 文档的 `CPS` 含义。采集器须记录 endpoint、完整 `functionpara`、超级命令协议确认日期和供应商版本；当前只落盘后复权与未复权两种口径，未经发布规则确认不得覆盖同一标准字段面板。前复权参数仅作为已确认协议保留，不提供采集入口。
+
+#### 价格采集职责拆分（2026-08-11）
+
+```text
+sources/ifind/market_data/         # 回测数据
+  后复权 OHLC（CPS=1）+ volume/amt/turn
+  → raw/price + raw/liquidity
+  → market_data_hfq.csv/.parquet
+
+sources/ifind/unadjusted_price/    # WebApp K 线数据
+  未复权 OHLC（不传 CPS），不含流动性
+  → raw
+  → unadjusted_price.csv/.parquet
+```
+
+`market_data` 和 `unadjusted_price` 均不暴露通用 `adjustment` 参数。前复权 `CPS: "2"` 暂不提供入口。每日总更新固定维护回测行情；WebApp 未复权数据通过独立全量或日增量命令运行，是否纳入统一调度由后续 WebApp 发布计划决定。
 
 全 A 股下载任务使用 `POST /api/v1/get_trade_dates` 获取交易日历，固定 `functionpara: {"mode": "1", "dateType": "0", "period": "D", "dateFormat": "0"}`。交易所与 iFinD `marketcode` 映射为：`SH → 212001`、`SZ → 212100`、`BJ → 212300`。三份日历独立保存并进行差异检查；按证券所属交易所选择下载窗口，不假定三地日历恒等。
 
@@ -85,6 +101,16 @@ sources/ifind/universe/a_share.csv
 所有 iFinD 下载结果先写入 `MarketData/sources/ifind/` 下按数据域、交易所和时间窗口分区的 UTF-8 CSV；不得由 HTTP 响应直接写入 `current/` 或 `releases/` 的 Parquet。CSV 经字段名、证券代码、日期、重复记录、OHLC 关系、缺失率和请求覆盖区间检查后，才转换为候选发布版本中的标准字段 Parquet。每个 CSV 分区对应的请求参数、`dataVol`、来源版本、生成时间和内容哈希由 checkpoint / manifest 记录；CSV 用于人工查看和问题追溯，Parquet 用于研究运行时读取。
 
 指数权重使用 `POST /api/v1/data_pool` 的 `p03563`，`functionpara` 只含 `date`、`index_name`，`outputpara` 固定为 `p03563_f002,p03563_f004`。两字段分别映射证券代码与权重。每个指数的 CSV 与 Parquet 都采用日期索引、股票代码列的宽表结构；权重保持 iFinD 百分比原值，非成分股为空值。
+
+指数数据统一组织为一个业务域，但保持两个独立数据产品：
+
+```text
+sources/ifind/index/
+├── index_weights/{raw/<index>/<date>.json,index_weights_<index>.csv,index_weights_<index>.parquet}
+└── index_price/{raw/<index>/<start>_<end>.json,index_price_<index>.csv,index_price_<index>.parquet}
+```
+
+指数价格调用 `POST /api/v1/history_data`，请求体为 `{"reqBody":{"codes":"<index>","startdate":"YYYY-MM-DD","enddate":"YYYY-MM-DD","indicators":"high,open,low,close"}}`。请求不含 `functionpara`；原始字段顺序按超级命令保留，CSV/Parquet 统一输出 `date,open,high,low,close`。当前不采集指数成交量、成交额和换手率。指数点位不套用股票前复权或后复权语义。
 
 ### iFinD 全量与日增量任务
 

@@ -1,23 +1,20 @@
-"""``FieldParquetProvider`` - 读取「一个字段一个 parquet」的目录。
+"""``FieldParquetProvider`` - 按逻辑字段读取 Parquet 面板。
 
-每个 ``{field}.parquet`` 是一张 ``日期×标的`` 宽表（行=日期，列=标的代码），
-多个字段文件组成完整面板，正好对应 :meth:`get_panels` 返回的
+目标布局按业务域使用多字段宽表，兼容旧版 ``{field}.parquet`` 单字段文件。
+无论磁盘如何分组，:meth:`get_panels` 都返回
 ``{field: DataFrame[日期×标的]}``。
 
 典型数据源（如某行情导出）目录：
 
 ::
 
-    parquet/
-    ├── close.parquet       # 收盘价
-    ├── open.parquet        # 开盘价
-    ├── high.parquet / low.parquet / volume.parquet / amount.parquet
-    ├── total_mv.parquet   # 总市值
-    ├── pe_ttm.parquet / pb.parquet / ps_ttm.parquet
-    └── ...
+    panels/
+    ├── market_data.parquet
+    ├── daily_basic.parquet
+    └── security_status.parquet
 
-**懒加载**：仅在字段被访问时才读盘并缓存，跑一个只用 close 的因子不会把
-18 个文件全读进来。``pd.read_parquet`` 在新版 pyarrow 下可能因列索引存成
+**懒加载**：仅在字段被访问时才读对应物理列并缓存，跑一个只用 close 的因子不会把
+同文件其他字段读进来。``pd.read_parquet`` 在新版 pyarrow 下可能因列索引存成
 ``categorical`` 报错，这里用 ``replace_schema_metadata({})`` 绕过。
 """
 
@@ -41,17 +38,15 @@ from quantcore.data.interface import IDataProvider
 #: 非面板文件（如 stock_info），跳过
 _SKIP = {"stock_info", "test"}
 _UNIVERSE_FILES = {
-    "CSI300": "CSI300_constituents.parquet",
-    "CSI500": "CSI500_constituents.parquet",
-    "CSI1000": "CSI1000_constituents.parquet",
-    "SSE50": "SSE50_constituents.parquet",
+    "CSI300": "index_weights_000300.SH.parquet",
+    "CSI500": "index_weights_000905.SH.parquet",
 }
 _INDEX_FILES = {
-    "CSI300": "index_000300.parquet",
-    "CSI500": "index_000905.parquet",
-    "CSI1000": "index_000852.parquet",
-    "SSE50": "index_000016.parquet",
+    "CSI300": "index_price_000300.SH.parquet",
+    "CSI500": "index_price_000905.SH.parquet",
 }
+_ALL_A_NAMES = {"CSI_ALL", "ALL_A", "A_SHARE"}
+_DOMAIN_PANEL_FILES = ("market_data.parquet", "daily_basic.parquet", "security_status.parquet")
 
 
 class _LazyPanels:
@@ -90,21 +85,22 @@ class _LazyPanels:
 
 
 class FieldParquetProvider(IDataProvider):
-    """读取「一个字段一个 parquet」目录的数据源。"""
+    """读取按业务域组织的多字段宽表，并兼容旧版单字段目录。"""
 
     name = "field_parquet"
 
     def __init__(self, data_dir: str | Path) -> None:
         require_optional("pyarrow", "FieldParquetProvider 需要 pyarrow")
         self.data_dir = Path(data_dir)
-        self._combined_file: Path | None = None
+        self._combined_files: set[Path] = set()
         self._combined_columns: dict[str, list[tuple[str, str]]] = {}
-        self._combined_index_column: str | None = None
+        self._combined_field_files: dict[str, Path] = {}
+        self._combined_index_columns: dict[Path, str] = {}
         if self.data_dir.is_file():
             if self.data_dir.suffix.lower() != ".parquet":
                 raise ValueError(f"只支持 parquet 合并面板文件: {self.data_dir}")
-            self._combined_file = self.data_dir
-            self._scan_combined_file()
+            combined_file = self.data_dir
+            self._scan_combined_file(combined_file)
             self.data_dir = self.data_dir.parent
         elif not self.data_dir.is_dir():
             raise NotADirectoryError(f"parquet 目录不存在: {self.data_dir}")
@@ -115,13 +111,14 @@ class FieldParquetProvider(IDataProvider):
             self.data_dir = current_dir
         panels_dir = self.data_dir / "panels"
         self._panels_dir = panels_dir if panels_dir.is_dir() else self.data_dir
-        if self._combined_file is None:
-            combined_file = self._panels_dir / "market_data.parquet"
-            if combined_file.is_file():
-                self._combined_file = combined_file
-                self._scan_combined_file()
+        if not self._combined_files:
+            for filename in _DOMAIN_PANEL_FILES:
+                combined_file = self._panels_dir / filename
+                if combined_file.is_file():
+                    self._scan_combined_file(combined_file)
         benchmark_dir = self.data_dir / "benchmark"
         self._benchmark_dir = benchmark_dir if benchmark_dir.is_dir() else self.data_dir / "benchmark"
+        self._all_a_file = self.data_dir / "universe" / "a_share.parquet"
         #: 文件名 -> 标准字段名 的映射（仅本目录实际存在的）
         self._field_files: dict = self._scan_fields()
         #: 字段数据缓存 {field: DataFrame}
@@ -130,35 +127,41 @@ class FieldParquetProvider(IDataProvider):
     def _scan_fields(self) -> dict:
         result = {}
         for p in self._panels_dir.glob("*.parquet"):
-            if p.stem in _SKIP or p == self._combined_file:
+            if p.stem in _SKIP or p in self._combined_files:
                 continue
             result[p.stem] = p   # 文件名即字段名
-        if self._combined_file is not None:
-            result.update({field: self._combined_file for field in self._combined_columns})
+        result.update(self._combined_field_files)
         return result
 
-    def _scan_combined_file(self) -> None:
+    def _scan_combined_file(self, path: Path) -> None:
         """识别 iFinD 合并宽表中的 ``(证券代码, 字段)`` 列。"""
         import pyarrow.parquet as pq
 
-        schema = pq.read_schema(self._combined_file)
+        schema = pq.read_schema(path)
         metadata = schema.pandas_metadata or {}
         index_columns = metadata.get("index_columns", [])
         if index_columns and isinstance(index_columns[0], str):
-            self._combined_index_column = index_columns[0]
+            self._combined_index_columns[path] = index_columns[0]
 
+        found_fields: set[str] = set()
         for column in schema.names:
             try:
                 symbol, field = ast.literal_eval(column)
             except (SyntaxError, ValueError, TypeError):
                 continue
             if isinstance(symbol, str) and isinstance(field, str):
+                existing = self._combined_field_files.get(field)
+                if existing is not None and existing != path:
+                    raise ValueError(f"逻辑字段 {field!r} 同时存在于 {existing} 和 {path}")
                 self._combined_columns.setdefault(field, []).append((column, symbol))
+                self._combined_field_files[field] = path
+                found_fields.add(field)
 
-        if not self._combined_columns:
+        if not found_fields:
             raise ValueError(
-                f"合并 parquet 不包含 '(证券代码, 字段)' 两级列: {self._combined_file}"
+                f"合并 parquet 不包含 '(证券代码, 字段)' 两级列: {path}"
             )
+        self._combined_files.add(path)
 
     def _combined_symbol(self, symbol: str) -> str:
         """将六位代码匹配到合并面板中的交易所代码。"""
@@ -186,7 +189,7 @@ class FieldParquetProvider(IDataProvider):
         if field in self._combined_columns:
             columns = self._combined_columns[field]
             names = [name for name, _ in columns]
-            index_column = self._combined_index_column or "date"
+            index_column = self._combined_index_columns.get(path, "date")
             table = pq.read_table(path, columns=[*names, index_column]).replace_schema_metadata({})
             df = table.to_pandas().set_index(index_column)
             df.columns = [self._standard_symbol(symbol) for _, symbol in columns]
@@ -276,29 +279,37 @@ class FieldParquetProvider(IDataProvider):
     def get_universe(self, date: Optional[str] = None) -> List[str]:
         """返回股票池成分；池名取最新一期成分，日期查询仍回退全市场。
 
-        ``IDataProvider`` 的参数名为 ``date``，但上层 ``resolve_universe`` 也用它
-        传入 ``CSI500`` 等池名。字段 parquet 数据目录中的指数成分文件按日期保存，
-        此处取最新一期有效成分；逐日调入调出需要由上层持仓掩码处理，不能仅靠列筛选
-        正确表达。
+        ``IDataProvider`` 的参数名为 ``date``，但上层 ``resolve_universe`` 用它
+        传入 ``CSI500`` 等池名。指数权重表同时表达历史成分，此处取最新一行中
+        权重非空且大于零的证券；逐日调入调出仍应由上层按同一权重表生成掩码。
         """
         pool = str(date).upper() if date is not None else None
+        requested_all_a = pool in _ALL_A_NAMES
+        if (requested_all_a or pool is None) and self._all_a_file.is_file():
+            frame = pd.read_parquet(self._all_a_file, columns=["thscode"])
+            return [self._standard_symbol(symbol) for symbol in frame["thscode"].dropna().astype(str)]
+        if requested_all_a:
+            pool = None
         if pool in _UNIVERSE_FILES:
             path = self._benchmark_dir / _UNIVERSE_FILES[pool]
             if not path.exists():
-                raise FileNotFoundError(f"股票池 {pool} 缺少成分文件: {path}")
+                raise FileNotFoundError(f"股票池 {pool} 缺少指数权重文件: {path}")
             frame = pd.read_parquet(path)
             if frame.empty:
                 return []
             latest = frame.iloc[-1]
-            symbols = [str(symbol) for symbol, included in latest.items() if included == 1]
-            if self._combined_file is not None:
-                return [self._standard_symbol(symbol) for symbol in symbols]
-            return [symbol.split(".", 1)[0] for symbol in symbols]
+            symbols = [
+                str(symbol) for symbol, weight in latest.items()
+                if pd.notna(weight) and float(weight) > 0
+            ]
+            return [self._standard_symbol(symbol) for symbol in symbols]
+        if pool is not None:
+            raise KeyError(f"不支持的股票池 {pool!r}，可用: {sorted(_ALL_A_NAMES | set(_UNIVERSE_FILES))}")
 
         # 读 close 字段 schema 取列名（不读数据），无 close 则取首个
         import pyarrow.parquet as pq
 
-        if self._combined_file is not None:
+        if self._combined_files:
             field = "close" if "close" in self._combined_columns else next(
                 iter(self._combined_columns)
             )
@@ -309,6 +320,36 @@ class FieldParquetProvider(IDataProvider):
         )
         names = pq.read_schema(self._field_files[field]).names
         return [n for n in names if n != "datetime"]
+
+    def get_universe_at(self, name: str, as_of: str | pd.Timestamp) -> List[str]:
+        """返回 ``as_of`` 当日可知的命名股票池快照。
+
+        权重文件不一定每天都有一行，因此使用不晚于 ``as_of`` 的最近一期，
+        绝不向后取未来快照。全 A 股票池是静态列表，日期对其没有影响。
+        """
+        pool = str(name).upper()
+        if pool in _ALL_A_NAMES:
+            return self.get_universe(pool)
+        if pool not in _UNIVERSE_FILES:
+            return self.get_universe(pool)
+
+        path = self._benchmark_dir / _UNIVERSE_FILES[pool]
+        if not path.is_file():
+            raise FileNotFoundError(f"股票池 {pool} 缺少指数权重文件: {path}")
+        frame = pd.read_parquet(path)
+        if frame.empty:
+            return []
+        frame.index = pd.to_datetime(frame.index)
+        frame = frame.sort_index()
+        snapshots = frame.loc[frame.index <= pd.Timestamp(as_of)]
+        if snapshots.empty:
+            raise ValueError(f"股票池 {pool} 在 {pd.Timestamp(as_of).date()} 当日没有可用快照")
+        row = snapshots.iloc[-1]
+        symbols = [
+            str(symbol) for symbol, weight in row.items()
+            if pd.notna(weight) and float(weight) > 0
+        ]
+        return [self._standard_symbol(symbol) for symbol in symbols]
 
     def get_symbols(self) -> List[str]:
         return self.get_universe()

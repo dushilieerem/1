@@ -28,7 +28,7 @@ from typing import Dict, List, Optional, Sequence
 
 import pandas as pd
 
-from quantcore.data._util import Universe, resolve_universe
+from quantcore.data._util import Universe, first_panel_date, resolve_universe
 from quantcore.factor.backend import ComputeBackend, get_backend
 from quantcore.factor.base import BaseFactor, Panel
 
@@ -66,7 +66,9 @@ class FactorEngine:
     ) -> Panel:
         panels = data_provider.get_panels(start, end, fields)
         # 按 universe 过滤列（懒执行：仅因子访问到的字段才真正读盘+过滤）
-        symbols = resolve_universe(data_provider, universe)
+        symbols = resolve_universe(
+            data_provider, universe, as_of=first_panel_date(panels)
+        )
         return Panel(
             panels,
             symbols=symbols,

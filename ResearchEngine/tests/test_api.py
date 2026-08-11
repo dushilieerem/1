@@ -82,6 +82,21 @@ def market_data_dir(tmp_path, monkeypatch):
         frame.index.name = "datetime"
         frame.reset_index().to_parquet(tmp_path / f"{name}.parquet", index=False)
 
+    display_dir = tmp_path / "display"
+    display_dir.mkdir()
+    display_columns = pd.MultiIndex.from_product(
+        [symbols, ["open", "high", "low", "close"]]
+    )
+    display = pd.DataFrame(index=dates, columns=display_columns, dtype=float)
+    for index, symbol in enumerate(symbols):
+        # 与研究行情刻意使用不同数值，确保接口确实读取展示专用文件。
+        display[(symbol, "open")] = close[:, index] + 10.0
+        display[(symbol, "high")] = close[:, index] + 12.0
+        display[(symbol, "low")] = close[:, index] + 8.0
+        display[(symbol, "close")] = close[:, index] + 11.0
+    display.index.name = "date"
+    display.to_parquet(display_dir / "unadjusted_price.parquet")
+
     pd.DataFrame({
         "code": symbols,
         "name": [f"股票{i:03d}" for i in range(12)],
@@ -93,24 +108,24 @@ def market_data_dir(tmp_path, monkeypatch):
     benchmark_close = np.linspace(4000.0, 4300.0, len(dates))
     benchmark = pd.DataFrame(
         {
-            "000300_open": benchmark_close * 0.995,
-            "000300_high": benchmark_close * 1.01,
-            "000300_low": benchmark_close * 0.99,
-            "000300_close": benchmark_close,
+            "open": benchmark_close * 0.995,
+            "high": benchmark_close * 1.01,
+            "low": benchmark_close * 0.99,
+            "close": benchmark_close,
         },
         index=dates,
     )
-    benchmark.to_parquet(benchmark_dir / "index_000300.parquet")
+    benchmark.to_parquet(benchmark_dir / "index_price_000300.SH.parquet")
     pd.DataFrame(
-        {symbol: [1] for symbol in symbols}, index=[dates[-1]]
-    ).to_parquet(benchmark_dir / "CSI500_constituents.parquet")
+        {symbol: [1 / len(symbols)] for symbol in symbols}, index=[dates[0]]
+    ).to_parquet(benchmark_dir / "index_weights_000905.SH.parquet")
     pd.DataFrame(
         {
-            symbol: [1, int(symbol in {"S000", "S001"})]
+            symbol: [1 / len(symbols), 0.5 if symbol in {"S000", "S001"} else float("nan")]
             for symbol in symbols
         },
-        index=[dates[-2], dates[-1]],
-    ).to_parquet(benchmark_dir / "CSI300_constituents.parquet")
+        index=[dates[0], dates[-1]],
+    ).to_parquet(benchmark_dir / "index_weights_000300.SH.parquet")
     monkeypatch.setenv("SVQUANT_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("SVQUANT_BACKTEST_CACHE_DIR", str(tmp_path / "backtest_cache"))
     return tmp_path
@@ -148,7 +163,7 @@ def test_daily_bars_returns_filtered_ohlc(market_data_dir):
     assert len(body["bars"]) == 3
     assert body["date_range"] == {"start": "2022-01-05", "end": "2022-01-07"}
     assert set(body["bars"][0]) == {"date", "open", "high", "low", "close"}
-    assert body["bars"][0]["open"] == pytest.approx(body["bars"][0]["close"] * 0.995)
+    assert body["bars"][0]["open"] == pytest.approx(body["bars"][0]["close"] - 1.0)
 
 
 def test_market_data_symbols_returns_sorted_stock_codes(market_data_dir):
@@ -195,6 +210,7 @@ def test_market_symbol_conversion():
     assert _market_symbol("000001") == "000001.SZ"
     assert _market_symbol("600519") == "600519.SH"
     assert _market_symbol("430047") == "430047.BJ"
+    assert _market_symbol("920000") == "920000.BJ"
     assert _panel_symbol("000001.SZ") == "000001"
 
 
@@ -207,7 +223,10 @@ def test_daily_bars_returns_not_found_or_invalid_range(market_data_dir):
 
 
 def test_daily_bars_returns_service_unavailable_when_field_missing(market_data_dir):
-    (market_data_dir / "high.parquet").unlink()
+    path = market_data_dir / "display" / "unadjusted_price.parquet"
+    display = pd.read_parquet(path)
+    display = display.loc[:, display.columns.get_level_values(1) != "high"]
+    display.to_parquet(path)
     response = client.get("/api/market-data/daily/S000")
     assert response.status_code == 503
 
@@ -428,8 +447,8 @@ def test_strategy_backtest_injects_benchmark_ohlc_for_ichimoku(market_data_dir):
 
 
 def test_event_strategy_reports_missing_benchmark_ohlc_field(market_data_dir):
-    path = market_data_dir / "benchmark" / "index_000300.parquet"
-    benchmark = pd.read_parquet(path).drop(columns="000300_open")
+    path = market_data_dir / "benchmark" / "index_price_000300.SH.parquet"
+    benchmark = pd.read_parquet(path).drop(columns="open")
     benchmark.to_parquet(path)
 
     response = client.post(
@@ -475,7 +494,7 @@ def test_event_strategy_accepts_exchange_code_against_raw_panel_symbols(market_d
         panel = pd.read_parquet(path)
         panel["600519"] = 100.0
         panel.to_parquet(path, index=False)
-    constituents_path = market_data_dir / "benchmark" / "CSI300_constituents.parquet"
+    constituents_path = market_data_dir / "benchmark" / "index_weights_000300.SH.parquet"
     constituents = pd.read_parquet(constituents_path)
     constituents["600519"] = 1
     constituents.to_parquet(constituents_path)
@@ -622,7 +641,7 @@ def test_vectorized_strategy_receives_exchange_code_columns(market_data_dir):
     close = pd.read_parquet(path)
     close["600519"] = 100.0
     close.to_parquet(path, index=False)
-    constituents_path = market_data_dir / "benchmark" / "CSI300_constituents.parquet"
+    constituents_path = market_data_dir / "benchmark" / "index_weights_000300.SH.parquet"
     constituents = pd.read_parquet(constituents_path)
     constituents["600519"] = 1
     constituents.to_parquet(constituents_path)
@@ -842,13 +861,13 @@ def test_strategy_backtest_returns_business_error_for_invalid_contract(market_da
 
 
 def test_strategy_backtest_returns_business_error_when_benchmark_is_unavailable(market_data_dir):
-    (market_data_dir / "benchmark" / "index_000300.parquet").unlink()
+    (market_data_dir / "benchmark" / "index_price_000300.SH.parquet").unlink()
     response = client.post(
         "/api/backtest/strategy",
         json={"strategy_code": STRATEGY_CODE, "benchmark": "CSI300"},
     )
     assert response.status_code == 200
-    assert "index_000300.parquet" in response.json()["error"]
+    assert "index_price_000300.SH.parquet" in response.json()["error"]
 
 
 def test_strategy_backtest_rejects_unknown_fields(market_data_dir):

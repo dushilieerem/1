@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 from data_ingestion.ifind.common.paths import DEFAULT_OUTPUT_ROOT
-from data_ingestion.ifind.index_weights.download import OUTPUT_FIELDS
+from data_ingestion.ifind.index.index_weights.download import OUTPUT_DIR, OUTPUT_FIELDS, artifact_path
 
 SYMBOL_FIELD, WEIGHT_FIELD = OUTPUT_FIELDS
 
@@ -50,7 +50,7 @@ def normalize_index_weights_response(response: dict, date: str, index_code: str)
 
 
 def _raw_paths(output_root: Path, index_code: str) -> list[Path]:
-    return sorted((output_root / "index_weights" / "raw" / index_code).glob("*.json"))
+    return sorted((output_root / OUTPUT_DIR / "raw" / index_code).glob("*.json"))
 
 
 def _wide_rows(paths: list[Path], index_code: str) -> tuple[list[str], list[dict[str, object]]]:
@@ -78,7 +78,7 @@ def _write_wide_csv(path: Path, symbols: list[str], rows: list[dict[str, object]
 
 def build_index_weights_csv(output_root: Path, index_code: str) -> dict[str, int]:
     paths = _raw_paths(output_root, index_code)
-    output_path = output_root / "index_weights" / f"{index_code}.csv"
+    output_path = artifact_path(output_root, index_code, "csv")
     temporary_path = output_path.with_suffix(".csv.tmp")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     symbols, rows = _wide_rows(paths, index_code)
@@ -90,8 +90,8 @@ def build_index_weights_csv(output_root: Path, index_code: str) -> dict[str, int
 
 
 def update_index_weights_csv(output_root: Path, index_code: str, as_of: str) -> dict[str, int]:
-    output_path = output_root / "index_weights" / f"{index_code}.csv"
-    raw_file = output_root / "index_weights" / "raw" / index_code / f"{as_of}.json"
+    output_path = artifact_path(output_root, index_code, "csv")
+    raw_file = output_root / OUTPUT_DIR / "raw" / index_code / f"{as_of}.json"
     if not output_path.is_file():
         print("[index_weights_csv] 完整 CSV 不存在，改为全量重建", flush=True)
         return build_index_weights_csv(output_root, index_code)

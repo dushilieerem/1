@@ -32,7 +32,7 @@ SVQuant 涉及以下几类数据：
 | SQLite | 支持 SQL 查询、事务 | 大表性能差、不适合分析场景 |
 | ClickHouse | 极速分析查询、列式存储 | 需要部署服务、运维成本 |
 
-**决策**：行情数据和因子数据使用 **Parquet** 存储，按"一个字段一个文件"组织（FieldParquetProvider）。回测结果可选 CSV / Parquet / SQLite / ClickHouse。
+**决策**：历史行情和基本面数据使用 **Parquet** 持久化，股票日频数据按业务域组织为多字段宽表。因子值默认只在运行时以内存数组存在；需要长期保存时可导出 Parquet。回测结果可选 CSV / Parquet / SQLite / ClickHouse。
 
 ### 2.2 给老板的解释
 
@@ -47,37 +47,37 @@ CSV 存股票数据，要查"所有股票某一天的收盘价"需要读整个�
 
 ## 3. 数据目录结构
 
-```
-MarketData/                          # 行情数据根目录
-├── stocks/                          # A 股
-│   ├── daily/                       # 日线
-│   │   ├── open.parquet             # 开盘价（字段独立存储）
-│   │   ├── high.parquet
-│   │   ├── low.parquet
-│   │   ├── close.parquet
-│   │   ├── volume.parquet
-│   │   ├── amount.parquet
-│   │   └── adj_factor.parquet       # 复权因子
-│   ├── minute/                      # 分钟线
-│   │   ├── close_1min.parquet
-│   │   └── ...
-│   └── fundamentals/                # 基本面
-│       ├── pe.parquet
-│       ├── pb.parquet
-│       ├── market_cap.parquet
-│       └── ...
-├── industry/                        # 行业分类
-│   ├── sw_industry.parquet          # 申万行业
-│   └── zx_industry.parquet          # 中信行业
-└── index/                           # 指数
-    └── ...
+```text
+MarketData/<release>/
+├── panels/
+│   ├── market_data.parquet          # 后复权行情和流动性
+│   ├── daily_basic.parquet          # 市值、股本和估值
+│   └── security_status.parquet      # 行业、涨跌停、ST、是否停牌
+├── display/
+│   └── unadjusted_price.parquet     # WebApp 未复权 K 线
+├── benchmark/
+│   ├── index_price_<index>.parquet
+│   └── index_weights_<index>.parquet
+├── universe/
+│   └── a_share.parquet              # 静态全 A 股票池
+├── calendar/
+│   └── trading_calendar.parquet
+├── metadata/
+│   └── security_master.parquet
+├── data_manifest.yaml
+└── quality_report.json
 ```
 
-### 为什么按字段存储？
+`MarketData/current` 指向当前活动 release。活动 release 只读，数据更新通过生成、校验并切换新 release 完成。
 
-1. **查询按需加载**：算 IC 只需要因子值和收益率，不需要成交量数据
-2. **并行计算友好**：不同字段可以并行读取
-3. **字段类型独立**：价格用 float64，成交量用 int64，不互相影响
+### 为什么按业务域组织多字段宽表？
+
+1. **贴合读取模式**：价格和流动性、估值和股本等相关字段通常成组使用。
+2. **减少资产碎片**：日期轴和证券轴不必在每个字段文件中重复维护，发布与校验以业务资产为单位。
+3. **保持职责隔离**：研究行情、日频基本面、证券状态和展示价格分别更新，不形成一张难以治理的总表。
+4. **不牺牲字段接口**：Provider 仍按字段返回“日期 × 证券”面板，服务器内存仍按字段保存只读二维数组。
+
+股票日频多字段宽表使用 `(symbol, field)` 两级列。具体字段契约见 `../04-features/FEAT-024-ifind-storage-v2/03-technical-design.md`，其中 `security_status.parquet` 明确包含独立的 `is_suspended` 字段。
 
 ---
 
@@ -129,11 +129,15 @@ ResearchEngine/output/
 ## 6. 数据流
 
 ```
-外部数据源（Wind / AKShare / CSV）
+外部数据源（iFinD / AKShare / CSV）
        ↓
-  FieldParquetProvider（转为 Parquet 存储）
+  数据采集与候选 release 构建
        ↓
-  DataEngine（统一读取接口）
+  按业务域多字段 Parquet（不可变发布）
+       ↓
+  Provider / DataEngine（统一字段接口）
+       ↓
+  MarketDataSnapshot（服务器只读内存快照）
        ↓
   FactorEngine（计算因子值 → numpy array）
        ↓
@@ -148,4 +152,6 @@ ResearchEngine/output/
 
 - `../06-decisions/ADR-001-为什么使用向量化回测.md` — 向量化回测优先，Parquet 的列式读取对向量化计算友好
 - `../06-decisions/ADR-003-为什么行情数据采用文件存储并选择Parquet.md` — 历史行情为何采用文件存储，以及为何以 Parquet 为标准格式
+- `../06-decisions/ADR-016-Parquet持久化与只读内存快照.md` — 持久化版本与回测运行时内存快照的职责划分
+- `../06-decisions/ADR-017-市场数据按业务域采用多字段宽表.md` — 股票日频数据的业务域多字段物理布局
 - `system_architecture.md` — 架构总览中的数据层

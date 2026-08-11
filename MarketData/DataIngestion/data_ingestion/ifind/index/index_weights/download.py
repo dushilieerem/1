@@ -17,6 +17,12 @@ from data_ingestion.ifind.common.raw import load_or_fetch_json
 
 REPORT_NAME = "p03563"
 OUTPUT_FIELDS = ("p03563_f002", "p03563_f004")
+OUTPUT_DIR = Path("index") / "index_weights"
+OUTPUT_PREFIX = "index_weights"
+
+
+def artifact_path(output_root: Path, index_code: str, suffix: str) -> Path:
+    return output_root / OUTPUT_DIR / f"{OUTPUT_PREFIX}_{index_code}.{suffix}"
 
 
 class IndexWeightsClient(Protocol):
@@ -37,7 +43,7 @@ def index_weights_payload(index_code: str, date: str) -> dict:
 
 
 def raw_path(output_root: Path, index_code: str, date: str) -> Path:
-    return output_root / "index_weights" / "raw" / index_code / f"{date}.json"
+    return output_root / OUTPUT_DIR / "raw" / index_code / f"{date}.json"
 
 
 def run_download(client: IndexWeightsClient, output_root: Path, index_code: str, start: str, end: str) -> dict[str, int]:

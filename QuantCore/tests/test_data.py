@@ -1,6 +1,7 @@
 """``DataEngine`` 与各 provider 的测试。"""
 
 import pandas as pd
+import pytest
 
 from quantcore.data.providers.field_parquet_provider import FieldParquetProvider
 
@@ -57,12 +58,52 @@ def test_field_parquet_provider_uses_latest_index_constituents(tmp_path):
     benchmark = tmp_path / "benchmark"
     benchmark.mkdir()
     pd.DataFrame(
-        {"000001.SZ": [1, 0], "000002.SZ": [0, 1], "000003.SZ": [0, 1]},
+        {"000001.SZ": [0.6, float("nan")], "000002.SZ": [0.4, 0.55], "000003.SZ": [float("nan"), 0.45]},
         index=pd.to_datetime(["2024-01-01", "2024-06-01"]),
-    ).to_parquet(benchmark / "CSI500_constituents.parquet")
+    ).to_parquet(benchmark / "index_weights_000905.SH.parquet")
 
     provider = FieldParquetProvider(tmp_path)
     assert provider.get_universe("CSI500") == ["000002", "000003"]
+
+
+def test_field_parquet_provider_uses_point_in_time_index_constituents(tmp_path):
+    pd.DataFrame({
+        "datetime": pd.to_datetime(["2024-01-02", "2024-01-03"]),
+        "000001": [10.0, 10.1],
+        "000002": [20.0, 20.1],
+        "000003": [30.0, 30.1],
+    }).to_parquet(tmp_path / "close.parquet", index=False)
+    benchmark = tmp_path / "benchmark"
+    benchmark.mkdir()
+    pd.DataFrame(
+        {
+            "000001.SZ": [0.6, float("nan")],
+            "000002.SZ": [0.4, 0.5],
+            "000003.SZ": [float("nan"), 0.5],
+        },
+        index=pd.to_datetime(["2024-01-02", "2024-01-03"]),
+    ).to_parquet(benchmark / "index_weights_000905.SH.parquet")
+
+    provider = FieldParquetProvider(tmp_path)
+
+    assert provider.get_universe_at("CSI500", "2024-01-02") == ["000001", "000002"]
+    assert provider.get_universe_at("CSI500", "2024-01-03") == ["000002", "000003"]
+
+
+def test_field_parquet_provider_never_uses_future_universe_snapshot(tmp_path):
+    pd.DataFrame({
+        "datetime": pd.to_datetime(["2024-01-02"]), "000001": [10.0],
+    }).to_parquet(tmp_path / "close.parquet", index=False)
+    benchmark = tmp_path / "benchmark"
+    benchmark.mkdir()
+    pd.DataFrame(
+        {"000001.SZ": [1.0]}, index=pd.to_datetime(["2024-01-03"])
+    ).to_parquet(benchmark / "index_weights_000905.SH.parquet")
+
+    provider = FieldParquetProvider(tmp_path)
+
+    with pytest.raises(ValueError, match="没有可用快照"):
+        provider.get_universe_at("CSI500", "2024-01-02")
 
 
 def test_field_parquet_provider_resolves_market_data_current_directory(tmp_path):
@@ -73,13 +114,29 @@ def test_field_parquet_provider_resolves_market_data_current_directory(tmp_path)
     }).to_parquet(panels / "close.parquet", index=False)
     benchmark = tmp_path / "current" / "benchmark"
     benchmark.mkdir()
-    pd.DataFrame({"000001.SZ": [1]}).to_parquet(
-        benchmark / "CSI500_constituents.parquet"
+    pd.DataFrame({"000001.SZ": [100.0]}).to_parquet(
+        benchmark / "index_weights_000905.SH.parquet"
     )
 
     provider = FieldParquetProvider(tmp_path)
     assert provider.get_panels(fields=["close"])["close"].iloc[0, 0] == 10.0
     assert provider.get_universe("CSI500") == ["000001"]
+
+
+def test_field_parquet_provider_reads_all_a_static_universe(tmp_path):
+    pd.DataFrame({
+        "datetime": pd.to_datetime(["2024-01-02"]), "000001": [10.0], "600000": [20.0],
+    }).to_parquet(tmp_path / "close.parquet", index=False)
+    universe = tmp_path / "universe"
+    universe.mkdir()
+    pd.DataFrame({"thscode": ["000001.SZ", "600000.SH"], "name": ["平安银行", "浦发银行"]}).to_parquet(
+        universe / "a_share.parquet", index=False
+    )
+
+    provider = FieldParquetProvider(tmp_path)
+
+    assert provider.get_universe("CSI_ALL") == ["000001", "600000"]
+    assert provider.get_symbols() == ["000001", "600000"]
 
 
 def test_field_parquet_provider_reads_legacy_pandas_datetime_index(tmp_path):
@@ -148,3 +205,27 @@ def test_field_parquet_provider_keeps_non_market_fields_with_combined_file(tmp_p
     panels = FieldParquetProvider(tmp_path).get_panels(fields=["close", "pb"])
     assert list(panels["close"].columns) == ["000001"]
     assert panels["pb"].iloc[0, 0] == 2.0
+
+
+def test_field_parquet_provider_reads_multiple_domain_panel_files(tmp_path):
+    panels_dir = tmp_path / "current" / "panels"
+    panels_dir.mkdir(parents=True)
+    dates = pd.to_datetime(["2024-01-02"])
+    for filename, values in (
+        ("market_data.parquet", {"close": 10.0}),
+        ("daily_basic.parquet", {"pb": 2.0}),
+        ("security_status.parquet", {"is_suspended": False}),
+    ):
+        frame = pd.DataFrame(
+            [list(values.values())],
+            index=dates,
+            columns=pd.MultiIndex.from_tuples([("000001.SZ", field) for field in values]),
+        )
+        frame.index.name = "date"
+        frame.to_parquet(panels_dir / filename)
+
+    panels = FieldParquetProvider(tmp_path).get_panels(fields=["close", "pb", "is_suspended"])
+
+    assert panels["close"].iloc[0, 0] == 10.0
+    assert panels["pb"].iloc[0, 0] == 2.0
+    assert not panels["is_suspended"].iloc[0, 0]

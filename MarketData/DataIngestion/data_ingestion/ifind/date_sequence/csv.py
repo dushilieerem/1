@@ -18,6 +18,8 @@ CSV_FIELDS = ("float_mv", "pe", "pb", "industry_sw", "industry_sw_code", "limit_
 FIELD_MAP = dict(zip(SOURCE_FIELDS, CSV_FIELDS, strict=True))
 CSV_COLUMNS = ("date", "thscode", "exchange", *CSV_FIELDS, "source")
 DEFAULT_WORKERS = max(1, min(4, os.cpu_count() or 1))
+OUTPUT_DIR = "date_sequence"
+OUTPUT_FILENAME = "date_sequence.csv"
 
 
 def _date(value: str) -> str:
@@ -104,7 +106,7 @@ def build_date_sequence_csv(output_root: Path, workers: int = DEFAULT_WORKERS, u
     raw_root = output_root / "date_sequence" / "raw"
     universe_path = universe_path or existing_universe_path(output_root)
     columns = _wide_columns(universe_path)
-    output_path = output_root / "date_sequence.csv"
+    output_path = output_root / OUTPUT_DIR / OUTPUT_FILENAME
     temporary_path = output_path.with_suffix(".csv.tmp")
     summary = {"rows": 0, "partitions": 0}
     paths = sorted(raw_root.rglob("*.json"))
@@ -134,7 +136,7 @@ def update_date_sequence_csv(output_root: Path, as_of: str, workers: int = DEFAU
     raw_root = output_root / "date_sequence" / "raw"
     universe_path = universe_path or existing_universe_path(output_root)
     columns = _wide_columns(universe_path)
-    output_path = output_root / "date_sequence.csv"
+    output_path = output_root / OUTPUT_DIR / OUTPUT_FILENAME
     if not output_path.is_file():
         print("[date_sequence_csv] 完整 CSV 不存在，改为全量重建", flush=True)
         return build_date_sequence_csv(output_root, workers, universe_path)

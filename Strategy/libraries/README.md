@@ -62,3 +62,5 @@ strategies:
 `dual_thrust_a_share` 使用前 N 日波动区间和当日开盘锚定上下轨生成向量化目标权重，并按周更新流动性候选池。原始策略的 09:45 盘中信号在 v1 中近似为当日收盘信号，结果仅用于研究验证。
 
 `net_operating_assets_anomaly_a_share_event` 使用点时资产负债表计算 NOA/总资产，按月度 NOA 升序构建组合；核心字段缺失时不以零值填充。
+
+`cci_mean_reversion_a_share_event`、`money_flow_index_a_share_event`、`trix_momentum_a_share_event` 和 `rate_of_change_momentum_a_share_event` 是新增的日频事件研究策略，分别使用 CCI、MFI、TRIX 和 ROC 生成现金多头信号。四者均按前一收盘计算、下一交易日开盘成交；MFI 额外要求 `volume` 字段。它们不补造盘中价格、历史成分或市场状态，结果仅用于研究验证。

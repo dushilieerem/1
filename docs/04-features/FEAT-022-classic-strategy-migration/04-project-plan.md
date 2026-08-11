@@ -27,6 +27,10 @@
 | 蔡金累积派发/振荡器策略、指标与事件回归测试 | 3 | 中 | 点时 OHLCV、成交额、行业、PE/PB、流通市值 | 完成 |
 | Dual Thrust 向量化研究策略与 NativeEngine 回归测试 | 3 | 高 | 日线 OHLC、成交额、市值；盘中触发近似 | 完成（研究近似） |
 | 净营运资产异象策略、NOA 公式与事件回归测试 | 3 | 高 | 点时资产负债表、PE、市值、日线 close | 完成 |
+| CCI 均值回归策略、指标公式与事件回归测试 | 2 | 低 | 日线 OHLC、EventEngine | 完成 |
+| MFI 资金流量策略、指标公式与字段缺失回归测试 | 2 | 中 | 日线 OHLCV、EventEngine | 完成 |
+| TRIX 三重指数动量策略、信号线与事件回归测试 | 2 | 低 | 日线 OHLC、EventEngine | 完成 |
+| ROC 变化率动量策略、零轴交叉与事件回归测试 | 2 | 低 | 日线 OHLC、EventEngine | 完成 |
 | 完整 CANSLIM | 5 | 高 | 公告日财务、股东数据、历史证券状态、形态金标 | 不在本 Feature 范围 |
 
 里程碑：M1 为 RSI 可加载、可运行并通过测试；M2 为 CANSLIM Lite 只用价格数据可运行；M3 为后续 Feature 的完整 CANSLIM 通过点时数据与形态黄金样本验证。

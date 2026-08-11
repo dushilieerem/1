@@ -36,7 +36,7 @@ from quantcore import (
     Panel,
     WideCSVProvider,
 )
-from quantcore.data._util import resolve_universe
+from quantcore.data._util import first_panel_date, resolve_universe
 from quantcore.metric.context import MetricContext
 
 from researchengine.config import ConfigManager
@@ -348,7 +348,9 @@ class Experiment:
         # ② 取面板一次，因子与组合复用（懒加载：只读因子/组合真正用到的字段）
         started_at = time.perf_counter()
         panels = self._data_engine.get_panels(self.start_date, self.end_date)
-        symbols = resolve_universe(self._data_engine, self.universe)
+        symbols = resolve_universe(
+            self._data_engine, self.universe, as_of=first_panel_date(panels)
+        )
         panel = Panel(
             panels,
             symbols=symbols,

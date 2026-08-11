@@ -23,13 +23,12 @@ from researchengine.api.schemas import (
 
 
 _DATA_ENGINES: dict[Path, DataEngine] = {}
+_DISPLAY_DATA_ENGINES: dict[Path, DataEngine] = {}
 _STOCK_NAMES: dict[Path, dict[str, str]] = {}
 _OHLC_FIELDS = ("open", "high", "low", "close")
 _INDEXES = {
     "CSI300": IndexInfo(code="000300.SH", name="沪深300"),
     "CSI500": IndexInfo(code="000905.SH", name="中证500"),
-    "CSI1000": IndexInfo(code="000852.SH", name="中证1000"),
-    "SSE50": IndexInfo(code="000016.SH", name="上证50"),
 }
 
 
@@ -37,6 +36,8 @@ def _market_symbol(symbol: str) -> str:
     """将面板使用的六位代码转换为对外的交易所代码。"""
     if not symbol.isdigit() or len(symbol) != 6:
         return symbol
+    if symbol.startswith("92"):
+        return f"{symbol}.BJ"
     if symbol.startswith(("6", "5", "9")):
         return f"{symbol}.SH"
     if symbol.startswith(("0", "2", "3")):
@@ -60,6 +61,18 @@ def _get_data_engine() -> DataEngine:
     if data_dir not in _DATA_ENGINES:
         _DATA_ENGINES[data_dir] = DataEngine(FieldParquetProvider(data_dir))
     return _DATA_ENGINES[data_dir]
+
+
+def _get_display_data_engine() -> DataEngine:
+    """读取 Web 展示专用未复权行情，与研究/回测用行情物理隔离。"""
+    data_dir = Path(_resolve_data_dir(None)).resolve()
+    current_dir = data_dir / "current" if (data_dir / "current").is_dir() else data_dir
+    display_file = current_dir / "display" / "unadjusted_price.parquet"
+    if display_file not in _DISPLAY_DATA_ENGINES:
+        _DISPLAY_DATA_ENGINES[display_file] = DataEngine(
+            FieldParquetProvider(display_file)
+        )
+    return _DISPLAY_DATA_ENGINES[display_file]
 
 
 def _get_stock_names() -> dict[str, str]:
@@ -106,7 +119,7 @@ def get_daily_bars(
     panel_symbol = _panel_symbol(symbol)
 
     try:
-        bars = _get_data_engine().get_bars(
+        bars = _get_display_data_engine().get_bars(
             panel_symbol,
             str(start) if start else None,
             str(end) if end else None,
@@ -155,7 +168,7 @@ def get_daily_bars(
 def get_symbols() -> SymbolListResponse:
     """返回当前已发布市场数据中的全部可查询股票代码。"""
     try:
-        symbols = _get_data_engine().get_symbols()
+        symbols = _get_display_data_engine().get_symbols()
         names = _get_stock_names()
     except (FileNotFoundError, NotADirectoryError, KeyError) as exc:
         raise HTTPException(status_code=503, detail=f"股票代码数据不可用: {exc}") from exc

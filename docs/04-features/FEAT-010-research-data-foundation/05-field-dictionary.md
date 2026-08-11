@@ -24,7 +24,7 @@
 | `is_st` | ST 标识 | bool | 日 | 当日证券是否处于 ST 或 *ST 状态 | 复用，待盘点 |
 | `limit_up` | 涨停标识 | bool | 日 | 当日收盘是否触及涨停；不等同于不可买入 | 复用，待盘点 |
 | `adj_factor` | 复权因子 | 正数 | 日 | 数据源定义的累计复权因子；必须在清单声明基日与公式 | 新增 |
-| `open` / `high` / `low` / `close` | 前复权开/高/低/收盘价 | 元/股 | 日 | 由未复权价与 `adj_factor` 按已声明公式计算 | 新增 |
+| `open` / `high` / `low` / `close` | 前复权开/高/低/收盘价 | 元/股 | 日 | 由未复权价与 `adj_factor` 按已声明公式计算 | 后续，当前不采集 |
 | `listing_status` | 上市状态 | enum | 日 | `listed`、`suspended_listing`、`delisted`；退市后不得默认仍可交易 | 新增 |
 | `is_suspended` | 停牌标识 | bool | 日 | 该交易日是否停牌；缺失不等同于未停牌 | 新增 |
 | `is_tradable` | 可交易标识 | bool | 日 | 由上市、停牌、涨跌停及可选流动性规则产生；规则版本必须入清单 | 新增 |

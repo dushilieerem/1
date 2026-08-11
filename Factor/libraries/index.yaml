@@ -2,8 +2,8 @@
 # 前端读取此文件展示因子列表，提交回测时读取对应 .py 文件内容
 
 version: 1
-updated: 2026-08-10
-total_factors: 836
+updated: 2026-08-11
+total_factors: 840
 
 libraries:
   classic_indicators:
@@ -353,6 +353,22 @@ libraries:
         description: "Chande动量振荡器"
         params: { window: 20 }
         tags: [cmo, momentum]
+      - name: ultimate_oscillator
+        description: "终极振荡器：7/14/28日买压加权"
+        params: { short: 7, medium: 14, long: 28 }
+        tags: [oscillator, momentum]
+      - name: fisher_transform
+        description: "费舍尔变换：滚动价格分布振荡器"
+        params: { window: 10 }
+        tags: [oscillator, reversal]
+      - name: ease_of_movement
+        description: "移动容易度：价格位移与成交量的关系"
+        params: { window: 14, volume_divisor: 100000000.0 }
+        tags: [volume, momentum]
+      - name: relative_vigor_index
+        description: "相对活力指数：收盘开盘动量相对交易区间"
+        params: { window: 10 }
+        tags: [oscillator, trend]
       - name: positive_directional_index
         description: "正向方向指标（+DI）"
         params: { window: 14 }

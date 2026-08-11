@@ -56,16 +56,24 @@
     </section>
 
     <section>
-      <h2>市场行情：价格与流动性分别下载，统一汇总</h2>
+      <h2>市场行情：回测与 WebApp 展示数据分开采集</h2>
       <div class="pipeline">
-        <article class="node input"><h3>iFinD 历史行情</h3><p>OHLC 复权方式可选</p><code>hfq：CPS "1"（后复权）<br>qfq：CPS "2"（前复权）<br>none：不带 CPS（不复权）</code></article><div class="arrow">→</div>
-        <article class="node raw-node"><h3>价格 raw</h3><code>prices/hfq/raw/ · prices/qfq/raw/<br>prices/none/raw/<br>SH | SZ | BJ / 日期窗口 / 批次.json</code></article><div class="arrow">↘</div>
-        <article class="node csv-node"><h3>市场行情宽 CSV</h3><code>market_data_hfq.csv<br>market_data_qfq.csv<br>market_data_none.csv</code></article><div class="arrow">→</div>
-        <article class="node parquet-node"><h3>市场行情 Parquet</h3><code>market_data_hfq.parquet<br>market_data_qfq.parquet<br>market_data_none.parquet</code></article>
+        <article class="node input"><h3>回测行情</h3><p>固定后复权 OHLC + 流动性</p><code>OHLC：CPS "1"<br>volume, amt, turn：不带 CPS</code></article><div class="arrow">→</div>
+        <article class="node raw-node"><h3>回测 raw</h3><code>market_data/raw/price/<br>market_data/raw/liquidity/<br>SH | SZ | BJ / 日期窗口 / 批次.json</code></article><div class="arrow">→</div>
+        <article class="node csv-node"><h3>回测宽 CSV</h3><code>market_data/market_data_hfq.csv<br>OHLC + volume + amount + turnover</code></article><div class="arrow">→</div>
+        <article class="node parquet-node"><h3>回测 Parquet</h3><code>market_data/market_data_hfq.parquet</code></article>
       </div>
       <div class="branch">
-        <article class="subflow"><h3>第二条下载支路：流动性</h3><code>volume, amt, turn → liquidity/raw/SH|SZ|BJ/日期窗口/批次.json</code><p>CSV 汇总时按 <code>date + thscode</code> 与价格 JSON 合并。</p></article>
+        <article class="subflow"><h3>WebApp K 线价格</h3><code>未复权 OHLC（不带 CPS）→ unadjusted_price/raw/<br>→ unadjusted_price/unadjusted_price.csv → unadjusted_price.parquet</code><p>不请求、不合并流动性字段；前复权暂不采集。</p></article>
         <article class="subflow"><h3>CSV 两行表头形状</h3><table class="wide"><thead><tr><th>date</th><th>600000.SH</th><th>600000.SH</th><th>000001.SZ</th></tr><tr><th></th><th>open</th><th>close</th><th>turnover</th></tr></thead><tbody><tr><td>2026-08-05</td><td>10.10</td><td>10.30</td><td>0.012</td></tr></tbody></table></article>
+      </div>
+    </section>
+
+    <section>
+      <h2>指数数据：权重与价格同域、独立产物</h2>
+      <div class="branch">
+        <article class="subflow"><h3>指数成分权重</h3><code>data_pool p03563 → index/index_weights/raw/&lt;index&gt;/&lt;date&gt;.json<br>→ index_weights_&lt;index&gt;.csv → index_weights_&lt;index&gt;.parquet</code><p>日期 × 股票宽表；权重非空即表示当日成分，缺席成分保持空值。</p></article>
+        <article class="subflow"><h3>指数价格</h3><code>history_data high,open,low,close → index/index_price/raw/<br>→ index_price_&lt;index&gt;.csv → index_price_&lt;index&gt;.parquet</code><p>最终标准化为 OHLC；不传复权参数，不采集成交量、成交额和换手率。</p></article>
       </div>
     </section>
 
@@ -74,8 +82,8 @@
       <div class="pipeline">
         <article class="node input"><h3>iFinD 日期序列</h3><code>ths_current_mv_stock<br>ths_pe_stock · ths_pb_stock<br>申万行业 · 涨跌停</code></article><div class="arrow">→</div>
         <article class="node raw-node"><h3>日期序列 raw</h3><code>date_sequence/raw/<br>SH | SZ | BJ / 日期窗口 / 批次.json</code></article><div class="arrow">→</div>
-        <article class="node csv-node"><h3>日期序列宽 CSV</h3><code>date_sequence.csv<br>行：date<br>两级列头：thscode / field</code></article><div class="arrow">→</div>
-        <article class="node parquet-node"><h3>日期序列 Parquet</h3><code>date_sequence.parquet<br>pandas MultiIndex 列</code></article>
+        <article class="node csv-node"><h3>日期序列宽 CSV</h3><code>date_sequence/date_sequence.csv<br>行：date<br>两级列头：thscode / field</code></article><div class="arrow">→</div>
+        <article class="node parquet-node"><h3>日期序列 Parquet</h3><code>date_sequence/date_sequence.parquet<br>pandas MultiIndex 列</code></article>
       </div>
     </section>
 
@@ -83,7 +91,7 @@
       <h2>两种运行路径</h2>
       <div class="branch">
         <article class="subflow"><h3>首次回填 / 历史修复</h3><div class="command">*_download backfill → *_csv rebuild → *_parquet</div><p>CSV 脚本并行解析全部 raw JSON，重新构建完整宽表。</p></article>
-        <article class="subflow"><h3>每日收盘后更新</h3><div class="daily"><div class="daily-step"><b>1</b><br>calendar update</div><div class="daily-step"><b>2</b><br>market_data_download update</div><div class="daily-step"><b>3</b><br>date_sequence_download update</div><div class="daily-step"><b>4</b><br>两个 CSV update</div><div class="daily-step"><b>5</b><br>两个 Parquet</div></div><p style="margin-top:14px">CSV 的 <code>update</code> 只解析当天 raw JSON，并替换宽表中同一天的一行。</p></article>
+        <article class="subflow"><h3>每日收盘后更新</h3><div class="daily"><div class="daily-step"><b>1</b><br>交易日历</div><div class="daily-step"><b>2</b><br>证券池</div><div class="daily-step"><b>3</b><br>指数权重</div><div class="daily-step"><b>4</b><br>指数价格</div><div class="daily-step"><b>5</b><br>回测行情</div></div><p style="margin-top:14px">每类数据均执行下载、当日 CSV 替换和 Parquet 重建；任一步失败即停止。</p></article>
       </div>
       <div class="note"><strong>全 A 主表更新规则</strong><code>a_share.csv</code> 保持既有扁平列结构：每日校验 LISTED、DELISTED 与 DELISTING 三张快照的 <code>thscode</code> 必须两两互斥；发现交集立即报错，不构建日期 × 证券成员矩阵。</div>
     </section>

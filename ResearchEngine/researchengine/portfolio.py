@@ -19,7 +19,7 @@ from typing import Tuple
 import numpy as np  # noqa: F401  (forward_returns 等保留 numpy 依赖，便于外部扩展)
 import pandas as pd
 
-from quantcore.data._util import resolve_universe
+from quantcore.data._util import first_panel_date, resolve_universe
 
 
 def build_close_panel(data_engine, universe, start=None, end=None) -> pd.DataFrame:
@@ -28,7 +28,9 @@ def build_close_panel(data_engine, universe, start=None, end=None) -> pd.DataFra
     close = panels.get("close")
     if close is None or close.empty:
         return pd.DataFrame()
-    symbols = resolve_universe(data_engine, universe)
+    symbols = resolve_universe(
+        data_engine, universe, as_of=first_panel_date(panels)
+    )
     return close.reindex(columns=symbols)
 
 

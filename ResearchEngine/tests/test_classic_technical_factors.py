@@ -13,7 +13,15 @@ def _panel() -> Panel:
     close = pd.DataFrame(
         np.arange(10, 70, dtype=float).reshape(30, 2), index=dates, columns=columns
     )
-    return Panel({"high": close + 2, "low": close - 1, "close": close, "volume": close * 100})
+    return Panel(
+        {
+            "open": close - 0.5,
+            "high": close + 2,
+            "low": close - 1,
+            "close": close,
+            "volume": close * 100,
+        }
+    )
 
 
 def test_classic_technical_factor_formulae_match_reference():
@@ -69,6 +77,50 @@ def test_trend_and_momentum_factor_formulae_match_reference():
     )
 
 
+def test_oscillator_and_volume_factor_formulae_match_reference():
+    loader = FactorLoader()
+    panel = _panel()
+    loader.load("technical_lib")
+
+    previous_close = panel.close.shift()
+    minimum = panel.low.where(panel.low <= previous_close, previous_close)
+    maximum = panel.high.where(panel.high >= previous_close, previous_close)
+    buying_pressure = panel.close - minimum
+    true_range = maximum - minimum
+
+    def average(window):
+        return buying_pressure.rolling(window).sum() / (true_range.rolling(window).sum() + 1e-10)
+
+    expected_uo = 100 * (4 * average(7) + 2 * average(14) + average(28)) / 7
+    pd.testing.assert_frame_equal(loader.factors["ultimate_oscillator"].compute(panel), expected_uo)
+
+    midpoint = (panel.high + panel.low) / 2
+    lowest = midpoint.rolling(10).min()
+    highest = midpoint.rolling(10).max()
+    price_range = highest - lowest
+    normalized = (2 * (midpoint - lowest) / (price_range + 1e-10) - 1).where(
+        price_range > 0, 0.0
+    ).clip(-0.999999, 0.999999)
+    expected_fisher = 0.5 * np.log((1 + normalized) / (1 - normalized))
+    pd.testing.assert_frame_equal(loader.factors["fisher_transform"].compute(panel), expected_fisher)
+
+    distance_moved = midpoint.diff()
+    box_ratio = (panel.volume / 100000000.0) / (panel.high - panel.low + 1e-10)
+    expected_eom = (distance_moved / (box_ratio + 1e-10)).rolling(14).mean()
+    pd.testing.assert_frame_equal(loader.factors["ease_of_movement"].compute(panel), expected_eom)
+
+    close_open = panel.close - panel.open
+    high_low = panel.high - panel.low
+    numerator = (
+        close_open + 2 * close_open.shift(1) + 2 * close_open.shift(2) + close_open.shift(3)
+    ) / 6
+    denominator = (
+        high_low + 2 * high_low.shift(1) + 2 * high_low.shift(2) + high_low.shift(3)
+    ) / 6
+    expected_rvi = numerator.rolling(10).mean() / (denominator.rolling(10).mean() + 1e-10)
+    pd.testing.assert_frame_equal(loader.factors["relative_vigor_index"].compute(panel), expected_rvi)
+
+
 def test_directional_and_accumulation_factor_formulae_match_reference():
     loader = FactorLoader()
     panel = _panel()
@@ -113,4 +165,6 @@ def test_classic_technical_factors_are_discoverable():
         "aroon_down", "dpo", "chande_momentum_oscillator",
         "positive_directional_index", "negative_directional_index",
         "average_directional_index", "accumulation_distribution",
+        "ultimate_oscillator", "fisher_transform", "ease_of_movement",
+        "relative_vigor_index",
     }.issubset(loader.factors)

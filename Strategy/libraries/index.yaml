@@ -420,3 +420,47 @@ strategies:
       v1:
         file: net_operating_assets_anomaly_a_share_event_v1.py
         entrypoint: NetOperatingAssetsAnomalyAShareEventStrategy
+
+  cci_mean_reversion_a_share_event:
+    name: CCI A 股均值回归
+    strategy_type: reversal
+    execution_mode: event
+    current_version: v1
+    tags: [cci, oscillator, mean_reversion, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: cci_mean_reversion_a_share_event_v1.py
+        entrypoint: CciMeanReversionAShareEventStrategy
+
+  money_flow_index_a_share_event:
+    name: MFI A 股资金流量
+    strategy_type: money_flow
+    execution_mode: event
+    current_version: v1
+    tags: [mfi, money_flow, volume, reversal, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: money_flow_index_a_share_event_v1.py
+        entrypoint: MoneyFlowIndexAShareEventStrategy
+
+  trix_momentum_a_share_event:
+    name: TRIX A 股三重指数动量
+    strategy_type: momentum
+    execution_mode: event
+    current_version: v1
+    tags: [trix, momentum, oscillator, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: trix_momentum_a_share_event_v1.py
+        entrypoint: TrixMomentumAShareEventStrategy
+
+  rate_of_change_momentum_a_share_event:
+    name: ROC A 股变化率动量
+    strategy_type: momentum
+    execution_mode: event
+    current_version: v1
+    tags: [roc, momentum, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: rate_of_change_momentum_a_share_event_v1.py
+        entrypoint: RateOfChangeMomentumAShareEventStrategy

@@ -77,7 +77,7 @@ class FactorBacktestRequest(BaseModel):
     #: 组合构建方式：long_only=纯多头 | long_short=多空组合
     portfolio_type: str = Field("long_short", description="long_only | long_short")
     #: 股票池
-    universe: str = Field("CSI_ALL", description="CSI_ALL | CSI300 | CSI500 | CSI1000 | CSI2000 | SSE50")
+    universe: str = Field("CSI_ALL", description="CSI_ALL | CSI300 | CSI500")
     universe_snapshot: Optional[UniverseSnapshotInput] = None
     #: 自定义回测区间
     start: Optional[str] = None
@@ -91,7 +91,7 @@ class FactorBacktestRequest(BaseModel):
     #: 因子分层数
     groups: int = Field(5, ge=2, le=10, description="因子分层数，2-10 组")
     #: 对比基准
-    benchmark: Literal["CSI300", "CSI500", "CSI1000", "SSE50"] = "CSI300"
+    benchmark: Literal["CSI300", "CSI500"] = "CSI300"
     benchmark_snapshot: Optional[BenchmarkSnapshotInput] = None
     #: 手续费率（默认 3‱）
     commission_rate: float = 0.0003
@@ -149,7 +149,7 @@ class StrategyBacktestRequest(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     #: 对比基准
-    benchmark: Literal["CSI300", "CSI500", "CSI1000", "SSE50"] = "CSI300"
+    benchmark: Literal["CSI300", "CSI500"] = "CSI300"
     benchmark_snapshot: Optional[BenchmarkSnapshotInput] = None
     commission_rate: float = 0.0
     #: 印花税率（仅卖出时按成交额计提）

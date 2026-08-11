@@ -274,10 +274,8 @@ def _build_config(commission_rate, slippage_rate, stamp_tax=None,
 
 
 _BENCHMARK_FILES = {
-    "CSI300": "index_000300.parquet",
-    "CSI500": "index_000905.parquet",
-    "CSI1000": "index_000852.parquet",
-    "SSE50": "index_000016.parquet",
+    "CSI300": "index_price_000300.SH.parquet",
+    "CSI500": "index_price_000905.SH.parquet",
 }
 
 
@@ -285,7 +283,7 @@ def _load_benchmark_equity(benchmark: str, dates: pd.DatetimeIndex) -> pd.Series
     """加载指数收盘价并对齐、归一化为净值序列。"""
     path = _resolve_current_data_dir() / "benchmark" / _BENCHMARK_FILES[benchmark]
     frame = pd.read_parquet(path)
-    close_col = next(col for col in frame.columns if col.endswith("_close"))
+    close_col = "close" if "close" in frame else next(col for col in frame.columns if col.endswith("_close"))
     series = frame[close_col]
     series.index = pd.to_datetime(series.index)
     series = series.reindex(dates).ffill().dropna()
@@ -350,7 +348,9 @@ def _declared_strategy_symbols(strategy) -> tuple[str, ...]:
     return tuple(dict.fromkeys(symbols))
 
 
-def _resolve_strategy_symbols(provider, universe, strategy) -> tuple[list[str], dict[str, str], tuple[str, ...]]:
+def _resolve_strategy_symbols(
+    provider, universe, strategy, *, as_of=None
+) -> tuple[list[str], dict[str, str], tuple[str, ...]]:
     """优先解析策略固定标的；否则沿用请求股票池。"""
     from quantcore.data._util import resolve_universe
     from researchengine.api.market_data import _market_symbol, _panel_symbol
@@ -364,7 +364,7 @@ def _resolve_strategy_symbols(provider, universe, strategy) -> tuple[list[str], 
             raise ValueError(f"策略固定标的行情不可用: {sorted(missing_symbols)}")
         return raw_symbols, dict(zip(raw_symbols, declared_symbols)), declared_symbols
 
-    raw_symbols = resolve_universe(provider, universe)
+    raw_symbols = resolve_universe(provider, universe, as_of=as_of)
     return raw_symbols, {symbol: _market_symbol(symbol) for symbol in raw_symbols}, ()
 
 
@@ -942,12 +942,18 @@ def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestRespo
 
         provider = FieldParquetProvider(data_dir)
         data_engine = DataEngine(provider=provider)
+        raw_panels = data_engine.get_panels(req.start, req.end)
+        from quantcore.data._util import first_panel_date
+
         raw_symbols, symbol_mapping, declared_symbols = _resolve_strategy_symbols(
-            provider, universe, strategy_class
+            provider,
+            universe,
+            strategy_class,
+            as_of=first_panel_date(raw_panels),
         )
         panels = Panel(
             _StrategyPanels(
-                data_engine.get_panels(req.start, req.end), raw_symbols, symbol_mapping
+                raw_panels, raw_symbols, symbol_mapping
             ),
             index_loader=lambda name: data_engine.get_index(name, req.start, req.end),
         )
@@ -1090,8 +1096,13 @@ def _run_event_strategy_backtest(
         strategy = strategy_class()
         required_fields = set(getattr(strategy, "required_fields", ())) | {"open", "high", "low", "close"}
         panels = data_engine.get_panels(req.start, req.end, fields=sorted(required_fields))
+        from quantcore.data._util import first_panel_date
+
         raw_symbols, symbol_mapping, declared_symbols = _resolve_strategy_symbols(
-            provider, req.universe, strategy
+            provider,
+            req.universe,
+            strategy,
+            as_of=first_panel_date(panels),
         )
         event_panels = {
             field: panels[field].reindex(columns=raw_symbols).rename(columns=symbol_mapping)

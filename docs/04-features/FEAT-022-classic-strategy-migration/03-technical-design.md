@@ -40,3 +40,12 @@ Piotroski F-Score 与股息增长策略分别位于 `piotroski_f_score_a_share_e
 - `chaikin_accumulation_distribution_a_share_event:v1` 位于 `Strategy/libraries/chaikin_accumulation_distribution_a_share_event_v1.py`。事件策略使用前收盘可见的 OHLCV、成交额、行业、估值和流通市值，按 81 日窗口计算资金流乘数、A/D、EMA3/EMA10、CMF20 和行业评分；订单由事件引擎在下一交易日开盘成交。
 - `dual_thrust_a_share:v1` 位于 `Strategy/libraries/dual_thrust_a_share_v1.py`。它采用 `BacktestSignals`，以 `open/high/low/close` 和前一日可见的成交额/市值数据生成周度候选池及日度目标权重，`NativeEngine` 使用下一交易日收益。原稿的当日 09:45 盘中价无法由当前接口读取，因此 v1 的 close-vs-open 触发是明确的研究近似，不作为实盘执行策略。
 - `net_operating_assets_anomaly_a_share_event:v1` 位于 `Strategy/libraries/net_operating_assets_anomaly_a_share_event_v1.py`。事件策略按月读取不晚于前一收盘的点时资产负债表、PE、市值和价格；使用最多 260 日历史寻找最近可见的基本面值，但不向前填充或把缺失核心字段置零。回测回滚方式仍为从 `index.yaml` 移除对应条目，保留源码版本不覆盖。
+
+本次新增的四个日频事件策略均位于 `Strategy/libraries/`，复用 `DataView.history()` 的前收盘快照、`Scheduler.daily()` 和 `OrderService.target_value()`：
+
+- `cci_mean_reversion_a_share_event:v1` 使用 OHLC 计算典型价格、20 日 CCI 和 60 日趋势均线。
+- `money_flow_index_a_share_event:v1` 使用 OHLCV 计算 14 日 MFI；`volume` 属于硬性字段依赖，缺失时在 `initialize()` 明确报错。
+- `trix_momentum_a_share_event:v1` 使用 15 日三重 EMA、TRIX 和 9 日 EMA 信号线，信号仅基于前一收盘。
+- `rate_of_change_momentum_a_share_event:v1` 使用 20 日 ROC 和 60 日趋势均线，输出现金多头目标市值。
+
+四个策略不新增 QuantCore 或 EventEngine 接口，不维护策略外部状态，也不覆盖已有源码版本。回滚方式为从 `Strategy/libraries/index.yaml` 移除对应条目；源码文件保留以保证历史版本引用可追溯。

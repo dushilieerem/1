@@ -6,12 +6,16 @@
 
 ```text
 ifind/
+├── everydayupdate.py   # 每日总更新：交易日历 → 股票池/指数权重 → 行情数据
 ├── common/             # HTTP 客户端、原始 JSON 缓存、通用 Parquet 与路径约定
 ├── calendar/           # 交易日历：pipeline.py → parquet.py
 ├── universe/           # 证券主表：pipeline.py → parquet.py
-├── market_data/        # 日频行情：download.py → csv.py → parquet.py
+├── market_data/        # 回测行情：后复权 OHLC + 流动性
+├── unadjusted_price/   # WebApp K 线：仅未复权 OHLC
 ├── date_sequence/      # 估值、行业与状态：download.py → csv.py → parquet.py
-└── index_weights/      # 指数成分权重：download.py → csv.py → parquet.py
+└── index/              # 指数数据域
+    ├── index_weights/  # 指数成分权重：download.py → csv.py → parquet.py
+    └── index_price/    # 指数 OHLC：download.py → csv.py → parquet.py
 ```
 
 各业务目录内按处理阶段命名；`common/` 只承载跨管道复用能力，不包含业务采集入口。
@@ -21,7 +25,52 @@ ifind/
 - 凭据只从 `IFIND_REFRESH_TOKEN` 环境变量读取；不得将 refresh token 或 access token 写入代码、配置或 CSV。
 - 每个 HTTP 成功响应都先落盘为原始 JSON，再解析为 CSV。重跑同一分区会重放本地 JSON，不重复消耗 iFinD 下载量。
 - CSV 是人工检查和问题追溯的原始层；本目录不直接写入 `MarketData/current/` 或 `MarketData/releases/` 的 Parquet。
-- 市场行情按复权方式分别汇总为 `MarketData/sources/ifind/market_data_hfq|qfq|none.csv`，再分别转为同名 Parquet。
+- `--output-root` 始终表示 iFinD 根目录；每条管道的 raw、CSV 和 Parquet 统一写入同名业务子目录，根目录不直接存放业务数据文件。
+- 回测行情固定写入 `market_data/market_data_hfq.csv/.parquet`；WebApp 未复权价格固定写入 `unadjusted_price/unadjusted_price.csv/.parquet`。
+
+```text
+MarketData/sources/ifind/
+├── calendar/                    # raw + calendar_all_a.csv/.parquet
+├── universe/                    # raw + a_share.csv/.parquet
+├── market_data/                 # raw/price、raw/liquidity + 回测行情
+├── unadjusted_price/            # raw + WebApp 未复权行情
+├── date_sequence/               # raw + 日期序列 CSV/Parquet
+├── index/                       # 指数数据域
+│   ├── index_weights/           # raw + 各指数成分权重 CSV/Parquet
+│   └── index_price/             # raw + 各指数 OHLC CSV/Parquet
+├── logs/                        # 运行日志
+└── archive/                     # 迁移前遗留数据，只读留存
+```
+
+## 每日总更新
+
+`everydayupdate.py` 按数据依赖顺序执行一次完整的每日更新：
+
+1. 更新统一交易日历，并将 CSV 转为 Parquet；
+2. 更新全 A 股票池、指定股指权重与指数 OHLC，并分别更新 CSV 与 Parquet；
+3. 更新供回测使用的后复权日频行情与流动性，并更新 CSV 与 Parquet。
+
+任一步失败时脚本会立即报错并停止，不继续生成依赖不完整前置数据的后续产物。默认更新沪深 300（`000300.SH`）权重和后复权行情。WebApp 未复权价格保持独立运行，不包含在每日总更新中。
+
+```powershell
+cd MarketData/DataIngestion
+
+# 默认日期：上海时间 17:00 前取前一自然日，17:00 起取当天
+python -m data_ingestion.ifind.everydayupdate
+
+# 显式指定目标日期
+python -m data_ingestion.ifind.everydayupdate --as-of 2026-08-11
+
+# 指定指数
+python -m data_ingestion.ifind.everydayupdate `
+  --as-of 2026-08-11 --index 000905.SH
+```
+
+运行前必须通过 `IFIND_REFRESH_TOKEN` 环境变量提供凭据。脚本支持 `--output-root` 指定输出根目录、`--workers` 指定行情 CSV 解析进程数；完整参数可通过以下命令查看：
+
+```powershell
+python -m data_ingestion.ifind.everydayupdate --help
+```
 
 ## 交易日历
 
@@ -98,29 +147,48 @@ python -m data_ingestion.ifind.universe.parquet
 
 在市与已摘牌快照必须非空；退市整理可能没有证券，iFinD 返回 `-4001 / no data` 时按空快照缓存并继续。三张同日快照的 `thscode` 必须互斥；只要任意两类存在交集就报错并拒绝写入 CSV，不能用状态优先级掩盖数据异常。通过校验后直接联合三张列表，重复运行同一日期会得到相同结果。该表只表达“曾经属于全 A 的证券代码和名称”集合，不包含交易所、上市日期、板块或上市状态等未请求字段；下游按 `thscode` 后缀派生 `SH`、`SZ`、`BJ`。这里假定已摘牌与退市整理板块返回截至目标日的累计列表，因而最新一组三类快照即可覆盖历史证券。
 
-## 全 A 日频行情
+## 回测用全 A 日频行情
 
-日频行情固定分为三个脚本：下载脚本只写原始 JSON；CSV 脚本只读取 JSON 并生成完整 CSV；Parquet 脚本只读取完整 CSV。价格支持 `hfq`（后复权，`CPS: "1"`）、`qfq`（前复权，`CPS: "2"`）和 `none`（不带 CPS）；三种价格 raw 与最终文件分别保存。成交指标使用 `volume,amt,turn` 且不带复权参数，三种价格共用同一份 liquidity raw。下载任务按交易所、证券批次和交易日窗口分区，以便断点续传；默认每个请求为 100 只证券 × 10 个交易日。
+`market_data` 固定服务回测系统。价格只请求后复权 `open,high,low,close`（`CPS: "1"`），成交指标独立请求不带复权参数的 `volume,amt,turn`。下载任务按交易所、证券批次和交易日窗口分区，以便断点续传；默认每个请求为 100 只证券 × 10 个交易日。
 
 ```powershell
 # 指定历史区间的全量回填；跳过已完成 CSV，重放已有 JSON
 python -m data_ingestion.ifind.market_data.download backfill `
-  --start 2026-08-05 --end 2026-08-10 --adjustment hfq
+  --start 2026-08-05 --end 2026-08-10
 
 # 首次回填或修复：全部 JSON 汇总为完整 CSV，不调用 iFinD
-python -m data_ingestion.ifind.market_data.csv rebuild --adjustment hfq
+python -m data_ingestion.ifind.market_data.csv rebuild
 
 # 收盘后日增量：仅解析当日 JSON，并替换完整 CSV 中同日记录
 python -m data_ingestion.ifind.market_data.csv update --as-of 2026-08-05
 
 # 完整 CSV 转 Parquet，不调用 iFinD
-python -m data_ingestion.ifind.market_data.parquet --adjustment hfq
+python -m data_ingestion.ifind.market_data.parquet
 
 # 收盘后执行，仅处理目标日期
-python -m data_ingestion.ifind.market_data.download update --as-of 2026-08-05 --adjustment hfq
+python -m data_ingestion.ifind.market_data.download update --as-of 2026-08-05
 ```
 
-价格原始 JSON 分别保存在 `prices/hfq/raw/`、`prices/qfq/raw/` 与 `prices/none/raw/`；成交指标原始 JSON 保存在共享的 `liquidity/raw/`。最终文件分别为 `market_data_hfq|qfq|none.csv` 与同名 Parquet：一行一个交易日，列为两级索引（第一级为 `thscode`，第二级为 OHLC、`volume`（股）、`amount`（元）、`turnover`（小数））。
+价格原始 JSON 保存在 `market_data/raw/price/`，成交指标原始 JSON 保存在 `market_data/raw/liquidity/`。最终文件为 `market_data/market_data_hfq.csv/.parquet`：一行一个交易日，列为两级索引（第一级为 `thscode`，第二级为 OHLC、`volume`（股）、`amount`（元）、`turnover`（小数））。
+
+## WebApp K 线未复权价格
+
+`unadjusted_price` 只请求不带 `CPS` 的 `open,high,low,close`，不下载、不读取也不写入成交量、成交额或换手率。当前不提供前复权采集入口。
+
+```powershell
+# 历史回填
+python -m data_ingestion.ifind.unadjusted_price.download backfill `
+  --start 2017-01-05 --end 2026-08-10
+python -m data_ingestion.ifind.unadjusted_price.csv rebuild
+python -m data_ingestion.ifind.unadjusted_price.parquet
+
+# 指定日期增量
+python -m data_ingestion.ifind.unadjusted_price.download update --as-of 2026-08-11
+python -m data_ingestion.ifind.unadjusted_price.csv update --as-of 2026-08-11
+python -m data_ingestion.ifind.unadjusted_price.parquet
+```
+
+原始 JSON 保存在 `unadjusted_price/raw/`，最终文件为 `unadjusted_price/unadjusted_price.csv/.parquet`，两级列头只包含 OHLC。
 
 ## 全 A 日期序列：估值、行业与状态
 
@@ -140,7 +208,7 @@ python -m data_ingestion.ifind.date_sequence.parquet
 python -m data_ingestion.ifind.date_sequence.download update --as-of 2026-08-05
 ```
 
-原始 JSON 在 `MarketData/sources/ifind/date_sequence/raw/`；完整文件为 `MarketData/sources/ifind/date_sequence.csv` 与 `date_sequence.parquet`：一行一个交易日，列为两级索引（第一级为 `thscode`，第二级为日期序列字段）。涨跌停状态保留 iFinD 原值。
+原始 JSON 在 `MarketData/sources/ifind/date_sequence/raw/`；完整文件为 `MarketData/sources/ifind/date_sequence/date_sequence.csv` 与 `date_sequence.parquet`：一行一个交易日，列为两级索引（第一级为 `thscode`，第二级为日期序列字段）。涨跌停状态保留 iFinD 原值。
 
 ## 指数成分股权重
 
@@ -148,23 +216,44 @@ python -m data_ingestion.ifind.date_sequence.download update --as-of 2026-08-05
 
 ```powershell
 # 回填沪深 300（默认指数代码为 000300.SH）
-python -m data_ingestion.ifind.index_weights.download backfill `
-  --start 2026-01-01 --end 2026-08-07
+python -m data_ingestion.ifind.index.index_weights.download backfill `
+  --start 2017-01-01 --end 2026-08-10
 
 # 下载其他指数，例如中证 500
-python -m data_ingestion.ifind.index_weights.download backfill `
-  --index 000905.SH --start 2026-01-01 --end 2026-08-07
+python -m data_ingestion.ifind.index.index_weights.download backfill `
+  --index 000906.SH --start 2017-01-01 --end 2026-08-10
 
 # 只下载并写入收盘后的当日原始 JSON
-python -m data_ingestion.ifind.index_weights.download update `
+python -m data_ingestion.ifind.index.index_weights.download update `
   --index 000300.SH --as-of 2026-08-07
 
 # 原始 JSON 汇总为完整宽表 CSV；当日更新只替换该日期行
-python -m data_ingestion.ifind.index_weights.csv rebuild --index 000300.SH
-python -m data_ingestion.ifind.index_weights.csv update --index 000300.SH --as-of 2026-08-07
+python -m data_ingestion.ifind.index.index_weights.csv rebuild --index 000905.SH
+python -m data_ingestion.ifind.index.index_weights.csv update --index 000300.SH --as-of 2026-08-07
 
 # CSV 转 Parquet，不调用 iFinD
-python -m data_ingestion.ifind.index_weights.parquet --index 000300.SH
+python -m data_ingestion.ifind.index.index_weights.parquet --index 000905.SH
 ```
 
-原始 JSON 路径为 `index_weights/raw/<指数代码>/<日期>.json`；完整文件为 `index_weights/<指数代码>.csv` 与同名 Parquet。
+原始 JSON 路径为 `index/index_weights/raw/<指数代码>/<日期>.json`；完整文件为 `index/index_weights/index_weights_<指数代码>.csv` 与同名 Parquet。权重非空的股票即为该请求日期的指数成分，缺席成分保持空值。
+
+## 指数价格
+
+指数价格通过 `POST /api/v1/history_data` 获取，请求只包含单个指数代码和 `high,open,low,close`，不传 `functionpara`，也不请求成交量、成交额或换手率。原始响应保留接口字段顺序，最终 CSV/Parquet 规范为 `date,open,high,low,close`。
+
+```powershell
+# 回填沪深 300 指数价格
+python -m data_ingestion.ifind.index.index_price.download backfill `
+  --index 000905.SH --start 2017-01-01 --end 2026-08-10
+python -m data_ingestion.ifind.index.index_price.csv rebuild --index 000905.SH
+python -m data_ingestion.ifind.index.index_price.parquet --index 000905.SH
+
+# 指定日期增量
+python -m data_ingestion.ifind.index.index_price.download update `
+  --index 000300.SH --as-of 2026-08-11
+python -m data_ingestion.ifind.index.index_price.csv update `
+  --index 000300.SH --as-of 2026-08-11
+python -m data_ingestion.ifind.index.index_price.parquet --index 000300.SH
+```
+
+原始 JSON 路径为 `index/index_price/raw/<指数代码>/<起始日>_<结束日>.json`；完整文件为 `index/index_price/index_price_<指数代码>.csv` 与同名 Parquet。

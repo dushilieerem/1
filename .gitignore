@@ -43,3 +43,4 @@ AGENTS.md
 .Codex/
 tmp/
 MarketData/DataIngestion/.tmp/
+*.parquet

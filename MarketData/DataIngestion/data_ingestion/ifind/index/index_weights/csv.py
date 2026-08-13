@@ -89,18 +89,36 @@ def build_index_weights_csv(output_root: Path, index_code: str) -> dict[str, int
     return summary
 
 
-def update_index_weights_csv(output_root: Path, index_code: str, as_of: str) -> dict[str, int]:
+def update_index_weights_csv_range(
+    output_root: Path,
+    index_code: str,
+    dates: list[str],
+) -> dict[str, int]:
+    dates = sorted(set(dates))
+    if not dates:
+        return {"rows": 0, "replaced_rows": 0, "partitions": 0}
     output_path = artifact_path(output_root, index_code, "csv")
-    raw_file = output_root / OUTPUT_DIR / "raw" / index_code / f"{as_of}.json"
     if not output_path.is_file():
         print("[index_weights_csv] 完整 CSV 不存在，改为全量重建", flush=True)
         return build_index_weights_csv(output_root, index_code)
-    if not raw_file.is_file():
-        print(f"[index_weights_csv] 未找到 {as_of} 的原始 JSON，CSV 不变", flush=True)
+    raw_files = [
+        output_root / OUTPUT_DIR / "raw" / index_code / f"{date}.json"
+        for date in dates
+    ]
+    raw_files = [path for path in raw_files if path.is_file()]
+    if not raw_files:
+        print(f"[index_weights_csv] 未找到 {dates[0]} 至 {dates[-1]} 的原始 JSON，CSV 不变", flush=True)
         return {"rows": 0, "replaced_rows": 0, "partitions": 0}
-    with raw_file.open(encoding="utf-8") as stream:
-        normalized = normalize_index_weights_response(json.load(stream), as_of, index_code)
-    delta = {"date": as_of, **{str(row["thscode"]): row["weight"] for row in normalized}}
+    deltas = []
+    for raw_file in raw_files:
+        with raw_file.open(encoding="utf-8") as stream:
+            normalized = normalize_index_weights_response(
+                json.load(stream), raw_file.stem, index_code
+            )
+        deltas.append({
+            "date": raw_file.stem,
+            **{str(row["thscode"]): row["weight"] for row in normalized},
+        })
     temporary_path = output_path.with_suffix(".csv.tmp")
     with output_path.open(encoding="utf-8-sig", newline="") as source:
         reader = csv.DictReader(source)
@@ -108,15 +126,28 @@ def update_index_weights_csv(output_root: Path, index_code: str, as_of: str) -> 
             print("[index_weights_csv] 现有 CSV 不是当前宽表结构，改为全量重建", flush=True)
             return build_index_weights_csv(output_root, index_code)
         existing_symbols = reader.fieldnames[1:]
-        rows = [row for row in reader if row["date"] != as_of]
-    symbols = [*existing_symbols, *sorted(set(delta) - {"date", *existing_symbols})]
-    rows.append(delta)
+        delta_dates = {str(delta["date"]) for delta in deltas}
+        rows = [row for row in reader if row["date"] not in delta_dates]
+    delta_symbols = set().union(*(set(delta) for delta in deltas))
+    symbols = [*existing_symbols, *sorted(delta_symbols - {"date", *existing_symbols})]
+    rows.extend(deltas)
     rows.sort(key=lambda row: str(row["date"]))
     _write_wide_csv(temporary_path, symbols, rows)
     temporary_path.replace(output_path)
-    summary = {"rows": len(rows), "replaced_rows": 1, "partitions": 1}
-    print(f"[index_weights_csv] 已完成当日更新：替换 {as_of}，写入 {output_path}", flush=True)
+    summary = {
+        "rows": len(rows),
+        "replaced_rows": len(deltas),
+        "partitions": len(raw_files),
+    }
+    print(
+        f"[index_weights_csv] 已完成区间更新：替换 {len(deltas)} 行，写入 {output_path}",
+        flush=True,
+    )
     return summary
+
+
+def update_index_weights_csv(output_root: Path, index_code: str, as_of: str) -> dict[str, int]:
+    return update_index_weights_csv_range(output_root, index_code, [as_of])
 
 
 def main() -> None:

@@ -36,7 +36,7 @@ from quantcore import (
     Panel,
     WideCSVProvider,
 )
-from quantcore.data._util import first_panel_date, resolve_universe
+from quantcore.data._util import filter_by_date, resolve_universe
 from quantcore.metric.context import MetricContext
 
 from researchengine.config import ConfigManager
@@ -58,6 +58,44 @@ _STORAGE_MAP = {
     "parquet": ParquetStorage,
     "sqlite": SQLiteStorage,
 }
+
+_PRICE_FIELDS = ("open", "high", "low", "close")
+
+
+class _FieldOverlay:
+    """在不触发基准面板懒加载的前提下覆盖指定字段。"""
+
+    def __init__(self, base, overrides) -> None:
+        self._base = base
+        self._overrides = overrides
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._overrides or name in self._base
+
+    def __getitem__(self, name: str):
+        if name in self._overrides:
+            return self._overrides[name]
+        return self._base[name]
+
+    def get(self, name: str, default=None):
+        if name in self._overrides:
+            return self._overrides[name]
+        return self._base.get(name, default)
+
+    def __iter__(self):
+        seen = set()
+        for name in self._base:
+            seen.add(name)
+            yield name
+        for name in self._overrides:
+            if name not in seen:
+                yield name
+
+    def keys(self):
+        return list(self)
+
+    def __len__(self) -> int:
+        return sum(1 for _ in self)
 
 
 def _daily_ic_series(factor_values: pd.DataFrame, forward_returns: pd.DataFrame) -> pd.DataFrame:
@@ -147,15 +185,17 @@ class Experiment:
 
         # QuantCore 引擎（可注入，否则按 config 构造默认）
         self._data_engine = data_engine
+        self._unadjusted_price_engine: Optional[DataEngine] = None
+        self._unadjusted_price_path: Optional[Path] = None
         self._factor_engine = factor_engine
         self._metric_engine = metric_engine
 
     # -- 构建默认 QuantCore 引擎 --
     def _build_engines(self) -> None:
+        data_dir = self.config.get("data_dir", "./data")
         if self._data_engine is None:
             import os
 
-            data_dir = self.config.get("data_dir", "./data")
             # 文件 -> 宽表 CSV；目录里有 *.parquet -> 字段 parquet；否则逐只 CSV
             if os.path.isfile(data_dir):
                 provider = (
@@ -172,6 +212,13 @@ class Experiment:
                 provider = CSVDataProvider(data_dir)
             self._data_engine = DataEngine(provider)
 
+        self._unadjusted_price_engine = None
+        self._unadjusted_price_path = self._resolve_unadjusted_price_path(data_dir)
+        if self._unadjusted_price_path is not None:
+            self._unadjusted_price_engine = DataEngine(
+                FieldParquetProvider(self._unadjusted_price_path)
+            )
+
         if self._factor_engine is None:
             backend = self.config.get("compute_backend", "python")
             self._factor_engine = FactorEngine(backend=backend)
@@ -180,6 +227,40 @@ class Experiment:
 
         if self._metric_engine is None:
             self._metric_engine = MetricEngine()
+
+    def _resolve_unadjusted_price_path(self, data_dir) -> Optional[Path]:
+        """定位因子计算使用的未复权 OHLC 数据。"""
+        configured = self.config.get("unadjusted_price_path")
+        if configured:
+            path = Path(configured)
+            if not path.is_absolute():
+                path = Path(data_dir) / path
+            if not path.is_file() and not path.is_dir():
+                raise FileNotFoundError(f"未复权价格数据不存在: {path}")
+            return path
+
+        root = Path(data_dir)
+        if not root.is_dir():
+            return None
+        if (root / "current").is_dir():
+            root = root / "current"
+        path = root / "display" / "unadjusted_price.parquet"
+        if path.is_file():
+            return path
+
+        # 旧版逐只 CSV 测试/数据目录没有展示行情文件，保持兼容；
+        # 字段 Parquet / current 布局则必须显式提供未复权 OHLC，避免悄悄退回后复权价格。
+        is_field_data = (
+            (root / "panels").is_dir()
+            or root.name == "current"
+            or any(root.glob("*.parquet"))
+        )
+        if is_field_data:
+            raise FileNotFoundError(
+                "因子计算要求未复权 OHLC 文件，但未找到: "
+                f"{root / 'display' / 'unadjusted_price.parquet'}"
+            )
+        return None
 
     def _build_storage(self):
         kind = self.config.get("storage", "csv")
@@ -345,35 +426,65 @@ class Experiment:
         timings["engine_setup"] = time.perf_counter() - started_at
         print("① 读取配置 / 构建引擎 完毕")
 
-        # ② 取面板一次，因子与组合复用（懒加载：只读因子/组合真正用到的字段）
+        # ② 读取两个逻辑区间：
+        #    - calculation_panels 不设起止日期，给因子完整历史用于 rolling/pct_change 等预热；
+        #    - evaluation_close 从同一份完整面板裁剪，仅用于解析股票池首个实际交易日。
+        #    这样 CSV 等无缓存 Provider 也不会因区间探测再读一遍全部文件。
         started_at = time.perf_counter()
-        panels = self._data_engine.get_panels(self.start_date, self.end_date)
+        calculation_panels = self._data_engine.get_panels(None, None)
+        factor_panels = calculation_panels
+        if self._unadjusted_price_engine is not None:
+            unadjusted_panels = self._unadjusted_price_engine.get_panels(
+                None, None, fields=_PRICE_FIELDS
+            )
+            factor_panels = _FieldOverlay(calculation_panels, unadjusted_panels)
+        evaluation_close = calculation_panels.get("close")
+        if evaluation_close is None or evaluation_close.empty:
+            raise RuntimeError("收益确认区间没有可用 close 数据，请检查数据源和起止日期。")
+        evaluation_close = filter_by_date(
+            evaluation_close, self.start_date, self.end_date
+        )
+        if evaluation_close.empty:
+            raise RuntimeError("收益确认区间没有可用 close 数据，请检查数据源和起止日期。")
+        evaluation_start = pd.Timestamp(evaluation_close.index[0])
         symbols = resolve_universe(
-            self._data_engine, self.universe, as_of=first_panel_date(panels)
+            self._data_engine, self.universe, as_of=evaluation_start
         )
         panel = Panel(
-            panels,
+            calculation_panels,
             symbols=symbols,
             index_loader=lambda name: self._data_engine.get_index(
-                name, self.start_date, self.end_date
+                name, None, None
+            ),
+        )
+        factor_panel = Panel(
+            factor_panels,
+            symbols=symbols,
+            index_loader=lambda name: self._data_engine.get_index(
+                name, None, None
             ),
         )
         timings["panel_setup"] = time.perf_counter() - started_at
         print("数据读取完毕")
 
-        # ③a 因子计算（复用已取面板）
+        # ③a 因子先在完整历史上计算，再裁剪到收益确认区间。
         started_at = time.perf_counter()
-        factor_values = self._factor_engine.compute_panel(self.factor.name, panel)
+        factor_values_all = self._factor_engine.compute_panel(
+            self.factor.name, factor_panel
+        )
         timings["factor_compute"] = time.perf_counter() - started_at
+        factor_values = filter_by_date(
+            factor_values_all, self.start_date, self.end_date
+        )
         if factor_values.empty:
-            raise RuntimeError("因子计算结果为空，请检查数据源/区间/universe。")
+            raise RuntimeError("收益确认区间内因子计算结果为空，请检查数据源/区间/universe。")
         print("因子值计算完毕")
 
         # 取收盘价宽表，构造远期收益与组合（触发 close 懒加载）
         if "close" not in panel:
             raise RuntimeError("数据中缺少 close 字段，无法构建组合。")
         started_at = time.perf_counter()
-        close_panel = panel.close
+        close_panel = filter_by_date(panel.close, self.start_date, self.end_date)
         common_symbols = factor_values.columns.intersection(close_panel.columns)
         if len(common_symbols) == 0:
             raise ValueError(
@@ -457,6 +568,12 @@ class Experiment:
                 "universe": self.universe,
                 "start_date": self.start_date,
                 "end_date": self.end_date,
+                "factor_price_adjustment": (
+                    "unadjusted" if self._unadjusted_price_engine is not None
+                    else "source_default"
+                ),
+                "factor_price_fields": list(_PRICE_FIELDS),
+                "return_price_adjustment": "hfq",
             },
         )
         print("结果保存完毕")

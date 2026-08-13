@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from data_ingestion.ifind.common.paths import DEFAULT_OUTPUT_ROOT
+from data_ingestion.ifind.common.file_ops import replace_with_retry
 from data_ingestion.ifind.market_data.download import LIQUIDITY, PRICE
 from data_ingestion.ifind.universe.pipeline import existing_universe_path
 
@@ -152,15 +153,23 @@ def build_daily_csv(output_root: Path, workers: int = DEFAULT_WORKERS, universe_
             for row in _wide_rows(parsed_partitions).values():
                 _write_row(writer, columns, row)
                 summary["rows"] += 1
-    temporary_path.replace(output_path)
+    replace_with_retry(temporary_path, output_path)
     print(f"[market_data_csv] 已完成：{summary['rows']} 行，写入 {output_path}", flush=True)
     return summary
 
 
-def update_daily_csv(output_root: Path, as_of: str, workers: int = DEFAULT_WORKERS, universe_path: Path | None = None) -> dict[str, int]:
-    """以指定日期的 raw JSON 覆盖完整 CSV 中同日记录，不重解析历史 JSON。"""
+def update_daily_csv_range(
+    output_root: Path,
+    dates: list[str],
+    workers: int = DEFAULT_WORKERS,
+    universe_path: Path | None = None,
+) -> dict[str, int]:
+    """以多个指定日期的 raw JSON 一次性更新完整 CSV，不重解析历史 JSON。"""
     if workers <= 0:
         raise ValueError("workers 必须大于零")
+    dates = sorted(set(dates))
+    if not dates:
+        return {"rows": 0, "replaced_rows": 0, "partitions": 0}
     universe_path = universe_path or existing_universe_path(output_root)
     columns = _wide_columns(universe_path)
     output_path = output_root / OUTPUT_DIR / OUTPUT_FILENAME
@@ -172,17 +181,17 @@ def update_daily_csv(output_root: Path, as_of: str, workers: int = DEFAULT_WORKE
         if tuple(next(reader, [])) != tuple(_headers(columns)[0]) or tuple(next(reader, [])) != tuple(_headers(columns)[1]):
             print("[market_data_csv] 现有 CSV 不是当前宽表结构，改为全量重建", flush=True)
             return build_daily_csv(output_root, workers, universe_path)
-    jobs = _jobs_for_date(output_root, as_of)
+    jobs = [job for date in dates for job in _jobs_for_date(output_root, date)]
     partition_rows: list[list[dict[str, object]]] = []
     for number, rows in enumerate(_parallel_merge(jobs, workers), start=1):
-        print(f"[market_data_csv] 第 {number}/{len(jobs)} 批：正在解析 {as_of} 的增量 JSON", flush=True)
+        print(f"[market_data_csv] 第 {number}/{len(jobs)} 批：正在解析增量 JSON", flush=True)
         partition_rows.append(rows)
-    delta = _wide_rows(partition_rows).get(as_of)
-    if delta is None:
-        print(f"[market_data_csv] 未找到 {as_of} 的原始 JSON，CSV 不变", flush=True)
+    delta_rows = _wide_rows(partition_rows)
+    if not delta_rows:
+        print(f"[market_data_csv] 未找到 {dates[0]} 至 {dates[-1]} 的原始 JSON，CSV 不变", flush=True)
         return {"rows": 0, "replaced_rows": 0, "partitions": len(jobs)}
     temporary_path = output_path.with_suffix(".csv.tmp")
-    summary = {"rows": 0, "replaced_rows": 1, "partitions": len(jobs)}
+    summary = {"rows": 0, "replaced_rows": len(delta_rows), "partitions": len(jobs)}
     with output_path.open(encoding="utf-8-sig", newline="") as source, temporary_path.open("w", encoding="utf-8", newline="") as target:
         reader = csv.reader(source)
         next(reader, None)
@@ -190,17 +199,26 @@ def update_daily_csv(output_root: Path, as_of: str, workers: int = DEFAULT_WORKE
         writer = csv.writer(target)
         writer.writerows(_headers(columns))
         for row in reader:
-            if row and row[0] == as_of:
+            if row and row[0] in delta_rows:
                 continue
             writer.writerow(row)
             summary["rows"] += 1
             if summary["rows"] % 1_000_000 == 0:
                 print(f"[market_data_csv] 正在写入历史 CSV：{summary['rows']} 行", flush=True)
-        _write_row(writer, columns, delta)
-        summary["rows"] += 1
-    temporary_path.replace(output_path)
-    print(f"[market_data_csv] 已完成当日更新：替换 1 行，写入 {output_path}", flush=True)
+        for date in sorted(delta_rows):
+            _write_row(writer, columns, delta_rows[date])
+            summary["rows"] += 1
+    replace_with_retry(temporary_path, output_path)
+    print(
+        f"[market_data_csv] 已完成区间更新：替换 {len(delta_rows)} 行，写入 {output_path}",
+        flush=True,
+    )
     return summary
+
+
+def update_daily_csv(output_root: Path, as_of: str, workers: int = DEFAULT_WORKERS, universe_path: Path | None = None) -> dict[str, int]:
+    """以指定日期的 raw JSON 覆盖完整 CSV 中同日记录，不重解析历史 JSON。"""
+    return update_daily_csv_range(output_root, [as_of], workers, universe_path)
 
 
 def main() -> None:

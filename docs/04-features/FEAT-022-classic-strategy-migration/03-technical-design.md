@@ -49,3 +49,12 @@ Piotroski F-Score 与股息增长策略分别位于 `piotroski_f_score_a_share_e
 - `rate_of_change_momentum_a_share_event:v1` 使用 20 日 ROC 和 60 日趋势均线，输出现金多头目标市值。
 
 四个策略不新增 QuantCore 或 EventEngine 接口，不维护策略外部状态，也不覆盖已有源码版本。回滚方式为从 `Strategy/libraries/index.yaml` 移除对应条目；源码文件保留以保证历史版本引用可追溯。
+
+本次新增的四个日频事件策略继续复用 `DataView.history()` 的前收盘快照、`Scheduler.daily()` 和 `OrderService.target_value()`：
+
+- `ultimate_oscillator_a_share_event:v1` 使用 7/14/28 日买压与真实波幅的加权终极振荡器，并以 60 日均线做趋势过滤。
+- `vortex_indicator_a_share_event:v1` 使用 14 日正/负涡旋运动与真实波幅，比较 VI+ 和 VI- 的交叉。
+- `relative_vigor_index_a_share_event:v1` 使用与既有 `technical_lib.relative_vigor_index` 相同的 4 日加权平滑，再以 4 日均线生成信号线。
+- `elder_force_index_a_share_event:v1` 使用 `close.diff() * volume` 的 13 日 EMA；`volume` 是硬性字段依赖，缺失时在 `initialize()` 明确报错。
+
+四个策略不新增 QuantCore 或 EventEngine 接口，不覆盖既有源码版本。回滚方式仍为从 `Strategy/libraries/index.yaml` 移除对应条目，源码文件保留用于历史版本追溯。

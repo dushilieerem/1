@@ -4,7 +4,7 @@
 > 最后更新：2026-07-17
 > 适用范围：公共因子库（PublicAlphaLibrary）
 
-> 因子名称、公式要点、参数、依赖字段和兼容范围见[《SVQuant 内置因子库总览》](../因子库总览.md)。
+> 因子名称、公式要点、参数、依赖字段和兼容范围见[《SVQuant 内置因子库总览》](../因子库总览.md)；该文档由研究员手工维护。
 
 ## 1. 设计原则
 
@@ -41,7 +41,7 @@ class MomentumLib(FactorLibrary):
         return self.close.pct_change(5)
 ```
 
-`index.yaml` 保存前端展示所需的元数据：
+`index.yaml` 保存前端展示所需的元数据，也是 ResearchEngine API 的唯一内置库注册来源；API 不再维护第二份库名白名单：
 
 ```yaml
 libraries:
@@ -56,15 +56,44 @@ libraries:
 
 ## 3. 因子管理
 
-- 新增：在对应 `.py` 文件新增方法，并在 `index.yaml` 增加元数据。
-- 修改：直接修改方法体；仅当名称、描述或参数变化时同步修改 `index.yaml`。
-- 删除：同时删除方法和对应的 `index.yaml` 条目。
-- 重命名：同步修改方法名和 `index.yaml` 中的 `name`。
+- 因子实现的唯一事实来源是对应 `.py` 文件中的公开方法；不要手工维护逐因子清单。
+- 新增、修改、删除或重命名因子后，只修改 `.py` 文件并运行下方的 `sync` 命令。
+- `index.yaml` 中的库级标签、来源、验证状态等治理字段可以人工维护；逐因子名称、说明、默认参数、文件、类名和数量由同步器生成。
+
+### 3.1 源码与索引同步（当前规则）
+
+因子源码是可执行事实来源，`index.yaml` 是 API 与前端使用的登记清单；逐因子
+名称、说明、默认参数、文件、类名和数量不再手工维护。修改
+`Factor/libraries/*.py` 后，在仓库根目录执行：
+
+```powershell
+conda run -n svquant python -m researchengine.factor_catalog sync
+```
+
+该命令会从所有 `FactorLibrary` 的公开方法重新发现因子，并原子更新：
+
+- `Factor/libraries/index.yaml`：因子名称、说明、默认参数、文件、类名和数量；
+
+`Factor/因子库总览.md` 不由同步器写入或校验，研究员可以按研究需要手工补充和整理。
+
+提交前执行只读校验：
+
+```powershell
+conda run -n svquant python -m researchengine.factor_catalog check
+```
+
+校验会重新扫描源码并比较 `index.yaml`；新增、删除、重命名因子或修改
+docstring/默认参数后未执行 `sync`，校验会失败。`pytest` 也包含同一项仓库目录
+一致性测试，因此 CI 或本地全量测试会拦截漏同步。
 
 ## 4. 与 ResearchEngine 的关系
 
 ```text
-内置因子：前端读取 index.yaml，传 library_name + factor_name
+内置因子库目录：GET /api/factor-libraries 返回全部因子库
+        ↓
+指定因子库：GET /api/factors/{library_name} 返回该库全部因子
+        ↓
+内置因子回测：传 library_name + factor_name
         ↓
 ResearchEngine 加载完整因子库并回测
 
@@ -73,7 +102,7 @@ ResearchEngine 加载完整因子库并回测
 ResearchEngine 生成临时 FactorLibrary 并回测
 ```
 
-当前 API 的两种来源必须二选一：内置因子传 `library_name` 与 `factor_name`，由服务端加载完整库；用户自定义因子传 `factor_code` 与 `factor_name`，其中 `factor_code` 只接收**单个因子函数体**，服务端自动补全 `FactorLibrary` 类定义。
+当前 API 的两种来源必须二选一：内置因子传 `library_name` 与 `factor_name`，由服务端按 `index.yaml` 登记加载完整库；用户自定义因子传 `factor_code` 与 `factor_name`，其中 `factor_code` 只接收**单个因子函数体**，服务端自动补全 `FactorLibrary` 类定义。
 
 ## 5. API 接口文档
 

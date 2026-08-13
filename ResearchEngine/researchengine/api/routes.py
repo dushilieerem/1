@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, HTTPException, Response
 
 from researchengine.api.market_data import (
     get_daily_bars,
@@ -20,6 +20,8 @@ from researchengine.api.schemas import (
     FactorBacktestRequest,
     FactorBacktestResponse,
     FactorInfo,
+    FactorLibraryInfo,
+    FactorLibraryListResponse,
     FactorListResponse,
     HealthResponse,
     DailyBarsResponse,
@@ -47,10 +49,50 @@ def health() -> HealthResponse:
     return HealthResponse(status="ok", version="2.0.0", engines=["native"])
 
 
-@router.get("/factors", response_model=FactorListResponse)
-def list_factors() -> FactorListResponse:
-    """列出已登记内置因子库的方法与 docstring，供 UI 下拉。"""
-    return FactorListResponse(factors=_builtin_factors())
+@router.get("/factor-libraries", response_model=FactorLibraryListResponse)
+def list_factor_libraries() -> FactorLibraryListResponse:
+    """列出 ``index.yaml`` 中登记的全部内置因子库。"""
+    try:
+        from researchengine.api.runner import _builtin_factor_library_index
+
+        libraries = []
+        for library_name, metadata in sorted(_builtin_factor_library_index().items()):
+            tags = metadata.get("tags", [])
+            if not isinstance(tags, list):
+                tags = []
+            factor_count = metadata.get("factor_count", 0)
+            if not isinstance(factor_count, int) or isinstance(factor_count, bool):
+                factor_count = 0
+            libraries.append(
+                FactorLibraryInfo(
+                    name=library_name,
+                    description=metadata.get("description"),
+                    factor_count=factor_count,
+                    tags=[tag for tag in tags if isinstance(tag, str)],
+                )
+            )
+        return FactorLibraryListResponse(libraries=libraries)
+    except Exception as exc:  # noqa: BLE001 - 目录不可用时返回明确服务错误
+        raise HTTPException(status_code=503, detail=f"因子库目录不可用: {exc}") from exc
+
+
+@router.get("/factors/{library_name}", response_model=FactorListResponse)
+def list_library_factors(library_name: str) -> FactorListResponse:
+    """列出指定内置因子库中的全部因子。"""
+    try:
+        from researchengine.api.runner import builtin_factor_library_names
+
+        if library_name not in builtin_factor_library_names():
+            raise HTTPException(status_code=404, detail=f"未找到内置因子库: {library_name}")
+        factors = _builtin_factors(library_name)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 因子库加载失败不得伪造目录
+        raise HTTPException(
+            status_code=503,
+            detail=f"因子库 {library_name!r} 不可用: {exc}",
+        ) from exc
+    return FactorListResponse(library_name=library_name, factors=factors)
 
 
 @router.get("/strategies", response_model=StrategyListResponse)
@@ -122,21 +164,28 @@ def backtest_strategy(req: StrategyBacktestRequest) -> StrategyBacktestResponse:
     return run_strategy_backtest(req)
 
 
-def _builtin_factors() -> "list[FactorInfo]":
-    """枚举内置因子库的方法；加载失败返回空列表。"""
+def _builtin_factors(library_name: str | None = None) -> "list[FactorInfo]":
+    """枚举一个或全部内置因子库的方法；兼容测试和内部调用。"""
     try:
-        from researchengine import FactorLoader
-        from researchengine.api.runner import BUILTIN_FACTOR_LIBRARIES
-        from researchengine.assets import factor_library_dir
+        from researchengine.api.runner import (
+            _load_builtin_factor_library,
+            builtin_factor_library_names,
+        )
 
-        loader = FactorLoader(factor_dir=str(factor_library_dir()))
         factors = []
-        for module_name in sorted(BUILTIN_FACTOR_LIBRARIES):
-            library = loader.load(module_name)
+        library_names = (
+            (library_name,)
+            if library_name is not None
+            else builtin_factor_library_names()
+        )
+        for current_library_name in library_names:
+            _loader, library = _load_builtin_factor_library(current_library_name)
             factors.extend(
                 FactorInfo(name=n, description=(m.__doc__ or "").strip() or None)
                 for n, m in library._factor_methods().items()
             )
         return factors
     except Exception:  # noqa: BLE001  无内置库或路径变化时不阻塞 API
+        if library_name is not None:
+            raise
         return []

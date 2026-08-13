@@ -26,12 +26,13 @@
 │  BacktestRunner.run()                                            │
 │  ① 编译因子代码（exec → FactorLibrary）                             │
 │  ② 初始化 QuantCore 引擎                                          │
-│  ③ data_engine.get_panels → Panel                                │
-│  ④ factor_engine.compute_panel → factor_values                   │
-│  ⑤ FactorQuantileStrategy → signals                              │
-│  ⑥ get_backtest_engine.run() → equity/returns/positions          │
-│  ⑦ MetricEngine.calculate_all() → metrics                        │
-│  ⑧ 序列化 → BacktestResult                                       │
+│  ③ data_engine.get_panels(完整历史) → Panel                        │
+│  ④ factor_engine.compute_panel → 完整历史 factor_values            │
+│  ⑤ 裁剪 start/end 收益确认区间                                  │
+│  ⑥ FactorQuantileStrategy → signals                              │
+│  ⑦ get_backtest_engine.run() → equity/returns/positions          │
+│  ⑧ MetricEngine.calculate_all() → metrics                        │
+│  ⑨ 序列化 → BacktestResult                                       │
 │                                                                  │
 │  实例间无共享状态，每个请求独立执行                                    │
 └──────────────────────────┬──────────────────────────────────────┘
@@ -69,14 +70,19 @@ Step 2  初始化 QuantCore 引擎
   │
   ▼
 Step 3  取面板数据
-         panels = data_engine.get_panels(start, end)
-          → Panel(open, high, low, close, volume, total_mv, ...)
-         universe_data = resolve_universe(panels, universe)
+         calculation_panels = data_engine.get_panels(None, None)
+          → 完整历史 Panel(open, high, low, close, volume, total_mv, ...)
+         evaluation_close = calculation_panels["close"].loc[start:end]
+         evaluation_start = evaluation_close.index[0]
+          → 用收益确认区间首个实际交易日解析 universe
+         universe_data = resolve_universe(data_engine, universe, as_of=evaluation_start)
   │
   ▼
 Step 4  计算因子值
-         factor_values = factor_engine.compute_panel(factor.name, universe_data)
-          → DataFrame[date, instrument, factor_value]
+         all_factor_values = factor_engine.compute_panel(factor.name, calculation_panels)
+          → 使用完整历史，自动覆盖 rolling/pct_change 等预热
+         factor_values = all_factor_values.loc[start:end]
+          → 仅将收益确认区间交给回测和分析
   │
   ▼
 Step 5  计算远期收益（IC 用）

@@ -31,6 +31,10 @@
 | MFI 资金流量策略、指标公式与字段缺失回归测试 | 2 | 中 | 日线 OHLCV、EventEngine | 完成 |
 | TRIX 三重指数动量策略、信号线与事件回归测试 | 2 | 低 | 日线 OHLC、EventEngine | 完成 |
 | ROC 变化率动量策略、零轴交叉与事件回归测试 | 2 | 低 | 日线 OHLC、EventEngine | 完成 |
+| Ultimate Oscillator 多周期动量策略、加权公式与事件回归测试 | 2 | 低 | 日线 OHLC、EventEngine | 完成 |
+| Vortex Indicator 趋势策略、VI+/VI- 公式与事件回归测试 | 2 | 低 | 日线 OHLC、EventEngine | 完成 |
+| Relative Vigor Index 趋势策略、信号线与事件回归测试 | 2 | 低 | 日线 OHLC、EventEngine | 完成 |
+| Elder Force Index 量价策略、成交量契约与事件回归测试 | 2 | 中 | 日线 OHLCV、EventEngine | 完成 |
 | 完整 CANSLIM | 5 | 高 | 公告日财务、股东数据、历史证券状态、形态金标 | 不在本 Feature 范围 |
 
 里程碑：M1 为 RSI 可加载、可运行并通过测试；M2 为 CANSLIM Lite 只用价格数据可运行；M3 为后续 Feature 的完整 CANSLIM 通过点时数据与形态黄金样本验证。

@@ -8,10 +8,10 @@ from researchengine import FactorLoader
 
 
 def _panel() -> Panel:
-    dates = pd.bdate_range("2024-01-02", periods=30)
+    dates = pd.bdate_range("2024-01-02", periods=60)
     columns = ["A", "B"]
     close = pd.DataFrame(
-        np.arange(10, 70, dtype=float).reshape(30, 2), index=dates, columns=columns
+        np.arange(10, 130, dtype=float).reshape(60, 2), index=dates, columns=columns
     )
     return Panel(
         {
@@ -120,6 +120,28 @@ def test_oscillator_and_volume_factor_formulae_match_reference():
     expected_rvi = numerator.rolling(10).mean() / (denominator.rolling(10).mean() + 1e-10)
     pd.testing.assert_frame_equal(loader.factors["relative_vigor_index"].compute(panel), expected_rvi)
 
+    midpoint = (panel.high + panel.low) / 2
+    expected_ao = midpoint.rolling(5).mean() - midpoint.rolling(34).mean()
+    pd.testing.assert_frame_equal(loader.factors["awesome_oscillator"].compute(panel), expected_ao)
+
+    expected_bop = (panel.close - panel.open) / (panel.high - panel.low + 1e-10)
+    pd.testing.assert_frame_equal(loader.factors["balance_of_power"].compute(panel), expected_bop)
+
+    previous_close = panel.close.shift()
+    first = panel.high - panel.low
+    second = (panel.high - previous_close).abs()
+    third = (panel.low - previous_close).abs()
+    true_range = first.where(first >= second, second)
+    true_range = true_range.where(true_range >= third, third)
+    true_range_sum = true_range.rolling(14).sum()
+    price_range = panel.high.rolling(14).max() - panel.low.rolling(14).min()
+    ratio = (true_range_sum / (price_range + 1e-10)).clip(lower=1e-10)
+    expected_chop = 100 * np.log10(ratio) / np.log10(14)
+    pd.testing.assert_frame_equal(loader.factors["choppiness_index"].compute(panel), expected_chop)
+
+    expected_efi = (panel.close.diff() * panel.volume).ewm(span=13, adjust=False).mean()
+    pd.testing.assert_frame_equal(loader.factors["elder_force_index"].compute(panel), expected_efi)
+
 
 def test_directional_and_accumulation_factor_formulae_match_reference():
     loader = FactorLoader()
@@ -166,5 +188,6 @@ def test_classic_technical_factors_are_discoverable():
         "positive_directional_index", "negative_directional_index",
         "average_directional_index", "accumulation_distribution",
         "ultimate_oscillator", "fisher_transform", "ease_of_movement",
-        "relative_vigor_index",
+        "relative_vigor_index", "awesome_oscillator", "balance_of_power",
+        "choppiness_index", "elder_force_index",
     }.issubset(loader.factors)

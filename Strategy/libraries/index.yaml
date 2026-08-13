@@ -464,3 +464,47 @@ strategies:
       v1:
         file: rate_of_change_momentum_a_share_event_v1.py
         entrypoint: RateOfChangeMomentumAShareEventStrategy
+
+  ultimate_oscillator_a_share_event:
+    name: Ultimate Oscillator A 股多周期动量
+    strategy_type: momentum
+    execution_mode: event
+    current_version: v1
+    tags: [ultimate_oscillator, momentum, oscillator, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: ultimate_oscillator_a_share_event_v1.py
+        entrypoint: UltimateOscillatorAShareEventStrategy
+
+  vortex_indicator_a_share_event:
+    name: Vortex Indicator A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [vortex, trend, crossover, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: vortex_indicator_a_share_event_v1.py
+        entrypoint: VortexIndicatorAShareEventStrategy
+
+  relative_vigor_index_a_share_event:
+    name: Relative Vigor Index A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [relative_vigor_index, rvi, trend, oscillator, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: relative_vigor_index_a_share_event_v1.py
+        entrypoint: RelativeVigorIndexAShareEventStrategy
+
+  elder_force_index_a_share_event:
+    name: 埃尔德强力指数 A 股趋势
+    strategy_type: volume_trend
+    execution_mode: event
+    current_version: v1
+    tags: [elder, force_index, volume, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: elder_force_index_a_share_event_v1.py
+        entrypoint: ElderForceIndexAShareEventStrategy

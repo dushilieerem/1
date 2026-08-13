@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -9,7 +11,12 @@ from fastapi.testclient import TestClient
 
 from researchengine.api import app
 from researchengine.api.market_data import _market_symbol, _panel_symbol
-from researchengine.api.runner import _display_instrument, _sample_positions, _serialize_rebalance_logs
+from researchengine.api.runner import (
+    _compute_quantile_metrics,
+    _display_instrument,
+    _sample_positions,
+    _serialize_rebalance_logs,
+)
 
 
 client = TestClient(app)
@@ -150,6 +157,22 @@ def test_health():
     assert response.json()["status"] == "ok"
 
 
+def test_factor_backtest_minimal_builtin_request_uses_web_defaults():
+    from researchengine.api.schemas import FactorBacktestRequest
+
+    request = FactorBacktestRequest(
+        library_name="momentum_lib",
+        factor_name="momentum_5d",
+    )
+
+    assert request.portfolio_type == "long_only"
+    assert request.universe == "CSI300"
+    assert request.rebalance_days == 1
+    assert request.commission_rate == 0.0
+    assert request.stamp_tax == 0.0
+    assert request.slippage_rate == 0.0
+
+
 def test_daily_bars_returns_filtered_ohlc(market_data_dir):
     response = client.get(
         "/api/market-data/daily/S000",
@@ -254,8 +277,136 @@ def test_factor_backtest_groups_and_benchmark(market_data_dir):
     industry_groups = body["factor_analysis"]["industry_group_equity_curves"]
     assert len(industry_groups) == 2
     assert set(industry_groups[0]["points"][-1]["groups"]) == {"G1", "G2", "G3"}
+    quantile_metrics = body["factor_analysis"]["quantile_metrics"]
+    assert [item["quantile"] for item in quantile_metrics] == ["Q1", "Q2", "Q3"]
+    assert set(quantile_metrics[0]) == {
+        "quantile",
+        "annual_return",
+        "volatility",
+        "sharpe",
+        "max_drawdown",
+        "annual_excess_return",
+        "excess_volatility",
+        "information_ratio",
+        "benchmark_win_rate",
+    }
+    assert all(
+        item["annual_return"] is not None
+        and item["annual_excess_return"] is not None
+        for item in quantile_metrics
+    )
     assert len(body["benchmark_curve"]) > 0
     assert body["excess_return"] is not None
+
+
+def test_quantile_metrics_use_daily_returns_and_relative_benchmark():
+    dates = pd.date_range("2022-01-03", periods=4, freq="B")
+    layered_equity = pd.DataFrame(
+        {
+            "layer1": [1.0, 1.10, 1.00, 1.20],
+            "layer2": [1.0, 1.00, 1.05, 1.10],
+        },
+        index=dates,
+    )
+    benchmark_equity = pd.Series([1.0, 1.05, 1.00, 1.10], index=dates)
+
+    metrics = _compute_quantile_metrics(
+        layered_equity, benchmark_equity, periods_per_year=4
+    )
+
+    q1 = metrics[0]
+    group_returns = layered_equity["layer1"].pct_change().dropna()
+    benchmark_returns = benchmark_equity.pct_change().dropna()
+    excess = group_returns - benchmark_returns
+    assert q1.quantile == "Q1"
+    assert q1.annual_return == pytest.approx(group_returns.mean() * 4)
+    assert q1.volatility == pytest.approx(group_returns.std() * 2)
+    assert q1.annual_excess_return == pytest.approx(excess.mean() * 4)
+    assert q1.excess_volatility == pytest.approx(excess.std() * 2)
+    assert q1.benchmark_win_rate == pytest.approx((excess > 0).mean())
+
+
+def test_factor_backtest_uses_pre_start_history_for_rolling_factor(market_data_dir):
+    payload = _request_payload()
+    payload.update({
+        "factor_code": "def momentum_20d(self):\n    return self.close.pct_change(20)",
+        "factor_name": "momentum_20d",
+        "start": "2022-02-01",
+        "end": "2022-03-31",
+        "analysis_level": "core",
+    })
+    response = client.post("/api/backtest/factor", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["error"] is None
+    # 20 日动量在收益区间首日就有预热值；净值从首个持有日开始，
+    # 而不是等到收益区间内再滚满 20 天。
+    assert body["date_range"] == {"start": "2022-02-02", "end": "2022-03-31"}
+
+
+def test_experiment_uses_unadjusted_ohlc_for_factor_values(market_data_dir):
+    from quantcore import BaseFactor
+    from researchengine import ConfigManager, Experiment
+
+    class OhlcMean(BaseFactor):
+        name = "ohlc_mean_unadjusted"
+
+        def compute(self, data):
+            return (data.open + data.high + data.low + data.close) / 4.0
+
+    config = ConfigManager()
+    config.set("data_dir", str(market_data_dir))
+    config.set("factor_analysis.level", "core")
+    config.set("groups", 3)
+    config.set("long_short", False)
+    result = Experiment(
+        factor=OhlcMean(),
+        universe="CSI500",
+        start_date="2022-02-01",
+        end_date="2022-02-04",
+        config=config,
+    ).run()
+
+    display = pd.read_parquet(
+        market_data_dir / "display" / "unadjusted_price.parquet"
+    )
+    expected = pd.DataFrame(
+        {
+            symbol: sum(
+                display[(symbol, field)]
+                for field in ("open", "high", "low", "close")
+            ) / 4.0
+            for symbol in result.factor_values.columns
+        },
+        index=display.index,
+    )
+    expected = expected.reindex(
+        index=result.factor_values.index,
+        columns=result.factor_values.columns,
+    )
+    pd.testing.assert_frame_equal(
+        result.factor_values,
+        expected,
+        check_names=False,
+    )
+    assert result.meta["factor_price_adjustment"] == "unadjusted"
+    assert result.meta["factor_price_fields"] == ["open", "high", "low", "close"]
+    assert result.meta["return_price_adjustment"] == "hfq"
+
+    hfq_close = pd.read_parquet(market_data_dir / "close.parquet").set_index("datetime")
+    hfq_returns = hfq_close.pct_change(fill_method=None).reindex(
+        index=result.positions.index,
+        columns=result.positions.columns,
+    )
+    expected_returns = (result.positions * hfq_returns).sum(axis=1)
+    expected_display_returns = expected_returns.copy()
+    expected_display_returns.iloc[0] = 0.0
+    pd.testing.assert_series_equal(
+        result.equity_curve,
+        (1.0 + expected_display_returns).cumprod(),
+        check_names=False,
+    )
 
 
 def test_factor_backtest_loads_builtin_factor_library(market_data_dir):
@@ -282,6 +433,123 @@ def test_factor_backtest_loads_classic_indicator_library(market_data_dir):
 
     assert response.status_code == 200
     assert response.json()["error"] is None
+
+
+@pytest.mark.parametrize(
+    ("library_name", "factor_name"),
+    [
+        ("momentum_lib", "momentum_5d"),
+        ("volatility_lib", "parkinson_volatility"),
+    ],
+)
+def test_factor_backtest_loads_every_library_registered_in_index_yaml(
+    market_data_dir, monkeypatch, library_name, factor_name
+):
+    """API 库注册必须跟随 index.yaml，而不是 runner 中的重复名单。"""
+    monkeypatch.setenv(
+        "SVQUANT_FACTOR_DIR",
+        str(Path(__file__).resolve().parents[2] / "Factor" / "libraries"),
+    )
+    payload = _request_payload()
+    payload.pop("factor_code")
+    payload.update({"library_name": library_name, "factor_name": factor_name})
+    response = client.post("/api/backtest/factor", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["error"] is None
+
+
+def test_factor_api_lists_libraries_registered_in_index_yaml():
+    from researchengine.api.routes import _builtin_factors
+
+    names = {factor.name for factor in _builtin_factors()}
+    assert {"momentum_5d", "parkinson_volatility"}.issubset(names)
+
+
+def test_factor_api_lists_factor_libraries():
+    response = client.get("/api/factor-libraries")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "libraries" in payload
+    assert "factors" not in payload
+    libraries = {item["name"]: item for item in payload["libraries"]}
+    assert {"momentum_lib", "volatility_lib", "worldquant_alpha101"}.issubset(libraries)
+    assert libraries["momentum_lib"]["factor_count"] == 18
+
+    # /api/factors 只保留指定库因子资源，不再承担因子库目录功能。
+    assert client.get("/api/factors").status_code == 404
+
+
+def test_factor_api_lists_factors_for_one_library():
+    response = client.get("/api/factors/classic_indicators")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["library_name"] == "classic_indicators"
+    names = {item["name"] for item in payload["factors"]}
+    assert {"ma", "macd", "rsi"}.issubset(names)
+
+    missing = client.get("/api/factors/not_a_factor_library")
+    assert missing.status_code == 404
+
+
+def test_factor_api_registry_uses_index_yaml_as_its_only_source(tmp_path, monkeypatch):
+    """替换索引后，API 注册范围应随 YAML 变化，而非依赖硬编码库名。"""
+    library_name = "temporary_indexed_lib"
+    (tmp_path / f"{library_name}.py").write_text(
+        "from quantcore import FactorLibrary\n\n"
+        "class TemporaryIndexedLibrary(FactorLibrary):\n"
+        "    def temporary_factor(self):\n"
+        "        return self.close\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "index.yaml").write_text(
+        "libraries:\n"
+        f"  {library_name}:\n"
+        f"    file: {library_name}.py\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SVQUANT_FACTOR_DIR", str(tmp_path))
+
+    from researchengine.factor_catalog import sync_catalog
+    from researchengine.api.runner import (
+        _load_factor_from_builtin_library,
+        builtin_factor_library_names,
+    )
+
+    sync_catalog(factor_dir=tmp_path)
+    assert builtin_factor_library_names() == (library_name,)
+    assert _load_factor_from_builtin_library(library_name, "temporary_factor").name == (
+        "temporary_factor"
+    )
+
+
+def test_builtin_factor_loader_rejects_unsynchronized_index(tmp_path, monkeypatch):
+    """源码已有因子但 index.yaml 未同步时，API 不应静默加载。"""
+    library_name = "stale_indexed_lib"
+    (tmp_path / f"{library_name}.py").write_text(
+        "from quantcore import FactorLibrary\n\n"
+        "class StaleIndexedLibrary(FactorLibrary):\n"
+        "    def first_factor(self):\n"
+        "        return self.close\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "index.yaml").write_text(
+        "libraries:\n"
+        f"  {library_name}:\n"
+        f"    file: {library_name}.py\n"
+        "    class: StaleIndexedLibrary\n"
+        "    factor_count: 0\n"
+        "    factors: []\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SVQUANT_FACTOR_DIR", str(tmp_path))
+
+    from researchengine.api.runner import _load_builtin_factor_library
+
+    with pytest.raises(ValueError, match="未同步"):
+        _load_builtin_factor_library(library_name)
 
 
 def test_factor_backtest_custom_factor_can_combine_builtin_library_methods(market_data_dir):
@@ -352,6 +620,9 @@ def test_factor_backtest_defaults_to_core_analysis(market_data_dir):
     analysis = body["factor_analysis"]
     assert analysis["definition"]["analysis_level"] == "core"
     assert set(analysis["layered_returns"]) >= {"layer1", "layer2", "layer3"}
+    assert [item["quantile"] for item in analysis["quantile_metrics"]] == [
+        "Q1", "Q2", "Q3"
+    ]
     assert analysis["industry_equity_curves"] == []
     assert analysis["ic_series"] == []
     assert body["meta"]["timings_seconds"]["api_total"] >= 0
@@ -921,6 +1192,7 @@ def test_factor_api_reads_current_market_data_layout(market_data_dir):
     for path in market_data_dir.glob("*.parquet"):
         target_dir = metadata if path.name == "stock_info.parquet" else panels
         shutil.copy2(path, target_dir / path.name)
+    shutil.copytree(market_data_dir / "display", current / "display")
     shutil.copytree(market_data_dir / "benchmark", current / "benchmark")
 
     response = client.post("/api/backtest/factor", json=_request_payload())

@@ -75,9 +75,9 @@ class FactorBacktestRequest(BaseModel):
     #: 要跑的因子名（FactorLibrary 的方法名，或 BaseFactor 的 ``name``）
     factor_name: str = Field("alpha101", description="因子名")
     #: 组合构建方式：long_only=纯多头 | long_short=多空组合
-    portfolio_type: str = Field("long_short", description="long_only | long_short")
+    portfolio_type: str = Field("long_only", description="long_only | long_short")
     #: 股票池
-    universe: str = Field("CSI_ALL", description="CSI_ALL | CSI300 | CSI500")
+    universe: str = Field("CSI300", description="CSI300 | CSI500 | CSI_ALL")
     universe_snapshot: Optional[UniverseSnapshotInput] = None
     #: 自定义回测区间
     start: Optional[str] = None
@@ -87,18 +87,18 @@ class FactorBacktestRequest(BaseModel):
     #: 是否过滤停牌股
     filter_suspended: bool = True
     #: 调仓间隔（交易日）
-    rebalance_days: int = Field(20, ge=1, description="调仓间隔，单位为交易日")
+    rebalance_days: int = Field(1, ge=1, description="调仓间隔，单位为交易日")
     #: 因子分层数
     groups: int = Field(5, ge=2, le=10, description="因子分层数，2-10 组")
     #: 对比基准
     benchmark: Literal["CSI300", "CSI500"] = "CSI300"
     benchmark_snapshot: Optional[BenchmarkSnapshotInput] = None
-    #: 手续费率（默认 3‱）
-    commission_rate: float = 0.0003
-    #: 印花税率（默认 1‰，仅卖出）
-    stamp_tax: float = 0.001
-    #: 滑点率（默认 1‰）
-    slippage_rate: float = 0.001
+    #: 手续费率（默认 0）
+    commission_rate: float = 0.0
+    #: 印花税率（默认 0，仅卖出）
+    stamp_tax: float = 0.0
+    #: 滑点率（默认 0）
+    slippage_rate: float = 0.0
     #: core 只计算回测和汇总指标；full 额外计算分层、FF3、行业曲线
     analysis_level: Literal["core", "full"] = Field(
         "core", description="core | full"
@@ -246,6 +246,20 @@ class LayeredPoint(BaseModel):
     layer10: Optional[float] = None
 
 
+class QuantileMetric(BaseModel):
+    """单个因子分位相对基准的绩效指标。"""
+
+    quantile: str
+    annual_return: Optional[float] = None
+    volatility: Optional[float] = None
+    sharpe: Optional[float] = None
+    max_drawdown: Optional[float] = None
+    annual_excess_return: Optional[float] = None
+    excess_volatility: Optional[float] = None
+    information_ratio: Optional[float] = None
+    benchmark_win_rate: Optional[float] = None
+
+
 class ValuePoint(BaseModel):
     """按日输出的单值序列点。"""
     date: str
@@ -290,6 +304,7 @@ class FactorAnalysis(BaseModel):
     rank_ic_mean: Optional[float] = None
     layered_returns: "dict[str, Optional[float]]" = {}
     cumulative_series: list[LayeredPoint] = []
+    quantile_metrics: list[QuantileMetric] = []
     definition: "dict[str, object]" = {}
     ic_series: list[ICPoint] = []
     cumulative_ic_series: list[ValuePoint] = []
@@ -450,7 +465,23 @@ class FactorInfo(BaseModel):
     description: Optional[str] = None
 
 
+class FactorLibraryInfo(BaseModel):
+    """一个已登记内置因子库的目录信息。"""
+
+    name: str
+    description: Optional[str] = None
+    factor_count: int = 0
+    tags: list[str] = Field(default_factory=list)
+
+
+class FactorLibraryListResponse(BaseModel):
+    """``GET /api/factor-libraries`` 返回的全部内置因子库。"""
+
+    libraries: list[FactorLibraryInfo]
+
+
 class FactorListResponse(BaseModel):
+    library_name: str
     factors: list[FactorInfo]
 
 

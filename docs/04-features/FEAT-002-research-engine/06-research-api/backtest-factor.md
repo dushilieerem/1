@@ -6,11 +6,11 @@
 {
   "factor_code": "def momentum(self, window=5):\n    return self.close.pct_change(window)",
   "factor_name": "momentum",
-  "portfolio_type": "long_short",
-  "universe": "CSI_ALL",
+  "portfolio_type": "long_only",
+  "universe": "CSI300",
   "start": "2024-01-01", "end": "2024-12-31",
-  "rebalance_days": 15, "groups": 5,
-  "benchmark": "CSI500", "analysis_level": "core"
+  "rebalance_days": 1, "groups": 5,
+  "benchmark": "CSI300", "analysis_level": "core"
 }
 ```
 
@@ -19,19 +19,46 @@
 | `factor_code` | string | — | 自定义因子函数。未传时必须传单个 `library_name`。 |
 | `library_name` | string/string[] | — | 内置库；自定义因子可传多个以复用方法。 |
 | `factor_name` | string | `alpha101` | 要执行的函数名。 |
-| `portfolio_type` | enum | `long_short` | `long_only` 或 `long_short`。 |
-| `universe` | string | `CSI_ALL` | 股票池。 |
+| `portfolio_type` | enum | `long_only` | `long_only` 或 `long_short`。 |
+| `universe` | string | `CSI300` | 股票池。 |
 | `universe_snapshot` | object/null | `null` | WebApp 已鉴权并解析的静态证券池快照；与 `universe` 至多传一个。 |
 | `start` / `end` | string/null | `null` | 回测区间，格式 `YYYY-MM-DD`。 |
-| `rebalance_days` | integer | `20` | 正整数交易日。 |
+| `rebalance_days` | integer | `1` | 正整数交易日。 |
 | `groups` | integer | `5` | 2–10 组。 |
 | `benchmark` | enum | `CSI300` | `CSI300`、`CSI500`、`CSI1000` 或 `SSE50`。 |
 | `benchmark_snapshot` | object/null | `null` | WebApp 已鉴权并解析的固定权重组合基准快照；与 `benchmark` 至多传一个。 |
 | `analysis_level` | enum | `core` | `core` 或 `full`；后者增加 IC/IR、FF3、行业曲线。 |
+| `commission_rate` | number | `0.0` | 手续费率。 |
+| `stamp_tax` | number | `0.0` | 卖出印花税率。 |
+| `slippage_rate` | number | `0.0` | 滑点率。 |
+
+### 日期语义
+
+`start/end` 是收益确认区间，不是因子计算区间。服务端会先用当前数据版本的完整可用历史计算因子（包括区间起点之前的预热数据），再将因子值、收盘价、远期收益、分层结果、指标和净值裁剪到请求区间。因子不需要额外声明 `warmup_days`；因子实现仍需自行避免使用未来数据。
 
 还支持 `filter_limit_up`、`filter_suspended`、`commission_rate`、`stamp_tax`、`slippage_rate`；完整示例和因子写法见 [因子与策略指南](../07-factor-strategy-guide.md)。
 
 成功响应包含 `metrics`、`equity_curve`、`drawdowns`、`annual_returns`、`factor_analysis`、`date_range`、`final_equity`、`benchmark_curve`、`excess_return`、`meta` 和 `error`。因子代码错误保持 HTTP `200`，并写入 `error`（此时 `meta` 为 `null`）。
+
+`factor_analysis.quantile_metrics` 返回每个因子分位（`Q1` 为最低分位，`QN` 为最高分位）的相对基准绩效：
+
+```json
+[
+  {
+    "quantile": "Q1",
+    "annual_return": 0.12,
+    "volatility": 0.18,
+    "sharpe": 0.67,
+    "max_drawdown": -0.21,
+    "annual_excess_return": 0.03,
+    "excess_volatility": 0.10,
+    "information_ratio": 0.30,
+    "benchmark_win_rate": 0.52
+  }
+]
+```
+
+其中 `annual_return`、`volatility`、`annual_excess_return` 和 `excess_volatility` 使用日频收益的算术年化口径（均值或标准差乘以 `252` 或 `√252`）；`sharpe` 和 `information_ratio` 的无风险利率均为 0；`benchmark_win_rate` 为日超额收益大于 0 的比例。`core` 与 `full` 均返回该字段；若分组或基准没有足够有效数据，对应指标为 `null`。
 
 使用自定义资产的请求示例：
 

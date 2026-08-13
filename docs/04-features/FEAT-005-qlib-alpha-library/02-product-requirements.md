@@ -15,5 +15,5 @@
 ## 非功能要求与验收
 
 - 不新增 Qlib 依赖。
-- 因子加载器可注册 518 个特征；`GET /api/factors` 可枚举内置 Alpha 与 Qlib Alpha 特征。
+- 因子加载器可注册 518 个特征；`GET /api/factor-libraries` 可枚举因子库，`GET /api/factors/alpha_features` 可枚举 Alpha158 / Alpha360 特征。
 - 代表性 K 线、滞后价格、VWAP 和滚动特征须通过确定性公式测试。

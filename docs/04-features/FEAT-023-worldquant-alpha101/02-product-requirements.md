@@ -35,7 +35,7 @@ FactorEngine / ResearchEngine
 - 不新增 WorldQuant、聚宽或其他第三方运行时依赖。
 - 每个因子返回与输入一致的日期×标的 `DataFrame`。
 - 101 个因子均能在包含 OHLCV、amount、市值和行业分类的标准测试面板上执行。
-- API 仅通过已登记的内置库白名单加载，不执行用户指定模块。
+- API 仅通过 `Factor/libraries/index.yaml` 已登记的内置库加载，不执行用户指定模块；该索引是唯一注册来源。
 
 ## 5. 可测试验收标准
 
@@ -44,4 +44,4 @@ FactorEngine / ResearchEngine
 3. 全部 101 个因子在标准面板上返回相同形状和索引列。
 4. 改变最后一行数据不会改变此前日期的因子值。
 5. 缺少 `amount` 时 VWAP 回退到典型价格仍可运行；具体数据口径在索引和技术设计中可追溯。
-6. `/api/factors` 可以发现 `alpha001` 和 `alpha101`，内置白名单包含 `worldquant_alpha101`。
+6. `/api/factor-libraries` 返回 `worldquant_alpha101` 因子库，`/api/factors/worldquant_alpha101` 可以发现 `alpha001` 和 `alpha101`，且结果与 `Factor/libraries/index.yaml` 的登记保持一致。

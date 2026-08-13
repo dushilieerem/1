@@ -35,14 +35,17 @@ BacktestRunner（核心执行器）
 内部流程：
   ① 编译因子代码（exec → FactorLibrary 子类 → 获取因子方法）
   ② 初始化 QuantCore 引擎（DataEngine / FactorEngine / MetricEngine，可注入）
-  ③ data_engine.get_panels(start, end) → Panel
-  ④ factor_engine.compute_panel(factor, panel) → factor_values
-  ⑤ forward_returns(close_panel, horizon) → 远期收益
-  ⑥ FactorQuantileStrategy(factor_values, close_panel, rebalance, stock_num, long_short)
-  ⑦ get_backtest_engine(engine).run(strategy.signals(), config) → equity/returns/positions
-  ⑧ metric_engine.calculate_all(MetricContext(...)) → metrics
-  ⑨ 序列化 → BacktestResult
+ ③ data_engine.get_panels(None, None) → 完整历史 Panel
+ ④ factor_engine.compute_panel(factor, panel) → 完整历史 factor_values
+ ⑤ 按 start/end 裁剪收益确认区间的 factor_values 与 close_panel
+ ⑥ forward_returns(close_panel, horizon) → 区间内远期收益
+ ⑦ FactorQuantileStrategy(factor_values, close_panel, rebalance, stock_num, long_short)
+ ⑧ get_backtest_engine(engine).run(strategy.signals(), config) → equity/returns/positions
+ ⑨ metric_engine.calculate_all(MetricContext(...)) → metrics
+ ⑩ 序列化 → BacktestResult
 ```
+
+`start/end` 只定义收益确认区间。因子计算使用当前数据版本的完整可用历史，以自动覆盖不同因子的预热需求；因子值、收益、指标和分析结果在计算后裁剪回请求区间。命名股票池仍按该区间内首个实际交易日解析并固定。
 
 **与旧 Experiment 的关键差异：**
 

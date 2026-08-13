@@ -1,7 +1,7 @@
 # ResearchEngine HTTP API（FastAPI）
 
-> 文档版本：v2.3
-> 最后更新：2026-07-31
+> 文档版本：v2.4
+> 最后更新：2026-08-12
 
 ResearchEngine 是无状态的研究计算服务：接收代码与参数、执行回测、返回结构化结果；不管理用户、因子/策略资产或回测结果持久化。开发期临时承载的 AI 因子草稿端点只生成并静态校验代码，不执行回测，待 SaaS 应用层具备身份与资产治理后迁出。
 
@@ -22,6 +22,8 @@ uvicorn researchengine.api.app:app --reload
 | 模块 | 方法 | 端点 | 文档 |
 |------|------|------|------|
 | 系统 | GET | `/api/health` | [健康检查](06-research-api/health.md) |
+| 因子目录 | GET | `/api/factor-libraries` | [因子库目录](06-research-api/factor-libraries.md) |
+| 因子目录 | GET | `/api/factors/{library_name}` | [指定库因子列表](06-research-api/factor-library-factors.md) |
 | AI 因子草稿 | POST | `/api/ai/factor-generations` | [AI 因子草稿生成](06-research-api/ai-factor-generations.md) |
 | AI 策略草稿 | POST | `/api/ai/strategy-generations` | [AI 向量化策略草稿生成](06-research-api/ai-strategy-generations.md) |
 | AI 回测解读 | POST | `/api/ai/backtest-interpretations` | [AI 回测解读与优化建议](06-research-api/ai-backtest-interpretations.md) |

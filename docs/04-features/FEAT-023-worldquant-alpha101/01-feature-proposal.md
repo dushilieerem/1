@@ -27,7 +27,7 @@ WorldQuant Alpha 101 公式因子库（SVQuant 原生实现）。
 ### 必须做
 
 - 实现 101 条公式，稳定命名为 `alpha001`–`alpha101`。
-- 通过 `FactorLoader` 和 `/api/factors` 可发现，并通过内置库回测 API 调用。
+- 通过 `FactorLoader` 和 `/api/factors/worldquant_alpha101` 可发现，并通过内置库回测 API 调用。
 - 支持 OHLCV 面板；对 `amount`/`vwap`/市值/行业字段声明明确的优先级和降级口径。
 - 补充因子数量、代表性公式、全量计算、无未来数据测试。
 

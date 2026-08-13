@@ -11,16 +11,16 @@ sys.path.insert(0, str(ROOT))
 from data_ingestion.ifind.common.parquet import csv_to_flat_parquet
 from data_ingestion.ifind.date_sequence.csv import build_date_sequence_csv, update_date_sequence_csv
 from data_ingestion.ifind.date_sequence.download import date_sequence_payload, raw_path as date_raw_path, run_download as run_date_sequence_download
-from data_ingestion.ifind.index.index_price.csv import build_index_price_csv, update_index_price_csv
+from data_ingestion.ifind.index.index_price.csv import build_index_price_csv, update_index_price_csv, update_index_price_csv_range
 from data_ingestion.ifind.index.index_price.download import INDEX_PRICE, run_download as run_index_price_download
 from data_ingestion.ifind.index.index_price.parquet import csv_to_index_price_parquet
-from data_ingestion.ifind.index.index_weights.csv import build_index_weights_csv, update_index_weights_csv
+from data_ingestion.ifind.index.index_weights.csv import build_index_weights_csv, update_index_weights_csv, update_index_weights_csv_range
 from data_ingestion.ifind.index.index_weights.download import index_weights_payload
 from data_ingestion.ifind.index.index_weights.parquet import csv_to_index_weights_parquet
-from data_ingestion.ifind.market_data.csv import build_daily_csv, update_daily_csv
+from data_ingestion.ifind.market_data.csv import build_daily_csv, update_daily_csv, update_daily_csv_range
 from data_ingestion.ifind.market_data.download import LIQUIDITY, PRICE, history_payload
 from data_ingestion.ifind.market_data.parquet import csv_to_parquet
-from data_ingestion.ifind.unadjusted_price.csv import build_price_csv
+from data_ingestion.ifind.unadjusted_price.csv import build_price_csv, update_price_csv_range
 from data_ingestion.ifind.unadjusted_price.download import PRICE as UNADJUSTED_PRICE
 from data_ingestion.ifind.unadjusted_price.download import run_download as run_unadjusted_price_download
 from data_ingestion.ifind.unadjusted_price.parquet import csv_to_parquet as unadjusted_csv_to_parquet
@@ -150,6 +150,101 @@ def test_incremental_csv_update_replaces_only_target_date(tmp_path):
     with (tmp_path / "date_sequence" / "date_sequence.csv").open(encoding="utf-8", newline="") as stream:
         rows = list(csv.reader(stream))
     assert len(rows) == 3 and rows[2][rows[1].index("float_mv")] == "100"
+
+
+def test_range_csv_updates_merge_all_missing_trade_dates(tmp_path):
+    universe = tmp_path / "universe" / "a_share.csv"
+    universe.parent.mkdir(parents=True)
+    universe.write_text("thscode,exchange\n600000.SH,SH\n", encoding="utf-8")
+
+    for trade_date, close in (("2026-08-08", 10.5), ("2026-08-11", 11.0)):
+        price = {
+            "tables": [{
+                "thscode": "600000.SH",
+                "time": [trade_date],
+                "table": {"open": [10], "high": [11], "low": [9], "close": [close]},
+            }]
+        }
+        liquidity = {
+            "tables": [{
+                "thscode": "600000.SH",
+                "time": [trade_date],
+                "table": {"volume": [100], "amt": [1000], "turn": [2]},
+            }]
+        }
+        for group, body in (("price", price), ("liquidity", liquidity)):
+            raw = tmp_path / "market_data" / "raw" / group / "SH" / f"{trade_date}_{trade_date}" / "symbols_00001.json"
+            raw.parent.mkdir(parents=True, exist_ok=True)
+            raw.write_text(json.dumps(body), encoding="utf-8")
+        unadjusted_raw = tmp_path / "unadjusted_price" / "raw" / "SH" / f"{trade_date}_{trade_date}" / "symbols_00001.json"
+        unadjusted_raw.parent.mkdir(parents=True, exist_ok=True)
+        unadjusted_raw.write_text(json.dumps(price), encoding="utf-8")
+
+    build_daily_csv(tmp_path, workers=1)
+    build_price_csv(tmp_path, workers=1)
+    result = update_daily_csv_range(
+        tmp_path, ["2026-08-08", "2026-08-11"], workers=1
+    )
+    unadjusted_result = update_price_csv_range(
+        tmp_path, ["2026-08-08", "2026-08-11"], workers=1
+    )
+
+    assert result["replaced_rows"] == 2
+    assert unadjusted_result["replaced_rows"] == 2
+    with (tmp_path / "market_data" / "market_data_hfq.csv").open(
+        encoding="utf-8", newline=""
+    ) as stream:
+        assert [row[0] for row in list(csv.reader(stream))[2:]] == [
+            "2026-08-08",
+            "2026-08-11",
+        ]
+
+
+def test_index_range_csv_updates_merge_multiple_dates(tmp_path):
+    weights_root = tmp_path / "index" / "index_weights" / "raw" / "000300.SH"
+    prices_root = tmp_path / "index" / "index_price" / "raw" / "000300.SH"
+    weights_root.mkdir(parents=True)
+    prices_root.mkdir(parents=True)
+    for trade_date, weight, close in (
+        ("2026-08-08", 0.01, 4080),
+        ("2026-08-11", 0.02, 4090),
+    ):
+        (weights_root / f"{trade_date}.json").write_text(
+            json.dumps({
+                "data": {
+                    "columns": ["p03563_f002", "p03563_f004"],
+                    "data": [["600000.SH", weight]],
+                }
+            }),
+            encoding="utf-8",
+        )
+        (prices_root / f"{trade_date}_{trade_date}.json").write_text(
+            json.dumps({
+                "tables": [{
+                    "thscode": "000300.SH",
+                    "time": [trade_date],
+                    "table": {
+                        "high": [4100],
+                        "open": [4050],
+                        "low": [4000],
+                        "close": [close],
+                    },
+                }]
+            }),
+            encoding="utf-8",
+        )
+
+    build_index_weights_csv(tmp_path, "000300.SH")
+    build_index_price_csv(tmp_path, "000300.SH")
+    weight_result = update_index_weights_csv_range(
+        tmp_path, "000300.SH", ["2026-08-08", "2026-08-11"]
+    )
+    price_result = update_index_price_csv_range(
+        tmp_path, "000300.SH", ["2026-08-08", "2026-08-11"]
+    )
+
+    assert weight_result["replaced_rows"] == 2
+    assert price_result["replaced_rows"] == 2
 
 
 def test_index_weights_json_to_csv_and_incremental_update(tmp_path):

@@ -11,6 +11,7 @@ HTTP 路由调用的纯函数。
 from __future__ import annotations
 
 import inspect
+import math
 import os
 import shutil
 import sys
@@ -21,6 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 import pandas as pd
+import yaml
 
 from researchengine.api.schemas import (
     AnnualReturn,
@@ -38,6 +40,7 @@ from researchengine.api.schemas import (
     Holding,
     LayeredPoint,
     PositionSnapshot,
+    QuantileMetric,
     RebalanceLog,
     RebalanceTrade,
     StrategyBacktestMeta,
@@ -57,15 +60,109 @@ from researchengine.api.serializers import (
 )
 
 
-BUILTIN_FACTOR_LIBRARIES = frozenset({
-    "alpha_library",
-    "alpha_features",
-    "worldquant_alpha101",
-    "technical_indicators",
-    "risk_indicators",
-    "emotion_indicators",
-    "classic_indicators",
-})
+def _builtin_factor_library_index() -> dict[str, dict]:
+    """读取因子库索引，作为 API 内置库注册的唯一来源。
+
+    ``FactorLoader`` 仍负责加载库的 Python 实现，但 API 是否允许某个
+    ``library_name`` 只由 ``Factor/libraries/index.yaml`` 决定。索引文件
+    位于 ``factor_library_dir`` 下，因此测试和部署都可以通过
+    ``SVQUANT_FACTOR_DIR`` 切换整套因子资产。
+    """
+    from researchengine.assets import factor_library_dir
+
+    index_path = factor_library_dir() / "index.yaml"
+    if not index_path.is_file():
+        raise FileNotFoundError(f"因子库索引不存在: {index_path}")
+
+    try:
+        payload = yaml.safe_load(index_path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"因子库索引无法解析: {index_path}") from exc
+
+    libraries = payload.get("libraries") if isinstance(payload, dict) else None
+    if not isinstance(libraries, dict):
+        raise ValueError(f"因子库索引缺少 libraries 映射: {index_path}")
+
+    invalid = [
+        name for name, metadata in libraries.items()
+        if not isinstance(name, str) or not name or not isinstance(metadata, dict)
+    ]
+    if invalid:
+        raise ValueError(f"因子库索引包含无效库条目: {invalid}")
+    return libraries
+
+
+def builtin_factor_library_names() -> tuple[str, ...]:
+    """返回 ``index.yaml`` 中登记的内置因子库名。"""
+    return tuple(sorted(_builtin_factor_library_index()))
+
+
+def _builtin_factor_library_entry(library_name: str) -> tuple[Path, str, dict]:
+    """解析并校验一个 YAML 登记的库，返回目录、模块名和元数据。"""
+    from researchengine.assets import factor_library_dir
+
+    libraries = _builtin_factor_library_index()
+    metadata = libraries.get(library_name)
+    if metadata is None:
+        raise ValueError(
+            f"不支持的内置因子库 {library_name!r}；可用: "
+            f"{list(builtin_factor_library_names())}"
+        )
+
+    file_name = metadata.get("file")
+    file_path = Path(file_name) if isinstance(file_name, str) else None
+    factor_dir = factor_library_dir()
+    if (
+        file_path is None
+        or file_path.name != file_name
+        or file_path.suffix != ".py"
+        or not (factor_dir / file_path).is_file()
+    ):
+        raise ValueError(
+            f"因子库 {library_name!r} 在 index.yaml 中声明的实现文件无效: "
+            f"{file_name!r}"
+        )
+    return factor_dir, file_path.stem, metadata
+
+
+def _load_builtin_factor_library(library_name: str):
+    """按 ``index.yaml`` 的文件声明加载一个内置因子库。"""
+    from researchengine import FactorLoader
+
+    factor_dir, module_name, metadata = _builtin_factor_library_entry(library_name)
+    loader = FactorLoader(factor_dir=str(factor_dir))
+    library = loader.load(module_name)
+
+    registered_factors = metadata.get("factors")
+    if not isinstance(registered_factors, list):
+        raise ValueError(
+            f"因子库 {library_name!r} 尚未由 factor_catalog 同步完整因子清单"
+        )
+    registered_names = [
+        item.get("name")
+        for item in registered_factors
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    ]
+    actual_names = sorted(loader.factors)
+    if len(registered_names) != len(set(registered_names)) or sorted(registered_names) != actual_names:
+        missing = sorted(set(actual_names) - set(registered_names))
+        extra = sorted(set(registered_names) - set(actual_names))
+        raise ValueError(
+            f"因子库 {library_name!r} 与 index.yaml 未同步；"
+            f"源码新增未登记: {missing}; 索引中不存在: {extra}"
+        )
+    if metadata.get("factor_count") != len(actual_names):
+        raise ValueError(
+            f"因子库 {library_name!r} 的 factor_count 与源码不一致；"
+            f"索引: {metadata.get('factor_count')}; 源码: {len(actual_names)}"
+        )
+    expected_class = metadata.get("class")
+    if expected_class and type(library).__name__ != expected_class:
+        raise ValueError(
+            f"因子库 {library_name!r} 的 class 与源码不一致；"
+            f"索引: {expected_class}; 源码: {type(library).__name__}"
+        )
+    return loader, library
 
 
 def _cache_enabled() -> bool:
@@ -205,16 +302,9 @@ def _load_factor_from_code(
 def _attach_builtin_library_methods(target_library, library_names: list[str]) -> None:
     """将内置库因子作为用户组合因子的方法依赖注入临时库。"""
     from quantcore.factor.base import library_factors
-    from researchengine import FactorLoader
 
     for library_name in library_names:
-        if library_name not in BUILTIN_FACTOR_LIBRARIES:
-            raise ValueError(
-                f"不支持的内置因子库 {library_name!r}；可用: "
-                f"{sorted(BUILTIN_FACTOR_LIBRARIES)}"
-            )
-
-        source_library = FactorLoader().load(library_name)
+        _loader, source_library = _load_builtin_factor_library(library_name)
         for factor_name, factor in library_factors(source_library).items():
             if hasattr(target_library, factor_name):
                 raise ValueError(f"内置因子 {factor_name!r} 与自定义因子方法重名")
@@ -227,16 +317,7 @@ def _attach_builtin_library_methods(target_library, library_names: list[str]) ->
 
 def _load_factor_from_builtin_library(library_name: str, factor_name: str):
     """从登记的内置因子库加载指定因子，不执行前端提交的源码。"""
-    if library_name not in BUILTIN_FACTOR_LIBRARIES:
-        raise ValueError(
-            f"不支持的内置因子库 {library_name!r}；可用: "
-            f"{sorted(BUILTIN_FACTOR_LIBRARIES)}"
-        )
-
-    from researchengine import FactorLoader
-
-    loader = FactorLoader()
-    loader.load(library_name)
+    loader, _library = _load_builtin_factor_library(library_name)
     if factor_name not in loader.factors:
         raise KeyError(
             f"因子 {factor_name!r} 不在内置库 {library_name!r} 中；"
@@ -448,6 +529,112 @@ def _layered_equity_to_points(equity: pd.DataFrame) -> list[LayeredPoint]:
             values[f"layer{number}"] = float(value)
         points.append(LayeredPoint(**values))
     return points
+
+
+def _finite_series(series: pd.Series) -> pd.Series:
+    """将序列转成可参与指标计算的有限数值。"""
+    values = pd.to_numeric(series, errors="coerce")
+    return values.replace([float("inf"), float("-inf")], pd.NA).dropna()
+
+
+def _safe_metric(value) -> float | None:
+    """将指标值转换成 JSON 安全的浮点数。"""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
+
+
+def _compute_quantile_metrics(
+    layered_equity: pd.DataFrame,
+    benchmark_equity: pd.Series,
+    periods_per_year: int = 252,
+) -> list[QuantileMetric]:
+    """计算各因子分位的收益、风险和相对基准指标。"""
+    if layered_equity is None or layered_equity.empty:
+        return []
+    if benchmark_equity is None or benchmark_equity.empty:
+        return []
+
+    benchmark_returns = _finite_series(
+        benchmark_equity.pct_change(fill_method=None)
+    ).rename("benchmark")
+    annualization = math.sqrt(periods_per_year)
+    result = []
+
+    for number, column in enumerate(layered_equity.columns, start=1):
+        equity = _finite_series(layered_equity[column])
+        returns = _finite_series(equity.pct_change(fill_method=None))
+        aligned = pd.concat(
+            [returns.rename("group"), benchmark_returns], axis=1, join="inner"
+        ).dropna()
+        excess = aligned["group"] - aligned["benchmark"]
+
+        return_std = returns.std()
+        excess_std = excess.std()
+        annual_return = (
+            _safe_metric(returns.mean() * periods_per_year)
+            if not returns.empty else None
+        )
+        volatility = (
+            _safe_metric(return_std * annualization)
+            if not pd.isna(return_std) else None
+        )
+        sharpe = None
+        if not returns.empty and not pd.isna(return_std):
+            sharpe = _safe_metric(
+                0.0 if return_std == 0
+                else returns.mean() / return_std * annualization
+            )
+
+        max_drawdown = None
+        if not equity.empty:
+            running_max = equity.cummax()
+            drawdown = (equity - running_max).div(
+                running_max.where(running_max != 0)
+            )
+            if not drawdown.dropna().empty:
+                max_drawdown = _safe_metric(drawdown.min())
+
+        annual_excess_return = (
+            _safe_metric(excess.mean() * periods_per_year)
+            if not excess.empty else None
+        )
+        excess_volatility = (
+            _safe_metric(excess_std * annualization)
+            if not pd.isna(excess_std) else None
+        )
+        information_ratio = None
+        if not excess.empty and not pd.isna(excess_std):
+            information_ratio = _safe_metric(
+                0.0 if excess_std == 0
+                else excess.mean() / excess_std * annualization
+            )
+        benchmark_win_rate = (
+            _safe_metric((excess > 0).mean()) if not excess.empty else None
+        )
+
+        column_name = str(column)
+        if column_name.lower().startswith("layer"):
+            quantile = f"Q{column_name[5:]}"
+        elif column_name.upper().startswith("Q"):
+            quantile = column_name.upper()
+        else:
+            quantile = f"Q{number}"
+        result.append(QuantileMetric(
+            quantile=quantile,
+            annual_return=annual_return,
+            volatility=volatility,
+            sharpe=sharpe,
+            max_drawdown=max_drawdown,
+            annual_excess_return=annual_excess_return,
+            excess_volatility=excess_volatility,
+            information_ratio=information_ratio,
+            benchmark_win_rate=benchmark_win_rate,
+        ))
+
+    return result
 
 
 def _value_points(series: pd.Series) -> list[ValuePoint]:
@@ -762,7 +949,7 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
         mgr = ExperimentManager()
         exp = mgr.create(
             factor=factor,
-            universe=req.universe,
+            universe=universe,
             start=req.start,
             end=req.end,
             config=cfg,
@@ -797,6 +984,7 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
     metrics = metrics_to_dict(result.metrics)
     analysis = getattr(result, "factor_analysis", {})
     factor_analysis = None
+    layered_equity = pd.DataFrame()
     if req.analysis_level in {"core", "full"}:
         layered_equity = analysis.get("layered_equity", pd.DataFrame())
         ic_series = analysis.get("ic_series", pd.DataFrame())
@@ -850,6 +1038,12 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
     except Exception as exc:  # noqa: BLE001
         return FactorBacktestResponse(error=f"{type(exc).__name__}: {exc}", meta=None)
     benchmark_curve = _compute_equity_with_drawdown(benchmark_equity)
+    if factor_analysis is not None:
+        factor_analysis.quantile_metrics = _compute_quantile_metrics(
+            layered_equity,
+            benchmark_equity,
+            periods_per_year=int(cfg.get("periods_per_year", 252)),
+        )
     common_dates = equity.index.intersection(benchmark_equity.index)
     excess_return = None
     if len(common_dates):

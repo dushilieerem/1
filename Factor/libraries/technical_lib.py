@@ -242,6 +242,27 @@ class TechnicalLib(FactorLibrary):
             denominator.rolling(window).mean() + 1e-10
         )
 
+    def awesome_oscillator(self, fast: int = 5, slow: int = 34):
+        """奇妙振荡器：短长周期中间价均线之差。"""
+        midpoint = (self.high + self.low) / 2
+        return midpoint.rolling(fast).mean() - midpoint.rolling(slow).mean()
+
+    def balance_of_power(self):
+        """平衡交易力量：收盘开盘差相对当日高低价区间。"""
+        return (self.close - self.open) / (self.high - self.low + 1e-10)
+
+    def choppiness_index(self, window: int = 14):
+        """混沌指标：衡量市场处于震荡还是方向性趋势。"""
+        true_range_sum = self._true_range().rolling(window).sum()
+        price_range = self.high.rolling(window).max() - self.low.rolling(window).min()
+        ratio = (true_range_sum / (price_range + 1e-10)).clip(lower=1e-10)
+        return 100 * np.log10(ratio) / np.log10(window)
+
+    def elder_force_index(self, window: int = 13):
+        """艾达尔强力指数：成交量加权收盘价变动的指数平滑值。"""
+        raw_force = self.close.diff() * self.volume
+        return raw_force.ewm(span=window, adjust=False).mean()
+
     def _true_range(self):
         previous_close = self.close.shift()
         first = self.high - self.low

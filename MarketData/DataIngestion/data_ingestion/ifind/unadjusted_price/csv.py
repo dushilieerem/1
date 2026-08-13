@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from data_ingestion.ifind.common.paths import DEFAULT_OUTPUT_ROOT
+from data_ingestion.ifind.common.file_ops import replace_with_retry
 from data_ingestion.ifind.unadjusted_price.download import PRICE
 from data_ingestion.ifind.universe.pipeline import existing_universe_path
 
@@ -132,14 +133,22 @@ def build_price_csv(output_root: Path, workers: int = DEFAULT_WORKERS, universe_
             for row in _wide_rows(parsed).values():
                 _write_row(writer, columns, row)
                 summary["rows"] += 1
-    temporary_path.replace(output_path)
+    replace_with_retry(temporary_path, output_path)
     print(f"[unadjusted_price_csv] 已完成：{summary['rows']} 行，写入 {output_path}", flush=True)
     return summary
 
 
-def update_price_csv(output_root: Path, as_of: str, workers: int = DEFAULT_WORKERS, universe_path: Path | None = None) -> dict[str, int]:
+def update_price_csv_range(
+    output_root: Path,
+    dates: list[str],
+    workers: int = DEFAULT_WORKERS,
+    universe_path: Path | None = None,
+) -> dict[str, int]:
     if workers <= 0:
         raise ValueError("workers 必须大于零")
+    dates = sorted(set(dates))
+    if not dates:
+        return {"rows": 0, "replaced_rows": 0, "partitions": 0}
     universe_path = universe_path or existing_universe_path(output_root)
     columns = _wide_columns(universe_path)
     output_path = output_root / OUTPUT_DIR / OUTPUT_FILENAME
@@ -151,14 +160,14 @@ def update_price_csv(output_root: Path, as_of: str, workers: int = DEFAULT_WORKE
         if tuple(next(reader, [])) != tuple(_headers(columns)[0]) or tuple(next(reader, [])) != tuple(_headers(columns)[1]):
             print("[unadjusted_price_csv] 现有 CSV 不是当前宽表结构，改为全量重建", flush=True)
             return build_price_csv(output_root, workers, universe_path)
-    jobs = _jobs_for_date(output_root, as_of)
+    jobs = [job for trade_date in dates for job in _jobs_for_date(output_root, trade_date)]
     parsed = list(_parallel_load(jobs, workers))
-    delta = _wide_rows(parsed).get(as_of)
-    if delta is None:
-        print(f"[unadjusted_price_csv] 未找到 {as_of} 的原始 JSON，CSV 不变", flush=True)
+    delta_rows = _wide_rows(parsed)
+    if not delta_rows:
+        print(f"[unadjusted_price_csv] 未找到 {dates[0]} 至 {dates[-1]} 的原始 JSON，CSV 不变", flush=True)
         return {"rows": 0, "replaced_rows": 0, "partitions": len(jobs)}
     temporary_path = output_path.with_suffix(".csv.tmp")
-    summary = {"rows": 0, "replaced_rows": 1, "partitions": len(jobs)}
+    summary = {"rows": 0, "replaced_rows": len(delta_rows), "partitions": len(jobs)}
     with output_path.open(encoding="utf-8-sig", newline="") as source, temporary_path.open("w", encoding="utf-8", newline="") as target:
         reader = csv.reader(source)
         next(reader, None)
@@ -166,15 +175,23 @@ def update_price_csv(output_root: Path, as_of: str, workers: int = DEFAULT_WORKE
         writer = csv.writer(target)
         writer.writerows(_headers(columns))
         for row in reader:
-            if row and row[0] == as_of:
+            if row and row[0] in delta_rows:
                 continue
             writer.writerow(row)
             summary["rows"] += 1
-        _write_row(writer, columns, delta)
-        summary["rows"] += 1
-    temporary_path.replace(output_path)
-    print(f"[unadjusted_price_csv] 已完成当日更新：替换 1 行，写入 {output_path}", flush=True)
+        for trade_date in sorted(delta_rows):
+            _write_row(writer, columns, delta_rows[trade_date])
+            summary["rows"] += 1
+    replace_with_retry(temporary_path, output_path)
+    print(
+        f"[unadjusted_price_csv] 已完成区间更新：替换 {len(delta_rows)} 行，写入 {output_path}",
+        flush=True,
+    )
     return summary
+
+
+def update_price_csv(output_root: Path, as_of: str, workers: int = DEFAULT_WORKERS, universe_path: Path | None = None) -> dict[str, int]:
+    return update_price_csv_range(output_root, [as_of], workers, universe_path)
 
 
 def main() -> None:

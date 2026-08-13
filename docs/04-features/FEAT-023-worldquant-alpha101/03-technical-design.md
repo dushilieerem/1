@@ -10,7 +10,7 @@ Factor/libraries/worldquant_alpha101.py
 ResearchEngine FactorLoader
   └─ 动态加载并注册 101 个方法因子
 ResearchEngine API
-  └─ 白名单加载 worldquant_alpha101
+  └─ 按 Factor/libraries/index.yaml 登记加载 worldquant_alpha101
 ```
 
 QuantCore 继续只负责通用 `Panel`、因子基类和计算后端；公式库不把行业、数据源或回测逻辑写入 QuantCore。
@@ -36,9 +36,8 @@ QuantCore 继续只负责通用 `Panel`、因子基类和计算后端；公式�
 
 ## 4. 兼容、回滚与接口影响
 
-- 新增 `worldquant_alpha101` 到 `BUILTIN_FACTOR_LIBRARIES`，不修改旧 `alpha_library`。
-- `Factor/libraries/index.yaml` 增加 101 个因子元数据和依赖说明；现有索引版本保持不变。
-- 若新库出现问题，可从白名单和索引移除，旧库和其他内置库不受影响。
+- 在 `Factor/libraries/index.yaml` 登记 `worldquant_alpha101` 及 101 个因子元数据和依赖说明；不再维护独立的 API 库名名单。
+- 若新库出现问题，从 `Factor/libraries/index.yaml` 移除对应库条目即可停止 API 发现与调用，旧库和其他内置库不受影响。
 - API 使用示例：
 
 ```json

@@ -88,29 +88,48 @@ def build_index_price_csv(output_root: Path, index_code: str) -> dict[str, int]:
     return {"rows": len(rows_by_date), "partitions": len(paths)}
 
 
-def update_index_price_csv(output_root: Path, index_code: str, as_of: str) -> dict[str, int]:
+def update_index_price_csv_range(
+    output_root: Path,
+    index_code: str,
+    dates: list[str],
+) -> dict[str, int]:
+    dates = sorted(set(dates))
+    if not dates:
+        return {"rows": 0, "replaced_rows": 0, "partitions": 0}
     output_path = artifact_path(output_root, index_code, "csv")
     if not output_path.is_file():
         print("[index_price_csv] 完整 CSV 不存在，改为全量重建", flush=True)
         return build_index_price_csv(output_root, index_code)
-    paths = _raw_paths_for_date(output_root, index_code, as_of)
-    delta = _load_rows(paths, index_code).get(as_of)
-    if delta is None:
-        print(f"[index_price_csv] 未找到 {as_of} 的原始 JSON，CSV 不变", flush=True)
+    paths = sorted({
+        path
+        for date in dates
+        for path in _raw_paths_for_date(output_root, index_code, date)
+    })
+    loaded_rows = _load_rows(paths, index_code)
+    deltas = {date: loaded_rows[date] for date in dates if date in loaded_rows}
+    if not deltas:
+        print(f"[index_price_csv] 未找到 {dates[0]} 至 {dates[-1]} 的原始 JSON，CSV 不变", flush=True)
         return {"rows": 0, "replaced_rows": 0, "partitions": 0}
     with output_path.open(encoding="utf-8-sig", newline="") as source:
         reader = csv.DictReader(source)
         if tuple(reader.fieldnames or ()) != ("date", *OUTPUT_FIELDS):
             print("[index_price_csv] 现有 CSV 不是当前结构，改为全量重建", flush=True)
             return build_index_price_csv(output_root, index_code)
-        rows = [row for row in reader if row["date"] != as_of]
-    rows.append(delta)
+        rows = [row for row in reader if row["date"] not in deltas]
+    rows.extend(deltas.values())
     rows.sort(key=lambda row: str(row["date"]))
     temporary_path = output_path.with_suffix(".csv.tmp")
     _write_csv(temporary_path, rows)
     temporary_path.replace(output_path)
-    print(f"[index_price_csv] 已完成当日更新：替换 {as_of}，写入 {output_path}", flush=True)
-    return {"rows": len(rows), "replaced_rows": 1, "partitions": len(paths)}
+    print(
+        f"[index_price_csv] 已完成区间更新：替换 {len(deltas)} 行，写入 {output_path}",
+        flush=True,
+    )
+    return {"rows": len(rows), "replaced_rows": len(deltas), "partitions": len(paths)}
+
+
+def update_index_price_csv(output_root: Path, index_code: str, as_of: str) -> dict[str, int]:
+    return update_index_price_csv_range(output_root, index_code, [as_of])
 
 
 def main() -> None:

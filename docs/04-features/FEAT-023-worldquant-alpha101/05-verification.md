@@ -7,7 +7,7 @@
 - 101 个因子在含 OHLCV、amount、市值和行业字段的标准面板上全部返回日期×标的宽表。
 - 改变最后一行数据后，Alpha 1、41、58、101 的历史输出保持不变。
 - 缺少 `amount` 时，VWAP 相关公式按约定回退到典型价格。
-- `/api/factors` 可发现 `alpha001`、`alpha101`；内置回测白名单包含 `worldquant_alpha101`。
+- `/api/factor-libraries` 可发现 `worldquant_alpha101`；`/api/factors/worldquant_alpha101` 可发现 `alpha001`、`alpha101`，且 API 可用库与 `Factor/libraries/index.yaml` 登记一致。
 
 ## 执行命令
 

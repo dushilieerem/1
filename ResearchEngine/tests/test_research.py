@@ -114,6 +114,38 @@ def test_experiment_end_to_end(tmp_path):
     assert (tmp_path / "out" / "metrics.csv").exists()
 
 
+def test_factor_uses_full_history_before_evaluation_window(tmp_path):
+    """start/end 只裁剪收益确认区间，滚动因子可使用区间前的历史预热。"""
+    _gen_data(tmp_path, days=80)
+    config = ConfigManager()
+    config.set("data_dir", str(tmp_path))
+    config.set("factor_analysis.level", "core")
+    config.set("n_groups", 5)
+    config.set("long_short", False)
+
+    from quantcore import BaseFactor
+
+    class Mom20(BaseFactor):
+        name = "mom20_full_history"
+
+        def compute(self, data):
+            return data.close.pct_change(20)
+
+    exp = Experiment(
+        factor=Mom20(),
+        universe="CSI500",
+        start_date="2022-02-01",
+        end_date="2022-03-31",
+        config=config,
+    )
+    result = exp.run()
+
+    # 结果因子值仍只保留收益确认区间，但起点已有 20 日历史预热后的有效值。
+    assert result.factor_values.index.min() == pd.Timestamp("2022-02-01")
+    assert result.factor_values.loc["2022-02-01"].notna().all()
+    assert result.factor_values.index.max() == pd.Timestamp("2022-03-31")
+
+
 def test_experiment_manager_run_all(tmp_path):
     _gen_data(tmp_path)
     config = ConfigManager()

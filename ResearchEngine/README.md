@@ -11,7 +11,7 @@
 SVQuant 界面 / 前端
     │  HTTP（FastAPI）
     ▼
-researchengine.api            # HTTP 适配层：/api/health · /api/factors · /api/backtest
+researchengine.api            # HTTP 适配层：/api/health · /api/factor-libraries · /api/factors/{library_name} · /api/backtest
     │  调 SDK
     ▼
 ResearchEngine（用户入口）
@@ -40,7 +40,7 @@ researchengine/
 ├── config.py            # ConfigManager
 ├── portfolio.py         # build_factor_portfolio（薄包装，委托 NativeEngine）
 ├── plotting.py          # 累计收益-回撤 / 分组 IC 图
-├── api/                 # HTTP 适配层（FastAPI）：/api/health · /api/factors · /api/backtest
+├── api/                 # HTTP 适配层（FastAPI）：/api/health · /api/factor-libraries · /api/factors/{library_name} · /api/backtest
 └── result/
     ├── manager.py      # ResultManager
     └── storage/        # ResultStorage + CSV/Parquet/SQLite/ClickHouse
@@ -108,8 +108,11 @@ uvicorn researchengine.api.app:app --reload   # Swagger UI: http://localhost:800
 
 // 内置因子库：不传 factor_code
 { "library_name": "risk_indicators", "factor_name": "kurtosis60",
-  "universe": "CSI500", "rebalance_days": 15, "groups": 5, "benchmark": "CSI500" }
+  "universe": "CSI300", "portfolio_type": "long_only",
+  "rebalance_days": 1, "groups": 5, "benchmark": "CSI300" }
 ```
+
+内置因子也可以只提交 `library_name` 和 `factor_name`；未填写的因子回测参数默认使用纯多头、沪深300、每日调仓，手续费、印花税和滑点均为 0。
 
 因子代码出错 -> `error` 字段填充，HTTP 200（不抛 500）。详见顶层 `docs/04-features/FEAT-002-research-engine/06-research-api.md`。
 

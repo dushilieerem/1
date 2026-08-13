@@ -47,10 +47,12 @@ MarketData/sources/ifind/
 `everydayupdate.py` 按数据依赖顺序执行一次完整的每日更新：
 
 1. 更新统一交易日历，并将 CSV 转为 Parquet；
-2. 更新全 A 股票池、指定股指权重与指数 OHLC，并分别更新 CSV 与 Parquet；
-3. 更新供回测使用的后复权日频行情与流动性，并更新 CSV 与 Parquet。
+2. 以不晚于 `as_of` 的最新交易日更新全 A 股票池；依次更新脚本内 `INDEX_CODES` 列表中全部指数的权重与 OHLC，各指数分别从自身现有最大交易日的下一交易日补到 `as_of`；
+3. 供回测使用的后复权日频行情与流动性，以及 WebApp 使用的未复权 OHLC，分别从自身最大交易日的下一交易日补到 `as_of`，再一次性更新各自完整 CSV 与 Parquet。
 
-任一步失败时脚本会立即报错并停止，不继续生成依赖不完整前置数据的后续产物。默认更新沪深 300（`000300.SH`）权重和后复权行情。WebApp 未复权价格保持独立运行，不包含在每日总更新中。
+任一步失败时脚本会立即报错并停止，不继续生成依赖不完整前置数据的后续产物。当前 `INDEX_CODES` 包含 `000300.SH` 和 `000905.SH`；以后直接修改 [everydayupdate.py](everydayupdate.py) 顶部的该列表即可增删每日维护的指数，无需修改编排逻辑。后复权回测行情和未复权 WebApp 行情始终随总更新运行。
+
+交易日区间以更新后的统一交易日历为准，只处理实际交易日。各时间序列独立读取自身 CSV 的最大日期，因此即使日历、指数或行情的进度不一致，也会分别补齐缺口；没有新增交易日时不会发起对应下载。若某项完整 CSV 尚不存在，无法推导历史起点，首次总更新保持原有行为：下载最新交易日，并用本地已有 raw JSON 重建完整 CSV。多日缺口会批量解析并一次写回，避免对完整宽表逐日重复改写。
 
 ```powershell
 cd MarketData/DataIngestion
@@ -61,12 +63,16 @@ python -m data_ingestion.ifind.everydayupdate
 # 显式指定目标日期
 python -m data_ingestion.ifind.everydayupdate --as-of 2026-08-11
 
-# 指定指数
+# 临时只更新指定指数，不使用脚本内 INDEX_CODES
 python -m data_ingestion.ifind.everydayupdate `
   --as-of 2026-08-11 --index 000905.SH
+
+# 临时更新多个指定指数；--index 可重复传入
+python -m data_ingestion.ifind.everydayupdate `
+  --index 000300.SH --index 000905.SH
 ```
 
-运行前必须通过 `IFIND_REFRESH_TOKEN` 环境变量提供凭据。脚本支持 `--output-root` 指定输出根目录、`--workers` 指定行情 CSV 解析进程数；完整参数可通过以下命令查看：
+运行前必须通过 `IFIND_REFRESH_TOKEN` 环境变量提供凭据。脚本支持 `--output-root` 指定输出根目录、`--workers` 指定行情 CSV 解析进程数；`--index` 只用于临时覆盖脚本内列表，未传入时始终更新 `INDEX_CODES` 中的所有指数。完整参数可通过以下命令查看：
 
 ```powershell
 python -m data_ingestion.ifind.everydayupdate --help

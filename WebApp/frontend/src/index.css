@@ -4,6 +4,8 @@
   --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
   /* 资讯标题：中文优先，避免 Inter 数字加粗 + 系统宋体/黑体混排发胖 */
   --font-news: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif;
+  /* 首页 / 登录展示标题（不全站替换） */
+  --font-display: "DM Sans", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
@@ -26,6 +28,399 @@ body {
 .font-news {
   font-family: var(--font-news);
   font-synthesis: none;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-synthesis: none;
+}
+
+@keyframes landing-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes landing-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.landing-hero-brand {
+  animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.landing-hero-title {
+  animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both;
+}
+
+.landing-hero-sub {
+  animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.16s both;
+}
+
+.landing-hero-cta {
+  animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.24s both;
+}
+
+.landing-hero-visual {
+  animation: landing-fade-in 1s ease 0.2s both;
+}
+
+.landing-chart-line {
+  stroke-dasharray: 1200;
+  stroke-dashoffset: 1200;
+  animation: landing-draw 1.6s cubic-bezier(0.22, 1, 0.36, 1) 0.35s forwards;
+}
+
+@keyframes landing-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes landing-float-slow {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes landing-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.25);
+  }
+}
+
+@keyframes landing-bar-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes landing-blob {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(18px, -12px) scale(1.05);
+  }
+}
+
+@keyframes landing-particle {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translateY(-14px);
+    opacity: 0.9;
+  }
+}
+
+@keyframes landing-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes landing-spin-rev {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes landing-bar-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes landing-wiggle {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  25% {
+    transform: translateY(-2px) rotate(-0.6deg);
+  }
+  75% {
+    transform: translateY(-1px) rotate(0.6deg);
+  }
+}
+
+.landing-float {
+  animation: landing-float 4.5s ease-in-out infinite;
+}
+
+.landing-float-slow {
+  animation: landing-float-slow 6s ease-in-out infinite;
+}
+
+.landing-pulse-dot {
+  animation: landing-pulse 1.8s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.landing-bar-grow {
+  transform-origin: bottom;
+  transform: scaleY(0);
+  animation: landing-bar-grow 0.85s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.landing-blob {
+  animation: landing-blob 12s ease-in-out infinite;
+}
+
+.landing-blob-delay {
+  animation: landing-blob 14s ease-in-out infinite reverse;
+}
+
+.landing-particle {
+  animation: landing-particle 4.5s ease-in-out infinite;
+}
+
+.landing-spin-slow {
+  animation: landing-spin 48s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.landing-spin-rev {
+  animation: landing-spin-rev 36s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.landing-bar-bob {
+  animation: landing-bar-bob 3.2s ease-in-out infinite;
+}
+
+.landing-wiggle-hover:hover {
+  animation: landing-wiggle 0.45s ease;
+}
+
+.landing-card-hover {
+  transition:
+    transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.25s ease,
+    border-color 0.25s ease,
+    background-color 0.25s ease;
+}
+
+.landing-card-hover:hover {
+  transform: translateY(-6px) rotate(-0.4deg);
+  border-color: rgb(254 202 202);
+  background-color: #fff;
+  box-shadow: 0 22px 50px -28px rgba(15, 23, 42, 0.28);
+}
+
+@keyframes landing-eq-draw-loop {
+  0% {
+    stroke-dashoffset: 900;
+  }
+  45% {
+    stroke-dashoffset: 0;
+  }
+  70% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: 900;
+  }
+}
+
+@keyframes landing-eq-fill-loop {
+  0%,
+  15% {
+    opacity: 0;
+  }
+  45%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes landing-layer-breath {
+  0%,
+  100% {
+    transform: scaleY(0.72);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.landing-layer-breath {
+  transform-origin: bottom;
+  animation: landing-layer-breath 2.8s ease-in-out infinite;
+}
+
+.landing-eq-line-strat,
+.landing-eq-line-bench {
+  stroke-dasharray: 900;
+  stroke-dashoffset: 900;
+  animation: landing-eq-draw-loop 5.5s ease-in-out infinite;
+}
+
+.landing-eq-line-bench {
+  animation-delay: 0.25s;
+}
+
+.landing-eq-fill {
+  animation: landing-eq-fill-loop 5.5s ease-in-out infinite;
+}
+
+@keyframes landing-hbar-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.landing-hbar-grow {
+  transform-origin: left center;
+  transform: scaleX(0);
+  animation: landing-hbar-grow 1.1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes landing-hbar-loop {
+  0% {
+    transform: scaleX(0);
+    opacity: 0.55;
+  }
+  35% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  70% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(0.08);
+    opacity: 0.55;
+  }
+}
+
+.landing-hbar-loop {
+  transform-origin: left center;
+  animation: landing-hbar-loop 3.6s ease-in-out infinite;
+}
+
+@keyframes landing-area-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.landing-area-rise {
+  animation: landing-area-rise 1.2s ease-out forwards;
+}
+
+.landing-area-stroke {
+  stroke-dasharray: none;
+  opacity: 0;
+  animation: landing-area-rise 1.2s ease-out 0.15s forwards;
+}
+
+@keyframes landing-comm-area-draw {
+  0% {
+    stroke-dashoffset: 1000;
+  }
+  40% {
+    stroke-dashoffset: 0;
+  }
+  72% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: 1000;
+  }
+}
+
+@keyframes landing-comm-area-fill {
+  0%,
+  12% {
+    opacity: 0;
+  }
+  40%,
+  72% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes landing-comm-dot {
+  0%,
+  12% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  40%,
+  72% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+.landing-comm-area-line {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: landing-comm-area-draw 4.8s ease-in-out infinite;
+}
+
+.landing-comm-area-fill {
+  animation: landing-comm-area-fill 4.8s ease-in-out infinite;
+}
+
+.landing-comm-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: landing-comm-dot 4.8s ease-in-out infinite;
 }
 
 ::selection {
@@ -341,5 +736,120 @@ body {
 .community-post-body strong {
   font-weight: 600;
   color: #0f172a;
+}
+
+/* AI 聊天：不要改 KaTeX 的 line-height，否则分数 / 1/T 会叠字 */
+.ai-md .katex {
+  font-size: 1.02em;
+  line-height: normal;
+  text-indent: 0;
+  font-style: normal;
+}
+.ai-md .katex * {
+  line-height: normal !important;
+  border-color: currentColor;
+}
+/* 外层唯一公式框；内部 katex-display 不再套第二层边框 */
+.ai-md .ai-math-block {
+  margin: 0.85em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.75rem 1rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+}
+.ai-md .ai-math-block .katex-display {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+}
+.ai-md .katex-display {
+  margin: 0.85em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.ai-md .katex-display > .katex {
+  text-align: left;
+  font-size: 1.05em;
+}
+.ai-md td .katex,
+.ai-md th .katex {
+  font-size: 0.95em;
+}
+/* 公式里的中文略缩小，避免比正文还抢眼 */
+.ai-md .katex .mord.text,
+.ai-md .katex .text,
+.ai-md .katex .textord {
+  font-family: ui-sans-serif, system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei",
+    sans-serif !important;
+  font-size: 0.82em !important;
+  font-weight: 400 !important;
+}
+.ai-md .katex .mfrac > span > span {
+  padding: 0 0.1em;
+}
+.ai-md .katex .mfrac .frac-line {
+  border-bottom-width: 0.05em !important;
+}
+/* 列表项间距：适合/不适合更易扫读 */
+.ai-md ul,
+.ai-md ol {
+  margin-top: 0.35rem;
+  margin-bottom: 0.65rem;
+}
+.ai-md li + li {
+  margin-top: 0.35rem;
+}
+
+/* AI 聊天代码块：白底 + DeepSeek 风浅色高亮 */
+.ai-code-block .hljs-comment,
+.ai-code-block .hljs-quote {
+  color: #6b7280;
+  font-style: italic;
+}
+.ai-code-block .hljs-keyword,
+.ai-code-block .hljs-selector-tag,
+.ai-code-block .hljs-subst {
+  color: #7c3aed;
+  font-weight: 500;
+}
+.ai-code-block .hljs-number,
+.ai-code-block .hljs-literal {
+  color: #c2410c;
+}
+.ai-code-block .hljs-string,
+.ai-code-block .hljs-doctag,
+.ai-code-block .hljs-regexp {
+  color: #059669;
+}
+.ai-code-block .hljs-title,
+.ai-code-block .hljs-section,
+.ai-code-block .hljs-name {
+  color: #2563eb;
+}
+.ai-code-block .hljs-type,
+.ai-code-block .hljs-class .hljs-title,
+.ai-code-block .hljs-built_in,
+.ai-code-block .hljs-attr {
+  color: #0d9488;
+}
+.ai-code-block .hljs-meta,
+.ai-code-block .hljs-symbol {
+  color: #64748b;
+}
+.ai-code-block .hljs-variable,
+.ai-code-block .hljs-template-variable,
+.ai-code-block .hljs-params {
+  color: #334155;
+}
+.ai-code-block .hljs-addition {
+  color: #059669;
+}
+.ai-code-block .hljs-deletion {
+  color: #dc2626;
 }
 

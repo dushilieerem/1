@@ -47,6 +47,9 @@ const ROW_BADGE: Record<string, string> = {
   小市值: "bg-cyan-50 text-cyan-700",
   最小方差: "bg-indigo-50 text-indigo-700",
   统计套利: "bg-fuchsia-50 text-fuchsia-700",
+  价值: "bg-orange-50 text-orange-700",
+  价值成长: "bg-sky-50 text-sky-700",
+  红利: "bg-rose-50 text-rose-700",
   其他: "bg-slate-100 text-slate-600",
 };
 
@@ -58,6 +61,9 @@ const COUNT_PILL: Record<string, string> = {
   小市值: "text-cyan-600",
   最小方差: "text-indigo-600",
   统计套利: "text-fuchsia-600",
+  价值: "text-orange-600",
+  价值成长: "text-sky-600",
+  红利: "text-rose-600",
 };
 
 function pageNumbers(current: number, total: number): (number | "…")[] {
@@ -297,8 +303,8 @@ export function StrategyLibraryPage() {
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50/80">
-      <div className="mx-auto max-w-[1440px] px-6 py-8">
-        <div className="relative mb-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm">
+      <div className="mx-auto max-w-[1440px] px-4 py-6 lg:px-6 lg:py-8">
+        <div className="relative mb-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm lg:p-6">
           <div className="bg-grid pointer-events-none absolute inset-0 opacity-40" />
           <div className="relative flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -312,10 +318,10 @@ export function StrategyLibraryPage() {
                 </div>
               </div>
               <div className="mt-3 text-xs text-slate-500">
-                <span className="font-semibold text-slate-700">
+                <span className="mb-1.5 block font-semibold text-slate-700 lg:mb-0 lg:inline">
                   内置策略分类及数量：
                 </span>
-                <span className="ml-2 inline-flex flex-wrap gap-3 font-semibold">
+                <span className="flex flex-wrap gap-x-3 gap-y-1.5 font-semibold lg:ml-2 lg:inline-flex lg:gap-3">
                   {builtinCategories.map((label) => (
                     <span
                       key={label}
@@ -327,14 +333,14 @@ export function StrategyLibraryPage() {
                 </span>
               </div>
             </div>
-            <div className="relative flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2">
-                <Search className="h-4 w-4 text-slate-400" />
+            <div className="relative flex w-full flex-col gap-2 lg:w-auto lg:flex-row lg:flex-wrap lg:items-center">
+              <div className="flex w-full min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 lg:w-auto lg:flex-none">
+                <Search className="h-4 w-4 shrink-0 text-slate-400" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="搜索名称、代码…"
-                  className="w-48 bg-transparent text-sm outline-none sm:w-56"
+                  className="w-full min-w-0 bg-transparent text-sm outline-none lg:w-56"
                 />
                 {query ? (
                   <button type="button" onClick={() => setQuery("")}>
@@ -342,6 +348,7 @@ export function StrategyLibraryPage() {
                   </button>
                 ) : null}
               </div>
+              <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={openCreate}
@@ -360,13 +367,14 @@ export function StrategyLibraryPage() {
                 <BarChart2 className="h-4 w-4" />
                 研究
               </Link>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="flex gap-5">
-          <aside className="w-52 shrink-0">
-            <div className="sticky top-20 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-5 lg:flex-row">
+          <aside className="w-full shrink-0 lg:w-52">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:sticky lg:top-20">
               <div className="border-b border-slate-100 px-3 py-2.5 text-xs font-semibold text-slate-500">
                 策略库
               </div>
@@ -461,7 +469,7 @@ export function StrategyLibraryPage() {
                     return (
                       <div
                         key={m.id}
-                        className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+                        className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm lg:flex-row lg:items-center lg:justify-between"
                       >
                         <div className="min-w-0">
                           <p className="truncate font-medium text-slate-900">
@@ -471,7 +479,7 @@ export function StrategyLibraryPage() {
                             {m.id}
                           </p>
                         </div>
-                        <div className="flex shrink-0 items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
                           {m.execution_mode === "event" ? (
                             <span className="rounded-md bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-800">
                               事件
@@ -506,7 +514,7 @@ export function StrategyLibraryPage() {
                     return (
                       <div
                         key={s.id}
-                        className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+                        className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm lg:flex-row lg:items-center lg:justify-between"
                       >
                         <div className="min-w-0">
                           <p className="truncate font-medium text-slate-900">
@@ -519,7 +527,7 @@ export function StrategyLibraryPage() {
                             {subtitle}
                           </p>
                         </div>
-                        <div className="flex shrink-0 items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
                           <span
                             className={`rounded-md px-2 py-0.5 text-xs font-medium ${badge}`}
                           >

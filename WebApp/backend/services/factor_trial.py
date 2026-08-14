@@ -2,12 +2,10 @@
 """自定义因子试算：转发到 YGQuant RE（本机不存行情）。"""
 from __future__ import annotations
 
-import json
 import re
-import urllib.error
-import urllib.request
 
 from services.backtest_range import build_factor_backtest_payload
+from services.lan_http import post_json
 
 RE_URL = "http://192.168.3.64:9527/api/backtest/factor"
 
@@ -37,19 +35,10 @@ def trial_via_re(
         universe=universe,
         period=period,
     )
-    req = urllib.request.Request(
-        RE_URL,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"RE HTTP {exc.code}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"RE 不可达: {exc.reason}") from exc
+        data = post_json(RE_URL, payload, timeout=180)
+    except RuntimeError as exc:
+        raise RuntimeError(str(exc).replace("HTTP Error ", "RE HTTP ", 1)) from exc
 
     err = data.get("error")
     if err:

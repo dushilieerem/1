@@ -32,6 +32,9 @@ import { CommunityProfileEditPage } from "./pages/CommunityProfileEditPage";
 import { CommunityProfileFollowsPage } from "./pages/CommunityProfileFollowsPage";
 import { NewsPage } from "./pages/NewsPage";
 import { NewsDetailPage } from "./pages/NewsDetailPage";
+import { GlobalSearchPage } from "./pages/GlobalSearchPage";
+import { HelpPage } from "./pages/ApiDocsPlaceholderPage";
+import { AiChatPage } from "./pages/AiChatPage";
 
 function Authed({ children }: { children: React.ReactNode }) {
   return <RequireAuth>{children}</RequireAuth>;
@@ -45,6 +48,8 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
+        <Route path="/search" element={<GlobalSearchPage />} />
+        <Route path="/ai/chat" element={<Authed><AiChatPage /></Authed>} />
         <Route path="/community" element={<CommunityFeedPage />} />
         <Route path="/news" element={<NewsPage />} />
         <Route path="/news/:id" element={<NewsDetailPage />} />
@@ -79,6 +84,8 @@ export default function App() {
           path="/data/watchlist"
           element={<Authed><WatchlistPage /></Authed>}
         />
+        <Route path="/help" element={<HelpPage />} />
+        <Route path="/data/api-docs" element={<Navigate to="/help" replace />} />
         <Route
           path="/data/symbol/:code/chart"
           element={<Authed><DataSymbolChartPage /></Authed>}

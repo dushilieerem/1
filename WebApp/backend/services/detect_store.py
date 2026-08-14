@@ -79,7 +79,7 @@ def _default_config(factor_codes: list[str] | None = None) -> dict[str, Any]:
             if codes
             else 'def combo_factor(self):\n    """自定义组合"""\n    return self.close.pct_change(5)'
         ),
-        "portfolioType": "long_short",
+        "portfolioType": "long_only",
         "rangeMode": "period",
         "backtestPeriod": "3y",
         "startDate": "",
@@ -87,13 +87,13 @@ def _default_config(factor_codes: list[str] | None = None) -> dict[str, Any]:
         "universe": "CSI300",
         "benchmark": "CSI300",
         "groups": 5,
-        "rebalanceDays": 20,
-        "filterLimitUp": True,
-        "filterSuspended": True,
+        "rebalanceDays": 1,
+        "filterLimitUp": False,
+        "filterSuspended": False,
         "analysisLevel": "core",
-        "commissionRate": 0.0003,
-        "stampTax": 0.001,
-        "slippageRate": 0.001,
+        "commissionRate": 0,
+        "stampTax": 0,
+        "slippageRate": 0,
     }
 
 
@@ -395,13 +395,15 @@ def delete_project(user_id: int, project_id: str) -> dict[str, Any]:
 
 
 def list_runs(user_id: int, project_id: str) -> dict[str, Any]:
-    """历史列表：不拉净值曲线等大 JSON，只返回表格所需摘要。"""
+    """历史列表：不拉净值曲线等大 JSON，只返回表格所需摘要（含当次因子快照）。"""
     with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT id, project_id, factor_name, description, finished_at, elapsed_sec,
                    COALESCE(result->'metrics', '{}'::jsonb) AS metrics,
-                   result->'factor_analysis'->'ic_mean' AS ic_mean
+                   result->'factor_analysis'->'ic_mean' AS ic_mean,
+                   request->'_svquant_ui' AS ui_snap,
+                   request->>'factor_name' AS req_factor_name
             FROM detect_runs
             WHERE user_id = %s AND project_id = %s
             ORDER BY finished_at DESC
@@ -416,13 +418,42 @@ def list_runs(user_id: int, project_id: str) -> dict[str, Any]:
             metrics = json.loads(metrics)
         ic_mean = row.get("ic_mean")
         fa = {"ic_mean": ic_mean} if ic_mean is not None else None
+        ui = row.get("ui_snap") or {}
+        if isinstance(ui, str):
+            try:
+                ui = json.loads(ui)
+            except Exception:
+                ui = {}
+        if not isinstance(ui, dict):
+            ui = {}
+        codes = ui.get("factorCodes") or []
+        labels = ui.get("factorLabels") or {}
+        if not isinstance(labels, dict):
+            labels = {}
+        summary = ""
+        if isinstance(codes, list) and codes:
+            parts = [str(labels.get(c) or c) for c in codes]
+            if len(parts) <= 3:
+                summary = " + ".join(parts)
+            else:
+                summary = f"{parts[0]} + {parts[1]} 等{len(parts)}个"
+        desc = summary or (row.get("description") or "") or (row.get("req_factor_name") or "")
+        # 列表仍带精简 request，便于前端直接展示因子列
+        slim_req: dict[str, Any] = {}
+        if ui:
+            slim_req["_svquant_ui"] = {
+                "factorCodes": codes if isinstance(codes, list) else [],
+                "factorLabels": labels,
+            }
+        if row.get("req_factor_name"):
+            slim_req["factor_name"] = row["req_factor_name"]
         runs.append(
             {
                 "id": row["id"],
                 "projectId": row["project_id"],
                 "factorName": row["factor_name"],
-                "description": row.get("description") or "",
-                "request": {},
+                "description": desc,
+                "request": slim_req,
                 "result": {"metrics": metrics, "factor_analysis": fa},
                 "finishedAt": _iso(row.get("finished_at")),
                 "elapsedSec": float(row.get("elapsed_sec") or 0),

@@ -1,22 +1,57 @@
 import type { WeightMode } from "./detectStore";
 import type { FactorMeta } from "./factorCatalog";
 
-/** ResearchEngine 支持 library_name 加载的完整内置库（含私有 _xxx / 动态注册） */
+/**
+ * ResearchEngine 已登记的 library_name 库。
+ * 单因子直通时只传 library_name + factor_name，不传 factor_code。
+ * （含原 PLATFORM 五库；源码只在 RE 侧）
+ */
 export const RE_BUILTIN_LIBS = new Set([
   "emotion_indicators",
   "risk_indicators",
   "technical_indicators",
+  "classic_indicators",
   "alpha_features",
-  // 旧名兼容
+  "momentum_lib",
+  "value_lib",
+  "technical_lib",
+  "volatility_lib",
+  "trading_lib",
   "alpha_library",
+  // 旧名兼容
   "qlib_alpha",
   "jq_compat_technical",
   "jq_compat_risk",
   "jq_compat_emotion",
 ]);
 
+/** @deprecated 五库已并入 RE_BUILTIN_LIBS；保留空集避免旧引用炸裂 */
+export const PLATFORM_LOCAL_LIBS = new Set<string>();
+
 export function isReBuiltinLib(library: string | undefined | null): boolean {
   return Boolean(library && RE_BUILTIN_LIBS.has(library));
+}
+
+/** 平台托管因子（RE 内置）——检测页/因子库不展示完整实现 */
+export function isPlatformFactorLib(library: string | undefined | null): boolean {
+  return isReBuiltinLib(library);
+}
+
+/** 检测页展示用存根（提交仍用真实 methodBodies / library_name） */
+export function buildPlatformFactorStub(meta: {
+  name: string;
+  description?: string;
+  library: string;
+  formula?: string;
+  explain?: string;
+}): string {
+  const title = (meta.description || meta.name).trim();
+  return [
+    `# ${title}`,
+    `# 库 ${meta.library} · 因子 ${meta.name}`,
+    `# 源码由 ResearchEngine 托管，本站不展示公式`,
+    `# 提交：library_name=${meta.library} + factor_name=${meta.name}`,
+  ].join("\n");
 }
 
 /** 根据赋权模式生成组合入口函数 */
@@ -36,7 +71,14 @@ export function buildComboFunction(opts: {
   if (opts.mode === "custom") {
     const custom = (opts.customCombine || "").trim();
     if (custom) return custom;
-    return `def ${entry}(self):\n    """${title}"""\n    return self.close.pct_change(5)`;
+    if (codes.length === 1) {
+      return `def ${entry}(self):\n    """${title}"""\n    return self.${codes[0]}()`;
+    }
+    if (codes.length > 1) {
+      const expr = codes.map((c) => `self.${c}()`).join(" + ");
+      return `def ${entry}(self):\n    """${title} · 自定义组合"""\n    return ${expr}`;
+    }
+    return `def ${entry}(self):\n    """${title}"""\n    # 先在左侧添加因子，再写合成表达式，例如 return self.momentum_5d()\n    return self.close.pct_change(5)`;
   }
 
   if (codes.length === 0) {
@@ -181,7 +223,8 @@ export function buildYgFactorRequestParts(opts: {
 
   const localBodies = opts.methodBodies
     .map((m) => m.trim())
-    .filter((m) => m && !m.startsWith("# RE库"));
+    // 展示/RE 存根（以 # 开头、无 def）不得当 factor_code
+    .filter((m) => m && /^\s*def\s+\w+/.test(m));
 
   // 单本地/自定义因子 + 直通组合 → 只传该因子函数本身（入口名=因子名）
   if (

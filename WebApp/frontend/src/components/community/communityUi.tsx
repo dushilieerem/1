@@ -207,7 +207,7 @@ export function PostListItem({
   return (
     <Link
       to={`/community/post/${post.id}`}
-      className="community-post-row group block px-5 py-4 transition hover:bg-slate-50/90 sm:px-6"
+      className="community-post-row group block px-4 py-3.5 transition hover:bg-slate-50/90 sm:px-6 sm:py-4"
     >
       <div className="flex items-start gap-2.5">
         <span className="mt-0.5 shrink-0">

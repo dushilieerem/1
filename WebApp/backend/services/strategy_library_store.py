@@ -19,6 +19,9 @@ STRATEGY_TYPE_LABELS = {
     "low_volatility": "低波动",
     "minimum_variance": "最小方差",
     "statistical_arbitrage": "统计套利",
+    "value": "价值",
+    "value_growth": "价值成长",
+    "dividend": "红利",
     "small_cap": "小市值",
     "custom": "自定义",
 }

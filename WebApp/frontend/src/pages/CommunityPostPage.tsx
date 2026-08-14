@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Eye, EyeOff, Flag, FlaskConical, LineChart, MessageCircle, Pencil, Pin, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, X } from "lucide-react";
+import { Eye, EyeOff, Flag, FlaskConical, LineChart, MessageCircle, Pencil, Pin, ScrollText, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, X } from "lucide-react";
 import { getStoredUser } from "@/lib/auth";
 import { runAgent, type AgentFlag } from "@/lib/agentApi";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -22,18 +22,14 @@ import {
 } from "@/lib/communityApi";
 import { pushBrowseHistory } from "@/lib/browseHistory";
 import {
-  createDetectProjectFromSnippet,
+  createDetectProjectFromLibraryFactors,
   openDetectInNewTab,
 } from "@/lib/detectStore";
-import {
-  builtinCategoryLabelsFromFactors,
-  loadFactors,
-} from "@/lib/factorCatalog";
-import { listAllUserLibraryFactors } from "@/lib/userFactorLibraries";
 import {
   createStrategyProjectFromCode,
   openStrategyInNewTab,
 } from "@/lib/strategyStore";
+import { planCommunityDetectClone } from "@/lib/communityClone";
 import {
   CommunityBackLink,
   CommunityPageShell,
@@ -65,6 +61,42 @@ function normalizeSummaryMd(raw: string): string {
   return s.trim();
 }
 
+type StoredPostTldr = {
+  summary: string;
+  flags: AgentFlag[];
+  updatedAt: string;
+};
+
+function postTldrStorageKey(userId: number, postId: number) {
+  return `svquant.community.tldr.u${userId}.p${postId}`;
+}
+
+function loadPostTldr(userId: number, postId: number): StoredPostTldr | null {
+  try {
+    const raw = localStorage.getItem(postTldrStorageKey(userId, postId));
+    if (!raw) return null;
+    const data = JSON.parse(raw) as StoredPostTldr;
+    if (!data?.summary?.trim()) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function savePostTldr(
+  userId: number,
+  postId: number,
+  summary: string,
+  flags: AgentFlag[],
+) {
+  const payload: StoredPostTldr = {
+    summary,
+    flags,
+    updatedAt: new Date().toISOString(),
+  };
+  localStorage.setItem(postTldrStorageKey(userId, postId), JSON.stringify(payload));
+}
+
 export function CommunityPostPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -77,15 +109,6 @@ export function CommunityPostPage() {
   const [loading, setLoading] = useState(true);
   const [cloneBusy, setCloneBusy] = useState(false);
   const [cloneErr, setCloneErr] = useState<string | null>(null);
-  const [cloneModalOpen, setCloneModalOpen] = useState(false);
-  const [cloneName, setCloneName] = useState("");
-  const [cloneDesc, setCloneDesc] = useState("");
-  const [cloneCategory, setCloneCategory] = useState("其他");
-  const [cloneFormErr, setCloneFormErr] = useState<string | null>(null);
-  const [categoryOptions, setCategoryOptions] = useState<string[]>(["其他"]);
-  const [takenFactorNames, setTakenFactorNames] = useState<Set<string>>(
-    () => new Set(),
-  );
   const [favBusy, setFavBusy] = useState(false);
   const [favErr, setFavErr] = useState<string | null>(null);
   const [voteBusy, setVoteBusy] = useState(false);
@@ -100,9 +123,36 @@ export function CommunityPostPage() {
   const [tldrErr, setTldrErr] = useState<string | null>(null);
   const [tldrSummary, setTldrSummary] = useState<string | null>(null);
   const [tldrFlags, setTldrFlags] = useState<AgentFlag[]>([]);
+  const [tldrModalOpen, setTldrModalOpen] = useState(false);
 
   const postId = Number(id);
   const focusComment = Number(searchParams.get("comment") || 0);
+
+  useEffect(() => {
+    if (!tldrModalOpen) return;
+    const scrollY = window.scrollY;
+    const { body, documentElement: html } = document;
+    const prev = {
+      bodyOverflow: body.style.overflow,
+      htmlOverflow: html.style.overflow,
+      bodyPosition: body.style.position,
+      bodyTop: body.style.top,
+      bodyWidth: body.style.width,
+    };
+    body.style.overflow = "hidden";
+    html.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    return () => {
+      body.style.overflow = prev.bodyOverflow;
+      html.style.overflow = prev.htmlOverflow;
+      body.style.position = prev.bodyPosition;
+      body.style.top = prev.bodyTop;
+      body.style.width = prev.bodyWidth;
+      window.scrollTo(0, scrollY);
+    };
+  }, [tldrModalOpen]);
 
   const reloadComments = async (pid: number) => {
     const data = await listComments(pid);
@@ -169,6 +219,36 @@ export function CommunityPostPage() {
     };
   }, [focusComment, loading, comments.length]);
 
+  // 按用户+帖子恢复本地摘要（不同用户互不影响）
+  useEffect(() => {
+    if (!user?.id || !Number.isFinite(postId) || postId <= 0) {
+      setTldrSummary(null);
+      setTldrFlags([]);
+      return;
+    }
+    const cached = loadPostTldr(Number(user.id), postId);
+    if (cached) {
+      setTldrSummary(cached.summary);
+      setTldrFlags(cached.flags || []);
+    } else {
+      setTldrSummary(null);
+      setTldrFlags([]);
+    }
+  }, [user?.id, postId]);
+
+  const openTldrModal = () => {
+    if (!user) {
+      navigate(`/login?next=${encodeURIComponent(`/community/post/${postId}`)}`);
+      return;
+    }
+    if (!tldrSummary?.trim()) {
+      setTldrErr("暂无摘要，请先点击「生成摘要」");
+      return;
+    }
+    setTldrErr(null);
+    setTldrModalOpen(true);
+  };
+
   const onGenerateTldr = async () => {
     if (!post) return;
     if (!user) {
@@ -201,10 +281,12 @@ export function CommunityPostPage() {
       if (!md.trim()) {
         throw new Error("摘要为空，请重试");
       }
-      setTldrSummary(normalizeSummaryMd(md));
-      setTldrFlags(
-        (res.outputs?.flags || res.board?.flags || []) as AgentFlag[],
-      );
+      const summary = normalizeSummaryMd(md);
+      const flags = (res.outputs?.flags || res.board?.flags || []) as AgentFlag[];
+      setTldrSummary(summary);
+      setTldrFlags(flags);
+      savePostTldr(Number(user.id), post.id, summary, flags);
+      setTldrModalOpen(true);
     } catch (ex) {
       setTldrErr(ex instanceof Error ? ex.message : String(ex));
     } finally {
@@ -274,100 +356,53 @@ export function CommunityPostPage() {
       return;
     }
     setCloneErr(null);
-    setCloneFormErr(null);
     const code = (post.code_snippet || "").trim();
     if (!code) {
       setCloneErr("该帖没有代码片段，无法克隆到因子检测");
       return;
     }
-    setCloneName("");
-    setCloneDesc("");
-    setCloneCategory("");
-    setCloneModalOpen(true);
-
-    void Promise.all([
-      loadFactors(true).catch(() => []),
-      listAllUserLibraryFactors().catch(() => []),
-    ]).then(([fs, userRows]) => {
-      const cats = builtinCategoryLabelsFromFactors(
-        fs.filter((f) => f.library !== "custom_lib"),
-      );
-      setCategoryOptions([...cats, "其他"]);
-      const taken = new Set<string>();
-      for (const f of fs) {
-        if (f.library === "custom_lib") continue;
-        taken.add(f.name);
-        if (f.methodName) taken.add(f.methodName);
-      }
-      for (const r of userRows) taken.add(r.name);
-      setTakenFactorNames(taken);
-    });
-  };
-
-  const confirmCloneToDetect = async () => {
-    if (!post) return;
-    setCloneFormErr(null);
-    const name = cloneName.trim();
-    const description = cloneDesc.trim();
-    const category = cloneCategory.trim();
-    if (!name) {
-      setCloneFormErr("请填写因子代码名");
-      return;
-    }
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-      setCloneFormErr("代码名须为字母开头的标识符（字母/数字/下划线）");
-      return;
-    }
-    if (!description) {
-      setCloneFormErr("请填写中文解释");
-      return;
-    }
-    if (!category) {
-      setCloneFormErr("请选择分类");
-      return;
-    }
-    if (takenFactorNames.has(name)) {
-      setCloneFormErr(
-        `「${name}」与内置或已有因子库重名，请重新命名后再确定`,
-      );
-      return;
-    }
     setCloneBusy(true);
     try {
-      // 再拉一次，避免弹窗打开后别人刚入库导致漏检
-      const [fs, userRows] = await Promise.all([
-        loadFactors(true).catch(() => []),
-        listAllUserLibraryFactors().catch(() => []),
-      ]);
-      const taken = new Set<string>();
-      for (const f of fs) {
-        if (f.library === "custom_lib") continue;
-        taken.add(f.name);
-        if (f.methodName) taken.add(f.methodName);
-      }
-      for (const r of userRows) taken.add(r.name);
-      if (taken.has(name)) {
-        setTakenFactorNames(taken);
-        setCloneFormErr(
-          `「${name}」与内置或已有因子库重名，请重新命名后再确定`,
-        );
+      const plan = await planCommunityDetectClone(code);
+      const displayName =
+        (post.title || "").trim().slice(0, 80) ||
+        (plan.kind === "library" || plan.kind === "mixed"
+          ? plan.factorIds.join("+")
+          : plan.suggestedName) ||
+        "社区克隆";
+      if (plan.kind === "library" || plan.kind === "mixed") {
+        const p = await createDetectProjectFromLibraryFactors({
+          title: displayName,
+          factorIds: plan.factorIds,
+          comboFn: plan.comboFn,
+          weightMode: plan.weightMode,
+          draftFactors:
+            plan.kind === "mixed" ? plan.customDrafts : undefined,
+        });
+        openDetectInNewTab(p.id);
         return;
       }
-
-      const code = post.code_snippet || "";
-      const displayName =
-        (post.title || "").trim().slice(0, 80) || description || name;
-      const p = await createDetectProjectFromSnippet({
+      // 纯自定义：临时因子直开检测，跳过「新建因子」表单
+      const drafts = plan.customDrafts?.length
+        ? plan.customDrafts
+        : [
+            {
+              name: plan.suggestedName || "cloned_factor",
+              description: plan.suggestedName || "社区克隆",
+              category: "其他",
+              body: plan.code,
+            },
+          ];
+      const p = await createDetectProjectFromLibraryFactors({
         title: displayName,
-        code,
-        name,
-        description,
-        category,
+        factorIds: [],
+        comboFn: plan.comboFn,
+        weightMode: plan.weightMode || "sum",
+        draftFactors: drafts,
       });
-      setCloneModalOpen(false);
       openDetectInNewTab(p.id);
     } catch (ex) {
-      setCloneFormErr(ex instanceof Error ? ex.message : String(ex));
+      setCloneErr(ex instanceof Error ? ex.message : String(ex));
     } finally {
       setCloneBusy(false);
     }
@@ -483,14 +518,13 @@ export function CommunityPostPage() {
 
   return (
     <CommunityPageShell>
-      {/* 知乎式：主栏左移、右侧栏给摘要；主栏仍 max-w 1120，卡片宽度不变 */}
-      <div className="mx-auto max-w-[1440px] px-5 py-6 animate-fade-up">
-        <div className="flex items-start gap-5">
-          <div className="w-full min-w-0 max-w-[1120px] space-y-5">
+      {/* 帖子主栏加宽居中；摘要入口放评论区右上角 */}
+      <div className="mx-auto max-w-[1100px] px-3 py-4 animate-fade-up lg:px-5 lg:py-6">
+        <div className="space-y-4 lg:space-y-5">
             <CommunityBackLink />
 
             {isHidden && isAdmin ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900 lg:px-4">
                 <span>该帖已下架，游客与普通用户不可见。</span>
                 <button
                   type="button"
@@ -504,9 +538,9 @@ export function CommunityPostPage() {
             ) : null}
 
             <CommunityPanel>
-          <header className="border-b border-slate-100 px-6 py-6 sm:px-8">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
+          <header className="border-b border-slate-100 px-3 py-4 lg:px-8 lg:py-6">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <SectionPill section={post.section} label={post.section_label} />
                 {post.is_pinned ? (
                   <span className="rounded-md bg-sky-500 px-1.5 py-0.5 text-[11px] font-semibold text-white">
@@ -514,114 +548,81 @@ export function CommunityPostPage() {
                   </span>
                 ) : null}
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {isAdmin ? (
+              {/* 手机：摘要固定右上，避免操作栏横滑才看得见 */}
+              <button
+                type="button"
+                className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-sky-200/80 bg-white px-2.5 text-xs font-semibold text-sky-800 shadow-sm transition hover:bg-sky-50 disabled:opacity-60 lg:hidden"
+                disabled={isHidden || tldrBusy}
+                onClick={() => {
+                  if (tldrSummary?.trim()) {
+                    openTldrModal();
+                    return;
+                  }
+                  void onGenerateTldr();
+                }}
+              >
+                {tldrSummary?.trim() ? (
                   <>
-                    <button
-                      type="button"
-                      disabled={modBusy}
-                      onClick={() =>
-                        void onModerate({ pinned: !post.is_pinned })
-                      }
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-800 transition hover:bg-sky-100 disabled:opacity-60"
-                    >
-                      <Pin className="h-4 w-4" />
-                      {post.is_pinned ? "取消置顶" : "置顶"}
-                    </button>
-                    {isHidden ? (
-                      <button
-                        type="button"
-                        disabled={modBusy}
-                        onClick={() => void onModerate({ status: "published" })}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60"
-                      >
-                        <Eye className="h-4 w-4" />
-                        恢复显示
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={modBusy}
-                        onClick={() => void onModerate({ status: "hidden" })}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-sm font-medium text-amber-700 transition hover:bg-amber-50 disabled:opacity-60"
-                      >
-                        <EyeOff className="h-4 w-4" />
-                        下架
-                      </button>
-                    )}
-                    {!isOwnPost ? (
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/community/post/${post.id}/edit`)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                      >
-                        <Pencil className="h-4 w-4" />
-                        编辑
-                      </button>
-                    ) : null}
-                  </>
-                ) : null}
-                {isOwnPost ? (
-                  <>
-                    <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5 text-sm text-slate-400">
-                      <ThumbsUp className="h-4 w-4" />
-                      赞
-                      <span className="text-xs opacity-70">{post.like_count ?? 0}</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5 text-sm text-slate-400">
-                      <ThumbsDown className="h-4 w-4" />
-                      踩
-                      <span className="text-xs opacity-70">
-                        {post.dislike_count ?? 0}
-                      </span>
-                    </span>
+                    <ScrollText className="h-3.5 w-3.5" />
+                    摘要
                   </>
                 ) : (
                   <>
-                    <button
-                      type="button"
-                      disabled={voteBusy || isHidden}
-                      onClick={() => void onCastVote(1)}
-                      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:opacity-60 ${
-                        myVote === 1
-                          ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-red-200 hover:bg-red-50/60 hover:text-red-700"
-                      }`}
-                    >
-                      <ThumbsUp
-                        className={`h-4 w-4 ${myVote === 1 ? "fill-red-500 text-red-500" : ""}`}
-                      />
-                      赞
-                      <span className="text-xs opacity-70">{post.like_count ?? 0}</span>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={voteBusy || isHidden}
-                      onClick={() => void onCastVote(-1)}
-                      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:opacity-60 ${
-                        myVote === -1
-                          ? "border-slate-300 bg-slate-100 text-slate-800 hover:bg-slate-200"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
-                      }`}
-                    >
-                      <ThumbsDown
-                        className={`h-4 w-4 ${myVote === -1 ? "fill-slate-600 text-slate-700" : ""}`}
-                      />
-                      踩
-                      <span className="text-xs opacity-70">
-                        {post.dislike_count ?? 0}
-                      </span>
-                    </button>
+                    <Sparkles className="h-3.5 w-3.5" />
+                    {tldrBusy ? "…" : "生成摘要"}
                   </>
                 )}
+              </button>
+            </div>
+
+            <h1 className="mt-2.5 text-xl font-bold leading-snug tracking-tight text-slate-900 lg:mt-4 lg:text-3xl">
+              {post.title}
+            </h1>
+
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-500 lg:mt-3 lg:gap-x-3 lg:gap-y-1.5 lg:text-sm">
+              <span className="inline-flex items-center gap-2 font-medium text-slate-700">
+                <AuthorAvatarWithCard
+                  username={post.author.username}
+                  name={authorName}
+                  src={post.author.avatar_url}
+                  size="md"
+                />
+                {authorName}
+              </span>
+              <span className="tabular-nums">{formatPostTime(post.created_at)}</span>
+              <span className="inline-flex items-center gap-1">
+                <Eye className="h-3.5 w-3.5" />
+                {post.view_count}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <MessageCircle className="h-3.5 w-3.5" />
+                {post.comment_count ?? comments.length}
+              </span>
+            </div>
+
+            {/* 手机：紧凑不换行；PC：疏朗可换行（两套布局，逻辑共用） */}
+            <div className="mt-4 lg:hidden">
+              <div className="flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {isOwnPost ? (
                   <>
+                    <span className="inline-flex h-8 min-w-[2.75rem] shrink-0 items-center justify-center gap-1 rounded-lg border border-slate-100 bg-slate-50 px-2 text-xs text-slate-400">
+                      <ThumbsUp className="h-3.5 w-3.5" />
+                      {post.like_count ?? 0}
+                    </span>
+                    <span className="inline-flex h-8 min-w-[2.75rem] shrink-0 items-center justify-center gap-1 rounded-lg border border-slate-100 bg-slate-50 px-2 text-xs text-slate-400">
+                      <ThumbsDown className="h-3.5 w-3.5" />
+                      {post.dislike_count ?? 0}
+                    </span>
+                    <span className="inline-flex h-8 min-w-[2.75rem] shrink-0 items-center justify-center gap-1 rounded-lg border border-slate-100 bg-slate-50 px-2 text-xs text-slate-400">
+                      <Star className="h-3.5 w-3.5" />
+                      {post.favorite_count ?? 0}
+                    </span>
                     <button
                       type="button"
                       onClick={() => navigate(`/community/post/${post.id}/edit`)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                      className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                     >
-                      <Pencil className="h-4 w-4" />
+                      <Pencil className="h-3.5 w-3.5" />
                       编辑
                     </button>
                     {!isHidden ? (
@@ -629,36 +630,56 @@ export function CommunityPostPage() {
                         type="button"
                         disabled={deleteBusy}
                         onClick={() => void onDelete()}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-60"
+                        className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
                       >
-                        <Trash2 className="h-4 w-4" />
-                        {deleteBusy ? "删除中…" : "删除"}
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {deleteBusy ? "…" : "删除"}
                       </button>
                     ) : null}
-                    <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5 text-sm text-slate-400">
-                      <Star className="h-4 w-4" />
-                      收藏 {post.favorite_count ?? 0}
-                    </span>
                   </>
                 ) : (
                   <>
                     <button
                       type="button"
-                      disabled={favBusy || isHidden}
-                      onClick={() => void onToggleFavorite()}
-                      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:opacity-60 ${
-                        favorited
-                          ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-amber-200 hover:bg-amber-50/60 hover:text-amber-700"
+                      disabled={voteBusy || isHidden}
+                      onClick={() => void onCastVote(1)}
+                      aria-label="赞"
+                      className={`inline-flex h-8 min-w-[2.75rem] shrink-0 items-center justify-center gap-1 rounded-lg border px-2 text-xs font-medium tabular-nums transition disabled:opacity-60 ${
+                        myVote === 1
+                          ? "border-red-200 bg-red-50 text-red-700"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-red-200 hover:bg-red-50/60"
                       }`}
                     >
-                      <Star
-                        className={`h-4 w-4 ${favorited ? "fill-amber-500 text-amber-500" : ""}`}
-                      />
-                      {favorited ? "已收藏" : "收藏"}
-                      <span className="text-xs opacity-70">
-                        {post.favorite_count ?? 0}
-                      </span>
+                      <ThumbsUp className={`h-3.5 w-3.5 ${myVote === 1 ? "fill-red-500 text-red-500" : ""}`} />
+                      {post.like_count ?? 0}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={voteBusy || isHidden}
+                      onClick={() => void onCastVote(-1)}
+                      aria-label="踩"
+                      className={`inline-flex h-8 min-w-[2.75rem] shrink-0 items-center justify-center gap-1 rounded-lg border px-2 text-xs font-medium tabular-nums transition disabled:opacity-60 ${
+                        myVote === -1
+                          ? "border-slate-300 bg-slate-100 text-slate-800"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      <ThumbsDown className={`h-3.5 w-3.5 ${myVote === -1 ? "fill-slate-600" : ""}`} />
+                      {post.dislike_count ?? 0}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={favBusy || isHidden}
+                      onClick={() => void onToggleFavorite()}
+                      aria-label={favorited ? "取消收藏" : "收藏"}
+                      className={`inline-flex h-8 min-w-[2.75rem] shrink-0 items-center justify-center gap-1 rounded-lg border px-2 text-xs font-medium tabular-nums transition disabled:opacity-60 ${
+                        favorited
+                          ? "border-amber-200 bg-amber-50 text-amber-700"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-amber-200 hover:bg-amber-50/60"
+                      }`}
+                    >
+                      <Star className={`h-3.5 w-3.5 ${favorited ? "fill-amber-500 text-amber-500" : ""}`} />
+                      {post.favorite_count ?? 0}
                     </button>
                     {!isHidden ? (
                       <button
@@ -672,95 +693,250 @@ export function CommunityPostPage() {
                           }
                           setReportTarget({ type: "post" });
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:border-amber-200 hover:bg-amber-50/60 hover:text-amber-800"
+                        aria-label="举报"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-amber-50/60"
                       >
-                        <Flag className="h-4 w-4" />
-                        举报
+                        <Flag className="h-3.5 w-3.5" />
                       </button>
                     ) : null}
                   </>
                 )}
               </div>
             </div>
-            <h1 className="mt-4 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-              {post.title}
-            </h1>
-            <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-slate-500">
-              <span className="inline-flex items-center gap-2 font-medium text-slate-700">
-                <AuthorAvatarWithCard
-                  username={post.author.username}
-                  name={authorName}
-                  src={post.author.avatar_url}
-                  size="md"
-                />
-                {authorName}
-              </span>
-              <span>发布于 {formatPostTime(post.created_at)}</span>
-              <span className="inline-flex items-center gap-1">
-                <Eye className="h-3.5 w-3.5" />
-                {post.view_count}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <MessageCircle className="h-3.5 w-3.5" />
-                {post.comment_count ?? comments.length}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <ThumbsUp className="h-3.5 w-3.5" />
-                {post.like_count ?? 0}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <ThumbsDown className="h-3.5 w-3.5" />
-                {post.dislike_count ?? 0}
-              </span>
+
+            <div className="mt-4 hidden flex-wrap items-center gap-2 lg:flex">
+              {isOwnPost ? (
+                <>
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5 text-sm text-slate-400">
+                    <ThumbsUp className="h-4 w-4" />
+                    {post.like_count ?? 0}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5 text-sm text-slate-400">
+                    <ThumbsDown className="h-4 w-4" />
+                    {post.dislike_count ?? 0}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5 text-sm text-slate-400">
+                    <Star className="h-4 w-4" />
+                    {post.favorite_count ?? 0}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/community/post/${post.id}/edit`)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    编辑
+                  </button>
+                  {!isHidden ? (
+                    <button
+                      type="button"
+                      disabled={deleteBusy}
+                      onClick={() => void onDelete()}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      {deleteBusy ? "删除中…" : "删除"}
+                    </button>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    disabled={voteBusy || isHidden}
+                    onClick={() => void onCastVote(1)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium tabular-nums transition disabled:opacity-60 ${
+                      myVote === 1
+                        ? "border-red-200 bg-red-50 text-red-700"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-red-200 hover:bg-red-50/60"
+                    }`}
+                  >
+                    <ThumbsUp className={`h-4 w-4 ${myVote === 1 ? "fill-red-500 text-red-500" : ""}`} />
+                    {post.like_count ?? 0}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={voteBusy || isHidden}
+                    onClick={() => void onCastVote(-1)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium tabular-nums transition disabled:opacity-60 ${
+                      myVote === -1
+                        ? "border-slate-300 bg-slate-100 text-slate-800"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    <ThumbsDown className={`h-4 w-4 ${myVote === -1 ? "fill-slate-600" : ""}`} />
+                    {post.dislike_count ?? 0}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={favBusy || isHidden}
+                    onClick={() => void onToggleFavorite()}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium tabular-nums transition disabled:opacity-60 ${
+                      favorited
+                        ? "border-amber-200 bg-amber-50 text-amber-700"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-amber-200 hover:bg-amber-50/60"
+                    }`}
+                  >
+                    <Star className={`h-4 w-4 ${favorited ? "fill-amber-500 text-amber-500" : ""}`} />
+                    {post.favorite_count ?? 0}
+                  </button>
+                  {!isHidden ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!user) {
+                          navigate(
+                            `/login?next=${encodeURIComponent(`/community/post/${post.id}`)}`,
+                          );
+                          return;
+                        }
+                        setReportTarget({ type: "post" });
+                      }}
+                      aria-label="举报"
+                      className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-slate-600 hover:bg-amber-50/60"
+                    >
+                      <Flag className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                </>
+              )}
+
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200/80 bg-white px-3 py-1.5 text-sm font-semibold text-sky-800 shadow-sm transition hover:bg-sky-50 disabled:opacity-60"
+                disabled={isHidden || tldrBusy}
+                onClick={() => {
+                  if (tldrSummary?.trim()) {
+                    openTldrModal();
+                    return;
+                  }
+                  void onGenerateTldr();
+                }}
+              >
+                {tldrSummary?.trim() ? (
+                  <>
+                    <ScrollText className="h-4 w-4" />
+                    显示摘要
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    {tldrBusy ? "生成中…" : "生成摘要"}
+                  </>
+                )}
+              </button>
             </div>
-            {favErr && <p className="mt-2 text-sm text-red-600">{favErr}</p>}
+
+            {isAdmin ? (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <button
+                  type="button"
+                  disabled={modBusy}
+                  onClick={() => void onModerate({ pinned: !post.is_pinned })}
+                  className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-xs font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-60 sm:gap-1.5 sm:px-3 sm:text-sm"
+                >
+                  <Pin className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  {post.is_pinned ? "取消置顶" : "置顶"}
+                </button>
+                {isHidden ? (
+                  <button
+                    type="button"
+                    disabled={modBusy}
+                    onClick={() => void onModerate({ status: "published" })}
+                    className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-60 sm:gap-1.5 sm:px-3 sm:text-sm"
+                  >
+                    <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    恢复
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={modBusy}
+                    onClick={() => void onModerate({ status: "hidden" })}
+                    className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60 sm:gap-1.5 sm:px-3 sm:text-sm"
+                  >
+                    <EyeOff className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    下架
+                  </button>
+                )}
+                {!isOwnPost ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/community/post/${post.id}/edit`)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 sm:gap-1.5 sm:px-3 sm:text-sm"
+                  >
+                    <Pencil className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    编辑
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {tldrErr ? <p className="mt-2 text-sm text-red-600">{tldrErr}</p> : null}
+            {favErr ? <p className="mt-2 text-sm text-red-600">{favErr}</p> : null}
           </header>
 
-          <div className="px-6 py-8 sm:px-8">
+          <div className="px-3 py-5 lg:px-8 lg:py-8">
             <MarkdownBody source={post.body || ""} />
           </div>
 
           {post.code_snippet ? (
-            <div className="border-t border-slate-100 px-6 py-5 sm:px-8">
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="border-t border-slate-100 px-3 py-4 lg:px-8 lg:py-5">
+              <div className="mb-2 flex flex-col gap-2 lg:mb-2 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between">
                 <h2 className="text-sm font-semibold text-slate-800">代码</h2>
                 <div className="flex flex-wrap items-center gap-2">
-                  {post.section !== "strategy" ? (
+                  {post.section === "factor" ? (
                     <button
                       type="button"
                       disabled={cloneBusy}
                       onClick={() => void onCloneToDetect()}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-1.5 text-sm font-semibold text-white shadow-sm shadow-red-200/50 transition hover:bg-red-400 active:scale-[0.98] disabled:opacity-60"
+                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-red-500 px-3 py-2 text-sm font-semibold text-white shadow-sm shadow-red-200/50 transition hover:bg-red-400 active:scale-[0.98] disabled:opacity-60 sm:w-auto lg:py-1.5"
                     >
-                      <FlaskConical className="h-4 w-4" />
-                      {cloneBusy ? "处理中…" : "克隆到因子检测"}
+                      <FlaskConical className="h-4 w-4 shrink-0" />
+                      <span className="lg:hidden">{cloneBusy ? "处理中…" : "克隆到因子"}</span>
+                      <span className="hidden lg:inline">
+                        {cloneBusy ? "处理中…" : "克隆到因子检测"}
+                      </span>
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    disabled={cloneBusy}
-                    onClick={() => void onCloneToStrategy()}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98] disabled:opacity-60"
-                  >
-                    <LineChart className="h-4 w-4" />
-                    克隆到策略研究
-                  </button>
+                  {post.section === "strategy" ? (
+                    <button
+                      type="button"
+                      disabled={cloneBusy}
+                      onClick={() => void onCloneToStrategy()}
+                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-white shadow-sm shadow-amber-200/50 transition hover:bg-amber-400 active:scale-[0.98] disabled:opacity-60 sm:w-auto lg:py-1.5"
+                    >
+                      <LineChart className="h-4 w-4 shrink-0" />
+                      <span className="lg:hidden">{cloneBusy ? "处理中…" : "克隆到策略"}</span>
+                      <span className="hidden lg:inline">
+                        {cloneBusy ? "处理中…" : "克隆到策略研究"}
+                      </span>
+                    </button>
+                  ) : null}
                 </div>
               </div>
-              {cloneErr && <p className="mb-2 text-sm text-red-600">{cloneErr}</p>}
-              <HighlightedCodeBlock code={post.code_snippet} />
+              {cloneErr ? (
+                <p className="mb-2 break-words rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+                  {cloneErr}
+                </p>
+              ) : null}
+              <div className="min-w-0 overflow-x-auto">
+                <HighlightedCodeBlock code={post.code_snippet} />
+              </div>
             </div>
           ) : (
-            <div className="border-t border-slate-100 px-6 py-4 text-sm text-slate-400 sm:px-8">
+            <div className="border-t border-slate-100 px-3 py-4 text-sm text-slate-400 lg:px-8">
               {post.section === "strategy"
                 ? "本帖无代码片段，无法克隆到策略研究。"
-                : "本帖无代码片段，无法克隆到因子检测或策略研究。"}
+                : post.section === "factor"
+                  ? "本帖无代码片段，无法克隆到因子检测。"
+                  : "本帖无代码片段。"}
             </div>
           )}
         </CommunityPanel>
 
         <CommunityPanel>
-          <div className="border-b border-slate-100 px-5 py-3.5">
+          <div className="border-b border-slate-100 px-3 py-3 lg:px-5 lg:py-3.5">
             <h2 className="text-sm font-bold text-slate-900">
               评论 {comments.length > 0 ? `· ${comments.length}` : ""}
             </h2>
@@ -793,74 +969,72 @@ export function CommunityPostPage() {
             }}
           />
         </CommunityPanel>
-          </div>
+        </div>
+      </div>
 
-          <aside className="sticky top-24 hidden w-[300px] shrink-0 self-start pt-8 xl:block">
-            <div className="space-y-3">
+      {tldrModalOpen && tldrSummary ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-4">
+          <div
+            className="absolute inset-0"
+            onClick={() => setTldrModalOpen(false)}
+            aria-hidden
+          />
+          <div
+            className="relative z-10 flex max-h-[min(88dvh,640px)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-slate-200 bg-white shadow-2xl sm:rounded-2xl"
+            onWheel={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-3.5">
+              <h2 className="text-base font-semibold text-slate-900">AI 摘要</h2>
+              <button
+                type="button"
+                onClick={() => setTldrModalOpen(false)}
+                className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                aria-label="关闭"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+              <MarkdownBody
+                source={tldrSummary}
+                forceMarkdown
+                className="text-[14px] leading-6 [&_h2]:mb-1.5 [&_h2]:mt-3 [&_h2]:text-[15px] [&_h2]:first:mt-0 [&_li]:leading-6 [&_p]:mb-2 [&_p]:leading-6"
+              />
+              {tldrFlags.length > 0 ? (
+                <div className="mt-4 border-t border-slate-100 pt-3">
+                  <p className="mb-1 text-[12px] font-medium text-slate-600">阅读提示</p>
+                  <ul className="space-y-1 text-[12px] leading-relaxed text-slate-500">
+                    {tldrFlags.map((f, i) => (
+                      <li key={`${f.code || "flag"}-${i}`}>
+                        · {f.message || f.code || "阅读提示"}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-100 px-5 py-3">
               <button
                 type="button"
                 disabled={tldrBusy || isHidden}
                 onClick={() => void onGenerateTldr()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200/80 bg-white px-3 py-1.5 text-sm font-semibold text-sky-800 shadow-sm transition hover:bg-sky-50 disabled:opacity-60"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-white px-3 py-1.5 text-xs font-semibold text-sky-800 hover:bg-sky-50 disabled:opacity-60"
               >
-                <Sparkles className="h-4 w-4" />
-                {tldrBusy ? "生成中…" : tldrSummary ? "重新生成" : "生成摘要"}
+                <Sparkles className="h-3.5 w-3.5" />
+                {tldrBusy ? "生成中…" : "重新生成"}
               </button>
-              {tldrErr ? <p className="text-sm text-red-600">{tldrErr}</p> : null}
-              {tldrSummary ? (
-                <div className="max-h-[calc(100vh-8rem)] overflow-y-auto rounded-xl border border-slate-200/80 bg-white px-3.5 py-3 shadow-sm">
-                  <MarkdownBody
-                    source={tldrSummary}
-                    forceMarkdown
-                    className="text-[13px] leading-6 [&_h2]:mb-1.5 [&_h2]:mt-3 [&_h2]:text-[15px] [&_h2]:first:mt-0 [&_li]:leading-6 [&_p]:mb-2 [&_p]:leading-6"
-                  />
-                  {tldrFlags.length > 0 ? (
-                    <div className="mt-3 border-t border-slate-100 pt-2">
-                      <p className="mb-1 text-[12px] font-medium text-slate-600">阅读提示</p>
-                      <ul className="space-y-1 text-[12px] leading-relaxed text-slate-500">
-                        {tldrFlags.map((f, i) => (
-                          <li key={`${f.code || "flag"}-${i}`}>
-                            · {f.message || f.code || "阅读提示"}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <p className="rounded-lg bg-white/70 px-3.5 py-3 text-[13px] leading-relaxed text-slate-500">
-                  AI 读帖助手会提炼背景、方法与结论，并标出阅读时需注意的局限。点上方即可生成短摘要。
-                </p>
-              )}
+              <button
+                type="button"
+                onClick={() => setTldrModalOpen(false)}
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              >
+                关闭
+              </button>
             </div>
-          </aside>
-        </div>
-      </div>
-
-      <div className="fixed bottom-5 right-5 z-30 w-[min(20rem,calc(100vw-2rem))] space-y-2 xl:hidden">
-        <button
-          type="button"
-          disabled={tldrBusy || isHidden}
-          onClick={() => void onGenerateTldr()}
-          className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-white px-3.5 py-2 text-sm font-semibold text-sky-800 shadow-md transition hover:bg-sky-50 disabled:opacity-60"
-        >
-          <Sparkles className="h-4 w-4" />
-          {tldrBusy ? "生成中…" : tldrSummary ? "重新生成" : "生成摘要"}
-        </button>
-        {tldrErr ? (
-          <p className="rounded-lg bg-white px-3 py-2 text-sm text-red-600 shadow">{tldrErr}</p>
-        ) : null}
-        {tldrSummary ? (
-          <div className="max-h-[40vh] overflow-y-auto rounded-xl border border-slate-200 bg-white px-3.5 py-3 shadow-lg">
-            <h2 className="mb-2 text-sm font-semibold text-slate-800">AI 摘要</h2>
-            <MarkdownBody
-              source={tldrSummary}
-              forceMarkdown
-              className="text-[13px] leading-6 [&_h2]:mb-1.5 [&_h2]:mt-3 [&_h2]:text-[15px] [&_h2]:first:mt-0"
-            />
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       <ReportDialog
         open={!!reportTarget}
@@ -878,86 +1052,6 @@ export function CommunityPostPage() {
           });
         }}
       />
-
-      {cloneModalOpen ? (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900">新建因子</h3>
-              <button
-                type="button"
-                onClick={() => setCloneModalOpen(false)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="space-y-3 text-sm">
-              <label className="block text-xs text-slate-500">
-                因子代码名
-                <input
-                  value={cloneName}
-                  onChange={(e) => {
-                    setCloneName(e.target.value);
-                    const n = e.target.value.trim();
-                    if (n && takenFactorNames.has(n)) {
-                      setCloneFormErr(
-                        `「${n}」与内置或已有因子库重名，请重新命名后再确定`,
-                      );
-                    } else if (cloneFormErr?.includes("重名")) {
-                      setCloneFormErr(null);
-                    }
-                  }}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm outline-none focus:border-blue-400"
-                />
-              </label>
-              <label className="block text-xs text-slate-500">
-                中文解释
-                <input
-                  value={cloneDesc}
-                  onChange={(e) => setCloneDesc(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
-                />
-              </label>
-              <label className="block text-xs text-slate-500">
-                分类
-                <select
-                  value={cloneCategory}
-                  onChange={(e) => setCloneCategory(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
-                >
-                  <option value="">请选择</option>
-                  {categoryOptions.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {cloneFormErr ? (
-                <p className="text-xs text-red-600">{cloneFormErr}</p>
-              ) : null}
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setCloneModalOpen(false)}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                disabled={cloneBusy}
-                onClick={() => void confirmCloneToDetect()}
-                className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-              >
-                {cloneBusy ? "处理中…" : "确定"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </CommunityPageShell>
   );
 }

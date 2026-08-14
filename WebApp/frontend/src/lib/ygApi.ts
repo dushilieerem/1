@@ -52,12 +52,26 @@ export type YgIndustryGroupEquityCurve = {
   }>;
 };
 
+export type YgQuantileMetric = {
+  quantile: string;
+  annual_return?: number | null;
+  volatility?: number | null;
+  sharpe?: number | null;
+  max_drawdown?: number | null;
+  annual_excess_return?: number | null;
+  excess_volatility?: number | null;
+  information_ratio?: number | null;
+  benchmark_win_rate?: number | null;
+};
+
 export type YgFactorAnalysis = {
   ic_mean?: number | null;
   ic_std?: number | null;
   rank_ic_mean?: number | null;
   layered_returns?: Record<string, number | null>;
   cumulative_series?: YgLayerPoint[] | null;
+  /** 各分位相对基准绩效（分组绩效分析表） */
+  quantile_metrics?: YgQuantileMetric[] | null;
   /** 诊断图口径定义（可选） */
   definition?: Record<string, unknown> | null;
   ic_series?: YgSeriesPoint[] | null;
@@ -169,6 +183,10 @@ export type YgBacktestRequest = {
   slippage_rate?: number;
   /** core=核心回测（默认） | full=额外 IC/FF3/行业 */
   analysis_level?: "core" | "full";
+  /** 仅 SVQuant 落库：当次左侧配置快照，不发给 RE */
+  _svquant_ui?: Record<string, unknown>;
+  /** 仅落库：草稿因子 */
+  _svquantDraftFactor?: Record<string, unknown>;
 };
 
 /** 去掉空 factor_code，避免纯 library_name 请求被脏字段干扰 */
@@ -181,6 +199,7 @@ export function serializeYgFactorBody(body: YgBacktestRequest): Record<string, u
     delete out.library_name;
   }
   delete out._svquantDraftFactor;
+  delete out._svquant_ui;
   return out;
 }
 
@@ -224,12 +243,24 @@ export type YgStrategyBacktestRequest = {
   include_positions?: boolean;
   /** 是否返回目标权重变化的调仓日志（默认 false；研究页可勾选） */
   include_rebalance_logs?: boolean;
+  /**
+   * 仅 SVQuant 落库用：左侧因子选择快照。
+   * serializeYgStrategyBody 会剥离，不会发给 ResearchEngine。
+   */
+  _svquant_ui?: {
+    signal_factor_ids?: string[];
+    signal_factor_weights?: number[];
+    signal_factor_powers?: number[];
+    signal_weight_mode?: "sum" | "product" | "custom";
+    signal_temp_labels?: Record<string, string>;
+  };
 };
 
 export function serializeYgStrategyBody(
   body: YgStrategyBacktestRequest,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...body };
+  delete out._svquant_ui;
   const code = out.strategy_code != null ? String(out.strategy_code).trim() : "";
   const sid = out.strategy_id != null ? String(out.strategy_id).trim() : "";
   if (!code) delete out.strategy_code;

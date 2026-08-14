@@ -380,15 +380,21 @@ export function clearStrategyCloneDraft() {
   sessionStorage.removeItem(STRATEGY_CLONE_DRAFT_KEY);
 }
 
-/** 打开策略配置草稿页（新标签）；首次回测/保存时才创建项目 */
+/** 打开策略配置草稿页；窄屏同页跳转，桌面优先新标签 */
 export function openStrategyDraftInNewTab(draft: StrategyCloneDraft) {
   stashStrategyCloneDraft(draft);
   prepareAuthHandoff();
-  const win = window.open(`/strategy/research/${STRATEGY_DRAFT_ID}`, "_blank");
+  const path = `/strategy/research/${STRATEGY_DRAFT_ID}`;
+  const narrow =
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 1023px)").matches;
+  if (narrow) {
+    window.location.assign(path);
+    return;
+  }
+  const win = window.open(path, "_blank");
   if (!win) {
-    window.alert(
-      "浏览器拦截了新标签页。请允许本站弹出窗口后再试。当前页面不会跳转。",
-    );
+    window.location.assign(path);
   }
 }
 
@@ -463,14 +469,20 @@ export async function deleteStrategyRun(runId: string): Promise<void> {
   });
 }
 
+/** 打开策略研究：窄屏同页跳转；桌面优先新标签 */
 export function openStrategyInNewTab(projectId: string) {
   const path = `/strategy/research/${encodeURIComponent(projectId)}`;
   prepareAuthHandoff();
+  const narrow =
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 1023px)").matches;
+  if (narrow) {
+    window.location.assign(path);
+    return;
+  }
   const win = window.open(path, "_blank");
   if (!win) {
-    window.alert(
-      "浏览器拦截了新标签页。请允许本站弹出窗口后再试。当前页面不会跳转。",
-    );
+    window.location.assign(path);
   }
 }
 

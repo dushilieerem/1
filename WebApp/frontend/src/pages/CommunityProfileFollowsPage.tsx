@@ -111,7 +111,7 @@ export function CommunityProfileFollowsPage({
 
   return (
     <CommunityPageShell>
-      <div className="mx-auto max-w-[1180px] px-5 py-6 pb-16 sm:py-8">
+      <div className="mx-auto max-w-[1180px] px-3 py-4 pb-16 sm:px-5 sm:py-8">
         {loading && !profile ? (
           <div className="flex items-center justify-center gap-2 py-24 text-sm text-slate-500">
             <Loader2 className="h-4 w-4 animate-spin" />

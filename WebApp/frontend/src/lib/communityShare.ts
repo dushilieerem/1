@@ -1,4 +1,10 @@
 import type { CommunitySection } from "@/lib/communityApi";
+import {
+  buildBuiltinFactorShareStub,
+  sanitizeFactorShareCode,
+} from "@/lib/communityClone";
+
+export { buildBuiltinFactorShareStub } from "@/lib/communityClone";
 
 /** 发帖助手 / Critic：平台结果引用（有则背书数字） */
 export type PlatformMetricsRef = {
@@ -59,7 +65,7 @@ function metricListHtml(
   return `<ul>${items.join("")}</ul>`;
 }
 
-export function buildFactorDetectShareDraft(input: {
+export async function buildFactorDetectShareDraft(input: {
   /** 展示名：用户起的检测项目名，如 max */
   name: string;
   rangeLabel?: string;
@@ -80,7 +86,7 @@ export function buildFactorDetectShareDraft(input: {
   factorName?: string | null;
   returnTo?: string;
   returnLabel?: string;
-}): CommunityShareDraft {
+}): Promise<CommunityShareDraft> {
   const titleBase = (input.name || "因子检测").trim();
   const title = `【因子检测】${titleBase}`.slice(0, 120);
   const m = input.metrics;
@@ -111,7 +117,7 @@ export function buildFactorDetectShareDraft(input: {
     "<blockquote><p>免责声明：内容不构成投资建议。</p></blockquote>",
   ].join("");
 
-  const code = resolveShareFactorCode(input);
+  const code = await resolveShareFactorCode(input);
 
   const metrics_display: Record<string, string> = {};
   const put = (k: string, v: string | null | undefined) => {
@@ -153,38 +159,18 @@ export function buildFactorDetectShareDraft(input: {
   };
 }
 
-/** 纯 library_name 检测无 factor_code 时，生成带正确 def 名的存根供社区克隆 */
-export function buildBuiltinFactorShareStub(
-  factorName: string,
-  libraryName: string | string[],
-): string {
-  const lib = Array.isArray(libraryName) ? libraryName.join(", ") : libraryName;
-  const safe =
-    /^[A-Za-z_][A-Za-z0-9_]*$/.test(factorName) ? factorName : "shared_factor";
-  return [
-    `def ${safe}(self):`,
-    `    """公用库因子 · ${lib}`,
-    `    克隆到因子检测：自动选用同名公用因子（RE library_name）。`,
-    `    克隆到策略研究：经典/聚宽拉本地实现；qlib_* 按命名展开公式。`,
-    `    """`,
-    `    pass`,
-  ].join("\n");
-}
-
-function resolveShareFactorCode(input: {
+async function resolveShareFactorCode(input: {
   factorCode?: string | null;
   libraryName?: string | string[] | null;
   factorName?: string | null;
-}): string {
-  const code = (input.factorCode || "").trim();
-  if (code) return code;
-  const fname = (input.factorName || "").trim();
-  const lib = input.libraryName;
-  if (fname && lib) return buildBuiltinFactorShareStub(fname, lib);
-  return "";
+}): Promise<string> {
+  return sanitizeFactorShareCode((input.factorCode || "").trim(), {
+    libraryName: input.libraryName,
+    factorName: input.factorName,
+  });
 }
 
-export function buildStrategyShareDraft(input: {
+export async function buildStrategyShareDraft(input: {
   name: string;
   rangeLabel?: string;
   universeLabel?: string;
@@ -201,7 +187,7 @@ export function buildStrategyShareDraft(input: {
   strategyCode?: string | null;
   returnTo?: string;
   returnLabel?: string;
-}): CommunityShareDraft {
+}): Promise<CommunityShareDraft> {
   const titleBase = (input.name || "策略回测").trim();
   const title = `【策略回测】${titleBase}`.slice(0, 120);
   const m = input.metrics;
@@ -230,12 +216,15 @@ export function buildStrategyShareDraft(input: {
     "<blockquote><p>免责声明：内容不构成投资建议。</p></blockquote>",
   ].join("");
 
+  // 策略分享暂不脱敏（仍按原代码分享）；因子侧另行处理
+  const strategyCode = (input.strategyCode || "").trim();
+
   return {
     shareDraft: true,
     section: "strategy",
     title,
     body,
-    code_snippet: (input.strategyCode || "").trim() || undefined,
+    code_snippet: strategyCode || undefined,
     returnTo: input.returnTo,
     returnLabel: input.returnLabel,
     platform_ref: (() => {
@@ -282,7 +271,7 @@ function panelIc(x?: number | null) {
   return (x / 100).toFixed(4);
 }
 
-export function buildFactorPanelShareDraft(input: {
+export async function buildFactorPanelShareDraft(input: {
   name: string;
   factorName: string;
   libraryName?: string | null;
@@ -309,7 +298,7 @@ export function buildFactorPanelShareDraft(input: {
   factorCode?: string | null;
   returnTo?: string;
   returnLabel?: string;
-}): CommunityShareDraft {
+}): Promise<CommunityShareDraft> {
   const display = (input.name || input.factorName || "因子").trim();
   const fname = (input.factorName || display).trim();
   const title = `【因子面板】${display}`.slice(0, 120);
@@ -351,7 +340,7 @@ export function buildFactorPanelShareDraft(input: {
     "<blockquote><p>免责声明：内容不构成投资建议。面板指标为聚合缓存，与单次检测参数可能不同。</p></blockquote>",
   ].join("");
 
-  const code = resolveShareFactorCode({
+  const code = await resolveShareFactorCode({
     factorCode: input.factorCode,
     libraryName: input.libraryName,
     factorName: fname,

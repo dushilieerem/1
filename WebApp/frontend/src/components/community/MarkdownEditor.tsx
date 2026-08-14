@@ -269,14 +269,14 @@ export function MarkdownEditor({
     <div
       className={`flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:border-red-300 focus-within:ring-2 focus-within:ring-red-100 ${className}`}
     >
-      <div className="flex flex-wrap items-center gap-0.5 border-b border-slate-100 bg-slate-50/80 px-2 py-1.5">
+      <div className="flex flex-nowrap items-center gap-0.5 overflow-x-auto border-b border-slate-100 bg-slate-50/80 px-1.5 py-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:px-2">
         <ToolBtn
           title="一级标题"
           active={editor.isActive("heading", { level: 1 })}
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
         >
           <Heading1 className="h-3.5 w-3.5" />
-          <span>H1</span>
+          <span className="hidden sm:inline">H1</span>
         </ToolBtn>
         <ToolBtn
           title="二级标题"
@@ -284,7 +284,7 @@ export function MarkdownEditor({
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
         >
           <Heading2 className="h-3.5 w-3.5" />
-          <span>H2</span>
+          <span className="hidden sm:inline">H2</span>
         </ToolBtn>
         <ToolBtn
           title="三级标题"
@@ -292,7 +292,7 @@ export function MarkdownEditor({
           onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
         >
           <Heading3 className="h-3.5 w-3.5" />
-          <span>H3</span>
+          <span className="hidden sm:inline">H3</span>
         </ToolBtn>
         <span className="mx-1 h-4 w-px bg-slate-200" />
         <ToolBtn
@@ -375,7 +375,7 @@ export function MarkdownEditor({
           }}
         />
         <span className="ml-auto pr-1 text-[11px] text-slate-400">
-          {textLen(value || editor.getHTML())} 字 · 图片自动缩小
+          {textLen(value || editor.getHTML())} 字
         </span>
       </div>
 

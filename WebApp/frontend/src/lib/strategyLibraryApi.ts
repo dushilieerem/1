@@ -29,6 +29,9 @@ export const STRATEGY_ARCHIVE_CATEGORIES = [
   "小市值",
   "最小方差",
   "统计套利",
+  "价值",
+  "价值成长",
+  "红利",
   "其他",
 ] as const;
 
@@ -43,6 +46,9 @@ export const STRATEGY_TYPE_LABELS: Record<string, string> = {
   low_volatility: "低波动",
   minimum_variance: "最小方差",
   statistical_arbitrage: "统计套利",
+  value: "价值",
+  value_growth: "价值成长",
+  dividend: "红利",
   small_cap: "小市值",
   custom: "自定义",
 };
@@ -205,6 +211,42 @@ export function configFromRunRequest(
     ? configFromLibraryCode(code, { engineMode: mode })
     : defaultStrategyConfig();
   const hasRange = Boolean(r.start && r.end);
+  const ui = r._svquant_ui && typeof r._svquant_ui === "object" ? r._svquant_ui : null;
+  const uiIds = Array.isArray(ui?.signal_factor_ids)
+    ? ui.signal_factor_ids.map(String).filter(Boolean)
+    : [];
+  // 优先：代码里解析出的 @factor；否则用落库时附带的左侧快照
+  const signalIds =
+    (fromCode.signal_factor_ids || []).length > 0
+      ? fromCode.signal_factor_ids
+      : uiIds;
+  const signalWeights =
+    (fromCode.signal_factor_ids || []).length > 0
+      ? fromCode.signal_factor_weights
+      : Array.isArray(ui?.signal_factor_weights)
+        ? ui.signal_factor_weights
+        : fromCode.signal_factor_weights;
+  const signalPowers =
+    (fromCode.signal_factor_ids || []).length > 0
+      ? fromCode.signal_factor_powers
+      : Array.isArray(ui?.signal_factor_powers)
+        ? ui.signal_factor_powers
+        : fromCode.signal_factor_powers;
+  const signalMode =
+    (fromCode.signal_factor_ids || []).length > 0
+      ? fromCode.signal_weight_mode
+      : ui?.signal_weight_mode === "product" ||
+          ui?.signal_weight_mode === "custom" ||
+          ui?.signal_weight_mode === "sum"
+        ? ui.signal_weight_mode
+        : fromCode.signal_weight_mode;
+  const signalLabels =
+    (fromCode.signal_factor_ids || []).length > 0
+      ? fromCode.signal_temp_labels
+      : {
+          ...(fromCode.signal_temp_labels || {}),
+          ...(ui?.signal_temp_labels || {}),
+        };
   return {
     ...defaultStrategyConfig(),
     ...fromCode,
@@ -237,6 +279,11 @@ export function configFromRunRequest(
       typeof r.include_rebalance_logs === "boolean"
         ? r.include_rebalance_logs
         : true,
+    signal_factor_ids: signalIds || [],
+    signal_factor_weights: signalWeights || [],
+    signal_factor_powers: signalPowers || [],
+    signal_weight_mode: signalMode || "sum",
+    signal_temp_labels: signalLabels || {},
   };
 }
 

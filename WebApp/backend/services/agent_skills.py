@@ -753,6 +753,8 @@ def skill_summarize_post(ctx: dict[str, Any], board: dict[str, Any]) -> dict[str
         f"{PLATFORM_KNOWLEDGE}"
         "有 platform_ref.metrics_display 时：结论里的 IC/年化/夏普等必须原样使用这些展示值，禁止改数、禁止补未给出的指标。"
         "无 platform_ref 时：不要把正文数字写成平台已验证结果。"
+        "正文以「来自因子面板/因子检测/策略回测自动摘要」开头，或已有 platform_ref 时："
+        "视为已挂平台来源；「局限」禁止写「未挂平台结果 / 指标未验证 / 未见平台引用」。"
         "不要建议分区、不要改原文、不要代写评论。中文。"
     )
     code_for_prompt = code if code_max <= 0 else code[:code_max]
@@ -807,6 +809,10 @@ def skill_flag_read_risks(ctx: dict[str, Any], board: dict[str, Any]) -> dict[st
     plain = f"{title}\n{strip_html(body)}\n{summary}"
     art = (board or {}).get("artifacts") or {}
     has_ref = bool(art.get("platform_ref") or (ctx or {}).get("platform_ref"))
+    if not has_ref:
+        from services.agent_metrics_trust import body_claims_platform_share
+
+        has_ref = body_claims_platform_share(body)
     prev_flags = list(board.get("flags") or [])
 
     flags: list[dict[str, Any]] = list(prev_flags)
@@ -826,6 +832,17 @@ def skill_flag_read_risks(ctx: dict[str, Any], board: dict[str, Any]) -> dict[st
                 "message": "文中有回测/面板类指标用语，未见平台引用，请自行核实出处",
             }
         )
+
+    # 有平台引用时去掉误报的「未见平台引用 / 指标未验证」类 flag
+    if has_ref:
+        drop_codes = {"unverified_metrics", "unverified_metric"}
+        drop_substr = ("未见平台引用", "未挂平台", "指标未经验证", "指标未验证")
+        flags = [
+            f
+            for f in flags
+            if str(f.get("code") or "") not in drop_codes
+            and not any(s in str(f.get("message") or "") for s in drop_substr)
+        ]
 
     if not llm_configured():
         # 去重
@@ -849,7 +866,8 @@ def skill_flag_read_risks(ctx: dict[str, Any], board: dict[str, Any]) -> dict[st
         "输出 JSON：{\"flags\":[{\"code\":\"...\",\"severity\":\"warn|info\",\"message\":\"...\"}]}。"
         "不要改摘要正文；不要滥报；无风险时 flags 为空数组。"
         f"{PLATFORM_KNOWLEDGE}"
-        "有 platform_ref 时不要再报「指标未经验证」；可提示面板缓存≠实盘。"
+        "有 platform_ref 时不要再报「指标未经验证」或「未见平台引用」；可提示面板缓存≠实盘。"
+        "正文含「来自因子面板/检测/策略回测自动摘要」视同已有平台来源，勿再报未见平台引用。"
         "关注：承诺收益、无出处夸张、把回测当实盘等。中文短句。"
     )
     user_msg = json.dumps(

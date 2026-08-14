@@ -413,8 +413,81 @@ export function CommunityMePage() {
 
   return (
     <CommunityPageShell className="!min-h-[calc(100vh-4rem)]">
-      <div className="relative flex min-h-[calc(100vh-4rem)] bg-[radial-gradient(ellipse_at_top,_#f8fafc_0%,_#eef1f6_55%,_#e8eef5_100%)]">
-        <aside className="flex w-[200px] shrink-0 flex-col border-r border-slate-200/70 bg-white/90 shadow-[2px_0_24px_rgba(15,23,42,0.04)] backdrop-blur-md sm:w-[220px]">
+      <div className="relative flex min-h-[calc(100vh-4rem)] flex-col bg-[radial-gradient(ellipse_at_top,_#f8fafc_0%,_#eef1f6_55%,_#e8eef5_100%)] lg:flex-row">
+        {/* 手机：顶栏头像 + 横滑 tab */}
+        <div className="sticky top-0 z-20 shrink-0 border-b border-slate-200/80 bg-white/95 backdrop-blur-md lg:hidden">
+          <div className="flex items-center gap-3 px-3 py-3">
+            {user?.username ? (
+              <Link
+                to={`/u/${encodeURIComponent(user.username)}`}
+                className="shrink-0"
+                title="我的主页"
+              >
+                <AuthorAvatar name={name} src={user.avatar_url} size="md" />
+              </Link>
+            ) : (
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-800 text-sm font-bold text-white">
+                {initial}
+              </span>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-slate-900">{name}</p>
+              <p className="truncate text-[11px] text-slate-500">
+                {roleLabel}
+                {user?.username ? ` · ${user.username}` : ""}
+              </p>
+              {user?.username ? (
+                <Link
+                  to={`/u/${encodeURIComponent(user.username)}`}
+                  className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-red-600 hover:text-red-500"
+                >
+                  <UserRound className="h-3 w-3" />
+                  我的主页
+                </Link>
+              ) : null}
+            </div>
+          </div>
+          <nav
+            className="-mx-0 flex flex-nowrap gap-1 overflow-x-auto px-2 pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            aria-label="个人中心栏目"
+          >
+            {sideNav.map((item) => {
+              const Icon = item.icon;
+              const active = tab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setTab(item.id)}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition ${
+                    active
+                      ? "bg-slate-900 font-semibold text-white shadow-sm"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  <Icon className={`h-3.5 w-3.5 ${active ? "text-white" : "text-slate-400"}`} />
+                  {item.label}
+                </button>
+              );
+            })}
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={() => {
+                  prepareAuthHandoff();
+                  window.open(KH_URL, "_blank", "noopener,noreferrer");
+                }}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-800"
+              >
+                <BookOpen className="h-3.5 w-3.5 text-sky-600" />
+                知识库
+              </button>
+            ) : null}
+          </nav>
+        </div>
+
+        {/* 桌面：左侧栏 */}
+        <aside className="hidden w-[200px] shrink-0 flex-col border-r border-slate-200/70 bg-white/90 shadow-[2px_0_24px_rgba(15,23,42,0.04)] backdrop-blur-md sm:w-[220px] lg:flex">
           <div className="relative overflow-hidden border-b border-slate-100 px-4 pb-5 pt-6">
             <div
               className="pointer-events-none absolute -right-6 -top-8 h-28 w-28 rounded-full bg-slate-200/40 blur-2xl"
@@ -496,21 +569,12 @@ export function CommunityMePage() {
               </button>
             </div>
           ) : null}
-
-          <div className="border-t border-slate-100 p-3">
-            <Link
-              to="/community"
-              className="block rounded-lg px-2 py-2 text-center text-xs font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-800"
-            >
-              浏览社区 Feed
-            </Link>
-          </div>
         </aside>
 
         <main className="min-w-0 flex-1 overflow-hidden p-3 sm:p-4 lg:p-5">
           {tab === "workspace" ? (
             <div className="h-full overflow-auto animate-fade-up">
-              <section className="relative mb-5 overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-sky-50/80 to-amber-50/70 p-6 shadow-sm sm:p-7">
+              <section className="relative mb-4 overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-sky-50/80 to-amber-50/70 p-4 shadow-sm sm:mb-5 sm:rounded-3xl sm:p-6 lg:p-7">
                 <div
                   className="pointer-events-none absolute inset-0 opacity-60"
                   style={{
@@ -523,7 +587,7 @@ export function CommunityMePage() {
                   <p className="text-xs font-medium tracking-wide text-slate-400">
                     SVQUANT · 个人中心
                   </p>
-                  <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                  <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:mt-1.5 sm:text-2xl lg:text-3xl">
                     你好，{name}
                   </h1>
                 </div>
@@ -535,9 +599,9 @@ export function CommunityMePage() {
               <button
                 type="button"
                 onClick={() => setTab("usage")}
-                className="group mb-5 flex w-full items-center gap-4 overflow-hidden rounded-2xl border border-slate-200/90 bg-white px-5 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
+                className="group mb-5 flex w-full items-center gap-3 overflow-hidden rounded-2xl border border-slate-200/90 bg-white px-4 py-3.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md sm:gap-4 sm:px-5 sm:py-4"
               >
-                <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-red-500 to-orange-400 text-white shadow-md shadow-orange-200/60">
+                <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-red-500 to-orange-400 text-white shadow-md shadow-orange-200/60 sm:h-12 sm:w-12">
                   <Gauge className="h-5 w-5" />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -565,7 +629,7 @@ export function CommunityMePage() {
               <p className="mb-3 text-xs font-semibold tracking-wide text-slate-400">
                 快捷入口
               </p>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {QUICK_LINKS.map((item) => {
                   const Icon = item.icon;
                   return (
@@ -594,7 +658,7 @@ export function CommunityMePage() {
               </div>
             </div>
           ) : (
-            <div className="flex h-[calc(100vh-5.5rem)] flex-col overflow-hidden rounded-2xl border border-white/80 bg-white/95 shadow-[0_8px_30px_rgba(15,23,42,0.06)] backdrop-blur animate-fade-up">
+            <div className="flex min-h-[min(70vh,calc(100vh-9rem))] flex-col overflow-hidden rounded-2xl border border-white/80 bg-white/95 shadow-[0_8px_30px_rgba(15,23,42,0.06)] backdrop-blur animate-fade-up lg:h-[calc(100vh-5.5rem)]">
               {tab === "usage" && <MeUsagePanel />}
               {tab === "messages" && <MeMessagesPanel />}
               {tab === "mine" && <MePostsPanel />}

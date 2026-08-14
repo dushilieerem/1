@@ -31,14 +31,20 @@ export type DetectProjectConfig = {
   rebalanceDays: number;
   filterLimitUp: boolean;
   filterSuspended: boolean;
-  /** core=核心检测 | full=全量检测，对应 RE analysis_level */
+  /** core=快速检测 | full=全量检测，对应 RE analysis_level */
   analysisLevel: AnalysisLevel;
   /** 对标 RE /yg-api：佣金率 / 卖出印花税 / 滑点率 */
   commissionRate: number;
   stampTax: number;
   slippageRate: number;
-  /** 新建因子草稿；有值时为单因子自定义模式 */
+  /**
+   * 新建/社区克隆临时因子（未入库；琥珀色）。
+   * 可与库因子并存：factorCodes 含草稿名，检测时把 body 打进 factor_code。
+   * 仅当 factorCodes 只有该草稿时，检测页进入「单因子草稿」编辑态。
+   */
   draftFactor?: DraftDetectFactor | null;
+  /** 多个临时因子（社区混合克隆）；有值时优先于 draftFactor */
+  draftFactors?: DraftDetectFactor[];
 };
 
 export type DetectProject = {
@@ -64,20 +70,181 @@ export type DetectRunRecord = {
   elapsedSec: number;
   /** 本次为新建自定义因子检测时带上，报告页可入库 */
   draftFactor?: DraftDetectFactor | null;
+  /** 多个临时因子（社区克隆）；优先于 draftFactor */
+  draftFactors?: DraftDetectFactor[];
 };
+
+/** 单次检测落库的 UI 快照（历史还原 / 列表展示） */
+export type DetectRunUiSnapshot = {
+  factorCodes: string[];
+  /** code → 中文名 */
+  factorLabels?: Record<string, string>;
+  weights: number[];
+  powers: number[];
+  weightMode: WeightMode;
+  customCombine: string;
+  portfolioType: string;
+  rangeMode: RangeMode;
+  backtestPeriod: string;
+  startDate: string;
+  endDate: string;
+  universe: string;
+  benchmark: string;
+  groups: number;
+  rebalanceDays: number;
+  filterLimitUp: boolean;
+  filterSuspended: boolean;
+  analysisLevel: AnalysisLevel;
+  commissionRate: number;
+  stampTax: number;
+  slippageRate: number;
+};
+
+export function buildDetectRunUiSnapshot(
+  cfg: DetectProjectConfig,
+  labelOf?: (code: string) => string,
+): DetectRunUiSnapshot {
+  const factorLabels: Record<string, string> = {};
+  for (const c of cfg.factorCodes || []) {
+    factorLabels[c] = labelOf?.(c) || c;
+  }
+  return {
+    factorCodes: [...(cfg.factorCodes || [])],
+    factorLabels,
+    weights: [...(cfg.weights || [])],
+    powers: [...(cfg.powers || [])],
+    weightMode: cfg.weightMode || "sum",
+    customCombine: cfg.customCombine || "",
+    portfolioType: cfg.portfolioType || "long_only",
+    rangeMode: cfg.rangeMode || "period",
+    backtestPeriod: cfg.backtestPeriod || "10y",
+    startDate: cfg.startDate || "",
+    endDate: cfg.endDate || "",
+    universe: cfg.universe || "CSI300",
+    benchmark: cfg.benchmark || "CSI300",
+    groups: cfg.groups || 5,
+    rebalanceDays: cfg.rebalanceDays || 1,
+    filterLimitUp: Boolean(cfg.filterLimitUp),
+    filterSuspended: Boolean(cfg.filterSuspended),
+    analysisLevel: cfg.analysisLevel === "full" ? "full" : "core",
+    commissionRate: Number(cfg.commissionRate) || 0,
+    stampTax: Number(cfg.stampTax) || 0,
+    slippageRate: Number(cfg.slippageRate) || 0,
+  };
+}
+
+export function readDetectRunUiSnapshot(
+  req: YgBacktestRequest | Record<string, unknown> | null | undefined,
+): DetectRunUiSnapshot | null {
+  const raw = (req as { _svquant_ui?: DetectRunUiSnapshot } | null | undefined)
+    ?._svquant_ui;
+  if (!raw || typeof raw !== "object") return null;
+  const codes = Array.isArray(raw.factorCodes)
+    ? raw.factorCodes.map(String).filter(Boolean)
+    : [];
+  if (!codes.length && !(raw.customCombine || "").trim()) return null;
+  return {
+    factorCodes: codes,
+    factorLabels:
+      raw.factorLabels && typeof raw.factorLabels === "object"
+        ? Object.fromEntries(
+            Object.entries(raw.factorLabels).map(([k, v]) => [k, String(v)]),
+          )
+        : {},
+    weights: Array.isArray(raw.weights) ? raw.weights.map(Number) : equalWeights(codes.length),
+    powers: Array.isArray(raw.powers) ? raw.powers.map(Number) : equalPowers(codes.length),
+    weightMode:
+      raw.weightMode === "product" || raw.weightMode === "custom"
+        ? raw.weightMode
+        : "sum",
+    customCombine: String(raw.customCombine || ""),
+    portfolioType: String(raw.portfolioType || "long_only"),
+    rangeMode: raw.rangeMode === "custom" ? "custom" : "period",
+    backtestPeriod: String(raw.backtestPeriod || "10y"),
+    startDate: String(raw.startDate || ""),
+    endDate: String(raw.endDate || ""),
+    universe: String(raw.universe || "CSI300"),
+    benchmark: String(raw.benchmark || "CSI300"),
+    groups: Number(raw.groups) || 5,
+    rebalanceDays: Number(raw.rebalanceDays) || 1,
+    filterLimitUp: Boolean(raw.filterLimitUp),
+    filterSuspended: Boolean(raw.filterSuspended),
+    analysisLevel: raw.analysisLevel === "full" ? "full" : "core",
+    commissionRate: Number(raw.commissionRate) || 0,
+    stampTax: Number(raw.stampTax) || 0,
+    slippageRate: Number(raw.slippageRate) || 0,
+  };
+}
+
+/** 历史列表「因子」列文案 */
+export function formatDetectRunFactorsLabel(
+  rec: Pick<DetectRunRecord, "description" | "factorName" | "request">,
+): string {
+  const ui = readDetectRunUiSnapshot(rec.request);
+  if (ui?.factorCodes?.length) {
+    const labels = ui.factorCodes.map(
+      (c) => ui.factorLabels?.[c] || c,
+    );
+    if (labels.length <= 3) return labels.join(" + ");
+    return `${labels.slice(0, 2).join(" + ")} 等${labels.length}个`;
+  }
+  const desc = (rec.description || "").trim();
+  const fname = (rec.factorName || "").trim();
+  if (desc && desc !== fname && desc !== "combo_factor" && desc !== "custom_combo") {
+    return desc;
+  }
+  if (fname && fname !== "combo_factor" && fname !== "custom_combo") return fname;
+  return desc || fname || "—";
+}
+
+/** 历史快照 → 覆盖到项目 config（仅内存展示，是否落库由调用方决定） */
+export function applyDetectRunSnapshotToConfig(
+  cfg: DetectProjectConfig,
+  snap: DetectRunUiSnapshot,
+): DetectProjectConfig {
+  return {
+    ...cfg,
+    factorCodes: [...snap.factorCodes],
+    weights: snap.weights.length
+      ? [...snap.weights]
+      : equalWeights(snap.factorCodes.length),
+    powers: snap.powers.length
+      ? [...snap.powers]
+      : equalPowers(snap.factorCodes.length),
+    weightMode: snap.weightMode,
+    customCombine: snap.customCombine,
+    portfolioType: snap.portfolioType,
+    rangeMode: snap.rangeMode,
+    backtestPeriod: snap.backtestPeriod,
+    startDate: snap.startDate,
+    endDate: snap.endDate,
+    universe: snap.universe,
+    benchmark: snap.benchmark,
+    groups: snap.groups,
+    rebalanceDays: snap.rebalanceDays,
+    filterLimitUp: snap.filterLimitUp,
+    filterSuspended: snap.filterSuspended,
+    analysisLevel: snap.analysisLevel,
+    commissionRate: snap.commissionRate,
+    stampTax: snap.stampTax,
+    slippageRate: snap.slippageRate,
+  };
+}
 
 export const DETECT_UNIVERSE_OPTIONS = [
   { code: "CSI300", label: "沪深300" },
   { code: "CSI500", label: "中证500" },
+  { code: "CSI800", label: "中证800" },
   { code: "CSI1000", label: "中证1000" },
   { code: "SSE50", label: "上证50" },
-  { code: "CSI_ALL", label: "中证全指" },
+  { code: "CSI_ALL", label: "全A" },
 ] as const;
 
 export const DETECT_BENCHMARK_OPTIONS = [
   { code: "CSI300", label: "沪深300" },
   { code: "SSE50", label: "上证50" },
   { code: "CSI500", label: "中证500" },
+  { code: "CSI800", label: "中证800" },
   { code: "CSI1000", label: "中证1000" },
 ] as const;
 
@@ -95,7 +262,7 @@ export const DETECT_PERIOD_OPTIONS = [
 ] as const;
 
 export const DETECT_ANALYSIS_LEVEL_OPTIONS = [
-  { code: "core" as const, label: "核心检测" },
+  { code: "core" as const, label: "快速检测" },
   { code: "full" as const, label: "全量检测" },
 ] as const;
 
@@ -175,12 +342,12 @@ export function clampDateRange(
 export const PORTFOLIO_TYPE_OPTIONS = [
   {
     code: "long_short",
-    label: "多空 long_short",
+    label: "多空",
     hint: "做多最高分组、做空最低分组，衡量因子多空收益。",
   },
   {
     code: "long_only",
-    label: "纯多 long_only",
+    label: "纯多",
     hint: "只做多最高分组，不进行空头对冲。",
   },
 ] as const;
@@ -211,7 +378,7 @@ export function defaultConfig(factorCodes: string[] = []): DetectProjectConfig {
     customCombine: codes.length
       ? `def combo_factor(self):\n    """自定义组合"""\n    return self.${codes[0]}()`
       : `def combo_factor(self):\n    """自定义组合"""\n    return self.close.pct_change(5)`,
-    portfolioType: "long_short",
+    portfolioType: "long_only",
     rangeMode: "period",
     backtestPeriod: "10y",
     startDate: periodToStartEnd("10y").start,
@@ -219,13 +386,13 @@ export function defaultConfig(factorCodes: string[] = []): DetectProjectConfig {
     universe: "CSI300",
     benchmark: "CSI300",
     groups: 5,
-    rebalanceDays: 20,
-    filterLimitUp: true,
-    filterSuspended: true,
+    rebalanceDays: 1,
+    filterLimitUp: false,
+    filterSuspended: false,
     analysisLevel: "core",
-    commissionRate: 0.0003,
-    stampTax: 0.001,
-    slippageRate: 0.001,
+    commissionRate: 0,
+    stampTax: 0,
+    slippageRate: 0,
   };
 }
 
@@ -427,12 +594,15 @@ export async function createProject(
   displayName?: string,
 ): Promise<DetectProject> {
   ensureCacheOwner();
+  const codes =
+    factorName && factorName !== "custom_combo" ? [factorName] : [];
   const data = await apiJson<{ project: DetectProject }>("/api/detect/projects", {
     method: "POST",
     body: JSON.stringify({
       factorName,
       description,
       name: displayName || description || factorName,
+      config: defaultConfig(codes),
     }),
   });
   const p = normalizeProject(data.project);
@@ -615,6 +785,11 @@ export async function createDetectProjectFromSnippet(opts: {
     weightMode: "sum",
     weights: equalWeights(1),
     powers: equalPowers(1),
+    // AI/社区草稿：默认 1 年 + 5 日调仓，避免日频×自定义源码首次试跑过久
+    backtestPeriod: "1y",
+    startDate: periodToStartEnd("1y").start,
+    endDate: periodToStartEnd("1y").end,
+    rebalanceDays: 5,
     draftFactor: {
       name,
       description,
@@ -625,15 +800,67 @@ export async function createDetectProjectFromSnippet(opts: {
   return saveProject(created);
 }
 
-/** 新标签打开检测配置页（原页不动；带登录交接，无需重登） */
+/** 配置里的临时草稿列表（兼容旧单一 draftFactor） */
+export function listDraftFactors(
+  cfg: Pick<DetectProjectConfig, "draftFactor" | "draftFactors"> | null | undefined,
+): DraftDetectFactor[] {
+  if (!cfg) return [];
+  if (cfg.draftFactors?.length) return cfg.draftFactors;
+  if (cfg.draftFactor?.name) return [cfg.draftFactor];
+  return [];
+}
+
+/** 社区克隆 → 选用平台公用因子（不展开源码）；可选附带临时自定义草稿 */
+export async function createDetectProjectFromLibraryFactors(opts: {
+  title: string;
+  factorIds: string[];
+  comboFn?: string;
+  weightMode?: WeightMode;
+  /** 帖内自定义因子：临时带入，不入库 */
+  draftFactors?: DraftDetectFactor[];
+}): Promise<DetectProject> {
+  ensureCacheOwner();
+  const drafts = (opts.draftFactors || []).filter((d) => d?.name && d?.body);
+  const ids = (opts.factorIds || []).map(String).filter(Boolean);
+  for (const d of drafts) {
+    if (!ids.includes(d.name)) ids.push(d.name);
+  }
+  if (!ids.length) throw new Error("未指定公用因子");
+  const title = (opts.title || ids.join("+")).trim() || "社区克隆";
+  const created = await createProject(ids[0], title, title);
+  const mode = opts.weightMode || (ids.length > 1 ? "custom" : "sum");
+  const combo =
+    (opts.comboFn || "").trim() ||
+    (ids.length === 1
+      ? `def combo_factor(self):\n    """直通"""\n    return self.${ids[0]}()`
+      : `def combo_factor(self):\n    """自定义组合"""\n    return ${ids.map((c) => `self.${c}()`).join(" + ")}`);
+  created.config = {
+    ...defaultConfig(ids),
+    factorCodes: ids,
+    weightMode: mode,
+    weights: equalWeights(ids.length),
+    powers: equalPowers(ids.length),
+    customCombine: combo,
+    draftFactor: drafts[0] || null,
+    draftFactors: drafts.length ? drafts : undefined,
+  };
+  return saveProject(created);
+}
+
+/** 打开检测配置页：窄屏同页跳转（手机常拦弹窗）；桌面优先新标签 */
 export function openDetectInNewTab(projectId: string) {
   const path = `/factor/detect/${encodeURIComponent(projectId)}`;
   prepareAuthHandoff();
+  const narrow =
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 1023px)").matches;
+  if (narrow) {
+    window.location.assign(path);
+    return;
+  }
   const win = window.open(path, "_blank");
   if (!win) {
-    window.alert(
-      "浏览器拦截了新标签页。请允许本站弹出窗口后，再点「检测」。当前页面不会跳转。",
-    );
+    window.location.assign(path);
   }
 }
 

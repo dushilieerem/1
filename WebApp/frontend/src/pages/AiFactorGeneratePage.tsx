@@ -4,6 +4,7 @@ import {
   Copy,
   FlaskConical,
   Loader2,
+  Menu,
   MoreHorizontal,
   Pin,
   Plus,
@@ -122,10 +123,20 @@ export function AiFactorGeneratePage() {
   const [sendFormErr, setSendFormErr] = useState<string | null>(null);
   const [categoryOptions, setCategoryOptions] = useState<string[]>(["其他"]);
   const [takenNames, setTakenNames] = useState<Set<string>>(() => new Set());
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [isNarrow, setIsNarrow] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  useEffect(() => {
+    const m = window.matchMedia("(max-width: 1023px)");
+    const sync = () => setIsNarrow(m.matches);
+    sync();
+    m.addEventListener("change", sync);
+    return () => m.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     return subscribeAuth(() => {
@@ -228,6 +239,7 @@ export function AiFactorGeneratePage() {
         factor_code: data.factor.factor_code,
         description: data.factor.description || "",
       });
+      setHistoryOpen(false);
     } catch (e) {
       if ((e as Error)?.name === "AbortError") return;
       setDraft(null);
@@ -240,7 +252,10 @@ export function AiFactorGeneratePage() {
 
   const onPickHistory = (h: HistoryItem) => {
     setMenuId(null);
-    if (h.id === activeHistoryId) return;
+    if (h.id === activeHistoryId) {
+      setHistoryOpen(false);
+      return;
+    }
     if (activeHistoryId === null && (prompt.trim() || code.trim() || draft)) {
       setCurrentSnap({ prompt, code, draft });
     }
@@ -257,6 +272,7 @@ export function AiFactorGeneratePage() {
       warnings: [],
     });
     setErr(null);
+    setHistoryOpen(false);
   };
 
   const onReturnCurrent = () => {
@@ -267,6 +283,7 @@ export function AiFactorGeneratePage() {
     setCode(currentSnap.code);
     setDraft(currentSnap.draft);
     setErr(null);
+    setHistoryOpen(false);
   };
 
   const onNewChat = () => {
@@ -279,6 +296,7 @@ export function AiFactorGeneratePage() {
     setCode("");
     setDraft(null);
     setErr(null);
+    setHistoryOpen(false);
   };
 
   const onTogglePin = (id: string) => {
@@ -384,19 +402,142 @@ export function AiFactorGeneratePage() {
 
   const canReturnCurrent = Boolean(currentSnap) && activeHistoryId !== null;
 
+  const onPromptChange = (value: string) => {
+    setPrompt(value.slice(0, PROMPT_MAX));
+    setErr(null);
+    if (activeHistoryId !== null) {
+      setActiveHistoryId(null);
+      setCurrentSnap(null);
+    }
+  };
+
+  const historyPanel = (
+    <>
+      <div className="space-y-2 p-3">
+        <button
+          type="button"
+          onClick={onNewChat}
+          className="flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2.5 text-[15px] font-medium text-slate-800 shadow-sm transition hover:bg-slate-50"
+        >
+          <Plus className="h-4 w-4" />
+          开启新问答
+        </button>
+        {canReturnCurrent ? (
+          <button
+            type="button"
+            onClick={onReturnCurrent}
+            className="flex w-full items-center justify-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            返回当前
+          </button>
+        ) : null}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+        {grouped.length === 0 ? (
+          <p className="px-2 py-6 text-center text-sm text-slate-400">
+            暂无历史记录
+          </p>
+        ) : null}
+        {grouped.map(([label, items]) => (
+          <div key={label} className="mb-3">
+            <p className="px-2 py-1.5 text-xs font-medium text-slate-400">
+              {label}
+            </p>
+            <ul className="space-y-0.5">
+              {items.map((h) => {
+                const active = h.id === activeHistoryId;
+                return (
+                  <li key={h.id} className="relative">
+                    <div
+                      className={`group flex items-start gap-1 rounded-xl px-2 py-2 ${
+                        active ? "bg-white shadow-sm" : "hover:bg-white/70"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onPickHistory(h)}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <p className="flex items-center gap-1 truncate text-[14px] font-semibold text-slate-800">
+                          {h.pinned ? (
+                            <Pin className="h-3 w-3 shrink-0 text-teal-600" />
+                          ) : null}
+                          <span className="truncate font-mono text-[13px]">
+                            {h.factor_name}
+                          </span>
+                        </p>
+                        <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-slate-500">
+                          {h.prompt}
+                        </p>
+                        <p className="mt-1 text-xs tabular-nums text-slate-400">
+                          {fmtTime(h.at)}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        title="更多"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMenuId((cur) => (cur === h.id ? null : h.id));
+                        }}
+                        className={`mt-0.5 shrink-0 rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 ${
+                          menuId === h.id
+                            ? "bg-slate-100 text-slate-700 opacity-100"
+                            : "opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
+                        }`}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+                    </div>
+                    {menuId === h.id ? (
+                      <div
+                        ref={menuRef}
+                        className="absolute right-2 top-9 z-20 w-36 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onTogglePin(h.id)}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                        >
+                          <Pin className="h-3.5 w-3.5" />
+                          {h.pinned ? "取消置顶" : "置顶"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteOne(h.id)}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          删除
+                        </button>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] flex-col bg-[#f7f8fa] text-[15px] text-slate-800">
-      <header className="border-b border-slate-200/80 bg-white">
-        <div className="mx-auto flex max-w-[1480px] items-center justify-between gap-3 px-5 py-3.5">
-          <h1 className="flex items-center gap-2 text-lg font-bold text-slate-900">
-            <Sparkles className="h-5 w-5 text-teal-600" />
-            AI 因子生成
+    <div className="flex min-h-[calc(100vh-4rem)] flex-col bg-[#f7f8fa] text-[15px] text-slate-800 lg:h-[calc(100vh-4rem)]">
+      {/* PC 顶栏 */}
+      <header className="hidden shrink-0 border-b border-slate-200/80 bg-white lg:block">
+        <div className="mx-auto flex max-w-[1480px] items-center justify-between gap-2 px-5 py-3.5">
+          <h1 className="flex min-w-0 items-center gap-2 text-lg font-bold text-slate-900">
+            <Sparkles className="h-5 w-5 shrink-0 text-teal-600" />
+            <span className="truncate">AI 因子生成</span>
           </h1>
           <button
             type="button"
             disabled={busy || !prompt.trim()}
             onClick={() => void onGenerate()}
-            className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-teal-700 px-5 text-[15px] font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
+            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-teal-700 px-5 text-[15px] font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
           >
             {busy ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -408,118 +549,60 @@ export function AiFactorGeneratePage() {
         </div>
       </header>
 
-      <div className="mx-auto grid w-full max-w-[1480px] flex-1 grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)_minmax(0,1.15fr)]">
-        {/* DeepSeek 风格侧栏 */}
-        <aside className="flex min-h-0 flex-col border-b border-slate-200 bg-[#f0f2f5] lg:border-b-0 lg:border-r lg:border-slate-200/80">
-          <div className="space-y-2 p-3">
-            <button
-              type="button"
-              onClick={onNewChat}
-              className="flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2.5 text-[15px] font-medium text-slate-800 shadow-sm transition hover:bg-slate-50"
-            >
-              <Plus className="h-4 w-4" />
-              开启新问答
-            </button>
-            {canReturnCurrent ? (
+      {/* 手机顶栏：左汉堡开历史 */}
+      <header className="relative flex shrink-0 items-center justify-center border-b border-slate-200/80 bg-white px-12 py-2.5 lg:hidden">
+        <button
+          type="button"
+          aria-label="历史记录"
+          onClick={() => setHistoryOpen(true)}
+          className="absolute left-2 rounded-lg p-2 text-slate-700 hover:bg-slate-100"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <div className="min-w-0 text-center">
+          <h1 className="truncate text-base font-bold text-slate-900">
+            AI 因子生成
+          </h1>
+          <p className="text-[11px] leading-tight text-slate-400">
+            AI 生成可能有误，请核实
+          </p>
+        </div>
+      </header>
+
+      {isNarrow && historyOpen ? (
+        <div className="fixed inset-0 z-[120] lg:hidden">
+          <button
+            type="button"
+            aria-label="关闭历史"
+            className="absolute inset-0 bg-slate-900/40"
+            onClick={() => setHistoryOpen(false)}
+          />
+          <aside className="absolute inset-y-0 left-0 flex w-[min(86vw,320px)] flex-col bg-[#f0f2f5] shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200/80 px-3 py-2.5">
+              <p className="text-[15px] font-semibold text-slate-800">历史记录</p>
               <button
                 type="button"
-                onClick={onReturnCurrent}
-                className="flex w-full items-center justify-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50"
+                aria-label="关闭"
+                onClick={() => setHistoryOpen(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-white"
               >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                返回当前
+                <X className="h-4 w-4" />
               </button>
-            ) : null}
-          </div>
+            </div>
+            {historyPanel}
+          </aside>
+        </div>
+      ) : null}
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-            {grouped.map(([label, items]) => (
-              <div key={label} className="mb-3">
-                <p className="px-2 py-1.5 text-xs font-medium text-slate-400">
-                  {label}
-                </p>
-                <ul className="space-y-0.5">
-                  {items.map((h) => {
-                    const active = h.id === activeHistoryId;
-                    return (
-                      <li key={h.id} className="relative">
-                        <div
-                          className={`group flex items-start gap-1 rounded-xl px-2 py-2 ${
-                            active
-                              ? "bg-white shadow-sm"
-                              : "hover:bg-white/70"
-                          }`}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => onPickHistory(h)}
-                            className="min-w-0 flex-1 text-left"
-                          >
-                            <p className="flex items-center gap-1 truncate text-[14px] font-semibold text-slate-800">
-                              {h.pinned ? (
-                                <Pin className="h-3 w-3 shrink-0 text-teal-600" />
-                              ) : null}
-                              <span className="truncate font-mono text-[13px]">
-                                {h.factor_name}
-                              </span>
-                            </p>
-                            <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-slate-500">
-                              {h.prompt}
-                            </p>
-                            <p className="mt-1 text-xs tabular-nums text-slate-400">
-                              {fmtTime(h.at)}
-                            </p>
-                          </button>
-                          <button
-                            type="button"
-                            title="更多"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setMenuId((cur) => (cur === h.id ? null : h.id));
-                            }}
-                            className={`mt-0.5 shrink-0 rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 ${
-                              menuId === h.id
-                                ? "bg-slate-100 text-slate-700 opacity-100"
-                                : "opacity-0 group-hover:opacity-100"
-                            }`}
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </button>
-                        </div>
-                        {menuId === h.id ? (
-                          <div
-                            ref={menuRef}
-                            className="absolute right-2 top-9 z-20 w-36 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-                          >
-                            <button
-                              type="button"
-                              onClick={() => onTogglePin(h.id)}
-                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                            >
-                              <Pin className="h-3.5 w-3.5" />
-                              {h.pinned ? "取消置顶" : "置顶"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onDeleteOne(h.id)}
-                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              删除
-                            </button>
-                          </div>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </aside>
+      <div className="mx-auto grid min-h-0 w-full max-w-[1480px] flex-1 grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)_minmax(0,1.15fr)]">
+        {!isNarrow ? (
+          <aside className="hidden min-h-0 flex-col border-r border-slate-200/80 bg-[#f0f2f5] lg:flex">
+            {historyPanel}
+          </aside>
+        ) : null}
 
-        {/* 提问 */}
-        <section className="flex min-h-0 flex-col border-b border-slate-200 bg-white lg:border-b-0 lg:border-r">
+        {/* PC 提问 */}
+        <section className="hidden min-h-0 flex-col border-r border-slate-200 bg-white lg:flex">
           <div className="flex h-11 items-center border-b border-slate-100 px-4">
             <p className="text-[15px] font-semibold text-slate-800">提问</p>
           </div>
@@ -527,14 +610,7 @@ export function AiFactorGeneratePage() {
             <textarea
               value={prompt}
               maxLength={PROMPT_MAX}
-              onChange={(e) => {
-                setPrompt(e.target.value.slice(0, PROMPT_MAX));
-                setErr(null);
-                if (activeHistoryId !== null) {
-                  setActiveHistoryId(null);
-                  setCurrentSnap(null);
-                }
-              }}
+              onChange={(e) => onPromptChange(e.target.value)}
               onKeyDown={(e) => {
                 if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !busy) {
                   e.preventDefault();
@@ -544,14 +620,17 @@ export function AiFactorGeneratePage() {
               placeholder="用自然语言描述你想要的因子逻辑…"
               className="min-h-[300px] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3.5 text-[15px] leading-7 outline-none focus:border-teal-500 focus:bg-white focus:ring-1 focus:ring-teal-500"
             />
+            <div className="mt-2 flex flex-col gap-1.5">
+              <p className="text-xs text-slate-400">Ctrl+Enter 生成</p>
+            </div>
             {err ? (
               <p className="mt-2 text-sm text-rose-600">{err}</p>
             ) : null}
           </div>
         </section>
 
-        {/* 代码 */}
-        <section className="flex min-h-0 flex-col bg-white">
+        {/* PC 代码 */}
+        <section className="hidden min-h-0 flex-col bg-white lg:flex">
           <div className="flex h-11 items-center justify-between gap-2 border-b border-slate-100 px-4">
             <p className="truncate text-[15px] font-semibold text-slate-800">
               {draft ? draft.factor_name : "生成代码"}
@@ -599,6 +678,123 @@ export function AiFactorGeneratePage() {
             )}
           </div>
         </section>
+
+        {/* 手机：豆包式主区 + 底栏 */}
+        <div className="flex min-h-0 flex-1 flex-col bg-white lg:hidden">
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+            {!busy && !code && !err ? (
+              <div className="flex h-full min-h-[40vh] flex-col items-center justify-center px-4 text-center">
+                <Sparkles className="mb-3 h-8 w-8 text-teal-600/80" />
+                <p className="text-base font-semibold text-slate-800">
+                  描述你想要的因子
+                </p>
+              </div>
+            ) : null}
+
+            {prompt.trim() && (busy || code || err) ? (
+              <div className="mb-3 flex justify-end">
+                <div className="max-w-[88%] rounded-2xl rounded-br-md bg-teal-700 px-3.5 py-2.5 text-[15px] leading-6 text-white">
+                  {prompt}
+                </div>
+              </div>
+            ) : null}
+
+            {busy ? (
+              <div className="rounded-2xl bg-slate-100 px-4 py-8 text-center">
+                <Loader2 className="mx-auto h-6 w-6 animate-spin text-teal-700" />
+                <p className="mt-2 text-sm text-slate-500">正在生成…</p>
+              </div>
+            ) : null}
+
+            {err && !busy ? (
+              <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">
+                {err}
+              </div>
+            ) : null}
+
+            {!busy && code ? (
+              <div className="overflow-hidden rounded-2xl bg-slate-100">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 px-3 py-2.5">
+                  <p className="min-w-0 truncate text-sm font-semibold text-slate-800">
+                    {draft?.factor_name || "生成代码"}
+                  </p>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={!code.trim()}
+                      onClick={() => void onCopy()}
+                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 disabled:opacity-40"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      {copied ? "已复制" : "复制"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!draft || !code.trim() || sendBusy}
+                      onClick={openSendModal}
+                      className="inline-flex h-8 items-center gap-1 rounded-lg bg-teal-700 px-2.5 text-xs font-semibold text-white disabled:opacity-40"
+                    >
+                      <FlaskConical className="h-3.5 w-3.5" />
+                      送检测
+                    </button>
+                  </div>
+                </div>
+                {draft?.description ? (
+                  <p className="border-b border-slate-200/60 px-3 py-2 text-xs leading-5 text-slate-500">
+                    {draft.description}
+                  </p>
+                ) : null}
+                <div className="p-2">
+                  <FactorCodeEditor
+                    value={code}
+                    height="100%"
+                    variant="dark"
+                    className="h-[min(52vh,420px)] min-h-[220px]"
+                    onChange={(v) => {
+                      setCode(v);
+                      if (activeHistoryId !== null) {
+                        setActiveHistoryId(null);
+                        setCurrentSnap(null);
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="shrink-0 border-t border-slate-200/80 bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2">
+            <div className="flex items-end gap-2 rounded-[22px] border border-slate-200 bg-slate-50 px-2 py-1.5">
+              <textarea
+                value={prompt}
+                maxLength={PROMPT_MAX}
+                rows={1}
+                onChange={(e) => onPromptChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && !busy) {
+                    e.preventDefault();
+                    void onGenerate();
+                  }
+                }}
+                placeholder="描述因子逻辑…"
+                className="max-h-28 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-[15px] leading-5 outline-none"
+              />
+              <button
+                type="button"
+                disabled={busy || !prompt.trim()}
+                onClick={() => void onGenerate()}
+                className="mb-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-700 text-white hover:bg-teal-800 disabled:opacity-40"
+                aria-label="发送"
+              >
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Wand2 className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {sendOpen ? (

@@ -49,8 +49,7 @@ const CATALOG: CatalogItem[] = [
     name: "通义千问 / 百炼",
     hint: "DashScope OpenAI 兼容接口",
     tags: ["LLM", "TEXT EMBEDDING"],
-    defaultBaseUrl:
-      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    defaultBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     accent: "bg-violet-500",
     icon: Sparkles,
   },
@@ -89,6 +88,15 @@ const CATALOG: CatalogItem[] = [
     defaultBaseUrl: "https://api.siliconflow.cn/v1",
     accent: "bg-cyan-600",
     icon: Layers,
+  },
+  {
+    key: "volcengine",
+    name: "火山引擎 / 方舟",
+    hint: "Agent Plan · 模型名如 ark-code-latest",
+    tags: ["LLM"],
+    defaultBaseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3",
+    accent: "bg-orange-500",
+    icon: Cloud,
   },
   {
     key: "xinference",
@@ -135,12 +143,7 @@ const ROLES: {
     modelType: "embedding",
     icon: Layers,
   },
-  {
-    key: "rerank",
-    label: "Rerank",
-    modelType: "rerank",
-    icon: Wand2,
-  },
+  { key: "rerank", label: "Rerank", modelType: "rerank", icon: Wand2 },
   { key: "vlm", label: "VLM", modelType: "vlm", icon: ImageIcon },
   { key: "asr", label: "ASR", modelType: "asr", icon: Mic },
   { key: "tts", label: "TTS", modelType: "tts", icon: Volume2 },
@@ -322,7 +325,7 @@ export function ModelProvidersPage() {
     }
   };
 
-  const setRoleChoice = (roleKey: string, modelType: string, value: string) => {
+  const setRoleChoice = (roleKey: string, _modelType: string, value: string) => {
     const enabled =
       defaults[roleKey]?.enabled !== false &&
       ["llm", "embedding", "rerank"].includes(roleKey);
@@ -338,54 +341,58 @@ export function ModelProvidersPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">模型提供商</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            先在下方添加供应商与模型，再在上方下拉选择默认 LLM / Embedding
-          </p>
-        </div>
-        {okMsg ? (
-          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-            {okMsg}
-          </span>
-        ) : null}
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-xl font-bold text-slate-900">模型供应商</h1>
+        <p className="mt-1 text-sm text-slate-500">
+          右侧选择模型商，填写 Base URL / API Key，并添加模型名。
+        </p>
       </div>
-      {err ? <p className="mb-3 text-sm text-rose-600">{err}</p> : null}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
-        <div className="space-y-6">
-          {/* 默认模型：下拉选已配置 */}
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-slate-900">设置默认模型</h2>
-            <p className="mt-0.5 text-sm text-slate-500">
-              请在开始问答前完成这些设置
+      {err ? (
+        <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {err}
+        </p>
+      ) : null}
+      {okMsg ? (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {okMsg}
+        </p>
+      ) : null}
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+        <div className="space-y-4">
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="text-base font-semibold text-slate-900">
+              设置默认模型
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-400">
+              问答 / 向量化等角色使用的默认条目
             </p>
             <div className="mt-4 space-y-3">
               {ROLES.map((r) => {
+                const Icon = r.icon;
                 const required = Boolean(r.required);
-                const opts = choicesByType[r.modelType] || [];
                 const cur = defaults[r.key];
+                const opts = choicesByType[r.modelType] || [];
                 const value =
                   cur?.providerKey && cur?.modelName
                     ? encodeChoice(cur.providerKey, cur.modelName)
                     : "";
                 const selected = Boolean(value);
-                const Icon = r.icon;
                 const provider = selected
                   ? providers.find((p) => p.providerKey === cur?.providerKey)
                   : null;
                 const cat = provider ? catalogOf(provider.providerKey) : null;
-                const ProviderIcon = cat?.icon || Sparkles;
+                const ProviderIcon = cat?.icon || Cloud;
                 return (
                   <div
                     key={r.key}
-                    className="flex flex-wrap items-center gap-3 border-b border-slate-50 pb-3 last:border-0 last:pb-0"
+                    className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2.5"
                   >
-                    <div className="flex w-36 items-center gap-2 text-sm font-medium text-slate-700">
+                    <div className="flex w-28 items-center gap-2 text-sm font-medium text-slate-700">
                       <span
-                        className={`flex h-7 w-7 items-center justify-center rounded-full ${
+                        className={`flex h-7 w-7 items-center justify-center rounded-lg ${
                           selected
                             ? "bg-violet-600 text-white"
                             : "bg-slate-100 text-slate-500"
@@ -456,7 +463,6 @@ export function ModelProvidersPage() {
             </button>
           </section>
 
-          {/* 已添加 */}
           <section>
             <div className="flex items-end justify-between gap-2">
               <div>
@@ -598,9 +604,8 @@ export function ModelProvidersPage() {
           </section>
         </div>
 
-        {/* 右侧目录 */}
         <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-20">
-          <h2 className="font-semibold text-slate-900">可选模型</h2>
+          <h2 className="font-semibold text-slate-900">可选模型商</h2>
           <div className="relative mt-3">
             <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
             <input
@@ -727,7 +732,7 @@ export function ModelProvidersPage() {
               className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
               value={modelName}
               onChange={(e) => setModelName(e.target.value)}
-              placeholder="如 qwen3.7-flash / qwen3.7-text-embedding"
+              placeholder="如 qwen3.7-flash / ark-code-latest"
             />
             <div className="mt-5 flex justify-end gap-2">
               <button

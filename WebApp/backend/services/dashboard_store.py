@@ -8,6 +8,7 @@ import threading
 import time
 import traceback
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,16 +25,21 @@ OUTPUT_DIR = ROOT / "output" / "factor_dashboard"
 DB_PATH = OUTPUT_DIR / "metrics.sqlite"
 JOB_PATH = OUTPUT_DIR / "job.json"
 RE_URL = "http://192.168.3.64:9527/api/backtest/factor"
+RE_BASE = "http://192.168.3.64:9527"
 RULES_VERSION = "yg_v1"
-# 与前端 detectComboCode.RE_BUILTIN_LIBS / 同事 factor 库对齐
-# 需走 library_name：含私有辅助或动态注册方法，无法单抽 factor_code
+# 与前端 detectComboCode.RE_BUILTIN_LIBS 对齐（含原 PLATFORM 五库）
 RE_BUILTIN_LIBS = frozenset(
     {
         "emotion_indicators",
         "risk_indicators",
         "technical_indicators",
+        "classic_indicators",
         "alpha_features",
-        # 旧名保留：历史帖/缓存可能仍引用
+        "momentum_lib",
+        "value_lib",
+        "technical_lib",
+        "volatility_lib",
+        "trading_lib",
         "alpha_library",
         "qlib_alpha",
         "jq_compat_technical",
@@ -41,7 +47,7 @@ RE_BUILTIN_LIBS = frozenset(
         "jq_compat_emotion",
     }
 )
-# 面板批跑只允许这些官方库；禁止 custom_lib / 他人自定义（含公开到因子库的）
+# 面板批跑只允许这些官方库；禁止 custom_lib / 他人自定义
 PANEL_OFFICIAL_LIBS = frozenset(
     {
         "momentum_lib",
@@ -52,6 +58,7 @@ PANEL_OFFICIAL_LIBS = frozenset(
         "emotion_indicators",
         "risk_indicators",
         "technical_indicators",
+        "classic_indicators",
         "alpha_features",
     }
 )
@@ -138,42 +145,54 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _yg_get_json(path: str, timeout: int = 60) -> Any:
+    from services.lan_http import urlopen_direct
+
+    url = f"{RE_BASE.rstrip('/')}{path}"
+    req = urllib.request.Request(url, method="GET")
+    with urlopen_direct(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
 def load_factor_index(*, include_qlib: bool = True) -> list[dict]:
-    """面板只跑官方公开库（PANEL_OFFICIAL_LIBS）。
+    """面板只跑官方公开库（PANEL_OFFICIAL_LIBS），目录来自 ResearchEngine。
 
     明确排除：
-    - custom_lib（用户自定义，即使写进因子库 / 带 owner_id）
-    - 任意带 owner_id 的条目
+    - custom_lib（用户自定义）
     - 未在白名单内的其它库
     """
-    from services.factor_catalog_expand import expand_index
+    try:
+        payload = _yg_get_json("/api/factor-libraries")
+    except Exception as e:
+        raise RuntimeError(f"读取 RE 因子库目录失败: {e}") from e
 
-    raw = expand_index(
-        yaml.safe_load((FACTOR_DIR / "index.yaml").read_text(encoding="utf-8")) or {}
-    )
+    libraries = payload.get("libraries") or []
     out: list[dict] = []
-    for lib_key, lib in (raw.get("libraries") or {}).items():
-        if lib_key not in PANEL_OFFICIAL_LIBS:
+    for lib in libraries:
+        lib_key = str(lib.get("name") or "").strip()
+        if not lib_key or lib_key not in PANEL_OFFICIAL_LIBS:
             continue
         if lib_key in ("qlib_alpha", "alpha_features") and not include_qlib:
             continue
-        for f in lib.get("factors") or []:
-            # 双保险：官方库内也不应出现个人因子
-            if f.get("owner_id") is not None:
-                continue
-            if f.get("owner") or f.get("user_id") is not None:
+        try:
+            detail = _yg_get_json(f"/api/factors/{urllib.parse.quote(lib_key)}")
+        except Exception as e:
+            raise RuntimeError(f"读取 RE 因子列表失败 ({lib_key}): {e}") from e
+        for f in detail.get("factors") or []:
+            name = (f.get("name") or "").strip()
+            if not name:
                 continue
             out.append(
                 {
-                    "name": f.get("name"),
-                    "description": f.get("description") or f.get("name"),
+                    "name": name,
+                    "description": f.get("description") or name,
                     "library": lib_key,
-                    "file": lib.get("file"),
-                    "unavailable": bool(f.get("unavailable")),
-                    "unavailable_reason": f.get("unavailable_reason") or "",
+                    "file": "",
+                    "unavailable": False,
+                    "unavailable_reason": "",
                 }
             )
-    return [x for x in out if x.get("name")]
+    return out
 
 
 def _blank_metrics(*, error: str | None) -> dict:
@@ -341,23 +360,9 @@ def map_yg_response(data: dict) -> dict:
 
 
 def call_yg_backtest(payload: dict, timeout: int = 600) -> dict:
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
-        RE_URL,
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = ""
-        try:
-            detail = exc.read().decode("utf-8", errors="replace")[:300]
-        except Exception:
-            pass
-        raise RuntimeError(f"HTTP Error {exc.code}: {exc.reason}" + (f" | {detail}" if detail else "")) from exc
+    from services.lan_http import post_json
+
+    return post_json(RE_URL, payload, timeout=timeout)
 
 
 def read_job() -> dict:
@@ -786,7 +791,6 @@ def _run_batch(
                     "error": None,
                 }
             )
-            py_path = FACTOR_DIR / (f.get("file") or "")
             now = datetime.now(timezone.utc).isoformat()
             base = {
                 "factor_name": name,
@@ -820,7 +824,8 @@ def _run_batch(
                     continue
 
                 lib_key = (f.get("library") or "").strip()
-                if lib_key in RE_BUILTIN_LIBS:
+                # 官方库一律 library_name；不再读本地 .py
+                if lib_key in RE_BUILTIN_LIBS or lib_key in PANEL_OFFICIAL_LIBS:
                     data = call_yg_backtest(
                         build_factor_backtest_payload(
                             factor_name=name,
@@ -833,19 +838,8 @@ def _run_batch(
                         )
                     )
                 else:
-                    if not py_path.exists():
-                        raise FileNotFoundError(str(py_path))
-                    code = extract_method(py_path.read_text(encoding="utf-8"), name)
-                    data = call_yg_backtest(
-                        build_factor_backtest_payload(
-                            factor_code=code,
-                            factor_name=name,
-                            universe=universe,
-                            period=period,
-                            filter_limit_up=filter_limit_up,
-                            filter_suspended=filter_suspended,
-                            analysis_level=analysis_level,
-                        )
+                    raise RuntimeError(
+                        f"面板不支持非官方库因子: {lib_key or '?'} / {name}"
                     )
                 mapped = map_yg_response(data)
                 if mapped.get("error"):

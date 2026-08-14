@@ -481,6 +481,7 @@ export function FactorCustomPage() {
                   >
                     <option value="CSI300">沪深300</option>
                     <option value="CSI500">中证500</option>
+                    <option value="CSI800">中证800</option>
                     <option value="CSI1000">中证1000</option>
                     <option value="SSE50">上证50</option>
                   </select>

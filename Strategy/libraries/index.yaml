@@ -200,3 +200,91 @@ strategies:
       v1:
         file: simons_pairs_trading_research_v1.py
         entrypoint: SimonsPairsTradingResearchStrategy
+
+  chande_aroon_a_share_event:
+    name: 图莎尔·钱德 Aroon A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [chande, aroon, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: chande_aroon_a_share_event_v1.py
+        entrypoint: ChandeAroonAShareEventStrategy
+
+  pring_kst_a_share_event:
+    name: 马丁·普林格 KST A 股多周期动量
+    strategy_type: momentum
+    execution_mode: event
+    current_version: v1
+    tags: [pring, kst, momentum, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: pring_kst_a_share_event_v1.py
+        entrypoint: PringKstAShareEventStrategy
+
+  neff_low_pe_a_share_event:
+    name: 约翰·聂夫低市盈率 A 股价值策略
+    strategy_type: value
+    execution_mode: event
+    current_version: v1
+    tags: [neff, value, low_pe, dividend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: neff_low_pe_a_share_event_v1.py
+        entrypoint: NeffLowPeAShareEventStrategy
+
+  davis_double_play_a_share_event:
+    name: 戴维斯双击 A 股价值成长策略
+    strategy_type: value_growth
+    execution_mode: event
+    current_version: v1
+    tags: [davis, double_play, value, growth, roe, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: davis_double_play_a_share_event_v1.py
+        entrypoint: DavisDoublePlayAShareEventStrategy
+
+  jegadeesh_titman_12_1_a_share_event:
+    name: 杰格迪什—蒂特曼 12-1 中期动量 A 股策略
+    strategy_type: momentum
+    execution_mode: event
+    current_version: v1
+    tags: [jegadeesh, titman, momentum, industry_neutral, low_volatility, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: jegadeesh_titman_12_1_a_share_event_v1.py
+        entrypoint: JegadeeshTitman121AShareEventStrategy
+
+  fama_french_small_value_a_share_event:
+    name: 法玛—弗伦奇小盘价值 A 股策略
+    strategy_type: value
+    execution_mode: event
+    current_version: v1
+    tags: [fama, french, small_cap, value, industry_neutral, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: fama_french_small_value_a_share_event_v1.py
+        entrypoint: FamaFrenchSmallValueAShareEventStrategy
+
+  dogs_of_the_dow_low_vol_a_share_event:
+    name: 奥希金斯狗股理论红利低波 A 股变体
+    strategy_type: dividend
+    execution_mode: event
+    current_version: v1
+    tags: [ohiggins, dogs_of_the_dow, dividend, low_volatility, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: dogs_of_the_dow_low_vol_a_share_event_v1.py
+        entrypoint: DogsOfTheDowLowVolAShareEventStrategy
+
+  elder_triple_screen_a_share_event:
+    name: 埃尔德三重滤网 A 股策略
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [elder, triple_screen, kdj, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: elder_triple_screen_a_share_event_v1.py
+        entrypoint: ElderTripleScreenAShareEventStrategy

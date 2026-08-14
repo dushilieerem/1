@@ -317,6 +317,59 @@ export function parseLibrarySignalSelection(code: string): {
   };
 }
 
+/** 左侧因子为空时：从代码 @factor 块补全；仍空则用 fallback（如项目配置 / 历史快照）。 */
+export function hydrateSignalSelection<
+  T extends {
+    strategy_code?: string;
+    signal_factor_ids?: string[];
+    signal_factor_weights?: number[];
+    signal_factor_powers?: number[];
+    signal_weight_mode?: StrategyWeightMode;
+    signal_temp_labels?: Record<string, string>;
+  },
+>(
+  config: T,
+  fallback?: Partial<
+    Pick<
+      T,
+      | "signal_factor_ids"
+      | "signal_factor_weights"
+      | "signal_factor_powers"
+      | "signal_weight_mode"
+      | "signal_temp_labels"
+    >
+  > | null,
+): T {
+  if ((config.signal_factor_ids || []).length > 0) return config;
+  const parsed = parseLibrarySignalSelection(config.strategy_code || "");
+  if (parsed.ids.length > 0) {
+    return {
+      ...config,
+      signal_factor_ids: parsed.ids,
+      signal_factor_weights: parsed.weights,
+      signal_factor_powers: parsed.powers,
+      signal_weight_mode: parsed.weightMode,
+    };
+  }
+  const fbIds = fallback?.signal_factor_ids || [];
+  if (fbIds.length > 0) {
+    return {
+      ...config,
+      signal_factor_ids: fbIds,
+      signal_factor_weights:
+        fallback?.signal_factor_weights || equalWeights(fbIds.length),
+      signal_factor_powers:
+        fallback?.signal_factor_powers || equalPowers(fbIds.length),
+      signal_weight_mode: fallback?.signal_weight_mode || "sum",
+      signal_temp_labels: {
+        ...(config.signal_temp_labels || {}),
+        ...(fallback?.signal_temp_labels || {}),
+      },
+    };
+  }
+  return config;
+}
+
 function buildFactorBlock(bodiesInner: string): string {
   const inner = (bodiesInner || "").replace(/\s+$/, "");
   return `${FACTORS_BEGIN}\n${inner}\n${FACTORS_END}`;

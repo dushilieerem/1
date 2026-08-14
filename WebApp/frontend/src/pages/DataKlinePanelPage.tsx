@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   ArrowRight,
   CandlestickChart,
@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { SymbolOverviewPanel } from "@/components/data/SymbolOverviewPanel";
 import { openAuthedTab } from "@/components/RequireAuth";
+import { fetchMarketDaily } from "@/lib/marketDataApi";
 
 /** 文档推荐交易所后缀；默认平安银行 */
 const DEFAULT_SYMBOL = "000001.SZ";
@@ -20,6 +21,11 @@ const FEATURES = [
 
 export function DataKlinePanelPage() {
   const [draftQ, setDraftQ] = useState("");
+
+  // 进页预热全历史写入本地，后续任意时刻进面板可秒开
+  useEffect(() => {
+    void fetchMarketDaily(DEFAULT_SYMBOL).catch(() => undefined);
+  }, []);
 
   const onSearch = (e: FormEvent) => {
     e.preventDefault();
@@ -37,14 +43,14 @@ export function DataKlinePanelPage() {
           <div className="absolute -right-16 top-0 h-[320px] w-[320px] rounded-full bg-sky-400/10 blur-3xl" />
         </div>
 
-        <div className="relative mx-auto max-w-[1280px] px-4 pt-10 sm:px-6 lg:px-8 lg:pt-12">
+        <div className="relative mx-auto max-w-[1280px] px-4 pt-6 sm:px-6 sm:pt-10 lg:px-8 lg:pt-12">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-red-100 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600">
             <Sparkles className="h-3 w-3" />
             数据 · K 线面板
           </span>
 
-          <div className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between sm:gap-8">
-            <h1 className="max-w-xl text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
+          <div className="mt-3 flex flex-col gap-3 sm:mt-5 sm:flex-row sm:items-end sm:justify-between sm:gap-8">
+            <h1 className="max-w-xl text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl lg:text-4xl">
               看行情，从一只股开始
             </h1>
 
@@ -58,12 +64,12 @@ export function DataKlinePanelPage() {
                   value={draftQ}
                   onChange={(e) => setDraftQ(e.target.value)}
                   placeholder="搜索代码或名称"
-                  className="w-full rounded-xl border border-slate-200 bg-white/90 py-3 pl-9 pr-3 text-sm shadow-sm outline-none ring-red-200 backdrop-blur focus:border-red-300 focus:ring-2"
+                  className="w-full rounded-xl border border-slate-200 bg-white/90 py-2.5 pl-9 pr-3 text-sm shadow-sm outline-none ring-red-200 backdrop-blur focus:border-red-300 focus:ring-2 sm:py-3"
                 />
               </div>
               <button
                 type="submit"
-                className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-red-700"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-700 sm:px-4 sm:py-3"
               >
                 搜索
                 <ArrowRight className="h-4 w-4" />
@@ -71,20 +77,21 @@ export function DataKlinePanelPage() {
             </form>
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-2">
+          {/* 手机：强制一行；PC：原样 flex-wrap */}
+          <div className="mt-3 flex flex-nowrap gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mt-6 sm:flex-wrap sm:gap-2 sm:overflow-visible">
             {FEATURES.map(({ icon: Icon, title }) => (
               <span
                 key={title}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/80 px-3.5 py-1.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200/90 bg-white/80 px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm backdrop-blur sm:gap-2 sm:px-3.5 sm:py-1.5 sm:text-sm"
               >
-                <Icon className="h-3.5 w-3.5 text-red-500" />
+                <Icon className="h-3 w-3 text-red-500 sm:h-3.5 sm:w-3.5" />
                 {title}
               </span>
             ))}
           </div>
 
           {/* 顶区与「今日聚焦」分割 */}
-          <div className="mt-10 flex items-center gap-3" aria-hidden>
+          <div className="mt-6 flex items-center gap-3 sm:mt-10" aria-hidden>
             <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-300 to-slate-300" />
             <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
             <div className="h-px flex-1 bg-gradient-to-l from-transparent via-slate-300 to-slate-300" />
@@ -92,8 +99,10 @@ export function DataKlinePanelPage() {
         </div>
       </div>
 
-      <section className="relative mx-auto max-w-[1280px] px-4 pb-10 pt-6 sm:px-6 lg:px-8">
-        <h2 className="mb-4 text-lg font-bold text-slate-900">今日聚焦</h2>
+      <section className="relative mx-auto max-w-[1280px] px-4 pb-8 pt-4 sm:px-6 sm:pb-10 sm:pt-6 lg:px-8">
+        <h2 className="mb-3 text-base font-bold text-slate-900 sm:mb-4 sm:text-lg">
+          今日聚焦
+        </h2>
         <SymbolOverviewPanel symbol={DEFAULT_SYMBOL} />
       </section>
     </div>

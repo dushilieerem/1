@@ -8,6 +8,12 @@ import {
   normalizeSignalWeights,
   type StrategyWeightMode,
 } from "@/lib/strategyFactorSync";
+import {
+  listLibraryFactors,
+  listUserFactorLibraries,
+  userLibraryFactorToMeta,
+  type UserFactorLibrary,
+} from "@/lib/userFactorLibraries";
 
 type Props = {
   factorIds: string[];
@@ -64,19 +70,37 @@ export function StrategySignalFactorsPanel({
 
   useEffect(() => {
     let cancelled = false;
-    void loadFactors()
-      .then((fs) => {
+    void (async () => {
+      try {
+        const [fs, libs] = await Promise.all([
+          loadFactors(),
+          listUserFactorLibraries().catch(() => [] as UserFactorLibrary[]),
+        ]);
+        let userMetas: FactorMeta[] = [];
+        if (libs.length) {
+          const rows = await Promise.all(
+            libs.map((lib) =>
+              listLibraryFactors(lib.id).catch(() => [] as Awaited<
+                ReturnType<typeof listLibraryFactors>
+              >),
+            ),
+          );
+          userMetas = rows.flat().map(userLibraryFactorToMeta);
+        }
         if (!cancelled) {
-          setCatalog(fs);
+          const byName = new Map<string, FactorMeta>();
+          for (const f of fs) byName.set(f.name, f);
+          for (const f of userMetas) byName.set(f.name, f);
+          setCatalog([...byName.values()]);
           setCatalogReady(true);
         }
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) {
           setCatalog([]);
           setCatalogReady(true);
         }
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };

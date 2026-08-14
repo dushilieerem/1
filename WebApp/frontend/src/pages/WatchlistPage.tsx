@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
-import { PageJump } from "@/components/PageJump";
+import { PageJump, PagerBar } from "@/components/PageJump";
 import {
   getStoredUser,
   subscribeAuth,
@@ -495,28 +495,35 @@ export function WatchlistPage() {
 
   const selectedItems = poolSource.filter((s) => selected.has(s.symbol));
 
+  const activeWl =
+    activeWlId != null
+      ? watchlists.find((w) => w.id === activeWlId) ?? null
+      : null;
+
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50/80">
-      <div className="mx-auto max-w-[1440px] px-6 py-8">
-        <div className="relative mb-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm">
-          <div className="relative flex flex-wrap items-start justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-600 text-white shadow">
-                <Bookmark className="h-5 w-5" />
+      <div className="mx-auto max-w-[1440px] px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+        <div className="relative mb-4 overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:mb-6 sm:p-6">
+          <div className="relative flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-600 text-white shadow sm:h-10 sm:w-10">
+                <Bookmark className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900">自选股组合</h1>
+              <div className="min-w-0">
+                <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">
+                  自选股组合
+                </h1>
                 {err ? <p className="mt-1 text-sm text-red-500">{err}</p> : null}
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2">
-                <Search className="h-4 w-4 text-slate-400" />
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 sm:flex-none">
+                <Search className="h-4 w-4 shrink-0 text-slate-400" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="搜索代码 / 名称…"
-                  className="w-48 bg-transparent text-sm outline-none sm:w-56"
+                  className="min-w-0 flex-1 bg-transparent text-sm outline-none sm:w-48 lg:w-56"
                 />
                 {query ? (
                   <button type="button" onClick={() => setQuery("")}>
@@ -527,7 +534,7 @@ export function WatchlistPage() {
               <button
                 type="button"
                 onClick={openCreate}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
               >
                 <Plus className="h-4 w-4" />
                 新建组合
@@ -536,9 +543,78 @@ export function WatchlistPage() {
           </div>
         </div>
 
+        {/* 手机：组合横滑 tab */}
+        <div className="mb-3 sticky top-0 z-20 -mx-3 border-b border-slate-200/80 bg-slate-50/95 px-3 py-2 backdrop-blur-md sm:-mx-0 sm:mx-0 sm:rounded-xl sm:border sm:border-slate-200/80 sm:bg-white/95 lg:hidden">
+          <nav
+            className="flex flex-nowrap gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            aria-label="自选组合"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setActiveKey(BROWSE_KEY);
+                setMode("browse");
+              }}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition ${
+                activeKey === BROWSE_KEY
+                  ? "bg-cyan-600 font-semibold text-white shadow-sm"
+                  : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              <Search className="h-3.5 w-3.5" />
+              浏览选股
+            </button>
+            {!user ? (
+              <Link
+                to="/login?next=/data/watchlist"
+                className="inline-flex shrink-0 items-center rounded-full bg-white px-3 py-1.5 text-xs font-medium text-cyan-700 ring-1 ring-slate-200"
+              >
+                登录管理自选
+              </Link>
+            ) : watchlists.length === 0 ? (
+              <button
+                type="button"
+                onClick={openCreate}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white px-3 py-1.5 text-xs text-slate-500 ring-1 ring-slate-200"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                暂无组合，点此新建
+              </button>
+            ) : (
+              watchlists.map((wl) => {
+                const on =
+                  activeKey === String(wl.id) ||
+                  (mode === "browse" && targetWlId === wl.id);
+                return (
+                  <button
+                    key={wl.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveKey(String(wl.id));
+                      setTargetWlId(wl.id);
+                      setMode("list");
+                    }}
+                    className={`inline-flex max-w-[10rem] shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition ${
+                      on
+                        ? "bg-cyan-600 font-semibold text-white shadow-sm"
+                        : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 shrink-0 opacity-80" />
+                    <span className="truncate">{wl.name}</span>
+                    <span className={`tabular-nums ${on ? "text-cyan-100" : "text-slate-400"}`}>
+                      {wl.symbolCount ?? 0}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </nav>
+        </div>
+
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-          {/* sidebar */}
-          <aside className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">
+          {/* 桌面侧栏 */}
+          <aside className="hidden rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm lg:block">
             <button
               type="button"
               onClick={() => {
@@ -624,23 +700,45 @@ export function WatchlistPage() {
 
           {/* main */}
           <section className="rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-3">
-              <div className="font-semibold text-slate-900">{activeTitle}</div>
-              {mode === "browse" && (query.trim() || board || indexKey) ? (
-                <button
-                  type="button"
-                  disabled={busy || selectedItems.length === 0}
-                  onClick={() => void beginAdd(selectedItems)}
-                  className="rounded-xl bg-cyan-600 px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-cyan-700 disabled:opacity-50"
-                >
-                  批量加入（{selectedItems.length}）
-                </button>
-              ) : null}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-2.5 sm:px-5 sm:py-3">
+              <div className="min-w-0 font-semibold text-slate-900">{activeTitle}</div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {mode === "list" && activeWl ? (
+                  <div className="flex items-center gap-0.5 lg:hidden">
+                    <button
+                      type="button"
+                      className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-cyan-700"
+                      onClick={() => openRename(activeWl)}
+                      title="改名"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg p-2 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                      onClick={() => void onDeleteWl(activeWl)}
+                      title="删除组合"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : null}
+                {mode === "browse" && (query.trim() || board || indexKey) ? (
+                  <button
+                    type="button"
+                    disabled={busy || selectedItems.length === 0}
+                    onClick={() => void beginAdd(selectedItems)}
+                    className="hidden rounded-xl bg-cyan-600 px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-cyan-700 disabled:opacity-50 lg:inline-flex"
+                  >
+                    批量加入（{selectedItems.length}）
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             {mode === "browse" && !query.trim() ? (
-              <div className="border-b border-slate-100 px-4 py-4">
-                <div className="mb-3 flex flex-wrap items-center gap-1.5 text-sm text-slate-500">
+              <div className="border-b border-slate-100 px-3 py-3 sm:px-4 sm:py-4">
+                <div className="mb-2 flex flex-wrap items-center gap-1 text-xs text-slate-500 sm:mb-3 sm:gap-1.5 sm:text-sm">
                   <span className={l1 ? "font-medium text-slate-800" : ""}>
                     {LEVEL1_OPTIONS.find((x) => x.key === l1)?.label || "资产"}
                   </span>
@@ -663,8 +761,8 @@ export function WatchlistPage() {
                 </div>
 
                 <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                  <div className="grid grid-cols-1 divide-y divide-slate-100 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-                    <div className="min-h-[200px] p-1.5">
+                  <div className="grid grid-cols-3 divide-x divide-slate-100">
+                    <div className="min-h-[160px] max-h-[220px] overflow-y-auto p-1 sm:min-h-[200px] sm:max-h-none sm:overflow-visible sm:p-1.5">
                       <ul className="space-y-0.5">
                         {LEVEL1_OPTIONS.map((opt) => {
                           const on = l1 === opt.key;
@@ -681,7 +779,7 @@ export function WatchlistPage() {
                                   setBoard(null);
                                   setIndexKey(null);
                                 }}
-                                className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition ${
+                                className={`flex w-full items-center gap-1.5 rounded-lg px-1.5 py-2 text-left text-[11px] transition sm:gap-2.5 sm:px-2.5 sm:text-sm ${
                                   on
                                     ? "bg-slate-100 font-medium text-slate-900"
                                     : opt.enabled
@@ -690,7 +788,7 @@ export function WatchlistPage() {
                                 }`}
                               >
                                 <span
-                                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold ${
+                                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold sm:h-6 sm:w-6 sm:text-[11px] ${
                                     on
                                       ? "bg-slate-200/80 text-slate-700"
                                       : "bg-slate-50 text-slate-400"
@@ -702,9 +800,9 @@ export function WatchlistPage() {
                                       ? "E"
                                       : "期"}
                                 </span>
-                                <span className="flex-1">{opt.label}</span>
+                                <span className="min-w-0 flex-1 truncate">{opt.label}</span>
                                 {on ? (
-                                  <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                                  <ChevronRight className="hidden h-3.5 w-3.5 text-slate-400 sm:block" />
                                 ) : null}
                               </button>
                             </li>
@@ -713,7 +811,7 @@ export function WatchlistPage() {
                       </ul>
                     </div>
 
-                    <div className="min-h-[200px] p-1.5">
+                    <div className="min-h-[160px] max-h-[220px] overflow-y-auto p-1 sm:min-h-[200px] sm:max-h-none sm:overflow-visible sm:p-1.5">
                       {l1 === "stock" ? (
                         <ul className="space-y-0.5">
                           {LEVEL2_STOCK_OPTIONS.map((opt) => {
@@ -727,7 +825,7 @@ export function WatchlistPage() {
                                     setBoard(null);
                                     setIndexKey(null);
                                   }}
-                                  className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition ${
+                                  className={`flex w-full items-center gap-1.5 rounded-lg px-1.5 py-2 text-left text-[11px] transition sm:gap-2.5 sm:px-2.5 sm:text-sm ${
                                     on
                                       ? "bg-slate-100 font-medium text-slate-900"
                                       : "text-slate-600 hover:bg-slate-50"
@@ -738,9 +836,9 @@ export function WatchlistPage() {
                                       on ? "bg-slate-500" : "bg-slate-300"
                                     }`}
                                   />
-                                  <span className="flex-1">{opt.label}</span>
+                                  <span className="min-w-0 flex-1 truncate">{opt.label}</span>
                                   {on ? (
-                                    <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                                    <ChevronRight className="hidden h-3.5 w-3.5 text-slate-400 sm:block" />
                                   ) : null}
                                 </button>
                               </li>
@@ -748,13 +846,13 @@ export function WatchlistPage() {
                           })}
                         </ul>
                       ) : (
-                        <div className="flex h-full items-center justify-center px-3 py-8 text-sm text-slate-400">
-                          选择左侧资产类型
+                        <div className="flex h-full items-center justify-center px-2 py-8 text-[11px] text-slate-400 sm:px-3 sm:text-sm">
+                          选择左侧资产
                         </div>
                       )}
                     </div>
 
-                    <div className="min-h-[200px] max-h-[200px] overflow-y-auto p-1.5">
+                    <div className="min-h-[160px] max-h-[220px] overflow-y-auto p-1 sm:min-h-[200px] sm:max-h-[200px] sm:p-1.5">
                       {l1 === "stock" && l2 === "market" ? (
                         <ul className="space-y-0.5">
                           {BOARD_OPTIONS.map((opt) => {
@@ -767,13 +865,13 @@ export function WatchlistPage() {
                                     setBoard(opt.key);
                                     setIndexKey(null);
                                   }}
-                                  className={`flex w-full items-center rounded-lg px-2.5 py-2 text-left text-sm transition ${
+                                  className={`flex w-full items-center rounded-lg px-1.5 py-2 text-left text-[11px] transition sm:px-2.5 sm:text-sm ${
                                     on
                                       ? "bg-slate-100 font-medium text-slate-900"
                                       : "text-slate-600 hover:bg-slate-50"
                                   }`}
                                 >
-                                  {opt.label}
+                                  <span className="truncate">{opt.label}</span>
                                 </button>
                               </li>
                             );
@@ -781,11 +879,11 @@ export function WatchlistPage() {
                         </ul>
                       ) : l1 === "stock" && l2 === "index" ? (
                         indicesErr ? (
-                          <div className="px-3 py-6 text-sm leading-relaxed text-slate-500">
+                          <div className="px-2 py-4 text-[11px] leading-relaxed text-slate-500 sm:px-3 sm:py-6 sm:text-sm">
                             股指列表暂不可用：{indicesErr}
                           </div>
                         ) : indices.length === 0 ? (
-                          <div className="px-3 py-8 text-center text-sm text-slate-400">
+                          <div className="px-2 py-6 text-center text-[11px] text-slate-400 sm:px-3 sm:py-8 sm:text-sm">
                             暂无可用股指
                           </div>
                         ) : (
@@ -800,13 +898,13 @@ export function WatchlistPage() {
                                       setIndexKey(opt.code);
                                       setBoard(null);
                                     }}
-                                    className={`flex w-full items-center rounded-lg px-2.5 py-2 text-left text-sm transition ${
+                                    className={`flex w-full items-center rounded-lg px-1.5 py-2 text-left text-[11px] transition sm:px-2.5 sm:text-sm ${
                                       on
                                         ? "bg-slate-100 font-medium text-slate-900"
                                         : "text-slate-600 hover:bg-slate-50"
                                     }`}
                                   >
-                                    {opt.name}
+                                    <span className="truncate">{opt.name}</span>
                                   </button>
                                 </li>
                               );
@@ -814,7 +912,7 @@ export function WatchlistPage() {
                           </ul>
                         )
                       ) : (
-                        <div className="flex h-full items-center justify-center px-3 py-8 text-sm text-slate-400">
+                        <div className="flex h-full items-center justify-center px-2 py-8 text-[11px] text-slate-400 sm:px-3 sm:text-sm">
                           选择中间分类
                         </div>
                       )}
@@ -824,13 +922,19 @@ export function WatchlistPage() {
               </div>
             ) : null}
 
-            <div className="px-2 py-2 sm:px-4">
+            <div
+              className={`px-2 py-2 sm:px-4 ${
+                mode === "browse" && (query.trim() || board || indexKey)
+                  ? "pb-20 lg:pb-2"
+                  : "pb-2"
+              }`}
+            >
               {loading ? (
                 <p className="px-3 py-10 text-center text-sm text-slate-400">加载中…</p>
               ) : mode === "list" ? (
                 listFiltered.length === 0 ? (
                   <p className="px-3 py-10 text-center text-sm text-slate-400">
-                    {activeWlId == null ? "请选择左侧自选组合" : "组合为空"}
+                    {activeWlId == null ? "请选择自选组合" : "组合为空"}
                   </p>
                 ) : (
                   <ul className="divide-y divide-slate-100">
@@ -961,37 +1065,65 @@ export function WatchlistPage() {
               )}
 
               {totalPages > 1 ? (
-                <div className="flex flex-wrap items-center justify-center gap-2 py-3 text-sm">
-                  <button
-                    type="button"
-                    disabled={pageSafe <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    className="rounded-lg border border-slate-200 px-3 py-1 disabled:opacity-40"
-                  >
-                    上一页
-                  </button>
-                  <span className="text-slate-500">
-                    {pageSafe} / {totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={pageSafe >= totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    className="rounded-lg border border-slate-200 px-3 py-1 disabled:opacity-40"
-                  >
-                    下一页
-                  </button>
-                  <PageJump
-                    page={pageSafe}
-                    totalPages={totalPages}
-                    onJump={setPage}
-                  />
-                </div>
+                <>
+                  <div className="hidden flex-wrap items-center justify-center gap-2 py-3 text-sm lg:flex">
+                    <button
+                      type="button"
+                      disabled={pageSafe <= 1}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      className="rounded-lg border border-slate-200 px-3 py-1 disabled:opacity-40"
+                    >
+                      上一页
+                    </button>
+                    <span className="text-slate-500">
+                      {pageSafe} / {totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={pageSafe >= totalPages}
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      className="rounded-lg border border-slate-200 px-3 py-1 disabled:opacity-40"
+                    >
+                      下一页
+                    </button>
+                    <PageJump
+                      page={pageSafe}
+                      totalPages={totalPages}
+                      onJump={setPage}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 px-2 py-2 lg:hidden">
+                    <span className="shrink-0 text-[11px] tabular-nums text-slate-400">
+                      {pageSafe}/{totalPages}
+                    </span>
+                    <PagerBar
+                      page={pageSafe}
+                      totalPages={totalPages}
+                      onJump={setPage}
+                      className="min-w-0 flex-1 justify-end py-1"
+                    />
+                  </div>
+                </>
               ) : null}
             </div>
           </section>
         </div>
       </div>
+
+      {mode === "browse" &&
+      (query.trim() || board || indexKey) &&
+      selectedItems.length > 0 ? (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-md lg:hidden">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void beginAdd(selectedItems)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-700 disabled:opacity-50"
+          >
+            批量加入（{selectedItems.length}）
+          </button>
+        </div>
+      ) : null}
 
       {createOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
@@ -1128,7 +1260,7 @@ export function WatchlistPage() {
       ) : null}
 
       {toast ? (
-        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-slate-900 px-4 py-2 text-sm text-white shadow-lg">
+        <div className="fixed bottom-[max(1.5rem,calc(env(safe-area-inset-bottom)+4.5rem))] left-1/2 z-50 -translate-x-1/2 rounded-full bg-slate-900 px-4 py-2 text-sm text-white shadow-lg lg:bottom-6">
           {toast}
         </div>
       ) : null}

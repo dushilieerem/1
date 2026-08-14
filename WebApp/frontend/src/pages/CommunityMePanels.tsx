@@ -76,7 +76,7 @@ function PanelChrome({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-white to-rose-50/40 px-5 py-4 sm:px-6">
+      <div className="flex flex-wrap items-end justify-between gap-2 border-b border-slate-100 bg-gradient-to-r from-white to-rose-50/40 px-3 py-3 sm:gap-3 sm:px-6 sm:py-4">
         <div>
           <h2 className="text-lg font-semibold tracking-tight text-slate-900">{title}</h2>
           {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
@@ -133,21 +133,6 @@ export function MeMessagesPanel() {
     }
   };
 
-  const markTabRead = async () => {
-    try {
-      const res = await markNotificationsRead({ type: tab });
-      setCounts(res.by_type || {});
-      setItems((prev) =>
-        prev.map((x) => ({
-          ...x,
-          read_at: x.read_at || new Date().toISOString(),
-        })),
-      );
-    } catch (ex) {
-      window.alert(ex instanceof Error ? ex.message : String(ex));
-    }
-  };
-
   const markAllRead = async () => {
     try {
       const res = await markNotificationsRead({ all: true });
@@ -169,16 +154,8 @@ export function MeMessagesPanel() {
   return (
     <PanelChrome
       title="消息中心"
-      subtitle="点开一条后进入帖子详情"
       actions={
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => void markTabRead()}
-            className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 transition hover:bg-white hover:text-red-600"
-          >
-            本栏标为已读
-          </button>
           <button
             type="button"
             disabled={totalUnread <= 0}
@@ -190,7 +167,7 @@ export function MeMessagesPanel() {
         </div>
       }
     >
-      <nav className="flex gap-1 border-b border-slate-100 bg-white px-3">
+      <nav className="flex gap-1 overflow-x-auto border-b border-slate-100 bg-white px-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {MSG_TABS.map((t) => {
           const active = tab === t.id;
           const n = counts[t.id] || 0;
@@ -199,7 +176,7 @@ export function MeMessagesPanel() {
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
-              className={`relative px-3 py-3 text-sm transition ${
+              className={`relative shrink-0 px-3 py-3 text-sm transition ${
                 active
                   ? "font-semibold text-red-600"
                   : "text-slate-600 hover:text-slate-900"
@@ -312,15 +289,19 @@ export function MePostsPanel() {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             to="/community/ai-assist"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 text-xs font-semibold text-red-600 shadow-sm ring-1 ring-red-100 transition hover:bg-red-50"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-white px-3.5 text-xs font-semibold text-red-600 shadow-sm ring-1 ring-red-100 transition hover:bg-red-50"
           >
             <Sparkles className="h-3.5 w-3.5" />
             AI 发帖助手
           </Link>
-          <PrimaryButton onClick={() => navigate("/community/new")}>
-            <PenLine className="h-4 w-4" />
+          <button
+            type="button"
+            onClick={() => navigate("/community/new")}
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-3.5 text-xs font-semibold text-white shadow-sm shadow-red-200/50 transition hover:bg-red-400 active:scale-[0.98]"
+          >
+            <PenLine className="h-3.5 w-3.5" />
             发帖
-          </PrimaryButton>
+          </button>
         </div>
       }
     >

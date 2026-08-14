@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""资讯真源拉取：CLS / 东财 / 巨潮 / 见闻 / 同花顺 → news_items。"""
+"""资讯真源拉取：CLS / 东财(市场+研报+政策) / 巨潮 / 见闻 / 同花顺 → news_items。"""
 from __future__ import annotations
 
 import hashlib
@@ -96,6 +96,8 @@ def scrape_eastmoney_body(article_url: str) -> str:
     """从东财文章页抽正文：优先按 <p> 分段，解码 &#xxxx;。"""
     if not article_url:
         return ""
+    if "/report/info/" in article_url or "data.eastmoney.com/report/" in article_url:
+        return scrape_eastmoney_report(article_url)
     try:
         page = _get_text(article_url, timeout=15, referer="https://finance.eastmoney.com/")
     except Exception:
@@ -129,6 +131,34 @@ def scrape_eastmoney_body(article_url: str) -> str:
         idx = text.find(cut)
         if idx > 120:
             text = text[:idx].strip()
+    return text[:20000]
+
+
+def scrape_eastmoney_report(article_url: str) -> str:
+    """东财研报详情：#ctx-content 投资要点/摘要（全文多为 PDF）。"""
+    if not article_url:
+        return ""
+    try:
+        page = _get_text(article_url, timeout=15, referer="https://data.eastmoney.com/")
+    except Exception:
+        return ""
+    m = re.search(r'id=["\']ctx-content["\'][^>]*>([\s\S]*?)</div>', page, re.I)
+    if not m:
+        return ""
+    inner = m.group(1)
+    paras = re.findall(r"<p[^>]*>([\s\S]*?)</p>", inner, re.I)
+    chunks: list[str] = []
+    for p in paras:
+        t = _html_to_text(p)
+        if t:
+            chunks.append(t)
+    text = "\n\n".join(chunks).strip()
+    if not text:
+        return ""
+    pdfs = re.findall(r"https://pdf\.dfcfw\.com/pdf/[^\"'\s<>]+", page)
+    pdf = pdfs[0] if pdfs else ""
+    if pdf:
+        text = f"{text}\n\n——\n完整研报 PDF：{pdf}"
     return text[:20000]
 
 
@@ -358,6 +388,123 @@ def fetch_eastmoney(*, limit: int = 20, enrich_body: bool = True) -> list[dict[s
     return out
 
 
+def fetch_eastmoney_research(*, limit: int = 20, enrich_body: bool = True) -> list[dict[str, Any]]:
+    """东财研报列表（reportapi）→ category=research；源仍记 eastmoney。"""
+    today = datetime.now(TZ8).date()
+    begin = (today - timedelta(days=30)).isoformat()
+    end = today.isoformat()
+    qs = urllib.parse.urlencode(
+        {
+            "industryCode": "*",
+            "pageSize": max(1, min(50, limit)),
+            "industry": "*",
+            "rating": "*",
+            "ratingChange": "*",
+            "beginTime": begin,
+            "endTime": end,
+            "pageNo": 1,
+            "fields": "",
+            "qType": 0,
+            "orgCode": "",
+            "rcode": "",
+            "p": 1,
+            "isPublish": "false",
+        }
+    )
+    url = f"https://reportapi.eastmoney.com/report/list?{qs}"
+    data = _get_json(
+        url,
+        headers={"Referer": "https://data.eastmoney.com/report/stock.jshtml"},
+    )
+    rows = data.get("data") or []
+    out: list[dict[str, Any]] = []
+    for r in rows[: max(1, min(50, limit))]:
+        title = str(r.get("title") or "").strip()
+        info = str(r.get("infoCode") or "").strip()
+        org = str(r.get("orgSName") or r.get("orgName") or "").strip()
+        stock_name = str(r.get("stockName") or "").strip()
+        stock_code = str(r.get("stockCode") or "").strip()
+        rating = str(r.get("emRatingName") or r.get("ratingName") or "").strip()
+        link = (
+            f"https://data.eastmoney.com/report/info/{info}.html"
+            if info
+            else "https://data.eastmoney.com/report/stock.jshtml"
+        )
+        bits = [x for x in (org, f"{stock_name}({stock_code})" if stock_code else stock_name, rating) if x]
+        summary = "｜".join(bits) if bits else title
+        body = summary or title
+        if enrich_body and link:
+            scraped = scrape_eastmoney_report(link)
+            if scraped:
+                body = scraped
+                # 列表摘要偏短时，用正文首段补摘要
+                first = scraped.split("\n\n", 1)[0].strip()
+                if first and (len(summary) < 40 or summary == title):
+                    summary = first[:800]
+        themes = ["研报"]
+        if org:
+            themes.append(org)
+        item = _norm_item(
+            source="eastmoney",
+            title=title,
+            summary=summary[:800],
+            body=body,
+            url=link,
+            published_at=_parse_dt(r.get("publishDate")),
+            category="research",
+            symbols=_extract_symbols(title, summary, body, extra=[stock_code] if stock_code else []),
+            themes=themes,
+            is_flash=False,
+            raw_key=f"eastmoney:research:{info or title}",
+        )
+        if item:
+            out.append(item)
+    return out
+
+
+def fetch_eastmoney_policy(*, limit: int = 20) -> list[dict[str, Any]]:
+    """东财政策向栏目（column=355）→ category=policy；源仍记 eastmoney。"""
+    url = (
+        "https://np-listapi.eastmoney.com/comm/web/getNewsByColumns"
+        "?client=web&biz=web_news_col&column=355&order=1&needInteractData=0"
+        f"&page_index=1&page_size={max(1, min(50, limit))}&req_trace=1"
+        "&fields=code,title,summary,showTime,uniqueUrl,url,mediaName"
+    )
+    data = _get_json(url, headers={"Referer": "https://finance.eastmoney.com/"})
+    rows = ((data.get("data") or {}).get("list")) or []
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        title = str(r.get("title") or "")
+        summary = str(r.get("summary") or "")
+        link = str(r.get("uniqueUrl") or r.get("url") or "")
+        pub = _parse_dt(r.get("showTime"))
+        body = summary or title
+        if link:
+            scraped = scrape_eastmoney_body(link)
+            if len(scraped) > len(body):
+                body = scraped
+        themes = ["政策"]
+        media = str(r.get("mediaName") or "").strip()
+        if media:
+            themes.append(media)
+        item = _norm_item(
+            source="eastmoney",
+            title=title,
+            summary=summary or title,
+            body=body,
+            url=link,
+            published_at=pub,
+            category="policy",
+            symbols=_extract_symbols(title, summary, body),
+            themes=themes,
+            is_flash=False,
+            raw_key=f"eastmoney:policy:{r.get('code') or link}",
+        )
+        if item:
+            out.append(item)
+    return out
+
+
 def fetch_cninfo(*, limit: int = 20) -> list[dict[str, Any]]:
     """巨潮公告列表（标题 + PDF 链；全文为 PDF，站内存摘要说明）。"""
     data = _post_form(
@@ -482,6 +629,8 @@ def fetch_10jqka(*, limit: int = 20) -> list[dict[str, Any]]:
 FETCHERS = {
     "cls": fetch_cls,
     "eastmoney": fetch_eastmoney,
+    "em_research": fetch_eastmoney_research,
+    "em_policy": fetch_eastmoney_policy,
     "cninfo": fetch_cninfo,
     "wallstreetcn": fetch_wallstreetcn,
     "10jqka": fetch_10jqka,
@@ -595,7 +744,12 @@ def enrich_news_body(news_id: int) -> dict[str, Any]:
         new_body = body
         if source == "eastmoney" and url:
             scraped = scrape_eastmoney_body(url)
-            bad_fmt = ("&#" in body) or ("\n\n" not in body and len(body) > 400)
+            bad_fmt = (
+                ("&#" in body)
+                or ("\n\n" not in body and len(body) > 400)
+                or ("来源：东方财富研报" in body)
+                or ("原文：https://data.eastmoney.com/report/" in body)
+            )
             if scraped and (len(scraped) > len(body) + 20 or bad_fmt):
                 new_body = scraped
         elif "&#" in body:
@@ -634,12 +788,12 @@ def purge_demo_seeds() -> int:
 
 
 def refresh_eastmoney_bodies(*, limit: int = 40) -> int:
-    """批量重抓东财正文（修实体/分段）。"""
+    """批量重抓东财正文（市场新闻 + 研报摘要）。"""
     updated = 0
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT id, url, body
+            SELECT id, url, body, category
             FROM news_items
             WHERE source = 'eastmoney' AND COALESCE(url, '') <> ''
             ORDER BY published_at DESC
@@ -652,7 +806,12 @@ def refresh_eastmoney_bodies(*, limit: int = 40) -> int:
         if not scraped:
             continue
         old = row["body"] or ""
-        bad = ("&#" in old) or ("\n\n" not in old and len(old) > 400)
+        bad = (
+            ("&#" in old)
+            or ("\n\n" not in old and len(old) > 400)
+            or ("来源：东方财富研报" in old)
+            or ("原文：https://data.eastmoney.com/report/" in old)
+        )
         if len(scraped) > len(old) + 20 or bad:
             with get_conn() as conn:
                 conn.execute(
@@ -712,16 +871,26 @@ def ingest_news(
     stats = upsert_news_items(batch)
     purged = purge_demo_seeds() if batch else 0
     refreshed = 0
-    if any(s.get("ok") and s.get("label") == SOURCE_LABELS.get("eastmoney") for s in per_source.values()) or (
-        "eastmoney" in (wanted or [])
-    ):
+    em_touched = any(
+        sid in ("eastmoney", "em_research", "em_policy") for sid in (wanted or [])
+    ) or any(
+        s.get("ok")
+        and s.get("label")
+        in (
+            SOURCE_LABELS.get("eastmoney"),
+            SOURCE_LABELS.get("em_research"),
+            SOURCE_LABELS.get("em_policy"),
+        )
+        for s in per_source.values()
+    )
+    if em_touched:
         try:
             refreshed = refresh_eastmoney_bodies(limit=30)
         except Exception:
             refreshed = 0
     retagged = 0
     try:
-        retagged = backfill_news_tags(limit=max(80, limit * 8))
+        retagged = backfill_news_tags(limit=max(80, limit_per_source * 8))
     except Exception:
         retagged = 0
     return {
@@ -734,8 +903,8 @@ def ingest_news(
         "sources": per_source,
         "errors": errors or None,
         "note": (
-            "正文完整度：东财长文可抓全文；财联社/见闻电报本身即全文短讯；"
-            "同花顺多为摘要；巨潮为公告标题+PDF；彭博暂不可用。"
+            "正文完整度：东财长文可抓全文；研报为列表摘要+详情链；政策栏目可抓全文；"
+            "财联社/见闻电报本身即全文短讯；同花顺多为摘要；巨潮为公告标题+PDF；彭博暂不可用。"
         ),
     }
 

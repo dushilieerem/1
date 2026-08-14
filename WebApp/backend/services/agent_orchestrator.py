@@ -76,6 +76,10 @@ def new_read_board(*, goal: str, context: dict[str, Any]) -> dict[str, Any]:
             ref = normalize_platform_ref(get_post_platform_ref(source_post_id))
         except Exception:
             ref = None
+    if not ref:
+        from services.agent_metrics_trust import infer_platform_ref_from_share_body
+
+        ref = infer_platform_ref_from_share_body(body)
     if ref and ref.get("factor_name") and not (
         ref.get("metrics_display") or ref.get("metrics")
     ):

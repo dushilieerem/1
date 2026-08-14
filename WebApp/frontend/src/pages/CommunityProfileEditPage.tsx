@@ -114,7 +114,7 @@ export function CommunityProfileEditPage() {
 
   return (
     <CommunityPageShell>
-      <div className="mx-auto max-w-[760px] px-5 py-8 sm:py-10 pb-20">
+      <div className="mx-auto max-w-[760px] px-3 py-5 pb-24 sm:px-5 sm:py-10 sm:pb-20">
         <Link
           to={backTo}
           className="inline-flex items-center gap-1.5 text-sm text-slate-500 transition hover:text-slate-800"
@@ -258,7 +258,7 @@ export function CommunityProfileEditPage() {
 
               {err ? <p className="mt-4 text-sm text-red-600">{err}</p> : null}
 
-              <div className="mt-8 flex flex-wrap items-center justify-end gap-3 border-t border-slate-100 pt-5">
+              <div className="mt-8 hidden flex-wrap items-center justify-end gap-3 border-t border-slate-100 pt-5 sm:flex">
                 <Link
                   to={backTo}
                   className="rounded-lg px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-800"
@@ -284,6 +284,35 @@ export function CommunityProfileEditPage() {
           </div>
         )}
       </div>
+
+      {/* 手机底栏保存 */}
+      {!loading && profile ? (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-sm sm:hidden">
+          <div className="mx-auto flex max-w-[760px] gap-2">
+            <Link
+              to={backTo}
+              className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600"
+            >
+              取消
+            </Link>
+            <PrimaryButton
+              type="button"
+              disabled={saving || !displayName.trim()}
+              onClick={() => void onSave()}
+              className="!flex-1"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  保存中…
+                </>
+              ) : (
+                "保存"
+              )}
+            </PrimaryButton>
+          </div>
+        </div>
+      ) : null}
     </CommunityPageShell>
   );
 }

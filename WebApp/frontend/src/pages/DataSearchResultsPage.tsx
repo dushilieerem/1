@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { SymbolPreviewCard } from "@/components/data/SymbolPreviewCard";
-import { PageJump } from "@/components/PageJump";
+import { PageJump, PagerBar } from "@/components/PageJump";
 import {
   fetchMarketSymbols,
   fetchQuotesBatch,
@@ -165,33 +165,46 @@ export function DataSearchResultsPage() {
             </div>
 
             {totalPages > 1 ? (
-              <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm text-slate-500">
-                  共 {allMatches.length} 条 · 第 {page}/{totalPages} 页 · 每页{" "}
-                  {PAGE_SIZE} 条
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={page <= 1}
-                    onClick={() => goPage(page - 1)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    上一页
-                  </button>
-                  <PageJump page={page} totalPages={totalPages} onJump={goPage} />
-                  <button
-                    type="button"
-                    disabled={page >= totalPages}
-                    onClick={() => goPage(page + 1)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    下一页
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
+              <>
+                {/* PC：原样 */}
+                <div className="mt-6 hidden flex-wrap items-center justify-between gap-3 lg:flex">
+                  <p className="text-sm text-slate-500">
+                    共 {allMatches.length} 条 · 第 {page}/{totalPages} 页 · 每页{" "}
+                    {PAGE_SIZE} 条
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={page <= 1}
+                      onClick={() => goPage(page - 1)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      上一页
+                    </button>
+                    <PageJump page={page} totalPages={totalPages} onJump={goPage} />
+                    <button
+                      type="button"
+                      disabled={page >= totalPages}
+                      onClick={() => goPage(page + 1)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      下一页
+                    </button>
+                  </div>
                 </div>
-              </div>
+                {/* 手机：单行 */}
+                <div className="mt-4 flex items-center gap-2 lg:hidden">
+                  <span className="shrink-0 text-[11px] tabular-nums text-slate-400">
+                    {allMatches.length}条
+                  </span>
+                  <PagerBar
+                    page={page}
+                    totalPages={totalPages}
+                    onJump={goPage}
+                    className="min-w-0 flex-1 justify-end py-1"
+                  />
+                </div>
+              </>
             ) : null}
           </>
         ) : null}

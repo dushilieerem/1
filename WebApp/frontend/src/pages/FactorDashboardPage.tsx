@@ -18,13 +18,14 @@ import {
   loadFactors,
   loadLibrarySource,
 } from "@/lib/factorCatalog";
+import { isPlatformFactorLib } from "@/lib/detectComboCode";
 import { openOrCreateForFactor, openDetectInNewTab } from "@/lib/detectStore";
 import { authHeaders, getStoredUser } from "@/lib/auth";
 import {
   buildBuiltinFactorShareStub,
   buildFactorPanelShareDraft,
 } from "@/lib/communityShare";
-import { PageJump } from "@/components/PageJump";
+import { PageJump, PagerBar } from "@/components/PageJump";
 
 type PeriodKey = "3m" | "1y" | "3y";
 type VerifyStatus = "pending" | "passed" | "failed";
@@ -94,6 +95,7 @@ function verifyMeta(status?: string | null) {
 const UNIVERSES = [
   { value: "CSI300", label: "沪深300" },
   { value: "CSI500", label: "中证500" },
+  { value: "CSI800", label: "中证800" },
   { value: "CSI1000", label: "中证1000" },
   { value: "SSE50", label: "上证50" },
 ] as const;
@@ -113,8 +115,8 @@ async function resolvePanelShareCode(
   const fname = factorName.trim();
   const lib = (library || "").trim();
   if (!fname) return "";
-  if (lib && DYNAMIC_FACTOR_LIBS.has(lib)) {
-    return buildBuiltinFactorShareStub(fname, lib);
+  if (lib && (DYNAMIC_FACTOR_LIBS.has(lib) || isPlatformFactorLib(lib))) {
+    return buildBuiltinFactorShareStub(fname, lib, fname);
   }
   try {
     const factors = await loadFactors();
@@ -122,16 +124,28 @@ async function resolvePanelShareCode(
       factors.find((f) => f.name === fname && (!lib || f.library === lib)) ||
       factors.find((f) => f.name === fname);
     if (!meta) {
-      return lib ? buildBuiltinFactorShareStub(fname, lib) : "";
+      return lib ? buildBuiltinFactorShareStub(fname, lib, fname) : "";
     }
-    if (DYNAMIC_FACTOR_LIBS.has(meta.library)) {
-      return buildBuiltinFactorShareStub(fname, meta.library);
+    if (
+      isPlatformFactorLib(meta.library) ||
+      DYNAMIC_FACTOR_LIBS.has(meta.library)
+    ) {
+      const label =
+        (meta.description || "").trim() ||
+        (meta.explain || "").trim() ||
+        fname;
+      return buildBuiltinFactorShareStub(fname, meta.library, label);
     }
+    // 用户自建库等：仍可贴实现
     const src = await loadLibrarySource(meta.libraryFile);
     const method = extractMethod(src, meta.methodName || meta.name).trim();
-    return method || buildBuiltinFactorShareStub(fname, meta.library);
+    const label =
+      (meta.description || "").trim() ||
+      (meta.explain || "").trim() ||
+      fname;
+    return method || buildBuiltinFactorShareStub(fname, meta.library, label);
   } catch {
-    return lib ? buildBuiltinFactorShareStub(fname, lib) : "";
+    return lib ? buildBuiltinFactorShareStub(fname, lib, fname) : "";
   }
 }
 
@@ -378,7 +392,7 @@ export function FactorDashboardPage() {
     try {
       const factorCode = await resolvePanelShareCode(r.factor_name, r.library);
       const libKey = r.library || "";
-      const draft = buildFactorPanelShareDraft({
+      const draft = await buildFactorPanelShareDraft({
         name: r.name_cn || r.factor_name,
         factorName: r.factor_name,
         libraryName: libKey || null,
@@ -467,8 +481,8 @@ export function FactorDashboardPage() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-red-50/50 via-white to-slate-50">
-      <div className="mx-auto max-w-[1440px] px-6 py-8">
-        <section className="relative mb-6 overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-white to-red-50/60 p-8 shadow-sm">
+      <div className="mx-auto max-w-[1440px] px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+        <section className="relative mb-6 overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-white to-red-50/60 p-4 shadow-sm sm:p-6 lg:p-8">
           <div
             className="pointer-events-none absolute inset-0 opacity-30"
             style={{
@@ -479,7 +493,7 @@ export function FactorDashboardPage() {
           />
           <div className="relative flex flex-wrap items-start justify-between gap-6">
             <div className="max-w-2xl">
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900">因子面板</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 lg:text-3xl">因子面板</h1>
               <p className="mt-2 text-sm leading-relaxed text-slate-600">
                 批量看全因子表现（YGQuant RE 回测聚合）。单因子可调参深度检测请用
                 <Link to="/factor/detect" className="mx-1 font-medium text-red-600 hover:underline">
@@ -487,7 +501,7 @@ export function FactorDashboardPage() {
                 </Link>
                 。
               </p>
-              <p className="mt-3 text-xs text-slate-400">
+              <p className="mt-3 text-[11px] leading-relaxed text-slate-400 sm:text-xs">
                 {uniLabel} · {periodLabel} · {filterUp ? "过滤涨停" : "不过滤涨停"} · 已算{" "}
                 {okRows.length}/{filtered.length}
                 {" · "}
@@ -648,7 +662,7 @@ export function FactorDashboardPage() {
             <div>
               <h2 className="text-sm font-bold text-slate-900">因子表现总览</h2>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               {errCount > 0 && (
                 <label className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-600">
                   <input
@@ -659,13 +673,13 @@ export function FactorDashboardPage() {
                   隐藏不可用/失败
                 </label>
               )}
-              <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-1.5">
-                <Search className="h-3.5 w-3.5 text-slate-400" />
+              <div className="flex min-w-0 w-full items-center gap-2 rounded-xl border border-slate-200 px-3 py-1.5 sm:w-auto">
+                <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="搜索因子名称、代码…"
-                  className="w-48 bg-transparent text-sm outline-none"
+                  className="min-w-0 w-full bg-transparent text-sm outline-none sm:w-48"
                 />
               </div>
             </div>
@@ -845,34 +859,47 @@ export function FactorDashboardPage() {
             </table>
           </div>
           {filtered.length > 0 ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
-              <span>
-                共 {filtered.length} 条 · 每页 {PAGE_SIZE} · 第 {pageSafe}/{pageCount} 页
-              </span>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  disabled={pageSafe <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                >
-                  上一页
-                </button>
-                <button
-                  type="button"
-                  disabled={pageSafe >= pageCount}
-                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                >
-                  下一页
-                </button>
-                <PageJump
+            <>
+              <div className="hidden flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-xs text-slate-500 lg:flex">
+                <span>
+                  共 {filtered.length} 条 · 每页 {PAGE_SIZE} · 第 {pageSafe}/{pageCount} 页
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={pageSafe <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    上一页
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pageSafe >= pageCount}
+                    onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    下一页
+                  </button>
+                  <PageJump
+                    page={pageSafe}
+                    totalPages={pageCount}
+                    onJump={setPage}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2 border-t border-slate-100 px-3 py-2 lg:hidden">
+                <span className="shrink-0 text-[11px] tabular-nums text-slate-400">
+                  {filtered.length}条 · {pageSafe}/{pageCount}
+                </span>
+                <PagerBar
                   page={pageSafe}
                   totalPages={pageCount}
                   onJump={setPage}
+                  className="min-w-0 flex-1 justify-end py-1"
                 />
               </div>
-            </div>
+            </>
           ) : null}
         </div>
       </div>

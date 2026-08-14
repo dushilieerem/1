@@ -4,9 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host",
+    "dev": "vite --host --port 9530 --strictPort",
+    "dev:http": "vite --host --port 9530 --strictPort",
+    "dev:https": "set VITE_DEV_HTTPS=1&& set VITE_DEV_PORT=9530&& vite --host --port 9530 --strictPort",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "build:dist": "vite build",
+    "preview": "vite preview --host",
+    "preview:stable": "vite preview --host --port 9532 --strictPort"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.2",
@@ -15,6 +19,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
     "@vitejs/plugin-react": "^6.0.3",
     "tailwindcss": "^4.3.2",
     "typescript": "~6.0.2",
@@ -40,6 +45,7 @@
     "echarts-for-react": "^3.0.6",
     "highlight.js": "^11.11.1",
     "js-yaml": "^5.2.1",
+    "katex": "0.16.22",
     "lightweight-charts": "^5.2.0",
     "lowlight": "^3.3.0",
     "lucide-react": "^1.24.0",
@@ -47,6 +53,9 @@
     "react-dom": "^19.2.7",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.18.1",
-    "remark-gfm": "^4.0.1"
+    "rehype-katex": "^7.0.1",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0"
   }
 }

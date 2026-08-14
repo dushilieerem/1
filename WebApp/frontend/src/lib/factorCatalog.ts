@@ -27,12 +27,15 @@ export const LABELS: Record<string, string> = {
   momentum_lib: "动量/趋势",
   value_lib: "价值/估值",
   technical_lib: "技术指标",
+  classic_indicators: "经典指标",
   volatility_lib: "波动/风险",
   trading_lib: "量价/成交",
   emotion_indicators: "情绪因子",
   risk_indicators: "风险因子",
   technical_indicators: "技术指标库",
   alpha_features: "Alpha158/360",
+  alpha_library: "Alpha库",
+  worldquant_alpha101: "WorldQuant/Alpha101",
   custom_lib: "自定义",
 };
 
@@ -42,7 +45,6 @@ export const LEGACY_LABELS: Record<string, string> = {
   jq_compat_risk: "聚宽风险",
   jq_compat_technical: "聚宽技术",
   qlib_alpha: "Qlib特征",
-  alpha_library: "Alpha库",
 };
 
 /** 与 index.yaml libraries 常见顺序一致；Tab 只展示实际出现的库 */
@@ -54,14 +56,15 @@ export const BUILTIN_LIBRARY_KEYS = LIBRARY_TAB_ORDER.filter(
 );
 
 export function builtinCategoryLabelsFromFactors(factors: FactorMeta[]): string[] {
-  const present = new Set(
-    factors.filter((f) => f.library !== "custom_lib").map((f) => f.library),
-  );
-  return BUILTIN_LIBRARY_KEYS.filter((k) => present.has(k)).map((k) => LABELS[k]);
+  // 含 RE 全库里尚未写进 LABELS 的库名
+  return filterTabsFromFactors(
+    factors.filter((f) => f.library !== "custom_lib"),
+  ).slice(1);
 }
 
-export function labelForLibrary(key: string, fallback?: string): string {
-  return LABELS[key] || LEGACY_LABELS[key] || fallback || key;
+export function labelForLibrary(key: string, _fallback?: string): string {
+  // 分类名必须稳定：勿用 RE 的 description 当 label，否则 Tab 键与 counts 对不上
+  return LABELS[key] || LEGACY_LABELS[key] || key;
 }
 
 export function libraryKeyFromLabel(label: string): string | undefined {
@@ -96,18 +99,81 @@ export const DYNAMIC_FACTOR_LIBS = new Set(["alpha_features", "qlib_alpha"]);
 
 let cache: FactorMeta[] | null = null;
 
-export async function loadFactors(force = false): Promise<FactorMeta[]> {
-  if (cache && !force) return cache;
+export type ReCatalogMeta = {
+  fetchedAt?: string;
+  source?: string;
+  factorCount?: number;
+};
+
+let reCatalogMeta: ReCatalogMeta | null = null;
+
+export function getReCatalogMeta(): ReCatalogMeta | null {
+  return reCatalogMeta;
+}
+
+async function loadBuiltinFromResearchEngine(
+  opts?: { fresh?: boolean },
+): Promise<FactorMeta[]> {
+  // 本机 BFF：默认读 PG 全库快照（all=1）；fresh=1 才当场打 RE（慢）
+  const q = new URLSearchParams({ all: "1" });
+  if (opts?.fresh) q.set("fresh", "1");
+  const res = await fetch(`/api/factor/re-catalog?${q}`, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`读取因子目录失败 HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as {
+    ok?: boolean;
+    error?: string;
+    fetched_at?: string;
+    source?: string;
+    factor_count?: number;
+    factors?: Array<{
+      name: string;
+      description?: string;
+      library: string;
+      library_description?: string | null;
+      tags?: string[];
+    }>;
+  };
+  if (data.ok === false) {
+    throw new Error(data.error || "读取 RE 因子目录失败");
+  }
+  reCatalogMeta = {
+    fetchedAt: data.fetched_at,
+    source: data.source,
+    factorCount: data.factor_count ?? data.factors?.length,
+  };
+  const out: FactorMeta[] = [];
+  for (const f of data.factors || []) {
+    const desc = (f.description || f.name || "").trim() || f.name;
+    out.push({
+      name: f.name,
+      methodName: f.name,
+      description: desc,
+      explain: desc,
+      formula: "",
+      params: {},
+      library: f.library,
+      libraryFile: "",
+      libraryLabel: labelForLibrary(f.library),
+      tags: f.tags,
+    });
+  }
+  return out;
+}
+
+/** 仅合并本机 custom_lib（用户自定义）；官方目录已改由 RE 提供 */
+async function loadCustomFromLocalIndex(): Promise<FactorMeta[]> {
   const res = await fetch("/api/factor/index", {
     cache: "no-store",
     headers: { ...authHeaders() },
   });
-  if (!res.ok) throw new Error(`读取索引失败 HTTP ${res.status}`);
+  if (!res.ok) return [];
   const raw = yamlLoad(await res.text()) as {
     libraries?: Record<
       string,
       {
-        file: string;
+        file?: string;
         description?: string;
         factors?: Array<{
           name: string;
@@ -116,36 +182,101 @@ export async function loadFactors(force = false): Promise<FactorMeta[]> {
           description?: string;
           explain?: string;
           formula?: string;
-          source_name?: string;
           params?: Record<string, string | number>;
           tags?: string[];
+          body?: string;
         }>;
       }
     >;
   };
+  const custom = raw.libraries?.custom_lib;
+  if (!custom) return [];
   const out: FactorMeta[] = [];
-  for (const [key, lib] of Object.entries(raw.libraries || {})) {
-    for (const f of lib.factors || []) {
-      const desc = f.description || f.source_name || f.name;
-      const params = f.params || {};
-      const explainRaw = f.explain || desc;
-      out.push({
-        name: f.name,
-        methodName: f.method_name || f.name,
-        description: desc,
-        explain: applyParams(explainRaw, params),
-        formula: applyParams(f.formula || "", params),
-        params,
-        library: key,
-        libraryFile: lib.file,
-        libraryLabel: labelForLibrary(key, lib.description || key),
-        tags: f.tags,
-        ownerId: f.owner_id,
-      });
-    }
+  for (const f of custom.factors || []) {
+    const desc = f.description || f.name;
+    const params = f.params || {};
+    out.push({
+      name: f.name,
+      methodName: f.method_name || f.name,
+      description: desc,
+      explain: applyParams(f.explain || desc, params),
+      formula: applyParams(f.formula || "", params),
+      params,
+      library: "custom_lib",
+      libraryFile: custom.file || "custom_lib.py",
+      libraryLabel: labelForLibrary("custom_lib", custom.description || "自定义"),
+      tags: f.tags,
+      ownerId: f.owner_id,
+      body: f.body,
+    });
   }
-  cache = out;
   return out;
+}
+
+export async function loadFactors(
+  force = false,
+  opts?: { freshCatalog?: boolean },
+): Promise<FactorMeta[]> {
+  if (cache && !force && !opts?.freshCatalog) return cache;
+  const [builtin, custom] = await Promise.all([
+    loadBuiltinFromResearchEngine({ fresh: Boolean(opts?.freshCatalog) }),
+    loadCustomFromLocalIndex(),
+  ]);
+  cache = [...builtin, ...custom];
+  return cache;
+}
+
+export type SyncOfficialCatalogResult = {
+  factors: FactorMeta[];
+  message: string;
+  factorCount: number;
+  changed: boolean;
+  libraryCounts?: Record<string, number>;
+};
+
+/** 管理员：POST 同步 RE 全库 → PG；所有账户读同一内置快照 */
+export async function syncOfficialFactorCatalog(): Promise<SyncOfficialCatalogResult> {
+  const res = await fetch("/api/factor/re-catalog/sync", {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ all: true }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    error?: string;
+    message?: string;
+    changed?: boolean;
+    factor_count?: number;
+    factors?: unknown[];
+    library_factor_counts?: Record<string, number>;
+  };
+  if (!res.ok || data.ok === false) {
+    throw new Error(data.error || `同步失败 HTTP ${res.status}`);
+  }
+  clearFactorCache();
+  const factors = await loadFactors(true);
+  const builtin = factors.filter((f) => f.library !== "custom_lib");
+  const factorCount = data.factor_count ?? data.factors?.length ?? builtin.length;
+  if (!factorCount) {
+    throw new Error("同步结果为空，请检查 ResearchEngine 是否可达");
+  }
+  // 读回数量若明显偏少，提示不要静默当成功
+  if (builtin.length > 0 && builtin.length + 5 < factorCount) {
+    throw new Error(
+      `同步写库 ${factorCount} 个，但页面读回仅 ${builtin.length} 个，请刷新重试`,
+    );
+  }
+  return {
+    factors,
+    message: data.message || `已同步 ${factorCount} 个因子`,
+    factorCount: builtin.length || factorCount,
+    changed: Boolean(data.changed),
+    libraryCounts: data.library_factor_counts,
+  };
 }
 
 export function clearFactorCache() {
@@ -370,6 +501,7 @@ export function extractEditableBody(methodSource: string): string {
 export const UNIVERSES = [
   { value: "CSI300", label: "沪深300" },
   { value: "CSI500", label: "中证500" },
+  { value: "CSI800", label: "中证800" },
   { value: "CSI1000", label: "中证1000" },
   { value: "SSE50", label: "上证50" },
 ] as const;

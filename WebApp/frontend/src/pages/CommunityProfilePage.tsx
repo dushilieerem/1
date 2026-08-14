@@ -8,8 +8,6 @@ import {
   CalendarDays,
   PenLine,
   LayoutDashboard,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import { getStoredUser, subscribeAuth } from "@/lib/auth";
 import {
@@ -32,7 +30,7 @@ import {
   PrimaryButton,
   SectionDot,
 } from "@/components/community/communityUi";
-import { PageJump } from "@/components/PageJump";
+import { PagerBar } from "@/components/PageJump";
 
 const PAGE_SIZE = 10;
 
@@ -174,7 +172,7 @@ export function CommunityProfilePage() {
 
   return (
     <CommunityPageShell>
-      <div className="mx-auto max-w-[1180px] px-5 py-6 pb-16 sm:py-8">
+      <div className="mx-auto max-w-[1180px] px-3 py-4 pb-16 sm:px-5 sm:py-8">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-24 text-sm text-slate-500">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -191,10 +189,10 @@ export function CommunityProfilePage() {
             </Link>
           </CommunityPanel>
         ) : profile ? (
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+          <div className="grid gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
             <div className="min-w-0 space-y-4">
               <div className="rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-                <div className="relative h-36 overflow-hidden rounded-t-2xl bg-gradient-to-br from-slate-700 via-slate-600 to-slate-800 sm:h-44">
+                <div className="relative h-28 overflow-hidden rounded-t-2xl bg-gradient-to-br from-slate-700 via-slate-600 to-slate-800 sm:h-36 lg:h-44">
                   {profile.cover_url ? (
                     <img
                       src={profile.cover_url}
@@ -213,8 +211,8 @@ export function CommunityProfilePage() {
                   )}
                 </div>
 
-                <div className="px-5 pb-6 sm:px-7">
-                  <div className="relative z-10 -mt-10 w-fit sm:-mt-12">
+                <div className="px-4 pb-5 sm:px-5 sm:pb-6 lg:px-7">
+                  <div className="relative z-10 -mt-8 w-fit sm:-mt-10 lg:-mt-12">
                     <AuthorAvatar
                       name={display}
                       src={profile.avatar_url}
@@ -224,7 +222,7 @@ export function CommunityProfilePage() {
                   </div>
 
                   <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                    <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
                       {display}
                     </h1>
                     {profile.is_self ? (
@@ -309,7 +307,7 @@ export function CommunityProfilePage() {
               </div>
 
               <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-                <div className="border-b border-slate-100 px-5 py-3 sm:px-6">
+                <div className="border-b border-slate-100 px-4 py-3 sm:px-5 lg:px-6">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h2 className="text-sm font-semibold text-slate-800">
                       动态
@@ -318,7 +316,7 @@ export function CommunityProfilePage() {
                       </span>
                     </h2>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
+                  <div className="mt-3 -mx-1 flex flex-nowrap gap-1.5 overflow-x-auto px-1 pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
                     {SECTION_META.map((s) => {
                       const active = section === s.id;
                       const count =
@@ -334,7 +332,7 @@ export function CommunityProfilePage() {
                           key={s.id}
                           type="button"
                           onClick={() => setSection(s.id)}
-                          className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+                          className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition ${
                             active
                               ? "bg-slate-900 text-white"
                               : "bg-slate-50 text-slate-600 hover:bg-slate-100"
@@ -381,35 +379,13 @@ export function CommunityProfilePage() {
                       ))}
                     </div>
                     {pageCount > 1 ? (
-                      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 sm:px-6">
-                        <p className="text-xs text-slate-400">
-                          第 {page} / {pageCount} 页 · 每页 {PAGE_SIZE} 条
-                        </p>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <button
-                            type="button"
-                            disabled={page <= 1}
-                            onClick={() => setPage(page - 1)}
-                            className="inline-flex items-center gap-0.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 disabled:opacity-40 hover:bg-slate-50"
-                          >
-                            <ChevronLeft className="h-3.5 w-3.5" />
-                            上一页
-                          </button>
-                          <button
-                            type="button"
-                            disabled={page >= pageCount}
-                            onClick={() => setPage(page + 1)}
-                            className="inline-flex items-center gap-0.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 disabled:opacity-40 hover:bg-slate-50"
-                          >
-                            下一页
-                            <ChevronRight className="h-3.5 w-3.5" />
-                          </button>
-                          <PageJump
-                            page={page}
-                            totalPages={pageCount}
-                            onJump={setPage}
-                          />
-                        </div>
+                      <div className="border-t border-slate-100 px-3 py-2 sm:px-4">
+                        <PagerBar
+                          page={page}
+                          totalPages={pageCount}
+                          onJump={setPage}
+                          className="justify-between sm:justify-center"
+                        />
                       </div>
                     ) : null}
                   </>

@@ -48,12 +48,76 @@ function ymd(d: Date): string {
 const _symbolsCache: { at: number; list: MarketSymbol[] } = { at: 0, list: [] };
 const _dailyCache = new Map<string, { at: number; data: MarketDaily }>();
 const SYMBOLS_TTL_MS = 30 * 60_000;
-const DAILY_TTL_MS = 10 * 60_000;
+/** 会话内短缓存：离开再回同一标的可秒开；?fresh=1 / bypassCache 仍直打 */
+const DAILY_CACHE_ENABLED = true;
+const DAILY_TTL_MS = 5 * 60_000;
+/** 浏览器持久缓存：隔天/关浏览器再进，先秒开再后台刷新 */
+const LS_DAILY_PREFIX = "svq.mkt.daily.v1:";
+const LS_DAILY_INDEX = "svq.mkt.daily.idx.v1";
+/** 超过此时间仍可用来首屏，但会后台刷新 */
+const LS_STALE_MS = 7 * 24 * 60 * 60_000;
+const LS_MAX_SYMBOLS = 12;
 /** RE 已发布日线的末日（本机「今天」可能比数据新） */
 let _panelAsOf: string | null = null;
 
 function dailyCacheKey(symbol: string, start?: string, end?: string): string {
   return `${symbol}|${start || ""}|${end || ""}`;
+}
+
+type LsDailyEntry = { at: number; data: MarketDaily };
+
+function lsReadIndex(): string[] {
+  try {
+    const raw = localStorage.getItem(LS_DAILY_INDEX);
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as unknown;
+    return Array.isArray(arr) ? arr.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function lsWriteIndex(syms: string[]) {
+  try {
+    localStorage.setItem(LS_DAILY_INDEX, JSON.stringify(syms.slice(0, LS_MAX_SYMBOLS)));
+  } catch {
+    /* quota */
+  }
+}
+
+function persistDaily(symbol: string, data: MarketDaily) {
+  if (!data?.bars?.length) return;
+  const code = String(symbol || "").trim();
+  if (!code) return;
+  try {
+    const entry: LsDailyEntry = { at: Date.now(), data };
+    localStorage.setItem(LS_DAILY_PREFIX + code, JSON.stringify(entry));
+    const idx = lsReadIndex().filter((s) => s !== code);
+    idx.unshift(code);
+    lsWriteIndex(idx);
+    // 超限删最旧
+    for (const old of idx.slice(LS_MAX_SYMBOLS)) {
+      localStorage.removeItem(LS_DAILY_PREFIX + old);
+    }
+  } catch {
+    /* private mode / quota */
+  }
+}
+
+/** 同步读本地日线（可过期）；用于进页立刻出图 */
+export function peekPersistedDaily(symbol: string): MarketDaily | null {
+  const code = String(symbol || "").trim();
+  if (!code) return null;
+  try {
+    const raw = localStorage.getItem(LS_DAILY_PREFIX + code);
+    if (!raw) return null;
+    const entry = JSON.parse(raw) as LsDailyEntry;
+    if (!entry?.data?.bars?.length) return null;
+    if (Date.now() - Number(entry.at || 0) > LS_STALE_MS) return null;
+    return entry.data;
+  } catch {
+    return null;
+  }
 }
 
 /** 去掉 .SH/.SZ/.BJ */
@@ -262,25 +326,57 @@ export async function fetchIndexConstituents(
  */
 export async function fetchMarketDaily(
   symbol: string,
-  opts?: { start?: string; end?: string },
+  opts?: { start?: string; end?: string; bypassCache?: boolean },
 ): Promise<MarketDaily> {
   const code = String(symbol || "").trim();
   if (!code) throw new Error("缺少股票代码");
   const key = dailyCacheKey(code, opts?.start, opts?.end);
-  const hit = _dailyCache.get(key);
   const now = Date.now();
-  if (hit && now - hit.at < DAILY_TTL_MS) return hit.data;
+  if (DAILY_CACHE_ENABLED && !opts?.bypassCache) {
+    const hit = _dailyCache.get(key);
+    if (hit && now - hit.at < DAILY_TTL_MS) return hit.data;
+  }
 
   const q = new URLSearchParams();
   if (opts?.start) q.set("start", opts.start);
   if (opts?.end) q.set("end", opts.end);
   const qs = q.toString();
   const res = await fetch(
-    `/yg-api/api/market-data/daily/${encodeURIComponent(code)}${qs ? `?${qs}` : ""}`,
+    `/api/market-data/daily/${encodeURIComponent(code)}${qs ? `?${qs}` : ""}`,
   );
   const data = await parseJson<MarketDaily>(res);
-  _dailyCache.set(key, { at: now, data });
+  if (DAILY_CACHE_ENABLED) {
+    _dailyCache.set(key, { at: now, data });
+  }
+  // 只把「更完整」的结果写入持久缓存（全历史优先；近端也能救急）
+  const prev = peekPersistedDaily(code);
+  if (!prev || (data.bars?.length || 0) >= (prev.bars?.length || 0)) {
+    persistDaily(code, data);
+  }
   return data;
+}
+
+/** 清日线内存缓存（调试首屏渐进加载用） */
+export function clearMarketDailyCache() {
+  _dailyCache.clear();
+}
+
+/** 清浏览器持久日线（?fresh=1） */
+export function clearPersistedDailyCache(symbol?: string) {
+  try {
+    if (symbol) {
+      const code = String(symbol).trim();
+      localStorage.removeItem(LS_DAILY_PREFIX + code);
+      lsWriteIndex(lsReadIndex().filter((s) => s !== code));
+      return;
+    }
+    for (const s of lsReadIndex()) {
+      localStorage.removeItem(LS_DAILY_PREFIX + s);
+    }
+    localStorage.removeItem(LS_DAILY_INDEX);
+  } catch {
+    /* ignore */
+  }
 }
 
 export function quoteFromBars(

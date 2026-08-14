@@ -219,6 +219,15 @@ function zoomSlider() {
   ];
 }
 
+function chartAnim() {
+  return {
+    animation: true as const,
+    animationThreshold: 200000,
+    animationDuration: 900,
+    animationEasing: "cubicOut" as const,
+  };
+}
+
 function legendTopRight(data: string[]) {
   return {
     ...legendBase({ top: 4, right: 8, left: "auto" }),
@@ -495,6 +504,7 @@ export function StrategyReportPage() {
   const equityOpt = useMemo(() => {
     if (!curveDates.length) return null;
     return {
+      ...chartAnim(),
       color: [CHART.ink, CHART.bench],
       tooltip: {
         ...darkTooltip(),
@@ -555,6 +565,7 @@ export function StrategyReportPage() {
   const drawdownOpt = useMemo(() => {
     if (!curveDates.length) return null;
     return {
+      ...chartAnim(),
       color: [CHART.amber],
       tooltip: {
         ...darkTooltip(),
@@ -611,6 +622,7 @@ export function StrategyReportPage() {
     if (!rows?.length) return null;
     const vals = rows.map((r) => (r.return_value ?? 0) * 100);
     return {
+      ...chartAnim(),
       tooltip: {
         ...darkTooltip(),
         trigger: "item",
@@ -646,8 +658,8 @@ export function StrategyReportPage() {
           data: vals.map((v) => ({
             value: v,
             itemStyle: {
-              color: v >= 0 ? CHART.positive : CHART.negative,
-              borderRadius: [4, 4, 0, 0],
+              color: v >= 0 ? "#ef4444" : "#16a34a",
+              borderRadius: v >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4],
             },
           })),
         },
@@ -697,18 +709,20 @@ export function StrategyReportPage() {
       navigate(`/login?next=${encodeURIComponent(next)}`);
       return;
     }
-    const draft = buildStrategyShareDraft({
-      name: rec.name || rec.description || "策略回测",
-      rangeLabel,
-      universeLabel: optionLabel(uniCode, STRATEGY_UNIVERSE_OPTIONS),
-      benchmarkLabel: optionLabel(bmCode, STRATEGY_BENCHMARK_OPTIONS),
-      metrics: m,
-      excessReturn: result?.excess_return,
-      strategyCode: req?.strategy_code,
-      returnTo: `/strategy/research/report/${rec.id || runId}`,
-      returnLabel: "返回策略回测报告",
-    });
-    navigate(next, { state: draft });
+    void (async () => {
+      const draft = await buildStrategyShareDraft({
+        name: rec.name || rec.description || "策略回测",
+        rangeLabel,
+        universeLabel: optionLabel(uniCode, STRATEGY_UNIVERSE_OPTIONS),
+        benchmarkLabel: optionLabel(bmCode, STRATEGY_BENCHMARK_OPTIONS),
+        metrics: m,
+        excessReturn: result?.excess_return,
+        strategyCode: req?.strategy_code,
+        returnTo: `/strategy/research/report/${rec.id || runId}`,
+        returnLabel: "返回策略回测报告",
+      });
+      navigate(next, { state: draft });
+    })();
   };
 
   const openArchive = () => {
@@ -857,9 +871,9 @@ export function StrategyReportPage() {
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-slate-50 to-white">
       <div className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-3 px-6 py-3">
-          <div>
-            <p className="text-sm text-slate-500">
+        <div className="mx-auto flex max-w-[1400px] flex-col gap-3 px-3 py-3 sm:px-6 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs text-slate-500 sm:text-sm">
               {isArchiveSnap || rec.immutable ? (
                 <>
                   <Link to="/strategy/library" className="hover:text-blue-600">
@@ -889,7 +903,7 @@ export function StrategyReportPage() {
                 </>
               )}
             </p>
-            <h1 className="mt-0.5 text-lg font-bold text-slate-900">
+            <h1 className="mt-0.5 text-base font-bold text-slate-900 sm:text-lg">
               {rec.name || rec.description}
               {isArchiveSnap || rec.immutable ? (
                 <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">
@@ -898,21 +912,11 @@ export function StrategyReportPage() {
               ) : null}
             </h1>
           </div>
-          <div className="flex gap-2">
-            {isArchiveSnap || rec.immutable ? null : (
-              <button
-                type="button"
-                onClick={openArchive}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-teal-300 bg-teal-50 px-3 py-1.5 text-sm font-medium text-teal-900 hover:bg-teal-100"
-              >
-                <Archive className="h-3.5 w-3.5" />
-                入库
-              </button>
-            )}
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             {isArchiveSnap || rec.immutable ? (
               <Link
                 to="/strategy/library"
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+                className="col-span-2 inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 sm:col-span-1"
               >
                 返回策略库
               </Link>
@@ -920,21 +924,31 @@ export function StrategyReportPage() {
               <>
                 <button
                   type="button"
+                  onClick={openArchive}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-teal-300 bg-teal-50 px-3 py-1.5 text-sm font-medium text-teal-900 hover:bg-teal-100"
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                  入库
+                </button>
+                <button
+                  type="button"
                   onClick={shareToCommunity}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
                 >
                   <Share2 className="h-3.5 w-3.5" />
-                  分享到社区
+                  <span className="sm:hidden">分享</span>
+                  <span className="hidden sm:inline">分享到社区</span>
                 </button>
                 <Link
                   to={`/strategy/research/${rec.projectId}/history`}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+                  className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
                 >
-                  历史记录
+                  <span className="sm:hidden">历史</span>
+                  <span className="hidden sm:inline">历史记录</span>
                 </Link>
                 <Link
                   to={`/strategy/research/${rec.projectId}?runId=${encodeURIComponent(rec.id)}`}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+                  className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
                 >
                   返回配置
                 </Link>
@@ -944,18 +958,15 @@ export function StrategyReportPage() {
         </div>
 
         {archiveOk ? (
-          <div className="mx-auto max-w-[1400px] px-6 pb-2">
+          <div className="mx-auto max-w-[1400px] px-3 pb-2 sm:px-6">
             <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
               {archiveOk}
             </p>
           </div>
         ) : null}
 
-        <div className="mx-auto w-full max-w-[1400px] space-y-2 px-6 pb-4">
-          <div
-            className="grid gap-2"
-            style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
-          >
+        <div className="mx-auto w-full max-w-[1400px] space-y-2 px-3 pb-4 sm:px-6">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
             <ReportStatCard
               label="区间"
               value={rangeLabel}
@@ -986,10 +997,7 @@ export function StrategyReportPage() {
               icon={<TrendingDown className="h-3.5 w-3.5 text-rose-500" />}
             />
           </div>
-          <div
-            className="grid gap-2"
-            style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
-          >
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {highlightMetrics.map((item) => (
               <ReportStatCard
                 key={item.key}
@@ -1002,8 +1010,8 @@ export function StrategyReportPage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-[1400px] px-6 py-5">
-        <nav className="mb-4 flex gap-1 overflow-x-auto border-b border-slate-200 pb-2 lg:hidden">
+      <div className="mx-auto max-w-[1400px] px-3 py-4 sm:px-6 sm:py-5">
+        <nav className="sticky top-0 z-10 mb-4 flex gap-1 overflow-x-auto border-b border-slate-200 bg-white/95 pb-2 backdrop-blur [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
           {NAV.map((item) => (
             <button
               key={item.id}

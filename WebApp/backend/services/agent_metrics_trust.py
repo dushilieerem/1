@@ -21,10 +21,131 @@ CASUAL_RE = re.compile(
 PROMISE_RE = re.compile(r"(稳赚|必涨|保证收益|稳赚不赔|闭眼买|全仓梭哈|横扫全市场)")
 NUMBER_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
 
+# 平台分享到社区的固定导语（正文有、但旧帖可能未落 platform_ref）
+SHARE_ORIGIN_RE = re.compile(
+    r"来自(?P<kind>因子面板|因子检测|策略回测)(?:报告)?自动摘要"
+)
+SHARE_SOURCE_MAP = {
+    "因子面板": "factor_panel",
+    "因子检测": "factor_detect",
+    "策略回测": "strategy_report",
+}
+UNIVERSE_CODE_HINTS = {
+    "沪深300": "CSI300",
+    "中证500": "CSI500",
+    "中证800": "CSI800",
+    "中证1000": "CSI1000",
+    "全A": "CSI_ALL",
+    "中证全指": "CSI_ALL",
+}
+PERIOD_CODE_HINTS = {
+    "近1年": "1y",
+    "近3年": "3y",
+    "近5年": "5y",
+    "1年": "1y",
+    "3年": "3y",
+    "5年": "5y",
+}
+
 
 def strip_html(text: str) -> str:
     plain = re.sub(r"<[^>]+>", " ", text or "")
     return re.sub(r"\s+", " ", plain).strip()
+
+
+def infer_platform_ref_from_share_body(body: str) -> dict[str, Any] | None:
+    """从「来自因子面板/检测/策略回测自动摘要」分享稿反推 platform_ref。
+
+    旧帖可能只有正文导语、未落库 platform_ref；读帖 TL;DR 据此视为已挂平台来源。
+    """
+    raw = body or ""
+    if not raw.strip():
+        return None
+    m = SHARE_ORIGIN_RE.search(raw) or SHARE_ORIGIN_RE.search(strip_html(raw))
+    if not m:
+        return None
+    kind = m.group("kind")
+    source = SHARE_SOURCE_MAP.get(kind) or "platform"
+
+    factor_name = None
+    code_m = re.search(r"<code>\s*([A-Za-z_][A-Za-z0-9_]*)\s*</code>", raw)
+    if code_m:
+        factor_name = code_m.group(1)
+
+    def _meta(label: str) -> str | None:
+        mm = re.search(
+            rf"<strong>\s*{re.escape(label)}\s*</strong>\s*[:：]\s*([^<]+)",
+            raw,
+        )
+        if not mm:
+            return None
+        return mm.group(1).strip() or None
+
+    universe = _meta("股票池")
+    period = _meta("周期") or _meta("区间")
+    library = _meta("因子库")
+    filter_label = _meta("涨跌停")
+
+    metrics_display: dict[str, str] = {}
+    for km in re.finditer(
+        r"<strong>\s*([^<]+?)\s*</strong>\s*[:：]\s*([^<]+)",
+        raw,
+    ):
+        key = km.group(1).strip()
+        val = km.group(2).strip()
+        if key in ("因子", "因子库", "股票池", "周期", "区间", "涨跌停", "基准", "指标摘要"):
+            continue
+        if key and val:
+            metrics_display[key[:40]] = val[:64]
+
+    universe_code = None
+    if universe:
+        for tip, code in UNIVERSE_CODE_HINTS.items():
+            if tip in universe:
+                universe_code = code
+                break
+    period_code = None
+    if period:
+        for tip, code in PERIOD_CODE_HINTS.items():
+            if tip in period:
+                period_code = code
+                break
+
+    filter_limit_up = None
+    if filter_label:
+        if "过滤涨停" in filter_label or "过滤" in filter_label:
+            filter_limit_up = True
+        elif "不过滤" in filter_label:
+            filter_limit_up = False
+
+    label_bits = [kind]
+    if factor_name:
+        label_bits.append(factor_name)
+    if universe:
+        label_bits.append(universe)
+    if period:
+        label_bits.append(period)
+
+    return normalize_platform_ref(
+        {
+            "source": source,
+            "label": " · ".join(label_bits),
+            "factor_name": factor_name,
+            "universe": universe,
+            "period": period,
+            "universe_code": universe_code,
+            "period_code": period_code,
+            "library": library,
+            "filter_limit_up": filter_limit_up,
+            "metrics_display": metrics_display,
+            "metrics": {},
+        }
+    )
+
+
+def body_claims_platform_share(body: str) -> bool:
+    raw = body or ""
+    return bool(SHARE_ORIGIN_RE.search(raw) or SHARE_ORIGIN_RE.search(strip_html(raw)))
 
 
 def normalize_platform_ref(raw: Any) -> dict[str, Any] | None:
@@ -143,6 +264,8 @@ def evaluate_metrics_trust(
         )
 
     ref = normalize_platform_ref(platform_ref) if platform_ref else None
+    if not ref and body_claims_platform_share(body or ""):
+        ref = infer_platform_ref_from_share_body(body or "")
 
     if ref:
         # 面板/检测/策略分享带来的引用即真源。

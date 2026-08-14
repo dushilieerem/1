@@ -1,8 +1,8 @@
 # SVQuant 数据库说明
 
-> **最后刷新：** 2026-08-05 13:51（Asia/Shanghai）  
+> **最后刷新：** 2026-08-12 15:07（Asia/Shanghai）  
 > **怎么更新：** 在 `WebApp/backend` 执行 `python scripts/refresh_database_docs.py`。脚本会重写本文件的表清单 / 字段 / 行数 / 样例；表用途与字段说明改脚本顶部的 `PURPOSES` / `FIELD_HINTS`。
-> **边界：** SVQuant **不存行情 bars**；因子面板指标在本机 SQLite；账号 / 社区 / 检测 / 策略 / **KnowledgeHub（`kh_*`）** 在 PostgreSQL。旧 `kb_*` 已删除，勿再建。
+> **边界：** SVQuant **不存行情 bars**；因子面板指标在本机 SQLite；账号 / 社区 / 检测 / 策略 / **官方因子目录缓存** （`re_factor_catalog_*`）/ **KnowledgeHub（`kh_*`）** 在 PostgreSQL。旧 `kb_*` 已删除，勿再建。
 
 ---
 
@@ -10,43 +10,45 @@
 
 | 库 | 引擎 | 连接 / 路径 | 表数量 | 用途 |
 |----|------|-------------|--------|------|
-| **主库** | PostgreSQL | `.env` → `DATABASE_URL`（`svquant`） | **31** | 用户、社区、Agent、检测/策略、KnowledgeHub |
+| **主库** | PostgreSQL | `.env` → `DATABASE_URL`（`svquant`） | **33** | 用户、社区、Agent、检测/策略、KnowledgeHub |
 | **因子面板缓存** | SQLite | `backend/output/factor_dashboard/metrics.sqlite` | **2** | 面板 IC/夏普等 + 跨平台校验状态 |
 
 ### PostgreSQL 表一览
 
 | 表名 | 约行数 | 作用（一句话） |
 |------|--------|----------------|
-| `ai_usage` | 147 | Agent 调用流水（按 skill 一行）；日配额按当日行数计。 |
+| `ai_usage` | 155 | Agent 调用流水（按 skill 一行）；日配额按当日行数计。 |
 | `comment_votes` | 6 | 评论赞/踩（每用户每评论一票）。 |
 | `community_reports` | 6 | 举报帖/评论；管理仓处理队列。 |
-| `detect_projects` | 88 | 因子检测项目配置与归属。 |
-| `detect_runs` | 109 | 因子检测一次运行结果摘要 / 状态。 |
-| `kh_chat_messages` | 16 | — |
+| `detect_projects` | 205 | 因子检测项目配置与归属。 |
+| `detect_runs` | 216 | 因子检测一次运行结果摘要 / 状态。 |
+| `kh_chat_messages` | 24 | KnowledgeHub 会话消息（role + content）；挂在 kh_conversations 下。 |
 | `kh_chats` | 2 | KnowledgeHub 聊天应用配置（开场白、系统提示、关联知识库 ids）。 |
-| `kh_chunks` | 161 | KnowledgeHub 文档切片（ordinal + text + meta JSONB）；检索读此表。 |
+| `kh_chunks` | 180 | KnowledgeHub 文档切片（ordinal + text + meta JSONB）；检索读此表。 |
 | `kh_collections` | 4 | KnowledgeHub 知识库集合（:9531；类型 pipeline + 分块策略）。 |
-| `kh_conversations` | 7 | — |
+| `kh_conversations` | 8 | KnowledgeHub 用户会话线程（关联 chat / collection）。 |
 | `kh_default_models` | 6 | 默认模型角色（llm / embedding / rerank …）。 |
-| `kh_documents` | 4 | KnowledgeHub 文档（正文 / 分块策略 / status / enabled / parse_error）。 |
+| `kh_documents` | 6 | KnowledgeHub 文档（正文 / 分块策略 / status / enabled / parse_error）。 |
 | `kh_files` | 0 | KnowledgeHub 文件管理页登记（可关联 collection）。 |
 | `kh_model_providers` | 1 | 模型供应商（通义/OpenAI 兼容等；存 base_url / api_key）。 |
-| `news_items` | 1492 | 资讯聚合条目（多源快讯/市场/公告等；真源 ingest upsert）。 |
-| `notifications` | 40 | 站内通知（回复、@、系统等）。 |
-| `post_comments` | 34 | 帖评论与楼中楼回复。 |
+| `news_items` | 11779 | 资讯聚合条目（快讯/市场/公告/研报/政策/海外；真源 ingest upsert，含定时调度）。 |
+| `notifications` | 54 | 站内通知（回复、@、系统等）。 |
+| `post_comments` | 36 | 帖评论与楼中楼回复。 |
 | `post_favorites` | 5 | 用户收藏帖。 |
 | `post_votes` | 9 | 帖赞/踩（每用户每帖一票）。 |
-| `posts` | 63 | 社区帖（正文 / 代码 / 分区 / 状态 / 置顶）。 |
-| `strategy_projects` | 67 | 策略研究项目配置与归属。 |
-| `strategy_runs` | 69 | 策略回测一次运行结果摘要 / 状态。 |
+| `posts` | 69 | 社区帖（正文 / 代码 / 分区 / 状态 / 置顶）。 |
+| `re_factor_catalog_snapshot` | 1 | ResearchEngine 官方因子目录快照（库列表+因子清单 JSON）；页面读此表，不每次打 RE。 |
+| `re_factor_catalog_sync_log` | 3 | 官方因子目录同步日志（定时/手动：有无变更、hash、条数）。 |
+| `strategy_projects` | 80 | 策略研究项目配置与归属。 |
+| `strategy_runs` | 74 | 策略回测一次运行结果摘要 / 状态。 |
 | `user_custom_factors` | 0 | 用户自定义因子元数据（`.py` 另存磁盘；本表记归属与可见性）。 |
-| `user_factor_libraries` | 3 | 用户自建因子库（文件夹）；与内置库同级，按 user 隔离。 |
-| `user_follows` | 3 | 用户关注关系（关注者 → 被关注者）。 |
-| `user_library_factors` | 8 | 用户因子库内的因子条目（含代码正文、分类、说明）。 |
-| `user_library_strategies` | 2 | 用户策略库内入库快照（含策略说明、回测归档 JSON；与研究侧 run 脱钩）。 |
-| `user_strategy_libraries` | 4 | 用户自建策略库（文件夹）；与内置库同级，按 user 隔离。 |
-| `user_watchlist_symbols` | 40 | — |
-| `user_watchlists` | 6 | — |
+| `user_factor_libraries` | 7 | 用户自建因子库（文件夹）；与内置库同级，按 user 隔离。 |
+| `user_follows` | 5 | 用户关注关系（关注者 → 被关注者）。 |
+| `user_library_factors` | 13 | 用户因子库内的因子条目（含代码正文、分类、说明）。 |
+| `user_library_strategies` | 3 | 用户策略库内入库快照（含策略说明、回测归档 JSON；与研究侧 run 脱钩）。 |
+| `user_strategy_libraries` | 5 | 用户自建策略库（文件夹）；与内置库同级，按 user 隔离。 |
+| `user_watchlist_symbols` | 41 | 自选组合内标的（symbol + 名称快照）；归属某 watchlist。 |
+| `user_watchlists` | 6 | 用户自选股组合（文件夹）；按 user 隔离，前端 `/data/watchlist`。 |
 | `users` | 9 | 账号与资料：登录、角色、AI 日配额、公开主页头像/封面/简介。 |
 
 ### SQLite 表一览
@@ -101,7 +103,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** Agent 调用流水（按 skill 一行）；日配额按当日行数计。
 
 - 主键：`id`
-- 当前行数：约 **147**
+- 当前行数：约 **155**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -220,7 +222,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 因子检测项目配置与归属。
 
 - 主键：`user_id`, `id`
-- 当前行数：约 **88**
+- 当前行数：约 **205**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -263,7 +265,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 因子检测一次运行结果摘要 / 状态。
 
 - 主键：`user_id`, `id`
-- 当前行数：约 **109**
+- 当前行数：约 **216**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -302,10 +304,10 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 
 ### `kh_chat_messages`
 
-**作用：** （待补）
+**作用：** KnowledgeHub 会话消息（role + content）；挂在 kh_conversations 下。
 
 - 主键：`id`
-- 当前行数：约 **16**
+- 当前行数：约 **24**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -331,13 +333,13 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
     "conversation_id": 6
   },
   {
-    "id": 10,
+    "id": 26,
     "chat_id": 1,
     "role": "assistant",
-    "content": "检索预览 Top5",
-    "meta": "{\"hits\": [{\"meta\": {\"title\": \"`marketcap`\", \"embeddingDim\": 1024, \"embeddingModel\": \"qwen3.7-text-embedding\"}, \"text\": \"…",
-    "created_at": "2026-08-04 10:27:19.998867+08:00",
-    "conversation_id": 6
+    "content": "根据当前知识库内容无法确定。知识库中仅显示刘子铭在7.22会议上的汇报/负责模块为**“AI代理开发与数据源调研”**[2]，并未记录其具体的待办事项。如需准确信息，建议查阅完整的会议纪要原文。",
+    "meta": "{\"hits\": [{\"meta\": {\"title\": \"导言\", \"embeddingDim\": 1024, \"embeddingModel\": \"qwen3.7-text-embedding\"}, \"text\": \"开发部7.22会议…",
+    "created_at": "2026-08-05 15:02:42.003156+08:00",
+    "conversation_id": 11
   }
 ]
 ```
@@ -374,7 +376,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
     "id": 1,
     "name": "1",
     "model_name": "",
-    "updated_at": "2026-08-05 13:41:53.105762+08:00"
+    "updated_at": "2026-08-05 15:15:33.307199+08:00"
   },
   {
     "id": 2,
@@ -390,7 +392,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** KnowledgeHub 文档切片（ordinal + text + meta JSONB）；检索读此表。
 
 - 主键：`id`
-- 当前行数：约 **161**
+- 当前行数：约 **180**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -464,10 +466,10 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 
 ### `kh_conversations`
 
-**作用：** （待补）
+**作用：** KnowledgeHub 用户会话线程（关联 chat / collection）。
 
 - 主键：`id`
-- 当前行数：约 **7**
+- 当前行数：约 **8**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -539,7 +541,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** KnowledgeHub 文档（正文 / 分块策略 / status / enabled / parse_error）。
 
 - 主键：`id`
-- 当前行数：约 **4**
+- 当前行数：约 **6**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -634,24 +636,24 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 
 ### `news_items`
 
-**作用：** 资讯聚合条目（多源快讯/市场/公告等；真源 ingest upsert）。
+**作用：** 资讯聚合条目（快讯/市场/公告/研报/政策/海外；真源 ingest upsert，含定时调度）。
 
 - 主键：`id`
-- 当前行数：约 **1492**
+- 当前行数：约 **11779**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
 | `id` | `bigint` | NO | 主键 |
 | `title` | `text` | NO | 标题 |
 | `summary` | `text` | NO | 摘要 |
-| `body` | `text` | NO | 正文（电报多为全文；东财可抓 HTML；巨潮多为 PDF 说明） |
+| `body` | `text` | NO | 正文（电报多为全文；东财市场/政策可抓 HTML；研报为投资要点+#ctx-content，附 PDF 链；巨潮多为 PDF 说明） |
 | `published_at` | `timestamp with time zone` | NO | 发布时间（巨潮常为披露日 00:00） |
-| `source` | `text` | NO | `cls` / `eastmoney` / `cninfo` / `10jqka` / `wallstreetcn` / `bloomberg` |
+| `source` | `text` | NO | `cls` / `eastmoney` / `cninfo` / `10jqka` / `wallstreetcn` / `bloomberg`（研报·政策调度键 em_research/em_policy，入库仍记 eastmoney） |
 | `category` | `text` | NO | `flash` / `market` / `announce` / `research` / `policy` / `global` |
-| `url` | `text` | NO | 源站或 PDF 链接 |
+| `url` | `text` | NO | 源站、研报详情或 PDF 链接 |
 | `symbols` | `jsonb` | NO | 关联代码 JSONB 数组 |
-| `themes` | `jsonb` | NO | 题材标签 JSONB 数组 |
-| `industries` | `jsonb` | NO | 行业标签 JSONB 数组 |
+| `themes` | `jsonb` | NO | 题材标签 JSONB 数组（字典 + 源站） |
+| `industries` | `jsonb` | NO | 行业标签 JSONB 数组（字典命中） |
 | `raw_hash` | `text` | NO | 去重键（同源同条唯一） |
 | `is_flash` | `boolean` | NO | 是否进电报流 |
 | `is_featured` | `boolean` | NO | 是否头条卡 |
@@ -671,11 +673,11 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
     "is_featured": false
   },
   {
-    "id": 618,
+    "id": 619,
     "source": "cls",
     "category": "flash",
-    "title": "【风口研报·公司】半导体12英寸硅片产线加速扩产，这家公司卡位半导体级硅片设备、2026年订单储备充足；这家云方向细分龙头注销式回购占公司总资产5%、较当前市价溢价近50%，受益AI应用拉动效益明显",
-    "published_at": "2026-08-04 20:21:17+08:00",
+    "title": "财联社8月4日电，沃尔玛公司表示，沃尔玛完成对Vibe.co的收购。",
+    "published_at": "2026-08-04 20:17:02+08:00",
     "is_flash": true,
     "is_featured": false
   }
@@ -687,7 +689,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 站内通知（回复、@、系统等）。
 
 - 主键：`id`
-- 当前行数：约 **40**
+- 当前行数：约 **54**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -730,7 +732,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 帖评论与楼中楼回复。
 
 - 主键：`id`
-- 当前行数：约 **34**
+- 当前行数：约 **36**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -833,7 +835,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 社区帖（正文 / 代码 / 分区 / 状态 / 置顶）。
 
 - 主键：`id`
-- 当前行数：约 **63**
+- 当前行数：约 **69**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -878,12 +880,85 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 ]
 ```
 
+### `re_factor_catalog_snapshot`
+
+**作用：** ResearchEngine 官方因子目录快照（库列表+因子清单 JSON）；页面读此表，不每次打 RE。
+
+- 主键：`scope`
+- 当前行数：约 **1**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `scope` | `text` | NO | `primary`（默认十库）或 `all` |
+| `content_hash` | `text` | NO | 库+因子清单 SHA256，用于判断 RE 是否有更新 |
+| `payload` | `jsonb` | NO | 完整目录 JSON（libraries + factors） |
+| `fetched_at` | `timestamp with time zone` | NO | 最近一次从 RE 拉到内容的时间 |
+| `fetched_at_unix` | `double precision` | NO | 同上，unix 秒 |
+| `factor_count` | `integer` | NO | 因子条数 |
+| `library_count` | `integer` | NO | 库个数 |
+| `updated_at` | `timestamp with time zone` | NO | 最近检查/写入时间（无变更也会刷新） |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "scope": "primary",
+    "content_hash": "8745c1093bef5d1dda6505d2f033821c2165266664c72be292799dbae95d62ca",
+    "factor_count": 734,
+    "library_count": 10,
+    "fetched_at": "2026-08-12 14:53:56.752604+08:00",
+    "updated_at": "2026-08-12 15:02:14.523718+08:00"
+  }
+]
+```
+
+### `re_factor_catalog_sync_log`
+
+**作用：** 官方因子目录同步日志（定时/手动：有无变更、hash、条数）。
+
+- 主键：`id`
+- 当前行数：约 **3**
+
+| 字段 | 类型 | 可空 | 说明 |
+|------|------|------|------|
+| `id` | `bigint` | NO | 自增主键 |
+| `scope` | `text` | NO | 同步范围 |
+| `changed` | `boolean` | NO | 本次是否写了新快照 |
+| `content_hash` | `text` | YES | 当时 hash |
+| `factor_count` | `integer` | YES | 因子条数 |
+| `message` | `text` | YES | 人读摘要 |
+| `created_at` | `timestamp with time zone` | NO | 日志时间 |
+
+**样例（脱敏 / 截断）：**
+
+```json
+[
+  {
+    "id": 1,
+    "scope": "primary",
+    "changed": true,
+    "factor_count": 734,
+    "message": "首次写入 734 个因子",
+    "created_at": "2026-08-12 14:53:56.976688+08:00"
+  },
+  {
+    "id": 2,
+    "scope": "primary",
+    "changed": false,
+    "factor_count": 734,
+    "message": "无变更（hash=8745c1093bef…，734 个）",
+    "created_at": "2026-08-12 14:54:03.055837+08:00"
+  }
+]
+```
+
 ### `strategy_projects`
 
 **作用：** 策略研究项目配置与归属。
 
 - 主键：`user_id`, `id`
-- 当前行数：约 **67**
+- 当前行数：约 **80**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -923,7 +998,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 策略回测一次运行结果摘要 / 状态。
 
 - 主键：`user_id`, `id`
-- 当前行数：约 **69**
+- 当前行数：约 **74**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -983,7 +1058,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 用户自建因子库（文件夹）；与内置库同级，按 user 隔离。
 
 - 主键：`id`
-- 当前行数：约 **3**
+- 当前行数：约 **7**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -1004,10 +1079,10 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
     "updated_at": "2026-07-29 18:29:04.218170+08:00"
   },
   {
-    "id": 3,
-    "user_id": 4,
-    "name": "B",
-    "updated_at": "2026-07-30 13:42:58.363122+08:00"
+    "id": 2,
+    "user_id": 5,
+    "name": "A",
+    "updated_at": "2026-07-31 09:48:01.304364+08:00"
   }
 ]
 ```
@@ -1017,7 +1092,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 用户关注关系（关注者 → 被关注者）。
 
 - 主键：`follower_id`, `following_id`
-- 当前行数：约 **3**
+- 当前行数：约 **5**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -1047,7 +1122,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 用户因子库内的因子条目（含代码正文、分类、说明）。
 
 - 主键：`id`
-- 当前行数：约 **8**
+- 当前行数：约 **13**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -1090,7 +1165,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 用户策略库内入库快照（含策略说明、回测归档 JSON；与研究侧 run 脱钩）。
 
 - 主键：`id`
-- 当前行数：约 **2**
+- 当前行数：约 **3**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -1140,7 +1215,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 **作用：** 用户自建策略库（文件夹）；与内置库同级，按 user 隔离。
 
 - 主键：`id`
-- 当前行数：约 **4**
+- 当前行数：约 **5**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -1155,26 +1230,26 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 ```json
 [
   {
-    "id": 2,
-    "user_id": 4,
-    "name": "OP",
-    "updated_at": "2026-07-30 11:39:12.983301+08:00"
-  },
-  {
     "id": 4,
     "user_id": 1,
     "name": "AA",
     "updated_at": "2026-07-30 12:28:56.456727+08:00"
+  },
+  {
+    "id": 3,
+    "user_id": 4,
+    "name": "演示库",
+    "updated_at": "2026-07-30 17:51:10.395436+08:00"
   }
 ]
 ```
 
 ### `user_watchlist_symbols`
 
-**作用：** （待补）
+**作用：** 自选组合内标的（symbol + 名称快照）；归属某 watchlist。
 
 - 主键：`id`
-- 当前行数：约 **40**
+- 当前行数：约 **41**
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
@@ -1210,7 +1285,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 
 ### `user_watchlists`
 
-**作用：** （待补）
+**作用：** 用户自选股组合（文件夹）；按 user 隔离，前端 `/data/watchlist`。
 
 - 主键：`id`
 - 当前行数：约 **6**
@@ -1228,18 +1303,18 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 ```json
 [
   {
-    "id": 2,
-    "user_id": 4,
-    "name": "11",
-    "created_at": "2026-07-31 15:51:53.832405+08:00",
-    "updated_at": "2026-07-31 15:51:53.832405+08:00"
-  },
-  {
     "id": 3,
     "user_id": 5,
     "name": "11",
     "created_at": "2026-07-31 15:58:01.405674+08:00",
     "updated_at": "2026-07-31 15:58:01.405674+08:00"
+  },
+  {
+    "id": 5,
+    "user_id": 1,
+    "name": "11",
+    "created_at": "2026-07-31 16:08:30.309083+08:00",
+    "updated_at": "2026-07-31 16:08:50.895115+08:00"
   }
 ]
 ```
@@ -1406,6 +1481,7 @@ sqlite3 output/factor_dashboard/metrics.sqlite "SELECT COUNT(*) FROM factor_dash
 
 | 日期 | 说明 |
 |------|------|
-| 2026-08-05 | 刷新：补全用户因子/策略库 4 表 + `user_library_strategies` 入库快照列；`posts.platform_ref`；Postgres **31** 表 + SQLite **2** 表；注明 AI 生成历史暂未落库 |
+| 2026-08-12 | 刷新行数/样例；`news_items` 说明补研报·政策（em_research/em_policy→source=eastmoney）；Postgres **33** 表 + SQLite **2** 表 |
+| 2026-08-05 | 刷新：补全用户因子/策略库 4 表 + `user_library_strategies` 入库快照列；`posts.platform_ref`；注明 AI 生成历史暂未落库 |
 | 2026-07-30 | 策略库入库快照列：`source_run_id` / `archive_*`；策略说明 `description` |
 | 2026-07-28 | 初版：Postgres + 面板 SQLite；含 `factor_verify_status` / `post_votes` |

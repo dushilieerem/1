@@ -278,8 +278,8 @@ export function CommunityAiAssistPage() {
 
   return (
     <CommunityPageShell>
-      <div className="mx-auto max-w-[1280px] px-4 py-5 sm:px-6 lg:px-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="mx-auto max-w-[1280px] px-3 pb-[calc(4.5rem+env(safe-area-inset-bottom))] pt-4 sm:px-6 lg:px-8 lg:pb-8 lg:pt-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <button
             type="button"
             onClick={goBack}
@@ -289,30 +289,27 @@ export function CommunityAiAssistPage() {
             返回发帖页
           </button>
           {quota && (
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-500 sm:px-3 sm:text-xs">
               今日已用 {quota.used_today}/{quota.quota_daily}
             </span>
           )}
         </div>
 
-        <header className="mt-4 flex flex-wrap items-end justify-between gap-4">
+        <header className="mt-3 flex flex-col gap-3 sm:mt-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-4">
           <div>
-            <p className="text-xs font-medium tracking-wide text-red-500/90">
+            <p className="text-[11px] font-medium tracking-wide text-red-500/90 sm:text-xs">
               SVQUANT AGENT
             </p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+            <h1 className="mt-0.5 text-xl font-bold tracking-tight text-slate-900 sm:mt-1 sm:text-2xl">
               AI 发帖助手
             </h1>
-            <p className="mt-1.5 max-w-xl text-sm text-slate-500">
-              左侧写或改初稿，点下方按钮生成 AI 建议；右侧只读可复制。把满意的内容填入底部整合区，确认后带回发帖页。
-            </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="sticky top-0 z-10 -mx-3 flex gap-2 border-b border-slate-100 bg-[#f3f5f8]/95 px-3 py-2 backdrop-blur-sm sm:static sm:mx-0 sm:w-auto sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none lg:w-auto">
             <button
               type="button"
               disabled={!!busy || (quota != null && quota.remaining < 2)}
               onClick={() => void runAssist("quick")}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50 sm:px-4 lg:flex-none"
             >
               {busy === "quick" ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -330,7 +327,7 @@ export function CommunityAiAssistPage() {
                   : undefined
               }
               onClick={() => void runAssist("deep")}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-50"
+              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-red-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-50 sm:px-4 lg:flex-none"
             >
               {busy === "deep" ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -341,10 +338,6 @@ export function CommunityAiAssistPage() {
             </button>
           </div>
         </header>
-
-        <p className="mt-2 text-xs text-slate-400">
-          快速润色：改写标题和正文。深度审校：改写并检查夸大表述，必要时建议分区。
-        </p>
 
         {dataTrust &&
           (dataTrust.status === "unverified" ||
@@ -387,23 +380,20 @@ export function CommunityAiAssistPage() {
           </ul>
         )}
 
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <div className="mt-4 grid gap-3 sm:mt-5 sm:gap-4 lg:grid-cols-2">
           {/* 初稿 */}
-          <section className="flex max-h-[560px] min-h-[420px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">我的初稿</h2>
-                <p className="text-[11px] text-slate-400">可直接在此撰写或修改</p>
-              </div>
+          <section className="flex min-h-[280px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm sm:min-h-[320px] lg:max-h-[560px] lg:min-h-[420px]">
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-2.5 sm:px-4 sm:py-3">
+              <h2 className="text-sm font-semibold text-slate-900">我的初稿</h2>
               <button
                 type="button"
                 onClick={fillWorkFromDraft}
-                className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="shrink-0 rounded-lg border border-slate-200 px-2 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 sm:px-2.5 sm:text-xs"
               >
                 用初稿填入下方
               </button>
             </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+            <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4">
               <input
                 className={fieldClassName("bg-slate-50")}
                 value={draftTitle}
@@ -411,7 +401,7 @@ export function CommunityAiAssistPage() {
                 maxLength={120}
                 placeholder="标题（可空，让 AI 帮你起）"
               />
-              <div className="flex flex-wrap gap-1.5">
+              <div className="-mx-1 flex flex-nowrap gap-1.5 overflow-x-auto px-1 pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
                 {sections.map((s) => {
                   const active = draftSection === s.id;
                   return (
@@ -419,7 +409,7 @@ export function CommunityAiAssistPage() {
                       key={s.id}
                       type="button"
                       onClick={() => setDraftSection(s.id)}
-                      className={`rounded-lg border px-2.5 py-1 text-xs ${
+                      className={`shrink-0 rounded-lg border px-2.5 py-1 text-xs ${
                         active
                           ? "border-red-200 bg-red-50 font-medium text-red-600"
                           : "border-slate-200 text-slate-600 hover:bg-slate-50"
@@ -434,32 +424,31 @@ export function CommunityAiAssistPage() {
                 value={draftBody}
                 onChange={setDraftBody}
                 className="min-h-0 flex-1"
-                minHeightClass="min-h-[260px]"
+                minHeightClass="min-h-[180px] sm:min-h-[260px]"
                 placeholder="写下你的初稿…"
               />
             </div>
           </section>
 
           {/* AI */}
-          <section className="flex max-h-[560px] min-h-[420px] flex-col overflow-hidden rounded-2xl border border-red-100 bg-gradient-to-b from-red-50/40 to-white shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-red-100/80 px-4 py-3">
+          <section className="flex min-h-[240px] flex-col overflow-hidden rounded-2xl border border-red-100 bg-gradient-to-b from-red-50/40 to-white shadow-sm sm:min-h-[320px] lg:max-h-[560px] lg:min-h-[420px]">
+            <div className="flex flex-col gap-2 border-b border-red-100/80 px-3 py-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-4 sm:py-3">
               <div>
                 <h2 className="text-sm font-semibold text-red-700">AI 建议</h2>
-                <p className="text-[11px] text-slate-400">只读 · 可复制，不可直接改</p>
                 {aiDraft ? (
                   <p className="mt-1 text-xs font-medium text-teal-600">
                     建议分区：{sectionLabel(aiDraft.section)}
                   </p>
                 ) : null}
               </div>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="-mx-1 flex flex-nowrap gap-1.5 overflow-x-auto px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
                 <button
                   type="button"
                   disabled={!aiDraft}
                   onClick={() =>
                     void copyText("title", aiDraft?.title || "")
                   }
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
                 >
                   <Copy className="h-3 w-3" />
                   {copied === "title" ? "已复制" : "复制标题"}
@@ -473,7 +462,7 @@ export function CommunityAiAssistPage() {
                       htmlToPlain(aiDraft?.body || "") || aiDraft?.body || "",
                     )
                   }
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
                 >
                   <Copy className="h-3 w-3" />
                   {copied === "body" ? "已复制" : "复制正文"}
@@ -482,16 +471,16 @@ export function CommunityAiAssistPage() {
                   type="button"
                   disabled={!aiDraft}
                   onClick={fillWorkFromAi}
-                  className="rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-40"
+                  className="shrink-0 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-40"
                 >
                   用 AI 稿填入下方
                 </button>
               </div>
             </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+            <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4">
               {!aiDraft ? (
-                <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/60 px-6 text-center text-sm text-slate-400">
-                  点右上角「快速润色」或「深度审校」后，建议会出现在这里
+                <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/60 px-4 py-8 text-center text-sm text-slate-400 sm:px-6">
+                  点上方「快速润色」或「深度审校」后，建议会出现在这里
                 </div>
               ) : (
                 <>
@@ -514,7 +503,7 @@ export function CommunityAiAssistPage() {
                       </span>
                     </label>
                   )}
-                  <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-100 bg-white px-3 py-3 text-sm leading-relaxed whitespace-pre-wrap text-slate-700">
+                  <div className="min-h-[120px] max-h-[280px] flex-1 overflow-y-auto rounded-xl border border-slate-100 bg-white px-3 py-3 text-sm leading-relaxed whitespace-pre-wrap text-slate-700 sm:max-h-none">
                     {htmlToPlain(aiDraft.body) || "（无正文）"}
                   </div>
                 </>
@@ -524,23 +513,18 @@ export function CommunityAiAssistPage() {
         </div>
 
         {/* 整合区 */}
-        <section className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900">整合编辑</h2>
-              <p className="text-[11px] text-slate-400">
-                在此拼成最终稿（默认为空）。可用上方按钮填入初稿或 AI 稿，也可复制后粘贴再改。
-              </p>
-            </div>
+        <section className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm sm:mt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-3 py-2.5 sm:px-4 sm:py-3">
+            <h2 className="text-sm font-semibold text-slate-900">整合编辑</h2>
             <button
               type="button"
               onClick={confirmBack}
-              className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+              className="hidden rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 lg:inline-flex"
             >
               确认，带回发帖页
             </button>
           </div>
-          <div className="space-y-3 p-4">
+          <div className="space-y-3 p-3 sm:p-4 lg:pb-4">
             <input
               className={fieldClassName()}
               value={workTitle}
@@ -548,7 +532,7 @@ export function CommunityAiAssistPage() {
               maxLength={120}
               placeholder="整合后的标题"
             />
-            <div className="flex flex-wrap gap-1.5">
+            <div className="-mx-1 flex flex-nowrap gap-1.5 overflow-x-auto px-1 pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
               {sections.map((s) => {
                 const active = workSection === s.id;
                 return (
@@ -556,7 +540,7 @@ export function CommunityAiAssistPage() {
                     key={s.id}
                     type="button"
                     onClick={() => setWorkSection(s.id)}
-                    className={`rounded-lg border px-2.5 py-1 text-xs ${
+                    className={`shrink-0 rounded-lg border px-2.5 py-1 text-xs ${
                       active
                         ? "border-red-200 bg-red-50 font-medium text-red-600"
                         : "border-slate-200 text-slate-600 hover:bg-slate-50"
@@ -570,11 +554,21 @@ export function CommunityAiAssistPage() {
             <MarkdownEditor
               value={workBody}
               onChange={setWorkBody}
-              minHeightClass="min-h-[280px]"
+              minHeightClass="min-h-[160px] sm:min-h-[200px] lg:min-h-[280px]"
               placeholder="在这里整合初稿与 AI 建议…"
             />
           </div>
         </section>
+
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-sm lg:hidden">
+          <button
+            type="button"
+            onClick={confirmBack}
+            className="w-full rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
+          >
+            确认，带回发帖页
+          </button>
+        </div>
       </div>
     </CommunityPageShell>
   );

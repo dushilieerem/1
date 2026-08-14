@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Maximize2, Scan, X } from "lucide-react";
 import {
   CandlestickSeries,
   ColorType,
+  CrosshairMode,
   createChart,
   HistogramSeries,
   LineSeries,
@@ -12,7 +14,7 @@ import {
   type ISeriesApi,
   type Time,
 } from "lightweight-charts";
-import { fetchMarketDaily, type MarketBar, type MarketDaily } from "@/lib/marketDataApi";
+import { fetchMarketDaily, peekPersistedDaily, type MarketBar, type MarketDaily } from "@/lib/marketDataApi";
 import {
   MA_DEFS,
   bollinger,
@@ -24,28 +26,32 @@ import {
   type LinePoint,
   type MaKey,
 } from "@/lib/chartIndicators";
+import {
+  PERIOD_TABS,
+  aggregateBars,
+  formatThsCrosshairDate,
+  type PeriodKey,
+} from "@/lib/chartPeriods";
 
-type RangeKey = "1M" | "3M" | "1Y" | "5Y" | "ALL";
 type SubPane = "none" | "macd" | "rsi";
 
-function ymdLocal(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+/** iPhone/iPad（含 iPadOS 桌面 UA） */
+function isAppleTouchDevice() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  return (
+    navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1
+  );
 }
 
-function filterBars(bars: MarketBar[], key: RangeKey): MarketBar[] {
-  if (!bars.length || key === "ALL") return bars;
-  const end = bars[bars.length - 1].date;
-  const endDate = new Date(end + "T12:00:00");
-  const start = new Date(endDate);
-  if (key === "1M") start.setMonth(start.getMonth() - 1);
-  else if (key === "3M") start.setMonth(start.getMonth() - 3);
-  else if (key === "1Y") start.setFullYear(start.getFullYear() - 1);
-  else if (key === "5Y") start.setFullYear(start.getFullYear() - 5);
-  const s = ymdLocal(start);
-  return bars.filter((b) => b.date >= s);
+/** 可见视口（Safari 地址栏收起前后会变） */
+function viewportSize() {
+  const vv = window.visualViewport;
+  return {
+    w: Math.round(vv?.width ?? window.innerWidth),
+    h: Math.round(vv?.height ?? window.innerHeight),
+  };
 }
 
 function toLineData(points: LinePoint[]) {
@@ -67,17 +73,34 @@ export function DataSymbolChartPage() {
   const { code = "" } = useParams();
   const [params] = useSearchParams();
   const symbol = decodeURIComponent(code).trim();
-  const fromWatchlist = params.get("from") === "watchlist";
-  const [daily, setDaily] = useState<MarketDaily | null>(null);
+  const fromParam = (params.get("from") || "").trim();
+  const overviewQuery = fromParam
+    ? fromParam.startsWith("news:")
+      ? `?from=news&newsId=${encodeURIComponent(fromParam.slice(5))}`
+      : fromParam === "news"
+        ? "?from=news"
+        : `?from=${encodeURIComponent(fromParam)}`
+    : "";
+  const seeded = peekPersistedDaily(symbol);
+  const [daily, setDaily] = useState<MarketDaily | null>(seeded);
   const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [range, setRange] = useState<RangeKey>("1Y");
+  const [loading, setLoading] = useState(!seeded?.bars?.length);
+  const [period, setPeriod] = useState<PeriodKey>("day");
   const [hover, setHover] = useState<MarketBar | null>(null);
   const [maOn, setMaOn] = useState<Record<MaKey, boolean>>(defaultMaOn);
   const [bollOn, setBollOn] = useState(false);
   const [subPane, setSubPane] = useState<SubPane>("none");
+  /** 仅手机：全屏。安卓竖屏可 CSS 伪横屏；苹果仅真横屏全屏（不 rotate，清晰） */
+  const [fs, setFs] = useState(false);
+  const [cssLandscape, setCssLandscape] = useState(false);
+  /** 伪横屏舞台像素尺寸（安卓） */
+  const [landBox, setLandBox] = useState({ w: 0, h: 0 });
+  const [landSs, setLandSs] = useState(1);
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const fsRootRef = useRef<HTMLDivElement | null>(null);
+  const landSsRef = useRef(1);
+  const fsRef = useRef(false);
   const chartApi = useRef<IChartApi | null>(null);
   const candleApi = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const maSeriesRef = useRef<Partial<Record<MaKey, ISeriesApi<"Line">>>>({});
@@ -104,33 +127,56 @@ export function DataSymbolChartPage() {
   useEffect(() => {
     if (!symbol) return;
     let cancelled = false;
-    setLoading(true);
+    const hit = peekPersistedDaily(symbol);
+    if (hit?.bars?.length) {
+      setDaily(hit);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setErr(null);
-    void fetchMarketDaily(symbol)
-      .then((d) => {
-        if (!cancelled) setDaily(d);
-      })
-      .catch((ex) => {
-        if (!cancelled) {
+    const lookback = (days: number) => {
+      const d = new Date();
+      d.setDate(d.getDate() - days);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+    void (async () => {
+      try {
+        const near = await fetchMarketDaily(symbol, {
+          start: lookback(120),
+        }).catch(() => null);
+        if (cancelled) return;
+        if (near?.bars?.length) {
+          setDaily((prev) =>
+            (near.bars?.length || 0) >= (prev?.bars?.length || 0) ? near : prev,
+          );
+          setLoading(false);
+        }
+        const full = await fetchMarketDaily(symbol);
+        if (cancelled) return;
+        if (full?.bars?.length) setDaily(full);
+        else if (!near?.bars?.length && !hit?.bars?.length) setErr("暂无日线数据");
+      } catch (ex) {
+        if (!cancelled && !hit?.bars?.length) {
           setDaily(null);
           setErr(ex instanceof Error ? ex.message : String(ex));
         }
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
   }, [symbol]);
 
-  // 全历史算指标，再按区间截取展示（短区间 MA60 仍有意义）
+  // 按当前周期聚合后再算指标（周 K 的 MA5 = 5 周）
   useEffect(() => {
     if (!daily?.bars?.length) {
       indCache.current = { ma: {}, boll: null, macd: null, rsi: null };
       return;
     }
-    const all = daily.bars;
+    const all = aggregateBars(daily.bars, period);
     const ma: Partial<Record<MaKey, LinePoint[]>> = {};
     for (const d of MA_DEFS) {
       ma[d.key] = smaSeries(all, d.period);
@@ -141,7 +187,7 @@ export function DataSymbolChartPage() {
       macd: macd(all, 12, 26, 9),
       rsi: rsi(all, 14),
     };
-  }, [daily]);
+  }, [daily, period]);
 
   useEffect(() => {
     if (loading || err || !wrapRef.current) return;
@@ -157,12 +203,50 @@ export function DataSymbolChartPage() {
         vertLines: { color: "#f1f5f9" },
         horzLines: { color: "#f1f5f9" },
       },
+      localization: {
+        locale: "zh-CN",
+        dateFormat: "yyyy-MM-dd",
+        timeFormatter: formatThsCrosshairDate,
+      },
       rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false },
+      timeScale: {
+        borderVisible: false,
+        rightOffset: 0,
+        // 左右均可空出约 1/3（见下方 range clamp）
+        fixLeftEdge: false,
+        fixRightEdge: false,
+        // 默认 minBarSpacing≈0.5，窄屏无法缩到「全景」；放宽到可 fit 全历史
+        minBarSpacing: 0.05,
+      },
+      // 与 PC 一致：左右拖时间轴、上下拖价格、双指缩放
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: true,
+      },
+      handleScale: {
+        axisPressedMouseMove: true,
+        axisDoubleClickReset: true,
+        mouseWheel: true,
+        pinch: true,
+      },
+      kineticScroll: {
+        touch: true,
+        mouse: false,
+      },
       crosshair: {
-        mode: 1,
-        vertLine: { color: "#94a3b8", labelBackgroundColor: "#0f172a" },
-        horzLine: { color: "#94a3b8", labelBackgroundColor: "#0f172a" },
+        mode: CrosshairMode.Normal,
+        vertLine: {
+          color: "#94a3b8",
+          style: LineStyle.Dashed,
+          labelBackgroundColor: "#0f172a",
+        },
+        horzLine: {
+          color: "#94a3b8",
+          style: LineStyle.Dashed,
+          labelBackgroundColor: "#0f172a",
+        },
       },
     });
     const candle = chart.addSeries(CandlestickSeries, {
@@ -176,10 +260,49 @@ export function DataSymbolChartPage() {
     chartApi.current = chart;
     candleApi.current = candle;
 
+    // 左/右缘最多各空出可视宽度的约 1/3
+    let clampingRange = false;
+    chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      if (!range || clampingRange) return;
+      const n = barsRef.current.length;
+      if (n < 2) return;
+      const span = range.to - range.from;
+      if (!(span > 0)) return;
+      const pad = span / 3;
+      const minFrom = -pad;
+      const maxTo = n - 1 + pad;
+      let { from, to } = range;
+      let changed = false;
+      if (from < minFrom) {
+        from = minFrom;
+        to = from + span;
+        changed = true;
+      }
+      if (to > maxTo) {
+        to = maxTo;
+        from = to - span;
+        if (from < minFrom) {
+          from = minFrom;
+          to = Math.min(maxTo, from + span);
+        }
+        changed = true;
+      }
+      if (!changed) return;
+      if (Math.abs(from - range.from) < 1e-6 && Math.abs(to - range.to) < 1e-6) return;
+      clampingRange = true;
+      try {
+        chart.timeScale().setVisibleLogicalRange({ from, to });
+      } catch {
+        /* ignore */
+      } finally {
+        clampingRange = false;
+      }
+    });
+
     for (const d of MA_DEFS) {
       maSeriesRef.current[d.key] = chart.addSeries(LineSeries, {
         color: d.color,
-        lineWidth: 2,
+        lineWidth: 1,
         priceLineVisible: false,
         lastValueVisible: false,
         crosshairMarkerVisible: false,
@@ -340,7 +463,7 @@ export function DataSymbolChartPage() {
 
   useEffect(() => {
     if (!candleApi.current || !daily) return;
-    const bars = filterBars(daily.bars || [], range);
+    const bars = aggregateBars(daily.bars || [], period);
     barsRef.current = bars;
 
     candleApi.current.setData(
@@ -354,14 +477,14 @@ export function DataSymbolChartPage() {
     );
     chartApi.current?.timeScale().fitContent();
     setHover(bars.length ? bars[bars.length - 1] : null);
-  }, [daily, range, loading, err]);
+  }, [daily, period, loading, err]);
 
   // 只更新叠加线 / 副图数据，不 fitContent，避免放大后点指标被拉回全图
   useEffect(() => {
     if (!candleApi.current || !daily) return;
     const bars = barsRef.current.length
       ? barsRef.current
-      : filterBars(daily.bars || [], range);
+      : aggregateBars(daily.bars || [], period);
     const dateSet = new Set(bars.map((b) => b.date));
     const chart = chartApi.current;
     const kept = chart?.timeScale().getVisibleLogicalRange() ?? null;
@@ -412,7 +535,7 @@ export function DataSymbolChartPage() {
         /* ignore */
       }
     }
-  }, [daily, range, loading, err, maOn, bollOn, subPane]);
+  }, [daily, period, loading, err, maOn, bollOn, subPane]);
 
   const hoverInd = useMemo(() => {
     if (!hover) return null;
@@ -433,7 +556,7 @@ export function DataSymbolChartPage() {
       if (l != null) items.push({ label: "BOLL下", color: "#64748b", value: l });
     }
     return items;
-  }, [hover, maOn, bollOn, range, daily]);
+  }, [hover, maOn, bollOn, period, daily]);
 
   const up = hover != null ? Number(hover.close) >= Number(hover.open) : null;
 
@@ -441,20 +564,463 @@ export function DataSymbolChartPage() {
     setMaOn((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const syncCssLandscape = (active = fs) => {
+    if (!active) {
+      setCssLandscape(false);
+      setLandBox({ w: 0, h: 0 });
+      landSsRef.current = 1;
+      setLandSs(1);
+      return;
+    }
+    // 苹果：永不 CSS rotate
+    if (isAppleTouchDevice()) {
+      setCssLandscape(false);
+      setLandBox({ w: 0, h: 0 });
+      landSsRef.current = 1;
+      setLandSs(1);
+      return;
+    }
+    const portrait = window.matchMedia("(orientation: portrait)").matches;
+    setCssLandscape(portrait);
+    if (!portrait) {
+      setLandBox({ w: 0, h: 0 });
+      landSsRef.current = 1;
+      setLandSs(1);
+      return;
+    }
+    const { w: vw, h: vh } = viewportSize();
+    landSsRef.current = 1;
+    setLandSs(1);
+    setLandBox({ w: vh, h: vw });
+  };
+
+  const exitFs = async () => {
+    try {
+      const ori = screen.orientation as ScreenOrientation & {
+        unlock?: () => void;
+      };
+      ori.unlock?.();
+    } catch {
+      /* ignore */
+    }
+    const doc = document as Document & {
+      webkitExitFullscreen?: () => Promise<void> | void;
+    };
+    if (
+      document.fullscreenElement ||
+      (doc as { webkitFullscreenElement?: Element }).webkitFullscreenElement
+    ) {
+      try {
+        await (document.exitFullscreen?.() ?? doc.webkitExitFullscreen?.());
+      } catch {
+        /* ignore */
+      }
+    }
+    fsRef.current = false;
+    setFs(false);
+    setCssLandscape(false);
+    setLandBox({ w: 0, h: 0 });
+    landSsRef.current = 1;
+    setLandSs(1);
+  };
+
+  const enterFs = async () => {
+    if (window.matchMedia("(min-width: 1024px)").matches) return;
+    const apple = isAppleTouchDevice();
+    const portrait = window.matchMedia("(orientation: portrait)").matches;
+
+    // 苹果：仅真横屏进全屏（横持自动触发）；竖屏无操作
+    if (apple && portrait) return;
+
+    fsRef.current = true;
+    setFs(true);
+    if (apple) {
+      setCssLandscape(false);
+      setLandBox({ w: 0, h: 0 });
+      landSsRef.current = 1;
+      setLandSs(1);
+    } else {
+      setCssLandscape(portrait);
+      if (portrait) {
+        const { w: vw, h: vh } = viewportSize();
+        landSsRef.current = 1;
+        setLandSs(1);
+        setLandBox({ w: vh, h: vw });
+      }
+    }
+    requestAnimationFrame(() => {
+      void (async () => {
+        const el = fsRootRef.current as
+          | (HTMLDivElement & {
+              webkitRequestFullscreen?: () => Promise<void> | void;
+            })
+          | null;
+        try {
+          if (el && !document.fullscreenElement) {
+            await (el.requestFullscreen?.() ?? el.webkitRequestFullscreen?.());
+          }
+        } catch {
+          /* iOS 常拒绝，靠 fixed 遮罩 */
+        }
+        if (!apple) {
+          try {
+            const ori = screen.orientation as ScreenOrientation & {
+              lock?: (o: string) => Promise<void>;
+            };
+            await ori.lock?.("landscape");
+          } catch {
+            /* 锁不住靠 CSS 伪横屏 */
+          }
+        }
+        try {
+          window.scrollTo(0, 1);
+        } catch {
+          /* ignore */
+        }
+        syncCssLandscape(true);
+        window.dispatchEvent(new Event("resize"));
+      })();
+    });
+  };
+
+  // 苹果：横持 → 进全屏；竖回来 → 退出（无 CSS rotate，不糊）
+  useEffect(() => {
+    if (!isAppleTouchDevice()) return;
+    if (loading || err) return;
+    if (window.matchMedia("(min-width: 1024px)").matches) return;
+
+    const onOrient = () => {
+      if (window.matchMedia("(min-width: 1024px)").matches) return;
+      const land = window.matchMedia("(orientation: landscape)").matches;
+      if (land) {
+        if (!fsRef.current) void enterFs();
+      } else if (fsRef.current) {
+        void exitFs();
+      }
+    };
+
+    onOrient();
+    window.addEventListener("orientationchange", onOrient);
+    window.addEventListener("resize", onOrient);
+    return () => {
+      window.removeEventListener("orientationchange", onOrient);
+      window.removeEventListener("resize", onOrient);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, err, symbol]);
+
+  // ?fs=1：安卓直接进；苹果已横屏则进，竖屏等横持
+  useEffect(() => {
+    if (params.get("fs") !== "1") return;
+    if (loading || err) return;
+    if (window.matchMedia("(min-width: 1024px)").matches) return;
+    if (isAppleTouchDevice()) {
+      if (window.matchMedia("(orientation: landscape)").matches) void enterFs();
+      return;
+    }
+    void enterFs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, err, symbol]);
+
+  useEffect(() => {
+    if (!fs) return;
+    const prev = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    syncCssLandscape(true);
+    const sharpen = () => {
+      window.dispatchEvent(new Event("resize"));
+      try {
+        const c = chartApi.current;
+        const el = wrapRef.current;
+        if (c && el) {
+          const w = Math.max(1, Math.round(el.clientWidth));
+          const h = Math.max(1, Math.round(el.clientHeight));
+          c.resize(w, h, true);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    const onOrient = () => {
+      syncCssLandscape(true);
+      requestAnimationFrame(sharpen);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") void exitFs();
+    };
+    window.addEventListener("orientationchange", onOrient);
+    window.addEventListener("resize", onOrient);
+    window.visualViewport?.addEventListener("resize", onOrient);
+    window.visualViewport?.addEventListener("scroll", onOrient);
+    window.addEventListener("keydown", onKey);
+    const tmr = window.setTimeout(sharpen, 80);
+    const tmr2 = window.setTimeout(sharpen, 320);
+    return () => {
+      document.body.style.overflow = prev;
+      document.documentElement.style.overflow = prevHtml;
+      window.removeEventListener("orientationchange", onOrient);
+      window.removeEventListener("resize", onOrient);
+      window.visualViewport?.removeEventListener("resize", onOrient);
+      window.visualViewport?.removeEventListener("scroll", onOrient);
+      window.removeEventListener("keydown", onKey);
+      window.clearTimeout(tmr);
+      window.clearTimeout(tmr2);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fs, cssLandscape]);
+
+  // CSS 横屏：触摸轴与视觉对调
+  useEffect(() => {
+    if (!fs || !cssLandscape || loading || err) return;
+    const el = wrapRef.current;
+    const chart = chartApi.current;
+    const candle = candleApi.current;
+    if (!el || !chart || !candle) return;
+
+    chart.applyOptions({
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: false,
+        horzTouchDrag: false,
+        vertTouchDrag: false,
+      },
+      handleScale: {
+        axisPressedMouseMove: false,
+        axisDoubleClickReset: true,
+        mouseWheel: true,
+        pinch: false,
+      },
+    });
+
+    let lastX = 0;
+    let lastY = 0;
+    let dragging = false;
+    let pinchDist = 0;
+
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        dragging = true;
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+      } else if (e.touches.length === 2) {
+        dragging = false;
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        pinchDist = Math.hypot(dx, dy);
+      }
+    };
+
+    const onMove = (e: TouchEvent) => {
+      e.preventDefault();
+      if (e.touches.length === 1 && dragging) {
+        const x = e.touches[0].clientX;
+        const y = e.touches[0].clientY;
+        const screenDx = x - lastX;
+        const screenDy = y - lastY;
+        lastX = x;
+        lastY = y;
+        const timePx = screenDy;
+        const pricePx = -screenDx;
+
+        const ts = chart.timeScale();
+        const range = ts.getVisibleLogicalRange();
+        if (range) {
+          const ss = Math.max(1, landSsRef.current);
+          const w = Math.max(1, el.clientWidth / ss);
+          const span = range.to - range.from;
+          const shift = (timePx / w) * span;
+          try {
+            ts.setVisibleLogicalRange({
+              from: range.from - shift,
+              to: range.to - shift,
+            });
+          } catch {
+            /* ignore */
+          }
+        }
+
+        const ps = candle.priceScale();
+        const pr = ps.getVisibleRange();
+        if (pr) {
+          const ss = Math.max(1, landSsRef.current);
+          const h = Math.max(1, el.clientHeight / ss);
+          const pspan = pr.to - pr.from;
+          const pshift = (pricePx / h) * pspan;
+          try {
+            ps.setAutoScale(false);
+            ps.setVisibleRange({
+              from: pr.from + pshift,
+              to: pr.to + pshift,
+            });
+          } catch {
+            /* ignore */
+          }
+        }
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.hypot(dx, dy);
+        if (pinchDist > 1) {
+          const scale = dist / pinchDist;
+          const ts = chart.timeScale();
+          const range = ts.getVisibleLogicalRange();
+          const n = barsRef.current.length;
+          if (range && scale > 0.01 && n > 1) {
+            const mid = (range.from + range.to) / 2;
+            const half = (range.to - range.from) / 2 / scale;
+            if (half * 2 >= n) {
+              try {
+                ts.fitContent();
+                candle.priceScale().setAutoScale(true);
+              } catch {
+                /* ignore */
+              }
+            } else {
+              try {
+                ts.setVisibleLogicalRange({
+                  from: mid - half,
+                  to: mid + half,
+                });
+              } catch {
+                /* ignore */
+              }
+            }
+          }
+        }
+        pinchDist = dist;
+      }
+    };
+
+    const onEnd = () => {
+      dragging = false;
+      pinchDist = 0;
+    };
+
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+      try {
+        chart.applyOptions({
+          handleScroll: {
+            mouseWheel: true,
+            pressedMouseMove: true,
+            horzTouchDrag: true,
+            vertTouchDrag: true,
+          },
+          handleScale: {
+            axisPressedMouseMove: true,
+            axisDoubleClickReset: true,
+            mouseWheel: true,
+            pinch: true,
+          },
+        });
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [fs, cssLandscape, loading, err]);
+
+
+  const fitPanorama = () => {
+    const chart = chartApi.current;
+    const candle = candleApi.current;
+    if (!chart) return;
+    try {
+      chart.timeScale().fitContent();
+      candle?.priceScale().setAutoScale(true);
+    } catch {
+      /* ignore */
+    }
+  };
+
   return (
-    <div className="mx-auto flex max-w-[1440px] flex-col px-4 py-4 sm:px-6 lg:px-8">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <Link
-            to={`/data/symbol/${encodeURIComponent(symbol)}${
-              fromWatchlist ? "?from=watchlist" : ""
+    <div
+      ref={fsRootRef}
+      className={
+        fs
+          ? "fixed inset-0 z-[9999] bg-white"
+          : "mx-auto flex max-w-[1440px] flex-col px-3 py-3 sm:px-6 sm:py-4 lg:px-8"
+      }
+      style={
+        fs
+          ? {
+              // 铺满可见区（含 Safari 动态工具栏空隙）
+              width: "100%",
+              height: "100%",
+              minHeight: "100dvh",
+              minWidth: "100dvw",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+            }
+          : undefined
+      }
+    >
+      <div
+        className={
+          fs
+            ? cssLandscape
+              ? "absolute flex flex-col bg-white"
+              : "flex h-full min-h-0 flex-col"
+            : "contents"
+        }
+        style={
+          fs && cssLandscape && landBox.w > 0
+            ? {
+                // 仅安卓伪横屏
+                width: landBox.w,
+                height: landBox.h,
+                top: "50%",
+                left: "50%",
+                transform: "translate(-50%, -50%) rotate(90deg)",
+                transformOrigin: "center center",
+              }
+            : undefined
+        }
+      >
+      <div
+        className={
+          fs
+            ? "flex shrink-0 items-center gap-2 border-b border-slate-100 px-2 py-1.5"
+            : "mb-3 flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:gap-3"
+        }
+      >
+        <div className="flex min-w-0 items-center gap-2 text-sm sm:gap-3">
+          {fs ? (
+            <button
+              type="button"
+              onClick={() => void exitFs()}
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-900 text-white"
+              aria-label="退出全屏"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          ) : (
+            <Link
+              to={`/data/symbol/${encodeURIComponent(symbol)}${overviewQuery}`}
+              className="shrink-0 text-slate-500 hover:text-slate-800"
+            >
+              ← 返回概览
+            </Link>
+          )}
+          {/* PC / 全屏：名称跟返回同一行；手机非全屏挪到周期行右侧 */}
+          <h1
+            className={`min-w-0 truncate font-bold text-slate-900 ${
+              fs
+                ? "text-sm"
+                : "hidden text-base sm:text-lg lg:inline"
             }`}
-            className="text-slate-500 hover:text-slate-800"
           >
-            ← 返回概览
-          </Link>
-          <span className="text-slate-300">|</span>
-          <h1 className="text-lg font-bold text-slate-900">
             {(daily?.name || "").trim() || symbol}
             {(daily?.name || "").trim() ? (
               <span className="ml-2 text-sm font-medium text-slate-500">
@@ -462,117 +1028,240 @@ export function DataSymbolChartPage() {
               </span>
             ) : null}
           </h1>
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
-            日线
-          </span>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          {(["1M", "3M", "1Y", "5Y", "ALL"] as RangeKey[]).map((k) => (
+        <div
+          className={
+            fs
+              ? "flex min-w-0 flex-1 items-end justify-center gap-2.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              : "flex items-end justify-between gap-2"
+          }
+        >
+          <div className="-mx-1 flex min-w-0 flex-1 items-end gap-3 overflow-x-auto px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:gap-5 sm:overflow-visible sm:px-0 lg:flex-none">
+            {PERIOD_TABS.map((t) => {
+              const on = period === t.key;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setPeriod(t.key)}
+                  className={`relative shrink-0 pb-1.5 text-sm transition-colors ${
+                    fs ? "pb-1 text-xs" : ""
+                  } ${
+                    on
+                      ? "font-bold text-slate-900"
+                      : "font-medium text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  {t.label}
+                  {on ? (
+                    <span className="absolute inset-x-0 bottom-0 mx-auto h-0.5 w-4 rounded-full bg-rose-500" />
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+          {/* 手机：名称/代码与周期行右对齐 */}
+          {!fs ? (
+            <h1 className="min-w-0 max-w-[48%] shrink-0 truncate pb-1.5 text-right text-sm font-bold text-slate-900 lg:hidden">
+              {(daily?.name || "").trim() || symbol}
+              {(daily?.name || "").trim() ? (
+                <span className="ml-1.5 text-xs font-medium text-slate-500">
+                  {daily?.symbol || symbol}
+                </span>
+              ) : null}
+            </h1>
+          ) : null}
+          {fs ? (
+            <button
+              type="button"
+              onClick={fitPanorama}
+              title="全景"
+              aria-label="全景"
+              className="ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-700"
+            >
+              <Scan className="h-3.5 w-3.5" />
+              全景
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div
+        className={
+          fs
+            ? "flex min-h-0 flex-1 flex-col px-1.5 pb-1.5 pt-1"
+            : "contents"
+        }
+      >
+        {/* 手机：指标+副图同一横滑行；PC：可换行 */}
+        <div
+          className={
+            fs
+              ? "mb-1 flex shrink-0 flex-nowrap items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              : "mb-2 flex flex-nowrap items-center gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:flex-wrap lg:overflow-visible"
+          }
+        >
+          {!fs ? (
+            <span className="mr-1 shrink-0 text-[11px] font-medium text-slate-400">
+              指标
+            </span>
+          ) : null}
+          {MA_DEFS.map((d) => (
+            <button
+              key={d.key}
+              type="button"
+              onClick={() => toggleMa(d.key)}
+              className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium tabular-nums ${
+                fs ? "px-1.5 text-[10px]" : ""
+              } ${
+                maOn[d.key]
+                  ? "bg-slate-900/5 ring-1 ring-slate-200"
+                  : "bg-slate-50 text-slate-400"
+              }`}
+              style={maOn[d.key] ? { color: d.color } : undefined}
+            >
+              {d.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setBollOn((v) => !v)}
+            className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium ${
+              fs ? "px-1.5 text-[10px]" : ""
+            } ${
+              bollOn
+                ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
+                : "bg-slate-50 text-slate-400"
+            }`}
+          >
+            BOLL
+          </button>
+          <span className="mx-1 h-3 w-px shrink-0 bg-slate-200" />
+          {!fs ? (
+            <span className="shrink-0 text-[11px] text-slate-400">副图</span>
+          ) : null}
+          {(
+            [
+              ["none", "无"],
+              ["macd", "MACD"],
+              ["rsi", "RSI"],
+            ] as const
+          ).map(([k, label]) => (
             <button
               key={k}
               type="button"
-              onClick={() => setRange(k)}
+              onClick={() => setSubPane(k)}
               className={
-                range === k
-                  ? "rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white"
-                  : "rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200"
+                subPane === k
+                  ? `shrink-0 rounded-full bg-slate-900 px-2.5 py-0.5 font-semibold text-white ${
+                      fs ? "px-2 text-[10px]" : "text-[11px]"
+                    }`
+                  : `shrink-0 rounded-full bg-slate-50 px-2.5 py-0.5 font-medium text-slate-500 hover:bg-slate-100 ${
+                      fs ? "px-2 text-[10px]" : "text-[11px]"
+                    }`
               }
             >
-              {k}
+              {label}
             </button>
           ))}
         </div>
-      </div>
 
-      <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 text-[11px] font-medium text-slate-400">指标</span>
-        {MA_DEFS.map((d) => (
-          <button
-            key={d.key}
-            type="button"
-            onClick={() => toggleMa(d.key)}
-            className={`rounded-md px-2 py-0.5 text-[11px] font-medium tabular-nums ${
-              maOn[d.key]
-                ? "bg-slate-900/5 ring-1 ring-slate-200"
-                : "bg-slate-50 text-slate-400"
-            }`}
-            style={maOn[d.key] ? { color: d.color } : undefined}
-          >
-            {d.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={() => setBollOn((v) => !v)}
-          className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${
-            bollOn
-              ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
-              : "bg-slate-50 text-slate-400"
-          }`}
-        >
-          BOLL
-        </button>
-        <span className="mx-1 h-3 w-px bg-slate-200" />
-        <span className="text-[11px] text-slate-400">副图</span>
-        {(
-          [
-            ["none", "无"],
-            ["macd", "MACD"],
-            ["rsi", "RSI"],
-          ] as const
-        ).map(([k, label]) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => setSubPane(k)}
-            className={
-              subPane === k
-                ? "rounded-md bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white"
-                : "rounded-md bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 hover:bg-slate-100"
-            }
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {hover ? (
-        <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums text-slate-600">
-          <span>{hover.date}</span>
-          <span>开 {Number(hover.open).toFixed(2)}</span>
-          <span>高 {Number(hover.high).toFixed(2)}</span>
-          <span>低 {Number(hover.low).toFixed(2)}</span>
-          <span
-            className={
-              up ? "font-semibold text-red-600" : "font-semibold text-emerald-600"
-            }
-          >
-            收 {Number(hover.close).toFixed(2)}
-          </span>
-          {hoverInd?.map((it) => (
-            <span key={it.label} style={{ color: it.color }}>
-              {it.label} {it.value.toFixed(2)}
-            </span>
-          ))}
-        </div>
-      ) : (
-        <div className="mb-2 h-4" />
-      )}
-
-      {loading ? (
-        <p className="py-24 text-center text-sm text-slate-400">加载日线…</p>
-      ) : err ? (
-        <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {err}
-        </p>
-      ) : (
-        <>
+        {hover ? (
           <div
-            ref={wrapRef}
-            className="h-[min(70vh,720px)] w-full overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm"
-          />
-        </>
-      )}
+            className={
+              fs
+                ? "mb-1 flex shrink-0 flex-nowrap gap-x-3 overflow-x-auto text-[10px] tabular-nums text-slate-600 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                : "mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums text-slate-600"
+            }
+          >
+            <span>{hover.date}</span>
+            <span>开 {Number(hover.open).toFixed(2)}</span>
+            <span>高 {Number(hover.high).toFixed(2)}</span>
+            <span>低 {Number(hover.low).toFixed(2)}</span>
+            <span
+              className={
+                up
+                  ? "font-semibold text-red-600"
+                  : "font-semibold text-emerald-600"
+              }
+            >
+              收 {Number(hover.close).toFixed(2)}
+            </span>
+            {!fs
+              ? hoverInd?.map((it) => (
+                  <span key={it.label} style={{ color: it.color }}>
+                    {it.label} {it.value.toFixed(2)}
+                  </span>
+                ))
+              : null}
+          </div>
+        ) : !fs ? (
+          <div className="mb-2 h-4" />
+        ) : null}
+
+        {loading ? (
+          <p className="py-24 text-center text-sm text-slate-400">加载日线…</p>
+        ) : err ? (
+          <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {err}
+          </p>
+        ) : (
+          <div
+            className={
+              fs ? "relative min-h-0 w-full flex-1" : "relative"
+            }
+          >
+            <div
+              ref={wrapRef}
+              className={
+                fs
+                  ? "h-full w-full overflow-hidden bg-white"
+                  : "h-[min(70vh,720px)] w-full overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm"
+              }
+            />
+            {/* PC：图区左上角全景 */}
+            {!fs ? (
+              <button
+                type="button"
+                onClick={fitPanorama}
+                title="全景"
+                aria-label="全景"
+                className="absolute left-2 top-2 z-10 hidden h-8 items-center gap-1 rounded-lg border border-slate-200/90 bg-white/95 px-2 text-[11px] font-medium text-slate-600 shadow-sm backdrop-blur hover:bg-white lg:inline-flex"
+              >
+                <Scan className="h-3.5 w-3.5" />
+                全景
+              </button>
+            ) : null}
+            {/* 仅手机：全景；横屏按钮仅安卓（苹果靠横持自动全屏） */}
+            {!fs ? (
+              <div className="absolute right-2 top-2 z-10 flex items-center gap-1.5 lg:hidden">
+                <button
+                  type="button"
+                  onClick={fitPanorama}
+                  title="全景"
+                  aria-label="全景"
+                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200/90 bg-white/95 px-2 text-[11px] font-medium text-slate-600 shadow-sm backdrop-blur hover:bg-white"
+                >
+                  <Scan className="h-3.5 w-3.5" />
+                  全景
+                </button>
+                {!isAppleTouchDevice() ? (
+                  <button
+                    type="button"
+                    onClick={() => void enterFs()}
+                    title="横屏全屏"
+                    aria-label="横屏全屏"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-white/95 text-slate-600 shadow-sm backdrop-blur hover:bg-white"
+                  >
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+      </div>
     </div>
   );
 }

@@ -2,17 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   BarChart2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   FolderOpen,
   Layers,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
   X,
 } from "lucide-react";
-import { FactorFormula } from "@/components/FactorFormula";
 import { PageJump } from "@/components/PageJump";
 import { useConfirm } from "@/components/ConfirmDialog";
 import {
@@ -21,13 +20,10 @@ import {
   subscribeAuth,
 } from "@/lib/auth";
 import {
-  DYNAMIC_FACTOR_LIBS,
   builtinCategoryLabelsFromFactors,
   clearFactorCache,
-  extractMethod,
-  formatFactorFormula,
   loadFactors,
-  loadLibrarySource,
+  syncOfficialFactorCatalog,
   type FactorMeta,
 } from "@/lib/factorCatalog";
 import { openOrCreateForFactor, openDetectInNewTab } from "@/lib/detectStore";
@@ -54,6 +50,8 @@ const ROW_ACCENT: Record<string, string> = {
   风险因子: "border-l-red-600",
   技术指标库: "border-l-fuchsia-500",
   "Alpha158/360": "border-l-indigo-500",
+  Alpha库: "border-l-violet-400",
+  "WorldQuant/Alpha101": "border-l-emerald-500",
   其他: "border-l-slate-400",
 };
 
@@ -67,6 +65,8 @@ const ROW_BADGE: Record<string, string> = {
   风险因子: "bg-red-50 text-red-800",
   技术指标库: "bg-fuchsia-50 text-fuchsia-700",
   "Alpha158/360": "bg-indigo-50 text-indigo-700",
+  Alpha库: "bg-violet-50 text-violet-700",
+  "WorldQuant/Alpha101": "bg-emerald-50 text-emerald-700",
   其他: "bg-slate-100 text-slate-600",
 };
 
@@ -80,6 +80,8 @@ const COUNT_PILL: Record<string, string> = {
   风险因子: "text-red-700",
   技术指标库: "text-fuchsia-600",
   "Alpha158/360": "text-indigo-600",
+  Alpha库: "text-violet-600",
+  "WorldQuant/Alpha101": "text-emerald-700",
 };
 
 function pageNumbers(current: number, total: number): (number | "…")[] {
@@ -96,54 +98,16 @@ function pageNumbers(current: number, total: number): (number | "…")[] {
 
 function FactorRow({
   factor,
-  expanded,
-  onToggle,
   onDelete,
 }: {
   factor: FactorMeta;
-  expanded: boolean;
-  onToggle: () => void;
   onDelete?: () => void;
 }) {
   const accent = ROW_ACCENT[factor.libraryLabel] ?? "border-l-slate-300";
   const badge = ROW_BADGE[factor.libraryLabel] ?? "bg-slate-100 text-slate-600";
-  const [formula, setFormula] = useState(factor.formula);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (!expanded) return;
-    let cancelled = false;
-    if (factor.body) {
-      setFormula(formatFactorFormula(factor.body));
-      return;
-    }
-    if (DYNAMIC_FACTOR_LIBS.has(factor.library)) {
-      setFormula(
-        `# ${factor.description}\n# 动态注册特征（${factor.libraryFile}）；检测时由 RE library_name=${factor.library} 加载`,
-      );
-      return;
-    }
-    if (!factor.libraryFile) {
-      setFormula(factor.formula || "# 无源码");
-      return;
-    }
-    void loadLibrarySource(factor.libraryFile)
-      .then((src) => {
-        if (cancelled) return;
-        const method = factor.methodName || factor.name;
-        const body = extractMethod(src, method);
-        setFormula(body ? formatFactorFormula(body) : factor.formula);
-      })
-      .catch(() => {
-        if (!cancelled) setFormula(factor.formula);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [expanded, factor]);
-
-  const onDetect = async (e: { stopPropagation: () => void }) => {
-    e.stopPropagation();
+  const onDetect = async () => {
     if (busy) return;
     setBusy(true);
     try {
@@ -163,38 +127,25 @@ function FactorRow({
     <div
       className={`overflow-hidden rounded-xl border border-slate-200 border-l-4 bg-white shadow-sm ${accent}`}
     >
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50/80"
-      >
-        <ChevronDown
-          className={`h-4 w-4 shrink-0 text-slate-400 transition ${
-            expanded ? "rotate-0" : "-rotate-90"
-          }`}
-        />
+      <div className="flex flex-col gap-2.5 px-4 py-3 sm:flex-row sm:items-center sm:gap-3">
         <div className="min-w-0 flex-1">
-          <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700">
+          <code className="inline-block max-w-full break-all rounded bg-slate-100 px-1.5 py-0.5 text-xs leading-snug text-slate-700">
             {factor.name}
           </code>
           <div className="mt-1 truncate text-sm font-medium text-slate-800">
             {factor.explain || factor.description}
           </div>
         </div>
-        <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${badge}`}
-        >
-          {factor.libraryLabel}
-        </span>
-        <div
-          className="flex shrink-0 items-center gap-1.5"
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
+        <div className="flex shrink-0 items-center gap-1.5 self-end sm:self-auto">
+          <span
+            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badge}`}
+          >
+            {factor.libraryLabel}
+          </span>
           <button
             type="button"
             disabled={busy}
-            onClick={onDetect}
+            onClick={() => void onDetect()}
             className="inline-flex h-7 min-w-[3.25rem] items-center justify-center rounded-lg bg-red-50 px-2.5 text-xs font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-40"
           >
             检测
@@ -210,12 +161,7 @@ function FactorRow({
             </button>
           ) : null}
         </div>
-      </button>
-      {expanded && (
-        <div className="border-t border-slate-100 bg-gradient-to-b from-slate-50/90 to-white px-4 py-3 pl-14">
-          <FactorFormula formula={formula} />
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -225,17 +171,19 @@ export function FactorLibraryPage() {
   const [factors, setFactors] = useState<FactorMeta[]>([]);
   const [userLibs, setUserLibs] = useState<UserFactorLibrary[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [activeLib, setActiveLib] = useState<string>(BUILTIN_KEY);
   const [category, setCategory] = useState<string>("全部");
   const [page, setPage] = useState(1);
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [user, setUser] = useState(() => getStoredUser());
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createErr, setCreateErr] = useState<string | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
   const [userLibFactors, setUserLibFactors] = useState<FactorMeta[]>([]);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const isAdmin = user?.role === "admin";
 
   const builtinFactors = useMemo(
     () => factors.filter((f) => f.library !== "custom_lib"),
@@ -271,9 +219,15 @@ export function FactorLibraryPage() {
   }, [builtinFactors]);
 
   const reload = () => {
+    setLoading(true);
+    setErr(null);
     void loadFactors(true)
-      .then(setFactors)
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+      .then((fs) => {
+        setFactors(fs);
+        setErr(null);
+      })
+      .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
     void listUserFactorLibraries()
       .then(setUserLibs)
       .catch(() => setUserLibs([]));
@@ -329,14 +283,44 @@ export function FactorLibraryPage() {
     });
   }, [activeLib, builtinFactors, userLibFactors, query, category]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageSafe = Math.min(page, totalPages);
-  const slice = filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE) || 1);
+  const pageNum = Number.isFinite(page) && page >= 1 ? Math.floor(page) : 1;
+  const pageSafe = Math.min(pageNum, totalPages);
+  const slice =
+    filtered.length === 0
+      ? []
+      : filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
 
   useEffect(() => {
     setPage(1);
-    setExpanded(null);
   }, [query, category, activeLib]);
+
+  const onSyncBuiltin = async () => {
+    if (!isAdmin || syncBusy) return;
+    const ok = await confirm({
+      title: "更新内置因子库",
+      message:
+        "将从同事 ResearchEngine 拉取全量官方目录并写入共享缓存。所有账户的「内置因子库」会一起更新；各用户自建库不受影响。同步可能需要十几秒。",
+      confirmLabel: "开始更新",
+    });
+    if (!ok) return;
+    setSyncBusy(true);
+    try {
+      const result = await syncOfficialFactorCatalog();
+      setFactors(result.factors);
+      setErr(null);
+      const wq = result.libraryCounts?.worldquant_alpha101;
+      window.alert(
+        `${result.message}\n当前内置 ${result.factorCount} 个` +
+          (wq != null ? `\nWorldQuant ${wq}` : "") +
+          (result.changed ? "" : "\n（与上次一致）"),
+      );
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncBusy(false);
+    }
+  };
 
   const openCreate = () => {
     if (!user) {
@@ -411,7 +395,6 @@ export function FactorLibraryPage() {
             : l,
         ),
       );
-      if (expanded === f.name) setExpanded(null);
     } catch (e) {
       window.alert(e instanceof Error ? e.message : String(e));
     }
@@ -424,8 +407,8 @@ export function FactorLibraryPage() {
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50/80">
-      <div className="mx-auto max-w-[1440px] px-6 py-8">
-        <div className="relative mb-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm">
+      <div className="mx-auto max-w-[1440px] px-4 py-6 lg:px-6 lg:py-8">
+        <div className="relative mb-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm lg:p-6">
           <div className="bg-grid pointer-events-none absolute inset-0 opacity-40" />
           <div className="relative flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -441,10 +424,10 @@ export function FactorLibraryPage() {
                 </div>
               </div>
               <div className="mt-3 text-xs text-slate-500">
-                <span className="font-semibold text-slate-700">
+                <span className="mb-1.5 block font-semibold text-slate-700 lg:mb-0 lg:inline">
                   内置因子分类及数量：
                 </span>
-                <span className="ml-2 inline-flex flex-wrap gap-3 font-semibold">
+                <span className="flex flex-wrap gap-x-3 gap-y-1.5 font-semibold lg:ml-2 lg:inline-flex lg:gap-3">
                   {builtinCategories.map((label) => (
                     <span
                       key={label}
@@ -456,14 +439,14 @@ export function FactorLibraryPage() {
                 </span>
               </div>
             </div>
-            <div className="relative flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2">
-                <Search className="h-4 w-4 text-slate-400" />
+            <div className="relative flex w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+              <div className="flex w-full min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 sm:w-auto sm:flex-none">
+                <Search className="h-4 w-4 shrink-0 text-slate-400" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="搜索名称、代码…"
-                  className="w-48 bg-transparent text-sm outline-none sm:w-56"
+                  className="w-full min-w-0 bg-transparent text-sm outline-none sm:w-56"
                 />
                 {query && (
                   <button type="button" onClick={() => setQuery("")}>
@@ -471,6 +454,21 @@ export function FactorLibraryPage() {
                   </button>
                 )}
               </div>
+              <div className="flex flex-wrap gap-2 sm:justify-end">
+              {isAdmin ? (
+                <button
+                  type="button"
+                  onClick={() => void onSyncBuiltin()}
+                  disabled={syncBusy}
+                  title="管理员：手动同步 RE 全量内置目录（所有账户共享）"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${syncBusy ? "animate-spin" : ""}`}
+                  />
+                  {syncBusy ? "更新中…" : "更新内置因子库"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={openCreate}
@@ -489,14 +487,15 @@ export function FactorLibraryPage() {
                 <BarChart2 className="h-4 w-4" />
                 检测
               </Link>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="flex gap-5">
-          {/* 左侧：因子库列表 */}
-          <aside className="w-52 shrink-0">
-            <div className="sticky top-20 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[13rem_minmax(0,1fr)]">
+          {/* 左侧栏：内置 + 用户因子库 */}
+          <aside className="w-full lg:w-auto order-1">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:sticky lg:top-20">
               <div className="border-b border-slate-100 px-3 py-2.5 text-xs font-semibold text-slate-500">
                 因子库
               </div>
@@ -550,8 +549,8 @@ export function FactorLibraryPage() {
             </div>
           </aside>
 
-          {/* 右侧：分类筛选 + 因子列表 */}
-          <div className="min-w-0 flex-1">
+          {/* 主区：分类筛选 + 因子列表 */}
+          <div className="min-w-0 order-2">
             <div className="mb-3 flex flex-wrap items-center gap-3">
               <span className="text-xs font-medium text-slate-500">分类筛选</span>
               <div className="flex flex-wrap gap-1.5">
@@ -574,24 +573,34 @@ export function FactorLibraryPage() {
 
             <div className="mb-3 flex items-center justify-between text-xs text-slate-500">
               <span>
-                {activeLibTitle} · 当前 {filtered.length} 个
+                {activeLibTitle} ·{" "}
+                {loading && activeLib === BUILTIN_KEY
+                  ? "加载中…"
+                  : `当前 ${filtered.length} 个`}
               </span>
               <span>
-                {(pageSafe - 1) * PAGE_SIZE + 1}-
-                {Math.min(pageSafe * PAGE_SIZE, filtered.length)} /{" "}
-                {filtered.length}
+                {loading && activeLib === BUILTIN_KEY
+                  ? "…"
+                  : filtered.length === 0
+                    ? `0 / 0`
+                    : `${(pageSafe - 1) * PAGE_SIZE + 1}-${Math.min(
+                        pageSafe * PAGE_SIZE,
+                        filtered.length,
+                      )} / ${filtered.length}`}
               </span>
             </div>
 
             <div className="space-y-2">
+              {loading && activeLib === BUILTIN_KEY ? (
+                <p className="py-16 text-center text-sm text-slate-400">
+                  正在加载内置因子目录…
+                </p>
+              ) : (
+                <>
               {slice.map((f) => (
                 <FactorRow
                   key={`${f.library}:${f.name}:${f.userLibraryFactorId ?? ""}`}
                   factor={f}
-                  expanded={expanded === f.name}
-                  onToggle={() =>
-                    setExpanded((v) => (v === f.name ? null : f.name))
-                  }
                   onDelete={
                     activeLib !== BUILTIN_KEY &&
                     f.userLibraryFactorId != null &&
@@ -607,6 +616,8 @@ export function FactorLibraryPage() {
                     ? "无匹配因子"
                     : "该因子库暂无因子，可在「因子检测 → 新建因子 → 报告入库」添加"}
                 </p>
+              )}
+                </>
               )}
             </div>
 
@@ -650,7 +661,7 @@ export function FactorLibraryPage() {
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
-                <PageJump page={pageSafe} total={totalPages} onJump={setPage} />
+                <PageJump page={pageSafe} totalPages={totalPages} onJump={setPage} />
               </div>
             )}
           </div>

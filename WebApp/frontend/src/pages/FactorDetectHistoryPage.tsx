@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   deleteRun,
+  formatDetectRunFactorsLabel,
   getProject,
   listRuns,
   peekProject,
@@ -61,7 +62,7 @@ export function FactorDetectHistoryPage() {
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50/80">
-      <div className="mx-auto max-w-[1100px] px-6 py-8">
+      <div className="mx-auto max-w-[1100px] px-4 py-6 lg:px-6 lg:py-8">
         <p className="text-xs text-slate-400">
           <Link to="/factor/detect" className="hover:text-slate-600">
             因子检测
@@ -72,19 +73,19 @@ export function FactorDetectHistoryPage() {
           </Link>
           {" / 检测列表"}
         </p>
-        <h1 className="mt-2 text-2xl font-bold text-slate-900">
+        <h1 className="mt-2 text-xl font-bold text-slate-900 lg:text-2xl">
           {project?.name || "…"} · 检测历史
         </h1>
 
-        <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
+        <div className="mt-6 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="w-full min-w-[36rem] text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500">
               <tr>
                 <th className="px-4 py-3">检测时间</th>
                 <th className="px-4 py-3">因子</th>
-                <th className="px-4 py-3">IC均值</th>
-                <th className="px-4 py-3">IR / Sharpe</th>
-                <th className="px-4 py-3">耗时</th>
+                <th className="hidden px-4 py-3 lg:table-cell">IC均值</th>
+                <th className="hidden px-4 py-3 lg:table-cell">IR / Sharpe</th>
+                <th className="hidden px-4 py-3 lg:table-cell">耗时</th>
                 <th className="px-4 py-3 text-right">操作</th>
               </tr>
             </thead>
@@ -106,41 +107,52 @@ export function FactorDetectHistoryPage() {
                           {String(r.finishedAt || "").replace("T", " ").slice(0, 19)}
                         </td>
                         <td className="px-4 py-3">
-                          <p className="font-semibold text-slate-900">
-                            {r.description || project?.name || "—"}
+                          <p
+                            className="max-w-[240px] truncate font-semibold text-slate-900"
+                            title={formatDetectRunFactorsLabel(r)}
+                          >
+                            {formatDetectRunFactorsLabel(r)}
                           </p>
                         </td>
-                        <td className="px-4 py-3 tabular-nums">
+                        <td className="hidden px-4 py-3 tabular-nums lg:table-cell">
                           {pct(typeof ic === "number" ? ic : null)}
                         </td>
-                        <td className="px-4 py-3 tabular-nums">{num(m.sharpe)}</td>
-                        <td className="px-4 py-3 tabular-nums text-slate-600">
+                        <td className="hidden px-4 py-3 tabular-nums lg:table-cell">{num(m.sharpe)}</td>
+                        <td className="hidden px-4 py-3 tabular-nums text-slate-600 lg:table-cell">
                           {Math.round((r.elapsedSec || 0) * 1000)}ms
                         </td>
                         <td className="px-4 py-3 text-right text-xs">
-                          <Link
-                            to={`/factor/detect/report/${r.id}`}
-                            className="mr-3 font-medium text-blue-600 hover:underline"
-                          >
-                            查看报告
-                          </Link>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void (async () => {
-                                const ok = await confirm({
-                                  title: "删除记录",
-                                  message: "删除这条检测记录？",
-                                  confirmLabel: "删除",
-                                  danger: true,
-                                });
-                                if (ok) void deleteRun(r.id).then(refresh);
-                              })();
-                            }}
-                            className="font-medium text-red-600 hover:underline"
-                          >
-                            删除
-                          </button>
+                          <div className="flex flex-col items-end gap-1 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-x-3 sm:gap-y-1">
+                            <Link
+                              to={`/factor/detect/report/${r.id}`}
+                              className="py-1 font-medium text-blue-600 hover:underline"
+                            >
+                              查看报告
+                            </Link>
+                            <Link
+                              to={`/factor/detect/${projectId}?runId=${encodeURIComponent(r.id)}`}
+                              className="py-1 font-medium text-blue-600 hover:underline"
+                            >
+                              打开配置
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void (async () => {
+                                  const ok = await confirm({
+                                    title: "删除记录",
+                                    message: "删除这条检测记录？",
+                                    confirmLabel: "删除",
+                                    danger: true,
+                                  });
+                                  if (ok) void deleteRun(r.id).then(refresh);
+                                })();
+                              }}
+                              className="py-1 font-medium text-red-600 hover:underline"
+                            >
+                              删除
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

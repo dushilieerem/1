@@ -59,6 +59,9 @@ export const DATA_NAV_ITEMS = [
   { to: "/data/watchlist", label: "自选股组合" },
 ] as const;
 
+/** 顶栏「帮助」：文档 / API 说明入口（原数据下拉里的 API 占位迁此） */
+export const HELP_NAV = { to: "/help", label: "帮助" } as const;
+
 export const STRATEGY_NAV_ITEMS = [
   { to: "/strategy/research", label: "策略研究" },
   { to: "/strategy/library", label: "策略库" },

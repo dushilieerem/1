@@ -22,6 +22,7 @@ import {
   FACTORS_BEGIN,
   FACTORS_END,
   applySignalFactorsToCode,
+  hydrateSignalSelection,
   normalizeSignalPowers,
   normalizeSignalWeights,
   resolveStrategyFactorBodies,
@@ -92,6 +93,7 @@ export function StrategyBacktestPage() {
   const [elapsed, setElapsed] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [factorSyncing, setFactorSyncing] = useState(false);
+  const [mobilePane, setMobilePane] = useState<"config" | "code">("config");
   const syncLock = useRef<"left" | "right" | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const factorSyncGen = useRef(0);
@@ -144,14 +146,22 @@ export function StrategyBacktestPage() {
       try {
         const p = await getStrategyProject(projectId);
         if (cancelled) return;
-        let config = normalizeStrategyConfig(p.config);
+        const projectConfig = normalizeStrategyConfig(p.config);
+        let config = projectConfig;
         if (snapshotRunId) {
           const run = await getStrategyRun(snapshotRunId);
           if (cancelled) return;
           if (run.projectId !== p.id) {
             throw new Error("该回测不属于当前检测项目");
           }
-          config = normalizeStrategyConfig(configFromRunRequest(run.request));
+          // 历史快照优先；代码/@factor 与落库 _svquant_ui 都空时回退到项目已保存因子
+          config = hydrateSignalSelection(
+            normalizeStrategyConfig(configFromRunRequest(run.request)),
+            projectConfig,
+          );
+        } else {
+          // 旧项目可能只在代码里有 @factor，config 未写 signal_factor_ids
+          config = hydrateSignalSelection(projectConfig);
         }
         const synced = {
           ...config,
@@ -433,6 +443,10 @@ export function StrategyBacktestPage() {
 
   const onRun = async () => {
     if (!project || !cfg || running) return;
+    if (factorSyncing) {
+      pushLog("因子仍在同步到代码，请稍候再回测");
+      return;
+    }
     const code = cfg.strategy_code.trim();
     if (!code) {
       pushLog("策略代码为空");
@@ -489,7 +503,17 @@ export function StrategyBacktestPage() {
         projectId: savedProject.id,
         name: savedProject.name,
         description: savedProject.description,
-        request: req,
+        // _svquant_ui 仅本地落库，方便「返回配置」还原左侧因子；不发给 RE
+        request: {
+          ...req,
+          _svquant_ui: {
+            signal_factor_ids: cfg.signal_factor_ids,
+            signal_factor_weights: cfg.signal_factor_weights,
+            signal_factor_powers: cfg.signal_factor_powers,
+            signal_weight_mode: cfg.signal_weight_mode,
+            signal_temp_labels: cfg.signal_temp_labels,
+          },
+        },
         result,
         elapsedSec: sec,
       });
@@ -524,16 +548,19 @@ export function StrategyBacktestPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col bg-[#f0f2f5]">
-      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2.5">
+    <div className="flex min-h-[calc(100vh-4rem)] flex-col bg-[#f0f2f5] lg:h-[calc(100vh-4rem)]">
+      <div className="flex flex-col gap-2 border-b border-slate-200 bg-white px-3 py-2.5 sm:px-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-2 text-sm">
-          <Link to="/strategy/research" className="text-slate-400 hover:text-slate-700">
+          <Link
+            to="/strategy/research"
+            className="hidden text-slate-400 hover:text-slate-700 sm:inline"
+          >
             策略研究
           </Link>
-          <span className="text-slate-300">/</span>
+          <span className="hidden text-slate-300 sm:inline">/</span>
           <span className="truncate font-semibold text-slate-900">{project.name}</span>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => void persist()}
@@ -541,7 +568,10 @@ export function StrategyBacktestPage() {
           >
             <span className="inline-flex items-center gap-1">
               <Save className="h-3.5 w-3.5" />
-              保存{savedHint ? ` · ${savedHint}` : ""}
+              <span className="sm:hidden">保存</span>
+              <span className="hidden sm:inline">
+                保存{savedHint ? ` · ${savedHint}` : ""}
+              </span>
             </span>
           </button>
           <button
@@ -557,26 +587,65 @@ export function StrategyBacktestPage() {
             )}
             {running ? `回测中 ${elapsed}s` : "进行回测"}
           </button>
+          {running ? (
+            <button
+              type="button"
+              onClick={() => abortRef.current?.abort()}
+              className="inline-flex items-center justify-center rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+            >
+              取消
+            </button>
+          ) : null}
           <Link
             to={`/strategy/research/${projectId}/history`}
             className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
           >
             <BarChart3 className="h-3.5 w-3.5" />
-            回测报告
+            <span className="hidden sm:inline">回测报告</span>
+            <span className="sm:hidden">报告</span>
           </Link>
           <Link
             to="/strategy/research"
             className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            列表
+            <span className="hidden sm:inline">列表</span>
           </Link>
         </div>
       </div>
 
+      <nav
+        className="flex gap-1.5 border-b border-slate-200 bg-white px-3 py-2 lg:hidden"
+        aria-label="研究区分区"
+      >
+        {(
+          [
+            { id: "config" as const, label: "配置" },
+            { id: "code" as const, label: "代码与日志" },
+          ] as const
+        ).map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setMobilePane(item.id)}
+            className={`rounded-full px-3 py-1.5 text-xs transition ${
+              mobilePane === item.id
+                ? "bg-blue-600 font-semibold text-white"
+                : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 p-3 lg:grid-cols-[1.1fr_1fr]">
-        <aside className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5 text-sm">
+        <aside
+          className={`min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ${
+            mobilePane === "config" ? "flex" : "hidden lg:flex"
+          }`}
+        >
+          <div className="flex-1 space-y-5 overflow-y-auto px-3 py-4 text-sm sm:px-5 sm:py-5">
             <section>
               <h2 className="mb-2 text-sm font-bold text-blue-600">执行模式</h2>
               <div className="flex flex-wrap gap-1.5">
@@ -634,7 +703,7 @@ export function StrategyBacktestPage() {
               <h2 className="mb-3 text-sm font-bold text-blue-600">
                 {cfg.engine_mode === "event" ? "回测参数" : "3. 参数设置"}
               </h2>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 lg:grid-cols-2">
                 <label className="block text-xs text-slate-500">
                   股票池
                   <select
@@ -876,8 +945,12 @@ export function StrategyBacktestPage() {
           </div>
         </aside>
 
-        <div className="flex min-h-0 flex-col gap-3">
-          <section className="flex min-h-0 flex-[3] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div
+          className={`min-h-0 flex-col gap-3 ${
+            mobilePane === "code" ? "flex" : "hidden lg:flex"
+          }`}
+        >
+          <section className="flex min-h-[50vh] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:min-h-0 lg:flex-[3]">
             <div className="border-b border-slate-100 px-4 py-2">
               <span className="text-xs font-semibold text-slate-600">
                 策略代码
@@ -894,11 +967,11 @@ export function StrategyBacktestPage() {
                 onChange={onCodeChange}
                 height="100%"
                 variant="light"
-                className="h-full"
+                className="h-full min-h-[40vh] lg:min-h-0"
               />
             </div>
           </section>
-          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <section className="flex min-h-[10rem] max-h-56 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:max-h-none lg:min-h-0 lg:flex-1">
             <div className="border-b border-slate-100 px-4 py-2">
               <span className="text-xs font-semibold text-slate-600">运行日志</span>
             </div>

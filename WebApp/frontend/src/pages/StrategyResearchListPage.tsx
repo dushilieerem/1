@@ -172,27 +172,17 @@ export function StrategyResearchListPage() {
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50/80">
-      <div className="mx-auto max-w-[1200px] px-6 py-8">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">策略研究</h1>
-          </div>
-          <button
-            type="button"
-            onClick={openCreate}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-          >
-            <Plus className="h-4 w-4" />
-            新建检测
-          </button>
+      <div className="mx-auto max-w-[1200px] px-4 py-6 lg:px-6 lg:py-8">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-slate-900">策略研究</h1>
         </div>
 
-        <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="mb-4 flex flex-wrap items-center gap-2 lg:gap-3">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索检测名称…"
-            className="w-full max-w-md rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200"
+            className="w-full max-w-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 lg:max-w-md"
           />
           {selectedIds.size > 0 ? (
             <button
@@ -204,13 +194,23 @@ export function StrategyResearchListPage() {
               删除所选（{selectedIds.size}）
             </button>
           ) : null}
+          <div className="flex w-full flex-wrap items-center gap-2 lg:ml-auto lg:w-auto">
+            <button
+              type="button"
+              onClick={openCreate}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+            >
+              <Plus className="h-4 w-4" />
+              新建检测
+            </button>
+          </div>
         </div>
 
         {err && <p className="mb-3 text-sm text-red-600">{err}</p>}
         {loading && <p className="mb-3 text-sm text-slate-400">加载中…</p>}
 
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="w-full min-w-[36rem] text-left text-sm">
             <thead className="border-b border-slate-100 bg-slate-50 text-xs text-slate-500">
               <tr>
                 <th className="w-10 px-4 py-3">
@@ -224,8 +224,8 @@ export function StrategyResearchListPage() {
                   />
                 </th>
                 <th className="px-4 py-3 font-medium">检测名称</th>
-                <th className="px-4 py-3 font-medium">最后修改</th>
-                <th className="px-4 py-3 font-medium">回测次数</th>
+                <th className="hidden px-4 py-3 font-medium lg:table-cell">最后修改</th>
+                <th className="hidden px-4 py-3 font-medium lg:table-cell">回测次数</th>
                 <th className="px-4 py-3 text-right font-medium">操作</th>
               </tr>
             </thead>
@@ -253,10 +253,10 @@ export function StrategyResearchListPage() {
                       ) : null}
                     </div>
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-600">
+                  <td className="hidden px-4 py-3 font-mono text-xs text-slate-600 lg:table-cell">
                     {p.updatedAt?.replace("T", " ").slice(0, 19)}
                   </td>
-                  <td className="px-4 py-3 tabular-nums text-slate-700">{p.runCount}</td>
+                  <td className="hidden px-4 py-3 tabular-nums text-slate-700 lg:table-cell">{p.runCount}</td>
                   <td className="px-4 py-3 text-right text-xs">
                     <button
                       type="button"

@@ -37,26 +37,16 @@ strategies:
 
 `markowitz_min_variance` 的 v1 不模拟动态指数成分、ST/停牌/涨跌停和盘中订单执行，也不代表完整的 A 股实盘策略；这些能力将在数据与事件回测条件具备后以新版本补齐。
 
-`simons_pairs_trading_research` 为向量化研究版配对交易（默认 600519/000858 价格比 Z-score），未模拟借券与融券成本；可通过当前 `/api/backtest/strategy` 路径回测。
-
 ## 事件策略研究候选
-
-`event` 条目已登记于 `index.yaml`，策略库页可见；**完整事件驱动回测 API 尚未交付**（见 FEAT-006），故现阶段以源码契约 + 本地信号/指标冒烟为准，不能在平台上一键跑完整事件回测。
-
-| 策略 ID | 说明 | 备注 |
-|---|---|---|
-| `donchian_a_share_event` | 唐奇安 A 股突破 | 多标的 |
-| `wilder_adx_rsi_atr_a_share_event` | Wilder ADX/RSI/ATR | 多标的 |
-| `appel_macd_a_share_event` | 阿佩尔 MACD | 仅 OHLC；研究用 |
-| `bollinger_mean_reversion_a_share_event` | 布林带均值回归 | 仅 OHLC；研究用 |
-| `wilder_rsi_classic_a_share_event` | Wilder RSI 经典 | 研究用 |
-| `oneil_canslim_lite_a_share_event` | CANSLIM Lite（无基本面） | 研究用 |
-| `lane_stochastic_a_share_event` | 莱恩 KD | 2026-08-03 新增；冒烟 OK |
-| `hosoda_ichimoku_a_share_event` | 一目均衡表 | 2026-08-03 新增；冒烟 OK |
-| `donchian_bullish_ma_alignment_a_share_event` | 均线多头排列（默认可单标的） | 2026-08-03 新增；冒烟 OK |
 
 `appel_macd_a_share_event` 与 `bollinger_mean_reversion_a_share_event` 已迁移为 SVQuant 日频事件策略。二者仅以 OHLC 生成信号，股票池须由回测请求按历史时点准备；历史指数成分、ST 与上市状态数据接入前，均仅用于研究验证。
 
 `wilder_rsi_classic_a_share_event` 使用 Wilder RSI(14)、200 日均线和持仓均价的 -8%/+20% 风控；日频信号按下一开盘成交。它不替代历史股票池、ST、停牌和上市状态过滤，数据面板必须先提供这些边界。
 
 `oneil_canslim_lite_a_share_event` 是无基本面数据的 CANSLIM 研究版：只使用 250 日相对强度、简化月线基底突破和沪深 300 的 250 日均线确定满仓或半仓，并在每年首次满足数据窗口的月度调度日调仓。它不包含 C/A/I/S 因子，也不处理 ST、停牌、退市、上市天数或真正的杯柄形态。
+
+`chande_aroon_a_share_event` 与 `pring_kst_a_share_event` 分别使用 Aroon(25) 趋势交叉和 KST(10/15/20/30 ROC) 多周期动量交叉，在沪深 300 市场过滤通过时构建最多十只、单只 9% 的现金多头组合。两者均只读取前一收盘可见的 OHLC，并于下一开盘成交；历史指数成分、ST、上市日期和交易状态由输入数据面板及事件引擎提供，因此当前仅用于研究验证。
+
+`neff_low_pe_a_share_event` 使用 PE、盈利增速、股息率和总回报率/PE 筛选低估值价值股；`davis_double_play_a_share_event` 使用历史 PE 分位、盈利增速和 ROE 筛选价值成长股。两者均按月度调仓、最多十只等权持有，基本面字段必须由点时数据面板提供，缺失值不会自动填充。
+
+`jegadeesh_titman_12_1_a_share_event` 使用行业内 12-1/6-1 动量和低波动评分；`fama_french_small_value_a_share_event` 使用行业内低 PB、低 PE 与小流通市值评分。两者都要求点时的行业、流动性和基本面面板。`dogs_of_the_dow_low_vol_a_share_event` 每年一月按高股息前 30% 内的低波动筛选；`elder_triple_screen_a_share_event` 以周 MA5/10、日线 KDJ(9,3,3) 实现三重滤网。四者均为日频本地研究资产，并不替代历史证券状态或数据质量校验。

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, Plus, Search, X } from "lucide-react";
+import { Plus, Search, X } from "lucide-react";
 import {
   builtinCategoryLabelsFromFactors,
   loadFactors,
@@ -39,6 +39,38 @@ function labelOf(
   );
 }
 
+function FactorRow({
+  f,
+  on,
+  onToggle,
+}: {
+  f: FactorMeta;
+  on: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition hover:bg-blue-50/70 ${
+        on ? "bg-blue-50/90" : "bg-white"
+      }`}
+    >
+      <span
+        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+          on ? "border-blue-600 bg-blue-600" : "border-slate-300 bg-white"
+        }`}
+      >
+        {on ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
+      </span>
+      <span className="min-w-0 flex-1 truncate font-medium text-slate-800">
+        {f.explain || f.description}
+      </span>
+      <code className="shrink-0 text-xs text-slate-400">{f.name}</code>
+    </button>
+  );
+}
+
 export function FactorPickerModal({
   open,
   selected,
@@ -49,14 +81,15 @@ export function FactorPickerModal({
 }: Props) {
   const [builtinFactors, setBuiltinFactors] = useState<FactorMeta[]>([]);
   const [userLibs, setUserLibs] = useState<UserFactorLibrary[]>([]);
+  const [allUserFactors, setAllUserFactors] = useState<FactorMeta[]>([]);
   const [userFactors, setUserFactors] = useState<FactorMeta[]>([]);
   const [activeLib, setActiveLib] = useState<string>(BUILTIN_KEY);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>("全部");
   const [picked, setPicked] = useState<string[]>(selected);
   const [tempLabels, setTempLabels] = useState<Record<string, string>>({});
-  const [expanded, setExpanded] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [tempFormOpen, setTempFormOpen] = useState(false);
   const [tempName, setTempName] = useState("");
   const [tempDesc, setTempDesc] = useState("");
@@ -69,28 +102,39 @@ export function FactorPickerModal({
     setQuery("");
     setCategory("全部");
     setActiveLib(BUILTIN_KEY);
-    setExpanded([]);
     setTempFormOpen(false);
     setTempName("");
     setTempDesc("");
     setTempErr(null);
+    setLoadErr(null);
     setLoading(true);
     void Promise.all([
       loadFactors().then((fs) => fs.filter((f) => f.library !== "custom_lib")),
       listUserFactorLibraries().catch(() => [] as UserFactorLibrary[]),
     ])
-      .then(([fs, libs]) => {
+      .then(async ([fs, libs]) => {
         setBuiltinFactors(fs);
         setUserLibs(libs);
-        const tabs = builtinCategoryLabelsFromFactors(fs);
-        setExpanded(tabs);
+        if (libs.length) {
+          const rows = await Promise.all(
+            libs.map((lib) =>
+              listLibraryFactors(lib.id).catch(() => [] as Awaited<
+                ReturnType<typeof listLibraryFactors>
+              >),
+            ),
+          );
+          setAllUserFactors(rows.flat().map(userLibraryFactorToMeta));
+        } else {
+          setAllUserFactors([]);
+        }
       })
-      .catch(() => {
+      .catch((ex) => {
         setBuiltinFactors([]);
         setUserLibs([]);
+        setAllUserFactors([]);
+        setLoadErr(ex instanceof Error ? ex.message : String(ex));
       })
       .finally(() => setLoading(false));
-    // 仅在打开时同步已选，避免父组件重渲染把弹窗内编辑冲掉
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -157,6 +201,7 @@ export function FactorPickerModal({
     });
   }, [sourceFactors, query, category]);
 
+  /** 分组展示但默认全部展开（不再用手风琴折叠） */
   const grouped = useMemo(() => {
     const map = new Map<string, FactorMeta[]>();
     for (const f of filtered) {
@@ -175,9 +220,10 @@ export function FactorPickerModal({
   const allKnown = useMemo(() => {
     const map = new Map<string, FactorMeta>();
     for (const f of builtinFactors) map.set(f.name, f);
+    for (const f of allUserFactors) map.set(f.name, f);
     for (const f of userFactors) map.set(f.name, f);
     return [...map.values()];
-  }, [builtinFactors, userFactors]);
+  }, [builtinFactors, allUserFactors, userFactors]);
 
   const catalogNames = useMemo(
     () => new Set(allKnown.map((f) => f.name)),
@@ -231,12 +277,17 @@ export function FactorPickerModal({
     setTempErr(null);
   };
 
+  const onLibChange = (key: string) => {
+    setActiveLib(key);
+    setCategory("全部");
+  };
+
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-slate-900/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="flex h-[min(94dvh,900px)] w-full max-w-5xl flex-col overflow-hidden rounded-t-2xl border border-slate-200 bg-white shadow-2xl sm:rounded-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5">
           <h3 className="text-base font-bold text-slate-900">选择因子</h3>
           <button
             type="button"
@@ -247,41 +298,61 @@ export function FactorPickerModal({
           </button>
         </div>
 
-        <div className="grid min-h-0 flex-1 gap-0 overflow-hidden lg:grid-cols-[180px_minmax(0,1fr)_220px]">
-          <aside className="flex min-h-0 flex-col border-b border-slate-100 bg-slate-50/80 lg:border-r lg:border-b-0">
-            <p className="px-3 pt-3 pb-1.5 text-[11px] font-semibold tracking-wide text-slate-400 uppercase">
+        {/* 手机：单列，列表独占剩余高度并可触摸滚动；PC：三栏 */}
+        <div className="grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[180px_minmax(0,1fr)_220px]">
+          {/* 手机：下拉选库；PC：侧栏按钮 */}
+          <aside className="shrink-0 border-b border-slate-100 bg-slate-50/80 px-3 py-2.5 lg:flex lg:min-h-0 lg:flex-col lg:border-r lg:border-b-0 lg:px-2 lg:py-3">
+            <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-slate-400 uppercase lg:px-1">
               因子库
             </p>
-            <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
+            <label className="block lg:hidden">
+              <span className="sr-only">选择因子库</span>
+              <select
+                value={activeLib}
+                onChange={(e) => onLibChange(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-800 outline-none focus:border-blue-400"
+              >
+                <option value={BUILTIN_KEY}>
+                  内置因子库（{builtinFactors.length}）
+                </option>
+                {userLibs.map((lib) => (
+                  <option key={lib.id} value={String(lib.id)}>
+                    {lib.name || `库#${lib.id}`}（{lib.factorCount ?? 0}）
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="hidden min-h-0 flex-1 space-y-0.5 overflow-y-auto lg:block">
               <button
                 type="button"
-                onClick={() => {
-                  setActiveLib(BUILTIN_KEY);
-                  setCategory("全部");
-                }}
-                className={`flex w-full items-center rounded-lg px-2.5 py-2 text-left text-sm font-medium ${
+                onClick={() => onLibChange(BUILTIN_KEY)}
+                className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm font-medium ${
                   activeLib === BUILTIN_KEY
                     ? "bg-slate-900 text-white"
                     : "text-slate-700 hover:bg-white"
                 }`}
               >
-                内置因子库
+                <span>内置因子库</span>
+                <span
+                  className={`text-[10px] tabular-nums ${
+                    activeLib === BUILTIN_KEY ? "text-slate-300" : "text-slate-400"
+                  }`}
+                >
+                  {builtinFactors.length}
+                </span>
               </button>
               {userLibs.map((lib) => (
                 <button
                   key={lib.id}
                   type="button"
-                  onClick={() => {
-                    setActiveLib(String(lib.id));
-                    setCategory("全部");
-                  }}
+                  onClick={() => onLibChange(String(lib.id))}
                   className={`flex w-full items-center justify-between gap-1 rounded-lg px-2.5 py-2 text-left text-sm font-medium ${
                     activeLib === String(lib.id)
                       ? "bg-slate-900 text-white"
                       : "text-slate-700 hover:bg-white"
                   }`}
                 >
-                  <span className="truncate">{lib.name}</span>
+                  <span className="truncate">{lib.name || `库#${lib.id}`}</span>
                   <span
                     className={`shrink-0 text-[10px] tabular-nums ${
                       activeLib === String(lib.id)
@@ -296,8 +367,8 @@ export function FactorPickerModal({
             </div>
           </aside>
 
-          <div className="flex min-h-0 flex-col overflow-hidden p-4">
-            <div className="mb-3 flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex min-h-0 flex-col overflow-hidden p-3 sm:p-4">
+            <div className="mb-2 flex shrink-0 flex-col gap-2 sm:mb-3 sm:flex-row sm:items-center">
               <div className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
@@ -323,7 +394,7 @@ export function FactorPickerModal({
             </div>
 
             {tempFormOpen && allowTempFactor ? (
-              <div className="mb-3 shrink-0 rounded-xl border border-teal-200 bg-teal-50/40 p-3">
+              <div className="mb-2 shrink-0 rounded-xl border border-teal-200 bg-teal-50/40 p-3 sm:mb-3">
                 <p className="text-xs font-semibold text-teal-900">新增临时因子</p>
                 <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
                   <label className="block text-[11px] font-medium text-slate-600">
@@ -381,13 +452,13 @@ export function FactorPickerModal({
               </div>
             ) : null}
 
-            <div className="mb-3 flex shrink-0 flex-wrap gap-1.5">
+            <div className="mb-2 flex shrink-0 gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mb-3 sm:flex-wrap sm:overflow-visible">
               {categoryTabs.map((t) => (
                 <button
                   key={t}
                   type="button"
                   onClick={() => setCategory(t)}
-                  className={`rounded-full px-3 py-1 text-xs font-medium ${
+                  className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
                     category === t
                       ? "bg-blue-600 text-white"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -397,90 +468,63 @@ export function FactorPickerModal({
                 </button>
               ))}
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/40">
+
+            {/* 唯一主滚动区：必须有明确高度 + touch 滚动 */}
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain rounded-xl border border-slate-200 bg-slate-50/40 [-webkit-overflow-scrolling:touch]"
+              style={{ WebkitOverflowScrolling: "touch" }}
+            >
               {loading ? (
                 <p className="p-6 text-center text-sm text-slate-400">加载因子库…</p>
+              ) : loadErr ? (
+                <p className="p-6 text-center text-sm text-red-500">{loadErr}</p>
               ) : grouped.length === 0 ? (
                 <p className="p-6 text-center text-sm text-slate-400">
                   {activeLib === BUILTIN_KEY
-                    ? "没有匹配的因子"
+                    ? sourceFactors.length === 0
+                      ? "内置因子目录为空，请稍后重试或让助手同步官方目录"
+                      : "没有匹配的因子（可切回「全部」）"
                     : "该因子库暂无因子，可在检测报告中「入库」"}
                 </p>
               ) : (
-                grouped.map(([cat, items]) => {
-                  const isOpen = expanded.includes(cat) || category !== "全部";
-                  return (
-                    <div key={cat} className="border-b border-slate-100 last:border-0">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setExpanded((prev) =>
-                            prev.includes(cat)
-                              ? prev.filter((x) => x !== cat)
-                              : [...prev, cat],
-                          )
-                        }
-                        className="flex w-full items-center justify-between bg-slate-50 px-3 py-2.5 text-left hover:bg-slate-100"
-                      >
-                        <div>
-                          <p className="text-sm font-semibold text-slate-700">{cat}</p>
-                          <p className="text-xs text-slate-400">{items.length} 个因子</p>
-                        </div>
-                        <ChevronDown
-                          className={`h-4 w-4 text-slate-400 transition ${
-                            isOpen ? "rotate-180" : ""
-                          }`}
-                        />
-                      </button>
-                      {isOpen &&
-                        items.map((f) => {
-                          const on = picked.includes(f.name);
-                          return (
-                            <button
-                              key={`${f.library}:${f.name}`}
-                              type="button"
-                              onClick={() => toggle(f.name)}
-                              className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition hover:bg-blue-50/70 ${
-                                on ? "bg-blue-50/90" : "bg-white"
-                              }`}
-                            >
-                              <span
-                                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
-                                  on
-                                    ? "border-blue-600 bg-blue-600"
-                                    : "border-slate-300 bg-white"
-                                }`}
-                              >
-                                {on && (
-                                  <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                                )}
-                              </span>
-                              <span className="min-w-0 flex-1 truncate font-medium text-slate-800">
-                                {f.explain || f.description}
-                              </span>
-                              <code className="shrink-0 text-xs text-slate-400">
-                                {f.name}
-                              </code>
-                            </button>
-                          );
-                        })}
-                    </div>
-                  );
-                })
+                grouped.map(([cat, items]) => (
+                  <div key={cat} className="border-b border-slate-100 last:border-0">
+                    {category === "全部" ? (
+                      <div className="sticky top-0 z-[1] border-b border-slate-100 bg-slate-100/95 px-3 py-1.5 backdrop-blur">
+                        <p className="text-xs font-semibold text-slate-600">
+                          {cat}
+                          <span className="ml-1.5 font-normal text-slate-400">
+                            {items.length} 个
+                          </span>
+                        </p>
+                      </div>
+                    ) : null}
+                    {items.map((f) => (
+                      <FactorRow
+                        key={`${f.library}:${f.name}`}
+                        f={f}
+                        on={picked.includes(f.name)}
+                        onToggle={() => toggle(f.name)}
+                      />
+                    ))}
+                  </div>
+                ))
               )}
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-col border-t border-slate-100 bg-gradient-to-b from-slate-50 to-white p-3 lg:border-t-0 lg:border-l">
+          <div className="flex max-h-36 shrink-0 flex-col border-t border-slate-100 bg-gradient-to-b from-slate-50 to-white p-3 lg:max-h-none lg:min-h-0 lg:border-t-0 lg:border-l">
             <p className="mb-2 shrink-0 text-xs font-semibold text-slate-600">
               已选 {picked.length} 个
             </p>
-            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
               {picked.length === 0 ? (
-                <p className="text-xs text-slate-400">点击左侧因子添加</p>
+                <p className="text-xs text-slate-400">点上方列表添加</p>
               ) : (
                 picked.map((code) => {
-                  const isTemp = Boolean(tempLabels[code]) || !catalogNames.has(code);
+                  const isTemp =
+                    allowTempFactor &&
+                    (Boolean(tempLabels[code]) || !catalogNames.has(code));
                   return (
                     <div
                       key={code}
@@ -528,7 +572,7 @@ export function FactorPickerModal({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-slate-100 px-4 py-3 sm:px-5">
           <button
             type="button"
             onClick={onClose}

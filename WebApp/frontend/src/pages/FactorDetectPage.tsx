@@ -1,26 +1,39 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, BarChart3, Loader2, Play, Plus, Save, X } from "lucide-react";
 import { FactorCodeEditor } from "@/components/FactorCodeEditor";
 import { FactorPickerModal } from "@/components/FactorPickerModal";
 import {
   buildComboFunction,
+  buildPlatformFactorStub,
   buildYgFactorRequestParts,
   extractEntryName,
   isReBuiltinLib,
 } from "@/lib/detectComboCode";
+import {
+  bodiesForScriptDisplay,
+  buildDetectScript,
+  parseDetectScript,
+  type DetectScriptBodies,
+} from "@/lib/detectScriptSync";
 import {
   DETECT_ANALYSIS_LEVEL_OPTIONS,
   DETECT_BENCHMARK_OPTIONS,
   DETECT_PERIOD_OPTIONS,
   DETECT_UNIVERSE_OPTIONS,
   PORTFOLIO_TYPE_OPTIONS,
+  applyDetectRunSnapshotToConfig,
+  buildDetectRunUiSnapshot,
   clampDateRange,
   defaultCustomRangeDates,
   equalPowers,
   equalWeights,
+  formatDetectRunFactorsLabel,
   getProject,
+  getRun,
+  listDraftFactors,
   peekProject,
+  readDetectRunUiSnapshot,
   resolveBacktestRange,
   saveDetectRun,
   saveProject,
@@ -51,39 +64,21 @@ function draftBodyTemplate(name: string, description: string): string {
   return `def ${name}(self):\n    """${doc}"""\n    return self.close.pct_change(5)\n`;
 }
 
-/** 自定义组合编辑器：展示「因子实现 + 组合」；写回时只抽出组合部分 */
-function extractCustomCombineFromEditor(
-  full: string,
-  factorCodes: string[],
-  methodBodies: string[],
-): string {
-  const text = (full || "").replace(/\r\n/g, "\n");
-  const methods = methodBodies.map((m) => m.trim()).filter(Boolean).join("\n\n");
-  if (methods) {
-    const trimmed = text.trimStart();
-    if (trimmed.startsWith(methods)) {
-      return trimmed.slice(methods.length).replace(/^\n+/, "");
-    }
-  }
-  const factorSet = new Set(factorCodes);
-  const re = /^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/gm;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
-    if (!factorSet.has(m[1])) {
-      return text.slice(m.index);
-    }
-  }
-  return text.trim();
-}
-
 export function FactorDetectPage() {
   const { projectId = "" } = useParams();
+  const [searchParams] = useSearchParams();
+  const snapshotRunId = searchParams.get("runId")?.trim() || "";
   const navigate = useNavigate();
   const [project, setProject] = useState<DetectProject | null | undefined>(() =>
     projectId ? peekProject(projectId) ?? undefined : undefined,
   );
   const [catalog, setCatalog] = useState<FactorMeta[]>([]);
   const [methodBodies, setMethodBodies] = useState<string[]>([]);
+  /** 右侧脚本里编辑过的自定义因子函数体 */
+  const [bodyOverrides, setBodyOverrides] = useState<DetectScriptBodies>({});
+  const [scriptText, setScriptText] = useState("");
+  const syncOriginRef = useRef<"ui" | "code" | null>(null);
+  const parseTimerRef = useRef<number | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -95,12 +90,25 @@ export function FactorDetectPage() {
   const [savedHint, setSavedHint] = useState("");
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [mobilePane, setMobilePane] = useState<"config" | "code">("config");
   const abortRef = useRef<AbortController | null>(null);
   const tickRef = useRef<number | null>(null);
 
   const cfg = project?.config;
-  const draftFactor = cfg?.draftFactor ?? null;
-  const isDraftMode = Boolean(draftFactor?.name);
+  const drafts = useMemo(() => listDraftFactors(cfg), [cfg]);
+  const draftByName = useMemo(() => {
+    const m = new Map<string, DraftDetectFactor>();
+    for (const d of drafts) m.set(d.name, d);
+    return m;
+  }, [drafts]);
+  const draftFactor = drafts[0] ?? null;
+  /** 仅一个临时因子、无库因子 → 右侧编辑因子体；混合克隆则走组合脚本 */
+  const isDraftOnlyMode =
+    drafts.length > 0 &&
+    (cfg?.factorCodes.length ?? 0) > 0 &&
+    (cfg?.factorCodes.every((c) => draftByName.has(c)) ?? false) &&
+    (cfg?.factorCodes.length ?? 0) === 1;
+  const hasDraft = drafts.length > 0;
 
   const pushLog = useCallback((line: string) => {
     const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
@@ -127,9 +135,37 @@ export function FactorDetectPage() {
         setProject(null);
         return;
       }
-      setProject(p);
-      const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-      setLogs((prev) => (prev.length ? prev : [`[${ts}] 已加载项目：${p.name}`]));
+      let next = p;
+      if (snapshotRunId) {
+        try {
+          const run = await getRun(snapshotRunId);
+          if (cancelled) return;
+          if (run && run.projectId === p.id) {
+            const snap = readDetectRunUiSnapshot(run.request);
+            if (snap) {
+              next = {
+                ...p,
+                config: applyDetectRunSnapshotToConfig(p.config, snap),
+              };
+              const label = formatDetectRunFactorsLabel(run);
+              const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+              setLogs((prev) => [
+                ...prev.slice(-200),
+                `[${ts}] 已加载历史快照：${label}（保存后才会写入项目最新配置）`,
+              ]);
+            }
+          }
+        } catch {
+          /* 无快照则仍用项目最新配置 */
+        }
+      }
+      setProject(next);
+      if (!snapshotRunId) {
+        const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+        setLogs((prev) =>
+          prev.length ? prev : [`[${ts}] 已加载项目：${next.name}`],
+        );
+      }
       void Promise.all([
         loadFactors().catch(() => [] as FactorMeta[]),
         listAllUserLibraryFactors()
@@ -148,30 +184,35 @@ export function FactorDetectPage() {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, snapshotRunId]);
 
   // 已入库的草稿：去掉琥珀色，按普通库因子展示
   useEffect(() => {
-    const draftName = project?.config?.draftFactor?.name;
-    if (!draftName || !catalog.length) return;
-    const inUserLib = catalog.some(
-      (f) => f.name === draftName && f.library.startsWith("user_lib_"),
+    const draftNames = listDraftFactors(project?.config).map((d) => d.name);
+    if (!draftNames.length || !catalog.length) return;
+    const archived = draftNames.filter((name) =>
+      catalog.some(
+        (f) => f.name === name && f.library.startsWith("user_lib_"),
+      ),
     );
-    if (!inUserLib) return;
+    if (!archived.length) return;
     setProject((prev) => {
-      if (!prev?.config?.draftFactor?.name) return prev;
-      if (prev.config.draftFactor.name !== draftName) return prev;
-      const name = prev.config.draftFactor.name;
+      if (!prev) return prev;
+      const remain = listDraftFactors(prev.config).filter(
+        (d) => !archived.includes(d.name),
+      );
+      if (remain.length === listDraftFactors(prev.config).length) return prev;
       const codes = prev.config.factorCodes.length
         ? prev.config.factorCodes
-        : [name];
+        : remain.map((d) => d.name);
       const next = {
         ...prev,
         config: {
           ...prev.config,
-          draftFactor: null,
+          draftFactor: remain[0] || null,
+          draftFactors: remain.length ? remain : undefined,
           factorCodes: codes,
-          weightMode: "sum" as const,
+          weightMode: remain.length ? prev.config.weightMode : ("sum" as const),
           weights: equalWeights(codes.length),
           powers: equalPowers(codes.length),
         },
@@ -179,7 +220,7 @@ export function FactorDetectPage() {
       void saveProject(next);
       return next;
     });
-  }, [catalog, project?.config?.draftFactor?.name, project?.id]);
+  }, [catalog, project?.config?.draftFactor?.name, project?.config?.draftFactors, project?.id]);
 
   const categoryOptions = useMemo(() => {
     const cats = builtinCategoryLabelsFromFactors(
@@ -190,17 +231,16 @@ export function FactorDetectPage() {
 
   const factorLabel = useCallback(
     (code: string) => {
-      if (draftFactor && draftFactor.name === code) {
-        return draftFactor.description || draftFactor.name;
-      }
+      const draft = draftByName.get(code);
+      if (draft) return draft.description || draft.name;
       const f = catalog.find((x) => x.name === code);
       return f?.explain || f?.description || code;
     },
-    [catalog, draftFactor],
+    [catalog, draftByName],
   );
 
   useEffect(() => {
-    if (isDraftMode && draftFactor) {
+    if (isDraftOnlyMode && draftFactor) {
       setMethodBodies([draftFactor.body || ""]);
       return;
     }
@@ -216,6 +256,11 @@ export function FactorDetectPage() {
         const bodies: string[] = [];
         const fileCache = new Map<string, string>();
         for (const code of cfg.factorCodes) {
+          const draft = draftByName.get(code);
+          if (draft) {
+            bodies.push(draft.body || "");
+            continue;
+          }
           const meta = byName.get(code);
           if (!meta) {
             bodies.push(`# 未找到因子 ${code}`);
@@ -226,9 +271,8 @@ export function FactorDetectPage() {
             continue;
           }
           if (isReBuiltinLib(meta.library)) {
-            bodies.push(
-              `# RE库 ${meta.library} · ${code}（由 library_name 加载完整库，含私有辅助）`,
-            );
+            // 存根无 def；buildYgFactorRequestParts 会忽略，单因子走 library_name
+            bodies.push(buildPlatformFactorStub(meta));
             continue;
           }
           let src = fileCache.get(meta.libraryFile);
@@ -249,60 +293,144 @@ export function FactorDetectPage() {
     return () => {
       cancelled = true;
     };
-  }, [cfg?.factorCodes, catalog, pushLog, isDraftMode, draftFactor]);
+  }, [cfg?.factorCodes, catalog, pushLog, isDraftOnlyMode, draftFactor, draftByName]);
 
-  const comboFn = useMemo(() => {
-    if (!cfg) return "";
-    return buildComboFunction({
-      mode: cfg.weightMode,
-      factorCodes: cfg.factorCodes,
-      weights: cfg.weights,
-      powers: cfg.powers,
-      customCombine: cfg.customCombine,
-      entryName: "combo_factor",
-      title: project?.name || "组合因子",
-    });
-  }, [cfg, project?.name]);
+  const catalogByName = useMemo(
+    () => new Map(catalog.map((f) => [f.name, f])),
+    [catalog],
+  );
 
-  const methodsText = methodBodies.join("\n\n");
+  const catalogWithDrafts = useMemo(() => {
+    const m = new Map(catalogByName);
+    for (const d of drafts) {
+      m.set(d.name, {
+        name: d.name,
+        methodName: d.name,
+        description: d.description,
+        explain: d.description,
+        formula: "",
+        params: {},
+        library: "draft_lib",
+        libraryFile: "",
+        libraryLabel: d.category,
+        body: d.body,
+      });
+    }
+    return m;
+  }, [catalogByName, drafts]);
 
   /** 多于 1 个因子才显示合成参数 */
-  const showSynthesis = !isDraftMode && (cfg?.factorCodes.length ?? 0) > 1;
+  const showSynthesis = !isDraftOnlyMode && (cfg?.factorCodes.length ?? 0) > 1;
 
-  /** 右侧统一代码区：单因子只看因子函数；多因子看实现+组合；自定义=实现(只读前缀)+可编辑组合 */
-  const unifiedCode = useMemo(() => {
-    if (!cfg) return "";
-    if (isDraftMode && draftFactor) return draftFactor.body || "";
-    const methods = methodsText.trim();
-    if (cfg.weightMode === "custom") {
-      const combo = (cfg.customCombine || "").trim();
-      if (!methods) return combo || "# 请先选择因子，再写组合函数";
-      return combo ? `${methods}\n\n${combo}` : `${methods}\n\n# 请在下方编写组合函数 combo_factor`;
+  /** 左侧改配置 → 重建右侧脚本（右侧正在编辑时跳过） */
+  useEffect(() => {
+    if (!cfg) return;
+    if (syncOriginRef.current === "code") {
+      syncOriginRef.current = null;
+      return;
     }
-    const n = cfg.factorCodes.length;
-    if (n === 0) return "# 请先选择因子";
-    if (n === 1) {
-      const body = methodBodies[0]?.trim() || "";
-      if (body.startsWith("# RE库")) {
-        return `${body}\n# 提交时走 library_name，不传 factor_code`;
-      }
-      return body || `# 未找到因子 ${cfg.factorCodes[0]}`;
+    if (isDraftOnlyMode && draftFactor) {
+      setScriptText(draftFactor.body || "");
+      return;
     }
-    const combo = comboFn.trim();
-    return [methods, combo].filter(Boolean).join("\n\n");
-  }, [cfg, isDraftMode, draftFactor, methodBodies, methodsText, comboFn]);
-
-  const codeEditable =
-    Boolean(isDraftMode && draftFactor) || cfg?.weightMode === "custom";
+    const bodies = bodiesForScriptDisplay({
+      factorCodes: cfg.factorCodes,
+      catalogByName: catalogWithDrafts,
+      methodBodies,
+      overrides: bodyOverrides,
+    });
+    setScriptText(
+      buildDetectScript({
+        config: cfg,
+        projectName: project?.name,
+        catalogByName: catalogWithDrafts,
+        factorBodies: bodies,
+      }),
+    );
+  }, [
+    cfg,
+    catalogWithDrafts,
+    methodBodies,
+    bodyOverrides,
+    isDraftOnlyMode,
+    draftFactor,
+    project?.name,
+  ]);
 
   const patchConfig = (partial: Partial<NonNullable<DetectProject["config"]>>) => {
+    syncOriginRef.current = "ui";
     setProject((prev) => {
       if (!prev) return prev;
       return { ...prev, config: { ...prev.config, ...partial } };
     });
   };
 
+  const onScriptChange = (v: string) => {
+    setScriptText(v);
+    if (isDraftOnlyMode && draftFactor) {
+      syncOriginRef.current = "code";
+      setProject((prev) => {
+        if (!prev) return prev;
+        const remain = listDraftFactors(prev.config).map((d) =>
+          d.name === draftFactor.name ? { ...d, body: v } : d,
+        );
+        return {
+          ...prev,
+          config: {
+            ...prev.config,
+            draftFactor: remain[0] || null,
+            draftFactors: remain.length ? remain : undefined,
+          },
+        };
+      });
+      return;
+    }
+    if (parseTimerRef.current) window.clearTimeout(parseTimerRef.current);
+    parseTimerRef.current = window.setTimeout(() => {
+      const parsed = parseDetectScript(v);
+      if (!parsed) return;
+      syncOriginRef.current = "code";
+      if (Object.keys(parsed.factorBodies).length) {
+        setBodyOverrides((prev) => ({ ...prev, ...parsed.factorBodies }));
+        // 同步写回临时草稿 body，保证再跑检测用最新代码
+        setProject((prev) => {
+          if (!prev) return prev;
+          const cur = listDraftFactors(prev.config);
+          if (!cur.length) return prev;
+          let changed = false;
+          const nextDrafts = cur.map((d) => {
+            const body = parsed.factorBodies[d.name];
+            if (body == null) return d;
+            changed = true;
+            return { ...d, body };
+          });
+          if (!changed) return prev;
+          return {
+            ...prev,
+            config: {
+              ...prev.config,
+              draftFactor: nextDrafts[0] || null,
+              draftFactors: nextDrafts,
+            },
+          };
+        });
+      }
+      // 自定义组合模式下，右侧改 combo_factor 写回左侧
+      if (parsed.comboFn) {
+        setProject((prev) => {
+          if (!prev) return prev;
+          if (prev.config.weightMode !== "custom") return prev;
+          return {
+            ...prev,
+            config: { ...prev.config, customCombine: parsed.comboFn! },
+          };
+        });
+      }
+    }, 320);
+  };
+
   const applyFactors = (codes: string[]) => {
+    syncOriginRef.current = "ui";
     setProject((prev) => {
       if (!prev) return prev;
       const mode = prev.config.weightMode;
@@ -320,6 +448,9 @@ export function FactorDetectPage() {
           }
         }
       }
+      const remain = listDraftFactors(prev.config).filter((d) =>
+        codes.includes(d.name),
+      );
       return {
         ...prev,
         factorName: codes.length === 1 ? codes[0] : "combo_factor",
@@ -329,7 +460,8 @@ export function FactorDetectPage() {
           weights,
           powers,
           customCombine,
-          draftFactor: null,
+          draftFactor: remain[0] || null,
+          draftFactors: remain.length ? remain : undefined,
         },
       };
     });
@@ -337,7 +469,7 @@ export function FactorDetectPage() {
 
   const removeFactor = (code: string) => {
     if (!cfg) return;
-    if (draftFactor && draftFactor.name === code) {
+    if (draftByName.has(code) && isDraftOnlyMode) {
       setProject((prev) => {
         if (!prev) return prev;
         return {
@@ -349,6 +481,7 @@ export function FactorDetectPage() {
             weights: [],
             powers: [],
             draftFactor: null,
+            draftFactors: undefined,
           },
         };
       });
@@ -400,6 +533,7 @@ export function FactorDetectPage() {
           powers: [1],
           weightMode: "sum",
           draftFactor: draft,
+          draftFactors: [draft],
         },
       };
     });
@@ -411,9 +545,23 @@ export function FactorDetectPage() {
   };
 
   const setWeightMode = (mode: WeightMode) => {
+    syncOriginRef.current = "ui";
     setProject((prev) => {
       if (!prev) return prev;
       const n = prev.config.factorCodes.length;
+      const codes = prev.config.factorCodes;
+      let customCombine = prev.config.customCombine;
+      if (mode === "custom") {
+        // 每次点「自定义」：右侧默认写成已选因子相加
+        if (codes.length === 1) {
+          customCombine = `def combo_factor(self):\n    """自定义组合"""\n    return self.${codes[0]}()`;
+        } else if (codes.length > 1) {
+          const expr = codes.map((c) => `self.${c}()`).join(" + ");
+          customCombine = `def combo_factor(self):\n    """自定义组合"""\n    return ${expr}`;
+        } else {
+          customCombine = `def combo_factor(self):\n    """自定义组合"""\n    # 先在左侧添加因子\n    return self.close.pct_change(5)`;
+        }
+      }
       return {
         ...prev,
         config: {
@@ -421,6 +569,7 @@ export function FactorDetectPage() {
           weightMode: mode,
           weights: mode === "sum" ? equalWeights(n) : prev.config.weights,
           powers: mode === "product" ? equalPowers(n) : prev.config.powers,
+          customCombine,
         },
       };
     });
@@ -439,47 +588,57 @@ export function FactorDetectPage() {
   const onRun = useCallback(async () => {
     if (!project || !cfg) return;
     setRunError(null);
-    const draft = cfg.draftFactor;
+    const runDrafts = listDraftFactors(cfg);
+    const draftOnly =
+      runDrafts.length === 1 &&
+      cfg.factorCodes.length === 1 &&
+      cfg.factorCodes[0] === runDrafts[0].name;
     const customOnly =
       cfg.weightMode === "custom" && Boolean(cfg.customCombine?.trim());
-    if (!cfg.factorCodes.length && !customOnly && !draft) {
+    if (!cfg.factorCodes.length && !customOnly && !runDrafts.length) {
       const msg = "请先在上方添加因子，或使用自定义组合函数";
       setRunError(msg);
       pushLog(msg);
       return;
     }
-    if (draft) {
-      const body = (draft.body || "").trim();
-      if (!body) {
-        const msg = "请先编写因子代码";
+    for (const d of runDrafts) {
+      if (!(d.body || "").trim()) {
+        const msg = `请先编写因子代码：${d.name}`;
         setRunError(msg);
         pushLog(msg);
         return;
       }
     }
-    const catalogForBuild: FactorMeta[] = draft
-      ? [
-          ...catalog,
-          {
-            name: draft.name,
-            methodName: draft.name,
-            description: draft.description,
-            explain: draft.description,
-            formula: "",
-            params: {},
-            library: "draft_lib",
-            libraryFile: "",
-            libraryLabel: draft.category,
-            body: draft.body,
-          },
-        ]
-      : catalog;
-    const bodiesForBuild = draft ? [draft.body] : methodBodies;
+    const catalogForBuild: FactorMeta[] = [
+      ...catalog,
+      ...runDrafts.map((draft) => ({
+        name: draft.name,
+        methodName: draft.name,
+        description: draft.description,
+        explain: draft.description,
+        formula: "",
+        params: {},
+        library: "draft_lib",
+        libraryFile: "",
+        libraryLabel: draft.category,
+        body: draft.body,
+      })),
+    ];
+    const codes = cfg.factorCodes.length
+      ? cfg.factorCodes
+      : runDrafts.map((d) => d.name);
+    const bodiesForBuild = codes.map((code, i) => {
+      const ov = bodyOverrides[code]?.trim();
+      if (ov) return ov;
+      const draft = runDrafts.find((d) => d.name === code);
+      if (draft) return draft.body || "";
+      return methodBodies[i] || "";
+    });
     const combo = buildComboFunction({
-      mode: draft ? "sum" : cfg.weightMode,
-      factorCodes: draft ? [draft.name] : cfg.factorCodes,
-      weights: draft ? [100] : cfg.weights,
-      powers: draft ? [1] : cfg.powers,
+      mode: draftOnly ? "sum" : cfg.weightMode,
+      factorCodes: codes,
+      weights: draftOnly ? [100] : cfg.weights,
+      powers: draftOnly ? [1] : cfg.powers,
       customCombine: cfg.customCombine,
       entryName: "combo_factor",
       title: project.name,
@@ -487,7 +646,7 @@ export function FactorDetectPage() {
     const entryName = extractEntryName(combo, project.factorName || "combo_factor");
     const parts = buildYgFactorRequestParts({
       factors: catalogForBuild,
-      factorCodes: draft ? [draft.name] : cfg.factorCodes,
+      factorCodes: codes,
       methodBodies: bodiesForBuild,
       comboFn: combo,
       entryName,
@@ -546,24 +705,47 @@ export function FactorDetectPage() {
         pushLog("不会跳转报告页 · 请改组合函数或单因子代码后重试");
         return;
       }
+      const primaryDraft = runDrafts[0] || null;
       const saveReq = {
         ...req,
-        ...(draft ? { _svquantDraftFactor: draft } : {}),
-      } as YgBacktestRequest & { _svquantDraftFactor?: DraftDetectFactor };
+        _svquant_ui: buildDetectRunUiSnapshot(cfg, (code) => {
+          const f = catalogForBuild.find((x) => x.name === code);
+          return (f?.description || f?.explain || code).trim() || code;
+        }),
+        ...(primaryDraft ? { _svquantDraftFactor: primaryDraft } : {}),
+        ...(runDrafts.length ? { _svquantDraftFactors: runDrafts } : {}),
+      } as YgBacktestRequest & {
+        _svquant_ui: ReturnType<typeof buildDetectRunUiSnapshot>;
+        _svquantDraftFactor?: DraftDetectFactor;
+        _svquantDraftFactors?: DraftDetectFactor[];
+      };
+      const factorLabel = formatDetectRunFactorsLabel({
+        description: "",
+        factorName: parts.factor_name || "",
+        request: saveReq,
+      });
       const rec = await saveDetectRun({
         projectId: project.id,
         factorName: parts.factor_name,
-        description: project.name,
+        description: factorLabel || project.name,
         request: saveReq,
         result: res,
         finishedAt: new Date().toISOString(),
         elapsedSec,
-        draftFactor: draft || null,
+        draftFactor: primaryDraft,
+        draftFactors: runDrafts.length ? runDrafts : undefined,
       });
       pushLog(`完成 ${elapsedSec}s，跳转报告`);
-      navigate(`/factor/detect/report/${rec.id}`);
+      // 跑完回到「最新配置」路由，去掉历史 runId
+      if (snapshotRunId) {
+        navigate(`/factor/detect/report/${rec.id}`, { replace: false });
+      } else {
+        navigate(`/factor/detect/report/${rec.id}`);
+      }
     } catch (e) {
-      if ((e as Error).name !== "AbortError") {
+      if ((e as Error).name === "AbortError") {
+        pushLog("已取消检测");
+      } else {
         const msg = e instanceof Error ? e.message : String(e);
         // 旧版 localStorage 配额错误：给可操作提示
         if (/quota|setItem|Storage/i.test(msg)) {
@@ -587,7 +769,7 @@ export function FactorDetectPage() {
       setRunning(false);
       setElapsed(Math.floor((Date.now() - t0) / 1000));
     }
-  }, [project, cfg, methodBodies, catalog, navigate, pushLog]);
+  }, [project, cfg, methodBodies, bodyOverrides, catalog, navigate, pushLog, snapshotRunId]);
 
   if (project === undefined) {
     return <div className="p-10 text-center text-slate-400">加载中…</div>;
@@ -604,69 +786,111 @@ export function FactorDetectPage() {
     );
   }
 
-  const portfolioHint =
-    PORTFOLIO_TYPE_OPTIONS.find((p) => p.code === cfg.portfolioType)?.hint || "";
-
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col bg-[#f0f2f5]">
-      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-2 text-sm">
-          <Link to="/factor/detect" className="text-slate-400 hover:text-slate-700">
-            因子算法
-          </Link>
-          <span className="text-slate-300">/</span>
-          <Link to={`/factor/detect/${projectId}/history`} className="text-slate-400 hover:text-slate-700">
-            检测列表
-          </Link>
-          <span className="text-slate-300">/</span>
-          <span className="truncate font-semibold text-slate-900">{project.name}</span>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={persist}
-            className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50"
-          >
-            <span className="inline-flex items-center gap-1">
-              <Save className="h-3.5 w-3.5" />
-              保存{savedHint ? ` · ${savedHint}` : ""}
+    <div className="flex min-h-[calc(100vh-4rem)] flex-col bg-[#f0f2f5] lg:h-[calc(100vh-4rem)]">
+      <div className="sticky top-0 z-20 border-b border-slate-200 bg-white px-3 py-2.5 sm:px-4">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+          <div className="flex min-w-0 items-center gap-2 text-sm">
+            <Link
+              to={`/factor/detect/${projectId}/history`}
+              className="shrink-0 text-slate-500 hover:text-slate-800"
+            >
+              检测列表
+            </Link>
+            <span className="shrink-0 text-slate-300">/</span>
+            <span className="min-w-0 truncate font-semibold text-slate-900" title={project.name}>
+              {project.name}
             </span>
-          </button>
-          <button
-            type="button"
-            disabled={
-              running ||
-              (!cfg.factorCodes.length &&
-                !(cfg.weightMode === "custom" && cfg.customCombine?.trim()))
-            }
-            onClick={() => void onRun()}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-            {running ? `检测中 ${elapsed}s` : "进行检测"}
-          </button>
-          <Link
-            to={`/factor/detect/${projectId}/history`}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-          >
-            <BarChart3 className="h-3.5 w-3.5" />
-            检测报告
-          </Link>
-          <Link to="/factor/detect" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
-            <ArrowLeft className="h-3.5 w-3.5" />
-            列表
-          </Link>
+          </div>
+          <div className="grid grid-cols-2 gap-2 lg:flex lg:flex-wrap lg:items-center">
+            <button
+              type="button"
+              onClick={persist}
+              className="inline-flex items-center justify-center gap-1 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 lg:py-1.5"
+            >
+              <Save className="h-3.5 w-3.5 shrink-0" />
+              保存{savedHint ? ` · ${savedHint}` : ""}
+            </button>
+            <button
+              type="button"
+              disabled={
+                running ||
+                (!cfg.factorCodes.length &&
+                  !(cfg.weightMode === "custom" && cfg.customCombine?.trim()))
+              }
+              onClick={() => void onRun()}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 lg:py-1.5"
+            >
+              {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+              {running ? `检测中 ${elapsed}s` : "进行检测"}
+            </button>
+            <Link
+              to={`/factor/detect/${projectId}/history`}
+              className={`inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 lg:py-1.5 ${
+                running ? "" : "col-span-2 lg:col-span-1"
+              }`}
+            >
+              <BarChart3 className="h-3.5 w-3.5" />
+              <span className="lg:hidden">报告</span>
+              <span className="hidden lg:inline">检测报告</span>
+            </Link>
+            {running ? (
+              <button
+                type="button"
+                onClick={() => abortRef.current?.abort()}
+                className="inline-flex items-center justify-center rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 lg:py-1.5"
+              >
+                取消检测
+              </button>
+            ) : null}
+            <Link
+              to="/factor/detect"
+              className="hidden items-center gap-1 text-sm text-slate-500 hover:text-slate-800 lg:inline-flex"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              列表
+            </Link>
+          </div>
         </div>
       </div>
 
+      <nav
+        className="flex gap-1.5 border-b border-slate-200 bg-white px-3 py-2 lg:hidden"
+        aria-label="工作台分区"
+      >
+        {(
+          [
+            { id: "config" as const, label: "配置" },
+            { id: "code" as const, label: "脚本与日志" },
+          ] as const
+        ).map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setMobilePane(item.id)}
+            className={`rounded-full px-3 py-1.5 text-xs transition ${
+              mobilePane === item.id
+                ? "bg-blue-600 font-semibold text-white"
+                : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 p-3 lg:grid-cols-[1.35fr_0.65fr]">
-        <aside className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5 text-sm">
+        <aside
+          className={`min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ${
+            mobilePane === "config" ? "flex" : "hidden lg:flex"
+          }`}
+        >
+          <div className="flex-1 space-y-6 overflow-y-auto px-3 py-4 text-sm sm:px-5 sm:py-5">
             {/* 1. 添加因子 */}
             <section>
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h2 className="text-sm font-bold text-blue-600">1. 添加因子</h2>
-                {!isDraftMode ? (
+                {!isDraftOnlyMode ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -684,15 +908,18 @@ export function FactorDetectPage() {
                 ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
-                {isDraftMode && draftFactor ? (
+                {isDraftOnlyMode && draftFactor ? (
                   <span
-                    className="inline-flex max-w-[260px] items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs shadow-sm"
+                    className="inline-flex w-full max-w-full items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs shadow-sm sm:w-auto sm:max-w-[min(100%,20rem)]"
                     title={draftFactor.name}
                   >
-                    <span className="truncate font-medium text-amber-900">
+                    <span className="shrink-0 rounded bg-amber-200/80 px-1 py-0.5 text-[10px] font-semibold text-amber-900">
+                      临时
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-medium text-amber-900">
                       {draftFactor.description || draftFactor.name}
                     </span>
-                    <code className="shrink-0 text-[10px] text-amber-700/80">
+                    <code className="hidden shrink-0 text-[10px] text-amber-700/80 sm:inline">
                       {draftFactor.name}
                     </code>
                     <button
@@ -705,24 +932,53 @@ export function FactorDetectPage() {
                   </span>
                 ) : (
                   <>
-                    {cfg.factorCodes.map((c) => (
-                      <span
-                        key={c}
-                        className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm"
-                        title={factorLabel(c)}
-                      >
-                        <span className="truncate font-medium text-slate-800">
-                          {factorLabel(c)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => removeFactor(c)}
-                          className="shrink-0 text-slate-400 hover:text-red-500"
+                    {cfg.factorCodes.map((c) => {
+                      const draft = draftByName.get(c);
+                      if (draft) {
+                        return (
+                          <span
+                            key={c}
+                            className="inline-flex w-full max-w-full items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs shadow-sm sm:w-auto sm:max-w-[min(100%,20rem)]"
+                            title={draft.name}
+                          >
+                            <span className="shrink-0 rounded bg-amber-200/80 px-1 py-0.5 text-[10px] font-semibold text-amber-900">
+                              临时
+                            </span>
+                            <span className="min-w-0 flex-1 truncate font-medium text-amber-900">
+                              {draft.description || draft.name}
+                            </span>
+                            <code className="hidden shrink-0 text-[10px] text-amber-700/80 sm:inline">
+                              {draft.name}
+                            </code>
+                            <button
+                              type="button"
+                              onClick={() => removeFactor(c)}
+                              className="shrink-0 text-amber-600 hover:text-red-500"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </span>
+                        );
+                      }
+                      return (
+                        <span
+                          key={c}
+                          className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm sm:max-w-[14rem]"
+                          title={factorLabel(c)}
                         >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </span>
-                    ))}
+                          <span className="truncate font-medium text-slate-800">
+                            {factorLabel(c)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeFactor(c)}
+                            className="shrink-0 text-slate-400 hover:text-red-500"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      );
+                    })}
                     <button
                       type="button"
                       onClick={() => setPickerOpen(true)}
@@ -819,17 +1075,7 @@ export function FactorDetectPage() {
                     </tbody>
                   </table>
                 </div>
-              ) : (
-                <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-3 py-3 text-xs leading-relaxed text-slate-500">
-                  自定义组合：先在上方添加因子（上方「对应函数」会自动出现），右侧只写如何合成已选因子。全新因子请先写入因子库再选。
-                  {cfg.factorCodes.length > 0 && (
-                    <>
-                      {" "}
-                      可用：{cfg.factorCodes.map((c) => `self.${c}()`).join("、")}
-                    </>
-                  )}
-                </p>
-              )}
+              ) : null}
             </section>
             ) : null}
 
@@ -839,7 +1085,10 @@ export function FactorDetectPage() {
                 {showSynthesis ? "3" : "2"}. 组合构建
               </h2>
               <label className="block text-xs text-slate-500">
-                组合类型 portfolio_type
+                组合类型
+                <span className="ml-1 hidden font-mono text-[10px] text-slate-400 sm:inline">
+                  portfolio_type
+                </span>
                 <select
                   value={cfg.portfolioType}
                   onChange={(e) => patchConfig({ portfolioType: e.target.value })}
@@ -852,7 +1101,6 @@ export function FactorDetectPage() {
                   ))}
                 </select>
               </label>
-              <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{portfolioHint}</p>
             </section>
 
             {/* 4. 参数设置 */}
@@ -860,8 +1108,8 @@ export function FactorDetectPage() {
               <h2 className="mb-3 text-sm font-bold text-blue-600">
                 {showSynthesis ? "4" : "3"}. 参数设置
               </h2>
-              <div className="grid grid-cols-2 gap-3">
-                <label className={`text-xs text-slate-500 ${cfg.rangeMode === "custom" ? "col-span-2" : ""}`}>
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <label className={`block min-w-0 text-xs text-slate-500 ${cfg.rangeMode === "custom" ? "lg:col-span-2" : ""}`}>
                   回测区间
                   <select
                     value={cfg.rangeMode}
@@ -878,19 +1126,19 @@ export function FactorDetectPage() {
                         patchConfig({ rangeMode: mode });
                       }
                     }}
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
                   >
                     <option value="period">预设周期</option>
                     <option value="custom">自定义区间</option>
                   </select>
                 </label>
                 {cfg.rangeMode === "period" ? (
-                  <label className="text-xs text-slate-500">
+                  <label className="block min-w-0 text-xs text-slate-500">
                     预设时长
                     <select
                       value={cfg.backtestPeriod}
                       onChange={(e) => patchConfig({ backtestPeriod: e.target.value })}
-                      className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
                     >
                       {DETECT_PERIOD_OPTIONS.map((p) => (
                         <option key={p.code} value={p.code}>
@@ -901,7 +1149,7 @@ export function FactorDetectPage() {
                   </label>
                 ) : (
                   <>
-                    <label className="text-xs text-slate-500">
+                    <label className="block min-w-0 text-xs text-slate-500">
                       开始日期
                       <input
                         type="date"
@@ -911,10 +1159,10 @@ export function FactorDetectPage() {
                           const startDate = e.target.value;
                           patchConfig(clampDateRange(startDate, cfg.endDate, "start"));
                         }}
-                        className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
                       />
                     </label>
-                    <label className="text-xs text-slate-500">
+                    <label className="block min-w-0 text-xs text-slate-500">
                       结束日期
                       <input
                         type="date"
@@ -924,17 +1172,17 @@ export function FactorDetectPage() {
                           const endDate = e.target.value;
                           patchConfig(clampDateRange(cfg.startDate, endDate, "end"));
                         }}
-                        className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
                       />
                     </label>
                   </>
                 )}
-                <label className="text-xs text-slate-500">
+                <label className="block min-w-0 text-xs text-slate-500">
                   股票池
                   <select
                     value={cfg.universe}
                     onChange={(e) => patchConfig({ universe: e.target.value })}
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
                   >
                     {DETECT_UNIVERSE_OPTIONS.map((u) => (
                       <option key={u.code} value={u.code}>
@@ -943,12 +1191,12 @@ export function FactorDetectPage() {
                     ))}
                   </select>
                 </label>
-                <label className="text-xs text-slate-500">
+                <label className="block min-w-0 text-xs text-slate-500">
                   基准指数
                   <select
                     value={cfg.benchmark}
                     onChange={(e) => patchConfig({ benchmark: e.target.value })}
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
                   >
                     {DETECT_BENCHMARK_OPTIONS.map((b) => (
                       <option key={b.code} value={b.code}>
@@ -957,12 +1205,12 @@ export function FactorDetectPage() {
                     ))}
                   </select>
                 </label>
-                <label className="text-xs text-slate-500">
+                <label className="block min-w-0 text-xs text-slate-500">
                   因子分组
                   <select
                     value={Math.min(5, Math.max(1, cfg.groups))}
                     onChange={(e) => patchConfig({ groups: Number(e.target.value) })}
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
                   >
                     {[1, 2, 3, 4, 5].map((n) => (
                       <option key={n} value={n}>
@@ -971,18 +1219,18 @@ export function FactorDetectPage() {
                     ))}
                   </select>
                 </label>
-                <label className="text-xs text-slate-500">
+                <label className="block min-w-0 text-xs text-slate-500">
                   调仓周期（交易日）
                   <input
                     type="number"
                     min={5}
                     max={60}
                     value={cfg.rebalanceDays}
-                    onChange={(e) => patchConfig({ rebalanceDays: Number(e.target.value) || 20 })}
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                    onChange={(e) => patchConfig({ rebalanceDays: Number(e.target.value) || 1 })}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
                   />
                 </label>
-                <label className="text-xs text-slate-500">
+                <label className="block min-w-0 text-xs text-slate-500">
                   佣金率
                   <input
                     type="number"
@@ -992,10 +1240,10 @@ export function FactorDetectPage() {
                     onChange={(e) =>
                       patchConfig({ commissionRate: Number(e.target.value) || 0 })
                     }
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
                   />
                 </label>
-                <label className="text-xs text-slate-500">
+                <label className="block min-w-0 text-xs text-slate-500">
                   印花税
                   <input
                     type="number"
@@ -1003,10 +1251,10 @@ export function FactorDetectPage() {
                     min={0}
                     value={cfg.stampTax}
                     onChange={(e) => patchConfig({ stampTax: Number(e.target.value) || 0 })}
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
                   />
                 </label>
-                <label className="text-xs text-slate-500">
+                <label className="block min-w-0 text-xs text-slate-500">
                   滑点率
                   <input
                     type="number"
@@ -1016,17 +1264,17 @@ export function FactorDetectPage() {
                     onChange={(e) =>
                       patchConfig({ slippageRate: Number(e.target.value) || 0 })
                     }
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
                   />
                 </label>
-                <label className="col-span-2 text-xs text-slate-500">
+                <label className="block min-w-0 text-xs text-slate-500 lg:col-span-2">
                   分析深度
                   <select
                     value={cfg.analysisLevel || "core"}
                     onChange={(e) =>
                       patchConfig({ analysisLevel: e.target.value as AnalysisLevel })
                     }
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
                   >
                     {DETECT_ANALYSIS_LEVEL_OPTIONS.map((o) => (
                       <option key={o.code} value={o.code}>
@@ -1058,61 +1306,46 @@ export function FactorDetectPage() {
           </div>
         </aside>
 
-        <div className="flex min-h-0 flex-col gap-3">
+        <div
+          className={`min-h-0 flex-col gap-3 ${
+            mobilePane === "code" ? "flex" : "hidden lg:flex"
+          }`}
+        >
           <section
-            className={`flex min-h-0 flex-[4] flex-col overflow-hidden rounded-xl border bg-white shadow-sm ${
-              isDraftMode ? "border-amber-200" : "border-slate-200"
+            className={`flex min-h-[50vh] flex-col overflow-hidden rounded-xl border bg-white shadow-sm lg:min-h-0 lg:flex-[4] ${
+              isDraftOnlyMode ? "border-amber-200" : "border-slate-200"
             }`}
           >
             <div
               className={`flex items-center justify-between border-b px-4 py-2 ${
-                isDraftMode
+                isDraftOnlyMode
                   ? "border-amber-100 bg-amber-50/60"
                   : "border-slate-100"
               }`}
             >
               <span
                 className={`text-xs font-semibold ${
-                  isDraftMode ? "text-amber-900" : "text-slate-600"
+                  isDraftOnlyMode ? "text-amber-900" : "text-slate-600"
                 }`}
               >
-                {isDraftMode && draftFactor
+                {isDraftOnlyMode && draftFactor
                   ? `因子代码 · ${draftFactor.name}`
-                  : cfg.weightMode === "custom" || cfg.factorCodes.length > 1
-                    ? "因子代码（实现 + 组合）"
-                    : "因子代码"}
+                  : hasDraft
+                    ? "组合脚本（含临时因子）"
+                    : "组合脚本"}
               </span>
-              {cfg.weightMode === "custom" ? (
-                <span className="text-[11px] text-slate-400">
-                  上方因子实现自动带入 · 请改组合函数
-                </span>
-              ) : !codeEditable ? (
-                <span className="text-[11px] text-slate-400">自动生成 · 只读</span>
-              ) : null}
             </div>
             <div className="min-h-0 flex-1 p-2">
               <FactorCodeEditor
-                value={unifiedCode}
-                onChange={(v) => {
-                  if (isDraftMode && draftFactor) {
-                    patchConfig({ draftFactor: { ...draftFactor, body: v } });
-                  } else if (cfg.weightMode === "custom") {
-                    patchConfig({
-                      customCombine: extractCustomCombineFromEditor(
-                        v,
-                        cfg.factorCodes,
-                        methodBodies,
-                      ),
-                    });
-                  }
-                }}
-                readOnly={!codeEditable}
+                value={scriptText}
+                onChange={onScriptChange}
+                readOnly={false}
                 height="100%"
               />
             </div>
           </section>
 
-          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <section className="flex min-h-[10rem] max-h-56 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:max-h-none lg:min-h-0 lg:flex-1">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2">
               <span className="text-xs font-semibold text-slate-600">运行日志</span>
               {runError && (

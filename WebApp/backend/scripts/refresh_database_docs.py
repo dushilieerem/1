@@ -74,6 +74,22 @@ SAMPLE_COLS: dict[str, tuple[str, ...]] = {
     "notifications": ("id", "user_id", "actor_id", "type", "post_id", "read_at", "created_at"),
     "community_reports": ("id", "reporter_id", "target_type", "post_id", "reason", "status", "created_at"),
     "ai_usage": ("id", "user_id", "skill", "tokens_in", "tokens_out", "created_at"),
+    "re_factor_catalog_snapshot": (
+        "scope",
+        "content_hash",
+        "factor_count",
+        "library_count",
+        "fetched_at",
+        "updated_at",
+    ),
+    "re_factor_catalog_sync_log": (
+        "id",
+        "scope",
+        "changed",
+        "factor_count",
+        "message",
+        "created_at",
+    ),
     "factor_dashboard_metrics": (
         "factor_name",
         "universe",
@@ -120,7 +136,13 @@ PURPOSES: dict[str, str] = {
     "detect_runs": "因子检测一次运行结果摘要 / 状态。",
     "strategy_projects": "策略研究项目配置与归属。",
     "strategy_runs": "策略回测一次运行结果摘要 / 状态。",
-    "news_items": "资讯聚合条目（多源快讯/市场/公告等；真源 ingest upsert）。",
+    "news_items": "资讯聚合条目（快讯/市场/公告/研报/政策/海外；真源 ingest upsert，含定时调度）。",
+    "user_watchlists": "用户自选股组合（文件夹）；按 user 隔离，前端 `/data/watchlist`。",
+    "user_watchlist_symbols": "自选组合内标的（symbol + 名称快照）；归属某 watchlist。",
+    "kh_chat_messages": "KnowledgeHub 会话消息（role + content）；挂在 kh_conversations 下。",
+    "kh_conversations": "KnowledgeHub 用户会话线程（关联 chat / collection）。",
+    "re_factor_catalog_snapshot": "ResearchEngine 官方因子目录快照（库列表+因子清单 JSON）；页面读此表，不每次打 RE。",
+    "re_factor_catalog_sync_log": "官方因子目录同步日志（定时/手动：有无变更、hash、条数）。",
     "factor_dashboard_metrics": "因子面板指标缓存（因子×池×周期×过滤规则）；RE 算完写入，非行情库。",
     "factor_verify_status": "因子跨平台对比校验状态（按因子名：pending/passed/failed），与指标行解耦。",
 }
@@ -362,6 +384,25 @@ FIELD_HINTS: dict[str, dict[str, str]] = {
         "tokens_out": "输出 token",
         "created_at": "记账时间（按日计配额）",
     },
+    "re_factor_catalog_snapshot": {
+        "scope": "`primary`（默认十库）或 `all`",
+        "content_hash": "库+因子清单 SHA256，用于判断 RE 是否有更新",
+        "payload": "完整目录 JSON（libraries + factors）",
+        "fetched_at": "最近一次从 RE 拉到内容的时间",
+        "fetched_at_unix": "同上，unix 秒",
+        "factor_count": "因子条数",
+        "library_count": "库个数",
+        "updated_at": "最近检查/写入时间（无变更也会刷新）",
+    },
+    "re_factor_catalog_sync_log": {
+        "id": "自增主键",
+        "scope": "同步范围",
+        "changed": "本次是否写了新快照",
+        "content_hash": "当时 hash",
+        "factor_count": "因子条数",
+        "message": "人读摘要",
+        "created_at": "日志时间",
+    },
     "detect_projects": {
         "id": "项目 UUID/文本主键（与 user_id 复合）",
         "user_id": "所有者",
@@ -414,14 +455,14 @@ FIELD_HINTS: dict[str, dict[str, str]] = {
         "id": "主键",
         "title": "标题",
         "summary": "摘要",
-        "body": "正文（电报多为全文；东财可抓 HTML；巨潮多为 PDF 说明）",
+        "body": "正文（电报多为全文；东财市场/政策可抓 HTML；研报为投资要点+#ctx-content，附 PDF 链；巨潮多为 PDF 说明）",
         "published_at": "发布时间（巨潮常为披露日 00:00）",
-        "source": "`cls` / `eastmoney` / `cninfo` / `10jqka` / `wallstreetcn` / `bloomberg`",
+        "source": "`cls` / `eastmoney` / `cninfo` / `10jqka` / `wallstreetcn` / `bloomberg`（研报·政策调度键 em_research/em_policy，入库仍记 eastmoney）",
         "category": "`flash` / `market` / `announce` / `research` / `policy` / `global`",
-        "url": "源站或 PDF 链接",
+        "url": "源站、研报详情或 PDF 链接",
         "symbols": "关联代码 JSONB 数组",
-        "themes": "题材标签 JSONB 数组",
-        "industries": "行业标签 JSONB 数组",
+        "themes": "题材标签 JSONB 数组（字典 + 源站）",
+        "industries": "行业标签 JSONB 数组（字典命中）",
         "raw_hash": "去重键（同源同条唯一）",
         "is_flash": "是否进电报流",
         "is_featured": "是否头条卡",
@@ -606,7 +647,8 @@ def render(pg: dict[str, Any], sq: dict[str, Any]) -> str:
     )
     a(
         "> **边界：** SVQuant **不存行情 bars**；"
-        "因子面板指标在本机 SQLite；账号 / 社区 / 检测 / 策略 / **KnowledgeHub（`kh_*`）** 在 PostgreSQL。"
+        "因子面板指标在本机 SQLite；账号 / 社区 / 检测 / 策略 / **官方因子目录缓存** "
+        "（`re_factor_catalog_*`）/ **KnowledgeHub（`kh_*`）** 在 PostgreSQL。"
         "旧 `kb_*` 已删除，勿再建。"
     )
     a("")
@@ -776,9 +818,12 @@ def render(pg: dict[str, Any], sq: dict[str, Any]) -> str:
     a("| 日期 | 说明 |")
     a("|------|------|")
     a(
-        f"| {now[:10]} | 刷新：补全用户因子/策略库 4 表 + `user_library_strategies` "
-        f"入库快照列；`posts.platform_ref`；Postgres **{len(pg)}** 表 + SQLite "
-        f"**{len(sq)}** 表；注明 AI 生成历史暂未落库 |"
+        f"| {now[:10]} | 刷新行数/样例；`news_items` 说明补研报·政策（em_research/em_policy→source=eastmoney）；"
+        f"Postgres **{len(pg)}** 表 + SQLite **{len(sq)}** 表 |"
+    )
+    a(
+        "| 2026-08-05 | 刷新：补全用户因子/策略库 4 表 + `user_library_strategies` "
+        "入库快照列；`posts.platform_ref`；注明 AI 生成历史暂未落库 |"
     )
     a("| 2026-07-30 | 策略库入库快照列：`source_run_id` / `archive_*`；策略说明 `description` |")
     a("| 2026-07-28 | 初版：Postgres + 面板 SQLite；含 `factor_verify_status` / `post_votes` |")

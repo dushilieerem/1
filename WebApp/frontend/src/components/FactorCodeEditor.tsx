@@ -95,8 +95,10 @@ const lightTheme = EditorView.theme({
 const darkTheme = EditorView.theme(
   {
     "&": {
-      fontSize: "13px",
+      fontSize: "12px",
       height: "100%",
+      width: "100%",
+      maxWidth: "100%",
       backgroundColor: "#0f172a !important",
       borderRadius: "0",
       border: "none",
@@ -110,24 +112,26 @@ const darkTheme = EditorView.theme(
       fontFamily: "var(--font-mono), ui-monospace, monospace",
       lineHeight: "1.6",
       backgroundColor: "#0f172a !important",
-      overflow: "auto !important",
+      overflowX: "auto !important",
+      overflowY: "auto !important",
     },
     ".cm-content": {
-      padding: "10px 0",
+      padding: "10px 8px 10px 0",
       caretColor: "#f8fafc",
       color: "#e2e8f0",
       minHeight: "100%",
+      maxWidth: "100%",
     },
     ".cm-gutters": {
       backgroundColor: "#020617 !important",
       color: "#64748b",
       border: "none",
       borderRight: "1px solid #1e293b",
-      minWidth: "2.5rem",
+      minWidth: "2rem",
     },
     ".cm-lineNumbers .cm-gutterElement": {
-      padding: "0 8px 0 10px",
-      minWidth: "2rem",
+      padding: "0 6px 0 8px",
+      minWidth: "1.5rem",
     },
     ".cm-activeLineGutter": {
       backgroundColor: "#1e293b",
@@ -171,7 +175,7 @@ export function FactorCodeEditor({
   const dark = variant === "dark";
   return (
     <div
-      className={`min-h-0 ${
+      className={`min-h-0 min-w-0 w-full max-w-full ${
         dark
           ? "overflow-hidden rounded-xl border border-slate-800 bg-slate-950 shadow-inner"
           : "h-full overflow-hidden rounded-lg"
@@ -191,11 +195,11 @@ export function FactorCodeEditor({
           <span className="text-[10px] text-slate-600">高亮 · 行号</span>
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="min-h-0 min-w-0 w-full flex-1 overflow-hidden">
         <CodeMirror
           value={value}
           height={height === "100%" ? "100%" : height}
-          style={{ height: "100%" }}
+          style={{ height: "100%", width: "100%", maxWidth: "100%" }}
           theme={dark ? "dark" : "light"}
           editable={!readOnly}
           extensions={[
@@ -204,7 +208,9 @@ export function FactorCodeEditor({
             syntaxHighlighting(dark ? darkHighlight : lightHighlight),
             dark ? darkTheme : lightTheme,
             EditorView.lineWrapping,
-            cmPlaceholder("def my_factor(self):\n    return self.close.pct_change(20)"),
+            cmPlaceholder(
+              "def my_factor(self):\n    return self.close.pct_change(20)",
+            ),
             ...(readOnly ? [EditorView.editable.of(false)] : []),
           ]}
           basicSetup={{

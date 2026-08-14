@@ -22,6 +22,14 @@ _KH_BACKEND = ROOT.parent / "KnowledgeHub" / "backend"
 if _KH_BACKEND.is_dir() and str(_KH_BACKEND) not in sys.path:
     sys.path.insert(0, str(_KH_BACKEND))
 
+# Clash 等系统代理会把 192.168.x 拐成 502；进程内加入 NO_PROXY
+try:
+    from services.lan_http import ensure_lan_no_proxy
+
+    ensure_lan_no_proxy()
+except Exception:
+    pass
+
 
 def _parse_body(handler: BaseHTTPRequestHandler) -> dict:
     length = int(handler.headers.get("Content-Length", 0))
@@ -86,6 +94,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
+        if path == "/api/ai/chat/models":
+            from services.ark_chat import list_ark_models
+
+            self._send_json(list_ark_models())
+            return
+        if path == "/api/ai/speech/status":
+            from services.speech_transcribe import speech_ready
+
+            self._send_json(speech_ready())
+            return
         if path == "/api/health":
             self._send_json(
                 {
@@ -108,6 +126,41 @@ class Handler(BaseHTTPRequestHandler):
                 owner_id = None
             raw = filtered_index_yaml(owner_id).encode("utf-8")
             self._send_bytes(raw, "text/yaml; charset=utf-8")
+            return
+        if path == "/api/factor/re-catalog":
+            # 勿在此局部 import parse_qs：会让整个 do_GET 把 parse_qs 当成局部变量，
+            # 其它分支未执行到 import 时直接 UnboundLocalError（检测/策略列表全挂）。
+            from services.re_factor_catalog import fetch_re_catalog
+
+            qs = parse_qs(urlparse(self.path).query)
+            force = (qs.get("fresh") or ["0"])[0] in ("1", "true", "yes")
+            include_all = (qs.get("all") or ["0"])[0] in ("1", "true", "yes")
+            try:
+                data = fetch_re_catalog(force=force, include_all=include_all)
+                self._send_json(data)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"ok": False, "error": str(exc)}, 502)
+            return
+        if path.startswith("/api/market-data/daily/"):
+            from services.market_data_bff import fetch_market_daily
+
+            code = unquote(path[len("/api/market-data/daily/") :]).strip("/")
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                data = fetch_market_daily(
+                    code,
+                    start=(qs.get("start") or [None])[0],
+                    end=(qs.get("end") or [None])[0],
+                    bypass_cache=(qs.get("fresh") or ["0"])[0]
+                    in ("1", "true", "yes"),
+                )
+                self._send_json(data)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 502)
             return
         if path == "/api/factor/libraries":
             from services.auth_store import user_from_authorization
@@ -1054,6 +1107,43 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             self._send_json({"error": "invalid JSON"}, 400)
             return
+        if path == "/api/factor/re-catalog/sync":
+            # 管理员手动同步内置因子目录（等同夜间 --all；始终全库，避免再回到 primary≈738）
+            from collections import Counter
+
+            from services.auth_store import user_from_authorization
+            from services.re_factor_catalog import clear_re_catalog_cache, sync_from_re
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                if user.get("role") != "admin":
+                    self._send_json({"error": "仅管理员可同步内置因子库"}, 403)
+                    return
+                clear_re_catalog_cache()
+                data = sync_from_re(include_all=True)
+                factors = data.get("factors") or []
+                by_lib = Counter(str(f.get("library") or "") for f in factors)
+                data["library_factor_counts"] = dict(sorted(by_lib.items()))
+                data["ok"] = True
+                # 无因子视为失败，避免静默写空目录
+                if int(data.get("factor_count") or 0) <= 0:
+                    self._send_json(
+                        {
+                            "ok": False,
+                            "error": "同步结果为空，未写入（请检查 RE 是否可达）",
+                            "message": data.get("message"),
+                        },
+                        502,
+                    )
+                    return
+                self._send_json(data)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"ok": False, "error": str(exc)}, 502)
+            return
         if path == "/api/detect/projects":
             from services.auth_store import user_from_authorization
             from services.detect_store import create_project, upsert_project
@@ -1762,6 +1852,139 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": msg}, 403 if "配额" in msg else 401)
             except (ValueError, LlmError) as exc:
                 self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/ai/chat":
+            from services.ark_chat import ArkChatError, chat as ark_chat, iter_chat_stream
+            from services.auth_store import user_from_authorization
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                messages = body.get("messages")
+                if not isinstance(messages, list):
+                    self._send_json({"error": "messages 须为数组"}, 400)
+                    return
+                model = str(body.get("model") or "").strip() or None
+                try:
+                    temperature = float(body.get("temperature", 0.7))
+                except (TypeError, ValueError):
+                    temperature = 0.7
+                want_stream = bool(body.get("stream"))
+
+                if want_stream:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                    self.send_header("Cache-Control", "no-cache, no-store")
+                    self.send_header("Connection", "keep-alive")
+                    self.send_header("X-Accel-Buffering", "no")
+                    self._cors()
+                    self.end_headers()
+                    try:
+                        # 立刻推一条 start，避免等上游首 token 时前端长时间空白
+                        self.wfile.write(
+                            b'data: {"status":"start"}\n\n'
+                        )
+                        self.wfile.flush()
+                        for piece in iter_chat_stream(
+                            messages=messages,
+                            model=model,
+                            temperature=temperature,
+                        ):
+                            payload = json.dumps(
+                                {"delta": piece}, ensure_ascii=False
+                            ).encode("utf-8")
+                            self.wfile.write(b"data: " + payload + b"\n\n")
+                            self.wfile.flush()
+                        self.wfile.write(b"data: [DONE]\n\n")
+                        self.wfile.flush()
+                    except ArkChatError as exc:
+                        err = json.dumps(
+                            {"error": str(exc)}, ensure_ascii=False
+                        ).encode("utf-8")
+                        try:
+                            self.wfile.write(b"data: " + err + b"\n\n")
+                            self.wfile.write(b"data: [DONE]\n\n")
+                            self.wfile.flush()
+                        except Exception:
+                            pass
+                    except Exception as exc:
+                        traceback.print_exc()
+                        err = json.dumps(
+                            {"error": str(exc)}, ensure_ascii=False
+                        ).encode("utf-8")
+                        try:
+                            self.wfile.write(b"data: " + err + b"\n\n")
+                            self.wfile.write(b"data: [DONE]\n\n")
+                            self.wfile.flush()
+                        except Exception:
+                            pass
+                    return
+
+                self._send_json(
+                    ark_chat(
+                        messages=messages,
+                        model=model,
+                        temperature=temperature,
+                    )
+                )
+            except ArkChatError as exc:
+                msg = str(exc)
+                code = 503 if "未配置" in msg else 502
+                self._send_json({"error": msg}, code)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/ai/speech/transcribe":
+            import base64
+
+            from services.auth_store import user_from_authorization
+            from services.speech_transcribe import SpeechError, transcribe_bytes
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                b64 = str(body.get("audio_base64") or "").strip()
+                if not b64:
+                    self._send_json({"error": "缺少 audio_base64"}, 400)
+                    return
+                if "," in b64 and b64.lower().startswith("data:"):
+                    b64 = b64.split(",", 1)[1]
+                try:
+                    audio = base64.b64decode(b64, validate=False)
+                except Exception:
+                    self._send_json({"error": "audio_base64 无效"}, 400)
+                    return
+                mime = str(body.get("mime") or "audio/webm").strip() or "audio/webm"
+                ext = "webm"
+                if "ogg" in mime:
+                    ext = "ogg"
+                elif "mp4" in mime or "m4a" in mime or "aac" in mime:
+                    ext = "m4a"
+                elif "mpeg" in mime or "mp3" in mime:
+                    ext = "mp3"
+                elif "wav" in mime:
+                    ext = "wav"
+                elif "caf" in mime:
+                    ext = "caf"
+                self._send_json(
+                    transcribe_bytes(
+                        audio,
+                        filename=f"speech.{ext}",
+                        content_type=mime,
+                    )
+                )
+            except SpeechError as exc:
+                msg = str(exc)
+                code = 503 if "未配置" in msg else 400
+                self._send_json({"error": msg}, code)
             except Exception as exc:
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
@@ -2518,6 +2741,13 @@ def main() -> None:
         mig = migrate_legacy_custom_to_admin()
         ensure_detect_schema()
         ensure_strategy_schema()
+        try:
+            from services.re_factor_catalog import ensure_re_factor_catalog_schema
+
+            ensure_re_factor_catalog_schema()
+            print("  re_factor_catalog_snapshot 就绪")
+        except Exception as exc:
+            print(f"  re_factor_catalog schema 跳过: {exc}")
         moved = reassign_misowned_named_projects()
         print("  auth  → postgres users 就绪")
         print("  agent → ai_usage 就绪")
@@ -2551,6 +2781,13 @@ def main() -> None:
             print(f"  dashboard job 仍为 running（{job.get('done')}/{job.get('total')}），可能是脚本在跑")
     except Exception:
         pass
+    try:
+        from services.re_factor_catalog import warm_re_catalog_async
+
+        warm_re_catalog_async()
+        print("  re-catalog 后台预热已启动")
+    except Exception as exc:
+        print(f"  re-catalog 预热跳过: {exc}")
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print("=" * 48)
     print(f"SVQuant API  http://{HOST}:{PORT}")
@@ -2645,6 +2882,10 @@ def main() -> None:
     print("  GET  /api/agent/usage/me")
     print("  GET  /api/agent/usage")
     print("  POST /api/agent/usage/quota")
+    print("  GET  /api/ai/chat/models")
+    print("  POST /api/ai/chat")
+    print("  GET  /api/ai/speech/status")
+    print("  POST /api/ai/speech/transcribe")
     print("=" * 48)
     server.serve_forever()
 

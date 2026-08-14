@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   ArrowUpRight,
   Building2,
@@ -132,11 +132,13 @@ function catLabel(id: string) {
  * 资讯 Hub：列表来自 GET /api/news（Postgres news_items）。
  */
 export function NewsPage() {
+  const [searchParams] = useSearchParams();
+  const qFromUrl = (searchParams.get("q") || "").trim();
   const saved = loadNewsUi();
   const [cat, setCat] = useState(saved.cat || "all");
   const [source, setSource] = useState(saved.source || "all");
-  const [q, setQ] = useState(saved.q || "");
-  const [qDebounced, setQDebounced] = useState((saved.q || "").trim());
+  const [q, setQ] = useState(qFromUrl || saved.q || "");
+  const [qDebounced, setQDebounced] = useState((qFromUrl || saved.q || "").trim());
   const [themes, setThemes] = useState<string[]>(() => asTagList(saved.themes));
   const [symbols, setSymbols] = useState<string[]>(() => asTagList(saved.symbols));
   const [industries, setIndustries] = useState<string[]>(() =>
@@ -172,6 +174,14 @@ export function NewsPage() {
       cancelled = true;
     };
   }, []);
+
+  // 全局搜索「在资讯查看全部」带入 ?q=
+  useEffect(() => {
+    if (!qFromUrl) return;
+    setQ(qFromUrl);
+    setQDebounced(qFromUrl);
+    setPage(1);
+  }, [qFromUrl]);
 
   useEffect(() => {
     const t = window.setTimeout(() => setQDebounced(q.trim()), 280);
@@ -329,7 +339,7 @@ export function NewsPage() {
       />
 
       <div className="relative border-b border-slate-200/80 bg-slate-950 text-white">
-        <div className="mx-auto flex max-w-[1440px] items-center gap-4 overflow-x-auto px-6 py-2.5 text-[12px]">
+        <div className="mx-auto flex max-w-[1440px] items-center gap-4 overflow-x-auto px-4 py-2.5 text-[12px] sm:px-6 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <span className="shrink-0 text-[10px] font-medium tracking-wide text-slate-500">
             指数 · 演示
           </span>
@@ -345,26 +355,15 @@ export function NewsPage() {
         </div>
       </div>
 
-      <div className="relative mx-auto max-w-[1560px] px-6 pb-12 pt-6">
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-rose-200/80 bg-white/80 px-3 py-1 text-[11px] font-semibold tracking-wide text-rose-700 shadow-sm backdrop-blur">
-              <Newspaper className="h-3.5 w-3.5" />
-              NEWS HUB · 六源聚合
-            </div>
-            <h1 className="font-news text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-              资讯
-            </h1>
+      <div className="relative mx-auto max-w-[1560px] px-4 pb-10 pt-5 sm:px-6 sm:pb-12 sm:pt-6">
+        <div className="mb-3 sm:mb-4">
+          <div className="mb-1 inline-flex items-center gap-2 rounded-full border border-rose-200/80 bg-white/80 px-3 py-1 text-[11px] font-semibold tracking-wide text-rose-700 shadow-sm backdrop-blur">
+            <Newspaper className="h-3.5 w-3.5" />
+            NEWS HUB
           </div>
-          <div className="flex w-full max-w-md items-center gap-2 rounded-2xl border border-slate-200/90 bg-white px-4 py-2.5 shadow-sm sm:w-auto">
-            <Search className="h-4 w-4 shrink-0 text-slate-400" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="搜标题、代码、题材、摘要…"
-              className="w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-slate-400 sm:w-64"
-            />
-          </div>
+          <h1 className="font-news text-2xl font-semibold tracking-tight text-slate-900 lg:text-3xl xl:text-4xl">
+            资讯
+          </h1>
         </div>
 
         {hasTagFilter ? (
@@ -411,7 +410,7 @@ export function NewsPage() {
         ) : null}
 
         {featured.length > 0 ? (
-          <div className="mb-6 grid gap-4 lg:grid-cols-2">
+          <div className="mb-3 grid gap-3 lg:mb-4 lg:grid-cols-2 lg:gap-4">
             {featured.map((it, i) => (
               <Link
                 key={it.id}
@@ -448,8 +447,18 @@ export function NewsPage() {
           </div>
         ) : null}
 
-        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
+        <div className="mb-3 flex w-full items-center gap-2 rounded-2xl border border-slate-200/90 bg-white px-3.5 py-2 shadow-sm sm:mb-4 sm:max-w-md sm:px-4 sm:py-2.5">
+          <Search className="h-4 w-4 shrink-0 text-slate-400" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="搜标题、代码、题材、摘要…"
+            className="w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
+          />
+        </div>
+
+        <div className="mb-3 flex flex-col gap-2 sm:mb-4 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+          <div className="inline-flex max-w-full gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-sm [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:overflow-visible">
             {(
               [
                 { id: "feed", label: "要闻流", icon: Sparkles },
@@ -461,7 +470,7 @@ export function NewsPage() {
                 key={m.id}
                 type="button"
                 onClick={() => setMode(m.id)}
-                className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium transition ${
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium transition sm:px-3.5 ${
                   mode === m.id
                     ? "bg-slate-900 text-white shadow"
                     : "text-slate-600 hover:bg-slate-50"
@@ -472,7 +481,7 @@ export function NewsPage() {
               </button>
             ))}
           </div>
-          <div className="flex gap-1 overflow-x-auto pb-1">
+          <div className="flex gap-1 overflow-x-auto pb-1 lg:pb-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {(mode === "announce"
               ? NEWS_CATEGORIES.filter((c) => c.id === "all" || c.id === "announce")
               : mode === "flash"
@@ -501,8 +510,38 @@ export function NewsPage() {
           </div>
         </div>
 
+        {/* 窄屏：来源横滑（桌面仍用左侧栏） */}
+        <div className="mb-3 flex gap-1.5 overflow-x-auto pb-0.5 lg:hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <button
+            type="button"
+            onClick={() => setSource("all")}
+            className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${
+              source === "all"
+                ? "bg-rose-600 text-white"
+                : "bg-white text-slate-600 ring-1 ring-slate-200"
+            }`}
+          >
+            全部来源
+          </button>
+          {NEWS_SOURCES.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => setSource(s.id)}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                source === s.id
+                  ? "bg-rose-600 text-white"
+                  : "bg-white text-slate-600 ring-1 ring-slate-200"
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${SOURCE_DOT[s.id]}`} />
+              {s.label}
+            </button>
+          ))}
+        </div>
+
         <div className="grid items-start gap-6 lg:grid-cols-[240px_minmax(0,1fr)_300px]">
-          <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+          <aside className="hidden space-y-4 lg:sticky lg:top-24 lg:block lg:self-start">
             <div className="rounded-3xl border border-slate-200/90 bg-white/90 p-4 shadow-sm backdrop-blur">
               <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Sources
@@ -568,8 +607,8 @@ export function NewsPage() {
             </div>
 
             {mode === "announce" ? (
-              <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-                <table className="w-full text-left text-sm">
+              <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm">
+                <table className="w-full min-w-[36rem] text-left text-sm">
                   <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-4 py-3 font-semibold">日期</th>
@@ -785,7 +824,7 @@ export function NewsPage() {
             ) : null}
           </main>
 
-          <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+          <aside className="hidden space-y-4 lg:sticky lg:top-24 lg:block lg:self-start">
             <div className="rounded-3xl border border-slate-200/90 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-900">
                 <Tag className="h-4 w-4 text-rose-600" />

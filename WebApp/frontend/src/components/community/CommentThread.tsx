@@ -406,7 +406,7 @@ export function CommentThread({
     <div>
       <ul className="divide-y divide-slate-100">
         {roots.length === 0 && (
-          <li className="px-5 py-10 text-center text-sm text-slate-400">
+          <li className="px-3 py-10 text-center text-sm text-slate-400 lg:px-5">
             还没有评论，来抢沙发
           </li>
         )}
@@ -416,10 +416,10 @@ export function CommentThread({
           const shown = open ? replies : replies.slice(0, PREVIEW_REPLY_N);
           const hiddenN = Math.max(0, replies.length - PREVIEW_REPLY_N);
           return (
-            <li key={root.id} className="px-5 py-4">
+            <li key={root.id} className="px-3 py-3.5 lg:px-5 lg:py-4">
               {renderOne(root)}
               {replies.length > 0 && (
-                <div className="mt-3 ml-10 rounded-xl bg-slate-50 px-3.5 py-2.5">
+                <div className="mt-3 ml-6 rounded-xl bg-slate-50 px-2.5 py-2 lg:ml-10 lg:px-3.5 lg:py-2.5">
                   {shown.map((r) => (
                     <div key={r.id} className="border-b border-slate-100/80 last:border-0">
                       {renderOne(r, true)}
@@ -457,7 +457,7 @@ export function CommentThread({
 
       <form
         onSubmit={onSubmit}
-        className="border-t border-slate-100 bg-gradient-to-b from-slate-50/80 to-white px-5 py-4"
+        className="border-t border-slate-100 bg-gradient-to-b from-slate-50/80 to-white px-3 py-3 lg:px-5 lg:py-4"
       >
         {canInteract ? (
           <>
@@ -486,11 +486,11 @@ export function CommentThread({
             )}
             <textarea
               ref={boxRef}
-              className={fieldClassName("min-h-[88px] resize-y")}
+              className={fieldClassName("min-h-[88px] resize-y lg:min-h-[120px]")}
               placeholder={
                 replyTo
-                  ? "写下回复… 双击头像可 @对方（进「@我的」）；点回复本身进「回复我的」"
-                  : "写下你的看法… 双击头像插入 @用户名（对方「@我的」会收到）或附图"
+                  ? "写下回复…"
+                  : "写下你的看法…"
               }
               value={body}
               onChange={(e) => setBody(e.target.value)}

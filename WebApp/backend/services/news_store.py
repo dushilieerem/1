@@ -20,6 +20,8 @@ VALID_SOURCES = frozenset(
 SOURCE_LABELS = {
     "cls": "财联社",
     "eastmoney": "东方财富",
+    "em_research": "东方财富·研报",
+    "em_policy": "东方财富·政策",
     "cninfo": "巨潮资讯",
     "10jqka": "同花顺",
     "wallstreetcn": "华尔街见闻",

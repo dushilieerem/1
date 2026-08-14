@@ -5,7 +5,7 @@
     - 右轴：回撤（%，正数，越大回撤越深），向上填充（0 在底、贴近 x 轴）
     - x 轴：仅标年份
 - :func:`plot_group_ic`：分组 IC 柱状图
-    - 按因子值分位分组（Q1=最低 … QN=最高），各组组内 IC 均值
+    - 按因子值分位分组（Q1=最高 … QN=最低），各组组内 IC 均值
 """
 
 from __future__ import annotations
@@ -260,7 +260,7 @@ def plot_group_ic(
 ) -> str | None:
     """绘制分组 IC 柱状图：按因子值分位分组，各组组内 IC 均值。
 
-    每个截面按因子值升序分 N 组（Q1=因子值最低 … QN=最高），在组内计算因子值
+    每个截面按因子值降序分 N 组（Q1=因子值最高 … QN=最低），在组内计算因子值
     与远期收益的截面相关（组内 IC），再对日期取均值，柱状展示——定位因子预测力
     集中在哪些因子值区间。
 
@@ -313,8 +313,8 @@ def plot_group_ic(
     # ---- 向量化：一次性算出每日每标的的分组号（无逐日 Python 循环）----
     valid = fv.notna() & fr.notna()
     n_per_day = valid.sum(axis=1).to_numpy()
-    # 仅在有效单元格上按行升序排名（method="first" 避免并列跨组）
-    ranks = fv.where(valid).rank(axis=1, ascending=True, method="first")
+    # 仅在有效单元格上按行降序排名（method="first" 避免并列跨组）
+    ranks = fv.where(valid).rank(axis=1, ascending=False, method="first")
     ranks_np = ranks.to_numpy().astype(float)
     n_np = n_per_day[:, None].astype(float)
     with np.errstate(all="ignore"):
@@ -364,7 +364,7 @@ def plot_group_ic(
     )
     ax.axhline(0, color="gray", linewidth=0.8)
     ax.set_ylabel("组内 IC 均值")
-    ax.set_xlabel("因子值分位组（Q1=最低 … QN=最高）")
+    ax.set_xlabel("因子值分位组（Q1=最高 … QN=最低）")
     ax.set_title(title)
     # 柱顶/柱底标数值
     span = max(abs(v) for v in values) or 1.0
@@ -541,7 +541,7 @@ def plot_layered_equity(
     title: str = "分层回测累计收益",
     benchmark=None,
 ) -> str | None:
-    """绘制分层回测各组累计收益曲线（Q1 最低组 … QN 最高组），可选叠基准。
+    """绘制分层回测各组累计收益曲线（Q1 最高组 … QN 最低组），可选叠基准。
 
     Parameters
     ----------

@@ -263,6 +263,47 @@ class TechnicalLib(FactorLibrary):
         raw_force = self.close.diff() * self.volume
         return raw_force.ewm(span=window, adjust=False).mean()
 
+    def coppock_curve(self, short: int = 11, long: int = 14, smooth: int = 10):
+        """科波克曲线：两段收益率之和的线性加权平滑。"""
+        rate_of_change = self.close.pct_change(short) * 100 + self.close.pct_change(long) * 100
+        weights = np.arange(1, smooth + 1, dtype=float)
+        return rate_of_change.rolling(smooth).apply(
+            lambda values: np.dot(values, weights) / weights.sum(), raw=True
+        )
+
+    def true_strength_index(self, long: int = 25, short: int = 13):
+        """真实强度指数：双重平滑价格动量相对绝对动量的比值。"""
+        momentum = self.close.diff()
+        smooth_momentum = momentum.ewm(span=long, adjust=False).mean().ewm(
+            span=short, adjust=False
+        ).mean()
+        smooth_absolute = momentum.abs().ewm(span=long, adjust=False).mean().ewm(
+            span=short, adjust=False
+        ).mean()
+        return 100 * smooth_momentum / (smooth_absolute + 1e-10)
+
+    def relative_volatility_index(self, window: int = 10, smooth: int = 14):
+        """相对波动指数：按价格方向分配滚动波动率后进行平滑。"""
+        volatility = self.close.rolling(window).std(ddof=0)
+        direction = self.close.diff()
+        upside = volatility.where(direction > 0, 0.0)
+        downside = volatility.where(direction < 0, 0.0)
+        upside = upside.ewm(span=smooth, adjust=False).mean()
+        downside = downside.ewm(span=smooth, adjust=False).mean()
+        return 100 * upside / (upside + downside + 1e-10)
+
+    def vortex_indicator(self, window: int = 14):
+        """涡旋指标差：上行与下行涡旋线之差。"""
+        previous_low = self.low.shift()
+        previous_high = self.high.shift()
+        positive_movement = (self.high - previous_low).abs()
+        negative_movement = (self.low - previous_high).abs()
+        true_range = self._true_range()
+        true_range_sum = true_range.rolling(window).sum()
+        positive = positive_movement.rolling(window).sum() / (true_range_sum + 1e-10)
+        negative = negative_movement.rolling(window).sum() / (true_range_sum + 1e-10)
+        return positive - negative
+
     def _true_range(self):
         previous_close = self.close.shift()
         first = self.high - self.low

@@ -28,6 +28,17 @@ def research_assets_market_data(tmp_path, monkeypatch):
     }.items():
         values.index.name = "datetime"
         values.reset_index().to_parquet(tmp_path / f"{field}.parquet", index=False)
+    display_dir = tmp_path / "display"
+    display_dir.mkdir()
+    display_columns = pd.MultiIndex.from_product(
+        [symbols, ["open", "high", "low", "close"]]
+    )
+    display = pd.DataFrame(index=dates, columns=display_columns, dtype=float)
+    for symbol in symbols:
+        for field in ("open", "high", "low", "close"):
+            display[(symbol, field)] = close[symbol]
+    display.index.name = "date"
+    display.to_parquet(display_dir / "unadjusted_price.parquet")
     pd.DataFrame({"code": symbols, "name": symbols}).to_parquet(
         tmp_path / "stock_info.parquet", index=False
     )

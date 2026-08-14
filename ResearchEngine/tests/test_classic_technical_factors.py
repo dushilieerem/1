@@ -142,6 +142,40 @@ def test_oscillator_and_volume_factor_formulae_match_reference():
     expected_efi = (panel.close.diff() * panel.volume).ewm(span=13, adjust=False).mean()
     pd.testing.assert_frame_equal(loader.factors["elder_force_index"].compute(panel), expected_efi)
 
+    weights = np.arange(1, 11, dtype=float)
+    rate_of_change = panel.close.pct_change(11) * 100 + panel.close.pct_change(14) * 100
+    expected_coppock = rate_of_change.rolling(10).apply(
+        lambda values: np.dot(values, weights) / weights.sum(), raw=True
+    )
+    pd.testing.assert_frame_equal(loader.factors["coppock_curve"].compute(panel), expected_coppock)
+
+    momentum = panel.close.diff()
+    expected_tsi = 100 * momentum.ewm(span=25, adjust=False).mean().ewm(
+        span=13, adjust=False
+    ).mean() / (
+        momentum.abs().ewm(span=25, adjust=False).mean().ewm(span=13, adjust=False).mean()
+        + 1e-10
+    )
+    pd.testing.assert_frame_equal(loader.factors["true_strength_index"].compute(panel), expected_tsi)
+
+    volatility = panel.close.rolling(10).std(ddof=0)
+    direction = panel.close.diff()
+    upside = volatility.where(direction > 0, 0.0).ewm(span=14, adjust=False).mean()
+    downside = volatility.where(direction < 0, 0.0).ewm(span=14, adjust=False).mean()
+    expected_rvi = 100 * upside / (upside + downside + 1e-10)
+    pd.testing.assert_frame_equal(loader.factors["relative_volatility_index"].compute(panel), expected_rvi)
+
+    previous_low = panel.low.shift()
+    previous_high = panel.high.shift()
+    positive_movement = (panel.high - previous_low).abs()
+    negative_movement = (panel.low - previous_high).abs()
+    true_range_sum = true_range.rolling(14).sum()
+    expected_vortex = (
+        positive_movement.rolling(14).sum() / (true_range_sum + 1e-10)
+        - negative_movement.rolling(14).sum() / (true_range_sum + 1e-10)
+    )
+    pd.testing.assert_frame_equal(loader.factors["vortex_indicator"].compute(panel), expected_vortex)
+
 
 def test_directional_and_accumulation_factor_formulae_match_reference():
     loader = FactorLoader()
@@ -189,5 +223,6 @@ def test_classic_technical_factors_are_discoverable():
         "average_directional_index", "accumulation_distribution",
         "ultimate_oscillator", "fisher_transform", "ease_of_movement",
         "relative_vigor_index", "awesome_oscillator", "balance_of_power",
-        "choppiness_index", "elder_force_index",
+        "choppiness_index", "elder_force_index", "coppock_curve",
+        "true_strength_index", "relative_volatility_index", "vortex_indicator",
     }.issubset(loader.factors)

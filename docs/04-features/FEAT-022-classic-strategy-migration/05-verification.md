@@ -21,6 +21,7 @@
 - OBV、蔡金和净营运资产异象策略作为事件策略资产登记；Dual Thrust 作为向量化研究策略资产登记。新增回归测试覆盖四项目录契约、OBV/蔡金核心指标、NOA 公式、Dual Thrust Range 和 NativeEngine 运行。
 - CCI、MFI、TRIX 和 ROC 作为事件策略资产登记；新增回归测试覆盖四项目录契约、CCI/MFI/TRIX/ROC 核心公式、MFI 缺少成交量时的拒绝行为以及 OHLC/OHLCV 日频事件回测。
 - Ultimate Oscillator、Vortex Indicator、Relative Vigor Index 和 Elder Force Index 作为事件策略资产登记；新增回归测试覆盖四项目录契约、核心公式、Elder Force Index 缺少成交量时的拒绝行为以及 OHLC/OHLCV 日频事件回测。
+- CMO、Fisher Transform、Ease of Movement 和 Volume Price Trend 作为事件策略资产登记；新增回归测试覆盖四项目录契约、核心公式、EOM/VPT 缺少成交量时的拒绝行为以及 OHLC/OHLCV 日频事件回测。
 
 ## 限制与遗留项
 
@@ -38,3 +39,4 @@
 - Dual Thrust 的原始 09:45 盘中触发、当日开盘后成交、涨跌停和 T+1 均未由 v1 模拟；v1 仅表示日线收盘触发后下一交易日收益的研究结果。
 - CCI、MFI、TRIX 和 ROC 仅提供日频研究版；不模拟盘中触发、动态历史成分股、ST/停牌/涨跌停之外的策略专属过滤，也不构成实盘执行承诺。
 - Ultimate Oscillator、Vortex Indicator、Relative Vigor Index 和 Elder Force Index 仅提供日频研究版；不模拟盘中触发、动态历史成分股、ST/停牌/涨跌停之外的策略专属过滤，也不构成实盘执行承诺。
+- CMO、Fisher Transform、Ease of Movement 和 Volume Price Trend 仅提供日频研究版；不模拟盘中触发、动态历史成分股、ST/停牌/涨跌停之外的策略专属过滤，也不构成实盘执行承诺。

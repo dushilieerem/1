@@ -37,6 +37,8 @@ from quantcore import (
     WideCSVProvider,
 )
 from quantcore.data._util import filter_by_date, resolve_universe
+from quantcore.backtest.adapter.grouping import raw_qcut_groups
+from quantcore.factor.tool import preprocess_factor_values
 from quantcore.metric.context import MetricContext
 
 from researchengine.config import ConfigManager
@@ -141,7 +143,9 @@ def _industry_equity_analysis(
             industry_returns.setdefault(name, []).append((date, float(values["return"].mean())))
             if len(values) < groups:
                 continue
-            ranks = values["factor"].rank(pct=True, method="average")
+            ranks = values["factor"].rank(
+                pct=True, method="average", ascending=False
+            )
             labels = (ranks.mul(groups).apply(math.ceil).clip(upper=groups)).astype(int)
             group_returns = {
                 f"G{group}": float(values.loc[labels == group, "return"].mean())
@@ -288,7 +292,10 @@ class Experiment:
             print(f"[warn] {meta_key} 绘图失败: {exc}")
 
     # -- 因子评估增强（分层 / 多空 / 基准 / 三因子归因 / 分行业 IC）--
-    def _run_factor_analysis(self, panel, factor_values, close_panel, fwd) -> dict:
+    def _run_factor_analysis(
+        self, panel, factor_values, close_panel, fwd,
+        group_assignments: Optional[pd.DataFrame] = None,
+    ) -> dict:
         """分层回测、多空、市值加权基准、三因子归因、分行业 IC/IR。
 
         数据缺失或失败 graceful skip（与 ``_attach_chart`` 守护一致），不阻断主流程。
@@ -327,8 +334,10 @@ class Experiment:
         # 因子分层 + 多空
         try:
             lr = layered_returns(
-                factor_values, close_panel, n_groups=n_groups, rebalance=rebalance
+                factor_values, close_panel, n_groups=n_groups, rebalance=rebalance,
+                group_assignments=group_assignments,
             )
+            out["layered_returns"] = lr
             out["layered_equity"] = layered_equity(lr)
             ls = long_short_returns(lr)
             out["long_short_returns"] = ls
@@ -379,6 +388,7 @@ class Experiment:
 
     def _run_core_group_analysis(
         self, factor_values: pd.DataFrame, close_panel: pd.DataFrame,
+        group_assignments: Optional[pd.DataFrame] = None,
     ) -> dict:
         """核心回测只计算全市场分组收益，不执行行业与归因诊断。"""
         from researchengine.layered import layered_equity, layered_returns
@@ -387,8 +397,12 @@ class Experiment:
         rebalance = self.config.get("rebalance_days", self.config.get("rebalance", "monthly"))
         returns = layered_returns(
             factor_values, close_panel, n_groups=groups, rebalance=rebalance,
+            group_assignments=group_assignments,
         )
-        return {"layered_equity": layered_equity(returns)}
+        return {
+            "layered_returns": returns,
+            "layered_equity": layered_equity(returns),
+        }
 
     def _load_industry_map(self) -> Optional[pd.Series]:
         """读 ``stock_info.parquet`` -> ``{code: industry}``。无文件返回 None。
@@ -472,6 +486,23 @@ class Experiment:
         factor_values_all = self._factor_engine.compute_panel(
             self.factor.name, factor_panel
         )
+        preprocess_winsorize = int(
+            self.config.get(
+                "factor_preprocess.winsorize",
+                self.config.get("winsorize", 0),
+            )
+        )
+        preprocess_standardize = int(
+            self.config.get(
+                "factor_preprocess.standardize",
+                self.config.get("standardize", 0),
+            )
+        )
+        factor_values_all = preprocess_factor_values(
+            factor_values_all,
+            winsorize=preprocess_winsorize,
+            standardize=preprocess_standardize,
+        )
         timings["factor_compute"] = time.perf_counter() - started_at
         factor_values = filter_by_date(
             factor_values_all, self.start_date, self.end_date
@@ -494,6 +525,15 @@ class Experiment:
         horizon = int(self.config.get("ic_horizon", 1))
         fwd = forward_returns(close_panel, horizon=horizon)
 
+        # API 默认显式指定分组；提前计算一次，供策略和分层分析复用。
+        # 组号仍由公共 qcut 实现生成，保持原有分组口径。
+        group_assignments = None
+        groups = self.config.get("groups")
+        if groups is not None:
+            group_assignments = raw_qcut_groups(
+                factor_values.loc[:, common_symbols], int(groups)
+            )
+
         # ③b 组合净值（适配器：默认 native 与 build_factor_portfolio 逐位等价；
         #    向量化回测统一由 NativeEngine 执行。
         #    成本从 backtest.* 读，默认 0 -> 不改默认结果；与历史 commission/slippage
@@ -505,7 +545,6 @@ class Experiment:
             get_backtest_engine,
         )
 
-        groups = self.config.get("groups")
         if groups is None:
             strategy = FactorQuantileStrategy(
                 factor_values,
@@ -521,6 +560,7 @@ class Experiment:
                 groups=int(groups),
                 rebalance_days=int(self.config.get("rebalance_days", 20)),
                 long_short=bool(self.config.get("long_short", True)),
+                group_assignments=group_assignments,
             )
         bt_config = BacktestConfig(
             engine=self.config.get("backtest.engine", "native"),
@@ -560,6 +600,7 @@ class Experiment:
             metrics=metrics,
             factor_values=factor_values,
             equity_curve=equity,
+            returns=returns,
             positions=positions,
             storage=storage,
             meta={
@@ -572,8 +613,22 @@ class Experiment:
                     "unadjusted" if self._unadjusted_price_engine is not None
                     else "source_default"
                 ),
+                "factor_price_source": (
+                    str(self._unadjusted_price_path)
+                    if self._unadjusted_price_path is not None
+                    else "source_default"
+                ),
                 "factor_price_fields": list(_PRICE_FIELDS),
+                "factor_price_precision": "source_precision_no_rounding",
                 "return_price_adjustment": "hfq",
+                "return_price_source": "data_engine.close",
+                "return_price_precision": "source_precision_no_rounding",
+                "factor_preprocess": {
+                    "winsorize": preprocess_winsorize,
+                    "standardize": preprocess_standardize,
+                    "order": ["winsorize", "standardize"],
+                    "axis": "cross_sectional",
+                },
             },
         )
         print("结果保存完毕")
@@ -584,9 +639,12 @@ class Experiment:
         if analysis_level == "full":
             factor_analysis = self._run_factor_analysis(
                 panel, factor_values, close_panel, fwd,
+                group_assignments=group_assignments,
             )
         elif analysis_level == "core":
-            factor_analysis = self._run_core_group_analysis(factor_values, close_panel)
+            factor_analysis = self._run_core_group_analysis(
+                factor_values, close_panel, group_assignments=group_assignments
+            )
         else:
             factor_analysis = {}
         timings["factor_analysis"] = time.perf_counter() - started_at

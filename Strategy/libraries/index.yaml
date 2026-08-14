@@ -508,3 +508,47 @@ strategies:
       v1:
         file: elder_force_index_a_share_event_v1.py
         entrypoint: ElderForceIndexAShareEventStrategy
+
+  chande_momentum_oscillator_a_share_event:
+    name: 钱德动量振荡器 A 股动量
+    strategy_type: momentum
+    execution_mode: event
+    current_version: v1
+    tags: [chande, cmo, momentum, oscillator, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: chande_momentum_oscillator_a_share_event_v1.py
+        entrypoint: ChandeMomentumOscillatorAShareEventStrategy
+
+  fisher_transform_a_share_event:
+    name: 费舍尔变换 A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [fisher, transform, oscillator, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: fisher_transform_a_share_event_v1.py
+        entrypoint: FisherTransformAShareEventStrategy
+
+  ease_of_movement_a_share_event:
+    name: 简化移动容易度 A 股量价趋势
+    strategy_type: volume_trend
+    execution_mode: event
+    current_version: v1
+    tags: [ease_of_movement, eom, volume, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: ease_of_movement_a_share_event_v1.py
+        entrypoint: EaseOfMovementAShareEventStrategy
+
+  volume_price_trend_a_share_event:
+    name: 量价趋势 VPT A 股策略
+    strategy_type: volume_trend
+    execution_mode: event
+    current_version: v1
+    tags: [vpt, volume, price_trend, momentum, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: volume_price_trend_a_share_event_v1.py
+        entrypoint: VolumePriceTrendAShareEventStrategy

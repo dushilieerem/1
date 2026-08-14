@@ -36,6 +36,7 @@ class ResultManager:
         metrics: Optional[Dict[str, float]] = None,
         factor_values: Optional[pd.Series] = None,
         equity_curve: Optional[pd.Series] = None,
+        returns: Optional[pd.Series] = None,
         positions: Optional[pd.DataFrame] = None,
         storage: "Optional[ResultStorage]" = None,
         meta: Optional[Dict] = None,
@@ -43,6 +44,7 @@ class ResultManager:
         self.metrics: Dict[str, float] = dict(metrics) if metrics else {}
         self.factor_values = factor_values
         self.equity_curve = equity_curve
+        self.returns = returns
         self.positions = positions
         self.storage = storage
         self.meta: Dict = dict(meta) if meta else {}

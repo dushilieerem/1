@@ -1,0 +1,2050 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>SVQuant 因子回测 API pipeline</title>
+<style>:root{color-scheme:light dark;background:light-dark(rgb(255 255 255), rgb(24 24 24))}html,body{margin:0}body{box-sizing:border-box;padding:1rem;background:inherit}iframe{display:block;width:100%;height:calc(100vh - 2rem);margin:0 auto;border:0}</style>
+</head>
+<body>
+<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="SVQuant 因子回测 API pipeline" srcdoc="&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+&lt;meta name=&quot;referrer&quot; content=&quot;no-referrer&quot;&gt;
+&lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27; &#x27;unsafe-eval&#x27; &#x27;wasm-unsafe-eval&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src &#x27;unsafe-inline&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
+&lt;title&gt;SVQuant 因子回测 API pipeline&lt;/title&gt;
+&lt;style&gt;:root {
+  color-scheme: light dark;
+  background-color: var(
+    --background,
+    var(--color-background-primary, light-dark(rgb(255 255 255), rgb(24 24 24)))
+  ) !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: var(
+    --color-background-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --card: color-mix(in oklab, var(--foreground) 5%, var(--background));
+  --card-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --popover: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255), rgb(45 45 45))
+  );
+  --popover-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --primary: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --primary-foreground: var(
+    --color-text-inverse,
+    light-dark(rgb(255 255 255), rgb(13 13 13))
+  );
+  --secondary: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%))
+  );
+  --secondary-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: var(
+    --color-text-secondary,
+    light-dark(rgb(26 28 31 / 49.4%), rgb(255 255 255 / 49.8%))
+  );
+  --accent: var(
+    --color-background-info,
+    light-dark(rgb(229 242 255), rgb(13 39 63))
+  );
+  --accent-foreground: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --destructive: var(
+    --color-text-warning,
+    light-dark(rgb(226 85 7), rgb(255 133 73))
+  );
+  --border: var(
+    --color-border-secondary,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+  --input: var(
+    --color-border-primary,
+    light-dark(
+      rgb(26 28 31 / 11.8%),
+      color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+    )
+  );
+  --ring: var(
+    --color-ring-primary,
+    light-dark(rgb(51 156 255), rgb(131 195 255 / 76%))
+  );
+  --font-size-base: var(--font-text-md-size, 14px);
+  --blue: light-dark(rgb(51 156 255), rgb(51 156 255));
+  --orange: light-dark(rgb(226 85 7), rgb(251 106 34));
+  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
+  --red: light-dark(rgb(224 46 42), rgb(255 103 100));
+  --purple: light-dark(rgb(146 79 247), rgb(173 123 249));
+  --yellow: light-dark(rgb(255 195 0), rgb(255 210 64));
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
+  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
+  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
+  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
+  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans: -apple-system, system-ui, &quot;Segoe UI&quot;, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, &quot;Liberation Mono&quot;,
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 430;
+  --font-weight-medium: 500;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --radius: var(--border-radius-lg, 12.5px);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url(&quot;data:image/svg+xml,%3Csvg xmlns=&#x27;http://www.w3.org/2000/svg&#x27; viewBox=&#x27;0 0 17 17&#x27;%3E%3Cpath d=&#x27;M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z&#x27;/%3E%3C/svg%3E&quot;);
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+}
+
+:root[data-theme=&quot;light&quot;] {
+  color-scheme: light;
+}
+
+:root[data-theme=&quot;dark&quot;] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html &gt; body {
+  /* Preserve MCP aliases for older inline renderers without creating :root cycles. */
+  --color-background-primary: var(
+    --background,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --color-text-primary: var(
+    --foreground,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --color-border-secondary: var(
+    --border,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+
+  margin: 0;
+  padding: 5px;
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: pointer;
+  font-weight: var(--font-weight-medium, 500);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+}
+
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.table-responsive &gt; .table :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
+
+.table thead th {
+  padding-block: 8px;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.table.table-sm :is(th, td) {
+  padding-block: 6px;
+}
+
+.table.table-sm :is(th, td):not(:last-child) {
+  padding-inline-end: 16px;
+}
+
+.table :is(.text-end, [align=&quot;right&quot;]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.table :is(.text-center, [align=&quot;center&quot;]) {
+  text-align: center;
+}
+
+.table .text-nowrap {
+  white-space: nowrap;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  corner-shape: superellipse(1.5);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+#widget &gt; :not(.card) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--popover-foreground);
+  background: var(--popover);
+  box-shadow: none;
+  font-size: var(--font-size-tooltip);
+  line-height: var(--line-height-tooltip);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls &gt; .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls &gt; .form-label &gt; :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+.btn {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--foreground);
+  background-clip: padding-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(in srgb, var(--primary-foreground) 50%, transparent);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type=&quot;file&quot;] {
+  padding: 0;
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control[type=&quot;file&quot;]::file-selector-button {
+  min-height: 26px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+}
+
+.form-control[type=&quot;file&quot;]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type=&quot;color&quot;] {
+  width: 40px;
+  height: 28px;
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+  corner-shape: superellipse(1.5);
+}
+
+textarea.form-control {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 32px 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-select:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-check {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;] {
+  border-color: var(--input);
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background-color: var(--secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type=&quot;checkbox&quot;]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: &quot;&quot;;
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+}
+
+.form-check-input[type=&quot;radio&quot;] {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+}
+
+.form-check-input[type=&quot;radio&quot;]:checked {
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
+    var(--primary);
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+  box-shadow: var(--shadow-sm);
+  content: &quot;&quot;;
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--primary);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  border: 0;
+  accent-color: var(--primary);
+  background: linear-gradient(
+      color-mix(in srgb, var(--foreground) 7%, transparent),
+      color-mix(in srgb, var(--foreground) 7%, transparent)
+    )
+    center / 100% 2px no-repeat;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range::-moz-range-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+    [aria-pressed=&quot;true&quot;],
+    [aria-selected=&quot;true&quot;],
+    .is-selected
+  ) {
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.btn.viz-tile:is([aria-pressed=&quot;true&quot;], [aria-selected=&quot;true&quot;], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget &gt; svg {
+  width: 100%;
+}
+
+/* Model-authored chart rules can otherwise stretch icons after these styles load. */
+svg.lucide {
+  display: block;
+  width: 16px !important;
+  height: 16px !important;
+  flex: none;
+  margin: 0 !important;
+  stroke-width: 1.6;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+
+html&gt;body{padding:0}&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div id=&quot;svquant-pipeline&quot; aria-labelledby=&quot;pipeline-title&quot;&gt;
+  &lt;style&gt;
+    #svquant-pipeline {
+      --background: light-dark(rgb(250 251 252), rgb(20 23 28));
+      --foreground: light-dark(rgb(28 35 42), rgb(235 240 244));
+      --muted-foreground: light-dark(rgb(89 103 115), rgb(164 177 188));
+      --border: light-dark(rgb(211 220 226), rgb(65 77 88));
+      --card: light-dark(rgb(255 255 255), rgb(30 35 42));
+      --card-foreground: light-dark(rgb(28 35 42), rgb(235 240 244));
+      --popover: light-dark(rgb(255 255 255), rgb(30 35 42));
+      --popover-foreground: light-dark(rgb(28 35 42), rgb(235 240 244));
+      --primary: light-dark(rgb(21 93 137), rgb(111 191 241));
+      --primary-foreground: light-dark(rgb(255 255 255), rgb(15 31 42));
+      --accent: light-dark(rgb(231 241 248), rgb(31 57 72));
+      --accent-foreground: light-dark(rgb(21 73 104), rgb(207 232 246));
+      --viz-series-1: light-dark(rgb(22 107 154), rgb(112 195 242));
+      --viz-series-2: light-dark(rgb(36 133 102), rgb(103 205 166));
+      --viz-series-3: light-dark(rgb(189 116 28), rgb(239 180 92));
+      --viz-series-4: light-dark(rgb(137 78 168), rgb(205 144 230));
+      --viz-series-5: light-dark(rgb(187 63 78), rgb(239 130 143));
+      --viz-series-6: light-dark(rgb(84 98 112), rgb(168 182 194));
+      color: var(--foreground);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    #svquant-pipeline * {
+      box-sizing: border-box;
+    }
+
+    #svquant-pipeline h1,
+    #svquant-pipeline h2,
+    #svquant-pipeline h3,
+    #svquant-pipeline p {
+      margin: 0;
+    }
+
+    #svquant-pipeline code {
+      color: var(--accent-foreground);
+      font-family: ui-monospace, SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, monospace;
+      font-size: 0.9em;
+      overflow-wrap: anywhere;
+    }
+
+    #svquant-pipeline .eyebrow {
+      color: var(--muted-foreground);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    #svquant-pipeline .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #svquant-pipeline h1 {
+      font-size: clamp(22px, 3vw, 32px);
+      font-weight: 500;
+      letter-spacing: -0.025em;
+    }
+
+    #svquant-pipeline .subtitle {
+      color: var(--muted-foreground);
+      margin-top: 6px;
+    }
+
+    #svquant-pipeline .endpoint {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--primary);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    #svquant-pipeline .endpoint::before {
+      content: &quot;POST&quot;;
+      border: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
+      border-radius: 3px;
+      color: var(--primary);
+      font-family: inherit;
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      padding: 2px 5px;
+    }
+
+    #svquant-pipeline .controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px 18px;
+      padding: 16px 0 12px;
+    }
+
+    #svquant-pipeline .control-group {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    #svquant-pipeline .control-label {
+      color: var(--muted-foreground);
+      font-size: 12px;
+      margin-right: 4px;
+    }
+
+    #svquant-pipeline .control-button {
+      appearance: none;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      padding: 6px 9px;
+    }
+
+    #svquant-pipeline .control-button:hover,
+    #svquant-pipeline .control-button:focus-visible {
+      border-color: var(--primary);
+      color: var(--foreground);
+      outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent);
+      outline-offset: 2px;
+    }
+
+    #svquant-pipeline .control-button[aria-pressed=&quot;true&quot;] {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: var(--primary-foreground);
+    }
+
+    #svquant-pipeline .profile-note {
+      color: var(--muted-foreground);
+      font-size: 12px;
+    }
+
+    #svquant-pipeline .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+      gap: 28px;
+      align-items: start;
+    }
+
+    #svquant-pipeline .section-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 8px 0 12px;
+    }
+
+    #svquant-pipeline .section-head h2 {
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    #svquant-pipeline .section-head span {
+      color: var(--muted-foreground);
+      font-size: 12px;
+    }
+
+    #svquant-pipeline .flow {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    #svquant-pipeline .stage {
+      --tone: var(--viz-series-6);
+      appearance: none;
+      background: color-mix(in srgb, var(--card) 82%, transparent);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--tone);
+      border-radius: 5px;
+      color: var(--card-foreground);
+      cursor: pointer;
+      display: block;
+      padding: 12px 14px;
+      text-align: left;
+      transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+      width: 100%;
+    }
+
+    #svquant-pipeline .stage:hover,
+    #svquant-pipeline .stage:focus-visible,
+    #svquant-pipeline .stage.is-active {
+      background: color-mix(in srgb, var(--accent) 72%, var(--card));
+      border-color: color-mix(in srgb, var(--tone) 55%, var(--border));
+      outline: 2px solid color-mix(in srgb, var(--tone) 30%, transparent);
+      outline-offset: 2px;
+      transform: translateX(2px);
+    }
+
+    #svquant-pipeline .stage[data-tone=&quot;request&quot;] { --tone: var(--viz-series-1); }
+    #svquant-pipeline .stage[data-tone=&quot;cache&quot;] { --tone: var(--viz-series-4); }
+    #svquant-pipeline .stage[data-tone=&quot;data&quot;] { --tone: var(--viz-series-2); }
+    #svquant-pipeline .stage[data-tone=&quot;factor&quot;] { --tone: var(--viz-series-3); }
+    #svquant-pipeline .stage[data-tone=&quot;backtest&quot;] { --tone: var(--viz-series-1); }
+    #svquant-pipeline .stage[data-tone=&quot;metric&quot;] { --tone: var(--viz-series-5); }
+    #svquant-pipeline .stage[data-tone=&quot;analysis&quot;] { --tone: var(--viz-series-4); }
+    #svquant-pipeline .stage[data-tone=&quot;response&quot;] { --tone: var(--viz-series-2); }
+
+    #svquant-pipeline .stage-top {
+      display: flex;
+      align-items: baseline;
+      gap: 9px;
+    }
+
+    #svquant-pipeline .stage-number {
+      color: var(--tone);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    #svquant-pipeline .stage-title {
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    #svquant-pipeline .stage-caption {
+      color: var(--muted-foreground);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    #svquant-pipeline .stage-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 9px;
+    }
+
+    #svquant-pipeline .tag {
+      border: 1px solid color-mix(in srgb, var(--tone) 35%, var(--border));
+      border-radius: 3px;
+      color: var(--muted-foreground);
+      font-size: 10px;
+      padding: 2px 5px;
+    }
+
+    #svquant-pipeline .connector {
+      align-items: center;
+      color: var(--muted-foreground);
+      display: flex;
+      height: 25px;
+      justify-content: center;
+      position: relative;
+    }
+
+    #svquant-pipeline .connector::before {
+      background: var(--border);
+      content: &quot;&quot;;
+      height: 100%;
+      position: absolute;
+      width: 1px;
+    }
+
+    #svquant-pipeline .connector span {
+      background: var(--background);
+      font-size: 13px;
+      line-height: 1;
+      padding: 3px 5px;
+      position: relative;
+    }
+
+    #svquant-pipeline .detail-panel,
+    #svquant-pipeline .timing-panel {
+      border-top: 2px solid var(--primary);
+      padding: 14px 0 18px;
+    }
+
+    #svquant-pipeline .detail-kicker {
+      color: var(--muted-foreground);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    #svquant-pipeline .detail-title {
+      font-size: 20px;
+      font-weight: 500;
+      margin-top: 4px;
+    }
+
+    #svquant-pipeline .detail-file {
+      color: var(--accent-foreground);
+      font-size: 11px;
+      margin-top: 8px;
+    }
+
+    #svquant-pipeline .detail-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-top: 18px;
+    }
+
+    #svquant-pipeline .detail-block {
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+    }
+
+    #svquant-pipeline .detail-label {
+      color: var(--muted-foreground);
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+
+    #svquant-pipeline .detail-value {
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    #svquant-pipeline .detail-description {
+      border-top: 1px solid var(--border);
+      font-size: 13px;
+      margin-top: 18px;
+      padding-top: 12px;
+    }
+
+    #svquant-pipeline .timing-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    #svquant-pipeline .timing-head h2 {
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    #svquant-pipeline .timing-total {
+      color: var(--primary);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 12px;
+    }
+
+    #svquant-pipeline .timing-subtitle {
+      color: var(--muted-foreground);
+      font-size: 11px;
+      margin-top: 4px;
+    }
+
+    #svquant-pipeline .timing-list {
+      margin-top: 15px;
+    }
+
+    #svquant-pipeline .timing-row {
+      display: grid;
+      grid-template-columns: 115px minmax(0, 1fr) 55px;
+      align-items: center;
+      gap: 8px;
+      margin-top: 9px;
+    }
+
+    #svquant-pipeline .timing-name,
+    #svquant-pipeline .timing-value {
+      font-size: 11px;
+    }
+
+    #svquant-pipeline .timing-value {
+      color: var(--muted-foreground);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      text-align: right;
+    }
+
+    #svquant-pipeline .timing-track {
+      background: color-mix(in srgb, var(--border) 55%, transparent);
+      height: 6px;
+      overflow: hidden;
+    }
+
+    #svquant-pipeline .timing-bar {
+      background: var(--viz-series-1);
+      height: 100%;
+      min-width: 3px;
+      transition: width 220ms ease;
+    }
+
+    #svquant-pipeline .timing-row[data-key=&quot;metric_calculation&quot;] .timing-bar {
+      background: var(--viz-series-5);
+    }
+
+    #svquant-pipeline .timing-row[data-key=&quot;factor_compute&quot;] .timing-bar {
+      background: var(--viz-series-3);
+    }
+
+    #svquant-pipeline .timing-row[data-key=&quot;engine_setup&quot;] .timing-bar,
+    #svquant-pipeline .timing-row[data-key=&quot;panel_setup&quot;] .timing-bar {
+      background: var(--viz-series-2);
+    }
+
+    #svquant-pipeline .timing-foot {
+      color: var(--muted-foreground);
+      font-size: 11px;
+      margin-top: 14px;
+    }
+
+    #svquant-pipeline .branch-section,
+    #svquant-pipeline .data-section,
+    #svquant-pipeline .error-section {
+      border-top: 1px solid var(--border);
+      margin-top: 20px;
+      padding-top: 16px;
+    }
+
+    #svquant-pipeline .branch-section h2,
+    #svquant-pipeline .data-section h2,
+    #svquant-pipeline .error-section h2 {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    #svquant-pipeline .branch-grid,
+    #svquant-pipeline .data-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-top: 11px;
+    }
+
+    #svquant-pipeline .branch,
+    #svquant-pipeline .data-lane,
+    #svquant-pipeline .error-lane {
+      border-left: 3px solid var(--viz-series-6);
+      padding: 9px 11px;
+    }
+
+    #svquant-pipeline .branch[data-branch=&quot;core&quot;] {
+      border-left-color: var(--viz-series-1);
+    }
+
+    #svquant-pipeline .branch[data-branch=&quot;full&quot;] {
+      border-left-color: var(--viz-series-4);
+    }
+
+    #svquant-pipeline .branch.is-muted {
+      opacity: 0.42;
+    }
+
+    #svquant-pipeline .branch-title,
+    #svquant-pipeline .data-title,
+    #svquant-pipeline .error-title {
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    #svquant-pipeline .branch-copy,
+    #svquant-pipeline .data-copy,
+    #svquant-pipeline .error-copy {
+      color: var(--muted-foreground);
+      font-size: 11px;
+      margin-top: 4px;
+    }
+
+    #svquant-pipeline .data-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    #svquant-pipeline .data-lane:nth-child(1) { border-left-color: var(--viz-series-3); }
+    #svquant-pipeline .data-lane:nth-child(2) { border-left-color: var(--viz-series-2); }
+    #svquant-pipeline .data-lane:nth-child(3) { border-left-color: var(--viz-series-1); }
+
+    #svquant-pipeline .error-lane {
+      border-left-color: var(--viz-series-5);
+      margin-top: 10px;
+    }
+
+    @media (max-width: 820px) {
+      #svquant-pipeline .layout {
+        grid-template-columns: 1fr;
+      }
+
+      #svquant-pipeline .detail-panel,
+      #svquant-pipeline .timing-panel {
+        margin-top: 4px;
+      }
+    }
+
+    @media (max-width: 560px) {
+      #svquant-pipeline {
+        padding: 16px;
+      }
+
+      #svquant-pipeline .header {
+        display: block;
+      }
+
+      #svquant-pipeline .endpoint {
+        margin-top: 13px;
+      }
+
+      #svquant-pipeline .detail-grid,
+      #svquant-pipeline .branch-grid,
+      #svquant-pipeline .data-grid {
+        grid-template-columns: 1fr;
+      }
+
+      #svquant-pipeline .timing-row {
+        grid-template-columns: 100px minmax(0, 1fr) 48px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #svquant-pipeline .stage,
+      #svquant-pipeline .timing-bar {
+        transition: none;
+      }
+    }
+  &lt;/style&gt;
+
+  &lt;header class=&quot;header&quot;&gt;
+    &lt;div&gt;
+      &lt;div class=&quot;eyebrow&quot;&gt;ResearchEngine · QuantCore&lt;/div&gt;
+      &lt;h1 id=&quot;pipeline-title&quot;&gt;因子回测 API pipeline&lt;/h1&gt;
+      &lt;p class=&quot;subtitle&quot;&gt;从请求校验到回测结果 JSON 的当前真实执行链&lt;/p&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;endpoint&quot; aria-label=&quot;HTTP endpoint&quot;&gt;/api/backtest/factor&lt;/div&gt;
+  &lt;/header&gt;
+
+  &lt;div class=&quot;controls&quot; aria-label=&quot;Pipeline controls&quot;&gt;
+    &lt;div class=&quot;control-group&quot; role=&quot;group&quot; aria-label=&quot;Analysis level&quot;&gt;
+      &lt;span class=&quot;control-label&quot;&gt;分析分支&lt;/span&gt;
+      &lt;button type=&quot;button&quot; class=&quot;control-button&quot; data-mode=&quot;core&quot; aria-pressed=&quot;true&quot;&gt;core · 默认&lt;/button&gt;
+      &lt;button type=&quot;button&quot; class=&quot;control-button&quot; data-mode=&quot;full&quot; aria-pressed=&quot;false&quot;&gt;full · 深度分析&lt;/button&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;control-group&quot; role=&quot;group&quot; aria-label=&quot;Measured profile&quot;&gt;
+      &lt;span class=&quot;control-label&quot;&gt;耗时样本&lt;/span&gt;
+      &lt;button type=&quot;button&quot; class=&quot;control-button&quot; data-profile=&quot;macd&quot; aria-pressed=&quot;true&quot;&gt;默认 MACD&lt;/button&gt;
+      &lt;button type=&quot;button&quot; class=&quot;control-button&quot; data-profile=&quot;bias&quot; aria-pressed=&quot;false&quot;&gt;短区间 BIAS&lt;/button&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;profile-note&quot; id=&quot;profile-note&quot;&gt;全历史 · CSI300 · 默认参数 · 未命中缓存&lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div class=&quot;layout&quot;&gt;
+    &lt;main&gt;
+      &lt;div class=&quot;section-head&quot;&gt;
+        &lt;h2&gt;请求生命周期&lt;/h2&gt;
+        &lt;span&gt;点击节点查看输入、输出和实现位置&lt;/span&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;flow&quot; aria-label=&quot;因子回测 API 执行流程&quot;&gt;
+        &lt;button type=&quot;button&quot; class=&quot;stage is-active&quot; data-stage=&quot;request&quot; data-tone=&quot;request&quot; aria-pressed=&quot;true&quot;&gt;
+          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;01&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;HTTP 请求与模型校验&lt;/span&gt;&lt;/div&gt;
+          &lt;div class=&quot;stage-caption&quot;&gt;FastAPI 路由接收因子、股票池、区间、分组和分析级别&lt;/div&gt;
+          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;FactorBacktestRequest&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;extra=forbid&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;HTTP 200 / error&lt;/span&gt;&lt;/div&gt;
+        &lt;/button&gt;
+        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
+
+        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;cache&quot; data-tone=&quot;cache&quot; aria-pressed=&quot;false&quot;&gt;
+          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;02&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;缓存闸门&lt;/span&gt;&lt;/div&gt;
+          &lt;div class=&quot;stage-caption&quot;&gt;默认启用文件缓存；命中直接返回，未命中进入真实回测&lt;/div&gt;
+          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;HIT → JSON&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;MISS + lock&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;BYPASS 可降级&lt;/span&gt;&lt;/div&gt;
+        &lt;/button&gt;
+        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
+
+        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;load&quot; data-tone=&quot;data&quot; aria-pressed=&quot;false&quot;&gt;
+          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;03&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;因子加载与实验配置&lt;/span&gt;&lt;/div&gt;
+          &lt;div class=&quot;stage-caption&quot;&gt;内置库或用户源码解析为 Factor，映射为 ConfigManager + Experiment&lt;/div&gt;
+          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;builtin / exec&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;universe&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;commission · slippage&lt;/span&gt;&lt;/div&gt;
+        &lt;/button&gt;
+        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
+
+        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;engines&quot; data-tone=&quot;data&quot; aria-pressed=&quot;false&quot;&gt;
+          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;04&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;构建 QuantCore 引擎&lt;/span&gt;&lt;/div&gt;
+          &lt;div class=&quot;stage-caption&quot;&gt;初始化数据、因子和指标引擎；FieldParquetProvider 复用 schema 缓存&lt;/div&gt;
+          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;DataEngine × 2&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;FactorEngine&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;MetricEngine&lt;/span&gt;&lt;/div&gt;
+        &lt;/button&gt;
+        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
+
+        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;panels&quot; data-tone=&quot;data&quot; aria-pressed=&quot;false&quot;&gt;
+          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;05&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;完整历史面板与预热&lt;/span&gt;&lt;/div&gt;
+          &lt;div class=&quot;stage-caption&quot;&gt;先取全历史，按收益确认区间解析股票池，再构造因子面板和收益面板&lt;/div&gt;
+          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;get_panels(None, None)&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;rolling warm-up&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;as_of 首个交易日&lt;/span&gt;&lt;/div&gt;
+        &lt;/button&gt;
+        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
+
+        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;factor&quot; data-tone=&quot;factor&quot; aria-pressed=&quot;false&quot;&gt;
+          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;06&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;因子计算与预处理&lt;/span&gt;&lt;/div&gt;
+          &lt;div class=&quot;stage-caption&quot;&gt;在完整历史计算后裁剪区间；因子使用未复权 OHLC，可选去极值/标准化&lt;/div&gt;
+          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;compute_panel&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;unadjusted OHLC&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;winsorize → standardize&lt;/span&gt;&lt;/div&gt;
+        &lt;/button&gt;
+        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
+
+        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;backtest&quot; data-tone=&quot;backtest&quot; aria-pressed=&quot;false&quot;&gt;
+          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;07&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;信号、分组与 Native 回测&lt;/span&gt;&lt;/div&gt;
+          &lt;div class=&quot;stage-caption&quot;&gt;计算远期收益；pd.qcut 生成 Q1 高因子值组至 QN 低因子值组，并在策略/分层间复用&lt;/div&gt;
+          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;FactorGroupStrategy&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;NativeEngine&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;HFQ close → returns&lt;/span&gt;&lt;/div&gt;
+        &lt;/button&gt;
+        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
+
+        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;metrics&quot; data-tone=&quot;metric&quot; aria-pressed=&quot;false&quot;&gt;
+          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;08&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;指标计算&lt;/span&gt;&lt;/div&gt;
+          &lt;div class=&quot;stage-caption&quot;&gt;用 equity、returns、factor_values、forward_returns、positions 构造 MetricContext&lt;/div&gt;
+          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;calculate_all&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;Sharpe · drawdown&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;IC · Rank IC&lt;/span&gt;&lt;/div&gt;
+        &lt;/button&gt;
+        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
+
+        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;analysis&quot; data-tone=&quot;analysis&quot; aria-pressed=&quot;false&quot;&gt;
+          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;09&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;因子分析分支&lt;/span&gt;&lt;/div&gt;
+          &lt;div class=&quot;stage-caption&quot; id=&quot;analysis-caption&quot;&gt;core：分组收益与分组净值；full：增加 IC、行业、FF3、多空和基准分析&lt;/div&gt;
+          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot; id=&quot;analysis-tag&quot;&gt;core active&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;layered_returns&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;benchmark&lt;/span&gt;&lt;/div&gt;
+        &lt;/button&gt;
+        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
+
+        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;response&quot; data-tone=&quot;response&quot; aria-pressed=&quot;false&quot;&gt;
+          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;10&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;结果整理与 JSON 响应&lt;/span&gt;&lt;/div&gt;
+          &lt;div class=&quot;stage-caption&quot;&gt;净值、回撤、分年收益、基准、因子分析、价格口径和阶段耗时统一序列化&lt;/div&gt;
+          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;FactorBacktestResponse&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;timings_seconds&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;HTTP 200&lt;/span&gt;&lt;/div&gt;
+        &lt;/button&gt;
+      &lt;/div&gt;
+
+      &lt;section class=&quot;branch-section&quot; aria-labelledby=&quot;branch-title&quot;&gt;
+        &lt;h2 id=&quot;branch-title&quot;&gt;分析级别展开&lt;/h2&gt;
+        &lt;div class=&quot;branch-grid&quot;&gt;
+          &lt;div class=&quot;branch&quot; data-branch=&quot;core&quot;&gt;
+            &lt;div class=&quot;branch-title&quot;&gt;core · 默认&lt;/div&gt;
+            &lt;div class=&quot;branch-copy&quot;&gt;核心回测 + 分组收益/净值；不执行完整行业和 FF3 诊断。&lt;/div&gt;
+          &lt;/div&gt;
+          &lt;div class=&quot;branch&quot; data-branch=&quot;full&quot;&gt;
+            &lt;div class=&quot;branch-title&quot;&gt;full · 显式开启&lt;/div&gt;
+            &lt;div class=&quot;branch-copy&quot;&gt;在 core 基础上增加 IC、累计 IC、滚动 IR、行业曲线、FF3 归因和多空结果。&lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/section&gt;
+    &lt;/main&gt;
+
+    &lt;aside&gt;
+      &lt;section class=&quot;detail-panel&quot; aria-live=&quot;polite&quot; aria-labelledby=&quot;detail-title&quot;&gt;
+        &lt;div class=&quot;detail-kicker&quot; id=&quot;detail-kicker&quot;&gt;selected stage&lt;/div&gt;
+        &lt;h2 class=&quot;detail-title&quot; id=&quot;detail-title&quot;&gt;HTTP 请求与模型校验&lt;/h2&gt;
+        &lt;div class=&quot;detail-file&quot; id=&quot;detail-file&quot;&gt;&lt;code&gt;ResearchEngine/researchengine/api/routes.py → runner.py&lt;/code&gt;&lt;/div&gt;
+        &lt;div class=&quot;detail-grid&quot;&gt;
+          &lt;div class=&quot;detail-block&quot;&gt;
+            &lt;div class=&quot;detail-label&quot;&gt;输入&lt;/div&gt;
+            &lt;div class=&quot;detail-value&quot; id=&quot;detail-input&quot;&gt;JSON body：factor_code / library_name / factor_name / universe / start / end / groups / analysis_level&lt;/div&gt;
+          &lt;/div&gt;
+          &lt;div class=&quot;detail-block&quot;&gt;
+            &lt;div class=&quot;detail-label&quot;&gt;输出&lt;/div&gt;
+            &lt;div class=&quot;detail-value&quot; id=&quot;detail-output&quot;&gt;已校验的 FactorBacktestRequest；失败也包装为 response.error&lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;detail-description&quot; id=&quot;detail-description&quot;&gt;路由只负责接收请求，runner 负责缓存入口与真实回测。Pydantic 模型禁止未知字段，内置因子要求明确 library_name。&lt;/div&gt;
+      &lt;/section&gt;
+
+      &lt;section class=&quot;timing-panel&quot; aria-labelledby=&quot;timing-title&quot;&gt;
+        &lt;div class=&quot;timing-head&quot;&gt;
+          &lt;h2 id=&quot;timing-title&quot;&gt;阶段耗时基线&lt;/h2&gt;
+          &lt;div class=&quot;timing-total&quot; id=&quot;timing-total&quot;&gt;api_total 26.24 s&lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;timing-subtitle&quot; id=&quot;timing-subtitle&quot;&gt;默认 MACD · 全历史 · CSI300 · core · 关闭缓存压测&lt;/div&gt;
+        &lt;div class=&quot;timing-list&quot; id=&quot;timing-list&quot; aria-label=&quot;Measured stage timings&quot;&gt;&lt;/div&gt;
+        &lt;div class=&quot;timing-foot&quot;&gt;指标计算不是主要瓶颈；当前主要时间在引擎/面板初始化、因子计算和信号回测。&lt;/div&gt;
+      &lt;/section&gt;
+    &lt;/aside&gt;
+  &lt;/div&gt;
+
+  &lt;section class=&quot;data-section&quot; aria-labelledby=&quot;data-title&quot;&gt;
+    &lt;h2 id=&quot;data-title&quot;&gt;数据口径与数据流&lt;/h2&gt;
+    &lt;div class=&quot;data-grid&quot;&gt;
+      &lt;div class=&quot;data-lane&quot;&gt;
+        &lt;div class=&quot;data-title&quot;&gt;因子价格&lt;/div&gt;
+        &lt;div class=&quot;data-copy&quot;&gt;&lt;code&gt;display/unadjusted_price.parquet&lt;/code&gt;&lt;br&gt;open / high / low / close · 未复权&lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;data-lane&quot;&gt;
+        &lt;div class=&quot;data-title&quot;&gt;收益价格&lt;/div&gt;
+        &lt;div class=&quot;data-copy&quot;&gt;&lt;code&gt;panels/market_data.parquet&lt;/code&gt;&lt;br&gt;close · 后复权（HFQ）&lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;data-lane&quot;&gt;
+        &lt;div class=&quot;data-title&quot;&gt;股票池与基准&lt;/div&gt;
+        &lt;div class=&quot;data-copy&quot;&gt;&lt;code&gt;benchmark/&lt;/code&gt;&lt;br&gt;as_of 成分快照 · 独立基准净值&lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/section&gt;
+
+  &lt;section class=&quot;error-section&quot; aria-labelledby=&quot;error-title&quot;&gt;
+    &lt;h2 id=&quot;error-title&quot;&gt;异常出口&lt;/h2&gt;
+    &lt;div class=&quot;error-lane&quot;&gt;
+      &lt;div class=&quot;error-title&quot;&gt;任一阶段异常 → &lt;code&gt;FactorBacktestResponse.error&lt;/code&gt;&lt;/div&gt;
+      &lt;div class=&quot;error-copy&quot;&gt;当前 API 将因子加载、数据、回测和基准错误包装到响应体；HTTP 通常仍为 200，前端应先检查 error。&lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/section&gt;
+
+  &lt;script&gt;
+    (() =&gt; {
+      const root = document.getElementById(&quot;svquant-pipeline&quot;);
+      if (!root) return;
+
+      const details = {
+        request: {
+          kicker: &quot;01 · request&quot;,
+          title: &quot;HTTP 请求与模型校验&quot;,
+          file: &quot;ResearchEngine/researchengine/api/routes.py → schemas.py&quot;,
+          input: &quot;JSON body：factor_code / library_name / factor_name / universe / start / end / groups / analysis_level&quot;,
+          output: &quot;已校验的 FactorBacktestRequest；失败也包装为 response.error&quot;,
+          description: &quot;路由只负责接收请求，Pydantic 负责字段、范围和因子来源校验。未知字段被拒绝；内置因子要求明确 library_name。&quot;
+        },
+        cache: {
+          kicker: &quot;02 · cache&quot;,
+          title: &quot;缓存闸门&quot;,
+          file: &quot;ResearchEngine/researchengine/api/runner.py · run_factor_backtest&quot;,
+          input: &quot;请求 JSON + MarketData 数据指纹 + TTL / 容量配置&quot;,
+          output: &quot;HIT 直接返回；MISS 执行一次并写缓存；缓存异常降级 BYPASS&quot;,
+          description: &quot;SVQUANT_BACKTEST_CACHE_ENABLED 默认开启。缓存锁避免同一 key 并发重复回测；关闭缓存时直接进入 uncached runner。&quot;
+        },
+        load: {
+          kicker: &quot;03 · load&quot;,
+          title: &quot;因子加载与实验配置&quot;,
+          file: &quot;ResearchEngine/researchengine/api/runner.py · _run_factor_backtest_uncached&quot;,
+          input: &quot;内置因子库名或用户因子源码，以及回测请求参数&quot;,
+          output: &quot;Factor 对象 + ConfigManager + ExperimentManager.create(...)&quot;,
+          description: &quot;内置库从 index.yaml 登记目录加载；用户源码被包装成 FactorLibrary 后临时编译。请求参数映射到股票池、分组、成本、预处理和 analysis_level。&quot;
+        },
+        engines: {
+          kicker: &quot;04 · engines&quot;,
+          title: &quot;构建 QuantCore 引擎&quot;,
+          file: &quot;ResearchEngine/researchengine/experiment.py · Experiment._build_engines&quot;,
+          input: &quot;SVQUANT_DATA_DIR 或默认 MarketData 目录&quot;,
+          output: &quot;研究 DataEngine、未复权价格 DataEngine、FactorEngine、MetricEngine&quot;,
+          description: &quot;FieldParquetProvider 读取字段面板；schema 按文件大小和 mtime 做进程内缓存。未复权展示行情单独作为因子价格源。&quot;
+        },
+        panels: {
+          kicker: &quot;05 · panels&quot;,
+          title: &quot;完整历史面板与预热&quot;,
+          file: &quot;ResearchEngine/researchengine/experiment.py · Experiment.run&quot;,
+          input: &quot;全历史字段面板 + 请求 start/end + universe&quot;,
+          output: &quot;Panel、factor_panel、收益确认区间、as_of 股票池&quot;,
+          description: &quot;先 get_panels(None, None)，让 rolling/pct_change 在完整历史上预热；再用收益区间首个实际交易日解析股票池，最后裁剪评估区间。&quot;
+        },
+        factor: {
+          kicker: &quot;06 · factor&quot;,
+          title: &quot;因子计算与预处理&quot;,
+          file: &quot;ResearchEngine/researchengine/experiment.py · FactorEngine.compute_panel&quot;,
+          input: &quot;完整历史 factor_panel：未复权 open/high/low/close 等字段&quot;,
+          output: &quot;完整历史 factor_values → 裁剪到 start/end 的因子值&quot;,
+          description: &quot;因子计算先于区间裁剪，避免预热缺失。随后按 winsorize → standardize 处理横截面因子值。&quot;
+        },
+        backtest: {
+          kicker: &quot;07 · backtest&quot;,
+          title: &quot;信号、分组与 Native 回测&quot;,
+          file: &quot;QuantCore/.../grouping.py + strategies.py · NativeEngine&quot;,
+          input: &quot;区间因子值 + 后复权 close + forward_returns&quot;,
+          output: &quot;equity_curve、returns、positions、rebalance_logs&quot;,
+          description: &quot;公共 raw_qcut_groups 每次回测只计算一次；Q1 为最高因子值组、QN 为最低组，结果供 FactorGroupStrategy 与分层分析复用。收益由后复权 close 计算。&quot;
+        },
+        metrics: {
+          kicker: &quot;08 · metrics&quot;,
+          title: &quot;指标计算&quot;,
+          file: &quot;QuantCore/quantcore/metric/engine.py · MetricEngine.calculate_all&quot;,
+          input: &quot;MetricContext：equity、returns、factor_values、forward_returns、positions&quot;,
+          output: &quot;Sharpe、Sortino、Calmar、回撤、波动、IC、Rank IC 等指标&quot;,
+          description: &quot;指标阶段只消费前面已经产生的序列，不负责读取行情或构造分组。当前实测中它不是主要耗时来源。&quot;
+        },
+        analysis: {
+          kicker: &quot;09 · analysis&quot;,
+          title: &quot;因子分析分支&quot;,
+          file: &quot;ResearchEngine/researchengine/experiment.py · _run_core_group_analysis / _run_factor_analysis&quot;,
+          input: &quot;因子值、收益、分组结果、基准和可选基本面字段&quot;,
+          output: &quot;layered_equity、layered_returns，以及 full 级诊断结果&quot;,
+          description: &quot;core 只保留分组收益与净值；full 在此基础上计算 IC 序列、滚动 IR、行业曲线、三因子归因、多空和基准分析。&quot;
+        },
+        response: {
+          kicker: &quot;10 · response&quot;,
+          title: &quot;结果整理与 JSON 响应&quot;,
+          file: &quot;ResearchEngine/researchengine/api/runner.py · FactorBacktestResponse&quot;,
+          input: &quot;ResultManager + benchmark_equity + factor_analysis&quot;,
+          output: &quot;metrics、equity_curve、drawdowns、annual_returns、benchmark_curve、meta&quot;,
+          description: &quot;最后补充独立基准净值、超额收益和价格/精度/预处理元数据，并把各阶段 timings_seconds 返回给前端。&quot;
+        }
+      };
+
+      const profiles = {
+        macd: {
+          note: &quot;全历史 · CSI300 · 默认参数 · 未命中缓存&quot;,
+          subtitle: &quot;默认 MACD · 全历史 · CSI300 · core · 关闭缓存压测&quot;,
+          total: 26.24285,
+          timings: {
+            engine_setup: 9.117648,
+            panel_setup: 4.334249,
+            factor_compute: 2.683102,
+            signal_and_backtest: 8.793942,
+            metric_calculation: 0.405782,
+            factor_analysis: 0.393488
+          }
+        },
+        bias: {
+          note: &quot;2026-07-12 → 2026-08-11 · BIAS · core · 第二次请求&quot;,
+          subtitle: &quot;短区间 BIAS · schema 缓存已生效 · core · 关闭结果缓存&quot;,
+          total: 10.766967,
+          timings: {
+            engine_setup: 2.41852,
+            panel_setup: 4.493104,
+            factor_compute: 2.645267,
+            signal_and_backtest: 0.710764,
+            metric_calculation: 0.05649,
+            factor_analysis: 0.173238
+          }
+        }
+      };
+
+      const labels = {
+        engine_setup: &quot;引擎初始化&quot;,
+        panel_setup: &quot;面板准备&quot;,
+        factor_compute: &quot;因子计算&quot;,
+        signal_and_backtest: &quot;信号 + 回测&quot;,
+        metric_calculation: &quot;指标计算&quot;,
+        factor_analysis: &quot;因子分析&quot;
+      };
+
+      const stageButtons = [...root.querySelectorAll(&quot;.stage&quot;)];
+      const modeButtons = [...root.querySelectorAll(&quot;[data-mode]&quot;)];
+      const profileButtons = [...root.querySelectorAll(&quot;[data-profile]&quot;)];
+      const detailKicker = root.querySelector(&quot;#detail-kicker&quot;);
+      const detailTitle = root.querySelector(&quot;#detail-title&quot;);
+      const detailFile = root.querySelector(&quot;#detail-file&quot;);
+      const detailInput = root.querySelector(&quot;#detail-input&quot;);
+      const detailOutput = root.querySelector(&quot;#detail-output&quot;);
+      const detailDescription = root.querySelector(&quot;#detail-description&quot;);
+      const analysisCaption = root.querySelector(&quot;#analysis-caption&quot;);
+      const analysisTag = root.querySelector(&quot;#analysis-tag&quot;);
+      const profileNote = root.querySelector(&quot;#profile-note&quot;);
+      const timingSubtitle = root.querySelector(&quot;#timing-subtitle&quot;);
+      const timingTotal = root.querySelector(&quot;#timing-total&quot;);
+      const timingList = root.querySelector(&quot;#timing-list&quot;);
+
+      let activeMode = &quot;core&quot;;
+      let activeProfile = &quot;macd&quot;;
+
+      function selectStage(key) {
+        const detail = details[key];
+        if (!detail) return;
+        stageButtons.forEach((button) =&gt; {
+          const active = button.dataset.stage === key;
+          button.classList.toggle(&quot;is-active&quot;, active);
+          button.setAttribute(&quot;aria-pressed&quot;, String(active));
+        });
+        detailKicker.textContent = detail.kicker;
+        detailTitle.textContent = detail.title;
+        detailFile.innerHTML = `&lt;code&gt;${detail.file}&lt;/code&gt;`;
+        detailInput.textContent = detail.input;
+        detailOutput.textContent = detail.output;
+        detailDescription.textContent = detail.description;
+      }
+
+      function updateMode() {
+        modeButtons.forEach((button) =&gt; {
+          button.setAttribute(&quot;aria-pressed&quot;, String(button.dataset.mode === activeMode));
+        });
+        const full = activeMode === &quot;full&quot;;
+        analysisCaption.textContent = full
+          ? &quot;full：分组收益与净值，并增加 IC、行业、FF3、多空和基准分析&quot;
+          : &quot;core：分组收益与分组净值；不执行完整行业和 FF3 诊断&quot;;
+        analysisTag.textContent = full ? &quot;full active&quot; : &quot;core active&quot;;
+        root.querySelectorAll(&quot;.branch&quot;).forEach((branch) =&gt; {
+          branch.classList.toggle(&quot;is-muted&quot;, branch.dataset.branch !== activeMode);
+        });
+      }
+
+      function updateProfile() {
+        const profile = profiles[activeProfile];
+        const values = Object.values(profile.timings);
+        const max = Math.max(...values);
+        profileNote.textContent = profile.note;
+        timingSubtitle.textContent = profile.subtitle;
+        timingTotal.textContent = `api_total ${profile.total.toFixed(2)} s`;
+        timingList.innerHTML = Object.entries(profile.timings).map(([key, value]) =&gt; {
+          const width = Math.max(3, (value / max) * 100);
+          return `&lt;div class=&quot;timing-row&quot; data-key=&quot;${key}&quot;&gt;
+            &lt;div class=&quot;timing-name&quot;&gt;${labels[key]}&lt;/div&gt;
+            &lt;div class=&quot;timing-track&quot; aria-hidden=&quot;true&quot;&gt;&lt;div class=&quot;timing-bar&quot; style=&quot;width:${width.toFixed(2)}%&quot;&gt;&lt;/div&gt;&lt;/div&gt;
+            &lt;div class=&quot;timing-value&quot;&gt;${value.toFixed(2)} s&lt;/div&gt;
+          &lt;/div&gt;`;
+        }).join(&quot;&quot;);
+      }
+
+      stageButtons.forEach((button) =&gt; {
+        button.addEventListener(&quot;click&quot;, () =&gt; selectStage(button.dataset.stage));
+      });
+      modeButtons.forEach((button) =&gt; {
+        button.addEventListener(&quot;click&quot;, () =&gt; {
+          activeMode = button.dataset.mode;
+          updateMode();
+        });
+      });
+      profileButtons.forEach((button) =&gt; {
+        button.addEventListener(&quot;click&quot;, () =&gt; {
+          activeProfile = button.dataset.profile;
+          profileButtons.forEach((item) =&gt; {
+            item.setAttribute(&quot;aria-pressed&quot;, String(item === button));
+          });
+          updateProfile();
+        });
+      });
+
+      selectStage(&quot;request&quot;);
+      updateMode();
+      updateProfile();
+    })();
+  &lt;/script&gt;
+&lt;/div&gt;
+
+&lt;script src=&quot;https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script src=&quot;https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set([&quot;top&quot;, &quot;right&quot;, &quot;bottom&quot;, &quot;left&quot;]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+
+  const getTrigger = (target) =&gt;
+    target?.nodeType === Node.ELEMENT_NODE
+      ? target.closest(&quot;[data-tooltip]&quot;)
+      : null;
+  const containsTarget = (trigger, target) =&gt;
+    target?.nodeType != null &amp;&amp; trigger.contains(target);
+  const getContent = (trigger) =&gt;
+    trigger.getAttribute(&quot;data-tooltip&quot;)?.trim() ?? &quot;&quot;;
+  const getPlacement = (trigger) =&gt; {
+    const placement = trigger.getAttribute(&quot;data-tooltip-placement&quot;);
+    return tooltipPlacements.has(placement) ? placement : &quot;top&quot;;
+  };
+  const getTooltip = () =&gt; {
+    if (tooltip == null) {
+      tooltip = document.createElement(&quot;div&quot;);
+      tooltip.id = tooltipId;
+      tooltip.className = &quot;tooltip&quot;;
+      tooltip.setAttribute(&quot;role&quot;, &quot;tooltip&quot;);
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) =&gt; {
+    const ids = new Set(
+      (trigger.getAttribute(&quot;aria-describedby&quot;) ?? &quot;&quot;)
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute(&quot;aria-describedby&quot;);
+    } else {
+      trigger.setAttribute(&quot;aria-describedby&quot;, [...ids].join(&quot; &quot;));
+    }
+  };
+  const clearOpenTimeout = () =&gt; {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) =&gt; {
+    clearOpenTimeout();
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) =&gt; {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-width&quot;,
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-height&quot;,
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: &quot;fixed&quot;,
+    })
+      .then(({ x, y }) =&gt; {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = &quot;visible&quot;;
+      })
+      .catch(() =&gt; {
+        if (activeTrigger === trigger &amp;&amp; request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) =&gt; {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = &quot;hidden&quot;;
+    floating.style.transform = &quot;translate(0, 0)&quot;;
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () =&gt; {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) =&gt; {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() &lt; skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() =&gt; {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) =&gt; {
+    if (event.pointerType === &quot;touch&quot;) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handleLeave = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (trigger?.matches(&quot;:focus-visible&quot;)) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) =&gt; {
+    if (event.key === &quot;Escape&quot;) {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const destroy = () =&gt; {
+    closeTooltip(false);
+    document.removeEventListener(&quot;pointerover&quot;, handlePointerOpen);
+    document.removeEventListener(&quot;pointerout&quot;, handleLeave);
+    document.removeEventListener(&quot;focusin&quot;, handleFocusIn);
+    document.removeEventListener(&quot;focusout&quot;, handleLeave);
+    document.removeEventListener(&quot;keydown&quot;, handleKeyDown);
+    document.removeEventListener(&quot;contextmenu&quot;, handleContextMenu);
+    tooltip = null;
+  };
+
+  document.addEventListener(&quot;pointerover&quot;, handlePointerOpen);
+  document.addEventListener(&quot;pointerout&quot;, handleLeave);
+  document.addEventListener(&quot;focusin&quot;, handleFocusIn);
+  document.addEventListener(&quot;focusout&quot;, handleLeave);
+  document.addEventListener(&quot;keydown&quot;, handleKeyDown);
+  document.addEventListener(&quot;contextmenu&quot;, handleContextMenu);
+  window.addEventListener(&quot;pagehide&quot;, destroy, { once: true });
+})();
+&lt;/script&gt;
+&lt;script id=&quot;codex-visualization-lucide&quot; async src=&quot;https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  const initialize = () =&gt; {
+    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
+  };
+  if (globalThis.lucide != null) {
+    initialize();
+    return;
+  }
+  document
+    .getElementById(&quot;codex-visualization-lucide&quot;)
+    ?.addEventListener(&quot;load&quot;, initialize, { once: true });
+})();
+&lt;/script&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+"></iframe>
+</body>
+</html>

@@ -177,6 +177,33 @@ def test_field_parquet_provider_reads_ifind_combined_market_data(tmp_path):
     assert provider.get_bars("000001", fields=["close"]).iloc[0, 0] == 3
 
 
+def test_field_parquet_provider_caches_combined_schema(tmp_path, monkeypatch):
+    columns = pd.MultiIndex.from_tuples([("000001.SZ", "close")])
+    frame = pd.DataFrame(
+        [[10.0]], index=pd.to_datetime(["2024-01-02"]), columns=columns
+    )
+    frame.index.name = "date"
+    path = tmp_path / "market_data.parquet"
+    frame.to_parquet(path)
+
+    import pyarrow.parquet as pq
+    from quantcore.data.providers import field_parquet_provider as provider_module
+
+    provider_module._SCHEMA_CACHE.pop(path.resolve(), None)
+    calls = []
+    original = pq.read_schema
+
+    def counted_read_schema(schema_path, *args, **kwargs):
+        calls.append(schema_path)
+        return original(schema_path, *args, **kwargs)
+
+    monkeypatch.setattr(pq, "read_schema", counted_read_schema)
+    FieldParquetProvider(path)
+    FieldParquetProvider(path)
+
+    assert len(calls) == 1
+
+
 def test_field_parquet_provider_prefers_combined_market_data_in_panels_directory(tmp_path):
     panels_dir = tmp_path / "current" / "panels"
     panels_dir.mkdir(parents=True)

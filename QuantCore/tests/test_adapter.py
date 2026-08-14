@@ -122,6 +122,27 @@ def test_factor_group_strategy_uses_top_group():
     assert weights.iloc[1].isna().all()
 
 
+def test_factor_group_strategy_reuses_precomputed_group_assignments():
+    """预计算分组与策略内部计算逐位一致。"""
+    from quantcore.backtest.adapter.grouping import raw_qcut_groups
+
+    fv, close = _make_panel(n_dates=10, n_sym=20)
+    assignments = raw_qcut_groups(fv, 4)
+    expected = FactorGroupStrategy(
+        fv, close, groups=4, rebalance_days=3, long_short=True
+    ).generate_signals().target_weights
+    actual = FactorGroupStrategy(
+        fv,
+        close,
+        groups=4,
+        rebalance_days=3,
+        long_short=True,
+        group_assignments=assignments,
+    ).generate_signals().target_weights
+
+    pd.testing.assert_frame_equal(actual, expected)
+
+
 def test_factor_group_strategy_all_equal_factor_breaks_ties_by_column_order():
     """全相等因子按列顺序稳定分配最高组与最低组。"""
     fv, close = _make_panel(n_dates=10, n_sym=20)

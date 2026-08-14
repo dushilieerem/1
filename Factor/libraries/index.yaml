@@ -1,6 +1,6 @@
 version: 1
-updated: '2026-08-12'
-total_factors: 844
+updated: '2026-08-13'
+total_factors: 848
 libraries:
   alpha_features:
     file: alpha_features.py
@@ -1622,7 +1622,7 @@ libraries:
     tags:
     - technical
     - indicator
-    factor_count: 37
+    factor_count: 41
     factors:
     - name: accumulation_distribution
       description: 累积/派发线：按收盘位置加权累计成交量。
@@ -1706,6 +1706,15 @@ libraries:
       tags:
       - regime
       - volatility
+    - name: coppock_curve
+      description: 科波克曲线：两段收益率之和的线性加权平滑。
+      params:
+        short: 11
+        long: 14
+        smooth: 10
+      tags:
+      - momentum
+      - trend
     - name: dpo
       description: 去趋势价格振荡器：移位收盘价减去当期均线。
       params:
@@ -1817,6 +1826,14 @@ libraries:
       tags:
       - oscillator
       - trend
+    - name: relative_volatility_index
+      description: 相对波动指数：按价格方向分配滚动波动率后进行平滑。
+      params:
+        window: 10
+        smooth: 14
+      tags:
+      - volatility
+      - oscillator
     - name: rsi_14
       description: 14 日 RSI。
       params:
@@ -1866,6 +1883,14 @@ libraries:
       tags:
       - rsi
       - stochastic
+    - name: true_strength_index
+      description: 真实强度指数：双重平滑价格动量相对绝对动量的比值。
+      params:
+        long: 25
+        short: 13
+      tags:
+      - oscillator
+      - momentum
     - name: ultimate_oscillator
       description: 终极振荡器：多周期买压与真实波幅的加权动量。
       params:
@@ -1875,6 +1900,13 @@ libraries:
       tags:
       - oscillator
       - momentum
+    - name: vortex_indicator
+      description: 涡旋指标差：上行与下行涡旋线之差。
+      params:
+        window: 14
+      tags:
+      - trend
+      - reversal
     - name: williams_r
       description: Williams %R：收盘价在近期高低区间中的位置。
       params:

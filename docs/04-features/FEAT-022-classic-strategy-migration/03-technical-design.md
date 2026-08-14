@@ -58,3 +58,12 @@ Piotroski F-Score 与股息增长策略分别位于 `piotroski_f_score_a_share_e
 - `elder_force_index_a_share_event:v1` 使用 `close.diff() * volume` 的 13 日 EMA；`volume` 是硬性字段依赖，缺失时在 `initialize()` 明确报错。
 
 四个策略不新增 QuantCore 或 EventEngine 接口，不覆盖既有源码版本。回滚方式仍为从 `Strategy/libraries/index.yaml` 移除对应条目，源码文件保留用于历史版本追溯。
+
+本次新增的四个日频事件策略继续复用 `DataView.history()` 的前收盘快照、`Scheduler.daily()` 和 `OrderService.target_value()`：
+
+- `chande_momentum_oscillator_a_share_event:v1` 位于 `Strategy/libraries/chande_momentum_oscillator_a_share_event_v1.py`，使用 20 日 CMO 和 60 日趋势均线；CMO 从 -50 上穿时建立候选，零轴/50 与趋势均线负责退出。
+- `fisher_transform_a_share_event:v1` 位于 `Strategy/libraries/fisher_transform_a_share_event_v1.py`，使用 10 日高低价中点的 Fisher 变换和 3 日信号线；计算中的滚动最高/最低只来自前收盘快照。
+- `ease_of_movement_a_share_event:v1` 位于 `Strategy/libraries/ease_of_movement_a_share_event_v1.py`，使用 14 日 EOM；`volume` 是硬性字段依赖，箱体比率采用成交量除以 `1e8` 的 A 股日线研究尺度。
+- `volume_price_trend_a_share_event:v1` 位于 `Strategy/libraries/volume_price_trend_a_share_event_v1.py`，使用标准 `close.pct_change() * volume` 累计 VPT 和 10 日 EMA 信号线；`volume` 缺失时在 `initialize()` 明确报错。
+
+四个策略不新增 QuantCore 或 EventEngine 接口，不覆盖既有源码版本。回滚方式仍为从 `Strategy/libraries/index.yaml` 移除对应条目，源码文件保留用于历史版本追溯。

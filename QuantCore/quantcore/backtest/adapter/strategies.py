@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from quantcore.backtest.adapter.calendar import PandasCalendar
+from quantcore.backtest.adapter.grouping import raw_qcut_groups
 from quantcore.backtest.adapter.interfaces import ICalendar, IStrategy
 from quantcore.backtest.adapter.signals import BacktestSignals
 from quantcore.factor.base import Panel
@@ -117,6 +118,7 @@ class FactorGroupStrategy(IStrategy):
         rebalance_days: int = 20,
         long_short: bool = True,
         calendar: Optional[ICalendar] = None,
+        group_assignments: Optional[pd.DataFrame] = None,
     ) -> None:
         if groups < 2:
             raise ValueError(f"groups 至少为 2，得到 {groups}")
@@ -126,6 +128,7 @@ class FactorGroupStrategy(IStrategy):
         self._rebalance_days = int(rebalance_days)
         self._long_short = bool(long_short)
         self._calendar = calendar or PandasCalendar()
+        self._group_assignments = group_assignments
 
     def generate_signals(self, panel: Optional[Panel] = None) -> BacktestSignals:
         common_dates = self._factor_values.index.intersection(self._close.index)
@@ -133,12 +136,17 @@ class FactorGroupStrategy(IStrategy):
         fv = self._factor_values.loc[common_dates, common_symbols]
         close = self._close.loc[common_dates, common_symbols]
 
-        # 同分值按标的列顺序打破并列，保证各组连续且可复现。
-        ranks = fv.rank(axis=1, pct=True, method="first")
-        group_no = np.ceil(ranks * self._groups).clip(upper=self._groups)
-        valid = fv.notna()
-        top = (group_no == self._groups) & valid
-        bottom = (group_no == 1) & valid
+        # SuperMind/Alphalens 按原始因子值 qcut；同值退化截面由公共
+        # 分组函数做稳定兜底，保证策略与分层分析使用完全相同的成员。
+        if self._group_assignments is None:
+            group_no = raw_qcut_groups(fv, self._groups)
+        else:
+            group_no = self._group_assignments.reindex(
+                index=fv.index, columns=fv.columns
+            )
+        valid = group_no.notna()
+        top = (group_no == 1) & valid
+        bottom = (group_no == self._groups) & valid
         rebalance = self._calendar.rebalance_mask(fv.index, self._rebalance_days)
 
         top_count = top.sum(axis=1).replace(0, np.nan)

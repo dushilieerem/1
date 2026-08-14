@@ -328,7 +328,8 @@ def _load_factor_from_builtin_library(library_name: str, factor_name: str):
 
 def _build_config(commission_rate, slippage_rate, stamp_tax=None,
                   rebalance_days=None, groups=None, long_short=None,
-                  analysis_level: str = "core"):
+                  analysis_level: str = "core", winsorize: int = 0,
+                  standardize: int = 0):
     """由参数构建 :class:`ConfigManager`（不设 output_path -> 不落盘）。"""
     from researchengine import ConfigManager
 
@@ -340,6 +341,8 @@ def _build_config(commission_rate, slippage_rate, stamp_tax=None,
         cfg.set("groups", groups)
         cfg.set("n_groups", groups)
         cfg.set("n_layered_groups", groups)
+    cfg.set("factor_preprocess.winsorize", winsorize)
+    cfg.set("factor_preprocess.standardize", standardize)
     if long_short is not None:
         cfg.set("long_short", long_short)
     if stamp_tax is not None:
@@ -546,57 +549,116 @@ def _safe_metric(value) -> float | None:
     return value if math.isfinite(value) else None
 
 
+def _geometric_annual_return(
+    returns: pd.Series,
+    periods_per_year: int,
+    observations: int | None = None,
+) -> float | None:
+    """按累计收益计算 CAGR；``observations`` 控制年化指数。"""
+    clean_returns = _finite_series(returns)
+    if clean_returns.empty:
+        return None
+    count = int(observations if observations is not None else len(clean_returns))
+    if count <= 0:
+        return None
+    cumulative_factor = float((1.0 + clean_returns).prod())
+    if cumulative_factor < 0:
+        return None
+    return _safe_metric(cumulative_factor ** (periods_per_year / count) - 1.0)
+
+
 def _compute_quantile_metrics(
     layered_equity: pd.DataFrame,
     benchmark_equity: pd.Series,
     periods_per_year: int = 252,
+    *,
+    layered_returns: pd.DataFrame | None = None,
 ) -> list[QuantileMetric]:
-    """计算各因子分位的收益、风险和相对基准指标。"""
+    """按 SuperMind 口径计算分组及基准指标。
+
+    分组指标使用 ``layered_returns`` 的完整原始收益（含首个信号到入场
+    日收益），展示净值只用于累计曲线和最大回撤。基准没有这笔信号收益，
+    因此从归一化基准曲线推导，并使用总体标准差。
+    """
     if layered_equity is None or layered_equity.empty:
         return []
     if benchmark_equity is None or benchmark_equity.empty:
         return []
 
+    annualization = math.sqrt(periods_per_year)
+    layered_returns = layered_returns if layered_returns is not None else pd.DataFrame()
+
+    def absolute_metrics(
+        equity: pd.Series,
+        returns: pd.Series,
+        *,
+        ddof: int,
+        annualization_observations: int | None = None,
+    ) -> tuple[dict[str, float | None], pd.Series]:
+        clean_equity = _finite_series(equity)
+        returns = _finite_series(returns)
+        return_std = returns.std(ddof=ddof)
+        metrics = {
+            "annual_return": _geometric_annual_return(
+                returns,
+                periods_per_year,
+                observations=annualization_observations,
+            ),
+            "volatility": (
+                _safe_metric(return_std * annualization)
+                if not pd.isna(return_std) else None
+            ),
+            "sharpe": None,
+            "max_drawdown": None,
+        }
+        if not returns.empty and not pd.isna(return_std):
+            metrics["sharpe"] = _safe_metric(
+                0.0 if return_std == 0
+                else returns.mean() / return_std * annualization
+            )
+
+        if not clean_equity.empty:
+            running_max = clean_equity.cummax()
+            drawdown = (clean_equity - running_max).div(
+                running_max.where(running_max != 0)
+            )
+            if not drawdown.dropna().empty:
+                metrics["max_drawdown"] = _safe_metric(drawdown.min())
+        return metrics, returns
+
     benchmark_returns = _finite_series(
         benchmark_equity.pct_change(fill_method=None)
-    ).rename("benchmark")
-    annualization = math.sqrt(periods_per_year)
+    )
+    benchmark_observations = (
+        len(layered_returns) if not layered_returns.empty else len(benchmark_returns)
+    )
+    benchmark_metrics, benchmark_returns = absolute_metrics(
+        benchmark_equity,
+        benchmark_returns,
+        ddof=0,
+        annualization_observations=benchmark_observations,
+    )
+    benchmark_returns = benchmark_returns.rename("benchmark")
     result = []
 
     for number, column in enumerate(layered_equity.columns, start=1):
-        equity = _finite_series(layered_equity[column])
-        returns = _finite_series(equity.pct_change(fill_method=None))
+        returns = (
+            layered_returns[column]
+            if column in layered_returns.columns
+            else layered_equity[column].pct_change(fill_method=None)
+        )
+        absolute, returns = absolute_metrics(
+            layered_equity[column],
+            returns,
+            ddof=1,
+            annualization_observations=len(_finite_series(returns)),
+        )
         aligned = pd.concat(
             [returns.rename("group"), benchmark_returns], axis=1, join="inner"
         ).dropna()
         excess = aligned["group"] - aligned["benchmark"]
 
-        return_std = returns.std()
         excess_std = excess.std()
-        annual_return = (
-            _safe_metric(returns.mean() * periods_per_year)
-            if not returns.empty else None
-        )
-        volatility = (
-            _safe_metric(return_std * annualization)
-            if not pd.isna(return_std) else None
-        )
-        sharpe = None
-        if not returns.empty and not pd.isna(return_std):
-            sharpe = _safe_metric(
-                0.0 if return_std == 0
-                else returns.mean() / return_std * annualization
-            )
-
-        max_drawdown = None
-        if not equity.empty:
-            running_max = equity.cummax()
-            drawdown = (equity - running_max).div(
-                running_max.where(running_max != 0)
-            )
-            if not drawdown.dropna().empty:
-                max_drawdown = _safe_metric(drawdown.min())
-
         annual_excess_return = (
             _safe_metric(excess.mean() * periods_per_year)
             if not excess.empty else None
@@ -624,16 +686,17 @@ def _compute_quantile_metrics(
             quantile = f"Q{number}"
         result.append(QuantileMetric(
             quantile=quantile,
-            annual_return=annual_return,
-            volatility=volatility,
-            sharpe=sharpe,
-            max_drawdown=max_drawdown,
+            **absolute,
             annual_excess_return=annual_excess_return,
             excess_volatility=excess_volatility,
             information_ratio=information_ratio,
             benchmark_win_rate=benchmark_win_rate,
         ))
 
+    result.append(QuantileMetric(
+        quantile="benchmark",
+        **benchmark_metrics,
+    ))
     return result
 
 
@@ -945,6 +1008,8 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
             groups=req.groups,
             long_short=long_short,
             analysis_level=req.analysis_level,
+            winsorize=req.winsorize,
+            standardize=req.standardize,
         )
         mgr = ExperimentManager()
         exp = mgr.create(
@@ -982,11 +1047,19 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
 
     # 深度因子分析仅在请求显式要求时计算，避免其拖慢核心回测。
     metrics = metrics_to_dict(result.metrics)
+    raw_strategy_returns = getattr(result, "returns", None)
+    if raw_strategy_returns is not None:
+        metrics["annual_return"] = _geometric_annual_return(
+            raw_strategy_returns,
+            int(cfg.get("periods_per_year", 252)),
+        )
     analysis = getattr(result, "factor_analysis", {})
     factor_analysis = None
     layered_equity = pd.DataFrame()
+    layered_return_frame = pd.DataFrame()
     if req.analysis_level in {"core", "full"}:
         layered_equity = analysis.get("layered_equity", pd.DataFrame())
+        layered_return_frame = analysis.get("layered_returns", pd.DataFrame())
         ic_series = analysis.get("ic_series", pd.DataFrame())
         cumulative_ic = analysis.get("cumulative_ic", pd.Series(dtype=float))
         rolling_ir = analysis.get("rolling_ir", pd.Series(dtype=float))
@@ -1001,7 +1074,7 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
                 for number in range(1, req.groups + 1)
             })
             layered_returns["spread"] = float(
-                layered_equity.iloc[-1, -1] - layered_equity.iloc[-1, 0]
+                layered_equity.iloc[-1, 0] - layered_equity.iloc[-1, -1]
             )
         else:
             layered_returns["spread"] = None
@@ -1018,6 +1091,16 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
                 "rolling_ir_window": 60,
                 "groups": req.groups,
                 "analysis_level": req.analysis_level,
+                "factor_preprocess": result.meta.get("factor_preprocess", {}),
+                "grouping_method": "pd.qcut_raw_value",
+                "group_order": "Q1_highest_factor_value_QN_lowest_factor_value",
+                "curve_first_value": 1.0,
+                "group_metric_returns": "signal_to_end_including_entry",
+                "benchmark_metric_returns": "entry_to_end",
+                "group_annualization": "geometric_cagr",
+                "benchmark_annualization": "geometric_cagr",
+                "group_volatility_ddof": 1,
+                "benchmark_volatility_ddof": 0,
                 **({
                     "industry_return_method": "equal_weight_fixed_capital",
                     "industry_grouping_method": "daily_cross_sectional_equal_weight_fixed_capital",
@@ -1043,6 +1126,7 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
             layered_equity,
             benchmark_equity,
             periods_per_year=int(cfg.get("periods_per_year", 252)),
+            layered_returns=layered_return_frame,
         )
     common_dates = equity.index.intersection(benchmark_equity.index)
     excess_return = None
@@ -1070,6 +1154,13 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
             benchmark=req.benchmark,
             filter_limit_up=req.filter_limit_up,
             filter_suspended=req.filter_suspended,
+            factor_price_adjustment=result.meta.get("factor_price_adjustment"),
+            factor_price_source=result.meta.get("factor_price_source"),
+            factor_price_fields=result.meta.get("factor_price_fields", []),
+            factor_price_precision=result.meta.get("factor_price_precision"),
+            return_price_adjustment=result.meta.get("return_price_adjustment"),
+            return_price_source=result.meta.get("return_price_source"),
+            return_price_precision=result.meta.get("return_price_precision"),
             timings_seconds={
                 **result.meta.get("timings_seconds", {}),
                 "api_total": round(time.perf_counter() - started_at, 6),

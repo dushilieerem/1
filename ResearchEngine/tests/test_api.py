@@ -138,6 +138,74 @@ def market_data_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
+@pytest.fixture()
+def supermind_api_data_dir(tmp_path, monkeypatch):
+    """将已验证的 SuperMind fixture 转为 API 可读取的字段 Parquet。"""
+    fixture_dir = (
+        Path(__file__).resolve().parents[2]
+        / "QuantCore"
+        / "tests"
+        / "fixtures"
+        / "supermind"
+    )
+    market_cap = pd.read_csv(fixture_dir / "market_cap.csv", index_col=0)
+    factor_dates = pd.to_datetime(
+        [str(value).split(" ")[0] for value in market_cap.columns],
+        format="%Y/%m/%d",
+    )
+    factor_values = market_cap.T
+    factor_values.index = factor_dates
+    factor_values.columns = market_cap.index.astype(str)
+
+    close = pd.read_csv(fixture_dir / "price.csv", index_col=0)
+    close.index = pd.to_datetime(close.index, format="%Y/%m/%d")
+    close = close.loc[:, factor_values.columns]
+
+    def write_field(name, frame):
+        frame = frame.copy()
+        frame.index.name = "datetime"
+        frame.reset_index().to_parquet(tmp_path / f"{name}.parquet", index=False)
+
+    for field in ("close", "total_mv"):
+        write_field(field, close if field == "close" else factor_values)
+
+    display_dir = tmp_path / "display"
+    display_dir.mkdir()
+    display_columns = pd.MultiIndex.from_product(
+        [close.columns, ["open", "high", "low", "close"]]
+    )
+    display = pd.DataFrame(index=close.index, columns=display_columns, dtype=float)
+    for symbol in close.columns:
+        for field in ("open", "high", "low", "close"):
+            display[(symbol, field)] = close[symbol]
+    display.index.name = "date"
+    display.to_parquet(display_dir / "unadjusted_price.parquet")
+
+    benchmark_dir = tmp_path / "benchmark"
+    benchmark_dir.mkdir()
+    benchmark_close = close.mean(axis=1)
+    benchmark = pd.DataFrame(
+        {
+            "open": benchmark_close,
+            "high": benchmark_close,
+            "low": benchmark_close,
+            "close": benchmark_close,
+        },
+        index=benchmark_close.index,
+    )
+    benchmark.to_parquet(benchmark_dir / "index_price_000300.SH.parquet")
+
+    monkeypatch.setenv("SVQUANT_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SVQUANT_BACKTEST_CACHE_DIR", str(tmp_path / "backtest_cache"))
+    monkeypatch.setenv("SVQUANT_BACKTEST_CACHE_ENABLED", "false")
+    return {
+        "root": tmp_path,
+        "factor_values": factor_values,
+        "close": close,
+        "benchmark_close": benchmark_close,
+    }
+
+
 def _request_payload():
     return {
         "factor_code": COMBO_FACTOR_CODE,
@@ -260,9 +328,21 @@ def test_factor_backtest_groups_and_benchmark(market_data_dir):
     assert response.headers["X-SVQuant-Cache"] == "MISS"
     body = response.json()
     assert body["error"] is None
+    assert body["benchmark_curve"][0]["value"] == pytest.approx(1.0)
     assert body["meta"]["rebalance_days"] == 15
     assert body["meta"]["groups"] == 3
     assert body["meta"]["benchmark"] == "CSI300"
+    assert body["meta"]["factor_price_adjustment"] == "unadjusted"
+    assert body["meta"]["factor_price_fields"] == ["open", "high", "low", "close"]
+    assert body["meta"]["factor_price_source"].replace("\\", "/").endswith(
+        "display/unadjusted_price.parquet"
+    )
+    assert body["meta"]["factor_price_precision"] == "source_precision_no_rounding"
+    assert body["meta"]["return_price_adjustment"] == "hfq"
+    assert body["meta"]["return_price_source"] == "data_engine.close"
+    assert body["meta"]["return_price_precision"] == "source_precision_no_rounding"
+    assert body["factor_analysis"]["definition"]["grouping_method"] == "pd.qcut_raw_value"
+    assert body["factor_analysis"]["cumulative_series"][0]["layer1"] == pytest.approx(1.0)
     assert len(body["factor_analysis"]["cumulative_series"]) > 0
     assert "layer3" in body["factor_analysis"]["cumulative_series"][-1]
     assert len(body["factor_analysis"]["ic_series"]) > 0
@@ -278,7 +358,9 @@ def test_factor_backtest_groups_and_benchmark(market_data_dir):
     assert len(industry_groups) == 2
     assert set(industry_groups[0]["points"][-1]["groups"]) == {"G1", "G2", "G3"}
     quantile_metrics = body["factor_analysis"]["quantile_metrics"]
-    assert [item["quantile"] for item in quantile_metrics] == ["Q1", "Q2", "Q3"]
+    assert [item["quantile"] for item in quantile_metrics] == [
+        "Q1", "Q2", "Q3", "benchmark"
+    ]
     assert set(quantile_metrics[0]) == {
         "quantile",
         "annual_return",
@@ -293,13 +375,144 @@ def test_factor_backtest_groups_and_benchmark(market_data_dir):
     assert all(
         item["annual_return"] is not None
         and item["annual_excess_return"] is not None
-        for item in quantile_metrics
+        for item in quantile_metrics[:-1]
     )
+    benchmark_metrics = quantile_metrics[-1]
+    assert benchmark_metrics["annual_return"] is not None
+    assert benchmark_metrics["volatility"] is not None
+    assert benchmark_metrics["sharpe"] is not None
+    assert benchmark_metrics["max_drawdown"] is not None
+    assert benchmark_metrics["annual_excess_return"] is None
+    assert benchmark_metrics["excess_volatility"] is None
+    assert benchmark_metrics["information_ratio"] is None
+    assert benchmark_metrics["benchmark_win_rate"] is None
     assert len(body["benchmark_curve"]) > 0
     assert body["excess_return"] is not None
 
 
-def test_quantile_metrics_use_daily_returns_and_relative_benchmark():
+def test_factor_backtest_supermind_fixture_matches_qcut_and_metric_contract(
+    supermind_api_data_dir,
+):
+    """通过真实 API 端点验证 qcut、首笔收益和分组/基准指标口径。"""
+    factor_values = supermind_api_data_dir["factor_values"]
+    close = supermind_api_data_dir["close"]
+    benchmark_close = supermind_api_data_dir["benchmark_close"]
+    symbols = list(close.columns)
+
+    expected_returns = {}
+    expected_equity = {}
+    for group_number in range(1, 6):
+        raw = []
+        for row_number in range(1, len(close)):
+            labels = 5 - pd.qcut(
+                factor_values.iloc[row_number - 1],
+                5,
+                labels=False,
+            )
+            members = [
+                symbol for symbol in symbols
+                if labels.loc[symbol] == group_number
+            ]
+            daily = (
+                close.iloc[row_number][members]
+                / close.iloc[row_number - 1][members]
+                - 1.0
+            ).mean()
+            raw.append(float(daily))
+        raw_returns = pd.Series(raw, index=close.index[1:])
+        display_returns = raw_returns.copy()
+        display_returns.iloc[0] = 0.0
+        expected_returns[group_number] = raw_returns
+        expected_equity[group_number] = (1.0 + display_returns).cumprod()
+
+    benchmark_curve = benchmark_close.loc[close.index[1:]]
+    benchmark_curve = benchmark_curve / benchmark_curve.iloc[0]
+    benchmark_returns = benchmark_curve.pct_change().dropna()
+
+    response = client.post(
+        "/api/backtest/factor",
+        json={
+            "factor_code": "def market_cap(self):\n    return self.total_mv",
+            "factor_name": "market_cap",
+            "universe_snapshot": {
+                "asset_id": "supermind-fixture",
+                "version": "1",
+                "content_hash": "fixture",
+                "symbols": symbols,
+            },
+            "start": "2026-04-01",
+            "end": "2026-04-30",
+            "portfolio_type": "long_only",
+            "rebalance_days": 1,
+            "groups": 5,
+            "benchmark": "CSI300",
+            "analysis_level": "core",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["error"] is None
+    assert body["meta"]["factor_price_adjustment"] == "unadjusted"
+    assert body["meta"]["return_price_adjustment"] == "hfq"
+    assert body["meta"]["factor_price_source"].replace("\\", "/").endswith(
+        "display/unadjusted_price.parquet"
+    )
+    assert body["meta"]["factor_price_precision"] == "source_precision_no_rounding"
+    assert body["factor_analysis"]["definition"]["grouping_method"] == "pd.qcut_raw_value"
+    assert body["factor_analysis"]["definition"]["group_order"] == (
+        "Q1_highest_factor_value_QN_lowest_factor_value"
+    )
+
+    points = body["factor_analysis"]["cumulative_series"]
+    assert [point["date"] for point in points] == [
+        date.strftime("%Y-%m-%d") for date in close.index[1:]
+    ]
+    assert all(point["layer1"] == pytest.approx(1.0) for point in points[:1])
+    for group_number in range(1, 6):
+        values = [point[f"layer{group_number}"] for point in points]
+        assert values == pytest.approx(expected_equity[group_number].tolist())
+
+    metrics = {
+        item["quantile"]: item
+        for item in body["factor_analysis"]["quantile_metrics"]
+    }
+    for group_number in range(1, 6):
+        raw = expected_returns[group_number]
+        expected_annual = (1.0 + raw).prod() ** (252 / len(raw)) - 1.0
+        expected_volatility = raw.std(ddof=1) * np.sqrt(252)
+        expected_sharpe = raw.mean() / raw.std(ddof=1) * np.sqrt(252)
+        expected_drawdown = (
+            expected_equity[group_number]
+            / expected_equity[group_number].cummax()
+            - 1.0
+        ).min()
+        actual = metrics[f"Q{group_number}"]
+        assert actual["annual_return"] == pytest.approx(expected_annual, abs=1e-12)
+        assert actual["volatility"] == pytest.approx(expected_volatility, abs=1e-12)
+        assert actual["sharpe"] == pytest.approx(expected_sharpe, abs=1e-12)
+        assert actual["max_drawdown"] == pytest.approx(expected_drawdown, abs=1e-12)
+
+    assert body["metrics"]["annual_return"] == pytest.approx(
+        (1.0 + expected_returns[1]).prod() ** (252 / len(expected_returns[1])) - 1.0,
+        abs=1e-12,
+    )
+
+    benchmark = metrics["benchmark"]
+    assert benchmark["annual_return"] == pytest.approx(
+        (1.0 + benchmark_returns).prod() ** (252 / len(expected_returns[1])) - 1.0,
+        abs=1e-12,
+    )
+    assert benchmark["volatility"] == pytest.approx(
+        benchmark_returns.std(ddof=0) * np.sqrt(252), abs=1e-12
+    )
+    assert benchmark["sharpe"] == pytest.approx(
+        benchmark_returns.mean() / benchmark_returns.std(ddof=0) * np.sqrt(252),
+        abs=1e-12,
+    )
+
+
+def test_quantile_metrics_return_absolute_and_relative_benchmark_metrics():
     dates = pd.date_range("2022-01-03", periods=4, freq="B")
     layered_equity = pd.DataFrame(
         {
@@ -309,21 +522,53 @@ def test_quantile_metrics_use_daily_returns_and_relative_benchmark():
         index=dates,
     )
     benchmark_equity = pd.Series([1.0, 1.05, 1.00, 1.10], index=dates)
+    layered_returns = pd.DataFrame(
+        {
+            # 第一项模拟因子信号日到入场日的额外收益。
+            "layer1": [0.03, 0.10, -1 / 11, 0.20],
+            "layer2": [0.01, 0.00, 0.05, 10 / 105],
+        },
+        index=dates,
+    )
 
     metrics = _compute_quantile_metrics(
-        layered_equity, benchmark_equity, periods_per_year=4
+        layered_equity,
+        benchmark_equity,
+        periods_per_year=4,
+        layered_returns=layered_returns,
     )
 
     q1 = metrics[0]
-    group_returns = layered_equity["layer1"].pct_change().dropna()
+    group_returns = layered_returns["layer1"]
     benchmark_returns = benchmark_equity.pct_change().dropna()
-    excess = group_returns - benchmark_returns
+    aligned = pd.concat(
+        [group_returns.rename("group"), benchmark_returns.rename("benchmark")],
+        axis=1,
+        join="inner",
+    ).dropna()
+    excess = aligned["group"] - aligned["benchmark"]
     assert q1.quantile == "Q1"
-    assert q1.annual_return == pytest.approx(group_returns.mean() * 4)
-    assert q1.volatility == pytest.approx(group_returns.std() * 2)
+    assert q1.annual_return == pytest.approx(
+        (1.0 + group_returns).prod() ** (4 / len(group_returns)) - 1
+    )
+    assert q1.volatility == pytest.approx(group_returns.std(ddof=1) * 2)
     assert q1.annual_excess_return == pytest.approx(excess.mean() * 4)
     assert q1.excess_volatility == pytest.approx(excess.std() * 2)
     assert q1.benchmark_win_rate == pytest.approx((excess > 0).mean())
+
+    benchmark = metrics[-1]
+    assert benchmark.quantile == "benchmark"
+    assert benchmark.annual_return == pytest.approx(
+        (1.0 + benchmark_returns).prod() ** (4 / len(layered_returns)) - 1
+    )
+    assert benchmark.volatility == pytest.approx(benchmark_returns.std(ddof=0) * 2)
+    assert benchmark.sharpe == pytest.approx(
+        benchmark_returns.mean() / benchmark_returns.std(ddof=0) * 2
+    )
+    assert benchmark.annual_excess_return is None
+    assert benchmark.excess_volatility is None
+    assert benchmark.information_ratio is None
+    assert benchmark.benchmark_win_rate is None
 
 
 def test_factor_backtest_uses_pre_start_history_for_rolling_factor(market_data_dir):
@@ -345,8 +590,29 @@ def test_factor_backtest_uses_pre_start_history_for_rolling_factor(market_data_d
     assert body["date_range"] == {"start": "2022-02-02", "end": "2022-03-31"}
 
 
+def test_factor_backtest_accepts_factor_preprocessing_options(market_data_dir):
+    payload = _request_payload()
+    payload.update({
+        "winsorize": 1,
+        "standardize": 2,
+        "analysis_level": "core",
+    })
+    response = client.post("/api/backtest/factor", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["error"] is None
+    assert body["factor_analysis"]["definition"]["factor_preprocess"] == {
+        "winsorize": 1,
+        "standardize": 2,
+        "order": ["winsorize", "standardize"],
+        "axis": "cross_sectional",
+    }
+
+
 def test_experiment_uses_unadjusted_ohlc_for_factor_values(market_data_dir):
     from quantcore import BaseFactor
+    from quantcore.factor.tool import preprocess_factor_values
     from researchengine import ConfigManager, Experiment
 
     class OhlcMean(BaseFactor):
@@ -360,6 +626,8 @@ def test_experiment_uses_unadjusted_ohlc_for_factor_values(market_data_dir):
     config.set("factor_analysis.level", "core")
     config.set("groups", 3)
     config.set("long_short", False)
+    config.set("factor_preprocess.winsorize", 1)
+    config.set("factor_preprocess.standardize", 2)
     result = Experiment(
         factor=OhlcMean(),
         universe="CSI500",
@@ -385,6 +653,11 @@ def test_experiment_uses_unadjusted_ohlc_for_factor_values(market_data_dir):
         index=result.factor_values.index,
         columns=result.factor_values.columns,
     )
+    expected = preprocess_factor_values(
+        expected,
+        winsorize=1,
+        standardize=2,
+    )
     pd.testing.assert_frame_equal(
         result.factor_values,
         expected,
@@ -393,6 +666,12 @@ def test_experiment_uses_unadjusted_ohlc_for_factor_values(market_data_dir):
     assert result.meta["factor_price_adjustment"] == "unadjusted"
     assert result.meta["factor_price_fields"] == ["open", "high", "low", "close"]
     assert result.meta["return_price_adjustment"] == "hfq"
+    assert result.meta["factor_preprocess"] == {
+        "winsorize": 1,
+        "standardize": 2,
+        "order": ["winsorize", "standardize"],
+        "axis": "cross_sectional",
+    }
 
     hfq_close = pd.read_parquet(market_data_dir / "close.parquet").set_index("datetime")
     hfq_returns = hfq_close.pct_change(fill_method=None).reindex(
@@ -621,7 +900,7 @@ def test_factor_backtest_defaults_to_core_analysis(market_data_dir):
     assert analysis["definition"]["analysis_level"] == "core"
     assert set(analysis["layered_returns"]) >= {"layer1", "layer2", "layer3"}
     assert [item["quantile"] for item in analysis["quantile_metrics"]] == [
-        "Q1", "Q2", "Q3"
+        "Q1", "Q2", "Q3", "benchmark"
     ]
     assert analysis["industry_equity_curves"] == []
     assert analysis["ic_series"] == []

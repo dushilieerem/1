@@ -90,6 +90,14 @@ class FactorBacktestRequest(BaseModel):
     rebalance_days: int = Field(1, ge=1, description="调仓间隔，单位为交易日")
     #: 因子分层数
     groups: int = Field(5, ge=2, le=10, description="因子分层数，2-10 组")
+    #: 因子去极值方式：0 不处理，1 MAD，2 标准差，3 四分位
+    winsorize: int = Field(
+        0, ge=0, le=3, description="因子去极值方式：0/1/2/3"
+    )
+    #: 因子标准化方式：0 不处理，1 原始值，2 rank，3 极差
+    standardize: int = Field(
+        0, ge=0, le=3, description="因子标准化方式：0/1/2/3"
+    )
     #: 对比基准
     benchmark: Literal["CSI300", "CSI500"] = "CSI300"
     benchmark_snapshot: Optional[BenchmarkSnapshotInput] = None
@@ -247,7 +255,12 @@ class LayeredPoint(BaseModel):
 
 
 class QuantileMetric(BaseModel):
-    """单个因子分位相对基准的绩效指标。"""
+    """单个因子分位或基准的绝对及相对绩效指标。
+
+    分组行的基础指标是分组自身的绝对绩效，``annual_excess_return``
+    等字段是相对基准的绩效；``quantile == "benchmark"`` 时只填充
+    基准自身的绝对绩效指标。
+    """
 
     quantile: str
     annual_return: Optional[float] = None
@@ -323,6 +336,13 @@ class FactorBacktestMeta(BaseModel):
     benchmark: str
     filter_limit_up: bool
     filter_suspended: bool
+    factor_price_adjustment: Optional[str] = None
+    factor_price_source: Optional[str] = None
+    factor_price_fields: list[str] = Field(default_factory=list)
+    factor_price_precision: Optional[str] = None
+    return_price_adjustment: Optional[str] = None
+    return_price_source: Optional[str] = None
+    return_price_precision: Optional[str] = None
     timings_seconds: "dict[str, float]" = {}
     universe_asset: Optional[ResolvedAssetMeta] = Field(None, exclude_if=lambda value: value is None)
     benchmark_asset: Optional[ResolvedAssetMeta] = Field(None, exclude_if=lambda value: value is None)

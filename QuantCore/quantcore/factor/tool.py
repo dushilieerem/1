@@ -62,6 +62,69 @@ def zscore(values: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def winsorize_data(values: pd.DataFrame, method: int = 0) -> pd.DataFrame:
+    """按外部平台口径做横截面去极值。
+
+    values 为日期×标的宽表；method 对应外部函数中的 winsorize 参数：
+    0 不处理，1 为 5.2 倍 MAD，2 为 3 倍标准差，3 为四分位法。
+    """
+    _require_frame(values)
+    if method not in (0, 1, 2, 3):
+        raise ValueError("winsorize_data 的 method 必须为 0、1、2 或 3")
+    if method == 0:
+        return values.copy()
+
+    median = values.median(axis=1)
+    if method == 1:
+        width = 5.2 * values.sub(median, axis=0).abs().median(axis=1)
+        lower = median - width
+        upper = median + width
+    elif method == 2:
+        width = 3 * values.std(axis=1)
+        lower = values.mean(axis=1) - width
+        upper = values.mean(axis=1) + width
+    else:
+        q1 = values.quantile(0.25, axis=1)
+        q3 = values.quantile(0.75, axis=1)
+        lower = q1 - 1.5 * (median - q1)
+        upper = q3 + 1.5 * (q3 - median)
+    return values.clip(lower=lower, upper=upper, axis=0)
+
+
+def standardize_data(values: pd.DataFrame, method: int = 0) -> pd.DataFrame:
+    """按外部平台口径做横截面标准化。"""
+    _require_frame(values)
+    if method not in (0, 1, 2, 3):
+        raise ValueError("standardize_data 的 method 必须为 0、1、2 或 3")
+    if method == 0:
+        return values.copy()
+    if method == 1:
+        return values.sub(values.mean(axis=1), axis=0).div(
+            values.std(axis=1), axis=0
+        )
+    if method == 2:
+        ranked = values.rank(axis=1, ascending=True)
+        return ranked.sub(ranked.mean(axis=1), axis=0).div(
+            ranked.std(axis=1), axis=0
+        )
+    lower = values.min(axis=1)
+    upper = values.max(axis=1)
+    return values.sub(lower, axis=0).div(upper - lower, axis=0)
+
+
+def preprocess_factor_values(
+    values: pd.DataFrame,
+    *,
+    winsorize: int = 0,
+    standardize: int = 0,
+) -> pd.DataFrame:
+    """按去极值再标准化的顺序处理因子值。"""
+    return standardize_data(
+        winsorize_data(values, winsorize),
+        standardize,
+    )
+
+
 def rank(values: pd.DataFrame) -> pd.DataFrame:
     """按交易日进行横截面百分位排名。"""
     _require_frame(values)
@@ -152,7 +215,10 @@ __all__ = [
     "mad_winsorize",
     "neutralize",
     "normalize",
+    "preprocess_factor_values",
     "rank",
+    "standardize_data",
     "winsorize",
+    "winsorize_data",
     "zscore",
 ]

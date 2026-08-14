@@ -1,6 +1,6 @@
 # POST /api/backtest/factor
 
-用于因子选股研究。服务以 `FactorQuantileStrategy` 按因子值分组构建组合，返回绩效、净值、基准、超额收益和因子分析。
+用于因子选股研究。服务以原始因子值 `pd.qcut` 分组构建组合，返回绩效、净值、基准、超额收益和因子分析。
 
 ```jsonc
 {
@@ -40,7 +40,7 @@
 
 成功响应包含 `metrics`、`equity_curve`、`drawdowns`、`annual_returns`、`factor_analysis`、`date_range`、`final_equity`、`benchmark_curve`、`excess_return`、`meta` 和 `error`。因子代码错误保持 HTTP `200`，并写入 `error`（此时 `meta` 为 `null`）。
 
-`factor_analysis.quantile_metrics` 返回每个因子分位（`Q1` 为最低分位，`QN` 为最高分位）的相对基准绩效：
+`factor_analysis.quantile_metrics` 返回各因子分位（`Q1` 为最高分位，`QN` 为最低分位）及基准的绩效。分组的 `annual_return`、`volatility`、`sharpe` 和 `max_drawdown` 是分组自身的绝对绩效；`annual_excess_return`、`excess_volatility`、`information_ratio` 和 `benchmark_win_rate` 是相对基准指标。最后一项 `quantile: "benchmark"` 返回基准的绝对绩效，相对基准字段为 `null`：
 
 ```json
 [
@@ -54,11 +54,24 @@
     "excess_volatility": 0.10,
     "information_ratio": 0.30,
     "benchmark_win_rate": 0.52
+  },
+  {
+    "quantile": "benchmark",
+    "annual_return": 0.09,
+    "volatility": 0.15,
+    "sharpe": 0.60,
+    "max_drawdown": -0.18,
+    "annual_excess_return": null,
+    "excess_volatility": null,
+    "information_ratio": null,
+    "benchmark_win_rate": null
   }
 ]
 ```
 
-其中 `annual_return`、`volatility`、`annual_excess_return` 和 `excess_volatility` 使用日频收益的算术年化口径（均值或标准差乘以 `252` 或 `√252`）；`sharpe` 和 `information_ratio` 的无风险利率均为 0；`benchmark_win_rate` 为日超额收益大于 0 的比例。`core` 与 `full` 均返回该字段；若分组或基准没有足够有效数据，对应指标为 `null`。
+其中，分组 `annual_return` 使用包含首个信号到入场日收益的完整收益序列计算几何年化 CAGR，分组 `volatility`/`sharpe` 使用样本标准差 `ddof=1`；基准使用入场日到结束日的收益序列，年化同样使用几何 CAGR，但波动率/夏普使用总体标准差 `ddof=0`。分组净值曲线首个输出点统一为 `1.0`，首个信号收益只进入分组指标，不进入展示曲线。`annual_excess_return`、`excess_volatility`、`information_ratio` 和 `benchmark_win_rate` 仍按日超额收益计算；`benchmark_win_rate` 为日超额收益大于 0 的比例。`core` 与 `full` 均返回该字段；若分组或基准没有足够有效数据，对应指标为 `null`。
+
+因子回测响应的 `meta` 会明确返回因子价格和收益价格的复权口径、字段、逻辑来源及精度策略。当前默认策略为：因子使用未复权 OHLC，收益使用后复权 close，读取源精度且不额外四舍五入。
 
 使用自定义资产的请求示例：
 

@@ -3,8 +3,8 @@
 三因子（Fama-French 口径，自构造）：
 
 - **MKT** = 市值加权全市场日收益（同时作累计收益图的基准）。
-- **SMB** = 小市值组 − 大市值组多空日收益（按 ``total_mv`` 分 N 组，Q1 小盘 − QN 大盘）。
-- **HML** = 高账面市值比组 − 低账面市值比组多空（按 ``1/pb`` 分组，高 1/pb=价值股 − 低 1/pb=成长股）。
+- **SMB** = 小市值组 − 大市值组多空日收益（按 ``total_mv`` 分 N 组，QN 小盘 − Q1 大盘）。
+- **HML** = 高账面市值比组 − 低账面市值比组多空（按 ``1/pb`` 分组，Q1 高 1/pb=价值股 − QN 低 1/pb=成长股）。
 
 SMB/HML 复用 :mod:`researchengine.layered`，与分层回测同口径。
 
@@ -95,20 +95,20 @@ def ff3_factors(
 
     Notes
     -----
-    - SMB = 小盘(Q1) − 大盘(QN)：按 ``total_mv`` 分组，做多低市值组、做空高市值组。
-    - HML = 价值(QN) − 成长(Q1)：按 ``1/pb`` 分组，做多高账面市值比（低 PB）组、
+    - SMB = 小盘(QN) − 大盘(Q1)：按 ``total_mv`` 分组，做多低市值组、做空高市值组。
+    - HML = 价值(Q1) − 成长(QN)：按 ``1/pb`` 分组，做多高账面市值比（低 PB）组、
       做空低账面市值比（高 PB）组。``pb<=0`` 视作无效（``1/pb`` 置 NaN）。
     """
     mkt = market_weighted_returns(close, total_mv, rebalance)
 
-    # SMB: 小盘 - 大盘 = Q1 - QN
+    # SMB: 小盘 - 大盘 = QN - Q1
     smb_lr = layered_returns(total_mv, close, n_groups=n_groups, rebalance=rebalance)
-    smb = long_short_returns(smb_lr, q_high=1, q_low=n_groups)
+    smb = long_short_returns(smb_lr, q_high=n_groups, q_low=1)
 
-    # HML: 价值(高 1/pb) - 成长(低 1/pb) = QN - Q1
+    # HML: 价值(高 1/pb) - 成长(低 1/pb) = Q1 - QN
     bm = 1.0 / pb.where(pb > 0)  # 账面市值比；pb<=0 -> NaN
     hml_lr = layered_returns(bm, close, n_groups=n_groups, rebalance=rebalance)
-    hml = long_short_returns(hml_lr, q_high=n_groups, q_low=1)
+    hml = long_short_returns(hml_lr, q_high=1, q_low=n_groups)
 
     df = pd.DataFrame({"MKT": mkt, "SMB": smb, "HML": hml})
     return df.dropna()

@@ -66,3 +66,5 @@ strategies:
 `cci_mean_reversion_a_share_event`、`money_flow_index_a_share_event`、`trix_momentum_a_share_event` 和 `rate_of_change_momentum_a_share_event` 是新增的日频事件研究策略，分别使用 CCI、MFI、TRIX 和 ROC 生成现金多头信号。四者均按前一收盘计算、下一交易日开盘成交；MFI 额外要求 `volume` 字段。它们不补造盘中价格、历史成分或市场状态，结果仅用于研究验证。
 
 `ultimate_oscillator_a_share_event`、`vortex_indicator_a_share_event`、`relative_vigor_index_a_share_event` 和 `elder_force_index_a_share_event` 是本次新增的日频事件研究策略，分别使用 Ultimate Oscillator、Vortex Indicator、RVI 和 Elder Force Index 生成现金多头信号。四者均按前一收盘计算、下一交易日开盘成交；Elder Force Index 额外要求 `volume` 字段，结果仅用于研究验证。
+
+`chande_momentum_oscillator_a_share_event`、`fisher_transform_a_share_event`、`ease_of_movement_a_share_event` 和 `volume_price_trend_a_share_event` 是本次新增的日频事件研究策略，分别使用 CMO、Fisher Transform、EOM 和标准 VPT 生成现金多头信号。四者均按前一收盘计算、下一交易日开盘成交；EOM 与 VPT 额外要求 `volume` 字段，结果仅用于研究验证。

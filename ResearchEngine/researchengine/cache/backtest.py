@@ -15,8 +15,8 @@ from typing import Any
 class FileBacktestCache:
     """保存完整 API 响应的可再生本地缓存。"""
 
-    # v4: 因子计算改用未复权 OHLC、收益计算改用后复权 close。
-    version = "factor-backtest-v4"
+    # v6: Q1 为最高因子值组，QN 为最低因子值组。
+    version = "factor-backtest-v6"
 
     def __init__(self, root: Path, ttl_days: int = 30, max_bytes: int = 10 * 1024**3):
         self.root = Path(root)

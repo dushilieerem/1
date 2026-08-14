@@ -48,6 +48,27 @@ _INDEX_FILES = {
 _ALL_A_NAMES = {"CSI_ALL", "ALL_A", "A_SHARE"}
 _DOMAIN_PANEL_FILES = ("market_data.parquet", "daily_basic.parquet", "security_status.parquet")
 
+# ``FieldParquetProvider`` 会在每次初始化时扫描合并宽表的 schema。API 请求通常
+# 会创建多个 provider，这个只读元数据扫描不需要重复执行。缓存项带文件指纹，
+# 数据版本切换或文件更新后会自动失效；进程重启也会自然清空。
+_SCHEMA_CACHE: dict[Path, tuple[int, int, object]] = {}
+
+
+def _read_schema_cached(path: Path):
+    """读取 Parquet schema，并按文件大小/mtime 缓存。"""
+    resolved = path.resolve()
+    stat = resolved.stat()
+    cached = _SCHEMA_CACHE.get(resolved)
+    fingerprint = (stat.st_size, stat.st_mtime_ns)
+    if cached is not None and cached[:2] == fingerprint:
+        return cached[2]
+
+    import pyarrow.parquet as pq
+
+    schema = pq.read_schema(resolved)
+    _SCHEMA_CACHE[resolved] = (stat.st_size, stat.st_mtime_ns, schema)
+    return schema
+
 
 class _LazyPanels:
     """按字段懒加载的面板映射。``__getitem__`` 时才读盘并缓存。"""
@@ -135,9 +156,7 @@ class FieldParquetProvider(IDataProvider):
 
     def _scan_combined_file(self, path: Path) -> None:
         """识别 iFinD 合并宽表中的 ``(证券代码, 字段)`` 列。"""
-        import pyarrow.parquet as pq
-
-        schema = pq.read_schema(path)
+        schema = _read_schema_cached(path)
         metadata = schema.pandas_metadata or {}
         index_columns = metadata.get("index_columns", [])
         if index_columns and isinstance(index_columns[0], str):
@@ -307,8 +326,6 @@ class FieldParquetProvider(IDataProvider):
             raise KeyError(f"不支持的股票池 {pool!r}，可用: {sorted(_ALL_A_NAMES | set(_UNIVERSE_FILES))}")
 
         # 读 close 字段 schema 取列名（不读数据），无 close 则取首个
-        import pyarrow.parquet as pq
-
         if self._combined_files:
             field = "close" if "close" in self._combined_columns else next(
                 iter(self._combined_columns)
@@ -318,7 +335,7 @@ class FieldParquetProvider(IDataProvider):
         field = "close" if "close" in self._field_files else next(
             iter(self._field_files)
         )
-        names = pq.read_schema(self._field_files[field]).names
+        names = _read_schema_cached(self._field_files[field]).names
         return [n for n in names if n != "datetime"]
 
     def get_universe_at(self, name: str, as_of: str | pd.Timestamp) -> List[str]:

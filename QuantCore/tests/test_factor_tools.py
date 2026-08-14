@@ -6,8 +6,11 @@ from quantcore.factor.tool import (
     mad_winsorize,
     neutralize,
     normalize,
+    preprocess_factor_values,
     rank,
+    standardize_data,
     winsorize,
+    winsorize_data,
     zscore,
 )
 
@@ -47,6 +50,34 @@ def test_zscore_rank_and_normalize_preserve_missing_values(values):
     assert normalized.iloc[0, :3].abs().sum() == pytest.approx(1.0)
     assert normalized.iloc[1, :3].tolist() == [pytest.approx(1 / 3)] * 3
     assert pd.isna(normalized.iloc[1, 3])
+
+
+def test_external_factor_preprocessing_uses_date_cross_sections():
+    values = pd.DataFrame(
+        [[1.0, 2.0, 3.0, 4.0, 100.0], [1.0, 2.0, 3.0, np.nan, 5.0]],
+        index=pd.date_range("2024-01-02", periods=2),
+        columns=list("ABCDE"),
+    )
+
+    mad = winsorize_data(values, method=1)
+    assert mad.iloc[0, 4] == pytest.approx(8.2)
+    assert pd.isna(mad.iloc[1, 3])
+
+    ranked = standardize_data(values.iloc[:, :3], method=2)
+    assert ranked.iloc[0].mean() == pytest.approx(0.0)
+    assert ranked.iloc[0].std() == pytest.approx(1.0)
+
+    minmax = standardize_data(values.iloc[:, :3], method=3)
+    assert minmax.iloc[0].tolist() == pytest.approx([0.0, 0.5, 1.0])
+
+    combined = preprocess_factor_values(values, winsorize=1, standardize=2)
+    expected = standardize_data(mad, method=2)
+    pd.testing.assert_frame_equal(combined, expected)
+
+    with pytest.raises(ValueError):
+        winsorize_data(values, method=4)
+    with pytest.raises(ValueError):
+        standardize_data(values, method=4)
 
 
 def test_neutralize_removes_industry_and_log_market_cap_exposures():

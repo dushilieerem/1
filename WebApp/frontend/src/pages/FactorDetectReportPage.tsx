@@ -945,36 +945,39 @@ export function FactorDetectReportPage() {
               <p className="font-mono text-xs text-slate-500">{rec.factorName}</p>
             ) : null}
           </div>
-          <div className="flex shrink-0 flex-nowrap items-center justify-end gap-2 overflow-x-auto sm:ml-auto">
+          <div className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
             {archiveDrafts.length > 0 ? (
               <button
                 type="button"
                 onClick={openArchive}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100"
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100"
               >
-                <Archive className="h-3.5 w-3.5" />
+                <Archive className="h-3.5 w-3.5 shrink-0" />
                 入库
               </button>
             ) : null}
             <button
               type="button"
               onClick={shareToCommunity}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
             >
-              <Share2 className="h-3.5 w-3.5" />
-              分享到社区
+              <Share2 className="h-3.5 w-3.5 shrink-0" />
+              <span className="sm:hidden">分享</span>
+              <span className="hidden sm:inline">分享到社区</span>
             </button>
             <Link
               to={`/factor/detect/${rec.projectId}?runId=${encodeURIComponent(rec.id || runId)}`}
-              className="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+              className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
             >
-              返回配置
+              <span className="sm:hidden">配置</span>
+              <span className="hidden sm:inline">返回配置</span>
             </Link>
             <Link
               to={`/factor/detect/${rec.projectId}/history`}
-              className="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+              className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
             >
-              检测列表
+              <span className="sm:hidden">列表</span>
+              <span className="hidden sm:inline">检测列表</span>
             </Link>
           </div>
         </div>
@@ -1017,20 +1020,22 @@ export function FactorDetectReportPage() {
       </div>
 
       <div className="mx-auto max-w-[1400px] px-3 py-4 sm:px-6 sm:py-5">
-        {/* 移动端顶栏导航 */}
-        <nav className="sticky top-0 z-10 mb-4 flex gap-1 overflow-x-auto border-b border-slate-200 bg-white/95 pb-2 backdrop-blur [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
+        {/* 移动端顶栏导航：可横滑，末项留边距避免裁切 */}
+        <nav className="sticky top-0 z-10 -mx-3 mb-4 flex gap-1.5 overflow-x-auto border-b border-slate-200 bg-white/95 px-3 pb-2 backdrop-blur [scrollbar-width:thin] lg:mx-0 lg:hidden lg:px-0">
           {visibleNav.map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => setTab(item.id)}
-              className={`shrink-0 rounded-full px-3 py-1.5 text-xs ${
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs whitespace-nowrap ${
                 tab === item.id ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
               }`}
             >
               {item.label}
             </button>
           ))}
+          {/* 右侧呼吸边距，防止最后一枚贴边看起来像被切掉 */}
+          <span className="w-2 shrink-0" aria-hidden />
         </nav>
 
         <div className="flex gap-6">
@@ -1423,11 +1428,11 @@ function MetaChip({
   value: string;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/80 px-2.5 py-1.5">
-      {icon}
-      <div className="min-w-0">
+    <div className="flex min-w-0 items-start gap-2 rounded-lg border border-slate-100 bg-slate-50/80 px-2.5 py-1.5">
+      <span className="mt-0.5 shrink-0">{icon}</span>
+      <div className="min-w-0 flex-1">
         <p className="text-[10px] text-slate-400">{label}</p>
-        <p className="truncate text-xs font-semibold text-slate-800">{value}</p>
+        <p className="break-words text-xs font-semibold leading-snug text-slate-800">{value}</p>
       </div>
     </div>
   );

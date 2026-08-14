@@ -15,7 +15,7 @@ from typing import Any
 from psycopg.types.json import Json
 
 from services.db import get_conn
-from services.news_store import SOURCE_LABELS, ensure_news_schema
+from services.news_store import SOURCE_LABELS, ensure_news_schema, enforce_news_retention
 
 TZ8 = timezone(timedelta(hours=8))
 UA = {
@@ -686,6 +686,11 @@ def upsert_news_items(items: list[dict[str, Any]]) -> dict[str, int]:
                     it.get("is_featured", False),
                 ),
             )
+    # 写入后立刻 FIFO 裁剪，避免定时任务未加载新代码时持续超限
+    try:
+        enforce_news_retention()
+    except Exception as exc:
+        print(f"[news] retention after upsert fail: {exc}")
     return {"upserted": len(items)}
 
 
@@ -870,6 +875,11 @@ def ingest_news(
     batch = list(uniq.values())
     stats = upsert_news_items(batch)
     purged = purge_demo_seeds() if batch else 0
+    retention: dict[str, int] = {}
+    try:
+        retention = enforce_news_retention()
+    except Exception:
+        retention = {}
     refreshed = 0
     em_touched = any(
         sid in ("eastmoney", "em_research", "em_policy") for sid in (wanted or [])
@@ -898,6 +908,7 @@ def ingest_news(
         "fetched": len(batch),
         "upserted": stats["upserted"],
         "purgedDemo": purged,
+        "retention": retention or None,
         "refreshedEastmoney": refreshed,
         "retagged": retagged,
         "sources": per_source,

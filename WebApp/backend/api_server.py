@@ -2731,10 +2731,19 @@ def main() -> None:
         from services.watchlist_store import ensure_watchlist_schema
 
         ensure_watchlist_schema()
-        from services.news_store import ensure_news_schema, seed_sample_news
+        from services.news_store import (
+            ensure_news_schema,
+            seed_sample_news,
+            enforce_news_retention,
+        )
 
         ensure_news_schema()
         news_n = seed_sample_news()
+        news_retention: dict = {}
+        try:
+            news_retention = enforce_news_retention()
+        except Exception as exc:
+            print(f"  news retention 跳过: {exc}")
         from knowledge_hub.store import ensure_kh_schema
 
         ensure_kh_schema()
@@ -2760,6 +2769,16 @@ def main() -> None:
         print("  user_strategy_libraries 就绪")
         print("  user_watchlists 就绪")
         print(f"  news_items 就绪" + (f"（种子 {news_n} 条）" if news_n else ""))
+        if news_retention and any(
+            int(news_retention.get(k) or 0) > 0
+            for k in ("prunedAnnounce", "prunedFlash", "prunedFeed")
+        ):
+            print(
+                "  news retention FIFO → "
+                f"announce -{news_retention.get('prunedAnnounce', 0)} "
+                f"flash -{news_retention.get('prunedFlash', 0)} "
+                f"feed -{news_retention.get('prunedFeed', 0)}"
+            )
         try:
             from services.news_ingest import start_news_ingest_scheduler
 

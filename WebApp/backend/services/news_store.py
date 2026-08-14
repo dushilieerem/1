@@ -17,6 +17,12 @@ VALID_SOURCES = frozenset(
     {"cls", "eastmoney", "cninfo", "10jqka", "wallstreetcn", "bloomberg"}
 )
 
+# 三类视图 FIFO 上限：新入库后删最旧，超出部分淘汰
+# 要闻流 = 全表；电报 = is_flash；公告 = category=announce
+NEWS_CAP_FEED = 15_000
+NEWS_CAP_FLASH = 10_000
+NEWS_CAP_ANNOUNCE = 2_000
+
 SOURCE_LABELS = {
     "cls": "财联社",
     "eastmoney": "东方财富",
@@ -196,6 +202,10 @@ def list_news(
 ) -> dict[str, Any]:
     limit = max(1, min(100, int(limit)))
     offset = max(0, int(offset))
+    try:
+        ensure_news_within_caps()
+    except Exception:
+        pass
     params: list[Any] = []
     where = "WHERE 1=1"
     cat = (category or "").strip()
@@ -474,3 +484,84 @@ def seed_sample_news() -> int:
             if cur.rowcount:
                 inserted += 1
     return inserted
+
+
+def _prune_by_window(conn: Any, *, where_sql: str, cap: int) -> int:
+    """按 published_at DESC, id DESC 保留最新 cap 条，删更旧的。where_sql 为空则全表。"""
+    if cap <= 0:
+        return 0
+    filter_sql = f"WHERE {where_sql}" if where_sql.strip() else ""
+    cur = conn.execute(
+        f"""
+        DELETE FROM news_items
+        WHERE id IN (
+          SELECT id FROM (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                     ORDER BY published_at DESC NULLS LAST, id DESC
+                   ) AS rn
+            FROM news_items
+            {filter_sql}
+          ) ranked
+          WHERE rn > %s
+        )
+        """,
+        (int(cap),),
+    )
+    return int(cur.rowcount or 0)
+
+
+def enforce_news_retention(
+    *,
+    cap_feed: int = NEWS_CAP_FEED,
+    cap_flash: int = NEWS_CAP_FLASH,
+    cap_announce: int = NEWS_CAP_ANNOUNCE,
+) -> dict[str, int]:
+    """
+    FIFO 上限：入库后淘汰最旧。
+    - 公告表 category=announce → cap_announce
+    - 电报快讯 is_flash → cap_flash
+    - 要闻流（全表）→ cap_feed
+    顺序：先裁分桶，再裁全表，避免全表先砍误伤分桶配额。
+    """
+    with get_conn() as conn:
+        pruned_announce = _prune_by_window(
+            conn, where_sql="category = 'announce'", cap=cap_announce
+        )
+        pruned_flash = _prune_by_window(
+            conn, where_sql="is_flash = TRUE", cap=cap_flash
+        )
+        pruned_feed = _prune_by_window(conn, where_sql="", cap=cap_feed)
+    return {
+        "prunedAnnounce": pruned_announce,
+        "prunedFlash": pruned_flash,
+        "prunedFeed": pruned_feed,
+        "capFeed": int(cap_feed),
+        "capFlash": int(cap_flash),
+        "capAnnounce": int(cap_announce),
+    }
+
+
+def ensure_news_within_caps() -> dict[str, int] | None:
+    """超限才裁剪；列表/写入前可调用，避免 UI 短暂显示超上限。"""
+    with get_conn() as conn:
+        feed = int(
+            conn.execute("SELECT COUNT(*) AS n FROM news_items").fetchone()["n"]
+        )
+        flash = int(
+            conn.execute(
+                "SELECT COUNT(*) AS n FROM news_items WHERE is_flash = TRUE"
+            ).fetchone()["n"]
+        )
+        announce = int(
+            conn.execute(
+                "SELECT COUNT(*) AS n FROM news_items WHERE category = 'announce'"
+            ).fetchone()["n"]
+        )
+    if (
+        feed <= NEWS_CAP_FEED
+        and flash <= NEWS_CAP_FLASH
+        and announce <= NEWS_CAP_ANNOUNCE
+    ):
+        return None
+    return enforce_news_retention()

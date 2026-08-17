@@ -67,3 +67,12 @@ Piotroski F-Score 与股息增长策略分别位于 `piotroski_f_score_a_share_e
 - `volume_price_trend_a_share_event:v1` 位于 `Strategy/libraries/volume_price_trend_a_share_event_v1.py`，使用标准 `close.pct_change() * volume` 累计 VPT 和 10 日 EMA 信号线；`volume` 缺失时在 `initialize()` 明确报错。
 
 四个策略不新增 QuantCore 或 EventEngine 接口，不覆盖既有源码版本。回滚方式仍为从 `Strategy/libraries/index.yaml` 移除对应条目，源码文件保留用于历史版本追溯。
+
+本次新增的四个日频事件策略继续复用 `DataView.history()` 的前收盘快照、`Scheduler.daily()` 和 `OrderService.target_value()`，并与 `Factor/libraries/technical_lib.py` 的既有指标口径保持一致：
+
+- `awesome_oscillator_a_share_event:v1` 位于 `Strategy/libraries/awesome_oscillator_a_share_event_v1.py`，以中间价 SMA5-SMA34 的零轴交叉和 MA60 过滤生成信号。
+- `balance_of_power_a_share_event:v1` 位于 `Strategy/libraries/balance_of_power_a_share_event_v1.py`，复用标准 BOP 公式并增加 14 日简单平滑，避免单日开收盘噪声直接触发组合订单。
+- `choppiness_breakout_a_share_event:v1` 位于 `Strategy/libraries/choppiness_breakout_a_share_event_v1.py`，使用 Choppiness Index 的 38.2/61.8 阈值识别趋势/震荡环境，并以不含当前观测的前 20 日最高/最低收盘作为突破与退出边界。
+- `coppock_curve_a_share_event:v1` 位于 `Strategy/libraries/coppock_curve_a_share_event_v1.py`，使用 11/14 日 ROC 和 10 日线性加权均线；该日频参数与因子库一致，是研究适配而非原始月线策略复刻。
+
+四个源码文件均自包含，仅依赖 pandas/numpy，不修改共享 Catalog、QuantCore 或 EventEngine。字段不足在 `initialize()` 拒绝，历史不足在局部指标计算中跳过，现有持仓缺少可用指标时提交平仓；无候选时保留现金。回滚方式为从 `Strategy/libraries/index.yaml` 移除对应条目，保留 v1 源码用于历史回测追溯。

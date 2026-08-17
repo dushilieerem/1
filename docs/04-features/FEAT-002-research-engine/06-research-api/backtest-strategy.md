@@ -2,6 +2,8 @@
 
 用于向量化或事件驱动策略。通过 `engine_mode` 显式选择：`vectorized`（默认）支持 `generate_signals()` 与 `FactorPortfolioStrategy`；`event` 支持实现 `initialize(context)` 的日频事件策略。引用策略目录时，请求模式必须与资产的 `execution_mode` 一致。
 
+Web 端需要展示调仓或成交过程时，使用 `include_execution_timeline=true`，统一消费响应中的 `execution_timeline`。该字段不改变回测计算，只控制是否序列化执行明细：向量化模式将目标权重变化转换为 `rebalance` 条目；事件模式将订单、成交、账户快照和审计事件合并为时间线。`rebalance_logs` 以及事件模式的 `orders`、`fills`、`event_positions`、`events` 保留用于兼容和底层调试。
+
 ```jsonc
 {
   "engine_mode": "vectorized",
@@ -31,7 +33,7 @@
 | `stamp_tax` | number | `0.001` | 卖出印花税率。 |
 | `initial_capital` | number | `1000000` | 初始资金。 |
 | `include_positions` | boolean | `false` | 返回持仓权重快照。 |
-| `include_rebalance_logs` | boolean | `false` | 返回目标权重变化日志。 |
+| `include_rebalance_logs` | boolean | `false` | 仅向量化模式返回目标权重变化日志；事件模式请使用 `include_execution_timeline`。 |
 | `include_execution_timeline` | boolean | `false` | 返回统一执行时间线；向量化策略包含目标权重变更，事件策略包含订单、成交、账户快照和审计事件。 |
 
 ## 成功响应示例
@@ -81,6 +83,7 @@
     "strategy": "EqualWeightMomentum",
     "universe": "CSI500",
     "benchmark": "CSI300",
+    "engine_mode": "vectorized",
     "strategy_id": null,
     "strategy_version": null,
     "code_hash": null
@@ -109,9 +112,128 @@
       ]
     }
   ],
+  "execution_timeline": [
+    {
+      "timestamp": "2024-01-02T00:00:00",
+      "type": "rebalance",
+      "payload": {
+        "trades": [
+          {
+            "symbol": "000001.SZ",
+            "name": "平安银行",
+            "side": "buy",
+            "previous_weight": 0.0,
+            "target_weight": 0.1,
+            "weight_change": 0.1
+          }
+        ]
+      }
+    }
+  ],
+  "orders": null,
+  "fills": null,
+  "event_positions": null,
+  "events": null,
+  "assumptions": null,
   "error": null
 }
 ```
+
+### 事件模式时间线示例
+
+事件模式请求需要显式设置 `engine_mode`，并可按需打开统一时间线：
+
+```jsonc
+{
+  "engine_mode": "event",
+  "strategy_id": "donchian_a_share_event",
+  "benchmark": "CSI300",
+  "include_execution_timeline": true
+}
+```
+
+事件模式响应中的 `execution_timeline` 结构如下（仅展示关键条目，实际会按回测日期返回完整序列）：
+
+```json
+{
+  "meta": {
+    "strategy": "DonchianAShareEventStrategy",
+    "universe": "CSI500",
+    "benchmark": "CSI300",
+    "engine_mode": "event",
+    "strategy_id": "donchian_a_share_event",
+    "strategy_version": "v1",
+    "code_hash": "..."
+  },
+  "execution_timeline": [
+    {
+      "timestamp": "2024-01-02T00:00:00",
+      "type": "audit",
+      "payload": {"type": "SESSION_OPEN", "timestamp": "2024-01-02T00:00:00"}
+    },
+    {
+      "timestamp": "2024-01-02T00:00:00",
+      "type": "audit",
+      "payload": {
+        "type": "SCHEDULED_CALLBACK",
+        "timestamp": "2024-01-02T00:00:00",
+        "callback": "rebalance"
+      }
+    },
+    {
+      "timestamp": "2024-01-02T00:00:00",
+      "type": "order",
+      "payload": {
+        "order_id": "EVT-000001",
+        "symbol": "000001",
+        "quantity": 100,
+        "target_value": null,
+        "side": "buy",
+        "status": "filled",
+        "reason_code": null,
+        "submitted_at": "2024-01-02T00:00:00"
+      }
+    },
+    {
+      "timestamp": "2024-01-02T00:00:00",
+      "type": "fill",
+      "payload": {
+        "order_id": "EVT-000001",
+        "symbol": "000001",
+        "side": "buy",
+        "quantity": 100,
+        "price": 10.0,
+        "timestamp": "2024-01-02T00:00:00",
+        "commission": 5.0,
+        "stamp_tax": 0.0
+      }
+    },
+    {
+      "timestamp": "2024-01-02T00:00:00",
+      "type": "position",
+      "payload": {
+        "timestamp": "2024-01-02T00:00:00",
+        "cash": 998995.0,
+        "total_value": 999995.0,
+        "positions": {"000001": 100},
+        "sellable_quantities": {"000001": 0}
+      }
+    }
+  ]
+}
+```
+
+`execution_timeline[].type` 的取值和 `payload` 约定如下：
+
+| `type` | 适用模式 | `payload` 内容 |
+|---|---|---|
+| `rebalance` | 向量化 | `{trades: [...]}`；每笔交易含 `symbol`、`name`、`side`、`previous_weight`、`target_weight`、`weight_change`。 |
+| `order` | 事件 | 一个 `EventOrderInfo`：订单编号、标的、数量/目标金额、方向、状态、拒单原因和提交时间。 |
+| `fill` | 事件 | 一个 `EventFillInfo`：订单编号、标的、方向、数量、成交价、成交时间和费用。 |
+| `position` | 事件 | 一个 `EventPositionSnapshot`：时间、现金、账户总值、持仓数量和可卖数量。 |
+| `audit` | 事件 | 事件引擎审计记录，例如 `SESSION_OPEN`、`SCHEDULED_CALLBACK`、`ORDER_REJECTED`、`FILL`、`SESSION_CLOSE`。 |
+
+时间线按 `timestamp` 升序排列；同一时间点按事件引擎阶段排序。事件策略的完整订单/成交/快照/审计原始数组仍分别位于 `orders`、`fills`、`event_positions`、`events`，前端不需要同时消费这些字段。
 
 ## 响应字段
 
@@ -125,10 +247,10 @@
 | `final_equity` | number/`null` | 回测结束日的策略账户权益金额。 |
 | `benchmark_curve` | object[]/`null` | 基准收盘价按首日归一化后的净值和回撤序列，首个 `value` 为 `1.0`。 |
 | `excess_return` | number/`null` | 策略区间收益减去同期基准区间收益，不是逐日超额收益序列。 |
-| `meta` | object/`null` | 本次回测实际采用的策略、股票池与基准信息。执行失败时为 `null`。 |
+| `meta` | object/`null` | 本次回测实际采用的策略、股票池、基准和 `engine_mode` 信息。执行失败时为 `null`。 |
 | `positions` | object[]/`null` | 仅当请求 `include_positions=true` 且存在持仓时返回；为控制体积，最多采样 60 个日期，每日只保留权重最高的 20 个标的。 |
-| `rebalance_logs` | object[]/`null` | 仅当请求 `include_rebalance_logs=true` 且有调仓记录时返回，按调仓日聚合。 |
-| `execution_timeline` | object[]/`null` | 仅当请求 `include_execution_timeline=true` 时返回，条目为 `{timestamp, type, payload}`，按执行顺序排列；Web 应优先消费此字段。 |
+| `rebalance_logs` | object[]/`null` | 仅向量化模式在请求 `include_rebalance_logs=true` 且有调仓记录时返回，按调仓日聚合；事件模式不将订单或成交伪装成目标权重日志。 |
+| `execution_timeline` | object[]/`null` | 仅当请求 `include_execution_timeline=true` 时返回，条目为 `{timestamp, type, payload}`，按执行顺序排列；Web 应优先消费此字段。没有可序列化的调仓/执行记录时为 `null`。 |
 | `orders` / `fills` / `event_positions` / `events` / `assumptions` | object[]/object/`null` | 仅事件模式返回：订单、成交、账户快照、调度审计轨迹和执行假设。 |
 | `error` | string/`null` | 业务执行错误信息；成功时为 `null`。 |
 
@@ -155,7 +277,7 @@
 | 净值点（`equity_curve`、`benchmark_curve`） | `date`、`value`、`drawdown` | 日期为 `YYYY-MM-DD`；`drawdown` 是相对历史最高值的回撤，取值小于等于 0。 |
 | 回撤段（`drawdowns`） | `start`、`end`、`peak`、`trough`、`recovery`、`depth`、`days` | `start` 是高点日，`end` 是最低点日，`recovery` 为恢复到此前高点的日期；未恢复则为 `null`。`days` 为从高点到恢复日（未恢复时到回测末日）的自然日数。 |
 | 年度收益（`annual_returns`） | `year`、`return_value` | 自然年份及该年首末有效净值点计算的收益率。 |
-| 元信息（`meta`） | `strategy`、`universe`、`benchmark` | 实际执行的策略类名、股票池和基准。 |
+| 元信息（`meta`） | `strategy`、`universe`、`benchmark`、`engine_mode` | 实际执行的策略类名、股票池、基准和回测引擎模式。 |
 | 已保存策略元信息（`meta`） | `strategy_id`、`strategy_version`、`code_hash` | 仅通过 `strategy_id` 运行时有值：策略 ID、实际使用版本和源码 SHA-256 哈希；直接提交源码时均为 `null`。 |
 | 持仓快照（`positions`） | `date`、`holdings` | `holdings` 是 `{symbol, name, weight}` 数组。`symbol` 为带交易所后缀的代码（如 `000001.SZ`），`name` 为证券名称，`weight` 为目标持仓权重。 |
 | 调仓日志（`rebalance_logs`） | `date`、`trades` | `trades` 为 `{symbol, name, side, previous_weight, target_weight, weight_change}` 数组；`symbol` 与 `name` 的口径同持仓快照，`side` 取 `buy` 或 `sell`。 |
@@ -178,6 +300,12 @@
   "meta": null,
   "positions": null,
   "rebalance_logs": null,
+  "execution_timeline": null,
+  "orders": null,
+  "fills": null,
+  "event_positions": null,
+  "events": null,
+  "assumptions": null,
   "error": "ValueError: 策略代码必须且只能定义一个包含 generate_signals 方法的类"
 }
 ```

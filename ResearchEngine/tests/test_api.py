@@ -332,10 +332,10 @@ def test_factor_backtest_groups_and_benchmark(market_data_dir):
     assert body["meta"]["rebalance_days"] == 15
     assert body["meta"]["groups"] == 3
     assert body["meta"]["benchmark"] == "CSI300"
-    assert body["meta"]["factor_price_adjustment"] == "unadjusted"
+    assert body["meta"]["factor_price_adjustment"] == "hfq"
     assert body["meta"]["factor_price_fields"] == ["open", "high", "low", "close"]
     assert body["meta"]["factor_price_source"].replace("\\", "/").endswith(
-        "display/unadjusted_price.parquet"
+        "data_engine.open_high_low_close"
     )
     assert body["meta"]["factor_price_precision"] == "source_precision_no_rounding"
     assert body["meta"]["return_price_adjustment"] == "hfq"
@@ -453,10 +453,10 @@ def test_factor_backtest_supermind_fixture_matches_qcut_and_metric_contract(
     assert response.status_code == 200
     body = response.json()
     assert body["error"] is None
-    assert body["meta"]["factor_price_adjustment"] == "unadjusted"
+    assert body["meta"]["factor_price_adjustment"] == "hfq"
     assert body["meta"]["return_price_adjustment"] == "hfq"
     assert body["meta"]["factor_price_source"].replace("\\", "/").endswith(
-        "display/unadjusted_price.parquet"
+        "data_engine.open_high_low_close"
     )
     assert body["meta"]["factor_price_precision"] == "source_precision_no_rounding"
     assert body["factor_analysis"]["definition"]["grouping_method"] == "pd.qcut_raw_value"
@@ -547,13 +547,25 @@ def test_quantile_metrics_return_absolute_and_relative_benchmark_metrics():
         join="inner",
     ).dropna()
     excess = aligned["group"] - aligned["benchmark"]
+    common_annual_group = (
+        (1.0 + aligned["group"]).prod() ** (4 / len(aligned)) - 1.0
+    )
+    common_annual_benchmark = (
+        (1.0 + aligned["benchmark"]).prod() ** (4 / len(aligned)) - 1.0
+    )
     assert q1.quantile == "Q1"
     assert q1.annual_return == pytest.approx(
         (1.0 + group_returns).prod() ** (4 / len(group_returns)) - 1
     )
     assert q1.volatility == pytest.approx(group_returns.std(ddof=1) * 2)
-    assert q1.annual_excess_return == pytest.approx(excess.mean() * 4)
+    assert len(aligned) == 3
+    assert q1.annual_excess_return == pytest.approx(
+        common_annual_group - common_annual_benchmark
+    )
     assert q1.excess_volatility == pytest.approx(excess.std() * 2)
+    assert q1.information_ratio == pytest.approx(
+        q1.annual_excess_return / q1.excess_volatility
+    )
     assert q1.benchmark_win_rate == pytest.approx((excess > 0).mean())
 
     benchmark = metrics[-1]
@@ -610,13 +622,13 @@ def test_factor_backtest_accepts_factor_preprocessing_options(market_data_dir):
     }
 
 
-def test_experiment_uses_unadjusted_ohlc_for_factor_values(market_data_dir):
+def test_experiment_uses_hfq_ohlc_for_factor_values(market_data_dir):
     from quantcore import BaseFactor
     from quantcore.factor.tool import preprocess_factor_values
     from researchengine import ConfigManager, Experiment
 
     class OhlcMean(BaseFactor):
-        name = "ohlc_mean_unadjusted"
+        name = "ohlc_mean_hfq"
 
         def compute(self, data):
             return (data.open + data.high + data.low + data.close) / 4.0
@@ -636,18 +648,20 @@ def test_experiment_uses_unadjusted_ohlc_for_factor_values(market_data_dir):
         config=config,
     ).run()
 
-    display = pd.read_parquet(
-        market_data_dir / "display" / "unadjusted_price.parquet"
-    )
+    hfq = {
+        field: pd.read_parquet(market_data_dir / f"{field}.parquet")
+        .set_index("datetime")
+        for field in ("open", "high", "low", "close")
+    }
     expected = pd.DataFrame(
         {
             symbol: sum(
-                display[(symbol, field)]
+                hfq[field][symbol]
                 for field in ("open", "high", "low", "close")
             ) / 4.0
             for symbol in result.factor_values.columns
         },
-        index=display.index,
+        index=hfq["close"].index,
     )
     expected = expected.reindex(
         index=result.factor_values.index,
@@ -663,7 +677,8 @@ def test_experiment_uses_unadjusted_ohlc_for_factor_values(market_data_dir):
         expected,
         check_names=False,
     )
-    assert result.meta["factor_price_adjustment"] == "unadjusted"
+    assert result.meta["factor_price_adjustment"] == "hfq"
+    assert result.meta["factor_price_source"] == "data_engine.open_high_low_close"
     assert result.meta["factor_price_fields"] == ["open", "high", "low", "close"]
     assert result.meta["return_price_adjustment"] == "hfq"
     assert result.meta["factor_preprocess"] == {

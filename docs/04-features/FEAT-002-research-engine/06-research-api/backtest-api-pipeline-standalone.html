@@ -1482,8 +1482,8 @@ html&gt;body{padding:0}&lt;/style&gt;
 
         &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;factor&quot; data-tone=&quot;factor&quot; aria-pressed=&quot;false&quot;&gt;
           &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;06&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;因子计算与预处理&lt;/span&gt;&lt;/div&gt;
-          &lt;div class=&quot;stage-caption&quot;&gt;在完整历史计算后裁剪区间；因子使用未复权 OHLC，可选去极值/标准化&lt;/div&gt;
-          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;compute_panel&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;unadjusted OHLC&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;winsorize → standardize&lt;/span&gt;&lt;/div&gt;
+          &lt;div class=&quot;stage-caption&quot;&gt;在完整历史计算后裁剪区间；因子使用后复权 OHLC，可选去极值/标准化&lt;/div&gt;
+          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;compute_panel&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;HFQ OHLC&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;winsorize → standardize&lt;/span&gt;&lt;/div&gt;
         &lt;/button&gt;
         &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
 
@@ -1565,7 +1565,7 @@ html&gt;body{padding:0}&lt;/style&gt;
     &lt;div class=&quot;data-grid&quot;&gt;
       &lt;div class=&quot;data-lane&quot;&gt;
         &lt;div class=&quot;data-title&quot;&gt;因子价格&lt;/div&gt;
-        &lt;div class=&quot;data-copy&quot;&gt;&lt;code&gt;display/unadjusted_price.parquet&lt;/code&gt;&lt;br&gt;open / high / low / close · 未复权&lt;/div&gt;
+        &lt;div class=&quot;data-copy&quot;&gt;&lt;code&gt;panels/market_data.parquet&lt;/code&gt;&lt;br&gt;open / high / low / close · 后复权（HFQ）&lt;/div&gt;
       &lt;/div&gt;
       &lt;div class=&quot;data-lane&quot;&gt;
         &lt;div class=&quot;data-title&quot;&gt;收益价格&lt;/div&gt;
@@ -1622,7 +1622,7 @@ html&gt;body{padding:0}&lt;/style&gt;
           file: &quot;ResearchEngine/researchengine/experiment.py · Experiment._build_engines&quot;,
           input: &quot;SVQUANT_DATA_DIR 或默认 MarketData 目录&quot;,
           output: &quot;研究 DataEngine、未复权价格 DataEngine、FactorEngine、MetricEngine&quot;,
-          description: &quot;FieldParquetProvider 读取字段面板；schema 按文件大小和 mtime 做进程内缓存。未复权展示行情单独作为因子价格源。&quot;
+          description: &quot;FieldParquetProvider 读取字段面板；schema 按文件大小和 mtime 做进程内缓存。研究行情中的后复权 OHLC 作为因子价格源，未复权展示行情仅供行情展示接口使用。&quot;
         },
         panels: {
           kicker: &quot;05 · panels&quot;,

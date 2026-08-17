@@ -22,6 +22,14 @@
 - CCI、MFI、TRIX 和 ROC 作为事件策略资产登记；新增回归测试覆盖四项目录契约、CCI/MFI/TRIX/ROC 核心公式、MFI 缺少成交量时的拒绝行为以及 OHLC/OHLCV 日频事件回测。
 - Ultimate Oscillator、Vortex Indicator、Relative Vigor Index 和 Elder Force Index 作为事件策略资产登记；新增回归测试覆盖四项目录契约、核心公式、Elder Force Index 缺少成交量时的拒绝行为以及 OHLC/OHLCV 日频事件回测。
 - CMO、Fisher Transform、Ease of Movement 和 Volume Price Trend 作为事件策略资产登记；新增回归测试覆盖四项目录契约、核心公式、EOM/VPT 缺少成交量时的拒绝行为以及 OHLC/OHLCV 日频事件回测。
+- Awesome Oscillator、Balance of Power、Choppiness Index 突破和 Coppock Curve 作为事件策略资产登记；新增回归测试覆盖四项目录契约、核心公式、未来观测不改变历史指标、OHLC 字段拒绝、持仓/权重约束和标准日频事件回测。
+
+## 本次验证记录（2026-08-14）
+
+- `conda run --no-capture-output -n svquant python -m pytest ResearchEngine/tests/test_strategy_migration_ao_bop_choppiness_coppock.py -q`：13 passed。
+- `conda run --no-capture-output -n svquant python -m pytest ResearchEngine/tests/test_strategy_library.py ResearchEngine/tests/test_classic_technical_factors.py -q`：12 passed。
+- `StrategyCatalog` 共解析 54 个资产；本次四个 `strategy_id/file/entrypoint/execution_mode` 四元组均为有效 `event/v1` 条目。
+- `git diff --check`：通过；仅输出工作区既有文件的 LF/CRLF 转换提示，无空白错误。
 
 ## 限制与遗留项
 
@@ -40,3 +48,4 @@
 - CCI、MFI、TRIX 和 ROC 仅提供日频研究版；不模拟盘中触发、动态历史成分股、ST/停牌/涨跌停之外的策略专属过滤，也不构成实盘执行承诺。
 - Ultimate Oscillator、Vortex Indicator、Relative Vigor Index 和 Elder Force Index 仅提供日频研究版；不模拟盘中触发、动态历史成分股、ST/停牌/涨跌停之外的策略专属过滤，也不构成实盘执行承诺。
 - CMO、Fisher Transform、Ease of Movement 和 Volume Price Trend 仅提供日频研究版；不模拟盘中触发、动态历史成分股、ST/停牌/涨跌停之外的策略专属过滤，也不构成实盘执行承诺。
+- AO、BOP、Choppiness 与 Coppock 仅提供日频研究版；Coppock 的 11/14/10 日参数是与因子库一致的日频适配，不代表原始月线指标复刻。BOP 的 14 日平滑和 Choppiness 的 38.2/61.8 阈值是可测试研究规则，不代表已完成参数有效性验证。

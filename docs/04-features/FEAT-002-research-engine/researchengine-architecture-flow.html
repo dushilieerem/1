@@ -1,0 +1,930 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="SVQuant ResearchEngine 当前代码的系统架构图与回测流程图">
+  <title>SVQuant ResearchEngine 架构与流程</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --surface: #ffffff;
+      --surface-2: #eef3fb;
+      --ink: #152238;
+      --muted: #63708a;
+      --line: #d8e0ee;
+      --line-strong: #b7c5dc;
+      --accent: #2d6cdf;
+      --accent-soft: #e5efff;
+      --teal: #0f8a83;
+      --teal-soft: #e3f6f2;
+      --violet: #7651c7;
+      --violet-soft: #eee8ff;
+      --orange: #b7651b;
+      --orange-soft: #fff0df;
+      --green: #2c8150;
+      --green-soft: #e5f7ea;
+      --shadow: 0 18px 50px rgb(28 49 85 / 9%);
+      --shadow-soft: 0 8px 24px rgb(28 49 85 / 7%);
+      --code-bg: #f1f4f9;
+      --focus: #2d6cdf;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --bg: #101722;
+        --surface: #172130;
+        --surface-2: #1e2b3f;
+        --ink: #eef4ff;
+        --muted: #a5b2c7;
+        --line: #304159;
+        --line-strong: #4b607f;
+        --accent: #79a8ff;
+        --accent-soft: #20395f;
+        --teal: #6dd5ca;
+        --teal-soft: #173c3d;
+        --violet: #c4adff;
+        --violet-soft: #332a53;
+        --orange: #f4b274;
+        --orange-soft: #453020;
+        --green: #8be0a8;
+        --green-soft: #1b3d2a;
+        --shadow: 0 18px 50px rgb(0 0 0 / 24%);
+        --shadow-soft: 0 8px 24px rgb(0 0 0 / 18%);
+        --code-bg: #202c3e;
+        --focus: #9bc0ff;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-width: 320px; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 34rem),
+        radial-gradient(circle at 100% 12%, color-mix(in srgb, var(--teal) 9%, transparent), transparent 32rem),
+        var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.55;
+    }
+
+    button { font: inherit; }
+
+    .page {
+      width: min(1440px, calc(100% - 36px));
+      margin: 0 auto;
+      padding: 34px 0 56px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .eyebrow {
+      margin-bottom: 8px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    h1 {
+      max-width: 860px;
+      font-size: clamp(28px, 4vw, 48px);
+      line-height: 1.12;
+      letter-spacing: -.035em;
+    }
+
+    .hero-copy {
+      max-width: 860px;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+      max-width: 320px;
+    }
+
+    .tag, .endpoint, .file-tag, .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: color-mix(in srgb, var(--surface) 82%, transparent);
+      font-size: 11px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .tag { padding: 7px 10px; }
+
+    .tabbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 18px;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--surface) 88%, transparent);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .tab {
+      flex: 1 1 160px;
+      min-height: 40px;
+      border: 1px solid transparent;
+      border-radius: 11px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .tab:hover { color: var(--ink); background: var(--surface-2); }
+
+    .tab[aria-selected="true"] {
+      border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .view { display: none; }
+    .view.is-active { display: block; }
+
+    .view-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      justify-content: space-between;
+      gap: 12px 20px;
+      margin: 12px 0 16px;
+    }
+
+    .view-head h2 { font-size: 22px; letter-spacing: -.02em; }
+    .view-head p { max-width: 760px; color: var(--muted); font-size: 13px; }
+
+    .canvas {
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: color-mix(in srgb, var(--surface) 92%, transparent);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .canvas-inner { padding: 22px; }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin-bottom: 16px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .legend-item {
+      padding: 5px 8px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+    }
+
+    .legend-swatch {
+      width: 9px;
+      height: 9px;
+      border-radius: 3px;
+      background: var(--accent);
+    }
+
+    .legend-swatch.teal { background: var(--teal); }
+    .legend-swatch.violet { background: var(--violet); }
+    .legend-swatch.orange { background: var(--orange); }
+    .legend-swatch.green { background: var(--green); }
+
+    .arch-stack { display: grid; gap: 10px; }
+
+    .arch-layer {
+      position: relative;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: color-mix(in srgb, var(--surface) 75%, var(--surface-2));
+    }
+
+    .layer-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px 18px;
+      margin-bottom: 12px;
+    }
+
+    .layer-title {
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    .layer-title span {
+      margin-right: 8px;
+      color: var(--accent);
+      font-size: 11px;
+      letter-spacing: .08em;
+    }
+
+    .layer-note { color: var(--muted); font-size: 11px; }
+
+    .lane, .arch-grid, .branch-grid, .output-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .lane { grid-template-columns: minmax(0, 1fr) 30px minmax(0, 1fr); align-items: center; }
+    .arch-grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .arch-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .arch-grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .branch-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .output-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    .node, .flow-step {
+      min-width: 0;
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      color: var(--ink);
+      background: var(--surface);
+      box-shadow: 0 4px 10px rgb(28 49 85 / 4%);
+      text-align: left;
+      cursor: pointer;
+      transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease, background .18s ease;
+    }
+
+    .node { min-height: 126px; padding: 14px; }
+    .node:hover, .flow-step:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); box-shadow: var(--shadow-soft); }
+    .node.is-selected, .flow-step.is-selected {
+      border-color: var(--focus);
+      background: color-mix(in srgb, var(--accent-soft) 70%, var(--surface));
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 22%, transparent), var(--shadow-soft);
+    }
+
+    .node.accent-teal { border-top: 3px solid var(--teal); }
+    .node.accent-violet { border-top: 3px solid var(--violet); }
+    .node.accent-orange { border-top: 3px solid var(--orange); }
+    .node.accent-green { border-top: 3px solid var(--green); }
+
+    .node-kicker, .step-kicker {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 750;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .node strong { display: block; margin-bottom: 5px; font-size: 15px; line-height: 1.25; }
+    .node code, .flow-step code, .selection-panel code, .code-line {
+      display: block;
+      overflow-wrap: anywhere;
+      color: var(--accent);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 11px;
+    }
+
+    .node-copy { display: block; margin-top: 8px; color: var(--muted); font-size: 11px; }
+
+    .endpoint-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 10px;
+    }
+
+    .endpoint { padding: 5px 7px; border-radius: 7px; color: var(--muted); background: var(--surface-2); }
+    .endpoint.strong { color: var(--accent); background: var(--accent-soft); }
+
+    .arrow, .down-arrow, .flow-connector {
+      color: var(--accent);
+      font-size: 22px;
+      font-weight: 500;
+      text-align: center;
+    }
+
+    .down-arrow { height: 18px; line-height: 18px; }
+
+    .micro-flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      margin-top: 12px;
+      padding-top: 11px;
+      border-top: 1px dashed var(--line-strong);
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .micro-flow b { color: var(--ink); font-weight: 650; }
+    .micro-arrow { color: var(--accent); font-size: 16px; }
+
+    .branch-note {
+      margin-top: 11px;
+      padding: 10px 12px;
+      border-left: 3px solid var(--violet);
+      color: var(--muted);
+      background: color-mix(in srgb, var(--violet-soft) 55%, transparent);
+      font-size: 11px;
+    }
+
+    .branch-note strong { color: var(--ink); }
+
+    .architecture-note {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .note-box {
+      min-width: 0;
+      padding: 12px 13px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 13px;
+      color: var(--muted);
+      background: color-mix(in srgb, var(--surface-2) 52%, transparent);
+      font-size: 11px;
+    }
+
+    .note-box strong { display: block; margin-bottom: 4px; color: var(--ink); font-size: 12px; }
+
+    .flow-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .flow-toolbar .code-line { display: inline; color: var(--muted); }
+    .flow-toolbar .tag { color: var(--accent); background: var(--accent-soft); }
+
+    .flowchart { display: grid; gap: 0; }
+
+    .flow-step {
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      padding: 13px 15px;
+      min-height: 74px;
+    }
+
+    .step-no {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 10px;
+      color: var(--accent);
+      background: var(--accent-soft);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .flow-step h3 { margin-bottom: 4px; font-size: 14px; line-height: 1.25; }
+    .flow-step p { color: var(--muted); font-size: 12px; }
+    .flow-step p code { display: inline; }
+
+    .flow-connector { height: 32px; line-height: 32px; }
+
+    .decision {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
+      margin: 2px 0;
+    }
+
+    .decision-center {
+      color: var(--muted);
+      font-size: 10px;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .decision-card {
+      min-height: 72px;
+      padding: 12px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 13px;
+      background: var(--surface-2);
+    }
+
+    .decision-card strong { display: block; margin-bottom: 3px; font-size: 12px; }
+    .decision-card span { color: var(--muted); font-size: 11px; }
+    .decision-card.hit { border-color: color-mix(in srgb, var(--green) 55%, var(--line)); background: var(--green-soft); }
+    .decision-card.miss { border-color: color-mix(in srgb, var(--orange) 55%, var(--line)); background: var(--orange-soft); }
+
+    .branch-box {
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      background: color-mix(in srgb, var(--surface-2) 45%, var(--surface));
+    }
+
+    .branch-box h3 { margin-bottom: 10px; font-size: 14px; }
+    .branch-box h3 span { margin-right: 6px; color: var(--accent); font-size: 11px; }
+    .branch-box.event h3 span { color: var(--orange); }
+    .branch-box ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+    .branch-box li { position: relative; padding-left: 16px; color: var(--muted); font-size: 11px; }
+    .branch-box li::before { content: "→"; position: absolute; left: 0; color: var(--accent); }
+    .branch-box.event li::before { color: var(--orange); }
+
+    .flow-output {
+      margin-top: 14px;
+      padding: 13px;
+      border: 1px solid color-mix(in srgb, var(--green) 45%, var(--line));
+      border-radius: 15px;
+      background: var(--green-soft);
+    }
+
+    .flow-output strong { display: block; margin-bottom: 4px; font-size: 13px; }
+    .flow-output p { color: var(--muted); font-size: 11px; }
+
+    .selection-panel {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.4fr);
+      gap: 14px 18px;
+      align-items: center;
+      margin-top: 18px;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: var(--surface);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .selection-label { color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .selection-panel h2 { margin-bottom: 3px; font-size: 16px; }
+    .selection-panel p { color: var(--muted); font-size: 12px; }
+    .selection-panel code { padding: 9px 10px; border-radius: 9px; background: var(--code-bg); }
+
+    .source-note {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .source-note code { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+
+    @media (max-width: 980px) {
+      .hero { grid-template-columns: 1fr; }
+      .hero-meta { justify-content: flex-start; max-width: none; }
+      .arch-grid.cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .architecture-note { grid-template-columns: 1fr; }
+      .selection-panel { grid-template-columns: auto minmax(0, 1fr); }
+      .selection-panel code { grid-column: 1 / -1; }
+    }
+
+    @media (max-width: 680px) {
+      .page { width: min(100% - 22px, 1440px); padding-top: 22px; }
+      .canvas-inner { padding: 13px; }
+      .arch-layer { padding: 12px; border-radius: 14px; }
+      .lane, .arch-grid.cols-2, .arch-grid.cols-3, .arch-grid.cols-4, .branch-grid, .output-grid { grid-template-columns: 1fr; }
+      .lane { gap: 5px; }
+      .arrow { transform: rotate(90deg); }
+      .node { min-height: 0; }
+      .decision { grid-template-columns: 1fr; }
+      .decision-center { padding: 2px 0; }
+      .selection-panel { grid-template-columns: 1fr; gap: 8px; }
+      .selection-panel code { grid-column: auto; }
+      .tab { flex-basis: 140px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main id="researchengine-map" class="page">
+    <header class="hero">
+      <div>
+        <div class="eyebrow">SVQuant / ResearchEngine</div>
+        <h1>当前代码的系统架构与运行流程</h1>
+        <p class="hero-copy">以当前仓库实现为准，展示 FastAPI 入口、ResearchEngine 编排层、QuantCore 计算层，以及因子/策略回测的真实调用路径。点击任意节点可查看对应职责和源码位置。</p>
+      </div>
+      <div class="hero-meta" aria-label="图示元信息">
+        <span class="tag">code-aligned</span>
+        <span class="tag">ResearchEngine</span>
+        <span class="tag">2026-08-17</span>
+      </div>
+    </header>
+
+    <nav class="tabbar" aria-label="图示视图">
+      <button class="tab" type="button" role="tab" aria-selected="true" data-tab="architecture">系统架构图</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" data-tab="factor-flow">因子回测流程</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" data-tab="strategy-flow">策略回测流程</button>
+    </nav>
+
+    <section class="view is-active" data-view="architecture" role="tabpanel">
+      <div class="view-head">
+        <div>
+          <h2>ResearchEngine 系统架构</h2>
+          <p>入口层负责协议适配；ResearchEngine 负责加载、编排、分析和结果管理；真正的数据、因子、回测与指标计算由 QuantCore 承担。</p>
+        </div>
+        <span class="tag">点击节点查看代码映射</span>
+      </div>
+
+      <div class="canvas">
+        <div class="canvas-inner">
+          <div class="legend" aria-label="图例">
+            <span class="legend-item"><i class="legend-swatch"></i>接口/编排</span>
+            <span class="legend-item"><i class="legend-swatch teal"></i>ResearchEngine 服务</span>
+            <span class="legend-item"><i class="legend-swatch violet"></i>QuantCore 计算</span>
+            <span class="legend-item"><i class="legend-swatch orange"></i>外部资产/分支</span>
+            <span class="legend-item"><i class="legend-swatch green"></i>结果与输出</span>
+          </div>
+
+          <div class="arch-stack">
+            <div class="arch-layer">
+              <div class="layer-top">
+                <div class="layer-title"><span>01</span>调用入口</div>
+                <div class="layer-note">Web 前端 / Python SDK / CLI / 上层 AI 平台</div>
+              </div>
+              <div class="lane">
+                <button class="node accent-orange" type="button" data-focus="caller" data-title="Web / SDK / CLI" data-files="ResearchEngine/examples/main.py · ResearchEngine/researchengine/__init__.py" data-desc="研究员可以通过 Python API、CLI 示例或 Web 前端触发因子与策略研究。">
+                  <span class="node-kicker">consumer</span>
+                  <strong>Web / SDK / CLI</strong>
+                  <code>examples/main.py · Python API</code>
+                  <span class="node-copy">提交研究参数，读取结构化结果</span>
+                </button>
+                <div class="arrow" aria-hidden="true">→</div>
+                <button class="node accent-teal" type="button" data-focus="api" data-title="FastAPI HTTP 适配层" data-files="ResearchEngine/researchengine/api/app.py · routes.py · runner.py · schemas.py" data-desc="app.py 创建 FastAPI 应用并挂载 /api 路由；routes.py 只做协议适配，runner.py 承担请求到 SDK/QuantCore 的调用编排与序列化。">
+                  <span class="node-kicker">HTTP adapter</span>
+                  <strong>FastAPI API</strong>
+                  <code>researchengine.api.app:app</code>
+                  <div class="endpoint-row">
+                    <span class="endpoint strong">/api/backtest/*</span>
+                    <span class="endpoint">/api/factors</span>
+                    <span class="endpoint">/api/market-data/*</span>
+                    <span class="endpoint">/api/ai/*</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <div class="down-arrow" aria-hidden="true">↓</div>
+
+            <div class="arch-layer">
+              <div class="layer-top">
+                <div class="layer-title"><span>02</span>ResearchEngine 服务与编排层</div>
+                <div class="layer-note">只编排研究工作，不重复实现底层回测数学</div>
+              </div>
+              <div class="arch-grid cols-3">
+                <button class="node accent-teal" type="button" data-focus="orchestration" data-title="实验编排核心" data-files="ResearchEngine/researchengine/manager.py · experiment.py" data-desc="ExperimentManager.create/run 登记和执行实验；Experiment.run() 构建 QuantCore 引擎、读取面板、计算因子、触发回测、计算指标并组装 ResultManager。">
+                  <span class="node-kicker">orchestration</span>
+                  <strong>ExperimentManager → Experiment</strong>
+                  <code>mgr.create(...) → mgr.run(exp)</code>
+                  <span class="node-copy">一次实验的生命周期与执行顺序</span>
+                </button>
+                <button class="node accent-teal" type="button" data-focus="assets" data-title="因子/策略资产与配置" data-files="ResearchEngine/researchengine/factor_loader.py · factor_catalog.py · strategy_catalog.py · config.py · assets.py" data-desc="FactorLoader 动态加载 FactorLibrary/BaseFactor；FactorCatalog 校验 index.yaml；StrategyCatalog 读取版本化策略源码；ConfigManager 提供 YAML/JSON 和点号配置。">
+                  <span class="node-kicker">assets & config</span>
+                  <strong>Loader / Catalog / Config</strong>
+                  <code>FactorLoader · StrategyCatalog</code>
+                  <span class="node-copy">源码、索引、版本、参数与路径解析</span>
+                </button>
+                <button class="node accent-orange" type="button" data-focus="cache" data-title="缓存与研究资产解析" data-files="ResearchEngine/researchengine/cache/backtest.py · api/runner.py · assets.py" data-desc="因子回测入口会先做缓存命中检查；请求中的证券池/基准快照由 runner 校验。缓存失效、异常或关闭时降级为直接回测。">
+                  <span class="node-kicker">request runtime</span>
+                  <strong>Cache / Research Assets</strong>
+                  <code>FileBacktestCache · _resolve_research_assets</code>
+                  <span class="node-copy">命中直接返回，未命中进入完整计算</span>
+                </button>
+              </div>
+              <div class="micro-flow" aria-label="ResearchEngine 内部编排关系">
+                <b>routes.py</b><span class="micro-arrow">→</span><b>runner.py</b><span class="micro-arrow">→</span><b>ExperimentManager</b><span class="micro-arrow">→</span><b>QuantCore</b><span class="micro-arrow">→</span><b>serializers.py</b>
+              </div>
+              <div class="branch-note"><strong>AI 辅助支路：</strong><code>ai_factor.py</code> / <code>ai_strategy.py</code> 只生成并静态校验草稿，不执行模型输出；<code>ai_interpretation.py</code> 先从回测快照构建证据与诊断，模型最多为候选发现排序。</div>
+            </div>
+
+            <div class="down-arrow" aria-hidden="true">↓</div>
+
+            <div class="arch-layer">
+              <div class="layer-top">
+                <div class="layer-title"><span>03</span>QuantCore 计算层</div>
+                <div class="layer-note">统一数据、因子、回测适配器与指标契约</div>
+              </div>
+              <div class="arch-grid cols-4">
+                <button class="node accent-violet" type="button" data-focus="data" data-title="DataEngine / Provider" data-files="QuantCore/quantcore/data/engine.py · QuantCore/quantcore/data/providers/*" data-desc="按数据路径选择 WideCSVProvider、FieldParquetProvider 或 CSVDataProvider，由 DataEngine 输出面板、指数和标的集合。">
+                  <span class="node-kicker">data</span>
+                  <strong>DataEngine</strong>
+                  <code>get_panels · get_index · get_symbols</code>
+                  <span class="node-copy">MarketData → 日期×标的面板</span>
+                </button>
+                <button class="node accent-violet" type="button" data-focus="factor" data-title="FactorEngine" data-files="QuantCore/quantcore/factor/engine.py · QuantCore/quantcore/factor/base.py" data-desc="Experiment 先在完整历史上计算因子，再把因子值裁剪到收益确认区间；可选 winsorize/standardize 预处理。">
+                  <span class="node-kicker">factor</span>
+                  <strong>FactorEngine</strong>
+                  <code>compute_panel(factor, Panel)</code>
+                  <span class="node-copy">FactorLibrary/BaseFactor → 因子值矩阵</span>
+                </button>
+                <button class="node accent-violet" type="button" data-focus="backtest" data-title="Backtest Adapter" data-files="QuantCore/quantcore/backtest/adapter/* · QuantCore/quantcore/backtest/event/* · ResearchEngine/researchengine/api/runner.py" data-desc="因子回测与向量化策略默认走 NativeEngine；策略 API 的 engine_mode=event 时走 EventBacktestEngine，输出订单、成交、持仓快照和事件审计。">
+                  <span class="node-kicker">backtest</span>
+                  <strong>Backtest Adapter</strong>
+                  <code>NativeEngine / EventBacktestEngine</code>
+                  <span class="node-copy">向量化快速回测 + 日频事件回测</span>
+                </button>
+                <button class="node accent-violet" type="button" data-focus="metric" data-title="MetricEngine" data-files="QuantCore/quantcore/metric/engine.py · QuantCore/quantcore/metric/context.py" data-desc="使用 MetricContext 汇总净值、收益、因子值、远期收益和持仓，统一计算年化、Sharpe、Sortino、Calmar、回撤、波动、IC、RankIC、胜率、换手等指标。">
+                  <span class="node-kicker">metrics</span>
+                  <strong>MetricEngine</strong>
+                  <code>calculate_all(MetricContext)</code>
+                  <span class="node-copy">指标契约与绩效度量</span>
+                </button>
+              </div>
+              <div class="micro-flow" aria-label="QuantCore 计算顺序">
+                <b>DataEngine</b><span class="micro-arrow">→</span><b>FactorEngine</b><span class="micro-arrow">→</span><b>Strategy / Signals</b><span class="micro-arrow">→</span><b>Backtest Adapter</b><span class="micro-arrow">→</span><b>MetricEngine</b>
+              </div>
+            </div>
+
+            <div class="down-arrow" aria-hidden="true">↓</div>
+
+            <div class="arch-layer">
+              <div class="layer-top">
+                <div class="layer-title"><span>04</span>数据、资产与结果边界</div>
+                <div class="layer-note">文件系统与可选远程结果后端</div>
+              </div>
+              <div class="arch-grid cols-4">
+                <button class="node accent-orange" type="button" data-focus="marketdata" data-title="MarketData" data-files="MarketData/ · FieldParquetProvider · WideCSVProvider" data-desc="行情和参考数据由用户准备，代码不绑定具体供应商；当前 ResearchEngine API 主要按已发布数据目录读取。">
+                  <span class="node-kicker">input</span>
+                  <strong>MarketData</strong>
+                  <code>Parquet / Wide CSV / CSV</code>
+                  <span class="node-copy">行情、指数、证券池、stock_info</span>
+                </button>
+                <button class="node accent-orange" type="button" data-focus="libraries" data-title="Factor / Strategy Libraries" data-files="Factor/libraries/index.yaml · Strategy/libraries/index.yaml · ResearchEngine/researchengine/*_catalog.py" data-desc="因子库通过源码与 index.yaml 校验；策略库通过版本化索引加载，返回 entrypoint、version 和 code_hash。">
+                  <span class="node-kicker">versioned assets</span>
+                  <strong>Factor / Strategy Libraries</strong>
+                  <code>index.yaml + *.py</code>
+                  <span class="node-copy">可发现、可追溯、可复用的研究资产</span>
+                </button>
+                <button class="node accent-green" type="button" data-focus="result" data-title="ResultManager / Storage" data-files="ResearchEngine/researchengine/result/manager.py · result/storage/*" data-desc="ResultManager 只保存和读取结果；Experiment 当前的 storage 选择映射是 csv、parquet、sqlite。ClickHouseStorage 类已存在并导出，但没有加入 Experiment._STORAGE_MAP。">
+                  <span class="node-kicker">output</span>
+                  <strong>ResultManager</strong>
+                  <code>CSVStorage · ParquetStorage · SQLiteStorage</code>
+                  <span class="node-copy">metrics / equity / factor_values / positions / meta</span>
+                </button>
+                <button class="node accent-green" type="button" data-focus="response" data-title="HTTP Response / Cache" data-files="ResearchEngine/researchengine/api/runner.py · api/serializers.py · cache/backtest.py" data-desc="API 将结果序列化为 metrics、equity_curve、drawdowns、annual_returns、benchmark、factor_analysis、positions 或 event timeline，并可写入压缩文件缓存。">
+                  <span class="node-kicker">consumer output</span>
+                  <strong>Structured Response</strong>
+                  <code>Response schemas + JSON cache</code>
+                  <span class="node-copy">前端可直接消费的研究结果契约</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="architecture-note">
+            <div class="note-box"><strong>因子回测入口</strong><code>POST /api/backtest/factor</code> 通过缓存后进入 <code>ExperimentManager → Experiment.run()</code>。</div>
+            <div class="note-box"><strong>策略回测入口</strong><code>POST /api/backtest/strategy</code> 在 <code>runner.py</code> 中直接编排向量化 Native 或事件引擎。</div>
+            <div class="note-box"><strong>结果持久化边界</strong>API 构造的 ConfigManager 默认不设置 <code>output_path</code>；SDK 显式配置时才由 ResultManager 落盘。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" data-view="factor-flow" role="tabpanel">
+      <div class="view-head">
+        <div>
+          <h2>因子回测：请求到结构化结果</h2>
+          <p>对应 <code>POST /api/backtest/factor</code>；展示缓存门、因子加载、Experiment 编排、Native 回测、因子分析和响应序列化。</p>
+        </div>
+        <span class="tag">cache-aware · native default</span>
+      </div>
+
+      <div class="canvas">
+        <div class="canvas-inner">
+          <div class="flow-toolbar">
+            <span class="code-line">routes.backtest_factor → runner.run_factor_backtest</span>
+            <span class="tag">HTTP 业务异常统一写入 response.error</span>
+          </div>
+          <div class="flowchart">
+            <button class="flow-step" type="button" data-focus="factor-request" data-title="① 接收因子回测请求" data-files="ResearchEngine/researchengine/api/routes.py: backtest_factor · api/schemas.py: FactorBacktestRequest" data-desc="请求可携带 factor_code 或 library_name/factor_name，并提供 universe、日期、调仓、分组、成本、预处理和 analysis_level 等参数。">
+              <span class="step-no">1</span>
+              <div><span class="step-kicker">HTTP input</span><h3>接收 FactorBacktestRequest</h3><p><code>factor_code</code>（自定义）或 <code>library_name + factor_name</code>（内置） → 参数校验</p></div>
+            </button>
+            <div class="flow-connector" aria-hidden="true">↓</div>
+
+            <button class="flow-step" type="button" data-focus="factor-cache" data-title="② 缓存门" data-files="ResearchEngine/researchengine/api/runner.py: run_factor_backtest · cache/backtest.py" data-desc="SVQUANT_BACKTEST_CACHE_ENABLED=true 时按请求参数和数据指纹计算 key；命中直接返回，缓存不可用或异常则降级为未缓存回测。">
+              <span class="step-no">2</span>
+              <div><span class="step-kicker">runtime gate</span><h3>检查 FileBacktestCache</h3><p><code>HIT → FactorBacktestResponse</code>；<code>MISS / BYPASS → _run_factor_backtest_uncached</code></p></div>
+            </button>
+            <div class="flow-connector" aria-hidden="true">↓</div>
+
+            <div class="decision" aria-label="缓存分支">
+              <div class="decision-card hit"><strong>命中</strong><span>读取压缩 JSON，设置 <code>X-SVQuant-Cache: HIT</code>，结束计算。</span></div>
+              <div class="decision-center">否则</div>
+              <div class="decision-card miss"><strong>未命中 / 绕过</strong><span>进入完整流程，成功后写入缓存；写缓存失败不重复回测。</span></div>
+            </div>
+            <div class="flow-connector" aria-hidden="true">↓</div>
+
+            <button class="flow-step" type="button" data-focus="factor-load" data-title="③ 解析研究资产并加载因子" data-files="ResearchEngine/researchengine/api/runner.py: _resolve_research_assets · _load_factor_from_code · _load_factor_from_builtin_library · factor_loader.py" data-desc="自定义代码写入临时模块后由 FactorLoader 加载；内置库先按 index.yaml 校验文件、类名、factor_count 和因子清单，再由 FactorLoader 加载。">
+              <span class="step-no">3</span>
+              <div><span class="step-kicker">asset resolution</span><h3>解析证券池 / 基准，得到 BaseFactor</h3><p>自定义：临时 <code>FactorLibrary</code> → FactorLoader；内置：<code>index.yaml</code> → FactorLoader</p></div>
+            </button>
+            <div class="flow-connector" aria-hidden="true">↓</div>
+
+            <button class="flow-step" type="button" data-focus="factor-orchestrate" data-title="④ 进入 Experiment 编排" data-files="ResearchEngine/researchengine/api/runner.py: _build_config · manager.py: ExperimentManager · experiment.py: Experiment" data-desc="runner 构建 ConfigManager，创建 ExperimentManager，登记 Experiment，再调用 mgr.run(exp)。API 默认不设置 output_path，因此本次请求不自动落 SDK 结果目录。">
+              <span class="step-no">4</span>
+              <div><span class="step-kicker">orchestration</span><h3>ExperimentManager.create → run</h3><p><code>_build_config</code> 注入 native、成本、分组、预处理、分析级别等配置。</p></div>
+            </button>
+            <div class="flow-connector" aria-hidden="true">↓</div>
+
+            <button class="flow-step" type="button" data-focus="factor-data" data-title="⑤ 构建引擎并读取面板" data-files="ResearchEngine/researchengine/experiment.py: _build_engines · QuantCore/quantcore/data/engine.py" data-desc="按 data_dir 选择 WideCSVProvider、FieldParquetProvider 或 CSVDataProvider；先读完整历史用于 rolling/pct_change 预热，再裁剪收益确认区间并解析 universe。">
+              <span class="step-no">5</span>
+              <div><span class="step-kicker">data + engines</span><h3>DataEngine → Panel</h3><p>完整历史面板 + 可选未复权 OHLC overlay → 日期过滤 → universe 对齐。</p></div>
+            </button>
+            <div class="flow-connector" aria-hidden="true">↓</div>
+
+            <button class="flow-step" type="button" data-focus="factor-compute" data-title="⑥ 计算因子值与远期收益" data-files="QuantCore/quantcore/factor/engine.py · ResearchEngine/researchengine/experiment.py: run · portfolio.py" data-desc="FactorEngine.compute_panel 计算因子；按配置做 winsorize/standardize；以 close 构造 forward_returns，并可提前生成公共 qcut 分组。">
+              <span class="step-no">6</span>
+              <div><span class="step-kicker">factor compute</span><h3>FactorEngine.compute_panel + 预处理</h3><p>因子值矩阵、收盘价宽表、远期收益和可复用分组标签准备完成。</p></div>
+            </button>
+            <div class="flow-connector" aria-hidden="true">↓</div>
+
+            <button class="flow-step" type="button" data-focus="factor-backtest" data-title="⑦ 生成信号并运行 Native 回测" data-files="QuantCore/quantcore/backtest/adapter/* · ResearchEngine/researchengine/experiment.py: run" data-desc="groups 未设置时使用 FactorQuantileStrategy；设置 groups 时使用 FactorGroupStrategy；两者均通过 get_backtest_engine(config.engine) 默认选 NativeEngine，产出 equity、returns、positions。">
+              <span class="step-no">7</span>
+              <div><span class="step-kicker">backtest</span><h3>Strategy → NativeEngine</h3><p><code>FactorQuantileStrategy</code> / <code>FactorGroupStrategy</code> → signals → 净值、收益、持仓。</p></div>
+            </button>
+            <div class="flow-connector" aria-hidden="true">↓</div>
+
+            <button class="flow-step" type="button" data-focus="factor-metric" data-title="⑧ 计算核心指标" data-files="QuantCore/quantcore/metric/context.py · QuantCore/quantcore/metric/engine.py" data-desc="MetricContext 携带 equity_curve、returns、factor_values、forward_returns、positions；MetricEngine.calculate_all 统一输出绩效和因子相关指标。">
+              <span class="step-no">8</span>
+              <div><span class="step-kicker">metrics</span><h3>MetricEngine.calculate_all</h3><p>年化 / Sharpe / Sortino / Calmar / 最大回撤 / 波动 / IC / RankIC / 胜率 / 换手等。</p></div>
+            </button>
+            <div class="flow-connector" aria-hidden="true">↓</div>
+
+            <button class="flow-step" type="button" data-focus="factor-analysis" data-title="⑨ 可选因子分析" data-files="ResearchEngine/researchengine/experiment.py: _run_factor_analysis · layered.py · riskmodel.py" data-desc="analysis_level=core/full 时补充 IC 序列、滚动 IR、分层净值、多空、基准、市值分层、FF3 归因和分行业 IC/IR；失败会 graceful skip，不阻断核心结果。">
+              <span class="step-no">9</span>
+              <div><span class="step-kicker">research diagnostics</span><h3>分层 / IC / 基准 / 归因分析</h3><p><code>core</code>：核心分组；<code>full</code>：行业、三因子和更多诊断；<code>none</code>：跳过深度分析。</p></div>
+            </button>
+            <div class="flow-connector" aria-hidden="true">↓</div>
+
+            <button class="flow-step" type="button" data-focus="factor-response" data-title="⑩ 序列化并返回" data-files="ResearchEngine/researchengine/api/runner.py · api/serializers.py · api/schemas.py · cache/backtest.py" data-desc="将 ResultManager 转换为 API schema：metrics、equity_curve、drawdowns、annual_returns、benchmark_curve、factor_analysis、meta；成功结果再写回缓存。">
+              <span class="step-no">10</span>
+              <div><span class="step-kicker">response</span><h3>结构化结果 + 缓存回写</h3><p>前端可直接消费净值、回撤、分年收益、因子分析、基准、超额收益和 timing meta。</p></div>
+            </button>
+          </div>
+
+          <div class="flow-output"><strong>核心结果边界</strong><p>因子回测 API 的业务异常被封装进 <code>FactorBacktestResponse.error</code>（通常 HTTP 200）；缓存只保存无错误的序列化响应。</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" data-view="strategy-flow" role="tabpanel">
+      <div class="view-head">
+        <div>
+          <h2>策略回测：向量化与事件双路径</h2>
+          <p>对应 <code>POST /api/backtest/strategy</code>；策略源码可以直接提交，也可以通过 StrategyCatalog 按版本加载。</p>
+        </div>
+        <span class="tag">engine_mode = vectorized | event</span>
+      </div>
+
+      <div class="canvas">
+        <div class="canvas-inner">
+          <div class="flow-toolbar">
+            <span class="code-line">routes.backtest_strategy → runner.run_strategy_backtest</span>
+            <span class="tag">strategy asset carries version + code_hash</span>
+          </div>
+          <div class="flowchart">
+            <button class="flow-step" type="button" data-focus="strategy-request" data-title="① 接收策略回测请求" data-files="ResearchEngine/researchengine/api/routes.py: backtest_strategy · api/schemas.py: StrategyBacktestRequest" data-desc="请求包含 strategy_code 或 strategy_id/version、engine_mode、universe、日期、成本、基准，以及是否返回持仓、调仓日志和执行时间线。">
+              <span class="step-no">1</span>
+              <div><span class="step-kicker">HTTP input</span><h3>接收 StrategyBacktestRequest</h3><p>请求先解析研究资产快照、策略源码/版本和执行模式。</p></div>
+            </button>
+            <div class="flow-connector" aria-hidden="true">↓</div>
+
+            <button class="flow-step" type="button" data-focus="strategy-source" data-title="② 读取策略源码并验证入口" data-files="ResearchEngine/researchengine/api/runner.py: run_strategy_backtest · strategy_catalog.py" data-desc="strategy_id 存在时由 StrategyCatalog.load 读取版本化源码并检查 execution_mode；否则直接编译提交源码。必须恰好找到一个包含对应入口方法的策略类。">
+              <span class="step-no">2</span>
+              <div><span class="step-kicker">catalog + compile</span><h3>StrategyCatalog / compile(exec)</h3><p><code>vectorized → generate_signals</code>；<code>event → initialize</code>；版本与 entrypoint 必须匹配。</p></div>
+            </button>
+            <div class="flow-connector" aria-hidden="true">↓</div>
+
+            <div class="branch-grid">
+              <div class="branch-box">
+                <h3><span>PATH A</span>向量化 Native</h3>
+                <ul>
+                  <li><code>FieldParquetProvider → DataEngine.get_panels</code></li>
+                  <li><code>_resolve_strategy_symbols</code> 解析固定标的或 universe</li>
+                  <li><code>Panel(_StrategyPanels)</code> 暴露交易所代码映射后的面板</li>
+                  <li>策略生成 <code>DataFrame</code> 或 <code>BacktestSignals</code></li>
+                  <li><code>get_backtest_engine("native")</code> 产出净值/收益/持仓/调仓日志</li>
+                </ul>
+              </div>
+              <div class="branch-box event">
+                <h3><span>PATH B</span>日频 EventBacktestEngine</h3>
+                <ul>
+                  <li>实例化事件策略，读取 required_fields + OHLC</li>
+                  <li>构造按交易所代码重命名的 event panels</li>
+                  <li><code>EventBacktestEngine(EventBacktestConfig)</code></li>
+                  <li>输出 orders、fills、position_snapshots、events</li>
+                  <li>可序列化统一 execution timeline 与审计信息</li>
+                </ul>
+              </div>
+            </div>
+            <div class="flow-connector" aria-hidden="true">↓</div>
+
+            <button class="flow-step" type="button" data-focus="strategy-metric" data-title="③ 两条路径统一计算绩效" data-files="QuantCore/quantcore/metric/engine.py · ResearchEngine/researchengine/api/runner.py" data-desc="向量化与事件路径都将 equity/returns 放入 MetricContext，调用 MetricEngine.calculate_all；随后加载基准、计算回撤、分年收益和超额收益。">
+              <span class="step-no">3</span>
+              <div><span class="step-kicker">common result</span><h3>MetricEngine + benchmark comparison</h3><p>两种执行模式共享指标、基准净值、回撤和超额收益响应字段。</p></div>
+            </button>
+            <div class="flow-connector" aria-hidden="true">↓</div>
+
+            <button class="flow-step" type="button" data-focus="strategy-response" data-title="④ 按执行模式返回结果" data-files="ResearchEngine/researchengine/api/runner.py: run_strategy_backtest · _run_event_strategy_backtest · api/schemas.py" data-desc="vectorized 响应可带 positions、rebalance_logs、execution_timeline；event 响应额外带 orders、fills、event_positions、events、assumptions。">
+              <span class="step-no">4</span>
+              <div><span class="step-kicker">response contract</span><h3>StrategyBacktestResponse</h3><p>共享 metrics/equity/benchmark；事件模式追加订单、成交和事件审计。</p></div>
+            </button>
+          </div>
+
+          <div class="output-grid" style="margin-top:14px">
+            <div class="note-box"><strong>Vectorized</strong><code>BacktestSignals</code> → NativeEngine → <code>positions / rebalance_logs</code></div>
+            <div class="note-box"><strong>Event</strong><code>EventBacktestEngine</code> → orders/fills/events → <code>execution_timeline</code></div>
+            <div class="note-box"><strong>共同边界</strong>ResearchEngine 负责适配和序列化，底层执行规则属于 QuantCore。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="selection-panel" aria-live="polite">
+      <div class="selection-label">Selected</div>
+      <div>
+        <h2 id="selection-title">FastAPI HTTP 适配层</h2>
+        <p id="selection-desc">点击架构节点或流程步骤，查看其职责和源码位置。</p>
+      </div>
+      <code id="selection-files">ResearchEngine/researchengine/api/app.py · routes.py · runner.py · schemas.py</code>
+    </aside>
+
+    <p class="source-note">图示依据当前仓库的 <code>ResearchEngine/researchengine/</code>、<code>QuantCore/quantcore/</code> 及 FEAT-002/FEAT-003 设计文档整理；如代码继续演进，应同步更新本图。</p>
+    <noscript><p class="source-note">当前页面的节点详情需要启用 JavaScript；静态架构和流程内容仍可直接阅读。</p></noscript>
+  </main>
+
+  <script>
+    (() => {
+      const root = document.getElementById("researchengine-map");
+      const tabs = Array.from(root.querySelectorAll("[data-tab]"));
+      const views = Array.from(root.querySelectorAll("[data-view]"));
+      const selectable = Array.from(root.querySelectorAll("[data-focus]"));
+      const title = document.getElementById("selection-title");
+      const description = document.getElementById("selection-desc");
+      const files = document.getElementById("selection-files");
+
+      const selectNode = (node) => {
+        selectable.forEach((item) => {
+          const selected = item === node;
+          item.classList.toggle("is-selected", selected);
+          if (item.tagName === "BUTTON") item.setAttribute("aria-pressed", String(selected));
+        });
+        title.textContent = node.dataset.title || "未命名节点";
+        description.textContent = node.dataset.desc || "暂无说明";
+        files.textContent = node.dataset.files || "暂无源码映射";
+      };
+
+      const showTab = (name) => {
+        tabs.forEach((tab) => {
+          const active = tab.dataset.tab === name;
+          tab.setAttribute("aria-selected", String(active));
+        });
+        views.forEach((view) => view.classList.toggle("is-active", view.dataset.view === name));
+        const first = root.querySelector(`[data-view="${name}"] [data-focus]`);
+        if (first) selectNode(first);
+      };
+
+      tabs.forEach((tab) => tab.addEventListener("click", () => showTab(tab.dataset.tab)));
+      selectable.forEach((node) => node.addEventListener("click", () => selectNode(node)));
+
+      const initial = root.querySelector('[data-focus="api"]') || selectable[0];
+      if (initial) selectNode(initial);
+    })();
+  </script>
+</body>
+</html>

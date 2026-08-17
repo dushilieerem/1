@@ -56,7 +56,7 @@ def inspect_panels(panels_dir: Path, *, metadata_dir: Path | None = None) -> dic
     manifests = []
     if metadata_dir:
         manifests = [
-            name for name in ("data_manifest.yaml", "data_manifest.json", "wind_daily_manifest.json")
+            name for name in ("data_manifest.yaml", "data_manifest.json")
             if (metadata_dir / name).is_file()
         ]
     return {

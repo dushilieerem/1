@@ -552,3 +552,47 @@ strategies:
       v1:
         file: volume_price_trend_a_share_event_v1.py
         entrypoint: VolumePriceTrendAShareEventStrategy
+
+  awesome_oscillator_a_share_event:
+    name: 奇妙振荡器 AO A 股趋势
+    strategy_type: momentum
+    execution_mode: event
+    current_version: v1
+    tags: [awesome_oscillator, ao, momentum, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: awesome_oscillator_a_share_event_v1.py
+        entrypoint: AwesomeOscillatorAShareEventStrategy
+
+  balance_of_power_a_share_event:
+    name: 平衡交易力量 BOP A 股趋势
+    strategy_type: price_action
+    execution_mode: event
+    current_version: v1
+    tags: [balance_of_power, bop, price_action, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: balance_of_power_a_share_event_v1.py
+        entrypoint: BalanceOfPowerAShareEventStrategy
+
+  choppiness_breakout_a_share_event:
+    name: 混沌指标 A 股趋势突破
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [choppiness_index, breakout, trend, volatility, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: choppiness_breakout_a_share_event_v1.py
+        entrypoint: ChoppinessBreakoutAShareEventStrategy
+
+  coppock_curve_a_share_event:
+    name: 科波克曲线 A 股趋势
+    strategy_type: momentum
+    execution_mode: event
+    current_version: v1
+    tags: [coppock_curve, momentum, trend, oscillator, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: coppock_curve_a_share_event_v1.py
+        entrypoint: CoppockCurveAShareEventStrategy

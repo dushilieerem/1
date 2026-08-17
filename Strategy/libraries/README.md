@@ -68,3 +68,5 @@ strategies:
 `ultimate_oscillator_a_share_event`、`vortex_indicator_a_share_event`、`relative_vigor_index_a_share_event` 和 `elder_force_index_a_share_event` 是本次新增的日频事件研究策略，分别使用 Ultimate Oscillator、Vortex Indicator、RVI 和 Elder Force Index 生成现金多头信号。四者均按前一收盘计算、下一交易日开盘成交；Elder Force Index 额外要求 `volume` 字段，结果仅用于研究验证。
 
 `chande_momentum_oscillator_a_share_event`、`fisher_transform_a_share_event`、`ease_of_movement_a_share_event` 和 `volume_price_trend_a_share_event` 是本次新增的日频事件研究策略，分别使用 CMO、Fisher Transform、EOM 和标准 VPT 生成现金多头信号。四者均按前一收盘计算、下一交易日开盘成交；EOM 与 VPT 额外要求 `volume` 字段，结果仅用于研究验证。
+
+`awesome_oscillator_a_share_event`、`balance_of_power_a_share_event`、`choppiness_breakout_a_share_event` 和 `coppock_curve_a_share_event` 是本次新增的日频事件研究策略，分别使用 AO、14 日平滑 BOP、Choppiness Index 配合 20 日突破和 Coppock Curve 生成现金多头信号。四者只依赖日频 OHLC，均按前一收盘计算、下一交易日开盘成交；最多持有十只、单只目标 9%。当前版本不包含动态历史股票池、ST、停牌或盘中成交近似，结果仅用于研究验证。

@@ -574,11 +574,13 @@ def _compute_quantile_metrics(
     *,
     layered_returns: pd.DataFrame | None = None,
 ) -> list[QuantileMetric]:
-    """按 SuperMind 口径计算分组及基准指标。
+    """按当前对齐口径计算分组及基准指标。
 
     分组指标使用 ``layered_returns`` 的完整原始收益（含首个信号到入场
     日收益），展示净值只用于累计曲线和最大回撤。基准没有这笔信号收益，
-    因此从归一化基准曲线推导，并使用总体标准差。
+    因此从归一化基准曲线推导，并使用总体标准差。相对基准指标只使用
+    分组与基准收益的共同日期；年化超额收益为共同区间的几何年化收益差，
+    信息比率为年化超额收益除以超额年化波动，胜率保留共同日超额收益胜率。
     """
     if layered_equity is None or layered_equity.empty:
         return []
@@ -658,20 +660,32 @@ def _compute_quantile_metrics(
         ).dropna()
         excess = aligned["group"] - aligned["benchmark"]
 
-        excess_std = excess.std()
+        excess_std = excess.std(ddof=1)
+        common_observations = len(aligned)
+        group_common_annual = _geometric_annual_return(
+            aligned["group"],
+            periods_per_year,
+            observations=common_observations,
+        )
+        benchmark_common_annual = _geometric_annual_return(
+            aligned["benchmark"],
+            periods_per_year,
+            observations=common_observations,
+        )
         annual_excess_return = (
-            _safe_metric(excess.mean() * periods_per_year)
-            if not excess.empty else None
+            _safe_metric(group_common_annual - benchmark_common_annual)
+            if group_common_annual is not None and benchmark_common_annual is not None
+            else None
         )
         excess_volatility = (
             _safe_metric(excess_std * annualization)
             if not pd.isna(excess_std) else None
         )
         information_ratio = None
-        if not excess.empty and not pd.isna(excess_std):
+        if annual_excess_return is not None and not pd.isna(excess_std):
             information_ratio = _safe_metric(
                 0.0 if excess_std == 0
-                else excess.mean() / excess_std * annualization
+                else annual_excess_return / (excess_std * annualization)
             )
         benchmark_win_rate = (
             _safe_metric((excess > 0).mean()) if not excess.empty else None
@@ -1101,6 +1115,11 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
                 "benchmark_annualization": "geometric_cagr",
                 "group_volatility_ddof": 1,
                 "benchmark_volatility_ddof": 0,
+                "relative_metric_returns": "common_group_benchmark_dates",
+                "relative_annual_excess_return": "geometric_cagr_difference",
+                "relative_excess_volatility_ddof": 1,
+                "relative_information_ratio": "annual_excess_divided_by_excess_volatility",
+                "benchmark_win_rate": "common_daily_excess_positive_rate",
                 **({
                     "industry_return_method": "equal_weight_fixed_capital",
                     "industry_grouping_method": "daily_cross_sectional_equal_weight_fixed_capital",

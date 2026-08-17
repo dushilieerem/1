@@ -34,9 +34,11 @@
 | FEAT-019 | AI 自然语言向量化策略生成 API | INIT-004 | AI 研究助手/策略研究 | P0 | 开发中（受控 MVP） |
 | FEAT-020 | AI 回测解读与优化建议 | INIT-004 | AI 研究助手/策略研究/因子研究 | P0 | 开发中（受控 MVP） |
 | FEAT-021 | 股指与成分股查询 API | INIT-001 | 数据/研究 API | P1 | 已完成 |
-| FEAT-022 | 经典策略迁移 | INIT-001 | 策略研究/策略回测 | P1 | 开发中（已覆盖 RSI、CANSLIM Lite、KD、一目均衡表、均线排列、配对交易、Aroon、KST、聂夫、戴维斯双击、12-1 动量、小盘价值、红利低波狗股、三重滤网、抛物线 SAR、Fama-French 多因子、凯特纳通道、Williams %R、德邦特—塞勒长期反转、豪根—海因斯低波动异象、Piotroski F-Score、股息增长、OBV、蔡金、Dual Thrust、净营运资产异象、CCI、MFI、TRIX、ROC、Ultimate Oscillator、Vortex Indicator、Relative Vigor Index、Elder Force Index、CMO、Fisher Transform、EOM、VPT） |
+| FEAT-022 | 经典策略迁移 | INIT-001 | 策略研究/策略回测 | P1 | 开发中（已覆盖 RSI、CANSLIM Lite、KD、一目均衡表、均线排列、配对交易、Aroon、KST、聂夫、戴维斯双击、12-1 动量、小盘价值、红利低波狗股、三重滤网、抛物线 SAR、Fama-French 多因子、凯特纳通道、Williams %R、德邦特—塞勒长期反转、豪根—海因斯低波动异象、Piotroski F-Score、股息增长、OBV、蔡金、Dual Thrust、净营运资产异象、CCI、MFI、TRIX、ROC、Ultimate Oscillator、Vortex Indicator、Relative Vigor Index、Elder Force Index、CMO、Fisher Transform、EOM、VPT、AO、BOP、Choppiness、Coppock） |
 | FEAT-023 | WorldQuant Alpha 101 因子库迁移 | INIT-001 | 因子研究 | P0 | 已完成 |
+| FEAT-026 | 国泰君安 Alpha191 因子库迁移 | INIT-001 | 因子研究 | P0 | 已完成 |
 | FEAT-024 | iFinD 宽表规范与渐进替换 | INIT-001 | 数据/研究基础设施 | P0 | 已批准 |
+| FEAT-025 | 免费数据源补齐日频基本面与证券状态 MVP | INIT-001 | 数据/研究基础设施 | P0 | 待批准 |
 
 ## 维护要求
 

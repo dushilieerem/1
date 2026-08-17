@@ -1,6 +1,6 @@
 version: 1
-updated: '2026-08-13'
-total_factors: 848
+updated: '2026-08-14'
+total_factors: 1043
 libraries:
   alpha_features:
     file: alpha_features.py
@@ -1397,6 +1397,414 @@ libraries:
       description: 聚宽 VSTD20：20 日成交量标准差。
     - name: wvad
       description: 聚宽 WVAD：6 日威廉变异离散量。
+  gtja_alpha191:
+    file: gtja_alpha191.py
+    class: GTJAAlpha191Library
+    description: 国泰君安 Alpha191 的 SVQuant 原生面板实现。
+    author: SVQuant
+    tags:
+    - gtja
+    - alpha191
+    - technical
+    - volume_price
+    naming: alpha191_001-alpha191_191
+    source_snapshot: JoinQuant 公开因子文档与公开 Alpha191 公式整理
+    verification: implemented
+    fields:
+    - open
+    - high
+    - low
+    - close
+    - volume
+    optional_fields:
+    - amount
+    - vwap
+    - benchmark_close
+    - benchmark_open
+    factor_count: 191
+    factors:
+    - name: alpha191_001
+      description: '国泰君安 Alpha191 #001。'
+    - name: alpha191_002
+      description: '国泰君安 Alpha191 #002。'
+    - name: alpha191_003
+      description: '国泰君安 Alpha191 #003。'
+    - name: alpha191_004
+      description: '国泰君安 Alpha191 #004。'
+    - name: alpha191_005
+      description: '国泰君安 Alpha191 #005。'
+    - name: alpha191_006
+      description: '国泰君安 Alpha191 #006。'
+    - name: alpha191_007
+      description: '国泰君安 Alpha191 #007。'
+    - name: alpha191_008
+      description: '国泰君安 Alpha191 #008。'
+    - name: alpha191_009
+      description: '国泰君安 Alpha191 #009。'
+    - name: alpha191_010
+      description: '国泰君安 Alpha191 #010。'
+    - name: alpha191_011
+      description: '国泰君安 Alpha191 #011。'
+    - name: alpha191_012
+      description: '国泰君安 Alpha191 #012。'
+    - name: alpha191_013
+      description: '国泰君安 Alpha191 #013。'
+    - name: alpha191_014
+      description: '国泰君安 Alpha191 #014。'
+    - name: alpha191_015
+      description: '国泰君安 Alpha191 #015。'
+    - name: alpha191_016
+      description: '国泰君安 Alpha191 #016。'
+    - name: alpha191_017
+      description: '国泰君安 Alpha191 #017。'
+    - name: alpha191_018
+      description: '国泰君安 Alpha191 #018。'
+    - name: alpha191_019
+      description: '国泰君安 Alpha191 #019。'
+    - name: alpha191_020
+      description: '国泰君安 Alpha191 #020。'
+    - name: alpha191_021
+      description: '国泰君安 Alpha191 #021。'
+    - name: alpha191_022
+      description: '国泰君安 Alpha191 #022。'
+    - name: alpha191_023
+      description: '国泰君安 Alpha191 #023。'
+    - name: alpha191_024
+      description: '国泰君安 Alpha191 #024。'
+    - name: alpha191_025
+      description: '国泰君安 Alpha191 #025。'
+    - name: alpha191_026
+      description: '国泰君安 Alpha191 #026。'
+    - name: alpha191_027
+      description: '国泰君安 Alpha191 #027。'
+    - name: alpha191_028
+      description: '国泰君安 Alpha191 #028。'
+    - name: alpha191_029
+      description: '国泰君安 Alpha191 #029。'
+    - name: alpha191_030
+      description: '国泰君安 Alpha191 #030。'
+    - name: alpha191_031
+      description: '国泰君安 Alpha191 #031。'
+    - name: alpha191_032
+      description: '国泰君安 Alpha191 #032。'
+    - name: alpha191_033
+      description: '国泰君安 Alpha191 #033。'
+    - name: alpha191_034
+      description: '国泰君安 Alpha191 #034。'
+    - name: alpha191_035
+      description: '国泰君安 Alpha191 #035。'
+    - name: alpha191_036
+      description: '国泰君安 Alpha191 #036。'
+    - name: alpha191_037
+      description: '国泰君安 Alpha191 #037。'
+    - name: alpha191_038
+      description: '国泰君安 Alpha191 #038。'
+    - name: alpha191_039
+      description: '国泰君安 Alpha191 #039。'
+    - name: alpha191_040
+      description: '国泰君安 Alpha191 #040。'
+    - name: alpha191_041
+      description: '国泰君安 Alpha191 #041。'
+    - name: alpha191_042
+      description: '国泰君安 Alpha191 #042。'
+    - name: alpha191_043
+      description: '国泰君安 Alpha191 #043。'
+    - name: alpha191_044
+      description: '国泰君安 Alpha191 #044。'
+    - name: alpha191_045
+      description: '国泰君安 Alpha191 #045。'
+    - name: alpha191_046
+      description: '国泰君安 Alpha191 #046。'
+    - name: alpha191_047
+      description: '国泰君安 Alpha191 #047。'
+    - name: alpha191_048
+      description: '国泰君安 Alpha191 #048。'
+    - name: alpha191_049
+      description: '国泰君安 Alpha191 #049。'
+    - name: alpha191_050
+      description: '国泰君安 Alpha191 #050。'
+    - name: alpha191_051
+      description: '国泰君安 Alpha191 #051。'
+    - name: alpha191_052
+      description: '国泰君安 Alpha191 #052。'
+    - name: alpha191_053
+      description: '国泰君安 Alpha191 #053。'
+    - name: alpha191_054
+      description: '国泰君安 Alpha191 #054。'
+    - name: alpha191_055
+      description: '国泰君安 Alpha191 #055。'
+    - name: alpha191_056
+      description: '国泰君安 Alpha191 #056。'
+    - name: alpha191_057
+      description: '国泰君安 Alpha191 #057。'
+    - name: alpha191_058
+      description: '国泰君安 Alpha191 #058。'
+    - name: alpha191_059
+      description: '国泰君安 Alpha191 #059。'
+    - name: alpha191_060
+      description: '国泰君安 Alpha191 #060。'
+    - name: alpha191_061
+      description: '国泰君安 Alpha191 #061。'
+    - name: alpha191_062
+      description: '国泰君安 Alpha191 #062。'
+    - name: alpha191_063
+      description: '国泰君安 Alpha191 #063。'
+    - name: alpha191_064
+      description: '国泰君安 Alpha191 #064。'
+    - name: alpha191_065
+      description: '国泰君安 Alpha191 #065。'
+    - name: alpha191_066
+      description: '国泰君安 Alpha191 #066。'
+    - name: alpha191_067
+      description: '国泰君安 Alpha191 #067。'
+    - name: alpha191_068
+      description: '国泰君安 Alpha191 #068。'
+    - name: alpha191_069
+      description: '国泰君安 Alpha191 #069。'
+    - name: alpha191_070
+      description: '国泰君安 Alpha191 #070。'
+    - name: alpha191_071
+      description: '国泰君安 Alpha191 #071。'
+    - name: alpha191_072
+      description: '国泰君安 Alpha191 #072。'
+    - name: alpha191_073
+      description: '国泰君安 Alpha191 #073。'
+    - name: alpha191_074
+      description: '国泰君安 Alpha191 #074。'
+    - name: alpha191_075
+      description: '国泰君安 Alpha191 #075。'
+    - name: alpha191_076
+      description: '国泰君安 Alpha191 #076。'
+    - name: alpha191_077
+      description: '国泰君安 Alpha191 #077。'
+    - name: alpha191_078
+      description: '国泰君安 Alpha191 #078。'
+    - name: alpha191_079
+      description: '国泰君安 Alpha191 #079。'
+    - name: alpha191_080
+      description: '国泰君安 Alpha191 #080。'
+    - name: alpha191_081
+      description: '国泰君安 Alpha191 #081。'
+    - name: alpha191_082
+      description: '国泰君安 Alpha191 #082。'
+    - name: alpha191_083
+      description: '国泰君安 Alpha191 #083。'
+    - name: alpha191_084
+      description: '国泰君安 Alpha191 #084。'
+    - name: alpha191_085
+      description: '国泰君安 Alpha191 #085。'
+    - name: alpha191_086
+      description: '国泰君安 Alpha191 #086。'
+    - name: alpha191_087
+      description: '国泰君安 Alpha191 #087。'
+    - name: alpha191_088
+      description: '国泰君安 Alpha191 #088。'
+    - name: alpha191_089
+      description: '国泰君安 Alpha191 #089。'
+    - name: alpha191_090
+      description: '国泰君安 Alpha191 #090。'
+    - name: alpha191_091
+      description: '国泰君安 Alpha191 #091。'
+    - name: alpha191_092
+      description: '国泰君安 Alpha191 #092。'
+    - name: alpha191_093
+      description: '国泰君安 Alpha191 #093。'
+    - name: alpha191_094
+      description: '国泰君安 Alpha191 #094。'
+    - name: alpha191_095
+      description: '国泰君安 Alpha191 #095。'
+    - name: alpha191_096
+      description: '国泰君安 Alpha191 #096。'
+    - name: alpha191_097
+      description: '国泰君安 Alpha191 #097。'
+    - name: alpha191_098
+      description: '国泰君安 Alpha191 #098。'
+    - name: alpha191_099
+      description: '国泰君安 Alpha191 #099。'
+    - name: alpha191_100
+      description: '国泰君安 Alpha191 #100。'
+    - name: alpha191_101
+      description: '国泰君安 Alpha191 #101。'
+    - name: alpha191_102
+      description: '国泰君安 Alpha191 #102。'
+    - name: alpha191_103
+      description: '国泰君安 Alpha191 #103。'
+    - name: alpha191_104
+      description: '国泰君安 Alpha191 #104。'
+    - name: alpha191_105
+      description: '国泰君安 Alpha191 #105。'
+    - name: alpha191_106
+      description: '国泰君安 Alpha191 #106。'
+    - name: alpha191_107
+      description: '国泰君安 Alpha191 #107。'
+    - name: alpha191_108
+      description: '国泰君安 Alpha191 #108。'
+    - name: alpha191_109
+      description: '国泰君安 Alpha191 #109。'
+    - name: alpha191_110
+      description: '国泰君安 Alpha191 #110。'
+    - name: alpha191_111
+      description: '国泰君安 Alpha191 #111。'
+    - name: alpha191_112
+      description: '国泰君安 Alpha191 #112。'
+    - name: alpha191_113
+      description: '国泰君安 Alpha191 #113。'
+    - name: alpha191_114
+      description: '国泰君安 Alpha191 #114。'
+    - name: alpha191_115
+      description: '国泰君安 Alpha191 #115。'
+    - name: alpha191_116
+      description: '国泰君安 Alpha191 #116。'
+    - name: alpha191_117
+      description: '国泰君安 Alpha191 #117。'
+    - name: alpha191_118
+      description: '国泰君安 Alpha191 #118。'
+    - name: alpha191_119
+      description: '国泰君安 Alpha191 #119。'
+    - name: alpha191_120
+      description: '国泰君安 Alpha191 #120。'
+    - name: alpha191_121
+      description: '国泰君安 Alpha191 #121。'
+    - name: alpha191_122
+      description: '国泰君安 Alpha191 #122。'
+    - name: alpha191_123
+      description: '国泰君安 Alpha191 #123。'
+    - name: alpha191_124
+      description: '国泰君安 Alpha191 #124。'
+    - name: alpha191_125
+      description: '国泰君安 Alpha191 #125。'
+    - name: alpha191_126
+      description: '国泰君安 Alpha191 #126。'
+    - name: alpha191_127
+      description: '国泰君安 Alpha191 #127。'
+    - name: alpha191_128
+      description: '国泰君安 Alpha191 #128。'
+    - name: alpha191_129
+      description: '国泰君安 Alpha191 #129。'
+    - name: alpha191_130
+      description: '国泰君安 Alpha191 #130。'
+    - name: alpha191_131
+      description: '国泰君安 Alpha191 #131。'
+    - name: alpha191_132
+      description: '国泰君安 Alpha191 #132。'
+    - name: alpha191_133
+      description: '国泰君安 Alpha191 #133。'
+    - name: alpha191_134
+      description: '国泰君安 Alpha191 #134。'
+    - name: alpha191_135
+      description: '国泰君安 Alpha191 #135。'
+    - name: alpha191_136
+      description: '国泰君安 Alpha191 #136。'
+    - name: alpha191_137
+      description: '国泰君安 Alpha191 #137。'
+    - name: alpha191_138
+      description: '国泰君安 Alpha191 #138。'
+    - name: alpha191_139
+      description: '国泰君安 Alpha191 #139。'
+    - name: alpha191_140
+      description: '国泰君安 Alpha191 #140。'
+    - name: alpha191_141
+      description: '国泰君安 Alpha191 #141。'
+    - name: alpha191_142
+      description: '国泰君安 Alpha191 #142。'
+    - name: alpha191_143
+      description: '国泰君安 Alpha191 #143。'
+    - name: alpha191_144
+      description: '国泰君安 Alpha191 #144。'
+    - name: alpha191_145
+      description: '国泰君安 Alpha191 #145。'
+    - name: alpha191_146
+      description: '国泰君安 Alpha191 #146。'
+    - name: alpha191_147
+      description: '国泰君安 Alpha191 #147。'
+    - name: alpha191_148
+      description: '国泰君安 Alpha191 #148。'
+    - name: alpha191_149
+      description: '国泰君安 Alpha191 #149。'
+    - name: alpha191_150
+      description: '国泰君安 Alpha191 #150。'
+    - name: alpha191_151
+      description: '国泰君安 Alpha191 #151。'
+    - name: alpha191_152
+      description: '国泰君安 Alpha191 #152。'
+    - name: alpha191_153
+      description: '国泰君安 Alpha191 #153。'
+    - name: alpha191_154
+      description: '国泰君安 Alpha191 #154。'
+    - name: alpha191_155
+      description: '国泰君安 Alpha191 #155。'
+    - name: alpha191_156
+      description: '国泰君安 Alpha191 #156。'
+    - name: alpha191_157
+      description: '国泰君安 Alpha191 #157。'
+    - name: alpha191_158
+      description: '国泰君安 Alpha191 #158。'
+    - name: alpha191_159
+      description: '国泰君安 Alpha191 #159。'
+    - name: alpha191_160
+      description: '国泰君安 Alpha191 #160。'
+    - name: alpha191_161
+      description: '国泰君安 Alpha191 #161。'
+    - name: alpha191_162
+      description: '国泰君安 Alpha191 #162。'
+    - name: alpha191_163
+      description: '国泰君安 Alpha191 #163。'
+    - name: alpha191_164
+      description: '国泰君安 Alpha191 #164。'
+    - name: alpha191_165
+      description: '国泰君安 Alpha191 #165。'
+    - name: alpha191_166
+      description: '国泰君安 Alpha191 #166。'
+    - name: alpha191_167
+      description: '国泰君安 Alpha191 #167。'
+    - name: alpha191_168
+      description: '国泰君安 Alpha191 #168。'
+    - name: alpha191_169
+      description: '国泰君安 Alpha191 #169。'
+    - name: alpha191_170
+      description: '国泰君安 Alpha191 #170。'
+    - name: alpha191_171
+      description: '国泰君安 Alpha191 #171。'
+    - name: alpha191_172
+      description: '国泰君安 Alpha191 #172。'
+    - name: alpha191_173
+      description: '国泰君安 Alpha191 #173。'
+    - name: alpha191_174
+      description: '国泰君安 Alpha191 #174。'
+    - name: alpha191_175
+      description: '国泰君安 Alpha191 #175。'
+    - name: alpha191_176
+      description: '国泰君安 Alpha191 #176。'
+    - name: alpha191_177
+      description: '国泰君安 Alpha191 #177。'
+    - name: alpha191_178
+      description: '国泰君安 Alpha191 #178。'
+    - name: alpha191_179
+      description: '国泰君安 Alpha191 #179。'
+    - name: alpha191_180
+      description: '国泰君安 Alpha191 #180。'
+    - name: alpha191_181
+      description: '国泰君安 Alpha191 #181。'
+    - name: alpha191_182
+      description: '国泰君安 Alpha191 #182。'
+    - name: alpha191_183
+      description: '国泰君安 Alpha191 #183。'
+    - name: alpha191_184
+      description: '国泰君安 Alpha191 #184。'
+    - name: alpha191_185
+      description: '国泰君安 Alpha191 #185。'
+    - name: alpha191_186
+      description: '国泰君安 Alpha191 #186。'
+    - name: alpha191_187
+      description: '国泰君安 Alpha191 #187。'
+    - name: alpha191_188
+      description: '国泰君安 Alpha191 #188。'
+    - name: alpha191_189
+      description: '国泰君安 Alpha191 #189。'
+    - name: alpha191_190
+      description: '国泰君安 Alpha191 #190。'
+    - name: alpha191_191
+      description: '国泰君安 Alpha191 #191。'
   momentum_lib:
     file: momentum_lib.py
     class: MomentumLib
@@ -1622,7 +2030,7 @@ libraries:
     tags:
     - technical
     - indicator
-    factor_count: 41
+    factor_count: 45
     factors:
     - name: accumulation_distribution
       description: 累积/派发线：按收盘位置加权累计成交量。
@@ -1744,6 +2152,10 @@ libraries:
       tags:
       - oscillator
       - reversal
+    - name: kaufman_efficiency_ratio
+      description: Kaufman 路径效率：净价格变化与实际路径长度之比。
+      params:
+        window: 10
     - name: kdj_d
       description: KDJ D 值。
       params:
@@ -1804,6 +2216,10 @@ libraries:
       tags:
       - dmi
       - trend
+    - name: normalized_linear_regression_slope
+      description: 归一化滚动线性回归斜率：斜率除以滚动均价绝对值。
+      params:
+        window: 20
     - name: positive_directional_index
       description: 正向方向指标：Wilder 平滑后的上行方向运动强度。
       params:
@@ -1819,6 +2235,10 @@ libraries:
       description: 锤子线形态。
       tags:
       - pattern
+    - name: regression_r_squared
+      description: 滚动线性回归拟合优度 R²，衡量趋势路径的稳定程度。
+      params:
+        window: 20
     - name: relative_vigor_index
       description: 相对活力指数：收盘—开盘动量相对高低价区间的平滑比值。
       params:
@@ -1891,6 +2311,10 @@ libraries:
       tags:
       - oscillator
       - momentum
+    - name: ulcer_index
+      description: Ulcer Index：滚动回撤百分比平方均值的平方根。
+      params:
+        window: 14
     - name: ultimate_oscillator
       description: 终极振荡器：多周期买压与真实波幅的加权动量。
       params:

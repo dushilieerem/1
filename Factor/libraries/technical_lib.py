@@ -360,3 +360,60 @@ class TechnicalLib(FactorLibrary):
         lower_shadow = self.close - self.low
         upper_shadow = self.high - self.open
         return ((lower_shadow > body * 2) & (upper_shadow < body * 0.5)).astype(float)
+
+    # ==================== 趋势质量与路径风险 ====================
+
+    def kaufman_efficiency_ratio(self, window: int = 10):
+        """Kaufman 路径效率：净价格变化与实际路径长度之比。"""
+        window = self._validate_window(window)
+        net_change = self.close.diff(window).abs()
+        path_length = self.close.diff().abs().rolling(window).sum()
+        return (net_change / (path_length + 1e-10)).clip(lower=0.0, upper=1.0)
+
+    def normalized_linear_regression_slope(self, window: int = 20):
+        """归一化滚动线性回归斜率：斜率除以滚动均价绝对值。"""
+        slope, _ = self._rolling_regression(window)
+        mean_price = self.close.rolling(window).mean()
+        return slope / (mean_price.abs() + 1e-10)
+
+    def regression_r_squared(self, window: int = 20):
+        """滚动线性回归拟合优度 R²，衡量趋势路径的稳定程度。"""
+        _, r_squared = self._rolling_regression(window)
+        return r_squared
+
+    def ulcer_index(self, window: int = 14):
+        """Ulcer Index：滚动回撤百分比平方均值的平方根。"""
+        window = self._validate_window(window)
+        rolling_max = self.close.rolling(window).max()
+        drawdown_pct = 100 * (self.close - rolling_max) / (rolling_max.abs() + 1e-10)
+        return drawdown_pct.pow(2).rolling(window).mean().pow(0.5)
+
+    @staticmethod
+    def _validate_window(window: int, minimum: int = 2) -> int:
+        if isinstance(window, bool) or not isinstance(window, (int, np.integer)):
+            raise ValueError(f"window 必须是大于等于 {minimum} 的整数")
+        window = int(window)
+        if window < minimum:
+            raise ValueError(f"window 必须是大于等于 {minimum} 的整数")
+        return window
+
+    def _rolling_regression(self, window: int):
+        window = self._validate_window(window)
+        centered_x = np.arange(window, dtype=float) - (window - 1) / 2
+        sum_squared_x = float(np.dot(centered_x, centered_x))
+        weighted_sum = self.close.rolling(window).apply(
+            lambda values: np.dot(values, centered_x), raw=True
+        )
+        slope = weighted_sum / sum_squared_x
+        mean_price = self.close.rolling(window).mean()
+        total_squared = (
+            self.close.pow(2).rolling(window).sum()
+            - window * mean_price.pow(2)
+        ).clip(lower=0.0)
+        r_squared = (slope.pow(2) * sum_squared_x) / (total_squared + 1e-10)
+        r_squared = r_squared.where(total_squared.notna())
+        r_squared = r_squared.where(
+            total_squared.isna() | (total_squared > 1e-10),
+            0.0,
+        )
+        return slope, r_squared.clip(lower=0.0, upper=1.0)

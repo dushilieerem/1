@@ -72,6 +72,23 @@ python -m data_ingestion.ifind.everydayupdate `
   --index 000300.SH --index 000905.SH
 ```
 
+### 历史回填
+
+同一入口还支持独立的 `backfill` 命令。它先补齐交易日历，再下载指定区间的指数、后复权股票行情/流动性和未复权 OHLC；股票行情会从全部 raw 分区重建有序 CSV。已有 `universe/a_share.csv` 时直接复用，不会用历史截止日快照覆盖当前证券池。
+
+```powershell
+cd MarketData/DataIngestion
+
+python -m data_ingestion.ifind.everydayupdate backfill `
+  --start 2010-01-01 `
+  --end 2017-01-01 `
+  --workers 4 `
+  --trading-days-per-request 10 `
+  --max-estimated-points 120000000
+```
+
+`--max-estimated-points` 会分别传给指数价格、后复权+流动性和未复权价格三个 history_data 数据域，并不是全局额度上限；剩余额度有限时应先分配预算，避免把同一额度重复分配给多个数据域。历史回填默认会把股票宽 CSV 转为 Parquet；宽表转换需要较大内存，可先加 `--skip-parquet` 跳过 `market_data` / `unadjusted_price` 两个股票宽表 Parquet，确认内存和额度后再转换。日历、指数和证券池的 Parquet 仍按流程生成。`2017-01-01` 若不是交易日，实际最后日期以交易日历返回的最后一个交易日为准。
+
 运行前必须通过 `IFIND_REFRESH_TOKEN` 环境变量提供凭据。脚本支持 `--output-root` 指定输出根目录、`--workers` 指定行情 CSV 解析进程数；`--index` 只用于临时覆盖脚本内列表，未传入时始终更新 `INDEX_CODES` 中的所有指数。完整参数可通过以下命令查看：
 
 ```powershell

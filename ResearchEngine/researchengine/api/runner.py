@@ -10,8 +10,6 @@ HTTP 路由调用的纯函数。
 
 from __future__ import annotations
 
-import inspect
-import math
 import os
 import shutil
 import sys
@@ -19,44 +17,55 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 import yaml
 
 from researchengine.api.schemas import (
-    AnnualReturn,
     DateRange,
-    DrawdownInfo,
-    EquityPoint,
     FactorAnalysis,
     FactorBacktestMeta,
     FactorBacktestRequest,
     FactorBacktestResponse,
-    ICPoint,
-    IndustryEquityCurve,
-    IndustryGroupEquityCurve,
-    IndustryGroupPoint,
-    Holding,
-    LayeredPoint,
-    PositionSnapshot,
-    QuantileMetric,
-    RebalanceLog,
-    RebalanceTrade,
-    StrategyBacktestMeta,
     StrategyBacktestRequest,
     StrategyBacktestResponse,
-    EventFillInfo,
-    EventOrderInfo,
-    EventPositionSnapshot,
-    ExecutionTimelineItem,
-    RollingIRPoint,
-    ValuePoint,
 )
-from researchengine.api.serializers import (
-    date_range_from,
-    equity_to_points,
-    metrics_to_dict,
+from researchengine.api.serializers import date_range_from, metrics_to_dict
+from researchengine.api.backtest_support import (
+    _BENCHMARK_FILES,
+    _StrategyPanels,
+    _asset_meta,
+    _benchmark_equity,
+    _custom_benchmark_equity,
+    _declared_strategy_symbols,
+    _load_benchmark_equity,
+    _persisted_asset,
+    _resolve_current_data_dir,
+    _resolve_data_dir,
+    _resolve_research_assets,
+    _resolve_strategy_symbols,
+)
+from researchengine.api.result_serializers import (
+    _compute_annual_returns,
+    _compute_drawdowns,
+    _compute_equity_with_drawdown,
+    _display_instrument,
+    _ic_points,
+    _industry_equity_to_response,
+    _industry_group_equity_to_response,
+    _layered_equity_to_points,
+    _rolling_ir_points,
+    _sample_positions,
+    _serialize_event_execution_timeline,
+    _serialize_rebalance_logs,
+    _serialize_vectorized_execution_timeline,
+    _value_points,
+)
+from researchengine.api.factor_metrics import (
+    _compute_quantile_metrics,
+    _finite_series,
+    _geometric_annual_return,
+    _safe_metric,
 )
 
 
@@ -227,27 +236,6 @@ def run_factor_backtest(req: FactorBacktestRequest, response=None) -> FactorBack
         return _run_factor_backtest_uncached(req)
 
 
-def _resolve_data_dir(req_data_dir: Optional[str]) -> str:
-    """数据目录解析顺序：请求 -> env ``SVQUANT_DATA_DIR`` -> ``<repo>/MarketData``。"""
-    if req_data_dir:
-        return req_data_dir
-    env = os.environ.get("SVQUANT_DATA_DIR")
-    if env:
-        return env
-    import researchengine
-
-    # researchengine/__init__.py -> 上三层 = 仓库根
-    repo_root = Path(researchengine.__file__).resolve().parent.parent.parent
-    return str(repo_root / "MarketData")
-
-
-def _resolve_current_data_dir() -> Path:
-    """返回当前已发布数据目录，兼容旧版扁平 MarketData。"""
-    data_dir = Path(_resolve_data_dir(None))
-    current_dir = data_dir / "current"
-    return current_dir if current_dir.is_dir() else data_dir
-
-
 def _wrap_factor_code(factor_code: str) -> str:
     """自动补全因子代码：用户只写函数体，系统添加 import 和 class 头。"""
     wrapped = (
@@ -355,646 +343,6 @@ def _build_config(commission_rate, slippage_rate, stamp_tax=None,
     cfg.set("compute_backend", "python")
     cfg.set("factor_analysis.level", analysis_level)
     return cfg
-
-
-_BENCHMARK_FILES = {
-    "CSI300": "index_price_000300.SH.parquet",
-    "CSI500": "index_price_000905.SH.parquet",
-}
-
-
-def _load_benchmark_equity(benchmark: str, dates: pd.DatetimeIndex) -> pd.Series:
-    """加载指数收盘价并对齐、归一化为净值序列。"""
-    path = _resolve_current_data_dir() / "benchmark" / _BENCHMARK_FILES[benchmark]
-    frame = pd.read_parquet(path)
-    close_col = "close" if "close" in frame else next(col for col in frame.columns if col.endswith("_close"))
-    series = frame[close_col]
-    series.index = pd.to_datetime(series.index)
-    series = series.reindex(dates).ffill().dropna()
-    if series.empty:
-        raise ValueError(f"基准 {benchmark} 与回测区间没有重叠数据")
-    return series / series.iloc[0]
-
-
-def _resolve_research_assets(req):
-    """校验 WebApp 已解析的可选资产快照，不访问用户资产存储。"""
-    universe_snapshot = req.universe_snapshot
-    benchmark_snapshot = req.benchmark_snapshot
-    universe = req.universe
-    if universe_snapshot is not None:
-        universe = list(universe_snapshot.symbols)
-        from quantcore import DataEngine, FieldParquetProvider
-
-        engine = DataEngine(FieldParquetProvider(_resolve_data_dir(None)))
-        available = set(engine.get_panels(req.start, req.end, fields=["close"])["close"].columns)
-        missing = [symbol for symbol in universe if symbol not in available]
-        if missing:
-            raise ValueError(f"证券池包含行情中不存在的证券: {', '.join(missing)}")
-    return universe, universe_snapshot, benchmark_snapshot
-
-
-def _declared_strategy_symbols(strategy) -> tuple[str, ...]:
-    """读取策略声明的固定交易标的，兼容旧单标的 ``symbol`` 属性。"""
-    symbols: list[str] = []
-    for field in ("fixed_symbols", "pair_symbols", "symbols"):
-        declared = getattr(strategy, field, ())
-        if declared is None:
-            continue
-        if isinstance(declared, str):
-            raise ValueError(f"策略 {field} 必须为证券代码序列，不能是字符串")
-        try:
-            values = list(declared)
-        except TypeError as exc:
-            raise ValueError(f"策略 {field} 必须为证券代码序列") from exc
-        if any(not isinstance(symbol, str) or not symbol for symbol in values):
-            raise ValueError(f"策略 {field} 包含无效证券代码")
-        symbols.extend(values)
-    if not symbols:
-        symbol = getattr(strategy, "symbol", None)
-        if isinstance(symbol, str) and symbol:
-            symbols.append(symbol)
-    if not symbols:
-        try:
-            parameters = inspect.signature(strategy.__init__).parameters
-        except (TypeError, ValueError):
-            parameters = {}
-        pair = [
-            parameters[name].default
-            for name in ("stock_a", "stock_b")
-            if name in parameters and isinstance(parameters[name].default, str)
-        ]
-        if len(pair) == 2:
-            symbols.extend(pair)
-        else:
-            symbol = parameters.get("symbol")
-            if symbol is not None and isinstance(symbol.default, str) and symbol.default:
-                symbols.append(symbol.default)
-    return tuple(dict.fromkeys(symbols))
-
-
-def _resolve_strategy_symbols(
-    provider, universe, strategy, *, as_of=None
-) -> tuple[list[str], dict[str, str], tuple[str, ...]]:
-    """优先解析策略固定标的；否则沿用请求股票池。"""
-    from quantcore.data._util import resolve_universe
-    from researchengine.api.market_data import _market_symbol, _panel_symbol
-
-    declared_symbols = _declared_strategy_symbols(strategy)
-    if declared_symbols:
-        raw_symbols = [_panel_symbol(symbol) for symbol in declared_symbols]
-        available_symbols = set(provider.get_symbols())
-        missing_symbols = [symbol for symbol, raw in zip(declared_symbols, raw_symbols) if raw not in available_symbols]
-        if missing_symbols:
-            raise ValueError(f"策略固定标的行情不可用: {sorted(missing_symbols)}")
-        return raw_symbols, dict(zip(raw_symbols, declared_symbols)), declared_symbols
-
-    raw_symbols = resolve_universe(provider, universe, as_of=as_of)
-    return raw_symbols, {symbol: _market_symbol(symbol) for symbol in raw_symbols}, ()
-
-
-class _StrategyPanels:
-    """向量化策略的懒加载行情视图，统一输出交易所代码列名。"""
-
-    def __init__(self, panels, raw_symbols: list[str], symbol_mapping: dict[str, str]) -> None:
-        self._panels = panels
-        self._raw_symbols = raw_symbols
-        self._symbol_mapping = symbol_mapping
-        self._cache: dict[str, pd.DataFrame] = {}
-
-    def __contains__(self, field: str) -> bool:
-        return field in self._panels
-
-    def __iter__(self):
-        return iter(self._panels)
-
-    def __getitem__(self, field: str) -> pd.DataFrame:
-        if field not in self._cache:
-            self._cache[field] = self._panels[field].reindex(
-                columns=self._raw_symbols
-            ).rename(columns=self._symbol_mapping)
-        return self._cache[field]
-
-
-def _custom_benchmark_equity(snapshot, dates: pd.DatetimeIndex) -> pd.Series:
-    """从已发布 close 面板计算静态组合基准，并严格校验价格可得性。"""
-    from quantcore import DataEngine, FieldParquetProvider
-
-    engine = DataEngine(FieldParquetProvider(_resolve_data_dir(None)))
-    close = engine.get_panels(None, None, fields=["close"])["close"].reindex(dates)
-    weights = pd.Series(snapshot.weights, dtype=float)
-    missing = [symbol for symbol in weights.index if symbol not in close.columns]
-    if missing:
-        raise ValueError(f"组合基准缺少价格的证券: {', '.join(missing)}")
-    prices = close.loc[:, weights.index]
-    if prices.dropna(how="all").empty:
-        raise ValueError("组合基准与回测区间没有重叠数据")
-    if prices.iloc[0].isna().any():
-        raise ValueError("组合基准首个有效日期存在缺失价格")
-    returns = prices.pct_change().iloc[1:]
-    if returns.isna().any().any():
-        raise ValueError("组合基准价格缺失，无法计算收益")
-    return pd.concat([
-        pd.Series([1.0], index=prices.index[:1]),
-        (1.0 + returns.dot(weights)).cumprod(),
-    ])
-
-
-def _benchmark_equity(benchmark: str, snapshot, dates: pd.DatetimeIndex) -> pd.Series:
-    return (
-        _custom_benchmark_equity(snapshot, dates)
-        if snapshot is not None else _load_benchmark_equity(benchmark, dates)
-    )
-
-
-def _asset_meta(snapshot):
-    if snapshot is None:
-        return None
-    meta = {
-        "id": snapshot.asset_id,
-        "version": snapshot.version,
-        "content_hash": snapshot.content_hash,
-    }
-    if hasattr(snapshot, "symbols"):
-        return {**meta, "constituent_count": len(snapshot.symbols), "membership_mode": snapshot.membership_mode}
-    return {**meta, "constituent_count": len(snapshot.weights), "pricing": snapshot.pricing}
-
-
-def _persisted_asset(snapshot):
-    return snapshot.model_dump() if snapshot is not None else None
-
-
-def _layered_equity_to_points(equity: pd.DataFrame) -> list[LayeredPoint]:
-    """分层净值宽表转为前端消费的逐日对象。"""
-    points = []
-    for date, row in equity.iterrows():
-        values = {"date": pd.Timestamp(date).strftime("%Y-%m-%d")}
-        for number, value in enumerate(row, start=1):
-            values[f"layer{number}"] = float(value)
-        points.append(LayeredPoint(**values))
-    return points
-
-
-def _finite_series(series: pd.Series) -> pd.Series:
-    """将序列转成可参与指标计算的有限数值。"""
-    values = pd.to_numeric(series, errors="coerce")
-    return values.replace([float("inf"), float("-inf")], pd.NA).dropna()
-
-
-def _safe_metric(value) -> float | None:
-    """将指标值转换成 JSON 安全的浮点数。"""
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
-        return None
-    return value if math.isfinite(value) else None
-
-
-def _geometric_annual_return(
-    returns: pd.Series,
-    periods_per_year: int,
-    observations: int | None = None,
-) -> float | None:
-    """按累计收益计算 CAGR；``observations`` 控制年化指数。"""
-    clean_returns = _finite_series(returns)
-    if clean_returns.empty:
-        return None
-    count = int(observations if observations is not None else len(clean_returns))
-    if count <= 0:
-        return None
-    cumulative_factor = float((1.0 + clean_returns).prod())
-    if cumulative_factor < 0:
-        return None
-    return _safe_metric(cumulative_factor ** (periods_per_year / count) - 1.0)
-
-
-def _compute_quantile_metrics(
-    layered_equity: pd.DataFrame,
-    benchmark_equity: pd.Series,
-    periods_per_year: int = 252,
-    *,
-    layered_returns: pd.DataFrame | None = None,
-) -> list[QuantileMetric]:
-    """按当前对齐口径计算分组及基准指标。
-
-    分组指标使用 ``layered_returns`` 的完整原始收益（含首个信号到入场
-    日收益），展示净值只用于累计曲线和最大回撤。基准没有这笔信号收益，
-    因此从归一化基准曲线推导，并使用总体标准差。相对基准指标只使用
-    分组与基准收益的共同日期；年化超额收益为共同区间的几何年化收益差，
-    信息比率为年化超额收益除以超额年化波动，胜率保留共同日超额收益胜率。
-    """
-    if layered_equity is None or layered_equity.empty:
-        return []
-    if benchmark_equity is None or benchmark_equity.empty:
-        return []
-
-    annualization = math.sqrt(periods_per_year)
-    layered_returns = layered_returns if layered_returns is not None else pd.DataFrame()
-
-    def absolute_metrics(
-        equity: pd.Series,
-        returns: pd.Series,
-        *,
-        ddof: int,
-        annualization_observations: int | None = None,
-    ) -> tuple[dict[str, float | None], pd.Series]:
-        clean_equity = _finite_series(equity)
-        returns = _finite_series(returns)
-        return_std = returns.std(ddof=ddof)
-        metrics = {
-            "annual_return": _geometric_annual_return(
-                returns,
-                periods_per_year,
-                observations=annualization_observations,
-            ),
-            "volatility": (
-                _safe_metric(return_std * annualization)
-                if not pd.isna(return_std) else None
-            ),
-            "sharpe": None,
-            "max_drawdown": None,
-        }
-        if not returns.empty and not pd.isna(return_std):
-            metrics["sharpe"] = _safe_metric(
-                0.0 if return_std == 0
-                else returns.mean() / return_std * annualization
-            )
-
-        if not clean_equity.empty:
-            running_max = clean_equity.cummax()
-            drawdown = (clean_equity - running_max).div(
-                running_max.where(running_max != 0)
-            )
-            if not drawdown.dropna().empty:
-                metrics["max_drawdown"] = _safe_metric(drawdown.min())
-        return metrics, returns
-
-    benchmark_returns = _finite_series(
-        benchmark_equity.pct_change(fill_method=None)
-    )
-    benchmark_observations = (
-        len(layered_returns) if not layered_returns.empty else len(benchmark_returns)
-    )
-    benchmark_metrics, benchmark_returns = absolute_metrics(
-        benchmark_equity,
-        benchmark_returns,
-        ddof=0,
-        annualization_observations=benchmark_observations,
-    )
-    benchmark_returns = benchmark_returns.rename("benchmark")
-    result = []
-
-    for number, column in enumerate(layered_equity.columns, start=1):
-        returns = (
-            layered_returns[column]
-            if column in layered_returns.columns
-            else layered_equity[column].pct_change(fill_method=None)
-        )
-        absolute, returns = absolute_metrics(
-            layered_equity[column],
-            returns,
-            ddof=1,
-            annualization_observations=len(_finite_series(returns)),
-        )
-        aligned = pd.concat(
-            [returns.rename("group"), benchmark_returns], axis=1, join="inner"
-        ).dropna()
-        excess = aligned["group"] - aligned["benchmark"]
-
-        excess_std = excess.std(ddof=1)
-        common_observations = len(aligned)
-        group_common_annual = _geometric_annual_return(
-            aligned["group"],
-            periods_per_year,
-            observations=common_observations,
-        )
-        benchmark_common_annual = _geometric_annual_return(
-            aligned["benchmark"],
-            periods_per_year,
-            observations=common_observations,
-        )
-        annual_excess_return = (
-            _safe_metric(group_common_annual - benchmark_common_annual)
-            if group_common_annual is not None and benchmark_common_annual is not None
-            else None
-        )
-        excess_volatility = (
-            _safe_metric(excess_std * annualization)
-            if not pd.isna(excess_std) else None
-        )
-        information_ratio = None
-        if annual_excess_return is not None and not pd.isna(excess_std):
-            information_ratio = _safe_metric(
-                0.0 if excess_std == 0
-                else annual_excess_return / (excess_std * annualization)
-            )
-        benchmark_win_rate = (
-            _safe_metric((excess > 0).mean()) if not excess.empty else None
-        )
-
-        column_name = str(column)
-        if column_name.lower().startswith("layer"):
-            quantile = f"Q{column_name[5:]}"
-        elif column_name.upper().startswith("Q"):
-            quantile = column_name.upper()
-        else:
-            quantile = f"Q{number}"
-        result.append(QuantileMetric(
-            quantile=quantile,
-            **absolute,
-            annual_excess_return=annual_excess_return,
-            excess_volatility=excess_volatility,
-            information_ratio=information_ratio,
-            benchmark_win_rate=benchmark_win_rate,
-        ))
-
-    result.append(QuantileMetric(
-        quantile="benchmark",
-        **benchmark_metrics,
-    ))
-    return result
-
-
-def _value_points(series: pd.Series) -> list[ValuePoint]:
-    return [
-        ValuePoint(date=pd.Timestamp(date).strftime("%Y-%m-%d"), value=float(value))
-        for date, value in series.items() if pd.notna(value)
-    ]
-
-
-def _ic_points(frame: pd.DataFrame) -> list[ICPoint]:
-    if frame.empty:
-        return []
-    return [
-        ICPoint(
-            date=pd.Timestamp(date).strftime("%Y-%m-%d"),
-            value=float(row["value"]),
-            sample_size=int(row["sample_size"]),
-        )
-        for date, row in frame.iterrows() if pd.notna(row["value"])
-    ]
-
-
-def _rolling_ir_points(series: pd.Series, window: int = 60) -> list[RollingIRPoint]:
-    return [
-        RollingIRPoint(
-            date=pd.Timestamp(date).strftime("%Y-%m-%d"), value=float(value),
-            window=window, sample_size=window,
-        )
-        for date, value in series.items() if pd.notna(value)
-    ]
-
-
-def _industry_equity_to_response(curves: dict[str, pd.Series]) -> list[IndustryEquityCurve]:
-    return [
-        IndustryEquityCurve(industry_code=industry, industry_name=industry, points=_value_points(series))
-        for industry, series in sorted(curves.items()) if not series.empty
-    ]
-
-
-def _industry_group_equity_to_response(
-    curves: dict[str, pd.DataFrame],
-) -> list[IndustryGroupEquityCurve]:
-    result = []
-    for industry, equity in sorted(curves.items()):
-        points = [
-            IndustryGroupPoint(
-                date=pd.Timestamp(date).strftime("%Y-%m-%d"),
-                groups={str(group): float(value) for group, value in row.items() if pd.notna(value)},
-            )
-            for date, row in equity.iterrows()
-        ]
-        if points:
-            result.append(IndustryGroupEquityCurve(
-                industry_code=industry, industry_name=industry, points=points,
-            ))
-    return result
-
-
-def _compute_drawdowns(equity: pd.Series) -> list[DrawdownInfo]:
-    """从净值序列计算回撤区间明细。"""
-    if equity is None or len(equity) < 2:
-        return []
-
-    rolling_max = equity.cummax()
-    drawdown = (equity - rolling_max) / rolling_max
-
-    drawdowns_list = []
-    in_drawdown = False
-    peak_date = None
-    peak_value = None
-    trough_date = None
-    trough_value = None
-
-    for date, (eq_val, dd_val) in enumerate(zip(equity.items(), drawdown.items())):
-        idx, eq = eq_val
-        _, dd = dd_val
-
-        if dd < 0 and not in_drawdown:
-            # 开始回撤
-            in_drawdown = True
-            peak_date = idx
-            peak_value = eq
-            trough_date = idx
-            trough_value = eq
-        elif dd < 0 and in_drawdown:
-            # 回撤中，更新最低点
-            if eq < trough_value:
-                trough_date = idx
-                trough_value = eq
-        elif dd >= 0 and in_drawdown:
-            # 回撤恢复
-            in_drawdown = False
-            depth = (trough_value - peak_value) / peak_value
-            days = (idx - peak_date).days
-            drawdowns_list.append(
-                DrawdownInfo(
-                    start=str(peak_date.date()),
-                    end=str(trough_date.date()),
-                    peak=float(peak_value),
-                    trough=float(trough_value),
-                    recovery=str(idx.date()),
-                    depth=float(depth),
-                    days=days,
-                )
-            )
-
-    # 如果到末尾还在回撤中
-    if in_drawdown and trough_date is not None and peak_date is not None:
-        depth = (trough_value - peak_value) / peak_value
-        days = (equity.index[-1] - peak_date).days
-        drawdowns_list.append(
-            DrawdownInfo(
-                start=str(peak_date.date()),
-                end=str(trough_date.date()),
-                peak=float(peak_value),
-                trough=float(trough_value),
-                recovery=None,
-                depth=float(depth),
-                days=days,
-            )
-        )
-
-    # 只返回最大的前 10 个回撤
-    drawdowns_list.sort(key=lambda x: x.depth)
-    return drawdowns_list[:10]
-
-
-def _compute_annual_returns(equity: pd.Series) -> list[AnnualReturn]:
-    """从净值序列计算分年收益。"""
-    if equity is None or len(equity) < 2:
-        return []
-
-    # 按年分组算收益
-    years = equity.index.year.unique()
-    result = []
-    for year in sorted(years):
-        year_data = equity[equity.index.year == year]
-        if len(year_data) < 2:
-            continue
-        ret = (year_data.iloc[-1] - year_data.iloc[0]) / year_data.iloc[0]
-        result.append(AnnualReturn(year=int(year), return_value=float(ret)))
-    return result
-
-
-def _display_instrument(symbol: object, stock_names: dict[str, str]) -> tuple[str, str]:
-    """将面板代码转换为 API 代码，并查询证券名称。"""
-    from researchengine.api.market_data import _market_symbol, _panel_symbol
-
-    panel_symbol = _panel_symbol(str(symbol))
-    return _market_symbol(panel_symbol), stock_names[panel_symbol]
-
-
-def _sample_positions(
-    positions: pd.DataFrame | None,
-    stock_names: dict[str, str],
-    max_snapshots: int = 60,
-    top_n: int = 20,
-) -> list[PositionSnapshot] | None:
-    """对持仓权重进行采样，减少传输量。"""
-    if positions is None or len(positions) == 0:
-        return None
-
-    # 每隔 N 个点采样一次
-    step = max(1, len(positions) // max_snapshots)
-    sampled = []
-
-    for idx in range(0, len(positions), step):
-        row = positions.iloc[idx]
-        date_str = str(positions.index[idx].date()) if hasattr(positions.index[idx], 'date') else str(positions.index[idx])
-
-        # 只取权重最大的 top_n 只
-        sorted_row = row.dropna().sort_values(ascending=False)
-        top = sorted_row.head(top_n)
-
-        holdings = []
-        for sym, weight in top.items():
-            symbol, name = _display_instrument(sym, stock_names)
-            holdings.append(Holding(symbol=symbol, name=name, weight=float(weight)))
-        sampled.append(PositionSnapshot(date=date_str, holdings=holdings))
-
-    return sampled
-
-
-def _serialize_rebalance_logs(
-    logs: pd.DataFrame | None, stock_names: dict[str, str]
-) -> list[RebalanceLog] | None:
-    """按调仓日期聚合日志，供 Web 端按需展示。"""
-    if logs is None or logs.empty:
-        return None
-
-    result = []
-    for date, trades in logs.groupby(level=0, sort=True):
-        serialized_trades = []
-        for row in trades.itertuples(index=False):
-            symbol, name = _display_instrument(row.symbol, stock_names)
-            serialized_trades.append(RebalanceTrade(
-                symbol=symbol,
-                name=name,
-                side=row.side,
-                previous_weight=float(row.previous_weight),
-                target_weight=float(row.target_weight),
-                weight_change=float(row.weight_change),
-            ))
-        result.append(RebalanceLog(
-            date=pd.Timestamp(date).strftime("%Y-%m-%d"),
-            trades=serialized_trades,
-        ))
-    return result
-
-
-def _serialize_vectorized_execution_timeline(
-    logs: pd.DataFrame | None, stock_names: dict[str, str],
-) -> list[ExecutionTimelineItem] | None:
-    """将向量化目标权重变化映射为统一执行时间线。"""
-    rebalance_logs = _serialize_rebalance_logs(logs, stock_names)
-    if rebalance_logs is None:
-        return None
-    return [
-        ExecutionTimelineItem(
-            timestamp=f"{log.date}T00:00:00",
-            type="rebalance",
-            payload={"trades": [trade.model_dump() for trade in log.trades]},
-        )
-        for log in rebalance_logs
-    ]
-
-
-def _serialize_event_execution_timeline(
-    orders: list[EventOrderInfo],
-    fills: list[EventFillInfo],
-    positions: list[EventPositionSnapshot],
-    events: list[dict[str, object]],
-) -> list[ExecutionTimelineItem] | None:
-    """按日频事件顺序合并订单、成交、账户快照与审计事件。"""
-    items: list[tuple[str, int, ExecutionTimelineItem]] = []
-    event_priority = {
-        "SESSION_OPEN": 0,
-        "SCHEDULED_CALLBACK": 10,
-        "ORDER_REJECTED": 30,
-        "FILL": 30,
-        "SESSION_CLOSE": 50,
-    }
-    for event in events:
-        timestamp = str(event["timestamp"])
-        items.append((timestamp, event_priority.get(str(event["type"]), 20), ExecutionTimelineItem(
-            timestamp=timestamp, type="audit", payload=event,
-        )))
-    for order in orders:
-        if order.submitted_at is not None:
-            items.append((order.submitted_at, 20, ExecutionTimelineItem(
-                timestamp=order.submitted_at, type="order", payload=order.model_dump(),
-            )))
-    for fill in fills:
-        items.append((fill.timestamp, 30, ExecutionTimelineItem(
-            timestamp=fill.timestamp, type="fill", payload=fill.model_dump(),
-        )))
-    for position in positions:
-        items.append((position.timestamp, 40, ExecutionTimelineItem(
-            timestamp=position.timestamp, type="position", payload=position.model_dump(),
-        )))
-    return [item for _, _, item in sorted(items, key=lambda entry: (entry[0], entry[1]))] or None
-
-
-def _compute_equity_with_drawdown(equity: pd.Series) -> list[EquityPoint]:
-    """计算净值点序列，包含回撤值。"""
-    points = equity_to_points(equity)
-    if not points:
-        return []
-
-    values = [p["value"] for p in points]
-    if not values or values[0] is None:
-        return [EquityPoint(date=p["date"], value=0.0, drawdown=0.0) for p in points]
-
-    cummax_val = values[0]
-    result = []
-    for p, v in zip(points, values):
-        if v is None:
-            result.append(EquityPoint(date=p["date"], value=0.0, drawdown=0.0))
-            continue
-        cummax_val = max(cummax_val, v)
-        dd = (v - cummax_val) / cummax_val if cummax_val != 0 else 0.0
-        result.append(EquityPoint(date=p["date"], value=v, drawdown=dd))
-    return result
 
 
 def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestResponse:
@@ -1110,16 +458,17 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
                 "group_order": "Q1_highest_factor_value_QN_lowest_factor_value",
                 "curve_first_value": 1.0,
                 "group_metric_returns": "signal_to_end_including_entry",
-                "benchmark_metric_returns": "entry_to_end",
+                "benchmark_metric_returns": "entry_to_end_with_initial_zero_return",
                 "group_annualization": "geometric_cagr",
                 "benchmark_annualization": "geometric_cagr",
                 "group_volatility_ddof": 1,
-                "benchmark_volatility_ddof": 0,
-                "relative_metric_returns": "common_group_benchmark_dates",
-                "relative_annual_excess_return": "geometric_cagr_difference",
+                "benchmark_volatility_ddof": 1,
+                "group_max_drawdown": "initial_equity_1_plus_full_group_returns",
+                "relative_metric_returns": "full_common_daily_group_benchmark_returns",
+                "relative_annual_excess_return": "annualized_cumulative_simple_excess",
                 "relative_excess_volatility_ddof": 1,
                 "relative_information_ratio": "annual_excess_divided_by_excess_volatility",
-                "benchmark_win_rate": "common_daily_excess_positive_rate",
+                "benchmark_win_rate": "common_daily_group_return_vs_cumulative_benchmark_return",
                 **({
                     "industry_return_method": "equal_weight_fixed_capital",
                     "industry_grouping_method": "daily_cross_sectional_equal_weight_fixed_capital",
@@ -1141,11 +490,21 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
         return FactorBacktestResponse(error=f"{type(exc).__name__}: {exc}", meta=None)
     benchmark_curve = _compute_equity_with_drawdown(benchmark_equity)
     if factor_analysis is not None:
+        relative_benchmark_returns = (
+            benchmark_equity
+            .pct_change(fill_method=None)
+            .reindex(layered_return_frame.index)
+        )
+        if not relative_benchmark_returns.empty:
+            first_common_date = layered_return_frame.index[0]
+            if pd.isna(relative_benchmark_returns.loc[first_common_date]):
+                relative_benchmark_returns.loc[first_common_date] = 0.0
         factor_analysis.quantile_metrics = _compute_quantile_metrics(
             layered_equity,
             benchmark_equity,
             periods_per_year=int(cfg.get("periods_per_year", 252)),
             layered_returns=layered_return_frame,
+            relative_benchmark_returns=relative_benchmark_returns,
         )
     common_dates = equity.index.intersection(benchmark_equity.index)
     excess_return = None
@@ -1192,193 +551,10 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
 
 
 def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestResponse:
-    """策略回测：自定义策略代码 -> 指标 + 净值。"""
-    try:
-        from quantcore.backtest.adapter import get_backtest_engine
-        from quantcore.backtest.adapter.signals import BacktestConfig, BacktestSignals
+    """兼容门面；实际策略执行位于 ``strategy_backtest`` 模块。"""
+    from researchengine.api.strategy_backtest import run_strategy_backtest as _run
 
-        universe, universe_snapshot, benchmark_snapshot = _resolve_research_assets(req)
-
-        strategy_id = None
-        strategy_version = None
-        code_hash = None
-        strategy_code = req.strategy_code
-        expected_entrypoint = None
-        if req.strategy_id is not None:
-            from researchengine.strategy_catalog import StrategyCatalog
-
-            asset = StrategyCatalog().load(req.strategy_id, req.strategy_version)
-            if asset.execution_mode != req.engine_mode:
-                raise ValueError(
-                    f"策略 {req.strategy_id} 的 execution_mode 为 {asset.execution_mode}，"
-                    f"与请求 engine_mode={req.engine_mode} 不一致"
-                )
-            strategy_code = asset.source_code
-            strategy_id = asset.strategy_id
-            strategy_version = asset.version
-            code_hash = asset.code_hash
-            expected_entrypoint = asset.entrypoint
-
-        # 编译策略代码
-        namespace = {"__name__": "user_strategy"}
-        exec(compile(strategy_code, '<strategy>', 'exec'), namespace)
-        strategy_classes = [
-            obj for obj in namespace.values()
-            if isinstance(obj, type)
-            and obj.__module__ == "user_strategy"
-            and hasattr(obj, "generate_signals" if req.engine_mode == "vectorized" else "initialize")
-        ]
-        if len(strategy_classes) != 1:
-            method = "generate_signals" if req.engine_mode == "vectorized" else "initialize"
-            raise ValueError(f"策略代码必须且只能定义一个包含 {method} 方法的类")
-        strategy_class = strategy_classes[0]
-        if expected_entrypoint is not None and strategy_class.__name__ != expected_entrypoint:
-            raise ValueError("策略索引 entrypoint 与源码中的策略类不一致")
-        if req.engine_mode == "event":
-            return _run_event_strategy_backtest(
-                req, strategy_class, strategy_id, strategy_version, code_hash
-            )
-        from quantcore.backtest.adapter.factor_strategy import FactorPortfolioStrategy
-
-        data_dir = _resolve_data_dir(None)
-        from quantcore import DataEngine, FieldParquetProvider
-        from quantcore.factor.base import Panel
-
-        provider = FieldParquetProvider(data_dir)
-        data_engine = DataEngine(provider=provider)
-        raw_panels = data_engine.get_panels(req.start, req.end)
-        from quantcore.data._util import first_panel_date
-
-        raw_symbols, symbol_mapping, declared_symbols = _resolve_strategy_symbols(
-            provider,
-            universe,
-            strategy_class,
-            as_of=first_panel_date(raw_panels),
-        )
-        panels = Panel(
-            _StrategyPanels(
-                raw_panels, raw_symbols, symbol_mapping
-            ),
-            index_loader=lambda name: data_engine.get_index(name, req.start, req.end),
-        )
-        close = panels.close
-        from researchengine.api.market_data import _get_stock_names
-        stock_names = _get_stock_names()
-        factor_values = None
-
-        # 结构化策略在策略源码内定义因子；自由策略接收收盘价面板自行生成信号。
-        if issubclass(strategy_class, FactorPortfolioStrategy):
-            strategy = strategy_class()
-            signals = strategy.generate_signals(panels)
-        else:
-            strategy = strategy_class(close=close)
-            signals = strategy.generate_signals()
-        if isinstance(signals, BacktestSignals):
-            bt_signals = signals
-        elif isinstance(signals, pd.DataFrame):
-            bt_signals = BacktestSignals(target_weights=signals, close=close)
-        else:
-            raise TypeError(
-                "generate_signals 必须返回 pandas.DataFrame 或 BacktestSignals"
-            )
-
-        # 跑回测
-        bt_config = BacktestConfig(
-            engine="native",
-            initial_capital=req.initial_capital,
-            commission_rate=req.commission_rate,
-            stamp_tax=req.stamp_tax,
-            slippage_rate=req.slippage_rate,
-        )
-        bt_engine = get_backtest_engine("native")
-        bt_result = bt_engine.run(bt_signals, bt_config)
-
-        equity = bt_result.equity_curve
-        returns = bt_result.returns
-
-        # 算指标
-        from quantcore.metric.context import MetricContext
-        from quantcore.metric.engine import MetricEngine
-
-        metric_engine = MetricEngine()
-        ctx = MetricContext(
-            equity_curve=equity,
-            returns=returns,
-            factor_values=factor_values,
-            forward_returns=None,
-            positions=bt_result.positions,
-            periods_per_year=252,
-        )
-        metrics = metric_engine.calculate_all(ctx)
-
-    except Exception as exc:  # noqa: BLE001
-        return StrategyBacktestResponse(
-            error=f"{type(exc).__name__}: {exc}",
-            meta=None,
-        )
-
-    final_equity = float(equity.iloc[-1]) if equity is not None and len(equity) else None
-    metrics = metrics_to_dict(metrics)
-    if equity is not None and len(equity):
-        metrics["total_return"] = float(equity.iloc[-1] / equity.iloc[0] - 1)
-
-    equity_points = _compute_equity_with_drawdown(equity) if equity is not None else None
-
-    drawdowns = _compute_drawdowns(equity) if equity is not None else []
-    annual_returns = _compute_annual_returns(equity) if equity is not None else []
-    try:
-        benchmark_equity = _benchmark_equity(req.benchmark, benchmark_snapshot, equity.index)
-    except Exception as exc:  # noqa: BLE001
-        return StrategyBacktestResponse(
-            error=f"{type(exc).__name__}: {exc}",
-            meta=None,
-        )
-    benchmark_curve = _compute_equity_with_drawdown(benchmark_equity)
-    common_dates = equity.index.intersection(benchmark_equity.index)
-    excess_return = None
-    if len(common_dates):
-        strategy_return = equity.loc[common_dates[-1]] / equity.loc[common_dates[0]] - 1
-        benchmark_return = benchmark_equity.loc[common_dates[-1]] / benchmark_equity.loc[common_dates[0]] - 1
-        excess_return = float(strategy_return - benchmark_return)
-
-    positions = None
-    if req.include_positions and bt_result.positions is not None:
-        positions = _sample_positions(bt_result.positions, stock_names)
-    rebalance_logs = None
-    if req.include_rebalance_logs:
-        rebalance_logs = _serialize_rebalance_logs(bt_result.rebalance_logs, stock_names)
-    execution_timeline = None
-    if req.include_execution_timeline:
-        execution_timeline = _serialize_vectorized_execution_timeline(
-            bt_result.rebalance_logs, stock_names,
-        )
-
-    return StrategyBacktestResponse(
-        metrics=metrics,
-        equity_curve=equity_points,
-        drawdowns=drawdowns,
-        annual_returns=annual_returns,
-        date_range=DateRange(**date_range_from(equity)),
-        final_equity=final_equity,
-        benchmark_curve=benchmark_curve,
-        excess_return=excess_return,
-        meta=StrategyBacktestMeta(
-            strategy=strategy_class.__name__,
-            universe=req.universe if universe_snapshot is None else universe_snapshot.asset_id,
-            benchmark=req.benchmark,
-            universe_asset=_asset_meta(universe_snapshot),
-            benchmark_asset=_asset_meta(benchmark_snapshot),
-            engine_mode="vectorized",
-            strategy_id=strategy_id,
-            strategy_version=strategy_version,
-            code_hash=code_hash,
-            trading_symbols=list(declared_symbols) or None,
-        ),
-        positions=positions,
-        rebalance_logs=rebalance_logs,
-        execution_timeline=execution_timeline,
-        error=None,
-    )
+    return _run(req)
 
 
 def _run_event_strategy_backtest(
@@ -1388,112 +564,7 @@ def _run_event_strategy_backtest(
     strategy_version: str | None,
     code_hash: str | None,
 ) -> StrategyBacktestResponse:
-    """运行日频事件策略，并将审计结果转成 API 契约。"""
-    try:
-        from quantcore import DataEngine, FieldParquetProvider
-        from quantcore.backtest.event import EventBacktestConfig, EventBacktestEngine
-        from quantcore.metric.context import MetricContext
-        from quantcore.metric.engine import MetricEngine
+    """兼容门面；事件策略实现位于 ``strategy_backtest`` 模块。"""
+    from researchengine.api.strategy_backtest import _run_event_strategy_backtest as _run
 
-        provider = FieldParquetProvider(_resolve_data_dir(None))
-        data_engine = DataEngine(provider=provider)
-        strategy = strategy_class()
-        required_fields = set(getattr(strategy, "required_fields", ())) | {"open", "high", "low", "close"}
-        panels = data_engine.get_panels(req.start, req.end, fields=sorted(required_fields))
-        from quantcore.data._util import first_panel_date
-
-        raw_symbols, symbol_mapping, declared_symbols = _resolve_strategy_symbols(
-            provider,
-            req.universe,
-            strategy,
-            as_of=first_panel_date(panels),
-        )
-        event_panels = {
-            field: panels[field].reindex(columns=raw_symbols).rename(columns=symbol_mapping)
-            for field in required_fields
-        }
-        index = data_engine.get_index(req.benchmark, req.start, req.end)
-        benchmark_symbol = getattr(strategy, "benchmark_symbol", None)
-        if benchmark_symbol:
-            required_index_fields = {"open", "high", "low", "close"}
-            missing_index_fields = required_index_fields - set(index.columns)
-            if missing_index_fields:
-                raise ValueError(
-                    f"基准 {req.benchmark} 缺少日线字段: {sorted(missing_index_fields)}"
-                )
-            for field in required_index_fields:
-                event_panels[field] = event_panels[field].copy()
-                event_panels[field][benchmark_symbol] = index[field].reindex(
-                    event_panels[field].index
-                )
-
-        result = EventBacktestEngine(
-            event_panels,
-            EventBacktestConfig(
-                initial_capital=req.initial_capital,
-                commission_rate=req.commission_rate,
-                stamp_tax_rate=req.stamp_tax,
-            ),
-        ).run(strategy)
-        equity = result.equity_curve
-        metrics = metrics_to_dict(MetricEngine().calculate_all(MetricContext(
-            equity_curve=equity, returns=result.returns, periods_per_year=252,
-        )))
-        metrics["total_return"] = float(equity.iloc[-1] / equity.iloc[0] - 1)
-        benchmark_equity = _load_benchmark_equity(req.benchmark, equity.index)
-        common_dates = equity.index.intersection(benchmark_equity.index)
-        excess_return = None
-        if len(common_dates):
-            excess_return = float(
-                equity.loc[common_dates[-1]] / equity.loc[common_dates[0]]
-                - benchmark_equity.loc[common_dates[-1]] / benchmark_equity.loc[common_dates[0]]
-            )
-        orders = [EventOrderInfo(
-            order_id=order.order_id, symbol=order.symbol, quantity=order.quantity,
-            target_value=order.target_value, side=order.side, status=order.status,
-            reason_code=order.reason_code,
-            submitted_at=order.submitted_at.isoformat() if order.submitted_at else None,
-        ) for order in result.orders]
-        fills = [EventFillInfo(
-            order_id=fill.order_id, symbol=fill.symbol, side=fill.side,
-            quantity=fill.quantity, price=fill.price, timestamp=fill.timestamp.isoformat(),
-            commission=fill.commission, stamp_tax=fill.stamp_tax,
-        ) for fill in result.fills]
-        event_positions = [EventPositionSnapshot(
-            timestamp=snapshot.timestamp.isoformat(), cash=snapshot.cash,
-            total_value=snapshot.total_value, positions=snapshot.positions,
-            sellable_quantities=snapshot.sellable_quantities,
-        ) for snapshot in result.position_snapshots]
-        events = [{
-            key: value.isoformat() if hasattr(value, "isoformat") else value
-            for key, value in event.items()
-        } for event in result.events]
-        execution_timeline = None
-        if req.include_execution_timeline:
-            execution_timeline = _serialize_event_execution_timeline(
-                orders, fills, event_positions, events,
-            )
-        return StrategyBacktestResponse(
-            metrics=metrics,
-            equity_curve=_compute_equity_with_drawdown(equity),
-            drawdowns=_compute_drawdowns(equity),
-            annual_returns=_compute_annual_returns(equity),
-            date_range=DateRange(**date_range_from(equity)),
-            final_equity=float(equity.iloc[-1]),
-            benchmark_curve=_compute_equity_with_drawdown(benchmark_equity),
-            excess_return=excess_return,
-            meta=StrategyBacktestMeta(
-                strategy=strategy_class.__name__, universe=req.universe,
-                benchmark=req.benchmark, engine_mode="event", strategy_id=strategy_id,
-                strategy_version=strategy_version, code_hash=code_hash,
-                trading_symbols=list(declared_symbols) or None,
-            ),
-            orders=orders,
-            fills=fills,
-            event_positions=event_positions,
-            events=events,
-            assumptions=result.assumptions,
-            execution_timeline=execution_timeline,
-        )
-    except Exception as exc:  # noqa: BLE001
-        return StrategyBacktestResponse(error=f"{type(exc).__name__}: {exc}")
+    return _run(req, strategy_class, strategy_id, strategy_version, code_hash)

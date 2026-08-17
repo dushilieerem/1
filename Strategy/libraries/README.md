@@ -70,3 +70,5 @@ strategies:
 `chande_momentum_oscillator_a_share_event`、`fisher_transform_a_share_event`、`ease_of_movement_a_share_event` 和 `volume_price_trend_a_share_event` 是本次新增的日频事件研究策略，分别使用 CMO、Fisher Transform、EOM 和标准 VPT 生成现金多头信号。四者均按前一收盘计算、下一交易日开盘成交；EOM 与 VPT 额外要求 `volume` 字段，结果仅用于研究验证。
 
 `awesome_oscillator_a_share_event`、`balance_of_power_a_share_event`、`choppiness_breakout_a_share_event` 和 `coppock_curve_a_share_event` 是本次新增的日频事件研究策略，分别使用 AO、14 日平滑 BOP、Choppiness Index 配合 20 日突破和 Coppock Curve 生成现金多头信号。四者只依赖日频 OHLC，均按前一收盘计算、下一交易日开盘成交；最多持有十只、单只目标 9%。当前版本不包含动态历史股票池、ST、停牌或盘中成交近似，结果仅用于研究验证。
+
+`dpo_mean_reversion_a_share_event`、`true_strength_index_a_share_event`、`stoch_rsi_a_share_event` 和 `relative_volatility_index_a_share_event` 是本批新增的日频事件研究策略，分别使用 DPO、TSI、StochRSI 和 RVI 生成现金多头信号。四者只声明并读取 `close` 字段；事件引擎仍需标准 OHLC 面板以完成开盘成交。信号均按前一收盘计算、下一交易日开盘成交，最多持有十只、单只目标 9%。DPO 使用 20 日去趋势价格振荡器和 MA60，TSI 使用 25/13 双重平滑与 9 日信号线，StochRSI 使用 14/14 参数，RVI 使用 10 日波动率和 14 日平滑。当前版本不包含动态历史股票池、ST、停牌或盘中成交近似，结果仅用于研究验证。

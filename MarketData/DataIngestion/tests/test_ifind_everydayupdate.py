@@ -269,3 +269,141 @@ def test_everyday_update_uses_all_configured_indices_by_default(tmp_path, monkey
 
     assert updated_indices == everydayupdate.INDEX_CODES
     assert list(result["reference_data"]["indices"]) == everydayupdate.INDEX_CODES
+
+
+def test_historical_backfill_rebuilds_full_csv_and_reuses_existing_universe(
+    tmp_path, monkeypatch
+):
+    calls: list[tuple] = []
+    universe_path = tmp_path / "universe" / "a_share.csv"
+    universe_path.parent.mkdir(parents=True)
+    universe_path.write_text("thscode,name\n000001.SZ,平安银行\n", encoding="utf-8")
+    trade_dates = ["2005-01-04", "2005-01-05"]
+
+    monkeypatch.setattr(
+        everydayupdate,
+        "backfill_calendar",
+        lambda client, root, start, end: calls.append(
+            ("calendar_backfill", start, end)
+        )
+        or 2,
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "csv_to_flat_parquet",
+        lambda source, target, label: calls.append((label, source, target))
+        or {"rows": 2},
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "_trade_dates_in_range",
+        lambda root, start, end: trade_dates,
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "existing_universe_path",
+        lambda root: universe_path,
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "_backfill_index",
+        lambda client, root, index, dates, days, points: calls.append(
+            ("index_backfill", index, dates, days, points)
+        )
+        or {"price": {}, "weights": {}},
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "download_market_data",
+        lambda client, root, universe, start, end, symbols, days, points: calls.append(
+            ("market_download", start, end, symbols, days, points)
+        )
+        or {"price_hfq": {}},
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "build_daily_csv",
+        lambda root, workers, universe: calls.append(
+            ("market_build", workers, universe)
+        )
+        or {"rows": 2},
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "csv_to_parquet",
+        lambda source, target: calls.append(("market_parquet", source, target))
+        or {"rows": 2},
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "download_unadjusted_price",
+        lambda client, root, universe, start, end, symbols, days, points: calls.append(
+            ("unadjusted_download", start, end, symbols, days, points)
+        )
+        or {"price_none": {}},
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "build_price_csv",
+        lambda root, workers, universe: calls.append(
+            ("unadjusted_build", workers, universe)
+        )
+        or {"rows": 2},
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "csv_to_unadjusted_price_parquet",
+        lambda source, target: calls.append(
+            ("unadjusted_parquet", source, target)
+        )
+        or {"rows": 2},
+    )
+
+    result = everydayupdate.run_historical_backfill(
+        object(),
+        tmp_path,
+        "2005-01-01",
+        "2005-01-31",
+        ["000905.SH"],
+        workers=1,
+        symbols_per_request=2,
+        trading_days_per_request=3,
+        max_estimated_points=100,
+    )
+
+    assert calls == [
+        ("calendar_backfill", "2005-01-01", "2005-01-31"),
+        (
+            "calendar_parquet",
+            tmp_path / "calendar" / "calendar_all_a.csv",
+            tmp_path / "calendar" / "calendar_all_a.parquet",
+        ),
+        ("index_backfill", "000905.SH", trade_dates, 3, 100),
+        ("market_download", "2005-01-04", "2005-01-05", 2, 3, 100),
+        ("market_build", 1, universe_path),
+        ("market_parquet", tmp_path / "market_data" / "market_data_hfq.csv", tmp_path / "market_data" / "market_data_hfq.parquet"),
+        ("unadjusted_download", "2005-01-04", "2005-01-05", 2, 3, 100),
+        ("unadjusted_build", 1, universe_path),
+        ("unadjusted_parquet", tmp_path / "unadjusted_price" / "unadjusted_price.csv", tmp_path / "unadjusted_price" / "unadjusted_price.parquet"),
+    ]
+    assert result["command"] == "backfill"
+    assert result["calendar"]["trade_dates"] == {
+        "count": 2,
+        "start": "2005-01-04",
+        "end": "2005-01-05",
+    }
+    assert result["reference_data"]["universe"]["download"] == {
+        "skipped": 1,
+        "reason": "reuse_existing_universe",
+    }
+
+
+def test_historical_backfill_rejects_reversed_date_range(tmp_path):
+    try:
+        everydayupdate.run_historical_backfill(
+            object(), tmp_path, "2005-02-01", "2005-01-01", [], write_parquet=False
+        )
+    except ValueError as exc:
+        assert "不能晚于" in str(exc)
+    else:
+        raise AssertionError("倒置的历史回填日期必须被拒绝")

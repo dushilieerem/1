@@ -76,3 +76,9 @@ Piotroski F-Score 与股息增长策略分别位于 `piotroski_f_score_a_share_e
 - `coppock_curve_a_share_event:v1` 位于 `Strategy/libraries/coppock_curve_a_share_event_v1.py`，使用 11/14 日 ROC 和 10 日线性加权均线；该日频参数与因子库一致，是研究适配而非原始月线策略复刻。
 
 四个源码文件均自包含，仅依赖 pandas/numpy，不修改共享 Catalog、QuantCore 或 EventEngine。字段不足在 `initialize()` 拒绝，历史不足在局部指标计算中跳过，现有持仓缺少可用指标时提交平仓；无候选时保留现金。回滚方式为从 `Strategy/libraries/index.yaml` 移除对应条目，保留 v1 源码用于历史回测追溯。
+
+本批四个策略分别位于 `Strategy/libraries/dpo_mean_reversion_a_share_event_v1.py`、`true_strength_index_a_share_event_v1.py`、`stoch_rsi_a_share_event_v1.py` 和 `relative_volatility_index_a_share_event_v1.py`，均通过 `StrategyCatalog` 以 `v1` 版本加载。四个入口类均实现 `initialize(context)`、日频 `rebalance(context)` 和独立指标函数，源码只依赖 pandas，不导入项目内部模块，避免隔离加载时产生隐式依赖。
+
+四者的字段契约均为 `required_fields = {"close"}`：DPO 使用 20 日位移振荡器和 MA60；TSI 使用 25/13 双重 EMA、9 日信号线和 MA60；StochRSI 使用 14 日 RSI 与 14 日随机归一化、0.2/0.8 阈值和 MA60；RVI 使用 10 日 `ddof=0` 波动率、14 日方向平滑、50 阈值和 MA60。事件引擎本身仍要求标准 OHLC 面板以便执行下一开盘订单，因此策略字段契约与撮合字段契约保持区分。
+
+四个策略都先处理已有持仓，再按现有持仓数量计算新候选名额；这使 T+1 导致的当日平仓拒绝不会让持仓超过上限。指标只在 `DataView.history()` 的前收盘快照上计算，缺少历史或指标时对持仓提交平仓、对新候选跳过；无候选则保持现金。回滚仍为从 `Strategy/libraries/index.yaml` 移除条目，保留源码以支持历史版本引用。

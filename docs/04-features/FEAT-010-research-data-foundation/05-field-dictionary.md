@@ -18,9 +18,9 @@
 | `volume` | 成交量 | 股 | 日 | 当日成交量 | 复用，待盘点 |
 | `amount` | 成交额 | 元 | 日 | 当日成交金额 | 复用，待盘点 |
 | `turnover` | 换手率 | 小数 | 日 | 数据源定义的换手率；必须说明分母为总股本或流通股本 | 复用，待盘点 |
-| `total_shares` / `float_shares` | 总/流通股本 | 股 | 日 | 当日可得的总/流通股份数 | 复用，待盘点 |
-| `total_mv` / `float_mv` | 总/流通市值 | 元 | 日 | 收盘价 × 对应股本；必须与价格复权口径一致 | 复用，待盘点 |
-| `pe_ttm` / `pb` / `ps_ttm` | 市盈率 / 市净率 / 市销率 | 倍 | 日 | 供应商日频估值；保留其计算口径和源版本 | 复用，待盘点 |
+| `total_shares` / `free_shares_a` | 总/流通股本 | 股 | 日 | 采用东方财富原始字段 `TOTAL_SHARES` / `FREE_SHARES_A` 的小写形式；保留数据源口径 | 复用，待盘点 |
+| `total_market_cap` / `notlimited_marketcap_a` | 总/流通市值 | 元 | 日 | 采用东方财富原始字段 `TOTAL_MARKET_CAP` / `NOTLIMITED_MARKETCAP_A` 的小写形式；保留数据源口径 | 复用，待盘点 |
+| `pe_lar` / `pe_ttm` / `pb_mrq` / `peg_car` / `pcf_ocf_ttm` / `ps_ttm` | 静态/TTM 市盈率、最近季度市净率、PEG、经营现金流 TTM 市现率、TTM 市销率 | 倍 | 日 | 采用东方财富原始字段 `PE_LAR` / `PE_TTM` / `PB_MRQ` / `PEG_CAR` / `PCF_OCF_TTM` / `PS_TTM` 的小写形式；不在导入层重新计算 | 复用，待盘点 |
 | `is_st` | ST 标识 | bool | 日 | 当日证券是否处于 ST 或 *ST 状态 | 复用，待盘点 |
 | `limit_up` | 涨停标识 | bool | 日 | 当日收盘是否触及涨停；不等同于不可买入 | 复用，待盘点 |
 | `adj_factor` | 复权因子 | 正数 | 日 | 数据源定义的累计复权因子；必须在清单声明基日与公式 | 新增 |

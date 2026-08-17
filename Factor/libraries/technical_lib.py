@@ -388,6 +388,61 @@ class TechnicalLib(FactorLibrary):
         drawdown_pct = 100 * (self.close - rolling_max) / (rolling_max.abs() + 1e-10)
         return drawdown_pct.pow(2).rolling(window).mean().pow(0.5)
 
+    # ==================== 日内结构与流动性状态 ====================
+
+    def overnight_gap_follow_through(self, window: int = 10):
+        """隔夜跳空延续：跳空方向与当日盘中收益方向一致性的滚动均值。"""
+        window = self._validate_window(window)
+        previous_close = self.close.shift()
+        gap = (self.open - previous_close) / (previous_close.abs() + 1e-10)
+        intraday_return = (self.close - self.open) / (self.open.abs() + 1e-10)
+        gap_direction = gap.gt(0).astype(float) - gap.lt(0).astype(float)
+        continuation = (gap_direction * intraday_return).where(
+            gap.notna() & intraday_return.notna()
+        )
+        return continuation.rolling(window).mean()
+
+    def range_expansion_persistence(self, window: int = 10, baseline: int = 60):
+        """区间扩张持续性：近期真实区间高于基准区间均值的比例。"""
+        window = self._validate_window(window)
+        baseline = self._validate_window(baseline)
+        true_range = self._true_range()
+        baseline_range = true_range.rolling(baseline).mean()
+        expanded = true_range.gt(baseline_range).where(
+            true_range.notna() & baseline_range.notna()
+        )
+        return expanded.astype(float).rolling(window).mean()
+
+    def directional_range_balance(self, window: int = 14):
+        """方向性区间平衡：上涨与下跌方向真实区间的净平衡强度。"""
+        window = self._validate_window(window)
+        previous_close = self.close.shift()
+        true_range = self._true_range()
+        change = self.close - previous_close
+        direction = change.gt(0).astype(float) - change.lt(0).astype(float)
+        signed_range = (direction * true_range).where(
+            change.notna() & true_range.notna()
+        )
+        numerator = signed_range.rolling(window).sum()
+        denominator = true_range.rolling(window).sum()
+        result = numerator / (denominator + 1e-10)
+        result = result.where(denominator.notna())
+        return result.where(denominator.isna() | (denominator > 1e-10), 0.0).clip(
+            lower=-1.0, upper=1.0
+        )
+
+    def volume_impact_score(self, window: int = 20):
+        """成交额冲击：单位成交额承载的绝对收益滚动均值。"""
+        window = self._validate_window(window)
+        returns = self.close.pct_change(fill_method=None)
+        if "amount" in self.fields:
+            traded_value = self.amount
+        else:
+            traded_value = self.close.abs() * self.volume
+        traded_value = traded_value.where(traded_value > 0)
+        impact = returns.abs() / traded_value
+        return impact.rolling(window).mean()
+
     @staticmethod
     def _validate_window(window: int, minimum: int = 2) -> int:
         if isinstance(window, bool) or not isinstance(window, (int, np.integer)):

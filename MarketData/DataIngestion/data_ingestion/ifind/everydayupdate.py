@@ -11,11 +11,13 @@ from typing import Protocol
 from data_ingestion.ifind.calendar.pipeline import (
     CALENDAR_CSV_FILENAME,
     CALENDAR_PARQUET_FILENAME,
+    backfill_calendar,
     default_update_as_of,
     read_calendar_dates,
     update_calendar,
 )
 from data_ingestion.ifind.common.client import IFindClient
+from data_ingestion.ifind.common.history import DEFAULT_TRADING_DAYS_PER_REQUEST
 from data_ingestion.ifind.common.parquet import csv_to_flat_parquet
 from data_ingestion.ifind.common.paths import DEFAULT_OUTPUT_ROOT
 from data_ingestion.ifind.index.index_price.csv import update_index_price_csv_range
@@ -34,6 +36,7 @@ from data_ingestion.ifind.market_data.csv import (
     DEFAULT_WORKERS,
     OUTPUT_DIR as MARKET_DATA_DIR,
     OUTPUT_FILENAME as MARKET_DATA_CSV_FILENAME,
+    build_daily_csv,
     update_daily_csv_range,
 )
 from data_ingestion.ifind.market_data.download import (
@@ -48,6 +51,7 @@ from data_ingestion.ifind.market_data.parquet import (
 from data_ingestion.ifind.unadjusted_price.csv import (
     OUTPUT_DIR as UNADJUSTED_PRICE_DIR,
     OUTPUT_FILENAME as UNADJUSTED_PRICE_CSV_FILENAME,
+    build_price_csv,
     update_price_csv_range,
 )
 from data_ingestion.ifind.unadjusted_price.download import (
@@ -114,6 +118,29 @@ def _date_range_summary(trade_dates: list[str]) -> dict[str, object]:
         "start": trade_dates[0] if trade_dates else None,
         "end": trade_dates[-1] if trade_dates else None,
     }
+
+
+def _normalize_backfill_range(start: str, end: str) -> tuple[str, str]:
+    """验证并规范历史回填的起止日期。"""
+    try:
+        start_date, end_date = date.fromisoformat(start), date.fromisoformat(end)
+    except ValueError as exc:
+        raise ValueError("历史回填日期必须使用 YYYY-MM-DD 格式") from exc
+    if start_date > end_date:
+        raise ValueError("历史回填起始日期不能晚于截止日期")
+    return start_date.isoformat(), end_date.isoformat()
+
+
+def _trade_dates_in_range(output_root: Path, start: str, end: str) -> list[str]:
+    calendar_file = output_root / "calendar" / CALENDAR_CSV_FILENAME
+    trade_dates = [
+        trade_date
+        for trade_date in read_calendar_dates(calendar_file)
+        if start <= trade_date <= end
+    ]
+    if not trade_dates:
+        raise ValueError(f"交易日历中没有 {start} 至 {end} 的交易日")
+    return trade_dates
 
 
 def _normalize_index_codes(index_codes: list[str] | tuple[str, ...]) -> list[str]:
@@ -190,6 +217,214 @@ def _update_index(
             "download": price_download,
             "csv": price_csv,
             "parquet": price_parquet,
+        },
+    }
+
+
+def _backfill_index(
+    client: EverydayUpdateClient,
+    output_root: Path,
+    index_code: str,
+    trade_dates: list[str],
+    trading_days_per_request: int,
+    max_estimated_points: int,
+) -> dict[str, object]:
+    """回填一个指数的权重和 OHLC，并重建其有序 CSV/Parquet。"""
+    start, end = trade_dates[0], trade_dates[-1]
+    print(f"[everydayupdate] 正在回填指数：{index_code} {start} 至 {end}", flush=True)
+
+    weights_csv_path = index_weights_artifact_path(output_root, index_code, "csv")
+    weights_download = download_index_weights(client, output_root, index_code, start, end)
+    weights_csv = update_index_weights_csv_range(output_root, index_code, trade_dates)
+    weights_parquet = csv_to_index_weights_parquet(
+        weights_csv_path,
+        index_weights_artifact_path(output_root, index_code, "parquet"),
+    )
+
+    price_csv_path = index_price_artifact_path(output_root, index_code, "csv")
+    price_download = download_index_price(
+        client,
+        output_root,
+        index_code,
+        start,
+        end,
+        trading_days_per_request,
+        max_estimated_points,
+    )
+    price_csv = update_index_price_csv_range(output_root, index_code, trade_dates)
+    price_parquet = csv_to_index_price_parquet(
+        price_csv_path,
+        index_price_artifact_path(output_root, index_code, "parquet"),
+    )
+    return {
+        "weights": {
+            "update_range": _date_range_summary(trade_dates),
+            "download": weights_download,
+            "csv": weights_csv,
+            "parquet": weights_parquet,
+        },
+        "price": {
+            "update_range": _date_range_summary(trade_dates),
+            "download": price_download,
+            "csv": price_csv,
+            "parquet": price_parquet,
+        },
+    }
+
+
+def _reused_asset_summary(path: Path) -> dict[str, object]:
+    return {"reused": True, "path": str(path)}
+
+
+def run_historical_backfill(
+    client: EverydayUpdateClient,
+    output_root: Path,
+    start: str,
+    end: str,
+    index_codes: list[str] | tuple[str, ...] | None = None,
+    workers: int = DEFAULT_WORKERS,
+    symbols_per_request: int = DEFAULT_SYMBOLS_PER_REQUEST,
+    trading_days_per_request: int = DEFAULT_TRADING_DAYS_PER_REQUEST,
+    max_estimated_points: int = DEFAULT_MAX_ESTIMATED_POINTS,
+    write_parquet: bool = True,
+) -> dict[str, object]:
+    """回填历史日期，并从全部 raw 分区重建有序 CSV/Parquet。
+
+    与日更不同，历史回填使用 ``build_*_csv`` 全量重建，避免把较早日期
+    追加到现有 CSV 尾部后破坏日期顺序。已有全 A 证券池会原样复用，避免
+    用历史快照覆盖当前证券池；仅在证券池不存在时才按回填截止交易日建立。
+    """
+    start, end = _normalize_backfill_range(start, end)
+    if workers <= 0 or symbols_per_request <= 0 or trading_days_per_request <= 0:
+        raise ValueError("workers、symbols_per_request 和 trading_days_per_request 必须大于零")
+    if max_estimated_points <= 0:
+        raise ValueError("max_estimated_points 必须大于零")
+
+    resolved_index_codes = _normalize_index_codes(
+        INDEX_CODES if index_codes is None else index_codes
+    )
+    print(f"[everydayupdate] 历史回填区间：{start} 至 {end}", flush=True)
+
+    print("[everydayupdate] 历史回填第 1/3 步：补齐交易日历", flush=True)
+    calendar_added = backfill_calendar(client, output_root, start, end)
+    calendar_dir = output_root / "calendar"
+    calendar_parquet = csv_to_flat_parquet(
+        calendar_dir / CALENDAR_CSV_FILENAME,
+        calendar_dir / CALENDAR_PARQUET_FILENAME,
+        "calendar_parquet",
+    )
+    trade_dates = _trade_dates_in_range(output_root, start, end)
+
+    print("[everydayupdate] 历史回填第 2/3 步：准备证券池和指数数据", flush=True)
+    universe_path = existing_universe_path(output_root)
+    if universe_path.is_file() and universe_path.stat().st_size > 0:
+        universe_download = {"skipped": 1, "reason": "reuse_existing_universe"}
+        universe_csv = _reused_asset_summary(universe_path)
+        universe_parquet = _reused_asset_summary(
+            output_root / "universe" / "a_share.parquet"
+        )
+    else:
+        latest_trade_date = trade_dates[-1]
+        universe_download = run_universe_download(
+            client, output_root, as_of=latest_trade_date
+        )
+        universe_csv = update_universe_csv(output_root, latest_trade_date)
+        universe_path = existing_universe_path(output_root)
+        universe_parquet = csv_to_flat_parquet(
+            universe_path,
+            output_root / "universe" / "a_share.parquet",
+            "universe_parquet",
+        )
+
+    indices = {
+        index_code: _backfill_index(
+            client,
+            output_root,
+            index_code,
+            trade_dates,
+            trading_days_per_request,
+            max_estimated_points,
+        )
+        for index_code in resolved_index_codes
+    }
+
+    print("[everydayupdate] 历史回填第 3/3 步：下载并重建股票行情", flush=True)
+    market_download = download_market_data(
+        client,
+        output_root,
+        universe_path,
+        trade_dates[0],
+        trade_dates[-1],
+        symbols_per_request,
+        trading_days_per_request,
+        max_estimated_points,
+    )
+    market_csv_path = output_root / MARKET_DATA_DIR / MARKET_DATA_CSV_FILENAME
+    market_csv = build_daily_csv(output_root, workers, universe_path)
+    market_parquet = (
+        csv_to_parquet(
+            market_csv_path,
+            output_root / MARKET_DATA_DIR / MARKET_DATA_PARQUET_FILENAME,
+        )
+        if write_parquet
+        else {"skipped": True, "reason": "write_parquet_false"}
+    )
+
+    unadjusted_price_download = download_unadjusted_price(
+        client,
+        output_root,
+        universe_path,
+        trade_dates[0],
+        trade_dates[-1],
+        symbols_per_request,
+        trading_days_per_request,
+        max_estimated_points,
+    )
+    unadjusted_price_csv_path = (
+        output_root / UNADJUSTED_PRICE_DIR / UNADJUSTED_PRICE_CSV_FILENAME
+    )
+    unadjusted_price_csv = build_price_csv(output_root, workers, universe_path)
+    unadjusted_price_parquet = (
+        csv_to_unadjusted_price_parquet(
+            unadjusted_price_csv_path,
+            output_root
+            / UNADJUSTED_PRICE_DIR
+            / UNADJUSTED_PRICE_PARQUET_FILENAME,
+        )
+        if write_parquet
+        else {"skipped": True, "reason": "write_parquet_false"}
+    )
+
+    return {
+        "command": "backfill",
+        "start": start,
+        "end": end,
+        "calendar": {
+            "new_trade_dates": calendar_added,
+            "trade_dates": _date_range_summary(trade_dates),
+            "parquet": calendar_parquet,
+        },
+        "reference_data": {
+            "universe": {
+                "download": universe_download,
+                "csv": universe_csv,
+                "parquet": universe_parquet,
+            },
+            "indices": indices,
+        },
+        "market_data": {
+            "adjustment": "hfq",
+            "update_range": _date_range_summary(trade_dates),
+            "download": market_download,
+            "csv": market_csv,
+            "parquet": market_parquet,
+        },
+        "unadjusted_price": {
+            "adjustment": "none",
+            "update_range": _date_range_summary(trade_dates),
+            "download": unadjusted_price_download,
+            "csv": unadjusted_price_csv,
+            "parquet": unadjusted_price_parquet,
         },
     }
 
@@ -324,11 +559,20 @@ def run_everyday_update(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=("update", "backfill"),
+        default="update",
+        help="update 执行收盘后日更；backfill 回填指定历史区间",
+    )
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument(
         "--as-of",
         help="目标日期；未指定时上海时间 17:00 前取前一日，17:00 起取当天",
     )
+    parser.add_argument("--start", help="历史回填起始日期，格式 YYYY-MM-DD")
+    parser.add_argument("--end", help="历史回填截止日期，格式 YYYY-MM-DD")
     parser.add_argument(
         "--index",
         dest="index_codes",
@@ -336,18 +580,62 @@ def _parse_args() -> argparse.Namespace:
         help="临时覆盖脚本内 INDEX_CODES；可重复传入多个指数代码",
     )
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
+    parser.add_argument(
+        "--symbols-per-request",
+        type=int,
+        default=DEFAULT_SYMBOLS_PER_REQUEST,
+        help="历史回填每个 history_data 请求的证券数",
+    )
+    parser.add_argument(
+        "--trading-days-per-request",
+        type=int,
+        default=DEFAULT_TRADING_DAYS_PER_REQUEST,
+        help="历史回填每个 history_data 请求的交易日数",
+    )
+    parser.add_argument(
+        "--max-estimated-points",
+        type=int,
+        default=DEFAULT_MAX_ESTIMATED_POINTS,
+        help="历史回填每个行情数据域本次允许计划的最大点数",
+    )
+    parser.add_argument(
+        "--skip-parquet",
+        action="store_true",
+        help="历史回填跳过股票 market_data/unadjusted_price 宽表 Parquet 转换",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
-    summary = run_everyday_update(
-        IFindClient.from_environment(),
-        args.output_root,
-        args.as_of or default_update_as_of(),
-        args.index_codes,
-        args.workers,
-    )
+    client = IFindClient.from_environment()
+    if args.command == "backfill":
+        if not args.start or not args.end:
+            raise SystemExit("backfill 必须同时提供 --start 和 --end")
+        if args.as_of:
+            raise SystemExit("backfill 不接受 --as-of，请使用 --start 和 --end")
+        summary = run_historical_backfill(
+            client,
+            args.output_root,
+            args.start,
+            args.end,
+            args.index_codes,
+            args.workers,
+            args.symbols_per_request,
+            args.trading_days_per_request,
+            args.max_estimated_points,
+            write_parquet=not args.skip_parquet,
+        )
+    else:
+        if args.start or args.end or args.skip_parquet:
+            raise SystemExit("--start、--end 和 --skip-parquet 仅用于 backfill")
+        summary = run_everyday_update(
+            client,
+            args.output_root,
+            args.as_of or default_update_as_of(),
+            args.index_codes,
+            args.workers,
+        )
     print(json.dumps(summary, ensure_ascii=False))
 
 

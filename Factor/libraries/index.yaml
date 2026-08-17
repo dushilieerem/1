@@ -1,6 +1,6 @@
 version: 1
-updated: '2026-08-14'
-total_factors: 1043
+updated: '2026-08-17'
+total_factors: 1047
 libraries:
   alpha_features:
     file: alpha_features.py
@@ -2030,7 +2030,7 @@ libraries:
     tags:
     - technical
     - indicator
-    factor_count: 45
+    factor_count: 49
     factors:
     - name: accumulation_distribution
       description: 累积/派发线：按收盘位置加权累计成交量。
@@ -2123,6 +2123,10 @@ libraries:
       tags:
       - momentum
       - trend
+    - name: directional_range_balance
+      description: 方向性区间平衡：上涨与下跌方向真实区间的净平衡强度。
+      params:
+        window: 14
     - name: dpo
       description: 去趋势价格振荡器：移位收盘价减去当期均线。
       params:
@@ -2220,6 +2224,10 @@ libraries:
       description: 归一化滚动线性回归斜率：斜率除以滚动均价绝对值。
       params:
         window: 20
+    - name: overnight_gap_follow_through
+      description: 隔夜跳空延续：跳空方向与当日盘中收益方向一致性的滚动均值。
+      params:
+        window: 10
     - name: positive_directional_index
       description: 正向方向指标：Wilder 平滑后的上行方向运动强度。
       params:
@@ -2235,6 +2243,11 @@ libraries:
       description: 锤子线形态。
       tags:
       - pattern
+    - name: range_expansion_persistence
+      description: 区间扩张持续性：近期真实区间高于基准区间均值的比例。
+      params:
+        window: 10
+        baseline: 60
     - name: regression_r_squared
       description: 滚动线性回归拟合优度 R²，衡量趋势路径的稳定程度。
       params:
@@ -2324,6 +2337,10 @@ libraries:
       tags:
       - oscillator
       - momentum
+    - name: volume_impact_score
+      description: 成交额冲击：单位成交额承载的绝对收益滚动均值。
+      params:
+        window: 20
     - name: vortex_indicator
       description: 涡旋指标差：上行与下行涡旋线之差。
       params:

@@ -596,3 +596,47 @@ strategies:
       v1:
         file: coppock_curve_a_share_event_v1.py
         entrypoint: CoppockCurveAShareEventStrategy
+
+  dpo_mean_reversion_a_share_event:
+    name: DPO 去趋势价格振荡器 A 股均值回归
+    strategy_type: reversal
+    execution_mode: event
+    current_version: v1
+    tags: [dpo, detrended_price_oscillator, reversal, trend_filter, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: dpo_mean_reversion_a_share_event_v1.py
+        entrypoint: DetrendedPriceOscillatorAShareEventStrategy
+
+  true_strength_index_a_share_event:
+    name: TSI 真实强度指数 A 股趋势
+    strategy_type: momentum
+    execution_mode: event
+    current_version: v1
+    tags: [tsi, true_strength_index, momentum, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: true_strength_index_a_share_event_v1.py
+        entrypoint: TrueStrengthIndexAShareEventStrategy
+
+  stoch_rsi_a_share_event:
+    name: StochRSI 随机 RSI A 股趋势反转
+    strategy_type: reversal
+    execution_mode: event
+    current_version: v1
+    tags: [stoch_rsi, rsi, oscillator, reversal, trend_filter, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: stoch_rsi_a_share_event_v1.py
+        entrypoint: StochRsiAShareEventStrategy
+
+  relative_volatility_index_a_share_event:
+    name: RVI 相对波动指数 A 股趋势
+    strategy_type: volatility
+    execution_mode: event
+    current_version: v1
+    tags: [rvi, relative_volatility_index, volatility, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: relative_volatility_index_a_share_event_v1.py
+        entrypoint: RelativeVolatilityIndexAShareEventStrategy

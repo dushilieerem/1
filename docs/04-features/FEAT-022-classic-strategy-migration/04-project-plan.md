@@ -43,6 +43,10 @@
 | Balance of Power 策略、平滑公式与事件回归测试 | 2 | 低 | 日线 OHLC、EventEngine | 完成 |
 | Choppiness Index 趋势突破策略、因果边界与事件回归测试 | 2 | 中 | 日线 OHLC、EventEngine | 完成 |
 | Coppock Curve 日频研究策略、WMA 公式与事件回归测试 | 2 | 低 | 日线 OHLC、EventEngine | 完成 |
+| DPO 去趋势价格振荡器策略、公式与事件回归测试 | 2 | 低 | 日线 close、EventEngine | 完成 |
+| TSI 真实强度指数策略、双重平滑公式与事件回归测试 | 2 | 低 | 日线 close、EventEngine | 完成 |
+| StochRSI 随机 RSI 策略、归一化公式与事件回归测试 | 2 | 低 | 日线 close、EventEngine | 完成 |
+| RVI 相对波动指数策略、方向波动公式与事件回归测试 | 2 | 低 | 日线 close、EventEngine | 完成 |
 | 完整 CANSLIM | 5 | 高 | 公告日财务、股东数据、历史证券状态、形态金标 | 不在本 Feature 范围 |
 
 里程碑：M1 为 RSI 可加载、可运行并通过测试；M2 为 CANSLIM Lite 只用价格数据可运行；M3 为后续 Feature 的完整 CANSLIM 通过点时数据与形态黄金样本验证。

@@ -427,7 +427,7 @@ def test_factor_backtest_supermind_fixture_matches_qcut_and_metric_contract(
 
     benchmark_curve = benchmark_close.loc[close.index[1:]]
     benchmark_curve = benchmark_curve / benchmark_curve.iloc[0]
-    benchmark_returns = benchmark_curve.pct_change().dropna()
+    benchmark_returns = benchmark_curve.pct_change().fillna(0.0)
 
     response = client.post(
         "/api/backtest/factor",
@@ -482,9 +482,13 @@ def test_factor_backtest_supermind_fixture_matches_qcut_and_metric_contract(
         expected_annual = (1.0 + raw).prod() ** (252 / len(raw)) - 1.0
         expected_volatility = raw.std(ddof=1) * np.sqrt(252)
         expected_sharpe = raw.mean() / raw.std(ddof=1) * np.sqrt(252)
+        metric_equity = pd.concat([
+            pd.Series([1.0]),
+            (1.0 + raw).cumprod(),
+        ], ignore_index=True)
         expected_drawdown = (
-            expected_equity[group_number]
-            / expected_equity[group_number].cummax()
+            metric_equity
+            / metric_equity.cummax()
             - 1.0
         ).min()
         actual = metrics[f"Q{group_number}"]
@@ -504,10 +508,10 @@ def test_factor_backtest_supermind_fixture_matches_qcut_and_metric_contract(
         abs=1e-12,
     )
     assert benchmark["volatility"] == pytest.approx(
-        benchmark_returns.std(ddof=0) * np.sqrt(252), abs=1e-12
+        benchmark_returns.std(ddof=1) * np.sqrt(252), abs=1e-12
     )
     assert benchmark["sharpe"] == pytest.approx(
-        benchmark_returns.mean() / benchmark_returns.std(ddof=0) * np.sqrt(252),
+        benchmark_returns.mean() / benchmark_returns.std(ddof=1) * np.sqrt(252),
         abs=1e-12,
     )
 
@@ -536,46 +540,69 @@ def test_quantile_metrics_return_absolute_and_relative_benchmark_metrics():
         benchmark_equity,
         periods_per_year=4,
         layered_returns=layered_returns,
+        relative_benchmark_returns=pd.Series(
+            [0.05, 0.01, 0.01, 0.01],
+            index=dates,
+        ),
     )
 
     q1 = metrics[0]
     group_returns = layered_returns["layer1"]
-    benchmark_returns = benchmark_equity.pct_change().dropna()
+    benchmark_returns = benchmark_equity.pct_change().fillna(0.0)
+    relative_benchmark_returns = pd.Series(
+        [0.05, 0.01, 0.01, 0.01],
+        index=dates,
+        name="benchmark",
+    )
     aligned = pd.concat(
-        [group_returns.rename("group"), benchmark_returns.rename("benchmark")],
+        [group_returns.rename("group"), relative_benchmark_returns],
         axis=1,
         join="inner",
     ).dropna()
     excess = aligned["group"] - aligned["benchmark"]
-    common_annual_group = (
-        (1.0 + aligned["group"]).prod() ** (4 / len(aligned)) - 1.0
+    cumulative_excess_factor = (
+        1.0
+        + (1.0 + aligned["group"]).prod()
+        - (1.0 + aligned["benchmark"]).prod()
     )
-    common_annual_benchmark = (
-        (1.0 + aligned["benchmark"]).prod() ** (4 / len(aligned)) - 1.0
-    )
+    common_annual_excess = cumulative_excess_factor ** (4 / len(aligned)) - 1.0
     assert q1.quantile == "Q1"
     assert q1.annual_return == pytest.approx(
         (1.0 + group_returns).prod() ** (4 / len(group_returns)) - 1
     )
     assert q1.volatility == pytest.approx(group_returns.std(ddof=1) * 2)
-    assert len(aligned) == 3
+    assert len(aligned) == 4
     assert q1.annual_excess_return == pytest.approx(
-        common_annual_group - common_annual_benchmark
+        common_annual_excess
     )
     assert q1.excess_volatility == pytest.approx(excess.std() * 2)
     assert q1.information_ratio == pytest.approx(
         q1.annual_excess_return / q1.excess_volatility
     )
-    assert q1.benchmark_win_rate == pytest.approx((excess > 0).mean())
+    benchmark_cumulative_returns = benchmark_equity / benchmark_equity.iloc[0] - 1.0
+    assert q1.benchmark_win_rate == pytest.approx(
+        (group_returns > benchmark_cumulative_returns).mean()
+    )
+
+    drawdown_metrics = _compute_quantile_metrics(
+        pd.DataFrame({"layer1": [1.0, 1.0]}, index=dates[:2]),
+        pd.Series([1.0, 1.0], index=dates[:2]),
+        periods_per_year=4,
+        layered_returns=pd.DataFrame(
+            {"layer1": [-0.05, 0.0]},
+            index=dates[:2],
+        ),
+    )
+    assert drawdown_metrics[0].max_drawdown == pytest.approx(-0.05)
 
     benchmark = metrics[-1]
     assert benchmark.quantile == "benchmark"
     assert benchmark.annual_return == pytest.approx(
         (1.0 + benchmark_returns).prod() ** (4 / len(layered_returns)) - 1
     )
-    assert benchmark.volatility == pytest.approx(benchmark_returns.std(ddof=0) * 2)
+    assert benchmark.volatility == pytest.approx(benchmark_returns.std(ddof=1) * 2)
     assert benchmark.sharpe == pytest.approx(
-        benchmark_returns.mean() / benchmark_returns.std(ddof=0) * 2
+        benchmark_returns.mean() / benchmark_returns.std(ddof=1) * 2
     )
     assert benchmark.annual_excess_return is None
     assert benchmark.excess_volatility is None

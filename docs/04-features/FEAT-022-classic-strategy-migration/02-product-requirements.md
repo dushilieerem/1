@@ -172,3 +172,17 @@
 - RVI 相对波动指数：按 10 日总体波动率分别累计上涨/下跌方向，再用 14 日 EMA 平滑；RVI 上穿 50 且收盘价高于 MA60 时入场，跌破 50 或跌破 MA60 时退出。
 - 共同约束：四个策略均为 `event`、日频、现金多头，信号只读取前一收盘及更早的 `close`，订单在下一交易日开盘成交，最多持有十只、单只默认目标权重 9%。
 - 共同异常行为：历史长度不足、无可用指标或无候选时不生成虚假订单；缺少 `close` 时明确抛出字段错误；策略不补造动态历史股票池、证券状态或盘中价格。
+
+## 本次新增四个策略规则（2026-08-18）
+
+- Connors RSI(2)：使用 Wilder 平滑的 2 日 RSI；收盘价高于 MA200 且 RSI(2) 不高于 10 时入场，收盘价高于 MA5、RSI(2) 达到 70 或跌破 MA200 时退出。
+- Supertrend：使用 Wilder ATR(10) 和 3 倍 ATR 的递推上下轨；Supertrend 由空转多且收盘价高于 MA60 时入场，趋势转空或收盘价跌破 MA60 时退出。
+- Hull Moving Average：使用 `WMA(2×WMA(close, 10) - WMA(close, 20), 4)` 作为 HMA；收盘价上穿 HMA、HMA 斜率向上且收盘价高于 MA60 时入场，收盘价跌破 HMA、HMA 斜率转弱或跌破 MA60 时退出。
+- Williams Alligator：使用中点价的 13/8/5 日 SMMA，并分别滞后 8/5/3 日；Lips > Teeth > Jaw 且收盘价高于 Lips 时入场，排列破坏或收盘价跌破 Lips 时退出。
+- 共同约束：四个策略均为 `event`、日频、现金多头；只使用 `DataView.history()` 的前收盘快照，订单在下一交易日开盘成交，最多持有十只、单只默认目标权重 9%。
+- 共同异常行为：历史不足、指标缺失、无候选或无有效价格时不制造订单；`close`、`high`、`low` 缺失时按策略真实字段契约明确拒绝运行；不使用未来观测、最新截面或静态名单补齐历史。
+
+| AC-53 | Connors RSI(2)、Supertrend、Hull Moving Average 和 Williams Alligator 均可由 `StrategyCatalog` 加载，入口类、版本和 `event` 执行模式与索引一致。 |
+| AC-54 | 四个策略的 RSI、ATR/Supertrend、WMA/HMA 和 SMMA/Alligator 核心公式可独立测试，向序列末尾追加未来极端值不会改变此前已计算的指标。 |
+| AC-55 | 四个策略可在标准 OHLC 面板完成事件回测，结果声明 `data_visibility == "previous_close"`，持仓数不超过 10，且只产生非负现金多头订单。 |
+| AC-56 | Connors RSI(2) 与 HMA 缺少 `close`、Supertrend 与 Alligator 缺少任一 `high`/`low`/`close` 时均明确抛出字段错误；历史不足或无候选时不补造数据。 |

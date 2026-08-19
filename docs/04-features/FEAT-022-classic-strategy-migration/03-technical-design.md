@@ -82,3 +82,12 @@ Piotroski F-Score 与股息增长策略分别位于 `piotroski_f_score_a_share_e
 四者的字段契约均为 `required_fields = {"close"}`：DPO 使用 20 日位移振荡器和 MA60；TSI 使用 25/13 双重 EMA、9 日信号线和 MA60；StochRSI 使用 14 日 RSI 与 14 日随机归一化、0.2/0.8 阈值和 MA60；RVI 使用 10 日 `ddof=0` 波动率、14 日方向平滑、50 阈值和 MA60。事件引擎本身仍要求标准 OHLC 面板以便执行下一开盘订单，因此策略字段契约与撮合字段契约保持区分。
 
 四个策略都先处理已有持仓，再按现有持仓数量计算新候选名额；这使 T+1 导致的当日平仓拒绝不会让持仓超过上限。指标只在 `DataView.history()` 的前收盘快照上计算，缺少历史或指标时对持仓提交平仓、对新候选跳过；无候选则保持现金。回滚仍为从 `Strategy/libraries/index.yaml` 移除条目，保留源码以支持历史版本引用。
+
+本次四个策略继续采用独立、可隔离加载的事件源码：
+
+- `connors_rsi2_a_share_event:v1` 位于 `Strategy/libraries/connors_rsi2_a_share_event_v1.py`，只读取 `close`，以 Wilder RSI(2)、MA200 和 MA5 形成短期反转与退出规则。
+- `supertrend_a_share_event:v1` 位于 `Strategy/libraries/supertrend_a_share_event_v1.py`，读取 `high`、`low`、`close`，以 Wilder ATR(10) 和 3 倍波动带递推趋势状态，并以 MA60 做过滤。
+- `hull_moving_average_a_share_event:v1` 位于 `Strategy/libraries/hull_moving_average_a_share_event_v1.py`，只读取 `close`，以 20 日 HMA 的上穿和斜率配合 MA60 生成趋势信号。
+- `williams_alligator_a_share_event:v1` 位于 `Strategy/libraries/williams_alligator_a_share_event_v1.py`，读取 `high`、`low`、`close`，以中点价 SMMA(13/8/5) 的 8/5/3 日滞后线判断多头排列。
+
+四个源码文件只依赖 pandas/numpy，不新增 QuantCore、EventEngine 或 StrategyCatalog 接口。Supertrend 的递推带只引用当日及历史已知收盘；Alligator 的滞后线使用正向 `shift` 引入历史值而不是未来值。所有信号由 `DataView.history()` 的 as-of 快照计算，订单仍由事件引擎在下一开盘执行；现有持仓先退出，再按当前持仓数计算候选名额，避免 T+1 拒绝造成持仓超限。回滚方式为从 `Strategy/libraries/index.yaml` 移除四个条目，保留源码版本以支持历史回测追溯。

@@ -47,6 +47,10 @@
 | TSI 真实强度指数策略、双重平滑公式与事件回归测试 | 2 | 低 | 日线 close、EventEngine | 完成 |
 | StochRSI 随机 RSI 策略、归一化公式与事件回归测试 | 2 | 低 | 日线 close、EventEngine | 完成 |
 | RVI 相对波动指数策略、方向波动公式与事件回归测试 | 2 | 低 | 日线 close、EventEngine | 完成 |
+| Connors RSI(2) 短期反转策略、RSI/趋势规则与事件回归测试 | 2 | 低 | 日线 close、EventEngine | 完成 |
+| Supertrend 趋势策略、ATR 递推与字段契约回归测试 | 2 | 中 | 日线 OHLC、EventEngine | 完成 |
+| Hull Moving Average 趋势策略、WMA/HMA 公式与事件回归测试 | 2 | 低 | 日线 close、EventEngine | 完成 |
+| Williams Alligator 趋势策略、SMMA 滞后线与事件回归测试 | 2 | 中 | 日线 OHLC、EventEngine | 完成 |
 | 完整 CANSLIM | 5 | 高 | 公告日财务、股东数据、历史证券状态、形态金标 | 不在本 Feature 范围 |
 
 里程碑：M1 为 RSI 可加载、可运行并通过测试；M2 为 CANSLIM Lite 只用价格数据可运行；M3 为后续 Feature 的完整 CANSLIM 通过点时数据与形态黄金样本验证。

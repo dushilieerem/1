@@ -18,7 +18,7 @@
 - `FEAT-010`：投研因子数据底座（待批准；点时财务、复权、交易状态和市场基准）
 - `FEAT-011`：内置因子库回测 API（开发中；内置库完整加载与自定义函数模板并存）
 - `FEAT-018`：自定义证券池与组合基准（待决策；统一供因子研究与策略回测引用）
-- `FEAT-022`：经典策略迁移（已覆盖 CCI、MFI、TRIX、ROC、Ultimate Oscillator、Vortex Indicator、Relative Vigor Index、Elder Force Index、CMO、Fisher Transform、EOM、VPT、AO、BOP、Choppiness、Coppock、DPO、TSI、StochRSI、RVI 及既有经典策略资产）
+- `FEAT-022`：经典策略迁移（已覆盖 CCI、MFI、TRIX、ROC、Ultimate Oscillator、Vortex Indicator、Relative Vigor Index、Elder Force Index、CMO、Fisher Transform、EOM、VPT、AO、BOP、Choppiness、Coppock、DPO、TSI、StochRSI、RVI、Connors RSI(2)、Supertrend、Hull Moving Average、Williams Alligator 及既有经典策略资产）
 - `FEAT-023`：WorldQuant Alpha 101 因子库迁移（已完成；独立库 `worldquant_alpha101`）
 - `FEAT-026`：国泰君安 Alpha191 因子库迁移（已完成；独立库 `gtja_alpha191`）
 - `FEAT-024`：iFinD 宽表规范与渐进替换（已批准；按业务域组织多字段宽表，采用不可变发布与只读内存快照）

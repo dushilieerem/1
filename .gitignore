@@ -44,3 +44,4 @@ AGENTS.md
 tmp/
 MarketData/DataIngestion/.tmp/
 *.parquet
+.vscode/

@@ -1603,17 +1603,17 @@ html&gt;body{padding:0}&lt;/style&gt;
         cache: {
           kicker: &quot;02 · cache&quot;,
           title: &quot;缓存闸门&quot;,
-          file: &quot;ResearchEngine/researchengine/api/runner.py · run_factor_backtest&quot;,
+          file: &quot;ResearchEngine/researchengine/api/runner.py · submit_factor_backtest · manager.py&quot;,
           input: &quot;请求 JSON + MarketData 数据指纹 + TTL / 容量配置&quot;,
           output: &quot;HIT 直接返回；MISS 执行一次并写缓存；缓存异常降级 BYPASS&quot;,
-          description: &quot;SVQUANT_BACKTEST_CACHE_ENABLED 默认开启。缓存锁避免同一 key 并发重复回测；关闭缓存时直接进入 uncached runner。&quot;
+          description: &quot;SVQUANT_BACKTEST_CACHE_ENABLED 默认开启。进程内同一 key 由 ExperimentManager 复用同一个 Future；跨进程仍使用文件锁协调，关闭缓存时直接进入 Manager 的 uncached 任务。&quot;
         },
         load: {
           kicker: &quot;03 · load&quot;,
           title: &quot;因子加载与实验配置&quot;,
           file: &quot;ResearchEngine/researchengine/api/runner.py · _run_factor_backtest_uncached&quot;,
           input: &quot;内置因子库名或用户因子源码，以及回测请求参数&quot;,
-          output: &quot;Factor 对象 + ConfigManager + ExperimentManager.create(...)&quot;,
+          output: &quot;Factor 对象 + ConfigManager + ExperimentManager.submit(...)&quot;,
           description: &quot;内置库从 index.yaml 登记目录加载；用户源码被包装成 FactorLibrary 后临时编译。请求参数映射到股票池、分组、成本、预处理和 analysis_level。&quot;
         },
         engines: {

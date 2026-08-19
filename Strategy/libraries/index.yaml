@@ -640,3 +640,47 @@ strategies:
       v1:
         file: relative_volatility_index_a_share_event_v1.py
         entrypoint: RelativeVolatilityIndexAShareEventStrategy
+
+  connors_rsi2_a_share_event:
+    name: Larry Connors RSI(2) A 股短期反转
+    strategy_type: reversal
+    execution_mode: event
+    current_version: v1
+    tags: [connors, rsi2, reversal, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: connors_rsi2_a_share_event_v1.py
+        entrypoint: ConnorsRsi2AShareEventStrategy
+
+  supertrend_a_share_event:
+    name: Supertrend A 股趋势跟随
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [supertrend, atr, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: supertrend_a_share_event_v1.py
+        entrypoint: SupertrendAShareEventStrategy
+
+  hull_moving_average_a_share_event:
+    name: Hull Moving Average A 股低滞后趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [hma, moving_average, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: hull_moving_average_a_share_event_v1.py
+        entrypoint: HullMovingAverageAShareEventStrategy
+
+  williams_alligator_a_share_event:
+    name: Williams Alligator A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [williams, alligator, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: williams_alligator_a_share_event_v1.py
+        entrypoint: WilliamsAlligatorAShareEventStrategy

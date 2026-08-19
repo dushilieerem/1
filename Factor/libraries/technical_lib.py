@@ -443,6 +443,78 @@ class TechnicalLib(FactorLibrary):
         impact = returns.abs() / traded_value
         return impact.rolling(window).mean()
 
+    # ==================== 收益序列与价格形态状态 ====================
+
+    def return_autocorrelation(self, window: int = 20, lag: int = 1):
+        """收益一阶自相关：衡量窗口内收益的延续或反转关系。"""
+        window = self._validate_window(window)
+        lag = self._validate_window(lag, minimum=1)
+        if lag >= window:
+            raise ValueError("lag 必须小于 window")
+
+        returns = self.close.pct_change(fill_method=None).replace(
+            [np.inf, -np.inf], np.nan
+        )
+        lagged = returns.shift(lag)
+        current_mean = returns.rolling(window).mean()
+        lagged_mean = lagged.rolling(window).mean()
+        covariance = (
+            (returns * lagged).rolling(window).mean()
+            - current_mean * lagged_mean
+        )
+        current_variance = (
+            returns.pow(2).rolling(window).mean() - current_mean.pow(2)
+        )
+        lagged_variance = (
+            lagged.pow(2).rolling(window).mean() - lagged_mean.pow(2)
+        )
+        denominator = np.sqrt(
+            current_variance.clip(lower=0.0) * lagged_variance.clip(lower=0.0)
+        )
+        result = covariance / denominator.where(denominator > 1e-10)
+        result = result.where(denominator.notna())
+        return result.where(
+            denominator.isna() | (denominator > 1e-10), 0.0
+        ).clip(lower=-1.0, upper=1.0)
+
+    def gain_loss_asymmetry(self, window: int = 20):
+        """收益非对称性：窗口内上涨收益与下跌收益总量的对数比。"""
+        window = self._validate_window(window)
+        returns = self.close.pct_change(fill_method=None).replace(
+            [np.inf, -np.inf], np.nan
+        )
+        gains = returns.clip(lower=0.0).rolling(window).sum()
+        losses = (-returns.clip(upper=0.0)).rolling(window).sum()
+        result = np.log((gains + 1e-10) / (losses + 1e-10))
+        return result.where(gains.notna() & losses.notna())
+
+    def wick_reversal_pressure(self, window: int = 10):
+        """影线反转压力：下影线相对上影线的滚动不平衡。"""
+        window = self._validate_window(window)
+        body_top = self.open.where(self.open >= self.close, self.close)
+        body_bottom = self.open.where(self.open <= self.close, self.close)
+        upper_shadow = (self.high - body_top).clip(lower=0.0)
+        lower_shadow = (body_bottom - self.low).clip(lower=0.0)
+        price_range = self.high - self.low
+        valid_range = price_range.notna() & price_range.ge(0.0)
+        safe_range = price_range.where(price_range > 0.0, 1e-10)
+        pressure = ((lower_shadow - upper_shadow) / safe_range).where(valid_range)
+        return pressure.rolling(window).mean()
+
+    def overnight_gap_share(self, window: int = 20):
+        """隔夜跳空占比：隔夜跳空绝对幅度占真实区间总量的比例。"""
+        window = self._validate_window(window)
+        previous_close = self.close.shift()
+        gap_size = (self.open - previous_close).abs()
+        true_range = self._true_range()
+        numerator = gap_size.rolling(window).sum()
+        denominator = true_range.rolling(window).sum()
+        result = numerator / (denominator + 1e-10)
+        result = result.where(numerator.notna() & denominator.notna())
+        return result.where(
+            denominator.isna() | (denominator > 1e-10), 0.0
+        ).clip(lower=0.0, upper=1.0)
+
     @staticmethod
     def _validate_window(window: int, minimum: int = 2) -> int:
         if isinstance(window, bool) or not isinstance(window, (int, np.integer)):

@@ -11,6 +11,9 @@ HTTP 路由调用的纯函数。
 from __future__ import annotations
 
 import os
+import asyncio
+import hashlib
+import json
 import shutil
 import sys
 import tempfile
@@ -67,6 +70,8 @@ from researchengine.api.factor_metrics import (
     _geometric_annual_return,
     _safe_metric,
 )
+from researchengine.manager import ExperimentHandle, ExperimentManager
+from researchengine.experiment import Experiment
 
 
 def _builtin_factor_library_index() -> dict[str, dict]:
@@ -187,53 +192,123 @@ def _cache_int_env(name: str, default: int) -> int:
         return default
 
 
-def run_factor_backtest(req: FactorBacktestRequest, response=None) -> FactorBacktestResponse:
-    """因子回测缓存入口；缓存异常时降级为直接回测。"""
-    if not _cache_enabled():
-        if response is not None:
-            response.headers["X-SVQuant-Cache"] = "BYPASS"
-        return _run_factor_backtest_uncached(req)
+def _factor_cache():
+    """构造因子回测缓存；缓存异常由调用方降级处理。"""
+    from researchengine.assets import backtest_cache_dir
+    from researchengine.cache import FileBacktestCache
 
+    return FileBacktestCache(
+        backtest_cache_dir(),
+        ttl_days=_cache_int_env("SVQUANT_BACKTEST_CACHE_TTL_DAYS", 30),
+        max_bytes=_cache_int_env("SVQUANT_BACKTEST_CACHE_MAX_BYTES", 10 * 1024**3),
+    )
+
+
+def _factor_cache_key(req: FactorBacktestRequest, cache) -> str:
+    return cache.make_key(
+        req.model_dump(mode="json"),
+        cache.data_fingerprint(Path(_resolve_data_dir(None))),
+    )
+
+
+def _run_cached_factor_backtest(
+    req: FactorBacktestRequest, cache, key: str
+) -> tuple[FactorBacktestResponse, str]:
+    """在线程池中完成缓存复核、文件锁协调和实际因子回测。"""
     try:
-        from researchengine.assets import backtest_cache_dir
-        from researchengine.cache import FileBacktestCache
-
-        cache = FileBacktestCache(
-            backtest_cache_dir(),
-            ttl_days=_cache_int_env("SVQUANT_BACKTEST_CACHE_TTL_DAYS", 30),
-            max_bytes=_cache_int_env("SVQUANT_BACKTEST_CACHE_MAX_BYTES", 10 * 1024**3),
-        )
-        key = cache.make_key(
-            req.model_dump(mode="json"),
-            cache.data_fingerprint(Path(_resolve_data_dir(None))),
-        )
         cached = cache.get(key)
         if cached is not None:
-            if response is not None:
-                response.headers["X-SVQuant-Cache"] = "HIT"
-            return FactorBacktestResponse.model_validate(cached)
+            return FactorBacktestResponse.model_validate(cached), "HIT"
 
         with cache.lock(key) as acquired:
             cached = cache.get(key)
             if cached is not None:
-                if response is not None:
-                    response.headers["X-SVQuant-Cache"] = "HIT"
-                return FactorBacktestResponse.model_validate(cached)
+                return FactorBacktestResponse.model_validate(cached), "HIT"
             result = _run_factor_backtest_uncached(req)
             if acquired and result.error is None:
                 try:
                     cache.set(key, result.model_dump(mode="json"))
                 except Exception:  # noqa: BLE001 写缓存失败不重复执行回测
-                    if response is not None:
-                        response.headers["X-SVQuant-Cache"] = "BYPASS"
-                    return result
-        if response is not None:
-            response.headers["X-SVQuant-Cache"] = "MISS"
-        return result
+                    return result, "BYPASS"
+            return result, "MISS"
     except Exception:  # noqa: BLE001 缓存不可用不得阻断研究回测
+        return _run_factor_backtest_uncached(req), "BYPASS"
+
+
+def submit_factor_backtest(
+    req: FactorBacktestRequest,
+    manager: ExperimentManager,
+) -> ExperimentHandle[tuple[FactorBacktestResponse, str]]:
+    """把因子回测提交给指定的应用级 ``ExperimentManager``。"""
+    if not _cache_enabled():
+        return manager.submit(
+            lambda: (_run_factor_backtest_uncached(req), "BYPASS"),
+            metadata={"type": "factor", "cache": "BYPASS"},
+        )
+
+    try:
+        cache = _factor_cache()
+        key = _factor_cache_key(req, cache)
+        cached = cache.get(key)
+    except Exception:  # noqa: BLE001 缓存不可用不得阻断研究回测
+        return manager.submit(
+            lambda: (_run_factor_backtest_uncached(req), "BYPASS"),
+            metadata={"type": "factor", "cache": "BYPASS"},
+        )
+    if cached is not None:
+        return manager.completed(
+            (FactorBacktestResponse.model_validate(cached), "HIT"),
+            key=key,
+            metadata={"type": "factor", "cache": "HIT"},
+        )
+    return manager.submit(
+        lambda: _run_cached_factor_backtest(req, cache, key),
+        key=f"factor:{key}",
+        metadata={"type": "factor", "cache": "MISS", "cache_key": key},
+    )
+
+
+def _unpack_factor_result(
+    handle: ExperimentHandle[tuple[FactorBacktestResponse, str]], response=None
+) -> FactorBacktestResponse:
+    result, cache_status = handle.result()
+    if response is not None:
+        response.headers["X-SVQuant-Cache"] = cache_status
+    return result
+
+
+def run_factor_backtest(
+    req: FactorBacktestRequest,
+    response=None,
+    manager: ExperimentManager | None = None,
+) -> FactorBacktestResponse:
+    """兼容同步调用；实际回测在线程池中执行。"""
+    owned_manager = manager is None
+    manager = manager or ExperimentManager()
+    try:
+        return _unpack_factor_result(submit_factor_backtest(req, manager), response)
+    finally:
+        if owned_manager:
+            manager.shutdown()
+
+
+async def run_factor_backtest_async(
+    req: FactorBacktestRequest,
+    response=None,
+    manager: ExperimentManager | None = None,
+) -> FactorBacktestResponse:
+    """HTTP 层使用的异步等待门面，不占用 FastAPI 通用线程池。"""
+    owned_manager = manager is None
+    manager = manager or ExperimentManager()
+    try:
+        handle = submit_factor_backtest(req, manager)
+        result, cache_status = await asyncio.wrap_future(handle.future)
         if response is not None:
-            response.headers["X-SVQuant-Cache"] = "BYPASS"
-        return _run_factor_backtest_uncached(req)
+            response.headers["X-SVQuant-Cache"] = cache_status
+        return result
+    finally:
+        if owned_manager:
+            manager.shutdown()
 
 
 def _wrap_factor_code(factor_code: str) -> str:
@@ -349,8 +424,6 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
     """因子回测：因子代码 + 参数 -> 指标 + 净值 + 因子分析。"""
     started_at = time.perf_counter()
     try:
-        from researchengine import ExperimentManager
-
         universe, universe_snapshot, benchmark_snapshot = _resolve_research_assets(req)
 
         factor = (
@@ -373,15 +446,14 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
             winsorize=req.winsorize,
             standardize=req.standardize,
         )
-        mgr = ExperimentManager()
-        exp = mgr.create(
+        exp = Experiment(
             factor=factor,
             universe=universe,
-            start=req.start,
-            end=req.end,
+            start_date=req.start,
+            end_date=req.end,
             config=cfg,
         )
-        result = mgr.run(exp)  # ResultManager
+        result = exp.run()  # ResultManager
         if universe_snapshot is not None or benchmark_snapshot is not None:
             result.meta["research_assets"] = {
                 **({"universe": _persisted_asset(universe_snapshot)} if universe_snapshot else {}),
@@ -550,11 +622,57 @@ def _run_factor_backtest_uncached(req: FactorBacktestRequest) -> FactorBacktestR
     )
 
 
-def run_strategy_backtest(req: StrategyBacktestRequest) -> StrategyBacktestResponse:
-    """兼容门面；实际策略执行位于 ``strategy_backtest`` 模块。"""
+def _strategy_task_key(req: StrategyBacktestRequest) -> str:
+    payload = json.dumps(
+        req.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return "strategy:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def submit_strategy_backtest(
+    req: StrategyBacktestRequest,
+    manager: ExperimentManager,
+) -> ExperimentHandle[StrategyBacktestResponse]:
+    """把策略回测提交给指定的应用级 ``ExperimentManager``。"""
     from researchengine.api.strategy_backtest import run_strategy_backtest as _run
 
-    return _run(req)
+    return manager.submit(
+        lambda: _run(req),
+        key=_strategy_task_key(req),
+        metadata={"type": "strategy", "engine_mode": req.engine_mode},
+    )
+
+
+def run_strategy_backtest(
+    req: StrategyBacktestRequest,
+    manager: ExperimentManager | None = None,
+) -> StrategyBacktestResponse:
+    """兼容同步调用；实际策略执行位于 Manager 的线程池中。"""
+    owned_manager = manager is None
+    manager = manager or ExperimentManager()
+    try:
+        return submit_strategy_backtest(req, manager).result()
+    finally:
+        if owned_manager:
+            manager.shutdown()
+
+
+async def run_strategy_backtest_async(
+    req: StrategyBacktestRequest,
+    manager: ExperimentManager | None = None,
+) -> StrategyBacktestResponse:
+    """HTTP 层使用的异步等待门面。"""
+    owned_manager = manager is None
+    manager = manager or ExperimentManager()
+    try:
+        handle = submit_strategy_backtest(req, manager)
+        return await asyncio.wrap_future(handle.future)
+    finally:
+        if owned_manager:
+            manager.shutdown()
 
 
 def _run_event_strategy_backtest(

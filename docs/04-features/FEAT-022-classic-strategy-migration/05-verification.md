@@ -24,6 +24,7 @@
 - CMO、Fisher Transform、Ease of Movement 和 Volume Price Trend 作为事件策略资产登记；新增回归测试覆盖四项目录契约、核心公式、EOM/VPT 缺少成交量时的拒绝行为以及 OHLC/OHLCV 日频事件回测。
 - Awesome Oscillator、Balance of Power、Choppiness Index 突破和 Coppock Curve 作为事件策略资产登记；新增回归测试覆盖四项目录契约、核心公式、未来观测不改变历史指标、OHLC 字段拒绝、持仓/权重约束和标准日频事件回测。
 - DPO、TSI、StochRSI 与 RVI 作为事件策略资产登记；新增回归测试覆盖四项目录契约、与 `Factor/libraries/technical_lib.py` 对齐的核心公式、未来观测不改变历史指标、`close` 字段拒绝、持仓/权重约束和标准日频事件回测。
+- Connors RSI(2)、Supertrend、Hull Moving Average 与 Williams Alligator 作为事件策略资产登记；新增回归测试覆盖目录契约、RSI/ATR/WMA/SMMA 核心公式、未来观测不改变历史指标、真实字段缺失拒绝、持仓/权重约束和标准日频事件回测。
 
 ## 本次验证记录（2026-08-14）
 
@@ -37,6 +38,15 @@
 - `conda run --no-capture-output -n svquant python -m pytest ResearchEngine/tests/test_strategy_migration_dpo_tsi_stochrsi_rvi.py ResearchEngine/tests/test_strategy_library.py -q`：19 passed。
 - 本批四个 `strategy_id/file/entrypoint/execution_mode` 四元组均可由 `StrategyCatalog` 加载，执行模式均为 `event`，策略字段契约均为 `close`。
 - `git diff --check`：通过；仅输出工作区已有文件的 LF/CRLF 转换提示，无空白错误。
+
+## 本次增量验证记录（2026-08-18）
+
+- `conda run --no-capture-output -n svquant python -m pytest ResearchEngine/tests/test_strategy_migration_rsi2_supertrend_hma_alligator.py -q`：12 passed。
+- `conda run --no-capture-output -n svquant python -m pytest ResearchEngine/tests/test_strategy_library.py ResearchEngine/tests/test_classic_technical_factors.py -q`：12 passed。
+- `conda run --no-capture-output -n svquant python -m pytest ResearchEngine/tests -k strategy_migration -q`：67 passed，244 deselected；仅有既有 FastAPI/Starlette 弃用警告。
+- `conda run --no-capture-output -n svquant python -m pytest -q`：376 passed；仅有既有 FastAPI/Starlette 弃用警告。
+- `StrategyCatalog` 共解析 62 个资产；本批四个 `strategy_id/file/entrypoint/execution_mode` 四元组均可加载，执行模式均为 `event/v1`。
+- `git diff --check`：通过；Git 仅提示工作区部分文件的 LF/CRLF 转换，不存在空白错误。
 
 ## 限制与遗留项
 
@@ -57,3 +67,4 @@
 - CMO、Fisher Transform、Ease of Movement 和 Volume Price Trend 仅提供日频研究版；不模拟盘中触发、动态历史成分股、ST/停牌/涨跌停之外的策略专属过滤，也不构成实盘执行承诺。
 - AO、BOP、Choppiness 与 Coppock 仅提供日频研究版；Coppock 的 11/14/10 日参数是与因子库一致的日频适配，不代表原始月线指标复刻。BOP 的 14 日平滑和 Choppiness 的 38.2/61.8 阈值是可测试研究规则，不代表已完成参数有效性验证。
 - DPO、TSI、StochRSI 与 RVI 仅提供日频研究版；四者只使用前收盘 `close` 计算，不模拟盘中触发、动态历史成分股、ST/停牌/涨跌停之外的策略专属过滤，也不构成实盘执行承诺。TSI、StochRSI 与 RVI 的参数为研究默认值，尚未完成跨市场状态的参数稳健性验证。
+- Connors RSI(2)、Supertrend、Hull Moving Average 与 Williams Alligator 仅提供日频研究版；不模拟盘中触发、动态历史成分股、ST/停牌/涨跌停之外的策略专属过滤，也不构成实盘执行承诺。Supertrend 的 ATR 递推和 Alligator 的 SMMA 参数为研究默认值，尚未完成跨市场状态的参数稳健性验证。

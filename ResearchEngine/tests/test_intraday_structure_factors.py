@@ -76,7 +76,7 @@ def test_intraday_structure_factors_are_discoverable_and_indexed():
     library = loader.load("technical_lib")
     factors = library_factors(library)
 
-    assert len(factors) == 49
+    assert len(factors) == 53
     assert FACTOR_NAMES.issubset(factors)
 
     index_path = Path(__file__).parents[2] / "Factor" / "libraries" / "index.yaml"

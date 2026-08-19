@@ -1,6 +1,6 @@
 version: 1
-updated: '2026-08-17'
-total_factors: 1047
+updated: '2026-08-18'
+total_factors: 1051
 libraries:
   alpha_features:
     file: alpha_features.py
@@ -2030,7 +2030,7 @@ libraries:
     tags:
     - technical
     - indicator
-    factor_count: 49
+    factor_count: 53
     factors:
     - name: accumulation_distribution
       description: 累积/派发线：按收盘位置加权累计成交量。
@@ -2156,6 +2156,13 @@ libraries:
       tags:
       - oscillator
       - reversal
+    - name: gain_loss_asymmetry
+      description: 收益非对称性：窗口内上涨收益与下跌收益总量的对数比。
+      params:
+        window: 20
+      tags:
+      - return
+      - asymmetry
     - name: kaufman_efficiency_ratio
       description: Kaufman 路径效率：净价格变化与实际路径长度之比。
       params:
@@ -2228,6 +2235,10 @@ libraries:
       description: 隔夜跳空延续：跳空方向与当日盘中收益方向一致性的滚动均值。
       params:
         window: 10
+    - name: overnight_gap_share
+      description: 隔夜跳空占比：隔夜跳空绝对幅度占真实区间总量的比例。
+      params:
+        window: 20
     - name: positive_directional_index
       description: 正向方向指标：Wilder 平滑后的上行方向运动强度。
       params:
@@ -2267,6 +2278,14 @@ libraries:
       tags:
       - volatility
       - oscillator
+    - name: return_autocorrelation
+      description: 收益一阶自相关：衡量窗口内收益的延续或反转关系。
+      params:
+        window: 20
+        lag: 1
+      tags:
+      - return
+      - autocorrelation
     - name: rsi_14
       description: 14 日 RSI。
       params:
@@ -2347,6 +2366,13 @@ libraries:
         window: 14
       tags:
       - trend
+      - reversal
+    - name: wick_reversal_pressure
+      description: 影线反转压力：下影线相对上影线的滚动不平衡。
+      params:
+        window: 10
+      tags:
+      - price_action
       - reversal
     - name: williams_r
       description: Williams %R：收盘价在近期高低区间中的位置。

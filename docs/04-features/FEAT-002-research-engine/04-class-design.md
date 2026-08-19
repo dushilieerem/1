@@ -1,8 +1,8 @@
 # ResearchEngine 类设计
 
-> 文档版本：v2.0
-> 最后更新：2026-07-15
-> 关联：`02-architecture.md`（无状态设计）、`03-modules.md`（模块职责）、`06-research-api.md`（HTTP API）
+> 文档版本：v2.1
+> 最后更新：2026-08-18
+> 关联：`02-architecture.md`（状态与扩展）、`03-modules.md`（模块职责）、`06-research-api.md`（HTTP API）
 
 ---
 
@@ -10,18 +10,18 @@
 
 ResearchEngine 是**纯计算服务层**，遵循以下原则：
 
-1. **无状态**：不持有因子注册表、实验状态、持久化结果
+1. **业务无状态**：不持有用户资产和可靠的持久化实验历史；进程内允许持有临时任务状态
 2. **薄适配**：只编排流程，不实现计算逻辑（所有计算委托 QuantCore）
 3. **水平扩展**：多实例部署，shared-nothing
 
 ---
 
-## 2. 核心类：Runner（替代旧 Experiment）
+## 2. 核心执行单元：Experiment 与 API runner
 
 ```
-researchengine/runner.py
+researchengine/experiment.py + researchengine/api/runner.py
 
-BacktestRunner（核心执行器）
+因子回测执行单元
 ─────────────────────────────────────────
 方法：
   run(factor_code: str,
@@ -47,18 +47,59 @@ BacktestRunner（核心执行器）
 
 `start/end` 只定义收益确认区间。因子计算使用当前数据版本的完整可用历史，以自动覆盖不同因子的预热需求；因子值、收益、指标和分析结果在计算后裁剪回请求区间。命名股票池仍按该区间内首个实际交易日解析并固定。
 
-**与旧 Experiment 的关键差异：**
+**执行单元与任务调度的边界：**
 
-| 维度 | Experiment（旧） | BacktestRunner（新） |
+| 维度 | Experiment/runner | ExperimentManager |
 |------|-----------------|---------------------|
-| 因子来源 | FactorLoader 加载本地文件 | 接收前端传入的代码字符串 |
-| 配置来源 | ConfigManager + config.yaml | 所有参数通过方法参数传入 |
-| 结果处理 | ResultManager 持久化 | 返回序列化结果，不持久化 |
-| 状态 | 持有 factor/result 引用 | 无状态，每次调用独立 |
+| 负责内容 | 编译因子、组织一次回测并生成结果 | 调度任务、控制并发、保存运行状态 |
+| 因子来源 | 内置库或前端传入的代码字符串 | 不解析因子代码 |
+| 结果处理 | 生成 `FactorBacktestResponse` | 保存 Future 和进程内任务快照 |
+| 线程归属 | 不创建服务级线程池 | 自有 `ThreadPoolExecutor` |
 
 ---
 
-## 3. 值对象
+## 3. ExperimentManager：进程级任务调度器
+
+```
+researchengine/manager.py
+
+ExperimentManager
+─────────────────────────────────────────
+属性：
+  max_workers: int              # 同时执行的回测数，默认 2
+  max_queue_size: int           # 额外排队数，默认 8
+  runs: Dict[run_id, Run]       # 进程内任务状态
+  inflight: Dict[key, run_id]   # 同键任务去重
+
+方法：
+  submit(callable, key, metadata) -> ExperimentHandle
+  completed(result) -> ExperimentHandle
+  get(run_id) -> ExperimentHandle | None
+  cancel(run_id) -> bool
+  shutdown() -> None
+```
+
+`ExperimentManager` 自己拥有 `ThreadPoolExecutor` 和有界容量。FastAPI lifespan
+只负责调用 `start()` / `shutdown()`；路由不能直接创建回测线程，也不能绕过 Manager
+调用 `Experiment.run()`。
+
+### 3.1 任务状态
+
+```text
+CREATED → QUEUED → RUNNING → SUCCEEDED
+                         ├→ FAILED
+                         └→ CANCELLED（仅能真正取消尚未开始的任务）
+```
+
+线程已经开始执行后，Python 无法安全强杀；此时 `cancel()` 只记录取消请求。
+需要硬超时和用户代码隔离时，后续增加进程/容器执行后端。
+
+### 3.2 任务键
+
+因子任务键包含请求参数、因子代码/库、数据指纹和缓存版本；策略任务键包含
+规范化请求。相同键的并发请求共享一个 Future，不会重复占用线程。
+
+## 5. 值对象
 
 ```
 researchengine/runner.py
@@ -90,7 +131,7 @@ BacktestResult
 
 ---
 
-## 4. HTTP API 层
+## 6. HTTP API 层
 
 ```
 researchengine/api/
@@ -100,15 +141,15 @@ schemas.py
 BacktestRequest     # Pydantic 请求模型（factor_code, factor_name, params...）
 BacktestResponse    # Pydantic 响应模型（metrics, equity_curve, error...）
 
-routes/backtest.py
+routes.py
 ────────────────
-backtest(req: BacktestRequest) -> BacktestResponse
-  # 调用 runner.BacktestRunner.run()，序列化结果返回
+backtest_factor(req: FactorBacktestRequest) -> FactorBacktestResponse
+  # 提交给 ExperimentManager，异步等待 Future，再序列化结果
 
-runner.py
+api/runner.py
 ────────────────
-run_backtest_from_code(req: BacktestRequest) -> BacktestResponse
-  # HTTP 层适配：请求 → BacktestRunner → 序列化 → 响应
+run_factor_backtest_async(req: FactorBacktestRequest) -> FactorBacktestResponse
+  # HTTP 层适配：请求 → Manager.submit() → 执行单元 → 响应
 
 app.py
 ────────────────
@@ -118,18 +159,18 @@ create_app() -> FastAPI
 
 ---
 
-## 5. 已移除的类
+## 7. 已移除或调整的类
 
 | 旧类 | 移除原因 | 替代方案 |
 |------|---------|---------|
-| `Experiment` | 持有状态（factor/result 引用） | `BacktestRunner`（无状态函数式） |
-| `ExperimentManager` | 管理 experiments 字典，有状态 | 无，前端管理实验状态 |
+| `Experiment` | 旧版由调用方直接运行 | 保留为单次因子实验执行单元，由 Manager 调度 |
+| `ExperimentManager` | 旧版只管理 experiments 字典 | 升级为进程级任务调度器，不管理用户资产 |
 | `FactorLoader` | 从本地文件加载因子 | 前端提交因子代码字符串 |
 | `ConfigManager` | 从本地 YAML 读取配置 | 参数通过请求传入 |
 
 ---
 
-## 6. 可选保留的类（非核心依赖）
+## 8. 可选保留的类（非核心依赖）
 
 ```
 ResultManager（可选）
@@ -143,13 +184,13 @@ ResultManager（可选）
 
 ---
 
-## 7. 核心设计约束
+## 9. 核心设计约束
 
 | 约束 | 含义 |
 |------|------|
-| **BacktestRunner** | 只编排流程，不计算因子/收益/指标（委托 QuantCore） |
+| **Experiment / API runner** | 只编排流程，不计算因子/收益/指标（委托 QuantCore） |
 | **代码编译** | 只编译执行因子/策略代码，不管理因子文件 |
-| **无状态** | 每次调用独立，不持有跨请求状态 |
-| **薄 HTTP 层** | API 只调 BacktestRunner，不新增回测逻辑 |
+| **状态边界** | 业务资产和结果历史不由 RE 管理；线程池与运行中任务属于进程内临时状态 |
+| **薄 HTTP 层** | API 只提交 ExperimentManager，不新增回测逻辑 |
 | **QuantCore 无感** | ResearchEngine 只调用 QuantCore，不关心其内部实现 |
 | **前端负责** | 因子管理、结果存储、可视化由前端处理 |

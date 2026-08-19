@@ -480,6 +480,34 @@ class StrategyBacktestResponse(BaseModel):
     error: Optional[str] = None
 
 
+class ExperimentSubmissionResponse(BaseModel):
+    """异步回测提交结果。"""
+
+    run_id: str
+    experiment_type: Literal["factor", "strategy"]
+    status: Literal[
+        "created", "queued", "running", "succeeded", "failed", "cancelled"
+    ]
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class ExperimentRunResponse(BaseModel):
+    """异步回测任务状态和完成后的结构化结果。"""
+
+    run_id: str
+    experiment_type: Literal["factor", "strategy"]
+    status: Literal[
+        "created", "queued", "running", "succeeded", "failed", "cancelled"
+    ]
+    created_at: float
+    started_at: Optional[float] = None
+    finished_at: Optional[float] = None
+    error: Optional[str] = None
+    cancel_requested: bool = False
+    metadata: dict[str, object] = Field(default_factory=dict)
+    result: Optional[dict[str, object]] = None
+
+
 class FactorInfo(BaseModel):
     name: str
     description: Optional[str] = None

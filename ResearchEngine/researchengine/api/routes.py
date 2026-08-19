@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from researchengine.api.market_data import (
     get_daily_bars,
@@ -15,7 +15,16 @@ from researchengine.api.market_data import (
 from researchengine.api.ai_factor import generate_factor
 from researchengine.api.ai_strategy import generate_strategy
 from researchengine.api.ai_interpretation import interpret_backtest
-from researchengine.api.runner import run_factor_backtest, run_strategy_backtest
+from researchengine.api.runner import (
+    run_factor_backtest_async,
+    run_strategy_backtest_async,
+    submit_factor_backtest,
+    submit_strategy_backtest,
+)
+from researchengine.manager import (
+    ExperimentManagerClosedError,
+    ExperimentQueueFullError,
+)
 from researchengine.api.schemas import (
     FactorBacktestRequest,
     FactorBacktestResponse,
@@ -38,6 +47,8 @@ from researchengine.api.schemas import (
     StrategyGenerationResponse,
     BacktestInterpretationRequest,
     BacktestInterpretationResponse,
+    ExperimentRunResponse,
+    ExperimentSubmissionResponse,
 )
 
 router = APIRouter(prefix="/api")
@@ -153,15 +164,140 @@ def interpret_backtest_result(req: BacktestInterpretationRequest) -> BacktestInt
 
 
 @router.post("/backtest/factor", response_model=FactorBacktestResponse)
-def backtest_factor(req: FactorBacktestRequest, response: Response) -> FactorBacktestResponse:
+async def backtest_factor(
+    req: FactorBacktestRequest,
+    request: Request,
+    response: Response,
+) -> FactorBacktestResponse:
     """因子回测：提交因子代码 + 参数 -> 跑回测 -> 返回指标 + 净值 + 因子分析。"""
-    return run_factor_backtest(req, response)
+    manager = request.app.state.experiment_manager
+    try:
+        return await run_factor_backtest_async(req, response, manager)
+    except ExperimentQueueFullError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=str(exc),
+            headers={"Retry-After": "1"},
+        ) from exc
+    except ExperimentManagerClosedError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/backtest/strategy", response_model=StrategyBacktestResponse)
-def backtest_strategy(req: StrategyBacktestRequest) -> StrategyBacktestResponse:
+async def backtest_strategy(
+    req: StrategyBacktestRequest,
+    request: Request,
+) -> StrategyBacktestResponse:
     """策略回测：提交自定义策略代码 -> 跑回测 -> 返回指标 + 净值。"""
-    return run_strategy_backtest(req)
+    manager = request.app.state.experiment_manager
+    try:
+        return await run_strategy_backtest_async(req, manager)
+    except ExperimentQueueFullError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=str(exc),
+            headers={"Retry-After": "1"},
+        ) from exc
+    except ExperimentManagerClosedError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _experiment_response(manager, run_id: str) -> ExperimentRunResponse:
+    handle = manager.get(run_id)
+    if handle is None:
+        raise HTTPException(status_code=404, detail=f"未找到回测任务: {run_id}")
+
+    snapshot = handle.snapshot(include_result=True)
+    metadata = snapshot.get("metadata") or {}
+    experiment_type = metadata.get("type")
+    if experiment_type not in {"factor", "strategy"}:
+        raise HTTPException(status_code=500, detail="回测任务缺少有效类型")
+
+    raw_result = snapshot.pop("result", None)
+    if isinstance(raw_result, tuple) and raw_result:
+        raw_result = raw_result[0]
+    if raw_result is not None and hasattr(raw_result, "model_dump"):
+        raw_result = raw_result.model_dump(mode="json")
+    snapshot["experiment_type"] = experiment_type
+    snapshot["result"] = raw_result
+    return ExperimentRunResponse.model_validate(snapshot)
+
+
+@router.post(
+    "/experiments/factor",
+    response_model=ExperimentSubmissionResponse,
+    status_code=202,
+)
+async def submit_factor_experiment(
+    req: FactorBacktestRequest,
+    request: Request,
+) -> ExperimentSubmissionResponse:
+    """提交异步因子回测任务，立即返回 ``run_id``。"""
+    manager = request.app.state.experiment_manager
+    try:
+        handle = submit_factor_backtest(req, manager)
+    except ExperimentQueueFullError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=str(exc),
+            headers={"Retry-After": "1"},
+        ) from exc
+    except ExperimentManagerClosedError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    snapshot = handle.snapshot()
+    return ExperimentSubmissionResponse(
+        run_id=handle.run_id,
+        experiment_type="factor",
+        status=snapshot["status"],
+        metadata=snapshot["metadata"],
+    )
+
+
+@router.post(
+    "/experiments/strategy",
+    response_model=ExperimentSubmissionResponse,
+    status_code=202,
+)
+async def submit_strategy_experiment(
+    req: StrategyBacktestRequest,
+    request: Request,
+) -> ExperimentSubmissionResponse:
+    """提交异步策略回测任务，立即返回 ``run_id``。"""
+    manager = request.app.state.experiment_manager
+    try:
+        handle = submit_strategy_backtest(req, manager)
+    except ExperimentQueueFullError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=str(exc),
+            headers={"Retry-After": "1"},
+        ) from exc
+    except ExperimentManagerClosedError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    snapshot = handle.snapshot()
+    return ExperimentSubmissionResponse(
+        run_id=handle.run_id,
+        experiment_type="strategy",
+        status=snapshot["status"],
+        metadata=snapshot["metadata"],
+    )
+
+
+@router.get("/experiments/{run_id}", response_model=ExperimentRunResponse)
+def get_experiment(run_id: str, request: Request) -> ExperimentRunResponse:
+    """查询异步回测状态；完成后同时返回结构化结果。"""
+    return _experiment_response(request.app.state.experiment_manager, run_id)
+
+
+@router.delete("/experiments/{run_id}", response_model=ExperimentRunResponse)
+def cancel_experiment(run_id: str, request: Request) -> ExperimentRunResponse:
+    """取消仍在排队的回测任务。运行中的线程只能记录取消请求。"""
+    manager = request.app.state.experiment_manager
+    handle = manager.get(run_id)
+    if handle is None:
+        raise HTTPException(status_code=404, detail=f"未找到回测任务: {run_id}")
+    handle.cancel()
+    return _experiment_response(manager, run_id)
 
 
 def _builtin_factors(library_name: str | None = None) -> "list[FactorInfo]":

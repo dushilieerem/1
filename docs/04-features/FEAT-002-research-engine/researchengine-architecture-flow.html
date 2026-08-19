@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="用初学者能看懂的方式解释 SVQuant ResearchEngine 的回测流程和指标口径">
-  <title>SVQuant ResearchEngine 新手入门</title>
+  <meta name="description" content="SVQuant ResearchEngine 架构、因子与策略回测流程及指标统计口径">
+  <title>SVQuant ResearchEngine 架构与流程</title>
   <style>
     :root {
       color-scheme: light;
@@ -109,10 +109,10 @@
     .canvas { overflow: hidden; border: 1px solid var(--line); border-radius: 22px; background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: var(--shadow); }
     .canvas-inner { padding: 22px; }
 
-    .beginner-callout { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: start; margin-bottom: 16px; padding: 15px 16px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 15px; background: var(--accent-soft); }
-    .beginner-callout .icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; color: var(--accent); background: var(--surface); font-weight: 900; }
-    .beginner-callout strong { display: block; margin-bottom: 3px; font-size: 13px; }
-    .beginner-callout p { color: var(--muted); font-size: 12px; }
+    .architecture-callout { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: start; margin-bottom: 16px; padding: 15px 16px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 15px; background: var(--accent-soft); }
+    .architecture-callout .icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; color: var(--accent); background: var(--surface); font-weight: 900; }
+    .architecture-callout strong { display: block; margin-bottom: 3px; font-size: 13px; }
+    .architecture-callout p { color: var(--muted); font-size: 12px; }
 
     .section-title { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 15px; margin: 22px 0 10px; }
     .section-title h3 { font-size: 16px; }
@@ -225,14 +225,14 @@
   <main id="researchengine-map" class="page">
     <header class="hero">
       <div>
-        <div class="eyebrow">SVQuant / ResearchEngine</div>
-        <h1>从“我想测一个因子”到“我看懂回测结果”</h1>
-        <p class="hero-copy">这张图专门写给刚接触量化回测的同学。你可以把 ResearchEngine 理解成一个研究助手：它负责读行情、算因子、按因子分组、模拟买卖，最后把收益和风险整理成一份报告。</p>
+        <div class="eyebrow">SVQuant / ResearchEngine / Internal Architecture</div>
+        <h1>ResearchEngine 架构与回测流程</h1>
+        <p class="hero-copy">本文档面向公司内部研发、产品和测试同事，说明 ResearchEngine 从 API 请求到回测结果的模块边界、运行链路、数据流和统计口径。ResearchEngine 负责研究流程编排，行情、因子、回测和指标计算由 QuantCore 提供。</p>
       </div>
       <div class="hero-meta" aria-label="页面信息">
-        <span class="tag">新手版</span>
-        <span class="tag">因子回测</span>
-        <span class="tag">2026-08-17</span>
+        <span class="tag">内部技术文档</span>
+        <span class="tag">架构与流程</span>
+        <span class="tag">2026-08-18</span>
       </div>
     </header>
 
@@ -246,67 +246,67 @@
     <section class="view is-active" data-view="overview" role="tabpanel">
       <div class="view-head">
         <div>
-          <h2>先记住这一条主线</h2>
-          <p>无论你提交的是一个因子还是一套策略，系统都在做同一件事：把想法变成可以用历史数据检查的结果。</p>
+          <h2>ResearchEngine 全链路概览</h2>
+          <p>因子和策略请求经过 API 接入、ResearchEngine 编排、QuantCore 计算和结果序列化，最终形成可供前端展示和研究分析的回测结果。</p>
         </div>
         <span class="tag">输入 → 计算 → 模拟 → 报告</span>
       </div>
 
       <div class="canvas">
         <div class="canvas-inner">
-          <div class="beginner-callout">
-            <div class="icon">记</div>
+          <div class="architecture-callout">
+            <div class="icon">架</div>
             <div>
-              <strong>一句话理解 ResearchEngine</strong>
-              <p>它更像“研究流程管家”，负责安排步骤；真正读数据、算因子和跑回测的基础能力由 QuantCore 提供。</p>
+              <strong>职责边界</strong>
+              <p>ResearchEngine 负责 API 适配、参数解析、因子/策略加载、Experiment 编排和结果序列化；QuantCore 负责数据访问、因子计算、持仓生成、回测执行和指标计算。</p>
             </div>
           </div>
 
           <div class="section-title">
-            <h3>一次因子回测会经过什么？</h3>
-            <p>点击卡片，下面会显示对应的源码位置。</p>
+            <h3>因子回测主链路</h3>
+            <p>点击节点查看对应源码位置和实现说明。</p>
           </div>
           <div class="plain-flow">
-            <button class="card blue" type="button" data-focus="beginner-request" data-title="第 1 步：你提交研究请求" data-files="ResearchEngine/researchengine/api/schemas.py · routes.py" data-desc="你告诉接口要测哪个因子、哪段日期、哪些股票、分几组以及用哪个基准。接口先检查这些参数是否完整。">
+            <button class="card blue" type="button" data-focus="overview-request" data-title="第 1 步：提交研究请求" data-files="ResearchEngine/researchengine/api/schemas.py · routes.py" data-desc="请求指定因子、日期、股票池、分组数、调仓参数、成本和基准。接口先校验请求模型和字段范围。">
               <span class="number">1</span>
-              <span class="small-label">你来决定</span>
+              <span class="small-label">请求输入</span>
               <h3>提交研究请求</h3>
               <p>例如：测 bias 因子，分 5 组，基准用沪深 300。</p>
               <span class="file">FactorBacktestRequest</span>
             </button>
-            <button class="card teal" type="button" data-focus="beginner-api" data-title="第 2 步：API 接待请求" data-files="ResearchEngine/researchengine/api/app.py · routes.py · runner.py" data-desc="FastAPI 接口像前台接待员，负责接收请求、调用后端流程，并把结果整理成 JSON 返回。">
+            <button class="card teal" type="button" data-focus="overview-api" data-title="第 2 步：API 接入" data-files="ResearchEngine/researchengine/api/app.py · routes.py: backtest_factor · runner.py: submit_factor_backtest · manager.py: ExperimentManager · cache/backtest.py: FileBacktestCache" data-desc="routes.py 的 backtest_factor 只负责校验请求并调用 run_factor_backtest_async；回测任务进入 app.state.experiment_manager。runner.py 先生成缓存键并查 FileBacktestCache：命中时创建已完成句柄，未命中时调用 ExperimentManager.submit。相同任务键在同一个进程内复用同一个 Future，不会重复占用线程。Manager 工作线程执行实际回测；跨进程时 FileBacktestCache.lock 仍作为文件锁兜底，锁等待发生在 Manager 工作线程，不会占用 FastAPI/AnyIO 通用线程。">
               <span class="number">2</span>
               <span class="small-label">接口层</span>
-              <h3>API 接待你</h3>
-              <p>检查参数，然后把任务交给研究引擎。</p>
+              <h3>API 入口</h3>
+              <p>参数 → 缓存键 → 同键锁 → 独立实验。</p>
               <span class="file">POST /api/backtest/factor</span>
             </button>
-            <button class="card violet" type="button" data-focus="beginner-engine" data-title="第 3 步：ResearchEngine 安排流程" data-files="ResearchEngine/researchengine/manager.py · experiment.py" data-desc="ExperimentManager 和 Experiment 负责安排读取数据、计算因子、生成信号、运行回测和整理结果的顺序。">
+            <button class="card violet" type="button" data-focus="overview-engine" data-title="第 3 步：ResearchEngine 编排" data-files="ResearchEngine/researchengine/manager.py · experiment.py · api/runner.py · api/app.py: lifespan" data-desc="ExperimentManager 是每个 ResearchEngine 进程一个的回测任务调度器。FastAPI lifespan 创建并关闭它，但不拥有回测线程。路由先把任务提交给 Manager：Manager 生成 run_id，按有界容量排队，使用自己的 ThreadPoolExecutor 执行因子或策略回测，并记录 created、queued、running、succeeded、failed、cancelled 状态。同一任务键的并发请求复用同一个 Future；队列满时立即返回 429。默认每个 Manager 最多同时执行 2 个回测，额外排队 8 个；多 Uvicorn worker 会各自创建 Manager，实际总并发按进程数相乘。">
               <span class="number">3</span>
               <span class="small-label">研究编排</span>
               <h3>安排工作顺序</h3>
-              <p>像项目经理一样，把一整次实验串起来。</p>
-              <span class="file">ExperimentManager → Experiment</span>
+              <p>FastAPI 只提交任务，ExperimentManager 自己管理线程池、队列和任务状态。</p>
+              <span class="file">ExperimentManager → Future → Experiment</span>
             </button>
-            <button class="card orange" type="button" data-focus="beginner-core" data-title="第 4 步：QuantCore 负责计算" data-files="QuantCore/quantcore/data · factor · backtest · metric" data-desc="QuantCore 读取行情，计算因子和收益，按分组生成持仓，再算出净值、风险和因子诊断。">
+            <button class="card orange" type="button" data-focus="overview-core" data-title="第 4 步：QuantCore 计算" data-files="QuantCore/quantcore/data · factor · backtest · metric" data-desc="QuantCore 读取行情，计算因子和收益，按分组生成持仓，再算出净值、风险和因子诊断。">
               <span class="number">4</span>
               <span class="small-label">计算层</span>
               <h3>读数据并做数学计算</h3>
               <p>这是回测真正发生的地方。</p>
               <span class="file">DataEngine · FactorEngine · NativeEngine</span>
             </button>
-            <button class="card green" type="button" data-focus="beginner-result" data-title="第 5 步：返回一份报告" data-files="ResearchEngine/researchengine/api/serializers.py · schemas.py" data-desc="系统返回主净值、分组净值、基准净值、指标、回撤和因子分析，前端可以直接画图。">
+            <button class="card green" type="button" data-focus="overview-result" data-title="第 5 步：返回研究结果" data-files="ResearchEngine/researchengine/api/serializers.py · schemas.py" data-desc="系统返回主净值、分组净值、基准净值、指标、回撤和因子分析，前端可以直接画图或继续进行研究分析。">
               <span class="number">5</span>
               <span class="small-label">结果层</span>
-              <h3>看懂回测结果</h3>
-              <p>你最终看到的是净值曲线和一组指标。</p>
+              <h3>返回研究结果</h3>
+              <p>输出净值曲线、指标、回撤和因子分析数据。</p>
               <span class="file">FactorBacktestResponse</span>
             </button>
           </div>
 
           <div class="section-title">
-            <h3>先认识 3 个常用词</h3>
-            <p>之后的流程图都会用到它们。</p>
+            <h3>核心对象与边界</h3>
+            <p>以下对象贯穿 API、ResearchEngine 和 QuantCore 的协作链路。</p>
           </div>
           <div class="note-grid">
             <div class="note"><strong>因子 factor</strong>给每只股票打分的规则。例如 bias 可以描述价格相对均线的位置。</div>
@@ -314,7 +314,7 @@
             <div class="note"><strong>基准 benchmark</strong>用来做比较的对象，例如沪深 300。它回答“这个组合是否跑赢市场”。</div>
           </div>
 
-          <div class="flow-end"><strong>如果你只想记住三件事</strong><p>因子值决定“买哪一堆股票”；价格收益决定“这一堆赚了多少”；指标决定“收益是否稳定、风险有多大”。</p></div>
+          <div class="flow-end"><strong>关键边界</strong><p>因子只提供排序依据；持仓和收益由回测适配器执行；指标模块负责把收益序列转换成风险和绩效统计。</p></div>
         </div>
       </div>
     </section>
@@ -322,19 +322,19 @@
     <section class="view" data-view="factor-flow" role="tabpanel">
       <div class="view-head">
         <div>
-          <h2>因子回测怎么跑？</h2>
-          <p>下面把 <code>POST /api/backtest/factor</code> 拆成几个容易理解的小步骤。每个步骤都对应当前代码。</p>
+          <h2>因子回测运行流程</h2>
+          <p>以下按 <code>POST /api/backtest/factor</code> 的实际调用链展开，每个步骤对应当前代码模块。</p>
         </div>
-        <span class="tag">因子值 → 分组 → 收益</span>
+        <span class="tag">请求 → 因子 → 持仓 → 指标</span>
       </div>
 
       <div class="canvas">
         <div class="canvas-inner">
-          <div class="beginner-callout">
-            <div class="icon">先</div>
+          <div class="architecture-callout">
+            <div class="icon">时</div>
             <div>
-              <strong>一个重要的时间概念</strong>
-              <p>如果你在 1 月 2 日收盘得到因子信号，系统用这一天的信号决定下一段持仓，通常计算 1 月 2 日到 1 月 3 日的收盘收益。因子不会偷看未来。</p>
+              <strong>时序约束</strong>
+              <p>信号在交易日收盘后形成，持仓从下一交易日开始生效；因子计算、分组、收益确认和净值展示必须按该时序对齐。</p>
             </div>
           </div>
 
@@ -344,14 +344,14 @@
               <div><h3>告诉平台你要测什么</h3><p>选择因子、日期、股票池、分组数和基准。</p><p class="why">为什么？没有这些条件，系统不知道应该在哪些股票、哪段时间做实验。</p></div>
             </button>
             <div class="connector">↓</div>
-            <button class="step" type="button" data-focus="factor-cache" data-title="第 2 步：检查有没有旧结果" data-files="ResearchEngine/researchengine/api/runner.py: run_factor_backtest · cache/backtest.py" data-desc="如果请求参数和数据版本都一样，缓存可以直接返回上次结果；关闭缓存或没有命中时，系统会重新计算。">
+            <button class="step" type="button" data-focus="factor-cache" data-title="第 2 步：检查缓存、提交 Manager 并协调跨进程锁" data-files="ResearchEngine/researchengine/api/runner.py: submit_factor_backtest · manager.py: ExperimentManager · cache/backtest.py: FileBacktestCache" data-desc="runner.py 先生成缓存键并检查 FileBacktestCache。命中缓存时由 ExperimentManager.completed 创建已完成句柄，不占用工作线程。未命中时，runner.py 调用 ExperimentManager.submit(key=缓存键)；同一进程内的相同键请求直接复用同一个 Future，不再各自等待文件锁。Manager 工作线程执行实际回测；如果另一个进程正在写同一缓存键，FileBacktestCache.lock 仍作为跨进程兜底。文件锁等待发生在 Manager 工作线程中，不会占用 FastAPI/AnyIO 的通用线程；锁超时后该进程可以自行计算但不写缓存。不同任务键仍可按 Manager 的有界容量并行。">
               <span class="step-number">2</span>
-              <div><h3>先找找有没有已经算过的结果</h3><p>缓存像一个“结果抽屉”，能省下重复计算的时间。</p><p class="why">为什么？同一份数据和同一组参数不需要每次都从头算。</p></div>
+              <div><h3>先找找有没有已经算过的结果</h3><p>缓存键决定能否复用；相同缓存键先通过一把文件锁协调。</p><p class="why">为什么？同一份数据和同一组参数不需要每次都从头算，但不同请求不会被这把锁互相挡住。</p></div>
             </button>
             <div class="connector">↓</div>
-            <button class="step" type="button" data-focus="factor-load" data-title="第 3 步：找到因子和股票池" data-files="ResearchEngine/researchengine/api/runner.py: _load_factor_from_code · _resolve_research_assets · factor_loader.py" data-desc="系统加载自定义因子或内置因子，并确认股票池和基准中的代码在行情数据里存在。">
+            <button class="step" type="button" data-focus="factor-load" data-title="第 3 步：加载因子、行情和股票池" data-files="ResearchEngine/researchengine/api/runner.py · api/backtest_support.py · experiment.py · manager.py · QuantCore/quantcore/data/engine.py · providers/field_parquet_provider.py · factor/base.py" data-desc="行情加载不是一次性把所有数据塞进因子。①确定目录：优先使用 SVQUANT_DATA_DIR，没有时使用项目根目录下的 MarketData；如果存在 current/，FieldParquetProvider 自动切到当前发布版本。②建立 DataEngine(FieldParquetProvider)：它先扫描 Parquet 的字段和列名；get_panels(None, None) 返回按字段懒加载的行情面板，支持 panels/market_data.parquet、daily_basic.parquet、security_status.parquet，也兼容一个字段一个 parquet。③先触发 close 字段，找到回测区间内第一个真实交易日；命名股票池从 benchmark/index_weights_*.parquet 读取不晚于该日的成分快照，前端传入的股票池快照会先检查 close 行情中是否存在这些代码。④用这些股票代码构造 Panel；因子访问 data.close、data.open、data.high、data.low 或其他字段时，才读取对应物理列，日期索引和股票代码会统一，读过的字段会在本次实验中缓存。⑤因子在完整历史面板上计算，滚动均线和 pct_change 因此能使用预热数据；计算完才按 start/end 截取回测区间。⑥再从 close 面板截取区间，和因子值取共同股票，构造远期收益、分组持仓；没有共同股票会报错。⑦基准随后按默认 CSI300/CSI500 读取 current/benchmark/index_price_*.parquet，或从自定义基准的股票 close 和权重计算，并按回测日期对齐。缺少字段、行情文件、基准文件或有效日期时，接口会返回明确错误。一次执行使用独立的 Experiment 和 QuantCore 对象，但任务状态、线程池和同键 Future 由应用级 ExperimentManager 统一管理。">
               <span class="step-number">3</span>
-              <div><h3>找到因子和要研究的股票</h3><p>自定义代码会被加载成一个因子对象；内置因子会从因子库中找到。</p><p class="why">为什么？后面的计算需要一个统一的因子接口。</p></div>
+              <div><h3>找到因子、行情和要研究的股票</h3><p>先确定数据目录，再由 DataEngine 通过 FieldParquetProvider 按字段懒加载宽表；因子只在访问某个字段时读取对应行情。</p><p class="why">为什么？这样既能支持完整历史预热，也能避免无关字段进入本次计算。</p></div>
             </button>
             <div class="connector">↓</div>
             <button class="step" type="button" data-focus="factor-warmup" data-title="第 4 步：先读完整历史做预热" data-files="ResearchEngine/researchengine/experiment.py: run · QuantCore/quantcore/data/providers" data-desc="系统先读取完整历史，再截取请求区间。这样 rolling、均线和 pct_change 在区间第一天也有足够的历史数据。">
@@ -364,9 +364,9 @@
               <div><h3>给股票打分，再分成几组</h3><p>同一天把股票按因子值切成 Q1、Q2……QN。默认 Q1 代表因子值最高的股票。</p><p class="why">为什么？这样可以观察“因子分数高”和“因子分数低”的股票，之后谁表现更好。</p></div>
             </button>
             <div class="connector">↓</div>
-            <button class="step" type="button" data-focus="factor-backtest" data-title="第 6 步：模拟持有和换仓" data-files="QuantCore/quantcore/backtest/adapter/strategies.py · engines.py" data-desc="系统根据分组信号生成等权持仓，按 rebalance_days 调仓，再由 NativeEngine 计算每日净值、收益和持仓。">
+            <button class="step" type="button" data-focus="factor-backtest" data-title="第 6 步：模拟持有、换仓和交易成本" data-files="QuantCore/quantcore/backtest/adapter/strategies.py · adapter/native_engine.py · adapter/signals.py · ResearchEngine/researchengine/api/runner.py · api/schemas.py" data-desc="系统先根据分组信号生成目标权重：Q1 多头，或 Q1 做多、QN 做空；组内默认等权。调仓日写入新权重，非调仓日写 NaN 并沿用上一次权重，NativeEngine 用 held = target.ffill().shift(1) 让新权重从下一交易日开始生效。每个收益日先计算不含成本的组合收益，再根据权重变化计算成本：turnover_t = Σ|Δw_t,i|，sell_turnover_t = Σmax(-Δw_t,i, 0)，cost_t = turnover_t × (commission_rate + slippage_rate) + sell_turnover_t × stamp_tax，最后 port_ret_t = raw_port_ret_t - cost_t。commission_rate 按买卖总权重变化扣手续费，slippage_rate 按同一换手额近似滑点，stamp_tax 只对权重减少的卖出侧扣印花税；成本扣在新权重开始生效的收益日。因子 API 这三个成本参数默认都是 0，默认结果不扣成本；当前接口没有最低手续费参数，NativeEngine 也不按每笔成交额设置最低收费。NativeEngine 使用归一化净值 1.0，成本直接扣日收益率，不按 initial_capital 重新换算。含成本的主组合 returns、equity_curve 和顶层 metrics 会受到影响；factor_analysis.cumulative_series 与 quantile_metrics 目前由 layered_returns 单独计算，使用原始价格收益，不包含这些交易成本。本说明针对向量化 NativeEngine，事件驱动策略有独立的成交和成本路径。">
               <span class="step-number">6</span>
-              <div><h3>模拟“买入、持有、换仓”</h3><p>每组股票通常等权持有，到了调仓日就按照新的因子排名更新持仓。</p><p class="why">为什么？单看因子值还不是收益，必须把它变成一套可执行的持仓规则。</p></div>
+              <div><h3>模拟“买入、持有、换仓”和成本</h3><p>先把分组信号变成目标权重，再把调仓造成的手续费、滑点和印花税扣进主组合收益。</p><p class="why">为什么？换仓不是免费的；忽略成本会高估真实可实现收益。</p></div>
             </button>
             <div class="connector">↓</div>
             <button class="step" type="button" data-focus="factor-analysis" data-title="第 7 步：算分组、基准和因子诊断" data-files="ResearchEngine/researchengine/api/factor_metrics.py · experiment.py · layered.py" data-desc="API 分别计算分组绝对绩效、相对基准绩效和因子诊断，如 IC、RankIC、累计 IC 和滚动 IR。">
@@ -388,139 +388,106 @@
     <section class="view" data-view="metrics" role="tabpanel">
       <div class="view-head">
         <div>
-          <h2>指标怎么算？</h2>
-          <p>这一页先用白话解释，再给出精确公式。表格里的分组指标对应 <code>factor_analysis.quantile_metrics</code>。</p>
+          <h2>指标计算与收益口径</h2>
+          <p>本节对应 <code>factor_analysis.quantile_metrics</code> 和顶层 <code>metrics</code>，先固定输入序列，再逐项给出唯一公式。</p>
         </div>
-        <span class="tag">Q1 最高 · 252 个交易日 · 样本标准差</span>
+        <span class="tag">统计收益 → 指标 · 展示净值 → 曲线</span>
       </div>
 
       <div class="canvas">
         <div class="canvas-inner">
-          <div class="metric-cards">
-            <div class="metric-card"><strong>Q1 到底是谁？</strong><p>同一天因子值最高的一组；Q2、Q3 依次降低，QN 是最低的一组。</p></div>
-            <div class="metric-card"><strong>第一笔收益怎么算？</strong><p>信号在 <code>t<sub>0</sub></code> 日形成，第一笔持有收益发生在下一交易日 <code>t<sub>1</sub></code>，也就是从 <code>t<sub>0</sub></code> 到 <code>t<sub>1</sub></code>。它会进入统计，但展示曲线首点仍从 1.0 开始。</p></div>
-            <div class="metric-card"><strong>一年按多少天算？</strong><p>日频默认按 252 个交易日年化，年化收益使用复利方式。</p></div>
-            <div class="metric-card"><strong>用什么价格？</strong><p>因子用后复权 OHLC，收益用后复权 close，读取源精度，不额外四舍五入。</p></div>
+          <div class="architecture-callout">
+            <div class="icon">口</div>
+            <div>
+              <strong>一条总规则：指标不直接读取分组展示净值</strong>
+              <p>分组和基准的绝对指标、相对指标都先取“统计日收益”计算。展示净值只服务前端画曲线；最大回撤虽然需要净值路径，也会从统计收益重建统计净值，不直接读取分组展示曲线。</p>
+            </div>
           </div>
 
-          <article class="metric-panel notation-panel">
-            <h3>先把日期和公式里的字母说清楚</h3>
-            <p>公式里的 <code>t</code> 不是一个神秘的“第几天”。它代表一条有效交易日记录。先分清下面几种日期，后面的公式就容易读了。</p>
+          <article class="metric-panel">
+            <h3>1. 统计输入和展示输出</h3>
+            <p><code>t<sub>0</sub></code> 是首个信号日，<code>t<sub>1</sub></code> 是首个持仓/收益日；第一笔分组收益是 <code>t<sub>0</sub>→t<sub>1</sub></code>。</p>
             <div class="metric-table-wrap">
               <table class="metric-table">
-                <thead><tr><th>符号 / 名称</th><th>它具体代表什么</th><th>例子或补充说明</th></tr></thead>
+                <thead><tr><th>对象</th><th>统计输入：用于指标</th><th>展示输出：用于画图</th></tr></thead>
                 <tbody>
-                  <tr><td><code>D<sub>start</sub></code>：回测区间首日</td><td>用户在请求里填写的开始日期，是一个自然日边界。</td><td>例如请求从 2026-07-12 开始。它可能是周末或节假日，因此不一定有行情。</td></tr>
-                  <tr><td><code>D<sub>end</sub></code>：回测区间末日</td><td>用户在请求里填写的结束日期，也是一个自然日边界。</td><td>实际最后一条有效行情可能早于这个日期，例如结束日落在周末。</td></tr>
-                  <tr><td><code>t<sub>0</sub></code>：首个交易日 / 首个信号日</td><td>回测区间内真正出现的第一个交易日，也是第一天计算因子、分组和形成持仓信号的日期。</td><td>如果 2026-07-12 不是交易日，而 2026-07-13 是，那么 <code>D<sub>start</sub>=2026-07-12</code>，但 <code>t<sub>0</sub>=2026-07-13</code>。如果开始日正好开市，两者才相同。</td></tr>
-                  <tr><td><code>t<sub>1</sub></code>：首个收益日</td><td><code>t<sub>0</sub></code> 后的下一个有效交易日。<code>t<sub>0</sub></code> 收盘形成的分组，从这一天开始承担当日收益。</td><td>例如 <code>t<sub>0</sub>=2026-07-13</code>，<code>t<sub>1</sub>=2026-07-14</code>。分组收益序列的第一笔是 7 月 13 日收盘到 7 月 14 日收盘。</td></tr>
-                  <tr><td><code>t</code>：当前交易日</td><td>公式中正在计算的那一天。对于 <code>r<sub>g,t</sub></code>，<code>t</code> 是这笔收益的结束日，不是信号形成日。</td><td>在分组收益序列里，<code>t</code> 依次是 <code>t<sub>1</sub>、t<sub>2</sub>、…、t<sub>n</sub></code>，不是自然日连续编号。</td></tr>
-                  <tr><td><code>t<sup>-</sup></code>：前一个有效交易日</td><td><code>t</code> 之前最近的一个有效交易日。</td><td>它不是简单地把日期减 1；周末、节假日会被跳过。第一笔收益中，<code>t<sup>-</sup>=t<sub>0</sub></code>。</td></tr>
-                  <tr><td><code>T</code>：有效收益日期集合</td><td>实际参与某个指标计算的全部交易日集合。</td><td>通常写成 <code>T={t<sub>1</sub>, …, t<sub>n</sub>}</code>；缺失值被剔除，所以它不一定等于用户请求的自然日数量。</td></tr>
-                  <tr><td><code>T<sub>c</sub></code>：共同有效日期集合</td><td>分组和基准都有有效收益、可以公平比较的交易日集合。</td><td>相对基准指标只用 <code>T<sub>c</sub></code>；它可能比单独计算分组指标时的 <code>T</code> 更短。</td></tr>
-                  <tr><td><code>n</code>：有效收益笔数</td><td>集合 <code>T</code> 中有效的每日收益数量，年化时用它估算这段收益对应的时间长度。</td><td>不是股票数量，也不是日历天数。相对基准指标会使用共同有效日期数量 <code>n<sub>c</sub></code>。</td></tr>
-                  <tr><td><code>n<sub>c</sub></code>：共同收益笔数</td><td>共同日期集合的大小，即 <code>n<sub>c</sub>=|T<sub>c</sub>|</code>。</td><td>年化超额收益只按分组和基准都存在的这些日期计算。</td></tr>
-                  <tr><td><code>u</code>：历史日期占位符</td><td>当公式要把从起点到 <code>t</code> 的多天收益连乘或找最高净值时，<code>u</code> 代表其中任意一天。</td><td>它和 <code>t</code> 一样都是有效交易日，只是用来表示“遍历历史日期”。</td></tr>
-                  <tr><td><code>g</code>：分组</td><td>某一组股票，例如 <code>Q1</code> 或 <code>Q5</code>。</td><td>当前约定 Q1 是因子值最高组，Q5（或 QN）是因子值最低组。</td></tr>
-                  <tr><td><code>i</code>：股票</td><td>组内的一只具体股票。</td><td>例如 <code>601788.SH</code>。公式中的求和通常就是把组内所有 <code>i</code> 加起来。</td></tr>
-                  <tr><td><code>w<sub>g,t<sup>-</sup>,i</sub></code>：持仓权重</td><td>前一个有效交易日结束时，股票 <code>i</code> 在分组 <code>g</code> 里的资金权重。</td><td>当前分组默认组内等权；调仓日更新，非调仓日沿用上一组持仓。</td></tr>
-                  <tr><td><code>r<sub>g,t</sub></code>：分组日收益</td><td>分组 <code>g</code> 在交易日 <code>t</code> 结束时得到的收益。</td><td>第一笔就是 <code>r<sub>g,t₁</sub></code>，表示从 <code>t<sub>0</sub></code> 到 <code>t<sub>1</sub></code> 的收益。</td></tr>
-                  <tr><td><code>r<sub>b,t</sub></code>：基准日收益</td><td>基准在交易日 <code>t</code> 结束时的收益，例如沪深 300 的日收益。</td><td>基准单独从自己的价格序列计算；在共同序列的第一个日期，基准收益按当前口径设为 0。</td></tr>
-                  <tr><td><code>E<sub>t</sub></code>：累计净值</td><td>把每日收益连续复利后，到交易日 <code>t</code> 为止的净值。</td><td>最大回撤用这条净值序列找历史高点；分组指标还会在第一笔真实收益之前补一个初始净值 1.0。</td></tr>
-                  <tr><td><code>F<sub>g</sub>、F<sub>b</sub></code>：最终增长倍数</td><td>把共同日期上的每日收益连乘后，分组和基准最后各剩下多少倍。</td><td><code>F<sub>g</sub>=Π<sub>t∈T<sub>c</sub></sub>(1+r<sub>g,t</sub>)</code>，<code>F<sub>b</sub>=Π<sub>t∈T<sub>c</sub></sub>(1+r<sub>b,t</sub>)</code>。它们不是百分比收益，而是“1 加上累计收益”。</td></tr>
-                  <tr><td><code>C<sub>b,t</sub></code>：基准累计收益</td><td>基准从第一个共同日期开始到 <code>t</code> 为止的累计收益。</td><td><code>C<sub>b,t</sub> = 基准归一化净值 - 1</code>，所以起点为 0。相对基准胜率会拿分组当日收益和它比较。</td></tr>
-                  <tr><td><code>P<sub>t,i</sub></code>：价格</td><td>股票 <code>i</code> 在交易日 <code>t</code> 的价格。</td><td>因子使用后复权 OHLC；收益公式中的 <code>P</code> 使用后复权收盘价，保留数据源精度。</td></tr>
+                  <tr><td>分组 Q</td><td><code>r<sub>g,t</sub></code> = <code>layered_returns[Q]</code>；保留第一笔 <code>t<sub>0</sub>→t<sub>1</sub></code> 收益。</td><td><code>factor_analysis.cumulative_series</code>；首个分组收益先置 0，曲线首点统一为 1.0。</td></tr>
+                  <tr><td>基准</td><td><code>r<sub>b,t</sub></code> = 归一化基准净值的 <code>pct_change</code>；首个有效日期的收益强制为 0。</td><td><code>benchmark_curve</code>；基准净值首点归一为 1.0。当前它与基准统计净值数值相同，但指标使用的是由它推导的日收益。</td></tr>
+                  <tr><td>分组统计净值</td><td>内部从 <code>r<sub>g,t</sub></code> 前补初始净值 1.0 后复利，用于 <code>max_drawdown</code>。</td><td>不单独返回；不要用分组展示净值代替它。</td></tr>
                 </tbody>
               </table>
             </div>
-            <div class="metric-note"><strong>完整时间关系：</strong>用户填写的 <code>D<sub>start</sub></code> → 找到区间内首个交易日 <code>t<sub>0</sub></code> → 在 <code>t<sub>0</sub></code> 收盘形成信号 → 下一个交易日 <code>t<sub>1</sub></code> 产生第一笔持有收益。预热数据可能早于 <code>D<sub>start</sub></code>，只用于计算滚动因子，不算作回测区间里的信号日或收益日。</div>
-            <div class="metric-note"><strong>读公式的小提示：</strong><code>Σ</code> 表示把组内股票加总，<code>Π</code> 表示把每天的增长倍数连乘，<code>|T<sub>c</sub>|</code> 表示共同日期数量，<code>√252</code> 表示把日频结果年化。</div>
+            <div class="metric-note"><strong>按指标归类：</strong><code>annual_return</code>、<code>volatility</code>、<code>sharpe</code> 使用日收益；<code>max_drawdown</code> 使用由统计收益得到的统计净值；相对指标使用同一日期上的分组日收益和基准日收益；没有指标使用分组展示净值。</div>
           </article>
 
           <article class="metric-panel">
-            <h3>先弄懂“收益”和“净值”</h3>
-            <p>收益是某一天赚了多少，净值是把每天收益连续乘起来后的结果。</p>
+            <h3>2. 分组和基准的绝对指标</h3>
+            <p>公式只有一套：分组代入 <code>r<sub>g,t</sub></code>，基准代入 <code>r<sub>b,t</sub></code>。<code>T<sub>g</sub></code>、<code>T<sub>b</sub></code> 分别是两条统计收益序列的有效日期，<code>n</code> 是对应有效收益笔数。</p>
             <div class="metric-table-wrap">
               <table class="metric-table">
-                <thead><tr><th>对象</th><th>白话解释</th><th>精确规则</th></tr></thead>
+                <thead><tr><th>指标</th><th>唯一公式</th><th>输入序列</th></tr></thead>
                 <tbody>
-                  <tr><td>分组日收益</td><td>某一组股票当天平均赚了多少。</td><td><code>r<sub>g,t</sub> = Σ w<sub>g,t<sup>-</sup>,i</sub> × (P<sub>t,i</sub> / P<sub>t<sup>-</sup>,i</sub> - 1)</code>；组内等权，调仓日更新持仓。第一笔 <code>r<sub>g,t₁</sub></code> 是从 <code>t<sub>0</sub></code> 到 <code>t<sub>1</sub></code>。</td></tr>
-                  <tr><td>分组展示净值</td><td>从 1.0 开始，把后面的每日收益复利累积起来。</td><td>展示时把首个收益 <code>r<sub>g,t₁</sub></code> 设为 0，再计算 <code>E<sup>display</sup><sub>g,t</sub> = Π(1 + r<sup>display</sup><sub>g,t</sub>)</code>，所以曲线第一点是 1.0。</td></tr>
-                  <tr><td>基准收益</td><td>例如沪深 300 自己在这段时间的表现。</td><td>基准 close 先按第一个共同日期归一化，再做 <code>pct_change</code>；首个基准收益设为 0。</td></tr>
-                  <tr><td>首个信号日</td><td>第一天只负责产生信号，下一天才看到第一段持有收益。</td><td>分组原始收益保留这笔收益，所以它会参加分组绝对指标和相对基准指标。</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="metric-note"><strong>小例子：</strong>如果回测区间首日是周日 1 月 7 日，区间首个交易日可能是 1 月 8 日。1 月 8 日收盘形成分组，1 月 9 日产生第一笔收益 <code>r<sub>g,t₁</sub></code>。展示曲线可以从 1 月 9 日的 1.0 开始，但年化、波动和回撤统计仍会使用 1 月 8 日到 1 月 9 日这第一笔真实收益。</div>
-          </article>
-
-          <article class="metric-panel">
-            <h3>分组和基准的“绝对成绩”</h3>
-            <p>绝对指标只回答“这一组自己表现如何”，不先和其他组比较。</p>
-            <div class="metric-table-wrap">
-              <table class="metric-table">
-                <thead><tr><th>指标</th><th>初学者理解</th><th>当前公式 / 规则</th></tr></thead>
-                <tbody>
-                  <tr><td>annual_return</td><td>假设保持这段表现，一年大约赚多少。</td><td><code>(Π<sub>t∈T</sub>(1 + r<sub>t</sub>))<sup>252/n</sup> - 1</code>，几何年化 CAGR。这里 <code>r<sub>t</sub></code> 是当前这条收益序列（分组或基准）。</td></tr>
-                  <tr><td>volatility</td><td>收益上下波动有多大；越大代表越不稳定。</td><td><code>std<sub>sample</sub>(r<sub>t</sub>) × √252</code>；<code>std<sub>sample</sub></code> 是样本标准差，分母使用 <code>n-1</code>。</td></tr>
-                  <tr><td>sharpe</td><td>每承担一单位波动，换来了多少收益。</td><td><code>mean(r<sub>t</sub>) / std<sub>sample</sub>(r<sub>t</sub>) × √252</code>；无风险利率取 0。</td></tr>
-                  <tr><td>max_drawdown</td><td>从历史最高点往下跌得最深是多少。</td><td><code>min<sub>t</sub>((E<sub>t</sub> - max<sub>u≤t</sub>E<sub>u</sub>) / max<sub>u≤t</sub>E<sub>u</sub>)</code>，返回负数；这里的 <code>u</code> 是从起点到当前 <code>t</code> 的历史日期。</td></tr>
+                  <tr><td>annual_return</td><td><code>(Π<sub>t∈T</sub>(1 + r<sub>t</sub>))<sup>252 / n</sup> − 1</code></td><td>分组：<code>r<sub>t</sub>=r<sub>g,t</sub></code>；基准：<code>r<sub>t</sub>=r<sub>b,t</sub></code>。几何年化。</td></tr>
+                  <tr><td>volatility</td><td><code>std<sub>n−1</sub>(r<sub>t</sub>) × √252</code></td><td>只用对应对象的统计日收益，样本标准差 <code>ddof=1</code>。</td></tr>
+                  <tr><td>sharpe</td><td><code>mean(r<sub>t</sub>) / std<sub>n−1</sub>(r<sub>t</sub>) × √252</code></td><td>只用对应对象的统计日收益，无风险利率为 0。</td></tr>
+                  <tr><td>max_drawdown</td><td><code>min<sub>t</sub>(E<sub>t</sub> / max<sub>u≤t</sub>E<sub>u</sub> − 1)</code></td><td>分组：<code>E<sub>t</sub></code> 从 <code>r<sub>g,t</sub></code> 重建；基准：使用基准统计净值。返回负数。</td></tr>
                 </tbody>
               </table>
             </div>
           </article>
 
           <article class="metric-panel">
-            <h3>和基准比较的“相对成绩”</h3>
-            <p>这些指标回答“相对于沪深 300，我多赚了吗？多赚得稳定吗？”</p>
+            <h3>3. 分组相对基准的指标</h3>
+            <p>先按日期取共同集合 <code>T<sub>c</sub> = T<sub>g</sub> ∩ T<sub>b</sub></code>，所有比较都使用这两条统计日收益；不使用分组展示净值。</p>
+            <div class="metric-note"><strong>本表符号：</strong><code>F<sub>g</sub>=Π(1+r<sub>g,t</sub>)</code>、<code>F<sub>b</sub>=Π(1+r<sub>b,t</sub>)</code>（<code>t∈T<sub>c</sub></code>）；<code>C<sub>b,t</sub>=Π<sub>u≤t</sub>(1+r<sub>b,u</sub>)−1</code> 是基准累计收益。</div>
             <div class="metric-table-wrap">
               <table class="metric-table">
-                <thead><tr><th>指标</th><th>初学者理解</th><th>当前公式 / 规则</th></tr></thead>
+                <thead><tr><th>指标</th><th>唯一公式</th><th>输入序列</th></tr></thead>
                 <tbody>
-                  <tr><td>annual_excess_return</td><td>这组相对基准多出来的年化收益。</td><td>在共同日期集合 <code>T<sub>c</sub></code> 上，令 <code>F<sub>g</sub>=Π<sub>t∈T<sub>c</sub></sub>(1+r<sub>g,t</sub>)</code>、<code>F<sub>b</sub>=Π<sub>t∈T<sub>c</sub></sub>(1+r<sub>b,t</sub>)</code>，返回 <code>(1 + F<sub>g</sub> - F<sub>b</sub>)<sup>252/n<sub>c</sub></sup> - 1</code>。这里 <code>n<sub>c</sub>=|T<sub>c</sub>|</code>；不是两个 CAGR 直接相减。</td></tr>
-                  <tr><td>excess_volatility</td><td>每天“多赚或少赚”的幅度有多不稳定。</td><td><code>std<sub>sample</sub>(r<sub>g,t</sub> - r<sub>b,t</sub>) × √252</code>，只使用共同日期 <code>T<sub>c</sub></code>。</td></tr>
-                  <tr><td>information_ratio</td><td>超额收益是否稳定；通常越高越好。</td><td><code>annual_excess_return / excess_volatility</code>；分母为 0 时返回 0。</td></tr>
-                  <tr><td>benchmark_win_rate</td><td>有多少天分组“赢过”基准。</td><td>严格比较 <code>分组当日收益 &gt; 基准累计收益</code>；相等不算赢。不是比较两条累计净值。</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="metric-note"><strong>注意：</strong>“相对基准胜率”是当前项目明确约定的口径，和普通意义上的“分组当天收益是否大于基准当天收益”不是一回事。</div>
-          </article>
-
-          <article class="metric-panel">
-            <h3>API 还会返回哪些指标？</h3>
-            <p>顶层 <code>metrics</code> 是通用组合指标；因子分析还会提供 IC 等诊断数据。看到同名字段时，先看它属于哪个位置。</p>
-            <div class="metric-table-wrap">
-              <table class="metric-table">
-                <thead><tr><th>指标</th><th>白话解释</th><th>当前规则</th></tr></thead>
-                <tbody>
-                  <tr><td>sortino</td><td>只关注向下波动后的收益表现。</td><td>下行偏差为 <code>√mean(min(r, 0)<sup>2</sup>)</code>，再用 <code>mean(r) / downside × √252</code>。</td></tr>
-                  <tr><td>calmar</td><td>年化收益相对于最大回撤的大小。</td><td><code>annual_return / abs(max_drawdown)</code>；当前底层计算仍使用算术年化，可能和 API 顶层几何年化不同。</td></tr>
-                  <tr><td>ic</td><td>因子分数高的股票，下一天是否真的更容易上涨。</td><td>逐日计算因子值和 1 日远期收益的 Pearson 相关，再取有效日期平均。</td></tr>
-                  <tr><td>rank_ic</td><td>只看排序是否一致，不太在意数值差多少。</td><td>逐日计算因子排名和远期收益排名的 Spearman 相关，再取平均。</td></tr>
-                  <tr><td>win_rate</td><td>主组合有多少天是赚钱的。</td><td><code>mean(r &gt; 0)</code>；它不同于分组表的 <code>benchmark_win_rate</code>。</td></tr>
-                  <tr><td>turnover</td><td>换手有多频繁，频繁换仓通常意味着成本更高。</td><td>每期持仓变化 <code>Σ|Δw| / 2</code>，再取平均。</td></tr>
-                  <tr><td>cumulative_ic</td><td>把每天的 IC 一天一天加起来。</td><td>简单累加，不是复利净值。</td></tr>
-                  <tr><td>rolling_ir</td><td>最近一段时间的 IC 是否稳定。</td><td>最近 60 个有效 IC 的均值除以样本标准差，不再乘 <code>√252</code>。</td></tr>
+                  <tr><td>annual_excess_return</td><td><code>(1 + F<sub>g</sub> − F<sub>b</sub>)<sup>252 / |T<sub>c</sub>|</sup> − 1</code></td><td>共同日期上的分组和基准统计日收益；不是两个 CAGR 相减。</td></tr>
+                  <tr><td>excess_volatility</td><td><code>std<sub>|T<sub>c</sub>|−1</sub>(r<sub>g,t</sub> − r<sub>b,t</sub>) × √252</code></td><td>共同日期上的日超额收益，样本标准差。</td></tr>
+                  <tr><td>information_ratio</td><td><code>annual_excess_return / excess_volatility</code></td><td>沿用本表前两项结果；分母为 0 时按安全规则返回 0。</td></tr>
+                  <tr><td>benchmark_win_rate</td><td><code>mean(𝟙(r<sub>g,t</sub> &gt; C<sub>b,t</sub>))</code></td><td>当前约定是“分组当日收益 &gt; 基准累计收益”；相等不算赢，也不是比较两条累计净值。</td></tr>
                 </tbody>
               </table>
             </div>
           </article>
 
           <article class="metric-panel">
-            <h3>几个容易混淆的返回字段</h3>
+            <h3>4. 顶层 API 的其他指标</h3>
+            <p>这些字段位于顶层 <code>metrics</code>，输入是主组合的日收益、净值或因子远期收益，不属于分组基准对比表。</p>
             <div class="metric-table-wrap">
               <table class="metric-table">
-                <thead><tr><th>字段</th><th>简单理解</th><th>当前规则</th></tr></thead>
+                <thead><tr><th>指标</th><th>唯一公式</th><th>输入</th></tr></thead>
                 <tbody>
-                  <tr><td>final_equity</td><td>主组合最后剩下多少净值。</td><td>主回测净值序列的最后一个有效值，不是每个分组的最终净值。</td></tr>
-                  <tr><td>excess_return</td><td>主组合整段收益比基准多多少。</td><td>主组合区间简单收益减去基准区间简单收益，不是年化超额收益。</td></tr>
-                  <tr><td>annual_returns</td><td>每个自然年分别赚了多少。</td><td>按净值点按自然年分组，计算年末相对年初的简单收益。</td></tr>
-                  <tr><td>drawdowns</td><td>把较大的回撤过程单独列出来。</td><td>按回撤深度排序，最多返回 10 段。</td></tr>
+                  <tr><td>sortino</td><td><code>mean(r) / √mean(min(r, 0)<sup>2</sup>) × √252</code></td><td>主组合日收益。</td></tr>
+                  <tr><td>calmar</td><td><code>annual_return<sub>native</sub> / abs(max_drawdown)</code></td><td>顶层底层指标的算术年化收益与最大回撤；可能不同于接口覆盖后的几何年化收益。</td></tr>
+                  <tr><td>ic</td><td><code>mean<sub>t</sub>(corr(factor<sub>t</sub>, forward_return<sub>t</sub>))</code></td><td>每天横截面的 Pearson 相关。</td></tr>
+                  <tr><td>rank_ic</td><td><code>mean<sub>t</sub>(corr(rank(factor<sub>t</sub>), rank(forward_return<sub>t</sub>)))</code></td><td>每天横截面的 Spearman 相关。</td></tr>
+                  <tr><td>win_rate</td><td><code>mean(𝟙(r<sub>t</sub> &gt; 0))</code></td><td>主组合日收益；与分组表的 <code>benchmark_win_rate</code> 不同。</td></tr>
+                  <tr><td>turnover</td><td><code>mean<sub>t</sub>(Σ<sub>i</sub>|w<sub>t,i</sub> − w<sub>t−1,i</sub>| / 2)</code></td><td>相邻日期持仓权重。</td></tr>
+                  <tr><td>cumulative_ic</td><td><code>Σ<sub>t</sub> IC<sub>t</sub></code></td><td>有效日期的 IC 简单累加，不是收益净值。</td></tr>
+                  <tr><td>rolling_ir</td><td><code>mean(IC<sub>t−59:t</sub>) / std<sub>sample</sub>(IC<sub>t−59:t</sub>)</code></td><td>最近 60 个有效 IC，不乘 <code>√252</code>。</td></tr>
                 </tbody>
               </table>
             </div>
-            <div class="metric-note"><strong>最重要的区分：</strong><code>factor_analysis.quantile_metrics</code> 是分组对比表；顶层 <code>metrics</code> 是主组合通用指标。不要把两个位置的同名字段直接当成同一条收益序列。</div>
+          </article>
+
+          <article class="metric-panel">
+            <h3>5. 返回字段和用途</h3>
+            <div class="metric-table-wrap">
+              <table class="metric-table">
+                <thead><tr><th>字段</th><th>内容</th><th>是否参与分组指标</th></tr></thead>
+                <tbody>
+                  <tr><td><code>factor_analysis.quantile_metrics</code></td><td>分组和基准的绝对、相对指标；输入是本页定义的统计收益。</td><td>是。</td></tr>
+                  <tr><td><code>factor_analysis.cumulative_series</code></td><td>分组展示净值曲线，首点统一为 1.0。</td><td>否，只画图。</td></tr>
+                  <tr><td><code>benchmark_curve</code></td><td>归一化基准净值曲线；基准日收益从它的变化推导，首个有效收益为 0。</td><td>不直接作为日收益输入。</td></tr>
+                  <tr><td>顶层 <code>metrics</code></td><td>主组合通用指标，例如年化收益、回撤、IC、胜率和换手。</td><td>不属于分组表。</td></tr>
+                  <tr><td><code>final_equity</code> / <code>annual_returns</code> / <code>drawdowns</code></td><td>主组合最终净值、分年收益和回撤区间明细。</td><td>不属于分组表。</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="metric-note"><strong>结论：</strong>分组与基准不会在指标之间随机切换“统计用”和“展示用”收益。切换的是指标类型：绝对指标看各自统计收益，相对指标看共同日期的两条统计收益；只有画曲线才看展示净值，最大回撤使用由统计收益得到的统计净值路径。</div>
           </article>
         </div>
       </div>
@@ -529,19 +496,19 @@
     <section class="view" data-view="strategy-flow" role="tabpanel">
       <div class="view-head">
         <div>
-          <h2>策略回测怎么跑？</h2>
-          <p>策略不是只给股票打分，而是会自己决定什么时候买、卖多少、什么时候换仓。</p>
+          <h2>策略回测运行流程</h2>
+          <p>策略回测在因子研究链路之上增加交易规则、持仓变化和执行结果；系统支持向量化与事件驱动两条执行路径。</p>
         </div>
-        <span class="tag">快速计算 or 逐日模拟</span>
+        <span class="tag">向量化 / 事件驱动</span>
       </div>
 
       <div class="canvas">
         <div class="canvas-inner">
-          <div class="beginner-callout">
-            <div class="icon">比</div>
+          <div class="architecture-callout">
+            <div class="icon">界</div>
             <div>
-              <strong>策略和因子有什么不同？</strong>
-              <p>因子通常只回答“股票应该怎么排序”；策略还要回答“什么时候交易、买多少、如何执行”。所以策略回测会更关注持仓、订单和成交。</p>
+              <strong>因子研究与策略执行的边界</strong>
+              <p>因子提供排序或信号依据；策略进一步定义交易动作、目标权重、订单、成交和持仓变化，因此策略回测需要区分向量化计算与事件驱动执行。</p>
             </div>
           </div>
 
@@ -602,15 +569,15 @@
     </section>
 
     <aside class="selection-panel" aria-live="polite">
-      <div class="selection-label">你现在看到的</div>
+      <div class="selection-label">当前节点</div>
       <div>
-        <h2 id="selection-title">点击任意卡片查看源码位置</h2>
-        <p id="selection-desc">页面上的白话解释对应当前仓库中的真实模块。</p>
+        <h2 id="selection-title">选择节点查看源码位置</h2>
+        <p id="selection-desc">节点说明对应当前仓库中的真实模块和运行逻辑。</p>
       </div>
       <code id="selection-files">ResearchEngine/researchengine/ · QuantCore/quantcore/</code>
     </aside>
 
-    <p class="source-note">本页按当前仓库代码整理，重点解释 ResearchEngine、QuantCore 和 <code>POST /api/backtest/*</code> 的关系；页面是帮助理解的入口，精确口径以代码和测试为准。</p>
+    <p class="source-note">本文档基于当前仓库代码整理，面向内部研发、产品和测试协作，重点说明 ResearchEngine、QuantCore 与 <code>POST /api/backtest/*</code> 的架构边界、运行流程和统计口径；实现以代码和测试为准。</p>
     <noscript><p class="source-note">需要启用 JavaScript 才能切换章节和查看卡片对应的源码位置；静态文字仍可直接阅读。</p></noscript>
   </main>
 

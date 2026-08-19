@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+from bisect import bisect_left
 from datetime import date
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 from data_ingestion.ifind.calendar.pipeline import (
     CALENDAR_CSV_FILENAME,
@@ -16,7 +17,7 @@ from data_ingestion.ifind.calendar.pipeline import (
     read_calendar_dates,
     update_calendar,
 )
-from data_ingestion.ifind.common.client import IFindClient
+from data_ingestion.ifind.common.client import IFindClient, IFindRequestError
 from data_ingestion.ifind.common.history import DEFAULT_TRADING_DAYS_PER_REQUEST
 from data_ingestion.ifind.common.parquet import csv_to_flat_parquet
 from data_ingestion.ifind.common.paths import DEFAULT_OUTPUT_ROOT
@@ -73,6 +74,13 @@ INDEX_CODES = [
     "000905.SH",
 ]
 
+# 指数正式发布日，只作为探测 iFinD 实际数据覆盖范围的下界。
+# 不能把这些日期直接当成 iFinD 数据一定可用的日期。
+INDEX_EARLIEST_START_DATES = {
+    "000300.SH": "2005-04-08",
+    "000905.SH": "2007-01-15",
+}
+
 
 class EverydayUpdateClient(Protocol):
     def post(self, path: str, payload: dict) -> dict: ...
@@ -118,6 +126,81 @@ def _date_range_summary(trade_dates: list[str]) -> dict[str, object]:
         "start": trade_dates[0] if trade_dates else None,
         "end": trade_dates[-1] if trade_dates else None,
     }
+
+
+def _find_first_available_trade_date(
+    trade_dates: list[str],
+    lower_bound: str | None,
+    probe: Callable[[str], bool],
+) -> str | None:
+    """用指数数据源探测区间内第一个有数据的交易日。"""
+    if not trade_dates:
+        return None
+    start_index = bisect_left(trade_dates, lower_bound) if lower_bound else 0
+    if start_index >= len(trade_dates):
+        return None
+
+    checked: dict[int, bool] = {}
+
+    def has_data(index: int) -> bool:
+        if index not in checked:
+            checked[index] = probe(trade_dates[index])
+        return checked[index]
+
+    if has_data(start_index):
+        return trade_dates[start_index]
+
+    last_unavailable = start_index
+    step = 1
+    first_available: int | None = None
+    while start_index + step < len(trade_dates):
+        candidate = start_index + step
+        if has_data(candidate):
+            first_available = candidate
+            break
+        last_unavailable = candidate
+        step *= 2
+
+    if first_available is None:
+        if last_unavailable == len(trade_dates) - 1:
+            return None
+        if not has_data(len(trade_dates) - 1):
+            return None
+        first_available = len(trade_dates) - 1
+
+    left, right = last_unavailable + 1, first_available
+    while left < right:
+        middle = (left + right) // 2
+        if has_data(middle):
+            right = middle
+        else:
+            left = middle + 1
+    return trade_dates[right]
+
+
+def _is_ifind_no_data_error(error: IFindRequestError) -> bool:
+    return (
+        str(error.errorcode) == "-4001"
+        or str(error.errmsg or "").strip().lower() == "no data"
+    )
+
+
+def _probe_index_weights_date(
+    client: EverydayUpdateClient,
+    output_root: Path,
+    index_code: str,
+    trade_date: str,
+) -> bool:
+    """请求单日指数权重，区分无数据和真实请求失败。"""
+    try:
+        summary = download_index_weights(
+            client, output_root, index_code, trade_date, trade_date
+        )
+    except IFindRequestError as error:
+        if _is_ifind_no_data_error(error):
+            return False
+        raise
+    return bool(summary.get("raw_partitions") or summary.get("skipped"))
 
 
 def _normalize_backfill_range(start: str, end: str) -> tuple[str, str]:
@@ -230,12 +313,62 @@ def _backfill_index(
     max_estimated_points: int,
 ) -> dict[str, object]:
     """回填一个指数的权重和 OHLC，并重建其有序 CSV/Parquet。"""
-    start, end = trade_dates[0], trade_dates[-1]
+    earliest_start = INDEX_EARLIEST_START_DATES.get(index_code)
+    print(
+        f"[everydayupdate] 正在探测指数权重起始日：{index_code}",
+        flush=True,
+    )
+    available_from = _find_first_available_trade_date(
+        trade_dates,
+        earliest_start,
+        lambda trade_date: _probe_index_weights_date(
+            client, output_root, index_code, trade_date
+        ),
+    )
+    effective_trade_dates = [
+        trade_date
+        for trade_date in trade_dates
+        if available_from is not None and trade_date >= available_from
+    ]
+    if not effective_trade_dates:
+        print(
+            f"[everydayupdate] 跳过指数：{index_code}；区间内未探测到可用数据",
+            flush=True,
+        )
+        empty_range = _date_range_summary([])
+        skipped_domain = {
+            "update_range": empty_range,
+            "download": {
+                "skipped": True,
+                "reason": "no_data_in_requested_range",
+            },
+            "csv": {
+                "skipped": True,
+                "reason": "no_data_in_requested_range",
+            },
+            "parquet": {
+                "skipped": True,
+                "reason": "no_data_in_requested_range",
+            },
+        }
+        return {
+            "requested_range": _date_range_summary(trade_dates),
+            "earliest_start": earliest_start,
+            "available_from": available_from,
+            "skipped": True,
+            "reason": "no_data_in_requested_range",
+            "weights": skipped_domain,
+            "price": skipped_domain.copy(),
+        }
+
+    start, end = effective_trade_dates[0], effective_trade_dates[-1]
     print(f"[everydayupdate] 正在回填指数：{index_code} {start} 至 {end}", flush=True)
 
     weights_csv_path = index_weights_artifact_path(output_root, index_code, "csv")
     weights_download = download_index_weights(client, output_root, index_code, start, end)
-    weights_csv = update_index_weights_csv_range(output_root, index_code, trade_dates)
+    weights_csv = update_index_weights_csv_range(
+        output_root, index_code, effective_trade_dates
+    )
     weights_parquet = csv_to_index_weights_parquet(
         weights_csv_path,
         index_weights_artifact_path(output_root, index_code, "parquet"),
@@ -251,20 +384,25 @@ def _backfill_index(
         trading_days_per_request,
         max_estimated_points,
     )
-    price_csv = update_index_price_csv_range(output_root, index_code, trade_dates)
+    price_csv = update_index_price_csv_range(
+        output_root, index_code, effective_trade_dates
+    )
     price_parquet = csv_to_index_price_parquet(
         price_csv_path,
         index_price_artifact_path(output_root, index_code, "parquet"),
     )
     return {
+        "requested_range": _date_range_summary(trade_dates),
+        "earliest_start": earliest_start,
+        "available_from": available_from,
         "weights": {
-            "update_range": _date_range_summary(trade_dates),
+            "update_range": _date_range_summary(effective_trade_dates),
             "download": weights_download,
             "csv": weights_csv,
             "parquet": weights_parquet,
         },
         "price": {
-            "update_range": _date_range_summary(trade_dates),
+            "update_range": _date_range_summary(effective_trade_dates),
             "download": price_download,
             "csv": price_csv,
             "parquet": price_parquet,

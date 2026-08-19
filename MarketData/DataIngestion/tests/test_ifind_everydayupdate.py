@@ -398,6 +398,145 @@ def test_historical_backfill_rebuilds_full_csv_and_reuses_existing_universe(
     }
 
 
+def test_find_first_available_trade_date_probes_then_binary_searches():
+    trade_dates = [
+        "2005-01-04",
+        "2005-01-05",
+        "2005-01-06",
+        "2005-01-07",
+        "2005-01-10",
+        "2005-01-11",
+    ]
+    probed: list[str] = []
+
+    result = everydayupdate._find_first_available_trade_date(
+        trade_dates,
+        "2005-01-04",
+        lambda trade_date: probed.append(trade_date) or trade_date >= "2005-01-07",
+    )
+
+    assert result == "2005-01-07"
+    assert len(probed) < len(trade_dates)
+
+
+def test_probe_index_weights_treats_no_data_as_unavailable(tmp_path, monkeypatch):
+    error = everydayupdate.IFindRequestError(
+        "no data", errorcode=-4001, errmsg="no data"
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "download_index_weights",
+        lambda *args: (_ for _ in ()).throw(error),
+    )
+
+    assert (
+        everydayupdate._probe_index_weights_date(
+            object(), tmp_path, "000300.SH", "2005-01-04"
+        )
+        is False
+    )
+
+
+def test_backfill_index_clips_to_discovered_start_date(tmp_path, monkeypatch):
+    calls: list[tuple] = []
+    monkeypatch.setattr(
+        everydayupdate,
+        "_find_first_available_trade_date",
+        lambda dates, lower_bound, probe: "2010-01-04",
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "download_index_weights",
+        lambda client, root, index, start, end: calls.append(
+            ("weights_download", index, start, end)
+        )
+        or {"raw_partitions": 1},
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "update_index_weights_csv_range",
+        lambda root, index, dates: calls.append(("weights_csv", index, dates))
+        or {"rows": 2},
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "csv_to_index_weights_parquet",
+        lambda source, target: {"rows": 2},
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "download_index_price",
+        lambda client, root, index, start, end, days, points: calls.append(
+            ("price_download", index, start, end, days, points)
+        )
+        or {"raw_partitions": 1},
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "update_index_price_csv_range",
+        lambda root, index, dates: calls.append(("price_csv", index, dates))
+        or {"rows": 2},
+    )
+    monkeypatch.setattr(
+        everydayupdate,
+        "csv_to_index_price_parquet",
+        lambda source, target: {"rows": 2},
+    )
+
+    result = everydayupdate._backfill_index(
+        object(),
+        tmp_path,
+        "000300.SH",
+        ["2005-01-04", "2010-01-04", "2010-01-05"],
+        trading_days_per_request=10,
+        max_estimated_points=100,
+    )
+
+    assert calls == [
+        ("weights_download", "000300.SH", "2010-01-04", "2010-01-05"),
+        ("weights_csv", "000300.SH", ["2010-01-04", "2010-01-05"]),
+        ("price_download", "000300.SH", "2010-01-04", "2010-01-05", 10, 100),
+        ("price_csv", "000300.SH", ["2010-01-04", "2010-01-05"]),
+    ]
+    assert result["requested_range"] == {
+        "count": 3,
+        "start": "2005-01-04",
+        "end": "2010-01-05",
+    }
+    assert result["available_from"] == "2010-01-04"
+    assert result["weights"]["update_range"] == {
+        "count": 2,
+        "start": "2010-01-04",
+        "end": "2010-01-05",
+    }
+
+
+def test_backfill_index_skips_range_without_available_data(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        everydayupdate,
+        "_find_first_available_trade_date",
+        lambda dates, lower_bound, probe: None,
+    )
+
+    result = everydayupdate._backfill_index(
+        object(),
+        tmp_path,
+        "000300.SH",
+        ["2005-01-04", "2009-12-31"],
+        trading_days_per_request=10,
+        max_estimated_points=100,
+    )
+
+    assert result["skipped"] is True
+    assert result["reason"] == "no_data_in_requested_range"
+    assert result["available_from"] is None
+    assert result["weights"]["update_range"] == {
+        "count": 0,
+        "start": None,
+        "end": None,
+    }
+
+
 def test_historical_backfill_rejects_reversed_date_range(tmp_path):
     try:
         everydayupdate.run_historical_backfill(

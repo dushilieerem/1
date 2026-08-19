@@ -74,7 +74,7 @@ python -m data_ingestion.ifind.everydayupdate `
 
 ### 历史回填
 
-同一入口还支持独立的 `backfill` 命令。它先补齐交易日历，再下载指定区间的指数、后复权股票行情/流动性和未复权 OHLC；股票行情会从全部 raw 分区重建有序 CSV。已有 `universe/a_share.csv` 时直接复用，不会用历史截止日快照覆盖当前证券池。
+同一入口还支持独立的 `backfill` 命令。它先补齐交易日历，再下载指定区间的指数、后复权股票行情/流动性和未复权 OHLC；股票行情会从全部 raw 分区重建有序 CSV。已有 `universe/a_share.csv` 时直接复用，不会用历史截止日快照覆盖当前证券池。指数以 `everydayupdate.py` 中的 `INDEX_EARLIEST_START_DATES` 作为正式发布日下界，再用 iFinD 实际请求探测区间内第一个有数据的交易日；因此不会把本地已有文件的最早日期误当成供应商的历史上限。若整个请求区间都没有数据，该指数会跳过，但不会阻断股票行情回填。未配置下界的自定义指数从请求区间起点开始探测。
 
 ```powershell
 cd MarketData/DataIngestion

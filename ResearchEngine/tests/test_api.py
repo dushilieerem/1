@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import numpy as np
@@ -1519,3 +1520,24 @@ def test_factor_api_reads_current_market_data_layout(market_data_dir):
     response = client.post("/api/backtest/factor", json=_request_payload())
     assert response.status_code == 200
     assert response.json()["error"] is None
+
+
+def test_async_factor_experiment_returns_run_id_and_result(market_data_dir):
+    response = client.post("/api/experiments/factor", json=_request_payload())
+    assert response.status_code == 202
+    submission = response.json()
+    assert submission["run_id"]
+    assert submission["experiment_type"] == "factor"
+
+    body = None
+    for _ in range(100):
+        status_response = client.get(f"/api/experiments/{submission['run_id']}")
+        assert status_response.status_code == 200
+        body = status_response.json()
+        if body["status"] in {"succeeded", "failed", "cancelled"}:
+            break
+        time.sleep(0.02)
+
+    assert body is not None
+    assert body["status"] == "succeeded"
+    assert body["result"]["error"] is None

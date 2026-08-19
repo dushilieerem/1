@@ -10,7 +10,7 @@ import {
   toLogicalMethodBody,
 } from "@/lib/factorCatalog";
 import { authHeaders, getStoredUser } from "@/lib/auth";
-import { openOrCreateForFactor, createDetectProjectForClone, openDetectInNewTab, periodToStartEnd } from "@/lib/detectStore";
+import { openOrCreateForFactor, createDetectProjectForClone, openDetectPlaceholderTab, navigateDetectTab, periodToStartEnd } from "@/lib/detectStore";
 import { ygBacktestFactor } from "@/lib/ygApi";
 import { FactorCodeEditor } from "@/components/FactorCodeEditor";
 
@@ -332,13 +332,19 @@ export function FactorCustomPage() {
     if (!factorName) return;
     setDetectBusy(true);
     setErr(null);
+    const tab = openDetectPlaceholderTab();
     try {
       const title = description.trim() || factorName;
       const p = fromCommunity
         ? await createDetectProjectForClone(factorName, title)
         : await openOrCreateForFactor(factorName, title);
-      openDetectInNewTab(p.id);
+      navigateDetectTab(tab, p.id);
     } catch (e) {
+      try {
+        tab?.close();
+      } catch {
+        /* ignore */
+      }
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setDetectBusy(false);

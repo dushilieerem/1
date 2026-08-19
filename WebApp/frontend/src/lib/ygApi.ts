@@ -1,3 +1,5 @@
+import { authHeaders } from "./auth";
+
 export type YgDrawdown = {
   start: string;
   end: string;
@@ -203,22 +205,57 @@ export function serializeYgFactorBody(body: YgBacktestRequest): Record<string, u
   return out;
 }
 
-export async function ygBacktestFactor(body: YgBacktestRequest, signal?: AbortSignal) {
+/**
+ * 因子回测：经 Vite `/yg-api` 直打 ResearchEngine（同步等结果）。
+ * 算数不再经本机 :8766 队列；保存项目 / 存检测 run 仍走本机 API。
+ */
+export async function ygBacktestFactor(
+  body: YgBacktestRequest,
+  signal?: AbortSignal,
+  opts?: {
+    /** 已发出 RE 请求时回调（无本机 job 排队） */
+    onQueued?: (info: {
+      jobId: string;
+      maxInflight: number;
+      queued: number;
+      running: number;
+    }) => void;
+    onStarted?: () => void;
+  },
+) {
+  opts?.onStarted?.();
+  // 兼容旧日志回调：直打 RE 无 job 队列
+  opts?.onQueued?.({
+    jobId: "",
+    maxInflight: 0,
+    queued: 0,
+    running: 1,
+  });
+
+  const headers = { "Content-Type": "application/json", ...authHeaders() };
   const res = await fetch("/yg-api/api/backtest/factor", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(serializeYgFactorBody(body)),
     signal,
   });
   const text = await res.text();
-  let data: YgBacktestResponse;
+  let data: YgBacktestResponse & { detail?: unknown; error?: string };
   try {
-    data = JSON.parse(text) as YgBacktestResponse;
+    data = JSON.parse(text) as typeof data;
   } catch {
-    throw new Error(res.ok ? "响应不是 JSON" : `HTTP ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(
+      res.ok ? "响应不是 JSON" : `HTTP ${res.status}: ${text.slice(0, 200)}`,
+    );
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-  return data;
+  if (!res.ok) {
+    const detail =
+      typeof data.detail === "string"
+        ? data.detail
+        : data.error || text.slice(0, 200);
+    throw new Error(detail || `HTTP ${res.status}`);
+  }
+  return data as YgBacktestResponse;
 }
 
 /** 策略回测：对齐 06-research-api.md + Strategy/libraries/backtest-strategy.md */

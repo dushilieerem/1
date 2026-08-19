@@ -20,7 +20,8 @@ import {
 } from "@/lib/aiFactorApi";
 import {
   createDetectProjectFromSnippet,
-  openDetectInNewTab,
+  openDetectPlaceholderTab,
+  navigateDetectTab,
 } from "@/lib/detectStore";
 import {
   builtinCategoryLabelsFromFactors,
@@ -383,6 +384,7 @@ export function AiFactorGeneratePage() {
     setSendBusy(true);
     setSendFormErr(null);
     setErr(null);
+    const tab = openDetectPlaceholderTab();
     try {
       const p = await createDetectProjectFromSnippet({
         title: description,
@@ -392,8 +394,13 @@ export function AiFactorGeneratePage() {
         category,
       });
       setSendOpen(false);
-      openDetectInNewTab(p.id);
+      navigateDetectTab(tab, p.id);
     } catch (e) {
+      try {
+        tab?.close();
+      } catch {
+        /* ignore */
+      }
       setSendFormErr(e instanceof Error ? e.message : String(e));
     } finally {
       setSendBusy(false);

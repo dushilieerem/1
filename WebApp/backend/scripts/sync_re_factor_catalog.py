@@ -28,8 +28,8 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("NO_PROXY", "*")
 os.environ.setdefault("no_proxy", "*")
 
-from services.db import get_conn  # noqa: E402
-from services.re_factor_catalog import (  # noqa: E402
+from services.core.db import get_conn  # noqa: E402
+from services.factor.re_factor_catalog import (  # noqa: E402
     ensure_re_factor_catalog_schema,
     sync_from_re,
 )

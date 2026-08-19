@@ -14,11 +14,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.auth_store import ensure_schema, seed_admin  # noqa: E402
-from services.community_store import ensure_posts_schema, seed_sample_posts  # noqa: E402
-from services.db import database_url  # noqa: E402
-from services.env_config import load_env  # noqa: E402
-from services.user_factor_store import (  # noqa: E402
+from services.auth.auth_store import ensure_schema, seed_admin  # noqa: E402
+from services.community.community_store import ensure_posts_schema, seed_sample_posts  # noqa: E402
+from services.core.db import database_url  # noqa: E402
+from services.core.env_config import load_env  # noqa: E402
+from services.factor.user_factor_store import (  # noqa: E402
     ensure_user_factors_schema,
     migrate_legacy_custom_to_admin,
 )

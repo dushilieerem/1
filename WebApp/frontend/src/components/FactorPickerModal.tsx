@@ -5,6 +5,7 @@ import {
   loadFactors,
   type FactorMeta,
 } from "@/lib/factorCatalog";
+import { isReBuiltinLib } from "@/lib/detectComboCode";
 import { isValidFactorMethodName } from "@/lib/strategyFactorSync";
 import {
   listLibraryFactors,
@@ -23,7 +24,11 @@ interface Props {
   /** 允许在弹窗内新增临时因子 */
   allowTempFactor?: boolean;
   onClose: () => void;
-  onConfirm: (codes: string[], tempLabels: Record<string, string>) => void;
+  onConfirm: (
+    codes: string[],
+    tempLabels: Record<string, string>,
+    libraries?: Record<string, string>,
+  ) => void;
 }
 
 function labelOf(
@@ -584,10 +589,20 @@ export function FactorPickerModal({
             type="button"
             onClick={() => {
               const kept: Record<string, string> = {};
+              const libs: Record<string, string> = {};
+              const byName = new Map<string, FactorMeta>();
+              for (const f of [...factors, ...userFactors]) {
+                const prev = byName.get(f.name);
+                if (!prev || (!isReBuiltinLib(prev.library) && isReBuiltinLib(f.library))) {
+                  byName.set(f.name, f);
+                }
+              }
               for (const code of picked) {
                 if (tempLabels[code]) kept[code] = tempLabels[code];
+                const meta = byName.get(code);
+                if (meta?.library) libs[code] = meta.library;
               }
-              onConfirm(picked, kept);
+              onConfirm(picked, kept, libs);
               onClose();
             }}
             className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700"

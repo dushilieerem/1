@@ -19,7 +19,7 @@ import {
   loadLibrarySource,
 } from "@/lib/factorCatalog";
 import { isPlatformFactorLib } from "@/lib/detectComboCode";
-import { openOrCreateForFactor, openDetectInNewTab } from "@/lib/detectStore";
+import { openOrCreateForFactor, openDetectPlaceholderTab, navigateDetectTab } from "@/lib/detectStore";
 import { authHeaders, getStoredUser } from "@/lib/auth";
 import {
   buildBuiltinFactorShareStub,
@@ -834,10 +834,22 @@ export function FactorDashboardPage() {
                           <button
                             type="button"
                             onClick={() => {
+                              const tab = openDetectPlaceholderTab();
                               void openOrCreateForFactor(
                                 r.factor_name,
                                 r.name_cn || r.factor_name,
-                              ).then((p) => openDetectInNewTab(p.id));
+                              )
+                                .then((p) => navigateDetectTab(tab, p.id))
+                                .catch((err) => {
+                                  try {
+                                    tab?.close();
+                                  } catch {
+                                    /* ignore */
+                                  }
+                                  window.alert(
+                                    err instanceof Error ? err.message : String(err),
+                                  );
+                                });
                             }}
                             className="rounded-md px-2 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50 hover:text-red-700"
                           >

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SVQuant · GitNexus 流程查看（本地）</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #111a2b;
+      --card: #162033;
+      --line: #2a3a55;
+      --text: #e8eef8;
+      --muted: #8ea0b8;
+      --cyan: #22d3ee;
+      --amber: #f59e0b;
+      --ok: #34d399;
+      --warn: #fb7185;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+    body { display: flex; flex-direction: column; }
+    header {
+      flex: 0 0 auto;
+      display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+      padding: 12px 18px; border-bottom: 1px solid var(--line); background: rgba(11,18,32,.95);
+    }
+    header h1 { margin: 0; font-size: 16px; }
+    header p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+    .cfg { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .cfg input, .cfg button {
+      border: 1px solid var(--line); background: var(--card); color: var(--text);
+      border-radius: 8px; padding: 7px 10px; font-size: 13px;
+    }
+    .cfg input { min-width: 220px; }
+    .cfg button { cursor: pointer; background: #0e7490; border-color: #0891b2; }
+    .cfg button.ghost { background: var(--card); }
+    .banner {
+      margin: 0; padding: 8px 18px; font-size: 12px; line-height: 1.5;
+      background: #1a1220; color: #fecdd3; border-bottom: 1px solid #4c0519;
+    }
+    .banner.ok { background: #052e1c; color: #a7f3d0; border-color: #065f46; }
+    .banner.warn { background: #422006; color: #fde68a; border-color: #92400e; }
+    main { flex: 1; min-height: 0; display: grid; grid-template-columns: 340px 1fr; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+    aside {
+      border-right: 1px solid var(--line); background: var(--panel);
+      display: flex; flex-direction: column; min-height: 0;
+    }
+    .aside-head { padding: 12px; border-bottom: 1px solid var(--line); }
+    .aside-head input {
+      width: 100%; border: 1px solid var(--line); background: var(--bg); color: var(--text);
+      border-radius: 8px; padding: 8px 10px; font-size: 13px;
+    }
+    .meta { margin-top: 8px; font-size: 12px; color: var(--muted); }
+    .list { overflow: auto; flex: 1; padding: 8px; }
+    .item {
+      width: 100%; text-align: left; border: 1px solid transparent; background: transparent;
+      color: var(--text); border-radius: 10px; padding: 10px; margin-bottom: 6px; cursor: pointer;
+    }
+    .item:hover { background: var(--card); border-color: var(--line); }
+    .item.active { background: #0c4a6e; border-color: #0284c7; }
+    .item .t { font-size: 13px; font-weight: 600; line-height: 1.35; word-break: break-word; }
+    .item .s { margin-top: 4px; font-size: 11px; color: var(--muted); }
+    .detail { overflow: auto; padding: 18px 22px 40px; }
+    .empty { color: var(--muted); font-size: 14px; padding: 40px 12px; }
+    .detail h2 { margin: 0 0 6px; font-size: 18px; }
+    .detail .sub { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+    .steps { display: flex; flex-direction: column; gap: 0; max-width: 820px; }
+    .step {
+      position: relative; padding: 12px 14px 12px 56px; border: 1px solid var(--line);
+      background: var(--card); border-radius: 12px; margin-bottom: 10px;
+    }
+    .step .n {
+      position: absolute; left: 12px; top: 14px; width: 32px; height: 32px; border-radius: 999px;
+      display: flex; align-items: center; justify-content: center;
+      background: #083344; color: var(--cyan); font-size: 12px; font-weight: 700;
+    }
+    .step .name { font-size: 14px; font-weight: 650; font-family: Consolas, "Cascadia Mono", monospace; color: #67e8f9; }
+    .step .path { margin-top: 4px; font-size: 12px; color: var(--muted); word-break: break-all; }
+    .step .type { display: inline-block; margin-top: 6px; font-size: 11px; color: var(--amber); }
+    .arrow {
+      width: 2px; height: 12px; background: var(--line); margin: -6px 0 -6px 27px;
+    }
+    .note {
+      margin-top: 22px; padding: 12px 14px; border-left: 3px solid var(--amber);
+      background: #1a1408; color: #fde68a; font-size: 13px; line-height: 1.6; max-width: 820px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>SVQuant · GitNexus 流程查看（本地重建）</h1>
+      <p>不依赖官方 UI 的左边高亮（空 id）。数据仍来自本机 <code>gitnexus serve</code>。</p>
+    </div>
+    <div class="cfg">
+      <input id="base" value="http://127.0.0.1:4747" title="serve 地址" />
+      <input id="repo" value="SVQuant" title="仓库名" style="min-width:120px" />
+      <button type="button" id="reload">加载流程列表</button>
+      <button type="button" class="ghost" id="openOfficial">打开官方 UI</button>
+    </div>
+  </header>
+  <div id="banner" class="banner warn">请先确保 <code>npx gitnexus serve -p 4747 --host 127.0.0.1</code> 在跑，再点「加载流程列表」。</div>
+  <main>
+    <aside>
+      <div class="aside-head">
+        <input id="filter" placeholder="过滤流程… 例如 FactorDetect / Watchlist" />
+        <div class="meta" id="listMeta">尚未加载</div>
+      </div>
+      <div class="list" id="list"></div>
+    </aside>
+    <section class="detail" id="detail">
+      <div class="empty">从左侧点一条流程，右侧展示逐步函数名与文件路径（与 GitNexus「流程」同源数据）。</div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let processes = [];
+    let activeId = null;
+
+    function setBanner(text, kind = "warn") {
+      const el = $("banner");
+      el.className = "banner " + kind;
+      el.innerHTML = text;
+    }
+
+    function apiBase() {
+      return $("base").value.replace(/\/$/, "");
+    }
+
+    async function fetchJson(url) {
+      const res = await fetch(url);
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(`HTTP ${res.status}: ${t.slice(0, 200)}`);
+      }
+      return res.json();
+    }
+
+    function renderList() {
+      const q = ($("filter").value || "").trim().toLowerCase();
+      const list = $("list");
+      list.innerHTML = "";
+      const filtered = processes.filter((p) => {
+        const label = (p.heuristicLabel || p.label || "").toLowerCase();
+        return !q || label.includes(q);
+      });
+      $("listMeta").textContent = `显示 ${filtered.length} / 共 ${processes.length} 条（GitNexus 自动挖的调用链，≠ 产品功能清单）`;
+      for (const p of filtered) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "item" + (p.id === activeId ? " active" : "");
+        const label = p.heuristicLabel || p.label || p.id;
+        btn.innerHTML = `<div class="t">${escapeHtml(label)}</div><div class="s">${p.stepCount || "?"} 步 · ${p.processType || ""}</div>`;
+        btn.onclick = () => selectProcess(p);
+        list.appendChild(btn);
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    async function loadProcesses() {
+      setBanner("正在加载…", "warn");
+      try {
+        const repo = $("repo").value.trim() || "SVQuant";
+        // 官方 /api/processes 写死 limit=50；用 cypher 拉全量
+        const cypher = `
+MATCH (p:Process)
+RETURN p.id AS id, p.label AS label, p.heuristicLabel AS heuristicLabel,
+       p.processType AS processType, p.stepCount AS stepCount
+ORDER BY p.stepCount DESC
+`.trim();
+        const res = await fetch(`${apiBase()}/api/query`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repo, cypher }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+        const data = await res.json();
+        const rows = data.result || data.processes || data || [];
+        processes = (Array.isArray(rows) ? rows : []).map((p) => ({
+          id: p.id,
+          label: p.label,
+          heuristicLabel: p.heuristicLabel || p.label,
+          processType: p.processType,
+          stepCount: p.stepCount,
+        }));
+        setBanner(
+          `已加载 <b>${processes.length}</b> 条流程。点左侧查看步骤。<b>注意：</b>这是 GitNexus 自动挖的「代码调用链」，不是产品功能清单；大量是 Page → Auth / ConsumeAuthHandoff。`,
+          "ok",
+        );
+        activeId = null;
+        $("detail").innerHTML = `<div class="empty">请选择左侧流程。</div>`;
+        renderList();
+      } catch (e) {
+        setBanner(
+          `加载失败：${escapeHtml(e.message)}。请确认 <code>gitnexus serve -p 4747 --host 127.0.0.1</code> 在跑。若用 file:// 打开本页被 CORS 拦，请改用：在 docs 目录起静态服，或把地址栏换成同源。`,
+          "warn",
+        );
+      }
+    }
+
+    async function selectProcess(p) {
+      activeId = p.id;
+      renderList();
+      const label = p.heuristicLabel || p.label || p.id;
+      $("detail").innerHTML = `<div class="empty">加载步骤：${escapeHtml(label)}…</div>`;
+      try {
+        const repo = encodeURIComponent($("repo").value.trim() || "SVQuant");
+        // 优先官方 /api/process（稳定）；不要用 RETURN DISTINCT r.xxx（Ladybug 会报 Variable r is not in scope）
+        const data = await fetchJson(
+          `${apiBase()}/api/process?repo=${repo}&name=${encodeURIComponent(label)}`,
+        );
+        if (data.error) throw new Error(data.error);
+        const steps = data.steps || [];
+        renderSteps(label, p, steps, data.process?.id || p.id);
+      } catch (e) {
+        $("detail").innerHTML = `<div class="empty" style="color:#fb7185">加载失败：${escapeHtml(e.message)}</div>`;
+      }
+    }
+
+    function renderSteps(label, p, steps, procId) {
+      let html = `<h2>${escapeHtml(label)}</h2>`;
+      html += `<div class="sub">${steps.length} 步 · ${escapeHtml(p.processType || "")} · process id=${escapeHtml(String(procId || ""))}</div>`;
+      html += `<div class="steps">`;
+      steps.forEach((s, i) => {
+        if (i) html += `<div class="arrow" aria-hidden="true"></div>`;
+        html += `<div class="step">
+          <div class="n">${escapeHtml(String(s.step ?? i + 1))}</div>
+          <div class="name">${escapeHtml(s.name || "?")}</div>
+          <div class="path">${escapeHtml(s.filePath || "")}</div>
+          ${s.type ? `<span class="type">${escapeHtml(s.type)}</span>` : ""}
+        </div>`;
+      });
+      html += `</div>`;
+      html += `<div class="note">
+        <b>怎么读：</b>这是 GitNexus 自动挖的「谁调谁」链，便于定位函数文件。
+        <b>不是</b>产品功能测单。要「从点按钮到接口结束」的完整业务步骤，用
+        <code>可测步骤-*.md</code> / <code>WebApp结构地图-GitNexus.md</code>（按模块人工维护，才能保证全覆盖）。
+        官方弹窗流程图与本页数据同源；本页不依赖左边大图高亮。
+      </div>`;
+      $("detail").innerHTML = html;
+    }
+
+    $("reload").onclick = loadProcesses;
+    $("filter").oninput = renderList;
+    $("openOfficial").onclick = () => window.open(apiBase() + "/", "_blank");
+    loadProcesses();
+  </script>
+</body>
+</html>

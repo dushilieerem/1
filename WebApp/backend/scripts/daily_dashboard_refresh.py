@@ -28,7 +28,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services import dashboard_store as ds  # noqa: E402
+from services.factor import dashboard_store as ds  # noqa: E402
 
 LOG_DIR = ROOT / "output" / "factor_dashboard"
 LOG_PATH = LOG_DIR / "daily_refresh.log"

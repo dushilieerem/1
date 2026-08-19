@@ -853,3 +853,45 @@ body {
   color: #dc2626;
 }
 
+/* 帮助文档代码块：浅灰底（聚宽/同花顺文档风） */
+.help-code-block .hljs-comment,
+.help-code-block .hljs-quote {
+  color: #6b7280;
+  font-style: italic;
+}
+.help-code-block .hljs-keyword,
+.help-code-block .hljs-selector-tag,
+.help-code-block .hljs-subst {
+  color: #2563eb;
+  font-weight: 500;
+}
+.help-code-block .hljs-number,
+.help-code-block .hljs-literal {
+  color: #c2410c;
+}
+.help-code-block .hljs-string,
+.help-code-block .hljs-doctag,
+.help-code-block .hljs-regexp {
+  color: #059669;
+}
+.help-code-block .hljs-title,
+.help-code-block .hljs-section,
+.help-code-block .hljs-name {
+  color: #1d4ed8;
+}
+.help-code-block .hljs-type,
+.help-code-block .hljs-class .hljs-title,
+.help-code-block .hljs-built_in,
+.help-code-block .hljs-attr {
+  color: #0d9488;
+}
+.help-code-block .hljs-meta,
+.help-code-block .hljs-symbol {
+  color: #64748b;
+}
+.help-code-block .hljs-variable,
+.help-code-block .hljs-template-variable,
+.help-code-block .hljs-params {
+  color: #334155;
+}
+

@@ -52,6 +52,10 @@ export default defineConfig({
     port: Number.isFinite(devPort) && devPort > 0 ? devPort : 9530,
     strictPort: true,
     https: useHttps,
+    fs: {
+      // 帮助页直接引用 WebApp/docs/help/*.md
+      allow: [path.resolve(__dirname, "..")],
+    },
     // Avoid stale/corrupt Chromium disk-cache after C: filled up (ERR_CACHE_READ_FAILURE).
     headers: {
       "Cache-Control": "no-store",
@@ -60,6 +64,9 @@ export default defineConfig({
       "/api": {
         target: "http://127.0.0.1:8766",
         changeOrigin: true,
+        // 与 re-backtest BFF 对齐：长回测可 >2min，默认代理超时会变成 Failed to fetch
+        timeout: 1_800_000,
+        proxyTimeout: 1_800_000,
       },
       "/yg-api": ygApiProxy,
     },
@@ -73,6 +80,8 @@ export default defineConfig({
       "/api": {
         target: "http://127.0.0.1:8766",
         changeOrigin: true,
+        timeout: 1_800_000,
+        proxyTimeout: 1_800_000,
       },
       "/yg-api": ygApiProxy,
     },

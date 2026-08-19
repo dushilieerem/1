@@ -24,7 +24,7 @@ if _KH_BACKEND.is_dir() and str(_KH_BACKEND) not in sys.path:
 
 # Clash 等系统代理会把 192.168.x 拐成 502；进程内加入 NO_PROXY
 try:
-    from services.lan_http import ensure_lan_no_proxy
+    from services.core.lan_http import ensure_lan_no_proxy
 
     ensure_lan_no_proxy()
 except Exception:
@@ -95,12 +95,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == "/api/ai/chat/models":
-            from services.ark_chat import list_ark_models
+            from ai.gateway.ark_chat import list_ark_models
 
             self._send_json(list_ark_models())
             return
         if path == "/api/ai/speech/status":
-            from services.speech_transcribe import speech_ready
+            from ai.gateway.speech_transcribe import speech_ready
 
             self._send_json(speech_ready())
             return
@@ -116,8 +116,8 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
         if path == "/api/factor/index":
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import filtered_index_yaml, resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import filtered_index_yaml, resolve_db_user_id
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -130,7 +130,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/factor/re-catalog":
             # 勿在此局部 import parse_qs：会让整个 do_GET 把 parse_qs 当成局部变量，
             # 其它分支未执行到 import 时直接 UnboundLocalError（检测/策略列表全挂）。
-            from services.re_factor_catalog import fetch_re_catalog
+            from services.factor.re_factor_catalog import fetch_re_catalog
 
             qs = parse_qs(urlparse(self.path).query)
             force = (qs.get("fresh") or ["0"])[0] in ("1", "true", "yes")
@@ -142,8 +142,29 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 self._send_json({"ok": False, "error": str(exc)}, 502)
             return
+        if path.startswith("/api/factor/re-backtest/"):
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.re_backtest_jobs import get_factor_backtest_job
+
+            jid = unquote(path[len("/api/factor/re-backtest/") :]).strip("/")
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                data = get_factor_backtest_job(jid, user_id=int(user["id"]))
+                code = 200
+                if data.get("status") == "missing":
+                    code = 404
+                elif data.get("status") == "forbidden":
+                    code = 403
+                self._send_json(data, code)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
         if path.startswith("/api/market-data/daily/"):
-            from services.market_data_bff import fetch_market_daily
+            from services.data.market_data_bff import fetch_market_daily
 
             code = unquote(path[len("/api/market-data/daily/") :]).strip("/")
             qs = parse_qs(urlparse(self.path).query)
@@ -163,9 +184,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 502)
             return
         if path == "/api/factor/libraries":
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.user_library_store import list_user_libraries
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.factor.user_library_store import list_user_libraries
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -181,9 +202,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/watchlists":
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.watchlist_store import list_watchlists
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.data.watchlist_store import list_watchlists
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -204,9 +225,9 @@ class Handler(BaseHTTPRequestHandler):
             if mid.isdigit():
                 m_wl_syms = int(mid)
         if m_wl_syms is not None:
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.watchlist_store import list_watchlist_symbols
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.data.watchlist_store import list_watchlist_symbols
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -226,9 +247,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/factor/libraries/factors":
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.user_library_store import list_all_user_library_factors
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.factor.user_library_store import list_all_user_library_factors
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -246,9 +267,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/factor/libraries/") and path.endswith("/factors"):
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.user_library_store import list_library_factors
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.factor.user_library_store import list_library_factors
 
             mid = unquote(path[len("/api/factor/libraries/") : -len("/factors")]).strip(
                 "/"
@@ -279,8 +300,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": "bad path"}, 400)
                 return
             if name == "custom_lib.py":
-                from services.auth_store import user_from_authorization
-                from services.user_factor_store import custom_lib_source_for_user, resolve_db_user_id
+                from services.auth.auth_store import user_from_authorization
+                from services.factor.user_factor_store import custom_lib_source_for_user, resolve_db_user_id
 
                 try:
                     user = user_from_authorization(self._auth_header())
@@ -293,7 +314,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(FACTOR_DIR / name)
             return
         if path == "/api/factor/dashboard":
-            from services.dashboard_store import query_metrics
+            from services.factor.dashboard_store import query_metrics
 
             qs = parse_qs(urlparse(self.path).query)
             self._send_json(
@@ -307,12 +328,12 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
         if path == "/api/factor/dashboard/status":
-            from services.dashboard_store import read_job
+            from services.factor.dashboard_store import read_job
 
             self._send_json(read_job())
             return
         if path == "/api/news":
-            from services.news_store import list_news
+            from services.news.news_store import list_news
 
             qs = parse_qs(urlparse(self.path).query)
             try:
@@ -345,7 +366,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/news/dict":
-            from services.news_tag_dict import dict_snapshot
+            from services.news.news_tag_dict import dict_snapshot
 
             try:
                 self._send_json({"ok": True, **dict_snapshot()})
@@ -354,7 +375,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/news/"):
-            from services.news_store import get_news
+            from services.news.news_store import get_news
 
             rid = unquote(path[len("/api/news/") :]).strip("/")
             # POST enrich 走 do_POST；此处仅 GET 详情
@@ -370,7 +391,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/community/posts":
-            from services.community_store import list_posts
+            from services.community.community_store import list_posts
 
             qs = parse_qs(urlparse(self.path).query)
             try:
@@ -391,7 +412,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/community/hot":
-            from services.community_store import list_hot_posts
+            from services.community.community_store import list_hot_posts
 
             qs = parse_qs(urlparse(self.path).query)
             try:
@@ -405,8 +426,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/community/favorites":
-            from services.auth_store import user_from_authorization
-            from services.community_store import list_favorites
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import list_favorites
 
             qs = parse_qs(urlparse(self.path).query)
             try:
@@ -424,8 +445,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/community/my-posts":
-            from services.auth_store import user_from_authorization
-            from services.community_store import list_my_posts
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import list_my_posts
 
             qs = parse_qs(urlparse(self.path).query)
             try:
@@ -451,8 +472,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/community/moderation":
-            from services.auth_store import user_from_authorization
-            from services.community_store import list_moderation_posts
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import list_moderation_posts
 
             qs = parse_qs(urlparse(self.path).query)
             try:
@@ -480,8 +501,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/community/reports":
-            from services.auth_store import user_from_authorization
-            from services.community_store import list_reports
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import list_reports
 
             qs = parse_qs(urlparse(self.path).query)
             try:
@@ -509,8 +530,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/community/ops/summary":
-            from services.auth_store import user_from_authorization
-            from services.community_store import ops_summary
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import ops_summary
 
             qs = parse_qs(urlparse(self.path).query)
             try:
@@ -537,8 +558,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/community/notifications":
-            from services.auth_store import user_from_authorization
-            from services.community_store import list_notifications
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import list_notifications
 
             qs = parse_qs(urlparse(self.path).query)
             try:
@@ -561,8 +582,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/community/notifications/unread-count":
-            from services.auth_store import user_from_authorization
-            from services.community_store import unread_notification_count
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import unread_notification_count
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -575,9 +596,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/detect/projects":
-            from services.auth_store import user_from_authorization
-            from services.detect_store import list_projects
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.detect_store import list_projects
+            from services.factor.user_factor_store import resolve_db_user_id
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -600,9 +621,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/strategy/projects":
-            from services.auth_store import user_from_authorization
-            from services.strategy_store import list_projects as list_strategy_projects
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.strategy.strategy_store import list_projects as list_strategy_projects
+            from services.factor.user_factor_store import resolve_db_user_id
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -620,8 +641,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/strategy/library":
-            from services.auth_store import user_from_authorization
-            from services.strategy_library_store import list_builtin_strategies
+            from services.auth.auth_store import user_from_authorization
+            from services.strategy.strategy_library_store import list_builtin_strategies
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -636,9 +657,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/strategy/libraries":
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.user_strategy_library_store import (
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.strategy.user_strategy_library_store import (
                 list_user_strategy_libraries,
             )
 
@@ -660,9 +681,9 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/strategy/libraries/") and path.endswith(
             "/strategies"
         ):
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.user_strategy_library_store import list_library_strategies
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.strategy.user_strategy_library_store import list_library_strategies
 
             mid = unquote(
                 path[len("/api/strategy/libraries/") : -len("/strategies")]
@@ -696,9 +717,9 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/strategy/library-strategies/") and path.endswith(
             "/archive"
         ):
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.user_strategy_library_store import (
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.strategy.user_strategy_library_store import (
                 get_library_strategy_archive,
             )
 
@@ -729,8 +750,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/strategy/library/"):
-            from services.auth_store import user_from_authorization
-            from services.strategy_library_store import get_strategy_source
+            from services.auth.auth_store import user_from_authorization
+            from services.strategy.strategy_library_store import get_strategy_source
 
             qs = parse_qs(urlparse(self.path).query)
             try:
@@ -757,9 +778,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/strategy/projects/") and path.endswith("/runs"):
-            from services.auth_store import user_from_authorization
-            from services.strategy_store import list_runs as list_strategy_runs
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.strategy.strategy_store import list_runs as list_strategy_runs
+            from services.factor.user_factor_store import resolve_db_user_id
 
             mid = unquote(path[len("/api/strategy/projects/") : -len("/runs")]).strip("/")
             try:
@@ -775,9 +796,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/strategy/projects/"):
-            from services.auth_store import user_from_authorization
-            from services.strategy_store import get_project as get_strategy_project
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.strategy.strategy_store import get_project as get_strategy_project
+            from services.factor.user_factor_store import resolve_db_user_id
 
             pid = unquote(path[len("/api/strategy/projects/") :]).strip("/")
             if "/" in pid:
@@ -798,9 +819,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/strategy/runs/"):
-            from services.auth_store import user_from_authorization
-            from services.strategy_store import get_run as get_strategy_run
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.strategy.strategy_store import get_run as get_strategy_run
+            from services.factor.user_factor_store import resolve_db_user_id
 
             rid = unquote(path[len("/api/strategy/runs/") :]).strip("/")
             try:
@@ -818,9 +839,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/detect/projects/") and path.endswith("/runs"):
-            from services.auth_store import user_from_authorization
-            from services.detect_store import list_runs
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.detect_store import list_runs
+            from services.factor.user_factor_store import resolve_db_user_id
 
             mid = unquote(path[len("/api/detect/projects/") : -len("/runs")]).strip("/")
             try:
@@ -836,9 +857,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/detect/projects/"):
-            from services.auth_store import user_from_authorization
-            from services.detect_store import get_project
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.detect_store import get_project
+            from services.factor.user_factor_store import resolve_db_user_id
 
             pid = unquote(path[len("/api/detect/projects/") :]).strip("/")
             if "/" in pid:
@@ -859,9 +880,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/detect/runs/"):
-            from services.auth_store import user_from_authorization
-            from services.detect_store import get_run
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.detect_store import get_run
+            from services.factor.user_factor_store import resolve_db_user_id
 
             rid = unquote(path[len("/api/detect/runs/") :]).strip("/")
             try:
@@ -879,8 +900,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/community/posts/"):
-            from services.auth_store import user_from_authorization
-            from services.community_store import get_post, list_comments
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import get_post, list_comments
 
             rest = unquote(path[len("/api/community/posts/") :]).strip("/")
             parts = [p for p in rest.split("/") if p]
@@ -925,7 +946,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/auth/me":
-            from services.auth_store import me_response
+            from services.auth.auth_store import me_response
 
             try:
                 self._send_json(me_response(self._auth_header()))
@@ -937,8 +958,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path.startswith("/api/users/") and path.endswith("/posts"):
-            from services.auth_store import user_from_authorization
-            from services.profile_store import list_user_posts
+            from services.auth.auth_store import user_from_authorization
+            from services.auth.profile_store import list_user_posts
             from urllib.parse import unquote as _unq
 
             rest = _unq(path[len("/api/users/") : -len("/posts")]).strip("/")
@@ -965,8 +986,8 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/users/") and (
             path.endswith("/following") or path.endswith("/followers")
         ):
-            from services.auth_store import user_from_authorization
-            from services.profile_store import list_user_follows
+            from services.auth.auth_store import user_from_authorization
+            from services.auth.profile_store import list_user_follows
             from urllib.parse import unquote as _unq
 
             kind = "following" if path.endswith("/following") else "followers"
@@ -996,8 +1017,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path.startswith("/api/users/"):
-            from services.auth_store import user_from_authorization
-            from services.profile_store import get_public_profile
+            from services.auth.auth_store import user_from_authorization
+            from services.auth.profile_store import get_public_profile
             from urllib.parse import unquote as _unq
 
             rest = _unq(path[len("/api/users/") :]).strip("/")
@@ -1020,8 +1041,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/agent/usage/me":
-            from services.agent_store import usage_summary_for_user
-            from services.auth_store import user_from_authorization
+            from ai.runtime.store import usage_summary_for_user
+            from services.auth.auth_store import user_from_authorization
 
             qs = parse_qs(urlparse(self.path).query)
             try:
@@ -1042,8 +1063,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/agent/usage":
-            from services.agent_store import usage_admin_summary
-            from services.auth_store import user_from_authorization
+            from ai.runtime.store import usage_admin_summary
+            from services.auth.auth_store import user_from_authorization
 
             qs = parse_qs(urlparse(self.path).query)
             try:
@@ -1084,7 +1105,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             from knowledge_hub.http_handlers import handle_kh_get
-            from services.auth_store import user_from_authorization
+            from services.auth.auth_store import user_from_authorization
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1111,8 +1132,8 @@ class Handler(BaseHTTPRequestHandler):
             # 管理员手动同步内置因子目录（等同夜间 --all；始终全库，避免再回到 primary≈738）
             from collections import Counter
 
-            from services.auth_store import user_from_authorization
-            from services.re_factor_catalog import clear_re_catalog_cache, sync_from_re
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.re_factor_catalog import clear_re_catalog_cache, sync_from_re
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1145,9 +1166,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"ok": False, "error": str(exc)}, 502)
             return
         if path == "/api/detect/projects":
-            from services.auth_store import user_from_authorization
-            from services.detect_store import create_project, upsert_project
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.detect_store import create_project, upsert_project
+            from services.factor.user_factor_store import resolve_db_user_id
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1181,9 +1202,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/detect/runs":
-            from services.auth_store import user_from_authorization
-            from services.detect_store import save_run
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.detect_store import save_run
+            from services.factor.user_factor_store import resolve_db_user_id
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1202,12 +1223,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/strategy/projects":
-            from services.auth_store import user_from_authorization
-            from services.strategy_store import (
+            from services.auth.auth_store import user_from_authorization
+            from services.strategy.strategy_store import (
                 create_project as create_strategy_project,
                 upsert_project as upsert_strategy_project,
             )
-            from services.user_factor_store import resolve_db_user_id
+            from services.factor.user_factor_store import resolve_db_user_id
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1233,9 +1254,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/strategy/libraries":
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.user_strategy_library_store import (
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.strategy.user_strategy_library_store import (
                 create_user_strategy_library,
             )
 
@@ -1260,9 +1281,9 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/strategy/libraries/") and path.endswith(
             "/strategies"
         ):
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.user_strategy_library_store import add_library_strategy
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.strategy.user_strategy_library_store import add_library_strategy
 
             mid = unquote(
                 path[len("/api/strategy/libraries/") : -len("/strategies")]
@@ -1308,9 +1329,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/strategy/runs":
-            from services.auth_store import user_from_authorization
-            from services.strategy_store import save_run as save_strategy_run
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.strategy.strategy_store import save_run as save_strategy_run
+            from services.factor.user_factor_store import resolve_db_user_id
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1329,7 +1350,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/auth/register":
-            from services.auth_store import register_user
+            from services.auth.auth_store import register_user
 
             try:
                 self._send_json(
@@ -1347,7 +1368,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/auth/login":
-            from services.auth_store import login_user
+            from services.auth.auth_store import login_user
 
             try:
                 self._send_json(
@@ -1363,9 +1384,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/factor/libraries":
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.user_library_store import create_user_library
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.factor.user_library_store import create_user_library
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1386,9 +1407,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/watchlists":
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.watchlist_store import create_watchlist
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.data.watchlist_store import create_watchlist
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1409,9 +1430,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/watchlists/") and path.endswith("/symbols/batch"):
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.watchlist_store import add_watchlist_symbols_batch
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.data.watchlist_store import add_watchlist_symbols_batch
 
             mid = unquote(
                 path[len("/api/watchlists/") : -len("/symbols/batch")]
@@ -1444,9 +1465,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/watchlists/") and path.endswith("/symbols"):
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.watchlist_store import add_watchlist_symbol
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.data.watchlist_store import add_watchlist_symbol
 
             mid = unquote(path[len("/api/watchlists/") : -len("/symbols")]).strip("/")
             try:
@@ -1477,9 +1498,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/factor/libraries/") and path.endswith("/factors"):
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.user_library_store import add_library_factor
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.factor.user_library_store import add_library_factor
 
             mid = unquote(path[len("/api/factor/libraries/") : -len("/factors")]).strip(
                 "/"
@@ -1514,9 +1535,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/factor/custom":
-            from services.auth_store import user_from_authorization
-            from services.factor_store import add_custom_factor
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.factor_store import add_custom_factor
+            from services.factor.user_factor_store import resolve_db_user_id
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1540,8 +1561,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/factor/custom/trial":
-            from services.auth_store import user_from_authorization
-            from services.factor_trial import trial_via_re
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.factor_trial import trial_via_re
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1562,8 +1583,30 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
             return
+        if path == "/api/factor/re-backtest":
+            # 立即入队返回 job_id；后台限流打 RE，避免同步干等堵死短接口
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.re_backtest_jobs import submit_factor_backtest
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                self._send_json(
+                    submit_factor_backtest(
+                        body if isinstance(body, dict) else {},
+                        user_id=int(user["id"]),
+                    )
+                )
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
         if path == "/api/factor/dashboard/refresh":
-            from services.dashboard_store import start_refresh
+            from services.factor.dashboard_store import start_refresh
 
             try:
                 self._send_json(
@@ -1580,7 +1623,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/news/ingest":
-            from services.news_ingest import FETCHERS, UNSUPPORTED_SOURCES, ingest_news
+            from services.news.news_ingest import FETCHERS, UNSUPPORTED_SOURCES, ingest_news
 
             try:
                 raw_sources = body.get("sources")
@@ -1610,7 +1653,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/news/") and path.endswith("/enrich"):
-            from services.news_ingest import enrich_news_body
+            from services.news.news_ingest import enrich_news_body
 
             mid = unquote(path[len("/api/news/") : -len("/enrich")]).strip("/")
             if not mid.isdigit():
@@ -1625,8 +1668,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/factor/dashboard/verify":
-            from services.auth_store import user_from_authorization
-            from services.dashboard_store import set_verify_status
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.dashboard_store import set_verify_status
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1654,8 +1697,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/community/posts":
-            from services.auth_store import user_from_authorization
-            from services.community_store import create_post
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import create_post
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1681,8 +1724,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/community/reports":
-            from services.auth_store import user_from_authorization
-            from services.community_store import create_report
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import create_report
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1712,8 +1755,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/community/reports/") and path.endswith("/resolve"):
-            from services.auth_store import user_from_authorization
-            from services.community_store import resolve_report
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import resolve_report
 
             rest = unquote(path[len("/api/community/reports/") : -len("/resolve")]).strip("/")
             try:
@@ -1745,8 +1788,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/profile/me":
-            from services.auth_store import user_from_authorization
-            from services.profile_store import update_my_profile
+            from services.auth.auth_store import user_from_authorization
+            from services.auth.profile_store import update_my_profile
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1774,8 +1817,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/users/") and path.endswith("/follow"):
-            from services.auth_store import user_from_authorization
-            from services.profile_store import follow_user
+            from services.auth.auth_store import user_from_authorization
+            from services.auth.profile_store import follow_user
             from urllib.parse import unquote as _unq
 
             rest = _unq(path[len("/api/users/") : -len("/follow")]).strip("/")
@@ -1794,8 +1837,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/agent/usage/quota":
-            from services.agent_store import set_user_ai_quota
-            from services.auth_store import user_from_authorization
+            from ai.runtime.store import set_user_ai_quota
+            from services.auth.auth_store import user_from_authorization
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1820,9 +1863,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/agent/runs":
-            from services.agent_runtime import start_run
-            from services.auth_store import user_from_authorization
-            from services.llm_client import LlmError
+            from ai.runtime.runtime import start_run
+            from services.auth.auth_store import user_from_authorization
+            from ai.gateway.llm_client import LlmError
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1856,9 +1899,129 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 self._send_json({"error": str(exc)}, 500)
             return
+        if path == "/api/agent/gather":
+            from ai.crews.gather_idea import run_gather_pipeline
+            from services.auth.auth_store import user_from_authorization
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                if not isinstance(body, dict):
+                    self._send_json({"error": "body 须为 JSON 对象"}, 400)
+                    return
+                self._send_json(
+                    run_gather_pipeline(body, user_id=int(user["id"]))
+                )
+            except PermissionError as exc:
+                msg = str(exc)
+                self._send_json({"error": msg}, 403 if "配额" in msg else 401)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/agent/idea":
+            from ai.crews.gather_idea import run_idea_pipeline
+            from services.auth.auth_store import user_from_authorization
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                if not isinstance(body, dict):
+                    self._send_json({"error": "body 须为 JSON 对象"}, 400)
+                    return
+                self._send_json(
+                    run_idea_pipeline(body, user_id=int(user["id"]))
+                )
+            except PermissionError as exc:
+                msg = str(exc)
+                self._send_json({"error": msg}, 403 if "配额" in msg else 401)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/agent/factor":
+            from ai.crews.gather_idea import run_factor_pipeline
+            from services.auth.auth_store import user_from_authorization
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                if not isinstance(body, dict):
+                    self._send_json({"error": "body 须为 JSON 对象"}, 400)
+                    return
+                self._send_json(
+                    run_factor_pipeline(body, user_id=int(user["id"]))
+                )
+            except PermissionError as exc:
+                msg = str(exc)
+                self._send_json({"error": msg}, 403 if "配额" in msg else 401)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/agent/factor-backtest":
+            from ai.crews.gather_idea import run_backtest_pipeline
+            from services.auth.auth_store import user_from_authorization
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                if not isinstance(body, dict):
+                    self._send_json({"error": "body 须为 JSON 对象"}, 400)
+                    return
+                self._send_json(
+                    run_backtest_pipeline(body, user_id=int(user["id"]))
+                )
+            except PermissionError as exc:
+                msg = str(exc)
+                self._send_json({"error": msg}, 403 if "配额" in msg else 401)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
+        if path == "/api/agent/factor-eval":
+            from ai.crews.gather_idea import run_eval_pipeline
+            from services.auth.auth_store import user_from_authorization
+
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                if not isinstance(body, dict):
+                    self._send_json({"error": "body 须为 JSON 对象"}, 400)
+                    return
+                self._send_json(
+                    run_eval_pipeline(body, user_id=int(user["id"]))
+                )
+            except PermissionError as exc:
+                msg = str(exc)
+                self._send_json({"error": msg}, 403 if "配额" in msg else 401)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
         if path == "/api/ai/chat":
-            from services.ark_chat import ArkChatError, chat as ark_chat, iter_chat_stream
-            from services.auth_store import user_from_authorization
+            from ai.gateway.ark_chat import ArkChatError, chat as ark_chat, iter_chat_stream
+            from services.auth.auth_store import user_from_authorization
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1943,8 +2106,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/ai/speech/transcribe":
             import base64
 
-            from services.auth_store import user_from_authorization
-            from services.speech_transcribe import SpeechError, transcribe_bytes
+            from services.auth.auth_store import user_from_authorization
+            from ai.gateway.speech_transcribe import SpeechError, transcribe_bytes
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -1990,8 +2153,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path == "/api/community/notifications/read":
-            from services.auth_store import user_from_authorization
-            from services.community_store import mark_notifications_read
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import mark_notifications_read
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -2017,8 +2180,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/community/comments/") and path.endswith("/vote"):
-            from services.auth_store import user_from_authorization
-            from services.community_store import set_comment_vote
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import set_comment_vote
 
             rest = unquote(path[len("/api/community/comments/") : -len("/vote")]).strip(
                 "/"
@@ -2047,8 +2210,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/community/posts/"):
-            from services.auth_store import user_from_authorization
-            from services.community_store import add_favorite, create_comment
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import add_favorite, create_comment
 
             rest = unquote(path[len("/api/community/posts/") :]).strip("/")
             parts = [p for p in rest.split("/") if p]
@@ -2087,7 +2250,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(add_favorite(int(user["id"]), post_id))
                     return
                 if parts[1] == "vote":
-                    from services.community_store import set_post_vote
+                    from services.community.community_store import set_post_vote
 
                     self._send_json(
                         set_post_vote(
@@ -2096,7 +2259,7 @@ class Handler(BaseHTTPRequestHandler):
                     )
                     return
                 if parts[1] == "moderate":
-                    from services.community_store import moderate_post
+                    from services.community.community_store import moderate_post
 
                     pinned = body.get("pinned")
                     status = body.get("status")
@@ -2110,7 +2273,7 @@ class Handler(BaseHTTPRequestHandler):
                     )
                     return
                 if parts[1] == "purge":
-                    from services.community_store import purge_post
+                    from services.community.community_store import purge_post
 
                     self._send_json(
                         purge_post(
@@ -2132,7 +2295,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/api/kh"):
             from knowledge_hub.http_handlers import handle_kh_post
-            from services.auth_store import user_from_authorization
+            from services.auth.auth_store import user_from_authorization
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -2155,9 +2318,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": "invalid JSON"}, 400)
             return
         if path.startswith("/api/watchlists/"):
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.watchlist_store import rename_watchlist
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.data.watchlist_store import rename_watchlist
 
             mid = unquote(path[len("/api/watchlists/") :]).strip("/")
             if "/" in mid:
@@ -2190,9 +2353,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/detect/projects/"):
-            from services.auth_store import user_from_authorization
-            from services.detect_store import upsert_project
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.detect_store import upsert_project
+            from services.factor.user_factor_store import resolve_db_user_id
 
             pid = unquote(path[len("/api/detect/projects/") :]).strip("/")
             try:
@@ -2209,9 +2372,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/strategy/projects/"):
-            from services.auth_store import user_from_authorization
-            from services.strategy_store import upsert_project as upsert_strategy_project
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.strategy.strategy_store import upsert_project as upsert_strategy_project
+            from services.factor.user_factor_store import resolve_db_user_id
 
             pid = unquote(path[len("/api/strategy/projects/") :]).strip("/")
             try:
@@ -2228,8 +2391,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/community/posts/"):
-            from services.auth_store import user_from_authorization
-            from services.community_store import update_post
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import update_post
 
             rest = unquote(path[len("/api/community/posts/") :]).strip("/")
             parts = [p for p in rest.split("/") if p]
@@ -2275,9 +2438,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/factor/custom/"):
-            from services.auth_store import user_from_authorization
-            from services.factor_store import update_custom_factor
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.factor_store import update_custom_factor
+            from services.factor.user_factor_store import resolve_db_user_id
 
             name = unquote(path.rsplit("/", 1)[-1])
             try:
@@ -2305,7 +2468,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/api/kh"):
             from knowledge_hub.http_handlers import handle_kh_put
-            from services.auth_store import user_from_authorization
+            from services.auth.auth_store import user_from_authorization
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -2322,9 +2485,24 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self) -> None:
         path = urlparse(self.path).path
+        if path.startswith("/api/factor/re-backtest/"):
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.re_backtest_jobs import cancel_factor_backtest_job
+
+            jid = unquote(path[len("/api/factor/re-backtest/") :]).strip("/")
+            try:
+                user = user_from_authorization(self._auth_header())
+                if not user:
+                    self._send_json({"error": "未登录"}, 401)
+                    return
+                self._send_json(cancel_factor_backtest_job(jid, user_id=int(user["id"])))
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json({"error": str(exc)}, 500)
+            return
         if path.startswith("/api/community/posts/") and path.endswith("/favorite"):
-            from services.auth_store import user_from_authorization
-            from services.community_store import remove_favorite
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import remove_favorite
 
             rest = unquote(path[len("/api/community/posts/") : -len("/favorite")]).strip("/")
             try:
@@ -2343,8 +2521,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/users/") and path.endswith("/follow"):
-            from services.auth_store import user_from_authorization
-            from services.profile_store import unfollow_user
+            from services.auth.auth_store import user_from_authorization
+            from services.auth.profile_store import unfollow_user
             from urllib.parse import unquote as _unq
 
             rest = _unq(path[len("/api/users/") : -len("/follow")]).strip("/")
@@ -2361,8 +2539,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/community/posts/"):
-            from services.auth_store import user_from_authorization
-            from services.community_store import delete_post
+            from services.auth.auth_store import user_from_authorization
+            from services.community.community_store import delete_post
 
             rest = unquote(path[len("/api/community/posts/") :]).strip("/")
             parts = [p for p in rest.split("/") if p]
@@ -2395,9 +2573,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/detect/runs/"):
-            from services.auth_store import user_from_authorization
-            from services.detect_store import delete_run
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.detect_store import delete_run
+            from services.factor.user_factor_store import resolve_db_user_id
 
             rid = unquote(path[len("/api/detect/runs/") :]).strip("/")
             try:
@@ -2415,9 +2593,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/strategy/runs/"):
-            from services.auth_store import user_from_authorization
-            from services.strategy_store import delete_run as delete_strategy_run
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.strategy.strategy_store import delete_run as delete_strategy_run
+            from services.factor.user_factor_store import resolve_db_user_id
 
             rid = unquote(path[len("/api/strategy/runs/") :]).strip("/")
             try:
@@ -2435,9 +2613,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/detect/projects/"):
-            from services.auth_store import user_from_authorization
-            from services.detect_store import delete_project
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.detect_store import delete_project
+            from services.factor.user_factor_store import resolve_db_user_id
 
             pid = unquote(path[len("/api/detect/projects/") :]).strip("/")
             try:
@@ -2455,9 +2633,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/strategy/projects/"):
-            from services.auth_store import user_from_authorization
-            from services.strategy_store import delete_project as delete_strategy_project
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.strategy.strategy_store import delete_project as delete_strategy_project
+            from services.factor.user_factor_store import resolve_db_user_id
 
             pid = unquote(path[len("/api/strategy/projects/") :]).strip("/")
             try:
@@ -2475,9 +2653,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/strategy/libraries/"):
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.user_strategy_library_store import (
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.strategy.user_strategy_library_store import (
                 delete_library_strategy,
                 delete_user_strategy_library,
             )
@@ -2533,9 +2711,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/watchlists/"):
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.watchlist_store import (
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.data.watchlist_store import (
                 delete_watchlist,
                 delete_watchlist_symbol,
             )
@@ -2594,9 +2772,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/factor/libraries/"):
-            from services.auth_store import user_from_authorization
-            from services.user_factor_store import resolve_db_user_id
-            from services.user_library_store import (
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.user_factor_store import resolve_db_user_id
+            from services.factor.user_library_store import (
                 delete_library_factor,
                 delete_user_library,
             )
@@ -2652,9 +2830,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, 500)
             return
         if path.startswith("/api/factor/custom/"):
-            from services.auth_store import user_from_authorization
-            from services.factor_store import delete_custom_factor
-            from services.user_factor_store import resolve_db_user_id
+            from services.auth.auth_store import user_from_authorization
+            from services.factor.factor_store import delete_custom_factor
+            from services.factor.user_factor_store import resolve_db_user_id
 
             name = unquote(path.rsplit("/", 1)[-1])
             try:
@@ -2675,7 +2853,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/api/kh"):
             from knowledge_hub.http_handlers import handle_kh_delete
-            from services.auth_store import user_from_authorization
+            from services.auth.auth_store import user_from_authorization
 
             try:
                 user = user_from_authorization(self._auth_header())
@@ -2695,43 +2873,43 @@ def main() -> None:
     if not FACTOR_DIR.exists():
         raise SystemExit(f"missing factor dir: {FACTOR_DIR}")
     try:
-        from services.env_config import load_env
+        from services.core.env_config import load_env
 
         load_env()
     except Exception:
         pass
     try:
-        from services.auth_store import ensure_schema, seed_admin
-        from services.agent_store import ensure_ai_usage_schema
-        from services.community_store import ensure_posts_schema, seed_sample_posts
-        from services.detect_store import ensure_detect_schema, reassign_misowned_named_projects
-        from services.strategy_store import ensure_strategy_schema
-        from services.user_factor_store import (
+        from services.auth.auth_store import ensure_schema, seed_admin
+        from ai.runtime.store import ensure_ai_usage_schema
+        from services.community.community_store import ensure_posts_schema, seed_sample_posts
+        from services.factor.detect_store import ensure_detect_schema, reassign_misowned_named_projects
+        from services.strategy.strategy_store import ensure_strategy_schema
+        from services.factor.user_factor_store import (
             ensure_user_factors_schema,
             migrate_legacy_custom_to_admin,
         )
 
         ensure_schema()
         seed_admin()
-        from services.profile_store import ensure_schema as ensure_profile_schema
+        from services.auth.profile_store import ensure_schema as ensure_profile_schema
 
         ensure_profile_schema()
         ensure_ai_usage_schema()
         ensure_posts_schema()
         n = seed_sample_posts()
         ensure_user_factors_schema()
-        from services.user_library_store import ensure_user_libraries_schema
+        from services.factor.user_library_store import ensure_user_libraries_schema
 
         ensure_user_libraries_schema()
-        from services.user_strategy_library_store import (
+        from services.strategy.user_strategy_library_store import (
             ensure_user_strategy_libraries_schema,
         )
 
         ensure_user_strategy_libraries_schema()
-        from services.watchlist_store import ensure_watchlist_schema
+        from services.data.watchlist_store import ensure_watchlist_schema
 
         ensure_watchlist_schema()
-        from services.news_store import (
+        from services.news.news_store import (
             ensure_news_schema,
             seed_sample_news,
             enforce_news_retention,
@@ -2751,7 +2929,7 @@ def main() -> None:
         ensure_detect_schema()
         ensure_strategy_schema()
         try:
-            from services.re_factor_catalog import ensure_re_factor_catalog_schema
+            from services.factor.re_factor_catalog import ensure_re_factor_catalog_schema
 
             ensure_re_factor_catalog_schema()
             print("  re_factor_catalog_snapshot 就绪")
@@ -2780,7 +2958,7 @@ def main() -> None:
                 f"feed -{news_retention.get('prunedFeed', 0)}"
             )
         try:
-            from services.news_ingest import start_news_ingest_scheduler
+            from services.news.news_ingest import start_news_ingest_scheduler
 
             start_news_ingest_scheduler()
         except Exception as exc:
@@ -2793,7 +2971,7 @@ def main() -> None:
     except Exception as exc:
         print(f"  auth  → 初始化失败（登录将不可用）: {exc}")
     try:
-        from services.dashboard_store import read_job
+        from services.factor.dashboard_store import read_job
 
         job = read_job()
         if job.get("status") == "running":
@@ -2801,12 +2979,15 @@ def main() -> None:
     except Exception:
         pass
     try:
-        from services.re_factor_catalog import warm_re_catalog_async
+        from services.factor.re_factor_catalog import warm_re_catalog_async
 
         warm_re_catalog_async()
         print("  re-catalog 后台预热已启动")
     except Exception as exc:
         print(f"  re-catalog 预热跳过: {exc}")
+    # 默认 backlog=5：多标签轮询 re-backtest + 消息铃时，半开连接一多就会
+    # ECONNREFUSED → Vite 空 502。必须在构造前加大（server_activate 里 listen）。
+    ThreadingHTTPServer.request_queue_size = 128
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print("=" * 48)
     print(f"SVQuant API  http://{HOST}:{PORT}")
@@ -2842,6 +3023,9 @@ def main() -> None:
     print("  POST /api/factor/custom")
     print("  PUT  /api/factor/custom/{name}")
     print("  POST /api/factor/custom/trial")
+    print("  POST /api/factor/re-backtest")
+    print("  GET  /api/factor/re-backtest/{job_id}")
+    print("  DELETE /api/factor/re-backtest/{job_id}")
     print("  DELETE /api/factor/custom/{name}")
     print("  GET  /api/factor/dashboard")
     print("  GET  /api/factor/dashboard/status")
@@ -2898,6 +3082,11 @@ def main() -> None:
     print("  GET  /api/strategy/runs/{id}")
     print("  DELETE /api/strategy/runs/{id}")
     print("  POST /api/agent/runs")
+    print("  POST /api/agent/gather")
+    print("  POST /api/agent/idea")
+    print("  POST /api/agent/factor")
+    print("  POST /api/agent/factor-backtest")
+    print("  POST /api/agent/factor-eval")
     print("  GET  /api/agent/usage/me")
     print("  GET  /api/agent/usage")
     print("  POST /api/agent/usage/quota")

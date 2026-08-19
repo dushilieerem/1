@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from knowledge_hub.chunking import chunk_text
-from services.db import get_conn
+from services.core.db import get_conn
 
 # 解析进度（内存），供前端轮询；ThreadingHTTPServer 下可边 ingest 边读
 _INGEST_PROGRESS: dict[int, dict[str, Any]] = {}

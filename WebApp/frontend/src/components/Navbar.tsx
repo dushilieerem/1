@@ -25,7 +25,11 @@ function isDataRoute(pathname: string) {
 }
 
 function isHelpRoute(pathname: string) {
-  return pathname === "/help" || pathname === "/data/api-docs";
+  return (
+    pathname === "/help" ||
+    pathname.startsWith("/help/") ||
+    pathname === "/data/api-docs"
+  );
 }
 
 function navLinkClass(isActive: boolean) {
@@ -372,10 +376,10 @@ export function Navbar() {
               搜索
             </button>
             <Link
-              to="/ai/chat"
+              to="/ai"
               className="flex shrink-0 items-center gap-0.5 rounded-lg border border-slate-200 bg-white px-1.5 py-1 text-[10px] font-semibold text-slate-600 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
-              title="AI 自然语言对话"
-              aria-label="AI 对话"
+              title="AI 模块"
+              aria-label="AI 模块"
             >
               <Sparkles className="h-3 w-3" />
               AI
@@ -390,10 +394,10 @@ export function Navbar() {
             <Search className="h-5 w-5" />
           </Link>
           <Link
-            to={user ? "/ai/chat" : loginWithNext("/ai/chat")}
+            to={user ? "/ai" : loginWithNext("/ai")}
             className="shrink-0 rounded-lg p-1.5 text-sky-600 hover:bg-sky-50 hover:text-sky-700 sm:p-2 lg:hidden"
-            aria-label="SV 助手"
-            title="SV 助手"
+            aria-label="AI 模块"
+            title="AI 模块"
           >
             <Sparkles className="h-5 w-5" />
           </Link>
@@ -476,15 +480,18 @@ export function Navbar() {
                       资讯
                     </NavLink>
                     <NavLink
-                      to={user ? "/ai/chat" : loginWithNext("/ai/chat")}
+                      to={user ? "/ai" : loginWithNext("/ai")}
                       onClick={closeMobile}
                       className={({ isActive }) =>
-                        drawerLinkClass(Boolean(user) && (isActive || pathname.startsWith("/ai/chat")))
+                        drawerLinkClass(
+                          Boolean(user) &&
+                            (isActive || pathname.startsWith("/ai")),
+                        )
                       }
                     >
                       <span className="inline-flex items-center gap-1.5">
                         <Sparkles className="h-3.5 w-3.5" />
-                        SV 助手
+                        AI 模块
                       </span>
                     </NavLink>
                     <NavLink

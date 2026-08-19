@@ -16,6 +16,11 @@ export type DraftDetectFactor = {
 
 export type DetectProjectConfig = {
   factorCodes: string[];
+  /**
+   * 因子名 → RE/本地 library。选因子时写入，提交时优先于 catalog 解析，
+   * 避免目录未就绪或同名多库时漏传 library_name。
+   */
+  factorLibraries?: Record<string, string>;
   weightMode: WeightMode;
   weights: number[];
   powers: number[];
@@ -372,6 +377,7 @@ export function defaultConfig(factorCodes: string[] = []): DetectProjectConfig {
   const codes = [...factorCodes];
   return {
     factorCodes: codes,
+    factorLibraries: {},
     weightMode: "sum",
     weights: equalWeights(codes.length),
     powers: equalPowers(codes.length),
@@ -412,6 +418,9 @@ function normalizeProject(
     cfg.analysisLevel = "core";
   }
   cfg.groups = Math.min(5, Math.max(1, Number(cfg.groups) || 5));
+  if (!cfg.factorLibraries || typeof cfg.factorLibraries !== "object") {
+    cfg.factorLibraries = {};
+  }
   if (typeof cfg.commissionRate !== "number" || Number.isNaN(cfg.commissionRate)) {
     cfg.commissionRate = base.commissionRate;
   }
@@ -503,7 +512,15 @@ async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
     user_id?: number;
   };
   if (!res.ok) {
-    throw new Error((data as { error?: string }).error || `HTTP ${res.status}`);
+    const detail = String((data as { error?: string }).error || "").trim();
+    // Vite 代理到 :8766 失败时常只有状态码、无 JSON error（与检测台直打 RE 的失败不同）
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      throw new Error(
+        detail ||
+          `本机 API 暂不可达（HTTP ${res.status}）。红色「检测」只创建/打开检测项目，不跑回测；请确认后端 :8766 在运行后重试。`,
+      );
+    }
+    throw new Error(detail || `HTTP ${res.status}`);
   }
   if (typeof data.user_id === "number" && data.user_id !== uid) {
     clearDetectClientCache();
@@ -710,6 +727,24 @@ function singleFactorDetectConfig(
   return cfg;
 }
 
+/**
+ * 面板进检测时清洗显示名：只去掉末尾「口语括注」，保留公式里的（快-慢）等。
+ */
+export function cleanDetectDisplayName(raw: string, fallback = ""): string {
+  let s = (raw || "").trim();
+  const m = s.match(/^(.*?)[（(]([^）)]*)[）)]\s*$/u);
+  if (m) {
+    const head = m[1].trim();
+    const inner = m[2].trim();
+    const casual =
+      /有点|厉害|哈哈|测试|test|TODO|xxx|随便|备注|啊|呢|吧|嘛|哦|啦|嘿/i.test(
+        inner,
+      ) || (inner.length <= 8 && /[啊呢吧嘛哦啦嘿]/.test(inner));
+    if (casual && head) s = head;
+  }
+  return s || (fallback || "").trim() || "未命名检测";
+}
+
 export async function openOrCreateForFactor(
   factorName: string,
   description: string,
@@ -717,16 +752,21 @@ export async function openOrCreateForFactor(
   ensureCacheOwner();
   const name = (factorName || "").trim();
   if (!name) throw new Error("因子名为空");
+  const title = cleanDetectDisplayName(description, name);
   const list = await listProjects();
   const existing = list.find((p) => p.factorName === name && !p.sample);
   if (existing) {
-    // 修好旧「社区克隆→自定义组合、未选因子」的脏项目
+    // 修好旧「社区克隆→自定义组合、未选因子」的脏项目；同步洗净项目名
+    existing.name = title;
+    existing.description = title;
     existing.config = singleFactorDetectConfig(name, existing.config);
-    existing.description = description || existing.description;
+    // 组合 docstring 用洗净标题（单因子）
+    existing.config.customCombine = `def combo_factor(self):\n    """${title}"""\n    return self.${name}()`;
     return saveProject(existing);
   }
-  const created = await createProject(name, description);
+  const created = await createProject(name, title, title);
   created.config = singleFactorDetectConfig(name, created.config);
+  created.config.customCombine = `def combo_factor(self):\n    """${title}"""\n    return self.${name}()`;
   return saveProject(created);
 }
 
@@ -847,20 +887,107 @@ export async function createDetectProjectFromLibraryFactors(opts: {
   return saveProject(created);
 }
 
-/** 打开检测配置页：窄屏同页跳转（手机常拦弹窗）；桌面优先新标签 */
-export function openDetectInNewTab(projectId: string) {
-  const path = `/factor/detect/${encodeURIComponent(projectId)}`;
-  prepareAuthHandoff();
-  const narrow =
+function detectPath(projectId: string) {
+  return `/factor/detect/${encodeURIComponent(projectId)}`;
+}
+
+function isNarrowViewport() {
+  return (
     typeof window !== "undefined" &&
-    window.matchMedia("(max-width: 1023px)").matches;
-  if (narrow) {
+    window.matchMedia("(max-width: 1023px)").matches
+  );
+}
+
+const DETECT_OPENING_HTML = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>正在打开检测…</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #f0f2f5;
+      font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; }
+    body { display: flex; align-items: center; justify-content: center; color: #475569; }
+    .c { text-align: center; }
+    .s { width: 28px; height: 28px; margin: 0 auto 12px; border-radius: 50%;
+      border: 3px solid #e2e8f0; border-top-color: #e11d48;
+      animation: r .8s linear infinite; }
+    @keyframes r { to { transform: rotate(360deg); } }
+    p { margin: 0; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="c"><div class="s"></div><p>正在打开检测页…</p></div>
+</body>
+</html>`;
+
+/**
+ * 必须在 click 同步阶段调用（await 之前），否则浏览器会丢「用户手势」，
+ * window.open 被拦后旧逻辑会 location.assign，表现为「不新开页、当前页跳走」。
+ * 立刻写入加载页，避免 about:blank 在等建项目时长时间白屏。
+ * 返回占位标签；窄屏返回 null（稍后同页跳转）。
+ */
+export function openDetectPlaceholderTab(): Window | null {
+  prepareAuthHandoff();
+  if (isNarrowViewport()) return null;
+  try {
+    const win = window.open("about:blank", "_blank");
+    if (win) {
+      try {
+        win.document.open();
+        win.document.write(DETECT_OPENING_HTML);
+        win.document.close();
+      } catch {
+        /* 跨域或已导航则忽略 */
+      }
+    }
+    return win;
+  } catch {
+    return null;
+  }
+}
+
+/** 把占位标签导航到检测配置页；无占位时窄屏同页跳，桌面则提示弹窗被拦 */
+export function navigateDetectTab(win: Window | null, projectId: string) {
+  const path = detectPath(projectId);
+  prepareAuthHandoff();
+  if (win && !win.closed) {
+    try {
+      win.location.replace(path);
+      win.focus();
+      return;
+    } catch {
+      try {
+        win.close();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  if (isNarrowViewport()) {
+    window.location.assign(path);
+    return;
+  }
+  // 桌面：勿静默劫持当前因子库页（多开回测时尤其容易误伤）
+  const abs = `${window.location.origin}${path}`;
+  window.alert(
+    `浏览器拦截了新标签页。请允许本站弹窗后重试，或复制打开：\n${abs}`,
+  );
+}
+
+/** 打开检测配置页：窄屏同页跳转；桌面新标签（仅适合仍在用户手势内的同步调用） */
+export function openDetectInNewTab(projectId: string) {
+  const path = detectPath(projectId);
+  prepareAuthHandoff();
+  if (isNarrowViewport()) {
     window.location.assign(path);
     return;
   }
   const win = window.open(path, "_blank");
   if (!win) {
-    window.location.assign(path);
+    const abs = `${window.location.origin}${path}`;
+    window.alert(
+      `浏览器拦截了新标签页。请允许本站弹窗后重试，或复制打开：\n${abs}`,
+    );
   }
 }
 

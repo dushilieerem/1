@@ -35,6 +35,12 @@ import { NewsDetailPage } from "./pages/NewsDetailPage";
 import { GlobalSearchPage } from "./pages/GlobalSearchPage";
 import { HelpPage } from "./pages/ApiDocsPlaceholderPage";
 import { AiChatPage } from "./pages/AiChatPage";
+import { AgentGatherPage } from "./pages/AgentGatherPage";
+import { AgentIdeaPage } from "./pages/AgentIdeaPage";
+import { AgentFactorPage } from "./pages/AgentFactorPage";
+import { AgentBacktestPage } from "./pages/AgentBacktestPage";
+import { AgentEvalPage } from "./pages/AgentEvalPage";
+import { AiHubPage } from "./pages/AiHubPage";
 
 function Authed({ children }: { children: React.ReactNode }) {
   return <RequireAuth>{children}</RequireAuth>;
@@ -49,7 +55,13 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
 
         <Route path="/search" element={<GlobalSearchPage />} />
+        <Route path="/ai" element={<Authed><AiHubPage /></Authed>} />
         <Route path="/ai/chat" element={<Authed><AiChatPage /></Authed>} />
+        <Route path="/ai/gather" element={<Authed><AgentGatherPage /></Authed>} />
+        <Route path="/ai/idea" element={<Authed><AgentIdeaPage /></Authed>} />
+        <Route path="/ai/factor" element={<Authed><AgentFactorPage /></Authed>} />
+        <Route path="/ai/factor-backtest" element={<Authed><AgentBacktestPage /></Authed>} />
+        <Route path="/ai/factor-eval" element={<Authed><AgentEvalPage /></Authed>} />
         <Route path="/community" element={<CommunityFeedPage />} />
         <Route path="/news" element={<NewsPage />} />
         <Route path="/news/:id" element={<NewsDetailPage />} />
@@ -85,6 +97,7 @@ export default function App() {
           element={<Authed><WatchlistPage /></Authed>}
         />
         <Route path="/help" element={<HelpPage />} />
+        <Route path="/help/:docId" element={<HelpPage />} />
         <Route path="/data/api-docs" element={<Navigate to="/help" replace />} />
         <Route
           path="/data/symbol/:code/chart"

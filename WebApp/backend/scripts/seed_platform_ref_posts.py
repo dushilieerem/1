@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.dashboard_store import lookup_panel_metric  # noqa: E402
+from services.factor.dashboard_store import lookup_panel_metric  # noqa: E402
 
 API = "http://127.0.0.1:8766"
 ADMIN_USER = "admin"

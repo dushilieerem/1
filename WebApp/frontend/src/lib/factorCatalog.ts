@@ -36,6 +36,7 @@ export const LABELS: Record<string, string> = {
   alpha_features: "Alpha158/360",
   alpha_library: "Alpha库",
   worldquant_alpha101: "WorldQuant/Alpha101",
+  gtja_alpha191: "国泰君安Alpha191",
   custom_lib: "自定义",
 };
 

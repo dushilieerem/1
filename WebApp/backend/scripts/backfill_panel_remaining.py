@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.daily_dashboard_refresh import MATRIX_24, MATRIX_16  # noqa: E402
-from services import dashboard_store as ds  # noqa: E402
+from services.factor import dashboard_store as ds  # noqa: E402
 
 LOG_DIR = ROOT / "output" / "factor_dashboard"
 LOG_PATH = LOG_DIR / "remaining_backfill.log"

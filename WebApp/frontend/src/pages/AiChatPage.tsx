@@ -17,7 +17,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { authHeaders, getStoredUser, subscribeAuth, type AuthUser } from "@/lib/auth";
 import { highlightSource } from "@/lib/codeHighlight";
 import { useKeyboardInset } from "@/hooks/useKeyboardInset";
@@ -1066,6 +1066,18 @@ export function AiChatPage() {
           </h1>
 
           <div className="z-10 ml-auto flex items-center gap-2">
+            <Link
+              to="/ai"
+              className="hidden rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 hover:border-sky-300 hover:text-sky-700 sm:inline-flex"
+            >
+              AI 主页
+            </Link>
+            <Link
+              to="/ai/gather"
+              className="hidden rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 hover:border-sky-300 hover:text-sky-700 sm:inline-flex"
+            >
+              信息搜集
+            </Link>
             <button
               type="button"
               className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 md:hidden"

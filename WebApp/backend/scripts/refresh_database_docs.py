@@ -538,7 +538,7 @@ def _pick_sample(row: dict[str, Any], table: str) -> dict[str, Any]:
 
 
 def _pg_dump() -> dict[str, Any]:
-    from services.db import get_conn
+    from services.core.db import get_conn
 
     out: dict[str, Any] = {}
     with get_conn() as conn:
@@ -696,7 +696,7 @@ def render(pg: dict[str, Any], sq: dict[str, Any]) -> str:
     a("")
     a("```bash")
     a("cd WebApp/backend")
-    a('python -c "from services.db import get_conn')
+    a('python -c "from services.core.db import get_conn')
     a("with get_conn() as c:")
     a(
         "  print([r['table_name'] for r in c.execute("

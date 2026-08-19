@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from services.db import get_conn
+from services.core.db import get_conn
 
 
 def get_role_credentials(role_key: str = "embedding") -> dict[str, str] | None:

@@ -2,8 +2,8 @@
 """One-shot: FIFO 裁剪资讯上限（要闻流/电报/公告）。"""
 from __future__ import annotations
 
-from services.db import get_conn
-from services.news_store import (
+from services.core.db import get_conn
+from services.news.news_store import (
     NEWS_CAP_ANNOUNCE,
     NEWS_CAP_FEED,
     NEWS_CAP_FLASH,

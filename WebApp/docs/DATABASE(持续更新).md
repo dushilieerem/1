@@ -73,7 +73,7 @@ ORDER BY 1;
 
 ```bash
 cd WebApp/backend
-python -c "from services.db import get_conn
+python -c "from services.core.db import get_conn
 with get_conn() as c:
   print([r['table_name'] for r in c.execute(\"SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY 1\").fetchall()])"
 ```

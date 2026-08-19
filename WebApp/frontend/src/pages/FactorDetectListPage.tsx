@@ -6,15 +6,20 @@ import {
   createProject,
   deleteProject,
   listVisibleProjects,
-  openDetectInNewTab,
+  openDetectPlaceholderTab,
+  navigateDetectTab,
   saveProject,
   type DetectProject,
 } from "@/lib/detectStore";
 import { getStoredUser, subscribeAuth } from "@/lib/auth";
+import { PagerBar } from "@/components/PageJump";
+
+const PAGE_SIZE = 20;
 
 export function FactorDetectListPage() {
   const [projects, setProjects] = useState<DetectProject[]>([]);
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
   const [nameModal, setNameModal] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [renameTarget, setRenameTarget] = useState<DetectProject | null>(null);
@@ -61,6 +66,7 @@ export function FactorDetectListPage() {
       lastUid = uid;
       clearDetectClientCache();
       setSelectedIds(new Set());
+      setPage(1);
       refresh();
     });
   }, []);
@@ -76,9 +82,20 @@ export function FactorDetectListPage() {
     );
   }, [projects, query]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [query]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE) || 1);
+  const pageSafe = Math.min(Math.max(1, page), totalPages);
+  const pageRows = useMemo(() => {
+    const start = (pageSafe - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, pageSafe]);
+
   const deletableFiltered = useMemo(
-    () => filtered.filter((p) => !p.sample),
-    [filtered],
+    () => pageRows.filter((p) => !p.sample),
+    [pageRows],
   );
 
   const allDeletableSelected =
@@ -117,15 +134,23 @@ export function FactorDetectListPage() {
       setCreateErr("请填写检测名称");
       return;
     }
+    const tab = openDetectPlaceholderTab();
     void createProject("custom_combo", title, title)
       .then((p) => {
         setNameModal(false);
         setProjectName("");
         setCreateErr(null);
-        openDetectInNewTab(p.id);
+        navigateDetectTab(tab, p.id);
         refresh();
       })
-      .catch((e) => setCreateErr(e instanceof Error ? e.message : String(e)));
+      .catch((e) => {
+        try {
+          tab?.close();
+        } catch {
+          /* ignore */
+        }
+        setCreateErr(e instanceof Error ? e.message : String(e));
+      });
   };
 
   const openRename = (p: DetectProject) => {
@@ -237,7 +262,7 @@ export function FactorDetectListPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((p) => (
+                {pageRows.map((p) => (
                   <tr key={p.id} className="border-t border-slate-100">
                     <td className="px-4 py-3">
                       {!p.sample ? (
@@ -321,6 +346,15 @@ export function FactorDetectListPage() {
             </table>
           </div>
         )}
+
+        {!loading && filtered.length > 0 ? (
+          <div className="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
+            <p className="text-xs text-slate-500">
+              共 {filtered.length} 条 · 第 {pageSafe}/{totalPages} 页
+            </p>
+            <PagerBar page={pageSafe} totalPages={totalPages} onJump={setPage} />
+          </div>
+        ) : null}
 
         {nameModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">

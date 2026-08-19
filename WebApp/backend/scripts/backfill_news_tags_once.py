@@ -2,10 +2,10 @@
 """One-shot: backfill news tags after dict deepen; print coverage."""
 from __future__ import annotations
 
-from services.db import get_conn
-from services.news_ingest import backfill_news_tags
-from services.news_store import ensure_news_schema
-from services.news_tag_dict import dict_snapshot
+from services.core.db import get_conn
+from services.news.news_ingest import backfill_news_tags
+from services.news.news_store import ensure_news_schema
+from services.news.news_tag_dict import dict_snapshot
 
 
 def main() -> None:

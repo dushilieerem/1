@@ -1,0 +1,58 @@
+# ============================================================
+# MVP 多 Agent 投研系统 · 配置
+# 阶段：先用外部 Token（mock 模式可零成本跑通整条链路）
+# 合规：L3（因子公式/仓位/PnL/权重/原始数据）禁止出网
+# ============================================================
+
+llm:
+  provider: "openai_compatible"   # 兼容 OpenAI 接口即可（DeepSeek / 智谱 GLM / 通义 / Kimi 等国内模型）
+  base_url: "https://api.your-domestic-provider.com/v1"   # 仅用国内合规零留存端点
+  api_key: "${QUANT_LLM_API_KEY}"   # 强烈建议用环境变量，勿明文落盘
+  model: "your-model-name"
+  temperature: 0.2
+  mock: true          # MVP 验证用 true（不花 token，返回结构化桩）；实跑改 false
+
+compliance:
+  enforce_l3: true    # L3 出站硬拦截；命中则抛错，改走本地模型或脱敏
+  external_scope: "domestic_zero_retention"  # 仅允许国内合规零留存端点处理出网内容
+  l3_fields:
+    - factor_formula   # 因子公式 / alpha 表达式
+    - positions        # 持仓 / 仓位
+    - pnl              # 盈亏 / 收益曲线
+    - model_weights    # 模型权重 / 参数
+    - raw_data         # 原始行情 / 数据集
+    - tickers          # 具体标的代码（A 股 6 位）
+
+pipeline:
+  universe: "沪深300"
+  objective: "中低频 alpha（含西蒙斯式配对交易）"
+  mode: "research_cycle"   # 一次完整研究循环
+
+trading:
+  default_mode: "simulate"   # simulate=模拟交易；live=实盘（仅 Boss 裁决 approve 后允许）
+  max_position_pct: 0.05     # 单标的最大仓位（风控硬约束示例）
+  pair_z_entry: 2.0          # 配对交易入场 z 阈值
+  pair_z_exit: 0.5           # 配对交易出场 z 阈值
+
+# ============================================================
+# 真实研究链路（数据接入层 + 四因子 + IC/IR + 组合回测）
+# 接入真实 Tushare 需配置 token；未配置则使用带因子结构的合成数据演示。
+# ============================================================
+research:
+  enabled: true              # true 时 Agent 研究循环调用真实链路（false 仍用 mock 桩）
+  db_path: "research/quant.db"   # SQLite 落库路径
+  universe_size: 50          # 合成/抽样股票数量（真实 Tushare 用指数成分）
+  hold_days: 20              # 调仓持有期（交易日）
+  rebalance: "M"             # 调仓频率：M=月频
+  cost_bps: 10               # 单边交易成本（基点），回测扣减
+  combination: "ic_weighted" # 因子合成方式：ic_weighted | top3
+  long_short: true           # true=多空组合(多Top空Bottom)；false=仅多头Top组合
+  ir_keep_threshold: 0.30    # |IR| 低于此值判为废弃因子
+  top_quantile: 0.2          # 多/空组合取前后各 20%
+
+tushare:
+  token: "${TUSHARE_TOKEN}"  # 建议环境变量；留空则用合成数据
+  source: "auto"             # auto|tushare|synthetic
+  start_date: "2019-01-01"
+  end_date: "2023-12-31"
+  index: "000300.SH"         # 真实取数时的股票池（沪深300）

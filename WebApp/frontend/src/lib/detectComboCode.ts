@@ -2,11 +2,24 @@ import type { WeightMode } from "./detectStore";
 import type { FactorMeta } from "./factorCatalog";
 
 /**
- * ResearchEngine 已登记的 library_name 库。
- * 单因子直通时只传 library_name + factor_name，不传 factor_code。
- * （含原 PLATFORM 五库；源码只在 RE 侧）
+ * 本机/用户库（须传 factor_code）。
+ * 其余凡带 library 名的一律当 ResearchEngine 官方库走 library_name，
+ * 避免再漏 gtja / wq / emotion 等白名单。
  */
-export const RE_BUILTIN_LIBS = new Set([
+export function isLocalFactorLib(library: string | undefined | null): boolean {
+  if (!library) return true;
+  if (library === "custom_lib" || library === "draft_lib") return true;
+  if (library.startsWith("user_lib_")) return true;
+  return false;
+}
+
+/** ResearchEngine 已登记的 library_name 库（非本机自定义）。 */
+export function isReBuiltinLib(library: string | undefined | null): boolean {
+  return Boolean(library) && !isLocalFactorLib(library);
+}
+
+/** @deprecated 保留导出，避免旧引用炸裂；请用 isReBuiltinLib */
+export const RE_BUILTIN_LIBS = new Set<string>([
   "emotion_indicators",
   "risk_indicators",
   "technical_indicators",
@@ -18,18 +31,26 @@ export const RE_BUILTIN_LIBS = new Set([
   "volatility_lib",
   "trading_lib",
   "alpha_library",
-  // 旧名兼容
+  "gtja_alpha191",
+  "worldquant_alpha101",
   "qlib_alpha",
   "jq_compat_technical",
   "jq_compat_risk",
   "jq_compat_emotion",
 ]);
 
-/** @deprecated 五库已并入 RE_BUILTIN_LIBS；保留空集避免旧引用炸裂 */
+/** @deprecated 五库已并入 RE；保留空集避免旧引用炸裂 */
 export const PLATFORM_LOCAL_LIBS = new Set<string>();
 
-export function isReBuiltinLib(library: string | undefined | null): boolean {
-  return Boolean(library && RE_BUILTIN_LIBS.has(library));
+/** 同名因子多库时优先官方 RE 库（如 wvad 同时在 classic / emotion） */
+export function resolveFactorMeta(
+  factors: FactorMeta[],
+  name: string,
+): FactorMeta | undefined {
+  const hits = factors.filter((f) => f.name === name);
+  if (!hits.length) return undefined;
+  const re = hits.find((f) => isReBuiltinLib(f.library));
+  return re || hits[0];
 }
 
 /** 平台托管因子（RE 内置）——检测页/因子库不展示完整实现 */
@@ -187,6 +208,7 @@ export function inlineLocalMethodsIntoCombo(
  * - RE 内置库走 library_name（完整库含私有辅助）
  * - 本地 / 自定义仍抽码进 factor_code
  * - 本地 + library_name：尽量内联成单函数（对齐 RE「只传一个函数」）
+ * - preferredLibraries：检测配置里落库的 name→library，优先于 catalog 解析（避免竞态/同名）
  */
 export function buildYgFactorRequestParts(opts: {
   factors: FactorMeta[];
@@ -194,11 +216,35 @@ export function buildYgFactorRequestParts(opts: {
   methodBodies: string[];
   comboFn: string;
   entryName: string;
+  /** 选因子时持久化的库名；内置因子必须有 */
+  preferredLibraries?: Record<string, string>;
 }): YgFactorRequestParts {
-  const byName = new Map(opts.factors.map((f) => [f.name, f]));
-  const metas = opts.factorCodes
-    .map((c) => byName.get(c))
-    .filter((m): m is FactorMeta => Boolean(m));
+  const pref = opts.preferredLibraries || {};
+
+  const metas: FactorMeta[] = opts.factorCodes.map((c) => {
+    const fromCatalog = resolveFactorMeta(opts.factors, c);
+    const lib = (pref[c] || fromCatalog?.library || "").trim();
+    if (fromCatalog) {
+      return lib && lib !== fromCatalog.library
+        ? { ...fromCatalog, library: lib }
+        : fromCatalog;
+    }
+    // catalog 未就绪时，仍用持久化 library 拼出最小 meta，避免空 UserFactorLibrary
+    if (lib) {
+      return {
+        name: c,
+        methodName: c,
+        description: c,
+        explain: c,
+        formula: "",
+        params: {},
+        library: lib,
+        libraryFile: "",
+        libraryLabel: lib,
+      } as FactorMeta;
+    }
+    return undefined;
+  }).filter((m): m is FactorMeta => Boolean(m));
 
   const builtinLibs = [
     ...new Set(metas.filter((m) => isReBuiltinLib(m.library)).map((m) => m.library)),
@@ -208,7 +254,8 @@ export function buildYgFactorRequestParts(opts: {
   const customOnly =
     opts.factorCodes.length === 0 && Boolean(opts.comboFn.trim());
 
-  // 纯单因子 + RE 内置 + passthrough → 不传 factor_code
+  // 纯单因子 + RE 内置 + passthrough → 只传 library_name（切勿带 factor_code，
+  // 否则 RE 装进空 UserFactorLibrary，self.xxx() 必炸）
   if (
     metas.length === 1 &&
     builtinLibs.length === 1 &&
@@ -219,6 +266,24 @@ export function buildYgFactorRequestParts(opts: {
       library_name: builtinLibs[0],
       factor_name: metas[0].name,
     };
+  }
+
+  // 目录里暂时找不到 meta，但 combo 是 return self.{code}() 且 code 像官方名：
+  // 仍尝试用 catalog / 持久化库补 library_name
+  if (
+    metas.length === 0 &&
+    opts.factorCodes.length === 1 &&
+    isPassthroughCombo(opts.comboFn, opts.factorCodes[0])
+  ) {
+    const code = opts.factorCodes[0];
+    const hit = resolveFactorMeta(opts.factors, code);
+    const lib = pref[code] || hit?.library;
+    if (lib && isReBuiltinLib(lib)) {
+      return {
+        library_name: lib,
+        factor_name: hit?.name || code,
+      };
+    }
   }
 
   const localBodies = opts.methodBodies
@@ -240,7 +305,7 @@ export function buildYgFactorRequestParts(opts: {
     };
   }
 
-  let factorCode: string;
+  let factorCode: string | undefined;
   if (needsLocalCode && builtinLibs.length > 0) {
     // 混合：优先单函数内联
     const inlined = inlineLocalMethodsIntoCombo(opts.comboFn, localBodies);
@@ -252,6 +317,23 @@ export function buildYgFactorRequestParts(opts: {
       : inlined.trim();
   } else if (needsLocalCode || customOnly) {
     factorCode = buildDetectFactorCode(localBodies, opts.comboFn);
+  } else if (
+    // 单 RE 因子：始终只带 library_name + factor_name（含非严格 passthrough）
+    metas.length === 1 &&
+    builtinLibs.length === 1 &&
+    !needsLocalCode
+  ) {
+    return {
+      library_name: builtinLibs[0],
+      factor_name: metas[0].name,
+    };
+  } else if (
+    // 多 RE 内置：combo + library_name（数组），禁止无 library 的空壳 factor_code
+    metas.length > 1 &&
+    builtinLibs.length >= 1 &&
+    !needsLocalCode
+  ) {
+    factorCode = opts.comboFn.trim();
   } else {
     factorCode = opts.comboFn.trim();
   }
@@ -264,4 +346,65 @@ export function buildYgFactorRequestParts(opts: {
   else if (builtinLibs.length > 1) parts.library_name = builtinLibs;
 
   return parts;
+}
+
+/**
+ * 审计：每个 RE 内置因子单独直通提交时，必须只有 library_name + factor_name。
+ * 返回不合格项（空数组 = 全过）。
+ */
+export function auditBuiltinPassthroughParts(
+  factors: FactorMeta[],
+): Array<{ name: string; library: string; reason: string; parts: YgFactorRequestParts }> {
+  const bad: Array<{
+    name: string;
+    library: string;
+    reason: string;
+    parts: YgFactorRequestParts;
+  }> = [];
+  const builtins = factors.filter((f) => isReBuiltinLib(f.library));
+  for (const f of builtins) {
+    const combo = `def combo_factor(self):\n    return self.${f.name}()`;
+    const parts = buildYgFactorRequestParts({
+      factors,
+      factorCodes: [f.name],
+      methodBodies: [buildPlatformFactorStub(f)],
+      comboFn: combo,
+      entryName: "combo_factor",
+      preferredLibraries: { [f.name]: f.library },
+    });
+    if (!parts.library_name) {
+      bad.push({ name: f.name, library: f.library, reason: "缺少 library_name", parts });
+      continue;
+    }
+    const libOk = Array.isArray(parts.library_name)
+      ? parts.library_name.includes(f.library)
+      : parts.library_name === f.library;
+    if (!libOk) {
+      bad.push({
+        name: f.name,
+        library: f.library,
+        reason: `library_name 不匹配: ${JSON.stringify(parts.library_name)}`,
+        parts,
+      });
+      continue;
+    }
+    if (parts.factor_code) {
+      bad.push({
+        name: f.name,
+        library: f.library,
+        reason: "单因子直通仍带了 factor_code",
+        parts,
+      });
+      continue;
+    }
+    if (parts.factor_name !== f.name) {
+      bad.push({
+        name: f.name,
+        library: f.library,
+        reason: `factor_name=${parts.factor_name} 应为 ${f.name}`,
+        parts,
+      });
+    }
+  }
+  return bad;
 }

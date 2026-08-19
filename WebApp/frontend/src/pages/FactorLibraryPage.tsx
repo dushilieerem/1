@@ -26,7 +26,11 @@ import {
   syncOfficialFactorCatalog,
   type FactorMeta,
 } from "@/lib/factorCatalog";
-import { openOrCreateForFactor, openDetectInNewTab } from "@/lib/detectStore";
+import {
+  openOrCreateForFactor,
+  openDetectPlaceholderTab,
+  navigateDetectTab,
+} from "@/lib/detectStore";
 import {
   createUserFactorLibrary,
   deleteFactorFromUserLibrary,
@@ -110,13 +114,20 @@ function FactorRow({
   const onDetect = async () => {
     if (busy) return;
     setBusy(true);
+    // 先同步占住新标签手势，再 await 建项目（否则弹窗被拦会误跳当前页）
+    const tab = openDetectPlaceholderTab();
     try {
       const p = await openOrCreateForFactor(
         factor.name,
         factor.explain || factor.description || factor.name,
       );
-      openDetectInNewTab(p.id);
+      navigateDetectTab(tab, p.id);
     } catch (err) {
+      try {
+        tab?.close();
+      } catch {
+        /* ignore */
+      }
       window.alert(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);

@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.daily_dashboard_refresh import MATRIX_24, log  # noqa: E402
-from services import dashboard_store as ds  # noqa: E402
+from services.factor import dashboard_store as ds  # noqa: E402
 
 # 已修代码、可重算的因子（不含「数据不可用」——那些只标记不编造）
 FIXED_NAMES = [

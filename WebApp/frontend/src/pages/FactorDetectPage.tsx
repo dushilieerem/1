@@ -9,6 +9,7 @@ import {
   buildYgFactorRequestParts,
   extractEntryName,
   isReBuiltinLib,
+  resolveFactorMeta,
 } from "@/lib/detectComboCode";
 import {
   bodiesForScriptDisplay,
@@ -25,6 +26,7 @@ import {
   applyDetectRunSnapshotToConfig,
   buildDetectRunUiSnapshot,
   clampDateRange,
+  cleanDetectDisplayName,
   defaultCustomRangeDates,
   equalPowers,
   equalWeights,
@@ -173,12 +175,12 @@ export function FactorDetectPage() {
           .catch(() => [] as FactorMeta[]),
       ]).then(([builtin, userFs]) => {
         if (cancelled) return;
-        const byName = new Map<string, FactorMeta>();
-        for (const f of builtin) {
-          if (f.library !== "custom_lib") byName.set(f.name, f);
-        }
-        for (const f of userFs) byName.set(f.name, f);
-        setCatalog([...byName.values()]);
+        // 保留同名多库（如 wvad∈classic/emotion）；解析时用 resolveFactorMeta 优先 RE 库
+        const merged = [
+          ...builtin.filter((f) => f.library !== "custom_lib"),
+          ...userFs,
+        ];
+        setCatalog(merged);
       });
     })();
     return () => {
@@ -252,7 +254,6 @@ export function FactorDetectPage() {
     void (async () => {
       try {
         const fs = catalog.length ? catalog : await loadFactors();
-        const byName = new Map(fs.map((f) => [f.name, f]));
         const bodies: string[] = [];
         const fileCache = new Map<string, string>();
         for (const code of cfg.factorCodes) {
@@ -261,7 +262,7 @@ export function FactorDetectPage() {
             bodies.push(draft.body || "");
             continue;
           }
-          const meta = byName.get(code);
+          const meta = resolveFactorMeta(fs, code);
           if (!meta) {
             bodies.push(`# 未找到因子 ${code}`);
             continue;
@@ -294,6 +295,35 @@ export function FactorDetectPage() {
       cancelled = true;
     };
   }, [cfg?.factorCodes, catalog, pushLog, isDraftOnlyMode, draftFactor, draftByName]);
+
+  /** 目录就绪后回填 factorLibraries（旧项目 / 历史快照可能没有） */
+  useEffect(() => {
+    if (!cfg?.factorCodes.length || !catalog.length) return;
+    const prev = cfg.factorLibraries || {};
+    let changed = false;
+    const next: Record<string, string> = { ...prev };
+    for (const code of cfg.factorCodes) {
+      if (draftByName.has(code)) {
+        if (next[code] !== "draft_lib") {
+          next[code] = "draft_lib";
+          changed = true;
+        }
+        continue;
+      }
+      if (next[code]) continue;
+      const meta = resolveFactorMeta(catalog, code);
+      if (meta?.library) {
+        next[code] = meta.library;
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    setProject((p) =>
+      p
+        ? { ...p, config: { ...p.config, factorLibraries: next } }
+        : p,
+    );
+  }, [catalog, cfg?.factorCodes, cfg?.factorLibraries, draftByName]);
 
   const catalogByName = useMemo(
     () => new Map(catalog.map((f) => [f.name, f])),
@@ -342,7 +372,10 @@ export function FactorDetectPage() {
     setScriptText(
       buildDetectScript({
         config: cfg,
-        projectName: project?.name,
+        projectName: cleanDetectDisplayName(
+          project?.description || project?.name || "",
+          project?.factorName || "",
+        ),
         catalogByName: catalogWithDrafts,
         factorBodies: bodies,
       }),
@@ -355,6 +388,8 @@ export function FactorDetectPage() {
     isDraftOnlyMode,
     draftFactor,
     project?.name,
+    project?.description,
+    project?.factorName,
   ]);
 
   const patchConfig = (partial: Partial<NonNullable<DetectProject["config"]>>) => {
@@ -429,7 +464,10 @@ export function FactorDetectPage() {
     }, 320);
   };
 
-  const applyFactors = (codes: string[]) => {
+  const applyFactors = (
+    codes: string[],
+    libraries?: Record<string, string>,
+  ) => {
     syncOriginRef.current = "ui";
     setProject((prev) => {
       if (!prev) return prev;
@@ -440,23 +478,43 @@ export function FactorDetectPage() {
       if (mode === "custom" && codes.length) {
         const mentionsAny = codes.some((c) => customCombine.includes(`self.${c}()`));
         if (!mentionsAny) {
+          const label = cleanDetectDisplayName(
+            prev.description || prev.name,
+            codes[0],
+          );
           if (codes.length === 1) {
-            customCombine = `def combo_factor(self):\n    """${prev.name}"""\n    return self.${codes[0]}()`;
+            customCombine = `def combo_factor(self):\n    """${label}"""\n    return self.${codes[0]}()`;
           } else {
             const expr = codes.map((c) => `self.${c}()`).join(" * ");
-            customCombine = `def combo_factor(self):\n    """${prev.name} · 自定义组合"""\n    return ${expr}`;
+            customCombine = `def combo_factor(self):\n    """${label} · 自定义组合"""\n    return ${expr}`;
           }
         }
       }
       const remain = listDraftFactors(prev.config).filter((d) =>
         codes.includes(d.name),
       );
+      const prevLibs = prev.config.factorLibraries || {};
+      const factorLibraries: Record<string, string> = {};
+      for (const code of codes) {
+        const draft = remain.find((d) => d.name === code);
+        if (draft) {
+          factorLibraries[code] = "draft_lib";
+          continue;
+        }
+        const lib =
+          libraries?.[code] ||
+          prevLibs[code] ||
+          resolveFactorMeta(catalog, code)?.library ||
+          "";
+        if (lib) factorLibraries[code] = lib;
+      }
       return {
         ...prev,
         factorName: codes.length === 1 ? codes[0] : "combo_factor",
         config: {
           ...prev.config,
           factorCodes: codes,
+          factorLibraries,
           weights,
           powers,
           customCombine,
@@ -641,7 +699,11 @@ export function FactorDetectPage() {
       powers: draftOnly ? [1] : cfg.powers,
       customCombine: cfg.customCombine,
       entryName: "combo_factor",
-      title: project.name,
+      // 组合备注用洗净后的描述/名，避免项目标题里的括注进 docstring
+      title: cleanDetectDisplayName(
+        project.description || project.name || project.factorName,
+        project.factorName,
+      ),
     });
     const entryName = extractEntryName(combo, project.factorName || "combo_factor");
     const parts = buildYgFactorRequestParts({
@@ -650,7 +712,30 @@ export function FactorDetectPage() {
       methodBodies: bodiesForBuild,
       comboFn: combo,
       entryName,
+      preferredLibraries: {
+        ...(cfg.factorLibraries || {}),
+        ...Object.fromEntries(runDrafts.map((d) => [d.name, "draft_lib"])),
+      },
     });
+    // 内置因子：必须已带 library_name；缺库名宁可不发，避免空 UserFactorLibrary
+    for (const code of codes) {
+      if (runDrafts.some((d) => d.name === code)) continue;
+      const lib =
+        cfg.factorLibraries?.[code] ||
+        resolveFactorMeta(catalogForBuild, code)?.library;
+      if (!lib) {
+        const msg = `因子「${code}」信息未就绪，请稍候再测，或重新添加该因子`;
+        setRunError(msg);
+        pushLog(msg);
+        return;
+      }
+      if (isReBuiltinLib(lib) && !parts.library_name) {
+        const msg = `因子「${code}」无法提交，请重新添加后再检测`;
+        setRunError(msg);
+        pushLog(msg);
+        return;
+      }
+    }
     if (!parts.factor_code && !parts.library_name) {
       const msg = "因子代码为空，无法检测";
       setRunError(msg);
@@ -666,15 +751,13 @@ export function FactorDetectPage() {
     const t0 = Date.now();
     tickRef.current = window.setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 400);
     saveProject(project);
-    pushLog("开始检测 · 调用 ResearchEngine 因子回测");
-    const entryHint = parts.library_name
-      ? `入口 ${parts.factor_name} · RE 库 ${
-          Array.isArray(parts.library_name)
-            ? parts.library_name.join(", ")
-            : parts.library_name
-        }${parts.factor_code ? " + 本地源码" : ""}`
-      : `入口 ${parts.factor_name} · 仅本地/自定义源码`;
-    pushLog(entryHint);
+    pushLog("开始检测…");
+    const factorLabel = parts.factor_name || "当前组合";
+    pushLog(
+      parts.library_name
+        ? `检测因子：${factorLabel}`
+        : `检测因子：${factorLabel}（自定义代码）`,
+    );
     try {
       const { start, end } = resolveBacktestRange(cfg);
       const req: YgBacktestRequest = {
@@ -693,16 +776,31 @@ export function FactorDetectPage() {
         slippage_rate: cfg.slippageRate,
         analysis_level: cfg.analysisLevel || "core",
       };
-      pushLog(
-        `区间 ${start} → ${end} · 池 ${cfg.universe} · 深度 ${req.analysis_level}`,
-      );
+      const depthLabel =
+        req.analysis_level === "full" ? "全量检测" : "快速检测";
+      const poolLabel =
+        cfg.universe === "CSI300"
+          ? "沪深300"
+          : cfg.universe === "CSI500"
+            ? "中证500"
+            : cfg.universe === "CSI800"
+              ? "中证800"
+              : cfg.universe === "CSI1000"
+                ? "中证1000"
+                : cfg.universe === "SSE50"
+                  ? "上证50"
+                  : cfg.universe === "ALL"
+                    ? "全A"
+                    : String(cfg.universe || "");
+      pushLog(`回测区间 ${start} → ${end} · 股票池 ${poolLabel} · ${depthLabel}`);
+      pushLog("正在计算，请稍候…");
       const res = await ygBacktestFactor(req, ac.signal);
       const elapsedSec = Math.floor((Date.now() - t0) / 1000);
       if (res.error) {
         const msg = res.error;
         setRunError(msg);
-        pushLog(`检测失败（代码/执行错误）: ${msg}`);
-        pushLog("不会跳转报告页 · 请改组合函数或单因子代码后重试");
+        pushLog(`检测未通过：${msg}`);
+        pushLog("请检查因子代码或参数后重试");
         return;
       }
       const primaryDraft = runDrafts[0] || null;
@@ -719,7 +817,7 @@ export function FactorDetectPage() {
         _svquantDraftFactor?: DraftDetectFactor;
         _svquantDraftFactors?: DraftDetectFactor[];
       };
-      const factorLabel = formatDetectRunFactorsLabel({
+      const factorLabelSaved = formatDetectRunFactorsLabel({
         description: "",
         factorName: parts.factor_name || "",
         request: saveReq,
@@ -727,7 +825,7 @@ export function FactorDetectPage() {
       const rec = await saveDetectRun({
         projectId: project.id,
         factorName: parts.factor_name,
-        description: factorLabel || project.name,
+        description: factorLabelSaved || project.name,
         request: saveReq,
         result: res,
         finishedAt: new Date().toISOString(),
@@ -735,7 +833,7 @@ export function FactorDetectPage() {
         draftFactor: primaryDraft,
         draftFactors: runDrafts.length ? runDrafts : undefined,
       });
-      pushLog(`完成 ${elapsedSec}s，跳转报告`);
+      pushLog(`检测完成（用时 ${elapsedSec} 秒），正在打开报告…`);
       // 跑完回到「最新配置」路由，去掉历史 runId
       if (snapshotRunId) {
         navigate(`/factor/detect/report/${rec.id}`, { replace: false });
@@ -750,9 +848,8 @@ export function FactorDetectPage() {
         // 旧版 localStorage 配额错误：给可操作提示
         if (/quota|setItem|Storage/i.test(msg)) {
           const tip =
-            "浏览器本地缓存已满（检测结果含大序列）。已切换 IndexedDB 存储，请刷新页面后再点一次检测。";
+            "浏览器本地缓存已满。请刷新页面后再点一次检测。";
           setRunError(tip);
-          pushLog(`浏览器异常: ${msg}`);
           pushLog(tip);
           try {
             localStorage.removeItem("svquant_detect_runs_v2");
@@ -760,8 +857,14 @@ export function FactorDetectPage() {
             /* ignore */
           }
         } else {
-          setRunError(msg);
-          pushLog(`请求异常: ${msg}`);
+          // 用户可见：去掉路径/端口等开发细节
+          const friendly = msg
+            .replace(/POST\s+\/yg-api\/\S+/gi, "计算服务")
+            .replace(/\/api\/\S+/g, "接口")
+            .replace(/:8766|:9527|ResearchEngine|RE\b/gi, "计算服务")
+            .replace(/HTTP\s+/gi, "");
+          setRunError(friendly);
+          pushLog(`检测未通过：${friendly}`);
         }
       }
     } finally {
@@ -772,7 +875,12 @@ export function FactorDetectPage() {
   }, [project, cfg, methodBodies, bodyOverrides, catalog, navigate, pushLog, snapshotRunId]);
 
   if (project === undefined) {
-    return <div className="p-10 text-center text-slate-400">加载中…</div>;
+    return (
+      <div className="flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center bg-[#f0f2f5] text-slate-600">
+        <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-slate-200 border-t-red-600" />
+        <p className="mt-3 text-sm">正在加载检测项目…</p>
+      </div>
+    );
   }
 
   if (!project || !cfg) {
@@ -1363,7 +1471,7 @@ export function FactorDetectPage() {
                 <span className="font-semibold">检测未通过：</span>
                 {runError}
                 <span className="mt-1 block text-red-500/90">
-                  ResearchEngine 返回成功但带 error 时不会跳转报告；请改代码后重新点「进行检测」。
+                  请修改因子代码或参数后，再点「进行检测」。
                 </span>
               </div>
             )}
@@ -1392,8 +1500,8 @@ export function FactorDetectPage() {
         open={pickerOpen}
         selected={cfg.factorCodes}
         onClose={() => setPickerOpen(false)}
-        onConfirm={(codes) => {
-          applyFactors(codes);
+        onConfirm={(codes, _labels, libraries) => {
+          applyFactors(codes, libraries);
           setPickerOpen(false);
           pushLog(`已选择 ${codes.length} 个因子`);
         }}

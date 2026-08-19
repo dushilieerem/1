@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
   Building2,
@@ -66,6 +66,25 @@ function renderLinkified(text: string): ReactNode {
 export function NewsDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const from = (searchParams.get("from") || "").trim();
+  const packQ = (searchParams.get("pack") || "").trim();
+  const bundleQ = (searchParams.get("bundle") || "").trim();
+  const backToGather = from === "gather" || from.startsWith("/ai/gather");
+  const backToIdea = from === "idea" || from.startsWith("/ai/idea");
+  const backLabel = backToGather
+    ? "返回证据包"
+    : backToIdea
+      ? "返回研究假设"
+      : "返回资讯";
+  const ideaBackPath = (() => {
+    if (!backToIdea) return "/ai/idea";
+    const q = new URLSearchParams();
+    if (packQ) q.set("pack", packQ);
+    if (bundleQ) q.set("bundle", bundleQ);
+    const s = q.toString();
+    return s ? `/ai/idea?${s}` : "/ai/idea";
+  })();
   const [item, setItem] = useState<NewsItem | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -204,11 +223,16 @@ export function NewsDetailPage() {
         <div className="mx-auto flex max-w-[1440px] items-center px-3 py-2.5 sm:px-6 sm:py-3">
           <button
             type="button"
-            onClick={() => navigate("/news")}
+            onClick={() => {
+              if (backToGather) navigate("/ai/gather");
+              else if (backToIdea) navigate(ideaBackPath);
+              else if (from.startsWith("/")) navigate(from);
+              else navigate("/news");
+            }}
             className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-rose-700"
           >
             <ArrowLeft className="h-4 w-4" />
-            返回资讯
+            {backLabel}
           </button>
         </div>
       </div>

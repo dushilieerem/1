@@ -10,7 +10,11 @@ const WARM_SYMBOL = "000001.SZ";
 
 export function Layout() {
   const { pathname } = useLocation();
-  const lockShell = pathname.startsWith("/ai/chat");
+  const lockShell =
+    pathname.startsWith("/ai/chat") ||
+    pathname.startsWith("/ai/gather") ||
+    pathname.startsWith("/ai/idea") ||
+    pathname.startsWith("/ai/factor");
   const [narrow, setNarrow] = useState(
     () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
   );
@@ -31,8 +35,8 @@ export function Layout() {
     void fetchMarketDaily(WARM_SYMBOL, { start }).catch(() => undefined);
   }, []);
 
-  // 对话页手机端隐藏站级顶栏，避免双汉堡 + 键盘更挤
-  const showNavbar = !(lockShell && narrow);
+  // 对话页手机端隐藏站级顶栏，避免双汉堡 + 键盘更挤（搜集页仍保留顶栏）
+  const showNavbar = !(pathname.startsWith("/ai/chat") && narrow);
 
   return (
     <ConfirmProvider>

@@ -23,7 +23,8 @@ import {
 import { pushBrowseHistory } from "@/lib/browseHistory";
 import {
   createDetectProjectFromLibraryFactors,
-  openDetectInNewTab,
+  openDetectPlaceholderTab,
+  navigateDetectTab,
 } from "@/lib/detectStore";
 import {
   createStrategyProjectFromCode,
@@ -362,6 +363,7 @@ export function CommunityPostPage() {
       return;
     }
     setCloneBusy(true);
+    const tab = openDetectPlaceholderTab();
     try {
       const plan = await planCommunityDetectClone(code);
       const displayName =
@@ -379,7 +381,7 @@ export function CommunityPostPage() {
           draftFactors:
             plan.kind === "mixed" ? plan.customDrafts : undefined,
         });
-        openDetectInNewTab(p.id);
+        navigateDetectTab(tab, p.id);
         return;
       }
       // 纯自定义：临时因子直开检测，跳过「新建因子」表单
@@ -400,8 +402,13 @@ export function CommunityPostPage() {
         weightMode: plan.weightMode || "sum",
         draftFactors: drafts,
       });
-      openDetectInNewTab(p.id);
+      navigateDetectTab(tab, p.id);
     } catch (ex) {
+      try {
+        tab?.close();
+      } catch {
+        /* ignore */
+      }
       setCloneErr(ex instanceof Error ? ex.message : String(ex));
     } finally {
       setCloneBusy(false);

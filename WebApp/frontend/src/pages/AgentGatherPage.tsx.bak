@@ -1,0 +1,449 @@
+import { useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  ArrowLeft,
+  ExternalLink,
+  Loader2,
+  Newspaper,
+  Sparkles,
+} from "lucide-react";
+import { runGather, type EvidencePack } from "@/lib/gatherApi";
+
+const PRESETS = [
+  { label: "CPO / 算力", topic: "最近一周 CPO、光模块、算力相关要点", themes: "CPO,算力" },
+  { label: "半导体", topic: "最近半导体、芯片产业链有哪些重要资讯", themes: "半导体" },
+  { label: "新能源", topic: "近期新能源、光伏、锂电相关动态", themes: "新能源,光伏,锂电" },
+];
+
+function parseCsv(raw: string): string[] {
+  return raw
+    .split(/[,，\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+export function AgentGatherPage() {
+  const navigate = useNavigate();
+  const [topic, setTopic] = useState(PRESETS[0].topic);
+  const [themes, setThemes] = useState(PRESETS[0].themes);
+  const [preset, setPreset] = useState<"7d" | "30d" | "90d">("7d");
+  const [maxItems, setMaxItems] = useState(12);
+  const [useLlm, setUseLlm] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [pack, setPack] = useState<EvidencePack | null>(null);
+
+  const modeLabel = useMemo(() => {
+    const m = pack?.stats?.digest_mode || pack?.query?.digest_mode;
+    if (m === "llm") return "LLM 摘要";
+    if (m === "rule_fallback") return "规则回退";
+    if (m === "rule_forced") return "仅规则";
+    if (m === "rule") return "规则摘要";
+    return m ? String(m) : "—";
+  }, [pack]);
+
+  const statusLabel = busy ? "Running" : pack ? "Ready" : "Idle";
+  const step = !topic.trim() ? 1 : busy ? 2 : pack ? 3 : 2;
+
+  const onRun = async () => {
+    const t = topic.trim();
+    if (!t) {
+      setErr("请先填写主题");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const data = await runGather({
+        topic: t,
+        themes: parseCsv(themes),
+        time_window: { preset },
+        max_items: maxItems,
+        sources: { sv_news: true, web_public: false },
+        use_llm: useLlm,
+      });
+      setPack(data);
+    } catch (e) {
+      setPack(null);
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#f0f3f8] text-slate-800 lg:flex-row">
+      {/* 左侧控制台：贴边全高 */}
+      <aside className="flex max-h-[48vh] w-full shrink-0 flex-col border-b border-slate-200/90 bg-white lg:max-h-none lg:h-full lg:w-[20.5rem] lg:border-b-0 lg:border-r xl:w-[22rem]">
+        <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+            <Newspaper className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-base font-semibold text-slate-900">
+              信息搜集 Agent
+            </div>
+            <div className="text-sm text-slate-500">站内资讯 → 证据包</div>
+          </div>
+        </div>
+
+        <div className="border-b border-slate-100 px-5 py-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            Progress · {step}/3
+          </div>
+          <ol className="mt-2 space-y-1.5 text-sm">
+            {[
+              { n: 1, t: "输入主题" },
+              { n: 2, t: "检索站内资讯" },
+              { n: 3, t: "生成摘要与证据" },
+            ].map((s) => (
+              <li
+                key={s.n}
+                className={`flex items-center gap-2 ${
+                  step >= s.n ? "text-slate-800" : "text-slate-400"
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    step === s.n
+                      ? "bg-emerald-500"
+                      : step > s.n
+                        ? "bg-emerald-300"
+                        : "bg-slate-300"
+                  }`}
+                />
+                {s.t}
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700">
+              主题 / 问题
+            </label>
+            <textarea
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              rows={4}
+              maxLength={200}
+              className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm outline-none focus:border-emerald-300 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+              placeholder="例如：最近一周 CPO / 光模块有哪些要点？"
+            />
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => {
+                    setTopic(p.topic);
+                    setThemes(p.themes);
+                  }}
+                  className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-emerald-50 hover:text-emerald-700"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700">
+              题材标签
+            </label>
+            <input
+              value={themes}
+              onChange={(e) => setThemes(e.target.value)}
+              className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm outline-none focus:border-emerald-300 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+              placeholder="CPO,算力"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700">
+                时间窗
+              </label>
+              <select
+                value={preset}
+                onChange={(e) =>
+                  setPreset(e.target.value as "7d" | "30d" | "90d")
+                }
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+              >
+                <option value="7d">近 7 日</option>
+                <option value="30d">近 30 日</option>
+                <option value="90d">近 90 日</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">
+                条数
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={maxItems}
+                onChange={(e) =>
+                  setMaxItems(
+                    Math.max(1, Math.min(50, Number(e.target.value) || 12)),
+                  )
+                }
+                className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+              />
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={useLlm}
+              onChange={(e) => setUseLlm(e.target.checked)}
+              className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+            />
+            LLM 摘要（失败自动回退）
+          </label>
+
+          {err && (
+            <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {err}
+            </p>
+          )}
+        </div>
+
+        <div className="border-t border-slate-100 px-5 py-4">
+          <p className="mb-2 text-xs text-slate-400">
+            {busy
+              ? "正在检索并生成…"
+              : topic.trim()
+                ? "就绪，可开始搜集"
+                : "等待输入主题…"}
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void onRun()}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:opacity-60"
+          >
+            {busy ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                搜集中…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4" />
+                开始搜集
+              </>
+            )}
+          </button>
+          <div className="mt-3 flex gap-3 text-sm">
+            <Link to="/ai" className="text-slate-500 hover:text-slate-800">
+              ← AI 主页
+            </Link>
+            <Link to="/ai/chat" className="text-slate-500 hover:text-slate-800">
+              SV 助手
+            </Link>
+          </div>
+        </div>
+      </aside>
+
+      {/* 右侧工作区：占满剩余 */}
+      <main className="flex min-w-0 flex-1 flex-col bg-[#f0f3f8]">
+        <div className="flex items-center justify-between border-b border-slate-200/80 bg-white/80 px-5 py-3 backdrop-blur sm:px-8">
+          <button
+            type="button"
+            onClick={() => {
+              if (window.history.length > 1) navigate(-1);
+              else navigate("/ai");
+            }}
+            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            返回
+          </button>
+          <span
+            className={`rounded-full px-3 py-1 text-sm font-medium ${
+              busy
+                ? "bg-amber-50 text-amber-700"
+                : pack
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-slate-100 text-slate-500"
+            }`}
+          >
+            {statusLabel}
+          </span>
+        </div>
+
+        <div className="flex flex-1 flex-col overflow-y-auto px-5 py-6 sm:px-10 sm:py-8">
+          {!pack && !busy && (
+            <div className="flex flex-1 flex-col items-center justify-center text-center">
+              <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-white text-emerald-600 shadow-sm ring-1 ring-slate-200/80">
+                <Newspaper className="h-10 w-10" />
+              </div>
+              <h2 className="mt-6 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+                准备生成证据包
+              </h2>
+              <p className="mt-3 max-w-lg text-base leading-relaxed text-slate-500">
+                在左侧输入主题并开始搜集，结果会给出摘要、要点引用与可点击的资讯卡片。
+              </p>
+              <button
+                type="button"
+                onClick={() => void onRun()}
+                className="mt-8 inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                开始新搜集 →
+              </button>
+              <div className="mt-14 grid w-full max-w-3xl grid-cols-1 gap-4 sm:grid-cols-3">
+                {[
+                  { t: "摘要", d: "主题要点一览" },
+                  { t: "证据", d: "条目可溯源" },
+                  { t: "缺口", d: "缺什么说明白" },
+                ].map((x) => (
+                  <div
+                    key={x.t}
+                    className="rounded-2xl bg-white px-5 py-4 text-left shadow-sm ring-1 ring-slate-200/80"
+                  >
+                    <div className="text-base font-semibold text-slate-800">
+                      {x.t}
+                    </div>
+                    <div className="mt-1 text-sm text-slate-500">{x.d}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {busy && (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 text-slate-500">
+              <Loader2 className="h-9 w-9 animate-spin text-emerald-600" />
+              <p className="text-base">正在检索资讯并生成摘要…</p>
+            </div>
+          )}
+
+          {pack && !busy && (
+            <div className="mx-auto w-full max-w-5xl space-y-6">
+              <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
+                <span className="rounded-full bg-white px-3 py-1 font-mono text-xs ring-1 ring-slate-200">
+                  {pack.pack_id}
+                </span>
+                <span>{modeLabel}</span>
+                <span>
+                  {pack.stats?.returned ?? pack.items?.length ?? 0} 条 · 检索{" "}
+                  {pack.stats?.retrieved ?? "—"}
+                </span>
+                <span>{pack.stats?.elapsed_ms ?? "—"} ms</span>
+              </div>
+
+              {pack.digest && (
+                <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-emerald-100/80 sm:p-6">
+                  <h3 className="text-base font-semibold text-emerald-900">
+                    摘要
+                  </h3>
+                  <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-800 sm:text-base">
+                    {pack.digest}
+                  </p>
+                </section>
+              )}
+
+              {(pack.digest_bullets || []).length > 0 && (
+                <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80 sm:p-6">
+                  <h3 className="text-base font-semibold text-slate-800">要点</h3>
+                  <ul className="mt-3 space-y-2">
+                    {pack.digest_bullets.map((b, i) => (
+                      <li
+                        key={`${i}-${b.text.slice(0, 12)}`}
+                        className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700"
+                      >
+                        {b.text}
+                        <div className="mt-1 font-mono text-xs text-slate-400">
+                          {(b.item_ids || []).join(", ")}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {(pack.gaps || []).length > 0 && (
+                <section className="rounded-2xl bg-amber-50 px-5 py-4 text-sm text-amber-900 ring-1 ring-amber-100">
+                  <div className="font-semibold">缺口</div>
+                  <ul className="mt-2 list-disc pl-5">
+                    {pack.gaps.map((g) => (
+                      <li key={g}>{g}</li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80 sm:p-6">
+                <h3 className="text-base font-semibold text-slate-800">
+                  证据条目
+                </h3>
+                <ul className="mt-3 space-y-3">
+                  {(pack.items || []).map((it) => {
+                    const newsPath =
+                      it.sv_news_id != null ? `/news/${it.sv_news_id}` : null;
+                    const extUrl =
+                      !newsPath && it.url?.startsWith("http")
+                        ? it.url
+                        : null;
+                    return (
+                      <li
+                        key={it.id}
+                        className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            {newsPath ? (
+                              <Link
+                                to={newsPath}
+                                className="text-sm font-medium text-slate-900 hover:text-emerald-700 sm:text-base"
+                              >
+                                {it.title}
+                              </Link>
+                            ) : extUrl ? (
+                              <a
+                                href={extUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-sm font-medium text-slate-900 hover:text-emerald-700 sm:text-base"
+                              >
+                                {it.title}
+                              </a>
+                            ) : (
+                              <div className="text-sm font-medium text-slate-900 sm:text-base">
+                                {it.title}
+                              </div>
+                            )}
+                            <div className="mt-1 text-sm text-slate-500">
+                              {it.source_label || it.source_type}
+                              {it.published_at
+                                ? ` · ${String(it.published_at).slice(0, 16).replace("T", " ")}`
+                                : ""}
+                            </div>
+                          </div>
+                          {(newsPath || extUrl) && (
+                            <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-slate-400" />
+                          )}
+                        </div>
+                        {it.snippet && (
+                          <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-slate-600">
+                            {it.snippet}
+                          </p>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}

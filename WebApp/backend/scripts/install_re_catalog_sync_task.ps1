@@ -10,7 +10,11 @@ param(
 
 $TaskName = "SVQuant-RE-FactorCatalog-Sync"
 $Backend = "E:\quant-lab\SV\SVQuant\WebApp\backend"
-$Py = "C:\Users\Administrator\anaconda3\envs\SVQuant\python.exe"
+# 环境已迁到 F 盘；旧 C:\...\anaconda3\envs\SVQuant 不存在会导致 02:05 任务失败(0x80070002)
+$Py = "F:\conda-envs\SVQuant\python.exe"
+if (-not (Test-Path $Py)) {
+  $Py = "C:\Users\Administrator\anaconda3\envs\SVQuant\python.exe"
+}
 $Script = Join-Path $Backend "scripts\sync_re_factor_catalog.py"
 $LogDir = Join-Path $Backend "output"
 

@@ -161,6 +161,8 @@ type Props = {
   height?: string;
   variant?: "light" | "dark";
   readOnly?: boolean;
+  /** 为空时是否显示灰色示例代码（检测页最终态应关闭，避免闪 placeholder） */
+  showPlaceholder?: boolean;
 };
 
 /** Python 编辑器：语法高亮 + 行号 + Tab 缩进 */
@@ -171,6 +173,7 @@ export function FactorCodeEditor({
   height = "280px",
   variant = "light",
   readOnly = false,
+  showPlaceholder = true,
 }: Props) {
   const dark = variant === "dark";
   return (
@@ -208,9 +211,13 @@ export function FactorCodeEditor({
             syntaxHighlighting(dark ? darkHighlight : lightHighlight),
             dark ? darkTheme : lightTheme,
             EditorView.lineWrapping,
-            cmPlaceholder(
-              "def my_factor(self):\n    return self.close.pct_change(20)",
-            ),
+            ...(showPlaceholder
+              ? [
+                  cmPlaceholder(
+                    "def my_factor(self):\n    return self.close.pct_change(20)",
+                  ),
+                ]
+              : []),
             ...(readOnly ? [EditorView.editable.of(false)] : []),
           ]}
           basicSetup={{

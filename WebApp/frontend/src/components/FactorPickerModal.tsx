@@ -13,6 +13,7 @@ import {
   userLibraryFactorToMeta,
   type UserFactorLibrary,
 } from "@/lib/userFactorLibraries";
+import { isFormulaPending } from "@/lib/factorLifecycle";
 
 const BUILTIN_KEY = "__builtin__";
 
@@ -53,12 +54,13 @@ function FactorRow({
   on: boolean;
   onToggle: () => void;
 }) {
+  const pending = isFormulaPending(f);
   return (
     <button
       type="button"
       onClick={onToggle}
       className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition hover:bg-blue-50/70 ${
-        on ? "bg-blue-50/90" : "bg-white"
+        on ? "bg-blue-50/90" : pending ? "bg-amber-50/80" : "bg-white"
       }`}
     >
       <span
@@ -591,7 +593,7 @@ export function FactorPickerModal({
               const kept: Record<string, string> = {};
               const libs: Record<string, string> = {};
               const byName = new Map<string, FactorMeta>();
-              for (const f of [...factors, ...userFactors]) {
+              for (const f of [...builtinFactors, ...allUserFactors]) {
                 const prev = byName.get(f.name);
                 if (!prev || (!isReBuiltinLib(prev.library) && isReBuiltinLib(f.library))) {
                   byName.set(f.name, f);

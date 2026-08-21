@@ -1,4 +1,4 @@
-/** 行情只读：经 /yg-api 调同事 RE，本机不落库。 */
+/** 行情只读：经本机 /api 转发；日线走本机 BFF 缓存，列表类薄转发。 */
 
 export type MarketBar = {
   date: string;
@@ -249,7 +249,7 @@ export async function fetchMarketSymbols(): Promise<MarketSymbol[]> {
   if (_symbolsCache.list.length && now - _symbolsCache.at < SYMBOLS_TTL_MS) {
     return _symbolsCache.list;
   }
-  const res = await fetch("/yg-api/api/market-data/symbols");
+  const res = await fetch("/api/market-data/symbols");
   const data = await parseJson<{ symbols?: unknown; unmapped_count?: number }>(
     res,
   );
@@ -291,7 +291,7 @@ export async function fetchMarketIndices(): Promise<MarketIndex[]> {
   if (_indicesCache.list.length && now - _indicesCache.at < INDICES_TTL_MS) {
     return _indicesCache.list;
   }
-  const res = await fetch("/yg-api/api/market-data/indices");
+  const res = await fetch("/api/market-data/indices");
   const data = await parseJson<{ indices?: unknown }>(res);
   const list = parseIndicesPayload(data.indices);
   _indicesCache.at = now;
@@ -310,7 +310,7 @@ export async function fetchIndexConstituents(
   if (hit && now - hit.at < CONSTITUENTS_TTL_MS) return hit.list;
 
   const res = await fetch(
-    `/yg-api/api/market-data/indices/${encodeURIComponent(key)}/constituents`,
+    `/api/market-data/indices/${encodeURIComponent(key)}/constituents`,
   );
   const data = await parseJson<{
     index?: { code?: string; name?: string };

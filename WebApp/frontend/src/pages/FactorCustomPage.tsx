@@ -338,7 +338,7 @@ export function FactorCustomPage() {
       const p = fromCommunity
         ? await createDetectProjectForClone(factorName, title)
         : await openOrCreateForFactor(factorName, title);
-      navigateDetectTab(tab, p.id);
+      navigateDetectTab(tab, p.id, p);
     } catch (e) {
       try {
         tab?.close();

@@ -69,6 +69,10 @@ export type DetectRunRecord = {
   projectId: string;
   factorName: string;
   description: string;
+  /** 用户备注（全局检测报告可编辑） */
+  remark?: string;
+  /** 用户标记为喜欢/看好 */
+  flagged?: boolean;
   request: YgBacktestRequest;
   result: YgBacktestResponse;
   finishedAt: string;
@@ -644,6 +648,51 @@ export async function listRuns(projectId: string): Promise<DetectRunRecord[]> {
   return data.runs || [];
 }
 
+/** 当前用户全部检测运行（全局检测报告） */
+export async function listAllDetectRuns(): Promise<DetectRunRecord[]> {
+  ensureCacheOwner();
+  const data = await apiJson<{ runs: DetectRunRecord[] }>("/api/detect/runs");
+  return data.runs || [];
+}
+
+export async function updateDetectRunRemark(
+  runId: string,
+  remark: string,
+): Promise<DetectRunRecord> {
+  ensureCacheOwner();
+  const data = await apiJson<{ run: DetectRunRecord }>(
+    `/api/detect/runs/${encodeURIComponent(runId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ remark }),
+    },
+  );
+  const full = data.run;
+  const prev = memoryRuns.get(runId);
+  if (prev) memoryRuns.set(runId, { ...prev, remark: full.remark ?? remark });
+  else memoryRuns.set(runId, full);
+  return full;
+}
+
+export async function updateDetectRunFlagged(
+  runId: string,
+  flagged: boolean,
+): Promise<DetectRunRecord> {
+  ensureCacheOwner();
+  const data = await apiJson<{ run: DetectRunRecord }>(
+    `/api/detect/runs/${encodeURIComponent(runId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ flagged }),
+    },
+  );
+  const full = data.run;
+  const prev = memoryRuns.get(runId);
+  if (prev) memoryRuns.set(runId, { ...prev, flagged: full.flagged ?? flagged });
+  else memoryRuns.set(runId, full);
+  return full;
+}
+
 export async function deleteRun(runId: string) {
   ensureCacheOwner();
   await apiJson(`/api/detect/runs/${encodeURIComponent(runId)}`, { method: "DELETE" });
@@ -723,7 +772,7 @@ function singleFactorDetectConfig(
   cfg.weightMode = "sum";
   cfg.weights = equalWeights(1);
   cfg.powers = equalPowers(1);
-  cfg.customCombine = `def combo_factor(self):\n    """单因子"""\n    return self.${factorName}()`;
+  cfg.customCombine = `def ${factorName}(self):\n    """单因子"""\n    return self.${factorName}()`;
   return cfg;
 }
 
@@ -753,20 +802,59 @@ export async function openOrCreateForFactor(
   const name = (factorName || "").trim();
   if (!name) throw new Error("因子名为空");
   const title = cleanDetectDisplayName(description, name);
-  const list = await listProjects();
+  // 有内存列表则不再全量 GET，缩短红「检测」占位等待
+  const list =
+    projectCache.length > 0 ? [...projectCache] : await listProjects();
   const existing = list.find((p) => p.factorName === name && !p.sample);
   if (existing) {
-    // 修好旧「社区克隆→自定义组合、未选因子」的脏项目；同步洗净项目名
+    // 复用已有项目：保留已选因子/权重，不要 reset 成单因子
     existing.name = title;
     existing.description = title;
-    existing.config = singleFactorDetectConfig(name, existing.config);
-    // 组合 docstring 用洗净标题（单因子）
-    existing.config.customCombine = `def combo_factor(self):\n    """${title}"""\n    return self.${name}()`;
+    let cfg = { ...(existing.config || defaultConfig([name])) };
+    let codes = [...(cfg.factorCodes || [])];
+    // 若配置被洗成只剩主因子，尝试从最近一次检测快照恢复成分因子
+    const onlyPrimary =
+      !codes.length ||
+      (codes.length === 1 && codes[0] === name) ||
+      (codes.length > 0 && codes.every((c) => c === name));
+    if (onlyPrimary) {
+      try {
+        const runs = await listRuns(existing.id);
+        const snap = runs[0]
+          ? readDetectRunUiSnapshot(runs[0].request)
+          : null;
+        if (snap?.factorCodes && snap.factorCodes.length > 1) {
+          cfg = applyDetectRunSnapshotToConfig(cfg, snap);
+          codes = [...(cfg.factorCodes || [])];
+        }
+      } catch {
+        /* 无历史则保持现状 */
+      }
+    }
+    if (name && !codes.includes(name)) {
+      codes.push(name);
+      cfg.factorCodes = codes;
+      if (cfg.weightMode === "sum") {
+        const ingredients = codes.filter((c) => c !== name);
+        const ew = equalWeights(ingredients.length || 1);
+        cfg.weights = codes.map((c) => {
+          if (c === name) return 0;
+          const ii = ingredients.indexOf(c);
+          return ii >= 0 ? ew[ii] : 0;
+        });
+      } else if ((cfg.weights || []).length !== codes.length) {
+        cfg.weights = equalWeights(codes.length);
+      }
+      if ((cfg.powers || []).length !== codes.length) {
+        cfg.powers = equalPowers(codes.length);
+      }
+    }
+    existing.config = cfg;
     return saveProject(existing);
   }
   const created = await createProject(name, title, title);
   created.config = singleFactorDetectConfig(name, created.config);
-  created.config.customCombine = `def combo_factor(self):\n    """${title}"""\n    return self.${name}()`;
+  created.config.customCombine = `def ${name}(self):\n    """${title}"""\n    return self.${name}()`;
   return saveProject(created);
 }
 
@@ -902,7 +990,7 @@ const DETECT_OPENING_HTML = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>正在打开检测…</title>
+  <title>正在加载检测项目…</title>
   <style>
     html, body { margin: 0; height: 100%; background: #f0f2f5;
       font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; }
@@ -916,7 +1004,7 @@ const DETECT_OPENING_HTML = `<!DOCTYPE html>
   </style>
 </head>
 <body>
-  <div class="c"><div class="s"></div><p>正在打开检测页…</p></div>
+  <div class="c"><div class="s"></div><p>正在加载检测项目…</p></div>
 </body>
 </html>`;
 
@@ -946,8 +1034,59 @@ export function openDetectPlaceholderTab(): Window | null {
   }
 }
 
+/** 新标签打开检测页时的项目快照（localStorage，跨标签；用完即删） */
+const DETECT_PROJECT_SEED_PREFIX = "svquant_detect_project_seed_";
+const DETECT_PROJECT_SEED_TTL_MS = 60_000;
+
+export function seedDetectProjectForNewTab(project: DetectProject): void {
+  try {
+    localStorage.setItem(
+      `${DETECT_PROJECT_SEED_PREFIX}${project.id}`,
+      JSON.stringify({ at: Date.now(), project }),
+    );
+  } catch {
+    /* quota */
+  }
+}
+
+export function consumeDetectProjectSeed(id: string): DetectProject | undefined {
+  const key = `${DETECT_PROJECT_SEED_PREFIX}${id}`;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return undefined;
+    localStorage.removeItem(key);
+    const parsed = JSON.parse(raw) as { at?: number; project?: DetectProject };
+    if (
+      typeof parsed.at !== "number" ||
+      Date.now() - parsed.at > DETECT_PROJECT_SEED_TTL_MS ||
+      !parsed.project
+    ) {
+      return undefined;
+    }
+    const p = normalizeProject(parsed.project);
+    const idx = projectCache.findIndex((x) => x.id === p.id);
+    if (idx >= 0) projectCache[idx] = p;
+    else projectCache.unshift(p);
+    return p;
+  } catch {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+    return undefined;
+  }
+}
+
 /** 把占位标签导航到检测配置页；无占位时窄屏同页跳，桌面则提示弹窗被拦 */
-export function navigateDetectTab(win: Window | null, projectId: string) {
+export function navigateDetectTab(
+  win: Window | null,
+  projectId: string,
+  project?: DetectProject,
+) {
+  if (project && project.id === projectId) {
+    seedDetectProjectForNewTab(project);
+  }
   const path = detectPath(projectId);
   prepareAuthHandoff();
   if (win && !win.closed) {

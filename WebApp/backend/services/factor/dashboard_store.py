@@ -360,9 +360,9 @@ def map_yg_response(data: dict) -> dict:
 
 
 def call_yg_backtest(payload: dict, timeout: int = 600) -> dict:
-    from services.core.lan_http import post_json
+    from services.factor.re_backtest_bff import forward_factor_backtest
 
-    return post_json(RE_URL, payload, timeout=timeout)
+    return forward_factor_backtest(payload, timeout=timeout)
 
 
 def read_job() -> dict:

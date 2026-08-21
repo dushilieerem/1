@@ -20,6 +20,8 @@ export type UserLibraryFactor = {
   body: string;
   description: string;
   categoryLabel: string;
+  /** false = 仅元数据、尚无有效公式（黄色） */
+  formulaReady?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -41,7 +43,14 @@ async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
   } catch {
     throw new Error(res.ok ? "响应不是 JSON" : `HTTP ${res.status}`);
   }
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (!res.ok) {
+    const detail =
+      (data as { error?: string; detail?: string | { msg?: string }[] }).error ||
+      (typeof (data as { detail?: unknown }).detail === "string"
+        ? (data as { detail: string }).detail
+        : undefined);
+    throw new Error(detail || `HTTP ${res.status}`);
+  }
   return data;
 }
 
@@ -92,6 +101,7 @@ export async function addFactorToUserLibrary(
     body: string;
     description?: string;
     categoryLabel?: string;
+    formulaReady?: boolean;
   },
 ): Promise<UserLibraryFactor> {
   const data = await apiJson<{ factor: UserLibraryFactor }>(
@@ -103,6 +113,38 @@ export async function addFactorToUserLibrary(
         body: payload.body,
         description: payload.description || "",
         categoryLabel: payload.categoryLabel || "其他",
+        formulaReady: payload.formulaReady,
+      }),
+    },
+  );
+  return data.factor;
+}
+
+export async function updateUserLibraryFactor(
+  libraryId: number,
+  factorId: number,
+  payload: {
+    body?: string;
+    description?: string;
+    categoryLabel?: string;
+    formulaReady?: boolean;
+  },
+): Promise<UserLibraryFactor> {
+  const data = await apiJson<{ factor: UserLibraryFactor }>(
+    `/api/factor/libraries/${libraryId}/factors/${factorId}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        ...(payload.body !== undefined ? { body: payload.body } : {}),
+        ...(payload.description !== undefined
+          ? { description: payload.description }
+          : {}),
+        ...(payload.categoryLabel !== undefined
+          ? { categoryLabel: payload.categoryLabel }
+          : {}),
+        ...(payload.formulaReady !== undefined
+          ? { formulaReady: payload.formulaReady }
+          : {}),
       }),
     },
   );
@@ -120,6 +162,10 @@ export async function deleteFactorFromUserLibrary(
 
 /** 转为与内置因子同结构的 FactorMeta（样式与内置一致） */
 export function userLibraryFactorToMeta(f: UserLibraryFactor): FactorMeta {
+  const ready =
+    f.formulaReady !== undefined
+      ? Boolean(f.formulaReady)
+      : Boolean((f.body || "").trim());
   return {
     name: f.name,
     methodName: f.methodName || f.name,
@@ -132,6 +178,7 @@ export function userLibraryFactorToMeta(f: UserLibraryFactor): FactorMeta {
     libraryLabel: f.categoryLabel || "其他",
     tags: ["user_library"],
     body: f.body,
+    formulaReady: ready,
     userLibraryId: f.libraryId,
     userLibraryName: f.libraryName,
     userLibraryFactorId: f.id,

@@ -5,9 +5,7 @@ from __future__ import annotations
 import re
 
 from services.core.backtest_range import build_factor_backtest_payload
-from services.core.lan_http import post_json
-
-RE_URL = "http://192.168.3.64:9527/api/backtest/factor"
+from services.factor.re_backtest_bff import forward_factor_backtest
 
 
 def trial_via_re(
@@ -36,7 +34,7 @@ def trial_via_re(
         period=period,
     )
     try:
-        data = post_json(RE_URL, payload, timeout=180)
+        data = forward_factor_backtest(payload, timeout=180)
     except RuntimeError as exc:
         raise RuntimeError(str(exc).replace("HTTP Error ", "RE HTTP ", 1)) from exc
 

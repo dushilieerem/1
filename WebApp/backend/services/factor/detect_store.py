@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 from datetime import datetime
 from typing import Any
@@ -11,53 +12,84 @@ from services.core.db import get_conn
 
 SAMPLE_ID = "sample_momentum_5d"
 
+_schema_lock = threading.Lock()
+# 升版本号以在进程重启后跑新的 ADD COLUMN（如 flagged）
+_schema_ready = False
+_SCHEMA_VERSION = 2
+_schema_applied_version = 0
+
 
 def ensure_detect_schema() -> None:
-    with get_conn() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS detect_projects (
-              id            TEXT NOT NULL,
-              user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-              name          TEXT NOT NULL,
-              factor_name   TEXT NOT NULL,
-              description   TEXT NOT NULL DEFAULT '',
-              config        JSONB NOT NULL DEFAULT '{}'::jsonb,
-              run_count     INTEGER NOT NULL DEFAULT 0,
-              is_sample     BOOLEAN NOT NULL DEFAULT FALSE,
-              created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-              updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-              PRIMARY KEY (user_id, id)
+    """建表/补列只跑一次。并发请求同时 ALTER 会抢 AccessExclusiveLock 死锁。"""
+    global _schema_ready, _schema_applied_version
+    if _schema_ready and _schema_applied_version >= _SCHEMA_VERSION:
+        return
+    with _schema_lock:
+        if _schema_ready and _schema_applied_version >= _SCHEMA_VERSION:
+            return
+        with get_conn() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS detect_projects (
+                  id            TEXT NOT NULL,
+                  user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                  name          TEXT NOT NULL,
+                  factor_name   TEXT NOT NULL,
+                  description   TEXT NOT NULL DEFAULT '',
+                  config        JSONB NOT NULL DEFAULT '{}'::jsonb,
+                  run_count     INTEGER NOT NULL DEFAULT 0,
+                  is_sample     BOOLEAN NOT NULL DEFAULT FALSE,
+                  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                  PRIMARY KEY (user_id, id)
+                )
+                """
             )
-            """
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_detect_projects_user_updated "
-            "ON detect_projects (user_id, updated_at DESC)"
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS detect_runs (
-              id            TEXT NOT NULL,
-              user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-              project_id    TEXT NOT NULL,
-              factor_name   TEXT NOT NULL,
-              description   TEXT NOT NULL DEFAULT '',
-              request       JSONB NOT NULL DEFAULT '{}'::jsonb,
-              result        JSONB NOT NULL DEFAULT '{}'::jsonb,
-              finished_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-              elapsed_sec   DOUBLE PRECISION NOT NULL DEFAULT 0,
-              PRIMARY KEY (user_id, id),
-              CONSTRAINT detect_runs_project_fk
-                FOREIGN KEY (user_id, project_id)
-                REFERENCES detect_projects (user_id, id) ON DELETE CASCADE
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_detect_projects_user_updated "
+                "ON detect_projects (user_id, updated_at DESC)"
             )
-            """
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_detect_runs_project "
-            "ON detect_runs (user_id, project_id, finished_at DESC)"
-        )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS detect_runs (
+                  id            TEXT NOT NULL,
+                  user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                  project_id    TEXT NOT NULL,
+                  factor_name   TEXT NOT NULL,
+                  description   TEXT NOT NULL DEFAULT '',
+                  request       JSONB NOT NULL DEFAULT '{}'::jsonb,
+                  result        JSONB NOT NULL DEFAULT '{}'::jsonb,
+                  finished_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                  elapsed_sec   DOUBLE PRECISION NOT NULL DEFAULT 0,
+                  PRIMARY KEY (user_id, id),
+                  CONSTRAINT detect_runs_project_fk
+                    FOREIGN KEY (user_id, project_id)
+                    REFERENCES detect_projects (user_id, id) ON DELETE CASCADE
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_detect_runs_project "
+                "ON detect_runs (user_id, project_id, finished_at DESC)"
+            )
+            conn.execute(
+                """
+                ALTER TABLE detect_runs
+                  ADD COLUMN IF NOT EXISTS remark TEXT NOT NULL DEFAULT ''
+                """
+            )
+            conn.execute(
+                """
+                ALTER TABLE detect_runs
+                  ADD COLUMN IF NOT EXISTS flagged BOOLEAN NOT NULL DEFAULT FALSE
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_detect_runs_user_finished "
+                "ON detect_runs (user_id, finished_at DESC)"
+            )
+        _schema_ready = True
+        _schema_applied_version = _SCHEMA_VERSION
 
 
 def _iso(val: Any) -> Any:
@@ -126,6 +158,8 @@ def _row_run(row: dict[str, Any]) -> dict[str, Any]:
         "projectId": row["project_id"],
         "factorName": row["factor_name"],
         "description": row.get("description") or "",
+        "remark": row.get("remark") or "",
+        "flagged": bool(row.get("flagged")),
         "request": req,
         "result": res,
         "finishedAt": _iso(row.get("finished_at")),
@@ -395,29 +429,52 @@ def delete_project(user_id: int, project_id: str) -> dict[str, Any]:
 
 
 def list_runs(user_id: int, project_id: str) -> dict[str, Any]:
-    """历史列表：不拉净值曲线等大 JSON，只返回表格所需摘要（含当次因子快照）。"""
+    """历史列表：只返回表格摘要（含 UI 因子快照），不碰 result 大 JSON。"""
+    return _list_runs_query(user_id, project_id=project_id)
+
+
+def list_all_runs(user_id: int) -> dict[str, Any]:
+    """当前用户全部检测运行（全局检测报告列表）。"""
+    return _list_runs_query(user_id, project_id=None)
+
+
+def _list_runs_query(user_id: int, *, project_id: str | None) -> dict[str, Any]:
+    """列表摘要：故意不碰 result JSONB。
+
+    单条 result 常约 100KB–1MB（净值曲线等）。Postgres 取 result->'metrics'
+    仍会把整段 TOAST 解出来；用户几百条时列表可卡 1–2s+。详情走 get_run。
+    """
+    ensure_detect_schema()
     with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT id, project_id, factor_name, description, finished_at, elapsed_sec,
-                   COALESCE(result->'metrics', '{}'::jsonb) AS metrics,
-                   result->'factor_analysis'->'ic_mean' AS ic_mean,
-                   request->'_svquant_ui' AS ui_snap,
-                   request->>'factor_name' AS req_factor_name
-            FROM detect_runs
-            WHERE user_id = %s AND project_id = %s
-            ORDER BY finished_at DESC
-            """,
-            (user_id, project_id),
-        ).fetchall()
+        if project_id:
+            rows = conn.execute(
+                """
+                SELECT id, project_id, factor_name, description, remark, flagged,
+                       finished_at, elapsed_sec,
+                       request->'_svquant_ui' AS ui_snap,
+                       request->>'factor_name' AS req_factor_name
+                FROM detect_runs
+                WHERE user_id = %s AND project_id = %s
+                ORDER BY finished_at DESC
+                """,
+                (user_id, project_id),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, project_id, factor_name, description, remark, flagged,
+                       finished_at, elapsed_sec,
+                       request->'_svquant_ui' AS ui_snap,
+                       request->>'factor_name' AS req_factor_name
+                FROM detect_runs
+                WHERE user_id = %s
+                ORDER BY finished_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
     runs = []
     for r in rows:
         row = dict(r)
-        metrics = row.get("metrics") or {}
-        if isinstance(metrics, str):
-            metrics = json.loads(metrics)
-        ic_mean = row.get("ic_mean")
-        fa = {"ic_mean": ic_mean} if ic_mean is not None else None
         ui = row.get("ui_snap") or {}
         if isinstance(ui, str):
             try:
@@ -438,7 +495,6 @@ def list_runs(user_id: int, project_id: str) -> dict[str, Any]:
             else:
                 summary = f"{parts[0]} + {parts[1]} 等{len(parts)}个"
         desc = summary or (row.get("description") or "") or (row.get("req_factor_name") or "")
-        # 列表仍带精简 request，便于前端直接展示因子列
         slim_req: dict[str, Any] = {}
         if ui:
             slim_req["_svquant_ui"] = {
@@ -453,8 +509,11 @@ def list_runs(user_id: int, project_id: str) -> dict[str, Any]:
                 "projectId": row["project_id"],
                 "factorName": row["factor_name"],
                 "description": desc,
+                "remark": row.get("remark") or "",
+                "flagged": bool(row.get("flagged")),
                 "request": slim_req,
-                "result": {"metrics": metrics, "factor_analysis": fa},
+                # 列表不带绩效；打开报告页再 get_run 拉完整 result
+                "result": {},
                 "finishedAt": _iso(row.get("finished_at")),
                 "elapsedSec": float(row.get("elapsed_sec") or 0),
             }
@@ -474,12 +533,14 @@ def get_run(user_id: int, run_id: str) -> dict[str, Any]:
 
 
 def save_run(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_detect_schema()
     project_id = str(payload.get("projectId") or payload.get("project_id") or "").strip()
     if not project_id:
         raise ValueError("缺少 projectId")
     run_id = str(payload.get("id") or "").strip() or str(uuid.uuid4())
     factor_name = str(payload.get("factorName") or payload.get("factor_name") or "").strip()
     description = str(payload.get("description") or factor_name).strip()
+    remark = str(payload.get("remark") or "").strip()
     request = payload.get("request") or {}
     result = payload.get("result") or {}
     finished_at = payload.get("finishedAt") or payload.get("finished_at")
@@ -495,16 +556,18 @@ def save_run(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         row = conn.execute(
             """
             INSERT INTO detect_runs
-              (id, user_id, project_id, factor_name, description, request, result, finished_at, elapsed_sec)
+              (id, user_id, project_id, factor_name, description, remark,
+               request, result, finished_at, elapsed_sec)
             VALUES (
-              %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb,
+              %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb,
               COALESCE(%s::timestamptz, NOW()), %s
             )
             ON CONFLICT (user_id, id) DO UPDATE SET
               request = EXCLUDED.request,
               result = EXCLUDED.result,
               finished_at = EXCLUDED.finished_at,
-              elapsed_sec = EXCLUDED.elapsed_sec
+              elapsed_sec = EXCLUDED.elapsed_sec,
+              remark = COALESCE(NULLIF(EXCLUDED.remark, ''), detect_runs.remark)
             RETURNING *
             """,
             (
@@ -513,6 +576,7 @@ def save_run(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                 project_id,
                 factor_name,
                 description,
+                remark,
                 json.dumps(request, ensure_ascii=False),
                 json.dumps(result, ensure_ascii=False),
                 finished_at,
@@ -565,3 +629,40 @@ def delete_run(user_id: int, run_id: str) -> dict[str, Any]:
             (user_id, project_id, user_id, project_id),
         )
     return {"ok": True, "id": run_id}
+
+
+def update_run_remark(user_id: int, run_id: int | str, remark: str) -> dict[str, Any]:
+    ensure_detect_schema()
+    rid = str(run_id).strip()
+    text = (remark or "").strip()
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            UPDATE detect_runs
+            SET remark = %s
+            WHERE user_id = %s AND id = %s
+            RETURNING *
+            """,
+            (text, user_id, rid),
+        ).fetchone()
+    if not row:
+        raise KeyError(rid)
+    return {"ok": True, "run": _row_run(dict(row))}
+
+
+def update_run_flagged(user_id: int, run_id: int | str, flagged: bool) -> dict[str, Any]:
+    ensure_detect_schema()
+    rid = str(run_id).strip()
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            UPDATE detect_runs
+            SET flagged = %s
+            WHERE user_id = %s AND id = %s
+            RETURNING *
+            """,
+            (bool(flagged), user_id, rid),
+        ).fetchone()
+    if not row:
+        raise KeyError(rid)
+    return {"ok": True, "run": _row_run(dict(row))}

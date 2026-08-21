@@ -35,13 +35,11 @@ type Props = {
 
 function factorLabel(
   code: string,
-  catalog: FactorMeta[],
+  _catalog: FactorMeta[],
   tempLabels: Record<string, string>,
 ): string {
-  if (tempLabels[code]) return tempLabels[code];
-  const f = catalog.find((x) => x.name === code);
-  if (f?.explain || f?.description) return f.explain || f.description || code;
-  return code;
+  // 库内因子用代码名；临时因子用 tempLabels
+  return tempLabels[code] || code;
 }
 
 function isCatalogFactor(code: string, catalogNames: Set<string>): boolean {

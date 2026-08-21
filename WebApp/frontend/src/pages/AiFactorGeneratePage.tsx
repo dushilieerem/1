@@ -394,7 +394,7 @@ export function AiFactorGeneratePage() {
         category,
       });
       setSendOpen(false);
-      navigateDetectTab(tab, p.id);
+      navigateDetectTab(tab, p.id, p);
     } catch (e) {
       try {
         tab?.close();

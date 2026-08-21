@@ -880,14 +880,13 @@ export function FactorDetectReportPage() {
       <div className="mx-auto max-w-lg px-6 py-20 text-center">
         <p className="text-slate-600">没有找到检测结果，请先运行检测。</p>
         <Link to="/factor/detect" className="mt-4 inline-block text-sm font-medium text-blue-600 underline">
-          返回检测列表
+          返回检测报告
         </Link>
       </div>
     );
   }
 
   const dds = result?.drawdowns || [];
-  const spread = result?.factor_analysis?.layered_returns?.spread;
   const rangeLabel =
     req?.start && req?.end
       ? `${req.start} ~ ${req.end}`
@@ -929,7 +928,7 @@ export function FactorDetectReportPage() {
           <div className="min-w-0 flex-1">
             <p className="text-sm text-slate-500">
               <Link to="/factor/detect" className="hover:text-blue-600">
-                因子检测
+                检测报告
               </Link>
               {" / "}
               <Link to={`/factor/detect/${rec.projectId}`} className="hover:text-blue-600">
@@ -973,11 +972,11 @@ export function FactorDetectReportPage() {
               <span className="hidden sm:inline">返回配置</span>
             </Link>
             <Link
-              to={`/factor/detect/${rec.projectId}/history`}
+              to="/factor/detect"
               className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
             >
-              <span className="sm:hidden">列表</span>
-              <span className="hidden sm:inline">检测列表</span>
+              <span className="sm:hidden">报告</span>
+              <span className="hidden sm:inline">全部报告</span>
             </Link>
           </div>
         </div>
@@ -1220,9 +1219,6 @@ export function FactorDetectReportPage() {
                   <section className={chartCardClass()}>
                     <h2 className="mb-2 text-sm font-semibold text-slate-800">
                       分层区间收益
-                      {typeof spread === "number" && (
-                        <span className="ml-2 text-xs font-normal text-slate-400">spread {pct(spread)}</span>
-                      )}
                     </h2>
                     {layerOpt ? (
                       <ReactECharts option={layerOpt} style={{ height: 280 }} notMerge opts={{ renderer: "canvas" }} />

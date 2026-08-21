@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, BarChart3, Loader2, Play, Plus, Save, X } from "lucide-react";
+import { BarChart3, Loader2, Play, Plus, Save, X } from "lucide-react";
 import { FactorCodeEditor } from "@/components/FactorCodeEditor";
 import { FactorPickerModal } from "@/components/FactorPickerModal";
 import {
   buildComboFunction,
-  buildPlatformFactorStub,
   buildYgFactorRequestParts,
   extractEntryName,
   isReBuiltinLib,
@@ -15,6 +14,8 @@ import {
   bodiesForScriptDisplay,
   buildDetectScript,
   parseDetectScript,
+  renameComboDef,
+  resolveDetectEntryName,
   type DetectScriptBodies,
 } from "@/lib/detectScriptSync";
 import {
@@ -34,7 +35,9 @@ import {
   getProject,
   getRun,
   listDraftFactors,
+  listRuns,
   peekProject,
+  consumeDetectProjectSeed,
   readDetectRunUiSnapshot,
   resolveBacktestRange,
   saveDetectRun,
@@ -46,7 +49,6 @@ import {
   type WeightMode,
 } from "@/lib/detectStore";
 import {
-  builtinCategoryLabelsFromFactors,
   extractMethod,
   loadFactors,
   loadLibrarySource,
@@ -57,24 +59,30 @@ import {
   listAllUserLibraryFactors,
   userLibraryFactorToMeta,
 } from "@/lib/userFactorLibraries";
+import {
+  emptyFactorBodyTemplate,
+  isFormulaPending,
+  persistFormulaAfterDetect,
+} from "@/lib/factorLifecycle";
 import { ygBacktestFactor, type YgBacktestRequest } from "@/lib/ygApi";
-
-const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-function draftBodyTemplate(name: string, description: string): string {
-  const doc = (description || name).replace(/\\/g, "\\\\").replace(/"""/g, "'''");
-  return `def ${name}(self):\n    """${doc}"""\n    return self.close.pct_change(5)\n`;
-}
 
 export function FactorDetectPage() {
   const { projectId = "" } = useParams();
   const [searchParams] = useSearchParams();
   const snapshotRunId = searchParams.get("runId")?.trim() || "";
   const navigate = useNavigate();
-  const [project, setProject] = useState<DetectProject | null | undefined>(() =>
-    projectId ? peekProject(projectId) ?? undefined : undefined,
-  );
+  const [project, setProject] = useState<DetectProject | null | undefined>(() => {
+    if (!projectId) return undefined;
+    // 带 runId 时先别用缓存项目渲染，否则会先闪「最新配置」再盖成历史快照
+    if (snapshotRunId) return undefined;
+    const seeded = consumeDetectProjectSeed(projectId);
+    if (seeded) return seeded;
+    return peekProject(projectId) ?? undefined;
+  });
   const [catalog, setCatalog] = useState<FactorMeta[]>([]);
+  const [catalogReady, setCatalogReady] = useState(false);
+  /** 最终脚本算好前不挂载编辑器，避免空值时闪出灰色 placeholder 示例代码 */
+  const [scriptReady, setScriptReady] = useState(false);
   const [methodBodies, setMethodBodies] = useState<string[]>([]);
   /** 右侧脚本里编辑过的自定义因子函数体 */
   const [bodyOverrides, setBodyOverrides] = useState<DetectScriptBodies>({});
@@ -82,19 +90,18 @@ export function FactorDetectPage() {
   const syncOriginRef = useRef<"ui" | "code" | null>(null);
   const parseTimerRef = useRef<number | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createName, setCreateName] = useState("");
-  const [createDesc, setCreateDesc] = useState("");
-  const [createCategory, setCreateCategory] = useState("");
-  const [createErr, setCreateErr] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
   const [savedHint, setSavedHint] = useState("");
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [mobilePane, setMobilePane] = useState<"config" | "code">("config");
+  /** 本页最近一次检测 / URL 快照对应的报告 id，供顶栏「检测报告」直达 */
+  const [reportRunId, setReportRunId] = useState<string>(snapshotRunId);
   const abortRef = useRef<AbortController | null>(null);
   const tickRef = useRef<number | null>(null);
+  /** 因子源码/存根是否已按当前 factorCodes 装完 */
+  const [bodiesReady, setBodiesReady] = useState(false);
 
   const cfg = project?.config;
   const drafts = useMemo(() => listDraftFactors(cfg), [cfg]);
@@ -112,6 +119,88 @@ export function FactorDetectPage() {
     (cfg?.factorCodes.length ?? 0) === 1;
   const hasDraft = drafts.length > 0;
 
+  /** 用户库主因子（待写或已写）：chips 不展示自身，多因子时作组合入口名 */
+  const primaryUserFactor = useMemo(() => {
+    const name = (project?.factorName || "").trim();
+    if (!name || name === "combo_factor" || name === "custom_combo" || name === "factor")
+      return null;
+    if (drafts.some((d) => d.name === name)) return null;
+    const meta = catalog.find((f) => f.name === name);
+    if (!meta) return null;
+    const isUser =
+      meta.userLibraryId != null ||
+      (meta.library || "").startsWith("user_lib_") ||
+      (meta.tags || []).includes("user_library");
+    if (!isUser) return null;
+    return meta;
+  }, [project?.factorName, catalog, drafts]);
+  /**
+   * 主因子名：目录就绪后以用户库为准；
+   * 未就绪时若多因子且含项目名，先按主因子隐藏，避免闪出「自己也在 chips 里」。
+   */
+  const primaryUserName = useMemo(() => {
+    if (primaryUserFactor) return primaryUserFactor.name;
+    const name = (project?.factorName || "").trim();
+    if (!name || name === "combo_factor" || name === "custom_combo" || name === "factor")
+      return null;
+    if (drafts.some((d) => d.name === name)) return null;
+    if (catalogReady) return null;
+    const codes = cfg?.factorCodes || [];
+    if (codes.length > 1 && codes.includes(name)) return name;
+    return null;
+  }, [primaryUserFactor, project?.factorName, drafts, catalogReady, cfg?.factorCodes]);
+  const authoringPendingFactor = useMemo(() => {
+    if (!primaryUserFactor || !isFormulaPending(primaryUserFactor)) return null;
+    return primaryUserFactor;
+  }, [primaryUserFactor]);
+  const authoringPendingName = authoringPendingFactor?.name ?? null;
+  const isAuthoringPending = Boolean(authoringPendingFactor);
+
+  /** 兼容旧逻辑：仅待写单因子（codes 里只有它） */
+  const pendingUserFactor = useMemo(() => {
+    if (!authoringPendingFactor || !cfg?.factorCodes.length) return null;
+    if (cfg.factorCodes.length !== 1) return null;
+    if (cfg.factorCodes[0] !== authoringPendingFactor.name) return null;
+    return authoringPendingFactor;
+  }, [authoringPendingFactor, cfg?.factorCodes]);
+  const isPendingUserOnlyMode = Boolean(pendingUserFactor);
+  const isEditableSingleMode =
+    isDraftOnlyMode || isPendingUserOnlyMode;
+
+  /** 全部为同事 RE 内置：不可增减/改函数 */
+  const isBuiltinLockedMode = useMemo(() => {
+    if (!cfg?.factorCodes.length || drafts.length || primaryUserFactor) return false;
+    if (!catalog.length) return false;
+    return cfg.factorCodes.every((c) => {
+      const meta = resolveFactorMeta(catalog, c);
+      return Boolean(meta && isReBuiltinLib(meta.library) && !isFormulaPending(meta));
+    });
+  }, [cfg?.factorCodes, catalog, drafts.length, primaryUserFactor]);
+
+  /** 「添加因子」区：不展示用户主因子自身 */
+  const chipFactorCodes = useMemo(() => {
+    if (!cfg?.factorCodes.length) return [] as string[];
+    if (!primaryUserName) return cfg.factorCodes;
+    return cfg.factorCodes.filter((c) => c !== primaryUserName);
+  }, [cfg?.factorCodes, primaryUserName]);
+
+  /** 参与赋权合成的因子（多因子时） */
+  const ingredientCodes = useMemo(() => {
+    if (!cfg?.factorCodes.length) return [] as string[];
+    if (primaryUserName && cfg.factorCodes.length > 1) {
+      return cfg.factorCodes.filter((c) => c !== primaryUserName);
+    }
+    return cfg.factorCodes;
+  }, [cfg?.factorCodes, primaryUserName]);
+
+  const detectEntryName = useMemo(
+    () => resolveDetectEntryName(primaryUserName || project?.factorName),
+    [primaryUserName, project?.factorName],
+  );
+
+  /** 多于 1 个参与合成的因子时显示赋权/赋幂/自定义 */
+  const showSynthesis = ingredientCodes.length > 1;
+
   const pushLog = useCallback((line: string) => {
     const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
     setLogs((prev) => [...prev.slice(-80), `[${ts}] ${line}`]);
@@ -119,15 +208,20 @@ export function FactorDetectPage() {
 
   useEffect(() => {
     let cancelled = false;
+    setScriptReady(false);
+    setScriptText("");
+    setBodiesReady(false);
+    setCatalogReady(false);
     const cached = peekProject(projectId);
-    if (cached) {
+    // 有 runId：等快照合并后再 setProject，避免先闪缓存配置
+    if (cached && !snapshotRunId) {
       setProject(cached);
       setLogs((prev) =>
         prev.length
           ? prev
           : [`[${new Date().toLocaleTimeString("zh-CN", { hour12: false })}] 已加载项目：${cached.name}`],
       );
-    } else {
+    } else if (!snapshotRunId) {
       setProject(undefined);
     }
     void (async () => {
@@ -137,6 +231,7 @@ export function FactorDetectPage() {
         setProject(null);
         return;
       }
+      setCatalogReady(false);
       let next = p;
       if (snapshotRunId) {
         try {
@@ -162,6 +257,16 @@ export function FactorDetectPage() {
         }
       }
       setProject(next);
+      if (snapshotRunId) {
+        setReportRunId(snapshotRunId);
+      } else {
+        void listRuns(projectId)
+          .then((runs) => {
+            if (cancelled || !runs.length) return;
+            setReportRunId((prev) => prev || runs[0].id);
+          })
+          .catch(() => undefined);
+      }
       if (!snapshotRunId) {
         const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
         setLogs((prev) =>
@@ -181,6 +286,7 @@ export function FactorDetectPage() {
           ...userFs,
         ];
         setCatalog(merged);
+        setCatalogReady(true);
       });
     })();
     return () => {
@@ -224,33 +330,47 @@ export function FactorDetectPage() {
     });
   }, [catalog, project?.config?.draftFactor?.name, project?.config?.draftFactors, project?.id]);
 
-  const categoryOptions = useMemo(() => {
-    const cats = builtinCategoryLabelsFromFactors(
-      catalog.filter((f) => !f.library.startsWith("user_lib_")),
-    );
-    return [...cats, "其他"];
-  }, [catalog]);
-
   const factorLabel = useCallback(
     (code: string) => {
       const draft = draftByName.get(code);
       if (draft) return draft.description || draft.name;
-      const f = catalog.find((x) => x.name === code);
-      return f?.explain || f?.description || code;
+      // 库内因子：界面用代码名；释义只在因子库列表展示
+      return code;
     },
-    [catalog, draftByName],
+    [draftByName],
   );
 
   useEffect(() => {
     if (isDraftOnlyMode && draftFactor) {
       setMethodBodies([draftFactor.body || ""]);
+      setBodiesReady(true);
+      return;
+    }
+    if (isAuthoringPending && authoringPendingFactor && (cfg?.factorCodes.length ?? 0) <= 1) {
+      const ov = bodyOverrides[authoringPendingFactor.name]?.trim();
+      const body =
+        ov ||
+        (authoringPendingFactor.body || "").trim() ||
+        emptyFactorBodyTemplate(
+          authoringPendingFactor.name,
+          authoringPendingFactor.description || authoringPendingFactor.name,
+        );
+      setMethodBodies([body]);
+      setBodiesReady(true);
       return;
     }
     if (!cfg?.factorCodes.length) {
       setMethodBodies([]);
+      setBodiesReady(true);
+      return;
+    }
+    // 等目录就绪再拉 body，避免先用空 catalog 填错存根
+    if (!catalogReady) {
+      setBodiesReady(false);
       return;
     }
     let cancelled = false;
+    setBodiesReady(false);
     void (async () => {
       try {
         const fs = catalog.length ? catalog : await loadFactors();
@@ -267,13 +387,19 @@ export function FactorDetectPage() {
             bodies.push(`# 未找到因子 ${code}`);
             continue;
           }
-          if (meta.body) {
-            bodies.push(renameMethodDef(meta.body, code));
+          if ((meta.body || "").trim()) {
+            bodies.push(renameMethodDef(meta.body || "", code));
+            continue;
+          }
+          if (isFormulaPending(meta)) {
+            bodies.push(
+              emptyFactorBodyTemplate(code, meta.description || code),
+            );
             continue;
           }
           if (isReBuiltinLib(meta.library)) {
-            // 存根无 def；buildYgFactorRequestParts 会忽略，单因子走 library_name
-            bodies.push(buildPlatformFactorStub(meta));
+            // 内置不落可展示源码；占位即可，脚本层 commentsOnly 不会输出
+            bodies.push("");
             continue;
           }
           let src = fileCache.get(meta.libraryFile);
@@ -283,10 +409,14 @@ export function FactorDetectPage() {
           }
           bodies.push(renameMethodDef(extractMethod(src, meta.methodName || code), code));
         }
-        if (!cancelled) setMethodBodies(bodies);
+        if (!cancelled) {
+          setMethodBodies(bodies);
+          setBodiesReady(true);
+        }
       } catch (e) {
         if (!cancelled) {
           setMethodBodies([]);
+          setBodiesReady(true);
           pushLog(`加载因子源码失败：${e instanceof Error ? e.message : String(e)}`);
         }
       }
@@ -294,7 +424,18 @@ export function FactorDetectPage() {
     return () => {
       cancelled = true;
     };
-  }, [cfg?.factorCodes, catalog, pushLog, isDraftOnlyMode, draftFactor, draftByName]);
+  }, [
+    cfg?.factorCodes,
+    catalog,
+    catalogReady,
+    pushLog,
+    isDraftOnlyMode,
+    draftFactor,
+    draftByName,
+    isAuthoringPending,
+    authoringPendingFactor,
+    bodyOverrides,
+  ]);
 
   /** 目录就绪后回填 factorLibraries（旧项目 / 历史快照可能没有） */
   useEffect(() => {
@@ -349,9 +490,6 @@ export function FactorDetectPage() {
     return m;
   }, [catalogByName, drafts]);
 
-  /** 多于 1 个因子才显示合成参数 */
-  const showSynthesis = !isDraftOnlyMode && (cfg?.factorCodes.length ?? 0) > 1;
-
   /** 左侧改配置 → 重建右侧脚本（右侧正在编辑时跳过） */
   useEffect(() => {
     if (!cfg) return;
@@ -359,25 +497,85 @@ export function FactorDetectPage() {
       syncOriginRef.current = null;
       return;
     }
-    if (isDraftOnlyMode && draftFactor) {
-      setScriptText(draftFactor.body || "");
+    // 目录/源码未齐：不挂编辑器、不写中间脚本
+    if (!catalogReady || !bodiesReady) {
+      setScriptReady(false);
       return;
     }
+    const commitScript = (text: string) => {
+      setScriptText(text);
+      setScriptReady(true);
+    };
+    if (isDraftOnlyMode && draftFactor) {
+      commitScript(draftFactor.body || "");
+      return;
+    }
+    // 内置锁定：只展示注释
+    if (isBuiltinLockedMode) {
+      commitScript(
+        buildDetectScript({
+          config: cfg,
+          catalogByName: catalogWithDrafts,
+          commentsOnly: true,
+          omitCombo: true,
+        }),
+      );
+      return;
+    }
+    // 用户主因子单独编辑（未再选其它因子）
+    if (
+      primaryUserFactor &&
+      (cfg.factorCodes.length === 0 ||
+        (cfg.factorCodes.length === 1 &&
+          cfg.factorCodes[0] === primaryUserFactor.name))
+    ) {
+      const primary = primaryUserFactor.name;
+      const ov = bodyOverrides[primary]?.trim();
+      const idx = cfg.factorCodes.indexOf(primary);
+      const body =
+        ov ||
+        (idx >= 0 ? methodBodies[idx] : "") ||
+        methodBodies[0] ||
+        (primaryUserFactor.body || "").trim() ||
+        emptyFactorBodyTemplate(
+          primary,
+          primaryUserFactor.description || primary,
+        );
+      commitScript(body);
+      return;
+    }
+
+    const codes = [...(cfg.factorCodes || [])];
+    if (primaryUserName && !codes.includes(primaryUserName)) {
+      codes.push(primaryUserName);
+    }
+    const ordered = primaryUserName
+      ? [...codes.filter((c) => c !== primaryUserName), primaryUserName]
+      : codes;
+    const ingredients = primaryUserName
+      ? ordered.filter((c) => c !== primaryUserName)
+      : ordered;
     const bodies = bodiesForScriptDisplay({
-      factorCodes: cfg.factorCodes,
+      factorCodes: ordered,
       catalogByName: catalogWithDrafts,
-      methodBodies,
+      methodBodies: ordered.map((c) => {
+        const i = cfg.factorCodes.indexOf(c);
+        return bodyOverrides[c]?.trim() || methodBodies[i] || "";
+      }),
       overrides: bodyOverrides,
     });
-    setScriptText(
+    commitScript(
       buildDetectScript({
-        config: cfg,
+        config: { ...cfg, factorCodes: ordered },
         projectName: cleanDetectDisplayName(
           project?.description || project?.name || "",
           project?.factorName || "",
         ),
         catalogByName: catalogWithDrafts,
         factorBodies: bodies,
+        entryName: detectEntryName,
+        ingredientCodes: ingredients,
+        omitCombo: ingredients.length === 0,
       }),
     );
   }, [
@@ -387,6 +585,12 @@ export function FactorDetectPage() {
     bodyOverrides,
     isDraftOnlyMode,
     draftFactor,
+    isBuiltinLockedMode,
+    primaryUserFactor,
+    primaryUserName,
+    detectEntryName,
+    catalogReady,
+    bodiesReady,
     project?.name,
     project?.description,
     project?.factorName,
@@ -420,9 +624,43 @@ export function FactorDetectPage() {
       });
       return;
     }
+    if (primaryUserFactor) {
+      syncOriginRef.current = "code";
+      const primary = primaryUserFactor.name;
+      if (cfg && ingredientCodes.length > 1) {
+        const parsed = parseDetectScript(v, detectEntryName);
+        if (parsed) {
+          setBodyOverrides((prev) => ({ ...prev, ...parsed.factorBodies }));
+          if (parsed.comboFn) {
+            setProject((prev) => {
+              if (!prev) return prev;
+              if (prev.config.weightMode !== "custom") return prev;
+              return {
+                ...prev,
+                config: {
+                  ...prev.config,
+                  customCombine: renameComboDef(parsed.comboFn!, detectEntryName),
+                },
+              };
+            });
+          }
+          const bodies = (cfg.factorCodes || []).map(
+            (c) => parsed.factorBodies[c] || bodyOverrides[c] || "",
+          );
+          setMethodBodies(bodies);
+        }
+        return;
+      }
+      setMethodBodies([v]);
+      setBodyOverrides((prev) => ({
+        ...prev,
+        [primary]: v,
+      }));
+      return;
+    }
     if (parseTimerRef.current) window.clearTimeout(parseTimerRef.current);
     parseTimerRef.current = window.setTimeout(() => {
-      const parsed = parseDetectScript(v);
+      const parsed = parseDetectScript(v, detectEntryName);
       if (!parsed) return;
       syncOriginRef.current = "code";
       if (Object.keys(parsed.factorBodies).length) {
@@ -450,14 +688,17 @@ export function FactorDetectPage() {
           };
         });
       }
-      // 自定义组合模式下，右侧改 combo_factor 写回左侧
+      // 自定义组合模式下，右侧改入口函数写回左侧
       if (parsed.comboFn) {
         setProject((prev) => {
           if (!prev) return prev;
           if (prev.config.weightMode !== "custom") return prev;
           return {
             ...prev,
-            config: { ...prev.config, customCombine: parsed.comboFn! },
+            config: {
+              ...prev.config,
+              customCombine: renameComboDef(parsed.comboFn!, detectEntryName),
+            },
           };
         });
       }
@@ -471,31 +712,63 @@ export function FactorDetectPage() {
     syncOriginRef.current = "ui";
     setProject((prev) => {
       if (!prev) return prev;
+      let nextCodes = [...codes];
+      const pin = primaryUserName;
+      if (pin) {
+        nextCodes = nextCodes.filter((c) => c !== pin);
+        nextCodes.push(pin);
+      }
       const mode = prev.config.weightMode;
-      const weights = mode === "sum" ? equalWeights(codes.length) : codes.map((_, i) => prev.config.weights[i] ?? 0);
-      const powers = mode === "product" ? equalPowers(codes.length) : codes.map((_, i) => prev.config.powers[i] ?? 1);
-      let customCombine = prev.config.customCombine;
-      if (mode === "custom" && codes.length) {
-        const mentionsAny = codes.some((c) => customCombine.includes(`self.${c}()`));
+      let weights: number[];
+      let powers: number[];
+      if (mode === "sum") {
+        if (pin && nextCodes.length > 1) {
+          weights = [...equalWeights(nextCodes.length - 1), 0];
+        } else {
+          weights = equalWeights(nextCodes.length);
+        }
+      } else {
+        weights = nextCodes.map((_, i) => prev.config.weights[i] ?? 0);
+      }
+      if (mode === "product") {
+        if (pin && nextCodes.length > 1) {
+          powers = [...equalPowers(nextCodes.length - 1), 1];
+        } else {
+          powers = equalPowers(nextCodes.length);
+        }
+      } else {
+        powers = nextCodes.map((_, i) => prev.config.powers[i] ?? 1);
+      }
+      const entry = resolveDetectEntryName(pin || (nextCodes.length === 1 ? nextCodes[0] : "factor"));
+      let customCombine = renameComboDef(prev.config.customCombine, entry);
+      if (mode === "custom" && nextCodes.length) {
+        const ingredients = pin
+          ? nextCodes.filter((c) => c !== pin)
+          : nextCodes;
+        const mentionsAny = ingredients.some((c) =>
+          customCombine.includes(`self.${c}()`),
+        );
         if (!mentionsAny) {
           const label = cleanDetectDisplayName(
             prev.description || prev.name,
-            codes[0],
+            entry,
           );
-          if (codes.length === 1) {
-            customCombine = `def combo_factor(self):\n    """${label}"""\n    return self.${codes[0]}()`;
+          if (ingredients.length === 1) {
+            customCombine = `def ${entry}(self):\n    """${label}"""\n    return self.${ingredients[0]}()`;
+          } else if (ingredients.length > 1) {
+            const expr = ingredients.map((c) => `self.${c}()`).join(" * ");
+            customCombine = `def ${entry}(self):\n    """${label} · 自定义组合"""\n    return ${expr}`;
           } else {
-            const expr = codes.map((c) => `self.${c}()`).join(" * ");
-            customCombine = `def combo_factor(self):\n    """${label} · 自定义组合"""\n    return ${expr}`;
+            customCombine = `def ${entry}(self):\n    """${label}"""\n    return self.close.pct_change(5)`;
           }
         }
       }
       const remain = listDraftFactors(prev.config).filter((d) =>
-        codes.includes(d.name),
+        nextCodes.includes(d.name),
       );
       const prevLibs = prev.config.factorLibraries || {};
       const factorLibraries: Record<string, string> = {};
-      for (const code of codes) {
+      for (const code of nextCodes) {
         const draft = remain.find((d) => d.name === code);
         if (draft) {
           factorLibraries[code] = "draft_lib";
@@ -510,10 +783,10 @@ export function FactorDetectPage() {
       }
       return {
         ...prev,
-        factorName: codes.length === 1 ? codes[0] : "combo_factor",
+        factorName: pin || (nextCodes.length === 1 ? nextCodes[0] : entry),
         config: {
           ...prev.config,
-          factorCodes: codes,
+          factorCodes: nextCodes,
           factorLibraries,
           weights,
           powers,
@@ -527,6 +800,8 @@ export function FactorDetectPage() {
 
   const removeFactor = (code: string) => {
     if (!cfg) return;
+    if (isBuiltinLockedMode) return;
+    if (primaryUserName && code === primaryUserName) return;
     if (draftByName.has(code) && isDraftOnlyMode) {
       setProject((prev) => {
         if (!prev) return prev;
@@ -548,76 +823,47 @@ export function FactorDetectPage() {
     applyFactors(cfg.factorCodes.filter((c) => c !== code));
   };
 
-  const confirmCreateFactor = () => {
-    setCreateErr(null);
-    const name = createName.trim();
-    const description = createDesc.trim();
-    const category = createCategory.trim();
-    if (!name) {
-      setCreateErr("请填写因子代码名");
-      return;
-    }
-    if (!NAME_RE.test(name)) {
-      setCreateErr("代码名须为字母开头的标识符（字母/数字/下划线）");
-      return;
-    }
-    if (!description) {
-      setCreateErr("请填写中文解释");
-      return;
-    }
-    if (!category) {
-      setCreateErr("请选择分类");
-      return;
-    }
-    if (catalog.some((f) => f.name === name)) {
-      setCreateErr(`因子「${name}」已存在，请换一个代码名`);
-      return;
-    }
-    const draft: DraftDetectFactor = {
-      name,
-      description,
-      category,
-      body: draftBodyTemplate(name, description),
-    };
-    setProject((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        factorName: name,
-        config: {
-          ...prev.config,
-          factorCodes: [name],
-          weights: [100],
-          powers: [1],
-          weightMode: "sum",
-          draftFactor: draft,
-          draftFactors: [draft],
-        },
-      };
-    });
-    setCreateOpen(false);
-    setCreateName("");
-    setCreateDesc("");
-    setCreateCategory("其他");
-    pushLog(`已新建自定义因子：${name}（检测后可入库）`);
-  };
-
   const setWeightMode = (mode: WeightMode) => {
     syncOriginRef.current = "ui";
     setProject((prev) => {
       if (!prev) return prev;
-      const n = prev.config.factorCodes.length;
       const codes = prev.config.factorCodes;
+      const pin = primaryUserName;
+      const ingredients =
+        pin && codes.length > 1 ? codes.filter((c) => c !== pin) : codes;
+      const entry = resolveDetectEntryName(
+        pin || (codes.length === 1 ? codes[0] : "factor"),
+      );
       let customCombine = prev.config.customCombine;
       if (mode === "custom") {
-        // 每次点「自定义」：右侧默认写成已选因子相加
-        if (codes.length === 1) {
-          customCombine = `def combo_factor(self):\n    """自定义组合"""\n    return self.${codes[0]}()`;
-        } else if (codes.length > 1) {
-          const expr = codes.map((c) => `self.${c}()`).join(" + ");
-          customCombine = `def combo_factor(self):\n    """自定义组合"""\n    return ${expr}`;
+        if (ingredients.length === 1) {
+          customCombine = `def ${entry}(self):\n    """自定义组合"""\n    return self.${ingredients[0]}()`;
+        } else if (ingredients.length > 1) {
+          const expr = ingredients.map((c) => `self.${c}()`).join(" + ");
+          customCombine = `def ${entry}(self):\n    """自定义组合"""\n    return ${expr}`;
         } else {
-          customCombine = `def combo_factor(self):\n    """自定义组合"""\n    # 先在左侧添加因子\n    return self.close.pct_change(5)`;
+          customCombine = `def ${entry}(self):\n    """自定义组合"""\n    # 先在左侧添加因子\n    return self.close.pct_change(5)`;
+        }
+      }
+      // 赋权只均分「成分因子」，主因子占位权重为 0（避免 2 个成分显示成 33.3）
+      let weights = prev.config.weights;
+      let powers = prev.config.powers;
+      if (mode === "sum") {
+        if (pin && ingredients.length > 0) {
+          const ew = equalWeights(ingredients.length);
+          weights = codes.map((c) => {
+            const ii = ingredients.indexOf(c);
+            return ii >= 0 ? ew[ii] : 0;
+          });
+        } else {
+          weights = equalWeights(codes.length);
+        }
+      }
+      if (mode === "product") {
+        if (pin && ingredients.length > 0) {
+          powers = codes.map((c) => (ingredients.includes(c) ? 1 : 1));
+        } else {
+          powers = equalPowers(codes.length);
         }
       }
       return {
@@ -625,8 +871,8 @@ export function FactorDetectPage() {
         config: {
           ...prev.config,
           weightMode: mode,
-          weights: mode === "sum" ? equalWeights(n) : prev.config.weights,
-          powers: mode === "product" ? equalPowers(n) : prev.config.powers,
+          weights,
+          powers,
           customCombine,
         },
       };
@@ -651,6 +897,14 @@ export function FactorDetectPage() {
       runDrafts.length === 1 &&
       cfg.factorCodes.length === 1 &&
       cfg.factorCodes[0] === runDrafts[0].name;
+    const pendingOnly =
+      !runDrafts.length &&
+      cfg.factorCodes.length === 1 &&
+      (() => {
+        const meta = resolveFactorMeta(catalog, cfg.factorCodes[0]);
+        return Boolean(meta && isFormulaPending(meta));
+      })();
+    const singleEditable = draftOnly || pendingOnly;
     const customOnly =
       cfg.weightMode === "custom" && Boolean(cfg.customCombine?.trim());
     if (!cfg.factorCodes.length && !customOnly && !runDrafts.length) {
@@ -662,6 +916,24 @@ export function FactorDetectPage() {
     for (const d of runDrafts) {
       if (!(d.body || "").trim()) {
         const msg = `请先编写因子代码：${d.name}`;
+        setRunError(msg);
+        pushLog(msg);
+        return;
+      }
+    }
+    for (const code of cfg.factorCodes) {
+      if (runDrafts.some((d) => d.name === code)) continue;
+      const meta = resolveFactorMeta(catalog, code);
+      if (!meta || !isFormulaPending(meta)) continue;
+      const idx = cfg.factorCodes.indexOf(code);
+      const body = (
+        bodyOverrides[code]?.trim() ||
+        methodBodies[idx] ||
+        meta.body ||
+        ""
+      ).trim();
+      if (!body) {
+        const msg = `请先编写因子代码：${code}`;
         setRunError(msg);
         pushLog(msg);
         return;
@@ -692,20 +964,43 @@ export function FactorDetectPage() {
       if (draft) return draft.body || "";
       return methodBodies[i] || "";
     });
+    const entry = resolveDetectEntryName(
+      primaryUserName || project.factorName || (codes.length === 1 ? codes[0] : "factor"),
+    );
+    const ingredients =
+      primaryUserName && codes.length > 1
+        ? codes.filter((c) => c !== primaryUserName)
+        : codes;
+    const comboCodes = singleEditable
+      ? codes
+      : ingredients.length
+        ? ingredients
+        : codes;
+    const comboWeights = singleEditable
+      ? [100]
+      : comboCodes.map((c) => {
+          const i = codes.indexOf(c);
+          return i >= 0 ? Number(cfg.weights[i] ?? 0) : 0;
+        });
+    const comboPowers = singleEditable
+      ? [1]
+      : comboCodes.map((c) => {
+          const i = codes.indexOf(c);
+          return i >= 0 ? Number(cfg.powers[i] ?? 1) : 1;
+        });
     const combo = buildComboFunction({
-      mode: draftOnly ? "sum" : cfg.weightMode,
-      factorCodes: codes,
-      weights: draftOnly ? [100] : cfg.weights,
-      powers: draftOnly ? [1] : cfg.powers,
-      customCombine: cfg.customCombine,
-      entryName: "combo_factor",
-      // 组合备注用洗净后的描述/名，避免项目标题里的括注进 docstring
+      mode: singleEditable ? "sum" : cfg.weightMode,
+      factorCodes: comboCodes,
+      weights: comboWeights,
+      powers: comboPowers,
+      customCombine: renameComboDef(cfg.customCombine, entry),
+      entryName: entry,
       title: cleanDetectDisplayName(
         project.description || project.name || project.factorName,
         project.factorName,
       ),
     });
-    const entryName = extractEntryName(combo, project.factorName || "combo_factor");
+    const entryName = extractEntryName(combo, entry);
     const parts = buildYgFactorRequestParts({
       factors: catalogForBuild,
       factorCodes: codes,
@@ -793,8 +1088,10 @@ export function FactorDetectPage() {
                     ? "全A"
                     : String(cfg.universe || "");
       pushLog(`回测区间 ${start} → ${end} · 股票池 ${poolLabel} · ${depthLabel}`);
-      pushLog("正在计算，请稍候…");
-      const res = await ygBacktestFactor(req, ac.signal);
+      const res = await ygBacktestFactor(req, ac.signal, {
+        onQueued: () => pushLog("准备中，请稍候…"),
+        onStarted: () => pushLog("正在检测，请稍候…"),
+      });
       const elapsedSec = Math.floor((Date.now() - t0) / 1000);
       if (res.error) {
         const msg = res.error;
@@ -807,8 +1104,9 @@ export function FactorDetectPage() {
       const saveReq = {
         ...req,
         _svquant_ui: buildDetectRunUiSnapshot(cfg, (code) => {
-          const f = catalogForBuild.find((x) => x.name === code);
-          return (f?.description || f?.explain || code).trim() || code;
+          const draft = runDrafts.find((d) => d.name === code);
+          if (draft) return (draft.description || draft.name).trim() || code;
+          return code;
         }),
         ...(primaryDraft ? { _svquantDraftFactor: primaryDraft } : {}),
         ...(runDrafts.length ? { _svquantDraftFactors: runDrafts } : {}),
@@ -833,6 +1131,49 @@ export function FactorDetectPage() {
         draftFactor: primaryDraft,
         draftFactors: runDrafts.length ? runDrafts : undefined,
       });
+      setReportRunId(rec.id);
+      // 再次落盘配置，保证下次从因子库点检测仍能看到已选成分因子
+      try {
+        await saveProject(project);
+      } catch {
+        /* ignore */
+      }
+      // 用户库空公式：检测成功后回写正文
+      for (let i = 0; i < codes.length; i++) {
+        const code = codes[i];
+        if (runDrafts.some((d) => d.name === code)) continue;
+        const meta = resolveFactorMeta(catalog, code);
+        if (
+          !meta ||
+          meta.userLibraryId == null ||
+          meta.userLibraryFactorId == null ||
+          !isFormulaPending(meta)
+        ) {
+          continue;
+        }
+        const body = (bodiesForBuild[i] || "").trim();
+        if (!body) continue;
+        try {
+          const updated = await persistFormulaAfterDetect({
+            libraryId: meta.userLibraryId,
+            factorId: meta.userLibraryFactorId,
+            body,
+            description: meta.description || code,
+          });
+          setCatalog((prev) =>
+            prev.map((f) =>
+              f.userLibraryFactorId === updated.id
+                ? userLibraryFactorToMeta(updated)
+                : f,
+            ),
+          );
+          pushLog(`已将公式写入因子库：${code}`);
+        } catch (e) {
+          pushLog(
+            `公式回写失败（${code}）：${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
+      }
       pushLog(`检测完成（用时 ${elapsedSec} 秒），正在打开报告…`);
       // 跑完回到「最新配置」路由，去掉历史 runId
       if (snapshotRunId) {
@@ -872,7 +1213,7 @@ export function FactorDetectPage() {
       setRunning(false);
       setElapsed(Math.floor((Date.now() - t0) / 1000));
     }
-  }, [project, cfg, methodBodies, bodyOverrides, catalog, navigate, pushLog, snapshotRunId]);
+  }, [project, cfg, methodBodies, bodyOverrides, catalog, navigate, pushLog, snapshotRunId, primaryUserName]);
 
   if (project === undefined) {
     return (
@@ -888,7 +1229,7 @@ export function FactorDetectPage() {
       <div className="p-10 text-center">
         <p className="text-slate-600">项目不存在</p>
         <Link to="/factor/detect" className="mt-3 inline-block text-blue-600 underline">
-          返回列表
+          返回检测报告
         </Link>
       </div>
     );
@@ -900,10 +1241,10 @@ export function FactorDetectPage() {
         <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
           <div className="flex min-w-0 items-center gap-2 text-sm">
             <Link
-              to={`/factor/detect/${projectId}/history`}
+              to="/factor/detect"
               className="shrink-0 text-slate-500 hover:text-slate-800"
             >
-              检测列表
+              检测报告
             </Link>
             <span className="shrink-0 text-slate-300">/</span>
             <span className="min-w-0 truncate font-semibold text-slate-900" title={project.name}>
@@ -932,8 +1273,26 @@ export function FactorDetectPage() {
               {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
               {running ? `检测中 ${elapsed}s` : "进行检测"}
             </button>
-            <Link
-              to={`/factor/detect/${projectId}/history`}
+            <button
+              type="button"
+              onClick={() => {
+                if (reportRunId) {
+                  navigate(`/factor/detect/report/${reportRunId}`);
+                  return;
+                }
+                void listRuns(projectId)
+                  .then((runs) => {
+                    if (runs[0]?.id) {
+                      setReportRunId(runs[0].id);
+                      navigate(`/factor/detect/report/${runs[0].id}`);
+                      return;
+                    }
+                    window.alert("暂无检测报告，请先点「进行检测」。");
+                  })
+                  .catch((e) => {
+                    window.alert(e instanceof Error ? e.message : String(e));
+                  });
+              }}
               className={`inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 lg:py-1.5 ${
                 running ? "" : "col-span-2 lg:col-span-1"
               }`}
@@ -941,7 +1300,7 @@ export function FactorDetectPage() {
               <BarChart3 className="h-3.5 w-3.5" />
               <span className="lg:hidden">报告</span>
               <span className="hidden lg:inline">检测报告</span>
-            </Link>
+            </button>
             {running ? (
               <button
                 type="button"
@@ -951,13 +1310,6 @@ export function FactorDetectPage() {
                 取消检测
               </button>
             ) : null}
-            <Link
-              to="/factor/detect"
-              className="hidden items-center gap-1 text-sm text-slate-500 hover:text-slate-800 lg:inline-flex"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              列表
-            </Link>
           </div>
         </div>
       </div>
@@ -994,26 +1346,12 @@ export function FactorDetectPage() {
           }`}
         >
           <div className="flex-1 space-y-6 overflow-y-auto px-3 py-4 text-sm sm:px-5 sm:py-5">
-            {/* 1. 添加因子 */}
+            {/* 1. 添加因子 / 当前内置因子 */}
             <section>
               <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="text-sm font-bold text-blue-600">1. 添加因子</h2>
-                {!isDraftOnlyMode ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCreateErr(null);
-                      setCreateName("");
-                      setCreateDesc("");
-                      setCreateCategory("");
-                      setCreateOpen(true);
-                    }}
-                    className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    新建因子
-                  </button>
-                ) : null}
+                <h2 className="text-sm font-bold text-blue-600">
+                  {isBuiltinLockedMode ? "1. 当前内置因子" : "1. 添加因子"}
+                </h2>
               </div>
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
                 {isDraftOnlyMode && draftFactor ? (
@@ -1021,13 +1359,7 @@ export function FactorDetectPage() {
                     className="inline-flex w-full max-w-full items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs shadow-sm sm:w-auto sm:max-w-[min(100%,20rem)]"
                     title={draftFactor.name}
                   >
-                    <span className="shrink-0 rounded bg-amber-200/80 px-1 py-0.5 text-[10px] font-semibold text-amber-900">
-                      临时
-                    </span>
-                    <span className="min-w-0 flex-1 truncate font-medium text-amber-900">
-                      {draftFactor.description || draftFactor.name}
-                    </span>
-                    <code className="hidden shrink-0 text-[10px] text-amber-700/80 sm:inline">
+                    <code className="min-w-0 flex-1 truncate font-medium text-amber-900">
                       {draftFactor.name}
                     </code>
                     <button
@@ -1039,25 +1371,21 @@ export function FactorDetectPage() {
                     </button>
                   </span>
                 ) : (
-                  <>
-                    {cfg.factorCodes.map((c) => {
-                      const draft = draftByName.get(c);
-                      if (draft) {
-                        return (
-                          <span
-                            key={c}
-                            className="inline-flex w-full max-w-full items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs shadow-sm sm:w-auto sm:max-w-[min(100%,20rem)]"
-                            title={draft.name}
-                          >
-                            <span className="shrink-0 rounded bg-amber-200/80 px-1 py-0.5 text-[10px] font-semibold text-amber-900">
-                              临时
-                            </span>
-                            <span className="min-w-0 flex-1 truncate font-medium text-amber-900">
-                              {draft.description || draft.name}
-                            </span>
-                            <code className="hidden shrink-0 text-[10px] text-amber-700/80 sm:inline">
-                              {draft.name}
-                            </code>
+                  chipFactorCodes.map((c) => {
+                    const draft = draftByName.get(c);
+                    const meta = catalog.find((f) => f.name === c);
+                    const pending = meta ? isFormulaPending(meta) : false;
+                    if (draft || pending) {
+                      return (
+                        <span
+                          key={c}
+                          className="inline-flex w-full max-w-full items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs shadow-sm sm:w-auto sm:max-w-[min(100%,20rem)]"
+                          title={c}
+                        >
+                          <code className="min-w-0 flex-1 truncate font-medium text-amber-900">
+                            {c}
+                          </code>
+                          {!isBuiltinLockedMode ? (
                             <button
                               type="button"
                               onClick={() => removeFactor(c)}
@@ -1065,18 +1393,20 @@ export function FactorDetectPage() {
                             >
                               <X className="h-3.5 w-3.5" />
                             </button>
-                          </span>
-                        );
-                      }
-                      return (
-                        <span
-                          key={c}
-                          className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm sm:max-w-[14rem]"
-                          title={factorLabel(c)}
-                        >
-                          <span className="truncate font-medium text-slate-800">
-                            {factorLabel(c)}
-                          </span>
+                          ) : null}
+                        </span>
+                      );
+                    }
+                    return (
+                      <span
+                        key={c}
+                        className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm sm:max-w-[14rem]"
+                        title={factorLabel(c)}
+                      >
+                        <span className="truncate font-medium text-slate-800">
+                          {factorLabel(c)}
+                        </span>
+                        {!isBuiltinLockedMode ? (
                           <button
                             type="button"
                             onClick={() => removeFactor(c)}
@@ -1084,18 +1414,21 @@ export function FactorDetectPage() {
                           >
                             <X className="h-3.5 w-3.5" />
                           </button>
-                        </span>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      onClick={() => setPickerOpen(true)}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-dashed border-blue-300 bg-blue-50/50 text-blue-600 transition hover:border-blue-400 hover:bg-blue-50"
-                    >
-                      <Plus className="h-5 w-5" />
-                    </button>
-                  </>
+                        ) : null}
+                      </span>
+                    );
+                  })
                 )}
+                {!isBuiltinLockedMode ? (
+                  <button
+                    type="button"
+                    onClick={() => setPickerOpen(true)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-dashed border-blue-300 bg-blue-50/50 text-blue-600 transition hover:border-blue-400 hover:bg-blue-50"
+                    title="添加因子"
+                  >
+                    <Plus className="h-5 w-5" />
+                  </button>
+                ) : null}
               </div>
             </section>
 
@@ -1140,7 +1473,9 @@ export function FactorDetectPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {cfg.factorCodes.map((c, i) => (
+                      {ingredientCodes.map((c) => {
+                        const i = cfg.factorCodes.indexOf(c);
+                        return (
                         <tr key={c}>
                           <td className="px-3 py-2.5">
                             <div className="font-medium text-slate-800">{factorLabel(c)}</div>
@@ -1153,9 +1488,14 @@ export function FactorDetectPage() {
                                 min={0}
                                 max={cfg.weightMode === "sum" ? 100 : undefined}
                                 step={cfg.weightMode === "sum" ? 1 : 0.1}
-                                value={cfg.weightMode === "sum" ? (cfg.weights[i] ?? 0) : (cfg.powers[i] ?? 1)}
+                                value={
+                                  cfg.weightMode === "sum"
+                                    ? (cfg.weights[i] ?? 0)
+                                    : (cfg.powers[i] ?? 1)
+                                }
                                 onChange={(e) => {
                                   const v = Number(e.target.value);
+                                  if (i < 0) return;
                                   if (cfg.weightMode === "sum") {
                                     const weights = [...cfg.weights];
                                     weights[i] = Math.max(0, Math.min(100, v));
@@ -1172,8 +1512,9 @@ export function FactorDetectPage() {
                             </div>
                           </td>
                         </tr>
-                      ))}
-                      {!cfg.factorCodes.length && (
+                        );
+                      })}
+                      {!ingredientCodes.length && (
                         <tr>
                           <td colSpan={2} className="px-3 py-6 text-center text-xs text-slate-400">
                             请先在上方添加因子
@@ -1421,35 +1762,51 @@ export function FactorDetectPage() {
         >
           <section
             className={`flex min-h-[50vh] flex-col overflow-hidden rounded-xl border bg-white shadow-sm lg:min-h-0 lg:flex-[4] ${
-              isDraftOnlyMode ? "border-amber-200" : "border-slate-200"
+              isEditableSingleMode ? "border-amber-200" : "border-slate-200"
             }`}
           >
             <div
               className={`flex items-center justify-between border-b px-4 py-2 ${
-                isDraftOnlyMode
+                isEditableSingleMode
                   ? "border-amber-100 bg-amber-50/60"
                   : "border-slate-100"
               }`}
             >
               <span
                 className={`text-xs font-semibold ${
-                  isDraftOnlyMode ? "text-amber-900" : "text-slate-600"
+                  isEditableSingleMode ? "text-amber-900" : "text-slate-600"
                 }`}
               >
                 {isDraftOnlyMode && draftFactor
                   ? `因子代码 · ${draftFactor.name}`
-                  : hasDraft
-                    ? "组合脚本（含临时因子）"
-                    : "组合脚本"}
+                  : isBuiltinLockedMode
+                    ? "内置因子（只读）"
+                    : primaryUserFactor && ingredientCodes.length <= 1
+                      ? `因子代码 · ${primaryUserFactor.name}`
+                      : primaryUserFactor
+                        ? `组合脚本 · ${primaryUserFactor.name}`
+                        : hasDraft
+                          ? "组合脚本（含临时因子）"
+                          : "组合脚本"}
               </span>
             </div>
             <div className="min-h-0 flex-1 p-2">
-              <FactorCodeEditor
-                value={scriptText}
-                onChange={onScriptChange}
-                readOnly={false}
-                height="100%"
-              />
+              {!scriptReady ? (
+                <div className="flex h-full min-h-[12rem] items-center justify-center rounded-lg border border-slate-100 bg-white">
+                  <div className="flex flex-col items-center gap-2 text-slate-400">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <span className="text-xs">加载代码…</span>
+                  </div>
+                </div>
+              ) : (
+                <FactorCodeEditor
+                  value={scriptText}
+                  onChange={onScriptChange}
+                  readOnly={isBuiltinLockedMode}
+                  height="100%"
+                  showPlaceholder={false}
+                />
+              )}
             </div>
           </section>
 
@@ -1498,81 +1855,18 @@ export function FactorDetectPage() {
 
       <FactorPickerModal
         open={pickerOpen}
-        selected={cfg.factorCodes}
+        selected={primaryUserName ? chipFactorCodes : cfg.factorCodes}
         onClose={() => setPickerOpen(false)}
         onConfirm={(codes, _labels, libraries) => {
           applyFactors(codes, libraries);
           setPickerOpen(false);
-          pushLog(`已选择 ${codes.length} 个因子`);
+          pushLog(
+            primaryUserName
+              ? `已添加 ${codes.filter((c) => c !== primaryUserName).length} 个因子`
+              : `已选择 ${codes.length} 个因子`,
+          );
         }}
       />
-
-      {createOpen ? (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900">新建因子</h3>
-              <button
-                type="button"
-                onClick={() => setCreateOpen(false)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="space-y-3 text-sm">
-              <label className="block text-xs text-slate-500">
-                因子代码名
-                <input
-                  value={createName}
-                  onChange={(e) => setCreateName(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm outline-none focus:border-blue-400"
-                />
-              </label>
-              <label className="block text-xs text-slate-500">
-                中文解释
-                <input
-                  value={createDesc}
-                  onChange={(e) => setCreateDesc(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
-                />
-              </label>
-              <label className="block text-xs text-slate-500">
-                分类
-                <select
-                  value={createCategory}
-                  onChange={(e) => setCreateCategory(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
-                >
-                  <option value="">请选择</option>
-                  {categoryOptions.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {createErr ? <p className="text-xs text-red-600">{createErr}</p> : null}
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setCreateOpen(false)}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                onClick={confirmCreateFactor}
-                className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-              >
-                确定
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

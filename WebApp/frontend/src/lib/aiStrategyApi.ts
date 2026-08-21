@@ -1,4 +1,6 @@
-/** AI 策略草稿生成：经 /yg-api 调同事 RE，本机不存 Key。 */
+/** AI 策略草稿生成：经本机 /api 转发计算服务，浏览器不直连对方。 */
+
+import { authHeaders } from "./auth";
 
 export type AiStrategyContext = {
   universe?: string | null;
@@ -42,9 +44,9 @@ export async function ygGenerateStrategyDraft(
   body: AiStrategyGenerateRequest,
   signal?: AbortSignal,
 ): Promise<AiStrategyGenerationResult> {
-  const res = await fetch("/yg-api/api/ai/strategy-generations", {
+  const res = await fetch("/api/ai/strategy-generations", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       prompt: body.prompt,
       context: body.context || {},

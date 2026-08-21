@@ -71,6 +71,6 @@ export const STRATEGY_NAV_ITEMS = [
 export const FACTOR_NAV_ITEMS = [
   { to: "/factor/library", label: "因子库" },
   { to: "/factor/ai", label: "AI因子生成" },
-  { to: "/factor/detect", label: "因子检测" },
+  { to: "/factor/detect", label: "检测报告" },
   { to: "/factor/dashboard", label: "因子面板" },
 ] as const;

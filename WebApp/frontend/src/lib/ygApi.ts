@@ -206,14 +206,218 @@ export function serializeYgFactorBody(body: YgBacktestRequest): Record<string, u
 }
 
 /**
- * 因子回测：经 Vite `/yg-api` 直打 ResearchEngine（同步等结果）。
- * 算数不再经本机 :8766 队列；保存项目 / 存检测 run 仍走本机 API。
+ * 计算类请求走本机薄 BFF（方案 A）：浏览器只打同源 /api，由 :8766 转发对方。
+ * 不直连对方地址，便于以后公网只暴露本站。
+ */
+function localApiUrl(path: string): string {
+  return path.startsWith("/") ? path : `/${path}`;
+}
+
+type YgAsyncRunTask = {
+  run_id?: string;
+  status?: string;
+  poll_url?: string;
+  error?: string | null;
+  result?: YgBacktestResponse | null;
+  cancel_requested?: boolean;
+  detail?: unknown;
+};
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const t = window.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      window.clearTimeout(t);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function parseJsonText(text: string): Record<string, unknown> {
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function errFromBody(data: Record<string, unknown>, status: number, text: string): string {
+  if (typeof data.detail === "string" && data.detail.trim()) return data.detail;
+  if (typeof data.error === "string" && data.error.trim()) return data.error;
+  const slice = text.slice(0, 200).trim();
+  return slice || `HTTP ${status}`;
+}
+
+/** 是否已是完整回测报表（旧同步 POST 或任务 result） */
+function looksLikeBacktestResult(
+  data: Record<string, unknown> | null | undefined,
+): data is YgBacktestResponse {
+  if (!data || typeof data !== "object") return false;
+  return (
+    "metrics" in data ||
+    "equity_curve" in data ||
+    "factor_analysis" in data ||
+    "date_range" in data
+  );
+}
+
+async function cancelBacktestRun(
+  kind: "factor" | "strategy",
+  runId: string,
+): Promise<void> {
+  const id = String(runId || "").trim();
+  if (!id) return;
+  try {
+    await fetch(
+      localApiUrl(`/api/backtest/${kind}/${encodeURIComponent(id)}`),
+      {
+        method: "DELETE",
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      },
+    );
+  } catch {
+    /* 取消尽力而为 */
+  }
+}
+
+async function submitAndPollBacktest(
+  kind: "factor" | "strategy",
+  payload: string,
+  signal?: AbortSignal,
+  opts?: {
+    onQueued?: (info: {
+      jobId: string;
+      maxInflight: number;
+      queued: number;
+      running: number;
+    }) => void;
+    onStarted?: () => void;
+  },
+): Promise<YgBacktestResponse> {
+  const headers = { "Content-Type": "application/json", ...authHeaders() };
+  const submitPath = `/api/backtest/${kind}`;
+
+  let submitRes: Response | null = null;
+  let submitText = "";
+  let submitData: Record<string, unknown> = {};
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    submitRes = await fetch(localApiUrl(submitPath), {
+      method: "POST",
+      headers,
+      body: payload,
+      signal,
+      cache: "no-store",
+    });
+    submitText = await submitRes.text();
+    submitData = parseJsonText(submitText);
+
+    if (submitRes.status !== 429) break;
+    const retryAfter = Number(submitRes.headers.get("Retry-After") || "1");
+    await sleep(Math.max(1, retryAfter) * 1000, signal);
+  }
+
+  if (!submitRes) throw new Error("提交失败");
+
+  if (submitRes.ok && submitRes.status !== 202 && looksLikeBacktestResult(submitData)) {
+    opts?.onStarted?.();
+    opts?.onQueued?.({ jobId: "", maxInflight: 0, queued: 0, running: 1 });
+    return submitData as YgBacktestResponse;
+  }
+
+  const runId = String(submitData.run_id || "").trim();
+  if (!(submitRes.status === 202 || (submitRes.ok && runId))) {
+    throw new Error(errFromBody(submitData, submitRes.status, submitText));
+  }
+  if (!runId) throw new Error("提交成功但未返回任务编号");
+
+  opts?.onQueued?.({
+    jobId: runId,
+    maxInflight: 0,
+    queued: 1,
+    running: 0,
+  });
+
+  const pollPath =
+    typeof submitData.poll_url === "string" && submitData.poll_url.startsWith("/api/")
+      ? submitData.poll_url
+      : `/api/backtest/${kind}/${encodeURIComponent(runId)}`;
+
+  let delayMs = 1000;
+  let sawRunning = false;
+
+  try {
+    while (true) {
+      if (signal?.aborted) {
+        await cancelBacktestRun(kind, runId);
+        throw new DOMException("Aborted", "AbortError");
+      }
+      await sleep(delayMs, signal);
+
+      const pollRes = await fetch(localApiUrl(pollPath), {
+        method: "GET",
+        headers: { ...authHeaders() },
+        signal,
+        cache: "no-store",
+      });
+      const pollText = await pollRes.text();
+      const task = parseJsonText(pollText) as YgAsyncRunTask & Record<string, unknown>;
+
+      if (pollRes.status === 404) {
+        throw new Error("任务已过期或不存在，请重试");
+      }
+      if (pollRes.status === 429) {
+        const retryAfter = Number(pollRes.headers.get("Retry-After") || "1");
+        delayMs = Math.max(1000, retryAfter * 1000);
+        continue;
+      }
+      if (!pollRes.ok) {
+        throw new Error(errFromBody(task, pollRes.status, pollText));
+      }
+
+      const status = String(task.status || "");
+      if (status === "running" && !sawRunning) {
+        sawRunning = true;
+        opts?.onStarted?.();
+      } else if (status === "succeeded") {
+        const result = task.result;
+        if (!looksLikeBacktestResult(result as Record<string, unknown>)) {
+          throw new Error("已完成但未返回结果，请重试");
+        }
+        return result as YgBacktestResponse;
+      } else if (status === "failed") {
+        throw new Error(String(task.error || "失败").trim() || "失败");
+      } else if (status === "cancelled") {
+        throw new DOMException("Aborted", "AbortError");
+      }
+
+      delayMs = delayMs < 2000 ? 2000 : 3000;
+    }
+  } catch (e) {
+    if ((e as Error)?.name === "AbortError") {
+      await cancelBacktestRun(kind, runId);
+    }
+    throw e;
+  }
+}
+
+/**
+ * 因子回测：本机 BFF 提交 → 轮询 GET（对方异步；本机不建队列）。
  */
 export async function ygBacktestFactor(
   body: YgBacktestRequest,
   signal?: AbortSignal,
   opts?: {
-    /** 已发出 RE 请求时回调（无本机 job 排队） */
     onQueued?: (info: {
       jobId: string;
       maxInflight: number;
@@ -223,39 +427,12 @@ export async function ygBacktestFactor(
     onStarted?: () => void;
   },
 ) {
-  opts?.onStarted?.();
-  // 兼容旧日志回调：直打 RE 无 job 队列
-  opts?.onQueued?.({
-    jobId: "",
-    maxInflight: 0,
-    queued: 0,
-    running: 1,
-  });
-
-  const headers = { "Content-Type": "application/json", ...authHeaders() };
-  const res = await fetch("/yg-api/api/backtest/factor", {
-    method: "POST",
-    headers,
-    body: JSON.stringify(serializeYgFactorBody(body)),
+  return submitAndPollBacktest(
+    "factor",
+    JSON.stringify(serializeYgFactorBody(body)),
     signal,
-  });
-  const text = await res.text();
-  let data: YgBacktestResponse & { detail?: unknown; error?: string };
-  try {
-    data = JSON.parse(text) as typeof data;
-  } catch {
-    throw new Error(
-      res.ok ? "响应不是 JSON" : `HTTP ${res.status}: ${text.slice(0, 200)}`,
-    );
-  }
-  if (!res.ok) {
-    const detail =
-      typeof data.detail === "string"
-        ? data.detail
-        : data.error || text.slice(0, 200);
-    throw new Error(detail || `HTTP ${res.status}`);
-  }
-  return data as YgBacktestResponse;
+    opts,
+  );
 }
 
 /** 策略回测：对齐 06-research-api.md + Strategy/libraries/backtest-strategy.md */
@@ -321,25 +498,15 @@ export async function ygBacktestStrategy(
   if (!payload.strategy_code && !payload.strategy_id) {
     throw new Error("strategy_code 与 strategy_id 至少提供其一");
   }
-  const res = await fetch("/yg-api/api/backtest/strategy", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+  return submitAndPollBacktest(
+    "strategy",
+    JSON.stringify(payload),
     signal,
-  });
-  const text = await res.text();
-  let data: YgBacktestResponse;
-  try {
-    data = JSON.parse(text) as YgBacktestResponse;
-  } catch {
-    throw new Error(res.ok ? "响应不是 JSON" : `HTTP ${res.status}: ${text.slice(0, 200)}`);
-  }
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-  return data;
+  );
 }
 
 export async function ygHealth() {
-  const res = await fetch("/yg-api/api/health");
-  if (!res.ok) throw new Error(`YGQuant 不通 HTTP ${res.status}`);
+  const res = await fetch(localApiUrl("/api/re/health"));
+  if (!res.ok) throw new Error(`计算服务不通 HTTP ${res.status}`);
   return res.json() as Promise<{ status?: string; version?: string }>;
 }

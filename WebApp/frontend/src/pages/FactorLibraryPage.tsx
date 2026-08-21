@@ -27,10 +27,10 @@ import {
   type FactorMeta,
 } from "@/lib/factorCatalog";
 import {
-  openOrCreateForFactor,
-  openDetectPlaceholderTab,
-  navigateDetectTab,
-} from "@/lib/detectStore";
+  createEmptyUserFactor,
+  isFormulaPending,
+  openDetectForLibraryFactor,
+} from "@/lib/factorLifecycle";
 import {
   createUserFactorLibrary,
   deleteFactorFromUserLibrary,
@@ -107,27 +107,22 @@ function FactorRow({
   factor: FactorMeta;
   onDelete?: () => void;
 }) {
-  const accent = ROW_ACCENT[factor.libraryLabel] ?? "border-l-slate-300";
-  const badge = ROW_BADGE[factor.libraryLabel] ?? "bg-slate-100 text-slate-600";
+  const pending = isFormulaPending(factor);
+  // 待写态用亮黄，与「波动/风险」的 amber 明显区分；检测写回后恢复分类色
+  const accent = pending
+    ? "border-l-yellow-400"
+    : ROW_ACCENT[factor.libraryLabel] ?? "border-l-slate-300";
+  const badge = pending
+    ? "bg-yellow-300 text-yellow-950"
+    : ROW_BADGE[factor.libraryLabel] ?? "bg-slate-100 text-slate-600";
   const [busy, setBusy] = useState(false);
 
   const onDetect = async () => {
     if (busy) return;
     setBusy(true);
-    // 先同步占住新标签手势，再 await 建项目（否则弹窗被拦会误跳当前页）
-    const tab = openDetectPlaceholderTab();
     try {
-      const p = await openOrCreateForFactor(
-        factor.name,
-        factor.explain || factor.description || factor.name,
-      );
-      navigateDetectTab(tab, p.id);
+      await openDetectForLibraryFactor(factor);
     } catch (err) {
-      try {
-        tab?.close();
-      } catch {
-        /* ignore */
-      }
       window.alert(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
@@ -136,13 +131,22 @@ function FactorRow({
 
   return (
     <div
-      className={`overflow-hidden rounded-xl border border-slate-200 border-l-4 bg-white shadow-sm ${accent}`}
+      className={`overflow-hidden rounded-xl border border-slate-200 border-l-4 bg-white shadow-sm ${accent} ${
+        pending ? "bg-yellow-50/50" : ""
+      }`}
     >
       <div className="flex flex-col gap-2.5 px-4 py-3 sm:flex-row sm:items-center sm:gap-3">
         <div className="min-w-0 flex-1">
-          <code className="inline-block max-w-full break-all rounded bg-slate-100 px-1.5 py-0.5 text-xs leading-snug text-slate-700">
-            {factor.name}
-          </code>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <code className="inline-block max-w-full break-all rounded bg-slate-100 px-1.5 py-0.5 text-xs leading-snug text-slate-700">
+              {factor.name}
+            </code>
+            {pending ? (
+              <span className="rounded bg-yellow-300 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-950">
+                待写代码
+              </span>
+            ) : null}
+          </div>
           <div className="mt-1 truncate text-sm font-medium text-slate-800">
             {factor.explain || factor.description}
           </div>
@@ -192,6 +196,13 @@ export function FactorLibraryPage() {
   const [createName, setCreateName] = useState("");
   const [createErr, setCreateErr] = useState<string | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
+  const [factorCreateOpen, setFactorCreateOpen] = useState(false);
+  const [factorName, setFactorName] = useState("");
+  const [factorDesc, setFactorDesc] = useState("");
+  const [factorCategory, setFactorCategory] = useState("");
+  const [factorLibId, setFactorLibId] = useState<number | "">("");
+  const [factorCreateErr, setFactorCreateErr] = useState<string | null>(null);
+  const [factorCreateBusy, setFactorCreateBusy] = useState(false);
   const [userLibFactors, setUserLibFactors] = useState<FactorMeta[]>([]);
   const [syncBusy, setSyncBusy] = useState(false);
   const isAdmin = user?.role === "admin";
@@ -343,6 +354,66 @@ export function FactorLibraryPage() {
     setCreateOpen(true);
   };
 
+  const openFactorCreate = () => {
+    if (!user) {
+      window.location.href = "/login?next=/factor/library";
+      return;
+    }
+    if (!userLibs.length) {
+      window.alert("请先「新增因子库」，再新建因子。");
+      return;
+    }
+    const prefer =
+      activeLib !== BUILTIN_KEY && userLibs.some((l) => String(l.id) === activeLib)
+        ? Number(activeLib)
+        : userLibs[0].id;
+    setFactorName("");
+    setFactorDesc("");
+    setFactorCategory("");
+    setFactorLibId(prefer);
+    setFactorCreateErr(null);
+    setFactorCreateOpen(true);
+  };
+
+  const confirmFactorCreate = async () => {
+    if (factorLibId === "") {
+      setFactorCreateErr("请选择所属因子库");
+      return;
+    }
+    if (!factorCategory.trim()) {
+      setFactorCreateErr("请选择分类");
+      return;
+    }
+    setFactorCreateBusy(true);
+    setFactorCreateErr(null);
+    try {
+      const created = await createEmptyUserFactor({
+        libraryId: Number(factorLibId),
+        name: factorName,
+        description: factorDesc,
+        categoryLabel: factorCategory,
+      });
+      const meta = userLibraryFactorToMeta(created);
+      setActiveLib(String(created.libraryId));
+      setUserLibFactors((prev) => [
+        meta,
+        ...prev.filter((x) => x.name !== meta.name),
+      ]);
+      setUserLibs((prev) =>
+        prev.map((l) =>
+          l.id === created.libraryId
+            ? { ...l, factorCount: (l.factorCount || 0) + 1 }
+            : l,
+        ),
+      );
+      setFactorCreateOpen(false);
+    } catch (e) {
+      setFactorCreateErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setFactorCreateBusy(false);
+    }
+  };
+
   const confirmCreate = async () => {
     const title = createName.trim();
     if (!title) {
@@ -488,6 +559,14 @@ export function FactorLibraryPage() {
                 <Plus className="h-4 w-4" />
                 新增因子库
               </button>
+              <button
+                type="button"
+                onClick={openFactorCreate}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100"
+              >
+                <Plus className="h-4 w-4" />
+                新建因子
+              </button>
               <Link
                 to="/factor/detect"
                 target="_blank"
@@ -496,7 +575,7 @@ export function FactorLibraryPage() {
                 className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-800"
               >
                 <BarChart2 className="h-4 w-4" />
-                检测
+                检测报告
               </Link>
               </div>
             </div>
@@ -625,7 +704,7 @@ export function FactorLibraryPage() {
                 <p className="py-16 text-center text-sm text-slate-400">
                   {activeLib === BUILTIN_KEY
                     ? "无匹配因子"
-                    : "该因子库暂无因子，可在「因子检测 → 新建因子 → 报告入库」添加"}
+                    : "该因子库暂无因子，可点右上角「新建因子」添加"}
                 </p>
               )}
                 </>
@@ -720,6 +799,106 @@ export function FactorLibraryPage() {
                 className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
               >
                 创建
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {factorCreateOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <div className="mb-1 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">新建因子</h3>
+              <button
+                type="button"
+                onClick={() => setFactorCreateOpen(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3 text-sm">
+              <label className="block text-xs text-slate-500">
+                因子代码名
+                <input
+                  autoFocus
+                  value={factorName}
+                  onChange={(e) => {
+                    setFactorName(e.target.value);
+                    setFactorCreateErr(null);
+                  }}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm outline-none focus:border-blue-400"
+                />
+              </label>
+              <label className="block text-xs text-slate-500">
+                中文解释
+                <input
+                  value={factorDesc}
+                  onChange={(e) => {
+                    setFactorDesc(e.target.value);
+                    setFactorCreateErr(null);
+                  }}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                />
+              </label>
+              <label className="block text-xs text-slate-500">
+                分类
+                <select
+                  value={factorCategory}
+                  onChange={(e) => {
+                    setFactorCategory(e.target.value);
+                    setFactorCreateErr(null);
+                  }}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                >
+                  <option value="">请选择</option>
+                  {[...builtinCategories, "其他"].map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs text-slate-500">
+                所属用户因子库
+                <select
+                  value={factorLibId === "" ? "" : String(factorLibId)}
+                  onChange={(e) => {
+                    setFactorLibId(
+                      e.target.value ? Number(e.target.value) : "",
+                    );
+                    setFactorCreateErr(null);
+                  }}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                >
+                  <option value="">请选择</option>
+                  {userLibs.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {factorCreateErr ? (
+              <p className="mt-2 text-xs text-red-500">{factorCreateErr}</p>
+            ) : null}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setFactorCreateOpen(false)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={factorCreateBusy}
+                onClick={() => void confirmFactorCreate()}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+              >
+                {factorCreateBusy ? "创建中…" : "确定"}
               </button>
             </div>
           </div>

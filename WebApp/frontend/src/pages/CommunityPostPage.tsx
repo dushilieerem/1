@@ -381,7 +381,7 @@ export function CommunityPostPage() {
           draftFactors:
             plan.kind === "mixed" ? plan.customDrafts : undefined,
         });
-        navigateDetectTab(tab, p.id);
+        navigateDetectTab(tab, p.id, p);
         return;
       }
       // 纯自定义：临时因子直开检测，跳过「新建因子」表单
@@ -402,7 +402,7 @@ export function CommunityPostPage() {
         weightMode: plan.weightMode || "sum",
         draftFactors: drafts,
       });
-      navigateDetectTab(tab, p.id);
+      navigateDetectTab(tab, p.id, p);
     } catch (ex) {
       try {
         tab?.close();

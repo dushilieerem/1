@@ -497,7 +497,7 @@ export function FactorDashboardPage() {
               <p className="mt-2 text-sm leading-relaxed text-slate-600">
                 批量看全因子表现（YGQuant RE 回测聚合）。单因子可调参深度检测请用
                 <Link to="/factor/detect" className="mx-1 font-medium text-red-600 hover:underline">
-                  因子检测
+                  检测报告
                 </Link>
                 。
               </p>
@@ -837,9 +837,9 @@ export function FactorDashboardPage() {
                               const tab = openDetectPlaceholderTab();
                               void openOrCreateForFactor(
                                 r.factor_name,
-                                r.name_cn || r.factor_name,
+                                r.factor_name,
                               )
-                                .then((p) => navigateDetectTab(tab, p.id))
+                                .then((p) => navigateDetectTab(tab, p.id, p))
                                 .catch((err) => {
                                   try {
                                     tab?.close();

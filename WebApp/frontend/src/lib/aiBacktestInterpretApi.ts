@@ -1,5 +1,6 @@
-/** AI 回测解读：经 /yg-api 调同事 RE，本机不存 Key。 */
+/** AI 回测解读：经本机 /api 转发计算服务，浏览器不直连对方。 */
 
+import { authHeaders } from "./auth";
 import { newUuidV4 } from "./uuid";
 
 export type BacktestInterpretType = "factor" | "strategy";
@@ -91,9 +92,9 @@ export async function ygInterpretBacktest(
   body: BacktestInterpretRequest,
   signal?: AbortSignal,
 ): Promise<BacktestInterpretationResult> {
-  const res = await fetch("/yg-api/api/ai/backtest-interpretations", {
+  const res = await fetch("/api/ai/backtest-interpretations", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       backtest_type: body.backtest_type,
       result: body.result,

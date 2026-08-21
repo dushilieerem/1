@@ -3,7 +3,7 @@ import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ChevronDown, ChevronLeft, ChevronRight, List } from "lucide-react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   DEFAULT_HELP_DOC,
   extractHelpHeadings,
@@ -145,17 +145,38 @@ function flatText(node: ReactNode): string {
   return "";
 }
 
+/** 帮助页内标题锚点滚动（SPA 下点目录不会自动跳位） */
+function scrollToHelpHeading(hash: string, behavior: ScrollBehavior = "smooth") {
+  const raw = hash.replace(/^#/, "").trim();
+  if (!raw) return false;
+  let id = raw;
+  try {
+    id = decodeURIComponent(raw);
+  } catch {
+    /* keep raw */
+  }
+  const el = document.getElementById(id);
+  if (!el) return false;
+  el.scrollIntoView({ behavior, block: "start" });
+  return true;
+}
+
 function HelpSidebar({
   activeId,
-  headings,
+  headingsByDoc,
   expandedGroups,
+  expandedDocs,
   onToggleGroup,
+  onToggleDoc,
 }: {
   activeId: HelpDocId;
-  headings: { id: string; text: string; level: 2 | 3 }[];
+  headingsByDoc: Record<string, { id: string; text: string; level: 2 | 3 }[]>;
   expandedGroups: Record<string, boolean>;
+  expandedDocs: Record<string, boolean>;
   onToggleGroup: (group: string) => void;
+  onToggleDoc: (docId: HelpDocId) => void;
 }) {
+  const navigate = useNavigate();
   const groups = useMemo(() => groupDocs(HELP_DOCS), []);
 
   return (
@@ -181,30 +202,61 @@ function HelpSidebar({
               <ul className="mt-0.5 space-y-0.5 border-l border-slate-200 ml-2 pl-1">
                 {items.map((doc) => {
                   const active = doc.id === activeId;
+                  const docHeadings = headingsByDoc[doc.id] || [];
+                  const docOpen = expandedDocs[doc.id] === true;
+                  const rowClass = `flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left leading-snug ${
+                    active
+                      ? "bg-sky-50 font-medium text-sky-700"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                  }`;
                   return (
                     <li key={doc.id}>
-                      <Link
-                        to={`/help/${doc.id}`}
-                        className={`block rounded px-2 py-1.5 leading-snug ${
-                          active
-                            ? "bg-sky-50 font-medium text-sky-700"
-                            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                        }`}
-                      >
-                        {doc.title}
-                      </Link>
-                      {active && headings.length > 0 && (
+                      {docHeadings.length > 0 ? (
+                        <button
+                          type="button"
+                          aria-expanded={docOpen}
+                          onClick={() => {
+                            const willOpen = !docOpen;
+                            onToggleDoc(doc.id);
+                            if (willOpen && !active) navigate(`/help/${doc.id}`);
+                          }}
+                          className={rowClass}
+                        >
+                          <span className="min-w-0">{doc.title}</span>
+                          <ChevronDown
+                            className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition ${
+                              docOpen ? "" : "-rotate-90"
+                            }`}
+                          />
+                        </button>
+                      ) : (
+                        <Link to={`/help/${doc.id}`} className={rowClass}>
+                          <span className="min-w-0">{doc.title}</span>
+                        </Link>
+                      )}
+                      {docOpen && docHeadings.length > 0 && (
                         <ul className="mt-0.5 mb-1 space-y-0.5 border-l border-slate-100 ml-2 pl-1">
-                          {headings.map((h) => (
+                          {docHeadings.map((h) => (
                             <li key={h.id}>
-                              <a
-                                href={`#${h.id}`}
+                              <Link
+                                to={{ pathname: `/help/${doc.id}`, hash: h.id }}
+                                onClick={(e) => {
+                                  // 已在本篇时 RR 往往不滚屏，手动定位
+                                  if (doc.id === activeId) {
+                                    e.preventDefault();
+                                    const href = `#${h.id}`;
+                                    if (window.location.hash !== href) {
+                                      window.history.pushState(null, "", href);
+                                    }
+                                    scrollToHelpHeading(h.id);
+                                  }
+                                }}
                                 className={`block rounded px-2 py-1 text-xs leading-snug text-slate-500 hover:bg-slate-50 hover:text-sky-700 ${
                                   h.level === 3 ? "pl-4" : ""
                                 }`}
                               >
                                 {h.text}
-                              </a>
+                              </Link>
                             </li>
                           ))}
                         </ul>
@@ -223,16 +275,25 @@ function HelpSidebar({
 
 function HelpArticle({ doc }: { doc: HelpDocMeta }) {
   const md = useMemo(() => loadHelpMarkdown(doc.id), [doc.id]);
-  const headings = useMemo(() => extractHelpHeadings(md), [md]);
+  const location = useLocation();
   const idx = HELP_DOCS.findIndex((d) => d.id === doc.id);
   const prev = idx > 0 ? HELP_DOCS[idx - 1] : null;
   const next = idx >= 0 && idx < HELP_DOCS.length - 1 ? HELP_DOCS[idx + 1] : null;
 
   useEffect(() => {
-    if (!window.location.hash) {
+    const hash = location.hash;
+    if (!hash) {
       window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+      return;
     }
-  }, [doc.id]);
+    let tries = 0;
+    const tick = () => {
+      if (scrollToHelpHeading(hash) || tries++ > 30) return;
+      window.setTimeout(tick, 16);
+    };
+    // 等 Markdown 标题进 DOM
+    window.setTimeout(tick, 0);
+  }, [doc.id, location.hash, md]);
 
   return (
     <article className="min-w-0">
@@ -298,28 +359,59 @@ export function HelpPage() {
 
 function HelpDocView({ docId }: { docId: HelpDocId }) {
   const doc = getHelpDoc(docId);
-  const md = useMemo(() => loadHelpMarkdown(doc.id), [doc.id]);
-  const headings = useMemo(() => extractHelpHeadings(md), [md]);
+  const headingsByDoc = useMemo(() => {
+    const map: Record<string, { id: string; text: string; level: 2 | 3 }[]> = {};
+    for (const d of HELP_DOCS) {
+      map[d.id] = extractHelpHeadings(loadHelpMarkdown(d.id));
+    }
+    return map;
+  }, []);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};
     for (const d of HELP_DOCS) init[d.group] = true;
     return init;
   });
+  // 多篇可同时展开章节目录；进入某篇时自动展开该篇
+  const [expandedDocs, setExpandedDocs] = useState<Record<string, boolean>>(() => ({
+    [docId]: true,
+  }));
+
+  useEffect(() => {
+    setExpandedDocs((prev) => (prev[docId] ? prev : { ...prev, [docId]: true }));
+  }, [docId]);
+
+  const toggleGroup = (g: string) => {
+    setExpandedGroups((prev) => ({
+      ...prev,
+      [g]: prev[g] === false,
+    }));
+  };
+
+  const toggleDoc = (id: HelpDocId) => {
+    setExpandedDocs((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const sidebar = (
+    <HelpSidebar
+      activeId={doc.id}
+      headingsByDoc={headingsByDoc}
+      expandedGroups={expandedGroups}
+      expandedDocs={expandedDocs}
+      onToggleGroup={toggleGroup}
+      onToggleDoc={toggleDoc}
+    />
+  );
 
   return (
     <div className="min-h-[calc(100vh-3.5rem)] bg-white">
       <div className="mx-auto flex max-w-[1440px] gap-0 px-4 sm:px-6 lg:px-8">
         {/* 桌面侧栏 */}
         <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-[260px] shrink-0 overflow-y-auto border-r border-slate-200 py-6 pr-4 lg:block">
-          <HelpSidebar
-            activeId={doc.id}
-            headings={headings}
-            expandedGroups={expandedGroups}
-            onToggleGroup={(g) =>
-              setExpandedGroups((prev) => ({ ...prev, [g]: prev[g] === false }))
-            }
-          />
+          {sidebar}
         </aside>
 
         <div className="min-w-0 flex-1 py-6 lg:pl-10 lg:pr-4">
@@ -336,17 +428,7 @@ function HelpDocView({ docId }: { docId: HelpDocId }) {
             </button>
             {mobileOpen && (
               <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-                <HelpSidebar
-                  activeId={doc.id}
-                  headings={headings}
-                  expandedGroups={expandedGroups}
-                  onToggleGroup={(g) =>
-                    setExpandedGroups((prev) => ({
-                      ...prev,
-                      [g]: prev[g] === false,
-                    }))
-                  }
-                />
+                {sidebar}
               </div>
             )}
           </div>

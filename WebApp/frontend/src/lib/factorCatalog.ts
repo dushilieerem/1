@@ -16,6 +16,8 @@ export type FactorMeta = {
   ownerId?: number;
   /** 用户库因子：直接带源码，无需读文件 */
   body?: string;
+  /** 用户库：false 表示尚无有效公式（黄色） */
+  formulaReady?: boolean;
   userLibraryId?: number;
   userLibraryName?: string;
   /** 用户库因子行 id（删除用） */

@@ -85,7 +85,7 @@ export function buildComboFunction(opts: {
   entryName?: string;
   title?: string;
 }): string {
-  const entry = opts.entryName || "combo_factor";
+  const entry = opts.entryName || "factor";
   const title = opts.title || "组合因子";
   const codes = opts.factorCodes;
 
@@ -131,7 +131,7 @@ export function buildDetectFactorCode(methodBodies: string[], comboFn: string): 
 }
 
 /** 从组合函数里取入口名 */
-export function extractEntryName(comboFn: string, fallback = "combo_factor"): string {
+export function extractEntryName(comboFn: string, fallback = "factor"): string {
   const m = comboFn.match(/^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/m);
   return m?.[1] || fallback;
 }

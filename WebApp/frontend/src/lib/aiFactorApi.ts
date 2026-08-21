@@ -1,4 +1,6 @@
-/** AI 因子草稿生成：经 /yg-api 调同事 RE，本机不存 Key。 */
+/** AI 因子草稿生成：经本机 /api 转发计算服务，浏览器不直连对方。 */
+
+import { authHeaders } from "./auth";
 
 export type AiFactorContext = {
   universe?: string | null;
@@ -44,9 +46,9 @@ export async function ygGenerateFactorDraft(
   body: AiFactorGenerateRequest,
   signal?: AbortSignal,
 ): Promise<AiFactorGenerationResult> {
-  const res = await fetch("/yg-api/api/ai/factor-generations", {
+  const res = await fetch("/api/ai/factor-generations", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       prompt: body.prompt,
       context: body.context || {},

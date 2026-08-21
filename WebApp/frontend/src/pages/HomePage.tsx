@@ -50,9 +50,9 @@ const MODULES: Entry[] = [
   },
   {
     icon: BarChart3,
-    title: "因子检测",
+    title: "检测报告",
     line: "IC / 分层 / 净值",
-    desc: "统一口径做检测，结果可复现、可对比。",
+    desc: "查看历次检测结果，可复现、可对比。",
     to: "/factor/detect",
     needAuth: true,
   },

@@ -12,4 +12,4 @@
 4. `zscore` 按日标准化，常数横截面有效值为 0。
 5. `rank` 返回按日百分位排名；`normalize` 按日将绝对值和归一化为 1。
 6. `neutralize` 支持行业虚拟变量、对数市值或两者；未提供任何暴露时抛出 `ValueError`，样本不足的日期返回缺失值而不伪造结果。
-7. 因子库可通过 `from quantcore.factor.tool import ...` 使用工具；现有组合策略复用同一实现。
+7. 因子库可通过 `from app.quantcore.factor.tool import ...` 使用工具；现有组合策略复用同一实现。

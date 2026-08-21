@@ -7,7 +7,8 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from researchengine.api import ai_interpretation, app
+from app.api import ai_interpretation
+from app.main import app
 
 
 client = TestClient(app)

@@ -8,7 +8,7 @@
 因子函数可直接使用：
 
 ```python
-from quantcore.factor.tool import winsorize, zscore
+from app.quantcore.factor.tool import winsorize, zscore
 
 def value_score(self):
     return zscore(winsorize(1 / self.pb))
@@ -17,7 +17,7 @@ def value_score(self):
 行业/市值中性化需要显式传入对应的历史暴露面板：
 
 ```python
-from quantcore.factor.tool import neutralize
+from app.quantcore.factor.tool import neutralize
 
 def neutral_value(self):
     return neutralize(

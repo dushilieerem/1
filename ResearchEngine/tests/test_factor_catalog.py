@@ -6,7 +6,7 @@ import uuid
 
 import yaml
 
-from researchengine.factor_catalog import check_catalog, sync_catalog
+from app.repositories.catalogs.factor_catalog import check_catalog, sync_catalog
 
 
 def test_repository_factor_catalog_is_synchronized():
@@ -23,7 +23,7 @@ def test_sync_and_check_catalog_follow_factor_source(tmp_path):
     overview_path.write_text("研究员手工维护的总览文档。\n", encoding="utf-8")
 
     module_path.write_text(
-        "from quantcore import FactorLibrary\n\n"
+        "from app.quantcore import FactorLibrary\n\n"
         f"class CatalogTestLibrary(FactorLibrary):\n"
         "    author = 'test'\n\n"
         "    def first_factor(self, window: int = 5):\n"

@@ -12,7 +12,7 @@
 ## 2. 推荐：结构化因子组合策略
 
 ```python
-from quantcore import (
+from app.quantcore import (
     EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, factor, signal,
 )
 

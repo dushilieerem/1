@@ -7,8 +7,8 @@ import pandas as pd
 import pytest
 import yaml
 
-from quantcore.factor.base import Panel, library_factors
-from researchengine import FactorLoader
+from app.quantcore.factor.base import Panel, library_factors
+from app import FactorLoader
 
 
 FACTOR_NAMES = {
@@ -53,10 +53,12 @@ def test_trend_quality_factors_are_discoverable_and_indexed():
     library = loader.load("technical_lib")
     factors = library_factors(library)
 
-    assert len(factors) == 53
+    assert len(factors) == 57
     assert FACTOR_NAMES.issubset(factors)
 
-    index_path = Path(__file__).parents[2] / "Factor" / "libraries" / "index.yaml"
+    from app.assets.factors import INDEX_PATH
+
+    index_path = INDEX_PATH
     catalog = yaml.safe_load(index_path.read_text(encoding="utf-8"))
     entry = catalog["libraries"]["technical_lib"]
     indexed_names = {item["name"] for item in entry["factors"]}

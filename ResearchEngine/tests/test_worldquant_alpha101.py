@@ -3,8 +3,8 @@
 import numpy as np
 import pandas as pd
 
-from quantcore.factor.base import Panel, library_factors
-from researchengine import FactorLoader
+from app.quantcore.factor.base import Panel, library_factors
+from app import FactorLoader
 
 
 def _panel(days: int = 300) -> Panel:
@@ -127,7 +127,7 @@ def test_worldquant_vwap_fallback_works_without_amount():
 
 
 def test_factor_api_lists_worldquant_alpha101():
-    from researchengine.api.routes import _builtin_factors
+    from app.api.routes import _builtin_factors
 
     names = {factor.name for factor in _builtin_factors()}
     assert "alpha001" in names
@@ -135,7 +135,7 @@ def test_factor_api_lists_worldquant_alpha101():
 
 
 def test_builtin_runner_loads_worldquant_alpha101_factor():
-    from researchengine.api.runner import _load_factor_from_builtin_library
+    from app.services.factor.runner import _load_factor_from_builtin_library
 
     factor = _load_factor_from_builtin_library("worldquant_alpha101", "alpha101")
     assert factor.name == "alpha101"

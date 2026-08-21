@@ -1,5 +1,6 @@
 import csv
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -63,6 +64,47 @@ def test_json_to_complete_csv_to_parquet(tmp_path):
     assert not list(tmp_path.glob("*.parquet"))
 
 
+def test_market_data_overlapping_windows_keep_latest_raw_result(tmp_path):
+    universe = tmp_path / "universe" / "a_share.csv"
+    universe.parent.mkdir(parents=True)
+    universe.write_text("thscode,exchange\n600000.SH,SH\n", encoding="utf-8")
+
+    windows = (
+        ("2026-08-04_2026-08-05", 10.0, 2.0, 1_700_000_000_000_000_000),
+        ("2026-08-05_2026-08-06", 12.0, 3.0, 1_700_000_001_000_000_000),
+    )
+    for window, close, turn, timestamp in windows:
+        price = {
+            "tables": [{
+                "thscode": "600000.SH",
+                "time": ["2026-08-05"],
+                "table": {"open": [close - 1], "high": [close + 1], "low": [close - 2], "close": [close]},
+            }]
+        }
+        liquidity = {
+            "tables": [{
+                "thscode": "600000.SH",
+                "time": ["2026-08-05"],
+                "table": {"volume": [100], "amt": [1000], "turn": [turn]},
+            }]
+        }
+        for group, body in (("price", price), ("liquidity", liquidity)):
+            path = tmp_path / "market_data" / "raw" / group / "SH" / window / "symbols_00001.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(body), encoding="utf-8")
+            os.utime(path, ns=(timestamp, timestamp))
+
+    summary = build_daily_csv(tmp_path, workers=1)
+
+    assert summary["rows"] == 1
+    assert summary["deduplicated_rows"] == 1
+    with (tmp_path / "market_data" / "market_data_hfq.csv").open(encoding="utf-8", newline="") as stream:
+        rows = list(csv.reader(stream))
+    assert len(rows) == 3
+    assert rows[2][rows[1].index("close")] == "12.0"
+    assert rows[2][rows[1].index("turnover")] == "0.03"
+
+
 def test_unadjusted_price_pipeline_has_only_ohlc(tmp_path):
     price = {"tables": [{"thscode": "600000.SH", "time": ["2026-08-04"], "table": {"open": [10], "high": [11], "low": [9], "close": [10.5]}}]}
     raw = tmp_path / "unadjusted_price" / "raw" / "SH" / "2026-08-04_2026-08-04" / "symbols_00001.json"
@@ -78,6 +120,43 @@ def test_unadjusted_price_pipeline_has_only_ohlc(tmp_path):
         rows = list(csv.reader(stream))
     assert rows[1][1:] == ["open", "high", "low", "close"]
     assert not {"volume", "amount", "turnover"} & set(rows[1])
+
+
+def test_unadjusted_price_windows_are_sorted_after_exchange_merge(tmp_path):
+    universe = tmp_path / "universe" / "a_share.csv"
+    universe.parent.mkdir(parents=True)
+    universe.write_text(
+        "thscode,exchange\n600000.SH,SH\n920000.BJ,BJ\n",
+        encoding="utf-8",
+    )
+    window = "2020-07-17_2020-07-30"
+    # BJ 只有窗口末日，且按路径排序会先于 SH；这正是原始错序场景。
+    for exchange, symbol, trade_date, close in (
+        ("BJ", "920000.BJ", "2020-07-30", 30),
+        ("SH", "600000.SH", "2020-07-17", 17),
+    ):
+        body = {
+            "tables": [{
+                "thscode": symbol,
+                "time": [trade_date],
+                "table": {
+                    "open": [close - 1],
+                    "high": [close + 1],
+                    "low": [close - 2],
+                    "close": [close],
+                },
+            }],
+        }
+        path = tmp_path / "unadjusted_price" / "raw" / exchange / window / "symbols_00001.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(body), encoding="utf-8")
+
+    assert build_price_csv(tmp_path, workers=1)["rows"] == 2
+    with (tmp_path / "unadjusted_price" / "unadjusted_price.csv").open(
+        encoding="utf-8", newline=""
+    ) as stream:
+        rows = list(csv.reader(stream))
+    assert [row[0] for row in rows[2:]] == ["2020-07-17", "2020-07-30"]
 
 
 def test_unadjusted_price_download_never_requests_liquidity(tmp_path):

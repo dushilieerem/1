@@ -51,6 +51,34 @@
 | Supertrend 趋势策略、ATR 递推与字段契约回归测试 | 2 | 中 | 日线 OHLC、EventEngine | 完成 |
 | Hull Moving Average 趋势策略、WMA/HMA 公式与事件回归测试 | 2 | 低 | 日线 close、EventEngine | 完成 |
 | Williams Alligator 趋势策略、SMMA 滞后线与事件回归测试 | 2 | 中 | 日线 OHLC、EventEngine | 完成 |
+| KAMA 自适应趋势策略、效率比公式与事件回归测试 | 2 | 低 | 日线 close、EventEngine | 完成 |
+| McGinley Dynamic 趋势策略、递推公式与事件回归测试 | 2 | 中 | 日线 close、EventEngine | 完成 |
+| Heikin-Ashi 趋势策略、蜡烛转换公式与事件回归测试 | 2 | 中 | 日线 OHLC、EventEngine | 完成 |
+| Pivot Point 突破策略、前一日枢轴公式与事件回归测试 | 2 | 低 | 日线 OHLC、EventEngine | 完成 |
 | 完整 CANSLIM | 5 | 高 | 公告日财务、股东数据、历史证券状态、形态金标 | 不在本 Feature 范围 |
 
 里程碑：M1 为 RSI 可加载、可运行并通过测试；M2 为 CANSLIM Lite 只用价格数据可运行；M3 为后续 Feature 的完整 CANSLIM 通过点时数据与形态黄金样本验证。
+
+## 本次增量任务（2026-08-20）
+
+| 任务 | 复杂度 | 风险 | 依赖 | 状态 |
+|---|---:|---|---|---|
+| BBI 多空指数趋势策略、公式和目录资产 | 2 | 低 | 日线 close、EventEngine | 完成 |
+| Mass Index 波动反转策略、公式和字段契约 | 2 | 中 | 日线 high/low/close、EventEngine | 完成 |
+| VHF 趋势强度策略、阈值规则和目录资产 | 2 | 低 | 日线 close、EventEngine | 完成 |
+| WVAD 量价趋势策略、零振幅边界和字段契约 | 2 | 中 | 日线 OHLCV、EventEngine | 完成 |
+| 四策略公式、因果性、事件回测和权重边界测试 | 2 | 中 | 上述策略资产 | 完成 |
+
+本批交付不新增 QuantCore、EventEngine 或 API 共享接口；回滚只需移除四个索引条目，源码版本保留。
+
+## 本次增量任务（2026-08-21）
+
+| 任务 | 复杂度 | 风险 | 依赖 | 状态 |
+|---|---:|---|---|---|
+| TEMA 低滞后趋势策略、公式和目录资产 | 2 | 低 | 日线 close、EventEngine | 完成 |
+| SMI 随机动量策略、双重平滑公式和字段契约 | 2 | 中 | 日线 OHLC、EventEngine | 完成 |
+| Ulcer Index 低回撤策略、风险公式和目录资产 | 2 | 低 | 日线 close、EventEngine | 完成 |
+| Schaff Trend Cycle 趋势动量策略、双重随机公式和目录资产 | 2 | 中 | 日线 close、EventEngine | 完成 |
+| 四策略公式、因果性、事件回测和权重边界测试 | 2 | 中 | 上述策略资产 | 完成 |
+
+本批交付不新增 QuantCore、EventEngine 或 API 共享接口；回滚只需移除四个索引条目，源码版本保留。

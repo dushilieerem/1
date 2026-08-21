@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from researchengine.riskmodel import (
+from app.services.factor.riskmodel import (
     ff3_factors,
     ff3_regression,
     industry_ic_ir,

@@ -14,7 +14,7 @@ API Route
 ```
 
 - `Factor/` 只承载项目资产，不包含 Python 运行逻辑。
-- 缓存编排属于 `ResearchEngine/researchengine/cache/`，不得侵入 QuantCore 回测引擎。
+- 缓存编排属于 `ResearchEngine/app/repositories/results/cache/`，不得侵入 `app.quantcore` 回测引擎。
 - `ResultStorage` 继续用于 SDK 的结果保存；不复用为 API 缓存，避免将缓存索引、失效和清理逻辑混入结果存储接口。
 
 ## 2. 目录迁移

@@ -19,7 +19,7 @@ ResearchEngine 是**纯计算服务层**，遵循以下原则：
 ## 2. 核心执行单元：Experiment 与 API runner
 
 ```
-researchengine/experiment.py + researchengine/api/runner.py
+app/services/experiment/ + app/services/factor/runner.py
 
 因子回测执行单元
 ─────────────────────────────────────────
@@ -61,7 +61,7 @@ researchengine/experiment.py + researchengine/api/runner.py
 ## 3. ExperimentManager：进程级任务调度器
 
 ```
-researchengine/manager.py
+app/services/experiment/manager.py
 
 ExperimentManager
 ─────────────────────────────────────────
@@ -102,7 +102,7 @@ CREATED → QUEUED → RUNNING → SUCCEEDED
 ## 5. 值对象
 
 ```
-researchengine/runner.py
+app/services/factor/runner.py
 
 BacktestParams
 ────────────────
@@ -134,7 +134,7 @@ BacktestResult
 ## 6. HTTP API 层
 
 ```
-researchengine/api/
+app/api/
 
 schemas.py
 ────────────────

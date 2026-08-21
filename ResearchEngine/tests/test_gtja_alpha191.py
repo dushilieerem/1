@@ -3,8 +3,8 @@
 import numpy as np
 import pandas as pd
 
-from quantcore.factor.base import Panel, library_factors
-from researchengine import FactorLoader
+from app.quantcore.factor.base import Panel, library_factors
+from app import FactorLoader
 
 
 def _panel(days: int = 300, include_optional: bool = True) -> Panel:

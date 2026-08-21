@@ -15,7 +15,7 @@
 前端只暴露因子方法体；服务端负责生成完整文件：
 
 ```python
-from quantcore import FactorLibrary
+from app.quantcore import FactorLibrary
 
 class MomentumLibrary(FactorLibrary):
     author = "当前用户"
@@ -29,7 +29,7 @@ class MomentumLibrary(FactorLibrary):
 
 | 生成项 | 规则 |
 |--------|------|
-| 导入 | 固定 `from quantcore import FactorLibrary` |
+| 导入 | 固定 `from app.quantcore import FactorLibrary` |
 | 类名 | 因子库名转换为大驼峰并追加 `Library` |
 | 作者 | 当前登录用户名 |
 | 方法 | 用户编辑的函数体原样插入并做语法校验 |

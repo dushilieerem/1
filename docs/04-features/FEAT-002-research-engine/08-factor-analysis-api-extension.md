@@ -63,8 +63,8 @@ industry_group_equity_curves: [{industry_code, industry_name,
 
 ### 模块边界与实现
 
-- `researchengine.experiment.Experiment` 在已计算的因子值、收盘价和远期收益上生成分析 DataFrame，不重复读取行情或执行回测。
-- `researchengine.api.schemas` 定义 JSON 契约；`researchengine.api.runner` 只进行 DataFrame 到 Pydantic 对象的序列化。
+- `app.services.experiment.Experiment` 在已计算的因子值、收盘价和远期收益上生成分析 DataFrame，不重复读取行情或执行回测。
+- `app.schemas` 定义 JSON 契约；`app.services.factor.runner` 只进行 DataFrame 到 Pydantic 对象的序列化。
 - 不修改 QuantCore 指标接口；序列属于 ResearchEngine 的 API 投影，不改变基础指标的汇总职责。
 
 ### 风险、兼容与回滚

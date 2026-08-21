@@ -1,12 +1,12 @@
 # 项目使用的火山方舟 Chat API 调用说明
 
-> 本文以 `ResearchEngine/researchengine/api/ai_factor.py` 的当前实现为准，只说明 AI 因子生成功能实际发送给火山方舟的请求。
+> 本文以 `ResearchEngine/app/api/ai_factor.py` 的当前实现为准，只说明 AI 因子生成功能实际发送给火山方舟的请求。
 >
 > 更新日期：2026-08-13
 
 ## 1. 实际请求地址
 
-项目不是调用标准在线推理地址 `/api/v3/chat/completions`，而是使用火山方舟 Agent Plan 地址：
+项目不是调用标准在线推理地址 `/api/v2/v3/chat/completions`，而是使用火山方舟 Agent Plan 地址：
 
 ```text
 POST https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions
@@ -218,7 +218,7 @@ raw_content = body["choices"][0]["message"]["content"]
 ```text
 AI_FACTOR_API_KEY / ARK_API_KEY
             ↓
-AI_FACTOR_BASE_URL（默认 /api/plan/v3）
+AI_FACTOR_BASE_URL（默认 /api/v2/plan/v3）
             ↓
 POST /chat/completions
             ↓

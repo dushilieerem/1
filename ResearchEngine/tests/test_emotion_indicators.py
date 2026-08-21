@@ -3,8 +3,8 @@
 import numpy as np
 import pandas as pd
 
-from quantcore.factor.base import Panel, library_factors
-from researchengine import FactorLoader
+from app.quantcore.factor.base import Panel, library_factors
+from app import FactorLoader
 
 
 def _panel() -> Panel:
@@ -60,7 +60,7 @@ def test_emotion_indicators_return_panel_shape():
 
 
 def test_factor_api_lists_emotion_indicators():
-    from researchengine.api.routes import _builtin_factors
+    from app.api.routes import _builtin_factors
 
     names = {factor.name for factor in _builtin_factors()}
     assert "psy" in names

@@ -91,6 +91,17 @@ def _jobs_for_date(output_root: Path, as_of: str) -> list[tuple[Path, Path | Non
     return [(relative, price_paths.get(relative), liquidity_paths.get(relative)) for relative in sorted(set(price_paths) | set(liquidity_paths), key=str)]
 
 
+def _window_freshness(jobs: list[tuple[Path, Path | None, Path | None]]) -> int:
+    """返回窗口内 raw 响应的最新修改时间，用于重叠日期择优。"""
+    paths = [
+        path
+        for _, price_path, liquidity_path in jobs
+        for path in (price_path, liquidity_path)
+        if path is not None
+    ]
+    return max((path.stat().st_mtime_ns for path in paths), default=0)
+
+
 def _wide_columns(universe_path: Path) -> tuple[str, ...]:
     with universe_path.open(encoding="utf-8-sig", newline="") as stream:
         symbols = [row["thscode"] for row in csv.DictReader(stream)]
@@ -136,25 +147,58 @@ def build_daily_csv(output_root: Path, workers: int = DEFAULT_WORKERS, universe_
     columns = _wide_columns(universe_path)
     output_path = output_root / OUTPUT_DIR / OUTPUT_FILENAME
     temporary_path = output_path.with_suffix(".csv.tmp")
-    summary = {"rows": 0, "partitions": 0}
+    summary = {"rows": 0, "partitions": 0, "deduplicated_rows": 0}
     partitions = sorted(set(price_paths) | set(liquidity_paths), key=str)
     windows: dict[str, list[tuple[Path, Path | None, Path | None]]] = {}
     for relative in partitions:
         windows.setdefault(relative.parts[1], []).append((relative, price_paths.get(relative), liquidity_paths.get(relative)))
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    pending_row: dict[str, object] | None = None
+    pending_date: str | None = None
+    pending_freshness = -1
+
+    def accept_row(row: dict[str, object], freshness: int, writer: csv.writer) -> None:
+        nonlocal pending_row, pending_date, pending_freshness
+        row_date = str(row["date"])
+        if pending_row is None:
+            pending_row, pending_date, pending_freshness = row, row_date, freshness
+            return
+        assert pending_date is not None
+        if row_date < pending_date:
+            raise ValueError(
+                "原始行情窗口合并后日期未按升序排列："
+                f"{row_date} 出现在 {pending_date} 之后"
+            )
+        if row_date == pending_date:
+            summary["deduplicated_rows"] += 1
+            if freshness >= pending_freshness:
+                pending_row, pending_freshness = row, freshness
+            return
+        _write_row(writer, columns, pending_row)
+        summary["rows"] += 1
+        pending_row, pending_date, pending_freshness = row, row_date, freshness
+
     with temporary_path.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.writer(stream)
         writer.writerows(_headers(columns))
         for window_number, window in enumerate(sorted(windows), start=1):
             jobs = windows[window]
+            freshness = _window_freshness(jobs)
             print(f"[market_data_csv] 第 {window_number}/{len(windows)} 个日期窗口：正在汇总 {window}", flush=True)
             parsed_partitions = list(_parallel_merge(jobs, workers))
             summary["partitions"] += len(parsed_partitions)
-            for row in _wide_rows(parsed_partitions).values():
-                _write_row(writer, columns, row)
-                summary["rows"] += 1
+            window_rows = _wide_rows(parsed_partitions)
+            for row in sorted(window_rows.values(), key=lambda value: str(value["date"])):
+                accept_row(row, freshness, writer)
+        if pending_row is not None:
+            _write_row(writer, columns, pending_row)
+            summary["rows"] += 1
     replace_with_retry(temporary_path, output_path)
-    print(f"[market_data_csv] 已完成：{summary['rows']} 行，写入 {output_path}", flush=True)
+    print(
+        f"[market_data_csv] 已完成：{summary['rows']} 行，去重 {summary['deduplicated_rows']} 行，"
+        f"写入 {output_path}",
+        flush=True,
+    )
     return summary
 
 

@@ -1,60 +1,64 @@
-# 回测任务 API
+# ExperimentManager 任务调度与因子回测异步契约
 
-ResearchEngine 的异步任务接口由进程级 `ExperimentManager` 管理。接口只返回任务标识，
-不会创建 FastAPI 自己的回测线程。
+> 文档版本：v2.2
+> 最后更新：2026-08-19
 
-## 提交因子回测
+`ExperimentManager` 是 ResearchEngine 进程内的并发边界。因子回测通过公开任务资源
+提交和轮询，策略回测继续使用同步 POST：
 
 ```http
-POST /api/experiments/factor
+POST /api/backtest/factor
+GET /api/backtest/factor/{run_id}
+DELETE /api/backtest/factor/{run_id}
+
+POST /api/backtest/strategy
 ```
 
-请求体与 [`POST /api/backtest/factor`](backtest-factor.md) 相同。
+## 因子任务生命周期
+
+```text
+POST /api/backtest/factor
+  → 202 + run_id
+  → queued
+  → running
+  → succeeded + result
+            或 failed + error
+            或 cancelled
+```
+
+提交阶段只做 Pydantic 参数校验、请求哈希计算和 Manager 入队。行情数据指纹、缓存扫描、
+缓存读取以及实际回测都在线程池工作线程中执行，因此 POST 不等待回测完成。
+
+任务状态查询返回：
 
 ```json
 {
-  "run_id": "7c2...",
-  "experiment_type": "factor",
-  "status": "queued",
-  "metadata": {"type": "factor", "cache": "MISS"}
+  "run_id": "uuid",
+  "status": "running",
+  "created_at": 1720000000.0,
+  "started_at": 1720000001.0,
+  "finished_at": null,
+  "cancel_requested": false,
+  "error": null,
+  "result": null
 }
 ```
 
-## 提交策略回测
+成功时 `result` 是旧版完整 `FactorBacktestResponse`；因子代码、数据和运行时业务错误
+统一映射为 `failed`，错误放在顶层 `error`。Future 技术异常也映射为 `failed`。排队任务
+取消会释放一个容量槽；运行中取消只设置 `cancel_requested`，不强杀执行用户 Python 代码。
 
-```http
-POST /api/experiments/strategy
-```
+## 容量、去重和结果保留
 
-请求体与 [`POST /api/backtest/strategy`](backtest-strategy.md) 相同，返回的
-`experiment_type` 为 `strategy`。
+默认配置为 2 个工作线程和额外 8 个排队槽位。容量是有界的，不能无限增长；队列满时提交
+返回 `429`。同一进程内相同请求的并发提交使用请求哈希复用同一个 `run_id`。实际文件缓存
+键仍包含缓存版本、请求参数和行情数据指纹，避免数据变更时错误命中。
 
-## 查询任务
-
-```http
-GET /api/experiments/{run_id}
-```
-
-状态包括：
-
-- `queued`：已进入 Manager 的有界队列；
-- `running`：已由 Manager 工作线程开始执行；
-- `succeeded`：结果位于 `result`；
-- `failed`：执行失败，错误摘要位于 `error`；
-- `cancelled`：任务尚未开始时被取消。
-
-完成后的 `result` 与同步接口的响应结构一致。
-
-## 取消任务
-
-```http
-DELETE /api/experiments/{run_id}
-```
-
-尚未开始执行的任务可以真正取消。已经运行的 Python 线程不能安全强杀，接口会返回
-`cancel_requested: true`，但任务仍可能完成。
+终态任务保留 60 秒。清理任务会从 Manager 的 `_runs` 中移除任务记录并释放完整回测结果；
+过期或未知 `run_id` 查询返回 `404`。WebApp 必须在 1 分钟内取走并持久化成功结果。
 
 ## 部署限制
 
-`run_id`、Future 和任务状态当前保存在单个 ResearchEngine 进程内。Uvicorn 多 worker
-会为每个 worker 创建独立的 Manager；多实例部署需要外部 RunStore、分布式队列和结果存储。
+任务状态保存在单个 ResearchEngine 进程内。当前必须使用单个 Uvicorn worker 和单个实例，
+确保 POST 返回的 `run_id` 能由后续 GET/DELETE 查询。多 worker 或多实例会产生相互隔离的
+Manager、队列和任务表；需要跨进程调度时再引入 Redis/数据库等外部任务系统。

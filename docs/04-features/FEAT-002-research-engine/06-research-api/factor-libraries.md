@@ -2,7 +2,7 @@
 
 返回当前已登记的全部内置因子库，供 WebApp 构建“因子库”一级选择器。
 
-该接口只读取 `Factor/libraries/index.yaml`，不会导入或执行因子 Python 源码。返回顺序按因子库名称升序排列。
+该接口只读取 `ResearchEngine/app/assets/factors/libraries/index.yaml`，不会导入或执行因子 Python 源码。返回顺序按因子库名称升序排列。
 
 ## 请求
 
@@ -55,7 +55,7 @@ GET /api/factor-libraries
 
 ```json
 {
-  "detail": "因子库目录不可用: 因子库索引不存在: .../Factor/libraries/index.yaml"
+  "detail": "因子库目录不可用: 因子库索引不存在: .../ResearchEngine/app/assets/factors/libraries/index.yaml"
 }
 ```
 

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from researchengine.api import app
+from app.main import app
 
 
 client = TestClient(app)
@@ -62,8 +64,18 @@ def test_factor_backtest_uses_webapp_resolved_snapshots(research_assets_market_d
         },
     })
 
-    body = response.json()
+    assert response.status_code == 202
+    poll_url = response.json()["poll_url"]
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        response = client.get(poll_url)
+        body = response.json()
+        if body["status"] in {"succeeded", "failed", "cancelled"}:
+            break
+        time.sleep(0.02)
     assert response.status_code == 200
+    assert body["status"] == "succeeded"
+    body = body["result"]
     assert body["error"] is None
     assert body["meta"]["universe_asset"]["constituent_count"] == 2
     assert body["meta"]["benchmark_asset"]["pricing"] == "close_to_close"

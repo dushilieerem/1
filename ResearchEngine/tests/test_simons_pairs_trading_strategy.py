@@ -2,8 +2,8 @@
 
 import pandas as pd
 
-from quantcore import BacktestConfig, NativeEngine
-from researchengine.strategy_catalog import StrategyCatalog
+from app.quantcore import BacktestConfig, NativeEngine
+from app.repositories.catalogs.strategy_catalog import StrategyCatalog
 
 
 def _strategy_class():

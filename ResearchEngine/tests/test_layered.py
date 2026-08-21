@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from researchengine.layered import (
+from app.services.factor.layered import (
     layered_equity,
     layered_returns,
     long_short_returns,

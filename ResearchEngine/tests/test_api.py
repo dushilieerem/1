@@ -1,18 +1,18 @@
-"""ResearchEngine 因子回测 API 测试。"""
+"""app 因子回测 API 测试。"""
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
+import time
 
 import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from researchengine.api import app
-from researchengine.api.market_data import _market_symbol, _panel_symbol
-from researchengine.api.runner import (
+from app.main import app
+from app.services.factor.market_data import _market_symbol, _panel_symbol
+from app.services.factor.runner import (
     _compute_quantile_metrics,
     _display_instrument,
     _sample_positions,
@@ -48,7 +48,7 @@ class EqualWeightMomentum:
         weights[ranks <= top_n] = 1.0 / top_n
         return weights'''
 
-STRUCTURED_STRATEGY_CODE = '''from quantcore import (
+STRUCTURED_STRATEGY_CODE = '''from app.quantcore import (
     EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, factor, signal,
 )
 
@@ -143,9 +143,8 @@ def market_data_dir(tmp_path, monkeypatch):
 def supermind_api_data_dir(tmp_path, monkeypatch):
     """将已验证的 SuperMind fixture 转为 API 可读取的字段 Parquet。"""
     fixture_dir = (
-        Path(__file__).resolve().parents[2]
-        / "QuantCore"
-        / "tests"
+        Path(__file__).resolve().parent
+        / "quantcore"
         / "fixtures"
         / "supermind"
     )
@@ -227,7 +226,7 @@ def test_health():
 
 
 def test_factor_backtest_minimal_builtin_request_uses_web_defaults():
-    from researchengine.api.schemas import FactorBacktestRequest
+    from app.schemas.backtest import FactorBacktestRequest
 
     request = FactorBacktestRequest(
         library_name="momentum_lib",
@@ -269,6 +268,22 @@ def test_market_data_symbols_returns_sorted_stock_codes(market_data_dir):
         ],
         "unmapped_count": 0,
     }
+
+
+def _wait_factor_task(payload: dict, *, timeout: float = 30.0):
+    submission = client.post("/api/backtest/factor", json=payload)
+    assert submission.status_code == 202
+    submission_body = submission.json()
+    assert submission.headers["Location"] == submission_body["poll_url"]
+    assert submission.headers["Retry-After"] == "1"
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        response = client.get(submission_body["poll_url"])
+        assert response.status_code == 200
+        if response.json()["status"] in {"succeeded", "failed", "cancelled"}:
+            return response
+        time.sleep(0.02)
+    raise AssertionError(f"因子回测任务超时: {submission_body['run_id']}")
 
 
 def test_market_data_indices_returns_available_indices(market_data_dir):
@@ -324,11 +339,11 @@ def test_daily_bars_returns_service_unavailable_when_field_missing(market_data_d
 
 
 def test_factor_backtest_groups_and_benchmark(market_data_dir):
-    response = client.post("/api/backtest/factor", json=_request_payload())
+    response = _wait_factor_task(_request_payload())
     assert response.status_code == 200
-    assert response.headers["X-SVQuant-Cache"] == "MISS"
-    body = response.json()
-    assert body["error"] is None
+    task = response.json()
+    assert task["status"] == "succeeded"
+    body = task["result"]
     assert body["benchmark_curve"][0]["value"] == pytest.approx(1.0)
     assert body["meta"]["rebalance_days"] == 15
     assert body["meta"]["groups"] == 3
@@ -430,9 +445,7 @@ def test_factor_backtest_supermind_fixture_matches_qcut_and_metric_contract(
     benchmark_curve = benchmark_curve / benchmark_curve.iloc[0]
     benchmark_returns = benchmark_curve.pct_change().fillna(0.0)
 
-    response = client.post(
-        "/api/backtest/factor",
-        json={
+    response = _wait_factor_task({
             "factor_code": "def market_cap(self):\n    return self.total_mv",
             "factor_name": "market_cap",
             "universe_snapshot": {
@@ -448,12 +461,10 @@ def test_factor_backtest_supermind_fixture_matches_qcut_and_metric_contract(
             "groups": 5,
             "benchmark": "CSI300",
             "analysis_level": "core",
-        },
-    )
+        })
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["error"] is None
+    body = response.json()["result"]
     assert body["meta"]["factor_price_adjustment"] == "hfq"
     assert body["meta"]["return_price_adjustment"] == "hfq"
     assert body["meta"]["factor_price_source"].replace("\\", "/").endswith(
@@ -620,11 +631,10 @@ def test_factor_backtest_uses_pre_start_history_for_rolling_factor(market_data_d
         "end": "2022-03-31",
         "analysis_level": "core",
     })
-    response = client.post("/api/backtest/factor", json=payload)
+    response = _wait_factor_task(payload)
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["error"] is None
+    body = response.json()["result"]
     # 20 日动量在收益区间首日就有预热值；净值从首个持有日开始，
     # 而不是等到收益区间内再滚满 20 天。
     assert body["date_range"] == {"start": "2022-02-02", "end": "2022-03-31"}
@@ -637,11 +647,10 @@ def test_factor_backtest_accepts_factor_preprocessing_options(market_data_dir):
         "standardize": 2,
         "analysis_level": "core",
     })
-    response = client.post("/api/backtest/factor", json=payload)
+    response = _wait_factor_task(payload)
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["error"] is None
+    body = response.json()["result"]
     assert body["factor_analysis"]["definition"]["factor_preprocess"] == {
         "winsorize": 1,
         "standardize": 2,
@@ -651,9 +660,9 @@ def test_factor_backtest_accepts_factor_preprocessing_options(market_data_dir):
 
 
 def test_experiment_uses_hfq_ohlc_for_factor_values(market_data_dir):
-    from quantcore import BaseFactor
-    from quantcore.factor.tool import preprocess_factor_values
-    from researchengine import ConfigManager, Experiment
+    from app.quantcore import BaseFactor
+    from app.quantcore.factor.tool import preprocess_factor_values
+    from app import ConfigManager, FactorExperiment, ExperimentManager
 
     class OhlcMean(BaseFactor):
         name = "ohlc_mean_hfq"
@@ -668,13 +677,23 @@ def test_experiment_uses_hfq_ohlc_for_factor_values(market_data_dir):
     config.set("long_short", False)
     config.set("factor_preprocess.winsorize", 1)
     config.set("factor_preprocess.standardize", 2)
-    result = Experiment(
-        factor=OhlcMean(),
-        universe="CSI500",
-        start_date="2022-02-01",
-        end_date="2022-02-04",
-        config=config,
-    ).run()
+    manager = ExperimentManager(
+        max_workers=1,
+        max_queue_size=0,
+        data_dir=market_data_dir,
+    )
+    try:
+        result = manager.submit(
+            FactorExperiment(
+                factor=OhlcMean(),
+                universe="CSI500",
+                start_date="2022-02-01",
+                end_date="2022-02-04",
+                config=config,
+            )
+        ).result(timeout=10)
+    finally:
+        manager.shutdown()
 
     hfq = {
         field: pd.read_parquet(market_data_dir / f"{field}.parquet")
@@ -738,10 +757,10 @@ def test_factor_backtest_loads_builtin_factor_library(market_data_dir):
         "library_name": "risk_indicators",
         "factor_name": "kurtosis60",
     })
-    response = client.post("/api/backtest/factor", json=payload)
+    response = _wait_factor_task(payload)
 
     assert response.status_code == 200
-    assert response.json()["error"] is None
+    assert response.json()["status"] == "succeeded"
 
 
 def test_factor_backtest_loads_classic_indicator_library(market_data_dir):
@@ -751,10 +770,10 @@ def test_factor_backtest_loads_classic_indicator_library(market_data_dir):
         "library_name": "classic_indicators",
         "factor_name": "bbi",
     })
-    response = client.post("/api/backtest/factor", json=payload)
+    response = _wait_factor_task(payload)
 
     assert response.status_code == 200
-    assert response.json()["error"] is None
+    assert response.json()["status"] == "succeeded"
 
 
 @pytest.mark.parametrize(
@@ -765,24 +784,20 @@ def test_factor_backtest_loads_classic_indicator_library(market_data_dir):
     ],
 )
 def test_factor_backtest_loads_every_library_registered_in_index_yaml(
-    market_data_dir, monkeypatch, library_name, factor_name
+    market_data_dir, library_name, factor_name
 ):
     """API 库注册必须跟随 index.yaml，而不是 runner 中的重复名单。"""
-    monkeypatch.setenv(
-        "SVQUANT_FACTOR_DIR",
-        str(Path(__file__).resolve().parents[2] / "Factor" / "libraries"),
-    )
     payload = _request_payload()
     payload.pop("factor_code")
     payload.update({"library_name": library_name, "factor_name": factor_name})
-    response = client.post("/api/backtest/factor", json=payload)
+    response = _wait_factor_task(payload)
 
     assert response.status_code == 200
-    assert response.json()["error"] is None
+    assert response.json()["status"] == "succeeded"
 
 
 def test_factor_api_lists_libraries_registered_in_index_yaml():
-    from researchengine.api.routes import _builtin_factors
+    from app.api.routes import _builtin_factors
 
     names = {factor.name for factor in _builtin_factors()}
     assert {"momentum_5d", "parkinson_volatility"}.issubset(names)
@@ -820,7 +835,7 @@ def test_factor_api_registry_uses_index_yaml_as_its_only_source(tmp_path, monkey
     """替换索引后，API 注册范围应随 YAML 变化，而非依赖硬编码库名。"""
     library_name = "temporary_indexed_lib"
     (tmp_path / f"{library_name}.py").write_text(
-        "from quantcore import FactorLibrary\n\n"
+        "from app.quantcore import FactorLibrary\n\n"
         "class TemporaryIndexedLibrary(FactorLibrary):\n"
         "    def temporary_factor(self):\n"
         "        return self.close\n",
@@ -834,8 +849,8 @@ def test_factor_api_registry_uses_index_yaml_as_its_only_source(tmp_path, monkey
     )
     monkeypatch.setenv("SVQUANT_FACTOR_DIR", str(tmp_path))
 
-    from researchengine.factor_catalog import sync_catalog
-    from researchengine.api.runner import (
+    from app.repositories.catalogs.factor_catalog import sync_catalog
+    from app.services.factor.runner import (
         _load_factor_from_builtin_library,
         builtin_factor_library_names,
     )
@@ -851,7 +866,7 @@ def test_builtin_factor_loader_rejects_unsynchronized_index(tmp_path, monkeypatc
     """源码已有因子但 index.yaml 未同步时，API 不应静默加载。"""
     library_name = "stale_indexed_lib"
     (tmp_path / f"{library_name}.py").write_text(
-        "from quantcore import FactorLibrary\n\n"
+        "from app.quantcore import FactorLibrary\n\n"
         "class StaleIndexedLibrary(FactorLibrary):\n"
         "    def first_factor(self):\n"
         "        return self.close\n",
@@ -868,7 +883,7 @@ def test_builtin_factor_loader_rejects_unsynchronized_index(tmp_path, monkeypatc
     )
     monkeypatch.setenv("SVQUANT_FACTOR_DIR", str(tmp_path))
 
-    from researchengine.api.runner import _load_builtin_factor_library
+    from app.services.factor.runner import _load_builtin_factor_library
 
     with pytest.raises(ValueError, match="未同步"):
         _load_builtin_factor_library(library_name)
@@ -881,10 +896,10 @@ def test_factor_backtest_custom_factor_can_combine_builtin_library_methods(marke
         "factor_name": "combo_factor",
         "library_name": ["risk_indicators", "alpha_features"],
     })
-    response = client.post("/api/backtest/factor", json=payload)
+    response = _wait_factor_task(payload)
 
     assert response.status_code == 200
-    assert response.json()["error"] is None
+    assert response.json()["status"] == "succeeded"
 
 
 def test_factor_backtest_requires_exactly_one_factor_source(market_data_dir):
@@ -903,9 +918,9 @@ def test_factor_backtest_accesses_csi300_close(market_data_dir):
     payload["factor_code"] = '''def relative_to_csi300(self):
     return self.close.pct_change(5).sub(self.csi300.close.pct_change(5), axis=0)'''
     payload["factor_name"] = "relative_to_csi300"
-    response = client.post("/api/backtest/factor", json=payload)
+    response = _wait_factor_task(payload)
     assert response.status_code == 200
-    assert response.json()["error"] is None
+    assert response.json()["status"] == "succeeded"
 
 
 def test_factor_backtest_rejects_index_series_as_stock_factor(market_data_dir):
@@ -913,32 +928,31 @@ def test_factor_backtest_rejects_index_series_as_stock_factor(market_data_dir):
     payload["factor_code"] = '''def index_close(self):
     return self.csi300.close'''
     payload["factor_name"] = "index_close"
-    response = client.post("/api/backtest/factor", json=payload)
+    response = _wait_factor_task(payload)
     assert response.status_code == 200
     body = response.json()
+    assert body["status"] == "failed"
     assert "不能直接作为股票因子返回" in body["error"]
 
 
 def test_factor_backtest_without_industry_mapping_returns_empty_curves(market_data_dir):
     (market_data_dir / "stock_info.parquet").unlink()
-    response = client.post("/api/backtest/factor", json=_request_payload())
+    response = _wait_factor_task(_request_payload())
     assert response.status_code == 200
-    body = response.json()
-    assert body["error"] is None
+    body = response.json()["result"]
     assert body["factor_analysis"]["industry_equity_curves"] == []
     assert body["factor_analysis"]["industry_group_equity_curves"] == []
 
-    cached_response = client.post("/api/backtest/factor", json=_request_payload())
-    assert cached_response.headers["X-SVQuant-Cache"] == "HIT"
-    assert cached_response.json() == body
+    cached_response = _wait_factor_task(_request_payload())
+    assert cached_response.json()["status"] == "succeeded"
+    assert cached_response.json()["result"] == body
 
 
 def test_factor_backtest_defaults_to_core_analysis(market_data_dir):
     payload = _request_payload()
     payload.pop("analysis_level")
-    response = client.post("/api/backtest/factor", json=payload)
-    body = response.json()
-    assert body["error"] is None
+    response = _wait_factor_task(payload)
+    body = response.json()["result"]
     analysis = body["factor_analysis"]
     assert analysis["definition"]["analysis_level"] == "core"
     assert set(analysis["layered_returns"]) >= {"layer1", "layer2", "layer3"}
@@ -951,12 +965,12 @@ def test_factor_backtest_defaults_to_core_analysis(market_data_dir):
 
 
 def test_data_change_invalidates_cache(market_data_dir):
-    first = client.post("/api/backtest/factor", json=_request_payload())
-    assert first.headers["X-SVQuant-Cache"] == "MISS"
+    first = _wait_factor_task(_request_payload())
+    assert first.json()["status"] == "succeeded"
     path = market_data_dir / "volume.parquet"
     path.touch()
-    second = client.post("/api/backtest/factor", json=_request_payload())
-    assert second.headers["X-SVQuant-Cache"] == "MISS"
+    second = _wait_factor_task(_request_payload())
+    assert second.json()["status"] == "succeeded"
 
 
 @pytest.mark.parametrize(
@@ -972,11 +986,11 @@ def test_removed_factor_request_fields_are_rejected(market_data_dir, removed_fie
 
 
 def test_invalid_factor_code_returns_error(market_data_dir):
-    response = client.post(
-        "/api/backtest/factor",
-        json={"factor_code": "this is not Python", "factor_name": "bad"},
+    response = _wait_factor_task(
+        {"factor_code": "this is not Python", "factor_name": "bad"}
     )
     assert response.status_code == 200
+    assert response.json()["status"] == "failed"
     assert response.json()["error"] is not None
 
 
@@ -1517,27 +1531,13 @@ def test_factor_api_reads_current_market_data_layout(market_data_dir):
     shutil.copytree(market_data_dir / "display", current / "display")
     shutil.copytree(market_data_dir / "benchmark", current / "benchmark")
 
-    response = client.post("/api/backtest/factor", json=_request_payload())
+    response = _wait_factor_task(_request_payload())
     assert response.status_code == 200
-    assert response.json()["error"] is None
+    assert response.json()["status"] == "succeeded"
 
 
-def test_async_factor_experiment_returns_run_id_and_result(market_data_dir):
-    response = client.post("/api/experiments/factor", json=_request_payload())
-    assert response.status_code == 202
-    submission = response.json()
-    assert submission["run_id"]
-    assert submission["experiment_type"] == "factor"
-
-    body = None
-    for _ in range(100):
-        status_response = client.get(f"/api/experiments/{submission['run_id']}")
-        assert status_response.status_code == 200
-        body = status_response.json()
-        if body["status"] in {"succeeded", "failed", "cancelled"}:
-            break
-        time.sleep(0.02)
-
-    assert body is not None
-    assert body["status"] == "succeeded"
-    assert body["result"]["error"] is None
+def test_experiment_task_routes_are_not_public():
+    assert client.post("/api/experiments/factor", json={}).status_code == 404
+    assert client.post("/api/experiments/strategy", json={}).status_code == 404
+    assert client.get("/api/experiments/example-run-id").status_code == 404
+    assert client.delete("/api/experiments/example-run-id").status_code == 404

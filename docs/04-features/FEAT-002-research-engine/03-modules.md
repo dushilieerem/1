@@ -1,7 +1,7 @@
 # ResearchEngine 模块
 
-> 文档版本：v2.1
-> 最后更新：2026-08-18
+> 文档版本：v2.2
+> 最后更新：2026-08-19
 
 ---
 
@@ -18,7 +18,7 @@ ResearchEngine 是**纯计算服务层**，核心职责：
 ## 2. 模块结构
 
 ```
-researchengine/
+app/
 ├── __init__.py              # 包入口
 ├── experiment.py            # 单次因子实验流程，实际计算委托 QuantCore
 ├── manager.py               # 进程级回测任务调度器、线程池和状态管理
@@ -34,7 +34,7 @@ researchengine/
 │   ├── serializers.py       # pandas → JSON 序列化
 │   ├── runner.py            # HTTP 回测提交与结果适配
 │   ├── strategy_backtest.py # 策略执行单元
-│   └── routes.py            # 路由注册、同步/异步回测接口
+│   └── routes.py            # 路由注册、回测接口（内部异步调度）
 │
 └── result/                  # （可选保留，但不作为核心依赖）
     ├── manager.py           # ResultManager
@@ -137,12 +137,8 @@ data_dir = os.environ.get("SVQUANT_DATA_DIR", "/data/market")
 | 端点 | 说明 |
 |------|------|
 | `GET /api/health` | 健康检查 |
-| `POST /api/backtest/factor` | 同步因子回测 |
-| `POST /api/backtest/strategy` | 同步策略回测 |
-| `POST /api/experiments/factor` | 异步因子回测 |
-| `POST /api/experiments/strategy` | 异步策略回测 |
-| `GET /api/experiments/{run_id}` | 查询异步回测结果 |
-| `DELETE /api/experiments/{run_id}` | 取消排队任务 |
+| `POST /api/backtest/factor` | 因子回测；内部由 Manager 异步调度，接口返回完整结果 |
+| `POST /api/backtest/strategy` | 策略回测；内部由 Manager 异步调度，接口返回完整结果 |
 
 不再提供以下端点（因 RE 不管理因子/策略）：
 
@@ -183,7 +179,7 @@ data_dir = os.environ.get("SVQUANT_DATA_DIR", "/data/market")
 ```text
 POST /api/backtest/factor   ─┐
 POST /api/backtest/strategy  ─┼─> ExperimentManager.submit()
-POST /api/experiments/*     ─┘             │
+                             ─┘             │
                                           ▼
                                FactorExperiment / Strategy runner
                                           │

@@ -1,2050 +1,581 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
-<title>SVQuant 因子回测 API pipeline</title>
-<style>:root{color-scheme:light dark;background:light-dark(rgb(255 255 255), rgb(24 24 24))}html,body{margin:0}body{box-sizing:border-box;padding:1rem;background:inherit}iframe{display:block;width:100%;height:calc(100vh - 2rem);margin:0 auto;border:0}</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>SVQuant 单因子回测 API 执行链</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: light-dark(#f7f8fa, #111418);
+      --surface: light-dark(#ffffff, #1a1e24);
+      --surface-2: light-dark(#f0f3f6, #222831);
+      --text: light-dark(#1d252d, #edf2f7);
+      --muted: light-dark(#65717d, #a8b3bf);
+      --line: light-dark(#dbe1e7, #37414c);
+      --blue: light-dark(#1267d6, #68a9ff);
+      --green: light-dark(#087f5b, #54d39f);
+      --orange: light-dark(#b85b00, #ffad5c);
+      --red: light-dark(#c52b2b, #ff7777);
+      --purple: light-dark(#7441bd, #bd94ff);
+      --teal: light-dark(#087d85, #5dd8dc);
+      --shadow: 0 10px 28px rgba(24, 35, 48, .08);
+      --radius: 14px;
+      --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    }
+
+    :root[data-theme="light"] { color-scheme: light; }
+    :root[data-theme="dark"] { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button { font: inherit; }
+    button:focus-visible, a:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+    code, pre { font-family: var(--mono); }
+    code {
+      padding: 1px 5px;
+      border-radius: 5px;
+      background: var(--surface-2);
+      overflow-wrap: anywhere;
+    }
+    .page { max-width: 1280px; margin: 0 auto; padding: 28px 24px 56px; }
+    .eyebrow { color: var(--blue); font: 600 12px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { margin-top: 8px; font-size: clamp(24px, 4vw, 38px); line-height: 1.14; letter-spacing: -.03em; }
+    h2 { font-size: 18px; line-height: 1.25; }
+    h3 { font-size: 14px; line-height: 1.3; }
+    .header { display: flex; justify-content: space-between; gap: 24px; align-items: end; }
+    .subtitle { margin-top: 10px; max-width: 760px; color: var(--muted); }
+    .endpoint {
+      flex: 0 0 auto;
+      padding: 10px 13px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--surface);
+      color: var(--blue);
+      font: 600 13px/1.2 var(--mono);
+      box-shadow: var(--shadow);
+    }
+    .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 24px; }
+    .summary { min-height: 88px; padding: 13px 14px; border-top: 3px solid var(--blue); background: var(--surface); box-shadow: var(--shadow); }
+    .summary:nth-child(2) { border-top-color: var(--green); }
+    .summary:nth-child(3) { border-top-color: var(--orange); }
+    .summary:nth-child(4) { border-top-color: var(--purple); }
+    .summary-label { color: var(--muted); font-size: 12px; }
+    .summary-value { margin-top: 5px; font-size: 18px; font-weight: 600; }
+    .summary-copy { margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .section { margin-top: 28px; }
+    .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+    .section-head p { color: var(--muted); font-size: 12px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .control {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px 10px;
+      background: var(--surface);
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .control[aria-pressed="true"] { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, var(--surface)); color: var(--text); }
+    .flow-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr); gap: 18px; margin-top: 14px; align-items: start; }
+    .flow { display: grid; gap: 7px; }
+    .stage {
+      display: block;
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--blue);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+      transition: border-color 120ms ease, background-color 120ms ease, transform 120ms ease;
+    }
+    .stage:hover { transform: translateX(2px); }
+    .stage[aria-pressed="true"] { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 9%, var(--surface)); }
+    .stage[data-tone="queue"] { border-left-color: var(--purple); }
+    .stage[data-tone="data"] { border-left-color: var(--teal); }
+    .stage[data-tone="factor"] { border-left-color: var(--green); }
+    .stage[data-tone="compute"] { border-left-color: var(--orange); }
+    .stage[data-tone="result"] { border-left-color: var(--blue); }
+    .stage-top { display: flex; align-items: baseline; gap: 9px; }
+    .stage-number { color: var(--muted); font: 600 11px/1 var(--mono); }
+    .stage-title { font-weight: 600; }
+    .stage-caption { margin: 5px 0 0 27px; color: var(--muted); font-size: 12px; }
+    .stage-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 0 27px; }
+    .tag { padding: 2px 6px; border-radius: 5px; background: var(--surface-2); color: var(--muted); font: 11px/1.35 var(--mono); }
+    .connector { height: 13px; color: var(--muted); text-align: center; line-height: 13px; }
+    .detail {
+      position: sticky;
+      top: 16px;
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .detail-kicker { color: var(--blue); font: 11px/1.2 var(--mono); text-transform: uppercase; }
+    .detail h2 { margin-top: 7px; }
+    .detail-file { margin-top: 9px; color: var(--muted); font-size: 12px; }
+    .detail-grid { display: grid; gap: 12px; margin-top: 16px; }
+    .detail-block { padding-top: 10px; border-top: 1px solid var(--line); }
+    .detail-label { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+    .detail-value { margin-top: 4px; overflow-wrap: anywhere; }
+    .detail-description { margin-top: 15px; color: var(--muted); font-size: 13px; }
+    .detail-note { margin-top: 14px; padding: 9px 10px; border-left: 3px solid var(--orange); background: color-mix(in srgb, var(--orange) 9%, var(--surface)); font-size: 12px; }
+    .boundary-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+    .boundary { min-height: 144px; padding: 12px; background: var(--surface); border-bottom: 3px solid var(--blue); }
+    .boundary:nth-child(2) { border-bottom-color: var(--green); }
+    .boundary:nth-child(3) { border-bottom-color: var(--orange); }
+    .boundary:nth-child(4) { border-bottom-color: var(--purple); }
+    .boundary-title { font-weight: 600; }
+    .boundary-log { margin-top: 7px; font: 11px/1.4 var(--mono); color: var(--blue); }
+    .boundary-copy { margin-top: 8px; color: var(--muted); font-size: 12px; }
+    .boundary-key { display: block; margin-top: 7px; color: var(--text); font: 11px/1.4 var(--mono); }
+    .data-layout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+    .data-panel { padding: 14px; background: var(--surface); }
+    .data-panel h3 { color: var(--text); }
+    .data-panel p { margin-top: 7px; color: var(--muted); font-size: 12px; }
+    .cache-flow { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 7px; margin-top: 12px; align-items: stretch; }
+    .cache-node { padding: 10px; border: 1px solid var(--line); background: var(--surface-2); }
+    .cache-node strong { display: block; font-size: 12px; }
+    .cache-node span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+    .cache-arrow { color: var(--muted); text-align: center; align-self: center; }
+    .matrix { margin-top: 12px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; background: var(--surface); font-size: 12px; }
+    th, td { padding: 10px 11px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+    tr:last-child td { border-bottom: 0; }
+    .status-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+    .status { padding: 12px; border-left: 3px solid var(--red); background: var(--surface); }
+    .status:nth-child(2) { border-left-color: var(--orange); }
+    .status:nth-child(3) { border-left-color: var(--teal); }
+    .status strong { display: block; }
+    .status p { margin-top: 5px; color: var(--muted); font-size: 12px; }
+    .timing-placeholder { margin-top: 12px; padding: 14px; border: 1px dashed var(--line); background: var(--surface); color: var(--muted); }
+    .timing-keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .timing-key { color: var(--text); font: 11px/1.3 var(--mono); }
+    .scope-note { margin-top: 22px; padding: 11px 13px; border-left: 3px solid var(--teal); background: color-mix(in srgb, var(--teal) 8%, var(--surface)); color: var(--muted); font-size: 12px; }
+    .muted { color: var(--muted); }
+    @media (max-width: 900px) {
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .flow-layout { grid-template-columns: 1fr; }
+      .detail { position: static; }
+      .boundary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 560px) {
+      .page { padding: 20px 14px 40px; }
+      .header { display: block; }
+      .endpoint { display: inline-block; margin-top: 15px; }
+      .summary-grid, .data-layout, .status-list, .boundary-grid { grid-template-columns: 1fr; }
+      .cache-flow { grid-template-columns: 1fr; }
+      .cache-node { grid-column: auto; }
+      .cache-arrow { transform: rotate(90deg); }
+    }
+    @media (prefers-reduced-motion: reduce) { .stage { transition: none; } }
+  </style>
 </head>
 <body>
-<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="SVQuant 因子回测 API pipeline" srcdoc="&lt;!doctype html&gt;
-&lt;html lang=&quot;en&quot;&gt;
-&lt;head&gt;
-&lt;meta charset=&quot;utf-8&quot;&gt;
-&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
-&lt;meta name=&quot;referrer&quot; content=&quot;no-referrer&quot;&gt;
-&lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27; &#x27;unsafe-eval&#x27; &#x27;wasm-unsafe-eval&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src &#x27;unsafe-inline&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
-&lt;title&gt;SVQuant 因子回测 API pipeline&lt;/title&gt;
-&lt;style&gt;:root {
-  color-scheme: light dark;
-  background-color: var(
-    --background,
-    var(--color-background-primary, light-dark(rgb(255 255 255), rgb(24 24 24)))
-  ) !important;
-
-  /* Agent-facing contract; keep in sync with SKILL.md. */
-  --background: var(
-    --color-background-primary,
-    light-dark(rgb(255 255 255), rgb(24 24 24))
-  );
-  --foreground: var(
-    --color-text-primary,
-    light-dark(rgb(26 28 31), rgb(255 255 255))
-  );
-  --card: color-mix(in oklab, var(--foreground) 5%, var(--background));
-  --card-foreground: var(
-    --color-text-primary,
-    light-dark(rgb(26 28 31), rgb(255 255 255))
-  );
-  --popover: var(
-    --color-background-secondary,
-    light-dark(rgb(255 255 255), rgb(45 45 45))
-  );
-  --popover-foreground: var(
-    --color-text-primary,
-    light-dark(rgb(26 28 31), rgb(255 255 255))
-  );
-  --primary: var(
-    --color-text-info,
-    light-dark(rgb(51 156 255), rgb(131 195 255))
-  );
-  --primary-foreground: var(
-    --color-text-inverse,
-    light-dark(rgb(255 255 255), rgb(13 13 13))
-  );
-  --secondary: var(
-    --color-background-secondary,
-    light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%))
-  );
-  --secondary-foreground: var(
-    --color-text-primary,
-    light-dark(rgb(26 28 31), rgb(255 255 255))
-  );
-  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
-  --muted-foreground: var(
-    --color-text-secondary,
-    light-dark(rgb(26 28 31 / 49.4%), rgb(255 255 255 / 49.8%))
-  );
-  --accent: var(
-    --color-background-info,
-    light-dark(rgb(229 242 255), rgb(13 39 63))
-  );
-  --accent-foreground: var(
-    --color-text-info,
-    light-dark(rgb(51 156 255), rgb(131 195 255))
-  );
-  --destructive: var(
-    --color-text-warning,
-    light-dark(rgb(226 85 7), rgb(255 133 73))
-  );
-  --border: var(
-    --color-border-secondary,
-    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
-  );
-  --input: var(
-    --color-border-primary,
-    light-dark(
-      rgb(26 28 31 / 11.8%),
-      color-mix(in oklab, rgb(0 0 0) 10%, transparent)
-    )
-  );
-  --ring: var(
-    --color-ring-primary,
-    light-dark(rgb(51 156 255), rgb(131 195 255 / 76%))
-  );
-  --font-size-base: var(--font-text-md-size, 14px);
-  --blue: light-dark(rgb(51 156 255), rgb(51 156 255));
-  --orange: light-dark(rgb(226 85 7), rgb(251 106 34));
-  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
-  --red: light-dark(rgb(224 46 42), rgb(255 103 100));
-  --purple: light-dark(rgb(146 79 247), rgb(173 123 249));
-  --yellow: light-dark(rgb(255 195 0), rgb(255 210 64));
-  --viz-series-1: var(--primary);
-  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
-  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
-  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
-  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
-  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
-
-  /* Internal implementation variables; not part of the agent contract. */
-  --font-sans: -apple-system, system-ui, &quot;Segoe UI&quot;, sans-serif;
-  --font-mono:
-    ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, &quot;Liberation Mono&quot;,
-    monospace;
-  --font-size-normal: max(11px, var(--font-size-base));
-  --font-size-tooltip: calc(var(--font-size-base) - 1px);
-  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
-  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
-  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
-  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
-  --font-weight-normal: 430;
-  --font-weight-medium: 500;
-  --line-height-normal: calc(var(--font-size-normal) * 1.5);
-  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
-  --line-height-small: calc(var(--font-size-small) + 4px);
-  --radius: var(--border-radius-lg, 12.5px);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-2xl: calc(var(--radius) * 1.6);
-  --radius-full: 9999px;
-  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
-  --checkmark-image: url(&quot;data:image/svg+xml,%3Csvg xmlns=&#x27;http://www.w3.org/2000/svg&#x27; viewBox=&#x27;0 0 17 17&#x27;%3E%3Cpath d=&#x27;M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z&#x27;/%3E%3C/svg%3E&quot;);
-
-  /* Legacy aliases; not part of the current agent contract. */
-  --viz-bg: transparent;
-  --viz-panel: var(--card);
-  --viz-border: var(--border);
-  --viz-text: var(--foreground);
-  --viz-muted: var(--muted-foreground);
-  --viz-accent: var(--primary);
-  --viz-accent-text: var(--primary-foreground);
-  --viz-accent-bg: var(--accent);
-  --viz-font-size: var(--font-size-base);
-  --viz-warning: var(--destructive);
-}
-
-:root[data-theme=&quot;light&quot;] {
-  color-scheme: light;
-}
-
-:root[data-theme=&quot;dark&quot;] {
-  color-scheme: dark;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html &gt; body {
-  /* Preserve MCP aliases for older inline renderers without creating :root cycles. */
-  --color-background-primary: var(
-    --background,
-    light-dark(rgb(255 255 255), rgb(24 24 24))
-  );
-  --color-text-primary: var(
-    --foreground,
-    light-dark(rgb(26 28 31), rgb(255 255 255))
-  );
-  --color-border-secondary: var(
-    --border,
-    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
-  );
-
-  margin: 0;
-  padding: 5px;
-  color: var(--foreground);
-  background: transparent !important;
-  font-family: var(--font-sans);
-  font-size: var(--font-size-normal);
-  font-weight: var(--font-weight-normal);
-  line-height: var(--line-height-normal);
-}
-
-a {
-  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
-  cursor: pointer;
-  font-weight: var(--font-weight-medium, 500);
-  text-decoration: none;
-  text-underline-offset: 2px;
-}
-
-a:is(:hover, :focus-visible) {
-  text-decoration-line: underline;
-  text-decoration-style: dashed;
-  text-decoration-thickness: 0.5px;
-}
-
-h1,
-h2,
-h3,
-h4,
-h5,
-h6,
-p {
-  margin-block: 0;
-}
-
-h1 {
-  font-size: var(--font-size-h1);
-  font-weight: var(--font-weight-medium);
-  line-height: 1.25;
-}
-
-h2 {
-  font-size: var(--font-size-h2);
-  font-weight: var(--font-weight-medium);
-  line-height: 1.25;
-}
-
-h3,
-h4,
-h5,
-h6 {
-  font-size: var(--font-size-h3);
-  font-weight: var(--font-weight-medium);
-  line-height: 1.3;
-}
-
-b,
-strong,
-th {
-  font-weight: var(--font-weight-medium);
-}
-
-code:not(pre code) {
-  display: inline;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  corner-shape: superellipse(1.5);
-  background: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 0.92em;
-  overflow-wrap: anywhere;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-  word-break: break-word;
-}
-
-.table-responsive {
-  width: 100%;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  color: var(--foreground);
-  font: inherit;
-  text-align: start;
-}
-
-.table :is(th, td) {
-  padding-block: 10px;
-  padding-inline: 0 24px;
-  overflow-wrap: anywhere;
-  border-bottom: 1px solid var(--border);
-  text-align: start;
-  vertical-align: top;
-}
-
-.table-responsive &gt; .table :is(th, td) {
-  overflow-wrap: break-word;
-}
-
-.table :is(th, td):last-child {
-  padding-inline-end: 0;
-}
-
-.table :is(caption, thead th) {
-  font-weight: 600;
-}
-
-.table thead th {
-  padding-block: 8px;
-  border-bottom-color: color-mix(in srgb, var(--foreground) 16%, transparent);
-}
-
-.table tbody tr:last-child :is(th, td) {
-  border-bottom: 0;
-}
-
-.table.table-sm :is(th, td) {
-  padding-block: 6px;
-}
-
-.table.table-sm :is(th, td):not(:last-child) {
-  padding-inline-end: 16px;
-}
-
-.table :is(.text-end, [align=&quot;right&quot;]) {
-  text-align: end;
-  font-variant-numeric: tabular-nums;
-}
-
-.table :is(.text-center, [align=&quot;center&quot;]) {
-  text-align: center;
-}
-
-.table .text-nowrap {
-  white-space: nowrap;
-}
-
-#widget {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 100%;
-  padding: 0;
-  background: transparent !important;
-}
-
-.card {
-  min-width: 0;
-  padding: 12px;
-  overflow: hidden;
-  overflow-wrap: break-word;
-  border-radius: var(--radius-2xl);
-  corner-shape: superellipse(1.5);
-  color: var(--card-foreground);
-  background: var(--card);
-}
-
-#widget &gt; :not(.card) {
-  width: 100% !important;
-  max-width: none !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-.tooltip {
-  position: fixed;
-  z-index: 50;
-  top: 0;
-  left: 0;
-  width: max-content;
-  max-width: min(
-    20rem,
-    var(--tooltip-available-width, calc(100vw - 10px)),
-    calc(100vw - 10px)
-  );
-  max-height: min(
-    var(--tooltip-available-height, calc(100vh - 10px)),
-    calc(100vh - 10px)
-  );
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  corner-shape: superellipse(1.5);
-  color: var(--popover-foreground);
-  background: var(--popover);
-  box-shadow: none;
-  font-size: var(--font-size-tooltip);
-  line-height: var(--line-height-tooltip);
-  overflow-wrap: break-word;
-  white-space: normal;
-  pointer-events: none;
-  user-select: none;
-}
-
-.viz-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
-  gap: 10px;
-}
-
-.viz-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.viz-stat-value {
-  font-size: var(--font-size-h2);
-  font-weight: var(--font-weight-medium);
-  line-height: 1.25;
-}
-
-.viz-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-
-.viz-badge {
-  padding: 3px 8px;
-  border-radius: var(--radius-full);
-  color: var(--accent-foreground);
-  background: var(--accent);
-  font-weight: var(--font-weight-medium);
-}
-
-small,
-.text-small,
-.viz-badge {
-  font-size: var(--font-size-small);
-  line-height: var(--line-height-small);
-}
-
-.text-muted {
-  color: var(--muted-foreground);
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.viz-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.viz-controls &gt; .form-label {
-  display: grid;
-  min-width: min(100%, 260px);
-  flex: 1 1 280px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 2px 12px;
-  margin-bottom: 0;
-}
-
-.viz-controls &gt; .form-label &gt; :is(.form-control, .form-range, .form-select) {
-  grid-column: 1 / -1;
-}
-
-.btn,
-.form-check-input,
-.form-control,
-.form-range,
-.form-select {
-  font: inherit;
-}
-
-.btn {
-  appearance: button;
-  display: inline-flex;
-  inline-size: fit-content;
-  max-inline-size: 100%;
-  min-height: 28px;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  margin: 0;
-  padding: 0 8px;
-  -webkit-app-region: no-drag;
-  border: 1px solid var(--input);
-  border-radius: var(--radius-lg);
-  corner-shape: superellipse(1.5);
-  color: var(--secondary-foreground);
-  background: var(--secondary);
-  cursor: var(--cursor-interaction, pointer);
-  text-align: center;
-  text-decoration: none;
-  white-space: nowrap;
-  user-select: none;
-  -webkit-font-smoothing: antialiased;
-}
-
-.btn:is(.btn-block, .viz-tile) {
-  inline-size: 100%;
-}
-
-.btn.viz-tile {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-
-a.btn {
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.btn:not(:disabled):hover {
-  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
-}
-
-.btn-primary {
-  border-color: transparent;
-  color: var(--primary-foreground);
-  background: var(--foreground);
-  background-clip: padding-box;
-}
-
-.btn-primary .text-muted {
-  color: color-mix(in srgb, var(--primary-foreground) 50%, transparent);
-}
-
-.btn-primary:not(:disabled):hover {
-  background: color-mix(in srgb, var(--foreground) 80%, transparent);
-  background-clip: padding-box;
-}
-
-.btn-ghost {
-  border-color: transparent;
-  color: var(--muted-foreground);
-  background: transparent;
-}
-
-.btn-ghost:not(:disabled):hover {
-  color: var(--foreground);
-  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
-}
-
-.btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
-}
-
-[data-lucide] {
-  stroke-width: 1.6;
-}
-
-.form-label {
-  display: block;
-  margin-bottom: 6px;
-  color: var(--foreground);
-}
-
-.form-control {
-  display: block;
-  width: 100%;
-  min-height: 28px;
-  padding: 0 8px;
-  outline: none;
-  border: 1px solid var(--input);
-  border-radius: var(--radius-lg);
-  corner-shape: superellipse(1.5);
-  color: var(--foreground);
-  background: var(--secondary);
-}
-
-.form-control::placeholder {
-  color: var(--muted-foreground);
-}
-
-.form-control[type=&quot;file&quot;] {
-  padding: 0;
-  overflow: hidden;
-  cursor: var(--cursor-interaction, pointer);
-}
-
-.form-control[type=&quot;file&quot;]::file-selector-button {
-  min-height: 26px;
-  margin-right: 8px;
-  padding: 0 8px;
-  border: 0;
-  border-right: 1px solid var(--input);
-  color: var(--secondary-foreground);
-  background: var(--secondary);
-  cursor: inherit;
-  font: inherit;
-}
-
-.form-control[type=&quot;file&quot;]:not(:disabled):hover::file-selector-button {
-  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
-}
-
-.form-control-color[type=&quot;color&quot;] {
-  width: 40px;
-  height: 28px;
-  padding: 3px;
-  cursor: var(--cursor-interaction, pointer);
-}
-
-.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch-wrapper {
-  padding: 0;
-}
-
-.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch {
-  border: 0;
-  border-radius: calc(var(--radius-lg) - 4px);
-  corner-shape: superellipse(1.5);
-}
-
-textarea.form-control {
-  height: auto;
-  min-height: 72px;
-  padding: 8px 10px;
-  resize: vertical;
-}
-
-.form-control:focus-visible {
-  border-color: var(--ring);
-  box-shadow: inset 0 0 0 1px var(--ring);
-}
-
-.form-control:disabled,
-.form-select:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
-}
-
-.form-select {
-  appearance: none;
-  display: block;
-  width: 100%;
-  min-height: 28px;
-  margin: 0;
-  padding: 0 32px 0 8px;
-  outline: none;
-  border: 1px solid var(--input);
-  border-radius: var(--radius-lg);
-  corner-shape: superellipse(1.5);
-  color: var(--foreground);
-  background-color: var(--secondary);
-  background-image:
-    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
-    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
-  background-position:
-    calc(100% - 14px) 50%,
-    calc(100% - 10px) 50%;
-  background-repeat: no-repeat;
-  background-size: 4px 4px;
-  cursor: var(--cursor-interaction, default);
-}
-
-.form-select:not(:disabled):hover {
-  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
-}
-
-.form-select:focus-visible {
-  border-color: var(--ring);
-  box-shadow: inset 0 0 0 1px var(--ring);
-}
-
-.form-check {
-  display: flex;
-  min-height: 20px;
-  align-items: center;
-  gap: 6px;
-}
-
-.form-check-input {
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  flex: 0 0 auto;
-  margin: 0;
-  border: 1px solid var(--input);
-  color: var(--primary-foreground);
-  background-color: transparent;
-  cursor: var(--cursor-interaction, default);
-  transition:
-    background-color 150ms,
-    border-color 150ms,
-    box-shadow 150ms;
-}
-
-.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;] {
-  border-color: var(--input);
-  border-radius: var(--radius-sm);
-  corner-shape: superellipse(1.5);
-  background-color: var(--secondary);
-  box-shadow: var(--shadow-sm);
-}
-
-.form-check:not(.form-switch)
-  .form-check-input:not(:disabled):not(:checked):hover {
-  background-color: var(--card);
-}
-
-.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;]:checked {
-  border-color: var(--primary);
-  background-color: var(--primary);
-}
-
-.form-check:not(.form-switch)
-  .form-check-input[type=&quot;checkbox&quot;]:checked::before {
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: var(--primary-foreground);
-  content: &quot;&quot;;
-  mask: var(--checkmark-image) center / 12px 12px no-repeat;
-}
-
-.form-check-input[type=&quot;radio&quot;] {
-  width: 14px;
-  height: 14px;
-  border-radius: var(--radius-full);
-}
-
-.form-check-input[type=&quot;radio&quot;]:checked {
-  border: 2px solid var(--primary);
-  background:
-    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
-    var(--primary);
-}
-
-.form-check:not(.form-switch) .form-check-input:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-.form-check:not(.form-switch) .form-check-input:disabled {
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
-.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
-  cursor: not-allowed;
-}
-
-.form-switch .form-check-input:disabled,
-.form-switch .form-check-input:disabled + .form-check-label {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.form-check-label {
-  color: var(--foreground);
-  cursor: var(--cursor-interaction, default);
-}
-
-.form-switch .form-check-input {
-  position: relative;
-  width: 32px;
-  height: 20px;
-  border: 0;
-  border-radius: var(--radius-full);
-  background: var(--muted);
-  box-shadow: none;
-  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
-}
-
-.form-switch .form-check-input::before {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  width: 16px;
-  height: 16px;
-  box-sizing: border-box;
-  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
-  border-radius: var(--radius-full);
-  background: light-dark(var(--primary-foreground), var(--foreground));
-  box-shadow: var(--shadow-sm);
-  content: &quot;&quot;;
-  transform: translate(2px, -50%);
-  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
-}
-
-.form-switch .form-check-input:checked {
-  background: var(--primary);
-}
-
-.form-switch .form-check-input:checked::before {
-  transform: translate(14px, -50%);
-}
-
-.form-switch .form-check-input:focus-visible {
-  box-shadow: 0 0 0 2px var(--ring);
-}
-
-.form-range {
-  appearance: none;
-  display: block;
-  width: 100%;
-  height: 28px;
-  flex: 1;
-  margin: 0;
-  padding: 0;
-  outline: none;
-  border: 0;
-  accent-color: var(--primary);
-  background: linear-gradient(
-      color-mix(in srgb, var(--foreground) 7%, transparent),
-      color-mix(in srgb, var(--foreground) 7%, transparent)
-    )
-    center / 100% 2px no-repeat;
-}
-
-.form-range::-webkit-slider-runnable-track {
-  height: 28px;
-  background: transparent;
-}
-
-.form-range::-webkit-slider-thumb {
-  appearance: none;
-  width: 20px;
-  height: 20px;
-  margin-top: 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  background: light-dark(var(--primary-foreground), var(--foreground));
-}
-
-.form-range:focus-visible::-webkit-slider-thumb {
-  border-color: var(--ring);
-  box-shadow: inset 0 0 0 1px var(--ring);
-}
-
-.form-range::-moz-range-track {
-  height: 28px;
-  background: transparent;
-}
-
-.form-range::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  background: light-dark(var(--primary-foreground), var(--foreground));
-}
-
-.form-range:focus-visible::-moz-range-thumb {
-  border-color: var(--ring);
-  box-shadow: inset 0 0 0 1px var(--ring);
-}
-
-.form-range:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
-}
-
-.btn:not(.btn-primary, .viz-tile):is(
-    [aria-pressed=&quot;true&quot;],
-    [aria-selected=&quot;true&quot;],
-    .is-selected
-  ) {
-  border-color: var(--primary);
-  color: var(--primary-foreground);
-  background: var(--primary);
-}
-
-.btn.viz-tile:is([aria-pressed=&quot;true&quot;], [aria-selected=&quot;true&quot;], .is-selected) {
-  border-color: var(--primary);
-  box-shadow: inset 0 0 0 1px var(--primary);
-}
-
-.btn:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-svg {
-  display: block;
-  max-width: 100%;
-  height: auto;
-}
-
-#widget &gt; svg {
-  width: 100%;
-}
-
-/* Model-authored chart rules can otherwise stretch icons after these styles load. */
-svg.lucide {
-  display: block;
-  width: 16px !important;
-  height: 16px !important;
-  flex: none;
-  margin: 0 !important;
-  stroke-width: 1.6;
-}
-
-.text-warning,
-.text-destructive {
-  color: var(--destructive);
-}
-
-html&gt;body{padding:0}&lt;/style&gt;
-&lt;/head&gt;
-&lt;body&gt;
-&lt;div id=&quot;svquant-pipeline&quot; aria-labelledby=&quot;pipeline-title&quot;&gt;
-  &lt;style&gt;
-    #svquant-pipeline {
-      --background: light-dark(rgb(250 251 252), rgb(20 23 28));
-      --foreground: light-dark(rgb(28 35 42), rgb(235 240 244));
-      --muted-foreground: light-dark(rgb(89 103 115), rgb(164 177 188));
-      --border: light-dark(rgb(211 220 226), rgb(65 77 88));
-      --card: light-dark(rgb(255 255 255), rgb(30 35 42));
-      --card-foreground: light-dark(rgb(28 35 42), rgb(235 240 244));
-      --popover: light-dark(rgb(255 255 255), rgb(30 35 42));
-      --popover-foreground: light-dark(rgb(28 35 42), rgb(235 240 244));
-      --primary: light-dark(rgb(21 93 137), rgb(111 191 241));
-      --primary-foreground: light-dark(rgb(255 255 255), rgb(15 31 42));
-      --accent: light-dark(rgb(231 241 248), rgb(31 57 72));
-      --accent-foreground: light-dark(rgb(21 73 104), rgb(207 232 246));
-      --viz-series-1: light-dark(rgb(22 107 154), rgb(112 195 242));
-      --viz-series-2: light-dark(rgb(36 133 102), rgb(103 205 166));
-      --viz-series-3: light-dark(rgb(189 116 28), rgb(239 180 92));
-      --viz-series-4: light-dark(rgb(137 78 168), rgb(205 144 230));
-      --viz-series-5: light-dark(rgb(187 63 78), rgb(239 130 143));
-      --viz-series-6: light-dark(rgb(84 98 112), rgb(168 182 194));
-      color: var(--foreground);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;
-      font-size: 14px;
-      line-height: 1.45;
-      max-width: 1160px;
-      margin: 0 auto;
-      padding: 24px;
-    }
-
-    #svquant-pipeline * {
-      box-sizing: border-box;
-    }
-
-    #svquant-pipeline h1,
-    #svquant-pipeline h2,
-    #svquant-pipeline h3,
-    #svquant-pipeline p {
-      margin: 0;
-    }
-
-    #svquant-pipeline code {
-      color: var(--accent-foreground);
-      font-family: ui-monospace, SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, monospace;
-      font-size: 0.9em;
-      overflow-wrap: anywhere;
-    }
-
-    #svquant-pipeline .eyebrow {
-      color: var(--muted-foreground);
-      font-size: 11px;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-    }
-
-    #svquant-pipeline .header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 20px;
-      padding-bottom: 18px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    #svquant-pipeline h1 {
-      font-size: clamp(22px, 3vw, 32px);
-      font-weight: 500;
-      letter-spacing: -0.025em;
-    }
-
-    #svquant-pipeline .subtitle {
-      color: var(--muted-foreground);
-      margin-top: 6px;
-    }
-
-    #svquant-pipeline .endpoint {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      color: var(--primary);
-      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-      font-size: 12px;
-      white-space: nowrap;
-    }
-
-    #svquant-pipeline .endpoint::before {
-      content: &quot;POST&quot;;
-      border: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
-      border-radius: 3px;
-      color: var(--primary);
-      font-family: inherit;
-      font-size: 10px;
-      letter-spacing: 0.04em;
-      padding: 2px 5px;
-    }
-
-    #svquant-pipeline .controls {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 12px 18px;
-      padding: 16px 0 12px;
-    }
-
-    #svquant-pipeline .control-group {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    #svquant-pipeline .control-label {
-      color: var(--muted-foreground);
-      font-size: 12px;
-      margin-right: 4px;
-    }
-
-    #svquant-pipeline .control-button {
-      appearance: none;
-      background: transparent;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      color: var(--muted-foreground);
-      cursor: pointer;
-      font: inherit;
-      font-size: 12px;
-      padding: 6px 9px;
-    }
-
-    #svquant-pipeline .control-button:hover,
-    #svquant-pipeline .control-button:focus-visible {
-      border-color: var(--primary);
-      color: var(--foreground);
-      outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent);
-      outline-offset: 2px;
-    }
-
-    #svquant-pipeline .control-button[aria-pressed=&quot;true&quot;] {
-      background: var(--primary);
-      border-color: var(--primary);
-      color: var(--primary-foreground);
-    }
-
-    #svquant-pipeline .profile-note {
-      color: var(--muted-foreground);
-      font-size: 12px;
-    }
-
-    #svquant-pipeline .layout {
-      display: grid;
-      grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
-      gap: 28px;
-      align-items: start;
-    }
-
-    #svquant-pipeline .section-head {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 16px;
-      margin: 8px 0 12px;
-    }
-
-    #svquant-pipeline .section-head h2 {
-      font-size: 15px;
-      font-weight: 500;
-    }
-
-    #svquant-pipeline .section-head span {
-      color: var(--muted-foreground);
-      font-size: 12px;
-    }
-
-    #svquant-pipeline .flow {
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-    }
-
-    #svquant-pipeline .stage {
-      --tone: var(--viz-series-6);
-      appearance: none;
-      background: color-mix(in srgb, var(--card) 82%, transparent);
-      border: 1px solid var(--border);
-      border-left: 4px solid var(--tone);
-      border-radius: 5px;
-      color: var(--card-foreground);
-      cursor: pointer;
-      display: block;
-      padding: 12px 14px;
-      text-align: left;
-      transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
-      width: 100%;
-    }
-
-    #svquant-pipeline .stage:hover,
-    #svquant-pipeline .stage:focus-visible,
-    #svquant-pipeline .stage.is-active {
-      background: color-mix(in srgb, var(--accent) 72%, var(--card));
-      border-color: color-mix(in srgb, var(--tone) 55%, var(--border));
-      outline: 2px solid color-mix(in srgb, var(--tone) 30%, transparent);
-      outline-offset: 2px;
-      transform: translateX(2px);
-    }
-
-    #svquant-pipeline .stage[data-tone=&quot;request&quot;] { --tone: var(--viz-series-1); }
-    #svquant-pipeline .stage[data-tone=&quot;cache&quot;] { --tone: var(--viz-series-4); }
-    #svquant-pipeline .stage[data-tone=&quot;data&quot;] { --tone: var(--viz-series-2); }
-    #svquant-pipeline .stage[data-tone=&quot;factor&quot;] { --tone: var(--viz-series-3); }
-    #svquant-pipeline .stage[data-tone=&quot;backtest&quot;] { --tone: var(--viz-series-1); }
-    #svquant-pipeline .stage[data-tone=&quot;metric&quot;] { --tone: var(--viz-series-5); }
-    #svquant-pipeline .stage[data-tone=&quot;analysis&quot;] { --tone: var(--viz-series-4); }
-    #svquant-pipeline .stage[data-tone=&quot;response&quot;] { --tone: var(--viz-series-2); }
-
-    #svquant-pipeline .stage-top {
-      display: flex;
-      align-items: baseline;
-      gap: 9px;
-    }
-
-    #svquant-pipeline .stage-number {
-      color: var(--tone);
-      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-      font-size: 11px;
-      font-weight: 500;
-    }
-
-    #svquant-pipeline .stage-title {
-      font-size: 15px;
-      font-weight: 500;
-    }
-
-    #svquant-pipeline .stage-caption {
-      color: var(--muted-foreground);
-      font-size: 12px;
-      margin-top: 4px;
-    }
-
-    #svquant-pipeline .stage-tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 5px;
-      margin-top: 9px;
-    }
-
-    #svquant-pipeline .tag {
-      border: 1px solid color-mix(in srgb, var(--tone) 35%, var(--border));
-      border-radius: 3px;
-      color: var(--muted-foreground);
-      font-size: 10px;
-      padding: 2px 5px;
-    }
-
-    #svquant-pipeline .connector {
-      align-items: center;
-      color: var(--muted-foreground);
-      display: flex;
-      height: 25px;
-      justify-content: center;
-      position: relative;
-    }
-
-    #svquant-pipeline .connector::before {
-      background: var(--border);
-      content: &quot;&quot;;
-      height: 100%;
-      position: absolute;
-      width: 1px;
-    }
-
-    #svquant-pipeline .connector span {
-      background: var(--background);
-      font-size: 13px;
-      line-height: 1;
-      padding: 3px 5px;
-      position: relative;
-    }
-
-    #svquant-pipeline .detail-panel,
-    #svquant-pipeline .timing-panel {
-      border-top: 2px solid var(--primary);
-      padding: 14px 0 18px;
-    }
-
-    #svquant-pipeline .detail-kicker {
-      color: var(--muted-foreground);
-      font-size: 11px;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-    }
-
-    #svquant-pipeline .detail-title {
-      font-size: 20px;
-      font-weight: 500;
-      margin-top: 4px;
-    }
-
-    #svquant-pipeline .detail-file {
-      color: var(--accent-foreground);
-      font-size: 11px;
-      margin-top: 8px;
-    }
-
-    #svquant-pipeline .detail-grid {
-      display: grid;
-      gap: 12px;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      margin-top: 18px;
-    }
-
-    #svquant-pipeline .detail-block {
-      border-top: 1px solid var(--border);
-      padding-top: 8px;
-    }
-
-    #svquant-pipeline .detail-label {
-      color: var(--muted-foreground);
-      font-size: 11px;
-      margin-bottom: 4px;
-    }
-
-    #svquant-pipeline .detail-value {
-      font-size: 12px;
-      overflow-wrap: anywhere;
-    }
-
-    #svquant-pipeline .detail-description {
-      border-top: 1px solid var(--border);
-      font-size: 13px;
-      margin-top: 18px;
-      padding-top: 12px;
-    }
-
-    #svquant-pipeline .timing-head {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 12px;
-    }
-
-    #svquant-pipeline .timing-head h2 {
-      font-size: 15px;
-      font-weight: 500;
-    }
-
-    #svquant-pipeline .timing-total {
-      color: var(--primary);
-      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-      font-size: 12px;
-    }
-
-    #svquant-pipeline .timing-subtitle {
-      color: var(--muted-foreground);
-      font-size: 11px;
-      margin-top: 4px;
-    }
-
-    #svquant-pipeline .timing-list {
-      margin-top: 15px;
-    }
-
-    #svquant-pipeline .timing-row {
-      display: grid;
-      grid-template-columns: 115px minmax(0, 1fr) 55px;
-      align-items: center;
-      gap: 8px;
-      margin-top: 9px;
-    }
-
-    #svquant-pipeline .timing-name,
-    #svquant-pipeline .timing-value {
-      font-size: 11px;
-    }
-
-    #svquant-pipeline .timing-value {
-      color: var(--muted-foreground);
-      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-      text-align: right;
-    }
-
-    #svquant-pipeline .timing-track {
-      background: color-mix(in srgb, var(--border) 55%, transparent);
-      height: 6px;
-      overflow: hidden;
-    }
-
-    #svquant-pipeline .timing-bar {
-      background: var(--viz-series-1);
-      height: 100%;
-      min-width: 3px;
-      transition: width 220ms ease;
-    }
-
-    #svquant-pipeline .timing-row[data-key=&quot;metric_calculation&quot;] .timing-bar {
-      background: var(--viz-series-5);
-    }
-
-    #svquant-pipeline .timing-row[data-key=&quot;factor_compute&quot;] .timing-bar {
-      background: var(--viz-series-3);
-    }
-
-    #svquant-pipeline .timing-row[data-key=&quot;engine_setup&quot;] .timing-bar,
-    #svquant-pipeline .timing-row[data-key=&quot;panel_setup&quot;] .timing-bar {
-      background: var(--viz-series-2);
-    }
-
-    #svquant-pipeline .timing-foot {
-      color: var(--muted-foreground);
-      font-size: 11px;
-      margin-top: 14px;
-    }
-
-    #svquant-pipeline .branch-section,
-    #svquant-pipeline .data-section,
-    #svquant-pipeline .error-section {
-      border-top: 1px solid var(--border);
-      margin-top: 20px;
-      padding-top: 16px;
-    }
-
-    #svquant-pipeline .branch-section h2,
-    #svquant-pipeline .data-section h2,
-    #svquant-pipeline .error-section h2 {
-      font-size: 14px;
-      font-weight: 500;
-    }
-
-    #svquant-pipeline .branch-grid,
-    #svquant-pipeline .data-grid {
-      display: grid;
-      gap: 10px;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      margin-top: 11px;
-    }
-
-    #svquant-pipeline .branch,
-    #svquant-pipeline .data-lane,
-    #svquant-pipeline .error-lane {
-      border-left: 3px solid var(--viz-series-6);
-      padding: 9px 11px;
-    }
-
-    #svquant-pipeline .branch[data-branch=&quot;core&quot;] {
-      border-left-color: var(--viz-series-1);
-    }
-
-    #svquant-pipeline .branch[data-branch=&quot;full&quot;] {
-      border-left-color: var(--viz-series-4);
-    }
-
-    #svquant-pipeline .branch.is-muted {
-      opacity: 0.42;
-    }
-
-    #svquant-pipeline .branch-title,
-    #svquant-pipeline .data-title,
-    #svquant-pipeline .error-title {
-      font-size: 12px;
-      font-weight: 500;
-    }
-
-    #svquant-pipeline .branch-copy,
-    #svquant-pipeline .data-copy,
-    #svquant-pipeline .error-copy {
-      color: var(--muted-foreground);
-      font-size: 11px;
-      margin-top: 4px;
-    }
-
-    #svquant-pipeline .data-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    #svquant-pipeline .data-lane:nth-child(1) { border-left-color: var(--viz-series-3); }
-    #svquant-pipeline .data-lane:nth-child(2) { border-left-color: var(--viz-series-2); }
-    #svquant-pipeline .data-lane:nth-child(3) { border-left-color: var(--viz-series-1); }
-
-    #svquant-pipeline .error-lane {
-      border-left-color: var(--viz-series-5);
-      margin-top: 10px;
-    }
-
-    @media (max-width: 820px) {
-      #svquant-pipeline .layout {
-        grid-template-columns: 1fr;
-      }
-
-      #svquant-pipeline .detail-panel,
-      #svquant-pipeline .timing-panel {
-        margin-top: 4px;
-      }
-    }
-
-    @media (max-width: 560px) {
-      #svquant-pipeline {
-        padding: 16px;
-      }
-
-      #svquant-pipeline .header {
-        display: block;
-      }
-
-      #svquant-pipeline .endpoint {
-        margin-top: 13px;
-      }
-
-      #svquant-pipeline .detail-grid,
-      #svquant-pipeline .branch-grid,
-      #svquant-pipeline .data-grid {
-        grid-template-columns: 1fr;
-      }
-
-      #svquant-pipeline .timing-row {
-        grid-template-columns: 100px minmax(0, 1fr) 48px;
-      }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      #svquant-pipeline .stage,
-      #svquant-pipeline .timing-bar {
-        transition: none;
-      }
-    }
-  &lt;/style&gt;
-
-  &lt;header class=&quot;header&quot;&gt;
-    &lt;div&gt;
-      &lt;div class=&quot;eyebrow&quot;&gt;ResearchEngine · QuantCore&lt;/div&gt;
-      &lt;h1 id=&quot;pipeline-title&quot;&gt;因子回测 API pipeline&lt;/h1&gt;
-      &lt;p class=&quot;subtitle&quot;&gt;从请求校验到回测结果 JSON 的当前真实执行链&lt;/p&gt;
-    &lt;/div&gt;
-    &lt;div class=&quot;endpoint&quot; aria-label=&quot;HTTP endpoint&quot;&gt;/api/backtest/factor&lt;/div&gt;
-  &lt;/header&gt;
-
-  &lt;div class=&quot;controls&quot; aria-label=&quot;Pipeline controls&quot;&gt;
-    &lt;div class=&quot;control-group&quot; role=&quot;group&quot; aria-label=&quot;Analysis level&quot;&gt;
-      &lt;span class=&quot;control-label&quot;&gt;分析分支&lt;/span&gt;
-      &lt;button type=&quot;button&quot; class=&quot;control-button&quot; data-mode=&quot;core&quot; aria-pressed=&quot;true&quot;&gt;core · 默认&lt;/button&gt;
-      &lt;button type=&quot;button&quot; class=&quot;control-button&quot; data-mode=&quot;full&quot; aria-pressed=&quot;false&quot;&gt;full · 深度分析&lt;/button&gt;
-    &lt;/div&gt;
-    &lt;div class=&quot;control-group&quot; role=&quot;group&quot; aria-label=&quot;Measured profile&quot;&gt;
-      &lt;span class=&quot;control-label&quot;&gt;耗时样本&lt;/span&gt;
-      &lt;button type=&quot;button&quot; class=&quot;control-button&quot; data-profile=&quot;macd&quot; aria-pressed=&quot;true&quot;&gt;默认 MACD&lt;/button&gt;
-      &lt;button type=&quot;button&quot; class=&quot;control-button&quot; data-profile=&quot;bias&quot; aria-pressed=&quot;false&quot;&gt;短区间 BIAS&lt;/button&gt;
-    &lt;/div&gt;
-    &lt;div class=&quot;profile-note&quot; id=&quot;profile-note&quot;&gt;全历史 · CSI300 · 默认参数 · 未命中缓存&lt;/div&gt;
-  &lt;/div&gt;
-
-  &lt;div class=&quot;layout&quot;&gt;
-    &lt;main&gt;
-      &lt;div class=&quot;section-head&quot;&gt;
-        &lt;h2&gt;请求生命周期&lt;/h2&gt;
-        &lt;span&gt;点击节点查看输入、输出和实现位置&lt;/span&gt;
-      &lt;/div&gt;
-
-      &lt;div class=&quot;flow&quot; aria-label=&quot;因子回测 API 执行流程&quot;&gt;
-        &lt;button type=&quot;button&quot; class=&quot;stage is-active&quot; data-stage=&quot;request&quot; data-tone=&quot;request&quot; aria-pressed=&quot;true&quot;&gt;
-          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;01&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;HTTP 请求与模型校验&lt;/span&gt;&lt;/div&gt;
-          &lt;div class=&quot;stage-caption&quot;&gt;FastAPI 路由接收因子、股票池、区间、分组和分析级别&lt;/div&gt;
-          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;FactorBacktestRequest&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;extra=forbid&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;HTTP 200 / error&lt;/span&gt;&lt;/div&gt;
-        &lt;/button&gt;
-        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
-
-        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;cache&quot; data-tone=&quot;cache&quot; aria-pressed=&quot;false&quot;&gt;
-          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;02&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;缓存闸门&lt;/span&gt;&lt;/div&gt;
-          &lt;div class=&quot;stage-caption&quot;&gt;默认启用文件缓存；命中直接返回，未命中进入真实回测&lt;/div&gt;
-          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;HIT → JSON&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;MISS + lock&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;BYPASS 可降级&lt;/span&gt;&lt;/div&gt;
-        &lt;/button&gt;
-        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
-
-        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;load&quot; data-tone=&quot;data&quot; aria-pressed=&quot;false&quot;&gt;
-          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;03&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;因子加载与实验配置&lt;/span&gt;&lt;/div&gt;
-          &lt;div class=&quot;stage-caption&quot;&gt;内置库或用户源码解析为 Factor，映射为 ConfigManager + Experiment&lt;/div&gt;
-          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;builtin / exec&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;universe&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;commission · slippage&lt;/span&gt;&lt;/div&gt;
-        &lt;/button&gt;
-        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
-
-        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;engines&quot; data-tone=&quot;data&quot; aria-pressed=&quot;false&quot;&gt;
-          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;04&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;构建 QuantCore 引擎&lt;/span&gt;&lt;/div&gt;
-          &lt;div class=&quot;stage-caption&quot;&gt;初始化数据、因子和指标引擎；FieldParquetProvider 复用 schema 缓存&lt;/div&gt;
-          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;DataEngine × 2&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;FactorEngine&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;MetricEngine&lt;/span&gt;&lt;/div&gt;
-        &lt;/button&gt;
-        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
-
-        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;panels&quot; data-tone=&quot;data&quot; aria-pressed=&quot;false&quot;&gt;
-          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;05&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;完整历史面板与预热&lt;/span&gt;&lt;/div&gt;
-          &lt;div class=&quot;stage-caption&quot;&gt;先取全历史，按收益确认区间解析股票池，再构造因子面板和收益面板&lt;/div&gt;
-          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;get_panels(None, None)&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;rolling warm-up&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;as_of 首个交易日&lt;/span&gt;&lt;/div&gt;
-        &lt;/button&gt;
-        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
-
-        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;factor&quot; data-tone=&quot;factor&quot; aria-pressed=&quot;false&quot;&gt;
-          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;06&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;因子计算与预处理&lt;/span&gt;&lt;/div&gt;
-          &lt;div class=&quot;stage-caption&quot;&gt;在完整历史计算后裁剪区间；因子使用后复权 OHLC，可选去极值/标准化&lt;/div&gt;
-          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;compute_panel&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;HFQ OHLC&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;winsorize → standardize&lt;/span&gt;&lt;/div&gt;
-        &lt;/button&gt;
-        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
-
-        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;backtest&quot; data-tone=&quot;backtest&quot; aria-pressed=&quot;false&quot;&gt;
-          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;07&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;信号、分组与 Native 回测&lt;/span&gt;&lt;/div&gt;
-          &lt;div class=&quot;stage-caption&quot;&gt;计算远期收益；pd.qcut 生成 Q1 高因子值组至 QN 低因子值组，并在策略/分层间复用&lt;/div&gt;
-          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;FactorGroupStrategy&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;NativeEngine&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;HFQ close → returns&lt;/span&gt;&lt;/div&gt;
-        &lt;/button&gt;
-        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
-
-        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;metrics&quot; data-tone=&quot;metric&quot; aria-pressed=&quot;false&quot;&gt;
-          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;08&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;指标计算&lt;/span&gt;&lt;/div&gt;
-          &lt;div class=&quot;stage-caption&quot;&gt;用 equity、returns、factor_values、forward_returns、positions 构造 MetricContext&lt;/div&gt;
-          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;calculate_all&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;Sharpe · drawdown&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;IC · Rank IC&lt;/span&gt;&lt;/div&gt;
-        &lt;/button&gt;
-        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
-
-        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;analysis&quot; data-tone=&quot;analysis&quot; aria-pressed=&quot;false&quot;&gt;
-          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;09&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;因子分析分支&lt;/span&gt;&lt;/div&gt;
-          &lt;div class=&quot;stage-caption&quot; id=&quot;analysis-caption&quot;&gt;core：分组收益与分组净值；full：增加 IC、行业、FF3、多空和基准分析&lt;/div&gt;
-          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot; id=&quot;analysis-tag&quot;&gt;core active&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;layered_returns&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;benchmark&lt;/span&gt;&lt;/div&gt;
-        &lt;/button&gt;
-        &lt;div class=&quot;connector&quot; aria-hidden=&quot;true&quot;&gt;&lt;span&gt;↓&lt;/span&gt;&lt;/div&gt;
-
-        &lt;button type=&quot;button&quot; class=&quot;stage&quot; data-stage=&quot;response&quot; data-tone=&quot;response&quot; aria-pressed=&quot;false&quot;&gt;
-          &lt;div class=&quot;stage-top&quot;&gt;&lt;span class=&quot;stage-number&quot;&gt;10&lt;/span&gt;&lt;span class=&quot;stage-title&quot;&gt;结果整理与 JSON 响应&lt;/span&gt;&lt;/div&gt;
-          &lt;div class=&quot;stage-caption&quot;&gt;净值、回撤、分年收益、基准、因子分析、价格口径和阶段耗时统一序列化&lt;/div&gt;
-          &lt;div class=&quot;stage-tags&quot;&gt;&lt;span class=&quot;tag&quot;&gt;FactorBacktestResponse&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;timings_seconds&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;HTTP 200&lt;/span&gt;&lt;/div&gt;
-        &lt;/button&gt;
-      &lt;/div&gt;
-
-      &lt;section class=&quot;branch-section&quot; aria-labelledby=&quot;branch-title&quot;&gt;
-        &lt;h2 id=&quot;branch-title&quot;&gt;分析级别展开&lt;/h2&gt;
-        &lt;div class=&quot;branch-grid&quot;&gt;
-          &lt;div class=&quot;branch&quot; data-branch=&quot;core&quot;&gt;
-            &lt;div class=&quot;branch-title&quot;&gt;core · 默认&lt;/div&gt;
-            &lt;div class=&quot;branch-copy&quot;&gt;核心回测 + 分组收益/净值；不执行完整行业和 FF3 诊断。&lt;/div&gt;
-          &lt;/div&gt;
-          &lt;div class=&quot;branch&quot; data-branch=&quot;full&quot;&gt;
-            &lt;div class=&quot;branch-title&quot;&gt;full · 显式开启&lt;/div&gt;
-            &lt;div class=&quot;branch-copy&quot;&gt;在 core 基础上增加 IC、累计 IC、滚动 IR、行业曲线、FF3 归因和多空结果。&lt;/div&gt;
-          &lt;/div&gt;
-        &lt;/div&gt;
-      &lt;/section&gt;
-    &lt;/main&gt;
-
-    &lt;aside&gt;
-      &lt;section class=&quot;detail-panel&quot; aria-live=&quot;polite&quot; aria-labelledby=&quot;detail-title&quot;&gt;
-        &lt;div class=&quot;detail-kicker&quot; id=&quot;detail-kicker&quot;&gt;selected stage&lt;/div&gt;
-        &lt;h2 class=&quot;detail-title&quot; id=&quot;detail-title&quot;&gt;HTTP 请求与模型校验&lt;/h2&gt;
-        &lt;div class=&quot;detail-file&quot; id=&quot;detail-file&quot;&gt;&lt;code&gt;ResearchEngine/researchengine/api/routes.py → runner.py&lt;/code&gt;&lt;/div&gt;
-        &lt;div class=&quot;detail-grid&quot;&gt;
-          &lt;div class=&quot;detail-block&quot;&gt;
-            &lt;div class=&quot;detail-label&quot;&gt;输入&lt;/div&gt;
-            &lt;div class=&quot;detail-value&quot; id=&quot;detail-input&quot;&gt;JSON body：factor_code / library_name / factor_name / universe / start / end / groups / analysis_level&lt;/div&gt;
-          &lt;/div&gt;
-          &lt;div class=&quot;detail-block&quot;&gt;
-            &lt;div class=&quot;detail-label&quot;&gt;输出&lt;/div&gt;
-            &lt;div class=&quot;detail-value&quot; id=&quot;detail-output&quot;&gt;已校验的 FactorBacktestRequest；失败也包装为 response.error&lt;/div&gt;
-          &lt;/div&gt;
-        &lt;/div&gt;
-        &lt;div class=&quot;detail-description&quot; id=&quot;detail-description&quot;&gt;路由只负责接收请求，runner 负责缓存入口与真实回测。Pydantic 模型禁止未知字段，内置因子要求明确 library_name。&lt;/div&gt;
-      &lt;/section&gt;
-
-      &lt;section class=&quot;timing-panel&quot; aria-labelledby=&quot;timing-title&quot;&gt;
-        &lt;div class=&quot;timing-head&quot;&gt;
-          &lt;h2 id=&quot;timing-title&quot;&gt;阶段耗时基线&lt;/h2&gt;
-          &lt;div class=&quot;timing-total&quot; id=&quot;timing-total&quot;&gt;api_total 26.24 s&lt;/div&gt;
-        &lt;/div&gt;
-        &lt;div class=&quot;timing-subtitle&quot; id=&quot;timing-subtitle&quot;&gt;默认 MACD · 全历史 · CSI300 · core · 关闭缓存压测&lt;/div&gt;
-        &lt;div class=&quot;timing-list&quot; id=&quot;timing-list&quot; aria-label=&quot;Measured stage timings&quot;&gt;&lt;/div&gt;
-        &lt;div class=&quot;timing-foot&quot;&gt;指标计算不是主要瓶颈；当前主要时间在引擎/面板初始化、因子计算和信号回测。&lt;/div&gt;
-      &lt;/section&gt;
-    &lt;/aside&gt;
-  &lt;/div&gt;
-
-  &lt;section class=&quot;data-section&quot; aria-labelledby=&quot;data-title&quot;&gt;
-    &lt;h2 id=&quot;data-title&quot;&gt;数据口径与数据流&lt;/h2&gt;
-    &lt;div class=&quot;data-grid&quot;&gt;
-      &lt;div class=&quot;data-lane&quot;&gt;
-        &lt;div class=&quot;data-title&quot;&gt;因子价格&lt;/div&gt;
-        &lt;div class=&quot;data-copy&quot;&gt;&lt;code&gt;panels/market_data.parquet&lt;/code&gt;&lt;br&gt;open / high / low / close · 后复权（HFQ）&lt;/div&gt;
-      &lt;/div&gt;
-      &lt;div class=&quot;data-lane&quot;&gt;
-        &lt;div class=&quot;data-title&quot;&gt;收益价格&lt;/div&gt;
-        &lt;div class=&quot;data-copy&quot;&gt;&lt;code&gt;panels/market_data.parquet&lt;/code&gt;&lt;br&gt;close · 后复权（HFQ）&lt;/div&gt;
-      &lt;/div&gt;
-      &lt;div class=&quot;data-lane&quot;&gt;
-        &lt;div class=&quot;data-title&quot;&gt;股票池与基准&lt;/div&gt;
-        &lt;div class=&quot;data-copy&quot;&gt;&lt;code&gt;benchmark/&lt;/code&gt;&lt;br&gt;as_of 成分快照 · 独立基准净值&lt;/div&gt;
-      &lt;/div&gt;
-    &lt;/div&gt;
-  &lt;/section&gt;
-
-  &lt;section class=&quot;error-section&quot; aria-labelledby=&quot;error-title&quot;&gt;
-    &lt;h2 id=&quot;error-title&quot;&gt;异常出口&lt;/h2&gt;
-    &lt;div class=&quot;error-lane&quot;&gt;
-      &lt;div class=&quot;error-title&quot;&gt;任一阶段异常 → &lt;code&gt;FactorBacktestResponse.error&lt;/code&gt;&lt;/div&gt;
-      &lt;div class=&quot;error-copy&quot;&gt;当前 API 将因子加载、数据、回测和基准错误包装到响应体；HTTP 通常仍为 200，前端应先检查 error。&lt;/div&gt;
-    &lt;/div&gt;
-  &lt;/section&gt;
-
-  &lt;script&gt;
-    (() =&gt; {
-      const root = document.getElementById(&quot;svquant-pipeline&quot;);
+  <main class="page" id="pipeline">
+    <header class="header">
+      <div>
+        <div class="eyebrow">ResearchEngine · QuantCore</div>
+        <h1>单因子回测 API 的当前真实执行链</h1>
+        <p class="subtitle">只描述 <code>POST /api/backtest/factor</code>：提交是异步的，真正耗时的行情、因子和回测工作在线程池任务中完成。</p>
+      </div>
+      <div class="endpoint">POST /api/backtest/factor</div>
+    </header>
+
+    <section class="summary-grid" aria-label="接口摘要">
+      <div class="summary"><div class="summary-label">提交响应</div><div class="summary-value">202 Accepted</div><div class="summary-copy">返回 run_id、poll_url，不等待计算完成</div></div>
+      <div class="summary"><div class="summary-label">轮询终态</div><div class="summary-value">succeeded / failed / cancelled</div><div class="summary-copy">成功结果仍是原 FactorBacktestResponse</div></div>
+      <div class="summary"><div class="summary-label">计算后端</div><div class="summary-value">Python + Native</div><div class="summary-copy">因子 backend=python，组合使用 NativeEngine</div></div>
+      <div class="summary"><div class="summary-label">时间口径</div><div class="summary-value">先全历史，再裁剪</div><div class="summary-copy">保证 rolling / pct_change 有预热数据</div></div>
+    </section>
+
+    <section class="section" aria-labelledby="flow-heading">
+      <div class="section-head">
+        <h2 id="flow-heading">从 POST 到结果 JSON</h2>
+        <p>点击节点查看该阶段实际做了什么</p>
+      </div>
+      <div class="controls" role="group" aria-label="分析级别">
+        <span class="muted">后段分析分支：</span>
+        <button class="control" type="button" data-mode="core" aria-pressed="true">core · 默认</button>
+        <button class="control" type="button" data-mode="full" aria-pressed="false">full · 深度分析</button>
+      </div>
+
+      <div class="flow-layout">
+        <div class="flow" id="flow" aria-label="单因子回测执行流程"></div>
+        <aside class="detail" aria-live="polite" aria-labelledby="detail-title">
+          <div class="detail-kicker" id="detail-kicker">01 · request</div>
+          <h2 id="detail-title">提交请求与模型校验</h2>
+          <div class="detail-file" id="detail-file"><code>ResearchEngine/app/api/routes/factor.py</code></div>
+          <div class="detail-grid">
+            <div class="detail-block"><div class="detail-label">输入</div><div class="detail-value" id="detail-input"></div></div>
+            <div class="detail-block"><div class="detail-label">输出</div><div class="detail-value" id="detail-output"></div></div>
+          </div>
+          <div class="detail-description" id="detail-description"></div>
+          <div class="detail-note" id="detail-note"></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="boundary-heading">
+      <div class="section-head">
+        <h2 id="boundary-heading">终端五条日志分别包住什么</h2>
+        <p>没有新实测数字；这里只标出真实代码边界</p>
+      </div>
+      <div class="boundary-grid">
+        <div class="boundary">
+          <div class="boundary-title">① 引擎初始化</div>
+          <div class="boundary-log">读取配置 / 构建引擎 完毕</div>
+          <div class="boundary-copy">只执行 <code>_build_engines</code>：复用上下文中的 DataEngine，创建 FactorEngine 和 MetricEngine。</div>
+          <span class="boundary-key">timings: engine_setup</span>
+        </div>
+        <div class="boundary">
+          <div class="boundary-title">② 面板准备</div>
+          <div class="boundary-log">数据读取完毕</div>
+          <div class="boundary-copy">创建懒加载面板，但先物化的是完整历史 <code>close</code>，不是所有因子字段。</div>
+          <span class="boundary-key">timings: panel_setup</span>
+        </div>
+        <div class="boundary">
+          <div class="boundary-title">③ 因子值阶段</div>
+          <div class="boundary-log">因子值计算完毕</div>
+          <div class="boundary-copy">日志覆盖因子公式、预处理、单因子过滤分支检查和随后执行的评估区间裁剪。</div>
+          <span class="boundary-key">timings: factor_compute（不含最后裁剪）</span>
+        </div>
+        <div class="boundary">
+          <div class="boundary-title">④ 指标阶段</div>
+          <div class="boundary-log">指标计算完毕</div>
+          <div class="boundary-copy">这条日志之前还会先做远期收益、qcut、信号生成和 Native 回测；这些没有单独终端日志。</div>
+          <span class="boundary-key">timings: metric_calculation</span>
+        </div>
+        <div class="boundary">
+          <div class="boundary-title">⑤ 结果对象阶段</div>
+          <div class="boundary-log">结果保存完毕</div>
+          <div class="boundary-copy">构造 ResultManager 并写入内部结果引用；API 当前没有 output_path，因此不是磁盘落盘完成。</div>
+          <span class="boundary-key">后续仍有 factor_analysis / response</span>
+        </div>
+      </div>
+      <div class="scope-note"><strong>“结果保存完毕”不是任务结束：</strong>当前 API 没有设置 <code>output_path</code>，这里只是构造了 <code>ResultManager</code>；之后还会执行 core/full 因子分析、基准整理和最终响应序列化。<code>factor_analysis</code> 结束后才写入阶段耗时元数据。</div>
+    </section>
+
+    <section class="section" aria-labelledby="panel-heading">
+      <div class="section-head">
+        <h2 id="panel-heading">Panel、懒加载和缓存：self.close 到底是不是每次读盘</h2>
+        <p>Panel 是项目自定义容器，不是 pandas.Panel</p>
+      </div>
+      <div class="data-layout">
+        <div class="data-panel">
+          <h3>① Panel 层缓存</h3>
+          <p>同一个 <code>Panel</code> 重复访问 <code>self.close</code>，命中 <code>Panel._cache</code>，返回同一个字段视图。</p>
+        </div>
+        <div class="data-panel">
+          <h3>② _LazyPanels 视图缓存</h3>
+          <p>以 <code>(field, symbol_key)</code> 缓存字段视图。<code>panel</code> 和 <code>factor_panel</code> 有独立 Panel 缓存，但共享底层懒加载映射。</p>
+        </div>
+        <div class="data-panel">
+          <h3>③ 进程 FieldFrameCache</h3>
+          <p>按发布版本、字段、日期和股票列缓存原始字段/视图；物理 Parquet 字段也有进程级缓存。</p>
+        </div>
+      </div>
+      <div class="cache-flow" aria-label="字段访问缓存链">
+        <div class="cache-node"><strong>self.close / self.open</strong><span>FactorLibrary 属性访问</span></div>
+        <div class="cache-arrow" aria-hidden="true">→</div>
+        <div class="cache-node"><strong>Panel._get</strong><span>按字段缓存当前 Panel 视图</span></div>
+        <div class="cache-arrow" aria-hidden="true">→</div>
+        <div class="cache-node"><strong>_LazyPanels.get_view</strong><span>按字段 + 股票池复用底层视图</span></div>
+        <div class="cache-arrow" aria-hidden="true">→</div>
+        <div class="cache-node"><strong>FieldFrameCache / Parquet</strong><span>缓存命中或首次物理读取</span></div>
+      </div>
+      <div class="scope-note"><strong>关键边界：</strong><code>数据读取完毕</code>时只调用了 <code>calculation_panels.get("close")</code>。如果因子之后第一次访问 <code>open</code>、<code>volume</code> 或其他字段，懒加载会发生在“数据读取完毕”之后。当前 Provider 对合并 Parquet 先读取逻辑字段的全部列，再做股票池列重排。</div>
+    </section>
+
+    <section class="section" aria-labelledby="matrix-heading">
+      <div class="section-head">
+        <h2 id="matrix-heading">“数据读取完毕 → 因子值计算完毕”的真实拆解</h2>
+        <p>全历史宽表，最后才裁剪 start/end</p>
+      </div>
+      <div class="matrix">
+        <table>
+          <thead><tr><th>子步骤</th><th>实际操作</th><th>当前内存/计算行为</th><th>代码位置</th></tr></thead>
+          <tbody>
+            <tr><td>加载因子</td><td><code>FactorEngine.compute_panel</code> → <code>_MethodFactor.compute</code></td><td>浅拷贝 FactorLibrary，把当前 Panel 绑定到库实例，再调用因子方法。</td><td><code>app/quantcore/factor/base.py</code></td></tr>
+            <tr><td>访问字段</td><td><code>self.close</code>、<code>self.open</code> 等</td><td>首次访问可能触发字段读取；同一层级的后续访问走缓存。<code>self.close + self.open</code> 是真正的 DataFrame 宽表运算。</td><td><code>app/quantcore/data/providers/field_parquet_provider.py</code></td></tr>
+            <tr><td>因子公式</td><td>返回日期 × 股票的 DataFrame</td><td>因子先在完整历史上计算，避免 start 之前没有 rolling/pct_change 预热数据。</td><td><code>app/services/experiment/factor.py</code></td></tr>
+            <tr><td>预处理</td><td><code>winsorize_data</code> → <code>standardize_data</code></td><td>当前 method=0 仍各执行一次 <code>values.copy()</code>；即使“不处理”，也会搬运整张宽表两次。</td><td><code>app/quantcore/factor/tool.py</code></td></tr>
+            <tr><td>批量过滤分支</td><td><code>_apply_factor_batch_filters</code></td><td>单因子 API 未开启 <code>factor_batch.filters_enabled</code>，当前直接返回；每日批量才会启用停牌/涨停过滤和额外掩码。</td><td><code>app/services/experiment/factor.py</code></td></tr>
+            <tr><td>评估裁剪</td><td><code>filter_by_date(factor_values_all, start, end)</code></td><td>只在因子完整历史计算结束后裁剪收益确认区间。</td><td><code>app/services/experiment/factor.py</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="slow-heading">
+      <div class="section-head">
+        <h2 id="slow-heading">为什么 Alpha158 beta 在全 A 特别慢</h2>
+        <p>这是当前实现的计算形态，不是新的性能基准</p>
+      </div>
+      <div class="data-layout">
+        <div class="data-panel">
+          <h3>看起来像 rolling，实际是逐窗口 Python 回调</h3>
+          <p><code>_rolling_apply(frame, window, _linear_slope)</code> 调用 <code>frame.rolling(...).apply(func, raw=True)</code>；每个窗口都会进入 Python 函数。</p>
+        </div>
+        <div class="data-panel">
+          <h3>窗口内部又调用 np.polyfit</h3>
+          <p><code>_linear_slope</code> 每次执行 <code>np.polyfit(np.arange(len(values)), values, 1)[0]</code>，不是一次矩阵级斜率计算。</p>
+        </div>
+        <div class="data-panel">
+          <h3>股票数直接放大回调次数</h3>
+          <p>当前全 A 约 5916 只 × 2335 个交易日，单个 beta 因子约 1380 万个窗口回调；CSI300 约 70 万个，数量级差异与耗时差异一致。</p>
+        </div>
+      </div>
+      <div class="scope-note"><strong>不要混淆两类操作：</strong><code>self.close + self.open</code>、<code>self.close.pct_change(20)</code> 主要由 pandas/NumPy 对宽表执行；<code>rolling.apply(Python callback)</code> 则会退化为大量窗口级 Python 调用。当前页面只记录这个事实，不预先规定后续优化方案。</div>
+    </section>
+
+    <section class="section" aria-labelledby="later-heading">
+      <div class="section-head">
+        <h2 id="later-heading">因子值之后：qcut、回测、指标与分析</h2>
+        <p>qcut 不在“因子值计算完毕”之前</p>
+      </div>
+      <div class="data-layout">
+        <div class="data-panel">
+          <h3>远期收益与分组</h3>
+          <p>裁剪后的 <code>close</code> → <code>forward_returns</code>；然后按日期执行 <code>raw_qcut_groups</code>，当前约定 Q1 是最高因子值组。</p>
+        </div>
+        <div class="data-panel">
+          <h3>策略信号与 NativeEngine</h3>
+          <p><code>FactorGroupStrategy</code> 消费分组结果生成信号，NativeEngine 计算 equity、returns、positions；对应耗时记录在 <code>signal_and_backtest</code>。</p>
+        </div>
+        <div class="data-panel">
+          <h3>指标与因子分析</h3>
+          <p><code>MetricEngine.calculate_all</code> 计算绩效、IC、RankIC 等；core/full 再计算分层、预测性汇总及可选行业/FF3 分析。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="timing-heading">
+      <div class="section-head">
+        <h2 id="timing-heading">阶段耗时记录</h2>
+        <p>等待新的可比实测，不填旧样本数字</p>
+      </div>
+      <div class="timing-placeholder">
+        当前页面不显示旧版 CSI300 MACD/BIAS 样本，避免把旧架构耗时误认为全 A 现状。下一次实测结果应直接填入 API 返回的 <code>meta.timings_seconds</code>，并同时记录因子、股票池、日期区间、缓存状态和数据版本。
+        <div class="timing-keys" aria-label="耗时字段">
+          <span class="timing-key"><code>engine_setup</code></span>
+          <span class="timing-key"><code>panel_setup</code></span>
+          <span class="timing-key"><code>factor_compute</code></span>
+          <span class="timing-key"><code>signal_and_backtest</code></span>
+          <span class="timing-key"><code>metric_calculation</code></span>
+          <span class="timing-key"><code>factor_analysis</code></span>
+          <span class="timing-key"><code>api_total</code></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="contract-heading">
+      <div class="section-head">
+        <h2 id="contract-heading">当前实现中的契约差异</h2>
+        <p>只记录，不在本次页面更新中修复</p>
+      </div>
+      <div class="status-list">
+        <div class="status"><strong>过滤参数尚未进入单因子执行</strong><p><code>filter_limit_up</code> / <code>filter_suspended</code> 会返回到 meta，但单因子配置没有打开 <code>factor_batch.filters_enabled</code>。</p></div>
+        <div class="status"><strong>stamp_tax 尚未传给 BacktestConfig</strong><p>请求值写入了配置，但 <code>FactorExperiment.run</code> 构造 Native 回测配置时没有传入印花税字段。</p></div>
+        <div class="status"><strong>后台错误在任务层呈现</strong><p>提交阶段可能返回 422/429/503；执行阶段通过轮询看到顶层 <code>status=failed</code> 和 <code>error</code>。</p></div>
+      </div>
+      <div class="scope-note"><strong>批量边界：</strong>每日全量批次不放进这张单因子 API 主图。它后续应复用这里的 FactorExperiment 核心链，业务差异只在全库枚举、双槽并发、重试、批次状态和结果入库。</div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      var root = document.getElementById("pipeline");
       if (!root) return;
 
-      const details = {
-        request: {
-          kicker: &quot;01 · request&quot;,
-          title: &quot;HTTP 请求与模型校验&quot;,
-          file: &quot;ResearchEngine/researchengine/api/routes.py → schemas.py&quot;,
-          input: &quot;JSON body：factor_code / library_name / factor_name / universe / start / end / groups / analysis_level&quot;,
-          output: &quot;已校验的 FactorBacktestRequest；失败也包装为 response.error&quot;,
-          description: &quot;路由只负责接收请求，Pydantic 负责字段、范围和因子来源校验。未知字段被拒绝；内置因子要求明确 library_name。&quot;
+      var stages = [
+        {
+          key: "request", tone: "request", title: "提交请求与模型校验", caption: "FastAPI 接收 JSON，校验因子来源、股票池、日期、分组和分析级别。", tags: ["POST", "FactorBacktestRequest", "extra=forbid"],
+          file: "ResearchEngine/app/api/routes/factor.py → app/schemas/backtest.py",
+          input: "factor_code 或 library_name + factor_name，以及 universe、start/end、groups、analysis_level 等请求字段。",
+          output: "HTTP 202 + run_id + poll_url + Location + Retry-After。",
+          description: "路由只提交任务，不等待行情指纹、缓存扫描或回测计算。参数错误在提交阶段直接返回 422。",
+          note: "真正的计算尚未开始；看到 202 只代表任务已进入 ExperimentManager。"
         },
-        cache: {
-          kicker: &quot;02 · cache&quot;,
-          title: &quot;缓存闸门&quot;,
-          file: &quot;ResearchEngine/researchengine/api/runner.py · submit_factor_backtest · manager.py&quot;,
-          input: &quot;请求 JSON + MarketData 数据指纹 + TTL / 容量配置&quot;,
-          output: &quot;HIT 直接返回；MISS 执行一次并写缓存；缓存异常降级 BYPASS&quot;,
-          description: &quot;SVQUANT_BACKTEST_CACHE_ENABLED 默认开启。进程内同一 key 由 ExperimentManager 复用同一个 Future；跨进程仍使用文件锁协调，关闭缓存时直接进入 Manager 的 uncached 任务。&quot;
+        {
+          key: "manager", tone: "queue", title: "ExperimentManager 入队与请求去重", caption: "按请求内容生成进程内 key，进入 interactive lane 的有界任务管理器。", tags: ["manager.submit", "interactive", "Future"],
+          file: "ResearchEngine/app/services/factor/runner.py → app/services/experiment/manager.py",
+          input: "已校验的 FactorBacktestRequest。",
+          output: "ExperimentHandle；后续 GET/DELETE 通过 run_id 读取或取消任务。",
+          description: "相同请求在进程内复用同一个 Future。队列满返回 429；运行中 DELETE 只设置取消请求，不强杀正在执行的 Python 线程。",
+          note: "单因子 API 的 HTTP 请求线程不承担耗时回测；耗时从后台任务开始累计。"
         },
-        load: {
-          kicker: &quot;03 · load&quot;,
-          title: &quot;因子加载与实验配置&quot;,
-          file: &quot;ResearchEngine/researchengine/api/runner.py · _run_factor_backtest_uncached&quot;,
-          input: &quot;内置因子库名或用户因子源码，以及回测请求参数&quot;,
-          output: &quot;Factor 对象 + ConfigManager + ExperimentManager.submit(...)&quot;,
-          description: &quot;内置库从 index.yaml 登记目录加载；用户源码被包装成 FactorLibrary 后临时编译。请求参数映射到股票池、分组、成本、预处理和 analysis_level。&quot;
+        {
+          key: "cache", tone: "queue", title: "行情指纹与结果缓存闸门", caption: "后台任务计算数据指纹，决定 HIT、MISS、文件锁等待或 BYPASS。", tags: ["data_fingerprint", "FileBacktestCache", "HIT/MISS/BYPASS"],
+          file: "ResearchEngine/app/services/factor/runner.py · _run_factor_backtest_job",
+          input: "请求 JSON + MarketData 数据目录指纹 + TTL/容量配置。",
+          output: "HIT 直接得到结果；MISS 进入未缓存回测；缓存异常降级为 BYPASS。",
+          description: "缓存扫描本身发生在后台任务中。MISS 会用文件锁协调跨进程重复请求，只有成功结果才写缓存。",
+          note: "如果终端在真正回测前已经等待，可能是行情指纹扫描或缓存锁，而不是因子公式。"
         },
-        engines: {
-          kicker: &quot;04 · engines&quot;,
-          title: &quot;构建 QuantCore 引擎&quot;,
-          file: &quot;ResearchEngine/researchengine/experiment.py · Experiment._build_engines&quot;,
-          input: &quot;SVQUANT_DATA_DIR 或默认 MarketData 目录&quot;,
-          output: &quot;研究 DataEngine、未复权价格 DataEngine、FactorEngine、MetricEngine&quot;,
-          description: &quot;FieldParquetProvider 读取字段面板；schema 按文件大小和 mtime 做进程内缓存。研究行情中的后复权 OHLC 作为因子价格源，未复权展示行情仅供行情展示接口使用。&quot;
+        {
+          key: "load", tone: "data", title: "加载因子与构建实验配置", caption: "加载内置库或临时用户代码，映射请求参数到 FactorExperiment。", tags: ["FactorLoader", "_build_config", "native", "python"],
+          file: "ResearchEngine/app/services/factor/runner.py · _run_factor_backtest_uncached",
+          input: "因子源码/库名、因子名、组合类型、成本、预处理和分析级别。",
+          output: "Factor 对象 + ConfigManager + FactorExperiment。",
+          description: "内置库从 index.yaml 对应文件加载；用户代码包装成 FactorLibrary。interactive API 当前使用 compute_backend=python、backtest.engine=native。",
+          note: "这里还没有计算因子值，只是在准备可执行对象和参数。"
         },
-        panels: {
-          kicker: &quot;05 · panels&quot;,
-          title: &quot;完整历史面板与预热&quot;,
-          file: &quot;ResearchEngine/researchengine/experiment.py · Experiment.run&quot;,
-          input: &quot;全历史字段面板 + 请求 start/end + universe&quot;,
-          output: &quot;Panel、factor_panel、收益确认区间、as_of 股票池&quot;,
-          description: &quot;先 get_panels(None, None)，让 rolling/pct_change 在完整历史上预热；再用收益区间首个实际交易日解析股票池，最后裁剪评估区间。&quot;
+        {
+          key: "engine", tone: "data", title: "构建 QuantCore 引擎", caption: "复用 ExperimentContext 的 DataEngine，按需创建 FactorEngine 和 MetricEngine。", tags: ["DataEngine × 1", "FactorEngine", "MetricEngine"],
+          file: "ResearchEngine/app/services/experiment/factor.py · FactorExperiment._build_engines",
+          input: "ExperimentContext.market.data_engine + 因子配置。",
+          output: "已注册因子的 FactorEngine、指标引擎和共享行情上下文。",
+          description: "当前实验不自己创建或关闭行情资源；DataEngine 来自 ExperimentManager 的共享上下文，因此页面不再描述为 DataEngine × 2。",
+          note: "终端的第一条日志只覆盖这一小段。"
         },
-        factor: {
-          kicker: &quot;06 · factor&quot;,
-          title: &quot;因子计算与预处理&quot;,
-          file: &quot;ResearchEngine/researchengine/experiment.py · FactorEngine.compute_panel&quot;,
-          input: &quot;完整历史 factor_panel：未复权 open/high/low/close 等字段&quot;,
-          output: &quot;完整历史 factor_values → 裁剪到 start/end 的因子值&quot;,
-          description: &quot;因子计算先于区间裁剪，避免预热缺失。随后按 winsorize → standardize 处理横截面因子值。&quot;
+        {
+          key: "panels", tone: "data", title: "懒加载面板、close 预热和股票池解析", caption: "先取完整历史到 end，再按评估区间第一个交易日解析 universe。", tags: ["get_panels(None, None)", "close", "as_of"],
+          file: "ResearchEngine/app/services/experiment/factor.py · FactorExperiment.run",
+          input: "DataEngine、请求 start/end、universe。",
+          output: "calculation_panels + evaluation_close + symbols + panel/factor_panel。",
+          description: "interactive API 未开启 strict_as_of，因此 calculation_end 为 None。先加载完整 close 并裁剪评估区间，再 resolve_universe；两个 Panel 都指向同一懒加载字段映射。",
+          note: "“数据读取完毕”不代表所有因子字段都已经读入；它只明确触发了 close。"
         },
-        backtest: {
-          kicker: &quot;07 · backtest&quot;,
-          title: &quot;信号、分组与 Native 回测&quot;,
-          file: &quot;QuantCore/.../grouping.py + strategies.py · NativeEngine&quot;,
-          input: &quot;区间因子值 + 后复权 close + forward_returns&quot;,
-          output: &quot;equity_curve、returns、positions、rebalance_logs&quot;,
-          description: &quot;公共 raw_qcut_groups 每次回测只计算一次；Q1 为最高因子值组、QN 为最低组，结果供 FactorGroupStrategy 与分层分析复用。收益由后复权 close 计算。&quot;
+        {
+          key: "factor", tone: "factor", title: "执行因子公式", caption: "FactorEngine 调用因子，返回完整历史的日期 × 股票因子宽表。", tags: ["compute_panel", "_MethodFactor", "DataFrame"],
+          file: "ResearchEngine/app/quantcore/factor/base.py · _MethodFactor.compute",
+          input: "绑定到 FactorLibrary 的自定义 Panel。",
+          output: "factor_values_all：完整历史 × 股票池的 pandas.DataFrame。",
+          description: "内置库方法会浅拷贝库实例，再绑定当前 Panel。self.close/self.open 的首次访问可能触发字段懒加载；同一个 Panel 的重复字段访问命中 Panel._cache。",
+          note: "self.close + self.open 是宽表向量化；rolling.apply(Python callback) 则会逐窗口进入 Python。"
         },
-        metrics: {
-          kicker: &quot;08 · metrics&quot;,
-          title: &quot;指标计算&quot;,
-          file: &quot;QuantCore/quantcore/metric/engine.py · MetricEngine.calculate_all&quot;,
-          input: &quot;MetricContext：equity、returns、factor_values、forward_returns、positions&quot;,
-          output: &quot;Sharpe、Sortino、Calmar、回撤、波动、IC、Rank IC 等指标&quot;,
-          description: &quot;指标阶段只消费前面已经产生的序列，不负责读取行情或构造分组。当前实测中它不是主要耗时来源。&quot;
+        {
+          key: "preprocess", tone: "factor", title: "预处理与单因子过滤分支", caption: "按 winsorize → standardize 处理；单因子 API 当前跳过批量过滤。", tags: ["winsorize", "standardize", "filters disabled"],
+          file: "ResearchEngine/app/quantcore/factor/tool.py → app/services/experiment/factor.py",
+          input: "factor_values_all + ConfigManager。",
+          output: "预处理后的 factor_values_all，随后裁剪为 factor_values。",
+          description: "默认 method=0 仍分别执行 values.copy()。_apply_factor_batch_filters 会被调用，但 interactive 配置没有 factor_batch.filters_enabled，因此直接返回原表；每日批次才启用停牌/涨停掩码。",
+          note: "这是“数据读取完毕 → 因子值计算完毕”计时的一部分。"
         },
-        analysis: {
-          kicker: &quot;09 · analysis&quot;,
-          title: &quot;因子分析分支&quot;,
-          file: &quot;ResearchEngine/researchengine/experiment.py · _run_core_group_analysis / _run_factor_analysis&quot;,
-          input: &quot;因子值、收益、分组结果、基准和可选基本面字段&quot;,
-          output: &quot;layered_equity、layered_returns，以及 full 级诊断结果&quot;,
-          description: &quot;core 只保留分组收益与净值；full 在此基础上计算 IC 序列、滚动 IR、行业曲线、三因子归因、多空和基准分析。&quot;
+        {
+          key: "backtest", tone: "compute", title: "远期收益、qcut、信号与 Native 回测", caption: "裁剪 close 后构造远期收益、分组、持仓信号和组合净值。", tags: ["forward_returns", "pd.qcut", "FactorGroupStrategy", "NativeEngine"],
+          file: "app/services/factor/portfolio.py → app/quantcore/backtest/adapter/{grouping,strategies,native_engine}.py",
+          input: "区间 factor_values + close_panel + groups/rebalance/cost 配置。",
+          output: "equity_curve、returns、positions、group_assignments。",
+          description: "groups 有值时先调用 raw_qcut_groups；当前 Q1 是最高因子值组。随后 FactorGroupStrategy 生成信号，NativeEngine 执行向量化组合回测。此阶段记录 signal_and_backtest，但没有单独终端日志。",
+          note: "pd.qcut 位于“因子值计算完毕”之后，所以它不会解释前一段因子日志之间的延迟。"
         },
-        response: {
-          kicker: &quot;10 · response&quot;,
-          title: &quot;结果整理与 JSON 响应&quot;,
-          file: &quot;ResearchEngine/researchengine/api/runner.py · FactorBacktestResponse&quot;,
-          input: &quot;ResultManager + benchmark_equity + factor_analysis&quot;,
-          output: &quot;metrics、equity_curve、drawdowns、annual_returns、benchmark_curve、meta&quot;,
-          description: &quot;最后补充独立基准净值、超额收益和价格/精度/预处理元数据，并把各阶段 timings_seconds 返回给前端。&quot;
+        {
+          key: "metrics", tone: "compute", title: "MetricContext 与指标计算", caption: "消费回测产物和因子/远期收益宽表，计算绩效与预测性指标。", tags: ["MetricContext", "calculate_all", "IC/RankIC"],
+          file: "ResearchEngine/app/quantcore/metric/engine.py · MetricEngine.calculate_all",
+          input: "equity、returns、factor_values、forward_returns、positions。",
+          output: "metrics 字典：绩效、回撤、波动、IC、RankIC、换手等。",
+          description: "RankIC 会对每日横截面分别 rank 后再计算相关性；positions 的变化也需要处理完整持仓宽表。指标本身是向量化，但数据规模仍随股票数增长。",
+          note: "终端“指标计算完毕”只在 MetricEngine 返回后打印；前面的 qcut 和 Native 回测也包含在两条日志之间。"
+        },
+        {
+          key: "analysis", tone: "compute", title: "core/full 因子分析分支", caption: "构造分层收益、预测性汇总，以及 full 级的深度分析。", tags: ["layered_returns", "predictive_summary", "benchmark", "FF3/industry"],
+          file: "ResearchEngine/app/services/experiment/factor.py · _run_core_group_analysis / _run_factor_analysis",
+          input: "因子值、close、远期收益、分组结果和可选基本面/行业字段。",
+          output: "factor_analysis；随后由 runner 整理成 API 响应模型。",
+          description: "core 计算分组收益/净值和预测性汇总；full 还会计算 IC 序列、滚动 IR、基准、市值分层、FF3、行业曲线和多空结果。",
+          note: "ResultManager 已构造后仍会进入这里；因此“结果保存完毕”不是最终完成。"
+        },
+        {
+          key: "response", tone: "result", title: "基准整理、任务终态与 JSON 响应", caption: "补充 benchmark、回撤、年化、meta 和 timings_seconds，供 GET 轮询返回。", tags: ["FactorBacktestResponse", "meta", "api_total"],
+          file: "ResearchEngine/app/services/factor/runner.py → app/api/routes/factor.py",
+          input: "ResultManager + factor_analysis + benchmark_equity。",
+          output: "任务 status=succeeded 及 result；失败时为顶层 error。",
+          description: "runner 把内部 ResultManager 转为 FactorBacktestResponse；任务快照再由 GET /api/backtest/factor/{run_id} 暴露。后台异常映射为 status=failed，不依赖前端解析 result.error。",
+          note: "timings_seconds 包含 engine_setup、panel_setup、factor_compute、signal_and_backtest、metric_calculation、factor_analysis 和 api_total。"
         }
-      };
+      ];
 
-      const profiles = {
-        macd: {
-          note: &quot;全历史 · CSI300 · 默认参数 · 未命中缓存&quot;,
-          subtitle: &quot;默认 MACD · 全历史 · CSI300 · core · 关闭缓存压测&quot;,
-          total: 26.24285,
-          timings: {
-            engine_setup: 9.117648,
-            panel_setup: 4.334249,
-            factor_compute: 2.683102,
-            signal_and_backtest: 8.793942,
-            metric_calculation: 0.405782,
-            factor_analysis: 0.393488
-          }
-        },
-        bias: {
-          note: &quot;2026-07-12 → 2026-08-11 · BIAS · core · 第二次请求&quot;,
-          subtitle: &quot;短区间 BIAS · schema 缓存已生效 · core · 关闭结果缓存&quot;,
-          total: 10.766967,
-          timings: {
-            engine_setup: 2.41852,
-            panel_setup: 4.493104,
-            factor_compute: 2.645267,
-            signal_and_backtest: 0.710764,
-            metric_calculation: 0.05649,
-            factor_analysis: 0.173238
-          }
-        }
-      };
-
-      const labels = {
-        engine_setup: &quot;引擎初始化&quot;,
-        panel_setup: &quot;面板准备&quot;,
-        factor_compute: &quot;因子计算&quot;,
-        signal_and_backtest: &quot;信号 + 回测&quot;,
-        metric_calculation: &quot;指标计算&quot;,
-        factor_analysis: &quot;因子分析&quot;
-      };
-
-      const stageButtons = [...root.querySelectorAll(&quot;.stage&quot;)];
-      const modeButtons = [...root.querySelectorAll(&quot;[data-mode]&quot;)];
-      const profileButtons = [...root.querySelectorAll(&quot;[data-profile]&quot;)];
-      const detailKicker = root.querySelector(&quot;#detail-kicker&quot;);
-      const detailTitle = root.querySelector(&quot;#detail-title&quot;);
-      const detailFile = root.querySelector(&quot;#detail-file&quot;);
-      const detailInput = root.querySelector(&quot;#detail-input&quot;);
-      const detailOutput = root.querySelector(&quot;#detail-output&quot;);
-      const detailDescription = root.querySelector(&quot;#detail-description&quot;);
-      const analysisCaption = root.querySelector(&quot;#analysis-caption&quot;);
-      const analysisTag = root.querySelector(&quot;#analysis-tag&quot;);
-      const profileNote = root.querySelector(&quot;#profile-note&quot;);
-      const timingSubtitle = root.querySelector(&quot;#timing-subtitle&quot;);
-      const timingTotal = root.querySelector(&quot;#timing-total&quot;);
-      const timingList = root.querySelector(&quot;#timing-list&quot;);
-
-      let activeMode = &quot;core&quot;;
-      let activeProfile = &quot;macd&quot;;
+      var flow = root.querySelector("#flow");
+      var detailKicker = root.querySelector("#detail-kicker");
+      var detailTitle = root.querySelector("#detail-title");
+      var detailFile = root.querySelector("#detail-file");
+      var detailInput = root.querySelector("#detail-input");
+      var detailOutput = root.querySelector("#detail-output");
+      var detailDescription = root.querySelector("#detail-description");
+      var detailNote = root.querySelector("#detail-note");
+      var modeButtons = Array.prototype.slice.call(root.querySelectorAll("[data-mode]"));
+      var activeMode = "core";
 
       function selectStage(key) {
-        const detail = details[key];
-        if (!detail) return;
-        stageButtons.forEach((button) =&gt; {
-          const active = button.dataset.stage === key;
-          button.classList.toggle(&quot;is-active&quot;, active);
-          button.setAttribute(&quot;aria-pressed&quot;, String(active));
+        var stage = stages.filter(function (item) { return item.key === key; })[0];
+        if (!stage) return;
+        Array.prototype.forEach.call(flow.querySelectorAll(".stage"), function (button) {
+          var active = button.getAttribute("data-stage") === key;
+          button.setAttribute("aria-pressed", String(active));
         });
-        detailKicker.textContent = detail.kicker;
-        detailTitle.textContent = detail.title;
-        detailFile.innerHTML = `&lt;code&gt;${detail.file}&lt;/code&gt;`;
-        detailInput.textContent = detail.input;
-        detailOutput.textContent = detail.output;
-        detailDescription.textContent = detail.description;
+        detailKicker.textContent = stage.key;
+        detailTitle.textContent = stage.title;
+        detailFile.innerHTML = "<code>" + stage.file + "</code>";
+        detailInput.textContent = stage.input;
+        detailOutput.textContent = stage.output;
+        detailDescription.textContent = stage.description;
+        detailNote.textContent = stage.note;
+      }
+
+      function renderFlow() {
+        flow.innerHTML = "";
+        stages.forEach(function (stage, index) {
+          var button = document.createElement("button");
+          button.type = "button";
+          button.className = "stage";
+          button.setAttribute("data-stage", stage.key);
+          button.setAttribute("data-tone", stage.tone);
+          button.setAttribute("aria-pressed", "false");
+          button.innerHTML = "<div class=\"stage-top\"><span class=\"stage-number\">" + String(index + 1).padStart(2, "0") + "</span><span class=\"stage-title\">" + stage.title + "</span></div>" +
+            "<div class=\"stage-caption\">" + stage.caption + "</div>" +
+            "<div class=\"stage-tags\">" + stage.tags.map(function (tag) { return "<span class=\"tag\">" + tag + "</span>"; }).join("") + "</div>";
+          button.addEventListener("click", function () { selectStage(stage.key); });
+          flow.appendChild(button);
+          if (index < stages.length - 1) {
+            var connector = document.createElement("div");
+            connector.className = "connector";
+            connector.setAttribute("aria-hidden", "true");
+            connector.textContent = "↓";
+            flow.appendChild(connector);
+          }
+        });
       }
 
       function updateMode() {
-        modeButtons.forEach((button) =&gt; {
-          button.setAttribute(&quot;aria-pressed&quot;, String(button.dataset.mode === activeMode));
+        modeButtons.forEach(function (button) {
+          button.setAttribute("aria-pressed", String(button.getAttribute("data-mode") === activeMode));
         });
-        const full = activeMode === &quot;full&quot;;
-        analysisCaption.textContent = full
-          ? &quot;full：分组收益与净值，并增加 IC、行业、FF3、多空和基准分析&quot;
-          : &quot;core：分组收益与分组净值；不执行完整行业和 FF3 诊断&quot;;
-        analysisTag.textContent = full ? &quot;full active&quot; : &quot;core active&quot;;
-        root.querySelectorAll(&quot;.branch&quot;).forEach((branch) =&gt; {
-          branch.classList.toggle(&quot;is-muted&quot;, branch.dataset.branch !== activeMode);
-        });
+        var analysis = stages.filter(function (item) { return item.key === "analysis"; })[0];
+        if (activeMode === "full") {
+          analysis.caption = "在 core 基础上增加 IC/IR、行业曲线、FF3、多空和基准分析。";
+          analysis.tags = ["full", "IC/IR", "industry", "FF3", "long-short"];
+        } else {
+          analysis.caption = "核心分组收益、预测性汇总和基准结果；不执行完整行业/FF3 诊断。";
+          analysis.tags = ["core", "layered_returns", "predictive_summary", "benchmark"];
+        }
+        var selected = root.querySelector(".stage[aria-pressed=\"true\"]");
+        var selectedKey = selected ? selected.getAttribute("data-stage") : "request";
+        renderFlow();
+        selectStage(selectedKey);
       }
 
-      function updateProfile() {
-        const profile = profiles[activeProfile];
-        const values = Object.values(profile.timings);
-        const max = Math.max(...values);
-        profileNote.textContent = profile.note;
-        timingSubtitle.textContent = profile.subtitle;
-        timingTotal.textContent = `api_total ${profile.total.toFixed(2)} s`;
-        timingList.innerHTML = Object.entries(profile.timings).map(([key, value]) =&gt; {
-          const width = Math.max(3, (value / max) * 100);
-          return `&lt;div class=&quot;timing-row&quot; data-key=&quot;${key}&quot;&gt;
-            &lt;div class=&quot;timing-name&quot;&gt;${labels[key]}&lt;/div&gt;
-            &lt;div class=&quot;timing-track&quot; aria-hidden=&quot;true&quot;&gt;&lt;div class=&quot;timing-bar&quot; style=&quot;width:${width.toFixed(2)}%&quot;&gt;&lt;/div&gt;&lt;/div&gt;
-            &lt;div class=&quot;timing-value&quot;&gt;${value.toFixed(2)} s&lt;/div&gt;
-          &lt;/div&gt;`;
-        }).join(&quot;&quot;);
-      }
-
-      stageButtons.forEach((button) =&gt; {
-        button.addEventListener(&quot;click&quot;, () =&gt; selectStage(button.dataset.stage));
-      });
-      modeButtons.forEach((button) =&gt; {
-        button.addEventListener(&quot;click&quot;, () =&gt; {
-          activeMode = button.dataset.mode;
+      modeButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+          activeMode = button.getAttribute("data-mode");
           updateMode();
         });
       });
-      profileButtons.forEach((button) =&gt; {
-        button.addEventListener(&quot;click&quot;, () =&gt; {
-          activeProfile = button.dataset.profile;
-          profileButtons.forEach((item) =&gt; {
-            item.setAttribute(&quot;aria-pressed&quot;, String(item === button));
-          });
-          updateProfile();
-        });
-      });
 
-      selectStage(&quot;request&quot;);
-      updateMode();
-      updateProfile();
+      renderFlow();
+      selectStage("request");
     })();
-  &lt;/script&gt;
-&lt;/div&gt;
-
-&lt;script src=&quot;https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js&quot;&gt;&lt;/script&gt;
-&lt;script src=&quot;https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js&quot;&gt;&lt;/script&gt;
-&lt;script&gt;
-(() =&gt; {
-  if (window.FloatingUIDOM == null) {
-    return;
-  }
-  const { autoUpdate, computePosition, flip, offset, shift, size } =
-    window.FloatingUIDOM;
-  const tooltipPlacements = new Set([&quot;top&quot;, &quot;right&quot;, &quot;bottom&quot;, &quot;left&quot;]);
-  const tooltipId = `codex-visualization-tooltip-${
-    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
-  }`;
-  const tooltipGap = 5;
-  const hoverDelay = 700;
-  const skipDelay = 300;
-  let activeTrigger = null;
-  let pendingTrigger = null;
-  let tooltip = null;
-  let openTimeout = null;
-  let autoUpdateCleanup = null;
-  let positionRequest = 0;
-  let skipDelayUntil = 0;
-
-  const getTrigger = (target) =&gt;
-    target?.nodeType === Node.ELEMENT_NODE
-      ? target.closest(&quot;[data-tooltip]&quot;)
-      : null;
-  const containsTarget = (trigger, target) =&gt;
-    target?.nodeType != null &amp;&amp; trigger.contains(target);
-  const getContent = (trigger) =&gt;
-    trigger.getAttribute(&quot;data-tooltip&quot;)?.trim() ?? &quot;&quot;;
-  const getPlacement = (trigger) =&gt; {
-    const placement = trigger.getAttribute(&quot;data-tooltip-placement&quot;);
-    return tooltipPlacements.has(placement) ? placement : &quot;top&quot;;
-  };
-  const getTooltip = () =&gt; {
-    if (tooltip == null) {
-      tooltip = document.createElement(&quot;div&quot;);
-      tooltip.id = tooltipId;
-      tooltip.className = &quot;tooltip&quot;;
-      tooltip.setAttribute(&quot;role&quot;, &quot;tooltip&quot;);
-    }
-    return tooltip;
-  };
-  const setDescribedBy = (trigger, described) =&gt; {
-    const ids = new Set(
-      (trigger.getAttribute(&quot;aria-describedby&quot;) ?? &quot;&quot;)
-        .split(/\s+/)
-        .filter(Boolean),
-    );
-    if (described) {
-      ids.add(tooltipId);
-    } else {
-      ids.delete(tooltipId);
-    }
-    if (ids.size === 0) {
-      trigger.removeAttribute(&quot;aria-describedby&quot;);
-    } else {
-      trigger.setAttribute(&quot;aria-describedby&quot;, [...ids].join(&quot; &quot;));
-    }
-  };
-  const clearOpenTimeout = () =&gt; {
-    if (openTimeout != null) {
-      window.clearTimeout(openTimeout);
-      openTimeout = null;
-    }
-    pendingTrigger = null;
-  };
-  const closeTooltip = (activateSkipDelay = true) =&gt; {
-    clearOpenTimeout();
-    positionRequest += 1;
-    autoUpdateCleanup?.();
-    autoUpdateCleanup = null;
-    if (activeTrigger == null) {
-      return;
-    }
-    setDescribedBy(activeTrigger, false);
-    activeTrigger = null;
-    tooltip?.remove();
-    if (activateSkipDelay) {
-      skipDelayUntil = Date.now() + skipDelay;
-    }
-  };
-  const updatePosition = (trigger, floating) =&gt; {
-    const request = ++positionRequest;
-    void computePosition(trigger, floating, {
-      middleware: [
-        offset(tooltipGap),
-        flip({ padding: tooltipGap }),
-        shift({ padding: tooltipGap }),
-        size({
-          padding: tooltipGap,
-          apply({ availableHeight, availableWidth, elements }) {
-            elements.floating.style.setProperty(
-              &quot;--tooltip-available-width&quot;,
-              `${Math.max(0, availableWidth)}px`,
-            );
-            elements.floating.style.setProperty(
-              &quot;--tooltip-available-height&quot;,
-              `${Math.max(0, availableHeight)}px`,
-            );
-          },
-        }),
-      ],
-      placement: getPlacement(trigger),
-      strategy: &quot;fixed&quot;,
-    })
-      .then(({ x, y }) =&gt; {
-        if (activeTrigger !== trigger || request !== positionRequest) {
-          return;
-        }
-        const scale = window.devicePixelRatio || 1;
-        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
-        floating.style.visibility = &quot;visible&quot;;
-      })
-      .catch(() =&gt; {
-        if (activeTrigger === trigger &amp;&amp; request === positionRequest) {
-          closeTooltip(false);
-        }
-      });
-  };
-  const openTooltip = (trigger) =&gt; {
-    const content = getContent(trigger);
-    if (!trigger.isConnected || content.length === 0) {
-      return;
-    }
-    clearOpenTimeout();
-    if (activeTrigger === trigger) {
-      return;
-    }
-    closeTooltip();
-    const floating = getTooltip();
-    floating.textContent = content;
-    floating.style.visibility = &quot;hidden&quot;;
-    floating.style.transform = &quot;translate(0, 0)&quot;;
-    document.body.appendChild(floating);
-    activeTrigger = trigger;
-    setDescribedBy(trigger, true);
-    autoUpdateCleanup = autoUpdate(trigger, floating, () =&gt; {
-      updatePosition(trigger, floating);
-    });
-  };
-  const requestOpen = (trigger, immediate = false) =&gt; {
-    if (
-      getContent(trigger).length === 0 ||
-      activeTrigger === trigger ||
-      pendingTrigger === trigger
-    ) {
-      return;
-    }
-    clearOpenTimeout();
-    pendingTrigger = trigger;
-    const delay =
-      immediate || activeTrigger != null || Date.now() &lt; skipDelayUntil
-        ? 0
-        : hoverDelay;
-    if (delay === 0) {
-      openTooltip(trigger);
-      return;
-    }
-    openTimeout = window.setTimeout(() =&gt; {
-      openTimeout = null;
-      pendingTrigger = null;
-      openTooltip(trigger);
-    }, delay);
-  };
-  const handlePointerOpen = (event) =&gt; {
-    if (event.pointerType === &quot;touch&quot;) {
-      return;
-    }
-    const trigger = getTrigger(event.target);
-    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
-      return;
-    }
-    requestOpen(trigger);
-  };
-  const handleLeave = (event) =&gt; {
-    const trigger = getTrigger(event.target);
-    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
-      return;
-    }
-    if (activeTrigger === trigger || pendingTrigger === trigger) {
-      closeTooltip();
-    }
-  };
-  const handleFocusIn = (event) =&gt; {
-    const trigger = getTrigger(event.target);
-    if (trigger?.matches(&quot;:focus-visible&quot;)) {
-      requestOpen(trigger, true);
-    }
-  };
-  const handleKeyDown = (event) =&gt; {
-    if (event.key === &quot;Escape&quot;) {
-      closeTooltip();
-    }
-  };
-  const handleContextMenu = (event) =&gt; {
-    const trigger = getTrigger(event.target);
-    if (activeTrigger === trigger || pendingTrigger === trigger) {
-      closeTooltip();
-    }
-  };
-  const destroy = () =&gt; {
-    closeTooltip(false);
-    document.removeEventListener(&quot;pointerover&quot;, handlePointerOpen);
-    document.removeEventListener(&quot;pointerout&quot;, handleLeave);
-    document.removeEventListener(&quot;focusin&quot;, handleFocusIn);
-    document.removeEventListener(&quot;focusout&quot;, handleLeave);
-    document.removeEventListener(&quot;keydown&quot;, handleKeyDown);
-    document.removeEventListener(&quot;contextmenu&quot;, handleContextMenu);
-    tooltip = null;
-  };
-
-  document.addEventListener(&quot;pointerover&quot;, handlePointerOpen);
-  document.addEventListener(&quot;pointerout&quot;, handleLeave);
-  document.addEventListener(&quot;focusin&quot;, handleFocusIn);
-  document.addEventListener(&quot;focusout&quot;, handleLeave);
-  document.addEventListener(&quot;keydown&quot;, handleKeyDown);
-  document.addEventListener(&quot;contextmenu&quot;, handleContextMenu);
-  window.addEventListener(&quot;pagehide&quot;, destroy, { once: true });
-})();
-&lt;/script&gt;
-&lt;script id=&quot;codex-visualization-lucide&quot; async src=&quot;https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js&quot;&gt;&lt;/script&gt;
-&lt;script&gt;
-(() =&gt; {
-  const initialize = () =&gt; {
-    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
-  };
-  if (globalThis.lucide != null) {
-    initialize();
-    return;
-  }
-  document
-    .getElementById(&quot;codex-visualization-lucide&quot;)
-    ?.addEventListener(&quot;load&quot;, initialize, { once: true });
-})();
-&lt;/script&gt;
-
-&lt;/body&gt;
-&lt;/html&gt;
-"></iframe>
+  </script>
 </body>
 </html>

@@ -130,7 +130,9 @@ def build_price_csv(output_root: Path, workers: int = DEFAULT_WORKERS, universe_
             print(f"[unadjusted_price_csv] 第 {window_number}/{len(windows)} 个日期窗口：正在汇总 {window}", flush=True)
             parsed = list(_parallel_load(jobs, workers))
             summary["partitions"] += len(parsed)
-            for row in _wide_rows(parsed).values():
+            # 不同交易所的证券池可能覆盖不同日期；按日期排序后再写出，
+            # 避免首个非空分区的末日把窗口内较早日期排到后面。
+            for row in sorted(_wide_rows(parsed).values(), key=lambda value: str(value["date"])):
                 _write_row(writer, columns, row)
                 summary["rows"] += 1
     replace_with_retry(temporary_path, output_path)

@@ -95,6 +95,38 @@ python -m data_ingestion.ifind.everydayupdate backfill `
 python -m data_ingestion.ifind.everydayupdate --help
 ```
 
+## 发布到 `MarketData/current`
+
+`everydayupdate.py` 只更新 `MarketData/sources/ifind/`，不会直接覆盖运行中的 `MarketData/current/`。确认源 Parquet 已生成并完成抽查后，使用 `sync_current.py` 执行“校验 → 候选暂存 → 备份 → 替换”发布流程。建议始终先执行 `--dry-run`；正式同步默认会在 `MarketData/backups/ifind-sync-<时间戳>/` 创建可恢复备份。
+
+```powershell
+cd MarketData/DataIngestion
+
+# 只校验源文件和候选清单，不替换 current
+python -m data_ingestion.ifind.sync_current `
+  --source-root ..\sources\ifind `
+  --current-root ..\current `
+  --dry-run
+
+# 校验通过后正式发布；默认自动创建备份
+python -m data_ingestion.ifind.sync_current `
+  --source-root ..\sources\ifind `
+  --current-root ..\current
+```
+
+当前同步映射为：
+
+| iFinD 源 Parquet | `MarketData/current` 目标 |
+|---|---|
+| `market_data/market_data_hfq.parquet` | `panels/market_data.parquet` |
+| `unadjusted_price/unadjusted_price.parquet` | `display/unadjusted_price.parquet` |
+| `index/index_price/index_price_<index>.parquet` | `benchmark/index_price_<index>.parquet` |
+| `index/index_weights/index_weights_<index>.parquet` | `benchmark/index_weights_<index>.parquet` |
+| `universe/a_share.parquet` | `universe/a_share.parquet` |
+| `calendar/calendar_all_a.parquet` | `calendar/calendar_all_a.parquet` |
+
+脚本会校验源文件存在、Parquet 非空、日期唯一且升序，并更新 `current/data_manifest.yaml` 与 `current/quality_report.json`。它暂不处理 `date_sequence.parquet`，也不会改写 `daily_basic.parquet` 或 `security_status.parquet`；这些字段需要各自的数据发布流程。同步完成后若 API 已经读取过旧的 `current` 文件，需要重启 API 服务使其重新加载。
+
 ## 交易日历
 
 全 A 只维护一份统一日历 `calendar/calendar_all_a.csv`。全量回填和日增量都只请求深交所市场代码 `212100`，随后沪深北的全 A 行情下载均使用这份日历；旧的 SH、SZ、BJ CSV 不再更新或读取。
@@ -192,7 +224,7 @@ python -m data_ingestion.ifind.market_data.parquet
 python -m data_ingestion.ifind.market_data.download update --as-of 2026-08-05
 ```
 
-价格原始 JSON 保存在 `market_data/raw/price/`，成交指标原始 JSON 保存在 `market_data/raw/liquidity/`。最终文件为 `market_data/market_data_hfq.csv/.parquet`：一行一个交易日，列为两级索引（第一级为 `thscode`，第二级为 OHLC、`volume`（股）、`amount`（元）、`turnover`（小数））。
+价格原始 JSON 保存在 `market_data/raw/price/`，成交指标原始 JSON 保存在 `market_data/raw/liquidity/`。最终文件为 `market_data/market_data_hfq.csv/.parquet`：一行一个交易日，列为两级索引（第一级为 `thscode`，第二级为 OHLC、`volume`（股）、`amount`（元）、`turnover`（小数））。不同日期窗口的端点可能重叠，汇总时按原始窗口文件的最新修改时间择优，同一交易日最终只保留一行。
 
 ## WebApp K 线未复权价格
 
@@ -211,7 +243,7 @@ python -m data_ingestion.ifind.unadjusted_price.csv update --as-of 2026-08-11
 python -m data_ingestion.ifind.unadjusted_price.parquet
 ```
 
-原始 JSON 保存在 `unadjusted_price/raw/`，最终文件为 `unadjusted_price/unadjusted_price.csv/.parquet`，两级列头只包含 OHLC。
+原始 JSON 保存在 `unadjusted_price/raw/`，最终文件为 `unadjusted_price/unadjusted_price.csv/.parquet`，两级列头只包含 OHLC；汇总时会按交易日排序，保证 Parquet 日期索引严格升序。
 
 ## 全 A 日期序列：估值、行业与状态
 

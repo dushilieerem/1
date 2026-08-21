@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from researchengine.strategy_catalog import StrategyCatalog
+from app.repositories.catalogs.strategy_catalog import StrategyCatalog
 
 
 def test_ma_13_26_maotai_strategy_targets_only_maotai():

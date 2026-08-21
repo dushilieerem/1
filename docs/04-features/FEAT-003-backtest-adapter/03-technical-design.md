@@ -5,7 +5,7 @@
 
 ## 目标
 
-向量化回测统一使用 `QuantCore.backtest.adapter.NativeEngine`。ResearchEngine 与策略代码只通过 `IBacktestEngine.run(signals, config)` 契约调用，无第三方回测后端或可选运行时依赖。
+向量化回测统一使用 `app.quantcore.backtest.adapter.NativeEngine`。`app.services` 与策略代码只通过 `IBacktestEngine.run(signals, config)` 契约调用，无第三方回测后端或可选运行时依赖。
 
 ## 输入与输出
 
@@ -33,7 +33,7 @@ equity = (1.0 + display_ret).cumprod()
 ## 使用方式
 
 ```python
-from quantcore import BacktestConfig, get_backtest_engine
+from app.quantcore import BacktestConfig, get_backtest_engine
 
 result = get_backtest_engine("native").run(signals, BacktestConfig())
 ```

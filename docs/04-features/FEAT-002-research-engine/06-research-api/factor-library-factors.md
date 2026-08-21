@@ -2,7 +2,7 @@
 
 返回指定内置因子库中的全部因子，供 WebApp 构建“因子”二级选择器。
 
-该接口先根据 `Factor/libraries/index.yaml` 校验 `library_name`，再加载对应的
+该接口先根据 `ResearchEngine/app/assets/factors/libraries/index.yaml` 校验 `library_name`，再加载对应的
 `FactorLibrary`，并校验源码发现的因子清单、因子数量和索引登记一致。接口不会执行因子计算或回测。
 
 ## 请求
@@ -13,7 +13,7 @@ GET /api/factors/momentum_lib
 
 | 参数 | 位置 | 类型 | 必填 | 说明 |
 |------|------|------|------|------|
-| `library_name` | 路径 | string | 是 | `Factor/libraries/index.yaml` 中登记的因子库名，例如 `momentum_lib`。 |
+| `library_name` | 路径 | string | 是 | `ResearchEngine/app/assets/factors/libraries/index.yaml` 中登记的因子库名，例如 `momentum_lib`。 |
 
 无查询参数和请求体。
 

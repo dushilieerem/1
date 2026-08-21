@@ -94,7 +94,7 @@ FactorResult (DataFrame[date × instrument])
 ### 3.3 事件循环
 
 ```
-event_queue = PriorityQueue()   # 按时间排序
+event_queue = PriorityQueue()   # 事件引擎按市场时间排序；不用于 ExperimentManager 任务调度
 while not event_queue.empty():
     event = event_queue.pop()           # 按时间顺序
     if isinstance(event, MarketEvent):

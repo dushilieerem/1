@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from quantcore import EventBacktestEngine
-from researchengine.strategy_catalog import StrategyCatalog
+from app.quantcore import EventBacktestEngine
+from app.repositories.catalogs.strategy_catalog import StrategyCatalog
 
 
 STRATEGIES = {

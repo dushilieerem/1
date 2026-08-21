@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from quantcore import BacktestConfig, EventBacktestEngine, NativeEngine
-from researchengine.strategy_catalog import StrategyCatalog
+from app.quantcore import BacktestConfig, EventBacktestEngine, NativeEngine
+from app.repositories.catalogs.strategy_catalog import StrategyCatalog
 
 
 EVENT_STRATEGIES = (

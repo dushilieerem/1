@@ -8,10 +8,12 @@ from uuid import uuid4
 from urllib.error import HTTPError
 
 import pandas as pd
+import numpy as np
 from fastapi.testclient import TestClient
 
-from researchengine.api import ai_factor, ai_strategy, app
-from researchengine.api.schemas import GeneratedFactor, GeneratedStrategy
+from app.api import ai_factor, ai_strategy
+from app.main import app
+from app.schemas.backtest import GeneratedFactor, GeneratedStrategy
 
 
 client = TestClient(app)
@@ -334,7 +336,7 @@ class MomentumTop30Strategy:
     )
     weights = namespace["MomentumTop30Strategy"](close).generate_signals()
     assert weights.iloc[:20].sum(axis=1).eq(0.0).all()
-    assert weights.iloc[20:].sum(axis=1).eq(1.0).all()
+    assert np.isclose(weights.iloc[20:].sum(axis=1), 1.0).all()
 
 
 def test_strategy_validator_allows_ma_deviation_top_ten():
@@ -403,6 +405,6 @@ def test_strategy_generation_prompt_contains_validated_templates():
 
 
 def _strategy_payload_to_request():
-    from researchengine.api.schemas import StrategyGenerationRequest
+    from app.schemas.backtest import StrategyGenerationRequest
 
     return StrategyGenerationRequest.model_validate(_strategy_payload())

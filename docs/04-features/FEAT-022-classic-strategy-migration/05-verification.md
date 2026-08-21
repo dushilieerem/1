@@ -25,6 +25,9 @@
 - Awesome Oscillator、Balance of Power、Choppiness Index 突破和 Coppock Curve 作为事件策略资产登记；新增回归测试覆盖四项目录契约、核心公式、未来观测不改变历史指标、OHLC 字段拒绝、持仓/权重约束和标准日频事件回测。
 - DPO、TSI、StochRSI 与 RVI 作为事件策略资产登记；新增回归测试覆盖四项目录契约、与 `Factor/libraries/technical_lib.py` 对齐的核心公式、未来观测不改变历史指标、`close` 字段拒绝、持仓/权重约束和标准日频事件回测。
 - Connors RSI(2)、Supertrend、Hull Moving Average 与 Williams Alligator 作为事件策略资产登记；新增回归测试覆盖目录契约、RSI/ATR/WMA/SMMA 核心公式、未来观测不改变历史指标、真实字段缺失拒绝、持仓/权重约束和标准日频事件回测。
+- KAMA、McGinley Dynamic、Heikin-Ashi 与 Pivot Point 作为事件策略资产登记；新增回归测试覆盖目录契约、四个核心公式、未来观测不改变历史指标、真实字段缺失拒绝、持仓/权重约束和标准日频事件回测。
+
+- TEMA、SMI、Ulcer Index 与 Schaff Trend Cycle 作为事件策略资产登记；新增回归测试覆盖目录契约、TEMA/SMI/Ulcer Index/STC 核心公式、未来观测不改变历史指标、真实字段缺失、标准事件回测、正数量持仓上限和非负目标权重。
 
 ## 本次验证记录（2026-08-14）
 
@@ -48,6 +51,20 @@
 - `StrategyCatalog` 共解析 62 个资产；本批四个 `strategy_id/file/entrypoint/execution_mode` 四元组均可加载，执行模式均为 `event/v1`。
 - `git diff --check`：通过；Git 仅提示工作区部分文件的 LF/CRLF 转换，不存在空白错误。
 
+## 本次增量验证记录（2026-08-19）
+
+- `conda run --no-capture-output -n svquant python -m pytest ResearchEngine/tests/test_strategy_migration_kama_mcginley_heikin_ashi_pivot.py -q`：12 passed。
+- `StrategyCatalog` 共解析 66 个资产；本批四个 `strategy_id/file/entrypoint/execution_mode` 四元组均可加载，执行模式均为 `event/v1`。
+- 新增测试覆盖 KAMA 效率比递推、McGinley Dynamic 递推、Heikin-Ashi 开收盘转换、前一交易日 Pivot/R1/S1 计算、未来极端值因果性、字段缺失、标准事件回测、持仓上限和非负目标权重。
+- `git diff --check`：通过；仅有工作区文件的 LF/CRLF 转换提示，无空白错误。
+
+## 本次增量验证记录（2026-08-20）
+
+- `D:\Devtools\anaconda3\envs\svquant\python.exe -m pytest -q ResearchEngine/tests/test_strategy_migration_bbi_mass_vhf_wvad.py`：13 passed。
+- 新增测试覆盖 BBI、Mass Index、VHF、WVAD 的目录四元组、真实字段契约、与 `app/assets/factors/libraries/classic_indicators.py` 对齐的核心公式、未来极端值因果性、标准 OHLC/OHLCV 事件回测、前收盘可见性、持仓上限、非负目标权重和 WVAD 零振幅边界。
+- `StrategyCatalog` 本批四个 `strategy_id/file/entrypoint/execution_mode` 四元组均可加载，执行模式均为 `event/v1`；当前目录共解析 70 个策略资产。
+- `D:\Devtools\anaconda3\envs\svquant\python.exe -m pytest -q ResearchEngine/tests`：450 passed，1 个既有 FastAPI/Starlette 弃用警告。
+
 ## 限制与遗留项
 
 - 日频风控以已知的前一收盘触发、下一开盘成交；不宣称模拟盘中止损。
@@ -68,3 +85,12 @@
 - AO、BOP、Choppiness 与 Coppock 仅提供日频研究版；Coppock 的 11/14/10 日参数是与因子库一致的日频适配，不代表原始月线指标复刻。BOP 的 14 日平滑和 Choppiness 的 38.2/61.8 阈值是可测试研究规则，不代表已完成参数有效性验证。
 - DPO、TSI、StochRSI 与 RVI 仅提供日频研究版；四者只使用前收盘 `close` 计算，不模拟盘中触发、动态历史成分股、ST/停牌/涨跌停之外的策略专属过滤，也不构成实盘执行承诺。TSI、StochRSI 与 RVI 的参数为研究默认值，尚未完成跨市场状态的参数稳健性验证。
 - Connors RSI(2)、Supertrend、Hull Moving Average 与 Williams Alligator 仅提供日频研究版；不模拟盘中触发、动态历史成分股、ST/停牌/涨跌停之外的策略专属过滤，也不构成实盘执行承诺。Supertrend 的 ATR 递推和 Alligator 的 SMMA 参数为研究默认值，尚未完成跨市场状态的参数稳健性验证。
+- KAMA、McGinley Dynamic、Heikin-Ashi 与 Pivot Point 仅提供日频研究版；不模拟盘中触发、动态历史成分股、ST/停牌/涨跌停之外的策略专属过滤，也不构成实盘执行承诺。四者的默认参数尚未完成跨市场状态的参数稳健性验证。
+
+## 本次增量验证记录（2026-08-21）
+
+- `D:\Devtools\anaconda3\envs\svquant\python.exe -m pytest -q ResearchEngine/tests/test_strategy_migration_tema_smi_ulcer_stc.py ResearchEngine/tests/test_strategy_library.py ResearchEngine/tests/test_classic_technical_factors.py`：24 passed。
+- 最终源码哈希断言回归：`D:\Devtools\anaconda3\envs\svquant\python.exe -m pytest -q ResearchEngine/tests/test_strategy_migration_tema_smi_ulcer_stc.py`：12 passed。
+- `StrategyCatalog` 共解析 74 个策略资产；本批四个 `strategy_id/file/entrypoint/execution_mode` 四元组均可加载，执行模式均为 `event/v1`。
+- `py_compile`：四个新增策略源码通过编译；`git diff --check`：通过，工作区仅有既有 LF/CRLF 转换提示，无空白错误。
+- GitNexus `detect-changes --scope all` 检测到工作区既有 90 文件/394 symbols 的高风险混合变更；本批未修改共享 Catalog、EventEngine 或 DataView，影响范围需与既有工作区改动隔离审阅。

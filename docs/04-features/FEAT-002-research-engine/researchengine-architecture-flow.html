@@ -232,7 +232,7 @@
       <div class="hero-meta" aria-label="页面信息">
         <span class="tag">内部技术文档</span>
         <span class="tag">架构与流程</span>
-        <span class="tag">2026-08-18</span>
+        <span class="tag">2026-08-19</span>
       </div>
     </header>
 
@@ -281,7 +281,7 @@
               <p>参数 → 缓存键 → 同键锁 → 独立实验。</p>
               <span class="file">POST /api/backtest/factor</span>
             </button>
-            <button class="card violet" type="button" data-focus="overview-engine" data-title="第 3 步：ResearchEngine 编排" data-files="ResearchEngine/researchengine/manager.py · experiment.py · api/runner.py · api/app.py: lifespan" data-desc="ExperimentManager 是每个 ResearchEngine 进程一个的回测任务调度器。FastAPI lifespan 创建并关闭它，但不拥有回测线程。路由先把任务提交给 Manager：Manager 生成 run_id，按有界容量排队，使用自己的 ThreadPoolExecutor 执行因子或策略回测，并记录 created、queued、running、succeeded、failed、cancelled 状态。同一任务键的并发请求复用同一个 Future；队列满时立即返回 429。默认每个 Manager 最多同时执行 2 个回测，额外排队 8 个；多 Uvicorn worker 会各自创建 Manager，实际总并发按进程数相乘。">
+            <button class="card violet" type="button" data-focus="overview-engine" data-title="第 3 步：ResearchEngine 编排" data-files="ResearchEngine/researchengine/manager.py · experiment.py · api/runner.py · api/app.py: lifespan" data-desc="ExperimentManager 是每个 ResearchEngine 进程一个的回测任务调度器。FastAPI lifespan 创建并关闭它，但不拥有回测线程。路由先把任务提交给 Manager：Manager 生成内部任务 ID，按有界容量排队，使用自己的 ThreadPoolExecutor 执行因子或策略回测，并记录 created、queued、running、succeeded、failed、cancelled 状态。任务完成后，原有 POST /api/backtest/factor 或 /api/backtest/strategy 仍返回完整结果；同一任务键的并发请求复用同一个 Future；队列满时立即返回 429。默认每个 Manager 最多同时执行 2 个回测，额外排队 8 个；多 Uvicorn worker 会各自创建 Manager，实际总并发按进程数相乘。">
               <span class="number">3</span>
               <span class="small-label">研究编排</span>
               <h3>安排工作顺序</h3>

@@ -1,7 +1,7 @@
 # ResearchEngine 架构
 
-> 文档版本：v2.1
-> 最后更新：2026-08-18
+> 文档版本：v2.2
+> 最后更新：2026-08-19
 
 ---
 
@@ -13,7 +13,8 @@ ResearchEngine 是 SVQuant 的**研究计算服务层**——业务资产和持�
 **核心职责**：接收前端提交的因子代码 + 策略代码 + 参数 → 跑回测 → 返回指标 + 净值。
 
 **并发职责**：接收回测任务 → 有界排队 → 由 `ExperimentManager` 自有线程池执行 →
-记录任务状态并返回同步结果或 `run_id`。
+记录内部任务状态 → Future 完成后返回同步结果。任务 `run_id` 只用于进程内调度，
+不作为公开 HTTP 资源。
 
 **不做的事**：
 - ❌ 不管理策略库、因子库、因子文件
@@ -29,7 +30,7 @@ ResearchEngine 是 SVQuant 的**研究计算服务层**——业务资产和持�
 | 临时状态 | 所有者 | 生命周期 |
 |---|---|---|
 | 线程池、排队任务、Future | `ExperimentManager` | 进程启动至关闭 |
-| `run_id`、任务状态、错误摘要 | `ExperimentManager` | 进程内任务保留期 |
+| 内部 `run_id`、任务状态、错误摘要 | `ExperimentManager` | 进程内任务保留期 |
 | 回测结果缓存 | `FileBacktestCache` | 文件缓存 TTL |
 
 单进程重启会丢失正在运行的任务。需要跨进程查询、重启恢复或多实例部署时，
@@ -132,7 +133,7 @@ ResearchEngine 是 SVQuant 的**研究计算服务层**——业务资产和持�
 | HTTP 路由 | 无业务状态 | 只负责接收、提交和返回 |
 | ExperimentManager | 进程内临时状态 | 管理线程池、队列、Future 和 `run_id` |
 | 回测运行器 | 单次执行状态 | 代码在 Manager 工作线程中编译执行 |
-| 异步回测 | 当前为进程内 | 跨实例/重启可靠性需要外部 RunStore |
+| Manager 运行状态 | 当前为进程内 | 跨实例/重启可靠性需要外部任务系统 |
 | 数据读取 | 只读 | 从共享存储读取 MarketData，不改写 |
 
 ### 4.2 部署扩展
@@ -158,8 +159,8 @@ services:
 
 ### 4.3 请求路由
 
-- 同步回测：请求提交给当前实例的 Manager，HTTP 层异步等待其 Future
-- 异步回测：当前 `run_id` 保存在实例内；部署多实例前应增加外部 RunStore 和队列
+- 回测请求：提交给当前实例的 Manager，HTTP 层异步等待其 Future 后返回完整结果
+- 内部 `run_id`：只用于 Manager 任务追踪，不对外提供查询或取消接口
 - 一个 Uvicorn worker 对应一个 Manager；多 worker 会按进程数倍增回测并发和内存占用
 
 ---
@@ -201,28 +202,25 @@ ResearchEngine 只做编排 + 序列化，所有计算委托 QuantCore。
 
 ## 7. 通信协议
 
-### 7.1 同步模式（默认）
+### 7.1 HTTP 回测模式
 
 ```
-POST /api/backtest
-Request:  factor_code + strategy_code + 参数
+POST /api/backtest/factor 或 /api/backtest/strategy
+Request:  factor_code 或 strategy_code + 参数
 Response: metrics + equity_curve + 序列化结果
-适用：回测时间 < 30s 的场景
+执行：路由提交给 ExperimentManager，异步等待 Future
 ```
 
-### 7.2 异步模式
+### 7.2 Manager 内部调度模式
 
 ```
-POST /api/experiments/factor 或 /api/experiments/strategy
-Request:  factor_code + strategy_code + 参数
-Response: { run_id, status }
+HTTP 路由
+    → ExperimentManager.submit()
+    → QUEUED / RUNNING
+    → Future 完成
+    → 原有 HTTP 响应契约（200 + 完整结果）
 
-GET /api/experiments/{run_id}
-Response: { status, result(完成后) }
-
-DELETE /api/experiments/{run_id}
-Response: 任务状态（排队任务可取消）
-适用：回测时间较长或调用方需要轮询的场景
+run_id、状态和取消能力只属于进程内 Manager，当前不直接暴露给前端。
 ```
 
 ### 7.3 结果存储（由前端决定）

@@ -1,6 +1,6 @@
 # Technical Design：AI 自然语言向量化策略生成 API
 
-实现位于 `ResearchEngine/researchengine/api/ai_strategy.py`，作为 SaaS AI 服务落地前的受控过渡层。它复用火山方舟 OpenAI 兼容调用方式，但不改变 `QuantCore` 或回测编排。
+实现位于 `ResearchEngine/app/api/ai_strategy.py`，作为 SaaS AI 服务落地前的受控过渡层。它复用火山方舟 OpenAI 兼容调用方式，但不改变 `app.quantcore` 或回测编排。
 
 ```text
 Web → 能力预检 → /api/ai/strategy-generations → LLM → JSON → AST/compile → 草稿

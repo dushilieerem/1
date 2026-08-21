@@ -186,3 +186,45 @@
 | AC-54 | 四个策略的 RSI、ATR/Supertrend、WMA/HMA 和 SMMA/Alligator 核心公式可独立测试，向序列末尾追加未来极端值不会改变此前已计算的指标。 |
 | AC-55 | 四个策略可在标准 OHLC 面板完成事件回测，结果声明 `data_visibility == "previous_close"`，持仓数不超过 10，且只产生非负现金多头订单。 |
 | AC-56 | Connors RSI(2) 与 HMA 缺少 `close`、Supertrend 与 Alligator 缺少任一 `high`/`low`/`close` 时均明确抛出字段错误；历史不足或无候选时不补造数据。 |
+
+## 本次新增四个策略规则（2026-08-19）
+
+- KAMA 自适应趋势：以 10 日效率比在 2 日快速常数与 30 日慢速常数之间计算平滑系数；价格上穿 KAMA、KAMA 斜率向上且收盘价高于 MA60 时入场，价格跌破 KAMA、KAMA 斜率转弱或跌破 MA60 时退出。
+- McGinley Dynamic：按 `MD[t] = MD[t-1] + (close[t]-MD[t-1]) / (0.6×14×(close[t]/MD[t-1])^4)` 递推；收盘价上穿 MD、MD 斜率向上且高于 MA60 时入场，跌破 MD、MD 斜率转弱或跌破 MA60 时退出。
+- Heikin-Ashi：以 `(open+high+low+close)/4` 计算 HA 收盘，以前一根 HA 开收盘均值递推 HA 开盘；HA 由空转多且原始收盘价高于 MA60 时入场，HA 转空或收盘价跌破 MA60 时退出。
+- Pivot Point 突破：以不晚于当前信号日的前一交易日 HLC 计算枢轴、R1 和 S1；收盘价由 R1 下方上穿且高于 MA60 时入场，收盘价跌破枢轴或 MA60 时退出。
+- 共同约束：四个策略均为 `event`、日频、现金多头，信号只读取前一收盘快照，订单在下一交易日开盘成交，最多持有十只、单只默认目标权重 9%。
+- 共同异常行为：历史长度不足、指标缺失、无候选或无有效价格时不制造订单；KAMA/McGinley 缺少 `close`、Heikin-Ashi 缺少任一 OHLC、Pivot Point 缺少任一 `high/low/close` 时明确拒绝运行；不以未来数据、最新截面或静态名单补齐历史。
+
+| AC-57 | KAMA、McGinley Dynamic、Heikin-Ashi 和 Pivot Point 均可由 `StrategyCatalog` 加载，入口类、版本和 `event` 执行模式与索引一致。 |
+| AC-58 | 四个策略的 KAMA、McGinley、Heikin-Ashi 与 Pivot Point 核心公式可独立测试，向序列末尾追加未来极端值不会改变此前已计算的指标。 |
+| AC-59 | 四个策略可在标准 OHLC 面板完成事件回测，结果声明 `data_visibility == "previous_close"`，持仓数不超过 10，且只产生非负现金多头订单。 |
+| AC-60 | KAMA/McGinley 缺少 `close`、Heikin-Ashi 缺少任一 OHLC、Pivot Point 缺少任一 `high/low/close` 时均明确抛出字段错误；历史不足或无候选时不补造数据。 |
+
+## 本次新增四个策略规则（2026-08-20）
+
+- BBI 多空指数：使用 SMA3、SMA6、SMA12、SMA24 的平均值作为 BBI；价格由 BBI 下方上穿、BBI 斜率向上且收盘价高于 MA60 时入场，价格跌破 BBI、BBI 斜率转弱或跌破 MA60 时退出。
+- Mass Index 梅斯线：使用 `(SMA9(high-low) / SMA9(SMA9(high-low))).rolling(25).sum()`；最近扩张窗口曾达到 27，且指标由 26.5 上方回落至 26.5 以下、收盘价高于 MA60 时入场；指标重新达到 27 或收盘价跌破 MA60 时退出。
+- VHF 纵横指标：使用 28 日 `(最高收盘-最低收盘) / 收盘绝对日变动总和`；VHF 从 0.4 下方上穿且收盘价高于 MA60 时入场，VHF 低于 0.3 或收盘价跌破 MA60 时退出。
+- WVAD 威廉变异离散量：使用 24 日 `((close-open)/(high-low))*volume` 累计值；WVAD 从零轴下方上穿、继续上升且收盘价高于 MA60 时入场，WVAD 回到零轴下方或跌破 MA60 时退出。`high == low` 的日线按零资金流处理。
+- 共同约束：四个策略均为 `event`、日频、现金多头，信号只读取前一收盘及更早数据，订单在下一交易日开盘成交，最多持有十只、单只默认目标权重 9%。
+- 共同异常行为：历史长度不足、指标缺失、无候选或无有效价格时不生成虚假订单；缺少声明字段时在 `initialize()` 明确抛出字段错误；不使用未来观测、最新截面或静态名单补齐历史。
+
+| AC-61 | BBI、Mass Index、VHF 与 WVAD 均可由 `StrategyCatalog` 加载，入口类、版本和 `event` 执行模式与索引一致，并声明真实字段依赖。 |
+| AC-62 | 四个核心指标与现有因子库的独立参考公式一致，向序列末尾追加未来极端值不会改变此前已计算的指标。 |
+| AC-63 | 四个策略可在标准 OHLC/OHLCV 面板完成事件回测，结果声明 `data_visibility == "previous_close"`，持仓数不超过 10 且订单不产生空头目标。 |
+| AC-64 | BBI/VHF 缺少 `close`、Mass Index 缺少任一 `high`/`low`/`close`、WVAD 缺少任一 OHLCV 字段时均明确抛出字段错误；历史不足或 WVAD 零振幅时不产生非法数值或虚假订单。 |
+
+## 本次新增四个策略规则（2026-08-21）
+
+- TEMA 三重指数移动平均线：以 `3*EMA(EMA(EMA(close))) - 3*EMA(EMA(close)) + EMA(close)` 计算 20 日 TEMA；收盘价由 TEMA 下方上穿、TEMA 斜率向上且高于 MA60 时入场，收盘价跌破 TEMA、TEMA 斜率转弱或跌破 MA60 时退出。
+- SMI 随机动量指标：以 14 日高低区间中点为基准，对 `close - midpoint` 与半区间分别做两次 3 日 EMA，得到 SMI，并用 3 日 EMA 生成信号线；SMI 在 0 下方上穿信号线且收盘价高于 MA60 时入场，死叉、达到 40 或跌破 MA60 时退出。
+- Ulcer Index 低回撤：以滚动高点计算回撤百分比平方均值的平方根；Ulcer Index 从 5 上方回落至 5 以下且收盘价高于 MA60 时入场，指标达到 10 或收盘价跌破 MA60 时退出。
+- Schaff Trend Cycle：以 23/50 日 MACD 经 10 日周期随机归一化、3 日平滑并重复一次得到 STC；STC 从 25 下方上穿且收盘价高于 MA60 时入场，跌破 75、回到 25 以下或跌破 MA60 时退出。
+- 共同约束：四个策略均为 `event`、日频、现金多头，信号只读取前一收盘及更早数据，订单在下一交易日开盘成交，最多持有十只、单只默认目标权重 9%。
+- 共同异常行为：历史长度不足、无可用指标、无候选或无有效价格时不生成虚假订单；缺少声明字段时明确拒绝运行；不使用未来观测、最新截面或静态名单补齐历史。
+
+| AC-65 | TEMA、SMI、Ulcer Index 与 STC 均可由 `StrategyCatalog` 加载，入口类、版本和 `event` 执行模式与索引一致，并声明真实字段依赖。 |
+| AC-66 | 四个核心指标与独立参考公式一致，向序列末尾追加未来极端值不会改变此前已计算的指标。 |
+| AC-67 | 四个策略可在标准 OHLC/OHLCV 面板完成事件回测，结果声明 `data_visibility == "previous_close"`，正数量持仓不超过 10 且订单不产生空头目标。 |
+| AC-68 | TEMA/Ulcer Index/STC 缺少 `close`、SMI 缺少任一 `high`/`low`/`close` 时均明确抛出字段错误；历史不足或无候选时不补造数据。 |

@@ -3,8 +3,8 @@
 import pandas as pd
 import numpy as np
 
-from quantcore.factor.base import Panel, library_factors
-from researchengine import FactorLoader
+from app.quantcore.factor.base import Panel, library_factors
+from app import FactorLoader
 
 
 def _panel():
@@ -33,7 +33,7 @@ def test_classic_indicator_library_is_discoverable():
 
 
 def test_factor_api_lists_classic_indicators():
-    from researchengine.api.routes import _builtin_factors
+    from app.api.routes import _builtin_factors
 
     names = {factor.name for factor in _builtin_factors()}
     assert {

@@ -1,5 +1,20 @@
-# ResearchEngine 实验配置示例
-# 研究员可修改本文件后重新运行 main.py
+# ResearchEngine/app 配置示例
+# 正式服务入口：python -m app.main 或 uvicorn app.main:app --workers 1
+# 当前部署约束：单实例、单 Worker；WebApp 不在本次重构范围内。
+
+application:
+  namespace: app
+  api_prefix: /api
+  max_workers: 2
+  max_queue_size: 8
+  daily_factor_batch_window: 2
+  deployment: single-instance-single-worker
+
+assets:
+  factor_dir: ./app/assets/factors/libraries
+  factor_index: ./app/assets/factors/index.yaml
+  strategy_dir: ./app/assets/strategies/libraries
+  strategy_index: ./app/assets/strategies/index.yaml
 
 # 数据源：MarketData 目录（一个字段一个 parquet 的宽表面板）
 # 指向文件 -> WideCSVProvider；目录含 *.parquet -> FieldParquetProvider；否则逐只 CSV

@@ -1,7 +1,7 @@
 # ResearchEngine 运行流程图
 
-> 文档版本：v2.1
-> 最后更新：2026-08-18
+> 文档版本：v2.2
+> 最后更新：2026-08-19
 > 关联：`02-architecture.md`（状态与扩展）、`04-class-design.md`（类设计）
 
 ---
@@ -27,7 +27,7 @@
 │       ① 生成任务键、检查缓存/同键进行中的任务                     │
 │       ② 有界排队，等待 Manager 自有线程池                          │
 │       ③ 工作线程执行一次因子/策略回测                              │
-│       ④ 回传 Future 结果或异步接口的 run_id                        │
+│       ④ Future 完成后回传原有 HTTP 结果                             │
 │                                                                  │
 │  单次回测执行单元                                                   │
 │  ① 编译因子代码（exec → FactorLibrary）                             │
@@ -155,7 +155,7 @@ Step 11 序列化结果并更新任务状态
          )
   │
   ▼
-返回 Response → Future 完成 → 同步 HTTP 200，或 GET /api/experiments/{run_id} 查询
+返回 Response → Future 完成 → 同步 HTTP 200 + 完整回测结果
 ```
 
 ---
@@ -231,7 +231,7 @@ FactorQuantileStrategy.generate_signals(panel) → BacktestSignals(target_weight
 
 - 每个实例独立处理请求，每个实例内由 Manager 限制回测并发
 - 默认每个 Uvicorn worker 2 个回测线程、8 个排队位
-- 实例间无任务状态共享；多实例异步查询需要外部 RunStore
+- 实例间无任务状态共享；任务状态只用于当前进程内部调度
 - 数据从共享只读存储读取
 - 任意实例可以处理任意请求
 
@@ -249,5 +249,5 @@ FactorQuantileStrategy.generate_signals(panel) → BacktestSignals(target_weight
 | **错误不抛 500** | 因子代码错误 → `error` 字段填充，HTTP 200 返回 |
 | **回测经适配器** | `IBacktestEngine` 契约，统一由 native 执行 |
 | **指标在 MetricEngine** | Runner 不算指标，委托 QuantCore MetricEngine |
-| **HTTP 是薄层** | `researchengine.api` 只提交 Manager，不新增回测逻辑 |
+| **HTTP 是薄层** | `app.api` 只提交 Manager，不新增回测逻辑 |
 | **QuantCore 无感** | ResearchEngine 只调用 QuantCore，不关心其内部实现 |

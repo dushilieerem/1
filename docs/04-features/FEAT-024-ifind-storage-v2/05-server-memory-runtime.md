@@ -11,7 +11,11 @@ SVQuant 不需要为了减少回测 I/O 而先建设行情数据库。
 
 ## 2. 当前实现差距
 
-现有 Provider 已有字段级进程内缓存，但部分 Research API 回测路径仍在每次请求中创建新的 Provider 和 DataEngine。新 Provider 的缓存随请求结束而丢失，因此相同字段可能反复读取。
+现有 Provider 已有字段级进程内缓存，当前 Research API 回测路径已经由
+`ExperimentManager` 持有 `ResearchRuntime`，复用同一 Provider、DataEngine 和字段级
+LRU 缓存。批处理 CLI 也走同一运行时边界，因此同一进程内的因子任务不会为每个因子
+重复读取相同字段。缓存按 release 隔离，行情 release 变化时切换上下文，不修改正在运行
+任务看到的旧上下文。
 
 目标不是只优化 `pd.read_parquet`，而是让整个服务生命周期只有一份市场数据对象。
 
@@ -124,11 +128,13 @@ Windows 开发环境使用 spawn，不能依赖 fork 的共享效果。Windows �
 
 ## 10. 实施优先级
 
-### P0：先消除重复读取
+### P0：先消除重复读取（MVP 已落地）
 
-- 增加进程级 `MarketDataSnapshotRegistry`。
-- API 启动时一次加载全部 `current/panels`。
-- 所有回测路径改为注入共享 DataEngine/快照，禁止请求内新建 Provider。
+- 增加进程级字段 LRU 缓存和 `ResearchRuntime`。
+- `ExperimentManager` 统一持有 runtime；CLI、因子 API、策略 API 注入共享 DataEngine。
+- 行情字段按需加载并合并并发 miss；禁止回测热路径为每个任务新建 Provider。
+- 完整 `MarketDataSnapshotRegistry`、启动时一次加载全部字段仍是后续增强项，避免 MVP
+  在 Windows 环境一次性占满内存。
 
 ### P1：多用户并发
 

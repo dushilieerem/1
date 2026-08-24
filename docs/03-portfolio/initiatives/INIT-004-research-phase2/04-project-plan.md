@@ -269,7 +269,7 @@ Week 3: AI 回测解读 + 集成
 | **复杂度** | ⭐⭐（中低） |
 | **风险** | 中（依赖外部 AI API） |
 | **依赖** | 无 |
-| **位置** | `ResearchEngine/researchengine/ai/llm.py` |
+| **位置** | `ResearchEngine/app/services/ai/llm.py` |
 
 **功能描述**：封装 LLM 调用接口，支持将自然语言转换为策略代码。
 
@@ -310,7 +310,7 @@ Week 3: AI 回测解读 + 集成
 | **复杂度** | ⭐⭐⭐（中） |
 | **风险** | 中（LLM 输出质量和稳定性） |
 | **依赖** | Task 2.1, Week 1 全部 |
-| **位置** | `ResearchEngine/researchengine/ai/strategy_gen.py` |
+| **位置** | `ResearchEngine/app/services/ai/strategy_gen.py` |
 
 **功能描述**：用户输入自然语言描述 → AI 生成可执行的因子代码。
 
@@ -342,7 +342,7 @@ Week 3: AI 回测解读 + 集成
 | **复杂度** | ⭐⭐（中低） |
 | **风险** | 低 |
 | **依赖** | Task 2.2, Week 1 |
-| **位置** | `ResearchEngine/researchengine/ai/experiment.py` |
+| **位置** | `ResearchEngine/app/services/ai/experiment.py` |
 
 **功能描述**：将 AI 策略生成接入 Experiment 编排体系。
 
@@ -371,7 +371,7 @@ class AIStrategyExperiment:
 | **复杂度** | ⭐⭐（中低） |
 | **风险** | 中（LLM 输出质量） |
 | **依赖** | Task 2.3 |
-| **位置** | `ResearchEngine/researchengine/ai/explainer.py` |
+| **位置** | `ResearchEngine/app/services/ai/explainer.py` |
 
 **功能描述**：AI 自动解读回测结果，用自然语言说明收益来源、回撤成因和改进方向。
 
@@ -399,7 +399,7 @@ class AIStrategyExperiment:
 | **复杂度** | ⭐⭐（中低） |
 | **风险** | 低 |
 | **依赖** | Task 2.3 |
-| **位置** | `ResearchEngine/researchengine/ai/strategy_store.py` |
+| **位置** | `ResearchEngine/app/services/ai/strategy_store.py` |
 
 **功能描述**：保存 AI 生成的策略，支持查看历史、对比、重新运行。
 

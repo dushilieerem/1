@@ -1,7 +1,7 @@
 # ResearchEngine 模块
 
-> 文档版本：v2.0
-> 最后更新：2026-07-15
+> 文档版本：v2.2
+> 最后更新：2026-08-19
 
 ---
 
@@ -18,9 +18,10 @@ ResearchEngine 是**纯计算服务层**，核心职责：
 ## 2. 模块结构
 
 ```
-researchengine/
+app/
 ├── __init__.py              # 包入口
-├── runner.py                # 核心执行器：编译代码 → 跑回测 → 返回结果（替代旧的 experiment.py）
+├── experiment.py            # 单次因子实验流程，实际计算委托 QuantCore
+├── manager.py               # 进程级回测任务调度器、线程池和状态管理
 ├── config.py                # 配置工具函数（可选，非核心）
 ├── portfolio.py             # 回退兼容的薄包装（可选）
 ├── plotting.py              # 绘图工具（被前端替代，可选保留）
@@ -31,12 +32,9 @@ researchengine/
 │   ├── server.py            # uvicorn __main__
 │   ├── schemas.py           # Pydantic 请求/响应模型
 │   ├── serializers.py       # pandas → JSON 序列化
-│   ├── runner.py            # HTTP 请求 → 调用核心 runner
-│   └── routes/              # 路由模块
-│       ├── __init__.py      # 路由注册
-│       ├── health.py        # GET /api/health
-│       ├── backtest.py      # POST /api/backtest（同步 + 异步）
-│       └── analysis.py      # POST /api/analysis/attribution 等
+│   ├── runner.py            # HTTP 回测提交与结果适配
+│   ├── strategy_backtest.py # 策略执行单元
+│   └── routes.py            # 路由注册、回测接口（内部异步调度）
 │
 └── result/                  # （可选保留，但不作为核心依赖）
     ├── manager.py           # ResultManager
@@ -47,8 +45,8 @@ researchengine/
 
 | 旧模块 | 变更 | 原因 |
 |--------|------|------|
-| `experiment.py` | 移除 | 实验管理逻辑不再由 RE 负责，职责转移到 `runner.py` |
-| `manager.py` | 移除 | ExperimentManager 管理实验状态，与无状态设计冲突 |
+| `experiment.py` | 保留 | 作为单次因子实验执行单元，由 Manager 调度 |
+| `manager.py` | 恢复为核心运行时模块 | 只管理进程内任务和计算资源，不管理用户资产或持久化业务结果 |
 | `factor_loader.py` | 移除 | 因子代码由前端提交，不再从本地文件加载 |
 | `factor/alpha_library.py` | 移至可选示例 | 不再作为 RE 核心依赖，作为参考示例保留 |
 
@@ -80,7 +78,7 @@ run_backtest(
    ↓
 5. 构建 FactorQuantileStrategy → 目标权重
    ↓
-6. 回测适配器（Native / VectorBT）→ 净值 / 收益 / 持仓
+6. NativeEngine → 净值 / 收益 / 持仓
    ↓
 7. MetricEngine 计算指标
    ↓
@@ -91,7 +89,7 @@ run_backtest(
 
 ---
 
-## 4. 无状态设计要点
+## 4. 执行隔离与运行状态
 
 ### 4.1 每个请求独立
 
@@ -100,9 +98,9 @@ run_backtest(
 请求 B ──► runner.run_backtest(code_B, ...) ──► 结果 B
 ```
 
-- 没有共享的 `experiments` 字典
-- 没有共享的 `factors` 注册表
-- 每个请求独立编译、执行、返回
+- `ExperimentManager` 共享的是进程内任务调度资源，不共享因子实例或 QuantCore 实验对象
+- 每次任务独立编译、执行、返回
+- `run_id`、Future 和任务状态只在当前进程有效
 
 ### 4.2 代码执行沙箱
 
@@ -139,9 +137,8 @@ data_dir = os.environ.get("SVQUANT_DATA_DIR", "/data/market")
 | 端点 | 说明 |
 |------|------|
 | `GET /api/health` | 健康检查 |
-| `POST /api/backtest` | 同步回测 |
-| `POST /api/backtest/async` | 异步回测（可选） |
-| `GET /api/backtest/{run_id}` | 查询异步回测结果（可选） |
+| `POST /api/backtest/factor` | 因子回测；内部由 Manager 异步调度，接口返回完整结果 |
+| `POST /api/backtest/strategy` | 策略回测；内部由 Manager 异步调度，接口返回完整结果 |
 
 不再提供以下端点（因 RE 不管理因子/策略）：
 
@@ -154,3 +151,38 @@ data_dir = os.environ.get("SVQUANT_DATA_DIR", "/data/market")
 - ~~`GET /api/policy`~~ —— 政策分析由数据服务层提供
 
 > 行业分析、政策分析等非回测核心功能，由独立的数据服务层提供，不属于 ResearchEngine。
+
+## 6. ExperimentManager 任务调度边界
+
+`ExperimentManager` 是每个 ResearchEngine 进程一个的应用级对象，由
+`api/app.py` 的 FastAPI lifespan 创建和关闭。FastAPI 负责 HTTP 连接和路由，
+不负责回测线程；所有因子、向量化策略和事件策略回测都通过 Manager 提交。
+
+### 6.1 Manager 负责什么
+
+- 持有 `ThreadPoolExecutor`，默认同时运行 2 个回测；
+- 通过有界容量限制额外排队任务，默认排队 8 个；
+- 维护 `created → queued → running → succeeded/failed/cancelled` 状态；
+- 为同一缓存键的并发请求复用同一个 Future；
+- 队列满时立即拒绝，不让 HTTP 请求无限堆积；
+- 关闭时停止接收任务、取消排队任务并等待运行中的任务结束。
+
+### 6.2 Manager 不负责什么
+
+- 不计算因子、收益、指标或订单；
+- 不解析 HTTP 请求和响应；
+- 不管理用户、因子/策略资产；
+- 不把进程内 `run_id` 当作跨实例可靠存储。
+
+### 6.3 执行入口
+
+```text
+POST /api/backtest/factor   ─┐
+POST /api/backtest/strategy  ─┼─> ExperimentManager.submit()
+                             ─┘             │
+                                          ▼
+                               FactorExperiment / Strategy runner
+                                          │
+                                          ▼
+                                      QuantCore
+```

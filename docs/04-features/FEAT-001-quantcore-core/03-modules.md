@@ -7,7 +7,7 @@ QuantCore
 ├── metric/    MetricEngine + MetricContext（10 个标准指标）
 └── backtest/
     ├── engine/    事件驱动 BacktestEngine（bar-loop + MatchingEngine + Order/Fill，保留为未来 EventEngine 基座）
-    └── adapter/   向量化适配层（IBacktestEngine: Native | VectorBT，ResearchEngine 实际走这条）
+    └── adapter/   向量化适配层（IBacktestEngine: NativeEngine，ResearchEngine 实际走这条）
 ```
 
 ## Data Engine
@@ -107,7 +107,6 @@ IStrategy.generate_signals(panel) -> BacktestSignals(target_weights)
                                               │
                               IBacktestEngine.run(signals, config)
                               ├── NativeEngine    自研向量化（默认，与 build_factor_portfolio 逐位等价）
-                              └── VectorBTEngine   vectorbt 后端（懒加载）
                                               │
                                               ▼
                               BacktestResult(equity_curve / returns / positions)

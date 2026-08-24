@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
-from researchengine.riskmodel import (
+from app.services.factor.riskmodel import (
     ff3_factors,
     ff3_regression,
     industry_ic_ir,
@@ -30,8 +31,8 @@ def test_market_weighted_equal_cap():
     mv = pd.DataFrame(1.0, index=dates, columns=syms)  # 等市值 -> 等权
     mkt = market_weighted_returns(close, mv, rebalance="monthly")
     assert len(mkt) == 9  # 去首日
-    assert abs(mkt.iloc[0] - 0.01) < 1e-9
-    assert (abs(mkt - 0.01) < 1e-9).all()
+    assert mkt.iloc[0] == pytest.approx(0.0)
+    assert (abs(mkt.iloc[1:] - 0.01) < 1e-9).all()
 
 
 def test_market_weighted_cap_weighted():
@@ -39,12 +40,12 @@ def test_market_weighted_cap_weighted():
     dates = pd.bdate_range("2022-01-03", periods=5)
     syms = ["A", "B"]
     close = pd.DataFrame(100.0, index=dates, columns=syms, dtype=float)
-    close.iloc[1:, 0] = 101.0  # A 平稳
-    close.iloc[1:, 1] = 110.0  # B 涨（B 是大市值）
+    close.iloc[2:, 0] = 101.0  # A 平稳
+    close.iloc[2:, 1] = 110.0  # B 涨（B 是大市值）
     mv = pd.DataFrame({"A": 10.0, "B": 1000.0}, index=dates)  # B 市值远大
     mkt = market_weighted_returns(close, mv, rebalance="monthly")
     # B 权重 ≈ 0.99，收益 ≈ 0.1/日（100->110）；MKT 应接近 B 的收益
-    assert mkt.iloc[0] > 0.05
+    assert mkt.iloc[1] > 0.05
 
 
 # ---------------- FF3 因子构造 ----------------
@@ -77,21 +78,21 @@ def test_ff3_smb_direction():
     """小盘涨、大盘跌 -> SMB = 小盘 - 大盘 > 0。"""
     close, mv, pb = _ff3_scenario()
     ff3 = ff3_factors(close, mv, pb, n_groups=2)
-    assert ff3["SMB"].iloc[0] > 0.01  # 显著为正
+    assert ff3["SMB"].iloc[1] > 0.01  # 建仓日后显著为正
 
 
 def test_ff3_hml_direction():
     """价值(低PB)涨、成长(高PB)跌 -> HML = 价值 - 成长 > 0。"""
     close, mv, pb = _ff3_scenario()
     ff3 = ff3_factors(close, mv, pb, n_groups=2)
-    assert ff3["HML"].iloc[0] > 0.01
+    assert ff3["HML"].iloc[1] > 0.01
 
 
 def test_ff3_mkt_sign():
     """大市值权重大 + 大盘跌 -> MKT 应为负（市值加权偏向大盘）。"""
     close, mv, pb = _ff3_scenario()
     ff3 = ff3_factors(close, mv, pb, n_groups=2)
-    assert ff3["MKT"].iloc[0] < 0  # 大盘权重大且跌
+    assert ff3["MKT"].iloc[1] < 0  # 大盘权重大且跌
 
 
 # ---------------- 三因子回归 ----------------

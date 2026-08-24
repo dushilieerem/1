@@ -1,12 +1,12 @@
 # ResearchEngine 运行流程图
 
-> 文档版本：v2.0
-> 最后更新：2026-07-15
-> 关联：`02-architecture.md`（无状态设计）、`04-class-design.md`（类设计）
+> 文档版本：v2.2
+> 最后更新：2026-08-19
+> 关联：`02-architecture.md`（状态与扩展）、`04-class-design.md`（类设计）
 
 ---
 
-## 1. 整体流程（无状态设计）
+## 1. 整体流程（Manager 管理执行资源）
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -16,24 +16,28 @@
 │  - 调用 ResearchEngine API                                        │
 │  - 处理结果                                                      │
 └──────────────────────────┬──────────────────────────────────────┘
-                           │ POST /api/backtest
+                           │ POST /api/backtest/factor 或 /api/backtest/strategy
                            │ { factor_code, factor_name,
                            │   universe, start, end, params }
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  ResearchEngine 实例（任意节点）                                    │
 │                                                                  │
-│  BacktestRunner.run()                                            │
+│  FastAPI 路由 → ExperimentManager.submit()                       │
+│       ① 生成任务键、检查缓存/同键进行中的任务                     │
+│       ② 有界排队，等待 Manager 自有线程池                          │
+│       ③ 工作线程执行一次因子/策略回测                              │
+│       ④ Future 完成后回传原有 HTTP 结果                             │
+│                                                                  │
+│  单次回测执行单元                                                   │
 │  ① 编译因子代码（exec → FactorLibrary）                             │
 │  ② 初始化 QuantCore 引擎                                          │
-│  ③ data_engine.get_panels → Panel                                │
-│  ④ factor_engine.compute_panel → factor_values                   │
-│  ⑤ FactorQuantileStrategy → signals                              │
-│  ⑥ get_backtest_engine.run() → equity/returns/positions          │
-│  ⑦ MetricEngine.calculate_all() → metrics                        │
-│  ⑧ 序列化 → BacktestResult                                       │
+│  ③ 取完整历史 Panel 并计算因子                                    │
+│  ④ 裁剪 start/end 收益确认区间                                  │
+│  ⑤ 构建策略、计算净值/收益/持仓/指标                               │
+│  ⑥ 序列化为 FactorBacktestResponse 或 StrategyBacktestResponse   │
 │                                                                  │
-│  实例间无共享状态，每个请求独立执行                                    │
+│  Manager 的任务状态只在当前进程内有效                              │
 └──────────────────────────┬──────────────────────────────────────┘
                            │ 200 + JSON
                            │ { metrics, equity_curve, ... }
@@ -48,19 +52,34 @@
 
 ---
 
-## 2. BacktestRunner.run() 详细流程
+## 2. Manager 与单次回测详细流程
 
 ```
-请求到达
+请求到达 FastAPI
   │
   ▼
-Step 1  编译因子代码
+Step 1  ExperimentManager 接收任务
+         规范化请求 → 计算任务键 → 检查缓存和 inflight 任务
+         已有相同任务 → 复用 Future
+         无空闲容量 → 返回 HTTP 429
+  │
+  ▼
+Step 2  Manager 有界排队
+         状态：QUEUED
+         不使用 FastAPI/AnyIO 通用线程池执行回测
+  │
+  ▼
+Step 3  Manager 工作线程开始执行
+         状态：RUNNING
+  │
+  ▼
+Step 4  编译因子代码
          exec(factor_code) → FactorLibrary 子类实例化
           → factor = getattr(library, factor_name)
          如果编译失败 → 返回 { error: "语法错误: ..." } HTTP 200
   │
   ▼
-Step 2  初始化 QuantCore 引擎
+Step 5  初始化 QuantCore 引擎
          data_dir = req.data_dir | env.SVQUANT_DATA_DIR | /data/market
          data_provider = FieldParquetProvider(data_dir)
          data_engine = DataEngine(provider=data_provider)
@@ -68,22 +87,27 @@ Step 2  初始化 QuantCore 引擎
          metric_engine = MetricEngine()
   │
   ▼
-Step 3  取面板数据
-         panels = data_engine.get_panels(start, end)
-          → Panel(open, high, low, close, volume, total_mv, ...)
-         universe_data = resolve_universe(panels, universe)
+Step 6  取面板数据
+         calculation_panels = data_engine.get_panels(None, None)
+          → 完整历史 Panel(open, high, low, close, volume, total_mv, ...)
+         evaluation_close = calculation_panels["close"].loc[start:end]
+         evaluation_start = evaluation_close.index[0]
+          → 用收益确认区间首个实际交易日解析 universe
+         universe_data = resolve_universe(data_engine, universe, as_of=evaluation_start)
   │
   ▼
-Step 4  计算因子值
-         factor_values = factor_engine.compute_panel(factor.name, universe_data)
-          → DataFrame[date, instrument, factor_value]
+Step 7  计算因子值
+         all_factor_values = factor_engine.compute_panel(factor.name, calculation_panels)
+          → 使用完整历史，自动覆盖 rolling/pct_change 等预热
+         factor_values = all_factor_values.loc[start:end]
+          → 仅将收益确认区间交给回测和分析
   │
   ▼
-Step 5  计算远期收益（IC 用）
+Step 8  计算远期收益（IC 用）
          fwd_returns = forward_returns(close_panel, horizon=ic_horizon)
   │
   ▼
-Step 6  构建策略 → 回测适配器
+Step 9  构建策略 → 回测适配器
          strategy = FactorQuantileStrategy(
              factor_values, close_panel,
              rebalance=params.rebalance,
@@ -92,7 +116,7 @@ Step 6  构建策略 → 回测适配器
          )
          signals = strategy.generate_signals()
          
-         engine_name = params.backtest_engine  # native | vectorbt
+         engine_name = "native"
          config = BacktestConfig(
              engine=engine_name,
              initial_capital=params.initial_capital,
@@ -104,7 +128,7 @@ Step 6  构建策略 → 回测适配器
           → equity_curve, returns, positions
   │
   ▼
-Step 7  计算指标
+Step 10 计算指标
          context = MetricContext(
              equity=bt_result.equity_curve,
              returns=bt_result.returns,
@@ -119,7 +143,7 @@ Step 7  计算指标
             win_rate, turnover, trade_count
   │
   ▼
-Step 8  序列化结果
+Step 11 序列化结果并更新任务状态
          result = BacktestResult(
              metrics=metrics,
              equity_curve=[{date, value} for ...] if include_equity else None,
@@ -131,7 +155,7 @@ Step 8  序列化结果
          )
   │
   ▼
-返回 BacktestResult → 序列化为 JSON → HTTP 200
+返回 Response → Future 完成 → 同步 HTTP 200 + 完整回测结果
 ```
 
 ---
@@ -145,10 +169,8 @@ FactorQuantileStrategy.generate_signals(panel) → BacktestSignals(target_weight
               IBacktestEngine.run(signals, config)
               ┌──────────────┴──────────────┐
               ▼                              ▼
-        NativeEngine                   VectorBTEngine
-   （自研向量化，默认，            （懒加载 vectorbt，
-     与 build_factor_portfolio       from_orders targetpercent）
-     逐位等价）
+        NativeEngine（自研向量化，默认，
+          与 build_factor_portfolio 逐位等价）
               │                              │
               └──────────────┬───────────────┘
                              ▼
@@ -160,23 +182,21 @@ FactorQuantileStrategy.generate_signals(panel) → BacktestSignals(target_weight
 ## 4. HTTP API 时序
 
 ```
-前端                     FastAPI 路由                 BacktestRunner
+前端                     FastAPI 路由              ExperimentManager
   │                           │                           │
-  │ POST /api/backtest        │                           │
+  │ POST /api/backtest/factor │                           │
   │ { factor_code,            │                           │
   │   factor_name,            │                           │
   │   universe,               │                           │
   │   params }                │                           │
   │──────────────────────────►│                           │
-  │                           │ run_backtest_from_code()  │
+  │                           │ submit_factor_backtest()  │
   │                           │──────────────────────────►│
   │                           │                           │
-  │                           │  ① 编译因子代码            │
-  │                           │  ② 初始化 QuantCore       │
-  │                           │  ③ 取面板 + 算因子         │
-  │                           │  ④ 跑回测（Native/VBT）    │
-  │                           │  ⑤ 算指标                 │
-  │                           │  ⑥ 序列化结果              │
+  │                           │                           │ QUEUED/RUNNING
+  │                           │                           │ → Experiment.run()
+  │                           │                           │ → QuantCore
+  │                           │                           │ → Future 完成
   │                           │                           │
   │ 200 + JSON                │                           │
   │ { metrics,                │                           │
@@ -201,14 +221,17 @@ FactorQuantileStrategy.generate_signals(panel) → BacktestSignals(target_weight
                    │         │    │
                    └────┬────┘────┘
                         │
+         每个进程：一个 FastAPI + 一个 ExperimentManager
+                        │
               共享只读存储（MarketData）
                    ┌────┴────┐
                    │         │
               stock_daily/  fundamentals/
 ```
 
-- 每个实例独立处理请求
-- 实例间无通信（shared-nothing）
+- 每个实例独立处理请求，每个实例内由 Manager 限制回测并发
+- 默认每个 Uvicorn worker 2 个回测线程、8 个排队位
+- 实例间无任务状态共享；任务状态只用于当前进程内部调度
 - 数据从共享只读存储读取
 - 任意实例可以处理任意请求
 
@@ -218,13 +241,13 @@ FactorQuantileStrategy.generate_signals(panel) → BacktestSignals(target_weight
 
 | 要点 | 说明 |
 |------|------|
-| **无状态** | 每个请求独立编译因子代码、独立初始化引擎、独立执行回测 |
+| **状态边界** | 单次回测独立；Manager 的任务状态和线程池只在当前进程内存在 |
 | **代码编译** | 因子代码通过 `exec()` 编译执行，不依赖本地因子文件 |
 | **所有参数通过请求传入** | 不依赖本地 config.yaml |
 | **结果不持久化** | 结果序列化后返回前端，由前端决定存储策略 |
-| **水平扩展** | 多实例部署，负载均衡分发，shared-nothing |
+| **水平扩展** | 多实例部署可行，但每个 worker 会独立拥有 Manager 和并发额度 |
 | **错误不抛 500** | 因子代码错误 → `error` 字段填充，HTTP 200 返回 |
-| **回测经适配器** | `IBacktestEngine` 契约，native（默认）| vectorbt，参数切换 |
+| **回测经适配器** | `IBacktestEngine` 契约，统一由 native 执行 |
 | **指标在 MetricEngine** | Runner 不算指标，委托 QuantCore MetricEngine |
-| **HTTP 是薄层** | `researchengine.api` 只调 BacktestRunner，不新增回测逻辑 |
+| **HTTP 是薄层** | `app.api` 只提交 Manager，不新增回测逻辑 |
 | **QuantCore 无感** | ResearchEngine 只调用 QuantCore，不关心其内部实现 |

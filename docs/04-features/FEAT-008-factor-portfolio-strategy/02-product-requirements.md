@@ -18,3 +18,4 @@
 3. 没有或有多个 `@signal` 时返回清晰错误。
 4. `TopN`、等权和每 N 日调仓的目标权重符合单元测试断言。
 5. 原有 `generate_signals()` 策略 API 与测试不退化。
+6. Web 请求传入 `include_rebalance_logs=true` 时，返回按调仓日聚合、仅含权重变化标的的目标调仓日志；未传时不返回该数据。

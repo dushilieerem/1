@@ -1,21 +1,37 @@
-"""``ResearchEngine`` 测试：配置、因子加载、端到端实验、结果存储。"""
+"""``app`` 测试：配置、因子加载、端到端实验、结果存储。"""
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 
-from quantcore import CSVDataProvider
-from researchengine import (
+from app.quantcore import CSVDataProvider, DataEngine
+from app import (
     ConfigManager,
-    Experiment,
+    FactorExperiment,
     ExperimentManager,
     FactorLoader,
     ResultManager,
     CSVStorage,
     SQLiteStorage,
 )
+from app.services.experiment import ExperimentContext
+
+
+class _StaticRuntime:
+    def __init__(self, data_engine):
+        self._context = SimpleNamespace(
+            data_engine=data_engine,
+            provider=data_engine.provider,
+        )
+
+    def get_context(self, data_dir=None):
+        return self._context
+
+    def close(self):
+        pass
 
 
 # ---------------- ConfigManager ----------------
@@ -41,7 +57,7 @@ def test_config_set_get_nested():
 def test_factor_loader_load(tmp_path):
     (tmp_path / "alpha_test.py").write_text(
         "import pandas as pd\n"
-        "from quantcore import BaseFactor\n"
+        "from app.quantcore import BaseFactor\n"
         "class AlphaTest(BaseFactor):\n"
         "    name = 'alpha_test'\n"
         "    def compute(self, data):\n"
@@ -92,19 +108,27 @@ def test_experiment_end_to_end(tmp_path):
     config.set("output_path", str(tmp_path / "out"))
 
     # 直接用 Alpha101 因子
-    from quantcore import BaseFactor
+    from app.quantcore import BaseFactor
 
     class Mom(BaseFactor):
         name = "mom"
         def compute(self, data):
             return data.close.pct_change(20)
 
-    exp = Experiment(
+    exp = FactorExperiment(
         factor=Mom(), universe="CSI500",
         start_date="2022-01-03", end_date="2024-12-31",
         config=config,
     )
-    result = exp.run()
+    manager = ExperimentManager(
+        max_workers=1,
+        max_queue_size=0,
+        runtime=_StaticRuntime(DataEngine(CSVDataProvider(str(tmp_path)))),
+    )
+    try:
+        result = manager.submit(exp).result(timeout=10)
+    finally:
+        manager.shutdown()
     assert result.equity_curve is not None
     assert len(result.equity_curve) > 20
     assert "sharpe" in result.metrics
@@ -114,24 +138,71 @@ def test_experiment_end_to_end(tmp_path):
     assert (tmp_path / "out" / "metrics.csv").exists()
 
 
+def test_factor_uses_full_history_before_evaluation_window(tmp_path):
+    """start/end 只裁剪收益确认区间，滚动因子可使用区间前的历史预热。"""
+    _gen_data(tmp_path, days=80)
+    config = ConfigManager()
+    config.set("data_dir", str(tmp_path))
+    config.set("factor_analysis.level", "core")
+    config.set("n_groups", 5)
+    config.set("long_short", False)
+
+    from app.quantcore import BaseFactor
+
+    class Mom20(BaseFactor):
+        name = "mom20_full_history"
+
+        def compute(self, data):
+            return data.close.pct_change(20)
+
+    exp = FactorExperiment(
+        factor=Mom20(),
+        universe="CSI500",
+        start_date="2022-02-01",
+        end_date="2022-03-31",
+        config=config,
+    )
+    manager = ExperimentManager(
+        max_workers=1,
+        max_queue_size=0,
+        runtime=_StaticRuntime(DataEngine(CSVDataProvider(str(tmp_path)))),
+    )
+    try:
+        result = manager.submit(exp).result(timeout=10)
+    finally:
+        manager.shutdown()
+
+    # 结果因子值仍只保留收益确认区间，但起点已有 20 日历史预热后的有效值。
+    assert result.factor_values.index.min() == pd.Timestamp("2022-02-01")
+    assert result.factor_values.loc["2022-02-01"].notna().all()
+    assert result.factor_values.index.max() == pd.Timestamp("2022-03-31")
+
+
 def test_experiment_manager_run_all(tmp_path):
     _gen_data(tmp_path)
     config = ConfigManager()
     config.set("data_dir", str(tmp_path))
     config.set("output_path", str(tmp_path / "out"))
 
-    from quantcore import BaseFactor
+    from app.quantcore import BaseFactor
 
     class Mom(BaseFactor):
         name = "mom"
         def compute(self, data):
             return data.close.pct_change(20)
 
-    mgr = ExperimentManager()
-    mgr.create(Mom(), "CSI500", "2022-01-03", "2024-12-31", config)
-    results = mgr.run_all()
-    assert "mom" in results
-    assert results["mom"].equity_curve is not None
+    mgr = ExperimentManager(
+        max_workers=1,
+        max_queue_size=0,
+        runtime=_StaticRuntime(DataEngine(CSVDataProvider(str(tmp_path)))),
+    )
+    try:
+        handle = mgr.submit(
+            FactorExperiment(Mom(), "CSI500", "2022-01-03", "2024-12-31", config)
+        )
+        assert handle.result(timeout=10).equity_curve is not None
+    finally:
+        mgr.shutdown()
 
 
 # ---------------- 结果存储 ----------------
@@ -155,7 +226,7 @@ def test_csv_storage_roundtrip(tmp_path):
 
 
 def test_parquet_storage_roundtrip(tmp_path):
-    from researchengine import ParquetStorage
+    from app import ParquetStorage
 
     eq = pd.Series([1.0, 1.05, 1.1], index=pd.bdate_range("2022-01-03", periods=3))
     fv = pd.DataFrame(
@@ -208,7 +279,7 @@ def test_sqlite_storage_roundtrip(tmp_path):
 # ---------------- 分组 IC 图 ----------------
 
 def test_plot_group_ic(tmp_path):
-    from researchengine.plotting import plot_group_ic
+    from app.services.factor.plotting import plot_group_ic
 
     rng = np.random.default_rng(11)
     dates = pd.bdate_range("2022-01-03", periods=40)
@@ -234,7 +305,7 @@ def test_plot_group_ic(tmp_path):
 # ---------------- IC 分析四联图 ----------------
 
 def test_plot_ic_analysis(tmp_path):
-    from researchengine.plotting import _daily_ic_series, plot_ic_analysis
+    from app.services.factor.plotting import _daily_ic_series, plot_ic_analysis
 
     rng = np.random.default_rng(11)
     dates = pd.bdate_range("2022-01-03", periods=120)
@@ -269,7 +340,7 @@ def test_plot_ic_analysis(tmp_path):
 # ---------------- 收益-回撤图 + 年度统计表 ----------------
 
 def test_plot_equity_drawdown_yearly_table(tmp_path):
-    from researchengine.plotting import plot_equity_drawdown, _yearly_stats
+    from app.services.factor.plotting import plot_equity_drawdown, _yearly_stats
 
     # 跨 3 年净值：2017 涨 / 2018 跌 / 2019 涨（确定性日收益）
     dates = pd.bdate_range("2017-01-03", "2019-12-31")
@@ -309,7 +380,7 @@ def test_plot_equity_drawdown_yearly_table(tmp_path):
 # ---------------- 组合构建 ----------------
 
 def test_build_factor_portfolio_weights():
-    from researchengine.portfolio import build_factor_portfolio
+    from app.services.factor.portfolio import build_factor_portfolio
 
     rng = np.random.default_rng(0)
     dates = pd.bdate_range("2022-01-03", periods=10)

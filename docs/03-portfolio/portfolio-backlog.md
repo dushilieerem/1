@@ -20,8 +20,26 @@
 | FEAT-003 | 回测适配层 | INIT-001 | 策略回测 | P0 | 已完成 |
 | FEAT-004 | 因子资产目录与回测结果缓存 | INIT-001 | 因子研究/研究基础设施 | P0 | 已完成 |
 | FEAT-005 | Qlib Alpha158 / Alpha360 特征库 | INIT-001 | 因子研究 | P1 | 已完成 |
-| FEAT-006 | 事件驱动策略回测引擎 | INIT-001 | 策略研究/策略回测 | P0 | 待评审 |
+| FEAT-006 | 事件驱动策略回测引擎 | INIT-001 | 策略研究/策略回测 | P0 | 开发中（日频内核 MVP） |
 | FEAT-008 | 结构化因子组合策略 | INIT-001 | 策略研究/策略回测 | P0 | 已完成 |
+| FEAT-009 | 聚宽兼容因子库 | INIT-001 | 因子研究/数据基础设施 | P0 | 开发中（第一批技术因子） |
+| FEAT-010 | 投研因子数据底座 | INIT-001 | 数据/因子研究 | P0 | 待批准（数据授权与样本待确认） |
+| FEAT-011 | 内置因子库回测 API | INIT-001 | 因子研究/研究 API | P0 | 开发中 |
+| FEAT-013 | 机器学习模型接入与预测回测 | INIT-001 | 因子研究/策略研究 | P0 | 待评审 |
+| FEAT-014 | 策略调仓日志 | INIT-001 | 策略研究/策略回测 API | P1 | 已完成 |
+| FEAT-015 | 个股日线行情 API | INIT-001 | 数据/研究 API | P1 | 开发中 |
+| FEAT-016 | AI 自然语言因子生成 API | INIT-004 | AI 研究助手/因子研究 | P0 | 开发中（受控 MVP） |
+| FEAT-017 | 策略资产目录与版本化持久化 | INIT-001 | 策略研究/研究基础设施 | P0 | 待验收 |
+| FEAT-018 | 自定义证券池与组合基准 | INIT-001 | 数据/因子研究/策略回测 | P1 | 开发中（ResearchEngine 快照契约已完成；WebApp CRUD 待交付） |
+| FEAT-019 | AI 自然语言向量化策略生成 API | INIT-004 | AI 研究助手/策略研究 | P0 | 开发中（受控 MVP） |
+| FEAT-020 | AI 回测解读与优化建议 | INIT-004 | AI 研究助手/策略研究/因子研究 | P0 | 开发中（受控 MVP） |
+| FEAT-021 | 股指与成分股查询 API | INIT-001 | 数据/研究 API | P1 | 已完成 |
+| FEAT-022 | 经典策略迁移 | INIT-001 | 策略研究/策略回测 | P1 | 开发中（已覆盖 RSI、CANSLIM Lite、KD、一目均衡表、均线排列、配对交易、Aroon、KST、聂夫、戴维斯双击、12-1 动量、小盘价值、红利低波狗股、三重滤网、抛物线 SAR、Fama-French 多因子、凯特纳通道、Williams %R、德邦特—塞勒长期反转、豪根—海因斯低波动异象、Piotroski F-Score、股息增长、OBV、蔡金、Dual Thrust、净营运资产异象、CCI、MFI、TRIX、ROC、Ultimate Oscillator、Vortex Indicator、Relative Vigor Index、Elder Force Index、CMO、Fisher Transform、EOM、VPT、AO、BOP、Choppiness、Coppock、DPO、TSI、StochRSI、RVI、Connors RSI(2)、Supertrend、Hull Moving Average、Williams Alligator、KAMA、McGinley Dynamic、Heikin-Ashi、Pivot Point、BBI、Mass Index、VHF、WVAD、TEMA、SMI、Ulcer Index、STC） |
+| FEAT-023 | WorldQuant Alpha 101 因子库迁移 | INIT-001 | 因子研究 | P0 | 已完成 |
+| FEAT-026 | 国泰君安 Alpha191 因子库迁移 | INIT-001 | 因子研究 | P0 | 已完成 |
+| FEAT-027 | 因子批量回测与指标仓库 | INIT-001 | 因子研究/研究基础设施 | P0 | 开发中（MVP 已实现） |
+| FEAT-024 | iFinD 宽表规范与渐进替换 | INIT-001 | 数据/研究基础设施 | P0 | 已批准 |
+| FEAT-025 | 免费数据源补齐日频基本面与证券状态 MVP | INIT-001 | 数据/研究基础设施 | P0 | 待批准 |
 
 ## 维护要求
 

@@ -3,6 +3,10 @@
 > 本文档定义 SVQuant 的系统架构，面向技术团队与老板汇报。
 > 关联：`../10-archive/legacy/system-architecture-v0.1.md`（历史原稿）、`../02-product/产品定位.md`、`../06-decisions/`（ADR 决策记录）
 
+> 当前实现说明：ResearchEngine 的运行时统一位于 `ResearchEngine/app`，公开 Python
+> 命名空间为 `app.*`，FastAPI 唯一入口为 `app.main`。本文件中的 QuantCore/ResearchEngine
+> 是产品模块名称；代码依赖边界以 FEAT-028 和 ADR-023 为准。
+
 ---
 
 ## 1. 架构总览
@@ -17,7 +21,7 @@
       │              ▼        ▼                     ▼
       │       QuantCore（数据、因子、指标、回测、市场规则）
       │              ▲                              ▲
-      │       ResearchEngine                   TradingEngine
+      │       ResearchEngine/app               TradingEngine
       │       （研究计算服务）                  （规划中）
       └──── SaaS 应用层（IAM、资产、计费、Web、社区；规划中）
 ```
@@ -30,10 +34,19 @@ SVQuant 先按六个**业务模块**定义产品边界，再用可演进的技�
 2. **数据模块**负责标准化行情、基本面、指数和行业分类；新闻、研究和交易都从它获得统一数据。
 3. **新闻模块**负责新闻、公告、研报和政策事件及其证券/行业关联；它提供研究可消费的事件与语义输入。
 4. **社区模块**负责内容、协作和研究资产分享，不执行回测或维护行情。
-5. **研究模块**负责因子与策略研究。`ResearchEngine` 是其中的回测计算服务，调用 `QuantCore` 完成数据读取、计算、回测和指标，并不管理用户因子库或前端页面。
+5. **研究模块**负责因子与策略研究。`ResearchEngine/app` 是其中的回测计算服务，调用
+   `app.quantcore` 完成数据读取、计算、回测和指标，并不管理用户因子库或前端页面。
 6. **实盘/模拟盘模块**负责策略运行、账户、风控、模拟撮合和订单执行；`TradingEngine` 为其规划承载。
 
-`QuantCore` 是跨数据、研究和交易模块复用的量化引擎层。六个业务模块不要求当前立即拆成六个进程或仓库；在 0-1 阶段可在同一应用中实现，但必须保持接口和数据所有权边界。
+`app.quantcore` 是跨数据、研究和交易模块复用的量化引擎层。六个业务模块不要求当前立即拆成六个进程或仓库；在 0-1 阶段可在同一应用中实现，但必须保持接口和数据所有权边界。
+
+ResearchEngine 的应用层依赖固定为：
+
+```text
+api → services → repositories/database → app.quantcore
+assets → app.quantcore 公开接口
+app.quantcore → 不依赖 FastAPI、services、repositories、schemas
+```
 
 ### 1.1 业务模块依赖
 
@@ -50,7 +63,7 @@ SVQuant 先按六个**业务模块**定义产品边界，再用可演进的技�
 ## 2. QuantCore 引擎分层
 
 ```
-QuantCore
+app.quantcore
 ├── Data Engine         数据引擎（统一数据访问）
 ├── Factor Engine       因子引擎（因子计算）
 ├── Factor Library      内置因子库
@@ -96,15 +109,14 @@ QuantCore
 ### 3.3 适配层设计（已落地）
 
 ```
-ResearchEngine（因子代码不变）
-       │  Experiment.run() 委托给适配器
+app.services.experiment（因子代码不变）
+       │  Experiment.run(context) 委托给适配器
        ▼
 IBacktestEngine ←── 契约接口
        │
   ┌────┴────────────┐
   │                  │
-VectorBTEngine   NativeEngine
-(wraps vectorbt)  (自研实现)
+NativeEngine（自研实现）
 ```
 
 **给老板的解释**：研究员写的因子代码，通过一个"转接头"连接回测引擎。这个转接头有两个版本——一个快的（向量化），一个准的（事件驱动）。研究员换引擎只需要改一行配置，代码不用动。
@@ -129,7 +141,7 @@ Factor Engine（因子计算 → 因子值矩阵）
          │        ↓
          │   Report（净值曲线/报告）
          │
-         └── Experiment（ResearchEngine 编排）
+         └── Experiment（app.services.experiment 编排）
                   ↓
              output/（回测结果）
 ```
@@ -144,7 +156,7 @@ Factor Engine（因子计算 → 因子值矩阵）
 | 因子值 | numpy array | 运行时内存管理，不落盘（可缓存） |
 | 回测结果 | CSV/Parquet | ResearchEngine output/ 目录 |
 | 基本面数据 | Parquet | 与行情类似，按字段存储 |
-| 用户配置 | YAML | ResearchEngine config.yaml |
+| 用户配置 | YAML | ResearchEngine/config.yaml |
 | 结果存储 | CSV/Parquet/SQLite/ClickHouse | 可选后端 |
 
 ---
@@ -171,7 +183,7 @@ Factor Engine（因子计算 → 因子值矩阵）
 |---------|----------|-------|
 | Python API | ✅ 研究员直接调用 | ✅ AI 平台调用 |
 | CLI | ✅ 命令行运行 | ✅ 辅助 |
-| HTTP (FastAPI) | ✅ 研究回测 API 已落地 | ✅ AI 平台远程调用 |
+| HTTP (FastAPI) | ✅ `app.main` 的 `/api` 研究回测 API 已落地 | ✅ AI 平台远程调用 |
 
 ---
 

@@ -14,7 +14,7 @@ API Route
 ```
 
 - `Factor/` 只承载项目资产，不包含 Python 运行逻辑。
-- 缓存编排属于 `ResearchEngine/researchengine/cache/`，不得侵入 QuantCore 回测引擎。
+- 缓存编排属于 `ResearchEngine/app/repositories/results/cache/`，不得侵入 `app.quantcore` 回测引擎。
 - `ResultStorage` 继续用于 SDK 的结果保存；不复用为 API 缓存，避免将缓存索引、失效和清理逻辑混入结果存储接口。
 
 ## 2. 目录迁移
@@ -26,7 +26,7 @@ API Route
 | `ResearchEngine/factor/*.md` | `Factor/libraries/*.md` |
 | — | `Factor/backtest_results/`（运行时创建） |
 
-新增路径解析工具，所有 `FactorLoader` 默认路径、`/api/factors`、示例和文档引用统一经该工具获取；不保留旧目录的双写或软链接，避免两个因子库来源分叉。
+新增路径解析工具，所有 `FactorLoader` 默认路径、`/api/factor-libraries`、`/api/factors/{library_name}`、示例和文档引用统一经该工具获取；不保留旧目录的双写或软链接，避免两个因子库来源分叉。
 
 ## 3. 缓存键
 
@@ -61,7 +61,7 @@ Factor/backtest_results/
 - `POST /api/backtest/factor` 请求体和响应体不新增必填字段。
 - 新增响应头 `X-SVQuant-Cache: HIT | MISS | BYPASS`。
 - 缓存配置通过服务端环境变量或配置文件提供，不向前端暴露缓存路径。
-- `/api/factors` 改为扫描 `Factor/libraries/`。
+- `/api/factor-libraries` 改为扫描 `Factor/libraries/`；指定库因子通过 `/api/factors/{library_name}` 查询。
 
 ## 6. 回滚方案
 

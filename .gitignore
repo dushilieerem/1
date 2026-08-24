@@ -26,7 +26,12 @@ Factor/backtest_results/
 *.db
 
 # 行情数据（体积大，不入库；放 MarketData/ 目录）
-MarketData/
+MarketData/*
+!MarketData/DataIngestion/
+!MarketData/DataIngestion/**
+!MarketData/README.md
+MarketData/DataIngestion/**/__pycache__/
+MarketData/DataIngestion/**/*.py[cod]
 
 # 压缩包文件
 *.7z
@@ -34,3 +39,9 @@ MarketData/
 #日志文件
 
 AGENTS.md
+*.rar
+.Codex/
+tmp/
+MarketData/DataIngestion/.tmp/
+*.parquet
+.vscode/

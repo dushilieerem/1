@@ -7,7 +7,7 @@ Factor/libraries/qlib_alpha.py
   └─ QlibAlphaLibrary（FactorLibrary）
        ├─ Alpha158：158 个方法因子
        └─ Alpha360：360 个方法因子
-ResearchEngine FactorLoader / GET /api/factors
+ResearchEngine FactorLoader / GET /api/factor-libraries / GET /api/factors/{library_name}
   └─ 加载并枚举上述因子
 ```
 

@@ -7,8 +7,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from researchengine.layered import layered_equity, layered_returns
-from researchengine.plotting import (
+from app.services.factor.layered import layered_equity, layered_returns
+from app.services.factor.plotting import (
     plot_equity_drawdown,
     plot_ff3_attribution,
     plot_industry_ic_ir,

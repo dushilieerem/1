@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SVQuant · iFinD 数据 Pipeline</title>
+  <style>
+    :root { --ink:#172033; --muted:#637083; --line:#cfd8e5; --canvas:#f5f7fb; --white:#fff; --blue:#225cbb; --blue-bg:#eaf2ff; --green:#147a54; --green-bg:#e9f8f1; --orange:#a85712; --orange-bg:#fff2e5; --red:#b12f3d; --red-bg:#fff0f1; --purple:#6846ab; --purple-bg:#f3efff; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--canvas); color:var(--ink); font:14px/1.5 "Microsoft YaHei", "Segoe UI", sans-serif; }
+    main { width:min(1180px, calc(100% - 32px)); margin:32px auto 56px; }
+    h1 { margin:0; font-size:30px; letter-spacing:-.5px; }
+    h2 { margin:0 0 12px; font-size:18px; }
+    h3 { margin:0 0 6px; font-size:15px; }
+    p { margin:0; color:var(--muted); }
+    .intro { display:flex; justify-content:space-between; gap:20px; align-items:end; margin-bottom:24px; }
+    .legend { display:flex; flex-wrap:wrap; gap:8px; }
+    .tag { border-radius:999px; padding:3px 9px; font-size:12px; font-weight:600; }
+    .raw { color:var(--blue); background:var(--blue-bg); }.csv { color:var(--green); background:var(--green-bg); }.parquet { color:var(--purple); background:var(--purple-bg); }.warn { color:var(--red); background:var(--red-bg); }
+    section { margin-top:20px; background:var(--white); border:1px solid var(--line); border-radius:14px; padding:20px; }
+    .source-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+    .source { padding:14px; border:1px solid var(--line); border-radius:10px; background:#fff; }
+    .source code, .node code { display:block; margin-top:8px; font:12px/1.45 Consolas, monospace; color:#3b4a60; overflow-wrap:anywhere; }
+    .pipeline { display:grid; grid-template-columns:1.1fr 34px 1.1fr 34px 1.1fr 34px 1.1fr; align-items:stretch; gap:0; }
+    .node { min-height:154px; padding:15px; border:1px solid var(--line); border-radius:11px; background:var(--white); }
+    .node.raw-node { border-top:4px solid var(--blue); }.node.csv-node { border-top:4px solid var(--green); }.node.parquet-node { border-top:4px solid var(--purple); }.node.input { border-top:4px solid var(--orange); }
+    .arrow { display:flex; align-items:center; justify-content:center; color:#8594a8; font-size:28px; }
+    .branch { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
+    .subflow { border:1px dashed var(--line); border-radius:11px; padding:14px; }
+    .subflow h3 { color:var(--blue); }
+    .command { margin-top:10px; padding:10px; border-radius:8px; background:#162033; color:#eaf2ff; font:12px/1.55 Consolas, monospace; overflow-wrap:anywhere; }
+    .daily { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; align-items:stretch; }
+    .daily-step { position:relative; min-height:108px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--white); }
+    .daily-step:not(:last-child)::after { content:"→"; position:absolute; right:-19px; top:38px; z-index:2; color:#8594a8; font-size:22px; }
+    .wide { margin-top:12px; border-collapse:collapse; width:100%; font-size:12px; }
+    .wide th,.wide td { border:1px solid var(--line); padding:6px 8px; text-align:left; white-space:nowrap; }
+    .wide thead tr:first-child { background:var(--blue-bg); color:var(--blue); }.wide thead tr:last-child { background:var(--green-bg); color:var(--green); }
+    .note { margin-top:16px; padding:12px 14px; border-left:4px solid var(--red); background:var(--red-bg); color:var(--red); border-radius:6px; }
+    .note strong { display:block; margin-bottom:2px; }
+    @media (max-width:800px) { .intro{display:block}.legend{margin-top:12px}.source-grid,.branch{grid-template-columns:1fr}.pipeline{grid-template-columns:1fr}.arrow{height:30px;transform:rotate(90deg)}.daily{grid-template-columns:1fr}.daily-step:not(:last-child)::after{right:auto;left:50%;top:auto;bottom:-22px;transform:translateX(-50%) rotate(90deg)}.wide{display:block;overflow-x:auto} }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="intro">
+      <div><h1>iFinD 数据 Pipeline</h1><p>原始 JSON 可追溯；CSV 便于检查；Parquet 面向研究与读取。</p></div>
+      <div class="legend"><span class="tag raw">原始 JSON</span><span class="tag csv">CSV</span><span class="tag parquet">Parquet</span><span class="tag warn">当前风险</span></div>
+    </div>
+
+    <section>
+      <h2>公共基础数据</h2>
+      <div class="source-grid">
+        <article class="source"><h3>统一交易日历</h3><p>只下载深交所日历，作为全 A 的唯一交易日序列。</p><code>get_trade_dates → calendar/raw/ALL_A/*.json<br>→ calendar/calendar_all_a.csv → calendar_all_a.parquet</code></article>
+        <article class="source"><h3>全 A 证券主表</h3><p>每日各读取一次 p03291 在市、已摘牌与退市整理板块，校验 thscode 互斥后直接联合。</p><code>data_pool p03291 → LISTED/*.json + DELISTED/*.json + DELISTING/*.json<br>→ a_share.csv → a_share.parquet</code></article>
+      </div>
+    </section>
+
+    <section>
+      <h2>市场行情：回测与 WebApp 展示数据分开采集</h2>
+      <div class="pipeline">
+        <article class="node input"><h3>回测行情</h3><p>固定后复权 OHLC + 流动性</p><code>OHLC：CPS "1"<br>volume, amt, turn：不带 CPS</code></article><div class="arrow">→</div>
+        <article class="node raw-node"><h3>回测 raw</h3><code>market_data/raw/price/<br>market_data/raw/liquidity/<br>SH | SZ | BJ / 日期窗口 / 批次.json</code></article><div class="arrow">→</div>
+        <article class="node csv-node"><h3>回测宽 CSV</h3><code>market_data/market_data_hfq.csv<br>OHLC + volume + amount + turnover</code></article><div class="arrow">→</div>
+        <article class="node parquet-node"><h3>回测 Parquet</h3><code>market_data/market_data_hfq.parquet</code></article>
+      </div>
+      <div class="branch">
+        <article class="subflow"><h3>WebApp K 线价格</h3><code>未复权 OHLC（不带 CPS）→ unadjusted_price/raw/<br>→ unadjusted_price/unadjusted_price.csv → unadjusted_price.parquet</code><p>不请求、不合并流动性字段；前复权暂不采集。</p></article>
+        <article class="subflow"><h3>CSV 两行表头形状</h3><table class="wide"><thead><tr><th>date</th><th>600000.SH</th><th>600000.SH</th><th>000001.SZ</th></tr><tr><th></th><th>open</th><th>close</th><th>turnover</th></tr></thead><tbody><tr><td>2026-08-05</td><td>10.10</td><td>10.30</td><td>0.012</td></tr></tbody></table></article>
+      </div>
+    </section>
+
+    <section>
+      <h2>指数数据：权重与价格同域、独立产物</h2>
+      <div class="branch">
+        <article class="subflow"><h3>指数成分权重</h3><code>data_pool p03563 → index/index_weights/raw/&lt;index&gt;/&lt;date&gt;.json<br>→ index_weights_&lt;index&gt;.csv → index_weights_&lt;index&gt;.parquet</code><p>日期 × 股票宽表；权重非空即表示当日成分，缺席成分保持空值。</p></article>
+        <article class="subflow"><h3>指数价格</h3><code>history_data high,open,low,close → index/index_price/raw/<br>→ index_price_&lt;index&gt;.csv → index_price_&lt;index&gt;.parquet</code><p>最终标准化为 OHLC；不传复权参数，不采集成交量、成交额和换手率。</p></article>
+      </div>
+    </section>
+
+    <section>
+      <h2>日期序列：估值、行业与状态</h2>
+      <div class="pipeline">
+        <article class="node input"><h3>iFinD 日期序列</h3><code>ths_current_mv_stock<br>ths_pe_stock · ths_pb_stock<br>申万行业 · 涨跌停</code></article><div class="arrow">→</div>
+        <article class="node raw-node"><h3>日期序列 raw</h3><code>date_sequence/raw/<br>SH | SZ | BJ / 日期窗口 / 批次.json</code></article><div class="arrow">→</div>
+        <article class="node csv-node"><h3>日期序列宽 CSV</h3><code>date_sequence/date_sequence.csv<br>行：date<br>两级列头：thscode / field</code></article><div class="arrow">→</div>
+        <article class="node parquet-node"><h3>日期序列 Parquet</h3><code>date_sequence/date_sequence.parquet<br>pandas MultiIndex 列</code></article>
+      </div>
+    </section>
+
+    <section>
+      <h2>两种运行路径</h2>
+      <div class="branch">
+        <article class="subflow"><h3>首次回填 / 历史修复</h3><div class="command">*_download backfill → *_csv rebuild → *_parquet</div><p>CSV 脚本并行解析全部 raw JSON，重新构建完整宽表。</p></article>
+        <article class="subflow"><h3>每日收盘后更新</h3><div class="daily"><div class="daily-step"><b>1</b><br>交易日历</div><div class="daily-step"><b>2</b><br>证券池</div><div class="daily-step"><b>3</b><br>指数权重</div><div class="daily-step"><b>4</b><br>指数价格</div><div class="daily-step"><b>5</b><br>回测行情</div></div><p style="margin-top:14px">每类数据均执行下载、当日 CSV 替换和 Parquet 重建；任一步失败即停止。</p></article>
+      </div>
+      <div class="note"><strong>全 A 主表更新规则</strong><code>a_share.csv</code> 保持既有扁平列结构：每日校验 LISTED、DELISTED 与 DELISTING 三张快照的 <code>thscode</code> 必须两两互斥；发现交集立即报错，不构建日期 × 证券成员矩阵。</div>
+    </section>
+  </main>
+</body>
+</html>

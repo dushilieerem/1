@@ -3,7 +3,9 @@
 > **决策记录**：Architecture Decision Record
 > **日期**：2026-07-17
 > **状态**：已实施
-> **关联**：`../05-architecture/database_design.md`、`../05-architecture/system_architecture.md` §4-5、`ADR-001-为什么使用向量化回测.md`
+> **关联**：`../05-architecture/database_design.md`、`../05-architecture/system_architecture.md` §4-5、`ADR-001-为什么使用向量化回测.md`、`ADR-017-市场数据按业务域采用多字段宽表.md`
+
+> **后续更新**：ADR-017 已将“一个字段一个文件”调整为“按业务域组织多字段宽表”。本 ADR 关于本地文件和 Parquet 格式的选择继续有效。
 
 ---
 
@@ -21,7 +23,7 @@ SVQuant 当前以本地 CLI/SDK 形态服务量化研究。A 股历史行情、�
 ## 决策
 
 1. 当前阶段的历史行情与基本面数据采用**本地文件存储**；数据目录由用户提供，不随代码仓库分发。
-2. 标准格式采用 **Parquet**，由 `FieldParquetProvider` 按“一个字段一个文件”读取；每个文件是一张“日期 × 标的”的宽表。
+2. 标准格式采用 **Parquet**；股票日频数据的物理文件按业务域组织为多字段宽表，具体 schema 和读取适配由 ADR-017 定义。
 3. `IDataProvider` 保留 CSV、Parquet、ClickHouse、AkShare、Wind 等实现，作为导入、兼容或特定部署场景的适配方式；它们不改变 Parquet 作为默认原始数据格式的选择。
 4. 当出现实时写入、多用户共享、服务端低延迟查询或复杂关联查询的明确需求时，重新评估并可引入 ClickHouse 或其他数据库。
 
@@ -56,25 +58,25 @@ SVQuant 当前以本地 CLI/SDK 形态服务量化研究。A 股历史行情、�
 
 Parquet 与当前面板计算方式直接匹配：
 
-- 字段独立存放，因子只访问 `close`、`volume` 等少量字段时，`FieldParquetProvider` 只懒加载对应文件；
-- 同一字段内的标的列保持一致的数值类型，减少 CSV 文本解析与类型推断；
+- 相关字段按业务域集中，Provider 仍可通过列投影向上层提供 `close`、`volume` 等单字段面板；
+- schema 保留字段类型，减少 CSV 文本解析与类型推断；
 - 文件具有可移植性，可在 Python 以外的分析工具中读取，不把数据资产锁定在 Python 对象序列化格式中；
 - 压缩后的列式文件更适合长期保存较大规模的历史面板。
 
 ## 数据组织方式
 
 ```text
-MarketData/
-└── stocks/daily/
-    ├── open.parquet
-    ├── high.parquet
-    ├── low.parquet
-    ├── close.parquet
-    ├── volume.parquet
-    └── total_mv.parquet
+MarketData/<release>/
+├── panels/
+│   ├── market_data.parquet
+│   ├── daily_basic.parquet
+│   └── security_status.parquet
+├── display/
+│   └── unadjusted_price.parquet
+└── data_manifest.yaml
 ```
 
-每个 Parquet 文件包含一列日期和多列标的代码；文件名即标准字段名。`FieldParquetProvider` 负责字段扫描、懒加载、日期过滤与缓存，`DataEngine` 对上层屏蔽具体存储格式。
+股票日频宽表以日期为行，使用 `(symbol, field)` 两级列。读取器建立 `field → 业务域文件及物理列` 映射，`DataEngine` 对上层屏蔽具体存储格式。完整目录与字段契约见 FEAT-024。
 
 ## 后果
 
@@ -88,7 +90,7 @@ MarketData/
 ### 负面后果与约束
 
 - 文件不提供事务、行级并发写入、统一权限管理和服务端查询能力。
-- 数据更新必须采用批处理，并避免多个进程同时覆盖同一字段文件。
+- 数据更新必须采用批处理并生成新 release，禁止多个进程覆盖活动版本文件。
 - Parquet 不适合作为人工直接编辑的格式；数据修订应通过导入/转换任务生成新文件，而不是手工修改。
 - CSV 仍可用于样例、小型导入导出和人类可读的回测产物；Pickle 仅可用于受信任环境下的临时缓存，不作为原始行情交换或归档格式。
 
@@ -97,3 +99,5 @@ MarketData/
 - `../05-architecture/database_design.md` — 数据分类、目录结构与结果存储选择
 - `../05-architecture/system_architecture.md` — 数据流与数据层边界
 - `ADR-001-为什么使用向量化回测.md` — 向量化计算对批量、列式读取的需求
+- `ADR-016-Parquet持久化与只读内存快照.md` — Parquet 发布版本与服务器回测运行格式的分工
+- `ADR-017-市场数据按业务域采用多字段宽表.md` — 多字段宽表的物理组织方式

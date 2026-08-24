@@ -7,7 +7,7 @@
 
 | 验证项 | 结果 | 证据 |
 |--------|------|------|
-| 因子资产迁移 | 通过 | 因子库已迁移至 `Factor/libraries/`；`GET /api/factors` 返回 5 个内置因子。 |
+| 因子资产迁移 | 通过 | 因子库已迁移至 `Factor/libraries/`；`GET /api/factor-libraries` 返回因子库目录，`GET /api/factors/alpha_library` 返回该库的 5 个内置因子。 |
 | 首次回测缓存 | 通过 | API 测试断言响应头为 `X-SVQuant-Cache: MISS`。 |
 | 重复回测缓存 | 通过 | 相同请求第二次调用返回 `X-SVQuant-Cache: HIT`，响应体一致。 |
 | 数据变更失效 | 通过 | 更新行情 Parquet 文件修改时间后，相同请求重新返回 `MISS`。 |

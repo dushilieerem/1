@@ -1,70 +1,85 @@
 # SVQuant
 
-#### 介绍
-一站式AI量化投研平台
+SVQuant 是一站式 AI 量化投研平台。当前投研运行时统一放在
+`ResearchEngine/app`，公开 Python 命名空间只有 `app.*`。
 
-#### 软件架构
+## 架构
 
-三大模块 + 数据层：
-
+```text
+FastAPI app.main
+    └── api/routes        HTTP 参数与响应适配
+        └── services      Experiment、因子/策略回测、因子批量回测业务
+            └── repositories/database
+                └── app.quantcore   数据、因子、指标、回测基础设施
 ```
-ResearchEngine（用户入口）  ->  QuantCore（底层引擎）  ->  Historical/Live Feed
-              （阶段一/二 CLI/SDK，阶段三 Web SaaS）
+
+- `app.main` 是唯一正式 FastAPI 入口。
+- `app.quantcore` 不依赖 FastAPI、schemas 或业务 service。
+- 因子和策略资产位于 `app.assets`，SQLite 结果通过 repository 访问。
+- `Experiment` 是抽象基类；具体实验为 `FactorExperiment`、`StrategyExperiment`
+  和因子批量回测业务中的 `FactorBacktestBatchExperiment`。
+- `ExperimentManager` 只有一个普通 FIFO 队列。因子批量业务自己维护容量为 2
+  的批量窗口，只有一个批量因子进入终态后才提交下一个。
+
+## 安装与启动
+
+```bash
+pip install -e .
+pip install -e ".[api]"
+
+# 生产/内网部署：单实例、单 Worker
+python -m uvicorn app.main:app --host 0.0.0.0 --port 9527 --workers 1
+# 或
+python -m app.main
 ```
 
-- **QuantCore** - 底层量化引擎：DataEngine / FactorEngine / BacktestEngine / MetricEngine
-- **ResearchEngine** - 投资研究层：ExperimentManager / Experiment / FactorLoader / ConfigManager / ResultManager
-- **TradingEngine** - 交易层（待实现）
+不支持多 Uvicorn Worker 或多实例部署，因为当前进程内只有一个
+`ExperimentManager` 和一个行情运行时。
 
-文档总入口见 `docs/README.md`。
+## 因子与批量回测
 
-#### 安装教程
+因子源码和索引分别位于：
 
-1. 克隆仓库
-2. 安装依赖（Python 3.9+）：
+```text
+ResearchEngine/app/assets/factors/libraries/
+ResearchEngine/app/assets/factors/index.yaml
+```
 
-   ```bash
-   pip install -e .
-   # 开箱即用仅需 pandas / numpy / PyYAML；可选依赖按需安装：
-   # pip install -e ".[akshare,clickhouse,numba,parquet]"
-   ```
+批量回测由可信内网中的 FastAPI 进程执行，CLI 只是 HTTP 客户端：
 
-#### 使用说明
+```bash
+python -m app.cli.factor_backtest_batch run --as-of YYYY-MM-DD
+python -m app.cli.factor_backtest_batch run --as-of YYYY-MM-DD --force-retry
+python -m app.cli.factor_backtest_batch run --as-of YYYY-MM-DD --dry-run
+python -m app.cli.factor_backtest_batch run --as-of YYYY-MM-DD --wait
+```
 
-1. 运行端到端示例（读取根目录 `data/price.CSV` 宽表面板）：
+API 契约使用 `/api`，批量触发接口为
+`POST /api/internal/factor-backtest-batches`；任务查询和批次、因子明细、历史结果
+的接口见 `docs/04-features/FEAT-027-factor-backtest-batch/`。
 
-   ```bash
-   python ResearchEngine/examples/main.py   # 跑通 因子->指标 全流程 + BacktestEngine 演示
-   ```
+研究代码示例：
 
-   > 数据为 Wind/Choice 风格宽表（3 行表头/GBK/OHLCV+市值）。无真实数据时可
-   > `python ResearchEngine/examples/gen_data.py` 生成样本。
+```python
+from app.repositories.catalogs.factor_loader import FactorLoader
+from app.services.experiment import FactorExperiment, ExperimentManager
 
-2. 研究员自定义因子：在 `Factor/libraries/` 下新建 `*.py`，定义 `BaseFactor` 子类并实现 `compute(data: Panel)`（面板模式，`data.close` 取宽表），修改 `examples/main.py` 调用即可。
+loader = FactorLoader()
+loader.load("momentum_lib")
+experiment = FactorExperiment(loader.factors["momentum_5d"])
 
-3. 核心抽象（Experiment）：
+with ExperimentManager(max_workers=2) as manager:
+    result = manager.submit(experiment).result()
+    print(result.summary())
+```
 
-   ```python
-   from researchengine import Experiment
-   experiment = Experiment(factor=MyFactor(), universe="CSI500",
-                            start_date=None, end_date=None)  # None=用数据全部区间
-   result = experiment.run()
-   print(result.summary())
-   ```
+实验不自行创建 `DataEngine` 或 `ExperimentManager`；行情上下文由 Manager 注入。
 
-#### 参与贡献
+## 测试
 
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
+```bash
+pytest
+pytest ResearchEngine/tests
+```
 
-
-#### 特技
-
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+完整产品、架构和交付文档入口：`docs/README.md`。

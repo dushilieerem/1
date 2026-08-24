@@ -73,7 +73,7 @@ Factor/
 
 ## 6. 验收标准
 
-1. 使用迁移后的因子目录，`GET /api/factors` 能列出内置因子。
+1. 使用迁移后的因子目录，`GET /api/factor-libraries` 能列出内置因子库，`GET /api/factors/{library_name}` 能列出指定库的内置因子。
 2. 两次相同请求中，第二次返回 `X-SVQuant-Cache: HIT`，且不调用回测执行器。
 3. 修改因子代码、任一回测参数、相关行情文件或基准文件后，请求返回 `MISS`。
 4. 缓存中的响应与首次计算响应体一致。

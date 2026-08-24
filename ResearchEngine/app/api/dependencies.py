@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from fastapi import Request
 
-from app.services.daily_factor_backtest import DailyFactorBacktestCoordinator
+from app.services.factor_backtest_batch import (
+    FactorBacktestBatchCoordinator,
+    FactorBacktestBatchTaskRegistry,
+)
 from app.services.experiment.manager import ExperimentManager
 
 
@@ -17,15 +20,27 @@ def get_experiment_manager(request: Request) -> ExperimentManager:
     return manager
 
 
-def get_daily_factor_backtest_coordinator(
+def get_factor_backtest_batch_coordinator(
     request: Request,
-) -> DailyFactorBacktestCoordinator:
-    """返回每日因子回测这一具体业务能力的协调器。"""
+) -> FactorBacktestBatchCoordinator:
+    """为当前触发请求创建一个不持有批次状态的批量协调器。"""
 
-    coordinator = getattr(request.app.state, "daily_factor_backtest", None)
-    if not isinstance(coordinator, DailyFactorBacktestCoordinator):
-        raise RuntimeError("DailyFactorBacktestCoordinator 尚未由 FastAPI lifespan 初始化")
-    return coordinator
+    return FactorBacktestBatchCoordinator(get_experiment_manager(request))
 
 
-__all__ = ["get_experiment_manager", "get_daily_factor_backtest_coordinator"]
+def get_factor_backtest_batch_task_registry(
+    request: Request,
+) -> FactorBacktestBatchTaskRegistry:
+    """返回由 FastAPI 应用生命周期管理的批量任务注册表。"""
+
+    registry = getattr(request.app.state, "factor_backtest_batch_task_registry", None)
+    if not isinstance(registry, FactorBacktestBatchTaskRegistry):
+        raise RuntimeError("FactorBacktestBatchTaskRegistry 尚未由 FastAPI 初始化")
+    return registry
+
+
+__all__ = [
+    "get_experiment_manager",
+    "get_factor_backtest_batch_coordinator",
+    "get_factor_backtest_batch_task_registry",
+]

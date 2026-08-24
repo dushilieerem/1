@@ -15,14 +15,14 @@ from concurrent.futures import Future
 from dataclasses import dataclass, field
 from enum import Enum
 from queue import Queue
-from typing import Any, Generic, Literal, TypeVar
+from typing import Any, Generic, Literal, TypeVar, get_args
 
 from app.core.runtime import ResearchDataContext, ResearchRuntime
 from app.services.experiment.base import Experiment, ExperimentContext
 
 
 T = TypeVar("T")
-Lane = Literal["interactive", "batch"]
+ExecutionLane = Literal["interactive", "batch"]
 
 
 class ExperimentManagerError(RuntimeError):
@@ -51,7 +51,7 @@ class _ExperimentRun(Generic[T]):
     run_id: str
     experiment: Experiment[T]
     key: str | None
-    lane: Lane
+    lane: ExecutionLane
     metadata: dict[str, Any]
     status: ExperimentStatus = ExperimentStatus.CREATED
     created_at: float = field(default_factory=time.time)
@@ -104,7 +104,7 @@ class ExperimentManager:
     _TERMINAL_STATUSES = frozenset(
         {ExperimentStatus.SUCCEEDED, ExperimentStatus.FAILED, ExperimentStatus.CANCELLED}
     )
-    _LANES = frozenset({"interactive", "batch"})
+    _LANES = frozenset(get_args(ExecutionLane))
 
     def __init__(
         self,
@@ -191,7 +191,7 @@ class ExperimentManager:
         experiment: Experiment[T],
         *,
         key: str | None = None,
-        lane: Lane = "interactive",
+        lane: ExecutionLane = "interactive",
         metadata: dict[str, Any] | None = None,
     ) -> ExperimentHandle[T]:
         """提交一个具体 Experiment；普通 callable 会被拒绝。"""
@@ -199,7 +199,7 @@ class ExperimentManager:
         if not isinstance(experiment, Experiment):
             raise TypeError("ExperimentManager.submit 只接受 Experiment 对象")
         if lane not in self._LANES:
-            raise ValueError("lane 必须为 'interactive' 或 'batch'")
+            raise ValueError(f"未知的任务执行 lane: {lane!r}")
         self.start()
         with self._lock:
             self._prune_finished_locked()
@@ -415,6 +415,7 @@ class _CompletedExperiment(Experiment[T]):
 
 
 __all__ = [
+    "ExecutionLane",
     "ExperimentHandle",
     "ExperimentManager",
     "ExperimentManagerClosedError",

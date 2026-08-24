@@ -15,7 +15,7 @@ app/
 │   ├── factor/                     # 因子回测用例
 │   ├── strategy/                   # 策略回测用例
 │   ├── catalog/                    # 目录查询用例
-│   └── daily_factor_backtest/      # 每日因子这一具体业务能力
+│   └── factor_backtest_batch/      # 因子批量回测这一具体业务能力
 ├── repositories/                   # 目录、结果和批次持久化边界
 ├── database/                       # SQLite 与 Parquet 访问边界
 ├── core/                           # 配置、运行时、异常
@@ -27,9 +27,10 @@ app/
 `app.quantcore` 不反向依赖 FastAPI、业务 service、repository 或 schemas；Pydantic
 只出现在 HTTP 边界。
 
-每日因子回测不是通用 `FactorBatchService`：它由
-`DailyFactorBacktestCoordinator` 作为具体业务协调器实现。Manager 保持普通 FIFO；
-协调器自己维护最多两个未完成因子，完成一个才提交下一个。交互式任务若已先进入
+因子批量回测不是通用 `FactorBatchService`：它由
+`FactorBacktestBatchCoordinator` 作为具体业务协调器实现。Manager 保持普通 FIFO；
+协调器自己维护最多两个未完成因子，完成一个才提交下一个。协调器按请求创建，
+不保存跨请求状态；异步任务由独立单线程注册表编排。交互式任务若已先进入
 Manager 队列，会按 FIFO 先于后提交的批量因子执行。
 
 ## 启动
@@ -46,7 +47,8 @@ python -m app.main
 ```
 
 当前只支持单实例、单 Worker。FastAPI 进程的 lifespan 负责启动和关闭唯一的
-`ExperimentManager`；每日批量协调器复用该 Manager，不创建自己的回测运行时。
+`ExperimentManager`；批量协调器复用该 Manager，不创建自己的回测运行时。应用关闭时先
+等待批量任务注册表，再关闭 Manager；启动 FastAPI 不会自动执行批量回测。
 
 ## 资产与 API
 
@@ -64,16 +66,19 @@ API 使用 `/api` 契约：
 ```text
 POST /api/backtest/factor
 POST /api/backtest/strategy
-POST /api/internal/factor-backtests/batches
+POST /api/internal/factor-backtest-batches
+GET  /api/factor-backtest-batch-tasks/{task_id}
+GET  /api/factor-backtest-batches
 GET  /api/factor-libraries
 GET  /api/strategies
 ```
 
-每日批量 CLI 只发送 HTTP 请求，不在本地创建 Manager 或执行回测：
+批量 CLI 只发送 HTTP 请求，不在本地创建 Manager 或执行回测：
 
 ```bash
-python -m app.cli.factor_batch run --as-of YYYY-MM-DD
-python -m app.cli.factor_batch run --as-of YYYY-MM-DD --force-retry
+python -m app.cli.factor_backtest_batch run --as-of YYYY-MM-DD
+python -m app.cli.factor_backtest_batch run --as-of YYYY-MM-DD --force-retry
+python -m app.cli.factor_backtest_batch run --as-of YYYY-MM-DD --wait
 ```
 
 批量结果写入 `Factor/database/factor_backtest.db`（可由环境变量覆盖），行情仍由
@@ -89,5 +94,5 @@ pytest ResearchEngine/tests
 
 - `docs/04-features/FEAT-002-research-engine/`
 - `docs/04-features/FEAT-003-backtest-adapter/`
-- `docs/04-features/FEAT-027-daily-factor-backtest/`
+- `docs/04-features/FEAT-027-factor-backtest-batch/`
 - `docs/04-features/FEAT-028-layered-application-architecture/`

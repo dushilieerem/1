@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import math
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -795,11 +795,11 @@ class IndexConstituentsResponse(BaseModel):
     unmapped_count: int = 0
 
 
-# ---------------- 每日因子指标仓库 ----------------
+# ---------------- 因子批量回测指标仓库 ----------------
 
 
 class FactorBacktestBatchTriggerRequest(BaseModel):
-    """触发每日因子批次的内部请求。"""
+    """触发因子批量回测的内部请求。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -808,16 +808,39 @@ class FactorBacktestBatchTriggerRequest(BaseModel):
     dry_run: bool = False
 
 
-class FactorBacktestBatchSubmissionResponse(BaseModel):
-    """每日因子批次触发结果。"""
+FactorBacktestBatchTaskStatus = Literal[
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+]
 
+
+class FactorBacktestBatchTaskSubmissionResponse(BaseModel):
+    """因子批量回测异步任务提交结果。"""
+
+    task_id: str
+    status: FactorBacktestBatchTaskStatus
+    poll_url: str
+    created_at: float
+
+
+class FactorBacktestBatchTaskResponse(BaseModel):
+    """因子批量回测异步任务快照。"""
+
+    task_id: str
+    status: FactorBacktestBatchTaskStatus
+    created_at: float
+    started_at: Optional[float] = None
+    finished_at: Optional[float] = None
     batch_id: str | None = None
-    status: str
-    query_url: str | None = None
+    batch_url: str | None = None
+    error: str | None = None
+    result: dict[str, Any] | None = None
 
 
 class FactorBacktestBatchResponse(BaseModel):
-    """每日全量因子回测批次摘要。"""
+    """因子批量回测批次摘要。"""
 
     id: str
     batch_key: str
@@ -845,7 +868,7 @@ class FactorBacktestBatchListResponse(BaseModel):
 
 
 class FactorBacktestFactorRunResponse(BaseModel):
-    """单个因子在一个每日批次中的状态和标量指标。"""
+    """单个因子在一个批次中的状态和标量指标。"""
 
     id: str
     batch_id: str

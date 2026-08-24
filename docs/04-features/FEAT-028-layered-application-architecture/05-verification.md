@@ -7,7 +7,7 @@
 | `app.main` 生命周期 | `tests/api/test_v2_contract.py` |
 | Experiment 抽象和 callable 拒绝 | `tests/services/test_experiment_contract.py` |
 | Manager 普通 FIFO、容量和取消 | `tests/test_experiment_manager.py` |
-| 批量两槽窗口和交互任务先到先执行 | `tests/services/test_daily_factor_backtest_queue.py` |
+| 批量两槽窗口和交互任务先到先执行 | `tests/services/test_factor_backtest_batch_queue.py` |
 | SQLite repository 边界 | `tests/repositories/test_factor_backtest_repository.py`、`test_factor_batch.py` |
 | 因子/策略资产索引 | `tests/assets/test_asset_namespace.py`、既有库测试 |
 | API 响应契约 | `tests/test_api.py`、`test_factor_backtest_async.py` |

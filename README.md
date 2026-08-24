@@ -8,7 +8,7 @@ SVQuant 是一站式 AI 量化投研平台。当前投研运行时统一放在
 ```text
 FastAPI app.main
     └── api/routes        HTTP 参数与响应适配
-        └── services      Experiment、因子/策略回测、每日因子业务
+        └── services      Experiment、因子/策略回测、因子批量回测业务
             └── repositories/database
                 └── app.quantcore   数据、因子、指标、回测基础设施
 ```
@@ -17,8 +17,8 @@ FastAPI app.main
 - `app.quantcore` 不依赖 FastAPI、schemas 或业务 service。
 - 因子和策略资产位于 `app.assets`，SQLite 结果通过 repository 访问。
 - `Experiment` 是抽象基类；具体实验为 `FactorExperiment`、`StrategyExperiment`
-  和每日因子业务中的 `DailyFactorExperiment`。
-- `ExperimentManager` 只有一个普通 FIFO 队列。每日因子业务自己维护容量为 2
+  和因子批量回测业务中的 `FactorBacktestBatchExperiment`。
+- `ExperimentManager` 只有一个普通 FIFO 队列。因子批量业务自己维护容量为 2
   的批量窗口，只有一个批量因子进入终态后才提交下一个。
 
 ## 安装与启动
@@ -45,17 +45,18 @@ ResearchEngine/app/assets/factors/libraries/
 ResearchEngine/app/assets/factors/index.yaml
 ```
 
-每日批量由可信内网中的 FastAPI 进程执行，CLI 只是 HTTP 客户端：
+批量回测由可信内网中的 FastAPI 进程执行，CLI 只是 HTTP 客户端：
 
 ```bash
-python -m app.cli.factor_batch run --as-of YYYY-MM-DD
-python -m app.cli.factor_batch run --as-of YYYY-MM-DD --force-retry
-python -m app.cli.factor_batch run --as-of YYYY-MM-DD --dry-run
+python -m app.cli.factor_backtest_batch run --as-of YYYY-MM-DD
+python -m app.cli.factor_backtest_batch run --as-of YYYY-MM-DD --force-retry
+python -m app.cli.factor_backtest_batch run --as-of YYYY-MM-DD --dry-run
+python -m app.cli.factor_backtest_batch run --as-of YYYY-MM-DD --wait
 ```
 
 API 契约使用 `/api`，批量触发接口为
-`POST /api/internal/factor-backtests/batches`；查询批次、因子明细和历史结果
-的接口见 `docs/04-features/FEAT-027-daily-factor-backtest/`。
+`POST /api/internal/factor-backtest-batches`；任务查询和批次、因子明细、历史结果
+的接口见 `docs/04-features/FEAT-027-factor-backtest-batch/`。
 
 研究代码示例：
 

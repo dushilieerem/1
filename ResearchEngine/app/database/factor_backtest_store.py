@@ -1,4 +1,4 @@
-"""每日因子全量回测的 SQLite 结果仓库。
+"""因子批量回测的 SQLite 结果仓库。
 
 该仓库只保存批次、状态和标量指标，不保存净值曲线或日频序列。
 它与 ``ResultStorage`` 分离，后者仍负责单次实验快照。
@@ -29,7 +29,7 @@ METRIC_COLUMNS = (
 
 
 def default_factor_backtest_db_path() -> Path:
-    """返回每日因子指标库路径，可由环境变量覆盖。"""
+    """返回因子批量指标库路径，可由环境变量覆盖。"""
 
     configured = (
         os.environ.get("SVQUANT_FACTOR_BACKTEST_DB")
@@ -61,7 +61,7 @@ def _finite(value: Any) -> float | None:
 
 
 class FactorBacktestStore:
-    """每日因子回测批次与标量指标的持久化服务。"""
+    """因子批量回测批次与标量指标的持久化服务。"""
 
     def __init__(self, path: str | os.PathLike[str] | None = None) -> None:
         self.path = Path(path) if path is not None else default_factor_backtest_db_path()

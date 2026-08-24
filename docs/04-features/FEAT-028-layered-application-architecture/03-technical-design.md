@@ -7,7 +7,7 @@ ResearchEngine/app/
 ├── main.py
 ├── api/routes/          # health/catalog/factor/strategy/batch
 ├── schemas/             # Pydantic DTO，仅 HTTP 边界
-├── services/            # experiment/factor/strategy/catalog/daily_factor_backtest
+├── services/            # experiment/factor/strategy/catalog/factor_backtest_batch
 ├── repositories/        # catalogs/results/factor_backtest
 ├── database/            # SQLite store 与行情访问边界
 ├── core/                # config/runtime/exceptions
@@ -38,22 +38,26 @@ Manager 的 worker 从唯一 FIFO 队列取任务；单实例配置为 `max_work
 
 - `FactorExperiment`：单因子回测；
 - `StrategyExperiment`：策略回测；
-- `DailyFactorExperiment`：每日批量中单个因子的适配器。
+- `FactorBacktestBatchExperiment`：批量回测中单个因子的适配器。
 
 实验不创建 `DataEngine` 或 Manager，Manager 创建只读 `ExperimentContext` 并注入。
 
-## 每日因子业务
+## 因子批量回测业务
 
-`DailyFactorBacktestCoordinator` 是具体业务能力，不抽象成通用 `FactorBatchService`。
+`FactorBacktestBatchCoordinator` 是具体业务能力，不抽象成通用 `FactorBatchService`。
 它负责目录扫描、批次幂等、断点续跑、重试、SQLite 进度和窗口调度。自身在协调器线程
 中等待 Manager future，不占用 Manager worker。
+
+协调器不是应用级单例。每个触发请求通过 `get_experiment_manager()` 获取共享
+`ExperimentManager` 后创建一个无跨请求状态的协调器；`FactorBacktestBatchTaskRegistry`
+只负责异步任务快照和单协调线程，批次状态仍由 SQLite 持久化。
 
 伪代码：
 
 ```text
 while 还有未完成因子:
     while pending < 2:
-        submit(DailyFactorExperiment)  # 普通 FIFO
+        submit(FactorBacktestBatchExperiment)  # 普通 FIFO
     等待一个 future 进入终态
     持久化结果并移除 pending
 ```
@@ -64,9 +68,11 @@ while 还有未完成因子:
 ## HTTP 与生命周期
 
 - `app.main` 创建 FastAPI 应用并注册 `/api` 路由；
-- lifespan 启动/关闭唯一 Manager；协调器只引用该 Manager；
-- API 通过 `app.api.dependencies` 注入 Manager/协调器；
-- 内部触发为 `POST /api/internal/factor-backtests/batches`；
+- lifespan 启动唯一 Manager；关闭时先停止并等待批量任务注册表，再关闭 Manager；
+- API 通过 `app.api.dependencies` 注入 Manager，并为当前触发请求创建协调器；
+- 内部触发为 `POST /api/internal/factor-backtest-batches`，立即返回 `202` 任务；
+- 任务查询为 `GET /api/factor-backtest-batch-tasks/{task_id}`；
+- 批次查询使用 `/api/factor-backtest-batches` 及其详情、因子和历史子路径；
 - CLI 仅用 stdlib HTTP 客户端调用该接口，不本地执行回测；
 - 不支持多 Worker、多实例；内部触发接口当前不鉴权，只允许可信内网访问。
 

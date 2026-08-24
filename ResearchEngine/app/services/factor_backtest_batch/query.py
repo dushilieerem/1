@@ -1,4 +1,4 @@
-"""每日因子回测的只读查询用例。"""
+"""因子批量回测的只读查询用例。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 from app.repositories.factor_backtest import FactorBacktestRepository
 
 
-class DailyFactorBacktestQuery:
+class FactorBacktestBatchQuery:
     """向 API 提供批次、因子明细和历史查询，不执行回测。"""
 
     def __init__(
@@ -39,4 +39,4 @@ class DailyFactorBacktestQuery:
         return self.repository.factor_history(library_name, factor_name, **filters)
 
 
-__all__ = ["DailyFactorBacktestQuery"]
+__all__ = ["FactorBacktestBatchQuery"]

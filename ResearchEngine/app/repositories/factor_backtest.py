@@ -1,4 +1,4 @@
-"""每日因子回测的 SQLite 持久化边界。"""
+"""因子批量回测的 SQLite 持久化边界。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ class FactorBacktestRepository:
         self.store = FactorBacktestStore(path)
 
     # 写入方法只做持久化边界转发；批次幂等、重试和窗口编排仍属于
-    # DailyFactorBacktestCoordinator，不下沉到通用 repository。
+    # FactorBacktestBatchCoordinator，不下沉到通用 repository。
     def get_batch_by_key(self, batch_key: str) -> dict[str, Any] | None:
         return self.store.get_batch_by_key(batch_key)
 

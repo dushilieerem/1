@@ -1,4 +1,4 @@
-"""每日因子业务自有容量为 2 的普通 FIFO 窗口验收。"""
+"""因子批量业务自有容量为 2 的普通 FIFO 窗口验收。"""
 
 from __future__ import annotations
 
@@ -7,13 +7,13 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.services.daily_factor_backtest import coordinator as daily_module
-from app.services.daily_factor_backtest.coordinator import (
-    DailyFactorBacktestProfile,
-    DailyFactorExperiment,
+from app.services.factor_backtest_batch import coordinator as batch_module
+from app.services.factor_backtest_batch.coordinator import (
+    FactorBacktestBatchProfile,
+    FactorBacktestBatchExperiment,
     FactorCatalogItem,
     FactorOutcome,
-    run_factor_batch,
+    run_factor_backtest_batch,
 )
 from app.services.experiment import Experiment, ExperimentContext
 from app.services.experiment.manager import ExperimentManager
@@ -38,8 +38,8 @@ class _InteractiveExperiment(Experiment[str]):
         return "interactive"
 
 
-def test_daily_factor_batch_owns_two_slot_fifo_window(monkeypatch, tmp_path: Path):
-    profile = DailyFactorBacktestProfile("2026-08-19")
+def test_factor_backtest_batch_owns_two_slot_fifo_window(monkeypatch, tmp_path: Path):
+    profile = FactorBacktestBatchProfile("2026-08-19")
     items = [
         FactorCatalogItem("library", f"factor_{index}", f"hash-{index}", factor=object())
         for index in range(1, 5)
@@ -65,19 +65,19 @@ def test_daily_factor_batch_owns_two_slot_fifo_window(monkeypatch, tmp_path: Pat
             third_started.set()
         return FactorOutcome(status="succeeded", observation_days=10)
 
-    monkeypatch.setattr(daily_module, "_catalog_items", lambda: (("library",), "v1", items))
+    monkeypatch.setattr(batch_module, "_catalog_items", lambda: (("library",), "v1", items))
     monkeypatch.setattr(
-        daily_module,
+        batch_module,
         "_preflight",
         lambda _profile, count, **_kwargs: {"factor_count": count},
     )
-    monkeypatch.setattr(daily_module, "_run_factor_with_retry", fake_run)
+    monkeypatch.setattr(batch_module, "_run_factor_with_retry", fake_run)
 
     manager = ExperimentManager(max_workers=2, max_queue_size=8, runtime=_Runtime())
     original_submit = manager.submit
 
     def recording_submit(experiment, *args, **kwargs):
-        if isinstance(experiment, DailyFactorExperiment):
+        if isinstance(experiment, FactorBacktestBatchExperiment):
             submitted.append(experiment.item.factor_name)
         return original_submit(experiment, *args, **kwargs)
 
@@ -88,7 +88,7 @@ def test_daily_factor_batch_owns_two_slot_fifo_window(monkeypatch, tmp_path: Pat
     def run_batch():
         try:
             result.append(
-                run_factor_batch(
+                run_factor_backtest_batch(
                     profile,
                     manager=manager,
                     db_path=tmp_path / "batch.db",

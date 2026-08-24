@@ -7,7 +7,7 @@ application:
   api_prefix: /api
   max_workers: 2
   max_queue_size: 8
-  daily_factor_batch_window: 2
+  factor_backtest_batch_window: 2
   deployment: single-instance-single-worker
 
 assets:

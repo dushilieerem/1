@@ -58,6 +58,15 @@ def test_manager_rejects_ordinary_callable():
         manager.shutdown()
 
 
+def test_manager_rejects_unknown_execution_lane():
+    manager = ExperimentManager(max_workers=1, max_queue_size=0, runtime=_Runtime())
+    try:
+        with pytest.raises(ValueError, match="未知的任务执行 lane: 'scheduled'"):
+            manager.submit(_experiment(lambda: "never"), lane="scheduled")
+    finally:
+        manager.shutdown()
+
+
 def test_manager_limits_running_tasks_and_rejects_full_queue():
     manager = ExperimentManager(max_workers=2, max_queue_size=1, runtime=_Runtime())
     release = threading.Event()

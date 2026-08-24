@@ -91,7 +91,7 @@ ResearchEngine/app/
   main.py              FastAPI 应用工厂、lifespan + CORS
   api/routes/           health/catalog/factor/strategy/batch 控制器
   schemas/              Pydantic 请求/响应模型
-  services/             实验、因子、策略和每日批量业务
+  services/             实验、因子、策略和因子批量业务
   repositories/         目录、结果和批次持久化边界
   database/             SQLite store
   quantcore/            data/factor/metric/backtest 基础设施

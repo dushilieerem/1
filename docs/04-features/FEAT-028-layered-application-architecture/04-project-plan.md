@@ -7,7 +7,8 @@
 | 迁移 QuantCore 到 `app.quantcore` | 4 | 中 | 包发现配置 | 已完成 |
 | 建立 api/schemas/services/repositories/database/core 分层 | 4 | 中 | 运行时导入分析 | 已完成 |
 | Experiment 抽象、唯一 Manager 和生命周期 | 4 | 中 | QuantCore data/context | 已完成 |
-| DailyFactorBacktestCoordinator 两槽 FIFO 窗口 | 4 | 中 | Manager、SQLite | 已完成 |
+| FactorBacktestBatchCoordinator 两槽 FIFO 窗口 | 4 | 中 | Manager、SQLite | 已完成 |
+| 独立单线程批量任务注册表与关闭顺序 | 3 | 中 | Manager、FastAPI lifespan | 已完成 |
 | 因子/策略资产和索引迁移 | 3 | 中 | catalog loader | 已完成 |
 | `/api` 路由、依赖注入和 HTTP CLI | 3 | 低 | services | 已完成 |
 | 旧目录删除、文档和 ADR | 2 | 低 | 迁移完成 | 进行中 |

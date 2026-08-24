@@ -1,8 +1,7 @@
-"""每日全量内置因子回测这一项具体业务的编排与指标摘要。"""
+"""全量内置因子批量回测业务的编排与指标摘要。"""
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import inspect
 import json
@@ -54,7 +53,7 @@ class FactorCatalogItem:
 
 
 @dataclass(frozen=True)
-class DailyFactorBacktestProfile:
+class FactorBacktestBatchProfile:
     as_of_date: str
     lookback_years: int = 10
     universe: str = "CSI_ALL"
@@ -79,17 +78,17 @@ class DailyFactorBacktestProfile:
             raise ValueError("lookback_years 必须大于 0")
         object.__setattr__(self, "as_of_date", timestamp.date().isoformat())
         if self.benchmark != "CSI300":
-            raise ValueError("每日因子批次当前只支持 CSI300 基准")
+            raise ValueError("因子批量回测当前只支持 CSI300 基准")
         if self.universe != "CSI_ALL":
-            raise ValueError("每日因子批次当前只支持 CSI_ALL 股票池")
+            raise ValueError("因子批量回测当前只支持 CSI_ALL 股票池")
         if self.portfolio_type != "long_only":
-            raise ValueError("每日因子批次当前只支持纯多头")
+            raise ValueError("因子批量回测当前只支持纯多头")
         if self.groups != 5 or self.rebalance_days != 1:
-            raise ValueError("每日因子批次固定为 5 组、每日调仓")
+            raise ValueError("因子批量回测固定为 5 组、每日调仓")
         if self.analysis_level != "core":
-            raise ValueError("每日因子批次固定使用 core 分析")
+            raise ValueError("因子批量回测固定使用 core 分析")
         if not self.filter_limit_up or not self.filter_suspended:
-            raise ValueError("每日因子批次固定开启涨停和停牌过滤")
+            raise ValueError("因子批量回测固定开启涨停和停牌过滤")
 
     @property
     def window_start(self) -> str:
@@ -211,7 +210,7 @@ def _catalog_items() -> tuple[tuple[str, ...], str, list[FactorCatalogItem]]:
 
 
 def _preflight(
-    profile: DailyFactorBacktestProfile,
+    profile: FactorBacktestBatchProfile,
     item_count: int,
     *,
     data_context=None,
@@ -271,7 +270,7 @@ def _preflight(
     }
 
 
-def _build_factor_config(profile: DailyFactorBacktestProfile):
+def _build_factor_config(profile: FactorBacktestBatchProfile):
     config = _build_config(
         commission_rate=profile.commission_rate,
         slippage_rate=profile.slippage_rate,
@@ -321,7 +320,7 @@ def _catalog_error_status(message: str) -> tuple[str, str]:
 
 
 def _run_factor_once(
-    profile: DailyFactorBacktestProfile,
+    profile: FactorBacktestBatchProfile,
     item: FactorCatalogItem,
     *,
     data_context=None,
@@ -344,7 +343,7 @@ def _run_factor_once(
         )
 
     if data_context is None:
-        raise RuntimeError("DailyFactorExperiment 必须由 ExperimentManager 提供行情上下文")
+        raise RuntimeError("FactorBacktestBatchExperiment 必须由 ExperimentManager 提供行情上下文")
     config = _build_factor_config(profile)
     experiment = FactorExperiment(
         factor=item.factor,
@@ -419,10 +418,10 @@ def _run_factor_once(
     )
 
 
-class DailyFactorExperiment(Experiment[FactorOutcome]):
-    """每日批量窗口中的单因子业务实验。"""
+class FactorBacktestBatchExperiment(Experiment[FactorOutcome]):
+    """批量回测窗口中的单因子业务实验。"""
 
-    def __init__(self, profile: DailyFactorBacktestProfile, item: FactorCatalogItem) -> None:
+    def __init__(self, profile: FactorBacktestBatchProfile, item: FactorCatalogItem) -> None:
         self.profile = profile
         self.item = item
 
@@ -442,7 +441,7 @@ def _should_skip(exc: BaseException) -> bool:
 
 
 def _run_factor_with_retry(
-    profile: DailyFactorBacktestProfile,
+    profile: FactorBacktestBatchProfile,
     item: FactorCatalogItem,
     *,
     data_context=None,
@@ -500,8 +499,8 @@ def _run_factor_with_retry(
     return FactorOutcome(status="failed", error_code="unknown", error_message="未知因子错误")
 
 
-def run_factor_batch(
-    profile: DailyFactorBacktestProfile,
+def run_factor_backtest_batch(
+    profile: FactorBacktestBatchProfile,
     *,
     manager: ExperimentManager,
     db_path: str | Path | None = None,
@@ -510,10 +509,10 @@ def run_factor_batch(
     dry_run: bool = False,
     progress_callback: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
-    """执行或续跑一个每日因子批次，并返回批次摘要。"""
+    """执行或续跑一个因子批次，并返回批次摘要。"""
 
     if batch_window != 2:
-        raise ValueError("每日批量回测窗口固定为 2")
+        raise ValueError("因子批量回测窗口固定为 2")
     repository: FactorBacktestRepository | None = None
     profile_payload = profile.to_dict()
     profile_hash = _stable_hash(profile_payload)
@@ -671,9 +670,9 @@ def run_factor_batch(
                 while True:
                     try:
                         handle = manager.submit(
-                            DailyFactorExperiment(profile, item),
+                            FactorBacktestBatchExperiment(profile, item),
                             lane="batch",
-                            metadata={"type": "daily_factor_backtest", "factor": item.factor_name},
+                            metadata={"type": "factor_backtest_batch", "factor": item.factor_name},
                         )
                         break
                     except ExperimentQueueFullError:
@@ -720,11 +719,11 @@ def run_factor_batch(
     return repository.refresh_batch_counts(batch_id, final=True)
 
 
-class DailyFactorBacktestCoordinator:
-    """每日因子回测业务用例的异步协调器。
+class FactorBacktestBatchCoordinator:
+    """因子批量回测业务用例的异步协调器。
 
     ``batch_window`` 固定为 2：协调器只向 Manager 提交两个尚未完成的
-    ``DailyFactorExperiment``，任意一个进入终态后才补充一个新的因子。
+    ``FactorBacktestBatchExperiment``，任意一个进入终态后才补充一个新的因子。
     """
 
     batch_window = 2
@@ -740,13 +739,13 @@ class DailyFactorBacktestCoordinator:
 
     def run_sync(
         self,
-        profile: DailyFactorBacktestProfile,
+        profile: FactorBacktestBatchProfile,
         *,
         force_retry: bool = False,
         dry_run: bool = False,
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> dict[str, Any]:
-        return run_factor_batch(
+        return run_factor_backtest_batch(
             profile,
             manager=self.manager,
             db_path=self.db_path,
@@ -756,30 +755,13 @@ class DailyFactorBacktestCoordinator:
             progress_callback=progress_callback,
         )
 
-    async def run(
-        self,
-        profile: DailyFactorBacktestProfile,
-        *,
-        force_retry: bool = False,
-        dry_run: bool = False,
-        progress_callback: Callable[[int, int], None] | None = None,
-    ) -> dict[str, Any]:
-        """异步运行协调器；不会占用 Manager 的回测 worker。"""
-
-        return await asyncio.to_thread(
-            self.run_sync,
-            profile,
-            force_retry=force_retry,
-            dry_run=dry_run,
-            progress_callback=progress_callback,
-        )
-
-
 __all__ = [
-    "DailyFactorBacktestProfile",
+    "FactorBacktestBatchProfile",
+    "FactorBacktestBatchExperiment",
+    "FactorBacktestBatchCoordinator",
     "FactorBatchSkip",
     "FactorCatalogItem",
     "FactorOutcome",
     "METRIC_VERSION",
-    "run_factor_batch",
+    "run_factor_backtest_batch",
 ]

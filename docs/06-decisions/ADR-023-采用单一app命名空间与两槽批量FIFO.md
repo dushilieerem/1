@@ -5,7 +5,7 @@
 ### 问题
 
 QuantCore、ResearchEngine、因子资产和策略资产原来分散在多个顶层目录，FastAPI 路由、
-实验编排和存储边界容易互相穿透。每日因子回测还需要限制业务并发，同时保证交互式
+实验编排和存储边界容易互相穿透。因子批量回测还需要限制业务并发，同时保证交互式
 回测不会被批量任务插队。
 
 ### 选择
@@ -16,12 +16,15 @@ QuantCore、ResearchEngine、因子资产和策略资产原来分散在多个顶
    FastAPI、schemas、services 或 repositories；Pydantic 只在 API 边界使用；
 4. `Experiment` 改为抽象基类，Manager 只接受具体 Experiment，并向其注入只读行情上下文；
 5. Manager 使用一个普通 FIFO 队列。`lane` 只记录元数据，不做优先级排序或插队；
-6. 每日因子回测由具体的 `DailyFactorBacktestCoordinator` 实现，不建立通用
+6. 因子批量回测由具体的 `FactorBacktestBatchCoordinator` 实现，不建立通用
    `FactorBatchService`。协调器维护自己的业务队列窗口，最多向 Manager 提交两个未完成因子；
-   一个因子进入终态后才提交下一个；
-7. 因子/策略运行时资产放在 `app.assets`，批量状态和标量指标继续通过 SQLite repository
+   一个因子进入终态后才提交下一个。协调器按触发请求创建，不作为应用级单例；
+7. `FactorBacktestBatchTaskRegistry` 使用独立单线程执行批量编排，避免把父协调任务提交到
+   两槽 Manager 后等待子任务导致死锁；应用关闭时先等待注册表，再关闭 Manager；
+8. 因子/策略运行时资产放在 `app.assets`，批量状态和标量指标继续通过 SQLite repository
    持久化，行情继续使用 QuantCore Parquet provider；
-8. 采用一次性命名切换，删除旧 examples 和旧包兼容转发；HTTP 契约切换到 `/api/v2`，
+9. 采用一次性命名切换，删除旧 examples 和旧包兼容转发；批量 HTTP 契约切换到
+   `/api/factor-backtest-batches`，
    WebApp 不在本次修改范围内。
 
 ### 备选方案

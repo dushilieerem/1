@@ -1,12 +1,15 @@
-# Technical Design：每日全量因子回测与指标仓库
+# Technical Design：因子批量回测与指标仓库
 
 ## 模块边界
 
-### `DailyFactorBacktestCoordinator`
+### `FactorBacktestBatchCoordinator`
 
-这是每日因子回测这一具体业务能力的唯一编排对象，负责目录枚举、预检、固定配置、批次键、
-批量窗口、因子重试、结果分类和断点续跑。它把每个因子封装为 `DailyFactorExperiment`，
+这是因子批量回测这一具体业务能力的编排对象，负责目录枚举、预检、固定配置、批次键、
+批量窗口、因子重试、结果分类和断点续跑。它把每个因子封装为 `FactorBacktestBatchExperiment`，
 通过唯一 `ExperimentManager` 提交，不创建 Manager 或行情引擎，也不写单次实验缓存或曲线文件。
+
+协调器由每次触发请求按需创建，不保存跨请求批次状态；幂等、进度和结果由 SQLite repository
+负责。FastAPI 应用只持有 `ExperimentManager` 和异步任务注册表，不持有批量协调器实例。
 
 协调器自己的业务窗口固定为 2。它只维护最多两个尚未进入终态的 future；消费一个 future
 并持久化结果后，才从目录取下一个因子提交。Manager 不实现 lane 优先级，只有普通 FIFO；
@@ -36,7 +39,7 @@ repository 隔离 SQLite 存储实现；store 负责建表、WAL/busy timeout、
 
 core 分组分析在已有分组收益计算旁计算 Pearson IC、Spearman RankIC 和 ICIR 汇总；
 日频序列只在内存中存在，汇总完成后随任务释放。
-每日 profile 额外开启 `is_suspended` 与 `limit_up/limit_status` 信号过滤；普通单因子 API
+批量 profile 额外开启 `is_suspended` 与 `limit_up/limit_status` 信号过滤；普通单因子 API
 不设置批处理标记，因此保持既有响应口径。批处理计算面板的结束日锁定为 `as_of_date`，
 避免重跑历史日期时读取其后的行情。
 
@@ -65,15 +68,27 @@ batch_key = hash(as_of_date, profile_hash, catalog_version, metric_version)
 指标保持现有实现语义。IC/RankIC 是每日截面 Pearson/Spearman 均值，ICIR 为
 `IC均值 / IC标准差 × sqrt(252)`。当前指标版本为 `factor-scorecard-v1`。
 
-## CLI 与 HTTP
+## 异步任务、CLI 与 HTTP
 
 CLI 必须显式提供 `--as-of`，支持 `--force-retry`、`--dry-run`，只调用
-`POST /api/internal/factor-backtests/batches`。HTTP 还提供批次列表/详情、批次因子分页
-和因子历史四个 GET 接口，支持日期、状态、库名、因子名过滤。
+`POST /api/internal/factor-backtest-batches`。提交接口由
+`FactorBacktestBatchTaskRegistry` 接收，注册表使用固定一个协调线程；协调线程执行批量
+编排，两个因子实验仍提交给共享 `ExperimentManager` 的两个 worker。批量协调器不能提交
+进 Manager，否则父任务等待子任务时会形成死锁。
+
+任务状态为 `queued/running/succeeded/failed`，内存快照保留 60 秒；相同非
+`force_retry` 请求在进程内复用 task ID，`force_retry` 创建新任务。成功后任务快照映射
+`batch_id`、`batch_url` 和批次结果；`dry_run` 成功时不创建 SQLite 批次。HTTP 还提供：
+
+- `GET /api/factor-backtest-batch-tasks/{task_id}`
+- `GET /api/factor-backtest-batches`
+- `GET /api/factor-backtest-batches/{batch_id}`
+- `GET /api/factor-backtest-batches/{batch_id}/factors`
+- `GET /api/factor-backtest-batches/factors/{library_name}/{factor_name}/history`
 
 ## 兼容与回滚
 
-现有单因子 API 和 `SQLiteStorage` 不改职责。删除任务计划入口即可停止每日批处理；保留 SQLite 文件
+现有单因子 API 和 `SQLiteStorage` 不改职责。删除外部触发入口即可停止批处理；保留 SQLite 文件
 仍可供只读接口查询。若需回滚代码，旧数据库表不会影响现有实验快照。
 
 ## 风险与缓解

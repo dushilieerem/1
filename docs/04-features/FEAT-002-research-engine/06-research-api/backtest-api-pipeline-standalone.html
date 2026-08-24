@@ -310,7 +310,7 @@
             <tr><td>访问字段</td><td><code>self.close</code>、<code>self.open</code> 等</td><td>首次访问可能触发字段读取；同一层级的后续访问走缓存。<code>self.close + self.open</code> 是真正的 DataFrame 宽表运算。</td><td><code>app/quantcore/data/providers/field_parquet_provider.py</code></td></tr>
             <tr><td>因子公式</td><td>返回日期 × 股票的 DataFrame</td><td>因子先在完整历史上计算，避免 start 之前没有 rolling/pct_change 预热数据。</td><td><code>app/services/experiment/factor.py</code></td></tr>
             <tr><td>预处理</td><td><code>winsorize_data</code> → <code>standardize_data</code></td><td>当前 method=0 仍各执行一次 <code>values.copy()</code>；即使“不处理”，也会搬运整张宽表两次。</td><td><code>app/quantcore/factor/tool.py</code></td></tr>
-            <tr><td>批量过滤分支</td><td><code>_apply_factor_batch_filters</code></td><td>单因子 API 未开启 <code>factor_batch.filters_enabled</code>，当前直接返回；每日批量才会启用停牌/涨停过滤和额外掩码。</td><td><code>app/services/experiment/factor.py</code></td></tr>
+            <tr><td>批量过滤分支</td><td><code>_apply_factor_batch_filters</code></td><td>单因子 API 未开启 <code>factor_batch.filters_enabled</code>，当前直接返回；批量回测才会启用停牌/涨停过滤和额外掩码。</td><td><code>app/services/experiment/factor.py</code></td></tr>
             <tr><td>评估裁剪</td><td><code>filter_by_date(factor_values_all, start, end)</code></td><td>只在因子完整历史计算结束后裁剪收益确认区间。</td><td><code>app/services/experiment/factor.py</code></td></tr>
           </tbody>
         </table>
@@ -460,7 +460,7 @@
           file: "ResearchEngine/app/quantcore/factor/tool.py → app/services/experiment/factor.py",
           input: "factor_values_all + ConfigManager。",
           output: "预处理后的 factor_values_all，随后裁剪为 factor_values。",
-          description: "默认 method=0 仍分别执行 values.copy()。_apply_factor_batch_filters 会被调用，但 interactive 配置没有 factor_batch.filters_enabled，因此直接返回原表；每日批次才启用停牌/涨停掩码。",
+          description: "默认 method=0 仍分别执行 values.copy()。_apply_factor_batch_filters 会被调用，但 interactive 配置没有 factor_batch.filters_enabled，因此直接返回原表；批量回测才启用停牌/涨停掩码。",
           note: "这是“数据读取完毕 → 因子值计算完毕”计时的一部分。"
         },
         {

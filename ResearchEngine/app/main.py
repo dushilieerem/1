@@ -8,19 +8,24 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
-from app.services.daily_factor_backtest import DailyFactorBacktestCoordinator
+from app.services.factor_backtest_batch import FactorBacktestBatchTaskRegistry
 from app.services.experiment.manager import ExperimentManager
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    """由 FastAPI 统一拥有 Manager 与每日批量协调器的生命周期。"""
+    """由 FastAPI 统一拥有 Manager 与批量任务注册表的生命周期。"""
 
     manager: ExperimentManager = application.state.experiment_manager
+    task_registry: FactorBacktestBatchTaskRegistry = (
+        application.state.factor_backtest_batch_task_registry
+    )
     manager.start()
     try:
         yield
     finally:
+        # 协调线程可能正在等待 Manager 的因子 worker；必须先等它退出。
+        task_registry.shutdown(wait=True)
         manager.shutdown()
 
 
@@ -33,7 +38,7 @@ def create_app() -> FastAPI:
     )
     manager = ExperimentManager(max_workers=2)
     application.state.experiment_manager = manager
-    application.state.daily_factor_backtest = DailyFactorBacktestCoordinator(manager)
+    application.state.factor_backtest_batch_task_registry = FactorBacktestBatchTaskRegistry()
     application.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],

@@ -3,7 +3,7 @@
 ## 背景
 
 原工程把核心量化引擎、投研编排、FastAPI 路由、因子资产和策略资产分散在多个顶层
-包中。随着每日因子回测、策略资产版本化和异步任务加入，旧入口容易被误用，API 也
+包中。随着因子批量回测、策略资产版本化和异步任务加入，旧入口容易被误用，API 也
 可能直接触碰行情或 SQLite 细节，增加迁移和回归成本。
 
 ## 用户价值
@@ -24,9 +24,9 @@
 
 - `ResearchEngine/app` 单一命名空间和 `app.main` 唯一 FastAPI 入口；
 - API、schemas、业务能力、repository/database、QuantCore 的固定依赖方向；
-- `Experiment` 抽象基类、Factor/Strategy/DailyFactor 三类具体实验；
+- `Experiment` 抽象基类、Factor/Strategy/FactorBacktestBatch 三类具体实验；
 - 唯一 Manager、普通 FIFO、有界容量和 FastAPI lifespan 生命周期；
-- `DailyFactorBacktestCoordinator` 自有容量为 2 的批量窗口；
+- `FactorBacktestBatchCoordinator` 自有容量为 2 的批量窗口和独立的单线程任务注册表；
 - 因子/策略资产迁移、SQLite repository 边界和 `/api` 契约；
 - 删除旧运行时包和历史教学入口。
 

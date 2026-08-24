@@ -33,7 +33,7 @@ all = [
 ]
 
 [project.scripts]
-svquant-factor-batch = "app.cli.factor_batch:main"
+svquant-factor-backtest-batch = "app.cli.factor_backtest_batch:main"
 
 [tool.setuptools.packages.find]
 # 全仓只发布 ResearchEngine/app 下的 app.* 命名空间

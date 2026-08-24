@@ -1,4 +1,4 @@
-"""每日因子回测批量路由。"""
+"""因子批量回测路由。"""
 
 from __future__ import annotations
 
@@ -10,18 +10,24 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.schemas.backtest import (
     FactorBacktestBatchListResponse,
     FactorBacktestBatchResponse,
-    FactorBacktestBatchSubmissionResponse,
+    FactorBacktestBatchTaskResponse,
+    FactorBacktestBatchTaskSubmissionResponse,
     FactorBacktestBatchTriggerRequest,
     FactorBacktestFactorListResponse,
     FactorBacktestFactorRunResponse,
     FactorBacktestHistoryResponse,
 )
-from app.services.daily_factor_backtest import (
-    DailyFactorBacktestCoordinator,
-    DailyFactorBacktestProfile,
-    DailyFactorBacktestQuery,
+from app.services.factor_backtest_batch import (
+    FactorBacktestBatchCoordinator,
+    FactorBacktestBatchProfile,
+    FactorBacktestBatchQuery,
+    FactorBacktestBatchTaskRegistry,
+    FactorBacktestBatchTaskRegistryClosedError,
 )
-from app.api.dependencies import get_daily_factor_backtest_coordinator
+from app.api.dependencies import (
+    get_factor_backtest_batch_coordinator,
+    get_factor_backtest_batch_task_registry,
+)
 
 
 router = APIRouter()
@@ -43,11 +49,11 @@ def _factor_payload(row: dict) -> dict:
     return payload
 
 
-def _query() -> DailyFactorBacktestQuery:
-    return DailyFactorBacktestQuery()
+def _query() -> FactorBacktestBatchQuery:
+    return FactorBacktestBatchQuery()
 
 
-@router.get("/factor-backtests/batches", response_model=FactorBacktestBatchListResponse)
+@router.get("/factor-backtest-batches", response_model=FactorBacktestBatchListResponse)
 def list_factor_backtest_batches(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -65,7 +71,7 @@ def list_factor_backtest_batches(
     )
 
 
-@router.get("/factor-backtests/batches/{batch_id}", response_model=FactorBacktestBatchResponse)
+@router.get("/factor-backtest-batches/{batch_id}", response_model=FactorBacktestBatchResponse)
 def get_factor_backtest_batch(batch_id: str) -> FactorBacktestBatchResponse:
     row = _query().get_batch(batch_id)
     if row is None:
@@ -73,7 +79,7 @@ def get_factor_backtest_batch(batch_id: str) -> FactorBacktestBatchResponse:
     return FactorBacktestBatchResponse.model_validate(_batch_payload(row))
 
 
-@router.get("/factor-backtests/batches/{batch_id}/factors", response_model=FactorBacktestFactorListResponse)
+@router.get("/factor-backtest-batches/{batch_id}/factors", response_model=FactorBacktestFactorListResponse)
 def list_factor_backtest_runs(
     batch_id: str,
     limit: int = Query(100, ge=1, le=1000),
@@ -98,7 +104,7 @@ def list_factor_backtest_runs(
     )
 
 
-@router.get("/factor-backtests/factors/{library_name}/{factor_name}/history", response_model=FactorBacktestHistoryResponse)
+@router.get("/factor-backtest-batches/factors/{library_name}/{factor_name}/history", response_model=FactorBacktestHistoryResponse)
 def factor_backtest_history(
     library_name: str,
     factor_name: str,
@@ -112,24 +118,52 @@ def factor_backtest_history(
 
 
 @router.post(
-    "/internal/factor-backtests/batches",
-    response_model=FactorBacktestBatchSubmissionResponse,
+    "/internal/factor-backtest-batches",
+    response_model=FactorBacktestBatchTaskSubmissionResponse,
     status_code=202,
 )
 async def trigger_factor_backtest_batch(
     req: FactorBacktestBatchTriggerRequest,
-    coordinator: DailyFactorBacktestCoordinator = Depends(
-        get_daily_factor_backtest_coordinator
+    coordinator: FactorBacktestBatchCoordinator = Depends(
+        get_factor_backtest_batch_coordinator
     ),
-) -> FactorBacktestBatchSubmissionResponse:
-    profile = DailyFactorBacktestProfile(as_of_date=req.as_of_date)
-    result = await coordinator.run(profile, force_retry=req.force_retry, dry_run=req.dry_run)
-    batch_id = result.get("id") if isinstance(result, dict) else None
-    return FactorBacktestBatchSubmissionResponse(
-        batch_id=str(batch_id) if batch_id else None,
-        status=str(result.get("status", "accepted")) if isinstance(result, dict) else "accepted",
-        query_url=f"/api/factor-backtests/batches/{batch_id}" if batch_id else None,
+    task_registry: FactorBacktestBatchTaskRegistry = Depends(
+        get_factor_backtest_batch_task_registry
+    ),
+) -> FactorBacktestBatchTaskSubmissionResponse:
+    profile = FactorBacktestBatchProfile(as_of_date=req.as_of_date)
+    try:
+        task = task_registry.submit(
+            coordinator,
+            profile,
+            force_retry=req.force_retry,
+            dry_run=req.dry_run,
+        )
+    except FactorBacktestBatchTaskRegistryClosedError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    task_id = str(task["task_id"])
+    return FactorBacktestBatchTaskSubmissionResponse(
+        task_id=task_id,
+        status=task["status"],
+        poll_url=f"/api/factor-backtest-batch-tasks/{task_id}",
+        created_at=float(task["created_at"]),
     )
+
+
+@router.get(
+    "/factor-backtest-batch-tasks/{task_id}",
+    response_model=FactorBacktestBatchTaskResponse,
+)
+def get_factor_backtest_batch_task(
+    task_id: str,
+    task_registry: FactorBacktestBatchTaskRegistry = Depends(
+        get_factor_backtest_batch_task_registry
+    ),
+) -> FactorBacktestBatchTaskResponse:
+    task = task_registry.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"未找到因子批量回测任务: {task_id}")
+    return FactorBacktestBatchTaskResponse.model_validate(task)
 
 
 __all__ = ["router"]

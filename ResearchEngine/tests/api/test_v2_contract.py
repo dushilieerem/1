@@ -3,18 +3,19 @@
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.services.daily_factor_backtest import DailyFactorBacktestCoordinator
+from app.services.factor_backtest_batch import FactorBacktestBatchTaskRegistry
 from app.services.experiment.manager import ExperimentManager
 
 
-def test_app_main_owns_single_manager_and_coordinator_lifecycle():
+def test_app_main_owns_manager_and_batch_task_registry_lifecycle():
     application = create_app()
     with TestClient(application) as client:
         assert isinstance(application.state.experiment_manager, ExperimentManager)
         assert isinstance(
-            application.state.daily_factor_backtest,
-            DailyFactorBacktestCoordinator,
+            application.state.factor_backtest_batch_task_registry,
+            FactorBacktestBatchTaskRegistry,
         )
+        assert not hasattr(application.state, "daily_factor_backtest")
         response = client.get("/api/health")
         assert response.status_code == 200
         assert response.json()["status"] == "ok"

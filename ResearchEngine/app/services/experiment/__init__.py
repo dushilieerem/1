@@ -4,6 +4,7 @@ from app.services.experiment.base import Experiment, ExperimentContext
 from app.services.experiment.factor import FactorExperiment
 from app.services.experiment.strategy import StrategyExperiment
 from app.services.experiment.manager import (
+    ExecutionLane,
     ExperimentHandle,
     ExperimentManager,
     ExperimentManagerClosedError,
@@ -13,6 +14,7 @@ from app.services.experiment.manager import (
 )
 
 __all__ = [
+    "ExecutionLane",
     "Experiment",
     "ExperimentContext",
     "FactorExperiment",

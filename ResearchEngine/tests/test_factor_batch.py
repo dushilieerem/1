@@ -1,4 +1,4 @@
-"""FEAT-027 每日全量因子回测：仓库、编排和只读查询测试。"""
+"""FEAT-027 因子批量回测：仓库、编排和只读查询测试。"""
 
 from __future__ import annotations
 
@@ -16,14 +16,14 @@ from app.database.factor_backtest_store import (
     FactorBacktestStore,
     default_factor_backtest_db_path,
 )
-from app.cli.factor_batch import main
-from app.services.daily_factor_backtest.coordinator import (
-    DailyFactorBacktestProfile,
+from app.cli.factor_backtest_batch import main
+from app.services.factor_backtest_batch.coordinator import (
+    FactorBacktestBatchProfile,
     FactorCatalogItem,
     FactorOutcome,
     _run_factor_with_retry,
     _run_factor_once,
-    run_factor_batch,
+    run_factor_backtest_batch,
 )
 from app.services.experiment.manager import ExperimentManager
 
@@ -88,7 +88,7 @@ def test_default_factor_backtest_db_path_is_factor_database(monkeypatch):
 
 
 def test_profile_uses_rolling_calendar_years_and_fixed_defaults():
-    profile = DailyFactorBacktestProfile("2026-08-19")
+    profile = FactorBacktestBatchProfile("2026-08-19")
 
     assert profile.window_start == "2016-08-19"
     assert profile.window_end == "2026-08-19"
@@ -178,7 +178,7 @@ def test_store_round_trip_persists_six_quantile_rows_and_predictive_metrics(tmp_
 
 
 def test_batch_is_idempotent_and_force_retry_supersedes(monkeypatch, tmp_path: Path):
-    profile = DailyFactorBacktestProfile("2026-08-19")
+    profile = FactorBacktestBatchProfile("2026-08-19")
     items = [
         FactorCatalogItem("lib", "ok", "hash-ok", factor=object()),
         FactorCatalogItem("lib", "bad", "hash-bad", factor=object()),
@@ -190,15 +190,15 @@ def test_batch_is_idempotent_and_force_retry_supersedes(monkeypatch, tmp_path: P
         "short": FactorOutcome(status="succeeded", observation_days=3, sample_quality="short_history"),
     }
     monkeypatch.setattr(
-        "app.services.daily_factor_backtest.coordinator._catalog_items",
+        "app.services.factor_backtest_batch.coordinator._catalog_items",
         lambda: (("lib",), "catalog-v1", items),
     )
     monkeypatch.setattr(
-        "app.services.daily_factor_backtest.coordinator._preflight",
+        "app.services.factor_backtest_batch.coordinator._preflight",
         lambda _profile, count, **_kwargs: {"factor_count": count},
     )
     monkeypatch.setattr(
-        "app.services.daily_factor_backtest.coordinator._run_factor_with_retry",
+        "app.services.factor_backtest_batch.coordinator._run_factor_with_retry",
         lambda _profile, item, **_kwargs: outcomes[item.factor_name],
     )
 
@@ -209,7 +209,7 @@ def test_batch_is_idempotent_and_force_retry_supersedes(monkeypatch, tmp_path: P
         runtime=_StaticRuntime(tmp_path),
     )
     try:
-        first = run_factor_batch(
+        first = run_factor_backtest_batch(
             profile,
             manager=manager,
             db_path=tmp_path / "batch.db",
@@ -223,10 +223,10 @@ def test_batch_is_idempotent_and_force_retry_supersedes(monkeypatch, tmp_path: P
         assert progress[-1] == (3, 3)
         assert [completed for completed, _ in progress] == [0, 1, 2, 3]
 
-        repeated = run_factor_batch(profile, manager=manager, db_path=tmp_path / "batch.db")
+        repeated = run_factor_backtest_batch(profile, manager=manager, db_path=tmp_path / "batch.db")
         assert repeated["id"] == first["id"]
 
-        forced = run_factor_batch(
+        forced = run_factor_backtest_batch(
             profile,
             manager=manager,
             db_path=tmp_path / "batch.db",
@@ -249,7 +249,7 @@ def test_cli_wires_progress_to_stderr(monkeypatch, capsys):
             return False
 
         def read(self):
-            return b'{"batch_id":"batch-1","status":"running"}'
+            return b'{"task_id":"task-1","status":"queued","poll_url":"/api/factor-backtest-batch-tasks/task-1","created_at":1.0}'
 
     captured_request = {}
 
@@ -258,27 +258,70 @@ def test_cli_wires_progress_to_stderr(monkeypatch, capsys):
         captured_request["timeout"] = timeout
         return FakeResponse()
 
-    monkeypatch.setattr("app.cli.factor_batch.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("app.cli.factor_backtest_batch.urllib.request.urlopen", fake_urlopen)
 
     assert main(["run", "--as-of", "2026-08-19", "--dry-run"]) == 0
     captured = capsys.readouterr()
-    assert '"batch_id":"batch-1"' in captured.out
+    assert '"task_id": "task-1"' in captured.out
     assert captured_request["request"].full_url.endswith(
-        "/api/internal/factor-backtests/batches"
+        "/api/internal/factor-backtest-batches"
     )
     assert '"dry_run": true' in captured_request["request"].data.decode()
 
 
+def test_cli_wait_polls_until_task_terminal(monkeypatch, capsys):
+    class FakeResponse:
+        def __init__(self, body: bytes, status: int = 200):
+            self.body = body
+            self.status = status
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return self.body
+
+    responses = iter(
+        [
+            FakeResponse(
+                b'{"task_id":"task-1","status":"queued","poll_url":"/api/factor-backtest-batch-tasks/task-1","created_at":1.0}',
+                202,
+            ),
+            FakeResponse(b'{"task_id":"task-1","status":"running"}'),
+            FakeResponse(
+                b'{"task_id":"task-1","status":"succeeded","batch_id":"batch-1"}'
+            ),
+        ]
+    )
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        requests.append(request)
+        return next(responses)
+
+    monkeypatch.setattr("app.cli.factor_backtest_batch.urllib.request.urlopen", fake_urlopen)
+
+    assert main(["run", "--as-of", "2026-08-19", "--wait", "--poll-interval", "0"]) == 0
+    captured = capsys.readouterr()
+    assert '"status": "succeeded"' in captured.out
+    assert requests[0].method == "POST"
+    assert requests[1].method == "GET"
+    assert requests[1].full_url.endswith("/api/factor-backtest-batch-tasks/task-1")
+
+
 def test_index_or_preflight_failure_is_recorded_as_failed_batch(monkeypatch, tmp_path: Path):
-    profile = DailyFactorBacktestProfile("2026-08-19")
+    profile = FactorBacktestBatchProfile("2026-08-19")
     monkeypatch.setattr(
-        "app.services.daily_factor_backtest.coordinator._catalog_items",
+        "app.services.factor_backtest_batch.coordinator._catalog_items",
         lambda: (_ for _ in ()).throw(ValueError("index is invalid")),
     )
 
     manager = ExperimentManager(max_workers=1, max_queue_size=0, runtime=_StaticRuntime(tmp_path))
     try:
-        result = run_factor_batch(profile, manager=manager, db_path=tmp_path / "failed.db")
+        result = run_factor_backtest_batch(profile, manager=manager, db_path=tmp_path / "failed.db")
         assert result["status"] == "failed"
         assert result["error_code"] == "preflight_error"
         assert "index is invalid" in result["error_message"]
@@ -287,7 +330,7 @@ def test_index_or_preflight_failure_is_recorded_as_failed_batch(monkeypatch, tmp
 
 
 def test_factor_retry_classifies_incompatible_without_retry_and_runtime_twice(monkeypatch):
-    profile = DailyFactorBacktestProfile("2026-08-19")
+    profile = FactorBacktestBatchProfile("2026-08-19")
     item = FactorCatalogItem("lib", "factor", "hash", factor=object())
     calls = {"count": 0}
 
@@ -295,7 +338,7 @@ def test_factor_retry_classifies_incompatible_without_retry_and_runtime_twice(mo
         calls["count"] += 1
         raise ValueError("参数不兼容")
 
-    monkeypatch.setattr("app.services.daily_factor_backtest.coordinator._run_factor_once", incompatible)
+    monkeypatch.setattr("app.services.factor_backtest_batch.coordinator._run_factor_once", incompatible)
     skipped = _run_factor_with_retry(profile, item)
     assert skipped.status == "skipped"
     assert skipped.retry_count == 0
@@ -305,7 +348,7 @@ def test_factor_retry_classifies_incompatible_without_retry_and_runtime_twice(mo
         calls["count"] += 1
         raise RuntimeError("temporary failure")
 
-    monkeypatch.setattr("app.services.daily_factor_backtest.coordinator._run_factor_once", runtime)
+    monkeypatch.setattr("app.services.factor_backtest_batch.coordinator._run_factor_once", runtime)
     failed = _run_factor_with_retry(profile, item)
     assert failed.status == "failed"
     assert failed.retry_count == 1
@@ -336,13 +379,13 @@ def test_run_factor_once_maps_six_metrics_and_short_history(monkeypatch):
         def run(self, _context):
             return fake_result
 
-    monkeypatch.setattr("app.services.daily_factor_backtest.coordinator.FactorExperiment", FakeExperiment)
+    monkeypatch.setattr("app.services.factor_backtest_batch.coordinator.FactorExperiment", FakeExperiment)
     monkeypatch.setattr(
-        "app.services.daily_factor_backtest.coordinator._load_benchmark_equity",
+        "app.services.factor_backtest_batch.coordinator._load_benchmark_equity",
         lambda _benchmark, index, **_kwargs: pd.Series(1.0, index=index),
     )
     monkeypatch.setattr(
-        "app.services.daily_factor_backtest.coordinator._compute_quantile_metrics",
+        "app.services.factor_backtest_batch.coordinator._compute_quantile_metrics",
         lambda *_args, **_kwargs: [
             {"quantile": name, "annual_return": 0.1}
             for name in ("Q1", "Q2", "Q3", "Q4", "Q5", "benchmark")
@@ -350,7 +393,7 @@ def test_run_factor_once_maps_six_metrics_and_short_history(monkeypatch):
     )
 
     outcome = _run_factor_once(
-        DailyFactorBacktestProfile("2026-08-19"),
+        FactorBacktestBatchProfile("2026-08-19"),
         FactorCatalogItem("lib", "factor", "hash", factor=object()),
         data_context=SimpleNamespace(data_engine=SimpleNamespace()),
     )
@@ -369,12 +412,12 @@ def test_read_only_http_queries_support_filters_and_history(monkeypatch, tmp_pat
 
     # 不使用全局 app 的 lifespan context：它会关闭既有 API 测试共享的 Manager。
     client = TestClient(app)
-    batches = client.get("/api/factor-backtests/batches", params={"status": "completed"})
+    batches = client.get("/api/factor-backtest-batches", params={"status": "completed"})
     factors = client.get(
-        f"/api/factor-backtests/batches/{batch_id}/factors",
+        f"/api/factor-backtest-batches/{batch_id}/factors",
         params={"status": "succeeded", "limit": 1},
     )
-    history = client.get("/api/factor-backtests/factors/test_library/test_factor/history")
+    history = client.get("/api/factor-backtest-batches/factors/test_library/test_factor/history")
 
     assert batches.status_code == 200
     assert batches.json()["batches"][0]["id"] == batch_id

@@ -151,5 +151,5 @@ export function areaGradient(hex: string, alphaTop = 0.28) {
 }
 
 export function chartCardClass() {
-  return "overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-br from-sky-50/40 via-white to-amber-50/30 p-5 shadow-sm";
+  return "rounded-2xl border border-slate-200/90 bg-gradient-to-br from-sky-50/40 via-white to-amber-50/30 p-5 shadow-sm";
 }

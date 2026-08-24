@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
-"""智能补算：只重跑「成功但无 Q1」或「已知坏因子/有 error」的行。
+"""智能补算：只重跑「成功但无 Q1」或「瞬时失败 / 已知可修因子」。
 
-比整组 82 因子全刷快很多。修代码后建议先停掉旧的整组 backfill，再跑本脚本。
+「数据不可用」因子不调 RE，只靠 mark_unavailable_factors / index.yaml 标记，不编造。
 
 用法:
   conda activate SVQuant
-  cd /d E:\\quant-lab\\SVQuant\\backend
+  cd /d E:\\quant-lab\\SV\\SVQuant\\WebApp\\backend
+  python scripts/mark_unavailable_factors.py
   python scripts/backfill_panel_smart.py
 """
 from __future__ import annotations
@@ -18,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.daily_dashboard_refresh import MATRIX_24, log  # noqa: E402
-from services import dashboard_store as ds  # noqa: E402
+from services.factor import dashboard_store as ds  # noqa: E402
 
 # 已修代码、可重算的因子（不含「数据不可用」——那些只标记不编造）
 FIXED_NAMES = [
@@ -42,11 +43,35 @@ UNAVAILABLE_SKIP = {
 }
 
 
+def _is_transient_error(err: str | None) -> bool:
+    e = (err or "").strip()
+    if not e:
+        return False
+    if "数据不可用" in e:
+        return False
+    keys = (
+        "timed out",
+        "timeout",
+        "urlopen",
+        "WinError",
+        "10051",
+        "10054",
+        "10061",
+        "连接",
+        "断开",
+        "Remote",
+        "502",
+        "503",
+        "504",
+    )
+    return any(k.lower() in e.lower() if k.isascii() else k in e for k in keys)
+
+
 def names_needed(universe: str, period: str, filter_limit_up: bool) -> list[str]:
     conn = sqlite3.connect(ds.DB_PATH)
     rows = conn.execute(
         """
-        SELECT factor_name
+        SELECT factor_name, error, q1_return
         FROM factor_dashboard_metrics
         WHERE universe = ?
           AND period = ?
@@ -54,29 +79,35 @@ def names_needed(universe: str, period: str, filter_limit_up: bool) -> list[str]
           AND filter_suspended = 1
           AND rules_version = ?
           AND factor_name != 'EDIT_BEFORE'
-          AND (
-                (error IS NOT NULL AND error != '')
-             OR ((error IS NULL OR error = '') AND q1_return IS NULL)
-             OR factor_name IN ({placeholders})
-          )
         ORDER BY 1
-        """.format(placeholders=",".join("?" * len(FIXED_NAMES))),
+        """,
         [
             universe,
             period,
             1 if filter_limit_up else 0,
             ds.RULES_VERSION,
-            *FIXED_NAMES,
         ],
     ).fetchall()
     conn.close()
-    if not rows:
-        return [
-            f["name"]
-            for f in ds.load_factor_index()
-            if not f.get("unavailable") and f["name"] not in UNAVAILABLE_SKIP
-        ]
-    return [r[0] for r in rows if r[0] not in UNAVAILABLE_SKIP]
+
+    needed: list[str] = []
+    seen: set[str] = set()
+    for name, err, q1 in rows:
+        if name in UNAVAILABLE_SKIP:
+            continue
+        # 仅：缺 Q1 / 瞬时网络失败 / 可修因子且当前仍失败
+        if (err is None or err == "") and q1 is None:
+            pick = True
+        elif _is_transient_error(err):
+            pick = True
+        elif name in FIXED_NAMES and err:
+            pick = True
+        else:
+            pick = False
+        if pick and name not in seen:
+            seen.add(name)
+            needed.append(name)
+    return needed
 
 
 def main() -> None:
@@ -86,9 +117,16 @@ def main() -> None:
         if names:
             plan.append((u, p, f, names))
 
-    log(f"smart backfill combos={len(plan)}")
+    log(f"smart backfill combos={len(plan)} db={ds.DB_PATH}")
     for u, p, f, names in plan:
-        log(f"  {u} {p} filter_up={f} names={len(names)}")
+        log(
+            f"  {u} {p} filter_up={f} names={len(names)} -> "
+            f"{','.join(names[:12])}{'…' if len(names) > 12 else ''}"
+        )
+
+    if not plan:
+        log("nothing to retry (miss_q1=0 and no transient errors)")
+        raise SystemExit(0)
 
     failed = 0
     for i, (u, p, f, names) in enumerate(plan, 1):

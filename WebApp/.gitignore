@@ -15,12 +15,14 @@ backend/.env
 
 # 运行产物 / 缓存（面板 SQLite、日志、批跑）
 backend/output/
+backend/data/
 *.sqlite
 *.sqlite-journal
 *.log
 
-# 本机笔记文档（不入库；接口说明在 backend/factor/）
-docs/
+# 产品文档在 WebApp/docs/（打勾表、社区说明、截图）— 需要入库，勿忽略
+# 本机临时笔记请放 WebApp/_notes/（不入库）
+_notes/
 
 # 系统与编辑器
 .DS_Store

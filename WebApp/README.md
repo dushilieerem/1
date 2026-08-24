@@ -38,19 +38,26 @@ python scripts/init_community_db.py
 
 ## 启动（自己部署）
 
+更完整说明（含 **试用口 9532 / 端口占用**）：见 [`docs/启动与试用口9532.md`](./docs/启动与试用口9532.md)。
+
 ```powershell
 # 终端 1 — 后端
 cd backend
 conda activate SVQuant
 python -u api_server.py
 
-# 终端 2 — 前端
+# 终端 2 — 开发前端 :9530
 cd frontend
 npm install
 npm run dev
+
+# 终端 3 — 试用前端 :9532（可选）
+cd frontend
+npm run build:dist
+npm run preview:stable
 ```
 
-- 本机：http://127.0.0.1:9530 · API http://127.0.0.1:8766  
+- 本机开发：http://127.0.0.1:9530 · API http://127.0.0.1:8766 · 试用 http://127.0.0.1:9532  
 - 自检：`curl http://127.0.0.1:8766/api/health` · `curl http://192.168.3.64:9527/api/health`
 
 ## 说明

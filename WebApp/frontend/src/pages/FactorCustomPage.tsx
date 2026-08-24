@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, FlaskConical, Play, Sparkles } from "lucide-react";
 import {
   clearFactorCache,
@@ -7,8 +7,21 @@ import {
   extractMethod,
   loadFactors,
   loadLibrarySource,
+  toLogicalMethodBody,
 } from "@/lib/factorCatalog";
 import { authHeaders, getStoredUser } from "@/lib/auth";
+import { openOrCreateForFactor, createDetectProjectForClone, openDetectPlaceholderTab, navigateDetectTab, periodToStartEnd } from "@/lib/detectStore";
+import { ygBacktestFactor } from "@/lib/ygApi";
+import { FactorCodeEditor } from "@/components/FactorCodeEditor";
+
+export type CommunityCloneState = {
+  communityClone?: boolean;
+  postId?: number;
+  title?: string;
+  body?: string;
+  name?: string;
+  description?: string;
+};
 
 function wrapFullDef(name: string, desc: string, bodyLines: string): string {
   const indented = bodyLines
@@ -78,20 +91,39 @@ type TrialStats = {
   turnover?: number | null;
 };
 
+function numOrNull(x: unknown): number | null {
+  if (x == null) return null;
+  const v = Number(x);
+  return Number.isFinite(v) ? v : null;
+}
+
 export function FactorCustomPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const communityState = (location.state || {}) as CommunityCloneState;
+  const fromCommunity = Boolean(communityState.communityClone);
   const { name: routeName } = useParams<{ name?: string }>();
   const isEdit = Boolean(routeName && routeName !== "new");
   const editName = isEdit ? decodeURIComponent(routeName!) : "";
 
-  const [name, setName] = useState("RET_5D_DEMO");
-  const [description, setDescription] = useState("5日收益示意");
-  const [body, setBody] = useState(DEFAULT_CODE);
+  const [name, setName] = useState(
+    fromCommunity && communityState.name ? communityState.name : "RET_5D_DEMO",
+  );
+  const [description, setDescription] = useState(
+    fromCommunity && communityState.description
+      ? communityState.description
+      : "5日收益示意",
+  );
+  const [body, setBody] = useState(
+    fromCommunity && communityState.body ? communityState.body : DEFAULT_CODE,
+  );
   const [tab, setTab] = useState<(typeof MODE_TABS)[number]["id"]>("free");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(isEdit);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [savedName, setSavedName] = useState<string | null>(null);
+  const [detectBusy, setDetectBusy] = useState(false);
 
   const [trialUniverse, setTrialUniverse] = useState("CSI300");
   const [trialPeriod, setTrialPeriod] = useState("3m");
@@ -126,10 +158,11 @@ export function FactorCustomPage() {
         if (!meta) throw new Error(`未找到自定义因子：${editName}`);
         const src = await loadLibrarySource(meta.libraryFile);
         const method = extractMethod(src, meta.methodName || editName);
+        const logical = toLogicalMethodBody(method.trim() || DEFAULT_CODE, editName);
         if (cancelled) return;
         setName(editName);
         setDescription(meta.description || meta.explain || editName);
-        setBody(method.trim() || DEFAULT_CODE);
+        setBody(logical);
         setTab("free");
         setTestedBody(null);
         setTestedDesc(null);
@@ -205,20 +238,42 @@ export function FactorCustomPage() {
     setTrialErr(null);
     setErr(null);
     try {
-      const res = await fetch("/api/factor/custom/trial", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
-          body: body.trim(),
-          name: name.trim(),
-          universe: trialUniverse,
-          period: trialPeriod,
-        }),
+      const code = body.trim();
+      const factorName = name.trim();
+      const { start, end } = periodToStartEnd(trialPeriod);
+      // 与因子检测「进行检测」同一条 RE 接口；默认 core 更快
+      const res = await ygBacktestFactor({
+        factor_code: code,
+        factor_name: factorName,
+        portfolio_type: "long_short",
+        universe: trialUniverse,
+        start,
+        end,
+        filter_limit_up: true,
+        filter_suspended: true,
+        benchmark: trialUniverse,
+        groups: 5,
+        rebalance_days: 20,
+        commission_rate: 0.0003,
+        stamp_tax: 0.001,
+        slippage_rate: 0.001,
+        analysis_level: "core",
       });
-      const j = await res.json();
-      if (!res.ok || j.error) throw new Error(j.error || `HTTP ${res.status}`);
-      setTrialStats(j.stats || null);
-      setTestedBody(String(j.body || body).trim());
+      if (res.error != null && String(res.error).trim() !== "") {
+        throw new Error(String(res.error));
+      }
+      // 仅以 RE 返回 error===null 为通过（见 06-research-api.md）；不再加额外指标判断
+      const metrics = res.metrics || {};
+      const fa = res.factor_analysis || {};
+      setTrialStats({
+        ic: numOrNull(metrics.ic) ?? numOrNull(fa.ic_mean),
+        rank_ic: numOrNull(metrics.rank_ic) ?? numOrNull(fa.rank_ic_mean),
+        sharpe: numOrNull(metrics.sharpe),
+        annual_return: numOrNull(metrics.annual_return),
+        max_drawdown: numOrNull(metrics.max_drawdown),
+        turnover: numOrNull(metrics.turnover),
+      });
+      setTestedBody(code);
       setTestedDesc(description.trim());
     } catch (e) {
       setTrialErr(e instanceof Error ? e.message : String(e));
@@ -258,8 +313,13 @@ export function FactorCustomPage() {
       const j = (await res.json()) as { ok?: boolean; error?: string; name?: string };
       if (!res.ok || j.error) throw new Error(j.error || `HTTP ${res.status}`);
       clearFactorCache();
-      setMsg(isEdit ? `已更新：${j.name}` : `已写入因子库：${j.name}`);
-      setTimeout(() => navigate("/factor/library"), 600);
+      const saved = j.name || name.trim();
+      setMsg(isEdit ? `已更新：${saved}` : `已写入自定义因子库：${saved}`);
+      if (fromCommunity && !isEdit) {
+        setSavedName(saved);
+      } else {
+        setTimeout(() => navigate("/factor/library"), 600);
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -267,21 +327,50 @@ export function FactorCustomPage() {
     }
   };
 
+  const goDetect = async () => {
+    const factorName = savedName || name.trim();
+    if (!factorName) return;
+    setDetectBusy(true);
+    setErr(null);
+    const tab = openDetectPlaceholderTab();
+    try {
+      const title = description.trim() || factorName;
+      const p = fromCommunity
+        ? await createDetectProjectForClone(factorName, title)
+        : await openOrCreateForFactor(factorName, title);
+      navigateDetectTab(tab, p.id, p);
+    } catch (e) {
+      try {
+        tab?.close();
+      } catch {
+        /* ignore */
+      }
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDetectBusy(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-violet-50/80 via-white to-rose-50/40">
       <div className="mx-auto max-w-[1280px] px-6 py-8">
         <Link
-          to="/factor/library"
+          to={fromCommunity && communityState.postId
+            ? `/community/post/${communityState.postId}`
+            : "/factor/library"}
           className="mb-4 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800"
         >
-          <ArrowLeft className="h-3.5 w-3.5" /> 因子库 / {isEdit ? "编辑自定义因子" : "新增自定义因子"}
+          <ArrowLeft className="h-3.5 w-3.5" />{" "}
+          {fromCommunity
+            ? "社区 / 社区自定义因子"
+            : `因子库 / ${isEdit ? "编辑自定义因子" : "新增自定义因子"}`}
         </Link>
 
         {loading ? (
           <p className="text-sm text-slate-500">加载中…</p>
         ) : (
-          <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-            <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur">
+          <div className="grid min-w-0 gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+            <section className="min-w-0 rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur">
               <div className="mb-5 flex flex-wrap gap-2">
                 {MODE_TABS.map((m) => (
                   <button
@@ -302,6 +391,9 @@ export function FactorCustomPage() {
               <div className="mb-4 grid gap-3 sm:grid-cols-2">
                 <label className="block text-xs font-medium text-slate-500">
                   因子代码
+                  {isEdit && (
+                    <span className="ml-1 font-normal text-slate-400">（入库后不可改）</span>
+                  )}
                   <input
                     value={name}
                     disabled={isEdit}
@@ -321,7 +413,7 @@ export function FactorCustomPage() {
                       setDescription(e.target.value);
                       setTestedDesc(null);
                     }}
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm outline-none ring-violet-200 focus:ring-2"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none ring-violet-200 focus:ring-2"
                   />
                 </label>
               </div>
@@ -349,17 +441,14 @@ export function FactorCustomPage() {
 
               <label className="block text-xs font-medium text-slate-500">
                 完整函数（须含 def，函数名与因子代码一致）
-                <textarea
+                <FactorCodeEditor
                   value={body}
-                  onChange={(e) => {
-                    setBody(e.target.value);
+                  onChange={(v) => {
+                    setBody(v);
                     setTestedBody(null);
                     setTestedDesc(null);
                     setTrialErr(null);
                   }}
-                  rows={12}
-                  spellCheck={false}
-                  className="mt-1 w-full rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white px-3 py-3 font-mono text-sm outline-none ring-violet-200 focus:ring-2"
                 />
               </label>
               {nameMismatchHint && <p className="mt-2 text-xs text-amber-700">{nameMismatchHint}</p>}
@@ -368,7 +457,7 @@ export function FactorCustomPage() {
               )}
             </section>
 
-            <section className="flex flex-col gap-4">
+            <section className="flex min-w-0 flex-col gap-4">
               <div className="rounded-3xl border border-violet-100 bg-gradient-to-br from-violet-50 to-white p-5 shadow-sm">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -389,11 +478,16 @@ export function FactorCustomPage() {
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   <select
                     value={trialUniverse}
-                    onChange={(e) => setTrialUniverse(e.target.value)}
+                    onChange={(e) => {
+                      setTrialUniverse(e.target.value);
+                      setTestedBody(null);
+                      setTestedDesc(null);
+                    }}
                     className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs"
                   >
                     <option value="CSI300">沪深300</option>
                     <option value="CSI500">中证500</option>
+                    <option value="CSI800">中证800</option>
                     <option value="CSI1000">中证1000</option>
                     <option value="SSE50">上证50</option>
                   </select>
@@ -405,7 +499,11 @@ export function FactorCustomPage() {
                     <button
                       key={d.v}
                       type="button"
-                      onClick={() => setTrialPeriod(d.v)}
+                      onClick={() => {
+                        setTrialPeriod(d.v);
+                        setTestedBody(null);
+                        setTestedDesc(null);
+                      }}
                       className={`h-8 rounded-lg px-2.5 text-xs font-semibold ${
                         trialPeriod === d.v
                           ? "bg-slate-900 text-white"
@@ -416,11 +514,6 @@ export function FactorCustomPage() {
                     </button>
                   ))}
                 </div>
-                {isEdit && (
-                  <p className="mb-2 text-[11px] text-slate-500">
-                    修改后须重新检测通过再保存；直接返回不会改动库里的原公式。
-                  </p>
-                )}
                 {trialErr && <p className="mb-2 text-xs text-red-600">{trialErr}</p>}
                 {trialPassed && (
                   <p className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
@@ -445,41 +538,58 @@ export function FactorCustomPage() {
                 )}
               </div>
 
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="mb-3 flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-rose-500" />
                   <h2 className="text-sm font-bold text-slate-900">公式预览</h2>
                 </div>
-                <pre className="overflow-x-auto rounded-2xl bg-slate-900 p-4 font-mono text-[12px] leading-relaxed text-rose-100">
+                <pre className="max-h-72 max-w-full overflow-auto rounded-2xl bg-slate-900 p-4 font-mono text-[12px] leading-relaxed whitespace-pre text-rose-100">
                   {preview || "# …"}
                 </pre>
               </div>
 
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <p className="text-xs text-slate-500">
-                  {isEdit ? "须重新检测通过后再保存到因子库。" : "须试算通过后再提交到因子库。"}
+                  {fromCommunity
+                    ? "社区克隆：试算通过后写入你的自定义因子库，再可跳转因子检测（点检测后才保存检测记录）。"
+                    : isEdit
+                      ? "须重新检测通过后再保存到因子库。"
+                      : "须试算通过后再提交到因子库。"}
                 </p>
                 {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
                 {msg && <p className="mt-2 text-sm text-emerald-600">{msg}</p>}
-                <button
-                  type="button"
-                  disabled={busy || !name.trim() || !body.trim() || !trialPassed}
-                  onClick={() => void onSubmit()}
-                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-                >
-                  <Play className="h-4 w-4" />
-                  {busy
-                    ? isEdit
-                      ? "保存中…"
-                      : "提交中…"
-                    : trialPassed
+                {!savedName && (
+                  <button
+                    type="button"
+                    disabled={busy || !name.trim() || !body.trim() || !trialPassed}
+                    onClick={() => void onSubmit()}
+                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                  >
+                    <Play className="h-4 w-4" />
+                    {busy
                       ? isEdit
-                        ? "保存到因子库"
-                        : "提交到因子库"
-                      : isEdit
-                        ? "请先重新检测通过"
-                        : "请先试算通过"}
-                </button>
+                        ? "保存中…"
+                        : "提交中…"
+                      : trialPassed
+                        ? isEdit
+                          ? "保存到因子库"
+                          : "提交到自定义因子库"
+                        : isEdit
+                          ? "请先重新检测通过"
+                          : "请先试算通过"}
+                  </button>
+                )}
+                {savedName && fromCommunity && (
+                  <button
+                    type="button"
+                    disabled={detectBusy}
+                    onClick={() => void goDetect()}
+                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-500 py-3 text-sm font-semibold text-white hover:bg-red-400 disabled:opacity-50"
+                  >
+                    <FlaskConical className="h-4 w-4" />
+                    {detectBusy ? "打开检测…" : `去因子检测（已选 ${savedName}）`}
+                  </button>
+                )}
               </div>
             </section>
           </div>

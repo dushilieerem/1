@@ -12,7 +12,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.dashboard_store import DB_PATH, RULES_VERSION  # noqa: E402
+from services.factor.dashboard_store import DB_PATH, RULES_VERSION  # noqa: E402
 
 INDEX = ROOT / "factor" / "index.yaml"
 

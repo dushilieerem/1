@@ -1,33 +1,56 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { FileText, Plus, Trash2 } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { FileText, Search, Trash2, X } from "lucide-react";
 import {
   clearDetectClientCache,
-  createProject,
-  deleteProject,
-  listVisibleProjects,
-  type DetectProject,
+  formatDetectRunFactorsLabel,
+  type DetectRunRecord,
 } from "@/lib/detectStore";
-import { getStoredUser, subscribeAuth } from "@/lib/auth";
+import {
+  listDetectReports,
+  removeDetectReport,
+  setDetectReportFlagged,
+  setDetectReportRemark,
+} from "@/lib/factorLifecycle";
+import { getStoredUser, prepareAuthHandoff, subscribeAuth } from "@/lib/auth";
+import { PagerBar } from "@/components/PageJump";
+import { useConfirm } from "@/components/ConfirmDialog";
+
+const PAGE_SIZE = 20;
+
+function fmtTime(iso: string) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  } catch {
+    return iso;
+  }
+}
 
 export function FactorDetectListPage() {
-  const navigate = useNavigate();
-  const [projects, setProjects] = useState<DetectProject[]>([]);
+  const confirm = useConfirm();
+  const [searchParams] = useSearchParams();
+  const filterProjectId = searchParams.get("projectId")?.trim() || "";
+  const [runs, setRuns] = useState<DetectRunRecord[]>([]);
   const [query, setQuery] = useState("");
-  const [nameModal, setNameModal] = useState(false);
-  const [projectName, setProjectName] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<DetectProject | null>(null);
-  const [createErr, setCreateErr] = useState<string | null>(null);
+  const [flaggedOnly, setFlaggedOnly] = useState(false);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [editingRemarkId, setEditingRemarkId] = useState<string | null>(null);
+  const [remarkDraft, setRemarkDraft] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const refresh = () => {
     setLoading(true);
     setErr(null);
-    void listVisibleProjects()
-      .then(setProjects)
+    void listDetectReports()
+      .then(setRuns)
       .catch((e) => {
-        setProjects([]);
+        setRuns([]);
         setErr(e instanceof Error ? e.message : String(e));
       })
       .finally(() => setLoading(false));
@@ -44,217 +67,308 @@ export function FactorDetectListPage() {
       if (uid === lastUid) return;
       lastUid = uid;
       clearDetectClientCache();
+      setPage(1);
       refresh();
     });
   }, []);
 
   const filtered = useMemo(() => {
+    let list = runs;
+    if (filterProjectId) {
+      list = list.filter((r) => r.projectId === filterProjectId);
+    }
+    if (flaggedOnly) {
+      list = list.filter((r) => Boolean(r.flagged));
+    }
     const q = query.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.factorName.toLowerCase().includes(q) ||
-        p.description.toLowerCase().includes(q),
-    );
-  }, [projects, query]);
+    if (!q) return list;
+    return list.filter((r) => {
+      const label = formatDetectRunFactorsLabel(r).toLowerCase();
+      const fname = (r.factorName || "").toLowerCase();
+      const remark = (r.remark || "").toLowerCase();
+      return label.includes(q) || fname.includes(q) || remark.includes(q);
+    });
+  }, [runs, query, filterProjectId, flaggedOnly]);
 
-  const openCreate = () => {
-    setProjectName("");
-    setCreateErr(null);
-    setNameModal(true);
+  useEffect(() => {
+    setPage(1);
+  }, [query, flaggedOnly]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE) || 1);
+  const pageSafe = Math.min(Math.max(1, page), totalPages);
+  const pageRows = useMemo(() => {
+    const start = (pageSafe - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, pageSafe]);
+
+  const saveRemark = async (runId: string) => {
+    setBusyId(runId);
+    try {
+      const updated = await setDetectReportRemark(runId, remarkDraft);
+      setRuns((prev) =>
+        prev.map((r) =>
+          r.id === runId ? { ...r, remark: updated.remark ?? remarkDraft } : r,
+        ),
+      );
+      setEditingRemarkId(null);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
   };
 
-  const confirmCreate = () => {
-    const title = projectName.trim();
-    if (!title) {
-      setCreateErr("请填写检测名称");
-      return;
+  const toggleFlag = async (run: DetectRunRecord) => {
+    const next = !run.flagged;
+    setBusyId(run.id);
+    try {
+      const updated = await setDetectReportFlagged(run.id, next);
+      setRuns((prev) =>
+        prev.map((r) =>
+          r.id === run.id ? { ...r, flagged: updated.flagged ?? next } : r,
+        ),
+      );
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
     }
-    void createProject("custom_combo", title, title)
-      .then((p) => {
-        setNameModal(false);
-        navigate(`/factor/detect/${p.id}`);
-      })
-      .catch((e) => setCreateErr(e instanceof Error ? e.message : String(e)));
+  };
+
+  const onDelete = async (run: DetectRunRecord) => {
+    const label = formatDetectRunFactorsLabel(run);
+    const ok = await confirm({
+      title: "删除检测报告",
+      message: `确定删除「${label}」这次检测记录？此操作不可恢复。`,
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusyId(run.id);
+    try {
+      await removeDetectReport(run.id);
+      setRuns((prev) => prev.filter((r) => r.id !== run.id));
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-slate-50/80">
-      <div className="mx-auto max-w-[1200px] px-6 py-8">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-50 via-white to-blue-50/30">
+      <div className="mx-auto max-w-[1440px] px-4 py-8 sm:px-6">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">因子检测</h1>
-            <p className="mt-1 text-sm text-slate-600">
-              已完成检测的因子会出现在此列表；也可新建后配置并运行
-            </p>
+            <h1 className="text-2xl font-bold text-slate-900">检测报告</h1>
+            {err ? <p className="mt-2 text-sm text-red-500">{err}</p> : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={openCreate}
-              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-            >
-              <Plus className="h-4 w-4" />
-              新建因子
-            </button>
+            <div className="flex min-w-[14rem] flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 sm:flex-none">
+              <Search className="h-4 w-4 shrink-0 text-slate-400" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="搜索因子名、备注…"
+                className="w-full min-w-0 bg-transparent text-sm outline-none sm:w-52"
+              />
+              {query ? (
+                <button type="button" onClick={() => setQuery("")}>
+                  <X className="h-3.5 w-3.5 text-slate-400" />
+                </button>
+              ) : null}
+            </div>
             <Link
               to="/factor/library"
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50"
+              onClick={() => prepareAuthHandoff()}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
             >
               <FileText className="h-4 w-4" />
               查看因子库
             </Link>
+            <button
+              type="button"
+              onClick={() => setFlaggedOnly((v) => !v)}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-semibold transition ${
+                flaggedOnly
+                  ? "border-amber-300 bg-amber-50 text-amber-900"
+                  : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
+              }`}
+            >
+              <span aria-hidden>🚩</span>
+              查看标记因子
+            </button>
           </div>
         </div>
 
-        <div className="mb-4">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索因子名称…"
-            className="w-full max-w-md rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200"
-          />
-        </div>
-
-        {err && <p className="mb-3 text-sm text-red-600">{err}</p>}
-        {loading ? (
-          <p className="py-16 text-center text-sm text-slate-400">加载中…</p>
-        ) : (
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs text-slate-500">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="min-w-full table-fixed text-left text-sm">
+              <colgroup>
+                <col className="w-[22%]" />
+                <col className="w-[18%]" />
+                <col className="w-[28%]" />
+                <col className="w-[32%]" />
+              </colgroup>
+              <thead className="border-b border-slate-100 bg-slate-50/80 text-xs font-semibold text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">因子名称</th>
-                  <th className="px-4 py-3">类型</th>
-                  <th className="px-4 py-3">最后修改时间</th>
-                  <th className="px-4 py-3">检测次数</th>
+                  <th className="px-4 py-3">因子名</th>
+                  <th className="px-4 py-3 whitespace-nowrap">测试时间</th>
+                  <th className="px-4 py-3">备注</th>
                   <th className="px-4 py-3 text-right">操作</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((p) => (
-                  <tr key={p.id} className="border-t border-slate-100">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-slate-900">{p.name}</p>
-                        {p.sample ? (
-                          <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                            样例
-                          </span>
-                        ) : null}
-                      </div>
-                      <code className="text-xs text-slate-400">{p.factorName}</code>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
-                        股票
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                      {p.updatedAt?.replace("T", " ").slice(0, 19)}
-                    </td>
-                    <td className="px-4 py-3 tabular-nums text-slate-700">{p.runCount}</td>
-                    <td className="px-4 py-3 text-right text-xs">
-                      <Link
-                        to={`/factor/detect/${p.id}`}
-                        className="mr-3 font-medium text-blue-600 hover:underline"
-                      >
-                        检测
-                      </Link>
-                      <Link
-                        to={`/factor/detect/${p.id}/history`}
-                        className="mr-3 font-medium text-blue-600 hover:underline"
-                      >
-                        检测列表
-                      </Link>
-                      {!p.sample ? (
-                        <button
-                          type="button"
-                          className="inline-flex text-slate-400 hover:text-red-600"
-                          onClick={() => setDeleteTarget(p)}
-                          title="删除"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-                {!filtered.length && (
+                {loading ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-16 text-center text-slate-400">
-                      暂无项目，点击「新建因子」开始
+                    <td
+                      colSpan={4}
+                      className="px-4 py-16 text-center text-slate-400"
+                    >
+                      加载中…
                     </td>
                   </tr>
+                ) : pageRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="px-4 py-16 text-center text-slate-400"
+                    >
+                      {flaggedOnly
+                        ? "暂无标记的检测报告。可在操作列点旗帜标记。"
+                        : "暂无检测报告。可在因子库选择因子后点「检测」。"}
+                    </td>
+                  </tr>
+                ) : (
+                  pageRows.map((r) => {
+                    const label = formatDetectRunFactorsLabel(r);
+                    const factorTitle =
+                      (r.factorName &&
+                        r.factorName !== "combo_factor" &&
+                        r.factorName !== "custom_combo" &&
+                        r.factorName) ||
+                      label;
+                    const editing = editingRemarkId === r.id;
+                    return (
+                      <tr
+                        key={r.id}
+                        className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60"
+                      >
+                        <td className="px-4 py-3 align-middle">
+                          <code className="break-all rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-800">
+                            {factorTitle}
+                          </code>
+                        </td>
+                        <td className="px-4 py-3 align-middle whitespace-nowrap text-slate-600">
+                          {fmtTime(r.finishedAt)}
+                        </td>
+                        <td className="px-4 py-3 align-middle">
+                          <div className="flex h-8 w-full min-w-0 items-center gap-1.5">
+                            {editing ? (
+                              <>
+                                <input
+                                  autoFocus
+                                  value={remarkDraft}
+                                  onChange={(e) => setRemarkDraft(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      void saveRemark(r.id);
+                                    }
+                                    if (e.key === "Escape") {
+                                      setEditingRemarkId(null);
+                                    }
+                                  }}
+                                  className="h-8 min-w-0 flex-1 rounded-lg border border-blue-300 bg-white px-2 text-xs outline-none"
+                                  placeholder="备注"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={busyId === r.id}
+                                  onClick={() => void saveRemark(r.id)}
+                                  className="w-8 shrink-0 text-xs font-medium text-blue-600 hover:underline disabled:opacity-40"
+                                >
+                                  保存
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  title="点击编辑备注"
+                                  onClick={() => {
+                                    setEditingRemarkId(r.id);
+                                    setRemarkDraft(r.remark || "");
+                                  }}
+                                  className="h-8 min-w-0 flex-1 truncate rounded-lg border border-transparent px-2 text-left text-slate-600 hover:border-slate-200 hover:bg-white"
+                                >
+                                  {r.remark?.trim() ? (
+                                    r.remark
+                                  ) : (
+                                    <span className="invisible select-none">备注</span>
+                                  )}
+                                </button>
+                                {/* 预留「保存」宽度，避免进入编辑时挤压操作列 */}
+                                <span className="w-8 shrink-0" aria-hidden />
+                              </>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 align-middle">
+                          <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs font-medium">
+                            <button
+                              type="button"
+                              title={r.flagged ? "取消标记" : "标记为喜欢"}
+                              disabled={busyId === r.id}
+                              onClick={() => void toggleFlag(r)}
+                              className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-sm transition disabled:opacity-40 ${
+                                r.flagged
+                                  ? "bg-amber-50 hover:bg-amber-100"
+                                  : "opacity-40 grayscale hover:bg-slate-100 hover:opacity-100 hover:grayscale-0"
+                              }`}
+                            >
+                              🚩
+                            </button>
+                            <Link
+                              to={`/factor/detect/report/${r.id}`}
+                              className="text-blue-600 hover:underline"
+                            >
+                              查看报告
+                            </Link>
+                            <Link
+                              to={`/factor/detect/${r.projectId}?runId=${encodeURIComponent(r.id)}`}
+                              className="text-blue-600 hover:underline"
+                            >
+                              查看配置
+                            </Link>
+                            <button
+                              type="button"
+                              disabled={busyId === r.id}
+                              onClick={() => void onDelete(r)}
+                              className="inline-flex items-center gap-0.5 text-red-500 hover:underline disabled:opacity-40"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              删除
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
-        )}
-
-        {nameModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-            <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-              <h2 className="text-lg font-bold text-slate-900">新建检测</h2>
-              <input
-                className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-                placeholder="检测名称"
-                autoFocus
+          {totalPages > 1 ? (
+            <div className="border-t border-slate-100 px-4 py-3">
+              <PagerBar
+                page={pageSafe}
+                totalPages={totalPages}
+                onJump={setPage}
               />
-              {createErr && <p className="mt-2 text-xs text-red-600">{createErr}</p>}
-              <div className="mt-4 flex justify-end gap-2">
-                <button
-                  type="button"
-                  className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
-                  onClick={() => setNameModal(false)}
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white"
-                  onClick={confirmCreate}
-                >
-                  创建
-                </button>
-              </div>
             </div>
-          </div>
-        )}
-
-        {deleteTarget && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-            <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
-              <p className="text-sm text-slate-700">
-                确认删除「{deleteTarget.name}」？检测记录将一并删除。
-              </p>
-              <div className="mt-4 flex justify-end gap-2">
-                <button
-                  type="button"
-                  className="rounded-lg px-3 py-2 text-sm"
-                  onClick={() => setDeleteTarget(null)}
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white"
-                  onClick={() => {
-                    void deleteProject(deleteTarget.id).then(() => {
-                      setDeleteTarget(null);
-                      refresh();
-                    });
-                  }}
-                >
-                  删除
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+          ) : null}
+        </div>
       </div>
     </div>
   );

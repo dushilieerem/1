@@ -12,14 +12,34 @@ export type CommunityPost = {
   view_count: number;
   comment_count?: number;
   favorite_count?: number;
+  like_count?: number;
+  dislike_count?: number;
   favorited?: boolean;
+  my_vote?: number;
   status: string;
+  is_pinned?: boolean;
+  pinned_at?: string | null;
   created_at: string | null;
   updated_at?: string | null;
+  /** 面板/检测/策略分享落库的真源指标 */
+  platform_ref?: {
+    source?: string;
+    label?: string;
+    factor_name?: string;
+    universe?: string;
+    period?: string;
+    universe_code?: string;
+    period_code?: string;
+    library?: string;
+    filter_limit_up?: boolean | null;
+    metrics_display?: Record<string, string>;
+    metrics?: Record<string, number | null | undefined>;
+  } | null;
   author: {
     id?: number;
     username?: string;
     display_name?: string;
+    avatar_url?: string | null;
   };
 };
 
@@ -27,11 +47,41 @@ export type CommunityComment = {
   id: number;
   post_id: number;
   body: string;
+  parent_id?: number | null;
+  images?: string[];
+  like_count?: number;
+  dislike_count?: number;
+  my_vote?: number;
   created_at: string | null;
   author: {
     id?: number;
     username?: string;
     display_name?: string;
+    avatar_url?: string | null;
+  };
+  reply_to?: {
+    id?: number;
+    username?: string;
+    display_name?: string;
+  } | null;
+};
+
+export type NotificationType = "reply" | "mention" | "like";
+
+export type CommunityNotification = {
+  id: number;
+  type: NotificationType;
+  post_id: number;
+  comment_id?: number | null;
+  post_title: string;
+  comment_body: string;
+  created_at: string | null;
+  read_at: string | null;
+  actor: {
+    id?: number;
+    username?: string;
+    display_name?: string;
+    avatar_url?: string | null;
   };
 };
 
@@ -60,27 +110,39 @@ async function parseJson<T>(res: Response): Promise<T> {
   return data as T;
 }
 
+export type CommunityPostSort = "views" | "favorites" | "likes" | "newest";
+
 export async function listCommunityPosts(opts?: {
   section?: string;
+  q?: string;
+  sort?: CommunityPostSort;
   limit?: number;
   offset?: number;
 }) {
-  const q = new URLSearchParams();
-  if (opts?.section && opts.section !== "all") q.set("section", opts.section);
-  if (opts?.limit != null) q.set("limit", String(opts.limit));
-  if (opts?.offset != null) q.set("offset", String(opts.offset));
-  const qs = q.toString();
+  const params = new URLSearchParams();
+  if (opts?.section && opts.section !== "all") params.set("section", opts.section);
+  const q = (opts?.q || "").trim();
+  if (q) params.set("q", q);
+  const sort = opts?.sort || "views";
+  params.set("sort", sort);
+  if (opts?.limit != null) params.set("limit", String(opts.limit));
+  if (opts?.offset != null) params.set("offset", String(opts.offset));
+  const qs = params.toString();
   const res = await fetch(`/api/community/posts${qs ? `?${qs}` : ""}`);
   return parseJson<{
     ok: boolean;
     total: number;
+    sort?: CommunityPostSort;
+    q?: string | null;
     items: CommunityPost[];
     sections: { id: string; label: string }[];
   }>(res);
 }
 
-export async function listHotPosts(limit = 10) {
-  const res = await fetch(`/api/community/hot?limit=${limit}`);
+export async function listHotPosts(limit = 10, section?: string) {
+  const q = new URLSearchParams({ limit: String(limit) });
+  if (section && section !== "all") q.set("section", section);
+  const res = await fetch(`/api/community/hot?${q}`);
   return parseJson<{ ok: boolean; items: CommunityPost[] }>(res);
 }
 
@@ -93,16 +155,15 @@ export async function getCommunityPost(id: number, opts?: { bump?: boolean }) {
   return parseJson<{ ok: boolean; post: CommunityPost }>(res);
 }
 
-/** 同一会话同一帖只计 1 次浏览（避免 React StrictMode 双挂载 +2） */
+/** 同一帖短时内只计 1 次（挡 React StrictMode 双挂载），离开再进可继续累加 */
+const _recentViewBumps = new Map<number, number>();
+
 export function takeViewBump(postId: number): boolean {
-  try {
-    const key = `svq_post_view_${postId}`;
-    if (sessionStorage.getItem(key)) return false;
-    sessionStorage.setItem(key, "1");
-    return true;
-  } catch {
-    return true;
-  }
+  const now = Date.now();
+  const last = _recentViewBumps.get(postId) ?? 0;
+  if (now - last < 2500) return false;
+  _recentViewBumps.set(postId, now);
+  return true;
 }
 
 export async function createCommunityPost(payload: {
@@ -110,6 +171,8 @@ export async function createCommunityPost(payload: {
   body: string;
   section: CommunitySection;
   code_snippet?: string;
+  status?: "draft" | "published";
+  platform_ref?: CommunityPost["platform_ref"];
 }) {
   const res = await fetch("/api/community/posts", {
     method: "POST",
@@ -122,21 +185,176 @@ export async function createCommunityPost(payload: {
   return parseJson<{ ok: boolean; post: CommunityPost }>(res);
 }
 
+export async function updateCommunityPost(
+  id: number,
+  payload: {
+    title: string;
+    body: string;
+    section: CommunitySection;
+    code_snippet?: string;
+    status?: "draft" | "published";
+    platform_ref?: CommunityPost["platform_ref"];
+  },
+) {
+  const res = await fetch(`/api/community/posts/${id}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+  return parseJson<{ ok: boolean; post: CommunityPost }>(res);
+}
+
+export async function deleteCommunityPost(id: number) {
+  const res = await fetch(`/api/community/posts/${id}`, {
+    method: "DELETE",
+    headers: { ...authHeaders() },
+  });
+  return parseJson<{ ok: boolean; id: number }>(res);
+}
+
+/** 管理员：置顶 / 下架 / 恢复 */
+export async function moderateCommunityPost(
+  id: number,
+  payload: { pinned?: boolean; status?: "published" | "hidden" },
+) {
+  const res = await fetch(`/api/community/posts/${id}/moderate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+  return parseJson<{ ok: boolean; post: CommunityPost }>(res);
+}
+
 export async function listComments(postId: number) {
-  const res = await fetch(`/api/community/posts/${postId}/comments`);
+  const res = await fetch(`/api/community/posts/${postId}/comments`, {
+    headers: { ...authHeaders() },
+  });
   return parseJson<{ ok: boolean; total: number; items: CommunityComment[] }>(res);
 }
 
-export async function createComment(postId: number, body: string) {
+export async function createComment(
+  postId: number,
+  body: string,
+  opts?: { parentId?: number | null; images?: string[] },
+) {
   const res = await fetch(`/api/community/posts/${postId}/comments`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...authHeaders(),
     },
-    body: JSON.stringify({ body }),
+    body: JSON.stringify({
+      body,
+      parent_id: opts?.parentId ?? null,
+      images: opts?.images ?? [],
+    }),
   });
   return parseJson<{ ok: boolean; comment: CommunityComment }>(res);
+}
+
+export async function voteComment(commentId: number, value: 1 | -1 | 0) {
+  const res = await fetch(`/api/community/comments/${commentId}/vote`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ value }),
+  });
+  return parseJson<{
+    ok: boolean;
+    comment_id: number;
+    like_count: number;
+    dislike_count: number;
+    my_vote: number;
+  }>(res);
+}
+
+export async function votePost(postId: number, value: 1 | -1 | 0) {
+  const res = await fetch(`/api/community/posts/${postId}/vote`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ value }),
+  });
+  return parseJson<{
+    ok: boolean;
+    post_id: number;
+    like_count: number;
+    dislike_count: number;
+    my_vote: number;
+  }>(res);
+}
+
+export async function listNotifications(opts?: {
+  type?: NotificationType;
+  limit?: number;
+  offset?: number;
+}) {
+  const q = new URLSearchParams();
+  if (opts?.type) q.set("type", opts.type);
+  if (opts?.limit != null) q.set("limit", String(opts.limit));
+  if (opts?.offset != null) q.set("offset", String(opts.offset));
+  const qs = q.toString();
+  const res = await fetch(`/api/community/notifications${qs ? `?${qs}` : ""}`, {
+    headers: { ...authHeaders() },
+  });
+  return parseJson<{ ok: boolean; total: number; items: CommunityNotification[] }>(
+    res,
+  );
+}
+
+export async function unreadNotificationCount() {
+  const res = await fetch("/api/community/notifications/unread-count", {
+    headers: { ...authHeaders() },
+  });
+  return parseJson<{
+    ok: boolean;
+    total: number;
+    by_type: Record<string, number>;
+  }>(res);
+}
+
+/** 通知 Navbar 等立刻刷新铃铛未读数 */
+export const UNREAD_CHANGED_EVENT = "svquant:notifications-unread-changed";
+
+export function notifyUnreadChanged(total?: number) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(UNREAD_CHANGED_EVENT, {
+      detail: { total },
+    }),
+  );
+}
+
+export async function markNotificationsRead(opts: {
+  ids?: number[];
+  type?: NotificationType;
+  all?: boolean;
+}) {
+  const res = await fetch("/api/community/notifications/read", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify(opts),
+  });
+  const data = await parseJson<{
+    ok: boolean;
+    total: number;
+    by_type: Record<string, number>;
+  }>(res);
+  notifyUnreadChanged(data.total);
+  return data;
 }
 
 export async function addFavorite(postId: number) {
@@ -170,15 +388,158 @@ export async function listMyFavorites(opts?: { limit?: number; offset?: number }
   return parseJson<{ ok: boolean; total: number; items: CommunityPost[] }>(res);
 }
 
-export async function listMyPosts(opts?: { limit?: number; offset?: number }) {
+export async function listMyPosts(opts?: {
+  status?: "published" | "draft";
+  limit?: number;
+  offset?: number;
+}) {
   const q = new URLSearchParams();
+  if (opts?.status) q.set("status", opts.status);
   if (opts?.limit != null) q.set("limit", String(opts.limit));
   if (opts?.offset != null) q.set("offset", String(opts.offset));
   const qs = q.toString();
   const res = await fetch(`/api/community/my-posts${qs ? `?${qs}` : ""}`, {
     headers: { ...authHeaders() },
   });
-  return parseJson<{ ok: boolean; total: number; items: CommunityPost[] }>(res);
+  return parseJson<{
+    ok: boolean;
+    status?: string;
+    total: number;
+    items: CommunityPost[];
+  }>(res);
+}
+
+export type ModerationKind = "hidden" | "pinned";
+
+export type ReportReason = "spam" | "abuse" | "illegal" | "misinfo" | "other";
+export type ReportStatus = "open" | "resolved" | "dismissed";
+export type ReportTargetType = "post" | "comment";
+
+export const REPORT_REASON_OPTIONS: { id: ReportReason; label: string }[] = [
+  { id: "spam", label: "垃圾广告" },
+  { id: "abuse", label: "辱骂骚扰" },
+  { id: "illegal", label: "违法违规" },
+  { id: "misinfo", label: "虚假误导" },
+  { id: "other", label: "其他" },
+];
+
+export type CommunityReport = {
+  id: number;
+  target_type: ReportTargetType;
+  post_id: number;
+  comment_id?: number | null;
+  reason: ReportReason | string;
+  reason_label?: string;
+  detail?: string;
+  status: ReportStatus | string;
+  created_at: string | null;
+  resolved_at?: string | null;
+  post_title?: string;
+  comment_body?: string;
+  reporter?: {
+    id?: number;
+    username?: string;
+    display_name?: string;
+  };
+};
+
+export async function createCommunityReport(payload: {
+  target_type: ReportTargetType;
+  post_id: number;
+  comment_id?: number | null;
+  reason: ReportReason;
+  detail?: string;
+}) {
+  const res = await fetch("/api/community/reports", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  return parseJson<{ ok: boolean; report: CommunityReport }>(res);
+}
+
+export async function listCommunityReports(opts?: {
+  status?: ReportStatus | "all";
+  limit?: number;
+  offset?: number;
+}) {
+  const q = new URLSearchParams();
+  q.set("status", opts?.status || "open");
+  if (opts?.limit != null) q.set("limit", String(opts.limit));
+  if (opts?.offset != null) q.set("offset", String(opts.offset));
+  const res = await fetch(`/api/community/reports?${q}`, {
+    headers: { ...authHeaders() },
+  });
+  return parseJson<{
+    ok: boolean;
+    status: string;
+    total: number;
+    items: CommunityReport[];
+  }>(res);
+}
+
+export type CommunityOpsSummary = {
+  ok: boolean;
+  days: number;
+  posts_7d: number;
+  comments_7d: number;
+  favorites_7d: number;
+  likes_7d: number;
+  interactions_7d: number;
+  reports_open: number;
+  ai_calls_7d: number;
+  ai_users_7d: number;
+  ai_tokens_7d: number;
+  by_day?: { day: string; posts: number }[];
+};
+
+export async function getCommunityOpsSummary(days = 7) {
+  const q = new URLSearchParams();
+  q.set("days", String(days));
+  const res = await fetch(`/api/community/ops/summary?${q}`, {
+    headers: { ...authHeaders() },
+  });
+  return parseJson<CommunityOpsSummary>(res);
+}
+
+export async function resolveCommunityReport(
+  id: number,
+  status: "resolved" | "dismissed" = "resolved",
+) {
+  const res = await fetch(`/api/community/reports/${id}/resolve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ status }),
+  });
+  return parseJson<{ ok: boolean; report: CommunityReport }>(res);
+}
+
+export async function listModerationPosts(opts?: {
+  kind?: ModerationKind;
+  limit?: number;
+  offset?: number;
+}) {
+  const q = new URLSearchParams();
+  q.set("kind", opts?.kind || "hidden");
+  if (opts?.limit != null) q.set("limit", String(opts.limit));
+  if (opts?.offset != null) q.set("offset", String(opts.offset));
+  const res = await fetch(`/api/community/moderation?${q}`, {
+    headers: { ...authHeaders() },
+  });
+  return parseJson<{
+    ok: boolean;
+    kind: ModerationKind;
+    total: number;
+    items: CommunityPost[];
+  }>(res);
+}
+
+export async function purgeCommunityPost(id: number) {
+  const res = await fetch(`/api/community/posts/${id}/purge`, {
+    method: "POST",
+    headers: { ...authHeaders() },
+  });
+  return parseJson<{ ok: boolean; id: number; purged: boolean }>(res);
 }
 
 export function formatPostTime(iso: string | null | undefined) {

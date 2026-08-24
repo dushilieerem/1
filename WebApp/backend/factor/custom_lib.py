@@ -14,22 +14,3 @@ class CustomLib(FactorLibrary):
 
     author = "SVQuant"
 
-    def u1_EDIT_BEFORE(self):
-        """改之后对照·10日收益"""
-        return self.close.pct_change(10)
-
-    def u3_RISK_ADJ_MOM_20(self):
-        """20日收益/20日波动：风险调整动量"""
-        ret = self.close.pct_change(20)
-        vol = self.close.pct_change().rolling(20).std()
-        return ret / (vol + 1e-8)
-
-    def u5_aaaa(self):
-        """5日收益示意"""
-        return self.close - self.close.rolling(5).mean()
-
-    def u5_VOL_RATIO_20(self):
-        """成交量相对20日均量比"""
-        ma = self.volume.rolling(20).mean()
-        return self.volume / ma
-

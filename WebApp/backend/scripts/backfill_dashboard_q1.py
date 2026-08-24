@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.daily_dashboard_refresh import run_one  # noqa: E402
-from services.dashboard_store import DB_PATH  # noqa: E402
+from services.factor.dashboard_store import DB_PATH  # noqa: E402
 
 
 def combos_needing_backfill() -> list[tuple[str, str, bool]]:

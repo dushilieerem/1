@@ -14,33 +14,169 @@ export type FactorMeta = {
   libraryLabel: string;
   tags?: string[];
   ownerId?: number;
+  /** 用户库因子：直接带源码，无需读文件 */
+  body?: string;
+  /** 用户库：false 表示尚无有效公式（黄色） */
+  formulaReady?: boolean;
+  userLibraryId?: number;
+  userLibraryName?: string;
+  /** 用户库因子行 id（删除用） */
+  userLibraryFactorId?: number;
 };
 
 export const LABELS: Record<string, string> = {
-  custom_lib: "自定义",
+  // 检测选因子 / 面板分类：动量优先，再经典库，再同事新库
   momentum_lib: "动量/趋势",
   value_lib: "价值/估值",
   technical_lib: "技术指标",
+  classic_indicators: "经典指标",
   volatility_lib: "波动/风险",
   trading_lib: "量价/成交",
+  emotion_indicators: "情绪因子",
+  risk_indicators: "风险因子",
+  technical_indicators: "技术指标库",
+  alpha_features: "Alpha158/360",
+  alpha_library: "Alpha库",
+  worldquant_alpha101: "WorldQuant/Alpha101",
+  gtja_alpha191: "国泰君安Alpha191",
+  custom_lib: "自定义",
 };
 
+/** 旧库名仅用于历史帖/缓存展示，不再作为分类 Tab */
+export const LEGACY_LABELS: Record<string, string> = {
+  jq_compat_emotion: "聚宽情绪",
+  jq_compat_risk: "聚宽风险",
+  jq_compat_technical: "聚宽技术",
+  qlib_alpha: "Qlib特征",
+};
+
+/** 与 index.yaml libraries 常见顺序一致；Tab 只展示实际出现的库 */
+export const LIBRARY_TAB_ORDER = Object.keys(LABELS);
+
+/** 内置因子库分类键（不含「自定义」） */
+export const BUILTIN_LIBRARY_KEYS = LIBRARY_TAB_ORDER.filter(
+  (k) => k !== "custom_lib",
+);
+
+export function builtinCategoryLabelsFromFactors(factors: FactorMeta[]): string[] {
+  // 含 RE 全库里尚未写进 LABELS 的库名
+  return filterTabsFromFactors(
+    factors.filter((f) => f.library !== "custom_lib"),
+  ).slice(1);
+}
+
+export function labelForLibrary(key: string, _fallback?: string): string {
+  // 分类名必须稳定：勿用 RE 的 description 当 label，否则 Tab 键与 counts 对不上
+  return LABELS[key] || LEGACY_LABELS[key] || key;
+}
+
+export function libraryKeyFromLabel(label: string): string | undefined {
+  const hit = Object.entries(LABELS).find(([, v]) => v === label);
+  if (hit) return hit[0];
+  const legacy = Object.entries(LEGACY_LABELS).find(([, v]) => v === label);
+  return legacy?.[0];
+}
+
+/** 按当前目录实际库生成「全部 + 分类」Tab（去掉 index 里没有的） */
+export function filterTabsFromLibraries(libraryKeys: Iterable<string>): string[] {
+  const present = new Set(libraryKeys);
+  const ordered = LIBRARY_TAB_ORDER.filter((k) => present.has(k)).map((k) => LABELS[k]);
+  for (const k of present) {
+    if (!(k in LABELS)) {
+      const lab = labelForLibrary(k);
+      if (!ordered.includes(lab)) ordered.push(lab);
+    }
+  }
+  return ["全部", ...ordered];
+}
+
+export function filterTabsFromFactors(factors: FactorMeta[]): string[] {
+  return filterTabsFromLibraries(factors.map((f) => f.library));
+}
+
+/** @deprecated 请用 filterTabsFromFactors；保留避免旧引用炸裂 */
 export const FILTER_TABS = ["全部", ...Object.values(LABELS)] as const;
+
+/** 动态注册、无法从 .py 静态抽取方法体的库（检测走 RE library_name） */
+export const DYNAMIC_FACTOR_LIBS = new Set(["alpha_features", "qlib_alpha"]);
 
 let cache: FactorMeta[] | null = null;
 
-export async function loadFactors(force = false): Promise<FactorMeta[]> {
-  if (cache && !force) return cache;
+export type ReCatalogMeta = {
+  fetchedAt?: string;
+  source?: string;
+  factorCount?: number;
+};
+
+let reCatalogMeta: ReCatalogMeta | null = null;
+
+export function getReCatalogMeta(): ReCatalogMeta | null {
+  return reCatalogMeta;
+}
+
+async function loadBuiltinFromResearchEngine(
+  opts?: { fresh?: boolean },
+): Promise<FactorMeta[]> {
+  // 本机 BFF：默认读 PG 全库快照（all=1）；fresh=1 才当场打 RE（慢）
+  const q = new URLSearchParams({ all: "1" });
+  if (opts?.fresh) q.set("fresh", "1");
+  const res = await fetch(`/api/factor/re-catalog?${q}`, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`读取因子目录失败 HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as {
+    ok?: boolean;
+    error?: string;
+    fetched_at?: string;
+    source?: string;
+    factor_count?: number;
+    factors?: Array<{
+      name: string;
+      description?: string;
+      library: string;
+      library_description?: string | null;
+      tags?: string[];
+    }>;
+  };
+  if (data.ok === false) {
+    throw new Error(data.error || "读取 RE 因子目录失败");
+  }
+  reCatalogMeta = {
+    fetchedAt: data.fetched_at,
+    source: data.source,
+    factorCount: data.factor_count ?? data.factors?.length,
+  };
+  const out: FactorMeta[] = [];
+  for (const f of data.factors || []) {
+    const desc = (f.description || f.name || "").trim() || f.name;
+    out.push({
+      name: f.name,
+      methodName: f.name,
+      description: desc,
+      explain: desc,
+      formula: "",
+      params: {},
+      library: f.library,
+      libraryFile: "",
+      libraryLabel: labelForLibrary(f.library),
+      tags: f.tags,
+    });
+  }
+  return out;
+}
+
+/** 仅合并本机 custom_lib（用户自定义）；官方目录已改由 RE 提供 */
+async function loadCustomFromLocalIndex(): Promise<FactorMeta[]> {
   const res = await fetch("/api/factor/index", {
     cache: "no-store",
     headers: { ...authHeaders() },
   });
-  if (!res.ok) throw new Error(`读取索引失败 HTTP ${res.status}`);
+  if (!res.ok) return [];
   const raw = yamlLoad(await res.text()) as {
     libraries?: Record<
       string,
       {
-        file: string;
+        file?: string;
         description?: string;
         factors?: Array<{
           name: string;
@@ -51,33 +187,99 @@ export async function loadFactors(force = false): Promise<FactorMeta[]> {
           formula?: string;
           params?: Record<string, string | number>;
           tags?: string[];
+          body?: string;
         }>;
       }
     >;
   };
+  const custom = raw.libraries?.custom_lib;
+  if (!custom) return [];
   const out: FactorMeta[] = [];
-  for (const [key, lib] of Object.entries(raw.libraries || {})) {
-    for (const f of lib.factors || []) {
-      const desc = f.description || f.name;
-      const params = f.params || {};
-      const explainRaw = f.explain || desc;
-      out.push({
-        name: f.name,
-        methodName: f.method_name || f.name,
-        description: desc,
-        explain: applyParams(explainRaw, params),
-        formula: applyParams(f.formula || "", params),
-        params,
-        library: key,
-        libraryFile: lib.file,
-        libraryLabel: LABELS[key] || lib.description || key,
-        tags: f.tags,
-        ownerId: f.owner_id,
-      });
-    }
+  for (const f of custom.factors || []) {
+    const desc = f.description || f.name;
+    const params = f.params || {};
+    out.push({
+      name: f.name,
+      methodName: f.method_name || f.name,
+      description: desc,
+      explain: applyParams(f.explain || desc, params),
+      formula: applyParams(f.formula || "", params),
+      params,
+      library: "custom_lib",
+      libraryFile: custom.file || "custom_lib.py",
+      libraryLabel: labelForLibrary("custom_lib", custom.description || "自定义"),
+      tags: f.tags,
+      ownerId: f.owner_id,
+      body: f.body,
+    });
   }
-  cache = out;
   return out;
+}
+
+export async function loadFactors(
+  force = false,
+  opts?: { freshCatalog?: boolean },
+): Promise<FactorMeta[]> {
+  if (cache && !force && !opts?.freshCatalog) return cache;
+  const [builtin, custom] = await Promise.all([
+    loadBuiltinFromResearchEngine({ fresh: Boolean(opts?.freshCatalog) }),
+    loadCustomFromLocalIndex(),
+  ]);
+  cache = [...builtin, ...custom];
+  return cache;
+}
+
+export type SyncOfficialCatalogResult = {
+  factors: FactorMeta[];
+  message: string;
+  factorCount: number;
+  changed: boolean;
+  libraryCounts?: Record<string, number>;
+};
+
+/** 管理员：POST 同步 RE 全库 → PG；所有账户读同一内置快照 */
+export async function syncOfficialFactorCatalog(): Promise<SyncOfficialCatalogResult> {
+  const res = await fetch("/api/factor/re-catalog/sync", {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ all: true }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    error?: string;
+    message?: string;
+    changed?: boolean;
+    factor_count?: number;
+    factors?: unknown[];
+    library_factor_counts?: Record<string, number>;
+  };
+  if (!res.ok || data.ok === false) {
+    throw new Error(data.error || `同步失败 HTTP ${res.status}`);
+  }
+  clearFactorCache();
+  const factors = await loadFactors(true);
+  const builtin = factors.filter((f) => f.library !== "custom_lib");
+  const factorCount = data.factor_count ?? data.factors?.length ?? builtin.length;
+  if (!factorCount) {
+    throw new Error("同步结果为空，请检查 ResearchEngine 是否可达");
+  }
+  // 读回数量若明显偏少，提示不要静默当成功
+  if (builtin.length > 0 && builtin.length + 5 < factorCount) {
+    throw new Error(
+      `同步写库 ${factorCount} 个，但页面读回仅 ${builtin.length} 个，请刷新重试`,
+    );
+  }
+  return {
+    factors,
+    message: data.message || `已同步 ${factorCount} 个因子`,
+    factorCount: builtin.length || factorCount,
+    changed: Boolean(data.changed),
+    libraryCounts: data.library_factor_counts,
+  };
 }
 
 export function clearFactorCache() {
@@ -133,6 +335,54 @@ export function extractMethod(source: string, methodName: string): string {
   return out.map((ln) => (ln.length >= n ? ln.slice(n) : ln)).join("\n").trim();
 }
 
+/** 列出源码中类内全部方法名（含私有 _xxx） */
+export function listClassMethodNames(source: string): string[] {
+  const lines = source.split(/\r?\n/);
+  let classIndent = -1;
+  const names: string[] = [];
+  for (const line of lines) {
+    const cm = /^(\s*)class\s+\w+/.exec(line);
+    if (cm) {
+      classIndent = cm[1].length;
+      continue;
+    }
+    if (classIndent < 0) continue;
+    if (line.trim() && !/^\s/.test(line) && !line.startsWith(" ".repeat(classIndent))) {
+      // 离开该类（顶格其它内容）
+      if (!line.startsWith(" ".repeat(classIndent + 1)) && /^class\s|^\S/.test(line.trim() ? line : "x")) {
+        /* keep scanning; multiple classes rare */
+      }
+    }
+    const dm = /^(\s*)def\s+([A-Za-z_]\w*)\s*\(/.exec(line);
+    if (!dm) continue;
+    if (dm[1].length <= classIndent) continue;
+    names.push(dm[2]);
+  }
+  return names;
+}
+
+/**
+ * 抽出公开因子 + 同类全部私有辅助（策略克隆用；策略 API 不支持 library_name）。
+ */
+export function extractFactorWithHelpers(source: string, methodName: string): string {
+  const names = listClassMethodNames(source);
+  if (!names.includes(methodName)) {
+    // 退回单方法（文件可能无 class 包裹）
+    return extractMethod(source, methodName);
+  }
+  const helpers = names.filter((n) => n.startsWith("_"));
+  const parts: string[] = [];
+  for (const h of helpers) {
+    try {
+      parts.push(extractMethod(source, h));
+    } catch {
+      /* skip */
+    }
+  }
+  parts.push(extractMethod(source, methodName));
+  return parts.filter(Boolean).join("\n\n");
+}
+
 /** 把 params / 签名默认值填进公式，避免 window 等占位符导致多条一模一样 */
 export function applyParams(text: string, params: Record<string, string | number>): string {
   if (!text) return text;
@@ -172,6 +422,28 @@ export function extractReturnExpr(methodSource: string): string {
 export function extractDefName(source: string): string | null {
   const m = source.match(/^\s*def\s+([A-Za-z_]\w*)\s*\(/m);
   return m ? m[1] : null;
+}
+
+/**
+ * 编辑页展示：把物理方法名 u{id}_{logical} 改写成逻辑名，
+ * 用户只写/看逻辑名；入库时后端再换成物理名。
+ */
+export function toLogicalMethodBody(methodSource: string, logicalName: string): string {
+  const logical = (logicalName || "").trim();
+  if (!logical || !methodSource.trim()) return methodSource;
+  let out = methodSource.replace(
+    new RegExp(`^(\\s*def\\s+)u\\d+_${logical.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s*\\()`, "m"),
+    `$1${logical}$2`,
+  );
+  // 若已是逻辑名则不变；若 def 名恰好等于 logical 也保持
+  const def = extractDefName(out);
+  if (def && def !== logical && def.endsWith(`_${logical}`)) {
+    out = out.replace(
+      new RegExp(`^(\\s*def\\s+)${def.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s*\\()`, "m"),
+      `$1${logical}$2`,
+    );
+  }
+  return out;
 }
 
 /** 展开公式：优先多行有效语句；并把签名默认参数代入 */
@@ -232,6 +504,7 @@ export function extractEditableBody(methodSource: string): string {
 export const UNIVERSES = [
   { value: "CSI300", label: "沪深300" },
   { value: "CSI500", label: "中证500" },
+  { value: "CSI800", label: "中证800" },
   { value: "CSI1000", label: "中证1000" },
   { value: "SSE50", label: "上证50" },
 ] as const;

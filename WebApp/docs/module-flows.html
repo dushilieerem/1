@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SVQuant · 模块调用链</title>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    window.__mermaid = mermaid;
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "neutral",
+      securityLevel: "loose",
+      flowchart: { curve: "basis", padding: 14, nodeSpacing: 26, rankSpacing: 36, htmlLabels: true },
+    });
+  </script>
+  <script src="./module-flows-data.js"></script>
+  <style>
+    :root {
+      --bg: #f4f6f9;
+      --panel: #ffffff;
+      --line: #d8dee8;
+      --text: #1e293b;
+      --muted: #64748b;
+      --cyan: #0284c7;
+      --amber: #b45309;
+      --red: #dc2626;
+      --soft2: #ecfeff;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+    body { display: flex; flex-direction: column; }
+    header {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;
+      padding: 12px 18px; border-bottom: 1px solid var(--line); background: #fff;
+    }
+    header h1 { margin: 0; font-size: 17px; color: #0f172a; }
+    .cfg { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .cfg input, .cfg button {
+      border: 1px solid var(--line); background: #fff; color: var(--text);
+      border-radius: 8px; padding: 7px 10px; font-size: 13px;
+    }
+    .cfg button { cursor: pointer; background: #0284c7; border-color: #0284c7; color: #fff; font-weight: 600; }
+    .cfg button.ghost { background: #fff; color: var(--text); }
+    #status {
+      padding: 6px 18px; font-size: 12px; border-bottom: 1px solid var(--line);
+      background: #f8fafc; color: var(--muted);
+    }
+    #status.ok { background: #ecfdf5; color: #065f46; }
+    #status.err { background: #fef2f2; color: #991b1b; }
+    main { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px 1fr; }
+    @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
+    aside { border-right: 1px solid var(--line); background: #fff; overflow: auto; padding: 10px; }
+    .mod { margin-bottom: 14px; }
+    .mod h3 {
+      margin: 0 0 6px; font-size: 11px; letter-spacing: .06em; color: var(--cyan);
+      font-weight: 700;
+    }
+    .screen {
+      width: 100%; text-align: left; border: 1px solid transparent; background: transparent;
+      color: var(--text); border-radius: 10px; padding: 8px 10px; margin-bottom: 3px; cursor: pointer;
+    }
+    .screen:hover { background: #f1f5f9; border-color: var(--line); }
+    .screen.active { background: var(--soft2); border-color: #67e8f9; }
+    .screen .t { font-size: 13px; font-weight: 650; }
+    .screen .h { margin-top: 2px; font-size: 11px; color: var(--muted); line-height: 1.4; }
+    .detail { overflow: auto; padding: 18px 22px 56px; }
+    .empty { color: var(--muted); padding: 40px 8px; font-size: 14px; }
+    .kicker { font-size: 12px; color: var(--cyan); margin: 0 0 4px; }
+    h2 { margin: 0 0 8px; font-size: 20px; color: #0f172a; }
+    .pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 16px; }
+    .pill {
+      font-size: 12px; border: 1px solid var(--line); background: #fff;
+      border-radius: 999px; padding: 4px 10px; color: var(--muted);
+    }
+    .pill b { color: var(--text); font-weight: 600; }
+    .chart {
+      background: #fff; border: 1px solid var(--line); border-radius: 14px;
+      padding: 16px; overflow: auto; min-height: 160px; margin-bottom: 16px;
+    }
+    .chart .mermaid { display: flex; justify-content: center; }
+    .steps { max-width: 900px; }
+    .step {
+      position: relative; border: 1px solid var(--line);
+      background: #fff; border-radius: 12px; margin-bottom: 8px; overflow: hidden;
+    }
+    .step.has-detail { cursor: pointer; }
+    .step.has-detail:hover { border-color: #7dd3fc; background: #f8fbff; }
+    .step.open { border-color: #38bdf8; background: #f0f9ff; }
+    .step-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 14px 12px 56px; min-height: 54px;
+    }
+    .step .n {
+      position: absolute; left: 12px; top: 12px; width: 30px; height: 30px; border-radius: 999px;
+      display: flex; align-items: center; justify-content: center;
+      background: #e0f2fe; color: #0369a1; font-size: 12px; font-weight: 700;
+    }
+    .step .name {
+      flex: 1; font-size: 14px; font-weight: 650;
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color: #0e7490;
+    }
+    .step .chev {
+      flex-shrink: 0; font-size: 11px; color: var(--muted); padding: 2px 8px;
+      border: 1px solid var(--line); border-radius: 6px; background: #fff;
+    }
+    .step.open .chev { color: #0369a1; border-color: #7dd3fc; }
+    .step-body { display: none; padding: 0 14px 12px 56px; border-top: 1px dashed #e2e8f0; }
+    .step.open .step-body { display: block; }
+    .step .snote { margin-top: 8px; font-size: 13px; color: var(--text); line-height: 1.55; }
+    .step .meta { margin-top: 4px; font-size: 12px; color: var(--muted); word-break: break-all; }
+    .arrow { width: 2px; height: 10px; background: #cbd5e1; margin: -4px 0 -4px 26px; }
+    h3.sec { margin: 0; font-size: 13px; color: var(--amber); }
+    .fold-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      margin: 20px 0 10px; cursor: pointer; user-select: none;
+    }
+    .fold-head button {
+      border: 1px solid var(--line); background: #fff; border-radius: 8px;
+      padding: 4px 10px; font-size: 12px; cursor: pointer; color: var(--text);
+    }
+    .panel-biz { border: 1px solid #bae6fd; background: #f8fbff; border-radius: 14px; padding: 14px 16px 16px; }
+    .panel-gn { border: 1px solid #e7e5e4; background: #fafaf9; border-radius: 14px; padding: 14px 16px 16px; margin-top: 18px; }
+    .gn-item.open { border-color: #0284c7; background: #f0f9ff; }
+    .gn-item {
+      border: 1px solid var(--line); background: #fff; border-radius: 10px;
+      padding: 10px 12px; margin-bottom: 8px; cursor: pointer; width: 100%; text-align: left; color: inherit;
+    }
+    .gn-item:hover { border-color: var(--cyan); background: #f0f9ff; }
+    .gn-item .t { font-size: 13px; font-weight: 600; }
+    .gn-item .s { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .fail { color: var(--red); font-size: 13px; }
+    .gn-sub { font-size: 12px; font-weight: 600; color: #0f172a; margin: 10px 0 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SVQuant · 模块调用链</h1>
+    <div class="cfg">
+      <input id="base" value="http://127.0.0.1:4747" title="gitnexus serve" />
+      <input id="repo" value="SVQuant" style="min-width:110px" />
+      <button type="button" id="reload">连接 GitNexus</button>
+      <button type="button" class="ghost" id="openGn">官方 UI</button>
+    </div>
+  </header>
+  <div id="status">…</div>
+  <main>
+    <aside id="aside"></aside>
+    <section class="detail" id="detail">
+      <div class="empty">选择左侧模块</div>
+    </section>
+  </main>
+  <script>
+    const CATALOG = window.SVQUANT_FLOW_CATALOG || [];
+    let gnProcesses = [];
+    let activeId = null;
+    const $ = (id) => document.getElementById(id);
+    const escapeHtml = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    function apiBase() { return $("base").value.replace(/\/$/, ""); }
+    function setStatus(text, kind) {
+      $("status").className = kind || "";
+      $("status").textContent = text;
+    }
+
+    function renderAside() {
+      const aside = $("aside");
+      aside.innerHTML = "";
+      for (const mod of CATALOG) {
+        const box = document.createElement("div");
+        box.className = "mod";
+        box.innerHTML = `<h3>${escapeHtml(mod.title)}</h3>`;
+        for (const sc of mod.screens) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "screen" + (sc.id === activeId ? " active" : "");
+          btn.innerHTML = `<div class="t">${escapeHtml(sc.title)}</div><div class="h">${escapeHtml(sc.how)}</div>`;
+          btn.onclick = () => selectScreen(sc);
+          box.appendChild(btn);
+        }
+        aside.appendChild(box);
+      }
+    }
+
+    function mermaidId(i) { return "N" + i; }
+    function chainToMermaid(chain) {
+      const lines = ["flowchart TD"];
+      chain.forEach((s, i) => {
+        const label = String(s.name).replace(/"/g, "'").slice(0, 42);
+        lines.push(`  ${mermaidId(i)}["${label}"]`);
+        if (i) lines.push(`  ${mermaidId(i - 1)} --> ${mermaidId(i)}`);
+      });
+      return lines.join("\n");
+    }
+
+    async function drawMermaid(el, def) {
+      el.innerHTML = "";
+      const m = window.__mermaid;
+      if (!m) { el.textContent = "Mermaid 未加载"; return; }
+      try {
+        const { svg } = await m.render("mmd-" + Date.now(), def);
+        el.innerHTML = svg;
+      } catch (e) {
+        el.innerHTML = `<div class="fail">${escapeHtml(e.message)}</div>`;
+      }
+    }
+
+    function matchGn(sc) {
+      const key = (sc.gnMatch || sc.page || "").toLowerCase();
+      if (!key) return [];
+      return gnProcesses.filter((p) => (p.heuristicLabel || p.label || "").toLowerCase().includes(key));
+    }
+
+    async function fetchProcessSteps(label) {
+      const repo = encodeURIComponent($("repo").value.trim() || "SVQuant");
+      const res = await fetch(`${apiBase()}/api/process?repo=${repo}&name=${encodeURIComponent(label)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    function isAuthish(p) {
+      const lab = (p.heuristicLabel || p.label || "").toLowerCase();
+      return /consumeauthhandoff|authstore|gettoken|notify/.test(lab);
+    }
+
+    function dedupeSteps(steps) {
+      const out = [];
+      const seen = new Set();
+      for (const s of steps || []) {
+        const k = `${s.step}|${s.name}|${s.filePath || ""}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push(s);
+      }
+      return out;
+    }
+
+    function bindFold(headId, bodyId, toggleBtnId) {
+      const head = document.getElementById(headId);
+      const body = document.getElementById(bodyId);
+      if (!head || !body) return;
+      const btn = toggleBtnId
+        ? document.getElementById(toggleBtnId)
+        : head.querySelector("button");
+      const setHidden = (hide) => {
+        body.style.display = hide ? "none" : "";
+        if (btn) btn.textContent = hide ? "展开面板" : "收起";
+      };
+      if (btn) {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          setHidden(body.style.display !== "none");
+        };
+      }
+      head.querySelector("h3")?.addEventListener("click", () => {
+        setHidden(body.style.display !== "none");
+      });
+    }
+
+    function renderGnList(container, hits, prefix) {
+      if (!hits.length) {
+        container.innerHTML = `<div class="empty" style="padding:8px">—</div>`;
+        return;
+      }
+      container.innerHTML = hits.map((p, idx) => {
+        const lab = p.heuristicLabel || p.label;
+        return `<button type="button" class="gn-item" data-p="${prefix}" data-i="${idx}">
+          <div class="t">${escapeHtml(lab)}</div>
+          <div class="s">${p.stepCount || "?"} 步</div>
+        </button><div id="${prefix}-${idx}"></div>`;
+      }).join("");
+      container.querySelectorAll(".gn-item").forEach((btn) => {
+        btn.onclick = async () => {
+          const i = Number(btn.dataset.i);
+          const slot = document.getElementById(`${prefix}-${i}`);
+          if (btn.classList.contains("open")) {
+            btn.classList.remove("open");
+            slot.innerHTML = "";
+            return;
+          }
+          container.querySelectorAll(".gn-item.open").forEach((b) => {
+            b.classList.remove("open");
+            const si = document.getElementById(`${b.dataset.p}-${b.dataset.i}`);
+            if (si) si.innerHTML = "";
+          });
+          btn.classList.add("open");
+          slot.innerHTML = `<div class="empty" style="padding:8px">…</div>`;
+          try {
+            const data = await fetchProcessSteps(hits[i].heuristicLabel || hits[i].label);
+            const steps = dedupeSteps(data.steps || []);
+            if (!steps.length) {
+              slot.innerHTML = `<div class="fail">步骤为空</div>`;
+              return;
+            }
+            slot.innerHTML = steps.map((s, j) =>
+              `<div class="step" style="margin-top:8px">
+                <div class="n">${escapeHtml(String(s.step ?? j + 1))}</div>
+                <div class="name">${escapeHtml(s.name || "?")}</div>
+                <div class="meta">${escapeHtml(s.filePath || "")}</div>
+              </div>`
+            ).join("");
+          } catch (e) {
+            slot.innerHTML = `<div class="fail">${escapeHtml(e.message)}</div>`;
+          }
+        };
+      });
+    }
+
+    async function selectScreen(sc) {
+      activeId = sc.id;
+      renderAside();
+      const hits = matchGn(sc);
+      const authHits = hits.filter(isAuthish);
+      const otherHits = hits.filter((p) => !isAuthish(p));
+      let html = `<div class="kicker">${escapeHtml(sc.how)}</div>`;
+      html += `<h2>${escapeHtml(sc.title)}</h2>`;
+      html += `<div class="pills">
+        <span class="pill">路由 <b>${escapeHtml(sc.route)}</b></span>
+        <span class="pill">页面 <b>${escapeHtml(sc.page)}</b></span>
+        <span class="pill">步骤 <b>${sc.chain.length}</b></span>
+        <span class="pill">GitNexus ${otherHits.length}+${authHits.length}</span>
+      </div>`;
+
+      html += `<section class="panel-biz">`;
+      html += `<div class="fold-head" id="fold-biz"><h3 class="sec">① 业务步骤</h3><div style="display:flex;gap:6px"><button type="button" id="biz-expand-all">全部展开</button><button type="button" id="biz-collapse-all">全部收起</button><button type="button" id="biz-panel-toggle">收起</button></div></div>`;
+      html += `<div id="body-biz"><div class="chart" id="chart"></div><div class="steps" id="biz-steps">`;
+      sc.chain.forEach((s, i) => {
+        if (i) html += `<div class="arrow"></div>`;
+        const detail = [s.note, s.file, s.api].filter(Boolean).length > 0;
+        html += `<div class="step${detail ? " has-detail" : ""}" data-step="${i}">
+          <div class="n">${i + 1}</div>
+          <div class="step-head">
+            <div class="name">${escapeHtml(s.name)}</div>
+            ${detail ? `<span class="chev">展开</span>` : ""}
+          </div>
+          ${detail ? `<div class="step-body">
+            ${s.note ? `<div class="snote">${escapeHtml(s.note)}</div>` : ""}
+            ${s.file ? `<div class="meta">${escapeHtml(s.file)}</div>` : ""}
+            ${s.api ? `<div class="meta">${escapeHtml(s.api)}</div>` : ""}
+          </div>` : ""}
+        </div>`;
+      });
+      html += `</div></div></section>`;
+
+      html += `<section class="panel-gn">`;
+      html += `<div class="fold-head" id="fold-gn"><h3 class="sec">② GitNexus</h3><button type="button">收起</button></div>`;
+      html += `<div id="body-gn">`;
+      if (otherHits.length) {
+        html += `<div class="gn-sub">其它</div><div id="gn-other"></div>`;
+      }
+      html += `<div class="gn-sub">鉴权 / 通知</div><div id="gn-auth"></div>`;
+      html += `</div></section>`;
+
+      $("detail").innerHTML = html;
+      bindFold("fold-biz", "body-biz", "biz-panel-toggle");
+      bindFold("fold-gn", "body-gn");
+      bindStepFolds();
+      $("biz-expand-all").onclick = (e) => {
+        e.stopPropagation();
+        document.querySelectorAll("#biz-steps .step.has-detail").forEach((el) => {
+          el.classList.add("open");
+          const c = el.querySelector(".chev");
+          if (c) c.textContent = "收起";
+        });
+      };
+      $("biz-collapse-all").onclick = (e) => {
+        e.stopPropagation();
+        document.querySelectorAll("#biz-steps .step.has-detail").forEach((el) => {
+          el.classList.remove("open");
+          const c = el.querySelector(".chev");
+          if (c) c.textContent = "展开";
+        });
+      };
+      await drawMermaid($("chart"), chainToMermaid(sc.chain));
+      if (otherHits.length) renderGnList($("gn-other"), otherHits, "gno");
+      renderGnList($("gn-auth"), authHits, "gna");
+    }
+
+    function bindStepFolds() {
+      document.querySelectorAll("#biz-steps .step.has-detail").forEach((el) => {
+        el.onclick = () => {
+          const open = el.classList.toggle("open");
+          const c = el.querySelector(".chev");
+          if (c) c.textContent = open ? "收起" : "展开";
+        };
+      });
+    }
+
+    async function loadGn() {
+      if (location.protocol === "file:") {
+        setStatus("请用 http://127.0.0.1:8765/module-flows.html 打开", "err");
+        return;
+      }
+      setStatus("连接中…");
+      try {
+        const repo = $("repo").value.trim() || "SVQuant";
+        const cypher = `MATCH (p:Process) RETURN p.id AS id, p.label AS label, p.heuristicLabel AS heuristicLabel, p.processType AS processType, p.stepCount AS stepCount ORDER BY p.stepCount DESC`;
+        const res = await fetch(`${apiBase()}/api/query`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repo, cypher }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        gnProcesses = data.result || [];
+        setStatus(`GitNexus ${gnProcesses.length}`, "ok");
+      } catch (e) {
+        gnProcesses = [];
+        setStatus(`GitNexus 未连接 · ${e.message}`);
+      }
+    }
+
+    $("reload").onclick = loadGn;
+    $("openGn").onclick = () => window.open(apiBase() + "/", "_blank");
+    renderAside();
+    loadGn();
+  </script>
+</body>
+</html>

@@ -63,10 +63,45 @@ def handle_kh_get(
     ensure_kh_schema()
 
     if path == "/api/kh/meta":
+        from knowledge_hub.schemas.knowledge_unit import (
+            DOC_TYPE_OPTIONS,
+            DOMAIN_OPTIONS,
+            FIELD_LABELS_ZH,
+        )
+
         send_json(
             {
                 "pipelines": store.list_pipelines(),
                 "chunkStrategies": list_strategies(),
+                "structuredDomains": [
+                    {"id": d, "labelZh": "论文" if d == "paper" else d}
+                    for d in DOMAIN_OPTIONS
+                ],
+                "docTypes": list(DOC_TYPE_OPTIONS),
+                "structuredFieldLabels": FIELD_LABELS_ZH,
+            }
+        )
+        return True
+
+    if path.startswith("/api/kh/documents/") and path.endswith("/attachment"):
+        mid = path[len("/api/kh/documents/") : -len("/attachment")].strip("/")
+        try:
+            doc_id = int(mid)
+        except ValueError:
+            send_json({"error": "无效文档 id"}, 400)
+            return True
+        try:
+            data, fname, mime = store.get_document_attachment(doc_id)
+        except FileNotFoundError as exc:
+            send_json({"error": str(exc)}, 404)
+            return True
+        import base64
+
+        send_json(
+            {
+                "fileName": fname,
+                "mimeType": mime,
+                "contentBase64": base64.b64encode(data).decode("ascii"),
             }
         )
         return True
@@ -224,6 +259,28 @@ def handle_kh_post(
                 send_json({"error": "知识库名称已存在"}, 409)
             else:
                 raise
+        return True
+
+    if path == "/api/kh/documents/structured":
+        try:
+            doc = store.create_structured_document(
+                collection_id=int(
+                    body.get("collectionId") or body.get("collection_id") or 0
+                ),
+                domain=str(body.get("domain") or "paper"),
+                payload=body.get("payload") if isinstance(body.get("payload"), dict) else {},
+                created_by=uid,
+                ingest=bool(body.get("ingest", True)),
+                chunk_strategy=body.get("chunkStrategy") or body.get("chunk_strategy"),
+                attachment_base64=body.get("attachmentBase64")
+                or body.get("attachment_base64"),
+                attachment_file_name=str(
+                    body.get("attachmentFileName") or body.get("attachment_file_name") or ""
+                ),
+            )
+            send_json({"document": doc})
+        except (ValueError, TypeError) as exc:
+            send_json({"error": str(exc)}, 400)
         return True
 
     if path == "/api/kh/documents":
@@ -395,6 +452,47 @@ def handle_kh_post(
             send_json({"provider": store.upsert_model_provider(body)})
         except ValueError as exc:
             send_json({"error": str(exc)}, 400)
+        return True
+
+    if path == "/api/kh/model-providers/test":
+        try:
+            from knowledge_hub.embedding import get_provider_credentials
+            from knowledge_hub.llm import KhLlmError, chat_completions
+
+            pk = str(body.get("providerKey") or body.get("provider_key") or "").strip()
+            mn = str(body.get("modelName") or body.get("model_name") or "").strip()
+            msg = str(body.get("message") or body.get("query") or "").strip()
+            if not pk or not mn:
+                raise ValueError("缺少 providerKey 或 modelName")
+            if not msg:
+                raise ValueError("请输入测试内容")
+            creds = get_provider_credentials(pk, model_name=mn)
+            if not creds:
+                raise ValueError("未找到该供应商或未配置基础 Url")
+            out = chat_completions(
+                messages=[{"role": "user", "content": msg}],
+                temperature=0.3,
+                max_tokens=512,
+                model_override=mn,
+                creds=creds,
+            )
+            send_json(
+                {
+                    "ok": True,
+                    "answer": out.get("content") or "",
+                    "model": out.get("model"),
+                    "providerKey": out.get("providerKey"),
+                    "tokensIn": out.get("tokensIn"),
+                    "tokensOut": out.get("tokensOut"),
+                }
+            )
+        except ValueError as exc:
+            send_json({"error": str(exc)}, 400)
+        except Exception as exc:
+            from knowledge_hub.llm import KhLlmError as _KhLlmErr
+
+            code = 502 if isinstance(exc, _KhLlmErr) else 500
+            send_json({"error": str(exc)}, code)
         return True
 
     if path == "/api/kh/default-models":

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""刷新 WebApp/docs/DATABASE(持续更新).md（表清单 / 字段 / 脱敏样例）。
+"""刷新 E:\\SVQuant_docs\\DATABASE(持续更新).md（表清单 / 字段 / 脱敏样例）。
 
 用法（在 backend 目录）::
 
@@ -18,7 +18,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCS = ROOT.parent / "docs"
+DOCS = Path(r"E:\SVQuant_docs")
 OUT = DOCS / "DATABASE(持续更新).md"
 PANEL_DB = ROOT / "output" / "factor_dashboard" / "metrics.sqlite"
 
@@ -41,7 +41,7 @@ SAMPLE_COLS: dict[str, tuple[str, ...]] = {
     "detect_projects": ("id", "user_id", "name", "factor_name", "run_count", "updated_at"),
     "detect_runs": ("id", "user_id", "project_id", "factor_name", "finished_at", "elapsed_sec"),
     "strategy_projects": ("id", "user_id", "name", "run_count", "updated_at"),
-    "strategy_runs": ("id", "user_id", "project_id", "name", "finished_at", "elapsed_sec"),
+    "strategy_runs": ("id", "user_id", "project_id", "name", "remark", "flagged", "finished_at", "elapsed_sec"),
     "news_items": (
         "id",
         "source",
@@ -55,6 +55,14 @@ SAMPLE_COLS: dict[str, tuple[str, ...]] = {
     "user_factor_libraries": ("id", "user_id", "name", "updated_at"),
     "user_library_factors": ("id", "user_id", "library_id", "name", "category_label", "updated_at"),
     "user_strategy_libraries": ("id", "user_id", "name", "updated_at"),
+    "builtin_strategies": (
+        "id",
+        "name",
+        "strategy_type",
+        "execution_mode",
+        "entrypoint",
+        "updated_at",
+    ),
     "user_library_strategies": (
         "id",
         "user_id",
@@ -74,6 +82,17 @@ SAMPLE_COLS: dict[str, tuple[str, ...]] = {
     "notifications": ("id", "user_id", "actor_id", "type", "post_id", "read_at", "created_at"),
     "community_reports": ("id", "reporter_id", "target_type", "post_id", "reason", "status", "created_at"),
     "ai_usage": ("id", "user_id", "skill", "tokens_in", "tokens_out", "created_at"),
+    "app_audit_logs": (
+        "id",
+        "created_at",
+        "username",
+        "action",
+        "module",
+        "method",
+        "path",
+        "status_code",
+        "duration_ms",
+    ),
     "re_factor_catalog_snapshot": (
         "scope",
         "content_hash",
@@ -116,6 +135,7 @@ PURPOSES: dict[str, str] = {
     "user_factor_libraries": "用户自建因子库（文件夹）；与内置库同级，按 user 隔离。",
     "user_library_factors": "用户因子库内的因子条目（含代码正文、分类、说明）。",
     "user_strategy_libraries": "用户自建策略库（文件夹）；与内置库同级，按 user 隔离。",
+    "builtin_strategies": "平台内置策略库（无 version）：id/名称/类型/执行模式/入口/标签/完整源码；由 index.yaml 种子导入，策略库页读此表。",
     "user_library_strategies": "用户策略库内入库快照（含策略说明、回测归档 JSON；与研究侧 run 脱钩）。",
     "kh_collections": "KnowledgeHub 知识库集合（:9531；类型 pipeline + 分块策略）。",
     "kh_documents": "KnowledgeHub 文档（正文 / 分块策略 / status / enabled / parse_error）。",
@@ -132,10 +152,11 @@ PURPOSES: dict[str, str] = {
     "notifications": "站内通知（回复、@、系统等）。",
     "community_reports": "举报帖/评论；管理仓处理队列。",
     "ai_usage": "Agent 调用流水（按 skill 一行）；日配额按当日行数计。",
+    "app_audit_logs": "系统审计日志（写操作 / 登录注册 / 4xx·5xx）；管理仓「系统日志」页查询；成功 GET 不记。",
     "detect_projects": "因子检测项目配置与归属。",
     "detect_runs": "因子检测一次运行结果摘要 / 状态。",
     "strategy_projects": "策略研究项目配置与归属。",
-    "strategy_runs": "策略回测一次运行结果摘要 / 状态。",
+    "strategy_runs": "策略回测一次运行结果（检测报告列表按此表；含备注/标记；按 user 隔离）。",
     "news_items": "资讯聚合条目（快讯/市场/公告/研报/政策/海外；真源 ingest upsert，含定时调度）。",
     "user_watchlists": "用户自选股组合（文件夹）；按 user 隔离，前端 `/data/watchlist`。",
     "user_watchlist_symbols": "自选组合内标的（symbol + 名称快照）；归属某 watchlist。",
@@ -205,6 +226,16 @@ FIELD_HINTS: dict[str, dict[str, str]] = {
         "name": "库名（同用户唯一）",
         "created_at": "创建",
         "updated_at": "更新",
+    },
+    "builtin_strategies": {
+        "id": "策略 id（主键；回测可作 strategy_id）",
+        "name": "展示名",
+        "strategy_type": "分类：trend/momentum/reversal/…",
+        "execution_mode": "`vectorized` / `event`",
+        "entrypoint": "入口类名",
+        "tags": "标签 JSON 数组",
+        "source": "完整 Python 源码（无 version 字段）",
+        "updated_at": "更新时间",
     },
     "user_library_strategies": {
         "id": "主键",
@@ -384,6 +415,24 @@ FIELD_HINTS: dict[str, dict[str, str]] = {
         "tokens_out": "输出 token",
         "created_at": "记账时间（按日计配额）",
     },
+    "app_audit_logs": {
+        "id": "主键",
+        "created_at": "事件时间",
+        "user_id": "操作用户 id（未登录可空）",
+        "username": "用户名快照",
+        "role": "角色快照 user/admin",
+        "action": "动作：auth.login / http.post 等",
+        "module": "模块：auth/community/detect/…（由路径前缀推断）",
+        "resource": "资源标识（可空）",
+        "method": "HTTP 方法",
+        "path": "接口路径（去 query）",
+        "status_code": "HTTP 状态码",
+        "duration_ms": "耗时毫秒",
+        "ip": "客户端 IP",
+        "user_agent": "UA（截断）",
+        "detail": "补充说明（如登录成功、HTTP 502）",
+        "request_id": "请求关联 id（可空）",
+    },
     "re_factor_catalog_snapshot": {
         "scope": "`primary`（默认十库）或 `all`",
         "content_hash": "库+因子清单 SHA256，用于判断 RE 是否有更新",
@@ -444,6 +493,8 @@ FIELD_HINTS: dict[str, dict[str, str]] = {
         "project_id": "所属项目 id",
         "name": "运行名 / 策略名",
         "description": "说明",
+        "remark": "用户备注（检测报告可编辑）",
+        "flagged": "是否标记",
         "request": "请求参数 JSON",
         "result": "结果摘要 JSON",
         "status": "运行状态（若有）",

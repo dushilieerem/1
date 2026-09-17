@@ -14,7 +14,7 @@ import {
   type ISeriesApi,
   type Time,
 } from "lightweight-charts";
-import { fetchMarketDaily, peekPersistedDaily, type MarketBar, type MarketDaily } from "@/lib/marketDataApi";
+import { fetchMarketDaily, mergeMarketDaily, peekPersistedDaily, yearlyRangesBack, type MarketBar, type MarketDaily } from "@/lib/marketDataApi";
 import {
   MA_DEFS,
   bollinger,
@@ -135,27 +135,68 @@ export function DataSymbolChartPage() {
       setLoading(true);
     }
     setErr(null);
-    const lookback = (days: number) => {
-      const d = new Date();
-      d.setDate(d.getDate() - days);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    };
     void (async () => {
+      const lookback = (days: number) => {
+        const d = new Date();
+        d.setDate(d.getDate() - days);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      };
       try {
         const near = await fetchMarketDaily(symbol, {
-          start: lookback(120),
+          start: lookback(180),
         }).catch(() => null);
         if (cancelled) return;
         if (near?.bars?.length) {
-          setDaily((prev) =>
-            (near.bars?.length || 0) >= (prev?.bars?.length || 0) ? near : prev,
-          );
+          setDaily((prev) => mergeMarketDaily(prev, near) || prev);
           setLoading(false);
         }
-        const full = await fetchMarketDaily(symbol);
+
+        const years = yearlyRangesBack({ earliestYear: 2005 });
+        let emptyStreak = 0;
+        let haveBars = Boolean(near?.bars?.length || hit?.bars?.length);
+        let inFlight =
+          years.length > 0
+            ? fetchMarketDaily(symbol, {
+                start: years[0].start,
+                end: years[0].end,
+              }).catch(() => null)
+            : Promise.resolve(null);
+
+        for (let i = 0; i < years.length; i++) {
+          if (cancelled) return;
+          const chunk = await inFlight;
+          const next = years[i + 1];
+          if (chunk?.bars?.length) {
+            emptyStreak = 0;
+            haveBars = true;
+            setDaily((prev) => mergeMarketDaily(prev, chunk) || prev);
+            setLoading(false);
+            // 有数据才预取更早一年，避免 2004 空了却已发出 2003
+            if (next) {
+              inFlight = fetchMarketDaily(symbol, {
+                start: next.start,
+                end: next.end,
+              }).catch(() => null);
+            }
+          } else {
+            emptyStreak += 1;
+            if (haveBars) break;
+            if (emptyStreak >= 2) break;
+            if (next) {
+              inFlight = fetchMarketDaily(symbol, {
+                start: next.start,
+                end: next.end,
+              }).catch(() => null);
+            }
+          }
+        }
+
         if (cancelled) return;
-        if (full?.bars?.length) setDaily(full);
-        else if (!near?.bars?.length && !hit?.bars?.length) setErr("暂无日线数据");
+        setDaily((prev) => {
+          if (prev?.bars?.length) return prev;
+          setErr("暂无日线数据");
+          return prev;
+        });
       } catch (ex) {
         if (!cancelled && !hit?.bars?.length) {
           setDaily(null);

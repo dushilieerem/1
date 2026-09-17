@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import {
+  downloadDocumentAttachment,
   getDocument,
   listChunks,
   listCollections,
@@ -14,15 +15,80 @@ const PAGE_SIZE = 10;
 
 type Span = { start: number; end: number };
 
+/** 与后端 FIELD_LABELS_ZH / render_payload_preview 对齐 */
+const STRUCTURED_FIELD_LABELS: Record<string, string> = {
+  summary: "摘要",
+  background: "背景",
+  motivation: "动机",
+  what_it_does: "方法概述",
+  key_idea: "核心思想",
+  ml_tech: "机器学习技术",
+  qf_tech: "量化金融模型",
+  data: "数据",
+  result: "结果",
+  limitation: "局限",
+  conclusion: "结论",
+  document_meta: "文献信息",
+};
+
+const NOTE_SECTION_LABELS = Object.values(STRUCTURED_FIELD_LABELS).filter(
+  (x) => x !== "文献信息",
+);
+
 /** 统一换行，便于 Windows 原文（\\r\\n）与切片（\\n）对齐 */
 function normalizeNewlines(s: string) {
   return (s || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+/** 去掉结构化检索前缀 【标题】\\n【字段】xxx\\n */
+function stripStructuredWrapper(text: string): string {
+  const lines = text.split("\n");
+  if (
+    lines.length >= 2 &&
+    lines[0]?.startsWith("【") &&
+    lines[1]?.startsWith("【字段】")
+  ) {
+    return lines.slice(2).join("\n").trim();
+  }
+  return text;
+}
+
+/**
+ * 结构化字段切片：按预览里的 ## 小节定位（切片带检索前缀，不能整段 indexOf）。
+ */
+function locateStructuredFieldSpan(
+  norm: string,
+  field: string,
+): { start: number; end: number } | null {
+  if (field === "document_meta") {
+    let end = norm.length;
+    for (const label of NOTE_SECTION_LABELS) {
+      const needle = `## ${label}`;
+      const at = norm.indexOf(needle);
+      if (at >= 0 && at < end) end = at;
+    }
+    while (end > 0 && (norm[end - 1] === "\n" || norm[end - 1] === " ")) end -= 1;
+    if (end <= 0) return null;
+    return { start: 0, end };
+  }
+  const label = STRUCTURED_FIELD_LABELS[field];
+  if (!label) return null;
+  const heading = `## ${label}`;
+  const start = norm.indexOf(heading);
+  if (start < 0) return null;
+  const afterHeading = start + heading.length;
+  const rest = norm.slice(afterHeading);
+  const next = rest.search(/\n##\s/);
+  let end = next >= 0 ? afterHeading + next : norm.length;
+  while (end > start && (norm[end - 1] === "\n" || norm[end - 1] === " ")) end -= 1;
+  return { start, end };
 }
 
 /**
  * 在原文中定位每片范围。
  * 先按归一化换行匹配，再映射回原文下标（保留预览里的真实字符）。
  * 标题分块若用 \\n\\n 拼过多段，整段可能对不上，会退回「首行 / 标题」近似定位。
+ * 结构化字段切片按 ## 小节高亮。
  */
 function locateChunkSpans(body: string, chunks: KhChunk[]): Map<number, Span> {
   const map = new Map<number, Span>();
@@ -57,6 +123,19 @@ function locateChunkSpans(body: string, chunks: KhChunk[]): Map<number, Span> {
     const text = normalizeNewlines(c.text || "");
     if (!text) continue;
 
+    const kind = typeof c.meta?.kind === "string" ? c.meta.kind : "";
+    const field = typeof c.meta?.field === "string" ? c.meta.field : "";
+    if (kind === "structured_field" && field) {
+      const sec = locateStructuredFieldSpan(norm, field);
+      if (sec) {
+        const start = normToOrig[sec.start] ?? 0;
+        const end = origEnd(sec.end);
+        map.set(c.ordinal, { start, end: Math.min(end, body.length) });
+        cursor = sec.start + 1;
+        continue;
+      }
+    }
+
     let normStart = -1;
     const metaStart = c.meta?.start;
     if (typeof metaStart === "number" && metaStart >= 0 && metaStart < body.length) {
@@ -76,14 +155,25 @@ function locateChunkSpans(body: string, chunks: KhChunk[]): Map<number, Span> {
     if (normStart < 0) normStart = norm.indexOf(text, cursor);
     if (normStart < 0) normStart = norm.indexOf(text.trim(), cursor);
 
+    // 结构化前缀剥掉后再找正文
+    if (normStart < 0) {
+      const bare = stripStructuredWrapper(text);
+      if (bare && bare !== text) {
+        normStart = norm.indexOf(bare, cursor);
+        if (normStart < 0) normStart = norm.indexOf(bare);
+      }
+    }
+
     // 整段对不上时（常见于标题策略用 \\n\\n 拼接多节），用首行 / 标题近似
     if (normStart < 0) {
       const firstLine = text.split("\n").find((ln) => ln.trim())?.trim() || "";
-      if (firstLine) normStart = norm.indexOf(firstLine, cursor);
+      if (firstLine && !firstLine.startsWith("【")) {
+        normStart = norm.indexOf(firstLine, cursor);
+      }
     }
     if (normStart < 0) {
       const title = typeof c.meta?.title === "string" ? c.meta.title.trim() : "";
-      if (title) {
+      if (title && kind !== "structured_field") {
         const headed = norm.indexOf(`# ${title}`, cursor);
         const headed2 = headed < 0 ? norm.indexOf(title, cursor) : headed;
         if (headed2 >= 0) normStart = headed2;
@@ -91,7 +181,7 @@ function locateChunkSpans(body: string, chunks: KhChunk[]): Map<number, Span> {
     }
     if (normStart < 0) {
       const tip = text.slice(0, Math.min(80, text.length)).split("\n")[0]?.trim();
-      if (tip) normStart = norm.indexOf(tip, cursor);
+      if (tip && !tip.startsWith("【")) normStart = norm.indexOf(tip, cursor);
     }
     if (normStart < 0) normStart = norm.indexOf(text);
     if (normStart < 0) continue;
@@ -100,10 +190,15 @@ function locateChunkSpans(body: string, chunks: KhChunk[]): Map<number, Span> {
     let normEnd = normStart + text.length;
     const exact = norm.slice(normStart, normStart + text.length) === text;
     if (!exact) {
-      const rest = norm.slice(normStart);
-      const nextHeading = rest.search(/\n#{1,6}\s/);
-      if (nextHeading > 0) normEnd = normStart + nextHeading;
-      else normEnd = Math.min(norm.length, normStart + Math.min(text.length, 400));
+      const bare = stripStructuredWrapper(text);
+      if (bare && norm.slice(normStart, normStart + bare.length) === bare) {
+        normEnd = normStart + bare.length;
+      } else {
+        const rest = norm.slice(normStart);
+        const nextHeading = rest.search(/\n#{1,6}\s/);
+        if (nextHeading > 0) normEnd = normStart + nextHeading;
+        else normEnd = Math.min(norm.length, normStart + Math.min(text.length, 400));
+      }
     }
 
     const start = normToOrig[normStart] ?? 0;
@@ -128,7 +223,7 @@ export function DocumentDetailPage() {
   const [page, setPage] = useState(1);
   const [err, setErr] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
-  const markRef = useRef<HTMLMarkElement | null>(null);
+  const markRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!collId || !documentId) return;
@@ -216,11 +311,25 @@ export function DocumentDetailPage() {
       <div className="mb-2 shrink-0">
         <h1 className="text-xl font-bold text-slate-900">{doc.title}</h1>
         <p className="mt-1 text-xs text-slate-400">
-          状态 {doc.status} · 分块 {doc.chunkStrategy || coll?.chunkStrategy || "—"} ·{" "}
-          {chunks.length} 片
+          状态 {doc.status}
+          {doc.ingestMode === "structured" ? " · 结构化填报" : ""}
+          · 分块 {doc.chunkStrategy || coll?.chunkStrategy || "—"} · {chunks.length} 片
           {doc.fileSize ? ` · ${doc.fileSize} B` : ""}
           {doc.createdAt ? ` · ${doc.createdAt.slice(0, 19)}` : ""}
         </p>
+        {doc.hasAttachment ? (
+          <button
+            type="button"
+            className="mt-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-[var(--kh-teal-deep)] hover:bg-slate-50"
+            onClick={() =>
+              void downloadDocumentAttachment(doc.id).catch((e) =>
+                setErr(e instanceof Error ? e.message : String(e)),
+              )
+            }
+          >
+            下载原文附件
+          </button>
+        ) : null}
       </div>
 
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2">

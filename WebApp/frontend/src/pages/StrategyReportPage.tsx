@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, Fragment, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactECharts from "echarts-for-react";
 import {
-  Archive,
   BarChart3,
   ChevronDown,
   ChevronRight,
@@ -16,6 +15,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { AiBacktestInterpretDialog } from "@/components/AiBacktestInterpretDialog";
+import { StrategyPlazaShareDialog } from "@/components/strategy/StrategyPlazaShareDialog";
 import {
   CHART,
   areaGradient,
@@ -28,22 +28,13 @@ import {
 import { getStoredUser, prepareAuthHandoff } from "@/lib/auth";
 import { buildStrategyShareDraft } from "@/lib/communityShare";
 import {
-  STRATEGY_ARCHIVE_CATEGORIES,
-  type StrategyArchiveCategory,
-} from "@/lib/strategyLibraryApi";
-import {
   STRATEGY_BENCHMARK_OPTIONS,
   STRATEGY_UNIVERSE_OPTIONS,
   getStrategyRun,
   optionLabel,
   type StrategyRunRecord,
 } from "@/lib/strategyStore";
-import {
-  addStrategyToUserLibrary,
-  getLibraryStrategyArchive,
-  listUserStrategyLibraries,
-  type UserStrategyLibrary,
-} from "@/lib/userStrategyLibraries";
+import { getLibraryStrategyArchive } from "@/lib/userStrategyLibraries";
 import type {
   YgEventFill,
   YgEventPositionSnap,
@@ -270,17 +261,7 @@ export function StrategyReportPage() {
   const [tradePage, setTradePage] = useState(1);
   const [holdingsPage, setHoldingsPage] = useState(1);
   const [expandedDates, setExpandedDates] = useState<Set<string>>(() => new Set());
-  const [archiveOpen, setArchiveOpen] = useState(false);
-  const [userLibs, setUserLibs] = useState<UserStrategyLibrary[]>([]);
-  const [archiveLibId, setArchiveLibId] = useState<number | "">("");
-  const [archiveName, setArchiveName] = useState("");
-  const [archiveDesc, setArchiveDesc] = useState("");
-  const [archiveCategory, setArchiveCategory] = useState<
-    StrategyArchiveCategory | ""
-  >("");
-  const [archiveBusy, setArchiveBusy] = useState(false);
-  const [archiveErr, setArchiveErr] = useState<string | null>(null);
-  const [archiveOk, setArchiveOk] = useState<string | null>(null);
+  const [plazaShareOpen, setPlazaShareOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -725,8 +706,7 @@ export function StrategyReportPage() {
     })();
   };
 
-  const openArchive = () => {
-    if (isArchiveSnap || rec?.immutable) return;
+  const shareToPlaza = () => {
     if (!getStoredUser()) {
       prepareAuthHandoff();
       navigate(
@@ -734,76 +714,7 @@ export function StrategyReportPage() {
       );
       return;
     }
-    setArchiveErr(null);
-    setArchiveOk(null);
-    setArchiveName("");
-    setArchiveDesc("");
-    setArchiveCategory("");
-    setArchiveLibId("");
-    setArchiveOpen(true);
-    void listUserStrategyLibraries()
-      .then((libs) => {
-        setUserLibs(libs);
-        if (libs.length === 1) setArchiveLibId(libs[0].id);
-      })
-      .catch((e) => {
-        setArchiveErr(e instanceof Error ? e.message : String(e));
-      });
-  };
-
-  const confirmArchive = async () => {
-    if (!rec || isArchiveSnap || rec.immutable) return;
-    const title = archiveName.trim();
-    if (!title) {
-      setArchiveErr("请填写策略名称");
-      return;
-    }
-    const desc = archiveDesc.trim();
-    if (!desc) {
-      setArchiveErr("请填写策略说明");
-      return;
-    }
-    if (desc.length > 40) {
-      setArchiveErr("策略说明最多 40 字");
-      return;
-    }
-    if (archiveLibId === "" || archiveLibId == null) {
-      setArchiveErr("请选择要放入的策略库");
-      return;
-    }
-    if (!archiveCategory) {
-      setArchiveErr("请选择分类");
-      return;
-    }
-    const code = String(req?.strategy_code || "").trim();
-    if (!code) {
-      setArchiveErr("该次回测没有策略代码，无法入库");
-      return;
-    }
-    setArchiveBusy(true);
-    setArchiveErr(null);
-    try {
-      await addStrategyToUserLibrary(Number(archiveLibId), {
-        name: title,
-        body: code,
-        description: desc,
-        categoryLabel: archiveCategory,
-        codeId: title,
-        sourceRunId: rec.id,
-        archiveRequest: { ...(req as Record<string, unknown>) },
-        archiveResult: { ...(result as Record<string, unknown>) },
-        archiveElapsedSec: rec.elapsedSec,
-        archiveFinishedAt: rec.finishedAt,
-      });
-      const libName =
-        userLibs.find((l) => l.id === Number(archiveLibId))?.name || "策略库";
-      setArchiveOk(`已入库到「${libName}」：${title}（含本次回测快照）`);
-      setArchiveOpen(false);
-    } catch (e) {
-      setArchiveErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setArchiveBusy(false);
-    }
+    setPlazaShareOpen(true);
   };
 
   const highlightMetrics: Array<{
@@ -924,11 +835,12 @@ export function StrategyReportPage() {
               <>
                 <button
                   type="button"
-                  onClick={openArchive}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-teal-300 bg-teal-50 px-3 py-1.5 text-sm font-medium text-teal-900 hover:bg-teal-100"
+                  onClick={shareToPlaza}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-cyan-300 bg-cyan-50 px-3 py-1.5 text-sm font-medium text-cyan-950 hover:bg-cyan-100"
                 >
-                  <Archive className="h-3.5 w-3.5" />
-                  入库
+                  <Share2 className="h-3.5 w-3.5" />
+                  <span className="sm:hidden">广场</span>
+                  <span className="hidden sm:inline">分享到策略广场</span>
                 </button>
                 <button
                   type="button"
@@ -936,7 +848,7 @@ export function StrategyReportPage() {
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
                 >
                   <Share2 className="h-3.5 w-3.5" />
-                  <span className="sm:hidden">分享</span>
+                  <span className="sm:hidden">社区</span>
                   <span className="hidden sm:inline">分享到社区</span>
                 </button>
                 <Link
@@ -956,14 +868,6 @@ export function StrategyReportPage() {
             )}
           </div>
         </div>
-
-        {archiveOk ? (
-          <div className="mx-auto max-w-[1400px] px-3 pb-2 sm:px-6">
-            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-              {archiveOk}
-            </p>
-          </div>
-        ) : null}
 
         <div className="mx-auto w-full max-w-[1400px] space-y-2 px-3 pb-4 sm:px-6">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
@@ -1691,97 +1595,17 @@ export function StrategyReportPage() {
         </div>
       </div>
 
-      {archiveOpen ? (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
-            <h3 className="text-base font-bold text-slate-900">策略入库</h3>
-            <label className="mt-4 block text-xs text-slate-500">
-              目标策略库
-              <select
-                value={archiveLibId === "" ? "" : String(archiveLibId)}
-                onChange={(e) =>
-                  setArchiveLibId(e.target.value ? Number(e.target.value) : "")
-                }
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              >
-                <option value="">请选择</option>
-                {userLibs.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="mt-3 block text-xs text-slate-500">
-              分类
-              <select
-                value={archiveCategory}
-                onChange={(e) =>
-                  setArchiveCategory(
-                    (e.target.value || "") as StrategyArchiveCategory | "",
-                  )
-                }
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              >
-                <option value="">请选择</option>
-                {STRATEGY_ARCHIVE_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="mt-3 block text-xs text-slate-500">
-              策略名称
-              <input
-                value={archiveName}
-                onChange={(e) => {
-                  setArchiveName(e.target.value);
-                  setArchiveErr(null);
-                }}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400"
-              />
-            </label>
-            <label className="mt-3 block text-xs text-slate-500">
-              <span className="flex items-center justify-between gap-2">
-                <span>策略说明</span>
-                <span className="tabular-nums text-slate-400">
-                  {archiveDesc.length}/40
-                </span>
-              </span>
-              <input
-                value={archiveDesc}
-                maxLength={40}
-                onChange={(e) => {
-                  setArchiveDesc(e.target.value.slice(0, 40));
-                  setArchiveErr(null);
-                }}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400"
-              />
-            </label>
-            {archiveErr ? (
-              <p className="mt-2 text-xs text-red-600">{archiveErr}</p>
-            ) : null}
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setArchiveOpen(false)}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                disabled={archiveBusy || userLibs.length === 0}
-                onClick={() => void confirmArchive()}
-                className="rounded-lg bg-teal-700 px-5 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
-              >
-                {archiveBusy ? "入库中…" : "确定入库"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <StrategyPlazaShareDialog
+        open={plazaShareOpen}
+        onClose={() => setPlazaShareOpen(false)}
+        runId={String(rec.id || runId)}
+        defaultTitle={(rec.name || rec.description || "策略分享").slice(0, 120)}
+        rangeLabel={rangeLabel}
+        universeLabel={optionLabel(uniCode, STRATEGY_UNIVERSE_OPTIONS)}
+        benchmarkLabel={optionLabel(bmCode, STRATEGY_BENCHMARK_OPTIONS)}
+        request={req}
+        result={result}
+      />
     </div>
   );
 }

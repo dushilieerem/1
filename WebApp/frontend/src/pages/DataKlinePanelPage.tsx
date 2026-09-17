@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import {
   ArrowRight,
   CandlestickChart,
@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 import { SymbolOverviewPanel } from "@/components/data/SymbolOverviewPanel";
 import { openAuthedTab } from "@/components/RequireAuth";
-import { fetchMarketDaily } from "@/lib/marketDataApi";
 
 /** 文档推荐交易所后缀；默认平安银行 */
 const DEFAULT_SYMBOL = "000001.SZ";
@@ -22,10 +21,8 @@ const FEATURES = [
 export function DataKlinePanelPage() {
   const [draftQ, setDraftQ] = useState("");
 
-  // 进页预热全历史写入本地，后续任意时刻进面板可秒开
-  useEffect(() => {
-    void fetchMarketDaily(DEFAULT_SYMBOL).catch(() => undefined);
-  }, []);
+  // 聚焦区由 SymbolOverviewPanel 近端先画 + 按年补齐；勿在此拉全历史
+  // （旧逻辑 fetchMarketDaily(无 start) 易打满 BFF 45s → 502，和搜其它票的渐进加载两套路径）
 
   const onSearch = (e: FormEvent) => {
     e.preventDefault();

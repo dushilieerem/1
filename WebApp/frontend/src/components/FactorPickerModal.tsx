@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, X } from "lucide-react";
 import {
   builtinCategoryLabelsFromFactors,
+  factorExplainText,
+  factorTitle,
   loadFactors,
   type FactorMeta,
 } from "@/lib/factorCatalog";
@@ -38,11 +40,9 @@ function labelOf(
   tempLabels: Record<string, string>,
 ): string {
   if (tempLabels[code]) return tempLabels[code];
-  return (
-    list.find((f) => f.name === code)?.explain ||
-    list.find((f) => f.name === code)?.description ||
-    code
-  );
+  const hit = list.find((f) => f.name === code);
+  if (!hit) return code;
+  return hit.displayName || factorExplainText(hit);
 }
 
 function FactorRow({
@@ -71,9 +71,11 @@ function FactorRow({
         {on ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
       </span>
       <span className="min-w-0 flex-1 truncate font-medium text-slate-800">
-        {f.explain || f.description}
+        {f.displayName || factorExplainText(f)}
       </span>
-      <code className="shrink-0 text-xs text-slate-400">{f.name}</code>
+      <span className="max-w-[42%] shrink-0 truncate text-right text-xs text-slate-400">
+        {factorTitle(f)}
+      </span>
     </button>
   );
 }
@@ -203,7 +205,9 @@ export function FactorPickerModal({
       return (
         f.name.toLowerCase().includes(q) ||
         f.description.toLowerCase().includes(q) ||
-        f.explain.toLowerCase().includes(q)
+        f.explain.toLowerCase().includes(q) ||
+        (f.displayName || "").toLowerCase().includes(q) ||
+        (f.nameEn || "").toLowerCase().includes(q)
       );
     });
   }, [sourceFactors, query, category]);
@@ -532,6 +536,7 @@ export function FactorPickerModal({
                   const isTemp =
                     allowTempFactor &&
                     (Boolean(tempLabels[code]) || !catalogNames.has(code));
+                  const hit = allKnown.find((f) => f.name === code);
                   return (
                     <div
                       key={code}
@@ -554,11 +559,13 @@ export function FactorPickerModal({
                             </span>
                           ) : null}
                         </div>
-                        <code
-                          className={isTemp ? "text-teal-700/80" : "text-slate-400"}
+                        <div
+                          className={`truncate ${
+                            isTemp ? "text-teal-700/80" : "text-slate-400"
+                          }`}
                         >
-                          {code}
-                        </code>
+                          {hit ? factorTitle(hit) : code}
+                        </div>
                       </div>
                       <button
                         type="button"

@@ -1,8 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Eye, FileUp, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
+import {
+  Eye,
+  FileText,
+  FileType2,
+  FileUp,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import {
   createDocument,
+  createStructuredDocument,
   deleteDocument,
   fetchMeta,
   getIngestProgress,
@@ -17,6 +30,11 @@ import {
   type KhDocument,
 } from "@/lib/api";
 import { ConfirmModal, ModalShell, NamePromptModal } from "@/components/Modals";
+import {
+  StructuredPaperForm,
+  sanitizePayload,
+  useStructuredFormState,
+} from "@/components/StructuredPaperForm";
 
 const TEXT_EXTS = /\.(md|markdown|txt|csv|json|yml|yaml|log)$/i;
 const BINARY_EXTS = /\.(docx|pdf)$/i;
@@ -86,7 +104,8 @@ export function DatasetDetailPage() {
     total?: number;
   } | null>(null);
   const [show, setShow] = useState(false);
-  const [mode, setMode] = useState<"upload" | "paste">("upload");
+  const [mode, setMode] = useState<"upload" | "paste" | "structured">("upload");
+  const structured = useStructuredFormState();
   const [parseOnCreate, setParseOnCreate] = useState(true);
   const [chunkStrategy, setChunkStrategy] = useState("markdown_heading");
   const [title, setTitle] = useState("");
@@ -160,11 +179,13 @@ export function DatasetDetailPage() {
     setBody("");
     setPendingFiles([]);
     setMode("upload");
+    structured.reset();
     setParseOnCreate(true);
     setChunkStrategy(
-      strategies.find((s) => s.id === "markdown_heading")?.id ||
+      strategies.find((s) => s.id === "structured_fields")?.id ||
+        strategies.find((s) => s.id === "markdown_heading")?.id ||
         strategies[0]?.id ||
-        "markdown_heading",
+        "structured_fields",
     );
     setBusy(false);
     setDragOver(false);
@@ -295,6 +316,43 @@ export function DatasetDetailPage() {
         }
       }
       if (!parseOnCreate) await reload();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      await reload().catch(() => undefined);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onStructuredSave = async () => {
+    const payload = sanitizePayload(structured.payload);
+    if (!payload.document.title.trim()) {
+      setErr("请填写标题");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const shouldParse = parseOnCreate;
+      const strategy = chunkStrategy || "structured_fields";
+      closeModal();
+      let attachmentBase64: string | undefined;
+      if (structured.attachment) {
+        attachmentBase64 = await readFileAsBase64(structured.attachment);
+      }
+      const created = await createStructuredDocument({
+        collectionId: collId,
+        domain: structured.domain,
+        payload: payload as unknown as Record<string, unknown>,
+        chunkStrategy: strategy,
+        ingest: false,
+        attachmentBase64,
+        attachmentFileName: structured.attachment?.name,
+      });
+      await reload();
+      if (shouldParse) {
+        await runIngest({ id: created.id, title: created.title });
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
       await reload().catch(() => undefined);
@@ -465,18 +523,29 @@ export function DatasetDetailPage() {
         ) : null}
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[960px] text-left text-sm">
+          <table className="w-full min-w-[1280px] table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-[32%]" />
+              <col className="w-[11%]" />
+              <col className="w-[9%]" />
+              <col className="w-[7%]" />
+              <col className="w-[7%]" />
+              <col className="w-[12%]" />
+              <col className="w-[6%]" />
+              <col className="w-[7%]" />
+              <col className="w-[9%]" />
+            </colgroup>
             <thead className="bg-slate-50 text-xs text-slate-500">
               <tr>
                 <th className="px-4 py-2.5 font-medium">名称</th>
-                <th className="px-4 py-2.5 font-medium">上传日期</th>
-                <th className="px-4 py-2.5 font-medium">来源</th>
-                <th className="px-4 py-2.5 font-medium">状态</th>
-                <th className="px-4 py-2.5 font-medium">启用</th>
-                <th className="px-4 py-2.5 font-medium">分块方法</th>
-                <th className="px-4 py-2.5 font-medium">分块数</th>
-                <th className="px-4 py-2.5 font-medium">Embedding</th>
-                <th className="px-4 py-2.5 font-medium">动作</th>
+                <th className="whitespace-nowrap px-4 py-2.5 font-medium">上传日期</th>
+                <th className="whitespace-nowrap px-4 py-2.5 font-medium">来源</th>
+                <th className="whitespace-nowrap px-4 py-2.5 font-medium">状态</th>
+                <th className="whitespace-nowrap px-4 py-2.5 font-medium">启用</th>
+                <th className="whitespace-nowrap px-4 py-2.5 font-medium">分块方法</th>
+                <th className="whitespace-nowrap px-4 py-2.5 font-medium">分块数</th>
+                <th className="whitespace-nowrap px-4 py-2.5 font-medium">Embedding</th>
+                <th className="whitespace-nowrap px-4 py-2.5 font-medium">动作</th>
               </tr>
             </thead>
             <tbody>
@@ -490,29 +559,40 @@ export function DatasetDetailPage() {
                 filtered.map((d) => (
                   <tr key={d.id} className="border-t border-slate-100 hover:bg-slate-50/80">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-slate-800">{d.title}</p>
-                      <p className="text-xs text-slate-400">
+                      <p className="truncate font-medium text-slate-800" title={d.title}>
+                        {d.title}
+                      </p>
+                      <p
+                        className="truncate text-xs text-slate-400"
+                        title={
+                          `${d.fileName || "粘贴文本"}${d.fileSize ? ` · ${formatBytes(d.fileSize)}` : ""}`
+                        }
+                      >
                         {d.fileName || "粘贴文本"}
                         {d.fileSize ? ` · ${formatBytes(d.fileSize)}` : ""}
                       </p>
                       {d.parseError ? (
                         <p
-                          className="mt-0.5 line-clamp-2 text-xs text-rose-500"
+                          className="mt-0.5 line-clamp-1 text-xs text-rose-500"
                           title={d.parseError}
                         >
                           {d.parseError}
                         </p>
                       ) : null}
                     </td>
-                    <td className="px-4 py-3 text-slate-500">
-                      {d.createdAt?.slice(0, 19) || "—"}
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-500">
+                      {d.createdAt
+                        ? d.createdAt.slice(0, 16).replace("T", " ")
+                        : "—"}
                     </td>
-                    <td className="px-4 py-3 text-slate-500">
-                      {d.fileName || d.sourceType === "file" || d.sourceType === "pdf" || d.sourceType === "docx"
-                        ? "本地上传"
-                        : "粘贴"}
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-500">
+                      {d.ingestMode === "structured"
+                        ? "结构化填报"
+                        : d.fileName || d.sourceType === "file" || d.sourceType === "pdf" || d.sourceType === "docx"
+                          ? "本地上传"
+                          : "粘贴"}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs ${
                           d.status === "ready"
@@ -528,7 +608,7 @@ export function DatasetDetailPage() {
                         {parsingId === d.id ? "解析中" : statusLabel(d.status)}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3">
                       <button
                         type="button"
                         disabled={parsingId != null}
@@ -547,11 +627,16 @@ export function DatasetDetailPage() {
                         {d.enabled === false ? "已停用" : "已启用"}
                       </button>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">
+                    <td
+                      className="truncate whitespace-nowrap px-4 py-3 text-slate-600"
+                      title={strategyLabel(d.chunkStrategy)}
+                    >
                       {strategyLabel(d.chunkStrategy)}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{d.chunkCount ?? 0}</td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                      {d.chunkCount ?? 0}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs ${
                           d.embedStatus === "ready"
@@ -581,33 +666,31 @@ export function DatasetDetailPage() {
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
-                        {d.status === "ready" ? (
-                          <button
-                            type="button"
-                            className="rounded px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50"
-                            title="重新解析（含 Embedding）"
-                            disabled={parsingId != null}
-                            onClick={() => void onParse(d)}
-                          >
-                            {parsingId === d.id ? "解析中…" : "重解析"}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="rounded px-1.5 py-1 text-xs text-sky-700 hover:bg-sky-50 disabled:opacity-50"
-                            title={
-                              d.status === "failed" ? "解析失败，点击重试" : "解析"
-                            }
-                            disabled={parsingId != null}
-                            onClick={() => void onParse(d)}
-                          >
-                            {parsingId === d.id
+                        <button
+                          type="button"
+                          className={`rounded p-1.5 disabled:opacity-50 ${
+                            d.status === "ready"
+                              ? "text-slate-400 hover:bg-sky-50 hover:text-sky-700"
+                              : "text-sky-600 hover:bg-sky-50 hover:text-sky-700"
+                          }`}
+                          title={
+                            parsingId === d.id
                               ? "解析中…"
-                              : d.status === "failed"
-                                ? "重试"
-                                : "解析"}
-                          </button>
-                        )}
+                              : d.status === "ready"
+                                ? "重新解析（含 Embedding）"
+                                : d.status === "failed"
+                                  ? "解析失败，点击重试"
+                                  : "解析"
+                          }
+                          disabled={parsingId != null}
+                          onClick={() => void onParse(d)}
+                        >
+                          <RefreshCw
+                            className={`h-4 w-4 ${
+                              parsingId === d.id ? "animate-spin" : ""
+                            }`}
+                          />
+                        </button>
                         <button
                           type="button"
                           className="rounded p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
@@ -627,7 +710,13 @@ export function DatasetDetailPage() {
       </div>
 
       {show ? (
-        <ModalShell title="上传文件" onClose={() => !busy && closeModal()}>
+        <ModalShell
+          title="上传文件"
+          wide
+          closeOnBackdrop={false}
+          closeOnEscape={false}
+          onClose={() => !busy && closeModal()}
+        >
           <div className="mb-3 flex items-center justify-between gap-3">
             <span className="text-sm text-slate-700">创建时解析</span>
             <button
@@ -665,37 +754,88 @@ export function DatasetDetailPage() {
             >
               粘贴文本
             </button>
+            <button
+              type="button"
+              className={`flex-1 rounded-md py-1.5 ${mode === "structured" ? "bg-white shadow-sm" : "text-slate-500"}`}
+              onClick={() => {
+                setMode("structured");
+                setChunkStrategy(
+                  strategies.find((s) => s.id === "structured_fields")?.id ||
+                    chunkStrategy,
+                );
+              }}
+              disabled={busy}
+            >
+              结构化填报
+            </button>
           </div>
 
-          <label className="block text-xs text-slate-500">分块方法</label>
-          <select
-            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-            value={chunkStrategy}
-            onChange={(e) => setChunkStrategy(e.target.value)}
-            disabled={busy}
-          >
-            {strategies.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.labelZh}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-[11px] text-slate-400">
-            本次上传的文件共用该分块方法；不同文件可分批上传并选不同策略。
-          </p>
-
-          <label className="mt-3 block text-xs text-slate-500">标题（可选）</label>
-          <input
-            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-            placeholder="多文件时忽略，默认用文件名"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            disabled={busy}
-          />
-
-          {mode === "upload" ? (
+          {mode !== "structured" ? (
             <>
-              <label className="mt-3 block text-xs text-slate-500">文件</label>
+              <label className="block text-sm font-medium text-slate-700">分块方法</label>
+              <select
+                className="mt-1.5 min-h-11 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+                value={chunkStrategy}
+                onChange={(e) => setChunkStrategy(e.target.value)}
+                disabled={busy}
+              >
+                {strategies.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.labelZh}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : null}
+
+          {mode !== "structured" ? (
+            <>
+              <label className="mt-4 block text-sm font-medium text-slate-700">标题</label>
+              <input
+                className="mt-1.5 min-h-11 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+                placeholder="多文件时忽略，默认用文件名"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                disabled={busy}
+              />
+            </>
+          ) : null}
+
+          {mode === "structured" ? (
+            <>
+              <StructuredPaperForm
+                domain={structured.domain}
+                onDomainChange={structured.setDomain}
+                chunkStrategy={chunkStrategy}
+                onChunkStrategyChange={setChunkStrategy}
+                strategies={strategies}
+                payload={structured.payload}
+                onPayloadChange={structured.setPayload}
+                attachment={structured.attachment}
+                onAttachmentChange={structured.setAttachment}
+              />
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border px-3 py-2 text-sm"
+                  disabled={busy}
+                  onClick={closeModal}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-60"
+                  disabled={busy}
+                  onClick={() => void onStructuredSave()}
+                >
+                  {busy ? "保存中…" : "保存"}
+                </button>
+              </div>
+            </>
+          ) : mode === "upload" ? (
+            <>
+              <label className="mt-4 block text-sm font-medium text-slate-700">文件</label>
               <input
                 ref={fileRef}
                 type="file"
@@ -721,42 +861,56 @@ export function DatasetDetailPage() {
                   setDragOver(false);
                   if (e.dataTransfer.files?.length) pickFiles(e.dataTransfer.files);
                 }}
-                className={`mt-1 flex w-full flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-10 text-sm transition ${
+                className={`mt-1.5 flex w-full flex-col items-center gap-3 rounded-xl border border-dashed px-4 py-16 text-sm transition ${
                   dragOver
                     ? "border-sky-400 bg-sky-50 text-sky-700"
                     : "border-slate-300 bg-slate-50 text-slate-500 hover:border-sky-400 hover:text-sky-700"
                 }`}
               >
-                <Upload className="h-8 w-8" />
-                <span className="font-medium">点击或拖拽文件至此区域即可上传</span>
-                <span className="px-4 text-center text-xs text-slate-400">
-                  支持 .md / .txt / .docx / .pdf（可批量）。扫描版 PDF 无文字层时无法抽取。
-                </span>
+                <Upload className="h-12 w-12" />
+                <span className="text-base font-medium">点击或拖拽文件至此区域即可上传</span>
               </button>
               {pendingFiles.length ? (
-                <ul className="mt-3 max-h-28 space-y-1 overflow-auto text-xs text-slate-600">
-                  {pendingFiles.map((f) => (
-                    <li
-                      key={`${f.name}-${f.size}`}
-                      className="flex items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1"
-                    >
-                      <span className="truncate">
-                        {f.name} · {formatBytes(f.size)}
-                      </span>
-                      <button
-                        type="button"
-                        className="shrink-0 text-rose-600 hover:underline"
-                        disabled={busy}
-                        onClick={() =>
-                          setPendingFiles((prev) =>
-                            prev.filter((x) => !(x.name === f.name && x.size === f.size)),
-                          )
-                        }
+                <ul className="mt-3 max-h-40 space-y-2 overflow-auto">
+                  {pendingFiles.map((f) => {
+                    const ext = f.name.split(".").pop()?.toLowerCase() || "";
+                    const isPdf = ext === "pdf";
+                    return (
+                      <li
+                        key={`${f.name}-${f.size}`}
+                        className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"
                       >
-                        移除
-                      </button>
-                    </li>
-                  ))}
+                        <div
+                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                            isPdf ? "bg-rose-50 text-rose-600" : "bg-sky-50 text-sky-700"
+                          }`}
+                        >
+                          {isPdf ? (
+                            <FileType2 className="h-5 w-5" />
+                          ) : (
+                            <FileText className="h-5 w-5" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-slate-800">{f.name}</p>
+                          <p className="text-xs text-slate-500">{formatBytes(f.size)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-rose-600"
+                          disabled={busy}
+                          aria-label="移除"
+                          onClick={() =>
+                            setPendingFiles((prev) =>
+                              prev.filter((x) => !(x.name === f.name && x.size === f.size)),
+                            )
+                          }
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : null}
               <div className="mt-4 flex justify-end gap-2">
@@ -781,7 +935,7 @@ export function DatasetDetailPage() {
           ) : (
             <>
               <textarea
-                className="mt-3 h-48 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                className="mt-3 h-56 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm leading-relaxed"
                 placeholder="粘贴 Markdown / 文本正文"
                 value={body}
                 onChange={(e) => setBody(e.target.value)}

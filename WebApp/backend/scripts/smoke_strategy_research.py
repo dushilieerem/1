@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 BASE = "http://127.0.0.1:8766"
-YG = "http://192.168.3.64:9527"
+YG = (os.environ.get("YG_RE_BASE") or "http://192.168.250.10:9527").rstrip("/")
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "frontend" / "src" / "lib"))  # not used for TS

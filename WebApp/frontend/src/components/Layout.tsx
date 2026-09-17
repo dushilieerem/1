@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { ConfirmProvider } from "./ConfirmDialog";
 import { Navbar } from "./Navbar";
@@ -10,6 +10,7 @@ const WARM_SYMBOL = "000001.SZ";
 
 export function Layout() {
   const { pathname } = useLocation();
+  const warmedRef = useRef(false);
   const lockShell =
     pathname.startsWith("/ai/chat") ||
     pathname.startsWith("/ai/gather") ||
@@ -28,12 +29,16 @@ export function Layout() {
   }, []);
 
   useEffect(() => {
+    if (warmedRef.current) return;
+    // 管理仓不预热日线：避免 RE 未开时刷 502 审计、也避免「看日志制造日志」
+    if (pathname.startsWith("/community/me")) return;
+    warmedRef.current = true;
     if (peekPersistedDaily(WARM_SYMBOL)?.bars?.length) return;
     const d = new Date();
     d.setDate(d.getDate() - 120);
     const start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     void fetchMarketDaily(WARM_SYMBOL, { start }).catch(() => undefined);
-  }, []);
+  }, [pathname]);
 
   // 对话页手机端隐藏站级顶栏，避免双汉堡 + 键盘更挤（搜集页仍保留顶栏）
   const showNavbar = !(pathname.startsWith("/ai/chat") && narrow);

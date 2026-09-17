@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 
 from app.deps import optional_user, require_user
 from services.auth.auth_store import login_user, me_response, register_user
@@ -15,31 +15,100 @@ from services.auth.profile_store import (
     unfollow_user,
     update_my_profile,
 )
+from services.core.audit_log_store import write_audit
+
+
+def _ip(request: Request) -> str | None:
+    xf = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
+    if xf:
+        return xf.split(",")[0].strip() or None
+    if request.client:
+        return request.client.host
+    return None
+
 
 router = APIRouter(tags=["auth"])
 
 
 @router.post("/api/auth/register")
-def auth_register(body: dict[str, Any]) -> dict:
+def auth_register(body: dict[str, Any], request: Request) -> dict:
+    username = str(body.get("username") or "")
     try:
-        return register_user(
-            username=str(body.get("username") or ""),
+        out = register_user(
+            username=username,
             password=str(body.get("password") or ""),
             email=(str(body["email"]) if body.get("email") else None),
             display_name=(str(body["display_name"]) if body.get("display_name") else None),
         )
+        user = out.get("user") if isinstance(out, dict) else None
+        write_audit(
+            action="auth.register",
+            user_id=int(user["id"]) if isinstance(user, dict) and user.get("id") else None,
+            username=str(user.get("username") or username) if isinstance(user, dict) else username,
+            role=str(user.get("role") or "user") if isinstance(user, dict) else "user",
+            module="auth",
+            method="POST",
+            path="/api/auth/register",
+            resource="/api/auth/register",
+            status_code=200,
+            ip=_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            detail="注册成功",
+        )
+        return out
     except ValueError as exc:
+        write_audit(
+            action="auth.register_failed",
+            username=username or None,
+            module="auth",
+            method="POST",
+            path="/api/auth/register",
+            resource="/api/auth/register",
+            status_code=400,
+            ip=_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            detail=str(exc)[:200],
+        )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/api/auth/login")
-def auth_login(body: dict[str, Any]) -> dict:
+def auth_login(body: dict[str, Any], request: Request) -> dict:
+    username = str(body.get("username") or "")
     try:
-        return login_user(
-            username=str(body.get("username") or ""),
+        out = login_user(
+            username=username,
             password=str(body.get("password") or ""),
         )
+        user = out.get("user") if isinstance(out, dict) else None
+        write_audit(
+            action="auth.login",
+            user_id=int(user["id"]) if isinstance(user, dict) and user.get("id") else None,
+            username=str(user.get("username") or username) if isinstance(user, dict) else username,
+            role=str(user.get("role") or "") if isinstance(user, dict) else None,
+            module="auth",
+            method="POST",
+            path="/api/auth/login",
+            resource="/api/auth/login",
+            status_code=200,
+            ip=_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            detail="登录成功",
+        )
+        return out
     except ValueError as exc:
+        write_audit(
+            action="auth.login_failed",
+            username=username or None,
+            module="auth",
+            method="POST",
+            path="/api/auth/login",
+            resource="/api/auth/login",
+            status_code=401,
+            ip=_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            detail="登录失败",
+        )
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 

@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import path from "path";
 import { fileURLToPath } from "url";
+import fs from "node:fs";
 import http from "node:http";
 
 /** 默认 HTTP :9530。需要 HTTPS 时用 `npm run dev:https`（会占用同一端口） */
@@ -12,8 +13,40 @@ const devPort = Number(process.env.VITE_DEV_PORT || 9530);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/** 读 backend/.env 里的 KEY（不覆盖已有 process.env） */
+function readBackendEnv(key: string): string | undefined {
+  const envPath = path.resolve(__dirname, "../backend/.env");
+  if (!fs.existsSync(envPath)) return undefined;
+  for (const raw of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#") || !line.includes("=")) continue;
+    const i = line.indexOf("=");
+    const k = line.slice(0, i).trim();
+    if (k !== key) continue;
+    return line
+      .slice(i + 1)
+      .trim()
+      .replace(/^['"]|['"]$/g, "");
+  }
+  return undefined;
+}
+
+/** 与 backend/.env 的 YG_RE_BASE 对齐；环境变量优先 */
+const ygReBase = (
+  process.env.YG_RE_BASE ||
+  readBackendEnv("YG_RE_BASE") ||
+  "http://192.168.250.10:9527"
+).replace(/\/$/, "");
+const ygReHost = (() => {
+  try {
+    return new URL(ygReBase).hostname;
+  } catch {
+    return "192.168.250.10";
+  }
+})();
+
 /** 本机 Clash 等会设 HTTP_PROXY；192.168 内网必须直连，否则 /yg-api 首包可卡 10s+ */
-const noProxyExtra = ["192.168.3.64", "192.168.0.0/16", "10.0.0.0/8", "127.0.0.1", "localhost"];
+const noProxyExtra = [ygReHost, "192.168.0.0/16", "10.0.0.0/8", "127.0.0.1", "localhost"];
 process.env.NO_PROXY = [...new Set([...(process.env.NO_PROXY || "").split(","), ...noProxyExtra])]
   .map((s) => s.trim())
   .filter(Boolean)
@@ -26,7 +59,7 @@ process.env.no_proxy = process.env.NO_PROXY;
 const ygDirectAgent = new http.Agent({ keepAlive: true, maxSockets: 16 });
 
 const ygApiProxy = {
-  target: "http://192.168.3.64:9527",
+  target: ygReBase,
   changeOrigin: true,
   rewrite: (p: string) => p.replace(/^\/yg-api/, ""),
   timeout: 1_800_000,

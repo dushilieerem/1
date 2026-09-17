@@ -11,7 +11,7 @@ from ai.crews.gather_idea.gather_agent import run_gather
 from ai.crews.gather_idea.idea_agent import run_idea
 
 OUT = Path(
-    r"E:\quant-lab\SV\SVQuant\WebApp\docs\mvp_agent\AgentAB-五问联动冒烟-2026-08-18.md"
+    r"E:\SVQuant_docs\mvp_agent\AgentAB-五问联动冒烟-2026-08-18.md"
 )
 
 TOPICS = [

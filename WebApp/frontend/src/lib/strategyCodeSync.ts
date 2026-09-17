@@ -22,7 +22,7 @@ export type StrategySyncParams = {
 const BEGIN = "# --- SVQUANT_PARAMS (与左侧表单同步，请求以表单为准) ---";
 const END = "# --- SVQUANT_PARAMS_END ---";
 
-export const DEFAULT_STRATEGY_CODE = `from quantcore import (
+export const DEFAULT_STRATEGY_CODE = `from app.services.strategy.vectorized.factor_strategy import (
     EqualWeight,
     EveryNTradingDays,
     FactorPortfolioStrategy,
@@ -303,7 +303,7 @@ export function parseParamsFromCode(code: string): Partial<StrategySyncParams> {
   return out;
 }
 
-const STRATEGY_IMPORTS = `from quantcore import (
+const STRATEGY_IMPORTS = `from app.services.strategy.vectorized.factor_strategy import (
     EqualWeight,
     EveryNTradingDays,
     FactorPortfolioStrategy,
@@ -311,6 +311,18 @@ const STRATEGY_IMPORTS = `from quantcore import (
     factor,
     signal,
 )`;
+
+/** 已有向量化策略 import（现网路径或旧 quantcore）则不再重复插入 */
+function hasStrategyImports(code: string): boolean {
+  return (
+    /from\s+app\.services\.strategy\.vectorized\.factor_strategy\s+import/.test(
+      code,
+    ) ||
+    /from\s+app\.quantcore\s+import/.test(code) ||
+    /from\s+quantcore\s+import/.test(code) ||
+    /import\s+quantcore\b/.test(code)
+  );
+}
 
 function defaultRangeFields(period = "10y"): Pick<
   StrategySyncParams,
@@ -426,7 +438,7 @@ export function wrapBuiltinLibraryStrategy(raw: string): string {
     );
   }
 
-  if (!/from\s+quantcore\s+import/.test(code) && !/import\s+quantcore/.test(code)) {
+  if (!hasStrategyImports(code)) {
     code = `${STRATEGY_IMPORTS}\n\n${code}`;
   }
 
@@ -633,7 +645,7 @@ export function wrapFactorCodeAsStrategy(raw: string): string {
 
   if (looksStrategy) {
     let next = code;
-    if (!/from\s+quantcore\s+import/.test(next) && !/import\s+quantcore/.test(next)) {
+    if (!hasStrategyImports(next)) {
       next = `${STRATEGY_IMPORTS}\n\n${next}`;
     }
     if (!next.includes(BEGIN)) {

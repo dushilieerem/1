@@ -2,12 +2,11 @@
 """因子回测异步薄 BFF（方案 A）：本机原样转发对方提交 / 轮询 / 取消，不自建队列。"""
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from services.core.lan_http import request_json
+from services.core.re_config import RE_BASE
 
-RE_BASE = os.environ.get("YG_RE_BASE", "http://192.168.3.64:9527").rstrip("/")
 RE_FACTOR_BT = f"{RE_BASE}/api/backtest/factor"
 
 _SV_ONLY_KEYS = (

@@ -60,8 +60,19 @@ def ensure_user_strategy_libraries_schema() -> None:
             "ADD COLUMN IF NOT EXISTS archive_elapsed_sec DOUBLE PRECISION",
             "ALTER TABLE user_library_strategies "
             "ADD COLUMN IF NOT EXISTS archive_finished_at TIMESTAMPTZ",
+            # 新建默认待检测；回测成功后写入 detected_at
+            "ALTER TABLE user_library_strategies "
+            "ADD COLUMN IF NOT EXISTS detected_at TIMESTAMPTZ",
         ):
             conn.execute(stmt)
+        # 旧入库快照视为已检测
+        conn.execute(
+            """
+            UPDATE user_library_strategies
+            SET detected_at = COALESCE(archive_finished_at, created_at, NOW())
+            WHERE detected_at IS NULL AND archive_result IS NOT NULL
+            """
+        )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_user_library_strategies_lib "
             "ON user_library_strategies (library_id, updated_at DESC)"
@@ -105,6 +116,8 @@ def _strategy_row(
     r: dict[str, Any], library_name: str | None = None
 ) -> dict[str, Any]:
     has_archive = _as_json(r.get("archive_result")) is not None
+    detected_at = _iso(r.get("detected_at"))
+    pending_detect = detected_at is None and not has_archive
     return {
         "id": int(r["id"]),
         "libraryId": int(r["library_id"]),
@@ -117,6 +130,8 @@ def _strategy_row(
         "sourceRunId": r.get("source_run_id") or "",
         "hasArchiveReport": has_archive,
         "archiveFinishedAt": _iso(r.get("archive_finished_at")),
+        "detectedAt": detected_at,
+        "pendingDetect": pending_detect,
         "createdAt": _iso(r.get("created_at")),
         "updatedAt": _iso(r.get("updated_at")),
     }
@@ -191,7 +206,7 @@ def list_library_strategies(user_id: int, library_id: int) -> list[dict[str, Any
             """
             SELECT id, library_id, user_id, name, code_id, body, description,
                    category_label, source_run_id, archive_finished_at,
-                   created_at, updated_at,
+                   detected_at, created_at, updated_at,
                    (archive_result IS NOT NULL) AS has_archive
             FROM user_library_strategies
             WHERE user_id = %s AND library_id = %s
@@ -236,9 +251,7 @@ def add_library_strategy(
     code = (body or "").strip()
     if not code:
         raise ValueError("策略代码不能为空")
-    desc = (description or "").strip()
-    if not desc:
-        raise ValueError("请填写策略说明")
+    desc = (description or "").strip() or title
     if len(desc) > 40:
         raise ValueError("策略说明过长（最多 40 字）")
     cat = (category_label or "其他").strip() or "其他"
@@ -276,12 +289,13 @@ def add_library_strategy(
             INSERT INTO user_library_strategies
               (library_id, user_id, name, code_id, body, description, category_label,
                source_run_id, archive_request, archive_result,
-               archive_elapsed_sec, archive_finished_at)
+               archive_elapsed_sec, archive_finished_at, detected_at)
             VALUES (
               %s, %s, %s, %s, %s, %s, %s,
               %s, %s::jsonb, %s::jsonb,
               %s,
-              COALESCE(%s::timestamptz, CASE WHEN %s::jsonb IS NOT NULL THEN NOW() ELSE NULL END)
+              COALESCE(%s::timestamptz, CASE WHEN %s::jsonb IS NOT NULL THEN NOW() ELSE NULL END),
+              CASE WHEN %s::jsonb IS NOT NULL THEN NOW() ELSE NULL END
             )
             RETURNING *
             """,
@@ -298,6 +312,7 @@ def add_library_strategy(
                 res_json,
                 elapsed,
                 archive_finished_at,
+                res_json,
                 res_json,
             ),
         ).fetchone()
@@ -347,6 +362,35 @@ def get_library_strategy_archive(user_id: int, strategy_id: int) -> dict[str, An
             "libraryName": d.get("library_name") or "",
         },
     }
+
+
+def mark_library_strategy_detected(
+    user_id: int, strategy_id: int
+) -> dict[str, Any]:
+    """首次回测成功后去掉「待检测」。"""
+    ensure_user_strategy_libraries_schema()
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            UPDATE user_library_strategies
+            SET detected_at = COALESCE(detected_at, NOW()),
+                updated_at = NOW()
+            WHERE user_id = %s AND id = %s
+            RETURNING *
+            """,
+            (int(user_id), int(strategy_id)),
+        ).fetchone()
+        if not row:
+            raise KeyError(strategy_id)
+        lib = conn.execute(
+            "SELECT name FROM user_strategy_libraries WHERE id = %s",
+            (int(dict(row)["library_id"]),),
+        ).fetchone()
+        conn.execute(
+            "UPDATE user_strategy_libraries SET updated_at = NOW() WHERE id = %s",
+            (int(dict(row)["library_id"]),),
+        )
+    return _strategy_row(dict(row), dict(lib)["name"] if lib else "")
 
 
 def delete_library_strategy(

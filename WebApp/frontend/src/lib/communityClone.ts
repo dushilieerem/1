@@ -133,6 +133,8 @@ export function buildBuiltinFactorShareStub(
 
 function factorChineseLabel(meta: FactorMeta | null | undefined, fallback: string): string {
   if (!meta) return fallback;
+  const dn = (meta.displayName || "").trim();
+  if (dn) return dn;
   const d = (meta.description || "").trim();
   const e = (meta.explain || "").trim();
   if (d && d !== meta.name) return d;

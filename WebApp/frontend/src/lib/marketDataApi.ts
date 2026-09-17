@@ -1,5 +1,7 @@
 /** 行情只读：经本机 /api 转发；日线走本机 BFF 缓存，列表类薄转发。 */
 
+import { authHeaders } from "@/lib/auth";
+
 export type MarketBar = {
   date: string;
   open: number;
@@ -14,6 +16,63 @@ export type MarketDaily = {
   bars: MarketBar[];
   date_range: { start: string; end: string };
 };
+
+/** 按 date 去重合并，升序 */
+export function mergeMarketBars(...lists: Array<MarketBar[] | undefined | null>): MarketBar[] {
+  const map = new Map<string, MarketBar>();
+  for (const list of lists) {
+    if (!list?.length) continue;
+    for (const b of list) {
+      const d = String(b?.date || "").trim();
+      if (!d) continue;
+      map.set(d, b);
+    }
+  }
+  return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** 把分段日线并进已有结果（先近后远渐进用） */
+export function mergeMarketDaily(
+  base: MarketDaily | null | undefined,
+  chunk: MarketDaily | null | undefined,
+): MarketDaily | null {
+  if (!chunk?.bars?.length && !base?.bars?.length) return base || chunk || null;
+  if (!chunk?.bars?.length) return base || null;
+  if (!base?.bars?.length) return chunk;
+  const bars = mergeMarketBars(base.bars, chunk.bars);
+  return {
+    symbol: chunk.symbol || base.symbol,
+    name: chunk.name || base.name,
+    bars,
+    date_range: {
+      start: bars[0]?.date || base.date_range?.start || chunk.date_range?.start || "",
+      end:
+        bars[bars.length - 1]?.date ||
+        base.date_range?.end ||
+        chunk.date_range?.end ||
+        "",
+    },
+  };
+}
+
+/**
+ * 自然年区间：从近到远（含当年）。
+ * 与近端窗口重叠无妨，merge 会去重。
+ */
+/** 按自然年从近往远：RE 日线库底约 2005-01-01，更早年多为空/404 */
+export function yearlyRangesBack(opts?: {
+  earliestYear?: number;
+  from?: Date;
+}): Array<{ start: string; end: string }> {
+  const earliest = opts?.earliestYear ?? 2005;
+  const now = opts?.from ?? new Date();
+  const yNow = now.getFullYear();
+  const out: Array<{ start: string; end: string }> = [];
+  for (let y = yNow; y >= earliest; y--) {
+    out.push({ start: `${y}-01-01`, end: `${y}-12-31` });
+  }
+  return out;
+}
 
 /** RE symbols 新结构：带交易所后缀 + 名称 */
 export type MarketSymbol = {
@@ -249,7 +308,9 @@ export async function fetchMarketSymbols(): Promise<MarketSymbol[]> {
   if (_symbolsCache.list.length && now - _symbolsCache.at < SYMBOLS_TTL_MS) {
     return _symbolsCache.list;
   }
-  const res = await fetch("/api/market-data/symbols");
+  const res = await fetch("/api/market-data/symbols", {
+    headers: { ...authHeaders() },
+  });
   const data = await parseJson<{ symbols?: unknown; unmapped_count?: number }>(
     res,
   );
@@ -291,7 +352,9 @@ export async function fetchMarketIndices(): Promise<MarketIndex[]> {
   if (_indicesCache.list.length && now - _indicesCache.at < INDICES_TTL_MS) {
     return _indicesCache.list;
   }
-  const res = await fetch("/api/market-data/indices");
+  const res = await fetch("/api/market-data/indices", {
+    headers: { ...authHeaders() },
+  });
   const data = await parseJson<{ indices?: unknown }>(res);
   const list = parseIndicesPayload(data.indices);
   _indicesCache.at = now;
@@ -311,6 +374,7 @@ export async function fetchIndexConstituents(
 
   const res = await fetch(
     `/api/market-data/indices/${encodeURIComponent(key)}/constituents`,
+    { headers: { ...authHeaders() } },
   );
   const data = await parseJson<{
     index?: { code?: string; name?: string };
@@ -343,6 +407,7 @@ export async function fetchMarketDaily(
   const qs = q.toString();
   const res = await fetch(
     `/api/market-data/daily/${encodeURIComponent(code)}${qs ? `?${qs}` : ""}`,
+    { headers: { ...authHeaders() } },
   );
   const data = await parseJson<MarketDaily>(res);
   if (DAILY_CACHE_ENABLED) {
@@ -451,8 +516,10 @@ export async function fetchQuotesBatch(
         if (tip && (!_panelAsOf || tip > _panelAsOf)) _panelAsOf = tip;
         return quoteFromBars(sym, near);
       }
+      // 近端明确无 bars（退市/无行情）：勿再打全历史
+      return quoteFromBars(sym, near);
     } catch {
-      // 近端窗口无数据 → 全量末日
+      // 近端请求失败才尝试全量末日
     }
     try {
       const full = await fetchMarketDaily(sym);

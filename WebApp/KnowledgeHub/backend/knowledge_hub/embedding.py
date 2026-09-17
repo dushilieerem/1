@@ -25,24 +25,47 @@ def get_role_credentials(role_key: str = "embedding") -> dict[str, str] | None:
             return None
         if not (role.get("model_name") or "").strip():
             return None
+        return get_provider_credentials(
+            str(role["provider_key"]),
+            model_name=str(role["model_name"]).strip(),
+            require_api_key=True,
+        )
+
+
+def get_provider_credentials(
+    provider_key: str,
+    *,
+    model_name: str | None = None,
+    require_api_key: bool = False,
+) -> dict[str, str] | None:
+    """按供应商读取 base_url / api_key；可选指定 model_name（对话测试用）。"""
+    from knowledge_hub.store import ensure_kh_schema
+
+    key = (provider_key or "").strip()
+    if not key:
+        return None
+    ensure_kh_schema()
+    with get_conn() as conn:
         prov = conn.execute(
             """
-            SELECT base_url, api_key FROM kh_model_providers
+            SELECT provider_key, base_url, api_key FROM kh_model_providers
             WHERE provider_key = %s
             """,
-            (role["provider_key"],),
+            (key,),
         ).fetchone()
         if not prov:
             return None
         base = (prov.get("base_url") or "").strip().rstrip("/")
-        key = (prov.get("api_key") or "").strip()
-        if not base or not key:
+        api_key = (prov.get("api_key") or "").strip()
+        if not base:
+            return None
+        if require_api_key and not api_key:
             return None
         return {
-            "providerKey": str(role["provider_key"]),
-            "modelName": str(role["model_name"]).strip(),
+            "providerKey": str(prov["provider_key"]),
+            "modelName": (model_name or "").strip(),
             "baseUrl": base,
-            "apiKey": key,
+            "apiKey": api_key or "EMPTY",
         }
 
 
@@ -69,7 +92,7 @@ def _post_json(
                 )
                 if resp.status_code >= 400:
                     raise RuntimeError(
-                        f"Embedding HTTP {resp.status_code}: {resp.text[:500]}"
+                        f"HTTP {resp.status_code}: {resp.text[:500]}"
                     )
                 return resp.json()
             except Exception as e:

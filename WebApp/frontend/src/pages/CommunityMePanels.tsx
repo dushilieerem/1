@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import ReactECharts from "echarts-for-react";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { MeSystemLogsPanel } from "@/pages/MeSystemLogsPanel";
 import {
   getAdminAgentUsage,
   getMyAgentUsage,
@@ -509,12 +510,13 @@ export function MeFavoritesPanel() {
 }
 
 type ModTab = ModerationKind | "reports";
-type ModSection = "ops" | "posts" | "usage";
+type ModSection = "ops" | "posts" | "usage" | "logs";
 
 const MOD_SECTIONS: { id: ModSection; label: string }[] = [
   { id: "ops", label: "运营看板" },
   { id: "posts", label: "帖子管理" },
   { id: "usage", label: "各用户用量汇总" },
+  { id: "logs", label: "系统日志" },
 ];
 
 const MOD_TABS: { id: ModTab; label: string }[] = [
@@ -662,10 +664,13 @@ export function MeModPanel() {
       setPreviewPost(null);
       setPreviewReport(null);
       void reload(kind);
-    } else {
+    } else if (section === "usage") {
       setPreviewPost(null);
       setPreviewReport(null);
       void reloadUsage();
+    } else {
+      setPreviewPost(null);
+      setPreviewReport(null);
     }
   }, [section, kind, reload, reloadOps, reloadUsage]);
 
@@ -1046,6 +1051,10 @@ export function MeModPanel() {
             </div>
           </>
         )
+      ) : section === "logs" ? (
+        <div className="px-4 py-4 sm:px-5">
+          <MeSystemLogsPanel />
+        </div>
       ) : previewLoading ? (
         <p className="px-5 py-16 text-center text-sm text-slate-400">加载帖子…</p>
       ) : previewPost ? (

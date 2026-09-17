@@ -77,6 +77,8 @@ export type StrategyRunRecord = {
   projectId: string;
   name: string;
   description: string;
+  remark?: string;
+  flagged?: boolean;
   request: YgStrategyBacktestRequest;
   result: YgBacktestResponse;
   finishedAt: string;
@@ -431,6 +433,40 @@ export async function listStrategyRuns(
     `/api/strategy/projects/${encodeURIComponent(projectId)}/runs`,
   );
   return data.runs || [];
+}
+
+/** 当前用户全部策略回测报告（全局检测报告列表） */
+export async function listAllStrategyRuns(): Promise<StrategyRunRecord[]> {
+  const data = await apiJson<{ runs: StrategyRunRecord[] }>("/api/strategy/runs");
+  return data.runs || [];
+}
+
+export async function updateStrategyRunRemark(
+  runId: string,
+  remark: string,
+): Promise<StrategyRunRecord> {
+  const data = await apiJson<{ run: StrategyRunRecord }>(
+    `/api/strategy/runs/${encodeURIComponent(runId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ remark }),
+    },
+  );
+  return data.run;
+}
+
+export async function updateStrategyRunFlagged(
+  runId: string,
+  flagged: boolean,
+): Promise<StrategyRunRecord> {
+  const data = await apiJson<{ run: StrategyRunRecord }>(
+    `/api/strategy/runs/${encodeURIComponent(runId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ flagged }),
+    },
+  );
+  return data.run;
 }
 
 export async function getStrategyRun(runId: string): Promise<StrategyRunRecord> {

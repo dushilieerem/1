@@ -1,10 +1,11 @@
-/** 平台策略库（Strategy/libraries）— 仅内置；研究项目在「策略研究」 */
+/** 平台内置策略库 — PG `builtin_strategies`；用户库见 userStrategyLibraries */
 
 import { authHeaders, assertAuthConsistency } from "./auth";
 import {
   inferEngineModeFromCode,
   parseParamsFromCode,
   wrapBuiltinLibraryStrategy,
+  DEFAULT_STRATEGY_CODE,
 } from "./strategyCodeSync";
 import { parseLibrarySignalSelection } from "./strategyFactorSync";
 import {
@@ -17,7 +18,10 @@ import {
   type StrategyProject,
   type StrategyProjectConfig,
 } from "./strategyStore";
-import type { UserLibraryStrategy } from "./userStrategyLibraries";
+import {
+  addStrategyToUserLibrary,
+  type UserLibraryStrategy,
+} from "./userStrategyLibraries";
 import type { YgStrategyBacktestRequest } from "./ygApi";
 
 /** 入库可选分类：内置常见类 + 其他 */
@@ -67,6 +71,7 @@ export type BuiltinStrategyMeta = {
   strategy_type: string;
   strategy_type_label: string;
   execution_mode: string;
+  /** 已废弃：内置库无 version，恒为空串 */
   current_version: string;
   tags: string[];
   file: string;
@@ -74,17 +79,26 @@ export type BuiltinStrategyMeta = {
   source: "builtin";
 };
 
-async function apiJson<T>(url: string): Promise<T> {
+async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
   assertAuthConsistency();
-  const res = await fetch(url, { headers: { ...authHeaders() } });
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+      ...(init?.headers || {}),
+    },
+  });
   const text = await res.text();
-  let data: T & { error?: string };
+  let data: T & { error?: string; detail?: string };
   try {
-    data = JSON.parse(text) as T & { error?: string };
+    data = JSON.parse(text) as T & { error?: string; detail?: string };
   } catch {
     throw new Error(res.ok ? "响应不是 JSON" : `HTTP ${res.status}`);
   }
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (!res.ok) {
+    throw new Error(data.error || data.detail || `HTTP ${res.status}`);
+  }
   return data;
 }
 
@@ -94,26 +108,32 @@ export async function listBuiltinStrategies(): Promise<BuiltinStrategyMeta[]> {
   );
   return (data.items || []).map((item) => ({
     ...item,
+    current_version: item.current_version || "",
+    file: item.file || "",
+    source: "builtin",
     strategy_type_label: strategyTypeLabel(
       item.strategy_type_label || item.strategy_type,
     ),
   }));
 }
 
-export async function getBuiltinStrategySource(
-  id: string,
-  version?: string,
-): Promise<{
+/** 管理员：从磁盘种子重导入 PG 内置策略（全站共享，不动用户库） */
+export async function syncBuiltinStrategies(): Promise<{
+  upserted: number;
+  skipped?: string[];
+}> {
+  return apiJson("/api/strategy/library/sync", { method: "POST" });
+}
+
+export async function getBuiltinStrategySource(id: string): Promise<{
   id: string;
   name: string;
-  version: string;
   strategy_code: string;
   strategy_type_label: string;
   execution_mode: string;
   tags: string[];
 }> {
-  const q = version ? `?version=${encodeURIComponent(version)}` : "";
-  return apiJson(`/api/strategy/library/${encodeURIComponent(id)}${q}`);
+  return apiJson(`/api/strategy/library/${encodeURIComponent(id)}`);
 }
 
 function normalizeEngineMode(
@@ -338,7 +358,7 @@ async function openOrCreateResearchProject(opts: {
 
 /** 内置策略库「检测」 */
 export async function openBuiltinStrategyDetect(meta: BuiltinStrategyMeta) {
-  const src = await getBuiltinStrategySource(meta.id, meta.current_version);
+  const src = await getBuiltinStrategySource(meta.id);
   const mode = normalizeEngineMode(
     src.execution_mode || meta.execution_mode,
     src.strategy_code,
@@ -352,7 +372,7 @@ export async function openBuiltinStrategyDetect(meta: BuiltinStrategyMeta) {
   });
 }
 
-/** 用户策略库入库项「检测」：按入库快照开/刷新研究项目 */
+/** 用户策略库入库项「检测」：按入库快照开/刷新研究项目（仅当前用户 projects） */
 export async function openUserLibraryStrategyDetect(item: UserLibraryStrategy) {
   const code = (item.body || "").trim();
   if (!code) throw new Error("该策略没有代码快照");
@@ -362,6 +382,24 @@ export async function openUserLibraryStrategyDetect(item: UserLibraryStrategy) {
     strategyCode: code,
     libraryRef: `userlib:${item.id}`,
     engineMode: inferEngineModeFromCode(code),
+  });
+}
+
+/** 策略库「新建策略」：写入当前用户指定库（默认代码模板） */
+export async function createEmptyUserStrategy(opts: {
+  libraryId: number;
+  name: string;
+  description?: string;
+  categoryLabel?: string;
+}): Promise<UserLibraryStrategy> {
+  const title = opts.name.trim();
+  if (!title) throw new Error("请填写策略名称");
+  if (!opts.libraryId) throw new Error("请选择策略库");
+  return addStrategyToUserLibrary(opts.libraryId, {
+    name: title,
+    body: DEFAULT_STRATEGY_CODE,
+    description: (opts.description || "").trim(),
+    categoryLabel: opts.categoryLabel || "其他",
   });
 }
 

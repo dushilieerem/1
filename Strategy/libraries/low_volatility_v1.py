@@ -1,7 +1,12 @@
 """低波动策略：持有过去 20 日收益波动最低的十只股票。"""
 
-from quantcore import (
-    EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, factor, signal,
+from app.services.strategy.vectorized.factor_strategy import (
+    EqualWeight,
+    EveryNTradingDays,
+    FactorPortfolioStrategy,
+    TopN,
+    factor,
+    signal,
 )
 
 

@@ -50,6 +50,8 @@ import {
 } from "@/lib/detectStore";
 import {
   extractMethod,
+  factorExplainText,
+  factorTitle,
   loadFactors,
   loadLibrarySource,
   renameMethodDef,
@@ -334,10 +336,27 @@ export function FactorDetectPage() {
     (code: string) => {
       const draft = draftByName.get(code);
       if (draft) return draft.description || draft.name;
-      // 库内因子：界面用代码名；释义只在因子库列表展示
+      const meta = catalog.find((f) => f.name === code);
+      if (meta) return factorTitle(meta);
       return code;
     },
-    [draftByName],
+    [catalog, draftByName],
+  );
+
+  const factorChipTitle = useCallback(
+    (code: string) => {
+      const draft = draftByName.get(code);
+      if (draft) return draft.description || draft.name;
+      const meta = catalog.find((f) => f.name === code);
+      if (meta) {
+        const bits = [factorTitle(meta), meta.displayName, factorExplainText(meta)]
+          .filter(Boolean)
+          .filter((v, i, arr) => arr.indexOf(v) === i);
+        return bits.join(" · ");
+      }
+      return code;
+    },
+    [catalog, draftByName],
   );
 
   useEffect(() => {
@@ -1401,7 +1420,7 @@ export function FactorDetectPage() {
                       <span
                         key={c}
                         className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm sm:max-w-[14rem]"
-                        title={factorLabel(c)}
+                        title={factorChipTitle(c)}
                       >
                         <span className="truncate font-medium text-slate-800">
                           {factorLabel(c)}
@@ -1479,7 +1498,9 @@ export function FactorDetectPage() {
                         <tr key={c}>
                           <td className="px-3 py-2.5">
                             <div className="font-medium text-slate-800">{factorLabel(c)}</div>
-                            <code className="text-xs text-slate-400">{c}</code>
+                            <div className="truncate text-xs text-slate-400" title={factorChipTitle(c)}>
+                              {catalog.find((f) => f.name === c)?.displayName || c}
+                            </div>
                           </td>
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-1">

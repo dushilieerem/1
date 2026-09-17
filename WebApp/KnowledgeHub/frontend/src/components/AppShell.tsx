@@ -18,7 +18,7 @@ export function AppShell() {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 shrink-0 border-b border-[var(--kh-line)] bg-white/75 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-6 px-4">
+        <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-6 px-4">
           <NavLink to="/" className="flex shrink-0 items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--kh-cyan)] to-[var(--kh-teal-deep)] text-xs font-bold text-white shadow-md shadow-teal-700/25">
               KH
@@ -76,7 +76,7 @@ export function AppShell() {
         className={
           isChatRoom
             ? "flex min-h-0 flex-1 flex-col"
-            : "mx-auto w-full max-w-[1400px] flex-1 px-4 py-6"
+            : "mx-auto w-full max-w-[1600px] flex-1 px-4 py-6"
         }
       >
         <Outlet />

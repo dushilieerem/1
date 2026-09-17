@@ -10,16 +10,22 @@ from typing import Any
 
 
 def ensure_lan_no_proxy(*hosts: str) -> None:
-    """???????? NO_PROXY / no_proxy????????"""
+    """合并写入 NO_PROXY / no_proxy，避免 Clash 拐弯局域网。"""
     extras = [h.strip() for h in hosts if h and h.strip()]
-    extras += ["192.168.3.64", "127.0.0.1", "localhost"]
+    try:
+        from services.core.re_config import re_host
+
+        extras.append(re_host())
+    except Exception:
+        extras.append("192.168.250.10")
+    extras += ["192.168.0.0/16", "127.0.0.1", "localhost"]
     for key in ("NO_PROXY", "no_proxy"):
         cur = [x.strip() for x in (os.environ.get(key) or "").split(",") if x.strip()]
         merged = list(dict.fromkeys([*cur, *extras]))
         os.environ[key] = ",".join(merged)
 
 
-# ???????????? urllib ????????
+# 进程导入时即直连白名单
 ensure_lan_no_proxy()
 
 _DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))

@@ -37,6 +37,11 @@ export type KhDocument = {
   bodyPreview?: string;
   body?: string;
   sourceType?: string;
+  ingestMode?: string;
+  domain?: string;
+  payload?: Record<string, unknown>;
+  hasAttachment?: boolean;
+  attachmentFileId?: number | null;
   fileName?: string;
   fileSize?: number;
   createdAt?: string;
@@ -95,15 +100,30 @@ async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
       ...(init?.headers || {}),
     },
   });
-  const data = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-  return data;
+  const data = (await res.json().catch(() => ({}))) as T & {
+    error?: string;
+    detail?: string | Array<{ msg?: string }>;
+  };
+  if (!res.ok) {
+    const detail =
+      typeof data?.detail === "string"
+        ? data.detail
+        : Array.isArray(data?.detail)
+          ? data.detail.map((x) => x.msg || JSON.stringify(x)).join("; ")
+          : "";
+    throw new Error(data.error || detail || `HTTP ${res.status}`);
+  }
+  return data as T;
 }
 
 export async function fetchMeta() {
-  return apiJson<{ pipelines: Pipeline[]; chunkStrategies: ChunkStrategy[] }>(
-    "/api/kh/meta",
-  );
+  return apiJson<{
+    pipelines: Pipeline[];
+    chunkStrategies: ChunkStrategy[];
+    structuredDomains?: Array<{ id: string; labelZh: string }>;
+    docTypes?: string[];
+    structuredFieldLabels?: Record<string, string>;
+  }>("/api/kh/meta");
 }
 
 export async function listCollections() {
@@ -176,6 +196,40 @@ export async function createDocument(body: {
   return d.document;
 }
 
+export async function createStructuredDocument(body: {
+  collectionId: number;
+  domain?: string;
+  payload: Record<string, unknown>;
+  chunkStrategy?: string;
+  ingest?: boolean;
+  attachmentBase64?: string;
+  attachmentFileName?: string;
+}) {
+  const d = await apiJson<{ document: KhDocument }>("/api/kh/documents/structured", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return d.document;
+}
+
+export async function downloadDocumentAttachment(docId: number) {
+  const d = await apiJson<{
+    fileName: string;
+    mimeType: string;
+    contentBase64: string;
+  }>(`/api/kh/documents/${docId}/attachment`);
+  const raw = atob(d.contentBase64);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  const blob = new Blob([bytes], { type: d.mimeType || "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = d.fileName || "attachment";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export async function deleteDocument(docId: number) {
   return apiJson(`/api/kh/documents/${docId}`, { method: "DELETE" });
 }
@@ -232,6 +286,22 @@ export type KhSearchHit = {
   text: string;
   meta?: Record<string, unknown>;
   score: number;
+  attachment?: {
+    available?: boolean;
+    fileName?: string;
+    downloadUrl?: string;
+  };
+};
+
+export type KhReferencedDocument = {
+  documentId: number;
+  documentTitle: string;
+  collectionId?: number;
+  attachment?: {
+    available?: boolean;
+    fileName?: string;
+    downloadUrl?: string;
+  };
 };
 
 export async function searchChunks(body: {
@@ -247,6 +317,7 @@ export async function searchChunks(body: {
     collectionIds: number[];
     totalCandidates: number;
     hits: KhSearchHit[];
+    referencedDocuments?: KhReferencedDocument[];
   }>("/api/kh/search", {
     method: "POST",
     body: JSON.stringify(body),
@@ -262,6 +333,7 @@ export type KhAskResult = {
   collectionIds?: number[];
   totalCandidates?: number;
   hits: KhSearchHit[];
+  referencedDocuments?: KhReferencedDocument[];
   llmConfigured?: boolean;
   model?: string | null;
   providerKey?: string | null;
@@ -467,6 +539,24 @@ export async function upsertProvider(body: Record<string, unknown>) {
 export async function deleteProvider(key: string) {
   return apiJson(`/api/kh/model-providers/${encodeURIComponent(key)}`, {
     method: "DELETE",
+  });
+}
+
+export async function testProviderChat(body: {
+  providerKey: string;
+  modelName: string;
+  message: string;
+}) {
+  return apiJson<{
+    ok: boolean;
+    answer: string;
+    model?: string;
+    providerKey?: string;
+    tokensIn?: number;
+    tokensOut?: number;
+  }>("/api/kh/model-providers/test", {
+    method: "POST",
+    body: JSON.stringify(body),
   });
 }
 

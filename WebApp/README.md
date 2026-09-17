@@ -38,7 +38,8 @@ python scripts/init_community_db.py
 
 ## 启动（自己部署）
 
-更完整说明（含 **试用口 9532 / 端口占用**）：见 [`docs/启动与试用口9532.md`](./docs/启动与试用口9532.md)。
+更完整说明（含 **试用口 9532 / 端口占用**）：见 `E:\SVQuant_docs\启动与试用口9532.md`（运维文档已迁出 WebApp）。  
+**项目代码说明（合订本）：** `E:\SVQuant_docs\项目代码说明文档\SVQuant_WebApp_项目代码说明.md`
 
 ```powershell
 # 终端 1 — 后端

@@ -18,14 +18,14 @@ from typing import Any
 import yaml
 
 from services.core.backtest_range import build_factor_backtest_payload
+from services.core.re_config import RE_BASE
 
 ROOT = Path(__file__).resolve().parents[2]
 FACTOR_DIR = ROOT / "factor"
 OUTPUT_DIR = ROOT / "output" / "factor_dashboard"
 DB_PATH = OUTPUT_DIR / "metrics.sqlite"
 JOB_PATH = OUTPUT_DIR / "job.json"
-RE_URL = "http://192.168.3.64:9527/api/backtest/factor"
-RE_BASE = "http://192.168.3.64:9527"
+RE_URL = f"{RE_BASE}/api/backtest/factor"
 RULES_VERSION = "yg_v1"
 # 与前端 detectComboCode.RE_BUILTIN_LIBS 对齐（含原 PLATFORM 五库）
 RE_BUILTIN_LIBS = frozenset(

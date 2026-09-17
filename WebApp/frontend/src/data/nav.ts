@@ -57,15 +57,17 @@ export const NEWS_SOURCES = [
 export const DATA_NAV_ITEMS = [
   { to: "/data/kline", label: "K线面板" },
   { to: "/data/watchlist", label: "自选股组合" },
+  { to: "/data/fields", label: "字段说明与样例" },
 ] as const;
 
 /** 顶栏「帮助」：文档 / API 说明入口（原数据下拉里的 API 占位迁此） */
 export const HELP_NAV = { to: "/help", label: "帮助" } as const;
 
 export const STRATEGY_NAV_ITEMS = [
-  { to: "/strategy/research", label: "策略研究" },
+  { to: "/strategy/plaza", label: "策略广场" },
   { to: "/strategy/library", label: "策略库" },
   { to: "/strategy/ai", label: "AI策略生成" },
+  { to: "/strategy/research", label: "检测报告" },
 ] as const;
 
 export const FACTOR_NAV_ITEMS = [

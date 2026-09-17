@@ -11,6 +11,7 @@ import { ChatDetailPage } from "./pages/ChatDetailPage";
 import { FilesPage } from "./pages/FilesPage";
 import { SettingsLayout } from "./pages/settings/SettingsLayout";
 import { ModelProvidersPage } from "./pages/settings/ModelProvidersPage";
+import { ModelTestPage } from "./pages/settings/ModelTestPage";
 import { ApiDocsPage } from "./pages/settings/ApiDocsPage";
 import { GuidePage } from "./pages/settings/GuidePage";
 import { AccountPage } from "./pages/settings/AccountPage";
@@ -39,6 +40,7 @@ export default function App() {
           <Route index element={<Navigate to="guide" replace />} />
           <Route path="guide" element={<GuidePage />} />
           <Route path="models" element={<ModelProvidersPage />} />
+          <Route path="models/test" element={<ModelTestPage />} />
           <Route path="api" element={<ApiDocsPage />} />
           <Route path="account" element={<AccountPage />} />
         </Route>

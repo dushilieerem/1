@@ -19,7 +19,9 @@ import {
   fetchMarketDaily,
   fmtPct,
   fmtPrice,
+  mergeMarketDaily,
   peekPersistedDaily,
+  yearlyRangesBack,
   type MarketDaily,
 } from "@/lib/marketDataApi";
 import {
@@ -112,12 +114,26 @@ export function SymbolOverviewPanel({
     }
     const bypass = fresh;
 
-    const applyIfRicher = (next: MarketDaily) => {
-      const n = next.bars?.length || 0;
-      if (n <= dailyBarsRef.current) return false;
-      dailyBarsRef.current = n;
-      setDaily(next);
-      return true;
+    const applyMerged = (chunk: MarketDaily | null | undefined) => {
+      if (!chunk?.bars?.length) return false;
+      let richer = false;
+      setDaily((prev) => {
+        const next = mergeMarketDaily(prev, chunk);
+        if (!next) return prev;
+        const n = next.bars.length;
+        const prevStart = prev?.bars?.[0]?.date || "";
+        const nextStart = next.bars[0]?.date || "";
+        if (
+          n > dailyBarsRef.current ||
+          (nextStart && (!prevStart || nextStart < prevStart))
+        ) {
+          dailyBarsRef.current = Math.max(dailyBarsRef.current, n);
+          richer = true;
+          return next;
+        }
+        return prev;
+      });
+      return richer;
     };
 
     void (async () => {
@@ -126,74 +142,81 @@ export function SymbolOverviewPanel({
           requestAnimationFrame(() => setTimeout(r, 0));
         });
 
-      // 近端优先抢首包；一年/全历史并行补全（有本地缓存时仅后台刷新）
-      const nearP = withTimeout(
-        fetchMarketDaily(code, {
-          start: recentDailyStart(35),
-          bypassCache: bypass,
-        }),
-        4_000,
-        "近端日线",
-      ).catch(() => null);
+      const pull = (start?: string, end?: string, ms = 15_000, label = "日线") =>
+        withTimeout(
+          fetchMarketDaily(code, { start, end, bypassCache: bypass }),
+          ms,
+          label,
+        ).catch(() => null);
 
-      const midP = withTimeout(
-        fetchMarketDaily(code, {
-          start: recentDailyStart(365),
-          bypassCache: bypass,
-        }),
-        8_000,
-        "一年日线",
-      ).catch(() => null);
-
-      const fullP = withTimeout(
-        fetchMarketDaily(code, { bypassCache: bypass }),
-        20_000,
-        "全历史日线",
-      );
-
-      try {
-        const near = await nearP;
-        if (cancelled) return;
-        if (near?.bars?.length) {
-          applyIfRicher(near);
-          setAwaitingFirst(false);
-          setEnriching(true);
-          setErr(null);
-          await yieldPaint();
-        }
-      } catch {
-        /* 交给后面 mid/full */
+      // 1) 近端先画（约半年）
+      const near = await pull(recentDailyStart(180), undefined, 15_000, "近端日线");
+      if (cancelled) return;
+      if (near?.bars?.length) {
+        applyMerged(near);
+        setAwaitingFirst(false);
+        setEnriching(true);
+        setErr(null);
+        await yieldPaint();
       }
 
-      try {
-        const mid = await midP;
+      // 2) 按自然年从近往远补；仅在「本年有数据」时预取下一年（避免空年后多打一年）
+      const years = yearlyRangesBack({ earliestYear: 2005 });
+      let emptyStreak = 0;
+      let i = 0;
+      let inFlight =
+        years.length > 0
+          ? pull(years[0].start, years[0].end, 20_000, `日线 ${years[0].start.slice(0, 4)}`)
+          : Promise.resolve(null);
+
+      while (i < years.length) {
         if (cancelled) return;
-        if (mid?.bars?.length && applyIfRicher(mid)) {
-          setAwaitingFirst(false);
-          setEnriching(true);
-          setErr(null);
-          await yieldPaint();
+        const chunk = await inFlight;
+        const nextRange = years[i + 1];
+
+        if (chunk?.bars?.length) {
+          emptyStreak = 0;
+          if (applyMerged(chunk)) {
+            setAwaitingFirst(false);
+            setEnriching(true);
+            setErr(null);
+            await yieldPaint();
+          }
+          // 有数据才预取更早一年
+          if (nextRange) {
+            inFlight = pull(
+              nextRange.start,
+              nextRange.end,
+              20_000,
+              `日线 ${nextRange.start.slice(0, 4)}`,
+            );
+          }
+        } else {
+          emptyStreak += 1;
+          // 从近往远：已有数据后再碰到空年，更早也不会有，立刻停（少打无意义 404/502）
+          if (dailyBarsRef.current > 0) break;
+          if (emptyStreak >= 2) break;
+          // 尚无任何日线：继续往更早年探（仍串行，不预取）
+          if (nextRange) {
+            inFlight = pull(
+              nextRange.start,
+              nextRange.end,
+              20_000,
+              `日线 ${nextRange.start.slice(0, 4)}`,
+            );
+          }
         }
-      } catch {
-        /* 保留已有 */
+        i += 1;
+        if (!nextRange) break;
       }
 
-      try {
-        const full = await fullP;
-        if (cancelled) return;
-        if (full?.bars?.length && applyIfRicher(full)) setErr(null);
-        else if (dailyBarsRef.current === 0) {
+      if (!cancelled) {
+        if (dailyBarsRef.current === 0) {
+          // 空结果（含退市/早于库底）：不是超时失败，勿写「请稍后重试」
           setErr("暂无日线数据");
         }
-      } catch (ex) {
-        if (!cancelled && dailyBarsRef.current === 0) {
-          setErr(ex instanceof Error ? ex.message : String(ex));
-        }
-      } finally {
-        if (!cancelled) {
-          setEnriching(false);
-          setAwaitingFirst(false);
-        }
+        setEnriching(false);
+        setAwaitingFirst(false);
       }
     })();
 
@@ -405,7 +428,15 @@ export function SymbolOverviewPanel({
               <p className="mt-1.5 text-sm text-slate-400">
                 {stats?.rangeStart || "—"} ~ {stats?.rangeEnd || "—"}
                 {statusHint ? (
-                  <span className={`ml-2 ${err ? "text-red-400" : "text-slate-300"}`}>
+                  <span
+                    className={`ml-2 ${
+                      err
+                        ? err.includes("暂无")
+                          ? "text-slate-400"
+                          : "text-red-500"
+                        : "text-slate-300"
+                    }`}
+                  >
                     · {statusHint}
                   </span>
                 ) : null}

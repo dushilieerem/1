@@ -12,8 +12,8 @@ import urllib.parse
 from typing import Any
 
 from services.core.lan_http import get_json
+from services.core.re_config import RE_BASE
 
-RE_BASE = os.environ.get("YG_RE_BASE", "http://192.168.3.64:9527").rstrip("/")
 _CACHE_TTL_SEC = float(os.environ.get("MARKET_DAILY_CACHE_TTL", "600"))
 _cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _cache_lock = threading.Lock()
@@ -48,7 +48,20 @@ def fetch_market_daily(
     qs = urllib.parse.urlencode(q)
     path = f"/api/market-data/daily/{urllib.parse.quote(code)}"
     url = f"{RE_BASE}{path}" + (f"?{qs}" if qs else "")
-    data = get_json(url, timeout=20)
+    try:
+        data = get_json(url, timeout=45)
+    except RuntimeError as exc:
+        msg = str(exc)
+        # RE 对「该区间无数据」常回 404；渐进按年往回补时属正常，返回空 bars 而非 502
+        if "HTTP Error 404" in msg:
+            data = {
+                "symbol": code,
+                "name": None,
+                "bars": [],
+                "date_range": {"start": start or "", "end": end or ""},
+            }
+        else:
+            raise
     if not isinstance(data, dict):
         raise RuntimeError("RE 日线返回非 JSON 对象")
     if _CACHE_TTL_SEC > 0:

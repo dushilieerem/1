@@ -19,7 +19,13 @@ export function isCustomFactorMeta(meta?: FactorMeta | null): boolean {
 
 export function factorCommentLine(meta: FactorMeta | undefined, code: string): string {
   const kind = isCustomFactorMeta(meta) ? "自定义" : "内置";
-  const title = (meta?.description || meta?.explain || "").trim();
+  const title = (
+    meta?.displayName ||
+    meta?.nameEn ||
+    meta?.description ||
+    meta?.explain ||
+    ""
+  ).trim();
   if (title && title !== code) return `# [${kind}] ${code} — ${title}`;
   return `# [${kind}] ${code}`;
 }

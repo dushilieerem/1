@@ -240,3 +240,26 @@ def numbered_heading(text: str, *, window: int = 1400, **_: Any) -> list[dict[st
             chunks.append(_piece(ordinal, sc["text"], meta))
             ordinal += 1
     return chunks or paragraph_merge(raw, window=min(window, 1000))
+
+
+@register(
+    "structured_fields",
+    label_zh="按结构化字段",
+    description="KnowledgeUnit 每个非空字段一块；空列表/空串跳过",
+    default_options={},
+)
+def structured_fields(
+    text: str,
+    *,
+    payload: dict[str, Any] | None = None,
+    **_: Any,
+) -> list[dict[str, Any]]:
+    """plain 文本路径兜底；结构化 ingest 直接调 payload_utils。"""
+    from knowledge_hub.payload_utils import iter_structured_field_chunks
+
+    if payload:
+        return iter_structured_field_chunks(payload)
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    return paragraph_merge(raw, window=1200)

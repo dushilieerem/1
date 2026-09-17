@@ -5,27 +5,39 @@ export function ModalShell({
   title,
   children,
   onClose,
+  wide = false,
+  /** 点遮罩是否关闭；长表单建议 false，避免误触丢内容 */
+  closeOnBackdrop = true,
+  /** Esc 是否关闭；长表单建议 false */
+  closeOnEscape = true,
 }: {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
+  /** 结构化填报等长表单用更宽弹层 */
+  wide?: boolean;
+  closeOnBackdrop?: boolean;
+  closeOnEscape?: boolean;
 }) {
   useEffect(() => {
+    if (!closeOnEscape) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, closeOnEscape]);
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
+      onClick={closeOnBackdrop ? onClose : undefined}
       role="presentation"
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+        className={`w-full rounded-2xl bg-white p-5 shadow-xl ${
+          wide ? "max-w-[min(72rem,66vw)]" : "max-w-md"
+        }`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

@@ -1,7 +1,12 @@
 """唐奇安突破策略：仅持有创 60 日新高的股票。"""
 
-from quantcore import (
-    EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, factor, signal,
+from app.services.strategy.vectorized.factor_strategy import (
+    EqualWeight,
+    EveryNTradingDays,
+    FactorPortfolioStrategy,
+    TopN,
+    factor,
+    signal,
 )
 
 

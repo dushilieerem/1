@@ -21,6 +21,7 @@ for _p in (_BACKEND_ROOT, _KH_BACKEND):
 from app.bootstrap import bootstrap_schemas  # noqa: E402
 from app.errors import install_exception_handlers  # noqa: E402
 from app.routers import (  # noqa: E402
+    admin_logs,
     agent,
     ai,
     auth,
@@ -71,8 +72,114 @@ for mod in (
     agent,
     ai,
     kh,
+    admin_logs,
 ):
     app.include_router(mod.router)
+
+
+_AUDIT_SKIP_PREFIXES = (
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    "/api/health",
+    "/favicon",
+)
+
+
+def _client_ip(request: Request) -> str | None:
+    xf = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
+    if xf:
+        return xf.split(",")[0].strip() or None
+    if request.client:
+        return request.client.host
+    return None
+
+
+def _should_audit(method: str, path: str, status: int) -> bool:
+    if method == "OPTIONS":
+        return False
+    if not path.startswith("/api/"):
+        return False
+    for pref in _AUDIT_SKIP_PREFIXES:
+        if path.startswith(pref):
+            return False
+    # 登录/注册由路由显式写业务审计，避免与中间件重复
+    if path in ("/api/auth/login", "/api/auth/register"):
+        return False
+    # 管理页轮询自身不记，避免刷屏
+    if method == "GET" and path.startswith("/api/admin/logs"):
+        return False
+    # 成功只读请求默认不记；写操作与错误必记
+    if method == "GET" and status < 400:
+        return False
+    return True
+
+
+@app.middleware("http")
+async def audit_access_log(request: Request, call_next) -> Response:
+    """API 写操作与错误落入审计表，供管理员页面查看。"""
+    import time
+
+    t0 = time.perf_counter()
+    response: Response | None = None
+    err: Exception | None = None
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as exc:
+        err = exc
+        raise
+    finally:
+        try:
+            path = request.url.path or ""
+            method = (request.method or "GET").upper()
+            status = (
+                int(response.status_code)
+                if response is not None
+                else (500 if err else 0)
+            )
+            if _should_audit(method, path, status):
+                from services.auth.auth_store import user_from_authorization
+                from services.core.audit_log_store import infer_action, write_audit
+                import uuid
+
+                rid = (
+                    request.headers.get("x-request-id")
+                    or request.headers.get("X-Request-Id")
+                    or uuid.uuid4().hex[:16]
+                )
+                if response is not None and "x-request-id" not in {
+                    k.lower() for k in response.headers.keys()
+                }:
+                    response.headers["X-Request-Id"] = rid
+
+                auth = request.headers.get("authorization") or request.headers.get(
+                    "Authorization"
+                )
+                user = user_from_authorization(auth) if auth else None
+                ms = int((time.perf_counter() - t0) * 1000)
+                action = infer_action(method, path)
+                detail = None
+                if status >= 400:
+                    detail = f"HTTP {status}"
+                # 无有效登录用户时由 write_audit 落「游客」
+                write_audit(
+                    action=action,
+                    user_id=int(user["id"]) if user and user.get("id") is not None else None,
+                    username=str(user.get("username") or "") if user else None,
+                    role=str(user.get("role") or "") if user else None,
+                    method=method,
+                    path=path,
+                    resource=path,
+                    status_code=status or None,
+                    duration_ms=ms,
+                    ip=_client_ip(request),
+                    user_agent=request.headers.get("user-agent"),
+                    detail=detail,
+                    request_id=rid,
+                )
+        except Exception:
+            pass
 
 
 @app.middleware("http")

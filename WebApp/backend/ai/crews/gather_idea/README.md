@@ -6,8 +6,8 @@ Agent A：外网资讯 / 研报 / 论文 / 帖子 → **EvidencePack**（含 LLM
 |------|------|
 | 页面 | `/ai/gather`（登录后；顶栏 **AI** 也进这里） |
 | API | `POST /api/agent/gather` |
-| 设计 | `docs/mvp_agent/Agent设计-A-信息搜集.md` |
-| 实现说明 | `docs/mvp_agent/AgentA-信息搜集-技术实现说明.md` |
+| 设计 | `E:\SVQuant_docs\mvp_agent\Agent设计-A-信息搜集.md` |
+| 实现说明 | `E:\SVQuant_docs\mvp_agent\AgentA-信息搜集-技术实现说明.md` |
 
 ## 模块
 

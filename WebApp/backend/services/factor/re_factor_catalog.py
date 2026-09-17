@@ -17,8 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from services.core.db import get_conn
-
-RE_BASE = os.environ.get("YG_RE_BASE", "http://192.168.3.64:9527").rstrip("/")
+from services.core.re_config import RE_BASE
 PRIMARY_LIBS = frozenset(
     {
         "momentum_lib",
@@ -31,8 +30,29 @@ PRIMARY_LIBS = frozenset(
         "risk_indicators",
         "technical_indicators",
         "alpha_features",
+        # 同事新主库（单库 + category_id SV01–SV15）
+        "主因子库",
     }
 )
+
+# RE 因子 category_id → 中文分类（接口有 category_name 时优先用接口）
+CATEGORY_ID_LABELS: dict[str, str] = {
+    "SV01": "动量因子",
+    "SV02": "技术复合因子",
+    "SV03": "Beta因子",
+    "SV04": "区间与通道因子",
+    "SV05": "技术复合因子",
+    "SV06": "流动性因子",
+    "SV07": "资金流与量能因子",
+    "SV08": "量价关系因子",
+    "SV09": "日内结构因子",
+    "SV10": "波动率因子",
+    "SV11": "估值因子",
+    "SV12": "规模因子",
+    "SV13": "风险分布因子",
+    "SV14": "待复核",
+    "SV15": "标签与不可交易",
+}
 
 _lock = threading.Lock()
 # 按 scope 分缓存，避免 primary≈738 覆盖 all≈1043（刷新后变回七百多）
@@ -87,10 +107,26 @@ def _get_json(path: str, timeout: float = 45.0) -> Any:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _category_label(category_id: str | None, lib_tags: list[Any]) -> str | None:
+    cid = str(category_id or "").strip().upper()
+    if not cid:
+        return None
+    if cid in CATEGORY_ID_LABELS:
+        return CATEGORY_ID_LABELS[cid]
+    # 兜底：SV01→tags[0]（若 tags 正好 15 个且顺序一致）
+    if cid.startswith("SV") and cid[2:].isdigit() and len(lib_tags) >= int(cid[2:]):
+        idx = int(cid[2:]) - 1
+        tag = str(lib_tags[idx] or "").strip()
+        if tag:
+            return tag
+    return cid
+
+
 def _factors_for_lib(lib: dict[str, Any]) -> tuple[str, list[dict[str, Any]], str | None]:
     name = str(lib.get("name") or "").strip()
     if not name:
         return "", [], None
+    lib_tags = list(lib.get("tags") or [])
     try:
         detail = _get_json(f"/api/factors/{urllib.parse.quote(name)}")
         rows: list[dict[str, Any]] = []
@@ -99,13 +135,25 @@ def _factors_for_lib(lib: dict[str, Any]) -> tuple[str, list[dict[str, Any]], st
             if not fname:
                 continue
             desc = (f.get("description") or fname or "").strip() or fname
+            category_id = str(f.get("category_id") or "").strip() or None
+            category_name = str(f.get("category_name") or "").strip() or None
+            display_name = str(f.get("display_name") or "").strip() or None
+            factor_id = str(f.get("factor_id") or fname).strip() or fname
+            name_en = str(f.get("name_en") or "").strip() or None
+            cat_label = category_name or _category_label(category_id, lib_tags)
             rows.append(
                 {
                     "name": fname,
                     "description": desc,
                     "library": name,
                     "library_description": lib.get("description"),
-                    "tags": lib.get("tags") or [],
+                    "tags": lib_tags,
+                    "category_id": category_id,
+                    "category_name": category_name,
+                    "category_label": cat_label,
+                    "factor_id": factor_id,
+                    "display_name": display_name,
+                    "name_en": name_en,
                 }
             )
         return name, rows, None
@@ -125,7 +173,9 @@ def content_hash(libraries: list[dict[str, Any]], factors: list[dict[str, Any]])
         key=lambda x: (str(x.get("library") or ""), str(x.get("name") or "")),
     ):
         lines.append(
-            f"F|{f.get('library')}|{f.get('name')}|{f.get('description')}|{json.dumps(f.get('tags') or [], ensure_ascii=False, sort_keys=True)}"
+            f"F|{f.get('library')}|{f.get('name')}|{f.get('description')}|"
+            f"{f.get('category_id')}|{f.get('category_label')}|"
+            f"{json.dumps(f.get('tags') or [], ensure_ascii=False, sort_keys=True)}"
         )
     raw = "\n".join(lines).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()

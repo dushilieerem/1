@@ -13,6 +13,12 @@ export type FactorMeta = {
   libraryFile: string;
   libraryLabel: string;
   tags?: string[];
+  /** RE 主因子库分类 ID，如 SV01 */
+  categoryId?: string;
+  /** 中文短名，如「涨跌日频率差」 */
+  displayName?: string;
+  /** 英文展示名；主因子库列表主标题优先用此字段 */
+  nameEn?: string;
   ownerId?: number;
   /** 用户库因子：直接带源码，无需读文件 */
   body?: string;
@@ -23,6 +29,24 @@ export type FactorMeta = {
   /** 用户库因子行 id（删除用） */
   userLibraryFactorId?: number;
 };
+
+/** 主因子库 category_id 展示名顺序（与同步侧 CATEGORY_ID_LABELS 一致） */
+export const SV_CATEGORY_LABEL_ORDER = [
+  "动量因子",
+  "技术复合因子",
+  "Beta因子",
+  "区间与通道因子",
+  "流动性因子",
+  "资金流与量能因子",
+  "量价关系因子",
+  "日内结构因子",
+  "波动率因子",
+  "估值因子",
+  "规模因子",
+  "风险分布因子",
+  "待复核",
+  "标签与不可交易",
+] as const;
 
 export const LABELS: Record<string, string> = {
   // 检测选因子 / 面板分类：动量优先，再经典库，再同事新库
@@ -40,6 +64,7 @@ export const LABELS: Record<string, string> = {
   worldquant_alpha101: "WorldQuant/Alpha101",
   gtja_alpha191: "国泰君安Alpha191",
   custom_lib: "自定义",
+  主因子库: "主因子库",
 };
 
 /** 旧库名仅用于历史帖/缓存展示，不再作为分类 Tab */
@@ -59,7 +84,18 @@ export const BUILTIN_LIBRARY_KEYS = LIBRARY_TAB_ORDER.filter(
 );
 
 export function builtinCategoryLabelsFromFactors(factors: FactorMeta[]): string[] {
-  // 含 RE 全库里尚未写进 LABELS 的库名
+  const present = new Set(
+    factors
+      .filter((f) => f.library !== "custom_lib")
+      .map((f) => f.libraryLabel)
+      .filter(Boolean),
+  );
+  // 主因子库：按 SV 分类固定顺序
+  const svOrdered = SV_CATEGORY_LABEL_ORDER.filter((lab) => present.has(lab));
+  if (svOrdered.length > 0) {
+    const rest = [...present].filter((lab) => !SV_CATEGORY_LABEL_ORDER.includes(lab as (typeof SV_CATEGORY_LABEL_ORDER)[number]));
+    return [...svOrdered, ...rest.sort((a, b) => a.localeCompare(b, "zh"))];
+  }
   return filterTabsFromFactors(
     factors.filter((f) => f.library !== "custom_lib"),
   ).slice(1);
@@ -136,6 +172,12 @@ async function loadBuiltinFromResearchEngine(
       library: string;
       library_description?: string | null;
       tags?: string[];
+      category_id?: string | null;
+      category_label?: string | null;
+      category_name?: string | null;
+      factor_id?: string | null;
+      display_name?: string | null;
+      name_en?: string | null;
     }>;
   };
   if (data.ok === false) {
@@ -149,6 +191,11 @@ async function loadBuiltinFromResearchEngine(
   const out: FactorMeta[] = [];
   for (const f of data.factors || []) {
     const desc = (f.description || f.name || "").trim() || f.name;
+    const categoryLabel = (
+      f.category_label ||
+      f.category_name ||
+      ""
+    ).trim();
     out.push({
       name: f.name,
       methodName: f.name,
@@ -158,11 +205,27 @@ async function loadBuiltinFromResearchEngine(
       params: {},
       library: f.library,
       libraryFile: "",
-      libraryLabel: labelForLibrary(f.library),
+      // 有 category_label 时按分类展示/筛选；否则回退库名
+      libraryLabel: categoryLabel || labelForLibrary(f.library),
       tags: f.tags,
+      categoryId: f.category_id || undefined,
+      displayName: (f.display_name || "").trim() || undefined,
+      nameEn: (f.name_en || "").trim() || undefined,
     });
   }
   return out;
+}
+
+/** 列表/芯片主标题：优先英文名，其次中文短名，再回退方法名 */
+export function factorTitle(f: Pick<FactorMeta, "name" | "nameEn" | "displayName">): string {
+  return (f.nameEn || f.displayName || f.name).trim() || f.name;
+}
+
+/** 释义行：description / explain */
+export function factorExplainText(
+  f: Pick<FactorMeta, "description" | "explain" | "name">,
+): string {
+  return (f.description || f.explain || f.name).trim() || f.name;
 }
 
 /** 仅合并本机 custom_lib（用户自定义）；官方目录已改由 RE 提供 */

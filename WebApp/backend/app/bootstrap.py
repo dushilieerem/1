@@ -30,6 +30,7 @@ def bootstrap_schemas() -> None:
         from services.community.community_store import ensure_posts_schema, seed_sample_posts
         from services.factor.detect_store import ensure_detect_schema, reassign_misowned_named_projects
         from services.strategy.strategy_store import ensure_strategy_schema
+        from services.strategy.strategy_plaza_store import ensure_strategy_plaza_schema
         from services.factor.user_factor_store import (
             ensure_user_factors_schema,
             migrate_legacy_custom_to_admin,
@@ -40,6 +41,22 @@ def bootstrap_schemas() -> None:
         from services.auth.profile_store import ensure_schema as ensure_profile_schema
 
         ensure_profile_schema()
+        from services.core.audit_log_store import ensure_audit_schema
+
+        ensure_audit_schema()
+        print("  app_audit_logs 就绪")
+        try:
+            import os
+
+            from services.core.audit_log_store import purge_audit_logs
+
+            days = int(os.environ.get("AUDIT_LOG_RETENTION_DAYS", "30") or "30")
+            if days > 0:
+                n = purge_audit_logs(days=days)
+                if n:
+                    print(f"  app_audit_logs 清理 {n} 条（>{days} 天）")
+        except Exception as exc:
+            print(f"  app_audit_logs 清理跳过: {exc}")
         ensure_ai_usage_schema()
         ensure_posts_schema()
         n = seed_sample_posts()
@@ -50,8 +67,30 @@ def bootstrap_schemas() -> None:
         from services.strategy.user_strategy_library_store import (
             ensure_user_strategy_libraries_schema,
         )
+        from services.strategy.builtin_strategies_store import (
+            ensure_builtin_strategies_schema,
+            seed_builtin_strategies_from_yaml,
+            list_builtin_strategies_from_db,
+        )
 
         ensure_user_strategy_libraries_schema()
+        try:
+            ensure_builtin_strategies_schema()
+            existing = list_builtin_strategies_from_db()
+            if int(existing.get("total") or 0) <= 0:
+                seed = seed_builtin_strategies_from_yaml(replace=True)
+                print(
+                    f"  builtin_strategies 种子导入: {seed.get('upserted')} 条"
+                    + (
+                        f"（跳过 {len(seed.get('skipped') or [])}）"
+                        if seed.get("skipped")
+                        else ""
+                    )
+                )
+            else:
+                print(f"  builtin_strategies 就绪（{existing.get('total')} 条）")
+        except Exception as exc:
+            print(f"  builtin_strategies schema/种子跳过: {exc}")
         from services.data.watchlist_store import ensure_watchlist_schema
 
         ensure_watchlist_schema()
@@ -73,6 +112,7 @@ def bootstrap_schemas() -> None:
         mig = migrate_legacy_custom_to_admin()
         ensure_detect_schema()
         ensure_strategy_schema()
+        ensure_strategy_plaza_schema()
         try:
             from services.factor.re_factor_catalog import ensure_re_factor_catalog_schema
 

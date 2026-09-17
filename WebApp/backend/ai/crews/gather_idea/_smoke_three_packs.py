@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ai.crews.gather_idea.gather_agent import run_gather
 
-OUT = Path(r"E:\quant-lab\SV\SVQuant\WebApp\docs\mvp_agent\AgentA-三问证据包冒烟-2026-08-18.md")
+OUT = Path(r"E:\SVQuant_docs\mvp_agent\AgentA-三问证据包冒烟-2026-08-18.md")
 TOPICS = [
     "隔夜收益异象在 A 股还有没有金工复现？",
     "质量因子和盈利质量最近有哪些衰减讨论？",

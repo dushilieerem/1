@@ -22,6 +22,8 @@ import {
 import {
   builtinCategoryLabelsFromFactors,
   clearFactorCache,
+  factorExplainText,
+  factorTitle,
   loadFactors,
   syncOfficialFactorCatalog,
   type FactorMeta,
@@ -56,6 +58,21 @@ const ROW_ACCENT: Record<string, string> = {
   "Alpha158/360": "border-l-indigo-500",
   Alpha库: "border-l-violet-400",
   "WorldQuant/Alpha101": "border-l-emerald-500",
+  动量因子: "border-l-blue-500",
+  技术复合因子: "border-l-sky-500",
+  Beta因子: "border-l-cyan-500",
+  区间与通道因子: "border-l-teal-500",
+  流动性因子: "border-l-orange-500",
+  资金流与量能因子: "border-l-amber-500",
+  量价关系因子: "border-l-orange-600",
+  日内结构因子: "border-l-indigo-500",
+  波动率因子: "border-l-amber-600",
+  估值因子: "border-l-violet-500",
+  规模因子: "border-l-purple-500",
+  风险分布因子: "border-l-red-500",
+  待复核: "border-l-yellow-500",
+  标签与不可交易: "border-l-slate-400",
+  主因子库: "border-l-slate-400",
   其他: "border-l-slate-400",
 };
 
@@ -71,6 +88,21 @@ const ROW_BADGE: Record<string, string> = {
   "Alpha158/360": "bg-indigo-50 text-indigo-700",
   Alpha库: "bg-violet-50 text-violet-700",
   "WorldQuant/Alpha101": "bg-emerald-50 text-emerald-700",
+  动量因子: "bg-blue-50 text-blue-700",
+  技术复合因子: "bg-sky-50 text-sky-700",
+  Beta因子: "bg-cyan-50 text-cyan-800",
+  区间与通道因子: "bg-teal-50 text-teal-800",
+  流动性因子: "bg-orange-50 text-orange-700",
+  资金流与量能因子: "bg-amber-50 text-amber-800",
+  量价关系因子: "bg-orange-50 text-orange-800",
+  日内结构因子: "bg-indigo-50 text-indigo-700",
+  波动率因子: "bg-amber-50 text-amber-900",
+  估值因子: "bg-violet-50 text-violet-700",
+  规模因子: "bg-purple-50 text-purple-700",
+  风险分布因子: "bg-red-50 text-red-800",
+  待复核: "bg-yellow-50 text-yellow-900",
+  标签与不可交易: "bg-slate-100 text-slate-600",
+  主因子库: "bg-slate-100 text-slate-600",
   其他: "bg-slate-100 text-slate-600",
 };
 
@@ -86,6 +118,20 @@ const COUNT_PILL: Record<string, string> = {
   "Alpha158/360": "text-indigo-600",
   Alpha库: "text-violet-600",
   "WorldQuant/Alpha101": "text-emerald-700",
+  动量因子: "text-blue-600",
+  技术复合因子: "text-sky-600",
+  Beta因子: "text-cyan-700",
+  区间与通道因子: "text-teal-700",
+  流动性因子: "text-orange-600",
+  资金流与量能因子: "text-amber-700",
+  量价关系因子: "text-orange-700",
+  日内结构因子: "text-indigo-600",
+  波动率因子: "text-amber-800",
+  估值因子: "text-violet-600",
+  规模因子: "text-purple-600",
+  风险分布因子: "text-red-700",
+  待复核: "text-yellow-800",
+  标签与不可交易: "text-slate-600",
 };
 
 function pageNumbers(current: number, total: number): (number | "…")[] {
@@ -138,17 +184,24 @@ function FactorRow({
       <div className="flex flex-col gap-2.5 px-4 py-3 sm:flex-row sm:items-center sm:gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <code className="inline-block max-w-full break-all rounded bg-slate-100 px-1.5 py-0.5 text-xs leading-snug text-slate-700">
-              {factor.name}
-            </code>
+            <span className="text-sm font-semibold leading-snug text-slate-900">
+              {factorTitle(factor)}
+            </span>
+            {factor.displayName &&
+            factor.nameEn &&
+            factor.displayName !== factor.nameEn ? (
+              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">
+                {factor.displayName}
+              </span>
+            ) : null}
             {pending ? (
               <span className="rounded bg-yellow-300 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-950">
                 待写代码
               </span>
             ) : null}
           </div>
-          <div className="mt-1 truncate text-sm font-medium text-slate-800">
-            {factor.explain || factor.description}
+          <div className="mt-1 truncate text-sm text-slate-600">
+            {factorExplainText(factor)}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 self-end sm:self-auto">
@@ -300,7 +353,9 @@ export function FactorLibraryPage() {
       return (
         f.name.toLowerCase().includes(q) ||
         f.description.toLowerCase().includes(q) ||
-        f.explain.toLowerCase().includes(q)
+        f.explain.toLowerCase().includes(q) ||
+        (f.displayName || "").toLowerCase().includes(q) ||
+        (f.nameEn || "").toLowerCase().includes(q)
       );
     });
   }, [activeLib, builtinFactors, userLibFactors, query, category]);
@@ -321,8 +376,7 @@ export function FactorLibraryPage() {
     if (!isAdmin || syncBusy) return;
     const ok = await confirm({
       title: "更新内置因子库",
-      message:
-        "将从同事 ResearchEngine 拉取全量官方目录并写入共享缓存。所有账户的「内置因子库」会一起更新；各用户自建库不受影响。同步可能需要十几秒。",
+      message: "是否更新内置因子库",
       confirmLabel: "开始更新",
     });
     if (!ok) return;
@@ -505,15 +559,15 @@ export function FactorLibraryPage() {
                   ) : null}
                 </div>
               </div>
-              <div className="mt-3 text-xs text-slate-500">
-                <span className="mb-1.5 block font-semibold text-slate-700 lg:mb-0 lg:inline">
+              <div className="mt-3 flex flex-col gap-y-2.5 text-xs">
+                <span className="font-semibold text-slate-700">
                   内置因子分类及数量：
                 </span>
-                <span className="flex flex-wrap gap-x-3 gap-y-1.5 font-semibold lg:ml-2 lg:inline-flex lg:gap-3">
+                <span className="flex flex-wrap gap-x-5 gap-y-2.5 font-semibold">
                   {builtinCategories.map((label) => (
                     <span
                       key={label}
-                      className={COUNT_PILL[label] || "text-slate-500"}
+                      className={`inline-block ${COUNT_PILL[label] || "text-slate-500"}`}
                     >
                       {label.split("/")[0]} {counts[label] || 0}
                     </span>

@@ -18,7 +18,7 @@ SAMPLE_ID = "sample_momentum_20d"
 SAMPLE_NAME = "多因子合成 样例"
 
 # 新建策略默认：空因子，用户自选
-DEFAULT_STRATEGY_CODE = '''from quantcore import (
+DEFAULT_STRATEGY_CODE = '''from app.services.strategy.vectorized.factor_strategy import (
     EqualWeight,
     EveryNTradingDays,
     FactorPortfolioStrategy,
@@ -67,7 +67,7 @@ class MyStrategy(FactorPortfolioStrategy):
 '''
 
 # 样例：多因子赋权相加，演示 @signal 合成写法
-SAMPLE_STRATEGY_CODE = '''from quantcore import (
+SAMPLE_STRATEGY_CODE = '''from app.services.strategy.vectorized.factor_strategy import (
     EqualWeight,
     EveryNTradingDays,
     FactorPortfolioStrategy,
@@ -186,6 +186,18 @@ def ensure_strategy_schema() -> None:
             "CREATE INDEX IF NOT EXISTS idx_strategy_runs_project "
             "ON strategy_runs (user_id, project_id, finished_at DESC)"
         )
+        conn.execute(
+            "ALTER TABLE strategy_runs "
+            "ADD COLUMN IF NOT EXISTS remark TEXT NOT NULL DEFAULT ''"
+        )
+        conn.execute(
+            "ALTER TABLE strategy_runs "
+            "ADD COLUMN IF NOT EXISTS flagged BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_strategy_runs_user_finished "
+            "ON strategy_runs (user_id, finished_at DESC)"
+        )
 
 
 def _iso(val: Any) -> Any:
@@ -259,6 +271,8 @@ def _row_run(row: dict[str, Any]) -> dict[str, Any]:
         "projectId": row["project_id"],
         "name": row.get("name") or "",
         "description": row.get("description") or "",
+        "remark": row.get("remark") or "",
+        "flagged": bool(row.get("flagged")),
         "request": req,
         "result": res,
         "finishedAt": _iso(row.get("finished_at")),
@@ -529,22 +543,50 @@ def delete_project(user_id: int, project_id: str) -> dict[str, Any]:
 
 
 def list_runs(user_id: int, project_id: str) -> dict[str, Any]:
+    return _list_runs_query(user_id, project_id=project_id)
+
+
+def list_all_runs(user_id: int) -> dict[str, Any]:
+    """当前用户全部策略回测报告（对标 detect list_all_runs）。"""
+    return _list_runs_query(user_id, project_id=None)
+
+
+def _list_runs_query(user_id: int, *, project_id: str | None) -> dict[str, Any]:
     with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT id, project_id, name, description, finished_at, elapsed_sec,
-                   COALESCE(result->'metrics', '{}'::jsonb) AS metrics,
-                   NULLIF(TRIM(COALESCE(
-                     request->>'universe',
-                     result->'meta'->>'universe',
-                     ''
-                   )), '') AS universe
-            FROM strategy_runs
-            WHERE user_id = %s AND project_id = %s
-            ORDER BY finished_at DESC
-            """,
-            (user_id, project_id),
-        ).fetchall()
+        if project_id:
+            rows = conn.execute(
+                """
+                SELECT id, project_id, name, description, remark, flagged,
+                       finished_at, elapsed_sec,
+                       COALESCE(result->'metrics', '{}'::jsonb) AS metrics,
+                       NULLIF(TRIM(COALESCE(
+                         request->>'universe',
+                         result->'meta'->>'universe',
+                         ''
+                       )), '') AS universe
+                FROM strategy_runs
+                WHERE user_id = %s AND project_id = %s
+                ORDER BY finished_at DESC
+                """,
+                (user_id, project_id),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, project_id, name, description, remark, flagged,
+                       finished_at, elapsed_sec,
+                       COALESCE(result->'metrics', '{}'::jsonb) AS metrics,
+                       NULLIF(TRIM(COALESCE(
+                         request->>'universe',
+                         result->'meta'->>'universe',
+                         ''
+                       )), '') AS universe
+                FROM strategy_runs
+                WHERE user_id = %s
+                ORDER BY finished_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
     runs = []
     for r in rows:
         row = dict(r)
@@ -552,7 +594,6 @@ def list_runs(user_id: int, project_id: str) -> dict[str, Any]:
         if isinstance(metrics, str):
             metrics = json.loads(metrics)
         universe = row.get("universe") or ""
-        # 列表不返回完整 request（含 strategy_code），只带历史表需要的摘要字段
         slim_req: dict[str, Any] = {}
         if universe:
             slim_req["universe"] = universe
@@ -562,6 +603,8 @@ def list_runs(user_id: int, project_id: str) -> dict[str, Any]:
                 "projectId": row["project_id"],
                 "name": row.get("name") or "",
                 "description": row.get("description") or "",
+                "remark": row.get("remark") or "",
+                "flagged": bool(row.get("flagged")),
                 "request": slim_req,
                 "result": {"metrics": metrics},
                 "finishedAt": _iso(row.get("finished_at")),
@@ -569,6 +612,39 @@ def list_runs(user_id: int, project_id: str) -> dict[str, Any]:
             }
         )
     return {"ok": True, "user_id": int(user_id), "runs": runs}
+
+
+def update_run_remark(user_id: int, run_id: str, remark: str) -> dict[str, Any]:
+    text = (remark or "").strip()
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            UPDATE strategy_runs
+            SET remark = %s
+            WHERE user_id = %s AND id = %s
+            RETURNING *
+            """,
+            (text, user_id, run_id),
+        ).fetchone()
+    if not row:
+        raise KeyError(run_id)
+    return {"ok": True, "run": _row_run(dict(row))}
+
+
+def update_run_flagged(user_id: int, run_id: str, flagged: bool) -> dict[str, Any]:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            UPDATE strategy_runs
+            SET flagged = %s
+            WHERE user_id = %s AND id = %s
+            RETURNING *
+            """,
+            (bool(flagged), user_id, run_id),
+        ).fetchone()
+    if not row:
+        raise KeyError(run_id)
+    return {"ok": True, "run": _row_run(dict(row))}
 
 
 def get_run(user_id: int, run_id: str) -> dict[str, Any]:

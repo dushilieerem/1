@@ -86,7 +86,7 @@ PIPELINES: list[dict[str, Any]] = [
     {"id": "qa", "labelZh": "问答", "defaultChunk": "qa_pair"},
     {"id": "manual", "labelZh": "手册", "defaultChunk": "markdown_heading"},
     {"id": "table", "labelZh": "表格", "defaultChunk": "table_row"},
-    {"id": "paper", "labelZh": "论文", "defaultChunk": "markdown_heading"},
+    {"id": "paper", "labelZh": "论文", "defaultChunk": "structured_fields"},
     {"id": "laws", "labelZh": "法规", "defaultChunk": "markdown_heading"},
 ]
 
@@ -244,6 +244,37 @@ def _ensure_kh_schema_unlocked(conn: Any) -> None:
         ).fetchone()
         if not exists:
             conn.execute(ddl)
+    for col_name, ddl in (
+        ("ingest_mode", "ALTER TABLE kh_documents ADD COLUMN ingest_mode TEXT NOT NULL DEFAULT 'plain'"),
+        ("domain", "ALTER TABLE kh_documents ADD COLUMN domain TEXT NOT NULL DEFAULT ''"),
+        ("payload", "ALTER TABLE kh_documents ADD COLUMN payload JSONB"),
+        (
+            "attachment_file_id",
+            "ALTER TABLE kh_documents ADD COLUMN attachment_file_id BIGINT",
+        ),
+    ):
+        exists = conn.execute(
+            """
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'kh_documents' AND column_name = %s
+            """,
+            (col_name,),
+        ).fetchone()
+        if not exists:
+            conn.execute(ddl)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS kh_attachments (
+          id              BIGSERIAL PRIMARY KEY,
+          file_name       TEXT NOT NULL DEFAULT '',
+          mime_type       TEXT NOT NULL DEFAULT 'application/octet-stream',
+          size_bytes      BIGINT NOT NULL DEFAULT 0,
+          storage_path    TEXT NOT NULL DEFAULT '',
+          sha256          TEXT NOT NULL DEFAULT '',
+          created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS kh_chunks (
@@ -522,11 +553,21 @@ def update_document(doc_id: int, body: dict[str, Any]) -> dict[str, Any]:
 
 
 def _doc_row(r: dict[str, Any], *, include_body: bool = False) -> dict[str, Any]:
+    payload = r.get("payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            payload = None
+    ingest_mode = (r.get("ingest_mode") or "plain").strip() or "plain"
+    attachment_id = r.get("attachment_file_id")
     out: dict[str, Any] = {
         "id": int(r["id"]),
         "collectionId": int(r["collection_id"]),
         "title": r["title"],
         "sourceType": r.get("source_type") or "text",
+        "ingestMode": ingest_mode,
+        "domain": r.get("domain") or "",
         "fileName": r.get("file_name") or "",
         "fileSize": int(r.get("file_size") or 0),
         "chunkStrategy": r.get("chunk_strategy") or "plain_window",
@@ -534,11 +575,15 @@ def _doc_row(r: dict[str, Any], *, include_body: bool = False) -> dict[str, Any]
         "enabled": bool(r["enabled"]) if r.get("enabled") is not None else True,
         "parseError": (r.get("parse_error") or "")[:500],
         "version": int(r.get("version") or 1),
+        "hasAttachment": bool(attachment_id),
+        "attachmentFileId": int(attachment_id) if attachment_id else None,
         "createdAt": _iso(r.get("created_at")),
         "updatedAt": _iso(r.get("updated_at")),
     }
     if include_body:
         out["body"] = r.get("body") or ""
+        if payload is not None:
+            out["payload"] = payload
     else:
         body = r.get("body") or ""
         out["bodyPreview"] = body[:160] + ("…" if len(body) > 160 else "")
@@ -676,6 +721,100 @@ def create_document(
     return doc
 
 
+def create_structured_document(
+    *,
+    collection_id: int,
+    domain: str,
+    payload: dict[str, Any],
+    created_by: int | None = None,
+    ingest: bool = True,
+    chunk_strategy: str | None = None,
+    attachment_base64: str | None = None,
+    attachment_file_name: str = "",
+) -> dict[str, Any]:
+    """结构化填报入库：payload 分块索引；附件可选且不抽字。"""
+    ensure_kh_schema()
+    from knowledge_hub.attachments import save_attachment_bytes
+    from knowledge_hub.payload_utils import (
+        iter_structured_field_chunks,
+        render_payload_preview,
+        storage_payload_dict,
+    )
+    from knowledge_hub.schemas.knowledge_unit import parse_knowledge_unit_payload
+
+    domain = (domain or "paper").strip() or "paper"
+    ku = parse_knowledge_unit_payload(payload)
+    title = (ku.document.title or "").strip()
+    if not title:
+        raise ValueError("标题不能为空")
+    storage = storage_payload_dict(ku)
+    preview = render_payload_preview(ku)
+    strategy = (chunk_strategy or "structured_fields").strip() or "structured_fields"
+    if strategy == "structured_fields":
+        pieces = iter_structured_field_chunks(ku)
+        if not pieces:
+            raise ValueError("至少填写一个可用于检索的字段")
+    elif not preview.strip():
+        raise ValueError("至少填写一个可用于检索的字段")
+
+    attachment_id: int | None = None
+    fname = attachment_file_name or ""
+    fsize = 0
+    if attachment_base64:
+        import base64
+
+        try:
+            raw = base64.b64decode(attachment_base64, validate=False)
+        except Exception as exc:
+            raise ValueError(f"附件解码失败：{exc}") from exc
+        if not fname.strip():
+            raise ValueError("上传附件时需填写文件名")
+        att = save_attachment_bytes(raw, fname)
+        attachment_id = int(att["id"])
+        fname = att["fileName"]
+        fsize = int(att["sizeBytes"])
+
+    with get_conn() as conn:
+        coll = conn.execute(
+            "SELECT id FROM kh_collections WHERE id = %s", (int(collection_id),)
+        ).fetchone()
+        if not coll:
+            raise ValueError("知识库不存在")
+        row = conn.execute(
+            """
+            INSERT INTO kh_documents
+              (collection_id, title, source_type, body, file_name, file_size,
+               chunk_strategy, status, created_by, ingest_mode, domain, payload,
+               attachment_file_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'draft', %s, 'structured', %s, %s::jsonb, %s)
+            RETURNING *
+            """,
+            (
+                int(collection_id),
+                title,
+                "structured",
+                preview,
+                fname,
+                int(fsize),
+                strategy,
+                created_by,
+                domain,
+                json.dumps(storage, ensure_ascii=False),
+                attachment_id,
+            ),
+        ).fetchone()
+        conn.execute(
+            "UPDATE kh_collections SET updated_at = NOW() WHERE id = %s",
+            (int(collection_id),),
+        )
+    doc = _doc_row(dict(row), include_body=True)
+    if ingest:
+        ingest_document(int(doc["id"]))
+        got = get_document(int(doc["id"]))
+        return got or doc
+    return doc
+
+
 def get_document(doc_id: int) -> dict[str, Any] | None:
     ensure_kh_schema()
     with get_conn() as conn:
@@ -687,11 +826,26 @@ def get_document(doc_id: int) -> dict[str, Any] | None:
 
 def delete_document(doc_id: int) -> bool:
     ensure_kh_schema()
+    attachment_id: int | None = None
     with get_conn() as conn:
+        row = conn.execute(
+            "SELECT attachment_file_id FROM kh_documents WHERE id = %s",
+            (int(doc_id),),
+        ).fetchone()
+        if row and row.get("attachment_file_id"):
+            attachment_id = int(row["attachment_file_id"])
         cur = conn.execute(
             "DELETE FROM kh_documents WHERE id = %s RETURNING id", (int(doc_id),)
         )
-        return bool(cur.fetchone())
+        ok = bool(cur.fetchone())
+    if ok and attachment_id:
+        from knowledge_hub.attachments import delete_attachment
+
+        try:
+            delete_attachment(attachment_id)
+        except Exception:
+            pass
+    return ok
 
 
 def ingest_document(doc_id: int) -> dict[str, Any]:
@@ -731,9 +885,21 @@ def ingest_document(doc_id: int) -> dict[str, Any]:
             ).fetchone()
             if not doc:
                 raise ValueError("文档不存在")
-            pieces = chunk_text(
-                doc["body"] or "", doc["chunk_strategy"] or "plain_window"
-            )
+            ingest_mode = (doc.get("ingest_mode") or "plain").strip() or "plain"
+            strategy = (doc.get("chunk_strategy") or "plain_window").strip()
+            if ingest_mode == "structured" and strategy == "structured_fields":
+                from knowledge_hub.payload_utils import iter_structured_field_chunks
+
+                raw_payload = doc.get("payload")
+                if isinstance(raw_payload, str):
+                    raw_payload = json.loads(raw_payload)
+                if not isinstance(raw_payload, dict):
+                    raise ValueError("结构化文档缺少 payload")
+                pieces = iter_structured_field_chunks(raw_payload)
+                if not pieces:
+                    raise ValueError("没有可用于检索的非空字段")
+            else:
+                pieces = chunk_text(doc["body"] or "", strategy or "plain_window")
             conn.execute("DELETE FROM kh_chunks WHERE document_id = %s", (did,))
 
             embed_ok = 0
@@ -894,12 +1060,21 @@ def _tokenize_query(q: str) -> list[str]:
     if not raw:
         return []
     # 空格 / 标点切分；保留较长中文连续串
-    parts = re.split(r"[\s,，。；;、|/\\]+", raw)
+    parts = re.split(r"[\s,，。；;、？?！!|/\\]+", raw)
     tokens: list[str] = []
     for p in parts:
         t = p.strip()
         if len(t) >= 1:
             tokens.append(t)
+    # 从 schema 字段中文名抽词（加字段时这里自动跟上，不必手维护名单）
+    from knowledge_hub.schemas.knowledge_unit import FIELD_LABELS_ZH
+
+    for label in FIELD_LABELS_ZH.values():
+        if label and label in raw:
+            tokens.append(label)
+    for alias in ("局限性", "不足之处", "缺陷"):
+        if alias in raw:
+            tokens.append(alias)
     # 去重保序
     seen: set[str] = set()
     out: list[str] = []
@@ -909,7 +1084,151 @@ def _tokenize_query(q: str) -> list[str]:
             continue
         seen.add(key)
         out.append(t)
-    return out[:12]
+    return out[:24]
+
+
+# 问句口语别名 → schema field（仅少数同义词；正式中文名走 FIELD_LABELS_ZH）
+_STRUCTURED_FIELD_ALIASES: tuple[tuple[str, str], ...] = (
+    ("局限性", "limitation"),
+    ("不足之处", "limitation"),
+    ("缺陷", "limitation"),
+    ("limitation", "limitation"),
+    ("做法", "what_it_does"),
+    ("方法", "what_it_does"),
+    ("技术", "ml_tech"),
+)
+
+
+def _hinted_structured_fields(q: str) -> list[str]:
+    """问句命中 schema 字段中文名 / 英文字段名 / 少量别名 → 对应 meta.field。"""
+    from knowledge_hub.schemas.knowledge_unit import FIELD_LABELS_ZH
+
+    ql = (q or "").lower()
+    out: list[str] = []
+    seen: set[str] = set()
+
+    # 长 label 优先，避免短串误伤（如「数据」）时仍按出现即记，覆盖补入只在有候选时生效
+    labels = sorted(
+        ((k, v) for k, v in FIELD_LABELS_ZH.items() if k != "document_meta" and v),
+        key=lambda kv: -len(kv[1]),
+    )
+    for field, label in labels:
+        if label.lower() in ql and field not in seen:
+            seen.add(field)
+            out.append(field)
+        if field.lower() in ql and field not in seen:
+            seen.add(field)
+            out.append(field)
+    for hint, field in _STRUCTURED_FIELD_ALIASES:
+        if hint.lower() in ql and field not in seen:
+            seen.add(field)
+            out.append(field)
+    return out
+
+
+def _ensure_structured_field_coverage(
+    scored: list[tuple[float, dict[str, Any]]],
+    top_k: int,
+    hinted_fields: list[str],
+) -> list[dict[str, Any]]:
+    """问句点到的 schema 字段，尽量让对应切片进入最终 hits（有限集合，随 schema 增长）。"""
+    hits = [item for _, item in scored[:top_k]]
+    if not hinted_fields or not scored:
+        return hits
+
+    def field_of(h: dict[str, Any]) -> str | None:
+        meta = h.get("meta") if isinstance(h.get("meta"), dict) else {}
+        f = meta.get("field")
+        return str(f) if isinstance(f, str) and f else None
+
+    present = {field_of(h) for h in hits}
+    for field in hinted_fields:
+        if field in present:
+            continue
+        cand = next((item for _, item in scored if field_of(item) == field), None)
+        if not cand:
+            continue
+        replaced = False
+        for i in range(len(hits) - 1, -1, -1):
+            f = field_of(hits[i])
+            if f not in hinted_fields:
+                hits[i] = cand
+                present.discard(f)
+                present.add(field)
+                replaced = True
+                break
+        if not replaced and hits:
+            old = field_of(hits[-1])
+            hits[-1] = cand
+            present.discard(old)
+            present.add(field)
+    return hits
+
+
+def _enrich_hits_with_attachment(hits: list[dict[str, Any]]) -> None:
+    if not hits:
+        return
+    doc_ids = list({int(h["documentId"]) for h in hits})
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT d.id, d.attachment_file_id, d.file_name,
+                   a.file_name AS att_name
+            FROM kh_documents d
+            LEFT JOIN kh_attachments a ON a.id = d.attachment_file_id
+            WHERE d.id = ANY(%s)
+            """,
+            (doc_ids,),
+        ).fetchall()
+    by_id = {int(r["id"]): dict(r) for r in rows}
+    for h in hits:
+        row = by_id.get(int(h["documentId"]))
+        if row and row.get("attachment_file_id"):
+            fn = row.get("att_name") or row.get("file_name") or "attachment"
+            h["attachment"] = {
+                "available": True,
+                "fileName": fn,
+                "downloadUrl": f"/api/kh/documents/{int(h['documentId'])}/attachment",
+            }
+        else:
+            h["attachment"] = {"available": False}
+
+
+def referenced_documents_from_hits(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[int] = set()
+    out: list[dict[str, Any]] = []
+    for h in hits:
+        did = int(h["documentId"])
+        if did in seen:
+            continue
+        seen.add(did)
+        att = h.get("attachment") if isinstance(h.get("attachment"), dict) else {}
+        out.append(
+            {
+                "documentId": did,
+                "documentTitle": h.get("documentTitle") or "",
+                "collectionId": h.get("collectionId"),
+                "attachment": att,
+            }
+        )
+    return out
+
+
+def get_document_attachment(doc_id: int) -> tuple[bytes, str, str]:
+    """返回 (bytes, file_name, mime_type)。"""
+    ensure_kh_schema()
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT attachment_file_id FROM kh_documents WHERE id = %s
+            """,
+            (int(doc_id),),
+        ).fetchone()
+    if not row or not row.get("attachment_file_id"):
+        raise FileNotFoundError("该文档没有可下载的附件")
+    from knowledge_hub.attachments import read_attachment
+
+    return read_attachment(int(row["attachment_file_id"]))
 
 
 def search_chunks(
@@ -983,11 +1302,13 @@ def search_chunks(
 
     scored: list[tuple[float, dict[str, Any]]] = []
     q_lower = q.lower()
+    hinted_fields = set(_hinted_structured_fields(q))
     for r in rows:
         text = r["text"] or ""
         title = r["document_title"] or ""
         meta = r["meta"] if isinstance(r["meta"], dict) else {}
         meta_title = str(meta.get("title") or "")
+        field = str(meta.get("field") or "") if meta.get("field") else ""
         blob = f"{title}\n{meta_title}\n{text}".lower()
         kw = 0.0
         hit_tokens = 0
@@ -1004,6 +1325,9 @@ def search_chunks(
         if q_lower in blob:
             kw += 4.0
         kw += hit_tokens * 0.5
+        # 问句点到的结构化字段：给对应切片加分（短「局限」块否则常被长技术块挤出 TopK）
+        if field and field in hinted_fields:
+            kw += 6.0
 
         vec_score = 0.0
         emb = meta.get("embedding")
@@ -1015,7 +1339,9 @@ def search_chunks(
 
         if mode == "hybrid":
             # 向量为主，关键词作加分（归一到相近量级）
-            score = vec_score * 10.0 + min(kw, 8.0) * 0.35
+            score = vec_score * 10.0 + min(kw, 12.0) * 0.35
+            if field and field in hinted_fields:
+                score += 2.5
             if vec_score < 0.15 and hit_tokens == 0 and q_lower not in blob:
                 continue
         else:
@@ -1047,7 +1373,18 @@ def search_chunks(
         )
 
     scored.sort(key=lambda x: (-x[0], x[1]["documentId"], x[1]["ordinal"]))
-    hits = [item for _, item in scored[:top_k]]
+    hits = _ensure_structured_field_coverage(
+        scored, top_k, _hinted_structured_fields(q)
+    )
+    # 刷新展示用 score 顺序（覆盖补入后按原 score 重排，便于阅读）
+    hits.sort(
+        key=lambda h: (
+            -float(h.get("score") or 0),
+            int(h.get("documentId") or 0),
+            int(h.get("ordinal") or 0),
+        )
+    )
+    _enrich_hits_with_attachment(hits)
     return {
         "query": q,
         "mode": mode,
@@ -1055,6 +1392,7 @@ def search_chunks(
         "collectionIds": cids,
         "totalCandidates": len(scored),
         "hits": hits,
+        "referencedDocuments": referenced_documents_from_hits(hits),
         "embeddingConfigured": bool(creds),
         "chunksWithVectors": sum(
             1
@@ -1181,6 +1519,7 @@ def ask(
         model_override=str(model_override).strip() if model_override else None,
     )
     answer = (llm_out.get("content") or "").strip() or empty
+    _enrich_hits_with_attachment(hits)
     return {
         "query": q,
         "answer": answer,
@@ -1190,6 +1529,7 @@ def ask(
         "collectionIds": retrieved.get("collectionIds") or cids,
         "totalCandidates": retrieved.get("totalCandidates") or 0,
         "hits": hits,
+        "referencedDocuments": referenced_documents_from_hits(hits),
         "llmConfigured": True,
         "model": llm_out.get("model"),
         "providerKey": llm_out.get("providerKey"),

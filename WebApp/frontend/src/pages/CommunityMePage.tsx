@@ -95,10 +95,16 @@ const SIDE_NAV: {
   { id: "mod", label: "管理仓", icon: Shield, adminOnly: true },
 ];
 
-/** 知识库独立站（可用 VITE_KH_URL 覆盖） */
-const KH_URL =
-  (import.meta.env.VITE_KH_URL as string | undefined)?.trim() ||
-  "http://192.168.3.32:9531/";
+/** 知识库独立站：优先 VITE_KH_URL；否则跟当前页面主机，端口 9531（避免写死本机 IP） */
+function resolveKhUrl(): string {
+  const fromEnv = (import.meta.env.VITE_KH_URL as string | undefined)?.trim();
+  if (fromEnv) return fromEnv.endsWith("/") ? fromEnv : `${fromEnv}/`;
+  if (typeof window !== "undefined" && window.location?.hostname) {
+    const { protocol, hostname } = window.location;
+    return `${protocol}//${hostname}:9531/`;
+  }
+  return "http://127.0.0.1:9531/";
+}
 
 const QUICK_LINKS: {
   id: MeTab;
@@ -475,7 +481,7 @@ export function CommunityMePage() {
                 type="button"
                 onClick={() => {
                   prepareAuthHandoff();
-                  window.open(KH_URL, "_blank", "noopener,noreferrer");
+                  window.open(resolveKhUrl(), "_blank", "noopener,noreferrer");
                 }}
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-800"
               >
@@ -560,7 +566,7 @@ export function CommunityMePage() {
                 type="button"
                 onClick={() => {
                   prepareAuthHandoff();
-                  window.open(KH_URL, "_blank", "noopener,noreferrer");
+                  window.open(resolveKhUrl(), "_blank", "noopener,noreferrer");
                 }}
                 className="flex w-full items-center gap-2.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-left text-sm font-medium text-sky-800 transition hover:bg-sky-100"
               >

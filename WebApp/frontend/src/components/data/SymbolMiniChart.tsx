@@ -56,14 +56,17 @@ async function loadOneYearBars(
       asOf =
         tip.date_range?.end ||
         (tip.bars.length ? tip.bars[tip.bars.length - 1].date : null);
+      // 明确无 bars：退市/无行情，勿再打全历史
+      if (!asOf && !(tip.bars?.length)) return [];
     }
     if (asOf) {
       const start = panelLookbackStart(asOf, 370);
       const near = await fetchMarketDaily(symbol, { start, end: asOf });
       if (near.bars?.length) return near.bars;
+      return [];
     }
   } catch {
-    // fall through
+    // fall through only on request failure
   }
   try {
     const full = await fetchMarketDaily(symbol);

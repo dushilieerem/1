@@ -10,5 +10,5 @@ ai/
     └── _shared/      # 跨 crew 工具
 ```
 
-**新 Agent：** 见 `WebApp/docs/mvp_agent/ADDING_AN_AGENT.md`  
+**新 Agent：** 见 `E:\SVQuant_docs\mvp_agent\ADDING_AN_AGENT.md`  
 **兼容：** 旧路径 `services/agent_*.py` 等仍可 import（薄封装转发到本包）。

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, X } from "lucide-react";
 import { FactorPickerModal } from "@/components/FactorPickerModal";
-import { loadFactors, type FactorMeta } from "@/lib/factorCatalog";
+import { factorTitle, loadFactors, type FactorMeta } from "@/lib/factorCatalog";
 import {
   equalPowers,
   normalizeSignalPowers,
@@ -35,11 +35,13 @@ type Props = {
 
 function factorLabel(
   code: string,
-  _catalog: FactorMeta[],
+  catalog: FactorMeta[],
   tempLabels: Record<string, string>,
 ): string {
-  // 库内因子用代码名；临时因子用 tempLabels
-  return tempLabels[code] || code;
+  if (tempLabels[code]) return tempLabels[code];
+  const hit = catalog.find((f) => f.name === code);
+  if (hit) return factorTitle(hit);
+  return code;
 }
 
 function isCatalogFactor(code: string, catalogNames: Set<string>): boolean {
@@ -292,13 +294,15 @@ export function StrategySignalFactorsPanel({
                             </span>
                           ) : null}
                         </div>
-                        <code
-                          className={`text-xs ${
+                        <div
+                          className={`truncate text-xs ${
                             temp ? "text-teal-700/80" : "text-slate-400"
                           }`}
                         >
-                          {c}
-                        </code>
+                          {temp
+                            ? c
+                            : catalog.find((f) => f.name === c)?.displayName || c}
+                        </div>
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-1">

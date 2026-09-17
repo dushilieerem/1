@@ -44,15 +44,21 @@ export function SymbolPreviewCard({ symbol, name, quote }: Props) {
       </div>
 
       <div className="mt-2 flex flex-wrap items-baseline gap-2 px-4">
-        <span className={`text-2xl font-bold tabular-nums ${tone}`}>
-          {fmtPrice(quote?.last)}
-        </span>
-        <span className={`text-sm font-semibold tabular-nums ${tone}`}>
-          {quote?.change == null
-            ? ""
-            : `${quote.change > 0 ? "+" : ""}${fmtPrice(quote.change)}`}{" "}
-          {fmtPct(quote?.changePct)}
-        </span>
+        {quote?.last == null ? (
+          <span className="text-sm font-medium text-slate-400">暂无行情</span>
+        ) : (
+          <>
+            <span className={`text-2xl font-bold tabular-nums ${tone}`}>
+              {fmtPrice(quote.last)}
+            </span>
+            <span className={`text-sm font-semibold tabular-nums ${tone}`}>
+              {quote.change == null
+                ? ""
+                : `${quote.change > 0 ? "+" : ""}${fmtPrice(quote.change)}`}{" "}
+              {fmtPct(quote.changePct)}
+            </span>
+          </>
+        )}
       </div>
 
       <div className="mt-3 border-t border-slate-100 bg-gradient-to-b from-slate-50/80 to-white px-3 pb-3 pt-3">

@@ -46,8 +46,19 @@ const StrategyHistoryPage = lazy(() =>
 const StrategyLibraryPage = lazy(() =>
   import("./pages/StrategyLibraryPage").then((m) => ({ default: m.StrategyLibraryPage })),
 );
+const StrategyPlazaPage = lazy(() =>
+  import("./pages/StrategyPlazaPage").then((m) => ({ default: m.StrategyPlazaPage })),
+);
+const StrategyPlazaDetailPage = lazy(() =>
+  import("./pages/StrategyPlazaDetailPage").then((m) => ({
+    default: m.StrategyPlazaDetailPage,
+  })),
+);
 const DataKlinePanelPage = lazy(() =>
   import("./pages/DataKlinePanelPage").then((m) => ({ default: m.DataKlinePanelPage })),
+);
+const DataFieldsPage = lazy(() =>
+  import("./pages/DataFieldsPage").then((m) => ({ default: m.DataFieldsPage })),
 );
 const DataSearchResultsPage = lazy(() =>
   import("./pages/DataSearchResultsPage").then((m) => ({ default: m.DataSearchResultsPage })),
@@ -199,6 +210,10 @@ export default function App() {
             path="/data/watchlist"
             element={<Authed><WatchlistPage /></Authed>}
           />
+          <Route
+            path="/data/fields"
+            element={<Authed><DataFieldsPage /></Authed>}
+          />
           <Route path="/help" element={<HelpPage />} />
           <Route path="/help/:docId" element={<HelpPage />} />
           <Route path="/data/api-docs" element={<Navigate to="/help" replace />} />
@@ -211,7 +226,9 @@ export default function App() {
             element={<Authed><DataSymbolOverviewPage /></Authed>}
           />
 
-          <Route path="/strategy" element={<Authed><Navigate to="/strategy/research" replace /></Authed>} />
+          <Route path="/strategy" element={<Navigate to="/strategy/plaza" replace />} />
+          <Route path="/strategy/plaza" element={<StrategyPlazaPage />} />
+          <Route path="/strategy/plaza/:id" element={<StrategyPlazaDetailPage />} />
           <Route path="/strategy/research" element={<Authed><StrategyResearchListPage /></Authed>} />
           <Route path="/strategy/research/report/:runId" element={<Authed><StrategyReportPage /></Authed>} />
           <Route path="/strategy/research/:projectId/history" element={<Authed><StrategyHistoryPage /></Authed>} />

@@ -4,10 +4,10 @@ import {
   BarChart2,
   ChevronLeft,
   ChevronRight,
-  FileText,
   FolderOpen,
   Layers,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
   X,
@@ -21,9 +21,11 @@ import {
 } from "@/lib/auth";
 import {
   STRATEGY_ARCHIVE_CATEGORIES,
+  createEmptyUserStrategy,
   listBuiltinStrategies,
   openBuiltinStrategyDetect,
   openUserLibraryStrategyDetect,
+  syncBuiltinStrategies,
   type BuiltinStrategyMeta,
 } from "@/lib/strategyLibraryApi";
 import {
@@ -94,6 +96,16 @@ export function StrategyLibraryPage() {
   const [createName, setCreateName] = useState("");
   const [createErr, setCreateErr] = useState<string | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [strategyCreateOpen, setStrategyCreateOpen] = useState(false);
+  const [strategyName, setStrategyName] = useState("");
+  const [strategyDesc, setStrategyDesc] = useState("");
+  const [strategyCategory, setStrategyCategory] = useState<string>("其他");
+  const [strategyLibId, setStrategyLibId] = useState("");
+  const [strategyCreateErr, setStrategyCreateErr] = useState<string | null>(null);
+  const [strategyCreateBusy, setStrategyCreateBusy] = useState(false);
+
+  const isAdmin = user?.role === "admin";
 
   const builtinCategories = useMemo(() => {
     const labels = new Set(builtin.map((b) => b.strategy_type_label));
@@ -233,6 +245,91 @@ export function StrategyLibraryPage() {
     setCreateOpen(true);
   };
 
+  const onSyncBuiltin = async () => {
+    if (!isAdmin || syncBusy) return;
+    const ok = await confirm({
+      title: "更新内置策略库",
+      message: "是否更新内置策略库",
+      confirmLabel: "开始更新",
+    });
+    if (!ok) return;
+    setSyncBusy(true);
+    setErr(null);
+    try {
+      const r = await syncBuiltinStrategies();
+      await listBuiltinStrategies().then(setBuiltin);
+      await confirm({
+        title: "更新完成",
+        message: `内置策略库已更新（${r.upserted} 条）`,
+        confirmLabel: "确定",
+        alert: true,
+      });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+
+  const openStrategyCreate = () => {
+    if (!user) {
+      window.location.href = "/login?next=/strategy/library";
+      return;
+    }
+    if (!userLibs.length) {
+      window.alert("请先「新增策略库」，再新建策略。");
+      return;
+    }
+    const prefer =
+      activeLib !== BUILTIN_KEY && userLibs.some((l) => String(l.id) === activeLib)
+        ? activeLib
+        : String(userLibs[0].id);
+    setStrategyLibId(prefer);
+    setStrategyName("");
+    setStrategyDesc("");
+    setStrategyCategory("其他");
+    setStrategyCreateErr(null);
+    setStrategyCreateOpen(true);
+  };
+
+  const confirmStrategyCreate = async () => {
+    const title = strategyName.trim();
+    if (!title) {
+      setStrategyCreateErr("请填写策略名称");
+      return;
+    }
+    const libId = Number(strategyLibId);
+    if (!Number.isFinite(libId)) {
+      setStrategyCreateErr("请选择策略库");
+      return;
+    }
+    setStrategyCreateBusy(true);
+    setStrategyCreateErr(null);
+    try {
+      await createEmptyUserStrategy({
+        libraryId: libId,
+        name: title,
+        description: strategyDesc,
+        categoryLabel: strategyCategory,
+      });
+      setActiveLib(String(libId));
+      const rows = await listStrategyLibraryItems(libId);
+      setUserLibItems(rows);
+      setUserLibs((prev) =>
+        prev.map((l) =>
+          l.id === libId
+            ? { ...l, strategyCount: (l.strategyCount || 0) + 1 }
+            : l,
+        ),
+      );
+      setStrategyCreateOpen(false);
+    } catch (e) {
+      setStrategyCreateErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setStrategyCreateBusy(false);
+    }
+  };
+
   const confirmCreate = async () => {
     const title = createName.trim();
     if (!title) {
@@ -333,14 +430,14 @@ export function StrategyLibraryPage() {
                 </span>
               </div>
             </div>
-            <div className="relative flex w-full flex-col gap-2 lg:w-auto lg:flex-row lg:flex-wrap lg:items-center">
-              <div className="flex w-full min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 lg:w-auto lg:flex-none">
+            <div className="relative flex w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+              <div className="flex w-full min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 sm:w-auto sm:flex-none">
                 <Search className="h-4 w-4 shrink-0 text-slate-400" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="搜索名称、代码…"
-                  className="w-full min-w-0 bg-transparent text-sm outline-none lg:w-56"
+                  className="w-full min-w-0 bg-transparent text-sm outline-none sm:w-56"
                 />
                 {query ? (
                   <button type="button" onClick={() => setQuery("")}>
@@ -348,7 +445,21 @@ export function StrategyLibraryPage() {
                   </button>
                 ) : null}
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 sm:justify-end">
+              {isAdmin ? (
+                <button
+                  type="button"
+                  onClick={() => void onSyncBuiltin()}
+                  disabled={syncBusy}
+                  title="管理员：从磁盘种子重导入内置策略到数据库（全站共享，不动用户库）"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${syncBusy ? "animate-spin" : ""}`}
+                  />
+                  {syncBusy ? "更新中…" : "更新内置策略库"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={openCreate}
@@ -356,6 +467,14 @@ export function StrategyLibraryPage() {
               >
                 <Plus className="h-4 w-4" />
                 新增策略库
+              </button>
+              <button
+                type="button"
+                onClick={openStrategyCreate}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100"
+              >
+                <Plus className="h-4 w-4" />
+                新建策略
               </button>
               <Link
                 to="/strategy/research"
@@ -365,7 +484,7 @@ export function StrategyLibraryPage() {
                 className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-800"
               >
                 <BarChart2 className="h-4 w-4" />
-                研究
+                检测报告
               </Link>
               </div>
             </div>
@@ -503,6 +622,11 @@ export function StrategyLibraryPage() {
                     );
                   })
                 : (slice as UserLibraryStrategy[]).map((s) => {
+                    const pending =
+                      s.pendingDetect === true ||
+                      (s.pendingDetect !== false &&
+                        !s.detectedAt &&
+                        !s.hasArchiveReport);
                     const badge =
                       ROW_BADGE[s.categoryLabel] ?? "bg-slate-100 text-slate-600";
                     const busy = busyId === `user:${s.id}`;
@@ -517,9 +641,16 @@ export function StrategyLibraryPage() {
                         className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm lg:flex-row lg:items-center lg:justify-between"
                       >
                         <div className="min-w-0">
-                          <p className="truncate font-medium text-slate-900">
-                            {s.name}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="truncate font-medium text-slate-900">
+                              {s.name}
+                            </p>
+                            {pending ? (
+                              <span className="shrink-0 rounded bg-yellow-300 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-950">
+                                待检测
+                              </span>
+                            ) : null}
+                          </div>
                           <p
                             className="truncate text-xs text-slate-400"
                             title={subtitle === "暂无说明" ? undefined : subtitle}
@@ -533,24 +664,6 @@ export function StrategyLibraryPage() {
                           >
                             {s.categoryLabel || "其他"}
                           </span>
-                          {s.hasArchiveReport ? (
-                            <Link
-                              to={`/strategy/library/archive/${s.id}`}
-                              title="查看入库时冻结的回测报告"
-                              className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-                            >
-                              <FileText className="h-3 w-3" />
-                              入库报告
-                            </Link>
-                          ) : (
-                            <span
-                              title="旧数据仅保存了代码，无入库回测快照；重新从报告「入库」可生成"
-                              className="inline-flex h-7 cursor-not-allowed items-center gap-1 rounded-lg border border-dashed border-slate-200 px-2.5 text-xs text-slate-400"
-                            >
-                              <FileText className="h-3 w-3" />
-                              入库报告
-                            </span>
-                          )}
                           <button
                             type="button"
                             disabled={busy}
@@ -575,7 +688,7 @@ export function StrategyLibraryPage() {
                 <p className="rounded-xl border border-dashed border-slate-200 bg-white py-16 text-center text-sm text-slate-400">
                   {activeLib === BUILTIN_KEY
                     ? "无匹配策略"
-                    : "该策略库暂无策略，可从策略研究回测报告「入库」添加"}
+                    : "该策略库暂无策略，可点右上角「新建策略」添加"}
                 </p>
               ) : null}
             </div>
@@ -663,6 +776,93 @@ export function StrategyLibraryPage() {
                 type="button"
                 disabled={createBusy}
                 onClick={() => void confirmCreate()}
+                className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+              >
+                创建
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {strategyCreateOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <div className="mb-1 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">新建策略</h3>
+              <button
+                type="button"
+                onClick={() => setStrategyCreateOpen(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3 text-sm">
+              <label className="block text-xs text-slate-500">
+                策略名称
+                <input
+                  autoFocus
+                  value={strategyName}
+                  onChange={(e) => {
+                    setStrategyName(e.target.value);
+                    setStrategyCreateErr(null);
+                  }}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                />
+              </label>
+              <label className="block text-xs text-slate-500">
+                说明
+                <input
+                  value={strategyDesc}
+                  onChange={(e) => setStrategyDesc(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                />
+              </label>
+              <label className="block text-xs text-slate-500">
+                分类
+                <select
+                  value={strategyCategory}
+                  onChange={(e) => setStrategyCategory(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                >
+                  {STRATEGY_ARCHIVE_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs text-slate-500">
+                所属策略库
+                <select
+                  value={strategyLibId}
+                  onChange={(e) => setStrategyLibId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                >
+                  {userLibs.map((l) => (
+                    <option key={l.id} value={String(l.id)}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {strategyCreateErr ? (
+              <p className="mt-2 text-xs text-red-500">{strategyCreateErr}</p>
+            ) : null}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setStrategyCreateOpen(false)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={strategyCreateBusy}
+                onClick={() => void confirmStrategyCreate()}
                 className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
               >
                 创建

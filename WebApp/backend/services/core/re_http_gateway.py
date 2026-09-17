@@ -2,13 +2,11 @@
 """ResearchEngine 薄网关：本机转发，不自建队列；浏览器只打 /api。"""
 from __future__ import annotations
 
-import os
 import urllib.parse
 from typing import Any
 
 from services.core.lan_http import request_json
-
-RE_BASE = os.environ.get("YG_RE_BASE", "http://192.168.3.64:9527").rstrip("/")
+from services.core.re_config import RE_BASE
 
 
 def forward_re(

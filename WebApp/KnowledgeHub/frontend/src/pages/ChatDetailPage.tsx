@@ -16,6 +16,7 @@ import {
   clearConversationMessages,
   createConversation,
   deleteConversation,
+  downloadDocumentAttachment,
   listChats,
   listCollections,
   listConversationMessages,
@@ -26,6 +27,7 @@ import {
   type KhChatMessage,
   type KhCollection,
   type KhConversation,
+  type KhReferencedDocument,
   type KhSearchHit,
 } from "@/lib/api";
 
@@ -37,6 +39,7 @@ type ChatTurn = {
   mode?: string;
   totalCandidates?: number;
   hits: KhSearchHit[];
+  referencedDocuments?: KhReferencedDocument[];
   model?: string | null;
   error?: string;
   /** 已上屏、等待 ask 返回 */
@@ -63,6 +66,14 @@ function cleanAnswer(text: string) {
     .trim();
 }
 
+/** 模型常写出 **标题 **（闭侧有空格），CommonMark 无法加粗，会露出字面 ** */
+function normalizeMdEmphasis(text: string) {
+  return text.replace(/\*\*\s*([^*]+?)\s*\*\*/g, (_m, inner: string) => {
+    const t = String(inner).trim();
+    return t ? `**${t}**` : "";
+  });
+}
+
 function AnswerWithCitations({
   answer,
   hits,
@@ -72,12 +83,15 @@ function AnswerWithCitations({
 }) {
   // 同一检索块编号只保留首次角标，避免 [1][1][1] 刷屏
   const seen = new Set<number>();
-  const md = cleanAnswer(answer).replace(/\[(\d+)\]/g, (_m, n: string) => {
-    const idx = Number(n);
-    if (seen.has(idx)) return "";
-    seen.add(idx);
-    return `[↗](#cite-${n})`;
-  });
+  const md = normalizeMdEmphasis(cleanAnswer(answer)).replace(
+    /\[(\d+)\]/g,
+    (_m, n: string) => {
+      const idx = Number(n);
+      if (seen.has(idx)) return "";
+      seen.add(idx);
+      return `[↗](#cite-${n})`;
+    },
+  );
   return (
     <div className="kh-md text-sm leading-relaxed text-slate-800">
       <ReactMarkdown
@@ -94,12 +108,32 @@ function AnswerWithCitations({
               </a>
             );
           },
+          strong: ({ children }) => (
+            <strong className="font-semibold text-slate-900">{children}</strong>
+          ),
         }}
       >
         {md}
       </ReactMarkdown>
     </div>
   );
+}
+
+function referencedDocsFromHits(hits: KhSearchHit[]): KhReferencedDocument[] {
+  const seen = new Set<number>();
+  const out: KhReferencedDocument[] = [];
+  for (const h of hits) {
+    const id = h.documentId;
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      documentId: id,
+      documentTitle: h.documentTitle || "",
+      collectionId: h.collectionId,
+      attachment: h.attachment,
+    });
+  }
+  return out;
 }
 
 function messagesToTurns(messages: KhChatMessage[]): ChatTurn[] {
@@ -128,6 +162,13 @@ function messagesToTurns(messages: KhChatMessage[]): ChatTurn[] {
       else if (m.content && meta.kind !== "retrieval") pending.answer = m.content;
       if (typeof meta.grounded === "boolean") pending.grounded = meta.grounded;
       if (typeof meta.model === "string") pending.model = meta.model;
+      const savedRefs = Array.isArray(meta.referencedDocuments)
+        ? (meta.referencedDocuments as KhReferencedDocument[])
+        : null;
+      pending.referencedDocuments =
+        savedRefs && savedRefs.length > 0
+          ? savedRefs
+          : referencedDocsFromHits(hits);
       turns.push(pending);
       pending = null;
     }
@@ -241,6 +282,7 @@ export function ChatDetailPage() {
       mode?: string;
       totalCandidates?: number;
       hits: KhSearchHit[];
+      referencedDocuments?: KhReferencedDocument[];
       model?: string | null;
       error?: string;
     },
@@ -250,6 +292,10 @@ export function ChatDetailPage() {
       content: turn.query,
     });
     const kind = turn.answer != null && !turn.error ? "answer" : "retrieval";
+    const refs =
+      turn.referencedDocuments && turn.referencedDocuments.length > 0
+        ? turn.referencedDocuments
+        : referencedDocsFromHits(turn.hits);
     await appendConversationMessage(conversationId, {
       role: "assistant",
       content: turn.error
@@ -263,6 +309,7 @@ export function ChatDetailPage() {
         mode: turn.mode,
         totalCandidates: turn.totalCandidates,
         hits: turn.hits,
+        referencedDocuments: refs,
         answer: turn.answer,
         grounded: turn.grounded,
         model: turn.model,
@@ -344,6 +391,7 @@ export function ChatDetailPage() {
           mode: res.mode,
           totalCandidates: res.totalCandidates,
           hits: res.hits || [],
+          referencedDocuments: res.referencedDocuments || [],
           model: res.model,
         };
       } catch (askErr) {
@@ -360,6 +408,7 @@ export function ChatDetailPage() {
             mode: res.mode,
             totalCandidates: res.totalCandidates,
             hits: res.hits || [],
+            referencedDocuments: res.referencedDocuments || [],
           };
           setErr("默认 LLM 未配置，已回落为检索预览（设置页可配）");
         } else {
@@ -628,58 +677,97 @@ export function ChatDetailPage() {
                             <AnswerWithCitations answer={t.answer} hits={t.hits} />
                           ) : null}
                           {t.hits.length > 0 ? (
-                            <details className="mt-3 rounded-xl border border-teal-100/80 bg-[var(--kh-mist)]/40 open:pb-1">
-                              <summary className="cursor-pointer list-none px-3 py-2 text-xs text-slate-600 marker:content-none [&::-webkit-details-marker]:hidden">
-                                <span className="inline-flex flex-wrap items-center gap-2">
-                                  <Search className="h-3.5 w-3.5 text-[var(--kh-teal)]" />
-                                  <span className="font-medium text-slate-700">
-                                    {t.answer != null ? "参考来源" : "检索结果"}
-                                  </span>
-                                  {t.mode ? (
-                                    <span className="rounded-md bg-white/80 px-1.5 py-0.5 font-mono text-[var(--kh-teal-deep)]">
-                                      {t.mode}
+                            <>
+                              <details className="mt-3 rounded-xl border border-teal-100/80 bg-[var(--kh-mist)]/40 open:pb-1">
+                                <summary className="cursor-pointer list-none px-3 py-2 text-xs text-slate-600 marker:content-none [&::-webkit-details-marker]:hidden">
+                                  <span className="inline-flex flex-wrap items-center gap-2">
+                                    <Search className="h-3.5 w-3.5 text-[var(--kh-teal)]" />
+                                    <span className="font-medium text-slate-700">
+                                      {t.answer != null ? "参考来源" : "检索结果"}
                                     </span>
-                                  ) : null}
-                                  <span className="text-slate-400">
-                                    {t.hits.length} 条
-                                    {typeof t.totalCandidates === "number"
-                                      ? ` / 候选 ${t.totalCandidates}`
-                                      : ""}
-                                  </span>
-                                  {t.model ? (
-                                    <span className="rounded bg-white/80 px-1.5 py-0.5 font-mono text-slate-500">
-                                      {t.model}
+                                    {t.mode ? (
+                                      <span className="rounded-md bg-white/80 px-1.5 py-0.5 font-mono text-[var(--kh-teal-deep)]">
+                                        {t.mode}
+                                      </span>
+                                    ) : null}
+                                    <span className="text-slate-400">
+                                      {t.hits.length} 条
+                                      {typeof t.totalCandidates === "number"
+                                        ? ` / 候选 ${t.totalCandidates}`
+                                        : ""}
                                     </span>
-                                  ) : null}
-                                </span>
-                              </summary>
-                              <ul className="space-y-2 px-3 pb-3">
-                                {t.hits.map((h, i) => (
-                                  <li
-                                    key={`${t.id}-${h.chunkId}-${i}`}
-                                    className="rounded-lg border border-white/80 bg-white/90 px-3 py-2"
-                                  >
-                                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-                                      <span className="font-mono text-slate-500">#{i + 1}</span>
-                                      <Link
-                                        to={`/datasets/${h.collectionId}/documents/${h.documentId}`}
-                                        className="font-medium text-[var(--kh-teal-deep)] hover:underline"
-                                      >
-                                        {h.documentTitle}
-                                      </Link>
-                                      {typeof h.meta?.title === "string" ? (
-                                        <span className="truncate text-slate-500">
-                                          {h.meta.title}
-                                        </span>
-                                      ) : null}
-                                    </div>
-                                    <p className="mt-1 text-sm leading-relaxed text-slate-600">
-                                      {snippet(h.text, 160)}
-                                    </p>
-                                  </li>
-                                ))}
-                              </ul>
-                            </details>
+                                    {t.model ? (
+                                      <span className="rounded bg-white/80 px-1.5 py-0.5 font-mono text-slate-500">
+                                        {t.model}
+                                      </span>
+                                    ) : null}
+                                    <span className="text-slate-400">（点击展开切片）</span>
+                                  </span>
+                                </summary>
+                                <ul className="space-y-2 px-3 pb-3">
+                                  {t.hits.map((h, i) => (
+                                    <li
+                                      key={`${t.id}-${h.chunkId}-${i}`}
+                                      className="rounded-lg border border-white/80 bg-white/90 px-3 py-2"
+                                    >
+                                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                                        <span className="font-mono text-slate-500">#{i + 1}</span>
+                                        <Link
+                                          to={`/datasets/${h.collectionId}/documents/${h.documentId}`}
+                                          className="font-medium text-[var(--kh-teal-deep)] hover:underline"
+                                        >
+                                          {h.documentTitle}
+                                        </Link>
+                                        {typeof h.meta?.field === "string" ? (
+                                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-500">
+                                            {String(h.meta.field)}
+                                          </span>
+                                        ) : typeof h.meta?.title === "string" ? (
+                                          <span className="truncate text-slate-500">
+                                            {h.meta.title}
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                      <p className="mt-1 text-sm leading-relaxed text-slate-600">
+                                        {snippet(h.text, 160)}
+                                      </p>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </details>
+                              {t.referencedDocuments &&
+                              t.referencedDocuments.some((rd) => rd.attachment?.available) ? (
+                                <div className="mt-2 rounded-xl border border-teal-100/80 bg-white/90 px-3 py-2">
+                                  <p className="mb-1.5 text-xs font-medium text-slate-600">
+                                    引用文档
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {t.referencedDocuments
+                                      .filter((rd) => rd.attachment?.available)
+                                      .map((rd) => (
+                                        <button
+                                          key={rd.documentId}
+                                          type="button"
+                                          title={rd.documentTitle}
+                                          className="max-w-full rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-left text-xs text-[var(--kh-teal-deep)] hover:bg-teal-100"
+                                          onClick={() =>
+                                            void downloadDocumentAttachment(rd.documentId).catch(
+                                              (e) =>
+                                                setErr(
+                                                  e instanceof Error ? e.message : String(e),
+                                                ),
+                                            )
+                                          }
+                                        >
+                                          <span className="line-clamp-2 break-words">
+                                            下载：{rd.documentTitle}
+                                          </span>
+                                        </button>
+                                      ))}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </>
                           ) : t.answer == null ? (
                             <p className="text-sm text-slate-400">
                               未命中切片，可换个问法或检查知识库是否已向量化

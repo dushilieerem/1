@@ -22,6 +22,9 @@ export type UserLibraryStrategy = {
   sourceRunId?: string;
   hasArchiveReport?: boolean;
   archiveFinishedAt?: string | null;
+  /** 首次回测完成时间；空则列表显示「待检测」 */
+  detectedAt?: string | null;
+  pendingDetect?: boolean;
   createdAt?: string | null;
   updatedAt?: string | null;
 };
@@ -119,6 +122,17 @@ export async function getLibraryStrategyArchive(
     run: import("./strategyStore").StrategyRunRecord;
   }>(`/api/strategy/library-strategies/${strategyId}/archive`);
   return data.run;
+}
+
+/** 回测成功后清除用户库策略的「待检测」 */
+export async function markUserLibraryStrategyDetected(
+  strategyId: number,
+): Promise<UserLibraryStrategy> {
+  const data = await apiJson<{ strategy: UserLibraryStrategy }>(
+    `/api/strategy/library-strategies/${strategyId}/mark-detected`,
+    { method: "POST", body: "{}" },
+  );
+  return data.strategy;
 }
 
 export async function deleteStrategyFromUserLibrary(

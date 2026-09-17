@@ -517,6 +517,19 @@ export function StrategyBacktestPage() {
         result,
         elapsedSec: sec,
       });
+      // 用户库策略：回测成功后去掉「待检测」
+      const libRef = String(savedProject.config?.library_ref || "");
+      const m = /^userlib:(\d+)$/.exec(libRef);
+      if (m) {
+        try {
+          const { markUserLibraryStrategyDetected } = await import(
+            "@/lib/userStrategyLibraries"
+          );
+          await markUserLibraryStrategyDetected(Number(m[1]));
+        } catch {
+          /* 非阻断 */
+        }
+      }
       pushLog(`已保存 · ${sec}s`);
       navigate(`/strategy/research/report/${run.id}`);
     } catch (e) {

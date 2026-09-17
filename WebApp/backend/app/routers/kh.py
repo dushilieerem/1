@@ -29,6 +29,27 @@ def kh_openapi() -> dict:
     return openapi_spec()
 
 
+@router.post("/api/kh/model-providers/test")
+async def kh_model_providers_test(
+    request: Request,
+    user: dict | None = Depends(optional_user),
+) -> JSONResponse:
+    """显式路由：模型对话探测（避免 catch-all 旧进程未热更时 404）。"""
+    body: dict[str, Any] = {}
+    raw = await request.body()
+    if raw:
+        import json
+
+        try:
+            parsed = json.loads(raw.decode("utf-8"))
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="invalid JSON") from None
+        if not isinstance(parsed, dict):
+            raise HTTPException(status_code=400, detail="invalid JSON")
+        body = parsed
+    return _collect_json(handle_kh_post, "/api/kh/model-providers/test", body, user=user)
+
+
 def _collect_json(fn, *args, **kwargs) -> JSONResponse:
     box: dict[str, Any] = {"status": 200, "payload": {"error": "not found"}}
 

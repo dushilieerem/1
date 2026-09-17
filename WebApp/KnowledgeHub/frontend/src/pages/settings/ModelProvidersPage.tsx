@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Bot,
   Cloud,
   Cpu,
   KeyRound,
   Layers,
+  MessageSquare,
   Mic,
   Plus,
   Search,
@@ -325,6 +327,39 @@ export function ModelProvidersPage() {
     }
   };
 
+  const onRemoveModel = async (p: ModelProvider, modelName: string) => {
+    try {
+      const nextModels = (p.models || []).filter((m) => m.name !== modelName);
+      await upsertProvider({
+        providerKey: p.providerKey,
+        displayName: p.displayName,
+        baseUrl: p.baseUrl,
+        models: nextModels,
+      });
+      const nextDefaults = { ...defaults };
+      let changed = false;
+      for (const [role, d] of Object.entries(nextDefaults)) {
+        if (d.providerKey === p.providerKey && d.modelName === modelName) {
+          nextDefaults[role] = {
+            providerKey: "",
+            modelName: "",
+            enabled: d.enabled,
+          };
+          changed = true;
+        }
+      }
+      if (changed) {
+        setDefaults(nextDefaults);
+        await setDefaultModels(nextDefaults);
+      }
+      setOkMsg(`已删除模型 ${modelName}`);
+      window.setTimeout(() => setOkMsg(null), 2000);
+      await reload();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const setRoleChoice = (roleKey: string, _modelType: string, value: string) => {
     const enabled =
       defaults[roleKey]?.enabled !== false &&
@@ -591,6 +626,27 @@ export function ModelProvidersPage() {
                                 >
                                   {meta.label}
                                 </span>
+                                {(m.type || "llm").toLowerCase() === "llm" ||
+                                (m.type || "llm").toLowerCase() === "vlm" ? (
+                                  <Link
+                                    to={`/settings/models/test?provider=${encodeURIComponent(p.providerKey)}&model=${encodeURIComponent(m.name)}`}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-white px-2 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-50"
+                                    title="跳转对话测试"
+                                  >
+                                    <MessageSquare className="h-3.5 w-3.5" />
+                                    对话测试
+                                  </Link>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="rounded-lg p-1.5 text-rose-500 hover:bg-rose-50"
+                                  title="删除此模型"
+                                  onClick={() =>
+                                    void onRemoveModel(p, m.name)
+                                  }
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
                               </li>
                             );
                           })
@@ -732,7 +788,7 @@ export function ModelProvidersPage() {
               className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
               value={modelName}
               onChange={(e) => setModelName(e.target.value)}
-              placeholder="如 qwen3.7-flash / ark-code-latest"
+              placeholder="如 qwen3.8 / qwen3.7-flash"
             />
             <div className="mt-5 flex justify-end gap-2">
               <button

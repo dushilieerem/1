@@ -9,8 +9,8 @@ import time
 from typing import Any
 
 from services.core.lan_http import get_json, post_json_with_status
+from services.core.re_config import RE_BASE
 
-RE_BASE = "http://192.168.3.64:9527"
 RE_URL = f"{RE_BASE}/api/backtest/factor"
 # 10y CSI300 实测约 90s；给足余量，避免 urllib 先掐断
 DEFAULT_TIMEOUT_SEC = 1800

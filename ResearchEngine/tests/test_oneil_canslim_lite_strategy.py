@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from app.quantcore import EventBacktestEngine
-from app.repositories.catalogs.strategy_catalog import StrategyCatalog
+from app.services.strategy.event.engine import EventBacktestEngine
+from app.services.catalog.strategy_catalog import StrategyCatalog
 
 
 def _strategy_class():

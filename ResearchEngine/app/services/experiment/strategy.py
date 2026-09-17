@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from app.schemas.backtest import StrategyBacktestRequest, StrategyBacktestResponse
-from app.services.experiment.base import Experiment, ExperimentContext
+from app.services.experiment.base import Experiment
+from app.services.data.engine import DataEngine
 from app.services.strategy.backtest import run_strategy_backtest
 
 
@@ -13,8 +14,8 @@ class StrategyExperiment(Experiment[StrategyBacktestResponse]):
     def __init__(self, request: StrategyBacktestRequest) -> None:
         self.request = request
 
-    def run(self, context: ExperimentContext) -> StrategyBacktestResponse:
-        return run_strategy_backtest(self.request, data_context=context.market)
+    def run(self) -> StrategyBacktestResponse:
+        return run_strategy_backtest(self.request, data_engine=DataEngine.get_instance())
 
 
 __all__ = ["StrategyExperiment"]

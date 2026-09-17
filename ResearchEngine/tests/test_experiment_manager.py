@@ -9,12 +9,9 @@ from typing import Callable, Generic, TypeVar
 
 import pytest
 
-from app.services.experiment import Experiment, ExperimentContext
-from app.services.experiment.manager import (
-    ExperimentManager,
-    ExperimentQueueFullError,
-    ExperimentStatus,
-)
+from app.services.experiment.base import Experiment
+from app.services.experiment.manager import ExperimentManager, ExperimentQueueFullError
+from app.models.experiment import ExperimentStatus
 
 
 T = TypeVar("T")
@@ -24,7 +21,7 @@ class _FunctionExperiment(Experiment[T], Generic[T]):
     def __init__(self, fn: Callable[[], T]) -> None:
         self._fn = fn
 
-    def run(self, context: ExperimentContext) -> T:
+    def run(self) -> T:
         return self._fn()
 
 
@@ -32,12 +29,7 @@ def _experiment(fn: Callable[[], T]) -> _FunctionExperiment[T]:
     return _FunctionExperiment(fn)
 
 
-class _Runtime:
-    def get_context(self, data_dir=None):
-        return SimpleNamespace(data_engine=None, provider=None)
-
-    def close(self):
-        pass
+_DATA_ENGINE = SimpleNamespace(provider=None)
 
 
 def _wait_until(predicate, timeout: float = 2.0) -> None:
@@ -50,7 +42,7 @@ def _wait_until(predicate, timeout: float = 2.0) -> None:
 
 
 def test_manager_rejects_ordinary_callable():
-    manager = ExperimentManager(max_workers=1, max_queue_size=0, runtime=_Runtime())
+    manager = ExperimentManager(max_workers=1, max_queue_size=0)
     try:
         with pytest.raises(TypeError, match="只接受 Experiment"):
             manager.submit(lambda: "not-an-experiment")
@@ -59,7 +51,7 @@ def test_manager_rejects_ordinary_callable():
 
 
 def test_manager_rejects_unknown_execution_lane():
-    manager = ExperimentManager(max_workers=1, max_queue_size=0, runtime=_Runtime())
+    manager = ExperimentManager(max_workers=1, max_queue_size=0)
     try:
         with pytest.raises(ValueError, match="未知的任务执行 lane: 'scheduled'"):
             manager.submit(_experiment(lambda: "never"), lane="scheduled")
@@ -68,7 +60,7 @@ def test_manager_rejects_unknown_execution_lane():
 
 
 def test_manager_limits_running_tasks_and_rejects_full_queue():
-    manager = ExperimentManager(max_workers=2, max_queue_size=1, runtime=_Runtime())
+    manager = ExperimentManager(max_workers=2, max_queue_size=1)
     release = threading.Event()
     lock = threading.Lock()
     active = 0
@@ -104,7 +96,7 @@ def test_manager_limits_running_tasks_and_rejects_full_queue():
 
 
 def test_manager_reuses_same_inflight_key():
-    manager = ExperimentManager(max_workers=1, max_queue_size=1, runtime=_Runtime())
+    manager = ExperimentManager(max_workers=1, max_queue_size=1)
     calls = 0
     lock = threading.Lock()
 
@@ -127,7 +119,7 @@ def test_manager_reuses_same_inflight_key():
 
 
 def test_manager_can_cancel_queued_task():
-    manager = ExperimentManager(max_workers=1, max_queue_size=1, runtime=_Runtime())
+    manager = ExperimentManager(max_workers=1, max_queue_size=1)
     release = threading.Event()
 
     try:
@@ -147,7 +139,7 @@ def test_manager_can_cancel_queued_task():
 
 
 def test_manager_is_a_normal_fifo_queue():
-    manager = ExperimentManager(max_workers=1, max_queue_size=3, runtime=_Runtime())
+    manager = ExperimentManager(max_workers=1, max_queue_size=3)
     release = threading.Event()
     order: list[str] = []
 

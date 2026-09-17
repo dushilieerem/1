@@ -3,10 +3,11 @@
 import numpy as np
 import pandas as pd
 import pytest
-import yaml
 
-from app import FactorLoader
-from app.quantcore.factor.base import Panel, library_factors
+from factor_test_support import BuiltinFactorLoader as FactorLoader
+from app.models.data import Panel
+from app.services.factor.base import library_factors
+from factor_test_support import builtin_factor_ids
 
 
 FACTOR_NAMES = {
@@ -58,19 +59,12 @@ def _tail_balance(values: np.ndarray, tail_fraction: float) -> float:
 
 def test_return_distribution_factors_are_discoverable_and_indexed():
     loader = FactorLoader()
-    library = loader.load("technical_lib")
+    library = loader.load()
     factors = library_factors(library)
 
     assert FACTOR_NAMES.issubset(factors)
 
-    from app.assets.factors import INDEX_PATH
-
-    catalog = yaml.safe_load(INDEX_PATH.read_text(encoding="utf-8"))
-    entry = catalog["libraries"]["technical_lib"]
-    indexed_names = {item["name"] for item in entry["factors"]}
-
-    assert entry["factor_count"] == len(factors)
-    assert FACTOR_NAMES.issubset(indexed_names)
+    assert FACTOR_NAMES.issubset(builtin_factor_ids())
 
 
 def test_return_distribution_factor_formulae_match_reference_values():
@@ -80,7 +74,7 @@ def test_return_distribution_factor_formulae_match_reference_values():
         index=dates,
     )
     panel = _panel(close)
-    library = FactorLoader().load("technical_lib")
+    library = FactorLoader().load()
 
     imbalance = _compute(
         library, "up_down_frequency_imbalance", panel, window=3
@@ -113,7 +107,7 @@ def test_return_distribution_factor_formulae_match_reference_values():
 def test_return_distribution_factors_preserve_shape_bounds_and_finiteness():
     panel = _sample_panel()
     loader = FactorLoader()
-    loader.load("technical_lib")
+    loader.load()
 
     for name in FACTOR_NAMES:
         result = loader.factors[name].compute(panel)
@@ -136,7 +130,7 @@ def test_zero_constant_and_missing_returns_are_safe():
     dates = pd.bdate_range("2024-01-02", periods=40)
     close = pd.DataFrame(10.0, index=dates, columns=["A"])
     panel = _panel(close)
-    library = FactorLoader().load("technical_lib")
+    library = FactorLoader().load()
 
     for name in FACTOR_NAMES:
         result = _compute(library, name, panel, **({"window": 5} if name != "return_tail_balance" else {"window": 5}))
@@ -197,7 +191,7 @@ def test_zero_constant_and_missing_returns_are_safe():
 
 def test_parameters_change_warmup_and_invalid_values_are_rejected():
     panel = _sample_panel()
-    library = FactorLoader().load("technical_lib")
+    library = FactorLoader().load()
 
     assert (
         _compute(library, "up_down_frequency_imbalance", panel, window=5)
@@ -243,7 +237,7 @@ def test_parameters_change_warmup_and_invalid_values_are_rejected():
     with pytest.raises(ValueError):
         _compute(library, "return_tail_balance", panel, window=5, tail_fraction=0.0)
     with pytest.raises(ValueError):
-        _compute(library, "return_tail_balance", panel, window=5, tail_fraction=0.6)
+        _compute(library, "return_tail_balance", panel, window=5, tail_fraction=1.1)
     with pytest.raises(ValueError):
         _compute(library, "return_shock_frequency", panel, window=5, shock_multiple=0)
     with pytest.raises(ValueError):
@@ -263,7 +257,7 @@ def test_return_distribution_factors_do_not_use_future_rows():
     changed_panel = _panel(changed_close)
 
     loader = FactorLoader()
-    loader.load("technical_lib")
+    loader.load()
     for name in FACTOR_NAMES:
         baseline = loader.factors[name].compute(panel)
         changed = loader.factors[name].compute(changed_panel)

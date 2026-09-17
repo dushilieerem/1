@@ -5,10 +5,13 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
-from app.quantcore import BaseFactor, FactorEngine, FactorLibrary, FieldParquetProvider
-from app.quantcore import DataEngine
-from app.quantcore import CSVDataProvider
-from app.quantcore.factor.base import library_factors
+from app.services.factor.base import BaseFactor, FactorLibrary
+from app.services.factor.engine import FactorEngine
+from app.models.data import Panel
+from app.database.data.providers.field_parquet_provider import FieldParquetProvider
+from app.services.data.engine import DataEngine
+from app.database.data.providers.csv_provider import CSVDataProvider
+from app.services.factor.base import library_factors
 
 
 class _Momentum(BaseFactor):
@@ -17,6 +20,26 @@ class _Momentum(BaseFactor):
 
     def compute(self, data) -> pd.DataFrame:
         return data.close.pct_change(self.params["window"])
+
+
+class _FactorLoader:
+    def __init__(self, factor):
+        self.factor = factor
+        self.calls = []
+
+    def load_factor(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.factor
+
+
+class _LegacyFactorLoader:
+    def __init__(self, factor):
+        self.factor = factor
+        self.module_names = []
+
+    def load(self, module_name):
+        self.module_names.append(module_name)
+        return self.factor
 
 
 def _make_data(tmp_path):
@@ -96,9 +119,68 @@ def test_factor_engine_missing_factor():
     raise AssertionError("应报 KeyError")
 
 
+def test_factor_engine_load_factor_registers_loader_result():
+    loader = _FactorLoader(_Momentum())
+    engine = FactorEngine(factor_loader=loader)
+
+    loaded = engine.load_factor(
+        source="database",
+        factor_name="mom",
+        version="v1",
+    )
+
+    assert loaded is engine.factors["mom"]
+    assert loader.calls == [{
+        "version": "v1",
+        "source": "database",
+        "factor_name": "mom",
+    }]
+
+
+def test_factor_engine_load_factor_adapts_library_result():
+    loader = _FactorLoader(_RelativeStrength())
+    engine = FactorEngine(factor_loader=loader)
+
+    loaded = engine.factor_loader(
+        source="code",
+        factor_name="relative_to_csi300",
+    )
+
+    assert loaded.name == "relative_to_csi300"
+    assert "relative_to_csi300" in engine.factors
+
+
+def test_factor_engine_load_factor_keeps_legacy_file_loader_compatible():
+    loader = _LegacyFactorLoader(_Momentum())
+    engine = FactorEngine(factor_loader=loader)
+
+    loaded = engine.load_factor(source="file", module_name="momentum_module")
+
+    assert loaded.name == "mom"
+    assert loader.module_names == ["momentum_module"]
+
+
 class _RelativeStrength(FactorLibrary):
     def relative_to_csi300(self):
         return self.close.pct_change().sub(self.csi300.close.pct_change(), axis=0)
+
+
+def test_factor_library_exposes_current_ifind_logical_fields_directly():
+    dates = pd.bdate_range("2024-01-02", periods=2)
+    fields = {
+        name: pd.DataFrame([[1.0], [2.0]], index=dates, columns=["A"])
+        for name in (
+            "open", "high", "low", "close", "volume", "amount", "turnover",
+            "current_mv", "dividend_yield_ttm", "pb_mrq",
+            "pcf_operating_cash_flow_ttm", "pe_ttm", "listed_status",
+            "the_sw_industry_code", "up_and_down_status",
+        )
+    }
+    library = _RelativeStrength()
+    library._panel = Panel(fields)
+
+    for name in fields:
+        assert getattr(library, name) is fields[name]
 
 
 def test_factor_library_accesses_csi300_close(tmp_path):

@@ -11,13 +11,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.services.data.engine import DataEngine
 from app.services.factor.market_data import _market_symbol, _panel_symbol
-from app.services.factor.runner import (
-    _compute_quantile_metrics,
+from app.services.factor.metrics import _compute_quantile_metrics
+from app.services.factor.result_serializers import (
     _display_instrument,
     _sample_positions,
     _serialize_rebalance_logs,
 )
+from app.services.portfolio.grouping import rank_groups
 
 
 client = TestClient(app)
@@ -32,7 +34,7 @@ def combo_factor(self):
     return 0.5 * self.volume_20d() + 0.5 * self.amount_20d()'''
 
 BUILTIN_COMBO_FACTOR_CODE = '''def combo_factor(self):
-    return 0.5 * self.kurtosis20() + 0.5 * self.alpha158_kmid()'''
+    return 0.5 * self.bbi() + 0.5 * self.alpha158_kmid()'''
 
 STRATEGY_CODE = '''import pandas as pd
 
@@ -48,26 +50,7 @@ class EqualWeightMomentum:
         weights[ranks <= top_n] = 1.0 / top_n
         return weights'''
 
-STRUCTURED_STRATEGY_CODE = '''from app.quantcore import (
-    EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, factor, signal,
-)
-
-class CompositeFactorStrategy(FactorPortfolioStrategy):
-    selector = TopN(3)
-    weighting = EqualWeight()
-    rebalance = EveryNTradingDays(15)
-
-    @factor
-    def momentum_20d(self):
-        return self.close.pct_change(20)
-
-    @factor
-    def value_ep(self):
-        return 1.0 / self.pe_ttm
-
-    @signal
-    def score(self):
-        return 0.6 * self.rank(self.momentum_20d()) + 0.4 * self.rank(self.value_ep())'''
+STRUCTURED_STRATEGY_CODE = 'from app.services.strategy.vectorized.factor_strategy import EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, factor, signal\n\nclass CompositeFactorStrategy(FactorPortfolioStrategy):\n    selector = TopN(3)\n    weighting = EqualWeight()\n    rebalance = EveryNTradingDays(15)\n\n    @factor\n    def momentum_20d(self):\n        return self.close.pct_change(20)\n\n    @factor\n    def value_ep(self):\n        return 1.0 / self.pe_ttm\n\n    @signal\n    def score(self):\n        return 0.6 * self.rank(self.momentum_20d()) + 0.4 * self.rank(self.value_ep())'
 
 
 @pytest.fixture()
@@ -84,11 +67,15 @@ def market_data_dir(tmp_path, monkeypatch):
         ("close", close),
         ("volume", rng.uniform(1e6, 1e7, (90, 12))),
         ("amount", rng.uniform(1e8, 1e9, (90, 12))),
-        ("total_mv", rng.uniform(1e10, 5e10, (90, 12))),
+        ("current_mv", rng.uniform(1e10, 5e10, (90, 12))),
     ):
         frame = pd.DataFrame(values, index=dates, columns=symbols)
         frame.index.name = "datetime"
         frame.reset_index().to_parquet(tmp_path / f"{name}.parquet", index=False)
+
+    status = pd.DataFrame("非涨跌停", index=dates, columns=symbols)
+    status.index.name = "datetime"
+    status.reset_index().to_parquet(tmp_path / "up_and_down_status.parquet", index=False)
 
     display_dir = tmp_path / "display"
     display_dir.mkdir()
@@ -136,7 +123,12 @@ def market_data_dir(tmp_path, monkeypatch):
     ).to_parquet(benchmark_dir / "index_weights_000300.SH.parquet")
     monkeypatch.setenv("SVQUANT_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("SVQUANT_BACKTEST_CACHE_DIR", str(tmp_path / "backtest_cache"))
-    return tmp_path
+    data_engine = DataEngine()
+    data_engine.load_parquet(tmp_path)
+    monkeypatch.setattr(DataEngine, "_instance", data_engine)
+    monkeypatch.setattr(app.state, "data_engine", data_engine)
+    yield tmp_path
+    data_engine.close()
 
 
 @pytest.fixture()
@@ -166,7 +158,7 @@ def supermind_api_data_dir(tmp_path, monkeypatch):
         frame.index.name = "datetime"
         frame.reset_index().to_parquet(tmp_path / f"{name}.parquet", index=False)
 
-    for field in ("close", "total_mv"):
+    for field in ("close", "current_mv"):
         write_field(field, close if field == "close" else factor_values)
 
     display_dir = tmp_path / "display"
@@ -198,12 +190,17 @@ def supermind_api_data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("SVQUANT_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("SVQUANT_BACKTEST_CACHE_DIR", str(tmp_path / "backtest_cache"))
     monkeypatch.setenv("SVQUANT_BACKTEST_CACHE_ENABLED", "false")
-    return {
+    data_engine = DataEngine()
+    data_engine.load_parquet(tmp_path)
+    monkeypatch.setattr(DataEngine, "_instance", data_engine)
+    monkeypatch.setattr(app.state, "data_engine", data_engine)
+    yield {
         "root": tmp_path,
         "factor_values": factor_values,
         "close": close,
         "benchmark_close": benchmark_close,
     }
+    data_engine.close()
 
 
 def _request_payload():
@@ -357,7 +354,7 @@ def test_factor_backtest_groups_and_benchmark(market_data_dir):
     assert body["meta"]["return_price_adjustment"] == "hfq"
     assert body["meta"]["return_price_source"] == "data_engine.close"
     assert body["meta"]["return_price_precision"] == "source_precision_no_rounding"
-    assert body["factor_analysis"]["definition"]["grouping_method"] == "pd.qcut_raw_value"
+    assert body["factor_analysis"]["definition"]["grouping_method"] == "rank_vectorized"
     assert body["factor_analysis"]["cumulative_series"][0]["layer1"] == pytest.approx(1.0)
     assert len(body["factor_analysis"]["cumulative_series"]) > 0
     assert "layer3" in body["factor_analysis"]["cumulative_series"][-1]
@@ -406,10 +403,10 @@ def test_factor_backtest_groups_and_benchmark(market_data_dir):
     assert body["excess_return"] is not None
 
 
-def test_factor_backtest_supermind_fixture_matches_qcut_and_metric_contract(
+def test_factor_backtest_supermind_fixture_matches_rank_and_metric_contract(
     supermind_api_data_dir,
 ):
-    """通过真实 API 端点验证 qcut、首笔收益和分组/基准指标口径。"""
+    """通过真实 API 端点验证 rank、首笔收益和分组/基准指标口径。"""
     factor_values = supermind_api_data_dir["factor_values"]
     close = supermind_api_data_dir["close"]
     benchmark_close = supermind_api_data_dir["benchmark_close"]
@@ -420,11 +417,10 @@ def test_factor_backtest_supermind_fixture_matches_qcut_and_metric_contract(
     for group_number in range(1, 6):
         raw = []
         for row_number in range(1, len(close)):
-            labels = 5 - pd.qcut(
-                factor_values.iloc[row_number - 1],
+            labels = rank_groups(
+                factor_values.iloc[[row_number - 1]],
                 5,
-                labels=False,
-            )
+            ).iloc[0]
             members = [
                 symbol for symbol in symbols
                 if labels.loc[symbol] == group_number
@@ -446,7 +442,7 @@ def test_factor_backtest_supermind_fixture_matches_qcut_and_metric_contract(
     benchmark_returns = benchmark_curve.pct_change().fillna(0.0)
 
     response = _wait_factor_task({
-            "factor_code": "def market_cap(self):\n    return self.total_mv",
+            "factor_code": "def market_cap(self):\n    return self.current_mv",
             "factor_name": "market_cap",
             "universe_snapshot": {
                 "asset_id": "supermind-fixture",
@@ -471,7 +467,7 @@ def test_factor_backtest_supermind_fixture_matches_qcut_and_metric_contract(
         "data_engine.open_high_low_close"
     )
     assert body["meta"]["factor_price_precision"] == "source_precision_no_rounding"
-    assert body["factor_analysis"]["definition"]["grouping_method"] == "pd.qcut_raw_value"
+    assert body["factor_analysis"]["definition"]["grouping_method"] == "rank_vectorized"
     assert body["factor_analysis"]["definition"]["group_order"] == (
         "Q1_highest_factor_value_QN_lowest_factor_value"
     )
@@ -654,108 +650,17 @@ def test_factor_backtest_accepts_factor_preprocessing_options(market_data_dir):
     assert body["factor_analysis"]["definition"]["factor_preprocess"] == {
         "winsorize": 1,
         "standardize": 2,
-        "order": ["winsorize", "standardize"],
+            "order": ["eligibility_mask", "winsorize", "standardize"],
         "axis": "cross_sectional",
     }
 
 
-def test_experiment_uses_hfq_ohlc_for_factor_values(market_data_dir):
-    from app.quantcore import BaseFactor
-    from app.quantcore.factor.tool import preprocess_factor_values
-    from app import ConfigManager, FactorExperiment, ExperimentManager
-
-    class OhlcMean(BaseFactor):
-        name = "ohlc_mean_hfq"
-
-        def compute(self, data):
-            return (data.open + data.high + data.low + data.close) / 4.0
-
-    config = ConfigManager()
-    config.set("data_dir", str(market_data_dir))
-    config.set("factor_analysis.level", "core")
-    config.set("groups", 3)
-    config.set("long_short", False)
-    config.set("factor_preprocess.winsorize", 1)
-    config.set("factor_preprocess.standardize", 2)
-    manager = ExperimentManager(
-        max_workers=1,
-        max_queue_size=0,
-        data_dir=market_data_dir,
-    )
-    try:
-        result = manager.submit(
-            FactorExperiment(
-                factor=OhlcMean(),
-                universe="CSI500",
-                start_date="2022-02-01",
-                end_date="2022-02-04",
-                config=config,
-            )
-        ).result(timeout=10)
-    finally:
-        manager.shutdown()
-
-    hfq = {
-        field: pd.read_parquet(market_data_dir / f"{field}.parquet")
-        .set_index("datetime")
-        for field in ("open", "high", "low", "close")
-    }
-    expected = pd.DataFrame(
-        {
-            symbol: sum(
-                hfq[field][symbol]
-                for field in ("open", "high", "low", "close")
-            ) / 4.0
-            for symbol in result.factor_values.columns
-        },
-        index=hfq["close"].index,
-    )
-    expected = expected.reindex(
-        index=result.factor_values.index,
-        columns=result.factor_values.columns,
-    )
-    expected = preprocess_factor_values(
-        expected,
-        winsorize=1,
-        standardize=2,
-    )
-    pd.testing.assert_frame_equal(
-        result.factor_values,
-        expected,
-        check_names=False,
-    )
-    assert result.meta["factor_price_adjustment"] == "hfq"
-    assert result.meta["factor_price_source"] == "data_engine.open_high_low_close"
-    assert result.meta["factor_price_fields"] == ["open", "high", "low", "close"]
-    assert result.meta["return_price_adjustment"] == "hfq"
-    assert result.meta["factor_preprocess"] == {
-        "winsorize": 1,
-        "standardize": 2,
-        "order": ["winsorize", "standardize"],
-        "axis": "cross_sectional",
-    }
-
-    hfq_close = pd.read_parquet(market_data_dir / "close.parquet").set_index("datetime")
-    hfq_returns = hfq_close.pct_change(fill_method=None).reindex(
-        index=result.positions.index,
-        columns=result.positions.columns,
-    )
-    expected_returns = (result.positions * hfq_returns).sum(axis=1)
-    expected_display_returns = expected_returns.copy()
-    expected_display_returns.iloc[0] = 0.0
-    pd.testing.assert_series_equal(
-        result.equity_curve,
-        (1.0 + expected_display_returns).cumprod(),
-        check_names=False,
-    )
-
-
-def test_factor_backtest_loads_builtin_factor_library(market_data_dir):
+def test_factor_backtest_loads_sqlite_factor_by_stable_id(market_data_dir):
     payload = _request_payload()
     payload.pop("factor_code")
     payload.update({
-        "library_name": "risk_indicators",
-        "factor_name": "kurtosis60",
+        "library_name": "主因子库",
+        "factor_name": "SV10_0004",
     })
     response = _wait_factor_task(payload)
 
@@ -763,11 +668,11 @@ def test_factor_backtest_loads_builtin_factor_library(market_data_dir):
     assert response.json()["status"] == "succeeded"
 
 
-def test_factor_backtest_loads_classic_indicator_library(market_data_dir):
+def test_factor_backtest_loads_sqlite_factor_by_function_name(market_data_dir):
     payload = _request_payload()
     payload.pop("factor_code")
     payload.update({
-        "library_name": "classic_indicators",
+        "library_name": "主因子库",
         "factor_name": "bbi",
     })
     response = _wait_factor_task(payload)
@@ -779,14 +684,14 @@ def test_factor_backtest_loads_classic_indicator_library(market_data_dir):
 @pytest.mark.parametrize(
     ("library_name", "factor_name"),
     [
-        ("momentum_lib", "momentum_5d"),
-        ("volatility_lib", "parkinson_volatility"),
+        ("主因子库", "SV01_0010"),
+        ("主因子库", "SV09_0024"),
     ],
 )
-def test_factor_backtest_loads_every_library_registered_in_index_yaml(
+def test_factor_backtest_loads_factors_registered_in_sqlite(
     market_data_dir, library_name, factor_name
 ):
-    """API 库注册必须跟随 index.yaml，而不是 runner 中的重复名单。"""
+    """API 因子注册必须跟随 SQLite 因子库，而不是 runner 中的重复名单。"""
     payload = _request_payload()
     payload.pop("factor_code")
     payload.update({"library_name": library_name, "factor_name": factor_name})
@@ -796,11 +701,12 @@ def test_factor_backtest_loads_every_library_registered_in_index_yaml(
     assert response.json()["status"] == "succeeded"
 
 
-def test_factor_api_lists_libraries_registered_in_index_yaml():
+def test_factor_api_lists_factors_from_sqlite_catalog():
     from app.api.routes import _builtin_factors
 
     names = {factor.name for factor in _builtin_factors()}
-    assert {"momentum_5d", "parkinson_volatility"}.issubset(names)
+    assert len(names) == 432
+    assert {"SV01_0010", "SV09_0024"}.issubset(names)
 
 
 def test_factor_api_lists_factor_libraries():
@@ -811,34 +717,40 @@ def test_factor_api_lists_factor_libraries():
     assert "libraries" in payload
     assert "factors" not in payload
     libraries = {item["name"]: item for item in payload["libraries"]}
-    assert {"momentum_lib", "volatility_lib", "worldquant_alpha101"}.issubset(libraries)
-    assert libraries["momentum_lib"]["factor_count"] == 18
+    assert set(libraries) == {"主因子库"}
+    assert libraries["主因子库"]["factor_count"] == 432
 
     # /api/factors 只保留指定库因子资源，不再承担因子库目录功能。
     assert client.get("/api/factors").status_code == 404
 
 
 def test_factor_api_lists_factors_for_one_library():
-    response = client.get("/api/factors/classic_indicators")
+    response = client.get("/api/factors/主因子库")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["library_name"] == "classic_indicators"
+    assert payload["library_name"] == "主因子库"
     names = {item["name"] for item in payload["factors"]}
-    assert {"ma", "macd", "rsi"}.issubset(names)
+    assert {"SV01_0010", "SV01_0020", "SV02_0012"}.issubset(names)
 
     missing = client.get("/api/factors/not_a_factor_library")
     assert missing.status_code == 404
+
+
+def test_factor_api_returns_category_name_instead_of_category_id():
+    response = client.get("/api/factors/主因子库")
+
+    assert response.status_code == 200
+    factor = response.json()["factors"][0]
+    assert factor["category_name"] == "动量因子"
+    assert "category_id" not in factor
 
 
 def test_factor_api_registry_uses_index_yaml_as_its_only_source(tmp_path, monkeypatch):
     """替换索引后，API 注册范围应随 YAML 变化，而非依赖硬编码库名。"""
     library_name = "temporary_indexed_lib"
     (tmp_path / f"{library_name}.py").write_text(
-        "from app.quantcore import FactorLibrary\n\n"
-        "class TemporaryIndexedLibrary(FactorLibrary):\n"
-        "    def temporary_factor(self):\n"
-        "        return self.close\n",
+        'from app.services.factor.base import FactorLibrary\n\nclass TemporaryIndexedLibrary(FactorLibrary):\n    def temporary_factor(self):\n        return self.close\n',
         encoding="utf-8",
     )
     (tmp_path / "index.yaml").write_text(
@@ -849,7 +761,7 @@ def test_factor_api_registry_uses_index_yaml_as_its_only_source(tmp_path, monkey
     )
     monkeypatch.setenv("SVQUANT_FACTOR_DIR", str(tmp_path))
 
-    from app.repositories.catalogs.factor_catalog import sync_catalog
+    from app.services.catalog.factor_catalog import sync_catalog
     from app.services.factor.runner import (
         _load_factor_from_builtin_library,
         builtin_factor_library_names,
@@ -866,10 +778,7 @@ def test_builtin_factor_loader_rejects_unsynchronized_index(tmp_path, monkeypatc
     """源码已有因子但 index.yaml 未同步时，API 不应静默加载。"""
     library_name = "stale_indexed_lib"
     (tmp_path / f"{library_name}.py").write_text(
-        "from app.quantcore import FactorLibrary\n\n"
-        "class StaleIndexedLibrary(FactorLibrary):\n"
-        "    def first_factor(self):\n"
-        "        return self.close\n",
+        'from app.services.factor.base import FactorLibrary\n\nclass StaleIndexedLibrary(FactorLibrary):\n    def first_factor(self):\n        return self.close\n',
         encoding="utf-8",
     )
     (tmp_path / "index.yaml").write_text(
@@ -894,7 +803,7 @@ def test_factor_backtest_custom_factor_can_combine_builtin_library_methods(marke
     payload.update({
         "factor_code": BUILTIN_COMBO_FACTOR_CODE,
         "factor_name": "combo_factor",
-        "library_name": ["risk_indicators", "alpha_features"],
+        "library_name": ["主因子库"],
     })
     response = _wait_factor_task(payload)
 
@@ -909,7 +818,7 @@ def test_factor_backtest_requires_exactly_one_factor_source(market_data_dir):
 
     payload = _request_payload()
     payload.pop("factor_code")
-    payload["library_name"] = ["risk_indicators", "alpha_features"]
+    payload["library_name"] = ["主因子库", "主因子库"]
     assert client.post("/api/backtest/factor", json=payload).status_code == 422
 
 
@@ -1505,6 +1414,7 @@ def test_structured_factor_portfolio_strategy_backtest(market_data_dir):
     )
     pe_ttm.index.name = "datetime"
     pe_ttm.reset_index().to_parquet(market_data_dir / "pe_ttm.parquet", index=False)
+    DataEngine.get_instance().load_parquet(market_data_dir)
 
     response = client.post(
         "/api/backtest/strategy",

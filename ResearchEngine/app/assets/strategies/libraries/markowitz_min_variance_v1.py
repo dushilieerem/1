@@ -7,7 +7,7 @@
 import numpy as np
 import pandas as pd
 
-from app.quantcore import BacktestSignals
+from app.models.strategy import BacktestSignals
 
 
 class MarkowitzMinVarianceStrategy:

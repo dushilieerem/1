@@ -1,7 +1,12 @@
 """截面动量策略：持有过去 20 日收益最高的十只股票。"""
 
-from app.quantcore import (
-    EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, factor, signal,
+from app.services.strategy.vectorized.factor_strategy import (
+    EqualWeight,
+    EveryNTradingDays,
+    FactorPortfolioStrategy,
+    TopN,
+    factor,
+    signal,
 )
 
 

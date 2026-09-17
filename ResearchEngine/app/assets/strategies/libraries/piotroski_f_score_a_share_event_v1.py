@@ -10,7 +10,7 @@ class PiotroskiFScoreAShareEventStrategy:
 
     execution_mode = "event"
     required_fields = frozenset({
-        "open", "high", "low", "close", "pb", "total_mv", "total_assets",
+        "open", "high", "low", "close", "pb_mrq", "total_mv", "total_assets",
         "total_liabilities", "current_assets", "current_liabilities", "total_shares",
         "operating_revenue_ttm", "operating_cost_ttm", "net_profit_ttm",
         "net_cashflow_operating_ttm",
@@ -35,8 +35,8 @@ class PiotroskiFScoreAShareEventStrategy:
         fields = list(self.required_fields - {"open", "high", "low"})
         history = context.data.history(symbols, fields, self.comparison_days + 1)
         candidates = self._candidates(history, symbols)
-        target = candidates[(candidates.fscore >= self.min_fscore) & (candidates.pb <= candidates.pb.quantile(self.pb_percentile))]
-        target = target.sort_values(["fscore", "pb"], ascending=[False, True]).head(self.max_holdings)
+        target = candidates[(candidates.fscore >= self.min_fscore) & (candidates.pb_mrq <= candidates.pb_mrq.quantile(self.pb_percentile))]
+        target = target.sort_values(["fscore", "pb_mrq"], ascending=[False, True]).head(self.max_holdings)
         for symbol in holdings - set(target.index):
             context.orders.close(symbol)
         total_value = context.portfolio.cash + sum(
@@ -54,11 +54,11 @@ class PiotroskiFScoreAShareEventStrategy:
                 continue
             now = {field: float(values.iloc[-1]) for field, values in latest.items()}
             prev = {field: float(values.iloc[-self.comparison_days - 1]) for field, values in latest.items()}
-            if now["pb"] <= 0 or now["total_mv"] < self.min_market_cap or min(now["total_assets"], now["current_liabilities"]) <= 0:
+            if now["pb_mrq"] <= 0 or now["total_mv"] < self.min_market_cap or min(now["total_assets"], now["current_liabilities"]) <= 0:
                 continue
             fscore = self.fscore(now, prev)
-            rows.append((symbol, now["pb"], fscore))
-        return pd.DataFrame(rows, columns=["symbol", "pb", "fscore"]).set_index("symbol")
+            rows.append((symbol, now["pb_mrq"], fscore))
+        return pd.DataFrame(rows, columns=["symbol", "pb_mrq", "fscore"]).set_index("symbol")
 
     @staticmethod
     def fscore(now, prev) -> int:

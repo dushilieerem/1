@@ -11,7 +11,7 @@ import pandas as pd
 
 
 def _resolve_data_dir(req_data_dir: Optional[str]) -> str:
-    """数据目录解析顺序：请求 -> env ``SVQUANT_DATA_DIR`` -> ``<repo>/MarketData``。"""
+    """数据目录解析顺序：请求 -> env ``SVQUANT_DATA_DIR`` -> ``<repo>/marketdata``。"""
     if req_data_dir:
         return req_data_dir
     env = os.environ.get("SVQUANT_DATA_DIR")
@@ -21,11 +21,11 @@ def _resolve_data_dir(req_data_dir: Optional[str]) -> str:
 
     # app/__init__.py -> 上三层 = 仓库根
     repo_root = Path(app.__file__).resolve().parent.parent.parent
-    return str(repo_root / "MarketData")
+    return str(repo_root / "marketdata")
 
 
 def _resolve_current_data_dir() -> Path:
-    """返回当前已发布数据目录，兼容旧版扁平 MarketData。"""
+    """返回当前数据目录，并兼容旧版 ``current`` 包装层。"""
     data_dir = Path(_resolve_data_dir(None))
     current_dir = data_dir / "current"
     return current_dir if current_dir.is_dir() else data_dir
@@ -35,6 +35,21 @@ _BENCHMARK_FILES = {
     "CSI300": "index_price_000300.SH.parquet",
     "CSI500": "index_price_000905.SH.parquet",
 }
+
+
+def _benchmark_path(data_dir: Path, benchmark: str) -> Path:
+    """解析指数价格文件在新旧数据布局中的路径。"""
+
+    try:
+        filename = _BENCHMARK_FILES[benchmark.upper()]
+    except KeyError as exc:
+        raise KeyError(f"不支持的基准 {benchmark!r}") from exc
+
+    candidates = (
+        data_dir / "index" / "index_price" / filename,
+        data_dir / "benchmark" / filename,
+    )
+    return next((path for path in candidates if path.is_file()), candidates[0])
 
 
 def _load_benchmark_equity(
@@ -47,7 +62,7 @@ def _load_benchmark_equity(
     if data_engine is not None:
         frame = data_engine.get_index(benchmark)
     else:
-        path = _resolve_current_data_dir() / "benchmark" / _BENCHMARK_FILES[benchmark]
+        path = _benchmark_path(_resolve_current_data_dir(), benchmark)
         frame = pd.read_parquet(path)
     close_col = "close" if "close" in frame else next(col for col in frame.columns if col.endswith("_close"))
     series = frame[close_col]
@@ -67,7 +82,8 @@ def _resolve_research_assets(req, *, data_engine: Any | None = None):
         universe = list(universe_snapshot.symbols)
         engine = data_engine
         if engine is None:
-            from app.quantcore import DataEngine, FieldParquetProvider
+            from app.services.data.engine import DataEngine
+            from app.database.data.providers.field_parquet_provider import FieldParquetProvider
 
             engine = DataEngine(FieldParquetProvider(_resolve_data_dir(None)))
         available = set(engine.get_panels(req.start, req.end, fields=["close"])["close"].columns)
@@ -120,7 +136,7 @@ def _resolve_strategy_symbols(
     provider, universe, strategy, *, as_of=None
 ) -> tuple[list[str], dict[str, str], tuple[str, ...]]:
     """优先解析策略固定标的；否则沿用请求股票池。"""
-    from app.quantcore.data._util import resolve_universe
+    from app.services.data.universe import resolve_universe
     from app.services.factor.market_data import _market_symbol, _panel_symbol
 
     declared_symbols = _declared_strategy_symbols(strategy)
@@ -168,7 +184,8 @@ def _custom_benchmark_equity(
     """从已发布 close 面板计算静态组合基准，并严格校验价格可得性。"""
     engine = data_engine
     if engine is None:
-        from app.quantcore import DataEngine, FieldParquetProvider
+        from app.services.data.engine import DataEngine
+        from app.database.data.providers.field_parquet_provider import FieldParquetProvider
 
         engine = DataEngine(FieldParquetProvider(_resolve_data_dir(None)))
     close = engine.get_panels(None, None, fields=["close"])["close"].reindex(dates)
@@ -223,6 +240,7 @@ def _persisted_asset(snapshot):
 
 __all__ = [
     "_BENCHMARK_FILES",
+    "_benchmark_path",
     "_resolve_data_dir",
     "_resolve_current_data_dir",
     "_load_benchmark_equity",

@@ -9,11 +9,9 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.services.factor_backtest_batch import (
-    FactorBacktestBatchCoordinator,
-    FactorBacktestBatchProfile,
-    FactorBacktestBatchTaskRegistry,
-)
+from app.services.factor_backtest_batch.coordinator import FactorBacktestBatchCoordinator
+from app.models.factor_batch import FactorBacktestBatchProfile
+from app.services.factor_backtest_batch.task_registry import FactorBacktestBatchTaskRegistry
 
 
 def _wait_for_status(client: TestClient, task_id: str, expected: set[str]) -> dict:

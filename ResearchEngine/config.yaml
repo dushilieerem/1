@@ -11,14 +11,18 @@ application:
   deployment: single-instance-single-worker
 
 assets:
+  # 因子运行时来源：SQLite 因子库 + 公共算子模块。
+  factor_database: ./app/assets/factors/factor_library.db
+  factor_tool: ./app/assets/factors/tool.py
+  # 以下路径仅保留给迁移期旧资产与历史目录工具，不参与默认回测。
   factor_dir: ./app/assets/factors/libraries
   factor_index: ./app/assets/factors/index.yaml
   strategy_dir: ./app/assets/strategies/libraries
   strategy_index: ./app/assets/strategies/index.yaml
 
-# 数据源：MarketData 目录（一个字段一个 parquet 的宽表面板）
+# 数据源：marketdata 目录（iFinD 业务域宽表面板）
 # 指向文件 -> WideCSVProvider；目录含 *.parquet -> FieldParquetProvider；否则逐只 CSV
-data_dir: ../MarketData
+data_dir: ../marketdata
 
 # 股票池名称（对应 universe.csv 的 pool；无 universe.csv 时用全部标的）
 benchmark: CSI500
@@ -45,7 +49,7 @@ backtest:
   # slippage_rate: 0.001
 
 # 因子评估增强（默认开启；分层回测/多空/三因子归因/分行业IC/IR，缺数据自动跳过）
-#   基准 = 市值加权全市场（自构造，复用 total_mv），三因子 MKT 同源
+#   基准 = 市值加权全市场（自构造，复用 current_mv），三因子 MKT 同源
 #   factor_analysis.enabled: false  # 关闭可加速纯回测
 #   n_layered_groups: 5             # 分层组数（缺省回落 n_groups）
 

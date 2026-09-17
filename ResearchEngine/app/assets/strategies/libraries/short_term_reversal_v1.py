@@ -1,7 +1,12 @@
 """短期反转策略：持有过去 5 日收益最低的十只股票。"""
 
-from app.quantcore import (
-    EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, factor, signal,
+from app.services.strategy.vectorized.factor_strategy import (
+    EqualWeight,
+    EveryNTradingDays,
+    FactorPortfolioStrategy,
+    TopN,
+    factor,
+    signal,
 )
 
 

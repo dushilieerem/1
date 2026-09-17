@@ -1,7 +1,12 @@
 """双均线趋势策略：快均线高于慢均线时等权持有。"""
 
-from app.quantcore import (
-    EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, factor, signal,
+from app.services.strategy.vectorized.factor_strategy import (
+    EqualWeight,
+    EveryNTradingDays,
+    FactorPortfolioStrategy,
+    TopN,
+    factor,
+    signal,
 )
 
 

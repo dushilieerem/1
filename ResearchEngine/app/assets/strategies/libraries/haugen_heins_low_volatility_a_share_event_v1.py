@@ -10,7 +10,7 @@ class HaugenHeinsLowVolatilityAShareEventStrategy:
     """行业内低波动、低下行波动与浅回撤的月度现金多头策略。"""
 
     execution_mode = "event"
-    required_fields = frozenset({"open", "high", "low", "close", "amount", "industry", "pe_ratio", "pb_ratio", "circulating_market_cap"})
+    required_fields = frozenset({"open", "high", "low", "close", "amount", "the_sw_industry_code", "pe_ttm", "pb_mrq", "current_mv"})
 
     def __init__(self, universe: list[str] | None = None, max_holdings: int = 25,
                  max_industry_holdings: int = 5, single_weight: float = 0.05,
@@ -27,7 +27,7 @@ class HaugenHeinsLowVolatilityAShareEventStrategy:
     def rebalance(self, context) -> None:
         holdings = set(context.portfolio.positions)
         symbols = list(dict.fromkeys((self.universe or list(context.data.symbols)) + list(holdings)))
-        fields = ["close", "amount", "industry", "pe_ratio", "pb_ratio", "circulating_market_cap"]
+        fields = ["close", "amount", "the_sw_industry_code", "pe_ttm", "pb_mrq", "current_mv"]
         history = context.data.history(symbols, fields, 121)
         target = self._select(self._candidates(history, symbols), holdings)
         for symbol in holdings - set(target.index):
@@ -41,10 +41,10 @@ class HaugenHeinsLowVolatilityAShareEventStrategy:
         rows = []
         for symbol in symbols:
             close = history["close"][symbol].dropna()
-            values = {field: history[field][symbol].dropna() for field in ("amount", "industry", "pe_ratio", "pb_ratio", "circulating_market_cap")}
+            values = {field: history[field][symbol].dropna() for field in ("amount", "the_sw_industry_code", "pe_ttm", "pb_mrq", "current_mv")}
             if len(close) < 121 or any(series.empty for series in values.values()) or values["amount"].tail(20).mean() < self.min_amount:
                 continue
-            pe, pb, cap = (float(values[field].iloc[-1]) for field in ("pe_ratio", "pb_ratio", "circulating_market_cap"))
+            pe, pb, cap = (float(values[field].iloc[-1]) for field in ("pe_ttm", "pb_mrq", "current_mv"))
             if not 0 < pe <= 100 or not 0 < pb <= 15 or cap <= 0:
                 continue
             returns = close.iloc[-121:].pct_change().dropna()
@@ -55,7 +55,7 @@ class HaugenHeinsLowVolatilityAShareEventStrategy:
             drawdown = (close.iloc[-121:] / close.iloc[-121:].cummax() - 1.0).min()
             if not np.isfinite(vol) or not np.isfinite(down_vol) or vol <= 0 or down_vol <= 0:
                 continue
-            rows.append((symbol, values["industry"].iloc[-1], cap, vol, down_vol, drawdown))
+            rows.append((symbol, values["the_sw_industry_code"].iloc[-1], cap, vol, down_vol, drawdown))
         frame = pd.DataFrame(rows, columns=["symbol", "industry", "cap", "volatility", "downside_volatility", "max_drawdown"])
         if frame.empty:
             return frame

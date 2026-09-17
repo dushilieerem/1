@@ -3,8 +3,8 @@
 import numpy as np
 import pandas as pd
 
-from app.quantcore.factor.base import Panel
-from app import FactorLoader
+from app.models.data import Panel
+from factor_test_support import BuiltinFactorLoader as FactorLoader
 
 
 def _panel() -> Panel:
@@ -23,7 +23,7 @@ def _panel() -> Panel:
 
 def test_range_volatility_factor_formulae_match_reference():
     loader = FactorLoader()
-    loader.load("volatility_lib")
+    loader.load()
     panel = _panel()
 
     expected_parkinson = np.sqrt(
@@ -55,7 +55,7 @@ def test_range_volatility_factor_formulae_match_reference():
 
 def test_range_volatility_factors_are_discoverable():
     loader = FactorLoader()
-    loader.load("volatility_lib")
+    loader.load()
 
     assert {
         "parkinson_volatility", "garman_klass_volatility",

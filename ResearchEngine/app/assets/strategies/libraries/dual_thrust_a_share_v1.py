@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from app.quantcore import BacktestSignals
+from app.models.strategy import BacktestSignals
 
 
 class DualThrustAShareStrategy:
@@ -24,7 +24,7 @@ class DualThrustAShareStrategy:
         low: pd.DataFrame,
         close: pd.DataFrame,
         amount: pd.DataFrame,
-        market_cap: pd.DataFrame,
+        current_mv: pd.DataFrame,
         range_n: int = 4,
         k1: float = 0.5,
         k2: float = 0.5,
@@ -40,7 +40,7 @@ class DualThrustAShareStrategy:
         self.low = low
         self.close = close
         self.amount = amount
-        self.market_cap = market_cap
+        self.current_mv = current_mv
         self.range_n = range_n
         self.k1 = k1
         self.k2 = k2
@@ -52,7 +52,7 @@ class DualThrustAShareStrategy:
         self.min_listed_days = min_listed_days
 
     def generate_signals(self) -> BacktestSignals:
-        open_, high, low, close, amount, market_cap, listed_days = self._aligned()
+        open_, high, low, close, amount, current_mv, listed_days = self._aligned()
         if self.range_n < 1 or self.max_holdings < 1 or self.pool_size < 1:
             raise ValueError("Dual Thrust 的窗口和持仓参数必须为正数")
 
@@ -60,7 +60,7 @@ class DualThrustAShareStrategy:
         buy_line = open_ + self.k1 * width
         sell_line = open_ - self.k2 * width
         liquidity = amount.rolling(self.avg_amount_days, min_periods=self.avg_amount_days).mean().shift(1)
-        cap_as_of = market_cap.shift(1)
+        cap_as_of = current_mv.shift(1)
         listed_as_of = listed_days.shift(1) if listed_days is not None else None
 
         target = pd.DataFrame(0.0, index=close.index, columns=close.columns)
@@ -99,7 +99,7 @@ class DualThrustAShareStrategy:
         return BacktestSignals(target_weights=target, close=close)
 
     def _aligned(self):
-        frames = [self.open, self.high, self.low, self.amount, self.market_cap]
+        frames = [self.open, self.high, self.low, self.amount, self.current_mv]
         if self.listed_days is not None:
             frames.append(self.listed_days)
         dates = self.close.index
@@ -112,7 +112,7 @@ class DualThrustAShareStrategy:
         close = self.close.loc[dates, symbols].sort_index()
         return tuple(
             frame.loc[dates, symbols].sort_index()
-            for frame in [self.open, self.high, self.low, close, self.amount, self.market_cap]
+            for frame in [self.open, self.high, self.low, close, self.amount, self.current_mv]
         ) + (self.listed_days.loc[dates, symbols].sort_index() if self.listed_days is not None else None,)
 
     @staticmethod

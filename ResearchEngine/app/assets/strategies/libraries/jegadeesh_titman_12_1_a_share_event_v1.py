@@ -9,7 +9,7 @@ class JegadeeshTitman121AShareEventStrategy:
     """按行业相对动量和低波动评分的月度现金多头策略。"""
 
     execution_mode = "event"
-    required_fields = frozenset({"open", "high", "low", "close", "amount", "industry"})
+    required_fields = frozenset({"open", "high", "low", "close", "amount", "the_sw_industry_code"})
 
     def __init__(self, universe: list[str] | None = None, max_holdings: int = 20,
                  max_industry_holdings: int = 4, single_weight: float = 0.05,
@@ -33,7 +33,7 @@ class JegadeeshTitman121AShareEventStrategy:
         holdings = set(context.portfolio.positions)
         universe = self.universe or list(context.data.symbols)
         symbols = list(dict.fromkeys(universe + list(holdings)))
-        history = context.data.history(symbols, ["close", "amount", "industry"], 253)
+        history = context.data.history(symbols, ["close", "amount", "the_sw_industry_code"], 253)
         candidates = self._candidates(history, symbols)
         target = self._select(candidates, holdings)
         for symbol in holdings - set(target.index):
@@ -51,7 +51,7 @@ class JegadeeshTitman121AShareEventStrategy:
         for symbol in symbols:
             close = history["close"][symbol].dropna()
             amount = history["amount"][symbol].reindex(close.index).fillna(0.0)
-            industry = history["industry"][symbol].dropna()
+            industry = history["the_sw_industry_code"][symbol].dropna()
             if len(close) < 253 or len(industry) == 0 or amount.tail(20).mean() < self.min_amount:
                 continue
             momentum_12_1 = close.iloc[-22] / close.iloc[-253] - 1.0

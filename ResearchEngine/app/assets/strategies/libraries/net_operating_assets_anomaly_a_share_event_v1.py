@@ -16,7 +16,7 @@ class NetOperatingAssetsAnomalyAShareEventStrategy:
             "high",
             "low",
             "close",
-            "pe_ratio",
+            "pe_ttm",
             "market_cap",
             "total_assets",
             "money_cap",
@@ -55,7 +55,7 @@ class NetOperatingAssetsAnomalyAShareEventStrategy:
         symbols = list(dict.fromkeys([*universe, *holdings]))
         fields = [
             "close",
-            "pe_ratio",
+            "pe_ttm",
             "market_cap",
             "total_assets",
             "money_cap",
@@ -87,7 +87,7 @@ class NetOperatingAssetsAnomalyAShareEventStrategy:
         for symbol in symbols:
             values = {}
             for field in (
-                "pe_ratio",
+                "pe_ttm",
                 "market_cap",
                 "total_assets",
                 "money_cap",
@@ -110,7 +110,7 @@ class NetOperatingAssetsAnomalyAShareEventStrategy:
 
             total_assets = float(values["total_assets"].iloc[-1])
             market_cap = float(values["market_cap"].iloc[-1])
-            pe_ratio = float(values["pe_ratio"].iloc[-1]) if not values["pe_ratio"].empty else float("nan")
+            pe_ratio = float(values["pe_ttm"].iloc[-1]) if not values["pe_ttm"].empty else float("nan")
             if total_assets <= 0 or market_cap < self.min_market_cap:
                 continue
             if self.require_positive_earnings and not (np.isfinite(pe_ratio) and pe_ratio > 0):

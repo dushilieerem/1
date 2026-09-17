@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from app.quantcore import EventBacktestEngine
-from app.repositories.catalogs.strategy_catalog import StrategyCatalog
+from app.services.strategy.event.engine import EventBacktestEngine
+from app.services.catalog.strategy_catalog import StrategyCatalog
 
 
 def _panels(days=270, symbols=10):
@@ -15,11 +15,11 @@ def _panels(days=270, symbols=10):
     close = pd.DataFrame({code: 10 + np.arange(days) * (0.03 + i * 0.002) + np.sin(np.arange(days) / 4) for i, code in enumerate(codes)}, index=dates)
     panels = {"open": close * 0.999, "high": close * 1.01, "low": close * 0.99, "close": close}
     panels["amount"] = pd.DataFrame(30_000_000.0, index=dates, columns=codes)
-    panels["industry"] = pd.DataFrame({code: f"I{i // 5}" for i, code in enumerate(codes)}, index=dates)
-    panels["pe_ratio"] = pd.DataFrame({code: 8 + i for i, code in enumerate(codes)}, index=dates)
-    panels["pb_ratio"] = pd.DataFrame({code: 0.8 + i * 0.1 for i, code in enumerate(codes)}, index=dates)
-    panels["circulating_market_cap"] = pd.DataFrame({code: 100 + i * 10 for i, code in enumerate(codes)}, index=dates)
-    panels["dividend_yield"] = pd.DataFrame({code: 2 + i * 0.2 for i, code in enumerate(codes)}, index=dates)
+    panels["the_sw_industry_code"] = pd.DataFrame({code: f"I{i // 5}" for i, code in enumerate(codes)}, index=dates)
+    panels["pe_ttm"] = pd.DataFrame({code: 8 + i for i, code in enumerate(codes)}, index=dates)
+    panels["pb_mrq"] = pd.DataFrame({code: 0.8 + i * 0.1 for i, code in enumerate(codes)}, index=dates)
+    panels["current_mv"] = pd.DataFrame({code: 100 + i * 10 for i, code in enumerate(codes)}, index=dates)
+    panels["dividend_yield_ttm"] = pd.DataFrame({code: 2 + i * 0.2 for i, code in enumerate(codes)}, index=dates)
     return panels
 
 

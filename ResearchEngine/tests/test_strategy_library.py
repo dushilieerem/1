@@ -6,8 +6,8 @@ import pandas as pd
 import pytest
 import numpy as np
 
-from app.quantcore import EventBacktestEngine
-from app.repositories.catalogs.strategy_catalog import StrategyCatalog
+from app.services.strategy.event.engine import EventBacktestEngine
+from app.services.catalog.strategy_catalog import StrategyCatalog
 
 
 def test_builtin_strategies_match_their_declared_execution_contract():

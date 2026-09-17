@@ -6,20 +6,21 @@ SVQuant 是一站式 AI 量化投研平台。当前投研运行时统一放在
 ## 架构
 
 ```text
-FastAPI app.main
-    └── api/routes        HTTP 参数与响应适配
-        └── services      Experiment、因子/策略回测、因子批量回测业务
-            └── repositories/database
-                └── app.quantcore   数据、因子、指标、回测基础设施
+ResearchEngine/app
+├── main.py          # FastAPI 入口与生命周期
+├── api              # 控制器
+├── models           # 内部数据结构
+├── schemas          # HTTP 请求/响应
+├── services         # 五个 Engine、实验、批量与目录业务
+├── database         # Provider、缓存和持久化
+├── utils            # 通用辅助
+└── config.py        # 配置
 ```
 
-- `app.main` 是唯一正式 FastAPI 入口。
-- `app.quantcore` 不依赖 FastAPI、schemas 或业务 service。
-- 因子和策略资产位于 `app.assets`，SQLite 结果通过 repository 访问。
-- `Experiment` 是抽象基类；具体实验为 `FactorExperiment`、`StrategyExperiment`
-  和因子批量回测业务中的 `FactorBacktestBatchExperiment`。
-- `ExperimentManager` 只有一个普通 FIFO 队列。因子批量业务自己维护容量为 2
-  的批量窗口，只有一个批量因子进入终态后才提交下一个。
+QuantCore 的独立共享库边界已取消，研究计算全部属于 ResearchEngine。WebApp 通过 HTTP 调用，
+TradingEngine 仍规划中，不预设代码共享。运行时 assets 和 cli 目录保留。
+ExperimentManager 保持单进程 FIFO，批量协调器保持两个未完成因子的业务窗口。
+具体架构见 [ADR-029](docs/05-技术决策/ADR-029-研究服务采用services与models分层.md)。
 
 ## 安装与启动
 
@@ -27,10 +28,30 @@ FastAPI app.main
 pip install -e .
 pip install -e ".[api]"
 
-# 生产/内网部署：单实例、单 Worker
+# SSH/生产部署：后台运行，单实例、单 Worker
+ResearchEngine/scripts/research-engine.sh start
+
+# 前台调试
 python -m uvicorn app.main:app --host 0.0.0.0 --port 9527 --workers 1
 # 或
 python -m app.main
+```
+
+如果通过 SSH 启动，建议使用仓库内的后台控制脚本。它会让进程脱离 SSH 会话，保存 PID，
+并把服务输出写入 `ResearchEngine/logs/app.log`：
+
+```bash
+ResearchEngine/scripts/research-engine.sh start
+ResearchEngine/scripts/research-engine.sh status
+ResearchEngine/scripts/research-engine.sh logs
+```
+
+常用操作：
+
+```bash
+ResearchEngine/scripts/research-engine.sh restart
+ResearchEngine/scripts/research-engine.sh stop
+ResearchEngine/scripts/research-engine.sh logs --no-follow
 ```
 
 不支持多 Uvicorn Worker 或多实例部署，因为当前进程内只有一个
@@ -56,12 +77,12 @@ python -m app.cli.factor_backtest_batch run --as-of YYYY-MM-DD --wait
 
 API 契约使用 `/api`，批量触发接口为
 `POST /api/internal/factor-backtest-batches`；任务查询和批次、因子明细、历史结果
-的接口见 `docs/04-features/FEAT-027-factor-backtest-batch/`。
+的接口见 `ResearchEngine/docs/03-功能文档/FEAT-027-因子批量回测/`。
 
 研究代码示例：
 
 ```python
-from app.repositories.catalogs.factor_loader import FactorLoader
+from app.services.factor.loader import FactorLoader
 from app.services.experiment import FactorExperiment, ExperimentManager
 
 loader = FactorLoader()

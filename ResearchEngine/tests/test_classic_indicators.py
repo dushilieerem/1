@@ -3,8 +3,11 @@
 import pandas as pd
 import numpy as np
 
-from app.quantcore.factor.base import Panel, library_factors
-from app import FactorLoader
+from app.models.data import Panel
+from app.services.factor.base import library_factors
+from app.assets.factors import tool
+from factor_test_support import BuiltinFactorLoader as FactorLoader
+from factor_test_support import builtin_factor_ids
 
 
 def _panel():
@@ -14,7 +17,7 @@ def _panel():
 
 
 def test_classic_indicator_library_is_discoverable():
-    library = FactorLoader().load("classic_indicators")
+    library = FactorLoader().load()
     factors = library_factors(library)
     assert {
         "bbi",
@@ -23,11 +26,9 @@ def test_classic_indicator_library_is_discoverable():
         "rsi",
         "atr",
         "vroc",
-        "wad",
-        "cvlt",
-        "donchian_position",
+        "wvad",
+        "channel_position",
         "donchian_width",
-        "keltner_position",
         "keltner_width",
     }.issubset(factors)
 
@@ -36,38 +37,45 @@ def test_factor_api_lists_classic_indicators():
     from app.api.routes import _builtin_factors
 
     names = {factor.name for factor in _builtin_factors()}
+    ids = builtin_factor_ids()
     assert {
-        "bbi",
-        "macd",
-        "kdj",
-        "atr",
-        "donchian_position",
-        "keltner_width",
+        ids["bbi"],
+        ids["macd"],
+        ids["kdj"],
+        ids["atr"],
+        ids["channel_position"],
+        ids["keltner_width"],
     }.issubset(names)
 
 
 def test_classic_indicator_formulae_match_reference():
     loader, panel = FactorLoader(), _panel()
-    loader.load("classic_indicators")
+    library = loader.load()
     expected_bbi = sum(panel.close.rolling(n).mean() for n in (3, 6, 12, 24)) / 4
     pd.testing.assert_frame_equal(loader.factors["bbi"].compute(panel), expected_bbi)
-    diff = panel.close.ewm(span=12, adjust=False).mean() - panel.close.ewm(span=26, adjust=False).mean()
-    pd.testing.assert_frame_equal(loader.factors["macd"].compute(panel), 2 * (diff - diff.ewm(span=9, adjust=False).mean()))
+    diff = panel.close.ewm(span=12).mean() - panel.close.ewm(span=26).mean()
+    pd.testing.assert_frame_equal(
+        loader.factors["macd"].compute(panel),
+        diff - diff.ewm(span=9).mean(),
+    )
     high, low = panel.high.rolling(9).max(), panel.low.rolling(9).min()
     rsv = (panel.close - low) / (high - low) * 100
-    k = rsv.ewm(alpha=1 / 3, adjust=False).mean()
-    d = k.ewm(alpha=1 / 3, adjust=False).mean()
+    k = tool.sma(rsv, 3)
+    d = tool.sma(k, 3)
     pd.testing.assert_frame_equal(loader.factors["kdj"].compute(panel), 3 * k - 2 * d)
 
-    upper = panel.high.rolling(20).max()
-    lower = panel.low.rolling(20).min()
+    middle = panel.close.rolling(20).mean()
+    std = panel.close.rolling(20).std()
+    upper, lower = middle + 2 * std, middle - 2 * std
     pd.testing.assert_frame_equal(
-        loader.factors["donchian_position"].compute(panel),
+        loader.factors["channel_position"].compute(panel),
         (panel.close - lower) / (upper - lower + 1e-10),
     )
+    donchian_upper = panel.high.rolling(20).max()
+    donchian_lower = panel.low.rolling(20).min()
     pd.testing.assert_frame_equal(
         loader.factors["donchian_width"].compute(panel),
-        (upper - lower) / (panel.close.abs() + 1e-10),
+        (donchian_upper - donchian_lower) / (panel.close.abs() + 1e-10),
     )
 
     previous_close = panel.close.shift()
@@ -83,8 +91,11 @@ def test_classic_indicator_formulae_match_reference():
     middle = panel.close.ewm(span=20, adjust=False).mean()
     offset = 2.0 * true_range.rolling(10).mean()
     keltner_upper, keltner_lower = middle + offset, middle - offset
+    library._panel = panel
     pd.testing.assert_frame_equal(
-        loader.factors["keltner_position"].compute(panel),
+        library.channel_position(
+            channel="keltner", window=20, atr_window=10, multiplier=2.0
+        ),
         (panel.close - keltner_lower) / (keltner_upper - keltner_lower + 1e-10),
     )
     pd.testing.assert_frame_equal(
@@ -95,6 +106,9 @@ def test_classic_indicator_formulae_match_reference():
 
 def test_classic_indicators_return_panel_shape():
     loader, panel = FactorLoader(), _panel()
-    loader.load("classic_indicators")
-    for factor in loader.factors.values():
-        assert factor.compute(panel).shape == panel.close.shape
+    loader.load()
+    for name in (
+        "bbi", "macd", "kdj", "rsi", "atr", "vroc", "wvad",
+        "channel_position", "donchian_width", "keltner_width",
+    ):
+        assert loader.factors[name].compute(panel).shape == panel.close.shape

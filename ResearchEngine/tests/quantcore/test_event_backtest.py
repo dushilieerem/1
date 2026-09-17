@@ -2,7 +2,8 @@
 
 import pandas as pd
 
-from app.quantcore.backtest.event import EventBacktestConfig, EventBacktestEngine
+from app.models.event import EventBacktestConfig
+from app.services.strategy.event.engine import EventBacktestEngine
 
 
 def _panels():
@@ -57,7 +58,9 @@ def test_t_plus_one_and_lot_size_rejections_are_audited():
 
 def test_limit_up_rejects_buy():
     panels = _panels()
-    panels["limit_up"] = pd.DataFrame({"A": [False, True, False]}, index=panels["close"].index)
+    panels["up_and_down_status"] = pd.DataFrame(
+        {"A": ["非涨跌停", "涨停", "非涨跌停"]}, index=panels["close"].index
+    )
 
     class Strategy:
         def initialize(self, context):
@@ -70,6 +73,30 @@ def test_limit_up_rejects_buy():
     result = EventBacktestEngine(panels, EventBacktestConfig(initial_capital=10_000)).run(Strategy())
 
     assert result.orders[0].reason_code == "LIMIT_UP"
+
+
+def test_normal_status_does_not_reject_sell_as_limit_down():
+    panels = _panels()
+    panels["up_and_down_status"] = pd.DataFrame(
+        {"A": ["非涨跌停", "非涨跌停", "非涨跌停"]}, index=panels["close"].index
+    )
+
+    class Strategy:
+        def initialize(self, context):
+            def trade(ctx):
+                if ctx.current_dt.date().isoformat() == "2024-01-02":
+                    ctx.orders.target_quantity("A", 100)
+                if ctx.current_dt.date().isoformat() == "2024-01-04":
+                    ctx.orders.close("A")
+
+            context.schedule.daily(trade)
+
+    result = EventBacktestEngine(
+        panels, EventBacktestConfig(initial_capital=10_000)
+    ).run(Strategy())
+
+    assert len(result.fills) == 2
+    assert result.fills[-1].side == "sell"
 
 
 def test_weekly_and_monthly_callbacks_follow_trading_calendar():

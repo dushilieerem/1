@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from app.quantcore import BacktestSignals
+from app.models.strategy import BacktestSignals
 
 
 class SimonsPairsTradingResearchStrategy:

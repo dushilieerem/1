@@ -24,6 +24,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--as-of", required=True, dest="as_of_date")
     parser.add_argument("--force-retry", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--filter-suspended", action="store_true")
+    parser.add_argument("--filter-limit-up", action="store_true")
+    parser.add_argument("--winsorize", type=int, choices=range(4), default=0)
+    parser.add_argument("--standardize", type=int, choices=range(4), default=0)
     parser.add_argument(
         "--wait",
         action="store_true",
@@ -79,6 +83,10 @@ def main(argv: list[str] | None = None) -> int:
                 "as_of_date": args.as_of_date,
                 "force_retry": args.force_retry,
                 "dry_run": args.dry_run,
+                "filter_suspended": args.filter_suspended,
+                "filter_limit_up": args.filter_limit_up,
+                "winsorize": args.winsorize,
+                "standardize": args.standardize,
             },
         )
         if not args.wait:

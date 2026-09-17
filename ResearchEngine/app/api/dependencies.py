@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from fastapi import Request
 
-from app.services.factor_backtest_batch import (
-    FactorBacktestBatchCoordinator,
-    FactorBacktestBatchTaskRegistry,
-)
+from app.services.factor_backtest_batch.coordinator import FactorBacktestBatchCoordinator
+from app.services.factor_backtest_batch.task_registry import FactorBacktestBatchTaskRegistry
 from app.services.experiment.manager import ExperimentManager
 
 

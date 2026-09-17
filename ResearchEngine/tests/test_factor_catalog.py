@@ -6,11 +6,14 @@ import uuid
 
 import yaml
 
-from app.repositories.catalogs.factor_catalog import check_catalog, sync_catalog
+from app.services.catalog.factor_catalog import check_catalog, sync_catalog
 
 
-def test_repository_factor_catalog_is_synchronized():
-    assert check_catalog() == []
+def test_repository_factor_runtime_assets_are_available():
+    from app.utils.paths import factor_database_path, factor_tool_path
+
+    assert factor_database_path().is_file()
+    assert factor_tool_path().is_file()
 
 
 def test_sync_and_check_catalog_follow_factor_source(tmp_path):
@@ -23,8 +26,8 @@ def test_sync_and_check_catalog_follow_factor_source(tmp_path):
     overview_path.write_text("研究员手工维护的总览文档。\n", encoding="utf-8")
 
     module_path.write_text(
-        "from app.quantcore import FactorLibrary\n\n"
-        f"class CatalogTestLibrary(FactorLibrary):\n"
+        "from app.services.factor.base import FactorLibrary\n\n"
+        "class CatalogTestLibrary(FactorLibrary):\n"
         "    author = 'test'\n\n"
         "    def first_factor(self, window: int = 5):\n"
         "        \"\"\"第一个测试因子。\"\"\"\n"

@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.quantcore.backtest.adapter import BacktestConfig, BacktestSignals, NativeEngine
+from app.models.strategy import BacktestConfig, BacktestSignals
+from app.services.strategy.vectorized.native_engine import NativeEngine
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "supermind"

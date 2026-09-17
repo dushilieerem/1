@@ -4,18 +4,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.quantcore import BacktestResult
-from app.quantcore.backtest.adapter import (
-    BacktestConfig,
-    BacktestSignals,
-    FactorGroupStrategy,
-    FactorQuantileStrategy,
-    IBacktestEngine,
-    IStrategy,
-    NativeEngine,
-    PandasCalendar,
-    get_backtest_engine,
-)
+from app.models.backtest import BacktestResult
+from app.models.strategy import BacktestConfig, BacktestSignals
+from app.services.strategy.vectorized.strategies import FactorGroupStrategy, FactorQuantileStrategy
+from app.services.strategy.vectorized.interfaces import IBacktestEngine, IStrategy
+from app.services.strategy.vectorized.native_engine import NativeEngine
+from app.services.data.calendar import PandasCalendar
+from app.services.strategy.vectorized.registry import get_backtest_engine
 
 
 # ---------------- 固件 ----------------
@@ -124,10 +119,10 @@ def test_factor_group_strategy_uses_top_group():
 
 def test_factor_group_strategy_reuses_precomputed_group_assignments():
     """预计算分组与策略内部计算逐位一致。"""
-    from app.quantcore.backtest.adapter.grouping import raw_qcut_groups
+    from app.services.portfolio.grouping import rank_groups
 
     fv, close = _make_panel(n_dates=10, n_sym=20)
-    assignments = raw_qcut_groups(fv, 4)
+    assignments = rank_groups(fv, 4)
     expected = FactorGroupStrategy(
         fv, close, groups=4, rebalance_days=3, long_short=True
     ).generate_signals().target_weights

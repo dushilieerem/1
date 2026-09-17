@@ -22,16 +22,20 @@ outputs/
 
 # 实验输出（由 main.py 生成，不入库）
 ResearchEngine/output/
+ResearchEngine/logs/
+ResearchEngine/run/
 Factor/backtest_results/
 *.db
 
-# 行情数据（体积大，不入库；放 MarketData/ 目录）
+# SQLite 因子库是项目运行时资产，需要纳入版本控制
+!ResearchEngine/app/assets/factors/factor_library.db
+
+# 行情数据（体积大，不入库；放 marketdata/ 目录）
+marketdata/*
+
+# 旧版行情目录已废弃，仅保留迁移提示
 MarketData/*
-!MarketData/DataIngestion/
-!MarketData/DataIngestion/**
 !MarketData/README.md
-MarketData/DataIngestion/**/__pycache__/
-MarketData/DataIngestion/**/*.py[cod]
 
 # 压缩包文件
 *.7z
@@ -42,6 +46,7 @@ AGENTS.md
 *.rar
 .Codex/
 tmp/
-MarketData/DataIngestion/.tmp/
 *.parquet
 .vscode/
+Factor/database/factor_backtest.db-shm
+Factor/database/factor_backtest.db-wal

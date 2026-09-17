@@ -1,0 +1,95 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "因子回测 API 执行流程",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "end-to-end",
+        "label": "全链路",
+        "focus": ["caller", "submit", "manager", "data", "factor", "portfolio", "metrics", "projection", "cache_store", "status"],
+        "note": "从 POST 提交到异步任务完成，沿主执行链路查看数据、因子、组合和指标阶段。"
+      },
+      {
+        "id": "performance",
+        "label": "性能热点",
+        "focus": ["data", "factor", "portfolio", "metrics", "cache_store"],
+        "note": "聚焦一次全市场十年回测中测得的主要耗时阶段。"
+      },
+      {
+        "id": "async-cache",
+        "label": "异步与缓存",
+        "focus": ["caller", "submit", "manager", "cache_probe", "cache_store", "poll", "status"],
+        "note": "查看 202 响应、任务轮询以及缓存命中和未命中的两条路径。"
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "caller_lane", "label": "API 调用方" },
+    { "id": "api_lane", "label": "ResearchEngine API" },
+    { "id": "runtime_lane", "label": "组合与指标执行" },
+    { "id": "factor_lane", "label": "因子计算" },
+    { "id": "asset_lane", "label": "数据与结果资产" }
+  ],
+  "phases": [
+    { "id": "request_phase", "label": "提交与调度", "fromCol": 0, "toCol": 1, "variant": "emphasis" },
+    { "id": "compute_phase", "label": "统一回测执行", "fromCol": 2, "toCol": 3, "variant": "default" },
+    { "id": "result_phase", "label": "投影与复用", "fromCol": 4, "toCol": 4, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "async_control", "label": "异步任务控制", "lane": "api_lane", "fromCol": 0, "toCol": 2, "variant": "emphasis" },
+    { "id": "compute_hotspots", "label": "四个核心耗时阶段", "lane": "runtime_lane", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
+    { "id": "asset_boundary", "label": "共享数据与结果缓存", "lane": "asset_lane", "fromCol": 2, "toCol": 4, "variant": "dashed" }
+  ],
+  "mainPath": ["caller", "submit", "manager", "cache_probe", "data", "factor", "portfolio", "metrics", "projection", "cache_store", "status"],
+  "nodes": [
+    { "id": "caller", "lane": "caller_lane", "col": 0, "type": "external", "label": "调用方", "sublabel": "提交回测", "width": 132 },
+    { "id": "submit", "lane": "api_lane", "col": 1, "type": "backend", "label": "因子回测路由", "sublabel": "POST /api/backtest/factor", "tag": "202 + run_id", "width": 150 },
+    { "id": "manager", "lane": "runtime_lane", "col": 2, "type": "backend", "label": "ExperimentManager", "sublabel": "queued → running", "tag": "interactive lane", "width": 150 },
+    { "id": "cache_probe", "lane": "asset_lane", "col": 2, "type": "database", "label": "回测缓存检查", "sublabel": "数据指纹 + cache.get", "tag": "MISS / HIT", "width": 150 },
+    { "id": "data", "lane": "asset_lane", "col": 3, "type": "backend", "label": "DataEngine", "sublabel": "按需 marketdata + 股票池", "tag": "核心 2.63s", "width": 154 },
+    { "id": "factor", "lane": "factor_lane", "col": 3, "type": "backend", "label": "FactorEngine", "sublabel": "SQLite + tool.py", "tag": "计算 1.90s", "width": 150 },
+    { "id": "portfolio", "lane": "runtime_lane", "col": 3, "type": "backend", "label": "PortfolioEngine", "sublabel": "rank · 权重 · 可选日志", "tag": "构建 2.47s", "width": 154 },
+    { "id": "metrics", "lane": "runtime_lane", "col": 4, "type": "backend", "label": "MetricEngine", "sublabel": "收益 · IC · 分层", "tag": "评价 6.04s", "width": 154 },
+    { "id": "projection", "lane": "api_lane", "col": 4, "type": "backend", "label": "结果投影", "sublabel": "曲线、指标、诊断", "tag": "0.36s", "width": 144 },
+    { "id": "cache_store", "lane": "asset_lane", "col": 4, "type": "database", "label": "FileBacktestCache", "sublabel": "standard report + gzip", "tag": "MISS ≈105.6s", "width": 154 },
+    { "id": "status", "lane": "caller_lane", "col": 4, "type": "messagebus", "label": "任务状态", "sublabel": "succeeded / failed", "width": 132 },
+    { "id": "poll", "lane": "caller_lane", "col": 3, "type": "external", "label": "轮询客户端", "sublabel": "GET /factor/{run_id}", "width": 170 }
+  ],
+  "edges": [
+    { "id": "caller-submit", "from": "caller", "to": "submit", "label": "POST 请求", "role": "main", "variant": "emphasis" },
+    { "id": "submit-manager", "from": "submit", "to": "manager", "label": "202 Accepted · run_id", "role": "async", "variant": "emphasis" },
+    { "id": "manager-probe", "from": "manager", "to": "cache_probe", "label": "worker 执行", "role": "main" },
+    { "id": "probe-data", "from": "cache_probe", "to": "data", "label": "MISS：进入回测", "role": "main", "variant": "emphasis" },
+    { "id": "probe-status-hit", "from": "cache_probe", "to": "status", "label": "HIT：复用 HTTP 结果", "role": "branch", "variant": "dashed", "fromSide": "left", "toSide": "top", "via": [[20, 645], [20, 80], [880.2, 80]] },
+    { "id": "data-factor", "from": "data", "to": "factor", "label": "task panels / close", "role": "main" },
+    { "id": "factor-portfolio", "from": "factor", "to": "portfolio", "label": "factor_values", "role": "main", "variant": "emphasis" },
+    { "id": "portfolio-metrics", "from": "portfolio", "to": "metrics", "label": "组合、持仓与远期收益", "role": "main" },
+    { "id": "metrics-projection", "from": "metrics", "to": "projection", "label": "metrics + curves", "role": "main" },
+    { "id": "projection-cache", "from": "projection", "to": "cache_store", "label": "MISS：生成标准报告", "role": "async", "variant": "dashed" },
+    { "id": "cache-status", "from": "cache_store", "to": "status", "label": "写入后完成", "role": "main", "variant": "emphasis" },
+    { "id": "caller-poll", "from": "caller", "to": "poll", "label": "按 poll_url 查询", "role": "async", "variant": "dashed" },
+    { "id": "poll-status", "from": "poll", "to": "status", "label": "queued / running / result", "role": "return", "variant": "dashed" },
+    { "id": "manager-error", "from": "manager", "to": "status", "label": "异常：failed", "role": "error", "variant": "security" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "执行契约",
+      "items": [
+        "POST 只创建异步任务并返回 run_id；实际计算由 ExperimentManager worker 执行",
+        "GET /api/backtest/factor/{run_id} 观察 queued、running、succeeded 或 failed"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "性能观测",
+      "items": [
+        "组合构建 113.12s，其中调仓日志约 73.21s；指标评价约 98.92s",
+        "缓存 MISS 还要生成并压缩标准报告约 105.6s；SQLite 因子计算仅约 1.62s"
+      ]
+    }
+  ]
+}

@@ -26,6 +26,8 @@ METRIC_COLUMNS = (
     "information_ratio",
     "benchmark_win_rate",
 )
+SCHEMA_VERSION = 2
+EXECUTION_VERSION = "factor-execution-v5"
 
 
 def default_factor_backtest_db_path() -> Path:
@@ -37,9 +39,16 @@ def default_factor_backtest_db_path() -> Path:
     )
     if configured:
         return Path(configured)
-    from app.repositories.catalogs.paths import _repo_root
+    from app.utils.paths import _repo_root
 
-    return _repo_root() / "Factor" / "database" / "factor_backtest.db"
+    return (
+        _repo_root()
+        / "ResearchEngine"
+        / "app"
+        / "assets"
+        / "factors"
+        / "factor_backtest.db"
+    )
 
 
 def _now() -> str:
@@ -78,8 +87,15 @@ class FactorBacktestStore:
         return conn
 
     def _initialize(self) -> None:
+        existed = self.path.exists() and self.path.stat().st_size > 0
         conn = self._connect()
         try:
+            current_version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+            if existed and current_version != SCHEMA_VERSION:
+                raise RuntimeError(
+                    f"因子回测数据库 schema 版本 {current_version} 不受支持，"
+                    f"需要 {SCHEMA_VERSION}；请停止服务并清理数据库后重建。"
+                )
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS batch_runs (
@@ -92,6 +108,9 @@ class FactorBacktestStore:
                     profile_hash TEXT NOT NULL,
                     catalog_version TEXT NOT NULL,
                     metric_version TEXT NOT NULL,
+                    execution_version TEXT NOT NULL,
+                    data_release_id TEXT,
+                    spec_hash TEXT NOT NULL,
                     status TEXT NOT NULL,
                     total_count INTEGER NOT NULL DEFAULT 0,
                     succeeded_count INTEGER NOT NULL DEFAULT 0,
@@ -110,6 +129,8 @@ class FactorBacktestStore:
                     library_name TEXT NOT NULL,
                     factor_name TEXT NOT NULL,
                     factor_source_hash TEXT NOT NULL,
+                    data_release_id TEXT,
+                    spec_hash TEXT,
                     status TEXT NOT NULL,
                     retry_count INTEGER NOT NULL DEFAULT 0,
                     error_code TEXT,
@@ -153,13 +174,7 @@ class FactorBacktestStore:
                     ON factor_runs(library_name, factor_name, created_at DESC);
                 """
             )
-            # 允许从 MVP 早期创建的数据库平滑升级到带基础设施错误信息的表。
-            columns = {
-                row["name"] for row in conn.execute("PRAGMA table_info(batch_runs)").fetchall()
-            }
-            for name in ("error_code", "error_message"):
-                if name not in columns:
-                    conn.execute(f"ALTER TABLE batch_runs ADD COLUMN {name} TEXT")
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             conn.commit()
         finally:
             conn.close()
@@ -184,6 +199,9 @@ class FactorBacktestStore:
         catalog_version: str,
         metric_version: str,
         total_count: int,
+        execution_version: str = EXECUTION_VERSION,
+        data_release_id: str | None = None,
+        spec_hash: str = "",
         supersedes_batch_id: str | None = None,
     ) -> dict[str, Any]:
         batch_id = uuid.uuid4().hex
@@ -194,8 +212,9 @@ class FactorBacktestStore:
                 INSERT INTO batch_runs (
                     id, batch_key, as_of_date, window_start, window_end,
                     profile_json, profile_hash, catalog_version, metric_version,
+                    execution_version, data_release_id, spec_hash,
                     status, total_count, supersedes_batch_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
                 """,
                 (
                     batch_id,
@@ -207,6 +226,9 @@ class FactorBacktestStore:
                     profile_hash,
                     catalog_version,
                     metric_version,
+                    execution_version,
+                    data_release_id,
+                    spec_hash,
                     total_count,
                     supersedes_batch_id,
                 ),
@@ -263,6 +285,8 @@ class FactorBacktestStore:
         library_name: str,
         factor_name: str,
         factor_source_hash: str,
+        data_release_id: str | None = None,
+        spec_hash: str | None = None,
     ) -> dict[str, Any]:
         now = _now()
         factor_id = uuid.uuid4().hex
@@ -272,10 +296,20 @@ class FactorBacktestStore:
                 """
                 INSERT OR IGNORE INTO factor_runs (
                     id, batch_id, library_name, factor_name, factor_source_hash,
-                    status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+                    data_release_id, spec_hash, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
                 """,
-                (factor_id, batch_id, library_name, factor_name, factor_source_hash, now, now),
+                (
+                    factor_id,
+                    batch_id,
+                    library_name,
+                    factor_name,
+                    factor_source_hash,
+                    data_release_id,
+                    spec_hash,
+                    now,
+                    now,
+                ),
             )
             conn.commit()
             row = conn.execute(
@@ -510,4 +544,10 @@ class FactorBacktestStore:
             conn.close()
 
 
-__all__ = ["FactorBacktestStore", "METRIC_COLUMNS", "default_factor_backtest_db_path"]
+__all__ = [
+    "FactorBacktestStore",
+    "METRIC_COLUMNS",
+    "SCHEMA_VERSION",
+    "EXECUTION_VERSION",
+    "default_factor_backtest_db_path",
+]

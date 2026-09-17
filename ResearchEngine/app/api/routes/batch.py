@@ -17,10 +17,10 @@ from app.schemas.backtest import (
     FactorBacktestFactorRunResponse,
     FactorBacktestHistoryResponse,
 )
-from app.services.factor_backtest_batch import (
-    FactorBacktestBatchCoordinator,
-    FactorBacktestBatchProfile,
-    FactorBacktestBatchQuery,
+from app.services.factor_backtest_batch.coordinator import FactorBacktestBatchCoordinator
+from app.models.factor_batch import FactorBacktestBatchProfile
+from app.services.factor_backtest_batch.query import FactorBacktestBatchQuery
+from app.services.factor_backtest_batch.task_registry import (
     FactorBacktestBatchTaskRegistry,
     FactorBacktestBatchTaskRegistryClosedError,
 )
@@ -131,7 +131,13 @@ async def trigger_factor_backtest_batch(
         get_factor_backtest_batch_task_registry
     ),
 ) -> FactorBacktestBatchTaskSubmissionResponse:
-    profile = FactorBacktestBatchProfile(as_of_date=req.as_of_date)
+    profile = FactorBacktestBatchProfile(
+        as_of_date=req.as_of_date,
+        filter_suspended=req.filter_suspended,
+        filter_limit_up=req.filter_limit_up,
+        winsorize=req.winsorize,
+        standardize=req.standardize,
+    )
     try:
         task = task_registry.submit(
             coordinator,

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from app.quantcore import EventBacktestEngine
-from app.repositories.catalogs.strategy_catalog import StrategyCatalog
+from app.services.strategy.event.engine import EventBacktestEngine
+from app.services.catalog.strategy_catalog import StrategyCatalog
 
 
 def _panels(days=30):
@@ -13,8 +13,8 @@ def _panels(days=30):
     symbols = ["000001.SZ", "000002.SZ"]
     close = pd.DataFrame({symbol: 100 + pd.Series(range(days), index=dates) for symbol in symbols})
     panels = {field: close.copy() for field in ("open", "high", "low", "close")}
-    panels["pe_ratio"] = pd.DataFrame({"000001.SZ": 10.0, "000002.SZ": 30.0}, index=dates)
-    panels["dividend_yield"] = pd.DataFrame({"000001.SZ": 3.0, "000002.SZ": 3.0}, index=dates)
+    panels["pe_ttm"] = pd.DataFrame({"000001.SZ": 10.0, "000002.SZ": 30.0}, index=dates)
+    panels["dividend_yield_ttm"] = pd.DataFrame({"000001.SZ": 3.0, "000002.SZ": 3.0}, index=dates)
     panels["inc_net_profit_year_on_year"] = pd.DataFrame({"000001.SZ": 20.0, "000002.SZ": 20.0}, index=dates)
     panels["roe"] = pd.DataFrame({"000001.SZ": 15.0, "000002.SZ": 15.0}, index=dates)
     return panels

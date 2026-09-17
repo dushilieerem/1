@@ -1,14 +1,13 @@
 """日内结构与流动性状态因子的确定性验证。"""
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import pytest
-import yaml
 
-from app.quantcore.factor.base import Panel, library_factors
-from app import FactorLoader
+from app.models.data import Panel
+from app.services.factor.base import library_factors
+from factor_test_support import BuiltinFactorLoader as FactorLoader
+from factor_test_support import builtin_factor_ids
 
 
 FACTOR_NAMES = {
@@ -73,21 +72,12 @@ def _true_range(panel: Panel) -> pd.DataFrame:
 
 def test_intraday_structure_factors_are_discoverable_and_indexed():
     loader = FactorLoader()
-    library = loader.load("technical_lib")
+    library = loader.load()
     factors = library_factors(library)
 
-    assert len(factors) == 57
+    assert len(factors) == 432
     assert FACTOR_NAMES.issubset(factors)
-
-    from app.assets.factors import INDEX_PATH
-
-    index_path = INDEX_PATH
-    catalog = yaml.safe_load(index_path.read_text(encoding="utf-8"))
-    entry = catalog["libraries"]["technical_lib"]
-    indexed_names = {item["name"] for item in entry["factors"]}
-
-    assert entry["factor_count"] == len(factors)
-    assert FACTOR_NAMES.issubset(indexed_names)
+    assert FACTOR_NAMES.issubset(builtin_factor_ids())
 
 
 def test_intraday_structure_factor_formulae_match_reference():
@@ -98,7 +88,7 @@ def test_intraday_structure_factor_formulae_match_reference():
     )
     panel = _panel(close)
     loader = FactorLoader()
-    library = loader.load("technical_lib")
+    library = loader.load()
 
     previous_close = panel.close.shift()
     gap = (panel.open - previous_close) / (previous_close.abs() + 1e-10)
@@ -161,7 +151,7 @@ def test_intraday_structure_factor_formulae_match_reference():
 
 def test_intraday_structure_factors_preserve_shape_and_have_finite_values():
     loader = FactorLoader()
-    loader.load("technical_lib")
+    loader.load()
     panel = _sample_panel()
 
     for name in FACTOR_NAMES:
@@ -180,7 +170,7 @@ def test_flat_prices_missing_amount_and_missing_values_are_safe():
     dates = pd.bdate_range("2024-01-02", periods=140)
     flat = pd.DataFrame(10.0, index=dates, columns=["A"])
     loader = FactorLoader()
-    library = loader.load("technical_lib")
+    library = loader.load()
 
     flat_fields = {
         "open": flat.copy(),
@@ -236,7 +226,7 @@ def test_flat_prices_missing_amount_and_missing_values_are_safe():
 def test_window_parameters_change_warmup_and_invalid_values_are_rejected():
     panel = _sample_panel()
     loader = FactorLoader()
-    library = loader.load("technical_lib")
+    library = loader.load()
 
     for name in (
         "overnight_gap_follow_through",
@@ -274,7 +264,7 @@ def test_intraday_structure_factors_do_not_use_future_rows():
     changed_panel = Panel(changed_fields)
 
     loader = FactorLoader()
-    loader.load("technical_lib")
+    loader.load()
     for name in FACTOR_NAMES:
         baseline = loader.factors[name].compute(panel)
         changed = loader.factors[name].compute(changed_panel)

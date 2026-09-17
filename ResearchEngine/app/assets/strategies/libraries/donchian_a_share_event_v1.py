@@ -10,7 +10,7 @@ class DonchianAShareEventStrategy:
 
     execution_mode = "event"
     required_fields = frozenset({"open", "high", "low", "close", "amount"})
-    required_market_state = frozenset({"suspended", "limit_up", "limit_down"})
+    required_market_state = frozenset({"up_and_down_status"})
 
     def __init__(
         self,

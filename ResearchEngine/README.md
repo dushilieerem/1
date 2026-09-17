@@ -6,26 +6,32 @@ ResearchEngine 是 SVQuant 的投研应用层。运行时代码全部位于
 ## 分层结构
 
 ```text
-app/
-├── main.py                         # FastAPI 唯一正式入口
-├── api/routes/                     # health、catalog、factor、strategy、batch
-├── schemas/                        # Pydantic HTTP DTO
+ResearchEngine/app/
+├── main.py                         # FastAPI 入口、生命周期和依赖组装
+├── api/                            # 路由与控制器
+├── models/                         # 面板、配置、结果、上下文和状态
+├── schemas/                        # HTTP 请求/响应
 ├── services/
-│   ├── experiment/                 # Experiment 契约、Manager、具体实验
-│   ├── factor/                     # 因子回测用例
-│   ├── strategy/                   # 策略回测用例
-│   ├── catalog/                    # 目录查询用例
-│   └── factor_backtest_batch/      # 因子批量回测这一具体业务能力
-├── repositories/                   # 目录、结果和批次持久化边界
-├── database/                       # SQLite 与 Parquet 访问边界
-├── core/                           # 配置、运行时、异常
-├── quantcore/                      # 量化基础设施内层
-└── assets/                         # 因子/策略源码与索引
+│   ├── data/                       # DataEngine
+│   ├── factor/                     # FactorEngine、加载和预处理
+│   ├── portfolio/                  # PortfolioEngine
+│   ├── metric/                     # MetricEngine
+│   ├── backtest/                   # BacktestEngine
+│   ├── experiment/                 # Experiment、Manager、runtime
+│   ├── strategy/                   # 既有向量化/事件策略计算
+│   ├── catalog/                    # 资产目录业务
+│   ├── results/                    # ResultManager
+│   └── factor_backtest_batch/      # 批量协调和任务注册表
+├── database/                       # Provider、缓存、存储、SQLite 访问
+├── utils/                          # 通用工具、异常和路径
+├── config.py                       # ConfigManager
+├── assets/                         # 策略资产；因子旧源码仅作迁移兼容
+└── cli/                            # 现有命令行入口
 ```
 
-依赖方向固定为 `api → services → repositories/database → quantcore`。
-`app.quantcore` 不反向依赖 FastAPI、业务 service、repository 或 schemas；Pydantic
-只出现在 HTTP 边界。
+五个 Engine 属于 services；面板、回测规格/结果及上下文属于 models；数据读取和保存属于 database。
+配置使用 app.config，通用辅助位于 utils，不保留 QuantCore、core、repositories 包。
+内部导入路径已调整；HTTP、行情/数据库格式和回测公式保持不变。
 
 因子批量回测不是通用 `FactorBatchService`：它由
 `FactorBacktestBatchCoordinator` 作为具体业务协调器实现。Manager 保持普通 FIFO；
@@ -41,9 +47,30 @@ Manager 队列，会按 FIFO 先于后提交的批量因子执行。
 pip install -e .
 pip install -e ".[api]"
 
+# SSH/生产部署：后台运行，单实例、单 Worker
+ResearchEngine/scripts/research-engine.sh start
+
+# 前台调试
 uvicorn app.main:app --workers 1
 # 或
 python -m app.main
+```
+
+通过 SSH 部署时使用仓库根目录的后台控制脚本，避免 SSH 断开后进程收到挂断信号：
+
+```bash
+ResearchEngine/scripts/research-engine.sh start
+ResearchEngine/scripts/research-engine.sh status
+ResearchEngine/scripts/research-engine.sh logs
+```
+
+日志默认写入 `ResearchEngine/logs/app.log`，PID 默认写入
+`ResearchEngine/run/app.pid`。停止、重启和查看最近日志：
+
+```bash
+ResearchEngine/scripts/research-engine.sh stop
+ResearchEngine/scripts/research-engine.sh restart
+ResearchEngine/scripts/research-engine.sh logs --no-follow
 ```
 
 当前只支持单实例、单 Worker。FastAPI 进程的 lifespan 负责启动和关闭唯一的
@@ -52,14 +79,25 @@ python -m app.main
 
 ## 资产与 API
 
-因子和策略资产位于：
+策略资产位于：
 
 ```text
-app/assets/factors/libraries/
-app/assets/factors/index.yaml
 app/assets/strategies/libraries/
 app/assets/strategies/index.yaml
 ```
+
+内置因子运行时使用项目内 SQLite 因子库和公共算子模块：
+
+```text
+app/assets/factors/factor_library.db
+app/assets/factors/tool.py
+```
+
+可分别通过 `SVQUANT_FACTOR_DB_PATH`、`SVQUANT_FACTOR_TOOL_PATH` 覆盖路径。
+旧的 `app/assets/factors/index.yaml` 与 `libraries/*.py` 已废弃，不参与默认目录、回测和批量任务；
+旧加载器仅保留迁移期兼容。
+因子目录 API 使用数据库中的 `sv_id` 作为稳定因子标识，同时保留中文名、英文名和源码函数名
+作为加载别名。
 
 API 使用 `/api` 契约：
 
@@ -81,8 +119,8 @@ python -m app.cli.factor_backtest_batch run --as-of YYYY-MM-DD --force-retry
 python -m app.cli.factor_backtest_batch run --as-of YYYY-MM-DD --wait
 ```
 
-批量结果写入 `Factor/database/factor_backtest.db`（可由环境变量覆盖），行情仍由
-`app.quantcore` 的 Parquet provider 读取。
+批量结果写入 `app/assets/factors/factor_backtest.db`（可由环境变量覆盖），行情仍由
+`app.database.data.providers` 的 Parquet provider 读取。
 
 ## 开发与测试
 
@@ -92,7 +130,8 @@ pytest ResearchEngine/tests
 
 设计文档：
 
-- `docs/04-features/FEAT-002-research-engine/`
-- `docs/04-features/FEAT-003-backtest-adapter/`
-- `docs/04-features/FEAT-027-factor-backtest-batch/`
-- `docs/04-features/FEAT-028-layered-application-architecture/`
+- `ResearchEngine/docs/03-功能文档/FEAT-002-研究引擎/`
+- `../docs/03-功能文档/FEAT-003-回测适配层/`
+- `ResearchEngine/docs/03-功能文档/FEAT-027-因子批量回测/`
+- `ResearchEngine/docs/03-功能文档/FEAT-028-分层应用架构/`
+- `ResearchEngine/docs/02-架构文档/researchengine_architecture.md`

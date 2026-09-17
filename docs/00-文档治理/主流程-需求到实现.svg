@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="520" viewBox="0 0 1500 520" role="img" aria-labelledby="title desc">
+  <title id="title">SVQuant 文档主流程：需求到实现</title>
+  <desc id="desc">需求、业务、架构、功能、实现五层依次推进，辅助区提供治理、决策、状态、会议和归档支撑。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#475569"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .font { font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #0f172a; }
+      .stage { font-size: 25px; font-weight: 700; }
+      .question { font-size: 17px; font-weight: 600; fill: #334155; }
+      .detail { font-size: 16px; fill: #475569; }
+      .number { font-size: 16px; font-weight: 700; fill: #ffffff; }
+      .small { font-size: 15px; fill: #475569; }
+    </style>
+  </defs>
+
+  <rect width="1500" height="520" fill="#f8fafc"/>
+  <text x="750" y="48" text-anchor="middle" class="font" style="font-size: 32px; font-weight: 700;">SVQuant 文档主流程</text>
+  <text x="750" y="80" text-anchor="middle" class="font" style="font-size: 18px; fill: #64748b;">价值定义先行，业务闭环承接，系统设计落地，最终形成可运行交付</text>
+
+  <g filter="url(#shadow)">
+    <rect x="30" y="125" width="260" height="210" rx="16" fill="#dbeafe" stroke="#60a5fa" stroke-width="2"/>
+    <rect x="325" y="125" width="260" height="210" rx="16" fill="#dcfce7" stroke="#4ade80" stroke-width="2"/>
+    <rect x="620" y="125" width="260" height="210" rx="16" fill="#fef3c7" stroke="#fbbf24" stroke-width="2"/>
+    <rect x="915" y="125" width="260" height="210" rx="16" fill="#fce7f3" stroke="#f472b6" stroke-width="2"/>
+    <rect x="1210" y="125" width="260" height="210" rx="16" fill="#ede9fe" stroke="#a78bfa" stroke-width="2"/>
+  </g>
+
+  <g class="font">
+    <circle cx="62" cy="158" r="17" fill="#2563eb"/><text x="62" y="164" text-anchor="middle" class="number">01</text>
+    <text x="92" y="166" class="stage">需求</text>
+    <text x="55" y="207" class="question">为什么做</text>
+    <text x="55" y="245" class="detail">场景与痛点</text><text x="55" y="271" class="detail">价值指标与范围</text><text x="55" y="297" class="detail">优先级与风险</text>
+
+    <circle cx="357" cy="158" r="17" fill="#16a34a"/><text x="357" y="164" text-anchor="middle" class="number">02</text>
+    <text x="387" y="166" class="stage">业务</text>
+    <text x="350" y="207" class="question">业务怎么跑</text>
+    <text x="350" y="245" class="detail">角色与职责</text><text x="350" y="271" class="detail">流程与业务规则</text><text x="350" y="297" class="detail">异常与业务闭环</text>
+
+    <circle cx="652" cy="158" r="17" fill="#d97706"/><text x="652" y="164" text-anchor="middle" class="number">03</text>
+    <text x="682" y="166" class="stage">架构</text>
+    <text x="645" y="207" class="question">系统怎么承载</text>
+    <text x="645" y="245" class="detail">模块边界与职责</text><text x="645" y="271" class="detail">数据、接口与依赖</text><text x="645" y="297" class="detail">技术方案与扩展</text>
+
+    <circle cx="947" cy="158" r="17" fill="#db2777"/><text x="947" y="164" text-anchor="middle" class="number">04</text>
+    <text x="977" y="166" class="stage">功能</text>
+    <text x="940" y="207" class="question">系统具体做什么</text>
+    <text x="940" y="245" class="detail">功能清单与操作</text><text x="940" y="271" class="detail">字段、状态与权限</text><text x="940" y="297" class="detail">交互与验收用例</text>
+
+    <circle cx="1242" cy="158" r="17" fill="#7c3aed"/><text x="1242" y="164" text-anchor="middle" class="number">05</text>
+    <text x="1272" y="166" class="stage">实现</text>
+    <text x="1235" y="207" class="question">怎么开发上线可用</text>
+    <text x="1235" y="245" class="detail">代码与工程落地</text><text x="1235" y="271" class="detail">测试、发布与验收</text><text x="1235" y="297" class="detail">监控、运维与反馈</text>
+  </g>
+
+  <path d="M290 230 H315" stroke="#475569" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M585 230 H610" stroke="#475569" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M880 230 H905" stroke="#475569" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M1175 230 H1200" stroke="#475569" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <rect x="30" y="390" width="1440" height="78" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="55" y="424" class="font" style="font-size: 18px; font-weight: 700;">辅助区</text>
+  <text x="170" y="424" class="font" style="font-size: 18px; fill: #334155;">文档治理 · 技术决策 · 项目状态 · 会议记录 · 历史归档</text>
+  <text x="55" y="451" class="small">记录规则、决策与证据，支撑主流程但不能替代需求、业务、架构、功能和实现结论。</text>
+  <path d="M160 390 C160 365 160 350 160 335" stroke="#94a3b8" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#arrow)"/>
+  <path d="M750 390 C750 365 750 350 750 335" stroke="#94a3b8" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#arrow)"/>
+  <path d="M1340 390 C1340 365 1340 350 1340 335" stroke="#94a3b8" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#arrow)"/>
+</svg>

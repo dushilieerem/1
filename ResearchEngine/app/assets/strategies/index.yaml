@@ -816,3 +816,91 @@ strategies:
       v1:
         file: schaff_trend_cycle_a_share_event_v1.py
         entrypoint: SchaffTrendCycleAShareEventStrategy
+
+  elder_ray_index_a_share_event:
+    name: Elder Ray Index A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [elder, elder_ray, bull_power, bear_power, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: elder_ray_index_a_share_event_v1.py
+        entrypoint: ElderRayIndexAShareEventStrategy
+
+  klinger_volume_oscillator_a_share_event:
+    name: Klinger Volume Oscillator A 股量价趋势
+    strategy_type: volume_trend
+    execution_mode: event
+    current_version: v1
+    tags: [klinger, volume_oscillator, volume, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: klinger_volume_oscillator_a_share_event_v1.py
+        entrypoint: KlingerVolumeOscillatorAShareEventStrategy
+
+  relative_momentum_index_a_share_event:
+    name: Relative Momentum Index A 股多日动量
+    strategy_type: momentum
+    execution_mode: event
+    current_version: v1
+    tags: [rmi, relative_momentum_index, momentum, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: relative_momentum_index_a_share_event_v1.py
+        entrypoint: RelativeMomentumIndexAShareEventStrategy
+
+  fractal_adaptive_moving_average_a_share_event:
+    name: FRAMA 分形自适应移动平均线 A 股趋势
+    strategy_type: trend
+    execution_mode: event
+    current_version: v1
+    tags: [frama, fractal, adaptive_moving_average, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: fractal_adaptive_moving_average_a_share_event_v1.py
+        entrypoint: FractalAdaptiveMovingAverageAShareEventStrategy
+
+  arbr_sentiment_a_share_event:
+    name: ARBR A 股人气意愿
+    strategy_type: sentiment
+    execution_mode: event
+    current_version: v1
+    tags: [arbr, sentiment, price_action, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: arbr_sentiment_a_share_event_v1.py
+        entrypoint: ArbrSentimentAShareEventStrategy
+
+  psy_sentiment_a_share_event:
+    name: PSY A 股心理线
+    strategy_type: sentiment
+    execution_mode: event
+    current_version: v1
+    tags: [psy, sentiment, breadth, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: psy_sentiment_a_share_event_v1.py
+        entrypoint: PsySentimentAShareEventStrategy
+
+  volume_ratio_a_share_event:
+    name: VR A 股成交量比率
+    strategy_type: volume_trend
+    execution_mode: event
+    current_version: v1
+    tags: [vr, volume_ratio, volume, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: volume_ratio_a_share_event_v1.py
+        entrypoint: VolumeRatioAShareEventStrategy
+
+  volume_rate_of_change_a_share_event:
+    name: VROC A 股成交量变动速率
+    strategy_type: volume_trend
+    execution_mode: event
+    current_version: v1
+    tags: [vroc, volume_momentum, volume, trend, a_share, long_only, event, research_only]
+    versions:
+      v1:
+        file: volume_rate_of_change_a_share_event_v1.py
+        entrypoint: VolumeRateOfChangeAShareEventStrategy

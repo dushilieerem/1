@@ -47,14 +47,12 @@ def test_quantile_groups_nan_preserved():
     assert set(valid) == {1, 2}
 
 
-def test_quantile_groups_uses_raw_value_qcut_at_duplicate_boundaries():
-    """重复边界按 qcut 的原始值归属，不强行按 rank 拆开。"""
+def test_quantile_groups_uses_vectorized_rank_at_duplicate_boundaries():
+    """重复值按列顺序稳定拆分，分组结果由 rank 一次性得到。"""
     values = [0.0, 0.0, 0.0, 1.0, 2.0, 3.0]
     fv = pd.DataFrame([values], columns=list("ABCDEF"))
     groups = quantile_groups(fv, n_groups=3).iloc[0].tolist()
-    expected = (
-        3 - pd.qcut(pd.Series(values), 3, labels=False, duplicates="drop")
-    ).tolist()
+    expected = [3, 3, 2, 2, 1, 1]
     assert groups == expected
 
 
@@ -176,9 +174,9 @@ def test_layered_returns_nan_factor():
     fv, close = _make_panel(periods=5, n=10)
     fv.iloc[0, 0] = np.nan  # S0 首日 NaN
     lr = layered_returns(fv, close, n_groups=2, rebalance="monthly")
-    # 两组时 qcut 的低值组为 Q2，含一只 2% 标的，等权收益为 1.2%。
-    assert abs(lr["Q2"].iloc[0] - 0.012) < 1e-9
-    assert abs(lr["Q2"].iloc[1] - 0.012) < 1e-9
+    # rank 分组后，首个有效的低值组为 S1-S4，等权收益为 1%。
+    assert abs(lr["Q2"].iloc[0] - 0.01) < 1e-9
+    assert abs(lr["Q2"].iloc[1] - 0.01) < 1e-9
 
 
 def test_layered_returns_all_equal_factor_breaks_ties_by_column_order():

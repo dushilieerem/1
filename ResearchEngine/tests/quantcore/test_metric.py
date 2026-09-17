@@ -5,8 +5,9 @@ import math
 import numpy as np
 import pandas as pd
 
-from app.quantcore import MetricContext, MetricEngine
-from app.quantcore.metric.metrics import (
+from app.models.metric import MetricContext
+from app.services.metric.engine import MetricEngine
+from app.services.metric.metrics.standard import (
     AnnualReturn,
     CalmarRatio,
     InformationCoefficient,
@@ -118,3 +119,29 @@ def test_metric_engine_calculate_all():
     for name in ["sharpe", "volatility", "win_rate", "max_drawdown", "annual_return"]:
         assert name in result
         assert not math.isnan(result[name])
+
+
+def test_metric_engine_accepts_single_metric_name_and_exposes_registry_snapshot():
+    r = pd.Series([0.01, -0.02, 0.03, 0.0, 0.02])
+    engine = MetricEngine()
+
+    result = engine.calculate("sharpe", _ctx(returns=r))
+
+    assert list(result) == ["sharpe"]
+    assert "sharpe" in engine.names
+    assert engine.get_metric("sharpe") is engine.metrics["sharpe"]
+
+
+def test_metric_engine_register_many_accepts_mapping():
+    # The test double must inherit BaseMetric to exercise the same public
+    # validation as production metrics.
+    from app.services.metric.base import BaseMetric
+
+    class _TypedConstantMetric(BaseMetric):
+        name = "constant"
+
+        def calculate(self, ctx):
+            return 1
+
+    engine = MetricEngine(register_defaults=False, metrics={"alias": _TypedConstantMetric()})
+    assert engine.calculate_one("constant", _ctx()) == 1.0

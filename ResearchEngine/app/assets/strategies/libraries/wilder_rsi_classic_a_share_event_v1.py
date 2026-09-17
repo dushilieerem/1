@@ -14,7 +14,7 @@ class WilderRsiClassicAShareEventStrategy:
 
     execution_mode = "event"
     required_fields = frozenset({"open", "high", "low", "close"})
-    required_market_state = frozenset({"suspended", "limit_up", "limit_down"})
+    required_market_state = frozenset({"up_and_down_status"})
     execution_assumptions = frozenset({"daily_open", "no_slippage"})
 
     def __init__(

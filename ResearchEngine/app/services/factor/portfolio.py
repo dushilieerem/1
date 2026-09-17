@@ -2,24 +2,21 @@
 
 历史职责：把因子值转化为可衡量的组合净值，用于收益/风险/胜率/换手等指标。
 
-自适配层改造后，本模块仅保留**薄包装**用于向后兼容
-（``app.__init__`` 导出与既有调用方）。真实逻辑已迁移至
-:mod:`app.quantcore.backtest.adapter`：
-
-- 因子值 -> 目标权重：:class:`app.quantcore.backtest.adapter.FactorQuantileStrategy`
-- 目标权重 -> 净值/收益/持仓：:class:`app.quantcore.backtest.adapter.NativeEngine`
-
-新代码应直接用 ``IBacktestEngine`` + ``IStrategy``，按 ``backtest.engine`` 切后端。
+重构后，本模块仅保留**兼容门面**（``app.__init__`` 导出与既有调用方）。真实逻辑由
+QuantCore 的 ``PortfolioEngine`` 和 ``MetricEngine`` 提供；策略侧的
+``FactorQuantileStrategy`` / ``NativeEngine`` 不再参与因子组合构建。
 """
 
 from __future__ import annotations
 
 from typing import Tuple
 
-import numpy as np  # noqa: F401  (forward_returns 等保留 numpy 依赖，便于外部扩展)
 import pandas as pd
 
-from app.quantcore.data._util import first_panel_date, resolve_universe
+from app.services.metric.engine import MetricEngine
+from app.services.portfolio.engine import PortfolioEngine
+from app.utils.data import first_panel_date
+from app.services.data.universe import resolve_universe
 
 
 def build_close_panel(data_engine, universe, start=None, end=None) -> pd.DataFrame:
@@ -45,9 +42,9 @@ def forward_returns(close_panel: pd.DataFrame, horizon: int = 1) -> pd.DataFrame
 def _rebalance_mask(index: pd.DatetimeIndex, freq: str) -> pd.Series:
     """生成布尔序列，标记每个日期是否为调仓日（首行必为调仓日）。
 
-    已迁移至 :class:`app.quantcore.backtest.adapter.calendar.PandasCalendar`；此处保留薄包装
+    已迁移至 :class:`app.services.data.calendar.PandasCalendar`；此处保留薄包装
     以兼容既有导入。"""
-    from app.quantcore.backtest.adapter.calendar import PandasCalendar
+    from app.services.data.calendar import PandasCalendar
 
     return PandasCalendar().rebalance_mask(index, freq)
 
@@ -64,8 +61,8 @@ def build_factor_portfolio(
     策略：每个调仓日按因子值截面排名，做多因子值最大的 ``stock_num`` 只（等权）；
     若 ``long_short`` 另做空因子值最小的 ``stock_num`` 只。持仓至下一调仓日。
 
-    薄包装：委托 :class:`NativeEngine` + :class:`FactorQuantileStrategy`，与历史实现**逐位等价**
-    （默认 ``cost=0``，固定本金口径 ``equity = 1.0 + port_ret.cumsum()``）。
+    薄包装：委托 ``PortfolioEngine`` + ``MetricEngine``，保持旧的返回三元组和
+    收益/展示净值时序。
 
     Returns
     -------
@@ -74,19 +71,17 @@ def build_factor_portfolio(
     positions : pd.DataFrame
         实际持有的权重 ``日期×标的``，用于换手率。
     """
-    from app.quantcore.backtest.adapter import (
-        BacktestConfig,
-        FactorQuantileStrategy,
-        NativeEngine,
-    )
-
-    strategy = FactorQuantileStrategy(
+    portfolio = PortfolioEngine().build(
         factor_values,
         close_panel,
+        groups=None,
         rebalance=rebalance,
         stock_num=stock_num,
-        long_short=long_short,
+        portfolio_type="long_short" if long_short else "long_only",
     )
-    signals = strategy.generate_signals()
-    result = NativeEngine().run(signals, BacktestConfig())
-    return result.equity_curve, result.returns, result.positions
+    evaluation = MetricEngine().evaluate(portfolio)
+    return (
+        evaluation["equity_curve"],
+        evaluation["returns"],
+        evaluation["positions"],
+    )

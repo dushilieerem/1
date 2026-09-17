@@ -9,7 +9,7 @@ class DogsOfTheDowLowVolAShareEventStrategy:
     """年度按高股息前 30% 内低波动筛选的现金多头策略。"""
 
     execution_mode = "event"
-    required_fields = frozenset({"open", "high", "low", "close", "pe_ratio", "dividend_yield"})
+    required_fields = frozenset({"open", "high", "low", "close", "pe_ttm", "dividend_yield_ttm"})
 
     def __init__(self, universe: list[str] | None = None, max_holdings: int = 10,
                  dividend_top: float = 0.30, vol_days: int = 250) -> None:
@@ -31,11 +31,11 @@ class DogsOfTheDowLowVolAShareEventStrategy:
     def rebalance(self, context) -> None:
         holdings = set(context.portfolio.positions)
         symbols = list(dict.fromkeys((self.universe or list(context.data.symbols)) + list(holdings)))
-        history = context.data.history(symbols, ["close", "pe_ratio", "dividend_yield"], self.vol_days)
+        history = context.data.history(symbols, ["close", "pe_ttm", "dividend_yield_ttm"], self.vol_days)
         rows = []
         for symbol in symbols:
             close = history["close"][symbol].dropna()
-            pe, dividend = history["pe_ratio"][symbol].dropna(), history["dividend_yield"][symbol].dropna()
+            pe, dividend = history["pe_ttm"][symbol].dropna(), history["dividend_yield_ttm"][symbol].dropna()
             if len(close) < self.vol_days or pe.empty or dividend.empty or pe.iloc[-1] <= 0 or dividend.iloc[-1] <= 0:
                 continue
             rows.append((symbol, float(dividend.iloc[-1]), float(close.pct_change().std())))

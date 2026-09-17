@@ -1,1 +1,1 @@
-"""因子回测用例与分析辅助。"""
+"""ResearchEngine services 包。"""

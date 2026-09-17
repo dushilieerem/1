@@ -10,7 +10,7 @@ class NeffLowPeAShareEventStrategy:
 
     execution_mode = "event"
     required_fields = frozenset({
-        "open", "high", "low", "close", "pe_ratio", "dividend_yield",
+        "open", "high", "low", "close", "pe_ttm", "dividend_yield_ttm",
         "inc_net_profit_year_on_year",
     })
 
@@ -41,20 +41,20 @@ class NeffLowPeAShareEventStrategy:
         symbols = list(dict.fromkeys(universe + list(holdings)))
         history = context.data.history(
             symbols,
-            ["close", "pe_ratio", "dividend_yield", "inc_net_profit_year_on_year"],
+            ["close", "pe_ttm", "dividend_yield_ttm", "inc_net_profit_year_on_year"],
             1,
         )
         latest = self._latest(history, symbols)
         if latest.empty:
             return
         latest = latest[
-            (latest.pe_ratio > self.min_pe) & (latest.pe_ratio < self.max_pe)
+            (latest.pe_ttm > self.min_pe) & (latest.pe_ttm < self.max_pe)
             & (latest.inc_net_profit_year_on_year > self.min_growth)
-            & (latest.dividend_yield > self.min_dividend)
+            & (latest.dividend_yield_ttm > self.min_dividend)
         ].copy()
         latest["ratio"] = (
-            latest.inc_net_profit_year_on_year + latest.dividend_yield
-        ) / latest.pe_ratio
+            latest.inc_net_profit_year_on_year + latest.dividend_yield_ttm
+        ) / latest.pe_ttm
         target = latest[latest.ratio >= self.min_ratio].sort_values("ratio", ascending=False).head(self.max_holdings)
         target_symbols = set(target.index)
         for symbol in holdings - target_symbols:

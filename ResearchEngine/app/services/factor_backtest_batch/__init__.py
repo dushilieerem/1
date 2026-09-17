@@ -2,13 +2,11 @@
 
 from app.services.factor_backtest_batch.coordinator import (
     FactorBacktestBatchCoordinator,
-    FactorBacktestBatchExperiment,
-    FactorBacktestBatchProfile,
     FactorBatchSkip,
-    FactorCatalogItem,
-    FactorOutcome,
     run_factor_backtest_batch,
 )
+from app.models.factor_batch import FactorBacktestBatchProfile, FactorCatalogItem, FactorOutcome
+from app.services.factor.experiment import FactorBacktestExperiment
 from app.services.factor_backtest_batch.query import FactorBacktestBatchQuery
 from app.services.factor_backtest_batch.task_registry import (
     FactorBacktestBatchTaskRegistry,
@@ -17,7 +15,7 @@ from app.services.factor_backtest_batch.task_registry import (
 
 __all__ = [
     "FactorBacktestBatchCoordinator",
-    "FactorBacktestBatchExperiment",
+    "FactorBacktestExperiment",
     "FactorBacktestBatchProfile",
     "FactorBatchSkip",
     "FactorCatalogItem",

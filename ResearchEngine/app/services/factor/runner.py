@@ -1,8 +1,9 @@
 """核心：因子代码字符串 -> 回测 -> 序列化结果。
 
-复用 :class:`app.FactorLoader` + :class:`app.ExperimentManager`
-+ Native 回测适配器，**不新写回测逻辑**，只把 SDK 调用包成可被
-HTTP 路由调用的纯函数。
+复用 :class:`app.services.factor.loader.FactorLoader`、
+:class:`app.services.experiment.manager.ExperimentManager` 和
+:class:`app.services.backtest.engine.BacktestEngine`，**不新写回测逻辑**，只把请求调用
+包成可被 HTTP 路由调用的纯函数。
 
 所有异常（语法错 / 导入错 / 运行错 / 因子名不存在）都会被转换为结构化错误。
 内部同步包装函数仍返回 ``BacktestResponse.error``；异步 HTTP 任务路由将其映射为
@@ -15,15 +16,11 @@ import os
 import asyncio
 import hashlib
 import json
-import shutil
-import sys
-import tempfile
+import math
 import time
-import uuid
 from pathlib import Path
 
 import pandas as pd
-import yaml
 
 from app.schemas.backtest import (
     DateRange,
@@ -71,113 +68,27 @@ from app.services.factor.metrics import (
     _geometric_annual_return,
     _safe_metric,
 )
-from app.services.experiment import Experiment, ExperimentContext, FactorExperiment, StrategyExperiment
+from app.services.experiment.base import Experiment
+from app.services.data.engine import DataEngine
+from app.services.experiment.strategy import StrategyExperiment
+from app.services.backtest.engine import BacktestEngine
+from app.services.factor.experiment import FactorBacktestExperiment
+from app.services.factor.loader import (
+    _builtin_factor_library_entry,
+    _builtin_factor_library_index,
+    _load_builtin_factor_library,
+    _load_factor_from_builtin_library,
+    _load_factor_from_code,
+    _wrap_factor_code,
+    builtin_factor_library_names,
+)
+from app.services.factor.sqlite_loader import (
+    FactorDatabaseError,
+    SQLiteFactorRepository,
+)
+from app.models.factor_backtest import FactorBacktestResult
+from app.models.factor_backtest import FactorBacktestSpec
 from app.services.experiment.manager import ExperimentHandle, ExperimentManager
-
-
-def _builtin_factor_library_index() -> dict[str, dict]:
-    """读取因子库索引，作为 API 内置库注册的唯一来源。
-
-    ``FactorLoader`` 仍负责加载库的 Python 实现，但 API 是否允许某个
-    ``library_name`` 只由 ``app/assets/factors/index.yaml`` 决定。索引文件
-    位于 ``factor_library_dir`` 下，因此测试和部署都可以通过
-    ``SVQUANT_FACTOR_DIR`` 切换整套因子资产。
-    """
-    from app.repositories.catalogs.paths import factor_index_path
-
-    index_path = factor_index_path()
-    if not index_path.is_file():
-        raise FileNotFoundError(f"因子库索引不存在: {index_path}")
-
-    try:
-        payload = yaml.safe_load(index_path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as exc:
-        raise ValueError(f"因子库索引无法解析: {index_path}") from exc
-
-    libraries = payload.get("libraries") if isinstance(payload, dict) else None
-    if not isinstance(libraries, dict):
-        raise ValueError(f"因子库索引缺少 libraries 映射: {index_path}")
-
-    invalid = [
-        name for name, metadata in libraries.items()
-        if not isinstance(name, str) or not name or not isinstance(metadata, dict)
-    ]
-    if invalid:
-        raise ValueError(f"因子库索引包含无效库条目: {invalid}")
-    return libraries
-
-
-def builtin_factor_library_names() -> tuple[str, ...]:
-    """返回 ``index.yaml`` 中登记的内置因子库名。"""
-    return tuple(sorted(_builtin_factor_library_index()))
-
-
-def _builtin_factor_library_entry(library_name: str) -> tuple[Path, str, dict]:
-    """解析并校验一个 YAML 登记的库，返回目录、模块名和元数据。"""
-    from app.repositories.catalogs.paths import factor_library_dir
-
-    libraries = _builtin_factor_library_index()
-    metadata = libraries.get(library_name)
-    if metadata is None:
-        raise ValueError(
-            f"不支持的内置因子库 {library_name!r}；可用: "
-            f"{list(builtin_factor_library_names())}"
-        )
-
-    file_name = metadata.get("file")
-    file_path = Path(file_name) if isinstance(file_name, str) else None
-    factor_dir = factor_library_dir()
-    if (
-        file_path is None
-        or file_path.name != file_name
-        or file_path.suffix != ".py"
-        or not (factor_dir / file_path).is_file()
-    ):
-        raise ValueError(
-            f"因子库 {library_name!r} 在 index.yaml 中声明的实现文件无效: "
-            f"{file_name!r}"
-        )
-    return factor_dir, file_path.stem, metadata
-
-
-def _load_builtin_factor_library(library_name: str):
-    """按 ``index.yaml`` 的文件声明加载一个内置因子库。"""
-    from app import FactorLoader
-
-    factor_dir, module_name, metadata = _builtin_factor_library_entry(library_name)
-    loader = FactorLoader(factor_dir=str(factor_dir))
-    library = loader.load(module_name)
-
-    registered_factors = metadata.get("factors")
-    if not isinstance(registered_factors, list):
-        raise ValueError(
-            f"因子库 {library_name!r} 尚未由 factor_catalog 同步完整因子清单"
-        )
-    registered_names = [
-        item.get("name")
-        for item in registered_factors
-        if isinstance(item, dict) and isinstance(item.get("name"), str)
-    ]
-    actual_names = sorted(loader.factors)
-    if len(registered_names) != len(set(registered_names)) or sorted(registered_names) != actual_names:
-        missing = sorted(set(actual_names) - set(registered_names))
-        extra = sorted(set(registered_names) - set(actual_names))
-        raise ValueError(
-            f"因子库 {library_name!r} 与 index.yaml 未同步；"
-            f"源码新增未登记: {missing}; 索引中不存在: {extra}"
-        )
-    if metadata.get("factor_count") != len(actual_names):
-        raise ValueError(
-            f"因子库 {library_name!r} 的 factor_count 与源码不一致；"
-            f"索引: {metadata.get('factor_count')}; 源码: {len(actual_names)}"
-        )
-    expected_class = metadata.get("class")
-    if expected_class and type(library).__name__ != expected_class:
-        raise ValueError(
-            f"因子库 {library_name!r} 的 class 与源码不一致；"
-            f"索引: {expected_class}; 源码: {type(library).__name__}"
-        )
-    return loader, library
 
 
 def _cache_enabled() -> bool:
@@ -195,8 +106,8 @@ def _cache_int_env(name: str, default: int) -> int:
 
 def _factor_cache():
     """构造因子回测缓存；缓存异常由调用方降级处理。"""
-    from app.repositories.catalogs.paths import backtest_cache_dir
-    from app.repositories.results.cache import FileBacktestCache
+    from app.utils.paths import backtest_cache_dir
+    from app.database.results.cache_impl import FileBacktestCache
 
     return FileBacktestCache(
         backtest_cache_dir(),
@@ -205,93 +116,468 @@ def _factor_cache():
     )
 
 
-def _factor_cache_key(req: FactorBacktestRequest, cache) -> str:
-    return cache.make_key(
-        req.model_dump(mode="json"),
-        cache.data_fingerprint(Path(_resolve_data_dir(None))),
+def _request_factor_source_hash(req: FactorBacktestRequest) -> str:
+    sources: list[tuple[str, str]] = []
+    if req.factor_code is not None:
+        sources.append(("factor_code", hashlib.sha256(req.factor_code.encode("utf-8")).hexdigest()))
+    database = None
+    try:
+        database = SQLiteFactorRepository()
+    except (FileNotFoundError, FactorDatabaseError):
+        # 迁移期允许没有外部数据库的旧开发环境继续使用文件库。
+        pass
+    for library_name in req.library_names:
+        database_library = None
+        if database is not None:
+            try:
+                database_library = database.get_library(library_name)
+            except (KeyError, FileNotFoundError, FactorDatabaseError):
+                database_library = None
+        if database_library is not None and database is not None:
+            if req.factor_code is None:
+                try:
+                    record = database.get_factor(
+                        req.factor_name,
+                        library_name=database_library.library_name,
+                    )
+                    source_hash = database.source_hash(record)
+                except Exception:  # noqa: BLE001 - 统一在实际加载时报告不存在因子
+                    source_hash = "missing"
+            else:
+                # 自定义源码可以复用 SQLite 库的方法；此时整个数据库/工具
+                # 版本都属于源码的执行依赖。
+                source_hash = database.catalog_signature()
+            sources.append((library_name, source_hash))
+            continue
+        try:
+            factor_dir, file_stem, _metadata = _builtin_factor_library_entry(library_name)
+            path = factor_dir / f"{file_stem}.py"
+            sources.append((library_name, hashlib.sha256(path.read_bytes()).hexdigest()))
+        except Exception:
+            sources.append((library_name, "missing"))
+    # 内置单因子批量目录直接记录实现文件 SHA；单因子入口必须使用同一
+    # 原始 SHA，才能让相同规格跨入口共享 spec/cache 身份。
+    if len(sources) == 1:
+        return sources[0][1]
+    payload = json.dumps(sources, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _request_spec(req: FactorBacktestRequest) -> FactorBacktestSpec:
+    universe = (
+        tuple(req.universe_snapshot.symbols)
+        if req.universe_snapshot is not None
+        else req.universe
+    )
+    return FactorBacktestSpec(
+        factor_name=req.factor_name,
+        factor_source_hash=_request_factor_source_hash(req),
+        factor_code=req.factor_code,
+        library_names=tuple(req.library_names),
+        universe=universe,
+        universe_snapshot=req.universe_snapshot,
+        start=req.start,
+        end=req.end,
+        benchmark=req.benchmark,
+        benchmark_snapshot=req.benchmark_snapshot,
+        portfolio_type=req.portfolio_type,
+        rebalance_days=req.rebalance_days,
+        groups=req.groups,
+        commission_rate=req.commission_rate,
+        stamp_tax=req.stamp_tax,
+        slippage_rate=req.slippage_rate,
+        filter_limit_up=req.filter_limit_up,
+        filter_suspended=req.filter_suspended,
+        # 兼容旧的总开关语义：核心流程只接收已经归一化的有效开关。
+        filters_enabled=bool(req.filter_limit_up or req.filter_suspended),
+        winsorize=req.winsorize,
+        standardize=req.standardize,
+        analysis_level=req.analysis_level,
+        engine="native",
+        strict_as_of=True,
     )
 
 
+def _factor_cache_key(spec: FactorBacktestSpec, cache, *, data_context=None) -> str:
+    if isinstance(spec, FactorBacktestRequest):
+        spec = _request_spec(spec)
+    data_dir = Path(
+        getattr(data_context, "data_dir", None) or _resolve_data_dir(None)
+    )
+    release_id = getattr(data_context, "release_id", None)
+    return cache.make_key(
+        {
+            **spec.computation_payload(),
+            "data_release_id": release_id,
+            "execution_version": spec.execution_version,
+            "metric_version": spec.metric_version,
+        },
+        cache.data_fingerprint(data_dir),
+    )
+
+
+def _cache_value(value):
+    """把标准结果中的 pandas/NumPy 值编码为稳定 JSON 结构。"""
+    if value is None or value is pd.NaT or value is pd.NA:
+        return None
+    if isinstance(value, pd.Timestamp):
+        return value.isoformat()
+    if isinstance(value, pd.Series):
+        return {
+            "__type__": "series",
+            "name": _cache_value(value.name),
+            "index": [_cache_value(item) for item in value.index],
+            "data": [_cache_value(item) for item in value.tolist()],
+        }
+    if isinstance(value, pd.DataFrame):
+        return {
+            "__type__": "dataframe",
+            "index": [_cache_value(item) for item in value.index],
+            "columns": [_cache_value(item) for item in value.columns],
+            "data": [
+                [_cache_value(item) for item in row]
+                for row in value.to_numpy().tolist()
+            ],
+        }
+    if isinstance(value, dict):
+        return {str(key): _cache_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_cache_value(item) for item in value]
+    if hasattr(value, "model_dump"):
+        return _cache_value(value.model_dump(mode="json"))
+    if hasattr(value, "item"):
+        return _cache_value(value.item())
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _restore_index(values: list, *, datetime_index: bool = True):
+    if datetime_index and values:
+        parsed = pd.to_datetime(values, errors="coerce")
+        if not parsed.isna().any():
+            return parsed
+    return pd.Index(values)
+
+
+def _restore_cache_value(value, *, datetime_index: bool = True):
+    if not isinstance(value, dict):
+        if isinstance(value, list):
+            return [
+                _restore_cache_value(item, datetime_index=datetime_index)
+                for item in value
+            ]
+        return value
+    value_type = value.get("__type__")
+    if value_type == "series":
+        return pd.Series(
+            [
+                _restore_cache_value(item, datetime_index=False)
+                for item in value.get("data", [])
+            ],
+            index=_restore_index(
+                value.get("index", []), datetime_index=datetime_index
+            ),
+            name=value.get("name"),
+        )
+    if value_type == "dataframe":
+        return pd.DataFrame(
+            [
+                _restore_cache_value(row, datetime_index=False)
+                for row in value.get("data", [])
+            ],
+            index=_restore_index(
+                value.get("index", []), datetime_index=datetime_index
+            ),
+            columns=value.get("columns", []),
+        )
+    return {
+        key: _restore_cache_value(item, datetime_index=datetime_index)
+        for key, item in value.items()
+    }
+
+
+def _factor_request_from_spec(spec: FactorBacktestSpec) -> FactorBacktestRequest:
+    """为批量缓存复用现有 HTTP 投影器构造等价 DTO。"""
+    payload = {
+        "factor_code": spec.factor_code,
+        "library_name": (
+            spec.library_names[0]
+            if len(spec.library_names) == 1
+            else list(spec.library_names)
+        ),
+        "factor_name": spec.factor_name,
+        "start": spec.start,
+        "end": spec.end,
+        "portfolio_type": spec.portfolio_type,
+        "rebalance_days": spec.rebalance_days,
+        "groups": spec.groups,
+        "benchmark": spec.benchmark,
+        "commission_rate": spec.commission_rate,
+        "stamp_tax": spec.stamp_tax,
+        "slippage_rate": spec.slippage_rate,
+        "filter_limit_up": spec.filter_limit_up,
+        "filter_suspended": spec.filter_suspended,
+        "winsorize": spec.winsorize,
+        "standardize": spec.standardize,
+        "analysis_level": spec.analysis_level,
+    }
+    if spec.universe_snapshot is not None:
+        payload["universe_snapshot"] = spec.universe_snapshot
+    else:
+        payload["universe"] = str(spec.universe)
+    if spec.benchmark_snapshot is not None:
+        payload.pop("benchmark", None)
+        payload["benchmark_snapshot"] = spec.benchmark_snapshot
+    return FactorBacktestRequest(**payload)
+
+
+def _factor_standard_report(
+    execution: FactorBacktestResult,
+    response: FactorBacktestResponse,
+) -> dict:
+    """生成 API 与批量任务共享的标准报告缓存载荷。"""
+    result = execution.result_manager
+    return {
+        "cache_format": "factor-standard-report-v2",
+        "standard": {
+            "spec": execution.spec.to_dict(),
+            "spec_hash": execution.spec_hash,
+            "data_release_id": execution.data_release_id,
+            "actual_end": execution.actual_end,
+            "metrics": _cache_value(result.metrics),
+            "factor_values": _cache_value(getattr(result, "factor_values", None)),
+            "equity_curve": _cache_value(execution.equity_curve),
+            "returns": _cache_value(execution.returns),
+            "positions": _cache_value(execution.positions),
+            "benchmark_equity": _cache_value(execution.benchmark_equity),
+            "factor_analysis": _cache_value(execution.factor_analysis),
+            "quantile_metrics": _cache_value(list(execution.quantile_metrics)),
+            "predictive_metrics": _cache_value(execution.predictive_metrics),
+            "meta": _cache_value(result.meta),
+        },
+        # HTTP 是标准结果的一个外围投影，保留它可以让现有 API 缓存命中零改动。
+        "http_response": response.model_dump(mode="json"),
+    }
+
+
+def _factor_execution_from_standard_report(
+    spec: FactorBacktestSpec,
+    payload: dict,
+) -> FactorBacktestResult | None:
+    if payload.get("cache_format") != "factor-standard-report-v2":
+        return None
+    standard = payload.get("standard")
+    if not isinstance(standard, dict):
+        return None
+    from app.services.results.manager import ResultManager
+
+    actual_end = standard.get("actual_end")
+    result = ResultManager(
+        metrics=_restore_cache_value(
+            standard.get("metrics", {}), datetime_index=False
+        ),
+        factor_values=_restore_cache_value(
+            standard.get("factor_values"), datetime_index=True
+        ),
+        equity_curve=_restore_cache_value(
+            standard.get("equity_curve"), datetime_index=True
+        ),
+        returns=_restore_cache_value(
+            standard.get("returns"), datetime_index=True
+        ),
+        positions=_restore_cache_value(
+            standard.get("positions"), datetime_index=True
+        ),
+        meta=_restore_cache_value(
+            standard.get("meta", {}), datetime_index=False
+        ),
+    )
+    result.factor_analysis = _restore_cache_value(
+        standard.get("factor_analysis", {}), datetime_index=True
+    )
+    benchmark = _restore_cache_value(
+        standard.get("benchmark_equity"), datetime_index=True
+    )
+    if result.equity_curve is None or benchmark is None:
+        return None
+    return FactorBacktestResult(
+        spec=spec,
+        result_manager=result,
+        benchmark_equity=benchmark,
+        quantile_metrics=tuple(
+            _restore_cache_value(
+                standard.get("quantile_metrics", []), datetime_index=False
+            )
+        ),
+        predictive_metrics=_restore_cache_value(
+            standard.get("predictive_metrics", {}), datetime_index=False
+        ),
+        data_release_id=standard.get("data_release_id"),
+        actual_end=actual_end,
+    )
+
+
+def _run_cached_standard_factor_backtest(
+    spec: FactorBacktestSpec,
+    execute,
+    *,
+    data_context=None,
+) -> FactorBacktestResult:
+    """批量入口的缓存策略；计算仍由传入的统一 executor 回调完成。"""
+    if not _cache_enabled():
+        return execute()
+    try:
+        cache = _factor_cache()
+        key = _factor_cache_key(spec, cache, data_context=data_context)
+        cached = cache.get(key)
+        if cached is not None:
+            execution = _factor_execution_from_standard_report(spec, cached)
+            if execution is not None:
+                return execution
+        with cache.lock(key) as acquired:
+            cached = cache.get(key)
+            if cached is not None:
+                execution = _factor_execution_from_standard_report(spec, cached)
+                if execution is not None:
+                    return execution
+    except Exception:  # noqa: BLE001 - 缓存故障不得改变回测可用性
+        return execute()
+    execution = execute()
+    try:
+        response = _serialize_factor_execution(
+            _factor_request_from_spec(execution.spec),
+            execution,
+        )
+        if acquired and response.error is None:
+            cache.set(key, _factor_standard_report(execution, response))
+    except Exception:  # noqa: BLE001 - 写缓存/投影失败不重复计算
+        pass
+    return execution
+
+
 def _run_cached_factor_backtest(
-    req: FactorBacktestRequest, cache, key: str, *, data_context=None
+    req: FactorBacktestRequest,
+    cache,
+    key: str,
+    *,
+    execute,
+    data_context=None,
 ) -> tuple[FactorBacktestResponse, str]:
     """在线程池中完成缓存复核、文件锁协调和实际因子回测。"""
     try:
         cached = cache.get(key)
         if cached is not None:
-            return FactorBacktestResponse.model_validate(cached), "HIT"
+            payload = (
+                cached.get("http_response", cached)
+                if isinstance(cached, dict)
+                else cached
+            )
+            return FactorBacktestResponse.model_validate(payload), "HIT"
 
         with cache.lock(key) as acquired:
             cached = cache.get(key)
             if cached is not None:
-                return FactorBacktestResponse.model_validate(cached), "HIT"
-            result = _run_factor_backtest_uncached(req, data_context=data_context)
-            if acquired and result.error is None:
-                try:
-                    cache.set(key, result.model_dump(mode="json"))
-                except Exception:  # noqa: BLE001 写缓存失败不重复执行回测
-                    return result, "BYPASS"
-            return result, "MISS"
+                payload = (
+                    cached.get("http_response", cached)
+                    if isinstance(cached, dict)
+                    else cached
+                )
+                return FactorBacktestResponse.model_validate(payload), "HIT"
     except Exception:  # noqa: BLE001 缓存不可用不得阻断研究回测
-        return _run_factor_backtest_uncached(req, data_context=data_context), "BYPASS"
+        execution = execute()
+        return _serialize_factor_execution(req, execution), "BYPASS"
+    execution = execute()
+    result = _serialize_factor_execution(req, execution)
+    if acquired and result.error is None:
+        try:
+            cache.set(key, _factor_standard_report(execution, result))
+        except Exception:  # noqa: BLE001 写缓存失败不重复执行回测
+            return result, "BYPASS"
+    return result, "MISS"
 
 
-def _factor_task_key(req: FactorBacktestRequest) -> str:
-    """生成进程内同请求去重键，不读取行情文件。"""
+def _factor_task_key(
+    req: FactorBacktestRequest,
+    *,
+    data_release_id: str | None = None,
+) -> str:
+    """按统一规格生成进程内同规格去重键。"""
 
-    payload = json.dumps(
-        req.model_dump(mode="json"),
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return "factor-request:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return "factor-spec:" + _request_spec(req).identity(data_release_id=data_release_id)
 
 
 def _run_factor_backtest_job(
     req: FactorBacktestRequest,
     *,
+    spec: FactorBacktestSpec | None = None,
+    execute=None,
     data_context=None,
 ) -> tuple[FactorBacktestResponse, str]:
     """在线程池中计算行情指纹、读取缓存并执行因子回测。"""
 
-    if not _cache_enabled():
+    if execute is None:
+        # 旧内部调用兼容：正式 Manager 任务始终传入统一执行回调。
         return _run_factor_backtest_uncached(req, data_context=data_context), "BYPASS"
+    spec = spec or _request_spec(req)
+
+    if not _cache_enabled():
+        return _serialize_factor_execution(req, execute()), "BYPASS"
 
     try:
         cache = _factor_cache()
-        key = _factor_cache_key(req, cache)
+        key = _factor_cache_key(spec, cache, data_context=data_context)
     except Exception:  # noqa: BLE001 缓存不可用不得阻断研究回测
-        return _run_factor_backtest_uncached(req, data_context=data_context), "BYPASS"
-    return _run_cached_factor_backtest(req, cache, key, data_context=data_context)
-
-
-class FactorBacktestExperiment(Experiment[tuple[FactorBacktestResponse, str]]):
-    """API 因子回测请求的 Experiment 适配器。"""
-
-    def __init__(self, request: FactorBacktestRequest) -> None:
-        self.request = request
-
-    def run(self, context: ExperimentContext) -> tuple[FactorBacktestResponse, str]:
-        return _run_factor_backtest_job(self.request, data_context=context.market)
+        return _serialize_factor_execution(req, execute()), "BYPASS"
+    return _run_cached_factor_backtest(
+        req,
+        cache,
+        key,
+        execute=execute,
+        data_context=data_context,
+    )
 
 
 def submit_factor_backtest(
     req: FactorBacktestRequest,
     manager: ExperimentManager,
-) -> ExperimentHandle[tuple[FactorBacktestResponse, str]]:
+) -> ExperimentHandle[Any]:
     """只创建因子回测任务；缓存扫描和行情读取均在线程池中执行。"""
 
+    spec = _request_spec(req)
+    try:
+        data_release_id = getattr(DataEngine.get_instance(), "release_id", "unknown")
+    except Exception:  # noqa: BLE001 - 由 Manager.submit/worker 统一暴露运行时状态
+        data_release_id = None
+    engine = BacktestEngine()
+
+    def run_policy(execute):
+        return _run_factor_backtest_job(
+            req,
+            spec=spec,
+            execute=execute,
+            data_context=DataEngine.get_instance(),
+        )
+
     return manager.submit(
-        FactorBacktestExperiment(req),
-        key=_factor_task_key(req),
+        FactorBacktestExperiment(spec, engine=engine, run_policy=run_policy),
+        key=_factor_task_key(req, data_release_id=data_release_id),
         lane="interactive",
-        metadata={"type": "factor", "cache": "PENDING"},
+        metadata={
+            "type": "factor",
+            "cache": "PENDING",
+            "data_release_id": data_release_id,
+            "spec_hash": spec.identity(data_release_id=data_release_id),
+        },
     )
 
 
 def _unpack_factor_result(
-    handle: ExperimentHandle[tuple[FactorBacktestResponse, str]], response=None
+    handle: ExperimentHandle[Any], response=None
 ) -> FactorBacktestResponse:
     result, cache_status = handle.result()
     if response is not None:
@@ -323,176 +609,46 @@ async def run_factor_backtest_async(
     return result
 
 
-def _wrap_factor_code(factor_code: str) -> str:
-    """自动补全因子代码：用户只写函数体，系统添加 import 和 class 头。"""
-    wrapped = (
-        "from app.quantcore import FactorLibrary\n\n"
-        "class UserFactorLibrary(FactorLibrary):\n"
-        "    author = \"user\"\n\n"
-    )
-    for line in factor_code.splitlines():
-        if line.strip():
-            wrapped += f"    {line}\n"
-        else:
-            wrapped += "\n"
-    return wrapped
-
-
-def _load_factor_from_code(
-    factor_code: str, factor_name: str, library_names: list[str] | None = None,
-):
-    """把因子源码写到临时文件，用 :class:`FactorLoader` 加载，取出指定因子。
-
-    因子对象本身是内存中的活实例，临时文件加载完即可清理。
-    因子代码自动补全 FactorLibrary 类头，用户只需写函数体。
-    """
-    from app import FactorLoader
-
-    full_code = _wrap_factor_code(factor_code)
-
-    tmpdir = tempfile.mkdtemp(prefix="svquant_api_")
-    mod_name = f"user_factor_{uuid.uuid4().hex[:8]}"
-    factor_file = Path(tmpdir) / f"{mod_name}.py"
-    factor_file.write_text(full_code, encoding="utf-8")
-
-    try:
-        loader = FactorLoader(factor_dir=str(tmpdir))
-        library = loader.load(mod_name)
-        _attach_builtin_library_methods(library, library_names or [])
-        if factor_name not in loader.factors:
-            raise KeyError(
-                f"因子 {factor_name!r} 未找到；可用: {list(loader.factors)}"
-            )
-        return loader.factors[factor_name]
-    finally:
-        # 清理：弹 sys.modules 与临时目录（FactorLoader 会把 tmpdir 加进 sys.path）
-        sys.modules.pop(mod_name, None)
-        try:
-            sys.path.remove(str(tmpdir))
-        except ValueError:
-            pass
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-def _attach_builtin_library_methods(target_library, library_names: list[str]) -> None:
-    """将内置库因子作为用户组合因子的方法依赖注入临时库。"""
-    from app.quantcore.factor.base import library_factors
-
-    # 因子库方法在 ``_MethodFactor.compute`` 中会被复制到每个 Worker 的
-    # library 实例。把依赖方法挂在实例字典上会绕过 Python 的 descriptor
-    # 绑定，复制后的方法仍然闭包指向原始实例，导致并发时读取错误的
-    # ``_panel``。挂到临时库的动态 class 上，让每次调用都绑定当前副本。
-    library_type = type(target_library)
-    for library_name in library_names:
-        _loader, source_library = _load_builtin_factor_library(library_name)
-        for factor_name, factor in library_factors(source_library).items():
-            if hasattr(target_library, factor_name):
-                raise ValueError(f"内置因子 {factor_name!r} 与自定义因子方法重名")
-
-            def builtin_method(self, _factor=factor):
-                return _factor.compute(self._panel)
-
-            setattr(library_type, factor_name, builtin_method)
-
-
-def _load_factor_from_builtin_library(library_name: str, factor_name: str):
-    """从登记的内置因子库加载指定因子，不执行前端提交的源码。"""
-    loader, _library = _load_builtin_factor_library(library_name)
-    if factor_name not in loader.factors:
-        raise KeyError(
-            f"因子 {factor_name!r} 不在内置库 {library_name!r} 中；"
-            f"可用: {list(loader.factors)}"
-        )
-    return loader.factors[factor_name]
-
-
-def _build_config(commission_rate, slippage_rate, stamp_tax=None,
-                  rebalance_days=None, groups=None, long_short=None,
-                  analysis_level: str = "core", winsorize: int = 0,
-                  standardize: int = 0):
-    """由参数构建 :class:`ConfigManager`（不设 output_path -> 不落盘）。"""
-    from app import ConfigManager
-
-    cfg = ConfigManager()
-    cfg.set("data_dir", _resolve_data_dir(None))
-    if rebalance_days is not None:
-        cfg.set("rebalance_days", rebalance_days)
-    if groups is not None:
-        cfg.set("groups", groups)
-        cfg.set("n_groups", groups)
-        cfg.set("n_layered_groups", groups)
-    cfg.set("factor_preprocess.winsorize", winsorize)
-    cfg.set("factor_preprocess.standardize", standardize)
-    if long_short is not None:
-        cfg.set("long_short", long_short)
-    if stamp_tax is not None:
-        cfg.set("stamp_tax", stamp_tax)
-    cfg.set("backtest.engine", "native")
-    cfg.set("backtest.initial_capital", 1_000_000.0)
-    cfg.set("backtest.commission_rate", commission_rate)
-    cfg.set("backtest.slippage_rate", slippage_rate)
-    cfg.set("periods_per_year", 252)
-    cfg.set("compute_backend", "python")
-    cfg.set("factor_analysis.level", analysis_level)
-    return cfg
-
-
 def _run_factor_backtest_uncached(
     req: FactorBacktestRequest,
     *,
     data_context=None,
 ) -> FactorBacktestResponse:
-    """因子回测：因子代码 + 参数 -> 指标 + 净值 + 因子分析。"""
-    started_at = time.perf_counter()
+    """旧内部同步门面；实际执行仍走统一规格和执行器。"""
+
+    if data_context is None:
+        return FactorBacktestResponse(
+            error="BacktestEngine 必须由 ExperimentManager 提供行情上下文",
+            meta=None,
+        )
+    spec = _request_spec(req)
+    engine = BacktestEngine()
     try:
-        if data_context is None:
-            raise RuntimeError("FactorExperiment 必须由 ExperimentManager 提供行情上下文")
-        data_engine = data_context.data_engine
-        universe, universe_snapshot, benchmark_snapshot = _resolve_research_assets(
-            req,
-            data_engine=data_engine,
-        )
-
-        factor = (
-            _load_factor_from_code(req.factor_code, req.factor_name, req.library_names)
-            if req.factor_code is not None
-            else _load_factor_from_builtin_library(req.library_names[0], req.factor_name)
-        )
-
-        # 组合方式映射
-        long_short = req.portfolio_type == "long_short"
-
-        cfg = _build_config(
-            commission_rate=req.commission_rate,
-            slippage_rate=req.slippage_rate,
-            stamp_tax=req.stamp_tax,
-            rebalance_days=req.rebalance_days,
-            groups=req.groups,
-            long_short=long_short,
-            analysis_level=req.analysis_level,
-            winsorize=req.winsorize,
-            standardize=req.standardize,
-        )
-        exp = FactorExperiment(
-            factor=factor,
-            universe=universe,
-            start_date=req.start,
-            end_date=req.end,
-            config=cfg,
-        )
-        if data_context is None:
-            raise RuntimeError("FactorExperiment 必须由 ExperimentManager 提供行情上下文")
-        result = exp.run(ExperimentContext(data_context))  # ResultManager
-        if universe_snapshot is not None or benchmark_snapshot is not None:
-            result.meta["research_assets"] = {
-                **({"universe": _persisted_asset(universe_snapshot)} if universe_snapshot else {}),
-                **({"benchmark": _persisted_asset(benchmark_snapshot)} if benchmark_snapshot else {}),
-            }
-    except Exception as exc:  # noqa: BLE001  任何错都回前端
+        DataEngine.configure_instance(data_context)
+        execution = engine.run(spec)
+    except Exception as exc:  # noqa: BLE001  保持旧同步响应契约
         return FactorBacktestResponse(
             error=f"{type(exc).__name__}: {exc}",
             meta=None,
         )
+    return _serialize_factor_execution(req, execution)
+
+
+def _serialize_factor_execution(
+    req: FactorBacktestRequest,
+    execution: FactorBacktestResult,
+) -> FactorBacktestResponse:
+    """把统一执行器结果投影为现有 HTTP 响应。"""
+    started_at = time.perf_counter()
+    result = execution.result_manager
+    universe_snapshot = execution.spec.universe_snapshot
+    benchmark_snapshot = execution.spec.benchmark_snapshot
+    if universe_snapshot is not None or benchmark_snapshot is not None:
+        result.meta["research_assets"] = {
+            **({"universe": _persisted_asset(universe_snapshot)} if universe_snapshot else {}),
+            **({"benchmark": _persisted_asset(benchmark_snapshot)} if benchmark_snapshot else {}),
+        }
+    periods_per_year = execution.spec.periods_per_year
 
     equity = result.equity_curve
     final_equity = (
@@ -514,15 +670,13 @@ def _run_factor_backtest_uncached(
     if raw_strategy_returns is not None:
         metrics["annual_return"] = _geometric_annual_return(
             raw_strategy_returns,
-            int(cfg.get("periods_per_year", 252)),
+            periods_per_year,
         )
     analysis = getattr(result, "factor_analysis", {})
     factor_analysis = None
     layered_equity = pd.DataFrame()
-    layered_return_frame = pd.DataFrame()
     if req.analysis_level in {"core", "full"}:
         layered_equity = analysis.get("layered_equity", pd.DataFrame())
-        layered_return_frame = analysis.get("layered_returns", pd.DataFrame())
         ic_series = analysis.get("ic_series", pd.DataFrame())
         cumulative_ic = analysis.get("cumulative_ic", pd.Series(dtype=float))
         rolling_ir = analysis.get("rolling_ir", pd.Series(dtype=float))
@@ -555,7 +709,7 @@ def _run_factor_backtest_uncached(
                 "groups": req.groups,
                 "analysis_level": req.analysis_level,
                 "factor_preprocess": result.meta.get("factor_preprocess", {}),
-                "grouping_method": "pd.qcut_raw_value",
+                "grouping_method": "rank_vectorized",
                 "group_order": "Q1_highest_factor_value_QN_lowest_factor_value",
                 "curve_first_value": 1.0,
                 "group_metric_returns": "signal_to_end_including_entry",
@@ -585,33 +739,10 @@ def _run_factor_backtest_uncached(
                 analysis.get("industry_group_equity", {})
             ),
         )
-    try:
-        benchmark_equity = _benchmark_equity(
-            req.benchmark,
-            benchmark_snapshot,
-            equity.index,
-            data_engine=data_engine,
-        )
-    except Exception as exc:  # noqa: BLE001
-        return FactorBacktestResponse(error=f"{type(exc).__name__}: {exc}", meta=None)
+    benchmark_equity = execution.benchmark_equity
     benchmark_curve = _compute_equity_with_drawdown(benchmark_equity)
     if factor_analysis is not None:
-        relative_benchmark_returns = (
-            benchmark_equity
-            .pct_change(fill_method=None)
-            .reindex(layered_return_frame.index)
-        )
-        if not relative_benchmark_returns.empty:
-            first_common_date = layered_return_frame.index[0]
-            if pd.isna(relative_benchmark_returns.loc[first_common_date]):
-                relative_benchmark_returns.loc[first_common_date] = 0.0
-        factor_analysis.quantile_metrics = _compute_quantile_metrics(
-            layered_equity,
-            benchmark_equity,
-            periods_per_year=int(cfg.get("periods_per_year", 252)),
-            layered_returns=layered_return_frame,
-            relative_benchmark_returns=relative_benchmark_returns,
-        )
+        factor_analysis.quantile_metrics = list(execution.quantile_metrics)
     common_dates = equity.index.intersection(benchmark_equity.index)
     excess_return = None
     if len(common_dates):
@@ -638,6 +769,14 @@ def _run_factor_backtest_uncached(
             benchmark=req.benchmark,
             filter_limit_up=req.filter_limit_up,
             filter_suspended=req.filter_suspended,
+            filter_status=result.meta.get("filter_status", {}),
+            warnings=result.meta.get("warnings", []),
+            execution_version=result.meta.get("execution_version", execution.spec.execution_version),
+            metric_version=result.meta.get("metric_version", execution.spec.metric_version),
+            data_release_id=result.meta.get("data_release_id", execution.data_release_id),
+            spec_hash=result.meta.get("spec_hash", execution.spec_hash),
+            factor_source_hash=result.meta.get("factor_source_hash", execution.spec.factor_source_hash),
+            actual_end=result.meta.get("actual_end", execution.actual_end),
             factor_price_adjustment=result.meta.get("factor_price_adjustment"),
             factor_price_source=result.meta.get("factor_price_source"),
             factor_price_fields=result.meta.get("factor_price_fields", []),

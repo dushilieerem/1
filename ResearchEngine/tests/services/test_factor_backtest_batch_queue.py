@@ -7,24 +7,21 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+import pandas as pd
+
 from app.services.factor_backtest_batch import coordinator as batch_module
-from app.services.factor_backtest_batch.coordinator import (
-    FactorBacktestBatchProfile,
-    FactorBacktestBatchExperiment,
-    FactorCatalogItem,
-    FactorOutcome,
-    run_factor_backtest_batch,
-)
-from app.services.experiment import Experiment, ExperimentContext
+from app.models.factor_batch import FactorBacktestBatchProfile, FactorCatalogItem
+from app.services.factor_backtest_batch.coordinator import run_factor_backtest_batch
+from app.services.factor.experiment import FactorBacktestExperiment
+from app.services.experiment.base import Experiment
 from app.services.experiment.manager import ExperimentManager
 
 
-class _Runtime:
-    def get_context(self, data_dir=None):
-        return SimpleNamespace(data_dir=Path("."), data_engine=object(), provider=object())
-
-    def close(self):
-        pass
+_DATA_ENGINE = SimpleNamespace(
+    data_dir=Path("."),
+    release_id="test-release",
+    provider=object(),
+)
 
 
 class _InteractiveExperiment(Experiment[str]):
@@ -32,7 +29,7 @@ class _InteractiveExperiment(Experiment[str]):
         self.started = started
         self.lock = lock
 
-    def run(self, context: ExperimentContext) -> str:
+    def run(self) -> str:
         with self.lock:
             self.started.append("interactive")
         return "interactive"
@@ -41,7 +38,7 @@ class _InteractiveExperiment(Experiment[str]):
 def test_factor_backtest_batch_owns_two_slot_fifo_window(monkeypatch, tmp_path: Path):
     profile = FactorBacktestBatchProfile("2026-08-19")
     items = [
-        FactorCatalogItem("library", f"factor_{index}", f"hash-{index}", factor=object())
+        FactorCatalogItem("library", f"factor_{index}", f"hash-{index}")
         for index in range(1, 5)
     ]
     started: list[str] = []
@@ -52,18 +49,26 @@ def test_factor_backtest_batch_owns_two_slot_fifo_window(monkeypatch, tmp_path: 
     release_second = threading.Event()
     third_started = threading.Event()
 
-    def fake_run(_profile, item, **_kwargs):
+    def fake_task_run(experiment):
+        item_name = experiment.spec.factor_name
         with lock:
-            started.append(item.factor_name)
+            started.append(item_name)
             if {"factor_1", "factor_2"}.issubset(started):
                 first_two_started.set()
-        if item.factor_name == "factor_1":
+        if item_name == "factor_1":
             release_first.wait(timeout=3)
-        elif item.factor_name == "factor_2":
+        elif item_name == "factor_2":
             release_second.wait(timeout=3)
-        elif item.factor_name == "factor_3":
+        elif item_name == "factor_3":
             third_started.set()
-        return FactorOutcome(status="succeeded", observation_days=10)
+        return SimpleNamespace(
+            equity_curve=pd.Series([1.0, 1.01], index=pd.date_range("2026-01-01", periods=2)),
+            quantile_metrics=tuple(
+                {"quantile": name, "annual_return": 0.1}
+                for name in ("Q1", "Q2", "Q3", "Q4", "Q5", "benchmark")
+            ),
+            predictive_metrics={},
+        )
 
     monkeypatch.setattr(batch_module, "_catalog_items", lambda: (("library",), "v1", items))
     monkeypatch.setattr(
@@ -71,14 +76,14 @@ def test_factor_backtest_batch_owns_two_slot_fifo_window(monkeypatch, tmp_path: 
         "_preflight",
         lambda _profile, count, **_kwargs: {"factor_count": count},
     )
-    monkeypatch.setattr(batch_module, "_run_factor_with_retry", fake_run)
+    monkeypatch.setattr(FactorBacktestExperiment, "run", fake_task_run)
 
-    manager = ExperimentManager(max_workers=2, max_queue_size=8, runtime=_Runtime())
+    manager = ExperimentManager(max_workers=2, max_queue_size=8)
     original_submit = manager.submit
 
     def recording_submit(experiment, *args, **kwargs):
-        if isinstance(experiment, FactorBacktestBatchExperiment):
-            submitted.append(experiment.item.factor_name)
+        if isinstance(experiment, FactorBacktestExperiment):
+            submitted.append(experiment.spec.factor_name)
         return original_submit(experiment, *args, **kwargs)
 
     manager.submit = recording_submit  # type: ignore[method-assign]

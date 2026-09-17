@@ -1,10 +1,10 @@
-"""ExperimentManager 持有共享行情运行时的测试。"""
+"""DataEngine 持有应用级行情 release 的测试。"""
 
 from __future__ import annotations
 
 import pandas as pd
 
-from app.services.experiment.manager import ExperimentManager
+from app.services.data.engine import DataEngine
 
 
 def _write_market_data(tmp_path):
@@ -16,14 +16,13 @@ def _write_market_data(tmp_path):
     ).to_parquet(panels / "close.parquet", index=False)
 
 
-def test_manager_reuses_context_and_refreshes_release(tmp_path):
+def test_data_engine_loads_one_fixed_release(tmp_path):
     _write_market_data(tmp_path)
-    manager = ExperimentManager(max_workers=1, max_queue_size=0, data_dir=tmp_path)
+    engine = DataEngine()
     try:
-        first = manager.get_data_context()
-        second = manager.get_data_context()
-        assert first is second
-        assert first.data_engine is second.data_engine
+        engine.load_parquet(tmp_path)
+        first = engine.get_panels(fields=["close"])["close"]
+        assert first.iloc[0, 0] == 10.0
 
         pd.DataFrame(
             {
@@ -32,9 +31,7 @@ def test_manager_reuses_context_and_refreshes_release(tmp_path):
             },
         ).to_parquet(tmp_path / "panels" / "close.parquet", index=False)
 
-        refreshed = manager.get_data_context()
-        assert refreshed is not first
-        assert refreshed.release_id != first.release_id
-        assert refreshed.data_engine.get_panels(fields=["close"])["close"].iloc[0, 0] == 20.0
+        # 已加载 release 是进程内固定快照；文件变化不会改变运行中任务数据。
+        assert engine.get_panels(fields=["close"])["close"].iloc[0, 0] == 10.0
     finally:
-        manager.shutdown()
+        engine.close()

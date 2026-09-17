@@ -3,8 +3,8 @@
 import numpy as np
 import pandas as pd
 
-from app.quantcore.factor.base import Panel
-from app import FactorLoader
+from app.models.data import Panel
+from factor_test_support import BuiltinFactorLoader as FactorLoader
 
 
 def _panel() -> Panel:
@@ -22,18 +22,23 @@ def _panel() -> Panel:
 
 def test_volume_momentum_factor_formulae_match_reference():
     loader = FactorLoader()
-    loader.load("trading_lib")
+    library = loader.load()
     panel = _panel()
+    library._panel = panel
 
     expected_pvi = 1000 * (1 + panel.close.pct_change()).where(
         panel.volume > panel.volume.shift(), 1.0
     ).fillna(1.0).cumprod()
-    pd.testing.assert_frame_equal(loader.factors["positive_volume_index"].compute(panel), expected_pvi)
+    pd.testing.assert_frame_equal(
+        library.volume_index(direction="positive"), expected_pvi
+    )
 
     expected_nvi = 1000 * (1 + panel.close.pct_change()).where(
         panel.volume < panel.volume.shift(), 1.0
     ).fillna(1.0).cumprod()
-    pd.testing.assert_frame_equal(loader.factors["negative_volume_index"].compute(panel), expected_nvi)
+    pd.testing.assert_frame_equal(
+        library.volume_index(direction="negative"), expected_nvi
+    )
 
     multiplier = ((panel.close - panel.low) - (panel.high - panel.close)) / (panel.high - panel.low + 1e-10)
     accumulation_distribution = (multiplier * panel.volume).cumsum()
@@ -51,8 +56,8 @@ def test_volume_momentum_factor_formulae_match_reference():
 
 def test_volume_momentum_factors_are_discoverable():
     loader = FactorLoader()
-    loader.load("trading_lib")
+    loader.load()
 
     assert {
-        "positive_volume_index", "negative_volume_index", "chaikin_oscillator", "volume_oscillator"
+        "volume_index", "chaikin_oscillator", "volume_oscillator"
     }.issubset(loader.factors)

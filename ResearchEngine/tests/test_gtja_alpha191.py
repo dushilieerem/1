@@ -3,8 +3,9 @@
 import numpy as np
 import pandas as pd
 
-from app.quantcore.factor.base import Panel, library_factors
-from app import FactorLoader
+from app.models.data import Panel
+from app.services.factor.base import library_factors
+from factor_test_support import BuiltinFactorLoader as FactorLoader
 
 
 def _panel(days: int = 300, include_optional: bool = True) -> Panel:
@@ -38,18 +39,23 @@ def _panel(days: int = 300, include_optional: bool = True) -> Panel:
     return Panel(fields)
 
 
-def test_gtja_alpha191_library_registers_all_factors():
-    library = FactorLoader().load("gtja_alpha191")
+def test_builtin_factor_library_exposes_selected_gtja_factors():
+    library = FactorLoader().load()
     factors = library_factors(library)
 
-    assert len(factors) == 191
-    assert list(factors)[:2] == ["alpha191_001", "alpha191_002"]
-    assert list(factors)[-2:] == ["alpha191_190", "alpha191_191"]
+    assert len(factors) == 432
+    assert {
+        "alpha191_001",
+        "alpha191_002",
+        "alpha191_041",
+        "alpha191_190",
+        "alpha191_191",
+    }.issubset(factors)
 
 
 def test_gtja_reference_formulae():
     panel = _panel()
-    library = FactorLoader().load("gtja_alpha191")
+    library = FactorLoader().load()
     factors = library_factors(library)
 
     expected_1 = -np.log(panel.volume).diff(1).rank(axis=1, pct=True).rolling(6).corr(
@@ -70,11 +76,20 @@ def test_gtja_reference_formulae():
     pd.testing.assert_frame_equal(factors["alpha191_041"].compute(panel), expected_41)
 
 
-def test_all_gtja_alpha191_factors_keep_panel_shape_and_no_infinity():
+def test_selected_gtja_alpha191_factors_keep_panel_shape_and_no_infinity():
     panel = _panel()
-    library = FactorLoader().load("gtja_alpha191")
+    library = FactorLoader().load()
 
-    for factor in library_factors(library).values():
+    factor_names = (
+        "alpha191_001",
+        "alpha191_002",
+        "alpha191_041",
+        "alpha191_190",
+        "alpha191_191",
+    )
+    factors = library_factors(library)
+    for name in factor_names:
+        factor = factors[name]
         result = factor.compute(panel)
         assert result.shape == panel.close.shape
         assert result.index.equals(panel.close.index)
@@ -84,7 +99,7 @@ def test_all_gtja_alpha191_factors_keep_panel_shape_and_no_infinity():
 
 def test_gtja_vwap_fallback_without_amount_or_vwap():
     panel = _panel(include_optional=False)
-    library = FactorLoader().load("gtja_alpha191")
+    library = FactorLoader().load()
     result = library_factors(library)["alpha191_041"].compute(panel)
     typical = (panel.high + panel.low + panel.close) / 3.0
     expected = -typical.diff(3).rolling(5).max().rank(axis=1, pct=True)
@@ -100,9 +115,9 @@ def test_gtja_factors_do_not_read_future_rows():
     changed._fields["close"] = changed_close
 
     cutoff = panel.close.index[-2]
-    library = FactorLoader().load("gtja_alpha191")
+    library = FactorLoader().load()
     factors = library_factors(library)
-    for name in ("alpha191_001", "alpha191_041", "alpha191_149", "alpha191_191"):
+    for name in ("alpha191_001", "alpha191_041", "alpha191_190", "alpha191_191"):
         before = factors[name].compute(panel).loc[:cutoff]
         after = factors[name].compute(changed).loc[:cutoff]
         pd.testing.assert_frame_equal(before, after)

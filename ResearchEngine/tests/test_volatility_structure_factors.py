@@ -1,14 +1,13 @@
 """波动结构与尾部风险因子的确定性验证。"""
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import pytest
-import yaml
 
-from app.quantcore.factor.base import Panel, library_factors
-from app import FactorLoader
+from app.models.data import Panel
+from app.services.factor.base import library_factors
+from factor_test_support import BuiltinFactorLoader as FactorLoader
+from factor_test_support import builtin_factor_ids
 
 
 FACTOR_NAMES = {
@@ -79,21 +78,12 @@ def _last_percentile_rank(values: np.ndarray) -> float:
 
 def test_volatility_structure_factors_are_discoverable_and_indexed():
     loader = FactorLoader()
-    library = loader.load("volatility_lib")
+    library = loader.load()
     factors = library_factors(library)
 
-    assert len(factors) == 23
+    assert len(factors) == 432
     assert FACTOR_NAMES.issubset(factors)
-
-    from app.assets.factors import INDEX_PATH
-
-    index_path = INDEX_PATH
-    catalog = yaml.safe_load(index_path.read_text(encoding="utf-8"))
-    entry = catalog["libraries"]["volatility_lib"]
-    indexed_names = {item["name"] for item in entry["factors"]}
-
-    assert entry["factor_count"] == len(factors)
-    assert FACTOR_NAMES.issubset(indexed_names)
+    assert FACTOR_NAMES.issubset(builtin_factor_ids())
 
 
 def test_volatility_structure_factor_formulae_match_reference():
@@ -104,7 +94,7 @@ def test_volatility_structure_factor_formulae_match_reference():
     )
     panel = _panel(close)
     loader = FactorLoader()
-    library = loader.load("volatility_lib")
+    library = loader.load()
 
     true_range = _true_range(panel)
     expected_atr = true_range.rolling(2).mean() / panel.close.abs()
@@ -164,7 +154,7 @@ def test_volatility_structure_factor_formulae_match_reference():
 
 def test_volatility_structure_factors_preserve_shape_and_bounds():
     loader = FactorLoader()
-    loader.load("volatility_lib")
+    loader.load()
     panel = _sample_panel()
 
     for name in FACTOR_NAMES:
@@ -199,7 +189,7 @@ def test_flat_prices_missing_values_and_zero_denominators_are_safe():
         }
     )
     loader = FactorLoader()
-    library = loader.load("volatility_lib")
+    library = loader.load()
 
     atr = _compute(library, "atr_percent", panel, window=5)
     assert np.isfinite(atr.dropna().to_numpy()).all()
@@ -231,7 +221,7 @@ def test_flat_prices_missing_values_and_zero_denominators_are_safe():
 def test_window_and_tail_parameters_control_warmup_and_validation():
     panel = _sample_panel()
     loader = FactorLoader()
-    library = loader.load("volatility_lib")
+    library = loader.load()
 
     atr = _compute(library, "atr_percent", panel, window=3)
     assert atr.first_valid_index() == panel.close.index[3]
@@ -268,7 +258,7 @@ def test_volatility_structure_factors_do_not_use_future_rows():
     changed_panel = Panel(changed_fields)
 
     loader = FactorLoader()
-    loader.load("volatility_lib")
+    loader.load()
     for name in FACTOR_NAMES:
         baseline = loader.factors[name].compute(panel)
         changed = loader.factors[name].compute(changed_panel)

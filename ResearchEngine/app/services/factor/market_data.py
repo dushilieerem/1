@@ -7,13 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
-from app.quantcore import DataEngine, FieldParquetProvider
-from app.core.exceptions import (
-    MarketDataError,
-    MarketDataNotFoundError,
-    MarketDataValidationError,
-)
-from app.services.factor.runner import _resolve_data_dir
+from app.services.data.engine import DataEngine
+from app.database.data.providers.field_parquet_provider import FieldParquetProvider
+from app.utils.exceptions import MarketDataError, MarketDataNotFoundError, MarketDataValidationError
+from app.services.factor.backtest_support import _resolve_data_dir
 
 
 @dataclass(frozen=True)
@@ -114,7 +111,12 @@ def _get_display_data_engine() -> DataEngine:
     """读取 Web 展示专用未复权行情，与研究/回测用行情物理隔离。"""
     data_dir = Path(_resolve_data_dir(None)).resolve()
     current_dir = data_dir / "current" if (data_dir / "current").is_dir() else data_dir
-    display_file = current_dir / "display" / "unadjusted_price.parquet"
+    candidates = (
+        current_dir / "unadjusted_price" / "unadjusted_price.parquet",
+        current_dir / "display" / "unadjusted_price.parquet",
+        current_dir / "unadjusted_price.parquet",
+    )
+    display_file = next((path for path in candidates if path.is_file()), candidates[0])
     if display_file not in _DISPLAY_DATA_ENGINES:
         _DISPLAY_DATA_ENGINES[display_file] = DataEngine(
             FieldParquetProvider(display_file)
@@ -130,6 +132,8 @@ def _get_stock_names() -> dict[str, str]:
 
     current_dir = data_dir / "current"
     candidates = (
+        current_dir / "universe" / "a_share.parquet",
+        data_dir / "universe" / "a_share.parquet",
         current_dir / "metadata" / "stock_info.parquet",
         data_dir / "metadata" / "stock_info.parquet",
         data_dir / "stock_info.parquet",
@@ -140,9 +144,14 @@ def _get_stock_names() -> dict[str, str]:
 
     stock_info = pd.read_parquet(path)
     code_column = next(
-        (column for column in ("symbol", "code", "ts_code") if column in stock_info), None
+        (
+            column
+            for column in ("thscode", "symbol", "code", "ts_code")
+            if column in stock_info
+        ),
+        None,
     )
-    if code_column is None and stock_info.index.name in {"symbol", "code", "ts_code"}:
+    if code_column is None and stock_info.index.name in {"thscode", "symbol", "code", "ts_code"}:
         stock_info = stock_info.reset_index()
         code_column = stock_info.columns[0]
     if code_column is None or "name" not in stock_info:

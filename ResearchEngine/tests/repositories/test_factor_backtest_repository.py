@@ -1,6 +1,6 @@
 """批量回测 repository 层验收。"""
 
-from app.repositories.factor_backtest import FactorBacktestRepository
+from app.database.factor_backtest import FactorBacktestRepository
 
 
 def test_repository_exposes_batch_persistence_without_leaking_sqlite_to_api():

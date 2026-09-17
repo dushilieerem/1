@@ -6,13 +6,15 @@ import threading
 import time
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.services.factor import runner
 from app.schemas.backtest import FactorBacktestResponse
-from app.services.experiment import Experiment, ExperimentContext
+from app.services.experiment.base import Experiment
 from app.services.experiment.manager import ExperimentManager
+from app.services.data.engine import DataEngine
 
 
 PAYLOAD = {
@@ -21,28 +23,43 @@ PAYLOAD = {
 }
 
 
-class _StaticRuntime:
-    def get_context(self, data_dir=None):
-        return SimpleNamespace(data_engine=None, provider=None)
+@pytest.fixture(autouse=True)
+def _restore_global_data_engine():
+    previous = DataEngine._instance
+    yield
+    DataEngine._instance = previous
+
+
+class _TestDataEngine(SimpleNamespace):
+    """API 任务测试只验证调度，不在 lifespan 读取真实 MarketData。"""
+
+    def __init__(self):
+        super().__init__(provider=None, release_id="test-release", data_dir=None)
+
+    def load_parquet(self, *_args, **_kwargs):
+        return None
 
     def close(self):
-        pass
+        return None
 
 
 class _ValueExperiment(Experiment[dict]):
     def __init__(self, value):
         self.value = value
 
-    def run(self, context: ExperimentContext):
+    def run(self):
         return self.value
 
 
-def _use_stub_runtime(application, *, max_workers=2, max_queue_size=8):
+def _use_app_data_engine(application, *, max_workers=2, max_queue_size=8):
     application.state.experiment_manager.shutdown()
+    data_engine = _TestDataEngine()
+    application.state.data_engine = data_engine
+    from app.services.data.engine import DataEngine
+    DataEngine.configure_instance(data_engine)
     manager = ExperimentManager(
         max_workers=max_workers,
         max_queue_size=max_queue_size,
-        runtime=_StaticRuntime(),
     )
     application.state.experiment_manager = manager
     return manager
@@ -75,7 +92,7 @@ def test_post_returns_202_while_backtest_is_blocked(monkeypatch):
 
     monkeypatch.setattr(runner, "_run_factor_backtest_job", blocked_job)
     app = create_app()
-    _use_stub_runtime(app)
+    _use_app_data_engine(app)
     try:
         with TestClient(app) as client:
             begin = time.perf_counter()
@@ -106,7 +123,7 @@ def test_business_error_is_exposed_as_failed_task(monkeypatch):
 
     monkeypatch.setattr(runner, "_run_factor_backtest_job", failed_job)
     app = create_app()
-    _use_stub_runtime(app)
+    _use_app_data_engine(app)
     with TestClient(app) as client:
         submission = client.post("/api/backtest/factor", json=PAYLOAD)
         result = _poll(client, submission.json()["poll_url"])
@@ -122,7 +139,7 @@ def test_future_exception_is_exposed_as_failed_task(monkeypatch):
 
     monkeypatch.setattr(runner, "_run_factor_backtest_job", broken_job)
     app = create_app()
-    _use_stub_runtime(app)
+    _use_app_data_engine(app)
     with TestClient(app) as client:
         submission = client.post("/api/backtest/factor", json=PAYLOAD)
         result = _poll(client, submission.json()["poll_url"])
@@ -142,7 +159,7 @@ def test_same_request_reuses_inflight_run_id(monkeypatch):
 
     monkeypatch.setattr(runner, "_run_factor_backtest_job", blocked_job)
     app = create_app()
-    _use_stub_runtime(app)
+    _use_app_data_engine(app)
     try:
         with TestClient(app) as client:
             first = client.post("/api/backtest/factor", json=PAYLOAD)
@@ -169,9 +186,7 @@ def test_queue_full_returns_429(monkeypatch):
 
     monkeypatch.setattr(runner, "_run_factor_backtest_job", blocked_job)
     app = create_app()
-    manager = ExperimentManager(max_workers=1, max_queue_size=0, runtime=_StaticRuntime())
-    app.state.experiment_manager.shutdown()
-    app.state.experiment_manager = manager
+    manager = _use_app_data_engine(app, max_workers=1, max_queue_size=0)
     try:
         with TestClient(app) as client:
             first = client.post("/api/backtest/factor", json=PAYLOAD)
@@ -213,9 +228,7 @@ def test_queued_task_can_be_cancelled(monkeypatch):
 
     monkeypatch.setattr(runner, "_run_factor_backtest_job", blocked_job)
     app = create_app()
-    manager = ExperimentManager(max_workers=1, max_queue_size=1, runtime=_StaticRuntime())
-    app.state.experiment_manager.shutdown()
-    app.state.experiment_manager = manager
+    manager = _use_app_data_engine(app, max_workers=1, max_queue_size=1)
     try:
         with TestClient(app) as client:
             first = client.post("/api/backtest/factor", json=PAYLOAD)
@@ -246,7 +259,7 @@ def test_running_task_records_cancel_request_without_killing_thread(monkeypatch)
 
     monkeypatch.setattr(runner, "_run_factor_backtest_job", blocked_job)
     app = create_app()
-    _use_stub_runtime(app)
+    _use_app_data_engine(app)
     try:
         with TestClient(app) as client:
             submission = client.post("/api/backtest/factor", json=PAYLOAD)
@@ -268,7 +281,6 @@ def test_terminal_task_is_removed_after_60_seconds():
     manager = ExperimentManager(
         max_workers=1,
         max_queue_size=0,
-        runtime=_StaticRuntime(),
     )
     try:
         handle = manager.submit(_ValueExperiment({"large": "result"}))

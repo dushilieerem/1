@@ -68,11 +68,11 @@ class FactorBacktestRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    #: 用户自定义因子的函数源码；未提供时执行内置因子
+    #: 用户自定义因子的函数源码；未提供时从 SQLite 因子库加载
     factor_code: Optional[str] = Field(None, description="自定义因子 Python 函数源码")
-    #: 内置因子库名；自定义因子可传一个或多个库以复用其中的方法
-    library_name: Optional[str | list[str]] = Field(None, description="内置因子库名")
-    #: 要跑的因子名（FactorLibrary 的方法名，或 BaseFactor 的 ``name``）
+    #: SQLite 因子库名；自定义因子可传一个库以复用其中的方法
+    library_name: Optional[str | list[str]] = Field(None, description="SQLite 因子库名")
+    #: 要跑的因子标识（优先使用 SQLite 的 sv_id，也兼容名称和源码函数名）
     factor_name: str = Field("alpha101", description="因子名")
     #: 组合构建方式：long_only=纯多头 | long_short=多空组合
     portfolio_type: str = Field("long_only", description="long_only | long_short")
@@ -83,9 +83,9 @@ class FactorBacktestRequest(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     #: 是否过滤涨停股
-    filter_limit_up: bool = True
+    filter_limit_up: bool = False
     #: 是否过滤停牌股
-    filter_suspended: bool = True
+    filter_suspended: bool = False
     #: 调仓间隔（交易日）
     rebalance_days: int = Field(1, ge=1, description="调仓间隔，单位为交易日")
     #: 因子分层数
@@ -114,7 +114,7 @@ class FactorBacktestRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_factor_source(self):
-        """内置因子或自定义因子必须有明确来源。"""
+        """SQLite 内置因子或自定义因子必须有明确来源。"""
         libraries = self.library_names
         if self.factor_code is None and not libraries:
             raise ValueError("未提供 factor_code 时必须提供 library_name")
@@ -336,6 +336,14 @@ class FactorBacktestMeta(BaseModel):
     benchmark: str
     filter_limit_up: bool
     filter_suspended: bool
+    filter_status: dict[str, str] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    execution_version: str = "factor-execution-v5"
+    metric_version: str = "factor-scorecard-v3"
+    data_release_id: Optional[str] = None
+    spec_hash: Optional[str] = None
+    factor_source_hash: Optional[str] = None
+    actual_end: Optional[str] = None
     factor_price_adjustment: Optional[str] = None
     factor_price_source: Optional[str] = None
     factor_price_fields: list[str] = Field(default_factory=list)
@@ -515,6 +523,10 @@ class StrategyBacktestResponse(BaseModel):
 class FactorInfo(BaseModel):
     name: str
     description: Optional[str] = None
+    factor_id: Optional[str] = None
+    display_name: Optional[str] = None
+    name_en: Optional[str] = None
+    category_name: Optional[str] = None
 
 
 class FactorLibraryInfo(BaseModel):
@@ -806,6 +818,10 @@ class FactorBacktestBatchTriggerRequest(BaseModel):
     as_of_date: str
     force_retry: bool = False
     dry_run: bool = False
+    filter_suspended: bool = False
+    filter_limit_up: bool = False
+    winsorize: int = Field(0, ge=0, le=3)
+    standardize: int = Field(0, ge=0, le=3)
 
 
 FactorBacktestBatchTaskStatus = Literal[
@@ -851,6 +867,9 @@ class FactorBacktestBatchResponse(BaseModel):
     profile_hash: str
     catalog_version: str
     metric_version: str
+    execution_version: str = "factor-execution-v5"
+    data_release_id: Optional[str] = None
+    spec_hash: str = ""
     status: str
     total_count: int = 0
     succeeded_count: int = 0
@@ -875,6 +894,8 @@ class FactorBacktestFactorRunResponse(BaseModel):
     library_name: str
     factor_name: str
     factor_source_hash: str
+    data_release_id: Optional[str] = None
+    spec_hash: Optional[str] = None
     status: str
     retry_count: int = 0
     error_code: Optional[str] = None

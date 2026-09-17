@@ -3,8 +3,8 @@
 import numpy as np
 import pandas as pd
 
-from app.quantcore import EventBacktestEngine
-from app.repositories.catalogs.strategy_catalog import StrategyCatalog
+from app.services.strategy.event.engine import EventBacktestEngine
+from app.services.catalog.strategy_catalog import StrategyCatalog
 
 
 def _strategy(strategy_id):
@@ -19,7 +19,7 @@ def _panels(days=1900, symbols=10):
     codes = [f"0000{i:02d}.SZ" for i in range(symbols)]
     close = pd.DataFrame({code: 10 + np.arange(days) * (0.01 + i * 0.001) for i, code in enumerate(codes)}, index=dates)
     panels = {"open": close * 0.999, "high": close * 1.01, "low": close * 0.99, "close": close}
-    for field, value in {"pb": 0.8, "total_mv": 4_000_000_000, "total_assets": 10_000, "total_liabilities": 4_000, "current_assets": 6_000, "current_liabilities": 3_000, "total_shares": 1_000, "operating_revenue_ttm": 8_000, "operating_cost_ttm": 4_000, "net_profit_ttm": 1_000, "net_cashflow_operating_ttm": 1_200, "dividend_yield": 0.03, "pe_ttm": 12.0}.items():
+    for field, value in {"pb_mrq": 0.8, "total_mv": 4_000_000_000, "total_assets": 10_000, "total_liabilities": 4_000, "current_assets": 6_000, "current_liabilities": 3_000, "total_shares": 1_000, "operating_revenue_ttm": 8_000, "operating_cost_ttm": 4_000, "net_profit_ttm": 1_000, "net_cashflow_operating_ttm": 1_200, "dividend_yield_ttm": 0.03, "pe_ttm": 12.0}.items():
         panels[field] = pd.DataFrame({code: value + i for i, code in enumerate(codes)}, index=dates)
     dividend = pd.DataFrame(0.0, index=dates, columns=codes)
     for year in range(2019, 2025):

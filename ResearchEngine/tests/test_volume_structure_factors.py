@@ -3,10 +3,11 @@
 import numpy as np
 import pandas as pd
 import pytest
-import yaml
 
-from app import FactorLoader
-from app.quantcore.factor.base import Panel, library_factors
+from factor_test_support import BuiltinFactorLoader as FactorLoader
+from app.models.data import Panel
+from app.services.factor.base import library_factors
+from factor_test_support import builtin_factor_ids
 
 
 FACTOR_NAMES = {
@@ -74,20 +75,12 @@ def _rolling_correlation(left: pd.DataFrame, right: pd.DataFrame, window: int):
 
 def test_volume_structure_factors_are_discoverable_and_indexed():
     loader = FactorLoader()
-    library = loader.load("trading_lib")
+    library = loader.load()
     factors = library_factors(library)
 
-    assert len(factors) == 26
+    assert len(factors) == 432
     assert FACTOR_NAMES.issubset(factors)
-
-    from app.assets.factors import INDEX_PATH
-
-    catalog = yaml.safe_load(INDEX_PATH.read_text(encoding="utf-8"))
-    entry = catalog["libraries"]["trading_lib"]
-    indexed_names = {item["name"] for item in entry["factors"]}
-
-    assert entry["factor_count"] == len(factors)
-    assert FACTOR_NAMES.issubset(indexed_names)
+    assert FACTOR_NAMES.issubset(builtin_factor_ids())
 
 
 def test_volume_structure_factor_formulae_match_reference_values():
@@ -102,7 +95,7 @@ def test_volume_structure_factor_formulae_match_reference_values():
     )
     panel = _panel(close, volume)
     loader = FactorLoader()
-    library = loader.load("trading_lib")
+    library = loader.load()
 
     imbalance = _compute(library, "up_down_volume_imbalance", panel, window=3)
     assert imbalance.loc[dates[3], "A"] == pytest.approx((2.0 - 3.0 + 4.0) / 9.0)
@@ -133,7 +126,7 @@ def test_volume_structure_factor_formulae_match_reference_values():
 
 def test_volume_structure_factors_preserve_shape_and_bounds():
     loader = FactorLoader()
-    loader.load("trading_lib")
+    loader.load()
     panel = _sample_panel()
 
     for name in FACTOR_NAMES:
@@ -157,7 +150,7 @@ def test_zero_volume_and_missing_values_are_safe():
     volume = pd.DataFrame(100.0, index=dates, columns=["A"])
     panel = _panel(close, volume)
     loader = FactorLoader()
-    library = loader.load("trading_lib")
+    library = loader.load()
 
     for name in FACTOR_NAMES:
         result = _compute(library, name, panel, **({"window": 5} if name != "volume_concentration" else {"window": 5}))
@@ -187,7 +180,7 @@ def test_zero_volume_and_missing_values_are_safe():
 def test_parameters_change_warmup_and_invalid_values_are_rejected():
     panel = _sample_panel()
     loader = FactorLoader()
-    library = loader.load("trading_lib")
+    library = loader.load()
 
     assert _compute(library, "up_down_volume_imbalance", panel, window=5).first_valid_index() == panel.close.index[5]
     assert _compute(library, "volume_concentration", panel, window=5).first_valid_index() == panel.close.index[4]
@@ -213,7 +206,7 @@ def test_volume_structure_factors_do_not_use_future_rows():
     changed_panel = _panel(panel.close, changed_volume)
 
     loader = FactorLoader()
-    loader.load("trading_lib")
+    loader.load()
     for name in FACTOR_NAMES:
         baseline = loader.factors[name].compute(panel)
         changed = loader.factors[name].compute(changed_panel)

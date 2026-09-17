@@ -9,7 +9,7 @@ class DavisDoublePlayAShareEventStrategy:
     """低 PE 历史分位、高盈利增长与高 ROE 的月度等权策略。"""
 
     execution_mode = "event"
-    required_fields = frozenset({"open", "high", "low", "close", "pe_ratio", "roe", "inc_net_profit_year_on_year"})
+    required_fields = frozenset({"open", "high", "low", "close", "pe_ttm", "roe", "inc_net_profit_year_on_year"})
 
     def __init__(self, universe: list[str] | None = None, max_holdings: int = 10,
                  min_growth: float = 10.0, min_roe: float = 10.0,
@@ -37,13 +37,13 @@ class DavisDoublePlayAShareEventStrategy:
         holdings = set(context.portfolio.positions)
         symbols = list(dict.fromkeys(universe + list(holdings)))
         count = max(self.hist_years * 366, 8)
-        history = context.data.history(symbols, ["close", "pe_ratio", "roe", "inc_net_profit_year_on_year"], count)
+        history = context.data.history(symbols, ["close", "pe_ttm", "roe", "inc_net_profit_year_on_year"], count)
         current = self._latest(history, symbols)
         if current.empty:
             return
-        current = current[(current.pe_ratio > 0) & (current.roe > self.min_roe)
+        current = current[(current.pe_ttm > 0) & (current.roe > self.min_roe)
                           & (current.inc_net_profit_year_on_year > self.min_growth)].copy()
-        current["pe_pct"] = [self._percentile(symbol, float(row.pe_ratio), history["pe_ratio"])
+        current["pe_pct"] = [self._percentile(symbol, float(row.pe_ttm), history["pe_ttm"])
                               for symbol, row in current.iterrows()]
         target = current[current.pe_pct <= self.buy_pe_pct].sort_values("pe_pct").head(self.max_holdings)
         target_symbols = set(target.index)

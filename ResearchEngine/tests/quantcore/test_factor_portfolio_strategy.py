@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.quantcore.backtest.adapter.factor_strategy import (
+from app.services.strategy.vectorized.factor_strategy import (
     EqualWeight,
     EveryNTradingDays,
     FactorPortfolioStrategy,
@@ -12,7 +12,7 @@ from app.quantcore.backtest.adapter.factor_strategy import (
     factor,
     signal,
 )
-from app.quantcore.factor.base import Panel
+from app.models.data import Panel
 
 
 class CompositeStrategy(FactorPortfolioStrategy):

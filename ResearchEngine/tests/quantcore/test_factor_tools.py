@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.quantcore.factor.tool import (
+from app.services.factor.tool import (
     mad_winsorize,
     neutralize,
     normalize,

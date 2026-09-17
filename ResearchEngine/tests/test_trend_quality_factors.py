@@ -1,14 +1,13 @@
 """趋势质量与路径风险因子的确定性验证。"""
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import pytest
-import yaml
 
-from app.quantcore.factor.base import Panel, library_factors
-from app import FactorLoader
+from app.models.data import Panel
+from app.services.factor.base import library_factors
+from factor_test_support import BuiltinFactorLoader as FactorLoader
+from factor_test_support import builtin_factor_ids
 
 
 FACTOR_NAMES = {
@@ -50,26 +49,17 @@ def _compute(library, name: str, panel: Panel, **params) -> pd.DataFrame:
 
 def test_trend_quality_factors_are_discoverable_and_indexed():
     loader = FactorLoader()
-    library = loader.load("technical_lib")
+    library = loader.load()
     factors = library_factors(library)
 
-    assert len(factors) == 57
+    assert len(factors) == 432
     assert FACTOR_NAMES.issubset(factors)
-
-    from app.assets.factors import INDEX_PATH
-
-    index_path = INDEX_PATH
-    catalog = yaml.safe_load(index_path.read_text(encoding="utf-8"))
-    entry = catalog["libraries"]["technical_lib"]
-    indexed_names = {item["name"] for item in entry["factors"]}
-
-    assert entry["factor_count"] == len(factors)
-    assert FACTOR_NAMES.issubset(indexed_names)
+    assert FACTOR_NAMES.issubset(builtin_factor_ids())
 
 
 def test_trend_quality_factors_preserve_panel_shape_and_finite_values():
     loader = FactorLoader()
-    loader.load("technical_lib")
+    loader.load()
     panel = _sample_panel()
 
     for name in FACTOR_NAMES:
@@ -83,7 +73,7 @@ def test_trend_quality_factors_match_hand_calculated_values():
     dates = pd.bdate_range("2024-01-02", periods=5)
     panel = _panel(pd.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0]}, index=dates))
     loader = FactorLoader()
-    library = loader.load("technical_lib")
+    library = loader.load()
 
     efficiency = _compute(library, "kaufman_efficiency_ratio", panel, window=4)
     assert efficiency.loc[dates[-1], "A"] == pytest.approx(1.0)
@@ -111,7 +101,7 @@ def test_flat_prices_and_missing_values_are_safe():
     dates = pd.bdate_range("2024-01-02", periods=30)
     flat = _panel(pd.DataFrame({"A": np.full(30, 10.0)}, index=dates))
     loader = FactorLoader()
-    library = loader.load("technical_lib")
+    library = loader.load()
 
     for name in FACTOR_NAMES:
         result = _compute(library, name, flat, window=5)
@@ -130,7 +120,7 @@ def test_flat_prices_and_missing_values_are_safe():
 def test_window_changes_warmup_and_invalid_windows_are_rejected():
     panel = _sample_panel()
     loader = FactorLoader()
-    library = loader.load("technical_lib")
+    library = loader.load()
 
     for name in (
         "kaufman_efficiency_ratio",
@@ -160,7 +150,7 @@ def test_trend_quality_factors_do_not_use_future_prices():
     changed_close.iloc[40:] = changed_close.iloc[40:] * 10
     changed_panel = _panel(changed_close)
     loader = FactorLoader()
-    loader.load("technical_lib")
+    loader.load()
 
     for name in FACTOR_NAMES:
         baseline = loader.factors[name].compute(panel)

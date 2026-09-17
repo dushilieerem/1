@@ -1,14 +1,13 @@
 """收益序列与价格形态状态因子的确定性验证。"""
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import pytest
-import yaml
 
-from app.quantcore.factor.base import Panel, library_factors
-from app import FactorLoader
+from app.models.data import Panel
+from app.services.factor.base import library_factors
+from factor_test_support import BuiltinFactorLoader as FactorLoader
+from factor_test_support import builtin_factor_ids
 
 
 FACTOR_NAMES = {
@@ -70,21 +69,12 @@ def _compute(library, name: str, panel: Panel, **params) -> pd.DataFrame:
 
 def test_return_shape_factors_are_discoverable_and_indexed():
     loader = FactorLoader()
-    library = loader.load("technical_lib")
+    library = loader.load()
     factors = library_factors(library)
 
-    assert len(factors) == 57
+    assert len(factors) == 432
     assert FACTOR_NAMES.issubset(factors)
-
-    from app.assets.factors import INDEX_PATH
-
-    index_path = INDEX_PATH
-    catalog = yaml.safe_load(index_path.read_text(encoding="utf-8"))
-    entry = catalog["libraries"]["technical_lib"]
-    indexed_names = {item["name"] for item in entry["factors"]}
-
-    assert entry["factor_count"] == len(factors)
-    assert FACTOR_NAMES.issubset(indexed_names)
+    assert FACTOR_NAMES.issubset(builtin_factor_ids())
 
 
 def test_return_shape_factor_formulae_match_hand_calculated_values():
@@ -94,7 +84,7 @@ def test_return_shape_factor_formulae_match_hand_calculated_values():
         index=dates,
     )
     loader = FactorLoader()
-    library = loader.load("technical_lib")
+    library = loader.load()
 
     autocorrelation = _compute(
         library,
@@ -155,7 +145,7 @@ def test_return_shape_factor_formulae_match_hand_calculated_values():
 
 def test_return_shape_factors_preserve_shape_and_bounds():
     loader = FactorLoader()
-    loader.load("technical_lib")
+    loader.load()
     panel = _sample_panel()
 
     for name in FACTOR_NAMES:
@@ -177,7 +167,7 @@ def test_zero_ranges_and_missing_values_are_safe():
     flat = pd.DataFrame(10.0, index=dates, columns=["A"])
     zero_range_panel = _panel(flat, open_price=flat, high=flat, low=flat)
     loader = FactorLoader()
-    library = loader.load("technical_lib")
+    library = loader.load()
 
     for name in FACTOR_NAMES:
         result = _compute(library, name, zero_range_panel)
@@ -199,7 +189,7 @@ def test_zero_ranges_and_missing_values_are_safe():
 def test_window_parameters_change_warmup_and_invalid_values_are_rejected():
     panel = _sample_panel()
     loader = FactorLoader()
-    library = loader.load("technical_lib")
+    library = loader.load()
 
     short_auto = _compute(
         library, "return_autocorrelation", panel, window=5, lag=1
@@ -239,7 +229,7 @@ def test_return_shape_factors_do_not_use_future_rows():
     changed_panel = Panel(changed_fields)
 
     loader = FactorLoader()
-    loader.load("technical_lib")
+    loader.load()
     for name in FACTOR_NAMES:
         baseline = loader.factors[name].compute(panel)
         changed = loader.factors[name].compute(changed_panel)

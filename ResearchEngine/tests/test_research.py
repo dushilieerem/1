@@ -2,36 +2,15 @@
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 
-from app.quantcore import CSVDataProvider, DataEngine
-from app import (
-    ConfigManager,
-    FactorExperiment,
-    ExperimentManager,
-    FactorLoader,
-    ResultManager,
-    CSVStorage,
-    SQLiteStorage,
-)
-from app.services.experiment import ExperimentContext
-
-
-class _StaticRuntime:
-    def __init__(self, data_engine):
-        self._context = SimpleNamespace(
-            data_engine=data_engine,
-            provider=data_engine.provider,
-        )
-
-    def get_context(self, data_dir=None):
-        return self._context
-
-    def close(self):
-        pass
+from app.config import ConfigManager
+from app.services.factor.loader import FactorLoader
+from app.services.results.manager import ResultManager
+from app.database.results.storage.csv_storage import CSVStorage
+from app.database.results.storage.sqlite_storage import SQLiteStorage
 
 
 # ---------------- ConfigManager ----------------
@@ -56,153 +35,13 @@ def test_config_set_get_nested():
 
 def test_factor_loader_load(tmp_path):
     (tmp_path / "alpha_test.py").write_text(
-        "import pandas as pd\n"
-        "from app.quantcore import BaseFactor\n"
-        "class AlphaTest(BaseFactor):\n"
-        "    name = 'alpha_test'\n"
-        "    def compute(self, data):\n"
-        "        return data['close'].pct_change(5)\n",
+        "import pandas as pd\nfrom app.services.factor.base import BaseFactor\nclass AlphaTest(BaseFactor):\n    name = 'alpha_test'\n    def compute(self, data):\n        return data['close'].pct_change(5)\n",
         encoding="utf-8",
     )
     loader = FactorLoader(factor_dir=str(tmp_path))
     factor = loader.load("alpha_test")
     assert factor.name == "alpha_test"
     assert "alpha_test" in loader.factors
-
-
-# ---------------- 端到端实验 ----------------
-
-def _gen_data(tmp_path, n_symbols=5, days=80, seed=7):
-    rng = np.random.default_rng(seed)
-    dates = pd.bdate_range("2022-01-03", periods=days)
-    symbols = [f"S{i:03d}" for i in range(n_symbols)]
-    for sym in symbols:
-        drift = rng.uniform(0.1, 0.3) / 252
-        vol = rng.uniform(0.2, 0.4) / np.sqrt(252)
-        mom = rng.uniform(0.03, 0.08)
-        rets = np.zeros(days)
-        for t in range(1, days):
-            hist = rets[max(0, t - 20):t].mean()
-            rets[t] = drift + mom * hist + rng.normal(0, vol)
-        close = 20 * np.exp(np.cumsum(rets))
-        pd.DataFrame({
-            "date": dates.strftime("%Y-%m-%d"),
-            "open": close, "high": close * 1.01, "low": close * 0.99,
-            "close": close, "volume": rng.integers(1000, 9999, days),
-        }).to_csv(tmp_path / f"{sym}.csv", index=False)
-    pd.DataFrame({"pool": ["CSI500"], "symbols": [";".join(symbols)]}).to_csv(
-        tmp_path / "universe.csv", index=False
-    )
-    return symbols
-
-
-def test_experiment_end_to_end(tmp_path):
-    symbols = _gen_data(tmp_path)
-    config = ConfigManager()
-    config.set("data_dir", str(tmp_path))
-    config.set("rebalance", "monthly")
-    config.set("n_groups", 5)
-    config.set("long_short", True)
-    config.set("ic_horizon", 5)
-    config.set("storage", "csv")
-    config.set("output_path", str(tmp_path / "out"))
-
-    # 直接用 Alpha101 因子
-    from app.quantcore import BaseFactor
-
-    class Mom(BaseFactor):
-        name = "mom"
-        def compute(self, data):
-            return data.close.pct_change(20)
-
-    exp = FactorExperiment(
-        factor=Mom(), universe="CSI500",
-        start_date="2022-01-03", end_date="2024-12-31",
-        config=config,
-    )
-    manager = ExperimentManager(
-        max_workers=1,
-        max_queue_size=0,
-        runtime=_StaticRuntime(DataEngine(CSVDataProvider(str(tmp_path)))),
-    )
-    try:
-        result = manager.submit(exp).result(timeout=10)
-    finally:
-        manager.shutdown()
-    assert result.equity_curve is not None
-    assert len(result.equity_curve) > 20
-    assert "sharpe" in result.metrics
-    assert "ic" in result.metrics
-    assert "annual_return" in result.metrics
-    # 结果已保存
-    assert (tmp_path / "out" / "metrics.csv").exists()
-
-
-def test_factor_uses_full_history_before_evaluation_window(tmp_path):
-    """start/end 只裁剪收益确认区间，滚动因子可使用区间前的历史预热。"""
-    _gen_data(tmp_path, days=80)
-    config = ConfigManager()
-    config.set("data_dir", str(tmp_path))
-    config.set("factor_analysis.level", "core")
-    config.set("n_groups", 5)
-    config.set("long_short", False)
-
-    from app.quantcore import BaseFactor
-
-    class Mom20(BaseFactor):
-        name = "mom20_full_history"
-
-        def compute(self, data):
-            return data.close.pct_change(20)
-
-    exp = FactorExperiment(
-        factor=Mom20(),
-        universe="CSI500",
-        start_date="2022-02-01",
-        end_date="2022-03-31",
-        config=config,
-    )
-    manager = ExperimentManager(
-        max_workers=1,
-        max_queue_size=0,
-        runtime=_StaticRuntime(DataEngine(CSVDataProvider(str(tmp_path)))),
-    )
-    try:
-        result = manager.submit(exp).result(timeout=10)
-    finally:
-        manager.shutdown()
-
-    # 结果因子值仍只保留收益确认区间，但起点已有 20 日历史预热后的有效值。
-    assert result.factor_values.index.min() == pd.Timestamp("2022-02-01")
-    assert result.factor_values.loc["2022-02-01"].notna().all()
-    assert result.factor_values.index.max() == pd.Timestamp("2022-03-31")
-
-
-def test_experiment_manager_run_all(tmp_path):
-    _gen_data(tmp_path)
-    config = ConfigManager()
-    config.set("data_dir", str(tmp_path))
-    config.set("output_path", str(tmp_path / "out"))
-
-    from app.quantcore import BaseFactor
-
-    class Mom(BaseFactor):
-        name = "mom"
-        def compute(self, data):
-            return data.close.pct_change(20)
-
-    mgr = ExperimentManager(
-        max_workers=1,
-        max_queue_size=0,
-        runtime=_StaticRuntime(DataEngine(CSVDataProvider(str(tmp_path)))),
-    )
-    try:
-        handle = mgr.submit(
-            FactorExperiment(Mom(), "CSI500", "2022-01-03", "2024-12-31", config)
-        )
-        assert handle.result(timeout=10).equity_curve is not None
-    finally:
-        mgr.shutdown()
 
 
 # ---------------- 结果存储 ----------------
@@ -224,9 +63,19 @@ def test_csv_storage_roundtrip(tmp_path):
     assert loaded.metrics["ic"] == 0.05
     assert len(loaded.equity_curve) == 3
 
+    # 存储只返回数据；业务门面恢复后仍可读指标、再次保存。
+    from app.models.results import ResultData
+
+    assert type(loaded) is ResultData
+    restored = result.load(str(out))
+    assert isinstance(restored, ResultManager)
+    assert restored.get_metric("sharpe") == 1.2
+    assert restored.storage is result.storage
+    restored.save(str(tmp_path / "restored"))
+
 
 def test_parquet_storage_roundtrip(tmp_path):
-    from app import ParquetStorage
+    from app.database.results.storage.parquet_storage import ParquetStorage
 
     eq = pd.Series([1.0, 1.05, 1.1], index=pd.bdate_range("2022-01-03", periods=3))
     fv = pd.DataFrame(

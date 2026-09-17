@@ -6,7 +6,7 @@ from datetime import date
 
 from fastapi import APIRouter, HTTPException
 
-from app.core.exceptions import MarketDataError
+from app.utils.exceptions import MarketDataError
 from app.schemas.backtest import (
     DailyBar,
     DailyBarsResponse,
@@ -23,7 +23,7 @@ from app.schemas.backtest import (
     StockInfo,
     SymbolListResponse,
 )
-from app.services.catalog import CatalogQuery
+from app.services.catalog.query import CatalogQuery
 from app.services.factor.market_data import (
     get_daily_bars,
     get_index_constituents,
@@ -74,7 +74,17 @@ def list_library_factors(library_name: str) -> FactorListResponse:
         ) from exc
     return FactorListResponse(
         library_name=library_name,
-        factors=[FactorInfo(name=record.name, description=record.description) for record in factors],
+        factors=[
+            FactorInfo(
+                name=record.name,
+                description=record.description,
+                factor_id=record.factor_id,
+                display_name=record.display_name,
+                name_en=record.name_en,
+                category_name=record.category_name,
+            )
+            for record in factors
+        ],
     )
 
 
@@ -130,7 +140,17 @@ def _builtin_factors(library_name: str | None = None) -> list[FactorInfo]:
     records = []
     for current in names or [record.name for record in _catalog.list_factor_libraries()]:
         records.extend(_catalog.list_factors(current))
-    return [FactorInfo(name=record.name, description=record.description) for record in records]
+    return [
+        FactorInfo(
+            name=record.name,
+            description=record.description,
+            factor_id=record.factor_id,
+            display_name=record.display_name,
+            name_en=record.name_en,
+            category_name=record.category_name,
+        )
+        for record in records
+    ]
 
 
 __all__ = ["router", "_builtin_factors"]

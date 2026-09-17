@@ -9,7 +9,7 @@ class DividendGrowthAShareEventStrategy:
     """连续五年派息且最近一年不降的中等股息率月度策略。"""
 
     execution_mode = "event"
-    required_fields = frozenset({"open", "high", "low", "close", "dividend_yield", "pe_ttm", "total_mv", "dividend_cash_per_share"})
+    required_fields = frozenset({"open", "high", "low", "close", "dividend_yield_ttm", "pe_ttm", "total_mv", "dividend_cash_per_share"})
 
     def __init__(self, universe: list[str] | None = None, max_holdings: int = 10,
                  min_years: int = 5, min_dividend_yield: float = 0.01,
@@ -37,7 +37,11 @@ class DividendGrowthAShareEventStrategy:
     def _candidates(self, history, symbols):
         rows = []
         for symbol in symbols:
-            latest = {field: history[field][symbol].dropna() for field in ("dividend_yield", "pe_ttm", "total_mv")}
+            latest = {
+                "dividend_yield": history["dividend_yield_ttm"][symbol].dropna(),
+                "pe_ttm": history["pe_ttm"][symbol].dropna(),
+                "total_mv": history["total_mv"][symbol].dropna(),
+            }
             if any(values.empty for values in latest.values()):
                 continue
             dividend_yield, pe, market_cap = (float(latest[field].iloc[-1]) for field in latest)

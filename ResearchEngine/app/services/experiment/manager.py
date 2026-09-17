@@ -12,17 +12,14 @@ import threading
 import time
 import uuid
 from concurrent.futures import Future
-from dataclasses import dataclass, field
-from enum import Enum
+from app.models.experiment import ExperimentStatus, _ExperimentRun, ExecutionLane
 from queue import Queue
 from typing import Any, Generic, Literal, TypeVar, get_args
 
-from app.core.runtime import ResearchDataContext, ResearchRuntime
-from app.services.experiment.base import Experiment, ExperimentContext
+from app.services.experiment.base import Experiment
 
 
 T = TypeVar("T")
-ExecutionLane = Literal["interactive", "batch"]
 
 
 class ExperimentManagerError(RuntimeError):
@@ -37,31 +34,8 @@ class ExperimentManagerClosedError(ExperimentManagerError):
     """任务管理器已经停止接收任务。"""
 
 
-class ExperimentStatus(str, Enum):
-    CREATED = "created"
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
 
 
-@dataclass
-class _ExperimentRun(Generic[T]):
-    run_id: str
-    experiment: Experiment[T]
-    key: str | None
-    lane: ExecutionLane
-    metadata: dict[str, Any]
-    status: ExperimentStatus = ExperimentStatus.CREATED
-    created_at: float = field(default_factory=time.time)
-    started_at: float | None = None
-    finished_at: float | None = None
-    future: Future[T] = field(default_factory=Future)
-    result: T | None = None
-    error: str | None = None
-    cancel_requested: bool = False
-    capacity_released: bool = False
 
 
 class ExperimentHandle(Generic[T]):
@@ -94,7 +68,7 @@ class ExperimentHandle(Generic[T]):
 
 
 class ExperimentManager:
-    """唯一的进程级实验执行边界。
+    """唯一的进程级实验调度边界。
 
     Manager 只维护一个普通 FIFO 队列。``lane`` 是任务元数据，批量窗口和
     交互任务的先后关系由上层业务在提交时控制，而不是由 Manager 插队。
@@ -110,9 +84,6 @@ class ExperimentManager:
         self,
         max_workers: int | None = None,
         max_queue_size: int | None = None,
-        *,
-        runtime: ResearchRuntime | None = None,
-        data_dir: str | os.PathLike[str] | None = None,
     ) -> None:
         self.max_workers = max_workers if max_workers is not None else self._env_int(
             "SVQUANT_EXPERIMENT_MAX_WORKERS", 2, minimum=1
@@ -126,10 +97,6 @@ class ExperimentManager:
             raise ValueError("max_workers 必须大于等于 1")
         if self.max_queue_size < 0:
             raise ValueError("max_queue_size 必须大于等于 0")
-        if runtime is not None and data_dir is not None:
-            raise ValueError("runtime 与 data_dir 不能同时指定")
-
-        self.runtime = runtime or ResearchRuntime(data_dir=data_dir)
         self._capacity = threading.BoundedSemaphore(self.max_workers + self.max_queue_size)
         # semaphore 限制“运行中 + 等待中”的总数，Queue.maxsize 再把底层
         # 队列本身设为有界，避免未来新增提交路径绕过容量约束。
@@ -179,12 +146,6 @@ class ExperimentManager:
             for worker in self._workers:
                 worker.start()
         return self
-
-    def get_data_context(
-        self,
-        data_dir: str | os.PathLike[str] | None = None,
-    ) -> ResearchDataContext:
-        return self.runtime.get_context(data_dir)
 
     def submit(
         self,
@@ -279,8 +240,7 @@ class ExperimentManager:
             run.started_at = time.time()
 
         try:
-            context = ExperimentContext(self.runtime.get_context())
-            result = run.experiment.run(context)
+            result = run.experiment.run()
         except BaseException as exc:  # noqa: BLE001 - Future 需要保留原异常
             with self._lock:
                 run.status = ExperimentStatus.FAILED
@@ -397,7 +357,6 @@ class ExperimentManager:
         if wait:
             for worker in workers:
                 worker.join(timeout=5.0)
-        self.runtime.close()
 
     def __enter__(self) -> "ExperimentManager":
         return self.start()
@@ -410,7 +369,7 @@ class _CompletedExperiment(Experiment[T]):
     def __init__(self, result: T) -> None:
         self.result = result
 
-    def run(self, context: ExperimentContext) -> T:
+    def run(self) -> T:
         return self.result
 
 

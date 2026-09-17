@@ -10,7 +10,7 @@ class DeBondtThalerLongTermReversalAShareEventStrategy:
     """行业内长期输家、近期恢复与低 PB 的月度现金多头策略。"""
 
     execution_mode = "event"
-    required_fields = frozenset({"open", "high", "low", "close", "amount", "industry", "pe_ratio", "pb_ratio", "circulating_market_cap"})
+    required_fields = frozenset({"open", "high", "low", "close", "amount", "the_sw_industry_code", "pe_ttm", "pb_mrq", "current_mv"})
 
     def __init__(self, universe: list[str] | None = None, max_holdings: int = 20,
                  max_industry_holdings: int = 4, single_weight: float = 0.05,
@@ -27,7 +27,7 @@ class DeBondtThalerLongTermReversalAShareEventStrategy:
     def rebalance(self, context) -> None:
         holdings = set(context.portfolio.positions)
         symbols = list(dict.fromkeys((self.universe or list(context.data.symbols)) + list(holdings)))
-        fields = ["close", "amount", "industry", "pe_ratio", "pb_ratio", "circulating_market_cap"]
+        fields = ["close", "amount", "the_sw_industry_code", "pe_ttm", "pb_mrq", "current_mv"]
         history = context.data.history(symbols, fields, 757)
         target = self._select(self._candidates(history, symbols), holdings)
         for symbol in holdings - set(target.index):
@@ -45,10 +45,10 @@ class DeBondtThalerLongTermReversalAShareEventStrategy:
         for symbol in symbols:
             close = history["close"][symbol].dropna()
             amount = history["amount"][symbol].reindex(close.index).fillna(0.0)
-            values = {field: history[field][symbol].dropna() for field in ("industry", "pe_ratio", "pb_ratio", "circulating_market_cap")}
+            values = {field: history[field][symbol].dropna() for field in ("the_sw_industry_code", "pe_ttm", "pb_mrq", "current_mv")}
             if len(close) < 757 or any(series.empty for series in values.values()) or amount.tail(20).mean() < self.min_amount:
                 continue
-            pe, pb, cap = (float(values[field].iloc[-1]) for field in ("pe_ratio", "pb_ratio", "circulating_market_cap"))
+            pe, pb, cap = (float(values[field].iloc[-1]) for field in ("pe_ttm", "pb_mrq", "current_mv"))
             if not 0 < pe <= 80 or not 0 < pb <= 10 or cap <= 0:
                 continue
             long_return = close.iloc[-22] / close.iloc[-757] - 1.0
@@ -56,7 +56,7 @@ class DeBondtThalerLongTermReversalAShareEventStrategy:
             volatility = close.iloc[-121:].pct_change().std() * np.sqrt(252.0)
             if not np.isfinite(long_return) or not np.isfinite(volatility) or long_return <= -0.95 or long_return >= 8 or recovery <= 0:
                 continue
-            rows.append((symbol, values["industry"].iloc[-1], pb, cap, long_return, recovery, volatility))
+            rows.append((symbol, values["the_sw_industry_code"].iloc[-1], pb, cap, long_return, recovery, volatility))
         frame = pd.DataFrame(rows, columns=["symbol", "industry", "pb", "cap", "long_return", "recovery", "volatility"])
         if frame.empty:
             return frame

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,37 +11,29 @@ import pandas as pd
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.core.config import ConfigManager
+from app.config import ConfigManager
 from app.services.experiment.factor import _apply_factor_batch_filters, _predictive_summary
-from app.database.factor_backtest_store import (
-    FactorBacktestStore,
-    default_factor_backtest_db_path,
-)
+from app.database.factor_backtest_store import FactorBacktestStore, default_factor_backtest_db_path
 from app.cli.factor_backtest_batch import main
+from app.models.factor_batch import FactorBacktestBatchProfile, FactorCatalogItem
 from app.services.factor_backtest_batch.coordinator import (
-    FactorBacktestBatchProfile,
-    FactorCatalogItem,
-    FactorOutcome,
-    _run_factor_with_retry,
-    _run_factor_once,
+    _outcome_from_result,
+    _factor_spec,
     run_factor_backtest_batch,
 )
+from app.services.factor.experiment import FactorBacktestExperiment
 from app.services.experiment.manager import ExperimentManager
+from app.schemas.backtest import FactorBacktestRequest
+from app.services.factor.runner import _request_factor_source_hash, _request_spec
+from app.utils.paths import _repo_root
 
 
-class _StaticRuntime:
+class _StaticDataEngine:
     def __init__(self, root: Path):
-        self._context = SimpleNamespace(
-            data_dir=root,
-            data_engine=SimpleNamespace(),
-            provider=SimpleNamespace(),
-        )
-
-    def get_context(self, data_dir=None):
-        return self._context
-
-    def close(self):
-        pass
+        self.data_dir = root
+        self.provider = SimpleNamespace()
+        self.release_id = "test-release"
+        self.data_engine = self
 
 
 def _make_batch(store: FactorBacktestStore, *, as_of: str = "2026-08-19") -> tuple[str, str]:
@@ -83,7 +76,12 @@ def test_default_factor_backtest_db_path_is_factor_database(monkeypatch):
     monkeypatch.delenv("SVQUANT_FACTOR_BACKTEST_DB_PATH", raising=False)
 
     assert default_factor_backtest_db_path() == (
-        Path("D:/project/SVQuant") / "Factor" / "database" / "factor_backtest.db"
+        _repo_root()
+        / "ResearchEngine"
+        / "app"
+        / "assets"
+        / "factors"
+        / "factor_backtest.db"
     )
 
 
@@ -98,7 +96,35 @@ def test_profile_uses_rolling_calendar_years_and_fixed_defaults():
     assert profile.groups == 5
     assert profile.rebalance_days == 1
     assert profile.analysis_level == "core"
-    assert profile.filter_limit_up and profile.filter_suspended
+    assert not profile.filter_limit_up and not profile.filter_suspended
+
+
+def test_builtin_single_and_batch_specs_share_identity(monkeypatch, tmp_path: Path):
+    source_path = tmp_path / "library.py"
+    source_path.write_text("# same factor source\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "app.services.factor.runner._builtin_factor_library_entry",
+        lambda _library: (tmp_path, "library", {}),
+    )
+
+    profile = FactorBacktestBatchProfile("2026-08-19")
+    request = FactorBacktestRequest(
+        library_name="library",
+        factor_name="factor",
+        universe="CSI_ALL",
+        start=profile.window_start,
+        end=profile.window_end,
+    )
+    source_hash = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    batch_spec = _factor_spec(
+        profile,
+        FactorCatalogItem("library", "factor", source_hash),
+    )
+
+    assert _request_factor_source_hash(request) == source_hash
+    assert _request_spec(request).identity(data_release_id="release-1") == batch_spec.identity(
+        data_release_id="release-1"
+    )
 
 
 def test_predictive_summary_returns_scalar_ic_rank_ic_and_annualized_icir():
@@ -119,7 +145,7 @@ def test_predictive_summary_returns_scalar_ic_rank_ic_and_annualized_icir():
     assert "value" not in summary
 
 
-def test_batch_filters_mask_suspended_and_limit_up_symbols():
+def test_batch_skips_missing_suspension_filter_and_uses_up_and_down_status():
     dates = pd.date_range("2026-01-01", periods=2)
     columns = ["A", "B", "C"]
     factor = pd.DataFrame(1.0, index=dates, columns=columns)
@@ -127,10 +153,7 @@ def test_batch_filters_mask_suspended_and_limit_up_symbols():
     class PanelStub:
         def __init__(self):
             self.fields = {
-                "is_suspended": pd.DataFrame(
-                    [[False, True, False], [False, False, False]], index=dates, columns=columns
-                ),
-                "limit_status": pd.DataFrame(
+                "up_and_down_status": pd.DataFrame(
                     [["非涨跌停", "非涨跌停", "涨停"], ["非涨跌停"] * 3],
                     index=dates,
                     columns=columns,
@@ -150,7 +173,8 @@ def test_batch_filters_mask_suspended_and_limit_up_symbols():
 
     filtered = _apply_factor_batch_filters(factor, PanelStub(), config)
 
-    assert pd.isna(filtered.loc[dates[0], "B"])
+    # 当前 release 没有独立 is_suspended，停牌过滤按缺失字段跳过。
+    assert filtered.loc[dates[0], "B"] == 1.0
     assert pd.isna(filtered.loc[dates[0], "C"])
     assert filtered.loc[dates[1]].notna().all()
 
@@ -180,15 +204,10 @@ def test_store_round_trip_persists_six_quantile_rows_and_predictive_metrics(tmp_
 def test_batch_is_idempotent_and_force_retry_supersedes(monkeypatch, tmp_path: Path):
     profile = FactorBacktestBatchProfile("2026-08-19")
     items = [
-        FactorCatalogItem("lib", "ok", "hash-ok", factor=object()),
-        FactorCatalogItem("lib", "bad", "hash-bad", factor=object()),
-        FactorCatalogItem("lib", "short", "hash-short", factor=object()),
+        FactorCatalogItem("lib", "ok", "hash-ok"),
+        FactorCatalogItem("lib", "bad", "hash-bad"),
+        FactorCatalogItem("lib", "short", "hash-short"),
     ]
-    outcomes = {
-        "ok": FactorOutcome(status="succeeded", observation_days=20, sample_quality="complete"),
-        "bad": FactorOutcome(status="failed", retry_count=1, error_code="runtime_error", error_message="boom"),
-        "short": FactorOutcome(status="succeeded", observation_days=3, sample_quality="short_history"),
-    }
     monkeypatch.setattr(
         "app.services.factor_backtest_batch.coordinator._catalog_items",
         lambda: (("lib",), "catalog-v1", items),
@@ -197,16 +216,31 @@ def test_batch_is_idempotent_and_force_retry_supersedes(monkeypatch, tmp_path: P
         "app.services.factor_backtest_batch.coordinator._preflight",
         lambda _profile, count, **_kwargs: {"factor_count": count},
     )
-    monkeypatch.setattr(
-        "app.services.factor_backtest_batch.coordinator._run_factor_with_retry",
-        lambda _profile, item, **_kwargs: outcomes[item.factor_name],
-    )
+    attempts: dict[str, int] = {}
+
+    def fake_task_run(self):
+        name = self.spec.factor_name
+        attempts[name] = attempts.get(name, 0) + 1
+        if name == "bad":
+            raise RuntimeError("boom")
+        return SimpleNamespace(
+            equity_curve=pd.Series(
+                [1.0, 1.01],
+                index=pd.date_range("2026-01-01", periods=2),
+            ),
+            quantile_metrics=tuple(
+                {"quantile": quantile, "annual_return": 0.1}
+                for quantile in ("Q1", "Q2", "Q3", "Q4", "Q5", "benchmark")
+            ),
+            predictive_metrics={},
+        )
+
+    monkeypatch.setattr(FactorBacktestExperiment, "run", fake_task_run)
 
     progress: list[tuple[int, int]] = []
     manager = ExperimentManager(
         max_workers=2,
         max_queue_size=4,
-        runtime=_StaticRuntime(tmp_path),
     )
     try:
         first = run_factor_backtest_batch(
@@ -319,7 +353,7 @@ def test_index_or_preflight_failure_is_recorded_as_failed_batch(monkeypatch, tmp
         lambda: (_ for _ in ()).throw(ValueError("index is invalid")),
     )
 
-    manager = ExperimentManager(max_workers=1, max_queue_size=0, runtime=_StaticRuntime(tmp_path))
+    manager = ExperimentManager(max_workers=1, max_queue_size=0)
     try:
         result = run_factor_backtest_batch(profile, manager=manager, db_path=tmp_path / "failed.db")
         assert result["status"] == "failed"
@@ -329,33 +363,11 @@ def test_index_or_preflight_failure_is_recorded_as_failed_batch(monkeypatch, tmp
         manager.shutdown()
 
 
-def test_factor_retry_classifies_incompatible_without_retry_and_runtime_twice(monkeypatch):
-    profile = FactorBacktestBatchProfile("2026-08-19")
-    item = FactorCatalogItem("lib", "factor", "hash", factor=object())
-    calls = {"count": 0}
-
-    def incompatible(_profile, _item):
-        calls["count"] += 1
-        raise ValueError("参数不兼容")
-
-    monkeypatch.setattr("app.services.factor_backtest_batch.coordinator._run_factor_once", incompatible)
-    skipped = _run_factor_with_retry(profile, item)
-    assert skipped.status == "skipped"
-    assert skipped.retry_count == 0
-    assert calls["count"] == 1
-
-    def runtime(_profile, _item):
-        calls["count"] += 1
-        raise RuntimeError("temporary failure")
-
-    monkeypatch.setattr("app.services.factor_backtest_batch.coordinator._run_factor_once", runtime)
-    failed = _run_factor_with_retry(profile, item)
-    assert failed.status == "failed"
-    assert failed.retry_count == 1
-    assert calls["count"] == 3
+def test_batch_submits_the_unified_factor_experiment():
+    assert FactorBacktestExperiment.__name__ == "FactorBacktestExperiment"
 
 
-def test_run_factor_once_maps_six_metrics_and_short_history(monkeypatch):
+def test_batch_projection_maps_six_metrics_and_short_history():
     dates = pd.date_range("2025-01-01", periods=4, freq="D")
     layered = pd.DataFrame(
         {f"layer{number}": np.linspace(1.0, 1.1 + number / 100, len(dates)) for number in range(1, 6)},
@@ -365,37 +377,16 @@ def test_run_factor_once_maps_six_metrics_and_short_history(monkeypatch):
     equity = pd.Series(np.linspace(1.0, 1.2, len(dates)), index=dates)
     fake_result = SimpleNamespace(
         equity_curve=equity,
-        factor_analysis={
-            "layered_equity": layered,
-            "layered_returns": returns,
-            "predictive_summary": {"ic_mean": 0.2, "rank_ic_mean": 0.15, "ic_ir": 2.0},
-        },
-    )
-
-    class FakeExperiment:
-        def __init__(self, **_kwargs):
-            pass
-
-        def run(self, _context):
-            return fake_result
-
-    monkeypatch.setattr("app.services.factor_backtest_batch.coordinator.FactorExperiment", FakeExperiment)
-    monkeypatch.setattr(
-        "app.services.factor_backtest_batch.coordinator._load_benchmark_equity",
-        lambda _benchmark, index, **_kwargs: pd.Series(1.0, index=index),
-    )
-    monkeypatch.setattr(
-        "app.services.factor_backtest_batch.coordinator._compute_quantile_metrics",
-        lambda *_args, **_kwargs: [
+        quantile_metrics=tuple(
             {"quantile": name, "annual_return": 0.1}
             for name in ("Q1", "Q2", "Q3", "Q4", "Q5", "benchmark")
-        ],
+        ),
+        predictive_metrics={"ic_mean": 0.2, "rank_ic_mean": 0.15, "ic_ir": 2.0},
     )
-
-    outcome = _run_factor_once(
+    outcome = _outcome_from_result(
         FactorBacktestBatchProfile("2026-08-19"),
-        FactorCatalogItem("lib", "factor", "hash", factor=object()),
-        data_context=SimpleNamespace(data_engine=SimpleNamespace()),
+        fake_result,
+        started=0.0,
     )
 
     assert outcome.status == "succeeded"

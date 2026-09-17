@@ -17,10 +17,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal
 
-from app.services.factor_backtest_batch.coordinator import (
-    FactorBacktestBatchCoordinator,
-    FactorBacktestBatchProfile,
-)
+from app.services.factor_backtest_batch.coordinator import FactorBacktestBatchCoordinator
+from app.models.factor_batch import FactorBacktestBatchProfile
 
 
 FactorBacktestBatchTaskStatus = Literal[

@@ -7,8 +7,9 @@ import time
 
 import pandas as pd
 
-from app.quantcore import FieldParquetProvider
-from app.quantcore.data.field_cache import FieldFrameCache
+from app.database.data.providers.field_parquet_provider import FieldParquetProvider
+from app.database.data.field_cache import FieldFrameCache
+from app.services.data.engine import DataEngine
 
 
 def _write_fields(tmp_path):
@@ -24,7 +25,7 @@ def _write_fields(tmp_path):
 
 
 def test_concurrent_cache_miss_executes_loader_once():
-    cache = FieldFrameCache(max_bytes=1024 * 1024)
+    cache = FieldFrameCache()
     calls = {"count": 0}
     lock = threading.Lock()
 
@@ -50,9 +51,9 @@ def test_concurrent_cache_miss_executes_loader_once():
     assert all(result is results[0] for result in results)
 
 
-def test_provider_reuses_date_and_symbol_slice(tmp_path):
+def test_provider_reuses_complete_field_from_shared_cache(tmp_path):
     _write_fields(tmp_path)
-    cache = FieldFrameCache(max_bytes=1024 * 1024)
+    cache = FieldFrameCache()
     provider = FieldParquetProvider(tmp_path, cache=cache)
 
     first = provider.get_panels(
@@ -62,22 +63,35 @@ def test_provider_reuses_date_and_symbol_slice(tmp_path):
         "2024-01-02", "2024-01-03", fields=["close"]
     )["close"]
 
-    assert first is second
+    pd.testing.assert_frame_equal(first, second)
     assert list(first.columns) == ["A", "B"]
     assert len(first) == 2
     assert cache.stats()["hits"] >= 1
 
 
-def test_lru_never_exceeds_configured_bytes(tmp_path):
+def test_preloaded_field_cache_has_no_capacity_eviction_and_task_panels_are_isolated(tmp_path):
     _write_fields(tmp_path)
-    probe = FieldParquetProvider(tmp_path, cache=FieldFrameCache(max_bytes=1024 * 1024))
-    size = probe._cache.estimate_bytes(probe._read_field("close"))
-    cache = FieldFrameCache(max_bytes=size + 1)
+    cache = FieldFrameCache()
     provider = FieldParquetProvider(tmp_path, cache=cache)
 
-    provider._read_field("close")
-    provider._read_field("open")
+    provider.preload_all_fields()
+    shared_close = provider._read_field("close")
+    first = provider.get_task_panels("2024-01-02", "2024-01-03", ["close"])["close"]
+    second = provider.get_task_panels("2024-01-02", "2024-01-03", ["close"])["close"]
+    first.iloc[0, 0] = -1.0
 
     stats = cache.stats()
-    assert stats["bytes"] <= stats["max_bytes"]
-    assert stats["evictions"] >= 1
+    assert stats["entries"] == 2
+    assert stats["bytes"] > 0
+    assert shared_close.iloc[0, 0] == 10.0
+    assert second.iloc[0, 0] == 10.0
+
+
+def test_data_engine_load_does_not_preload_the_active_release(tmp_path):
+    _write_fields(tmp_path)
+    engine = DataEngine()
+    engine.load_parquet(tmp_path)
+
+    assert engine.cache_stats()["entries"] == 0
+    engine.get_task_panels(fields=["close"])["close"]
+    assert engine.cache_stats()["entries"] == 1

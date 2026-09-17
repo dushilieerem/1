@@ -10,7 +10,7 @@ class LaneStochasticAShareEventStrategy:
 
     execution_mode = "event"
     required_fields = frozenset({"open", "high", "low", "close"})
-    required_market_state = frozenset({"suspended", "limit_up", "limit_down"})
+    required_market_state = frozenset({"up_and_down_status"})
 
     def __init__(self, benchmark_symbol: str = "000300.SH", universe: list[str] | None = None,
                  max_holdings: int = 10, single_weight: float = 0.09) -> None:

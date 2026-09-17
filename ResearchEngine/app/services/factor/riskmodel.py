@@ -3,8 +3,8 @@
 三因子（Fama-French 口径，自构造）：
 
 - **MKT** = 市值加权全市场日收益（同时作累计收益图的基准）。
-- **SMB** = 小市值组 − 大市值组多空日收益（按 ``total_mv`` 分 N 组，QN 小盘 − Q1 大盘）。
-- **HML** = 高账面市值比组 − 低账面市值比组多空（按 ``1/pb`` 分组，Q1 高 1/pb=价值股 − QN 低 1/pb=成长股）。
+- **SMB** = 小市值组 − 大市值组多空日收益（按 ``current_mv`` 分 N 组，QN 小盘 − Q1 大盘）。
+- **HML** = 高账面市值比组 − 低账面市值比组多空（按 ``1/pb_mrq`` 分组，Q1 高 1/pb_mrq=价值股 − QN 低 1/pb_mrq=成长股）。
 
 SMB/HML 复用 :mod:`app.services.factor.layered`，与分层回测同口径。
 
@@ -19,7 +19,7 @@ from typing import Optional, Union
 import numpy as np
 import pandas as pd
 
-from app.quantcore.backtest.adapter.calendar import PandasCalendar
+from app.services.data.calendar import PandasCalendar
 from app.services.factor.layered import layered_returns, long_short_returns
 
 #: 年化周期数（与指标层默认一致）
@@ -28,18 +28,18 @@ _PERIODS_PER_YEAR = 252
 
 def market_weighted_returns(
     close: pd.DataFrame,
-    total_mv: pd.DataFrame,
+    current_mv: pd.DataFrame,
     rebalance: str = "monthly",
 ) -> pd.Series:
     """市值加权全市场日收益（MKT / 基准）。
 
-    每个调仓日按 ``total_mv`` 归一化得权重，``t+1`` 收盘建仓并作为净值起点，
+    每个调仓日按 ``current_mv`` 归一化得权重，``t+1`` 收盘建仓并作为净值起点，
     ``t+2`` 起持有；口径与 :class:`NativeEngine` 一致（固定本金）。
 
     Parameters
     ----------
-    close, total_mv : pd.DataFrame
-        ``日期×标的`` 收盘价 / 总市值。
+    close, current_mv : pd.DataFrame
+        ``日期×标的`` 收盘价 / 当前市值。
     rebalance : str
         调仓频率（默认 monthly）。
 
@@ -48,12 +48,12 @@ def market_weighted_returns(
     pd.Series
         全市场市值加权日收益（首日已剔除）。
     """
-    common_dates = close.index.intersection(total_mv.index)
-    common_symbols = close.columns.intersection(total_mv.columns)
+    common_dates = close.index.intersection(current_mv.index)
+    common_symbols = close.columns.intersection(current_mv.columns)
     if common_dates.empty or common_symbols.empty:
         return pd.Series(dtype=float)
     close = close.loc[common_dates, common_symbols]
-    mv = total_mv.loc[common_dates, common_symbols]
+    mv = current_mv.loc[common_dates, common_symbols]
 
     reb_np = PandasCalendar().rebalance_mask(close.index, rebalance).to_numpy()[:, None]
     ret = close.pct_change()
@@ -72,8 +72,8 @@ def market_weighted_returns(
 
 def ff3_factors(
     close: pd.DataFrame,
-    total_mv: pd.DataFrame,
-    pb: pd.DataFrame,
+    current_mv: pd.DataFrame,
+    pb_mrq: pd.DataFrame,
     rebalance: str = "monthly",
     n_groups: int = 5,
 ) -> pd.DataFrame:
@@ -81,8 +81,8 @@ def ff3_factors(
 
     Parameters
     ----------
-    close, total_mv, pb : pd.DataFrame
-        ``日期×标的`` 收盘价 / 总市值 / 市净率。``pb`` 用于算 ``1/pb``（账面市值比）。
+    close, current_mv, pb_mrq : pd.DataFrame
+        ``日期×标的`` 收盘价 / 当前市值 / 最近报告期市净率。``pb_mrq`` 用于算 ``1/pb_mrq``（账面市值比）。
     rebalance : str
         调仓频率。
     n_groups : int
@@ -95,18 +95,18 @@ def ff3_factors(
 
     Notes
     -----
-    - SMB = 小盘(QN) − 大盘(Q1)：按 ``total_mv`` 分组，做多低市值组、做空高市值组。
-    - HML = 价值(Q1) − 成长(QN)：按 ``1/pb`` 分组，做多高账面市值比（低 PB）组、
-      做空低账面市值比（高 PB）组。``pb<=0`` 视作无效（``1/pb`` 置 NaN）。
+    - SMB = 小盘(QN) − 大盘(Q1)：按 ``current_mv`` 分组，做多低市值组、做空高市值组。
+    - HML = 价值(Q1) − 成长(QN)：按 ``1/pb_mrq`` 分组，做多高账面市值比（低 PB）组、
+      做空低账面市值比（高 PB）组。``pb_mrq<=0`` 视作无效（``1/pb_mrq`` 置 NaN）。
     """
-    mkt = market_weighted_returns(close, total_mv, rebalance)
+    mkt = market_weighted_returns(close, current_mv, rebalance)
 
     # SMB: 小盘 - 大盘 = QN - Q1
-    smb_lr = layered_returns(total_mv, close, n_groups=n_groups, rebalance=rebalance)
+    smb_lr = layered_returns(current_mv, close, n_groups=n_groups, rebalance=rebalance)
     smb = long_short_returns(smb_lr, q_high=n_groups, q_low=1)
 
-    # HML: 价值(高 1/pb) - 成长(低 1/pb) = Q1 - QN
-    bm = 1.0 / pb.where(pb > 0)  # 账面市值比；pb<=0 -> NaN
+    # HML: 价值(高 1/pb_mrq) - 成长(低 1/pb_mrq) = Q1 - QN
+    bm = 1.0 / pb_mrq.where(pb_mrq > 0)  # 账面市值比；pb_mrq<=0 -> NaN
     hml_lr = layered_returns(bm, close, n_groups=n_groups, rebalance=rebalance)
     hml = long_short_returns(hml_lr, q_high=1, q_low=n_groups)
 

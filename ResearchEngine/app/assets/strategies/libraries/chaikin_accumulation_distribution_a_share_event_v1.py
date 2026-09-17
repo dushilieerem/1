@@ -18,10 +18,10 @@ class ChaikinAccumulationDistributionAShareEventStrategy:
             "close",
             "volume",
             "amount",
-            "industry",
-            "pe_ratio",
-            "pb_ratio",
-            "circulating_market_cap",
+            "the_sw_industry_code",
+            "pe_ttm",
+            "pb_mrq",
+            "current_mv",
         }
     )
 
@@ -66,10 +66,10 @@ class ChaikinAccumulationDistributionAShareEventStrategy:
             "close",
             "volume",
             "amount",
-            "industry",
-            "pe_ratio",
-            "pb_ratio",
-            "circulating_market_cap",
+            "the_sw_industry_code",
+            "pe_ttm",
+            "pb_mrq",
+            "current_mv",
         ]
         history = context.data.history(symbols, fields, self.history_window)
         candidates = self._candidates(history, symbols)
@@ -110,11 +110,11 @@ class ChaikinAccumulationDistributionAShareEventStrategy:
             ):
                 continue
 
-            industry = history["industry"][symbol].dropna()
-            pe = pd.to_numeric(history["pe_ratio"][symbol], errors="coerce").dropna()
-            pb = pd.to_numeric(history["pb_ratio"][symbol], errors="coerce").dropna()
+            industry = history["the_sw_industry_code"][symbol].dropna()
+            pe = pd.to_numeric(history["pe_ttm"][symbol], errors="coerce").dropna()
+            pb = pd.to_numeric(history["pb_mrq"][symbol], errors="coerce").dropna()
             cap = pd.to_numeric(
-                history["circulating_market_cap"][symbol], errors="coerce"
+                history["current_mv"][symbol], errors="coerce"
             ).dropna()
             if industry.empty or pe.empty or pb.empty or cap.empty:
                 continue

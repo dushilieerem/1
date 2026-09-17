@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from app.quantcore import EventBacktestEngine
-from app.repositories.catalogs.strategy_catalog import StrategyCatalog
+from app.services.strategy.event.engine import EventBacktestEngine
+from app.services.catalog.strategy_catalog import StrategyCatalog
 
 
 def _strategy(strategy_id):
@@ -22,7 +22,7 @@ def _panels(days=280, symbols=12):
     close = pd.DataFrame({code: 10 + np.arange(days) * (0.03 + i * 0.002) + np.sin(np.arange(days) / 6) for i, code in enumerate(codes)}, index=dates)
     panels = {"open": close * 0.999, "high": close * 1.01, "low": close * 0.99, "close": close}
     panels["market_cap"] = pd.DataFrame({code: 3_100_000_000 + i * 300_000_000 for i, code in enumerate(codes)}, index=dates)
-    panels["pb_ratio"] = pd.DataFrame({code: 0.8 + i * 0.1 for i, code in enumerate(codes)}, index=dates)
+    panels["pb_mrq"] = pd.DataFrame({code: 0.8 + i * 0.1 for i, code in enumerate(codes)}, index=dates)
     return panels
 
 

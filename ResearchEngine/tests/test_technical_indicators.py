@@ -3,8 +3,10 @@
 import numpy as np
 import pandas as pd
 
-from app.quantcore.factor.base import Panel, library_factors
-from app import FactorLoader
+from app.models.data import Panel
+from app.services.factor.base import library_factors
+from factor_test_support import BuiltinFactorLoader as FactorLoader
+from factor_test_support import builtin_factor_ids
 
 
 def _panel() -> Panel:
@@ -25,29 +27,27 @@ def _panel() -> Panel:
 
 def test_technical_indicator_library_registers_first_batch():
     loader = FactorLoader()
-    library = loader.load("technical_indicators")
+    library = loader.load()
 
     factors = library_factors(library)
-    assert len(factors) == 15
-    assert set(factors) == {
-        "boll_down", "boll_up", "ema5", "emac10", "emac12",
-        "emac20", "emac26", "emac120", "mac5", "mac10",
-        "mac20", "mac60", "mac120", "macdc", "mfi14",
-    }
+    assert len(factors) == 432
+    assert {"boll_down", "boll_up", "expma", "simple_moving_average"}.issubset(factors)
 
 
 def test_technical_indicator_formulae_match_reference():
     loader = FactorLoader()
-    loader.load("technical_indicators")
+    loader.load()
     panel = _panel()
 
-    ema5 = loader.factors["ema5"].compute(panel)
+    library = loader.load()
+    expma5 = loader.factors["expma"].compute(panel)
     pd.testing.assert_frame_equal(
-        ema5, panel.close.ewm(span=5, adjust=False).mean() / panel.close
+        expma5, panel.close.ewm(span=5, adjust=False).mean()
     )
 
-    mac20 = loader.factors["mac20"].compute(panel)
-    pd.testing.assert_frame_equal(mac20, panel.close.rolling(20).mean() / panel.close)
+    library._panel = panel
+    sma20 = library.simple_moving_average(window=20)
+    pd.testing.assert_frame_equal(sma20, panel.close.rolling(20).mean())
 
     boll_up = loader.factors["boll_up"].compute(panel)
     expected_boll_up = (
@@ -58,16 +58,16 @@ def test_technical_indicator_formulae_match_reference():
 
 def test_technical_indicators_return_panel_shape():
     loader = FactorLoader()
-    loader.load("technical_indicators")
+    loader.load()
     panel = _panel()
 
-    for factor in loader.factors.values():
-        assert factor.compute(panel).shape == panel.close.shape
+    for name in ("boll_down", "boll_up", "expma", "simple_moving_average"):
+        assert loader.factors[name].compute(panel).shape == panel.close.shape
 
 
 def test_factor_api_lists_technical_indicators():
     from app.api.routes import _builtin_factors
 
     names = {factor.name for factor in _builtin_factors()}
-    assert "boll_up" in names
-    assert "mac120" in names
+    ids = builtin_factor_ids()
+    assert {ids["boll_up"], ids["expma"]}.issubset(names)

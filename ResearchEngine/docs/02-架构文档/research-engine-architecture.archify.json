@@ -1,0 +1,307 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "SVQuant ResearchEngine 高层系统架构（当前实现）",
+    "locale": "zh-CN",
+    "output": "research-engine-architecture.html",
+    "quality_profile": "showcase",
+    "viewBox": [1380, 500],
+    "views": [
+      {
+        "id": "primary-path",
+        "label": "主请求与计算路径",
+        "focus": [
+          "researcher",
+          "api",
+          "manager",
+          "backtest",
+          "data",
+          "factor",
+          "portfolio",
+          "metric",
+          "result-manager"
+        ],
+        "note": "从 /api 请求进入进程级调度器，经 BacktestEngine 编排四个计算引擎，形成结构化结果。"
+      },
+      {
+        "id": "data-boundary",
+        "label": "数据读取边界",
+        "focus": ["data", "provider", "market-data"],
+        "note": "DataEngine 通过 FieldParquetProvider 只读当前 MarketData release。"
+      },
+      {
+        "id": "execution-and-results",
+        "label": "执行与持久化",
+        "focus": ["manager", "backtest", "portfolio", "metric", "result-manager", "result-store"],
+        "note": "任务状态由 Manager 管理；结果由 ResultManager 组装，并按输出配置选择性保存。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "researcher",
+      "type": "external",
+      "label": "投研用户 / WebApp",
+      "sublabel": "HTTP client",
+      "tag": "外部调用方",
+      "pos": [30, 40],
+      "size": [170, 68]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "FastAPI API 适配层",
+      "sublabel": "app.main + app.api.routes",
+      "tag": "/api/*",
+      "pos": [240, 40],
+      "size": [190, 68]
+    },
+    {
+      "id": "manager",
+      "type": "backend",
+      "label": "ExperimentManager",
+      "sublabel": "进程级 FIFO 调度与任务状态",
+      "tag": "2 workers + 8 queued",
+      "pos": [480, 40],
+      "size": [210, 68]
+    },
+    {
+      "id": "data",
+      "type": "backend",
+      "label": "Data Engine",
+      "sublabel": "面板、股票池与有效池",
+      "tag": "只读数据门面",
+      "pos": [960, 40],
+      "size": [165, 68]
+    },
+    {
+      "id": "provider",
+      "type": "backend",
+      "label": "FieldParquetProvider",
+      "sublabel": "IDataProvider 实现",
+      "tag": "按字段 / 业务域读 Parquet",
+      "pos": [900, 160],
+      "size": [190, 68]
+    },
+    {
+      "id": "market-data",
+      "type": "external",
+      "label": "MarketData release",
+      "sublabel": "用户准备的只读行情目录",
+      "tag": "外部数据边界",
+      "pos": [900, 280],
+      "size": [190, 68]
+    },
+    {
+      "id": "factor",
+      "type": "backend",
+      "label": "Factor Engine",
+      "sublabel": "因子解析、计算与预处理",
+      "tag": "任务私有因子状态",
+      "pos": [1150, 40],
+      "size": [180, 68]
+    },
+    {
+      "id": "portfolio",
+      "type": "backend",
+      "label": "Portfolio Engine",
+      "sublabel": "分组、权重、持仓与远期收益",
+      "tag": "组合构建",
+      "pos": [1140, 160],
+      "size": [200, 68]
+    },
+    {
+      "id": "backtest",
+      "type": "backend",
+      "label": "BacktestEngine",
+      "sublabel": "因子回测唯一应用编排边界",
+      "tag": "Data → Factor → Portfolio → Metric",
+      "pos": [720, 40],
+      "size": [210, 68]
+    },
+    {
+      "id": "metric",
+      "type": "backend",
+      "label": "Metric Engine",
+      "sublabel": "收益、净值、IC、分层与成本",
+      "tag": "统一评价",
+      "pos": [1140, 280],
+      "size": [200, 68]
+    },
+    {
+      "id": "result-manager",
+      "type": "backend",
+      "label": "ResultManager",
+      "sublabel": "结构化结果组装与可选保存",
+      "tag": "ResultData 投影",
+      "pos": [1145, 400],
+      "size": [190, 68]
+    },
+    {
+      "id": "result-store",
+      "type": "database",
+      "label": "Result Storage",
+      "sublabel": "CSV / Parquet / SQLite",
+      "tag": "可插拔持久化",
+      "pos": [900, 400],
+      "size": [190, 68]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "ResearchEngine 受信任 Python 运行时（当前实现）",
+      "wraps": [
+        "api",
+        "manager",
+        "backtest",
+        "data",
+        "provider",
+        "factor",
+        "portfolio",
+        "metric",
+        "result-manager"
+      ],
+      "pad": 28
+    },
+    {
+      "kind": "region",
+      "label": "用户管理的数据边界（只读）",
+      "wraps": ["market-data"],
+      "pad": 22
+    },
+    {
+      "kind": "region",
+      "label": "可选结果持久化边界",
+      "wraps": ["result-store"],
+      "pad": 22
+    }
+  ],
+  "connections": [
+    {
+      "id": "request-entry",
+      "from": "researcher",
+      "to": "api",
+      "label": "HTTP /api/*",
+      "variant": "emphasis",
+      "labelDy": 58
+    },
+    {
+      "id": "api-to-manager",
+      "from": "api",
+      "to": "manager",
+      "label": "提交因子 / 策略 Experiment",
+      "labelDy": 82
+    },
+    {
+      "id": "manager-to-backtest",
+      "from": "manager",
+      "to": "backtest",
+      "label": "FactorBacktestExperiment.run",
+      "labelDy": 58
+    },
+    {
+      "id": "backtest-to-data",
+      "from": "backtest",
+      "to": "data",
+      "label": "行情面板与股票池",
+      "labelDy": 58
+    },
+    {
+      "id": "data-to-factor",
+      "from": "data",
+      "to": "factor",
+      "label": "Panel + 有效池掩码",
+      "labelDy": 65
+    },
+    {
+      "id": "factor-to-portfolio",
+      "from": "factor",
+      "to": "portfolio",
+      "label": "因子值",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    },
+    {
+      "id": "portfolio-to-metric",
+      "from": "portfolio",
+      "to": "metric",
+      "label": "权重 / 持仓 / 远期收益",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    },
+    {
+      "id": "metric-to-result-manager",
+      "from": "metric",
+      "to": "result-manager",
+      "label": "指标 / 净值 / 分析",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    },
+    {
+      "id": "result-manager-to-store",
+      "from": "result-manager",
+      "to": "result-store",
+      "label": "可选 save()",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelDy": 58
+    },
+    {
+      "id": "data-to-provider",
+      "from": "data",
+      "to": "provider",
+      "label": "IDataProvider 字段读取",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "variant": "dashed",
+      "labelDy": 118,
+      "labelDx": -140
+    },
+    {
+      "id": "provider-to-market-data",
+      "from": "provider",
+      "to": "market-data",
+      "label": "只读当前 release",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "variant": "dashed",
+      "labelDy": 40,
+      "labelDx": -220
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "入口与调度",
+      "items": [
+        "app.main 组装 FastAPI、一个进程级 DataEngine、ExperimentManager 和批量任务注册表。",
+        "因子回测 POST 返回 202 与 run_id，查询 / 取消由任务路由完成；策略回测共享 Manager 但保持同步响应。",
+        "Manager 负责有界 FIFO、inflight 去重、排队 / 运行 / 终态和取消语义；不把业务优先级插入通用队列。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "计算主链",
+      "items": [
+        "BacktestEngine 是因子回测唯一应用编排边界，统一串起 Data、Factor、Portfolio、Metric 四个 services 引擎。",
+        "FactorEngine 任务内解析因子来源并预处理；PortfolioEngine 产出分组、目标权重、持仓和远期收益。",
+        "MetricEngine 评价收益、净值、IC、分层与交易成本，随后由 ResultManager 组装 FactorBacktestResult。"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "数据、持久化与边界",
+      "items": [
+        "MarketData 是 ResearchEngine 只读消费的活动 release；FieldParquetProvider 兼容业务域宽表与字段级 Parquet。",
+        "ResultManager 默认承载当前任务结果，只有 spec 指定 output_path 时才委托 CSV / Parquet / SQLite 存储；批量历史另由 SQLite 业务库保存。",
+        "因子 / 策略源码在当前受信任环境中通过 exec 执行；生产沙箱、认证与多实例共享任务状态仍是后续演进。"
+      ]
+    }
+  ]
+}

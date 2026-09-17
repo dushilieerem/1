@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "因子回测 API 时序（ResearchEngine 内部）",
+    "locale": "zh-CN",
+    "output": "factor-backtest-api-sequence.html",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [1080, 620],
+    "views": [
+      {
+        "id": "submit-auth",
+        "label": "提交与鉴权",
+        "focus": ["caller", "api", "manager"],
+        "note": "调用方直接访问 ResearchEngine；当前 API 未实现鉴权。"
+      },
+      {
+        "id": "cache-execute",
+        "label": "缓存与执行",
+        "focus": ["manager", "trace", "cache", "engine", "data", "result"],
+        "note": "HIT 直接回放；MISS 或 BYPASS 进入统一因子回测主链。"
+      },
+      {
+        "id": "poll-final",
+        "label": "轮询与回传",
+        "focus": ["caller", "api", "manager", "trace"],
+        "note": "调用方按 run_id 轮询，终态返回结构化结果或错误。"
+      }
+    ]
+  },
+  "participants": [
+    { "id": "caller", "type": "external", "label": "调用方", "sublabel": "HTTP client" },
+    { "id": "api", "type": "backend", "label": "RE API", "sublabel": "FastAPI /api" },
+    { "id": "manager", "type": "backend", "label": "Manager", "sublabel": "ExperimentManager" },
+    { "id": "trace", "type": "messagebus", "label": "Trace / Event", "sublabel": "旁路未接入" },
+    { "id": "cache", "type": "database", "label": "Cache", "sublabel": "FileBacktestCache" },
+    { "id": "engine", "type": "backend", "label": "Backtest", "sublabel": "BacktestEngine" },
+    { "id": "data", "type": "backend", "label": "Data", "sublabel": "DataEngine" },
+    { "id": "result", "type": "backend", "label": "Result", "sublabel": "Result + Storage" }
+  ],
+  "segments": [
+    { "from": 150, "to": 230, "label": "提交 / 鉴权" },
+    { "from": 242, "to": 480, "label": "异步执行 / 缓存" },
+    { "from": 494, "to": 536, "label": "轮询 / 最终响应" }
+  ],
+  "messages": [
+    { "id": "submit", "from": "caller", "to": "api", "y": 160, "label": "POST /api/backtest/factor", "variant": "emphasis", "note": "当前无鉴权" },
+    { "id": "auth", "from": "api", "to": "caller", "y": 188, "label": "request accepted", "variant": "return", "note": "未做 auth 校验" },
+    { "id": "enqueue", "from": "api", "to": "manager", "y": 216, "label": "submit + run_id", "variant": "emphasis", "note": "Experiment 入队" },
+    { "id": "accepted", "from": "api", "to": "caller", "y": 244, "label": "202 + poll_url", "variant": "return", "note": "Location + Retry-After" },
+    { "id": "queued", "from": "manager", "to": "trace", "y": 272, "label": "queued", "variant": "dashed", "note": "异步旁路未接入" },
+    { "id": "cache-lookup", "from": "manager", "to": "cache", "y": 300, "label": "lookup key", "variant": "default", "note": "spec + release + fingerprint" },
+    { "id": "cache-result", "from": "cache", "to": "manager", "y": 328, "label": "HIT / MISS", "variant": "return", "note": "HIT 回放；MISS 继续" },
+    { "id": "cache-miss-run", "from": "manager", "to": "engine", "y": 356, "label": "[MISS] run", "variant": "emphasis", "note": "BYPASS 也执行" },
+    { "id": "main-chain", "from": "engine", "to": "data", "y": 384, "label": "run chain", "variant": "default", "note": "Data → Factor → Portfolio → Metric" },
+    { "id": "assemble", "from": "engine", "to": "result", "y": 412, "label": "assemble / save", "variant": "default", "note": "output_path；失败 → failed" },
+    { "id": "write-cache", "from": "result", "to": "cache", "y": 440, "label": "write report", "variant": "dashed" },
+    { "id": "cache-write-status", "from": "cache", "to": "result", "y": 468, "label": "ok / BYPASS", "variant": "return", "note": "写入失败仍返结果" },
+    { "id": "done", "from": "manager", "to": "trace", "y": 496, "label": "done / failed", "variant": "dashed", "note": "异步事件旁路" },
+    { "id": "poll-final", "from": "caller", "to": "api", "y": 524, "label": "GET /.../{id} → 200", "variant": "return", "note": "Manager snapshot：result / error" }
+  ]
+}

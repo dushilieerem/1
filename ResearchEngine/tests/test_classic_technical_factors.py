@@ -3,8 +3,9 @@
 import numpy as np
 import pandas as pd
 
-from app.quantcore.factor.base import Panel
-from app import FactorLoader
+from app.models.data import Panel
+from factor_test_support import BuiltinFactorLoader as FactorLoader
+from factor_test_support import builtin_factor_ids
 
 
 def _panel() -> Panel:
@@ -27,14 +28,13 @@ def _panel() -> Panel:
 def test_classic_technical_factor_formulae_match_reference():
     loader = FactorLoader()
     panel = _panel()
-    loader.load("technical_lib")
-    loader.load("trading_lib")
+    loader.load()
 
     typical_price = (panel.high + panel.low + panel.close) / 3
-    mean_deviation = typical_price.rolling(20).apply(
+    mean_deviation = typical_price.rolling(14).apply(
         lambda values: np.mean(np.abs(values - values.mean())), raw=True
     )
-    expected_cci = (typical_price - typical_price.rolling(20).mean()) / (0.015 * mean_deviation + 1e-10)
+    expected_cci = (typical_price - typical_price.rolling(14).mean()) / (0.015 * mean_deviation)
     pd.testing.assert_frame_equal(loader.factors["cci"].compute(panel), expected_cci)
 
     expected_williams_r = -100 * (panel.high.rolling(14).max() - panel.close) / (
@@ -53,7 +53,7 @@ def test_classic_technical_factor_formulae_match_reference():
 def test_trend_and_momentum_factor_formulae_match_reference():
     loader = FactorLoader()
     panel = _panel()
-    loader.load("technical_lib")
+    loader.load()
 
     expected_aroon_up = 100 * (
         25 - panel.high.rolling(26).apply(lambda values: np.argmax(values[::-1]), raw=True)
@@ -65,7 +65,7 @@ def test_trend_and_momentum_factor_formulae_match_reference():
     ) / 25
     pd.testing.assert_frame_equal(loader.factors["aroon_down"].compute(panel), expected_aroon_down)
 
-    expected_dpo = panel.close.shift(11) - panel.close.rolling(20).mean()
+    expected_dpo = panel.close - panel.close.rolling(11).mean()
     pd.testing.assert_frame_equal(loader.factors["dpo"].compute(panel), expected_dpo)
 
     delta = panel.close.diff()
@@ -80,7 +80,7 @@ def test_trend_and_momentum_factor_formulae_match_reference():
 def test_oscillator_and_volume_factor_formulae_match_reference():
     loader = FactorLoader()
     panel = _panel()
-    loader.load("technical_lib")
+    loader.load()
 
     previous_close = panel.close.shift()
     minimum = panel.low.where(panel.low <= previous_close, previous_close)
@@ -123,9 +123,6 @@ def test_oscillator_and_volume_factor_formulae_match_reference():
     midpoint = (panel.high + panel.low) / 2
     expected_ao = midpoint.rolling(5).mean() - midpoint.rolling(34).mean()
     pd.testing.assert_frame_equal(loader.factors["awesome_oscillator"].compute(panel), expected_ao)
-
-    expected_bop = (panel.close - panel.open) / (panel.high - panel.low + 1e-10)
-    pd.testing.assert_frame_equal(loader.factors["balance_of_power"].compute(panel), expected_bop)
 
     previous_close = panel.close.shift()
     first = panel.high - panel.low
@@ -180,7 +177,7 @@ def test_oscillator_and_volume_factor_formulae_match_reference():
 def test_directional_and_accumulation_factor_formulae_match_reference():
     loader = FactorLoader()
     panel = _panel()
-    loader.load("technical_lib")
+    loader.load()
 
     previous_close = panel.close.shift()
     true_range = panel.high - panel.low
@@ -213,8 +210,7 @@ def test_directional_and_accumulation_factor_formulae_match_reference():
 
 def test_classic_technical_factors_are_discoverable():
     loader = FactorLoader()
-    loader.load("technical_lib")
-    loader.load("trading_lib")
+    loader.load()
 
     assert {
         "cci", "williams_r", "obv", "chaikin_money_flow", "aroon_up",
@@ -222,7 +218,26 @@ def test_classic_technical_factors_are_discoverable():
         "positive_directional_index", "negative_directional_index",
         "average_directional_index", "accumulation_distribution",
         "ultimate_oscillator", "fisher_transform", "ease_of_movement",
-        "relative_vigor_index", "awesome_oscillator", "balance_of_power",
+        "relative_vigor_index", "awesome_oscillator",
         "choppiness_index", "elder_force_index", "coppock_curve",
         "true_strength_index", "relative_volatility_index", "vortex_indicator",
     }.issubset(loader.factors)
+
+    from app.api.routes import _builtin_factors
+
+    names = {factor.name for factor in _builtin_factors()}
+    ids = builtin_factor_ids()
+    expected_ids = {
+        ids[name]
+        for name in (
+            "cci", "williams_r", "obv", "chaikin_money_flow", "aroon_up",
+            "aroon_down", "dpo", "chande_momentum_oscillator",
+            "positive_directional_index", "negative_directional_index",
+            "average_directional_index", "accumulation_distribution",
+            "ultimate_oscillator", "fisher_transform", "ease_of_movement",
+            "relative_vigor_index", "awesome_oscillator", "choppiness_index",
+            "elder_force_index", "coppock_curve", "true_strength_index",
+            "relative_volatility_index", "vortex_indicator",
+        )
+    }
+    assert expected_ids.issubset(names)

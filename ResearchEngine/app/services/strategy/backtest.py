@@ -41,16 +41,15 @@ from app.services.factor.serializers import date_range_from, metrics_to_dict
 def run_strategy_backtest(
     req: StrategyBacktestRequest,
     *,
-    data_context=None,
+    data_engine=None,
 ) -> StrategyBacktestResponse:
     """策略回测：自定义策略代码 -> 指标 + 净值。"""
     try:
-        from app.quantcore.backtest.adapter import get_backtest_engine
-        from app.quantcore.backtest.adapter.signals import BacktestConfig, BacktestSignals
+        from app.services.strategy.vectorized.registry import get_backtest_engine
+        from app.models.strategy import BacktestConfig, BacktestSignals
 
-        if data_context is None:
-            raise RuntimeError("StrategyExperiment 必须由 ExperimentManager 提供行情上下文")
-        data_engine = data_context.data_engine
+        if data_engine is None:
+            raise RuntimeError("StrategyExperiment 必须提供 DataEngine")
         universe, universe_snapshot, benchmark_snapshot = _resolve_research_assets(
             req,
             data_engine=data_engine,
@@ -62,7 +61,7 @@ def run_strategy_backtest(
         strategy_code = req.strategy_code
         expected_entrypoint = None
         if req.strategy_id is not None:
-            from app.repositories.catalogs.strategy_catalog import StrategyCatalog
+            from app.services.catalog.strategy_catalog import StrategyCatalog
 
             asset = StrategyCatalog().load(req.strategy_id, req.strategy_version)
             if asset.execution_mode != req.engine_mode:
@@ -98,14 +97,14 @@ def run_strategy_backtest(
                 strategy_id,
                 strategy_version,
                 code_hash,
-                data_context=data_context,
+                data_engine=data_engine,
             )
-        from app.quantcore.backtest.adapter.factor_strategy import FactorPortfolioStrategy
+        from app.services.strategy.vectorized.factor_strategy import FactorPortfolioStrategy
 
-        from app.quantcore.factor.base import Panel
-        provider = data_context.provider
+        from app.models.data import Panel
+        provider = data_engine.provider
         raw_panels = data_engine.get_panels(req.start, req.end)
-        from app.quantcore.data._util import first_panel_date
+        from app.utils.data import first_panel_date
 
         raw_symbols, symbol_mapping, declared_symbols = _resolve_strategy_symbols(
             provider,
@@ -155,8 +154,8 @@ def run_strategy_backtest(
         returns = bt_result.returns
 
         # 算指标
-        from app.quantcore.metric.context import MetricContext
-        from app.quantcore.metric.engine import MetricEngine
+        from app.models.metric import MetricContext
+        from app.services.metric.engine import MetricEngine
 
         metric_engine = MetricEngine()
         ctx = MetricContext(
@@ -251,22 +250,26 @@ def _run_event_strategy_backtest(
     strategy_version: str | None,
     code_hash: str | None,
     *,
-    data_context=None,
+    data_engine=None,
 ) -> StrategyBacktestResponse:
     """运行日频事件策略，并将审计结果转成 API 契约。"""
     try:
-        from app.quantcore.backtest.event import EventBacktestConfig, EventBacktestEngine
-        from app.quantcore.metric.context import MetricContext
-        from app.quantcore.metric.engine import MetricEngine
+        from app.models.event import EventBacktestConfig
+        from app.services.strategy.event.engine import EventBacktestEngine
+        from app.models.metric import MetricContext
+        from app.services.metric.engine import MetricEngine
 
-        if data_context is None:
-            raise RuntimeError("StrategyExperiment 必须由 ExperimentManager 提供行情上下文")
-        provider = data_context.provider
-        data_engine = data_context.data_engine
+        if data_engine is None:
+            raise RuntimeError("StrategyExperiment 必须提供 DataEngine")
+        provider = data_engine.provider
         strategy = strategy_class()
-        required_fields = set(getattr(strategy, "required_fields", ())) | {"open", "high", "low", "close"}
+        required_fields = (
+            set(getattr(strategy, "required_fields", ()))
+            | set(getattr(strategy, "required_market_state", ()))
+            | {"open", "high", "low", "close"}
+        )
         panels = data_engine.get_panels(req.start, req.end, fields=sorted(required_fields))
-        from app.quantcore.data._util import first_panel_date
+        from app.utils.data import first_panel_date
 
         raw_symbols, symbol_mapping, declared_symbols = _resolve_strategy_symbols(
             provider,

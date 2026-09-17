@@ -3,8 +3,10 @@
 import numpy as np
 import pandas as pd
 
-from app.quantcore.factor.base import Panel, library_factors
-from app import FactorLoader
+from app.models.data import Panel
+from app.services.factor.base import library_factors
+from factor_test_support import BuiltinFactorLoader as FactorLoader
+from factor_test_support import builtin_factor_ids
 
 
 def _panel(days: int = 300) -> Panel:
@@ -23,7 +25,7 @@ def _panel(days: int = 300) -> Panel:
         columns=symbols,
     )
     amount = close * volume
-    total_mv = close * volume * 100.0
+    current_mv = close * volume * 100.0
     groups = pd.DataFrame(
         np.tile(["G1", "G1", "G2", "G2"], (days, 1)),
         index=dates,
@@ -36,25 +38,24 @@ def _panel(days: int = 300) -> Panel:
         "close": close,
         "volume": volume,
         "amount": amount,
-        "total_mv": total_mv,
+        "current_mv": current_mv,
         "sector": groups,
         "industry": groups,
         "subindustry": groups,
     })
 
 
-def test_worldquant_alpha101_library_registers_all_factors():
-    library = FactorLoader().load("worldquant_alpha101")
+def test_builtin_factor_library_exposes_selected_worldquant_factors():
+    library = FactorLoader().load()
     factors = library_factors(library)
 
-    assert len(factors) == 101
-    assert list(factors)[:2] == ["alpha001", "alpha002"]
-    assert list(factors)[-2:] == ["alpha100", "alpha101"]
+    assert len(factors) == 432
+    assert {"alpha001", "alpha002", "alpha041", "alpha058", "alpha101"}.issubset(factors)
 
 
 def test_worldquant_reference_formulae():
     loader = FactorLoader()
-    loader.load("worldquant_alpha101")
+    loader.load()
     panel = _panel()
 
     expected_2 = -(
@@ -80,13 +81,13 @@ def test_worldquant_reference_formulae():
     )
 
 
-def test_all_worldquant_alpha101_factors_compute_on_panel():
+def test_selected_worldquant_factors_compute_on_panel():
     loader = FactorLoader()
-    loader.load("worldquant_alpha101")
+    loader.load()
     panel = _panel()
 
-    for factor in loader.factors.values():
-        result = factor.compute(panel)
+    for name in ("alpha001", "alpha002", "alpha041", "alpha058", "alpha101"):
+        result = loader.factors[name].compute(panel)
         assert result.shape == panel.close.shape
         assert result.index.equals(panel.close.index)
         assert result.columns.equals(panel.close.columns)
@@ -94,7 +95,7 @@ def test_all_worldquant_alpha101_factors_compute_on_panel():
 
 def test_worldquant_factors_do_not_read_future_rows():
     loader = FactorLoader()
-    loader.load("worldquant_alpha101")
+    loader.load()
     panel = _panel()
     changed = _panel()
     changed_close = changed.close.copy()
@@ -113,11 +114,11 @@ def test_worldquant_vwap_fallback_works_without_amount():
     fields = {
         name: value
         for name, value in full._fields.items()
-        if name not in {"amount", "total_mv", "sector", "industry", "subindustry"}
+        if name not in {"amount", "current_mv", "sector", "industry", "subindustry"}
     }
     panel = Panel(fields)
     loader = FactorLoader()
-    loader.load("worldquant_alpha101")
+    loader.load()
 
     result = loader.factors["alpha041"].compute(panel)
     expected = np.sqrt(panel.high * panel.low) - (
@@ -130,12 +131,16 @@ def test_factor_api_lists_worldquant_alpha101():
     from app.api.routes import _builtin_factors
 
     names = {factor.name for factor in _builtin_factors()}
-    assert "alpha001" in names
-    assert "alpha101" in names
+    ids = builtin_factor_ids()
+    assert {ids["alpha001"], ids["alpha101"]}.issubset(names)
 
 
 def test_builtin_runner_loads_worldquant_alpha101_factor():
-    from app.services.factor.runner import _load_factor_from_builtin_library
+    from app.services.factor.sqlite_loader import SQLiteFactorLoader
 
-    factor = _load_factor_from_builtin_library("worldquant_alpha101", "alpha101")
-    assert factor.name == "alpha101"
+    factor_id = builtin_factor_ids()["alpha101"]
+    factor = SQLiteFactorLoader().load_factor(
+        factor_name=factor_id,
+        library_name="主因子库",
+    )
+    assert factor.name == factor_id

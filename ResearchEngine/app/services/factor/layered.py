@@ -14,11 +14,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 
-from app.quantcore.backtest.adapter.calendar import PandasCalendar
-from app.quantcore.backtest.adapter.grouping import raw_qcut_groups
+from app.services.data.calendar import PandasCalendar
+from app.services.portfolio.grouping import rank_groups
+from app.services.portfolio.returns import calculate_group_returns
 
 
 def quantile_groups(
@@ -31,8 +31,8 @@ def quantile_groups(
     返回**同形状的组号 DataFrame**（1..N，NaN 表示当日无效）。
     Q1 = 因子值最高组 ... QN = 最低组。
 
-    使用 ``pd.qcut`` 按原始值确定边界；退化重复值截面由公共分组函数
-    做稳定兜底，有效标的不足时保持 qcut 的实际分箱结果。
+    使用公共 rank 分组函数；重复值按列顺序稳定拆分，有效标的不足时
+    自动使用实际可形成的分组数。
 
     Parameters
     ----------
@@ -48,7 +48,7 @@ def quantile_groups(
     """
     if n_groups < 2:
         raise ValueError(f"n_groups 至少为 2，得到 {n_groups}")
-    return raw_qcut_groups(group_values, n_groups)
+    return rank_groups(group_values, n_groups)
 
 
 def layered_returns(
@@ -77,8 +77,8 @@ def layered_returns(
     calendar : PandasCalendar, optional
         调仓日历，默认新建。
     group_assignments : pd.DataFrame, optional
-        已按 ``group_values`` 原始值计算好的组号。提供时复用该结果，
-        避免在同一次回测中重复执行 ``pd.qcut``。
+        已按 ``group_values`` 计算好的组号。提供时复用该结果，避免在
+        同一次回测中重复执行截面排名。
 
     Returns
     -------
@@ -92,30 +92,14 @@ def layered_returns(
     gv = group_values.loc[common_dates, common_symbols]
     close = close.loc[common_dates, common_symbols]
 
-    ret = close.pct_change()
+    ret = close.pct_change(fill_method=None)
     groups = (
         quantile_groups(gv, n_groups)
         if group_assignments is None
         else group_assignments.reindex(index=gv.index, columns=gv.columns)
     )
     reb_mask = (calendar or PandasCalendar()).rebalance_mask(gv.index, rebalance)
-    reb_np = reb_mask.to_numpy()[:, None]
-
-    out: dict[str, pd.Series] = {}
-    for g in range(1, n_groups + 1):
-        mask = (groups == g).fillna(False).astype(float).to_numpy()  # (T, N) 0/1
-        n_in = mask.sum(axis=1, keepdims=True)         # (T,1) 组内成员数
-        safe_n = np.where(n_in > 0, n_in, 1.0)
-        weight = mask / safe_n                          # 等权
-        # 仅调仓日更新权重；前一日分组承担当日收盘收益。
-        weight = np.where(reb_np, weight, np.nan)
-        weight = pd.DataFrame(weight, index=gv.index, columns=gv.columns)
-        held = weight.ffill().shift(1).fillna(0.0)
-        group_ret = (held * ret).sum(axis=1)
-        out[f"Q{g}"] = group_ret
-
-    result = pd.DataFrame(out)
-    result = result.iloc[1:]  # 去信号日；首个保留日包含首个持有日收益。
+    result = calculate_group_returns(ret, groups, reb_mask, n_groups)
     return result.dropna(how="all")
 
 

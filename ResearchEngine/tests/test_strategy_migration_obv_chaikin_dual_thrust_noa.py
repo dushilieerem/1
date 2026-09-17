@@ -5,8 +5,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from app.quantcore import BacktestConfig, EventBacktestEngine, NativeEngine
-from app.repositories.catalogs.strategy_catalog import StrategyCatalog
+from app.models.strategy import BacktestConfig
+from app.services.strategy.event.engine import EventBacktestEngine
+from app.services.strategy.vectorized.native_engine import NativeEngine
+from app.services.catalog.strategy_catalog import StrategyCatalog
 
 
 EVENT_STRATEGIES = (
@@ -40,17 +42,17 @@ def _event_panels(days=300, symbols=10):
         "close": close,
         "volume": pd.DataFrame(1_000_000.0, index=dates, columns=codes),
         "amount": pd.DataFrame(30_000_000.0, index=dates, columns=codes),
-        "industry": pd.DataFrame(
+        "the_sw_industry_code": pd.DataFrame(
             {code: [f"I{i // 5}"] * days for i, code in enumerate(codes)}, index=dates
         ),
-        "pe_ratio": pd.DataFrame(
+        "pe_ttm": pd.DataFrame(
             {code: [8.0 + i] * days for i, code in enumerate(codes)}, index=dates
         ),
-        "pb_ratio": pd.DataFrame(
+        "pb_mrq": pd.DataFrame(
             {code: [0.8 + i * 0.1] * days for i, code in enumerate(codes)}, index=dates
         ),
-        "circulating_market_cap": pd.DataFrame(
-            {code: [100.0 + i * 10] * days for i, code in enumerate(codes)}, index=dates
+        "current_mv": pd.DataFrame(
+            {code: [4_000_000_000.0 + i * 10_000_000] * days for i, code in enumerate(codes)}, index=dates
         ),
         "market_cap": pd.DataFrame(
             {code: [4_000_000_000.0 + i * 10_000_000] * days for i, code in enumerate(codes)}, index=dates
@@ -125,7 +127,7 @@ def test_dual_thrust_uses_previous_range_and_native_engine():
         panels["low"],
         panels["close"],
         panels["amount"],
-        panels["market_cap"],
+        panels["current_mv"],
         max_holdings=2,
         pool_size=4,
     )

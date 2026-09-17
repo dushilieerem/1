@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.services.data.engine import DataEngine
 
 
 client = TestClient(app)
@@ -47,7 +48,12 @@ def research_assets_market_data(tmp_path, monkeypatch):
 
     monkeypatch.setenv("SVQUANT_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("SVQUANT_BACKTEST_CACHE_DIR", str(tmp_path / "cache"))
-    return dates
+    data_engine = DataEngine()
+    data_engine.load_parquet(tmp_path)
+    monkeypatch.setattr(DataEngine, "_instance", data_engine)
+    monkeypatch.setattr(app.state, "data_engine", data_engine)
+    yield dates
+    data_engine.close()
 
 
 def test_factor_backtest_uses_webapp_resolved_snapshots(research_assets_market_data):

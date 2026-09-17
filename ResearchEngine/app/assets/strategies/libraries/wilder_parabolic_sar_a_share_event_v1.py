@@ -10,7 +10,7 @@ class WilderParabolicSarAShareEventStrategy:
 
     execution_mode = "event"
     required_fields = frozenset({"open", "high", "low", "close"})
-    required_market_state = frozenset({"suspended", "limit_up", "limit_down"})
+    required_market_state = frozenset({"up_and_down_status"})
 
     def __init__(self, universe: list[str] | None = None, max_holdings: int = 10,
                  pool_size: int = 15, lookback: int = 120,

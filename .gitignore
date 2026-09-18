@@ -1,52 +1,62 @@
-#claude code缓存
-CLAUDE.md
-.claude
-
-#pycharm缓存
-.idea
-
-# Python 缓存
+# Python 缓存和构建产物
 __pycache__/
 *.py[cod]
 *.egg-info/
-.pytest_cache/
+**/.pytest_cache/
+**/.mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
-
-# 构建产物
 build/
 dist/
 *.egg
-node_modules/
-outputs/
 
-# 实验输出（由 main.py 生成，不入库）
-ResearchEngine/output/
-ResearchEngine/logs/
-ResearchEngine/run/
-Factor/backtest_results/
+# 本机配置与敏感凭据
+backend/.env
+**/.env
+!**/.env.example
+*.pem
+*.key
+
+# 后端运行产物和可再生缓存
+backend/output/
+backend/data/
 *.db
+*.sqlite
+*.sqlite-journal
+*.log
+logs/
 
-# SQLite 因子库是项目运行时资产，需要纳入版本控制
-!ResearchEngine/app/assets/factors/factor_library.db
+# KnowledgeHub 上传附件（已入库的示例文件仍由 Git 跟踪）
+KnowledgeHub/data/kh_attachments/*
 
-# 行情数据（体积大，不入库；放 marketdata/ 目录）
-marketdata/*
-
-# 旧版行情目录已废弃，仅保留迁移提示
-MarketData/*
+# 外部行情目录若被误放回仓库，不纳入 Git
+marketdata/
+MarketData/
 !MarketData/README.md
 
-# 压缩包文件
-*.7z
-*.zip
-#日志文件
+# 前端依赖和构建产物
+node_modules/
+frontend/.vite/
+frontend/dist/
+KnowledgeHub/frontend/node_modules/
+KnowledgeHub/frontend/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tsbuildinfo
 
-AGENTS.md
-*.rar
-.Codex/
-tmp/
-*.parquet
+# 本机临时文件、编辑器和系统文件
+.idea/
 .vscode/
-Factor/database/factor_backtest.db-shm
-Factor/database/factor_backtest.db-wal
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+tmp/
+_tmp_*
+_notes/
+.claude/
+.codex/

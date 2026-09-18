@@ -6,9 +6,9 @@ SVQuant 的 `MarketData/DataIngestion/data_ingestion/ifind` 同时承担供应�
 
 ## 选择
 
-将完整数据生产能力迁入独立 `IFind` 项目。独立项目采用 `src/` Python 包布局，保留 `data_ingestion.ifind` 内部命名空间，并接管 AkShare、共享质量检查、候选版本、备份以及历史回填/日更/发布 CLI。发布到 SVQuant 必须显式指定 `MarketData` 根目录，两个项目不互相导入源码。
+将完整数据生产能力迁入独立 `IFind` 项目。独立项目采用 `src/` Python 包布局，保留 `data_ingestion.ifind` 内部命名空间，并接管 AkShare、共享质量检查、候选版本、备份以及历史回填/日更/发布 CLI。发布到 ResearchEngine 的部署数据目录必须显式指定目标，SVQuant 与数据项目不互相导入源码。
 
-SVQuant 只保留数据契约、活动发布物和只读 Provider/DataEngine。原 `MarketData/sources`、`releases`、`backups`、`DataIngestion` 全部迁入 IFind；原 `MarketData/current/*` 提升到 `MarketData/*`。
+SVQuant 只保留产品侧的字段/API 说明和数据展示适配。活动发布物、manifest、质量报告和只读 Provider/DataEngine 由 ResearchEngine 部署侧管理；原 `MarketData/sources`、`releases`、`backups`、`DataIngestion` 全部迁入 IFind。
 
 ## 备选方案
 

@@ -1,5 +1,7 @@
 # 服务器市场数据内存运行方案
 
+> 当前边界（2026-09-17）：本方案属于 ResearchEngine 部署侧。SVQuant 不加载 `marketdata/` 到本地内存，也不直接访问回测结果 SQLite；SVQuant 的进程只负责调用 ResearchEngine API。
+
 ## 1. 结论
 
 SVQuant 不需要为了减少回测 I/O 而先建设行情数据库。

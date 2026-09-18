@@ -4,6 +4,8 @@
 - 状态：已接受
 - 关联：ADR-003、ADR-010、FEAT-010
 
+> 当前边界修订（2026-09-17）：本 ADR 记录数据生产决策；采集和发布由独立 IFind/数据发布项目执行，活动 `marketdata/` 由 ResearchEngine 部署侧持有，SVQuant 不保存活动数据。
+
 ## 问题
 
 SVQuant 需要可持续更新、可复现的 A 股历史行情，以生成本地 Parquet 发布版本。现有 Wind 账号为一个月试用，无法作为长期自动更新与历史发布的唯一依赖；项目已具备 AkShare / Baostock 原始历史库及日更脚本。
@@ -11,7 +13,7 @@ SVQuant 需要可持续更新、可复现的 A 股历史行情，以生成本地
 ## 选择
 
 1. AkShare 原始库为当前主历史数据源；其中由 Baostock 补齐的历史文件保留其真实来源，具体以 `data_provenance.csv` 为准。
-2. 发布链路固定为 `IFind/data/akshare` → 质量门禁 → `IFind/data/releases/<version>` → `SVQuant/MarketData`。候选版本验证完成前不得覆盖 SVQuant 活动数据。
+2. 发布链路固定为 `IFind/data/akshare` → 质量门禁 → `IFind/data/releases/<version>` → ResearchEngine 部署侧 `marketdata/`。候选版本验证完成前不得覆盖活动数据。
 3. Wind 仅作为受限期内的小样本校验源，不承担日常更新或正式数据发布。
 4. 首批发布字段限于可直接映射且在清单中标注为后复权的 OHLC、`volume`、`amount`、`turnover`。`adj_factor`、财务、证券状态与未验证字段必须保持 `blocked`，不得伪造或静默混源。
 5. 单证券停更或缺少字段时，候选面板保留 `NaN`，并在清单记录受影响证券；禁止填零、前值填充或跨来源补值。

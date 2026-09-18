@@ -48,10 +48,11 @@
 
 ## 文档边界
 
-- 根目录负责产品级、项目级、跨模块的需求、业务边界、系统架构、公共契约和交付管理。
-- [`ResearchEngine 文档`](../ResearchEngine/docs/README.md) 负责研究引擎自己的模块架构、功能包、实现证据和专属 ADR；它遵循同一条主链路，但不重复维护产品级需求。
-- [`WebApp 工程文档`](../WebApp/docs/README.md) 由 WebApp 团队维护。根目录不创建 `docs/WebApp` 交接区，也不修改 WebApp 源码或其文档。
-- MarketData、系统总架构和跨模块契约留在根目录；ResearchEngine 只负责研究计算，不负责用户资产 CRUD、鉴权、权限和 Web 页面。
+- 根目录负责 SVQuant 产品级、项目级、跨模块的需求、业务边界、系统架构、公共契约和交付管理。
+- `frontend/`、`backend/`、`KnowledgeHub/` 的工程说明属于 SVQuant；帮助文档统一放在 `docs/help/`。
+- ResearchEngine 的内部架构、实现证据和专属 ADR 由[独立仓库](https://gitee.com/yanggu-yuanqi-intelligence/research-engine)维护，本仓库只记录 API 集成和跨仓库边界。
+- `marketdata` 和回测结果 SQLite 不属于 SVQuant；ResearchEngine 在自己的部署环境中读取和管理它们。
+- ResearchEngine 不负责用户资产 CRUD、鉴权、权限和 Web 页面；SVQuant 不导入 ResearchEngine 的 Python 包。
 
 ## 推荐阅读顺序
 
@@ -60,20 +61,20 @@
 3. [功能文档](03-功能文档/)：进入对应 FEAT 功能包，从 README 确认价值、规则、方案、验收口径和当前状态。
 4. [项目管理](04-项目管理/)：阅读当前迭代、项目计划、风险和技术债。
 5. 按需查看 [技术决策](05-技术决策/)、[项目状态](04-项目管理/项目状态/) 和 [会议记录](04-项目管理/会议记录/)。
-6. 进入 [ResearchEngine 文档](../ResearchEngine/docs/README.md) 或 [WebApp 工程文档](../WebApp/docs/README.md) 查看对应模块的责任边界。
+6. 按需进入 [ResearchEngine 独立仓库](https://gitee.com/yanggu-yuanqi-intelligence/research-engine)查看研究服务内部文档。
 
 ## 当前架构变更
 
 - [ADR-029：研究服务采用 services 与 models 分层](05-技术决策/ADR-029-研究服务采用services与models分层.md)：取消 QuantCore 独立共享库定位，ResearchEngine 采用 `services / models / database` 的常规 FastAPI 分层。
-- [FEAT-030：因子回测流程重构](03-功能文档/FEAT-030-因子回测流程重构/README.md)：因子主链已迁移到 `BacktestEngine → DataEngine → FactorEngine → PortfolioEngine → MetricEngine`，专项验收仍以功能包和验证记录为准。
+- [FEAT-030：因子回测服务集成](03-功能文档/FEAT-030-因子回测流程重构/README.md)：ResearchEngine 内部实现已迁出，SVQuant 只维护因子回测网关、权限、任务状态和结果展示。
 - [ADR-028：BacktestEngine 编排四引擎](05-技术决策/ADR-028-因子回测由BacktestEngine编排四引擎.md)：因子回测由统一应用管线编排。
-- [FEAT-031：iFinD 采集项目拆分](03-功能文档/FEAT-031-iFinD采集项目拆分/README.md)：全部数据生产能力与非活动数据已迁入独立 `IFind` 项目，SVQuant 只读消费仓库根目录下的 `marketdata/` 数据目录。
-- [ADR-032：MarketData 扁平只读消费目录](05-技术决策/ADR-032-MarketData扁平只读消费目录.md)：历史 `MarketData/` 消费目录已由 `marketdata/` 的 iFinD 目录镜像替代；旧目录仅保留迁移提示。
+- [FEAT-031：iFinD 采集项目拆分](03-功能文档/FEAT-031-iFinD采集项目拆分/README.md)：数据生产能力由独立项目维护，ResearchEngine 在部署环境中只读消费已发布的 `marketdata/`。
+- [ADR-032：MarketData 扁平只读消费目录](05-技术决策/ADR-032-MarketData扁平只读消费目录.md)：定义外部行情目录与 ResearchEngine 的交接边界；SVQuant 不保存行情文件。
 
 ## 文档原则
 
 - 链路顺序约束结论何时必须存在：没有上游结论，不得把实现当作默认答案；实现发现上游失效时回退修订。
-- 一个结论只有一个权威版本：系统级在根目录，模块级在 ResearchEngine，决策依据在 ADR；其他位置只链接，不复制。
+- 一个结论只有一个权威版本：SVQuant 系统级结论在根目录，ResearchEngine 模块级结论在独立仓库，决策依据在 ADR；其他位置只链接，不复制。
 - 文档深度跟随决策权重（平台级 > 普通 FEAT > 小改动），不追求层级齐全；禁止为凑层产生空壳文件。
 - Feature 状态统一维护在 [项目组合需求池](01-需求文档/项目组合/portfolio-backlog.md) 和对应 Feature `README.md`。
 - 任何 Feature 通过 [Definition of Ready](00-文档治理/Definition-of-Ready.md) 后才能编码，通过 [Definition of Done](00-文档治理/Definition-of-Done.md) 后才能标记完成。

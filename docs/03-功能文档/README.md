@@ -22,9 +22,9 @@ FEAT-xxx-功能名称/
 | [FEAT-018-自定义证券池与组合基准](FEAT-018-自定义证券池与组合基准/README.md) | 开发中 | 版本化研究资产与快照契约 |
 | [FEAT-024-iFinD数据存储](FEAT-024-iFinD数据存储/README.md) | 已批准 | 业务域宽表规范与渐进替换 |
 | [FEAT-025-免费数据源基本面与状态MVP](FEAT-025-免费数据源基本面与状态MVP/README.md) | 待批准 | BaoStock/CNINFO 补齐估值与状态 |
-| [FEAT-030-因子回测流程重构](FEAT-030-因子回测流程重构/README.md) | 开发中 | 五引擎应用管线与 services/models 分层 |
+| [FEAT-030-因子回测流程重构](FEAT-030-因子回测流程重构/README.md) | 开发中 | ResearchEngine 因子回测服务集成 |
 | [FEAT-031-iFinD采集项目拆分](FEAT-031-iFinD采集项目拆分/README.md) | 已完成 | 采集能力迁入独立 IFind 项目 |
-| [FEAT-032-日终模拟盘](FEAT-032-日终模拟盘/README.md) | 待批准 | 日频 VWAP 批量模拟与 ResearchEngine/WebApp 交接契约 |
+| [FEAT-032-日终模拟盘](FEAT-032-日终模拟盘/README.md) | 待批准 | 日频 VWAP 批量模拟与 ResearchEngine 与 SVQuant 的交接契约 |
 
 已废弃的 FEAT-001（QuantCore）归档于 [`99-历史归档/`](../99-历史归档/)。
 
@@ -32,9 +32,9 @@ FEAT-xxx-功能名称/
 
 | 归属 | 文档位置 | 说明 |
 |------|----------|------|
-| ResearchEngine | [`ResearchEngine/docs/03-功能文档/`](../../ResearchEngine/docs/03-功能文档/) | 研究服务、因子/策略、API、批量回测和 AI 研究能力 |
-| 项目级及跨模块 | 当前目录 | MarketData、跨模块契约和共享能力 Feature |
-| WebApp | [`WebApp/docs/`](../../WebApp/docs/README.md) | WebApp 团队维护的前端工程文档；本仓库不创建交接副本 |
+| ResearchEngine | [独立仓库](https://gitee.com/yanggu-yuanqi-intelligence/research-engine) | 研究服务、因子/策略、API、批量回测和 AI 研究能力 |
+| 项目级及跨模块 | 当前目录 | 跨仓库 API 契约、产品边界和共享能力 Feature |
+| SVQuant 产品帮助 | [`docs/help/`](../help/) | 前端帮助和产品使用说明 |
 
 ## 进入实现的最低条件
 

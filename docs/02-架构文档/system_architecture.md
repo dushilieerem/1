@@ -1,206 +1,158 @@
 # SVQuant 系统架构设计
 
-> 本文档定义 SVQuant 的系统架构，面向技术团队与老板汇报。
-> 关联：`../99-历史归档/历史资料/system-architecture-v0.1.md`（历史原稿）、`../01-需求文档/产品定位.md`、`../05-技术决策/`（项目级 ADR）、`../../ResearchEngine/docs/05-技术决策/`（模块级 ADR）
+> 本文档描述 SVQuant 产品层的当前架构，以及它与独立 ResearchEngine 的跨仓库边界。
+> ResearchEngine 内部实现、API 契约和契约测试以独立仓库为准：
+> https://gitee.com/yanggu-yuanqi-intelligence/research-engine
 
-> 当前实现说明：ResearchEngine 的运行时统一位于 `ResearchEngine/app`，公开 Python
-> 命名空间为 `app.*`，FastAPI 唯一入口为 `app.main`。QuantCore 的独立包边界已取消；
-> 代码分层以 ADR-029 为准，五个 Engine 全部属于 ResearchEngine 的 services。
-> ResearchEngine 模块级架构见 `../../ResearchEngine/docs/02-架构文档/researchengine_architecture.md`。
+## 1. 系统定位
 
----
+SVQuant 面向量化投研产品体验，承载用户、权限、社区、知识库、因子/策略配置和结果展示。
+ResearchEngine 面向研究计算，承载行情读取、因子计算、策略执行、回测编排和回测结果管理。
+拆分后的两个项目不共享 Python 运行时包，也不共享数据库连接。
 
-## 0. 当前架构修订（FEAT-030 / ADR-028 / ADR-029）
+~~~text
+SVQuant/
+├── frontend/                 # 产品主前端
+├── backend/                  # 产品 API、鉴权、BFF 和业务持久化
+│   ├── app/                  # FastAPI 入口和路由
+│   ├── services/             # 用户、社区、资讯、数据/因子/策略 BFF
+│   ├── ai/                   # 产品侧 AI 编排和供应商适配
+│   ├── factor/               # 自定义因子同步产物和接口说明
+│   └── requirements.txt
+├── KnowledgeHub/             # 知识库产品模块
+├── Strategy/                 # 暂存的策略库兼容快照
+└── docs/                     # SVQuant 与跨仓库文档
+~~~
 
-用户确认采用常规 FastAPI 结构，取消 QuantCore 的共享库定位，见
-[ADR-029](../05-技术决策/ADR-029-研究服务采用services与models分层.md)。
-[FEAT-030](../03-功能文档/FEAT-030-因子回测流程重构/README.md) 的四引擎流程保持；
-本轮只整理服务、模型和数据访问归属，自动化回归与专项验收分别记录。
+独立部署的 ResearchEngine 不属于本仓库目录树。它通过 HTTP 暴露研究 API，并在自己的部署
+环境中配置和管理行情目录、因子/策略运行时资源以及回测结果 SQLite。
 
-当前项目级架构需同时承接 ResearchEngine 的已接受模块决策：因子计算与收益确认区间分离（ADR-018）、
-Manager/Runtime 的进程级资源边界（ADR-019、ADR-022）、异步因子任务与 `/api` 前缀（ADR-021、ADR-024）、
-独立批量指标 SQLite（ADR-020）、统一 BacktestEngine 执行边界（ADR-028）和 `services / models / database`
-分层（ADR-029）。模块级细节以 [`ResearchEngine 模块架构`](../../ResearchEngine/docs/02-架构文档/researchengine_architecture.md)
-为准；本文件只保留系统边界、跨模块依赖和公共数据契约。
+## 2. 责任边界
 
-| 服务 | 职责 |
-|---|---|
-| BacktestEngine | 组织完整因子回测 |
-| DataEngine | 研究数据访问与可选筛选 |
-| FactorEngine | 因子加载、计算和可选预处理 |
-| PortfolioEngine | 分组、权重、持仓和评价标签对齐 |
-| MetricEngine | 收益、净值、IC、分层和绩效评价 |
+| 领域 | SVQuant | ResearchEngine |
+|------|---------|----------------|
+| 用户、登录、JWT、权限 | 负责 | 不负责 |
+| 用户资产、因子/策略配置 | 负责保存、鉴权、展示 | 接收已解析的请求快照，不拥有 CRUD |
+| 社区、资讯、知识库 | 负责 | 不负责 |
+| 行情目录和数据版本校验 | 不保存、不读取 | 负责读取部署环境中的已发布数据 |
+| 因子目录、因子计算 | 保存用户自定义同步状态；通过 API 展示/调用 | 负责官方因子目录、校验和计算 |
+| 策略执行和回测 | 保存配置、展示结果、调用网关 | 负责执行、撮合语义和结果生成 |
+| 回测结果 SQLite | 不直接访问 | 负责存储和查询 |
+| API 契约及契约测试 | 使用并做网关集成验证 | 维护权威契约和契约测试 |
+| Web 页面 | 负责 | 不负责 |
 
-五者均位于 `app/services/`。Panel、MetricContext、回测规格/结果及实验上下文位于 `app/models/`。
-所有过滤/预处理仍按已确认配置执行；当前因子执行版本为 `factor-execution-v4`，文件缓存为
-`factor-backtest-v10`，指标版本为 `factor-scorecard-v2`。本轮不修改跨模块数据 schema，批量历史
-由独立 SQLite 保存，具体字段和生命周期见模块架构与对应 ADR。
+Strategy/libraries 是当前仍被 SVQuant 后端读取的兼容快照，暂时保留。它不表示 SVQuant
+拥有策略执行引擎；执行仍通过 ResearchEngine API 完成。根目录 Factor/ 已移除，不再作为
+SVQuant 的代码、数据或缓存目录。
 
-## 1. 系统边界
+## 3. 请求拓扑
 
-```text
-SVQuant
-├── WebApp                 # 前端与上层业务，通过 HTTP 调用研究服务
-├── ResearchEngine         # 独立的投研计算应用；拥有自己的 services/models/database
-├── marketdata             # iFinD 活动数据目录；研究服务只读读取
-└── TradingEngine          # 规划中的交易应用；本期不规定其内部结构或依赖
+~~~text
+用户浏览器
+    │ 只访问 SVQuant frontend / backend
+    ▼
+SVQuant backend
+    ├─ 鉴权、权限和参数校验
+    ├─ 用户资产解析与请求快照
+    ├─ ResearchEngine 网关（HTTP）
+    ├─ 错误码/超时映射
+    └─ PostgreSQL、产品缓存和展示适配
+             │
+             │ YG_RE_BASE
+             ▼
+ResearchEngine
+    ├─ marketdata（外部已发布数据）
+    ├─ 因子/策略计算
+    ├─ 回测任务与结果
+    └─ 回测结果 SQLite（服务部署侧）
+~~~
 
-外部同级项目
-└── IFind                  # 外部数据采集、日更、源数据、候选、备份与发布工具
-```
+前端主应用通过 /api 访问 SVQuant backend；前端不得把 ResearchEngine 地址写入业务代码。
+ResearchEngine 地址只在 backend/.env 的 YG_RE_BASE 中配置。Vite 开发代理也读取同一份
+配置，避免前后端出现两个不一致的地址来源。
 
-用户、数据、新闻、社区、研究、实盘/模拟盘仍是产品能力分类，不等于六个已部署服务。
-ResearchEngine 当前负责因子/策略回测、调度、数据和资产只读查询、结果及批量历史。
-WebApp 消费 HTTP API，不直接导入 Python 引擎。TradingEngine 没有已确认的共享代码需求，
-不预建共享 QuantCore，不承诺研究事件引擎可以直接用于实盘。
+## 4. SVQuant 模块职责
 
-`IFind` 与 SVQuant 不互相导入 Python 源码。`IFind` 独立持有供应商鉴权、HTTP 请求、raw/CSV/Parquet 生成、候选版本、备份和发布 CLI；SVQuant 只持有数据契约及 `marketdata/` 根目录中的活动数据。旧 `MarketData/` 目录已废弃。发布通过显式目标目录和清单/质量报告交接，见 ADR-031、ADR-032。
+### 4.1 frontend
 
-## 2. ResearchEngine 分层
+- 登录、用户操作、因子/策略配置、社区、知识库和结果展示。
+- 所有需要研究计算的操作调用 SVQuant backend。
+- 不直接访问 ResearchEngine，不保存研究服务凭据。
 
-```text
-ResearchEngine/app/
-├── main.py                         # FastAPI 入口、生命周期和依赖组装
-├── api/                            # 路由与控制器
-├── models/                         # 面板、配置、结果、上下文和状态
-├── schemas/                        # HTTP 请求/响应
-├── services/
-│   ├── data/                       # DataEngine
-│   ├── factor/                     # FactorEngine、加载和预处理
-│   ├── portfolio/                  # PortfolioEngine
-│   ├── metric/                     # MetricEngine
-│   ├── backtest/                   # BacktestEngine
-│   ├── experiment/                 # Experiment、Manager、runtime
-│   ├── strategy/                   # 既有向量化/事件策略计算
-│   ├── catalog/                    # 资产目录业务
-│   ├── results/                    # ResultManager
-│   └── factor_backtest_batch/      # 批量协调和任务注册表
-├── database/                       # Provider、缓存、存储、SQLite 访问
-├── utils/                          # 通用工具、异常和路径
-├── config.py                       # ConfigManager
-├── logging.py                      # 标准 logging 配置；服务记录运行诊断与告警
-├── assets/                         # 现有因子/策略源码和索引
-└── cli/                            # 现有命令行入口
-```
+### 4.2 backend/app
 
-api 调用 services；services 使用 models，并按需调用 database。
-models 不在运行时导入服务、HTTP、配置或存储；database 不构造业务服务。
-ResultStorage 返回 ResultData，ResultManager.load 在服务层恢复管理对象。
-utils 不承担选股、分组或绩效公式；分组和指标计算仍在对应 service。
-`logging.py` 统一配置 Python 标准 `logging` 的 `app.*` 命名空间；各 service 记录运行状态、
-可选数据缺失和过滤告警，结果/缓存仍保留需要对外展示的诊断副本。
-`ConfigManager` 继续服务策略和应用配置，但因子回测主链只使用原始 `FactorBacktestSpec`，
-不再把规格复制成第二份运行配置。
+- FastAPI 入口、路由、鉴权依赖和统一错误处理。
+- 将用户请求转换为网关可接受的 API 请求。
+- 不在路由层实现行情读取、因子计算或策略回测。
 
-这是一套普通分层应用，不额外建立 domain/application/infrastructure 目录。
+### 4.3 backend/services
 
-## 3. 研究执行模式
+- auth、community、news、core：平台业务、数据库和通用基础设施。
+- data：通过 ResearchEngine API 获取行情并做产品侧字段适配、缓存和展示。
+- factor：管理用户自定义因子同步状态、官方目录缓存、检测/回测请求和展示指标。
+- strategy：管理策略配置、策略库兼容快照、权限和结果展示；不执行回测。
+- re_* 和 re_gateway：ResearchEngine 的 HTTP BFF/网关，不复制其计算逻辑。
 
-因子流程由一个具体 `BacktestEngine` 组织 `DataEngine`、`FactorEngine`、`PortfolioEngine` 和
-`MetricEngine` 四个 services 引擎，不设因子专用 Executor、Native 实现层、Simulator 或通用工作流框架。
-既有策略流程继续使用 `services/strategy/vectorized` 的 `NativeEngine` 和
-`services/strategy/event` 的 `EventBacktestEngine`；本轮只迁移代码位置，不统一两类策略流程或改变撮合。
+backend/output/ 中的 SQLite 或 JSON 是可再生的产品缓存，不是 ResearchEngine 的结果库，也
+不是跨服务审计事实。用户、权限、配置和审计事实写入 SVQuant PostgreSQL。
 
-策略 Config、Signals、订单、成交及结果数据放在 models；策略执行方法留在 services。
-因子主链不通过策略信号包装进行计算。两条路径共用研究数据和指标服务，不代表交易应用复用。
+### 4.4 KnowledgeHub
 
-当前责任划分如下：
+知识库的 API、页面、文档元数据和附件管理属于 SVQuant 产品层。附件文件按本项目的
+KnowledgeHub/data/ 规则管理；ResearchEngine 不依赖它。
 
-| 研究路径 | 当前入口 | 当前执行边界 | 对外行为 |
-|---|---|---|---|
-| 因子回测 | 单次、批量、Python | `FactorBacktestSpec → BacktestEngine.run()` | 单因子提交异步，批量提交异步 |
-| 向量化策略 | `engine_mode=vectorized` | `StrategyExperiment → NativeEngine` | HTTP 当前同步等待 |
-| 事件策略 | `engine_mode=event` | `StrategyExperiment → EventBacktestEngine` | 日频 MVP，保留既有事件语义 |
+## 5. 外部资源和部署边界
 
-## 4. 数据与任务流程
+| 资源 | 位置/入口 | 归属 |
+|------|-----------|------|
+| PostgreSQL | backend/.env 的 DATABASE_URL | SVQuant |
+| ResearchEngine | backend/.env 的 YG_RE_BASE | 独立 ResearchEngine 部署 |
+| marketdata | SVQuant 外部的 project/marketdata 或 ResearchEngine 配置目录 | ResearchEngine 与数据发布方 |
+| 回测结果 SQLite | ResearchEngine 配置的结果存储目录 | ResearchEngine |
+| LLM、资讯源 | SVQuant backend 配置 | SVQuant |
+| Strategy/libraries | SVQuant 仓库内的兼容快照 | SVQuant 暂存，后续再治理 |
 
-```text
-HTTP / Python / CLI
-    → services 的实验入口
-    → ExperimentManager（FIFO）
-    → FactorBacktestExperiment
-    → BacktestEngine
-        → DataEngine → database Provider → 只读 MarketData release
-        → FactorEngine → 因子面板
-        → PortfolioEngine → 组合与对齐后的评价数据
-        → MetricEngine → 效果计算
-    → 结果组织、缓存/持久化、HTTP 响应或 Python 结果
-```
+marketdata 中的 data_manifest.yaml 和 quality_report.json 属于外部数据发布物，不应被复制回
+SVQuant 或提交到本仓库。ResearchEngine 在启动/运行时按自己的配置读取并校验版本或哈希。
 
-数据发布链路独立于研究执行链路：
+## 6. API 和版本约束
 
-```text
-iFinD HTTP → IFind 回填/日更 → IFind data/ifind 候选数据
-    → 在 IFind 内校验、备份、显式发布 → SVQuant marketdata
-    → FieldParquetProvider → DataEngine
-```
+- ResearchEngine 的公开 API、响应字段、兼容窗口和契约测试由独立仓库维护。
+- SVQuant backend 只依赖公开 HTTP 契约，不依赖 ResearchEngine 内部模块路径或文件布局。
+- SVQuant 网关负责认证、用户资产快照、超时、连接失败和 ResearchEngine 错误到产品错误的映射。
+- ResearchEngine 与 SVQuant 必须锁步发布：先确认 API 契约和契约测试，再同时更新网关、页面、
+  运行配置和发布记录。
+- 任一服务不可用时，SVQuant 应明确显示“研究服务暂不可用”，不能伪造计算结果或回退到本地
+  隐式计算。
 
-database 在读取和保存时调用，不是 MetricEngine 之后才执行的计算步骤。
-运行时维持一个 Uvicorn worker、一个应用级全局 DataEngine 和一个进程级 Manager。FastAPI lifespan
-先由 DataEngine 加载固定 release，再启动 Manager；Manager 不向任务注入数据对象。
-任务有独立因子注册、筛选结果、组合和评价数据；不为每个实验复制完整行情，不共享任务可变配置。
+## 7. 配置和启动
 
-HTTP 与任务边界：
+SVQuant 只提供产品层启动方式：
 
-- `POST /api/backtest/factor` 只负责校验、生成任务并返回 `202`；调用方通过
-  `GET/DELETE /api/backtest/factor/{run_id}` 查询或取消。
-- `POST /api/internal/factor-backtest-batches` 返回批量 `task_id`；批量协调器以固定业务窗口
-  向同一个 `ExperimentManager` 提交 `FactorBacktestExperiment`，历史标量写入独立
-  `FactorBacktestStore` SQLite。
-- 策略回测当前仍同步返回；异步因子任务、同步策略任务和批量业务协调不能混写成同一种 HTTP 契约。
+~~~bash
+cp backend/.env.example backend/.env
+# 手工填写 DATABASE_URL、JWT_SECRET、YG_RE_BASE 等配置
+conda activate svquant
+cd backend
+pip install -r requirements.txt
+python -u api_server.py
+~~~
 
-## 5. 数据存储方案
+ResearchEngine 的安装、数据校验、结果库和服务启动由其独立仓库负责。本仓库不再提供
+ResearchEngine 的安装脚本、启动脚本或内部配置。
 
-| 数据类型 | 当前存储 | 所有权与说明 |
-|---------|----------|--------------|
-| MarketData release | Parquet | 以不可变 release 发布；物理上可按业务域宽表或字段文件组织，由 `FieldParquetProvider` 统一暴露逻辑字段面板。 |
-| 研究运行时行情 | DataEngine 持有当前 release 的数据来源与字段缓存 | FastAPI lifespan 不预热字段；因子任务按 spec 的日期范围读取自己的字段切片，FieldFrameCache 只复用已经实际读取的完整字段。 |
-| 因子值、组合和指标中间结果 | 任务内存 | 每个实验独立持有，不写入共享行情上下文；由 `BacktestEngine` 和四个 services 引擎协作产生。 |
-| 完整回测结果 | CSV/Parquet/SQLite/ClickHouse | 由 `ResultManager` 和结果存储适配器按输出配置持久化到 `ResearchEngine/output/` 或指定后端。 |
-| 因子批量历史和标量指标 | SQLite | 独立 `FactorBacktestStore`，默认路径为 `Factor/database/factor_backtest.db`；不替代完整结果存储。 |
-| 用户资产与权限数据 | WebApp/平台侧 | ResearchEngine 只接收已解析的用户资产快照，不拥有用户资产 CRUD、鉴权和权限数据。 |
+## 8. 失败与回滚
 
-因子回测的 `start/end` 同时定义本次因子计算与回测数据范围；滚动窗口不足导致的缺失由因子设计
-自行表达，系统不额外读取区间之前的预热历史。版本、源码哈希和 release 标识共同
-参与结果身份，避免把不同数据版本或执行协议的结果混为一谈。
+| 故障 | SVQuant 行为 | 处理责任 |
+|------|--------------|----------|
+| ResearchEngine 连接失败/超时 | 网关返回明确的服务不可用错误，前端保留用户输入 | ResearchEngine 运维和网络配置 |
+| API 响应不兼容 | 集成测试或网关校验阻断发布 | 两仓库共同修复并锁步发布 |
+| marketdata 版本/哈希不匹配 | ResearchEngine 拒绝计算；SVQuant 展示计算服务不可用 | 数据发布方和 ResearchEngine |
+| PostgreSQL 不可用 | SVQuant 登录和产品写操作失败 | SVQuant 运维 |
+| 产品缓存损坏 | 删除后按 ResearchEngine API 重建 | SVQuant |
+| 版本发布异常 | 按人工回滚方案恢复上一组兼容版本 | 发布负责人 |
 
----
+## 9. 后续演进
 
-## 6. 后续扩展边界
-
-多市场、分布式 worker 和 TradingEngine 属于后续需求，不以这次目录整理提前创建代码。
-将来确有第二个应用的复用需求时，再基于实际契约评估提取公共库。
-当前事件策略只保留既有日频研究能力和测试覆盖，不据此宣称实盘与全部市场规则已实现。
-
-## 7. 接口形态
-
-| 接口形式 | 当前职责 | 当前契约 |
-|---------|----------|----------|
-| Python API | 研究员和内部任务调用 | 单次、批量和策略入口复用 services；因子回测进入统一 `BacktestEngine`。 |
-| CLI | 批量触发、运维和辅助研究 | 批量触发返回任务标识，查询仍走 ResearchEngine 任务/历史接口。 |
-| HTTP (FastAPI) | WebApp 或其他受信任客户端远程调用 | 根路径统一为 `/api`；因子和批量提交异步返回 `202`，策略回测当前同步返回。 |
-
-ResearchEngine 不提供 `/api/v2` 并行入口；公开 API 的完整路由和响应字段以模块功能文档为准，
-跨模块调用必须同时遵循 ADR-021 与 ADR-024。
-
----
-
-## 8. 架构决策索引
-
-| 决策 | 当前选择 | 来源 |
-|------|----------|------|
-| ResearchEngine 分层 | `api / schemas / services / models / database / utils / config.py`，不恢复 QuantCore 独立包层 | [ADR-029](../05-技术决策/ADR-029-研究服务采用services与models分层.md) |
-| 因子回测编排 | `BacktestEngine` 编排 Data、Factor、Portfolio、Metric 四个 services 引擎 | [ADR-028](../05-技术决策/ADR-028-因子回测由BacktestEngine编排四引擎.md) |
-| 数据与调度边界 | 每进程一个应用级 `DataEngine` 持有固定 release；`ExperimentManager` 只调度 | [ADR-030](../05-技术决策/ADR-030-DataEngine持有应用级市场数据快照.md) |
-| 数据生产边界 | 回填、日更、凭据、源数据、候选、备份和发布 CLI 位于独立 `IFind` 项目；SVQuant 只读消费 `marketdata/` 目录镜像 | [ADR-031](../05-技术决策/ADR-031-iFinD采集迁移为独立项目.md)、[ADR-032](../05-技术决策/ADR-032-MarketData扁平只读消费目录.md) |
-| 因子任务接口 | 单次和批量提交异步返回任务标识；策略回测当前同步 | [ResearchEngine ADR-021](../../ResearchEngine/docs/05-技术决策/ADR-021-因子回测接口采用异步任务查询.md) |
-| HTTP 根路径 | 统一使用 `/api`，不提供 `/api/v2` 并行入口 | [ResearchEngine ADR-024](../../ResearchEngine/docs/05-技术决策/ADR-024-ResearchEngine HTTP API 使用 api 前缀.md) |
-| 批量指标存储 | 独立 `FactorBacktestStore` SQLite，完整结果仍走通用结果存储 | [ResearchEngine ADR-020](../../ResearchEngine/docs/05-技术决策/ADR-020-因子批量指标仓库使用独立SQLite.md) |
-| 因子区间语义 | `start/end` 就是因子计算、组合和评价的数据范围；系统不额外补读区间前历史 | [ADR-028](../05-技术决策/ADR-028-因子回测由BacktestEngine编排四引擎.md) |
-| 计算技术基座 | NumPy/Pandas 面板计算；策略保留向量化和事件两种执行模式 | ADR-001、ADR-002、[引擎详细设计](engine-design.md) |
-| 历史行情存储 | 不可变 release + Parquet；Provider 向上提供统一字段面板 | ADR-003、ADR-016、ADR-017、[数据存储设计](database_design.md) |
-| 包管理 | setuptools + pyproject.toml | 项目构建约束 |
-| HTTP 框架 | FastAPI | 运行时实现与 OpenAPI 契约 |
-| 业务模块边界 | 用户 / 数据 / 新闻 / 社区 / 研究 / 实盘模拟盘 | 产品能力边界；不等同于已部署服务数量 |
-| 文档 | Markdown + AGENTS.md | 轻量，版本可控 |
-| 代码托管与协作 | Gitee 为主仓 | 当前国内团队协作更稳定；需要国际生态时再评估 GitHub 镜像或双平台流程 |
+本轮不设计共享领域库、分布式任务队列、统一对象存储、实盘执行或自动回滚。若未来需要，
+先更新跨仓库契约和 ADR，再分别修改两个项目，避免通过复制代码重新形成耦合。

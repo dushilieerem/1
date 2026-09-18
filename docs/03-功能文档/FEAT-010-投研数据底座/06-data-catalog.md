@@ -1,10 +1,12 @@
 # FEAT-010 数据清单（v1.0）
 
 > 状态：待数据授权、样本和数据负责人确认。本文定义数据资产而非供应商合同；`授权状态` 未确认前不得下载、落盘或用于产品交付。
+>
+> 当前边界（2026-09-17）：清单和质量报告是外部 ResearchEngine/数据发布侧资产。ResearchEngine 部署配置的 `marketdata/` 是活动数据目录，SVQuant 不保存或直接读取这些文件。
 
 ## 1. 清单与发布规则
 
-- 每次完整数据发布在 `IFind/data/releases/<data_version>/` 下生成；`SVQuant/MarketData/` 根目录是 API 唯一活动版本目录，`SVQUANT_DATA_DIR` 直接指向该目录。
+- 每次完整数据发布在 `IFind/data/releases/<data_version>/` 下生成；ResearchEngine 部署配置的 `marketdata/` 是 API 唯一活动数据目录，ResearchEngine 在启动或任务执行时校验其中的 manifest 和质量报告。
 - 每个发布必须包含 `data_manifest.yaml`、字段字典副本、质量报告和所有已声明字段文件。清单记录文件 SHA-256、行列规模、日期区间、证券覆盖、来源版本和生成时间。
 - 标准面板文件为 `<field>.parquet`，首列/索引为 `datetime`，其余列为规范化证券代码；原始受控数据不进入 Git，也不与运行时面板混放。
 - `已存在（待盘点）` 仅表示项目声明已有相应文件；在质量盘点完成前，不能作为字段覆盖或授权已确认的证据。
@@ -22,10 +24,10 @@
 
 | ID | 数据资产 / 建议路径 | 内容与关键字段 | 粒度 / 格式 | 来源与授权状态 | 发布验收 |
 |---|---|---|---|---|---|
-| DATA-001 | `current/panels/{field}.parquet` | 既有 OHLC、成交量额、换手率、市值股本、PE/PB/PS、ST、涨停 | 日 × 证券，字段宽表 | 已迁移，口径/许可待盘点 | 对每个文件核对复权口径、日期区间、证券代码和缺失率 |
+| DATA-001 | `marketdata/panels/{field}.parquet` | 既有 OHLC、成交量额、换手率、市值股本、PE/PB/PS、ST、涨停 | 日 × 证券，字段宽表 | 已迁移，口径/许可待盘点 | 对每个文件核对复权口径、日期区间、证券代码和缺失率 |
 | DATA-002 | `raw/fundamentals.parquet` | 原始三表记录及第 5 节必填元数据 | 披露记录长表 | 待授权 | 抽样核对报告期、公告日、单位、修订链和供应商版本 |
 | DATA-003 | `panels/{financial_field}.parquet` | 第 05 文档第 3 节所有财务标准字段 | 日 × 证券，字段宽表 | 由 DATA-002 转换 | 公告日前不可见；修订后切换；TTM 缺季为空 |
-| DATA-004 | `current/panels/adj_factor.parquet` | 累计复权因子；前复权价格面板延期 | 日 × 证券，字段宽表 | 待授权 / 待确认现有数据 | 抽样复算复权公式；明确基日和企业行为处理；前复权另行评审 |
+| DATA-004 | `marketdata/panels/adj_factor.parquet` | 累计复权因子；前复权价格面板延期 | 日 × 证券，字段宽表 | 待授权 / 待确认现有数据 | 抽样复算复权公式；明确基日和企业行为处理；前复权另行评审 |
 | DATA-005 | `panels/listing_status.parquet`、`is_suspended.parquet`、`is_tradable.parquet` | 上市、停牌与交易可行状态 | 日 × 证券，字段宽表 | 待授权 | 抽样覆盖 IPO、停牌、复牌、退市与涨跌停边界 |
 | DATA-006 | `panels/market_return_all_a.parquet` | 全 A 市场收益单列面板或日期序列 | 日，Parquet | 由 DATA-001/004/005 派生 | 用 t-1 流通市值复算抽样日期；记录成分和剔除规则 |
 | DATA-007 | `metadata/security_master.parquet` | `symbol`、证券名称、上市/退市日期、代码变更关系 | 证券 / 生效区间，长表 | 待授权 / 待确认 | 证券代码可与所有面板列一一对应，历史代码变更可追溯 |
@@ -68,13 +70,13 @@ quality_report: quality_report.json
 
 交易日历按交易所分别发布为 `calendar/SH.parquet`、`calendar/SZ.parquet`、`calendar/BJ.parquet`。iFinD `/api/v1/get_trade_dates` 的 `marketcode` 固定为 `SH=212001`、`SZ=212100`、`BJ=212300`；每份日历记录请求区间、生成时间、源版本和哈希。
 
-所有 iFinD 数据资产均采用“CSV 先行、Parquet 发布”流程：`sources/ifind/` 中保留可人工检查的 CSV 分区，只有通过质量门禁的数据才生成 `releases/<version>/` 和 `current/` 下的 Parquet。CSV 分区的请求参数、来源版本、数据量和哈希必须记录在采集 checkpoint / 发布清单中。
+所有 iFinD 数据资产均采用“CSV 先行、Parquet 发布”流程：IFind 项目中的 `sources/ifind/` 保留可人工检查的 CSV 分区，只有通过质量门禁的数据才生成 `releases/<version>/` 和 ResearchEngine 部署侧 `marketdata/` 下的 Parquet。CSV 分区的请求参数、来源版本、数据量和哈希必须记录在采集 checkpoint / 发布清单中。
 
 ## 5. iFinD 日线复权协议记录
 
 `/api/v1/history_data` 的全 A 股 OHLC 请求使用 `reqBody.codes`、`startdate`、`enddate`、`indicators` 和可选 `functionpara`。经超级命令生成协议确认：省略 `functionpara.CPS` 为不复权，`CPS: "1"` 为后复权，`CPS: "2"` 为前复权。该规则仅适用于此 HTTP endpoint；不得用其他接口或 SDK 的同名参数规则替代。
 
-当前分别保存后复权回测行情和未复权 WebApp 展示价格，发布清单必须记录其 `endpoint`、`functionpara`、价格口径、源版本和对应超级命令确认记录。前复权暂不采集。任何一个候选版本的标准 `open`、`high`、`low`、`close` 只允许声明一种明确口径。
+当前分别保存后复权回测行情和未复权 SVQuant 展示价格，发布清单必须记录其 `endpoint`、`functionpara`、价格口径、源版本和对应超级命令确认记录。前复权暂不采集。任何一个候选版本的标准 `open`、`high`、`low`、`close` 只允许声明一种明确口径。
 
 ## 6. 责任与待确认项
 

@@ -1,80 +1,52 @@
-# FEAT-030：因子回测流程重构
+# FEAT-030：因子回测服务集成
 
-- 状态：开发中（services/models 结构迁移完成，原专项验收尚未全部关闭）
-- 文档日期：2026-08-28
+- 状态：ResearchEngine 内部实现已迁出；SVQuant 侧保留网关集成
 - 所属 Initiative：INIT-001 投研核心
-- 所属能力：ResearchEngine 因子研究
-- 优先级：P0（建议）
-- 当前交付：四引擎主链及 services/models 目录修订已实现；本轮全量回归 528 passed，见 Verification
-- 代码开工条件：已由用户明确批准；代码重构已开始
+- 所属能力：因子研究
+- 优先级：P0
 
 ## 目标
 
-2026-08-28 用户明确取消 QuantCore 独立边界，采用
-`main.py / api / models / schemas / services / database / utils / config.py`。
-五个 Engine 的业务逻辑进入 services，内部数据结构进入 models；不新增 domain/application/infrastructure。
-本次修订以 [目录与职责设计](06-app-layout.md) 和 [ADR-029](../../05-技术决策/ADR-029-研究服务采用services与models分层.md) 为准。
-用户已明确授权按该结构实施，原有业务公式、HTTP 和数据库边界不变。
+ResearchEngine 独立负责因子目录、行情读取、因子计算、回测任务和结果生成。SVQuant 负责用户
+鉴权、请求参数和用户资产快照，调用 ResearchEngine HTTP API，并向页面展示结果。
 
-DataEngine 管数据与筛选条件，FactorEngine 管因子加工，PortfolioEngine 管组合，
-MetricEngine 管效果计算，BacktestEngine 组织完整流程。
+~~~text
+用户配置
+  → SVQuant backend 鉴权和快照解析
+  → ResearchEngine 因子回测 API
+  → 任务状态/结果
+  → SVQuant 展示与可再生缓存
+~~~
 
-```text
-ExperimentManager
-  → FactorBacktestExperiment
-    → BacktestEngine.run(spec, context)
-      → DataEngine：完整行情、股票池、筛选掩码
-      → FactorEngine：因子计算、可选预处理
-      → PortfolioEngine：分组、权重、持仓、评价数据对齐
-      → MetricEngine：收益、净值、基准、指标和扩展分析
-      → 汇总 FactorBacktestResult
-```
+## SVQuant 侧范围
 
-当前因子主链已按此图实现。`FactorBacktestExperiment` 位于
-`app.services.factor.experiment`，标准单次、批量和 Python 入口直接进入 `BacktestEngine`；策略回测仍使用自己的 Native/Event
-组件。只保留一个具体 BacktestEngine，不增加接口继承、后端注册表或模拟器层。
-Manager 和 Experiment 的原有职责保持。
+- 维护因子目录同步缓存和用户自定义因子元数据。
+- 维护因子检测/回测 BFF，适配异步任务、轮询、超时和错误映射。
+- 维护用户证券池、组合基准、权限和产品层历史记录。
+- 通过网关测试请求转换和与指定 ResearchEngine 版本的集成。
 
-## 已确认范围
+## ResearchEngine 侧范围
 
-- 只重构因子回测；策略回测仍依赖的 NativeEngine、EventBacktestEngine 及信号契约暂时保留。
-- 首期迁移停牌/涨停过滤、去极值、标准化，所有入口默认关闭，支持分别显式开启。
-- 后续再考虑跌停、北交所、上市不足 180 天过滤及中性化；首期不提供占位参数或空实现。
-- 保留现有收益、净值、分组指标公式及展示时序。
-- 过滤缺少状态数据时跳过并显式告警；保留在当次结果、缓存和日志，不增加批量历史数据库字段。
-- 不修改 WebApp，不迁移因子数据库，不清理历史数据，不处理无关重构。
+因子执行管线、数据 release、因子/策略资产、任务调度、计算测试、API 契约和结果 SQLite 均由
+[ResearchEngine 独立仓库](https://gitee.com/yanggu-yuanqi-intelligence/research-engine)维护。
+SVQuant 不再保存或运行该服务的 Python 实现。
 
-## 审核顺序与材料
+## 跨仓库契约
 
-| 顺序 | 材料 | 审核重点 |
-|---|---|---|
-| 1 | [Feature Proposal](01-feature-proposal.md) | 为什么做、用户和商业价值、范围及资源 |
-| 2 | [Product Requirements](02-product-requirements.md) | 默认行为、异常、跨入口一致性、验收标准 |
-| 3 | [Technical Design](03-technical-design.md) | 五个引擎职责、输入输出、时序、兼容及迁移 |
-| 4 | [Project Plan](04-project-plan.md) | 任务、依赖、人天、风险、里程碑 |
-| 5 | [Verification](05-verification.md) | 基线记录与尚未执行的重构验收矩阵 |
-| 6 | [ADR-028](../../05-技术决策/ADR-028-因子回测由BacktestEngine编排四引擎.md) | 已采纳；其中包归属由 ADR-029 修订 |
-| 7 | [目录与职责修订](06-app-layout.md) | QuantCore 取消，services/models/database 的职责与生命周期 |
+- SVQuant 只发送经过鉴权的日期、因子引用、参数和不可变资产快照。
+- ResearchEngine 负责校验因子、数据 manifest、版本/哈希和计算参数。
+- 异步提交必须通过任务状态确认终态；结果失败、取消、超时和服务不可达都要显式返回。
+- SVQuant 不读取 ResearchEngine 的本地行情或结果 SQLite。
+- ResearchEngine 与 SVQuant 必须锁步发布；接口变化先更新 ResearchEngine 契约测试，再同步
+  SVQuant BFF、前端文案和集成验证。
 
-## 审核关卡
+## 验收
 
-交付顺序固定为：计划 → 文档落盘 → 用户审核 → 代码重构 → 验收。
+ResearchEngine 的计算和契约测试在其独立仓库执行。SVQuant 侧验收关注：
 
-- [x] 完成方案讨论及范围确认。
-- [x] 编写完整 Feature 文档与拟议 ADR。
-- [x] 用户审核通过 Proposal、Requirements、Technical Design、Project Plan。
-- [x] 用户明确批准开始 M1–M5 代码重构，满足 Definition of Ready。
-- [ ] 完成专项实现、跨入口、并发及数值验收。
-- [ ] 更新当前实现基线并标记交付状态。
+1. 未登录或无权限请求不会到达 ResearchEngine。
+2. 用户资产快照经过版本、归属和内容哈希校验后才提交。
+3. 网关能正确处理提交、轮询、终态结果和错误映射。
+4. ResearchEngine 不可用时页面显示明确的服务不可用状态，不回退到本地隐式计算。
 
-本次代码开工已获明确授权；当前仍未达到 Feature 最终交付状态，M5 验收完成前不标记为已完成。
-
-## 关联文档
-
-- [Portfolio Backlog](../../01-需求文档/项目组合/portfolio-backlog.md)
-- [INIT-001](../../01-需求文档/项目倡议/INIT-001-研究核心/README.md)
-- [当前 ResearchEngine 架构](../../../ResearchEngine/docs/02-架构文档/researchengine_architecture.md)
-- [ADR-025：现有单一应用执行管线](../../../ResearchEngine/docs/05-技术决策/ADR-025-回测采用单一应用执行管线与可插拔后端.md)
-- [ADR-027：已有三引擎兼容式重构](../../05-技术决策/ADR-027-QuantCore三引擎兼容式重构.md)
-
-本 Feature 的实现全部归 ResearchEngine；为保留现有链接，文档仍在当前目录维护，不另行搬迁文档。
+原 ResearchEngine 内部实现说明和测试记录已从 SVQuant 移除，历史版本仍可通过 Git 历史追溯。

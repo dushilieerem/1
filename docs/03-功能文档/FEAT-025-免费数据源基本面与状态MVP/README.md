@@ -7,14 +7,16 @@
 - 关联 Feature：FEAT-010、FEAT-024
 - 提案日期：2026-08-14
 
+> 当前边界（2026-09-17）：免费数据源采集、候选 release 和活动 `marketdata/` 不属于 SVQuant；由独立数据发布项目生成并供 ResearchEngine 使用。本 Feature 在 SVQuant 仅保留数据契约、产品需求和跨仓库验收说明。
+
 ## 1. 价值与范围
 
 ### 目标
 
 使用可公开获取的免费数据源，补齐以下两个活动数据资产：
 
-- `MarketData/panels/daily_basic.parquet`
-- `MarketData/panels/security_status.parquet`
+- ResearchEngine 配置的 `marketdata/panels/daily_basic.parquet`
+- ResearchEngine 配置的 `marketdata/panels/security_status.parquet`
 
 MVP 的成功标准是：两张表追平 `market_data.parquet` 的最大交易日；沪深股票的核心估值、ST 和停牌字段可用于研究；每个缺口和口径差异均可审计。MVP 不承诺免费数据源与 iFinD 全字段、全市场、全历史等价。
 

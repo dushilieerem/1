@@ -7,13 +7,15 @@
 - 关联 Feature：FEAT-010 投研因子数据底座
 - 批准日期：2026-08-11
 
+> 当前边界（2026-09-17）：本 Feature 描述 ResearchEngine 部署侧的 `marketdata/` 宽表与只读快照。SVQuant 不持有这些 Parquet，也不直接访问回测结果 SQLite；产品侧通过 ResearchEngine HTTP API 获取数据和结果。
+
 ## 1. 价值与范围
 
 ### 背景
 
 现有 AkShare 数据已经能够支持研究验证，不需要等待 iFinD 全量基本面完成后一次性切源。当前目标是继续使用可用数据，将已经下载并验证的 iFinD 行情、估值和状态字段逐步写入活动数据版本。
 
-SVQuant 的回测数据是只读历史快照，并且价格、成交量、成交额和换手率通常一起加载。Parquet 本身支持列选择，因此没有必要为七个高度相关字段维护七个独立文件。现有 iFinD `market_data_hfq.parquet` 的业务分组方向正确，需要补齐文件边界、字段清单、版本和读取规范。
+ResearchEngine 的回测数据是只读历史快照，并且价格、成交量、成交额和换手率通常一起加载。Parquet 本身支持列选择，因此没有必要为七个高度相关字段维护七个独立文件。现有 iFinD `market_data_hfq.parquet` 的业务分组方向正确，需要补齐文件边界、字段清单、版本和读取规范。
 
 ### MVP 范围
 
@@ -79,7 +81,7 @@ SVQuant 的回测数据是只读历史快照，并且价格、成交量、成交
 1. `panels/market_data.parquet` 保存后复权价格和流动性七个字段。
 2. `panels/daily_basic.parquet` 保存日频市值、股本和估值字段。
 3. `panels/security_status.parquet` 保存上市状态、行业、涨跌停、ST 和是否停牌字段；`is_suspended` 由 `listed_status` 派生，`limit_status` 仅表示涨跌停原始状态。
-4. `display/unadjusted_price.parquet` 单独保存 WebApp 未复权 OHLC。
+4. `display/unadjusted_price.parquet` 单独保存 SVQuant 未复权 OHLC。
 5. `benchmark/index_weights_<index>.parquet` 同时保存指数权重和历史成分，不再单独保存 constituents 表。
 6. `universe/a_share.parquet` 保存静态全 A 股票池列表。
 7. 发布文件不可修改；数据更新生成新版本，验证后整体切换活动目录。

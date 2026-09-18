@@ -1,6 +1,6 @@
-# `marketdata` 当前数据字典
+# `marketdata` 外部数据字典
 
-> 本文是当前仓库 `marketdata/` 活动数据目录的数据字典。字段、文件和覆盖规模以实际 Parquet schema、`data_manifest.yaml` 与 `quality_report.json` 为准。
+> 本文记录 ResearchEngine 使用的外部 `marketdata/` release 数据字典。该目录已经移出 SVQuant，字段、文件和覆盖规模以实际 Parquet schema、`data_manifest.yaml` 与 `quality_report.json` 为准。
 >
 > - 数据版本：`ifind-sync-20260908-055514`
 > - 清单生成时间：`2026-09-08T05:55:14.511492+00:00`（UTC）
@@ -10,12 +10,12 @@
 
 ## 1. 结论先看
 
-当前 `marketdata/` 实际包含 75 个已登记数据资产：
+当前已发布的 `marketdata/` release 包含 75 个已登记数据资产：
 
 | 类型 | 资产数量 | 作用 |
 |---|---:|---|
 | 股票日频后复权行情 | 1 | 因子研究、日频回测 |
-| 股票日频未复权行情 | 1 | WebApp K 线展示 |
+| 股票日频未复权行情 | 1 | SVQuant K 线展示 |
 | 日频估值与证券状态 | 1 | 估值、行业、涨跌停和上市状态研究 |
 | 1 分钟行情分区 | 66 | 已落盘的高频行情；当前暂无统一读取接口 |
 | 指数日线 | 2 | CSI300、CSI500 基准指数 |
@@ -102,10 +102,10 @@ date
 
 | 字段 | 中文含义 | 类型 | 单位 | 使用场景 |
 |---|---|---|---|---|
-| `open` | 未复权开盘价 | `float64` | 元/股 | WebApp K 线展示 |
-| `high` | 未复权最高价 | `float64` | 元/股 | WebApp K 线展示 |
-| `low` | 未复权最低价 | `float64` | 元/股 | WebApp K 线展示 |
-| `close` | 未复权收盘价 | `float64` | 元/股 | WebApp K 线展示 |
+| `open` | 未复权开盘价 | `float64` | 元/股 | SVQuant K 线展示 |
+| `high` | 未复权最高价 | `float64` | 元/股 | SVQuant K 线展示 |
+| `low` | 未复权最低价 | `float64` | 元/股 | SVQuant K 线展示 |
+| `close` | 未复权收盘价 | `float64` | 元/股 | SVQuant K 线展示 |
 
 该文件不提供 `volume`、`amount` 或 `turnover`。未复权价格不能与后复权研究价格混用，也不参与当前因子回测收益计算。
 
@@ -151,7 +151,7 @@ date
 | 字段 | 类型 | 含义 | 注意事项 |
 |---|---|---|---|
 | `thscode` | `string` | 带交易所后缀的 iFinD 证券代码，例如 `000001.SZ` | 当前 5,929 行；用于与行情列匹配 |
-| `name` | `string` | 证券名称 | 用于 WebApp 代码名称映射；不表示某日一定在市或可交易 |
+| `name` | `string` | 证券名称 | 用于 SVQuant 代码名称映射；不表示某日一定在市或可交易 |
 
 `CSI_ALL`、`ALL_A` 和 `A_SHARE` 使用该文件返回全 A 代码列表。缺少 `is_tradable`、上市日期和退市日期等点时字段。
 
@@ -209,7 +209,7 @@ date
 
 ## 9. 事件策略字段兼容性
 
-按当前 15 个逻辑字段审计 `ResearchEngine/app/assets/strategies/libraries/` 中声明为 `event` 的策略：共 72 个，66 个所需字段完整，6 个仍然缺字段。审计同时包含策略的 `required_market_state`；涨跌停状态统一使用 `up_and_down_status`，停牌字段不参与兼容映射。
+按当前 15 个逻辑字段审计 ResearchEngine 独立仓库已发布策略资产中声明为 `event` 的策略：共 72 个，66 个所需字段完整，6 个仍然缺字段。审计同时包含策略的 `required_market_state`；涨跌停状态统一使用 `up_and_down_status`，停牌字段不参与兼容映射。
 
 | 事件策略 | 缺少字段 |
 |---|---|
@@ -222,24 +222,11 @@ date
 
 其中 `total_mv`、`market_cap` 不自动映射为 `current_mv`，会计字段也不以估值字段替代。上述 6 个策略在当前 release 上应明确报告缺字段并停止初始化，不做静默兼容。
 
-## 10. 读取示例
+## 10. 读取边界
 
-```python
-from app.database.data.providers.field_parquet_provider import FieldParquetProvider
-from app.services.data.engine import DataEngine
+本字典供 ResearchEngine 的数据 Provider 和契约测试使用。SVQuant 不直接实例化 Provider，不
+读取 Parquet 文件，也不依赖文件名或目录层级。SVQuant 如需行情展示或研究数据，统一通过
+ResearchEngine HTTP API 获取；接口响应中的字段语义必须与本字典和对应 API 契约一致。
 
-engine = DataEngine(FieldParquetProvider("marketdata"))
-
-panels = engine.get_panels(
-    fields=[
-        "open", "high", "low", "close", "volume", "amount", "turnover",
-        "current_mv", "pb_mrq", "pe_ttm", "up_and_down_status", "listed_status",
-    ]
-)
-
-bars = engine.get_bars("000001.SZ", fields=["close", "pb_mrq", "pe_ttm"])
-index = engine.get_index("CSI300")
-all_a = engine.get_universe("CSI_ALL")
-```
-
-以上示例中的 `panels[field]` 是 `DataFrame[日期 × 证券]`；`bars` 是单证券日线表；`index` 是指数 OHLC 表；`all_a` 是六位证券代码列表。
+数据 release 的版本、manifest 哈希和质量状态由 ResearchEngine 在自己的部署环境校验。发生
+版本不匹配时，ResearchEngine 应拒绝计算，SVQuant 显示研究服务不可用，而不是使用本地旧数据。

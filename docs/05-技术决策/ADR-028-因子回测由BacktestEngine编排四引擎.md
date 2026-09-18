@@ -34,7 +34,7 @@ NativeEngine 只负责底层组合收益。团队希望 BacktestEngine 明确表
    缺少可选过滤数据时跳过并告警，保留在当次结果、缓存和日志，不新增批量历史字段。
 8. 保持现有收益、净值及分组指标公式；当前执行版本为 factor-execution-v4，缓存为
    factor-backtest-v10，指标公式版本保持 factor-scorecard-v2。批次身份隔离新旧执行版本。
-9. 本期不修改 WebApp、不迁移因子数据库、不改变批量历史 schema，也不清理历史数据。
+9. 本期不修改 SVQuant、不迁移因子数据库、不改变批量历史 schema，也不清理历史数据。
 10. 因子回测只保留调用方原始 `FactorBacktestSpec`；运行时实际数据终点记为 `actual_end`。
     不派生 `effective_spec`，因子主链不再把 Spec 转换为 `ConfigManager`。
 
@@ -42,7 +42,7 @@ NativeEngine 只负责底层组合收益。团队希望 BacktestEngine 明确表
 
 | 既有决定 | 保留 | 本提议获批并实施后调整 |
 |---|---|---|
-| [ADR-025](../../ResearchEngine/docs/05-技术决策/ADR-025-回测采用单一应用执行管线与可插拔后端.md) | 因子单一路径、Spec/高层结果、统一调度、跨入口一致、版本追溯 | 因子计算入口改为 BacktestEngine，不再经可插拔后端；旧执行/缓存版本演进 |
+| ResearchEngine ADR-025（见[独立仓库](https://gitee.com/yanggu-yuanqi-intelligence/research-engine)） | 因子单一路径、Spec/高层结果、统一调度、跨入口一致、版本追溯 | 因子计算入口改为 BacktestEngine，不再经可插拔后端；旧执行/缓存版本演进 |
 | [ADR-027](ADR-027-QuantCore三引擎兼容式重构.md) | loader 注入、provider 隔离、既有注册/计算接口、数据库后续独立处理 | DataEngine 不再仅透明代理；FactorEngine 接管加工；MetricEngine 接管完整效果计算 |
 | ADR-002 / ADR-005 | 策略侧向量化与事件模式及其能力边界 | 本期不调整，不据此删除 EventBacktestEngine 或策略资产 |
 

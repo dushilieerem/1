@@ -3,12 +3,12 @@
 - 日期：2026-08-28
 - 状态：已采纳，目录与模型归属迁移完成；528 项全量回归通过
 - 决策依据：用户明确指定 `main.py / api / models / schemas / services / database / utils / config.py`。
-- 关联：[FEAT-030 目录与职责修订](../03-功能文档/FEAT-030-因子回测流程重构/06-app-layout.md)
+- 关联：[FEAT-030 因子回测服务集成](../03-功能文档/FEAT-030-因子回测流程重构/README.md)
 
 ## 问题
 
 QuantCore 最初按因子回测流程抽象为跨应用基础库，但目前实际消费者只有 ResearchEngine。
-WebApp 通过 HTTP 使用研究服务，TradingEngine 尚未建立，也没有复用这些实现的已确认需求。
+SVQuant 通过 HTTP 使用研究服务，TradingEngine 尚未建立，也没有复用这些实现的已确认需求。
 把完整业务逻辑放在 QuantCore，同时在 services 再包装一遍，造成职责分散；
 继续引入 application/domain/infrastructure 目录不符合当前团队采用的简单分层方式。
 
@@ -50,5 +50,5 @@ ADR-023/027/028 中有关 QuantCore 包边界的部分由本 ADR 接替；其单
 ## 验证与回滚
 
 迁移前记录工作区基线；迁移后验证所有模块可导入、无旧运行时路径、models 无运行时反向依赖、
-HTTP/OpenAPI 契约及现有全量测试。测试使用 svquant 环境。保持 WebApp、数据库、行情和输出不变。
+HTTP/OpenAPI 契约及现有全量测试。测试使用 svquant 环境。保持 SVQuant、数据库、行情和输出不变。
 部署回滚使用上一已验收版本；不能 reset 用户工作区或清空历史数据。

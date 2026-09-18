@@ -1,146 +1,114 @@
-# SVQuant 回测引擎与执行模式设计
+# 回测服务集成与执行边界
 
-> 文档版本：v1.0
-> 状态：当前架构基线；因子主链已实施，策略向量化/事件模式按现有行为维护
-> 最后更新：2026-08-28
-> 适用范围：ResearchEngine 回测计算，不代表 TradingEngine 或实盘交易已实现
+> 本文只描述 SVQuant 如何使用 ResearchEngine 的回测能力。
+> ResearchEngine 内部引擎、任务状态、数据 Provider 和结果存储的详细设计以独立仓库为准：
+> https://gitee.com/yanggu-yuanqi-intelligence/research-engine
 
-## 1. 文档定位
+## 1. 设计目标
 
-本文档说明项目级回测执行模式和引擎协作边界。ResearchEngine 的完整模块架构以
-[`ResearchEngine 模块架构`](../../ResearchEngine/docs/02-架构文档/researchengine_architecture.md) 为准；
-本文只保留跨模块需要理解的引擎职责、数据时序和执行差异。
+SVQuant 负责把用户意图变成经过鉴权和校验的研究请求，再把 ResearchEngine 的结果转换成
+产品可展示的数据。回测计算、行情读取、策略执行和结果持久化全部属于 ResearchEngine。
 
-当前架构的决策来源包括：
+~~~text
+页面操作
+  → SVQuant backend 鉴权/校验
+  → HTTP 网关
+  → ResearchEngine 计算
+  → HTTP 响应
+  → SVQuant 展示/缓存
+~~~
 
-- [ADR-028：因子回测由 BacktestEngine 编排四引擎](../05-技术决策/ADR-028-因子回测由BacktestEngine编排四引擎.md)
-- [ADR-029：研究服务采用 services 与 models 分层](../05-技术决策/ADR-029-研究服务采用services与models分层.md)
-- [ResearchEngine ADR-018：因子计算区间与收益确认区间分离](../../ResearchEngine/docs/05-技术决策/ADR-018-因子计算区间与收益确认区间分离.md)
-- [ResearchEngine ADR-019：由 ExperimentManager 管理回测并发](../../ResearchEngine/docs/05-技术决策/ADR-019-为什么由ExperimentManager管理回测并发.md)
-- [ADR-030：DataEngine 持有应用级市场数据快照](../05-技术决策/ADR-030-DataEngine持有应用级市场数据快照.md)
+SVQuant 不在本地保留一套备用回测引擎。ResearchEngine 不可用时，系统返回可识别的失败状态，
+由用户重试或按人工运维流程处理。
 
-早期文档中的 `VectorEngine`、`EventEngine`、`ExecutionEngine` 和因子 AST 方案是概念或后续
-演进设计，不得当作当前已部署的独立服务、公共类或实盘能力。当前代码中可确认的实现类是
-`BacktestEngine`、`NativeEngine` 和 `EventBacktestEngine`。
+## 2. SVQuant 侧组件
 
-## 2. 当前引擎责任
+| 组件 | 位置 | 责任 |
+|------|------|------|
+| ResearchEngine 网关 | backend/app/routers/re_gateway.py、backend/services/core/re_http_gateway.py | 统一转发、超时和错误映射 |
+| 因子回测 BFF | backend/services/factor/re_backtest_bff.py、re_backtest_jobs.py | 适配异步任务、轮询和产品展示 |
+| 因子目录适配 | backend/services/factor/re_factor_catalog.py | 通过 HTTP 拉取官方目录并缓存到 PostgreSQL |
+| 行情适配 | backend/services/data/market_data_bff.py | 通过 HTTP 获取展示行情，不读取本地 marketdata |
+| 策略服务 | backend/services/strategy/ | 保存配置、读取兼容策略快照、调用回测接口 |
+| 产品缓存 | backend/services/factor/dashboard_store.py 等 | 保存可再生展示缓存，不拥有回测事实 |
 
-| 组件 | 代码位置 | 当前责任 | 当前状态 |
-|------|----------|----------|----------|
-| `BacktestEngine` | `app/services/backtest/` | 组织完整因子回测，调用四个责任引擎并生成标准结果 | 因子主链当前入口 |
-| `DataEngine` | `app/services/data/` | 统一 Provider、行情面板、股票池、基准和筛选掩码 | 当前实现 |
-| `FactorEngine` | `app/services/factor/` | 因子来源加载、因子计算、有效池和可选预处理 | 当前实现 |
-| `PortfolioEngine` | `app/services/portfolio/` | 分组、权重、持仓、调仓意图和评价数据对齐 | 当前实现 |
-| `MetricEngine` | `app/services/metric/` | 收益、费用、净值、IC、分组及扩展评价 | 当前实现 |
-| `NativeEngine` | `app/services/strategy/vectorized/` | 向量化策略的策略回测执行适配器 | 当前策略主路径 |
-| `EventBacktestEngine` | `app/services/strategy/event/` | 日频事件策略的时序、订单、成交和账本执行 | 日频 MVP |
-| `ExperimentManager` | `app/services/experiment/` | 统一任务排队、并发、去重和取消 | 调度边界，不负责数据生命周期或量化计算 |
+## 3. 因子回测时序
 
-`DataEngine`、`FactorEngine`、`PortfolioEngine`、`MetricEngine` 和 `BacktestEngine` 都属于
-`services`；配置、面板、规格、上下文、订单、成交和结果结构属于 `models`。当前不存在
-“因子由 VectorEngine 独立计算、再交给 BacktestEngine”的运行时层级。
+因子回测通常是异步交互，具体路径和字段由 ResearchEngine API 契约定义：
 
-## 3. 因子回测执行链路
-
-单次、批量、Python 和 HTTP 入口共享同一规格和执行边界：
-
-```text
-FactorBacktestRequest
-        ↓ 标准化、校验、数据 release 解析
-FactorBacktestSpec（models，不可变、可哈希）
+~~~text
+前端提交因子/日期/资产快照
         ↓
-ExperimentManager
+SVQuant backend 鉴权并校验请求
         ↓
-FactorBacktestExperiment
+POST ResearchEngine 因子回测接口
         ↓
-BacktestEngine.run(spec, context)
-        ├─ DataEngine：行情、股票池、基准和筛选掩码
-        ├─ FactorEngine：来源加载、完整历史计算、有效池、预处理
-        ├─ PortfolioEngine：分组、权重、持仓和评价数据对齐
-        └─ MetricEngine：收益、净值、IC、分组和扩展评价
+返回 run_id/task_id
         ↓
-FactorBacktestResult / ResultManager
-```
-
-### 3.1 计算时序与数据边界
-
-1. `start/end` 定义本次因子计算和回测数据范围；系统不额外读取区间之前的滚动预热数据。
-2. 在 release 和 `as_of` 允许的上界内完成因子计算，随后将因子值、远期收益、分组、净值和指标裁剪到确认区间。
-3. DataEngine 负责读取和筛选数据，不通过删除历史行破坏完整时间轴；缺少可选过滤字段时按已确认策略跳过并告警。
-4. FactorEngine 负责因子加载/计算和可选去极值、标准化；PortfolioEngine 不使用未来收益参与组合决策。
-5. MetricEngine 只负责效果计算和评价，不负责交易撮合；结果身份绑定规格、源码、release、执行版本和指标版本。
-
-当前版本约束：`factor-execution-v4`、`factor-backtest-v10`、`factor-scorecard-v2`。
-因子执行期间始终保留调用方提交的原始 `FactorBacktestSpec`；数据实际截止日作为
-`actual_end` 单独记录，不生成 `effective_spec`，也不转换为 `ConfigManager`。
-
-### 3.2 因子链路与策略链路的隔离
-
-因子主链不经过 `BacktestSignals`、`NativeEngine` 或 `EventBacktestEngine` 的策略包装；策略链路
-可以复用 DataEngine 和部分指标能力，但不因此成为因子回测的第二套实现。因子批量协调器只负责任务
-枚举、两槽业务窗口、重试、幂等和 SQLite 标量投影，不能复制四个引擎的计算逻辑。
-
-## 4. 向量化策略执行模式
-
-策略请求通过 `StrategyExperiment` 进入 `services/strategy/vectorized/`：
-
-```text
-StrategyBacktestRequest
+SVQuant backend 轮询 ResearchEngine 状态接口
         ↓
-StrategyExperiment
+读取结果或错误
         ↓
-BacktestSignals + BacktestConfig
+保存可再生的产品展示缓存并返回前端
+~~~
+
+SVQuant 传递用户已确认的证券池、基准、日期、参数和因子引用；ResearchEngine 负责验证其
+是否能在当前数据 release 上执行。SVQuant 不读取结果 SQLite，也不根据本地文件推断任务状态。
+
+## 4. 策略回测时序
+
+~~~text
+策略编辑器/策略广场
         ↓
-IBacktestEngine
+SVQuant 保存策略配置和权限信息
         ↓
-NativeEngine
+请求通过 backend strategy service
         ↓
-策略净值、收益、持仓、再平衡和可选执行时间线
-```
-
-向量化模式适合按日期×标的面板批量计算。`NativeEngine` 负责策略侧的信号、组合收益和成本
-接线；它不是因子 `BacktestEngine` 的后端，也不承担因子分组、因子预处理或因子指标评分。
-策略请求当前由 HTTP 同步等待结果，和因子请求的 `202 + run_id` 异步契约不同。
-
-## 5. 事件策略执行模式
-
-当前 `EventBacktestEngine` 是 ResearchEngine 内的日频研究实现，不是交易执行服务：
-
-```text
-前一收盘可见的 DataView
+ResearchEngine HTTP 策略回测接口
         ↓
-StrategyContext + schedule
-        ↓
-策略产生订单意图
-        ↓
-当日开盘按卖后买执行
-        ↓
-EventFill + PositionSnapshot + equity
-```
+SVQuant 解析结果、显示净值/指标/持仓
+~~~
 
-当前可验证的研究边界：
+Strategy/libraries 仅是当前 SVQuant 兼容读取的策略源码快照，用于内置策略展示和 PostgreSQL
+种子初始化。页面提交的策略代码由 ResearchEngine 校验和执行；SVQuant 不执行快照中的策略代码。
 
-- 日频交易日循环；策略在盘前只能读取截至前一收盘的数据。
-- 以现金账户为主的研究账本，订单按目标数量或目标金额转换。
-- 支持卖后买、手数、现金、T+1、停牌、涨跌停和交易成本等已实现规则。
-- 输出订单、成交、持仓快照、权益曲线和事件记录，拒单原因进入订单状态。
-- 当前不承诺分钟/Tick、多资产保证金、券商接入、实盘下单或 TradingEngine 复用。
+## 5. 两类执行模式
 
-## 6. 调度、数据和部署约束
+ResearchEngine 当前对外可能提供因子回测和策略回测两类 API；策略内部的向量化/事件模式、
+任务管理、撮合规则和结果模型属于 ResearchEngine 内部实现。
 
-- 一个 ResearchEngine 进程创建一个 `ExperimentManager(max_workers=2, max_queue_size=8)`。
-- Manager 使用一个普通 FIFO；批量 `window=2` 是批量业务窗口，不等于全局队列容量，也不构成优先级插队。
-- FastAPI 应用持有一个 `DataEngine`，它加载固定 release、持有 Provider 与原始字段缓存；Manager 仅注入该只读快照。因子、组合、指标中间状态属于任务私有。
-- 当前部署保持单实例、单 Uvicorn worker；跨进程任务状态、分布式锁和远程 Worker 属于后续架构决策。
-- API 根路径统一为 `/api`；因子单次和批量提交异步，策略回测当前同步。
+SVQuant 只依赖以下稳定事实：
 
-## 7. 后续演进边界
+- 请求必须经过 ResearchEngine 的公开 API 契约校验。
+- 计算结果必须带有可追溯的任务或运行标识、数据版本和错误信息。
+- 异步接口需要通过状态接口确认终态，不能把“已提交”当成“已完成”。
+- 失败、取消、超时和服务不可达都必须向用户返回明确状态。
 
-以下内容不是当前实现的前置假设，必须在新需求和新 ADR 中单独确认：
+若 ResearchEngine 扩展执行模式，优先新增或版本化 HTTP 字段，不在 SVQuant 复制执行逻辑。
 
-- 通过 `StrategyRequirements` 与 `EngineProfile` 做事件能力画像匹配（ResearchEngine ADR-013 当前为提议）。
-- 分钟/Tick、期货/ETF、多账户和更完整市场规则。
-- 独立进程/容器沙箱、外部队列、持久化任务状态和多实例调度。
-- `LiveFeed`、`LiveExecutionEngine` 和 TradingEngine 的实盘执行能力。
+## 6. 配置、网络和安全
 
-任何后续变更都要先更新对应 ADR，再同步本文件、ResearchEngine 模块架构和必要的功能/实现文档。
+- ResearchEngine 地址唯一来源是 backend/.env 的 YG_RE_BASE。
+- 前端开发代理读取同一份 backend/.env；业务 TS 文件不保存地址。
+- ResearchEngine 凭据、数据库密码和 LLM 密钥只存在本地 .env 或部署密钥系统中。
+- 浏览器只携带 SVQuant 的会话凭据；ResearchEngine 地址和内部凭据不暴露给浏览器。
+- 网关必须限制允许转发的路径和方法，避免把任意内网 URL 变成代理能力。
+
+## 7. 测试和发布
+
+ResearchEngine 独立仓库维护：
+
+- API schema、响应示例和契约测试；
+- 因子、策略、行情和回测结果的计算测试；
+- 数据 manifest/质量报告校验；
+- 服务自身的启动、健康检查和结果存储测试。
+
+SVQuant 维护：
+
+- 网关参数转换、认证和错误映射测试；
+- 前端请求/展示测试；
+- 与指定 ResearchEngine 版本配套的集成验证；
+- 发布配置和人工回滚记录。
+
+两个仓库必须锁步发布。任何接口字段变化，都应先更新 ResearchEngine 契约测试，再同步
+SVQuant BFF、前端类型/文案和集成验证。

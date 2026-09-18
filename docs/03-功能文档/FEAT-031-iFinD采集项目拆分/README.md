@@ -4,10 +4,10 @@
 - 所属 Initiative：INIT-001 投研核心
 - 所属能力：数据 / 研究基础设施
 - 优先级：P0
-- 决策：将全部数据生产能力与非活动数据迁入独立 `IFind` 项目，SVQuant 只保留扁平活动数据目录
+- 决策：将全部数据生产能力与非活动数据迁入独立 `IFind` 项目，SVQuant 只保留字段/API 展示适配
 
-> 后续目录修订（2026-09-07）：ResearchEngine 的默认消费目录已切换为仓库根目录下的
-> `marketdata/` iFinD 目录镜像；旧 `MarketData/` 仅保留迁移提示。
+> 后续边界修订（2026-09-17）：marketdata 已移出 SVQuant，作为 ResearchEngine 部署侧的外部
+> 数据目录；`data_manifest.yaml` 和 `quality_report.json` 由数据发布方生成并由 ResearchEngine 校验。
 
 ## 为什么做
 
@@ -19,7 +19,7 @@ SVQuant 的核心运行时是研究计算，但原仓同时持有第三方数据
 
 ## 目标与指标
 
-- 数据采集、质量发布源码和测试在 SVQuant 中归零，WebApp 不做任何改动。
+- 数据采集、质量发布源码和测试在 SVQuant 中归零，SVQuant 产品层不做任何采集实现。
 - 独立项目可在 `svquant` conda 环境中通过 `pip install -e ".[test]"` 安装。
 - 历史回填、日更和发布 CLI 均可独立显示帮助并保持原 `data_ingestion.ifind` 内部命名空间。
 - 迁移后的全部采集侧自动化测试通过；SVQuant ResearchEngine 不回归。
@@ -27,20 +27,21 @@ SVQuant 的核心运行时是研究计算，但原仓同时持有第三方数据
 
 ## 业务流程
 
-数据运维人员在 `IFind` 项目中完成“配置环境变量 → 历史回填或日更 → 检查 raw/CSV/Parquet → 候选 release → `--dry-run` 校验 → 备份并发布”。任一步失败即停止。研究服务只读取 `marketdata/` 根目录，不感知供应商接口。
+数据运维人员在 `IFind` 项目中完成“配置环境变量 → 历史回填或日更 → 检查 raw/CSV/Parquet → 候选 release → `--dry-run` 校验 → 备份并发布”。任一步失败即停止。ResearchEngine 只读取已发布的 `marketdata/`，不感知供应商接口；SVQuant 只通过 ResearchEngine API 使用研究数据。
 
 ## 架构与数据边界
 
 - `IFind` 拥有：供应商凭据、iFinD/AkShare 采集、历史回填、日更、源数据、候选 release、备份、质量校验和发布 CLI。
-- SVQuant 拥有：数据契约、`marketdata/` 根目录活动数据、Provider/DataEngine 只读访问和研究计算。
-- 项目间只通过 Parquet、`data_manifest.yaml`、`quality_report.json` 和显式发布目录交接，不通过源码导入或相邻目录推断。
+- ResearchEngine 拥有：部署侧的 `marketdata/` 活动数据、版本/哈希校验、Provider/DataEngine 和研究计算。
+- SVQuant 只拥有数据展示所需的 HTTP 适配，不保存活动行情，不通过源码导入或相邻目录推断数据。
+- 项目间通过 Parquet、`data_manifest.yaml`、`quality_report.json` 和显式发布目录交接；SVQuant 与 ResearchEngine 通过 HTTP API 交接研究请求和结果。
 - 长期决策见 [ADR-031](../../05-技术决策/ADR-031-iFinD采集迁移为独立项目.md) 与 [ADR-032](../../05-技术决策/ADR-032-MarketData扁平只读消费目录.md)。
 
 ## 功能范围
 
 MVP 包含 `ifind-data update`、`ifind-data backfill`、AkShare 回填、共享质量工具、候选 release 构建和 `ifind-sync-current`。发布目标必须由 `--target-root` 或 `IFIND_TARGET_ROOT` 指定；默认源数据、release 和备份目录归独立项目所有。
 
-明确不做：不修改 WebApp；不改变 Parquet 字段口径；不新增在线数据服务或调度平台；不在 SVQuant 保留采集兼容入口。
+明确不做：不修改 SVQuant 产品 API；不改变 Parquet 字段口径；不新增在线数据服务或调度平台；不在 SVQuant 保留采集兼容入口。
 
 ## 投入、收益与优先级
 
@@ -61,7 +62,7 @@ MVP 包含 `ifind-data update`、`ifind-data backfill`、AkShare 回填、共享
 
 验收要求：独立项目安装成功；iFinD 测试全部通过；CLI 帮助和默认路径正确；SVQuant 不再包含 iFinD Python 实现；保留测试与 ResearchEngine 回归通过；GitNexus 变更只命中预期边界。
 
-回滚时，代码通过两个仓库版本历史恢复；运行时数据从 IFind 按迁移映射移回，活动数据从 `MarketData/*` 重新包装为 `MarketData/current/*`。SVQuant 不应长期恢复采集能力。
+回滚时，代码通过两个仓库版本历史恢复；运行时数据由 IFind/ResearchEngine 按上一版发布物或备份恢复，SVQuant 不接收、不重新包装 `marketdata/`，也不应长期恢复采集能力。
 
 ## 验收结论与下一步
 

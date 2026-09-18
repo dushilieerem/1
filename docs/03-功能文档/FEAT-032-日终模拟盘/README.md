@@ -8,13 +8,13 @@
 - 关联架构：[系统架构](../../02-架构文档/system_architecture.md)、[回测引擎设计](../../02-架构文档/engine-design.md)
 
 > 本 Feature 定义的是日终批量模拟盘，不是实时行情驱动的模拟交易，也不是券商实盘接入。
-> ResearchEngine 负责确定性信号与执行计算；WebApp 负责账户生命周期、持久化账本、日终调度和用户侧接口。
+> ResearchEngine 负责确定性信号与执行计算；SVQuant 负责账户生命周期、持久化账本、日终调度和用户侧接口。
 
 ## 1. 价值与范围
 
 ### 1.1 用户场景
 
-用户绑定一段策略代码、股票池和模拟账户。交易日 `D` 收盘后，数据服务发布当日完整日频数据，系统使用截至 `D-1` 的信息生成 `D` 日订单，并以 `D` 日成交额除以成交量得到的 VWAP 作为模拟成交价。用户可以在 WebApp 查看资金、持仓、成交、费用和每日净值。
+用户绑定一段策略代码、股票池和模拟账户。交易日 `D` 收盘后，数据服务发布当日完整日频数据，系统使用截至 `D-1` 的信息生成 `D` 日订单，并以 `D` 日成交额除以成交量得到的 VWAP 作为模拟成交价。用户可以在 SVQuant 查看资金、持仓、成交、费用和每日净值。
 
 该流程是“收盘后结算已提交的 D 日订单”，不是收盘后才使用 D 日收盘信息下单。这样可以保持信号时序没有未来函数。
 
@@ -27,7 +27,7 @@
 - 使用现金多头账户、整手、卖后买、T+1、涨跌停、现金和交易成本规则。
 - 订单按 VWAP 全量成交；返回订单、成交、费用、下一持仓状态和收盘权益。
 - ResearchEngine 提供单日同步内部结算接口，不写账户数据库。
-- WebApp 持久化账户、持仓、订单、成交、净值和策略运行状态，并保证日终结算幂等。
+- SVQuant 持久化账户、持仓、订单、成交、净值和策略运行状态，并保证日终结算幂等。
 
 ### 1.3 可以以后做
 
@@ -49,9 +49,9 @@
 ### 2.1 日终时序
 
 ```text
-IFind / MarketData 发布 D 日完整数据
+数据发布方将 D 日完整数据发布到 ResearchEngine 的 `marketdata/`
         ↓
-WebApp 日终任务确认 release 和交易日
+SVQuant 日终任务确认 release 和交易日
         ↓
 ResearchEngine 读取 D-1 可见数据生成信号
         ↓
@@ -61,7 +61,7 @@ ResearchEngine 读取 D 日 amount / volume / 未复权 close
         ↓
 ResearchEngine 返回 fills、费用、下一持仓和收盘权益
         ↓
-WebApp 事务性保存账户账本和结算快照
+SVQuant 事务性保存账户账本和结算快照
 ```
 
 `D` 必须是交易日；`D-1` 是不晚于 `D` 的上一个交易日。D 日数据未完整发布时不得使用前一版本数据静默结算。
@@ -81,7 +81,7 @@ WebApp 事务性保存账户账本和结算快照
 
 - 使用已有 `initialize(context)` 契约。
 - `context.data` 只能看到 `D-1` 及之前的数据。
-- WebApp 传入上次结算返回的 `strategy_state`；ResearchEngine 将更新后的 JSON 状态原样返回。
+- SVQuant 传入上次结算返回的 `strategy_state`；ResearchEngine 将更新后的 JSON 状态原样返回。
 - 若非空 `strategy_state` 对应的代码哈希与本次代码不一致，返回 `STRATEGY_STATE_VERSION_MISMATCH`，不得静默继续运行。
 - 策略产生的 `target_quantity`、`target_value` 和 `close` 意图统一转换为订单，再交由日频执行器处理。
 
@@ -95,7 +95,7 @@ WebApp 事务性保存账户账本和结算快照
 
 ### 2.5 账户和成交规则
 
-WebApp 传入的账户输入在业务上仍是“现金 + 持仓”，但每项持仓必须包含执行所需字段：
+SVQuant 传入的账户输入在业务上仍是“现金 + 持仓”，但每项持仓必须包含执行所需字段：
 
 ```json
 {
@@ -120,7 +120,7 @@ ResearchEngine 不持有账户，但会返回更新后的 `cash` 和同样结构
 
 ### 2.6 公司行为边界
 
-本 Feature 不新增公司行为数据和自动检测逻辑。WebApp 可以在产品层提示该限制，但 ResearchEngine 不声明跨除权除息、分红或送转日期的账户净值准确性。后续若纳入公司行为，必须新增数据契约和独立 Feature/ADR。
+本 Feature 不新增公司行为数据和自动检测逻辑。SVQuant 可以在产品层提示该限制，但 ResearchEngine 不声明跨除权除息、分红或送转日期的账户净值准确性。后续若纳入公司行为，必须新增数据契约和独立 Feature/ADR。
 
 ## 3. 模块职责与方案设计
 
@@ -129,8 +129,8 @@ ResearchEngine 不持有账户，但会返回更新后的 `cash` 和同样结构
 | 模块 | 负责内容 | 明确不负责 |
 |---|---|---|
 | ResearchEngine | 数据可见性、策略执行、VWAP 派生、订单归一化、交易规则、费用、成交和下一状态计算 | 账户持久化、用户认证、调度、重试、前端 |
-| WebApp | 账户和策略配置、`strategy_state`、账本、订单/成交/快照、日终任务、幂等、用户 API/UI | 不复制 ResearchEngine 的成交和交易规则 |
-| IFind / MarketData | 发布 D 日 `amount`、`volume`、未复权 close、研究字段及 release 清单 | 不维护模拟账户和订单状态 |
+| SVQuant | 账户和策略配置、`strategy_state`、账本、订单/成交/快照、日终任务、幂等、用户 API/UI | 不复制 ResearchEngine 的成交和交易规则 |
+| ResearchEngine / `marketdata` | 提供 D 日 `amount`、`volume`、未复权 close、研究字段及 release 清单 | 不维护模拟账户和订单状态 |
 
 ### 3.2 ResearchEngine 内部接口
 
@@ -146,7 +146,7 @@ POST /api/internal/paper-trading/settle
 |---|---:|---|
 | `settlement_date` | 是 | D 日 |
 | `engine_mode` | 是 | `event` 或 `vectorized` |
-| `strategy_code` | 是 | 本次运行的完整策略源码；仅限受信任 WebApp 内部调用 |
+| `strategy_code` | 是 | 本次运行的完整策略源码；仅限受信任 SVQuant 内部调用 |
 | `expected_code_hash` | 否 | 调用方可提供的 SHA-256 校验值 |
 | `universe` | 是 | 命名股票池或既有资产引用 |
 | `account.cash` | 是 | D 日执行前现金 |
@@ -185,13 +185,13 @@ HTTP 语义：
 - `422`：请求字段、策略源码、模式或组合方向不合法；
 - `500`：ResearchEngine 内部未预期错误。
 
-ResearchEngine 不保存响应。WebApp 必须在事务中保存结算响应，并以以下组合生成幂等键：
+ResearchEngine 不保存响应。SVQuant 必须在事务中保存结算响应，并以以下组合生成幂等键：
 
 ```text
 (paper_account_id, settlement_date, strategy_config_revision, data_release_id)
 ```
 
-同一幂等键重复调用不得重复记账；数据 release 发生变化时必须由 WebApp 显式发起重算或回滚。
+同一幂等键重复调用不得重复记账；数据 release 发生变化时必须由 SVQuant 显式发起重算或回滚。
 
 ### 3.3 ResearchEngine 实施拆分
 
@@ -202,7 +202,7 @@ ResearchEngine 不保存响应。WebApp 必须在事务中保存结算响应，�
 5. 增加向量化目标权重到整手订单的适配器。
 6. 新增内部同步路由；不改变现有 `/api/backtest/strategy` 回测接口。
 
-### 3.4 WebApp 实施拆分
+### 3.4 SVQuant 实施拆分
 
 1. 建立模拟账户、持仓、策略状态、订单、成交和日快照存储。
 2. 保存策略代码、代码哈希、配置修订号和 `strategy_state`。
@@ -213,11 +213,11 @@ ResearchEngine 不保存响应。WebApp 必须在事务中保存结算响应，�
 ## 4. 兼容性、风险与回滚
 
 - 现有策略回测接口、事件回测的历史输出和向量化回测接口保持不变。
-- 新接口仅供 WebApp 内部使用，不把策略源码结算接口暴露给公网用户。
+- 新接口仅供 SVQuant 内部使用，不把策略源码结算接口暴露给公网用户。
 - 策略源码执行沿用当前 ResearchEngine 的受信任代码边界；若未来开放不受信任用户代码，必须单独增加沙箱、资源限制和权限设计。
 - 使用未复权 close 做账户估值；策略信号与账户估值价格口径不同，响应中必须记录 `signal_price_source` 和 `mark_price_source`。
 - 公司行为暂不自动识别；产品和接口文档必须展示该限制。
-- 回滚方式：WebApp 关闭模拟盘 Feature Flag，停止日终任务；现有回测路由和数据 release 不回滚、不覆盖。
+- 回滚方式：SVQuant 关闭模拟盘 Feature Flag，停止日终任务；现有回测路由和数据 release 不回滚、不覆盖。
 
 ## 5. 验收与测试
 
@@ -232,7 +232,7 @@ ResearchEngine 不保存响应。WebApp 必须在事务中保存结算响应，�
 - 相同输入、策略代码和 data release 的确定性测试。
 - 代码哈希变化、状态哈希不匹配、数据未就绪和不支持多空的错误测试。
 
-### 5.2 WebApp 联调验收
+### 5.2 SVQuant 联调验收
 
 - 同一账户同一交易日重复触发不会重复写入订单、成交和费用。
 - ResearchEngine 成功响应可以一次事务提交为账户下一状态。
@@ -243,7 +243,7 @@ ResearchEngine 不保存响应。WebApp 必须在事务中保存结算响应，�
 ### 5.3 完成标准
 
 1. ResearchEngine 内部结算接口契约冻结并通过自动化测试。
-2. WebApp 可对一个事件策略和一个向量化策略完成连续多个交易日结算。
+2. SVQuant 可对一个事件策略和一个向量化策略完成连续多个交易日结算。
 3. 结算结果可重放、可审计，且同一输入不会产生不同成交结果。
 4. 文档中的未实现能力没有被 API 或 UI 误标为已支持。
 
@@ -254,7 +254,7 @@ ResearchEngine 不保存响应。WebApp 必须在事务中保存结算响应，�
 | M0 | 双方 | Feature 批准、接口和价格口径冻结 |
 | M1 | ResearchEngine | 交易价格视图、VWAP 派生和通用现金执行器 |
 | M2 | ResearchEngine | 事件/向量化适配、策略状态、内部结算 API |
-| M3 | WebApp | 账户账本、日终调度、幂等提交和用户接口 |
+| M3 | SVQuant | 账户账本、日终调度、幂等提交和用户接口 |
 | M4 | 双方 | 连续多日联调、黄金样例、灰度和回滚演练 |
 
 ## 7. 决策记录
@@ -263,7 +263,7 @@ ResearchEngine 不保存响应。WebApp 必须在事务中保存结算响应，�
 - D-1 生成信号，D 日 VWAP 成交。
 - VWAP 使用日频 `amount / volume`，不使用分钟数据。
 - 首期现金多头、全量 VWAP 成交，不做部分成交和市场冲击。
-- ResearchEngine 无状态、不持久化；WebApp 持久化账本、调度和账户接口。
+- ResearchEngine 无状态、不持久化；SVQuant 持久化账本、调度和账户接口。
 - 持仓记录包含 `quantity`、`available_quantity`、`average_cost`；策略运行状态单独作为 opaque JSON 保存。
 - 每次允许传入策略源码，但必须计算和记录代码哈希。
 - 首期不自动处理公司行为，跨公司行为日期的结果不保证准确。

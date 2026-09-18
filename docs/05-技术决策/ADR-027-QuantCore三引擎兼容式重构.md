@@ -63,7 +63,7 @@
 ### 正面
 
 - 因子来源路由集中到 FactorEngine，数据库、文件和源码 loader 可以独立替换。
-- 现有 Spec、算法、批量入口和 WebApp 无需迁移；旧 resolver 可逐步下线。
+- 现有 Spec、算法、批量入口和 SVQuant 无需迁移；旧 resolver 可逐步下线。
 - 指标调用获得统一的单指标入口，错误信息和注册快照更一致。
 - provider 配置错误在 DataEngine 初始化/切换时尽早暴露，面板默认实现仍兼容轻量 provider。
 

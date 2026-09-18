@@ -2,10 +2,10 @@
 
 ## 模块边界
 
-WebApp 负责用户资产持久化、版本、CRUD 与权限；`ResearchEngine` 负责校验已解析快照并把它传给现有编排；`QuantCore` 只接收已解析的证券集合或收益序列，不感知用户、数据库和权限。
+SVQuant 负责用户资产持久化、版本、CRUD 与权限；`ResearchEngine` 负责校验已解析快照并把它传给现有编排；`QuantCore` 只接收已解析的证券集合或收益序列，不感知用户、数据库和权限。
 
 ```text
-WebApp 用户资产 CRUD / 鉴权 / 数据库                WebApp 用户资产 CRUD / 鉴权 / 数据库
+SVQuant 用户资产 CRUD / 鉴权 / 数据库                SVQuant 用户资产 CRUD / 鉴权 / 数据库
                          │                                      │
                          └────── 解析为不可变 Snapshot ────────┘
                                            │ AssetSnapshot
@@ -18,9 +18,9 @@ WebApp 用户资产 CRUD / 鉴权 / 数据库                WebApp 用户资产
                            BacktestResult / API meta / 结果存储
 ```
 
-## WebApp → ResearchEngine 快照契约
+## SVQuant → ResearchEngine 快照契约
 
-WebApp 对用户资产完成鉴权和版本解析后，将完整不可变快照传给 ResearchEngine。证券池为 `{asset_id, version, content_hash, symbols, membership_mode: "static"}`；基准为 `{asset_id, version, content_hash, weights, pricing: "close_to_close"}`。MVP 不接受隐式等权；WebApp 必须写出已归一化权重。
+SVQuant 对用户资产完成鉴权和版本解析后，将完整不可变快照传给 ResearchEngine。证券池为 `{asset_id, version, content_hash, symbols, membership_mode: "static"}`；基准为 `{asset_id, version, content_hash, weights, pricing: "close_to_close"}`。MVP 不接受隐式等权；SVQuant 必须写出已归一化权重。
 
 ## 核心对象与接口
 
@@ -40,12 +40,12 @@ class BenchmarkSnapshot:
     weights: pd.Series  # index=symbol, sum=1
     pricing: Literal["close_to_close"]
 
-class WebAppAssetResolver:
+class SVQuantAssetResolver:
     def resolve_universe_for_user(...) -> UniverseSnapshot: ...
     def resolve_benchmark_for_user(...) -> BenchmarkSnapshot: ...
 ```
 
-API 的 `universe_snapshot`、`benchmark_snapshot` 为 WebApp 已解析的完整快照。响应 `meta` 新增可选 `universe_asset`、`benchmark_asset`；为避免响应过大，只返回摘要，完整快照写入回测结果的配置/元数据文件。ResearchEngine 不提供资产列表或 CRUD API。
+API 的 `universe_snapshot`、`benchmark_snapshot` 为 SVQuant 已解析的完整快照。响应 `meta` 新增可选 `universe_asset`、`benchmark_asset`；为避免响应过大，只返回摘要，完整快照写入回测结果的配置/元数据文件。ResearchEngine 不提供资产列表或 CRUD API。
 
 ## 运行时设计
 
@@ -57,7 +57,7 @@ API 的 `universe_snapshot`、`benchmark_snapshot` 为 WebApp 已解析的完整
 
 ## 数据与兼容影响
 
-- 不改动 `FieldParquetProvider` 的固定指数读取契约；自定义资产由 WebApp 解析为快照后传入。
+- 不改动 `FieldParquetProvider` 的固定指数读取契约；自定义资产由 SVQuant 解析为快照后传入。
 - 不把“最新一期指数成分”升级为历史池。历史 `日期×标的` 成分掩码、指数调仓和幸存者偏差修复作为后续 Feature，需扩展数据目录与 `UniverseSnapshot` 的时间序列表示。
 - 不新增数据库表；Wave 3 可将 Catalog 的存储适配器替换为用户资产服务，保持 `AssetRef → Snapshot` 契约不变。
 

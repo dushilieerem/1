@@ -6,6 +6,8 @@
 > **关联**：`../02-架构文档/database_design.md`、`../02-架构文档/system_architecture.md` §4-5、`ADR-001-为什么使用向量化回测.md`、`ADR-017-市场数据按业务域采用多字段宽表.md`
 
 > **后续更新**：ADR-017 已将“一个字段一个文件”调整为“按业务域组织多字段宽表”。本 ADR 关于本地文件和 Parquet 格式的选择继续有效。
+>
+> **当前边界修订（2026-09-17）**：本 ADR 的文件/Parquet 结论当前适用于独立 ResearchEngine 的部署侧数据目录；SVQuant 产品层不再持有或读取该目录。
 
 ---
 
@@ -66,7 +68,7 @@ Parquet 与当前面板计算方式直接匹配：
 ## 数据组织方式
 
 ```text
-MarketData/<release>/
+ResearchEngine/marketdata/<release>/
 ├── panels/
 │   ├── market_data.parquet
 │   ├── daily_basic.parquet

@@ -1,4 +1,6 @@
-# Technical Design：`current` 多字段 Parquet 宽表规格
+# Technical Design：ResearchEngine `marketdata` 多字段 Parquet 宽表规格
+
+> 当前边界（2026-09-17）：以下宽表和快照由 ResearchEngine 在部署侧管理，根目录示例中的 `marketdata/` 不属于 SVQuant。SVQuant 只通过 ResearchEngine HTTP API 使用展示数据和回测能力。
 
 ## 1. 统一物理结构
 
@@ -27,7 +29,7 @@ datetime
 ## 2. 目录与文件职责
 
 ```text
-MarketData/<release>/
+marketdata/<release>/
 ├── panels/
 │   ├── market_data.parquet
 │   ├── daily_basic.parquet
@@ -47,7 +49,7 @@ MarketData/<release>/
 └── quality_report.json
 ```
 
-`MarketData/` 根目录是活动 release 的只读视图。任何采集、合并和转换任务都必须在 IFind 候选版本中完成，禁止由 SVQuant 直接修改活动文件。
+ResearchEngine 配置的 `marketdata/` 根目录是活动 release 的只读视图。任何采集、合并和转换任务都必须在 IFind 候选版本中完成，禁止由 SVQuant 直接修改活动文件。
 
 ## 3. `panels/market_data.parquet`
 
@@ -99,7 +101,7 @@ MarketData/<release>/
 
 ## 6. `display/unadjusted_price.parquet`
 
-代表 WebApp K 线使用的股票未复权价格，与研究用后复权行情隔离。
+代表 SVQuant K 线使用的股票未复权价格，与研究用后复权行情隔离。
 
 | 逻辑字段 | 代表什么 | iFinD 原字段 |
 |---|---|---|

@@ -65,4 +65,4 @@
 
 同时：模块内 20 个 FEAT 功能包按同一规则收编空壳文件（小包合并为单 README，大包保留 requirements / technical-design / verification）；FEAT-002、FEAT-007、FEAT-022 保持原文件结构仅修链接。新引用一律使用新路径。
 
-WebApp 文档仍由 `WebApp/docs/` 维护，仓库不创建 `docs/WebApp` 交接区。
+SVQuant 文档仍由 `SVQuant/docs/` 维护，仓库不创建 `docs/SVQuant` 交接区。

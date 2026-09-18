@@ -37,7 +37,7 @@
 
 - [FEAT-030：因子回测流程重构](../../../03-功能文档/FEAT-030-因子回测流程重构/README.md)：P0，主链已实施，M5 专项验收中。
 - BacktestEngine 组织完整因子流程，Data/Factor/Portfolio/Metric 分别负责数据与筛选、因子加工、组合及效果计算。
-- 本期不迁移策略或因子数据库，不改 WebApp；不改变 Wave 1 业务范围和当前已交付状态。
+- 本期不迁移策略或因子数据库，不改 SVQuant；不改变 Wave 1 业务范围和当前已交付状态。
 - FEAT-029 保留因子来源加载目标，其原阶段执行器设计已由 FEAT-030 的 BacktestEngine 主链接替。
 
 ## 文档

@@ -10,7 +10,7 @@
 > Panel、MetricContext、回测规格/结果和实验上下文进入 `app.models`，数据访问进入 `app.database`。
 > 配置为 `app.config`，通用工具为 `app.utils`；不增加 domain/application/infrastructure。
 > 下文中的旧目录和旧分层仅作历史设计追溯，不再作为新代码约束；既有业务规则和历史验证记录保留。
-> 详见根目录 FEAT-030/06-app-layout.md 与 ADR-029。FEAT-029 因子来源加载目标保持不变。
+> 详见根目录 FEAT-030/README.md 与 ADR-029。FEAT-029 因子来源加载目标保持不变。
 
 
 > 已批准实施：[FEAT-030 因子回测流程重构](../../03-功能文档/FEAT-030-因子回测流程重构/README.md) 已在 QuantCore 增加

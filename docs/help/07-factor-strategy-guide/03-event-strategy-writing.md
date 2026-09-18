@@ -98,7 +98,7 @@ class DonchianStyleStrategy:
                 context.orders.close(symbol)
 ```
 
-完整示例可参考 SVQuant 暂存的 `Strategy/libraries/donchian_a_share_event_v1.py`；实际执行由 ResearchEngine 完成。要严谨运行该策略，接口还必须提供 `money`、停牌/涨跌停状态和按历史时点构建的股票池、上市天数与 ST 过滤结果。
+完整示例和内置策略源码由 ResearchEngine 策略目录维护，SVQuant 页面只展示策略元数据并通过策略 ID 发起执行。要严谨运行该策略，接口还必须提供 `money`、停牌/涨跌停状态和按历史时点构建的股票池、上市天数与 ST 过滤结果。
 
 ## 6. 当前边界
 

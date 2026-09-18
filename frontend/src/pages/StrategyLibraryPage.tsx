@@ -451,7 +451,7 @@ export function StrategyLibraryPage() {
                   type="button"
                   onClick={() => void onSyncBuiltin()}
                   disabled={syncBusy}
-                  title="管理员：从磁盘种子重导入内置策略到数据库（全站共享，不动用户库）"
+                  title="管理员：从 ResearchEngine 全量同步内置策略到数据库（全站共享，不动用户库）"
                   className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
                 >
                   <RefreshCw

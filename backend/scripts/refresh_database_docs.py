@@ -61,6 +61,8 @@ SAMPLE_COLS: dict[str, tuple[str, ...]] = {
         "strategy_type",
         "execution_mode",
         "entrypoint",
+        "current_version",
+        "source",
         "updated_at",
     ),
     "user_library_strategies": (
@@ -135,7 +137,7 @@ PURPOSES: dict[str, str] = {
     "user_factor_libraries": "用户自建因子库（文件夹）；与内置库同级，按 user 隔离。",
     "user_library_factors": "用户因子库内的因子条目（含代码正文、分类、说明）。",
     "user_strategy_libraries": "用户自建策略库（文件夹）；与内置库同级，按 user 隔离。",
-    "builtin_strategies": "平台内置策略库（无 version）：id/名称/类型/执行模式/入口/标签/完整源码；由 index.yaml 种子导入，策略库页读此表。",
+    "builtin_strategies": "ResearchEngine 策略目录在 SVQuant 的全量镜像：id/名称/类型/执行模式/当前版本/入口/标签；source 仅保留过渡期回测源码快照，目录由管理员从 RE 同步。",
     "user_library_strategies": "用户策略库内入库快照（含策略说明、回测归档 JSON；与研究侧 run 脱钩）。",
     "kh_collections": "KnowledgeHub 知识库集合（:9531；类型 pipeline + 分块策略）。",
     "kh_documents": "KnowledgeHub 文档（正文 / 分块策略 / status / enabled / parse_error）。",
@@ -234,7 +236,8 @@ FIELD_HINTS: dict[str, dict[str, str]] = {
         "execution_mode": "`vectorized` / `event`",
         "entrypoint": "入口类名",
         "tags": "标签 JSON 数组",
-        "source": "完整 Python 源码（无 version 字段）",
+        "current_version": "RE 当前目录版本（仅镜像，不随回测请求发送）",
+        "source": "过渡期完整 Python 源码快照；不用于内置策略执行",
         "updated_at": "更新时间",
     },
     "user_library_strategies": {

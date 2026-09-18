@@ -324,6 +324,16 @@ function hasStrategyImports(code: string): boolean {
   );
 }
 
+/** 补平台 import 时保留 Python future import 必须位于普通 import 之前的规则。 */
+function addStrategyImports(code: string): string {
+  if (hasStrategyImports(code)) return code;
+  const lines = code.replace(/\r\n/g, "\n").split("\n");
+  const insertAt = findAfterImportsLineIndex(lines);
+  const head = lines.slice(0, insertAt).join("\n").trimEnd();
+  const tail = lines.slice(insertAt).join("\n").replace(/^\n+/, "");
+  return [head, STRATEGY_IMPORTS, tail].filter(Boolean).join("\n\n");
+}
+
 function defaultRangeFields(period = "10y"): Pick<
   StrategySyncParams,
   "range_mode" | "backtest_period" | "start_date" | "end_date"
@@ -439,7 +449,7 @@ export function wrapBuiltinLibraryStrategy(raw: string): string {
   }
 
   if (!hasStrategyImports(code)) {
-    code = `${STRATEGY_IMPORTS}\n\n${code}`;
+    code = addStrategyImports(code);
   }
 
   // 已带完整标记：只补参数块，并用类属性对齐 TOP_N / REBALANCE
@@ -646,7 +656,7 @@ export function wrapFactorCodeAsStrategy(raw: string): string {
   if (looksStrategy) {
     let next = code;
     if (!hasStrategyImports(next)) {
-      next = `${STRATEGY_IMPORTS}\n\n${next}`;
+      next = addStrategyImports(next);
     }
     if (!next.includes(BEGIN)) {
       next = applyParamsToCode(
@@ -668,7 +678,7 @@ export function wrapFactorCodeAsStrategy(raw: string): string {
 
   const defs = listTopLevelDefs(code);
   if (!defs.length) {
-    return `${STRATEGY_IMPORTS}\n\n${defaultParamsBlock()}\n\n${code}\n`;
+    return `${addStrategyImports(code)}\n\n${defaultParamsBlock()}\n`;
   }
 
   const publicDefs = defs.filter((n) => !n.startsWith("_"));
@@ -713,4 +723,3 @@ export function wrapFactorCodeAsStrategy(raw: string): string {
 
   return `${STRATEGY_IMPORTS}\n\n${defaultParamsBlock()}\n\n${classBody}`;
 }
-

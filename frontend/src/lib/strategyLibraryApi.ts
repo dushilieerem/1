@@ -12,6 +12,7 @@ import {
   createStrategyProject,
   defaultStrategyConfig,
   listStrategyProjects,
+  normalizeStrategyConfig,
   openStrategyInNewTab,
   saveStrategyProject,
   type StrategyEngineMode,
@@ -71,7 +72,7 @@ export type BuiltinStrategyMeta = {
   strategy_type: string;
   strategy_type_label: string;
   execution_mode: string;
-  /** 已废弃：内置库无 version，恒为空串 */
+  /** RE 当前目录版本；仅用于展示/镜像，不随回测请求发送 */
   current_version: string;
   tags: string[];
   file: string;
@@ -117,7 +118,7 @@ export async function listBuiltinStrategies(): Promise<BuiltinStrategyMeta[]> {
   }));
 }
 
-/** 管理员：从磁盘种子重导入 PG 内置策略（全站共享，不动用户库） */
+/** 管理员：从 ResearchEngine 目录全量同步 PG 内置策略镜像 */
 export async function syncBuiltinStrategies(): Promise<{
   upserted: number;
   skipped?: string[];
@@ -225,7 +226,10 @@ export function configFromRunRequest(
   req: YgStrategyBacktestRequest | Record<string, unknown> | null | undefined,
 ): StrategyProjectConfig {
   const r = (req || {}) as YgStrategyBacktestRequest;
-  const code = String(r.strategy_code || "").trim();
+  const strategyId = String(r.strategy_id || "").trim();
+  const snapshotCode = String(r.strategy_code || "").trim();
+  // 内置策略的源码快照只用于历史保存，不重新解析或展示。
+  const code = strategyId ? "" : snapshotCode;
   const mode = normalizeEngineMode(r.engine_mode, code);
   const fromCode = code
     ? configFromLibraryCode(code, { engineMode: mode })
@@ -271,7 +275,9 @@ export function configFromRunRequest(
     ...defaultStrategyConfig(),
     ...fromCode,
     engine_mode: mode,
-    strategy_code: code || String(fromCode.strategy_code || ""),
+    strategy_code: strategyId ? snapshotCode : code || String(fromCode.strategy_code || ""),
+    strategy_id: strategyId || undefined,
+    library_ref: strategyId ? `library:${strategyId}` : fromCode.library_ref,
     universe: String(r.universe || fromCode.universe || "CSI500"),
     benchmark: String(r.benchmark || fromCode.benchmark || "CSI300"),
     rangeMode: hasRange ? "custom" : fromCode.rangeMode || "period",
@@ -356,6 +362,53 @@ async function openOrCreateResearchProject(opts: {
   return saved;
 }
 
+/** 内置策略只保存 RE ID；源码快照可留在项目配置中，但不进入编辑器。 */
+async function openOrCreateBuiltinResearchProject(
+  meta: BuiltinStrategyMeta,
+  sourceCode: string,
+  engineMode: StrategyEngineMode | string | null | undefined,
+): Promise<StrategyProject> {
+  const title = meta.name.trim();
+  if (!title) throw new Error("检测名称不能为空");
+  const list = await listStrategyProjects();
+  const libraryRef = `library:${meta.id}`;
+  const existing = list.find(
+    (p) => (p.config as { library_ref?: string }).library_ref === libraryRef,
+  );
+  const base = existing?.config || defaultStrategyConfig();
+  const existingSnapshot = existing
+    ? String(base.strategy_code || "").trim()
+    : "";
+  const config = {
+    ...normalizeStrategyConfig(base),
+    strategy_id: meta.id,
+    library_ref: libraryRef,
+    engine_mode:
+      engineMode === "event" || engineMode === "vectorized"
+        ? engineMode
+        : "vectorized",
+    // sourceCode 是过渡期历史快照；实际回测仍由 strategy_id 执行。
+    strategy_code: sourceCode.trim() || existingSnapshot,
+  } satisfies StrategyProjectConfig;
+  if (existing) {
+    const saved = await saveStrategyProject({
+      ...existing,
+      description: existing.description || title,
+      config,
+    });
+    openStrategyInNewTab(saved.id);
+    return saved;
+  }
+  const created = await createStrategyProject(title, title);
+  const saved = await saveStrategyProject({
+    ...created,
+    description: title,
+    config,
+  });
+  openStrategyInNewTab(saved.id);
+  return saved;
+}
+
 /** 内置策略库「检测」 */
 export async function openBuiltinStrategyDetect(meta: BuiltinStrategyMeta) {
   const src = await getBuiltinStrategySource(meta.id);
@@ -363,13 +416,7 @@ export async function openBuiltinStrategyDetect(meta: BuiltinStrategyMeta) {
     src.execution_mode || meta.execution_mode,
     src.strategy_code,
   );
-  return openOrCreateResearchProject({
-    name: meta.name,
-    description: meta.name,
-    strategyCode: src.strategy_code,
-    libraryRef: `library:${meta.id}`,
-    engineMode: mode,
-  });
+  return openOrCreateBuiltinResearchProject(meta, src.strategy_code, mode);
 }
 
 /** 用户策略库入库项「检测」：按入库快照开/刷新研究项目（仅当前用户 projects） */

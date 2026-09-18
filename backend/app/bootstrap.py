@@ -69,7 +69,6 @@ def bootstrap_schemas() -> None:
         )
         from services.strategy.builtin_strategies_store import (
             ensure_builtin_strategies_schema,
-            seed_builtin_strategies_from_yaml,
             list_builtin_strategies_from_db,
         )
 
@@ -77,20 +76,12 @@ def bootstrap_schemas() -> None:
         try:
             ensure_builtin_strategies_schema()
             existing = list_builtin_strategies_from_db()
-            if int(existing.get("total") or 0) <= 0:
-                seed = seed_builtin_strategies_from_yaml(replace=True)
-                print(
-                    f"  builtin_strategies 种子导入: {seed.get('upserted')} 条"
-                    + (
-                        f"（跳过 {len(seed.get('skipped') or [])}）"
-                        if seed.get("skipped")
-                        else ""
-                    )
-                )
-            else:
-                print(f"  builtin_strategies 就绪（{existing.get('total')} 条）")
+            print(
+                f"  builtin_strategies RE 镜像就绪（{existing.get('total')} 条；"
+                "管理员可在策略库页面手动同步）"
+            )
         except Exception as exc:
-            print(f"  builtin_strategies schema/种子跳过: {exc}")
+            print(f"  builtin_strategies schema 跳过: {exc}")
         from services.data.watchlist_store import ensure_watchlist_schema
 
         ensure_watchlist_schema()

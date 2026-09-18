@@ -77,7 +77,8 @@ export function StrategyPlazaShareDialog({
           benchmark: request?.benchmark || null,
           universe_label: universeLabel || null,
           benchmark_label: benchmarkLabel || null,
-          strategy_code: request?.strategy_code || null,
+          // 内置策略只按 RE ID 执行，源码快照不进入用户可见的策略广场。
+          strategy_code: request?.strategy_id ? null : request?.strategy_code || null,
           range_label: rangeLabel || null,
         },
       });

@@ -301,6 +301,19 @@ def _dumps(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, allow_nan=False, default=_json_default)
 
 
+def _strip_code_hash(value: Any) -> Any:
+    """策略运行记录不持久化 code_hash，兼容嵌套结果 JSON。"""
+    if isinstance(value, dict):
+        return {
+            str(key): _strip_code_hash(item)
+            for key, item in value.items()
+            if str(key) != "code_hash"
+        }
+    if isinstance(value, list):
+        return [_strip_code_hash(item) for item in value]
+    return value
+
+
 def write_run_blob(user_id: int, run_id: str, payload: dict[str, Any]) -> Path:
     path = _blob_path(user_id, run_id)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -351,13 +364,32 @@ def slim_strategy_result_for_db(result: Any) -> dict[str, Any]:
 
 
 def slim_strategy_request(request: Any) -> dict[str, Any]:
+    """保留完整 request 快照；特别是 strategy_code 不截断。"""
+    if not isinstance(request, dict):
+        return {}
+    return dict(request)
+
+
+def _attach_builtin_source_snapshot(request: Any) -> dict[str, Any]:
+    """为 ID-only 内置回测补齐 request JSONB 中的源码快照。
+
+    RE 执行只收到 strategy_id；这里的源码来自 SVQuant 中保留的过渡期
+    快照，只用于历史记录，不改变实际执行请求，也不计算/保存 code_hash。
+    """
     if not isinstance(request, dict):
         return {}
     out = dict(request)
-    code = out.get("strategy_code")
-    if isinstance(code, str) and len(code) > 80_000:
-        out["strategy_code"] = code[:80_000] + "\n# ... truncated for storage ...\n"
-        out["_strategy_code_truncated"] = True
+    strategy_id = str(out.get("strategy_id") or "").strip()
+    if not strategy_id or str(out.get("strategy_code") or "").strip():
+        return out
+    try:
+        from services.strategy.builtin_strategies_store import get_builtin_strategy
+
+        source = str(get_builtin_strategy(strategy_id).get("strategy_code") or "")
+    except (KeyError, ValueError):
+        source = ""
+    if source:
+        out["strategy_code"] = source
     return out
 
 
@@ -458,7 +490,12 @@ def upsert_project(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     config = payload.get("config") or _default_config()
     if not isinstance(config, dict):
         config = _default_config()
-    if not str(config.get("strategy_code") or "").strip():
+    # 内置策略过渡期只保存 strategy_id，源码不需要进入研究编辑器。
+    # 普通/用户策略仍沿用默认源码模板。
+    if (
+        not str(config.get("strategy_code") or "").strip()
+        and not str(config.get("strategy_id") or "").strip()
+    ):
         config = {**config, "strategy_code": DEFAULT_STRATEGY_CODE}
 
     with get_conn() as conn:
@@ -660,7 +697,7 @@ def get_run(user_id: int, run_id: str) -> dict[str, Any]:
     if blob and isinstance(blob.get("result"), dict):
         run["result"] = blob["result"]
         if isinstance(blob.get("request"), dict) and blob["request"]:
-            # 文件里可能有未截断的 request
+            # 文件里保存的是完整 request 快照
             run["request"] = {**run["request"], **blob["request"]}
     return {"ok": True, "run": run}
 
@@ -672,8 +709,10 @@ def save_run(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     run_id = str(payload.get("id") or "").strip() or str(uuid.uuid4())
     name = str(payload.get("name") or "").strip()
     description = str(payload.get("description") or name).strip()
-    full_request = payload.get("request") or {}
-    full_result = payload.get("result") or {}
+    full_request = _strip_code_hash(
+        _attach_builtin_source_snapshot(payload.get("request") or {})
+    )
+    full_result = _strip_code_hash(payload.get("result") or {})
     if not isinstance(full_result, dict):
         full_result = {}
     request = slim_strategy_request(full_request)

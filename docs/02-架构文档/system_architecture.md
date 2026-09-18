@@ -20,7 +20,6 @@ SVQuant/
 │   ├── factor/               # 自定义因子同步产物和接口说明
 │   └── requirements.txt
 ├── KnowledgeHub/             # 知识库产品模块
-├── Strategy/                 # 暂存的策略库兼容快照
 └── docs/                     # SVQuant 与跨仓库文档
 ~~~
 
@@ -41,9 +40,10 @@ SVQuant/
 | API 契约及契约测试 | 使用并做网关集成验证 | 维护权威契约和契约测试 |
 | Web 页面 | 负责 | 不负责 |
 
-Strategy/libraries 是当前仍被 SVQuant 后端读取的兼容快照，暂时保留。它不表示 SVQuant
-拥有策略执行引擎；执行仍通过 ResearchEngine API 完成。根目录 Factor/ 已移除，不再作为
-SVQuant 的代码、数据或缓存目录。
+内置策略元数据通过 ResearchEngine 的 `GET /api/strategies` 同步到 SVQuant PostgreSQL
+的 `builtin_strategies` 表。SVQuant 页面读取该数据库镜像，回测只向 ResearchEngine
+提交 `strategy_id`；内置策略源码和执行仍由 ResearchEngine 管理。根目录 Factor/ 已移除，
+不再作为 SVQuant 的代码、数据或缓存目录。
 
 ## 3. 请求拓扑
 
@@ -90,7 +90,7 @@ ResearchEngine 地址只在 backend/.env 的 YG_RE_BASE 中配置。Vite 开发�
 - auth、community、news、core：平台业务、数据库和通用基础设施。
 - data：通过 ResearchEngine API 获取行情并做产品侧字段适配、缓存和展示。
 - factor：管理用户自定义因子同步状态、官方目录缓存、检测/回测请求和展示指标。
-- strategy：管理策略配置、策略库兼容快照、权限和结果展示；不执行回测。
+- strategy：管理策略配置、ResearchEngine 目录同步快照、权限和结果展示；不执行回测。
 - re_* 和 re_gateway：ResearchEngine 的 HTTP BFF/网关，不复制其计算逻辑。
 
 backend/output/ 中的 SQLite 或 JSON 是可再生的产品缓存，不是 ResearchEngine 的结果库，也
@@ -110,7 +110,7 @@ KnowledgeHub/data/ 规则管理；ResearchEngine 不依赖它。
 | marketdata | SVQuant 外部的 project/marketdata 或 ResearchEngine 配置目录 | ResearchEngine 与数据发布方 |
 | 回测结果 SQLite | ResearchEngine 配置的结果存储目录 | ResearchEngine |
 | LLM、资讯源 | SVQuant backend 配置 | SVQuant |
-| Strategy/libraries | SVQuant 仓库内的兼容快照 | SVQuant 暂存，后续再治理 |
+| `builtin_strategies` | SVQuant PostgreSQL 中的 ResearchEngine 目录同步快照 | SVQuant 产品缓存 |
 
 marketdata 中的 data_manifest.yaml 和 quality_report.json 属于外部数据发布物，不应被复制回
 SVQuant 或提交到本仓库。ResearchEngine 在启动/运行时按自己的配置读取并校验版本或哈希。

@@ -1,121 +1,39 @@
 # -*- coding: utf-8 -*-
-"""平台策略库：读取 SVQuant/Strategy/libraries 的兼容快照。"""
+"""内置策略目录的兼容门面。
+
+历史代码曾在这里直接读取本地策略目录。现在由 ``builtin_strategies_store``
+维护 ResearchEngine API 的数据库镜像；保留这些函数名只是为了兼容尚未迁移的脚本，
+实际不会访问本地策略文件。
+"""
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-import yaml
-
-# backend/services/strategy → SVQuant/
-_SVQUANT_ROOT = Path(__file__).resolve().parents[3]
-STRATEGY_LIB_DIR = _SVQUANT_ROOT / "Strategy" / "libraries"
-INDEX_PATH = STRATEGY_LIB_DIR / "index.yaml"
-
-STRATEGY_TYPE_LABELS = {
-    "trend": "趋势",
-    "momentum": "动量",
-    "reversal": "反转",
-    "low_volatility": "低波动",
-    "minimum_variance": "最小方差",
-    "statistical_arbitrage": "统计套利",
-    "value": "价值",
-    "value_growth": "价值成长",
-    "dividend": "红利",
-    "small_cap": "小市值",
-    "custom": "自定义",
-}
+from services.strategy.builtin_strategies_store import (
+    get_builtin_strategy,
+    list_builtin_strategies_from_db,
+)
 
 
-def libraries_root() -> Path:
-    return STRATEGY_LIB_DIR
+def libraries_root() -> None:
+    """旧 API 兼容项：内置策略已不再有 SVQuant 本地目录。"""
+    return None
 
 
 def load_index() -> dict[str, Any]:
-    if not INDEX_PATH.is_file():
-        raise FileNotFoundError(f"策略库索引不存在: {INDEX_PATH}")
-    raw = yaml.safe_load(INDEX_PATH.read_text(encoding="utf-8")) or {}
-    if not isinstance(raw, dict):
-        raise ValueError("index.yaml 格式无效")
-    return raw
+    """旧 API 兼容项：返回当前数据库镜像目录。"""
+    return list_builtin_strategies_from_db()
 
 
 def list_builtin_strategies() -> dict[str, Any]:
-    idx = load_index()
-    strategies = idx.get("strategies") or {}
-    items: list[dict[str, Any]] = []
-    for sid, meta in strategies.items():
-        if not isinstance(meta, dict):
-            continue
-        stype = str(meta.get("strategy_type") or "custom")
-        cur = str(meta.get("current_version") or "v1")
-        versions = meta.get("versions") or {}
-        ver = versions.get(cur) if isinstance(versions, dict) else None
-        file_name = ""
-        entrypoint = ""
-        if isinstance(ver, dict):
-            file_name = str(ver.get("file") or "")
-            entrypoint = str(ver.get("entrypoint") or "")
-        items.append(
-            {
-                "id": str(sid),
-                "name": str(meta.get("name") or sid),
-                "strategy_type": stype,
-                "strategy_type_label": STRATEGY_TYPE_LABELS.get(stype, stype),
-                "execution_mode": str(meta.get("execution_mode") or "vectorized"),
-                "current_version": cur,
-                "tags": list(meta.get("tags") or []),
-                "file": file_name,
-                "entrypoint": entrypoint,
-                "source": "builtin",
-            }
-        )
-    items.sort(key=lambda x: (x["strategy_type_label"], x["name"], x["id"]))
-    return {
-        "ok": True,
-        "index_version": idx.get("version"),
-        "root": str(STRATEGY_LIB_DIR),
-        "total": len(items),
-        "items": items,
-    }
+    return list_builtin_strategies_from_db()
 
 
-def get_strategy_source(strategy_id: str, *, version: str | None = None) -> dict[str, Any]:
-    sid = (strategy_id or "").strip()
-    if not sid:
-        raise ValueError("strategy_id 不能为空")
-    idx = load_index()
-    strategies = idx.get("strategies") or {}
-    meta = strategies.get(sid)
-    if not isinstance(meta, dict):
-        raise KeyError(f"未知策略: {sid}")
-    cur = str(version or meta.get("current_version") or "v1")
-    versions = meta.get("versions") or {}
-    ver = versions.get(cur) if isinstance(versions, dict) else None
-    if not isinstance(ver, dict):
-        raise KeyError(f"策略 {sid} 无版本 {cur}")
-    file_name = str(ver.get("file") or "").strip()
-    if not file_name:
-        raise ValueError(f"策略 {sid}@{cur} 未声明 file")
-    path = STRATEGY_LIB_DIR / file_name
-    if not path.is_file():
-        raise FileNotFoundError(f"源码不存在: {path}")
-    # 防目录穿越
-    if not path.resolve().is_relative_to(STRATEGY_LIB_DIR.resolve()):
-        raise PermissionError("非法路径")
-    code = path.read_text(encoding="utf-8")
-    stype = str(meta.get("strategy_type") or "custom")
-    return {
-        "ok": True,
-        "id": sid,
-        "name": str(meta.get("name") or sid),
-        "strategy_type": stype,
-        "strategy_type_label": STRATEGY_TYPE_LABELS.get(stype, stype),
-        "execution_mode": str(meta.get("execution_mode") or "vectorized"),
-        "version": cur,
-        "file": file_name,
-        "entrypoint": str(ver.get("entrypoint") or ""),
-        "tags": list(meta.get("tags") or []),
-        "strategy_code": code,
-        "source": "builtin",
-    }
+def get_strategy_source(
+    strategy_id: str, *, version: str | None = None
+) -> dict[str, Any]:
+    """兼容旧调用；源码只来自数据库中的过渡期快照。"""
+    data = get_builtin_strategy(strategy_id)
+    if version:
+        data["version"] = version
+    return data

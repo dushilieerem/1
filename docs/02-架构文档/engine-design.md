@@ -69,8 +69,9 @@ ResearchEngine HTTP 策略回测接口
 SVQuant 解析结果、显示净值/指标/持仓
 ~~~
 
-Strategy/libraries 仅是当前 SVQuant 兼容读取的策略源码快照，用于内置策略展示和 PostgreSQL
-种子初始化。页面提交的策略代码由 ResearchEngine 校验和执行；SVQuant 不执行快照中的策略代码。
+内置策略目录由 ResearchEngine 管理，SVQuant 通过 `GET /api/strategies` 同步元数据到
+`builtin_strategies` 表。页面只展示元数据并提交 `strategy_id`；内置策略源码由
+ResearchEngine 校验和执行，SVQuant 不保存或执行本地内置策略源码。
 
 ## 5. 两类执行模式
 

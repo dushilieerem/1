@@ -14,7 +14,7 @@
 | 用户因子/策略配置 | SVQuant PostgreSQL | SVQuant | 是 |
 | 官方因子目录快照 | SVQuant PostgreSQL 的同步表 | SVQuant（缓存） | 通过 ResearchEngine API 更新 |
 | 产品展示缓存 | backend/output/ 下的可再生文件/SQLite | SVQuant（缓存） | 是 |
-| 策略兼容快照 | Strategy/libraries/ | SVQuant（暂存） | 展示和种子初始化读取 |
+| 内置策略目录快照 | SVQuant PostgreSQL 的 `builtin_strategies` 表 | SVQuant（ResearchEngine 同步缓存） | 展示和请求解析读取 |
 | marketdata | SVQuant 外部的 project/marketdata 或 ResearchEngine 配置目录 | ResearchEngine 与数据发布方 | 否 |
 | 因子运行时值 | ResearchEngine 进程内 | ResearchEngine | 否 |
 | 回测结果 SQLite | ResearchEngine 部署目录 | ResearchEngine | 否 |
@@ -47,11 +47,11 @@ backend/output/ 被 .gitignore 忽略，用于本机生成的展示加速缓存�
 KnowledgeHub/data/ 保存知识库运行时附件和本地数据。新上传附件默认不提交 Git；部署时由
 人工或外部备份流程管理。仓库中已有的示例附件若需要随产品发布，可继续作为受控样例。
 
-### 3.3 Strategy/libraries
+### 3.3 builtin_strategies
 
-Strategy/libraries/ 是当前 SVQuant 兼容读取的策略源码快照。它不承载运行时行情或回测结果，
-也不应在 SVQuant backend 中执行。后续如果策略目录迁移到独立服务，只需先替换展示/种子读取
-适配器，再删除快照。
+`builtin_strategies` 是 ResearchEngine 策略目录在 SVQuant PostgreSQL 中的同步快照，保存
+内置策略的 ID、名称、类型、执行模式、版本和标签等展示/请求元数据。同步来源是
+ResearchEngine API，SVQuant 不在本地保存或执行内置策略源码。
 
 ## 4. ResearchEngine 外部数据
 
@@ -85,7 +85,7 @@ SVQuant 版本库。
 | PostgreSQL | 长期产品事实 | 按 SVQuant 数据库运维策略备份；恢复后校验迁移版本 |
 | KnowledgeHub 附件 | 长期业务文件 | 按附件目录备份；数据库元数据和文件必须成对恢复 |
 | backend/output/ | 临时加速缓存 | 不做事实备份，损坏后重建 |
-| Strategy/libraries/ | 兼容期受控代码 | 随 SVQuant Git 版本管理 |
+| `builtin_strategies` | ResearchEngine 目录同步快照 | 随 SVQuant PostgreSQL 备份；可从 ResearchEngine 重建 |
 | ResearchEngine marketdata | 按数据 release 管理 | 由数据发布方/ResearchEngine 维护版本、manifest 和备份 |
 | ResearchEngine 结果 SQLite | 按研究结果保留策略 | 由 ResearchEngine 部署方备份；SVQuant 只依赖 API |
 

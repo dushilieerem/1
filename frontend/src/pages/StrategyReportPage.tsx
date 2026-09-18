@@ -698,7 +698,8 @@ export function StrategyReportPage() {
         benchmarkLabel: optionLabel(bmCode, STRATEGY_BENCHMARK_OPTIONS),
         metrics: m,
         excessReturn: result?.excess_return,
-        strategyCode: req?.strategy_code,
+        // 内置策略源码是历史快照，但过渡期不在用户分享/展示链路中暴露。
+        strategyCode: req?.strategy_id ? undefined : req?.strategy_code,
         returnTo: `/strategy/research/report/${rec.id || runId}`,
         returnLabel: "返回策略回测报告",
       });

@@ -58,6 +58,8 @@ export type StrategyProjectConfig = {
   signal_temp_labels?: Record<string, string>;
   /** 从平台策略库打开时：library:{id}，用于复用研究项目 */
   library_ref?: string;
+  /** ResearchEngine 内置策略 ID；存在时由 RE 执行，研究页不展示源码 */
+  strategy_id?: string;
 };
 
 export type StrategyProject = {
@@ -135,6 +137,13 @@ export function normalizeStrategyConfig(
 ): StrategyProjectConfig {
   const d = defaultStrategyConfig();
   const c = raw || {};
+  const strategyId = c.strategy_id ? String(c.strategy_id).trim() : "";
+  const isBuiltin = Boolean(strategyId);
+  const strategyCode = (c.strategy_code || "").trim()
+    ? String(c.strategy_code)
+    : isBuiltin
+      ? ""
+      : d.strategy_code;
   return {
     universe: c.universe || d.universe,
     benchmark: c.benchmark || d.benchmark,
@@ -162,13 +171,9 @@ export function normalizeStrategyConfig(
       c.engine_mode === "event" || c.engine_mode === "vectorized"
         ? c.engine_mode
         : inferEngineModeFromCode(
-            (c.strategy_code || "").trim()
-              ? String(c.strategy_code)
-              : d.strategy_code,
+            strategyCode || d.strategy_code,
           ),
-    strategy_code: (c.strategy_code || "").trim()
-      ? String(c.strategy_code)
-      : d.strategy_code,
+    strategy_code: strategyCode,
     signal_factor_ids: Array.isArray(c.signal_factor_ids)
       ? c.signal_factor_ids.map(String).filter(Boolean)
       : d.signal_factor_ids,
@@ -196,6 +201,7 @@ export function normalizeStrategyConfig(
           )
         : {},
     library_ref: c.library_ref ? String(c.library_ref) : undefined,
+    strategy_id: strategyId || undefined,
   };
 }
 

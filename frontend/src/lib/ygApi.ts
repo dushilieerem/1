@@ -435,7 +435,7 @@ export async function ygBacktestFactor(
   );
 }
 
-/** 策略回测：对齐 ResearchEngine 策略回测 API 契约 + Strategy/libraries */
+/** 策略回测：对齐 ResearchEngine 策略回测 API 契约 */
 export type YgStrategyEngineMode = "vectorized" | "event";
 
 export type YgStrategyBacktestRequest = {

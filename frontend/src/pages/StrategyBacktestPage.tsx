@@ -11,7 +11,10 @@ import { FactorCodeEditor } from "@/components/FactorCodeEditor";
 import { StrategySignalFactorsPanel } from "@/components/StrategySignalFactorsPanel";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { configFromRunRequest } from "@/lib/strategyLibraryApi";
-import { ygBacktestStrategy } from "@/lib/ygApi";
+import {
+  ygBacktestStrategy,
+  type YgStrategyBacktestRequest,
+} from "@/lib/ygApi";
 import {
   applyParamsToCode,
   DEFAULT_EVENT_STRATEGY_CODE,
@@ -77,6 +80,11 @@ function syncCodeFromLeft(cfg: StrategyProjectConfig): string {
   return applyParamsToCode(cfg.strategy_code, syncParams(cfg));
 }
 
+function syncProjectCode(cfg: StrategyProjectConfig): string {
+  // 内置策略源码只作为隐藏的历史快照保存，不能被 SVQuant 参数编辑器改写。
+  return cfg.strategy_id ? cfg.strategy_code : syncCodeFromLeft(cfg);
+}
+
 export function StrategyBacktestPage() {
   const { projectId = "" } = useParams();
   const [searchParams] = useSearchParams();
@@ -121,7 +129,7 @@ export function StrategyBacktestPage() {
       });
       const synced = {
         ...config,
-        strategy_code: syncCodeFromLeft(config),
+        strategy_code: syncProjectCode(config),
       };
       if (!cancelled) {
         setProject({
@@ -165,7 +173,7 @@ export function StrategyBacktestPage() {
         }
         const synced = {
           ...config,
-          strategy_code: syncCodeFromLeft(config),
+          strategy_code: syncProjectCode(config),
         };
         setProject({ ...p, config: synced });
         setCfg(synced);
@@ -196,7 +204,7 @@ export function StrategyBacktestPage() {
         syncLock.current = "left";
         next = {
           ...next,
-          strategy_code: syncCodeFromLeft(next),
+          strategy_code: syncProjectCode(next),
         };
         queueMicrotask(() => {
           syncLock.current = null;
@@ -215,6 +223,7 @@ export function StrategyBacktestPage() {
     tempLabels?: Record<string, string>;
     forceRewriteSignal?: boolean;
   }) => {
+    if (cfg?.strategy_id) return;
     const ids = next.ids;
     const w = normalizeSignalWeights(ids, next.weights);
     const powers = normalizeSignalPowers(ids, next.powers);
@@ -311,6 +320,7 @@ export function StrategyBacktestPage() {
   };
 
   const onCodeChange = (code: string) => {
+    if (cfg?.strategy_id) return;
     if (syncLock.current === "left") {
       setCfg((prev) => (prev ? { ...prev, strategy_code: code } : prev));
       return;
@@ -395,7 +405,7 @@ export function StrategyBacktestPage() {
   };
 
   const switchEngineMode = async (mode: StrategyEngineMode) => {
-    if (!cfg || mode === cfg.engine_mode) return;
+    if (!cfg || cfg.strategy_id || mode === cfg.engine_mode) return;
     const toEvent = mode === "event";
     const ok = await confirm({
       title: "切换执行模式",
@@ -437,7 +447,7 @@ export function StrategyBacktestPage() {
     });
     setCfg({
       ...next,
-      strategy_code: syncCodeFromLeft(next),
+      strategy_code: syncProjectCode(next),
     });
   };
 
@@ -447,8 +457,9 @@ export function StrategyBacktestPage() {
       pushLog("因子仍在同步到代码，请稍候再回测");
       return;
     }
-    const code = cfg.strategy_code.trim();
-    if (!code) {
+    const strategyId = String(cfg.strategy_id || "").trim();
+    const snapshotCode = cfg.strategy_code.trim();
+    if (!strategyId && !snapshotCode) {
       pushLog("策略代码为空");
       return;
     }
@@ -467,8 +478,8 @@ export function StrategyBacktestPage() {
     const ac = new AbortController();
     abortRef.current = ac;
     const t0 = performance.now();
-    const req = {
-      strategy_code: code,
+    const req: YgStrategyBacktestRequest = {
+      ...(strategyId ? { strategy_id: strategyId } : { strategy_code: snapshotCode }),
       engine_mode: cfg.engine_mode,
       universe: cfg.universe,
       start: range.start,
@@ -481,6 +492,13 @@ export function StrategyBacktestPage() {
       include_positions: false,
       include_rebalance_logs: cfg.include_rebalance_logs,
     };
+    // RE 执行请求只带 strategy_id；源码只作为 SVQuant 的不可变回测快照保存。
+    const runRequest: YgStrategyBacktestRequest = strategyId
+      ? {
+          ...req,
+          ...(snapshotCode ? { strategy_code: snapshotCode } : {}),
+        }
+      : req;
     try {
       // 草稿：回测跑通后再落库；失败则不建策略项目
       const result = await ygBacktestStrategy(req, ac.signal);
@@ -505,7 +523,7 @@ export function StrategyBacktestPage() {
         description: savedProject.description,
         // _svquant_ui 仅本地落库，方便「返回配置」还原左侧因子；不发给 RE
         request: {
-          ...req,
+          ...runRequest,
           _svquant_ui: {
             signal_factor_ids: cfg.signal_factor_ids,
             signal_factor_weights: cfg.signal_factor_weights,
@@ -673,6 +691,7 @@ export function StrategyBacktestPage() {
                     <button
                       key={opt.id}
                       type="button"
+                      disabled={Boolean(cfg.strategy_id)}
                       onClick={() => void switchEngineMode(opt.id)}
                       className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                         active
@@ -689,7 +708,14 @@ export function StrategyBacktestPage() {
               </div>
             </section>
 
-            {cfg.engine_mode === "event" ? null : usesFactorPortfolioTemplate(
+            {cfg.strategy_id ? (
+              <section className="rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2.5">
+                <h2 className="text-sm font-bold text-blue-700">ResearchEngine 内置策略</h2>
+                <p className="mt-1 text-[11px] leading-snug text-blue-700/80">
+                  当前策略由 ResearchEngine 按策略 ID 执行，SVQuant 仅管理回测参数和运行记录。
+                </p>
+              </section>
+            ) : cfg.engine_mode === "event" ? null : usesFactorPortfolioTemplate(
                 cfg.strategy_code,
               ) ? (
               <StrategySignalFactorsPanel
@@ -966,7 +992,7 @@ export function StrategyBacktestPage() {
           <section className="flex min-h-[50vh] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:min-h-0 lg:flex-[3]">
             <div className="border-b border-slate-100 px-4 py-2">
               <span className="text-xs font-semibold text-slate-600">
-                策略代码
+                {cfg.strategy_id ? "内置策略" : "策略代码"}
                 {cfg.engine_mode === "event" ? (
                   <span className="ml-2 rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-800">
                     事件
@@ -975,13 +1001,19 @@ export function StrategyBacktestPage() {
               </span>
             </div>
             <div className="min-h-0 flex-1 p-2">
-              <FactorCodeEditor
-                value={cfg.strategy_code}
-                onChange={onCodeChange}
-                height="100%"
-                variant="light"
-                className="h-full min-h-[40vh] lg:min-h-0"
-              />
+              {cfg.strategy_id ? (
+                <div className="flex h-full min-h-[40vh] items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 px-6 text-center text-sm text-slate-500 lg:min-h-0">
+                  内置策略源码由 ResearchEngine 管理，当前版本不在 SVQuant 页面展示。
+                </div>
+              ) : (
+                <FactorCodeEditor
+                  value={cfg.strategy_code}
+                  onChange={onCodeChange}
+                  height="100%"
+                  variant="light"
+                  className="h-full min-h-[40vh] lg:min-h-0"
+                />
+              )}
             </div>
           </section>
           <section className="flex min-h-[10rem] max-h-56 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:max-h-none lg:min-h-0 lg:flex-1">

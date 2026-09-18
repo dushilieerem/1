@@ -9,7 +9,7 @@ from app.deps import require_admin, require_db_user_id, require_user
 from services.strategy.builtin_strategies_store import (
     get_builtin_strategy,
     list_builtin_strategies_from_db,
-    seed_builtin_strategies_from_yaml,
+    sync_builtin_strategies_from_re,
 )
 from services.strategy.strategy_store import (
     create_project as create_strategy_project,
@@ -174,13 +174,13 @@ def strategy_builtin_list(_user: dict = Depends(require_user)) -> dict:
 
 @router.post("/api/strategy/library/sync")
 def strategy_builtin_sync(_admin: dict = Depends(require_admin)) -> dict:
-    """管理员：从当前保留的 Strategy/libraries 兼容快照重导入 PG。"""
+    """管理员：从 ResearchEngine 目录全量同步 PG 镜像。"""
     try:
-        data = seed_builtin_strategies_from_yaml(replace=True)
+        data = sync_builtin_strategies_from_re()
         if int(data.get("upserted") or 0) <= 0:
             raise HTTPException(
                 status_code=502,
-                detail="同步结果为空，未写入（请检查 Strategy/libraries 兼容快照）",
+                detail="ResearchEngine 同步结果为空，未写入",
             )
         return {**data, "ok": True}
     except HTTPException:

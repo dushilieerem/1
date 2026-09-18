@@ -16,13 +16,13 @@ SVQuant/
 │   ├── factor/         # 用户自定义因子同步产物与 API 文档
 │   └── requirements.txt
 ├── KnowledgeHub/       # 知识库模块（API 挂载在 backend 的 /api/kh）
-├── Strategy/           # 当前 SVQuant 兼容读取的策略库快照
 ├── docs/               # SVQuant 产品、架构和交付文档
 └── .gitignore
 ```
 
-`Strategy/libraries` 目前仍被 SVQuant 用于内置策略展示和 PostgreSQL 种子初始化，
-因此暂时保留；策略执行和回测由 ResearchEngine 完成。
+内置策略元数据由 ResearchEngine API 同步到 SVQuant PostgreSQL 的
+`builtin_strategies` 表；SVQuant 不再维护本地内置策略源码目录。策略执行和回测由
+ResearchEngine 完成。
 
 ## 外部服务与数据边界
 

@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-# 本文件是发给 ResearchEngine 的同步产物，SVQuant 不在本地 import。
 from app.services.factor.base import FactorLibrary
 
 

@@ -10,6 +10,7 @@ HTTP 集成方式、部署依赖和跨仓库发布约束。
 | system_architecture.md | SVQuant 全局边界、模块职责、依赖方向和部署拓扑 |
 | engine-design.md | 回测能力的跨仓库调用链、执行模式和网关边界 |
 | database_design.md | SVQuant 自有数据、缓存、兼容资产和外部研究数据的所有权 |
+| 因子面板-RE接口契约.md | 因子面板迁移到 RE 批量计算的接口提案与职责边界 |
 | ResearchEngine 独立仓库 | https://gitee.com/yanggu-yuanqi-intelligence/research-engine：研究服务内部实现、API 契约、契约测试和专属 ADR |
 
 ## 当前边界

@@ -34,7 +34,30 @@ ResearchEngine 完成。
 | 回测结果 SQLite | ResearchEngine 部署 | SVQuant 不直接访问，只接收 API 结果 |
 | LLM、新闻等供应商 | SVQuant | 通过 `backend/.env` 配置敏感凭据 |
 
-## 后端配置与启动
+## 本地一键启动
+
+先准备好 PostgreSQL、ResearchEngine、`backend/.env` 和前端依赖；之后可在仓库根目录启动
+SVQuant 前后端：
+
+```bash
+./scripts/svquant.sh
+```
+
+默认打开 <http://127.0.0.1:9530>。管理命令：
+
+启动器会将前后端放入独立后台会话，最长等待 60 秒进行健康检查；命令行 Ctrl+C
+或 SSH 断开不会向服务进程发送中断信号。
+
+```bash
+./scripts/svquant.sh status   # 查看状态
+./scripts/svquant.sh logs     # 跟踪日志（Ctrl+C 退出查看，不会停止服务）
+./scripts/svquant.sh stop     # 停止本脚本启动的服务
+./scripts/svquant.sh restart  # 重启
+```
+
+日志和 PID 文件放在被 Git 忽略的 `backend/output/dev-services/`。
+
+## 后端配置与手动启动
 
 首次部署时人工创建配置：
 

@@ -12,8 +12,12 @@
 | KnowledgeHub 元数据 | SVQuant PostgreSQL | SVQuant | 是 |
 | KnowledgeHub 附件 | KnowledgeHub/data/ | SVQuant | 是 |
 | 用户因子/策略配置 | SVQuant PostgreSQL | SVQuant | 是 |
+| 因子面板指标缓存 | SVQuant PostgreSQL（`factor_dashboard_metrics`） | SVQuant（可再生缓存） | 是 |
+| 因子面板校验记录 | SVQuant PostgreSQL（`factor_dashboard_verifications`） | SVQuant | 是 |
+| 因子面板旧库迁移标记 | SVQuant PostgreSQL（`factor_dashboard_legacy_imports`） | SVQuant（迁移元数据） | 是 |
 | 官方因子目录快照 | SVQuant PostgreSQL 的同步表 | SVQuant（缓存） | 通过 ResearchEngine API 更新 |
-| 产品展示缓存 | backend/output/ 下的可再生文件/SQLite | SVQuant（缓存） | 是 |
+| 因子面板任务状态 | `backend/output/factor_dashboard/job.json` | SVQuant（临时状态，待 RE 任务 API 接管后退役） | 是 |
+| 其它产品展示缓存 | backend/output/ 下的可再生文件 | SVQuant（缓存） | 是 |
 | 内置策略目录快照 | SVQuant PostgreSQL 的 `builtin_strategies` 表 | SVQuant（ResearchEngine 同步缓存） | 展示和请求解析读取 |
 | marketdata | SVQuant 外部的 project/marketdata 或 ResearchEngine 配置目录 | ResearchEngine 与数据发布方 | 否 |
 | 因子运行时值 | ResearchEngine 进程内 | ResearchEngine | 否 |
@@ -29,7 +33,7 @@
 - 用户、登录会话所需的账号信息、权限和审计日志；
 - 社区帖子、评论、标签、资讯及其产品状态；
 - KnowledgeHub 的数据集、文档、分块、对话和模型配置元数据；
-- 用户自定义因子、官方因子目录同步快照及因子展示指标；
+- 用户自定义因子、官方因子目录同步快照、因子面板指标缓存及校验记录；
 - 用户策略、策略库、策略广场条目和策略运行的产品记录；
 - 证券池、基准等用户资产配置。
 
@@ -39,8 +43,10 @@ ResearchEngine 不连接此 PostgreSQL。它只接收 SVQuant 经过鉴权和解
 
 ### 3.1 backend/output
 
-backend/output/ 被 .gitignore 忽略，用于本机生成的展示加速缓存，例如因子仪表盘指标。
-缓存可以随时删除并通过 ResearchEngine API 重建，不能作为用户资产、回测审计结果或跨服务事实。
+backend/output/ 被 .gitignore 忽略，用于本机任务进度、日志等临时文件。因子面板指标和校验状态
+均保存在 SVQuant PostgreSQL；旧 `metrics.sqlite` 仅在升级时只读导入，迁移成功后不再访问。
+批任务状态仍另存于 `job.json`，待 RE 任务 API 接管后退役。普通缓存不能作为用户资产、回测审计
+结果或跨服务事实。
 
 ### 3.2 KnowledgeHub/data
 
@@ -82,7 +88,9 @@ SVQuant 版本库。
 
 | 数据层 | 生命周期 | 备份/恢复 |
 |--------|----------|-----------|
-| PostgreSQL | 长期产品事实 | 按 SVQuant 数据库运维策略备份；恢复后校验迁移版本 |
+| PostgreSQL | 产品数据与因子面板缓存 | 按 SVQuant 数据库运维策略备份；恢复后校验迁移版本 |
+| `factor_dashboard_verifications` | 长期产品记录 | 随 SVQuant PostgreSQL 备份；不能从指标缓存重建 |
+| `factor_dashboard_metrics` | 可再生指标缓存 | 随 PostgreSQL 备份；丢失后可由 ResearchEngine 重新计算 |
 | KnowledgeHub 附件 | 长期业务文件 | 按附件目录备份；数据库元数据和文件必须成对恢复 |
 | backend/output/ | 临时加速缓存 | 不做事实备份，损坏后重建 |
 | `builtin_strategies` | ResearchEngine 目录同步快照 | 随 SVQuant PostgreSQL 备份；可从 ResearchEngine 重建 |

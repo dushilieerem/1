@@ -428,7 +428,11 @@ export function FactorDashboardPage() {
     }
   };
 
-  const onChangeVerify = async (factorName: string, status: VerifyStatus) => {
+  const onChangeVerify = async (
+    libraryName: string,
+    factorName: string,
+    status: VerifyStatus,
+  ) => {
     const u = getStoredUser();
     if (!u) {
       navigate(`/login?next=${encodeURIComponent("/factor/dashboard")}`);
@@ -438,7 +442,8 @@ export function FactorDashboardPage() {
       window.alert("仅管理员可修改校验状态");
       return;
     }
-    setVerifyBusy(factorName);
+    const verifyKey = `${libraryName}::${factorName}`;
+    setVerifyBusy(verifyKey);
     try {
       const res = await fetch("/api/factor/dashboard/verify", {
         method: "POST",
@@ -446,13 +451,17 @@ export function FactorDashboardPage() {
           "Content-Type": "application/json",
           ...authHeaders(),
         },
-        body: JSON.stringify({ factor_name: factorName, status }),
+        body: JSON.stringify({
+          library_name: libraryName,
+          factor_name: factorName,
+          status,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setRows((prev) =>
         prev.map((r) =>
-          r.factor_name === factorName
+          r.factor_name === factorName && (r.library || "") === libraryName
             ? {
                 ...r,
                 verify_status: data.verify_status || status,
@@ -463,7 +472,9 @@ export function FactorDashboardPage() {
       );
       setVerifySummary((prev) => {
         const old = normalizeVerify(
-          rows.find((r) => r.factor_name === factorName)?.verify_status,
+          rows.find(
+            (r) => r.factor_name === factorName && (r.library || "") === libraryName,
+          )?.verify_status,
         );
         const next = { ...prev };
         if (old !== status) {
@@ -715,10 +726,11 @@ export function FactorDashboardPage() {
                 {paged.map((r) => {
                   const win = r.win_rate ?? r.coverage_pool;
                   const lib = labelForLibrary(r.library || "", r.library || "—");
+                  const verifyKey = `${r.library || ""}::${r.factor_name}`;
                   const vm = verifyMeta(r.verify_status);
                   return (
                     <tr
-                      key={r.factor_name}
+                      key={verifyKey}
                       className="group border-b border-slate-100 transition hover:bg-slate-50/80"
                     >
                       <td className="px-4 py-3.5">
@@ -755,9 +767,10 @@ export function FactorDashboardPage() {
                         {isAdmin ? (
                           <select
                             value={normalizeVerify(r.verify_status)}
-                            disabled={verifyBusy === r.factor_name}
+                            disabled={verifyBusy === verifyKey}
                             onChange={(e) =>
                               void onChangeVerify(
+                                r.library || "",
                                 r.factor_name,
                                 e.target.value as VerifyStatus,
                               )

@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -20,8 +19,6 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT.parent / "docs" / "04-项目管理"
 OUT = DOCS / "数据库持续更新.md"
-PANEL_DB = ROOT / "output" / "factor_dashboard" / "metrics.sqlite"
-
 MAX_STR = 120
 SAMPLE_N = 2
 REDACT_KEYS = {
@@ -121,12 +118,19 @@ SAMPLE_COLS: dict[str, tuple[str, ...]] = {
         "error",
         "computed_at",
     ),
-    "factor_verify_status": (
+    "factor_dashboard_verifications": (
+        "library_name",
         "factor_name",
         "status",
-        "note",
         "updated_at",
         "updated_by",
+    ),
+    "factor_dashboard_legacy_imports": (
+        "migration_key",
+        "source_rows",
+        "imported_rows",
+        "skipped_rows",
+        "completed_at",
     ),
 }
 
@@ -166,8 +170,9 @@ PURPOSES: dict[str, str] = {
     "kh_conversations": "KnowledgeHub 用户会话线程（关联 chat / collection）。",
     "re_factor_catalog_snapshot": "ResearchEngine 官方因子目录快照（库列表+因子清单 JSON）；页面读此表，不每次打 RE。",
     "re_factor_catalog_sync_log": "官方因子目录同步日志（定时/手动：有无变更、hash、条数）。",
-    "factor_dashboard_metrics": "因子面板指标缓存（因子×池×周期×过滤规则）；RE 算完写入，非行情库。",
-    "factor_verify_status": "因子跨平台对比校验状态（按因子名：pending/passed/failed），与指标行解耦。",
+    "factor_dashboard_metrics": "SVQuant 因子面板指标缓存（因子×库×池×周期×过滤规则）；ResearchEngine 计算后写入 PostgreSQL。",
+    "factor_dashboard_verifications": "因子跨平台对比校验状态（按因子库+因子名），SVQuant 产品数据。",
+    "factor_dashboard_legacy_imports": "旧因子面板 SQLite 指标与校验记录的一次性导入标记，不承载面板业务数据。",
 }
 
 FIELD_HINTS: dict[str, dict[str, str]] = {
@@ -550,12 +555,20 @@ FIELD_HINTS: dict[str, dict[str, str]] = {
         "error": "失败原因；成功为空",
         "computed_at": "写入时间",
     },
-    "factor_verify_status": {
-        "factor_name": "因子名（主键）",
+    "factor_dashboard_verifications": {
+        "library_name": "因子库名；`*` 表示从旧 SQLite 导入的全局同名状态",
+        "factor_name": "因子名；与 library_name 组成主键",
         "status": "`pending` 待验证 / `passed` 已通过 / `failed` 未通过",
         "note": "备注（可选）",
         "updated_at": "最近更新时间",
         "updated_by": "更新人用户名",
+    },
+    "factor_dashboard_legacy_imports": {
+        "migration_key": "一次性迁移名称（主键）",
+        "source_rows": "旧 SQLite 源表行数",
+        "imported_rows": "导入 PostgreSQL 的行数",
+        "skipped_rows": "因关键字段无效而跳过的行数",
+        "completed_at": "迁移完成时间",
     },
 }
 
@@ -648,44 +661,13 @@ def _pg_dump() -> dict[str, Any]:
     return out
 
 
-def _sqlite_dump() -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    if not PANEL_DB.exists():
-        return out
-    conn = sqlite3.connect(str(PANEL_DB))
-    conn.row_factory = sqlite3.Row
-    try:
-        for (name,) in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY 1"
-        ):
-            info = conn.execute(f'PRAGMA table_info("{name}")').fetchall()
-            cnt = conn.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0]
-            rows = conn.execute(f'SELECT * FROM "{name}" LIMIT {SAMPLE_N}').fetchall()
-            out[name] = {
-                "count": int(cnt),
-                "columns": [
-                    {
-                        "name": r["name"],
-                        "type": r["type"],
-                        "notnull": r["notnull"],
-                        "pk": r["pk"],
-                    }
-                    for r in info
-                ],
-                "samples": [_pick_sample(dict(r), name) for r in rows],
-            }
-    finally:
-        conn.close()
-    return out
-
-
 def _pg_type(c: dict[str, Any]) -> str:
     dt = c.get("data_type") or c.get("udt_name") or ""
     n = c.get("character_maximum_length")
     return f"{dt}({n})" if n else str(dt)
 
 
-def render(pg: dict[str, Any], sq: dict[str, Any]) -> str:
+def render(pg: dict[str, Any]) -> str:
     now = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M")
     A: list[str] = []
     a = A.append
@@ -701,7 +683,8 @@ def render(pg: dict[str, Any], sq: dict[str, Any]) -> str:
     )
     a(
         "> **边界：** SVQuant **不存行情 bars**；"
-        "因子面板指标在本机 SQLite；账号 / 社区 / 检测 / 策略 / **官方因子目录缓存** "
+        "因子面板指标与校验状态均保存在 SVQuant PostgreSQL；"
+        "账号 / 社区 / 检测 / 策略 / **官方因子目录缓存** "
         "（`re_factor_catalog_*`）/ **KnowledgeHub（`kh_*`）** 在 PostgreSQL。"
         "旧 `kb_*` 已删除，勿再建。"
     )
@@ -717,8 +700,9 @@ def render(pg: dict[str, Any], sq: dict[str, Any]) -> str:
         f"**{len(pg)}** | 用户、社区、Agent、检测/策略、KnowledgeHub |"
     )
     a(
-        f"| **因子面板缓存** | SQLite | `backend/output/factor_dashboard/metrics.sqlite` | "
-        f"**{len(sq)}** | 面板 IC/夏普等 + 跨平台校验状态 |"
+        "| **因子面板数据** | PostgreSQL | `.env` → `DATABASE_URL` | "
+        "`factor_dashboard_metrics` / `factor_dashboard_verifications` / "
+        "`factor_dashboard_legacy_imports` | 指标缓存、校验状态与迁移标记 |"
     )
     a("")
     a("### PostgreSQL 表一览")
@@ -727,13 +711,6 @@ def render(pg: dict[str, Any], sq: dict[str, Any]) -> str:
     a("|------|--------|----------------|")
     for t in sorted(pg):
         a(f"| `{t}` | {pg[t]['count']} | {PURPOSES.get(t, '—')} |")
-    a("")
-    a("### SQLite 表一览")
-    a("")
-    a("| 表名 | 约行数 | 作用（一句话） |")
-    a("|------|--------|----------------|")
-    for t in sorted(sq):
-        a(f"| `{t}` | {sq[t]['count']} | {PURPOSES.get(t, '—')} |")
     a("")
     a("---")
     a("")
@@ -760,26 +737,22 @@ def render(pg: dict[str, Any], sq: dict[str, Any]) -> str:
     )
     a("```")
     a("")
-    a("### 因子面板 SQLite")
-    a("")
-    a("```bash")
-    a("cd backend")
-    a('sqlite3 output/factor_dashboard/metrics.sqlite ".tables"')
     a(
-        'sqlite3 output/factor_dashboard/metrics.sqlite '
-        '"SELECT COUNT(*) FROM factor_dashboard_metrics;"'
+        "因子面板指标由 `factor_dashboard_metrics` 保存；旧 `metrics.sqlite` 仅在首次启动迁移时"
+        "只读导入，迁移后不再作为运行时数据源。批任务进度仍暂存于 "
+        "`backend/output/factor_dashboard/job.json`，待 RE 任务 API 接管后退役。"
     )
-    a("```")
     a("")
     a("代码入口：")
     a("")
-    a("- 连接：`services/db.py`")
+    a("- 连接：`services/core/db.py`")
     a(
         "- 建表：`auth_store` / `profile_store` / `community_store` / "
         "`agent_store` / `detect_store` / `strategy_store` / `user_factor_store` / "
-        "`user_library_store` / `user_strategy_library_store`"
+        "`user_library_store` / `user_strategy_library_store` / "
+        "`factor_verification_store` / `factor_dashboard_metrics_store`"
     )
-    a("- 面板：`services/dashboard_store.py`")
+    a("- 面板：`services/factor/dashboard_store.py`")
     a("")
     a(
         "> **不在库内：** AI 因子/策略生成历史目前仅浏览器 `localStorage` "
@@ -821,65 +794,20 @@ def render(pg: dict[str, Any], sq: dict[str, Any]) -> str:
 
     a("---")
     a("")
-    a("## B. SQLite · 因子面板")
-    a("")
-    a(f"路径：`{PANEL_DB.as_posix()}`")
-    a("")
-    a(
-        "**注意：** 仅面板**指标缓存**，无日线/分钟行情。"
-        "行情在 YGQuant / bars-only；SVQuant 本机不落 bars。"
-    )
-    a("")
-
-    for t in sorted(sq):
-        meta = sq[t]
-        a(f"### `{t}`")
-        a("")
-        a(f"**作用：** {PURPOSES.get(t, '（待补）')}")
-        a("")
-        a(f"- 当前行数：约 **{meta['count']}**")
-        if t == "factor_dashboard_metrics":
-            a(
-                "- 主键：`(factor_name, universe, period, "
-                "filter_limit_up, filter_suspended, rules_version)`"
-            )
-        elif t == "factor_verify_status":
-            a("- 主键：`factor_name`")
-        else:
-            pk_cols = [c["name"] for c in meta["columns"] if c.get("pk")]
-            a(f"- 主键：{', '.join(f'`{x}`' for x in pk_cols) or '—'}")
-        a("")
-        a("| 字段 | 类型 | NOT NULL | 说明 |")
-        a("|------|------|----------|------|")
-        hints = FIELD_HINTS.get(t, {})
-        for c in meta["columns"]:
-            name = c["name"]
-            nn = "YES" if c.get("notnull") else ""
-            a(f"| `{name}` | `{c.get('type') or ''}` | {nn} | {hints.get(name, '')} |")
-        a("")
-        if meta.get("samples"):
-            a("**样例：**")
-            a("")
-            a("```json")
-            a(json.dumps(meta["samples"], ensure_ascii=False, indent=2))
-            a("```")
-            a("")
-
-    a("---")
-    a("")
     a("## 变更记录")
     a("")
     a("| 日期 | 说明 |")
     a("|------|------|")
     a(
         f"| {now[:10]} | 刷新行数/样例；`news_items` 说明补研报·政策（em_research/em_policy→source=eastmoney）；"
-        f"Postgres **{len(pg)}** 表 + SQLite **{len(sq)}** 表 |"
+        f"PostgreSQL **{len(pg)}** 表 |"
     )
     a(
         "| 2026-08-05 | 刷新：补全用户因子/策略库 4 表 + `user_library_strategies` "
         "入库快照列；`posts.platform_ref`；注明 AI 生成历史暂未落库 |"
     )
     a("| 2026-07-30 | 策略库入库快照列：`source_run_id` / `archive_*`；策略说明 `description` |")
+    a("| 2026-09-21 | 因子面板指标与校验状态统一迁入 PostgreSQL；旧 SQLite 仅作一次性只读迁移来源 |")
     a("| 2026-07-28 | 初版：Postgres + 面板 SQLite；含 `factor_verify_status` / `post_votes` |")
     a("")
     return "\n".join(A)
@@ -890,11 +818,10 @@ def main() -> None:
 
     sys.path.insert(0, str(ROOT))
     pg = _pg_dump()
-    sq = _sqlite_dump()
-    text = render(pg, sq)
+    text = render(pg)
     DOCS.mkdir(parents=True, exist_ok=True)
     OUT.write_text(text, encoding="utf-8")
-    print(f"wrote {OUT} ({len(text)} chars, pg={len(pg)}, sqlite={len(sq)})")
+    print(f"wrote {OUT} ({len(text)} chars, pg={len(pg)})")
 
 
 if __name__ == "__main__":

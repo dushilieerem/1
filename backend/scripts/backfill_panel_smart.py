@@ -11,7 +11,6 @@
 """
 from __future__ import annotations
 
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -20,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.daily_dashboard_refresh import MATRIX_24, log  # noqa: E402
 from services.factor import dashboard_store as ds  # noqa: E402
+from services.core.db import get_conn  # noqa: E402
 
 # 已修代码、可重算的因子（不含「数据不可用」——那些只标记不编造）
 FIXED_NAMES = [
@@ -68,31 +68,34 @@ def _is_transient_error(err: str | None) -> bool:
 
 
 def names_needed(universe: str, period: str, filter_limit_up: bool) -> list[str]:
-    conn = sqlite3.connect(ds.DB_PATH)
-    rows = conn.execute(
-        """
-        SELECT factor_name, error, q1_return
-        FROM factor_dashboard_metrics
-        WHERE universe = ?
-          AND period = ?
-          AND filter_limit_up = ?
-          AND filter_suspended = 1
-          AND rules_version = ?
-          AND factor_name != 'EDIT_BEFORE'
-        ORDER BY 1
-        """,
-        [
-            universe,
-            period,
-            1 if filter_limit_up else 0,
-            ds.RULES_VERSION,
-        ],
-    ).fetchall()
-    conn.close()
+    ds.migrate_legacy_factor_dashboard_metrics()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT factor_name, error, q1_return
+            FROM factor_dashboard_metrics
+            WHERE universe = %s
+              AND period = %s
+              AND filter_limit_up = %s
+              AND filter_suspended = 1
+              AND rules_version = %s
+              AND factor_name != 'EDIT_BEFORE'
+            ORDER BY 1
+            """,
+            (
+                universe,
+                period,
+                1 if filter_limit_up else 0,
+                ds.RULES_VERSION,
+            ),
+        ).fetchall()
 
     needed: list[str] = []
     seen: set[str] = set()
-    for name, err, q1 in rows:
+    for row in rows:
+        name = str(row["factor_name"])
+        err = row["error"]
+        q1 = row["q1_return"]
         if name in UNAVAILABLE_SKIP:
             continue
         # 仅：缺 Q1 / 瞬时网络失败 / 可修因子且当前仍失败
@@ -117,7 +120,7 @@ def main() -> None:
         if names:
             plan.append((u, p, f, names))
 
-    log(f"smart backfill combos={len(plan)} db={ds.DB_PATH}")
+    log(f"smart backfill combos={len(plan)} db=PostgreSQL.factor_dashboard_metrics")
     for u, p, f, names in plan:
         log(
             f"  {u} {p} filter_up={f} names={len(names)} -> "

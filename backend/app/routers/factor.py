@@ -352,6 +352,7 @@ def factor_dashboard_verify(
         )
         return set_verify_status(
             factor_name=str(body.get("factor_name") or ""),
+            library_name=str(body.get("library_name") or "") or None,
             status=str(body.get("status") or ""),
             note=str(body.get("note") or ""),
             updated_by=updated_by,

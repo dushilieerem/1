@@ -59,7 +59,7 @@ def count_todo(
     if libraries:
         lib_set = set(libraries)
         factors = [f for f in factors if f.get("library") in lib_set]
-    conn = ds._connect()
+    ds.migrate_legacy_factor_dashboard_metrics()
     ok = 0
     todo = 0
     for f in factors:
@@ -67,8 +67,8 @@ def count_todo(
             todo += 1  # 仍会写不可用标记（很快）
             continue
         if ds.row_is_ok(
-            conn,
             factor_name=f["name"],
+            library=f.get("library"),
             universe=universe,
             period=period,
             filter_limit_up=filter_limit_up,
@@ -77,7 +77,6 @@ def count_todo(
             ok += 1
         else:
             todo += 1
-    conn.close()
     return len(factors), ok, todo
 
 
@@ -156,7 +155,7 @@ def main() -> None:
         f"level={args.analysis_level} include_qlib={include_qlib} libs={libs} "
         f"limit={args.limit} dry_run={args.dry_run}"
     )
-    log(f"SQLite → {ds.DB_PATH}")
+    log("指标缓存 → PostgreSQL.factor_dashboard_metrics")
 
     catalog = ds.load_factor_index(include_qlib=include_qlib)
     if libs:

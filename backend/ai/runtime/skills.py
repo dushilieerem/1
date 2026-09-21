@@ -641,7 +641,7 @@ def _mock_summary_md(*, title: str, body: str, truncated: bool) -> str:
 
 
 def skill_lookup_panel_metrics(ctx: dict[str, Any], board: dict[str, Any]) -> dict[str, Any]:
-    """按因子名查面板 SQLite，写回 artifacts.platform_ref（不调 LLM）。"""
+    """按因子名查 PostgreSQL 中的面板指标，写回 artifacts.platform_ref（不调 LLM）。"""
     from services.factor.dashboard_store import lookup_panel_metric
     from ai.crews._shared.metrics_trust import normalize_platform_ref
 
@@ -682,6 +682,7 @@ def skill_lookup_panel_metrics(ctx: dict[str, Any], board: dict[str, Any]) -> di
         }
     looked = lookup_panel_metric(
         factor_name=name,
+        library=str((ctx or {}).get("library") or ref.get("library") or "") or None,
         universe=uni,
         period=per,
         filter_limit_up=filt,
@@ -976,7 +977,7 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
     "lookup_panel_metrics": {
         "id": "lookup_panel_metrics",
         "name": "查面板指标",
-        "description": "按因子×池×周期查面板 SQLite 真源",
+        "description": "按因子×池×周期查询 PostgreSQL 因子面板指标",
         "run": skill_lookup_panel_metrics,
         "cost_hint": 0,
     },

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""SVQuant 因子面板日更：调 YGQuant RE，结果写入本地 SQLite。
+"""SVQuant 因子面板日更：调 YGQuant RE，结果写入 PostgreSQL。
 
 用法:
   conda activate svquant
@@ -14,7 +14,7 @@
 --matrix-16：旧口径，仅 3m+1y（16 组）。
 默认 DEFAULT_COMBOS 为轻量 CSI300×3m/1y。
 
-库：SQLite（backend/output/factor_dashboard/metrics.sqlite），无需安装 Postgres。
+指标缓存写入 SVQuant PostgreSQL 的 factor_dashboard_metrics 表。
 每组约 83 因子，单次回测常 30–60s，16 组可能十数小时，建议后台跑。
 """
 from __future__ import annotations
@@ -178,7 +178,7 @@ def main() -> None:
     log(f"日更启动 jobs={len(jobs)} limit={args.limit} skip_ok={args.skip_ok} level={args.analysis_level}")
     for i, (u, p, f) in enumerate(jobs, 1):
         log(f"  [{i}/{len(jobs)}] {u} {p} filter_up={f}")
-    log(f"SQLite → {ds.DB_PATH}")
+    log("指标缓存 → PostgreSQL.factor_dashboard_metrics")
 
     failed = 0
     for u, p, filt in jobs:

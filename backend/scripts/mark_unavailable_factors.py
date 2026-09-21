@@ -2,9 +2,7 @@
 """把「数据不可用」因子的编造指标清掉，只保留明确 error 标记。"""
 from __future__ import annotations
 
-import sqlite3
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -12,48 +10,52 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.factor.dashboard_store import DB_PATH, RULES_VERSION  # noqa: E402
+from services.factor.dashboard_store import (  # noqa: E402
+    RULES_VERSION,
+    migrate_legacy_factor_dashboard_metrics,
+)
+from services.core.db import get_conn  # noqa: E402
 
 INDEX = ROOT / "factor" / "index.yaml"
 
 
-def unavailable_from_index() -> dict[str, str]:
+def unavailable_from_index() -> dict[tuple[str, str], str]:
     raw = yaml.safe_load(INDEX.read_text(encoding="utf-8")) or {}
-    out: dict[str, str] = {}
-    for lib in (raw.get("libraries") or {}).values():
+    out: dict[tuple[str, str], str] = {}
+    for library_name, lib in (raw.get("libraries") or {}).items():
         for f in lib.get("factors") or []:
             if f.get("unavailable"):
                 name = f.get("name")
                 if name:
-                    out[name] = (f.get("unavailable_reason") or "数据不可用").strip()
+                    out[(str(library_name), str(name))] = (
+                        f.get("unavailable_reason") or "数据不可用"
+                    ).strip()
     return out
 
 
 def main() -> None:
     reasons = unavailable_from_index()
     print("unavailable", list(reasons))
-    now = datetime.now(timezone.utc).isoformat()
-    conn = sqlite3.connect(DB_PATH)
+    migrate_legacy_factor_dashboard_metrics()
     total = 0
-    for name, reason in reasons.items():
-        cur = conn.execute(
-            """
-            UPDATE factor_dashboard_metrics
-            SET ic_mean=NULL, ic_std=NULL, ir=NULL, rank_ic=NULL,
-                q1_return=NULL, q5_return=NULL, long_short_spread=NULL,
-                q1_turnover=NULL, q5_turnover=NULL,
-                coverage_pool=NULL, coverage_total=NULL,
-                win_rate=NULL, volatility=NULL,
-                sharpe=NULL, annual_return=NULL, max_drawdown=NULL,
-                error=?, computed_at=?
-            WHERE factor_name=? AND rules_version=?
-            """,
-            (reason[:500], now, name, RULES_VERSION),
-        )
-        print(f"  {name}: cleared {cur.rowcount} rows -> {reason}")
-        total += cur.rowcount
-    conn.commit()
-    conn.close()
+    with get_conn() as conn:
+        for (library, name), reason in reasons.items():
+            cur = conn.execute(
+                """
+                UPDATE factor_dashboard_metrics
+                SET ic_mean=NULL, ic_std=NULL, ir=NULL, rank_ic=NULL,
+                    q1_return=NULL, q5_return=NULL, long_short_spread=NULL,
+                    q1_turnover=NULL, q5_turnover=NULL,
+                    coverage_pool=NULL, coverage_total=NULL,
+                    win_rate=NULL, volatility=NULL,
+                    sharpe=NULL, annual_return=NULL, max_drawdown=NULL,
+                    error=%s, computed_at=NOW()
+                WHERE library=%s AND factor_name=%s AND rules_version=%s
+                """,
+                (reason[:500], library, name, RULES_VERSION),
+            )
+            print(f"  {library}/{name}: cleared {cur.rowcount} rows -> {reason}")
+            total += cur.rowcount
     print(f"done total_rows={total}")
 
 

@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import argparse
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -24,6 +23,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.daily_dashboard_refresh import MATRIX_24, log  # noqa: E402
 from services.factor import dashboard_store as ds  # noqa: E402
+from services.core.db import get_conn  # noqa: E402
 
 # 已修代码、需强制重算的因子（不含数据不可用项）
 FIXED_NAMES = [
@@ -37,18 +37,18 @@ FIXED_NAMES = [
 
 
 def names_from_db() -> list[str]:
-    conn = sqlite3.connect(ds.DB_PATH)
-    rows = conn.execute(
-        """
-        SELECT DISTINCT factor_name
-        FROM factor_dashboard_metrics
-        WHERE (error IS NOT NULL AND error != '')
-           OR ((error IS NULL OR error = '') AND q1_return IS NULL)
-        ORDER BY 1
-        """
-    ).fetchall()
-    conn.close()
-    return [r[0] for r in rows]
+    ds.migrate_legacy_factor_dashboard_metrics()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT factor_name
+            FROM factor_dashboard_metrics
+            WHERE (error IS NOT NULL AND error != '')
+               OR ((error IS NULL OR error = '') AND q1_return IS NULL)
+            ORDER BY 1
+            """
+        ).fetchall()
+    return [str(row["factor_name"]) for row in rows]
 
 
 def main() -> None:

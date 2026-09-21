@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""PostgreSQL 连接（社区 / 账号）。面板 metrics 仍用 SQLite。"""
+"""PostgreSQL 连接（SVQuant 产品持久化数据）。"""
 from __future__ import annotations
 
 from contextlib import contextmanager

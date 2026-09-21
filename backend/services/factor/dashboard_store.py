@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
-"""因子面板指标缓存（SQLite）+ 批跑 YGQuant 映射。"""
+"""因子面板指标缓存（PostgreSQL）+ 批跑 YGQuant 映射。"""
 from __future__ import annotations
 
 import json
-import sqlite3
 import threading
 import time
 import traceback
@@ -17,13 +16,21 @@ from typing import Any
 
 import yaml
 
+from services.factor.factor_verification_store import (
+    LEGACY_LIBRARY_NAME,
+    list_factor_verification_map,
+    set_factor_verification_status,
+)
+from services.factor.factor_dashboard_metrics_store import (
+    migrate_legacy_factor_dashboard_metrics,
+)
 from services.core.backtest_range import build_factor_backtest_payload
+from services.core.db import get_conn
 from services.core.re_config import RE_BASE
 
 ROOT = Path(__file__).resolve().parents[2]
 FACTOR_DIR = ROOT / "factor"
 OUTPUT_DIR = ROOT / "output" / "factor_dashboard"
-DB_PATH = OUTPUT_DIR / "metrics.sqlite"
 JOB_PATH = OUTPUT_DIR / "job.json"
 RE_URL = f"{RE_BASE}/api/backtest/factor"
 RULES_VERSION = "yg_v1"
@@ -69,80 +76,6 @@ _job_thread: threading.Thread | None = None
 
 def _ensure_dirs() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-
-VERIFY_STATUSES = frozenset({"pending", "passed", "failed"})
-
-
-def _ensure_verify_table(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS factor_verify_status (
-          factor_name TEXT PRIMARY KEY,
-          status TEXT NOT NULL DEFAULT 'pending',
-          note TEXT NOT NULL DEFAULT '',
-          updated_at TEXT NOT NULL,
-          updated_by TEXT NOT NULL DEFAULT ''
-        )
-        """
-    )
-
-
-def _migrate_columns(conn: sqlite3.Connection) -> None:
-    existing = {r[1] for r in conn.execute("PRAGMA table_info(factor_dashboard_metrics)")}
-    for col, typ in (
-        ("rank_ic", "REAL"),
-        ("win_rate", "REAL"),
-        ("volatility", "REAL"),
-    ):
-        if col not in existing:
-            conn.execute(f"ALTER TABLE factor_dashboard_metrics ADD COLUMN {col} {typ}")
-    _ensure_verify_table(conn)
-
-
-def _connect() -> sqlite3.Connection:
-    _ensure_dirs()
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS factor_dashboard_metrics (
-          factor_name TEXT NOT NULL,
-          universe TEXT NOT NULL,
-          period TEXT NOT NULL,
-          filter_limit_up INTEGER NOT NULL,
-          filter_suspended INTEGER NOT NULL,
-          rules_version TEXT NOT NULL DEFAULT 'yg_v1',
-          name_cn TEXT,
-          library TEXT,
-          ic_mean REAL,
-          ic_std REAL,
-          ir REAL,
-          q1_return REAL,
-          q5_return REAL,
-          long_short_spread REAL,
-          q1_turnover REAL,
-          q5_turnover REAL,
-          coverage_pool REAL,
-          coverage_total REAL,
-          sharpe REAL,
-          annual_return REAL,
-          max_drawdown REAL,
-          rank_ic REAL,
-          win_rate REAL,
-          volatility REAL,
-          error TEXT,
-          computed_at TEXT NOT NULL,
-          PRIMARY KEY (
-            factor_name, universe, period,
-            filter_limit_up, filter_suspended, rules_version
-          )
-        )
-        """
-    )
-    _migrate_columns(conn)
-    conn.commit()
-    return conn
 
 
 def _yg_get_json(path: str, timeout: int = 60) -> Any:
@@ -218,25 +151,35 @@ def _blank_metrics(*, error: str | None) -> dict:
     }
 
 
-def row_is_ok(conn: sqlite3.Connection, *, factor_name: str, universe: str, period: str,
-              filter_limit_up: bool, filter_suspended: bool) -> bool:
-    r = conn.execute(
-        """
-        SELECT 1 FROM factor_dashboard_metrics
-        WHERE factor_name=? AND universe=? AND period=?
-          AND filter_limit_up=? AND filter_suspended=? AND rules_version=?
-          AND error IS NULL AND ic_mean IS NOT NULL
-        LIMIT 1
-        """,
-        [
-            factor_name,
-            universe,
-            period,
-            1 if filter_limit_up else 0,
-            1 if filter_suspended else 0,
-            RULES_VERSION,
-        ],
-    ).fetchone()
+def row_is_ok(
+    *,
+    factor_name: str,
+    library: str | None,
+    universe: str,
+    period: str,
+    filter_limit_up: bool,
+    filter_suspended: bool,
+) -> bool:
+    migrate_legacy_factor_dashboard_metrics()
+    with get_conn() as conn:
+        r = conn.execute(
+            """
+            SELECT 1 FROM factor_dashboard_metrics
+            WHERE factor_name=%s AND library=%s AND universe=%s AND period=%s
+              AND filter_limit_up=%s AND filter_suspended=%s AND rules_version=%s
+              AND error IS NULL AND ic_mean IS NOT NULL
+            LIMIT 1
+            """,
+            (
+                factor_name,
+                str(library or ""),
+                universe,
+                period,
+                1 if filter_limit_up else 0,
+                1 if filter_suspended else 0,
+                RULES_VERSION,
+            ),
+        ).fetchone()
     return r is not None
 
 
@@ -400,31 +343,33 @@ def write_job(data: dict) -> None:
 
 def prune_orphan_metrics(*, include_qlib: bool = True) -> dict:
     """删除不在当前官方目录中的面板缓存行（旧库改名/下线后的孤儿）。"""
-    names = {f["name"] for f in load_factor_index(include_qlib=include_qlib)}
-    conn = _connect()
-    existing = [
-        r[0]
-        for r in conn.execute(
-            "SELECT DISTINCT factor_name FROM factor_dashboard_metrics"
-        ).fetchall()
-    ]
-    orphans = [n for n in existing if n not in names]
-    deleted = 0
-    if orphans:
-        # SQLite 变量上限保守分批
-        chunk = 400
+    migrate_legacy_factor_dashboard_metrics()
+    catalog = {
+        (str(f.get("library") or ""), str(f["name"]))
+        for f in load_factor_index(include_qlib=include_qlib)
+    }
+    with get_conn() as conn:
+        existing = {
+            (str(row["library"] or ""), str(row["factor_name"]))
+            for row in conn.execute(
+                "SELECT DISTINCT library, factor_name FROM factor_dashboard_metrics"
+            ).fetchall()
+        }
+        orphans = sorted(existing - catalog)
+        deleted = 0
+        # 避免一次 DELETE 参数过多；用复合键精确清理下线/改名库中的缓存。
+        chunk = 300
         for i in range(0, len(orphans), chunk):
             part = orphans[i : i + chunk]
-            placeholders = ",".join("?" for _ in part)
-            cur = conn.execute(
-                f"DELETE FROM factor_dashboard_metrics WHERE factor_name IN ({placeholders})",
-                part,
+            pairs = ", ".join("(%s, %s)" for _ in part)
+            params = [value for pair in part for value in pair]
+            cursor = conn.execute(
+                f"DELETE FROM factor_dashboard_metrics WHERE (library, factor_name) IN ({pairs})",
+                params,
             )
-            deleted += cur.rowcount
-        conn.commit()
-    conn.close()
+            deleted += max(cursor.rowcount, 0)
     return {
-        "catalog": len(names),
+        "catalog": len(catalog),
         "orphan_names": len(orphans),
         "deleted_rows": deleted,
     }
@@ -438,12 +383,15 @@ def query_metrics(
     filter_suspended: bool,
     library: str | None = None,
 ) -> dict:
-    catalog = {f["name"]: f for f in load_factor_index(include_qlib=True)}
-    conn = _connect()
+    migrate_legacy_factor_dashboard_metrics()
+    catalog = {
+        (str(f.get("library") or ""), str(f.get("name") or ""))
+        for f in load_factor_index(include_qlib=True)
+    }
     sql = """
       SELECT * FROM factor_dashboard_metrics
-      WHERE universe=? AND period=? AND filter_limit_up=? AND filter_suspended=?
-        AND rules_version=?
+      WHERE universe=%s AND period=%s AND filter_limit_up=%s AND filter_suspended=%s
+        AND rules_version=%s
     """
     args: list = [
         universe,
@@ -453,26 +401,27 @@ def query_metrics(
         RULES_VERSION,
     ]
     if library:
-        sql += " AND library=?"
+        sql += " AND library=%s"
         args.append(library)
-    rows = [dict(r) for r in conn.execute(sql, args).fetchall()]
-    verify_map = {
-        str(r["factor_name"]): {
-            "status": str(r["status"] or "pending"),
-            "note": str(r["note"] or ""),
-            "updated_at": str(r["updated_at"] or ""),
-            "updated_by": str(r["updated_by"] or ""),
-        }
-        for r in conn.execute(
-            "SELECT factor_name, status, note, updated_at, updated_by FROM factor_verify_status"
-        )
-    }
-    conn.close()
+    with get_conn() as conn:
+        rows = [dict(r) for r in conn.execute(sql, args).fetchall()]
+    verify_map = list_factor_verification_map()
     # 只返回当前目录因子，避免旧缓存把「缓存因子」数撑到 1000+
-    rows = [r for r in rows if r.get("factor_name") in catalog]
+    rows = [
+        r
+        for r in rows
+        if (str(r.get("library") or ""), str(r.get("factor_name") or "")) in catalog
+    ]
     for r in rows:
+        if isinstance(r.get("computed_at"), datetime):
+            r["computed_at"] = r["computed_at"].isoformat()
         name = str(r.get("factor_name") or "")
-        v = verify_map.get(name) or {}
+        library_name = str(r.get("library") or "")
+        v = (
+            verify_map.get((library_name, name))
+            or verify_map.get((LEGACY_LIBRARY_NAME, name))
+            or {}
+        )
         r["verify_status"] = v.get("status") or "pending"
         r["verify_note"] = v.get("note") or ""
         r["verify_updated_at"] = v.get("updated_at") or ""
@@ -533,6 +482,7 @@ def _fmt_num(x: float | None) -> str | None:
 def lookup_panel_metric(
     *,
     factor_name: str,
+    library: str | None = None,
     universe: str = "CSI300",
     period: str = "3y",
     filter_limit_up: bool = True,
@@ -544,23 +494,29 @@ def lookup_panel_metric(
     per = (period or "3y").strip() or "3y"
     if not name:
         return None
-    conn = _connect()
-    row = conn.execute(
-        """
+    migrate_legacy_factor_dashboard_metrics()
+    sql = """
         SELECT * FROM factor_dashboard_metrics
-        WHERE factor_name=? AND universe=? AND period=?
-          AND filter_limit_up=? AND filter_suspended=? AND rules_version=?
-        """,
-        (
-            name,
-            uni,
-            per,
-            1 if filter_limit_up else 0,
-            1 if filter_suspended else 0,
-            RULES_VERSION,
-        ),
-    ).fetchone()
-    conn.close()
+        WHERE factor_name=%s AND universe=%s AND period=%s
+          AND filter_limit_up=%s AND filter_suspended=%s AND rules_version=%s
+    """
+    params: list[Any] = [
+        name,
+        uni,
+        per,
+        1 if filter_limit_up else 0,
+        1 if filter_suspended else 0,
+        RULES_VERSION,
+    ]
+    if library:
+        sql += " AND library=%s"
+        params.append(library)
+    sql += " ORDER BY computed_at DESC LIMIT 1"
+    with get_conn() as conn:
+        row = conn.execute(
+            sql,
+            params,
+        ).fetchone()
     if not row:
         return None
     r = dict(row)
@@ -633,49 +589,20 @@ def set_verify_status(
     *,
     factor_name: str,
     status: str,
+    library_name: str | None = None,
     note: str = "",
     updated_by: str = "",
 ) -> dict:
-    name = (factor_name or "").strip()
-    st = (status or "").strip().lower()
-    if not name:
-        raise ValueError("factor_name 不能为空")
-    if st not in VERIFY_STATUSES:
-        raise ValueError("status 须为 pending / passed / failed")
-    catalog = {f["name"] for f in load_factor_index(include_qlib=True)}
-    if name not in catalog:
-        raise ValueError(f"因子不在官方面板目录：{name}")
-    now = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
-    conn = _connect()
-    conn.execute(
-        """
-        INSERT INTO factor_verify_status (factor_name, status, note, updated_at, updated_by)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(factor_name) DO UPDATE SET
-          status=excluded.status,
-          note=excluded.note,
-          updated_at=excluded.updated_at,
-          updated_by=excluded.updated_by
-        """,
-        (name, st, str(note or ""), now, str(updated_by or "")),
+    return set_factor_verification_status(
+        factor_name=factor_name,
+        status=status,
+        library_name=library_name,
+        note=note,
+        updated_by=updated_by,
     )
-    conn.commit()
-    row = conn.execute(
-        "SELECT factor_name, status, note, updated_at, updated_by FROM factor_verify_status WHERE factor_name=?",
-        (name,),
-    ).fetchone()
-    conn.close()
-    return {
-        "ok": True,
-        "factor_name": name,
-        "verify_status": str(row["status"]),
-        "verify_note": str(row["note"] or ""),
-        "verify_updated_at": str(row["updated_at"] or ""),
-        "verify_updated_by": str(row["updated_by"] or ""),
-    }
 
 
-def upsert_row(conn: sqlite3.Connection, row: dict) -> None:
+def upsert_row(conn: Any, row: dict) -> None:
     cols = [
         "factor_name",
         "universe",
@@ -704,24 +631,47 @@ def upsert_row(conn: sqlite3.Connection, row: dict) -> None:
         "error",
         "computed_at",
     ]
-    placeholders = ",".join("?" for _ in cols)
-    updates = ",".join(f"{c}=excluded.{c}" for c in cols if c not in {
+    key_cols = {
         "factor_name",
+        "library",
         "universe",
         "period",
         "filter_limit_up",
         "filter_suspended",
         "rules_version",
-    })
+    }
+    placeholders = ",".join("%s" for _ in cols)
+    updates = ",".join(
+        f"{c}=EXCLUDED.{c}" for c in cols if c not in key_cols
+    )
+    values = [row.get(c) for c in cols]
+    values[cols.index("library")] = str(row.get("library") or "")
+    computed_at_index = cols.index("computed_at")
+    values[computed_at_index] = _as_datetime(values[computed_at_index])
     conn.execute(
         f"""
         INSERT INTO factor_dashboard_metrics ({",".join(cols)})
         VALUES ({placeholders})
-        ON CONFLICT(factor_name, universe, period, filter_limit_up, filter_suspended, rules_version)
+        ON CONFLICT(factor_name, library, universe, period, filter_limit_up, filter_suspended, rules_version)
         DO UPDATE SET {updates}
+        WHERE factor_dashboard_metrics.computed_at < EXCLUDED.computed_at
         """,
-        [row.get(c) for c in cols],
+        values,
     )
+
+
+def _as_datetime(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _store_metric(row: dict) -> None:
+    with get_conn() as conn:
+        upsert_row(conn, row)
 
 
 def _run_batch(
@@ -769,10 +719,10 @@ def _run_batch(
             "error": None,
         }
     )
-    conn = _connect()
     skipped = 0
     failed = 0
     try:
+        migrate_legacy_factor_dashboard_metrics()
         for i, f in enumerate(factors):
             name = f["name"]
             write_job(
@@ -791,7 +741,6 @@ def _run_batch(
                     "error": None,
                 }
             )
-            now = datetime.now(timezone.utc).isoformat()
             base = {
                 "factor_name": name,
                 "universe": universe,
@@ -801,20 +750,19 @@ def _run_batch(
                 "rules_version": RULES_VERSION,
                 "name_cn": f.get("description"),
                 "library": f.get("library"),
-                "computed_at": now,
+                "computed_at": datetime.now(timezone.utc),
             }
             try:
                 if f.get("unavailable"):
                     reason = (f.get("unavailable_reason") or "数据不可用").strip()
-                    upsert_row(conn, {**base, **_blank_metrics(error=reason)})
-                    conn.commit()
+                    _store_metric({**base, **_blank_metrics(error=reason)})
                     failed += 1
                     time.sleep(0.02)
                     continue
 
                 if skip_ok and row_is_ok(
-                    conn,
                     factor_name=name,
+                    library=f.get("library"),
                     universe=universe,
                     period=period,
                     filter_limit_up=filter_limit_up,
@@ -844,18 +792,14 @@ def _run_batch(
                 mapped = map_yg_response(data)
                 if mapped.get("error"):
                     # RE 业务错误：只记原因，清空数值
-                    upsert_row(
-                        conn,
-                        {**base, **_blank_metrics(error=str(mapped["error"]))},
-                    )
+                    _store_metric({**base, **_blank_metrics(error=str(mapped["error"]))})
                     failed += 1
                 else:
-                    upsert_row(conn, {**base, **mapped})
+                    _store_metric({**base, **mapped})
             except Exception as exc:
                 traceback.print_exc()
-                upsert_row(conn, {**base, **_blank_metrics(error=str(exc))})
+                _store_metric({**base, **_blank_metrics(error=str(exc))})
                 failed += 1
-            conn.commit()
             time.sleep(0.15)
         write_job(
             {
@@ -875,8 +819,6 @@ def _run_batch(
         )
     except Exception as exc:
         write_job({**read_job(), "status": "failed", "error": str(exc)})
-    finally:
-        conn.close()
 
 
 def start_refresh(

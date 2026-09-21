@@ -89,12 +89,13 @@ ResearchEngine 地址只在 backend/.env 的 YG_RE_BASE 中配置。Vite 开发�
 
 - auth、community、news、core：平台业务、数据库和通用基础设施。
 - data：通过 ResearchEngine API 获取行情并做产品侧字段适配、缓存和展示。
-- factor：管理用户自定义因子同步状态、官方目录缓存、检测/回测请求和展示指标。
+- factor：管理用户自定义因子同步状态、官方目录缓存、检测/回测请求，以及 PostgreSQL 中的面板指标缓存和校验记录。
 - strategy：管理策略配置、ResearchEngine 目录同步快照、权限和结果展示；不执行回测。
 - re_* 和 re_gateway：ResearchEngine 的 HTTP BFF/网关，不复制其计算逻辑。
 
-backend/output/ 中的 SQLite 或 JSON 是可再生的产品缓存，不是 ResearchEngine 的结果库，也
-不是跨服务审计事实。用户、权限、配置和审计事实写入 SVQuant PostgreSQL。
+backend/output/ 中的 JSON 任务状态和日志是本机临时文件，不是 ResearchEngine 的结果库，也
+不是跨服务审计事实。因子面板指标和校验状态写入 SVQuant PostgreSQL；用户、权限、配置和审计
+事实同样由 PostgreSQL 持久化。旧面板 SQLite 只用于升级时的一次性只读数据迁移。
 
 ### 4.4 KnowledgeHub
 

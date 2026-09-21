@@ -95,6 +95,7 @@ def new_read_board(*, goal: str, context: dict[str, Any]) -> dict[str, Any]:
             filt = ref.get("filter_limit_up")
             looked = lookup_panel_metric(
                 factor_name=str(ref["factor_name"]),
+                library=str(ref.get("library") or "") or None,
                 universe=str(uni),
                 period=str(per),
                 filter_limit_up=True if filt is None else bool(filt),

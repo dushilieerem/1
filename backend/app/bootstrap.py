@@ -35,6 +35,12 @@ def bootstrap_schemas() -> None:
             ensure_user_factors_schema,
             migrate_legacy_custom_to_admin,
         )
+        from services.factor.factor_verification_store import (
+            migrate_legacy_factor_verifications,
+        )
+        from services.factor.factor_dashboard_metrics_store import (
+            migrate_legacy_factor_dashboard_metrics,
+        )
 
         ensure_schema()
         seed_admin()
@@ -61,6 +67,26 @@ def bootstrap_schemas() -> None:
         ensure_posts_schema()
         n = seed_sample_posts()
         ensure_user_factors_schema()
+        try:
+            metric_migration = migrate_legacy_factor_dashboard_metrics()
+            if metric_migration.get("source_rows"):
+                print(
+                    "  因子面板指标缓存迁移："
+                    f"导入 {metric_migration['imported_rows']} 条，"
+                    f"跳过 {metric_migration['skipped_rows']} 条"
+                )
+        except Exception as exc:
+            print(f"  因子面板指标缓存迁移失败（旧 SQLite 保留）: {exc}")
+        try:
+            verify_migration = migrate_legacy_factor_verifications()
+            if verify_migration.get("source_rows"):
+                print(
+                    "  因子校验状态迁移："
+                    f"导入 {verify_migration['imported_rows']} 条，"
+                    f"跳过 {verify_migration['skipped_rows']} 条"
+                )
+        except Exception as exc:
+            print(f"  因子校验状态迁移失败（旧 SQLite 保留）: {exc}")
         from services.factor.user_library_store import ensure_user_libraries_schema
 
         ensure_user_libraries_schema()

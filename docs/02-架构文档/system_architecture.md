@@ -126,21 +126,9 @@ SVQuant 或提交到本仓库。ResearchEngine 在启动/运行时按自己的�
 - 任一服务不可用时，SVQuant 应明确显示“研究服务暂不可用”，不能伪造计算结果或回退到本地
   隐式计算。
 
-## 7. 配置和启动
+## 7. 配置和部署
 
-SVQuant 只提供产品层启动方式：
-
-~~~bash
-cp backend/.env.example backend/.env
-# 手工填写 DATABASE_URL、JWT_SECRET、YG_RE_BASE 等配置
-conda activate svquant
-cd backend
-pip install -r requirements.txt
-python -u api_server.py
-~~~
-
-ResearchEngine 的安装、数据校验、结果库和服务启动由其独立仓库负责。本仓库不再提供
-ResearchEngine 的安装脚本、启动脚本或内部配置。
+本地环境配置、一键启动、手动启动和健康检查见[部署文档](../07-部署文档/部署文档.md)。ResearchEngine 的安装、数据校验、结果库和服务启动由其独立仓库负责；本仓库不提供 RE 的安装脚本、启动脚本或内部配置。
 
 ## 8. 失败与回滚
 

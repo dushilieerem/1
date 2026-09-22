@@ -31,11 +31,11 @@
 
 ## 已批准、实施中的架构演进
 
-- 用户确认 [ADR-029](../../../05-技术决策/ADR-029-研究服务采用services与models分层.md)：取消 QuantCore
+- 用户确认 [ADR-029](../../../09-技术决策/ADR-029-研究服务采用services与models分层.md)：取消 QuantCore
   独立共享库定位，五个 Engine 的逻辑进入 services、内部数据结构进入 models，数据访问进入 database。
   仅 ResearchEngine 拥有这些实现；不为尚不存在的 TradingEngine 设计共享包。
 
-- [FEAT-030：因子回测流程重构](../../../03-功能文档/FEAT-030-因子回测流程重构/README.md)：P0，主链已实施，M5 专项验收中。
+- [FEAT-030：因子回测流程重构](../../../03-模块详细设计/FEAT-030-因子回测流程重构/README.md)：P0，主链已实施，M5 专项验收中。
 - BacktestEngine 组织完整因子流程，Data/Factor/Portfolio/Metric 分别负责数据与筛选、因子加工、组合及效果计算。
 - 本期不迁移策略或因子数据库，不改 SVQuant；不改变 Wave 1 业务范围和当前已交付状态。
 - FEAT-029 保留因子来源加载目标，其原阶段执行器设计已由 FEAT-030 的 BacktestEngine 主链接替。

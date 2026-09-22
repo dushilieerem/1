@@ -1,4 +1,4 @@
-/** 帮助中心目录（对应 docs/help/07-factor-strategy-guide） */
+/** 帮助中心目录（对应 docs/08-使用文档/因子与策略指南） */
 export type HelpDocId =
   | "factor-writing"
   | "vectorized-strategy"

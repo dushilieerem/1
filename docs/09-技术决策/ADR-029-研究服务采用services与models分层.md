@@ -3,7 +3,7 @@
 - 日期：2026-08-28
 - 状态：已采纳，目录与模型归属迁移完成；528 项全量回归通过
 - 决策依据：用户明确指定 `main.py / api / models / schemas / services / database / utils / config.py`。
-- 关联：[FEAT-030 因子回测服务集成](../03-功能文档/FEAT-030-因子回测流程重构/README.md)
+- 关联：[FEAT-030 因子回测服务集成](../03-模块详细设计/FEAT-030-因子回测流程重构/README.md)
 
 ## 问题
 

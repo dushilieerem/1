@@ -2,8 +2,8 @@
 
 > **已废弃归档（2026-09-02）**：QuantCore 独立共享库定位已由 ADR-029 取消，
 > 本包全部设计仅作历史追溯，不构成任何当前约束。现行架构见
-> [FEAT-030 因子回测流程重构](../../03-功能文档/FEAT-030-因子回测流程重构/README.md) 与
-> [ADR-029](../../05-技术决策/ADR-029-研究服务采用services与models分层.md)。
+> [FEAT-030 因子回测流程重构](../../03-模块详细设计/FEAT-030-因子回测流程重构/README.md) 与
+> [ADR-029](../../09-技术决策/ADR-029-研究服务采用services与models分层.md)。
 
 > 2026-08-28 架构修订：用户已确认 ADR-029 的常规 FastAPI 分层。
 > 原 QuantCore 运行时边界取消；五个 Engine 的业务逻辑进入 `app.services`，
@@ -13,7 +13,7 @@
 > 详见根目录 FEAT-030/README.md 与 ADR-029。FEAT-029 因子来源加载目标保持不变。
 
 
-> 已批准实施：[FEAT-030 因子回测流程重构](../../03-功能文档/FEAT-030-因子回测流程重构/README.md) 已在 QuantCore 增加
+> 已批准实施：[FEAT-030 因子回测流程重构](../../03-模块详细设计/FEAT-030-因子回测流程重构/README.md) 已在 QuantCore 增加
 > PortfolioEngine，并调整 Data/Factor/Metric 的职责；完整 BacktestEngine 位于应用层。
 > 本 Feature 的基础版状态不变，FEAT-030 主链已实施，专项验收中。
 

@@ -1,7 +1,7 @@
 ## QuantCore 运行流程图
 
 > 本文保留基础版运行流程；其中“BacktestEngine（交易模拟）”是旧阶段/策略语义。
-> [FEAT-030](../FEAT-030-因子回测流程重构/README.md) 已将完整因子回测放到应用层 BacktestEngine，
+> [FEAT-030](../../03-模块详细设计/FEAT-030-因子回测流程重构/README.md) 已将完整因子回测放到应用层 BacktestEngine，
 > QuantCore 分别承担数据筛选、因子加工、组合和效果计算，策略旧执行内核暂留。
 
 依据 `04-class-design.md` 中的类设计，绘制 QuantCore 四大引擎的完整运行流程。

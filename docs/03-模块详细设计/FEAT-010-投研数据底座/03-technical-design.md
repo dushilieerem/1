@@ -43,7 +43,7 @@ marketdata/
 
 - `DataEngine` 以 `IDataProvider` 作为唯一数据读取入口；因子、研究编排和回测只访问标准字段面板，不直接依赖 Wind、AkShare、iFind 或文件路径。
 - `FieldParquetProvider` 直接读取 ResearchEngine 配置的 `marketdata/panels` 字段宽表、`marketdata/benchmark` 的指数和成分、`marketdata/metadata` 的非面板数据；SVQuant 不提供本地目录兼容读取层。
-- Provider 对字段按需懒加载并在实例内缓存；API 服务应按每个进程、每个数据版本复用其实例，而非每次回测重新读取全部文件。多数据源分层和适配要求见 `../../05-技术决策/ADR-010-为什么采用统一数据引擎和多数据源适配.md`。
+- Provider 对字段按需懒加载并在实例内缓存；API 服务应按每个进程、每个数据版本复用其实例，而非每次回测重新读取全部文件。多数据源分层和适配要求见 `../../09-技术决策/ADR-010-为什么采用统一数据引擎和多数据源适配.md`。
 - 历史 Pandas Parquet 的日期索引可能保存于文件元数据；读取器已兼容显式 `datetime` 列与历史隐式索引两种格式，统一输出索引名为 `datetime`。
 
 ## 点时转换

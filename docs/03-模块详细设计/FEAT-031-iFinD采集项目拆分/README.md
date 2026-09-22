@@ -35,7 +35,7 @@ SVQuant 的核心运行时是研究计算，但原仓同时持有第三方数据
 - ResearchEngine 拥有：部署侧的 `marketdata/` 活动数据、版本/哈希校验、Provider/DataEngine 和研究计算。
 - SVQuant 只拥有数据展示所需的 HTTP 适配，不保存活动行情，不通过源码导入或相邻目录推断数据。
 - 项目间通过 Parquet、`data_manifest.yaml`、`quality_report.json` 和显式发布目录交接；SVQuant 与 ResearchEngine 通过 HTTP API 交接研究请求和结果。
-- 长期决策见 [ADR-031](../../05-技术决策/ADR-031-iFinD采集迁移为独立项目.md) 与 [ADR-032](../../05-技术决策/ADR-032-MarketData扁平只读消费目录.md)。
+- 长期决策见 [ADR-031](../../09-技术决策/ADR-031-iFinD采集迁移为独立项目.md) 与 [ADR-032](../../09-技术决策/ADR-032-MarketData扁平只读消费目录.md)。
 
 ## 功能范围
 

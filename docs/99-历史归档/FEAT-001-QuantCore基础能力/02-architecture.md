@@ -10,7 +10,7 @@
 
 > FEAT-030 当前实现：应用层 BacktestEngine 编排 QuantCore 的 DataEngine、FactorEngine、
 > PortfolioEngine、MetricEngine。数据/筛选、因子加工、组合、效果计算分别归属四引擎。
-> [设计与验收](../FEAT-030-因子回测流程重构/README.md) 仍是跨模块约束；下文保留基础版阶段结构，
+> [设计与验收](../../03-模块详细设计/FEAT-030-因子回测流程重构/README.md) 仍是跨模块约束；下文保留基础版阶段结构，
 > 不应据此把完整流程引擎放入 QuantCore。
 
 ```
@@ -44,5 +44,5 @@
 `app.quantcore` 永远是底层引擎，不能依赖 FastAPI 或应用业务层。
 
 `backtest/adapter` 为策略回测提供 Native/Event 后端；因子新主链由应用层 BacktestEngine
-直接组织四个 QuantCore 引擎，不经过 `IBacktestEngine`。详见 `../FEAT-003-回测适配层/03-technical-design.md`、
+直接组织四个 QuantCore 引擎，不经过 `IBacktestEngine`。详见 [`FEAT-003 回测适配层`](../../03-模块详细设计/FEAT-003-回测适配层/03-technical-design.md)、
 `../../../ResearchEngine/docs/03-功能文档/FEAT-002-研究引擎/06-research-api.md`。

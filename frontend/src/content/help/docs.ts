@@ -1,9 +1,9 @@
 import type { HelpDocId } from "./catalog";
-import factorWriting from "../../../../docs/help/07-factor-strategy-guide/01-factor-writing.md?raw";
-import vectorizedStrategy from "../../../../docs/help/07-factor-strategy-guide/02-vectorized-strategy-writing.md?raw";
-import eventStrategy from "../../../../docs/help/07-factor-strategy-guide/03-event-strategy-writing.md?raw";
-import examplesFaq from "../../../../docs/help/07-factor-strategy-guide/04-examples-and-faq.md?raw";
-import frontendFactorLib from "../../../../docs/help/07-factor-strategy-guide/05-frontend-factor-library.md?raw";
+import factorWriting from "../../../../docs/08-使用文档/因子与策略指南/01-factor-writing.md?raw";
+import vectorizedStrategy from "../../../../docs/08-使用文档/因子与策略指南/02-vectorized-strategy-writing.md?raw";
+import eventStrategy from "../../../../docs/08-使用文档/因子与策略指南/03-event-strategy-writing.md?raw";
+import examplesFaq from "../../../../docs/08-使用文档/因子与策略指南/04-examples-and-faq.md?raw";
+import frontendFactorLib from "../../../../docs/08-使用文档/因子与策略指南/05-frontend-factor-library.md?raw";
 
 const BODY: Record<HelpDocId, string> = {
   "factor-writing": factorWriting,

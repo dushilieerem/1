@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""刷新 docs/04-项目管理/数据库持续更新.md（表清单 / 字段 / 脱敏样例）。
+"""刷新 docs/04-数据库设计/数据库持续更新.md（表清单 / 字段 / 脱敏样例）。
 
 用法（在 backend 目录）::
 
@@ -17,7 +17,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCS = ROOT.parent / "docs" / "04-项目管理"
+DOCS = ROOT.parent / "docs" / "04-数据库设计"
 OUT = DOCS / "数据库持续更新.md"
 MAX_STR = 120
 SAMPLE_N = 2
@@ -25,7 +25,11 @@ REDACT_KEYS = {
     "password_hash",
     "password",
     "token",
+    "access_token",
+    "refresh_token",
     "secret",
+    "api_key",
+    "authorization",
     "avatar_url",
     "cover_url",
 }

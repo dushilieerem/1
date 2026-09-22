@@ -36,26 +36,13 @@ ResearchEngine 完成。
 
 ## 本地一键启动
 
-先准备好 PostgreSQL、ResearchEngine、`backend/.env` 和前端依赖；之后可在仓库根目录启动
-SVQuant 前后端：
+准备好 PostgreSQL、ResearchEngine、`backend/.env` 和前端依赖后，在仓库根目录运行：
 
 ```bash
 ./scripts/svquant.sh
 ```
 
-默认打开 <http://127.0.0.1:9530>。管理命令：
-
-启动器会将前后端放入独立后台会话，最长等待 60 秒进行健康检查；命令行 Ctrl+C
-或 SSH 断开不会向服务进程发送中断信号。
-
-```bash
-./scripts/svquant.sh status   # 查看状态
-./scripts/svquant.sh logs     # 跟踪日志（Ctrl+C 退出查看，不会停止服务）
-./scripts/svquant.sh stop     # 停止本脚本启动的服务
-./scripts/svquant.sh restart  # 重启
-```
-
-日志和 PID 文件放在被 Git 忽略的 `backend/output/dev-services/`。
+默认打开 <http://127.0.0.1:9530>。状态、日志、停止和手动启动方式见[部署文档](docs/07-部署文档/部署文档.md)。
 
 ## 后端配置与手动启动
 
@@ -99,15 +86,6 @@ npm run dev
 
 ## 测试
 
-ResearchEngine 的计算测试和 API 契约测试在独立仓库维护。SVQuant 维护前端、后端自身
-测试以及 ResearchEngine 网关集成测试；契约脚本位于 `backend/scripts/contract/`。
-
-```bash
-conda activate svquant
-python -m compileall -q backend KnowledgeHub/backend
-
-cd frontend
-npm run build
-```
+测试命令、当前覆盖范围和环境限制见[测试设计](docs/06-测试设计/测试设计.md)。
 
 完整产品、架构和交付文档见 [`docs/README.md`](docs/README.md)。

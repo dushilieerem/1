@@ -1,0 +1,54 @@
+{
+  "runId": "R5_KH_FIX_1790270017",
+  "base": "http://127.0.0.1:8766",
+  "total": 5,
+  "pass": 5,
+  "fail": 0,
+  "results": [
+    {
+      "case_id": "TC-KH-ASK-REGRESSION-001",
+      "title": "合法用户 Ask 成功（无 LLM 降级答案）",
+      "status": "PASS",
+      "http_status": 200,
+      "expected": "HTTP 200 with answer and hits",
+      "actual": "HTTP 200",
+      "evidence": "{'grounded': True, 'llmConfigured': False, 'degraded': True}"
+    },
+    {
+      "case_id": "TC-KH-ASK-REGRESSION-002",
+      "title": "无权限用户 Ask 失败",
+      "status": "PASS",
+      "http_status": 403,
+      "expected": "HTTP 401/403",
+      "actual": "HTTP 403",
+      "evidence": ""
+    },
+    {
+      "case_id": "TC-KH-ASK-REGRESSION-003",
+      "title": "非法 Collection 返回 404",
+      "status": "PASS",
+      "http_status": 404,
+      "expected": "HTTP 404",
+      "actual": "HTTP 404",
+      "evidence": "{'error': 'collection not found'}"
+    },
+    {
+      "case_id": "TC-KH-ASK-REGRESSION-004",
+      "title": "空问题返回 400",
+      "status": "PASS",
+      "http_status": 400,
+      "expected": "HTTP 400",
+      "actual": "HTTP 400",
+      "evidence": "{'error': '问题不能为空'}"
+    },
+    {
+      "case_id": "TC-KH-ASK-REGRESSION-005",
+      "title": "LLM 异常返回明确错误且不 500",
+      "status": "PASS",
+      "http_status": 502,
+      "expected": "HTTP 502 with llm_unavailable",
+      "actual": "HTTP 502",
+      "evidence": "{'code': 'llm_unavailable', 'hasError': True}"
+    }
+  ]
+}

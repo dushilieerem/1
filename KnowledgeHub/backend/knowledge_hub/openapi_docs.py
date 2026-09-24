@@ -70,8 +70,8 @@ def openapi_spec() -> dict[str, Any]:
                 },
             }
 
-        # 内网默认免鉴权，便于 Try it out；需要强制登录时设 KH_REQUIRE_AUTH=1
-        op["security"] = []
+        # 默认需要 admin JWT；仅显式 KH_ALLOW_ANON_ADMIN=1 时可匿名调试。
+        op["security"] = [{"BearerAuth": []}]
 
         paths.setdefault(oa_path, {})[method] = op
 
@@ -82,8 +82,8 @@ def openapi_spec() -> dict[str, Any]:
             "version": cat.get("version") or "0.1.0",
             "description": (
                 (cat.get("note") or "")
-                + "\n\n**当前内网模式：无需 Authorize 即可 Try it out。**"
-                + "\n若服务端设置环境变量 `KH_REQUIRE_AUTH=1`，则需填入 admin JWT。"
+                + "\n\n**默认安全模式：KnowledgeHub 管理 API 需要 admin JWT。**"
+                + "\n仅当服务端显式设置 `KH_ALLOW_ANON_ADMIN=1` 时，才允许匿名调试。"
             ),
         },
         "servers": [
@@ -95,7 +95,7 @@ def openapi_spec() -> dict[str, Any]:
                     "type": "http",
                     "scheme": "bearer",
                     "bearerFormat": "JWT",
-                    "description": "可选。默认免登录；强制鉴权时再填。",
+                    "description": "必填。需要 admin JWT；仅显式匿名调试模式可不填。",
                 }
             }
         },

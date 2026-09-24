@@ -141,8 +141,18 @@ def main() -> int:
     results.append(ok("GET /docs/outline", st) and len(outline.get("endpoints") or []) >= 10)
 
     # ask 应未实现 → 404 not found
-    st, _ = req("POST", "/api/kh/ask", token, {"query": "x", "collectionIds": [cid]})
-    results.append(ok("POST /ask (expect 404 planned)", st, 404))
+    st, ask = req(
+        "POST",
+        "/api/kh/ask",
+        token,
+        {"query": "no_such_smoke_needle", "collectionIds": [cid], "topK": 5},
+    )
+    results.append(
+        ok("POST /ask", st)
+        and isinstance(ask, dict)
+        and isinstance(ask.get("answer"), str)
+        and "hits" in ask
+    )
 
     st, _ = req("DELETE", f"/api/kh/documents/{did}", token)
     results.append(ok("DELETE /documents/{id}", st))

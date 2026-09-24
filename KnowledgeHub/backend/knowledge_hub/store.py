@@ -1432,6 +1432,49 @@ def _format_knowledge(hits: list[dict[str, Any]]) -> str:
     return "\n\n".join(blocks)
 
 
+def _fallback_answer_from_hits(
+    query: str,
+    hits: list[dict[str, Any]],
+    empty: str,
+) -> str:
+    """Return a deterministic grounded answer when no LLM is configured."""
+    if not hits:
+        return empty
+    lines = [
+        "当前未配置默认 LLM，以下为基于知识库检索结果生成的摘录式回答：",
+        "",
+    ]
+    for i, hit in enumerate(hits[:3], start=1):
+        title = hit.get("documentTitle") or "未命名文档"
+        text = " ".join(str(hit.get("text") or "").split())
+        if len(text) > 360:
+            text = text[:360].rstrip() + "..."
+        lines.append(f"{i}. 《{title}》[{i}]：{text}")
+    lines.extend(
+        [
+            "",
+            f"问题：{query}",
+            "说明：该回答未调用外部 LLM，仅用于返回可审计的知识库命中内容。",
+        ]
+    )
+    return "\n".join(lines).strip()
+
+
+def _ensure_collections_exist(collection_ids: list[int]) -> None:
+    if not collection_ids:
+        return
+    wanted = {int(x) for x in collection_ids}
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id FROM kh_collections WHERE id = ANY(%s)",
+            (list(wanted),),
+        ).fetchall()
+    found = {int(r["id"]) for r in rows}
+    missing = sorted(wanted - found)
+    if missing:
+        raise KeyError("collection not found")
+
+
 def get_chat(chat_id: int) -> dict[str, Any] | None:
     ensure_kh_schema()
     with get_conn() as conn:
@@ -1468,6 +1511,7 @@ def ask(
         cids = list(chat.get("collectionIds") or [])
     if not cids:
         raise ValueError("请指定 collectionIds 或在聊天应用中关联知识库")
+    _ensure_collections_exist(cids)
 
     retrieved = search_chunks(query=q, collection_ids=cids, top_k=top_k)
     hits = retrieved.get("hits") or []
@@ -1490,10 +1534,26 @@ def ask(
             "providerKey": None,
         }
 
-    if not llm_configured():
-        raise KhLlmError("未配置默认 LLM（设置页：供应商 / 默认模型 / Key）")
-
     knowledge = _format_knowledge(hits)
+    if not llm_configured():
+        _enrich_hits_with_attachment(hits)
+        return {
+            "query": q,
+            "answer": _fallback_answer_from_hits(q, hits, empty),
+            "grounded": True,
+            "mode": retrieved.get("mode"),
+            "topK": retrieved.get("topK"),
+            "collectionIds": retrieved.get("collectionIds") or cids,
+            "totalCandidates": retrieved.get("totalCandidates") or 0,
+            "hits": hits,
+            "referencedDocuments": referenced_documents_from_hits(hits),
+            "llmConfigured": False,
+            "model": None,
+            "providerKey": None,
+            "degraded": True,
+            "degradeReason": "llm_not_configured",
+        }
+
     user_sys = ((chat.get("systemPrompt") if chat else "") or "").strip()
     if user_sys:
         if "{knowledge}" in user_sys:

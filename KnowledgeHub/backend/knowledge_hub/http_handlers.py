@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """KnowledgeHub HTTP。
 
-内网调试默认：**无 Token 也可调**（视为 admin），方便 Swagger Try it out。
+安全默认：KnowledgeHub 管理 API 必须携带已登录 admin Token。
+如确需本地 Swagger 调试匿名 admin，必须显式设置 KH_ALLOW_ANON_ADMIN=1。
 若带了 Authorization，则仍校验必须为 admin。
-前端页面本身仍可走登录门禁。
 """
 from __future__ import annotations
 
@@ -14,8 +14,13 @@ from knowledge_hub import store
 from knowledge_hub.chunking import list_strategies
 from knowledge_hub.store import ensure_kh_schema
 
-# 默认开放；设 KH_REQUIRE_AUTH=1 可恢复强制登录
-_KH_REQUIRE_AUTH = os.environ.get("KH_REQUIRE_AUTH", "").strip() in ("1", "true", "TRUE", "yes")
+# 默认强制登录；仅显式本地调试变量允许匿名 admin。
+_KH_ALLOW_ANON_ADMIN = os.environ.get("KH_ALLOW_ANON_ADMIN", "").strip() in (
+    "1",
+    "true",
+    "TRUE",
+    "yes",
+)
 
 _ANON_ADMIN = {
     "id": None,
@@ -30,9 +35,9 @@ def _require_admin(user: dict[str, Any] | None) -> tuple[dict[str, Any] | None, 
         if user.get("role") != "admin":
             return None, 403, "仅管理员可进入知识库平台"
         return user, 200, ""
-    if _KH_REQUIRE_AUTH:
-        return None, 401, "未登录"
-    return dict(_ANON_ADMIN), 200, ""
+    if _KH_ALLOW_ANON_ADMIN:
+        return dict(_ANON_ADMIN), 200, ""
+    return None, 401, "未登录"
 
 
 def _actor_id(user: dict[str, Any] | None) -> int | None:
@@ -361,11 +366,12 @@ def handle_kh_post(
             )
             send_json(result)
         except KhLlmError as exc:
-            send_json({"error": str(exc)}, 400)
+            send_json({"error": str(exc), "code": "llm_unavailable"}, 502)
         except ValueError as exc:
             send_json({"error": str(exc)}, 400)
-        except KeyError:
-            send_json({"error": "chat not found"}, 404)
+        except KeyError as exc:
+            msg = str(exc.args[0]) if exc.args else "not found"
+            send_json({"error": msg}, 404)
         except (TypeError,) as exc:
             send_json({"error": str(exc)}, 400)
         return True

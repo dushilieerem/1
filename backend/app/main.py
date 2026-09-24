@@ -35,10 +35,23 @@ from app.routers import (  # noqa: E402
     strategy,
     watchlists,
 )
+from services.core.env_config import env  # noqa: E402
+
+
+def _configure_threadpool() -> None:
+    try:
+        import anyio.to_thread
+
+        raw = env("SVQUANT_THREADPOOL_TOKENS", "80") or "80"
+        tokens = max(40, min(200, int(raw)))
+        anyio.to_thread.current_default_thread_limiter().total_tokens = tokens
+    except Exception:
+        pass
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    _configure_threadpool()
     bootstrap_schemas()
     yield
 

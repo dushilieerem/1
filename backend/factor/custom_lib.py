@@ -13,3 +13,4 @@ class CustomLib(FactorLibrary):
     """用户自定义因子。公共库因子在 momentum/value/technical/… 中。"""
 
     author = "SVQuant"
+

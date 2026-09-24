@@ -41,7 +41,10 @@ def chat_completions(
     if top_p is not None:
         payload["top_p"] = float(top_p)
 
-    data = _post_json(url, payload, c["apiKey"], timeout=120, retries=2)
+    try:
+        data = _post_json(url, payload, c["apiKey"], timeout=120, retries=2)
+    except Exception as exc:
+        raise KhLlmError(f"LLM 调用失败: {exc}") from exc
     choices = data.get("choices") or []
     if not choices:
         raise KhLlmError("LLM 返回空 choices")

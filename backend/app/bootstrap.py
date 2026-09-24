@@ -17,6 +17,9 @@ def bootstrap_schemas() -> None:
         load_env()
     except Exception:
         pass
+    from services.auth.auth_store import validate_auth_config
+
+    validate_auth_config()
     try:
         from services.core.lan_http import ensure_lan_no_proxy
 

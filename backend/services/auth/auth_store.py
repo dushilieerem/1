@@ -13,10 +13,26 @@ from services.core.db import get_conn
 from services.core.env_config import env
 
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{3,32}$")
+_WEAK_JWT_SECRETS = {
+    "secret",
+    "change-me",
+    "change-me-in-production",
+    "svquant",
+    "svquant-dev-jwt-secret-change-me",
+}
 
 
 def _jwt_secret() -> str:
-    return env("JWT_SECRET", "svquant-dev-jwt-secret-change-me") or "svquant-dev-jwt-secret-change-me"
+    secret = (env("JWT_SECRET_KEY") or "").strip()
+    if not secret:
+        raise RuntimeError("JWT_SECRET_KEY is required")
+    if secret.lower() in _WEAK_JWT_SECRETS or len(secret) < 32:
+        raise RuntimeError("JWT_SECRET_KEY must be a strong per-environment secret")
+    return secret
+
+
+def validate_auth_config() -> None:
+    _jwt_secret()
 
 
 def _jwt_expire_days() -> int:

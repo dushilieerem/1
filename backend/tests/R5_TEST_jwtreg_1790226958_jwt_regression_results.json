@@ -1,0 +1,59 @@
+{
+  "run_id": "R5_TEST_jwtreg_1790226958",
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "blocked": 0
+  },
+  "results": [
+    {
+      "case_id": "TC-SEC-JWT-REGRESSION-001",
+      "title": "missing JWT_SECRET_KEY fails fast",
+      "status": "PASS",
+      "expected": "non-zero startup/config validation failure",
+      "actual": "{\"returncode\": 1}",
+      "http_status": null
+    },
+    {
+      "case_id": "TC-SEC-JWT-REGRESSION-002",
+      "title": "old default secret token is rejected",
+      "status": "PASS",
+      "expected": "401/403",
+      "actual": "{\"error\": \"未登录\"}",
+      "http_status": 401
+    },
+    {
+      "case_id": "TC-SEC-JWT-REGRESSION-003",
+      "title": "random wrong secret token is rejected",
+      "status": "PASS",
+      "expected": "401/403",
+      "actual": "{\"error\": \"未登录\"}",
+      "http_status": 401
+    },
+    {
+      "case_id": "TC-SEC-JWT-REGRESSION-004",
+      "title": "correct environment secret token is accepted",
+      "status": "PASS",
+      "expected": "200",
+      "actual": "{\"ok\": true}",
+      "http_status": 200
+    },
+    {
+      "case_id": "TC-SEC-JWT-REGRESSION-005",
+      "title": "tampered payload token is rejected",
+      "status": "PASS",
+      "expected": "401/403",
+      "actual": "{\"error\": \"未登录\"}",
+      "http_status": 401
+    },
+    {
+      "case_id": "TC-SEC-JWT-REGRESSION-006",
+      "title": "role escalation token signed with wrong secret is rejected",
+      "status": "PASS",
+      "expected": "401/403",
+      "actual": "{\"error\": \"未登录\"}",
+      "http_status": 401
+    }
+  ]
+}

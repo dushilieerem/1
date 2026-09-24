@@ -1,0 +1,666 @@
+{
+  "run_id": "R4_PERF_TEST_1790219612",
+  "base": "http://127.0.0.1:8766",
+  "config": {
+    "latency_requests": 100,
+    "concurrency_levels": [
+      10,
+      50,
+      100
+    ],
+    "concurrency_duration_sec": 300,
+    "stability_duration_sec": 1800,
+    "stability_concurrency": 20
+  },
+  "environment": {
+    "os": "Windows-10-10.0.19045-SP0",
+    "machine": "AMD64",
+    "processor": "Intel64 Family 6 Model 60 Stepping 3, GenuineIntel",
+    "cpu_count": 8,
+    "python": "3.12.9",
+    "node": "v24.18.0",
+    "docker": "Docker version 29.8.0, build 88096ef",
+    "git_branch": "master",
+    "git_commit": "da1161e",
+    "database": "127.0.0.1:5432/svquant",
+    "postgres": "16.15",
+    "resource_probe": "psutil unavailable: No module named 'psutil'"
+  },
+  "before_data_scale": {
+    "users": 13,
+    "strategy_projects": 1,
+    "strategy_runs": 0,
+    "detect_projects": 3,
+    "detect_runs": 0,
+    "kh_collections": 0,
+    "kh_documents": 0,
+    "posts": 4,
+    "post_comments": 0,
+    "app_audit_logs": 886,
+    "user_watchlists": 0,
+    "user_factor_libraries": 0
+  },
+  "after_setup_data_scale": {
+    "users": 16,
+    "strategy_projects": 2,
+    "strategy_runs": 1,
+    "detect_projects": 3,
+    "detect_runs": 0,
+    "kh_collections": 1,
+    "kh_documents": 0,
+    "posts": 4,
+    "post_comments": 0,
+    "app_audit_logs": 896,
+    "user_watchlists": 1,
+    "user_factor_libraries": 0
+  },
+  "api_latency": [
+    {
+      "name": "health",
+      "method": "GET",
+      "path": "/api/health",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 8.8,
+      "p50_ms": 4.19,
+      "p95_ms": 24.64,
+      "p99_ms": 27.44,
+      "max_ms": 28.28,
+      "rps": 113.62,
+      "error_rate": 0.0
+    },
+    {
+      "name": "openapi",
+      "method": "GET",
+      "path": "/openapi.json",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 14.93,
+      "p50_ms": 14.81,
+      "p95_ms": 28.45,
+      "p99_ms": 30.27,
+      "max_ms": 153.97,
+      "rps": 66.99,
+      "error_rate": 0.0
+    },
+    {
+      "name": "login",
+      "method": "POST",
+      "path": "/api/auth/login",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 410.09,
+      "p50_ms": 407.97,
+      "p95_ms": 437.42,
+      "p99_ms": 444.72,
+      "max_ms": 531.13,
+      "rps": 2.44,
+      "error_rate": 0.0
+    },
+    {
+      "name": "me",
+      "method": "GET",
+      "path": "/api/auth/me",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 35.3,
+      "p50_ms": 29.94,
+      "p95_ms": 50.6,
+      "p99_ms": 61.68,
+      "max_ms": 63.96,
+      "rps": 28.33,
+      "error_rate": 0.0
+    },
+    {
+      "name": "market_symbols",
+      "method": "GET",
+      "path": "/api/market-data/symbols",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 113.67,
+      "p50_ms": 102.84,
+      "p95_ms": 166.41,
+      "p99_ms": 180.22,
+      "max_ms": 183.0,
+      "rps": 8.8,
+      "error_rate": 0.0
+    },
+    {
+      "name": "market_indices",
+      "method": "GET",
+      "path": "/api/market-data/indices",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 25.19,
+      "p50_ms": 29.55,
+      "p95_ms": 42.15,
+      "p99_ms": 55.43,
+      "max_ms": 56.0,
+      "rps": 39.69,
+      "error_rate": 0.0
+    },
+    {
+      "name": "factor_index",
+      "method": "GET",
+      "path": "/api/factor/index",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 39.01,
+      "p50_ms": 34.4,
+      "p95_ms": 58.27,
+      "p99_ms": 61.54,
+      "max_ms": 62.53,
+      "rps": 25.63,
+      "error_rate": 0.0
+    },
+    {
+      "name": "factor_re_catalog",
+      "method": "GET",
+      "path": "/api/factor/re-catalog",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 12.26,
+      "p50_ms": 6.76,
+      "p95_ms": 29.77,
+      "p99_ms": 31.58,
+      "max_ms": 31.67,
+      "rps": 81.56,
+      "error_rate": 0.0
+    },
+    {
+      "name": "factor_libraries",
+      "method": "GET",
+      "path": "/api/factor/libraries",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 63.11,
+      "p50_ms": 57.38,
+      "p95_ms": 83.46,
+      "p99_ms": 103.71,
+      "max_ms": 233.18,
+      "rps": 15.85,
+      "error_rate": 0.0
+    },
+    {
+      "name": "strategy_library",
+      "method": "GET",
+      "path": "/api/strategy/library",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 62.63,
+      "p50_ms": 56.8,
+      "p95_ms": 84.25,
+      "p99_ms": 98.37,
+      "max_ms": 106.65,
+      "rps": 15.97,
+      "error_rate": 0.0
+    },
+    {
+      "name": "strategy_projects",
+      "method": "GET",
+      "path": "/api/strategy/projects",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 118.09,
+      "p50_ms": 113.8,
+      "p95_ms": 146.19,
+      "p99_ms": 154.15,
+      "max_ms": 156.43,
+      "rps": 8.47,
+      "error_rate": 0.0
+    },
+    {
+      "name": "strategy_runs",
+      "method": "GET",
+      "path": "/api/strategy/runs",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 61.92,
+      "p50_ms": 56.34,
+      "p95_ms": 84.02,
+      "p99_ms": 89.85,
+      "max_ms": 98.06,
+      "rps": 16.15,
+      "error_rate": 0.0
+    },
+    {
+      "name": "watchlists",
+      "method": "GET",
+      "path": "/api/watchlists",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 87.12,
+      "p50_ms": 82.81,
+      "p95_ms": 107.46,
+      "p99_ms": 129.8,
+      "max_ms": 199.86,
+      "rps": 11.48,
+      "error_rate": 0.0
+    },
+    {
+      "name": "kh_collections",
+      "method": "GET",
+      "path": "/api/kh/collections",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 61.68,
+      "p50_ms": 56.39,
+      "p95_ms": 84.2,
+      "p99_ms": 101.13,
+      "max_ms": 141.5,
+      "rps": 16.21,
+      "error_rate": 0.0
+    },
+    {
+      "name": "ai_models",
+      "method": "GET",
+      "path": "/api/ai/chat/models",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 11.11,
+      "p50_ms": 4.31,
+      "p95_ms": 27.57,
+      "p99_ms": 28.66,
+      "max_ms": 28.83,
+      "rps": 89.99,
+      "error_rate": 0.0
+    },
+    {
+      "name": "admin_logs",
+      "method": "GET",
+      "path": "/api/admin/logs?limit=20",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 88.74,
+      "p50_ms": 83.38,
+      "p95_ms": 114.2,
+      "p99_ms": 131.57,
+      "max_ms": 131.94,
+      "rps": 11.27,
+      "error_rate": 0.0
+    }
+  ],
+  "concurrency": [
+    {
+      "name": "mix_watchlists",
+      "method": "GET",
+      "path": "/api/watchlists",
+      "requests": 14024,
+      "success": 13816,
+      "failed": 208,
+      "avg_ms": 213.92,
+      "p50_ms": 182.36,
+      "p95_ms": 404.46,
+      "p99_ms": 1269.82,
+      "max_ms": 2705.94,
+      "rps": 46.71,
+      "error_rate": 0.0148,
+      "concurrency": 10,
+      "duration_sec": 300.22
+    },
+    {
+      "name": "mix_health",
+      "method": "GET",
+      "path": "/api/health",
+      "requests": 12873,
+      "success": 12635,
+      "failed": 238,
+      "avg_ms": 1175.0,
+      "p50_ms": 963.1,
+      "p95_ms": 3607.44,
+      "p99_ms": 5825.19,
+      "max_ms": 8248.57,
+      "rps": 42.22,
+      "error_rate": 0.0185,
+      "concurrency": 50,
+      "duration_sec": 304.91
+    },
+    {
+      "name": "mix_me",
+      "method": "GET",
+      "path": "/api/auth/me",
+      "requests": 9427,
+      "success": 8930,
+      "failed": 497,
+      "avg_ms": 3247.41,
+      "p50_ms": 1950.88,
+      "p95_ms": 14206.76,
+      "p99_ms": 15013.61,
+      "max_ms": 15037.35,
+      "rps": 30.26,
+      "error_rate": 0.0527,
+      "concurrency": 100,
+      "duration_sec": 311.54
+    }
+  ],
+  "business_concurrency": [
+    {
+      "name": "business_login",
+      "method": "POST",
+      "path": "/api/auth/login",
+      "requests": 813,
+      "success": 813,
+      "failed": 0,
+      "avg_ms": 1490.08,
+      "p50_ms": 1470.35,
+      "p95_ms": 1824.94,
+      "p99_ms": 2045.58,
+      "max_ms": 2628.6,
+      "rps": 13.36,
+      "error_rate": 0.0,
+      "business_case": "login",
+      "concurrency": 20,
+      "duration_sec": 60.87
+    },
+    {
+      "name": "business_watchlist",
+      "method": "GET",
+      "path": "/api/watchlists",
+      "requests": 2580,
+      "success": 2580,
+      "failed": 0,
+      "avg_ms": 466.03,
+      "p50_ms": 461.7,
+      "p95_ms": 540.33,
+      "p99_ms": 609.15,
+      "max_ms": 721.88,
+      "rps": 42.83,
+      "error_rate": 0.0,
+      "business_case": "watchlist_query",
+      "concurrency": 20,
+      "duration_sec": 60.23
+    },
+    {
+      "name": "business_strategy_runs",
+      "method": "GET",
+      "path": "/api/strategy/runs",
+      "requests": 1916,
+      "success": 1834,
+      "failed": 82,
+      "avg_ms": 628.03,
+      "p50_ms": 337.2,
+      "p95_ms": 2177.97,
+      "p99_ms": 4218.61,
+      "max_ms": 5020.24,
+      "rps": 31.8,
+      "error_rate": 0.0428,
+      "business_case": "strategy_run_query",
+      "concurrency": 20,
+      "duration_sec": 60.25
+    },
+    {
+      "name": "business_ai_quota",
+      "method": "GET",
+      "path": "/api/agent/usage/me",
+      "requests": 1137,
+      "success": 1136,
+      "failed": 1,
+      "avg_ms": 1060.69,
+      "p50_ms": 1034.99,
+      "p95_ms": 1314.91,
+      "p99_ms": 1406.27,
+      "max_ms": 1496.81,
+      "rps": 18.79,
+      "error_rate": 0.0009,
+      "business_case": "ai_quota_query",
+      "concurrency": 20,
+      "duration_sec": 60.5
+    },
+    {
+      "name": "business_kh_query",
+      "method": "GET",
+      "path": "/api/kh/collections",
+      "requests": 1800,
+      "success": 1800,
+      "failed": 0,
+      "avg_ms": 670.84,
+      "p50_ms": 664.27,
+      "p95_ms": 760.0,
+      "p99_ms": 839.27,
+      "max_ms": 1019.13,
+      "rps": 29.78,
+      "error_rate": 0.0,
+      "business_case": "kh_search_like_query",
+      "concurrency": 20,
+      "duration_sec": 60.45
+    }
+  ],
+  "database_perf": {
+    "user_lookup": {
+      "execution_ms": 0.063,
+      "planning_ms": 1.604,
+      "node_type": "Limit"
+    },
+    "strategy_projects": {
+      "execution_ms": 0.084,
+      "planning_ms": 0.649,
+      "node_type": "Limit"
+    },
+    "strategy_runs": {
+      "error": "column \"created_at\" does not exist\nLINE 1: ...FORMAT JSON) SELECT * FROM strategy_runs ORDER BY created_at...\n                                                             ^"
+    },
+    "factor_libraries": {
+      "error": "current transaction is aborted, commands ignored until end of transaction block"
+    },
+    "kh_collections": {
+      "error": "current transaction is aborted, commands ignored until end of transaction block"
+    },
+    "audit_logs": {
+      "error": "current transaction is aborted, commands ignored until end of transaction block"
+    },
+    "connections": {
+      "error": "current transaction is aborted, commands ignored until end of transaction block"
+    },
+    "long_transactions": {
+      "error": "current transaction is aborted, commands ignored until end of transaction block"
+    }
+  },
+  "external_dependencies": {
+    "research_engine_health": {
+      "name": "re_health",
+      "method": "GET",
+      "path": "/api/re/health",
+      "status": 0,
+      "ok": false,
+      "elapsed_ms": 15006.759599999896,
+      "error": "TimeoutError"
+    },
+    "research_engine_catalog": {
+      "name": "re_catalog",
+      "method": "GET",
+      "path": "/api/factor/re-catalog",
+      "status": 200,
+      "ok": true,
+      "elapsed_ms": 64.85759999941365,
+      "error": ""
+    },
+    "ai_provider_error_path": {
+      "name": "ai_invalid_provider",
+      "method": "POST",
+      "path": "/api/ai/chat",
+      "status": 502,
+      "ok": false,
+      "elapsed_ms": 190.03340000017488,
+      "error": "HTTP 502"
+    }
+  },
+  "stability": {
+    "summary": {
+      "name": "mix_symbols",
+      "method": "GET",
+      "path": "/api/market-data/symbols",
+      "requests": 20228,
+      "success": 17904,
+      "failed": 2324,
+      "avg_ms": 1786.13,
+      "p50_ms": 73.73,
+      "p95_ms": 15010.3,
+      "p99_ms": 15021.3,
+      "max_ms": 15041.13,
+      "rps": 11.15,
+      "error_rate": 0.1149,
+      "duration_sec": 1814.02,
+      "concurrency": 20
+    },
+    "resource_samples": [
+      {
+        "t": "11:36:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:37:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:38:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:39:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:40:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:41:13",
+        "db_connections": 7
+      },
+      {
+        "t": "11:42:13",
+        "db_connections": 7
+      },
+      {
+        "t": "11:43:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:44:13",
+        "db_connections": 7
+      },
+      {
+        "t": "11:45:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:46:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:47:13",
+        "db_connections": 7
+      },
+      {
+        "t": "11:48:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:49:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:50:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:51:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:52:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:53:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:54:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:55:13",
+        "db_connections": 7
+      },
+      {
+        "t": "11:56:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:57:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:58:13",
+        "db_connections": 6
+      },
+      {
+        "t": "11:59:13",
+        "db_connections": 6
+      },
+      {
+        "t": "12:00:13",
+        "db_connections": 6
+      },
+      {
+        "t": "12:01:13",
+        "db_connections": 6
+      },
+      {
+        "t": "12:02:13",
+        "db_connections": 6
+      },
+      {
+        "t": "12:03:13",
+        "db_connections": 6
+      },
+      {
+        "t": "12:04:14",
+        "db_connections": 7
+      },
+      {
+        "t": "12:05:14",
+        "db_connections": 6
+      }
+    ]
+  },
+  "after_cleanup_data_scale": {
+    "users": 13,
+    "strategy_projects": 1,
+    "strategy_runs": 0,
+    "detect_projects": 3,
+    "detect_runs": 0,
+    "kh_collections": 0,
+    "kh_documents": 0,
+    "posts": 4,
+    "post_comments": 0,
+    "app_audit_logs": 1872,
+    "user_watchlists": 0,
+    "user_factor_libraries": 0
+  },
+  "summary": {
+    "total_requests": 66398,
+    "failed_requests": 3350,
+    "error_rate": 0.0505,
+    "max_p95_ms": 15010.3,
+    "performance_bugs": [],
+    "resource_leak_found": false
+  }
+}

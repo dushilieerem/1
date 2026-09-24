@@ -1,0 +1,279 @@
+{
+  "run_id": "R4_PERF_FIX_1790233888",
+  "base": "http://127.0.0.1:8766",
+  "config": {
+    "request_timeout_sec": 15.0,
+    "auth_me_concurrency": 100,
+    "auth_me_duration_sec": 300,
+    "strategy_runs_concurrency": 20,
+    "strategy_runs_duration_sec": 60,
+    "market_symbols_concurrency": 20,
+    "market_symbols_duration_sec": 1800,
+    "re_health_requests": 100
+  },
+  "baseline": {
+    "path": "D:\\project\\SVQuant\\backend\\tests\\performance\\R4_PERF_TEST_1790219612_r4_performance_results.json",
+    "found": true,
+    "auth_me_100": {
+      "name": "mix_me",
+      "method": "GET",
+      "path": "/api/auth/me",
+      "requests": 9427,
+      "success": 8930,
+      "failed": 497,
+      "avg_ms": 3247.41,
+      "p50_ms": 1950.88,
+      "p95_ms": 14206.76,
+      "p99_ms": 15013.61,
+      "max_ms": 15037.35,
+      "rps": 30.26,
+      "error_rate": 0.0527,
+      "concurrency": 100,
+      "duration_sec": 311.54
+    },
+    "strategy_runs_business": {
+      "name": "business_strategy_runs",
+      "method": "GET",
+      "path": "/api/strategy/runs",
+      "requests": 1916,
+      "success": 1834,
+      "failed": 82,
+      "avg_ms": 628.03,
+      "p50_ms": 337.2,
+      "p95_ms": 2177.97,
+      "p99_ms": 4218.61,
+      "max_ms": 5020.24,
+      "rps": 31.8,
+      "error_rate": 0.0428,
+      "business_case": "strategy_run_query",
+      "concurrency": 20,
+      "duration_sec": 60.25
+    },
+    "re_health": {
+      "name": "re_health",
+      "method": "GET",
+      "path": "/api/re/health",
+      "status": 0,
+      "ok": false,
+      "elapsed_ms": 15006.759599999896,
+      "error": "TimeoutError"
+    },
+    "market_symbols_stability": {
+      "name": "mix_symbols",
+      "method": "GET",
+      "path": "/api/market-data/symbols",
+      "requests": 20228,
+      "success": 17904,
+      "failed": 2324,
+      "avg_ms": 1786.13,
+      "p50_ms": 73.73,
+      "p95_ms": 15010.3,
+      "p99_ms": 15021.3,
+      "max_ms": 15041.13,
+      "rps": 11.15,
+      "error_rate": 0.1149,
+      "duration_sec": 1814.02,
+      "concurrency": 20
+    }
+  },
+  "environment": {
+    "os": "Windows-10-10.0.19045-SP0",
+    "machine": "AMD64",
+    "processor": "Intel64 Family 6 Model 60 Stepping 3, GenuineIntel",
+    "cpu_count": 8,
+    "python": "3.12.9",
+    "node": "v24.18.0",
+    "docker": "Docker version 29.8.0, build 88096ef",
+    "git_branch": "master",
+    "git_commit": "da1161e",
+    "database": "127.0.0.1:5432/svquant",
+    "postgres": "16.15",
+    "resource_probe": "psutil unavailable: No module named 'psutil'"
+  },
+  "results": {
+    "re_health": {
+      "name": "re_health",
+      "method": "GET",
+      "path": "/api/re/health",
+      "requests": 100,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 32.3,
+      "p50_ms": 5.13,
+      "p95_ms": 27.59,
+      "p99_ms": 28.16,
+      "max_ms": 2057.38,
+      "rps": 30.91,
+      "error_rate": 0.0,
+      "status_counts": {
+        "200": 100
+      },
+      "error_counts": {},
+      "concurrency": 1,
+      "duration_sec": 3.24,
+      "case": "PERF-R4-003"
+    },
+    "auth_me_100": {
+      "name": "auth_me_100",
+      "method": "GET",
+      "path": "/api/auth/me",
+      "requests": 22421,
+      "success": 20817,
+      "failed": 1604,
+      "avg_ms": 1339.72,
+      "p50_ms": 956.8,
+      "p95_ms": 1274.86,
+      "p99_ms": 15005.32,
+      "max_ms": 16284.22,
+      "rps": 74.52,
+      "error_rate": 0.0715,
+      "status_counts": {
+        "200": 20817,
+        "0": 1481,
+        "500": 123
+      },
+      "error_counts": {
+        "connection_error": 1187,
+        "timeout": 294,
+        "server_error": 123
+      },
+      "concurrency": 100,
+      "duration_sec": 300.86,
+      "case": "PERF-R4-001"
+    },
+    "strategy_runs_20": {
+      "name": "strategy_runs_20",
+      "method": "GET",
+      "path": "/api/strategy/runs",
+      "requests": 1435,
+      "success": 1229,
+      "failed": 206,
+      "avg_ms": 852.84,
+      "p50_ms": 336.03,
+      "p95_ms": 4031.47,
+      "p99_ms": 6266.92,
+      "max_ms": 7629.46,
+      "rps": 23.17,
+      "error_rate": 0.1436,
+      "status_counts": {
+        "200": 1229,
+        "500": 83,
+        "0": 123
+      },
+      "error_counts": {
+        "server_error": 83,
+        "connection_error": 123
+      },
+      "concurrency": 20,
+      "duration_sec": 61.94,
+      "case": "PERF-R4-002"
+    },
+    "market_symbols_stability": {
+      "name": "market_symbols_stability",
+      "method": "GET",
+      "path": "/api/market-data/symbols",
+      "requests": 2402,
+      "success": 2,
+      "failed": 2400,
+      "avg_ms": 15005.8,
+      "p50_ms": 15011.55,
+      "p95_ms": 15026.22,
+      "p99_ms": 15030.08,
+      "max_ms": 15033.52,
+      "rps": 1.33,
+      "error_rate": 0.9992,
+      "status_counts": {
+        "0": 2400,
+        "200": 2
+      },
+      "error_counts": {
+        "timeout": 2400
+      },
+      "concurrency": 20,
+      "duration_sec": 1811.52,
+      "case": "PERF-R4-004"
+    }
+  },
+  "before_data_scale": {
+    "users": 13,
+    "strategy_projects": 1,
+    "strategy_runs": 0,
+    "detect_projects": 3,
+    "detect_runs": 0,
+    "kh_collections": 0,
+    "kh_documents": 0,
+    "posts": 4,
+    "post_comments": 0,
+    "app_audit_logs": 1963,
+    "user_watchlists": 0,
+    "user_factor_libraries": 0
+  },
+  "warmup_market_symbols": {
+    "name": "warmup_market_symbols",
+    "method": "GET",
+    "path": "/api/market-data/symbols",
+    "status": 200,
+    "ok": true,
+    "elapsed_ms": 5065.39469999916,
+    "error": "",
+    "error_type": ""
+  },
+  "database_perf": {
+    "user_lookup": {
+      "execution_ms": 0.146,
+      "planning_ms": 2.685,
+      "node_type": "Limit"
+    },
+    "strategy_projects": {
+      "execution_ms": 0.086,
+      "planning_ms": 0.763,
+      "node_type": "Limit"
+    },
+    "strategy_runs": {
+      "execution_ms": 0.064,
+      "planning_ms": 0.805,
+      "node_type": "Limit"
+    },
+    "factor_libraries": {
+      "execution_ms": 0.034,
+      "planning_ms": 0.515,
+      "node_type": "Limit"
+    },
+    "kh_collections": {
+      "execution_ms": 0.038,
+      "planning_ms": 0.467,
+      "node_type": "Limit"
+    },
+    "audit_logs": {
+      "execution_ms": 0.092,
+      "planning_ms": 1.73,
+      "node_type": "Limit"
+    },
+    "connections": {
+      "total": 6,
+      "active": 1
+    },
+    "long_transactions": []
+  },
+  "after_cleanup_data_scale": {
+    "users": 13,
+    "strategy_projects": 1,
+    "strategy_runs": 0,
+    "detect_projects": 3,
+    "detect_runs": 0,
+    "kh_collections": 0,
+    "kh_documents": 0,
+    "posts": 4,
+    "post_comments": 0,
+    "app_audit_logs": 1975,
+    "user_watchlists": 0,
+    "user_factor_libraries": 0
+  },
+  "summary": {
+    "total_requests": 26358,
+    "failed_requests": 4210,
+    "error_rate": 0.1597,
+    "max_p95_ms": 15026.22,
+    "all_related_regressions_pass": false
+  }
+}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import urllib.error
 import urllib.request
 from typing import Any
@@ -131,5 +132,12 @@ def request_json(
             for k, v in (exc.headers.items() if exc.headers else [])
         }
         return int(exc.code), hdrs, body
+    except (TimeoutError, socket.timeout):
+        return 504, {}, {"error": "upstream timeout", "error_type": "timeout"}
     except urllib.error.URLError as exc:
-        return 502, {}, {"error": f"????????{exc.reason}"}
+        reason = getattr(exc, "reason", exc)
+        if isinstance(reason, (TimeoutError, socket.timeout)):
+            return 504, {}, {"error": "upstream timeout", "error_type": "timeout"}
+        return 502, {}, {"error": f"upstream connection error: {reason}", "error_type": "connection_error"}
+    except OSError as exc:
+        return 502, {}, {"error": f"upstream connection error: {exc}", "error_type": "connection_error"}

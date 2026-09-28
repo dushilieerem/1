@@ -328,7 +328,9 @@ def factor_dashboard_status() -> dict:
 
 
 @router.post("/api/factor/dashboard/refresh")
-def factor_dashboard_refresh(body: dict[str, Any] | None = None) -> dict:
+def factor_dashboard_refresh(
+    body: dict[str, Any] | None = None, _admin: dict = Depends(require_admin)
+) -> dict:
     body = body or {}
     try:
         return start_refresh(

@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
+from app.deps import require_admin, require_user
 from services.data.market_data_bff import fetch_market_daily
 from services.news.news_ingest import FETCHERS, UNSUPPORTED_SOURCES, enrich_news_body, ingest_news
 from services.news.news_store import get_news, list_news
@@ -59,7 +60,7 @@ def news_get(news_id: str) -> dict:
 
 
 @router.post("/api/news/ingest")
-def news_ingest(body: dict[str, Any]) -> JSONResponse:
+def news_ingest(body: dict[str, Any], _admin: dict = Depends(require_admin)) -> JSONResponse:
     raw_sources = body.get("sources")
     sources = None
     allowed = set(FETCHERS) | set(UNSUPPORTED_SOURCES)
@@ -85,7 +86,7 @@ def news_ingest(body: dict[str, Any]) -> JSONResponse:
 
 
 @router.post("/api/news/{news_id}/enrich")
-def news_enrich(news_id: str) -> dict:
+def news_enrich(news_id: str, _user: dict = Depends(require_user)) -> dict:
     if not news_id.isdigit():
         raise HTTPException(status_code=400, detail="invalid id")
     try:

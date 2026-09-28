@@ -56,6 +56,16 @@ async def lifespan(_app: FastAPI):
     yield
 
 
+def _cors_origins() -> list[str]:
+    # 允许跨域的前端来源白名单；逗号分隔配置在 CORS_ORIGINS。
+    # 开发默认仅允许本机前端（前端经 Vite 代理访问 /api，本身同源，此白名单主要约束直连 API 的场景）。
+    raw = env("CORS_ORIGINS", "") or ""
+    origins = [o.strip().rstrip("/") for o in raw.split(",") if o.strip()]
+    if "*" in origins:
+        return ["*"]
+    return origins or ["http://127.0.0.1:9530", "http://localhost:9530"]
+
+
 app = FastAPI(
     title="SVQuant",
     lifespan=lifespan,
@@ -65,7 +75,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins(),
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )

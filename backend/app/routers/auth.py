@@ -16,6 +16,8 @@ from services.auth.profile_store import (
     update_my_profile,
 )
 from services.core.audit_log_store import write_audit
+from services.core.env_config import env
+from services.core.rate_limit import enforce_rate_limit
 
 
 def _ip(request: Request) -> str | None:
@@ -27,11 +29,27 @@ def _ip(request: Request) -> str | None:
     return None
 
 
+def _rate_limit_int(key: str, default: int) -> int:
+    try:
+        return max(1, int(env(key, str(default)) or default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _enforce_auth_rate_limit(request: Request, *, scope: str, limit: int) -> None:
+    enforce_rate_limit(request, scope=scope, limit=limit, window_sec=60)
+
+
 router = APIRouter(tags=["auth"])
 
 
 @router.post("/api/auth/register")
 def auth_register(body: dict[str, Any], request: Request) -> dict:
+    _enforce_auth_rate_limit(
+        request,
+        scope="auth.register",
+        limit=_rate_limit_int("AUTH_REGISTER_RATE_LIMIT", 10),
+    )
     username = str(body.get("username") or "")
     try:
         out = register_user(
@@ -74,6 +92,11 @@ def auth_register(body: dict[str, Any], request: Request) -> dict:
 
 @router.post("/api/auth/login")
 def auth_login(body: dict[str, Any], request: Request) -> dict:
+    _enforce_auth_rate_limit(
+        request,
+        scope="auth.login",
+        limit=_rate_limit_int("AUTH_LOGIN_RATE_LIMIT", 30),
+    )
     username = str(body.get("username") or "")
     try:
         out = login_user(

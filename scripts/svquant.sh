@@ -20,6 +20,11 @@ STARTUP_TIMEOUT_SECONDS=60
 CONDA_ENV_NAME="${SVQUANT_CONDA_ENV:-svquant}"
 BASH_BIN="$(command -v bash)"
 
+# 健康检查/探活必须直连本机：shell 里若有 http_proxy（如 Clash），curl 127.0.0.1
+# 会被拐到代理导致服务被误判为未就绪（进而回滚误杀）。子服务一并继承，无副作用。
+export NO_PROXY="${NO_PROXY:+$NO_PROXY,}127.0.0.1,localhost"
+export no_proxy="${no_proxy:+$no_proxy,}127.0.0.1,localhost"
+
 usage() {
   cat <<'EOF'
 SVQuant 本地开发启动器

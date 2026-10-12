@@ -26,6 +26,7 @@ import {
 import { MarkdownEditor } from "@/components/community/MarkdownEditor";
 import { ContentLengthHint } from "@/components/community/ContentLengthHint";
 import { POST_BODY_LIMIT, lengthError } from "@/lib/communityLimits";
+import { postBodyText } from "@/lib/communityBodyText";
 import { FactorCodeEditor } from "@/components/FactorCodeEditor";
 
 function initialSection(
@@ -176,7 +177,7 @@ export function CommunityNewPage() {
 
   const save = async (status: "draft" | "published") => {
     setErr(null);
-    const bodyError = lengthError(body, POST_BODY_LIMIT, "正文");
+    const bodyError = lengthError(postBodyText(body), POST_BODY_LIMIT, "正文");
     if (bodyError) {
       setErr(bodyError);
       return;
@@ -425,7 +426,7 @@ export function CommunityNewPage() {
                     minHeightClass="min-h-[220px] lg:min-h-[min(620px,68vh)]"
                     placeholder="直接写正文；可粘贴图片，选中文字后点链接可加网址"
                   />
-                  <ContentLengthHint value={body} limit={POST_BODY_LIMIT} label="正文（Markdown 源文）" />
+                  <ContentLengthHint value={postBodyText(body)} limit={POST_BODY_LIMIT} label="正文文字（不含标签及图片编码）" />
                 </section>
 
                 <div className="min-w-0 bg-slate-50/40 p-3 sm:p-6 lg:col-start-1 lg:row-start-2 lg:border-r lg:border-slate-100 lg:p-6">

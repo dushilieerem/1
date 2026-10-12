@@ -19,6 +19,16 @@ class PostLimitsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "不能同时为空"):
             self.normalize("  ")
 
+    def test_html_images_and_entities(self):
+        from services.community.content_limits import post_body_text
+        image = '<img src="data:image/png;base64,' + "a" * 30000 + '">'
+        html = "<p>" + "😀" * 20000 + "</p>" + image
+        self.assertEqual(self.normalize(html)[1], html)
+        with self.assertRaisesRegex(ValueError, "20000"):
+            self.normalize("<p>" + "中" * 20001 + "</p>" + image)
+        self.assertEqual(post_body_text("<p>&amp;😀<strong>中</strong></p>"), "&😀中")
+        self.assertEqual(post_body_text("# 标题\n正文"), "# 标题\n正文")
+
 
 if __name__ == "__main__":
     unittest.main()

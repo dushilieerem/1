@@ -1,4 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { postBodyText } from "@/lib/communityBodyText";
+import { contentLength } from "@/lib/communityLimits";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
@@ -43,11 +45,7 @@ function plainToHtml(source: string): string {
 }
 
 function textLen(html: string): number {
-  return html
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/\s+/g, " ")
-    .trim().length;
+  return contentLength(postBodyText(html));
 }
 
 /** 压缩并限制尺寸，避免正文被大图撑爆 */

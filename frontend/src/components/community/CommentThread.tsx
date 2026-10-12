@@ -25,6 +25,8 @@ import { PrimaryButton, fieldClassName } from "@/components/community/communityU
 import { AuthorAvatarWithCard } from "@/components/community/AuthorProfileCard";
 import { ImageLightbox } from "@/components/community/ImageLightbox";
 import { groupCommentThreads } from "./commentThreads";
+import { ContentLengthHint } from "./ContentLengthHint";
+import { COMMENT_LIMIT, lengthError } from "@/lib/communityLimits";
 
 const PREVIEW_REPLY_N = 2;
 /** 评论列表缩略图固定框，避免超宽图缩成细条 / logo 显得过大 */
@@ -260,6 +262,11 @@ export function CommentThread({
       return;
     }
     if (!body.trim() && images.length === 0) return;
+    const bodyError = lengthError(body, COMMENT_LIMIT, "评论 / 回复");
+    if (bodyError) {
+      setErr(bodyError);
+      return;
+    }
     setErr(null);
     setSubmitting(true);
     try {
@@ -485,8 +492,10 @@ export function CommentThread({
                   }
                 }
               }}
-              maxLength={2000}
+              aria-describedby="comment-length"
+              aria-invalid={!!lengthError(body, COMMENT_LIMIT, "评论 / 回复")}
             />
+            <ContentLengthHint id="comment-length" value={body} limit={COMMENT_LIMIT} label="评论 / 回复" />
             {images.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {images.map((src, i) => (
@@ -534,7 +543,7 @@ export function CommentThread({
               </div>
               <PrimaryButton
                 type="submit"
-                disabled={submitting || (!body.trim() && images.length === 0)}
+                disabled={submitting || !!lengthError(body, COMMENT_LIMIT, "评论 / 回复") || (!body.trim() && images.length === 0)}
               >
                 {submitting ? "发送中…" : replyTo ? "发表回复" : "发表评论"}
               </PrimaryButton>

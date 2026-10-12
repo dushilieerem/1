@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from services.core.db import get_conn
+from services.community.content_limits import post_body_text
 
 SECTIONS = ("strategy", "factor", "qa", "hotspot", "official")
 SECTION_LABELS = {
@@ -738,6 +739,8 @@ def _normalize_post_fields(
 ) -> tuple[str, str, str, str | None]:
     title = (title or "").strip()
     body = (body or "").strip()
+    if len(post_body_text(body)) > 20_000:
+        raise ValueError("正文过长（最多 20000 字符）")
     section = (section or "").strip() or "strategy"
     code = (code_snippet or "").strip() or None
     if len(title) > 120:
@@ -1691,7 +1694,9 @@ def create_report(
     rk = (reason or "").strip().lower()
     if rk not in REPORT_REASONS:
         raise ValueError("无效举报原因")
-    detail_s = (detail or "").strip()[:500]
+    detail_s = (detail or "").strip()
+    if len(detail_s) > 500:
+        raise ValueError("举报说明过长（最多 500 字符）")
     cid = int(comment_id) if comment_id is not None else None
     if tt == "comment" and not cid:
         raise ValueError("举报评论须指定 comment_id")

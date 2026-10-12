@@ -1693,7 +1693,9 @@ def create_report(
     rk = (reason or "").strip().lower()
     if rk not in REPORT_REASONS:
         raise ValueError("无效举报原因")
-    detail_s = (detail or "").strip()[:500]
+    detail_s = (detail or "").strip()
+    if len(detail_s) > 500:
+        raise ValueError("举报说明过长（最多 500 字符）")
     cid = int(comment_id) if comment_id is not None else None
     if tt == "comment" and not cid:
         raise ValueError("举报评论须指定 comment_id")

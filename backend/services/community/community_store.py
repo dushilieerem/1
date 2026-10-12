@@ -738,6 +738,8 @@ def _normalize_post_fields(
 ) -> tuple[str, str, str, str | None]:
     title = (title or "").strip()
     body = (body or "").strip()
+    if len(body) > 20_000:
+        raise ValueError("正文过长（最多 20000 字符）")
     section = (section or "").strip() or "strategy"
     code = (code_snippet or "").strip() or None
     if len(title) > 120:

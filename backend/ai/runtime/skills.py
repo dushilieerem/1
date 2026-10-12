@@ -631,13 +631,8 @@ def _source_from(board: dict[str, Any], ctx: dict[str, Any] | None = None) -> di
 def _mock_summary_md(*, title: str, body: str, truncated: bool) -> str:
     plain = strip_html(body)
     excerpt = plain[:120] + ("…" if len(plain) > 120 else "")
-    limit_note = "原文过长已截断。" if truncated else "本地 mock。"
-    return (
-        f"## 背景\n\n{(title or '未命名帖').strip()}\n\n"
-        f"## 方法或观点\n\n{excerpt or '（正文为空）'}\n\n"
-        f"## 结论\n\n见原文要点。\n\n"
-        f"## 局限\n\n{limit_note}\n"
-    )
+    limit_note = "\n\n原文过长，仅展示部分内容。" if truncated else ""
+    return f"## 原文节选\n\n{excerpt or '正文为空，请直接查看原文代码。'}{limit_note}\n"
 
 
 def skill_lookup_panel_metrics(ctx: dict[str, Any], board: dict[str, Any]) -> dict[str, Any]:
@@ -727,9 +722,18 @@ def skill_summarize_post(ctx: dict[str, Any], board: dict[str, Any]) -> dict[str
     trust = _board_trust(board, ctx)
     has_ref = bool(ref)
 
+    if not strip_html(body) and not code.strip():
+        raise LlmError("正文与代码为空，无法生成摘要")
+    short_flags = ([{"code": "summary_short_content", "severity": "info",
+                     "message": "原文内容较短，可供归纳的信息有限，建议直接阅读原文。"}]
+                   if len(strip_html(body)) + len(code.strip()) < 20 else [])
+
     if not llm_configured():
         summary = _mock_summary_md(title=title, body=body, truncated=truncated)
         gate = summary_number_flags(summary, ref if isinstance(ref, dict) else None)
+        gate.extend(short_flags)
+        gate.append({"code": "summary_rule_based", "severity": "info",
+                     "message": "AI 模型尚未配置，当前为原文节选，未进行 AI 分析。"})
         return {
             "board_patch": {
                 "summary_md": summary,
@@ -786,6 +790,7 @@ def skill_summarize_post(ctx: dict[str, Any], board: dict[str, Any]) -> dict[str
         raise LlmError("摘要为空")
     gate = summary_number_flags(summary, ref if isinstance(ref, dict) else None)
     prev_flags = list(board.get("flags") or [])
+    gate.extend(short_flags)
     return {
         "board_patch": {
             "summary_md": summary,

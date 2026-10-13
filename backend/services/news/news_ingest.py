@@ -163,6 +163,11 @@ def scrape_eastmoney_report(article_url: str) -> str:
 
 
 def _parse_dt(value: Any) -> datetime:
+    """解析源站时间；字段缺失或格式不认识时兜底为当前时间（调用方需注意兜底语义）。
+
+    兜底值语义上是「抓取时刻」而非发布时间，入库后不应再被重抓覆盖
+    （见 upsert_news_items 的 ON CONFLICT 处理）。
+    """
     if value is None:
         return datetime.now(TZ8)
     if isinstance(value, (int, float)):
@@ -173,7 +178,15 @@ def _parse_dt(value: Any) -> datetime:
     s = str(value).strip()
     if s.isdigit():
         return _parse_dt(int(s))
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S"):
+    for fmt in (
+        # 东财研报 publishDate 带毫秒后缀（如 2026-10-09 00:00:00.000）
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        # 仅日期，按当日 00:00(+8) 处理
+        "%Y-%m-%d",
+        "%Y/%m/%d %H:%M:%S",
+    ):
         try:
             return datetime.strptime(s, fmt).replace(tzinfo=TZ8)
         except ValueError:
@@ -647,6 +660,9 @@ def upsert_news_items(items: list[dict[str, Any]]) -> dict[str, int]:
         return {"upserted": 0}
     with get_conn() as conn:
         for it in items:
+            # published_at 一经确定不再被重抓覆盖：_parse_dt 在源字段缺失/解析失败时
+            # 会兜底成抓取时刻，若用 EXCLUDED 覆盖，会把首次解析出的真实发布时间冲掉，
+            # 且每次定时重抓都会漂移（东财研报曾因此全部变成抓取时间）。
             conn.execute(
                 """
                 INSERT INTO news_items (
@@ -662,7 +678,7 @@ def upsert_news_items(items: list[dict[str, Any]]) -> dict[str, int]:
                   body = CASE
                     WHEN length(EXCLUDED.body) >= length(COALESCE(news_items.body, ''))
                     THEN EXCLUDED.body ELSE news_items.body END,
-                  published_at = EXCLUDED.published_at,
+                  published_at = news_items.published_at,
                   symbols = EXCLUDED.symbols,
                   themes = EXCLUDED.themes,
                   industries = EXCLUDED.industries,
@@ -825,6 +841,90 @@ def refresh_eastmoney_bodies(*, limit: int = 40) -> int:
                 )
             updated += 1
     return updated
+
+
+def backfill_eastmoney_research_dates(*, max_pages: int = 40) -> dict[str, int]:
+    """回填东财研报 published_at：历史数据曾因 ".000" 毫秒后缀解析失败被兜底为抓取时间。
+
+    重新拉 reportapi 列表建立 infoCode → 发布日期 映射，按 URL 中的 infoCode 纠正库内条目。
+    窗口从库内最早 created_at 往前推 2 天，覆盖所有存量研报。
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, url, published_at, created_at
+            FROM news_items
+            WHERE source = 'eastmoney' AND category = 'research'
+            """
+        ).fetchall()
+    if not rows:
+        return {"rows": 0, "matched": 0, "updated": 0, "skipped": 0, "fetched": 0}
+
+    by_code: dict[str, list[Any]] = {}
+    for r in rows:
+        m = re.search(r"/report/info/([0-9A-Za-z]+)\.html", r["url"] or "")
+        if m:
+            by_code.setdefault(m.group(1), []).append(r)
+
+    begin = (min(r["created_at"] for r in rows).date() - timedelta(days=2)).isoformat()
+    end = datetime.now(TZ8).date().isoformat()
+    date_map: dict[str, datetime] = {}
+    for page_no in range(1, max(1, max_pages) + 1):
+        qs = urllib.parse.urlencode(
+            {
+                "industryCode": "*",
+                "pageSize": 50,
+                "industry": "*",
+                "rating": "*",
+                "ratingChange": "*",
+                "beginTime": begin,
+                "endTime": end,
+                "pageNo": page_no,
+                "fields": "",
+                "qType": 0,
+                "orgCode": "",
+                "rcode": "",
+                "p": page_no,
+                "isPublish": "false",
+            }
+        )
+        data = _get_json(
+            f"https://reportapi.eastmoney.com/report/list?{qs}",
+            headers={"Referer": "https://data.eastmoney.com/report/stock.jshtml"},
+        )
+        page = data.get("data") or []
+        if not page:
+            break
+        for r in page:
+            info = str(r.get("infoCode") or "").strip()
+            raw = r.get("publishDate")
+            if info and raw and info not in date_map:
+                date_map[info] = _parse_dt(raw)
+        # 已集齐全部目标 infoCode 或翻到末页即可停
+        if len(page) < 50 or set(by_code) <= set(date_map):
+            break
+
+    matched = updated = 0
+    with get_conn() as conn:
+        for code, items in by_code.items():
+            dt = date_map.get(code)
+            if dt is None:
+                continue
+            matched += len(items)
+            for r in items:
+                if r["published_at"] != dt:
+                    conn.execute(
+                        "UPDATE news_items SET published_at = %s WHERE id = %s",
+                        (dt, int(r["id"])),
+                    )
+                    updated += 1
+    return {
+        "rows": len(rows),
+        "matched": matched,
+        "updated": updated,
+        "skipped": len(rows) - matched,
+        "fetched": len(date_map),
+    }
 
 
 def ingest_news(

@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "test:community": "node --import tsx --test tests/commentThreads.test.mjs tests/communityLimits.test.mjs tests/communityForms.test.tsx",
+    "test:comments": "node --test tests/commentThreads.test.mjs",
     "dev": "vite --host --port 9530 --strictPort",
     "dev:http": "vite --host --port 9530 --strictPort",
     "dev:https": "set VITE_DEV_HTTPS=1&& set VITE_DEV_PORT=9530&& vite --host --port 9530 --strictPort",
@@ -14,6 +16,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.2",
+    "@testing-library/react": "^16.3.3",
     "@types/dompurify": "^3.0.5",
     "@types/highlight.js": "^9.12.4",
     "@types/js-yaml": "^4.0.9",
@@ -21,7 +24,9 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-basic-ssl": "^2.3.0",
     "@vitejs/plugin-react": "^6.0.3",
+    "jsdom": "^30.1.2",
     "tailwindcss": "^4.3.2",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.2",
     "vite": "^8.1.1"
   },

@@ -10,7 +10,7 @@ import {
 import { NEWS_CATEGORIES } from "@/data/nav";
 import {
   enrichNewsBody,
-  formatNewsTime,
+  formatNewsDate,
   getNews,
   type NewsItem,
 } from "@/lib/newsApi";
@@ -18,16 +18,6 @@ import { pushBrowseHistory } from "@/lib/browseHistory";
 
 function catLabel(id: string) {
   return NEWS_CATEGORIES.find((c) => c.id === id)?.label || id;
-}
-
-function formatFullTime(iso: string) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day} ${formatNewsTime(iso)}`;
 }
 
 const URL_RE = /https?:\/\/[^\s<>"')\]，。；、！？]+/g;
@@ -255,7 +245,7 @@ export function NewsDetailPage() {
                     <Newspaper className="h-3.5 w-3.5" />
                     {item.sourceLabel}
                   </span>
-                  <span>{formatFullTime(item.publishedAt)}</span>
+                  <span>{formatNewsDate(item.publishedAt)}</span>
                   <span className="text-slate-300">·</span>
                   <span>{catLabel(item.category)}</span>
                 </div>

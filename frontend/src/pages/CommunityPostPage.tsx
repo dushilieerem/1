@@ -64,12 +64,13 @@ function normalizeSummaryMd(raw: string): string {
 
 type StoredPostTldr = {
   summary: string;
+  source: string;
   flags: AgentFlag[];
   updatedAt: string;
 };
 
 function postTldrStorageKey(userId: number, postId: number) {
-  return `svquant.community.tldr.u${userId}.p${postId}`;
+  return `svquant.community.tldr.v2.u${userId}.p${postId}`;
 }
 
 function loadPostTldr(userId: number, postId: number): StoredPostTldr | null {
@@ -89,9 +90,11 @@ function savePostTldr(
   postId: number,
   summary: string,
   flags: AgentFlag[],
+  source: string,
 ) {
   const payload: StoredPostTldr = {
     summary,
+    source,
     flags,
     updatedAt: new Date().toISOString(),
   };
@@ -123,6 +126,7 @@ export function CommunityPostPage() {
   const [tldrBusy, setTldrBusy] = useState(false);
   const [tldrErr, setTldrErr] = useState<string | null>(null);
   const [tldrSummary, setTldrSummary] = useState<string | null>(null);
+  const [tldrSource, setTldrSource] = useState("unknown");
   const [tldrFlags, setTldrFlags] = useState<AgentFlag[]>([]);
   const [tldrModalOpen, setTldrModalOpen] = useState(false);
 
@@ -231,6 +235,7 @@ export function CommunityPostPage() {
     const cached = loadPostTldr(Number(user.id), postId);
     if (cached) {
       setTldrSummary(cached.summary);
+      setTldrSource(cached.source || "unknown");
       setTldrFlags(cached.flags || []);
     } else {
       setTldrSummary(null);
@@ -285,9 +290,11 @@ export function CommunityPostPage() {
       }
       const summary = normalizeSummaryMd(md);
       const flags = (res.outputs?.flags || res.board?.flags || []) as AgentFlag[];
+      const source = String(res.board?.artifacts?.summary_source || "unknown");
       setTldrSummary(summary);
+      setTldrSource(source);
       setTldrFlags(flags);
-      savePostTldr(Number(user.id), post.id, summary, flags);
+      savePostTldr(Number(user.id), post.id, summary, flags, source);
       setTldrModalOpen(true);
     } catch (ex) {
       setTldrErr(ex instanceof Error ? ex.message : String(ex));
@@ -993,7 +1000,7 @@ export function CommunityPostPage() {
             onTouchMove={(e) => e.stopPropagation()}
           >
             <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-3.5">
-              <h2 className="text-base font-semibold text-slate-900">AI 摘要</h2>
+              <h2 className="text-base font-semibold text-slate-900">{tldrSource === "llm" ? "AI 摘要" : tldrSource === "mock_local" ? "原文节选（非 AI）" : "内容摘要（来源未确认）"}</h2>
               <button
                 type="button"
                 onClick={() => setTldrModalOpen(false)}

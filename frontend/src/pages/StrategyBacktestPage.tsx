@@ -9,7 +9,9 @@ import {
 } from "lucide-react";
 import { FactorCodeEditor } from "@/components/FactorCodeEditor";
 import { StrategySignalFactorsPanel } from "@/components/StrategySignalFactorsPanel";
+import { BacktestFilterToggles } from "@/components/strategy/BacktestFilterToggles";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { buildStrategyBacktestRequest } from "@/lib/backtestRequests";
 import { configFromRunRequest } from "@/lib/strategyLibraryApi";
 import {
   ygBacktestStrategy,
@@ -431,6 +433,11 @@ export function StrategyBacktestPage() {
       top_n: cfg.top_n,
       rebalance_days: cfg.rebalance_days,
       include_rebalance_logs: cfg.include_rebalance_logs,
+      // 过滤开关必须在此保留，否则每次切换执行模式都会被静默重置为 false。
+      filter_suspended: cfg.filter_suspended,
+      filter_st: cfg.filter_st,
+      filter_limit_up: cfg.filter_limit_up,
+      filter_limit_down: cfg.filter_limit_down,
       library_ref: cfg.library_ref,
     };
     const next = normalizeStrategyConfig({
@@ -478,20 +485,11 @@ export function StrategyBacktestPage() {
     const ac = new AbortController();
     abortRef.current = ac;
     const t0 = performance.now();
-    const req: YgStrategyBacktestRequest = {
-      ...(strategyId ? { strategy_id: strategyId } : { strategy_code: snapshotCode }),
-      engine_mode: cfg.engine_mode,
-      universe: cfg.universe,
-      start: range.start,
-      end: range.end,
-      benchmark: cfg.benchmark,
-      commission_rate: cfg.commission_rate,
-      stamp_tax: cfg.stamp_tax,
-      slippage_rate: cfg.slippage_rate,
-      initial_capital: cfg.initial_capital,
-      include_positions: false,
-      include_rebalance_logs: cfg.include_rebalance_logs,
-    };
+    const req = buildStrategyBacktestRequest(cfg, {
+      strategyId,
+      snapshotCode,
+      range,
+    });
     // RE 执行请求只带 strategy_id；源码只作为 SVQuant 的不可变回测快照保存。
     const runRequest: YgStrategyBacktestRequest = strategyId
       ? {
@@ -962,6 +960,12 @@ export function StrategyBacktestPage() {
                   />
                 </label>
               </div>
+              {/* 过滤开关在两种模式下都要渲染：事件模式仍可勾选过滤 ST */}
+              <BacktestFilterToggles
+                value={cfg}
+                engineMode={cfg.engine_mode}
+                onChange={(patch) => patchCfg(patch, "right")}
+              />
               {cfg.engine_mode === "event" ? null : (
                 <label className="mt-3 flex cursor-pointer items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2.5">
                   <input

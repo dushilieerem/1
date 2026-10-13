@@ -305,6 +305,14 @@ export function configFromRunRequest(
       typeof r.include_rebalance_logs === "boolean"
         ? r.include_rebalance_logs
         : true,
+    // 老 run 没有这几个键 -> 回落 false，与「当时不可设置」语义一致
+    filter_suspended:
+      typeof r.filter_suspended === "boolean" ? r.filter_suspended : false,
+    filter_st: typeof r.filter_st === "boolean" ? r.filter_st : false,
+    filter_limit_up:
+      typeof r.filter_limit_up === "boolean" ? r.filter_limit_up : false,
+    filter_limit_down:
+      typeof r.filter_limit_down === "boolean" ? r.filter_limit_down : false,
     signal_factor_ids: signalIds || [],
     signal_factor_weights: signalWeights || [],
     signal_factor_powers: signalPowers || [],

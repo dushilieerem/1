@@ -48,6 +48,7 @@ import {
   type RangeMode,
   type WeightMode,
 } from "@/lib/detectStore";
+import { buildFactorDetectRequest } from "@/lib/backtestRequests";
 import {
   extractMethod,
   factorExplainText,
@@ -1074,22 +1075,7 @@ export function FactorDetectPage() {
     );
     try {
       const { start, end } = resolveBacktestRange(cfg);
-      const req: YgBacktestRequest = {
-        ...parts,
-        portfolio_type: cfg.portfolioType,
-        universe: cfg.universe,
-        start,
-        end,
-        filter_limit_up: cfg.filterLimitUp,
-        filter_suspended: cfg.filterSuspended,
-        benchmark: cfg.benchmark,
-        groups: Math.min(5, Math.max(1, cfg.groups || 5)),
-        rebalance_days: cfg.rebalanceDays,
-        commission_rate: cfg.commissionRate,
-        stamp_tax: cfg.stampTax,
-        slippage_rate: cfg.slippageRate,
-        analysis_level: cfg.analysisLevel || "core",
-      };
+      const req = buildFactorDetectRequest(cfg, parts, { start, end });
       const depthLabel =
         req.analysis_level === "full" ? "全量检测" : "快速检测";
       const poolLabel =
@@ -1758,6 +1744,22 @@ export function FactorDetectPage() {
                 <label className="flex items-center gap-2 text-xs text-slate-600">
                   <input
                     type="checkbox"
+                    checked={cfg.filterSuspended}
+                    onChange={(e) => patchConfig({ filterSuspended: e.target.checked })}
+                  />
+                  过滤停牌
+                </label>
+                <label className="flex items-center gap-2 text-xs text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={cfg.filterSt}
+                    onChange={(e) => patchConfig({ filterSt: e.target.checked })}
+                  />
+                  过滤ST
+                </label>
+                <label className="flex items-center gap-2 text-xs text-slate-600">
+                  <input
+                    type="checkbox"
                     checked={cfg.filterLimitUp}
                     onChange={(e) => patchConfig({ filterLimitUp: e.target.checked })}
                   />
@@ -1766,10 +1768,10 @@ export function FactorDetectPage() {
                 <label className="flex items-center gap-2 text-xs text-slate-600">
                   <input
                     type="checkbox"
-                    checked={cfg.filterSuspended}
-                    onChange={(e) => patchConfig({ filterSuspended: e.target.checked })}
+                    checked={cfg.filterLimitDown}
+                    onChange={(e) => patchConfig({ filterLimitDown: e.target.checked })}
                   />
-                  过滤停牌
+                  过滤跌停
                 </label>
               </div>
             </section>

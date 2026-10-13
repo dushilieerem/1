@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test:community": "node --import tsx --test tests/commentThreads.test.mjs tests/communityLimits.test.mjs tests/communityForms.test.tsx",
+    "test:backtest-filters": "node --import tsx --test tests/backtestFilters.test.tsx",
     "test:comments": "node --test tests/commentThreads.test.mjs",
     "dev": "vite --host --port 9530 --strictPort",
     "dev:http": "vite --host --port 9530 --strictPort",

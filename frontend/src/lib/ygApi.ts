@@ -177,6 +177,10 @@ export type YgBacktestRequest = {
   end?: string | null;
   filter_limit_up?: boolean;
   filter_suspended?: boolean;
+  /** 是否过滤 ST、*ST */
+  filter_st?: boolean;
+  /** 是否过滤跌停 */
+  filter_limit_down?: boolean;
   rebalance_days?: number;
   groups?: number;
   benchmark?: string;
@@ -457,6 +461,14 @@ export type YgStrategyBacktestRequest = {
   include_positions?: boolean;
   /** 是否返回目标权重变化的调仓日志（默认 false；研究页可勾选） */
   include_rebalance_logs?: boolean;
+  /** 是否过滤停牌（事件模式下由撮合层强制拦截，该参数不额外生效） */
+  filter_suspended?: boolean;
+  /** 是否过滤 ST、*ST（事件模式下只拒绝买入） */
+  filter_st?: boolean;
+  /** 是否过滤涨停（事件模式下由撮合层强制拦截，该参数不额外生效） */
+  filter_limit_up?: boolean;
+  /** 是否过滤跌停（事件模式下由撮合层强制拦截，该参数不额外生效） */
+  filter_limit_down?: boolean;
   /**
    * 仅 SVQuant 落库用：左侧因子选择快照。
    * serializeYgStrategyBody 会剥离，不会发给 ResearchEngine。

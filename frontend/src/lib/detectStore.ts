@@ -36,6 +36,8 @@ export type DetectProjectConfig = {
   rebalanceDays: number;
   filterLimitUp: boolean;
   filterSuspended: boolean;
+  filterSt: boolean;
+  filterLimitDown: boolean;
   /** core=快速检测 | full=全量检测，对应 RE analysis_level */
   analysisLevel: AnalysisLevel;
   /** 对标 RE /yg-api：佣金率 / 卖出印花税 / 滑点率 */
@@ -103,6 +105,8 @@ export type DetectRunUiSnapshot = {
   rebalanceDays: number;
   filterLimitUp: boolean;
   filterSuspended: boolean;
+  filterSt: boolean;
+  filterLimitDown: boolean;
   analysisLevel: AnalysisLevel;
   commissionRate: number;
   stampTax: number;
@@ -135,6 +139,8 @@ export function buildDetectRunUiSnapshot(
     rebalanceDays: cfg.rebalanceDays || 1,
     filterLimitUp: Boolean(cfg.filterLimitUp),
     filterSuspended: Boolean(cfg.filterSuspended),
+    filterSt: Boolean(cfg.filterSt),
+    filterLimitDown: Boolean(cfg.filterLimitDown),
     analysisLevel: cfg.analysisLevel === "full" ? "full" : "core",
     commissionRate: Number(cfg.commissionRate) || 0,
     stampTax: Number(cfg.stampTax) || 0,
@@ -178,6 +184,8 @@ export function readDetectRunUiSnapshot(
     rebalanceDays: Number(raw.rebalanceDays) || 1,
     filterLimitUp: Boolean(raw.filterLimitUp),
     filterSuspended: Boolean(raw.filterSuspended),
+    filterSt: Boolean(raw.filterSt),
+    filterLimitDown: Boolean(raw.filterLimitDown),
     analysisLevel: raw.analysisLevel === "full" ? "full" : "core",
     commissionRate: Number(raw.commissionRate) || 0,
     stampTax: Number(raw.stampTax) || 0,
@@ -233,6 +241,8 @@ export function applyDetectRunSnapshotToConfig(
     rebalanceDays: snap.rebalanceDays,
     filterLimitUp: snap.filterLimitUp,
     filterSuspended: snap.filterSuspended,
+    filterSt: snap.filterSt,
+    filterLimitDown: snap.filterLimitDown,
     analysisLevel: snap.analysisLevel,
     commissionRate: snap.commissionRate,
     stampTax: snap.stampTax,
@@ -399,6 +409,8 @@ export function defaultConfig(factorCodes: string[] = []): DetectProjectConfig {
     rebalanceDays: 1,
     filterLimitUp: false,
     filterSuspended: false,
+    filterSt: false,
+    filterLimitDown: false,
     analysisLevel: "core",
     commissionRate: 0,
     stampTax: 0,

@@ -43,6 +43,11 @@ export type StrategyProjectConfig = {
   rebalance_days: number;
   /** 回测请求：是否拉取 rebalance_logs */
   include_rebalance_logs: boolean;
+  /** 回测请求：交易过滤开关（命名对齐 ResearchEngine 请求字段，默认全 false） */
+  filter_suspended: boolean;
+  filter_st: boolean;
+  filter_limit_up: boolean;
+  filter_limit_down: boolean;
   /** 执行模式：vectorized | event（对应 API engine_mode） */
   engine_mode: StrategyEngineMode;
   strategy_code: string;
@@ -121,6 +126,10 @@ export function defaultStrategyConfig(): StrategyProjectConfig {
     top_n: 30,
     rebalance_days: 20,
     include_rebalance_logs: true,
+    filter_suspended: false,
+    filter_st: false,
+    filter_limit_up: false,
+    filter_limit_down: false,
     engine_mode: "vectorized",
     strategy_code: DEFAULT_STRATEGY_CODE,
     signal_factor_ids: [],
@@ -167,6 +176,20 @@ export function normalizeStrategyConfig(
       typeof c.include_rebalance_logs === "boolean"
         ? c.include_rebalance_logs
         : d.include_rebalance_logs,
+    // 注意：本函数是严格白名单，未在此列出的字段会在保存/加载项目时被丢弃。
+    filter_suspended:
+      typeof c.filter_suspended === "boolean"
+        ? c.filter_suspended
+        : d.filter_suspended,
+    filter_st: typeof c.filter_st === "boolean" ? c.filter_st : d.filter_st,
+    filter_limit_up:
+      typeof c.filter_limit_up === "boolean"
+        ? c.filter_limit_up
+        : d.filter_limit_up,
+    filter_limit_down:
+      typeof c.filter_limit_down === "boolean"
+        ? c.filter_limit_down
+        : d.filter_limit_down,
     engine_mode:
       c.engine_mode === "event" || c.engine_mode === "vectorized"
         ? c.engine_mode

@@ -1,4 +1,5 @@
 import type { YgBacktestRequest, YgBacktestResponse } from "./ygApi";
+import type { DetectSource } from "./detectSource";
 import { authHeaders, assertAuthConsistency, getStoredUser, subscribeAuth, prepareAuthHandoff } from "./auth";
 import { renameMethodDef } from "./factorCatalog";
 
@@ -15,6 +16,7 @@ export type DraftDetectFactor = {
 };
 
 export type DetectProjectConfig = {
+  source?: DetectSource;
   factorCodes: string[];
   /**
    * 因子名 → RE/本地 library。选因子时写入，提交时优先于 catalog 解析，
@@ -87,6 +89,8 @@ export type DetectRunRecord = {
 
 /** 单次检测落库的 UI 快照（历史还原 / 列表展示） */
 export type DetectRunUiSnapshot = {
+  source?: DetectSource;
+  factorLibraries?: Record<string, string>;
   factorCodes: string[];
   /** code → 中文名 */
   factorLabels?: Record<string, string>;
@@ -123,6 +127,8 @@ export function buildDetectRunUiSnapshot(
   }
   return {
     factorCodes: [...(cfg.factorCodes || [])],
+    source: cfg.source,
+    factorLibraries: cfg.factorLibraries,
     factorLabels,
     weights: [...(cfg.weights || [])],
     powers: [...(cfg.powers || [])],
@@ -160,6 +166,8 @@ export function readDetectRunUiSnapshot(
   if (!codes.length && !(raw.customCombine || "").trim()) return null;
   return {
     factorCodes: codes,
+    source: raw.source,
+    factorLibraries: raw.factorLibraries,
     factorLabels:
       raw.factorLabels && typeof raw.factorLabels === "object"
         ? Object.fromEntries(
@@ -221,6 +229,8 @@ export function applyDetectRunSnapshotToConfig(
 ): DetectProjectConfig {
   return {
     ...cfg,
+    source: snap.source,
+    factorLibraries: snap.factorLibraries || {},
     factorCodes: [...snap.factorCodes],
     weights: snap.weights.length
       ? [...snap.weights]

@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { PageJump } from "@/components/PageJump";
+import { UserFactorEditDialog } from "@/components/UserFactorEditDialog";
 import { useConfirm } from "@/components/ConfirmDialog";
 import {
   getStoredUser,
@@ -149,9 +150,11 @@ function pageNumbers(current: number, total: number): (number | "…")[] {
 function FactorRow({
   factor,
   onDelete,
+  onEdit,
 }: {
   factor: FactorMeta;
   onDelete?: () => void;
+  onEdit?: () => void;
 }) {
   const pending = isFormulaPending(factor);
   // 待写态用亮黄，与「波动/风险」的 amber 明显区分；检测写回后恢复分类色
@@ -218,6 +221,7 @@ function FactorRow({
           >
             检测
           </button>
+          {onEdit && <button type="button" onClick={onEdit} className="rounded-lg px-2 py-1 text-xs text-blue-600 hover:bg-blue-50">编辑</button>}
           {onDelete ? (
             <button
               type="button"
@@ -257,6 +261,7 @@ export function FactorLibraryPage() {
   const [factorCreateErr, setFactorCreateErr] = useState<string | null>(null);
   const [factorCreateBusy, setFactorCreateBusy] = useState(false);
   const [userLibFactors, setUserLibFactors] = useState<FactorMeta[]>([]);
+  const [editingFactor, setEditingFactor] = useState<FactorMeta | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
   const isAdmin = user?.role === "admin";
 
@@ -745,6 +750,7 @@ export function FactorLibraryPage() {
                 <FactorRow
                   key={`${f.library}:${f.name}:${f.userLibraryFactorId ?? ""}`}
                   factor={f}
+                  onEdit={activeLib !== BUILTIN_KEY && f.userLibraryFactorId != null ? () => setEditingFactor(f) : undefined}
                   onDelete={
                     activeLib !== BUILTIN_KEY &&
                     f.userLibraryFactorId != null &&
@@ -859,6 +865,10 @@ export function FactorLibraryPage() {
         </div>
       ) : null}
 
+      {editingFactor && <UserFactorEditDialog factor={editingFactor} onClose={() => setEditingFactor(null)} onSaved={(saved) => {
+        setUserLibFactors((prev) => prev.map((f) => f.userLibraryFactorId === saved.userLibraryFactorId ? saved : f));
+        setEditingFactor(null);
+      }} />}
       {factorCreateOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">

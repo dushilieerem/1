@@ -49,6 +49,7 @@ import {
   type WeightMode,
 } from "@/lib/detectStore";
 import { buildFactorDetectRequest } from "@/lib/backtestRequests";
+import { sourceFromRequest, sourceRequestParts } from "@/lib/detectSource";
 import {
   extractMethod,
   factorExplainText,
@@ -213,6 +214,7 @@ export function FactorDetectPage() {
     let cancelled = false;
     setScriptReady(false);
     setScriptText("");
+    setBodyOverrides({});
     setBodiesReady(false);
     setCatalogReady(false);
     const cached = peekProject(projectId);
@@ -254,6 +256,11 @@ export function FactorDetectPage() {
                 `[${ts}] 已加载历史快照：${label}（保存后才会写入项目最新配置）`,
               ]);
             }
+            // 运行请求保存了实际执行的源码，不能用现在的库公式覆盖历史。
+            next = {
+              ...next,
+              config: { ...next.config, source: sourceFromRequest(run.request) },
+            };
           }
         } catch {
           /* 无快照则仍用项目最新配置 */
@@ -526,6 +533,10 @@ export function FactorDetectPage() {
       setScriptText(text);
       setScriptReady(true);
     };
+    if (cfg.source !== undefined) {
+      commitScript(cfg.source.code);
+      return;
+    }
     if (isDraftOnlyMode && draftFactor) {
       commitScript(draftFactor.body || "");
       return;
@@ -620,12 +631,31 @@ export function FactorDetectPage() {
     syncOriginRef.current = "ui";
     setProject((prev) => {
       if (!prev) return prev;
-      return { ...prev, config: { ...prev.config, ...partial } };
+      const formulaChanged = ["weights", "powers", "customCombine", "factorCodes", "weightMode"]
+        .some((key) => key in partial);
+      return {
+        ...prev,
+        config: { ...prev.config, ...partial, ...(formulaChanged ? { source: undefined } : {}) },
+      };
     });
   };
 
   const onScriptChange = (v: string) => {
     setScriptText(v);
+    const libs = [...new Set((cfg?.factorCodes || [])
+      .map((c) => cfg?.factorLibraries?.[c] || resolveFactorMeta(catalog, c)?.library)
+      .filter((lib): lib is string => Boolean(lib && isReBuiltinLib(lib))))];
+    setProject((prev) => prev ? {
+      ...prev,
+      config: {
+        ...prev.config,
+        source: {
+          code: v,
+          name: prev.config.source?.name || detectEntryName,
+          library: prev.config.source?.library ?? (libs.length ? libs : undefined),
+        },
+      },
+    } : prev);
     if (isDraftOnlyMode && draftFactor) {
       syncOriginRef.current = "code";
       setProject((prev) => {
@@ -807,6 +837,7 @@ export function FactorDetectPage() {
         config: {
           ...prev.config,
           factorCodes: nextCodes,
+          source: undefined,
           factorLibraries,
           weights,
           powers,
@@ -831,6 +862,7 @@ export function FactorDetectPage() {
           config: {
             ...prev.config,
             factorCodes: [],
+            source: undefined,
             weights: [],
             powers: [],
             draftFactor: null,
@@ -891,6 +923,7 @@ export function FactorDetectPage() {
         config: {
           ...prev.config,
           weightMode: mode,
+          source: undefined,
           weights,
           powers,
           customCombine,
@@ -899,19 +932,59 @@ export function FactorDetectPage() {
     });
   };
 
-  const persist = () => {
+  const persist = async () => {
     if (!project) return;
-    void saveProject(project).then((saved) => {
+    try {
+      if (!isBuiltinLockedMode) {
+        sourceRequestParts({ code: scriptText, name: cfg?.source?.name || detectEntryName });
+      }
+      if (primaryUserFactor?.userLibraryId != null &&
+          primaryUserFactor.userLibraryFactorId != null &&
+          (cfg?.factorCodes.length ?? 0) <= 1) {
+        const updated = await persistFormulaAfterDetect({
+          libraryId: primaryUserFactor.userLibraryId,
+          factorId: primaryUserFactor.userLibraryFactorId,
+          body: scriptText,
+          description: primaryUserFactor.description,
+        });
+        setCatalog((prev) => prev.map((f) =>
+          f.userLibraryFactorId === updated.id ? userLibraryFactorToMeta(updated) : f,
+        ));
+      }
+      const saved = await saveProject(project);
       setProject(saved);
       setSavedHint("已保存");
       window.setTimeout(() => setSavedHint(""), 1500);
-      pushLog("项目配置已保存");
-    });
+      pushLog("代码与项目配置已保存");
+    } catch (e) {
+      setRunError(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const onRun = useCallback(async () => {
     if (!project || !cfg) return;
     setRunError(null);
+    if (!scriptReady || !catalogReady) return;
+    let sourceParts;
+    try {
+      if (cfg.source !== undefined) sourceParts = sourceRequestParts(cfg.source);
+      else if (!isBuiltinLockedMode && !scriptText.trim()) {
+        throw new Error("因子代码不能为空，请编写代码后再检测");
+      }
+      if (!sourceParts) {
+        const missing = cfg.factorCodes.find((code) =>
+          !listDraftFactors(cfg).some((d) => d.name === code) && !resolveFactorMeta(catalog, code),
+        );
+        if (missing) {
+          throw new Error(`因子「${missing}」已删除或不可用，且没有可执行的历史代码快照，请重新添加因子`);
+        }
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setRunError(msg);
+      pushLog(msg);
+      return;
+    }
     const runDrafts = listDraftFactors(cfg);
     const draftOnly =
       runDrafts.length === 1 &&
@@ -933,7 +1006,7 @@ export function FactorDetectPage() {
       pushLog(msg);
       return;
     }
-    for (const d of runDrafts) {
+    for (const d of sourceParts ? [] : runDrafts) {
       if (!(d.body || "").trim()) {
         const msg = `请先编写因子代码：${d.name}`;
         setRunError(msg);
@@ -941,7 +1014,7 @@ export function FactorDetectPage() {
         return;
       }
     }
-    for (const code of cfg.factorCodes) {
+    for (const code of sourceParts ? [] : cfg.factorCodes) {
       if (runDrafts.some((d) => d.name === code)) continue;
       const meta = resolveFactorMeta(catalog, code);
       if (!meta || !isFormulaPending(meta)) continue;
@@ -1021,7 +1094,7 @@ export function FactorDetectPage() {
       ),
     });
     const entryName = extractEntryName(combo, entry);
-    const parts = buildYgFactorRequestParts({
+    const parts = sourceParts ?? buildYgFactorRequestParts({
       factors: catalogForBuild,
       factorCodes: codes,
       methodBodies: bodiesForBuild,
@@ -1033,7 +1106,7 @@ export function FactorDetectPage() {
       },
     });
     // 内置因子：必须已带 library_name；缺库名宁可不发，避免空 UserFactorLibrary
-    for (const code of codes) {
+    for (const code of sourceParts ? [] : codes) {
       if (runDrafts.some((d) => d.name === code)) continue;
       const lib =
         cfg.factorLibraries?.[code] ||
@@ -1065,7 +1138,6 @@ export function FactorDetectPage() {
     setElapsed(0);
     const t0 = Date.now();
     tickRef.current = window.setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 400);
-    saveProject(project);
     pushLog("开始检测…");
     const factorLabel = parts.factor_name || "当前组合";
     pushLog(
@@ -1074,6 +1146,7 @@ export function FactorDetectPage() {
         : `检测因子：${factorLabel}（自定义代码）`,
     );
     try {
+      await saveProject(project);
       const { start, end } = resolveBacktestRange(cfg);
       const req = buildFactorDetectRequest(cfg, parts, { start, end });
       const depthLabel =
@@ -1207,7 +1280,7 @@ export function FactorDetectPage() {
           const friendly = msg
             .replace(/POST\s+\/yg-api\/\S+/gi, "计算服务")
             .replace(/\/api\/\S+/g, "接口")
-            .replace(/:8766|:9527|ResearchEngine|RE\b/gi, "计算服务")
+            .replace(/:8766|:9527|ResearchEngine|\bRE\b/gi, "计算服务")
             .replace(/HTTP\s+/gi, "");
           setRunError(friendly);
           pushLog(`检测未通过：${friendly}`);
@@ -1218,7 +1291,7 @@ export function FactorDetectPage() {
       setRunning(false);
       setElapsed(Math.floor((Date.now() - t0) / 1000));
     }
-  }, [project, cfg, methodBodies, bodyOverrides, catalog, navigate, pushLog, snapshotRunId, primaryUserName]);
+  }, [project, cfg, methodBodies, bodyOverrides, catalog, navigate, pushLog, snapshotRunId, primaryUserName, scriptText, scriptReady, catalogReady, isBuiltinLockedMode]);
 
   if (project === undefined) {
     return (

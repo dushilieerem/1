@@ -123,6 +123,7 @@ export async function updateUserLibraryFactor(
   libraryId: number,
   factorId: number,
   payload: {
+    name?: string;
     body?: string;
     description?: string;
     categoryLabel?: string;
@@ -134,6 +135,7 @@ export async function updateUserLibraryFactor(
     {
       method: "PUT",
       body: JSON.stringify({
+        ...(payload.name !== undefined ? { name: payload.name } : {}),
         ...(payload.body !== undefined ? { body: payload.body } : {}),
         ...(payload.description !== undefined
           ? { description: payload.description }

@@ -2,6 +2,7 @@
 """用户自建因子库（文件夹）+ 库内因子。与「内置因子库」同级。"""
 from __future__ import annotations
 
+import keyword
 import re
 import threading
 from typing import Any
@@ -322,12 +323,13 @@ def update_library_factor(
     library_id: int,
     factor_id: int,
     *,
+    name: str | None = None,
     body: str | None = None,
     description: str | None = None,
     category_label: str | None = None,
     formula_ready: bool | None = None,
 ) -> dict[str, Any]:
-    """更新用户库因子正文/说明；检测成功回写公式用。"""
+    """更新本人因子的名称、正文和说明，历史检测记录保持不变。"""
     ensure_user_libraries_schema()
     with get_conn() as conn:
         lib = conn.execute(
@@ -346,7 +348,24 @@ def update_library_factor(
         if not cur:
             raise KeyError(factor_id)
         row = dict(cur)
-        code = row["name"]
+        code = (name if name is not None else row["name"]).strip()
+        if not FACTOR_NAME_RE.fullmatch(code) or keyword.iskeyword(code):
+            raise ValueError("因子代码名须为有效的 Python 标识符")
+        if code != row["name"]:
+            clash = conn.execute(
+                "SELECT id FROM user_library_factors WHERE user_id = %s AND name = %s AND id <> %s",
+                (int(user_id), code, int(factor_id)),
+            ).fetchone()
+            if clash:
+                raise ValueError(f"你已有同名因子「{code}」，请换一个代码名")
+            if body is None:
+                body = re.sub(
+                    rf"^(def\s+){re.escape(row['name'])}(\s*\()",
+                    rf"\g<1>{code}\2",
+                    row.get("body") or "",
+                    count=1,
+                    flags=re.M,
+                )
         desc = (
             (description if description is not None else row.get("description") or "")
             .strip()
@@ -361,7 +380,9 @@ def update_library_factor(
             raw = (body or "").strip()
             if not raw:
                 normalized = ""
-                ready = False if formula_ready is None else bool(formula_ready)
+                if row.get("body"):
+                    raise ValueError("因子代码不能为空")
+                ready = False
             else:
                 normalized = _normalize_body(raw, code, desc)
                 ready = True if formula_ready is None else bool(formula_ready)
@@ -375,7 +396,7 @@ def update_library_factor(
         updated = conn.execute(
             """
             UPDATE user_library_factors
-            SET body = %s,
+            SET name = %s, method_name = %s, body = %s,
                 description = %s,
                 category_label = %s,
                 formula_ready = %s,
@@ -384,6 +405,8 @@ def update_library_factor(
             RETURNING *
             """,
             (
+                code,
+                code,
                 normalized,
                 desc,
                 cat,

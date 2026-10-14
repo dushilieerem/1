@@ -88,7 +88,8 @@ def watchlists_rename(
     uid: int = Depends(require_db_user_id),
 ) -> dict:
     try:
-        return rename_watchlist(uid, wl_id, str(body.get("name") or ""))
+        wl = rename_watchlist(uid, wl_id, str(body.get("name") or ""))
+        return {"ok": True, "watchlist": wl}
     except KeyError:
         raise HTTPException(status_code=404, detail="not found") from None
     except ValueError as exc:

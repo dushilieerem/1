@@ -336,6 +336,10 @@ export function StrategyLibraryPage() {
       setCreateErr("请填写策略库名称");
       return;
     }
+    if (title.length > 64) {
+      setCreateErr("策略库名称最长 64 个字符");
+      return;
+    }
     setCreateBusy(true);
     setCreateErr(null);
     try {
@@ -747,6 +751,7 @@ export function StrategyLibraryPage() {
               <input
                 autoFocus
                 value={createName}
+                maxLength={64}
                 onChange={(e) => {
                   setCreateName(e.target.value);
                   setCreateErr(null);
@@ -761,6 +766,12 @@ export function StrategyLibraryPage() {
                 className="mt-1.5 h-9 w-full rounded-lg border border-slate-200 px-2.5 text-sm outline-none focus:border-slate-400"
               />
             </label>
+            <p className="mt-1.5 text-xs text-slate-400">
+              <span className={createName.length >= 64 ? "text-red-500" : undefined}>
+                {createName.length}/64
+              </span>
+              {" · 支持中英文、数字、下划线与短横线"}
+            </p>
             {createErr ? (
               <p className="mt-2 text-xs text-red-500">{createErr}</p>
             ) : null}

@@ -9,6 +9,7 @@ from typing import Any
 from services.core.db import get_conn
 
 NAME_RE = re.compile(r"^[\w\u4e00-\u9fff][\w\u4e00-\u9fff\-]{0,63}$")
+MAX_LIBRARY_NAME_LEN = 64
 
 
 def ensure_user_strategy_libraries_schema() -> None:
@@ -43,10 +44,15 @@ def ensure_user_strategy_libraries_schema() -> None:
               category_label  TEXT NOT NULL DEFAULT '其他',
               created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
               updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-              UNIQUE (library_id, name),
-              UNIQUE (user_id, name)
+              UNIQUE (library_id, name)
             )
             """
+        )
+        # 策略名唯一性收敛到库内：不同策略库允许同名策略。
+        # 历史版本建过全用户范围的 UNIQUE (user_id, name)，对已存在的表移除。
+        conn.execute(
+            "ALTER TABLE user_library_strategies "
+            "DROP CONSTRAINT IF EXISTS user_library_strategies_user_id_name_key"
         )
         # 入库快照：与研究侧 run 脱钩，不可变
         for stmt in (
@@ -163,9 +169,19 @@ def create_user_strategy_library(user_id: int, name: str) -> dict[str, Any]:
     title = (name or "").strip()
     if not title:
         raise ValueError("请填写策略库名称")
+    if len(title) > MAX_LIBRARY_NAME_LEN:
+        raise ValueError(
+            f"策略库名称最长 {MAX_LIBRARY_NAME_LEN} 个字符，当前 {len(title)} 个"
+        )
     if not NAME_RE.match(title):
         raise ValueError("名称仅支持中英文、数字、下划线与短横线")
     with get_conn() as conn:
+        exists = conn.execute(
+            "SELECT id FROM user_strategy_libraries WHERE user_id = %s AND name = %s",
+            (int(user_id), title),
+        ).fetchone()
+        if exists:
+            raise ValueError(f"已存在同名策略库：{title}")
         row = conn.execute(
             """
             INSERT INTO user_strategy_libraries (user_id, name)
@@ -279,11 +295,12 @@ def add_library_strategy(
         if not lib:
             raise KeyError(library_id)
         clash = conn.execute(
-            "SELECT id, library_id FROM user_library_strategies WHERE user_id = %s AND name = %s",
-            (int(user_id), title),
+            "SELECT id, library_id FROM user_library_strategies "
+            "WHERE library_id = %s AND name = %s",
+            (int(library_id), title),
         ).fetchone()
         if clash:
-            raise ValueError(f"你已有同名策略「{title}」，请换一个名字")
+            raise ValueError(f"该策略库中已有同名策略「{title}」，请换一个名字")
         row = conn.execute(
             """
             INSERT INTO user_library_strategies

@@ -7,12 +7,77 @@ the same concurrency, duration, and request timeout used by the baseline report.
 from __future__ import annotations
 
 import json
+import http.client
+import os
+import socket
 import time
+import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import performance_baseline as perf
+
+
+CLIENT_MODE = "httpclient_keepalive_per_worker"
+
+
+class KeepAliveClient:
+    def __init__(self, token: str | None = None):
+        parsed = urllib.parse.urlparse(perf.BASE)
+        self.host = parsed.hostname or "127.0.0.1"
+        self.port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        self.https = parsed.scheme == "https"
+        self.token = token
+        self.conn: http.client.HTTPConnection | http.client.HTTPSConnection | None = None
+
+    def _connect(self) -> http.client.HTTPConnection | http.client.HTTPSConnection:
+        if self.conn is None:
+            cls = http.client.HTTPSConnection if self.https else http.client.HTTPConnection
+            self.conn = cls(self.host, self.port, timeout=perf.REQUEST_TIMEOUT_SEC)
+        return self.conn
+
+    def close(self) -> None:
+        if self.conn is not None:
+            try:
+                self.conn.close()
+            finally:
+                self.conn = None
+
+    def request(self, method: str, path: str, *, body: dict | None = None, name: str = "") -> perf.RequestResult:
+        data = None
+        headers = {
+            "Accept": "application/json",
+            "Connection": "keep-alive",
+            "User-Agent": f"SVQuant-R4-Perf/{perf.RUN_ID}",
+        }
+        if body is not None:
+            data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        t0 = time.perf_counter()
+        try:
+            conn = self._connect()
+            conn.request(method, path, body=data, headers=headers)
+            resp = conn.getresponse()
+            resp.read()
+            elapsed = (time.perf_counter() - t0) * 1000
+            if getattr(resp, "will_close", False):
+                self.close()
+            ok = 200 <= resp.status < 400
+            error_type = "" if ok else ("server_error" if int(resp.status) >= 500 else "client_error")
+            error = "" if ok else f"HTTP {resp.status}"
+            return perf.RequestResult(name or path, method, path, resp.status, ok, elapsed, error, error_type)
+        except (TimeoutError, socket.timeout) as exc:
+            self.close()
+            elapsed = (time.perf_counter() - t0) * 1000
+            return perf.RequestResult(name or path, method, path, 0, False, elapsed, repr(exc), "timeout")
+        except Exception as exc:
+            self.close()
+            elapsed = (time.perf_counter() - t0) * 1000
+            return perf.RequestResult(name or path, method, path, 0, False, elapsed, repr(exc), "connection_error")
 
 
 def _summary(results: list[perf.RequestResult], wall: float, *, concurrency: int, case: str) -> dict[str, Any]:
@@ -20,12 +85,41 @@ def _summary(results: list[perf.RequestResult], wall: float, *, concurrency: int
     row["concurrency"] = concurrency
     row["duration_sec"] = round(wall, 2)
     row["case"] = case
+    row["client_mode"] = CLIENT_MODE
     return row
 
 
 def _run_case(concurrency: int, duration_sec: int, factory, case: str) -> dict[str, Any]:
     results, wall = perf.run_for_duration(concurrency, duration_sec, factory)
     return _summary(results, wall, concurrency=concurrency, case=case)
+
+
+def _run_keepalive_case(
+    concurrency: int,
+    duration_sec: int,
+    client_factory: Callable[[], KeepAliveClient],
+    request_factory: Callable[[KeepAliveClient], perf.RequestResult],
+    case: str,
+) -> dict[str, Any]:
+    stop_at = time.monotonic() + duration_sec
+    results: list[perf.RequestResult] = []
+
+    def worker() -> list[perf.RequestResult]:
+        client = client_factory()
+        local: list[perf.RequestResult] = []
+        try:
+            while time.monotonic() < stop_at:
+                local.append(request_factory(client))
+        finally:
+            client.close()
+        return local
+
+    t0 = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        futures = [pool.submit(worker) for _ in range(concurrency)]
+        for fut in as_completed(futures):
+            results.extend(fut.result())
+    return _summary(results, time.perf_counter() - t0, concurrency=concurrency, case=case)
 
 
 def _run_fixed_count(count: int, factory, case: str) -> dict[str, Any]:
@@ -62,6 +156,14 @@ def main() -> int:
             "market_symbols_concurrency": perf.STABILITY_CONCURRENCY,
             "market_symbols_duration_sec": perf.STABILITY_DURATION_SEC,
             "re_health_requests": 100,
+            "client_mode": CLIENT_MODE,
+            "short_mode": {
+                "enabled": os.environ.get("PERF_CONCURRENCY_DURATION_SEC") is not None
+                or os.environ.get("PERF_STABILITY_DURATION_SEC") is not None,
+                "PERF_CONCURRENCY_DURATION_SEC": os.environ.get("PERF_CONCURRENCY_DURATION_SEC"),
+                "PERF_STABILITY_DURATION_SEC": os.environ.get("PERF_STABILITY_DURATION_SEC"),
+                "PERF_STABILITY_CONCURRENCY": os.environ.get("PERF_STABILITY_CONCURRENCY"),
+            },
         },
         "baseline": _baseline(),
         "environment": perf.env_info(),
@@ -84,22 +186,25 @@ def main() -> int:
             lambda: anon.request("GET", "/api/re/health", name="re_health"),
             "PERF-R4-003",
         )
-        artifact["results"]["auth_me_100"] = _run_case(
+        artifact["results"]["auth_me_100"] = _run_keepalive_case(
             100,
             perf.CONCURRENCY_DURATION_SEC,
-            lambda: user.request("GET", "/api/auth/me", name="auth_me_100"),
+            lambda: KeepAliveClient(accts["user_token"]),
+            lambda c: c.request("GET", "/api/auth/me", name="auth_me_100"),
             "PERF-R4-001",
         )
-        artifact["results"]["strategy_runs_20"] = _run_case(
+        artifact["results"]["strategy_runs_20"] = _run_keepalive_case(
             20,
             60,
-            lambda: user.request("GET", "/api/strategy/runs", name="strategy_runs_20"),
+            lambda: KeepAliveClient(accts["user_token"]),
+            lambda c: c.request("GET", "/api/strategy/runs", name="strategy_runs_20"),
             "PERF-R4-002",
         )
-        artifact["results"]["market_symbols_stability"] = _run_case(
+        artifact["results"]["market_symbols_stability"] = _run_keepalive_case(
             perf.STABILITY_CONCURRENCY,
             perf.STABILITY_DURATION_SEC,
-            lambda: anon.request("GET", "/api/market-data/symbols", name="market_symbols_stability"),
+            lambda: KeepAliveClient(),
+            lambda c: c.request("GET", "/api/market-data/symbols", name="market_symbols_stability"),
             "PERF-R4-004",
         )
         artifact["database_perf"] = perf.database_perf()

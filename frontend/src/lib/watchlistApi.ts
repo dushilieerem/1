@@ -60,6 +60,7 @@ export async function renameWatchlist(
     method: "PUT",
     body: JSON.stringify({ name }),
   });
+  if (!data.watchlist) throw new Error("响应格式异常：缺少 watchlist 字段");
   return data.watchlist;
 }
 
@@ -80,15 +81,16 @@ export async function addWatchlistSymbol(
   watchlistId: number,
   symbol: string,
   name = "",
-): Promise<WatchlistSymbol> {
-  const data = await apiJson<{ symbol: WatchlistSymbol }>(
+): Promise<{ added: boolean; symbol: WatchlistSymbol }> {
+  const data = await apiJson<{ added?: boolean; symbol: WatchlistSymbol }>(
     `/api/watchlists/${watchlistId}/symbols`,
     {
       method: "POST",
       body: JSON.stringify({ symbol, name }),
     },
   );
-  return data.symbol;
+  if (!data.symbol) throw new Error("响应格式异常：缺少 symbol 字段");
+  return { added: data.added !== false, symbol: data.symbol };
 }
 
 export async function addWatchlistSymbolsBatch(

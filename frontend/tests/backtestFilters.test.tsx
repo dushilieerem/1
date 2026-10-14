@@ -26,6 +26,7 @@ import {
 } from "../src/lib/detectStore";
 import { serializeYgFactorBody, serializeYgStrategyBody } from "../src/lib/ygApi";
 import { configFromRunRequest } from "../src/lib/strategyLibraryApi";
+import { icUnavailableHint } from "../src/lib/factorPanelLabels";
 
 afterEach(cleanup);
 
@@ -431,4 +432,35 @@ test("因子检测请求体不会发出越界的分组数", () => {
       `发出 ${sent}，超出 RE 约束`,
     );
   }
+});
+
+// ---------- G. IC 不可用原因（与计算失败区分） ----------
+//
+// RE 在 factor_analysis.definition.ic_unavailable_reason 给出原因；面板要据此
+// 把「算成功但因子无区分度」与「计算失败」分开。老响应没有这个键。
+
+test("icUnavailableHint 未给出原因时返回 null（不编造）", () => {
+  for (const empty of [null, undefined, ""]) {
+    assert.equal(icUnavailableHint(empty), null, String(empty));
+  }
+});
+
+test("icUnavailableHint 覆盖 RE 的四种取值", () => {
+  for (const reason of [
+    "missing_inputs",
+    "no_common_axis",
+    "insufficient_cross_section",
+    "zero_cross_sectional_variance",
+  ]) {
+    const hint = icUnavailableHint(reason);
+    assert.ok(hint, reason);
+    assert.ok(hint.includes("非计算失败"), `${reason}: ${hint}`);
+    assert.ok(!hint.includes(reason), `${reason} 应被翻译成中文而不是原样透出`);
+  }
+});
+
+test("icUnavailableHint 对未知取值原样透出，不吞掉", () => {
+  const hint = icUnavailableHint("some_future_reason");
+  assert.ok(hint);
+  assert.ok(hint.includes("some_future_reason"), hint);
 });

@@ -34,6 +34,9 @@ export type FactorMeta = {
 export const SV_CATEGORY_LABEL_ORDER = [
   "动量因子",
   "技术复合因子",
+  // RE 目录实际返回 category_name=反转因子（28 个因子，未落在 CATEGORY_ID_LABELS 里）；
+  // 不收进来会掉进下面的「其余按拼音排序」分支，Tab 顺序错乱。
+  "反转因子",
   "Beta因子",
   "区间与通道因子",
   "流动性因子",

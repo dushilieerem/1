@@ -161,6 +161,13 @@ def bootstrap_schemas() -> None:
         print(f"  news ingest scheduler 跳过: {exc}")
 
     try:
+        from services.factor.dashboard_scheduler import start_dashboard_daily_scheduler
+
+        start_dashboard_daily_scheduler()
+    except Exception as exc:
+        print(f"  panel daily scheduler 跳过: {exc}")
+
+    try:
         from services.factor.dashboard_store import read_job
 
         job = read_job()

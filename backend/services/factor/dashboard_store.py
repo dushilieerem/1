@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import traceback
-import urllib.error
-import urllib.parse
-import urllib.request
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from typing import Any
+from typing import Any, Iterator
 
 import yaml
+
+try:  # Windows 无 fcntl：退化为不跨进程互斥（由调用方的 job.json 判断兜底）
+    import fcntl
+except ImportError:  # pragma: no cover - 仅 Windows
+    fcntl = None  # type: ignore[assignment]
 
 from services.factor.factor_verification_store import (
     LEGACY_LIBRARY_NAME,
@@ -26,48 +30,31 @@ from services.factor.factor_dashboard_metrics_store import (
 )
 from services.core.backtest_range import build_factor_backtest_payload
 from services.core.db import get_conn
-from services.core.re_config import RE_BASE
 
 ROOT = Path(__file__).resolve().parents[2]
 FACTOR_DIR = ROOT / "factor"
 OUTPUT_DIR = ROOT / "output" / "factor_dashboard"
 JOB_PATH = OUTPUT_DIR / "job.json"
-RE_URL = f"{RE_BASE}/api/backtest/factor"
+REFRESH_LOCK_PATH = OUTPUT_DIR / "panel_refresh.lock"
 RULES_VERSION = "yg_v1"
-# 与前端 detectComboCode.RE_BUILTIN_LIBS 对齐（含原 PLATFORM 五库）
-RE_BUILTIN_LIBS = frozenset(
-    {
-        "emotion_indicators",
-        "risk_indicators",
-        "technical_indicators",
-        "classic_indicators",
-        "alpha_features",
-        "momentum_lib",
-        "value_lib",
-        "technical_lib",
-        "volatility_lib",
-        "trading_lib",
-        "alpha_library",
-        "qlib_alpha",
-        "jq_compat_technical",
-        "jq_compat_risk",
-        "jq_compat_emotion",
-    }
-)
-# 面板批跑只允许这些官方库；禁止 custom_lib / 他人自定义
-PANEL_OFFICIAL_LIBS = frozenset(
-    {
-        "momentum_lib",
-        "value_lib",
-        "technical_lib",
-        "volatility_lib",
-        "trading_lib",
-        "emotion_indicators",
-        "risk_indicators",
-        "technical_indicators",
-        "classic_indicators",
-        "alpha_features",
-    }
+# 面板只跑 RE 官方库；本地/用户库排除（与前端 detectComboCode.isLocalFactorLib 同口径）。
+# 不维护库名白名单：同事把内置库重组为单库（如「主因子库」+ category_id）后，
+# 枚举库名会让面板整个变空。面板目录以 RE 目录快照为唯一真源，见 re_factor_catalog。
+PANEL_LOCAL_LIBS = frozenset({"custom_lib", "draft_lib"})
+PANEL_LOCAL_LIB_PREFIX = "user_lib_"
+
+# 面板回测组合。股票池只含 RE 实际支持的 CSI300 / CSI500：
+# RE 对其余池直接 422（`不支持的股票池 'CSI1000'，可用: ['ALL_A','A_SHARE','CSI300','CSI500','CSI_ALL']`），
+# 全市场池不纳入（股票数远多于指数成分，单组耗时不可控）。
+# 定义放在服务层，供日更脚本、补算脚本与进程内定时器共用，避免 app 反向 import scripts/。
+PANEL_UNIVERSES: tuple[str, ...] = ("CSI300", "CSI500")
+PANEL_PERIODS: tuple[str, ...] = ("3m", "1y", "3y")
+# 全量组合 = 2 池 × 近3月/1年/3年 × 过滤涨停开/关 = 12 组
+PANEL_COMBOS: tuple[tuple[str, str, bool], ...] = tuple(
+    (u, p, filt)
+    for u in PANEL_UNIVERSES
+    for p in PANEL_PERIODS
+    for filt in (True, False)
 )
 
 _job_lock = threading.Lock()
@@ -78,53 +65,90 @@ def _ensure_dirs() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _yg_get_json(path: str, timeout: int = 60) -> Any:
-    from services.core.lan_http import urlopen_direct
+@contextmanager
+def refresh_lock() -> Iterator[bool]:
+    """跨进程互斥：面板整批回测同一时刻只允许一个进程跑。
 
-    url = f"{RE_BASE.rstrip('/')}{path}"
-    req = urllib.request.Request(url, method="GET")
-    with urlopen_direct(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    `flock` 随进程退出（含被 kill）自动释放，不会留下需要人工清理的陈旧锁；
+    这把锁同时覆盖 API 的刷新线程与命令行日更/补算脚本，避免两批并发写同一张表、
+    并把 RE 回测压力翻倍。yield False 表示锁被其它进程占用。
+    """
+    _ensure_dirs()
+    if fcntl is None:
+        # 非 POSIX：无法跨进程加锁，交由调用方按 job.json 自行判断
+        yield True
+        return
+    handle = open(REFRESH_LOCK_PATH, "w", encoding="utf-8")
+    try:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        handle.seek(0)
+        handle.truncate()
+        handle.write(f"{os.getpid()}\n")
+        handle.flush()
+        try:
+            yield True
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        handle.close()
+
+
+def refresh_lock_available() -> bool:
+    """探活：当前能否抢到刷新锁（抢到即刻释放）。用于同步拒绝并发的刷新请求。"""
+    with refresh_lock() as acquired:
+        return acquired
+
+
+def is_panel_local_lib(library: str | None) -> bool:
+    """本地/用户库（不进面板）：与前端 detectComboCode.isLocalFactorLib 同口径。"""
+    lib = (library or "").strip()
+    return not lib or lib in PANEL_LOCAL_LIBS or lib.startswith(PANEL_LOCAL_LIB_PREFIX)
 
 
 def load_factor_index(*, include_qlib: bool = True) -> list[dict]:
-    """面板只跑官方公开库（PANEL_OFFICIAL_LIBS），目录来自 ResearchEngine。
+    """面板目录：以 RE 目录快照为唯一真源（re_factor_catalog，PG 优先）。
 
-    明确排除：
-    - custom_lib（用户自定义）
-    - 未在白名单内的其它库
+    明确排除本地/用户库（custom_lib / draft_lib / user_lib_*）；
+    官方库不再枚举库名——同事把内置库重组为单库（「主因子库」+ category_id SV01–SV15）
+    后，按库名白名单过滤会让面板整个变空。同时读 PG 快照也让目录读取不再依赖
+    RE 在线（RE 不可达时回退上次快照）。
+
+    include_qlib 保留仅为兼容旧调用签名：qlib_alpha 已并入 RE 目录，不再单独开关。
     """
-    try:
-        payload = _yg_get_json("/api/factor-libraries")
-    except Exception as e:
-        raise RuntimeError(f"读取 RE 因子库目录失败: {e}") from e
+    from services.factor.re_factor_catalog import fetch_re_catalog
 
-    libraries = payload.get("libraries") or []
+    try:
+        payload = fetch_re_catalog(include_all=True)
+    except Exception as e:
+        raise RuntimeError(f"读取 RE 因子目录失败: {e}") from e
+
     out: list[dict] = []
-    for lib in libraries:
-        lib_key = str(lib.get("name") or "").strip()
-        if not lib_key or lib_key not in PANEL_OFFICIAL_LIBS:
+    for f in payload.get("factors") or []:
+        name = str(f.get("name") or "").strip()
+        lib_key = str(f.get("library") or "").strip()
+        if not name or is_panel_local_lib(lib_key):
             continue
-        if lib_key in ("qlib_alpha", "alpha_features") and not include_qlib:
-            continue
-        try:
-            detail = _yg_get_json(f"/api/factors/{urllib.parse.quote(lib_key)}")
-        except Exception as e:
-            raise RuntimeError(f"读取 RE 因子列表失败 ({lib_key}): {e}") from e
-        for f in detail.get("factors") or []:
-            name = (f.get("name") or "").strip()
-            if not name:
-                continue
-            out.append(
-                {
-                    "name": name,
-                    "description": f.get("description") or name,
-                    "library": lib_key,
-                    "file": "",
-                    "unavailable": False,
-                    "unavailable_reason": "",
-                }
-            )
+        description = str(f.get("description") or "").strip() or name
+        display_name = str(f.get("display_name") or "").strip()
+        out.append(
+            {
+                "name": name,
+                "description": description,
+                # 行标题优先用中文短名（description 是长问句，不适合当标题）
+                "display_name": display_name or description,
+                "name_en": str(f.get("name_en") or "").strip(),
+                "library": lib_key,
+                "category_id": str(f.get("category_id") or "").strip(),
+                "category_label": str(f.get("category_label") or "").strip(),
+                "file": "",
+                "unavailable": False,
+                "unavailable_reason": "",
+            }
+        )
     return out
 
 
@@ -384,9 +408,18 @@ def query_metrics(
     library: str | None = None,
 ) -> dict:
     migrate_legacy_factor_dashboard_metrics()
+    catalog_factors = load_factor_index(include_qlib=True)
     catalog = {
         (str(f.get("library") or ""), str(f.get("name") or ""))
-        for f in load_factor_index(include_qlib=True)
+        for f in catalog_factors
+    }
+    # 分类来自目录（表结构不存分类），返回行上补齐供「子类」列与分类筛选使用
+    category_by_key = {
+        (str(f.get("library") or ""), str(f.get("name") or "")): (
+            str(f.get("category_id") or ""),
+            str(f.get("category_label") or ""),
+        )
+        for f in catalog_factors
     }
     sql = """
       SELECT * FROM factor_dashboard_metrics
@@ -417,6 +450,9 @@ def query_metrics(
             r["computed_at"] = r["computed_at"].isoformat()
         name = str(r.get("factor_name") or "")
         library_name = str(r.get("library") or "")
+        cat_id, cat_label = category_by_key.get((library_name, name), ("", ""))
+        r["category_id"] = cat_id
+        r["category_label"] = cat_label
         v = (
             verify_map.get((library_name, name))
             or verify_map.get((LEGACY_LIBRARY_NAME, name))
@@ -674,7 +710,27 @@ def _store_metric(row: dict) -> None:
         upsert_row(conn, row)
 
 
-def _run_batch(
+def _run_batch(**kwargs: Any) -> None:
+    """批跑面板指标（外层：抢跨进程刷新锁）。
+
+    锁被其它进程占用（例如上一轮日更/补算尚未结束）时，本轮不并发执行，
+    写 failed + 明确原因后返回，由调用方（日更脚本）据此记日志并告警。
+    """
+    with refresh_lock() as acquired:
+        if not acquired:
+            write_job(
+                {
+                    **read_job(),
+                    "status": "failed",
+                    "error": "已有面板回测在其它进程运行，本次跳过（未抢到刷新锁）",
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            return
+        _run_batch_locked(**kwargs)
+
+
+def _run_batch_locked(
     *,
     universe: str,
     period: str,
@@ -748,7 +804,8 @@ def _run_batch(
                 "filter_limit_up": 1 if filter_limit_up else 0,
                 "filter_suspended": 1 if filter_suspended else 0,
                 "rules_version": RULES_VERSION,
-                "name_cn": f.get("description"),
+                # 标题用中文短名（display_name）；description 是长问句，不作标题
+                "name_cn": f.get("display_name") or f.get("description") or name,
                 "library": f.get("library"),
                 "computed_at": datetime.now(timezone.utc),
             }
@@ -772,23 +829,23 @@ def _run_batch(
                     continue
 
                 lib_key = (f.get("library") or "").strip()
-                # 官方库一律 library_name；不再读本地 .py
-                if lib_key in RE_BUILTIN_LIBS or lib_key in PANEL_OFFICIAL_LIBS:
-                    data = call_yg_backtest(
-                        build_factor_backtest_payload(
-                            factor_name=name,
-                            library_name=lib_key,
-                            universe=universe,
-                            period=period,
-                            filter_limit_up=filter_limit_up,
-                            filter_suspended=filter_suspended,
-                            analysis_level=analysis_level,
-                        )
-                    )
-                else:
+                # 目录已是唯一真源，不再按库名白名单放行；只挡本地/用户库。
+                if is_panel_local_lib(lib_key):
                     raise RuntimeError(
-                        f"面板不支持非官方库因子: {lib_key or '?'} / {name}"
+                        f"面板不支持本地/用户库因子: {lib_key or '?'} / {name}"
                     )
+                # 官方库一律走 RE library_name；不读本地 .py，不复制源码
+                data = call_yg_backtest(
+                    build_factor_backtest_payload(
+                        factor_name=name,
+                        library_name=lib_key,
+                        universe=universe,
+                        period=period,
+                        filter_limit_up=filter_limit_up,
+                        filter_suspended=filter_suspended,
+                        analysis_level=analysis_level,
+                    )
+                )
                 mapped = map_yg_response(data)
                 if mapped.get("error"):
                     # RE 业务错误：只记原因，清空数值
@@ -836,6 +893,9 @@ def start_refresh(
         job = read_job()
         if job.get("status") == "running" and _job_thread and _job_thread.is_alive():
             return {"ok": False, "error": "已有任务在跑", "job": job}
+        # 跨进程：命令行日更/补算正在跑时同步拒绝，避免两批并发写同表
+        if not refresh_lock_available():
+            return {"ok": False, "error": "已有面板回测在其它进程运行", "job": job}
         t = threading.Thread(
             target=_run_batch,
             kwargs={

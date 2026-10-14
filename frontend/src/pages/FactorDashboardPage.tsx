@@ -5,16 +5,16 @@ import {
   BarChart3,
   Database,
   Layers,
+  RefreshCw,
   Search,
   TrendingUp,
   Zap,
 } from "lucide-react";
 import {
   DYNAMIC_FACTOR_LIBS,
+  builtinCategoryLabelsFromFactors,
   extractMethod,
-  filterTabsFromFactors,
   labelForLibrary,
-  libraryKeyFromLabel,
   loadFactors,
   loadLibrarySource,
 } from "@/lib/factorCatalog";
@@ -46,6 +46,9 @@ type DashRow = {
   factor_name: string;
   name_cn?: string;
   library?: string;
+  /** 分类（来自 RE 目录，后端在行上补齐）：如「动量因子」 */
+  category_id?: string;
+  category_label?: string;
   ic_mean?: number | null;
   rank_ic?: number | null;
   ir?: number | null;
@@ -92,12 +95,14 @@ function verifyMeta(status?: string | null) {
   return VERIFY_OPTIONS.find((o) => o.value === st) || VERIFY_OPTIONS[0];
 }
 
+/**
+ * 只列出 RE 实际支持的股票池：其余池 RE 直接 422
+ * （`不支持的股票池 'CSI1000'，可用: ['ALL_A','A_SHARE','CSI300','CSI500','CSI_ALL']`）。
+ * 列出后点开必然空表，不如不展示；后端日更也只跑这两个池。
+ */
 const UNIVERSES = [
   { value: "CSI300", label: "沪深300" },
   { value: "CSI500", label: "中证500" },
-  { value: "CSI800", label: "中证800" },
-  { value: "CSI1000", label: "中证1000" },
-  { value: "SSE50", label: "上证50" },
 ] as const;
 
 const PERIODS: { key: PeriodKey; label: string }[] = [
@@ -147,6 +152,11 @@ async function resolvePanelShareCode(
   } catch {
     return lib ? buildBuiltinFactorShareStub(fname, lib, fname) : "";
   }
+}
+
+/** 行的分类：优先 RE 目录补的 category_label，回退库名映射（单库时即「主因子库」） */
+function rowCategory(r: DashRow): string {
+  return r.category_label || labelForLibrary(r.library || "");
 }
 
 function tone(v: number | null | undefined) {
@@ -210,7 +220,8 @@ export function FactorDashboardPage() {
   const [universe, setUniverse] = useState("CSI300");
   const [period, setPeriod] = useState<PeriodKey>("3y");
   const [filterUp, setFilterUp] = useState(true);
-  const [library, setLibrary] = useState<string>("全部");
+  /** 分类筛选：RE 目录的分类名（如「动量因子」），不是库名 */
+  const [category, setCategory] = useState<string>("全部");
   const [query, setQuery] = useState("");
   const [verifyFilter, setVerifyFilter] = useState<"all" | VerifyStatus>("all");
   const [rows, setRows] = useState<DashRow[]>([]);
@@ -229,15 +240,21 @@ export function FactorDashboardPage() {
 
   const [hideErrors, setHideErrors] = useState(true);
   const [page, setPage] = useState(1);
-  /** 分类 Tab 跟当前 index.yaml 实际库走（面板不含自定义） */
+  /** 分类 Tab 跟 RE 目录的分类走（面板不含自定义 / 用户库） */
   const [categoryTabs, setCategoryTabs] = useState<string[]>(["全部"]);
+  const [refreshBusy, setRefreshBusy] = useState(false);
 
   useEffect(() => {
     void loadFactors(true)
       .then((fs) => {
-        const tabs = filterTabsFromFactors(fs.filter((f) => f.library !== "custom_lib"));
+        const tabs = [
+          "全部",
+          ...builtinCategoryLabelsFromFactors(
+            fs.filter((f) => f.library !== "custom_lib"),
+          ),
+        ];
         setCategoryTabs(tabs);
-        setLibrary((cur) => (tabs.includes(cur) ? cur : "全部"));
+        setCategory((cur) => (tabs.includes(cur) ? cur : "全部"));
       })
       .catch(() => setCategoryTabs(["全部"]));
   }, []);
@@ -252,10 +269,8 @@ export function FactorDashboardPage() {
         filter_limit_up: filterUp ? "1" : "0",
         filter_suspended: "1",
       });
-      if (library !== "全部") {
-        const key = libraryKeyFromLabel(library);
-        if (key) qs.set("library", key);
-      }
+      // 分类不做服务端过滤：单库（主因子库）下 library 已无区分度，
+      // 改由前端按行的 category_label 过滤（本页本就整批取回后本地搜索/排序/分页）。
       const res = await fetch(`/api/factor/dashboard?${qs}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -272,7 +287,7 @@ export function FactorDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [universe, period, filterUp, library]);
+  }, [universe, period, filterUp]);
 
   useEffect(() => {
     void load();
@@ -302,6 +317,9 @@ export function FactorDashboardPage() {
     if (verifyFilter !== "all") {
       list = list.filter((r) => normalizeVerify(r.verify_status) === verifyFilter);
     }
+    if (category !== "全部") {
+      list = list.filter((r) => rowCategory(r) === category);
+    }
     if (q) {
       list = list.filter(
         (r) =>
@@ -320,11 +338,11 @@ export function FactorDashboardPage() {
       const bn = typeof bv === "number" ? bv : -Infinity;
       return dir * (an - bn);
     });
-  }, [rows, query, sortKey, sortDir, hideErrors, verifyFilter]);
+  }, [rows, query, sortKey, sortDir, hideErrors, verifyFilter, category]);
 
   useEffect(() => {
     setPage(1);
-  }, [universe, period, filterUp, library, query, hideErrors, sortKey, sortDir, verifyFilter]);
+  }, [universe, period, filterUp, category, query, hideErrors, sortKey, sortDir, verifyFilter]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageSafe = Math.min(page, pageCount);
@@ -396,7 +414,8 @@ export function FactorDashboardPage() {
         name: r.name_cn || r.factor_name,
         factorName: r.factor_name,
         libraryName: libKey || null,
-        libraryLabel: libKey ? labelForLibrary(libKey) : null,
+        // 单库下面板以分类区分因子，分享稿展示分类更有信息量
+        libraryLabel: rowCategory(r) || null,
         universeLabel: uniLabel,
         periodLabel,
         universeCode: universe,
@@ -490,6 +509,50 @@ export function FactorDashboardPage() {
     }
   };
 
+  /** 重算当前视图的整批 RE 回测（仅管理员；后端同样限管理员） */
+  const onRefresh = async () => {
+    if (!isAdmin || job.status === "running") return;
+    if (
+      !window.confirm(
+        `将重新经 RE 回测 ${uniLabel} · ${periodLabel} · ${
+          filterUp ? "过滤涨停" : "不过滤涨停"
+        } 的全部因子（约 ${filtered.length || "数百"} 个）。\n` +
+          `单个因子约 6–12 秒，整轮可能数十分钟；期间会持续占用 RE 回测资源。\n\n确认开始？`,
+      )
+    ) {
+      return;
+    }
+    setRefreshBusy(true);
+    try {
+      const res = await fetch("/api/factor/dashboard/refresh", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(),
+        },
+        body: JSON.stringify({
+          universe,
+          period,
+          filter_limit_up: filterUp,
+          filter_suspended: true,
+          // false = 重新计算（不跳过已算过的），否则行情更新后指标永远不变
+          skip_ok: false,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || data.detail || `HTTP ${res.status}`);
+      }
+      if (data.ok === false) throw new Error(data.error || "刷新任务未启动");
+      // 置为 running 触发既有的进度轮询 effect
+      setJob(data.job || { status: "running" });
+    } catch (ex) {
+      window.alert(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setRefreshBusy(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-red-50/50 via-white to-slate-50">
       <div className="mx-auto max-w-[1440px] px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
@@ -568,9 +631,9 @@ export function FactorDashboardPage() {
               <button
                 key={lab}
                 type="button"
-                onClick={() => setLibrary(lab)}
+                onClick={() => setCategory(lab)}
                 className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                  library === lab ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
+                  category === lab ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
                 }`}
               >
                 {lab}
@@ -674,6 +737,24 @@ export function FactorDashboardPage() {
               <h2 className="text-sm font-bold text-slate-900">因子表现总览</h2>
             </div>
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              {isAdmin && (
+                <button
+                  type="button"
+                  disabled={refreshBusy || job.status === "running"}
+                  onClick={() => void onRefresh()}
+                  title="重新经 RE 计算当前股票池/周期/过滤口径的全部因子指标"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40"
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${job.status === "running" || refreshBusy ? "animate-spin" : ""}`}
+                  />
+                  {job.status === "running"
+                    ? `计算中 ${job.done ?? 0}/${job.total ?? "?"}`
+                    : refreshBusy
+                      ? "提交中…"
+                      : "刷新指标"}
+                </button>
+              )}
               {errCount > 0 && (
                 <label className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-600">
                   <input
@@ -725,7 +806,7 @@ export function FactorDashboardPage() {
               <tbody>
                 {paged.map((r) => {
                   const win = r.win_rate ?? r.coverage_pool;
-                  const lib = labelForLibrary(r.library || "", r.library || "—");
+                  const lib = rowCategory(r) || "—";
                   const verifyKey = `${r.library || ""}::${r.factor_name}`;
                   const vm = verifyMeta(r.verify_status);
                   return (

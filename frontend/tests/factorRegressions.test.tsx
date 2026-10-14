@@ -6,6 +6,7 @@ import { render, fireEvent, cleanup, waitFor, act } from "@testing-library/react
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { EditorView } from "@codemirror/view";
 import { FactorDetectPage } from "../src/pages/FactorDetectPage";
+import { FactorDashboardPage } from "../src/pages/FactorDashboardPage";
 import { UserFactorEditDialog } from "../src/components/UserFactorEditDialog";
 import { sourceFromRequest, sourceRequestParts } from "../src/lib/detectSource";
 import { buildDetectRunUiSnapshot, applyDetectRunSnapshotToConfig, readDetectRunUiSnapshot, defaultConfig } from "../src/lib/detectStore";
@@ -136,4 +137,99 @@ test("FT-013 页面回归：已删除且没有代码快照时明确阻止重跑"
   fireEvent.click(page.view.getByRole("button", { name: "进行检测" }));
   await waitFor(() => assert.match(page.view.container.textContent!, /已删除或不可用/));
   assert.equal(page.sent.filter((r) => r.path === "/api/backtest/factor").length, 0);
+});
+
+// —— 因子面板（/factor/dashboard）——
+// 回归背景：RE 内置库重组为单库「主因子库」后，页面的分类 Tab 曾退化成
+// 只有「全部/主因子库」，且刷新入口在产品上不可达。
+
+const DASH_FACTORS = [
+  { name: "SV01_0001", library: "主因子库", description: "长问句A", display_name: "涨跌日频率差", category_label: "动量因子" },
+  { name: "SV08_0001", library: "主因子库", description: "长问句B", display_name: "量价背离度", category_label: "量价关系因子" },
+];
+
+const DASH_ROWS = [
+  { factor_name: "SV01_0001", name_cn: "涨跌日频率差", library: "主因子库", category_label: "动量因子", ic_mean: 2.06, rank_ic: 3.09 },
+  { factor_name: "SV08_0001", name_cn: "量价背离度", library: "主因子库", category_label: "量价关系因子", ic_mean: 1.11 },
+];
+
+function mountDashboard(role: string) {
+  sessionStorage.setItem("svquant_user", JSON.stringify({ id: 9, username: "u", role, status: "active" }));
+  const sent: Array<{ path: string; method: string; body: any }> = [];
+  globalThis.fetch = async (url, init) => {
+    const path = new URL(String(url), "http://localhost").pathname;
+    const method = init?.method || "GET";
+    const body = init?.body ? JSON.parse(String(init.body)) : null;
+    sent.push({ path, method, body });
+    if (path === "/api/factor/re-catalog") return Response.json({ ok: true, factors: DASH_FACTORS });
+    if (path === "/api/factor/index") return new Response("libraries: {}");
+    if (path === "/api/factor/dashboard") {
+      return Response.json({ rows: DASH_ROWS, job: { status: "idle" }, verify_summary: { pending: 2, passed: 0, failed: 0 } });
+    }
+    if (path === "/api/factor/dashboard/refresh") return Response.json({ ok: true, job: { status: "running", done: 0, total: 2 } });
+    if (path === "/api/factor/dashboard/status") return Response.json({ status: "done" });
+    throw new Error(`Unexpected request ${method} ${path}`);
+  };
+  const view = render(<MemoryRouter><FactorDashboardPage /></MemoryRouter>);
+  return { view, sent };
+}
+
+test("因子面板：分类 Tab 取 RE 目录的分类，不再退化成单一库名", async () => {
+  const { view } = mountDashboard("user");
+  await waitFor(() => assert.ok(view.getByRole("button", { name: "动量因子" })));
+  assert.ok(view.getByRole("button", { name: "量价关系因子" }));
+  assert.equal(view.queryByRole("button", { name: "主因子库" }), null);
+  // 子类列显示真实分类，而非恒为「主因子库」
+  await waitFor(() => assert.ok(view.getByText("涨跌日频率差")));
+});
+
+test("因子面板：选分类只做本地过滤，不重新拉取", async () => {
+  const { view, sent } = mountDashboard("user");
+  await waitFor(() => assert.ok(view.getByText("量价背离度")));
+  const before = sent.filter((r) => r.path === "/api/factor/dashboard").length;
+  fireEvent.click(view.getByRole("button", { name: "动量因子" }));
+  await waitFor(() => assert.equal(view.queryByText("量价背离度"), null));
+  assert.ok(view.getByText("涨跌日频率差"));
+  assert.equal(sent.filter((r) => r.path === "/api/factor/dashboard").length, before);
+});
+
+/** jsdom 的 confirm 恒为假，按需打桩；返回还原函数 */
+function stubConfirm(result: boolean): () => void {
+  const original = window.confirm;
+  window.confirm = () => result;
+  return () => {
+    window.confirm = original;
+  };
+}
+
+test("因子面板：刷新指标按钮仅管理员可见，确认后才提交整批重算", async () => {
+  const admin = mountDashboard("admin");
+  const refreshReqs = () => admin.sent.filter((r) => r.path === "/api/factor/dashboard/refresh");
+  await waitFor(() => assert.ok(admin.view.getByRole("button", { name: /刷新指标/ })));
+
+  // 取消确认：不发请求（整轮数十分钟，必须给人反悔的机会）
+  const restoreCancel = stubConfirm(false);
+  fireEvent.click(admin.view.getByRole("button", { name: /刷新指标/ }));
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(refreshReqs().length, 0);
+  restoreCancel();
+
+  // 确认：提交，且 skip_ok=false —— 重新计算，否则行情更新后指标永远不变
+  const restoreOk = stubConfirm(true);
+  fireEvent.click(admin.view.getByRole("button", { name: /刷新指标/ }));
+  await waitFor(() => {
+    const req = refreshReqs()[0];
+    assert.ok(req);
+    assert.equal(req!.method, "POST");
+    assert.equal(req!.body.universe, "CSI300");
+    assert.equal(req!.body.period, "3y");
+    assert.equal(req!.body.filter_limit_up, true);
+    assert.equal(req!.body.skip_ok, false);
+  });
+  restoreOk();
+  cleanup();
+
+  const plain = mountDashboard("user");
+  await waitFor(() => assert.ok(plain.view.getByText("因子表现总览")));
+  assert.equal(plain.view.queryByRole("button", { name: /刷新指标/ }), null);
 });

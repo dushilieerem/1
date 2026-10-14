@@ -21,6 +21,7 @@ import {
 import {
   DETECT_ANALYSIS_LEVEL_OPTIONS,
   DETECT_BENCHMARK_OPTIONS,
+  DETECT_GROUP_OPTIONS,
   EXECUTION_TIMING_OPTIONS,
   DETECT_PERIOD_OPTIONS,
   DETECT_UNIVERSE_OPTIONS,
@@ -45,6 +46,7 @@ import {
   saveProject,
   type AnalysisLevel,
   type ExecutionTiming,
+  normalizeDetectGroups,
   normalizeExecutionTiming,
   type DetectProject,
   type DraftDetectFactor,
@@ -1740,11 +1742,11 @@ export function FactorDetectPage() {
                 <label className="block min-w-0 text-xs text-slate-500">
                   因子分组
                   <select
-                    value={Math.min(5, Math.max(1, cfg.groups))}
+                    value={normalizeDetectGroups(cfg.groups)}
                     onChange={(e) => patchConfig({ groups: Number(e.target.value) })}
                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
                   >
-                    {[1, 2, 3, 4, 5].map((n) => (
+                    {DETECT_GROUP_OPTIONS.map((n) => (
                       <option key={n} value={n}>
                         {n} 组
                       </option>

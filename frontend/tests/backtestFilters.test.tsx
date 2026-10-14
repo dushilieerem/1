@@ -15,10 +15,12 @@ import {
 } from "../src/lib/strategyStore";
 import {
   DEFAULT_EXECUTION_TIMING,
+  DETECT_GROUP_OPTIONS,
   EXECUTION_TIMING_OPTIONS,
   applyDetectRunSnapshotToConfig,
   buildDetectRunUiSnapshot,
   defaultConfig,
+  normalizeDetectGroups,
   normalizeExecutionTiming,
   readDetectRunUiSnapshot,
 } from "../src/lib/detectStore";
@@ -387,4 +389,46 @@ test("因子检测请求体在 config 缺失时回落 next_close", () => {
     { start: "2024-01-01", end: "2024-12-31" },
   );
   assert.equal(req.execution_timing, "next_close");
+});
+
+// ---------- F. 因子分组数 ----------
+//
+// RE 的约束是 2~10（groups = Field(5, ge=2, le=10)）。此前下拉里含「1 组」，
+// 选了必然 422。这里把「选项必须落在 RE 允许区间内」固化成断言，避免再次跑偏。
+
+const RE_GROUPS_MIN = 2;
+const RE_GROUPS_MAX = 10;
+
+test("因子分组选项全部落在 RE 允许的 2~10 内", () => {
+  assert.ok(DETECT_GROUP_OPTIONS.length > 0);
+  for (const n of DETECT_GROUP_OPTIONS) {
+    assert.ok(n >= RE_GROUPS_MIN && n <= RE_GROUPS_MAX, `分组 ${n} 超出 RE 约束`);
+  }
+  assert.deepEqual([...DETECT_GROUP_OPTIONS], [3, 5, 10]);
+});
+
+test("normalizeDetectGroups 收敛越界与非法值", () => {
+  for (const n of DETECT_GROUP_OPTIONS) {
+    assert.equal(normalizeDetectGroups(n), n);
+  }
+  // 1 是这次修掉的越界值；2/4 不在选项里但 RE 允许，仍按默认收敛。
+  for (const bad of [1, 0, -3, 2, 4, 6, 11, 999, NaN, null, undefined, "abc"]) {
+    assert.equal(normalizeDetectGroups(bad), 5, String(bad));
+  }
+  assert.equal(normalizeDetectGroups("10"), 10, "字符串数字应被接受");
+});
+
+test("因子检测请求体不会发出越界的分组数", () => {
+  for (const raw of [DETECT_GROUP_OPTIONS[0], DETECT_GROUP_OPTIONS[2], 1, 2, 11]) {
+    const req = buildFactorDetectRequest(
+      { ...defaultConfig([]), groups: raw },
+      { factor_name: "momentum" },
+      { start: "2024-01-01", end: "2024-12-31" },
+    );
+    const sent = Number(req.groups);
+    assert.ok(
+      sent >= RE_GROUPS_MIN && sent <= RE_GROUPS_MAX,
+      `发出 ${sent}，超出 RE 约束`,
+    );
+  }
 });

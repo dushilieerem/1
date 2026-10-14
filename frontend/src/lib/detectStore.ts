@@ -144,7 +144,7 @@ export function buildDetectRunUiSnapshot(
     endDate: cfg.endDate || "",
     universe: cfg.universe || "CSI300",
     benchmark: cfg.benchmark || "CSI300",
-    groups: cfg.groups || 5,
+    groups: normalizeDetectGroups(cfg.groups),
     rebalanceDays: cfg.rebalanceDays || 1,
     filterLimitUp: Boolean(cfg.filterLimitUp),
     filterSuspended: Boolean(cfg.filterSuspended),
@@ -192,7 +192,7 @@ export function readDetectRunUiSnapshot(
     endDate: String(raw.endDate || ""),
     universe: String(raw.universe || "CSI300"),
     benchmark: String(raw.benchmark || "CSI300"),
-    groups: Number(raw.groups) || 5,
+    groups: normalizeDetectGroups(raw.groups),
     rebalanceDays: Number(raw.rebalanceDays) || 1,
     filterLimitUp: Boolean(raw.filterLimitUp),
     filterSuspended: Boolean(raw.filterSuspended),
@@ -253,7 +253,7 @@ export function applyDetectRunSnapshotToConfig(
     endDate: snap.endDate,
     universe: snap.universe,
     benchmark: snap.benchmark,
-    groups: snap.groups,
+    groups: normalizeDetectGroups(snap.groups),
     rebalanceDays: snap.rebalanceDays,
     filterLimitUp: snap.filterLimitUp,
     filterSuspended: snap.filterSuspended,
@@ -315,6 +315,22 @@ export const EXECUTION_TIMING_OPTIONS = [
 ] as const;
 
 export type ExecutionTiming = (typeof EXECUTION_TIMING_OPTIONS)[number]["code"];
+
+/**
+ * 因子分层数。RE 的约束是 2~10，这里只暴露 3 / 5 / 10——原先的选项里含 1，
+ * 而 RE 要求 >= 2，选「1 组」必然 422。
+ */
+export const DETECT_GROUP_OPTIONS = [3, 5, 10] as const;
+
+export const DEFAULT_DETECT_GROUPS = 5;
+
+/** 把任意输入收敛成允许的分层数；不在选项内一律回落默认值。 */
+export function normalizeDetectGroups(value: unknown): number {
+  const n = Number(value);
+  return (DETECT_GROUP_OPTIONS as readonly number[]).includes(n)
+    ? n
+    : DEFAULT_DETECT_GROUPS;
+}
 
 /** 默认成交时点，与 ResearchEngine 的默认值保持一致。 */
 export const DEFAULT_EXECUTION_TIMING: ExecutionTiming = "next_close";
@@ -475,7 +491,7 @@ function normalizeProject(
   if (cfg.analysisLevel !== "core" && cfg.analysisLevel !== "full") {
     cfg.analysisLevel = "core";
   }
-  cfg.groups = Math.min(5, Math.max(1, Number(cfg.groups) || 5));
+  cfg.groups = normalizeDetectGroups(cfg.groups);
   cfg.executionTiming = normalizeExecutionTiming(cfg.executionTiming);
   if (!cfg.factorLibraries || typeof cfg.factorLibraries !== "object") {
     cfg.factorLibraries = {};

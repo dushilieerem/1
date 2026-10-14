@@ -7,6 +7,7 @@
  * 只靠通读页面代码很容易漏，因此需要这里的纯函数来兜住。
  */
 
+import { normalizeDetectGroups } from "./detectStore";
 import type { DetectProjectConfig } from "./detectStore";
 import type { StrategyProjectConfig } from "./strategyStore";
 import type { YgBacktestRequest, YgStrategyBacktestRequest } from "./ygApi";
@@ -29,7 +30,7 @@ export function buildFactorDetectRequest(
     filter_limit_up: cfg.filterLimitUp,
     filter_limit_down: cfg.filterLimitDown,
     benchmark: cfg.benchmark,
-    groups: Math.min(5, Math.max(1, cfg.groups || 5)),
+    groups: normalizeDetectGroups(cfg.groups),
     rebalance_days: cfg.rebalanceDays,
     commission_rate: cfg.commissionRate,
     stamp_tax: cfg.stampTax,

@@ -11,6 +11,7 @@ import {
   updateDetectRunRemark,
   updateDetectRunFlagged,
   deleteRun,
+  saveProject,
   type DetectProject,
   type DetectRunRecord,
 } from "./detectStore";
@@ -57,11 +58,15 @@ export async function createEmptyUserFactor(opts: {
 
 /** 因子库点「检测」：打开/复用检测项目并进配置页 */
 export async function openDetectForLibraryFactor(
-  factor: Pick<FactorMeta, "name">,
+  factor: Pick<FactorMeta, "name"> & Partial<FactorMeta>,
 ): Promise<DetectProject> {
   const tab = openDetectPlaceholderTab();
   try {
-    const p = await openOrCreateForFactor(factor.name, factor.name);
+    let p = await openOrCreateForFactor(factor.name, factor.name);
+    // 从因子库开始新检测，单因子使用库中最新公式；历史入口仍使用运行快照。
+    if (factor.userLibraryId != null && factor.body?.trim() && p.config.factorCodes.length === 1) {
+      p = await saveProject({ ...p, config: { ...p.config, source: { code: factor.body, name: factor.name } } });
+    }
     navigateDetectTab(tab, p.id, p);
     return p;
   } catch (err) {

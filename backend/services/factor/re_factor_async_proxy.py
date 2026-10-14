@@ -6,6 +6,7 @@ from typing import Any
 
 from services.core.lan_http import request_json
 from services.core.re_config import RE_BASE
+from services.factor.code_validation import validated_factor_code
 
 RE_FACTOR_BT = f"{RE_BASE}/api/backtest/factor"
 
@@ -39,10 +40,21 @@ def _rewrite_poll(data: Any) -> Any:
 def proxy_submit_factor_backtest(
     payload: dict[str, Any],
 ) -> tuple[int, dict[str, str], Any]:
+    body = _strip_sv(payload)
+    if payload.get("factor_code") is not None:
+        try:
+            body["factor_code"] = validated_factor_code(
+                str(payload.get("factor_code") or ""),
+                str(payload.get("factor_name") or "factor"),
+            )
+        except ValueError as exc:
+            return 400, {}, {"error": str(exc)}
+    elif not body.get("library_name"):
+        return 400, {}, {"error": "请选择内置因子或填写因子代码"}
     status, headers, data = request_json(
         RE_FACTOR_BT,
         method="POST",
-        payload=_strip_sv(payload),
+        payload=body,
         timeout=120,
     )
     data = _rewrite_poll(data)

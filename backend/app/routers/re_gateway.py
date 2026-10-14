@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from app.deps import optional_user, require_user
+from services.core.backtest_params import validate_execution_timing
 from services.core.db import get_conn
 from services.core.env_config import env
 from services.core.re_http_gateway import forward_re, rewrite_run_poll_url
@@ -219,10 +220,15 @@ def backtest_strategy_submit(
     body: dict[str, Any],
     _user: dict = Depends(require_user),
 ) -> JSONResponse:
+    payload = body if isinstance(body, dict) else {}
+    try:
+        validate_execution_timing(payload)
+    except ValueError as exc:
+        return _resp(400, {}, {"error": str(exc)})
     status, headers, data = forward_re(
         "POST",
         "/api/backtest/strategy",
-        payload=body if isinstance(body, dict) else {},
+        payload=payload,
         timeout=1800,
     )
     data = rewrite_run_poll_url(data, "/api/backtest/strategy")

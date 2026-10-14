@@ -28,6 +28,37 @@ class ProxyValidationTest(unittest.TestCase):
             self.assertEqual(headers["Location"], "/api/backtest/factor/123")
             self.assertEqual(response["poll_url"], "/api/backtest/factor/123")
 
+    def test_execution_timing_forwarded_unchanged(self):
+        body = {
+            "factor_name": "SV01_0001",
+            "library_name": "classic_indicators",
+            "execution_timing": "next_open",
+        }
+        with patch.object(self.proxy, "request_json", return_value=(202, {}, {"run_id": "123"})) as request:
+            self.proxy.proxy_submit_factor_backtest(body)
+            self.assertEqual(
+                request.call_args.kwargs["payload"]["execution_timing"], "next_open"
+            )
+
+    def test_execution_timing_absent_is_left_to_research_engine(self):
+        # 默认值归 RE 定义，SVQuant 不补——否则默认值会有两个来源。
+        body = {"factor_name": "SV01_0001", "library_name": "classic_indicators"}
+        with patch.object(self.proxy, "request_json", return_value=(202, {}, {"run_id": "123"})) as request:
+            self.proxy.proxy_submit_factor_backtest(body)
+            self.assertNotIn("execution_timing", request.call_args.kwargs["payload"])
+
+    def test_invalid_execution_timing_is_rejected_before_http(self):
+        body = {
+            "factor_name": "SV01_0001",
+            "library_name": "classic_indicators",
+            "execution_timing": "same_open",
+        }
+        with patch.object(self.proxy, "request_json") as request:
+            status, _, result = self.proxy.proxy_submit_factor_backtest(body)
+            self.assertEqual(status, 400)
+            self.assertIn("execution_timing", result["error"])
+            request.assert_not_called()
+
     def test_guarded_code_forwarded_without_mutating_source_snapshot(self):
         source = "def factor(self):\n    return self.close.pct_change(100000)"
         body = {"factor_name": "factor", "factor_code": source, "_svquant_ui": {"source": source}}

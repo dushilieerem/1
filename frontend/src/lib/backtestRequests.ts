@@ -35,6 +35,7 @@ export function buildFactorDetectRequest(
     stamp_tax: cfg.stampTax,
     slippage_rate: cfg.slippageRate,
     analysis_level: cfg.analysisLevel || "core",
+    execution_timing: cfg.executionTiming || "next_close",
   };
 }
 
@@ -67,5 +68,6 @@ export function buildStrategyBacktestRequest(
     filter_st: cfg.filter_st,
     filter_limit_up: cfg.filter_limit_up,
     filter_limit_down: cfg.filter_limit_down,
+    execution_timing: cfg.execution_timing,
   };
 }

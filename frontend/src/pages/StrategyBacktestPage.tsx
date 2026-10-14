@@ -47,6 +47,7 @@ import {
   saveStrategyRun,
   stashStrategyCloneDraft,
   STRATEGY_BENCHMARK_OPTIONS,
+  STRATEGY_EXECUTION_TIMING_OPTIONS,
   STRATEGY_PERIOD_OPTIONS,
   STRATEGY_UNIVERSE_OPTIONS,
   clampDateRange,
@@ -55,6 +56,7 @@ import {
   type StrategyProject,
   type StrategyProjectConfig,
 } from "@/lib/strategyStore";
+import type { ExecutionTiming } from "@/lib/detectStore";
 
 function fieldClass(extra = "") {
   return `h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-sm outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 ${extra}`;
@@ -438,6 +440,8 @@ export function StrategyBacktestPage() {
       filter_st: cfg.filter_st,
       filter_limit_up: cfg.filter_limit_up,
       filter_limit_down: cfg.filter_limit_down,
+      // 同理：成交时点不在 shell 里保留，切换执行模式就会被重置为默认值。
+      execution_timing: cfg.execution_timing,
       library_ref: cfg.library_ref,
     };
     const next = normalizeStrategyConfig({
@@ -958,6 +962,29 @@ export function StrategyBacktestPage() {
                       )
                     }
                   />
+                </label>
+                <label className="block text-xs text-slate-500 lg:col-span-2">
+                  成交时点
+                  <select
+                    className={fieldClass("mt-1")}
+                    value={cfg.execution_timing}
+                    onChange={(e) =>
+                      patchCfg(
+                        { execution_timing: e.target.value as ExecutionTiming },
+                        "right",
+                      )
+                    }
+                  >
+                    {STRATEGY_EXECUTION_TIMING_OPTIONS.map((o) => (
+                      <option key={o.code} value={o.code}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="mt-1 block text-[11px] leading-relaxed text-slate-400">
+                    信号在当日收盘产生：当日收盘价 / 次日收盘价（默认）/ 次日开盘价成交。
+                    越靠后越保守，也会改变净值、分层曲线与 IC。
+                  </span>
                 </label>
               </div>
               {/* 过滤开关在两种模式下都要渲染：事件模式仍可勾选过滤 ST */}

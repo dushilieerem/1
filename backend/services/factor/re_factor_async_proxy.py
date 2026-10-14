@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.core.backtest_params import validate_execution_timing
 from services.core.lan_http import request_json
 from services.core.re_config import RE_BASE
 from services.factor.code_validation import validated_factor_code
@@ -41,6 +42,10 @@ def proxy_submit_factor_backtest(
     payload: dict[str, Any],
 ) -> tuple[int, dict[str, str], Any]:
     body = _strip_sv(payload)
+    try:
+        validate_execution_timing(body)
+    except ValueError as exc:
+        return 400, {}, {"error": str(exc)}
     if payload.get("factor_code") is not None:
         try:
             body["factor_code"] = validated_factor_code(

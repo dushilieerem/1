@@ -7,13 +7,17 @@ import {
   subscribeAuth,
 } from "./auth";
 import {
+  DEFAULT_EXECUTION_TIMING,
   DETECT_BENCHMARK_OPTIONS,
   DETECT_PERIOD_OPTIONS,
   DETECT_UNIVERSE_OPTIONS,
+  EXECUTION_TIMING_OPTIONS,
   RE_MARKET_END,
   clampDateRange,
   defaultCustomRangeDates,
+  normalizeExecutionTiming,
   periodToStartEnd,
+  type ExecutionTiming,
   type RangeMode,
 } from "./detectStore";
 import {
@@ -48,6 +52,8 @@ export type StrategyProjectConfig = {
   filter_st: boolean;
   filter_limit_up: boolean;
   filter_limit_down: boolean;
+  /** 成交时点，对标 RE execution_timing（默认 next_close） */
+  execution_timing: ExecutionTiming;
   /** 执行模式：vectorized | event（对应 API engine_mode） */
   engine_mode: StrategyEngineMode;
   strategy_code: string;
@@ -101,6 +107,7 @@ export type StrategyRunRecord = {
 export const STRATEGY_UNIVERSE_OPTIONS = DETECT_UNIVERSE_OPTIONS;
 export const STRATEGY_BENCHMARK_OPTIONS = DETECT_BENCHMARK_OPTIONS;
 export const STRATEGY_PERIOD_OPTIONS = DETECT_PERIOD_OPTIONS;
+export const STRATEGY_EXECUTION_TIMING_OPTIONS = EXECUTION_TIMING_OPTIONS;
 export { RE_MARKET_END, periodToStartEnd, clampDateRange, defaultCustomRangeDates };
 
 export function optionLabel(
@@ -130,6 +137,7 @@ export function defaultStrategyConfig(): StrategyProjectConfig {
     filter_st: false,
     filter_limit_up: false,
     filter_limit_down: false,
+    execution_timing: DEFAULT_EXECUTION_TIMING,
     engine_mode: "vectorized",
     strategy_code: DEFAULT_STRATEGY_CODE,
     signal_factor_ids: [],
@@ -190,6 +198,8 @@ export function normalizeStrategyConfig(
       typeof c.filter_limit_down === "boolean"
         ? c.filter_limit_down
         : d.filter_limit_down,
+    // 成交时点同样必须在白名单里，否则保存/加载项目时被静默丢弃。
+    execution_timing: normalizeExecutionTiming(c.execution_timing),
     engine_mode:
       c.engine_mode === "event" || c.engine_mode === "vectorized"
         ? c.engine_mode

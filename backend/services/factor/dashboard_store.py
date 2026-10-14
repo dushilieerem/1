@@ -277,6 +277,9 @@ def map_yg_response(data: dict) -> dict:
         except (TypeError, ValueError, ZeroDivisionError):
             ir = None
 
+    # RE 的分位编号是 **Q1 = 因子值最高组、QN = 最低组**
+    # （app/services/portfolio/grouping.py 的 rank_groups 文档与实现；
+    #  runner.py 里 layer1 ← 分层净值的第 0 列）。故 Q1 即纯做多参考的「最大分位」。
     q1 = _pct100(lr.get("layer1"))
     q5 = _pct100(lr.get("layer5"))
     # core 在部分股票池不返回 layered_returns；用分组净值末值推区间收益
@@ -295,11 +298,13 @@ def map_yg_response(data: dict) -> dict:
                 except (TypeError, ValueError):
                     pass
 
+    # RE 的 spread = Q1 − QN = 最高组 − 最低组（runner.py 用首列减末列）。
+    # 兜底分支必须同向，否则同一列在不同因子上符号相反。
     spread = _pct100(lr.get("spread"))
     if spread is None:
         spread = _pct100(lr.get("long_short_return"))
     if spread is None and q1 is not None and q5 is not None:
-        spread = round(q5 - q1, 4)
+        spread = round(q1 - q5, 4)
 
     turnover = _pct100(metrics.get("turnover"))
     win_rate = _pct100(metrics.get("win_rate"))
@@ -570,10 +575,12 @@ def lookup_panel_metric(
     if wr is None:
         wr = r.get("coverage_pool")
     put("胜率", _fmt_pct_from_panel(wr))
-    put("Q1收益", _fmt_pct_from_panel(r.get("q1_return")))
-    put("Q5收益", _fmt_pct_from_panel(r.get("q5_return")))
-    put("多空价差", _fmt_pct_from_panel(r.get("long_short_spread")))
-    put("Q1换手", _fmt_pct_from_panel(r.get("q1_turnover")))
+    # 标签带上方向：RE 口径下 Q1 是「因子值最大」那组，纯做多的参考收益
+    put("最高分位(Q1)收益", _fmt_pct_from_panel(r.get("q1_return")))
+    put("最低分位(Q5)收益", _fmt_pct_from_panel(r.get("q5_return")))
+    put("多空差(Q1−Q5)", _fmt_pct_from_panel(r.get("long_short_spread")))
+    # 注意：这是整组合换手，不是分位换手（契约 §6 禁止伪称 Q1/Q5 换手）
+    put("组合换手", _fmt_pct_from_panel(r.get("q1_turnover")))
     if not display:
         return None
     # metrics 用小数口径（与分享稿一致：面板百分数点 /100）

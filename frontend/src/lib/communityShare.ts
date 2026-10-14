@@ -332,10 +332,10 @@ export async function buildFactorPanelShareDraft(input: {
       ["最大回撤", panelPct(m?.max_drawdown)],
       ["夏普", num(m?.sharpe)],
       ["胜率", panelPct(m?.win_rate)],
-      ["Q1收益", panelPct(m?.q1_return)],
-      ["Q5收益", panelPct(m?.q5_return)],
-      ["多空价差", panelPct(m?.long_short_spread)],
-      ["Q1换手", panelPct(m?.q1_turnover)],
+      ["最高分位(Q1)收益", panelPct(m?.q1_return)],
+      ["最低分位(Q5)收益", panelPct(m?.q5_return)],
+      ["多空差(Q1−Q5)", panelPct(m?.long_short_spread)],
+      ["组合换手", panelPct(m?.q1_turnover)],
     ]),
     "<blockquote><p>免责声明：内容不构成投资建议。面板指标为聚合缓存，与单次检测参数可能不同。</p></blockquote>",
   ].join("");
@@ -357,10 +357,10 @@ export async function buildFactorPanelShareDraft(input: {
   put("最大回撤", panelPct(m?.max_drawdown) || undefined);
   put("夏普", num(m?.sharpe) || undefined);
   put("胜率", panelPct(m?.win_rate) || undefined);
-  put("Q1收益", panelPct(m?.q1_return) || undefined);
-  put("Q5收益", panelPct(m?.q5_return) || undefined);
-  put("多空价差", panelPct(m?.long_short_spread) || undefined);
-  put("Q1换手", panelPct(m?.q1_turnover) || undefined);
+  put("最高分位(Q1)收益", panelPct(m?.q1_return) || undefined);
+  put("最低分位(Q5)收益", panelPct(m?.q5_return) || undefined);
+  put("多空差(Q1−Q5)", panelPct(m?.long_short_spread) || undefined);
+  put("组合换手", panelPct(m?.q1_turnover) || undefined);
 
   const labelParts = [
     "因子面板",

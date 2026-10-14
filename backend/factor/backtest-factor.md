@@ -40,7 +40,7 @@
 
 成功响应包含 `metrics`、`equity_curve`、`drawdowns`、`annual_returns`、`factor_analysis`、`date_range`、`final_equity`、`benchmark_curve`、`excess_return`、`meta` 和 `error`。因子代码错误保持 HTTP `200`，并写入 `error`（此时 `meta` 为 `null`）。
 
-`factor_analysis.quantile_metrics` 返回各因子分位（`Q1` 为最低分位，`QN` 为最高分位）及基准的绩效。分组的 `annual_return`、`volatility`、`sharpe` 和 `max_drawdown` 是分组自身的绝对绩效；`annual_excess_return`、`excess_volatility`、`information_ratio` 和 `benchmark_win_rate` 是相对基准指标。最后一项 `quantile: "benchmark"` 返回基准的绝对绩效，相对基准字段为 `null`：
+`factor_analysis.quantile_metrics` 返回各因子分位（**`Q1` 为最高分位、`QN` 为最低分位**，即 `Q1` 是因子值最大那组）及基准的绩效。分组的 `annual_return`、`volatility`、`sharpe` 和 `max_drawdown` 是分组自身的绝对绩效；`annual_excess_return`、`excess_volatility`、`information_ratio` 和 `benchmark_win_rate` 是相对基准指标。最后一项 `quantile: "benchmark"` 返回基准的绝对绩效，相对基准字段为 `null`：
 
 ```json
 [

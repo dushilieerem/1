@@ -44,10 +44,15 @@ def ensure_user_strategy_libraries_schema() -> None:
               category_label  TEXT NOT NULL DEFAULT '其他',
               created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
               updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-              UNIQUE (library_id, name),
-              UNIQUE (user_id, name)
+              UNIQUE (library_id, name)
             )
             """
+        )
+        # 策略名唯一性收敛到库内：不同策略库允许同名策略。
+        # 历史版本建过全用户范围的 UNIQUE (user_id, name)，对已存在的表移除。
+        conn.execute(
+            "ALTER TABLE user_library_strategies "
+            "DROP CONSTRAINT IF EXISTS user_library_strategies_user_id_name_key"
         )
         # 入库快照：与研究侧 run 脱钩，不可变
         for stmt in (
@@ -290,11 +295,12 @@ def add_library_strategy(
         if not lib:
             raise KeyError(library_id)
         clash = conn.execute(
-            "SELECT id, library_id FROM user_library_strategies WHERE user_id = %s AND name = %s",
-            (int(user_id), title),
+            "SELECT id, library_id FROM user_library_strategies "
+            "WHERE library_id = %s AND name = %s",
+            (int(library_id), title),
         ).fetchone()
         if clash:
-            raise ValueError(f"你已有同名策略「{title}」，请换一个名字")
+            raise ValueError(f"该策略库中已有同名策略「{title}」，请换一个名字")
         row = conn.execute(
             """
             INSERT INTO user_library_strategies

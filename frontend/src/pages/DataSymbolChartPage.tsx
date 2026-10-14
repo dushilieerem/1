@@ -597,8 +597,21 @@ export function DataSymbolChartPage() {
       if (m != null) items.push({ label: "BOLL中", color: "#a855f7", value: m });
       if (l != null) items.push({ label: "BOLL下", color: "#64748b", value: l });
     }
+    if (subPane === "macd" && indCache.current.macd) {
+      const m = indCache.current.macd;
+      const dif = valueAt(filterLineByDates(m.dif, dateSet), date);
+      const dea = valueAt(filterLineByDates(m.dea, dateSet), date);
+      const hist = valueAt(filterLineByDates(m.hist, dateSet), date);
+      if (dif != null) items.push({ label: "DIF", color: "#3b82f6", value: dif });
+      if (dea != null) items.push({ label: "DEA", color: "#f59e0b", value: dea });
+      if (hist != null) items.push({ label: "MACD", color: "#64748b", value: hist });
+    }
+    if (subPane === "rsi" && indCache.current.rsi) {
+      const v = valueAt(filterLineByDates(indCache.current.rsi, dateSet), date);
+      if (v != null) items.push({ label: "RSI", color: "#a855f7", value: v });
+    }
     return items;
-  }, [hover, maOn, bollOn, period, daily]);
+  }, [hover, maOn, bollOn, subPane, period, daily]);
 
   const up = hover != null ? Number(hover.close) >= Number(hover.open) : null;
 
@@ -1261,6 +1274,59 @@ export function DataSymbolChartPage() {
                   : "h-[min(70vh,720px)] w-full overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm"
               }
             />
+            {/* MACD 副图线图例：区分 DIF / DEA / 柱（副图占下部约 35%） */}
+            {subPane === "macd" ? (
+              <div
+                className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-2.5 rounded-lg border border-slate-200/90 bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-600 shadow-sm backdrop-blur sm:text-[11px]"
+                aria-hidden
+              >
+                <span className="text-slate-400">MACD(12,26,9)</span>
+                <span className="flex items-center gap-1">
+                  <span
+                    className="inline-block h-0.5 w-3 rounded"
+                    style={{ background: "#3b82f6" }}
+                  />
+                  DIF
+                </span>
+                <span className="flex items-center gap-1">
+                  <span
+                    className="inline-block h-0.5 w-3 rounded"
+                    style={{ background: "#f59e0b" }}
+                  />
+                  DEA
+                </span>
+                <span className="flex items-center gap-1">
+                  <span
+                    className="inline-block h-2.5 w-1.5 rounded-sm bg-gradient-to-b from-red-500 to-emerald-500"
+                  />
+                  柱
+                </span>
+              </div>
+            ) : null}
+            {/* RSI 副图图例：周期与超买超卖参考线 */}
+            {subPane === "rsi" ? (
+              <div
+                className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-2.5 rounded-lg border border-slate-200/90 bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-600 shadow-sm backdrop-blur sm:text-[11px]"
+                aria-hidden
+              >
+                <span className="text-slate-400">RSI(14)</span>
+                <span className="flex items-center gap-1">
+                  <span
+                    className="inline-block h-0.5 w-3 rounded"
+                    style={{ background: "#a855f7" }}
+                  />
+                  RSI
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-0 w-3 border-t border-dashed" style={{ borderColor: "rgba(225, 29, 72, 0.45)" }} />
+                  70
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-0 w-3 border-t border-dashed" style={{ borderColor: "rgba(5, 150, 105, 0.45)" }} />
+                  30
+                </span>
+              </div>
+            ) : null}
             {/* PC：图区左上角全景 */}
             {!fs ? (
               <button

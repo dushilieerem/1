@@ -21,6 +21,8 @@ import {
 import {
   DETECT_ANALYSIS_LEVEL_OPTIONS,
   DETECT_BENCHMARK_OPTIONS,
+  DETECT_GROUP_OPTIONS,
+  EXECUTION_TIMING_OPTIONS,
   DETECT_PERIOD_OPTIONS,
   DETECT_UNIVERSE_OPTIONS,
   PORTFOLIO_TYPE_OPTIONS,
@@ -43,6 +45,9 @@ import {
   saveDetectRun,
   saveProject,
   type AnalysisLevel,
+  type ExecutionTiming,
+  normalizeDetectGroups,
+  normalizeExecutionTiming,
   type DetectProject,
   type DraftDetectFactor,
   type RangeMode,
@@ -1737,11 +1742,11 @@ export function FactorDetectPage() {
                 <label className="block min-w-0 text-xs text-slate-500">
                   因子分组
                   <select
-                    value={Math.min(5, Math.max(1, cfg.groups))}
+                    value={normalizeDetectGroups(cfg.groups)}
                     onChange={(e) => patchConfig({ groups: Number(e.target.value) })}
                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
                   >
-                    {[1, 2, 3, 4, 5].map((n) => (
+                    {DETECT_GROUP_OPTIONS.map((n) => (
                       <option key={n} value={n}>
                         {n} 组
                       </option>
@@ -1811,6 +1816,28 @@ export function FactorDetectPage() {
                       </option>
                     ))}
                   </select>
+                </label>
+                <label className="block min-w-0 text-xs text-slate-500 lg:col-span-2">
+                  成交时点
+                  <select
+                    value={normalizeExecutionTiming(cfg.executionTiming)}
+                    onChange={(e) =>
+                      patchConfig({
+                        executionTiming: e.target.value as ExecutionTiming,
+                      })
+                    }
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
+                  >
+                    {EXECUTION_TIMING_OPTIONS.map((o) => (
+                      <option key={o.code} value={o.code}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="mt-1 block text-[11px] leading-relaxed text-slate-400">
+                    信号在当日收盘产生：当日收盘价 / 次日收盘价（默认）/ 次日开盘价成交。
+                    越靠后越保守，也会改变净值、分层曲线与 IC。
+                  </span>
                 </label>
               </div>
               <div className="mt-3 flex flex-wrap gap-4">

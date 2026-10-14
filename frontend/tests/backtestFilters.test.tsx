@@ -14,9 +14,14 @@ import {
   type StrategyProjectConfig,
 } from "../src/lib/strategyStore";
 import {
+  DEFAULT_EXECUTION_TIMING,
+  DETECT_GROUP_OPTIONS,
+  EXECUTION_TIMING_OPTIONS,
   applyDetectRunSnapshotToConfig,
   buildDetectRunUiSnapshot,
   defaultConfig,
+  normalizeDetectGroups,
+  normalizeExecutionTiming,
   readDetectRunUiSnapshot,
 } from "../src/lib/detectStore";
 import { serializeYgFactorBody, serializeYgStrategyBody } from "../src/lib/ygApi";
@@ -271,5 +276,159 @@ test("策略检测请求体带上四个过滤开关（两种引擎模式）", ()
     for (const key of FILTER_KEYS) {
       assert.equal(req[key], true, `${mode}:${key}`);
     }
+  }
+});
+
+// ---------- E. 成交时点（execution_timing） ----------
+//
+// 与过滤开关同样的两类坑：配置白名单丢字段、老快照缺字段读回 undefined。
+// 另外成交时点还多一个坑——switchEngineMode 重建 cfg 时要显式保留。
+
+const EXECUTION_TIMINGS = EXECUTION_TIMING_OPTIONS.map((o) => o.code);
+
+test("成交时点选项覆盖三种取值且默认是 next_close", () => {
+  assert.deepEqual([...EXECUTION_TIMINGS], ["same_close", "next_close", "next_open"]);
+  assert.equal(DEFAULT_EXECUTION_TIMING, "next_close");
+});
+
+test("normalizeExecutionTiming 收敛非法与缺失值", () => {
+  for (const code of EXECUTION_TIMINGS) {
+    assert.equal(normalizeExecutionTiming(code), code);
+  }
+  for (const bad of [undefined, null, "", "  ", "same_open", 42, {}]) {
+    assert.equal(normalizeExecutionTiming(bad), "next_close", String(bad));
+  }
+});
+
+test("策略配置默认 next_close，且白名单不丢弃该字段", () => {
+  assert.equal(defaultStrategyConfig().execution_timing, "next_close");
+
+  assert.equal(
+    normalizeStrategyConfig({ execution_timing: "next_open" }).execution_timing,
+    "next_open",
+  );
+  assert.equal(
+    normalizeStrategyConfig({ execution_timing: "same_close" }).execution_timing,
+    "same_close",
+  );
+  // 非法值回落默认，不能留 undefined —— RE 端 extra=forbid 会直接 422。
+  assert.equal(
+    normalizeStrategyConfig({ execution_timing: "bogus" as never }).execution_timing,
+    "next_close",
+  );
+  assert.equal(normalizeStrategyConfig({}).execution_timing, "next_close");
+});
+
+test("因子侧默认 next_close，快照往返保持", () => {
+  assert.equal(defaultConfig(["mom"]).executionTiming, "next_close");
+
+  const snapshot = buildDetectRunUiSnapshot({
+    ...defaultConfig(["mom"]),
+    executionTiming: "next_open",
+  });
+  const read = readDetectRunUiSnapshot({ _svquant_ui: snapshot });
+  assert.ok(read, "快照应能被读回");
+  assert.equal(read.executionTiming, "next_open");
+
+  const applied = applyDetectRunSnapshotToConfig(defaultConfig(["mom"]), read);
+  assert.equal(applied.executionTiming, "next_open");
+});
+
+test("因子侧：老快照缺 executionTiming 时回落 next_close", () => {
+  const legacy: Record<string, unknown> = {
+    ...buildDetectRunUiSnapshot(defaultConfig(["mom"])),
+  };
+  delete legacy.executionTiming;
+
+  const read = readDetectRunUiSnapshot({ _svquant_ui: legacy });
+  assert.ok(read, "老快照应仍可读回");
+  assert.equal(read.executionTiming, "next_close");
+});
+
+test("序列化不剥离 execution_timing", () => {
+  const strategyBody = serializeYgStrategyBody({
+    strategy_id: "builtin",
+    execution_timing: "next_open",
+  });
+  assert.equal(strategyBody.execution_timing, "next_open");
+
+  const factorBody = serializeYgFactorBody({
+    factor_name: "momentum",
+    execution_timing: "next_open",
+  });
+  assert.equal(factorBody.execution_timing, "next_open");
+});
+
+test("两个回测请求体都带上 execution_timing", () => {
+  const factorReq = buildFactorDetectRequest(
+    { ...defaultConfig([]), executionTiming: "same_close" },
+    { factor_name: "momentum" },
+    { start: "2024-01-01", end: "2024-12-31" },
+  );
+  assert.equal(factorReq.execution_timing, "same_close");
+
+  for (const mode of ["vectorized", "event"] as const) {
+    const strategyReq = buildStrategyBacktestRequest(
+      { ...defaultStrategyConfig(), engine_mode: mode, execution_timing: "next_open" },
+      {
+        strategyId: "",
+        snapshotCode: "class S: pass",
+        range: { start: "2024-01-01", end: "2024-12-31" },
+      },
+    );
+    assert.equal(strategyReq.execution_timing, "next_open", mode);
+  }
+});
+
+test("因子检测请求体在 config 缺失时回落 next_close", () => {
+  const cfg = defaultConfig([]);
+  delete (cfg as { executionTiming?: unknown }).executionTiming;
+  const req = buildFactorDetectRequest(
+    cfg,
+    { factor_name: "momentum" },
+    { start: "2024-01-01", end: "2024-12-31" },
+  );
+  assert.equal(req.execution_timing, "next_close");
+});
+
+// ---------- F. 因子分组数 ----------
+//
+// RE 的约束是 2~10（groups = Field(5, ge=2, le=10)）。此前下拉里含「1 组」，
+// 选了必然 422。这里把「选项必须落在 RE 允许区间内」固化成断言，避免再次跑偏。
+
+const RE_GROUPS_MIN = 2;
+const RE_GROUPS_MAX = 10;
+
+test("因子分组选项全部落在 RE 允许的 2~10 内", () => {
+  assert.ok(DETECT_GROUP_OPTIONS.length > 0);
+  for (const n of DETECT_GROUP_OPTIONS) {
+    assert.ok(n >= RE_GROUPS_MIN && n <= RE_GROUPS_MAX, `分组 ${n} 超出 RE 约束`);
+  }
+  assert.deepEqual([...DETECT_GROUP_OPTIONS], [3, 5, 10]);
+});
+
+test("normalizeDetectGroups 收敛越界与非法值", () => {
+  for (const n of DETECT_GROUP_OPTIONS) {
+    assert.equal(normalizeDetectGroups(n), n);
+  }
+  // 1 是这次修掉的越界值；2/4 不在选项里但 RE 允许，仍按默认收敛。
+  for (const bad of [1, 0, -3, 2, 4, 6, 11, 999, NaN, null, undefined, "abc"]) {
+    assert.equal(normalizeDetectGroups(bad), 5, String(bad));
+  }
+  assert.equal(normalizeDetectGroups("10"), 10, "字符串数字应被接受");
+});
+
+test("因子检测请求体不会发出越界的分组数", () => {
+  for (const raw of [DETECT_GROUP_OPTIONS[0], DETECT_GROUP_OPTIONS[2], 1, 2, 11]) {
+    const req = buildFactorDetectRequest(
+      { ...defaultConfig([]), groups: raw },
+      { factor_name: "momentum" },
+      { start: "2024-01-01", end: "2024-12-31" },
+    );
+    const sent = Number(req.groups);
+    assert.ok(
+      sent >= RE_GROUPS_MIN && sent <= RE_GROUPS_MAX,
+      `发出 ${sent}，超出 RE 约束`,
+    );
   }
 });

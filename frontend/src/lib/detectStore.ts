@@ -42,6 +42,8 @@ export type DetectProjectConfig = {
   filterLimitDown: boolean;
   /** core=快速检测 | full=全量检测，对应 RE analysis_level */
   analysisLevel: AnalysisLevel;
+  /** 成交时点，对标 RE execution_timing；缺省视为 next_close */
+  executionTiming?: ExecutionTiming;
   /** 对标 RE /yg-api：佣金率 / 卖出印花税 / 滑点率 */
   commissionRate: number;
   stampTax: number;
@@ -112,6 +114,7 @@ export type DetectRunUiSnapshot = {
   filterSt: boolean;
   filterLimitDown: boolean;
   analysisLevel: AnalysisLevel;
+  executionTiming: ExecutionTiming;
   commissionRate: number;
   stampTax: number;
   slippageRate: number;
@@ -141,13 +144,14 @@ export function buildDetectRunUiSnapshot(
     endDate: cfg.endDate || "",
     universe: cfg.universe || "CSI300",
     benchmark: cfg.benchmark || "CSI300",
-    groups: cfg.groups || 5,
+    groups: normalizeDetectGroups(cfg.groups),
     rebalanceDays: cfg.rebalanceDays || 1,
     filterLimitUp: Boolean(cfg.filterLimitUp),
     filterSuspended: Boolean(cfg.filterSuspended),
     filterSt: Boolean(cfg.filterSt),
     filterLimitDown: Boolean(cfg.filterLimitDown),
     analysisLevel: cfg.analysisLevel === "full" ? "full" : "core",
+    executionTiming: normalizeExecutionTiming(cfg.executionTiming),
     commissionRate: Number(cfg.commissionRate) || 0,
     stampTax: Number(cfg.stampTax) || 0,
     slippageRate: Number(cfg.slippageRate) || 0,
@@ -188,13 +192,15 @@ export function readDetectRunUiSnapshot(
     endDate: String(raw.endDate || ""),
     universe: String(raw.universe || "CSI300"),
     benchmark: String(raw.benchmark || "CSI300"),
-    groups: Number(raw.groups) || 5,
+    groups: normalizeDetectGroups(raw.groups),
     rebalanceDays: Number(raw.rebalanceDays) || 1,
     filterLimitUp: Boolean(raw.filterLimitUp),
     filterSuspended: Boolean(raw.filterSuspended),
     filterSt: Boolean(raw.filterSt),
     filterLimitDown: Boolean(raw.filterLimitDown),
     analysisLevel: raw.analysisLevel === "full" ? "full" : "core",
+    // 老快照没有这个字段，回落到 RE 默认值，不能留 undefined。
+    executionTiming: normalizeExecutionTiming(raw.executionTiming),
     commissionRate: Number(raw.commissionRate) || 0,
     stampTax: Number(raw.stampTax) || 0,
     slippageRate: Number(raw.slippageRate) || 0,
@@ -247,13 +253,14 @@ export function applyDetectRunSnapshotToConfig(
     endDate: snap.endDate,
     universe: snap.universe,
     benchmark: snap.benchmark,
-    groups: snap.groups,
+    groups: normalizeDetectGroups(snap.groups),
     rebalanceDays: snap.rebalanceDays,
     filterLimitUp: snap.filterLimitUp,
     filterSuspended: snap.filterSuspended,
     filterSt: snap.filterSt,
     filterLimitDown: snap.filterLimitDown,
     analysisLevel: snap.analysisLevel,
+    executionTiming: normalizeExecutionTiming(snap.executionTiming),
     commissionRate: snap.commissionRate,
     stampTax: snap.stampTax,
     slippageRate: snap.slippageRate,
@@ -294,6 +301,46 @@ export const DETECT_ANALYSIS_LEVEL_OPTIONS = [
   { code: "core" as const, label: "快速检测" },
   { code: "full" as const, label: "全量检测" },
 ] as const;
+
+/**
+ * 成交时点（对标 RE execution_timing）。信号恒在 T 日收盘产生：
+ *   same_close  T 日收盘价成交（旧口径，最乐观）
+ *   next_close  T+1 日收盘价成交（RE 默认值）
+ *   next_open   T+1 日开盘价成交
+ */
+export const EXECUTION_TIMING_OPTIONS = [
+  { code: "same_close" as const, label: "当日收盘" },
+  { code: "next_close" as const, label: "次日收盘" },
+  { code: "next_open" as const, label: "次日开盘" },
+] as const;
+
+export type ExecutionTiming = (typeof EXECUTION_TIMING_OPTIONS)[number]["code"];
+
+/**
+ * 因子分层数。RE 的约束是 2~10，这里只暴露 3 / 5 / 10——原先的选项里含 1，
+ * 而 RE 要求 >= 2，选「1 组」必然 422。
+ */
+export const DETECT_GROUP_OPTIONS = [3, 5, 10] as const;
+
+export const DEFAULT_DETECT_GROUPS = 5;
+
+/** 把任意输入收敛成允许的分层数；不在选项内一律回落默认值。 */
+export function normalizeDetectGroups(value: unknown): number {
+  const n = Number(value);
+  return (DETECT_GROUP_OPTIONS as readonly number[]).includes(n)
+    ? n
+    : DEFAULT_DETECT_GROUPS;
+}
+
+/** 默认成交时点，与 ResearchEngine 的默认值保持一致。 */
+export const DEFAULT_EXECUTION_TIMING: ExecutionTiming = "next_close";
+
+/** 把任意输入收敛成合法的成交时点；非法或缺失一律回落默认值。 */
+export function normalizeExecutionTiming(value: unknown): ExecutionTiming {
+  return value === "same_close" || value === "next_close" || value === "next_open"
+    ? value
+    : DEFAULT_EXECUTION_TIMING;
+}
 
 export const RE_MARKET_END = (() => {
   const d = new Date();
@@ -422,6 +469,7 @@ export function defaultConfig(factorCodes: string[] = []): DetectProjectConfig {
     filterSt: false,
     filterLimitDown: false,
     analysisLevel: "core",
+    executionTiming: DEFAULT_EXECUTION_TIMING,
     commissionRate: 0,
     stampTax: 0,
     slippageRate: 0,
@@ -443,7 +491,8 @@ function normalizeProject(
   if (cfg.analysisLevel !== "core" && cfg.analysisLevel !== "full") {
     cfg.analysisLevel = "core";
   }
-  cfg.groups = Math.min(5, Math.max(1, Number(cfg.groups) || 5));
+  cfg.groups = normalizeDetectGroups(cfg.groups);
+  cfg.executionTiming = normalizeExecutionTiming(cfg.executionTiming);
   if (!cfg.factorLibraries || typeof cfg.factorLibraries !== "object") {
     cfg.factorLibraries = {};
   }

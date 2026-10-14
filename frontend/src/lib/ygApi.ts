@@ -189,6 +189,8 @@ export type YgBacktestRequest = {
   slippage_rate?: number;
   /** core=核心回测（默认） | full=额外 IC/FF3/行业 */
   analysis_level?: "core" | "full";
+  /** 成交时点：当日收盘 / 次日收盘（默认） / 次日开盘 */
+  execution_timing?: "same_close" | "next_close" | "next_open";
   /** 仅 SVQuant 落库：当次左侧配置快照，不发给 RE */
   _svquant_ui?: Record<string, unknown>;
   /** 仅落库：草稿因子 */
@@ -469,6 +471,8 @@ export type YgStrategyBacktestRequest = {
   filter_limit_up?: boolean;
   /** 是否过滤跌停（事件模式下由撮合层强制拦截，该参数不额外生效） */
   filter_limit_down?: boolean;
+  /** 成交时点：当日收盘 / 次日收盘（默认） / 次日开盘 */
+  execution_timing?: "same_close" | "next_close" | "next_open";
   /**
    * 仅 SVQuant 落库用：左侧因子选择快照。
    * serializeYgStrategyBody 会剥离，不会发给 ResearchEngine。

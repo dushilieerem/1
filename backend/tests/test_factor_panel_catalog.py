@@ -155,6 +155,37 @@ class RunBatchLibraryGateTest(unittest.TestCase):
         self.assertIsNone(stored[0]["ic_mean"])
 
 
+class SpreadDirectionTest(unittest.TestCase):
+    """多空差符号：RE 口径 = Q1 − Q5（Q1 是因子值最高组、Q5 是最低组）。
+
+    回归背景：兜底分支原本写 q5 - q1，与 RE 透传的 spread 符号相反 ——
+    同一列在不同因子上方向会翻转。
+    """
+
+    def test_fallback_uses_highest_minus_lowest(self):
+        # 只给分层收益、不给 spread/long_short_return → 走兜底
+        data = {"factor_analysis": {"layered_returns": {"layer1": 0.14, "layer5": -0.02}}}
+        m = ds.map_yg_response(data)
+        self.assertAlmostEqual(m["q1_return"], 14.0, places=4)
+        self.assertAlmostEqual(m["q5_return"], -2.0, places=4)
+        # Q1(最高分位) − Q5(最低分位) = +16，而不是 −16
+        self.assertAlmostEqual(m["long_short_spread"], 16.0, places=4)
+
+    def test_re_spread_passed_through_wins(self):
+        data = {
+            "factor_analysis": {
+                "layered_returns": {"layer1": 0.14, "layer5": -0.02, "spread": 0.16}
+            }
+        }
+        m = ds.map_yg_response(data)
+        self.assertAlmostEqual(m["long_short_spread"], 16.0, places=4)
+
+    def test_lower_highest_quantile_gives_negative_spread(self):
+        data = {"factor_analysis": {"layered_returns": {"layer1": -0.05, "layer5": 0.11}}}
+        m = ds.map_yg_response(data)
+        self.assertAlmostEqual(m["long_short_spread"], -16.0, places=4)
+
+
 class RefreshLockTest(unittest.TestCase):
     """整批回测跨进程互斥：锁被占用时本轮跳过并告警，不并发压 RE、不并发写同表。"""
 

@@ -371,16 +371,20 @@ export function FactorDashboardPage() {
     k,
     label,
     align = "left",
+    title,
   }: {
     k: SortKey;
     label: string;
     align?: "left" | "right";
+    /** 口径说明：分位列必须讲清哪一端是「因子值最大」 */
+    title?: string;
   }) => (
     <th
       className={`cursor-pointer whitespace-nowrap px-4 py-3 ${
         align === "right" ? "text-right" : "text-left"
       }`}
       onClick={() => toggleSort(k)}
+      title={title}
     >
       <span
         className={`inline-flex items-center gap-1 text-xs font-semibold tracking-wide ${
@@ -792,12 +796,32 @@ export function FactorDashboardPage() {
                   <SortTh k="rank_ic" label="RankIC" align="right" />
                   <SortTh k="annual_return" label="年化" align="right" />
                   <SortTh k="max_drawdown" label="最大回撤" align="right" />
-                  <SortTh k="q1_turnover" label="换手" align="right" />
+                  <SortTh
+                    k="q1_turnover"
+                    label="组合换手"
+                    align="right"
+                    title="整个多空组合的换手，不是分位换手（RE 目前不提供逐分位换手）"
+                  />
                   <SortTh k="win_rate" label="胜率" align="right" />
                   <SortTh k="sharpe" label="Sharpe" align="right" />
-                  <SortTh k="q1_return" label="Q1分层" align="right" />
-                  <SortTh k="q5_return" label="Q5分层" align="right" />
-                  <SortTh k="long_short_spread" label="多空差" align="right" />
+                  <SortTh
+                    k="q1_return"
+                    label="最高分位 Q1"
+                    align="right"
+                    title="因子值最大的一组，纯做多的参考收益（RE 口径：Q1 = 最高组、Q5 = 最低组）"
+                  />
+                  <SortTh
+                    k="q5_return"
+                    label="最低分位 Q5"
+                    align="right"
+                    title="因子值最小的一组（RE 口径：Q1 = 最高组、Q5 = 最低组）"
+                  />
+                  <SortTh
+                    k="long_short_spread"
+                    label="多空差"
+                    align="right"
+                    title="最高分位 Q1 − 最低分位 Q5（做多最高组、做空最低组）"
+                  />
                   <th className="sticky right-0 z-10 whitespace-nowrap bg-slate-50/95 px-3 py-3 text-center text-xs font-semibold tracking-wide text-slate-500 shadow-[-6px_0_8px_-6px_rgba(15,23,42,0.12)]">
                     操作
                   </th>

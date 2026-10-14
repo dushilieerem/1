@@ -234,8 +234,8 @@ def add_watchlist_symbol(
                     "FROM user_watchlist_symbols WHERE id = %s",
                     (int(dict(existing)["id"]),),
                 ).fetchone()
-                return _sym_row(dict(row))
-            return _sym_row(dict(existing))
+                return {"added": False, "symbol": _sym_row(dict(row))}
+            return {"added": False, "symbol": _sym_row(dict(existing))}
         row = conn.execute(
             """
             INSERT INTO user_watchlist_symbols (watchlist_id, user_id, symbol, name)
@@ -249,7 +249,7 @@ def add_watchlist_symbol(
             "WHERE id = %s AND user_id = %s",
             (int(watchlist_id), int(user_id)),
         )
-    return _sym_row(dict(row))
+    return {"added": True, "symbol": _sym_row(dict(row))}
 
 
 def add_watchlist_symbols_batch(
@@ -276,23 +276,17 @@ def add_watchlist_symbols_batch(
         except ValueError:
             skipped += 1
             continue
-        with get_conn() as conn:
-            existed = conn.execute(
-                "SELECT 1 FROM user_watchlist_symbols "
-                "WHERE watchlist_id = %s AND symbol = %s",
-                (int(watchlist_id), code),
-            ).fetchone()
-        row = add_watchlist_symbol(
+        res = add_watchlist_symbol(
             user_id,
             watchlist_id,
             code,
             str(raw.get("name") or ""),
         )
-        out.append(row)
-        if existed:
-            skipped += 1
-        else:
+        out.append(res["symbol"])
+        if res["added"]:
             added += 1
+        else:
+            skipped += 1
     return {"ok": True, "added": added, "skipped": skipped, "symbols": out}
 
 

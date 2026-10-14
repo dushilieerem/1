@@ -346,8 +346,12 @@ export function WatchlistPage() {
     try {
       if (items.length === 1) {
         const item = items[0];
-        await addWatchlistSymbol(wlId, item.symbol, item.name || "");
-        showToast(`已加入 ${labelOf(item)}`);
+        const res = await addWatchlistSymbol(wlId, item.symbol, item.name || "");
+        showToast(
+          res.added
+            ? `已加入 ${labelOf(item)}`
+            : `${labelOf(item)} 已在该组合中，请勿重复添加`,
+        );
       } else {
         const res = await addWatchlistSymbolsBatch(
           wlId,

@@ -171,6 +171,12 @@ def create_user_strategy_library(user_id: int, name: str) -> dict[str, Any]:
     if not NAME_RE.match(title):
         raise ValueError("名称仅支持中英文、数字、下划线与短横线")
     with get_conn() as conn:
+        exists = conn.execute(
+            "SELECT id FROM user_strategy_libraries WHERE user_id = %s AND name = %s",
+            (int(user_id), title),
+        ).fetchone()
+        if exists:
+            raise ValueError(f"已存在同名策略库：{title}")
         row = conn.execute(
             """
             INSERT INTO user_strategy_libraries (user_id, name)

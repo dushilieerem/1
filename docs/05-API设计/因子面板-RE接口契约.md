@@ -257,8 +257,8 @@ GET /api/factor-dashboard/results
         "turnover": 0.35,
         "win_rate": 0.52,
         "sharpe": 0.81,
-        "q1_return": -0.02,
-        "q5_return": 0.14,
+        "q1_return": 0.14,
+        "q5_return": -0.02,
         "long_short_spread": 0.16,
         "q1_turnover": null,
         "q5_turnover": null
@@ -283,7 +283,10 @@ GET /api/factor-dashboard/results
 | `annual_return`、`max_drawdown`、`turnover`、`win_rate`、`q1_return`、`q5_return`、`long_short_spread`、`q1_turnover`、`q5_turnover` | 比例值 | 小数；`0.12` 表示 `12%` |
 | `sharpe` | 按 RE 固定年化规则计算 | 无量纲 |
 
-`annual_return`、`max_drawdown`、`turnover`、`win_rate`、`sharpe` 对应请求所选 `portfolio_type`；Q1/Q5 为因子分值从低到高的第 1/5 组，`long_short_spread = Q5 - Q1`。不按因子正负预测方向调整分组含义。若 RE 的现行计算定义不同，必须在 RE 契约中写明并固定版本，再由 SVQuant 展示层适配。
+`annual_return`、`max_drawdown`、`turnover`、`win_rate`、`sharpe` 对应请求所选 `portfolio_type`；**Q1 为因子值最高组、Q5 为因子值最低组**，`long_short_spread = Q1 - Q5`（做多最高组、做空最低组）。不按因子正负预测方向调整分组含义。
+
+> **方向以 RE 实现为准，已核对 RE 源码**：`app/services/portfolio/grouping.py` 的 `rank_groups` 文档与实现均声明「Q1 为因子值最高组，QN 为最低组」；`app/services/factor/runner.py` 的 `spread` 用分层净值首列减末列（即 Q1 − QN）。
+> 本文件早期版本曾写作「Q1/Q5 为因子分值从低到高的第 1/5 组，`long_short_spread = Q5 - Q1`」，**方向与公式均与 RE 相反，已更正**；面板展示层同步改为在列名标明「最高分位 Q1 / 最低分位 Q5」。纯做多的参考收益即 `q1_return`（最高分位）。
 
 现有 SVQuant 面板数据库中的部分百分比字段采用“百分数点”存储（如 12 表示 12%），新 BFF 适配时必须只转换一次；不得把 RE 的 `0.12` 当作 `12` 再显示成 `1200%`。IC 字段直接按相关系数展示。
 

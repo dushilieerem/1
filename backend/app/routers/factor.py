@@ -330,8 +330,14 @@ def factor_dashboard_status() -> dict:
 
 @router.post("/api/factor/dashboard/refresh")
 def factor_dashboard_refresh(
-    body: dict[str, Any] | None = None, _admin: dict = Depends(require_admin)
+    body: dict[str, Any] | None = None,
+    admin: dict = Depends(require_admin),
 ) -> dict:
+    """整批重跑 RE 回测是重活（数百次回测、按小时计），与校验状态同样限管理员。
+
+    `skip_ok` 默认 False：面板「刷新指标」的语义是**重新计算**当前视图的全部因子
+    （行情滚动后指标才会更新）。传 true 则退化为「只补算缺失行」，已算过的保留旧值。
+    """
     body = body or {}
     try:
         return start_refresh(
@@ -340,6 +346,7 @@ def factor_dashboard_refresh(
             filter_limit_up=bool(body.get("filter_limit_up", True)),
             filter_suspended=bool(body.get("filter_suspended", True)),
             limit=int(body["limit"]) if body.get("limit") is not None else None,
+            skip_ok=bool(body.get("skip_ok", False)),
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

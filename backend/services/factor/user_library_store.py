@@ -10,6 +10,7 @@ from typing import Any
 from services.core.db import get_conn
 
 NAME_RE = re.compile(r"^[\w\u4e00-\u9fff][\w\u4e00-\u9fff\-]{0,63}$")
+MAX_LIBRARY_NAME_LEN = 64
 FACTOR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 _schema_lock = threading.Lock()
@@ -150,8 +151,12 @@ def create_user_library(user_id: int, name: str) -> dict[str, Any]:
         raise ValueError("请填写因子库名称")
     if title in ("内置因子库", "全部", "其他"):
         raise ValueError(f"不能使用保留名：{title}")
+    if len(title) > MAX_LIBRARY_NAME_LEN:
+        raise ValueError(
+            f"因子库名称最长 {MAX_LIBRARY_NAME_LEN} 个字符，当前 {len(title)} 个"
+        )
     if not NAME_RE.match(title):
-        raise ValueError("名称仅支持中英文、数字、下划线与短横线，最长 64")
+        raise ValueError("名称仅支持中英文、数字、下划线与短横线")
     with get_conn() as conn:
         exists = conn.execute(
             "SELECT id FROM user_factor_libraries WHERE user_id = %s AND name = %s",

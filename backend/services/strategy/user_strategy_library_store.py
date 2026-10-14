@@ -9,6 +9,7 @@ from typing import Any
 from services.core.db import get_conn
 
 NAME_RE = re.compile(r"^[\w\u4e00-\u9fff][\w\u4e00-\u9fff\-]{0,63}$")
+MAX_LIBRARY_NAME_LEN = 64
 
 
 def ensure_user_strategy_libraries_schema() -> None:
@@ -163,6 +164,10 @@ def create_user_strategy_library(user_id: int, name: str) -> dict[str, Any]:
     title = (name or "").strip()
     if not title:
         raise ValueError("请填写策略库名称")
+    if len(title) > MAX_LIBRARY_NAME_LEN:
+        raise ValueError(
+            f"策略库名称最长 {MAX_LIBRARY_NAME_LEN} 个字符，当前 {len(title)} 个"
+        )
     if not NAME_RE.match(title):
         raise ValueError("名称仅支持中英文、数字、下划线与短横线")
     with get_conn() as conn:

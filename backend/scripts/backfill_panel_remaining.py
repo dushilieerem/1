@@ -3,21 +3,21 @@
 
 设计：
   - analysis_level=core（面板所需 IC/分层/年化等标量均在 core，比 full 快）
-  - 默认纳入 qlib_alpha（~518）+ 未算过的 jq_compat（~63）
+  - 目录来自 RE 目录快照（单库「主因子库」+ SV 分类），本地/用户库不入面板
   - skip_ok：已有 ic_mean 且无 error 的行保留
   - unavailable / RE 报错：写 error，数值置空
+  - 整批持有跨进程刷新锁：与日更/API 刷新互斥，抢不到锁即中止并告警
 
 用法（建议后台）:
   conda activate svquant
   cd backend
-  python -u scripts/backfill_panel_remaining.py --matrix-24
+  python -u scripts/backfill_panel_remaining.py --matrix      # 全量 12 组
 
-  # 先跑默认视图（最快看到面板变多）
+  # 先补面板默认视图（最快看到面板有数）
   python -u scripts/backfill_panel_remaining.py --combo CSI300:3y
 
-  # 只补聚宽 / 只补 qlib
-  python -u scripts/backfill_panel_remaining.py --matrix-24 --libraries jq_compat_emotion,jq_compat_risk,jq_compat_technical
-  python -u scripts/backfill_panel_remaining.py --matrix-24 --libraries qlib_alpha
+  # 只补某个池 / 某个周期
+  python -u scripts/backfill_panel_remaining.py --matrix --combo CSI500:1y
 
 日志: output/factor_dashboard/remaining_backfill.log
 """
@@ -31,7 +31,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from scripts.daily_dashboard_refresh import MATRIX_24, MATRIX_16  # noqa: E402
+from scripts.daily_dashboard_refresh import MATRIX_FULL  # noqa: E402
 from services.factor import dashboard_store as ds  # noqa: E402
 
 LOG_DIR = ROOT / "output" / "factor_dashboard"
@@ -83,8 +83,13 @@ def count_todo(
 def main() -> None:
     ap = argparse.ArgumentParser(description="补算因子面板剩余因子（跳过已成功）")
     ap.add_argument("--combo", action="append", help="形如 CSI300:3y，可多次")
-    ap.add_argument("--matrix-24", action="store_true", help="4池×3周期×过滤开/关")
-    ap.add_argument("--matrix-16", action="store_true", help="旧 16 组")
+    ap.add_argument(
+        "--matrix",
+        action="store_true",
+        help="面板全量组合：2 池 × 3 周期 × 过滤开/关 = 12 组",
+    )
+    ap.add_argument("--matrix-24", action="store_true", help="[已弃用] 现等同 --matrix")
+    ap.add_argument("--matrix-16", action="store_true", help="[已弃用] 现等同 --matrix")
     ap.add_argument("--universe", default=None)
     ap.add_argument("--period", default=None)
     ap.add_argument("--no-filter-up", action="store_true")
@@ -118,7 +123,9 @@ def main() -> None:
     args = ap.parse_args()
 
     jobs: list[tuple[str, str, bool]] = []
-    if args.matrix_24:
+    if args.matrix or args.matrix_24 or args.matrix_16:
+        if args.matrix_24 or args.matrix_16:
+            log("注意：--matrix-24/--matrix-16 已弃用（RE 只支持 CSI300/CSI500），按全量矩阵执行")
         # 常用视图优先，面板能尽快看到数量上涨
         priority = [
             ("CSI300", "3y", True),
@@ -126,11 +133,9 @@ def main() -> None:
             ("CSI300", "3m", True),
         ]
         jobs = list(priority)
-        for j in MATRIX_24:
+        for j in MATRIX_FULL:
             if j not in jobs:
                 jobs.append(j)
-    elif args.matrix_16:
-        jobs = list(MATRIX_16)
     elif args.combo:
         filt = not args.no_filter_up
         for c in args.combo:
@@ -193,6 +198,12 @@ def main() -> None:
         )
         if job.get("status") == "failed":
             failed_combos += 1
+            if "刷新锁" in str(job.get("error") or ""):
+                log(
+                    "中止：另一轮面板回测正在运行（未抢到刷新锁）。本批不再继续，"
+                    "避免两批并发压 RE 并交叉写同表；请确认上一轮是否卡住。"
+                )
+                break
 
     log(f"全部完成 failed_combos={failed_combos}/{len(jobs)}")
     raise SystemExit(1 if failed_combos else 0)

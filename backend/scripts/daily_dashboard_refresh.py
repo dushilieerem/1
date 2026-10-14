@@ -4,18 +4,19 @@
 用法:
   conda activate svquant
   cd backend
-  python scripts/daily_dashboard_refresh.py
+  python scripts/daily_dashboard_refresh.py                 # 默认=全量组合（见下）
+  python scripts/daily_dashboard_refresh.py --matrix        # 同默认
   python scripts/daily_dashboard_refresh.py --combo CSI300:3y
-  python scripts/daily_dashboard_refresh.py --matrix-24
-  python scripts/daily_dashboard_refresh.py --matrix-16
   python scripts/daily_dashboard_refresh.py --limit 3
 
---matrix-24：4 池 × 近3月/近1年/近3年 × 过滤开/关 = 24 组（区间 end 默认 2026-01-01）。
---matrix-16：旧口径，仅 3m+1y（16 组）。
-默认 DEFAULT_COMBOS 为轻量 CSI300×3m/1y。
+默认（DEFAULT_COMBOS）= 面板全量组合 = 2 池 × 近3月/1年/3年 × 过滤涨停开/关 = 12 组。
+股票池只含 RE 实际支持的 CSI300 / CSI500：RE 对其它池直接 422
+（报「可用: ['ALL_A','A_SHARE','CSI300','CSI500','CSI_ALL']」），全市场池不纳入日更。
 
 指标缓存写入 SVQuant PostgreSQL 的 factor_dashboard_metrics 表。
-每组约 83 因子，单次回测常 30–60s，16 组可能十数小时，建议后台跑。
+单因子实测约 6s(3m)/9s(1y)/10s(3y)，331 个因子单组约 0.5–1 小时，
+12 组预计 10–12 小时（CSI500 成分更多、更慢），必须后台/定时跑。
+整批持有跨进程刷新锁：上一轮未结束则本轮跳过并告警，不会两批并发。
 """
 from __future__ import annotations
 
@@ -29,38 +30,30 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from services.factor import dashboard_store as ds  # noqa: E402
+from services.factor.dashboard_store import (  # noqa: E402
+    PANEL_COMBOS,
+    PANEL_PERIODS,
+    PANEL_UNIVERSES,
+)
 
 LOG_DIR = ROOT / "output" / "factor_dashboard"
 LOG_PATH = LOG_DIR / "daily_refresh.log"
 
-# 与同事 RE 成分表对齐（无 CSI_ALL）
-PANEL_UNIVERSES = ("CSI300", "CSI500", "CSI1000", "SSE50")
+# 组合定义在服务层（进程内定时器与脚本共用同一份）
+MATRIX_FULL: list[tuple[str, str, bool]] = list(PANEL_COMBOS)
 
-# 24 组：4 指数 × 近3月/近1年/近3年 × 过滤涨停开/关（end 见 backtest_range.RE_MARKET_END）
-MATRIX_24: list[tuple[str, str, bool]] = [
-    (u, p, filt)
-    for u in PANEL_UNIVERSES
-    for p in ("3m", "1y", "3y")
-    for filt in (True, False)
-]
+# 兼容旧名：池数收敛后 24/16 已不是真实组数，统一指向当前全量矩阵。
+# 保留是为了不让既有运维脚本静默失效（调用处会打弃用日志）。
+MATRIX_24: list[tuple[str, str, bool]] = list(MATRIX_FULL)
+MATRIX_16: list[tuple[str, str, bool]] = list(MATRIX_FULL)
 
-# 兼容旧名：原先 16 组不含 3y
-MATRIX_16: list[tuple[str, str, bool]] = [
-    (u, p, filt)
-    for u in PANEL_UNIVERSES
-    for p in ("3m", "1y")
-    for filt in (True, False)
-]
-
-# 日常默认：轻量（约 2 组）；扩量用 --combo / --matrix-16 / --all
-DEFAULT_COMBOS = [
-    ("CSI300", "3m"),
-    ("CSI300", "1y"),
-]
+# 日更默认 = 全量组合：面板所有股票池 × 周期 × 过滤口径都有数
+DEFAULT_COMBOS: list[tuple[str, str, bool]] = list(MATRIX_FULL)
+# 仅「过滤涨停开」（临时缩量/排查用）
 ALL_COMBOS = [
     (u, p)
     for u in PANEL_UNIVERSES
-    for p in ("3m", "1y", "3y")
+    for p in PANEL_PERIODS
 ]
 
 
@@ -130,16 +123,25 @@ def main() -> None:
     ap.add_argument("--period", default=None)
     ap.add_argument("--combo", action="append", help="形如 CSI300:3y，可多次")
     ap.add_argument(
+        "--matrix",
+        action="store_true",
+        help="面板全量组合：2 池 × 3 周期 × 过滤开/关 = 12 组（等同默认）",
+    )
+    ap.add_argument(
         "--matrix-24",
         action="store_true",
-        help="4池×近3月/近1年/近3年×过滤开/关 = 24 组（end=RE 行情截止日）",
+        help="[已弃用] 旧口径，现等同 --matrix",
     )
     ap.add_argument(
         "--matrix-16",
         action="store_true",
-        help="4池×近3月/近1年×过滤开/关 = 16 组（旧口径）",
+        help="[已弃用] 旧口径，现等同 --matrix",
     )
-    ap.add_argument("--all-default", action="store_true", help="4 池 × 3 周期全量（仅过滤开）")
+    ap.add_argument(
+        "--all-default",
+        action="store_true",
+        help="2 池 × 3 周期（仅过滤涨停开）",
+    )
     ap.add_argument("--no-filter-up", action="store_true", help="单组/多 combo 时关闭涨停过滤")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument(
@@ -157,10 +159,10 @@ def main() -> None:
 
     # (universe, period, filter_limit_up)
     jobs: list[tuple[str, str, bool]] = []
-    if args.matrix_24:
-        jobs = list(MATRIX_24)
-    elif args.matrix_16:
-        jobs = list(MATRIX_16)
+    if args.matrix or args.matrix_24 or args.matrix_16:
+        if args.matrix_24 or args.matrix_16:
+            log("注意：--matrix-24/--matrix-16 已弃用（RE 只支持 CSI300/CSI500），按全量矩阵执行")
+        jobs = list(MATRIX_FULL)
     elif args.all_default:
         filt = not args.no_filter_up
         jobs = [(u, p, filt) for u, p in ALL_COMBOS]
@@ -172,8 +174,8 @@ def main() -> None:
     elif args.universe and args.period:
         jobs = [(args.universe, args.period, not args.no_filter_up)]
     else:
-        filt = not args.no_filter_up
-        jobs = [(u, p, filt) for u, p in DEFAULT_COMBOS]
+        # 默认：面板全量组合（--no-filter-up 只影响 --combo / --universe 模式）
+        jobs = list(DEFAULT_COMBOS)
 
     log(f"日更启动 jobs={len(jobs)} limit={args.limit} skip_ok={args.skip_ok} level={args.analysis_level}")
     for i, (u, p, f) in enumerate(jobs, 1):
@@ -192,6 +194,12 @@ def main() -> None:
         )
         if job.get("status") == "failed":
             failed += 1
+            if "刷新锁" in str(job.get("error") or ""):
+                log(
+                    "中止：另一轮面板回测正在运行（未抢到刷新锁）。本批不再继续，"
+                    "避免两批并发压 RE 并交叉写同表；请确认上一轮是否卡住。"
+                )
+                break
 
     log(f"全部完成 failed_combos={failed}/{len(jobs)}")
     if failed:

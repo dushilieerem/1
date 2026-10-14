@@ -249,8 +249,9 @@ export function FactorCustomPage() {
         universe: trialUniverse,
         start,
         end,
-        filter_limit_up: true,
-        filter_suspended: true,
+        // 试算页没有过滤开关，跟随接口默认（全 false），避免静默强制过滤
+        filter_limit_up: false,
+        filter_suspended: false,
         benchmark: trialUniverse,
         groups: 5,
         rebalance_days: 20,

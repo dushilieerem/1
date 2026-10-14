@@ -24,6 +24,9 @@ import { compressImageFile } from "@/lib/imageCompress";
 import { PrimaryButton, fieldClassName } from "@/components/community/communityUi";
 import { AuthorAvatarWithCard } from "@/components/community/AuthorProfileCard";
 import { ImageLightbox } from "@/components/community/ImageLightbox";
+import { groupCommentThreads } from "./commentThreads";
+import { ContentLengthHint } from "./ContentLengthHint";
+import { COMMENT_LIMIT, lengthError } from "@/lib/communityLimits";
 
 const PREVIEW_REPLY_N = 2;
 /** 评论列表缩略图固定框，避免超宽图缩成细条 / logo 显得过大 */
@@ -161,15 +164,6 @@ function VoteBar({
   );
 }
 
-function sortByLikes(a: CommunityComment, b: CommunityComment) {
-  const la = a.like_count ?? 0;
-  const lb = b.like_count ?? 0;
-  if (lb !== la) return lb - la;
-  const ta = a.created_at || "";
-  const tb = b.created_at || "";
-  return ta.localeCompare(tb);
-}
-
 export function CommentThread({
   comments,
   postAuthorId,
@@ -204,24 +198,10 @@ export function CommentThread({
   const fileRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
 
-  const roots = useMemo(() => {
-    const list = comments.filter((c) => !c.parent_id);
-    return [...list].sort(sortByLikes);
-  }, [comments]);
-
-  const repliesByRoot = useMemo(() => {
-    const map = new Map<number, CommunityComment[]>();
-    for (const c of comments) {
-      if (!c.parent_id) continue;
-      const list = map.get(c.parent_id) || [];
-      list.push(c);
-      map.set(c.parent_id, list);
-    }
-    for (const [k, list] of map) {
-      map.set(k, [...list].sort(sortByLikes));
-    }
-    return map;
-  }, [comments]);
+  const { roots, repliesByRoot } = useMemo(
+    () => groupCommentThreads(comments),
+    [comments],
+  );
 
   const patchComment = (
     id: number,
@@ -282,6 +262,11 @@ export function CommentThread({
       return;
     }
     if (!body.trim() && images.length === 0) return;
+    const bodyError = lengthError(body, COMMENT_LIMIT, "评论 / 回复");
+    if (bodyError) {
+      setErr(bodyError);
+      return;
+    }
     setErr(null);
     setSubmitting(true);
     try {
@@ -507,8 +492,10 @@ export function CommentThread({
                   }
                 }
               }}
-              maxLength={2000}
+              aria-describedby="comment-length"
+              aria-invalid={!!lengthError(body, COMMENT_LIMIT, "评论 / 回复")}
             />
+            <ContentLengthHint id="comment-length" value={body} limit={COMMENT_LIMIT} label="评论 / 回复" />
             {images.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {images.map((src, i) => (
@@ -556,7 +543,7 @@ export function CommentThread({
               </div>
               <PrimaryButton
                 type="submit"
-                disabled={submitting || (!body.trim() && images.length === 0)}
+                disabled={submitting || !!lengthError(body, COMMENT_LIMIT, "评论 / 回复") || (!body.trim() && images.length === 0)}
               >
                 {submitting ? "发送中…" : replyTo ? "发表回复" : "发表评论"}
               </PrimaryButton>

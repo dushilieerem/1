@@ -5,6 +5,8 @@ import {
   type ReportTargetType,
 } from "@/lib/communityApi";
 import { fieldClassName } from "@/components/community/communityUi";
+import { ContentLengthHint } from "./ContentLengthHint";
+import { REPORT_DETAIL_LIMIT, lengthError } from "@/lib/communityLimits";
 
 type Phase = "form" | "confirm" | "success";
 
@@ -46,6 +48,12 @@ export function ReportDialog({
     REPORT_REASON_OPTIONS.find((o) => o.id === reason)?.label || reason;
 
   const doSubmit = async () => {
+    const detailError = lengthError(detail, REPORT_DETAIL_LIMIT, "举报说明");
+    if (detailError) {
+      setErr(detailError);
+      setPhase("form");
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -179,10 +187,12 @@ export function ReportDialog({
             <textarea
               className={fieldClassName("mt-3 min-h-[72px] resize-y")}
               placeholder="补充说明（可选）"
-              maxLength={500}
+              aria-describedby="report-detail-length"
+              aria-invalid={!!lengthError(detail, REPORT_DETAIL_LIMIT, "举报说明")}
               value={detail}
               onChange={(e) => setDetail(e.target.value)}
             />
+            <ContentLengthHint id="report-detail-length" value={detail} limit={REPORT_DETAIL_LIMIT} label="举报说明" />
 
             {err ? (
               <p className="mt-2 text-sm text-red-600">{err}</p>
@@ -202,6 +212,7 @@ export function ReportDialog({
                   setErr(null);
                   setPhase("confirm");
                 }}
+                disabled={!!lengthError(detail, REPORT_DETAIL_LIMIT, "举报说明")}
                 className="rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-800"
               >
                 下一步

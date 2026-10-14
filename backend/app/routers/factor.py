@@ -248,6 +248,7 @@ def factor_update_library_factor(
             uid,
             lib_id,
             factor_id,
+            name=str(body.get("name") or "") if "name" in body else None,
             body=(
                 str(body.get("body") or body.get("expression") or "")
                 if ("body" in body or "expression" in body)

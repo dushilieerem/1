@@ -155,6 +155,8 @@ def load_factor_index(*, include_qlib: bool = True) -> list[dict]:
 def _blank_metrics(*, error: str | None) -> dict:
     """失败/不可用：只写 error，数值一律置空，禁止编造。"""
     return {
+        # 失败态没有「IC 不可用原因」可言，留空由 error 表达。
+        "ic_unavailable_reason": None,
         "ic_mean": None,
         "ic_std": None,
         "ir": None,
@@ -191,7 +193,10 @@ def row_is_ok(
             SELECT 1 FROM factor_dashboard_metrics
             WHERE factor_name=%s AND library=%s AND universe=%s AND period=%s
               AND filter_limit_up=%s AND filter_suspended=%s AND rules_version=%s
-              AND error IS NULL AND ic_mean IS NOT NULL
+              AND error IS NULL
+              -- IC 结构性不可用（因子无区分度）也是「算过」：只看 ic_mean
+              -- 会让这些因子每次刷新都重跑。有原因字段即视为已算出结果。
+              AND (ic_mean IS NOT NULL OR ic_unavailable_reason IS NOT NULL)
             LIMIT 1
             """,
             (
@@ -257,6 +262,13 @@ def _pct100(x) -> float | None:
 
 def map_yg_response(data: dict) -> dict:
     fa = data.get("factor_analysis") or {}
+    # RE 在 factor_analysis.definition.ic_unavailable_reason 给出 IC 不可用的原因
+    # （missing_inputs / no_common_axis / insufficient_cross_section /
+    #  zero_cross_sectional_variance），正常为 null。老响应没有这个键，按 null 兜底。
+    definition = fa.get("definition") or {}
+    if not isinstance(definition, dict):
+        definition = {}
+    ic_unavailable_reason = definition.get("ic_unavailable_reason") or None
     lr = fa.get("layered_returns") or {}
     if not isinstance(lr, dict):
         lr = {}
@@ -328,6 +340,8 @@ def map_yg_response(data: dict) -> dict:
         "annual_return": _pct100(metrics.get("annual_return")),
         "max_drawdown": _pct100(metrics.get("max_drawdown")),
         "error": err if err else None,
+        # 注意：这是「算成功但 IC 不可用」，与 error 非空的「算失败」是两回事。
+        "ic_unavailable_reason": ic_unavailable_reason,
     }
 
 

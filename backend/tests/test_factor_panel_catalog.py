@@ -186,6 +186,42 @@ class SpreadDirectionTest(unittest.TestCase):
         self.assertAlmostEqual(m["long_short_spread"], -16.0, places=4)
 
 
+class IcUnavailableReasonTest(unittest.TestCase):
+    """IC 不可用 vs 计算失败：RE 在 definition 里给出原因，SVQuant 据此区分。"""
+
+    def test_reason_is_carried_through(self):
+        for reason in (
+            "missing_inputs",
+            "no_common_axis",
+            "insufficient_cross_section",
+            "zero_cross_sectional_variance",
+        ):
+            data = {
+                "factor_analysis": {
+                    "definition": {"ic_unavailable_reason": reason},
+                    "ic_mean": None,
+                }
+            }
+            m = ds.map_yg_response(data)
+            self.assertEqual(m["ic_unavailable_reason"], reason)
+
+    def test_normal_factor_has_no_reason(self):
+        data = {"factor_analysis": {"definition": {"ic_unavailable_reason": None}, "ic_mean": 0.02}}
+        m = ds.map_yg_response(data)
+        self.assertIsNone(m["ic_unavailable_reason"])
+
+    def test_legacy_response_without_the_key_falls_back_to_none(self):
+        # 老版本 RE 没有这个键；必须按「正常」兜底，而不是报错或编造原因。
+        m = ds.map_yg_response({"factor_analysis": {"ic_mean": 0.02}})
+        self.assertIsNone(m["ic_unavailable_reason"])
+
+    def test_failure_record_has_no_reason(self):
+        m = ds._blank_metrics(error="boom")
+        self.assertIn("ic_unavailable_reason", m)
+        self.assertIsNone(m["ic_unavailable_reason"])
+        self.assertEqual(m["error"], "boom")
+
+
 class RefreshLockTest(unittest.TestCase):
     """整批回测跨进程互斥：锁被占用时本轮跳过并告警，不并发压 RE、不并发写同表。"""
 

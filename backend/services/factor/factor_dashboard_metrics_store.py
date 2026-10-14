@@ -49,6 +49,9 @@ METRIC_COLUMNS = (
     "annual_return",
     "max_drawdown",
     "error",
+    # RE 在 factor_analysis.definition 给出的 IC 不可用原因；正常为 NULL。
+    # 用于区分「算过但没有 IC（因子无区分度）」与「没算过 / 算失败」。
+    "ic_unavailable_reason",
     "computed_at",
 )
 _UPSERT_SQL = """\
@@ -100,12 +103,20 @@ def ensure_factor_dashboard_metrics_schema() -> None:
                   annual_return DOUBLE PRECISION,
                   max_drawdown DOUBLE PRECISION,
                   error TEXT,
+                  ic_unavailable_reason TEXT,
                   computed_at TIMESTAMPTZ NOT NULL,
                   PRIMARY KEY (
                     factor_name, library, universe, period,
                     filter_limit_up, filter_suspended, rules_version
                   )
                 )
+                """
+            )
+            # CREATE TABLE IF NOT EXISTS 不会给既有表补列，这里显式加一次。
+            conn.execute(
+                """
+                ALTER TABLE factor_dashboard_metrics
+                ADD COLUMN IF NOT EXISTS ic_unavailable_reason TEXT
                 """
             )
             conn.execute(

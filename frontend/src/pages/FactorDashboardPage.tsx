@@ -19,6 +19,7 @@ import {
   loadLibrarySource,
 } from "@/lib/factorCatalog";
 import { isPlatformFactorLib } from "@/lib/detectComboCode";
+import { icUnavailableHint } from "@/lib/factorPanelLabels";
 import { openOrCreateForFactor, openDetectPlaceholderTab, navigateDetectTab } from "@/lib/detectStore";
 import { authHeaders, getStoredUser } from "@/lib/auth";
 import {
@@ -51,6 +52,12 @@ type DashRow = {
   category_label?: string;
   ic_mean?: number | null;
   rank_ic?: number | null;
+  /**
+   * IC 不可用的原因（RE `factor_analysis.definition.ic_unavailable_reason`）。
+   * 与「计算失败」不同：这一行算成功了，只是因子/数据本身让 IC 无定义。
+   * 老响应或计算失败时为 null。
+   */
+  ic_unavailable_reason?: string | null;
   ir?: number | null;
   q1_return?: number | null;
   q5_return?: number | null;
@@ -903,8 +910,19 @@ export function FactorDashboardPage() {
                           {lib}
                         </span>
                       </td>
-                      <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.ic_mean)}`}>
+                      <td
+                        className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.ic_mean)}`}
+                        title={icUnavailableHint(r.ic_unavailable_reason) ?? undefined}
+                      >
                         {fmtIc(r.ic_mean)}
+                        {r.ic_mean == null && r.ic_unavailable_reason ? (
+                          <span
+                            className="ml-1 align-super text-[10px] text-amber-500"
+                            aria-label="IC 不可用"
+                          >
+                            *
+                          </span>
+                        ) : null}
                       </td>
                       <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.rank_ic)}`}>
                         {fmtIc(r.rank_ic)}

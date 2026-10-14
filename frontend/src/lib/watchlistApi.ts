@@ -60,6 +60,7 @@ export async function renameWatchlist(
     method: "PUT",
     body: JSON.stringify({ name }),
   });
+  if (!data.watchlist) throw new Error("响应格式异常：缺少 watchlist 字段");
   return data.watchlist;
 }
 

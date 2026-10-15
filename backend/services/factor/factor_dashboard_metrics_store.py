@@ -18,6 +18,8 @@ LEGACY_SQLITE_PATH = (
     / "metrics.sqlite"
 )
 MIGRATION_KEY = "factor_dashboard_metrics_from_sqlite_v1"
+# 组合换手与逐分位换手的语义拆分（一次性）：历史行的 q1_turnover 存的是**整组合**换手。
+TURNOVER_SPLIT_KEY = "factor_dashboard_turnover_split_v1"
 _migration_lock = threading.Lock()
 _schema_lock = threading.Lock()
 _migration_done = False
@@ -39,6 +41,8 @@ METRIC_COLUMNS = (
     "q1_return",
     "q5_return",
     "long_short_spread",
+    # 组合（主组合）换手；与逐分位换手分列，互不冒充。
+    "turnover",
     "q1_turnover",
     "q5_turnover",
     "coverage_pool",
@@ -93,6 +97,7 @@ def ensure_factor_dashboard_metrics_schema() -> None:
                   q1_return DOUBLE PRECISION,
                   q5_return DOUBLE PRECISION,
                   long_short_spread DOUBLE PRECISION,
+                  turnover DOUBLE PRECISION,
                   q1_turnover DOUBLE PRECISION,
                   q5_turnover DOUBLE PRECISION,
                   coverage_pool DOUBLE PRECISION,
@@ -117,6 +122,13 @@ def ensure_factor_dashboard_metrics_schema() -> None:
                 """
                 ALTER TABLE factor_dashboard_metrics
                 ADD COLUMN IF NOT EXISTS ic_unavailable_reason TEXT
+                """
+            )
+            # 组合换手从 q1_turnover 拆出独立列：q1_turnover/q5_turnover 让给 RE 的逐分位换手。
+            conn.execute(
+                """
+                ALTER TABLE factor_dashboard_metrics
+                ADD COLUMN IF NOT EXISTS turnover DOUBLE PRECISION
                 """
             )
             conn.execute(
@@ -153,6 +165,47 @@ def _parse_timestamp(raw: Any) -> datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed
+
+
+def split_legacy_portfolio_turnover(conn: Any) -> int:
+    """把历史 `q1_turnover` 里的整组合换手搬到独立列 `turnover`，并清空逐分位列。
+
+    背景：RE 早先不提供逐分位换手，`q1_turnover` 被当成「组合换手」占用；现在
+    `factor_analysis.quantile_metrics[].turnover` 给出了逐分位值，两列必须分开。
+    旧行的值确实是组合换手（`map_yg_response` 原先就写的 `metrics.turnover`），
+    搬走后「组合换手」列不缺数；`q1_turnover`/`q5_turnover` 置空，界面显示「—」，
+    等下一次批跑用真值填上——不编造、也不把组合换手顶在分位列上。
+
+    幂等：靠 `factor_dashboard_legacy_imports` 的标记行，只跑一次。
+    """
+    marker = conn.execute(
+        """
+        SELECT 1
+        FROM factor_dashboard_legacy_imports
+        WHERE migration_key = %s
+        """,
+        (TURNOVER_SPLIT_KEY,),
+    ).fetchone()
+    if marker is not None:
+        return 0
+    cursor = conn.execute(
+        """
+        UPDATE factor_dashboard_metrics
+        SET turnover = q1_turnover, q1_turnover = NULL, q5_turnover = NULL
+        WHERE q1_turnover IS NOT NULL
+        """
+    )
+    moved = max(cursor.rowcount, 0)
+    conn.execute(
+        """
+        INSERT INTO factor_dashboard_legacy_imports
+          (migration_key, source_rows, imported_rows, skipped_rows)
+        VALUES (%s, %s, %s, 0)
+        ON CONFLICT (migration_key) DO NOTHING
+        """,
+        (TURNOVER_SPLIT_KEY, moved, moved),
+    )
+    return moved
 
 
 def _upsert_sql() -> str:
@@ -316,6 +369,8 @@ def migrate_legacy_factor_dashboard_metrics() -> dict[str, int]:
                 if marker is not None
                 else _import_legacy_factor_dashboard_metrics(conn)
             )
+            # 与旧库导入同一把锁内顺带做一次语义拆分：旧库刚导进来的行也要拆。
+            split_legacy_portfolio_turnover(conn)
 
         _migration_done = True
         return result
@@ -324,4 +379,5 @@ def migrate_legacy_factor_dashboard_metrics() -> dict[str, int]:
 __all__ = [
     "ensure_factor_dashboard_metrics_schema",
     "migrate_legacy_factor_dashboard_metrics",
+    "split_legacy_portfolio_turnover",
 ]

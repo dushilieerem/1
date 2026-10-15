@@ -36,12 +36,25 @@ type SortKey =
   | "rank_ic"
   | "annual_return"
   | "max_drawdown"
+  | "turnover"
   | "q1_turnover"
+  | "q5_turnover"
   | "win_rate"
   | "sharpe"
   | "q1_return"
   | "q5_return"
   | "long_short_spread";
+
+/** 面板回测口径（后端 /api/factor/dashboard 透出，见 dashboard_store.PANEL_PORTFOLIO_INFO）。 */
+type PanelPortfolio = {
+  portfolio_type?: string;
+  portfolio_label?: string;
+  groups?: number;
+  rebalance_days?: number;
+  cost?: string;
+  execution_timing?: string;
+  note?: string;
+};
 
 type DashRow = {
   factor_name: string;
@@ -62,7 +75,11 @@ type DashRow = {
   q1_return?: number | null;
   q5_return?: number | null;
   long_short_spread?: number | null;
+  /** 组合（主组合）换手 */
+  turnover?: number | null;
+  /** 逐分位换手：最高分位 Q1 / 最低分位 Q5 */
   q1_turnover?: number | null;
+  q5_turnover?: number | null;
   win_rate?: number | null;
   coverage_pool?: number | null;
   sharpe?: number | null;
@@ -232,6 +249,7 @@ export function FactorDashboardPage() {
   const [query, setQuery] = useState("");
   const [verifyFilter, setVerifyFilter] = useState<"all" | VerifyStatus>("all");
   const [rows, setRows] = useState<DashRow[]>([]);
+  const [portfolio, setPortfolio] = useState<PanelPortfolio | null>(null);
   const [verifySummary, setVerifySummary] = useState({
     pending: 0,
     passed: 0,
@@ -282,6 +300,7 @@ export function FactorDashboardPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setRows(data.rows || []);
+      setPortfolio(data.portfolio || null);
       setJob(data.job || {});
       const vs = data.verify_summary || {};
       setVerifySummary({
@@ -444,7 +463,9 @@ export function FactorDashboardPage() {
           q1_return: r.q1_return,
           q5_return: r.q5_return,
           long_short_spread: r.long_short_spread,
+          turnover: r.turnover,
           q1_turnover: r.q1_turnover,
+          q5_turnover: r.q5_turnover,
         },
         factorCode,
         returnTo: "/factor/dashboard",
@@ -600,6 +621,18 @@ export function FactorDashboardPage() {
                   ? ` · 后台计算中 ${job.done ?? 0}/${job.total ?? "?"} ${job.current || ""}`
                   : ""}
               </p>
+              {portfolio ? (
+                <p className="mt-2 rounded-lg border border-slate-200/80 bg-white/70 px-2.5 py-1.5 text-[11px] leading-relaxed text-slate-500">
+                  组合口径：
+                  <span className="font-medium text-slate-700">
+                    {portfolio.portfolio_label || portfolio.portfolio_type}
+                  </span>
+                  {portfolio.rebalance_days ? ` · ${portfolio.rebalance_days} 交易日调仓` : ""}
+                  {portfolio.groups ? ` · ${portfolio.groups} 组` : ""}
+                  {portfolio.cost ? ` · ${portfolio.cost}` : ""}
+                  {portfolio.note ? `　${portfolio.note}` : ""}
+                </p>
+              ) : null}
             </div>
           </div>
         </section>
@@ -789,7 +822,7 @@ export function FactorDashboardPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1200px] text-left text-sm">
+            <table className="w-full min-w-[1500px] text-left text-sm">
               <thead className="bg-slate-50/80">
                 <tr className="border-b border-slate-100">
                   <SortTh k="name_cn" label="因子" />
@@ -804,10 +837,22 @@ export function FactorDashboardPage() {
                   <SortTh k="annual_return" label="年化" align="right" />
                   <SortTh k="max_drawdown" label="最大回撤" align="right" />
                   <SortTh
-                    k="q1_turnover"
+                    k="turnover"
                     label="组合换手"
                     align="right"
-                    title="整个多空组合的换手，不是分位换手（RE 目前不提供逐分位换手）"
+                    title="整条多空主组合的平均单边换手（逐日 Σ|Δw|/2 后取均值），不是分位换手"
+                  />
+                  <SortTh
+                    k="q1_turnover"
+                    label="最高分位 Q1 换手"
+                    align="right"
+                    title="因子值最大那一组的换手。分组是等权诊断桶（不是可交易组合），换手全部来自排名进出，量级通常明显高于组合"
+                  />
+                  <SortTh
+                    k="q5_turnover"
+                    label="最低分位 Q5 换手"
+                    align="right"
+                    title="因子值最小那一组的换手，口径同 Q1 列"
                   />
                   <SortTh k="win_rate" label="胜率" align="right" />
                   <SortTh k="sharpe" label="Sharpe" align="right" />
@@ -933,8 +978,14 @@ export function FactorDashboardPage() {
                       <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.max_drawdown)}`}>
                         {fmtPct(r.max_drawdown)}
                       </td>
+                      <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.turnover)}`}>
+                        {fmtPct(r.turnover)}
+                      </td>
                       <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.q1_turnover)}`}>
                         {fmtPct(r.q1_turnover)}
+                      </td>
+                      <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(r.q5_turnover)}`}>
+                        {fmtPct(r.q5_turnover)}
                       </td>
                       <td className={`px-4 py-3.5 text-right font-mono text-sm ${tone(win)}`}>
                         {fmtPct(win)}
@@ -998,7 +1049,7 @@ export function FactorDashboardPage() {
                 })}
                 {!filtered.length && (
                   <tr>
-                    <td colSpan={14} className="px-4 py-16 text-center text-sm text-slate-400">
+                    <td colSpan={16} className="px-4 py-16 text-center text-sm text-slate-400">
                       暂无缓存数据
                     </td>
                   </tr>

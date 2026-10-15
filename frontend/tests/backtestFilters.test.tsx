@@ -26,7 +26,13 @@ import {
 } from "../src/lib/detectStore";
 import { serializeYgFactorBody, serializeYgStrategyBody } from "../src/lib/ygApi";
 import { configFromRunRequest } from "../src/lib/strategyLibraryApi";
-import { icUnavailableHint } from "../src/lib/factorPanelLabels";
+import {
+  RE_Q1_DIRECTION_HINT,
+  groupLayerKeys,
+  icUnavailableHint,
+  portfolioConvention,
+  quantileLabel,
+} from "../src/lib/factorPanelLabels";
 
 afterEach(cleanup);
 
@@ -463,4 +469,43 @@ test("icUnavailableHint 对未知取值原样透出，不吞掉", () => {
   const hint = icUnavailableHint("some_future_reason");
   assert.ok(hint);
   assert.ok(hint.includes("some_future_reason"), hint);
+});
+
+// ---------- H. 分位曲线不再截断到 5 条 + 方向口径文案 ----------
+//
+// 分组可选 3/5/10：旧实现写死 Math.min(groups, 5)，选 10 组时只画 Q1–Q5
+// （十分位的上半段），同页的「分层区间收益」与分组表却全量展示 10 组。
+
+test("groupLayerKeys 覆盖 2–10 组，不再截断到 5", () => {
+  assert.deepEqual(groupLayerKeys(3), ["layer1", "layer2", "layer3"]);
+  assert.equal(groupLayerKeys(5).length, 5);
+  assert.equal(groupLayerKeys(10).length, 10);
+  assert.equal(groupLayerKeys(10).at(-1), "layer10");
+});
+
+test("groupLayerKeys 对越界与脏值钳制，不抛错", () => {
+  assert.deepEqual(groupLayerKeys(1), ["layer1", "layer2"]);
+  assert.deepEqual(groupLayerKeys(99), groupLayerKeys(10));
+  assert.deepEqual(groupLayerKeys(NaN), groupLayerKeys(5));
+  assert.deepEqual(groupLayerKeys(undefined), groupLayerKeys(5));
+});
+
+test("quantileLabel 由层键给分位号，认不出时按序号回退", () => {
+  assert.equal(quantileLabel("layer1", 0), "Q1");
+  assert.equal(quantileLabel("layer10", 9), "Q10");
+  assert.equal(quantileLabel("weird", 3), "Q4");
+});
+
+test("方向口径文案写明 Q1 = 因子值最大组", () => {
+  assert.ok(RE_Q1_DIRECTION_HINT.includes("Q1"));
+  assert.ok(RE_Q1_DIRECTION_HINT.includes("最大"));
+});
+
+test("组合口径文案区分纯多与多空，且都点名 Q1", () => {
+  assert.ok(portfolioConvention("long_only").includes("Q1"));
+  const short = portfolioConvention("long_short");
+  assert.ok(short.includes("Q1") && short.includes("Q5") && short.includes("−"), short);
+  // 认不出的组合类型不编造口径
+  assert.equal(portfolioConvention("nonsense"), "");
+  assert.equal(portfolioConvention(null), "");
 });

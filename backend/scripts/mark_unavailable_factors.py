@@ -45,7 +45,7 @@ def main() -> None:
                 UPDATE factor_dashboard_metrics
                 SET ic_mean=NULL, ic_std=NULL, ir=NULL, rank_ic=NULL,
                     q1_return=NULL, q5_return=NULL, long_short_spread=NULL,
-                    q1_turnover=NULL, q5_turnover=NULL,
+                    turnover=NULL, q1_turnover=NULL, q5_turnover=NULL,
                     coverage_pool=NULL, coverage_total=NULL,
                     win_rate=NULL, volatility=NULL,
                     sharpe=NULL, annual_return=NULL, max_drawdown=NULL,

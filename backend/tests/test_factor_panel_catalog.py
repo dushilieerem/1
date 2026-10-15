@@ -146,6 +146,20 @@ class RunBatchLibraryGateTest(unittest.TestCase):
         # 行标题取中文短名，不是长问句
         self.assertEqual(stored[0]["name_cn"], "涨跌日频率差")
 
+    def test_panel_backtest_profile_is_explicit(self):
+        """面板口径必须显式进请求体：多空 / 5 组 / 20 交易日调仓。
+
+        以前靠 build_factor_backtest_payload 的默认值，函数默认一改，面板的
+        「年化/最大回撤/换手」就会静默换口径而界面上没有任何变化。
+        """
+        captured, _ = self._run(_panel_factor())
+
+        payload = captured["payload"]
+        self.assertEqual(payload["portfolio_type"], "long_short")
+        self.assertEqual(payload["groups"], 5)
+        self.assertEqual(payload["rebalance_days"], 20)
+        self.assertEqual(payload["portfolio_type"], ds.PANEL_BACKTEST["portfolio_type"])
+
     def test_local_library_still_rejected(self):
         captured, stored = self._run(_panel_factor(library="custom_lib"))
 
@@ -184,6 +198,71 @@ class SpreadDirectionTest(unittest.TestCase):
         data = {"factor_analysis": {"layered_returns": {"layer1": -0.05, "layer5": 0.11}}}
         m = ds.map_yg_response(data)
         self.assertAlmostEqual(m["long_short_spread"], -16.0, places=4)
+
+    def test_long_short_return_is_not_accepted_as_spread(self):
+        """RE 的 `long_short_return` 填的是**主组合总收益**，不能当多空差。
+
+        回归背景：兜底链原来是 spread → long_short_return → q1-q5。面板跑的是
+        long_short，看似巧合地对；但换成 pure-long 的响应就会把纯多收益显示成
+        多空差（符号、量级都错）。现在只认 spread 与 Q1−Q5。
+        """
+        data = {
+            "factor_analysis": {"layered_returns": {"long_short_return": 0.31}},
+            "metrics": {"total_return": 0.31},
+        }
+        m = ds.map_yg_response(data)
+        self.assertIsNone(m["long_short_spread"])
+
+
+class TurnoverMappingTest(unittest.TestCase):
+    """换手：组合换手与逐分位换手分列，互不冒充。
+
+    回归背景：RE 早先不提供逐分位换手，`q1_turnover` 被当作「组合换手」占位、
+    `q5_turnover` 恒为 None。RE 现在在 `quantile_metrics[].turnover` 给出逐分位
+    日均单边换手，故 `q1_turnover`/`q5_turnover` 回归本义，组合换手搬去 `turnover`。
+    """
+
+    @staticmethod
+    def _response(*, q1: float | None = 0.35, q5: float | None = 0.42, portfolio=0.2):
+        quantiles = []
+        if q1 is not None:
+            quantiles.append({"quantile": "Q1", "turnover": q1})
+        if q5 is not None:
+            quantiles.append({"quantile": "Q5", "turnover": q5})
+        quantiles.append({"quantile": "benchmark", "turnover": None})
+        return {
+            "factor_analysis": {"quantile_metrics": quantiles},
+            "metrics": {"turnover": portfolio},
+        }
+
+    def test_quantile_turnover_is_mapped_separately(self):
+        m = ds.map_yg_response(self._response())
+
+        self.assertAlmostEqual(m["q1_turnover"], 35.0, places=4)
+        self.assertAlmostEqual(m["q5_turnover"], 42.0, places=4)
+        self.assertAlmostEqual(m["turnover"], 20.0, places=4)
+        # 组合换手不再被塞进分位列
+        self.assertNotEqual(m["q1_turnover"], m["turnover"])
+
+    def test_missing_quantile_metrics_is_not_fabricated(self):
+        """老 RE 响应没有 quantile_metrics：分位列留 None（显示「—」），不拿组合换手顶。"""
+        m = ds.map_yg_response({"metrics": {"turnover": 0.2}})
+
+        self.assertIsNone(m["q1_turnover"])
+        self.assertIsNone(m["q5_turnover"])
+        self.assertAlmostEqual(m["turnover"], 20.0, places=4)
+
+    def test_group_turnover_uses_strict_percent_conversion(self):
+        """分组换手会超过 150%/日，必须严格 ×100。
+
+        `_pct100` 的「|v|>1.5 就不再 ×100」逃逸是给老响应可能返回百分数点用的，
+        落到换手上会把 2.5（=250%/日）原样显示成 2.5%。
+        """
+        m = ds.map_yg_response(self._response(q1=2.5, q5=0.0, portfolio=1.8))
+
+        self.assertAlmostEqual(m["q1_turnover"], 250.0, places=4)
+        self.assertAlmostEqual(m["q5_turnover"], 0.0, places=4)
+        self.assertAlmostEqual(m["turnover"], 180.0, places=4)
 
 
 class IcUnavailableReasonTest(unittest.TestCase):

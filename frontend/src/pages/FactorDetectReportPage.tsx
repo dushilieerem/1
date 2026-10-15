@@ -30,8 +30,16 @@ import {
 import { ICDetectPanel } from "@/components/factor/ICDetectPanel";
 import { IndustryDetectPanel } from "@/components/factor/IndustryDetectPanel";
 import {
+  RE_Q1_DIRECTION_HINT,
+  clampGroups,
+  groupLayerKeys,
+  portfolioConvention,
+  quantileLabel,
+} from "@/lib/factorPanelLabels";
+import {
   DETECT_BENCHMARK_OPTIONS,
   DETECT_UNIVERSE_OPTIONS,
+  PORTFOLIO_TYPE_OPTIONS,
   formatDetectRunFactorsLabel,
   getProject,
   getRun,
@@ -39,6 +47,7 @@ import {
   loadLastResult,
   optionLabel,
   peekRun,
+  readDetectRunUiSnapshot,
   saveProject,
   type DetectRunRecord,
   type DraftDetectFactor,
@@ -432,10 +441,17 @@ export function FactorDetectReportPage() {
   const result = rec?.result;
   const m = result?.metrics;
   const req = rec?.request;
-  const groups =
-    Number(result?.factor_analysis?.layered_returns?.groups) ||
-    Number(req?.groups) ||
-    5;
+  const groups = clampGroups(
+    Number(result?.factor_analysis?.layered_returns?.groups) || Number(req?.groups) || 5,
+  );
+  /** 主组合口径：纯多 = 做多 Q1；多空 = Q1 − Q5。报告页必须写明，否则看不出是哪个分位。 */
+  const portfolioType = String(
+    req?.portfolio_type ||
+      readDetectRunUiSnapshot(rec?.request)?.portfolioType ||
+      "long_only",
+  );
+  const portfolioLabel = optionLabel(portfolioType, PORTFOLIO_TYPE_OPTIONS);
+  const convention = portfolioConvention(portfolioType);
 
   const curveDates = useMemo(() => result?.equity_curve?.map((p) => p.date) || [], [result]);
   const stratPct = useMemo(
@@ -601,8 +617,7 @@ export function FactorDetectReportPage() {
   const groupCumOpt = useMemo(() => {
     const seriesPts = result?.factor_analysis?.cumulative_series;
     if (!seriesPts?.length) return null;
-    const n = Math.min(Math.max(groups, 1), 5);
-    const groupKeys = Array.from({ length: n }, (_, i) => `layer${i + 1}`);
+    const groupKeys = groupLayerKeys(groups);
     const benchMap = new Map(
       (result?.benchmark_curve || []).map((p) => [String(p.date), p.value]),
     );
@@ -636,12 +651,11 @@ export function FactorDetectReportPage() {
       ),
     );
     const showBench = benchPairs.length > 0;
-    const seriesNames = showBench
-      ? ["基准", ...groupKeys.map((_, i) => `Q${i + 1}`)]
-      : groupKeys.map((_, i) => `Q${i + 1}`);
+    const groupLabels = groupKeys.map((k, i) => quantileLabel(k, i));
+    const seriesNames = showBench ? ["基准", ...groupLabels] : groupLabels;
     const seriesColors = showBench
-      ? [CHART.bench, ...QUANTILE_PALETTE]
-      : [...QUANTILE_PALETTE];
+      ? [CHART.bench, ...QUANTILE_PALETTE.slice(0, groupKeys.length)]
+      : [...QUANTILE_PALETTE.slice(0, groupKeys.length)];
 
     /** 悬停时各线出实心圆点（白边）；平时不铺满，避免抄空心圆也避免密点糊成线 */
     const pointMark = (color: string) => ({
@@ -714,7 +728,12 @@ export function FactorDetectReportPage() {
           return `<b>${head}</b><br/>${rows.join("<br/>")}`;
         },
       },
-      legend: legendTopRight(seriesNames),
+      // 组数多时图例改可滚动：10 组 + 基准共 11 项，铺开会压住曲线。
+      // 滚动图例必须给定宽度（left/right 夹住），否则 ECharts 按内容撑宽、不出现翻页箭头。
+      legend: {
+        ...legendTopRight(seriesNames),
+        ...(groupKeys.length > 5 ? { type: "scroll" as const, left: 0, right: 8 } : {}),
+      },
       xAxis: {
         type: "time" as const,
         boundaryGap: false,
@@ -756,10 +775,10 @@ export function FactorDetectReportPage() {
               },
             ]
           : []),
-        ...groupKeys.map((_k, i) => {
+        ...groupKeys.map((k, i) => {
           const color = QUANTILE_PALETTE[i % QUANTILE_PALETTE.length];
           return {
-            name: `Q${i + 1}`,
+            name: quantileLabel(k, i),
             type: "line" as const,
             smooth: true,
             ...pointMark(color),
@@ -989,7 +1008,7 @@ export function FactorDetectReportPage() {
           </div>
         ) : null}
 
-        <div className="mx-auto grid max-w-[1400px] grid-cols-2 gap-2 px-3 pb-3 sm:grid-cols-3 sm:px-6 lg:grid-cols-5">
+        <div className="mx-auto grid max-w-[1400px] grid-cols-2 gap-2 px-3 pb-3 sm:grid-cols-3 sm:px-6 lg:grid-cols-6">
           <MetaChip icon={<Clock className="h-3.5 w-3.5 text-blue-500" />} label="区间" value={rangeLabel} />
           <MetaChip
             icon={<Layers className="h-3.5 w-3.5 text-amber-500" />}
@@ -1000,6 +1019,12 @@ export function FactorDetectReportPage() {
             icon={<TrendingUp className="h-3.5 w-3.5 text-teal-500" />}
             label="基准"
             value={optionLabel(req?.benchmark || "", DETECT_BENCHMARK_OPTIONS)}
+          />
+          {/* 组合类型决定「累计收益/回撤/绩效概览」是哪个组合：纯多 = Q1，多空 = Q1 − Q5 */}
+          <MetaChip
+            icon={<Activity className="h-3.5 w-3.5 text-rose-500" />}
+            label="组合类型"
+            value={portfolioLabel ? `${portfolioLabel}${convention ? ` · ${convention}` : ""}` : "—"}
           />
           <MetaChip
             icon={
@@ -1064,6 +1089,15 @@ export function FactorDetectReportPage() {
               <div className="space-y-5">
                 <section className={chartCardClass()}>
                   <h2 className="mb-2 text-lg font-bold tracking-tight text-slate-900">累计收益</h2>
+                  <ConventionNote>
+                    {[
+                      convention ? `组合口径：${convention}。` : "",
+                      "本页净值与回撤取自这一条主组合净值，已扣本配置的佣金/印花/滑点（默认 0）。",
+                      portfolioType === "long_short"
+                        ? "多空组合为市场中性口径，与下方基准指数不可直接比超额。"
+                        : "",
+                    ].join("")}
+                  </ConventionNote>
                   {equityOnlyOpt ? (
                     <ReactECharts option={equityOnlyOpt} style={{ height: 340, width: "100%" }} notMerge opts={{ renderer: "canvas" }} />
                   ) : (
@@ -1086,6 +1120,13 @@ export function FactorDetectReportPage() {
               <div className="space-y-5">
                 <section className={chartCardClass()}>
                   <h2 className="mb-2 text-lg font-bold tracking-tight text-slate-900">分组累计收益</h2>
+                  <ConventionNote>
+                    {[
+                      RE_Q1_DIRECTION_HINT,
+                      `；本页共 ${groups} 组。`,
+                      "分组曲线是各组毛收益（交易成本只作用于主组合），与「累计收益」页的净口径不同。",
+                    ].join("")}
+                  </ConventionNote>
                   {groupCumOpt ? (
                     <ReactECharts option={groupCumOpt} style={{ height: 420 }} notMerge opts={{ renderer: "canvas" }} />
                   ) : (
@@ -1124,9 +1165,8 @@ export function FactorDetectReportPage() {
                           {quantileMetrics.map((row) => {
                             const q = String(row.quantile || "");
                             const isBench = /^benchmark$/i.test(q);
-                            const label = isBench
-                              ? "基准"
-                              : q.replace(/^Q/i, "") || "—";
+                            // 保留 Q 前缀：方向口径（Q1 = 因子值最大组）要靠它读
+                            const label = isBench ? "基准" : q || "—";
                             const ar = row.annual_return;
                             return (
                               <tr
@@ -1189,6 +1229,13 @@ export function FactorDetectReportPage() {
 
             {tab === "overview" && (
               <div className="space-y-5">
+                <ConventionNote>
+                  {[
+                    "下列指标全部是主组合口径",
+                    convention ? `（${convention}）` : "",
+                    "，不是某一个分组；「分层区间收益」才是逐组结果（Q1 = 因子值最大组，毛收益、区间累计、非年化）。",
+                  ].join("")}
+                </ConventionNote>
                 {m && (
                   <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     {[
@@ -1411,6 +1458,15 @@ export function FactorDetectReportPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** 口径说明行：讲清这一屏的数字属于哪个组合 / 哪个分位。 */
+function ConventionNote({ children }: { children: ReactNode }) {
+  return (
+    <p className="mb-3 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+      {children}
+    </p>
   );
 }
 

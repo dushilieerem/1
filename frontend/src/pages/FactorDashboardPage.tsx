@@ -719,7 +719,7 @@ export function FactorDashboardPage() {
             >
               过滤涨停
             </button>
-            {!filterUp && filtered.length === 0 && (
+            {!filterUp && !loading && !err && rows.length === 0 && (
               <span className="text-[11px] text-amber-600">
                 该口径暂无缓存数据
               </span>
@@ -1050,7 +1050,13 @@ export function FactorDashboardPage() {
                 {!filtered.length && (
                   <tr>
                     <td colSpan={16} className="px-4 py-16 text-center text-sm text-slate-400">
-                      暂无缓存数据
+                      {loading
+                        ? "正在加载因子数据…"
+                        : err
+                          ? "因子数据加载失败，请稍后重试"
+                          : rows.length === 0
+                            ? "该口径暂无缓存数据"
+                            : "没有符合条件的因子，请调整搜索或筛选条件"}
                     </td>
                   </tr>
                 )}

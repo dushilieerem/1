@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "test:ai-factor": "node --import tsx --test tests/aiFactorFeedback.test.tsx",
     "test:community": "node --import tsx --test tests/commentThreads.test.mjs tests/communityLimits.test.mjs tests/communityForms.test.tsx",
     "test:backtest-filters": "node --import tsx --test tests/backtestFilters.test.tsx",
     "test:comments": "node --test tests/commentThreads.test.mjs",

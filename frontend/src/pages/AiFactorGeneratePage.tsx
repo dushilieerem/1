@@ -14,6 +14,8 @@ import {
   X,
 } from "lucide-react";
 import { FactorCodeEditor } from "@/components/FactorCodeEditor";
+import { AiFactorExplanation } from "@/components/AiFactorExplanation";
+import { factorPromptError, factorRejectionMessage } from "@/lib/aiFactorFeedback";
 import {
   ygGenerateFactorDraft,
   type AiFactorDraft,
@@ -44,6 +46,8 @@ type HistoryItem = {
   factor_name: string;
   factor_code: string;
   description: string;
+  assumptions?: string[];
+  warnings?: string[];
   pinned?: boolean;
 };
 
@@ -107,6 +111,7 @@ export function AiFactorGeneratePage() {
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [draft, setDraft] = useState<AiFactorDraft | null>(null);
   const [code, setCode] = useState("");
   const [history, setHistory] = useState<HistoryItem[]>(() =>
@@ -198,8 +203,10 @@ export function AiFactorGeneratePage() {
 
   const onGenerate = useCallback(async () => {
     const text = prompt.trim();
-    if (!text) {
-      setErr("请先写研究假设");
+    const inputError = factorPromptError(text);
+    if (inputError) {
+      setValidationErrors([]);
+      setErr(inputError);
       return;
     }
     abortRef.current?.abort();
@@ -207,6 +214,9 @@ export function AiFactorGeneratePage() {
     abortRef.current = ac;
     setBusy(true);
     setErr(null);
+    setValidationErrors([]);
+    setDraft(null);
+    setCode("");
     try {
       const data = await ygGenerateFactorDraft(
         {
@@ -216,15 +226,12 @@ export function AiFactorGeneratePage() {
         },
         ac.signal,
       );
-      if (data.status !== "ready" || !data.factor) {
+      if (data.status !== "ready" || data.validation?.status !== "passed" || !data.factor?.factor_code?.trim()) {
         const errs = data.validation?.errors || [];
         setDraft(null);
         setCode("");
-        setErr(
-          errs.length
-            ? `未通过校验：${errs.join("；")}`
-            : "生成失败，请换个说法再试",
-        );
+        setValidationErrors(errs);
+        setErr(factorRejectionMessage(errs));
         return;
       }
       const id = data.generation_id || newIdempotencyKey();
@@ -239,6 +246,8 @@ export function AiFactorGeneratePage() {
         factor_name: data.factor.factor_name,
         factor_code: data.factor.factor_code,
         description: data.factor.description || "",
+        assumptions: data.factor.assumptions || [],
+        warnings: data.factor.warnings || [],
       });
       setHistoryOpen(false);
     } catch (e) {
@@ -269,8 +278,8 @@ export function AiFactorGeneratePage() {
       description: h.description,
       used_fields: [],
       used_library_methods: [],
-      assumptions: [],
-      warnings: [],
+      assumptions: h.assumptions || [],
+      warnings: h.warnings || [],
     });
     setErr(null);
     setHistoryOpen(false);
@@ -613,7 +622,7 @@ export function AiFactorGeneratePage() {
           <div className="flex h-11 items-center border-b border-slate-100 px-4">
             <p className="text-[15px] font-semibold text-slate-800">提问</p>
           </div>
-          <div className="flex min-h-0 flex-1 flex-col p-4">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
             <textarea
               value={prompt}
               maxLength={PROMPT_MAX}
@@ -631,7 +640,10 @@ export function AiFactorGeneratePage() {
               <p className="text-xs text-slate-400">Ctrl+Enter 生成</p>
             </div>
             {err ? (
-              <p className="mt-2 text-sm text-rose-600">{err}</p>
+              <div role="alert" className="mt-2 text-sm text-rose-600">
+                <p>{err}</p>
+                {validationErrors.length > 0 && <details className="mt-2"><summary>错误详情</summary><p className="whitespace-pre-wrap">{validationErrors.join("；")}</p></details>}
+              </div>
             ) : null}
           </div>
         </section>
@@ -663,7 +675,8 @@ export function AiFactorGeneratePage() {
               </button>
             </div>
           </div>
-          <div className="min-h-0 flex-1 p-4">
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            {!busy && draft && <AiFactorExplanation draft={draft} />}
             {busy ? (
               <div className="flex h-full min-h-[300px] items-center justify-center rounded-2xl border border-slate-200">
                 <Loader2 className="h-7 w-7 animate-spin text-teal-700" />
@@ -714,8 +727,9 @@ export function AiFactorGeneratePage() {
             ) : null}
 
             {err && !busy ? (
-              <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">
-                {err}
+              <div role="alert" className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">
+                <p>{err}</p>
+                {validationErrors.length > 0 && <details className="mt-2"><summary>错误详情</summary><p className="whitespace-pre-wrap">{validationErrors.join("；")}</p></details>}
               </div>
             ) : null}
 
@@ -746,11 +760,7 @@ export function AiFactorGeneratePage() {
                     </button>
                   </div>
                 </div>
-                {draft?.description ? (
-                  <p className="border-b border-slate-200/60 px-3 py-2 text-xs leading-5 text-slate-500">
-                    {draft.description}
-                  </p>
-                ) : null}
+                {draft && <AiFactorExplanation draft={draft} />}
                 <div className="p-2">
                   <FactorCodeEditor
                     value={code}

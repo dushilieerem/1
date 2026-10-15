@@ -1,11 +1,12 @@
-# 因子面板 · 待 RE 确认 2 项
+# 因子面板 · RE 待确认问题（两项均已回复）
 
 > 提出方：SVQuant 集成侧　对象：ResearchEngine
 > 2026-10-14　**结论均已核对 RE 源码**（`/home/dev01/project/ResearchEngine`），非推测
 
 分组方向那件事已查清：**RE 实现自洽，是 SVQuant 自己的两份文档把 `Q1`/`Q5` 写反了**，已在 SVQuant 侧修正（依据与结论见 `因子面板-RE接口契约.md` §7，含 RE 源码引用）。**RE 无需为此改动。**
 
-以下两项仍需 RE 回复。
+下面两项**现均已有 RE 回复**（逐分位换手已在 RE 实现，IC 不可用原因由 RE 新增字段）：
+各节正文保留提问时记录的现状，答复与 SVQuant 落地见每节末尾的「RE 回复」。
 
 ---
 
@@ -35,6 +36,33 @@
 **SVQuant 为什么需要**：面板的换手列现在只能显示整组合换手。契约 §6 明确「不可把组合总换手伪称为
 Q1/Q5 换手」，所以该列已按实情改名为「组合换手」—— 若 RE 能提供逐分位换手，我们再补「最高分位 Q1 /
 最低分位 Q5 换手」两列。
+
+---
+
+### RE 回复 —— **已实现（2026-10-14 SVQuant 核对 RE 源码）**
+
+RE 已在 `quantile_metrics[]` 上提供逐分位换手，口径与请求一致，SVQuant 无需再等：
+
+- `app/schemas/backtest.py:292-299`：`QuantileMetric.turnover`，注释写明
+  「该分组的**日均单边换手**（`Σ|Δw| / 2`，逐日计算后取均值、**不年化**），与主组合
+  `metrics.turnover` 同口径」，并提示「分组是等权诊断桶而非可交易策略，其换手全部来自
+  排名进出，量级通常显著高于主组合」。
+- `app/services/metric/factor_analysis.py:281-304`：按 `Q1..QN` 逐组取 `group_turnover` 列的
+  均值写入 `turnover`；`quantile == "benchmark"` 行为 `None`。
+- `app/services/metric/engine.py:577-583`：`_factor_quantile_metrics` 传入
+  `analysis.get("group_turnover")`；该列由 `calculate_group_turnover(...)` 与分层曲线共用同一份
+  持有分组映射（含 lag），故与主组合换手口径一致。
+
+**请求的两点也一并明确**：单边（`Σ|Δw|/2`）、不年化、逐日计算后取均值（不是只在调仓日）。
+
+**SVQuant 落地**：`map_yg_response` 改读 `factor_analysis.quantile_metrics[].turnover` ——
+`q1_turnover`/`q5_turnover` 回归本义（最高/最低分位换手），整组合换手搬到新列 `turnover`，
+面板列拆成「组合换手 / 最高分位 Q1 换手 / 最低分位 Q5 换手」。
+历史行的 `q1_turnover` 存的是整组合换手（旧口径），由一次性迁移
+`factor_dashboard_turnover_split_v1` 搬到 `turnover` 并把分位列置空，界面对未重算的行显示「—」
+而不是错值；下一次批跑（日更/定时器本来就 `skip_ok=False`）填入真值。
+
+**残留差异**：RE 未提供逐分位**年化**换手与双边口径，SVQuant 也不需要；面板按日均可比口径展示。
 
 ---
 

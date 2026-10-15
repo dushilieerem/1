@@ -285,6 +285,11 @@ GET /api/factor-dashboard/results
 
 `annual_return`、`max_drawdown`、`turnover`、`win_rate`、`sharpe` 对应请求所选 `portfolio_type`；**Q1 为因子值最高组、Q5 为因子值最低组**，`long_short_spread = Q1 - Q5`（做多最高组、做空最低组）。不按因子正负预测方向调整分组含义。
 
+换手分两类，**不得互相冒充**：`turnover` 是**整条主组合**的平均单边换手
+（`mean(Σ|Δw| / 2)`，逐日计算、不年化）；`q1_turnover` / `q5_turnover` 是**逐分位换手**，
+口径同 `quantile_metrics[].turnover`（该分组的日均单边换手）。分组是等权诊断桶而非可交易策略，
+其换手全部来自排名进出，量级通常显著高于主组合，不能拿来代表组合的换手成本。
+
 > **方向以 RE 实现为准，已核对 RE 源码**：`app/services/portfolio/grouping.py` 的 `rank_groups` 文档与实现均声明「Q1 为因子值最高组，QN 为最低组」；`app/services/factor/runner.py` 的 `spread` 用分层净值首列减末列（即 Q1 − QN）。
 > 本文件早期版本曾写作「Q1/Q5 为因子分值从低到高的第 1/5 组，`long_short_spread = Q5 - Q1`」，**方向与公式均与 RE 相反，已更正**；面板展示层同步改为在列名标明「最高分位 Q1 / 最低分位 Q5」。纯做多的参考收益即 `q1_return`（最高分位）。
 

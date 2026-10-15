@@ -64,6 +64,8 @@ export type YgQuantileMetric = {
   excess_volatility?: number | null;
   information_ratio?: number | null;
   benchmark_win_rate?: number | null;
+  /** 该分组的日均单边换手（Σ|Δw|/2，逐日均值、不年化）；RE 新版本才有。 */
+  turnover?: number | null;
 };
 
 export type YgFactorAnalysis = {

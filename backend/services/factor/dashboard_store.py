@@ -56,6 +56,21 @@ PANEL_COMBOS: tuple[tuple[str, str, bool], ...] = tuple(
     for p in PANEL_PERIODS
     for filt in (True, False)
 )
+# 面板组合口径。以前是"碰巧"用了 build_factor_backtest_payload 的默认值，
+# 函数默认一改面板口径就会静默漂移，故显式声明并由 /api/factor/dashboard 透出给前端：
+# 组合 = 多空（做多 Q1、做空 Q5），20 交易日调仓，费率全 0，T+1 收盘成交。
+PANEL_BACKTEST: dict[str, Any] = {
+    "portfolio_type": "long_short",
+    "groups": 5,
+    "rebalance_days": 20,
+}
+PANEL_PORTFOLIO_INFO: dict[str, Any] = {
+    **PANEL_BACKTEST,
+    "portfolio_label": "多空（Q1 − Q5）",
+    "cost": "无（佣金/印花/滑点均为 0）",
+    "execution_timing": "next_close",
+    "note": "年化、最大回撤、组合换手均为该多空主组合口径；Q1/Q5 列为分组毛收益。",
+}
 
 _job_lock = threading.Lock()
 _job_thread: threading.Thread | None = None
@@ -164,6 +179,7 @@ def _blank_metrics(*, error: str | None) -> dict:
         "q1_return": None,
         "q5_return": None,
         "long_short_spread": None,
+        "turnover": None,
         "q1_turnover": None,
         "q5_turnover": None,
         "coverage_pool": None,
@@ -260,6 +276,25 @@ def _pct100(x) -> float | None:
     return round(v, 4)
 
 
+def _ratio_pct(x) -> float | None:
+    """小数比例 → 百分数点，严格 ×100。
+
+    用于换手：契约 §7 规定 RE 的 `turnover` 一律是小数比例（0.35 = 35%），
+    而 `_pct100` 的「|v|>1.5 就不再 ×100」逃逸是给老响应可能返回百分数点用的，
+    落到换手上会把 2.5（=250%/日）原样输出成 2.5%。分组换手按 RE 自己的说明
+    「量级通常显著高于主组合」，正好会踩到这个逃逸，故换手走这条严格路径。
+    """
+    if x is None:
+        return None
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    if v != v:  # NaN
+        return None
+    return round(v * 100, 4)
+
+
 def map_yg_response(data: dict) -> dict:
     fa = data.get("factor_analysis") or {}
     # RE 在 factor_analysis.definition.ic_unavailable_reason 给出 IC 不可用的原因
@@ -312,13 +347,24 @@ def map_yg_response(data: dict) -> dict:
 
     # RE 的 spread = Q1 − QN = 最高组 − 最低组（runner.py 用首列减末列）。
     # 兜底分支必须同向，否则同一列在不同因子上符号相反。
+    # 只认 spread 与「Q1 − Q5」：RE 的 layered_returns.long_short_return 填的是
+    # **主组合总收益**（runner.py），long_only 下会把它当成多空差，故不再兜底到它。
     spread = _pct100(lr.get("spread"))
-    if spread is None:
-        spread = _pct100(lr.get("long_short_return"))
     if spread is None and q1 is not None and q5 is not None:
         spread = round(q1 - q5, 4)
 
-    turnover = _pct100(metrics.get("turnover"))
+    # 逐分位换手：RE 在 factor_analysis.quantile_metrics 上按 Q1..QN/benchmark 给出
+    # 日均单边换手（schemas/backtest.py 的 QuantileMetric.turnover）。老响应没有该
+    # 字段 → 两个分位列留 None 显示「—」，不拿组合换手顶替。
+    quantile_turnover: dict[str, Any] = {}
+    for row in fa.get("quantile_metrics") or []:
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("quantile") or "").strip().upper()
+        if key:
+            quantile_turnover[key] = row.get("turnover")
+
+    turnover = _ratio_pct(metrics.get("turnover"))
     win_rate = _pct100(metrics.get("win_rate"))
     vol = _pct100(metrics.get("volatility"))
     err = data.get("error")
@@ -330,8 +376,9 @@ def map_yg_response(data: dict) -> dict:
         "q1_return": q1,
         "q5_return": q5,
         "long_short_spread": spread,
-        "q1_turnover": turnover,
-        "q5_turnover": None,
+        "turnover": turnover,
+        "q1_turnover": _ratio_pct(quantile_turnover.get("Q1")),
+        "q5_turnover": _ratio_pct(quantile_turnover.get("Q5")),
         "coverage_pool": None,
         "coverage_total": None,
         "win_rate": win_rate,
@@ -490,6 +537,8 @@ def query_metrics(
         "filter_limit_up": filter_limit_up,
         "filter_suspended": filter_suspended,
         "rules_version": RULES_VERSION,
+        # 面板回测口径：前端据此写明「年化/回撤/换手是哪个组合」，不再靠硬编码
+        "portfolio": PANEL_PORTFOLIO_INFO,
         "count": len(rows),
         "rows": rows,
         "job": read_job(),
@@ -593,8 +642,11 @@ def lookup_panel_metric(
     put("最高分位(Q1)收益", _fmt_pct_from_panel(r.get("q1_return")))
     put("最低分位(Q5)收益", _fmt_pct_from_panel(r.get("q5_return")))
     put("多空差(Q1−Q5)", _fmt_pct_from_panel(r.get("long_short_spread")))
-    # 注意：这是整组合换手，不是分位换手（契约 §6 禁止伪称 Q1/Q5 换手）
-    put("组合换手", _fmt_pct_from_panel(r.get("q1_turnover")))
+    # 组合换手 = 整条主组合（多空）的平均单边换手；逐分位换手是分组等权诊断桶的换手，
+    # 两者分列，不相互冒充（契约 §6）。
+    put("组合换手", _fmt_pct_from_panel(r.get("turnover")))
+    put("最高分位(Q1)换手", _fmt_pct_from_panel(r.get("q1_turnover")))
+    put("最低分位(Q5)换手", _fmt_pct_from_panel(r.get("q5_turnover")))
     if not display:
         return None
     # metrics 用小数口径（与分享稿一致：面板百分数点 /100）
@@ -676,6 +728,7 @@ def upsert_row(conn: Any, row: dict) -> None:
         "q1_return",
         "q5_return",
         "long_short_spread",
+        "turnover",
         "q1_turnover",
         "q5_turnover",
         "coverage_pool",
@@ -865,6 +918,8 @@ def _run_batch_locked(
                         filter_limit_up=filter_limit_up,
                         filter_suspended=filter_suspended,
                         analysis_level=analysis_level,
+                        # 面板口径显式传入，不依赖函数默认值（见 PANEL_BACKTEST）
+                        **PANEL_BACKTEST,
                     )
                 )
                 mapped = map_yg_response(data)

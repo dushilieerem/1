@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""补算面板里 Q1/Q5 为空的组合（analysis_level=full）。"""
+"""补算面板里 Q1/Q5 收益或分位换手为空的组合（analysis_level=full）。"""
 from __future__ import annotations
 
 import sys
@@ -22,7 +22,9 @@ def combos_needing_backfill() -> list[tuple[str, str, bool]]:
             FROM factor_dashboard_metrics
             GROUP BY 1, 2, 3
             HAVING SUM(
-              CASE WHEN (error IS NULL OR error='') AND q1_return IS NULL
+              CASE WHEN (error IS NULL OR error='') AND
+                   (q1_return IS NULL OR q5_return IS NULL
+                    OR q1_turnover IS NULL OR q5_turnover IS NULL)
                    THEN 1 ELSE 0 END
             ) > 0
             ORDER BY universe, period, filter_limit_up DESC
@@ -41,7 +43,7 @@ def main() -> None:
         print(f"  [{i}/{len(jobs)}] {u} {p} filter_up={f}")
     failed = 0
     for u, p, f in jobs:
-        job = run_one(u, p, filter_limit_up=f, limit=None)
+        job = run_one(u, p, filter_limit_up=f, limit=None, analysis_level="full")
         if job.get("status") == "failed":
             failed += 1
     print(f"backfill done failed={failed}/{len(jobs)}")

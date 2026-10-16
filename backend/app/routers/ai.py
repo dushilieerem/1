@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import base64
@@ -13,6 +13,25 @@ from ai.gateway.ark_chat import ArkChatError, chat as ark_chat, iter_chat_stream
 from ai.gateway.speech_transcribe import SpeechError, speech_ready, transcribe_bytes
 
 router = APIRouter(tags=["ai"])
+
+
+def _validate_messages(messages: Any) -> list[dict[str, str]]:
+    if not isinstance(messages, list) or not messages:
+        raise HTTPException(status_code=400, detail="messages must be a non-empty array")
+    out: list[dict[str, str]] = []
+    for item in messages:
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=400, detail="message item must be an object")
+        role = str(item.get("role") or "").strip()
+        content = str(item.get("content") or "").strip()
+        if role not in {"user", "assistant", "system"} or not content:
+            raise HTTPException(status_code=400, detail="message item requires valid role/content")
+        out.append({"role": role, "content": content})
+    return out
+
+
+def _is_unconfigured_error(msg: str) -> bool:
+    return "未配置" in msg or "鏈" in msg and "厤" in msg
 
 
 @router.get("/api/ai/chat/models")
@@ -59,9 +78,7 @@ def ai_chat(
     user: dict = Depends(require_user),
 ):
     _ = user
-    messages = body.get("messages")
-    if not isinstance(messages, list):
-        raise HTTPException(status_code=400, detail="messages 须为数组")
+    messages = _validate_messages(body.get("messages"))
     model = str(body.get("model") or "").strip() or None
     try:
         temperature = float(body.get("temperature", 0.7))
@@ -88,7 +105,7 @@ def ai_chat(
         )
     except ArkChatError as exc:
         msg = str(exc)
-        code = 503 if "未配置" in msg else 502
+        code = 503 if _is_unconfigured_error(msg) else 502
         raise HTTPException(status_code=code, detail=msg) from exc
 
 
@@ -100,13 +117,15 @@ def ai_speech_transcribe(
     _ = user
     b64 = str(body.get("audio_base64") or "").strip()
     if not b64:
-        raise HTTPException(status_code=400, detail="缺少 audio_base64")
+        raise HTTPException(status_code=400, detail="缂哄皯 audio_base64")
     if "," in b64 and b64.lower().startswith("data:"):
         b64 = b64.split(",", 1)[1]
     try:
-        audio = base64.b64decode(b64, validate=False)
+        audio = base64.b64decode(b64, validate=True)
     except Exception:
-        raise HTTPException(status_code=400, detail="audio_base64 无效") from None
+        raise HTTPException(status_code=400, detail="audio_base64 鏃犳晥") from None
+    if not audio:
+        raise HTTPException(status_code=400, detail="audio_base64 invalid")
     mime = str(body.get("mime") or "audio/webm").strip() or "audio/webm"
     ext = "webm"
     if "ogg" in mime:
@@ -127,5 +146,5 @@ def ai_speech_transcribe(
         )
     except SpeechError as exc:
         msg = str(exc)
-        code = 503 if "未配置" in msg else 400
+        code = 503 if _is_unconfigured_error(msg) else 400
         raise HTTPException(status_code=code, detail=msg) from exc

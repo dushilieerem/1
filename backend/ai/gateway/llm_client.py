@@ -39,22 +39,33 @@ def llm_settings() -> dict[str, Any]:
 
 def chat_completions(
     *,
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     temperature: float = 0.4,
     max_tokens: int = 2048,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """返回 { content, tokens_in, tokens_out, model, provider }。"""
+    """返回 { content, message, tool_calls, tokens_in, tokens_out, model, provider }。
+
+    传 tools 时启用 OpenAI 兼容 function calling；模型发起工具调用时
+    message 含 tool_calls、content 可能为空，由调用方执行工具后以
+    {"role": "tool", "tool_call_id": ...} 续聊。
+    """
     cfg = llm_settings()
     if not cfg["configured"]:
         raise LlmError("LLM 未配置：请在 backend/.env 设置 LLM_API_KEY")
 
     url = f"{cfg['base_url']}/chat/completions"
-    payload = {
+    payload: dict[str, Any] = {
         "model": cfg["model"],
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    if tools:
+        payload["tools"] = tools
+        if tool_choice is not None:
+            payload["tool_choice"] = tool_choice
     raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         url,
@@ -87,11 +98,14 @@ def chat_completions(
         raise LlmError("LLM 无 choices")
     message = choices[0].get("message") or {}
     content = message.get("content")
-    if not isinstance(content, str) or not content.strip():
+    tool_calls = message.get("tool_calls") or []
+    if (not isinstance(content, str) or not content.strip()) and not tool_calls:
         raise LlmError("LLM 返回空内容")
     usage = data.get("usage") or {}
     return {
-        "content": content.strip(),
+        "content": (content or "").strip(),
+        "message": message,
+        "tool_calls": tool_calls if isinstance(tool_calls, list) else [],
         "tokens_in": int(usage.get("prompt_tokens") or 0),
         "tokens_out": int(usage.get("completion_tokens") or 0),
         "model": data.get("model") or cfg["model"],

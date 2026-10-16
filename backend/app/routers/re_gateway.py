@@ -103,15 +103,6 @@ def _cached_re_get(cache_key: str, path: str) -> tuple[int, dict[str, str], Any]
             if isinstance(stale_data, dict):
                 stale_data = {**stale_data, "_stale": True, "_upstream_status": status}
             return int(cached["status"]), _cache_headers(cached["headers"], state="stale"), stale_data
-        fallback = _local_market_fallback(cache_key, status)
-        if fallback is not None:
-            _CACHE[cache_key] = {
-                "at": time.monotonic(),
-                "status": 200,
-                "headers": headers,
-                "data": fallback,
-            }
-            return 200, _cache_headers(headers, state="fallback"), fallback
         return status, _cache_headers(headers, state="error"), data
 
 

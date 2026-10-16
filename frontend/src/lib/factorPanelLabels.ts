@@ -25,10 +25,13 @@ export const RE_Q1_DIRECTION_HINT = "RE 口径：Q1 = 因子值最大组、QN = 
  */
 export const PORTFOLIO_CONVENTION: Record<string, string> = {
   long_only: "纯多 = 做多 Q1（因子值最大组）等权组合",
-  long_short: "多空 = Q1 − Q5（做多最高组、做空最低组）",
+  long_short: "多空 = Q1 − QN（做多最高组、做空最低组）",
 };
 
-export function portfolioConvention(code: string | null | undefined): string {
+export function portfolioConvention(code: string | null | undefined, groups?: number | null): string {
+  if (code === "long_short") {
+    return `多空 = Q1 − Q${clampGroups(groups ?? 5)}（做多最高组、做空最低组）`;
+  }
   return PORTFOLIO_CONVENTION[String(code || "")] || "";
 }
 

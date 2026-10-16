@@ -509,3 +509,11 @@ test("组合口径文案区分纯多与多空，且都点名 Q1", () => {
   assert.equal(portfolioConvention("nonsense"), "");
   assert.equal(portfolioConvention(null), "");
 });
+
+test("多空口径使用本次报告的组数：3/5/10组分别对应Q3/Q5/Q10", () => {
+  for (const groups of [3, 5, 10]) {
+    assert.equal(portfolioConvention("long_short", groups),
+      `多空 = Q1 − Q${groups}（做多最高组、做空最低组）`);
+    assert.equal(portfolioConvention("long_only", groups), portfolioConvention("long_only"));
+  }
+});

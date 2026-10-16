@@ -444,14 +444,14 @@ export function FactorDetectReportPage() {
   const groups = clampGroups(
     Number(result?.factor_analysis?.layered_returns?.groups) || Number(req?.groups) || 5,
   );
-  /** 主组合口径：纯多 = 做多 Q1；多空 = Q1 − Q5。报告页必须写明，否则看不出是哪个分位。 */
+  /** 主组合口径：纯多 = 做多 Q1；多空 = Q1 − QN，N 使用本次报告组数。 */
   const portfolioType = String(
     req?.portfolio_type ||
       readDetectRunUiSnapshot(rec?.request)?.portfolioType ||
       "long_only",
   );
   const portfolioLabel = optionLabel(portfolioType, PORTFOLIO_TYPE_OPTIONS);
-  const convention = portfolioConvention(portfolioType);
+  const convention = portfolioConvention(portfolioType, groups);
 
   const curveDates = useMemo(() => result?.equity_curve?.map((p) => p.date) || [], [result]);
   const stratPct = useMemo(
@@ -1020,7 +1020,7 @@ export function FactorDetectReportPage() {
             label="基准"
             value={optionLabel(req?.benchmark || "", DETECT_BENCHMARK_OPTIONS)}
           />
-          {/* 组合类型决定「累计收益/回撤/绩效概览」是哪个组合：纯多 = Q1，多空 = Q1 − Q5 */}
+          {/* 组合类型决定「累计收益/回撤/绩效概览」的口径：纯多 = Q1，多空 = Q1 − QN */}
           <MetaChip
             icon={<Activity className="h-3.5 w-3.5 text-rose-500" />}
             label="组合类型"

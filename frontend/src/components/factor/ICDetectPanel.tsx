@@ -9,30 +9,12 @@ import {
   darkTooltip,
   zeroMarkLine,
 } from "@/components/chartTheme";
-import type { YgFactorAnalysis, YgSeriesPoint } from "@/lib/ygApi";
+import type { YgFactorAnalysis } from "@/lib/ygApi";
+import { icMetrics, sampleStandardDeviation } from "@/lib/factorIcMetrics";
 
 type Props = {
   fa: YgFactorAnalysis | null | undefined;
 };
-
-function icMetrics(series: YgSeriesPoint[], fa: YgFactorAnalysis | null | undefined) {
-  const vals = series.map((p) => p.value).filter((v) => Number.isFinite(v));
-  const mean =
-    typeof fa?.ic_mean === "number" && Number.isFinite(fa.ic_mean)
-      ? fa.ic_mean
-      : vals.length
-        ? vals.reduce((s, v) => s + v, 0) / vals.length
-        : 0;
-  const std =
-    typeof fa?.ic_std === "number" && Number.isFinite(fa.ic_std)
-      ? fa.ic_std
-      : vals.length > 1
-        ? Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length)
-        : 0;
-  const ir = std > 1e-12 ? mean / std : 0;
-  const posPct = vals.length ? (100 * vals.filter((v) => v > 0).length) / vals.length : 0;
-  return { mean, std, ir, posPct };
-}
 
 const METRIC_CARDS = [
   { key: "mean", label: "IC 均值", fmt: (v: number) => v.toFixed(4) },
@@ -217,9 +199,8 @@ export function ICDetectPanel({ fa }: Props) {
         const arr = raw.slice(start, i + 1).filter((v) => Number.isFinite(v));
         if (arr.length < 10) return null;
         const mean = arr.reduce((s, v) => s + v, 0) / arr.length;
-        const variance = arr.reduce((s, v) => s + (v - mean) ** 2, 0) / arr.length;
-        const std = Math.sqrt(variance);
-        return std > 1e-12 ? mean / std : null;
+        const std = sampleStandardDeviation(arr);
+        return std != null && std > 1e-12 ? mean / std : null;
       });
     } else {
       return null;
@@ -287,7 +268,7 @@ export function ICDetectPanel({ fa }: Props) {
             className="rounded-xl border border-slate-200/80 bg-gradient-to-b from-slate-50 to-white px-3 py-3 text-center shadow-sm"
           >
             <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{label}</p>
-            <p className="mt-1 font-mono text-lg font-bold text-slate-900">{fmt(metricMap[key])}</p>
+            <p className="mt-1 font-mono text-lg font-bold text-slate-900">{metricMap[key] == null ? "—" : fmt(metricMap[key])}</p>
           </div>
         ))}
       </div>

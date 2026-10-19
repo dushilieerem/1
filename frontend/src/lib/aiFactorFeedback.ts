@@ -10,6 +10,8 @@ export function factorPromptError(prompt: string): string | null {
 }
 
 export function factorRejectionMessage(errors: string[]): string {
+  const requestReason = errors.find((error) => /^(需求暂不支持|请补充因子需求)：/.test(error));
+  if (requestReason) return requestReason;
   if (errors.some((error) => /Raise/.test(error))) {
     return "未能生成可用因子。请确认需求所需的数据字段是否受支持，或补充数据与计算逻辑。具体支持的数据范围请联系管理员确认。";
   }

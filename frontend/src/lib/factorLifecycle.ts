@@ -3,6 +3,7 @@
  * 页面只编排 UI，建空因子 / 打开检测 / 成功回写 / 全局报告 走这里。
  */
 import type { FactorMeta } from "./factorCatalog";
+import { factorNameError } from "./factorName";
 import {
   openOrCreateForFactor,
   openDetectPlaceholderTab,
@@ -20,8 +21,6 @@ import {
   updateUserLibraryFactor,
   type UserLibraryFactor,
 } from "./userFactorLibraries";
-
-const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export function emptyFactorBodyTemplate(
   name: string,
@@ -41,10 +40,8 @@ export async function createEmptyUserFactor(opts: {
   const name = (opts.name || "").trim();
   const description = (opts.description || "").trim();
   const categoryLabel = (opts.categoryLabel || "").trim() || "其他";
-  if (!name) throw new Error("请填写因子代码名");
-  if (!NAME_RE.test(name)) {
-    throw new Error("代码名须为字母开头的标识符（字母/数字/下划线）");
-  }
+  const nameError = factorNameError(name);
+  if (nameError) throw new Error(nameError);
   if (!description) throw new Error("请填写中文解释");
   if (!opts.libraryId) throw new Error("请选择所属因子库");
   return addFactorToUserLibrary(opts.libraryId, {

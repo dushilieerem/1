@@ -26,6 +26,12 @@ test("代码被拒提供处理方向，不把Raise直接断言为平台缺少数
   assert.match(factorRejectionMessage([]), /重新生成/);
 });
 
+test("服务明确返回能力边界或补充需求时，页面直接展示原因", () => {
+  for (const message of ["需求暂不支持：只有日频价量数据，没有逐笔撤单字段", "请补充因子需求：请说明周期及计算公式"]) {
+    assert.equal(factorRejectionMessage([message]), message);
+  }
+});
+
 test("说明展示服务返回的计算假设与注意事项，缺失说明时不捏造数据规则", () => {
   const draft = { factor_name: "vol", factor_code: "code", description: "20日波动率", used_fields: [], used_library_methods: [], assumptions: ["至少21个收盘价观察值"], warnings: ["分母为0时保留空值"] };
   const view = render(<AiFactorExplanation draft={draft} />);

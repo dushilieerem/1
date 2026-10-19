@@ -9,6 +9,7 @@ from html import unescape
 from typing import Any, Callable
 
 from ai.gateway.llm_client import LlmError, chat_completions, llm_configured
+from services.community.ai_summary import summarize_with_re
 from ai.crews._shared.metrics_trust import (
     PLATFORM_KNOWLEDGE,
     PROMISE_RE,
@@ -729,6 +730,22 @@ def skill_summarize_post(ctx: dict[str, Any], board: dict[str, Any]) -> dict[str
                    if len(strip_html(body)) + len(code.strip()) < 20 else [])
 
     if not llm_configured():
+        shared = summarize_with_re(title=title, body=strip_html(body), code_snippet=code,
+                                   grounding=trust_prompt_block(trust), truncated=truncated)
+        if shared is not None:
+            summary = shared["summary_md"]
+            gate = summary_number_flags(summary, ref if isinstance(ref, dict) else None)
+            gate.extend(short_flags)
+            return {
+                "board_patch": {
+                    "summary_md": summary, "truncated": shared["truncated"],
+                    "flags": list(board.get("flags") or []) + gate,
+                    "artifacts": {"summary_source": "llm"},
+                },
+                "outputs": {"summary_md": summary, "flags": gate},
+                "tokens_in": shared["tokens_in"], "tokens_out": shared["tokens_out"],
+                "provider": shared["provider"], "model": shared["model"],
+            }
         summary = _mock_summary_md(title=title, body=body, truncated=truncated)
         gate = summary_number_flags(summary, ref if isinstance(ref, dict) else None)
         gate.extend(short_flags)

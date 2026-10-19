@@ -20,6 +20,7 @@ import {
 } from "@/lib/factorCatalog";
 import { isPlatformFactorLib } from "@/lib/detectComboCode";
 import { icUnavailableHint } from "@/lib/factorPanelLabels";
+import { comparePanelMetric } from "@/lib/factorPanelSort";
 import { openOrCreateForFactor, openDetectPlaceholderTab, navigateDetectTab } from "@/lib/detectStore";
 import { authHeaders, getStoredUser } from "@/lib/auth";
 import {
@@ -358,11 +359,7 @@ export function FactorDashboardPage() {
       if (sortKey === "name_cn") {
         return dir * String(a.name_cn || a.factor_name).localeCompare(String(b.name_cn || b.factor_name), "zh");
       }
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      const an = typeof av === "number" ? av : -Infinity;
-      const bn = typeof bv === "number" ? bv : -Infinity;
-      return dir * (an - bn);
+      return comparePanelMetric(a[sortKey], b[sortKey], sortDir);
     });
   }, [rows, query, sortKey, sortDir, hideErrors, verifyFilter, category]);
 

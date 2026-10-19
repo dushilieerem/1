@@ -153,7 +153,7 @@ const DASH_ROWS = [
   { factor_name: "SV08_0001", name_cn: "量价背离度", library: "主因子库", category_label: "量价关系因子", ic_mean: 1.11 },
 ];
 
-function mountDashboard(role: string) {
+function mountDashboard(role: string, rows: any[] = DASH_ROWS) {
   sessionStorage.setItem("svquant_user", JSON.stringify({ id: 9, username: "u", role, status: "active" }));
   const sent: Array<{ path: string; method: string; body: any }> = [];
   globalThis.fetch = async (url, init) => {
@@ -164,7 +164,7 @@ function mountDashboard(role: string) {
     if (path === "/api/factor/re-catalog") return Response.json({ ok: true, factors: DASH_FACTORS });
     if (path === "/api/factor/index") return new Response("libraries: {}");
     if (path === "/api/factor/dashboard") {
-      return Response.json({ rows: DASH_ROWS, job: { status: "idle" }, verify_summary: { pending: 2, passed: 0, failed: 0 } });
+      return Response.json({ rows, job: { status: "idle" }, verify_summary: { pending: 2, passed: 0, failed: 0 } });
     }
     if (path === "/api/factor/dashboard/refresh") return Response.json({ ok: true, job: { status: "running", done: 0, total: 2 } });
     if (path === "/api/factor/dashboard/status") return Response.json({ status: "done" });
@@ -173,6 +173,21 @@ function mountDashboard(role: string) {
   const view = render(<MemoryRouter><FactorDashboardPage /></MemoryRouter>);
   return { view, sent };
 }
+
+test("面板点击IC升降序，缺失值均排在有效值之后，负数与0正常排序", async () => {
+  const { view } = mountDashboard("user", [
+    { factor_name: "missing", name_cn: "缺失IC", ic_mean: null },
+    { factor_name: "negative", name_cn: "负IC", ic_mean: -2 },
+    { factor_name: "zero", name_cn: "零IC", ic_mean: 0 },
+  ]);
+  await waitFor(() => assert.ok(view.getByText("缺失IC")));
+  const names = () => [...view.container.querySelectorAll("tbody tr")].map(r => r.querySelector("code")?.textContent);
+  assert.deepEqual(names(), ["zero", "negative", "missing"]);
+  fireEvent.click(view.getByRole("columnheader", { name: "IC均值" }));
+  assert.deepEqual(names(), ["negative", "zero", "missing"]);
+  fireEvent.click(view.getByRole("columnheader", { name: "IC均值" }));
+  assert.deepEqual(names(), ["zero", "negative", "missing"]);
+});
 
 test("因子面板：分类 Tab 取 RE 目录的分类，不再退化成单一库名", async () => {
   const { view } = mountDashboard("user");

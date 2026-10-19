@@ -6,7 +6,7 @@ from ai.gateway.llm_client import LlmError
 
 class SummaryTest(unittest.TestCase):
     def test_unconfigured_short_content_is_honest_excerpt(self):
-        with patch("ai.runtime.skills.llm_configured", return_value=False):
+        with patch("ai.runtime.skills.llm_configured", return_value=False), patch("ai.runtime.skills.summarize_with_re", return_value=None):
             result = skill_summarize_post({"title": "测试", "body": "很短的内容"}, {})
         self.assertEqual(result["board_patch"]["artifacts"]["summary_source"], "mock_local")
         self.assertIn("原文节选", result["outputs"]["summary_md"])

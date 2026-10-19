@@ -205,12 +205,16 @@ def _normalize_body(body: str, name: str, description: str = "") -> str:
         if "return" not in e:
             e = f"return {e}"
         e = f'def {name}(self):\n    """{doc}"""\n    ' + e.replace("\n", "\n    ")
-        return e
     def_name = _extract_def_name(e)
     if not def_name:
         raise ValueError("请写完整函数，例如 def my_factor(self): ...")
     if def_name != name:
         raise ValueError(f"因子代码名「{name}」须与函数名「{def_name}」一致")
+    try:
+        # 只编译检查语法，不执行用户代码；错误时保留原库内容。
+        compile(e, "<user_factor>", "exec")
+    except SyntaxError as exc:
+        raise ValueError(f"因子代码语法错误（第 {exc.lineno} 行）：{exc.msg}") from exc
     return e
 
 
@@ -270,8 +274,8 @@ def add_library_factor(
     code = (name or "").strip()
     if not code:
         raise ValueError("请填写因子代码名")
-    if not FACTOR_NAME_RE.match(code):
-        raise ValueError("因子代码名仅支持字母开头的标识符（字母/数字/下划线）")
+    if not FACTOR_NAME_RE.fullmatch(code) or keyword.iskeyword(code):
+        raise ValueError("因子代码名须为有效的 Python 标识符，不能使用关键字")
     desc = (description or "").strip() or code
     cat = (category_label or "其他").strip() or "其他"
     raw = (body or "").strip()

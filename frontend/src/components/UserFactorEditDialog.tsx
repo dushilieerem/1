@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FactorMeta } from "../lib/factorCatalog";
+import { factorNameError } from "../lib/factorName";
 import { updateUserLibraryFactor, userLibraryFactorToMeta } from "../lib/userFactorLibraries";
 
 export function UserFactorEditDialog({ factor, onSaved, onClose }: {
@@ -13,7 +14,8 @@ export function UserFactorEditDialog({ factor, onSaved, onClose }: {
   async function save() {
     if (busy) return;
     setError("");
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name.trim())) { setError("因子代码名仅支持字母、数字和下划线，不能以数字开头"); return; }
+    const nameError = factorNameError(name);
+    if (nameError) { setError(nameError); return; }
     if (!description.trim()) { setError("请填写因子说明"); return; }
     if (factor.body?.trim() && !body.trim()) { setError("因子代码不能为空"); return; }
     setBusy(true);

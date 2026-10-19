@@ -16,6 +16,7 @@ import {
 import { FactorCodeEditor } from "@/components/FactorCodeEditor";
 import { AiFactorExplanation } from "@/components/AiFactorExplanation";
 import { factorPromptError, factorRejectionMessage } from "@/lib/aiFactorFeedback";
+import { factorNameError } from "@/lib/factorName";
 import {
   ygGenerateFactorDraft,
   type AiFactorDraft,
@@ -37,7 +38,6 @@ import { newUuidV4 } from "@/lib/uuid";
 const PROMPT_MAX = 2000;
 const DESC_MAX = 40;
 const HISTORY_MAX = 40;
-const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 type HistoryItem = {
   id: string;
@@ -370,12 +370,9 @@ export function AiFactorGeneratePage() {
     const name = sendName.trim();
     const description = sendDesc.trim();
     const category = sendCategory.trim();
-    if (!name) {
-      setSendFormErr("请填写因子代码名");
-      return;
-    }
-    if (!NAME_RE.test(name)) {
-      setSendFormErr("代码名须为字母开头的标识符（字母/数字/下划线）");
+    const nameError = factorNameError(name);
+    if (nameError) {
+      setSendFormErr(nameError);
       return;
     }
     if (takenNames.has(name)) {

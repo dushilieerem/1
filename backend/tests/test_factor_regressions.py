@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 
 from services.factor.code_validation import validated_factor_code
-from services.factor.user_library_store import update_library_factor
+from services.factor.user_library_store import update_library_factor, add_library_factor, _normalize_body
 
 
 class FactorValuesTest(unittest.TestCase):
@@ -52,6 +52,21 @@ class FactorValuesTest(unittest.TestCase):
 
 
 class FactorEditTest(unittest.TestCase):
+    def test_incomplete_function_and_expression_rejected_before_save(self):
+        for body in ("def factor(self):\n    return self.close.pct_change(", "self.close /", "def factor(self):\n    break"):
+            with self.subTest(body=body), self.assertRaisesRegex(ValueError, "语法错误"):
+                _normalize_body(body, "factor")
+        source = _normalize_body("self.close.pct_change(5)", "factor")
+        compile(source, "<test>", "exec")
+
+    @patch("services.factor.user_library_store.ensure_user_libraries_schema")
+    @patch("services.factor.user_library_store.get_conn")
+    def test_create_rejects_python_keywords_before_writing(self, db, _schema):
+        for name in ("for", "class", "return", "None", "async", "await", "bad\nname"):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                add_library_factor(7, 2, name=name, body="")
+        db.assert_not_called()
+
     def db(self, owned=True, clash=False):
         conn = MagicMock()
         row = {"id": 3, "library_id": 2, "name": "old_factor", "body": "def old_factor(self):\n    return self.close", "formula_ready": True}

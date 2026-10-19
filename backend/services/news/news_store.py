@@ -233,14 +233,22 @@ def list_news(
     where += _or_jsonb_contains("industries", industries_f, params)
     pattern = _search_pattern(q)
     if pattern:
-        where += (
-            " AND ("
+        search_clauses = [
             "title ILIKE %s ESCAPE '\\' OR "
             "summary ILIKE %s ESCAPE '\\' OR "
-            "COALESCE(body, '') ILIKE %s ESCAPE '\\'"
-            ")"
-        )
+            "COALESCE(body, '') ILIKE %s ESCAPE '\\'",
+        ]
         params.extend([pattern, pattern, pattern])
+        # 关联标的和题材可能只存在于结构化标签中，不能依赖它们碰巧出现在正文。
+        # 按数组元素搜索，避免把 JSON 的引号、方括号当成用户可检索的内容。
+        for col in ("symbols", "themes", "industries"):
+            search_clauses.append(
+                "EXISTS (SELECT 1 FROM jsonb_array_elements_text("
+                f"{col}) AS search_tag(value) "
+                "WHERE search_tag.value ILIKE %s ESCAPE '\\')"
+            )
+            params.append(pattern)
+        where += " AND (" + " OR ".join(search_clauses) + ")"
     params.extend([limit, offset])
     with get_conn() as conn:
         rows = conn.execute(

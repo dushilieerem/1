@@ -368,7 +368,7 @@ export function NewsPage() {
 
         {hasTagFilter ? (
           <div className="mb-4 flex flex-wrap items-center gap-2 text-[12px]">
-            <span className="text-slate-500">标签筛选（可多选）</span>
+            <span className="text-slate-500">标签筛选（同时满足所有已选标签）</span>
             {themes.map((t) => (
               <button
                 key={`t-${t}`}
@@ -735,7 +735,7 @@ export function NewsPage() {
                           {t}
                         </button>
                       ))}
-                      {(it.industries || []).slice(0, 2).map((ind) => (
+                      {(it.industries || []).filter((ind, index) => index < 2 || industries.includes(ind)).map((ind) => (
                         <button
                           key={ind}
                           type="button"

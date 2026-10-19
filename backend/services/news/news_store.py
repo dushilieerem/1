@@ -177,15 +177,12 @@ def _parse_tag_list(
     return out
 
 
-def _or_jsonb_contains(col: str, tags: list[str], params: list[Any]) -> str:
-    """themes/symbols/industries 任一命中（多选 OR）。"""
+def _all_jsonb_contains(col: str, tags: list[str], params: list[Any]) -> str:
+    """标签筛选取交集：一篇资讯必须包含本维度的全部已选标签。"""
     if not tags:
         return ""
-    clauses: list[str] = []
-    for t in tags:
-        clauses.append(f"{col} @> %s::jsonb")
-        params.append(json.dumps([t], ensure_ascii=False))
-    return " AND (" + " OR ".join(clauses) + ")"
+    params.append(json.dumps(tags, ensure_ascii=False))
+    return f" AND {col} @> %s::jsonb"
 
 
 def list_news(
@@ -228,9 +225,9 @@ def list_news(
     themes_f = _parse_tag_list(theme)
     symbols_f = _parse_tag_list(symbol, max_len=32)
     industries_f = _parse_tag_list(industry)
-    where += _or_jsonb_contains("themes", themes_f, params)
-    where += _or_jsonb_contains("symbols", symbols_f, params)
-    where += _or_jsonb_contains("industries", industries_f, params)
+    where += _all_jsonb_contains("themes", themes_f, params)
+    where += _all_jsonb_contains("symbols", symbols_f, params)
+    where += _all_jsonb_contains("industries", industries_f, params)
     pattern = _search_pattern(q)
     if pattern:
         search_clauses = [

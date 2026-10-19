@@ -93,9 +93,26 @@ class NewsSearchTests(unittest.TestCase):
         self.assertEqual(self.ids(q="601162.SH", source="cninfo", category="announce"), [2, 1])
         self.assertEqual(self.ids(q="CRO", theme=["算力"]), [6])
 
-    def test_multiple_themes_keep_union_and_other_dimensions_intersect(self):
-        self.assertEqual(self.ids(theme=["CRO", "算力"]), [6, 5, 4])
-        self.assertEqual(self.ids(theme=["CRO", "算力"], industry=["医药生物"]), [6, 4])
+    def test_multiple_themes_require_all_selected_tags(self):
+        self.assertEqual(self.ids(theme=["CRO", "算力"]), [6])
+        self.assertEqual(self.ids(theme=["CRO", "算力"], industry=["医药生物"]), [6])
+        self.assertEqual(self.ids(theme=["CRO", "不存在"]), [])
+
+    def test_multiple_industries_and_symbols_also_require_all_tags(self):
+        self.samples.add(9, "跨行业多证券资讯", symbols=["601162.SH", "300345.SZ"],
+                         industries=["计算机", "国防军工"])
+        self.samples.add(10, "仅军工资讯", industries=["国防军工"])
+        self.samples.add(11, "仅计算机资讯", industries=["计算机"])
+        self.assertEqual(self.ids(industry=["计算机", "国防军工"]), [9])
+        self.assertEqual(self.ids(symbol=["601162.SH", "300345.SZ"]), [9])
+
+    def test_hong_kong_theme_and_defense_industry_intersect(self):
+        self.samples.add(9, "港股军工样例", themes=["港股"], industries=["国防军工"])
+        self.samples.add(10, "仅港股样例", themes=["港股"], industries=["银行"])
+        self.samples.add(11, "仅军工样例", themes=["A股"], industries=["国防军工"])
+        result = store.list_news(theme=["港股"], industry=["国防军工"], limit=1)
+        self.assertEqual(result["total"], 1)
+        self.assertEqual([item["id"] for item in result["items"]], [9])
 
     def test_total_and_pagination_share_the_same_search_scope(self):
         result = store.list_news(q="601162.SH", limit=1, offset=1)

@@ -40,8 +40,11 @@ class SharedSummaryTest(unittest.TestCase):
 
     def test_missing_endpoint_timeout_and_invalid_source_never_become_ai_success(self):
         for status, data in [(404, {}), (504, {}), (503, {}), (200, {"summary_source": "mock_local", "summary_md": "原文"}), (200, {"summary_source": "llm", "summary_md": " "})]:
-            with self.subTest(status=status, data=data), self.assertRaises(LlmError):
-                self.invoke(status, data)
+            with self.subTest(status=status, data=data):
+                with self.assertRaises(LlmError) as error:
+                    self.invoke(status, data)
+                self.assertNotIn("ResearchEngine", str(error.exception))
+                self.assertNotIn("post-summaries", str(error.exception))
 
     def test_content_limits_propagate_truncation(self):
         forward = MagicMock(return_value=(200, {}, {"summary_source": "llm", "summary_md": "截断摘要"}))

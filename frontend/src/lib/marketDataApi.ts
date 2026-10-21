@@ -9,6 +9,7 @@ export type MarketBar = {
   high: number;
   low: number;
   close: number;
+  is_show?: boolean;
 };
 
 export type MarketDaily = {
@@ -17,6 +18,16 @@ export type MarketDaily = {
   bars: MarketBar[];
   date_range: { start: string; end: string };
 };
+
+/** 上游明确标记不展示的补值不进入图表、报价或指标；兼容未提供字段的旧接口。 */
+export function normalizeMarketDaily(data: MarketDaily): MarketDaily {
+  const bars = (data.bars || []).filter((bar) => bar.is_show !== false);
+  return {
+    ...data,
+    bars,
+    date_range: { start: bars[0]?.date || "", end: bars.at(-1)?.date || "" },
+  };
+}
 
 /** 按 date 去重合并，升序 */
 export function mergeMarketBars(...lists: Array<MarketBar[] | undefined | null>): MarketBar[] {
@@ -115,8 +126,8 @@ const SYMBOLS_TTL_MS = 30 * 60_000;
 const DAILY_CACHE_ENABLED = true;
 const DAILY_TTL_MS = 5 * 60_000;
 /** 浏览器持久缓存：隔天/关浏览器再进，先秒开再后台刷新 */
-const LS_DAILY_PREFIX = "svq.mkt.daily.v1:";
-const LS_DAILY_INDEX = "svq.mkt.daily.idx.v1";
+const LS_DAILY_PREFIX = "svq.mkt.daily.v2:";
+const LS_DAILY_INDEX = "svq.mkt.daily.idx.v2";
 /** 超过此时间仍可用来首屏，但会后台刷新 */
 const LS_STALE_MS = 7 * 24 * 60 * 60_000;
 const LS_MAX_SYMBOLS = 12;
@@ -175,7 +186,7 @@ export function peekPersistedDaily(symbol: string): MarketDaily | null {
     const entry = JSON.parse(raw) as LsDailyEntry;
     if (!entry?.data?.bars?.length) return null;
     if (Date.now() - Number(entry.at || 0) > LS_STALE_MS) return null;
-    return entry.data;
+    return normalizeMarketDaily(entry.data);
   } catch {
     return null;
   }
@@ -395,12 +406,13 @@ export async function fetchMarketDaily(
   const q = new URLSearchParams();
   if (opts?.start) q.set("start", opts.start);
   if (opts?.end) q.set("end", opts.end);
+  if (opts?.bypassCache) q.set("fresh", "1");
   const qs = q.toString();
   const res = await fetch(
     `/api/market-data/daily/${encodeURIComponent(code)}${qs ? `?${qs}` : ""}`,
     { headers: { ...authHeaders() } },
   );
-  const data = await parseJson<MarketDaily>(res);
+  const data = normalizeMarketDaily(await parseJson<MarketDaily>(res));
   if (DAILY_CACHE_ENABLED) {
     _dailyCache.set(key, { at: now, data });
   }

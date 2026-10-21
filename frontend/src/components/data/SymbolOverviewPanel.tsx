@@ -24,6 +24,7 @@ import {
   yearlyRangesBack,
   type MarketDaily,
 } from "@/lib/marketDataApi";
+import { streamMarketHistory } from "@/lib/marketHistory";
 import {
   PERIOD_TABS,
   aggregateBars,
@@ -114,26 +115,14 @@ export function SymbolOverviewPanel({
     }
     const bypass = fresh;
 
+    let loadedDaily = fresh ? null : peekPersistedDaily(code);
     const applyMerged = (chunk: MarketDaily | null | undefined) => {
       if (!chunk?.bars?.length) return false;
-      let richer = false;
-      setDaily((prev) => {
-        const next = mergeMarketDaily(prev, chunk);
-        if (!next) return prev;
-        const n = next.bars.length;
-        const prevStart = prev?.bars?.[0]?.date || "";
-        const nextStart = next.bars[0]?.date || "";
-        if (
-          n > dailyBarsRef.current ||
-          (nextStart && (!prevStart || nextStart < prevStart))
-        ) {
-          dailyBarsRef.current = Math.max(dailyBarsRef.current, n);
-          richer = true;
-          return next;
-        }
-        return prev;
-      });
-      return richer;
+      // 在请求流程内累积，再提交状态；避免 React 重放 updater 时被可变 ref 丢弃新数据。
+      loadedDaily = mergeMarketDaily(loadedDaily, chunk);
+      dailyBarsRef.current = loadedDaily?.bars.length || 0;
+      setDaily(loadedDaily);
+      return true;
     };
 
     void (async () => {
@@ -160,54 +149,18 @@ export function SymbolOverviewPanel({
         await yieldPaint();
       }
 
-      // 2) 按自然年从近往远补；仅在「本年有数据」时预取下一年（避免空年后多打一年）
+      // 2) 按自然年从近往远补齐至库底；近年或中间空年都不能截断历史。
       const years = yearlyRangesBack({ earliestYear: 2005 });
-      let emptyStreak = 0;
-      let i = 0;
-      let inFlight =
-        years.length > 0
-          ? pull(years[0].start, years[0].end, 20_000, `日线 ${years[0].start.slice(0, 4)}`)
-          : Promise.resolve(null);
-
-      while (i < years.length) {
-        if (cancelled) return;
-        const chunk = await inFlight;
-        const nextRange = years[i + 1];
-
-        if (chunk?.bars?.length) {
-          emptyStreak = 0;
-          if (applyMerged(chunk)) {
-            setAwaitingFirst(false);
-            setEnriching(true);
-            setErr(null);
-            await yieldPaint();
-          }
-          // 有数据才预取更早一年
-          if (nextRange) {
-            inFlight = pull(
-              nextRange.start,
-              nextRange.end,
-              20_000,
-              `日线 ${nextRange.start.slice(0, 4)}`,
-            );
-          }
-        } else {
-          emptyStreak += 1;
-          // 从近往远：已有数据后再碰到空年，更早也不会有，立刻停（少打无意义 404/502）
-          if (dailyBarsRef.current > 0) break;
-          if (emptyStreak >= 2) break;
-          // 尚无任何日线：继续往更早年探（仍串行，不预取）
-          if (nextRange) {
-            inFlight = pull(
-              nextRange.start,
-              nextRange.end,
-              20_000,
-              `日线 ${nextRange.start.slice(0, 4)}`,
-            );
-          }
-        }
-        i += 1;
-        if (!nextRange) break;
+      for await (const chunk of streamMarketHistory(
+        years,
+        ({ start, end }) => pull(start, end, 20_000, `日线 ${start.slice(0, 4)}`),
+        () => cancelled,
+      )) {
+        applyMerged(chunk);
+        setAwaitingFirst(false);
+        setEnriching(true);
+        setErr(null);
+        await yieldPaint();
       }
 
       if (!cancelled) {

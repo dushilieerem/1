@@ -78,7 +78,7 @@ export function DataSearchResultsPage() {
       return;
     }
     let cancelled = false;
-    void fetchQuotesBatch(pageCodes, { concurrency: 4, lookbackDays: 45 }).then(
+    void fetchQuotesBatch(pageCodes, { concurrency: 4 }).then(
       (map) => {
         if (!cancelled) setQuotes(map);
       },

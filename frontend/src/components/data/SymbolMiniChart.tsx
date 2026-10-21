@@ -7,17 +7,13 @@ import {
   type Time,
 } from "lightweight-charts";
 import {
-  fetchMarketDaily,
-  panelLookbackStart,
-  type MarketBar,
+  fetchMarketPreviewDaily,
 } from "@/lib/marketDataApi";
 
 type Props = {
   symbol: string;
   /** 上涨用红系，下跌用绿系（A 股） */
   up?: boolean | null;
-  /** 若已知数据末日，可少打一轮试探请求 */
-  asOf?: string | null;
   className?: string;
   height?: number;
 };
@@ -44,42 +40,6 @@ function pickTone(up: boolean | null | undefined) {
   };
 }
 
-/** 近一年交易日（约 250 根），保证预览是完整一年再缩放进卡片 */
-async function loadOneYearBars(
-  symbol: string,
-  asOfHint?: string | null,
-): Promise<MarketBar[]> {
-  try {
-    let asOf = asOfHint || null;
-    if (!asOf) {
-      const tip = await fetchMarketDaily(symbol, { start: "2025-01-01" });
-      asOf =
-        tip.date_range?.end ||
-        (tip.bars.length ? tip.bars[tip.bars.length - 1].date : null);
-      // 明确无 bars：退市/无行情，勿再打全历史
-      if (!asOf && !(tip.bars?.length)) return [];
-    }
-    if (asOf) {
-      const start = panelLookbackStart(asOf, 370);
-      const near = await fetchMarketDaily(symbol, { start, end: asOf });
-      if (near.bars?.length) return near.bars;
-      return [];
-    }
-  } catch {
-    // fall through only on request failure
-  }
-  try {
-    const full = await fetchMarketDaily(symbol);
-    const bars = full.bars || [];
-    if (!bars.length) return [];
-    const end = bars[bars.length - 1].date;
-    const start = panelLookbackStart(end, 370);
-    return bars.filter((b) => b.date >= start);
-  } catch {
-    return [];
-  }
-}
-
 /** 把整段数据等比例缩进视口，左右/上下留白，避免贴边截断感 */
 function fitScaled(chart: IChartApi, pointCount: number) {
   const ts = chart.timeScale();
@@ -103,7 +63,6 @@ function fitScaled(chart: IChartApi, pointCount: number) {
 export function SymbolMiniChart({
   symbol,
   up = null,
-  asOf = null,
   className = "",
   height = 120,
 }: Props) {
@@ -116,7 +75,8 @@ export function SymbolMiniChart({
     let cancelled = false;
 
     void (async () => {
-      const bars = await loadOneYearBars(symbol, asOf);
+      const daily = await fetchMarketPreviewDaily(symbol).catch(() => null);
+      const bars = daily?.bars || [];
       if (cancelled || !hostRef.current) return;
 
       chartRef.current?.remove();
@@ -179,7 +139,7 @@ export function SymbolMiniChart({
       chartRef.current?.remove();
       chartRef.current = null;
     };
-  }, [symbol, up, asOf, height]);
+  }, [symbol, up, height]);
 
   return (
     <div

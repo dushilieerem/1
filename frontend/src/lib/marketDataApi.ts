@@ -1,6 +1,7 @@
 /** 行情只读：经本机 /api 转发；日线走本机 BFF 缓存，列表类薄转发。 */
 
-import { authHeaders } from "@/lib/auth";
+import { authHeaders } from "./auth.ts";
+import { streamMarketHistory } from "./marketHistory.ts";
 
 export type MarketBar = {
   date: string;
@@ -106,6 +107,9 @@ function ymd(d: Date): string {
 /** 会话内内存缓存：不落库，减少重复打 RE */
 const _symbolsCache: { at: number; list: MarketSymbol[] } = { at: 0, list: [] };
 const _dailyCache = new Map<string, { at: number; data: MarketDaily }>();
+const _previewCache = new Map<string, { at: number; data: MarketDaily | null }>();
+const _previewInFlight = new Map<string, Promise<MarketDaily | null>>();
+let _previewGeneration = 0;
 const SYMBOLS_TTL_MS = 30 * 60_000;
 /** 会话内短缓存：离开再回同一标的可秒开；?fresh=1 / bypassCache 仍直打 */
 const DAILY_CACHE_ENABLED = true;
@@ -116,8 +120,6 @@ const LS_DAILY_INDEX = "svq.mkt.daily.idx.v1";
 /** 超过此时间仍可用来首屏，但会后台刷新 */
 const LS_STALE_MS = 7 * 24 * 60 * 60_000;
 const LS_MAX_SYMBOLS = 12;
-/** RE 已发布日线的末日（本机「今天」可能比数据新） */
-let _panelAsOf: string | null = null;
 
 function dailyCacheKey(symbol: string, start?: string, end?: string): string {
   return `${symbol}|${start || ""}|${end || ""}`;
@@ -225,17 +227,6 @@ export function panelLookbackStart(asOf: string, lookbackDays = 45): string {
   if (Number.isNaN(d.getTime())) return recentStartDate(lookbackDays);
   d.setDate(d.getDate() - Math.max(5, lookbackDays));
   return ymdLocal(d);
-}
-
-async function resolvePanelAsOf(sampleSymbol: string): Promise<string> {
-  if (_panelAsOf) return _panelAsOf;
-  const daily = await fetchMarketDaily(sampleSymbol, { start: "2024-01-01" });
-  const end =
-    daily.date_range?.end ||
-    (daily.bars.length ? daily.bars[daily.bars.length - 1].date : null);
-  if (!end) throw new Error("无法解析市场数据末日");
-  _panelAsOf = end;
-  return end;
 }
 
 async function formatApiError(data: unknown, res: Response): Promise<string> {
@@ -424,6 +415,62 @@ export async function fetchMarketDaily(
 /** 清日线内存缓存（调试首屏渐进加载用） */
 export function clearMarketDailyCache() {
   _dailyCache.clear();
+  _previewCache.clear();
+  _previewInFlight.clear();
+  _previewGeneration++;
+}
+
+/**
+ * 搜索报价和缩略图共用的最近一年行情。
+ * 近年为空时逐年找到该证券最后有记录的年份，再按真实末日取一年窗口。
+ * 不读取空响应的 date_range.end，也不发起无日期边界的全历史请求。
+ */
+export async function fetchMarketPreviewDaily(symbol: string): Promise<MarketDaily | null> {
+  const code = symbol.trim();
+  if (!code) throw new Error("缺少股票代码");
+  const hit = _previewCache.get(code);
+  if (hit && Date.now() - hit.at < DAILY_TTL_MS) return hit.data;
+  const pending = _previewInFlight.get(code);
+  if (pending) return pending;
+
+  const generation = _previewGeneration;
+  const load = async (): Promise<MarketDaily | null> => {
+    let fetchError: unknown;
+    const pull = async (range: { start: string; end: string }) => {
+      try {
+        return await fetchMarketDaily(code, range);
+      } catch (error) {
+        fetchError = error;
+        return null;
+      }
+    };
+    const now = new Date();
+    const end = ymdLocal(now);
+    const recent = await pull({ start: panelLookbackStart(end, 370), end });
+    if (recent?.bars?.length) return recent;
+
+    for await (const latest of streamMarketHistory(
+      yearlyRangesBack({ earliestYear: 2005, from: now }),
+      pull,
+    )) {
+      const asOf = latest.bars[latest.bars.length - 1].date;
+      const window = await pull({ start: panelLookbackStart(asOf, 370), end: asOf });
+      return window?.bars?.length ? window : latest;
+    }
+    // 请求失败不能缓存成“确定没有历史行情”。
+    if (fetchError) throw fetchError;
+    return null;
+  };
+  const request = load().then((data) => {
+    if (generation === _previewGeneration) {
+      _previewCache.set(code, { at: Date.now(), data });
+    }
+    return data;
+  }).finally(() => {
+    if (_previewInFlight.get(code) === request) _previewInFlight.delete(code);
+  });
+  _previewInFlight.set(code, request);
+  return request;
 }
 
 /** 清浏览器持久日线（?fresh=1） */
@@ -486,44 +533,18 @@ export function quoteFromBars(
   };
 }
 
-/** 有限并发拉取多只近端行情；近端无数据时回退全量末日收盘价 */
+/** 有限并发拉取报价；每只证券按自己的实际数据末日解析历史窗口。 */
 export async function fetchQuotesBatch(
   symbols: string[],
-  opts?: { concurrency?: number; lookbackDays?: number },
+  opts?: { concurrency?: number },
 ): Promise<Record<string, SymbolQuote>> {
   const concurrency = Math.max(1, Math.min(12, opts?.concurrency ?? 8));
-  const lookbackDays = opts?.lookbackDays ?? 45;
   const out: Record<string, SymbolQuote> = {};
   if (!symbols.length) return out;
 
-  let start: string;
-  let end: string | undefined;
-  try {
-    const asOf = await resolvePanelAsOf(symbols[0] || "000001.SZ");
-    end = asOf;
-    start = panelLookbackStart(asOf, lookbackDays);
-  } catch {
-    start = "2025-01-01";
-    end = undefined;
-  }
-
   async function quoteOne(sym: string): Promise<SymbolQuote> {
     try {
-      const near = await fetchMarketDaily(sym, { start, end });
-      if (near.bars?.length) {
-        const tip =
-          near.date_range?.end || near.bars[near.bars.length - 1]?.date || null;
-        if (tip && (!_panelAsOf || tip > _panelAsOf)) _panelAsOf = tip;
-        return quoteFromBars(sym, near);
-      }
-      // 近端明确无 bars（退市/无行情）：勿再打全历史
-      return quoteFromBars(sym, near);
-    } catch {
-      // 近端请求失败才尝试全量末日
-    }
-    try {
-      const full = await fetchMarketDaily(sym);
-      return quoteFromBars(sym, full);
+      return quoteFromBars(sym, await fetchMarketPreviewDaily(sym));
     } catch {
       return quoteFromBars(sym, null);
     }

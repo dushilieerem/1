@@ -45,7 +45,9 @@ export function SymbolPreviewCard({ symbol, name, quote }: Props) {
 
       <div className="mt-2 flex flex-wrap items-baseline gap-2 px-4">
         {quote?.last == null ? (
-          <span className="text-sm font-medium text-slate-400">暂无行情</span>
+          <span className="text-sm font-medium text-slate-400">
+            {quote ? "暂无行情" : "行情加载中…"}
+          </span>
         ) : (
           <>
             <span className={`text-2xl font-bold tabular-nums ${tone}`}>
@@ -61,11 +63,14 @@ export function SymbolPreviewCard({ symbol, name, quote }: Props) {
         )}
       </div>
 
+      {quote?.asOf ? (
+        <p className="mt-1 px-4 text-xs text-slate-400">行情截至 {quote.asOf}</p>
+      ) : null}
+
       <div className="mt-3 border-t border-slate-100 bg-gradient-to-b from-slate-50/80 to-white px-3 pb-3 pt-3">
         <SymbolMiniChart
           symbol={symbol}
           up={up}
-          asOf={quote?.asOf || quote?.rangeEnd || null}
           height={112}
         />
       </div>

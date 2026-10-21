@@ -15,6 +15,7 @@ import {
   type Time,
 } from "lightweight-charts";
 import { fetchMarketDaily, mergeMarketDaily, peekPersistedDaily, yearlyRangesBack, type MarketBar, type MarketDaily } from "@/lib/marketDataApi";
+import { streamMarketHistory } from "@/lib/marketHistory";
 import {
   MA_DEFS,
   bollinger,
@@ -152,43 +153,14 @@ export function DataSymbolChartPage() {
         }
 
         const years = yearlyRangesBack({ earliestYear: 2005 });
-        let emptyStreak = 0;
-        let haveBars = Boolean(near?.bars?.length || hit?.bars?.length);
-        let inFlight =
-          years.length > 0
-            ? fetchMarketDaily(symbol, {
-                start: years[0].start,
-                end: years[0].end,
-              }).catch(() => null)
-            : Promise.resolve(null);
-
-        for (let i = 0; i < years.length; i++) {
-          if (cancelled) return;
-          const chunk = await inFlight;
-          const next = years[i + 1];
-          if (chunk?.bars?.length) {
-            emptyStreak = 0;
-            haveBars = true;
-            setDaily((prev) => mergeMarketDaily(prev, chunk) || prev);
-            setLoading(false);
-            // 有数据才预取更早一年，避免 2004 空了却已发出 2003
-            if (next) {
-              inFlight = fetchMarketDaily(symbol, {
-                start: next.start,
-                end: next.end,
-              }).catch(() => null);
-            }
-          } else {
-            emptyStreak += 1;
-            if (haveBars) break;
-            if (emptyStreak >= 2) break;
-            if (next) {
-              inFlight = fetchMarketDaily(symbol, {
-                start: next.start,
-                end: next.end,
-              }).catch(() => null);
-            }
-          }
+        for await (const chunk of streamMarketHistory(
+          years,
+          ({ start, end }) =>
+            fetchMarketDaily(symbol, { start, end }).catch(() => null),
+          () => cancelled,
+        )) {
+          setDaily((prev) => mergeMarketDaily(prev, chunk) || prev);
+          setLoading(false);
         }
 
         if (cancelled) return;

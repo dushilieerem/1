@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from app.deps import optional_user, require_user
 from services.core.backtest_params import validate_execution_timing
 from services.core.ai_factor_input import factor_prompt_error
+from services.core.ai_strategy_input import strategy_prompt_error
 from services.core.db import get_conn
 from services.core.env_config import env
 from services.core.re_http_gateway import forward_re, rewrite_run_poll_url
@@ -284,6 +285,9 @@ def ai_factor_generations(
 def ai_strategy_generations(
     body: dict[str, Any], _user: dict = Depends(require_user)
 ) -> JSONResponse:
+    error = strategy_prompt_error(body.get("prompt"))
+    if error:
+        return JSONResponse(status_code=422, content={"detail": error})
     status, headers, data = forward_re(
         "POST",
         "/api/ai/strategy-generations",

@@ -26,7 +26,7 @@ FEAT-xxx-功能名称/
 | [FEAT-025-免费数据源基本面与状态MVP](FEAT-025-免费数据源基本面与状态MVP/README.md) | 待批准 | BaoStock/CNINFO 补齐估值与状态 |
 | [FEAT-030-因子回测流程重构](FEAT-030-因子回测流程重构/README.md) | 开发中 | ResearchEngine 因子回测服务集成 |
 | [FEAT-031-iFinD采集项目拆分](FEAT-031-iFinD采集项目拆分/README.md) | 已完成 | 采集能力迁入独立 IFind 项目 |
-| [FEAT-032-日终模拟盘](FEAT-032-日终模拟盘/README.md) | 待批准 | 日频 VWAP 批量模拟与 ResearchEngine 与 SVQuant 的交接契约 |
+| [FEAT-032-日终模拟盘](FEAT-032-日终模拟盘/README.md) | 已实现 | 日频 VWAP 批量模拟与 ResearchEngine 与 SVQuant 的交接契约 |
 
 已废弃的 FEAT-001（QuantCore）归档于 [`99-历史归档/`](../99-历史归档/)。
 

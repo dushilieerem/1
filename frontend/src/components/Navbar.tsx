@@ -2,7 +2,13 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Bell, ChevronDown, LogOut, Menu, Search, Sparkles, X } from "lucide-react";
-import { FACTOR_NAV_ITEMS, DATA_NAV_ITEMS, HELP_NAV, STRATEGY_NAV_ITEMS } from "@/data/nav";
+import {
+  FACTOR_NAV_ITEMS,
+  DATA_NAV_ITEMS,
+  HELP_NAV,
+  PAPER_NAV,
+  STRATEGY_NAV_ITEMS,
+} from "@/data/nav";
 import {
   type AuthUser,
   fetchMe,
@@ -306,6 +312,14 @@ export function Navbar() {
       >
         资讯
       </NavLink>
+      <NavLink
+        to={user ? PAPER_NAV.to : loginWithNext(PAPER_NAV.to)}
+        className={({ isActive }) =>
+          navLinkClass(Boolean(user) && (isActive || pathname.startsWith("/paper")))
+        }
+      >
+        {PAPER_NAV.label}
+      </NavLink>
       {/* 未登录也展示数据/策略/因子菜单；点子项再跳登录 */}
       <NavDropdown
         label="数据"
@@ -478,6 +492,18 @@ export function Navbar() {
                       }
                     >
                       资讯
+                    </NavLink>
+                    <NavLink
+                      to={user ? PAPER_NAV.to : loginWithNext(PAPER_NAV.to)}
+                      onClick={closeMobile}
+                      className={({ isActive }) =>
+                        drawerLinkClass(
+                          Boolean(user) &&
+                            (isActive || pathname.startsWith("/paper")),
+                        )
+                      }
+                    >
+                      {PAPER_NAV.label}
                     </NavLink>
                     <NavLink
                       to={user ? "/ai" : loginWithNext("/ai")}

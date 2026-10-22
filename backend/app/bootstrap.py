@@ -134,6 +134,13 @@ def bootstrap_schemas() -> None:
         ensure_strategy_schema()
         ensure_strategy_plaza_schema()
         try:
+            from services.paper.paper_store import ensure_paper_schema
+
+            ensure_paper_schema()
+            print("  paper_accounts / paper_settlements 就绪")
+        except Exception as exc:
+            print(f"  paper schema 初始化跳过: {exc}")
+        try:
             from services.factor.re_factor_catalog import ensure_re_factor_catalog_schema
 
             ensure_re_factor_catalog_schema()
@@ -166,6 +173,13 @@ def bootstrap_schemas() -> None:
         start_dashboard_daily_scheduler()
     except Exception as exc:
         print(f"  panel daily scheduler 跳过: {exc}")
+
+    try:
+        from services.paper.scheduler import start_paper_settlement_scheduler
+
+        start_paper_settlement_scheduler()
+    except Exception as exc:
+        print(f"  paper trading scheduler 跳过: {exc}")
 
     try:
         from services.factor.dashboard_store import read_job

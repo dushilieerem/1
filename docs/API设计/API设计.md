@@ -1,7 +1,7 @@
 # SVQuant API 设计
 
 > 文档版本：v2.0（2026-09-23）。全量接口总览 + 核心接口详细定义。
-> 接口清单来自对 `backend/app/routers/*.py` 与 `KnowledgeHub/backend/knowledge_hub/` 的路由声明扫描（141 处 `@router` 声明，140 个端点函数）；未展开接口以运行时 OpenAPI 为准。
+> 接口清单来自对 `backend/app/routers/*.py` 与 `KnowledgeHub/backend/knowledge_hub/` 的路由声明扫描（156 处 `@router` 声明，155 个端点函数）；未展开接口以运行时 OpenAPI 为准。
 > 关联文档：[PRD](../需求文档/PRD.md)、[系统架构](../架构文档/系统架构.md)、[数据库设计](../数据库设计/数据库设计.md)、[因子面板-RE接口契约](因子面板-RE接口契约.md)、[模块详细设计](../模块详细设计/SVQuant产品层/模块设计.md)。
 
 ---
@@ -76,7 +76,7 @@
 ## 3. 全量接口总览
 
 > 扫描命令：`rg -n "@router\.(get|post|put|delete|patch)\(" backend/app/routers KnowledgeHub/backend`
-> 结果：**141 处声明 / 140 个端点**（`/api/kh/docs` 一个函数挂两个路径）。下表覆盖全部端点；`详细`列标注本文展开的 37 个核心接口，其余以运行时 OpenAPI 为准。
+> 结果：**156 处声明 / 155 个端点**（`/api/kh/docs` 一个函数挂两个路径）。下表覆盖全部端点；`详细`列标注本文展开的 37 个核心接口，其余以运行时 OpenAPI 为准。
 
 ### 3.1 健康检查（health.py，1 个）
 
@@ -278,6 +278,32 @@
 | ANY | `/api/kh/{path:path}` | catch-all → `handle_kh_get/post/put/delete` | 见 §8 | — | 视子接口 | 索引（引用 OpenAPI） |
 
 > KH 子接口（collections/documents/ingest/search/ask/chats/conversations/messages/files/model-providers/default-models/progress/chunks/attachment 等 40 余条）**不在本文手写**，一律引用 `GET /api/kh/openapi.json`，见 §8。
+
+### 3.12b 模拟盘（paper.py，15 个）
+
+| 方法 | 路径 | 功能 | 权限 | 副作用 |
+|---|---|---|---|---|
+| GET | `/api/paper/accounts` | 模拟账户列表 | 登录 | 无 |
+| POST | `/api/paper/accounts` | 创建账户（快照策略项目） | 登录 | ✓ |
+| GET | `/api/paper/accounts/{id}` | 账户详情 + 持仓 | 登录+归属 | 无 |
+| POST | `/api/paper/accounts/{id}/status` | 重命名/暂停/恢复/关闭 | 登录+归属 | ✓ |
+| DELETE | `/api/paper/accounts/{id}` | 软关闭账户 | 登录+归属 | ✓ |
+| GET | `/api/paper/accounts/{id}/positions` | 当前持仓 | 登录+归属 | 无 |
+| GET | `/api/paper/accounts/{id}/orders` | 订单（可按日期过滤） | 登录+归属 | 无 |
+| GET | `/api/paper/accounts/{id}/fills` | 成交（可按日期过滤） | 登录+归属 | 无 |
+| GET | `/api/paper/accounts/{id}/equity` | 每日权益曲线 | 登录+归属 | 无 |
+| GET | `/api/paper/accounts/{id}/settlements` | 结算记录 | 登录+归属 | 无 |
+| GET | `/api/paper/accounts/{id}/settlement-attempts` | 结算尝试/失败原因 | 登录+归属 | 无 |
+| POST | `/api/paper/accounts/{id}/settle` | 手动结算/补结算 | 登录+归属 | ✓ |
+| POST | `/api/paper/accounts/{id}/replay` | 回滚并重算最新结算 | 登录+归属 | ✓ |
+| POST | `/api/paper/accounts/{id}/sync-strategy` | 同步策略项目快照 | 登录+归属 | ✓ |
+| GET | `/api/paper/status` | Feature Flag、RE 数据就绪与调度状态 | 登录 | 无 |
+
+结算内部接口在 ResearchEngine，仅内网调用：
+`GET /api/internal/paper-trading/status`、`GET /api/internal/paper-trading/trading-days`、
+`POST /api/internal/paper-trading/settle`。
+
+---
 
 ### 3.13 管理与审计（admin_logs.py，2 个）
 
@@ -1088,7 +1114,7 @@ data: [DONE]                      ← 终止帧（正常结束与异常结束都
 
 | 项 | 数值 |
 |---|---|
-| 实际扫描路由声明 | **141 处**（`rg` 扫描 `backend/app/routers` + KnowledgeHub；`/api/kh/docs` 一函数两路径） |
+| 实际扫描路由声明 | **156 处**（`rg` 扫描 `backend/app/routers` + KnowledgeHub；`/api/kh/docs` 一函数两路径） |
 | 去重后端点数 | **140 个** |
 | 文档总览覆盖 | **140 个**（§3 全量，含 KH catch-all 1 条 + 显式 3 条） |
 | 详细展开核心接口 | **37 个**（§9，含 KH 入口 3 个） |

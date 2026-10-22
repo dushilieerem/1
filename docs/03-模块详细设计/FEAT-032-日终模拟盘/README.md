@@ -1,6 +1,6 @@
 # FEAT-032：日终模拟盘
 
-- 状态：待批准 / 设计中
+- 状态：已实现（2026-10-22 首期）
 - 所属 Initiative：[INIT-002：交易执行](../../01-需求文档/项目倡议/INIT-002-交易执行/README.md)
 - 所属能力：实盘/模拟盘 / 交易执行
 - 优先级：P1
@@ -257,7 +257,56 @@ ResearchEngine 不保存响应。SVQuant 必须在事务中保存结算响应，
 | M3 | SVQuant | 账户账本、日终调度、幂等提交和用户接口 |
 | M4 | 双方 | 连续多日联调、黄金样例、灰度和回滚演练 |
 
-## 7. 决策记录
+## 7. 首期实现记录（2026-10-22）
+
+### 7.1 已落地接口
+
+ResearchEngine（内部，内网信任边界）：
+
+- `GET /api/internal/paper-trading/status?date=YYYY-MM-DD`
+- `GET /api/internal/paper-trading/trading-days?start=&end=`
+- `POST /api/internal/paper-trading/settle`
+
+SVQuant（用户登录 + 归属）：
+
+- `GET/POST /api/paper/accounts`
+- `GET /api/paper/accounts/{id}`、`POST /api/paper/accounts/{id}/status`、`DELETE /api/paper/accounts/{id}`
+- `GET /api/paper/accounts/{id}/positions|orders|fills|equity|settlements|settlement-attempts`
+- `POST /api/paper/accounts/{id}/settle|replay|sync-strategy`
+- `GET /api/paper/status`
+
+### 7.2 已落地存储
+
+`paper_accounts`、`paper_positions`、`paper_settlements`、`paper_orders`、
+`paper_fills`、`paper_equity_daily`、`paper_settlement_attempts`。
+
+同一账户同一交易日只允许一条 `applied` 结算（部分唯一索引）。失败尝试只写
+`paper_settlement_attempts`，不推进 `next_settlement_date`；可重试错误按退避
+重试，代码/状态哈希不匹配等错误把账户置为 `blocked`。
+
+### 7.3 首期口径与限制
+
+- 成交价：D 日 `amount / volume`；`volume<=0`、缺失或非有限值返回 `NO_VWAP`
+  并拒单，不回退 close。
+- 估值：D 日未复权 close；缺失时回退最近有效未复权 close 并写
+  `MARK_PRICE_FALLBACK`。
+- 信号：事件策略 `context.data` 最大可见 D-1；向量化策略只把 `<=D-1` 的
+  面板交给 `generate_signals()`。
+- 状态：`context.state` 使用带类型标签的 JSON（date/datetime/tuple/NaN/numpy
+  标量），恢复顺序为先 `initialize` 再覆盖持久化值。
+- 账户创建时快照策略源码、代码哈希、执行模式、股票池和费用；项目后续修改
+  不会自动影响账户，需显式 `sync-strategy`（配置修订 +1）。
+- 不模拟滑点（`assumptions.slippage = not_modeled`）、部分成交、多空、融券、
+  保证金和公司行为；结算日不做退市强平，持仓只能由策略主动卖出。
+- 自动调度默认开启（`SVQUANT_PAPER_TRADING_ENABLED=1`），按
+  `SVQUANT_PAPER_POLL_SEC` 轮询数据就绪；关闭后停止自动结算，已有数据保留。
+
+### 7.4 回滚
+
+关闭 Feature Flag 即可停止调度和手动结算；表结构和已结算账本保留，不影响既有
+策略回测。最新一笔结算可通过 `POST /api/paper/accounts/{id}/replay` 回滚重算。
+
+## 8. 决策记录
 
 - 日终结算，不做实时模拟。
 - D-1 生成信号，D 日 VWAP 成交。

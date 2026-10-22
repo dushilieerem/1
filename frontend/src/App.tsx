@@ -54,6 +54,16 @@ const StrategyPlazaDetailPage = lazy(() =>
     default: m.StrategyPlazaDetailPage,
   })),
 );
+const PaperTradingListPage = lazy(() =>
+  import("./pages/PaperTradingListPage").then((m) => ({
+    default: m.PaperTradingListPage,
+  })),
+);
+const PaperAccountPage = lazy(() =>
+  import("./pages/PaperAccountPage").then((m) => ({
+    default: m.PaperAccountPage,
+  })),
+);
 const DataKlinePanelPage = lazy(() =>
   import("./pages/DataKlinePanelPage").then((m) => ({ default: m.DataKlinePanelPage })),
 );
@@ -225,6 +235,9 @@ export default function App() {
             path="/data/symbol/:code"
             element={<Authed><DataSymbolOverviewPage /></Authed>}
           />
+
+          <Route path="/paper" element={<Authed><PaperTradingListPage /></Authed>} />
+          <Route path="/paper/:accountId" element={<Authed><PaperAccountPage /></Authed>} />
 
           <Route path="/strategy" element={<Navigate to="/strategy/plaza" replace />} />
           <Route path="/strategy/plaza" element={<StrategyPlazaPage />} />

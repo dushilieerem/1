@@ -8,6 +8,7 @@
     "test:community": "node --import tsx --test tests/commentThreads.test.mjs tests/communityLimits.test.mjs tests/communityForms.test.tsx",
     "test:backtest-filters": "node --import tsx --test tests/backtestFilters.test.tsx",
     "test:comments": "node --test tests/commentThreads.test.mjs",
+    "test:paper": "node --import tsx --test tests/paperTrading.test.ts",
     "dev": "vite --host --port 9530 --strictPort",
     "dev:http": "vite --host --port 9530 --strictPort",
     "dev:https": "set VITE_DEV_HTTPS=1&& set VITE_DEV_PORT=9530&& vite --host --port 9530 --strictPort",

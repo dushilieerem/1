@@ -63,6 +63,9 @@ export const DATA_NAV_ITEMS = [
 /** 顶栏「帮助」：文档 / API 说明入口（原数据下拉里的 API 占位迁此） */
 export const HELP_NAV = { to: "/help", label: "帮助" } as const;
 
+/** 模拟盘：日终 VWAP 结算账户 */
+export const PAPER_NAV = { to: "/paper", label: "模拟盘" } as const;
+
 export const STRATEGY_NAV_ITEMS = [
   { to: "/strategy/plaza", label: "策略广场" },
   { to: "/strategy/library", label: "策略库" },

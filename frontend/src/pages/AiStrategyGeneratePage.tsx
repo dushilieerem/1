@@ -17,6 +17,8 @@ import {
   ygGenerateStrategyDraft,
   type AiStrategyDraft,
 } from "@/lib/aiStrategyApi";
+import { strategyPromptError, strategyRejectionMessage } from "@/lib/aiStrategyFeedback";
+import { AiStrategyExplanation } from "@/components/AiStrategyExplanation";
 import {
   createStrategyProjectFromCode,
   openStrategyInNewTab,
@@ -36,6 +38,8 @@ type HistoryItem = {
   strategy_name: string;
   strategy_code: string;
   description: string;
+  assumptions?: string[];
+  warnings?: string[];
   pinned?: boolean;
 };
 
@@ -100,6 +104,7 @@ export function AiStrategyGeneratePage() {
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [draft, setDraft] = useState<AiStrategyDraft | null>(null);
   const [code, setCode] = useState("");
   const [validated, setValidated] = useState(false);
@@ -190,8 +195,10 @@ export function AiStrategyGeneratePage() {
 
   const onGenerate = useCallback(async () => {
     const text = prompt.trim();
-    if (!text) {
-      setErr("请先写研究假设");
+    const inputError = strategyPromptError(text);
+    if (inputError) {
+      setValidationErrors([]);
+      setErr(inputError);
       return;
     }
     abortRef.current?.abort();
@@ -199,6 +206,9 @@ export function AiStrategyGeneratePage() {
     abortRef.current = ac;
     setBusy(true);
     setErr(null);
+    setValidationErrors([]);
+    setDraft(null);
+    setCode("");
     try {
       const data = await ygGenerateStrategyDraft(
         {
@@ -208,16 +218,13 @@ export function AiStrategyGeneratePage() {
         },
         ac.signal,
       );
-      if (data.status !== "ready" || !data.strategy) {
+      if (data.status !== "ready" || data.validation?.status !== "passed" || !data.strategy?.strategy_code?.trim()) {
         const errs = data.validation?.errors || [];
         setDraft(null);
         setCode("");
         setValidated(false);
-        setErr(
-          errs.length
-            ? `未通过校验：${errs.join("；")}`
-            : "生成失败，请换个说法再试",
-        );
+        setValidationErrors(errs);
+        setErr(strategyRejectionMessage(errs));
         return;
       }
       const id = data.generation_id || newIdempotencyKey();
@@ -233,6 +240,8 @@ export function AiStrategyGeneratePage() {
         strategy_name: data.strategy.strategy_name,
         strategy_code: data.strategy.strategy_code,
         description: data.strategy.description || "",
+        assumptions: data.strategy.assumptions || [],
+        warnings: data.strategy.warnings || [],
       });
       setHistoryOpen(false);
     } catch (e) {
@@ -264,8 +273,8 @@ export function AiStrategyGeneratePage() {
       strategy_code: h.strategy_code,
       description: h.description,
       used_fields: [],
-      assumptions: [],
-      warnings: [],
+      assumptions: h.assumptions || [],
+      warnings: h.warnings || [],
     });
     setErr(null);
     setHistoryOpen(false);
@@ -580,7 +589,10 @@ export function AiStrategyGeneratePage() {
               <p className="text-xs text-slate-400">Ctrl+Enter 生成</p>
             </div>
             {err ? (
-              <p className="mt-2 text-sm text-rose-600">{err}</p>
+              <div role="alert" className="mt-2 text-sm text-rose-600">
+                <p>{err}</p>
+                {validationErrors.length > 0 && <details className="mt-2"><summary>错误详情</summary><p className="whitespace-pre-wrap">{validationErrors.join("；")}</p></details>}
+              </div>
             ) : null}
           </div>
         </section>
@@ -622,19 +634,7 @@ export function AiStrategyGeneratePage() {
               </button>
             </div>
           </div>
-          {draft?.description ||
-          (draft?.warnings && draft.warnings.length > 0) ? (
-            <div className="space-y-1 border-b border-indigo-50 px-4 py-2 text-xs text-slate-500">
-              {draft.description ? (
-                <p className="line-clamp-2">{draft.description}</p>
-              ) : null}
-              {draft.warnings?.length ? (
-                <p className="text-amber-700">
-                  提示：{draft.warnings.join("；")}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
+          {!busy && draft ? <AiStrategyExplanation draft={draft} /> : null}
           <div className="min-h-0 flex-1 p-4">
             {busy ? (
               <div className="flex h-full min-h-[300px] items-center justify-center rounded-xl border border-slate-200">
@@ -686,8 +686,9 @@ export function AiStrategyGeneratePage() {
             ) : null}
 
             {err && !busy ? (
-              <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">
-                {err}
+              <div role="alert" className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">
+                <p>{err}</p>
+                {validationErrors.length > 0 && <details className="mt-2"><summary>错误详情</summary><p className="whitespace-pre-wrap">{validationErrors.join("；")}</p></details>}
               </div>
             ) : null}
 
@@ -718,11 +719,7 @@ export function AiStrategyGeneratePage() {
                     </button>
                   </div>
                 </div>
-                {draft?.description ? (
-                  <p className="border-b border-slate-200/60 px-3 py-2 text-xs leading-5 text-slate-500">
-                    {draft.description}
-                  </p>
-                ) : null}
+                {!busy && draft ? <AiStrategyExplanation draft={draft} /> : null}
                 <div className="p-2">
                   <FactorCodeEditor
                     value={code}

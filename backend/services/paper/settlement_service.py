@@ -172,6 +172,18 @@ def settle_account_day(
             store.advance_next_settlement_date(user_id, account_id, next_date)
             return {"settled": False, "skipped": "not_trading_day", "status": status}
         if status_value != "ready":
+            # 目标日晚于行情已就绪日 = 该交易日数据尚未发布，属于正常等待，
+            # 不是账户错误。若在此写 last_error，调度器结算完最新一日后紧接着
+            # 轮询下一日，会把健康账户每天都标成 DATA_NOT_READY。
+            latest_ready_raw = status.get("latest_ready_trading_day")
+            pending_release = False
+            if status_value == "data_not_ready" and latest_ready_raw:
+                try:
+                    pending_release = date.fromisoformat(str(latest_ready_raw)) < target
+                except ValueError:
+                    pending_release = False
+            if pending_release:
+                return {"settled": False, "skipped": "data_not_ready", "status": status}
             store.mark_account_error(
                 user_id,
                 account_id,
@@ -331,6 +343,16 @@ def run_scheduler_tick(*, reason: str = "scheduled", limit: int = 50) -> dict[st
         user_id = int(account["user_id"])
         account_id = int(account["id"])
         for _ in range(max_catchup_days()):
+            row = store.get_account_row(user_id, account_id)
+            next_raw = row.get("next_settlement_date")
+            next_date = (
+                next_raw if isinstance(next_raw, date) else date.fromisoformat(str(next_raw))
+            )
+            if next_date > latest:
+                # 已补到最新可用交易日，下一日的行情还没发布，停止推进。
+                # 少了这个守卫，结算成功后同一次 tick 会立刻用未发布日问 RE，
+                # 把账户误标为 DATA_NOT_READY。
+                break
             try:
                 result = settle_account_day(
                     user_id, account_id, trigger=f"scheduler:{reason}"

@@ -108,7 +108,7 @@ class MultiFactorSampleStrategy(FactorPortfolioStrategy):
     @factor
     def small_size(self):
         """小市值：负总市值。"""
-        return -self.total_mv
+        return -self.current_mv
 
     @factor
     def ep_ttm(self):

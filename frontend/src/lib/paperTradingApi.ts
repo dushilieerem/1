@@ -173,6 +173,43 @@ export type PaperSettleResult = {
   status?: PaperReStatus;
 };
 
+/** 模拟盘错误码 → 面向用户的说明。未收录的码回退为 `code: message`。 */
+const PAPER_ERROR_TEXT: Record<string, string> = {
+  DATA_NOT_READY: "行情数据尚未就绪，数据发布后会自动重试",
+  STRATEGY_CODE_INVALID: "策略代码执行失败，请修正后同步策略再重试",
+  CODE_HASH_MISMATCH: "策略代码与账户快照不一致，请同步策略后重试",
+  STRATEGY_STATE_HASH_MISMATCH: "策略状态与账户记录不一致，请回放账户后重试",
+  STRATEGY_STATE_VERSION_MISMATCH: "策略状态版本不匹配，请回放账户后重试",
+  STRATEGY_STATE_UNSERIALIZABLE: "策略状态无法序列化，请检查策略中保存的状态",
+  STRATEGY_STATE_TOO_LARGE: "策略状态超出大小上限，请精简策略状态",
+  TARGET_WEIGHT_EXCEEDS_ONE: "策略目标权重合计超过 100%",
+  UNSUPPORTED_PORTFOLIO: "策略组合方式暂不支持结算",
+  SETTLEMENT_DATE_MISMATCH: "结算服务返回的结算日与请求不一致",
+  DATA_RELEASE_MISMATCH: "行情版本已更新，稍后会自动重试",
+  NOT_A_TRADING_DAY: "非交易日",
+  NO_VWAP: "行情缺少成交额或成交量，无法按 VWAP 成交",
+  RE_TIMEOUT: "结算服务超时，稍后会自动重试",
+  RE_UNAVAILABLE: "结算服务不可用，稍后会自动重试",
+  RE_BUSY: "结算服务繁忙，稍后会自动重试",
+  SETTLE_BUSY: "结算服务并发已满，稍后会自动重试",
+  HTTP_500: "结算服务内部错误，请查看最近结算尝试或联系管理员",
+};
+
+export function paperErrorLabel(code?: string | null): string | null {
+  return PAPER_ERROR_TEXT[(code || "").trim()] ?? null;
+}
+
+export function paperErrorText(
+  code?: string | null,
+  message?: string | null,
+): string {
+  const label = paperErrorLabel(code);
+  if (label) return label;
+  const key = (code || "").trim();
+  if (key && message) return `${key}: ${message}`;
+  return message || key || "未知错误";
+}
+
 async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
   assertAuthConsistency();
   const res = await fetch(url, {

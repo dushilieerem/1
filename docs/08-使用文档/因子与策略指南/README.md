@@ -1,11 +1,11 @@
 # 因子与策略指南
 
-本指南供需要在 SVQuant 中查看或编写因子/策略的用户和研究开发者使用。当前计算接口由 ResearchEngine 提供；指南描述 SVQuant 暴露的集成边界和编写约定，不代表 RE 内部实现。
+本指南供在 SVQuant 中编写因子、策略以及使用模拟盘的用户查阅。
 
 | 文档 | 内容 |
 |---|---|
-| [因子编写规范](01-factor-writing.md) | 因子定义、面板字段与基本注意事项 |
-| [向量化策略编写规范](02-vectorized-strategy-writing.md) | 向量化策略接口与限制 |
-| [事件策略编写规范](03-event-strategy-writing.md) | 日频事件策略、上下文和调度约定 |
+| [因子编写规范](01-factor-writing.md) | 因子定义、可用字段与编写注意事项 |
+| [向量化策略编写规范](02-vectorized-strategy-writing.md) | 横截面选股、目标权重与调仓规则 |
+| [事件策略编写规范](03-event-strategy-writing.md) | 日频事件策略、上下文、调度和成交规则 |
 | [示例与常见问题](04-examples-and-faq.md) | 因子操作示例及常见疑问 |
-| [前端因子库映射规范](05-frontend-factor-library.md) | 因子目录在 SVQuant 前端的映射约定 |
+| [模拟盘使用说明](05-paper-trading.md) | 创建账户、自动结算、页面操作与常见提示 |

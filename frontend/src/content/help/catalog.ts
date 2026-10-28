@@ -4,7 +4,7 @@ export type HelpDocId =
   | "vectorized-strategy"
   | "event-strategy"
   | "examples-faq"
-  | "frontend-factor-library";
+  | "paper-trading";
 
 export type HelpDocMeta = {
   id: HelpDocId;
@@ -40,10 +40,10 @@ export const HELP_DOCS: HelpDocMeta[] = [
     file: "04-examples-and-faq.md",
   },
   {
-    id: "frontend-factor-library",
-    title: "前端因子库映射",
-    group: "平台与开发",
-    file: "05-frontend-factor-library.md",
+    id: "paper-trading",
+    title: "模拟盘使用说明",
+    group: "功能使用",
+    file: "05-paper-trading.md",
   },
 ];
 

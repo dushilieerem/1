@@ -2,11 +2,10 @@
 
 > 关联：[因子与策略指南目录](README.md)
 
-## 1. 创建并回测因子
+## 1. 创建并运行一个因子
 
-1. 在前端创建因子库，例如“动量因子”。
-2. 新建 `momentum_5d` 因子。
-3. 填写：
+1. 打开「因子 → 因子库」，新建因子库，例如“动量因子”。
+2. 新建因子 `momentum_5d`，填写：
 
 ```python
 def momentum_5d(self):
@@ -14,45 +13,31 @@ def momentum_5d(self):
     return self.close.pct_change(5)
 ```
 
-4. 调用因子回测 API：
-
-```python
-import requests
-
-response = requests.post("http://<svquant-api>/api/backtest/factor", json={
-    "factor_code": """def momentum_5d(self):
-    return self.close.pct_change(5)
-""",
-    "factor_name": "momentum_5d",
-    "universe": "CSI500",
-    "portfolio_type": "long_only",
-    "rebalance_days": 20,
-    "groups": 5,
-    "benchmark": "CSI300",
-})
-result = response.json()
-if result["error"]:
-    raise RuntimeError(result["error"])
-```
+3. 保存后打开「因子 → 检测报告」，选择该因子、股票池、回测区间和检测深度，点击开始运行。
+4. 页面会显示运行进度；完成后可以查看分层收益、IC 等结果。
 
 ## 2. 常见问题
 
 ### （1）因子值需要手动处理 NaN 吗？
 
-通常不需要。滚动窗口前的 NaN 会由系统在后续分析中处理；不要用未来值填补。
+通常不需要。滚动窗口前产生的 NaN 会由系统在后续分析中处理；不要用未来值填补。
 
 ### （2）一个因子库可以有多个因子吗？
 
 可以。每个因子是同一库文件中的一个方法。
 
-### （3）策略回测返回 HTTP 200 是否代表成功？
+### （3）运行失败怎么办？
 
-不一定。因子或策略的业务错误会写入响应 `error` 字段；只有 `error: null` 才代表成功。
+页面会显示失败原因。语法错误按提示修改即可；提示“字段不存在”说明用了当前面板没有的字段，请对照[因子编写规范](01-factor-writing.md)第 3 节改用可用字段，例如市值用 `current_mv` 而不是 `total_mv`。
 
-### （4）事件策略如何调用 `/api/backtest/strategy`？
+### （4）事件策略和向量化策略怎么选？
 
-事件策略使用 `initialize(context)`，请求中设置 `engine_mode: "event"`；向量化策略使用 `generate_signals()` 并设置 `engine_mode: "vectorized"`。两类请求都经过 SVQuant 网关到 ResearchEngine 执行。
+在策略项目的执行模式里选择。需要止损、持仓状态、T+1 和涨跌停等逐笔规则时选“事件”；横截面选股、定期调仓选“向量化”。写法分别见[向量化策略编写规范](02-vectorized-strategy-writing.md)和[事件策略编写规范](03-event-strategy-writing.md)。
 
 ### （5）我能直接粘贴聚宽策略吗？
 
 不能。SVQuant 不提供 `jqdata`、全局 `g` 或 `run_daily` 兼容层；应按[事件策略规范](03-event-strategy-writing.md)迁移到 `context` 接口。
+
+### （6）模拟盘为什么一直提示“行情数据尚未就绪”？
+
+目标交易日的数据还没发布。数据通常在收盘后发布，发布后系统会自动补结算，不需要手工处理。详见[模拟盘使用说明](05-paper-trading.md)。

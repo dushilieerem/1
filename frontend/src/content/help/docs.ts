@@ -3,14 +3,14 @@ import factorWriting from "../../../../docs/08-使用文档/因子与策略指�
 import vectorizedStrategy from "../../../../docs/08-使用文档/因子与策略指南/02-vectorized-strategy-writing.md?raw";
 import eventStrategy from "../../../../docs/08-使用文档/因子与策略指南/03-event-strategy-writing.md?raw";
 import examplesFaq from "../../../../docs/08-使用文档/因子与策略指南/04-examples-and-faq.md?raw";
-import frontendFactorLib from "../../../../docs/08-使用文档/因子与策略指南/05-frontend-factor-library.md?raw";
+import paperTrading from "../../../../docs/08-使用文档/因子与策略指南/05-paper-trading.md?raw";
 
 const BODY: Record<HelpDocId, string> = {
   "factor-writing": factorWriting,
   "vectorized-strategy": vectorizedStrategy,
   "event-strategy": eventStrategy,
   "examples-faq": examplesFaq,
-  "frontend-factor-library": frontendFactorLib,
+  "paper-trading": paperTrading,
 };
 
 /** 去掉指向仓外相对路径的链接，避免帮助页 404 */

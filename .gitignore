@@ -63,3 +63,6 @@ _tmp_*
 _notes/
 .claude/
 .codex/
+
+# 前端/端到端测试运行产物（每次运行都会变）
+test-results/

@@ -11,6 +11,8 @@ import {
   listPaperOrders,
   listPaperPositions,
   listPaperSettlements,
+  paperErrorLabel,
+  paperErrorText,
   replayPaperAccount,
   settlePaperAccount,
   syncPaperStrategy,
@@ -323,7 +325,7 @@ export function PaperAccountPage() {
           ) : null}
           {account.lastErrorMessage ? (
             <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              {account.lastErrorCode}: {account.lastErrorMessage}
+              {paperErrorText(account.lastErrorCode, account.lastErrorMessage)}
               {account.nextRetryAt ? ` · 下次重试 ${dateTime(account.nextRetryAt)}` : ""}
             </p>
           ) : null}
@@ -434,9 +436,19 @@ export function PaperAccountPage() {
                       {latestAttempt.settlementDate} · {latestAttempt.status}
                     </p>
                     {latestAttempt.errorCode ? (
-                      <p className="text-rose-600">
-                        {latestAttempt.errorCode}: {latestAttempt.errorMessage}
-                      </p>
+                      <>
+                        <p className="text-rose-600">
+                          {paperErrorText(
+                            latestAttempt.errorCode,
+                            latestAttempt.errorMessage,
+                          )}
+                        </p>
+                        {paperErrorLabel(latestAttempt.errorCode) ? (
+                          <p className="text-slate-400">
+                            {latestAttempt.errorCode}: {latestAttempt.errorMessage}
+                          </p>
+                        ) : null}
+                      </>
                     ) : null}
                     <p className="text-slate-400">
                       {dateTime(latestAttempt.startedAt)}

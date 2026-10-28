@@ -9,7 +9,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from app.routers import paper as paper_router
-from services.paper import re_client
+from services.paper import re_client, settlement_service
 from services.paper.paper_store import (
     canonical_code_hash,
     infer_engine_mode,
@@ -158,6 +158,56 @@ class RouterErrorMappingTest(unittest.TestCase):
                 paper_router.paper_settle(1, {}, uid=1)
         self.assertEqual(ctx.exception.status_code, 422)
         self.assertEqual(ctx.exception.detail["code"], "UNSUPPORTED_PORTFOLIO")
+
+
+class PendingReleaseTest(unittest.TestCase):
+    """行情尚未发布的下一个交易日不算账户错误。"""
+
+    def _settle(self, status: dict):
+        account = {"status": "active", "next_settlement_date": date(2026, 10, 28)}
+        with patch.object(settlement_service.store, "get_account_row", return_value=account), \
+            patch.object(settlement_service.store, "find_applied_settlement", return_value=None), \
+            patch.object(settlement_service.store, "claim_settlement_lease", return_value=True), \
+            patch.object(settlement_service.store, "release_settlement_lease"), \
+            patch.object(settlement_service.store, "mark_account_error") as mark, \
+            patch.object(settlement_service, "fetch_status", return_value=status):
+            result = settlement_service.settle_account_day(1, 2, trigger="test")
+        return result, mark
+
+    def test_unpublished_date_does_not_mark_error(self):
+        result, mark = self._settle(
+            {"status": "data_not_ready", "latest_ready_trading_day": "2026-10-27"}
+        )
+        self.assertEqual(result["skipped"], "data_not_ready")
+        mark.assert_not_called()
+
+    def test_missing_fields_on_ready_day_still_marks_error(self):
+        result, mark = self._settle(
+            {"status": "data_not_ready", "latest_ready_trading_day": "2026-10-28"}
+        )
+        self.assertEqual(result["skipped"], "data_not_ready")
+        mark.assert_called_once()
+
+
+class SchedulerCatchupGuardTest(unittest.TestCase):
+    """调度器补结算到最新可用交易日后必须停下，不能拿未发布日去问 RE。"""
+
+    def test_stops_when_next_date_exceeds_latest_ready(self):
+        account = {"user_id": 1, "id": 2}
+        next_day = {"next_settlement_date": date(2026, 10, 28)}
+        with patch.object(settlement_service, "enabled", return_value=True), \
+            patch.object(
+                settlement_service,
+                "fetch_status",
+                return_value={"latest_ready_trading_day": "2026-10-27"},
+            ), \
+            patch.object(settlement_service.store, "list_due_accounts", return_value=[account]), \
+            patch.object(settlement_service.store, "get_account_row", return_value=next_day), \
+            patch.object(settlement_service, "settle_account_day") as settle:
+            result = settlement_service.run_scheduler_tick(reason="test")
+        settle.assert_not_called()
+        self.assertEqual(result["settled"], 0)
+        self.assertEqual(result["failed"], 0)
 
 
 if __name__ == "__main__":

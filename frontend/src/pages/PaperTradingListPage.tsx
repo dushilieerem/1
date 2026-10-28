@@ -4,6 +4,7 @@ import { useConfirm } from "@/components/ConfirmDialog";
 import {
   createPaperAccount,
   listPaperAccounts,
+  paperErrorText,
   settlePaperAccount,
   updatePaperAccount,
   type PaperAccount,
@@ -288,7 +289,10 @@ export function PaperTradingListPage() {
                       </p>
                       {account.lastErrorMessage ? (
                         <p className="mt-1 text-xs text-rose-600">
-                          {account.lastErrorCode}: {account.lastErrorMessage}
+                          {paperErrorText(
+                            account.lastErrorCode,
+                            account.lastErrorMessage,
+                          )}
                         </p>
                       ) : null}
                     </div>

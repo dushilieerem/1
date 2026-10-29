@@ -10,6 +10,8 @@ ai/
     └── _shared/      # 跨 crew 工具
 ```
 
-新增 Agent 时，请在本目录 README 和对应的 `docs/03-模块详细设计/` 功能文档中记录入口、
+新增 Agent 时，请在本目录 README 和对应的 `docs/模块设计/` 功能文档中记录入口、
 权限、输入输出和失败语义。
 **兼容：** 旧路径 `services/agent_*.py` 等仍可 import（薄封装转发到本包）。
+
+

@@ -83,7 +83,7 @@ export default defineConfig({
     strictPort: true,
     https: useHttps,
     fs: {
-      // 帮助页直接引用根目录 docs/08-使用文档/ 下的 Markdown
+      // 帮助页直接引用根目录 docs/用户指南/ 下的 Markdown
       allow: [path.resolve(__dirname, "..")],
     },
     // Avoid stale/corrupt Chromium disk-cache after C: filled up (ERR_CACHE_READ_FAILURE).
@@ -117,3 +117,5 @@ export default defineConfig({
     },
   },
 });
+
+

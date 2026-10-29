@@ -13,6 +13,7 @@ from app.deps import optional_user, require_user
 from services.core.backtest_params import validate_execution_timing
 from services.core.ai_factor_input import factor_prompt_error
 from services.core.ai_strategy_input import strategy_prompt_error
+from services.core.strategy_transcription_input import strategy_transcription_error
 from services.core.db import get_conn
 from services.core.env_config import env
 from services.core.re_http_gateway import forward_re, rewrite_run_poll_url
@@ -292,6 +293,22 @@ def ai_strategy_generations(
         "POST",
         "/api/ai/strategy-generations",
         payload=body if isinstance(body, dict) else {},
+        timeout=600,
+    )
+    return _resp(status, headers, data)
+
+
+@router.post("/api/ai/strategy-transcriptions")
+def ai_strategy_transcriptions(
+    body: dict[str, Any], _user: dict = Depends(require_user)
+) -> JSONResponse:
+    error = strategy_transcription_error(body)
+    if error:
+        return JSONResponse(status_code=422, content={"detail": error})
+    status, headers, data = forward_re(
+        "POST",
+        "/api/ai/strategy-transcriptions",
+        payload=body,
         timeout=600,
     )
     return _resp(status, headers, data)

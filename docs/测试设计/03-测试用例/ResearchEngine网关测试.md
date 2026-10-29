@@ -1,7 +1,7 @@
 # ResearchEngine 网关测试用例（M5）
 
 > 模块：RE 网关与 BFF 契约。代码：`backend/app/routers/re_gateway.py`、`services/core/re_config.py / re_http_gateway.py / lan_http.py`、`factor.py` BFF 部分。
-> 关键代码事实：转发端点与超时——`POST /api/backtest/strategy` 1800s、`GET|DELETE /api/backtest/strategy/{run_id}` 60s、`GET /api/re/health` 15s、`POST /api/ai/factor-generations|strategy-generations|backtest-interpretations` 600s、market-data 三端点 60s；提交成功改写 `poll_url` 为本站路径并附 `Location`；RE 4xx/5xx 状态码与 body 透传、`Retry-After` 头透传；RE 不可达 → 502 `{"error":...}`；`YG_RE_BASE` 为唯一地址来源（导入期强校验）；网关仅白名单路径与方法。**RE 侧算法正确性不在测试范围**。
+> 关键代码事实：转发端点与超时——`POST /api/backtest/strategy` 1800s、`GET|DELETE /api/backtest/strategy/{run_id}` 60s、`GET /api/re/health` 15s、`POST /api/ai/factor-generations|strategy-generations|strategy-transcriptions|backtest-interpretations` 600s、market-data 三端点 60s；提交成功改写 `poll_url` 为本站路径并附 `Location`；RE 4xx/5xx 状态码与 body 透传、`Retry-After` 头透传；RE 不可达 → 502 `{"error":...}`；`YG_RE_BASE` 为唯一地址来源（导入期强校验）；网关仅白名单路径与方法。**RE 侧算法正确性不在测试范围**。
 > 状态：全部 NOT RUN。Req 基线：PRD §6.10。测试载体：真实内网 RE + 本地 RE 桩（pytest fixture，可脚本化 4xx/5xx/慢响应/坏 JSON）。
 
 ## 覆盖概览
@@ -36,9 +36,9 @@
 - **Expected**: 状态与结果字段透传一致（含失败原因）；DELETE 转发成功
 - **Auto**: AUTO ｜ **Env**: TEST ｜ **Status**: NOT RUN ｜ **Bug**: —
 
-### TC-RE-004 AI 生成代理三端点契约
+### TC-RE-004 AI 生成/转写代理四端点契约
 - **Req**: REQ-RE-003 ｜ **Pri**: P1 ｜ **Sev**: Major ｜ **Type**: Contract
-- **Steps**: `POST /api/ai/factor-generations`、`strategy-generations`、`backtest-interpretations`（合法 body，RE 桩）
+- **Steps**: `POST /api/ai/factor-generations`、`strategy-generations`、`strategy-transcriptions`、`backtest-interpretations`（合法 body，RE 桩）
 - **Expected**: 200 透传生成结果；请求 schema 与 RE 契约一致；600s 超时配置生效（桩延迟验证）
 - **Auto**: AUTO ｜ **Env**: TEST ｜ **Status**: NOT RUN ｜ **Bug**: —
 

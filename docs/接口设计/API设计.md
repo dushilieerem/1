@@ -200,6 +200,7 @@
 | GET | `/api/re/health` | RE 健康代理（15s） | optional_user | — | 无 | ✅ |
 | POST | `/api/ai/factor-generations` | RE AI 因子生成代理（600s） | 登录 | — | ✓（RE 侧） | — |
 | POST | `/api/ai/strategy-generations` | RE AI 策略生成代理（600s） | 登录 | — | ✓（RE 侧） | — |
+| POST | `/api/ai/strategy-transcriptions` | RE 聚宽策略转写代理（600s） | 登录 | — | ✓（RE 侧） | — |
 | POST | `/api/ai/backtest-interpretations` | RE 回测解读代理（600s） | 登录 | — | ✓（RE 侧） | — |
 | GET | `/api/market-data/symbols` | 证券列表转发 | **匿名** | — | 无 | — |
 | GET | `/api/market-data/indices` | 指数列表转发 | **匿名** | — | 无 | — |
@@ -371,7 +372,7 @@
 | 类别 | 接口 | 说明 |
 |---|---|---|
 | SVQuant 自有接口 | 健康检查、认证/主页、自选股、因子库/自定义因子/试算排队、检测项目/运行、策略项目/运行/库/广场、社区、新闻、AI 对话/语音、Agent、审计 | 数据与逻辑在 SVQuant（PostgreSQL / 磁盘 blob） |
-| RE 网关/薄转发（无自建队列） | `/api/backtest/strategy*`、`/api/re/health`、`/api/ai/factor-generations`、`/api/ai/strategy-generations`、`/api/ai/backtest-interpretations`、`/api/market-data/symbols|indices|constituents` | 计算/数据在 RE，SVQuant 只做转发、超时与错误映射 |
+| RE 网关/薄转发（无自建队列） | `/api/backtest/strategy*`、`/api/re/health`、`/api/ai/factor-generations`、`/api/ai/strategy-generations`、`/api/ai/strategy-transcriptions`、`/api/ai/backtest-interpretations`、`/api/market-data/symbols|indices|constituents` | 计算/数据在 RE，SVQuant 只做转发、超时与错误映射 |
 | RE BFF（有本地适配） | `/api/factor/re-catalog*`（快照缓存）、`/api/backtest/factor*`（异步薄代理）、`/api/market-data/daily/{code}`（缓存）、`/api/factor/custom/trial`（经 RE 试算） | SVQuant 持有缓存/任务记录，但**不伪造结果** |
 | 同步快照 | `POST /api/factor/re-catalog/sync`、`POST /api/strategy/library/sync` | RE 是事实来源，SVQuant 存只读镜像 |
 

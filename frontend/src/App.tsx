@@ -29,6 +29,9 @@ const AiFactorGeneratePage = lazy(() =>
 const AiStrategyGeneratePage = lazy(() =>
   import("./pages/AiStrategyGeneratePage").then((m) => ({ default: m.AiStrategyGeneratePage })),
 );
+const StrategyConvertPage = lazy(() =>
+  import("./pages/StrategyConvertPage").then((m) => ({ default: m.StrategyConvertPage })),
+);
 const StrategyResearchListPage = lazy(() =>
   import("./pages/StrategyResearchListPage").then((m) => ({
     default: m.StrategyResearchListPage,
@@ -257,6 +260,10 @@ export default function App() {
           <Route
             path="/strategy/ai"
             element={<Authed><AiStrategyGeneratePage /></Authed>}
+          />
+          <Route
+            path="/strategy/convert"
+            element={<Authed><StrategyConvertPage /></Authed>}
           />
 
           <Route path="/factor" element={<Authed><Navigate to="/factor/library" replace /></Authed>} />

@@ -27,6 +27,7 @@ from app.routers import (  # noqa: E402
     ai_backtest,
     ai_factor_generation,
     ai_strategy_generation,
+    ai_transcription,
     auth,
     community,
     detect,
@@ -102,6 +103,7 @@ for mod in (
     ai_backtest,
     ai_factor_generation,
     ai_strategy_generation,
+    ai_transcription,
     kh,
     admin_logs,
 ):

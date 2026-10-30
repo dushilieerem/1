@@ -8,6 +8,7 @@ from ai.router.tasks.community_summary import SUMMARY_TASK  # noqa: F401  导入
 from ai.router.tasks.factor_generation import FACTOR_TASK  # noqa: F401  导入即注册
 from ai.router.tasks.research import register_research_tasks
 from ai.router.tasks.strategy_generation import STRATEGY_TASK  # noqa: F401  导入即注册
+from ai.router.tasks.strategy_transcription import TRANSCRIPTION_TASK  # noqa: F401  导入即注册
 
 register_community_tasks()
 register_research_tasks()

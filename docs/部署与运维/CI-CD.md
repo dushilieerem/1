@@ -145,8 +145,9 @@ smoke.sh                        前端 /healthz、后端 /api/health，RE 网关
 | `backend` | `docker/backend.Dockerfile` | `127.0.0.1:${BACKEND_PORT:-8766}`（容器内 8766） | 启动时 `bootstrap_schemas()` 自动建表 |
 | `web` | `docker/frontend.Dockerfile` | `127.0.0.1:${WEB_PORT:-9530}` | Nginx 托管 dist + `/api` 反代 |
 
-生产沿用原开发端口（`9530` / `8766` / `5432`）；原 dev02 的 PostgreSQL 实例已停用，
-开发启动脚本与生产栈不能同时运行。`deploy.sh` 从 `deploy/.env` 读取端口做冒烟检查。
+生产沿用原开发端口（`9530` / `8766` / `5432`），且监听所有网卡；原 dev02 的 PostgreSQL
+实例已停用。开发启动脚本改用 `9531` / `8768` / `8769` / `9541`，两套可同时运行。
+`deploy.sh` 从 `deploy/.env` 读取端口做冒烟检查。
 
 ## 7. 版本与发布规矩
 

@@ -1,39 +1,41 @@
 # -*- coding: utf-8 -*-
-"""OpenAI 兼容 Chat Completions 客户端（DeepSeek / 通义 / OpenAI 等）。"""
+"""Legacy 兼容入口（ADR-037）。
+
+实现已迁到 `ai/gateway/providers.py`（出口解析 + HTTP）与 `ai/router/`（任务路由）。
+本模块只为既有调用点与测试保留同名 API，**新代码请用 `ai.router`**。
+"""
 from __future__ import annotations
 
-import json
-import urllib.error
-import urllib.request
 from typing import Any
 
-from services.core.env_config import env
+from ai.errors import AiError, AiNotConfigured
+from ai.gateway import providers
 
-
-class LlmError(RuntimeError):
-    """LLM 调用失败（配置缺失、超时、上游错误）。"""
+#: 兼容别名：既有 `except LlmError` 与 `raise LlmError(...)` 继续有效。
+LlmError = AiError
 
 
 def llm_configured() -> bool:
-    key = (env("LLM_API_KEY", "") or "").strip()
-    return bool(key) and key.lower() not in {"changeme", "your-key", "xxx"}
+    return providers.is_configured(providers.SLOT_DEFAULT)
 
 
 def llm_settings() -> dict[str, Any]:
-    base = (env("LLM_BASE_URL", "https://api.openai.com/v1") or "https://api.openai.com/v1").rstrip(
-        "/"
-    )
-    model = (env("LLM_MODEL", "gpt-4o-mini") or "gpt-4o-mini").strip()
     try:
-        timeout = max(5, int(env("LLM_TIMEOUT_SEC", "60") or "60"))
-    except ValueError:
-        timeout = 60
+        target = providers.resolve_target(slot=providers.SLOT_DEFAULT)
+    except AiNotConfigured:
+        return {
+            "base_url": providers.OPENAI_DEFAULT_BASE,
+            "api_key": "",
+            "model": (providers.env("LLM_MODEL", "gpt-4o-mini") or "gpt-4o-mini"),
+            "timeout": 60,
+            "configured": False,
+        }
     return {
-        "base_url": base,
-        "api_key": (env("LLM_API_KEY", "") or "").strip(),
-        "model": model,
-        "timeout": timeout,
-        "configured": llm_configured(),
+        "base_url": target.base_url,
+        "api_key": target.api_key,
+        "model": target.model,
+        "timeout": target.timeout,
+        "configured": True,
     }
 
 
@@ -45,69 +47,19 @@ def chat_completions(
     tools: list[dict[str, Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """返回 { content, message, tool_calls, tokens_in, tokens_out, model, provider }。
+    """OpenAI 兼容补全（legacy）。
 
-    传 tools 时启用 OpenAI 兼容 function calling；模型发起工具调用时
-    message 含 tool_calls、content 可能为空，由调用方执行工具后以
-    {"role": "tool", "tool_call_id": ...} 续聊。
+    返回 {content, message, tool_calls, tokens_in, tokens_out, model, provider}。
     """
-    cfg = llm_settings()
-    if not cfg["configured"]:
-        raise LlmError("LLM 未配置：请在 backend/.env 设置 LLM_API_KEY")
-
-    url = f"{cfg['base_url']}/chat/completions"
-    payload: dict[str, Any] = {
-        "model": cfg["model"],
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
-    if tools:
-        payload["tools"] = tools
-        if tool_choice is not None:
-            payload["tool_choice"] = tool_choice
-    raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=raw,
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {cfg['api_key']}",
-        },
+    target = providers.resolve_target(slot=providers.SLOT_DEFAULT)
+    return providers.complete(
+        target,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        tools=tools,
+        tool_choice=tool_choice,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=cfg["timeout"]) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        body = ""
-        try:
-            body = exc.read().decode("utf-8", errors="replace")[:400]
-        except Exception:
-            pass
-        raise LlmError(f"LLM HTTP {exc.code}: {body or exc.reason}") from exc
-    except urllib.error.URLError as exc:
-        raise LlmError(f"LLM 网络错误: {exc.reason}") from exc
-    except TimeoutError as exc:
-        raise LlmError("LLM 请求超时") from exc
-    except json.JSONDecodeError as exc:
-        raise LlmError("LLM 返回非 JSON") from exc
 
-    choices = data.get("choices") or []
-    if not choices:
-        raise LlmError("LLM 无 choices")
-    message = choices[0].get("message") or {}
-    content = message.get("content")
-    tool_calls = message.get("tool_calls") or []
-    if (not isinstance(content, str) or not content.strip()) and not tool_calls:
-        raise LlmError("LLM 返回空内容")
-    usage = data.get("usage") or {}
-    return {
-        "content": (content or "").strip(),
-        "message": message,
-        "tool_calls": tool_calls if isinstance(tool_calls, list) else [],
-        "tokens_in": int(usage.get("prompt_tokens") or 0),
-        "tokens_out": int(usage.get("completion_tokens") or 0),
-        "model": data.get("model") or cfg["model"],
-        "provider": "openai_compatible",
-    }
+
+__all__ = ["LlmError", "chat_completions", "llm_configured", "llm_settings"]

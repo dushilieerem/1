@@ -6,7 +6,7 @@ from ai.gateway.llm_client import LlmError
 
 class SummaryTest(unittest.TestCase):
     def test_unconfigured_short_content_is_honest_excerpt(self):
-        with patch("ai.runtime.skills.llm_configured", return_value=False), patch("ai.runtime.skills.summarize_with_re", return_value=None):
+        with patch("ai.runtime.skills.available_task", return_value=False), patch("ai.runtime.skills.summarize_with_re", return_value=None):
             result = skill_summarize_post({"title": "测试", "body": "很短的内容"}, {})
         self.assertEqual(result["board_patch"]["artifacts"]["summary_source"], "mock_local")
         self.assertIn("原文节选", result["outputs"]["summary_md"])
@@ -20,7 +20,7 @@ class SummaryTest(unittest.TestCase):
             skill_summarize_post({"title": "只有标题", "body": "<p> </p>"}, {})
 
     def test_configured_model_and_failure(self):
-        with patch("ai.runtime.skills.llm_configured", return_value=True), patch("ai.runtime.skills.chat_completions") as llm:
+        with patch("ai.runtime.skills.available_task", return_value=True), patch("ai.runtime.skills.run_task") as llm:
             llm.return_value = {"content": '{"summary_md":"依据原文生成的摘要"}', "tokens_in": 10, "tokens_out": 5}
             result = skill_summarize_post({"body": "这是用来验证模型路径的一段足够长的研究说明正文。"}, {})
             self.assertEqual(result["board_patch"]["artifacts"]["summary_source"], "llm")

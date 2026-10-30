@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Skill 注册表：可被多 Agent 复用的能力原子。"""
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ import re
 from html import unescape
 from typing import Any, Callable
 
-from ai.gateway.llm_client import LlmError, chat_completions, llm_configured
+from ai.errors import AiBadOutput, AiError
+from ai.router import available_task, run_task
 from services.community.ai_summary import summarize_with_re
 from ai.crews._shared.metrics_trust import (
     PLATFORM_KNOWLEDGE,
@@ -20,6 +21,9 @@ from ai.crews._shared.metrics_trust import (
 )
 
 SkillFn = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
+
+#: 兼容旧调用点的异常捕获；新代码请直接用 `ai.errors` 中的类型。
+LlmError = AiError
 
 SECTION_IDS = ("strategy", "factor", "qa", "hotspot", "official")
 SECTION_LABELS = {
@@ -50,10 +54,10 @@ def extract_json_object(text: str) -> dict[str, Any]:
         pass
     m = re.search(r"\{[\s\S]*\}", raw)
     if not m:
-        raise LlmError("无法解析模型 JSON")
+        raise AiBadOutput("无法解析模型 JSON")
     data = json.loads(m.group(0))
     if not isinstance(data, dict):
-        raise LlmError("模型 JSON 非对象")
+        raise AiBadOutput("模型 JSON 非对象")
     return data
 
 
@@ -126,7 +130,7 @@ def skill_polish_title(ctx: dict[str, Any], board: dict[str, Any]) -> dict[str, 
     body = str(d.get("body") or "")
     section = str(d.get("section") or "strategy")
     trust = _board_trust(board, ctx)
-    if not llm_configured():
+    if not available_task("community.polish_title"):
         out = _mock_polish_title(title, section)
         return {
             "board_patch": {"draft": {"title": out}},
@@ -155,13 +159,12 @@ def skill_polish_title(ctx: dict[str, Any], board: dict[str, Any]) -> dict[str, 
         },
         ensure_ascii=False,
     )
-    result = chat_completions(
+    result = run_task(
+        "community.polish_title",
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user_msg},
         ],
-        temperature=0.35,
-        max_tokens=200,
     )
     parsed = extract_json_object(result["content"])
     new_title = str(parsed.get("title") or "").strip() or title
@@ -183,7 +186,7 @@ def skill_polish_body(ctx: dict[str, Any], board: dict[str, Any]) -> dict[str, A
     section = str(d.get("section") or "strategy")
     code = str(d.get("code_snippet") or "")
     trust = _board_trust(board, ctx)
-    if not llm_configured():
+    if not available_task("community.polish_body"):
         out = _mock_polish_body(body, title)
         return {
             "board_patch": {
@@ -225,13 +228,12 @@ def skill_polish_body(ctx: dict[str, Any], board: dict[str, Any]) -> dict[str, A
         },
         ensure_ascii=False,
     )
-    result = chat_completions(
+    result = run_task(
+        "community.polish_body",
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user_msg},
         ],
-        temperature=0.35,
-        max_tokens=1200,
     )
     parsed = extract_json_object(result["content"])
     new_body = str(parsed.get("body") or "").strip() or body
@@ -261,7 +263,7 @@ def skill_suggest_section(ctx: dict[str, Any], board: dict[str, Any]) -> dict[st
     cur = str(d.get("section") or "strategy")
     code = str(d.get("code_snippet") or "")
 
-    if not llm_configured():
+    if not available_task("community.suggest_section"):
         trust = _board_trust(board, ctx)
         ref = trust.get("platform_ref") if isinstance(trust, dict) else None
         src = str((ref or {}).get("source") or "")
@@ -316,13 +318,12 @@ def skill_suggest_section(ctx: dict[str, Any], board: dict[str, Any]) -> dict[st
         },
         ensure_ascii=False,
     )
-    result = chat_completions(
+    result = run_task(
+        "community.suggest_section",
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user_msg},
         ],
-        temperature=0.2,
-        max_tokens=200,
     )
     parsed = extract_json_object(result["content"])
     sug = str(parsed.get("section") or cur).strip()
@@ -356,7 +357,7 @@ def skill_audit_claims(ctx: dict[str, Any], board: dict[str, Any]) -> dict[str, 
     trust = _board_trust(board, ctx)
     det_flags = list(trust.get("flags") or [])
 
-    if not llm_configured():
+    if not available_task("community.audit_claims"):
         # 确定性审计：重新评估当前草稿（润色后可能已改）
         trust2 = evaluate_metrics_trust(
             title=title,
@@ -417,13 +418,12 @@ def skill_audit_claims(ctx: dict[str, Any], board: dict[str, Any]) -> dict[str, 
         },
         ensure_ascii=False,
     )
-    result = chat_completions(
+    result = run_task(
+        "community.audit_claims",
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user_msg},
         ],
-        temperature=0.1,
-        max_tokens=800,
     )
     parsed = extract_json_object(result["content"])
     decision = str(parsed.get("decision") or "approve").strip().lower()
@@ -514,7 +514,7 @@ def skill_strip_unverifiable(ctx: dict[str, Any], board: dict[str, Any]) -> dict
             "provider": "noop",
         }
 
-    if not llm_configured():
+    if not available_task("community.strip_unverifiable"):
         # 弱化：去掉带 % 且无「约/未」的短句（粗暴但可演示回流）
         plain_paras = re.split(r"(?<=[。！？\n])", body)
         kept = []
@@ -565,13 +565,12 @@ def skill_strip_unverifiable(ctx: dict[str, Any], board: dict[str, Any]) -> dict
         },
         ensure_ascii=False,
     )
-    result = chat_completions(
+    result = run_task(
+        "community.strip_unverifiable",
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user_msg},
         ],
-        temperature=0.25,
-        max_tokens=1400,
     )
     parsed = extract_json_object(result["content"])
     new_title = str(parsed.get("title") or title).strip()[:120] or title
@@ -729,7 +728,7 @@ def skill_summarize_post(ctx: dict[str, Any], board: dict[str, Any]) -> dict[str
                      "message": "原文内容较短，可供归纳的信息有限，建议直接阅读原文。"}]
                    if len(strip_html(body)) + len(code.strip()) < 20 else [])
 
-    if not llm_configured():
+    if not available_task("community.summarize_post"):
         shared = summarize_with_re(title=title, body=strip_html(body), code_snippet=code,
                                    grounding=trust_prompt_block(trust), truncated=truncated)
         if shared is not None:
@@ -793,13 +792,12 @@ def skill_summarize_post(ctx: dict[str, Any], board: dict[str, Any]) -> dict[str
         },
         ensure_ascii=False,
     )
-    result = chat_completions(
+    result = run_task(
+        "community.summarize_post",
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user_msg},
         ],
-        temperature=0.2,
-        max_tokens=450,
     )
     parsed = extract_json_object(result["content"])
     summary = str(parsed.get("summary_md") or "").strip()
@@ -867,7 +865,7 @@ def skill_flag_read_risks(ctx: dict[str, Any], board: dict[str, Any]) -> dict[st
             and not any(s in str(f.get("message") or "") for s in drop_substr)
         ]
 
-    if not llm_configured():
+    if not available_task("community.flag_read_risks"):
         # 去重
         seen: set[str] = set()
         uniq: list[dict[str, Any]] = []
@@ -904,13 +902,12 @@ def skill_flag_read_risks(ctx: dict[str, Any], board: dict[str, Any]) -> dict[st
         },
         ensure_ascii=False,
     )
-    result = chat_completions(
+    result = run_task(
+        "community.flag_read_risks",
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user_msg},
         ],
-        temperature=0.1,
-        max_tokens=600,
     )
     parsed = extract_json_object(result["content"])
     raw_flags = parsed.get("flags")

@@ -26,14 +26,14 @@ class SharedSummaryTest(unittest.TestCase):
 
     def test_shared_llm_output_is_marked_ai_and_usage_preserved(self):
         response = {"summary_md": "## 结论\n仅供测试的归纳。", "model": "shared", "tokens_in": 32, "tokens_out": 12, "truncated": False, "provider": "openai_compatible"}
-        with patch("ai.runtime.skills.llm_configured", return_value=False), patch("ai.runtime.skills.summarize_with_re", return_value=response) as shared:
+        with patch("ai.runtime.skills.available_task", return_value=False), patch("ai.runtime.skills.summarize_with_re", return_value=response) as shared:
             result = skill_summarize_post({"title": "虚构测试", "body": "<p>测试内容<img src='data:image/png;base64,FAKE'></p>"}, {})
         self.assertEqual(result["board_patch"]["artifacts"]["summary_source"], "llm")
         self.assertEqual(result["tokens_in"], 32)
         self.assertNotIn("base64", shared.call_args.kwargs["body"])
 
     def test_explicit_local_llm_still_wins(self):
-        with patch("ai.runtime.skills.llm_configured", return_value=True), patch("ai.runtime.skills.summarize_with_re") as shared, patch("ai.runtime.skills.chat_completions", return_value={"content": '{"summary_md":"本地模型摘要"}', "tokens_in": 1, "tokens_out": 1}):
+        with patch("ai.runtime.skills.available_task", return_value=True), patch("ai.runtime.skills.summarize_with_re") as shared, patch("ai.runtime.skills.run_task", return_value={"content": '{"summary_md":"本地模型摘要"}', "tokens_in": 1, "tokens_out": 1}):
             result = skill_summarize_post({"body": "虚构测试正文"}, {})
         shared.assert_not_called()
         self.assertEqual(result["board_patch"]["artifacts"]["summary_source"], "llm")

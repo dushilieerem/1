@@ -387,11 +387,12 @@ def _llm_ideas(
     if not items:
         return [], {}, None
     try:
-        from ai.gateway.llm_client import LlmError, chat_completions, llm_configured
+        from ai.errors import AiError
+        from ai.router import available_task, run_task
     except Exception as exc:  # noqa: BLE001
-        return [], {}, f"LLM 模块不可用: {exc}"
+        return [], {}, f"AI 路由层不可用: {exc}"
 
-    if not llm_configured():
+    if not available_task("gather_idea.idea"):
         return [], {}, "LLM 未配置"
 
     topic = _pack_topic(pack)
@@ -455,15 +456,14 @@ def _llm_ideas(
         ensure_ascii=False,
     )
     try:
-        out = chat_completions(
+        out = run_task(
+            "gather_idea.idea",
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            temperature=0.3,
-            max_tokens=4500,
         )
-    except LlmError as exc:
+    except AiError as exc:
         return [], {}, str(exc)
     except Exception as exc:  # noqa: BLE001
         return [], {}, f"LLM 调用失败: {exc}"

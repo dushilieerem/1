@@ -1,0 +1,507 @@
+# -*- coding: utf-8 -*-
+"""L1 供应商层：把「哪家供应商、哪个 base_url、哪个 Key、哪个模型」收敛到一处。
+
+本层只认识 messages / tokens / HTTP，不认识任何业务词（社区、因子、转写）。
+业务能力一律经 `ai.router` 调用；本模块只被网关与路由层导入。
+
+兼容口径：
+- `llm_client`（LLM_*，OpenAI 兼容，走系统代理）与
+  `ark_chat`（ARK_* / AI_FACTOR_* / SILICONFLOW_*，走直连）在此合并为同一实现，
+  仅以 `ChatTarget.direct` 区分出口，既有行为不变。
+"""
+from __future__ import annotations
+
+import json
+import os
+import socket
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from typing import Any, Iterator
+
+from ai.errors import (
+    AiBadOutput,
+    AiInvalidRequest,
+    AiNotConfigured,
+    AiTimeout,
+    AiUpstreamError,
+)
+from services.core.env_config import env
+from services.core.lan_http import urlopen_direct
+
+# —— 模型目录（SV 助手可选项；加/删模型只改这里）——
+CHAT_MODELS: list[dict[str, str]] = [
+    # 火山方舟（Agent Plan）
+    {"id": "ark-code-latest", "label": "ark-code-latest", "family": "ark", "provider": "ark"},
+    {"id": "doubao-seed-2.0-pro", "label": "Doubao Seed 2.0 Pro", "family": "doubao", "provider": "ark"},
+    {"id": "doubao-seed-2.0-code", "label": "Doubao Seed 2.0 Code", "family": "doubao", "provider": "ark"},
+    {"id": "doubao-seed-2.0-lite", "label": "Doubao Seed 2.0 Lite", "family": "doubao", "provider": "ark"},
+    {"id": "doubao-seed-2.0-mini", "label": "Doubao Seed 2.0 Mini", "family": "doubao", "provider": "ark"},
+    {"id": "kimi-k2.6", "label": "Kimi K2.6", "family": "kimi", "provider": "ark"},
+    {"id": "kimi-k2.6-thinking", "label": "Kimi K2.6 Thinking", "family": "kimi", "provider": "ark"},
+    {"id": "minimax-latest", "label": "MiniMax Latest", "family": "minimax", "provider": "ark"},
+    # 硅基流动
+    {"id": "deepseek-ai/DeepSeek-V3", "label": "DeepSeek V3", "family": "deepseek", "provider": "siliconflow"},
+    {"id": "Qwen/Qwen2.5-72B-Instruct", "label": "Qwen2.5 72B", "family": "qwen", "provider": "siliconflow"},
+    {"id": "Qwen/Qwen2.5-Coder-32B-Instruct", "label": "Qwen2.5 Coder 32B", "family": "qwen", "provider": "siliconflow"},
+    {"id": "THUDM/glm-4-9b-chat", "label": "GLM-4 9B", "family": "glm", "provider": "siliconflow"},
+]
+
+ARK_DEFAULT_BASE = "https://ark.cn-beijing.volces.com/api/plan/v3"
+SILICONFLOW_DEFAULT_BASE = "https://api.siliconflow.cn/v1"
+OPENAI_DEFAULT_BASE = "https://api.openai.com/v1"
+ARK_DEFAULT_MODEL = "ark-code-latest"
+
+# 档位：业务只选档位，不选模型。换模型改环境变量即可。
+SLOT_DEFAULT = "default"
+SLOT_CODE = "code"
+SLOT_FAST = "fast"
+SLOT_ASSISTANT = "assistant"
+
+
+@dataclass(frozen=True)
+class ChatTarget:
+    """一次调用的完整出口参数。"""
+
+    provider: str
+    base_url: str
+    api_key: str
+    model: str
+    timeout: int = 60
+    direct: bool = False
+
+    def __repr__(self) -> str:  # pragma: no cover - 防密钥进日志
+        return f"ChatTarget(provider={self.provider!r}, model={self.model!r}, direct={self.direct})"
+
+
+def _usable_key(value: str | None) -> str:
+    v = (value or "").strip()
+    if v.lower() in {"changeme", "your-key", "xxx", "none", "null"}:
+        return ""
+    return v
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return max(5, int(env(name, str(default)) or default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _windows_user_env(name: str) -> str:
+    """沿用 ark_chat 的既定口径：.env 之外还认 Windows 用户环境变量。"""
+    if os.name != "nt":
+        return ""
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment") as key:
+            value, _ = winreg.QueryValueEx(key, name)
+            return str(value or "").strip()
+    except Exception:
+        return ""
+
+
+def key_env(name: str) -> str:
+    """密钥读取：进程/.env 优先，其次 Windows 用户环境变量（沿用既有口径）。"""
+    v = _usable_key(env(name, ""))
+    if v:
+        return v
+    v = _usable_key(_windows_user_env(name))
+    if v:
+        try:
+            os.environ[name] = v
+        except Exception:
+            pass
+    return v
+
+
+def ark_base_url() -> str:
+    return (env("AI_FACTOR_BASE_URL", ARK_DEFAULT_BASE) or ARK_DEFAULT_BASE).rstrip("/")
+
+
+def siliconflow_base_url() -> str:
+    return (env("SILICONFLOW_BASE_URL", SILICONFLOW_DEFAULT_BASE) or SILICONFLOW_DEFAULT_BASE).rstrip("/")
+
+
+def ark_default_model() -> str:
+    return (env("AI_FACTOR_MODEL_ALIAS", ARK_DEFAULT_MODEL) or ARK_DEFAULT_MODEL).strip()
+
+
+def ark_configured() -> bool:
+    return ark_target() is not None
+
+
+def openai_target(model: str | None = None) -> ChatTarget | None:
+    key = _usable_key(env("LLM_API_KEY", ""))
+    if not key:
+        return None
+    base = (env("LLM_BASE_URL", OPENAI_DEFAULT_BASE) or OPENAI_DEFAULT_BASE).rstrip("/")
+    return ChatTarget(
+        provider="openai_compatible",
+        base_url=base,
+        api_key=key,
+        model=(model or env("LLM_MODEL", "gpt-4o-mini") or "gpt-4o-mini").strip(),
+        timeout=_int_env("LLM_TIMEOUT_SEC", 60),
+        direct=False,
+    )
+
+
+def ark_target(model: str | None = None) -> ChatTarget | None:
+    key = ""
+    for name in ("ARK_API_KEY", "AI_FACTOR_API_KEY"):
+        key = key_env(name)
+        if key:
+            break
+    if not key:
+        return None
+    return ChatTarget(
+        provider="ark",
+        base_url=ark_base_url(),
+        api_key=key,
+        model=(model or ark_default_model()).strip(),
+        timeout=_int_env("AI_FACTOR_TIMEOUT_SEC", 90),
+        direct=True,
+    )
+
+
+def siliconflow_target(model: str | None = None) -> ChatTarget | None:
+    key = ""
+    for name in ("SILICONFLOW_API_KEY", "SILICON_FLOW_API_KEY"):
+        key = key_env(name)
+        if key:
+            break
+    if not key:
+        return None
+    return ChatTarget(
+        provider="siliconflow",
+        base_url=siliconflow_base_url(),
+        api_key=key,
+        model=(model or "deepseek-ai/DeepSeek-V3").strip(),
+        timeout=_int_env("AI_FACTOR_TIMEOUT_SEC", 90),
+        direct=True,
+    )
+
+
+def model_provider(model_id: str) -> str:
+    for meta in CHAT_MODELS:
+        if meta["id"] == model_id:
+            return meta.get("provider") or "ark"
+    return "ark"
+
+
+def resolve_target(
+    *,
+    slot: str = SLOT_DEFAULT,
+    model: str | None = None,
+    provider: str | None = None,
+) -> ChatTarget:
+    """按档位或显式模型解析出口；都不可用时抛 `AiNotConfigured`。
+
+    档位语义：
+    - default：OpenAI 兼容（LLM_*），沿用既有 11 个调用点的口径；
+    - code：火山方舟（AI_FACTOR_*），代码生成类任务；
+    - fast：优先 default，缺失时回落到 code（不引入第三个供应商）；
+    - assistant：按模型 id 归属供应商（SV 助手，请求方可指定模型）。
+    """
+    if model:
+        chosen = provider or model_provider(model)
+        if chosen == "siliconflow":
+            target = siliconflow_target(model)
+        elif chosen == "ark":
+            target = ark_target(model)
+        else:
+            target = openai_target(model)
+        if target is None:
+            raise AiNotConfigured(f"模型 {model} 所属供应商未配置密钥")
+        return target
+
+    if slot == SLOT_ASSISTANT:
+        target = ark_target() or siliconflow_target()
+        if target is None:
+            raise AiNotConfigured("未配置 ARK_API_KEY / SILICONFLOW_API_KEY")
+        return target
+
+    if slot == SLOT_CODE:
+        target = ark_target()
+        if target is None:
+            raise AiNotConfigured("未配置 ARK_API_KEY / AI_FACTOR_API_KEY")
+        return target
+
+    if slot == SLOT_FAST:
+        target = openai_target() or ark_target()
+        if target is None:
+            raise AiNotConfigured("未配置 LLM_API_KEY / ARK_API_KEY")
+        return target
+
+    target = openai_target()
+    if target is None:
+        raise AiNotConfigured("LLM 未配置：请在 backend/.env 设置 LLM_API_KEY")
+    return target
+
+
+def resolve_provider(model_id: str) -> tuple[str, str, str]:
+    """兼容 ark_chat 的旧接口：返回 (provider, base_url, api_key)。"""
+    target = resolve_target(model=model_id)
+    return target.provider, target.base_url, target.api_key
+
+
+def is_configured(slot: str = SLOT_DEFAULT) -> bool:
+    try:
+        resolve_target(slot=slot)
+    except AiNotConfigured:
+        return False
+    return True
+
+
+def list_models() -> dict[str, Any]:
+    ark = ark_target()
+    sf = siliconflow_target()
+    try:
+        default_model = resolve_target(slot=SLOT_DEFAULT).model
+    except AiNotConfigured:
+        default_model = ""
+    return {
+        "configured": bool(ark or sf),
+        "defaultModel": default_model or ARK_DEFAULT_MODEL,
+        "baseUrl": ark.base_url if ark else ARK_DEFAULT_BASE,
+        "siliconflowBaseUrl": sf.base_url if sf else SILICONFLOW_DEFAULT_BASE,
+        "arkConfigured": bool(ark),
+        "siliconflowConfigured": bool(sf),
+        "models": CHAT_MODELS,
+    }
+
+
+# —— 请求执行 ——
+
+
+class _HttpFailure(Exception):
+    """内部信号：HTTP 状态错误，携带原始状态码与响应体，供重试判定。"""
+
+    def __init__(self, status: int, body: str, reason: str) -> None:
+        super().__init__(f"HTTP {status}")
+        self.status = status
+        self.body = body
+        self.reason = reason
+
+
+def _post(target: ChatTarget, payload: dict[str, Any], *, timeout: int, stream: bool):
+    url = f"{target.base_url.rstrip('/')}/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {target.api_key}",
+    }
+    if stream:
+        headers["Accept"] = "text/event-stream"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        method="POST",
+        headers=headers,
+    )
+    kwargs: dict[str, Any] = {"timeout": max(5, int(timeout))}
+    try:
+        if target.direct:
+            return urlopen_direct(req, **kwargs)
+        return urllib.request.urlopen(req, **kwargs)
+    except urllib.error.HTTPError as exc:
+        body = ""
+        try:
+            body = exc.read().decode("utf-8", errors="replace")[:600]
+        except Exception:
+            pass
+        raise _HttpFailure(int(exc.code), body, str(exc.reason)) from exc
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        if isinstance(reason, (TimeoutError, socket.timeout)):
+            raise AiTimeout(f"{target.provider} 请求超时") from exc
+        raise AiUpstreamError(f"{target.provider} 网络错误: {reason}") from exc
+    except (TimeoutError, socket.timeout) as exc:
+        raise AiTimeout(f"{target.provider} 请求超时") from exc
+    except OSError as exc:
+        raise AiUpstreamError(f"{target.provider} 连接失败: {exc}") from exc
+
+
+def _failure_to_error(failure: _HttpFailure, target: ChatTarget) -> AiUpstreamError:
+    if failure.status in (401, 403):
+        return AiNotConfigured(
+            f"{target.provider} 密钥无效或无权访问（HTTP {failure.status}）",
+            detail=failure.body,
+        )
+    if failure.status == 429:
+        return AiUpstreamError(f"{target.provider} 触发限流（HTTP 429）", detail=failure.body)
+    return AiUpstreamError(
+        f"{target.provider} HTTP {failure.status}: {failure.body or failure.reason}",
+        detail=failure.body,
+    )
+
+
+def _response_format_unsupported(failure: _HttpFailure) -> bool:
+    """供应商明确拒绝 response_format（与 ResearchEngine 同口径）。"""
+    if failure.status != 400:
+        return False
+    return "response_format.type" in failure.body and "not supported" in failure.body
+
+
+def _send(
+    target: ChatTarget,
+    payload: dict[str, Any],
+    *,
+    timeout: int,
+    stream: bool,
+):
+    """发送请求；`response_format` 被拒时去掉该字段重试一次。"""
+    try:
+        return _post(target, payload, timeout=timeout, stream=stream)
+    except _HttpFailure as failure:
+        if payload.get("response_format") is not None and _response_format_unsupported(failure):
+            retry = dict(payload)
+            retry.pop("response_format", None)
+            try:
+                return _post(target, retry, timeout=timeout, stream=stream)
+            except _HttpFailure as retry_failure:
+                raise _failure_to_error(retry_failure, target) from retry_failure
+        raise _failure_to_error(failure, target) from failure
+
+
+def complete(
+    target: ChatTarget,
+    *,
+    messages: list[dict[str, Any]],
+    temperature: float = 0.4,
+    max_tokens: int | None = 2048,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    response_format: dict[str, Any] | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """一次非流式补全。
+
+    返回 {content, message, tool_calls, tokens_in, tokens_out, model, provider}，
+    与原 `chat_completions` 同构，便于调用点无感迁移。
+    """
+    if not messages:
+        raise AiInvalidRequest("messages 不能为空")
+
+    payload: dict[str, Any] = {
+        "model": target.model,
+        "messages": messages,
+        "temperature": float(temperature),
+    }
+    if max_tokens is not None:
+        payload["max_tokens"] = int(max_tokens)
+    if tools:
+        payload["tools"] = tools
+        if tool_choice is not None:
+            payload["tool_choice"] = tool_choice
+    if response_format is not None:
+        payload["response_format"] = response_format
+
+    resp = _send(target, payload, timeout=int(timeout or target.timeout), stream=False)
+    return _normalize(_read_json(resp), target)
+
+
+def _read_json(resp) -> dict[str, Any]:
+    with resp:
+        raw = resp.read().decode("utf-8", errors="replace")
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise AiBadOutput("上游返回非 JSON") from exc
+    if not isinstance(data, dict):
+        raise AiBadOutput("上游响应不是 JSON 对象")
+    return data
+
+
+def _normalize(data: dict[str, Any], target: ChatTarget) -> dict[str, Any]:
+    choices = data.get("choices") or []
+    if not isinstance(choices, list) or not choices:
+        raise AiBadOutput("上游无 choices")
+    message = choices[0].get("message") or {}
+    content = message.get("content")
+    tool_calls = message.get("tool_calls") or []
+    text = content if isinstance(content, str) else ""
+    if not text.strip() and not tool_calls:
+        raise AiBadOutput("上游返回空内容")
+    usage = data.get("usage") or {}
+    return {
+        "content": text.strip(),
+        "message": message,
+        "tool_calls": tool_calls if isinstance(tool_calls, list) else [],
+        "tokens_in": _int(usage.get("prompt_tokens")),
+        "tokens_out": _int(usage.get("completion_tokens")),
+        "model": data.get("model") or target.model,
+        "provider": target.provider,
+        "usage": usage if isinstance(usage, dict) else {},
+    }
+
+
+def _int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def stream(
+    target: ChatTarget,
+    *,
+    messages: list[dict[str, Any]],
+    temperature: float = 0.7,
+    max_tokens: int | None = None,
+    timeout: int | None = None,
+) -> Iterator[str]:
+    """SSE 流式补全，逐段 yield 文本 delta。"""
+    if not messages:
+        raise AiInvalidRequest("messages 不能为空")
+    payload: dict[str, Any] = {
+        "model": target.model,
+        "messages": messages,
+        "temperature": float(temperature),
+        "stream": True,
+    }
+    if max_tokens is not None:
+        payload["max_tokens"] = int(max_tokens)
+    resp = _send(target, payload, timeout=int(timeout or target.timeout), stream=True)
+    try:
+        while True:
+            line = resp.readline()
+            if not line:
+                break
+            text_line = line.decode("utf-8", errors="replace").strip()
+            if not text_line or text_line.startswith(":") or not text_line.startswith("data:"):
+                continue
+            data_str = text_line[5:].strip()
+            if not data_str or data_str == "[DONE]":
+                break
+            try:
+                obj = json.loads(data_str)
+            except json.JSONDecodeError:
+                continue
+            choices = obj.get("choices") or []
+            if not choices:
+                continue
+            delta = choices[0].get("delta") or {}
+            piece = delta.get("content")
+            if isinstance(piece, str) and piece:
+                yield piece
+    finally:
+        try:
+            resp.close()
+        except Exception:
+            pass
+
+
+__all__ = [
+    "CHAT_MODELS",
+    "ChatTarget",
+    "SLOT_ASSISTANT",
+    "SLOT_CODE",
+    "SLOT_DEFAULT",
+    "SLOT_FAST",
+    "complete",
+    "is_configured",
+    "list_models",
+    "resolve_target",
+    "stream",
+]

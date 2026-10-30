@@ -314,17 +314,7 @@ def ai_strategy_transcriptions(
     return _resp(status, headers, data)
 
 
-@router.post("/api/ai/backtest-interpretations")
-def ai_backtest_interpretations(
-    body: dict[str, Any], _user: dict = Depends(require_user)
-) -> JSONResponse:
-    status, headers, data = forward_re(
-        "POST",
-        "/api/ai/backtest-interpretations",
-        payload=body if isinstance(body, dict) else {},
-        timeout=600,
-    )
-    return _resp(status, headers, data)
+# —— 行情只读列表（日线已有本机 BFF）——
 
 
 # —— 行情只读列表（日线已有本机 BFF）——

@@ -1,0 +1,26 @@
+# SVQuant 内网轮询（systemd 服务模板）
+# 由 scripts/ci/poll-install.sh 安装时替换 __REPO_DIR__ / __RUN_USER__ 等占位符。
+#
+# 这是 oneshot 服务：timer 到点启动一次，跑完退出；下一次由 OnUnitActiveSec 排期，
+# 所以天然不会重叠执行（长时间 CI 不会被下一轮打断）。
+
+[Unit]
+Description=SVQuant 内网轮询：Gitee master/tag -> CI/CD
+Documentation=file://__REPO_DIR__/docs/部署与运维/CI-CD.md
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=__RUN_USER__
+Group=__RUN_USER__
+WorkingDirectory=__REPO_DIR__
+EnvironmentFile=-/etc/svquant/__NAME__.env
+ExecStart=/bin/bash __REPO_DIR__/scripts/ci/poll.sh
+TimeoutStartSec=5400
+Nice=10
+# 轮询本身很轻，限制它不要抢业务资源
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

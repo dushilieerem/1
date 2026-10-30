@@ -1,0 +1,17 @@
+# SVQuant 内网轮询定时器模板
+# OnUnitActiveSec 表示「上一次跑完之后再等 N 秒」，因此长任务不会被下一轮打断。
+# Persistent=true 让机器重启后补跑一次（不会补跑历史多次）。
+
+[Unit]
+Description=每 __INTERVAL__ 秒检查 Gitee 是否有新提交或新 tag
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=__INTERVAL__s
+AccuracySec=10s
+RandomizedDelaySec=5s
+Persistent=true
+Unit=__NAME__.service
+
+[Install]
+WantedBy=timers.target

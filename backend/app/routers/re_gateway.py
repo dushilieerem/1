@@ -11,7 +11,6 @@ from fastapi.responses import JSONResponse
 
 from app.deps import optional_user, require_user
 from services.core.backtest_params import validate_execution_timing
-from services.core.ai_strategy_input import strategy_prompt_error
 from services.core.strategy_transcription_input import strategy_transcription_error
 from services.core.db import get_conn
 from services.core.env_config import env
@@ -262,23 +261,7 @@ def re_health(_user: dict | None = Depends(optional_user)) -> JSONResponse:
     return _resp(status, headers, data)
 
 
-# —— AI（因子生成与回测解读已本地化，见 ai_factor_generation / ai_backtest）——
-
-
-@router.post("/api/ai/strategy-generations")
-def ai_strategy_generations(
-    body: dict[str, Any], _user: dict = Depends(require_user)
-) -> JSONResponse:
-    error = strategy_prompt_error(body.get("prompt"))
-    if error:
-        return JSONResponse(status_code=422, content={"detail": error})
-    status, headers, data = forward_re(
-        "POST",
-        "/api/ai/strategy-generations",
-        payload=body if isinstance(body, dict) else {},
-        timeout=600,
-    )
-    return _resp(status, headers, data)
+# —— AI（因子/策略生成与回测解读已本地化，仅策略转写仍转发）——
 
 
 @router.post("/api/ai/strategy-transcriptions")

@@ -24,6 +24,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+    ports:
+      # 沿用原开发库端口（dev02 的实例已停用）；只绑本机
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     restart: unless-stopped
 
   backend:
@@ -47,8 +50,8 @@ services:
       - backend-factor:/app/backend/factor
       - kh-data:/app/KnowledgeHub/data
     ports:
-      # 宿主机端口与开发环境（8766）区分；容器内始终是 8766
-      - "127.0.0.1:${BACKEND_PORT:-9766}:8766"
+      # 沿用原开发端口；容器内始终是 8766
+      - "127.0.0.1:${BACKEND_PORT:-8766}:8766"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8766/api/health || exit 1"]
       interval: 10s
@@ -68,8 +71,8 @@ services:
       backend:
         condition: service_healthy
     ports:
-      # 宿主机端口与开发环境（9530）区分
-      - "127.0.0.1:${WEB_PORT:-9630}:80"
+      # 沿用原开发端口
+      - "127.0.0.1:${WEB_PORT:-9530}:80"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/healthz || exit 1"]
       interval: 10s

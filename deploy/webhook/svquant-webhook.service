@@ -1,0 +1,35 @@
+# SVQuant Gitee WebHook 接收器（systemd 单元模板）
+#
+# 由 scripts/ci/webhook-install.sh 安装时会替换 __REPO_DIR__ / __RUN_USER__ / __PYTHON__，
+# 一般不需要手工改；手工部署时按需替换后放到 /etc/systemd/system/svquant-webhook.service。
+#
+# 说明：
+# - 只监听 127.0.0.1，由 Nginx 终止 TLS 后反代到 /hooks/gitee
+# - 任务以子进程运行，日志在该服务名的 journal 与 deploy/webhook-logs/ 下
+# - 运行用户必须能执行 docker（加入 docker 组），否则部署任务会失败
+
+[Unit]
+Description=SVQuant Gitee WebHook receiver
+Documentation=file://__REPO_DIR__/deploy/webhook/README.md
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__RUN_USER__
+Group=__RUN_USER__
+WorkingDirectory=__REPO_DIR__
+EnvironmentFile=/etc/svquant/webhook.env
+ExecStart=__PYTHON__ __REPO_DIR__/deploy/webhook/server.py
+Restart=always
+RestartSec=3
+TimeoutStopSec=20
+
+# 最小权限：只放开仓库与日志目录
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ReadWritePaths=__REPO_DIR__ /var/log/svquant
+
+[Install]
+WantedBy=multi-user.target

@@ -100,7 +100,7 @@ fi
 
 printf '\n== 结论 ==\n'
 if (( ${#FAILS[@]} == 0 )); then
-  printf '  可以跑流水线。记得在 Gitee「服务 → Gitee Go → 主机组」里确认 agent 在线。\n'
+  printf '  可以跑 CI/CD。下一步：sudo bash scripts/ci/webhook-install.sh --user <运行用户>\n'
 else
   printf '  还有 %d 项缺失，按上面的命令补齐后重跑本脚本。\n' "${#FAILS[@]}"
 fi

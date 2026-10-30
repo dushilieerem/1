@@ -66,6 +66,10 @@ fi
 if [[ "$START_OK" == "1" ]] && bash "$ROOT_DIR/scripts/ci/smoke.sh" "$WEB_BASE" "$API_BASE"; then
   printf 'BACKEND_IMAGE=%s\nWEB_IMAGE=%s\n' "$NEW_BACKEND" "$NEW_WEB" > "$LAST_GOOD"
   log "发布成功，已记录回滚点 $LAST_GOOD"
+  if [[ "${SKIP_PUBLIC_SERVICES:-0}" != "1" ]]; then
+    bash "$ROOT_DIR/scripts/ci/serve-public.sh" start \
+      || log "警告：手机 H5 或外网通道启动失败（主服务不受影响）"
+  fi
   exit 0
 fi
 

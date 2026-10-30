@@ -18,9 +18,9 @@ log() { printf '[deploy] %s\n' "$*" >&2; }
 # 宿主机端口优先取 deploy/.env（生产与开发端口分离），再退回环境变量/默认值
 env_val() { sed -n "s/^$1=//p" "$ENV_FILE" | head -n1; }
 WEB_PORT_GUESS="${WEB_PORT:-$(env_val WEB_PORT)}"
-WEB_PORT_GUESS="${WEB_PORT_GUESS:-9630}"
+WEB_PORT_GUESS="${WEB_PORT_GUESS:-9530}"
 API_PORT="${API_PORT:-$(env_val BACKEND_PORT)}"
-API_PORT="${API_PORT:-9766}"
+API_PORT="${API_PORT:-8766}"
 WEB_BASE="http://127.0.0.1:${WEB_PORT_GUESS}"
 API_BASE="http://127.0.0.1:${API_PORT}"
 

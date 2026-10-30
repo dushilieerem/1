@@ -1,6 +1,6 @@
 # iFinD 数据缺口分析：13 个聚宽策略需要额外采集什么
 
-> 分析对象：`D:\xudo\10月\10.29策略代码\公司策略` 下 13 个聚宽（JoinQuant）策略
+> 分析对象：[聚宽策略源码/公司策略](聚宽策略源码/公司策略) 下 13 个聚宽（JoinQuant）策略
 > 基准数据：SVQuant / `marketdata` 现有 iFinD 发布物
 > 分析日期：2026-10-30
 > 性质：只读分析，不改代码、不动数据
@@ -26,7 +26,7 @@
 
 ### 2.1 权威清单
 
-依据 [09-current-data-fields.md](D:/project/SVQuant/docs/功能包/FEAT-010-投研数据底座/09-current-data-fields.md)（release `ifind-sync-20260908-055514`，来源 iFinD）：
+依据 [09-current-data-fields.md](../功能包/FEAT-010-投研数据底座/09-current-data-fields.md)（release `ifind-sync-20260908-055514`，来源 iFinD）：
 
 | 数据域 | 规模 | 字段 | 覆盖期 |
 |---|---|---|---|
@@ -43,7 +43,7 @@
 
 1. **`current_mv` 不能当总市值用。** 文档明确写「不能在读取层当作 `total_mv` 或 `market_cap` 的同义字段」。但 11 个策略都按 `market_cap`（总市值）取数，其中「流通市值前 N」「市值最小 10%」这类排序对总/流通口径敏感。**必须先确认 `ths_current_mv_stock` 到底是总市值还是流通市值**，否则市值因子全错。
 2. **`turnover` 是 iFinD 原始值，未做单位换算**（文档：不能默认理解为 0~1 小数）。而「自由现金流轮动」用 `turnover`，国证2000 用 `turnover_ratio`。
-3. **本地 `D:\project\SVQuant\MarketData` 与文档不是同一版本。** 本地是拆分前旧快照（2026-08-14 前），字段是 `total_mv/float_mv/total_shares/float_shares/pe/pe_ttm/pb/ps_ttm` + `is_st/is_suspended/limit_status/industry_sw`，来源标注 `akshare` / `baostock`，与文档的 iFinD 15 字段**完全不同名、不同口径**。且本地 `security_status.parquet` 只有 141 行（2026-01-05 → 2026-08-04）。做决策前需确认以哪套为准。
+3. **本仓库本地的 `MarketData/` 与文档不是同一版本。** 本地是拆分前旧快照（2026-08-14 前），字段是 `total_mv/float_mv/total_shares/float_shares/pe/pe_ttm/pb/ps_ttm` + `is_st/is_suspended/limit_status/industry_sw`，来源标注 `akshare` / `baostock`，与文档的 iFinD 15 字段**完全不同名、不同口径**。且本地 `security_status.parquet` 只有 141 行（2026-01-05 → 2026-08-04）。做决策前需确认以哪套为准。
 
 **建议以文档的 iFinD 15 字段为基准**（本地旧快照的 `total_mv/float_mv/shares/ps_ttm/is_st` 看似"补齐了"缺口，但那批是 AkShare 口径，按 FEAT-025 规则不能与 iFinD 混用、不能静默覆盖）。
 
@@ -91,7 +91,7 @@
 
 ## 4. 需要额外采集的数据清单
 
-> iFinD 指标 ID 统一遵循 `ths_*_stock` 命名，但**新增字段的准确 ID 与 `indiparams` 必须先用「超级命令」核实再入采集器**（沿用 [03-technical-design.md](D:/project/SVQuant/docs/功能包/FEAT-010-投研数据底座/03-technical-design.md) §3 的流程）。下表只写语义，不写未经验证的 ID。
+> iFinD 指标 ID 统一遵循 `ths_*_stock` 命名，但**新增字段的准确 ID 与 `indiparams` 必须先用「超级命令」核实再入采集器**（沿用 [03-technical-design.md](../功能包/FEAT-010-投研数据底座/03-technical-design.md) §3 的流程）。下表只写语义，不写未经验证的 ID。
 
 ### 4.1 P0 — 财务三表（8/13 策略，从零新增）
 
@@ -275,6 +275,8 @@
 ---
 
 ## 8. 附：13 个策略文件与代码规模
+
+下表路径相对 [聚宽策略源码/公司策略](聚宽策略源码/公司策略)：
 
 | # | 策略 | 文件 | 行数级 |
 |---|---|---|---|

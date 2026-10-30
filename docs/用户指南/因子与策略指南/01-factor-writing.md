@@ -51,11 +51,12 @@ def ep_ratio(self):
 |------|------|
 | 价格 | `open`、`high`、`low`、`close` |
 | 成交 | `volume`、`amount`、`turnover` |
-| 市值 | `current_mv`（当前总市值，单位元） |
+| 市值 | `current_mv`（当前**流通**市值，单位元） |
 | 估值 | `dividend_yield_ttm`、`pe_ttm`、`pb_mrq`、`pcf_operating_cash_flow_ttm` |
 | 状态 | `listed_status`、`the_sw_industry_code`、`up_and_down_status` |
 
 - 市值字段名是 `current_mv`，没有 `total_mv`；市净率是 `pb_mrq`，没有 `pb`。
+- `current_mv` 是**流通市值**（iFinD `ths_current_mv_stock`），不是总市值。需要总市值时，必须用「总股本 × 未复权收盘价」自行计算，不能直接把 `current_mv` 当 `total_mv` 用。
 - 其他字段可以用 `self["字段名"]` 访问，全部可用字段名可以通过 `self.fields` 查看。
 - 字段缺失时不要用最新静态值替代：改用可用字段，或停止该因子的回测。
 

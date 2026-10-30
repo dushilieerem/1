@@ -142,8 +142,11 @@ smoke.sh                        前端 /healthz、后端 /api/health，RE 网关
 | 服务 | 镜像 | 端口 | 说明 |
 |------|------|------|------|
 | `db` | postgres:16-alpine | 仅内网 | 命名卷 `pgdata` |
-| `backend` | `docker/backend.Dockerfile` | `127.0.0.1:8766` | 启动时 `bootstrap_schemas()` 自动建表 |
-| `web` | `docker/frontend.Dockerfile` | `127.0.0.1:${WEB_PORT:-9530}` | Nginx 托管 dist + `/api` 反代 |
+| `backend` | `docker/backend.Dockerfile` | `127.0.0.1:${BACKEND_PORT:-9766}`（容器内 8766） | 启动时 `bootstrap_schemas()` 自动建表 |
+| `web` | `docker/frontend.Dockerfile` | `127.0.0.1:${WEB_PORT:-9630}` | Nginx 托管 dist + `/api` 反代 |
+
+生产端口与开发端口刻意分开（开发 `9530`/`8766`，生产 `9630`/`9766`），
+两套可以同时运行，`deploy.sh` 从 `deploy/.env` 读取这两个端口做冒烟检查。
 
 ## 7. 版本与发布规矩
 

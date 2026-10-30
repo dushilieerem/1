@@ -4,8 +4,9 @@
 # 退出码 0 表示全部通过；任一失败即非 0，供 deploy.sh 触发回滚。
 set -Eeuo pipefail
 
-WEB_BASE="${1:-http://127.0.0.1:9530}"
-API_BASE="${2:-http://127.0.0.1:8766}"
+# 默认值是生产端口，与开发环境的 9530/8766 区分；deploy.sh 会显式传入
+WEB_BASE="${1:-http://127.0.0.1:9630}"
+API_BASE="${2:-http://127.0.0.1:9766}"
 RETRIES="${SMOKE_RETRIES:-20}"
 
 log() { printf '[smoke] %s\n' "$*" >&2; }

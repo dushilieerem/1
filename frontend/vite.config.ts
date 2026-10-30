@@ -90,6 +90,9 @@ export default defineConfig({
     headers: {
       "Cache-Control": "no-store",
     },
+    // cloudflared 快速通道（scripts/svquant.sh 创建）经 *.trycloudflare.com 访问，
+    // Vite 默认按 Host 头拦截，必须显式放行。
+    allowedHosts: [".trycloudflare.com"],
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8766",
@@ -106,6 +109,7 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 9532,
     strictPort: true,
+    allowedHosts: [".trycloudflare.com"],
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8766",

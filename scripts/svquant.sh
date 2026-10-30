@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# One-command local launcher for the SVQuant API and main Vite frontend.
+# One-command local launcher for the SVQuant API, main Vite frontend,
+# invest-api, mobile H5, and cloudflared quick tunnels for external access.
 # PostgreSQL and ResearchEngine remain separate services and must be available.
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -9,16 +10,32 @@ ROOT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
 SCRIPT_PATH="$SCRIPT_DIR/svquant.sh"
 BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
+INVEST_API_DIR="$ROOT_DIR/invest-api"
+INVEST_H5_DIR="$ROOT_DIR/frontend/invest"
 RUNTIME_DIR="$BACKEND_DIR/output/dev-services"
 BACKEND_PID_FILE="$RUNTIME_DIR/backend.pid"
 FRONTEND_PID_FILE="$RUNTIME_DIR/frontend.pid"
+INVEST_API_PID_FILE="$RUNTIME_DIR/invest-api.pid"
+INVEST_H5_PID_FILE="$RUNTIME_DIR/invest-h5.pid"
+TUNNEL_FRONTEND_PID_FILE="$RUNTIME_DIR/tunnel-frontend.pid"
+TUNNEL_INVEST_PID_FILE="$RUNTIME_DIR/tunnel-invest.pid"
 BACKEND_LOG="$RUNTIME_DIR/backend.log"
 FRONTEND_LOG="$RUNTIME_DIR/frontend.log"
+INVEST_API_LOG="$RUNTIME_DIR/invest-api.log"
+INVEST_H5_LOG="$RUNTIME_DIR/invest-h5.log"
+TUNNEL_FRONTEND_LOG="$RUNTIME_DIR/tunnel-frontend.log"
+TUNNEL_INVEST_LOG="$RUNTIME_DIR/tunnel-invest.log"
 BACKEND_PORT=8766
 FRONTEND_PORT=9530
+INVEST_API_PORT=8767
+INVEST_H5_PORT=9540
 STARTUP_TIMEOUT_SECONDS=60
+TUNNEL_TIMEOUT_SECONDS=40
 CONDA_ENV_NAME="${SVQUANT_CONDA_ENV:-svquant}"
 BASH_BIN="$(command -v bash)"
+CLOUDFLARED_INSTALL_PATH="${SVQUANT_CLOUDFLARED_PATH:-$HOME/.local/bin/cloudflared}"
+SERVICES=(backend frontend invest-api invest-h5)
+TUNNELS=(tunnel-frontend tunnel-invest)
 
 # 健康检查/探活必须直连本机：shell 里若有 http_proxy（如 Clash），curl 127.0.0.1
 # 会被拐到代理导致服务被误判为未就绪（进而回滚误杀）。子服务一并继承，无副作用。
@@ -30,18 +47,29 @@ usage() {
 SVQuant 本地开发启动器
 
 用法：
-  ./scripts/svquant.sh                 启动前后端（等同 start）
-  ./scripts/svquant.sh start           启动前后端
-  ./scripts/svquant.sh stop            停止本脚本启动的前后端
-  ./scripts/svquant.sh restart         重启前后端
-  ./scripts/svquant.sh status          查看进程状态
-  ./scripts/svquant.sh logs            跟踪前后端日志
+  ./scripts/svquant.sh                    一键启动全部服务 + cloudflared 临时通道
+  ./scripts/svquant.sh start              同上
+  ./scripts/svquant.sh start --no-tunnel  只启动服务，不建外网通道
+  ./scripts/svquant.sh stop               停止全部服务与通道
+  ./scripts/svquant.sh restart            重启全部
+  ./scripts/svquant.sh status             查看进程状态与外网地址
+  ./scripts/svquant.sh logs               跟踪全部日志
+  ./scripts/svquant.sh tunnel             仅创建 cloudflared 临时通道
+  ./scripts/svquant.sh untunnel           仅停止 cloudflared 临时通道
+  ./scripts/svquant.sh install-cloudflared  下载 cloudflared 到 ~/.local/bin
 
 启动成功后：
-  前端  http://127.0.0.1:9530
-  API   http://127.0.0.1:8766/docs
-  backend/frontend 在独立后台会话运行；启动命令返回或终端断开不会向服务发送 Ctrl+C。
+  主前端     http://127.0.0.1:9530
+  API        http://127.0.0.1:8766/docs
+  手机 H5    http://127.0.0.1:9540   （演示账号 demo / demo1234）
+  Invest API http://127.0.0.1:8767/docs
+  外网       *.trycloudflare.com，地址每次启动都会变，用 status 查看
 
+注意：cloudflared 快速通道对公网开放且没有额外鉴权，演示数据也会被访问到，
+      仅用于临时演示，用完请 stop 或 untunnel。
+
+cloudflared 未安装时运行 ./scripts/svquant.sh install-cloudflared；
+也可用 SVQUANT_CLOUDFLARED_BIN 指定已有二进制。
 可通过 SVQUANT_CONDA_ENV 指定 Conda 环境，默认 svquant。
 EOF
 }
@@ -108,10 +136,63 @@ activate_conda_env() {
   conda activate "$CONDA_ENV_NAME"
 }
 
+find_cloudflared() {
+  local candidate
+  if [[ -n "${SVQUANT_CLOUDFLARED_BIN:-}" ]]; then
+    if [[ -x "$SVQUANT_CLOUDFLARED_BIN" ]]; then
+      printf '%s\n' "$SVQUANT_CLOUDFLARED_BIN"
+      return 0
+    fi
+    return 1
+  fi
+  if command -v cloudflared >/dev/null 2>&1; then
+    command -v cloudflared
+    return 0
+  fi
+  for candidate in "$CLOUDFLARED_INSTALL_PATH" "$ROOT_DIR/.tools/cloudflared"; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+install_cloudflared() {
+  local asset="" url="" tmp=""
+  command -v curl >/dev/null 2>&1 || die "需要 curl 下载 cloudflared。"
+  case "$(uname -m)" in
+    x86_64|amd64) asset="cloudflared-linux-amd64" ;;
+    aarch64|arm64) asset="cloudflared-linux-arm64" ;;
+    armv7l|armv6l) asset="cloudflared-linux-arm" ;;
+    *) die "不支持的 CPU 架构：$(uname -m)" ;;
+  esac
+  url="https://github.com/cloudflare/cloudflared/releases/latest/download/$asset"
+  mkdir -p "$(dirname -- "$CLOUDFLARED_INSTALL_PATH")"
+  tmp="$(mktemp "$CLOUDFLARED_INSTALL_PATH.XXXXXX")"
+  printf '下载 %s ...\n' "$url" >&2
+  if ! curl -fL --retry 3 --connect-timeout 15 -o "$tmp" "$url"; then
+    rm -f -- "$tmp"
+    die "cloudflared 下载失败（网络或代理问题）。"
+  fi
+  chmod +x "$tmp"
+  if ! "$tmp" --version >/dev/null 2>&1; then
+    rm -f -- "$tmp"
+    die "下载的 cloudflared 无法执行。"
+  fi
+  mv -f -- "$tmp" "$CLOUDFLARED_INSTALL_PATH"
+  printf '已安装 cloudflared：%s\n' "$CLOUDFLARED_INSTALL_PATH"
+  "$CLOUDFLARED_INSTALL_PATH" --version
+}
+
 pid_file_for() {
   case "$1" in
     backend) printf '%s\n' "$BACKEND_PID_FILE" ;;
     frontend) printf '%s\n' "$FRONTEND_PID_FILE" ;;
+    invest-api) printf '%s\n' "$INVEST_API_PID_FILE" ;;
+    invest-h5) printf '%s\n' "$INVEST_H5_PID_FILE" ;;
+    tunnel-frontend) printf '%s\n' "$TUNNEL_FRONTEND_PID_FILE" ;;
+    tunnel-invest) printf '%s\n' "$TUNNEL_INVEST_PID_FILE" ;;
     *) return 1 ;;
   esac
 }
@@ -120,6 +201,10 @@ log_file_for() {
   case "$1" in
     backend) printf '%s\n' "$BACKEND_LOG" ;;
     frontend) printf '%s\n' "$FRONTEND_LOG" ;;
+    invest-api) printf '%s\n' "$INVEST_API_LOG" ;;
+    invest-h5) printf '%s\n' "$INVEST_H5_LOG" ;;
+    tunnel-frontend) printf '%s\n' "$TUNNEL_FRONTEND_LOG" ;;
+    tunnel-invest) printf '%s\n' "$TUNNEL_INVEST_LOG" ;;
     *) return 1 ;;
   esac
 }
@@ -132,7 +217,24 @@ process_matches_service() {
       [[ "$args" == *"$SCRIPT_PATH _run_backend"* || "$args" == *"api_server.py"* ]]
       ;;
     frontend)
-      [[ "$args" == *"$FRONTEND_DIR"* && "$args" == *vite* ]]
+      # 主前端与 Invest H5 共用 frontend/node_modules/.bin/vite，必须靠端口区分。
+      [[ "$args" == *"$FRONTEND_DIR"* && "$args" == *vite* && "$args" == *"--port $FRONTEND_PORT"* ]]
+      ;;
+    invest-api)
+      [[ "$args" == *"$SCRIPT_PATH _run_invest_api"* ||
+         ( "$args" == *uvicorn* && "$args" == *"app:app"* && "$args" == *"--port $INVEST_API_PORT"* ) ]]
+      ;;
+    invest-h5)
+      [[ "$args" == *"$SCRIPT_PATH _run_invest_h5"* ||
+         ( "$args" == *vite* && "$args" == *"--port $INVEST_H5_PORT"* ) ]]
+      ;;
+    tunnel-frontend)
+      [[ "$args" == *"$SCRIPT_PATH _run_tunnel"* ||
+         ( "$args" == *cloudflared* && "$args" == *"127.0.0.1:$FRONTEND_PORT"* ) ]]
+      ;;
+    tunnel-invest)
+      [[ "$args" == *"$SCRIPT_PATH _run_tunnel"* ||
+         ( "$args" == *cloudflared* && "$args" == *"127.0.0.1:$INVEST_H5_PORT"* ) ]]
       ;;
     *) return 1 ;;
   esac
@@ -165,6 +267,8 @@ health_url_for() {
   case "$1" in
     backend) printf 'http://127.0.0.1:%s/api/health\n' "$BACKEND_PORT" ;;
     frontend) printf 'http://127.0.0.1:%s/\n' "$FRONTEND_PORT" ;;
+    invest-api) printf 'http://127.0.0.1:%s/api/health\n' "$INVEST_API_PORT" ;;
+    invest-h5) printf 'http://127.0.0.1:%s/\n' "$INVEST_H5_PORT" ;;
     *) return 1 ;;
   esac
 }
@@ -173,8 +277,16 @@ port_for() {
   case "$1" in
     backend) printf '%s\n' "$BACKEND_PORT" ;;
     frontend) printf '%s\n' "$FRONTEND_PORT" ;;
+    invest-api) printf '%s\n' "$INVEST_API_PORT" ;;
+    invest-h5) printf '%s\n' "$INVEST_H5_PORT" ;;
     *) return 1 ;;
   esac
+}
+
+tunnel_url_from_log() {
+  local log_file="$1"
+  [[ -f "$log_file" ]] || return 1
+  grep -oE 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' "$log_file" 2>/dev/null | tail -n 1
 }
 
 run_backend() {
@@ -194,36 +306,64 @@ run_frontend() {
   exec "$FRONTEND_DIR/node_modules/.bin/vite" --host 0.0.0.0 --port "$FRONTEND_PORT" --strictPort
 }
 
+run_invest_api() {
+  activate_conda_env || die "无法激活 Conda 环境 '$CONDA_ENV_NAME'。"
+  cd "$INVEST_API_DIR"
+  if [[ -n "${SVQUANT_PID_FILE:-}" ]]; then
+    printf '%s\n' "$$" > "$SVQUANT_PID_FILE"
+  fi
+  exec python -u -m uvicorn app:app --host 0.0.0.0 --port "$INVEST_API_PORT"
+}
+
+run_invest_h5() {
+  cd "$INVEST_H5_DIR"
+  if [[ -n "${SVQUANT_PID_FILE:-}" ]]; then
+    printf '%s\n' "$$" > "$SVQUANT_PID_FILE"
+  fi
+  exec "$FRONTEND_DIR/node_modules/.bin/vite" --host 0.0.0.0 --port "$INVEST_H5_PORT" --strictPort
+}
+
+run_tunnel() {
+  local bin="" port="${SVQUANT_TUNNEL_PORT:-}"
+  bin="$(find_cloudflared || true)"
+  [[ -n "$bin" ]] || die "找不到 cloudflared。"
+  [[ -n "$port" ]] || die "缺少 SVQUANT_TUNNEL_PORT。"
+  if [[ -n "${SVQUANT_PID_FILE:-}" ]]; then
+    printf '%s\n' "$$" > "$SVQUANT_PID_FILE"
+  fi
+  exec "$bin" tunnel --url "http://127.0.0.1:$port" --no-autoupdate
+}
+
 wait_for_services_ready() {
-  local backend_pid="$1" frontend_pid="$2"
+  local -a services=("$@")
   local deadline=$((SECONDS + STARTUP_TIMEOUT_SECONDS))
   local next_notice=$((SECONDS + 5))
-  local backend_ready=0 frontend_ready=0
+  local -a ready=()
+  local i service all_ready
 
-  printf '前后端已在独立后台会话启动，等待就绪（最多 %s 秒）...\n' \
+  for i in "${!services[@]}"; do
+    ready[i]=0
+  done
+
+  printf '服务已在独立后台会话启动，等待就绪（最多 %s 秒）...\n' \
     "$STARTUP_TIMEOUT_SECONDS"
   while ((SECONDS <= deadline)); do
-    if ((backend_ready == 0)); then
-      if curl -fsS --max-time 1 "$(health_url_for backend)" >/dev/null 2>&1; then
-        backend_ready=1
-        printf 'backend 已就绪（PID %s）。\n' "$backend_pid"
-      elif ! kill -0 "$backend_pid" 2>/dev/null; then
-        printf 'backend 进程已退出（PID %s）。\n' "$backend_pid" >&2
+    all_ready=1
+    for i in "${!services[@]}"; do
+      service="${services[i]}"
+      if ((ready[i])); then
+        continue
+      fi
+      all_ready=0
+      if curl -fsS --max-time 1 "$(health_url_for "$service")" >/dev/null 2>&1; then
+        ready[i]=1
+        printf '%s 已就绪（PID %s）。\n' "$service" "$(managed_pid "$service" || true)"
+      elif ! managed_pid "$service" >/dev/null; then
+        printf '%s 进程已退出。\n' "$service" >&2
         return 1
       fi
-    fi
-
-    if ((frontend_ready == 0)); then
-      if curl -fsS --max-time 1 "$(health_url_for frontend)" >/dev/null 2>&1; then
-        frontend_ready=1
-        printf 'frontend 已就绪（PID %s）。\n' "$frontend_pid"
-      elif ! kill -0 "$frontend_pid" 2>/dev/null; then
-        printf 'frontend 进程已退出（PID %s）。\n' "$frontend_pid" >&2
-        return 1
-      fi
-    fi
-
-    if ((backend_ready && frontend_ready)); then
+    done
+    if ((all_ready)); then
       return 0
     fi
     if ((SECONDS >= next_notice)); then
@@ -234,7 +374,7 @@ wait_for_services_ready() {
     sleep 0.5
   done
 
-  printf '前后端未能在 %s 秒内全部就绪。\n' "$STARTUP_TIMEOUT_SECONDS" >&2
+  printf '服务未能在 %s 秒内全部就绪。\n' "$STARTUP_TIMEOUT_SECONDS" >&2
   return 1
 }
 
@@ -272,16 +412,34 @@ start_service() {
   fi
 
   : >> "$log_file"
-  if [[ "$service" == backend ]]; then
-    setsid env \
-      SVQUANT_CONDA_ENV="$CONDA_ENV_NAME" \
-      SVQUANT_CONDA_HOOK="$SVQUANT_CONDA_HOOK" \
-      SVQUANT_PID_FILE="$pid_file" \
-      "$BASH_BIN" "$SCRIPT_PATH" _run_backend >> "$log_file" 2>&1 </dev/null &
-  else
-    setsid env SVQUANT_PID_FILE="$pid_file" \
-      "$BASH_BIN" "$SCRIPT_PATH" _run_frontend >> "$log_file" 2>&1 </dev/null &
-  fi
+  case "$service" in
+    backend)
+      setsid env \
+        SVQUANT_CONDA_ENV="$CONDA_ENV_NAME" \
+        SVQUANT_CONDA_HOOK="$SVQUANT_CONDA_HOOK" \
+        SVQUANT_PID_FILE="$pid_file" \
+        "$BASH_BIN" "$SCRIPT_PATH" _run_backend >> "$log_file" 2>&1 </dev/null &
+      ;;
+    frontend)
+      setsid env SVQUANT_PID_FILE="$pid_file" \
+        "$BASH_BIN" "$SCRIPT_PATH" _run_frontend >> "$log_file" 2>&1 </dev/null &
+      ;;
+    invest-api)
+      setsid env \
+        SVQUANT_CONDA_ENV="$CONDA_ENV_NAME" \
+        SVQUANT_CONDA_HOOK="$SVQUANT_CONDA_HOOK" \
+        SVQUANT_PID_FILE="$pid_file" \
+        "$BASH_BIN" "$SCRIPT_PATH" _run_invest_api >> "$log_file" 2>&1 </dev/null &
+      ;;
+    invest-h5)
+      setsid env SVQUANT_PID_FILE="$pid_file" \
+        "$BASH_BIN" "$SCRIPT_PATH" _run_invest_h5 >> "$log_file" 2>&1 </dev/null &
+      ;;
+    *)
+      printf '错误：未知服务 %s。\n' "$service" >&2
+      return 1
+      ;;
+  esac
 
   pid=""
   for ((attempt = 0; attempt < 100; attempt++)); do
@@ -338,8 +496,93 @@ stop_service() {
   printf '%s 已停止。\n' "$service"
 }
 
+ensure_invest_db() {
+  # 不带 --force：库已存在时会直接返回，不会覆盖现有数据。
+  local db="${INVEST_DB:-$INVEST_API_DIR/data/invest.db}"
+  python -c "import fastapi, uvicorn" >/dev/null 2>&1 ||
+    die "Invest API 依赖缺失；请运行：conda run -n $CONDA_ENV_NAME pip install -r invest-api/requirements.txt"
+  if [[ ! -f "$db" ]]; then
+    printf '未找到 Invest 演示库，正在生成：%s\n' "$db"
+  fi
+  (cd "$INVEST_API_DIR" && python seed.py) >/dev/null || die "Invest 演示库生成失败。"
+}
+
+start_tunnel() {
+  local name="$1" port="$2" pid_file log_file pid url attempt existing_pid bin
+  pid_file="$(pid_file_for "$name")"
+  log_file="$(log_file_for "$name")"
+
+  existing_pid="$(managed_pid "$name" || true)"
+  if [[ -n "$existing_pid" ]]; then
+    url="$(tunnel_url_from_log "$log_file" || true)"
+    printf '%s 已在运行（PID %s）%s\n' "$name" "$existing_pid" "${url:+：$url}"
+    return 0
+  fi
+
+  bin="$(find_cloudflared || true)"
+  if [[ -z "$bin" ]]; then
+    printf '未找到 cloudflared，跳过 %s。运行 %s install-cloudflared 安装后重试。\n' \
+      "$name" "$SCRIPT_PATH" >&2
+    return 1
+  fi
+
+  mkdir -p "$RUNTIME_DIR"
+  # 每次启动清空日志，确保读到的是本次的新地址。
+  : > "$log_file"
+  setsid env SVQUANT_PID_FILE="$pid_file" SVQUANT_TUNNEL_PORT="$port" \
+    "$BASH_BIN" "$SCRIPT_PATH" _run_tunnel >> "$log_file" 2>&1 </dev/null &
+
+  # 子进程写入 PID 文件有短暂延迟，先等登记完成，避免误判为“进程已退出”。
+  pid=""
+  for ((attempt = 0; attempt < 100; attempt++)); do
+    pid="$(managed_pid "$name" || true)"
+    [[ -n "$pid" ]] && break
+    sleep 0.05
+  done
+  if [[ -z "$pid" ]]; then
+    printf '错误：%s 后台进程未能登记有效 PID。\n' "$name" >&2
+    print_log_tail "$log_file"
+    return 1
+  fi
+
+  local deadline=$((SECONDS + TUNNEL_TIMEOUT_SECONDS))
+  url=""
+  while ((SECONDS <= deadline)); do
+    if ! managed_pid "$name" >/dev/null; then
+      printf '错误：%s 进程已退出。\n' "$name" >&2
+      print_log_tail "$log_file"
+      return 1
+    fi
+    url="$(tunnel_url_from_log "$log_file" || true)"
+    [[ -n "$url" ]] && break
+    sleep 0.5
+  done
+  if [[ -z "$url" ]]; then
+    printf '错误：%s 在 %s 秒内未取得通道地址。\n' "$name" "$TUNNEL_TIMEOUT_SECONDS" >&2
+    print_log_tail "$log_file"
+    return 1
+  fi
+
+  printf '%s 已创建：%s -> http://127.0.0.1:%s\n' "$name" "$url" "$port"
+}
+
+start_tunnels() {
+  local rc=0
+  start_tunnel tunnel-frontend "$FRONTEND_PORT" || rc=1
+  start_tunnel tunnel-invest "$INVEST_H5_PORT" || rc=1
+  return "$rc"
+}
+
+stop_tunnels() {
+  local name
+  for name in "${TUNNELS[@]}"; do
+    stop_service "$name"
+  done
+}
+
 start_all() {
-  local backend_before="" frontend_before="" backend_pid frontend_pid
+  local with_tunnel="$1" i j service failed=0
+  local -a before=()
   [[ -f "$BACKEND_DIR/.env" ]] || die "缺少 backend/.env；请先复制 backend/.env.example 并填写配置。"
   [[ -x "$FRONTEND_DIR/node_modules/.bin/vite" ]] || die "前端依赖未安装；请先在 frontend 目录运行 npm install。"
   command -v curl >/dev/null 2>&1 || die "需要 curl 执行启动健康检查。"
@@ -349,71 +592,150 @@ start_all() {
   activate_conda_env || die "无法激活 Conda 环境 '$CONDA_ENV_NAME'。"
 
   mkdir -p "$RUNTIME_DIR"
-  backend_before="$(managed_pid backend || true)"
-  frontend_before="$(managed_pid frontend || true)"
-  start_service backend || return 1
-  backend_pid="$STARTED_PID"
-  if ! start_service frontend; then
-    if [[ -z "$backend_before" ]]; then
-      stop_service backend || true
-    fi
-    return 1
-  fi
-  frontend_pid="$STARTED_PID"
+  ensure_invest_db
 
-  if ! wait_for_services_ready "$backend_pid" "$frontend_pid"; then
-    print_log_tail "$BACKEND_LOG"
-    print_log_tail "$FRONTEND_LOG"
-    if [[ -z "$frontend_before" ]]; then
-      stop_service frontend || true
+  for i in "${!SERVICES[@]}"; do
+    service="${SERVICES[i]}"
+    before[i]="$(managed_pid "$service" || true)"
+    if ! start_service "$service"; then
+      failed=1
+      break
     fi
-    if [[ -z "$backend_before" ]]; then
-      stop_service backend || true
-    fi
+  done
+  if ((failed)); then
+    for ((j = 0; j < i; j++)); do
+      if [[ -z "${before[j]}" ]]; then
+        stop_service "${SERVICES[j]}" || true
+      fi
+    done
     return 1
   fi
 
-  printf '\nSVQuant 已启动：\n  前端：http://127.0.0.1:%s\n  API： http://127.0.0.1:%s/docs\n' \
-    "$FRONTEND_PORT" "$BACKEND_PORT"
+  if ! wait_for_services_ready "${SERVICES[@]}"; then
+    for i in "${!SERVICES[@]}"; do
+      print_log_tail "$(log_file_for "${SERVICES[i]}")"
+    done
+    for i in "${!SERVICES[@]}"; do
+      if [[ -z "${before[i]}" ]]; then
+        stop_service "${SERVICES[i]}" || true
+      fi
+    done
+    return 1
+  fi
+
+  if ((with_tunnel)); then
+    if ! start_tunnels; then
+      printf '部分外网通道未建立；服务本身仍在运行。可稍后执行 %s tunnel 重试。\n' \
+        "$SCRIPT_PATH" >&2
+    fi
+  fi
+
+  printf '\nSVQuant 已启动：\n'
+  printf '  主前端：http://127.0.0.1:%s\n' "$FRONTEND_PORT"
+  printf '  API：   http://127.0.0.1:%s/docs\n' "$BACKEND_PORT"
+  printf '  手机 H5：http://127.0.0.1:%s  （演示账号 demo/demo1234）\n' "$INVEST_H5_PORT"
+  printf '  Invest API：http://127.0.0.1:%s/docs\n' "$INVEST_API_PORT"
+  local name url found=0
+  for name in "${TUNNELS[@]}"; do
+    url="$(tunnel_url_from_log "$(log_file_for "$name")" || true)"
+    if [[ -n "$url" ]]; then
+      printf '  外网 %s：%s\n' "$name" "$url"
+      found=1
+    fi
+  done
+  if ((with_tunnel && found)); then
+    printf '  提示：trycloudflare 临时地址公网可访问、每次启动会变，用完记得 stop。\n'
+  fi
 }
 
 show_status() {
   local service pid url
-  for service in backend frontend; do
+  for service in "${SERVICES[@]}"; do
     pid="$(managed_pid "$service" || true)"
-    url="$(health_url_for "$service")"
     if [[ -n "$pid" ]]; then
-      if curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
-        printf '%-8s 运行中  PID=%s  %s\n' "$service" "$pid" "$url"
+      if curl -fsS --max-time 2 "$(health_url_for "$service")" >/dev/null 2>&1; then
+        printf '%-16s 运行中  PID=%s  %s\n' "$service" "$pid" "$(health_url_for "$service")"
       else
-        printf '%-8s 进程存在但未就绪  PID=%s  %s\n' "$service" "$pid" "$url"
+        printf '%-16s 进程存在但未就绪  PID=%s  %s\n' "$service" "$pid" "$(health_url_for "$service")"
       fi
     else
-      printf '%-8s 未运行\n' "$service"
+      printf '%-16s 未运行\n' "$service"
+    fi
+  done
+  for service in "${TUNNELS[@]}"; do
+    pid="$(managed_pid "$service" || true)"
+    url="$(tunnel_url_from_log "$(log_file_for "$service")" || true)"
+    if [[ -n "$pid" ]]; then
+      printf '%-16s 运行中  PID=%s  %s\n' "$service" "$pid" "${url:-（等待地址）}"
+    else
+      printf '%-16s 未运行\n' "$service"
     fi
   done
 }
 
-case "${1:-start}" in
+MODE="start"
+NO_TUNNEL=0
+for arg in "$@"; do
+  case "$arg" in
+    --no-tunnel) NO_TUNNEL=1 ;;
+    start|stop|restart|status|logs|tunnel|untunnel|install-cloudflared)
+      MODE="$arg"
+      ;;
+    _run_backend|_run_frontend|_run_invest_api|_run_invest_h5|_run_tunnel)
+      MODE="$arg"
+      ;;
+    -h|--help|help)
+      MODE="help"
+      ;;
+    *)
+      printf '未知参数：%s\n\n' "$arg" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+case "$MODE" in
   start)
-    start_all
+    if ((NO_TUNNEL)); then
+      start_all 0
+    else
+      start_all 1
+    fi
     ;;
   stop)
+    stop_tunnels
+    stop_service invest-h5
+    stop_service invest-api
     stop_service frontend
     stop_service backend
     ;;
   restart)
+    stop_tunnels
+    stop_service invest-h5
+    stop_service invest-api
     stop_service frontend
     stop_service backend
-    start_all
+    start_all "$((1 - NO_TUNNEL))"
+    ;;
+  tunnel)
+    start_tunnels
+    ;;
+  untunnel)
+    stop_tunnels
+    ;;
+  install-cloudflared)
+    install_cloudflared
     ;;
   status)
     show_status
     ;;
   logs)
     mkdir -p "$RUNTIME_DIR"
-    touch "$BACKEND_LOG" "$FRONTEND_LOG"
-    tail -n 100 -F "$BACKEND_LOG" "$FRONTEND_LOG"
+    touch "$BACKEND_LOG" "$FRONTEND_LOG" "$INVEST_API_LOG" "$INVEST_H5_LOG" \
+      "$TUNNEL_FRONTEND_LOG" "$TUNNEL_INVEST_LOG"
+    tail -n 100 -F "$BACKEND_LOG" "$FRONTEND_LOG" "$INVEST_API_LOG" "$INVEST_H5_LOG" \
+      "$TUNNEL_FRONTEND_LOG" "$TUNNEL_INVEST_LOG"
     ;;
   _run_backend)
     run_backend
@@ -421,7 +743,16 @@ case "${1:-start}" in
   _run_frontend)
     run_frontend
     ;;
-  -h|--help|help)
+  _run_invest_api)
+    run_invest_api
+    ;;
+  _run_invest_h5)
+    run_invest_h5
+    ;;
+  _run_tunnel)
+    run_tunnel
+    ;;
+  help)
     usage
     ;;
   *)

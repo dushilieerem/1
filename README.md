@@ -42,7 +42,10 @@ ResearchEngine 完成。
 ./scripts/svquant.sh
 ```
 
-默认打开 <http://127.0.0.1:9530>。状态、日志、停止和手动启动方式见[部署文档](docs/部署与运维/部署文档.md)。
+默认打开 <http://127.0.0.1:9530>。脚本会依次启动主前端、`backend`、`invest-api` 和手机 H5，
+并可用 cloudflared 为主前端和 H5 各建一条临时外网通道（地址见 `./scripts/svquant.sh status`，
+每次启动都会变）。未安装 cloudflared 时先运行 `./scripts/svquant.sh install-cloudflared`；
+不需要外网访问用 `./scripts/svquant.sh start --no-tunnel`。状态、日志、停止和手动启动方式见[部署文档](docs/部署与运维/部署文档.md)。
 
 ## 后端配置与手动启动
 

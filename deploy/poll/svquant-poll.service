@@ -12,6 +12,8 @@ After=network-online.target docker.service
 
 [Service]
 Type=oneshot
+# 发布任务会拉起手机 H5 / cloudflared 等长期进程，oneshot 结束后不能被连带杀掉
+KillMode=process
 User=__RUN_USER__
 Group=__RUN_USER__
 WorkingDirectory=__REPO_DIR__

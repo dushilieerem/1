@@ -132,18 +132,27 @@ compose up -d --wait            等 db / backend / web 健康检查通过
 smoke.sh                        前端 /healthz、后端 /api/health，RE 网关只告警
   ↓
 成功：写 deploy/.last-good.env（回滚点）
+  ↓
+serve-public.sh start           重启 invest-api 与手机 H5，创建或复用 cloudflared 临时通道
 失败：用上一组镜像重新 up，再冒烟，最后退出码 1
 ```
 
 跳过备份：`SKIP_DB_BACKUP=1 bash scripts/ci/deploy.sh <tag>`（仅限确认无数据变更时）。
+跳过手机 H5 与通道：`SKIP_PUBLIC_SERVICES=1`。
+
+`serve-public.sh` 启动的进程是长期进程，依赖两件事：
+
+1. 轮询服务设置 `KillMode=process`（`deploy/poll/svquant-poll.service` 模板已包含），
+   否则 oneshot 结束时 systemd 会把它们连带杀掉；
+2. 子进程关闭继承的 fd 9（轮询的 flock），否则会永久占锁、让后续轮询全部跳过。
 
 编排文件：[`deploy/compose.yml`](../../deploy/compose.yml)：
 
 | 服务 | 镜像 | 端口 | 说明 |
 |------|------|------|------|
-| `db` | postgres:16-alpine | `127.0.0.1:${DB_PORT:-5432}` | 命名卷 `pgdata` |
-| `backend` | `docker/backend.Dockerfile` | `127.0.0.1:${BACKEND_PORT:-8766}`（容器内 8766） | 启动时 `bootstrap_schemas()` 自动建表 |
-| `web` | `docker/frontend.Dockerfile` | `127.0.0.1:${WEB_PORT:-9530}` | Nginx 托管 dist + `/api` 反代 |
+| `db` | postgres:16-alpine | `${DB_PORT:-5432}`（所有网卡） | 命名卷 `pgdata` |
+| `backend` | `docker/backend.Dockerfile` | `${BACKEND_PORT:-8766}`（容器内 8766） | 启动时 `bootstrap_schemas()` 自动建表 |
+| `web` | `docker/frontend.Dockerfile` | `${WEB_PORT:-9530}`（所有网卡） | Nginx 托管 dist + `/api` 反代 |
 
 生产沿用原开发端口（`9530` / `8766` / `5432`），且监听所有网卡；原 dev02 的 PostgreSQL
 实例已停用。开发启动脚本改用 `9531` / `8768` / `8769` / `9541`，两套可同时运行。

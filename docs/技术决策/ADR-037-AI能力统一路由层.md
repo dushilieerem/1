@@ -1,7 +1,7 @@
 # ADR-037：AI 能力统一路由层
 
 - 日期：2026-10-30
-- 状态：已采纳；P0、P1-1、P1-2、P1-3（因子与策略生成）已落地，仅剩 P1-4 策略转写
+- 状态：已采纳并落地；P0 路由层与 RE 五项 AI 能力（读帖摘要、回测解读、因子生成、策略生成、策略转写）均已迁入，`re_gateway` 不再转发 AI 请求
 - 关联：[INIT-003 AI 平台](../产品与需求/倡议/INIT-003-AI平台/domain-design.md)、[ADR-029 研究服务采用 services 与 models 分层](ADR-029-研究服务采用services与models分层.md)
 
 ## 问题
@@ -152,7 +152,7 @@ RE 侧 AI 端点保留一个版本周期做为灰度回退，之后下线（ADR 
 - INIT-003 用户、社区与 AI SaaS 平台：本 ADR 是其 BC1 AI Assistant 的基础设施前提。
 - ADR-029：`ai/` 目录沿用 services 与 models 分层的组织方式，不引入额外分层框架。
 
-## 8. 落地进度与 P1-4 迁移清单
+## 8. 落地进度
 
 | 能力 | 状态 | 位置 |
 |---|---|---|
@@ -160,13 +160,9 @@ RE 侧 AI 端点保留一个版本周期做为灰度回退，之后下线（ADR 
 | 回测解读 | 已迁入 | `services/research/backtest_evidence.py` + `ai/router/tasks/backtest_interpretation.py` |
 | 因子生成 | 已迁入 | `services/factor/generated_factor_validation.py` + `ai/router/tasks/factor_generation.py` |
 | 策略生成 | 已迁入 | `services/strategy/generated_strategy_validation.py` + `ai/router/tasks/strategy_generation.py` |
-| 聚宽转写 | **未迁入**（仍转发 RE） | `app/routers/re_gateway.py` |
+| 聚宽转写 | 已迁入 | `services/strategy/transcription_validation.py` + `ai/router/tasks/strategy_transcription.py` + `app/routers/ai_transcription.py` |
 
-续做 P1-4 时需要一起搬的东西（`research-engine/app/api/ai_strategy_transcription.py`）：
-`_InventoryVisitor` / `_capability_issues` / `_contract_issues` / `_instrument_issues` /
-`_mappings` / `_redact_secrets` / `_security_errors` / `_future_data_errors` /
-`_field_errors` / `_vectorized_contract_errors` / `_event_contract_errors` /
-两份 AST 校验器 / prompt / `report_only` 与 `accepted_degradations` 的判定逻辑。
-
-执行形态待定（D3）：现为 600s 同步调用；可选 202 + 轮询，与 `/api/backtest/strategy` 同构。
-这一步只改传输，不改 prompt 与校验语义。
+五项能力全部本地化后，`app/routers/re_gateway.py` 已无 AI 转发端点；RE 侧 AI 端点可在
+一个版本周期后下线（D5）。转写仍按 600s 同步执行（D3 未定），迁移时保持了 RE 的两处
+逆向语义：非 JSON/类型不符的模型输出返回 `200 + rejected + syntax check fail` 而非 502；
+`meta.data_version` 固定 `"unknown"`（RE 无数据清单时的 fallback）。

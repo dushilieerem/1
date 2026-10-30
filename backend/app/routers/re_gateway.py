@@ -11,7 +11,6 @@ from fastapi.responses import JSONResponse
 
 from app.deps import optional_user, require_user
 from services.core.backtest_params import validate_execution_timing
-from services.core.ai_factor_input import factor_prompt_error
 from services.core.ai_strategy_input import strategy_prompt_error
 from services.core.strategy_transcription_input import strategy_transcription_error
 from services.core.db import get_conn
@@ -263,23 +262,7 @@ def re_health(_user: dict | None = Depends(optional_user)) -> JSONResponse:
     return _resp(status, headers, data)
 
 
-# —— AI（对方侧；本机不存 Key）——
-
-
-@router.post("/api/ai/factor-generations")
-def ai_factor_generations(
-    body: dict[str, Any], _user: dict = Depends(require_user)
-) -> JSONResponse:
-    error = factor_prompt_error(body.get("prompt"))
-    if error:
-        return JSONResponse(status_code=422, content={"detail": error})
-    status, headers, data = forward_re(
-        "POST",
-        "/api/ai/factor-generations",
-        payload=body if isinstance(body, dict) else {},
-        timeout=600,
-    )
-    return _resp(status, headers, data)
+# —— AI（因子生成与回测解读已本地化，见 ai_factor_generation / ai_backtest）——
 
 
 @router.post("/api/ai/strategy-generations")

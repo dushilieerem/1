@@ -47,7 +47,8 @@ services:
       - backend-factor:/app/backend/factor
       - kh-data:/app/KnowledgeHub/data
     ports:
-      - "127.0.0.1:8766:8766"
+      # 宿主机端口与开发环境（8766）区分；容器内始终是 8766
+      - "127.0.0.1:${BACKEND_PORT:-9766}:8766"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8766/api/health || exit 1"]
       interval: 10s
@@ -67,7 +68,8 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${WEB_PORT:-9530}:80"
+      # 宿主机端口与开发环境（9530）区分
+      - "127.0.0.1:${WEB_PORT:-9630}:80"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/healthz || exit 1"]
       interval: 10s

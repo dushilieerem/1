@@ -39,7 +39,7 @@ def run_task(
         tools=tools,
         tool_choice=tool_choice,
     )
-    if not request.messages and spec.executors[0] != EXECUTOR_RE:
+    if not request.messages and spec.prompt is None and spec.executors[0] != EXECUTOR_RE:
         raise AiInvalidRequest("messages 不能为空")
 
     started = time.perf_counter()

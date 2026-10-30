@@ -40,12 +40,6 @@ COMMUNITY_TASKS: tuple[TaskSpec, ...] = (
         max_tokens=1400,
     ),
     TaskSpec(
-        task_id="community.summarize_post",
-        description="读帖摘要（TL;DR）",
-        temperature=0.2,
-        max_tokens=450,
-    ),
-    TaskSpec(
         task_id="community.flag_read_risks",
         description="读帖风险标注",
         temperature=0.1,

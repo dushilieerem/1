@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ai.router.tasks.community import register_community_tasks
+from ai.router.tasks.community_summary import SUMMARY_TASK  # noqa: F401  导入即注册
 from ai.router.tasks.research import register_research_tasks
 
 register_community_tasks()

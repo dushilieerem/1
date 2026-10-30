@@ -45,6 +45,9 @@ class TaskSpec:
     allow_tools: bool = False
     allow_stream: bool = False
     executors: tuple[str, ...] = (EXECUTOR_LOCAL,)
+    # 任务自带 prompt 与输出校验器（迁移 RE 能力时启用）
+    prompt: Callable[[TaskRequest], list[dict[str, Any]]] | None = None
+    validator: Callable[[str, TaskRequest], dict[str, Any]] | None = None
     # 执行链中的 re 成员需要目标路径与入参/出参映射
     re_path: str | None = None
     re_payload: Callable[[TaskRequest], dict[str, Any]] | None = None

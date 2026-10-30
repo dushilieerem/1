@@ -21,10 +21,15 @@ from ai.router.specs import EXECUTOR_LOCAL, EXECUTOR_RE, TaskRequest, TaskSpec
 
 def run_local(spec: TaskSpec, request: TaskRequest) -> dict[str, Any]:
     target = providers.resolve_target(slot=spec.slot, model=request.model)
+    messages = list(request.messages)
+    if not messages and spec.prompt is not None:
+        messages = list(spec.prompt(request))
+    if not messages:
+        raise AiInvalidRequest(f"任务 {spec.task_id} 没有可用的 messages 或 prompt")
     tools = request.tools if spec.allow_tools else None
     result = providers.complete(
         target,
-        messages=list(request.messages),
+        messages=messages,
         temperature=spec.temperature if request.temperature is None else request.temperature,
         max_tokens=spec.max_tokens,
         tools=tools,
@@ -32,6 +37,8 @@ def run_local(spec: TaskSpec, request: TaskRequest) -> dict[str, Any]:
         response_format=spec.response_format,
         timeout=spec.timeout_sec,
     )
+    if spec.validator is not None:
+        result["data"] = spec.validator(str(result.get("content") or ""), request)
     return result
 
 
@@ -52,11 +59,14 @@ def run_re(spec: TaskSpec, request: TaskRequest) -> dict[str, Any]:
     )
     if status == 404:
         # 端点未部署视为“该执行者不可用”，允许链上后续成员接手。
-        raise AiNotConfigured(f"研究计算服务未提供 {spec.re_path}")
+        # 对外不暴露内部服务路径（产品要求：错误文案不泄漏 RE 细节）。
+        raise AiNotConfigured("研究计算服务未提供该能力")
     if status in (401, 403):
         raise AiNotConfigured("研究计算服务拒绝访问，请检查服务端凭据")
     if status == 429:
         raise AiUpstreamError("研究计算服务限流（HTTP 429）")
+    if status == 504:
+        raise AiTimeout("研究计算服务请求超时")
     if status >= 500:
         raise AiUpstreamError(f"研究计算服务 HTTP {status}")
     if status >= 400:
@@ -84,14 +94,14 @@ EXECUTORS: dict[str, Callable[[TaskSpec, TaskRequest], dict[str, Any]]] = {
 
 
 def can_run(spec: TaskSpec) -> bool:
-    """该任务的执行链首成员当前是否可用（用于 feature 层决定是否走 mock）。"""
-    first = spec.executors[0]
-    if first == EXECUTOR_LOCAL:
-        return providers.is_configured(spec.slot)
-    if first == EXECUTOR_RE:
-        from services.core.env_config import env
+    """执行链上是否至少有一个成员可用（供 feature 决定是否使用本地 mock）。"""
+    from services.core.env_config import env
 
-        return bool((env("YG_RE_BASE", "") or "").strip())
+    for name in spec.executors:
+        if name == EXECUTOR_LOCAL and providers.is_configured(spec.slot):
+            return True
+        if name == EXECUTOR_RE and (env("YG_RE_BASE", "") or "").strip():
+            return True
     return False
 
 

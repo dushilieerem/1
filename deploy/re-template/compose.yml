@@ -1,0 +1,39 @@
+# ResearchEngine 编排模板（复制到 RE 仓库根目录）
+# 用法：
+#   cp .env.example .env   # 按 RE 实际配置变量填写
+#   docker compose up -d --build --wait
+#
+# 边界：marketdata 只读挂载，output（回测结果 SQLite/报告）走命名卷，都不进 Git。
+
+name: research-engine
+
+services:
+  re:
+    image: ${RE_IMAGE:-research-engine:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # RE 的配置项以它自己的 .env.example 为准；没有该文件时 compose 会忽略
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TZ: Asia/Shanghai
+      # 行情目录在容器内的固定挂载点，与下面的 volumes 保持一致
+      MARKETDATA_DIR: /data/marketdata
+    volumes:
+      # 宿主机行情目录（Parquet 只读）→ 容器内固定路径
+      - ${RE_MARKETDATA_HOST_DIR:-./marketdata}:/data/marketdata:ro
+      - re-output:/app/output
+    ports:
+      - "127.0.0.1:${RE_PORT:-9527}:9527"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9527/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  re-output:

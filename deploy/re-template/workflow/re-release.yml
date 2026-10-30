@@ -1,0 +1,54 @@
+version: '1.0'
+name: re-release
+displayName: ResearchEngine 发布（tag → 部署 → 冒烟 → 失败回滚）
+
+triggers:
+  push:
+    tags:
+      prefix:
+        - v
+
+stages:
+  - name: stage-release
+    displayName: 发布
+    strategy: naturally
+    trigger: auto
+    executor: []
+    steps:
+      - step: shell@agent
+        name: re_deploy
+        displayName: 构建 → compose 部署 → 健康检查 → 回滚
+        hostGroupID: gitee-go
+        script: |
+          set -Eeuo pipefail
+          ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+          cd "$ROOT"
+          TAG="$(git describe --tags --exact-match)"
+          IMAGE="research-engine:${TAG}"
+          LAST_GOOD=".last-good.env"
+          HEALTH="http://127.0.0.1:${RE_PORT:-9527}/api/health"
+
+          # RE 的回测结果在 output 卷里，破坏性变更前先按 README 的方式打 tar 备份
+          PREV_IMAGE=""
+          if [ -f "$LAST_GOOD" ]; then
+            PREV_IMAGE="$(sed -n 's/^RE_IMAGE=//p' "$LAST_GOOD" | head -n1)"
+          fi
+
+          echo "构建 $IMAGE"
+          docker build -t "$IMAGE" .
+
+          if RE_IMAGE="$IMAGE" docker compose up -d --wait --wait-timeout 300 \
+             && curl -fsS --max-time 10 "$HEALTH"; then
+            printf 'RE_IMAGE=%s\n' "$IMAGE" > "$LAST_GOOD"
+            echo "发布成功：$IMAGE"
+            exit 0
+          fi
+
+          echo "发布失败，准备回滚"
+          if [ -n "$PREV_IMAGE" ]; then
+            RE_IMAGE="$PREV_IMAGE" docker compose up -d --wait --wait-timeout 300 || true
+            echo "已回滚到 $PREV_IMAGE"
+          else
+            echo "无可用回滚点，请人工处理"
+          fi
+          exit 1

@@ -1,0 +1,83 @@
+# SVQuant 生产/预发编排（PostgreSQL + 后端 + 前端/Nginx）
+#
+# 用法（在仓库根目录执行）：
+#   cp deploy/.env.example deploy/.env   # 填密码、JWT、YG_RE_BASE
+#   docker compose -f deploy/compose.yml --env-file deploy/.env up -d --build --wait
+#
+# 端口只绑 127.0.0.1：对外由宿主机 Nginx / 网关终止 TLS 并转发。
+# ResearchEngine 不在本编排内，由 deploy/re-template/ 部署，并通过 YG_RE_BASE 接入。
+
+name: svquant
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-svquant}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?deploy/.env 缺 POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-svquant}
+      TZ: Asia/Shanghai
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-svquant} -d ${POSTGRES_DB:-svquant}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  backend:
+    image: ${BACKEND_IMAGE:-svquant-backend:local}
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    env_file:
+      - .env
+    environment:
+      # 覆盖 .env 里的本机地址：容器内必须用服务名连库
+      DATABASE_URL: postgresql://${POSTGRES_USER:-svquant}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-svquant}
+      YG_RE_BASE: ${YG_RE_BASE:?deploy/.env 缺 YG_RE_BASE（ResearchEngine 地址）}
+      TZ: Asia/Shanghai
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # 命名卷首次创建时会从镜像内容初始化，保留仓库自带的因子目录
+      - backend-output:/app/backend/output
+      - backend-factor:/app/backend/factor
+      - kh-data:/app/KnowledgeHub/data
+    ports:
+      - "127.0.0.1:8766:8766"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8766/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 40s
+      retries: 12
+    restart: unless-stopped
+
+  web:
+    image: ${WEB_IMAGE:-svquant-web:local}
+    build:
+      context: ..
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        YG_RE_BASE: ${YG_RE_BASE:-http://127.0.0.1:9527}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${WEB_PORT:-9530}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 6
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  backend-output:
+  backend-factor:
+  kh-data:

@@ -1,0 +1,54 @@
+version: '1.0'
+name: re-ci
+displayName: ResearchEngine CI（PR / 主干门禁）
+
+triggers:
+  push:
+    branches:
+      precise:
+        - master
+  pr:
+    branches:
+      precise:
+        - master
+
+variables:
+  PYTHON_BIN: python3
+
+stages:
+  - name: stage-test
+    displayName: 测试门禁
+    strategy: naturally
+    trigger: auto
+    executor: []
+    steps:
+      - step: shell@agent
+        name: re_check
+        displayName: pytest
+        # 与 SVQuant 同一台构建机时复用同一个 hostGroupID
+        hostGroupID: gitee-go
+        script: |
+          set -Eeuo pipefail
+          ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+          bash "$ROOT/scripts/ci/re-check.sh"
+
+  - name: stage-image
+    displayName: 镜像构建校验
+    strategy: naturally
+    trigger: auto
+    executor: []
+    steps:
+      - step: shell@agent
+        name: re_image
+        displayName: 构建 RE 镜像
+        hostGroupID: gitee-go
+        script: |
+          set -Eeuo pipefail
+          # 同 SVQuant：PR 阶段不构建镜像，省构建机内存与时间
+          if [ -n "${GITEE_PULL_ID:-}" ] || [ "${GITEE_BRANCH:-}" != "master" ]; then
+            echo "非 master 推送，跳过镜像阶段"
+            exit 0
+          fi
+          ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+          cd "$ROOT"
+          docker build -t "research-engine:ci-${GITEE_PIPELINE_BUILD_NUMBER:-$(git rev-parse --short HEAD)}" .

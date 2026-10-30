@@ -151,3 +151,22 @@ RE 侧 AI 端点保留一个版本周期做为灰度回退，之后下线（ADR 
 
 - INIT-003 用户、社区与 AI SaaS 平台：本 ADR 是其 BC1 AI Assistant 的基础设施前提。
 - ADR-029：`ai/` 目录沿用 services 与 models 分层的组织方式，不引入额外分层框架。
+
+## 8. 落地进度与 P1-4 迁移清单
+
+| 能力 | 状态 | 位置 |
+|---|---|---|
+| 读帖摘要 | 已迁入 | `ai/router/tasks/community_summary.py` + `local→re` 执行链 |
+| 回测解读 | 已迁入 | `services/research/backtest_evidence.py` + `ai/router/tasks/backtest_interpretation.py` |
+| 因子生成 | 已迁入 | `services/factor/generated_factor_validation.py` + `ai/router/tasks/factor_generation.py` |
+| 策略生成 | 已迁入 | `services/strategy/generated_strategy_validation.py` + `ai/router/tasks/strategy_generation.py` |
+| 聚宽转写 | **未迁入**（仍转发 RE） | `app/routers/re_gateway.py` |
+
+续做 P1-4 时需要一起搬的东西（`research-engine/app/api/ai_strategy_transcription.py`）：
+`_InventoryVisitor` / `_capability_issues` / `_contract_issues` / `_instrument_issues` /
+`_mappings` / `_redact_secrets` / `_security_errors` / `_future_data_errors` /
+`_field_errors` / `_vectorized_contract_errors` / `_event_contract_errors` /
+两份 AST 校验器 / prompt / `report_only` 与 `accepted_degradations` 的判定逻辑。
+
+执行形态待定（D3）：现为 600s 同步调用；可选 202 + 轮询，与 `/api/backtest/strategy` 同构。
+这一步只改传输，不改 prompt 与校验语义。

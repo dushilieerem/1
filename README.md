@@ -8,8 +8,8 @@ ResearchEngine 的 Python 包，也不直接读取行情目录或回测结果 SQ
 
 ```text
 SVQuant/
-├── frontend/          # 主 Web 前端，Vite，默认 :9530
-├── backend/           # FastAPI 产品后端，默认 :8766
+├── frontend/          # 主 Web 前端，Vite，开发默认 :9531（生产 :9530）
+├── backend/           # FastAPI 产品后端，开发默认 :8768（生产 :8766）
 │   ├── app/            # 路由、启动和生命周期
 │   ├── services/       # 用户、社区、因子/策略 BFF、ResearchEngine 网关
 │   ├── ai/             # SVQuant 侧 AI 编排和供应商适配
@@ -42,7 +42,7 @@ ResearchEngine 完成。
 ./scripts/svquant.sh
 ```
 
-默认打开 <http://127.0.0.1:9530>。脚本会依次启动主前端、`backend`、`invest-api` 和手机 H5，
+默认打开 <http://127.0.0.1:9531>。脚本会依次启动主前端、`backend`、`invest-api` 和手机 H5，
 并可用 cloudflared 为主前端和 H5 各建一条临时外网通道（地址见 `./scripts/svquant.sh status`，
 每次启动都会变）。未安装 cloudflared 时先运行 `./scripts/svquant.sh install-cloudflared`；
 不需要外网访问用 `./scripts/svquant.sh start --no-tunnel`。状态、日志、停止和手动启动方式见[部署文档](docs/部署与运维/部署文档.md)。
@@ -67,7 +67,7 @@ ResearchEngine 的安装或启动脚本；ResearchEngine 应在其独立仓库�
 健康检查：
 
 ```bash
-curl http://127.0.0.1:8766/api/health
+curl http://127.0.0.1:8768/api/health
 ```
 
 ## 前端启动
@@ -78,7 +78,7 @@ npm install
 npm run dev
 ```
 
-主前端默认地址为 <http://127.0.0.1:9530>，所有浏览器请求先访问 SVQuant
+主前端开发默认地址为 <http://127.0.0.1:9531>，所有浏览器请求先访问 SVQuant
 `/api`，再由后端网关调用 ResearchEngine。KnowledgeHub 前端如需单独运行：
 
 ```bash

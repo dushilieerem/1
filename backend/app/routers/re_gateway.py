@@ -11,9 +11,6 @@ from fastapi.responses import JSONResponse
 
 from app.deps import optional_user, require_user
 from services.core.backtest_params import validate_execution_timing
-from services.core.ai_factor_input import factor_prompt_error
-from services.core.ai_strategy_input import strategy_prompt_error
-from services.core.strategy_transcription_input import strategy_transcription_error
 from services.core.db import get_conn
 from services.core.env_config import env
 from services.core.re_http_gateway import forward_re, rewrite_run_poll_url
@@ -263,68 +260,7 @@ def re_health(_user: dict | None = Depends(optional_user)) -> JSONResponse:
     return _resp(status, headers, data)
 
 
-# —— AI（对方侧；本机不存 Key）——
-
-
-@router.post("/api/ai/factor-generations")
-def ai_factor_generations(
-    body: dict[str, Any], _user: dict = Depends(require_user)
-) -> JSONResponse:
-    error = factor_prompt_error(body.get("prompt"))
-    if error:
-        return JSONResponse(status_code=422, content={"detail": error})
-    status, headers, data = forward_re(
-        "POST",
-        "/api/ai/factor-generations",
-        payload=body if isinstance(body, dict) else {},
-        timeout=600,
-    )
-    return _resp(status, headers, data)
-
-
-@router.post("/api/ai/strategy-generations")
-def ai_strategy_generations(
-    body: dict[str, Any], _user: dict = Depends(require_user)
-) -> JSONResponse:
-    error = strategy_prompt_error(body.get("prompt"))
-    if error:
-        return JSONResponse(status_code=422, content={"detail": error})
-    status, headers, data = forward_re(
-        "POST",
-        "/api/ai/strategy-generations",
-        payload=body if isinstance(body, dict) else {},
-        timeout=600,
-    )
-    return _resp(status, headers, data)
-
-
-@router.post("/api/ai/strategy-transcriptions")
-def ai_strategy_transcriptions(
-    body: dict[str, Any], _user: dict = Depends(require_user)
-) -> JSONResponse:
-    error = strategy_transcription_error(body)
-    if error:
-        return JSONResponse(status_code=422, content={"detail": error})
-    status, headers, data = forward_re(
-        "POST",
-        "/api/ai/strategy-transcriptions",
-        payload=body,
-        timeout=600,
-    )
-    return _resp(status, headers, data)
-
-
-@router.post("/api/ai/backtest-interpretations")
-def ai_backtest_interpretations(
-    body: dict[str, Any], _user: dict = Depends(require_user)
-) -> JSONResponse:
-    status, headers, data = forward_re(
-        "POST",
-        "/api/ai/backtest-interpretations",
-        payload=body if isinstance(body, dict) else {},
-        timeout=600,
-    )
-    return _resp(status, headers, data)
+# —— 行情只读列表（日线已有本机 BFF）——
 
 
 # —— 行情只读列表（日线已有本机 BFF）——

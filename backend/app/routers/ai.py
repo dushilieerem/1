@@ -1,4 +1,9 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
+"""AI 对外端点：助手对话（含流式）与语音转写。
+
+所有模型调用经 `ai.router`（ADR-037）；本文件只做 HTTP 适配与状态码映射，
+不出现供应商名，也不按错误文案猜测状态码。
+"""
 from __future__ import annotations
 
 import base64
@@ -8,11 +13,19 @@ from typing import Any, Iterator
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from app.deps import require_user
-from ai.gateway.ark_chat import ArkChatError, chat as ark_chat, iter_chat_stream, list_ark_models
+from ai.errors import AiError
+from ai.gateway.ark_chat import list_ark_models, prepare_messages, strip_thinking
 from ai.gateway.speech_transcribe import SpeechError, speech_ready, transcribe_bytes
+from ai.router import run_task, stream_task
+from app.deps import require_user
 
 router = APIRouter(tags=["ai"])
+
+
+def _http_error(exc: AiError) -> HTTPException:
+    """唯一的状态码映射点：按异常类型，不看错误文案。"""
+    status = int(getattr(exc, "http_status", 502) or 502)
+    return HTTPException(status_code=status, detail=str(exc) or "AI 服务调用失败")
 
 
 def _validate_messages(messages: Any) -> list[dict[str, str]]:
@@ -30,10 +43,6 @@ def _validate_messages(messages: Any) -> list[dict[str, str]]:
     return out
 
 
-def _is_unconfigured_error(msg: str) -> bool:
-    return "未配置" in msg or "鏈" in msg and "厤" in msg
-
-
 @router.get("/api/ai/chat/models")
 def ai_chat_models() -> dict:
     return list_ark_models()
@@ -45,13 +54,14 @@ def ai_speech_status() -> dict:
 
 
 def _sse_chat_frames(
-    messages: list,
+    messages: list[dict[str, Any]],
     model: str | None,
     temperature: float,
 ) -> Iterator[bytes]:
     yield b'data: {"status":"start"}\n\n'
     try:
-        for piece in iter_chat_stream(
+        for piece in stream_task(
+            "assistant.chat",
             messages=messages,
             model=model,
             temperature=temperature,
@@ -59,11 +69,11 @@ def _sse_chat_frames(
             payload = json.dumps({"delta": piece}, ensure_ascii=False).encode("utf-8")
             yield b"data: " + payload + b"\n\n"
         yield b"data: [DONE]\n\n"
-    except ArkChatError as exc:
+    except AiError as exc:
         err = json.dumps({"error": str(exc)}, ensure_ascii=False).encode("utf-8")
         yield b"data: " + err + b"\n\n"
         yield b"data: [DONE]\n\n"
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - 流已开始，只能以帧返回错误
         import traceback
 
         traceback.print_exc()
@@ -86,9 +96,14 @@ def ai_chat(
         temperature = 0.7
     want_stream = bool(body.get("stream"))
 
+    try:
+        cleaned = prepare_messages(messages)
+    except AiError as exc:
+        raise _http_error(exc) from exc
+
     if want_stream:
         return StreamingResponse(
-            _sse_chat_frames(messages, model, temperature),
+            _sse_chat_frames(cleaned, model, temperature),
             media_type="text/event-stream; charset=utf-8",
             headers={
                 "Cache-Control": "no-cache, no-store",
@@ -98,15 +113,25 @@ def ai_chat(
         )
 
     try:
-        return ark_chat(
-            messages=messages,
+        data = run_task(
+            "assistant.chat",
+            messages=cleaned,
             model=model,
             temperature=temperature,
         )
-    except ArkChatError as exc:
-        msg = str(exc)
-        code = 503 if _is_unconfigured_error(msg) else 502
-        raise HTTPException(status_code=code, detail=msg) from exc
+    except AiError as exc:
+        raise _http_error(exc) from exc
+
+    usage = data.get("usage") or {}
+    return {
+        "content": strip_thinking(str(data.get("content") or "")),
+        "model": data.get("model") or model or "",
+        "usage": {
+            "promptTokens": usage.get("prompt_tokens"),
+            "completionTokens": usage.get("completion_tokens"),
+            "totalTokens": usage.get("total_tokens"),
+        },
+    }
 
 
 @router.post("/api/ai/speech/transcribe")
@@ -117,15 +142,15 @@ def ai_speech_transcribe(
     _ = user
     b64 = str(body.get("audio_base64") or "").strip()
     if not b64:
-        raise HTTPException(status_code=400, detail="缂哄皯 audio_base64")
+        raise HTTPException(status_code=400, detail="缺少 audio_base64")
     if "," in b64 and b64.lower().startswith("data:"):
         b64 = b64.split(",", 1)[1]
     try:
         audio = base64.b64decode(b64, validate=True)
     except Exception:
-        raise HTTPException(status_code=400, detail="audio_base64 鏃犳晥") from None
+        raise HTTPException(status_code=400, detail="audio_base64 无效") from None
     if not audio:
-        raise HTTPException(status_code=400, detail="audio_base64 invalid")
+        raise HTTPException(status_code=400, detail="audio_base64 无效")
     mime = str(body.get("mime") or "audio/webm").strip() or "audio/webm"
     ext = "webm"
     if "ogg" in mime:
@@ -145,6 +170,4 @@ def ai_speech_transcribe(
             content_type=mime,
         )
     except SpeechError as exc:
-        msg = str(exc)
-        code = 503 if _is_unconfigured_error(msg) else 400
-        raise HTTPException(status_code=code, detail=msg) from exc
+        raise _http_error(exc) from exc

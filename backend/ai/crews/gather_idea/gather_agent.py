@@ -362,11 +362,12 @@ def _llm_digest(
     if not items:
         return "", [], {}, None
     try:
-        from ai.gateway.llm_client import LlmError, chat_completions, llm_configured
+        from ai.errors import AiError
+        from ai.router import available_task, run_task
     except Exception as exc:  # noqa: BLE001
-        return "", [], {}, f"LLM 模块不可用: {exc}"
+        return "", [], {}, f"AI 路由层不可用: {exc}"
 
-    if not llm_configured():
+    if not available_task("gather_idea.gather"):
         return "", [], {}, "LLM 未配置"
 
     allowed = {it["id"] for it in items}
@@ -396,15 +397,14 @@ def _llm_digest(
         ensure_ascii=False,
     )
     try:
-        out = chat_completions(
+        out = run_task(
+            "gather_idea.gather",
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            temperature=0.2,
-            max_tokens=1200,
         )
-    except LlmError as exc:
+    except AiError as exc:
         return "", [], {}, str(exc)
     except Exception as exc:  # noqa: BLE001
         return "", [], {}, f"LLM 调用失败: {exc}"

@@ -1,8 +1,9 @@
 # ADR-034: CI/CD 采用 Gitee Go 自建主机组 + Docker Compose
 
 - 日期：2026-10-30
-- 状态：已接受
-- 关联：`../部署与运维/CI-CD.md`、`ADR-006`、`../../deploy/compose.yml`
+- 状态：**部分被 [ADR-035](ADR-035-CI触发改为Gitee-WebHook.md) 取代**（触发方式改为 WebHook；
+  容器编排、发布与回滚设计仍然有效）
+- 关联：`../部署与运维/CI-CD.md`、`ADR-006`、`ADR-035`、`../../deploy/compose.yml`
 
 ## 问题
 

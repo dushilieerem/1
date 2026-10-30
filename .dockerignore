@@ -25,6 +25,7 @@ deploy/.env
 deploy/.last-good.env
 deploy/backups
 deploy/re-template
+deploy/webhook-logs
 .ci
 *.log
 *.sqlite

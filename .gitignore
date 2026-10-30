@@ -67,8 +67,9 @@ _notes/
 # 前端/端到端测试运行产物（每次运行都会变）
 test-results/
 
-# CI 本地运行产物（venv、临时 env 备份、部署回滚点）
+# CI 本地运行产物（venv、临时 env 备份、部署回滚点、WebHook 任务日志）
 .ci/
 **/.env.ci-backup
 deploy/.last-good.env
 deploy/backups/
+deploy/webhook-logs/

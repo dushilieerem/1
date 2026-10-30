@@ -76,7 +76,7 @@
 ## 3. 全量接口总览
 
 > 扫描命令：`rg -n "@router\.(get|post|put|delete|patch)\(" backend/app/routers KnowledgeHub/backend`
-> 结果：**156 处声明 / 155 个端点**（`/api/kh/docs` 一个函数挂两个路径）。下表覆盖全部端点；`详细`列标注本文展开的 37 个核心接口，其余以运行时 OpenAPI 为准。
+> 结果：**158 处声明 / 157 个端点**（`/api/kh/docs` 一个函数挂两个路径）。下表覆盖全部端点；`详细`列标注本文展开的 37 个核心接口，其余以运行时 OpenAPI 为准。
 
 ### 3.1 健康检查（health.py，1 个）
 
@@ -98,6 +98,15 @@
 | GET | `/api/users/{username}/followers` | 粉丝列表 | optional_user | — | 无 | — |
 | POST | `/api/users/{username}/follow` | 关注 | 登录 | — | ✓ | — |
 | DELETE | `/api/users/{username}/follow` | 取消关注 | 登录 | — | ✓ | — |
+
+### 3.2b 机构端（inst.py，2 个）
+
+| 方法 | 路径 | 功能 | 权限 | 管理员 | 副作用 | 详细 |
+|---|---|---|---|---|---|---|
+| POST | `/api/inst/auth/login` | 机构端登录：校验账号密码 + 机构成员身份，签发 `scope=inst` 令牌 | 匿名（限流 10 次/分/IP） | — | 写审计 | — |
+| GET | `/api/inst/me` | 机构会话：用户、机构、角色、九工作区权限 | 机构令牌（`scope=inst`） | — | 无 | — |
+
+> 机构令牌与个人版令牌互不通用：个人版令牌访问 `/api/inst/*` 返回 401；机构令牌也不能替代个人版会话。权限矩阵见实现 `backend/services/institution/inst_store.py`，以服务端为准。
 
 ### 3.3 自选股（watchlists.py，8 个）
 
@@ -321,6 +330,7 @@
 |---|---|---|---|---|
 | 健康检查 | GET /api/health、GET /api/re/health | — | — | — |
 | 认证 | register / login | me / profile | — | — |
+| 机构端 | — | 仅接受 `scope=inst` 机构令牌；个人版令牌返回 401 | 六角色 × 九工作区矩阵（服务端计算） | — |
 | 用户主页 | 帖子列表、following/followers、主页 | follow/unfollow | — | — |
 | 自选股 | —（匿名 GET 返回空集） | 全部读写 | 归属校验（`_require_watchlist`） | — |
 | 因子研究 | re-catalog、dashboard、dashboard/status、**dashboard/refresh** | 其余全部 | 因子库/自定义因子按 user 隔离 | re-catalog/sync、dashboard/verify |

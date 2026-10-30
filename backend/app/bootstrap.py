@@ -47,6 +47,17 @@ def bootstrap_schemas() -> None:
 
         ensure_schema()
         seed_admin()
+        try:
+            from services.institution.inst_store import ensure_inst_schema, seed_inst_demo
+
+            ensure_inst_schema()
+            inst_seed = seed_inst_demo()
+            if inst_seed.get("created_users"):
+                print(f"  机构端就绪：新建演示账号 {inst_seed['created_users']} 个")
+            else:
+                print("  机构端就绪")
+        except Exception as exc:
+            print(f"  机构端 schema 跳过: {exc}")
         from services.auth.profile_store import ensure_schema as ensure_profile_schema
 
         ensure_profile_schema()

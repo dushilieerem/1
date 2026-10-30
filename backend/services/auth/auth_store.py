@@ -185,7 +185,8 @@ def register_user(
     return {"ok": True, "user": user, "token": issue_token(user)}
 
 
-def login_user(*, username: str, password: str) -> dict[str, Any]:
+def authenticate_user(*, username: str, password: str) -> dict[str, Any]:
+    """校验用户名密码并返回公开用户；不签发令牌（供不同会话类型复用）。"""
     ensure_schema()
     username = (username or "").strip()
     row = get_user_by_username(username)
@@ -193,11 +194,16 @@ def login_user(*, username: str, password: str) -> dict[str, Any]:
         raise ValueError("用户名或密码错误")
     if row.get("status") != "active":
         raise ValueError("账号已停用")
-    user = _public_user(row)
+    return _public_user(row)
+
+
+def login_user(*, username: str, password: str) -> dict[str, Any]:
+    user = authenticate_user(username=username, password=password)
     return {"ok": True, "user": user, "token": issue_token(user)}
 
 
-def issue_token(user: dict[str, Any]) -> str:
+def issue_token(user: dict[str, Any], *, extra: dict[str, Any] | None = None) -> str:
+    """签发 JWT；`extra` 用于机构会话等附加 claims，不能覆盖身份字段。"""
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user["id"]),
@@ -206,6 +212,11 @@ def issue_token(user: dict[str, Any]) -> str:
         "iat": now,
         "exp": now + timedelta(days=_jwt_expire_days()),
     }
+    if extra:
+        for key, value in extra.items():
+            if key in {"sub", "username", "role", "iat", "exp"}:
+                continue
+            payload[key] = value
     return jwt.encode(payload, _jwt_secret(), algorithm="HS256")
 
 

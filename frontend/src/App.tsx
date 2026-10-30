@@ -146,6 +146,19 @@ const AgentEvalPage = lazy(() =>
   import("./pages/AgentEvalPage").then((m) => ({ default: m.AgentEvalPage })),
 );
 const AiHubPage = lazy(() => import("./pages/AiHubPage").then((m) => ({ default: m.AiHubPage })));
+const InstLayout = lazy(() =>
+  import("./components/institution/InstLayout").then((m) => ({ default: m.InstLayout })),
+);
+const InstOverviewPage = lazy(() =>
+  import("./pages/institution/InstOverviewPage").then((m) => ({
+    default: m.InstOverviewPage,
+  })),
+);
+const InstPlaceholderPage = lazy(() =>
+  import("./pages/institution/InstPlaceholderPage").then((m) => ({
+    default: m.InstPlaceholderPage,
+  })),
+);
 
 function Authed({ children }: { children: ReactNode }) {
   return <RequireAuth>{children}</RequireAuth>;
@@ -176,6 +189,20 @@ export default function App() {
   return (
     <Suspense fallback={<RouteFallback />}>
       <Routes>
+        {/* 机构端：独立壳与会话，不复用个人版 Layout */}
+        <Route path="/inst" element={<InstLayout />}>
+          <Route index element={<Navigate to="/inst/overview" replace />} />
+          <Route path="overview" element={<InstOverviewPage />} />
+          <Route path="ideas" element={<InstPlaceholderPage workspaceKey="ideas" />} />
+          <Route path="research" element={<InstPlaceholderPage workspaceKey="research" />} />
+          <Route path="debate" element={<InstPlaceholderPage workspaceKey="debate" />} />
+          <Route path="portfolio" element={<InstPlaceholderPage workspaceKey="portfolio" />} />
+          <Route path="approvals" element={<InstPlaceholderPage workspaceKey="approvals" />} />
+          <Route path="execution" element={<InstPlaceholderPage workspaceKey="execution" />} />
+          <Route path="monitor" element={<InstPlaceholderPage workspaceKey="monitor" />} />
+          <Route path="about" element={<InstPlaceholderPage workspaceKey="about" />} />
+        </Route>
+
         <Route element={<Layout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />

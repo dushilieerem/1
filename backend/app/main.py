@@ -33,6 +33,7 @@ from app.routers import (  # noqa: E402
     detect,
     factor,
     health,
+    inst,
     kh,
     news,
     paper,
@@ -90,6 +91,7 @@ install_exception_handlers(app)
 for mod in (
     health,
     auth,
+    inst,
     detect,
     strategy,
     paper,
@@ -137,7 +139,11 @@ def _should_audit(method: str, path: str, status: int) -> bool:
         if path.startswith(pref):
             return False
     # 登录/注册由路由显式写业务审计，避免与中间件重复
-    if path in ("/api/auth/login", "/api/auth/register"):
+    if path in (
+        "/api/auth/login",
+        "/api/auth/register",
+        "/api/inst/auth/login",
+    ):
         return False
     # 管理页轮询自身不记，避免刷屏
     if method == "GET" and path.startswith("/api/admin/logs"):

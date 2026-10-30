@@ -7,6 +7,7 @@ from fastapi import Depends, Header, HTTPException, Request
 
 from services.auth.auth_store import user_from_authorization
 from services.factor.user_factor_store import resolve_db_user_id
+from services.institution.inst_store import user_from_inst_authorization
 
 
 def _auth_header(
@@ -41,6 +42,16 @@ def require_admin(user: dict[str, Any] = Depends(require_user)) -> dict[str, Any
     if str(user.get("role") or "") != "admin":
         raise HTTPException(status_code=403, detail="需要管理员权限")
     return user
+
+
+def require_inst_user(
+    authorization: str | None = Depends(_auth_header),
+) -> dict[str, Any]:
+    """机构端会话：必须是 scope=inst 的令牌且成员状态有效。"""
+    ctx = user_from_inst_authorization(authorization)
+    if not ctx:
+        raise HTTPException(status_code=401, detail="机构端未登录或会话已失效")
+    return ctx
 
 
 def soft_db_user_id(user: dict[str, Any] | None = Depends(optional_user)) -> int | None:

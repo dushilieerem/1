@@ -92,7 +92,7 @@ marketdata parquet ──etl_marketdata.py / etl_us_marketdata.py──▶ Postg
 - 美股只有行情，无财务/估值/公告；研究页显示「待补充」。
 - 主题/热点仍是种子数据；未用真实行业指数重算。
 - 找回密码、邮箱验证、SSO token-exchange 尚未接主站。
-- 手机 H5 仍是独立 Vite 构建；"并入主 SPA" 的路由迁移待下一迭代（后端已合并）。
+- 手机 H5 已通过主站 `/m` 同域 iframe 嵌入，并用主站令牌 SSO；仍是独立 Vite 构建（避免桌面 CSS 冲突），原生路由迁移待后续。
 - 公开运行 Gate 仍按 [`docs/产品与需求/手机端公开上线检查.md`](../../产品与需求/手机端公开上线检查.md) 执行。
 
 ## 7. 下一步

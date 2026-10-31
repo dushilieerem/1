@@ -7,10 +7,12 @@ import { AuthProvider } from "./auth";
 import { ToastProvider } from "./toast";
 import "./styles.css";
 
+const basename = window.location.pathname.startsWith("/mobile") ? "/mobile" : "/";
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <BrowserRouter>
+      <BrowserRouter basename={basename}>
         <AuthProvider>
           <ToastProvider>
             <App />

@@ -89,6 +89,9 @@ cp backend/.env.example backend/.env
 
 # 5) AI：backend/.env 配置 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL
 #    手机端 /api/invest/ai/*，机构端 /api/inst/*，均复用 backend/ai/router
+
+# 6) 构建主前端 + 手机 H5（H5 嵌入主站 /mobile/，主站入口 /m）
+./scripts/build-mobile-embed.sh
 ```
 
 文档：

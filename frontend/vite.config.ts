@@ -105,6 +105,12 @@ export default defineConfig({
         proxyTimeout: 1_800_000,
       },
       "/yg-api": ygApiProxy,
+      // 手机 H5 嵌入：/mobile/* 反代到 H5 dev server（build 时复制到 dist/mobile）
+      "/mobile": {
+        target: `http://127.0.0.1:${process.env.SVQUANT_INVEST_H5_PORT || 9540}`,
+        changeOrigin: true,
+        rewrite: (p: string) => p.replace(/^\/mobile/, "") || "/",
+      },
     },
   },
   // 试用版：npm run build && npm run preview:stable → :9532（与开发 :9530 互不干扰）
@@ -121,6 +127,11 @@ export default defineConfig({
         proxyTimeout: 1_800_000,
       },
       "/yg-api": ygApiProxy,
+      "/mobile": {
+        target: `http://127.0.0.1:${process.env.SVQUANT_INVEST_H5_PORT || 9541}`,
+        changeOrigin: true,
+        rewrite: (p: string) => p.replace(/^\/mobile/, "") || "/",
+      },
     },
   },
 });

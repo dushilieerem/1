@@ -292,7 +292,7 @@ run_frontend() {
   if [[ -n "${SVQUANT_PID_FILE:-}" ]]; then
     printf '%s\n' "$$" > "$SVQUANT_PID_FILE"
   fi
-  exec env SVQUANT_BACKEND_PORT="$BACKEND_PORT" \
+  exec env SVQUANT_BACKEND_PORT="$BACKEND_PORT" SVQUANT_INVEST_H5_PORT="$INVEST_H5_PORT" \
     "$FRONTEND_DIR/node_modules/.bin/vite" --host 0.0.0.0 --port "$FRONTEND_PORT" --strictPort
 }
 

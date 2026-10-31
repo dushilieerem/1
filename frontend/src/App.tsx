@@ -147,6 +147,7 @@ const AgentEvalPage = lazy(() =>
 );
 const AiHubPage = lazy(() => import("./pages/AiHubPage").then((m) => ({ default: m.AiHubPage })));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
+const InvestMobilePage = lazy(() => import("./pages/InvestMobilePage"));
 const InstLayout = lazy(() =>
   import("./components/institution/InstLayout").then((m) => ({ default: m.InstLayout })),
 );
@@ -238,6 +239,7 @@ export default function App() {
           <Route path="/ai/factor-eval" element={<Authed><AgentEvalPage /></Authed>} />
           <Route path="/community" element={<CommunityFeedPage />} />
           <Route path="/admin" element={<Authed><AdminPage /></Authed>} />
+          <Route path="/m" element={<Authed><InvestMobilePage /></Authed>} />
           <Route path="/news" element={<NewsPage />} />
           <Route path="/news/:id" element={<NewsDetailPage />} />
           <Route path="/community/new" element={<Authed><CommunityNewPage /></Authed>} />

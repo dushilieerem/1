@@ -6,6 +6,8 @@ const apiTarget = `http://127.0.0.1:${process.env.SVQUANT_BACKEND_PORT || 8766}`
 
 export default defineConfig({
   plugins: [react()],
+  // 相对资源路径：既可独立部署，也可嵌入主站 /mobile/
+  base: "./",
   server: {
     host: "0.0.0.0",
     port: 9540,

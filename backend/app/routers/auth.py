@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 
 from app.deps import optional_user, require_user
-from services.auth.auth_store import login_user, me_response, register_user
+from services.auth.auth_store import login_user, me_response, register_user, user_from_authorization
 from services.auth.profile_store import (
     follow_user,
     get_public_profile,
@@ -41,6 +41,31 @@ def _enforce_auth_rate_limit(request: Request, *, scope: str, limit: int) -> Non
 
 
 router = APIRouter(tags=["auth"])
+
+
+@router.post("/api/auth/sso")
+def auth_sso(body: dict[str, Any], request: Request) -> dict:
+    """主站令牌换 H5 会话：校验现有 JWT，返回同一用户与令牌。"""
+    token = str(body.get("token") or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="缺少 token")
+    user = user_from_authorization(f"Bearer {token}")
+    if not user:
+        raise HTTPException(status_code=401, detail="token 无效或用户已禁用")
+    write_audit(
+        action="auth.sso",
+        user_id=int(user["id"]) if user.get("id") else None,
+        username=str(user.get("username") or ""),
+        role=str(user.get("role") or "user"),
+        module="auth",
+        method="POST",
+        path="/api/auth/sso",
+        status_code=200,
+        ip=_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        detail="主站令牌换 H5 会话",
+    )
+    return {"ok": True, "user": user, "token": token, "mode": "svquant"}
 
 
 @router.post("/api/auth/register")

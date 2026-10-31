@@ -95,6 +95,20 @@ def ensure_posts_schema() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_posts_pinned ON posts (is_pinned DESC, pinned_at DESC NULLS LAST)"
         )
+        # P1-C04：社区子串检索（标题/正文/代码）用 pg_trgm 加速 ILIKE。
+        try:
+            with conn.transaction():
+                conn.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+                for name, col in (
+                    ("idx_posts_title_trgm", "title"),
+                    ("idx_posts_body_trgm", "body"),
+                    ("idx_posts_code_trgm", "code_snippet"),
+                ):
+                    conn.execute(
+                        f"CREATE INDEX IF NOT EXISTS {name} ON posts USING gin ({col} gin_trgm_ops)"
+                    )
+        except Exception:
+            pass
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS post_comments (

@@ -48,11 +48,18 @@ def sync_once() -> dict[str, Any]:
 
     out = sync_all_scopes()
     consistency = out.get("consistency") or {}
+    warnings = list(consistency.get("warnings") or [])
+    errors = list(out.get("errors") or [])
     print(
-        f"  re-catalog 同步：ok={out.get('ok')} "
-        f"warnings={consistency.get('warnings') or []} errors={out.get('errors') or []}",
+        f"  re-catalog 同步：ok={out.get('ok')} warnings={warnings} errors={errors}",
         flush=True,
     )
+    if not out.get("ok"):
+        # P1-F04：陈旧/失败/双 scope 不一致都在这里留一条醒目告警
+        print(
+            "  re-catalog 同步告警：" + ("; ".join(warnings + errors) or "未知原因"),
+            flush=True,
+        )
     return out
 
 

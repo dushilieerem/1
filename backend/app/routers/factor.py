@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import mimetypes
+import time
 from collections import Counter
 from typing import Any
 
@@ -13,6 +14,7 @@ from app.deps import optional_user, require_admin, require_db_user_id, require_u
 from services.factor.dashboard_store import query_metrics, read_job, set_verify_status, start_refresh
 from services.factor.factor_store import add_custom_factor, delete_custom_factor, update_custom_factor
 from services.factor.factor_trial import trial_via_re
+from services.factor.trial_store import delete_trial, get_trial, list_trials, save_trial
 from services.factor.re_backtest_jobs import (
     cancel_factor_backtest_job,
     get_factor_backtest_job,
@@ -24,6 +26,7 @@ from services.factor.re_factor_async_proxy import (
     proxy_submit_factor_backtest,
 )
 from services.factor.re_factor_catalog import (
+    catalog_sync_status,
     clear_re_catalog_cache,
     fetch_re_catalog,
     sync_all_scopes,
@@ -90,6 +93,18 @@ def factor_re_catalog_sync(_admin: dict = Depends(require_admin)) -> JSONRespons
         return JSONResponse(data)
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
+
+
+@router.get("/api/admin/re-catalog/status")
+def admin_re_catalog_status(
+    _admin: dict = Depends(require_admin),
+    limit: int = Query(20, ge=1, le=200),
+) -> JSONResponse:
+    """P1-F04：目录双 scope 一致性、陈旧告警与最近变更 diff。"""
+    try:
+        return JSONResponse(catalog_sync_status(limit=limit))
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 
 
 @router.get("/api/factor/re-backtest/{job_id}")
@@ -418,16 +433,71 @@ def factor_custom_delete(
 
 @router.post("/api/factor/custom/trial")
 def factor_custom_trial(
-    body: dict[str, Any], _user: dict = Depends(require_user)
+    body: dict[str, Any], uid: int = Depends(require_db_user_id)
 ) -> dict:
+    code = str(body.get("body") or "")
+    factor_name = str(body.get("name") or body.get("factor_name") or "trial_factor")
+    universe = str(body.get("universe") or "CSI300")
+    period = str(body.get("period") or "3m")
+    t0 = time.perf_counter()
     try:
-        return trial_via_re(
-            body=str(body.get("body") or ""),
-            factor_name=str(
-                body.get("name") or body.get("factor_name") or "trial_factor"
-            ),
-            universe=str(body.get("universe") or "CSI300"),
-            period=str(body.get("period") or "3m"),
+        out = trial_via_re(
+            body=code,
+            factor_name=factor_name,
+            universe=universe,
+            period=period,
         )
     except (ValueError, RuntimeError) as exc:
+        elapsed = int((time.perf_counter() - t0) * 1000)
+        try:
+            save_trial(
+                user_id=uid,
+                factor_name=factor_name,
+                body=code,
+                universe=universe,
+                period=period,
+                error=str(exc),
+                elapsed_ms=elapsed,
+            )
+        except Exception:  # noqa: BLE001 - 落库失败不应掩盖试算错误
+            pass
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    elapsed = int((time.perf_counter() - t0) * 1000)
+    try:
+        saved = save_trial(
+            user_id=uid,
+            factor_name=factor_name,
+            body=code,
+            universe=universe,
+            period=period,
+            result=out,
+            elapsed_ms=elapsed,
+        )
+        out = {**out, "trial_id": saved["id"]}
+    except Exception as exc:  # noqa: BLE001
+        out = {**out, "trial_saved": False, "trial_save_error": str(exc)}
+    return out
+
+
+@router.get("/api/factor/custom/trials")
+def factor_trial_list(
+    uid: int = Depends(require_db_user_id),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    return list_trials(uid, limit=limit, offset=offset)
+
+
+@router.get("/api/factor/custom/trials/{trial_id}")
+def factor_trial_get(trial_id: int, uid: int = Depends(require_db_user_id)) -> dict:
+    item = get_trial(uid, trial_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return item
+
+
+@router.delete("/api/factor/custom/trials/{trial_id}")
+def factor_trial_delete(trial_id: int, uid: int = Depends(require_db_user_id)) -> dict:
+    if not delete_trial(uid, trial_id):
+        raise HTTPException(status_code=404, detail="not found")
+    return {"ok": True, "id": trial_id}

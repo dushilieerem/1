@@ -67,10 +67,20 @@ def run_eval(body: dict[str, Any], *, user_id: int) -> dict[str, Any]:
     return {
         "ok": True,
         "eval_id": f"fev_{datetime.now(_TZ).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}",
-        "verdict": verdict,  # admit 留给以后；雏形只有 review / reject
+        "verdict": verdict,  # 只给建议；入库需人工确认
         "admit": False,
         "note": note,
         "reasons": reasons,
+        # P1-F08：把评价标准显式返回，避免阈值只藏在代码里
+        "criteria": [
+            {"key": "sharpe", "rule": "Sharpe >= 0.5 记 1 分"},
+            {"key": "annual_return", "rule": "年化收益 > 0 记 1 分"},
+            {"key": "max_drawdown", "rule": "最大回撤 > -40% 记 1 分"},
+            {
+                "key": "verdict",
+                "rule": "无回测报错且得分 >= 2 → review（建议人工复核）；否则 reject",
+            },
+        ],
         "stats": {"elapsed_ms": elapsed, "eval_mode": "rule"},
-        "warnings": ["评价 Agent 为雏形，不会改因子库"],
+        "warnings": ["评价 Agent 只给建议，入库需人工确认"],
     }

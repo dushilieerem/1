@@ -584,3 +584,126 @@ def ensure_news_within_caps() -> dict[str, int] | None:
     ):
         return None
     return enforce_news_retention()
+
+
+# —— P1-C07：抓取健康（每次 ingest 留痕，管理端可看各源最近成功/失败）——
+
+
+def ensure_ingest_runs_schema() -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS news_ingest_runs (
+              id          BIGSERIAL PRIMARY KEY,
+              finished_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              ok          BOOLEAN NOT NULL,
+              fetched     INT NOT NULL DEFAULT 0,
+              upserted    INT NOT NULL DEFAULT 0,
+              sources     JSONB NOT NULL DEFAULT '{}'::jsonb,
+              errors      JSONB NOT NULL DEFAULT '{}'::jsonb
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_news_ingest_runs_finished "
+            "ON news_ingest_runs (finished_at DESC)"
+        )
+
+
+def record_ingest_run(result: dict[str, Any]) -> None:
+    """保存一次 ingest 结果（调度与手动触发都会走这里）。"""
+    ensure_ingest_runs_schema()
+    sources = result.get("sources") if isinstance(result.get("sources"), dict) else {}
+    errors = result.get("errors") if isinstance(result.get("errors"), dict) else {}
+    per_source_ok = all(bool(v.get("ok")) for v in sources.values()) if sources else False
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO news_ingest_runs (ok, fetched, upserted, sources, errors)
+            VALUES (%s, %s, %s, %s::jsonb, %s::jsonb)
+            """,
+            (
+                per_source_ok,
+                int(result.get("fetched") or 0),
+                int(result.get("upserted") or 0),
+                json.dumps(sources, ensure_ascii=False),
+                json.dumps(errors, ensure_ascii=False),
+            ),
+        )
+
+
+def ingest_health(limit: int = 20) -> dict[str, Any]:
+    """最近 N 次抓取 + 各源最后状态；超过 2 个调度周期未跑则告警。"""
+    from services.core.env_config import env
+
+    ensure_ingest_runs_schema()
+    limit = max(1, min(100, int(limit)))
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, finished_at, ok, fetched, upserted, sources, errors
+            FROM news_ingest_runs
+            ORDER BY id DESC
+            LIMIT %s
+            """,
+            (limit,),
+        ).fetchall()
+
+    per_source: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        sources = row.get("sources") or {}
+        errors = row.get("errors") or {}
+        if isinstance(sources, str):
+            sources = json.loads(sources)
+        if isinstance(errors, str):
+            errors = json.loads(errors)
+        for sid, info in sources.items():
+            if sid in per_source:
+                continue
+            per_source[sid] = {
+                "source": sid,
+                "label": SOURCE_LABELS.get(sid, sid),
+                "ok": bool((info or {}).get("ok")),
+                "count": int((info or {}).get("count") or 0),
+                "error": (info or {}).get("error") or errors.get(sid),
+                "finished_at": row["finished_at"].isoformat(),
+            }
+
+    warnings: list[str] = []
+    if not rows:
+        warnings.append("尚无抓取记录")
+        last_at = None
+    else:
+        last_at = rows[0]["finished_at"]
+        try:
+            interval = int(env("NEWS_INGEST_INTERVAL_SEC", "900") or "900")
+        except (TypeError, ValueError):
+            interval = 900
+        if interval > 0:
+            age = datetime.now(timezone.utc) - last_at.astimezone(timezone.utc)
+            if age.total_seconds() > interval * 2:
+                warnings.append(f"已 {round(age.total_seconds() / 60)} 分钟未抓取")
+        failing = [k for k, v in per_source.items() if not v["ok"]]
+        if failing:
+            warnings.append("最近失败源：" + "、".join(failing))
+    for sid in ("cls", "eastmoney", "cninfo", "10jqka", "wallstreetcn"):
+        if sid not in per_source:
+            warnings.append(f"{sid} 最近没有抓取记录")
+
+    return {
+        "ok": not warnings,
+        "warnings": warnings,
+        "last_finished_at": last_at.isoformat() if last_at else None,
+        "runs": [
+            {
+                "id": int(r["id"]),
+                "finished_at": r["finished_at"].isoformat(),
+                "ok": bool(r["ok"]),
+                "fetched": int(r["fetched"] or 0),
+                "upserted": int(r["upserted"] or 0),
+                "errors": r.get("errors") or {},
+            }
+            for r in rows
+        ],
+        "sources": [per_source[k] for k in sorted(per_source)],
+    }

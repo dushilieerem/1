@@ -15,7 +15,12 @@ from typing import Any
 from psycopg.types.json import Json
 
 from services.core.db import get_conn
-from services.news.news_store import SOURCE_LABELS, ensure_news_schema, enforce_news_retention
+from services.news.news_store import (
+    SOURCE_LABELS,
+    ensure_news_schema,
+    enforce_news_retention,
+    record_ingest_run,
+)
 
 TZ8 = timezone(timedelta(hours=8))
 UA = {
@@ -1003,7 +1008,7 @@ def ingest_news(
         retagged = backfill_news_tags(limit=max(80, limit_per_source * 8))
     except Exception:
         retagged = 0
-    return {
+    result = {
         "ok": True,
         "fetched": len(batch),
         "upserted": stats["upserted"],
@@ -1018,6 +1023,11 @@ def ingest_news(
             "财联社/见闻电报本身即全文短讯；同花顺多为摘要；巨潮为公告标题+PDF；彭博暂不可用。"
         ),
     }
+    try:
+        record_ingest_run(result)  # P1-C07：抓取健康留痕
+    except Exception:
+        pass
+    return result
 
 
 def start_news_ingest_scheduler() -> None:

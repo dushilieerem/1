@@ -56,6 +56,18 @@ def bootstrap_schemas() -> None:
                 print(f"  机构端就绪：新建演示账号 {inst_seed['created_users']} 个")
             else:
                 print("  机构端就绪")
+            from services.marketdata.schema import ensure_marketdata_schema
+
+            # 只建表；索引由 ETL 在数据加载完成后创建，避免启动时锁大表。
+            ensure_marketdata_schema(include_indexes=False)
+            print("  市场数据服务层表就绪")
+            from services.institution.inst_service import ensure_and_seed as ensure_inst_business
+
+            business = ensure_inst_business()
+            if business.get("ok"):
+                print(f"  机构端业务表就绪（org={business.get('org_id')}）")
+            else:
+                print(f"  机构端业务表跳过: {business.get('reason')}")
         except Exception as exc:
             print(f"  机构端 schema 跳过: {exc}")
         from services.auth.profile_store import ensure_schema as ensure_profile_schema

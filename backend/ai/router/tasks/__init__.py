@@ -6,6 +6,12 @@ from ai.router.tasks.backtest_interpretation import INTERPRET_TASK  # noqa: F401
 from ai.router.tasks.community import register_community_tasks
 from ai.router.tasks.community_summary import SUMMARY_TASK  # noqa: F401  导入即注册
 from ai.router.tasks.factor_generation import FACTOR_TASK  # noqa: F401  导入即注册
+from ai.router.tasks.institution import (  # noqa: F401  导入即注册
+    CHAIRMAN_MEMO_TASK,
+    DEBATE_TASK,
+    RESEARCH_MEMO_TASK,
+    RISK_REVIEW_TASK,
+)
 from ai.router.tasks.research import register_research_tasks
 from ai.router.tasks.strategy_generation import STRATEGY_TASK  # noqa: F401  导入即注册
 from ai.router.tasks.strategy_transcription import TRANSCRIPTION_TASK  # noqa: F401  导入即注册

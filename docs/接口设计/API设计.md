@@ -1121,7 +1121,62 @@ data: [DONE]                      ← 终止帧（正常结束与异常结束都
 
 ---
 
-## 13. 文末统计
+## 13. 机构端与手机端新增接口（2026-10-30）
+
+### 13.1 机构端 `/api/inst/*`
+
+只接受机构令牌（`scope=inst`）；写操作在服务端校验角色与职责分离。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/inst/overview` | 驾驶舱：净值、在研、待办、风控阻断、监控预警 |
+| GET | `/api/inst/companies` | 公司池，支持 `market` / `q` / `pool_status` |
+| GET | `/api/inst/companies/{id}` | 公司档案 + 行情/估值/财务/风险/同行 |
+| POST | `/api/inst/companies/{id}/pool` | 立项/观察/放弃（经理） |
+| GET | `/api/inst/cases` | 研究案列表，可按 `company_id` |
+| POST | `/api/inst/cases` | 创建研究案（经理） |
+| GET | `/api/inst/cases/{id}` | 研究案详情（任务/版本/证据/辩论/议案） |
+| POST | `/api/inst/cases/{id}/research` | 生成六维研究（`mode=full` 或单维） |
+| POST | `/api/inst/research/{version_id}/review` | 研究审核通过/退回 |
+| POST | `/api/inst/cases/{id}/ai/memo` | AI 研究一页纸（只读） |
+| POST | `/api/inst/cases/{id}/debate` | 开始辩论（`use_ai`） |
+| GET | `/api/inst/debates/{id}` | 辩论记录 |
+| GET | `/api/inst/proposals` | 议案列表，可按 `status` |
+| POST | `/api/inst/cases/{id}/proposals` | 创建议案（经理） |
+| GET | `/api/inst/proposals/{id}` | 议案详情（版本/审批/授权） |
+| POST | `/api/inst/proposals/{id}/partner` | 合伙人复核 |
+| POST | `/api/inst/proposals/{id}/chairman` | Chairman 审批 |
+| POST | `/api/inst/proposals/{id}/risk-check` | 执行前风控复核 |
+| POST | `/api/inst/proposals/{id}/authorize` | 生成不可变授权快照 |
+| POST | `/api/inst/proposals/{id}/ai/risk-review` | AI 风控意见（只读） |
+| POST | `/api/inst/proposals/{id}/ai/chairman-memo` | AI Chairman 摘要（只读） |
+| GET | `/api/inst/authorizations` | 授权列表，可按 `status` |
+| POST | `/api/inst/authorizations/{id}/execute` | SimBroker 执行（幂等） |
+| GET | `/api/inst/portfolio` | 组合净值/现金/持仓/行业敞口 |
+| GET | `/api/inst/monitor` | 投后持仓、预警、退出案 |
+| POST | `/api/inst/monitor/events` | 记录监控事件 |
+| POST | `/api/inst/monitor/exits` | 发起退出研究 |
+| GET | `/api/inst/audit` | 领域审计（`limit`） |
+
+响应统一 `{ok: true, ...}`；错误为 `{detail}`，401/403/404/400/503 与异常语义对应。
+
+### 13.2 手机端 AI `/api/invest/ai/*`
+
+见 `invest-api/README.md` 与 [Agent 设计](../模块设计/AI与Agent模块/机构端与手机端Agent设计.md)。要点：
+
+- 8 条端点：status / intent / chat / stock / daily / portfolio / announcement / condition。
+- 前置红线 + 后置扫描；无 Key 返回 503，不用 mock 伪装。
+- 响应卡片：`{card:{summary,sections,disclaimer,meta}, blocked?, raw}`。
+
+### 13.3 数据接口边界
+
+- 机构端直接读 PG 服务层，经 `backend/services/marketdata/store.py`。
+- 手机端读 `invest-api` SQLite 缓存；缓存由 `scripts/sync_invest_sqlite.py` 从 PG 重建。
+- 两端的行情/估值/财务口径见 [数据接入与库表设计](../数据设计/机构端与手机端-数据接入与库表设计-v0.1.md)。
+
+---
+
+## 14. 文末统计
 
 | 项 | 数值 |
 |---|---|

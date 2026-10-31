@@ -12,6 +12,7 @@ from services.auth.auth_store import decode_token, issue_token  # noqa: E402
 from services.institution.inst_store import (  # noqa: E402
     ROLE_LABELS,
     WORKSPACES,
+    _org_payload,
     issue_inst_token,
     permissions_for,
     user_from_inst_authorization,
@@ -110,6 +111,13 @@ class PermissionMatrixTest(unittest.TestCase):
             self.assertEqual(visible, {k for k, v in expected.items() if v != "none"})
             for item in workspaces_for(role):
                 self.assertEqual(item["path"], f"/inst/{item['key']}")
+
+    def test_org_payload_uses_org_id_not_member_id(self):
+        # 回归：成员 ID 与机构 ID 不同时，会话里的 org.id 必须是机构 ID。
+        payload = _org_payload(
+            {"id": 99, "org_id": 7, "code": "sunvalley", "name_cn": "旸谷资本", "name_en": ""}
+        )
+        self.assertEqual(payload["id"], 7)
 
 
 class TokenBoundaryTest(unittest.TestCase):

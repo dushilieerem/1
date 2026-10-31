@@ -1,12 +1,29 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, RefreshCw, ShieldCheck } from "lucide-react";
+import { instApi, fmtMoney, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
+import { Badge, ErrorBox, Loading } from "./instUi";
 
-const DEMO = {
-  nav: "10,000,000",
-  activeCases: "03",
-  invested: "18%",
-  available: "82%",
+type Overview = {
+  companies: number;
+  active_cases: number;
+  pending_approvals: number;
+  my_pending: number;
+  risk_blocks: number;
+  monitor_alerts: number;
+  data_date?: string;
+  portfolio: {
+    nav: number;
+    cash: number;
+    invested_ratio: number;
+  };
+  policy: {
+    max_single_weight: number;
+    min_cash_ratio: number;
+    nav: number;
+    policy_version: string;
+  };
 };
 
 const WORKFLOW = [
@@ -30,13 +47,44 @@ function Metric({ label, value, note }: { label: string; value: string; note: st
 
 export function InstOverviewPage() {
   const session = useInstSession();
+  const [data, setData] = useState<Overview | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const allowed = (key: string) => (session.permissions[key] || "none") !== "none";
 
+  const load = () => {
+    setLoading(true);
+    setError(null);
+    instApi<Overview>("/overview")
+      .then(setData)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(load, []);
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-6">
+        <Loading label="正在加载驾驶舱…" />
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-6">
+        <ErrorBox message={error || "驾驶舱数据不可用"} onRetry={load} />
+      </div>
+    );
+  }
+
   const attention = [
-    { label: "待我处理的议案", count: 2, to: "/inst/approvals", key: "approvals" },
-    { label: "风控硬性阻断", count: 0, to: "/inst/approvals", key: "approvals" },
-    { label: "监控预警", count: 1, to: "/inst/monitor", key: "monitor" },
-    { label: "待复核事项", count: 3, to: "/inst/monitor", key: "monitor" },
+    { label: "待我处理的议案", count: data.my_pending ?? data.pending_approvals, to: "/inst/approvals", key: "approvals" },
+    { label: "风控硬性阻断", count: data.risk_blocks, to: "/inst/approvals", key: "approvals" },
+    { label: "监控预警", count: data.monitor_alerts, to: "/inst/monitor", key: "monitor" },
+    { label: "在研研究案", count: data.active_cases, to: "/inst/research", key: "research" },
   ].filter((item) => allowed(item.key));
 
   return (
@@ -57,43 +105,49 @@ export function InstOverviewPage() {
           <div className="rounded-xl border border-[#c9a15e]/40 bg-[#fbf6ea] px-3 py-2 text-[11px] leading-relaxed text-[#8a6a2f]">
             模拟环境 · 无真实交易
             <br />
-            固定演示账本，不构成投资建议
+            数据日 {data.data_date || "—"} · 不构成投资建议
           </div>
         </div>
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="模拟资产净值 · CNY" value={DEMO.nav} note="固定演示账本 · 非收益曲线" />
-        <Metric label="在研投资议案" value={DEMO.activeCases} note="跨市场共享同一研究流程" />
         <Metric
-          label="已投资 / 可用资金"
-          value={`${DEMO.invested} / ${DEMO.available}`}
-          note="CNY 基准币种 · 多币种敞口"
+          label="模拟资产净值 · CNY"
+          value={fmtMoney(data.portfolio?.nav)}
+          note={`现金 ${fmtMoney(data.portfolio?.cash)} · 仓位 ${fmtPct(data.portfolio?.invested_ratio)}`}
         />
-        <Metric label="独立风控状态" value="正常运行" note="单股上限 15% · 内部演示政策" />
+        <Metric label="在研研究案" value={String(data.active_cases).padStart(2, "0")} note={`研究对象 ${data.companies} 个`} />
+        <Metric
+          label="待审批 / 风控阻断"
+          value={`${String(data.pending_approvals).padStart(2, "0")} / ${String(data.risk_blocks).padStart(2, "0")}`}
+          note="跨市场共享同一研究流程"
+        />
+        <Metric
+          label="监控预警"
+          value={String(data.monitor_alerts).padStart(2, "0")}
+          note={`独立风控 · 单股上限 ${fmtPct(data.policy?.max_single_weight)}`}
+        />
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-[#e7e3d8] bg-white p-6">
           <div className="flex items-center justify-between">
             <h2 className="font-display text-lg font-semibold text-slate-900">今天需要关注</h2>
-            <span className="text-[11px] text-slate-400">演示待办</span>
+            <button type="button" onClick={load} className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600">
+              <RefreshCw className="h-3 w-3" /> 刷新
+            </button>
           </div>
           {attention.length ? (
             <ul className="mt-4 divide-y divide-[#f0ece2]">
               {attention.map((item) => (
-                <li key={`${item.key}-${item.label}`}>
+                <li key={item.label}>
                   <Link
                     to={item.to}
                     className="flex items-center justify-between gap-3 py-3 text-sm text-slate-700 transition-colors hover:text-slate-900"
                   >
                     <span>{item.label}</span>
                     <span className="flex items-center gap-2">
-                      <span
-                        className={`font-mono text-sm ${
-                          item.count > 0 ? "text-[#8a6a2f]" : "text-slate-400"
-                        }`}
-                      >
+                      <span className={`font-mono text-sm ${item.count > 0 ? "text-[#8a6a2f]" : "text-slate-400"}`}>
                         {String(item.count).padStart(2, "0")}
                       </span>
                       <ArrowUpRight className="h-3.5 w-3.5 text-slate-300" aria-hidden />
@@ -116,10 +170,10 @@ export function InstOverviewPage() {
           <h2 className="font-display text-lg font-semibold text-slate-900">组合约束</h2>
           <dl className="mt-4 space-y-3 text-sm">
             {[
-              ["单股仓位上限", "15%"],
-              ["最低现金储备", "10%"],
-              ["参考净值", "CNY 10M"],
-              ["币种敞口", "CNY / USD / HKD"],
+              ["单股仓位上限", fmtPct(data.policy?.max_single_weight)],
+              ["最低现金储备", fmtPct(data.policy?.min_cash_ratio)],
+              ["参考净值", fmtMoney(data.policy?.nav)],
+              ["政策版本", data.policy?.policy_version || "—"],
             ].map(([k, v]) => (
               <div key={k} className="flex items-center justify-between border-b border-[#f0ece2] pb-3">
                 <dt className="text-slate-500">{k}</dt>
@@ -137,16 +191,12 @@ export function InstOverviewPage() {
       <section className="rounded-2xl border border-[#e7e3d8] bg-white p-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display text-lg font-semibold text-slate-900">投资工作流</h2>
-          <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500">
-            本期仅开放入口与驾驶舱
-          </span>
+          <Badge tone="gold">九工作区已接入首版闭环</Badge>
         </div>
         <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {WORKFLOW.map(([title, desc], index) => (
             <li key={title} className="rounded-xl border border-[#f0ece2] bg-[#faf9f5] p-4">
-              <span className="font-mono text-[11px] text-[#8a6a2f]">
-                {String(index + 1).padStart(2, "0")}
-              </span>
+              <span className="font-mono text-[11px] text-[#8a6a2f]">{String(index + 1).padStart(2, "0")}</span>
               <p className="mt-1 text-sm font-medium text-slate-800">{title}</p>
               <p className="mt-1 text-[11px] text-slate-500">{desc}</p>
             </li>

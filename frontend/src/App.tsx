@@ -154,10 +154,29 @@ const InstOverviewPage = lazy(() =>
     default: m.InstOverviewPage,
   })),
 );
-const InstPlaceholderPage = lazy(() =>
-  import("./pages/institution/InstPlaceholderPage").then((m) => ({
-    default: m.InstPlaceholderPage,
-  })),
+const InstIdeasPage = lazy(() =>
+  import("./pages/institution/InstIdeasPage").then((m) => ({ default: m.InstIdeasPage })),
+);
+const InstResearchPage = lazy(() =>
+  import("./pages/institution/InstResearchPage").then((m) => ({ default: m.InstResearchPage })),
+);
+const InstDebatePage = lazy(() =>
+  import("./pages/institution/InstDebatePage").then((m) => ({ default: m.InstDebatePage })),
+);
+const InstPortfolioPage = lazy(() =>
+  import("./pages/institution/InstPortfolioPage").then((m) => ({ default: m.InstPortfolioPage })),
+);
+const InstApprovalsPage = lazy(() =>
+  import("./pages/institution/InstApprovalsPage").then((m) => ({ default: m.InstApprovalsPage })),
+);
+const InstExecutionPage = lazy(() =>
+  import("./pages/institution/InstExecutionPage").then((m) => ({ default: m.InstExecutionPage })),
+);
+const InstMonitorPage = lazy(() =>
+  import("./pages/institution/InstMonitorPage").then((m) => ({ default: m.InstMonitorPage })),
+);
+const InstAboutPage = lazy(() =>
+  import("./pages/institution/InstAboutPage").then((m) => ({ default: m.InstAboutPage })),
 );
 
 function Authed({ children }: { children: ReactNode }) {
@@ -193,14 +212,14 @@ export default function App() {
         <Route path="/inst" element={<InstLayout />}>
           <Route index element={<Navigate to="/inst/overview" replace />} />
           <Route path="overview" element={<InstOverviewPage />} />
-          <Route path="ideas" element={<InstPlaceholderPage workspaceKey="ideas" />} />
-          <Route path="research" element={<InstPlaceholderPage workspaceKey="research" />} />
-          <Route path="debate" element={<InstPlaceholderPage workspaceKey="debate" />} />
-          <Route path="portfolio" element={<InstPlaceholderPage workspaceKey="portfolio" />} />
-          <Route path="approvals" element={<InstPlaceholderPage workspaceKey="approvals" />} />
-          <Route path="execution" element={<InstPlaceholderPage workspaceKey="execution" />} />
-          <Route path="monitor" element={<InstPlaceholderPage workspaceKey="monitor" />} />
-          <Route path="about" element={<InstPlaceholderPage workspaceKey="about" />} />
+          <Route path="ideas" element={<InstIdeasPage />} />
+          <Route path="research" element={<InstResearchPage />} />
+          <Route path="debate" element={<InstDebatePage />} />
+          <Route path="portfolio" element={<InstPortfolioPage />} />
+          <Route path="approvals" element={<InstApprovalsPage />} />
+          <Route path="execution" element={<InstExecutionPage />} />
+          <Route path="monitor" element={<InstMonitorPage />} />
+          <Route path="about" element={<InstAboutPage />} />
         </Route>
 
         <Route element={<Layout />}>

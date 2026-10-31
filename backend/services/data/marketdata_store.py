@@ -166,16 +166,16 @@ def _minute_files(start: str, end: str) -> list[Path]:
     root = data_root() / "high_frequency" / "1min"
     if not root.exists():
         return []
-    files: list[Path] = []
-    for year_dir in sorted(root.iterdir()):
+    entries: list[tuple[str, Path]] = []
+    for year_dir in root.iterdir():
         if not year_dir.is_dir() or not year_dir.name.isdigit():
             continue
         year = year_dir.name
-        for month_dir in sorted(year_dir.iterdir()):
+        for month_dir in year_dir.iterdir():
             if not month_dir.is_dir() or not month_dir.name.isdigit():
                 continue
-            for f in sorted(month_dir.glob("*.parquet")):
-                # 文件名 9.10.parquet → 2026-09-10
+            for f in month_dir.glob("*.parquet"):
+                # 文件名 9.10.parquet → 2026-09-10；按日期数值排序，避免 9.9 > 9.10
                 parts = f.stem.split(".")
                 if len(parts) != 2 or not all(p.isdigit() for p in parts):
                     continue
@@ -184,8 +184,9 @@ def _minute_files(start: str, end: str) -> list[Path]:
                     continue
                 if end and day > end:
                     continue
-                files.append(f)
-    return files
+                entries.append((day, f))
+    entries.sort(key=lambda x: x[0])
+    return [f for _day, f in entries]
 
 
 MINUTE_FREQS = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "60m": 60}

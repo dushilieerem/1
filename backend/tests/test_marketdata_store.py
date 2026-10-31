@@ -91,3 +91,17 @@ def test_index_catalog_from_release() -> None:
     cat = md.index_catalog()
     assert cat["count"] >= 2
     assert any(x["code"].startswith("000300") for x in cat["items"])
+
+
+@pytest.mark.skipif(not HAS_DATA, reason="本机无 marketdata release")
+def test_minute_limit_days_uses_latest_date() -> None:
+    files = md._minute_files("", "")
+    assert files
+    # 目录名 10.30 不能按字符串排在 10.9 前面
+    last = files[-1]
+    year = last.parent.parent.name
+    month, day = last.stem.split(".")
+    expected = f"{year}-{int(month):02d}-{int(day):02d}"
+    out = md.minute_bars("000001.SZ", limit_days=1)
+    assert out["items"]
+    assert out["items"][0]["time"].startswith(expected)

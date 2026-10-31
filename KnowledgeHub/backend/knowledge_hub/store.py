@@ -12,6 +12,7 @@ from typing import Any
 
 from knowledge_hub.chunking import chunk_text
 from services.core.db import get_conn
+from services.core.secret_box import encrypt_secret
 
 # 解析进度（内存），供前端轮询；ThreadingHTTPServer 下可边 ingest 边读
 _INGEST_PROGRESS: dict[int, dict[str, Any]] = {}
@@ -2122,6 +2123,26 @@ def list_model_providers() -> list[dict[str, Any]]:
     return out
 
 
+def migrate_provider_keys() -> int:
+    """把历史明文 provider key 加密；幂等。"""
+    ensure_kh_schema()
+    changed = 0
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, api_key FROM kh_model_providers WHERE api_key IS NOT NULL AND api_key <> ''"
+        ).fetchall()
+        for row in rows:
+            raw = str(row.get("api_key") or "")
+            if raw.startswith("enc:v1:"):
+                continue
+            conn.execute(
+                "UPDATE kh_model_providers SET api_key=%s WHERE id=%s",
+                (encrypt_secret(raw), int(row["id"])),
+            )
+            changed += 1
+    return changed
+
+
 def upsert_model_provider(body: dict[str, Any]) -> dict[str, Any]:
     ensure_kh_schema()
     key = str(body.get("providerKey") or body.get("provider_key") or "").strip()
@@ -2140,7 +2161,7 @@ def upsert_model_provider(body: dict[str, Any]) -> dict[str, Any]:
         ).fetchone()
         if existing:
             new_key = (
-                str(api_key)
+                encrypt_secret(str(api_key))
                 if api_key is not None and str(api_key).strip() != ""
                 else (existing["api_key"] or "")
             )
@@ -2172,7 +2193,7 @@ def upsert_model_provider(body: dict[str, Any]) -> dict[str, Any]:
                     key,
                     name,
                     base_url,
-                    str(api_key or ""),
+                    encrypt_secret(str(api_key or "")),
                     json.dumps(models, ensure_ascii=False),
                 ),
             ).fetchone()

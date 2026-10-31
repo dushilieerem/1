@@ -165,9 +165,15 @@ def bootstrap_schemas() -> None:
             enforce_news_retention()
         except Exception as exc:
             print(f"  news retention 跳过: {exc}")
-        from knowledge_hub.store import ensure_kh_schema
+        from knowledge_hub.store import ensure_kh_schema, migrate_provider_keys
 
         ensure_kh_schema()
+        try:
+            n = migrate_provider_keys()
+            if n:
+                print(f"  KH provider 密钥已加密 {n} 条")
+        except Exception as exc:
+            print(f"  KH provider 密钥迁移跳过: {exc}")
         mig = migrate_legacy_custom_to_admin()
         ensure_detect_schema()
         ensure_strategy_schema()
@@ -198,6 +204,18 @@ def bootstrap_schemas() -> None:
             print(f"  detect 错归属修正: {'; '.join(moved)}")
     except Exception as exc:
         print(f"  schema 初始化失败（登录可能不可用）: {exc}")
+
+    try:
+        from services.core.migrations import apply_migrations
+
+        migration = apply_migrations()
+        if migration.get("applied"):
+            print(f"  数据库迁移已执行: {', '.join(migration['applied'])}")
+        else:
+            print(f"  数据库迁移已是最新（{migration.get('current') or 'baseline'}）")
+    except Exception as exc:
+        # P0-10：迁移失败必须 fail-fast，不能带着不确定 schema 启动。
+        raise RuntimeError(f"数据库迁移失败: {exc}") from exc
 
     try:
         from services.news.news_ingest import start_news_ingest_scheduler

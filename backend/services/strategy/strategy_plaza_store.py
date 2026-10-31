@@ -317,6 +317,15 @@ def create_plaza_item(
         body = body[:_MAX_BODY]
     snap = build_snapshot(snapshot if isinstance(snapshot, dict) else {})
     with get_conn() as conn:
+        rid = (source_run_id or "").strip()
+        if not rid:
+            raise ValueError("发布必须绑定一次已验证的回测运行")
+        run = conn.execute(
+            "SELECT verified FROM strategy_runs WHERE user_id = %s AND id = %s",
+            (author_id, rid),
+        ).fetchone()
+        if not run or not bool(run.get("verified")):
+            raise PermissionError("源回测运行未通过服务端验证，不能发布")
         row = conn.execute(
             """
             INSERT INTO strategy_plaza_items

@@ -14,6 +14,7 @@ from services.core.backtest_params import validate_execution_timing
 from services.core.db import get_conn
 from services.core.env_config import env
 from services.core.re_http_gateway import forward_re, rewrite_run_poll_url
+from services.strategy.result_signature import sign_result
 
 router = APIRouter(tags=["re-gateway"])
 
@@ -32,29 +33,6 @@ _RE_HEALTH_TIMEOUT = _float_env("SVQUANT_RE_HEALTH_TIMEOUT_SEC", 2.0)
 _RE_HEALTH_CACHE_TTL = _float_env("SVQUANT_RE_HEALTH_CACHE_TTL_SEC", 5.0)
 _CACHE_LOCK = Lock()
 _CACHE: dict[str, dict[str, Any]] = {}
-
-_DEFAULT_SYMBOLS = [
-    ("000001.SZ", "平安银行"),
-    ("000002.SZ", "万科A"),
-    ("000858.SZ", "五粮液"),
-    ("002415.SZ", "海康威视"),
-    ("002594.SZ", "比亚迪"),
-    ("300750.SZ", "宁德时代"),
-    ("600000.SH", "浦发银行"),
-    ("600036.SH", "招商银行"),
-    ("600519.SH", "贵州茅台"),
-    ("600887.SH", "伊利股份"),
-    ("601318.SH", "中国平安"),
-    ("601398.SH", "工商银行"),
-]
-
-_DEFAULT_INDICES = [
-    {"code": "CSI300", "name": "沪深300"},
-    {"code": "CSI500", "name": "中证500"},
-    {"code": "CSI1000", "name": "中证1000"},
-    {"code": "SSE50", "name": "上证50"},
-    {"code": "SZSE100", "name": "深证100"},
-]
 
 
 def _resp(status: int, headers: dict[str, str], data: Any) -> JSONResponse:
@@ -103,65 +81,6 @@ def _cached_re_get(cache_key: str, path: str) -> tuple[int, dict[str, str], Any]
                 stale_data = {**stale_data, "_stale": True, "_upstream_status": status}
             return int(cached["status"]), _cache_headers(cached["headers"], state="stale"), stale_data
         return status, _cache_headers(headers, state="error"), data
-
-
-def _local_market_fallback(cache_key: str, upstream_status: int) -> dict[str, Any] | None:
-    if cache_key == "market_indices":
-        return {"ok": True, "indices": _DEFAULT_INDICES, "_fallback": True, "_upstream_status": upstream_status}
-    if cache_key != "market_symbols":
-        return None
-
-    seen: set[str] = set()
-    symbols: list[dict[str, str]] = []
-
-    def add(symbol: Any, name: Any = "") -> None:
-        code = str(symbol or "").strip().upper()
-        if not code or code in seen:
-            return
-        seen.add(code)
-        symbols.append({"symbol": code, "name": str(name or "").strip()})
-
-    for code, name in _DEFAULT_SYMBOLS:
-        add(code, name)
-
-    try:
-        with get_conn() as conn:
-            try:
-                for row in conn.execute(
-                    """
-                    SELECT symbol, max(name) AS name
-                    FROM user_watchlist_symbols
-                    WHERE symbol IS NOT NULL AND symbol <> ''
-                    GROUP BY symbol
-                    ORDER BY symbol
-                    LIMIT 200
-                    """
-                ).fetchall():
-                    add(row.get("symbol"), row.get("name"))
-            except Exception:
-                conn.rollback()
-            try:
-                for row in conn.execute(
-                    """
-                    SELECT DISTINCT jsonb_array_elements_text(symbols) AS symbol
-                    FROM news_items
-                    WHERE jsonb_typeof(symbols) = 'array'
-                    LIMIT 200
-                    """
-                ).fetchall():
-                    add(row.get("symbol"))
-            except Exception:
-                conn.rollback()
-    except Exception:
-        pass
-
-    return {
-        "ok": True,
-        "symbols": symbols,
-        "unmapped_count": 0,
-        "_fallback": True,
-        "_upstream_status": upstream_status,
-    }
 
 
 def _re_health_with_fallback() -> tuple[int, dict[str, str], Any]:
@@ -223,31 +142,11 @@ def backtest_strategy_submit(
         timeout=1800,
     )
     data = rewrite_run_poll_url(data, "/api/backtest/strategy")
-    if isinstance(data, dict) and data.get("run_id"):
-        headers = {
-            **headers,
-            "Location": f"/api/backtest/strategy/{data['run_id']}",
-        }
-    return _resp(status, headers, data)
-
-
-@router.get("/api/backtest/strategy/{run_id}")
-def backtest_strategy_poll(
-    run_id: str, _user: dict = Depends(require_user)
-) -> JSONResponse:
-    status, headers, data = forward_re(
-        "GET", f"/api/backtest/strategy/{run_id}", timeout=60
-    )
-    return _resp(status, headers, data)
-
-
-@router.delete("/api/backtest/strategy/{run_id}")
-def backtest_strategy_cancel(
-    run_id: str, _user: dict = Depends(require_user)
-) -> JSONResponse:
-    status, headers, data = forward_re(
-        "DELETE", f"/api/backtest/strategy/{run_id}", timeout=60
-    )
+    if status == 202 or (isinstance(data, dict) and data.get("run_id")):
+        # P0-02：当前 RE 只有同步策略回测；不暴露会 404 的轮询路由。
+        return _resp(502, headers, {"error": "ResearchEngine 当前仅支持同步策略回测"})
+    if 200 <= status < 300 and isinstance(data, dict) and not data.get("error"):
+        data = {**data, "_svquant_verified_token": sign_result(int(_user["id"]), data)}
     return _resp(status, headers, data)
 
 

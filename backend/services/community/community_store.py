@@ -2,6 +2,7 @@
 """社区：帖子 + 评论（两层）+ 赞踩 + 收藏 + 通知 + 举报。"""
 from __future__ import annotations
 
+import html
 import json
 import re
 from datetime import datetime
@@ -9,6 +10,7 @@ from typing import Any
 
 from services.core.db import get_conn
 from services.community.content_limits import post_body_text
+from services.community.sanitize import sanitize_community_html
 
 SECTIONS = ("strategy", "factor", "qa", "hotspot", "official")
 SECTION_LABELS = {
@@ -741,6 +743,9 @@ def _normalize_post_fields(
     body = (body or "").strip()
     if len(post_body_text(body)) > 20_000:
         raise ValueError("正文过长（最多 20000 字符）")
+    # P0-05：服务端白名单清洗，存储与输出双重防护。
+    body = sanitize_community_html(body)
+    title = html.escape(title, quote=False)
     section = (section or "").strip() or "strategy"
     code = (code_snippet or "").strip() or None
     if len(title) > 120:
@@ -1035,8 +1040,9 @@ def create_comment(
     imgs = _normalize_images(images)
     if not body and not imgs:
         raise ValueError("评论不能为空")
-    if len(body) > 2000:
+    if len(post_body_text(body)) > 2000:
         raise ValueError("评论过长（最多 2000 字）")
+    body = sanitize_community_html(body)
     with get_conn() as conn:
         exists = conn.execute(
             "SELECT id, author_id FROM posts WHERE id = %s AND status = 'published'",

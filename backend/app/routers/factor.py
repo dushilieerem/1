@@ -26,7 +26,7 @@ from services.factor.re_factor_async_proxy import (
 from services.factor.re_factor_catalog import (
     clear_re_catalog_cache,
     fetch_re_catalog,
-    sync_from_re,
+    sync_all_scopes,
 )
 from services.factor.user_factor_store import custom_lib_source_for_user, filtered_index_yaml
 from services.factor.user_library_store import (
@@ -72,17 +72,18 @@ def factor_re_catalog(
 def factor_re_catalog_sync(_admin: dict = Depends(require_admin)) -> JSONResponse:
     try:
         clear_re_catalog_cache()
-        data = sync_from_re(include_all=True)
-        factors = data.get("factors") or []
+        data = sync_all_scopes()
+        all_data = data.get("all") or {}
+        factors = all_data.get("factors") or []
         by_lib = Counter(str(f.get("library") or "") for f in factors)
         data["library_factor_counts"] = dict(sorted(by_lib.items()))
-        data["ok"] = True
-        if int(data.get("factor_count") or 0) <= 0:
+        if int(all_data.get("factor_count") or 0) <= 0:
             return JSONResponse(
                 {
                     "ok": False,
                     "error": "同步结果为空，未写入（请检查 RE 是否可达）",
-                    "message": data.get("message"),
+                    "message": all_data.get("message"),
+                    "detail": data,
                 },
                 status_code=502,
             )

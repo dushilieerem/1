@@ -5,6 +5,7 @@ from __future__ import annotations
 import urllib.parse
 from typing import Any
 
+from services.core.env_config import env
 from services.core.lan_http import request_json
 from services.core.re_config import RE_BASE
 
@@ -24,8 +25,10 @@ def forward_re(
         qs = urllib.parse.urlencode({k: v for k, v in query.items() if v is not None})
         if qs:
             url = f"{url}?{qs}"
+    token = (env("RE_SERVICE_TOKEN", "") or "").strip()
+    extra = {"X-Service-Token": token} if token else None
     status, headers, data = request_json(
-        url, method=method.upper(), payload=payload, timeout=timeout
+        url, method=method.upper(), payload=payload, timeout=timeout, headers=extra
     )
     out: dict[str, str] = {}
     ra = headers.get("retry-after")

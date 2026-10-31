@@ -9,6 +9,7 @@ import urllib.request
 from typing import Any
 
 from services.core.db import get_conn
+from services.core.secret_box import decrypt_secret
 
 
 def get_role_credentials(role_key: str = "embedding") -> dict[str, str] | None:
@@ -56,7 +57,7 @@ def get_provider_credentials(
         if not prov:
             return None
         base = (prov.get("base_url") or "").strip().rstrip("/")
-        api_key = (prov.get("api_key") or "").strip()
+        api_key = decrypt_secret(str(prov.get("api_key") or "")).strip()
         if not base:
             return None
         if require_api_key and not api_key:

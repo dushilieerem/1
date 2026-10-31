@@ -6,9 +6,9 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 # backend root + KnowledgeHub/backend（knowledge_hub 包）
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
@@ -46,6 +46,7 @@ from app.routers import (  # noqa: E402
     watchlists,
 )
 from services.core.env_config import env  # noqa: E402
+from services.core.rate_limit import enforce_rate_limit_key  # noqa: E402
 
 
 def _configure_threadpool() -> None:
@@ -86,11 +87,75 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
 
 install_exception_handlers(app)
+
+
+def _csp_policy() -> str:
+    return (
+        env(
+            "CONTENT_SECURITY_POLICY",
+            "default-src 'self'; img-src 'self' data: https:; "
+            "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            "connect-src 'self' https: http: ws: wss:; frame-ancestors 'self';",
+        )
+        or ""
+    ).strip()
+
+
+_WRITE_SKIP_PREFIXES = ("/api/auth/", "/api/health")
+
+
+@app.middleware("http")
+async def write_rate_limit(request: Request, call_next):
+    """P0-06：所有非 GET API 默认按用户/IP 限流（单 worker；多实例见 D-06）。"""
+    method = request.method.upper()
+    path = request.url.path
+    if method not in {"POST", "PUT", "PATCH", "DELETE"} or not path.startswith("/api/"):
+        return await call_next(request)
+    if any(path.startswith(prefix) for prefix in _WRITE_SKIP_PREFIXES):
+        return await call_next(request)
+    identity = None
+    auth = request.headers.get("authorization") or ""
+    if auth.lower().startswith("bearer "):
+        try:
+            from services.auth.auth_store import decode_token
+
+            identity = f"u:{decode_token(auth.split(None, 1)[1].strip()).get('sub')}"
+        except Exception:
+            identity = None
+    if not identity:
+        xf = request.headers.get("x-forwarded-for") or ""
+        identity = f"ip:{(xf.split(',')[0].strip() if xf else (request.client.host if request.client else 'unknown'))}"
+    try:
+        limit = max(1, int(env("WRITE_RATE_LIMIT", "120") or "120"))
+    except (TypeError, ValueError):
+        limit = 120
+    try:
+        enforce_rate_limit_key(identity, scope="write", limit=limit, window_sec=60)
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "请求过于频繁，请稍后再试"},
+            headers=exc.headers or {"Retry-After": "60"},
+        )
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    csp = _csp_policy()
+    if csp:
+        response.headers.setdefault("Content-Security-Policy", csp)
+    return response
 
 for mod in (
     health,

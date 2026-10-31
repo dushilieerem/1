@@ -27,9 +27,9 @@ def _client_key(request: Request) -> str:
     return "unknown"
 
 
-def enforce_rate_limit(request: Request, *, scope: str, limit: int, window_sec: int) -> None:
-    """同一 IP 在 window_sec 秒内最多调用 limit 次，超出抛 429。"""
-    key = f"{scope}:{_client_key(request)}"
+def enforce_rate_limit_key(key: str, *, scope: str, limit: int, window_sec: int) -> None:
+    """同一 key 在 window_sec 秒内最多调用 limit 次，超出抛 429。"""
+    key = f"{scope}:{key}"
     now = time.monotonic()
     with _LOCK:
         if len(_BUCKETS) >= _MAX_KEYS:
@@ -38,7 +38,16 @@ def enforce_rate_limit(request: Request, *, scope: str, limit: int, window_sec: 
         while bucket and now - bucket[0] > window_sec:
             bucket.popleft()
         if len(bucket) >= limit:
-            raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+            raise HTTPException(
+                status_code=429,
+                detail="请求过于频繁，请稍后再试",
+                headers={"Retry-After": str(max(1, int(window_sec)))},
+            )
         bucket.append(now)
         if not bucket:  # 理论不可达；防御空桶滞留
             _BUCKETS.pop(key, None)
+
+
+def enforce_rate_limit(request: Request, *, scope: str, limit: int, window_sec: int) -> None:
+    """同一 IP 在 window_sec 秒内最多调用 limit 次，超出抛 429。"""
+    enforce_rate_limit_key(_client_key(request), scope=scope, limit=limit, window_sec=window_sec)

@@ -360,6 +360,60 @@ def sync_from_re(*, include_all: bool = False) -> dict[str, Any]:
     return out
 
 
+def catalog_scope_status() -> dict[str, Any]:
+    """P0-14：primary/all 双 scope 的一致性/陈旧检查。"""
+    out: dict[str, Any] = {"ok": True, "scopes": {}, "warnings": []}
+    now = time.time()
+    for scope, flag in (("primary", False), ("all", True)):
+        snap = _load_db(flag)
+        if not snap:
+            out["ok"] = False
+            out["warnings"].append(f"{scope} 未同步")
+            out["scopes"][scope] = None
+            continue
+        fetched = int(snap.get("fetched_at_unix") or 0)
+        age_hours = round((now - fetched) / 3600, 1) if fetched else None
+        out["scopes"][scope] = {
+            "factor_count": len(snap.get("factors") or []),
+            "content_hash": snap.get("content_hash"),
+            "fetched_at": snap.get("fetched_at"),
+            "age_hours": age_hours,
+        }
+        if age_hours is not None and age_hours > 24 * 7:
+            out["warnings"].append(f"{scope} 已 {age_hours} 小时未同步")
+    pri = out["scopes"].get("primary")
+    alls = out["scopes"].get("all")
+    if pri and alls and int(pri["factor_count"]) > int(alls["factor_count"]):
+        out["ok"] = False
+        out["warnings"].append("primary 因子数大于 all，scope 可能写反")
+    if out["warnings"]:
+        out["ok"] = False
+    return out
+
+
+def sync_all_scopes() -> dict[str, Any]:
+    """同一周期刷新 primary 与 all，并返回一致性检查（P0-14）。"""
+    errors: list[str] = []
+    primary: dict[str, Any] | None = None
+    all_scope: dict[str, Any] | None = None
+    try:
+        primary = sync_from_re(include_all=False)
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"primary: {exc}")
+    try:
+        all_scope = sync_from_re(include_all=True)
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"all: {exc}")
+    status = catalog_scope_status()
+    return {
+        "ok": not errors and bool(primary) and bool(all_scope) and status.get("ok", False),
+        "primary": primary,
+        "all": all_scope,
+        "consistency": status,
+        "errors": errors,
+    }
+
+
 def fetch_re_catalog(*, force: bool = False, include_all: bool = False) -> dict[str, Any]:
     """页面默认读内存/PG；force 才同步 RE。"""
     ensure_re_factor_catalog_schema()
@@ -412,7 +466,8 @@ def warm_re_catalog_async() -> None:
                     _cache_by_scope["all"] = all_db
                 if pri_db is not None:
                     _cache_by_scope["primary"] = pri_db
-            if all_db is not None:
+            status = catalog_scope_status()
+            if all_db is not None and status.get("ok"):
                 n = len(all_db.get("factors") or [])
                 print(f"  re-catalog 已从 PostgreSQL 载入全库 {n} 个因子")
                 return
@@ -421,8 +476,10 @@ def warm_re_catalog_async() -> None:
                 print(f"  re-catalog 仅有 primary {n} 个，后台补全库…")
             else:
                 print("  re-catalog 库空，后台首次同步 RE（全库）…")
-            out = sync_from_re(include_all=True)
-            print(f"  re-catalog 同步完成：{out.get('message')}")
+            out = sync_all_scopes()
+            primary_msg = ((out.get("primary") or {}).get("message") or "")
+            all_msg = ((out.get("all") or {}).get("message") or "")
+            print(f"  re-catalog 同步完成：primary={primary_msg} / all={all_msg}")
         except Exception as exc:  # noqa: BLE001
             print(f"  re-catalog 预热失败: {exc}")
 

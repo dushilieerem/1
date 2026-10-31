@@ -97,6 +97,20 @@ def ensure_news_schema() -> None:
         )
 
 
+        # P1-C05：中文子串检索用 pg_trgm 加速 ILIKE；扩展不可用时忽略。
+        try:
+            with conn.transaction():
+                conn.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+                for name, col in (
+                    ("idx_news_title_trgm", "title"),
+                    ("idx_news_summary_trgm", "summary"),
+                ):
+                    conn.execute(
+                        f"CREATE INDEX IF NOT EXISTS {name} ON news_items USING gin ({col} gin_trgm_ops)"
+                    )
+        except Exception:
+            pass
+
 def _search_pattern(q: str | None) -> str | None:
     raw = (q or "").strip()
     if not raw:

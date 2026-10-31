@@ -9,6 +9,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from app.deps import require_admin
 from services.admin import user_admin_store as store
 from services.core.audit_log_store import write_audit
+from services.core.db import get_conn
 
 router = APIRouter(tags=["admin-users"])
 
@@ -103,3 +104,33 @@ def reset_password(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     _audit(request, admin, "admin.user.reset_password", f"user={user_id}", user_id)
     return {"ok": True, **out}
+
+@router.get("/api/admin/usage")
+def usage(
+    days: int = Query(7, ge=1, le=90),
+    _admin: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """P2-12 首版：按日聚合 AI/社区/策略/资讯使用量。"""
+    with get_conn() as conn:
+        def series(table: str, date_col: str, extra: str = "") -> list[dict[str, Any]]:
+            rows = conn.execute(
+                f"""
+                SELECT to_char(date_trunc('day', {date_col}), 'YYYY-MM-DD') AS d,
+                       COUNT(*)::int AS n {extra}
+                  FROM {table}
+                 WHERE {date_col} >= NOW() - (%s || ' days')::interval
+                 GROUP BY 1 ORDER BY 1
+                """,
+                (days,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+        ai = series("ai_usage", "created_at", ", COALESCE(SUM(tokens_in+tokens_out),0)::bigint AS tokens")
+        posts = series("posts", "created_at")
+        runs = series("strategy_runs", "finished_at")
+        news = series("news_items", "published_at")
+        users = conn.execute(
+            "SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status='active')::int AS active FROM users"
+        ).fetchone()
+    return {"ok": True, "days": days, "users": dict(users), "ai": ai, "posts": posts, "strategyRuns": runs, "news": news}
+

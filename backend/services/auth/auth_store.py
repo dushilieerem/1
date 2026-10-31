@@ -237,6 +237,18 @@ def decode_token(token: str) -> dict[str, Any]:
     return jwt.decode(token, _jwt_secret(), algorithms=["HS256"])
 
 
+def revoke_user_tokens(user_id: int) -> None:
+    """P1-U05：token_version + 1，使该用户已签发的 JWT 全部失效。"""
+    uid = int(user_id)
+    if uid <= 0:
+        return
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET token_version = COALESCE(token_version, 0) + 1 WHERE id = %s",
+            (uid,),
+        )
+
+
 def user_from_authorization(header: str | None) -> dict[str, Any] | None:
     if dev_skip_auth():
         return {

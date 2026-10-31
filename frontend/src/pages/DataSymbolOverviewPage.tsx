@@ -1,4 +1,5 @@
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import { MinuteBarsPanel } from "@/components/data/MinuteBarsPanel";
 import { SymbolOverviewPanel } from "@/components/data/SymbolOverviewPanel";
 
 export function DataSymbolOverviewPage() {
@@ -41,6 +42,7 @@ export function DataSymbolOverviewPage() {
           }
         />
       </div>
+      <MinuteBarsPanel symbol={symbol || "000001.SZ"} />
     </div>
   );
 }

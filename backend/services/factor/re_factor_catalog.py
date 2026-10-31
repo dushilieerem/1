@@ -88,8 +88,16 @@ def ensure_re_factor_catalog_schema() -> None:
               content_hash TEXT,
               factor_count INT,
               message TEXT,
+              detail JSONB,
               created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
+            """
+        )
+        # 旧库补列（P1-F04：记录变更 diff）
+        conn.execute(
+            """
+            ALTER TABLE re_factor_catalog_sync_log
+            ADD COLUMN IF NOT EXISTS detail JSONB
             """
         )
     _schema_ready = True
@@ -181,6 +189,40 @@ def content_hash(libraries: list[dict[str, Any]], factors: list[dict[str, Any]])
     return hashlib.sha256(raw).hexdigest()
 
 
+def _factor_key(f: dict[str, Any]) -> str:
+    return f"{f.get('library') or ''}::{f.get('name') or ''}"
+
+
+def factor_diff(
+    old: dict[str, Any] | None, new: dict[str, Any], *, limit: int = 50
+) -> dict[str, Any]:
+    """两次同步之间的因子增删 diff（P1-F04）。
+
+    以「库名::因子名」为键；首次同步没有旧快照，不算 diff。
+    """
+    if old is None:
+        return {
+            "first_sync": True,
+            "added_count": len(new.get("factors") or []),
+            "removed_count": 0,
+            "added": [],
+            "removed": [],
+            "truncated": False,
+        }
+    old_keys = {_factor_key(f) for f in old.get("factors") or []}
+    new_keys = {_factor_key(f) for f in new.get("factors") or []}
+    added = sorted(new_keys - old_keys)
+    removed = sorted(old_keys - new_keys)
+    return {
+        "first_sync": False,
+        "added_count": len(added),
+        "removed_count": len(removed),
+        "added": added[:limit],
+        "removed": removed[:limit],
+        "truncated": len(added) > limit or len(removed) > limit,
+    }
+
+
 def _pull_from_re(*, include_all: bool = False) -> dict[str, Any]:
     t0 = time.time()
     lib_payload = _get_json("/api/factor-libraries")
@@ -251,7 +293,13 @@ def _load_db(include_all: bool) -> dict[str, Any] | None:
     return out
 
 
-def _save_db(payload: dict[str, Any], *, changed: bool, message: str) -> None:
+def _save_db(
+    payload: dict[str, Any],
+    *,
+    changed: bool,
+    message: str,
+    diff: dict[str, Any] | None = None,
+) -> None:
     ensure_re_factor_catalog_schema()
     scope = _scope(bool(payload.get("include_all")))
     h = str(payload.get("content_hash") or "")
@@ -315,10 +363,17 @@ def _save_db(payload: dict[str, Any], *, changed: bool, message: str) -> None:
         conn.execute(
             """
             INSERT INTO re_factor_catalog_sync_log (
-              scope, changed, content_hash, factor_count, message
-            ) VALUES (%s, %s, %s, %s, %s)
+              scope, changed, content_hash, factor_count, message, detail
+            ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
             """,
-            (scope, changed, h, factor_count, message),
+            (
+                scope,
+                changed,
+                h,
+                factor_count,
+                message,
+                json.dumps(diff, ensure_ascii=False) if diff else None,
+            ),
         )
 
 
@@ -330,17 +385,21 @@ def sync_from_re(*, include_all: bool = False) -> dict[str, Any]:
     old_hash = (old or {}).get("content_hash")
     new_hash = pulled.get("content_hash")
     changed = old_hash != new_hash
+    diff = factor_diff(old, pulled)
 
     if changed or old is None:
-        msg = (
-            f"已更新：{old.get('factor_count') if old else 0} → {pulled.get('factor_count')} 个因子"
-            if old
-            else f"首次写入 {pulled.get('factor_count')} 个因子"
-        )
-        _save_db(pulled, changed=True, message=msg)
+        if old:
+            msg = (
+                f"已更新：{old.get('factor_count')} → {pulled.get('factor_count')} 个因子"
+                f"（新增 {diff['added_count']} / 移除 {diff['removed_count']}）"
+            )
+        else:
+            msg = f"首次写入 {pulled.get('factor_count')} 个因子"
+        _save_db(pulled, changed=True, message=msg, diff=diff)
         result = dict(pulled)
         result["changed"] = True
         result["message"] = msg
+        result["diff"] = diff
     else:
         msg = f"无变更（hash={str(new_hash)[:12]}…，{pulled.get('factor_count')} 个）"
         _save_db(old, changed=False, message=msg)
@@ -389,6 +448,36 @@ def catalog_scope_status() -> dict[str, Any]:
     if out["warnings"]:
         out["ok"] = False
     return out
+
+
+def sync_log(limit: int = 20) -> list[dict[str, Any]]:
+    """最近的同步记录（含 diff），供管理后台诊断（P1-F04）。"""
+    ensure_re_factor_catalog_schema()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT scope, changed, content_hash, factor_count, message, detail, created_at
+            FROM re_factor_catalog_sync_log
+            ORDER BY id DESC
+            LIMIT %s
+            """,
+            (max(1, min(200, int(limit))),),
+        ).fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        created = item.get("created_at")
+        if created is not None:
+            item["created_at"] = created.isoformat()
+        out.append(item)
+    return out
+
+
+def catalog_sync_status(limit: int = 20) -> dict[str, Any]:
+    """P1-F04：双 scope 一致性 + 陈旧告警 + 最近同步 diff。"""
+    status = catalog_scope_status()
+    status["recent_syncs"] = sync_log(limit)
+    return status
 
 
 def sync_all_scopes() -> dict[str, Any]:

@@ -585,8 +585,25 @@ def parse_symbols(text: str) -> list[str]:
 
 def run(args: argparse.Namespace) -> int:
     symbols = parse_symbols(args.symbols)
+    if getattr(args, "from_db", False):
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT s.symbol
+                  FROM ref_security s
+                  LEFT JOIN LATERAL (
+                    SELECT float_mv FROM md_valuation_daily v
+                     WHERE v.symbol=s.symbol ORDER BY trade_date DESC LIMIT 1
+                  ) v ON TRUE
+                 WHERE s.market='CN' AND s.status='listed'
+                 ORDER BY v.float_mv DESC NULLS LAST, s.symbol
+                 LIMIT %s
+                """,
+                (max(1, int(args.limit)),),
+            ).fetchall()
+        symbols = [str(r["symbol"]).split(".")[0] for r in rows]
     if not symbols:
-        raise SystemExit("--symbols 为空")
+        raise SystemExit("--symbols / --from-db 为空")
     cutoff = today_cn()
 
     ensure_marketdata_schema()
@@ -674,6 +691,8 @@ def main() -> int:
         default=",".join(DEFAULT_SYMBOLS),
         help="逗号分隔的 A 股代码，默认 8 只观察池",
     )
+    parser.add_argument("--from-db", action="store_true", help="按 PG 流通市值取前 N 只 A 股")
+    parser.add_argument("--limit", type=int, default=50, help="--from-db 时的标的数（默认 50）")
     parser.add_argument("--pages", type=int, default=10, help="每个接口最多翻页数（默认 10）")
     parser.add_argument("--skip-announcements", action="store_true", help="跳过公告采集")
     args = parser.parse_args()

@@ -11,9 +11,12 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import socket
+import threading
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -364,6 +367,74 @@ def _send(
         raise _failure_to_error(failure, target) from failure
 
 
+class _CompletionCache:
+    """进程内结果缓存（P1-A03）：默认关闭，`LLM_CACHE_TTL_SEC>0` 时启用。"""
+
+    def __init__(self) -> None:
+        self._rows: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._lock = threading.Lock()
+
+    def get(self, key: str, ttl: int) -> dict[str, Any] | None:
+        if ttl <= 0:
+            return None
+        now = time.monotonic()
+        with self._lock:
+            row = self._rows.get(key)
+            if row is None:
+                return None
+            expires, value = row
+            if expires <= now:
+                self._rows.pop(key, None)
+                return None
+            return json.loads(json.dumps(value))  # 调用方可能改返回值
+
+    def put(self, key: str, value: dict[str, Any], ttl: int) -> None:
+        if ttl <= 0:
+            return
+        with self._lock:
+            if len(self._rows) >= 256:
+                # 简单淘汰：清掉最早写入的一批，避免无界增长
+                for k in list(self._rows)[:64]:
+                    self._rows.pop(k, None)
+            self._rows[key] = (time.monotonic() + ttl, value)
+
+
+_CACHE = _CompletionCache()
+
+
+def _cache_key(target: ChatTarget, payload: dict[str, Any]) -> str:
+    raw = json.dumps(
+        {"base": target.base_url, "payload": payload},
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _fallback_targets(primary: ChatTarget) -> list[ChatTarget]:
+    """`LLM_FALLBACK_MODELS=a,b` 指定的兜底模型；不可配置的自动跳过。"""
+    raw = (env("LLM_FALLBACK_MODELS", "") or "").strip()
+    if not raw:
+        return []
+    out: list[ChatTarget] = []
+    for model_id in (x.strip() for x in raw.split(",")):
+        if not model_id:
+            continue
+        try:
+            candidate = resolve_target(model=model_id)
+        except AiNotConfigured:
+            continue
+        if (candidate.provider, candidate.base_url, candidate.model) == (
+            primary.provider,
+            primary.base_url,
+            primary.model,
+        ):
+            continue
+        out.append(candidate)
+    return out
+
+
 def complete(
     target: ChatTarget,
     *,
@@ -375,10 +446,11 @@ def complete(
     response_format: dict[str, Any] | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
-    """一次非流式补全。
+    """一次非流式补全（P1-A03：超时重试 + 多模型兜底 + 可选缓存）。
 
     返回 {content, message, tool_calls, tokens_in, tokens_out, model, provider}，
     与原 `chat_completions` 同构，便于调用点无感迁移。
+    兜底/重试只针对超时与上游错误；参数错误和输出不合规不静默换模型。
     """
     if not messages:
         raise AiInvalidRequest("messages 不能为空")
@@ -397,8 +469,43 @@ def complete(
     if response_format is not None:
         payload["response_format"] = response_format
 
-    resp = _send(target, payload, timeout=int(timeout or target.timeout), stream=False)
-    return _normalize(_read_json(resp), target)
+    try:
+        cache_ttl = max(0, int(env("LLM_CACHE_TTL_SEC", "0") or "0"))
+    except (TypeError, ValueError):
+        cache_ttl = 0
+    key = _cache_key(target, payload)
+    cached = _CACHE.get(key, cache_ttl)
+    if cached is not None:
+        return {**cached, "cached": True}
+
+    try:
+        max_retries = max(0, int(env("LLM_MAX_RETRIES", "1") or "1"))
+    except (TypeError, ValueError):
+        max_retries = 1
+
+    attempts = [target, *_fallback_targets(target)]
+    last_error: Exception | None = None
+    for index, current in enumerate(attempts):
+        # 兜底模型用自己的 model 字段
+        if index > 0:
+            payload = {**payload, "model": current.model}
+        for retry in range(max_retries + 1):
+            try:
+                resp = _send(
+                    current, payload, timeout=int(timeout or current.timeout), stream=False
+                )
+                result = _normalize(_read_json(resp), current)
+                if index > 0:
+                    result["fallback_from"] = target.model
+                if cache_ttl > 0:
+                    _CACHE.put(key, result, cache_ttl)
+                return result
+            except (AiTimeout, AiUpstreamError) as exc:
+                last_error = exc
+                if retry < max_retries:
+                    time.sleep(0.4 * (retry + 1))
+    assert last_error is not None
+    raise last_error
 
 
 def _read_json(resp) -> dict[str, Any]:

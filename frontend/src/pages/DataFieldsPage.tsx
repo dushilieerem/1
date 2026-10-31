@@ -1,8 +1,38 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FIELD_GROUPS } from "@/data/marketFieldCatalog";
+
+type FieldSample = {
+  ok?: boolean;
+  data_version?: string | null;
+  generated_at?: string | null;
+  fields?: Record<string, unknown>;
+  error?: string;
+};
 
 export function DataFieldsPage() {
   const [navId, setNavId] = useState(FIELD_GROUPS[0]?.id || "basic");
+  const [sample, setSample] = useState<FieldSample | null>(null);
+  const [sampleErr, setSampleErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/market-data/fields/samples", { cache: "no-store" })
+      .then(async (res) => {
+        const data = (await res.json().catch(() => ({}))) as FieldSample;
+        if (cancelled) return;
+        if (!res.ok || data.ok === false) {
+          setSampleErr(data.error || `HTTP ${res.status}`);
+          return;
+        }
+        setSample(data);
+      })
+      .catch((e) => {
+        if (!cancelled) setSampleErr(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const group = useMemo(
     () => FIELD_GROUPS.find((g) => g.id === navId) || null,
@@ -40,6 +70,26 @@ export function DataFieldsPage() {
         </aside>
 
         <main className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-2 lg:py-1">
+          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            {sampleErr ? (
+              <span className="text-amber-700">样例数据暂不可用：{sampleErr}</span>
+            ) : sample ? (
+              <span>
+                数据版本 <code className="font-mono">{sample.data_version || "未知"}</code>
+                {sample.generated_at ? ` · 生成于 ${sample.generated_at}` : ""}
+                {sample.fields?.symbol ? (
+                  <>
+                    {" "}· 样例（{String(sample.fields.symbol)}，
+                    {String(sample.fields.date || "最新")}）：PE{" "}
+                    {String(sample.fields.pe_ttm ?? "—")} / PB{" "}
+                    {String(sample.fields.pb_mrq ?? "—")}
+                  </>
+                ) : null}
+              </span>
+            ) : (
+              "正在加载样例数据…"
+            )}
+          </div>
           {group ? (
             <article>
               <h1 className="mb-4 border-b border-slate-200 pb-3 text-2xl font-bold tracking-tight text-slate-900">

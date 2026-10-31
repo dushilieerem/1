@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { Maximize2, Scan, X } from "lucide-react";
+import { Download, ImageDown, Maximize2, Scan, X } from "lucide-react";
 import {
   CandlestickSeries,
   ColorType,
@@ -34,7 +34,7 @@ import {
   type PeriodKey,
 } from "@/lib/chartPeriods";
 
-type SubPane = "none" | "macd" | "rsi";
+type SubPane = "none" | "macd" | "rsi" | "volume";
 
 /** iPhone/iPad（含 iPadOS 桌面 UA） */
 function isAppleTouchDevice() {
@@ -418,7 +418,13 @@ export function DataSymbolChartPage() {
     const pane = chart.addPane(true);
     pane.setStretchFactor(0.35);
 
-    if (subPane === "macd") {
+    if (subPane === "volume") {
+      subRef.current.hist = pane.addSeries(HistogramSeries, {
+        priceFormat: { type: "volume" },
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+    } else if (subPane === "macd") {
       subRef.current.hist = pane.addSeries(HistogramSeries, {
         priceLineVisible: false,
         lastValueVisible: false,
@@ -539,6 +545,19 @@ export function DataSymbolChartPage() {
     } else if (subPane === "rsi" && indCache.current.rsi) {
       subRef.current.rsi?.setData(
         toLineData(filterLineByDates(indCache.current.rsi, dateSet)),
+      );
+    } else if (subPane === "volume") {
+      subRef.current.hist?.setData(
+        bars
+          .filter((b) => dateSet.has(b.date))
+          .map((b) => ({
+            time: b.date as Time,
+            value: Number(b.volume || 0),
+            color:
+              Number(b.close) >= Number(b.open)
+                ? "rgba(225, 29, 72, 0.55)"
+                : "rgba(5, 150, 105, 0.55)",
+          })),
       );
     }
 
@@ -969,6 +988,39 @@ export function DataSymbolChartPage() {
     }
   };
 
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportCsv = () => {
+    const bars = aggregateBars(daily?.bars || [], period);
+    if (!bars.length) return;
+    const lines = ["date,open,high,low,close,volume"];
+    for (const b of bars) {
+      lines.push(
+        [b.date, b.open, b.high, b.low, b.close, b.volume ?? ""].join(","),
+      );
+    }
+    downloadBlob(
+      new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" }),
+      `${symbol}-${period}.csv`,
+    );
+  };
+
+  const exportPng = () => {
+    const chart = chartApi.current;
+    if (!chart || typeof chart.takeScreenshot !== "function") return;
+    const canvas = chart.takeScreenshot();
+    canvas.toBlob((blob) => {
+      if (blob) downloadBlob(blob, `${symbol}-${period}.png`);
+    }, "image/png");
+  };
+
   return (
     <div
       ref={fsRootRef}
@@ -1163,6 +1215,26 @@ export function DataSymbolChartPage() {
           >
             BOLL
           </button>
+          <button
+            type="button"
+            onClick={exportCsv}
+            title="导出 CSV"
+            aria-label="导出 CSV"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 hover:bg-slate-100"
+          >
+            <Download className="h-3 w-3" />
+            CSV
+          </button>
+          <button
+            type="button"
+            onClick={exportPng}
+            title="导出图片"
+            aria-label="导出图片"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 hover:bg-slate-100"
+          >
+            <ImageDown className="h-3 w-3" />
+            PNG
+          </button>
           <span className="mx-1 h-3 w-px shrink-0 bg-slate-200" />
           {!fs ? (
             <span className="shrink-0 text-[11px] text-slate-400">副图</span>
@@ -1170,6 +1242,7 @@ export function DataSymbolChartPage() {
           {(
             [
               ["none", "无"],
+              ["volume", "成交量"],
               ["macd", "MACD"],
               ["rsi", "RSI"],
             ] as const
@@ -1246,6 +1319,11 @@ export function DataSymbolChartPage() {
                   : "h-[min(70vh,720px)] w-full overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm"
               }
             />
+            {subPane === "volume" ? (
+              <div className="pointer-events-none absolute bottom-8 left-2 z-10 rounded-lg border border-slate-200/90 bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-600 shadow-sm backdrop-blur sm:text-[11px]">
+                成交量
+              </div>
+            ) : null}
             {/* MACD 副图线图例：区分 DIF / DEA / 柱（副图占下部约 35%） */}
             {subPane === "macd" ? (
               <div

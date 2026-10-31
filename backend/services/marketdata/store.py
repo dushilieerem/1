@@ -47,7 +47,7 @@ def security(symbol: str) -> dict[str, Any] | None:
     return out
 
 
-def search_securities(q: str, limit: int = 20) -> list[dict[str, Any]]:
+def search_securities(q: str, limit: int = 20, offset: int = 0) -> list[dict[str, Any]]:
     term = (q or "").strip()
     if not term:
         return []
@@ -59,11 +59,24 @@ def search_securities(q: str, limit: int = 20) -> list[dict[str, Any]]:
               FROM ref_security
              WHERE symbol ILIKE %s OR name ILIKE %s
              ORDER BY (symbol = %s) DESC, symbol
-             LIMIT %s
+             LIMIT %s OFFSET %s
             """,
-            (like, like, term, limit),
+            (like, like, term, max(1, min(limit, 200)), max(0, offset)),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def count_securities(q: str) -> int:
+    term = (q or "").strip()
+    if not term:
+        return 0
+    like = f"%{term}%"
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM ref_security WHERE symbol ILIKE %s OR name ILIKE %s",
+            (like, like),
+        ).fetchone()
+    return int(row["n"] or 0)
 
 
 def latest_bar(symbol: str, adjust: str = "none") -> dict[str, Any] | None:
@@ -381,6 +394,7 @@ __all__ = [
     "latest_bar",
     "latest_trade_date",
     "risk_stats",
+    "count_securities",
     "search_securities",
     "security",
     "status_latest",

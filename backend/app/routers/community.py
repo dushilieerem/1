@@ -5,7 +5,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from ai.errors import AiError
+from ai.router import run_task
 from app.deps import optional_user, require_user
+from services.community.platform_ref_verify import verify_platform_ref
+from services.core.env_config import env
 from services.community.community_store import (
     add_favorite,
     create_comment,
@@ -27,6 +31,7 @@ from services.community.community_store import (
     purge_post,
     remove_favorite,
     resolve_report,
+    search_suggestions,
     set_comment_vote,
     set_post_vote,
     unread_notification_count,
@@ -48,6 +53,14 @@ def community_list_posts(
         return list_posts(section=section, q=q, sort=sort, limit=limit, offset=offset)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/community/search/suggest")
+def community_search_suggest(
+    q: str | None = Query(None),
+    limit: int = Query(8, ge=1, le=20),
+) -> dict:
+    return search_suggestions(q, limit=limit)
 
 
 @router.get("/api/community/hot")
@@ -186,6 +199,8 @@ def community_get_post(
 @router.get("/api/community/posts/{post_id}/comments")
 def community_list_comments(
     post_id: int,
+    limit: int | None = None,
+    offset: int = 0,
     viewer: dict | None = Depends(optional_user),
 ) -> dict:
     try:
@@ -193,6 +208,8 @@ def community_list_comments(
             post_id,
             viewer_id=int(viewer["id"]) if viewer else None,
             viewer_role=str((viewer or {}).get("role") or "user"),
+            limit=limit,
+            offset=offset,
         )
     except KeyError:
         raise HTTPException(status_code=404, detail="not found") from None
@@ -214,10 +231,66 @@ def community_create_post(
             ),
             author_role=str(user.get("role") or "user"),
             status=str(body.get("status") or "published"),
-            platform_ref=body.get("platform_ref"),
+            platform_ref=verify_platform_ref(
+                int(user["id"]), body.get("platform_ref")
+            ),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/community/posts/{post_id}/ai-review")
+def community_ai_review(
+    post_id: int,
+    user: dict = Depends(require_user),
+) -> dict:
+    """P1-C08：策略帖自动点评/风险提示；可关闭，结果标注 AI 生成。"""
+    if (env("COMMUNITY_AI_REVIEW_ENABLED", "1") or "1").strip().lower() in (
+        "0",
+        "false",
+        "no",
+    ):
+        return {"ok": False, "disabled": True, "error": "AI 点评已关闭"}
+    try:
+        post = get_post(
+            post_id,
+            bump_view=False,
+            viewer_id=int(user["id"]),
+            viewer_role=str(user.get("role") or "user"),
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="not found") from None
+    title = str(post.get("title") or "")
+    body = str(post.get("body") or "")[:4000]
+    code = str(post.get("code_snippet") or "")[:4000]
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是量化社区的内容审阅助手。对策略分享给出简洁点评："
+                "1) 策略思路与适用市场；2) 主要风险与过拟合迹象；3) 缺失的回测信息。"
+                "不预测收益、不构成投资建议；中文，200 字以内。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"标题：{title}\n正文：{body}\n代码：\n{code}",
+        },
+    ]
+    try:
+        data = run_task("community.review_strategy", messages=messages)
+    except AiError as exc:
+        raise HTTPException(
+            status_code=int(getattr(exc, "http_status", 503) or 503),
+            detail=str(exc) or "AI 点评不可用",
+        ) from exc
+    return {
+        "ok": True,
+        "ai_generated": True,
+        "review": str(data.get("content") or "").strip(),
+        "model": data.get("model"),
+        "disclaimer": "AI 生成内容，仅供参考，不构成投资建议。",
+    }
 
 
 @router.post("/api/community/reports")
@@ -420,7 +493,9 @@ def community_update_post(
             ),
             author_role=str(user.get("role") or "user"),
             status=(str(body["status"]) if body.get("status") is not None else None),
-            platform_ref=body.get("platform_ref"),
+            platform_ref=verify_platform_ref(
+                int(user["id"]), body.get("platform_ref")
+            ),
             clear_platform_ref=bool(body.get("clear_platform_ref")),
         )
     except PermissionError as exc:

@@ -9,6 +9,7 @@ export type MarketBar = {
   high: number;
   low: number;
   close: number;
+  volume?: number;
   is_show?: boolean;
 };
 
@@ -320,6 +321,30 @@ export async function fetchMarketSymbols(): Promise<MarketSymbol[]> {
   _symbolsCache.at = now;
   _symbolsCache.list = list;
   return list;
+}
+
+export async function searchMarketSymbols(
+  q: string,
+  limit = 6,
+  offset = 0,
+): Promise<{ items: MarketSymbol[]; total: number }> {
+  const term = q.trim();
+  if (!term) return { items: [], total: 0 };
+  const params = new URLSearchParams({
+    q: term,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const res = await fetch(`/api/market-data/search?${params.toString()}`, {
+    headers: { ...authHeaders() },
+  });
+  const data = await parseJson<{ items?: unknown; total?: number }>(res);
+  const items = Array.isArray(data.items)
+    ? data.items
+        .map((o: any) => ({ symbol: String(o.symbol || ""), name: String(o.name || "") }))
+        .filter((x) => x.symbol)
+    : [];
+  return { items, total: Number(data.total || items.length) };
 }
 
 export type MarketIndex = {

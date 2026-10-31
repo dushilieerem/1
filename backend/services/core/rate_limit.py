@@ -27,9 +27,55 @@ def _client_key(request: Request) -> str:
     return "unknown"
 
 
+def _pg_rate_limit(key: str, *, limit: int, window_sec: int) -> bool | None:
+    """P1-O06：多实例共享计数；返回 True=放行、False=超限、None=不可用回退内存。"""
+    from services.core.env_config import env
+
+    if (env("RATE_LIMIT_BACKEND", "memory") or "memory").strip().lower() != "postgres":
+        return None
+    try:
+        from services.core.db import get_conn
+
+        with get_conn() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS rate_limit_windows (
+                  bucket       TEXT PRIMARY KEY,
+                  window_start BIGINT NOT NULL,
+                  hits         INT NOT NULL DEFAULT 0
+                )
+                """
+            )
+            # 固定窗口：按 window_sec 对齐的时间片
+            window_id = int(time.time() // max(1, window_sec))
+            bucket = f"{key}:{window_id}"
+            row = conn.execute(
+                """
+                INSERT INTO rate_limit_windows (bucket, window_start, hits)
+                VALUES (%s, %s, 1)
+                ON CONFLICT (bucket) DO UPDATE
+                  SET hits = rate_limit_windows.hits + 1
+                RETURNING hits
+                """,
+                (bucket, window_id),
+            ).fetchone()
+            return bool(row) and int(row["hits"]) <= limit
+    except Exception:
+        return None
+
+
 def enforce_rate_limit_key(key: str, *, scope: str, limit: int, window_sec: int) -> None:
     """同一 key 在 window_sec 秒内最多调用 limit 次，超出抛 429。"""
     key = f"{scope}:{key}"
+    shared = _pg_rate_limit(key, limit=limit, window_sec=window_sec)
+    if shared is False:
+        raise HTTPException(
+            status_code=429,
+            detail="请求过于频繁，请稍后再试",
+            headers={"Retry-After": str(max(1, int(window_sec)))},
+        )
+    if shared is True:
+        return
     now = time.monotonic()
     with _LOCK:
         if len(_BUCKETS) >= _MAX_KEYS:

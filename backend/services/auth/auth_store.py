@@ -69,11 +69,22 @@ def ensure_schema() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_users_status ON users (status)"
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS auth_login_failures (
+              username     TEXT PRIMARY KEY,
+              failures     INTEGER NOT NULL DEFAULT 0,
+              locked_until TIMESTAMPTZ,
+              updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
         for col_sql in (
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_url TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS headline TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0",
         ):
             try:
                 conn.execute(col_sql)
@@ -106,6 +117,7 @@ def _public_user(row: dict[str, Any]) -> dict[str, Any]:
         "headline": row.get("headline") or "",
         "bio": row.get("bio") or "",
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+        "token_version": int(row.get("token_version") or 0),
     }
 
 
@@ -209,6 +221,7 @@ def issue_token(user: dict[str, Any], *, extra: dict[str, Any] | None = None) ->
         "sub": str(user["id"]),
         "username": user["username"],
         "role": user["role"],
+        "tv": int(user.get("token_version") or 0),
         "iat": now,
         "exp": now + timedelta(days=_jwt_expire_days()),
     }
@@ -222,6 +235,18 @@ def issue_token(user: dict[str, Any], *, extra: dict[str, Any] | None = None) ->
 
 def decode_token(token: str) -> dict[str, Any]:
     return jwt.decode(token, _jwt_secret(), algorithms=["HS256"])
+
+
+def revoke_user_tokens(user_id: int) -> None:
+    """P1-U05：token_version + 1，使该用户已签发的 JWT 全部失效。"""
+    uid = int(user_id)
+    if uid <= 0:
+        return
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET token_version = COALESCE(token_version, 0) + 1 WHERE id = %s",
+            (uid,),
+        )
 
 
 def user_from_authorization(header: str | None) -> dict[str, Any] | None:
@@ -248,6 +273,8 @@ def user_from_authorization(header: str | None) -> dict[str, Any] | None:
         return None
     row = get_user_by_id(uid)
     if not row or row.get("status") != "active":
+        return None
+    if int(payload.get("tv") or 0) != int(row.get("token_version") or 0):
         return None
     return _public_user(row)
 

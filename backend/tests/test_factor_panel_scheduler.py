@@ -89,6 +89,44 @@ class RunFullMatrixTest(unittest.TestCase):
         self.assertEqual(out["ok"], 0)
 
 
+class IncrementalResumeTest(unittest.TestCase):
+    def test_resume_skips_completed_combos(self):
+        universe, period, filt = PANEL_COMBOS[0]
+        progress = {
+            "run_date": datetime.now().strftime("%Y-%m-%d"),
+            "completed": [f"{universe}|{period}|{1 if filt else 0}"],
+            "finished": False,
+        }
+        calls: list[dict] = []
+        saved: dict = {}
+        with (
+            patch.object(dsched, "_load_progress", return_value=dict(progress)),
+            patch.object(dsched, "_save_progress"),
+            patch.object(dsched, "_save_state", side_effect=lambda **kw: saved.update(kw)),
+            patch.object(dsched.ds, "_run_batch", side_effect=lambda **kw: calls.append(kw)),
+            patch.object(dsched.ds, "read_job", return_value={"status": "done"}),
+        ):
+            out = dsched.run_full_matrix(reason="resume")
+
+        self.assertEqual(out["resumed"], True)
+        self.assertEqual(len(calls), len(PANEL_COMBOS) - 1)
+        self.assertEqual(out["completed"], len(PANEL_COMBOS))
+
+    def test_incremental_enables_skip_ok(self):
+        calls: list[dict] = []
+        with (
+            patch.object(dsched, "_load_progress", return_value={}),
+            patch.object(dsched, "_save_progress"),
+            patch.object(dsched, "_save_state"),
+            patch.object(dsched, "_incremental_enabled", return_value=True),
+            patch.object(dsched.ds, "_run_batch", side_effect=lambda **kw: calls.append(kw)),
+            patch.object(dsched.ds, "read_job", return_value={"status": "done"}),
+        ):
+            out = dsched.run_full_matrix(reason="daily")
+        self.assertTrue(out["incremental"])
+        self.assertTrue(all(c["skip_ok"] is True for c in calls))
+
+
 class StartSchedulerConfigTest(unittest.TestCase):
     """只测不会真正起线程的分支（关闭 / 时刻非法）。"""
 

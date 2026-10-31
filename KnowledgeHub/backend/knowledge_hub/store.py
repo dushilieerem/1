@@ -2,6 +2,8 @@
 """知识库平台表：集合 / 文档 / 切片 / 聊天助手 / 模型供应商。"""
 from __future__ import annotations
 
+import os
+
 import json
 import re
 import threading
@@ -16,6 +18,8 @@ from services.core.secret_box import encrypt_secret
 
 # 解析进度（内存），供前端轮询；ThreadingHTTPServer 下可边 ingest 边读
 _INGEST_PROGRESS: dict[int, dict[str, Any]] = {}
+# P1-K02：pgvector 可用时启用向量表/ANN；不可用时回退 meta 内向量精确计算
+_VECTOR_READY = False
 _INGEST_PROGRESS_LOCK = threading.Lock()
 
 
@@ -53,6 +57,35 @@ def _set_ingest_progress(
     }
     with _INGEST_PROGRESS_LOCK:
         _INGEST_PROGRESS[did] = payload
+    # P1-K03：进度持久化，进程重启后仍可查询
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO kh_ingest_jobs
+                  (document_id, phase, done, total, percent, title, message, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (document_id) DO UPDATE SET
+                  phase = EXCLUDED.phase,
+                  done = EXCLUDED.done,
+                  total = EXCLUDED.total,
+                  percent = EXCLUDED.percent,
+                  title = EXCLUDED.title,
+                  message = EXCLUDED.message,
+                  updated_at = NOW()
+                """,
+                (
+                    did,
+                    payload["phase"],
+                    payload["done"],
+                    payload["total"],
+                    payload["percent"],
+                    payload["title"],
+                    payload["message"],
+                ),
+            )
+    except Exception:
+        pass
 
 
 def get_ingest_progress(doc_id: int) -> dict[str, Any]:
@@ -60,6 +93,24 @@ def get_ingest_progress(doc_id: int) -> dict[str, Any]:
         cur = _INGEST_PROGRESS.get(int(doc_id))
         if cur:
             return dict(cur)
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM kh_ingest_jobs WHERE document_id = %s", (int(doc_id),)
+            ).fetchone()
+        if row:
+            return {
+                "documentId": int(doc_id),
+                "phase": row["phase"],
+                "done": int(row["done"] or 0),
+                "total": int(row["total"] or 0),
+                "percent": int(row["percent"] or 0),
+                "title": row["title"] or "",
+                "message": row["message"] or "",
+                "cancelRequested": bool(row["cancel_requested"]),
+            }
+    except Exception:
+        pass
     return {
         "documentId": int(doc_id),
         "phase": "idle",
@@ -69,6 +120,57 @@ def get_ingest_progress(doc_id: int) -> dict[str, Any]:
         "title": "",
         "message": "",
     }
+
+
+def request_ingest_cancel(doc_id: int) -> dict[str, Any]:
+    """P1-K03：请求取消；worker 在阶段边界检查。"""
+    ensure_kh_schema()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE kh_ingest_jobs SET cancel_requested = TRUE, updated_at = NOW() "
+            "WHERE document_id = %s",
+            (int(doc_id),),
+        )
+    return {"documentId": int(doc_id), "cancelRequested": True}
+
+
+def is_ingest_cancelled(doc_id: int) -> bool:
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT cancel_requested FROM kh_ingest_jobs WHERE document_id = %s",
+                (int(doc_id),),
+            ).fetchone()
+        return bool(row and row.get("cancel_requested"))
+    except Exception:
+        return False
+
+
+def start_ingest_async(doc_id: int) -> dict[str, Any]:
+    """P1-K03：后台线程摄取，立即返回；进度写库可轮询。"""
+    ensure_kh_schema()
+    did = int(doc_id)
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO kh_ingest_jobs (document_id, phase, percent, updated_at)
+            VALUES (%s, 'queued', 0, NOW())
+            ON CONFLICT (document_id) DO UPDATE SET
+              phase = 'queued', cancel_requested = FALSE, percent = 0, updated_at = NOW()
+            """,
+            (did,),
+        )
+
+    def _worker() -> None:
+        try:
+            ingest_document(did)
+        except Exception as exc:  # noqa: BLE001
+            _set_ingest_progress(
+                did, phase="error", message=str(exc)[:300], percent=0
+            )
+
+    threading.Thread(target=_worker, name=f"kh-ingest-{did}", daemon=True).start()
+    return {"documentId": did, "phase": "queued", "async": True}
 
 
 def _clear_ingest_progress(doc_id: int, delay_sec: float = 2.0) -> None:
@@ -200,10 +302,19 @@ def _ensure_kh_schema_unlocked(conn: Any) -> None:
           chunk_strategy  TEXT NOT NULL DEFAULT 'plain_window',
           status          TEXT NOT NULL DEFAULT 'active',
           created_by      BIGINT REFERENCES users(id) ON DELETE SET NULL,
+          owner_id        BIGINT REFERENCES users(id) ON DELETE SET NULL,
           created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """
+    )
+    # P1-K01：个人知识库归属；历史库 owner_id 为 NULL（仅 admin 可见）
+    conn.execute(
+        "ALTER TABLE kh_collections ADD COLUMN IF NOT EXISTS owner_id BIGINT"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kh_collections_owner "
+        "ON kh_collections (owner_id, updated_at DESC)"
     )
     conn.execute(
         """
@@ -230,6 +341,21 @@ def _ensure_kh_schema_unlocked(conn: Any) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_kh_documents_coll "
         "ON kh_documents (collection_id, updated_at DESC)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS kh_document_versions (
+          id           BIGSERIAL PRIMARY KEY,
+          document_id  BIGINT NOT NULL REFERENCES kh_documents(id) ON DELETE CASCADE,
+          version_no   INT NOT NULL,
+          title        TEXT NOT NULL,
+          body         TEXT NOT NULL DEFAULT '',
+          file_name    TEXT NOT NULL DEFAULT '',
+          payload      JSONB,
+          created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (document_id, version_no)
+        )
+        """
     )
     # 旧库补列：启用开关 / 解析错误
     for col_name, ddl in (
@@ -287,6 +413,67 @@ def _ensure_kh_schema_unlocked(conn: Any) -> None:
           meta          JSONB NOT NULL DEFAULT '{}'::jsonb,
           created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           UNIQUE (document_id, ordinal)
+        )
+        """
+    )
+    # P1-K02：全文/子串索引（pg_trgm 不可用时忽略；向量列仍在 meta，pgvector 待迁移）
+    try:
+        with conn.transaction():
+            conn.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_kh_chunks_text_trgm "
+                "ON kh_chunks USING gin (text gin_trgm_ops)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_kh_chunks_fts "
+                "ON kh_chunks USING gin (to_tsvector('simple', text))"
+            )
+    except Exception:
+        pass
+    # P1-K02：pgvector 可选；不可用时不影响入库/检索
+    global _VECTOR_READY
+    try:
+        with conn.transaction():
+            conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS kh_chunk_vectors (
+                  chunk_id    BIGINT PRIMARY KEY
+                    REFERENCES kh_chunks(id) ON DELETE CASCADE,
+                  document_id BIGINT NOT NULL,
+                  embedding   vector,
+                  model       TEXT NOT NULL DEFAULT '',
+                  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+        _VECTOR_READY = True
+    except Exception:
+        _VECTOR_READY = False
+    if _VECTOR_READY:
+        try:
+            dim = int(os.environ.get("KH_VECTOR_DIM", "0") or "0")
+            if dim > 0:
+                with conn.transaction():
+                    conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_kh_chunk_vectors_ann "
+                        "ON kh_chunk_vectors USING hnsw (embedding vector_cosine_ops)"
+                    )
+        except Exception:
+            pass
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS kh_ingest_jobs (
+          document_id      BIGINT PRIMARY KEY
+            REFERENCES kh_documents(id) ON DELETE CASCADE,
+          phase            TEXT NOT NULL DEFAULT 'idle',
+          done             INT NOT NULL DEFAULT 0,
+          total            INT NOT NULL DEFAULT 0,
+          percent          INT NOT NULL DEFAULT 0,
+          title            TEXT NOT NULL DEFAULT '',
+          message          TEXT NOT NULL DEFAULT '',
+          cancel_requested BOOLEAN NOT NULL DEFAULT FALSE,
+          updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """
     )
@@ -424,21 +611,56 @@ def _coll_row(r: dict[str, Any], doc_count: int = 0) -> dict[str, Any]:
     }
 
 
-def list_collections() -> list[dict[str, Any]]:
+def list_collections(owner_id: int | None = None) -> list[dict[str, Any]]:
+    """owner_id=None 返回全部（仅 admin 调用）；否则只返回该用户的知识库。"""
     ensure_kh_schema()
+    sql = """
+        SELECT c.*, COALESCE(d.cnt, 0) AS document_count
+        FROM kh_collections c
+        LEFT JOIN (
+          SELECT collection_id, COUNT(*) AS cnt
+          FROM kh_documents GROUP BY collection_id
+        ) d ON d.collection_id = c.id
+    """
+    params: tuple[Any, ...] = ()
+    if owner_id is not None:
+        sql += " WHERE c.owner_id = %s"
+        params = (int(owner_id),)
+    sql += " ORDER BY c.updated_at DESC"
     with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT c.*, COALESCE(d.cnt, 0) AS document_count
-            FROM kh_collections c
-            LEFT JOIN (
-              SELECT collection_id, COUNT(*) AS cnt
-              FROM kh_documents GROUP BY collection_id
-            ) d ON d.collection_id = c.id
-            ORDER BY c.updated_at DESC
-            """
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     return [_coll_row(dict(r), int(dict(r).get("document_count") or 0)) for r in rows]
+
+
+def collection_accessible(
+    coll_id: int, *, user_id: int | None, is_admin: bool
+) -> bool:
+    """P1-K01：admin 全量；普通用户仅自己的库（历史 NULL 库仅 admin）。"""
+    if is_admin:
+        return True
+    if not user_id:
+        return False
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT owner_id FROM kh_collections WHERE id = %s", (int(coll_id),)
+        ).fetchone()
+    return bool(row) and row.get("owner_id") is not None and int(row["owner_id"]) == int(user_id)
+
+
+def document_accessible(
+    doc_id: int, *, user_id: int | None, is_admin: bool
+) -> bool:
+    if is_admin:
+        return True
+    if not user_id:
+        return False
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT col.owner_id FROM kh_documents d "
+            "JOIN kh_collections col ON col.id = d.collection_id WHERE d.id = %s",
+            (int(doc_id),),
+        ).fetchone()
+    return bool(row) and row.get("owner_id") is not None and int(row["owner_id"]) == int(user_id)
 
 
 def create_collection(
@@ -448,6 +670,7 @@ def create_collection(
     pipeline: str = "general",
     chunk_strategy: str | None = None,
     created_by: int | None = None,
+    owner_id: int | None = None,
 ) -> dict[str, Any]:
     ensure_kh_schema()
     title = (name or "").strip()
@@ -462,11 +685,11 @@ def create_collection(
         row = conn.execute(
             """
             INSERT INTO kh_collections
-              (name, description, pipeline, chunk_strategy, created_by)
-            VALUES (%s, %s, %s, %s, %s)
+              (name, description, pipeline, chunk_strategy, created_by, owner_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
-            (title, description or "", pipe, strategy, created_by),
+            (title, description or "", pipe, strategy, created_by, owner_id),
         ).fetchone()
     return _coll_row(dict(row), 0)
 
@@ -544,6 +767,22 @@ def update_document(doc_id: int, body: dict[str, Any]) -> dict[str, Any]:
     sets.append("updated_at = NOW()")
     vals.append(int(doc_id))
     with get_conn() as conn:
+        current = conn.execute("SELECT * FROM kh_documents WHERE id=%s", (int(doc_id),)).fetchone()
+        if not current:
+            raise KeyError("文档不存在")
+        conn.execute(
+            """
+            INSERT INTO kh_document_versions (document_id, version_no, title, body, file_name, payload)
+            VALUES (%s,%s,%s,%s,%s,%s::jsonb)
+            ON CONFLICT (document_id, version_no) DO NOTHING
+            """,
+            (
+                int(doc_id), int(current.get("version") or 1), current.get("title") or "",
+                current.get("body") or "", current.get("file_name") or "",
+                json.dumps(current.get("payload"), ensure_ascii=False) if current.get("payload") is not None else None,
+            ),
+        )
+        sets.append("version = version + 1")
         row = conn.execute(
             f"UPDATE kh_documents SET {', '.join(sets)} WHERE id = %s RETURNING *",
             tuple(vals),
@@ -668,10 +907,10 @@ def create_document(
     if content_base64 and not body.strip():
         import base64
 
-        from knowledge_hub.extractors import extract_text, is_binary_doc
+        from knowledge_hub.extractors import extract_text, is_extractable
 
-        if not is_binary_doc(fname):
-            raise ValueError("contentBase64 仅用于 .docx / .pdf")
+        if not is_extractable(fname):
+            raise ValueError("contentBase64 仅用于 .docx / .pdf / .xlsx / .md / .html / .txt")
         try:
             raw = base64.b64decode(content_base64, validate=False)
         except Exception as exc:
@@ -770,6 +1009,12 @@ def create_structured_document(
             raise ValueError(f"附件解码失败：{exc}") from exc
         if not fname.strip():
             raise ValueError("上传附件时需填写文件名")
+        try:
+            max_mb = max(1, int(os.environ.get("KH_MAX_ATTACHMENT_MB", "50") or "50"))
+        except ValueError:
+            max_mb = 50
+        if len(raw) > max_mb * 1024 * 1024:
+            raise ValueError(f"附件过大（最大 {max_mb} MB）")
         att = save_attachment_bytes(raw, fname)
         attachment_id = int(att["id"])
         fname = att["fileName"]
@@ -871,6 +1116,10 @@ def ingest_document(doc_id: int) -> dict[str, Any]:
                 """,
                 (did,),
             )
+            conn.execute(
+                "UPDATE kh_ingest_jobs SET cancel_requested = FALSE WHERE document_id = %s",
+                (did,),
+            )
 
         _set_ingest_progress(
             did,
@@ -948,6 +1197,18 @@ def ingest_document(doc_id: int) -> dict[str, Any]:
                     percent=90,
                 )
 
+            # P1-K03：取消在阶段边界生效（避免半写入）
+            if is_ingest_cancelled(did):
+                _set_ingest_progress(
+                    did, phase="cancelled", message="摄取已取消", percent=0
+                )
+                with get_conn() as conn:
+                    conn.execute(
+                        "UPDATE kh_documents SET status = 'draft' WHERE id = %s",
+                        (did,),
+                    )
+                raise ValueError("摄取已取消")
+
             _set_ingest_progress(
                 did,
                 phase="saving",
@@ -968,10 +1229,11 @@ def ingest_document(doc_id: int) -> dict[str, Any]:
                     meta["embedError"] = embed_err
                 elif not creds:
                     meta["embedSkipped"] = "no_default_embedding"
-                conn.execute(
+                inserted = conn.execute(
                     """
                     INSERT INTO kh_chunks (document_id, ordinal, text, meta)
                     VALUES (%s, %s, %s, %s::jsonb)
+                    RETURNING id
                     """,
                     (
                         did,
@@ -979,7 +1241,29 @@ def ingest_document(doc_id: int) -> dict[str, Any]:
                         p["text"],
                         json.dumps(meta, ensure_ascii=False),
                     ),
-                )
+                ).fetchone()
+                # P1-K02：pgvector 可用时同步写入向量表
+                if _VECTOR_READY and vectors[i] is not None and inserted:
+                    try:
+                        conn.execute(
+                            """
+                            INSERT INTO kh_chunk_vectors
+                              (chunk_id, document_id, embedding, model)
+                            VALUES (%s, %s, %s::vector, %s)
+                            ON CONFLICT (chunk_id) DO UPDATE SET
+                              embedding = EXCLUDED.embedding,
+                              model = EXCLUDED.model,
+                              updated_at = NOW()
+                            """,
+                            (
+                                int(inserted["id"]),
+                                did,
+                                "[" + ",".join(str(float(x)) for x in vectors[i]) + "]",
+                                creds["modelName"] if creds else "",
+                            ),
+                        )
+                    except Exception:
+                        pass
             conn.execute(
                 """
                 UPDATE kh_documents
@@ -1049,7 +1333,11 @@ def list_chunks(document_id: int) -> list[dict[str, Any]]:
             "documentId": int(r["document_id"]),
             "ordinal": int(r["ordinal"]),
             "text": r["text"] or "",
-            "meta": r["meta"] if isinstance(r["meta"], dict) else {},
+            "meta": {
+                k: v
+                for k, v in (r["meta"] if isinstance(r["meta"], dict) else {}).items()
+                if k != "embedding"  # P1-K08：不回传大向量
+            },
             "createdAt": _iso(r["created_at"]),
         }
         for r in rows
@@ -1237,6 +1525,8 @@ def search_chunks(
     query: str,
     collection_ids: list[int] | None = None,
     top_k: int = 8,
+    owner_id: int | None = None,
+    rerank: bool = False,
 ) -> dict[str, Any]:
     """关键词检索；若默认 Embedding 可用且切片含向量，则 hybrid（向量+关键词）。"""
     ensure_kh_schema()
@@ -1264,9 +1554,12 @@ def search_chunks(
                 WHERE d.status = 'ready'
                   AND COALESCE(d.enabled, TRUE) = TRUE
                   AND d.collection_id = ANY(%s)
+                  {owner_filter}
                 ORDER BY c.id
-                """,
-                (cids,),
+                """.format(
+                    owner_filter="AND col.owner_id = %s" if owner_id is not None else ""
+                ),
+                (cids, int(owner_id)) if owner_id is not None else (cids,),
             ).fetchall()
         else:
             rows = conn.execute(
@@ -1279,8 +1572,12 @@ def search_chunks(
                 JOIN kh_collections col ON col.id = d.collection_id
                 WHERE d.status = 'ready'
                   AND COALESCE(d.enabled, TRUE) = TRUE
+                  {owner_filter}
                 ORDER BY c.id
-                """
+                """.format(
+                    owner_filter="AND col.owner_id = %s" if owner_id is not None else ""
+                ),
+                (int(owner_id),) if owner_id is not None else (),
             ).fetchall()
 
     q_vec: list[float] | None = None
@@ -1301,10 +1598,31 @@ def search_chunks(
             q_vec = None
             mode = "keyword"
 
+    # P1-K02：pgvector 存在时先用 ANN 取候选，减少 Python 侧扫描
+    candidate_ids: set[int] | None = None
+    if q_vec and _VECTOR_READY:
+        try:
+            lit = "[" + ",".join(str(float(x)) for x in q_vec) + "]"
+            with get_conn() as conn:
+                cand_rows = conn.execute(
+                    """
+                    SELECT chunk_id FROM kh_chunk_vectors
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s
+                    """,
+                    (lit, max(top_k * 20, 50)),
+                ).fetchall()
+            if cand_rows:
+                candidate_ids = {int(r["chunk_id"]) for r in cand_rows}
+        except Exception:
+            candidate_ids = None
+
     scored: list[tuple[float, dict[str, Any]]] = []
     q_lower = q.lower()
     hinted_fields = set(_hinted_structured_fields(q))
     for r in rows:
+        if candidate_ids is not None and int(r["id"]) not in candidate_ids:
+            continue
         text = r["text"] or ""
         title = r["document_title"] or ""
         meta = r["meta"] if isinstance(r["meta"], dict) else {}
@@ -1385,6 +1703,12 @@ def search_chunks(
             int(h.get("ordinal") or 0),
         )
     )
+    # P1-K05：可选 rerank（配置的 rerank 服务优先，未配置时用确定性重排）
+    if rerank and hits:
+        from knowledge_hub.rerank import rerank_hits
+
+        hits = rerank_hits(q, hits, top_k=top_k)
+        mode = f"{mode}+rerank"
     _enrich_hits_with_attachment(hits)
     return {
         "query": q,
@@ -1493,6 +1817,8 @@ def ask(
     collection_ids: list[int] | None = None,
     chat_id: int | None = None,
     top_k: int = 5,
+    owner_id: int | None = None,
+    rerank: bool = False,
 ) -> dict[str, Any]:
     """检索 + LLM 问答。无命中不调用模型；禁止无依据编造由提示词约束。"""
     from knowledge_hub.llm import KhLlmError, chat_completions, llm_configured
@@ -1514,7 +1840,9 @@ def ask(
         raise ValueError("请指定 collectionIds 或在聊天应用中关联知识库")
     _ensure_collections_exist(cids)
 
-    retrieved = search_chunks(query=q, collection_ids=cids, top_k=top_k)
+    retrieved = search_chunks(
+        query=q, collection_ids=cids, top_k=top_k, owner_id=owner_id, rerank=rerank
+    )
     hits = retrieved.get("hits") or []
     empty = (
         (chat.get("emptyResponse") if chat else "") or ""

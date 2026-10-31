@@ -45,6 +45,12 @@ COMMUNITY_TASKS: tuple[TaskSpec, ...] = (
         temperature=0.1,
         max_tokens=600,
     ),
+    TaskSpec(
+        task_id="community.review_strategy",
+        description="策略帖 AI 点评（风险提示，不构成投资建议）",
+        temperature=0.2,
+        max_tokens=900,
+    ),
 )
 
 

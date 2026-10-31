@@ -39,6 +39,8 @@ from app.routers import (  # noqa: E402
     invest,
     invest_ai,
     kh,
+    market_data,
+    metrics,
     news,
     paper,
     re_gateway,
@@ -107,6 +109,15 @@ def _csp_policy() -> str:
 
 
 _WRITE_SKIP_PREFIXES = ("/api/auth/", "/api/health")
+
+
+@app.middleware("http")
+async def api_v1_alias(request: Request, call_next):
+    """P1-O01：/api/v1/* 作为 /api/* 的兼容别名。"""
+    path = request.url.path
+    if path.startswith("/api/v1/"):
+        request.scope["path"] = path[len("/api/v1"):]
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -179,6 +190,8 @@ for mod in (
     ai_strategy_generation,
     ai_transcription,
     kh,
+    market_data,
+    metrics,
     admin_logs,
     admin_users,
 ):

@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from services.core.db import get_conn
+from services.core.env_config import env
 from services.community.content_limits import post_body_text
 from services.community.sanitize import sanitize_community_html
 
@@ -21,7 +22,7 @@ SECTION_LABELS = {
     "official": "官方",
 }
 # Feed 排序：浏览数 / 收藏数 / 点赞数 / 最新（默认浏览最多）
-POST_SORTS = ("views", "favorites", "likes", "newest")
+POST_SORTS = ("views", "favorites", "likes", "newest", "relevance")
 NOTIF_TYPES = ("reply", "mention", "like")
 MAX_COMMENT_IMAGES = 3
 _MENTION_RE = re.compile(r"@([^\s@]{1,32})")
@@ -94,6 +95,20 @@ def ensure_posts_schema() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_posts_pinned ON posts (is_pinned DESC, pinned_at DESC NULLS LAST)"
         )
+        # P1-C04：社区子串检索（标题/正文/代码）用 pg_trgm 加速 ILIKE。
+        try:
+            with conn.transaction():
+                conn.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+                for name, col in (
+                    ("idx_posts_title_trgm", "title"),
+                    ("idx_posts_body_trgm", "body"),
+                    ("idx_posts_code_trgm", "code_snippet"),
+                ):
+                    conn.execute(
+                        f"CREATE INDEX IF NOT EXISTS {name} ON posts USING gin ({col} gin_trgm_ops)"
+                    )
+        except Exception:
+            pass
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS post_comments (
@@ -235,6 +250,8 @@ def ensure_posts_schema() -> None:
             )
             """
         )
+        conn.execute("ALTER TABLE community_reports ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal'")
+        conn.execute("ALTER TABLE community_reports ADD COLUMN IF NOT EXISTS sla_due_at TIMESTAMPTZ")
         conn.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_open_uniq
@@ -584,22 +601,32 @@ def list_posts(
     if sort_key not in POST_SORTS:
         raise ValueError(f"无效排序: {sort}")
     pin_first = "p.is_pinned DESC, p.pinned_at DESC NULLS LAST, "
+    pattern = _search_pattern(q)
+    # P1-C04：有查询词时可按相关度排序（标题命中权重 2、正文命中 1）
+    if sort_key == "relevance" and not pattern:
+        sort_key = "newest"
     if sort_key == "favorites":
         order_by = f"{pin_first}COALESCE(fc.cnt, 0) DESC, p.created_at DESC, p.id DESC"
     elif sort_key == "likes":
         order_by = f"{pin_first}COALESCE(lk.cnt, 0) DESC, p.created_at DESC, p.id DESC"
     elif sort_key == "newest":
         order_by = f"{pin_first}p.created_at DESC, p.id DESC"
+    elif sort_key == "relevance":
+        order_by = (
+            f"{pin_first}"
+            "(CASE WHEN p.title ILIKE %s ESCAPE '\\' THEN 2 ELSE 0 END + "
+            "CASE WHEN p.body ILIKE %s ESCAPE '\\' THEN 1 ELSE 0 END) DESC, "
+            "p.created_at DESC, p.id DESC"
+        )
     else:
         order_by = f"{pin_first}p.view_count DESC, p.created_at DESC, p.id DESC"
-    params: list[Any] = []
+    where_params: list[Any] = []
     where = "WHERE p.status = 'published'"
     if section and section != "all":
         if section not in SECTIONS:
             raise ValueError(f"无效分区: {section}")
         where += " AND p.section = %s"
-        params.append(section)
-    pattern = _search_pattern(q)
+        where_params.append(section)
     if pattern:
         where += (
             " AND ("
@@ -608,8 +635,8 @@ def list_posts(
             "COALESCE(p.code_snippet, '') ILIKE %s ESCAPE '\\'"
             ")"
         )
-        params.extend([pattern, pattern, pattern])
-    params.extend([limit, offset])
+        where_params.extend([pattern, pattern, pattern])
+    order_params: list[Any] = [pattern, pattern] if sort_key == "relevance" else []
     with get_conn() as conn:
         rows = conn.execute(
             f"""
@@ -618,12 +645,11 @@ def list_posts(
             ORDER BY {order_by}
             LIMIT %s OFFSET %s
             """,
-            params,
+            [*where_params, *order_params, limit, offset],
         ).fetchall()
-        count_params = params[:-2]
         total = conn.execute(
             f"SELECT COUNT(*) AS c FROM posts p {where}",
-            count_params,
+            where_params,
         ).fetchone()["c"]
     return {
         "ok": True,
@@ -634,6 +660,31 @@ def list_posts(
         "q": (q or "").strip()[:80] or None,
         "sections": [{"id": k, "label": v} for k, v in SECTION_LABELS.items()],
         "items": [_row_to_post(dict(r)) for r in rows],
+    }
+
+
+def search_suggestions(q: str | None, *, limit: int = 8) -> dict[str, Any]:
+    """P1-C04：标题级搜索建议（按命中帖子数排序）。"""
+    pattern = _search_pattern(q)
+    if not pattern:
+        return {"ok": True, "q": None, "items": []}
+    limit = max(1, min(20, int(limit)))
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT title, COUNT(*) AS hits
+            FROM posts
+            WHERE status = 'published' AND title ILIKE %s ESCAPE '\\'
+            GROUP BY title
+            ORDER BY hits DESC, MAX(created_at) DESC
+            LIMIT %s
+            """,
+            (pattern, limit),
+        ).fetchall()
+    return {
+        "ok": True,
+        "q": (q or "").strip()[:80],
+        "items": [str(r["title"]) for r in rows],
     }
 
 
@@ -730,6 +781,21 @@ def get_post(
     }
 
 
+def _banned_words() -> tuple[str, ...]:
+    raw = (env("COMMUNITY_BANNED_WORDS", "") or "").strip()
+    return tuple(x.strip() for x in raw.replace("，", ",").split(",") if x.strip())
+
+
+def _assert_content_allowed(*parts: str | None) -> None:
+    words = _banned_words()
+    if not words:
+        return
+    text = " ".join(str(p or "") for p in parts).lower()
+    hit = next((w for w in words if w.lower() in text), None)
+    if hit:
+        raise ValueError("内容包含不允许的词汇")
+
+
 def _normalize_post_fields(
     *,
     title: str,
@@ -743,6 +809,7 @@ def _normalize_post_fields(
     body = (body or "").strip()
     if len(post_body_text(body)) > 20_000:
         raise ValueError("正文过长（最多 20000 字符）")
+    _assert_content_allowed(title, body)
     # P0-05：服务端白名单清洗，存储与输出双重防护。
     body = sanitize_community_html(body)
     title = html.escape(title, quote=False)
@@ -980,6 +1047,8 @@ def list_comments(
     *,
     viewer_id: int | None = None,
     viewer_role: str = "user",
+    limit: int | None = None,
+    offset: int = 0,
 ) -> dict[str, Any]:
     with get_conn() as conn:
         if viewer_role == "admin":
@@ -1021,11 +1090,16 @@ def list_comments(
             ORDER BY
               COALESCE(lk.cnt, 0) DESC,
               c.created_at ASC
+            LIMIT %s OFFSET %s
             """,
-            (viewer_id if viewer_id is not None else -1, post_id),
+            (viewer_id if viewer_id is not None else -1, post_id, max(1, min(int(limit or 500), 500)), max(0, int(offset or 0))),
         ).fetchall()
+        total = conn.execute(
+            "SELECT COUNT(*) AS n FROM post_comments WHERE post_id=%s AND status='published'",
+            (post_id,),
+        ).fetchone()["n"]
     items = [_row_to_comment(dict(r)) for r in rows]
-    return {"ok": True, "total": len(items), "items": items}
+    return {"ok": True, "total": int(total or 0), "items": items, "limit": max(1, min(int(limit or 500), 500)), "offset": max(0, int(offset or 0))}
 
 
 def create_comment(
@@ -1042,6 +1116,7 @@ def create_comment(
         raise ValueError("评论不能为空")
     if len(post_body_text(body)) > 2000:
         raise ValueError("评论过长（最多 2000 字）")
+    _assert_content_allowed(body)
     body = sanitize_community_html(body)
     with get_conn() as conn:
         exists = conn.execute(
@@ -1378,6 +1453,17 @@ def unread_notification_count(user_id: int) -> dict[str, Any]:
     for r in rows:
         by_type[str(r["type"])] = int(r["c"])
     return {"ok": True, "total": int(total), "by_type": by_type}
+
+
+def purge_old_notifications(days: int = 90) -> int:
+    """删除超过保留期的通知（P1-C02）；返回删除行数。"""
+    days = max(1, int(days or 90))
+    with get_conn() as conn:
+        row = conn.execute(
+            "DELETE FROM notifications WHERE created_at < NOW() - (%s || ' days')::interval RETURNING id",
+            (days,),
+        ).fetchall()
+    return len(row)
 
 
 def mark_notifications_read(
@@ -1751,15 +1837,17 @@ def create_report(
         if exists:
             raise ValueError("你已举报过该内容，请等待处理")
 
+        priority = "high" if rk in {"abuse", "illegal"} else "normal"
+        due_hours = 4 if priority == "high" else 24
         row = conn.execute(
             """
             INSERT INTO community_reports (
-              reporter_id, target_type, post_id, comment_id, reason, detail
+              reporter_id, target_type, post_id, comment_id, reason, detail, priority, sla_due_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id, target_type, post_id, comment_id, reason, detail, status, created_at
+            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW() + (%s || ' hours')::interval)
+            RETURNING id, target_type, post_id, comment_id, reason, detail, status, priority, sla_due_at, created_at
             """,
-            (int(reporter_id), tt, int(post_id), cid, rk, detail_s),
+            (int(reporter_id), tt, int(post_id), cid, rk, detail_s, priority, due_hours),
         ).fetchone()
 
     return {
@@ -1771,6 +1859,8 @@ def create_report(
             "comment_id": int(row["comment_id"]) if row.get("comment_id") is not None else None,
             "reason": row["reason"],
             "reason_label": REPORT_REASON_LABELS.get(str(row["reason"]), str(row["reason"])),
+            "priority": row.get("priority") or "normal",
+            "sla_due_at": row.get("sla_due_at").isoformat() if row.get("sla_due_at") else None,
             "detail": row.get("detail") or "",
             "status": row.get("status") or "open",
             "created_at": _iso(row.get("created_at")),

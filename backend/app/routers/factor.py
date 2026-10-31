@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import mimetypes
+import time
 from collections import Counter
 from typing import Any
 
@@ -10,9 +11,13 @@ from fastapi.responses import JSONResponse
 
 from app.bootstrap import FACTOR_DIR
 from app.deps import optional_user, require_admin, require_db_user_id, require_user, soft_db_user_id
+from services.factor.attribution import run_attribution
 from services.factor.dashboard_store import query_metrics, read_job, set_verify_status, start_refresh
+from services.factor.factor_combo import combine as combine_factors
+from services.data.minute_backtest import backtest_symbol
 from services.factor.factor_store import add_custom_factor, delete_custom_factor, update_custom_factor
 from services.factor.factor_trial import trial_via_re
+from services.factor.trial_store import delete_trial, get_trial, list_trials, save_trial
 from services.factor.re_backtest_jobs import (
     cancel_factor_backtest_job,
     get_factor_backtest_job,
@@ -24,11 +29,13 @@ from services.factor.re_factor_async_proxy import (
     proxy_submit_factor_backtest,
 )
 from services.factor.re_factor_catalog import (
+    catalog_sync_status,
     clear_re_catalog_cache,
     fetch_re_catalog,
     sync_all_scopes,
 )
 from services.factor.user_factor_store import custom_lib_source_for_user, filtered_index_yaml
+from services.strategy.result_signature import sign_result
 from services.factor.user_library_store import (
     add_library_factor,
     create_user_library,
@@ -92,6 +99,75 @@ def factor_re_catalog_sync(_admin: dict = Depends(require_admin)) -> JSONRespons
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
 
 
+@router.post("/api/backtest/minute")
+def minute_backtest(
+    body: dict[str, Any],
+    _user: dict = Depends(require_user),
+) -> dict:
+    """P1-D02：分钟频率回测基线（单标的价格择时）。"""
+    try:
+        return backtest_symbol(
+            str(body.get("symbol") or ""),
+            freq=str(body.get("freq") or "1m"),
+            lookback=int(body.get("lookback") or 20),
+            fee_rate=float(body.get("fee_rate") or 0.0),
+            days=int(body.get("days") or 5),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/api/factor/attribution")
+def factor_attribution(
+    body: dict[str, Any], _user: dict = Depends(require_user)
+) -> dict:
+    """P1-F01：Brinson-Fachler 行业归因 + 可选风格贡献。"""
+    try:
+        return {"ok": True, **run_attribution(body if isinstance(body, dict) else {})}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/factor/combo")
+def factor_combo(
+    body: dict[str, Any], _user: dict = Depends(require_user)
+) -> dict:
+    """P1-F02：多因子合成（等权/IC/IR/自定义）与可选择时乘数。"""
+    factors = body.get("factors") if isinstance(body, dict) else None
+    if not isinstance(factors, dict):
+        raise HTTPException(status_code=400, detail="factors 须为 {name: [values]} 对象")
+    dates_raw = body.get("dates")
+    dates = [str(x) for x in dates_raw] if isinstance(dates_raw, list) else None
+    try:
+        out = combine_factors(
+            factors=factors,
+            scheme=str(body.get("scheme") or "equal"),
+            metrics=body.get("metrics") if isinstance(body.get("metrics"), dict) else None,
+            custom_weights=body.get("custom_weights")
+            if isinstance(body.get("custom_weights"), dict)
+            else None,
+            timing=body.get("timing") if isinstance(body.get("timing"), dict) else None,
+            dates=dates,
+        )
+        return {"ok": True, **out}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/admin/re-catalog/status")
+def admin_re_catalog_status(
+    _admin: dict = Depends(require_admin),
+    limit: int = Query(20, ge=1, le=200),
+) -> JSONResponse:
+    """P1-F04：目录双 scope 一致性、陈旧告警与最近变更 diff。"""
+    try:
+        return JSONResponse(catalog_sync_status(limit=limit))
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
 @router.get("/api/factor/re-backtest/{job_id}")
 def factor_re_backtest_get(
     job_id: str, user: dict = Depends(require_user)
@@ -131,20 +207,37 @@ def _proxy_response(
     return JSONResponse(content=data if data is not None else {}, status_code=status, headers=headers)
 
 
+def _sign_factor_result(uid: int, status: int, data: Any) -> Any:
+    """P1-F09：给检测结果签发 HMAC，落库时据此判定来源。"""
+    if not isinstance(data, dict) or not (200 <= int(status) < 300):
+        return data
+    if (
+        data.get("status") in ("done", "success", "finished")
+        or data.get("metrics")
+        or data.get("factor_analysis")
+    ):
+        return {**data, "_svquant_verified_token": sign_result(int(uid), data)}
+    return data
+
+
 @router.post("/api/backtest/factor")
 def backtest_factor_submit(
-    body: dict[str, Any], _user: dict = Depends(require_user)
+    body: dict[str, Any],
+    _user: dict = Depends(require_user),
+    uid: int = Depends(require_db_user_id),
 ) -> JSONResponse:
     status, headers, data = proxy_submit_factor_backtest(body if isinstance(body, dict) else {})
-    return _proxy_response(status, headers, data)
+    return _proxy_response(status, headers, _sign_factor_result(uid, status, data))
 
 
 @router.get("/api/backtest/factor/{run_id}")
 def backtest_factor_poll(
-    run_id: str, _user: dict = Depends(require_user)
+    run_id: str,
+    _user: dict = Depends(require_user),
+    uid: int = Depends(require_db_user_id),
 ) -> JSONResponse:
     status, headers, data = proxy_get_factor_run(run_id)
-    return _proxy_response(status, headers, data)
+    return _proxy_response(status, headers, _sign_factor_result(uid, status, data))
 
 
 @router.delete("/api/backtest/factor/{run_id}")
@@ -288,7 +381,7 @@ def factor_delete_library_factor(
 
 @router.get("/api/factor/file/{name:path}")
 def factor_file(
-    name: str, uid: int | None = Depends(soft_db_user_id)
+    name: str, uid: int = Depends(require_db_user_id)
 ) -> Response:
     if ".." in name or "/" in name or "\\" in name:
         raise HTTPException(status_code=400, detail="bad path")
@@ -418,16 +511,71 @@ def factor_custom_delete(
 
 @router.post("/api/factor/custom/trial")
 def factor_custom_trial(
-    body: dict[str, Any], _user: dict = Depends(require_user)
+    body: dict[str, Any], uid: int = Depends(require_db_user_id)
 ) -> dict:
+    code = str(body.get("body") or "")
+    factor_name = str(body.get("name") or body.get("factor_name") or "trial_factor")
+    universe = str(body.get("universe") or "CSI300")
+    period = str(body.get("period") or "3m")
+    t0 = time.perf_counter()
     try:
-        return trial_via_re(
-            body=str(body.get("body") or ""),
-            factor_name=str(
-                body.get("name") or body.get("factor_name") or "trial_factor"
-            ),
-            universe=str(body.get("universe") or "CSI300"),
-            period=str(body.get("period") or "3m"),
+        out = trial_via_re(
+            body=code,
+            factor_name=factor_name,
+            universe=universe,
+            period=period,
         )
     except (ValueError, RuntimeError) as exc:
+        elapsed = int((time.perf_counter() - t0) * 1000)
+        try:
+            save_trial(
+                user_id=uid,
+                factor_name=factor_name,
+                body=code,
+                universe=universe,
+                period=period,
+                error=str(exc),
+                elapsed_ms=elapsed,
+            )
+        except Exception:  # noqa: BLE001 - 落库失败不应掩盖试算错误
+            pass
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    elapsed = int((time.perf_counter() - t0) * 1000)
+    try:
+        saved = save_trial(
+            user_id=uid,
+            factor_name=factor_name,
+            body=code,
+            universe=universe,
+            period=period,
+            result=out,
+            elapsed_ms=elapsed,
+        )
+        out = {**out, "trial_id": saved["id"]}
+    except Exception as exc:  # noqa: BLE001
+        out = {**out, "trial_saved": False, "trial_save_error": str(exc)}
+    return out
+
+
+@router.get("/api/factor/custom/trials")
+def factor_trial_list(
+    uid: int = Depends(require_db_user_id),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    return list_trials(uid, limit=limit, offset=offset)
+
+
+@router.get("/api/factor/custom/trials/{trial_id}")
+def factor_trial_get(trial_id: int, uid: int = Depends(require_db_user_id)) -> dict:
+    item = get_trial(uid, trial_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return item
+
+
+@router.delete("/api/factor/custom/trials/{trial_id}")
+def factor_trial_delete(trial_id: int, uid: int = Depends(require_db_user_id)) -> dict:
+    if not delete_trial(uid, trial_id):
+        raise HTTPException(status_code=404, detail="not found")
+    return {"ok": True, "id": trial_id}

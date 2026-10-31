@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.deps import require_db_user_id, soft_db_user_id
+from services.marketdata.store import latest_bar
 from services.data.watchlist_store import (
     add_watchlist_symbol,
     add_watchlist_symbols_batch,
@@ -41,7 +42,16 @@ def watchlists_create(
 @router.get("/api/watchlists/{wl_id}/symbols")
 def watchlists_symbols(wl_id: int, uid: int = Depends(require_db_user_id)) -> dict:
     try:
-        return {"ok": True, "symbols": list_watchlist_symbols(uid, wl_id)}
+        rows = list_watchlist_symbols(uid, wl_id)
+        for row in rows:
+            bar = latest_bar(str(row.get("symbol") or ""), adjust="none")
+            if bar:
+                close = bar.get("close")
+                prev = bar.get("pre_close")
+                row["price"] = close
+                row["changePct"] = (float(close) / float(prev) - 1) if close and prev else None
+                row["asOf"] = bar.get("trade_date")
+        return {"ok": True, "symbols": rows}
     except KeyError:
         raise HTTPException(status_code=404, detail="not found") from None
 

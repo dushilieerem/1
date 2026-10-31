@@ -7,11 +7,18 @@ import re
 from pathlib import Path
 
 
-_BINARY_EXTS = {".docx", ".pdf"}
+_BINARY_EXTS = {".docx", ".pdf", ".xlsx"}
+_TEXT_EXTS = {".md", ".markdown", ".html", ".htm", ".txt", ".csv", ".json", ".yaml", ".yml"}
+_SUPPORTED_EXTS = _BINARY_EXTS | _TEXT_EXTS
 
 
 def is_binary_doc(file_name: str) -> bool:
     return Path(file_name or "").suffix.lower() in _BINARY_EXTS
+
+
+def is_extractable(file_name: str) -> bool:
+    """P1-K06：可解析的文件类型（二进制或纯文本）。"""
+    return Path(file_name or "").suffix.lower() in _SUPPORTED_EXTS
 
 
 def extract_text(file_name: str, data: bytes) -> str:
@@ -23,7 +30,60 @@ def extract_text(file_name: str, data: bytes) -> str:
         return _from_docx(data)
     if ext == ".pdf":
         return _from_pdf(data)
-    raise ValueError(f"暂不支持解析「{ext or '未知类型'}」，请上传 .docx / .pdf 或文本文件")
+    if ext == ".xlsx":
+        return _from_xlsx(data)
+    if ext in _TEXT_EXTS:
+        return _from_text(ext, data)
+    raise ValueError(
+        f"暂不支持解析「{ext or '未知类型'}」，请上传 "
+        ".docx / .pdf / .xlsx / .md / .html / .txt"
+    )
+
+
+def _decode_text(data: bytes) -> str:
+    for enc in ("utf-8-sig", "utf-8", "gb18030"):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    raise ValueError("无法识别文本编码（支持 UTF-8 / GB18030）")
+
+
+def _from_text(ext: str, data: bytes) -> str:
+    text = _decode_text(data)
+    if ext in (".html", ".htm"):
+        text = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", text)
+        text = re.sub(r"(?i)<br\s*/?>|</(?:p|div|h[1-6]|li|tr|section|article)>", "\n", text)
+        text = re.sub(r"<[^>]+>", " ", text)
+        import html as html_lib
+
+        text = html_lib.unescape(text)
+    text = _normalize_ws(text)
+    if not text:
+        raise ValueError("文件未解析出文字")
+    return text
+
+
+def _from_xlsx(data: bytes) -> str:
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:
+        raise ValueError("服务端未安装 openpyxl，无法解析 Excel") from exc
+    try:
+        wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    except Exception as exc:
+        raise ValueError(f"无法打开 Excel 文件：{exc}") from exc
+    parts: list[str] = []
+    for sheet in wb.worksheets:
+        parts.append(f"# {sheet.title}")
+        for row in sheet.iter_rows(values_only=True):
+            cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
+            if cells:
+                parts.append(" | ".join(cells))
+    text = _normalize_ws("\n".join(parts))
+    if not text.strip():
+        raise ValueError("Excel 未解析出内容")
+    return text
 
 
 def _from_docx(data: bytes) -> str:

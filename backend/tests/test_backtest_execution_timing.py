@@ -40,10 +40,14 @@ class StrategyRouteExecutionTimingTest(unittest.TestCase):
 
         def fake_forward(method, path, *, payload=None, query=None, timeout=120):
             captured["payload"] = payload
-            return 200, {}, {"run_id": "r1"}
+            # P0-02：RE 现为同步回测，正常响应直接带指标；带 run_id 会被路由判为 502。
+            return 200, {}, {"metrics": {"total_return": 0.1}}
 
-        with patch.object(re_gateway, "forward_re", side_effect=fake_forward):
-            response = re_gateway.backtest_strategy_submit(body, _user={"id": "u"})
+        with (
+            patch.object(re_gateway, "forward_re", side_effect=fake_forward),
+            patch.object(re_gateway, "sign_result", return_value="tok"),
+        ):
+            response = re_gateway.backtest_strategy_submit(body, _user={"id": 1})
         return response, captured
 
     def test_invalid_value_is_rejected_before_forwarding(self):

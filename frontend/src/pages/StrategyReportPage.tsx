@@ -700,6 +700,7 @@ export function StrategyReportPage() {
         excessReturn: result?.excess_return,
         // 内置策略源码是历史快照，但过渡期不在用户分享/展示链路中暴露。
         strategyCode: req?.strategy_id ? undefined : req?.strategy_code,
+        runId: rec.id || runId,
         returnTo: `/strategy/research/report/${rec.id || runId}`,
         returnLabel: "返回策略回测报告",
       });
@@ -912,6 +913,11 @@ export function StrategyReportPage() {
               />
             ))}
           </div>
+          {highlightMetrics.some((item) => item.value === "—") && (
+            <p className="mt-2 text-xs text-slate-400">
+              「—」表示本次回测未返回该指标（数据不足或计算失败），不代表 0。
+            </p>
+          )}
         </div>
       </div>
 

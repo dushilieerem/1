@@ -18,6 +18,7 @@ from ai.errors import AiError
 from ai.gateway.ark_chat import list_ark_models, prepare_messages, strip_thinking
 from ai.gateway.speech_transcribe import SpeechError, speech_ready, transcribe_bytes
 from ai.router import run_task, stream_task
+from ai.runtime import conversation_store
 from ai.runtime.store import assert_quota_available, record_usage
 from app.deps import require_user
 
@@ -86,6 +87,7 @@ def _sse_chat_frames(
     messages: list[dict[str, Any]],
     model: str | None,
     temperature: float,
+    on_delta: Any = None,
 ) -> Iterator[bytes]:
     yield b'data: {"status":"start"}\n\n'
     try:
@@ -95,6 +97,8 @@ def _sse_chat_frames(
             model=model,
             temperature=temperature,
         ):
+            if on_delta is not None:
+                on_delta(piece)
             payload = json.dumps({"delta": piece}, ensure_ascii=False).encode("utf-8")
             yield b"data: " + payload + b"\n\n"
         yield b"data: [DONE]\n\n"
@@ -109,6 +113,45 @@ def _sse_chat_frames(
         err = json.dumps({"error": str(exc)}, ensure_ascii=False).encode("utf-8")
         yield b"data: " + err + b"\n\n"
         yield b"data: [DONE]\n\n"
+
+
+def _last_user_content(messages: list[dict[str, Any]]) -> str:
+    for msg in reversed(messages or []):
+        if str(msg.get("role") or "") == "user":
+            return str(msg.get("content") or "")
+    return ""
+
+
+def _persist_exchange(
+    uid: int,
+    conversation_id: int,
+    *,
+    user_text: str,
+    reply: str,
+    model: str | None = None,
+    tokens_in: int = 0,
+    tokens_out: int = 0,
+) -> None:
+    """落库失败不影响对话主链路。"""
+    if uid <= 0:
+        return
+    try:
+        if user_text:
+            conversation_store.append_message(
+                uid, conversation_id, role="user", content=user_text
+            )
+        if reply:
+            conversation_store.append_message(
+                uid,
+                conversation_id,
+                role="assistant",
+                content=reply,
+                model=model,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+            )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 @router.post("/api/ai/chat")
@@ -130,12 +173,38 @@ def ai_chat(
     except AiError as exc:
         raise _http_error(exc) from exc
 
+    # P1-A01：可选服务端会话；未显式给 id 且 persist=true 时自动新建
+    conversation_id = 0
+    try:
+        conversation_id = int(body.get("conversation_id") or 0)
+    except (TypeError, ValueError):
+        conversation_id = 0
+    if not conversation_id and body.get("persist") and uid > 0:
+        first = _last_user_content(messages)
+        conversation_id = int(
+            conversation_store.create_conversation(
+                uid, first_message=first, title=first
+            )["id"]
+        )
+
     if want_stream:
+        parts: list[str] = []
+
         def _frames():
             try:
-                yield from _sse_chat_frames(cleaned, model, temperature)
+                yield from _sse_chat_frames(
+                    cleaned, model, temperature, on_delta=parts.append
+                )
             finally:
                 _record(uid, "assistant.chat")
+                if conversation_id:
+                    _persist_exchange(
+                        uid,
+                        conversation_id,
+                        user_text=_last_user_content(messages),
+                        reply="".join(parts),
+                        model=model,
+                    )
 
         return StreamingResponse(
             _frames(),
@@ -158,8 +227,19 @@ def ai_chat(
         raise _http_error(exc) from exc
 
     _record(uid, "assistant.chat", tokens_in=int(data.get("tokens_in") or 0), tokens_out=int(data.get("tokens_out") or 0))
+    if conversation_id:
+        _persist_exchange(
+            uid,
+            conversation_id,
+            user_text=_last_user_content(messages),
+            reply=str(data.get("content") or ""),
+            model=str(data.get("model") or model or ""),
+            tokens_in=int(data.get("tokens_in") or 0),
+            tokens_out=int(data.get("tokens_out") or 0),
+        )
     usage = data.get("usage") or {}
     return {
+        "conversation_id": conversation_id or None,
         "content": strip_thinking(str(data.get("content") or "")),
         "model": data.get("model") or model or "",
         "usage": {
@@ -168,6 +248,44 @@ def ai_chat(
             "totalTokens": usage.get("total_tokens"),
         },
     }
+
+
+@router.get("/api/ai/conversations")
+def ai_conversations_list(
+    user: dict = Depends(require_user),
+    limit: int = 20,
+    offset: int = 0,
+) -> dict:
+    return conversation_store.list_conversations(
+        int(user["id"]), limit=limit, offset=offset
+    )
+
+
+@router.post("/api/ai/conversations")
+def ai_conversations_create(body: dict[str, Any], user: dict = Depends(require_user)) -> dict:
+    return {
+        "ok": True,
+        "conversation": conversation_store.create_conversation(
+            int(user["id"]),
+            title=str(body.get("title") or ""),
+            first_message=str(body.get("first_message") or ""),
+        ),
+    }
+
+
+@router.get("/api/ai/conversations/{conversation_id}")
+def ai_conversations_get(conversation_id: int, user: dict = Depends(require_user)) -> dict:
+    item = conversation_store.get_conversation(int(user["id"]), conversation_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return item
+
+
+@router.delete("/api/ai/conversations/{conversation_id}")
+def ai_conversations_delete(conversation_id: int, user: dict = Depends(require_user)) -> dict:
+    if not conversation_store.delete_conversation(int(user["id"]), conversation_id):
+        raise HTTPException(status_code=404, detail="not found")
+    return {"ok": True}
 
 
 @router.post("/api/ai/speech/transcribe")

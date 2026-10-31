@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import csv
+import io
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 
 from app.deps import require_admin, require_db_user_id, require_user
 from services.strategy.builtin_strategies_store import (
@@ -38,6 +41,7 @@ from services.strategy.user_strategy_library_store import (
     delete_user_strategy_library,
     get_library_strategy_archive,
     list_library_strategies,
+    update_library_strategy,
     list_user_strategy_libraries,
     mark_library_strategy_detected,
 )
@@ -125,6 +129,34 @@ def strategy_save_run(
 def strategy_list_all_runs(uid: int = Depends(require_db_user_id)) -> dict:
     """当前用户全部回测报告（对标 GET /api/detect/runs）。"""
     return list_all_strategy_runs(uid)
+
+
+@router.get("/api/strategy/runs/{run_id}/export.csv")
+def strategy_export_run_csv(
+    run_id: str, uid: int = Depends(require_db_user_id)
+) -> Response:
+    """导出单次回测摘要 CSV（P1-S04 首版）。"""
+    try:
+        data = get_strategy_run(uid, run_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="not found") from None
+    run = data.get("run") or {}
+    result = run.get("result") or {}
+    metrics = result.get("metrics") if isinstance(result, dict) else None
+    if not isinstance(metrics, dict):
+        metrics = {}
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["field", "value"])
+    for key in ("id", "name", "description", "finishedAt", "elapsedSec", "verified"):
+        writer.writerow([key, run.get(key)])
+    for key, value in sorted(metrics.items()):
+        writer.writerow([f"metrics.{key}", value])
+    return Response(
+        content=buf.getvalue().encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="strategy-{run_id}.csv"'},
+    )
 
 
 @router.patch("/api/strategy/runs/{run_id}")
@@ -289,6 +321,28 @@ def strategy_delete_library_strategy(
         return delete_library_strategy(uid, lib_id, strategy_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="not found") from None
+
+
+@router.put("/api/strategy/library-strategies/{strategy_id}")
+def strategy_update_library_strategy(
+    strategy_id: int,
+    body: dict[str, Any],
+    uid: int = Depends(require_db_user_id),
+) -> dict:
+    try:
+        strat = update_library_strategy(
+            uid,
+            strategy_id,
+            name=body.get("name"),
+            body=body.get("body") or body.get("code"),
+            description=body.get("description"),
+            category_label=body.get("categoryLabel") or body.get("category_label"),
+        )
+        return {"ok": True, "strategy": strat}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="not found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/api/strategy/library-strategies/{strategy_id}/mark-detected")

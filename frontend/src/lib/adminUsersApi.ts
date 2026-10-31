@@ -63,3 +63,19 @@ export async function resetAdminUserPassword(id: number, password: string): Prom
     body: JSON.stringify({ password }),
   }));
 }
+
+export type AdminUsage = {
+  ok: boolean;
+  days: number;
+  users: { total: number; active: number };
+  ai: Array<{ d: string; n: number; tokens: number }>;
+  posts: Array<{ d: string; n: number }>;
+  strategyRuns: Array<{ d: string; n: number }>;
+  news: Array<{ d: string; n: number }>;
+};
+
+export async function getAdminUsage(days = 7): Promise<AdminUsage> {
+  return json<AdminUsage>(
+    await fetch(`/api/admin/usage?days=${days}`, { headers: { ...authHeaders() } }),
+  );
+}

@@ -2,9 +2,12 @@
 """管理员：系统审计日志查询与清理。"""
 from __future__ import annotations
 
+import csv
+import io
 import os
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 
 from app.deps import require_admin
 from services.core.audit_log_store import list_audit_logs, purge_audit_logs
@@ -61,3 +64,56 @@ def admin_purge_logs(
         retain = int(os.environ.get("AUDIT_LOG_RETENTION_DAYS", "30") or "30")
     deleted = purge_audit_logs(days=retain)
     return {"ok": True, "days": retain, "deleted": deleted}
+
+@router.get("/api/admin/logs/export")
+def admin_export_logs(
+    _admin: dict = Depends(require_admin),
+    module: str | None = Query(None),
+    username: str | None = Query(None),
+    action: str | None = Query(None),
+    statusCode: int | None = Query(None, alias="statusCode"),
+    statusMin: int | None = Query(None, alias="statusMin"),
+    statusMax: int | None = Query(None, alias="statusMax"),
+    method: str | None = Query(None),
+    writeOnly: bool = Query(False, alias="writeOnly"),
+    path: str | None = Query(None),
+    since: str | None = Query(None),
+    until: str | None = Query(None),
+    maxRows: int = Query(5000, ge=1, le=20000),
+) -> Response:
+    """按筛选导出审计 CSV（服务端分页拉取，最多 maxRows）。"""
+    items: list[dict] = []
+    offset = 0
+    while len(items) < maxRows:
+        page = list_audit_logs(
+            limit=min(200, maxRows - len(items)),
+            offset=offset,
+            module=module,
+            username=username,
+            action=action,
+            status_code=statusCode,
+            status_min=statusMin,
+            status_max=statusMax,
+            method=method,
+            write_only=writeOnly,
+            path_contains=path,
+            since=since,
+            until=until,
+        )
+        batch = page.get("items") or []
+        items.extend(batch)
+        offset += len(batch)
+        if not batch or offset >= int(page.get("total") or 0):
+            break
+    fields = ["id", "createdAt", "username", "role", "action", "module", "method", "path", "statusCode", "ip", "detail"]
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+    writer.writeheader()
+    for item in items:
+        writer.writerow({k: item.get(k) for k in fields})
+    return Response(
+        content=buf.getvalue().encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="svquant-audit.csv"'},
+    )
+

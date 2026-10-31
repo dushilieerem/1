@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DraftRestoreBanner } from "@/components/DraftRestoreBanner";
+import { clearDraft, draftNewerThan, loadDraft, saveDraft } from "@/lib/autosave";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { BarChart3, Loader2, Play, Plus, Save, X } from "lucide-react";
 import { FactorCodeEditor } from "@/components/FactorCodeEditor";
@@ -105,6 +107,8 @@ export function FactorDetectPage() {
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [mobilePane, setMobilePane] = useState<"config" | "code">("config");
+  const [draftBanner, setDraftBanner] = useState<{ savedAt: string } | null>(null);
+  const autosaveKey = `svquant.autosave.detect.${projectId || "new"}`;
   /** 本页最近一次检测 / URL 快照对应的报告 id，供顶栏「检测报告」直达 */
   const [reportRunId, setReportRunId] = useState<string>(snapshotRunId);
   const abortRef = useRef<AbortController | null>(null);
@@ -214,6 +218,38 @@ export function FactorDetectPage() {
     const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
     setLogs((prev) => [...prev.slice(-80), `[${ts}] ${line}`]);
   }, []);
+
+  useEffect(() => {
+    if (!project?.config || snapshotRunId) return;
+    const draft = loadDraft<typeof project.config>(autosaveKey);
+    if (draft && draftNewerThan(draft, project.updatedAt)) {
+      setDraftBanner({ savedAt: draft.savedAt });
+    } else {
+      setDraftBanner(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id, snapshotRunId]);
+
+  useEffect(() => {
+    if (!project?.config || snapshotRunId) return;
+    const timer = window.setTimeout(() => saveDraft(autosaveKey, project.config), 800);
+    return () => window.clearTimeout(timer);
+  }, [project?.config, snapshotRunId, autosaveKey]);
+
+  const restoreDraft = () => {
+    const draft = loadDraft<NonNullable<typeof project>["config"]>(autosaveKey);
+    if (draft?.data) {
+      setProject((prev) => (prev ? { ...prev, config: draft.data } : prev));
+      setSavedHint("已恢复本地草稿");
+      window.setTimeout(() => setSavedHint(""), 2000);
+    }
+    setDraftBanner(null);
+  };
+
+  const discardDraft = () => {
+    clearDraft(autosaveKey);
+    setDraftBanner(null);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -1429,6 +1465,13 @@ export function FactorDetectPage() {
           }`}
         >
           <div className="flex-1 space-y-6 overflow-y-auto px-3 py-4 text-sm sm:px-5 sm:py-5">
+            {draftBanner && (
+              <DraftRestoreBanner
+                savedAt={draftBanner.savedAt}
+                onRestore={restoreDraft}
+                onDiscard={discardDraft}
+              />
+            )}
             {/* 1. 添加因子 / 当前内置因子 */}
             <section>
               <div className="mb-3 flex items-center justify-between gap-2">

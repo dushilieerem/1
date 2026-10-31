@@ -9,10 +9,27 @@ from __future__ import annotations
 import time
 from typing import Any, Iterator
 
-from ai.errors import AiInvalidRequest, AiNotConfigured
+from ai.errors import AiInvalidRequest, AiNotConfigured, AiQuotaExceeded
 from ai.gateway import providers
 from ai.router.executors import EXECUTORS, can_run
 from ai.router.specs import EXECUTOR_RE, TaskRequest, get_task
+
+
+def _assert_token_budget() -> None:
+    """P1-A03：AI_DAILY_TOKEN_BUDGET（全站当日 token，0=不限）。"""
+    from services.core.env_config import env
+
+    try:
+        budget = int(env("AI_DAILY_TOKEN_BUDGET", "0") or "0")
+    except (TypeError, ValueError):
+        budget = 0
+    if budget <= 0:
+        return
+    from ai.runtime.store import tokens_used_today
+
+    used = tokens_used_today()
+    if used >= budget:
+        raise AiQuotaExceeded(f"今日 AI token 预算已用尽（{used}/{budget}）")
 
 
 def run_task(
@@ -30,6 +47,7 @@ def run_task(
     返回值固定包含：content / model / provider / tokens_in / tokens_out /
     tool_calls / task / latency_ms；出错抛 `ai.errors` 中的类型化异常。
     """
+    _assert_token_budget()
     spec = get_task(task_id)
     request = TaskRequest(
         messages=list(messages or []),
@@ -55,6 +73,7 @@ def run_task(
             continue
         out = dict(result)
         out["task"] = task_id
+        out["prompt_version"] = spec.prompt_version
         out["latency_ms"] = int((time.perf_counter() - started) * 1000)
         return out
 

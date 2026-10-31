@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -69,7 +70,7 @@ function CommentImages({ images }: { images?: string[] }) {
             title="点击查看大图"
             style={{ width: 128, height: 96 }}
           >
-            <img src={src} alt="" style={THUMB_STYLE} />
+            <img src={src} alt="" loading="lazy" style={THUMB_STYLE} />
           </button>
         ))}
       </div>
@@ -202,6 +203,13 @@ export function CommentThread({
     () => groupCommentThreads(comments),
     [comments],
   );
+  // P2-08：长楼渐进渲染，避免一次挂载全部评论 DOM
+  const ROOT_PAGE = 30;
+  const [rootLimit, setRootLimit] = useState(ROOT_PAGE);
+  useEffect(() => {
+    setRootLimit((n) => Math.max(ROOT_PAGE, Math.min(n, roots.length || ROOT_PAGE)));
+  }, [roots.length]);
+  const visibleRoots = useMemo(() => roots.slice(0, rootLimit), [roots, rootLimit]);
 
   const patchComment = (
     id: number,
@@ -395,7 +403,7 @@ export function CommentThread({
             还没有评论，来抢沙发
           </li>
         )}
-        {roots.map((root) => {
+        {visibleRoots.map((root) => {
           const replies = repliesByRoot.get(root.id) || [];
           const open = !!expanded[root.id];
           const shown = open ? replies : replies.slice(0, PREVIEW_REPLY_N);
@@ -438,6 +446,17 @@ export function CommentThread({
             </li>
           );
         })}
+        {roots.length > visibleRoots.length && (
+          <li className="px-3 py-3 text-center lg:px-5">
+            <button
+              type="button"
+              onClick={() => setRootLimit((n) => n + ROOT_PAGE)}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              显示更多评论（还有 {roots.length - visibleRoots.length} 条）
+            </button>
+          </li>
+        )}
       </ul>
 
       <form

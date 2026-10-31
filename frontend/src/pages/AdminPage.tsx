@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { ShieldCheck, Users } from "lucide-react";
 import { getStoredUser, subscribeAuth, type AuthUser } from "@/lib/auth";
 import {
+  getAdminUsage,
   listAdminUsers,
   resetAdminUserPassword,
   setAdminUserRole,
   setAdminUserStatus,
   type AdminUser,
+  type AdminUsage,
 } from "@/lib/adminUsersApi";
 import { MeSystemLogsPanel } from "@/pages/MeSystemLogsPanel";
 
@@ -17,7 +19,8 @@ function fmt(v?: string | null) {
 export default function AdminPage() {
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   useEffect(() => subscribeAuth(() => setUser(getStoredUser())), []);
-  const [tab, setTab] = useState<"users" | "logs">("users");
+  const [tab, setTab] = useState<"users" | "logs" | "usage">("users");
+  const [usage, setUsage] = useState<AdminUsage | null>(null);
   const [items, setItems] = useState<AdminUser[]>([]);
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState("");
@@ -25,10 +28,12 @@ export default function AdminPage() {
   const [role, setRole] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [offset, setOffset] = useState(0);
+  const PAGE = 50;
 
   const load = () => {
     setError(null);
-    listAdminUsers({ q, status, role, limit: 100 })
+    listAdminUsers({ q, status, role, limit: PAGE, offset })
       .then((d) => {
         setItems(d.items);
         setTotal(d.total);
@@ -36,7 +41,15 @@ export default function AdminPage() {
       .catch((e: Error) => setError(e.message));
   };
 
-  useEffect(load, [status, role]);
+  useEffect(() => {
+    setOffset(0);
+  }, [status, role]);
+  useEffect(load, [status, role, offset]);
+  useEffect(() => {
+    if (tab === "usage" && !usage) {
+      getAdminUsage(7).then(setUsage).catch((e: Error) => setError(e.message));
+    }
+  }, [tab, usage]);
 
   if (!user || user.role !== "admin") {
     return (
@@ -75,13 +88,14 @@ export default function AdminPage() {
         {[
           ["users", "用户管理", Users],
           ["logs", "系统日志", ShieldCheck],
+          ["usage", "运营报表", Users],
         ].map(([key, label, Icon]) => {
           const I = Icon as typeof Users;
           return (
             <button
               key={key as string}
               type="button"
-              onClick={() => setTab(key as "users" | "logs")}
+              onClick={() => setTab(key as "users" | "logs" | "usage")}
               className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
                 tab === key ? "border-red-200 bg-red-50 text-red-600" : "border-slate-200 bg-white text-slate-600"
               }`}
@@ -95,7 +109,29 @@ export default function AdminPage() {
 
       {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div> : null}
 
-      {tab === "logs" ? <MeSystemLogsPanel /> : (
+      {tab === "usage" ? (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5">
+          <h2 className="text-lg font-semibold text-slate-900">近 7 日运营</h2>
+          <div className="mt-3 grid gap-3 sm:grid-cols-4">
+            <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">用户</p><p className="mt-1 font-mono text-lg">{usage?.users.total ?? "—"}</p></div>
+            <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">有效用户</p><p className="mt-1 font-mono text-lg">{usage?.users.active ?? "—"}</p></div>
+            <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">AI 调用</p><p className="mt-1 font-mono text-lg">{usage ? usage.ai.reduce((a, x) => a + x.n, 0) : "—"}</p></div>
+            <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">策略回测</p><p className="mt-1 font-mono text-lg">{usage ? usage.strategyRuns.reduce((a, x) => a + x.n, 0) : "—"}</p></div>
+          </div>
+          <table className="mt-4 w-full text-left text-sm">
+            <thead><tr className="border-b border-slate-100 text-[11px] text-slate-400"><th className="py-2">日期</th><th className="py-2 text-right">AI</th><th className="py-2 text-right">帖子</th><th className="py-2 text-right">回测</th><th className="py-2 text-right">资讯</th></tr></thead>
+            <tbody>
+              {(usage?.ai || []).map((row) => {
+                const d = row.d;
+                const posts = usage?.posts.find((x) => x.d === d)?.n ?? 0;
+                const runs = usage?.strategyRuns.find((x) => x.d === d)?.n ?? 0;
+                const news = usage?.news.find((x) => x.d === d)?.n ?? 0;
+                return <tr key={d} className="border-b border-slate-50 last:border-0"><td className="py-2">{d}</td><td className="py-2 text-right font-mono">{row.n}</td><td className="py-2 text-right font-mono">{posts}</td><td className="py-2 text-right font-mono">{runs}</td><td className="py-2 text-right font-mono">{news}</td></tr>;
+              })}
+            </tbody>
+          </table>
+        </section>
+      ) : tab === "logs" ? <MeSystemLogsPanel /> : (
         <section className="rounded-2xl border border-slate-200 bg-white p-5">
           <div className="flex flex-wrap items-center gap-2">
             <input
@@ -119,6 +155,8 @@ export default function AdminPage() {
               查询
             </button>
             <span className="text-xs text-slate-400">共 {total} 个用户</span>
+            <button type="button" disabled={offset <= 0} onClick={() => setOffset(Math.max(0, offset - PAGE))} className="rounded border border-slate-200 px-2 py-1 text-xs disabled:opacity-40">上一页</button>
+            <button type="button" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)} className="rounded border border-slate-200 px-2 py-1 text-xs disabled:opacity-40">下一页</button>
           </div>
 
           <div className="mt-4 overflow-x-auto">

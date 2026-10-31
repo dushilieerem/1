@@ -5,11 +5,13 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.deps import require_user
+from app.deps import require_db_user_id, require_user
 from ai.gateway.llm_client import LlmError
 from ai.crews.strategy_research import run_backtest, run_backtest_chat
+from ai.runtime import chain_store, eval_store, research_run_store
 from ai.runtime import store as agent_store
 from ai.runtime.runtime import start_run
+from services.factor.factor_store import add_custom_factor
 from ai.runtime.store import (
     set_user_ai_quota,
     usage_admin_summary,
@@ -137,7 +139,203 @@ def agent_factor_backtest(
 def agent_factor_eval(
     body: dict[str, Any], user: dict = Depends(require_user)
 ) -> dict:
-    return _run_pipeline(run_eval_pipeline, body, user)
+    out = _run_pipeline(run_eval_pipeline, body, user)
+    try:
+        record = eval_store.record_eval(
+            user_id=int(user["id"]),
+            out=out,
+            report=body.get("report") if isinstance(body, dict) else None,
+        )
+        out = {**out, "persisted": True, "record_id": record["id"]}
+    except Exception as exc:  # noqa: BLE001 - 落库失败不影响评价结果返回
+        out = {**out, "persisted": False, "persist_error": str(exc)}
+    return out
+
+
+@router.post("/api/agent/knowledge/search")
+def agent_knowledge_search(
+    body: dict[str, Any],
+    user: dict = Depends(require_user),
+) -> dict:
+    """P1-K09：研究/Agent 检索个人知识库，返回可追溯引用。"""
+    from knowledge_hub import store as kh_store
+
+    uid = int(user["id"])
+    is_admin = str(user.get("role") or "") == "admin"
+    raw_ids = body.get("collection_ids") or body.get("collectionIds") or []
+    cids: list[int] = []
+    if isinstance(raw_ids, list):
+        for x in raw_ids:
+            try:
+                cids.append(int(x))
+            except (TypeError, ValueError):
+                continue
+    if not is_admin and cids:
+        cids = [c for c in cids if kh_store.collection_accessible(c, user_id=uid, is_admin=False)]
+    try:
+        result = kh_store.search_chunks(
+            query=str(body.get("query") or ""),
+            collection_ids=cids or None,
+            top_k=int(body.get("top_k") or body.get("topK") or 6),
+            owner_id=None if is_admin else uid,
+            rerank=bool(body.get("rerank") or True),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    citations = [
+        {
+            "index": i,
+            "chunkId": h.get("chunkId"),
+            "documentId": h.get("documentId"),
+            "documentTitle": h.get("documentTitle"),
+            "collectionName": h.get("collectionName"),
+            "text": h.get("text"),
+            "score": h.get("rerankScore", h.get("score")),
+        }
+        for i, h in enumerate(result.get("hits") or [], start=1)
+    ]
+    return {
+        "ok": True,
+        "query": result.get("query"),
+        "mode": result.get("mode"),
+        "citations": citations,
+        "referencedDocuments": result.get("referencedDocuments") or [],
+    }
+
+
+@router.post("/api/agent/research-runs")
+def agent_research_run_create(body: dict[str, Any], user: dict = Depends(require_user)) -> dict:
+    """P1-A02：创建多步研究（gather→idea→factor→backtest→eval→report）。"""
+    try:
+        run = research_run_store.create_run(int(user["id"]), str(body.get("goal") or ""))
+        return {"ok": True, "run": run, "steps": list(research_run_store.STEPS)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/agent/research-runs")
+def agent_research_run_list(
+    user: dict = Depends(require_user),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    return research_run_store.list_runs(int(user["id"]), limit=limit, offset=offset)
+
+
+@router.get("/api/agent/research-runs/{run_id}")
+def agent_research_run_get(run_id: int, user: dict = Depends(require_user)) -> dict:
+    run = research_run_store.get_run(int(user["id"]), run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"ok": True, "run": run, "steps": list(research_run_store.STEPS)}
+
+
+@router.post("/api/agent/research-runs/{run_id}/advance")
+def agent_research_run_advance(
+    run_id: int,
+    body: dict[str, Any],
+    user: dict = Depends(require_user),
+) -> dict:
+    try:
+        run = research_run_store.advance_run(
+            int(user["id"]),
+            run_id,
+            step=str(body.get("step") or ""),
+            output=body.get("output"),
+            approve=bool(body.get("approve")),
+            fail=str(body["fail"]) if body.get("fail") else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if run is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"ok": True, "run": run}
+
+
+@router.post("/api/agent/research-runs/{run_id}/cancel")
+def agent_research_run_cancel(run_id: int, user: dict = Depends(require_user)) -> dict:
+    run = research_run_store.cancel_run(int(user["id"]), run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"ok": True, "run": run}
+
+
+@router.get("/api/agent/chain-state")
+def agent_chain_state_get(uid: int = Depends(require_db_user_id)) -> dict:
+    """P1-F07：最近一次 idea/draft/report 快照（跨设备恢复）。"""
+    return chain_store.get_chain_state(uid)
+
+
+@router.put("/api/agent/chain-state")
+def agent_chain_state_put(
+    body: dict[str, Any],
+    uid: int = Depends(require_db_user_id),
+) -> dict:
+    patch = {k: body.get(k) for k in ("idea", "draft", "report") if k in body}
+    if not patch:
+        raise HTTPException(status_code=400, detail="至少提供 idea/draft/report 之一")
+    return chain_store.put_chain_state(uid, patch)
+
+
+@router.delete("/api/agent/chain-state")
+def agent_chain_state_delete(uid: int = Depends(require_db_user_id)) -> dict:
+    return chain_store.delete_chain_state(uid)
+
+
+@router.get("/api/agent/factor-eval/history")
+def agent_factor_eval_history(
+    user: dict = Depends(require_user),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    return eval_store.list_evals(int(user["id"]), limit=limit, offset=offset)
+
+
+@router.get("/api/agent/factor-eval/{eval_id}")
+def agent_factor_eval_get(eval_id: str, user: dict = Depends(require_user)) -> dict:
+    item = eval_store.get_eval(int(user["id"]), eval_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return item
+
+
+@router.post("/api/agent/factor-eval/{eval_id}/decision")
+def agent_factor_eval_decision(
+    eval_id: str,
+    body: dict[str, Any],
+    user: dict = Depends(require_user),
+) -> dict:
+    """人工确认：admit=true 时写入用户自定义因子库，并留下审计记录。"""
+    uid = int(user["id"])
+    record = eval_store.get_eval(uid, eval_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="not found")
+    admit = bool(body.get("admit"))
+    note = body.get("note")
+    library_factor = None
+    if admit:
+        name = str(record.get("factor_name") or "").strip()
+        code = str(record.get("factor_code") or "").strip()
+        if not name or not code:
+            raise HTTPException(status_code=400, detail="该评价没有因子代码，无法入库")
+        try:
+            library_factor = add_custom_factor(
+                user_id=uid,
+                name=name,
+                body=code,
+                description=str(note or f"AI 评价入库 {eval_id}"),
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"写入因子库失败: {exc}") from exc
+    out = eval_store.decide_eval(
+        user_id=uid,
+        eval_id=eval_id,
+        admit=admit,
+        note=str(note) if note is not None else None,
+    )
+    if out is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {**out, "library_factor": library_factor}
 
 
 # —— 策略研究 crew：真实回测工具（经 ResearchEngine 网关执行）——

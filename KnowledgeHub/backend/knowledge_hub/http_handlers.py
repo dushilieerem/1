@@ -30,6 +30,15 @@ _ANON_ADMIN = {
 }
 
 
+def _require_user(user: dict[str, Any] | None) -> tuple[dict[str, Any] | None, int, str]:
+    """P1-K01：个人知识库允许普通登录用户；管理能力在分支内单独判定 admin。"""
+    if user:
+        return user, 200, ""
+    if _KH_ALLOW_ANON_ADMIN:
+        return dict(_ANON_ADMIN), 200, ""
+    return None, 401, "未登录"
+
+
 def _require_admin(user: dict[str, Any] | None) -> tuple[dict[str, Any] | None, int, str]:
     if user:
         if user.get("role") != "admin":
@@ -61,13 +70,27 @@ def handle_kh_get(
 ) -> bool:
     if not path.startswith("/api/kh"):
         return False
-    u, code, err = _require_admin(user)
+    u, code, err = _require_user(user)
     if not u:
         send_json({"error": err}, code)
         return True
     ensure_kh_schema()
+    is_admin = u.get("role") == "admin"
+    uid = _actor_id(u)
+    if not is_admin and (
+        path.startswith("/api/kh/chats")
+        or path.startswith("/api/kh/conversations")
+        or path.startswith("/api/kh/files")
+        or path.startswith("/api/kh/model-providers")
+        or path == "/api/kh/default-models"
+    ):
+        send_json({"error": "仅管理员可访问该设置"}, 403)
+        return True
 
     if path == "/api/kh/meta":
+        if not is_admin:
+            send_json({"error": "仅管理员可查看知识库平台设置"}, 403)
+            return True
         from knowledge_hub.schemas.knowledge_unit import (
             DOC_TYPE_OPTIONS,
             DOMAIN_OPTIONS,
@@ -95,6 +118,9 @@ def handle_kh_get(
         except ValueError:
             send_json({"error": "无效文档 id"}, 400)
             return True
+        if not store.document_accessible(doc_id, user_id=uid, is_admin=is_admin):
+            send_json({"error": "文档不存在"}, 404)
+            return True
         try:
             data, fname, mime = store.get_document_attachment(doc_id)
         except FileNotFoundError as exc:
@@ -112,7 +138,13 @@ def handle_kh_get(
         return True
 
     if path == "/api/kh/collections":
-        send_json({"collections": store.list_collections()})
+        send_json(
+            {
+                "collections": store.list_collections(
+                    None if is_admin else uid
+                )
+            }
+        )
         return True
 
     if path.startswith("/api/kh/collections/") and path.endswith("/documents"):
@@ -121,6 +153,9 @@ def handle_kh_get(
             coll_id = int(mid)
         except ValueError:
             send_json({"error": "无效知识库 id"}, 400)
+            return True
+        if not store.collection_accessible(coll_id, user_id=uid, is_admin=is_admin):
+            send_json({"error": "知识库不存在"}, 404)
             return True
         send_json({"documents": store.list_documents(coll_id), "collectionId": coll_id})
         return True
@@ -132,6 +167,9 @@ def handle_kh_get(
         except ValueError:
             send_json({"error": "无效文档 id"}, 400)
             return True
+        if not store.document_accessible(doc_id, user_id=uid, is_admin=is_admin):
+            send_json({"error": "文档不存在"}, 404)
+            return True
         send_json({"chunks": store.list_chunks(doc_id), "documentId": doc_id})
         return True
 
@@ -142,12 +180,18 @@ def handle_kh_get(
         except ValueError:
             send_json({"error": "无效文档 id"}, 400)
             return True
+        if not store.document_accessible(doc_id, user_id=uid, is_admin=is_admin):
+            send_json({"error": "文档不存在"}, 404)
+            return True
         send_json({"progress": store.get_ingest_progress(doc_id)})
         return True
 
     if path.startswith("/api/kh/documents/"):
         mid = path[len("/api/kh/documents/") :].strip("/")
         if mid.isdigit():
+            if not store.document_accessible(int(mid), user_id=uid, is_admin=is_admin):
+                send_json({"error": "文档不存在"}, 404)
+                return True
             doc = store.get_document(int(mid))
             if not doc:
                 send_json({"error": "文档不存在"}, 404)
@@ -158,10 +202,16 @@ def handle_kh_get(
             return True
 
     if path == "/api/kh/chats":
+        if not is_admin:
+            send_json({"error": "仅管理员可查看聊天设置"}, 403)
+            return True
         send_json({"chats": store.list_chats()})
         return True
 
     if path.startswith("/api/kh/chats/") and path.endswith("/conversations"):
+        if not is_admin:
+            send_json({"error": "仅管理员可查看聊天设置"}, 403)
+            return True
         mid = path[len("/api/kh/chats/") : -len("/conversations")].strip("/")
         try:
             chat_id = int(mid)
@@ -177,6 +227,9 @@ def handle_kh_get(
         return True
 
     if path.startswith("/api/kh/chats/") and path.endswith("/messages"):
+        if not is_admin:
+            send_json({"error": "仅管理员可查看聊天设置"}, 403)
+            return True
         mid = path[len("/api/kh/chats/") : -len("/messages")].strip("/")
         try:
             chat_id = int(mid)
@@ -194,6 +247,9 @@ def handle_kh_get(
         return True
 
     if path.startswith("/api/kh/conversations/") and path.endswith("/messages"):
+        if not is_admin:
+            send_json({"error": "仅管理员可查看聊天设置"}, 403)
+            return True
         mid = path[len("/api/kh/conversations/") : -len("/messages")].strip("/")
         try:
             conversation_id = int(mid)
@@ -214,18 +270,30 @@ def handle_kh_get(
         return True
 
     if path == "/api/kh/files":
+        if not is_admin:
+            send_json({"error": "仅管理员可查看文件管理"}, 403)
+            return True
         send_json({"files": store.list_files()})
         return True
 
     if path == "/api/kh/model-providers":
+        if not is_admin:
+            send_json({"error": "仅管理员可查看模型设置"}, 403)
+            return True
         send_json({"providers": store.list_model_providers()})
         return True
 
     if path == "/api/kh/default-models":
+        if not is_admin:
+            send_json({"error": "仅管理员可查看模型设置"}, 403)
+            return True
         send_json(store.get_default_models())
         return True
 
     if path == "/api/kh/docs/outline":
+        if not is_admin:
+            send_json({"error": "仅管理员可查看接口目录"}, 403)
+            return True
         send_json(store.api_catalog())
         return True
 
@@ -241,11 +309,21 @@ def handle_kh_post(
 ) -> bool:
     if not path.startswith("/api/kh"):
         return False
-    u, code, err = _require_admin(user)
+    u, code, err = _require_user(user)
     if not u:
         send_json({"error": err}, code)
         return True
     uid = _actor_id(u)
+    is_admin = u.get("role") == "admin"
+    if not is_admin and (
+        path.startswith("/api/kh/chats")
+        or path.startswith("/api/kh/conversations")
+        or path.startswith("/api/kh/files")
+        or path.startswith("/api/kh/model-providers")
+        or path == "/api/kh/default-models"
+    ):
+        send_json({"error": "仅管理员可访问该设置"}, 403)
+        return True
 
     if path == "/api/kh/collections":
         try:
@@ -255,6 +333,7 @@ def handle_kh_post(
                 pipeline=str(body.get("pipeline") or "general"),
                 chunk_strategy=body.get("chunkStrategy") or body.get("chunk_strategy"),
                 created_by=uid,
+                owner_id=None if is_admin else uid,
             )
             send_json({"collection": coll})
         except ValueError as exc:
@@ -268,10 +347,12 @@ def handle_kh_post(
 
     if path == "/api/kh/documents/structured":
         try:
+            coll_id = int(body.get("collectionId") or body.get("collection_id") or 0)
+            if not store.collection_accessible(coll_id, user_id=uid, is_admin=is_admin):
+                send_json({"error": "知识库不存在"}, 404)
+                return True
             doc = store.create_structured_document(
-                collection_id=int(
-                    body.get("collectionId") or body.get("collection_id") or 0
-                ),
+                collection_id=coll_id,
                 domain=str(body.get("domain") or "paper"),
                 payload=body.get("payload") if isinstance(body.get("payload"), dict) else {},
                 created_by=uid,
@@ -290,8 +371,12 @@ def handle_kh_post(
 
     if path == "/api/kh/documents":
         try:
+            coll_id = int(body.get("collectionId") or body.get("collection_id") or 0)
+            if not store.collection_accessible(coll_id, user_id=uid, is_admin=is_admin):
+                send_json({"error": "知识库不存在"}, 404)
+                return True
             doc = store.create_document(
-                collection_id=int(body.get("collectionId") or body.get("collection_id") or 0),
+                collection_id=coll_id,
                 title=str(body.get("title") or ""),
                 body=str(body.get("body") or body.get("text") or ""),
                 chunk_strategy=body.get("chunkStrategy") or body.get("chunk_strategy"),
@@ -311,9 +396,30 @@ def handle_kh_post(
         mid = path[len("/api/kh/documents/") : -len("/ingest")].strip("/")
         try:
             doc_id = int(mid)
-            send_json(store.ingest_document(doc_id))
+            if not store.document_accessible(doc_id, user_id=uid, is_admin=is_admin):
+                send_json({"error": "文档不存在"}, 404)
+                return True
+            async_flag = bool(body.get("async", True))
+            send_json(
+                store.start_ingest_async(doc_id)
+                if async_flag
+                else store.ingest_document(doc_id)
+            )
         except ValueError as exc:
             send_json({"error": str(exc)}, 400)
+        return True
+
+    if path.startswith("/api/kh/documents/") and path.endswith("/cancel"):
+        mid = path[len("/api/kh/documents/") : -len("/cancel")].strip("/")
+        try:
+            doc_id = int(mid)
+        except ValueError:
+            send_json({"error": "无效文档 id"}, 400)
+            return True
+        if not store.document_accessible(doc_id, user_id=uid, is_admin=is_admin):
+            send_json({"error": "文档不存在"}, 404)
+            return True
+        send_json(store.request_ingest_cancel(doc_id))
         return True
 
     if path == "/api/kh/search":
@@ -329,10 +435,17 @@ def handle_kh_post(
                     cids.append(int(x))
                 except (TypeError, ValueError):
                     continue
+            if not is_admin and cids:
+                cids = [
+                    c for c in cids
+                    if store.collection_accessible(c, user_id=uid, is_admin=False)
+                ]
             result = store.search_chunks(
                 query=str(body.get("query") or body.get("q") or ""),
                 collection_ids=cids or None,
                 top_k=int(body.get("topK") or body.get("top_k") or 8),
+                owner_id=None if is_admin else uid,
+                rerank=bool(body.get("rerank") or False),
             )
             send_json(result)
         except ValueError as exc:
@@ -358,11 +471,18 @@ def handle_kh_post(
                     continue
             chat_raw = body.get("chatId") or body.get("chat_id")
             chat_id = int(chat_raw) if chat_raw not in (None, "") else None
+            if not is_admin and cids:
+                cids = [
+                    c for c in cids
+                    if store.collection_accessible(c, user_id=uid, is_admin=False)
+                ]
             result = store.ask(
                 query=str(body.get("query") or body.get("q") or ""),
                 collection_ids=cids or None,
                 chat_id=chat_id,
                 top_k=int(body.get("topK") or body.get("top_k") or 5),
+                owner_id=None if is_admin else uid,
+                rerank=bool(body.get("rerank") or False),
             )
             send_json(result)
         except KhLlmError as exc:
@@ -388,6 +508,9 @@ def handle_kh_post(
         return True
 
     if path.startswith("/api/kh/chats/") and path.endswith("/conversations"):
+        if not is_admin:
+            send_json({"error": "仅管理员可查看聊天设置"}, 403)
+            return True
         mid = path[len("/api/kh/chats/") : -len("/conversations")].strip("/")
         try:
             chat_id = int(mid)
@@ -402,6 +525,9 @@ def handle_kh_post(
         return True
 
     if path.startswith("/api/kh/chats/") and path.endswith("/messages"):
+        if not is_admin:
+            send_json({"error": "仅管理员可查看聊天设置"}, 403)
+            return True
         mid = path[len("/api/kh/chats/") : -len("/messages")].strip("/")
         try:
             chat_id = int(mid)
@@ -420,6 +546,9 @@ def handle_kh_post(
         return True
 
     if path.startswith("/api/kh/conversations/") and path.endswith("/messages"):
+        if not is_admin:
+            send_json({"error": "仅管理员可查看聊天设置"}, 403)
+            return True
         mid = path[len("/api/kh/conversations/") : -len("/messages")].strip("/")
         try:
             conversation_id = int(mid)
@@ -517,9 +646,20 @@ def handle_kh_put(
 ) -> bool:
     if not path.startswith("/api/kh"):
         return False
-    u, code, err = _require_admin(user)
+    u, code, err = _require_user(user)
     if not u:
         send_json({"error": err}, code)
+        return True
+    uid = _actor_id(u)
+    is_admin = u.get("role") == "admin"
+    if not is_admin and (
+        path.startswith("/api/kh/chats")
+        or path.startswith("/api/kh/conversations")
+        or path.startswith("/api/kh/files")
+        or path.startswith("/api/kh/model-providers")
+        or path == "/api/kh/default-models"
+    ):
+        send_json({"error": "仅管理员可访问该设置"}, 403)
         return True
 
     if path.startswith("/api/kh/conversations/"):
@@ -554,6 +694,9 @@ def handle_kh_put(
         if not mid or "/" in mid:
             return False
         try:
+            if not store.collection_accessible(int(mid), user_id=uid, is_admin=is_admin):
+                send_json({"error": "知识库不存在"}, 404)
+                return True
             send_json({"collection": store.update_collection(int(mid), body)})
         except ValueError as exc:
             send_json({"error": str(exc)}, 400)
@@ -571,6 +714,9 @@ def handle_kh_put(
         if not mid or "/" in mid:
             return False
         try:
+            if not store.document_accessible(int(mid), user_id=uid, is_admin=is_admin):
+                send_json({"error": "文档不存在"}, 404)
+                return True
             send_json({"document": store.update_document(int(mid), body)})
         except ValueError as exc:
             send_json({"error": str(exc)}, 400)
@@ -593,9 +739,20 @@ def handle_kh_delete(
 ) -> bool:
     if not path.startswith("/api/kh"):
         return False
-    u, code, err = _require_admin(user)
+    u, code, err = _require_user(user)
     if not u:
         send_json({"error": err}, code)
+        return True
+    uid = _actor_id(u)
+    is_admin = u.get("role") == "admin"
+    if not is_admin and (
+        path.startswith("/api/kh/chats")
+        or path.startswith("/api/kh/conversations")
+        or path.startswith("/api/kh/files")
+        or path.startswith("/api/kh/model-providers")
+        or path == "/api/kh/default-models"
+    ):
+        send_json({"error": "仅管理员可访问该设置"}, 403)
         return True
 
     if path.startswith("/api/kh/collections/"):
@@ -603,6 +760,9 @@ def handle_kh_delete(
         if not mid or "/" in mid:
             return False
         try:
+            if not store.collection_accessible(int(mid), user_id=uid, is_admin=is_admin):
+                send_json({"error": "知识库不存在"}, 404)
+                return True
             ok = store.delete_collection(int(mid))
         except ValueError:
             send_json({"error": "无效 id"}, 400)
@@ -615,6 +775,9 @@ def handle_kh_delete(
         if not mid or "/" in mid:
             return False
         try:
+            if not store.document_accessible(int(mid), user_id=uid, is_admin=is_admin):
+                send_json({"error": "文档不存在"}, 404)
+                return True
             ok = store.delete_document(int(mid))
         except ValueError:
             send_json({"error": "无效 id"}, 400)

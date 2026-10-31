@@ -3,3 +3,5 @@
 pandas>=2.2,<4
 # 测试运行器：CI 用 `python -m pytest tests -q`，本文件必须自带，避免依赖本机装了什么。
 pytest>=8
+# starlette>=1.10 的 TestClient 依赖 httpx2（httpx 的继任包）
+httpx2>=2.0

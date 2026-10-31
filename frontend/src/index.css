@@ -895,3 +895,9 @@ body {
   color: #334155;
 }
 
+/* P2-05：移动端触控优化（减少双击缩放任性延迟，不影响手势） */
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
+}

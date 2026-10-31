@@ -79,3 +79,6 @@ export DEV_SKIP_AUTH=0
 cd "$BACKEND_DIR"
 log "运行 pytest"
 "$VENV_PY" -m pytest tests -q ${PYTEST_ARGS:-}
+
+log "运行 AI 离线评测集（P1-A07）"
+"$VENV_PY" -m ai.evals.run

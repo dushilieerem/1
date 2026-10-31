@@ -21,7 +21,8 @@ _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
-_SSL = ssl._create_unverified_context()
+_TLS_VERIFY = (os.environ.get("GATHER_TLS_VERIFY", "1") or "1").strip() not in {"0", "false", "False", "no"}
+_SSL = ssl.create_default_context() if _TLS_VERIFY else ssl._create_unverified_context()
 _ZH_EN = {
     "动量": "momentum",
     "反转": "reversal",
@@ -75,12 +76,13 @@ _CN_HOSTS = (
     "so.com",
 )
 _PROXY = (
-    os.environ.get("HTTPS_PROXY")
+    os.environ.get("GATHER_HTTP_PROXY")
+    or os.environ.get("HTTPS_PROXY")
     or os.environ.get("https_proxy")
     or os.environ.get("HTTP_PROXY")
     or os.environ.get("http_proxy")
-    or "http://127.0.0.1:7897"
-)
+    or ""
+).strip()
 
 
 def _now() -> datetime:
@@ -142,7 +144,10 @@ def _opener(kind: str) -> urllib.request.OpenerDirector:
 def _http_get(url: str, *, timeout: int = 12, headers: dict[str, str] | None = None) -> bytes:
     host = (urllib.parse.urlparse(url).netloc or "").lower()
     prefer_direct = any(h in host for h in _CN_HOSTS)
-    order = ("direct", "proxy") if prefer_direct else ("proxy", "direct")
+    if not _PROXY:
+        order = ("direct",)
+    else:
+        order = ("direct", "proxy") if prefer_direct else ("proxy", "direct")
     last_exc: Exception | None = None
     req = urllib.request.Request(
         url,

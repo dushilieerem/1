@@ -3,6 +3,16 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+ENV_FILE="$ROOT_DIR/backend/.env"
+ENV_BACKUP=""
+if [[ ! -f "$ENV_FILE" ]] || ! grep -q '^YG_RE_BASE=' "$ENV_FILE" 2>/dev/null; then
+  # vite.config.ts 要求 backend/.env 有 YG_RE_BASE；临时补齐，退出时还原
+  ENV_BACKUP="$(mktemp)"
+  if [[ -f "$ENV_FILE" ]]; then cp "$ENV_FILE" "$ENV_BACKUP"; else : > "$ENV_BACKUP"; fi
+  mkdir -p "$ROOT_DIR/backend"
+  printf 'YG_RE_BASE=http://127.0.0.1:9527\n' >> "$ENV_FILE"
+  trap 'cp "$ENV_BACKUP" "$ENV_FILE"; rm -f "$ENV_BACKUP"' EXIT
+fi
 cd "$ROOT_DIR/frontend"
 
 if [[ ! -d node_modules ]]; then

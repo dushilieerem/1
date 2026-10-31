@@ -5,10 +5,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.deps import require_user
+from app.deps import require_db_user_id, require_user
 from ai.gateway.llm_client import LlmError
 from ai.crews.strategy_research import run_backtest, run_backtest_chat
-from ai.runtime import eval_store
+from ai.runtime import chain_store, eval_store
 from ai.runtime import store as agent_store
 from ai.runtime.runtime import start_run
 from services.factor.factor_store import add_custom_factor
@@ -150,6 +150,28 @@ def agent_factor_eval(
     except Exception as exc:  # noqa: BLE001 - 落库失败不影响评价结果返回
         out = {**out, "persisted": False, "persist_error": str(exc)}
     return out
+
+
+@router.get("/api/agent/chain-state")
+def agent_chain_state_get(uid: int = Depends(require_db_user_id)) -> dict:
+    """P1-F07：最近一次 idea/draft/report 快照（跨设备恢复）。"""
+    return chain_store.get_chain_state(uid)
+
+
+@router.put("/api/agent/chain-state")
+def agent_chain_state_put(
+    body: dict[str, Any],
+    uid: int = Depends(require_db_user_id),
+) -> dict:
+    patch = {k: body.get(k) for k in ("idea", "draft", "report") if k in body}
+    if not patch:
+        raise HTTPException(status_code=400, detail="至少提供 idea/draft/report 之一")
+    return chain_store.put_chain_state(uid, patch)
+
+
+@router.delete("/api/agent/chain-state")
+def agent_chain_state_delete(uid: int = Depends(require_db_user_id)) -> dict:
+    return chain_store.delete_chain_state(uid)
 
 
 @router.get("/api/agent/factor-eval/history")

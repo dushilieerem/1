@@ -176,7 +176,7 @@ VIEWS: tuple[str, ...] = (
     CREATE VIEW news AS
     SELECT 'doc-' || id AS id, title, COALESCE(summary, '') AS summary, source,
            COALESCE(publish_at::text, '') AS published_at,
-           CASE doc_type WHEN 'announcement' THEN '公告' WHEN 'research' THEN '研报' ELSE '要闻' END AS kind,
+           CASE doc_type WHEN 'announcement' THEN 'announcement' WHEN 'research' THEN 'research' ELSE 'news' END AS kind,
            CASE WHEN symbol LIKE '%.SH' OR symbol LIKE '%.SZ' OR symbol LIKE '%.BJ' THEN split_part(symbol, '.', 1) ELSE symbol END AS code,
            NULL::text AS topic_id, url
       FROM doc_item

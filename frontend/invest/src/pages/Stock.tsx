@@ -6,6 +6,7 @@ import { Disclaimer, ErrorState, Kv, LoadingCards, PageHeader, Sheet, Tag } from
 import { fmtMoney, fmtPct, formatPrice } from "../lib";
 import { useToast } from "../toast";
 import GlossarySheet from "../GlossarySheet";
+import AiPanel from "../components/AiPanel";
 
 const KLineChart = lazy(() => import("../KLineChart"));
 
@@ -169,6 +170,13 @@ export default function Stock() {
         <button className="link-btn" onClick={() => setTab("risk")}>查看风险 <ChevronRight size={14} /></button>
       </section>
 
+      <AiPanel
+        title="AI 个股解读"
+        subtitle="基于当前页面的行情、财务、估值与风险数据生成；只解释数据，不给买卖建议。"
+        endpoint={`/api/invest/ai/stock/${code}`}
+        buttonLabel="生成 AI 解读"
+      />
+
       <section className="quote-card">
         <div className="quote-main">
           <div>
@@ -184,7 +192,7 @@ export default function Stock() {
           <div><span>最低</span><b>{formatPrice(q.low)}</b></div>
           <div><span>今开</span><b>{formatPrice(q.open)}</b></div>
           <div><span>昨收</span><b>{formatPrice(q.prevClose)}</b></div>
-          <div><span>总市值</span><b>{fmtMoney(q.marketCap)}</b></div>
+          <div><span>流通市值</span><b>{fmtMoney(q.marketCap)}</b></div>
           <div><span>换手率</span><b>{q.turnover?.toFixed?.(2)}%</b></div>
           <div><span>成交额</span><b>{fmtMoney(q.amount)}</b></div>
           <div><span>PE(TTM)</span><b>{q.pe?.toFixed?.(2) ?? "—"}</b></div>

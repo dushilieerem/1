@@ -5,6 +5,7 @@ import { api } from "../api";
 import { BarRow, Disclaimer, EmptyState, ErrorState, Kv, LoadingCards, PageHeader, RiskRing, Sheet, Tag } from "../components";
 import { fmtMoney, fmtPct } from "../lib";
 import { useToast } from "../toast";
+import AiPanel from "../components/AiPanel";
 
 export default function Portfolio() {
   const nav = useNavigate();
@@ -64,6 +65,13 @@ export default function Portfolio() {
               <div className="kpi" key={k.label}><span>{k.label}</span><b>{k.value}</b></div>
             ))}
           </div>
+
+          <AiPanel
+            title="AI 组合诊断"
+            subtitle="基于当前持仓、集中度与行业暴露生成；只说明风险来源，不给调仓指令。"
+            endpoint="/api/invest/ai/portfolio"
+            buttonLabel="生成 AI 诊断"
+          />
 
           <section className="card">
             <div className="card-title-row"><h2>诊断报告</h2><span className="hint">{data.diagnosis.length} 个待关注</span></div>

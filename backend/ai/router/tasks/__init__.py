@@ -12,6 +12,14 @@ from ai.router.tasks.institution import (  # noqa: F401  导入即注册
     RESEARCH_MEMO_TASK,
     RISK_REVIEW_TASK,
 )
+from ai.router.tasks.invest import (  # noqa: F401  导入即注册
+    ANNOUNCEMENT_TASK,
+    CONDITION_TASK,
+    DAILY_TASK,
+    INTENT_TASK,
+    PORTFOLIO_TASK,
+    STOCK_TASK,
+)
 from ai.router.tasks.research import register_research_tasks
 from ai.router.tasks.strategy_generation import STRATEGY_TASK  # noqa: F401  导入即注册
 from ai.router.tasks.strategy_transcription import TRANSCRIPTION_TASK  # noqa: F401  导入即注册

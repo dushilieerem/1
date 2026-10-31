@@ -6,6 +6,7 @@ import { useAuth } from "../auth";
 import { Disclaimer, ErrorState, LoadingCards, SectionHead, Sparkline, Tag } from "../components";
 import { fmtPct, formatPrice } from "../lib";
 import GlossarySheet from "../GlossarySheet";
+import AiPanel from "../components/AiPanel";
 
 type HomeData = any;
 
@@ -89,6 +90,13 @@ export default function Home() {
             </div>
             <div className="daily-foot">按自选、组合与收盘数据生成 · 非投资建议</div>
           </section>
+
+          <AiPanel
+            title="AI 今日解读"
+            subtitle="基于自选、持仓与收盘数据生成；只解释今天发生了什么，不构成投资建议。"
+            endpoint="/api/invest/ai/daily"
+            buttonLabel="生成今日解读"
+          />
 
           <section className="card">
             <div className="card-title-row">

@@ -120,6 +120,41 @@ def build_stock(conn: sqlite3.Connection, code: str, period: str = "daily") -> d
     stock = one(conn, "SELECT * FROM stocks WHERE code=?", (code,))
     if not stock:
         return None
+    meta = data_meta(conn)
+    if not stock.get("price"):
+        # 全市场检索可以命中，但池外标的可能尚未同步日线；给出明确空态而不是 500。
+        return {
+            "quote": {
+                "code": stock["code"], "name": stock["name"], "industry": stock.get("industry"),
+                "asset": stock.get("asset"), "price": None, "prevClose": None,
+                "change": None, "changePct": None, "open": None, "high": None, "low": None,
+                "marketCap": stock.get("market_cap"), "pe": stock.get("pe_ttm"), "pb": stock.get("pb"),
+                "dividendYield": stock.get("dividend_yield"), "turnover": stock.get("turnover"),
+                "volume": stock.get("volume"), "amount": stock.get("amount"), "beta": stock.get("beta"),
+                "updatedAt": stock.get("updated_at"), "nextReportDate": stock.get("next_report_date"),
+            },
+            "chart": {"period": period, "bars": [], "ma5": [], "ma10": [], "ma20": []},
+            "technical": {
+                "ma5": None, "ma10": None, "ma20": None, "drawdown": None, "return20": None,
+                "volumeRatio": None, "trend": "数据暂缺",
+                "summary": ["该标的暂无可用收盘行情；请先同步该标的日线，再做技术面判断。"],
+            },
+            "summary": ["该标的暂无可用收盘行情；当前只能展示证券主数据，不能做估值分位、技术面与财务对比。"],
+            "valuation": {
+                "pe": stock.get("pe_ttm"), "pb": stock.get("pb"), "pePercentile": None,
+                "pbPercentile": None, "industryPe": None, "samples": 0, "label": "无估值数据",
+            },
+            "financials": [],
+            "report": None,
+            "risks": [
+                {"title": "行情数据暂缺", "detail": "该标的尚未同步日线；不要基于空数据做判断。", "level": "amber"}
+            ],
+            "news": rows(conn, "SELECT * FROM news WHERE code=? ORDER BY published_at DESC LIMIT 6", (code,)),
+            "dataDate": meta["dataDate"],
+            "disclaimer": DISCLAIMER,
+            "isDemo": meta["isDemo"],
+            "dataSource": meta["dataSource"],
+        }
     all_bars = stock_bars(conn, code)
     chart_bars = aggregate(all_bars, period)
     chart_bars = chart_bars[-180:]
@@ -536,7 +571,10 @@ def build_search(conn: sqlite3.Connection, q: str) -> dict[str, Any]:
     results += [{"type": "topic", "id": t["id"], "name": t["name"], "sub": "行业 / 主题",
                  "price": None, "changePct": None} for t in topics]
     presets = []
-    all_stocks = [s for s in rows(conn, "SELECT * FROM stocks") if s["asset"] == "stock"]
+    all_stocks = [
+        s for s in rows(conn, "SELECT * FROM stocks")
+        if s["asset"] == "stock" and s.get("price") is not None
+    ]
     for key, label, desc in [("low_pe", "低估值", "PE 分位 < 30%"), ("momentum", "高动量", "近 20 日涨幅 > 5%"),
                              ("low_vol", "低波动", "年化波动率低于中位数")]:
         items = []
@@ -590,20 +628,34 @@ def build_data_quality(conn: sqlite3.Connection) -> dict[str, Any]:
     stocks = rows(conn, "SELECT code, name, asset FROM stocks")
     bars = {r["code"]: r for r in rows(conn, "SELECT code, COUNT(*) AS n, MAX(date) AS last, MIN(date) AS first FROM bars GROUP BY code")}
     checks = []
-    missing = [s["code"] for s in stocks if not bars.get(s["code"])]
-    stale = [s["code"] for s in stocks if bars.get(s["code"]) and bars[s["code"]]["last"] != latest]
-    checks.append({"key": "bars", "label": "日线覆盖", "status": "fail" if missing or stale else "pass",
-                   "detail": f"最新交易日 {latest}；缺失 {len(missing)}，未更新 {len(stale)}"})
-    non_etf = [s["code"] for s in stocks if s["asset"] != "etf"]
+    # 全市场主数据 + 选中池日线：只对池内标的做完整性判断，避免把“未同步池外标的”当故障。
+    pool = [s for s in stocks if bars.get(s["code"])]
+    stale = [s["code"] for s in pool if bars[s["code"]]["last"] != latest]
+    checks.append({
+        "key": "bars",
+        "label": "日线覆盖",
+        "status": "fail" if not pool or stale else "pass",
+        "detail": f"最新交易日 {latest}；池内 {len(pool)}/{len(stocks)} 只有日线，未更新 {len(stale)}",
+    })
+    pool_codes = [s["code"] for s in pool if s["asset"] != "etf"]
     fin = {r["code"]: r for r in rows(conn, "SELECT code, COUNT(*) AS n, MAX(report_date) AS last FROM financials WHERE report_date<=? GROUP BY code", (latest,))}
-    no_fin = [c for c in non_etf if not fin.get(c) or not fin[c]["n"]]
-    checks.append({"key": "financials", "label": "已披露财务", "status": "fail" if no_fin else "pass",
-                   "detail": f"{len(non_etf) - len(no_fin)}/{len(non_etf)} 只非 ETF 有已披露财务；最新 {latest}"})
+    no_fin = [c for c in pool_codes if not fin.get(c) or not fin[c]["n"]]
+    fin_cov = (len(pool_codes) - len(no_fin)) / len(pool_codes) if pool_codes else 1.0
+    checks.append({
+        "key": "financials",
+        "label": "已披露财务",
+        "status": "pass" if not no_fin else ("warn" if fin_cov > 0 else "fail"),
+        "detail": f"池内 {len(pool_codes) - len(no_fin)}/{len(pool_codes)} 只有已披露财务；最新 {latest}",
+    })
     val = {r["code"]: r for r in rows(conn, "SELECT code, COUNT(*) AS n, MAX(date) AS last FROM valuations GROUP BY code")}
-    no_val = [c for c in non_etf if not val.get(c) or not val[c]["n"]]
-    lag_val = [c for c in non_etf if val.get(c) and val[c]["last"] and val[c]["last"] != latest]
-    checks.append({"key": "valuations", "label": "估值历史", "status": "fail" if no_val else ("warn" if lag_val else "pass"),
-                   "detail": f"缺失 {len(no_val)}；滞后 {len(lag_val)}（{latest}）"})
+    no_val = [c for c in pool_codes if not val.get(c) or not val[c]["n"]]
+    lag_val = [c for c in pool_codes if val.get(c) and val[c]["last"] and val[c]["last"] != latest]
+    checks.append({
+        "key": "valuations",
+        "label": "估值历史",
+        "status": "pass" if not no_val and not lag_val else ("warn" if len(no_val) < max(1, len(pool_codes) // 2) else "fail"),
+        "detail": f"池内缺失 {len(no_val)}；滞后 {len(lag_val)}（{latest}）",
+    })
     etf_bad = [s["code"] for s in stocks if s["asset"] == "etf"
                and (((fin.get(s["code"]) or {"n": 0})["n"]) or ((val.get(s["code"]) or {"n": 0})["n"]))]
     checks.append({"key": "etf", "label": "ETF 口径", "status": "fail" if etf_bad else "pass",

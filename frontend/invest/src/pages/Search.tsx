@@ -13,6 +13,9 @@ export default function Search() {
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [cond, setCond] = useState<any>(null);
+  const [condBusy, setCondBusy] = useState(false);
+  const [condError, setCondError] = useState<string | null>(null);
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -50,6 +53,43 @@ export default function Search() {
         />
         {q ? <button className="clear-btn" onClick={() => setQ("")} aria-label="清空"><X size={16} /></button> : null}
       </div>
+
+      {q ? (
+        <button
+          className="btn btn-ghost btn-sm"
+          disabled={condBusy}
+          onClick={() => {
+            setCondBusy(true);
+            setCondError(null);
+            api<any>("/api/invest/ai/condition", {
+              method: "POST",
+              body: JSON.stringify({ query: q }),
+            })
+              .then((res) => setCond(res.card || null))
+              .catch((e: Error) => setCondError(e.message))
+              .finally(() => setCondBusy(false));
+          }}
+        >
+          {condBusy ? "AI 解析中…" : "AI 解析选股条件"}
+        </button>
+      ) : null}
+      {condError ? <div className="hint">{condError}</div> : null}
+      {cond && !condError ? (
+        <section className="card">
+          <div className="card-title-row"><h2>AI 理解的条件</h2><span className="hint">仅解析 · 未执行筛选</span></div>
+          {cond.explain ? <p className="review-summary">{cond.explain}</p> : null}
+          {Array.isArray(cond.conditions) && cond.conditions.length ? (
+            <ul className="fact-list">
+              {cond.conditions.map((c: any, i: number) => (
+                <li key={i}>{typeof c === "string" ? c : JSON.stringify(c)}</li>
+              ))}
+            </ul>
+          ) : (
+            <div className="empty-inline">没有解析出可执行条件；可以补充行业、估值、增速或波动等关键词。</div>
+          )}
+          <p className="hint">AI 生成 · 非投资建议 · 条件选股结果仅供研究。</p>
+        </section>
+      ) : null}
 
       {error ? <ErrorState message={error} /> : null}
 

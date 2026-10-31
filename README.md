@@ -94,6 +94,7 @@ cp backend/.env.example backend/.env
 - [数据接入与库表设计](docs/数据设计/机构端与手机端-数据接入与库表设计-v0.1.md)
 - [机构端与手机端 Agent 设计](docs/模块设计/AI与Agent模块/机构端与手机端Agent设计.md)
 - [FEAT-034 机构端首版闭环](docs/功能包/FEAT-034-机构端首版闭环/README.md)
+- [FEAT-035 手机端真实数据与 AI](docs/功能包/FEAT-035-手机端真实数据与AI/README.md)
 
 ## 后端配置与手动启动
 

@@ -8,9 +8,17 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import sys
 import time
 from collections import defaultdict, deque
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Iterator
+
+# 复用 backend/ai/router（L2 任务路由层）；只在函数内延迟导入，避免启动强依赖。
+_BACKEND_DIR = Path(__file__).resolve().parent.parent / "backend"
+if _BACKEND_DIR.is_dir() and str(_BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_DIR))
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +26,7 @@ from fastapi.responses import JSONResponse
 
 import auth
 import rules
+from deps import get_db, optional_user, now_ts, require_user
 from seed import DB_PATH, seed
 
 if os.getenv("INVEST_ENV") == "production" and not os.getenv("INVEST_JWT_SECRET"):
@@ -69,25 +78,6 @@ async def security_and_login_limit(request: Request, call_next):
     return response
 
 
-def get_db() -> Iterator[sqlite3.Connection]:
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-    finally:
-        conn.close()
-
-
-def optional_user(authorization: str | None = Header(default=None, alias="Authorization")) -> dict[str, Any] | None:
-    return auth.user_from_authorization(authorization)
-
-
-def require_user(user: dict[str, Any] | None = Depends(optional_user)) -> dict[str, Any]:
-    if not user:
-        raise HTTPException(status_code=401, detail="请先登录")
-    return user
-
-
 def audit_event(conn: sqlite3.Connection, request: Request, action: str,
                 username: str | None = None, detail: str | None = None) -> None:
     """Best-effort auth audit; never let logging break login/register."""
@@ -114,8 +104,13 @@ GLOSSARY = [
 
 
 @app.get("/api/health")
-def health() -> dict[str, Any]:
-    return {"ok": True, "service": "invest-api", "dataDate": "2026-10-23"}
+def health(conn: sqlite3.Connection = Depends(get_db)) -> dict[str, Any]:
+    try:
+        meta = rules.build_meta(conn)
+        data_date = meta.get("dataDate")
+    except Exception:
+        data_date = None
+    return {"ok": True, "service": "invest-api", "dataDate": data_date}
 
 
 @app.post("/api/auth/login")
@@ -227,7 +222,7 @@ def add_watchlist(body: dict[str, Any] = Body(...), user: dict[str, Any] = Depen
     if not conn.execute("SELECT 1 FROM stocks WHERE code=?", (code,)).fetchone():
         raise HTTPException(status_code=404, detail="标的未收录")
     conn.execute("INSERT OR IGNORE INTO watchlist VALUES (?,?,?,?)",
-                 (int(user["id"]), code, str(body.get("group") or "默认"), "2026-10-26 18:30:00"))
+                 (int(user["id"]), code, str(body.get("group") or "默认"), now_ts()))
     conn.commit()
     return rules.build_watchlist(conn, int(user["id"]))
 
@@ -248,7 +243,7 @@ def add_event(body: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(r
         raise HTTPException(status_code=400, detail="缺少标的")
     conn.execute("INSERT INTO events (user_id, code, type, condition, status, created_at) VALUES (?,?,?,?,?,?)",
                  (int(user["id"]), code, str(body.get("type") or "价格"),
-                  str(body.get("condition") or "收盘后检查"), "active", "2026-10-26 18:30:00"))
+                  str(body.get("condition") or "收盘后检查"), "active", now_ts()))
     conn.commit()
     return rules.build_watchlist(conn, int(user["id"]))
 
@@ -260,7 +255,7 @@ def risk_profile(body: dict[str, Any] = Body(...), user: dict[str, Any] = Depend
     score = int(body.get("score") or 62)
     answers = json.dumps(body.get("answers") or {}, ensure_ascii=False)
     conn.execute("INSERT OR REPLACE INTO risk_profiles VALUES (?,?,?,?,?)",
-                 (int(user["id"]), level, score, answers, "2026-10-26 18:30:00"))
+                 (int(user["id"]), level, score, answers, now_ts()))
     conn.commit()
     return {"level": level, "score": score}
 
@@ -356,3 +351,12 @@ def delete_invest_data(request: Request, user: dict[str, Any] = Depends(require_
     conn.commit()
     audit_event(conn, request, "delete_invest_data", user.get("username"), "local Invest data only")
     return {"ok": True, "deleted": ["watchlist", "events", "event_logs", "portfolio", "risk_profile"]}
+
+
+# AI 能力接口（复用 backend/ai/router 的 TaskSpec）。放在文件末尾导入，避免与 app 依赖循环。
+try:
+    from ai_endpoints import router as invest_ai_router
+
+    app.include_router(invest_ai_router)
+except Exception as _exc:  # 无 LLM 配置时仍允许 Invest 主流程运行
+    print(f"[invest-api] AI 能力未加载: {_exc}")

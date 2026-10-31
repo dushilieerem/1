@@ -6,9 +6,19 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Iterator
 
 from services.core.db import get_conn
+
+
+# SQL 里可能有 LIKE 'doc-%' 这类字面量百分号；psycopg 只认 %s/%b/%t 占位符，
+# 需要把其余 % 转义为 %%，否则 News/Topic 接口会 500。
+_PERCENT_LITERAL_RE = re.compile(r"%(?![sbt%])")
+
+
+def pg_sql(sql: str) -> str:
+    return _PERCENT_LITERAL_RE.sub("%%", sql.replace("?", "%s"))
 
 
 class PGConn:
@@ -16,7 +26,7 @@ class PGConn:
         self._conn = conn
 
     def execute(self, sql: str, params: Any = ()) -> Any:
-        return self._conn.execute(sql.replace("?", "%s"), tuple(params))
+        return self._conn.execute(pg_sql(sql), tuple(params))
 
     def commit(self) -> None:
         self._conn.commit()

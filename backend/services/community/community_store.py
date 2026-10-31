@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from services.core.db import get_conn
+from services.core.env_config import env
 from services.community.content_limits import post_body_text
 from services.community.sanitize import sanitize_community_html
 
@@ -235,6 +236,8 @@ def ensure_posts_schema() -> None:
             )
             """
         )
+        conn.execute("ALTER TABLE community_reports ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal'")
+        conn.execute("ALTER TABLE community_reports ADD COLUMN IF NOT EXISTS sla_due_at TIMESTAMPTZ")
         conn.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_open_uniq
@@ -730,6 +733,21 @@ def get_post(
     }
 
 
+def _banned_words() -> tuple[str, ...]:
+    raw = (env("COMMUNITY_BANNED_WORDS", "") or "").strip()
+    return tuple(x.strip() for x in raw.replace("，", ",").split(",") if x.strip())
+
+
+def _assert_content_allowed(*parts: str | None) -> None:
+    words = _banned_words()
+    if not words:
+        return
+    text = " ".join(str(p or "") for p in parts).lower()
+    hit = next((w for w in words if w.lower() in text), None)
+    if hit:
+        raise ValueError("内容包含不允许的词汇")
+
+
 def _normalize_post_fields(
     *,
     title: str,
@@ -743,6 +761,7 @@ def _normalize_post_fields(
     body = (body or "").strip()
     if len(post_body_text(body)) > 20_000:
         raise ValueError("正文过长（最多 20000 字符）")
+    _assert_content_allowed(title, body)
     # P0-05：服务端白名单清洗，存储与输出双重防护。
     body = sanitize_community_html(body)
     title = html.escape(title, quote=False)
@@ -1049,6 +1068,7 @@ def create_comment(
         raise ValueError("评论不能为空")
     if len(post_body_text(body)) > 2000:
         raise ValueError("评论过长（最多 2000 字）")
+    _assert_content_allowed(body)
     body = sanitize_community_html(body)
     with get_conn() as conn:
         exists = conn.execute(
@@ -1769,15 +1789,17 @@ def create_report(
         if exists:
             raise ValueError("你已举报过该内容，请等待处理")
 
+        priority = "high" if rk in {"abuse", "illegal"} else "normal"
+        due_hours = 4 if priority == "high" else 24
         row = conn.execute(
             """
             INSERT INTO community_reports (
-              reporter_id, target_type, post_id, comment_id, reason, detail
+              reporter_id, target_type, post_id, comment_id, reason, detail, priority, sla_due_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id, target_type, post_id, comment_id, reason, detail, status, created_at
+            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW() + (%s || ' hours')::interval)
+            RETURNING id, target_type, post_id, comment_id, reason, detail, status, priority, sla_due_at, created_at
             """,
-            (int(reporter_id), tt, int(post_id), cid, rk, detail_s),
+            (int(reporter_id), tt, int(post_id), cid, rk, detail_s, priority, due_hours),
         ).fetchone()
 
     return {
@@ -1789,6 +1811,8 @@ def create_report(
             "comment_id": int(row["comment_id"]) if row.get("comment_id") is not None else None,
             "reason": row["reason"],
             "reason_label": REPORT_REASON_LABELS.get(str(row["reason"]), str(row["reason"])),
+            "priority": row.get("priority") or "normal",
+            "sla_due_at": row.get("sla_due_at").isoformat() if row.get("sla_due_at") else None,
             "detail": row.get("detail") or "",
             "status": row.get("status") or "open",
             "created_at": _iso(row.get("created_at")),

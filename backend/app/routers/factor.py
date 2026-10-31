@@ -11,7 +11,9 @@ from fastapi.responses import JSONResponse
 
 from app.bootstrap import FACTOR_DIR
 from app.deps import optional_user, require_admin, require_db_user_id, require_user, soft_db_user_id
+from services.factor.attribution import run_attribution
 from services.factor.dashboard_store import query_metrics, read_job, set_verify_status, start_refresh
+from services.factor.factor_combo import combine as combine_factors
 from services.factor.factor_store import add_custom_factor, delete_custom_factor, update_custom_factor
 from services.factor.factor_trial import trial_via_re
 from services.factor.trial_store import delete_trial, get_trial, list_trials, save_trial
@@ -94,6 +96,43 @@ def factor_re_catalog_sync(_admin: dict = Depends(require_admin)) -> JSONRespons
         return JSONResponse(data)
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
+
+
+@router.post("/api/factor/attribution")
+def factor_attribution(
+    body: dict[str, Any], _user: dict = Depends(require_user)
+) -> dict:
+    """P1-F01：Brinson-Fachler 行业归因 + 可选风格贡献。"""
+    try:
+        return {"ok": True, **run_attribution(body if isinstance(body, dict) else {})}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/factor/combo")
+def factor_combo(
+    body: dict[str, Any], _user: dict = Depends(require_user)
+) -> dict:
+    """P1-F02：多因子合成（等权/IC/IR/自定义）与可选择时乘数。"""
+    factors = body.get("factors") if isinstance(body, dict) else None
+    if not isinstance(factors, dict):
+        raise HTTPException(status_code=400, detail="factors 须为 {name: [values]} 对象")
+    dates_raw = body.get("dates")
+    dates = [str(x) for x in dates_raw] if isinstance(dates_raw, list) else None
+    try:
+        out = combine_factors(
+            factors=factors,
+            scheme=str(body.get("scheme") or "equal"),
+            metrics=body.get("metrics") if isinstance(body.get("metrics"), dict) else None,
+            custom_weights=body.get("custom_weights")
+            if isinstance(body.get("custom_weights"), dict)
+            else None,
+            timing=body.get("timing") if isinstance(body.get("timing"), dict) else None,
+            dates=dates,
+        )
+        return {"ok": True, **out}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/admin/re-catalog/status")

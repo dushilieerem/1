@@ -296,6 +296,15 @@ def minute_bars(
 
 def index_catalog() -> dict[str, Any]:
     """P1-D03：从 release 动态列出已有指数（替代前端静态样例）。"""
+    # P1-O06：跨实例共享缓存；数据库不可用时直接读盘
+    try:
+        from services.core import shared_cache
+
+        cached = shared_cache.get("marketdata:index_catalog")
+        if isinstance(cached, dict) and cached.get("items") is not None:
+            return cached
+    except Exception:
+        cached = None
     root = data_root() / "index" / "index_price"
     items: list[dict[str, Any]] = []
     if root.exists():
@@ -309,7 +318,14 @@ def index_catalog() -> dict[str, Any]:
                     "weight_file": (root.parent / "index_weights" / f"index_weights_{code}.parquet").exists(),
                 }
             )
-    return {"ok": True, "items": items, "count": len(items), **data_manifest()}
+    out = {"ok": True, "items": items, "count": len(items), **data_manifest()}
+    try:
+        from services.core import shared_cache
+
+        shared_cache.set("marketdata:index_catalog", out, ttl_sec=300)
+    except Exception:
+        pass
+    return out
 
 
 def field_catalog_samples(limit: int = 3) -> dict[str, Any]:

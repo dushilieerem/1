@@ -1,13 +1,8 @@
 # -*- coding: utf-8 -*-
-"""AI 合规前置/后置扫描的最小回归。"""
+"""手机 Invest AI 合规前置/后置扫描回归（PG 版）。"""
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-import ai_endpoints as ai
+from app.routers import invest_ai as ai
 
 
 def test_pre_block_explicit_trade_request() -> None:

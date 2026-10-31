@@ -6,21 +6,20 @@ No LLM, no generated opinions: each sentence is backed by a number in the DB.
 from __future__ import annotations
 
 import math
-import sqlite3
 from collections import OrderedDict
 from datetime import date, datetime
 from statistics import median
 from typing import Any, Iterable
 
-DATA_DATE = "2026-10-23"  # fallback when a DB has no bars
+DATA_DATE = date.today().isoformat()  # fallback when a DB has no bars
 DISCLAIMER = "收盘数据 · 非实时 · 非投资建议"
 
 
-def rows(conn: sqlite3.Connection, sql: str, args: Iterable[Any] = ()) -> list[dict[str, Any]]:
+def rows(conn: Any, sql: str, args: Iterable[Any] = ()) -> list[dict[str, Any]]:
     return [dict(r) for r in conn.execute(sql, tuple(args)).fetchall()]
 
 
-def one(conn: sqlite3.Connection, sql: str, args: Iterable[Any] = ()) -> dict[str, Any] | None:
+def one(conn: Any, sql: str, args: Iterable[Any] = ()) -> dict[str, Any] | None:
     r = conn.execute(sql, tuple(args)).fetchone()
     return dict(r) if r else None
 
@@ -36,12 +35,18 @@ def signed(value: float, digits: int = 1) -> str:
     return f"{text}%"
 
 
-def latest_date(conn: sqlite3.Connection) -> str:
+def latest_date(conn: Any) -> str:
+    try:
+        meta = conn.execute("SELECT value FROM meta WHERE key='dataDate'").fetchone()
+        if meta and meta.get("value"):
+            return str(meta["value"])[:10]
+    except Exception:
+        pass
     row = conn.execute("SELECT MAX(date) AS d FROM bars").fetchone()
     return (row["d"] if row and row["d"] else DATA_DATE) or DATA_DATE
 
 
-def data_meta(conn: sqlite3.Connection) -> dict[str, Any]:
+def data_meta(conn: Any) -> dict[str, Any]:
     row = conn.execute("SELECT value FROM meta WHERE key='source'").fetchone()
     source = row["value"] if row else "seed"
     latest = latest_date(conn)
@@ -110,13 +115,13 @@ def aggregate(bars: list[dict[str, Any]], mode: str) -> list[dict[str, Any]]:
     return out
 
 
-def stock_bars(conn: sqlite3.Connection, code: str, limit: int = 750) -> list[dict[str, Any]]:
+def stock_bars(conn: Any, code: str, limit: int = 750) -> list[dict[str, Any]]:
     return rows(conn, """SELECT * FROM (
                            SELECT * FROM bars WHERE code=? ORDER BY date DESC LIMIT ?
                          ) ORDER BY date ASC""", (code, limit))
 
 
-def build_stock(conn: sqlite3.Connection, code: str, period: str = "daily") -> dict[str, Any] | None:
+def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] | None:
     stock = one(conn, "SELECT * FROM stocks WHERE code=?", (code,))
     if not stock:
         return None
@@ -165,7 +170,7 @@ def build_stock(conn: sqlite3.Connection, code: str, period: str = "daily") -> d
 
     daily = all_bars[-180:]
     daily_closes = [b["close"] for b in daily]
-    ma20_daily = ma(daily_closes, 20)[-1]
+    ma20_daily = ma(daily_closes, 20)[-1] if daily_closes else None
     high_180 = max(daily_closes) if daily_closes else stock["price"]
     dd = (stock["price"] / high_180 - 1) * 100 if high_180 else 0
     avg_vol = sum(b["volume"] for b in daily[-20:]) / max(1, len(daily[-20:]))
@@ -258,7 +263,7 @@ def build_stock(conn: sqlite3.Connection, code: str, period: str = "daily") -> d
     }
 
 
-def build_topic(conn: sqlite3.Connection, topic_id: str) -> dict[str, Any] | None:
+def build_topic(conn: Any, topic_id: str) -> dict[str, Any] | None:
     topic = one(conn, "SELECT * FROM topics WHERE id=?", (topic_id,))
     if not topic:
         return None
@@ -278,7 +283,7 @@ def build_topic(conn: sqlite3.Connection, topic_id: str) -> dict[str, Any] | Non
     news = rows(conn, """SELECT * FROM news WHERE topic_id=? OR code IN (SELECT code FROM topic_stocks WHERE topic_id=?)
                          ORDER BY published_at DESC LIMIT 6""", (topic_id, topic_id))
     news_is_demo = not bool(conn.execute(
-        "SELECT 1 FROM news WHERE id LIKE 'news-%' OR id LIKE 'ann-%' OR id LIKE 'rep-%' LIMIT 1").fetchone())
+        "SELECT 1 FROM news WHERE id LIKE 'doc-%' OR id LIKE 'news-%' OR id LIKE 'ann-%' OR id LIKE 'rep-%' LIMIT 1").fetchone())
     facts = [
         {"title": "订单/政策", "detail": topic["summary"], "source": "公开信息", "date": as_of},
         {"title": "估值位置", "detail": f"等权代理指数估值处于近 3 年 {vp:.0f}% 分位，成交热度 {tp:.0f}% 分位。", "source": "行情数据", "date": as_of},
@@ -347,13 +352,13 @@ def compute_base_rate(bars: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def portfolio_rows(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]]:
+def portfolio_rows(conn: Any, user_id: int) -> list[dict[str, Any]]:
     return rows(conn, """SELECT p.*, s.name, s.industry AS stock_industry, s.price, s.prev_close, s.beta,
                                 s.asset FROM portfolio p LEFT JOIN stocks s ON s.code=p.code
                          WHERE p.user_id=?""", (user_id,))
 
 
-def build_portfolio(conn: sqlite3.Connection, user_id: int) -> dict[str, Any]:
+def build_portfolio(conn: Any, user_id: int) -> dict[str, Any]:
     holdings = portfolio_rows(conn, user_id)
     if not holdings:
         return {
@@ -452,7 +457,7 @@ def build_portfolio(conn: sqlite3.Connection, user_id: int) -> dict[str, Any]:
     }
 
 
-def build_home(conn: sqlite3.Connection, user_id: int) -> dict[str, Any]:
+def build_home(conn: Any, user_id: int) -> dict[str, Any]:
     stocks = rows(conn, "SELECT * FROM stocks")
     by_code = {s["code"]: s for s in stocks}
     meta = data_meta(conn)
@@ -537,7 +542,7 @@ def build_home(conn: sqlite3.Connection, user_id: int) -> dict[str, Any]:
             "disclaimer": DISCLAIMER}
 
 
-def build_watchlist(conn: sqlite3.Connection, user_id: int) -> dict[str, Any]:
+def build_watchlist(conn: Any, user_id: int) -> dict[str, Any]:
     watch = rows(conn, "SELECT * FROM watchlist WHERE user_id=? ORDER BY created_at ASC", (user_id,))
     groups: dict[str, list[dict[str, Any]]] = {}
     for w in watch:
@@ -558,7 +563,7 @@ def build_watchlist(conn: sqlite3.Connection, user_id: int) -> dict[str, Any]:
             "disclaimer": "关注事件在收盘后更新；不提供实时推送。"}
 
 
-def build_search(conn: sqlite3.Connection, q: str) -> dict[str, Any]:
+def build_search(conn: Any, q: str) -> dict[str, Any]:
     q = (q or "").strip()
     stocks = []
     if q:
@@ -602,18 +607,18 @@ def build_search(conn: sqlite3.Connection, q: str) -> dict[str, Any]:
     return {"q": q, "results": results, "presets": presets}
 
 
-def build_news(conn: sqlite3.Connection, kind: str | None = None) -> dict[str, Any]:
+def build_news(conn: Any, kind: str | None = None) -> dict[str, Any]:
     if kind and kind != "all":
         items = rows(conn, "SELECT * FROM news WHERE kind=? ORDER BY published_at DESC LIMIT 20", (kind,))
     else:
         items = rows(conn, "SELECT * FROM news ORDER BY published_at DESC LIMIT 20")
-    real = conn.execute("SELECT COUNT(*) AS n FROM news WHERE id LIKE 'news-%' OR id LIKE 'ann-%' OR id LIKE 'rep-%'").fetchone()["n"]
+    real = conn.execute("SELECT COUNT(*) AS n FROM news WHERE id LIKE 'doc-%' OR id LIKE 'news-%' OR id LIKE 'ann-%' OR id LIKE 'rep-%'").fetchone()["n"]
     seed_news = conn.execute("SELECT COUNT(*) AS n FROM news WHERE kind='news' AND id NOT LIKE 'news-%'").fetchone()["n"]
     return {"items": items, "disclaimer": "公告/研报仅保留标题、来源、时间与原文链接；非投资建议。",
             "isDemo": not bool(real), "demoKinds": ["news"] if seed_news else []}
 
 
-def build_meta(conn: sqlite3.Connection) -> dict[str, Any]:
+def build_meta(conn: Any) -> dict[str, Any]:
     meta = data_meta(conn)
     row = conn.execute("SELECT value FROM meta WHERE key='updated_at'").fetchone()
     age = max(0, (date.today() - date.fromisoformat(meta["dataDate"])).days)
@@ -623,41 +628,41 @@ def build_meta(conn: sqlite3.Connection) -> dict[str, Any]:
             "ageDays": age, "isStale": age > 2}
 
 
-def build_data_quality(conn: sqlite3.Connection) -> dict[str, Any]:
+def build_data_quality(conn: Any) -> dict[str, Any]:
     latest = latest_date(conn)
-    stocks = rows(conn, "SELECT code, name, asset FROM stocks")
-    bars = {r["code"]: r for r in rows(conn, "SELECT code, COUNT(*) AS n, MAX(date) AS last, MIN(date) AS first FROM bars GROUP BY code")}
-    checks = []
-    # 全市场主数据 + 选中池日线：只对池内标的做完整性判断，避免把“未同步池外标的”当故障。
-    pool = [s for s in stocks if bars.get(s["code"])]
-    stale = [s["code"] for s in pool if bars[s["code"]]["last"] != latest]
-    checks.append({
+    stocks = rows(conn, "SELECT code, name, asset, price, pe_ttm, updated_at FROM stocks")
+    pool = [s for s in stocks if s["asset"] != "etf" and s["price"] is not None]
+    # A 股/美股交易日不同，按各自市场的最新快照判断“未更新”。
+    def market_of(code: str) -> str:
+        return "US" if "." in code else "CN"
+    latest_by_market = {m: max((s.get("updated_at") or "")[:10] for s in pool if market_of(s["code"]) == m)
+                        for m in {market_of(s["code"]) for s in pool}}
+    stale = [s["code"] for s in pool if (s.get("updated_at") or "")[:10] != latest_by_market.get(market_of(s["code"]))]
+    checks = [{
         "key": "bars",
         "label": "日线覆盖",
         "status": "fail" if not pool or stale else "pass",
-        "detail": f"最新交易日 {latest}；池内 {len(pool)}/{len(stocks)} 只有日线，未更新 {len(stale)}",
-    })
-    pool_codes = [s["code"] for s in pool if s["asset"] != "etf"]
-    fin = {r["code"]: r for r in rows(conn, "SELECT code, COUNT(*) AS n, MAX(report_date) AS last FROM financials WHERE report_date<=? GROUP BY code", (latest,))}
-    no_fin = [c for c in pool_codes if not fin.get(c) or not fin[c]["n"]]
+        "detail": f"CN {latest_by_market.get('CN','—')} / US {latest_by_market.get('US','—')}；有日线 {len(pool)}/{len(stocks)} 只，未更新 {len(stale)}",
+    }]
+    pool_codes = [s["code"] for s in pool]
+    fin_codes = {r["code"] for r in rows(conn, "SELECT DISTINCT code FROM financials")}
+    no_fin = [c for c in pool_codes if c not in fin_codes]
     fin_cov = (len(pool_codes) - len(no_fin)) / len(pool_codes) if pool_codes else 1.0
     checks.append({
         "key": "financials",
         "label": "已披露财务",
         "status": "pass" if not no_fin else ("warn" if fin_cov > 0 else "fail"),
-        "detail": f"池内 {len(pool_codes) - len(no_fin)}/{len(pool_codes)} 只有已披露财务；最新 {latest}",
+        "detail": f"有财务 {len(pool_codes) - len(no_fin)}/{len(pool_codes)} 只；最新 {latest}",
     })
-    val = {r["code"]: r for r in rows(conn, "SELECT code, COUNT(*) AS n, MAX(date) AS last FROM valuations GROUP BY code")}
-    no_val = [c for c in pool_codes if not val.get(c) or not val[c]["n"]]
-    lag_val = [c for c in pool_codes if val.get(c) and val[c]["last"] and val[c]["last"] != latest]
+    pool_cn = [s for s in pool if market_of(s["code"]) == "CN"]
+    no_val = [s["code"] for s in pool_cn if s.get("pe_ttm") is None]
     checks.append({
         "key": "valuations",
-        "label": "估值历史",
-        "status": "pass" if not no_val and not lag_val else ("warn" if len(no_val) < max(1, len(pool_codes) // 2) else "fail"),
-        "detail": f"池内缺失 {len(no_val)}；滞后 {len(lag_val)}（{latest}）",
+        "label": "估值快照（A 股）",
+        "status": "pass" if not no_val else ("warn" if len(no_val) < max(1, len(pool_cn) // 2) else "fail"),
+        "detail": f"A 股估值缺失 {len(no_val)}/{len(pool_cn)}；美股无估值源，已排除",
     })
-    etf_bad = [s["code"] for s in stocks if s["asset"] == "etf"
-               and (((fin.get(s["code"]) or {"n": 0})["n"]) or ((val.get(s["code"]) or {"n": 0})["n"]))]
+    etf_bad = [s["code"] for s in stocks if s["asset"] == "etf" and s.get("pe_ttm") is not None]
     checks.append({"key": "etf", "label": "ETF 口径", "status": "fail" if etf_bad else "pass",
                    "detail": "ETF 不适用财务/估值" if not etf_bad else f"ETF 混入财务/估值：{', '.join(etf_bad)}"})
     age = max(0, (date.today() - date.fromisoformat(latest)).days)

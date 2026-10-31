@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # One-command local launcher for the SVQuant API, main Vite frontend,
-# invest-api, mobile H5, and cloudflared quick tunnels for external access.
+# mobile H5, and cloudflared quick tunnels for external access.
 # PostgreSQL and ResearchEngine remain separate services and must be available.
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -10,32 +10,28 @@ ROOT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
 SCRIPT_PATH="$SCRIPT_DIR/svquant.sh"
 BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
-INVEST_API_DIR="$ROOT_DIR/invest-api"
 INVEST_H5_DIR="$ROOT_DIR/frontend/invest"
 RUNTIME_DIR="$BACKEND_DIR/output/dev-services"
 BACKEND_PID_FILE="$RUNTIME_DIR/backend.pid"
 FRONTEND_PID_FILE="$RUNTIME_DIR/frontend.pid"
-INVEST_API_PID_FILE="$RUNTIME_DIR/invest-api.pid"
 INVEST_H5_PID_FILE="$RUNTIME_DIR/invest-h5.pid"
 TUNNEL_FRONTEND_PID_FILE="$RUNTIME_DIR/tunnel-frontend.pid"
 TUNNEL_INVEST_PID_FILE="$RUNTIME_DIR/tunnel-invest.pid"
 BACKEND_LOG="$RUNTIME_DIR/backend.log"
 FRONTEND_LOG="$RUNTIME_DIR/frontend.log"
-INVEST_API_LOG="$RUNTIME_DIR/invest-api.log"
 INVEST_H5_LOG="$RUNTIME_DIR/invest-h5.log"
 TUNNEL_FRONTEND_LOG="$RUNTIME_DIR/tunnel-frontend.log"
 TUNNEL_INVEST_LOG="$RUNTIME_DIR/tunnel-invest.log"
 # 开发端口刻意避开生产（9530 / 8766 / 5432），两套可同时运行
 BACKEND_PORT=8768
 FRONTEND_PORT=9531
-INVEST_API_PORT=8769
 INVEST_H5_PORT=9541
 STARTUP_TIMEOUT_SECONDS=60
 TUNNEL_TIMEOUT_SECONDS=40
 CONDA_ENV_NAME="${SVQUANT_CONDA_ENV:-svquant}"
 BASH_BIN="$(command -v bash)"
 CLOUDFLARED_INSTALL_PATH="${SVQUANT_CLOUDFLARED_PATH:-$HOME/.local/bin/cloudflared}"
-SERVICES=(backend frontend invest-api invest-h5)
+SERVICES=(backend frontend invest-h5)
 TUNNELS=(tunnel-frontend tunnel-invest)
 
 # 健康检查/探活必须直连本机：shell 里若有 http_proxy（如 Clash），curl 127.0.0.1
@@ -190,7 +186,6 @@ pid_file_for() {
   case "$1" in
     backend) printf '%s\n' "$BACKEND_PID_FILE" ;;
     frontend) printf '%s\n' "$FRONTEND_PID_FILE" ;;
-    invest-api) printf '%s\n' "$INVEST_API_PID_FILE" ;;
     invest-h5) printf '%s\n' "$INVEST_H5_PID_FILE" ;;
     tunnel-frontend) printf '%s\n' "$TUNNEL_FRONTEND_PID_FILE" ;;
     tunnel-invest) printf '%s\n' "$TUNNEL_INVEST_PID_FILE" ;;
@@ -202,7 +197,6 @@ log_file_for() {
   case "$1" in
     backend) printf '%s\n' "$BACKEND_LOG" ;;
     frontend) printf '%s\n' "$FRONTEND_LOG" ;;
-    invest-api) printf '%s\n' "$INVEST_API_LOG" ;;
     invest-h5) printf '%s\n' "$INVEST_H5_LOG" ;;
     tunnel-frontend) printf '%s\n' "$TUNNEL_FRONTEND_LOG" ;;
     tunnel-invest) printf '%s\n' "$TUNNEL_INVEST_LOG" ;;
@@ -220,10 +214,6 @@ process_matches_service() {
     frontend)
       # 主前端与 Invest H5 共用 frontend/node_modules/.bin/vite，必须靠端口区分。
       [[ "$args" == *"$FRONTEND_DIR"* && "$args" == *vite* && "$args" == *"--port $FRONTEND_PORT"* ]]
-      ;;
-    invest-api)
-      [[ "$args" == *"$SCRIPT_PATH _run_invest_api"* ||
-         ( "$args" == *uvicorn* && "$args" == *"app:app"* && "$args" == *"--port $INVEST_API_PORT"* ) ]]
       ;;
     invest-h5)
       [[ "$args" == *"$SCRIPT_PATH _run_invest_h5"* ||
@@ -268,7 +258,6 @@ health_url_for() {
   case "$1" in
     backend) printf 'http://127.0.0.1:%s/api/health\n' "$BACKEND_PORT" ;;
     frontend) printf 'http://127.0.0.1:%s/\n' "$FRONTEND_PORT" ;;
-    invest-api) printf 'http://127.0.0.1:%s/api/health\n' "$INVEST_API_PORT" ;;
     invest-h5) printf 'http://127.0.0.1:%s/\n' "$INVEST_H5_PORT" ;;
     *) return 1 ;;
   esac
@@ -278,7 +267,6 @@ port_for() {
   case "$1" in
     backend) printf '%s\n' "$BACKEND_PORT" ;;
     frontend) printf '%s\n' "$FRONTEND_PORT" ;;
-    invest-api) printf '%s\n' "$INVEST_API_PORT" ;;
     invest-h5) printf '%s\n' "$INVEST_H5_PORT" ;;
     *) return 1 ;;
   esac
@@ -308,23 +296,12 @@ run_frontend() {
     "$FRONTEND_DIR/node_modules/.bin/vite" --host 0.0.0.0 --port "$FRONTEND_PORT" --strictPort
 }
 
-run_invest_api() {
-  activate_conda_env || die "无法激活 Conda 环境 '$CONDA_ENV_NAME'。"
-  cd "$INVEST_API_DIR"
-  if [[ -n "${SVQUANT_PID_FILE:-}" ]]; then
-    printf '%s\n' "$$" > "$SVQUANT_PID_FILE"
-  fi
-  # 开发用独立 SQLite，避免演示数据的读写落到生产的 invest.db
-  exec env INVEST_DB="$INVEST_API_DIR/data/invest.dev.db" \
-    python -u -m uvicorn app:app --host 0.0.0.0 --port "$INVEST_API_PORT"
-}
-
 run_invest_h5() {
   cd "$INVEST_H5_DIR"
   if [[ -n "${SVQUANT_PID_FILE:-}" ]]; then
     printf '%s\n' "$$" > "$SVQUANT_PID_FILE"
   fi
-  exec env SVQUANT_INVEST_API_PORT="$INVEST_API_PORT" \
+  exec env SVQUANT_BACKEND_PORT="$BACKEND_PORT" \
     "$FRONTEND_DIR/node_modules/.bin/vite" --host 0.0.0.0 --port "$INVEST_H5_PORT" --strictPort
 }
 
@@ -429,13 +406,6 @@ start_service() {
       setsid env SVQUANT_PID_FILE="$pid_file" \
         "$BASH_BIN" "$SCRIPT_PATH" _run_frontend >> "$log_file" 2>&1 </dev/null &
       ;;
-    invest-api)
-      setsid env \
-        SVQUANT_CONDA_ENV="$CONDA_ENV_NAME" \
-        SVQUANT_CONDA_HOOK="$SVQUANT_CONDA_HOOK" \
-        SVQUANT_PID_FILE="$pid_file" \
-        "$BASH_BIN" "$SCRIPT_PATH" _run_invest_api >> "$log_file" 2>&1 </dev/null &
-      ;;
     invest-h5)
       setsid env SVQUANT_PID_FILE="$pid_file" \
         "$BASH_BIN" "$SCRIPT_PATH" _run_invest_h5 >> "$log_file" 2>&1 </dev/null &
@@ -499,17 +469,6 @@ stop_service() {
   fi
   rm -f -- "$pid_file"
   printf '%s 已停止。\n' "$service"
-}
-
-ensure_invest_db() {
-  # 不带 --force：库已存在时会直接返回，不会覆盖现有数据。
-  local db="${INVEST_DB:-$INVEST_API_DIR/data/invest.db}"
-  python -c "import fastapi, uvicorn" >/dev/null 2>&1 ||
-    die "Invest API 依赖缺失；请运行：conda run -n $CONDA_ENV_NAME pip install -r invest-api/requirements.txt"
-  if [[ ! -f "$db" ]]; then
-    printf '未找到 Invest 演示库，正在生成：%s\n' "$db"
-  fi
-  (cd "$INVEST_API_DIR" && python seed.py) >/dev/null || die "Invest 演示库生成失败。"
 }
 
 start_tunnel() {
@@ -597,7 +556,6 @@ start_all() {
   activate_conda_env || die "无法激活 Conda 环境 '$CONDA_ENV_NAME'。"
 
   mkdir -p "$RUNTIME_DIR"
-  ensure_invest_db
 
   for i in "${!SERVICES[@]}"; do
     service="${SERVICES[i]}"
@@ -639,7 +597,6 @@ start_all() {
   printf '  主前端：http://127.0.0.1:%s\n' "$FRONTEND_PORT"
   printf '  API：   http://127.0.0.1:%s/docs\n' "$BACKEND_PORT"
   printf '  手机 H5：http://127.0.0.1:%s  （演示账号 demo/demo1234）\n' "$INVEST_H5_PORT"
-  printf '  Invest API：http://127.0.0.1:%s/docs\n' "$INVEST_API_PORT"
   local name url found=0
   if ((with_tunnel)); then
     for name in "${TUNNELS[@]}"; do
@@ -688,7 +645,7 @@ for arg in "$@"; do
     start|stop|restart|status|logs|tunnel|untunnel|install-cloudflared)
       MODE="$arg"
       ;;
-    _run_backend|_run_frontend|_run_invest_api|_run_invest_h5|_run_tunnel)
+    _run_backend|_run_frontend|_run_invest_h5|_run_tunnel)
       MODE="$arg"
       ;;
     -h|--help|help)
@@ -713,14 +670,12 @@ case "$MODE" in
   stop)
     stop_tunnels
     stop_service invest-h5
-    stop_service invest-api
     stop_service frontend
     stop_service backend
     ;;
   restart)
     stop_tunnels
     stop_service invest-h5
-    stop_service invest-api
     stop_service frontend
     stop_service backend
     start_all "$((1 - NO_TUNNEL))"
@@ -739,9 +694,9 @@ case "$MODE" in
     ;;
   logs)
     mkdir -p "$RUNTIME_DIR"
-    touch "$BACKEND_LOG" "$FRONTEND_LOG" "$INVEST_API_LOG" "$INVEST_H5_LOG" \
+    touch "$BACKEND_LOG" "$FRONTEND_LOG" "$INVEST_H5_LOG" \
       "$TUNNEL_FRONTEND_LOG" "$TUNNEL_INVEST_LOG"
-    tail -n 100 -F "$BACKEND_LOG" "$FRONTEND_LOG" "$INVEST_API_LOG" "$INVEST_H5_LOG" \
+    tail -n 100 -F "$BACKEND_LOG" "$FRONTEND_LOG" "$INVEST_H5_LOG" \
       "$TUNNEL_FRONTEND_LOG" "$TUNNEL_INVEST_LOG"
     ;;
   _run_backend)
@@ -749,9 +704,6 @@ case "$MODE" in
     ;;
   _run_frontend)
     run_frontend
-    ;;
-  _run_invest_api)
-    run_invest_api
     ;;
   _run_invest_h5)
     run_invest_h5

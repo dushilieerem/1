@@ -261,17 +261,24 @@ def financials(symbol: str, limit: int = 8) -> list[dict[str, Any]]:
     return [by_date[k] for k in sorted(by_date, reverse=True)]
 
 
-def risk_stats(symbol: str, *, days: int = 252, index_code: str = "000300.SH") -> dict[str, Any] | None:
-    """近 N 个交易日：年化波动、最大回撤、相对沪深300 beta。"""
+def risk_stats(
+    symbol: str,
+    *,
+    days: int = 252,
+    index_code: str | None = "000300.SH",
+) -> dict[str, Any] | None:
+    """近 N 个交易日：年化波动、最大回撤、相对基准 beta（基准缺失时 beta=None）。"""
     start = (date.today() - timedelta(days=days * 2)).isoformat()
     bars = bar_history(symbol, start=start, adjust="hfq", limit=days + 5)
     if len(bars) < 30:
         return None
-    with get_conn() as conn:
-        idx = conn.execute(
-            "SELECT trade_date, close FROM md_index_bar WHERE index_code=%s AND trade_date >= %s ORDER BY trade_date",
-            (index_code, start),
-        ).fetchall()
+    idx = []
+    if index_code:
+        with get_conn() as conn:
+            idx = conn.execute(
+                "SELECT trade_date, close FROM md_index_bar WHERE index_code=%s AND trade_date >= %s ORDER BY trade_date",
+                (index_code, start),
+            ).fetchall()
     idx_map = {_d(r["trade_date"]): float(r["close"]) for r in idx if r["close"]}
     closes = [(b["trade_date"], float(b["close"])) for b in bars if b["close"]]
     if len(closes) < 30:

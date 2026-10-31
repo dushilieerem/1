@@ -182,6 +182,9 @@ def ensure_and_seed(org_id: int | None = None) -> dict[str, Any]:
         existing = conn.execute("SELECT COUNT(*) AS n FROM inst_company WHERE org_id=%s", (org_id,)).fetchone()
         if int(existing["n"] or 0) == 0:
             _seed_companies(conn, org_id)
+        # 全市场研究范围：首次把 ref_security 的 A 股/美股全部纳入公司池。
+        if int(existing["n"] or 0) < 1000:
+            _sync_company_universe(conn, org_id)
         # 财务/行情晚于公司池种子到达时，刷新数据状态与参考价（不覆盖人工字段）。
         conn.execute(
             """
@@ -202,7 +205,7 @@ def ensure_and_seed(org_id: int | None = None) -> dict[str, Any]:
                   WHERE b.symbol=c.symbol AND b.adjust='none'
                   ORDER BY b.trade_date DESC LIMIT 1
                )
-             WHERE c.market='CN' AND c.ref_price IS NULL
+             WHERE c.ref_price IS NULL
             """
         )
         existing_pf = conn.execute("SELECT COUNT(*) AS n FROM inst_portfolio WHERE org_id=%s", (org_id,)).fetchone()
@@ -249,6 +252,53 @@ def _seed_companies(conn, org_id: int) -> None:
                 data_status,
             ),
         )
+
+
+def _sync_company_universe(conn, org_id: int) -> None:
+    """把 ref_security 的 A 股/美股补进公司池；保留已有人工字段。"""
+    conn.execute(
+        """
+        INSERT INTO inst_company
+          (org_id, symbol, name, market, industry, ref_price, data_status, pool_status)
+        SELECT %s, s.symbol, s.name, s.market,
+               i.industry_code,
+               b.close,
+               CASE
+                 WHEN s.market='CN' AND EXISTS (
+                   SELECT 1 FROM fin_income_statement f
+                    WHERE f.symbol=s.symbol AND f.notice_date IS NOT NULL AND f.notice_date <= CURRENT_DATE
+                 ) THEN 'real'
+                 WHEN b.close IS NOT NULL THEN 'partial'
+                 ELSE 'missing'
+               END,
+               'research'
+          FROM ref_security s
+          LEFT JOIN LATERAL (
+            SELECT industry_code FROM ref_security_industry x
+             WHERE x.symbol=s.symbol AND x.level=1
+             ORDER BY effective_from DESC LIMIT 1
+          ) i ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT close FROM md_daily_bar b
+             WHERE b.symbol=s.symbol AND b.adjust='none'
+             ORDER BY trade_date DESC LIMIT 1
+          ) b ON TRUE
+         WHERE s.market IN ('CN','US') AND s.status='listed'
+        ON CONFLICT (org_id, market, symbol) DO UPDATE
+          SET name=EXCLUDED.name,
+              industry=COALESCE(inst_company.industry, EXCLUDED.industry),
+              ref_price=COALESCE(inst_company.ref_price, EXCLUDED.ref_price),
+              data_status=CASE
+                WHEN inst_company.data_status='real' THEN 'real'
+                ELSE EXCLUDED.data_status
+              END,
+              updated_at=NOW()
+        """,
+        (org_id,),
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_inst_company_market_name ON inst_company (org_id, market, name)"
+    )
 
 
 # ---------------------------------------------------------------- 驾驶舱 / 公司池
@@ -318,8 +368,25 @@ def list_companies(
     market: str | None = None,
     q: str | None = None,
     pool_status: str | None = None,
-) -> list[dict[str, Any]]:
-    sql = """
+    limit: int = 60,
+    offset: int = 0,
+) -> dict[str, Any]:
+    where = ["c.org_id=%s"]
+    params: list[Any] = [org_id]
+    if market:
+        where.append("c.market=%s")
+        params.append(market)
+    if pool_status:
+        where.append("c.pool_status=%s")
+        params.append(pool_status)
+    if q:
+        where.append("(c.symbol ILIKE %s OR c.name ILIKE %s OR c.industry ILIKE %s)")
+        like = f"%{q.strip()}%"
+        params.extend([like, like, like])
+    clause = " AND ".join(where)
+    limit = max(1, min(int(limit), 200))
+    offset = max(0, int(offset))
+    sql = f"""
         SELECT c.*,
                v.pe_ttm, v.pb_mrq, v.float_mv,
                b.close AS last_close, b.trade_date AS last_trade_date
@@ -332,28 +399,22 @@ def list_companies(
             SELECT close, trade_date FROM md_daily_bar
              WHERE symbol=c.symbol AND adjust='none' ORDER BY trade_date DESC LIMIT 1
           ) b ON TRUE
-         WHERE c.org_id=%s
+         WHERE {clause}
+         ORDER BY c.market, c.symbol
+         LIMIT %s OFFSET %s
     """
-    params: list[Any] = [org_id]
-    if market:
-        sql += " AND c.market=%s"
-        params.append(market)
-    if pool_status:
-        sql += " AND c.pool_status=%s"
-        params.append(pool_status)
-    if q:
-        sql += " AND (c.symbol ILIKE %s OR c.name ILIKE %s OR c.industry ILIKE %s)"
-        like = f"%{q.strip()}%"
-        params.extend([like, like, like])
-    sql += " ORDER BY c.market, c.id"
     with get_conn() as conn:
-        rows = conn.execute(sql, tuple(params)).fetchall()
+        total = int(
+            conn.execute(f"SELECT COUNT(*) AS n FROM inst_company c WHERE {clause}", tuple(params)).fetchone()["n"]
+            or 0
+        )
+        rows = conn.execute(sql, tuple(params + [limit, offset])).fetchall()
     out = []
     for r in rows:
         item = _row_dict(r) or {}
         item["ref_price"] = item.get("last_close") or item.get("ref_price")
         out.append(item)
-    return out
+    return {"items": out, "total": total, "limit": limit, "offset": offset}
 
 
 def update_company_pool(
@@ -406,7 +467,7 @@ def get_company(org_id: int, company_id: int) -> dict[str, Any] | None:
         "valuation": md.valuation_latest(symbol),
         "percentile": md.valuation_percentile(symbol, years=3),
         "status": md.status_latest(symbol),
-        "risk": md.risk_stats(symbol),
+        "risk": md.risk_stats(symbol, index_code=None if company.get("market") == "US" else "000300.SH"),
         "industry": md.industry_latest(symbol),
     }
     company["financials"] = md.financials(symbol, limit=8)
@@ -521,7 +582,7 @@ def _build_research(company: dict[str, Any], mode: str = "full") -> dict[str, An
     bar = md.latest_bar(symbol, adjust="none")
     val = md.valuation_latest(symbol) or {}
     pct = md.valuation_percentile(symbol, years=3) or {}
-    risk = md.risk_stats(symbol) or {}
+    risk = md.risk_stats(symbol, index_code=None if company.get("market") == "US" else "000300.SH") or {}
     ind = md.industry_latest(symbol) or {}
     fin = md.financials(symbol, limit=8)
     latest_fin = fin[0] if fin else {}
@@ -1913,24 +1974,50 @@ def create_exit_case(
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "manager", "partner", "monitoring")
+        company = conn.execute(
+            "SELECT id, symbol, name FROM inst_company WHERE id=%s AND org_id=%s",
+            (company_id, org_id),
+        ).fetchone()
+        if not company:
+            raise LookupError("公司不存在")
         pos = conn.execute(
             """
             SELECT ps.id, ps.portfolio_id, ps.symbol, ps.qty
               FROM inst_position_snapshot ps
               JOIN inst_portfolio p ON p.id=ps.portfolio_id
-             WHERE p.org_id=%s AND ps.symbol=(
-               SELECT symbol FROM inst_company WHERE id=%s AND org_id=%s
-             ) AND ps.qty > 0
+             WHERE p.org_id=%s AND ps.symbol=%s AND ps.qty > 0
              ORDER BY ps.as_of DESC LIMIT 1
             """,
-            (org_id, company_id, org_id),
+            (org_id, company["symbol"]),
         ).fetchone()
         if not pos:
             raise PermissionError("该标的不在持仓中，不能发起退出研究")
+        # 退出研究使旧授权失效：只撤销仍有效的授权，保留历史。
+        conn.execute(
+            """
+            UPDATE inst_authorization a
+               SET status='revoked', revoked_at=NOW(),
+                   revoke_reason='exit research: ' || %s
+             WHERE a.status='qualified'
+               AND a.id IN (
+                 SELECT a2.id FROM inst_authorization a2
+                   JOIN inst_proposal_version v ON v.id=a2.proposal_version_id
+                   JOIN inst_proposal p ON p.id=v.proposal_id
+                  WHERE p.org_id=%s AND p.company_id=%s
+               )
+            """,
+            (memo[:120] or reason_type, org_id, company_id),
+        )
+        case_no = f"EX-{date.today():%Y%m%d}-{str(company['symbol']).split('.')[0]}-{_uid()[:4]}"
+        case = conn.execute(
+            "INSERT INTO inst_research_case (org_id, company_id, case_no, stage, created_by) "
+            "VALUES (%s,%s,%s,'draft',%s) RETURNING id",
+            (org_id, company_id, case_no, actor_member_id),
+        ).fetchone()
         row = conn.execute(
-            "INSERT INTO inst_exit_case (org_id, company_id, position_id, reason_type, memo, status) "
-            "VALUES (%s,%s,%s,%s,%s,'draft') RETURNING *",
-            (org_id, company_id, pos["id"], reason_type, memo),
+            "INSERT INTO inst_exit_case (org_id, company_id, position_id, case_id, reason_type, memo, status) "
+            "VALUES (%s,%s,%s,%s,%s,%s,'draft') RETURNING *",
+            (org_id, company_id, pos["id"], int(case["id"]), reason_type, memo),
         ).fetchone()
         _audit(
             conn,
@@ -1939,9 +2026,12 @@ def create_exit_case(
             action="monitor.exit.create",
             object_type="inst_exit_case",
             object_id=int(row["id"]),
-            after={"company_id": company_id, "reason_type": reason_type},
+            after={"company_id": company_id, "reason_type": reason_type, "case_id": int(case["id"])},
         )
-    return _row_dict(row) or {}
+    out = _row_dict(row) or {}
+    out["case_id"] = int(case["id"])
+    out["case_no"] = case_no
+    return out
 
 
 def list_audit(org_id: int, limit: int = 100) -> list[dict[str, Any]]:

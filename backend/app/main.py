@@ -22,6 +22,7 @@ from app.bootstrap import bootstrap_schemas  # noqa: E402
 from app.errors import install_exception_handlers  # noqa: E402
 from app.routers import (  # noqa: E402
     admin_logs,
+    admin_users,
     agent,
     ai,
     ai_backtest,
@@ -35,6 +36,8 @@ from app.routers import (  # noqa: E402
     health,
     inst,
     inst_workflow,
+    invest,
+    invest_ai,
     kh,
     news,
     paper,
@@ -94,6 +97,8 @@ for mod in (
     auth,
     inst,
     inst_workflow,
+    invest,
+    invest_ai,
     detect,
     strategy,
     paper,
@@ -110,6 +115,7 @@ for mod in (
     ai_transcription,
     kh,
     admin_logs,
+    admin_users,
 ):
     app.include_router(mod.router)
 

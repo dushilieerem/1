@@ -53,11 +53,23 @@ def companies(
     market: str | None = None,
     q: str | None = None,
     pool_status: str | None = None,
+    limit: int = 60,
+    offset: int = 0,
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
     _require_ws(ctx, "ideas")
-    return {"ok": True, "items": svc.list_companies(org_id, market=market, q=q, pool_status=pool_status)}
+    return {
+        "ok": True,
+        **svc.list_companies(
+            org_id,
+            market=market,
+            q=q,
+            pool_status=pool_status,
+            limit=limit,
+            offset=offset,
+        ),
+    }
 
 
 @router.get("/companies/{company_id}")

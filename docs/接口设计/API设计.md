@@ -1162,7 +1162,7 @@ data: [DONE]                      ← 终止帧（正常结束与异常结束都
 
 ### 13.2 手机端 AI `/api/invest/ai/*`
 
-见 `invest-api/README.md` 与 [Agent 设计](../模块设计/AI与Agent模块/机构端与手机端Agent设计.md)。要点：
+见 [FEAT-035](../功能包/FEAT-035-手机端真实数据与AI/README.md) 与 [Agent 设计](../模块设计/AI与Agent模块/机构端与手机端Agent设计.md)。要点：
 
 - 8 条端点：status / intent / chat / stock / daily / portfolio / announcement / condition。
 - 前置红线 + 后置扫描；无 Key 返回 503，不用 mock 伪装。
@@ -1171,7 +1171,7 @@ data: [DONE]                      ← 终止帧（正常结束与异常结束都
 ### 13.3 数据接口边界
 
 - 机构端直接读 PG 服务层，经 `backend/services/marketdata/store.py`。
-- 手机端读 `invest-api` SQLite 缓存；缓存由 `scripts/sync_invest_sqlite.py` 从 PG 重建。
+- 手机端与主后端同源，直接读 PG（`invest_stocks` 快照 + 兼容视图）。
 - 两端的行情/估值/财务口径见 [数据接入与库表设计](../数据设计/机构端与手机端-数据接入与库表设计-v0.1.md)。
 
 ---

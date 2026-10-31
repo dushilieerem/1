@@ -47,6 +47,15 @@ def bootstrap_schemas() -> None:
 
         ensure_schema()
         seed_admin()
+        # 手机 H5 的演示账号：主站账号体系 + 主站登录/注册/找回密码。
+        try:
+            from services.auth.auth_store import get_user_by_username, register_user
+
+            if not get_user_by_username("demo"):
+                register_user(username="demo", password="demo1234", display_name="演示用户")
+                print("  手机 H5 演示账号 demo 就绪")
+        except Exception as exc:
+            print(f"  手机 H5 演示账号跳过: {exc}")
         try:
             from services.institution.inst_store import ensure_inst_schema, seed_inst_demo
 
@@ -63,6 +72,10 @@ def bootstrap_schemas() -> None:
             print("  市场数据服务层表就绪")
             from services.institution.inst_service import ensure_and_seed as ensure_inst_business
 
+            from services.invest.schema import ensure_invest_schema
+
+            ensure_invest_schema()
+            print("  手机端 PG 读模型就绪")
             business = ensure_inst_business()
             if business.get("ok"):
                 print(f"  机构端业务表就绪（org={business.get('org_id')}）")

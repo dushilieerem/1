@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 发布后在宿主机启动 invest-api 与手机 H5，并为生产主前端 / H5 建立 cloudflared 临时通道。
+# 发布后在宿主机启动手机 H5（复用主后端），并为主前端 / H5 建立 cloudflared 临时通道。
 #
 # 用法：
-#   bash scripts/ci/serve-public.sh start     # 幂等：重启 H5 与 invest-api，复用已有通道
+#   bash scripts/ci/serve-public.sh start     # 幂等：重启 H5，复用已有通道
 #   bash scripts/ci/serve-public.sh status
 #   bash scripts/ci/serve-public.sh stop
 #
@@ -28,16 +28,12 @@ mkdir -p "$RUNTIME_DIR"
 env_val() { sed -n "s/^$1=//p" "$ENV_FILE" | head -n1; }
 
 WEB_PORT="${WEB_PORT:-$(env_val WEB_PORT)}"; WEB_PORT="${WEB_PORT:-9530}"
-INVEST_API_PORT="${INVEST_API_PORT:-$(env_val INVEST_API_PORT)}"; INVEST_API_PORT="${INVEST_API_PORT:-8767}"
+BACKEND_PORT="${BACKEND_PORT:-$(env_val BACKEND_PORT)}"; BACKEND_PORT="${BACKEND_PORT:-8766}"
 INVEST_H5_PORT="${INVEST_H5_PORT:-$(env_val INVEST_H5_PORT)}"; INVEST_H5_PORT="${INVEST_H5_PORT:-9540}"
-INVEST_PYTHON="${INVEST_PYTHON:-$(env_val INVEST_PYTHON)}"; INVEST_PYTHON="${INVEST_PYTHON:-python3}"
-INVEST_ENV_NAME="${INVEST_ENV:-$(env_val INVEST_ENV)}"; INVEST_ENV_NAME="${INVEST_ENV_NAME:-production}"
-INVEST_JWT="${INVEST_JWT_SECRET:-$(env_val INVEST_JWT_SECRET)}"
 CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-$(env_val CLOUDFLARED_BIN)}"
 CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-$HOME/.local/bin/cloudflared}"
 PUBLIC_TUNNELS="${PUBLIC_TUNNELS:-$(env_val PUBLIC_TUNNELS)}"; PUBLIC_TUNNELS="${PUBLIC_TUNNELS:-1}"
 
-API_PID="$RUNTIME_DIR/invest-api.pid"
 H5_PID="$RUNTIME_DIR/invest-h5.pid"
 
 pid_alive() { [[ -f "$1" ]] && kill -0 "$(cat "$1")" 2>/dev/null; }
@@ -68,31 +64,6 @@ wait_http() { # url seconds label
   return 1
 }
 
-ensure_secret() {
-  [[ -n "$INVEST_JWT" ]] && return 0
-  INVEST_JWT="$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')"
-  printf '\nINVEST_JWT_SECRET=%s\n' "$INVEST_JWT" >> "$ENV_FILE"
-  log "已生成 INVEST_JWT_SECRET 并写入 deploy/.env"
-}
-
-start_invest_api() {
-  ensure_secret
-  stop_pid "$API_PID" "invest-api"
-  log "启动 invest-api（:${INVEST_API_PORT}）"
-  (
-    cd "$ROOT_DIR/invest-api"
-    # 9>&- 关闭轮询锁，避免子进程长期持有 flock
-    exec setsid env INVEST_ENV="$INVEST_ENV_NAME" INVEST_JWT_SECRET="$INVEST_JWT" \
-      "$INVEST_PYTHON" -m uvicorn app:app --host 0.0.0.0 --port "$INVEST_API_PORT" \
-      > "$RUNTIME_DIR/invest-api.log" 2>&1 < /dev/null 9>&-
-  ) &
-  echo "$!" > "$API_PID"
-  wait_http "http://127.0.0.1:${INVEST_API_PORT}/api/health" 40 "invest-api" || {
-    tail -5 "$RUNTIME_DIR/invest-api.log" >&2 || true
-    return 1
-  }
-}
-
 start_h5() {
   local vite="$ROOT_DIR/frontend/node_modules/.bin/vite"
   [[ -x "$vite" ]] || { log "错误：缺少 $vite（先在 frontend 执行 npm ci）"; return 1; }
@@ -100,7 +71,7 @@ start_h5() {
   log "启动手机 H5（:${INVEST_H5_PORT}）"
   (
     cd "$ROOT_DIR/frontend/invest"
-    exec setsid "$vite" --host 0.0.0.0 --port "$INVEST_H5_PORT" --strictPort \
+    exec setsid env SVQUANT_BACKEND_PORT="$BACKEND_PORT" "$vite" --host 0.0.0.0 --port "$INVEST_H5_PORT" --strictPort \
       > "$RUNTIME_DIR/invest-h5.log" 2>&1 < /dev/null 9>&-
   ) &
   echo "$!" > "$H5_PID"
@@ -151,16 +122,13 @@ stop_all() {
   stop_pid "$RUNTIME_DIR/tunnel-invest.pid" "H5 通道"
   stop_pid "$RUNTIME_DIR/tunnel-frontend.pid" "主前端通道"
   stop_pid "$H5_PID" "手机 H5"
-  stop_pid "$API_PID" "invest-api"
 }
 
 status_all() {
-  local api="未运行" h5="未运行" fe_url="-" h5_url="-"
-  pid_alive "$API_PID" && api="运行中 PID=$(cat "$API_PID")"
+  local h5="未运行" fe_url="-" h5_url="-"
   pid_alive "$H5_PID" && h5="运行中 PID=$(cat "$H5_PID")"
   pid_alive "$RUNTIME_DIR/tunnel-frontend.pid" && fe_url="$(tunnel_url "$RUNTIME_DIR/tunnel-frontend.log")"
   pid_alive "$RUNTIME_DIR/tunnel-invest.pid" && h5_url="$(tunnel_url "$RUNTIME_DIR/tunnel-invest.log")"
-  printf 'invest-api     %s  http://127.0.0.1:%s\n' "$api" "$INVEST_API_PORT"
   printf '手机 H5        %s  http://127.0.0.1:%s\n' "$h5" "$INVEST_H5_PORT"
   printf '主前端通道     %s\n' "${fe_url:--}"
   printf 'H5 通道        %s\n' "${h5_url:--}"
@@ -168,7 +136,6 @@ status_all() {
 
 case "$ACTION" in
   start)
-    start_invest_api || exit 1
     start_h5 || exit 1
     if [[ "$PUBLIC_TUNNELS" == "1" ]]; then
       fe_url="$(start_tunnel frontend "$WEB_PORT")" || exit 1

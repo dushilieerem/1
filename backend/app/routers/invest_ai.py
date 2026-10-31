@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
-import rules
-from deps import get_db, require_user
+from app.deps import require_user
+from services.invest import rules
+from services.invest.db import PGConn, invest_conn
 
 router = APIRouter(prefix="/api/invest/ai", tags=["invest-ai"])
 
@@ -97,7 +97,7 @@ def _call(task_id: str, payload: dict[str, Any], system: str | None = None) -> d
     return {"card": {"summary": content, "sections": []}, "raw": out}
 
 
-def _stock_context(conn: sqlite3.Connection, code: str) -> dict[str, Any]:
+def _stock_context(conn: PGConn, code: str) -> dict[str, Any]:
     data = rules.build_stock(conn, code)
     if not data:
         raise HTTPException(status_code=404, detail="标的未收录")
@@ -153,7 +153,7 @@ def intent(body: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(requ
 def chat(
     body: dict[str, Any] = Body(...),
     user: dict[str, Any] = Depends(require_user),
-    conn: sqlite3.Connection = Depends(get_db),
+    conn: PGConn = Depends(invest_conn),
 ) -> dict[str, Any]:
     q = str(body.get("query") or "").strip()
     if not q:
@@ -208,17 +208,17 @@ def chat(
 
 
 @router.post("/stock/{code}")
-def stock_ai(code: str, user: dict[str, Any] = Depends(require_user), conn: sqlite3.Connection = Depends(get_db)) -> dict[str, Any]:
+def stock_ai(code: str, user: dict[str, Any] = Depends(require_user), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
     return {"ok": True, **_call("invest.stock", _stock_context(conn, code))}
 
 
 @router.post("/daily")
-def daily_ai(user: dict[str, Any] = Depends(require_user), conn: sqlite3.Connection = Depends(get_db)) -> dict[str, Any]:
+def daily_ai(user: dict[str, Any] = Depends(require_user), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
     return {"ok": True, **_call("invest.daily", rules.build_home(conn, int(user["id"])))}
 
 
 @router.post("/portfolio")
-def portfolio_ai(user: dict[str, Any] = Depends(require_user), conn: sqlite3.Connection = Depends(get_db)) -> dict[str, Any]:
+def portfolio_ai(user: dict[str, Any] = Depends(require_user), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
     return {"ok": True, **_call("invest.portfolio", rules.build_portfolio(conn, int(user["id"])))}
 
 

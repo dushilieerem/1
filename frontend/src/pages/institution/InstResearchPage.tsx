@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, FileSearch, Lock, Sparkles } from "lucide-react";
 import { instApi, fmtNum } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
+import { useInstLocale } from "@/components/institution/instLocale";
 import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge } from "./instUi";
 
 type Dim = {
@@ -47,6 +48,7 @@ type CaseItem = {
 
 export function InstResearchPage() {
   const session = useInstSession();
+  const { t } = useInstLocale();
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const caseId = Number(params.get("case") || 0);
@@ -115,7 +117,7 @@ export function InstResearchPage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
-        <PageHeader eyebrow="RESEARCH / 03" title="公司研究" />
+        <PageHeader eyebrow="RESEARCH / 03" title={t("公司研究", "Company research")} />
         <Loading label="正在加载研究案…" />
       </div>
     );
@@ -126,8 +128,8 @@ export function InstResearchPage() {
       <div className="mx-auto max-w-6xl space-y-5">
         <PageHeader
           eyebrow="RESEARCH / 03"
-          title="公司研究"
-          desc="六维研究、资料包与版本化审核。结论必须带来源与反证条件；未审核通过不能进入辩论。"
+          title={t("公司研究", "Company research")}
+          desc={t("六维研究、资料包与版本化审核。结论必须带来源与反证条件；未审核通过不能进入辩论。", "Six-dimension research, evidence package and versioned review. Conclusions need sources and falsifiers; debate opens only after approval.")}
         />
         {error ? <ErrorBox message={error} onRetry={loadList} /> : null}
         {items.length ? (
@@ -170,7 +172,7 @@ export function InstResearchPage() {
   if (!detail) {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
-        <PageHeader eyebrow="RESEARCH / 03" title="公司研究" />
+        <PageHeader eyebrow="RESEARCH / 03" title={t("公司研究", "Company research")} />
         <ErrorBox message={error || "研究案不存在"} onRetry={() => loadDetail(caseId)} />
       </div>
     );
@@ -185,7 +187,7 @@ export function InstResearchPage() {
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" onClick={() => nav("/inst/research")}>
-              <ArrowLeft className="mr-1 h-4 w-4" /> 返回列表
+              <ArrowLeft className="mr-1 h-4 w-4" /> {t("返回列表", "Back to list")}
             </Button>
             <StatusBadge status={detail.stage} />
           </div>
@@ -197,8 +199,8 @@ export function InstResearchPage() {
       <div className="grid gap-4 lg:grid-cols-[1.55fr_1fr]">
         <div className="space-y-4">
           <Card
-            title="六维研究"
-            desc="每维包含核心问题、数据检查、反证条件与证据 ID；数据不足显示「待补充」，不补造数字。"
+            title={t("六维研究", "Six-dimension research")}
+            desc={t("每维包含核心问题、数据检查、反证条件与证据 ID；数据不足显示「待补充」，不补造数字。", "Each dimension includes the core question, data checks, falsifiers and evidence IDs. Missing data is marked TBD, never fabricated.")}
             actions={
               <Button
                 variant="gold"
@@ -210,7 +212,7 @@ export function InstResearchPage() {
                 }
               >
                 <Sparkles className="mr-1 h-4 w-4" />
-                {busy === "generate" ? "生成中…" : "生成六维研究"}
+                {busy === "generate" ? t("生成中…", "Generating…") : t("生成六维研究", "Generate research")}
               </Button>
             }
           >
@@ -247,7 +249,7 @@ export function InstResearchPage() {
             )}
           </Card>
 
-          <Card title="证据与反证" desc="重大结论必须可回源；无证据 ID 的结论不能进入审批包。">
+          <Card title={t("证据与反证", "Evidence & counter-evidence")} desc={t("重大结论必须可回源；无证据 ID 的结论不能进入审批包。", "Material conclusions must be traceable; conclusions without evidence IDs cannot enter the approval package.")}>
             {detail.evidence?.length ? (
               <ul className="divide-y divide-[#f0ece2]">
                 {detail.evidence.map((ev) => (
@@ -274,7 +276,7 @@ export function InstResearchPage() {
         </div>
 
         <div className="space-y-4">
-          <Card title="版本与审核">
+          <Card title={t("版本与审核", "Version & review")}>
             {version ? (
               <>
                 <Field label="版本" value={`v${version.version_no}`} />
@@ -294,7 +296,7 @@ export function InstResearchPage() {
                       })
                     }
                   >
-                    {busy === "memo" ? "生成中…" : "AI 研究一页纸"}
+                    {busy === "memo" ? t("生成中…", "Generating…") : t("AI 研究一页纸", "AI research memo")}
                   </Button>
                 </div>
                 {memo ? (
@@ -326,7 +328,7 @@ export function InstResearchPage() {
                     <textarea
                       value={comment}
                       onChange={(e) => setComment(e.target.value)}
-                      placeholder="审核意见（退回时必须填写）"
+                      placeholder={t("审核意见（退回时必须填写）", "Review comment (required when returning)")}
                       className="min-h-[72px] w-full rounded-lg border border-[#dcd6c8] bg-[#faf9f5] p-2 text-xs outline-none focus:border-[#c9a15e]"
                     />
                     <div className="flex gap-2">
@@ -342,7 +344,7 @@ export function InstResearchPage() {
                           )
                         }
                       >
-                        {busy === "approve" ? "提交中…" : "审核通过"}
+                        {busy === "approve" ? t("提交中…", "Submitting…") : t("审核通过", "Approve")}
                       </Button>
                       <Button
                         variant="danger"
@@ -356,7 +358,7 @@ export function InstResearchPage() {
                           )
                         }
                       >
-                        退回
+                        {t("退回", "Return")}
                       </Button>
                     </div>
                   </div>
@@ -371,7 +373,7 @@ export function InstResearchPage() {
                       disabled={!canWrite || !!busy}
                       onClick={() => nav(`/inst/debate?case=${caseId}`)}
                     >
-                      进入投资辩论
+                      {t("进入投资辩论", "Enter debate")}
                     </Button>
                   </div>
                 ) : null}
@@ -381,7 +383,7 @@ export function InstResearchPage() {
             )}
           </Card>
 
-          <Card title="研究任务" desc="任务状态与进度由研究生成流程写入。">
+          <Card title={t("研究任务", "Research tasks")} desc={t("任务状态与进度由研究生成流程写入。", "Task status and progress are written by the research pipeline.")}>
             {detail.tasks?.length ? (
               <ul className="space-y-2">
                 {detail.tasks.map((t) => (
@@ -399,7 +401,7 @@ export function InstResearchPage() {
             )}
           </Card>
 
-          <Card title="公司信息">
+          <Card title={t("公司信息", "Company")}>
             <Field label="代码" value={<span className="font-mono">{detail.symbol}</span>} />
             <Field label="市场" value={detail.market} />
             <Field label="行业" value={detail.industry || "待补充"} />

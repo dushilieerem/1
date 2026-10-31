@@ -5,11 +5,17 @@ from __future__ import annotations
 from typing import Any
 
 from services.core.backtest_params import validate_execution_timing
+from services.core.env_config import env
 from services.core.lan_http import request_json
 from services.core.re_config import RE_BASE
 from services.factor.code_validation import validated_factor_code
 
 RE_FACTOR_BT = f"{RE_BASE}/api/backtest/factor"
+
+def _service_headers() -> dict[str, str] | None:
+    token = (env("RE_SERVICE_TOKEN", "") or "").strip()
+    return {"X-Service-Token": token} if token else None
+
 
 _SV_ONLY_KEYS = (
     "_svquant_ui",
@@ -61,6 +67,7 @@ def proxy_submit_factor_backtest(
         method="POST",
         payload=body,
         timeout=120,
+        headers=_service_headers(),
     )
     data = _rewrite_poll(data)
     out_headers: dict[str, str] = {}
@@ -80,6 +87,7 @@ def proxy_get_factor_run(run_id: str) -> tuple[int, dict[str, str], Any]:
         f"{RE_FACTOR_BT}/{rid}",
         method="GET",
         timeout=60,
+        headers=_service_headers(),
     )
     out_headers: dict[str, str] = {}
     ra = headers.get("retry-after")
@@ -96,4 +104,5 @@ def proxy_cancel_factor_run(run_id: str) -> tuple[int, dict[str, str], Any]:
         f"{RE_FACTOR_BT}/{rid}",
         method="DELETE",
         timeout=60,
+        headers=_service_headers(),
     )

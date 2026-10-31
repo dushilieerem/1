@@ -178,6 +178,11 @@ def load_valuation(conn, from_date: date, batch_symbols: int) -> int:
 
 
 def main() -> int:
+    if os.environ.get("ALLOW_LEGACY_COLLECT") != "1":
+        raise SystemExit(
+            "该采集脚本已迁移到独立数据平台 /home/dev01/project/svquant-data；"
+            "如确需应急运行，设置 ALLOW_LEGACY_COLLECT=1。"
+        )
     ap = argparse.ArgumentParser()
     ap.add_argument("--from", dest="from_date", default="2016-01-01")
     ap.add_argument("--batch-symbols", type=int, default=200)

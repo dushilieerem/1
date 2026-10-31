@@ -685,6 +685,11 @@ def run(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    if os.environ.get("ALLOW_LEGACY_COLLECT") != "1":
+        raise SystemExit(
+            "该采集脚本已迁移到独立数据平台 /home/dev01/project/svquant-data；"
+            "如确需应急运行，设置 ALLOW_LEGACY_COLLECT=1。"
+        )
     parser = argparse.ArgumentParser(description="采集东方财富 A 股财报与公告到 PostgreSQL")
     parser.add_argument(
         "--symbols",

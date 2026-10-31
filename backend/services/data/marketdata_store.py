@@ -33,6 +33,15 @@ FUNDAMENTAL_FIELDS = {
 
 
 def data_root() -> Path:
+    # 优先使用独立数据平台的只读物化视图；旧部署回退 MARKETDATA_DIR
+    try:
+        from services.data.platform_view import materialized_ifind_root
+
+        view_root = materialized_ifind_root()
+        if view_root is not None:
+            return view_root
+    except Exception:
+        pass
     raw = (env("MARKETDATA_DIR", "") or "").strip()
     if raw:
         return Path(raw).expanduser().resolve()

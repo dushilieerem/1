@@ -69,6 +69,11 @@ def fetch(symbol: str) -> dict[str, Any] | None:
 
 
 def main() -> None:
+    if os.environ.get("ALLOW_LEGACY_COLLECT") != "1":
+        raise SystemExit(
+            "该采集脚本已迁移到独立数据平台 /home/dev01/project/svquant-data；"
+            "如确需应急运行，设置 ALLOW_LEGACY_COLLECT=1。"
+        )
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbols", default=",".join(DEFAULT))
     args = ap.parse_args()

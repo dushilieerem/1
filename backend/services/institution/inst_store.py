@@ -263,8 +263,10 @@ def seed_inst_demo() -> dict[str, Any]:
 
 
 def _org_payload(row: dict[str, Any]) -> dict[str, Any]:
+    # 注意：row 是 inst_members JOIN inst_orgs 的结果，`id` 是成员 ID，
+    # 机构 ID 必须取 `org_id`；否则第二个及之后的成员会把机构 ID 错认成成员 ID。
     return {
-        "id": int(row["id"]),
+        "id": int(row.get("org_id") or 0),
         "code": row["code"],
         "name_cn": row["name_cn"],
         "name_en": row.get("name_en") or "",
@@ -321,6 +323,7 @@ def _context(user: dict[str, Any], membership: dict[str, Any]) -> dict[str, Any]
     label_cn, label_en = ROLE_LABELS.get(role, (role, role))
     return {
         "user": user,
+        "member_id": int(membership.get("id") or 0),
         "org": _org_payload(membership),
         "role": role,
         "role_label_cn": label_cn,

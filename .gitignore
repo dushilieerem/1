@@ -30,10 +30,11 @@ logs/
 # KnowledgeHub 上传附件（已入库的示例文件仍由 Git 跟踪）
 KnowledgeHub/data/kh_attachments/*
 
-# 外部行情目录若被误放回仓库，不纳入 Git
-marketdata/
-MarketData/
-!MarketData/README.md
+# 外部行情目录若被误放回仓库，不纳入 Git（只匹配仓库根目录，
+# 不能误伤 backend/services/marketdata）
+/marketdata/
+/MarketData/
+!/MarketData/README.md
 
 # 前端依赖和构建产物
 node_modules/

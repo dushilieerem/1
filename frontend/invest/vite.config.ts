@@ -1,6 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+/** 开发启动器会传 SVQUANT_INVEST_API_PORT；独立运行时仍默认生产的 8767。 */
+const apiTarget = `http://127.0.0.1:${process.env.SVQUANT_INVEST_API_PORT || 8767}`;
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -15,7 +18,7 @@ export default defineConfig({
     },
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8767",
+        target: apiTarget,
         changeOrigin: true,
       },
     },
@@ -27,7 +30,7 @@ export default defineConfig({
     allowedHosts: [".trycloudflare.com"],
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8767",
+        target: apiTarget,
         changeOrigin: true,
       },
     },

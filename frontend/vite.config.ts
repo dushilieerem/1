@@ -11,6 +11,9 @@ import http from "node:http";
 const useHttps = process.env.VITE_DEV_HTTPS === "1";
 const devPort = Number(process.env.VITE_DEV_PORT || 9530);
 
+/** 开发启动器会传 SVQUANT_BACKEND_PORT；独立运行时仍默认生产的 8766。 */
+const apiTarget = `http://127.0.0.1:${process.env.SVQUANT_BACKEND_PORT || 8766}`;
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** 只从 backend/.env 读取 KEY；前端不维护同一配置的第二份副本。 */
@@ -95,7 +98,7 @@ export default defineConfig({
     allowedHosts: [".trycloudflare.com"],
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8766",
+        target: apiTarget,
         changeOrigin: true,
         // 与 re-backtest BFF 对齐：长回测可 >2min，默认代理超时会变成 Failed to fetch
         timeout: 1_800_000,
@@ -112,7 +115,7 @@ export default defineConfig({
     allowedHosts: [".trycloudflare.com"],
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8766",
+        target: apiTarget,
         changeOrigin: true,
         timeout: 1_800_000,
         proxyTimeout: 1_800_000,

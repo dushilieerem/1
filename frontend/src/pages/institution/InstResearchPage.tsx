@@ -1,0 +1,418 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { ArrowLeft, FileSearch, Lock, Sparkles } from "lucide-react";
+import { instApi, fmtNum } from "@/lib/instApi";
+import { useInstSession } from "@/components/institution/instSessionContext";
+import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge } from "./instUi";
+
+type Dim = {
+  key: string;
+  title: string;
+  question?: string;
+  status?: string;
+  summary?: string;
+  checks?: string[];
+  counter?: string[];
+  evidence_ids?: number[];
+};
+
+type Version = {
+  id: number;
+  version_no: number;
+  status: string;
+  conclusion?: string;
+  six_dim?: Dim[];
+  valuation?: Record<string, unknown> | null;
+  assumptions?: unknown;
+  counter_evidence?: string[];
+  open_questions?: string[];
+  evidence_ids?: number[];
+};
+
+type CaseItem = {
+  id: number;
+  case_no: string;
+  stage: string;
+  symbol: string;
+  company_name: string;
+  market: string;
+  industry?: string;
+  data_status?: string;
+  ref_price?: number;
+  versions?: Version[];
+  evidence?: Array<{ id: number; title: string; quote?: string; source: string; as_of?: string }>;
+  tasks?: Array<{ id: number; title: string; status: string; progress: number }>;
+  debates?: Array<{ id: number; status: string; conclusion?: string }>;
+};
+
+export function InstResearchPage() {
+  const session = useInstSession();
+  const nav = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const caseId = Number(params.get("case") || 0);
+  const [items, setItems] = useState<CaseItem[]>([]);
+  const [detail, setDetail] = useState<CaseItem | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [comment, setComment] = useState("");
+  const [memo, setMemo] = useState<Record<string, any> | null>(null);
+
+  const canWrite = (session.permissions.research || "none") === "write";
+
+  const loadList = () => {
+    setLoading(true);
+    setError(null);
+    instApi<{ items: CaseItem[] }>("/cases")
+      .then((data) => setItems(data.items || []))
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  const loadDetail = (id: number) => {
+    setLoading(true);
+    setError(null);
+    instApi<CaseItem>(`/cases/${id}`)
+      .then(setDetail)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    if (caseId) loadDetail(caseId);
+    else {
+      setDetail(null);
+      loadList();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId]);
+
+  const version = useMemo<Version | null>(() => {
+    const list = detail?.versions || [];
+    return list.length ? list[0] : null;
+  }, [detail]);
+
+  const evidenceMap = useMemo(() => {
+    const map = new Map<number, { title: string; quote?: string; source: string; as_of?: string }>();
+    for (const ev of detail?.evidence || []) map.set(ev.id, ev);
+    return map;
+  }, [detail]);
+
+  const run = async (label: string, fn: () => Promise<unknown>) => {
+    setBusy(label);
+    setError(null);
+    try {
+      await fn();
+      if (caseId) loadDetail(caseId);
+      else loadList();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-5">
+        <PageHeader eyebrow="RESEARCH / 03" title="公司研究" />
+        <Loading label="正在加载研究案…" />
+      </div>
+    );
+  }
+
+  if (!caseId) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-5">
+        <PageHeader
+          eyebrow="RESEARCH / 03"
+          title="公司研究"
+          desc="六维研究、资料包与版本化审核。结论必须带来源与反证条件；未审核通过不能进入辩论。"
+        />
+        {error ? <ErrorBox message={error} onRetry={loadList} /> : null}
+        {items.length ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {items.map((c) => (
+              <Link
+                key={c.id}
+                to={`/inst/research?case=${c.id}`}
+                className="rounded-2xl border border-[#e7e3d8] bg-white p-5 transition hover:border-[#c9a15e]"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h3 className="font-display text-base font-semibold text-slate-900">{c.company_name}</h3>
+                    <p className="mt-0.5 font-mono text-[11px] text-slate-500">
+                      {c.symbol} · {c.case_no}
+                    </p>
+                  </div>
+                  <StatusBadge status={c.stage} />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  <Badge tone="gold">{c.industry || "行业待补充"}</Badge>
+                  <StatusBadge status={c.data_status} />
+                </div>
+                <p className="mt-3 text-xs text-slate-500">
+                  点击进入研究案，生成六维结论、资料包与审核记录。
+                </p>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <Empty>
+            <FileSearch className="mx-auto mb-2 h-6 w-6 text-slate-300" />
+            还没有研究案。先到「机会发现」选择一家公司并进入研究。
+          </Empty>
+        )}
+      </div>
+    );
+  }
+
+  if (!detail) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-5">
+        <PageHeader eyebrow="RESEARCH / 03" title="公司研究" />
+        <ErrorBox message={error || "研究案不存在"} onRetry={() => loadDetail(caseId)} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-5">
+      <PageHeader
+        eyebrow="RESEARCH / 03"
+        title={detail.company_name}
+        desc={`${detail.symbol} · ${detail.industry || "行业待补充"} · ${detail.case_no}`}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button variant="ghost" onClick={() => nav("/inst/research")}>
+              <ArrowLeft className="mr-1 h-4 w-4" /> 返回列表
+            </Button>
+            <StatusBadge status={detail.stage} />
+          </div>
+        }
+      />
+
+      {error ? <ErrorBox message={error} onRetry={() => loadDetail(caseId)} /> : null}
+
+      <div className="grid gap-4 lg:grid-cols-[1.55fr_1fr]">
+        <div className="space-y-4">
+          <Card
+            title="六维研究"
+            desc="每维包含核心问题、数据检查、反证条件与证据 ID；数据不足显示「待补充」，不补造数字。"
+            actions={
+              <Button
+                variant="gold"
+                disabled={!canWrite || !!busy}
+                onClick={() =>
+                  run("generate", () =>
+                    instApi(`/cases/${caseId}/research`, { method: "POST", body: { mode: "full" } }),
+                  )
+                }
+              >
+                <Sparkles className="mr-1 h-4 w-4" />
+                {busy === "generate" ? "生成中…" : "生成六维研究"}
+              </Button>
+            }
+          >
+            {version?.six_dim?.length ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {version.six_dim.map((dim) => (
+                  <article key={dim.key} className="rounded-xl border border-[#f0ece2] bg-[#faf9f5] p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-sm font-semibold text-slate-900">{dim.title}</h3>
+                      <StatusBadge status={dim.status} />
+                    </div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{dim.question}</p>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-700">{dim.summary || "待补充"}</p>
+                    {dim.checks?.length ? (
+                      <ul className="mt-2 space-y-1 text-[11px] text-slate-500">
+                        {dim.checks.map((x) => (
+                          <li key={x}>· {x}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {dim.counter?.length ? (
+                      <p className="mt-2 text-[11px] text-amber-700">反证：{dim.counter[0]}</p>
+                    ) : null}
+                    {dim.evidence_ids?.length ? (
+                      <p className="mt-2 font-mono text-[10px] text-slate-400">
+                        证据 ID：{dim.evidence_ids.join(", ")}
+                      </p>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <Empty>还没有六维研究。点击右上角生成；生成后自动进入待审核。</Empty>
+            )}
+          </Card>
+
+          <Card title="证据与反证" desc="重大结论必须可回源；无证据 ID 的结论不能进入审批包。">
+            {detail.evidence?.length ? (
+              <ul className="divide-y divide-[#f0ece2]">
+                {detail.evidence.map((ev) => (
+                  <li key={ev.id} className="py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">
+                          #{ev.id} {ev.title}
+                        </p>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-600">{ev.quote || "—"}</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <Badge>{ev.source}</Badge>
+                        <p className="mt-1 text-[10px] text-slate-400">{ev.as_of || "—"}</p>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <Empty>还没有证据。生成研究会写入行情、估值与财务证据。</Empty>
+            )}
+          </Card>
+        </div>
+
+        <div className="space-y-4">
+          <Card title="版本与审核">
+            {version ? (
+              <>
+                <Field label="版本" value={`v${version.version_no}`} />
+                <Field label="状态" value={<StatusBadge status={version.status} />} />
+                <Field label="结论" value={version.conclusion || "待补充"} />
+                <Field label="证据数" value={`${version.evidence_ids?.length || 0} 条`} />
+                <div className="mt-3">
+                  <Button
+                    variant="ghost"
+                    disabled={!!busy || !detail.evidence?.length}
+                    onClick={() =>
+                      run("memo", async () => {
+                        const res = await instApi<{ memo: Record<string, any> }>(`/cases/${caseId}/ai/memo`, {
+                          method: "POST",
+                        });
+                        setMemo(res.memo);
+                      })
+                    }
+                  >
+                    {busy === "memo" ? "生成中…" : "AI 研究一页纸"}
+                  </Button>
+                </div>
+                {memo ? (
+                  <div className="mt-3 rounded-xl border border-[#c9a15e]/30 bg-[#fbf6ea] p-3 text-xs leading-relaxed text-[#8a6a2f]">
+                    <p className="font-medium">AI 摘要（非投资建议）</p>
+                    <p className="mt-1">{memo.summary || "—"}</p>
+                    {Array.isArray(memo.risks) && memo.risks.length ? (
+                      <ul className="mt-2 list-disc pl-4">
+                        {memo.risks.map((x: string) => (
+                          <li key={x}>{x}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {Array.isArray(memo.open_questions) && memo.open_questions.length ? (
+                      <p className="mt-2">待核验：{memo.open_questions.join("；")}</p>
+                    ) : null}
+                  </div>
+                ) : null}
+                {version.valuation ? (
+                  <div className="mt-3 rounded-xl border border-[#c9a15e]/30 bg-[#fbf6ea] p-3 text-xs text-[#8a6a2f]">
+                    <p className="font-medium">估值口径</p>
+                    <p className="mt-1 leading-relaxed">
+                      {String((version.valuation as Record<string, unknown>).note || "演示口径，不是目标价。")}
+                    </p>
+                  </div>
+                ) : null}
+                {version.status === "pending_review" ? (
+                  <div className="mt-4 space-y-2">
+                    <textarea
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                      placeholder="审核意见（退回时必须填写）"
+                      className="min-h-[72px] w-full rounded-lg border border-[#dcd6c8] bg-[#faf9f5] p-2 text-xs outline-none focus:border-[#c9a15e]"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        variant="gold"
+                        disabled={!canWrite || !!busy}
+                        onClick={() =>
+                          run("approve", () =>
+                            instApi(`/research/${version.id}/review`, {
+                              method: "POST",
+                              body: { decision: "approve", comment },
+                            }),
+                          )
+                        }
+                      >
+                        {busy === "approve" ? "提交中…" : "审核通过"}
+                      </Button>
+                      <Button
+                        variant="danger"
+                        disabled={!canWrite || !!busy}
+                        onClick={() =>
+                          run("return", () =>
+                            instApi(`/research/${version.id}/review`, {
+                              method: "POST",
+                              body: { decision: "return", comment: comment || "退回补充研究" },
+                            }),
+                          )
+                        }
+                      >
+                        退回
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+                {version.status === "approved" ? (
+                  <div className="mt-4">
+                    <div className="mb-2 flex items-center gap-2 text-[11px] text-emerald-700">
+                      <Lock className="h-3.5 w-3.5" /> 已冻结审核版本，可进入辩论
+                    </div>
+                    <Button
+                      variant="primary"
+                      disabled={!canWrite || !!busy}
+                      onClick={() => nav(`/inst/debate?case=${caseId}`)}
+                    >
+                      进入投资辩论
+                    </Button>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <Empty>还没有研究版本。</Empty>
+            )}
+          </Card>
+
+          <Card title="研究任务" desc="任务状态与进度由研究生成流程写入。">
+            {detail.tasks?.length ? (
+              <ul className="space-y-2">
+                {detail.tasks.map((t) => (
+                  <li key={t.id} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="text-slate-700">{t.title}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="font-mono text-[11px] text-slate-400">{t.progress}%</span>
+                      <StatusBadge status={t.status} />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <Empty>生成研究后自动创建六维任务。</Empty>
+            )}
+          </Card>
+
+          <Card title="公司信息">
+            <Field label="代码" value={<span className="font-mono">{detail.symbol}</span>} />
+            <Field label="市场" value={detail.market} />
+            <Field label="行业" value={detail.industry || "待补充"} />
+            <Field label="数据状态" value={<StatusBadge status={detail.data_status} />} />
+            <Field label="参考价" value={fmtNum(detail.ref_price, 2)} />
+          </Card>
+        </div>
+      </div>
+
+      <p className="text-[11px] leading-relaxed text-slate-400">
+        研究结论由数据与规则生成，AI 仅提供解释与反证建议；估值口径为演示，不是目标价。
+        数据不足时显示「待补充」，不构成投资建议。
+      </p>
+    </div>
+  );
+}

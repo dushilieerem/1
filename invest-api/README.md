@@ -48,7 +48,10 @@ python -m pytest tests -q
 
 ## 数据
 
+> 2026-10-30 起，生产/开发数据由 `scripts/sync_invest_sqlite.py` 从 PostgreSQL 服务层同步到 SQLite 读取缓存；`seed.py` 仅用于首建库与演示回退。
+
 - `seed.py` 生成**确定性演示数据**：29 只标的、750 交易日、8 季财务、3 个主题、新闻、示例组合、事件与风测。
+- `scripts/sync_invest_sqlite.py`：全市场证券主表 + 选中池日线/估值/财务 + 指数 + 公告/研报/要闻；用户数据不覆盖。
 - `scripts/fetch_live.py` 用腾讯 K 线 + 东方财富财务/估值，把 29 只标的替换为真实 EOD（示范命令见上）。已实测成功：801 根日线、2000+ 条 PE/PB、50 期财务，数据日 2026-10-29；beta 按近 1 年日收益 vs 沪深300 实算。
 - `scripts/fetch_akshare.py` 是 AKShare 接入脚手架；当前环境 AKShare 的 `stock_zh_a_hist` / `stock_zh_a_spot_em` 返回 `RemoteDisconnected`，未采用。
 - 主题指数/base rate 为成分股等权代理（非官方指数）；公告/研报/要闻已接东方财富公开标题+链接。正式上线前需逐源核对条款。
@@ -78,6 +81,23 @@ python -m pytest tests -q
 | GET | `/api/invest/risk-profile` / POST | 风测 |
 | GET | `/api/invest/account/export` | 导出 Invest 数据（含审计事件，不含 IP） |
 | DELETE | `/api/invest/account/data` | 删除 Invest 数据（不删 SVQuant 账号） |
+
+## AI 接口（复用 backend/ai/router）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/invest/ai/status` | 各 TaskSpec 是否可用 |
+| POST | `/api/invest/ai/intent` | 意图 + 槽位 |
+| POST | `/api/invest/ai/chat` | 路由后调用对应 Worker |
+| POST | `/api/invest/ai/stock/{code}` | 个股解读 |
+| POST | `/api/invest/ai/daily` | 日报/复盘 |
+| POST | `/api/invest/ai/portfolio` | 组合诊断 |
+| POST | `/api/invest/ai/announcement` | 公告要点 |
+| POST | `/api/invest/ai/condition` | 条件解析 |
+
+- 需要 `backend/.env` 的 `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`；未配置时返回 503。
+- 前置红线（买入/卖出/目标价/保证收益/自动交易…）固定话术；后置扫描越界表达。
+- 设计见 `docs/模块设计/AI与Agent模块/机构端与手机端Agent设计.md`。
 
 ## 已知缺口
 

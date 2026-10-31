@@ -16,6 +16,8 @@ SVQuant/
 │   ├── factor/         # 用户自定义因子同步产物与 API 文档
 │   └── requirements.txt
 ├── KnowledgeHub/       # 知识库模块（API 挂载在 backend 的 /api/kh）
+├── invest-api/         # 手机 H5 BFF（FastAPI + SQLite 读取缓存）
+├── scripts/            # 启动、数据同步、建库脚本
 ├── docs/               # SVQuant 产品、架构和交付文档
 └── .gitignore
 ```
@@ -30,7 +32,7 @@ ResearchEngine 完成。
 |------|--------|-------------------|
 | PostgreSQL | SVQuant | 用户、认证、社区、知识库、因子/策略配置、审计日志 |
 | ResearchEngine HTTP API | ResearchEngine | 通过 `backend` 网关调用因子、策略、行情和回测接口 |
-| `marketdata` | 外部数据/ResearchEngine 部署 | SVQuant 不保存、不读取 |
+| `marketdata` parquet | 外部数据/ResearchEngine 部署 | `scripts/etl_marketdata.py` 只读同步到 SVQuant PG 服务层；不修改源文件 |
 | 回测结果 SQLite | ResearchEngine 部署 | SVQuant 不直接访问，只接收 API 结果 |
 | LLM、新闻等供应商 | SVQuant | 通过 `backend/.env` 配置敏感凭据 |
 
@@ -46,6 +48,53 @@ ResearchEngine 完成。
 并可用 cloudflared 为主前端和 H5 各建一条临时外网通道（地址见 `./scripts/svquant.sh status`，
 每次启动都会变）。未安装 cloudflared 时先运行 `./scripts/svquant.sh install-cloudflared`；
 不需要外网访问用 `./scripts/svquant.sh start --no-tunnel`。状态、日志、停止和手动启动方式见[部署文档](docs/部署与运维/部署文档.md)。
+
+### 开发库（首次）
+
+开发环境使用独立的 `svquant_dev` 库，不与生产的 `svquant` 共用数据；手机 H5 使用
+`invest-api/data/invest.dev.db`，缺少时首次启动自动从种子数据生成。
+
+首次准备：
+
+```bash
+cp backend/.env.example backend/.env
+# 编辑 backend/.env，将 DATABASE_URL 的库名写成 svquant_dev（账号/密码/主机不变）
+./scripts/init-dev-db.sh
+```
+
+脚本从 `backend/.env` 的 `DATABASE_URL` 取账号和主机，在同一个 PostgreSQL 实例里
+幂等创建开发库（已存在则跳过）。库名可用 `SVQUANT_DEV_DB_NAME` 覆盖，Conda 环境可用
+`SVQUANT_CONDA_ENV` 指定。
+
+### 真实数据与 AI（2026-10-30）
+
+```bash
+# 1) parquet → PostgreSQL 服务层（A 股 2016 起；首次/数据 release 更新后跑）
+/home/dev01/program/anaconda3/bin/python scripts/etl_marketdata.py --from 2016-01-01
+
+# 2) 东方财富财务三表 + 公告（默认 8 只 A 股池；按需改 --symbols）
+/home/dev01/program/anaconda3/bin/python scripts/fetch_financials.py
+
+# 2.5) 总股本 / 总市值（研究池逐只快照）
+/home/dev01/program/anaconda3/bin/python scripts/fetch_valuation_snapshot.py
+
+# 3) PostgreSQL → 手机 H5 的 SQLite 读取缓存（用户数据不覆盖）
+/home/dev01/program/anaconda3/bin/python scripts/sync_invest_sqlite.py \
+  --db invest-api/data/invest.dev.db --limit-symbols 500
+
+# 或一键（不含 parquet）：
+./scripts/refresh_invest_data.sh
+
+# 4) AI：backend/.env 配置 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL
+#    手机端 /api/invest/ai/*，机构端 /api/inst/*，均复用 backend/ai/router
+```
+
+文档：
+
+- [数据接入与库表设计](docs/数据设计/机构端与手机端-数据接入与库表设计-v0.1.md)
+- [机构端与手机端 Agent 设计](docs/模块设计/AI与Agent模块/机构端与手机端Agent设计.md)
+- [FEAT-034 机构端首版闭环](docs/功能包/FEAT-034-机构端首版闭环/README.md)
+- [FEAT-035 手机端真实数据与 AI](docs/功能包/FEAT-035-手机端真实数据与AI/README.md)
 
 ## 后端配置与手动启动
 

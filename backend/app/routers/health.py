@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter
 
 from app.bootstrap import FACTOR_DIR
 
 router = APIRouter(tags=["health"])
 
-PORT = 8766
+PORT = int(os.environ.get("SVQUANT_BACKEND_PORT", "8766"))
 
 
 @router.get("/api/health")

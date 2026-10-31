@@ -160,6 +160,15 @@ export function InstLayout() {
     [session, location.pathname],
   );
 
+  useEffect(() => {
+    const onExpired = () => {
+      setSession(null);
+      navigate("/login?mode=inst", { replace: true });
+    };
+    window.addEventListener("svq:inst-auth-expired", onExpired);
+    return () => window.removeEventListener("svq:inst-auth-expired", onExpired);
+  }, [navigate]);
+
   const logout = () => {
     clearInstSession();
     setSession(null);

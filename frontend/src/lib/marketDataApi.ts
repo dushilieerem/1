@@ -9,6 +9,7 @@ export type MarketBar = {
   high: number;
   low: number;
   close: number;
+  volume?: number;
   is_show?: boolean;
 };
 

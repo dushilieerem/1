@@ -4,6 +4,7 @@ import { Maximize2 } from "lucide-react";
 import {
   CandlestickSeries,
   ColorType,
+  HistogramSeries,
   CrosshairMode,
   createChart,
   LineStyle,
@@ -81,6 +82,7 @@ export function SymbolOverviewPanel({
   const chartRef = useRef<HTMLDivElement | null>(null);
   const chartApi = useRef<IChartApi | null>(null);
   const seriesApi = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeApi = useRef<ISeriesApi<"Histogram"> | null>(null);
   const barCountRef = useRef(0);
   const dailyBarsRef = useRef(seeded?.bars?.length || 0);
   const lineBarsRef = useRef<
@@ -192,6 +194,7 @@ export function SymbolOverviewPanel({
     if (!seriesApi.current || !chartApi.current) return;
     if (!bars.length) {
       seriesApi.current.setData([]);
+      volumeApi.current?.setData([]);
       barCountRef.current = 0;
       return;
     }
@@ -202,8 +205,14 @@ export function SymbolOverviewPanel({
       low: Number(b.low),
       close: Number(b.close),
     }));
+    const volumes = bars.map((b) => ({
+      time: b.date as Time,
+      value: Number(b.volume || 0),
+      color: Number(b.close) >= Number(b.open) ? "rgba(225,29,72,0.35)" : "rgba(5,150,105,0.35)",
+    }));
     barCountRef.current = data.length;
     seriesApi.current.setData(data);
+    volumeApi.current?.setData(volumes);
     chartApi.current.timeScale().fitContent();
   };
 
@@ -215,6 +224,7 @@ export function SymbolOverviewPanel({
     chartApi.current?.remove();
     chartApi.current = null;
     seriesApi.current = null;
+    volumeApi.current = null;
 
     const chart = createChart(el, {
       autoSize: true,
@@ -271,8 +281,16 @@ export function SymbolOverviewPanel({
       lastValueVisible: true,
       priceLineVisible: true,
     });
+    const volume = chart.addSeries(HistogramSeries, {
+      priceScaleId: "volume",
+      priceFormat: { type: "volume" },
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     chartApi.current = chart;
     seriesApi.current = series;
+    volumeApi.current = volume;
 
     // 空图即可，不要画假 K（超时后会看起来像「坏图」）
     if (lineBarsRef.current.length) {

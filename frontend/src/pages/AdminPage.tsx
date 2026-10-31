@@ -28,10 +28,12 @@ export default function AdminPage() {
   const [role, setRole] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [offset, setOffset] = useState(0);
+  const PAGE = 50;
 
   const load = () => {
     setError(null);
-    listAdminUsers({ q, status, role, limit: 100 })
+    listAdminUsers({ q, status, role, limit: PAGE, offset })
       .then((d) => {
         setItems(d.items);
         setTotal(d.total);
@@ -39,7 +41,10 @@ export default function AdminPage() {
       .catch((e: Error) => setError(e.message));
   };
 
-  useEffect(load, [status, role]);
+  useEffect(() => {
+    setOffset(0);
+  }, [status, role]);
+  useEffect(load, [status, role, offset]);
   useEffect(() => {
     if (tab === "usage" && !usage) {
       getAdminUsage(7).then(setUsage).catch((e: Error) => setError(e.message));
@@ -150,6 +155,8 @@ export default function AdminPage() {
               查询
             </button>
             <span className="text-xs text-slate-400">共 {total} 个用户</span>
+            <button type="button" disabled={offset <= 0} onClick={() => setOffset(Math.max(0, offset - PAGE))} className="rounded border border-slate-200 px-2 py-1 text-xs disabled:opacity-40">上一页</button>
+            <button type="button" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)} className="rounded border border-slate-200 px-2 py-1 text-xs disabled:opacity-40">下一页</button>
           </div>
 
           <div className="mt-4 overflow-x-auto">

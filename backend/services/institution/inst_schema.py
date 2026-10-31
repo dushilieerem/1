@@ -283,6 +283,7 @@ DDL: tuple[str, ...] = (
       org_id      BIGINT NOT NULL REFERENCES inst_orgs(id) ON DELETE CASCADE,
       company_id  BIGINT NOT NULL REFERENCES inst_company(id) ON DELETE CASCADE,
       position_id BIGINT REFERENCES inst_position_snapshot(id) ON DELETE SET NULL,
+      case_id     BIGINT REFERENCES inst_research_case(id) ON DELETE SET NULL,
       reason_type TEXT NOT NULL,
       memo        TEXT,
       status      TEXT NOT NULL DEFAULT 'draft',
@@ -332,6 +333,11 @@ def ensure_inst_business_schema(*, include_indexes: bool = True) -> None:
     with get_conn() as conn:
         for ddl in DDL:
             conn.execute(ddl)
+        # 兼容已存在的旧表：补退出案关联的研究案。
+        conn.execute(
+            "ALTER TABLE inst_exit_case ADD COLUMN IF NOT EXISTS case_id BIGINT "
+            "REFERENCES inst_research_case(id) ON DELETE SET NULL"
+        )
         if include_indexes:
             for idx in INDEXES:
                 conn.execute(idx)

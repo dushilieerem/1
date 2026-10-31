@@ -146,6 +146,9 @@ const AgentEvalPage = lazy(() =>
   import("./pages/AgentEvalPage").then((m) => ({ default: m.AgentEvalPage })),
 );
 const AiHubPage = lazy(() => import("./pages/AiHubPage").then((m) => ({ default: m.AiHubPage })));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
+const InvestMobilePage = lazy(() => import("./pages/InvestMobilePage"));
+const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const InstLayout = lazy(() =>
   import("./components/institution/InstLayout").then((m) => ({ default: m.InstLayout })),
 );
@@ -226,6 +229,7 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
           <Route path="/search" element={<GlobalSearchPage />} />
           <Route path="/ai" element={<Authed><AiHubPage /></Authed>} />
@@ -236,6 +240,8 @@ export default function App() {
           <Route path="/ai/factor-backtest" element={<Authed><AgentBacktestPage /></Authed>} />
           <Route path="/ai/factor-eval" element={<Authed><AgentEvalPage /></Authed>} />
           <Route path="/community" element={<CommunityFeedPage />} />
+          <Route path="/admin" element={<Authed><AdminPage /></Authed>} />
+          <Route path="/m" element={<Authed><InvestMobilePage /></Authed>} />
           <Route path="/news" element={<NewsPage />} />
           <Route path="/news/:id" element={<NewsDetailPage />} />
           <Route path="/community/new" element={<Authed><CommunityNewPage /></Authed>} />

@@ -18,6 +18,7 @@ import {
 import { clearInstSession, fetchInstMe, getInstToken, type InstSession } from "@/lib/instAuth";
 import { accessBadge, visibleWorkspaces, workspaceForPath } from "@/data/instNav";
 import { InstSessionContext } from "./instSessionContext";
+import { InstLocaleProvider, useInstLocale } from "./instLocale";
 
 const ICONS: Record<string, LucideIcon> = {
   overview: LayoutDashboard,
@@ -36,6 +37,7 @@ function loginUrl(next: string) {
 }
 
 function Brand({ compact = false }: { compact?: boolean }) {
+  const { t } = useInstLocale();
   return (
     <div className={`flex items-center gap-3 ${compact ? "px-4 py-4" : "px-5 py-5"}`}>
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#c9a15e]/60 bg-[#1b2436] font-display text-lg text-[#e8c98a]">
@@ -46,7 +48,7 @@ function Brand({ compact = false }: { compact?: boolean }) {
           旸谷资本
         </p>
         <p className="truncate text-[11px] tracking-wide text-slate-500">
-          SVQuant 机构端 · 主观价值投资
+          {t("SVQuant 机构端 · 主观价值投资", "SVQuant Institution · Subjective Value Investing")}
         </p>
       </div>
     </div>
@@ -54,6 +56,7 @@ function Brand({ compact = false }: { compact?: boolean }) {
 }
 
 function SidebarNav({ session, onNavigate }: { session: InstSession; onNavigate?: () => void }) {
+  const { locale, t } = useInstLocale();
   const items = useMemo(() => visibleWorkspaces(session.workspaces), [session.workspaces]);
   return (
     <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
@@ -74,10 +77,10 @@ function SidebarNav({ session, onNavigate }: { session: InstSession; onNavigate?
             }
           >
             <Icon className="h-4 w-4 shrink-0" aria-hidden />
-            <span className="flex-1 truncate">{item.label_cn}</span>
+            <span className="flex-1 truncate">{locale === "en" ? item.label_en : item.label_cn}</span>
             {badge ? (
               <span className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] text-slate-500">
-                {badge}
+                {badge === "只读" ? t("只读", "Read-only") : badge === "仅摘要" ? t("仅摘要", "Summary only") : badge}
               </span>
             ) : null}
           </NavLink>
@@ -88,18 +91,19 @@ function SidebarNav({ session, onNavigate }: { session: InstSession; onNavigate?
 }
 
 function SidebarFooter({ session, onLogout }: { session: InstSession; onLogout: () => void }) {
+  const { t } = useInstLocale();
   return (
     <div className="border-t border-[#1e293b] px-4 py-4 text-[11px] text-slate-500">
       <div className="mb-3 flex items-center gap-2">
         <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#c9a15e]" />
-        <span>模拟环境 · 无真实交易</span>
+        <span>{t("模拟环境 · 无真实交易", "Simulation · no real trading")}</span>
       </div>
       <p className="mb-3 leading-relaxed">
-        {session.demo ? "演示机构数据，仅用于流程验证。" : "受控试点环境。"}
+        {session.demo ? t("演示机构数据，仅用于流程验证。", "Demo institution data for workflow validation only.") : t("受控试点环境。", "Controlled pilot environment.")}
       </p>
       <div className="flex items-center justify-between">
         <NavLink to="/" className="text-slate-500 transition-colors hover:text-slate-300">
-          返回个人版
+          {t("返回个人版", "Personal edition")}
         </NavLink>
         <button
           type="button"
@@ -107,14 +111,15 @@ function SidebarFooter({ session, onLogout }: { session: InstSession; onLogout: 
           className="inline-flex items-center gap-1 text-slate-500 transition-colors hover:text-slate-300"
         >
           <LogOut className="h-3.5 w-3.5" aria-hidden />
-          退出
+          {t("退出", "Sign out")}
         </button>
       </div>
     </div>
   );
 }
 
-export function InstLayout() {
+function InstLayoutInner() {
+  const { locale, toggle, t } = useInstLocale();
   const navigate = useNavigate();
   const location = useLocation();
   const [session, setSession] = useState<InstSession | null>(null);
@@ -253,27 +258,35 @@ export function InstLayout() {
               >
                 <Menu className="h-4 w-4" />
               </button>
-              <span className="hidden text-xs text-slate-400 sm:inline">机构端</span>
+              <span className="hidden text-xs text-slate-400 sm:inline">{t("机构端", "Institution")}</span>
               <span className="hidden text-xs text-slate-300 sm:inline">/</span>
               <span className="truncate text-sm font-medium text-slate-800">
-                {current?.label_cn || "投资驾驶舱"}
+                {current ? (locale === "en" ? current.label_en : current.label_cn) : t("投资驾驶舱", "Overview")}
               </span>
               {current && accessBadge(current.access) ? (
                 <span className="rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-500">
-                  {accessBadge(current.access)}
+                  {accessBadge(current.access) === "只读" ? t("只读", "Read-only") : accessBadge(current.access) === "仅摘要" ? t("仅摘要", "Summary only") : accessBadge(current.access)}
                 </span>
               ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-3">
+              <button
+                type="button"
+                onClick={toggle}
+                className="rounded-lg border border-[#dcd6c8] px-2.5 py-1.5 text-xs text-slate-600 transition hover:border-[#c9a15e] hover:text-[#8a6a2f]"
+                aria-label={t("切换为英文", "Switch to Chinese")}
+              >
+                {locale === "zh" ? "EN" : "中文"}
+              </button>
               <span className="hidden rounded-full border border-[#c9a15e]/40 bg-[#fbf6ea] px-2.5 py-1 text-[11px] text-[#8a6a2f] sm:inline">
-                模拟环境 · 无真实交易
+                {t("模拟环境 · 无真实交易", "Simulation · no real trading")}
               </span>
               <div className="text-right">
                 <p className="text-xs font-medium text-slate-800">
                   {session.user.display_name || session.user.username}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  {session.role_label_cn} · {session.org.name_cn}
+                  {locale === "en" ? session.role_label_en : session.role_label_cn} · {session.org.name_cn}
                 </p>
               </div>
               <button
@@ -281,7 +294,7 @@ export function InstLayout() {
                 onClick={logout}
                 className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
               >
-                退出
+                {t("退出", "Sign out")}
               </button>
             </div>
           </header>
@@ -289,15 +302,15 @@ export function InstLayout() {
           <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
             {denied ? (
               <div className="mx-auto max-w-lg rounded-2xl border border-[#e7e3d8] bg-white p-8 text-center">
-                <h2 className="font-display text-lg font-semibold text-slate-900">无此工作区权限</h2>
+                <h2 className="font-display text-lg font-semibold text-slate-900">{t("无此工作区权限", "No access to this workspace")}</h2>
                 <p className="mt-2 text-sm text-slate-600">
-                  当前角色「{session.role_label_cn}」的权限矩阵不包含该工作区。
+                  {t(`当前角色「${session.role_label_cn}」的权限矩阵不包含该工作区。`, `The current role (${session.role_label_en}) does not include this workspace in its permission matrix.`)}
                 </p>
                 <NavLink
                   to="/inst/overview"
                   className="mt-5 inline-block rounded-lg bg-[#0b1220] px-4 py-2 text-sm font-medium text-white"
                 >
-                  返回投资驾驶舱
+                  {t("返回投资驾驶舱", "Back to overview")}
                 </NavLink>
               </div>
             ) : (
@@ -307,5 +320,13 @@ export function InstLayout() {
         </div>
       </div>
     </InstSessionContext.Provider>
+  );
+}
+
+export function InstLayout() {
+  return (
+    <InstLocaleProvider>
+      <InstLayoutInner />
+    </InstLocaleProvider>
   );
 }

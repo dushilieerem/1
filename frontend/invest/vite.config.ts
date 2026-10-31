@@ -1,11 +1,13 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-/** 开发启动器会传 SVQUANT_INVEST_API_PORT；独立运行时仍默认生产的 8767。 */
-const apiTarget = `http://127.0.0.1:${process.env.SVQUANT_INVEST_API_PORT || 8767}`;
+/** 手机 H5 与主后端同源：开发启动器传 SVQUANT_BACKEND_PORT；独立运行默认 8766。 */
+const apiTarget = `http://127.0.0.1:${process.env.SVQUANT_BACKEND_PORT || 8766}`;
 
 export default defineConfig({
   plugins: [react()],
+  // 相对资源路径：既可独立部署，也可嵌入主站 /mobile/
+  base: "./",
   server: {
     host: "0.0.0.0",
     port: 9540,

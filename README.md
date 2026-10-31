@@ -9,6 +9,7 @@ ResearchEngine 的 Python 包，也不直接读取行情目录或回测结果 SQ
 ```text
 SVQuant/
 ├── frontend/          # 主 Web 前端，Vite，开发默认 :9531（生产 :9530）
+├── frontend/invest/   # 手机 H5（与主后端同源，读 PG）
 ├── backend/           # FastAPI 产品后端，开发默认 :8768（生产 :8766）
 │   ├── app/            # 路由、启动和生命周期
 │   ├── services/       # 用户、社区、因子/策略 BFF、ResearchEngine 网关
@@ -16,7 +17,6 @@ SVQuant/
 │   ├── factor/         # 用户自定义因子同步产物与 API 文档
 │   └── requirements.txt
 ├── KnowledgeHub/       # 知识库模块（API 挂载在 backend 的 /api/kh）
-├── invest-api/         # 手机 H5 BFF（FastAPI + SQLite 读取缓存）
 ├── scripts/            # 启动、数据同步、建库脚本
 ├── docs/               # SVQuant 产品、架构和交付文档
 └── .gitignore
@@ -44,15 +44,15 @@ ResearchEngine 完成。
 ./scripts/svquant.sh
 ```
 
-默认打开 <http://127.0.0.1:9531>。脚本会依次启动主前端、`backend`、`invest-api` 和手机 H5，
+默认打开 <http://127.0.0.1:9531>。脚本会依次启动主前端、`backend` 和手机 H5，
 并可用 cloudflared 为主前端和 H5 各建一条临时外网通道（地址见 `./scripts/svquant.sh status`，
 每次启动都会变）。未安装 cloudflared 时先运行 `./scripts/svquant.sh install-cloudflared`；
 不需要外网访问用 `./scripts/svquant.sh start --no-tunnel`。状态、日志、停止和手动启动方式见[部署文档](docs/部署与运维/部署文档.md)。
 
 ### 开发库（首次）
 
-开发环境使用独立的 `svquant_dev` 库，不与生产的 `svquant` 共用数据；手机 H5 使用
-`invest-api/data/invest.dev.db`，缺少时首次启动自动从种子数据生成。
+开发环境使用独立的 `svquant_dev` 库，不与生产的 `svquant` 共用数据；手机 H5 与主后端
+同源、直接读写 PostgreSQL，不再使用 SQLite。
 
 首次准备：
 
@@ -78,15 +78,20 @@ cp backend/.env.example backend/.env
 # 2.5) 总股本 / 总市值（研究池逐只快照）
 /home/dev01/program/anaconda3/bin/python scripts/fetch_valuation_snapshot.py
 
-# 3) PostgreSQL → 手机 H5 的 SQLite 读取缓存（用户数据不覆盖）
-/home/dev01/program/anaconda3/bin/python scripts/sync_invest_sqlite.py \
-  --db invest-api/data/invest.dev.db --limit-symbols 500
+# 3) 美股 parquet → PostgreSQL（研究范围英文态使用）
+/home/dev01/program/anaconda3/bin/python scripts/etl_us_marketdata.py --days 750
+
+# 4) 重建手机端 PG 服务层快照（invest_stocks；用户数据不覆盖）
+/home/dev01/program/anaconda3/bin/python scripts/refresh_invest_serving.py
 
 # 或一键（不含 parquet）：
 ./scripts/refresh_invest_data.sh
 
-# 4) AI：backend/.env 配置 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL
+# 5) AI：backend/.env 配置 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL
 #    手机端 /api/invest/ai/*，机构端 /api/inst/*，均复用 backend/ai/router
+
+# 6) 构建主前端 + 手机 H5（H5 嵌入主站 /mobile/，主站入口 /m）
+./scripts/build-mobile-embed.sh
 ```
 
 文档：

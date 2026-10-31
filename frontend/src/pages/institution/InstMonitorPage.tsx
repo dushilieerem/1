@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Activity, AlertTriangle, ClipboardList } from "lucide-react";
 import { instApi, fmtMoney, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
@@ -59,6 +60,7 @@ const REASON: Record<string, string> = {
 
 export function InstMonitorPage() {
   const session = useInstSession();
+  const nav = useNavigate();
   const [data, setData] = useState<MonitorData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -288,11 +290,15 @@ export function InstMonitorPage() {
                   setExitBusy(true);
                   setError(null);
                   try {
-                    await instApi("/monitor/exits", {
+                    const res = await instApi<{ case_id?: number }>("/monitor/exits", {
                       method: "POST",
                       body: { company_id: Number(exitCompany), reason_type: exitReason, memo: exitMemo },
                     });
                     setExitMemo("");
+                    if (res.case_id) {
+                      nav(`/inst/research?case=${res.case_id}`);
+                      return;
+                    }
                     load();
                   } catch (e) {
                     setError(e instanceof Error ? e.message : String(e));

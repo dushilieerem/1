@@ -183,6 +183,10 @@ export function LoginPage() {
                 <Link to="/register" className="font-semibold text-red-600 hover:text-red-700">
                   注册
                 </Link>
+                <span className="mx-1 text-slate-300">·</span>
+                <Link to="/forgot-password" className="font-semibold text-red-600 hover:text-red-700">
+                  忘记密码
+                </Link>
               </>
             )}
           </p>

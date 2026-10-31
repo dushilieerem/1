@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, MessagesSquare, Play } from "lucide-react";
 import { instApi } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
+import { useInstLocale } from "@/components/institution/instLocale";
 import { Badge, Button, Card, Empty, ErrorBox, Loading, PageHeader, StatusBadge } from "./instUi";
 
 type Argument = {
@@ -38,6 +39,7 @@ type CaseItem = {
 
 export function InstDebatePage() {
   const session = useInstSession();
+  const { t } = useInstLocale();
   const nav = useNavigate();
   const [params] = useSearchParams();
   const caseId = Number(params.get("case") || 0);
@@ -125,7 +127,7 @@ export function InstDebatePage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
-        <PageHeader eyebrow="DEBATE / 04" title="投资辩论室" />
+        <PageHeader eyebrow="DEBATE / 04" title={t("投资辩论室", "Investment debate")} />
         <Loading label="正在加载辩论…" />
       </div>
     );
@@ -136,8 +138,8 @@ export function InstDebatePage() {
       <div className="mx-auto max-w-6xl space-y-5">
         <PageHeader
           eyebrow="DEBATE / 04"
-          title="投资辩论室"
-          desc="研究与辩论分离：先有已审核通过的研究版本，才能开始正反方独立立论与交叉质询。"
+          title={t("投资辩论室", "Investment debate")}
+          desc={t("研究与辩论分离：先有已审核通过的研究版本，才能开始正反方独立立论与交叉质询。", "Research and debate are separate: an approved research version is required before independent bull/bear arguments and cross-examination.")}
         />
         {error ? <ErrorBox message={error} onRetry={loadCases} /> : null}
         {cases.length ? (
@@ -156,7 +158,7 @@ export function InstDebatePage() {
                   <StatusBadge status={c.stage} />
                 </div>
                 <p className="mt-3 text-xs text-slate-500">
-                  {c.debates?.length ? `已有 ${c.debates.length} 场辩论` : "尚未开始辩论"}
+                  {c.debates?.length ? t(`已有 ${c.debates.length} 场辩论`, `${c.debates.length} debate(s)`) : t("尚未开始辩论", "No debate yet")}
                 </p>
               </Link>
             ))}
@@ -174,7 +176,7 @@ export function InstDebatePage() {
   if (!detail) {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
-        <PageHeader eyebrow="DEBATE / 04" title="投资辩论室" />
+        <PageHeader eyebrow="DEBATE / 04" title={t("投资辩论室", "Investment debate")} />
         <ErrorBox message={error || "研究案不存在"} onRetry={() => loadDetail(caseId)} />
       </div>
     );
@@ -184,12 +186,12 @@ export function InstDebatePage() {
     <div className="mx-auto max-w-6xl space-y-5">
       <PageHeader
         eyebrow="DEBATE / 04"
-        title={`${detail.company_name} · 投资辩论`}
-        desc={`${detail.symbol} · 正反方独立立论，保留未解决异议；结论只做流程建议，不生成订单。`}
+        title={t(`${detail.company_name} · 投资辩论`, `${detail.company_name} · Investment debate`)}
+        desc={`${detail.symbol} · ${t("正反方独立立论，保留未解决异议；结论只做流程建议，不生成订单。", "Independent bull/bear arguments, with unresolved dissent retained. Conclusions are process suggestions only and never create orders.")}`}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" onClick={() => nav(`/inst/research?case=${caseId}`)}>
-              <ArrowLeft className="mr-1 h-4 w-4" /> 返回研究
+              <ArrowLeft className="mr-1 h-4 w-4" /> {t("返回研究", "Back to research")}
             </Button>
             <StatusBadge status={detail.stage} />
           </div>
@@ -199,19 +201,19 @@ export function InstDebatePage() {
       {error ? <ErrorBox message={error} onRetry={() => loadDetail(caseId)} /> : null}
 
       {!approvedVersion ? (
-        <Card title="辩论门禁">
+        <Card title={t("辩论门禁", "Debate gate")}>
           <p className="text-sm text-slate-600">
             研究审核尚未通过，不能进入辩论。请先在研究页确认研究成果。
           </p>
         </Card>
       ) : !debate ? (
         <Card
-          title="开始辩论"
-          desc={`研究 v${approvedVersion.version_no} 已审核通过；开始后将生成正反方论点与主持结论。`}
+          title={t("开始辩论", "Start debate")}
+          desc={t(`研究 v${approvedVersion.version_no} 已审核通过；开始后将生成正反方论点与主持结论。`, `Research v${approvedVersion.version_no} is approved. Starting will generate bull/bear arguments and the chair conclusion.`)}
         >
           <Button variant="gold" disabled={!canWrite || busy} onClick={start}>
             <Play className="mr-1 h-4 w-4" />
-            {busy ? "辩论生成中…" : "开始两轮辩论"}
+            {busy ? t("辩论生成中…", "Generating…") : t("开始两轮辩论", "Start two-round debate")}
           </Button>
           <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
             论点必须引用证据 ID；AI 不可用时使用规则模板并标注。辩论不产生买卖建议。
@@ -220,18 +222,18 @@ export function InstDebatePage() {
       ) : (
         <>
           <Card
-            title="辩论记录"
+            title={t("辩论记录", "Debate record")}
             desc={`场次 #${debate.id} · 状态 ${debate.status} · FactPack ${String(debate.factpack_hash || "").slice(0, 12)}…`}
             actions={<StatusBadge status={debate.status} />}
           >
             <div className="mb-4 rounded-xl border border-[#c9a15e]/30 bg-[#fbf6ea] px-4 py-3 text-sm text-[#8a6a2f]">
-              主持结论：<b>{debate.conclusion || "待定"}</b>
+              {t("主持结论", "Chair conclusion")}：<b>{debate.conclusion || t("待定", "TBD")}</b>
               <span className="ml-2 text-[11px]">（流程建议，不构成投资建议）</span>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               {[
-                { key: "bull", title: "正方 · 看多", tone: "green" as const, items: groups.bull },
-                { key: "bear", title: "反方 · 看空", tone: "red" as const, items: groups.bear },
+                { key: "bull", title: t("正方 · 看多", "Bull case"), tone: "green" as const, items: groups.bull },
+                { key: "bear", title: t("反方 · 看空", "Bear case"), tone: "red" as const, items: groups.bear },
               ].map((col) => (
                 <div key={col.key} className="rounded-xl border border-[#f0ece2] bg-[#faf9f5] p-4">
                   <div className="mb-3 flex items-center justify-between">
@@ -272,7 +274,7 @@ export function InstDebatePage() {
             </div>
           </Card>
 
-          <Card title="主持与裁决" desc="主持只做流程建议：推进审议 / 补充研究 / 继续观察 / 拒绝。">
+          <Card title={t("主持与裁决", "Chair & ruling")} desc={t("主持只做流程建议：推进审议 / 补充研究 / 继续观察 / 拒绝。", "The chair only recommends: proceed / supplement research / keep watching / reject.")}>
             {groups.chair.length ? (
               <ul className="space-y-2">
                 {groups.chair.map((a) => (
@@ -317,14 +319,14 @@ export function InstDebatePage() {
                   }
                 }}
               >
-                {proposalBusy ? "创建中…" : "创建议案"}
+                {proposalBusy ? t("创建中…", "Creating…") : t("创建议案", "Create proposal")}
               </Button>
               <Button variant="ghost" onClick={() => nav("/inst/debate")}>
-                返回辩论列表
+                {t("返回辩论列表", "Back to debate list")}
               </Button>
             </div>
             <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
-              创建议案后进入合伙人复核 → Chairman 审批 → 执行前风控 → 授权。任何一步拒绝都不能跳级。
+              {t("创建议案后进入合伙人复核 → Chairman 审批 → 执行前风控 → 授权。任何一步拒绝都不能跳级。", "A proposal then goes through partner review → Chairman approval → pre-execution risk check → authorization. No step can be skipped.")}
             </p>
           </Card>
         </>

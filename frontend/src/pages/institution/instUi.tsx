@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
+import { useInstLocale } from "@/components/institution/instLocale";
 
 export function PageHeader({
   eyebrow,
@@ -147,39 +148,40 @@ export function Empty({ children }: { children: ReactNode }) {
 }
 
 export function StatusBadge({ status }: { status?: string | null }) {
-  const map: Record<string, { label: string; tone: "slate" | "gold" | "green" | "red" | "amber" | "blue" }> = {
-    draft: { label: "草稿", tone: "slate" },
-    planning: { label: "计划中", tone: "slate" },
-    researching: { label: "研究中", tone: "blue" },
-    pending_review: { label: "待研究审核", tone: "amber" },
-    package_ready: { label: "资料包就绪", tone: "blue" },
-    approved: { label: "研究已通过", tone: "green" },
-    debate: { label: "辩论中", tone: "blue" },
-    proposal: { label: "已进入议案", tone: "gold" },
-    closed: { label: "已关闭", tone: "slate" },
-    partner_review: { label: "待合伙人复核", tone: "amber" },
-    chairman_review: { label: "待 Chairman 审批", tone: "amber" },
-    risk_precheck: { label: "待执行前风控", tone: "amber" },
-    authorized: { label: "已授权", tone: "green" },
-    executed: { label: "已执行", tone: "green" },
-    rejected: { label: "已拒绝", tone: "red" },
-    frozen: { label: "风控冻结", tone: "red" },
-    pending: { label: "待开始", tone: "slate" },
-    running: { label: "运行中", tone: "blue" },
-    completed: { label: "已完成", tone: "green" },
-    failed: { label: "失败", tone: "red" },
-    done: { label: "已完成", tone: "green" },
-    partial: { label: "待补充", tone: "amber" },
-    missing: { label: "无数据", tone: "red" },
-    real: { label: "真实数据", tone: "green" },
-    pass: { label: "通过", tone: "green" },
-    block: { label: "阻断", tone: "red" },
-    veto: { label: "否决", tone: "red" },
-    qualified: { label: "有效授权", tone: "green" },
-    filled: { label: "已成交", tone: "green" },
+  const { locale } = useInstLocale();
+  const map: Record<string, { zh: string; en: string; tone: "slate" | "gold" | "green" | "red" | "amber" | "blue" }> = {
+    draft: { zh: "草稿", en: "Draft", tone: "slate" },
+    planning: { zh: "计划中", en: "Planning", tone: "slate" },
+    researching: { zh: "研究中", en: "Researching", tone: "blue" },
+    pending_review: { zh: "待研究审核", en: "Pending research review", tone: "amber" },
+    package_ready: { zh: "资料包就绪", en: "Package ready", tone: "blue" },
+    approved: { zh: "研究已通过", en: "Research approved", tone: "green" },
+    debate: { zh: "辩论中", en: "Debating", tone: "blue" },
+    proposal: { zh: "已进入议案", en: "Proposal stage", tone: "gold" },
+    closed: { zh: "已关闭", en: "Closed", tone: "slate" },
+    partner_review: { zh: "待合伙人复核", en: "Partner review", tone: "amber" },
+    chairman_review: { zh: "待 Chairman 审批", en: "Chairman review", tone: "amber" },
+    risk_precheck: { zh: "待执行前风控", en: "Pre-execution risk check", tone: "amber" },
+    authorized: { zh: "已授权", en: "Authorized", tone: "green" },
+    executed: { zh: "已执行", en: "Executed", tone: "green" },
+    rejected: { zh: "已拒绝", en: "Rejected", tone: "red" },
+    frozen: { zh: "风控冻结", en: "Risk frozen", tone: "red" },
+    pending: { zh: "待开始", en: "Pending", tone: "slate" },
+    running: { zh: "运行中", en: "Running", tone: "blue" },
+    completed: { zh: "已完成", en: "Completed", tone: "green" },
+    failed: { zh: "失败", en: "Failed", tone: "red" },
+    done: { zh: "已完成", en: "Done", tone: "green" },
+    partial: { zh: "待补充", en: "Partial", tone: "amber" },
+    missing: { zh: "无数据", en: "No data", tone: "red" },
+    real: { zh: "真实数据", en: "Real data", tone: "green" },
+    pass: { zh: "通过", en: "Pass", tone: "green" },
+    block: { zh: "阻断", en: "Blocked", tone: "red" },
+    veto: { zh: "否决", en: "Vetoed", tone: "red" },
+    qualified: { zh: "有效授权", en: "Qualified", tone: "green" },
+    filled: { zh: "已成交", en: "Filled", tone: "green" },
   };
-  const item = map[status || ""] || { label: status || "—", tone: "slate" as const };
-  return <Badge tone={item.tone}>{item.label}</Badge>;
+  const item = map[status || ""] || { zh: status || "—", en: status || "—", tone: "slate" as const };
+  return <Badge tone={item.tone}>{locale === "en" ? item.en : item.zh}</Badge>;
 }
 
 export function Field({ label, value }: { label: string; value: ReactNode }) {

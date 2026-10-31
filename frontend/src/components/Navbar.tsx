@@ -165,6 +165,22 @@ function UserMenu({ user }: { user: AuthUser }) {
           <div className="absolute right-0 top-full z-50 min-w-[10rem] pt-1">
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
               <Link
+                to="/m"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                手机版
+              </Link>
+              {user.role === "admin" ? (
+                <Link
+                  to="/admin"
+                  onClick={() => setOpen(false)}
+                  className="block px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50"
+                >
+                  管理后台
+                </Link>
+              ) : null}
+              <Link
                 to="/community/me"
                 onClick={() => setOpen(false)}
                 className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"

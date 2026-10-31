@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 
 from app.deps import optional_user, require_user
-from services.auth.auth_store import login_user, me_response, register_user
+from services.auth.auth_store import login_user, me_response, register_user, user_from_authorization
 from services.auth.profile_store import (
     follow_user,
     get_public_profile,
@@ -41,6 +41,77 @@ def _enforce_auth_rate_limit(request: Request, *, scope: str, limit: int) -> Non
 
 
 router = APIRouter(tags=["auth"])
+
+
+@router.post("/api/auth/forgot-password")
+def auth_forgot_password(body: dict[str, Any], request: Request) -> dict:
+    _enforce_auth_rate_limit(request, scope="auth.forgot", limit=_rate_limit_int("AUTH_FORGOT_RATE_LIMIT", 5))
+    identifier = str(body.get("identifier") or body.get("email") or body.get("username") or "").strip()
+    from services.auth.password_reset_store import request_reset
+
+    token = request_reset(identifier)
+    write_audit(
+        action="auth.forgot_password",
+        username=identifier or None,
+        role="user",
+        module="auth",
+        method="POST",
+        path="/api/auth/forgot-password",
+        status_code=200,
+        ip=_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        detail="已受理找回密码请求",
+    )
+    out: dict[str, Any] = {"ok": True, "message": "如果账号存在，重置方式将发送到绑定邮箱或由管理员处理。"}
+    if token and (env("AUTH_RESET_DEBUG", "0") or "0").strip() in {"1", "true", "True"}:
+        out["reset_token"] = token
+    return out
+
+
+@router.post("/api/auth/reset-password")
+def auth_reset_password(body: dict[str, Any], request: Request) -> dict:
+    from services.auth.password_reset_store import reset_password
+
+    try:
+        reset_password(str(body.get("token") or ""), str(body.get("password") or ""))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    write_audit(
+        action="auth.reset_password",
+        module="auth",
+        method="POST",
+        path="/api/auth/reset-password",
+        status_code=200,
+        ip=_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        detail="密码已重置",
+    )
+    return {"ok": True}
+
+
+@router.post("/api/auth/sso")
+def auth_sso(body: dict[str, Any], request: Request) -> dict:
+    """主站令牌换 H5 会话：校验现有 JWT，返回同一用户与令牌。"""
+    token = str(body.get("token") or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="缺少 token")
+    user = user_from_authorization(f"Bearer {token}")
+    if not user:
+        raise HTTPException(status_code=401, detail="token 无效或用户已禁用")
+    write_audit(
+        action="auth.sso",
+        user_id=int(user["id"]) if user.get("id") else None,
+        username=str(user.get("username") or ""),
+        role=str(user.get("role") or "user"),
+        module="auth",
+        method="POST",
+        path="/api/auth/sso",
+        status_code=200,
+        ip=_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        detail="主站令牌换 H5 会话",
+    )
+    return {"ok": True, "user": user, "token": token, "mode": "svquant"}
 
 
 @router.post("/api/auth/register")

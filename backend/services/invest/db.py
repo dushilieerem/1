@@ -1,0 +1,34 @@
+# -*- coding: utf-8 -*-
+"""psycopg 连接的 SQLite 占位符兼容包装。
+
+`rules.py` 从 invest-api 迁移而来，查询里仍是 `?` 占位符；这里只做 `? -> %s`
+的替换，不改变 SQL 语义。新代码优先直接写 `%s`。
+"""
+from __future__ import annotations
+
+from typing import Any, Iterator
+
+from services.core.db import get_conn
+
+
+class PGConn:
+    def __init__(self, conn: Any) -> None:
+        self._conn = conn
+
+    def execute(self, sql: str, params: Any = ()) -> Any:
+        return self._conn.execute(sql.replace("?", "%s"), tuple(params))
+
+    def commit(self) -> None:
+        self._conn.commit()
+
+    @property
+    def raw(self) -> Any:
+        return self._conn
+
+
+def invest_conn() -> Iterator[PGConn]:
+    with get_conn() as conn:
+        yield PGConn(conn)
+
+
+__all__ = ["PGConn", "invest_conn"]

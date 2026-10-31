@@ -1,12 +1,12 @@
 # SVQuant Invest H5
 
-独立手机版 H5（React 19 + Vite 8 + TypeScript），复用 SVQuant 账号。数据由 `scripts/sync_invest_sqlite.py` 从 PostgreSQL 服务层同步到 `invest-api` 的 SQLite 读取缓存：全市场证券主表、选中池日线/估值/财务、指数与公告/研报/要闻。主题仍为成分股等权代理；无实时、无推送。
+独立手机版 H5（React 19 + Vite 8 + TypeScript），复用 SVQuant 主站账号。数据直接读主后端 PostgreSQL（`/api/invest/*`）：全市场 A 股/美股主数据、日线/估值/财务、指数与公告/研报/要闻。主题仍为成分股等权代理；无实时、无推送。
 
 2026-10-30 起新增 AI 解读面板（个股/首页/组合），接口复用 `backend/ai/router`；合规红线仍强制，不提供买卖点/目标价/收益承诺。
 
 ## 运行
 
-先启动 API（见 `../../invest-api/README.md`，默认 `127.0.0.1:8767`），再启动 H5：
+先启动主后端（`backend`，开发默认 `127.0.0.1:8768`，生产 `8766`），H5 与主后端同源：
 
 ```powershell
 cd frontend/invest
@@ -19,7 +19,7 @@ cd frontend/invest
 
 ```powershell
 ..\node_modules\.bin\vite.cmd build
-# dist/ 由 Nginx/CDN 托管；/api 反代到 invest-api
+# dist/ 由 Nginx/CDN 托管；/api 反代到主后端
 ```
 
 冒烟测试（需 API + H5 已启动，且本机有 Chrome）：
@@ -30,19 +30,23 @@ node tests/smoke.mjs
 
 > 本工程复用 `frontend/node_modules`（React/Vite/Router/lucide/lightweight-charts），没有单独安装依赖。换机器时需在 `frontend` 执行过一次 `npm install`。
 
-## 数据同步（PG → SQLite）
+## 数据与 PG 读模型
 
 ```bash
-# 先确保 PostgreSQL 已由 scripts/etl_marketdata.py / fetch_financials.py 填充
-/home/dev01/program/anaconda3/bin/python scripts/sync_invest_sqlite.py \
-  --db invest-api/data/invest.dev.db --limit-symbols 500 --bar-days 750
-
-# 重建后 `/api/invest/meta` 会返回 dataDate 与 source=live
+# 1) parquet → PG（A 股）
+/home/dev01/program/anaconda3/bin/python scripts/etl_marketdata.py --from 2016-01-01
+# 2) 美股（英文态研究范围）
+/home/dev01/program/anaconda3/bin/python scripts/etl_us_marketdata.py --days 750
+# 3) 财务/公告/总股本
+/home/dev01/program/anaconda3/bin/python scripts/fetch_financials.py
+/home/dev01/program/anaconda3/bin/python scripts/fetch_valuation_snapshot.py
+# 4) 重建手机端服务层快照
+/home/dev01/program/anaconda3/bin/python scripts/refresh_invest_serving.py
 ```
 
-- 用户数据（自选/组合/风测/事件/审计）不被覆盖。
-- 全市场 5,956 只进入 `stocks` 供搜索；日线/估值只同步选中池（默认 500 只）。
-- 未同步日线的标的详情页会返回「行情数据暂缺」空态，不再 500。
+- 用户数据落 `invest_*` 表，不随快照重建覆盖。
+- A 股 5,576 只、美股 16,273 只进入 `stocks`（代码规则：A 股/ETF 用裸代码，美股用 `AAPL.O` 全代码避免跨交易所重名）。
+- 未同步日线的标的详情页返回「行情数据暂缺」空态，不再 500。
 
 ## 已实现（MVP）
 
@@ -68,7 +72,7 @@ node tests/smoke.mjs
 ## 关键约束
 
 - API 必须与 H5 同源反代，或把 H5 域名加入 `INVEST_CORS_ORIGINS`。
-- 公开运行前必须完成数据源条款、ICP、隐私政策、用户协议与安全加固；见 `../../invest-api/PUBLIC_LAUNCH.md`。
+- 公开运行前必须完成数据源条款、ICP、隐私政策、用户协议与安全加固；见 [`docs/产品与需求/手机端公开上线检查.md`](../../docs/产品与需求/手机端公开上线检查.md)。
 - 所有页面标注“收盘数据 · 非实时 · 不构成投资建议”；行情/组合/主题为公开 EOD（主题为等权代理），公告/研报/要闻为公开标题。
 - AI 面板必须保留「AI 生成 · 非投资建议」与数据口径；红线命中走固定话术。
 

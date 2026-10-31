@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { BadgeCheck, ShieldAlert, Stamp } from "lucide-react";
 import { instApi, fmtNum, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
+import { useInstLocale } from "@/components/institution/instLocale";
 import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge } from "./instUi";
 
 type ProposalListItem = {
@@ -34,14 +35,21 @@ type ProposalDetail = ProposalListItem & {
   authorizations?: Array<{ id: number; status: string; issued_at: string; snapshot: Record<string, any> }>;
 };
 
-const STEP_LABEL: Record<string, string> = {
+const STEP_LABEL_ZH: Record<string, string> = {
   partner: "合伙人复核",
   chairman: "Chairman 审批",
   risk_precheck: "执行前风控复核",
 };
+const STEP_LABEL_EN: Record<string, string> = {
+  partner: "Partner review",
+  chairman: "Chairman approval",
+  risk_precheck: "Pre-execution risk check",
+};
 
 export function InstApprovalsPage() {
   const session = useInstSession();
+  const { locale, t } = useInstLocale();
+  const stepLabel = (step: string) => (locale === "en" ? STEP_LABEL_EN[step] : STEP_LABEL_ZH[step]) || step;
   const [params, setParams] = useSearchParams();
   const selectedId = Number(params.get("proposal") || 0);
   const [items, setItems] = useState<ProposalListItem[]>([]);
@@ -115,7 +123,7 @@ export function InstApprovalsPage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
-        <PageHeader eyebrow="APPROVALS / 06" title="投委会与审批" />
+        <PageHeader eyebrow="APPROVALS / 06" title={t("投委会与审批", "IC & approvals")} />
         <Loading label="正在加载议案…" />
       </div>
     );
@@ -126,8 +134,8 @@ export function InstApprovalsPage() {
       <div className="mx-auto max-w-6xl space-y-5">
         <PageHeader
           eyebrow="APPROVALS / 06"
-          title="投委会与审批"
-          desc="议案版本、合伙人复核、Chairman 审批、独立风控与不可变授权快照。任一步拒绝或阻断都不能跳级。"
+          title={t("投委会与审批", "IC & approvals")}
+          desc={t("议案版本、合伙人复核、Chairman 审批、独立风控与不可变授权快照。任一步拒绝或阻断都不能跳级。", "Proposal versions, partner review, Chairman approval, independent risk and immutable authorization snapshots. No step can be skipped.")}
         />
         {error ? <ErrorBox message={error} onRetry={loadList} /> : null}
         {items.length ? (
@@ -171,7 +179,7 @@ export function InstApprovalsPage() {
   if (!detail) {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
-        <PageHeader eyebrow="APPROVALS / 06" title="议案详情" />
+        <PageHeader eyebrow="APPROVALS / 06" title={t("议案详情", "Proposal")} />
         <ErrorBox message={error || "议案不存在"} onRetry={() => loadDetail(selectedId)} />
       </div>
     );
@@ -184,11 +192,11 @@ export function InstApprovalsPage() {
       <PageHeader
         eyebrow="APPROVALS / 06"
         title={`${detail.company_name} · 议案 #${detail.id}`}
-        desc={`${detail.symbol} · ${detail.direction === "buy" ? "买入" : detail.direction === "sell" ? "卖出" : "退出"} · 当前版本 v${detail.current_version?.version_no || 1}`}
+        desc={`${detail.symbol} · ${detail.direction === "buy" ? t("买入", "Buy") : detail.direction === "sell" ? t("卖出", "Sell") : t("退出", "Exit")} · ${t("当前版本", "Current version")} v${detail.current_version?.version_no || 1}`}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" onClick={() => setParams({})}>
-              返回列表
+              {t("返回列表", "Back to list")}
             </Button>
             <StatusBadge status={detail.status} />
           </div>
@@ -199,7 +207,7 @@ export function InstApprovalsPage() {
 
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
         <div className="space-y-4">
-          <Card title="议案快照" desc="授权绑定研究版本、议案版本、配置、批准人与有效期。">
+          <Card title={t("议案快照", "Proposal snapshot")} desc={t("授权绑定研究版本、议案版本、配置、批准人与有效期。", "Authorization binds research version, proposal version, configuration, approver and validity.")}>
             <div className="grid gap-x-6 sm:grid-cols-2">
               <Field label="议案版本" value={`v${detail.current_version?.version_no || 1}`} />
               <Field label="研究版本" value={String(snapshot.research_version_no || snapshot.research_version_id || "—")} />
@@ -222,14 +230,14 @@ export function InstApprovalsPage() {
             ) : null}
           </Card>
 
-          <Card title="审批链" desc="职责分离：提案人不得批准自己的议案；风控否决终局。">
+          <Card title={t("审批链", "Approval chain")} desc={t("职责分离：提案人不得批准自己的议案；风控否决终局。", "Separation of duties: proposers cannot approve their own proposal; risk veto is final.")}>
             <div className="space-y-3">
               {(["partner", "chairman", "risk_precheck"] as const).map((step) => {
                 const a = approvalMap.get(step);
                 return (
                   <div key={step} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#f0ece2] bg-[#faf9f5] px-4 py-3">
                     <div>
-                      <p className="text-sm font-medium text-slate-800">{STEP_LABEL[step]}</p>
+                      <p className="text-sm font-medium text-slate-800">{stepLabel(step)}</p>
                       <p className="mt-1 text-xs text-slate-500">{a?.comment || "尚未处理"}</p>
                       {a?.decided_at ? <p className="mt-1 text-[10px] text-slate-400">{a.decided_at}</p> : null}
                     </div>
@@ -272,7 +280,7 @@ export function InstApprovalsPage() {
                           )
                         }
                       >
-                        {busy === "partner" ? "提交中…" : "合伙人复核通过"}
+                        {busy === "partner" ? t("提交中…", "Submitting…") : t("合伙人复核通过", "Partner approve")}
                       </Button>
                       <Button
                         variant="danger"
@@ -305,7 +313,7 @@ export function InstApprovalsPage() {
                           )
                         }
                       >
-                        {busy === "chairman" ? "提交中…" : "Chairman 批准"}
+                        {busy === "chairman" ? t("提交中…", "Submitting…") : t("Chairman 批准", "Chairman approve")}
                       </Button>
                       <Button
                         variant="danger"
@@ -337,7 +345,7 @@ export function InstApprovalsPage() {
                         )
                       }
                     >
-                      {busy === "risk" ? "复核中…" : "执行前风控复核"}
+                      {busy === "risk" ? t("复核中…", "Checking…") : t("执行前风控复核", "Pre-execution risk check")}
                     </Button>
                   ) : null}
 
@@ -351,7 +359,7 @@ export function InstApprovalsPage() {
                         )
                       }
                     >
-                      {busy === "authorize" ? "生成中…" : "生成授权快照"}
+                      {busy === "authorize" ? t("生成中…", "Creating…") : t("生成授权快照", "Create authorization")}
                     </Button>
                   ) : null}
                 </div>
@@ -364,12 +372,12 @@ export function InstApprovalsPage() {
         </div>
 
         <div className="space-y-4">
-          <Card title="风控检查" desc="硬性阻断：单股 >15%、交易后现金 <10%、版本不一致、无有效批准。">
+          <Card title={t("风控检查", "Risk checks")} desc={t("硬性阻断：单股 >15%、交易后现金 <10%、版本不一致、无有效批准。", "Hard blocks: single name >15%, post-trade cash <10%, version mismatch, no valid approval.")}>
             {detail.approvals?.length ? (
               <ul className="space-y-2 text-xs">
                 {detail.approvals.map((a) => (
                   <li key={a.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#f0ece2] px-3 py-2">
-                    <span className="text-slate-600">{STEP_LABEL[a.step] || a.step}</span>
+                    <span className="text-slate-600">{stepLabel(a.step)}</span>
                     <StatusBadge status={a.decision} />
                   </li>
                 ))}
@@ -385,7 +393,7 @@ export function InstApprovalsPage() {
             ) : null}
           </Card>
 
-          <Card title="AI 审议辅助" desc="AI 只读议案、审批与风控检查，不改变状态；不提供目标价或买卖指令。">
+          <Card title={t("AI 审议辅助", "AI review support")} desc={t("AI 只读议案、审批与风控检查，不改变状态；不提供目标价或买卖指令。", "AI only reads the proposal, approvals and risk checks; it never changes state or gives target prices/trade instructions.")}>
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="ghost"
@@ -400,7 +408,7 @@ export function InstApprovalsPage() {
                   })
                 }
               >
-                {busy === "ai-risk" ? "生成中…" : "AI 风控意见"}
+                {busy === "ai-risk" ? t("生成中…", "Generating…") : t("AI 风控意见", "AI risk opinion")}
               </Button>
               <Button
                 variant="ghost"
@@ -415,7 +423,7 @@ export function InstApprovalsPage() {
                   })
                 }
               >
-                {busy === "ai-chair" ? "生成中…" : "AI Chairman 摘要"}
+                {busy === "ai-chair" ? t("生成中…", "Generating…") : t("AI Chairman 摘要", "AI Chairman memo")}
               </Button>
             </div>
             {memo ? (
@@ -436,7 +444,7 @@ export function InstApprovalsPage() {
             ) : null}
           </Card>
 
-          <Card title="授权记录" desc="授权是不可变快照；撤销写新记录，不覆盖旧记录。">
+          <Card title={t("授权记录", "Authorizations")} desc={t("授权是不可变快照；撤销写新记录，不覆盖旧记录。", "Authorizations are immutable snapshots; revocation writes a new record.")}>
             {detail.authorizations?.length ? (
               <ul className="space-y-2">
                 {detail.authorizations.map((a) => (
@@ -457,7 +465,7 @@ export function InstApprovalsPage() {
             )}
           </Card>
 
-          <Card title="版本历史">
+          <Card title={t("版本历史", "Version history")}>
             {detail.versions?.length ? (
               <ul className="space-y-2">
                 {detail.versions.map((v) => (

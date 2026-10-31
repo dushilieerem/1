@@ -15,6 +15,9 @@
 | [FEAT-031-iFinD采集项目拆分](FEAT-031-iFinD采集项目拆分/README.md) | iFinD 采集独立项目 |
 | [FEAT-032-日终模拟盘](FEAT-032-日终模拟盘/README.md) | 日终模拟盘与结算 |
 | [FEAT-033-机构端入口](FEAT-033-机构端入口/README.md) | 机构端登录入口、六角色权限与机构壳 |
+| [FEAT-034-机构端首版闭环](FEAT-034-机构端首版闭环/README.md) | 主观投研端研究/辩论/审批/授权/SimBroker 闭环 |
+| [FEAT-035-手机端真实数据与AI](FEAT-035-手机端真实数据与AI/README.md) | 手机端 PG 读模型与 AI 解读 |
+| [FEAT-036-主站管理后台](FEAT-036-主站管理后台/README.md) | 用户管理与系统审计 |
 
 ## 目录约定
 

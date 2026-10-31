@@ -5,7 +5,7 @@
 | 日期 | 2026-10-30 |
 | 状态 | 首版落地中 |
 | 前置 | [ADR-037 AI 能力统一路由层](../../技术决策/ADR-037-AI能力统一路由层.md)、[主观机构端需求 v1.1](/home/dev01/download/10.30主观机构李思博/Sunvalley_AI_Value_Investment_Requirements_v1.1.md)、[手机端 AI Agent 能力清单](/home/dev01/download/10.29手机端朱梦研/SVQuant-AI-Agent能力清单交付文档.md) |
-| 代码 | `backend/ai/router/tasks/institution.py`、`backend/ai/router/tasks/invest.py`、`backend/services/institution/inst_service.py`、`invest-api/ai_endpoints.py` |
+| 代码 | `backend/ai/router/tasks/institution.py`、`backend/ai/router/tasks/invest.py`、`backend/services/institution/inst_service.py`、`backend/app/routers/invest_ai.py` |
 | 模型 | OpenAI 兼容网关 `LLM_*`（内网 LiteLLM，默认 `deepseek-flash-yxd`） |
 
 > 本文只描述 AI 能力如何接入、如何约束、如何验收；业务状态机与阈值在服务端代码中，不由模型决定。
@@ -15,7 +15,7 @@
 ## 1. 分层与边界
 
 ```text
-业务（机构端 inst_service / 手机端 invest-api）
+业务（机构端 inst_service / 手机端 invest 路由）
   │  只调用 task_id + 已注入的结构化数据
   ▼
 L2 ai/router  TaskSpec：prompt、temperature、max_tokens、validator、执行链
@@ -179,7 +179,7 @@ L1 ai/gateway  OpenAI 兼容网关 / 火山 / 硅基流动 / RE
 | 机构端辩论 | 已接入真实模型，证据 ID 校验 | `inst_service._ai_debate` |
 | 机构端研究/风控/Chairman 一页纸 | TaskSpec 已注册，接口待接 | `ai/router/tasks/institution.py` |
 | 手机端意图路由 | 已接入 | `/api/invest/ai/intent`、`/chat` |
-| 手机端日报/个股/组合/公告/条件 | 已接入 | `invest-api/ai_endpoints.py` |
+| 手机端日报/个股/组合/公告/条件 | 已接入 | `backend/app/routers/invest_ai.py` |
 | 手机端 UI 面板 | 个股/首页/组合已接入 | `frontend/invest/src/components/AiPanel.tsx` |
 | 值守调度/推送 | 未做 | 下一阶段 |
 | AI 产物落库与真人确认 | 未做 | 下一阶段（`ai_artifact`） |

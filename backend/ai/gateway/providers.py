@@ -205,7 +205,7 @@ def resolve_target(
     - default：OpenAI 兼容（LLM_*），沿用既有 11 个调用点的口径；
     - code：火山方舟（AI_FACTOR_*），代码生成类任务；
     - fast：优先 default，缺失时回落到 code（不引入第三个供应商）；
-    - assistant：按模型 id 归属供应商（SV 助手，请求方可指定模型）。
+    - assistant：按模型 id 归属供应商；该供应商未配置密钥时回落到 default（SV 助手）。
     """
     if model:
         chosen = provider or model_provider(model)
@@ -215,14 +215,17 @@ def resolve_target(
             target = ark_target(model)
         else:
             target = openai_target(model)
+        if target is None and slot == SLOT_ASSISTANT:
+            # 助手选中的模型供应商未配置时，回落到 default 网关，避免整个助手不可用
+            target = openai_target()
         if target is None:
             raise AiNotConfigured(f"模型 {model} 所属供应商未配置密钥")
         return target
 
     if slot == SLOT_ASSISTANT:
-        target = ark_target() or siliconflow_target()
+        target = ark_target() or siliconflow_target() or openai_target()
         if target is None:
-            raise AiNotConfigured("未配置 ARK_API_KEY / SILICONFLOW_API_KEY")
+            raise AiNotConfigured("未配置 ARK_API_KEY / SILICONFLOW_API_KEY / LLM_API_KEY")
         return target
 
     if slot == SLOT_CODE:

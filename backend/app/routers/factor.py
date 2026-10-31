@@ -288,7 +288,7 @@ def factor_delete_library_factor(
 
 @router.get("/api/factor/file/{name:path}")
 def factor_file(
-    name: str, uid: int | None = Depends(soft_db_user_id)
+    name: str, uid: int = Depends(require_db_user_id)
 ) -> Response:
     if ".." in name or "/" in name or "\\" in name:
         raise HTTPException(status_code=400, detail="bad path")

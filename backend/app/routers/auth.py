@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 
 from app.deps import optional_user, require_user
-from services.auth.auth_store import login_user, me_response, register_user, user_from_authorization
+from services.auth.auth_store import login_user, me_response, register_user, revoke_user_tokens, user_from_authorization
 from services.auth.profile_store import (
     follow_user,
     get_public_profile,
@@ -204,6 +204,17 @@ def auth_login(body: dict[str, Any], request: Request) -> dict:
             detail="登录失败",
         )
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+@router.post("/api/auth/logout")
+def auth_logout(
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict:
+    """吊销当前用户全部令牌（token_version +1）。无令牌也返回成功。"""
+    user = user_from_authorization(authorization)
+    if user and int(user.get("id") or 0) > 0:
+        revoke_user_tokens(int(user["id"]))
+    return {"ok": True}
 
 
 @router.get("/api/auth/me")

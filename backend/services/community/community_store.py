@@ -980,6 +980,8 @@ def list_comments(
     *,
     viewer_id: int | None = None,
     viewer_role: str = "user",
+    limit: int | None = None,
+    offset: int = 0,
 ) -> dict[str, Any]:
     with get_conn() as conn:
         if viewer_role == "admin":
@@ -1021,11 +1023,16 @@ def list_comments(
             ORDER BY
               COALESCE(lk.cnt, 0) DESC,
               c.created_at ASC
+            LIMIT %s OFFSET %s
             """,
-            (viewer_id if viewer_id is not None else -1, post_id),
+            (viewer_id if viewer_id is not None else -1, post_id, max(1, min(int(limit or 500), 500)), max(0, int(offset or 0))),
         ).fetchall()
+        total = conn.execute(
+            "SELECT COUNT(*) AS n FROM post_comments WHERE post_id=%s AND status='published'",
+            (post_id,),
+        ).fetchone()["n"]
     items = [_row_to_comment(dict(r)) for r in rows]
-    return {"ok": True, "total": len(items), "items": items}
+    return {"ok": True, "total": int(total or 0), "items": items, "limit": max(1, min(int(limit or 500), 500)), "offset": max(0, int(offset or 0))}
 
 
 def create_comment(
@@ -1378,6 +1385,17 @@ def unread_notification_count(user_id: int) -> dict[str, Any]:
     for r in rows:
         by_type[str(r["type"])] = int(r["c"])
     return {"ok": True, "total": int(total), "by_type": by_type}
+
+
+def purge_old_notifications(days: int = 90) -> int:
+    """删除超过保留期的通知（P1-C02）；返回删除行数。"""
+    days = max(1, int(days or 90))
+    with get_conn() as conn:
+        row = conn.execute(
+            "DELETE FROM notifications WHERE created_at < NOW() - (%s || ' days')::interval RETURNING id",
+            (days,),
+        ).fetchall()
+    return len(row)
 
 
 def mark_notifications_read(

@@ -186,6 +186,8 @@ def community_get_post(
 @router.get("/api/community/posts/{post_id}/comments")
 def community_list_comments(
     post_id: int,
+    limit: int | None = None,
+    offset: int = 0,
     viewer: dict | None = Depends(optional_user),
 ) -> dict:
     try:
@@ -193,6 +195,8 @@ def community_list_comments(
             post_id,
             viewer_id=int(viewer["id"]) if viewer else None,
             viewer_role=str((viewer or {}).get("role") or "user"),
+            limit=limit,
+            offset=offset,
         )
     except KeyError:
         raise HTTPException(status_code=404, detail="not found") from None

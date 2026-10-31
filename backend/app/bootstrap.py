@@ -2,6 +2,7 @@
 """FastAPI 启动时 schema / seed（从旧 api_server.main 抽出）。"""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -107,6 +108,14 @@ def bootstrap_schemas() -> None:
             print(f"  app_audit_logs 清理跳过: {exc}")
         ensure_ai_usage_schema()
         ensure_posts_schema()
+        try:
+            from services.community.community_store import purge_old_notifications
+
+            purged = purge_old_notifications(int(os.environ.get("NOTIFICATION_RETENTION_DAYS", "90") or "90"))
+            if purged:
+                print(f"  notifications 清理 {purged} 条")
+        except Exception as exc:
+            print(f"  notifications 清理跳过: {exc}")
         n = seed_sample_posts()
         ensure_user_factors_schema()
         try:

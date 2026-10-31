@@ -15,6 +15,9 @@ export type WatchlistSymbol = {
   watchlistId: number;
   symbol: string;
   name: string;
+  price?: number | null;
+  changePct?: number | null;
+  asOf?: string | null;
   createdAt?: string;
 };
 

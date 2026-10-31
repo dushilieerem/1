@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import threading
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -123,7 +124,7 @@ def _list_all_rows() -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
-def rebuild_custom_lib() -> None:
+def _rebuild_custom_lib_unlocked() -> None:
     """从表全量重写 custom_lib.py 与 index.yaml 的 custom_lib.factors。"""
     rows = _list_all_rows()
     header = (
@@ -182,6 +183,32 @@ def rebuild_custom_lib() -> None:
     custom["description"] = "用户自定义因子（按 owner_id 隔离）"
     custom["factors"] = factors_meta
     _save_index(index)
+
+
+_LIB_LOCK = threading.RLock()
+
+
+def rebuild_custom_lib() -> None:
+    """跨线程/进程串行重建（threading + 文件锁）。"""
+    with _LIB_LOCK:
+        lock_path = FACTOR_DIR / ".custom_lib.lock"
+        lock_file = None
+        try:
+            lock_file = open(lock_path, "a+")
+            try:
+                import fcntl
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            except Exception:
+                pass
+            _rebuild_custom_lib_unlocked()
+        finally:
+            if lock_file is not None:
+                try:
+                    import fcntl
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                except Exception:
+                    pass
+                lock_file.close()
 
 
 def _extract_method_from_source(source: str, method_name: str) -> str | None:
@@ -354,6 +381,15 @@ def add_user_factor(
         ).fetchone()
         if global_hit:
             raise ValueError(f"物理方法名冲突: {mname}")
+        try:
+            max_factors = max(1, int(env("USER_FACTOR_MAX", "100") or "100"))
+        except (TypeError, ValueError):
+            max_factors = 100
+        count = conn.execute(
+            "SELECT COUNT(*) AS n FROM user_custom_factors WHERE user_id=%s", (user_id,)
+        ).fetchone()["n"]
+        if int(count or 0) >= max_factors:
+            raise ValueError(f"自定义因子数量已达上限（{max_factors}）")
         conn.execute(
             """
             INSERT INTO user_custom_factors (user_id, name, method_name, body, description)

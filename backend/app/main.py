@@ -39,6 +39,7 @@ from app.routers import (  # noqa: E402
     invest,
     invest_ai,
     kh,
+    market_data,
     news,
     paper,
     re_gateway,
@@ -179,6 +180,7 @@ for mod in (
     ai_strategy_generation,
     ai_transcription,
     kh,
+    market_data,
     admin_logs,
     admin_users,
 ):

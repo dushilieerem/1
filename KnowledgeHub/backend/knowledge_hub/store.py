@@ -1049,7 +1049,11 @@ def list_chunks(document_id: int) -> list[dict[str, Any]]:
             "documentId": int(r["document_id"]),
             "ordinal": int(r["ordinal"]),
             "text": r["text"] or "",
-            "meta": r["meta"] if isinstance(r["meta"], dict) else {},
+            "meta": {
+                k: v
+                for k, v in (r["meta"] if isinstance(r["meta"], dict) else {}).items()
+                if k != "embedding"  # P1-K08：不回传大向量
+            },
             "createdAt": _iso(r["created_at"]),
         }
         for r in rows

@@ -40,6 +40,8 @@ services:
       # 覆盖 .env 里的本机地址：容器内必须用服务名连库
       DATABASE_URL: postgresql://${POSTGRES_USER:-svquant}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-svquant}
       YG_RE_BASE: ${YG_RE_BASE:?deploy/.env 缺 YG_RE_BASE（ResearchEngine 地址）}
+      # P1-D01/D02/D07/D08：本地 marketdata release 只读挂载
+      MARKETDATA_DIR: /marketdata
       TZ: Asia/Shanghai
     depends_on:
       db:
@@ -49,6 +51,8 @@ services:
       - backend-output:/app/backend/output
       - backend-factor:/app/backend/factor
       - kh-data:/app/KnowledgeHub/data
+      # 宿主机 marketdata release 只读挂载；容器内固定 /marketdata
+      - ${MARKETDATA_HOST_DIR:-/home/dev01/project/marketdata}:/marketdata:ro
     ports:
       # 沿用原开发端口；监听所有网卡，容器内始终是 8766
       - "${BACKEND_PORT:-8766}:8766"

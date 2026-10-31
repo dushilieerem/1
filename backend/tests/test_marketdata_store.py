@@ -53,6 +53,21 @@ def test_indicators_lengths_and_values() -> None:
     assert 0 <= out["series"]["rsi6"][-1] <= 100
 
 
+def test_minute_resample_ohlcv() -> None:
+    bars = [
+        {"time": "2026-09-10 09:30:00", "open": 10, "high": 10.2, "low": 9.9, "close": 10.1, "volume": 100, "amount": 1000},
+        {"time": "2026-09-10 09:31:00", "open": 10.1, "high": 10.4, "low": 10.0, "close": 10.3, "volume": 200, "amount": 2000},
+        {"time": "2026-09-10 09:35:00", "open": 10.3, "high": 10.3, "low": 10.2, "close": 10.25, "volume": 50, "amount": 500},
+    ]
+    out = md.resample_minute_bars(bars, "5m")
+    assert len(out) == 2
+    assert out[0]["open"] == 10 and out[0]["close"] == 10.3
+    assert out[0]["high"] == 10.4 and out[0]["low"] == 9.9
+    assert out[0]["volume"] == 300
+    with pytest.raises(ValueError):
+        md.resample_minute_bars(bars, "7m")
+
+
 def test_unknown_indicator_rejected() -> None:
     with pytest.raises(ValueError):
         indicators.compute(_bars(), indicators=["foo"])

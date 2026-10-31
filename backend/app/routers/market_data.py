@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
+from services.data import financial_store as fin
 from services.data import indicators as ind
 from services.data import marketdata_store as md
 from services.marketdata.store import count_securities, search_securities
@@ -37,10 +38,13 @@ def minute(
     start: str = Query(""),
     end: str = Query(""),
     limit_days: int = Query(5, ge=1, le=30),
+    freq: str = Query("1m"),
 ) -> dict[str, Any]:
-    """P1-D02：1 分钟行情（单日分区读取，带数据版本）。"""
+    """P1-D02：分钟行情（1m/5m/15m/30m/60m，带数据版本）。"""
     try:
-        return md.minute_bars(symbol, start=start, end=end, limit_days=limit_days)
+        return md.minute_bars(
+            symbol, start=start, end=end, limit_days=limit_days, freq=freq
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
@@ -62,6 +66,29 @@ def fundamentals(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (FileNotFoundError, RuntimeError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/financials/fields")
+def financial_fields() -> dict[str, Any]:
+    """P1-D01：财务三表/指标字段字典。"""
+    return {"ok": True, "fields": fin.FIELD_DICT, "statement_types": list(fin.STATEMENT_TYPES)}
+
+
+@router.get("/financials/{symbol}")
+def financials(
+    symbol: str,
+    as_of: str = Query(""),
+    statement_type: str = Query(""),
+) -> dict[str, Any]:
+    """P1-D01：公告日点时的财务三表/指标查询。"""
+    try:
+        return fin.query_financials(
+            symbol, as_of=as_of or None, statement_type=statement_type or None
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=f"财务库不可用: {exc}") from exc
 
 
 @router.get("/daily-local/{symbol}")

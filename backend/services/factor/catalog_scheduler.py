@@ -85,13 +85,18 @@ def start_re_catalog_sync_scheduler() -> None:
             return
         _started = True
 
+    # P1-O06：调度入队，worker 在任意实例执行
+    from services.core.job_queue import enqueue, start_worker
+
+    start_worker("re.catalog.sync", lambda _payload: sync_once(), poll_sec=30)
+
     def _loop() -> None:
         while True:
             time.sleep(interval)
             try:
-                sync_once()
+                enqueue("re.catalog.sync", {})
             except Exception as exc:  # noqa: BLE001
-                print(f"  re-catalog 定时同步失败: {exc}", flush=True)
+                print(f"  re-catalog 入队失败: {exc}", flush=True)
 
     _thread = threading.Thread(target=_loop, name="re-catalog-sync", daemon=True)
     _thread.start()

@@ -75,9 +75,11 @@ class CatalogSchedulerTest(unittest.TestCase):
             csched.start_re_catalog_sync_scheduler()
             csched.start_re_catalog_sync_scheduler()
 
-        # 幂等：重复调用（例如 bootstrap 被调用两次）不重复起线程
-        self.assertEqual(thread_cls.call_count, 1)
-        self.assertTrue(thread_cls.call_args.kwargs["daemon"])
+        # 调度线程 + 队列 worker 各一个；重复调用不得继续增加
+        self.assertEqual(thread_cls.call_count, 2)
+        self.assertGreaterEqual(
+            sum(1 for c in thread_cls.call_args_list if c.kwargs.get("daemon")), 2
+        )
 
     def test_sync_once_calls_both_scopes_and_returns_result(self):
         expected = {

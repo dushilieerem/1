@@ -188,10 +188,69 @@ def _minute_files(start: str, end: str) -> list[Path]:
     return files
 
 
+MINUTE_FREQS = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "60m": 60}
+
+
+def resample_minute_bars(items: list[dict[str, Any]], freq: str) -> list[dict[str, Any]]:
+    """把 1m bars 按固定分钟聚合（OHLCV）；时间取桶内第一根。"""
+    minutes = MINUTE_FREQS.get(str(freq or "1m").lower())
+    if minutes is None:
+        raise ValueError(f"不支持的分钟频率: {freq}（可选 {', '.join(MINUTE_FREQS)}）")
+    if minutes <= 1:
+        return items
+    out: list[dict[str, Any]] = []
+    bucket: dict[str, Any] | None = None
+    bucket_index: int | None = None
+    for bar in items:
+        raw = str(bar.get("time") or "")
+        try:
+            hh = int(raw[11:13])
+            mm = int(raw[14:16])
+            idx = (hh * 60 + mm) // minutes
+        except (ValueError, IndexError):
+            idx = None
+        if bucket is None or idx != bucket_index:
+            if bucket is not None:
+                out.append(bucket)
+            bucket = {
+                "time": raw,
+                "open": bar.get("open"),
+                "high": bar.get("high"),
+                "low": bar.get("low"),
+                "close": bar.get("close"),
+                "volume": bar.get("volume"),
+                "amount": bar.get("amount"),
+            }
+            bucket_index = idx
+        else:
+            if bar.get("high") is not None:
+                bucket["high"] = (
+                    bar["high"] if bucket["high"] is None else max(bucket["high"], bar["high"])
+                )
+            if bar.get("low") is not None:
+                bucket["low"] = (
+                    bar["low"] if bucket["low"] is None else min(bucket["low"], bar["low"])
+                )
+            bucket["close"] = bar.get("close")
+            for key in ("volume", "amount"):
+                if bar.get(key) is not None:
+                    bucket[key] = (bucket.get(key) or 0) + bar[key]
+    if bucket is not None:
+        out.append(bucket)
+    return out
+
+
 def minute_bars(
-    symbol: str, *, start: str = "", end: str = "", limit_days: int = 5
+    symbol: str,
+    *,
+    start: str = "",
+    end: str = "",
+    limit_days: int = 5,
+    freq: str = "1m",
 ) -> dict[str, Any]:
-    """1 分钟行情（按单日分区读取；默认最多 5 个交易日）。"""
+    """分钟行情（1m 分区读取，可按 freq 聚合；默认最多 5 个交易日）。"""
+    if str(freq or "1m").lower() not in MINUTE_FREQS:
+        raise ValueError(f"不支持的分钟频率: {freq}（可选 {', '.join(MINUTE_FREQS)}）")
     sym = normalize_symbol(symbol)
     files = _minute_files(start, end)
     if len(files) > limit_days:
@@ -200,7 +259,7 @@ def minute_bars(
         return {
             "ok": True,
             "symbol": sym,
-            "frequency": "1m",
+            "frequency": str(freq or "1m").lower(),
             "items": [],
             "count": 0,
             "note": "指定区间没有分钟数据分区",
@@ -223,10 +282,11 @@ def minute_bars(
                 row[f] = v
             if has_value:
                 items.append(row)
+    items = resample_minute_bars(items, freq)
     return {
         "ok": True,
         "symbol": sym,
-        "frequency": "1m",
+        "frequency": str(freq or "1m").lower(),
         "items": items,
         "count": len(items),
         "days": [p.stem for p in files],

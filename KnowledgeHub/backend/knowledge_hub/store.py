@@ -18,6 +18,8 @@ from services.core.secret_box import encrypt_secret
 
 # 解析进度（内存），供前端轮询；ThreadingHTTPServer 下可边 ingest 边读
 _INGEST_PROGRESS: dict[int, dict[str, Any]] = {}
+# P1-K02：pgvector 可用时启用向量表/ANN；不可用时回退 meta 内向量精确计算
+_VECTOR_READY = False
 _INGEST_PROGRESS_LOCK = threading.Lock()
 
 
@@ -428,6 +430,37 @@ def _ensure_kh_schema_unlocked(conn: Any) -> None:
             )
     except Exception:
         pass
+    # P1-K02：pgvector 可选；不可用时不影响入库/检索
+    global _VECTOR_READY
+    try:
+        with conn.transaction():
+            conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS kh_chunk_vectors (
+                  chunk_id    BIGINT PRIMARY KEY
+                    REFERENCES kh_chunks(id) ON DELETE CASCADE,
+                  document_id BIGINT NOT NULL,
+                  embedding   vector,
+                  model       TEXT NOT NULL DEFAULT '',
+                  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+        _VECTOR_READY = True
+    except Exception:
+        _VECTOR_READY = False
+    if _VECTOR_READY:
+        try:
+            dim = int(os.environ.get("KH_VECTOR_DIM", "0") or "0")
+            if dim > 0:
+                with conn.transaction():
+                    conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_kh_chunk_vectors_ann "
+                        "ON kh_chunk_vectors USING hnsw (embedding vector_cosine_ops)"
+                    )
+        except Exception:
+            pass
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS kh_ingest_jobs (
@@ -1196,10 +1229,11 @@ def ingest_document(doc_id: int) -> dict[str, Any]:
                     meta["embedError"] = embed_err
                 elif not creds:
                     meta["embedSkipped"] = "no_default_embedding"
-                conn.execute(
+                inserted = conn.execute(
                     """
                     INSERT INTO kh_chunks (document_id, ordinal, text, meta)
                     VALUES (%s, %s, %s, %s::jsonb)
+                    RETURNING id
                     """,
                     (
                         did,
@@ -1207,7 +1241,29 @@ def ingest_document(doc_id: int) -> dict[str, Any]:
                         p["text"],
                         json.dumps(meta, ensure_ascii=False),
                     ),
-                )
+                ).fetchone()
+                # P1-K02：pgvector 可用时同步写入向量表
+                if _VECTOR_READY and vectors[i] is not None and inserted:
+                    try:
+                        conn.execute(
+                            """
+                            INSERT INTO kh_chunk_vectors
+                              (chunk_id, document_id, embedding, model)
+                            VALUES (%s, %s, %s::vector, %s)
+                            ON CONFLICT (chunk_id) DO UPDATE SET
+                              embedding = EXCLUDED.embedding,
+                              model = EXCLUDED.model,
+                              updated_at = NOW()
+                            """,
+                            (
+                                int(inserted["id"]),
+                                did,
+                                "[" + ",".join(str(float(x)) for x in vectors[i]) + "]",
+                                creds["modelName"] if creds else "",
+                            ),
+                        )
+                    except Exception:
+                        pass
             conn.execute(
                 """
                 UPDATE kh_documents
@@ -1542,10 +1598,31 @@ def search_chunks(
             q_vec = None
             mode = "keyword"
 
+    # P1-K02：pgvector 存在时先用 ANN 取候选，减少 Python 侧扫描
+    candidate_ids: set[int] | None = None
+    if q_vec and _VECTOR_READY:
+        try:
+            lit = "[" + ",".join(str(float(x)) for x in q_vec) + "]"
+            with get_conn() as conn:
+                cand_rows = conn.execute(
+                    """
+                    SELECT chunk_id FROM kh_chunk_vectors
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s
+                    """,
+                    (lit, max(top_k * 20, 50)),
+                ).fetchall()
+            if cand_rows:
+                candidate_ids = {int(r["chunk_id"]) for r in cand_rows}
+        except Exception:
+            candidate_ids = None
+
     scored: list[tuple[float, dict[str, Any]]] = []
     q_lower = q.lower()
     hinted_fields = set(_hinted_structured_fields(q))
     for r in rows:
+        if candidate_ids is not None and int(r["id"]) not in candidate_ids:
+            continue
         text = r["text"] or ""
         title = r["document_title"] or ""
         meta = r["meta"] if isinstance(r["meta"], dict) else {}

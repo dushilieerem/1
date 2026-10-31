@@ -14,6 +14,7 @@ from app.deps import optional_user, require_admin, require_db_user_id, require_u
 from services.factor.attribution import run_attribution
 from services.factor.dashboard_store import query_metrics, read_job, set_verify_status, start_refresh
 from services.factor.factor_combo import combine as combine_factors
+from services.data.minute_backtest import backtest_symbol
 from services.factor.factor_store import add_custom_factor, delete_custom_factor, update_custom_factor
 from services.factor.factor_trial import trial_via_re
 from services.factor.trial_store import delete_trial, get_trial, list_trials, save_trial
@@ -96,6 +97,26 @@ def factor_re_catalog_sync(_admin: dict = Depends(require_admin)) -> JSONRespons
         return JSONResponse(data)
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
+
+
+@router.post("/api/backtest/minute")
+def minute_backtest(
+    body: dict[str, Any],
+    _user: dict = Depends(require_user),
+) -> dict:
+    """P1-D02：分钟频率回测基线（单标的价格择时）。"""
+    try:
+        return backtest_symbol(
+            str(body.get("symbol") or ""),
+            freq=str(body.get("freq") or "1m"),
+            lookback=int(body.get("lookback") or 20),
+            fee_rate=float(body.get("fee_rate") or 0.0),
+            days=int(body.get("days") or 5),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/api/factor/attribution")

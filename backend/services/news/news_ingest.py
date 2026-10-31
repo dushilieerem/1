@@ -1099,18 +1099,24 @@ def start_news_ingest_scheduler() -> None:
     except Exception:
         pass
 
+    # P1-O06：调度只负责入队；任意实例的 worker 领取执行
+    from services.core.job_queue import enqueue, start_worker
+
+    def _run(payload: dict[str, Any]) -> dict[str, Any]:
+        n = int(payload.get("limit") or limit)
+        return ingest_news(limit_per_source=n)
+
+    start_worker("news.ingest", _run, poll_sec=max(5, min(30, interval // 10)))
+
     def _loop() -> None:
         # 启动后稍等再首拉，避免拖慢 API 就绪
         time.sleep(min(45, max(5, interval // 20)))
         while True:
             try:
-                r = ingest_news(limit_per_source=limit)
-                print(
-                    f"[news] scheduled ingest ok upserted={r.get('upserted')} "
-                    f"fetched={r.get('fetched')}"
-                )
+                enqueue("news.ingest", {"limit": limit})
+                print("[news] scheduled ingest enqueued")
             except Exception as exc:
-                print(f"[news] scheduled ingest fail: {exc}")
+                print(f"[news] enqueue fail: {exc}")
             time.sleep(interval)
 
     threading.Thread(target=_loop, name="news-ingest", daemon=True).start()

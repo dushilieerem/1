@@ -22,7 +22,7 @@ SECTION_LABELS = {
     "official": "官方",
 }
 # Feed 排序：浏览数 / 收藏数 / 点赞数 / 最新（默认浏览最多）
-POST_SORTS = ("views", "favorites", "likes", "newest")
+POST_SORTS = ("views", "favorites", "likes", "newest", "relevance")
 NOTIF_TYPES = ("reply", "mention", "like")
 MAX_COMMENT_IMAGES = 3
 _MENTION_RE = re.compile(r"@([^\s@]{1,32})")
@@ -601,22 +601,32 @@ def list_posts(
     if sort_key not in POST_SORTS:
         raise ValueError(f"无效排序: {sort}")
     pin_first = "p.is_pinned DESC, p.pinned_at DESC NULLS LAST, "
+    pattern = _search_pattern(q)
+    # P1-C04：有查询词时可按相关度排序（标题命中权重 2、正文命中 1）
+    if sort_key == "relevance" and not pattern:
+        sort_key = "newest"
     if sort_key == "favorites":
         order_by = f"{pin_first}COALESCE(fc.cnt, 0) DESC, p.created_at DESC, p.id DESC"
     elif sort_key == "likes":
         order_by = f"{pin_first}COALESCE(lk.cnt, 0) DESC, p.created_at DESC, p.id DESC"
     elif sort_key == "newest":
         order_by = f"{pin_first}p.created_at DESC, p.id DESC"
+    elif sort_key == "relevance":
+        order_by = (
+            f"{pin_first}"
+            "(CASE WHEN p.title ILIKE %s ESCAPE '\\' THEN 2 ELSE 0 END + "
+            "CASE WHEN p.body ILIKE %s ESCAPE '\\' THEN 1 ELSE 0 END) DESC, "
+            "p.created_at DESC, p.id DESC"
+        )
     else:
         order_by = f"{pin_first}p.view_count DESC, p.created_at DESC, p.id DESC"
-    params: list[Any] = []
+    where_params: list[Any] = []
     where = "WHERE p.status = 'published'"
     if section and section != "all":
         if section not in SECTIONS:
             raise ValueError(f"无效分区: {section}")
         where += " AND p.section = %s"
-        params.append(section)
-    pattern = _search_pattern(q)
+        where_params.append(section)
     if pattern:
         where += (
             " AND ("
@@ -625,8 +635,8 @@ def list_posts(
             "COALESCE(p.code_snippet, '') ILIKE %s ESCAPE '\\'"
             ")"
         )
-        params.extend([pattern, pattern, pattern])
-    params.extend([limit, offset])
+        where_params.extend([pattern, pattern, pattern])
+    order_params: list[Any] = [pattern, pattern] if sort_key == "relevance" else []
     with get_conn() as conn:
         rows = conn.execute(
             f"""
@@ -635,12 +645,11 @@ def list_posts(
             ORDER BY {order_by}
             LIMIT %s OFFSET %s
             """,
-            params,
+            [*where_params, *order_params, limit, offset],
         ).fetchall()
-        count_params = params[:-2]
         total = conn.execute(
             f"SELECT COUNT(*) AS c FROM posts p {where}",
-            count_params,
+            where_params,
         ).fetchone()["c"]
     return {
         "ok": True,
@@ -651,6 +660,31 @@ def list_posts(
         "q": (q or "").strip()[:80] or None,
         "sections": [{"id": k, "label": v} for k, v in SECTION_LABELS.items()],
         "items": [_row_to_post(dict(r)) for r in rows],
+    }
+
+
+def search_suggestions(q: str | None, *, limit: int = 8) -> dict[str, Any]:
+    """P1-C04：标题级搜索建议（按命中帖子数排序）。"""
+    pattern = _search_pattern(q)
+    if not pattern:
+        return {"ok": True, "q": None, "items": []}
+    limit = max(1, min(20, int(limit)))
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT title, COUNT(*) AS hits
+            FROM posts
+            WHERE status = 'published' AND title ILIKE %s ESCAPE '\\'
+            GROUP BY title
+            ORDER BY hits DESC, MAX(created_at) DESC
+            LIMIT %s
+            """,
+            (pattern, limit),
+        ).fetchall()
+    return {
+        "ok": True,
+        "q": (q or "").strip()[:80],
+        "items": [str(r["title"]) for r in rows],
     }
 
 

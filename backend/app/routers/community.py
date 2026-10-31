@@ -27,6 +27,7 @@ from services.community.community_store import (
     purge_post,
     remove_favorite,
     resolve_report,
+    search_suggestions,
     set_comment_vote,
     set_post_vote,
     unread_notification_count,
@@ -48,6 +49,14 @@ def community_list_posts(
         return list_posts(section=section, q=q, sort=sort, limit=limit, offset=offset)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/community/search/suggest")
+def community_search_suggest(
+    q: str | None = Query(None),
+    limit: int = Query(8, ge=1, le=20),
+) -> dict:
+    return search_suggestions(q, limit=limit)
 
 
 @router.get("/api/community/hot")

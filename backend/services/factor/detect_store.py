@@ -162,6 +162,7 @@ def _row_run(row: dict[str, Any]) -> dict[str, Any]:
         "flagged": bool(row.get("flagged")),
         "request": req,
         "result": res,
+        "verified": bool((res or {}).get("_svquant_verified")),
         "finishedAt": _iso(row.get("finished_at")),
         "elapsedSec": float(row.get("elapsed_sec") or 0),
     }
@@ -532,6 +533,27 @@ def get_run(user_id: int, run_id: str) -> dict[str, Any]:
     return {"ok": True, "run": _row_run(dict(row))}
 
 
+def _verified_detect_result(user_id: int, result: Any) -> Any:
+    """P1-F09：校验 BFF 签名。
+
+    - 带签名且错误：拒绝入库（客户端伪造/篡改结果）
+    - 带签名且正确：标记 `_svquant_verified=true`
+    - 无签名（旧客户端/历史数据）：按未验证保存
+    """
+    if not isinstance(result, dict):
+        return result
+    result = dict(result)
+    token = str(result.pop("_svquant_verified_token", "") or "")
+    verified = False
+    if token:
+        from services.strategy.result_signature import verify_result
+
+        if not verify_result(user_id, result, token):
+            raise ValueError("检测结果签名无效，已拒绝入库")
+        verified = True
+    return {**result, "_svquant_verified": verified}
+
+
 def save_run(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     ensure_detect_schema()
     project_id = str(payload.get("projectId") or payload.get("project_id") or "").strip()
@@ -543,6 +565,7 @@ def save_run(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     remark = str(payload.get("remark") or "").strip()
     request = payload.get("request") or {}
     result = payload.get("result") or {}
+    result = _verified_detect_result(user_id, result)
     finished_at = payload.get("finishedAt") or payload.get("finished_at")
     elapsed = float(payload.get("elapsedSec") or payload.get("elapsed_sec") or 0)
 

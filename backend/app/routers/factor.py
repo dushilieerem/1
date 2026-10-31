@@ -32,6 +32,7 @@ from services.factor.re_factor_catalog import (
     sync_all_scopes,
 )
 from services.factor.user_factor_store import custom_lib_source_for_user, filtered_index_yaml
+from services.strategy.result_signature import sign_result
 from services.factor.user_library_store import (
     add_library_factor,
     create_user_library,
@@ -146,20 +147,37 @@ def _proxy_response(
     return JSONResponse(content=data if data is not None else {}, status_code=status, headers=headers)
 
 
+def _sign_factor_result(uid: int, status: int, data: Any) -> Any:
+    """P1-F09：给检测结果签发 HMAC，落库时据此判定来源。"""
+    if not isinstance(data, dict) or not (200 <= int(status) < 300):
+        return data
+    if (
+        data.get("status") in ("done", "success", "finished")
+        or data.get("metrics")
+        or data.get("factor_analysis")
+    ):
+        return {**data, "_svquant_verified_token": sign_result(int(uid), data)}
+    return data
+
+
 @router.post("/api/backtest/factor")
 def backtest_factor_submit(
-    body: dict[str, Any], _user: dict = Depends(require_user)
+    body: dict[str, Any],
+    _user: dict = Depends(require_user),
+    uid: int = Depends(require_db_user_id),
 ) -> JSONResponse:
     status, headers, data = proxy_submit_factor_backtest(body if isinstance(body, dict) else {})
-    return _proxy_response(status, headers, data)
+    return _proxy_response(status, headers, _sign_factor_result(uid, status, data))
 
 
 @router.get("/api/backtest/factor/{run_id}")
 def backtest_factor_poll(
-    run_id: str, _user: dict = Depends(require_user)
+    run_id: str,
+    _user: dict = Depends(require_user),
+    uid: int = Depends(require_db_user_id),
 ) -> JSONResponse:
     status, headers, data = proxy_get_factor_run(run_id)
-    return _proxy_response(status, headers, data)
+    return _proxy_response(status, headers, _sign_factor_result(uid, status, data))
 
 
 @router.delete("/api/backtest/factor/{run_id}")

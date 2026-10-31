@@ -16,9 +16,7 @@ export function getLocale(): Locale {
   } catch {
     /* ignore */
   }
-  if (typeof navigator !== "undefined") {
-    return normalizeLocale(navigator.language);
-  }
+  // 产品默认中文；英文仅在用户显式切换后生效
   return "zh";
 }
 

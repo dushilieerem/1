@@ -6,6 +6,7 @@ import hashlib
 import html as html_lib
 import json
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -932,7 +933,36 @@ def backfill_eastmoney_research_dates(*, max_pages: int = 40) -> dict[str, int]:
     }
 
 
+def _retry_config() -> tuple[int, float]:
+    """P1-C06：每源失败重试次数与线性退避基数。"""
+    from services.core.env_config import env
+
+    try:
+        retries = max(0, min(5, int(env("NEWS_FETCH_RETRIES", "2") or "2")))
+    except (TypeError, ValueError):
+        retries = 2
+    try:
+        backoff = max(0.0, min(60.0, float(env("NEWS_FETCH_BACKOFF_SEC", "2") or "2")))
+    except (TypeError, ValueError):
+        backoff = 2.0
+    return retries, backoff
+
+
 def ingest_news(
+    *,
+    sources: list[str] | None = None,
+    limit_per_source: int = 15,
+) -> dict[str, Any]:
+    """P1-O06：多实例下同一时刻只允许一轮抓取。"""
+    from services.core.distributed_lock import advisory_lock
+
+    with advisory_lock("svquant:news:ingest") as acquired:
+        if not acquired:
+            return {"ok": False, "skipped": True, "reason": "another instance is ingesting"}
+        return _ingest_news_impl(sources=sources, limit_per_source=limit_per_source)
+
+
+def _ingest_news_impl(
     *,
     sources: list[str] | None = None,
     limit_per_source: int = 15,
@@ -957,21 +987,36 @@ def ingest_news(
         if not fn:
             errors[sid] = "unsupported source"
             continue
-        try:
-            items = fn(limit=limit_per_source)
+        attempts = 0
+        last_exc: Exception | None = None
+        items: list[dict[str, Any]] = []
+        retries, backoff = _retry_config()
+        for attempt in range(retries + 1):
+            attempts = attempt + 1
+            try:
+                items = fn(limit=limit_per_source)
+                last_exc = None
+                break
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if attempt < retries:
+                    time.sleep(backoff * (attempt + 1))
+        if last_exc is None:
             per_source[sid] = {
                 "ok": True,
                 "count": len(items),
                 "label": SOURCE_LABELS.get(sid, sid),
+                "attempts": attempts,
             }
             all_items.extend(items)
-        except Exception as exc:
-            errors[sid] = str(exc)[:240]
+        else:
+            errors[sid] = str(last_exc)[:240]
             per_source[sid] = {
                 "ok": False,
                 "count": 0,
                 "label": SOURCE_LABELS.get(sid, sid),
-                "error": str(exc)[:240],
+                "error": str(last_exc)[:240],
+                "attempts": attempts,
             }
 
     uniq: dict[str, dict[str, Any]] = {}

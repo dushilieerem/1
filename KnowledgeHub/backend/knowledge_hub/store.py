@@ -55,6 +55,35 @@ def _set_ingest_progress(
     }
     with _INGEST_PROGRESS_LOCK:
         _INGEST_PROGRESS[did] = payload
+    # P1-K03：进度持久化，进程重启后仍可查询
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO kh_ingest_jobs
+                  (document_id, phase, done, total, percent, title, message, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (document_id) DO UPDATE SET
+                  phase = EXCLUDED.phase,
+                  done = EXCLUDED.done,
+                  total = EXCLUDED.total,
+                  percent = EXCLUDED.percent,
+                  title = EXCLUDED.title,
+                  message = EXCLUDED.message,
+                  updated_at = NOW()
+                """,
+                (
+                    did,
+                    payload["phase"],
+                    payload["done"],
+                    payload["total"],
+                    payload["percent"],
+                    payload["title"],
+                    payload["message"],
+                ),
+            )
+    except Exception:
+        pass
 
 
 def get_ingest_progress(doc_id: int) -> dict[str, Any]:
@@ -62,6 +91,24 @@ def get_ingest_progress(doc_id: int) -> dict[str, Any]:
         cur = _INGEST_PROGRESS.get(int(doc_id))
         if cur:
             return dict(cur)
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM kh_ingest_jobs WHERE document_id = %s", (int(doc_id),)
+            ).fetchone()
+        if row:
+            return {
+                "documentId": int(doc_id),
+                "phase": row["phase"],
+                "done": int(row["done"] or 0),
+                "total": int(row["total"] or 0),
+                "percent": int(row["percent"] or 0),
+                "title": row["title"] or "",
+                "message": row["message"] or "",
+                "cancelRequested": bool(row["cancel_requested"]),
+            }
+    except Exception:
+        pass
     return {
         "documentId": int(doc_id),
         "phase": "idle",
@@ -71,6 +118,57 @@ def get_ingest_progress(doc_id: int) -> dict[str, Any]:
         "title": "",
         "message": "",
     }
+
+
+def request_ingest_cancel(doc_id: int) -> dict[str, Any]:
+    """P1-K03：请求取消；worker 在阶段边界检查。"""
+    ensure_kh_schema()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE kh_ingest_jobs SET cancel_requested = TRUE, updated_at = NOW() "
+            "WHERE document_id = %s",
+            (int(doc_id),),
+        )
+    return {"documentId": int(doc_id), "cancelRequested": True}
+
+
+def is_ingest_cancelled(doc_id: int) -> bool:
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT cancel_requested FROM kh_ingest_jobs WHERE document_id = %s",
+                (int(doc_id),),
+            ).fetchone()
+        return bool(row and row.get("cancel_requested"))
+    except Exception:
+        return False
+
+
+def start_ingest_async(doc_id: int) -> dict[str, Any]:
+    """P1-K03：后台线程摄取，立即返回；进度写库可轮询。"""
+    ensure_kh_schema()
+    did = int(doc_id)
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO kh_ingest_jobs (document_id, phase, percent, updated_at)
+            VALUES (%s, 'queued', 0, NOW())
+            ON CONFLICT (document_id) DO UPDATE SET
+              phase = 'queued', cancel_requested = FALSE, percent = 0, updated_at = NOW()
+            """,
+            (did,),
+        )
+
+    def _worker() -> None:
+        try:
+            ingest_document(did)
+        except Exception as exc:  # noqa: BLE001
+            _set_ingest_progress(
+                did, phase="error", message=str(exc)[:300], percent=0
+            )
+
+    threading.Thread(target=_worker, name=f"kh-ingest-{did}", daemon=True).start()
+    return {"documentId": did, "phase": "queued", "async": True}
 
 
 def _clear_ingest_progress(doc_id: int, delay_sec: float = 2.0) -> None:
@@ -202,10 +300,19 @@ def _ensure_kh_schema_unlocked(conn: Any) -> None:
           chunk_strategy  TEXT NOT NULL DEFAULT 'plain_window',
           status          TEXT NOT NULL DEFAULT 'active',
           created_by      BIGINT REFERENCES users(id) ON DELETE SET NULL,
+          owner_id        BIGINT REFERENCES users(id) ON DELETE SET NULL,
           created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """
+    )
+    # P1-K01：个人知识库归属；历史库 owner_id 为 NULL（仅 admin 可见）
+    conn.execute(
+        "ALTER TABLE kh_collections ADD COLUMN IF NOT EXISTS owner_id BIGINT"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kh_collections_owner "
+        "ON kh_collections (owner_id, updated_at DESC)"
     )
     conn.execute(
         """
@@ -304,6 +411,36 @@ def _ensure_kh_schema_unlocked(conn: Any) -> None:
           meta          JSONB NOT NULL DEFAULT '{}'::jsonb,
           created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           UNIQUE (document_id, ordinal)
+        )
+        """
+    )
+    # P1-K02：全文/子串索引（pg_trgm 不可用时忽略；向量列仍在 meta，pgvector 待迁移）
+    try:
+        with conn.transaction():
+            conn.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_kh_chunks_text_trgm "
+                "ON kh_chunks USING gin (text gin_trgm_ops)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_kh_chunks_fts "
+                "ON kh_chunks USING gin (to_tsvector('simple', text))"
+            )
+    except Exception:
+        pass
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS kh_ingest_jobs (
+          document_id      BIGINT PRIMARY KEY
+            REFERENCES kh_documents(id) ON DELETE CASCADE,
+          phase            TEXT NOT NULL DEFAULT 'idle',
+          done             INT NOT NULL DEFAULT 0,
+          total            INT NOT NULL DEFAULT 0,
+          percent          INT NOT NULL DEFAULT 0,
+          title            TEXT NOT NULL DEFAULT '',
+          message          TEXT NOT NULL DEFAULT '',
+          cancel_requested BOOLEAN NOT NULL DEFAULT FALSE,
+          updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """
     )
@@ -441,21 +578,56 @@ def _coll_row(r: dict[str, Any], doc_count: int = 0) -> dict[str, Any]:
     }
 
 
-def list_collections() -> list[dict[str, Any]]:
+def list_collections(owner_id: int | None = None) -> list[dict[str, Any]]:
+    """owner_id=None 返回全部（仅 admin 调用）；否则只返回该用户的知识库。"""
     ensure_kh_schema()
+    sql = """
+        SELECT c.*, COALESCE(d.cnt, 0) AS document_count
+        FROM kh_collections c
+        LEFT JOIN (
+          SELECT collection_id, COUNT(*) AS cnt
+          FROM kh_documents GROUP BY collection_id
+        ) d ON d.collection_id = c.id
+    """
+    params: tuple[Any, ...] = ()
+    if owner_id is not None:
+        sql += " WHERE c.owner_id = %s"
+        params = (int(owner_id),)
+    sql += " ORDER BY c.updated_at DESC"
     with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT c.*, COALESCE(d.cnt, 0) AS document_count
-            FROM kh_collections c
-            LEFT JOIN (
-              SELECT collection_id, COUNT(*) AS cnt
-              FROM kh_documents GROUP BY collection_id
-            ) d ON d.collection_id = c.id
-            ORDER BY c.updated_at DESC
-            """
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     return [_coll_row(dict(r), int(dict(r).get("document_count") or 0)) for r in rows]
+
+
+def collection_accessible(
+    coll_id: int, *, user_id: int | None, is_admin: bool
+) -> bool:
+    """P1-K01：admin 全量；普通用户仅自己的库（历史 NULL 库仅 admin）。"""
+    if is_admin:
+        return True
+    if not user_id:
+        return False
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT owner_id FROM kh_collections WHERE id = %s", (int(coll_id),)
+        ).fetchone()
+    return bool(row) and row.get("owner_id") is not None and int(row["owner_id"]) == int(user_id)
+
+
+def document_accessible(
+    doc_id: int, *, user_id: int | None, is_admin: bool
+) -> bool:
+    if is_admin:
+        return True
+    if not user_id:
+        return False
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT col.owner_id FROM kh_documents d "
+            "JOIN kh_collections col ON col.id = d.collection_id WHERE d.id = %s",
+            (int(doc_id),),
+        ).fetchone()
+    return bool(row) and row.get("owner_id") is not None and int(row["owner_id"]) == int(user_id)
 
 
 def create_collection(
@@ -465,6 +637,7 @@ def create_collection(
     pipeline: str = "general",
     chunk_strategy: str | None = None,
     created_by: int | None = None,
+    owner_id: int | None = None,
 ) -> dict[str, Any]:
     ensure_kh_schema()
     title = (name or "").strip()
@@ -479,11 +652,11 @@ def create_collection(
         row = conn.execute(
             """
             INSERT INTO kh_collections
-              (name, description, pipeline, chunk_strategy, created_by)
-            VALUES (%s, %s, %s, %s, %s)
+              (name, description, pipeline, chunk_strategy, created_by, owner_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
-            (title, description or "", pipe, strategy, created_by),
+            (title, description or "", pipe, strategy, created_by, owner_id),
         ).fetchone()
     return _coll_row(dict(row), 0)
 
@@ -910,6 +1083,10 @@ def ingest_document(doc_id: int) -> dict[str, Any]:
                 """,
                 (did,),
             )
+            conn.execute(
+                "UPDATE kh_ingest_jobs SET cancel_requested = FALSE WHERE document_id = %s",
+                (did,),
+            )
 
         _set_ingest_progress(
             did,
@@ -986,6 +1163,18 @@ def ingest_document(doc_id: int) -> dict[str, Any]:
                     message="未配置 Embedding，仅保存分块…",
                     percent=90,
                 )
+
+            # P1-K03：取消在阶段边界生效（避免半写入）
+            if is_ingest_cancelled(did):
+                _set_ingest_progress(
+                    did, phase="cancelled", message="摄取已取消", percent=0
+                )
+                with get_conn() as conn:
+                    conn.execute(
+                        "UPDATE kh_documents SET status = 'draft' WHERE id = %s",
+                        (did,),
+                    )
+                raise ValueError("摄取已取消")
 
             _set_ingest_progress(
                 did,
@@ -1280,6 +1469,8 @@ def search_chunks(
     query: str,
     collection_ids: list[int] | None = None,
     top_k: int = 8,
+    owner_id: int | None = None,
+    rerank: bool = False,
 ) -> dict[str, Any]:
     """关键词检索；若默认 Embedding 可用且切片含向量，则 hybrid（向量+关键词）。"""
     ensure_kh_schema()
@@ -1307,9 +1498,12 @@ def search_chunks(
                 WHERE d.status = 'ready'
                   AND COALESCE(d.enabled, TRUE) = TRUE
                   AND d.collection_id = ANY(%s)
+                  {owner_filter}
                 ORDER BY c.id
-                """,
-                (cids,),
+                """.format(
+                    owner_filter="AND col.owner_id = %s" if owner_id is not None else ""
+                ),
+                (cids, int(owner_id)) if owner_id is not None else (cids,),
             ).fetchall()
         else:
             rows = conn.execute(
@@ -1322,8 +1516,12 @@ def search_chunks(
                 JOIN kh_collections col ON col.id = d.collection_id
                 WHERE d.status = 'ready'
                   AND COALESCE(d.enabled, TRUE) = TRUE
+                  {owner_filter}
                 ORDER BY c.id
-                """
+                """.format(
+                    owner_filter="AND col.owner_id = %s" if owner_id is not None else ""
+                ),
+                (int(owner_id),) if owner_id is not None else (),
             ).fetchall()
 
     q_vec: list[float] | None = None
@@ -1428,6 +1626,12 @@ def search_chunks(
             int(h.get("ordinal") or 0),
         )
     )
+    # P1-K05：可选 rerank（配置的 rerank 服务优先，未配置时用确定性重排）
+    if rerank and hits:
+        from knowledge_hub.rerank import rerank_hits
+
+        hits = rerank_hits(q, hits, top_k=top_k)
+        mode = f"{mode}+rerank"
     _enrich_hits_with_attachment(hits)
     return {
         "query": q,
@@ -1536,6 +1740,8 @@ def ask(
     collection_ids: list[int] | None = None,
     chat_id: int | None = None,
     top_k: int = 5,
+    owner_id: int | None = None,
+    rerank: bool = False,
 ) -> dict[str, Any]:
     """检索 + LLM 问答。无命中不调用模型；禁止无依据编造由提示词约束。"""
     from knowledge_hub.llm import KhLlmError, chat_completions, llm_configured
@@ -1557,7 +1763,9 @@ def ask(
         raise ValueError("请指定 collectionIds 或在聊天应用中关联知识库")
     _ensure_collections_exist(cids)
 
-    retrieved = search_chunks(query=q, collection_ids=cids, top_k=top_k)
+    retrieved = search_chunks(
+        query=q, collection_ids=cids, top_k=top_k, owner_id=owner_id, rerank=rerank
+    )
     hits = retrieved.get("hits") or []
     empty = (
         (chat.get("emptyResponse") if chat else "") or ""

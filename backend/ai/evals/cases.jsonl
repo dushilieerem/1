@@ -1,0 +1,7 @@
+{"id":"factor-valid-close","kind":"factor_static","code":"def candidate(self):\n    return self.close.pct_change()\n","expect_ok":true}
+{"id":"factor-reject-import","kind":"factor_static","code":"import os\ndef X(self):\n    return os.getcwd()\n","expect_ok":false}
+{"id":"factor-reject-future","kind":"factor_static","code":"def X(self):\n    return self.data['close'].shift(-1)\n","expect_ok":false}
+{"id":"strategy-required-keys","kind":"json_keys","payload":{"strategy_code":"def init(context): pass","metrics":{"sharpe":1.2}},"required":["strategy_code","metrics"],"expect_ok":true}
+{"id":"strategy-missing-metrics","kind":"json_keys","payload":{"strategy_code":"x"},"required":["strategy_code","metrics"],"expect_ok":false}
+{"id":"summary-metric-drift","kind":"summary_numbers","summary":"夏普 2.50，年化 30.00%","platform_ref":{"metrics_display":{"夏普":"1.20","年化":"12.00%"},"metrics":{"sharpe":1.2,"annual_return":0.12}},"expect_ok":false}
+{"id":"summary-metric-match","kind":"summary_numbers","summary":"夏普 1.20，年化 12.00%","platform_ref":{"metrics_display":{"夏普":"1.20","年化":"12.00%"},"metrics":{"sharpe":1.2,"annual_return":0.12}},"expect_ok":true}

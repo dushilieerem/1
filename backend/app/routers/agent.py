@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.deps import require_db_user_id, require_user
 from ai.gateway.llm_client import LlmError
 from ai.crews.strategy_research import run_backtest, run_backtest_chat
-from ai.runtime import chain_store, eval_store
+from ai.runtime import chain_store, eval_store, research_run_store
 from ai.runtime import store as agent_store
 from ai.runtime.runtime import start_run
 from services.factor.factor_store import add_custom_factor
@@ -150,6 +150,114 @@ def agent_factor_eval(
     except Exception as exc:  # noqa: BLE001 - 落库失败不影响评价结果返回
         out = {**out, "persisted": False, "persist_error": str(exc)}
     return out
+
+
+@router.post("/api/agent/knowledge/search")
+def agent_knowledge_search(
+    body: dict[str, Any],
+    user: dict = Depends(require_user),
+) -> dict:
+    """P1-K09：研究/Agent 检索个人知识库，返回可追溯引用。"""
+    from knowledge_hub import store as kh_store
+
+    uid = int(user["id"])
+    is_admin = str(user.get("role") or "") == "admin"
+    raw_ids = body.get("collection_ids") or body.get("collectionIds") or []
+    cids: list[int] = []
+    if isinstance(raw_ids, list):
+        for x in raw_ids:
+            try:
+                cids.append(int(x))
+            except (TypeError, ValueError):
+                continue
+    if not is_admin and cids:
+        cids = [c for c in cids if kh_store.collection_accessible(c, user_id=uid, is_admin=False)]
+    try:
+        result = kh_store.search_chunks(
+            query=str(body.get("query") or ""),
+            collection_ids=cids or None,
+            top_k=int(body.get("top_k") or body.get("topK") or 6),
+            owner_id=None if is_admin else uid,
+            rerank=bool(body.get("rerank") or True),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    citations = [
+        {
+            "index": i,
+            "chunkId": h.get("chunkId"),
+            "documentId": h.get("documentId"),
+            "documentTitle": h.get("documentTitle"),
+            "collectionName": h.get("collectionName"),
+            "text": h.get("text"),
+            "score": h.get("rerankScore", h.get("score")),
+        }
+        for i, h in enumerate(result.get("hits") or [], start=1)
+    ]
+    return {
+        "ok": True,
+        "query": result.get("query"),
+        "mode": result.get("mode"),
+        "citations": citations,
+        "referencedDocuments": result.get("referencedDocuments") or [],
+    }
+
+
+@router.post("/api/agent/research-runs")
+def agent_research_run_create(body: dict[str, Any], user: dict = Depends(require_user)) -> dict:
+    """P1-A02：创建多步研究（gather→idea→factor→backtest→eval→report）。"""
+    try:
+        run = research_run_store.create_run(int(user["id"]), str(body.get("goal") or ""))
+        return {"ok": True, "run": run, "steps": list(research_run_store.STEPS)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/agent/research-runs")
+def agent_research_run_list(
+    user: dict = Depends(require_user),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    return research_run_store.list_runs(int(user["id"]), limit=limit, offset=offset)
+
+
+@router.get("/api/agent/research-runs/{run_id}")
+def agent_research_run_get(run_id: int, user: dict = Depends(require_user)) -> dict:
+    run = research_run_store.get_run(int(user["id"]), run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"ok": True, "run": run, "steps": list(research_run_store.STEPS)}
+
+
+@router.post("/api/agent/research-runs/{run_id}/advance")
+def agent_research_run_advance(
+    run_id: int,
+    body: dict[str, Any],
+    user: dict = Depends(require_user),
+) -> dict:
+    try:
+        run = research_run_store.advance_run(
+            int(user["id"]),
+            run_id,
+            step=str(body.get("step") or ""),
+            output=body.get("output"),
+            approve=bool(body.get("approve")),
+            fail=str(body["fail"]) if body.get("fail") else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if run is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"ok": True, "run": run}
+
+
+@router.post("/api/agent/research-runs/{run_id}/cancel")
+def agent_research_run_cancel(run_id: int, user: dict = Depends(require_user)) -> dict:
+    run = research_run_store.cancel_run(int(user["id"]), run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"ok": True, "run": run}
 
 
 @router.get("/api/agent/chain-state")

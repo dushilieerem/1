@@ -116,6 +116,14 @@ def bootstrap_schemas() -> None:
                 print(f"  notifications 清理 {purged} 条")
         except Exception as exc:
             print(f"  notifications 清理跳过: {exc}")
+        try:
+            from ai.runtime.conversation_store import purge_old_conversations
+
+            purged = purge_old_conversations()
+            if purged:
+                print(f"  ai_conversations 清理 {purged} 个")
+        except Exception as exc:
+            print(f"  ai_conversations 清理跳过: {exc}")
         n = seed_sample_posts()
         ensure_user_factors_schema()
         try:

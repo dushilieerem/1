@@ -10,6 +10,7 @@ from app.deps import require_admin, require_user
 from services.data.market_data_bff import fetch_market_daily
 from services.news.news_ingest import FETCHERS, UNSUPPORTED_SOURCES, enrich_news_body, ingest_news
 from services.news.news_store import get_news, ingest_health, list_news
+from services.news.source_registry import list_sources
 from services.news.news_tag_dict import dict_snapshot
 
 router = APIRouter(tags=["news"])
@@ -83,6 +84,12 @@ def news_ingest(body: dict[str, Any], _admin: dict = Depends(require_admin)) -> 
         return JSONResponse(ingest_news(sources=sources, limit_per_source=limit))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/admin/news/sources")
+def admin_news_sources(_admin: dict = Depends(require_admin)) -> dict:
+    """P1-C07：数据源清单与授权状态（待法务确认项明确标注）。"""
+    return list_sources()
 
 
 @router.get("/api/admin/news/ingest-health")

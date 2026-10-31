@@ -43,10 +43,15 @@ def _interval() -> int:
 
 
 def sync_once() -> dict[str, Any]:
-    """同步 primary/all 两个 scope，并打印一致性结果。"""
+    """同步 primary/all 两个 scope，并打印一致性结果（多实例互斥）。"""
+    from services.core.distributed_lock import advisory_lock
     from services.factor.re_factor_catalog import sync_all_scopes
 
-    out = sync_all_scopes()
+    with advisory_lock("svquant:re-catalog:sync") as acquired:
+        if not acquired:
+            print("  re-catalog 同步跳过：另一实例正在同步", flush=True)
+            return {"ok": False, "skipped": True}
+        out = sync_all_scopes()
     consistency = out.get("consistency") or {}
     warnings = list(consistency.get("warnings") or [])
     errors = list(out.get("errors") or [])

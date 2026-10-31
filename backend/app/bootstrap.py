@@ -259,6 +259,13 @@ def bootstrap_schemas() -> None:
         pass
 
     try:
+        from services.factor.catalog_scheduler import start_re_catalog_sync_scheduler
+
+        start_re_catalog_sync_scheduler()
+    except Exception as exc:
+        print(f"  re-catalog 定时同步跳过: {exc}")
+
+    try:
         from services.factor.re_factor_catalog import warm_re_catalog_async
 
         warm_re_catalog_async()

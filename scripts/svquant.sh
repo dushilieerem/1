@@ -296,7 +296,7 @@ run_backend() {
   if [[ -n "${SVQUANT_PID_FILE:-}" ]]; then
     printf '%s\n' "$$" > "$SVQUANT_PID_FILE"
   fi
-  exec python -u api_server.py
+  exec env SVQUANT_BACKEND_PORT="$BACKEND_PORT" python -u api_server.py
 }
 
 run_frontend() {
@@ -304,7 +304,8 @@ run_frontend() {
   if [[ -n "${SVQUANT_PID_FILE:-}" ]]; then
     printf '%s\n' "$$" > "$SVQUANT_PID_FILE"
   fi
-  exec "$FRONTEND_DIR/node_modules/.bin/vite" --host 0.0.0.0 --port "$FRONTEND_PORT" --strictPort
+  exec env SVQUANT_BACKEND_PORT="$BACKEND_PORT" \
+    "$FRONTEND_DIR/node_modules/.bin/vite" --host 0.0.0.0 --port "$FRONTEND_PORT" --strictPort
 }
 
 run_invest_api() {
@@ -313,7 +314,9 @@ run_invest_api() {
   if [[ -n "${SVQUANT_PID_FILE:-}" ]]; then
     printf '%s\n' "$$" > "$SVQUANT_PID_FILE"
   fi
-  exec python -u -m uvicorn app:app --host 0.0.0.0 --port "$INVEST_API_PORT"
+  # 开发用独立 SQLite，避免演示数据的读写落到生产的 invest.db
+  exec env INVEST_DB="$INVEST_API_DIR/data/invest.dev.db" \
+    python -u -m uvicorn app:app --host 0.0.0.0 --port "$INVEST_API_PORT"
 }
 
 run_invest_h5() {
@@ -321,7 +324,8 @@ run_invest_h5() {
   if [[ -n "${SVQUANT_PID_FILE:-}" ]]; then
     printf '%s\n' "$$" > "$SVQUANT_PID_FILE"
   fi
-  exec "$FRONTEND_DIR/node_modules/.bin/vite" --host 0.0.0.0 --port "$INVEST_H5_PORT" --strictPort
+  exec env SVQUANT_INVEST_API_PORT="$INVEST_API_PORT" \
+    "$FRONTEND_DIR/node_modules/.bin/vite" --host 0.0.0.0 --port "$INVEST_H5_PORT" --strictPort
 }
 
 run_tunnel() {
@@ -637,13 +641,15 @@ start_all() {
   printf '  手机 H5：http://127.0.0.1:%s  （演示账号 demo/demo1234）\n' "$INVEST_H5_PORT"
   printf '  Invest API：http://127.0.0.1:%s/docs\n' "$INVEST_API_PORT"
   local name url found=0
-  for name in "${TUNNELS[@]}"; do
-    url="$(tunnel_url_from_log "$(log_file_for "$name")" || true)"
-    if [[ -n "$url" ]]; then
-      printf '  外网 %s：%s\n' "$name" "$url"
-      found=1
-    fi
-  done
+  if ((with_tunnel)); then
+    for name in "${TUNNELS[@]}"; do
+      url="$(tunnel_url_from_log "$(log_file_for "$name")" || true)"
+      if [[ -n "$url" ]]; then
+        printf '  外网 %s：%s\n' "$name" "$url"
+        found=1
+      fi
+    done
+  fi
   if ((with_tunnel && found)); then
     printf '  提示：trycloudflare 临时地址公网可访问、每次启动会变，用完记得 stop。\n'
   fi

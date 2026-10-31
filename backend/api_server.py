@@ -1,5 +1,7 @@
 ﻿# -*- coding: utf-8 -*-
-"""SVQuant API 入口：FastAPI + uvicorn（端口 8766，路径与旧版兼容）。
+"""SVQuant API 入口：FastAPI + uvicorn（默认端口 8766，路径与旧版兼容）。
+
+开发启动器会通过 SVQUANT_BACKEND_PORT 指定端口（默认 8768），避免占用生产的 8766。
 
 用法:
   conda activate svquant
@@ -9,6 +11,7 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -20,7 +23,8 @@ for _p in (ROOT, _KH_BACKEND):
         sys.path.insert(0, s)
 
 HOST = "0.0.0.0"
-PORT = 8766
+# 默认沿用生产端口；开发启动器传入 SVQUANT_BACKEND_PORT=8768 与生产并行。
+PORT = int(os.environ.get("SVQUANT_BACKEND_PORT", "8766"))
 
 
 def main() -> None:

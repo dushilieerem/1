@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChevronDown, ChevronLeft, ChevronRight, List } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, List, Search } from "lucide-react";
 import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   DEFAULT_HELP_DOC,
@@ -15,6 +15,7 @@ import {
 } from "@/content/help/catalog";
 import { loadHelpMarkdown } from "@/content/help/docs";
 import { highlightSource } from "@/lib/codeHighlight";
+import { getLocale, setLocale, t, type Locale } from "@/lib/i18n";
 
 function groupDocs(docs: HelpDocMeta[]): { group: string; items: HelpDocMeta[] }[] {
   const order: string[] = [];
@@ -177,13 +178,53 @@ function HelpSidebar({
   onToggleDoc: (docId: HelpDocId) => void;
 }) {
   const navigate = useNavigate();
-  const groups = useMemo(() => groupDocs(HELP_DOCS), []);
+  const [locale, setLocaleState] = useState<Locale>(() => getLocale());
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return HELP_DOCS;
+    return HELP_DOCS.filter((d) => {
+      if (d.title.toLowerCase().includes(q) || d.group.toLowerCase().includes(q)) return true;
+      try {
+        return loadHelpMarkdown(d.id).toLowerCase().includes(q);
+      } catch {
+        return false;
+      }
+    });
+  }, [query]);
+  const groups = useMemo(() => groupDocs(filtered), [filtered]);
 
   return (
     <nav className="help-sidebar text-sm" aria-label="帮助目录">
-      <div className="mb-3 border-b border-slate-200 pb-2 text-base font-bold text-slate-900">
-        帮助文档
+      <div className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2 text-base font-bold text-slate-900">
+        <span>{t("帮助文档", "Help", locale)}</span>
+        <button
+          type="button"
+          onClick={() => {
+            const next: Locale = locale === "en" ? "zh" : "en";
+            setLocale(next);
+            setLocaleState(next);
+          }}
+          aria-label={t("切换语言", "Switch language", locale)}
+          className="rounded-md border border-slate-200 px-2 py-0.5 text-xs font-medium text-slate-500 hover:bg-slate-50"
+        >
+          {locale === "en" ? "中文" : "EN"}
+        </button>
       </div>
+      <label className="relative mb-3 block">
+        <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("搜索帮助文档…", "Search help…", locale)}
+          aria-label="搜索帮助文档"
+          className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-7 pr-2 text-sm text-slate-800 outline-none focus:border-sky-300 focus:bg-white"
+        />
+      </label>
+      {query.trim() && filtered.length === 0 && (
+        <p className="px-2 py-1 text-xs text-slate-400">没有匹配的文档</p>
+      )}
       {groups.map(({ group, items }) => {
         const open = expandedGroups[group] !== false;
         return (

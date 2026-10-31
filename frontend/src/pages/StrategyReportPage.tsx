@@ -913,6 +913,11 @@ export function StrategyReportPage() {
               />
             ))}
           </div>
+          {highlightMetrics.some((item) => item.value === "—") && (
+            <p className="mt-2 text-xs text-slate-400">
+              「—」表示本次回测未返回该指标（数据不足或计算失败），不代表 0。
+            </p>
+          )}
         </div>
       </div>
 

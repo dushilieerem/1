@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { DraftRestoreBanner } from "@/components/DraftRestoreBanner";
+import { clearDraft, draftNewerThan, loadDraft, saveDraft } from "@/lib/autosave";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -106,9 +108,44 @@ export function StrategyBacktestPage() {
   const [logs, setLogs] = useState<string[]>([]);
   const [factorSyncing, setFactorSyncing] = useState(false);
   const [mobilePane, setMobilePane] = useState<"config" | "code">("config");
+  const [draftBanner, setDraftBanner] = useState<{ savedAt: string } | null>(null);
+  const autosaveKey = `svquant.autosave.strategy.${projectId}`;
   const syncLock = useRef<"left" | "right" | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const factorSyncGen = useRef(0);
+
+  useEffect(() => {
+    if (loading || !cfg || !project) return;
+    const draft = loadDraft<StrategyProjectConfig>(autosaveKey);
+    if (draft && draftNewerThan(draft, project.updatedAt)) {
+      setDraftBanner({ savedAt: draft.savedAt });
+    } else {
+      setDraftBanner(null);
+    }
+    // 只在资源切换/加载完成时检查，避免每次编辑弹提示
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, project?.id]);
+
+  useEffect(() => {
+    if (loading || !cfg || !project) return;
+    const timer = window.setTimeout(() => saveDraft(autosaveKey, cfg), 800);
+    return () => window.clearTimeout(timer);
+  }, [cfg, loading, project?.id, autosaveKey]);
+
+  const restoreDraft = () => {
+    const draft = loadDraft<StrategyProjectConfig>(autosaveKey);
+    if (draft?.data) {
+      setCfg(normalizeStrategyConfig(draft.data));
+      setSavedHint("已恢复本地草稿");
+      window.setTimeout(() => setSavedHint(""), 2000);
+    }
+    setDraftBanner(null);
+  };
+
+  const discardDraft = () => {
+    clearDraft(autosaveKey);
+    setDraftBanner(null);
+  };
 
   const pushLog = (msg: string) => {
     const t = new Date().toLocaleTimeString("zh-CN", { hour12: false });
@@ -679,6 +716,13 @@ export function StrategyBacktestPage() {
           }`}
         >
           <div className="flex-1 space-y-5 overflow-y-auto px-3 py-4 text-sm sm:px-5 sm:py-5">
+            {draftBanner && (
+              <DraftRestoreBanner
+                savedAt={draftBanner.savedAt}
+                onRestore={restoreDraft}
+                onDiscard={discardDraft}
+              />
+            )}
             <section>
               <h2 className="mb-2 text-sm font-bold text-blue-600">执行模式</h2>
               <div className="flex flex-wrap gap-1.5">

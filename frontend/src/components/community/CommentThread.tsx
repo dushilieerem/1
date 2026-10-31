@@ -69,7 +69,7 @@ function CommentImages({ images }: { images?: string[] }) {
             title="点击查看大图"
             style={{ width: 128, height: 96 }}
           >
-            <img src={src} alt="" style={THUMB_STYLE} />
+            <img src={src} alt="" loading="lazy" style={THUMB_STYLE} />
           </button>
         ))}
       </div>

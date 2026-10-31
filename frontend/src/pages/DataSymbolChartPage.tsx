@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { Maximize2, Scan, X } from "lucide-react";
+import { Download, ImageDown, Maximize2, Scan, X } from "lucide-react";
 import {
   CandlestickSeries,
   ColorType,
@@ -969,6 +969,39 @@ export function DataSymbolChartPage() {
     }
   };
 
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportCsv = () => {
+    const bars = aggregateBars(daily?.bars || [], period);
+    if (!bars.length) return;
+    const lines = ["date,open,high,low,close,volume"];
+    for (const b of bars) {
+      lines.push(
+        [b.date, b.open, b.high, b.low, b.close, b.volume ?? ""].join(","),
+      );
+    }
+    downloadBlob(
+      new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" }),
+      `${symbol}-${period}.csv`,
+    );
+  };
+
+  const exportPng = () => {
+    const chart = chartApi.current;
+    if (!chart || typeof chart.takeScreenshot !== "function") return;
+    const canvas = chart.takeScreenshot();
+    canvas.toBlob((blob) => {
+      if (blob) downloadBlob(blob, `${symbol}-${period}.png`);
+    }, "image/png");
+  };
+
   return (
     <div
       ref={fsRootRef}
@@ -1162,6 +1195,26 @@ export function DataSymbolChartPage() {
             }`}
           >
             BOLL
+          </button>
+          <button
+            type="button"
+            onClick={exportCsv}
+            title="导出 CSV"
+            aria-label="导出 CSV"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 hover:bg-slate-100"
+          >
+            <Download className="h-3 w-3" />
+            CSV
+          </button>
+          <button
+            type="button"
+            onClick={exportPng}
+            title="导出图片"
+            aria-label="导出图片"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 hover:bg-slate-100"
+          >
+            <ImageDown className="h-3 w-3" />
+            PNG
           </button>
           <span className="mx-1 h-3 w-px shrink-0 bg-slate-200" />
           {!fs ? (

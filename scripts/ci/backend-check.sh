@@ -73,7 +73,7 @@ fi
 
 # backend/.env 不存在时，模块导入期会因 YG_RE_BASE 缺失直接抛错。
 export YG_RE_BASE="${YG_RE_BASE:-http://127.0.0.1:9527}"
-export JWT_SECRET_KEY="${JWT_SECRET_KEY:-ci-only-not-a-secret}"
+export JWT_SECRET_KEY="${JWT_SECRET_KEY:-ci-test-secret-0123456789abcdefghijklmnop}"
 export DEV_SKIP_AUTH=0
 
 cd "$BACKEND_DIR"

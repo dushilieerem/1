@@ -148,6 +148,7 @@ const AgentEvalPage = lazy(() =>
 const AiHubPage = lazy(() => import("./pages/AiHubPage").then((m) => ({ default: m.AiHubPage })));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const InvestMobilePage = lazy(() => import("./pages/InvestMobilePage"));
+const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const InstLayout = lazy(() =>
   import("./components/institution/InstLayout").then((m) => ({ default: m.InstLayout })),
 );
@@ -228,6 +229,7 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
           <Route path="/search" element={<GlobalSearchPage />} />
           <Route path="/ai" element={<Authed><AiHubPage /></Authed>} />

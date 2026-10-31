@@ -46,6 +46,9 @@ def bootstrap_schemas() -> None:
         )
 
         ensure_schema()
+        from services.auth.password_reset_store import ensure_password_reset_schema
+
+        ensure_password_reset_schema()
         seed_admin()
         # 手机 H5 的演示账号：主站账号体系 + 主站登录/注册/找回密码。
         try:

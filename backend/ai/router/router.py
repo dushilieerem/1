@@ -55,6 +55,7 @@ def run_task(
             continue
         out = dict(result)
         out["task"] = task_id
+        out["prompt_version"] = spec.prompt_version
         out["latency_ms"] = int((time.perf_counter() - started) * 1000)
         return out
 

@@ -2,6 +2,8 @@
 """知识库平台表：集合 / 文档 / 切片 / 聊天助手 / 模型供应商。"""
 from __future__ import annotations
 
+import os
+
 import json
 import re
 import threading
@@ -230,6 +232,21 @@ def _ensure_kh_schema_unlocked(conn: Any) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_kh_documents_coll "
         "ON kh_documents (collection_id, updated_at DESC)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS kh_document_versions (
+          id           BIGSERIAL PRIMARY KEY,
+          document_id  BIGINT NOT NULL REFERENCES kh_documents(id) ON DELETE CASCADE,
+          version_no   INT NOT NULL,
+          title        TEXT NOT NULL,
+          body         TEXT NOT NULL DEFAULT '',
+          file_name    TEXT NOT NULL DEFAULT '',
+          payload      JSONB,
+          created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (document_id, version_no)
+        )
+        """
     )
     # 旧库补列：启用开关 / 解析错误
     for col_name, ddl in (
@@ -544,6 +561,22 @@ def update_document(doc_id: int, body: dict[str, Any]) -> dict[str, Any]:
     sets.append("updated_at = NOW()")
     vals.append(int(doc_id))
     with get_conn() as conn:
+        current = conn.execute("SELECT * FROM kh_documents WHERE id=%s", (int(doc_id),)).fetchone()
+        if not current:
+            raise KeyError("文档不存在")
+        conn.execute(
+            """
+            INSERT INTO kh_document_versions (document_id, version_no, title, body, file_name, payload)
+            VALUES (%s,%s,%s,%s,%s,%s::jsonb)
+            ON CONFLICT (document_id, version_no) DO NOTHING
+            """,
+            (
+                int(doc_id), int(current.get("version") or 1), current.get("title") or "",
+                current.get("body") or "", current.get("file_name") or "",
+                json.dumps(current.get("payload"), ensure_ascii=False) if current.get("payload") is not None else None,
+            ),
+        )
+        sets.append("version = version + 1")
         row = conn.execute(
             f"UPDATE kh_documents SET {', '.join(sets)} WHERE id = %s RETURNING *",
             tuple(vals),
@@ -770,6 +803,12 @@ def create_structured_document(
             raise ValueError(f"附件解码失败：{exc}") from exc
         if not fname.strip():
             raise ValueError("上传附件时需填写文件名")
+        try:
+            max_mb = max(1, int(os.environ.get("KH_MAX_ATTACHMENT_MB", "50") or "50"))
+        except ValueError:
+            max_mb = 50
+        if len(raw) > max_mb * 1024 * 1024:
+            raise ValueError(f"附件过大（最大 {max_mb} MB）")
         att = save_attachment_bytes(raw, fname)
         attachment_id = int(att["id"])
         fname = att["fileName"]

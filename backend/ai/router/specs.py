@@ -37,6 +37,7 @@ class TaskSpec:
 
     task_id: str
     description: str = ""
+    prompt_version: str = "v1"
     slot: str = SLOT_DEFAULT
     temperature: float = 0.4
     max_tokens: int | None = 2048

@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.deps import optional_user, require_user
+from services.community.platform_ref_verify import verify_platform_ref
 from services.community.community_store import (
     add_favorite,
     create_comment,
@@ -227,7 +228,9 @@ def community_create_post(
             ),
             author_role=str(user.get("role") or "user"),
             status=str(body.get("status") or "published"),
-            platform_ref=body.get("platform_ref"),
+            platform_ref=verify_platform_ref(
+                int(user["id"]), body.get("platform_ref")
+            ),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -433,7 +436,9 @@ def community_update_post(
             ),
             author_role=str(user.get("role") or "user"),
             status=(str(body["status"]) if body.get("status") is not None else None),
-            platform_ref=body.get("platform_ref"),
+            platform_ref=verify_platform_ref(
+                int(user["id"]), body.get("platform_ref")
+            ),
             clear_platform_ref=bool(body.get("clear_platform_ref")),
         )
     except PermissionError as exc:

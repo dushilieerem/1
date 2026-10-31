@@ -20,6 +20,11 @@ export type PlatformMetricsRef = {
   filter_limit_up?: boolean;
   metrics_display: Record<string, string>;
   metrics?: Record<string, number | null | undefined>;
+  /** P1-A05：检测/策略运行 id，服务端据此回查指标 */
+  ref_id?: string;
+  /** 服务端回查结果（发帖时由后端写入） */
+  metrics_verified?: boolean;
+  verify_note?: string;
 };
 
 /** 发帖页 location.state 预填（报告分享 / 其它入口） */
@@ -84,6 +89,8 @@ export async function buildFactorDetectShareDraft(input: {
   /** RE 内置库（单因子无 factor_code 时用于生成可克隆存根） */
   libraryName?: string | string[] | null;
   factorName?: string | null;
+  /** 检测运行 id（服务端回查用） */
+  runId?: string;
   returnTo?: string;
   returnLabel?: string;
 }): Promise<CommunityShareDraft> {
@@ -142,6 +149,7 @@ export async function buildFactorDetectShareDraft(input: {
       ? {
           source: "factor_detect",
           label: `因子检测 · ${titleBase}${input.universeLabel ? ` · ${input.universeLabel}` : ""}${input.rangeLabel ? ` · ${input.rangeLabel}` : ""}`,
+          ref_id: input.runId,
           factor_name: titleBase,
           universe: input.universeLabel,
           period: input.rangeLabel,
@@ -185,6 +193,8 @@ export async function buildStrategyShareDraft(input: {
   } | null;
   excessReturn?: number | null;
   strategyCode?: string | null;
+  /** 策略回测运行 id（服务端回查用） */
+  runId?: string;
   returnTo?: string;
   returnLabel?: string;
 }): Promise<CommunityShareDraft> {
@@ -242,6 +252,7 @@ export async function buildStrategyShareDraft(input: {
       return {
         source: "strategy_report" as const,
         label: `策略回测 · ${titleBase}${input.universeLabel ? ` · ${input.universeLabel}` : ""}${input.rangeLabel ? ` · ${input.rangeLabel}` : ""}`,
+        ref_id: input.runId,
         universe: input.universeLabel,
         period: input.rangeLabel,
         metrics_display,

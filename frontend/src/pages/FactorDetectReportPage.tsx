@@ -932,6 +932,7 @@ export function FactorDetectReportPage() {
         factorCode: req?.factor_code,
         libraryName: req?.library_name,
         factorName: req?.factor_name,
+        runId: rec.id || runId,
         returnTo: `/factor/detect/report/${rec.id || runId}`,
         returnLabel: "返回因子检测报告",
       });

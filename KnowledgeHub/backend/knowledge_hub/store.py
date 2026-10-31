@@ -701,10 +701,10 @@ def create_document(
     if content_base64 and not body.strip():
         import base64
 
-        from knowledge_hub.extractors import extract_text, is_binary_doc
+        from knowledge_hub.extractors import extract_text, is_extractable
 
-        if not is_binary_doc(fname):
-            raise ValueError("contentBase64 仅用于 .docx / .pdf")
+        if not is_extractable(fname):
+            raise ValueError("contentBase64 仅用于 .docx / .pdf / .xlsx / .md / .html / .txt")
         try:
             raw = base64.b64decode(content_base64, validate=False)
         except Exception as exc:

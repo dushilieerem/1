@@ -8,13 +8,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from app.deps import require_inst_user
 from services.core.audit_log_store import write_audit
 from services.core.env_config import env
 from services.core.rate_limit import enforce_rate_limit
-from services.institution.inst_store import login_inst, login_payload, me_payload
+from services.auth.auth_store import user_from_authorization
+from services.institution.inst_store import (
+    ROLE_LABELS,
+    list_memberships,
+    login_inst,
+    login_payload,
+    me_payload,
+    session_payload,
+)
 
 router = APIRouter(tags=["institution"])
 
@@ -92,3 +101,94 @@ def inst_login(body: dict[str, Any], request: Request) -> dict:
 @router.get("/api/inst/me")
 def inst_me(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict:
     return me_payload(ctx)
+
+
+def _membership_brief(m: dict[str, Any]) -> dict[str, Any]:
+    label_cn, label_en = ROLE_LABELS.get(str(m.get("role")), (m.get("role"), m.get("role")))
+    return {
+        "org_id": int(m["org_id"]),
+        "code": m.get("code"),
+        "name_cn": m.get("name_cn"),
+        "name_en": m.get("name_en"),
+        "role": m.get("role"),
+        "role_label_cn": label_cn,
+        "role_label_en": label_en,
+    }
+
+
+@router.get("/api/inst/auth/orgs")
+def inst_orgs(authorization: str | None = Header(default=None, alias="Authorization")) -> dict:
+    """列出当前登录用户可进入的机构（个人令牌或机构令牌均可）。"""
+    user = user_from_authorization(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+    memberships = list_memberships(int(user["id"]))
+    if not memberships:
+        raise HTTPException(status_code=403, detail="该账号未加入机构")
+    return {"ok": True, "orgs": [_membership_brief(m) for m in memberships]}
+
+
+@router.post("/api/inst/auth/sso")
+def inst_sso(
+    body: dict[str, Any],
+    request: Request,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict:
+    """S01：用主站令牌（或现有机构令牌）换机构会话。
+
+    用户属于多个机构时须传 `org_id`；只属于一个机构时自动选择。
+    """
+    enforce_rate_limit(request, scope="inst.auth.sso", limit=_login_limit(), window_sec=60)
+    raw = str(body.get("token") or "").strip()
+    header = f"Bearer {raw}" if raw else authorization
+    user = user_from_authorization(header)
+    if not user:
+        raise HTTPException(status_code=401, detail="令牌无效或用户已停用")
+    memberships = list_memberships(int(user["id"]))
+    if not memberships:
+        raise HTTPException(status_code=403, detail="该账号未加入机构")
+    org_raw = body.get("org_id")
+    if org_raw is not None:
+        try:
+            org_id = int(org_raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="org_id 不合法") from None
+        membership = next((m for m in memberships if int(m["org_id"]) == org_id), None)
+        if not membership:
+            raise HTTPException(status_code=403, detail="无权进入该机构")
+    elif len(memberships) == 1:
+        membership = memberships[0]
+    else:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "ok": False,
+                "message": "请选择机构",
+                "orgs": [_membership_brief(m) for m in memberships],
+            },
+        )
+    payload = session_payload(user, membership)
+    write_audit(
+        action="inst.sso",
+        user_id=int(user["id"]),
+        username=str(user.get("username") or "") or None,
+        role=str(membership.get("role") or ""),
+        module="institution",
+        method="POST",
+        path="/api/inst/auth/sso",
+        status_code=200,
+        ip=_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        detail=f"机构 SSO：{membership.get('name_cn', '')} / {membership.get('role', '')}",
+    )
+    return {"ok": True, **payload}
+
+
+@router.post("/api/inst/auth/switch")
+def inst_switch(
+    body: dict[str, Any],
+    request: Request,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict:
+    """S02：多机构切换（等价于带 org_id 的 SSO）。"""
+    return inst_sso(body, request, authorization)

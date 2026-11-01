@@ -395,3 +395,31 @@ def me_payload(context: dict[str, Any]) -> dict[str, Any]:
 def login_payload(result: dict[str, Any]) -> dict[str, Any]:
     ctx = _context(result["user"], result["membership"])
     return {"ok": True, "token": result["token"], **ctx}
+
+
+def list_memberships(user_id: int) -> list[dict[str, Any]]:
+    """用户可用的全部机构成员关系（S02 多机构）。"""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT m.id, m.org_id, m.role, m.status AS member_status, m.title_cn,
+                   o.code, o.name_cn, o.name_en, o.status AS org_status
+              FROM inst_members m
+              JOIN inst_orgs o ON o.id = m.org_id
+             WHERE m.user_id = %s AND m.status = 'active' AND o.status = 'active'
+             ORDER BY m.org_id, m.id
+            """,
+            (int(user_id),),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def session_payload(user: dict[str, Any], membership: dict[str, Any]) -> dict[str, Any]:
+    """机构登录/SSO 统一返回体。"""
+    token = issue_inst_token(user, membership)
+    return {
+        "user": user,
+        "membership": membership,
+        "token": token,
+        "context": _context(user, membership),
+    }

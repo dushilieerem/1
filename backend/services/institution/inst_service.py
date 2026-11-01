@@ -2002,6 +2002,148 @@ def ai_chairman_memo(org_id: int, proposal_id: int) -> dict[str, Any]:
     return {"memo": data, "task": "inst.chairman_memo", "version_no": version.get("version_no")}
 
 
+# ---------------------------------------------------------------- AI Chairman 模式
+
+
+def _ai_available(task_id: str = "inst.chairman_memo") -> bool:
+    try:
+        from ai.router import available_task
+
+        return bool(available_task(task_id))
+    except Exception:
+        return False
+
+
+def _chairman_context(
+    org_id: int, proposal_id: int
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, dict[str, Any]], list[dict[str, Any]], int]:
+    with get_conn() as conn:
+        proposal = _proposal_row(conn, org_id, proposal_id)
+        if not proposal:
+            raise LookupError("议案不存在")
+        current = _current_version(conn, proposal_id)
+        if not current:
+            raise LookupError("议案版本不存在")
+        approvals = {
+            str(r["step"]): dict(r)
+            for r in conn.execute(
+                "SELECT * FROM inst_approval WHERE proposal_version_id=%s", (current["id"],)
+            ).fetchall()
+        }
+        snapshot = current.get("snapshot") or {}
+        risk_checks = _risk_checks(conn, org_id, proposal, current)
+        evidence_count = 0
+        research_version_id = snapshot.get("research_version_id")
+        if research_version_id:
+            row = conn.execute(
+                "SELECT evidence_ids FROM inst_research_version WHERE id=%s",
+                (research_version_id,),
+            ).fetchone()
+            if row:
+                evidence_count = len(row.get("evidence_ids") or [])
+    return proposal, current, snapshot, approvals, risk_checks, evidence_count
+
+
+def ai_chairman_precheck(
+    org_id: int, proposal_id: int, *, actor_member_id: int | None = None
+) -> dict[str, Any]:
+    """预检查：只读，不改状态。"""
+    from services.institution.chairman_mode import evaluate
+
+    proposal, current, snapshot, approvals, risk_checks, evidence_count = _chairman_context(
+        org_id, proposal_id
+    )
+    result = evaluate(
+        proposal_status=str(proposal.get("status") or ""),
+        snapshot=snapshot,
+        approvals=approvals,
+        risk_checks=risk_checks,
+        evidence_count=evidence_count,
+        ai_available=_ai_available(),
+        proposer_is_reviewer=int(proposal.get("created_by") or 0) == int(actor_member_id or 0),
+    )
+    result.update(
+        {
+            "proposal_id": proposal_id,
+            "version_no": current.get("version_no"),
+            "status": proposal.get("status"),
+        }
+    )
+    return result
+
+
+def ai_chairman_simulate(
+    org_id: int, proposal_id: int, *, actor_member_id: int | None = None
+) -> dict[str, Any]:
+    """模拟批准：只记录建议与审计，不写审批、不改状态。"""
+    pre = ai_chairman_precheck(org_id, proposal_id, actor_member_id=actor_member_id)
+    memo = None
+    if _ai_available():
+        try:
+            memo = ai_chairman_memo(org_id, proposal_id).get("memo")
+        except AiUnavailable:
+            memo = None
+    recommendation = pre["recommendation"]
+    decision = {
+        "approve_candidate": "approve",
+        "conditional_candidate": "conditional",
+    }.get(recommendation, "handover")
+    with get_conn() as conn:
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="proposal.chairman.ai_simulate",
+            object_type="inst_proposal",
+            object_id=proposal_id,
+            after={
+                "simulated_decision": decision,
+                "blocking": pre["blocking"],
+                "warnings": pre["warnings"],
+                "binding": False,
+            },
+        )
+    return {
+        **pre,
+        "mode": "ai_simulated",
+        "simulated_decision": decision,
+        "memo": memo,
+        "note": "AI 模拟结果不构成批准；需真人 Chairman 表决",
+    }
+
+
+def ai_chairman_handover(
+    org_id: int,
+    proposal_id: int,
+    *,
+    actor_member_id: int | None,
+    note: str | None = None,
+) -> dict[str, Any]:
+    """人工移交：Chairman 放弃 AI 模拟，转真人流程；只写审计。"""
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "chairman")
+        proposal = _proposal_row(conn, org_id, proposal_id)
+        if not proposal:
+            raise LookupError("议案不存在")
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="proposal.chairman.ai_handover",
+            object_type="inst_proposal",
+            object_id=proposal_id,
+            after={"note": note or "已移交真人 Chairman", "status": proposal.get("status")},
+        )
+    return {
+        "ok": True,
+        "handover": True,
+        "proposal_id": proposal_id,
+        "status": proposal.get("status"),
+        "note": note or "已移交真人 Chairman",
+    }
+
+
 def create_exit_case(
     org_id: int,
     company_id: int,

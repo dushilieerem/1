@@ -246,6 +246,58 @@ def chairman_memo_ai(proposal_id: int, ctx: dict[str, Any] = Depends(require_ins
         raise _handle(exc) from exc
 
 
+@router.get("/proposals/{proposal_id}/ai/chairman-precheck")
+def chairman_precheck(
+    proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)
+) -> dict[str, Any]:
+    """AI Chairman 预检查：只读，返回阻断项与建议。"""
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "approvals")
+    try:
+        return {
+            "ok": True,
+            **svc.ai_chairman_precheck(org_id, proposal_id, actor_member_id=member_id),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/proposals/{proposal_id}/ai/chairman-simulate")
+def chairman_simulate(
+    proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)
+) -> dict[str, Any]:
+    """AI 模拟批准：不写审批、不改状态，binding 恒为 false。"""
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "approvals")
+    try:
+        return {
+            "ok": True,
+            **svc.ai_chairman_simulate(org_id, proposal_id, actor_member_id=member_id),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/proposals/{proposal_id}/ai/chairman-handover")
+def chairman_handover(
+    proposal_id: int,
+    body: dict[str, Any] | None = None,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    """Chairman 主动移交真人流程，只写审计。"""
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "approvals")
+    try:
+        return svc.ai_chairman_handover(
+            org_id,
+            proposal_id,
+            actor_member_id=member_id,
+            note=str((body or {}).get("note") or "") or None,
+        )
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.post("/cases/{case_id}/debate")
 def start_debate(
     case_id: int,

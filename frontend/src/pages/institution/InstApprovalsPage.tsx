@@ -60,6 +60,8 @@ export function InstApprovalsPage() {
   const [comment, setComment] = useState("");
   const [target, setTarget] = useState("");
   const [memo, setMemo] = useState<Record<string, any> | null>(null);
+  const [chairmanMode, setChairmanMode] = useState<Record<string, any> | null>(null);
+  const [handoverNote, setHandoverNote] = useState("");
 
   const role = session.role;
   const canWrite = (session.permissions.approvals || "none") === "write";
@@ -440,6 +442,91 @@ export function InstApprovalsPage() {
                 {Array.isArray(memo.open_questions) && memo.open_questions.length ? (
                   <p className="mt-2">待核验：{memo.open_questions.join("；")}</p>
                 ) : null}
+              </div>
+            ) : null}
+          </Card>
+
+          <Card
+            title={t("AI Chairman 模式", "AI Chairman mode")}
+            desc={t("预检查与模拟批准只读议案，不写审批、不改状态；最终由真人 Chairman 表决。", "Pre-check and simulated approval are read-only; the human Chairman makes the binding decision.")}
+          >
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="ghost"
+                disabled={!!busy}
+                onClick={() =>
+                  act("chair-pre", async () => {
+                    const res = await instApi<Record<string, any>>(
+                      `/proposals/${selectedId}/ai/chairman-precheck`,
+                    );
+                    setChairmanMode(res);
+                  })
+                }
+              >
+                {busy === "chair-pre" ? t("检查中…", "Checking…") : t("预检查", "Pre-check")}
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={!!busy}
+                onClick={() =>
+                  act("chair-sim", async () => {
+                    const res = await instApi<Record<string, any>>(
+                      `/proposals/${selectedId}/ai/chairman-simulate`,
+                      { method: "POST" },
+                    );
+                    setChairmanMode(res);
+                  })
+                }
+              >
+                {busy === "chair-sim" ? t("模拟中…", "Simulating…") : t("模拟批准", "Simulate approval")}
+              </Button>
+            </div>
+            {chairmanMode ? (
+              <div className="mt-3 space-y-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone={chairmanMode.ready ? "green" : "red"}>
+                    {chairmanMode.ready ? t("预检查通过", "Pre-check passed") : t("需人工处理", "Human required")}
+                  </Badge>
+                  <span className="text-slate-600">
+                    {t("建议", "Recommendation")}：{chairmanMode.recommendation}
+                  </span>
+                  {chairmanMode.mode === "ai_simulated" ? (
+                    <span className="text-amber-700">
+                      {t("模拟结论", "Simulated")}：{chairmanMode.simulated_decision}（{t("不构成批准", "not binding")}）
+                    </span>
+                  ) : null}
+                </div>
+                <ul className="space-y-1">
+                  {(chairmanMode.checks || []).map((c: Record<string, any>) => (
+                    <li key={c.key} className={c.ok ? "text-slate-600" : c.severity === "block" ? "text-red-600" : "text-amber-700"}>
+                      {c.ok ? "✓" : "✕"} {c.label}：{c.detail}
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <input
+                    value={handoverNote}
+                    onChange={(e) => setHandoverNote(e.target.value)}
+                    placeholder={t("移交备注（可选）", "Handover note (optional)")}
+                    className="w-56 rounded-lg border border-[#dcd6c8] bg-white px-2 py-2 text-xs outline-none"
+                  />
+                  <Button
+                    variant="ghost"
+                    disabled={!!busy}
+                    onClick={() =>
+                      act("chair-handover", async () => {
+                        await instApi(`/proposals/${selectedId}/ai/chairman-handover`, {
+                          method: "POST",
+                          body: { note: handoverNote },
+                        });
+                        setHandoverNote("");
+                        setChairmanMode(null);
+                      })
+                    }
+                  >
+                    {busy === "chair-handover" ? t("移交中…", "Handing over…") : t("人工移交", "Hand over")}
+                  </Button>
+                </div>
               </div>
             ) : null}
           </Card>

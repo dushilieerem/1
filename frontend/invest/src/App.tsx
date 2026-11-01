@@ -15,6 +15,9 @@ import Community from "./pages/Community";
 import PostDetail from "./pages/PostDetail";
 import PostNew from "./pages/PostNew";
 import Notifications from "./pages/Notifications";
+import Quant from "./pages/Quant";
+import FactorLibrary from "./pages/FactorLibrary";
+import StrategyLibrary from "./pages/StrategyLibrary";
 import { Privacy, Terms } from "./pages/Legal";
 
 function Splash() {
@@ -59,6 +62,9 @@ export default function App() {
         <Route path="community/new" element={<PostNew />} />
         <Route path="community/:id" element={<PostDetail />} />
         <Route path="notifications" element={<Notifications />} />
+        <Route path="quant" element={<Quant />} />
+        <Route path="quant/factor" element={<FactorLibrary />} />
+        <Route path="quant/strategy" element={<StrategyLibrary />} />
         <Route path="me" element={<Me />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

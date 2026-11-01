@@ -147,3 +147,14 @@ test("帖子详情有举报入口（有帖子时）", async ({ page }) => {
     await expect(page.getByRole("button", { name: "举报帖子" })).toBeVisible({ timeout: 20_000 });
   }
 });
+
+test("量化研究入口与因子/策略库可打开", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/quant`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "量化研究" })).toBeVisible({ timeout: 20_000 });
+  await page.goto(`${H5}/quant/factor`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "因子库" })).toBeVisible({ timeout: 20_000 });
+  await page.goto(`${H5}/quant/strategy`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "策略库" })).toBeVisible({ timeout: 20_000 });
+  await noHorizontalOverflow(page);
+});

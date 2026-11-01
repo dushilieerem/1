@@ -98,6 +98,9 @@ export default function Me() {
       </section>
 
       <div className="menu">
+        <button className="menu-item" onClick={() => nav("/quant")}>
+          <FileText size={18} /><span>量化研究</span><ChevronRight size={16} />
+        </button>
         <button className="menu-item" onClick={() => nav("/notifications")}>
           <Bell size={18} /><span>消息通知</span><ChevronRight size={16} />
         </button>

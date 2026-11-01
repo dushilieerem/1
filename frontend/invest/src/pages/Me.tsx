@@ -16,6 +16,7 @@ export default function Me() {
   const [riskOpen, setRiskOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     api("/api/invest/risk-profile").then(setRisk).catch(() => {});
@@ -116,6 +117,12 @@ export default function Me() {
         </button>
       </div>
 
+      <div className="menu">
+        <button className="menu-item danger" onClick={() => setDeleteOpen(true)}>
+          <Trash2 size={18} /><span>注销 SVQuant 账号</span><ChevronRight size={16} />
+        </button>
+      </div>
+
       <button className="btn btn-ghost w100 logout" onClick={logout}>
         <LogOut size={16} /> 退出登录
       </button>
@@ -125,6 +132,11 @@ export default function Me() {
       </div>
       <Disclaimer>演示环境 · 不接券商 · 不产生真实委托</Disclaimer>
 
+      <AccountDeleteSheet
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onDone={() => { setDeleteOpen(false); logout(); nav("/login", { replace: true }); }}
+      />
       <RiskSheet open={riskOpen} onClose={() => setRiskOpen(false)} onSaved={(next) => { setRisk(next); setRiskOpen(false); toast("测评已保存"); }} />
       <PrivacySheet open={privacyOpen} onClose={() => setPrivacyOpen(false)} onOpenFull={() => { setPrivacyOpen(false); nav("/privacy"); }} />
       <Sheet open={aboutOpen} onClose={() => setAboutOpen(false)} title="关于" sub="SVQuant Invest · MVP">
@@ -171,6 +183,45 @@ function RiskSheet({ open, onClose, onSaved }: { open: boolean; onClose: () => v
   );
 }
 
+function AccountDeleteSheet({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: () => void }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const submit = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api("/api/auth/account/delete", {
+        method: "POST",
+        body: JSON.stringify({ password, confirm }),
+      });
+      onDone();
+    } catch (e: any) {
+      setMsg(e.message || "注销失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title="注销 SVQuant 账号"
+      sub="不可恢复 · 同时影响主站与 H5"
+      footer={<button className="btn btn-primary w100" onClick={submit} disabled={busy || !password || !confirm}>{busy ? "注销中…" : "确认注销"}</button>}
+    >
+      <div className="callout">
+        <AlertTriangle size={15} />
+        <span>个人数据（自选、组合、模拟盘、策略、因子、通知等）会被删除；已发布的帖子和评论保留并显示为「已注销用户」。账号不可恢复。</span>
+      </div>
+      <label className="field"><span>登录密码</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="输入登录密码" /></label>
+      <label className="field"><span>确认词</span><input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="输入用户名或「注销」确认" /></label>
+      {msg ? <div className="callout">{msg}</div> : null}
+    </Sheet>
+  );
+}
+
 function PrivacySheet({ open, onClose, onOpenFull }: { open: boolean; onClose: () => void; onOpenFull: () => void }) {
   return (
     <Sheet open={open} onClose={onClose} title="隐私与协议" sub="MVP 草案 · 公开前需法务确认">
@@ -180,7 +231,7 @@ function PrivacySheet({ open, onClose, onOpenFull }: { open: boolean; onClose: (
         <h4>如何使用</h4>
         <p>用于生成组合诊断、关注事件日志与产品改进；不用于公共模型训练，不向第三方出售。</p>
         <h4>保存与删除</h4>
-        <p>你可以在「我的」导出或删除 Invest 数据；SVQuant 账号本身的注销需在主站处理。公开版需补齐完整流程。</p>
+        <p>你可以在「我的」导出或删除 Invest 数据，也可以直接注销 SVQuant 账号；注销会删除个人数据，社区内容保留并匿名化。</p>
         <h4>数据来源</h4>
         <p>当前为本地演示数据；公开版需逐项核实行情、财务、新闻源条款，并标注来源与延迟。</p>
         <h4>风险提示</h4>

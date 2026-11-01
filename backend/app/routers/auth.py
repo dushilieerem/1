@@ -206,6 +206,44 @@ def auth_login(body: dict[str, Any], request: Request) -> dict:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
+@router.post("/api/auth/account/delete")
+def auth_delete_account(
+    body: dict[str, Any], request: Request, user: dict = Depends(require_user)
+) -> dict:
+    """账号注销：校验密码 + 确认词，删除个人数据并匿名化账号。"""
+    _enforce_auth_rate_limit(
+        request, scope="auth.account_delete", limit=_rate_limit_int("AUTH_DELETE_RATE_LIMIT", 3)
+    )
+    from services.auth.account_store import delete_account
+
+    try:
+        out = delete_account(
+            int(user["id"]),
+            password=str(body.get("password") or ""),
+            confirm=str(body.get("confirm") or ""),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    write_audit(
+        action="auth.account_delete",
+        user_id=int(user["id"]),
+        username=str(out.get("username") or ""),
+        role=str(user.get("role") or "user"),
+        module="auth",
+        method="POST",
+        path="/api/auth/account/delete",
+        status_code=200,
+        ip=_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        detail=f"账号已注销，清理 {sum(out.get('purged', {}).values())} 行个人数据",
+    )
+    return out
+
+
 @router.post("/api/auth/logout")
 def auth_logout(
     authorization: str | None = Header(default=None, alias="Authorization"),

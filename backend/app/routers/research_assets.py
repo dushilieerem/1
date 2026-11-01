@@ -21,8 +21,11 @@ def _handle(exc: Exception) -> HTTPException:
 
 
 @router.get("/universes")
-def list_universes(uid: int = Depends(require_db_user_id)) -> dict[str, Any]:
-    return {"ok": True, "items": store.list_universes(uid)}
+def list_universes(org_id: int | None = None, uid: int = Depends(require_db_user_id)) -> dict[str, Any]:
+    try:
+        return {"ok": True, "items": store.list_universes(uid, org_id=org_id)}
+    except Exception as exc:
+        raise _handle(exc) from exc
 
 
 @router.post("/universes")
@@ -35,6 +38,7 @@ def create_universe(body: dict[str, Any], uid: int = Depends(require_db_user_id)
                 name=str(body.get("name") or ""),
                 symbols=body.get("symbols") or [],
                 description=str(body.get("description") or ""),
+                org_id=int(body["org_id"]) if body.get("org_id") else None,
             ),
         }
     except Exception as exc:
@@ -90,8 +94,11 @@ def universe_snapshot(
 
 
 @router.get("/benchmarks")
-def list_benchmarks(uid: int = Depends(require_db_user_id)) -> dict[str, Any]:
-    return {"ok": True, "items": store.list_benchmarks(uid)}
+def list_benchmarks(org_id: int | None = None, uid: int = Depends(require_db_user_id)) -> dict[str, Any]:
+    try:
+        return {"ok": True, "items": store.list_benchmarks(uid, org_id=org_id)}
+    except Exception as exc:
+        raise _handle(exc) from exc
 
 
 @router.post("/benchmarks")
@@ -104,6 +111,7 @@ def create_benchmark(body: dict[str, Any], uid: int = Depends(require_db_user_id
                 name=str(body.get("name") or ""),
                 weights=body.get("weights") or [],
                 description=str(body.get("description") or ""),
+                org_id=int(body["org_id"]) if body.get("org_id") else None,
             ),
         }
     except Exception as exc:

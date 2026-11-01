@@ -25,6 +25,7 @@ from app.routers import (  # noqa: E402
     admin_users,
     support,
     research_assets,
+    billing,
     agent,
     ai,
     ai_backtest,
@@ -200,11 +201,13 @@ for mod in (
     admin_users,
     support,
     research_assets,
+    billing,
 ):
     app.include_router(mod.router)
 
 
 app.include_router(support.admin_router)
+app.include_router(billing.admin_router)
 
 _AUDIT_SKIP_PREFIXES = (
     "/docs",

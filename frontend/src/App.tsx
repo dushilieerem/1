@@ -150,6 +150,7 @@ const AdminPage = lazy(() => import("./pages/AdminPage"));
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const SupportPage = lazy(() => import("./pages/SupportPage"));
 const ResearchAssetsPage = lazy(() => import("./pages/ResearchAssetsPage"));
+const OrgPage = lazy(() => import("./pages/OrgPage"));
 const InstLayout = lazy(() =>
   import("./components/institution/InstLayout").then((m) => ({ default: m.InstLayout })),
 );
@@ -237,6 +238,7 @@ export default function App() {
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/support" element={<Authed><SupportPage /></Authed>} />
           <Route path="/research/assets" element={<Authed><ResearchAssetsPage /></Authed>} />
+          <Route path="/org" element={<Authed><OrgPage /></Authed>} />
 
           <Route path="/search" element={<GlobalSearchPage />} />
           <Route path="/ai" element={<Authed><AiHubPage /></Authed>} />

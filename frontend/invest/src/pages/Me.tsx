@@ -104,8 +104,8 @@ export default function Me() {
         <button className="menu-item" onClick={() => setAboutOpen(true)}>
           <Info size={18} /><span>关于 SVQuant Invest</span><ChevronRight size={16} />
         </button>
-        <button className="menu-item" onClick={() => toast("公开版需接客服工单/邮箱；MVP 暂未开放")}>
-          <FileText size={18} /><span>帮助与客服</span><ChevronRight size={16} />
+        <button className="menu-item" onClick={() => window.open("/support", "_blank", "noopener")}>
+          <FileText size={18} /><span>客服与工单</span><ChevronRight size={16} />
         </button>
       </div>
 

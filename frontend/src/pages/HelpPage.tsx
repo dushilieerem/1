@@ -310,6 +310,14 @@ function HelpSidebar({
           </div>
         );
       })}
+      <div className="mt-4 border-t border-slate-200 pt-3">
+        <Link
+          to="/support"
+          className="flex items-center gap-2 rounded px-2 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+        >
+          联系客服 / 提交工单
+        </Link>
+      </div>
     </nav>
   );
 }

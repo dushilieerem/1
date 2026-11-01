@@ -23,6 +23,7 @@ from app.errors import install_exception_handlers  # noqa: E402
 from app.routers import (  # noqa: E402
     admin_logs,
     admin_users,
+    support,
     agent,
     ai,
     ai_backtest,
@@ -196,9 +197,12 @@ for mod in (
     metrics,
     admin_logs,
     admin_users,
+    support,
 ):
     app.include_router(mod.router)
 
+
+app.include_router(support.admin_router)
 
 _AUDIT_SKIP_PREFIXES = (
     "/docs",

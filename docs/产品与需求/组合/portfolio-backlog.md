@@ -27,7 +27,7 @@
 | FEAT-011 | 内置因子库回测 API | INIT-001 | 因子研究/研究 API | P0 | 开发中 |
 | FEAT-013 | 机器学习模型接入与预测回测 | INIT-001 | 因子研究/策略研究 | P0 | 待评审 |
 | FEAT-014 | 策略调仓日志 | INIT-001 | 策略研究/策略回测 API | P1 | 已完成 |
-| FEAT-015 | 个股日线行情 API | INIT-001 | 数据/研究 API | P1 | 开发中 |
+| FEAT-015 | 个股日线行情 API | INIT-001 | 数据/研究 API | P1 | 已完成（`/api/market-data/daily/{symbol}`） |
 | FEAT-016 | AI 自然语言因子生成 API | INIT-004 | AI 研究助手/因子研究 | P0 | 开发中（受控 MVP） |
 | FEAT-017 | 策略资产目录与版本化持久化 | INIT-001 | 策略研究/研究基础设施 | P0 | 待验收 |
 | FEAT-018 | 自定义证券池与组合基准 | INIT-001 | 数据/因子研究/策略回测 | P1 | 开发中（ResearchEngine 快照契约已完成；SVQuant CRUD 待交付） |

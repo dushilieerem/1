@@ -49,6 +49,16 @@ def data_root() -> Path:
     return (project_root / "marketdata").resolve()
 
 
+def view_root() -> Path | None:
+    """数据平台视图物化根（含 ifind/free/derived）；旧部署返回 None。"""
+    try:
+        from services.data.platform_view import materialized_view_root
+
+        return materialized_view_root()
+    except Exception:
+        return None
+
+
 def normalize_symbol(raw: str) -> str:
     """`000001`/`000001.sz` → `000001.SZ`；无法识别抛 ValueError。"""
     text = (raw or "").strip().upper()
@@ -95,6 +105,30 @@ def data_manifest(max_age_sec: int = 60) -> dict[str, Any]:
         "generated_at": None,
         "assets": 0,
     }
+    # 视图级 manifest 优先：data_version 用 view_id，能直接溯源到 release 组合。
+    view = view_root()
+    view_manifest = (view / "manifest.json") if view else None
+    if view_manifest is not None and view_manifest.exists():
+        try:
+            import json
+
+            raw_view = json.loads(view_manifest.read_text(encoding="utf-8")) or {}
+            datasets = raw_view.get("datasets") or {}
+            out.update(
+                {
+                    "view_id": raw_view.get("view_id"),
+                    "data_version": raw_view.get("view_id") or raw_view.get("generated_at"),
+                    "generated_at": raw_view.get("generated_at"),
+                    "contract_version": raw_view.get("contract_version"),
+                    "source_policy": raw_view.get("source_policy"),
+                    "assets": len(datasets),
+                }
+            )
+            with _lock:
+                _manifest_cache.update({"at": now, "data": out})
+            return dict(out)
+        except Exception as exc:  # noqa: BLE001
+            out["error"] = str(exc)
     if path.exists():
         try:
             import yaml
@@ -156,18 +190,95 @@ def fundamentals(symbol: str, *, start: str = "", end: str = "") -> dict[str, An
     return out
 
 
+def _partition_year(path: Path) -> str | None:
+    for parent in path.parents:
+        name = parent.name
+        if name.startswith("year=") and name[5:].isdigit():
+            return name[5:]
+    return None
+
+
+def _long_panel(
+    dataset: str, symbol: str, fields: list[str], start: str, end: str
+) -> list[dict[str, Any]]:
+    """读取派生长表（derived/<dataset>，按 year 分区）。"""
+    root = view_root()
+    if root is None:
+        raise FileNotFoundError("未配置数据平台视图（SVQUANT_DATA_ROOT/VIEW）")
+    base = root / "derived" / dataset
+    if not base.exists():
+        raise FileNotFoundError(str(base))
+    years = {start[:4], end[:4]} - {""}
+    items: list[dict[str, Any]] = []
+    for path in sorted(base.rglob("*.parquet")):
+        year = _partition_year(path)
+        if years and year and year not in years:
+            continue
+        table = _read_columns(path, ["date", "symbol", *fields])
+        data = table.to_pydict()
+        dates = data.get("date") or []
+        syms = data.get("symbol") or []
+        for i in range(len(dates)):
+            if str(syms[i]).upper() != symbol.upper():
+                continue
+            day = str(dates[i])
+            if start and day < start:
+                continue
+            if end and day > end:
+                continue
+            row: dict[str, Any] = {"date": day}
+            has_value = False
+            for f in fields:
+                vals = data.get(f) or []
+                value = vals[i] if i < len(vals) else None
+                if value is not None:
+                    has_value = True
+                row[f] = value
+            if has_value:
+                items.append(row)
+    items.sort(key=lambda r: r["date"])
+    return items
+
+
 def daily_bars(
-    symbol: str, *, start: str = "", end: str = "", adjusted: bool = True
+    symbol: str,
+    *,
+    start: str = "",
+    end: str = "",
+    adjusted: bool = True,
+    limit: int = 0,
 ) -> dict[str, Any]:
+    """个股日线（FEAT-015）。
+
+    - `adjusted=True`：后复权宽表，turnover 由小数转百分数；
+    - `adjusted=False`：派生长表 `daily_bars_unadjusted`，自带量/额/换手（百分数）。
+    """
     sym = normalize_symbol(symbol)
-    source = (
-        "market_data/market_data_hfq.parquet"
-        if adjusted
-        else "unadjusted_price/unadjusted_price.parquet"
+    fields = ["open", "high", "low", "close", "volume", "amount", "turnover"]
+    if adjusted:
+        out = _daily_panel("market_data/market_data_hfq.parquet", sym, fields, start, end)
+        for row in out["items"]:
+            value = row.get("turnover")
+            if value is not None:
+                try:
+                    row["turnover"] = round(float(value) * 100, 6)
+                except (TypeError, ValueError):
+                    row["turnover"] = None
+    else:
+        items = _long_panel("daily_bars_unadjusted", sym, fields, start, end)
+        out = {"items": items, "count": len(items), **data_manifest()}
+    if limit and limit > 0:
+        out["items"] = out["items"][-limit:]
+        out["count"] = len(out["items"])
+    out.update(
+        {
+            "symbol": sym,
+            "frequency": "1d",
+            "adjusted": adjusted,
+            "adjust": "hfq" if adjusted else "none",
+            "turnover_unit": "percent",
+        }
     )
-    fields = ["open", "high", "low", "close"] + (["volume", "amount"] if adjusted else [])
-    out = _daily_panel(source, sym, fields, start, end)
-    out.update({"symbol": sym, "frequency": "1d", "adjusted": adjusted})
     return out
 
 

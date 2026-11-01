@@ -91,16 +91,40 @@ def financials(
         raise HTTPException(status_code=503, detail=f"财务库不可用: {exc}") from exc
 
 
+@router.get("/daily/{symbol}")
+def daily(
+    symbol: str,
+    start: str = Query(""),
+    end: str = Query(""),
+    adjust: str = Query("hfq", pattern="^(hfq|none)$"),
+    limit: int = Query(0, ge=0, le=10000),
+) -> dict[str, Any]:
+    """FEAT-015：个股日线（OHLCV + 换手率），adjust=hfq|none。"""
+    try:
+        return md.daily_bars(
+            symbol,
+            start=start,
+            end=end,
+            adjusted=adjust == "hfq",
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @router.get("/daily-local/{symbol}")
 def daily_local(
     symbol: str,
     start: str = Query(""),
     end: str = Query(""),
     adjusted: bool = Query(True),
+    limit: int = Query(0, ge=0, le=10000),
 ) -> dict[str, Any]:
-    """本地日线（含成交量/额），用于图表与指标计算。"""
+    """本地日线（兼容旧路径，等价于 /daily/{symbol}）。"""
     try:
-        return md.daily_bars(symbol, start=start, end=end, adjusted=adjusted)
+        return md.daily_bars(symbol, start=start, end=end, adjusted=adjusted, limit=limit)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (FileNotFoundError, RuntimeError) as exc:

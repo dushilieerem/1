@@ -11,7 +11,8 @@ from pathlib import Path
 from services.core.env_config import env
 
 
-def materialized_ifind_root() -> Path | None:
+def materialized_view_root() -> Path | None:
+    """视图物化根目录（含 ifind / free / derived）。"""
     root = (env("SVQUANT_DATA_ROOT", "") or "").strip()
     view = (env("SVQUANT_DATA_VIEW", "") or "").strip()
     if not root or not view:
@@ -19,7 +20,15 @@ def materialized_ifind_root() -> Path | None:
     base = Path(root) / "views" / view
     # 容器内优先用指向 /marketdata 的物化；宿主机用普通物化
     for name in ("materialized-container", "materialized"):
-        candidate = base / name / "ifind"
+        candidate = base / name
         if candidate.exists():
             return candidate
     return None
+
+
+def materialized_ifind_root() -> Path | None:
+    view_root = materialized_view_root()
+    if view_root is None:
+        return None
+    candidate = view_root / "ifind"
+    return candidate if candidate.exists() else None

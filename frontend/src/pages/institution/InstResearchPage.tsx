@@ -102,7 +102,7 @@ export function InstResearchPage() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) {
-        let message = `导出失败（${res.status}）`;
+        let message = `${t("导出失败", "Export failed")}（${res.status}）`;
         try {
           const data = await res.json();
           message = String((data as { detail?: string } | null)?.detail || message);
@@ -115,7 +115,7 @@ export function InstResearchPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${detail?.symbol || "research"}-研究简报.md`;
+      a.download = `${detail?.symbol || "research"}-${t("研究简报", "research-report")}.md`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -181,7 +181,7 @@ export function InstResearchPage() {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
         <PageHeader eyebrow="RESEARCH / 03" title={t("公司研究", "Company research")} />
-        <Loading label="正在加载研究案…" />
+        <Loading label={t("正在加载研究案…", "Loading research case…")} />
       </div>
     );
   }
@@ -213,11 +213,11 @@ export function InstResearchPage() {
                   <StatusBadge status={c.stage} />
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1.5">
-                  <Badge tone="gold">{c.industry || "行业待补充"}</Badge>
+                  <Badge tone="gold">{c.industry || t("行业待补充", "Industry n/a")}</Badge>
                   <StatusBadge status={c.data_status} />
                 </div>
                 <p className="mt-3 text-xs text-slate-500">
-                  点击进入研究案，生成六维结论、资料包与审核记录。
+                  {t("点击进入研究案，生成六维结论、资料包与审核记录。", "Open the case to generate six dimensions, the evidence pack and reviews.")}
                 </p>
               </Link>
             ))}
@@ -225,7 +225,7 @@ export function InstResearchPage() {
         ) : (
           <Empty>
             <FileSearch className="mx-auto mb-2 h-6 w-6 text-slate-300" />
-            还没有研究案。先到「机会发现」选择一家公司并进入研究。
+            {t("还没有研究案。先到「机会发现」选择一家公司并进入研究。", "No research cases yet. Pick a company in Discovery and start research.")}
           </Empty>
         )}
       </div>
@@ -236,7 +236,7 @@ export function InstResearchPage() {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
         <PageHeader eyebrow="RESEARCH / 03" title={t("公司研究", "Company research")} />
-        <ErrorBox message={error || "研究案不存在"} onRetry={() => loadDetail(caseId)} />
+        <ErrorBox message={error || t("研究案不存在", "Research case not found")} onRetry={() => loadDetail(caseId)} />
       </div>
     );
   }
@@ -246,7 +246,7 @@ export function InstResearchPage() {
       <PageHeader
         eyebrow="RESEARCH / 03"
         title={detail.company_name}
-        desc={`${detail.symbol} · ${detail.industry || "行业待补充"} · ${detail.case_no}`}
+        desc={`${detail.symbol} · ${detail.industry || t("行业待补充", "Industry n/a")} · ${detail.case_no}`}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" onClick={() => nav("/inst/research")}>
@@ -292,7 +292,7 @@ export function InstResearchPage() {
                       <StatusBadge status={dim.status} />
                     </div>
                     <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{dim.question}</p>
-                    <p className="mt-2 text-xs leading-relaxed text-slate-700">{dim.summary || "待补充"}</p>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-700">{dim.summary || t("待补充", "TBD")}</p>
                     {dim.checks?.length ? (
                       <ul className="mt-2 space-y-1 text-[11px] text-slate-500">
                         {dim.checks.map((x) => (
@@ -301,18 +301,18 @@ export function InstResearchPage() {
                       </ul>
                     ) : null}
                     {dim.counter?.length ? (
-                      <p className="mt-2 text-[11px] text-amber-700">反证：{dim.counter[0]}</p>
+                      <p className="mt-2 text-[11px] text-amber-700">{t("反证", "Falsifier")}：{dim.counter[0]}</p>
                     ) : null}
                     {dim.evidence_ids?.length ? (
                       <p className="mt-2 font-mono text-[10px] text-slate-400">
-                        证据 ID：{dim.evidence_ids.join(", ")}
+                        {t("证据 ID", "Evidence IDs")}：{dim.evidence_ids.join(", ")}
                       </p>
                     ) : null}
                   </article>
                 ))}
               </div>
             ) : (
-              <Empty>还没有六维研究。点击右上角生成；生成后自动进入待审核。</Empty>
+              <Empty>{t("还没有六维研究。点击右上角生成；生成后自动进入待审核。", "No research yet. Generate it from the top-right; it enters review automatically.")}</Empty>
             )}
           </Card>
 
@@ -337,7 +337,7 @@ export function InstResearchPage() {
                 ))}
               </ul>
             ) : (
-              <Empty>还没有证据。生成研究会写入行情、估值与财务证据。</Empty>
+              <Empty>{t("还没有证据。生成研究会写入行情、估值与财务证据。", "No evidence yet; generating research writes price, valuation and financial evidence.")}</Empty>
             )}
           </Card>
         </div>
@@ -346,10 +346,10 @@ export function InstResearchPage() {
           <Card title={t("版本与审核", "Version & review")}>
             {version ? (
               <>
-                <Field label="版本" value={`v${version.version_no}`} />
-                <Field label="状态" value={<StatusBadge status={version.status} />} />
-                <Field label="结论" value={version.conclusion || "待补充"} />
-                <Field label="证据数" value={`${version.evidence_ids?.length || 0} 条`} />
+                <Field label={t("版本", "Version")} value={`v${version.version_no}`} />
+                <Field label={t("状态", "Status")} value={<StatusBadge status={version.status} />} />
+                <Field label={t("结论", "Conclusion")} value={version.conclusion || t("待补充", "TBD")} />
+                <Field label={t("证据数", "Evidence")} value={`${version.evidence_ids?.length || 0} ${t("条", "items")}`} />
                 <div className="mt-3">
                   <Button
                     variant="ghost"
@@ -368,7 +368,7 @@ export function InstResearchPage() {
                 </div>
                 {memo ? (
                   <div className="mt-3 rounded-xl border border-[#c9a15e]/30 bg-[#fbf6ea] p-3 text-xs leading-relaxed text-[#8a6a2f]">
-                    <p className="font-medium">AI 摘要（非投资建议）</p>
+                    <p className="font-medium">{t("AI 摘要（非投资建议）", "AI summary (not investment advice)")}</p>
                     <p className="mt-1">{memo.summary || "—"}</p>
                     {Array.isArray(memo.risks) && memo.risks.length ? (
                       <ul className="mt-2 list-disc pl-4">
@@ -378,31 +378,31 @@ export function InstResearchPage() {
                       </ul>
                     ) : null}
                     {Array.isArray(memo.open_questions) && memo.open_questions.length ? (
-                      <p className="mt-2">待核验：{memo.open_questions.join("；")}</p>
+                      <p className="mt-2">{t("待核验", "To verify")}：{memo.open_questions.join("；")}</p>
                     ) : null}
                   </div>
                 ) : null}
                 {version.valuation ? (
                   <div className="mt-3 rounded-xl border border-[#c9a15e]/30 bg-[#fbf6ea] p-3 text-xs text-[#8a6a2f]">
-                    <p className="font-medium">估值口径</p>
+                    <p className="font-medium">{t("估值口径", "Valuation basis")}</p>
                     <p className="mt-1 leading-relaxed">
-                      {String((version.valuation as Record<string, unknown>).note || "演示口径，不是目标价。")}
+                      {String((version.valuation as Record<string, unknown>).note || t("演示口径，不是目标价。", "Demo basis, not a target price."))}
                     </p>
                   </div>
                 ) : null}
                 {detail.company_id ? (
                   <div className="mt-3 rounded-xl border border-[#e7e3d8] bg-white p-3">
                     <p className="text-xs font-semibold text-slate-700">
-                      五年 DCF（确定性计算 · 不是目标价）
+                      {t("五年 DCF（确定性计算 · 不是目标价）", "Five-year DCF (deterministic, not a target price)")}
                     </p>
                     <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
                       {[
-                        ["base_revenue", "基期收入"],
-                        ["revenue_growth", "增长率 %"],
-                        ["cashflow_margin", "现金流率 %"],
-                        ["discount_rate", "折现率 %"],
-                        ["terminal_growth", "永续 %"],
-                        ["shares", "股本（可选）"],
+                        ["base_revenue", t("基期收入", "Base revenue")],
+                        ["revenue_growth", t("增长率 %", "Growth %")],
+                        ["cashflow_margin", t("现金流率 %", "Cash-flow margin %")],
+                        ["discount_rate", t("折现率 %", "Discount rate %")],
+                        ["terminal_growth", t("永续 %", "Terminal %")],
+                        ["shares", t("股本（可选）", "Shares (optional)")],
                       ].map(([key, label]) => (
                         <label key={key} className="space-y-1 text-slate-500">
                           <span>{label}</span>
@@ -417,15 +417,15 @@ export function InstResearchPage() {
                     </div>
                     <div className="mt-2">
                       <Button variant="ghost" disabled={!!busy} onClick={runDcf}>
-                        {busy === "dcf" ? "计算中…" : "计算估值区间"}
+                        {busy === "dcf" ? t("计算中…", "Calculating…") : t("计算估值区间", "Calculate range")}
                       </Button>
                     </div>
                     {dcf?.range ? (
                       <div className="mt-2 text-xs leading-relaxed text-slate-600">
                         <p>
-                          区间：{fmtNum(dcf.range.low, 2)} – {fmtNum(dcf.range.high, 2)}
+                          {t("区间", "Range")}：{fmtNum(dcf.range.low, 2)} – {fmtNum(dcf.range.high, 2)}
                           {dcf.range.base_per_share != null
-                            ? `；每股 ${fmtNum(dcf.range.low_per_share, 2)} / ${fmtNum(dcf.range.base_per_share, 2)} / ${fmtNum(dcf.range.high_per_share, 2)}`
+                            ? `；${t("每股", "per share")} ${fmtNum(dcf.range.low_per_share, 2)} / ${fmtNum(dcf.range.base_per_share, 2)} / ${fmtNum(dcf.range.high_per_share, 2)}`
                             : ""}
                         </p>
                         {Array.isArray(dcf.limits) ? (
@@ -465,7 +465,7 @@ export function InstResearchPage() {
                           run("return", () =>
                             instApi(`/research/${version.id}/review`, {
                               method: "POST",
-                              body: { decision: "return", comment: comment || "退回补充研究" },
+                              body: { decision: "return", comment: comment || t("退回补充研究", "Return for more research") },
                             }),
                           )
                         }
@@ -478,7 +478,7 @@ export function InstResearchPage() {
                 {version.status === "approved" ? (
                   <div className="mt-4">
                     <div className="mb-2 flex items-center gap-2 text-[11px] text-emerald-700">
-                      <Lock className="h-3.5 w-3.5" /> 已冻结审核版本，可进入辩论
+                      <Lock className="h-3.5 w-3.5" /> {t("已冻结审核版本，可进入辩论", "Approved version is frozen; debate can start")}
                     </div>
                     <Button
                       variant="primary"
@@ -491,7 +491,7 @@ export function InstResearchPage() {
                 ) : null}
               </>
             ) : (
-              <Empty>还没有研究版本。</Empty>
+              <Empty>{t("还没有研究版本。", "No research versions yet.")}</Empty>
             )}
           </Card>
 
@@ -509,23 +509,22 @@ export function InstResearchPage() {
                 ))}
               </ul>
             ) : (
-              <Empty>生成研究后自动创建六维任务。</Empty>
+              <Empty>{t("生成研究后自动创建六维任务。", "Six-dimension tasks appear after research is generated.")}</Empty>
             )}
           </Card>
 
           <Card title={t("公司信息", "Company")}>
-            <Field label="代码" value={<span className="font-mono">{detail.symbol}</span>} />
-            <Field label="市场" value={detail.market} />
-            <Field label="行业" value={detail.industry || "待补充"} />
-            <Field label="数据状态" value={<StatusBadge status={detail.data_status} />} />
-            <Field label="参考价" value={fmtNum(detail.ref_price, 2)} />
+            <Field label={t("代码", "Symbol")} value={<span className="font-mono">{detail.symbol}</span>} />
+            <Field label={t("市场", "Market")} value={detail.market} />
+            <Field label={t("行业", "Industry")} value={detail.industry || t("待补充", "TBD")} />
+            <Field label={t("数据状态", "Data status")} value={<StatusBadge status={detail.data_status} />} />
+            <Field label={t("参考价", "Reference price")} value={fmtNum(detail.ref_price, 2)} />
           </Card>
         </div>
       </div>
 
       <p className="text-[11px] leading-relaxed text-slate-400">
-        研究结论由数据与规则生成，AI 仅提供解释与反证建议；估值口径为演示，不是目标价。
-        数据不足时显示「待补充」，不构成投资建议。
+        {t("研究结论由数据与规则生成，AI 仅提供解释与反证建议；估值口径为演示，不是目标价。数据不足时显示「待补充」，不构成投资建议。", "Conclusions come from data and rules; AI only explains and suggests falsifiers. Valuation is illustrative, not a target price. Missing data shows TBD. Not investment advice.")}
       </p>
     </div>
   );

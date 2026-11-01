@@ -39,7 +39,7 @@ type CaseItem = {
 
 export function InstDebatePage() {
   const session = useInstSession();
-  const { t } = useInstLocale();
+  const { locale, t } = useInstLocale();
   const nav = useNavigate();
   const [params] = useSearchParams();
   const caseId = Number(params.get("case") || 0);
@@ -128,7 +128,7 @@ export function InstDebatePage() {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
         <PageHeader eyebrow="DEBATE / 04" title={t("投资辩论室", "Investment debate")} />
-        <Loading label="正在加载辩论…" />
+        <Loading label={t("正在加载辩论…", "Loading debate…")} />
       </div>
     );
   }
@@ -166,7 +166,7 @@ export function InstDebatePage() {
         ) : (
           <Empty>
             <MessagesSquare className="mx-auto mb-2 h-6 w-6 text-slate-300" />
-            还没有研究案。先从「机会发现」进入研究。
+            {t("还没有研究案。先从「机会发现」进入研究。", "No research cases yet. Start from Discovery.")}
           </Empty>
         )}
       </div>
@@ -177,7 +177,7 @@ export function InstDebatePage() {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
         <PageHeader eyebrow="DEBATE / 04" title={t("投资辩论室", "Investment debate")} />
-        <ErrorBox message={error || "研究案不存在"} onRetry={() => loadDetail(caseId)} />
+        <ErrorBox message={error || t("研究案不存在", "Research case not found")} onRetry={() => loadDetail(caseId)} />
       </div>
     );
   }
@@ -203,7 +203,7 @@ export function InstDebatePage() {
       {!approvedVersion ? (
         <Card title={t("辩论门禁", "Debate gate")}>
           <p className="text-sm text-slate-600">
-            研究审核尚未通过，不能进入辩论。请先在研究页确认研究成果。
+            {t("研究审核尚未通过，不能进入辩论。请先在研究页确认研究成果。", "Research is not approved yet; confirm it on the research page first.")}
           </p>
         </Card>
       ) : !debate ? (
@@ -216,19 +216,19 @@ export function InstDebatePage() {
             {busy ? t("辩论生成中…", "Generating…") : t("开始两轮辩论", "Start two-round debate")}
           </Button>
           <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
-            论点必须引用证据 ID；AI 不可用时使用规则模板并标注。辩论不产生买卖建议。
+            {t("论点必须引用证据 ID；AI 不可用时使用规则模板并标注。辩论不产生买卖建议。", "Arguments must cite evidence IDs; when AI is unavailable, rule templates are used and labeled. Debate produces no trade advice.")}
           </p>
         </Card>
       ) : (
         <>
           <Card
             title={t("辩论记录", "Debate record")}
-            desc={`场次 #${debate.id} · 状态 ${debate.status} · FactPack ${String(debate.factpack_hash || "").slice(0, 12)}…`}
+            desc={`${t("场次", "Session")} #${debate.id} · ${t("状态", "Status")} ${debate.status} · FactPack ${String(debate.factpack_hash || "").slice(0, 12)}…`}
             actions={<StatusBadge status={debate.status} />}
           >
             <div className="mb-4 rounded-xl border border-[#c9a15e]/30 bg-[#fbf6ea] px-4 py-3 text-sm text-[#8a6a2f]">
               {t("主持结论", "Chair conclusion")}：<b>{debate.conclusion || t("待定", "TBD")}</b>
-              <span className="ml-2 text-[11px]">（流程建议，不构成投资建议）</span>
+              <span className="ml-2 text-[11px]">{t("（流程建议，不构成投资建议）", "(process suggestion, not investment advice)")}</span>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               {[
@@ -238,36 +238,36 @@ export function InstDebatePage() {
                 <div key={col.key} className="rounded-xl border border-[#f0ece2] bg-[#faf9f5] p-4">
                   <div className="mb-3 flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-slate-900">{col.title}</h3>
-                    <Badge tone={col.tone}>{col.items.length} 条</Badge>
+                    <Badge tone={col.tone}>{col.items.length} {t("条", "items")}</Badge>
                   </div>
                   {col.items.length ? (
                     <ul className="space-y-3">
                       {col.items.map((a) => (
                         <li key={a.id} className="rounded-lg border border-white bg-white p-3">
                           <div className="flex items-center justify-between gap-2">
-                            <Badge>第 {a.round} 轮</Badge>
+                            <Badge>{locale === "en" ? `Round ${a.round}` : `第 ${a.round} 轮`}</Badge>
                             <span className="font-mono text-[10px] text-slate-400">
-                              置信度 {a.confidence?.toFixed?.(2) ?? "—"}
+                              {t("置信度", "Confidence")} {a.confidence?.toFixed?.(2) ?? "—"}
                             </span>
                           </div>
                           <p className="mt-2 text-xs leading-relaxed text-slate-700">{a.claim}</p>
                           {a.evidence_ids?.length ? (
                             <p className="mt-2 font-mono text-[10px] text-slate-400">
-                              证据：{a.evidence_ids.join(", ")}
+                              {t("证据", "Evidence")}：{a.evidence_ids.join(", ")}
                             </p>
                           ) : (
-                            <p className="mt-2 text-[10px] text-amber-600">无有效证据引用，不计入裁决</p>
+                            <p className="mt-2 text-[10px] text-amber-600">{t("无有效证据引用，不计入裁决", "No valid evidence citation; excluded from the verdict")}</p>
                           )}
                           {a.falsifier ? (
                             <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-                              可证伪条件：{a.falsifier}
+                              {t("可证伪条件", "Falsifier")}：{a.falsifier}
                             </p>
                           ) : null}
                         </li>
                       ))}
                     </ul>
                   ) : (
-                    <Empty>该方暂无有效论点。</Empty>
+                    <Empty>{t("该方暂无有效论点。", "No valid arguments on this side.")}</Empty>
                   )}
                 </div>
               ))}
@@ -284,11 +284,11 @@ export function InstDebatePage() {
                 ))}
               </ul>
             ) : (
-              <Empty>暂无主持记录。</Empty>
+              <Empty>{t("暂无主持记录。", "No chair record.")}</Empty>
             )}
             <div className="mt-4 flex flex-wrap items-end gap-2">
               <label className="text-[11px] text-slate-500">
-                目标仓位
+                {t("目标仓位", "Target weight")}
                 <input
                   value={target}
                   onChange={(e) => setTarget(e.target.value)}

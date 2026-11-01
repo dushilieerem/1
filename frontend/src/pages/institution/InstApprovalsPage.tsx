@@ -126,7 +126,7 @@ export function InstApprovalsPage() {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
         <PageHeader eyebrow="APPROVALS / 06" title={t("投委会与审批", "IC & approvals")} />
-        <Loading label="正在加载议案…" />
+        <Loading label={t("正在加载议案…", "Loading proposals…")} />
       </div>
     );
   }
@@ -153,17 +153,17 @@ export function InstApprovalsPage() {
                   <div>
                     <p className="font-display text-base font-semibold text-slate-900">{p.company_name}</p>
                     <p className="mt-0.5 font-mono text-[11px] text-slate-500">
-                      #{p.id} · {p.symbol} · {p.direction === "buy" ? "买入" : p.direction === "sell" ? "卖出" : "退出"}
+                      #{p.id} · {p.symbol} · {p.direction === "buy" ? t("买入", "Buy") : p.direction === "sell" ? t("卖出", "Sell") : t("退出", "Exit")}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone="gold">目标 {fmtPct(p.target_weight)}</Badge>
+                    <Badge tone="gold">{t("目标", "Target")} {fmtPct(p.target_weight)}</Badge>
                     <StatusBadge status={p.status} />
                     {p.authorization_status ? <StatusBadge status={p.authorization_status} /> : null}
                   </div>
                 </div>
                 <p className="mt-3 text-xs text-slate-500">
-                  当前版本 v{p.version_no || 1} · 点击进入审批详情
+                  {t("当前版本", "Current version")} v{p.version_no || 1} · {t("点击进入审批详情", "Open approval detail")}
                 </p>
               </button>
             ))}
@@ -171,7 +171,7 @@ export function InstApprovalsPage() {
         ) : (
           <Empty>
             <BadgeCheck className="mx-auto mb-2 h-6 w-6 text-slate-300" />
-            还没有议案。完成研究与辩论后，经理可在议案页创建。
+            {t("还没有议案。完成研究与辩论后，经理可在议案页创建。", "No proposals yet. After research and debate, a manager can create one.")}
           </Empty>
         )}
       </div>
@@ -182,7 +182,7 @@ export function InstApprovalsPage() {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
         <PageHeader eyebrow="APPROVALS / 06" title={t("议案详情", "Proposal")} />
-        <ErrorBox message={error || "议案不存在"} onRetry={() => loadDetail(selectedId)} />
+        <ErrorBox message={error || t("议案不存在", "Proposal not found")} onRetry={() => loadDetail(selectedId)} />
       </div>
     );
   }
@@ -193,7 +193,7 @@ export function InstApprovalsPage() {
     <div className="mx-auto max-w-6xl space-y-5">
       <PageHeader
         eyebrow="APPROVALS / 06"
-        title={`${detail.company_name} · 议案 #${detail.id}`}
+        title={`${detail.company_name} · ${t("议案", "Proposal")} #${detail.id}`}
         desc={`${detail.symbol} · ${detail.direction === "buy" ? t("买入", "Buy") : detail.direction === "sell" ? t("卖出", "Sell") : t("退出", "Exit")} · ${t("当前版本", "Current version")} v${detail.current_version?.version_no || 1}`}
         actions={
           <div className="flex flex-wrap gap-2">
@@ -211,18 +211,18 @@ export function InstApprovalsPage() {
         <div className="space-y-4">
           <Card title={t("议案快照", "Proposal snapshot")} desc={t("授权绑定研究版本、议案版本、配置、批准人与有效期。", "Authorization binds research version, proposal version, configuration, approver and validity.")}>
             <div className="grid gap-x-6 sm:grid-cols-2">
-              <Field label="议案版本" value={`v${detail.current_version?.version_no || 1}`} />
-              <Field label="研究版本" value={String(snapshot.research_version_no || snapshot.research_version_id || "—")} />
-              <Field label="方向" value={detail.direction} />
-              <Field label="目标仓位" value={fmtPct(snapshot.target_weight ?? detail.target_weight)} />
-              <Field label="价格区间" value={`${fmtNum(snapshot.price_low, 2)} - ${fmtNum(snapshot.price_high, 2)}`} />
-              <Field label="账户" value={String(snapshot.account || "—")} />
-              <Field label="币种 / 汇率" value={`${snapshot.currency || "CNY"} / ${snapshot.fx_rate ?? "—"}`} />
-              <Field label="有效期" value={String(snapshot.valid_until || "—")} />
+              <Field label={t("议案版本", "Proposal version")} value={`v${detail.current_version?.version_no || 1}`} />
+              <Field label={t("研究版本", "Research version")} value={String(snapshot.research_version_no || snapshot.research_version_id || "—")} />
+              <Field label={t("方向", "Direction")} value={detail.direction} />
+              <Field label={t("目标仓位", "Target weight")} value={fmtPct(snapshot.target_weight ?? detail.target_weight)} />
+              <Field label={t("价格区间", "Price range")} value={`${fmtNum(snapshot.price_low, 2)} - ${fmtNum(snapshot.price_high, 2)}`} />
+              <Field label={t("账户", "Account")} value={String(snapshot.account || "—")} />
+              <Field label={t("币种 / 汇率", "Currency / FX")} value={`${snapshot.currency || "CNY"} / ${snapshot.fx_rate ?? "—"}`} />
+              <Field label={t("有效期", "Valid until")} value={String(snapshot.valid_until || "—")} />
             </div>
             {Array.isArray(snapshot.monitoring) && snapshot.monitoring.length ? (
               <div className="mt-3 rounded-xl border border-[#c9a15e]/30 bg-[#fbf6ea] p-3 text-xs text-[#8a6a2f]">
-                <p className="font-medium">监控条件</p>
+                <p className="font-medium">{t("监控条件", "Monitoring conditions")}</p>
                 <ul className="mt-1 list-disc pl-4">
                   {snapshot.monitoring.map((x: string) => (
                     <li key={x}>{x}</li>
@@ -240,7 +240,7 @@ export function InstApprovalsPage() {
                   <div key={step} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#f0ece2] bg-[#faf9f5] px-4 py-3">
                     <div>
                       <p className="text-sm font-medium text-slate-800">{stepLabel(step)}</p>
-                      <p className="mt-1 text-xs text-slate-500">{a?.comment || "尚未处理"}</p>
+                      <p className="mt-1 text-xs text-slate-500">{a?.comment || t("尚未处理", "Pending")}</p>
                       {a?.decided_at ? <p className="mt-1 text-[10px] text-slate-400">{a.decided_at}</p> : null}
                     </div>
                     <StatusBadge status={a?.decision || "pending"} />
@@ -254,7 +254,7 @@ export function InstApprovalsPage() {
                 <textarea
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
-                  placeholder="审批意见（通过/拒绝/退回均建议填写）"
+                  placeholder={t("审批意见（通过/拒绝/退回均建议填写）", "Review comment (recommended for approve/reject/return)")}
                   className="min-h-[72px] w-full rounded-lg border border-[#dcd6c8] bg-[#faf9f5] p-2 text-xs outline-none focus:border-[#c9a15e]"
                 />
                 <div className="flex flex-wrap gap-2">
@@ -263,7 +263,7 @@ export function InstApprovalsPage() {
                       <input
                         value={target}
                         onChange={(e) => setTarget(e.target.value)}
-                        placeholder="目标仓位，如 0.05"
+                        placeholder={t("目标仓位，如 0.05", "Target weight, e.g. 0.05")}
                         className="w-36 rounded-lg border border-[#dcd6c8] bg-white px-2 py-2 text-xs outline-none"
                       />
                       <Button
@@ -291,12 +291,12 @@ export function InstApprovalsPage() {
                           act("return", () =>
                             instApi(`/proposals/${selectedId}/partner`, {
                               method: "POST",
-                              body: { decision: "return", comment: comment || "退回补充" },
+                              body: { decision: "return", comment: comment || t("退回补充", "Return for more") },
                             }),
                           )
                         }
                       >
-                        退回
+                        {t("退回", "Return")}
                       </Button>
                     </>
                   ) : null}
@@ -324,12 +324,12 @@ export function InstApprovalsPage() {
                           act("reject", () =>
                             instApi(`/proposals/${selectedId}/chairman`, {
                               method: "POST",
-                              body: { decision: "reject", comment: comment || "不同意" },
+                              body: { decision: "reject", comment: comment || t("不同意", "Reject") },
                             }),
                           )
                         }
                       >
-                        拒绝
+                        {t("拒绝", "Reject")}
                       </Button>
                     </>
                   ) : null}
@@ -342,7 +342,7 @@ export function InstApprovalsPage() {
                         act("risk", () =>
                           instApi(`/proposals/${selectedId}/risk-check`, {
                             method: "POST",
-                            body: { comment: comment || "执行前风控复核" },
+                            body: { comment: comment || t("执行前风控复核", "Pre-execution risk review") },
                           }),
                         )
                       }
@@ -366,7 +366,7 @@ export function InstApprovalsPage() {
                   ) : null}
                 </div>
                 <p className="text-[11px] leading-relaxed text-slate-400">
-                  角色校验在服务端执行；按钮显隐只是展示。风控阻断后 Chairman 不能批准。
+                  {t("角色校验在服务端执行；按钮显隐只是展示。风控阻断后 Chairman 不能批准。", "Roles are enforced server-side; button visibility is only display. Chairman cannot approve after a risk block.")}
                 </p>
               </div>
             ) : null}
@@ -385,12 +385,12 @@ export function InstApprovalsPage() {
                 ))}
               </ul>
             ) : (
-              <Empty>尚未产生审批记录。</Empty>
+              <Empty>{t("尚未产生审批记录。", "No approval records yet.")}</Empty>
             )}
             {detail.approvals?.some((a) => a.decision === "block" || a.decision === "veto") ? (
               <p className="mt-3 flex items-start gap-2 rounded-lg bg-red-50 p-3 text-[11px] text-red-700">
                 <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                风控已阻断。需整改并由独立风控重新核验，Chairman 不能绕过。
+                {t("风控已阻断。需整改并由独立风控重新核验，Chairman 不能绕过。", "Risk has blocked this proposal. Remediate and obtain a fresh independent risk review; Chairman cannot bypass.")}
               </p>
             ) : null}
           </Card>
@@ -430,7 +430,7 @@ export function InstApprovalsPage() {
             </div>
             {memo ? (
               <div className="mt-3 rounded-xl border border-[#c9a15e]/30 bg-[#fbf6ea] p-3 text-xs leading-relaxed text-[#8a6a2f]">
-                <p className="font-medium">AI 摘要（非投资建议，需真人确认）</p>
+                <p className="font-medium">{t("AI 摘要（非投资建议，需真人确认）", "AI summary (not advice; human confirmation required)")}</p>
                 <p className="mt-1">{memo.summary || "—"}</p>
                 {Array.isArray(memo.risks) && memo.risks.length ? (
                   <ul className="mt-2 list-disc pl-4">
@@ -440,7 +440,7 @@ export function InstApprovalsPage() {
                   </ul>
                 ) : null}
                 {Array.isArray(memo.open_questions) && memo.open_questions.length ? (
-                  <p className="mt-2">待核验：{memo.open_questions.join("；")}</p>
+                  <p className="mt-2">{t("待核验", "To verify")}：{memo.open_questions.join("；")}</p>
                 ) : null}
               </div>
             ) : null}
@@ -547,7 +547,7 @@ export function InstApprovalsPage() {
             ) : (
               <Empty>
                 <Stamp className="mx-auto mb-2 h-6 w-6 text-slate-300" />
-                尚未生成授权。完成合伙人、Chairman 与风控复核后可生成。
+                {t("尚未生成授权。完成合伙人、Chairman 与风控复核后可生成。", "No authorization yet. Generate it after partner, Chairman and risk reviews.")}
               </Empty>
             )}
           </Card>
@@ -563,14 +563,14 @@ export function InstApprovalsPage() {
                 ))}
               </ul>
             ) : (
-              <Empty>暂无版本记录。</Empty>
+              <Empty>{t("暂无版本记录。", "No version history.")}</Empty>
             )}
           </Card>
         </div>
       </div>
 
       <p className="text-[11px] leading-relaxed text-slate-400">
-        审批记录与授权快照写入领域审计；演示环境无真实交易，任何批准都不代表成交。
+        {t("审批记录与授权快照写入领域审计；演示环境无真实交易，任何批准都不代表成交。", "Approvals and authorization snapshots are written to the audit trail; demo environment has no real trading and approval is not a fill.")}
       </p>
     </div>
   );

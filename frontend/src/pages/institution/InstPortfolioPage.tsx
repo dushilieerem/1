@@ -83,7 +83,7 @@ export function InstPortfolioPage() {
         eyebrow="PORTFOLIO / 05"
         title={t("投资组合", "Portfolio")}
         desc={`${session.org.name_cn} · ${locale === "en" ? session.role_label_en : session.role_label_cn} · ${t("展示批准后的持仓与敞口；未成交的批准不计入持仓。", "Approved positions and exposures; unexecuted approvals are not positions.")}`}
-        actions={<Badge tone="gold">{pf?.base_currency || "CNY"} 基准</Badge>}
+        actions={<Badge tone="gold">{pf?.base_currency || "CNY"} {t("基准", "base")}</Badge>}
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -104,19 +104,19 @@ export function InstPortfolioPage() {
         <Card
           title={t("持仓明细", "Positions")}
           desc={t("按最新持仓快照展示；持仓只在确认成交后更新。", "Latest position snapshot; positions update only after a confirmed fill.")}
-          actions={<Badge>{positions.length} 只</Badge>}
+          actions={<Badge>{positions.length} {t("只", "names")}</Badge>}
         >
           {positions.length ? (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-[#f0ece2] text-[11px] text-slate-400">
-                    <th className="py-2">标的</th>
-                    <th className="py-2">行业</th>
-                    <th className="py-2 text-right">数量</th>
-                    <th className="py-2 text-right">成本</th>
-                    <th className="py-2 text-right">市值</th>
-                    <th className="py-2 text-right">权重</th>
+                    <th className="py-2">{t("标的", "Symbol")}</th>
+                    <th className="py-2">{t("行业", "Industry")}</th>
+                    <th className="py-2 text-right">{t("数量", "Qty")}</th>
+                    <th className="py-2 text-right">{t("成本", "Cost")}</th>
+                    <th className="py-2 text-right">{t("市值", "Value")}</th>
+                    <th className="py-2 text-right">{t("权重", "Weight")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -139,7 +139,7 @@ export function InstPortfolioPage() {
           ) : (
             <Empty>
               <PieChart className="mx-auto mb-2 h-6 w-6 text-slate-300" />
-              还没有持仓。授权并执行后，持仓才会出现。
+              {t("还没有持仓。授权并执行后，持仓才会出现。", "No positions yet; they appear after an authorization is executed.")}
             </Empty>
           )}
         </Card>
@@ -152,7 +152,7 @@ export function InstPortfolioPage() {
             <Field label={t("组合状态", "Status")} value={<StatusBadge status={positions.length ? "qualified" : "draft"} />} />
             <p className="mt-3 flex items-start gap-2 text-[11px] leading-relaxed text-slate-400">
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#8a6a2f]" />
-              风控硬阻断不可由 Chairman 或 AI 绕过；解除冻结须独立风控重新核验。
+              {t("风控硬阻断不可由 Chairman 或 AI 绕过；解除冻结须独立风控重新核验。", "Hard risk blocks cannot be bypassed by Chairman or AI; unfreezing requires a fresh independent risk review.")}
             </p>
           </Card>
 
@@ -182,7 +182,7 @@ export function InstPortfolioPage() {
       </div>
 
       <p className="text-[11px] leading-relaxed text-slate-400">
-        组合数据为演示账本；A 股价格来自公开 EOD 数据。配置与偏离只做展示，不自动调仓。
+        {t("组合数据为演示账本；A 股价格来自公开 EOD 数据。配置与偏离只做展示，不自动调仓。", "Portfolio is a demo ledger; A-share prices come from public EOD data. Allocation and deviation are display-only; no auto rebalancing.")}
       </p>
     </div>
   );

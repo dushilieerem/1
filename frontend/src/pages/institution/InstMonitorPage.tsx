@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Activity, AlertTriangle, ClipboardList } from "lucide-react";
 import { instApi, fmtMoney, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
+import { useInstLocale } from "@/components/institution/instLocale";
 import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge } from "./instUi";
 
 type Position = {
@@ -74,16 +75,17 @@ type MonitorData = {
   exit_reviews?: ExitReview[];
 };
 
-const REASON: Record<string, string> = {
-  thesis_invalid: "论点失效",
-  valuation: "估值透支",
-  better_allocation: "更优资本配置",
-  portfolio_constraint: "组合/资金约束",
-  other: "其他",
+const REASON: Record<string, [string, string]> = {
+  thesis_invalid: ["论点失效", "Thesis broken"],
+  valuation: ["估值透支", "Valuation stretched"],
+  better_allocation: ["更优资本配置", "Better allocation"],
+  portfolio_constraint: ["组合/资金约束", "Portfolio constraint"],
+  other: ["其他", "Other"],
 };
 
 export function InstMonitorPage() {
   const session = useInstSession();
+  const { locale, t } = useInstLocale();
   const nav = useNavigate();
   const [data, setData] = useState<MonitorData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -124,7 +126,7 @@ export function InstMonitorPage() {
 
   const createEvent = async () => {
     if (!companyId) {
-      setError("请选择持仓标的");
+      setError(t("请选择持仓标的", "Select a holding"));
       return;
     }
     setBusy(true);
@@ -145,7 +147,7 @@ export function InstMonitorPage() {
 
   const createThesis = async () => {
     if (!thesisCompany || !thesisText.trim()) {
-      setError("请选择标的并填写买入论点");
+      setError(t("请选择标的并填写买入论点", "Select a symbol and enter a thesis"));
       return;
     }
     setThesisBusy(true);
@@ -191,7 +193,7 @@ export function InstMonitorPage() {
       const kpiStatus = conclusion === "hold" ? "on_track" : conclusion === "reduce" ? "at_risk" : "broken";
       await instApi(`/theses/${id}/review`, {
         method: "POST",
-        body: { kpi_status: kpiStatus, conclusion, note: "投后复核" },
+        body: { kpi_status: kpiStatus, conclusion, note: t("投后复核", "Post-investment review") },
       });
       load();
     } catch (e) {
@@ -201,7 +203,7 @@ export function InstMonitorPage() {
 
   const submitExitReview = async () => {
     if (!reviewExitId) {
-      setError("请选择退出案");
+      setError(t("请选择退出案", "Select an exit case"));
       return;
     }
     setReviewBusy(true);
@@ -230,8 +232,8 @@ export function InstMonitorPage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
-        <PageHeader eyebrow="MONITOR / 08" title="投后与退出" />
-        <Loading label="正在加载投后数据…" />
+        <PageHeader eyebrow="MONITOR / 08" title={t("投后与退出", "Monitoring & exit")} />
+        <Loading label={t("正在加载投后数据…", "Loading post-investment data…")} />
       </div>
     );
   }
@@ -239,7 +241,7 @@ export function InstMonitorPage() {
   if (error && !data) {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
-        <PageHeader eyebrow="MONITOR / 08" title="投后与退出" />
+        <PageHeader eyebrow="MONITOR / 08" title={t("投后与退出", "Monitoring & exit")} />
         <ErrorBox message={error} onRetry={load} />
       </div>
     );
@@ -255,19 +257,26 @@ export function InstMonitorPage() {
     <div className="mx-auto max-w-6xl space-y-5">
       <PageHeader
         eyebrow="MONITOR / 08"
-        title="投后与退出"
-        desc="跟踪持仓、集中度、经营预警与原始论点复核；退出必须重新走研究、辩论、审批与风控。"
-        actions={<Badge tone={openAlerts ? "amber" : "green"}>{openAlerts} 条待处理预警</Badge>}
+        title={t("投后与退出", "Monitoring & exit")}
+        desc={t("跟踪持仓、集中度、经营预警与原始论点复核；退出必须重新走研究、辩论、审批与风控。", "Track positions, concentration, operating alerts and thesis reviews; exits must go through research, debate, approval and risk again.")}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={openAlerts ? "amber" : "green"}>{openAlerts} {t("条待处理预警", "open alerts")}</Badge>
+            <Link to="/inst/audit">
+              <Button variant="ghost">{t("审计日志", "Audit log")}</Button>
+            </Link>
+          </div>
+        }
       />
 
       {error ? <ErrorBox message={error} onRetry={load} /> : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          ["组合净值", fmtMoney(pf?.nav)],
-          ["现金", fmtMoney(pf?.cash)],
-          ["仓位", fmtPct(pf?.invested_ratio)],
-          ["持仓数", `${positions.length}`],
+          [t("组合净值", "Portfolio NAV"), fmtMoney(pf?.nav)],
+          [t("现金", "Cash"), fmtMoney(pf?.cash)],
+          [t("仓位", "Exposure"), fmtPct(pf?.invested_ratio)],
+          [t("持仓数", "Positions"), String(positions.length)],
         ].map(([label, value]) => (
           <div key={label} className="rounded-2xl border border-[#e7e3d8] bg-white p-5">
             <p className="text-xs text-slate-500">{label}</p>
@@ -278,7 +287,7 @@ export function InstMonitorPage() {
 
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
         <div className="space-y-4">
-          <Card title="持仓与论点台账" desc="每笔持仓应有买入理由、关键假设、KPI、复核时间与推翻条件。">
+          <Card title={t("持仓与论点台账", "Holdings & thesis ledger")} desc={t("每笔持仓应有买入理由、关键假设、KPI、复核时间与推翻条件。", "Every holding needs a thesis, assumptions, KPIs, review date and falsifiers.")}>
             {positions.length ? (
               <div className="space-y-3">
                 {positions.map((p) => (
@@ -289,13 +298,13 @@ export function InstMonitorPage() {
                         <p className="mt-0.5 font-mono text-[11px] text-slate-500">{p.symbol}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge>{p.industry || "行业待补充"}</Badge>
+                        <Badge>{p.industry || t("行业待补充", "Industry n/a")}</Badge>
                         <Badge tone="gold">{fmtPct(p.weight)}</Badge>
                       </div>
                     </div>
                     <div className="mt-2 grid gap-x-6 sm:grid-cols-2">
-                      <Field label="数量" value={fmtMoney(p.qty)} />
-                      <Field label="市值" value={fmtMoney(p.market_value)} />
+                      <Field label={t("数量", "Qty")} value={fmtMoney(p.qty)} />
+                      <Field label={t("市值", "Value")} value={fmtMoney(p.market_value)} />
                     </div>
                   </div>
                 ))}
@@ -303,14 +312,14 @@ export function InstMonitorPage() {
             ) : (
               <Empty>
                 <ClipboardList className="mx-auto mb-2 h-6 w-6 text-slate-300" />
-                暂无持仓台账。执行成交后自动出现。
+                {t("暂无持仓台账。执行成交后自动出现。", "No holdings yet; they appear after a fill.")}
               </Empty>
             )}
           </Card>
 
           <Card
-            title="买入论点台账"
-            desc="每笔持仓的买入理由、关键假设、KPI、复核时间与推翻条件；到期需复核。"
+            title={t("买入论点台账", "Investment thesis ledger")}
+            desc={t("每笔持仓的买入理由、关键假设、KPI、复核时间与推翻条件；到期需复核。", "Buy thesis, key assumptions, KPIs, review date and falsifiers; due reviews must be completed.")}
           >
             <div className="mb-4 space-y-2 rounded-xl border border-[#f0ece2] p-3">
               <select
@@ -318,7 +327,7 @@ export function InstMonitorPage() {
                 onChange={(e) => setThesisCompany(e.target.value)}
                 className="w-full rounded-lg border border-[#dcd6c8] bg-white px-2 py-2 text-xs"
               >
-                <option value="">选择持仓标的</option>
+                <option value="">{t("选择持仓标的", "Select holding")}</option>
                 {positions.map((p) => (
                   <option key={p.id} value={p.company_id}>
                     {p.name || p.symbol}（{p.symbol}）
@@ -328,7 +337,7 @@ export function InstMonitorPage() {
               <textarea
                 value={thesisText}
                 onChange={(e) => setThesisText(e.target.value)}
-                placeholder="买入论点：为什么买、赚什么钱"
+                placeholder={t("买入论点：为什么买、赚什么钱", "Thesis: why buy and where the return comes from")}
                 className="min-h-[64px] w-full rounded-lg border border-[#dcd6c8] bg-[#faf9f5] p-2 text-xs outline-none focus:border-[#c9a15e]"
               />
               <input
@@ -340,48 +349,48 @@ export function InstMonitorPage() {
               <textarea
                 value={thesisFalsifiers}
                 onChange={(e) => setThesisFalsifiers(e.target.value)}
-                placeholder="推翻条件，每行一条"
+                placeholder={t("推翻条件，每行一条", "Falsifiers, one per line")}
                 className="min-h-[52px] w-full rounded-lg border border-[#dcd6c8] bg-[#faf9f5] p-2 text-xs outline-none focus:border-[#c9a15e]"
               />
               <textarea
                 value={thesisKpis}
                 onChange={(e) => setThesisKpis(e.target.value)}
-                placeholder="KPI，每行一条，如：毛利率:0.45"
+                placeholder={t("KPI，每行一条，如：毛利率:0.45", "KPIs, one per line, e.g. gross_margin:0.45")}
                 className="min-h-[52px] w-full rounded-lg border border-[#dcd6c8] bg-[#faf9f5] p-2 text-xs outline-none focus:border-[#c9a15e]"
               />
               <Button variant="gold" disabled={!canWrite || thesisBusy} onClick={createThesis}>
-                {thesisBusy ? "保存中…" : "登记论点"}
+                {thesisBusy ? t("保存中…", "Saving…") : t("登记论点", "Add thesis")}
               </Button>
             </div>
             {data?.theses?.length ? (
               <ul className="space-y-2">
-                {data?.theses?.map((t) => (
-                  <li key={t.id} className="rounded-xl border border-[#f0ece2] bg-white p-3">
+                {data?.theses?.map((ledger) => (
+                  <li key={ledger.id} className="rounded-xl border border-[#f0ece2] bg-white p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-sm font-medium text-slate-800">
-                        {t.company_name || t.symbol}
+                        {ledger.company_name || ledger.symbol}
                       </span>
                       <div className="flex items-center gap-2">
-                        <StatusBadge status={t.status} />
-                        {t.review_due ? <Badge tone="gold">复核 {t.review_due}</Badge> : null}
+                        <StatusBadge status={ledger.status} />
+                        {ledger.review_due ? <Badge tone="gold">{t("复核", "Review")} {ledger.review_due}</Badge> : null}
                       </div>
                     </div>
-                    <p className="mt-1 text-xs text-slate-600">{t.thesis}</p>
-                    {t.falsifiers?.length ? (
-                      <p className="mt-1 text-[11px] text-amber-700">推翻条件：{t.falsifiers.join("；")}</p>
+                    <p className="mt-1 text-xs text-slate-600">{ledger.thesis}</p>
+                    {ledger.falsifiers?.length ? (
+                      <p className="mt-1 text-[11px] text-amber-700">{t("推翻条件", "Falsifiers")}：{ledger.falsifiers.join("；")}</p>
                     ) : null}
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <span className="text-[10px] text-slate-400">复核 {t.review_count || 0} 次</span>
+                      <span className="text-[10px] text-slate-400">{t("复核", "Reviews")} {ledger.review_count || 0}</span>
                       {canWrite ? (
                         <>
-                          <Button variant="ghost" onClick={() => void reviewThesisEntry(t.id, "hold")}>
-                            维持
+                          <Button variant="ghost" onClick={() => void reviewThesisEntry(ledger.id, "hold")}>
+                            {t("维持", "Hold")}
                           </Button>
-                          <Button variant="ghost" onClick={() => void reviewThesisEntry(t.id, "reduce")}>
-                            减仓
+                          <Button variant="ghost" onClick={() => void reviewThesisEntry(ledger.id, "reduce")}>
+                            {t("减仓", "Reduce")}
                           </Button>
-                          <Button variant="ghost" onClick={() => void reviewThesisEntry(t.id, "invalidate")}>
-                            论点失效
+                          <Button variant="ghost" onClick={() => void reviewThesisEntry(ledger.id, "invalidate")}>
+                            {t("论点失效", "Thesis broken")}
                           </Button>
                         </>
                       ) : null}
@@ -390,11 +399,11 @@ export function InstMonitorPage() {
                 ))}
               </ul>
             ) : (
-              <Empty>还没有论点台账。为每笔持仓补上买入理由与推翻条件。</Empty>
+              <Empty>{t("还没有论点台账。为每笔持仓补上买入理由与推翻条件。", "No theses yet. Add a thesis and falsifiers for each holding.")}</Empty>
             )}
           </Card>
 
-          <Card title="监控事件" desc="预警只陈述发生了什么与为什么，不自动卖出。">
+          <Card title={t("监控事件", "Monitoring events")} desc={t("预警只陈述发生了什么与为什么，不自动卖出。", "Alerts state what happened and why; nothing is sold automatically.")}>
             {events.length ? (
               <ul className="space-y-2">
                 {events.map((e) => (
@@ -416,21 +425,21 @@ export function InstMonitorPage() {
             ) : (
               <Empty>
                 <Activity className="mx-auto mb-2 h-6 w-6 text-slate-300" />
-                暂无监控事件。
+                {t("暂无监控事件。", "No monitoring events.")}
               </Empty>
             )}
           </Card>
         </div>
 
         <div className="space-y-4">
-          <Card title="记录预警" desc="手动记录经营/估值/治理预警，进入待复核队列。">
+          <Card title={t("记录预警", "Log alert")} desc={t("手动记录经营/估值/治理预警，进入待复核队列。", "Manually log operating, valuation or governance alerts for review.")}>
             <div className="space-y-2">
               <select
                 value={companyId}
                 onChange={(e) => setCompanyId(e.target.value)}
                 className="w-full rounded-lg border border-[#dcd6c8] bg-white px-2 py-2 text-xs"
               >
-                <option value="">选择持仓标的</option>
+                <option value="">{t("选择持仓标的", "Select holding")}</option>
                 {positions.map((p) => (
                   <option key={p.id} value={p.company_id}>
                     {p.name || p.symbol}（{p.symbol}）
@@ -442,30 +451,30 @@ export function InstMonitorPage() {
                 onChange={(e) => setSeverity(e.target.value)}
                 className="w-full rounded-lg border border-[#dcd6c8] bg-white px-2 py-2 text-xs"
               >
-                <option value="info">提示</option>
-                <option value="warning">警告</option>
-                <option value="critical">严重</option>
+                <option value="info">{t("提示", "Info")}</option>
+                <option value="warning">{t("警告", "Warning")}</option>
+                <option value="critical">{t("严重", "Critical")}</option>
               </select>
               <textarea
                 value={detail}
                 onChange={(e) => setDetail(e.target.value)}
-                placeholder="发生了什么、为什么需要复核"
+                placeholder={t("发生了什么、为什么需要复核", "What happened and why it needs review")}
                 className="min-h-[72px] w-full rounded-lg border border-[#dcd6c8] bg-[#faf9f5] p-2 text-xs outline-none focus:border-[#c9a15e]"
               />
               <Button variant="gold" disabled={!canWrite || busy} onClick={createEvent}>
-                {busy ? "提交中…" : "记录预警"}
+                {busy ? t("提交中…", "Submitting…") : t("记录预警", "Log alert")}
               </Button>
             </div>
           </Card>
 
-          <Card title="退出研究" desc="退出议案必须重新走研究、辩论、审批与风控；不得复用旧批准。">
+          <Card title={t("退出研究", "Exit research")} desc={t("退出议案必须重新走研究、辩论、审批与风控；不得复用旧批准。", "An exit must pass research, debate, approval and risk again; old approvals cannot be reused.")}>
             <div className="mb-4 space-y-2 rounded-xl border border-[#f0ece2] p-3">
               <select
                 value={exitCompany}
                 onChange={(e) => setExitCompany(e.target.value)}
                 className="w-full rounded-lg border border-[#dcd6c8] bg-white px-2 py-2 text-xs"
               >
-                <option value="">选择持仓标的</option>
+                <option value="">{t("选择持仓标的", "Select holding")}</option>
                 {positions.map((p) => (
                   <option key={p.id} value={p.company_id}>
                     {p.name || p.symbol}（{p.symbol}）
@@ -479,14 +488,14 @@ export function InstMonitorPage() {
               >
                 {Object.entries(REASON).map(([k, v]) => (
                   <option key={k} value={k}>
-                    {v}
+                    {locale === "en" ? v[1] : v[0]}
                   </option>
                 ))}
               </select>
               <textarea
                 value={exitMemo}
                 onChange={(e) => setExitMemo(e.target.value)}
-                placeholder="退出理由：比较继续持有 / 部分减持 / 全部退出"
+                placeholder={t("退出理由：比较继续持有 / 部分减持 / 全部退出", "Rationale: hold vs reduce vs full exit")}
                 className="min-h-[64px] w-full rounded-lg border border-[#dcd6c8] bg-[#faf9f5] p-2 text-xs outline-none focus:border-[#c9a15e]"
               />
               <Button
@@ -513,10 +522,10 @@ export function InstMonitorPage() {
                   }
                 }}
               >
-                {exitBusy ? "提交中…" : "发起退出研究"}
+                {exitBusy ? t("提交中…", "Submitting…") : t("发起退出研究", "Start exit research")}
               </Button>
               <p className="text-[10px] leading-relaxed text-slate-400">
-                发起退出研究会撤销该标的仍有效的旧授权，并新建退出研究案；后续重新走研究、辩论、审批与风控。
+                {t("发起退出研究会撤销该标的仍有效的旧授权，并新建退出研究案；后续重新走研究、辩论、审批与风控。", "Starting exit research revokes still-valid authorizations for the symbol and opens a new exit case; it then follows research, debate, approval and risk again.")}
               </p>
             </div>
             {exits.length ? (
@@ -527,26 +536,26 @@ export function InstMonitorPage() {
                       <span className="text-sm text-slate-800">{x.company_name}</span>
                       <StatusBadge status={x.status} />
                     </div>
-                    <p className="mt-1 text-xs text-slate-500">{REASON[x.reason_type] || x.reason_type}</p>
+                    <p className="mt-1 text-xs text-slate-500">{REASON[x.reason_type] ? (locale === "en" ? REASON[x.reason_type][1] : REASON[x.reason_type][0]) : x.reason_type}</p>
                   </li>
                 ))}
               </ul>
             ) : (
               <Empty>
                 <AlertTriangle className="mx-auto mb-2 h-6 w-6 text-slate-300" />
-                暂无退出研究。退出原因分为论点失效、估值透支、更优配置与组合约束。
+                {t("暂无退出研究。退出原因分为论点失效、估值透支、更优配置与组合约束。", "No exit cases. Reasons: thesis broken, valuation stretched, better allocation, portfolio constraint.")}
               </Empty>
             )}
           </Card>
 
-          <Card title="退出复盘" desc="记录已实现收益、持有天数、论点对错与教训，供下次研究复用。">
+          <Card title={t("退出复盘", "Exit post-mortem")} desc={t("记录已实现收益、持有天数、论点对错与教训，供下次研究复用。", "Record realized return, holding days, thesis verdict and lessons for future research.")}>
             <div className="mb-4 space-y-2 rounded-xl border border-[#f0ece2] p-3">
               <select
                 value={reviewExitId}
                 onChange={(e) => setReviewExitId(e.target.value)}
                 className="w-full rounded-lg border border-[#dcd6c8] bg-white px-2 py-2 text-xs"
               >
-                <option value="">选择退出案</option>
+                <option value="">{t("选择退出案", "Select exit case")}</option>
                 {exits.map((x) => (
                   <option key={x.id} value={x.id}>
                     EX-{x.id} {x.company_name}
@@ -558,32 +567,32 @@ export function InstMonitorPage() {
                 onChange={(e) => setVerdict(e.target.value)}
                 className="w-full rounded-lg border border-[#dcd6c8] bg-white px-2 py-2 text-xs"
               >
-                <option value="right">论点正确</option>
-                <option value="mixed">对错参半</option>
-                <option value="wrong">论点错误</option>
+                <option value="right">{t("论点正确", "Thesis right")}</option>
+                <option value="mixed">{t("对错参半", "Mixed")}</option>
+                <option value="wrong">{t("论点错误", "Thesis wrong")}</option>
               </select>
               <div className="flex gap-2">
                 <input
                   value={realized}
                   onChange={(e) => setRealized(e.target.value)}
-                  placeholder="已实现收益 %"
+                  placeholder={t("已实现收益 %", "Realized return %")}
                   className="w-1/2 rounded-lg border border-[#dcd6c8] bg-white px-2 py-2 text-xs"
                 />
                 <input
                   value={holdingDays}
                   onChange={(e) => setHoldingDays(e.target.value)}
-                  placeholder="持有天数"
+                  placeholder={t("持有天数", "Holding days")}
                   className="w-1/2 rounded-lg border border-[#dcd6c8] bg-white px-2 py-2 text-xs"
                 />
               </div>
               <textarea
                 value={lessons}
                 onChange={(e) => setLessons(e.target.value)}
-                placeholder="复盘教训：哪些假设错了、下次怎么验证"
+                placeholder={t("复盘教训：哪些假设错了、下次怎么验证", "Lessons: which assumption failed and how to verify next time")}
                 className="min-h-[64px] w-full rounded-lg border border-[#dcd6c8] bg-[#faf9f5] p-2 text-xs outline-none focus:border-[#c9a15e]"
               />
               <Button variant="gold" disabled={!canWrite || reviewBusy} onClick={submitExitReview}>
-                {reviewBusy ? "保存中…" : "保存复盘"}
+                {reviewBusy ? t("保存中…", "Saving…") : t("保存复盘", "Save post-mortem")}
               </Button>
             </div>
             {data?.exit_reviews?.length ? (
@@ -597,22 +606,22 @@ export function InstMonitorPage() {
                       </Badge>
                     </div>
                     <p className="mt-1 text-slate-500">
-                      收益 {r.realized_return != null ? fmtPct(r.realized_return) : "—"} · 持有{" "}
-                      {r.holding_days ?? "—"} 天
+                      {t("收益", "Return")} {r.realized_return != null ? fmtPct(r.realized_return) : "—"} · {t("持有", "Held")}{" "}
+                      {r.holding_days ?? "—"} {t("天", "days")}
                     </p>
                     {r.lessons ? <p className="mt-1 text-slate-600">{r.lessons}</p> : null}
                   </li>
                 ))}
               </ul>
             ) : (
-              <Empty>还没有退出复盘记录。</Empty>
+              <Empty>{t("还没有退出复盘记录。", "No exit post-mortems yet.")}</Empty>
             )}
           </Card>
         </div>
       </div>
 
       <p className="text-[11px] leading-relaxed text-slate-400">
-        投后预警与退出建议不构成卖出指令；Agent 不得临时扩权。演示数据不得进入真实审批。
+        {t("投后预警与退出建议不构成卖出指令；Agent 不得临时扩权。演示数据不得进入真实审批。", "Post-investment alerts and exit notes are not sell instructions; agents cannot escalate privileges. Demo data must not enter real approvals.")}
       </p>
     </div>
   );

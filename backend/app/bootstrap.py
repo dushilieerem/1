@@ -274,9 +274,14 @@ def bootstrap_schemas() -> None:
         print(f"  re-catalog 定时同步跳过: {exc}")
 
     try:
-        from services.factor.re_factor_catalog import warm_re_catalog_async
+        from services.core.env_config import env
 
-        warm_re_catalog_async()
-        print("  re-catalog 后台预热已启动")
+        if (env("RE_CATALOG_WARM_ENABLED", "1") or "1").strip().lower() in {"0", "false", "no"}:
+            print("  re-catalog 预热已关闭（RE_CATALOG_WARM_ENABLED=0）")
+        else:
+            from services.factor.re_factor_catalog import warm_re_catalog_async
+
+            warm_re_catalog_async()
+            print("  re-catalog 后台预热已启动")
     except Exception as exc:
         print(f"  re-catalog 预热跳过: {exc}")

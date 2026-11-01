@@ -15,6 +15,12 @@ import pytest
 
 os.environ.setdefault("JWT_SECRET_KEY", "0123456789abcdef0123456789abcdef")
 os.environ.setdefault("DEV_SKIP_AUTH", "0")
+# 测试不启动后台调度，避免写 factor/index.yaml、模拟盘结算等仓库副作用
+os.environ.setdefault("RE_CATALOG_SYNC_ENABLED", "0")
+os.environ.setdefault("SVQUANT_PANEL_DAILY_ENABLED", "0")
+os.environ.setdefault("SVQUANT_PAPER_TRADING_ENABLED", "0")
+os.environ.setdefault("NEWS_INGEST_INTERVAL_SEC", "0")
+os.environ.setdefault("RE_CATALOG_WARM_ENABLED", "0")
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -137,184 +143,184 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
         tokens["risk"],
         tokens["execution"],
     )
-    with TestClient(app) as client:
-        # 个人令牌不能进机构端
-        personal = issue_token(fixture["users"][0])
-        assert client.get("/api/inst/overview", headers=_h(personal)).status_code == 401
-        # chairman 无机会发现（ideas=none）工作区
-        assert client.get("/api/inst/companies", headers=_h(chairman)).status_code == 403
+    # 不进 lifespan：避免启动调度/迁移写仓库文件；schema 已在上方显式确保。
+    client = TestClient(app)
+    personal = issue_token(fixture["users"][0])
+    assert client.get("/api/inst/overview", headers=_h(personal)).status_code == 401
+    # chairman 无机会发现（ideas=none）工作区
+    assert client.get("/api/inst/companies", headers=_h(chairman)).status_code == 403
 
-        case = _ok(
-            client.post(
-                "/api/inst/cases",
-                json={"company_id": fixture["company_id"]},
-                headers=_h(manager),
-            )
+    case = _ok(
+        client.post(
+            "/api/inst/cases",
+            json={"company_id": fixture["company_id"]},
+            headers=_h(manager),
         )
-        case_id = int(case["id"])
+    )
+    case_id = int(case["id"])
 
-        research = _ok(
-            client.post(f"/api/inst/cases/{case_id}/research", json={"mode": "full"}, headers=_h(manager))
+    research = _ok(
+        client.post(f"/api/inst/cases/{case_id}/research", json={"mode": "full"}, headers=_h(manager))
+    )
+    version_id = int(research["versions"][0]["id"])
+    _ok(
+        client.post(
+            f"/api/inst/research/{version_id}/review",
+            json={"decision": "approve", "comment": "通过"},
+            headers=_h(partner),
         )
-        version_id = int(research["versions"][0]["id"])
-        _ok(
-            client.post(
-                f"/api/inst/research/{version_id}/review",
-                json={"decision": "approve", "comment": "通过"},
-                headers=_h(partner),
-            )
+    )
+    _ok(
+        client.post(
+            f"/api/inst/cases/{case_id}/debate", json={"use_ai": False}, headers=_h(manager)
         )
-        _ok(
-            client.post(
-                f"/api/inst/cases/{case_id}/debate", json={"use_ai": False}, headers=_h(manager)
-            )
-        )
+    )
 
-        proposal = _ok(
-            client.post(
-                f"/api/inst/cases/{case_id}/proposals",
-                json={"direction": "buy", "target_weight": 0.05},
-                headers=_h(manager),
-            )
+    proposal = _ok(
+        client.post(
+            f"/api/inst/cases/{case_id}/proposals",
+            json={"direction": "buy", "target_weight": 0.05},
+            headers=_h(manager),
         )
-        proposal_id = int(proposal["id"])
+    )
+    proposal_id = int(proposal["id"])
 
-        # 提案人角色 manager 不能做 Chairman 审批
-        assert (
-            client.post(
-                f"/api/inst/proposals/{proposal_id}/chairman",
-                json={"decision": "approve"},
-                headers=_h(manager),
-            ).status_code
-            == 403
-        )
+    # 提案人角色 manager 不能做 Chairman 审批
+    assert (
+        client.post(
+            f"/api/inst/proposals/{proposal_id}/chairman",
+            json={"decision": "approve"},
+            headers=_h(manager),
+        ).status_code
+        == 403
+    )
 
-        _ok(
-            client.post(
-                f"/api/inst/proposals/{proposal_id}/partner",
-                json={"decision": "approve", "updates": {"target_weight": 0.05}},
-                headers=_h(partner),
-            )
+    _ok(
+        client.post(
+            f"/api/inst/proposals/{proposal_id}/partner",
+            json={"decision": "approve", "updates": {"target_weight": 0.05}},
+            headers=_h(partner),
         )
-        _ok(
-            client.post(
-                f"/api/inst/proposals/{proposal_id}/chairman",
-                json={"decision": "approve"},
-                headers=_h(chairman),
-            )
+    )
+    _ok(
+        client.post(
+            f"/api/inst/proposals/{proposal_id}/chairman",
+            json={"decision": "approve"},
+            headers=_h(chairman),
         )
-        precheck = _ok(
-            client.get(
-                f"/api/inst/proposals/{proposal_id}/ai/chairman-precheck", headers=_h(chairman)
-            )
+    )
+    precheck = _ok(
+        client.get(
+            f"/api/inst/proposals/{proposal_id}/ai/chairman-precheck", headers=_h(chairman)
         )
-        assert precheck["binding"] is False
-        simulate = _ok(
-            client.post(
-                f"/api/inst/proposals/{proposal_id}/ai/chairman-simulate", headers=_h(chairman)
-            )
+    )
+    assert precheck["binding"] is False
+    simulate = _ok(
+        client.post(
+            f"/api/inst/proposals/{proposal_id}/ai/chairman-simulate", headers=_h(chairman)
         )
-        assert simulate["simulated_decision"] in {"approve", "conditional", "handover"}
+    )
+    assert simulate["simulated_decision"] in {"approve", "conditional", "handover"}
 
-        risk_out = _ok(
-            client.post(f"/api/inst/proposals/{proposal_id}/risk-check", json={}, headers=_h(risk))
-        )
-        assert risk_out["status"] == "risk_precheck"
+    risk_out = _ok(
+        client.post(f"/api/inst/proposals/{proposal_id}/risk-check", json={}, headers=_h(risk))
+    )
+    assert risk_out["status"] == "risk_precheck"
 
-        authorized = _ok(
-            client.post(f"/api/inst/proposals/{proposal_id}/authorize", headers=_h(chairman))
+    authorized = _ok(
+        client.post(f"/api/inst/proposals/{proposal_id}/authorize", headers=_h(chairman))
+    )
+    auth_id = int(authorized["authorizations"][0]["id"])
+    executed = _ok(
+        client.post(
+            f"/api/inst/authorizations/{auth_id}/execute",
+            json={"price": 100},
+            headers=_h(execution),
         )
-        auth_id = int(authorized["authorizations"][0]["id"])
-        executed = _ok(
-            client.post(
-                f"/api/inst/authorizations/{auth_id}/execute",
-                json={"price": 100},
-                headers=_h(execution),
-            )
+    )
+    assert executed["order"]["authorization_id"] == auth_id
+    # 幂等：重复执行返回同一订单
+    again = _ok(
+        client.post(
+            f"/api/inst/authorizations/{auth_id}/execute",
+            json={"price": 100},
+            headers=_h(execution),
         )
-        assert executed["order"]["authorization_id"] == auth_id
-        # 幂等：重复执行返回同一订单
-        again = _ok(
-            client.post(
-                f"/api/inst/authorizations/{auth_id}/execute",
-                json={"price": 100},
-                headers=_h(execution),
-            )
-        )
-        assert again.get("idempotent") is True
+    )
+    assert again.get("idempotent") is True
 
-        # 论点台账 + 复核 + 退出复盘
-        thesis = _ok(
-            client.post(
-                "/api/inst/theses",
-                json={
-                    "company_id": fixture["company_id"],
-                    "thesis": "品牌提价带来利润率修复",
-                    "kpis": [{"name": "毛利率", "target": 0.5}],
-                    "falsifiers": ["毛利率连续两季低于 30%"],
-                    "review_due": "2026-12-31",
-                },
-                headers=_h(manager),
-            )
+    # 论点台账 + 复核 + 退出复盘
+    thesis = _ok(
+        client.post(
+            "/api/inst/theses",
+            json={
+                "company_id": fixture["company_id"],
+                "thesis": "品牌提价带来利润率修复",
+                "kpis": [{"name": "毛利率", "target": 0.5}],
+                "falsifiers": ["毛利率连续两季低于 30%"],
+                "review_due": "2026-12-31",
+            },
+            headers=_h(manager),
         )
-        reviewed = _ok(
-            client.post(
-                f"/api/inst/theses/{int(thesis['id'])}/review",
-                json={"kpi_status": "at_risk", "conclusion": "reduce", "note": "接近推翻线"},
-                headers=_h(manager),
-            )
+    )
+    reviewed = _ok(
+        client.post(
+            f"/api/inst/theses/{int(thesis['id'])}/review",
+            json={"kpi_status": "at_risk", "conclusion": "reduce", "note": "接近推翻线"},
+            headers=_h(manager),
         )
-        assert reviewed["status"] == "reviewed"
+    )
+    assert reviewed["status"] == "reviewed"
 
-        exit_case = _ok(
-            client.post(
-                "/api/inst/monitor/exits",
-                json={"company_id": fixture["company_id"], "reason_type": "thesis_invalid", "memo": "论点失效"},
-                headers=_h(manager),
-            )
+    exit_case = _ok(
+        client.post(
+            "/api/inst/monitor/exits",
+            json={"company_id": fixture["company_id"], "reason_type": "thesis_invalid", "memo": "论点失效"},
+            headers=_h(manager),
         )
-        exit_id = int(exit_case["id"])
-        review = _ok(
-            client.post(
-                f"/api/inst/monitor/exits/{exit_id}/review",
-                json={"thesis_verdict": "wrong", "realized_return": -0.08, "holding_days": 30, "lessons": "高估提价"},
-                headers=_h(manager),
-            )
+    )
+    exit_id = int(exit_case["id"])
+    review = _ok(
+        client.post(
+            f"/api/inst/monitor/exits/{exit_id}/review",
+            json={"thesis_verdict": "wrong", "realized_return": -0.08, "holding_days": 30, "lessons": "高估提价"},
+            headers=_h(manager),
         )
-        assert review["thesis_verdict"] == "wrong"
+    )
+    assert review["thesis_verdict"] == "wrong"
 
-        # 风控阻断后 Chairman 不能再批准
-        blocked_proposal = _ok(
-            client.post(
-                f"/api/inst/cases/{case_id}/proposals",
-                json={"direction": "buy", "target_weight": 0.30},
-                headers=_h(manager),
-            )
+    # 风控阻断后 Chairman 不能再批准
+    blocked_proposal = _ok(
+        client.post(
+            f"/api/inst/cases/{case_id}/proposals",
+            json={"direction": "buy", "target_weight": 0.30},
+            headers=_h(manager),
         )
-        blocked_id = int(blocked_proposal["id"])
-        _ok(
-            client.post(
-                f"/api/inst/proposals/{blocked_id}/partner",
-                json={"decision": "approve", "updates": {"target_weight": 0.30}},
-                headers=_h(partner),
-            )
+    )
+    blocked_id = int(blocked_proposal["id"])
+    _ok(
+        client.post(
+            f"/api/inst/proposals/{blocked_id}/partner",
+            json={"decision": "approve", "updates": {"target_weight": 0.30}},
+            headers=_h(partner),
         )
-        _ok(
-            client.post(
-                f"/api/inst/proposals/{blocked_id}/chairman",
-                json={"decision": "approve"},
-                headers=_h(chairman),
-            )
+    )
+    _ok(
+        client.post(
+            f"/api/inst/proposals/{blocked_id}/chairman",
+            json={"decision": "approve"},
+            headers=_h(chairman),
         )
-        risk_blocked = _ok(
-            client.post(f"/api/inst/proposals/{blocked_id}/risk-check", json={}, headers=_h(risk))
-        )
-        assert risk_blocked["status"] == "frozen"
-        assert (
-            client.post(
-                f"/api/inst/proposals/{blocked_id}/chairman",
-                json={"decision": "approve"},
-                headers=_h(chairman),
-            ).status_code
-            == 403
-        )
+    )
+    risk_blocked = _ok(
+        client.post(f"/api/inst/proposals/{blocked_id}/risk-check", json={}, headers=_h(risk))
+    )
+    assert risk_blocked["status"] == "frozen"
+    assert (
+        client.post(
+            f"/api/inst/proposals/{blocked_id}/chairman",
+            json={"decision": "approve"},
+            headers=_h(chairman),
+        ).status_code
+        == 403
+    )

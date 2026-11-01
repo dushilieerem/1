@@ -1,0 +1,15 @@
+# 手机端值守 Agent 日频扫描（收盘后）
+# 安装时替换 __REPO_DIR__ / __RUN_USER__；只写 invest_event_log，不发外部推送。
+[Unit]
+Description=SVQuant Invest 值守扫描（自选/组合）
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+User=__RUN_USER__
+Group=__RUN_USER__
+WorkingDirectory=__REPO_DIR__
+EnvironmentFile=-/etc/svquant/invest-scan.env
+ExecStart=__REPO_DIR__/.ci/venv/bin/python __REPO_DIR__/scripts/invest_watch_scan.py --all
+TimeoutStartSec=900
+Nice=10

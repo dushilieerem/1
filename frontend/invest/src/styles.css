@@ -536,3 +536,28 @@ input, select, textarea { outline: none; }
 .comment-text { margin-top: 4px; font-size: 13px; line-height: 1.65; color: var(--ink); }
 
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--red); margin-left: 6px; vertical-align: middle; }
+
+/* AI 管家 / 对比 / 量化后续页 */
+.ai-chat-list { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
+.ai-msg { padding: 11px 12px; border-radius: 14px; font-size: 13px; line-height: 1.6; }
+.ai-msg.user { align-self: flex-end; background: var(--red-soft); color: var(--ink); max-width: 88%; }
+.ai-msg.ai { background: #fff; border: 1px solid var(--line); }
+.ai-msg-meta { margin-bottom: 6px; }
+.ai-msg p { margin: 4px 0; }
+.ai-section { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.ai-section b { font-size: 12.5px; }
+.ai-section ul { margin: 4px 0 0; padding-left: 18px; }
+.ai-section li { margin: 2px 0; }
+.ai-chart { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.ai-composer { position: sticky; bottom: 64px; display: flex; align-items: center; gap: 8px; padding: 8px; background: rgba(255,255,255,.96); border: 1px solid var(--line); border-radius: 14px; backdrop-filter: blur(6px); }
+.ai-composer input { flex: 1; min-width: 0; border: none; outline: none; font-size: 13px; background: transparent; }
+.ai-composer .round-btn { width: 36px; height: 36px; }
+.ai-composer .round-btn.recording { background: var(--red-soft); color: var(--red); animation: pulse 1.2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
+.behavior-card { border-color: var(--amber-line, #f0d9a8); background: #fffaf0; }
+.compare-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.compare-head > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.news-item .btn { margin: 6px 0 2px; }
+
+.ai-entry { width: 100%; margin-top: 8px; min-height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 8px; border-radius: 12px; background: linear-gradient(120deg, var(--red-soft), #fff); border: 1px solid var(--red-line); color: var(--red-dark); font-size: 12px; }
+.ai-entry span { flex: 1; text-align: left; }

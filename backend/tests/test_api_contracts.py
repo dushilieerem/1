@@ -29,6 +29,15 @@ EXPECTED = {
     "/api/admin/news/sources": {"get"},
     "/api/admin/news/ingest-health": {"get"},
     "/api/admin/re-catalog/status": {"get"},
+    "/api/invest/ai/compare": {"post"},
+    "/api/invest/ai/paper": {"post"},
+    "/api/invest/ai/quant": {"post"},
+    "/api/invest/ai/voice": {"post"},
+    "/api/invest/portfolio/penetration": {"get"},
+    "/api/invest/risk-scan": {"post"},
+    "/api/invest/events/scan": {"post"},
+    "/api/invest/quant/select": {"get"},
+    "/api/invest/quant/signals": {"get"},
 }
 
 

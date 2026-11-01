@@ -55,6 +55,11 @@ export default function Home() {
           <Search size={18} />
           <span>搜索股票 / 行业 / 主题</span>
         </button>
+        <button className="ai-entry" onClick={() => nav("/ai")}>
+          <Sparkles size={16} />
+          <span>AI 管家 · 问个股、组合或复盘</span>
+          <ChevronRight size={15} />
+        </button>
       </header>
 
       {data?.isStale ? (

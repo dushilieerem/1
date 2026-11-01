@@ -7,6 +7,7 @@ import { fmtMoney, fmtPct, formatPrice } from "../lib";
 import { useToast } from "../toast";
 import GlossarySheet from "../GlossarySheet";
 import AiPanel from "../components/AiPanel";
+import { AiCard } from "../components/AiCard";
 
 const KLineChart = lazy(() => import("../KLineChart"));
 
@@ -94,6 +95,8 @@ export default function Stock() {
   const [minute, setMinute] = useState<any[] | null>(null);
   const [minuteError, setMinuteError] = useState<string | null>(null);
   const [minuteLoading, setMinuteLoading] = useState(false);
+  const [annAi, setAnnAi] = useState<any>(null);
+  const [annBusy, setAnnBusy] = useState<string | null>(null);
 
   const load = (nextPeriod = period) => {
     setError(null);
@@ -205,6 +208,7 @@ export default function Stock() {
         <Tag tone="red">收盘数据</Tag>
         <Tag tone="gray">非实时</Tag>
         <Tag tone={data.isDemo ? "gray" : "green"}>{data.isDemo ? "演示数据" : "公开数据"}</Tag>
+        <button className="link-btn" onClick={() => nav(`/compare/${code}`)}>对比</button>
       </div>
 
       <section className="ai-summary-card">
@@ -217,6 +221,19 @@ export default function Stock() {
         </ul>
         <button className="link-btn" onClick={() => setTab("risk")}>查看风险 <ChevronRight size={14} /></button>
       </section>
+
+      {data.behavior?.triggered ? (
+        <section className="card behavior-card">
+          <div className="card-title-row"><h2>追高提醒</h2><span className="hint">行为护栏 · 非预测</span></div>
+          <p>{data.behavior.reasons?.join("；")}</p>
+          <p className="hint">
+            {data.behavior.baseRate?.sample
+              ? `${data.behavior.baseRate.period}：类似情况 ${data.behavior.baseRate.sample} 次，20 日中位收益 ${data.behavior.baseRate.medianReturn}%，中位最大回撤 ${data.behavior.baseRate.maxDrawdown}%，上涨占比 ${data.behavior.baseRate.winRate}%。`
+              : "历史样本不足，无法给出 base rate。"}
+          </p>
+          <p className="hint">热度与估值是两件事；历史分布不是预测。</p>
+        </section>
+      ) : null}
 
       <AiPanel
         title="AI 个股解读"
@@ -421,13 +438,35 @@ export default function Stock() {
       <Sheet open={newsOpen} onClose={() => setNewsOpen(false)} title="个股资讯" sub="标题 + 链接 · 非投资建议">
         <div className="news-list">
           {data.news.length ? data.news.map((n: any) => (
-            <a className="news-item" key={n.id} href={n.url} target="_blank" rel="noreferrer">
-              <b>{n.title}</b>
-              <p>{n.summary}</p>
-              <span>{n.source} · {n.published_at}</span>
-            </a>
+            <div className="news-item" key={n.id}>
+              <a href={n.url} target="_blank" rel="noreferrer">
+                <b>{n.title}</b>
+                <p>{n.summary}</p>
+                <span>{n.source} · {n.published_at}</span>
+              </a>
+              <button
+                className="btn btn-ghost btn-sm"
+                disabled={annBusy === String(n.id)}
+                onClick={async () => {
+                  setAnnBusy(String(n.id));
+                  try {
+                    setAnnAi(await api("/api/invest/ai/announcement", {
+                      method: "POST",
+                      body: JSON.stringify({ title: n.title, summary: n.summary || "" }),
+                    }));
+                  } catch (e: any) {
+                    toast(e.message || "解读失败");
+                  } finally {
+                    setAnnBusy(null);
+                  }
+                }}
+              >
+                {annBusy === String(n.id) ? "解读中…" : "AI 解读"}
+              </button>
+            </div>
           )) : <div className="empty-inline">暂无个股资讯。</div>}
         </div>
+        {annAi ? <AiCard data={annAi} title="公告解读" /> : null}
       </Sheet>
 
       <Sheet open={reportOpen} onClose={() => setReportOpen(false)} title="财报" sub={data.report ? `${data.report.period} · 披露 ${data.report.reportDate}` : "暂无"}>

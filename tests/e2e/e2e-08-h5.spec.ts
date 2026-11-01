@@ -193,3 +193,74 @@ test("ETF 穿透页展示代理成分", async ({ page }) => {
   await expect(page.locator(".data-table")).toBeVisible({ timeout: 20_000 });
   await noHorizontalOverflow(page);
 });
+
+test("AI 管家可发送问题并渲染卡片", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/ai/chat", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        intent: "stock",
+        target_agent: "stock",
+        card_hints: ["card", "chart"],
+        card: {
+          summary: "贵州茅台收盘上涨，估值处于历史中位。",
+          sections: [{ title: "风险", body: "数据为收盘口径。" }],
+          disclaimer: "AI 生成 · 非投资建议",
+        },
+        chart: { code: "600519", bars: [{ close: 1 }, { close: 2 }] },
+      }),
+    }),
+  );
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.getByPlaceholder("问个股、组合、复盘或条件选股").fill("贵州茅台怎么看");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText("贵州茅台收盘上涨")).toBeVisible({ timeout: 20_000 });
+  await noHorizontalOverflow(page);
+});
+
+test("多标的对比页渲染同口径表与 AI 入口", async ({ page }) => {
+  await loginByToken(page);
+  const stock = (code: string, name: string) => ({
+    quote: { code, name, industry: "白酒", price: 100, changePct: 1.2 },
+    valuation: { pe: 20, pb: 3, pePercentile: 40 },
+    technical: { return20: 5, drawdown: -3 },
+    report: { revenue: 100, netProfit: 20, grossMargin: 80, roe: 15 },
+  });
+  await page.route("**/api/invest/stock/600519", (route) =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify(stock("600519", "贵州茅台")) }),
+  );
+  await page.route("**/api/invest/stock/300750", (route) =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify(stock("300750", "宁德时代")) }),
+  );
+  await page.route("**/api/invest/ai/compare", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, card: { summary: "两者估值与增速不同。", sections: [] } }),
+    }),
+  );
+  await page.goto(`${H5}/compare/600519/300750`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".data-table")).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: /生成 AI 对比解读/ }).click();
+  await expect(page.getByText("两者估值与增速不同")).toBeVisible({ timeout: 20_000 });
+  await noHorizontalOverflow(page);
+});
+
+test("轻量因子选股页渲染规则打分", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/quant/select*", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        factors: ["低估值", "高股息", "20 日动量"],
+        items: [{ code: "601668", name: "中国建筑", score: 2.1, parts: [["低估值", 90]] }],
+      }),
+    }),
+  );
+  await page.goto(`${H5}/quant/select`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("中国建筑")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("低估值 90")).toBeVisible({ timeout: 20_000 });
+  await noHorizontalOverflow(page);
+});

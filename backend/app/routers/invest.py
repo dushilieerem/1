@@ -17,6 +17,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from app.deps import require_user
 from services.core.db import get_conn
 from services.core.public_switches import disabled_modules
+from services.invest import agent_tools
 from services.invest import etf as etf_service
 from services.invest import rules
 from services.invest.db import PGConn, invest_conn
@@ -101,6 +102,7 @@ def stock(code: str, period: str = Query("daily"), conn: PGConn = Depends(invest
     data = rules.build_stock(conn, code, period)
     if not data:
         raise HTTPException(status_code=404, detail="标的未收录")
+    data["behavior"] = agent_tools.behavior_alert_from_stock(conn, code, data)
     return data
 
 
@@ -129,6 +131,52 @@ def etf_profile(code: str, top: int = 20) -> dict[str, Any]:
         return etf_service.profile(code, top=top)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/portfolio/penetration")
+def portfolio_penetration(
+    top: int = Query(30, ge=1, le=100),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """F24：ETF 按跟踪指数穿透后的底层暴露。"""
+    return agent_tools.portfolio_penetration(conn, _uid(user), top=top)
+
+
+@router.post("/risk-scan")
+def risk_scan(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """F25：组合诊断 + 自选异动的主动扫描（收盘后口径）。"""
+    return agent_tools.risk_scan(conn, _uid(user))
+
+
+@router.post("/events/scan")
+def events_scan(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """F9：值守 Agent 的日频扫描入口（脚本/定时任务亦可调用服务层）。"""
+    return agent_tools.watch_scan(conn, _uid(user))
+
+
+@router.get("/quant/select")
+def quant_select(
+    top: int = Query(20, ge=1, le=100),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """F29：轻量多因子规则选股（非回测、非推荐）。"""
+    return agent_tools.quant_select(conn, top=top)
+
+
+@router.get("/quant/signals")
+def quant_signals(
+    user: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """F27：模拟盘策略信号监控（最新持仓与现金）。"""
+    return agent_tools.quant_signals(_uid(user))
 
 
 @router.get("/watchlist")

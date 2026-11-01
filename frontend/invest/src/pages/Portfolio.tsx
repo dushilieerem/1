@@ -13,12 +13,32 @@ export default function Portfolio() {
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [pen, setPen] = useState<any>(null);
+  const [scan, setScan] = useState<any>(null);
+  const [scanBusy, setScanBusy] = useState(false);
 
   const load = () => {
     setError(null);
     api("/api/invest/portfolio").then(setData).catch((e) => setError(e.message));
   };
   useEffect(load, []);
+  useEffect(() => {
+    if (!data?.holdings?.length) return;
+    api("/api/invest/portfolio/penetration")
+      .then(setPen)
+      .catch(() => setPen(null));
+  }, [data?.holdings?.length]);
+
+  const runScan = async () => {
+    setScanBusy(true);
+    try {
+      setScan(await api("/api/invest/risk-scan", { method: "POST" }));
+    } catch (e: any) {
+      toast(e.message || "扫描失败");
+    } finally {
+      setScanBusy(false);
+    }
+  };
 
   if (data && data.holdings.length === 0) {
     return (
@@ -96,7 +116,51 @@ export default function Portfolio() {
             {data.exposure.map((e: any) => (
               <BarRow key={e.name} label={e.name} value={e.weight} width={e.weight * 2.2} />
             ))}
-            <div className="hint">仅直接持仓；ETF 穿透与重叠识别暂未纳入。</div>
+            <div className="hint">直接持仓口径；ETF 穿透见下一节。</div>
+          </section>
+
+          {pen?.lookthrough?.length ? (
+            <section className="card">
+              <div className="card-title-row">
+                <h2>ETF 穿透</h2>
+                <span className="hint">代理成分 · {pen.coveragePct}% 已覆盖</span>
+              </div>
+              <div className="kpi-grid">
+                <div className="kpi"><span>ETF 权重</span><b>{pen.etfWeight}%</b></div>
+                <div className="kpi"><span>前三大底层</span><b>{pen.top3}%</b></div>
+                <div className="kpi"><span>前十大底层</span><b>{pen.top10}%</b></div>
+              </div>
+              {pen.lookthrough.slice(0, 12).map((it: any) => (
+                <BarRow key={it.code} label={it.name || it.code} value={it.weight} width={Math.min(100, it.weight * 3)} />
+              ))}
+              {pen.unmapped?.length ? (
+                <p className="hint">未穿透：{pen.unmapped.map((x: any) => `${x.name} ${x.weight}%`).join("、")}</p>
+              ) : null}
+              <p className="hint">ETF 用跟踪指数成分代理，不是官方持仓；缺失权重不计为 0。</p>
+            </section>
+          ) : null}
+
+          <section className="card">
+            <div className="card-title-row">
+              <h2>主动风险扫描</h2>
+              <button className="btn btn-ghost btn-sm" onClick={() => void runScan()} disabled={scanBusy}>
+                {scanBusy ? "扫描中…" : "立即扫描"}
+              </button>
+            </div>
+            <p className="hint">收盘后扫描组合诊断与自选异动；不提供实时推送。</p>
+            {scan ? (
+              scan.alerts?.length ? (
+                <div className="diag-list">
+                  {scan.alerts.map((a: any, i: number) => (
+                    <div className="diag-item" key={i}>
+                      <AlertTriangle size={18} />
+                      <div><b>{a.title}</b><span>{a.detail}</span><em>{a.source}</em></div>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="empty-inline">本次扫描未触发提醒。</div>
+            ) : null}
+            {scan ? <p className="hint">已写入事件日志 {scan.inserted} 条，可到「自选」查看。</p> : null}
           </section>
 
           <section className="card">

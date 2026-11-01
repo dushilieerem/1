@@ -148,9 +148,49 @@ CONDITION_TASK = register(
     )
 )
 
+
+COMPARE_TASK = register(
+    TaskSpec(
+        task_id="invest.compare",
+        description="Invest 多标的对比：同口径差异、各自风险（不判断谁更好）",
+        temperature=0.25,
+        max_tokens=2600,
+        timeout_sec=120,
+        executors=("local",),
+        validator=validate_card,
+    )
+)
+
+PAPER_TASK = register(
+    TaskSpec(
+        task_id="invest.paper",
+        description="Invest 模拟盘点评：仓位、集中度、回撤，只解释不调仓",
+        temperature=0.3,
+        max_tokens=2400,
+        timeout_sec=120,
+        executors=("local",),
+        validator=validate_card,
+    )
+)
+
+QUANT_TASK = register(
+    TaskSpec(
+        task_id="invest.quant",
+        description="Invest 量化解释：因子得分、选股口径与模拟盘信号说明",
+        temperature=0.2,
+        max_tokens=2400,
+        timeout_sec=120,
+        executors=("local",),
+        validator=validate_card,
+    )
+)
+
 __all__ = [
     "ANNOUNCEMENT_TASK",
     "CONDITION_TASK",
+    "COMPARE_TASK",
+    "PAPER_TASK",
+    "QUANT_TASK",
     "DAILY_TASK",
     "INTENT_TASK",
     "PORTFOLIO_TASK",

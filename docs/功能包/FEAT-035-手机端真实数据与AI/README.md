@@ -23,7 +23,7 @@
 - AI 接口 8 个：意图、聊天、个股、日报、组合、公告、条件解析、状态。
 - H5 面板：个股/首页/组合 AI 解读 + 搜索条件解析。
 
-**不做**：实时行情、分时、推送、社区/UGC、ETF 穿透、语音/OCR、量化模式。
+**不做**：实时行情、分时、推送、社区/UGC、OCR。（ETF 穿透、语音、量化看板已在 2026-11-01 补齐，见 §8）
 
 ## 2. 架构
 
@@ -102,3 +102,12 @@ marketdata parquet ──etl_marketdata.py / etl_us_marketdata.py──▶ Postg
 3. 美股基本面：免费源或采购评估。
 4. 主题/热点用真实行业指数与成分重算。
 5. 真机、弱网、E2E 与公开 Gate。
+
+## 8. 2026-11-01 能力补齐
+
+- AI 接口新增：`/api/invest/ai/compare`（多标的对比）、`/paper`（模拟盘点评）、`/quant`（量化解释）、`/voice`（语音转写 + 金融实体校正）；`/chat` 返回 `target_agent/card_hints/chart`。
+- 服务接口新增：`/api/invest/portfolio/penetration`（ETF 穿透）、`/risk-scan`、`/events/scan`、`/quant/select`、`/quant/signals`。
+- H5 页面：`/ai` AI 管家、`/compare/:a/:b`、`/paper`、`/quant/dashboard|select|signals`；个股页增加追高提醒与公告 AI 解读。
+- 日频值守：`scripts/invest_watch_scan.py`，`deploy/invest/svquant-invest-scan.timer` 交易日 16:30 运行。
+- 验证：后端 391 passed；H5 Playwright 16/16。
+- 仍缺：截图 OCR、实时行情/舆情推送（外部依赖）。

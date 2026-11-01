@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import base64
 import json
 import re
 from typing import Any
@@ -15,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from app.deps import require_user
-from services.invest import rules
+from services.invest import agent_tools, rules
 from services.invest.db import PGConn, invest_conn
 
 router = APIRouter(prefix="/api/invest/ai", tags=["invest-ai"])
@@ -101,6 +102,43 @@ def _call(task_id: str, payload: dict[str, Any], system: str | None = None) -> d
     return {"card": {"summary": content, "sections": []}, "raw": out}
 
 
+_TARGET = {
+    "brief": "content",
+    "review": "content",
+    "stock": "stock",
+    "debate": "stock",
+    "compare": "compare",
+    "portfolio": "portfolio",
+    "announcement": "content",
+    "condition": "condition",
+    "glossary": "chat",
+    "chat": "chat",
+    "compliance_block": "guard",
+}
+
+
+def _meta(intent: str) -> dict[str, Any]:
+    target = _TARGET.get(intent, "chat")
+    hints = {
+        "content": ["card"],
+        "stock": ["card", "chart", "risks"],
+        "compare": ["card", "compare_table"],
+        "portfolio": ["card", "diagnosis"],
+        "condition": ["card", "conditions"],
+        "chat": ["card"],
+        "guard": ["blocked"],
+    }.get(target, ["card"])
+    return {"target_agent": target, "card_hints": hints}
+
+
+def _chart(conn: PGConn, code: str) -> dict[str, Any]:
+    bars = rules.stock_bars(conn, code, 60)
+    return {
+        "code": code,
+        "bars": [{"date": b.get("date"), "close": b.get("close")} for b in bars],
+    }
+
+
 def _stock_context(conn: PGConn, code: str) -> dict[str, Any]:
     data = rules.build_stock(conn, code)
     if not data:
@@ -122,7 +160,11 @@ def _stock_context(conn: PGConn, code: str) -> dict[str, Any]:
 def status() -> dict[str, Any]:
     try:
         from ai.router import available_task
-        tasks = ["invest.intent", "invest.daily", "invest.stock", "invest.portfolio", "invest.announcement", "invest.condition"]
+        tasks = [
+            "invest.intent", "invest.daily", "invest.stock", "invest.portfolio",
+            "invest.announcement", "invest.condition", "invest.compare",
+            "invest.paper", "invest.quant",
+        ]
         return {"ok": True, "enabled": {t: available_task(t) for t in tasks}}
     except Exception as exc:
         return {"ok": False, "detail": str(exc)}
@@ -148,7 +190,8 @@ def intent(body: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(requ
             ],
         )
         data = out.get("data") or {}
-        return {"ok": True, **data}
+        intent_name = str(data.get("intent") or "chat")
+        return {"ok": True, **data, **_meta(intent_name)}
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"意图识别失败：{exc}") from exc
 
@@ -163,7 +206,13 @@ def chat(
     if not q:
         raise HTTPException(status_code=400, detail="query 不能为空")
     if compliance_block(q):
-        return {"ok": True, "blocked": True, "intent": "compliance_block", "card": {"summary": BLOCK_MESSAGE, "sections": []}}
+        return {
+            "ok": True,
+            "blocked": True,
+            "intent": "compliance_block",
+            "card": {"summary": BLOCK_MESSAGE, "sections": []},
+            **_meta("compliance_block"),
+        }
     # 先做意图路由；失败则按 chat 处理
     try:
         from ai.router import run_task
@@ -179,28 +228,79 @@ def chat(
         routed = {"intent": "chat", "slots": {}}
     intent_name = str(routed.get("intent") or "chat")
     if intent_name == "compliance_block":
-        return {"ok": True, "blocked": True, "intent": intent_name, "card": {"summary": BLOCK_MESSAGE, "sections": []}}
-    if intent_name in {"stock", "debate", "compare"}:
+        return {
+            "ok": True,
+            "blocked": True,
+            "intent": intent_name,
+            "card": {"summary": BLOCK_MESSAGE, "sections": []},
+            **_meta(intent_name),
+        }
+    if intent_name == "compare":
+        slots = routed.get("slots") or {}
+        first = str(slots.get("stock") or slots.get("symbol") or slots.get("company") or "").strip()
+        second = str(slots.get("stock2") or slots.get("symbol2") or slots.get("company2") or "").strip()
+        if not first or not second:
+            return {
+                "ok": True,
+                "intent": intent_name,
+                "need_clarify": [x for x, v in (("stock", first), ("stock2", second)) if not v],
+                "card": {"summary": "对比需要两个标的，请补充代码或名称。", "sections": []},
+                **_meta(intent_name),
+            }
+        codes = []
+        for name in (first, second):
+            hit = conn.execute("SELECT code FROM stocks WHERE code=? OR name=? LIMIT 1", (name, name)).fetchone()
+            if not hit:
+                like = f"%{name}%"
+                hit = conn.execute("SELECT code FROM stocks WHERE code LIKE ? OR name LIKE ? ORDER BY code LIMIT 1", (like, like)).fetchone()
+            if not hit:
+                return {"ok": True, "intent": intent_name, "card": {"summary": f"未收录标的：{name}", "sections": []}, **_meta(intent_name)}
+            codes.append(str(hit[0]))
+        try:
+            ctx = agent_tools.compare_context(conn, codes[0], codes[1])
+        except ValueError as exc:
+            return {"ok": True, "intent": intent_name, "card": {"summary": str(exc), "sections": []}, **_meta(intent_name)}
+        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.compare", ctx)}
+
+    if intent_name in {"stock", "debate"}:
         slots = routed.get("slots") or {}
         code = str(slots.get("stock") or slots.get("symbol") or slots.get("company") or "").strip()
         if not code:
-            return {"ok": True, "intent": intent_name, "need_clarify": ["stock"], "card": {"summary": "请补充要看的股票名称或代码。", "sections": []}}
+            return {
+                "ok": True,
+                "intent": intent_name,
+                "need_clarify": ["stock"],
+                "card": {"summary": "请补充要看的股票名称或代码。", "sections": []},
+                **_meta(intent_name),
+            }
         # 允许用户输入名称：用搜索找第一个匹配
         stock = conn.execute("SELECT code FROM stocks WHERE code=? OR name=? LIMIT 1", (code, code)).fetchone()
         if not stock:
             like = f"%{code}%"
             stock = conn.execute("SELECT code FROM stocks WHERE code LIKE ? OR name LIKE ? ORDER BY code LIMIT 1", (like, like)).fetchone()
         if not stock:
-            return {"ok": True, "intent": intent_name, "card": {"summary": f"未收录标的：{code}", "sections": []}}
-        return {"ok": True, "intent": intent_name, **_call("invest.stock", _stock_context(conn, str(stock[0])))}
+            return {
+                "ok": True,
+                "intent": intent_name,
+                "card": {"summary": f"未收录标的：{code}", "sections": []},
+                **_meta(intent_name),
+            }
+        return {
+            "ok": True,
+            "intent": intent_name,
+            "chart": _chart(conn, str(stock[0])),
+            **_meta(intent_name),
+            **_call("invest.stock", _stock_context(conn, str(stock[0]))),
+        }
     if intent_name in {"portfolio"}:
         data = rules.build_portfolio(conn, int(user["id"]))
-        return {"ok": True, "intent": intent_name, **_call("invest.portfolio", data)}
+        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.portfolio", data)}
     if intent_name in {"brief", "review"}:
         data = rules.build_home(conn, int(user["id"]))
-        return {"ok": True, "intent": intent_name, **_call("invest.daily", data)}
+        data["portfolio"] = rules.build_portfolio(conn, int(user["id"]))
+        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.daily", data)}
     if intent_name == "condition":
-        return {"ok": True, "intent": intent_name, **_call("invest.condition", {"query": q})}
+        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.condition", {"query": q})}
     return {
         "ok": True,
         "intent": intent_name,
@@ -208,6 +308,7 @@ def chat(
             "summary": "我目前可以解读个股、组合、日报和公告。请补充要看的标的或问题。",
             "sections": [],
         },
+        **_meta(intent_name),
     }
 
 
@@ -218,7 +319,9 @@ def stock_ai(code: str, user: dict[str, Any] = Depends(require_user), conn: PGCo
 
 @router.post("/daily")
 def daily_ai(user: dict[str, Any] = Depends(require_user), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
-    return {"ok": True, **_call("invest.daily", rules.build_home(conn, int(user["id"])))}
+    data = rules.build_home(conn, int(user["id"]))
+    data["portfolio"] = rules.build_portfolio(conn, int(user["id"]))
+    return {"ok": True, **_call("invest.daily", data)}
 
 
 @router.post("/portfolio")
@@ -244,3 +347,79 @@ def condition_ai(body: dict[str, Any] = Body(...), user: dict[str, Any] = Depend
     if compliance_block(q):
         return {"ok": True, "blocked": True, "conditions": [], "explain": BLOCK_MESSAGE}
     return {"ok": True, **_call("invest.condition", {"query": q})}
+
+
+@router.post("/compare")
+def compare(
+    body: dict[str, Any] = Body(...),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    a = str(body.get("a") or body.get("code_a") or "").strip()
+    b = str(body.get("b") or body.get("code_b") or "").strip()
+    if not a or not b:
+        raise HTTPException(status_code=400, detail="需要两个标的代码")
+    try:
+        ctx = agent_tools.compare_context(conn, a, b)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True, "compare": ctx, **_call("invest.compare", ctx)}
+
+
+@router.post("/paper")
+def paper(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    try:
+        account_id = int(body.get("account_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="account_id 无效") from None
+    try:
+        ctx = agent_tools.paper_review(int(user["id"]), account_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True, "paper": ctx, **_call("invest.paper", ctx)}
+
+
+@router.post("/quant")
+def quant(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    ctx = agent_tools.quant_context(conn, int(user["id"]))
+    return {"ok": True, "quant": ctx, **_call("invest.quant", ctx)}
+
+
+@router.post("/voice")
+def voice(
+    body: dict[str, Any] = Body(...),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    b64 = str(body.get("audio_base64") or "").strip()
+    if not b64:
+        raise HTTPException(status_code=400, detail="缺少 audio_base64")
+    if "," in b64 and b64.lower().startswith("data:"):
+        b64 = b64.split(",", 1)[1]
+    try:
+        audio = base64.b64decode(b64, validate=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="audio_base64 无效") from None
+    mime = str(body.get("mime") or "audio/webm").strip() or "audio/webm"
+    ext = "webm"
+    if "ogg" in mime:
+        ext = "ogg"
+    elif any(x in mime for x in ("mp4", "m4a", "aac")):
+        ext = "m4a"
+    elif any(x in mime for x in ("mpeg", "mp3")):
+        ext = "mp3"
+    elif "wav" in mime:
+        ext = "wav"
+    from ai.gateway.speech_transcribe import SpeechError, transcribe_bytes
+
+    try:
+        out = transcribe_bytes(audio, filename=f"speech.{ext}", content_type=mime)
+    except SpeechError as exc:
+        status = 503 if getattr(exc, "http_status", 400) == 503 else 400
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+    corrected = agent_tools.correct_entities(conn, str(out.get("text") or ""))
+    return {"ok": True, "asr": out, "corrected": corrected}

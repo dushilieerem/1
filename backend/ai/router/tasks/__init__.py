@@ -17,10 +17,13 @@ from ai.router.tasks.institution import (  # noqa: F401  导入即注册
 )
 from ai.router.tasks.invest import (  # noqa: F401  导入即注册
     ANNOUNCEMENT_TASK,
+    COMPARE_TASK,
     CONDITION_TASK,
     DAILY_TASK,
     INTENT_TASK,
+    PAPER_TASK,
     PORTFOLIO_TASK,
+    QUANT_TASK,
     STOCK_TASK,
 )
 from ai.router.tasks.research import register_research_tasks

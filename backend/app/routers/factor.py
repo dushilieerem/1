@@ -23,6 +23,7 @@ from services.factor.re_backtest_jobs import (
     get_factor_backtest_job,
     submit_factor_backtest,
 )
+from services.research import asset_store
 from services.factor.re_factor_async_proxy import (
     proxy_cancel_factor_run,
     proxy_get_factor_run,
@@ -226,7 +227,13 @@ def backtest_factor_submit(
     _user: dict = Depends(require_user),
     uid: int = Depends(require_db_user_id),
 ) -> JSONResponse:
-    status, headers, data = proxy_submit_factor_backtest(body if isinstance(body, dict) else {})
+    try:
+        payload = asset_store.apply_asset_refs(uid, body if isinstance(body, dict) else {})
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="研究资产不存在") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    status, headers, data = proxy_submit_factor_backtest(payload)
     return _proxy_response(status, headers, _sign_factor_result(uid, status, data))
 
 

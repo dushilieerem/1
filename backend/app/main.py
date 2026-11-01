@@ -24,6 +24,7 @@ from app.routers import (  # noqa: E402
     admin_logs,
     admin_users,
     support,
+    research_assets,
     agent,
     ai,
     ai_backtest,
@@ -198,6 +199,7 @@ for mod in (
     admin_logs,
     admin_users,
     support,
+    research_assets,
 ):
     app.include_router(mod.router)
 

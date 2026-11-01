@@ -30,7 +30,7 @@
 | FEAT-015 | 个股日线行情 API | INIT-001 | 数据/研究 API | P1 | 已完成（`/api/market-data/daily/{symbol}`） |
 | FEAT-016 | AI 自然语言因子生成 API | INIT-004 | AI 研究助手/因子研究 | P0 | 开发中（受控 MVP） |
 | FEAT-017 | 策略资产目录与版本化持久化 | INIT-001 | 策略研究/研究基础设施 | P0 | 已完成（版本历史 API） |
-| FEAT-018 | 自定义证券池与组合基准 | INIT-001 | 数据/因子研究/策略回测 | P1 | 开发中（ResearchEngine 快照契约已完成；SVQuant CRUD 待交付） |
+| FEAT-018 | 自定义证券池与组合基准 | INIT-001 | 数据/因子研究/策略回测 | P1 | 已完成（CRUD/版本/快照接入回测） |
 | FEAT-019 | AI 自然语言向量化策略生成 API | INIT-004 | AI 研究助手/策略研究 | P0 | 开发中（受控 MVP） |
 | FEAT-020 | AI 回测解读与优化建议 | INIT-004 | AI 研究助手/策略研究/因子研究 | P0 | 开发中（受控 MVP） |
 | FEAT-021 | 股指与成分股查询 API | INIT-001 | 数据/研究 API | P1 | 已完成 |

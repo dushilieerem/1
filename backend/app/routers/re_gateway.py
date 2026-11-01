@@ -14,6 +14,7 @@ from services.core.backtest_params import validate_execution_timing
 from services.core.db import get_conn
 from services.core.env_config import env
 from services.core.re_http_gateway import forward_re, rewrite_run_poll_url
+from services.research import asset_store
 from services.strategy.result_signature import sign_result
 
 router = APIRouter(tags=["re-gateway"])
@@ -133,6 +134,9 @@ def backtest_strategy_submit(
     payload = body if isinstance(body, dict) else {}
     try:
         validate_execution_timing(payload)
+        payload = asset_store.apply_asset_refs(int(_user["id"]), payload)
+    except KeyError:
+        return _resp(404, {}, {"error": "研究资产不存在"})
     except ValueError as exc:
         return _resp(400, {}, {"error": str(exc)})
     status, headers, data = forward_re(

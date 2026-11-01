@@ -174,6 +174,13 @@ function UserMenu({ user }: { user: AuthUser }) {
                 </Link>
               ) : null}
               <Link
+                to="/research/assets"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                研究资产
+              </Link>
+              <Link
                 to="/community/me"
                 onClick={() => setOpen(false)}
                 className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"

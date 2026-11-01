@@ -296,6 +296,13 @@ DDL: tuple[str, ...] = (
     )
     """,
     """
+    CREATE OR REPLACE FUNCTION inst_audit_event_immutable() RETURNS trigger AS $$
+    BEGIN
+      RAISE EXCEPTION 'inst_audit_event 是只增不改的审计表（WORM）';
+    END;
+    $$ LANGUAGE plpgsql
+    """,
+    """
     CREATE TABLE IF NOT EXISTS inst_audit_event (
       id              BIGSERIAL PRIMARY KEY,
       org_id          BIGINT NOT NULL REFERENCES inst_orgs(id) ON DELETE CASCADE,
@@ -388,6 +395,23 @@ def ensure_inst_business_schema(*, include_indexes: bool = True) -> None:
         if include_indexes:
             for idx in INDEXES:
                 conn.execute(idx)
+        # WORM：审计只增不改。测试/运维清理机构时需显式 DISABLE TRIGGER。
+        conn.execute(
+            """
+            DO $$
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_trigger
+                 WHERE tgname='inst_audit_event_worm'
+                   AND tgrelid='inst_audit_event'::regclass
+              ) THEN
+                CREATE TRIGGER inst_audit_event_worm
+                  BEFORE UPDATE OR DELETE ON inst_audit_event
+                  FOR EACH ROW EXECUTE FUNCTION inst_audit_event_immutable();
+              END IF;
+            END $$
+            """
+        )
 
 
 __all__ = ["DDL", "INDEXES", "ensure_inst_business_schema"]

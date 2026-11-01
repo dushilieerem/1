@@ -108,7 +108,25 @@ def test_thesis_lifecycle_and_exit_review() -> None:
         )
         assert review["thesis_verdict"] == "wrong"
         assert review["holding_days"] == 120
+
+        # WORM：审计记录不可篡改、不可删除
+        with pytest.raises(Exception):
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE inst_audit_event SET action='tampered' WHERE org_id=%s", (org_id,)
+                )
+        with pytest.raises(Exception):
+            with get_conn() as conn:
+                conn.execute("DELETE FROM inst_audit_event WHERE org_id=%s", (org_id,))
     finally:
         with get_conn() as conn:
+            conn.execute(
+                "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='inst_audit_event_worm')"
+                " THEN ALTER TABLE inst_audit_event DISABLE TRIGGER inst_audit_event_worm; END IF; END $$"
+            )
             conn.execute("DELETE FROM inst_orgs WHERE id=%s", (org_id,))
+            conn.execute(
+                "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='inst_audit_event_worm')"
+                " THEN ALTER TABLE inst_audit_event ENABLE TRIGGER inst_audit_event_worm; END IF; END $$"
+            )
             conn.execute("DELETE FROM users WHERE id=%s", (user_id,))

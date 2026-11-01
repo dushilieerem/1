@@ -89,6 +89,10 @@ def fixture():
         "users": users,
     }
     with get_conn() as conn:
+        conn.execute(
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='inst_audit_event_worm')"
+            " THEN ALTER TABLE inst_audit_event DISABLE TRIGGER inst_audit_event_worm; END IF; END $$"
+        )
         # 订单/成交/持仓快照对 portfolio 的 FK 不带级联，先按组合清理。
         conn.execute(
             "DELETE FROM inst_fill WHERE order_id IN ("
@@ -107,6 +111,10 @@ def fixture():
             (org_id,),
         )
         conn.execute("DELETE FROM inst_orgs WHERE id=%s", (org_id,))
+        conn.execute(
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='inst_audit_event_worm')"
+            " THEN ALTER TABLE inst_audit_event ENABLE TRIGGER inst_audit_event_worm; END IF; END $$"
+        )
         for user in users:
             conn.execute("DELETE FROM users WHERE id=%s", (user["id"],))
 

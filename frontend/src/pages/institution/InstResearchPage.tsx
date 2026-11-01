@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, FileSearch, Lock, Sparkles } from "lucide-react";
+import { ArrowLeft, Download, FileSearch, Lock, Sparkles } from "lucide-react";
 import { instApi, fmtNum } from "@/lib/instApi";
+import { getInstToken } from "@/lib/instAuth";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
 import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge } from "./instUi";
@@ -91,6 +92,38 @@ export function InstResearchPage() {
   };
 
   const canWrite = (session.permissions.research || "none") === "write";
+
+  const exportReport = async () => {
+    setBusy("export");
+    setError(null);
+    try {
+      const token = getInstToken();
+      const res = await fetch(`/api/inst/cases/${caseId}/report`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        let message = `导出失败（${res.status}）`;
+        try {
+          const data = await res.json();
+          message = String((data as { detail?: string } | null)?.detail || message);
+        } catch {
+          /* 非 JSON 错误体，保留默认提示 */
+        }
+        throw new Error(message);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${detail?.symbol || "research"}-研究简报.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const loadList = () => {
     setLoading(true);
@@ -218,6 +251,10 @@ export function InstResearchPage() {
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" onClick={() => nav("/inst/research")}>
               <ArrowLeft className="mr-1 h-4 w-4" /> {t("返回列表", "Back to list")}
+            </Button>
+            <Button variant="ghost" disabled={!!busy} onClick={exportReport}>
+              <Download className="mr-1 h-4 w-4" />
+              {busy === "export" ? t("导出中…", "Exporting…") : t("导出简报", "Export report")}
             </Button>
             <StatusBadge status={detail.stage} />
           </div>

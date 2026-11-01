@@ -7,8 +7,9 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
 from app.deps import require_inst_user
 from services.institution import inst_service as svc
@@ -194,6 +195,25 @@ def review_research(
         }
     except Exception as exc:
         raise _handle(exc) from exc
+
+
+@router.get("/cases/{case_id}/report")
+def export_case_report(
+    case_id: int, ctx: dict[str, Any] = Depends(require_inst_user)
+) -> Response:
+    """FR-GLB-02/03、GAP-12：导出带演示标识的研究简报（Markdown）。"""
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "research")
+    try:
+        data = svc.export_research(org_id, case_id, actor_member_id=member_id)
+    except Exception as exc:
+        raise _handle(exc) from exc
+    filename = quote(str(data["filename"]))
+    return Response(
+        content=str(data["content"]).encode("utf-8"),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
 
 
 @router.post("/cases/{case_id}/ai/memo")

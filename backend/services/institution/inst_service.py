@@ -18,6 +18,7 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from services.core.db import get_conn
+from services.institution.report import render_research_report, report_filename
 from services.marketdata import store as md
 
 POLICY_VERSION = "demo-v1"
@@ -922,6 +923,47 @@ def review_research(
             after={"decision": decision, "comment": comment},
         )
     return get_case(org_id, int(row["case_id"]))  # type: ignore[return-value]
+
+
+def export_research(
+    org_id: int,
+    case_id: int,
+    *,
+    actor_member_id: int | None = None,
+) -> dict[str, Any]:
+    """导出研究简报（Markdown，带演示标识）；导出动作写审计。"""
+    data = get_case(org_id, case_id)
+    if not data:
+        raise LookupError("研究案不存在")
+    versions = data.get("versions") or []
+    version = versions[0] if versions else None
+    generated_at = datetime.now().astimezone()
+    content = render_research_report(
+        case=data,
+        version=version,
+        evidence=data.get("evidence") or [],
+        generated_at=generated_at,
+    )
+    filename = report_filename(data, version)
+    with get_conn() as conn:
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="research.export",
+            object_type="inst_research_case",
+            object_id=case_id,
+            after={
+                "format": "markdown",
+                "version_id": int(version["id"]) if version and version.get("id") is not None else None,
+                "version_no": version.get("version_no") if version else None,
+            },
+        )
+    return {
+        "filename": filename,
+        "content": content,
+        "content_type": "text/markdown; charset=utf-8",
+    }
 
 
 # ---------------------------------------------------------------- 辩论

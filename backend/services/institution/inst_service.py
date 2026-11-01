@@ -1694,13 +1694,14 @@ def execute_authorization(
         if not row:
             raise LookupError("授权不存在")
         auth = dict(row)
-        if auth["status"] != "qualified":
-            raise PermissionError(f"授权状态为 {auth['status']}，不可执行")
+        # 幂等优先：同一授权重复执行返回原订单，而不是报“状态不可执行”。
         existing = conn.execute(
             "SELECT * FROM inst_order WHERE authorization_id=%s", (authorization_id,)
         ).fetchone()
         if existing:
             return {"ok": True, "idempotent": True, "order": _row_dict(existing)}
+        if auth["status"] != "qualified":
+            raise PermissionError(f"授权状态为 {auth['status']}，不可执行")
         snapshot = auth.get("snapshot") or {}
         valid_until = snapshot.get("valid_until")
         if valid_until and str(valid_until)[:10] < date.today().isoformat():

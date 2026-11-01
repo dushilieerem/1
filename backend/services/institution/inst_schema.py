@@ -350,6 +350,22 @@ DDL: tuple[str, ...] = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS inst_execution_exception (
+      id               BIGSERIAL PRIMARY KEY,
+      org_id           BIGINT NOT NULL REFERENCES inst_orgs(id) ON DELETE CASCADE,
+      authorization_id BIGINT REFERENCES inst_authorization(id) ON DELETE CASCADE,
+      order_id         BIGINT REFERENCES inst_order(id) ON DELETE SET NULL,
+      type             TEXT NOT NULL,
+      detail           TEXT,
+      status           TEXT NOT NULL DEFAULT 'open',
+      resolution       TEXT,
+      resolved_by      BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
+      resolved_at      TIMESTAMPTZ,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT inst_exc_status_chk CHECK (status IN ('open','resolved','ignored'))
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS inst_exit_review (
       id                 BIGSERIAL PRIMARY KEY,
       exit_case_id       BIGINT NOT NULL UNIQUE REFERENCES inst_exit_case(id) ON DELETE CASCADE,
@@ -380,6 +396,7 @@ INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_inst_audit_org ON inst_audit_event (org_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_thesis_org ON inst_thesis_ledger (org_id, status, review_due)",
     "CREATE INDEX IF NOT EXISTS idx_inst_thesis_review_ledger ON inst_thesis_review (ledger_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_exc_org ON inst_execution_exception (org_id, status, created_at DESC)",
 )
 
 

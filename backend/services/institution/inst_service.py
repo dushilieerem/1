@@ -1713,7 +1713,25 @@ def execute_authorization(
             raise LookupError("组合不存在")
         bar = md.latest_bar(auth["symbol"], adjust="none")
         px = float(price or (bar or {}).get("close") or 0)
+        status = md.status_latest(auth["symbol"]) or {}
+        if status.get("is_suspended") or status.get("is_st"):
+            reason = "停牌" if status.get("is_suspended") else "ST"
+            _record_blocked_execution(
+                org_id,
+                authorization_id,
+                type_="suspended_or_st",
+                detail=f"{auth['symbol']} 当前状态：{reason}",
+                actor_member_id=actor_member_id,
+            )
+            raise PermissionError(f"标的当前{reason}，不能执行")
         if px <= 0:
+            _record_blocked_execution(
+                org_id,
+                authorization_id,
+                type_="price_invalid",
+                detail=f"{auth['symbol']} 无可用成交价",
+                actor_member_id=actor_member_id,
+            )
             raise ValueError("没有可用的成交价")
         low = snapshot.get("price_low")
         high = snapshot.get("price_high")
@@ -1795,6 +1813,12 @@ def execute_authorization(
         conn.execute(
             "UPDATE inst_proposal SET status='executed', updated_at=NOW() WHERE id=%s", (auth["proposal_id"],)
         )
+        conn.execute(
+            "UPDATE inst_execution_exception SET status='resolved', resolution='执行成功自动关闭', "
+            "resolved_by=%s, resolved_at=NOW() "
+            "WHERE org_id=%s AND authorization_id=%s AND status='open'",
+            (actor_member_id, org_id, authorization_id),
+        )
         _audit(
             conn,
             org_id=org_id,
@@ -1805,6 +1829,246 @@ def execute_authorization(
             after={"symbol": auth["symbol"], "side": side, "qty": qty, "price": px, "fee": fee},
         )
     return {"ok": True, "idempotent": False, "order": _row_dict(order), "cash": new_cash}
+
+
+# ---------------------------------------------------------------- 执行前校验 / 对账 / 异常
+
+
+def _execution_context(conn, org_id: int, authorization_id: int):
+    row = conn.execute(
+        """
+        SELECT a.*, v.snapshot AS version_snapshot, p.id AS proposal_id, p.company_id, p.direction,
+               co.symbol, co.name AS company_name
+          FROM inst_authorization a
+          JOIN inst_proposal_version v ON v.id=a.proposal_version_id
+          JOIN inst_proposal p ON p.id=v.proposal_id
+          JOIN inst_company co ON co.id=p.company_id
+         WHERE a.id=%s AND p.org_id=%s
+        """,
+        (authorization_id, org_id),
+    ).fetchone()
+    if not row:
+        raise LookupError("授权不存在")
+    auth = dict(row)
+    portfolio = conn.execute(
+        "SELECT * FROM inst_portfolio WHERE org_id=%s ORDER BY id LIMIT 1", (org_id,)
+    ).fetchone()
+    existing = conn.execute(
+        "SELECT * FROM inst_order WHERE authorization_id=%s", (authorization_id,)
+    ).fetchone()
+    pos = conn.execute(
+        "SELECT qty FROM inst_position_snapshot WHERE portfolio_id=%s AND symbol=%s "
+        "ORDER BY as_of DESC LIMIT 1",
+        (portfolio["id"] if portfolio else 0, auth["symbol"]),
+    ).fetchone()
+    return auth, (auth.get("snapshot") or {}), portfolio, existing, float(pos["qty"]) if pos else 0.0
+
+
+def precheck_execution(org_id: int, authorization_id: int) -> dict[str, Any]:
+    """执行前校验：授权、有效期、价格区间、现金/持仓、停牌与 ST。"""
+    from services.institution.execution_guard import evaluate
+
+    with get_conn() as conn:
+        auth, snapshot, portfolio, existing, pos_qty = _execution_context(
+            conn, org_id, authorization_id
+        )
+    bar = md.latest_bar(str(auth["symbol"]), adjust="none") or {}
+    status = md.status_latest(str(auth["symbol"])) or {}
+    price = float(bar.get("close") or 0)
+    nav = float((portfolio or {}).get("nav") or DEFAULT_NAV)
+    cash = float((portfolio or {}).get("cash") or 0)
+    target = float(snapshot.get("target_weight") or 0)
+    direction = str(auth["direction"])
+    if direction in {"sell", "exit"}:
+        lot = math.floor(target * nav / price / 100) * 100 if price > 0 and target > 0 else pos_qty
+        qty = int(min(pos_qty, lot))
+        cost = 0.0
+    else:
+        qty = math.floor(target * nav / price / 100) * 100 if price > 0 else 0
+        cost = qty * price * 1.0003
+    out = evaluate(
+        auth_status=str(auth["status"]),
+        valid_until=(snapshot.get("valid_until") if isinstance(snapshot, dict) else None),
+        direction=direction,
+        price=price,
+        price_low=snapshot.get("price_low"),
+        price_high=snapshot.get("price_high"),
+        cash=cash,
+        cost=cost,
+        qty=qty,
+        position_qty=pos_qty,
+        suspended=bool(status.get("is_suspended") or False),
+        is_st=bool(status.get("is_st") or False),
+        duplicate_order=existing is not None,
+    )
+    return {
+        **out,
+        "authorization_id": authorization_id,
+        "symbol": auth["symbol"],
+        "price": price,
+        "qty": qty,
+        "cash": cash,
+        "position_qty": pos_qty,
+    }
+
+
+def _record_execution_exception(
+    conn, org_id: int, authorization_id: int, *, type_: str, detail: str
+) -> None:
+    exists = conn.execute(
+        "SELECT 1 FROM inst_execution_exception WHERE org_id=%s AND authorization_id=%s "
+        "AND type=%s AND status='open'",
+        (org_id, authorization_id, type_),
+    ).fetchone()
+    if exists:
+        return
+    conn.execute(
+        "INSERT INTO inst_execution_exception (org_id, authorization_id, type, detail) "
+        "VALUES (%s,%s,%s,%s)",
+        (org_id, authorization_id, type_, detail),
+    )
+
+
+def _record_blocked_execution(
+    org_id: int,
+    authorization_id: int,
+    *,
+    type_: str,
+    detail: str,
+    actor_member_id: int | None,
+) -> None:
+    """失败请求会回滚，异常记录用独立事务落库。"""
+    try:
+        with get_conn() as conn:
+            _record_execution_exception(conn, org_id, authorization_id, type_=type_, detail=detail)
+            _audit(
+                conn,
+                org_id=org_id,
+                actor_member_id=actor_member_id,
+                action="authorization.execute.blocked",
+                object_type="inst_authorization",
+                object_id=authorization_id,
+                after={"type": type_, "detail": detail},
+            )
+    except Exception:
+        pass
+
+
+def list_execution_exceptions(org_id: int, *, status: str | None = None) -> list[dict[str, Any]]:
+    with get_conn() as conn:
+        sql = (
+            "SELECT e.*, co.symbol, co.name AS company_name FROM inst_execution_exception e "
+            "LEFT JOIN inst_authorization a ON a.id=e.authorization_id "
+            "LEFT JOIN inst_proposal_version v ON v.id=a.proposal_version_id "
+            "LEFT JOIN inst_proposal p ON p.id=v.proposal_id "
+            "LEFT JOIN inst_company co ON co.id=p.company_id "
+            "WHERE e.org_id=%s"
+        )
+        params: list[Any] = [org_id]
+        if status:
+            sql += " AND e.status=%s"
+            params.append(status)
+        sql += " ORDER BY e.created_at DESC LIMIT 200"
+        rows = conn.execute(sql, tuple(params)).fetchall()
+    return [_row_dict(r) for r in rows]
+
+
+def resolve_execution_exception(
+    org_id: int,
+    exception_id: int,
+    *,
+    status: str,
+    resolution: str | None,
+    actor_member_id: int | None,
+) -> dict[str, Any]:
+    if status not in {"resolved", "ignored"}:
+        raise ValueError("status 必须是 resolved/ignored")
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager", "partner", "execution")
+        row = conn.execute(
+            "SELECT * FROM inst_execution_exception WHERE id=%s AND org_id=%s",
+            (exception_id, org_id),
+        ).fetchone()
+        if not row:
+            raise LookupError("异常记录不存在")
+        updated = conn.execute(
+            "UPDATE inst_execution_exception SET status=%s, resolution=%s, resolved_by=%s, "
+            "resolved_at=NOW() WHERE id=%s RETURNING *",
+            (status, resolution, actor_member_id, exception_id),
+        ).fetchone()
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action=f"execution.exception.{status}",
+            object_type="inst_execution_exception",
+            object_id=exception_id,
+            before={"status": row["status"]},
+            after={"status": status, "resolution": resolution},
+        )
+    return _row_dict(updated) or {}
+
+
+def reconcile_authorization(
+    org_id: int, authorization_id: int, *, actor_member_id: int | None = None
+) -> dict[str, Any]:
+    """成交对账：订单、成交、持仓快照与组合现金的一致性检查。"""
+    with get_conn() as conn:
+        auth, _snapshot, portfolio, order, pos_qty = _execution_context(
+            conn, org_id, authorization_id
+        )
+        fill = (
+            conn.execute("SELECT * FROM inst_fill WHERE order_id=%s", (order["id"],)).fetchone()
+            if order
+            else None
+        )
+        differences: list[str] = []
+        if order is None:
+            differences.append("授权没有成交订单")
+        else:
+            if fill is None:
+                differences.append("订单没有成交记录")
+            else:
+                if int(fill["qty"]) != int(order["qty"]):
+                    differences.append(f"成交数量 {fill['qty']} ≠ 订单数量 {order['qty']}")
+                if abs(float(fill["price"]) - float(order["price"])) > 1e-6:
+                    differences.append(f"成交价 {fill['price']} ≠ 订单价 {order['price']}")
+            if str(order["side"]) == "buy" and pos_qty < float(order["qty"]):
+                differences.append(f"持仓 {pos_qty} 少于买入数量 {order['qty']}")
+            expected = float((portfolio or {}).get("cash") or 0)
+            if expected < 0:
+                differences.append("组合现金为负")
+        matched = not differences
+        if order is not None and not matched:
+            exists = conn.execute(
+                "SELECT 1 FROM inst_execution_exception WHERE org_id=%s AND authorization_id=%s "
+                "AND type='reconcile_mismatch' AND status='open'",
+                (org_id, authorization_id),
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    "INSERT INTO inst_execution_exception "
+                    "  (org_id, authorization_id, order_id, type, detail, status) "
+                    "VALUES (%s,%s,%s,'reconcile_mismatch',%s,'open')",
+                    (org_id, authorization_id, order["id"], "；".join(differences)[:500]),
+                )
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="authorization.reconcile",
+            object_type="inst_authorization",
+            object_id=authorization_id,
+            after={"matched": matched, "differences": differences},
+        )
+    return {
+        "authorization_id": authorization_id,
+        "matched": matched,
+        "differences": differences,
+        "order": _row_dict(order) if order else None,
+        "fill": _row_dict(fill) if fill else None,
+    }
 
 
 def portfolio(org_id: int) -> dict[str, Any]:

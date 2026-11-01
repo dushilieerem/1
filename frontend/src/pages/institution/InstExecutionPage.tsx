@@ -33,6 +33,8 @@ export function InstExecutionPage() {
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [prechecks, setPrechecks] = useState<Record<number, Record<string, any>>>({});
+  const [exceptions, setExceptions] = useState<Array<Record<string, any>>>([]);
 
   const canWrite = (session.permissions.execution || "none") === "write";
 
@@ -42,10 +44,14 @@ export function InstExecutionPage() {
     Promise.all([
       instApi<{ items: Authorization[] }>("/authorizations?status=qualified"),
       instApi<PortfolioData>("/portfolio"),
+      instApi<{ items: Array<Record<string, any>> }>("/execution/exceptions?status=open").catch(
+        () => ({ items: [] as Array<Record<string, any>> }),
+      ),
     ])
-      .then(([a, p]) => {
+      .then(([a, p, ex]) => {
         setItems(a.items || []);
         setPf(p);
+        setExceptions(ex.items || []);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -62,16 +68,50 @@ export function InstExecutionPage() {
         `/authorizations/${id}/execute`,
         { method: "POST", body: {} },
       );
-      setMessage(
-        res.idempotent
-          ? t("该授权已执行过，返回原执行结果（幂等拦截）。", "Already executed; the original result is returned (idempotent).")
-          : `${t("模拟成交", "Simulated fill")}：${res.order?.side === "buy" ? t("买入", "Buy") : t("卖出", "Sell")} ${fmtMoney(res.order?.qty)} @ ${fmtNum(res.order?.price, 2)}`,
-      );
+      const fillMsg = res.idempotent
+        ? t("该授权已执行过，返回原执行结果（幂等拦截）。", "Already executed; the original result is returned (idempotent).")
+        : `${t("模拟成交", "Simulated fill")}：${res.order?.side === "buy" ? t("买入", "Buy") : t("卖出", "Sell")} ${fmtMoney(res.order?.qty)} @ ${fmtNum(res.order?.price, 2)}`;
+      let recMsg = "";
+      try {
+        const rec = await instApi<{ matched: boolean; differences?: string[] }>(
+          `/authorizations/${id}/reconcile`,
+          { method: "POST" },
+        );
+        recMsg = rec.matched
+          ? ` · ${t("对账一致", "reconciled")}`
+          : ` · ${t("对账差异", "reconciliation mismatch")}：${(rec.differences || []).join("；")}`;
+      } catch {
+        /* 对账失败不覆盖成交结果 */
+      }
+      setMessage(`${fillMsg}${recMsg}`);
       load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
+    }
+  };
+
+  const check = async (id: number) => {
+    setError(null);
+    try {
+      const res = await instApi<Record<string, any>>(`/authorizations/${id}/precheck`);
+      setPrechecks((prev) => ({ ...prev, [id]: res }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const resolveException = async (id: number) => {
+    setError(null);
+    try {
+      await instApi(`/execution/exceptions/${id}/resolve`, {
+        method: "POST",
+        body: { status: "resolved", resolution: t("已人工核对", "Checked manually") },
+      });
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -138,11 +178,25 @@ export function InstExecutionPage() {
                     </div>
                     <div className="mt-3 flex items-center justify-between gap-2">
                       <p className="text-[11px] text-slate-400">{t("执行前会再次校验授权、版本、现金与价格。", "Authorization, version, cash and price are re-checked before execution.")}</p>
-                      <Button variant="gold" disabled={!canWrite || busy === a.id} onClick={() => execute(a.id)}>
-                        <PlayCircle className="mr-1 h-4 w-4" />
-                        {busy === a.id ? t("执行中…", "Executing…") : t("模拟执行", "Simulate fill")}
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button variant="ghost" onClick={() => check(a.id)}>
+                          {t("执行前校验", "Pre-check")}
+                        </Button>
+                        <Button variant="gold" disabled={!canWrite || busy === a.id} onClick={() => execute(a.id)}>
+                          <PlayCircle className="mr-1 h-4 w-4" />
+                          {busy === a.id ? t("执行中…", "Executing…") : t("模拟执行", "Simulate fill")}
+                        </Button>
+                      </div>
                     </div>
+                    {prechecks[a.id] ? (
+                      <ul className="mt-2 space-y-1 rounded-lg bg-white p-2 text-[11px]">
+                        {(prechecks[a.id].checks || []).map((c: Record<string, any>) => (
+                          <li key={c.key} className={c.ok ? "text-slate-600" : "text-red-600"}>
+                            {c.ok ? "✓" : "✕"} {c.label}：{c.detail}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </article>
                 );
               })}
@@ -166,6 +220,29 @@ export function InstExecutionPage() {
           </p>
         </Card>
       </div>
+
+      <Card title={t("执行异常", "Execution exceptions")} desc={t("执行被阻断或对账不一致时自动登记；需人工核对后关闭。", "Recorded when execution is blocked or reconciliation mismatches; close after manual review.")}>
+        {exceptions.length ? (
+          <ul className="space-y-2">
+            {exceptions.map((ex) => (
+              <li key={ex.id} className="rounded-xl border border-red-100 bg-red-50/40 p-3 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-mono text-red-700">{String(ex.type)}</span>
+                  <Button variant="ghost" onClick={() => void resolveException(Number(ex.id))}>
+                    {t("标记已处理", "Resolve")}
+                  </Button>
+                </div>
+                <p className="mt-1 text-slate-600">{String(ex.detail || "—")}</p>
+                <p className="mt-1 text-[10px] text-slate-400">
+                  AUTH-{String(ex.authorization_id ?? "—")} · {String(ex.created_at || "")}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <Empty>{t("没有待处理的执行异常。", "No open execution exceptions.")}</Empty>
+        )}
+      </Card>
 
       <Card title={t("当前持仓", "Current positions")}>
         {pf?.positions?.length ? (

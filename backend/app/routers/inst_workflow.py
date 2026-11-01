@@ -486,6 +486,69 @@ def execute(
         raise _handle(exc) from exc
 
 
+@router.get("/authorizations/{authorization_id}/precheck")
+def authorization_precheck(
+    authorization_id: int, ctx: dict[str, Any] = Depends(require_inst_user)
+) -> dict[str, Any]:
+    """执行前校验：授权、价格区间、现金/持仓、停牌与 ST。"""
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "execution")
+    try:
+        return {"ok": True, **svc.precheck_execution(org_id, authorization_id)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/authorizations/{authorization_id}/reconcile")
+def authorization_reconcile(
+    authorization_id: int, ctx: dict[str, Any] = Depends(require_inst_user)
+) -> dict[str, Any]:
+    """成交对账：订单/成交/持仓/现金一致性。"""
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "execution")
+    try:
+        return {
+            "ok": True,
+            **svc.reconcile_authorization(
+                org_id, authorization_id, actor_member_id=member_id
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.get("/execution/exceptions")
+def execution_exceptions(
+    status: str | None = None, ctx: dict[str, Any] = Depends(require_inst_user)
+) -> dict[str, Any]:
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "execution")
+    return {"ok": True, "items": svc.list_execution_exceptions(org_id, status=status)}
+
+
+@router.post("/execution/exceptions/{exception_id}/resolve")
+def resolve_execution_exception(
+    exception_id: int,
+    body: dict[str, Any],
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "execution")
+    try:
+        return {
+            "ok": True,
+            **svc.resolve_execution_exception(
+                org_id,
+                exception_id,
+                status=str(body.get("status") or "resolved"),
+                resolution=str(body.get("resolution") or "") or None,
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.get("/portfolio")
 def portfolio(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)

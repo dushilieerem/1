@@ -231,6 +231,13 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
         client.post(f"/api/inst/proposals/{proposal_id}/authorize", headers=_h(chairman))
     )
     auth_id = int(authorized["authorizations"][0]["id"])
+    precheck = _ok(
+        client.get(f"/api/inst/authorizations/{auth_id}/precheck", headers=_h(execution))
+    )
+    assert precheck["checks"]
+    if precheck.get("price"):
+        # CI 的空行情库没有收盘价，此时只验证结构，不要求通过
+        assert precheck["ok"] is True, precheck
     executed = _ok(
         client.post(
             f"/api/inst/authorizations/{auth_id}/execute",
@@ -248,6 +255,27 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
         )
     )
     assert again.get("idempotent") is True
+
+    reconciled = _ok(
+        client.post(f"/api/inst/authorizations/{auth_id}/reconcile", headers=_h(execution))
+    )
+    assert reconciled["matched"] is True, reconciled
+    with get_conn() as conn:
+        exception = conn.execute(
+            "INSERT INTO inst_execution_exception (org_id, authorization_id, type, detail) "
+            "VALUES (%s,%s,'manual','对账差异待处理') RETURNING id",
+            (fixture["org_id"], auth_id),
+        ).fetchone()
+    listed = _ok(client.get("/api/inst/execution/exceptions", headers=_h(execution)))
+    assert any(item["id"] == exception["id"] for item in listed["items"])
+    resolved = _ok(
+        client.post(
+            f"/api/inst/execution/exceptions/{int(exception['id'])}/resolve",
+            json={"status": "resolved", "resolution": "已人工核对"},
+            headers=_h(execution),
+        )
+    )
+    assert resolved["status"] == "resolved"
 
     # 论点台账 + 复核 + 退出复盘
     thesis = _ok(

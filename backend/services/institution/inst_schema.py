@@ -310,6 +310,51 @@ DDL: tuple[str, ...] = (
       created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS inst_thesis_ledger (
+      id               BIGSERIAL PRIMARY KEY,
+      org_id           BIGINT NOT NULL REFERENCES inst_orgs(id) ON DELETE CASCADE,
+      company_id       BIGINT NOT NULL REFERENCES inst_company(id) ON DELETE CASCADE,
+      proposal_id      BIGINT REFERENCES inst_proposal(id) ON DELETE SET NULL,
+      symbol           TEXT NOT NULL,
+      thesis           TEXT NOT NULL,
+      key_assumptions  JSONB,
+      kpis             JSONB,
+      falsifiers       JSONB,
+      review_due       DATE,
+      status           TEXT NOT NULL DEFAULT 'active',
+      created_by       BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT inst_thesis_status_chk CHECK (status IN ('active','reviewed','invalidated','closed'))
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS inst_thesis_review (
+      id                 BIGSERIAL PRIMARY KEY,
+      ledger_id          BIGINT NOT NULL REFERENCES inst_thesis_ledger(id) ON DELETE CASCADE,
+      reviewer_member_id BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
+      kpi_status         TEXT NOT NULL,
+      conclusion         TEXT NOT NULL,
+      note               TEXT,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT inst_thesis_kpi_status_chk CHECK (kpi_status IN ('on_track','at_risk','broken')),
+      CONSTRAINT inst_thesis_conclusion_chk CHECK (conclusion IN ('hold','reduce','exit','invalidate'))
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS inst_exit_review (
+      id                 BIGSERIAL PRIMARY KEY,
+      exit_case_id       BIGINT NOT NULL UNIQUE REFERENCES inst_exit_case(id) ON DELETE CASCADE,
+      realized_return    DOUBLE PRECISION,
+      holding_days       INTEGER,
+      thesis_verdict     TEXT NOT NULL,
+      lessons            TEXT,
+      reviewer_member_id BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT inst_exit_verdict_chk CHECK (thesis_verdict IN ('right','wrong','mixed'))
+    )
+    """,
 )
 
 INDEXES: tuple[str, ...] = (
@@ -326,6 +371,8 @@ INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_inst_position_portfolio ON inst_position_snapshot (portfolio_id, as_of DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_monitor_org ON inst_monitor_event (org_id, status, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_audit_org ON inst_audit_event (org_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_thesis_org ON inst_thesis_ledger (org_id, status, review_due)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_thesis_review_ledger ON inst_thesis_review (ledger_id, created_at DESC)",
 )
 
 

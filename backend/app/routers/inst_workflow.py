@@ -539,6 +539,89 @@ def create_exit(body: dict[str, Any], ctx: dict[str, Any] = Depends(require_inst
         raise _handle(exc) from exc
 
 
+@router.get("/theses")
+def list_theses(
+    status: str | None = None, ctx: dict[str, Any] = Depends(require_inst_user)
+) -> dict[str, Any]:
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "monitor")
+    return {"ok": True, "items": svc.list_theses(org_id, status=status)}
+
+
+@router.post("/theses")
+def create_thesis(body: dict[str, Any], ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "monitor")
+    try:
+        return {
+            "ok": True,
+            **svc.create_thesis(
+                org_id,
+                company_id=int(body.get("company_id") or 0),
+                thesis=str(body.get("thesis") or ""),
+                proposal_id=int(body["proposal_id"]) if body.get("proposal_id") else None,
+                key_assumptions=body.get("key_assumptions"),
+                kpis=body.get("kpis"),
+                falsifiers=body.get("falsifiers"),
+                review_due=str(body.get("review_due") or "") or None,
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/theses/{ledger_id}/review")
+def review_thesis(
+    ledger_id: int,
+    body: dict[str, Any],
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "monitor")
+    try:
+        return {
+            "ok": True,
+            **svc.review_thesis(
+                org_id,
+                ledger_id,
+                kpi_status=str(body.get("kpi_status") or "on_track"),
+                conclusion=str(body.get("conclusion") or "hold"),
+                note=str(body.get("note") or "") or None,
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/monitor/exits/{exit_case_id}/review")
+def review_exit(
+    exit_case_id: int,
+    body: dict[str, Any],
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "monitor")
+    try:
+        price = body.get("realized_return")
+        days = body.get("holding_days")
+        return {
+            "ok": True,
+            **svc.review_exit(
+                org_id,
+                exit_case_id,
+                thesis_verdict=str(body.get("thesis_verdict") or "mixed"),
+                realized_return=float(price) if price is not None else None,
+                holding_days=int(days) if days is not None else None,
+                lessons=str(body.get("lessons") or "") or None,
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.get("/audit")
 def audit(limit: int = 100, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)

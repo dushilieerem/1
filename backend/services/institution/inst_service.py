@@ -1871,11 +1871,244 @@ def monitor(org_id: int) -> dict[str, Any]:
             "JOIN inst_company co ON co.id=x.company_id WHERE x.org_id=%s ORDER BY x.created_at DESC LIMIT 50",
             (org_id,),
         ).fetchall()
+        theses = conn.execute(
+            """
+            SELECT t.*, co.name AS company_name,
+                   (SELECT COUNT(*) FROM inst_thesis_review r WHERE r.ledger_id=t.id) AS review_count
+              FROM inst_thesis_ledger t
+              JOIN inst_company co ON co.id=t.company_id
+             WHERE t.org_id=%s
+             ORDER BY t.updated_at DESC LIMIT 100
+            """,
+            (org_id,),
+        ).fetchall()
+        exit_reviews = conn.execute(
+            """
+            SELECT r.* FROM inst_exit_review r
+              JOIN inst_exit_case x ON x.id=r.exit_case_id
+             WHERE x.org_id=%s ORDER BY r.created_at DESC LIMIT 50
+            """,
+            (org_id,),
+        ).fetchall()
     return {
         "portfolio": portfolio(org_id),
         "events": [_row_dict(r) for r in events],
         "exits": [_row_dict(r) for r in exits],
+        "theses": [_row_dict(r) for r in theses],
+        "exit_reviews": [_row_dict(r) for r in exit_reviews],
     }
+
+
+def _validated_list(value: Any, label: str) -> list[Any]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"{label} 必须是数组")
+    return value
+
+
+def create_thesis(
+    org_id: int,
+    *,
+    company_id: int,
+    thesis: str,
+    proposal_id: int | None = None,
+    key_assumptions: Any = None,
+    kpis: Any = None,
+    falsifiers: Any = None,
+    review_due: str | None = None,
+    actor_member_id: int | None,
+) -> dict[str, Any]:
+    """建立买入论点台账：论点、关键假设、KPI、复核时间、推翻条件。"""
+    text = str(thesis or "").strip()
+    if not text:
+        raise ValueError("买入论点不能为空")
+    assumptions = _validated_list(key_assumptions, "关键假设")
+    kpi_list = _validated_list(kpis, "KPI")
+    falsifier_list = _validated_list(falsifiers, "推翻条件")
+    for idx, item in enumerate(kpi_list, start=1):
+        if not isinstance(item, dict) or not str(item.get("name") or "").strip():
+            raise ValueError(f"第 {idx} 个 KPI 缺少 name")
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager", "partner", "monitoring")
+        company = conn.execute(
+            "SELECT id, symbol, name FROM inst_company WHERE id=%s AND org_id=%s",
+            (company_id, org_id),
+        ).fetchone()
+        if not company:
+            raise LookupError("公司不存在")
+        row = conn.execute(
+            """
+            INSERT INTO inst_thesis_ledger
+              (org_id, company_id, proposal_id, symbol, thesis, key_assumptions, kpis, falsifiers,
+               review_due, created_by)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *
+            """,
+            (
+                org_id,
+                company_id,
+                proposal_id,
+                company["symbol"],
+                text,
+                _j(assumptions),
+                _j(kpi_list),
+                _j(falsifier_list),
+                review_due or None,
+                actor_member_id,
+            ),
+        ).fetchone()
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="monitor.thesis.create",
+            object_type="inst_thesis_ledger",
+            object_id=int(row["id"]),
+            after={"company_id": company_id, "proposal_id": proposal_id, "review_due": review_due},
+        )
+    return _row_dict(row) or {}
+
+
+def _thesis_row(conn, org_id: int, ledger_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT t.*, co.name AS company_name, co.market
+          FROM inst_thesis_ledger t
+          JOIN inst_company co ON co.id=t.company_id
+         WHERE t.id=%s AND t.org_id=%s
+        """,
+        (ledger_id, org_id),
+    ).fetchone()
+    if not row:
+        return None
+    out = _row_dict(row) or {}
+    reviews = conn.execute(
+        "SELECT * FROM inst_thesis_review WHERE ledger_id=%s ORDER BY created_at DESC",
+        (ledger_id,),
+    ).fetchall()
+    out["reviews"] = [_row_dict(r) for r in reviews]
+    return out
+
+
+def list_theses(org_id: int, *, status: str | None = None) -> list[dict[str, Any]]:
+    with get_conn() as conn:
+        sql = (
+            "SELECT t.*, co.name AS company_name, co.market, "
+            "  (SELECT COUNT(*) FROM inst_thesis_review r WHERE r.ledger_id=t.id) AS review_count "
+            "  FROM inst_thesis_ledger t JOIN inst_company co ON co.id=t.company_id "
+            " WHERE t.org_id=%s"
+        )
+        params: list[Any] = [org_id]
+        if status:
+            sql += " AND t.status=%s"
+            params.append(status)
+        sql += " ORDER BY t.updated_at DESC LIMIT 100"
+        rows = conn.execute(sql, tuple(params)).fetchall()
+    return [_row_dict(r) for r in rows]
+
+
+def review_thesis(
+    org_id: int,
+    ledger_id: int,
+    *,
+    kpi_status: str,
+    conclusion: str,
+    note: str | None,
+    actor_member_id: int | None,
+) -> dict[str, Any]:
+    if kpi_status not in {"on_track", "at_risk", "broken"}:
+        raise ValueError("kpi_status 必须是 on_track/at_risk/broken")
+    if conclusion not in {"hold", "reduce", "exit", "invalidate"}:
+        raise ValueError("conclusion 必须是 hold/reduce/exit/invalidate")
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager", "partner", "monitoring")
+        ledger = conn.execute(
+            "SELECT * FROM inst_thesis_ledger WHERE id=%s AND org_id=%s",
+            (ledger_id, org_id),
+        ).fetchone()
+        if not ledger:
+            raise LookupError("论点台账不存在")
+        conn.execute(
+            """
+            INSERT INTO inst_thesis_review
+              (ledger_id, reviewer_member_id, kpi_status, conclusion, note)
+            VALUES (%s,%s,%s,%s,%s)
+            """,
+            (ledger_id, actor_member_id, kpi_status, conclusion, note),
+        )
+        new_status = "reviewed" if conclusion in {"hold", "reduce"} else "invalidated"
+        conn.execute(
+            "UPDATE inst_thesis_ledger SET status=%s, updated_at=NOW() WHERE id=%s",
+            (new_status, ledger_id),
+        )
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="monitor.thesis.review",
+            object_type="inst_thesis_ledger",
+            object_id=ledger_id,
+            before={"status": ledger["status"]},
+            after={"status": new_status, "kpi_status": kpi_status, "conclusion": conclusion},
+        )
+        out = _thesis_row(conn, org_id, ledger_id)
+    return out or {}
+
+
+def review_exit(
+    org_id: int,
+    exit_case_id: int,
+    *,
+    thesis_verdict: str,
+    realized_return: float | None = None,
+    holding_days: int | None = None,
+    lessons: str | None = None,
+    actor_member_id: int | None,
+) -> dict[str, Any]:
+    """退出复盘：结果、持有天数、论点对错与教训。"""
+    if thesis_verdict not in {"right", "wrong", "mixed"}:
+        raise ValueError("thesis_verdict 必须是 right/wrong/mixed")
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager", "partner", "monitoring")
+        exit_case = conn.execute(
+            "SELECT id, status FROM inst_exit_case WHERE id=%s AND org_id=%s",
+            (exit_case_id, org_id),
+        ).fetchone()
+        if not exit_case:
+            raise LookupError("退出案不存在")
+        row = conn.execute(
+            """
+            INSERT INTO inst_exit_review
+              (exit_case_id, realized_return, holding_days, thesis_verdict, lessons, reviewer_member_id)
+            VALUES (%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (exit_case_id) DO UPDATE
+              SET realized_return=EXCLUDED.realized_return,
+                  holding_days=EXCLUDED.holding_days,
+                  thesis_verdict=EXCLUDED.thesis_verdict,
+                  lessons=EXCLUDED.lessons,
+                  reviewer_member_id=EXCLUDED.reviewer_member_id,
+                  created_at=NOW()
+            RETURNING *
+            """,
+            (exit_case_id, realized_return, holding_days, thesis_verdict, lessons, actor_member_id),
+        ).fetchone()
+        conn.execute(
+            "UPDATE inst_exit_case SET status='closed' WHERE id=%s AND status IN ('approved','submitted')",
+            (exit_case_id,),
+        )
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="monitor.exit.review",
+            object_type="inst_exit_case",
+            object_id=exit_case_id,
+            after={"thesis_verdict": thesis_verdict, "realized_return": realized_return},
+        )
+    return _row_dict(row) or {}
 
 
 def create_monitor_event(

@@ -11,6 +11,9 @@ import Portfolio from "./pages/Portfolio";
 import Search from "./pages/Search";
 import News from "./pages/News";
 import Me from "./pages/Me";
+import Community from "./pages/Community";
+import PostDetail from "./pages/PostDetail";
+import PostNew from "./pages/PostNew";
 import { Privacy, Terms } from "./pages/Legal";
 
 function Splash() {
@@ -51,6 +54,9 @@ export default function App() {
         <Route path="portfolio" element={<Portfolio />} />
         <Route path="search" element={<Search />} />
         <Route path="news" element={<News />} />
+        <Route path="community" element={<Community />} />
+        <Route path="community/new" element={<PostNew />} />
+        <Route path="community/:id" element={<PostDetail />} />
         <Route path="me" element={<Me />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

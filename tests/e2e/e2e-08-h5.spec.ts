@@ -105,3 +105,28 @@ test("基础无障碍：主要按钮/链接有可访问名称", async ({ page })
   });
   expect(unnamed).toBe(0);
 });
+
+test("社区列表可打开且无横向溢出", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/community`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "社区" })).toBeVisible({ timeout: 20_000 });
+  await noHorizontalOverflow(page);
+  await expect(page.locator(".post-list, .empty-state")).toBeVisible({ timeout: 20_000 });
+});
+
+test("未登录访问社区会跳转登录页", async ({ page }) => {
+  await page.goto(`${H5}/community`, { waitUntil: "domcontentloaded" });
+  await page.waitForURL(/\/login/, { timeout: 20_000 });
+  await expect(page.locator('input[autocomplete="username"]')).toBeVisible();
+});
+
+test("登录后可打开帖子详情（有帖子时）", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/community`, { waitUntil: "domcontentloaded" });
+  const first = page.locator(".post-row").first();
+  if (await first.count()) {
+    await first.click();
+    await expect(page.getByText(/评论/)).toBeVisible({ timeout: 20_000 });
+    await noHorizontalOverflow(page);
+  }
+});

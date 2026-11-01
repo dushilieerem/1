@@ -25,6 +25,30 @@ def test_clean_nan_to_none() -> None:
     assert loader._clean(None) is None
 
 
+def test_income_single_quarter_to_ytd() -> None:
+    import math
+
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        {
+            "symbol": ["600519.SH"] * 4 + ["000001.SZ"],
+            "m_timetag": ["20260331", "20260630", "20260930", "20251231", "20260630"],
+            "revenue": [100.0, 120.0, None, 80.0, 50.0],
+            "oper_profit": [50.0, 60.0, None, 30.0, 20.0],
+            "net_profit_excl_min_int_inc": [40.0, 45.0, None, 20.0, 10.0],
+            "gross_margin": [90.0, 88.0, 87.0, 85.0, None],
+        }
+    )
+    out = loader._to_ytd(frame)
+    assert out["revenue"].iloc[:4].tolist()[:2] == [100.0, 220.0]
+    assert math.isnan(out["revenue"].iloc[2])
+    assert out["revenue"].iloc[3] == 80.0  # 新财年重新累计
+    assert out["revenue"].iloc[4] == 50.0
+    assert math.isclose(out["gross_profit"].iloc[1], 220.0 * 0.88)
+    assert math.isnan(out["gross_profit"].iloc[4])
+
+
 def test_valuation_frame_maps_and_filters(monkeypatch) -> None:
     import pyarrow as pa
 

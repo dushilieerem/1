@@ -114,6 +114,28 @@ def _norm_symbol(frame, column: str = "Symbol"):
     return out
 
 
+def _to_ytd(income):
+    """单季字段 → 年内累计（与 tot_profit/eps/*_yoy 口径一致）。
+
+    -12 契约里 financial_income 是混合口径：revenue、oper_profit、
+    net_profit_excl_min_int_inc 为单季；服务表按报告期展示，统一累加。
+    gross_profit 用“累计 revenue × YTD gross_margin”重算（平台原值为单季近似）。
+    """
+    income = income.copy()
+    income["_fy"] = income["m_timetag"].astype(str).str[:4]
+    for col in ("revenue", "oper_profit", "net_profit_excl_min_int_inc"):
+        if col not in income.columns:
+            continue
+        # 缺失季度保留 NaN，不用累计值冒充
+        ytd = income.groupby(["symbol", "_fy"], sort=False)[col].transform(
+            lambda s: s.cumsum().where(s.notna().cumsum() > 0)
+        )
+        income[col] = ytd.where(income[col].notna())
+    if "gross_margin" in income.columns:
+        income["gross_profit"] = income["revenue"] * income["gross_margin"] / 100.0
+    return income.drop(columns=["_fy"])
+
+
 def _statement_frames(root: Path, symbols: Iterable[str] | None = None):
     """读取并合并四类财务数据；返回 (income, balance, cashflow, indicator)。"""
     import pandas as pd
@@ -129,7 +151,7 @@ def _statement_frames(root: Path, symbols: Iterable[str] | None = None):
             "revenue",
             "oper_profit",
             "net_profit_excl_min_int_inc",
-            "gross_profit",
+            "gross_margin",
             "tot_profit",
             "s_fa_eps_basic",
         ],
@@ -140,6 +162,7 @@ def _statement_frames(root: Path, symbols: Iterable[str] | None = None):
     income = income.sort_values(["symbol", "m_timetag", "m_anntime"]).drop_duplicates(
         ["symbol", "m_timetag"], keep="last"
     )
+    income = _to_ytd(income)
 
     balance = _norm_symbol(
         _read(

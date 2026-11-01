@@ -44,7 +44,7 @@ services:
       MARKETDATA_DIR: /marketdata
       # 独立数据平台只读视图（物化 symlink 指向 /marketdata）
       SVQUANT_DATA_ROOT: /data/svquant-data
-      SVQUANT_DATA_VIEW: ${SVQUANT_DATA_VIEW:-research-rv-20261101-11}
+      SVQUANT_DATA_VIEW: ${SVQUANT_DATA_VIEW:-research-rv-20261101-12}
       TZ: Asia/Shanghai
     depends_on:
       db:

@@ -158,3 +158,11 @@ test("量化研究入口与因子/策略库可打开", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "策略库" })).toBeVisible({ timeout: 20_000 });
   await noHorizontalOverflow(page);
 });
+
+test("个股分时视图可切换（有数据或明确空态）", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/stock/600519`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "分时" }).click();
+  await expect(page.locator('svg[aria-label="分时走势"], .empty-inline')).toBeVisible({ timeout: 30_000 });
+  await noHorizontalOverflow(page);
+});

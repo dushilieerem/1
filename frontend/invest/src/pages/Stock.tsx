@@ -11,10 +11,45 @@ import AiPanel from "../components/AiPanel";
 const KLineChart = lazy(() => import("../KLineChart"));
 
 const PERIODS = [
+  { key: "minute", label: "分时" },
   { key: "daily", label: "日K" },
   { key: "weekly", label: "周K" },
   { key: "monthly", label: "月K" },
 ];
+function MinuteChart({ items }: { items: any[] }) {
+  const closes = items.map((x) => Number(x.close)).filter((x) => Number.isFinite(x));
+  if (!closes.length) return <div className="empty-inline">暂无有效分时价</div>;
+  const min = Math.min(...closes);
+  const max = Math.max(...closes);
+  const span = max - min || 1;
+  const w = 320;
+  const h = 140;
+  const step = w / Math.max(1, closes.length - 1);
+  const points = closes.map((v, i) => `${(i * step).toFixed(2)},${(h - ((v - min) / span) * (h - 12) - 6).toFixed(2)}`).join(" ");
+  const first = closes[0];
+  const last = closes[closes.length - 1];
+  const up = last >= first;
+  return (
+    <div>
+      <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-label="分时走势" style={{ width: "100%", height: 170 }}>
+        <polyline
+          points={points}
+          fill="none"
+          stroke={up ? "#d14343" : "#1f9d55"}
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <div className="chart-legend">
+        <span>最新 {formatPrice(last)}</span>
+        <span>最高 {formatPrice(max)}</span>
+        <span>最低 {formatPrice(min)}</span>
+        <span>{up ? "上涨" : "下跌"} {(((last - first) / first) * 100).toFixed(2)}%</span>
+      </div>
+    </div>
+  );
+}
+
 const TABS = [
   { key: "overview", label: "概览" },
   { key: "finance", label: "财务" },
@@ -56,6 +91,9 @@ export default function Stock() {
   const [glossary, setGlossary] = useState(false);
   const [inWatch, setInWatch] = useState(false);
   const [watchBusy, setWatchBusy] = useState(false);
+  const [minute, setMinute] = useState<any[] | null>(null);
+  const [minuteError, setMinuteError] = useState<string | null>(null);
+  const [minuteLoading, setMinuteLoading] = useState(false);
 
   const load = (nextPeriod = period) => {
     setError(null);
@@ -77,10 +115,20 @@ export default function Stock() {
       .catch(() => {});
   }, [code]);
 
+  const loadMinute = () => {
+    setMinuteLoading(true);
+    setMinuteError(null);
+    api<{ items: any[] }>(`/api/market-data/minute/${code}?freq=1m&limit_days=1`)
+      .then((d) => setMinute(d.items || []))
+      .catch((e) => setMinuteError(e.message))
+      .finally(() => setMinuteLoading(false));
+  };
+
   const changePeriod = (p: string) => {
     if (p === period) return;
     setPeriod(p);
-    load(p);
+    if (p === "minute") loadMinute();
+    else load(p);
   };
 
   const toggleWatch = async () => {
@@ -203,7 +251,7 @@ export default function Stock() {
       <section className="card chart-card">
         <div className="card-title-row">
           <h2>行情走势</h2>
-          <span className="hint">收盘数据 · 非实时</span>
+          <span className="hint">{period === "minute" ? "分时 · 非实时" : "收盘数据 · 非实时"}</span>
         </div>
         <div className="seg period-seg">
           {PERIODS.map((p) => (
@@ -212,7 +260,17 @@ export default function Stock() {
             </button>
           ))}
         </div>
-        {loading ? <div className="kline-loading">加载行情…</div> : (
+        {period === "minute" ? (
+          minuteLoading ? (
+            <div className="kline-loading">加载分时…</div>
+          ) : minuteError ? (
+            <div className="empty-inline">分时数据不可用：{minuteError}</div>
+          ) : minute?.length ? (
+            <MinuteChart items={minute} />
+          ) : (
+            <div className="empty-inline">暂无分时数据（仅支持 2025 年以来的交易日）</div>
+          )
+        ) : loading ? <div className="kline-loading">加载行情…</div> : (
           <Suspense fallback={<div className="kline-loading">加载图表…</div>}>
             <KLineChart bars={data.chart.bars} ma5={data.chart.ma5} ma10={data.chart.ma10} ma20={data.chart.ma20} />
           </Suspense>

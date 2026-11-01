@@ -116,7 +116,46 @@ CHAIRMAN_MEMO_TASK = register(
     )
 )
 
+FINANCIAL_ROLE_TASK = register(
+    TaskSpec(
+        task_id="inst.role.financial",
+        description="机构端 AI 岗位：财务与取证（三表勾稽、ROIC/FCF、应收存货与会计风险）",
+        temperature=0.2,
+        max_tokens=3000,
+        timeout_sec=120,
+        executors=("local",),
+        validator=validate_memo,
+    )
+)
+
+GOVERNANCE_ROLE_TASK = register(
+    TaskSpec(
+        task_id="inst.role.governance",
+        description="机构端 AI 岗位：治理/估值/反证（资本配置、DCF 假设、可检验反证条件）",
+        temperature=0.2,
+        max_tokens=3000,
+        timeout_sec=120,
+        executors=("local",),
+        validator=validate_memo,
+    )
+)
+
+POST_INVESTMENT_ROLE_TASK = register(
+    TaskSpec(
+        task_id="inst.role.post_investment",
+        description="机构端 AI 岗位：投后/退出/复盘（论点台账、经营预警、退出备忘录与归因）",
+        temperature=0.2,
+        max_tokens=3000,
+        timeout_sec=120,
+        executors=("local",),
+        validator=validate_memo,
+    )
+)
+
 __all__ = [
+    "FINANCIAL_ROLE_TASK",
+    "GOVERNANCE_ROLE_TASK",
+    "POST_INVESTMENT_ROLE_TASK",
     "CHAIRMAN_MEMO_TASK",
     "DEBATE_TASK",
     "PROMPT_VERSION",

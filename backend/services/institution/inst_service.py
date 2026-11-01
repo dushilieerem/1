@@ -2759,3 +2759,116 @@ __all__ = [
     "start_debate",
     "update_company_pool",
 ]
+
+
+# ---------------------------------------------------------------- AI 岗位（I01–I06）
+
+AI_ROLE_CATALOG: tuple[tuple[str, str, str], ...] = (
+    ("research", "研究统筹 / 产业 / 护城河", "inst.research_memo"),
+    ("financial", "财务与取证", "inst.role.financial"),
+    ("governance", "治理 / 估值 / 反证", "inst.role.governance"),
+    ("debate", "看多 / 看空 / 主持", "inst.debate"),
+    ("risk", "风控 / 合规 / 交易", "inst.risk_review"),
+    ("post_investment", "投后 / 退出 / 复盘", "inst.role.post_investment"),
+)
+
+_ROLE_PROMPTS = {
+    "financial": (
+        "你是机构端财务与取证岗位。只依据输入的财务、证据与估值数据；"
+        "检查三表勾稽、ROIC/FCF、应收存货与会计风险；不给买卖建议或目标价。只输出 JSON："
+        '{"summary":"...","evidence":["..."],"risks":["..."],"open_questions":["..."]}。'
+    ),
+    "governance": (
+        "你是机构端治理、估值与反证岗位。只依据输入数据；"
+        "评估资本配置、治理结构、DCF 假设与可检验的反证条件；不编造事实。只输出 JSON："
+        '{"summary":"...","evidence":["..."],"risks":["..."],"open_questions":["..."]}。'
+    ),
+    "post_investment": (
+        "你是机构端投后、退出与复盘岗位。只依据输入的持仓、论点台账、监控事件与退出案；"
+        "给出复核要点、预警与复盘问题；不直接给卖出指令。只输出 JSON："
+        '{"summary":"...","evidence":["..."],"risks":["..."],"open_questions":["..."]}。'
+    ),
+}
+
+
+def ai_role_catalog() -> list[dict[str, Any]]:
+    out = []
+    for key, label, task in AI_ROLE_CATALOG:
+        out.append(
+            {
+                "key": key,
+                "label": label,
+                "task": task,
+                "available": _ai_available(task),
+            }
+        )
+    return out
+
+
+def _role_case_payload(org_id: int, case_id: int) -> dict[str, Any]:
+    data = get_case(org_id, case_id)
+    if not data:
+        raise LookupError("研究案不存在")
+    version = (data.get("versions") or [None])[0] or {}
+    return {
+        "company": {
+            "symbol": data.get("symbol"),
+            "name": data.get("company_name"),
+            "market": data.get("market"),
+            "industry": data.get("industry"),
+            "data_status": data.get("data_status"),
+        },
+        "research": {
+            "version_no": version.get("version_no"),
+            "status": version.get("status"),
+            "conclusion": version.get("conclusion"),
+            "six_dim": [
+                {
+                    "key": d.get("key"),
+                    "title": d.get("title"),
+                    "summary": d.get("summary"),
+                    "counter": d.get("counter"),
+                }
+                for d in (version.get("six_dim") or [])
+            ],
+            "valuation": version.get("valuation"),
+            "counter_evidence": version.get("counter_evidence"),
+            "open_questions": version.get("open_questions"),
+        },
+        "evidence": [
+            {"id": e.get("id"), "title": e.get("title"), "source": e.get("source"), "quote": e.get("quote")}
+            for e in (data.get("evidence") or [])[:30]
+        ],
+    }
+
+
+def ai_role_run(
+    org_id: int,
+    role_key: str,
+    *,
+    case_id: int | None = None,
+    proposal_id: int | None = None,
+    actor_member_id: int | None = None,
+) -> dict[str, Any]:
+    """执行一个 AI 岗位：只输出建议，不改业务状态。"""
+    role = str(role_key or "").strip().lower()
+    task = {key: task_id for key, _label, task_id in AI_ROLE_CATALOG}.get(role)
+    if not task:
+        raise ValueError("未知 AI 岗位")
+    if role == "debate":
+        if not case_id:
+            raise ValueError("缺少 case_id")
+        return {"role": role, "task": task, "result": start_debate(org_id, case_id, actor_member_id=actor_member_id, use_ai=True)}
+    if role == "risk":
+        if not proposal_id:
+            raise ValueError("缺少 proposal_id")
+        return {"role": role, "task": task, "result": ai_risk_review(org_id, proposal_id)}
+    if role == "research":
+        if not case_id:
+            raise ValueError("缺少 case_id")
+        return {"role": role, "task": task, "result": ai_research_memo(org_id, case_id)}
+    if not case_id:
+        raise ValueError("缺少 case_id")
+    payload = _role_case_payload(org_id, case_id)
+    data = _ai_task(task, payload, _ROLE_PROMPTS[role])
+    return {"role": role, "task": task, "memo": data}

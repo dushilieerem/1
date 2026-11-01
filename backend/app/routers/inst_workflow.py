@@ -236,6 +236,39 @@ def risk_review_ai(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_
         raise _handle(exc) from exc
 
 
+@router.get("/ai/roles")
+def ai_roles(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    """I01–I06：AI 岗位目录与可用性。"""
+    _require_ws(ctx, "research")
+    return {"ok": True, "items": svc.ai_role_catalog()}
+
+
+@router.post("/ai/roles/{role_key}")
+def ai_role_run(
+    role_key: str,
+    body: dict[str, Any] | None = None,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    """执行单个 AI 岗位（只出建议，不改状态）。"""
+    org_id, member_id, _ = _ctx(ctx)
+    payload = body or {}
+    workspace = "approvals" if role_key == "risk" else ("debate" if role_key == "debate" else "research")
+    _require_ws(ctx, workspace)
+    try:
+        return {
+            "ok": True,
+            **svc.ai_role_run(
+                org_id,
+                role_key,
+                case_id=int(payload["case_id"]) if payload.get("case_id") else None,
+                proposal_id=int(payload["proposal_id"]) if payload.get("proposal_id") else None,
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.post("/proposals/{proposal_id}/ai/chairman-memo")
 def chairman_memo_ai(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)

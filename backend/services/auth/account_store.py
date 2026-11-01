@@ -115,11 +115,16 @@ def delete_account(
             value: Any = user_id
             if column == "username":
                 value = str(user.get("username") or "")
+            # 用 savepoint 包住单表删除：某张表被 FK 拦住时只回滚这一条，
+            # 不会把整个事务置为 aborted（PostgreSQL 的硬约束）。
+            conn.execute("SAVEPOINT purge_table")
             try:
                 result = conn.execute(f"DELETE FROM {table} WHERE {column}=%s", (value,))
+                conn.execute("RELEASE SAVEPOINT purge_table")
                 purged[table] = int(getattr(result, "rowcount", 0) or 0)
             except Exception:
-                # 列名/约束不符时不影响其余清理；审计里能看出跳过项
+                conn.execute("ROLLBACK TO SAVEPOINT purge_table")
+                conn.execute("RELEASE SAVEPOINT purge_table")
                 purged.setdefault(f"{table}.skipped", 0)
         new_username = f"deleted_{user_id}"
         if conn.execute("SELECT 1 FROM users WHERE username=%s", (new_username,)).fetchone():

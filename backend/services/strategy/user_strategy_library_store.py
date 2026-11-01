@@ -438,6 +438,58 @@ def update_library_strategy(
     return _strategy_row(dict(updated), cur["library_name"])
 
 
+def list_library_strategy_versions(
+    user_id: int, strategy_id: int, *, limit: int = 50
+) -> list[dict[str, Any]]:
+    """策略版本历史（FEAT-017）：只返回元数据，不返回代码正文。"""
+    ensure_user_strategy_libraries_schema()
+    with get_conn() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM user_library_strategies WHERE id=%s AND user_id=%s",
+            (int(strategy_id), int(user_id)),
+        ).fetchone()
+        if not exists:
+            raise KeyError(strategy_id)
+        rows = conn.execute(
+            """
+            SELECT id, version_no, name, description, category_label, source_run_id,
+                   created_at, length(body) AS body_chars
+              FROM user_library_strategy_versions
+             WHERE library_strategy_id=%s AND user_id=%s
+             ORDER BY version_no DESC
+             LIMIT %s
+            """,
+            (int(strategy_id), int(user_id), max(1, min(int(limit), 200))),
+        ).fetchall()
+    return [_iso_row(dict(r)) for r in rows]
+
+
+def get_library_strategy_version(
+    user_id: int, strategy_id: int, version_no: int
+) -> dict[str, Any]:
+    """读取指定版本的完整快照（含代码正文）。"""
+    ensure_user_strategy_libraries_schema()
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT version_no, name, code_id, body, description, category_label,
+                   source_run_id, created_at
+              FROM user_library_strategy_versions
+             WHERE library_strategy_id=%s AND user_id=%s AND version_no=%s
+            """,
+            (int(strategy_id), int(user_id), int(version_no)),
+        ).fetchone()
+    if not row:
+        raise KeyError(version_no)
+    return _iso_row(dict(row))
+
+
+def _iso_row(row: dict[str, Any]) -> dict[str, Any]:
+    for key in ("created_at", "updated_at"):
+        row[key] = _iso(row.get(key))
+    return row
+
+
 def get_library_strategy_archive(user_id: int, strategy_id: int) -> dict[str, Any]:
     """返回入库时冻结的回测报告（只读）。"""
     ensure_user_strategy_libraries_schema()

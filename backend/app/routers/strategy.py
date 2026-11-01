@@ -40,7 +40,9 @@ from services.strategy.user_strategy_library_store import (
     delete_library_strategy,
     delete_user_strategy_library,
     get_library_strategy_archive,
+    get_library_strategy_version,
     list_library_strategies,
+    list_library_strategy_versions,
     update_library_strategy,
     list_user_strategy_libraries,
     mark_library_strategy_detected,
@@ -353,6 +355,35 @@ def strategy_library_mark_detected(
     try:
         strat = mark_library_strategy_detected(uid, strategy_id)
         return {"ok": True, "strategy": strat}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="not found") from None
+
+
+@router.get("/api/strategy/library-strategies/{strategy_id}/versions")
+def strategy_library_versions(
+    strategy_id: int,
+    limit: int = 50,
+    uid: int = Depends(require_db_user_id),
+) -> dict:
+    """FEAT-017：库内策略版本历史（元数据）。"""
+    try:
+        return {
+            "ok": True,
+            "items": list_library_strategy_versions(uid, strategy_id, limit=limit),
+        }
+    except KeyError:
+        raise HTTPException(status_code=404, detail="not found") from None
+
+
+@router.get("/api/strategy/library-strategies/{strategy_id}/versions/{version_no}")
+def strategy_library_version(
+    strategy_id: int,
+    version_no: int,
+    uid: int = Depends(require_db_user_id),
+) -> dict:
+    """FEAT-017：读取指定版本的完整快照。"""
+    try:
+        return {"ok": True, "version": get_library_strategy_version(uid, strategy_id, version_no)}
     except KeyError:
         raise HTTPException(status_code=404, detail="not found") from None
 

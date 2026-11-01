@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.deps import require_inst_user
 from services.institution import inst_service as svc
+from services.institution.valuation import run_dcf
 
 router = APIRouter(tags=["institution-workflow"], prefix="/api/inst")
 
@@ -130,6 +131,23 @@ def case_detail(case_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) 
     if not data:
         raise HTTPException(status_code=404, detail="研究案不存在")
     return {"ok": True, **data}
+
+
+@router.post("/companies/{company_id}/dcf")
+def company_dcf(
+    company_id: int,
+    body: dict[str, Any],
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    """FR-RES-19..22：五年 DCF + 敏感性表（确定性计算，不是目标价）。"""
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "research")
+    if not svc.get_company(org_id, company_id):
+        raise HTTPException(status_code=404, detail="公司不存在")
+    try:
+        return run_dcf(body if isinstance(body, dict) else {})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/cases/{case_id}/research")

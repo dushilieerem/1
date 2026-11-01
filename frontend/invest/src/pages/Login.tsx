@@ -12,6 +12,9 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const registerUrl = (import.meta as any).env?.VITE_REGISTER_URL as string | undefined;
+  const forgotUrl =
+    ((import.meta as any).env?.VITE_FORGOT_URL as string | undefined) ||
+    `${window.location.protocol}//${window.location.hostname}:9530/forgot-password`;
 
   useEffect(() => {
     if (user) nav(loc.state?.from || "/", { replace: true });
@@ -79,6 +82,8 @@ export default function Login() {
           <Link to="/privacy">隐私政策</Link>
           <span>·</span>
           <Link to="/terms">用户协议</Link>
+          <span>·</span>
+          <a href={forgotUrl} target="_blank" rel="noreferrer">忘记密码</a>
         </div>
         <p className="login-note">
           {registerUrl

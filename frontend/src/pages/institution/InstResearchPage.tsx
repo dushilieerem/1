@@ -32,6 +32,7 @@ type Version = {
 
 type CaseItem = {
   id: number;
+  company_id?: number;
   case_no: string;
   stage: string;
   symbol: string;
@@ -59,6 +60,35 @@ export function InstResearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [memo, setMemo] = useState<Record<string, any> | null>(null);
+  const [dcf, setDcf] = useState<Record<string, any> | null>(null);
+  const [dcfIn, setDcfIn] = useState({
+    base_revenue: "100",
+    revenue_growth: "10",
+    cashflow_margin: "30",
+    discount_rate: "10",
+    terminal_growth: "2",
+    shares: "",
+  });
+  const runDcf = () => {
+    if (!detail?.company_id) return;
+    setBusy("dcf");
+    setError(null);
+    instApi<Record<string, any>>(`/companies/${detail.company_id}/dcf`, {
+      method: "POST",
+      body: {
+        base_revenue: Number(dcfIn.base_revenue),
+        revenue_growth: Number(dcfIn.revenue_growth) / 100,
+        cashflow_margin: Number(dcfIn.cashflow_margin) / 100,
+        discount_rate: Number(dcfIn.discount_rate) / 100,
+        terminal_growth: Number(dcfIn.terminal_growth) / 100,
+        shares_outstanding: dcfIn.shares ? Number(dcfIn.shares) : undefined,
+        years: 5,
+      },
+    })
+      .then(setDcf)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setBusy(null));
+  };
 
   const canWrite = (session.permissions.research || "none") === "write";
 
@@ -321,6 +351,51 @@ export function InstResearchPage() {
                     <p className="mt-1 leading-relaxed">
                       {String((version.valuation as Record<string, unknown>).note || "演示口径，不是目标价。")}
                     </p>
+                  </div>
+                ) : null}
+                {detail.company_id ? (
+                  <div className="mt-3 rounded-xl border border-[#e7e3d8] bg-white p-3">
+                    <p className="text-xs font-semibold text-slate-700">
+                      五年 DCF（确定性计算 · 不是目标价）
+                    </p>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+                      {[
+                        ["base_revenue", "基期收入"],
+                        ["revenue_growth", "增长率 %"],
+                        ["cashflow_margin", "现金流率 %"],
+                        ["discount_rate", "折现率 %"],
+                        ["terminal_growth", "永续 %"],
+                        ["shares", "股本（可选）"],
+                      ].map(([key, label]) => (
+                        <label key={key} className="space-y-1 text-slate-500">
+                          <span>{label}</span>
+                          <input
+                            value={(dcfIn as Record<string, string>)[key]}
+                            onChange={(e) => setDcfIn((v) => ({ ...v, [key]: e.target.value }))}
+                            inputMode="decimal"
+                            className="w-full rounded-lg border border-[#dcd6c8] bg-[#faf9f5] px-2 py-1 text-xs text-slate-800 outline-none focus:border-[#c9a15e]"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className="mt-2">
+                      <Button variant="ghost" disabled={!!busy} onClick={runDcf}>
+                        {busy === "dcf" ? "计算中…" : "计算估值区间"}
+                      </Button>
+                    </div>
+                    {dcf?.range ? (
+                      <div className="mt-2 text-xs leading-relaxed text-slate-600">
+                        <p>
+                          区间：{fmtNum(dcf.range.low, 2)} – {fmtNum(dcf.range.high, 2)}
+                          {dcf.range.base_per_share != null
+                            ? `；每股 ${fmtNum(dcf.range.low_per_share, 2)} / ${fmtNum(dcf.range.base_per_share, 2)} / ${fmtNum(dcf.range.high_per_share, 2)}`
+                            : ""}
+                        </p>
+                        {Array.isArray(dcf.limits) ? (
+                          <p className="mt-1 text-[11px] text-slate-400">{dcf.limits.join("；")}</p>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
                 {version.status === "pending_review" ? (

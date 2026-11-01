@@ -89,6 +89,7 @@ export default function Me() {
         <Kv k="行情口径" v="前复权 · 收盘快照 · 非实时" />
         <Kv k="质量检查" v={quality ? (quality.ok ? (quality.checks?.some?.((c: any) => c.status === "warn") ? "通过（有提醒）" : "通过") : "有异常") : "检查中"} />
         <Kv k="数据新鲜度" v={meta ? (meta.isStale ? `已 ${meta.ageDays} 天未更新` : "T-0 / 正常") : "检查中"} />
+        {meta?.disabledModules?.length ? <Kv k="模块状态" v={`临时关闭：${meta.disabledModules.join("、")}`} /> : null}
         <div className="hint">
           {meta?.isDemo
             ? "当前为演示数据，不代表真实行情；公开运行前需逐源核对数据条款。"

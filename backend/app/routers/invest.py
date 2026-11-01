@@ -16,10 +16,21 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 
 from app.deps import require_user
 from services.core.db import get_conn
+from services.core.public_switches import disabled_modules
 from services.invest import rules
 from services.invest.db import PGConn, invest_conn
 
 router = APIRouter(prefix="/api/invest", tags=["invest"])
+
+
+def _guard(module: str):
+    """数据模块下线开关：命中 INVEST_DISABLED_MODULES 时返回 503。"""
+
+    def dependency() -> None:
+        if module in disabled_modules():
+            raise HTTPException(status_code=503, detail=f"{module} 模块已临时关闭，请稍后再试")
+
+    return dependency
 
 GLOSSARY = [
     {"term": "PE 分位", "text": "当前市盈率在过去 N 年里的位置；分位越低通常越“便宜”，但不预测涨跌。"},
@@ -56,7 +67,7 @@ def _audit(conn: PGConn, request: Request, user: dict[str, Any], action: str, de
 
 @router.get("/meta")
 def meta(conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
-    return rules.build_meta(conn)
+    return {**rules.build_meta(conn), "disabledModules": sorted(disabled_modules())}
 
 
 @router.get("/data-quality")
@@ -69,12 +80,12 @@ def glossary() -> dict[str, Any]:
     return {"items": GLOSSARY}
 
 
-@router.get("/home")
+@router.get("/home", dependencies=[Depends(_guard("home"))])
 def home(user: dict[str, Any] = Depends(require_user), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
     return rules.build_home(conn, _uid(user))
 
 
-@router.get("/topic/{topic_id}")
+@router.get("/topic/{topic_id}", dependencies=[Depends(_guard("topic"))])
 def topic(topic_id: str, conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
     data = rules.build_topic(conn, topic_id)
     if not data:
@@ -82,7 +93,7 @@ def topic(topic_id: str, conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
     return data
 
 
-@router.get("/stock/{code}")
+@router.get("/stock/{code}", dependencies=[Depends(_guard("stock"))])
 def stock(code: str, period: str = Query("daily"), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
     if period not in {"daily", "weekly", "monthly"}:
         raise HTTPException(status_code=400, detail="period 必须是 daily/weekly/monthly")
@@ -92,12 +103,12 @@ def stock(code: str, period: str = Query("daily"), conn: PGConn = Depends(invest
     return data
 
 
-@router.get("/search")
+@router.get("/search", dependencies=[Depends(_guard("search"))])
 def search(q: str = Query(""), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
     return rules.build_search(conn, q)
 
 
-@router.get("/news")
+@router.get("/news", dependencies=[Depends(_guard("news"))])
 def news(kind: str | None = Query(None), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
     return rules.build_news(conn, kind)
 

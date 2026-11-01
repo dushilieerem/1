@@ -48,6 +48,7 @@ from app.routers import (  # noqa: E402
     watchlists,
 )
 from services.core.env_config import env  # noqa: E402
+from services.core.public_switches import docs_enabled  # noqa: E402
 from services.core.rate_limit import enforce_rate_limit_key  # noqa: E402
 
 
@@ -82,8 +83,9 @@ def _cors_origins() -> list[str]:
 app = FastAPI(
     title="SVQuant",
     lifespan=lifespan,
-    docs_url="/docs",
+    docs_url="/docs" if docs_enabled() else None,
     redoc_url=None,
+    openapi_url="/openapi.json" if docs_enabled() else None,
 )
 
 app.add_middleware(

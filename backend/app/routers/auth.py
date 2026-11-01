@@ -121,6 +121,10 @@ def auth_register(body: dict[str, Any], request: Request) -> dict:
         scope="auth.register",
         limit=_rate_limit_int("AUTH_REGISTER_RATE_LIMIT", 10),
     )
+    from services.core.public_switches import registration_open
+
+    if not registration_open():
+        raise HTTPException(status_code=403, detail="注册暂未开放，请通过邀请或等待公测")
     username = str(body.get("username") or "")
     try:
         out = register_user(

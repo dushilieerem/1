@@ -14,6 +14,7 @@ import Me from "./pages/Me";
 import Community from "./pages/Community";
 import PostDetail from "./pages/PostDetail";
 import PostNew from "./pages/PostNew";
+import Notifications from "./pages/Notifications";
 import { Privacy, Terms } from "./pages/Legal";
 
 function Splash() {
@@ -57,6 +58,7 @@ export default function App() {
         <Route path="community" element={<Community />} />
         <Route path="community/new" element={<PostNew />} />
         <Route path="community/:id" element={<PostDetail />} />
+        <Route path="notifications" element={<Notifications />} />
         <Route path="me" element={<Me />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

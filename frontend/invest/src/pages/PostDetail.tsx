@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Bookmark, Heart, MessageSquare } from "lucide-react";
+import { Bookmark, Flag, Heart, MessageSquare } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { Disclaimer, ErrorState, LoadingCards, PageHeader, Tag } from "../components";
+import { Disclaimer, ErrorState, LoadingCards, PageHeader, Sheet, Tag } from "../components";
 
 type Post = {
   id: number;
@@ -38,6 +38,11 @@ export default function PostDetail() {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportTarget, setReportTarget] = useState<{ type: "post" | "comment"; id: number } | null>(null);
+  const [reportReason, setReportReason] = useState("spam");
+  const [reportDetail, setReportDetail] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = () => {
     setError(null);
@@ -95,6 +100,40 @@ export default function PostDetail() {
     }
   };
 
+  const openReport = (type: "post" | "comment", id: number) => {
+    if (!user) {
+      nav("/login");
+      return;
+    }
+    setReportTarget({ type, id });
+    setReportOpen(true);
+  };
+
+  const submitReport = async () => {
+    if (!reportTarget) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api("/api/community/reports", {
+        method: "POST",
+        body: JSON.stringify({
+          target_type: reportTarget.type,
+          post_id: reportTarget.type === "post" ? reportTarget.id : postId,
+          comment_id: reportTarget.type === "comment" ? reportTarget.id : undefined,
+          reason: reportReason,
+          detail: reportDetail,
+        }),
+      });
+      setReportOpen(false);
+      setReportDetail("");
+      setNotice("举报已提交，我们会尽快处理。");
+    } catch (e: any) {
+      setError(e.message || "举报失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const favorite = async () => {
     if (!user) {
       nav("/login");
@@ -135,6 +174,7 @@ export default function PostDetail() {
       <PageHeader title="社区帖子" back onBack={() => nav(-1)} right={<Tag tone="gray">{post.section_label}</Tag>} />
 
       {error ? <ErrorState message={error} onRetry={load} /> : null}
+      {notice ? <div className="callout blue">{notice}</div> : null}
 
       <article className="card">
         <h2 style={{ fontSize: 19, lineHeight: 1.4, fontWeight: 700 }}>{post.title}</h2>
@@ -154,6 +194,9 @@ export default function PostDetail() {
           <span className="chip">
             <MessageSquare size={13} /> {post.comment_count}
           </span>
+          <button className="chip" onClick={() => openReport("post", post.id)} aria-label="举报帖子">
+            <Flag size={13} /> 举报
+          </button>
         </div>
       </article>
 
@@ -167,6 +210,9 @@ export default function PostDetail() {
                   {c.author?.display_name || c.author?.username || "匿名"} · {c.created_at?.slice(0, 16).replace("T", " ")}
                 </div>
                 <div className="comment-text">{c.body}</div>
+                <button className="chip" style={{ marginTop: 6 }} onClick={() => openReport("comment", c.id)}>
+                  举报
+                </button>
               </div>
             ))}
           </div>
@@ -188,6 +234,39 @@ export default function PostDetail() {
           </button>
         </div>
       </section>
+
+      <Sheet
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        title="举报内容"
+        sub="请选择原因；恶意举报会被记录"
+        footer={
+          <button className="btn btn-primary w100" disabled={busy} onClick={submitReport}>
+            {busy ? "提交中…" : "提交举报"}
+          </button>
+        }
+      >
+        <label className="field">
+          <span>原因</span>
+          <select value={reportReason} onChange={(e) => setReportReason(e.target.value)}>
+            <option value="spam">垃圾广告</option>
+            <option value="abuse">辱骂骚扰</option>
+            <option value="illegal">违法违规</option>
+            <option value="misinfo">不实信息</option>
+            <option value="other">其他</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>补充说明（可选）</span>
+          <textarea
+            value={reportDetail}
+            onChange={(e) => setReportDetail(e.target.value)}
+            maxLength={500}
+            placeholder="请描述问题"
+            style={{ minHeight: 80 }}
+          />
+        </label>
+      </Sheet>
 
       <Disclaimer>社区内容为用户观点，不构成投资建议。</Disclaimer>
     </div>

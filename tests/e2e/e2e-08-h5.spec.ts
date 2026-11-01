@@ -130,3 +130,20 @@ test("登录后可打开帖子详情（有帖子时）", async ({ page }) => {
     await noHorizontalOverflow(page);
   }
 });
+
+test("消息通知页可打开", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/notifications`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "消息通知" })).toBeVisible({ timeout: 20_000 });
+  await noHorizontalOverflow(page);
+});
+
+test("帖子详情有举报入口（有帖子时）", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/community`, { waitUntil: "domcontentloaded" });
+  const first = page.locator(".post-row").first();
+  if (await first.count()) {
+    await first.click();
+    await expect(page.getByRole("button", { name: "举报帖子" })).toBeVisible({ timeout: 20_000 });
+  }
+});

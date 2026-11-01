@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, ChevronRight, Download, FileText, Info, LogOut, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertTriangle, Bell, ChevronRight, Download, FileText, Info, LogOut, ShieldCheck, Trash2 } from "lucide-react";
 import { api, getToken } from "../api";
 import { useAuth } from "../auth";
 import { Disclaimer, Kv, PageHeader, Sheet, Tag } from "../components";
@@ -98,6 +98,9 @@ export default function Me() {
       </section>
 
       <div className="menu">
+        <button className="menu-item" onClick={() => nav("/notifications")}>
+          <Bell size={18} /><span>消息通知</span><ChevronRight size={16} />
+        </button>
         <button className="menu-item" onClick={() => setPrivacyOpen(true)}>
           <ShieldCheck size={18} /><span>隐私与协议</span><ChevronRight size={16} />
         </button>

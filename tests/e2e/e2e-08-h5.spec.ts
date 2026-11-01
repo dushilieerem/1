@@ -166,3 +166,30 @@ test("个股分时视图可切换（有数据或明确空态）", async ({ page 
   await expect(page.locator('svg[aria-label="分时走势"], .empty-inline')).toBeVisible({ timeout: 30_000 });
   await noHorizontalOverflow(page);
 });
+
+test("ETF 穿透页展示代理成分", async ({ page }) => {
+  await loginByToken(page);
+  // 运行中的后端可能是旧版本；这里用固定响应验证 UI 契约
+  await page.route("**/api/invest/etf/**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        etf: "510300.SH",
+        tracking: "index_proxy",
+        tracked_index: "000300.SH",
+        constituent_count: 2,
+        constituents: [
+          { symbol: "600519.SH", weight: 3.2 },
+          { symbol: "300750.SZ", weight: 4.0 },
+        ],
+        warning: "代理口径",
+      }),
+    }),
+  );
+  await page.goto(`${H5}/etf/510300`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "ETF 穿透" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("指数代理")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".data-table")).toBeVisible({ timeout: 20_000 });
+  await noHorizontalOverflow(page);
+});

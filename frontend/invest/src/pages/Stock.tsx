@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ChevronRight, FileText, Share2, Star, TrendingDown, TrendingUp, X } from "lucide-react";
 import { api } from "../api";
 import { Disclaimer, ErrorState, Kv, LoadingCards, PageHeader, Sheet, Tag } from "../components";
@@ -295,6 +295,11 @@ export default function Stock() {
           </div>
         </details>
         <div className="hint">日/周/月 K 由收盘数据聚合；前复权口径。图表引擎：TradingView Lightweight Charts。</div>
+        {code && /^(5[168]|1[56])\d{4}$/.test(code) ? (
+          <Link to={`/etf/${code}`} className="link-btn" style={{ marginTop: 8, display: "inline-flex" }}>
+            查看 ETF 穿透
+          </Link>
+        ) : null}
       </section>
 
       <section className="card tech-card">

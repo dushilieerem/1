@@ -7,11 +7,18 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from services.data import financial_store as fin
+from services.data import foundation
 from services.data import indicators as ind
 from services.data import marketdata_store as md
 from services.marketdata.store import count_securities, search_securities
 
 router = APIRouter(prefix="/api/market-data", tags=["market-data"])
+
+
+@router.get("/foundation")
+def data_foundation() -> dict[str, Any]:
+    """R03：投研数据底座状态（view_id/契约版本/关键数据集）。"""
+    return foundation.foundation_status()
 
 
 @router.get("/search")

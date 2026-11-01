@@ -17,6 +17,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from app.deps import require_user
 from services.core.db import get_conn
 from services.core.public_switches import disabled_modules
+from services.invest import etf as etf_service
 from services.invest import rules
 from services.invest.db import PGConn, invest_conn
 
@@ -111,6 +112,23 @@ def search(q: str = Query(""), conn: PGConn = Depends(invest_conn)) -> dict[str,
 @router.get("/news", dependencies=[Depends(_guard("news"))])
 def news(kind: str | None = Query(None), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
     return rules.build_news(conn, kind)
+
+
+@router.get("/etf/overlap")
+def etf_overlap(a: str, b: str) -> dict[str, Any]:
+    try:
+        return etf_service.overlap(a, b)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/etf/{code}")
+def etf_profile(code: str, top: int = 20) -> dict[str, Any]:
+    """H06/H07：ETF 跟踪指数与代理成分。"""
+    try:
+        return etf_service.profile(code, top=top)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/watchlist")

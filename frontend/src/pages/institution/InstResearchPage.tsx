@@ -419,7 +419,7 @@ export function InstResearchPage() {
                 onClick={() => void autopilot()}
               >
                 <Sparkles className="mr-1 h-4 w-4" />
-                {busy === "auto" ? t("6 个 Agent 分析中…", "6 agents analyzing…") : t("自动开展巴菲特六维分析", "Run Buffett six-dimension analysis")}
+                {busy === "auto" ? t("6 个 Agent 重新生成中…", "Regenerating with 6 agents…") : t("重新生成六维分析", "Regenerate six-dimension analysis")}
               </Button>
             }
           >
@@ -509,7 +509,7 @@ export function InstResearchPage() {
                       run("memo", () => loadMemo())
                     }
                   >
-                    {busy === "memo" || memoBusy ? t("生成中…", "Generating…") : t("AI 研究一页纸", "AI research memo")}
+                    {busy === "memo" || memoBusy ? t("重新生成中…", "Regenerating…") : t("重新生成 AI 一页纸", "Regenerate AI memo")}
                   </Button>
                 </div>
                 {memoBusy ? (

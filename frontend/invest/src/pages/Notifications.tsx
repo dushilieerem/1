@@ -1,14 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Bell } from "lucide-react";
+import { Bell, Settings } from "lucide-react";
 import { api } from "../api";
-import { EmptyState, ErrorState, LoadingCards, PageHeader } from "../components";
+import { EmptyState, ErrorState, LoadingCards, PageHeader, Sheet } from "../components";
 
-type Notification = {
+type CommunityNotification = {
   id: number;
   type: string;
   post_id: number;
-  comment_id?: number | null;
   post_title?: string;
   comment_body?: string;
   created_at?: string;
@@ -16,38 +15,80 @@ type Notification = {
   actor?: { display_name?: string; username?: string };
 };
 
+type EventLog = {
+  id: number;
+  code: string;
+  title: string;
+  detail?: string;
+  triggered_at: string;
+  read: boolean;
+};
+
+type Item =
+  | { kind: "community"; at: string; data: CommunityNotification }
+  | { kind: "event"; at: string; data: EventLog };
+
 const TYPE_LABEL: Record<string, string> = {
   reply: "回复了你",
   mention: "提到了你",
   like: "赞了你",
 };
 
+const PREFS_KEY = "svq_notify_prefs";
+
 export default function Notifications() {
   const nav = useNavigate();
-  const [items, setItems] = useState<Notification[]>([]);
+  const [community, setCommunity] = useState<CommunityNotification[]>([]);
+  const [events, setEvents] = useState<EventLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<"all" | "guard" | "community">("all");
+  const [settings, setSettings] = useState(false);
+  const [prefs, setPrefs] = useState<any>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  });
 
   const load = () => {
     setLoading(true);
     setError(null);
-    api<{ items: Notification[] }>("/api/community/notifications?limit=50")
-      .then((d) => setItems(d.items || []))
+    Promise.all([
+      api<{ items: CommunityNotification[] }>("/api/community/notifications?limit=50").catch(() => ({ items: [] })),
+      api<{ items: EventLog[] }>("/api/invest/event-logs?limit=50").catch(() => ({ items: [] })),
+    ])
+      .then(([c, e]) => {
+        setCommunity(c.items || []);
+        setEvents(e.items || []);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
 
   useEffect(load, []);
 
+  const items: Item[] = useMemo(() => {
+    const merged: Item[] = [
+      ...community.map((x) => ({ kind: "community" as const, at: x.created_at || "", data: x })),
+      ...events.map((x) => ({ kind: "event" as const, at: x.triggered_at || "", data: x })),
+    ];
+    merged.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+    if (tab === "community") return merged.filter((x) => x.kind === "community");
+    if (tab === "guard") return merged.filter((x) => x.kind === "event");
+    return merged;
+  }, [community, events, tab]);
+
+  const unread =
+    community.filter((x) => !x.read_at).length + events.filter((x) => !x.read).length;
+
   const markAll = async () => {
     setBusy(true);
-    setError(null);
     try {
-      await api("/api/community/notifications/read", {
-        method: "POST",
-        body: JSON.stringify({ all: true }),
-      });
+      await api("/api/community/notifications/read", { method: "POST", body: JSON.stringify({ all: true }) });
+      await api("/api/invest/event-logs/read", { method: "POST", body: JSON.stringify({ all: true }) });
       load();
     } catch (e: any) {
       setError(e.message || "操作失败");
@@ -56,7 +97,25 @@ export default function Notifications() {
     }
   };
 
-  const unread = items.filter((item) => !item.read_at).length;
+  const markOne = async (item: Item) => {
+    try {
+      if (item.kind === "event" && !item.data.read) {
+        await api("/api/invest/event-logs/read", { method: "POST", body: JSON.stringify({ id: item.data.id }) });
+        setEvents((prev) => prev.map((x) => (x.id === item.data.id ? { ...x, read: true } : x)));
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const savePrefs = (next: any) => {
+    setPrefs(next);
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  };
 
   return (
     <div className="page">
@@ -66,41 +125,95 @@ export default function Notifications() {
         back
         onBack={() => nav(-1)}
         right={
-          unread ? (
-            <button className="chip" onClick={markAll} disabled={busy}>
-              {busy ? "处理中…" : "全部已读"}
-            </button>
-          ) : null
+          <div className="row gap6">
+            <button className="chip" onClick={() => setSettings(true)} aria-label="通知设置"><Settings size={14} /></button>
+            {unread ? <button className="chip" onClick={markAll} disabled={busy}>{busy ? "处理中…" : "全部已读"}</button> : null}
+          </div>
         }
       />
 
+      <div className="seg">
+        {[
+          ["all", "全部"],
+          ["guard", "值守提醒"],
+          ["community", "社区互动"],
+        ].map(([key, label]) => (
+          <button key={key} className={tab === key ? "on" : ""} onClick={() => setTab(key as any)}>{label}</button>
+        ))}
+      </div>
+
       {error ? <ErrorState message={error} onRetry={load} /> : null}
       {loading ? <LoadingCards rows={3} /> : null}
-
       {!loading && !items.length ? (
-        <EmptyState title="没有消息" detail="有人回复、提到或赞你时会出现在这里。" />
+        <EmptyState title="没有消息" detail="值守触发或社区互动后会出现在这里。" />
       ) : null}
 
       {!loading && items.length ? (
         <div className="post-list">
-          {items.map((item) => (
-            <Link key={item.id} to={`/community/${item.post_id}`} className="post-row">
-              <div className="post-row-title" style={{ fontSize: 13.5 }}>
-                <Bell size={13} style={{ marginRight: 4 }} />
-                {item.actor?.display_name || item.actor?.username || "有人"} {TYPE_LABEL[item.type] || item.type}
-                {!item.read_at ? <span className="dot" /> : null}
-              </div>
-              <div className="post-row-meta">
-                <span>{item.post_title || "帖子"}</span>
-              </div>
-              {item.comment_body ? <div className="hint">{item.comment_body}</div> : null}
-              <div className="post-row-stats">
-                <span>{item.created_at?.slice(0, 16).replace("T", " ")}</span>
-              </div>
-            </Link>
-          ))}
+          {items.map((item) => {
+            const unreadItem = item.kind === "community" ? !item.data.read_at : !item.data.read;
+            if (item.kind === "community") {
+              const n = item.data;
+              return (
+                <Link key={`c${n.id}`} to={`/community/${n.post_id}`} className="post-row" onClick={() => void markOne(item)}>
+                  <div className="post-row-title" style={{ fontSize: 13.5 }}>
+                    <Bell size={13} style={{ marginRight: 4 }} />
+                    {n.actor?.display_name || n.actor?.username || "有人"} {TYPE_LABEL[n.type] || n.type}
+                    {unreadItem ? <span className="dot" /> : null}
+                  </div>
+                  <div className="post-row-meta"><span>{n.post_title || "帖子"}</span></div>
+                  {n.comment_body ? <div className="hint">{n.comment_body}</div> : null}
+                  <div className="post-row-stats"><span>{n.created_at?.slice(0, 16).replace("T", " ")}</span></div>
+                </Link>
+              );
+            }
+            const e = item.data;
+            return (
+              <button
+                key={`e${e.id}`}
+                className="post-row"
+                style={{ textAlign: "left" }}
+                onClick={() => { void markOne(item); nav(`/watch`); }}
+              >
+                <div className="post-row-title" style={{ fontSize: 13.5 }}>
+                  <Bell size={13} style={{ marginRight: 4 }} /> {e.title || e.code}
+                  {unreadItem ? <span className="dot" /> : null}
+                </div>
+                {e.detail ? <div className="hint">{e.detail}</div> : null}
+                <div className="post-row-stats"><span>{e.triggered_at?.slice(0, 16)}</span></div>
+              </button>
+            );
+          })}
         </div>
       ) : null}
+
+      <Sheet open={settings} onClose={() => setSettings(false)} title="通知设置" sub="当前仅站内通知，外部推送通道未接入">
+        <label className="hint" style={{ display: "block", marginBottom: 6 }}>
+          提醒频率
+          <select
+            value={prefs.frequency || "daily"}
+            onChange={(e) => savePrefs({ ...prefs, frequency: e.target.value })}
+            style={{ width: "100%", marginTop: 6, padding: 8, borderRadius: 8, border: "1px solid var(--line)" }}
+          >
+            <option value="realtime">尽量即时（站内）</option>
+            <option value="daily">每日汇总</option>
+            <option value="important">仅重要提醒</option>
+          </select>
+        </label>
+        <label className="hint" style={{ display: "block", marginBottom: 6 }}>
+          免打扰时段
+          <select
+            value={prefs.quiet || "22-8"}
+            onChange={(e) => savePrefs({ ...prefs, quiet: e.target.value })}
+            style={{ width: "100%", marginTop: 6, padding: 8, borderRadius: 8, border: "1px solid var(--line)" }}
+          >
+            <option value="none">不开启</option>
+            <option value="22-8">22:00–08:00</option>
+            <option value="20-9">20:00–09:00</option>
+          </select>
+        </label>
+        <p className="hint">频率与免打扰仅影响站内提醒展示；推送通道（H01/外部通道）未接入。</p>
+      </Sheet>
     </div>
   );
 }

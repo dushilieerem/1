@@ -58,6 +58,13 @@ const TABS = [
   { key: "risk", label: "风险" },
 ];
 
+function Help({ term }: { term: string }) {
+  const nav = useNavigate();
+  return (
+    <button className="metric-help" title="查看术语" onClick={() => nav(`/learn?term=${term}`)}>?</button>
+  );
+}
+
 function FinancialBars({ fins }: { fins: any[] }) {
   if (!fins.length) return <div className="empty-inline">暂无财务数据</div>;
   const rows = fins.slice(-4);
@@ -351,6 +358,20 @@ export default function Stock() {
         </section>
       )}
 
+      {tab === "overview" && data.sentiment?.available ? (
+        <section className="card">
+          <div className="card-title-row"><h2>舆情与情绪</h2><span className="hint">规则估算 · 非全量舆情</span></div>
+          <div className="kpi-grid">
+            <div className="kpi"><span>热度</span><b>{data.sentiment.heat}</b></div>
+            <div className="kpi"><span>偏正面</span><b>{data.sentiment.positive}%</b></div>
+            <div className="kpi"><span>偏负面</span><b>{data.sentiment.negative}%</b></div>
+            <div className="kpi"><span>中性/分歧</span><b>{data.sentiment.neutral}%</b></div>
+          </div>
+          <p className="muted small">当前判断：{data.sentiment.label}；{data.sentiment.note}</p>
+          {data.sentiment.topEvent ? <p className="hint">代表事件：{data.sentiment.topEvent}</p> : null}
+        </section>
+      ) : null}
+
       {tab === "finance" && (
         <section className="card">
           <div className="card-title-row">
@@ -359,10 +380,20 @@ export default function Stock() {
           </div>
           {q.asset === "etf" ? <div className="empty-inline">ETF 不适用公司财务指标。</div> : (
             <>
+              {data.earningsFlash?.available ? (
+                <div className="flash-card">
+                  <div><b>财报速读</b><span className="hint">{data.earningsFlash.period}</span></div>
+                  <div className="flash-cols">
+                    <div><span className="up">亮点</span><ul>{data.earningsFlash.highlights.map((x: string) => <li key={x}>{x}</li>)}</ul></div>
+                    <div><span className="down">隐忧</span><ul>{data.earningsFlash.concerns.map((x: string) => <li key={x}>{x}</li>)}</ul></div>
+                  </div>
+                  <p className="hint">{data.earningsFlash.consensusGap}</p>
+                </div>
+              ) : null}
               <FinancialBars fins={data.financials} />
               <div className="table-wrap">
                 <table className="data-table">
-                  <thead><tr><th>报告期</th><th>营收</th><th>同比</th><th>归母净利</th><th>毛利率</th></tr></thead>
+                  <thead><tr><th>报告期</th><th>营收</th><th>同比</th><th>归母净利</th><th>毛利率 <Help term="gross_margin" /></th></tr></thead>
                   <tbody>
                     {data.financials.slice(-4).reverse().map((f: any) => (
                       <tr key={f.period}>
@@ -386,8 +417,8 @@ export default function Stock() {
         <section className="card">
           <div className="card-title-row"><h2>估值位置</h2><span className="hint">近 3 年历史分位</span></div>
           <div className="valuation-nums">
-            <div><span>PE(TTM)</span><b>{v.pe?.toFixed?.(2) ?? "—"}x</b></div>
-            <div><span>PB</span><b>{v.pb?.toFixed?.(2) ?? "—"}x</b></div>
+            <div><span>PE(TTM)<Help term="pe_ttm" /></span><b>{v.pe?.toFixed?.(2) ?? "—"}x</b></div>
+            <div><span>PB<Help term="pb" /></span><b>{v.pb?.toFixed?.(2) ?? "—"}x</b></div>
             <div><span>行业 PE</span><b>{peer?.toFixed?.(2) ?? "—"}x</b></div>
           </div>
           <div className="valuation-track">
@@ -399,12 +430,28 @@ export default function Stock() {
             分位低不等于安全边际，需结合盈利趋势。
           </p>
           <button className="link-btn" onClick={() => setGlossary(true)}>查术语 <ChevronRight size={14} /></button>
+          <div className="divider" />
+          <div className="card-title-row"><h2>机构观点</h2><span className="hint">机构观点 · 非 AI 判断 · 非投资建议</span></div>
+          {data.institutionalView?.available ? (
+            <p className="muted small">评级分布与目标价区间待接入。</p>
+          ) : (
+            <p className="muted small">{data.institutionalView?.note || "机构评级 / 目标价 / 盈利预测数据待补充"}</p>
+          )}
           <div className="hint">估值按收盘价与已披露 EPS 计算；不是一致预期。</div>
         </section>
       )}
 
       {tab === "risk" && (
         <section className="card">
+          <div className="card-title-row"><h2>市场敏感度</h2><span className="hint">历史 Beta 分档</span></div>
+          {data.sensitivity?.available ? (
+            <div className="kpi-grid">
+              <div className="kpi"><span>敏感度</span><b>{data.sensitivity.level}</b></div>
+              <div className="kpi"><span>Beta</span><b>{data.sensitivity.beta}</b></div>
+            </div>
+          ) : <p className="muted small">{data.sensitivity?.note || "Beta 待补充"}</p>}
+          <p className="hint">{data.sensitivity?.note}</p>
+          <div className="divider" />
           <div className="card-title-row"><h2>风险清单</h2><span className="hint">规则扫描</span></div>
           <div className="risk-list">
             {data.risks.map((r: any, i: number) => (
@@ -436,6 +483,14 @@ export default function Stock() {
       </div>
 
       <Sheet open={newsOpen} onClose={() => setNewsOpen(false)} title="个股资讯" sub="标题 + 链接 · 非投资建议">
+        {data.todayNews?.length ? (
+          <div className="today-news">
+            <b>今日要闻</b>
+            {data.todayNews.slice(0, 3).map((n: any) => (
+              <a key={n.id} href={n.url} target="_blank" rel="noreferrer">{n.title}</a>
+            ))}
+          </div>
+        ) : null}
         <div className="news-list">
           {data.news.length ? data.news.map((n: any) => (
             <div className="news-item" key={n.id}>

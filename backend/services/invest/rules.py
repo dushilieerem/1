@@ -116,9 +116,160 @@ def aggregate(bars: list[dict[str, Any]], mode: str) -> list[dict[str, Any]]:
 
 
 def stock_bars(conn: Any, code: str, limit: int = 750) -> list[dict[str, Any]]:
-    return rows(conn, """SELECT * FROM (
-                           SELECT * FROM bars WHERE code=? ORDER BY date DESC LIMIT ?
-                         ) ORDER BY date ASC""", (code, limit))
+    # 直接走 md_daily_bar 的 (symbol, trade_date, adjust) 主键，避免 bars 视图对全表 split_part
+    symbol = _with_suffix(code)
+    return rows(
+        conn,
+        """SELECT * FROM (
+             SELECT n.trade_date::text AS date, n.open, n.high, n.low, n.close,
+                    COALESCE(n.volume, h.volume) AS volume,
+                    COALESCE(n.amount, h.amount) AS amount
+               FROM md_daily_bar n
+               LEFT JOIN md_daily_bar h
+                 ON h.symbol=n.symbol AND h.trade_date=n.trade_date AND h.adjust='hfq'
+              WHERE n.symbol=? AND n.adjust='none' AND n.close IS NOT NULL
+              ORDER BY n.trade_date DESC LIMIT ?
+           ) t ORDER BY date ASC""",
+        (symbol, limit),
+    )
+
+
+_POS_WORDS = ("增长", "上调", "回购", "中标", "盈利", "超预期", "分红", "增持", "利好", "突破", "创新高")
+_NEG_WORDS = ("下滑", "亏损", "减持", "处罚", "诉讼", "下调", "风险", "退市", "暴雷", "违规", "质押", "商誉", "问询")
+
+
+def _with_suffix(code: str) -> str:
+    raw = str(code or "").upper()
+    if "." in raw:
+        return raw
+    if raw.startswith("6") or raw.startswith("5"):
+        return f"{raw}.SH"
+    if raw.startswith(("0", "1", "2", "3")):
+        return f"{raw}.SZ"
+    if raw.startswith(("4", "8")):
+        return f"{raw}.BJ"
+    return raw
+
+
+def _beta_or_none(stock: dict[str, Any]) -> float | None:
+    beta = stock.get("beta")
+    if beta is not None:
+        return float(beta)
+    if stock.get("asset") == "etf":
+        return None
+    try:
+        from services.marketdata import store as md_store
+
+        risk = md_store.risk_stats(_with_suffix(str(stock.get("code") or "")), index_code="000300.SH")
+        beta = risk.get("beta_1y") if risk else None
+        # 近零 Beta 多为日期对齐/数据质量问题，宁可不展示
+        return float(beta) if beta is not None and abs(float(beta)) >= 0.1 else None
+    except Exception:
+        return None
+
+
+def _earnings_flash(latest: dict[str, Any] | None, prev: dict[str, Any] | None) -> dict[str, Any]:
+    if not latest:
+        return {"available": False, "highlights": [], "concerns": [], "consensusGap": "财务数据待补充"}
+    highlights, concerns = [], []
+    revenue_yoy = latest.get("revenue_yoy")
+    profit_yoy = latest.get("profit_yoy")
+    gross = latest.get("gross_margin")
+    if revenue_yoy is not None and revenue_yoy > 0:
+        highlights.append(f"营收同比 {revenue_yoy:+.1f}%")
+    elif revenue_yoy is not None:
+        concerns.append(f"营收同比 {revenue_yoy:+.1f}%")
+    if profit_yoy is not None and profit_yoy > 0:
+        highlights.append(f"归母净利同比 {profit_yoy:+.1f}%")
+    elif profit_yoy is not None:
+        concerns.append(f"归母净利同比 {profit_yoy:+.1f}%")
+    prev_gross = (prev or {}).get("gross_margin")
+    if gross is not None and prev_gross is not None:
+        if gross > prev_gross:
+            highlights.append(f"毛利率较上期改善 {gross - prev_gross:+.1f}pct")
+        elif gross < prev_gross:
+            concerns.append(f"毛利率较上期下降 {gross - prev_gross:+.1f}pct")
+    ocf = latest.get("ocf")
+    if ocf is not None:
+        (highlights if ocf > 0 else concerns).append(f"经营现金流 {ocf:.1f} 亿元")
+    if not highlights:
+        highlights.append("暂未识别出明确亮点")
+    if not concerns:
+        concerns.append("暂未识别出明确隐忧")
+    return {
+        "available": True,
+        "period": latest.get("period"),
+        "highlights": highlights[:3],
+        "concerns": concerns[:3],
+        "consensusGap": "一致预期数据待补充，当前未做“与预期差”判断",
+    }
+
+
+def _institutional_view() -> dict[str, Any]:
+    return {
+        "available": False,
+        "ratings": [],
+        "target": None,
+        "forecast": None,
+        "note": "机构评级 / 目标价 / 盈利预测数据待补充；本模块不由 AI 生成。",
+    }
+
+
+def _sensitivity(beta: float | None) -> dict[str, Any]:
+    if beta is None:
+        return {"available": False, "level": None, "beta": None, "note": "Beta 数据待补充"}
+    if beta < 0.8:
+        level = "低"
+    elif beta < 1.2:
+        level = "中"
+    elif beta < 1.5:
+        level = "较高"
+    else:
+        level = "高"
+    return {
+        "available": True,
+        "level": level,
+        "beta": round(beta, 2),
+        "note": "按近一年 Beta 分档：<0.8 低、0.8–1.2 中、1.2–1.5 较高、≥1.5 高；仅描述历史敏感度。",
+    }
+
+
+def _sentiment(news: list[dict[str, Any]], turnover: float | None) -> dict[str, Any]:
+    if not news:
+        return {"available": False, "note": "暂无可用于情绪估算的资讯", "source": "资讯标题词典"}
+    pos = neu = neg = 0
+    top_event = ""
+    for item in news:
+        text = f"{item.get('title') or ''} {item.get('summary') or ''}"
+        p = sum(1 for w in _POS_WORDS if w in text)
+        n = sum(1 for w in _NEG_WORDS if w in text)
+        if p > n:
+            pos += 1
+        elif n > p:
+            neg += 1
+            if not top_event:
+                top_event = str(item.get("title") or "")
+        else:
+            neu += 1
+    total = max(1, len(news))
+    heat = min(100.0, len(news) * 12 + (float(turnover or 0) * 2))
+    if neg >= pos + 2:
+        label = "偏负面"
+    elif pos >= neg + 2:
+        label = "偏正面"
+    else:
+        label = "中性/分歧"
+    return {
+        "available": True,
+        "positive": round(pos / total * 100, 1),
+        "neutral": round(neu / total * 100, 1),
+        "negative": round(neg / total * 100, 1),
+        "heat": round(heat, 1),
+        "label": label,
+        "topEvent": top_event,
+        "source": "资讯标题词典",
+        "note": "基于关联资讯标题/摘要的关键词规则估算，覆盖有限，不是全量舆情；只做描述，不预测方向。",
+    }
 
 
 def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] | None:
@@ -155,6 +306,11 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
                 {"title": "行情数据暂缺", "detail": "该标的尚未同步日线；不要基于空数据做判断。", "level": "amber"}
             ],
             "news": rows(conn, "SELECT * FROM news WHERE code=? ORDER BY published_at DESC LIMIT 6", (code,)),
+            "todayNews": rows(conn, "SELECT * FROM news WHERE code=? ORDER BY published_at DESC LIMIT 3", (code,)),
+            "earningsFlash": _earnings_flash(None, None),
+            "institutionalView": _institutional_view(),
+            "sensitivity": _sensitivity(None),
+            "sentiment": _sentiment([], None),
             "dataDate": meta["dataDate"],
             "disclaimer": DISCLAIMER,
             "isDemo": meta["isDemo"],
@@ -178,8 +334,10 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     ret20 = pct(stock["price"], daily_closes[-21]) if len(daily_closes) > 21 else 0
 
     valuations = rows(conn, """SELECT pe_ttm, pb FROM (
-                                 SELECT pe_ttm, pb, date FROM valuations WHERE code=? ORDER BY date DESC LIMIT 750
-                               ) ORDER BY date ASC""", (code,))
+                                 SELECT pe_ttm, pb_mrq AS pb, trade_date AS date
+                                   FROM md_valuation_daily
+                                  WHERE symbol=? ORDER BY trade_date DESC LIMIT 750
+                               ) t ORDER BY date ASC""", (_with_suffix(code),))
     pe_vals = [v["pe_ttm"] for v in valuations if v["pe_ttm"] is not None]
     pb_vals = [v["pb"] for v in valuations if v["pb"] is not None]
     pe_pct = percentile(pe_vals, stock["pe_ttm"])
@@ -215,6 +373,7 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     if daily_closes:
         summary.append(f"股价较近 180 日高点回撤 {dd:.1f}%，现价{'低于' if ma20_daily and stock['price'] < ma20_daily else '高于'} MA20；近 20 日涨跌 {ret20:+.1f}%。")
 
+    beta_value = stock.get("beta")
     q = {
         "code": stock["code"], "name": stock["name"], "industry": stock["industry"],
         "asset": stock["asset"], "price": stock["price"], "prevClose": stock["prev_close"],
@@ -222,7 +381,7 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
         "open": stock["open"], "high": stock["high"], "low": stock["low"],
         "marketCap": stock["market_cap"], "pe": stock["pe_ttm"], "pb": stock["pb"],
         "dividendYield": stock["dividend_yield"], "turnover": stock["turnover"],
-        "volume": stock["volume"], "amount": stock["amount"], "beta": stock["beta"],
+        "volume": stock["volume"], "amount": stock["amount"], "beta": beta_value,
         "updatedAt": stock["updated_at"], "nextReportDate": stock["next_report_date"],
     }
     chart = {
@@ -258,7 +417,12 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     return {
         "quote": q, "chart": chart, "technical": technical, "summary": summary,
         "valuation": valuation, "financials": fins, "report": report, "risks": risks,
-        "news": news, "dataDate": all_bars[-1]["date"] if all_bars else meta["dataDate"],
+        "news": news, "todayNews": news[:3],
+        "earningsFlash": _earnings_flash(latest, prev),
+        "institutionalView": _institutional_view(),
+        "sensitivity": _sensitivity(beta_value),
+        "sentiment": _sentiment(news, stock.get("turnover")),
+        "dataDate": all_bars[-1]["date"] if all_bars else meta["dataDate"],
         "disclaimer": DISCLAIMER, "isDemo": meta["isDemo"], "dataSource": meta["dataSource"],
     }
 

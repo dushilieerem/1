@@ -19,12 +19,15 @@ import Quant from "./pages/Quant";
 import FactorLibrary from "./pages/FactorLibrary";
 import StrategyLibrary from "./pages/StrategyLibrary";
 import EtfDetail from "./pages/EtfDetail";
+import Learn from "./pages/Learn";
 import AiChat from "./pages/AiChat";
 import Compare from "./pages/Compare";
 import Paper from "./pages/Paper";
 import QuantDashboard from "./pages/QuantDashboard";
 import QuantSelect from "./pages/QuantSelect";
 import QuantSignals from "./pages/QuantSignals";
+import QuantBacktests from "./pages/QuantBacktests";
+import StrategyPlaza from "./pages/StrategyPlaza";
 import { Privacy, Terms } from "./pages/Legal";
 
 function Splash() {
@@ -75,11 +78,14 @@ export default function App() {
         <Route path="quant/dashboard" element={<QuantDashboard />} />
         <Route path="quant/select" element={<QuantSelect />} />
         <Route path="quant/signals" element={<QuantSignals />} />
+        <Route path="quant/backtests" element={<QuantBacktests />} />
+        <Route path="quant/plaza" element={<StrategyPlaza />} />
         <Route path="ai" element={<AiChat />} />
         <Route path="compare/:a" element={<Compare />} />
         <Route path="compare/:a/:b" element={<Compare />} />
         <Route path="paper" element={<Paper />} />
         <Route path="etf/:code" element={<EtfDetail />} />
+        <Route path="learn" element={<Learn />} />
         <Route path="me" element={<Me />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

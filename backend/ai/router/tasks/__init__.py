@@ -17,7 +17,9 @@ from ai.router.tasks.institution import (  # noqa: F401  导入即注册
     RISK_REVIEW_TASK,
 )
 from ai.router.tasks.invest import (  # noqa: F401  导入即注册
+    ALLOCATION_TASK,
     ANNOUNCEMENT_TASK,
+    BACKTEST_TASK,
     COMPARE_TASK,
     CONDITION_TASK,
     DAILY_TASK,

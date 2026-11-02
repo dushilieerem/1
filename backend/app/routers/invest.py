@@ -19,6 +19,7 @@ from services.core.db import get_conn
 from services.core.public_switches import disabled_modules
 from services.invest import agent_tools
 from services.invest import etf as etf_service
+from services.invest import glossary as glossary_service
 from services.invest import rules
 from services.invest.db import PGConn, invest_conn
 
@@ -78,8 +79,11 @@ def data_quality(conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
 
 
 @router.get("/glossary")
-def glossary() -> dict[str, Any]:
-    return {"items": GLOSSARY}
+def glossary(
+    category: str = Query(""),
+    q: str = Query(""),
+) -> dict[str, Any]:
+    return glossary_service.list_terms(category=category, q=q)
 
 
 @router.get("/home", dependencies=[Depends(_guard("home"))])
@@ -159,6 +163,39 @@ def events_scan(
 ) -> dict[str, Any]:
     """F9：值守 Agent 的日频扫描入口（脚本/定时任务亦可调用服务层）。"""
     return agent_tools.watch_scan(conn, _uid(user))
+
+
+@router.get("/event-logs")
+def event_logs(
+    limit: int = Query(50, ge=1, le=200),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    items = rules.rows(
+        conn,
+        "SELECT id, code, title, detail, triggered_at, read FROM invest_event_log "
+        "WHERE user_id=? ORDER BY triggered_at DESC LIMIT ?",
+        (_uid(user), limit),
+    )
+    return {"items": items, "unread": sum(1 for x in items if not x.get("read"))}
+
+
+@router.post("/event-logs/read")
+def event_logs_read(
+    body: dict[str, Any] | None = Body(None),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    payload = body or {}
+    if payload.get("all"):
+        conn.execute("UPDATE invest_event_log SET read=TRUE WHERE user_id=?", (_uid(user),))
+    elif payload.get("id") is not None:
+        conn.execute(
+            "UPDATE invest_event_log SET read=TRUE WHERE user_id=? AND id=?",
+            (_uid(user), int(payload["id"])),
+        )
+    conn.commit()
+    return {"ok": True}
 
 
 @router.get("/quant/select")

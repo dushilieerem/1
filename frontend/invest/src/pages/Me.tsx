@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Bell, ChevronRight, Download, FileText, Info, LogOut, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertTriangle, Bell, ChevronRight, Download, FileText, Info, LogOut, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { api, getToken } from "../api";
 import { useAuth } from "../auth";
 import { Disclaimer, Kv, PageHeader, Sheet, Tag } from "../components";
@@ -17,6 +17,13 @@ export default function Me() {
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [aiMemory, setAiMemory] = useState<any>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("svq_ai_memory") || "{}");
+    } catch {
+      return {};
+    }
+  });
 
   useEffect(() => {
     api("/api/invest/risk-profile").then(setRisk).catch(() => {});
@@ -95,6 +102,29 @@ export default function Me() {
             ? "当前为演示数据，不代表真实行情；公开运行前需逐源核对数据条款。"
             : "行情/财务/估值来自公开 EOD；主题为成分股等权代理，公告/研报/要闻为公开标题。"}
         </div>
+      </section>
+
+      <section className="card">
+        <div className="card-title-row"><h2>AI 记忆</h2><span className="hint">仅存本机</span></div>
+        <p className="muted small">
+          {aiMemory?.lastStock
+            ? `上一标的：${aiMemory.lastStock.name || aiMemory.lastStock.code}（${aiMemory.lastStock.code}）`
+            : "暂无会话记忆；AI 不会保留跨会话推断。"}
+        </p>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => {
+            try {
+              localStorage.removeItem("svq_ai_memory");
+            } catch {
+              /* ignore */
+            }
+            setAiMemory({});
+            toast("AI 会话记忆已清除");
+          }}
+        >
+          <Trash2 size={14} /> 清除 AI 记忆
+        </button>
       </section>
 
       <div className="menu">

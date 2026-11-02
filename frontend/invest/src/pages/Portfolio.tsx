@@ -7,6 +7,11 @@ import { fmtMoney, fmtPct } from "../lib";
 import { useToast } from "../toast";
 import AiPanel from "../components/AiPanel";
 
+function Help({ term }: { term: string }) {
+  const nav = useNavigate();
+  return <button className="metric-help" title="查看术语" onClick={() => nav(`/learn?term=${term}`)}>?</button>;
+}
+
 export default function Portfolio() {
   const nav = useNavigate();
   const toast = useToast();
@@ -74,7 +79,7 @@ export default function Portfolio() {
           <section className="card ring-card">
             <RiskRing score={data.riskScore} />
             <div className="ring-copy">
-              <h2>{data.riskLabel} <Tag tone="amber">需关注</Tag></h2>
+              <h2>{data.riskLabel} <Help term="risk_score" /> <Tag tone="amber">需关注</Tag></h2>
               <p>{data.summary}</p>
               <span className={data.dailyChange >= 0 ? "up" : "down"}>今日 {fmtPct(data.dailyChange, 1)}</span>
             </div>
@@ -94,7 +99,7 @@ export default function Portfolio() {
           />
 
           <section className="card">
-            <div className="card-title-row"><h2>诊断报告</h2><span className="hint">{data.diagnosis.length} 个待关注</span></div>
+            <div className="card-title-row"><h2>诊断报告 <Help term="risk_score" /></h2><span className="hint">{data.diagnosis.length} 个待关注</span></div>
             <div className="diag-list">
               {data.diagnosis.map((d: any, i: number) => (
                 <div className="diag-item" key={i}>
@@ -112,7 +117,7 @@ export default function Portfolio() {
           </section>
 
           <section className="card">
-            <div className="card-title-row"><h2>行业暴露</h2><span className="hint">按当前市值</span></div>
+            <div className="card-title-row"><h2>行业暴露 <Help term="concentration" /></h2><span className="hint">按当前市值</span></div>
             {data.exposure.map((e: any) => (
               <BarRow key={e.name} label={e.name} value={e.weight} width={e.weight * 2.2} />
             ))}

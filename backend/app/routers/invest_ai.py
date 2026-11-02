@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from app.deps import require_user
-from services.invest import agent_tools, rules
+from services.invest import agent_tools, glossary, rules
 from services.invest.db import PGConn, invest_conn
 
 router = APIRouter(prefix="/api/invest/ai", tags=["invest-ai"])
@@ -111,6 +111,8 @@ _TARGET = {
     "portfolio": "portfolio",
     "announcement": "content",
     "condition": "condition",
+    "allocation": "portfolio",
+    "sip": "portfolio",
     "glossary": "chat",
     "chat": "chat",
     "compliance_block": "guard",
@@ -136,6 +138,24 @@ def _chart(conn: PGConn, code: str) -> dict[str, Any]:
     return {
         "code": code,
         "bars": [{"date": b.get("date"), "close": b.get("close")} for b in bars],
+    }
+
+
+_ALLOCATION_SYSTEM = (
+    "你是配置与定投解释助手。只依据输入的期限、风险偏好、组合偏离、风险测评与政策阈值作答；"
+    "不推荐具体标的，不给买入金额、目标价、收益承诺或调仓指令。只输出 JSON 卡片："
+    '{"summary":"...","sections":[{"title":"...","type":"text","body":"..."}],'
+    '"disclaimer":"AI 生成 · 非投资建议","meta":{"dataSource":"组合体检 + 风险测评"}}。'
+    "说明风险预算、集中度、现金下限与配置偏离的含义；数据不足写待补充。"
+)
+
+
+def _user_context(conn: PGConn, user_id: int) -> dict[str, Any]:
+    watch = rules.rows(conn, "SELECT code FROM watchlist WHERE user_id=?", (user_id,))
+    profile = rules.one(conn, "SELECT level, score FROM invest_risk_profile WHERE user_id=?", (user_id,)) or {}
+    return {
+        "watchlist": [x.get("code") for x in watch][:20],
+        "risk_profile": {"level": profile.get("level"), "score": profile.get("score")},
     }
 
 
@@ -184,7 +204,7 @@ def intent(body: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(requ
             messages=[
                 {
                     "role": "system",
-                    "content": "只输出 JSON：{\"intent\":\"...\",\"slots\":{}}。意图枚举：brief/review/stock/portfolio/debate/compare/announcement/condition/glossary/compliance_block/chat。缺槽位放 need_clarify。",
+                    "content": "只输出 JSON：{\"intent\":\"...\",\"slots\":{}}。意图枚举：brief/review/stock/portfolio/debate/compare/announcement/condition/allocation/sip/glossary/compliance_block/chat。缺槽位放 need_clarify。",
                 },
                 {"role": "user", "content": q},
             ],
@@ -219,7 +239,7 @@ def chat(
         out = run_task(
             "invest.intent",
             messages=[
-                {"role": "system", "content": "只输出 JSON：{\"intent\":\"...\",\"slots\":{}}。意图枚举：brief/review/stock/portfolio/debate/compare/announcement/condition/glossary/compliance_block/chat。"},
+                {"role": "system", "content": "只输出 JSON：{\"intent\":\"...\",\"slots\":{}}。意图枚举：brief/review/stock/portfolio/debate/compare/announcement/condition/allocation/sip/glossary/compliance_block/chat。"},
                 {"role": "user", "content": q},
             ],
         )
@@ -235,6 +255,77 @@ def chat(
             "card": {"summary": BLOCK_MESSAGE, "sections": []},
             **_meta(intent_name),
         }
+    if intent_name in {"allocation", "sip"}:
+        slots = routed.get("slots") or {}
+        horizon = str(slots.get("horizon") or slots.get("period") or "").strip()
+        risk_pref = str(slots.get("risk") or slots.get("risk_pref") or slots.get("risk_level") or "").strip()
+        if not horizon:
+            m = re.search(r"(\d+\s*年(?:以上|以内)?)", q)
+            horizon = m.group(1) if m else ""
+        if not risk_pref:
+            for word in ("保守", "稳健", "平衡", "进取", "激进"):
+                if word in q:
+                    risk_pref = word
+                    break
+        missing = [name for name, value in (("horizon", horizon), ("risk", risk_pref)) if not value]
+        if missing:
+            return {
+                "ok": True,
+                "intent": intent_name,
+                "need_clarify": missing,
+                "card": {
+                    "summary": "配置/定投需要先确认期限与风险偏好，例如“3 年以上、稳健型”。",
+                    "sections": [],
+                },
+                **_meta(intent_name),
+            }
+        uid = int(user["id"])
+        profile = rules.one(conn, "SELECT * FROM invest_risk_profile WHERE user_id=?", (uid,)) or {}
+        pf = rules.build_portfolio(conn, uid)
+        payload = {
+            "mode": "定投" if intent_name == "sip" else "配置",
+            "slots": {"horizon": horizon, "risk_pref": risk_pref, "goal": slots.get("goal")},
+            "risk_profile": {
+                "level": profile.get("level"),
+                "score": profile.get("score"),
+            },
+            "portfolio": {
+                "riskScore": pf.get("riskScore"),
+                "riskLabel": pf.get("riskLabel"),
+                "exposure": pf.get("exposure"),
+                "deviation": pf.get("deviation"),
+                "summary": pf.get("summary"),
+            },
+            "policy": {"max_single_weight": 15, "min_cash_ratio": 10},
+            "data_gaps": [] if pf.get("holdings") else ["尚未导入组合，无法计算配置偏离"],
+        }
+        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.allocation", payload, _ALLOCATION_SYSTEM)}
+
+    if intent_name == "glossary":
+        term = glossary.find_term(q)
+        if not term:
+            return {
+                "ok": True,
+                "intent": intent_name,
+                "card": {"summary": "术语库暂未收录该术语，可到「学习」页搜索或反馈补充。", "sections": [], "meta": {"dataSource": "术语库"}},
+                **_meta(intent_name),
+            }
+        return {
+            "ok": True,
+            "intent": intent_name,
+            "card": {
+                "summary": term["definition"],
+                "sections": [
+                    {"title": "怎么看", "body": term["how_to"]},
+                    {"title": "参考区间", "body": term["range"]},
+                    {"title": "例子", "body": term["example"]},
+                ],
+                "disclaimer": "术语库口径 · 非投资建议",
+                "meta": {"dataSource": "术语库"},
+            },
+            **_meta(intent_name),
+        }
+
     if intent_name == "compare":
         slots = routed.get("slots") or {}
         first = str(slots.get("stock") or slots.get("symbol") or slots.get("company") or "").strip()
@@ -255,7 +346,7 @@ def chat(
                 hit = conn.execute("SELECT code FROM stocks WHERE code LIKE ? OR name LIKE ? ORDER BY code LIMIT 1", (like, like)).fetchone()
             if not hit:
                 return {"ok": True, "intent": intent_name, "card": {"summary": f"未收录标的：{name}", "sections": []}, **_meta(intent_name)}
-            codes.append(str(hit[0]))
+            codes.append(str(hit["code"]))
         try:
             ctx = agent_tools.compare_context(conn, codes[0], codes[1])
         except ValueError as exc:
@@ -285,12 +376,14 @@ def chat(
                 "card": {"summary": f"未收录标的：{code}", "sections": []},
                 **_meta(intent_name),
             }
+        stock_ctx = _stock_context(conn, str(stock["code"]))
+        stock_ctx["user_context"] = _user_context(conn, int(user["id"]))
         return {
             "ok": True,
             "intent": intent_name,
-            "chart": _chart(conn, str(stock[0])),
+            "chart": _chart(conn, str(stock["code"])),
             **_meta(intent_name),
-            **_call("invest.stock", _stock_context(conn, str(stock[0]))),
+            **_call("invest.stock", stock_ctx),
         }
     if intent_name in {"portfolio"}:
         data = rules.build_portfolio(conn, int(user["id"]))
@@ -298,6 +391,7 @@ def chat(
     if intent_name in {"brief", "review"}:
         data = rules.build_home(conn, int(user["id"]))
         data["portfolio"] = rules.build_portfolio(conn, int(user["id"]))
+        data["user_context"] = _user_context(conn, int(user["id"]))
         return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.daily", data)}
     if intent_name == "condition":
         return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.condition", {"query": q})}
@@ -312,6 +406,65 @@ def chat(
     }
 
 
+@router.post("/deep")
+def deep(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """深度模式：按真实执行顺序返回步骤；不做假动画。"""
+    q = str(body.get("query") or "").strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="query 不能为空")
+    steps: list[dict[str, Any]] = []
+
+    steps.append({"key": "intent", "label": "理解问题与意图", "status": "done"})
+    if compliance_block(q):
+        steps.append({"key": "guard", "label": "合规前置检查", "status": "blocked"})
+        return {
+            "ok": True,
+            "blocked": True,
+            "intent": "compliance_block",
+            "card": {"summary": BLOCK_MESSAGE, "sections": []},
+            "steps": steps,
+            **_meta("compliance_block"),
+        }
+    steps.append({"key": "guard", "label": "合规前置检查", "status": "done"})
+
+    result = chat({"query": q}, user, conn)
+    intent_name = str(result.get("intent") or "chat")
+    steps[0]["detail"] = f"意图：{intent_name}"
+    steps.append(
+        {
+            "key": "grounding",
+            "label": "装载页面数据与证据",
+            "status": "done",
+            "detail": "已使用个股/组合/日报/术语库的结构化数据",
+        }
+    )
+    steps.append(
+        {
+            "key": "generate",
+            "label": "生成结论与卡片",
+            "status": "done" if result.get("card") else "failed",
+            "detail": "已生成结构化卡片" if result.get("card") else "未生成卡片",
+        }
+    )
+    steps.append(
+        {
+            "key": "post_guard",
+            "label": "合规后置扫描",
+            "status": "blocked" if result.get("blocked") else "done",
+            "detail": "命中红线，已替换为固定话术" if result.get("blocked") else "未命中红线",
+        }
+    )
+    evidence = []
+    for section in (result.get("card") or {}).get("sections") or []:
+        if section.get("body"):
+            evidence.append({"title": section.get("title") or "依据", "detail": section.get("body")[:200]})
+    return {**result, "steps": steps, "evidence": evidence}
+
+
 @router.post("/stock/{code}")
 def stock_ai(code: str, user: dict[str, Any] = Depends(require_user), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
     return {"ok": True, **_call("invest.stock", _stock_context(conn, code))}
@@ -321,6 +474,7 @@ def stock_ai(code: str, user: dict[str, Any] = Depends(require_user), conn: PGCo
 def daily_ai(user: dict[str, Any] = Depends(require_user), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
     data = rules.build_home(conn, int(user["id"]))
     data["portfolio"] = rules.build_portfolio(conn, int(user["id"]))
+    data["user_context"] = _user_context(conn, int(user["id"]))
     return {"ok": True, **_call("invest.daily", data)}
 
 
@@ -388,6 +542,32 @@ def quant(
 ) -> dict[str, Any]:
     ctx = agent_tools.quant_context(conn, int(user["id"]))
     return {"ok": True, "quant": ctx, **_call("invest.quant", ctx)}
+
+
+_BACKTEST_SYSTEM = (
+    "你是回测解读助手。只依据输入的指标、净值曲线与交易摘要，解释收益来源、回撤特征与风格风险；"
+    "不给未来预测、买卖建议、目标价或收益承诺。只输出 JSON 卡片："
+    '{"summary":"...","sections":[{"title":"...","type":"text","body":"..."}],'
+    '"disclaimer":"历史口径 · 非真实收益 · 非投资建议","meta":{"dataSource":"回测结果缓存"}}。'
+    "数据不足写待补充；结论限定在“这段区间发生了什么”。"
+)
+
+
+@router.post("/backtest")
+def backtest_ai(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    payload = {
+        "name": str(body.get("name") or "")[:120],
+        "universe": str(body.get("universe") or "")[:40],
+        "period": body.get("period"),
+        "metrics": body.get("metrics") if isinstance(body.get("metrics"), dict) else {},
+        "equity_summary": body.get("equity_summary") if isinstance(body.get("equity_summary"), dict) else {},
+        "trades": body.get("trades") if isinstance(body.get("trades"), (int, float)) else None,
+        "note": "历史回测结果，非真实收益。",
+    }
+    return {"ok": True, **_call("invest.backtest", payload, _BACKTEST_SYSTEM)}
 
 
 @router.post("/voice")

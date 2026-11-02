@@ -51,6 +51,8 @@ def validate_intent(raw: str, request: TaskRequest) -> dict[str, Any]:
         "compare",
         "announcement",
         "condition",
+        "allocation",
+        "sip",
         "glossary",
         "compliance_block",
         "chat",
@@ -136,6 +138,30 @@ ANNOUNCEMENT_TASK = register(
     )
 )
 
+BACKTEST_TASK = register(
+    TaskSpec(
+        task_id="invest.backtest",
+        description="Invest 回测解读：收益来源、回撤特征与风格风险，不预测未来",
+        temperature=0.25,
+        max_tokens=2600,
+        timeout_sec=120,
+        executors=("local",),
+        validator=validate_card,
+    )
+)
+
+ALLOCATION_TASK = register(
+    TaskSpec(
+        task_id="invest.allocation",
+        description="Invest 配置/定投解释：期限、风险偏好与组合偏离的风险预算说明",
+        temperature=0.25,
+        max_tokens=2600,
+        timeout_sec=120,
+        executors=("local",),
+        validator=validate_card,
+    )
+)
+
 CONDITION_TASK = register(
     TaskSpec(
         task_id="invest.condition",
@@ -186,6 +212,8 @@ QUANT_TASK = register(
 )
 
 __all__ = [
+    "ALLOCATION_TASK",
+    "BACKTEST_TASK",
     "ANNOUNCEMENT_TASK",
     "CONDITION_TASK",
     "COMPARE_TASK",

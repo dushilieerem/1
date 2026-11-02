@@ -219,6 +219,34 @@ def risk_scan(conn: Any, user_id: int, *, persist: bool = True) -> dict[str, Any
                 }
             )
 
+    # 舆情异常：仅扫描用户显式勾选“舆情异常”的标的，避免对全部自选做重查询
+    sentiment_codes = rules.rows(
+        conn,
+        "SELECT DISTINCT code FROM invest_event WHERE user_id=? AND type='舆情异常' AND status='active'",
+        (user_id,),
+    )
+    for item in sentiment_codes:
+        code = str(item.get("code") or "")
+        if not code:
+            continue
+        try:
+            stock = rules.build_stock(conn, code)
+        except Exception:
+            stock = None
+        senti = (stock or {}).get("sentiment") or {}
+        if not senti.get("available"):
+            continue
+        if float(senti.get("negative") or 0) >= 60 and float(senti.get("heat") or 0) >= 30:
+            alerts.append(
+                {
+                    "code": code,
+                    "level": "amber",
+                    "title": f"{(stock or {}).get('quote', {}).get('name') or code} 舆情偏负面",
+                    "detail": f"负面占比 {senti.get('negative')}%、热度 {senti.get('heat')}；代表事件：{senti.get('topEvent') or '待补充'}。仅描述，不预测方向。",
+                    "source": "舆情异常（资讯标题词典）",
+                }
+            )
+
     inserted = 0
     if persist:
         for alert in alerts:
@@ -250,10 +278,10 @@ def _base_rate_bars(conn: Any, code: str) -> list[dict[str, Any]]:
             "  SELECT n.trade_date::text AS date, n.close, v.pe_ttm AS valuation, n.turnover "
             "  FROM md_daily_bar n "
             "  LEFT JOIN md_valuation_daily v ON v.symbol=n.symbol AND v.trade_date=n.trade_date "
-            "  WHERE split_part(n.symbol, '.', 1)=? AND n.adjust='none' "
+            "  WHERE n.symbol=? AND n.adjust='none' "
             "  ORDER BY n.trade_date DESC LIMIT 750"
             ") t ORDER BY date ASC",
-            (code,),
+            (rules._with_suffix(code),),
         )
         return [r for r in rows if r.get("close")]
     except Exception:

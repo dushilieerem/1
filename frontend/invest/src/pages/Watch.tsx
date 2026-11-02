@@ -170,7 +170,7 @@ function AddWatchSheet({ open, onClose, onDone }: { open: boolean; onClose: () =
       <label className="field">
         <span>事件类型</span>
         <select value={type} onChange={(e) => setType(e.target.value)}>
-          <option>价格</option><option>财报</option><option>公告</option><option>热度</option><option>估值分位</option>
+          <option>价格</option><option>财报</option><option>公告</option><option>热度</option><option>舆情异常</option><option>估值分位</option>
         </select>
       </label>
       <label className="field">

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Calculator, Gauge, LineChart, ListChecks, Radio } from "lucide-react";
+import { Calculator, Gauge, History, LineChart, ListChecks, Radio, Trophy } from "lucide-react";
 import { PageHeader } from "../components";
 
 export default function Quant() {
@@ -30,6 +30,14 @@ export default function Quant() {
         <Link to="/quant/signals" className="post-row">
           <div className="post-row-title"><Radio size={14} style={{ marginRight: 6 }} /> 策略信号</div>
           <div className="hint">模拟盘最新持仓与现金，不是交易指令。</div>
+        </Link>
+        <Link to="/quant/backtests" className="post-row">
+          <div className="post-row-title"><History size={14} style={{ marginRight: 6 }} /> 回测速览</div>
+          <div className="hint">只读网页端回测：指标、净值曲线与 AI 解读。</div>
+        </Link>
+        <Link to="/quant/plaza" className="post-row">
+          <div className="post-row-title"><Trophy size={14} style={{ marginRight: 6 }} /> 策略广场</div>
+          <div className="hint">社区公开策略快照与收益/回撤排序。</div>
         </Link>
       </div>
     </div>

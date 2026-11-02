@@ -1,12 +1,13 @@
 import { useEffect } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { Home, Newspaper, PieChart, Star, User, Users } from "lucide-react";
+import { BookOpen, Home, Newspaper, PieChart, Star, User, Users } from "lucide-react";
 
 const TABS = [
   { to: "/", label: "首页", icon: Home },
   { to: "/watch", label: "自选", icon: Star },
   { to: "/portfolio", label: "组合", icon: PieChart },
   { to: "/news", label: "资讯", icon: Newspaper },
+  { to: "/learn", label: "学习", icon: BookOpen },
   { to: "/community", label: "社区", icon: Users },
   { to: "/me", label: "我的", icon: User },
 ];

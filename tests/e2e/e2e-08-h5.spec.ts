@@ -126,7 +126,7 @@ test("登录后可打开帖子详情（有帖子时）", async ({ page }) => {
   const first = page.locator(".post-row").first();
   if (await first.count()) {
     await first.click();
-    await expect(page.getByText(/评论/)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: /评论/ })).toBeVisible({ timeout: 20_000 });
     await noHorizontalOverflow(page);
   }
 });

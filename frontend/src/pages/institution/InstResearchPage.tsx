@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Download, FileSearch, Lock, Sparkles } from "lucide-react";
 import { instApi, fmtNum } from "@/lib/instApi";
@@ -61,6 +61,8 @@ export function InstResearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [memo, setMemo] = useState<Record<string, any> | null>(null);
+  const autoRan = useRef(false);
+  const memoRan = useRef(false);
   const [dcf, setDcf] = useState<Record<string, any> | null>(null);
   const [dcfIn, setDcfIn] = useState({
     base_revenue: "100",
@@ -163,6 +165,57 @@ export function InstResearchPage() {
     return map;
   }, [detail]);
 
+  const loadMemo = async () => {
+    const res = await instApi<{ memo: Record<string, any> }>(`/cases/${caseId}/ai/memo`, { method: "POST" });
+    setMemo(res.memo);
+  };
+
+  const autopilot = async () => {
+    setBusy("auto");
+    setError(null);
+    try {
+      await instApi(`/cases/${caseId}/research`, { method: "POST", body: { mode: "full" } });
+      const next = await instApi<CaseItem>(`/cases/${caseId}`);
+      setDetail(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!caseId || !detail || !canWrite || version || autoRan.current) return;
+    autoRan.current = true;
+    void autopilot();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId, detail, version, canWrite]);
+
+  useEffect(() => {
+    if (!caseId || !detail || !version || memo || memoRan.current || !canWrite) return;
+    memoRan.current = true;
+    void loadMemo().catch(() => {
+      /* 自动摘要失败时保留手动按钮 */
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId, detail, version, memo, canWrite]);
+
+  const approveAndDebate = async () => {
+    if (!version) return;
+    setBusy("approve");
+    setError(null);
+    try {
+      await instApi(`/research/${version.id}/review`, {
+        method: "POST",
+        body: { decision: "approve", comment },
+      });
+      nav(`/inst/debate?case=${caseId}&autostart=1`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(null);
+    }
+  };
+
   const run = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(label);
     setError(null);
@@ -192,7 +245,7 @@ export function InstResearchPage() {
         <PageHeader
           eyebrow="RESEARCH / 03"
           title={t("公司研究", "Company research")}
-          desc={t("六维研究、资料包与版本化审核。结论必须带来源与反证条件；未审核通过不能进入辩论。", "Six-dimension research, evidence package and versioned review. Conclusions need sources and falsifiers; debate opens only after approval.")}
+          desc={t("进入研究案自动开展巴菲特六维分析并生成 AI 一页纸；审核通过后进入辩论会自动开始 AI 辩论。", "Opening a case runs the Buffett six-dimension analysis and AI memo automatically; approval leads to an auto-started AI debate.")}
         />
         {error ? <ErrorBox message={error} onRetry={loadList} /> : null}
         {items.length ? (
@@ -266,20 +319,16 @@ export function InstResearchPage() {
       <div className="grid gap-4 lg:grid-cols-[1.55fr_1fr]">
         <div className="space-y-4">
           <Card
-            title={t("六维研究", "Six-dimension research")}
+            title={t("巴菲特六维分析", "Buffett six-dimension analysis")}
             desc={t("每维包含核心问题、数据检查、反证条件与证据 ID；数据不足显示「待补充」，不补造数字。", "Each dimension includes the core question, data checks, falsifiers and evidence IDs. Missing data is marked TBD, never fabricated.")}
             actions={
               <Button
                 variant="gold"
                 disabled={!canWrite || !!busy}
-                onClick={() =>
-                  run("generate", () =>
-                    instApi(`/cases/${caseId}/research`, { method: "POST", body: { mode: "full" } }),
-                  )
-                }
+                onClick={() => void autopilot()}
               >
                 <Sparkles className="mr-1 h-4 w-4" />
-                {busy === "generate" ? t("生成中…", "Generating…") : t("生成六维研究", "Generate research")}
+                {busy === "auto" ? t("自动分析中…", "Auto-analysis…") : t("自动开展巴菲特六维分析", "Run Buffett six-dimension analysis")}
               </Button>
             }
           >
@@ -312,7 +361,7 @@ export function InstResearchPage() {
                 ))}
               </div>
             ) : (
-              <Empty>{t("还没有六维研究。点击右上角生成；生成后自动进入待审核。", "No research yet. Generate it from the top-right; it enters review automatically.")}</Empty>
+              <Empty>{t("正在自动开展六维分析；如未开始，可点击右上角。", "Six-dimension analysis starts automatically; use the top-right button if needed.")}</Empty>
             )}
           </Card>
 
@@ -447,14 +496,7 @@ export function InstResearchPage() {
                       <Button
                         variant="gold"
                         disabled={!canWrite || !!busy}
-                        onClick={() =>
-                          run("approve", () =>
-                            instApi(`/research/${version.id}/review`, {
-                              method: "POST",
-                              body: { decision: "approve", comment },
-                            }),
-                          )
-                        }
+                        onClick={() => void approveAndDebate()}
                       >
                         {busy === "approve" ? t("提交中…", "Submitting…") : t("审核通过", "Approve")}
                       </Button>

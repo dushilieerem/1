@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, MessagesSquare, Play } from "lucide-react";
 import { instApi } from "@/lib/instApi";
@@ -51,6 +51,7 @@ export function InstDebatePage() {
   const [error, setError] = useState<string | null>(null);
   const [target, setTarget] = useState("0.05");
   const [proposalBusy, setProposalBusy] = useState(false);
+  const autoStarted = useRef(false);
 
   const canWrite = (session.permissions.debate || "none") === "write";
 
@@ -115,6 +116,17 @@ export function InstDebatePage() {
     }
   };
 
+  useEffect(() => {
+    if (!caseId || !detail || !approvedVersion || debate || !canWrite || autoStarted.current) return;
+    autoStarted.current = true;
+    void start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId, detail, approvedVersion, debate, canWrite]);
+
+  useEffect(() => {
+    autoStarted.current = false;
+  }, [caseId]);
+
   const groups = useMemo(() => {
     const args = debate?.arguments || [];
     return {
@@ -139,7 +151,7 @@ export function InstDebatePage() {
         <PageHeader
           eyebrow="DEBATE / 04"
           title={t("投资辩论室", "Investment debate")}
-          desc={t("研究与辩论分离：先有已审核通过的研究版本，才能开始正反方独立立论与交叉质询。", "Research and debate are separate: an approved research version is required before independent bull/bear arguments and cross-examination.")}
+          desc={t("先有已审核通过的研究版本，才能开始辩论；进入后 AI 会自动开展正反方独立立论与交叉质询。", "An approved research version is required; once opened, AI automatically runs the bull/bear arguments and cross-examination.")}
         />
         {error ? <ErrorBox message={error} onRetry={loadCases} /> : null}
         {cases.length ? (
@@ -209,7 +221,7 @@ export function InstDebatePage() {
       ) : !debate ? (
         <Card
           title={t("开始辩论", "Start debate")}
-          desc={t(`研究 v${approvedVersion.version_no} 已审核通过；开始后将生成正反方论点与主持结论。`, `Research v${approvedVersion.version_no} is approved. Starting will generate bull/bear arguments and the chair conclusion.`)}
+          desc={t(`研究 v${approvedVersion.version_no} 已审核通过；AI 正在自动生成正反方论点与主持结论，也可手动重试。`, `Research v${approvedVersion.version_no} is approved. AI is auto-generating bull/bear arguments and the chair conclusion; manual retry is available.`)}
         >
           <Button variant="gold" disabled={!canWrite || busy} onClick={start}>
             <Play className="mr-1 h-4 w-4" />

@@ -17,6 +17,7 @@ REQUIRED = (
     "daily_bars_unadjusted",
     "valuation_daily",
     "industry_daily",
+    "industry_code_map",
     "security_status_daily",
     "financial_income",
     "financial_balance",

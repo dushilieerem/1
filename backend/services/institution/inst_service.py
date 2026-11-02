@@ -16,7 +16,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Callable
 
 from psycopg.types.json import Jsonb
 
@@ -898,23 +898,62 @@ def _run_dimension_agent(key: str, facts: dict[str, Any]) -> dict[str, Any]:
     return {"data": data}
 
 
-def _run_dimension_agents(facts: dict[str, Any], keys: list[str]) -> dict[str, dict[str, Any]]:
+def _update_task_progress(
+    case_id: int,
+    key: str,
+    status: str,
+    payload: Any = None,
+) -> None:
+    """把单个 Agent 的开始/完成写入任务表，供前端轮询展示。"""
+    title = next((title for k, title, _ in SIX_DIM_DEFS if k == key), key)
+    task_status = {"done": "done", "partial": "needs_review", "failed": "failed", "running": "running", "pending": "pending"}.get(
+        status, "running"
+    )
+    progress = 15 if task_status == "running" else (100 if task_status in {"done", "needs_review", "failed"} else 0)
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO inst_research_task (case_id, task_key, title, agent, status, progress, result)
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (case_id, task_key) DO UPDATE
+                  SET status=EXCLUDED.status, progress=EXCLUDED.progress, result=EXCLUDED.result, updated_at=NOW()
+                """,
+                (case_id, key, title, f"AI-{key}", task_status, progress, _j(payload) if payload is not None else None),
+            )
+    except Exception:
+        # 进度展示失败不能阻断研究生成
+        pass
+
+
+def _run_dimension_agents(
+    facts: dict[str, Any],
+    keys: list[str],
+    on_event: Callable[[str, str, Any], None] | None = None,
+) -> dict[str, dict[str, Any]]:
     results: dict[str, dict[str, Any]] = {}
     if not keys:
         return results
 
     def one(key: str) -> dict[str, Any]:
+        if on_event:
+            on_event(key, "running", None)
         last: dict[str, Any] = {}
         for attempt in range(3):
             try:
                 result = _run_dimension_agent(key, facts)
                 if result.get("data"):
+                    data = result["data"]
+                    if on_event:
+                        on_event(key, "partial" if data.get("data_gaps") else "done", data)
                     return result
                 last = result
             except Exception as exc:  # noqa: BLE001 - 单个 Agent 失败不能阻断其他 Agent
                 last = {"error": str(exc)}
             if attempt < 2:
                 time.sleep(1.2 * (attempt + 1))
+        if on_event:
+            on_event(key, "failed", {"error": last.get("error") or "Agent 未返回有效结果"})
         return last
 
     try:
@@ -929,6 +968,8 @@ def _run_dimension_agents(facts: dict[str, Any], keys: list[str]) -> dict[str, d
                 results[key] = future.result()
             except Exception as exc:  # noqa: BLE001
                 results[key] = {"error": str(exc)}
+                if on_event:
+                    on_event(key, "failed", {"error": str(exc)})
     return results
 
 
@@ -1036,7 +1077,24 @@ def generate_research(
 
     built = _build_research(company, mode=mode)
     keys = [d[0] for d in SIX_DIM_DEFS] if mode == "full" else [mode]
-    results = _run_dimension_agents(built["facts"], keys)
+    with get_conn() as conn:
+        for key, title, _ in SIX_DIM_DEFS:
+            if key not in keys:
+                continue
+            conn.execute(
+                """
+                INSERT INTO inst_research_task (case_id, task_key, title, agent, status, progress, result)
+                VALUES (%s,%s,%s,%s,'pending',0,NULL)
+                ON CONFLICT (case_id, task_key) DO UPDATE
+                  SET status='pending', progress=0, result=NULL, updated_at=NOW()
+                """,
+                (case_id, key, title, f"AI-{key}"),
+            )
+    results = _run_dimension_agents(
+        built["facts"],
+        keys,
+        on_event=lambda key, status, payload: _update_task_progress(case_id, key, status, payload),
+    )
     built = _merge_agent_results(built, results, keys)
 
     # 2) 持久化：任务、证据、版本

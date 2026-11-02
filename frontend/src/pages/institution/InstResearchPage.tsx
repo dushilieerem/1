@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Download, FileSearch, Lock, Sparkles } from "lucide-react";
+import { ArrowLeft, Download, FileSearch, Loader2, Lock, Sparkles } from "lucide-react";
 import { instApi, fmtNum } from "@/lib/instApi";
 import { getInstToken } from "@/lib/instAuth";
 import { useInstSession } from "@/components/institution/instSessionContext";
@@ -50,9 +50,25 @@ type CaseItem = {
   ref_price?: number;
   versions?: Version[];
   evidence?: Array<{ id: number; title: string; quote?: string; source: string; as_of?: string }>;
-  tasks?: Array<{ id: number; title: string; status: string; progress: number }>;
+  tasks?: Array<{
+    id: number;
+    task_key?: string;
+    title: string;
+    status: string;
+    progress: number;
+    result?: { summary?: string; engine?: string; agent_error?: string };
+  }>;
   debates?: Array<{ id: number; status: string; conclusion?: string }>;
 };
+
+const AGENT_TITLES: Array<[string, string]> = [
+  ["industry", "商业与产业"],
+  ["business_model", "公司商业模式"],
+  ["moat", "护城河"],
+  ["financial", "财务质量"],
+  ["governance", "CEO 与治理"],
+  ["valuation", "估值与价格"],
+];
 
 export function InstResearchPage() {
   const session = useInstSession();
@@ -206,6 +222,33 @@ export function InstResearchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId, detail, version, memo, canWrite]);
 
+  useEffect(() => {
+    if (busy !== "auto" || !caseId) return;
+    let alive = true;
+    const timer = window.setInterval(() => {
+      instApi<CaseItem>(`/cases/${caseId}`)
+        .then((next) => {
+          if (alive) setDetail(next);
+        })
+        .catch(() => {
+          /* 轮询失败不打断主请求 */
+        });
+    }, 2000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [busy, caseId]);
+
+  const taskByKey = useMemo(() => {
+    const map = new Map<string, NonNullable<CaseItem["tasks"]>[number]>();
+    for (const t of detail?.tasks || []) {
+      if (t.task_key) map.set(t.task_key, t);
+    }
+    return map;
+  }, [detail]);
+  const hasLiveTasks = (detail?.tasks || []).some((t) => t.status === "pending" || t.status === "running");
+
   const approveAndDebate = async () => {
     if (!version) return;
     setBusy("approve");
@@ -321,6 +364,42 @@ export function InstResearchPage() {
       />
 
       {error ? <ErrorBox message={error} onRetry={() => loadDetail(caseId)} /> : null}
+
+      {busy === "auto" || hasLiveTasks ? (
+        <Card
+          title={t("6 个 Agent 实时进度", "6 agents live progress")}
+          desc={t("每个 Agent 独立分析，完成后立即显示该维结论；全部完成后再生成 AI 一页纸。", "Each agent analyzes independently; its conclusion appears as soon as it finishes, followed by the AI memo.")}
+        >
+          <div className="grid gap-2 sm:grid-cols-2">
+            {AGENT_TITLES.map(([key, label]) => {
+              const task = taskByKey.get(key);
+              const status = task?.status || "pending";
+              const running = status === "running";
+              const done = status === "done" || status === "needs_review";
+              return (
+                <div key={key} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-xs font-medium text-[#252533]">
+                      {running ? <Loader2 className="h-3.5 w-3.5 animate-spin text-[#7950ba]" /> : null}
+                      {label}
+                    </span>
+                    <StatusBadge status={status} />
+                  </div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-[#68738b]">
+                    {done && task?.result?.summary
+                      ? task.result.summary
+                      : status === "failed"
+                        ? task?.result?.agent_error || t("该 Agent 失败，稍后回退规则模板", "Agent failed; fallback will be used")
+                        : running
+                          ? t("分析中…", "Analyzing…")
+                          : t("等待启动…", "Waiting…")}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[1.55fr_1fr]">
         <div className="space-y-4">

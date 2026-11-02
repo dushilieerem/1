@@ -117,6 +117,8 @@ proposal: draft → partner_review → chairman_review → risk_precheck → aut
 
 编排器 `_run_dimension_agents` 默认并发 3（`INST_AGENT_CONCURRENCY` 可调），每维独立重试，失败时回退到确定性规则模板并标记 `engine=rule`。Agent 证据写入 `inst_evidence`，按 hash 去重。
 
+前端每 2 秒轮询研究案任务：6 个 Agent 分别为 pending/running/done/needs_review/failed，完成一个就展示该维摘要；全部完成后再生成 AI 一页纸。
+
 前端把研究到辩论的串行动作自动化：
 
 1. 进入研究案：若尚无研究版本，自动执行 6 Agent 分析（`POST /cases/{id}/research`，full）。

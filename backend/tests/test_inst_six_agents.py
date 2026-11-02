@@ -1,0 +1,95 @@
+# -*- coding: utf-8 -*-
+"""机构端六维 Agent：TaskSpec 校验与结果合并。"""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from ai.router.tasks.institution import DIMENSION_TASKS, validate_dimension  # noqa: E402
+from services.institution import inst_service as svc  # noqa: E402
+
+
+def test_six_dimension_tasks_registered() -> None:
+    assert set(DIMENSION_TASKS) == {
+        "industry",
+        "business_model",
+        "moat",
+        "financial",
+        "governance",
+        "valuation",
+    }
+    assert DIMENSION_TASKS["industry"].task_id == "inst.dim.industry"
+
+
+def test_validate_dimension_normalizes_evidence_and_confidence() -> None:
+    raw = json.dumps(
+        {
+            "summary": "行业集中度较高，龙头有定价权。",
+            "checks": ["CR5 未知", ""],
+            "counter": ["数据缺口"],
+            "evidence": [{"title": "行业", "quote": "待补充", "source": "ifind"}, {"title": ""}],
+            "open_questions": ["份额数据"],
+            "confidence": 2.5,
+            "data_gaps": ["行业规模"],
+        },
+        ensure_ascii=False,
+    )
+    data = validate_dimension(raw, None)  # type: ignore[arg-type]
+    assert data["checks"] == ["CR5 未知"]
+    assert data["evidence"] == [{"title": "行业", "quote": "待补充", "source": "ifind"}]
+    assert data["confidence"] == 1.0
+
+
+def test_merge_agent_results_keeps_six_dims_and_fallback() -> None:
+    built = {
+        "dims": [
+            {"key": key, "title": title, "question": q, "evidence_idx": []}
+            for key, title, q in svc.SIX_DIM_DEFS
+        ],
+        "evidence": [],
+        "data_gaps": [],
+        "facts": {"as_of": "2026-10-30"},
+    }
+    results = {}
+    for key, _, _ in svc.SIX_DIM_DEFS:
+        results[key] = {
+            "data": {
+                "summary": f"{key} summary",
+                "checks": ["check"],
+                "counter": ["counter"],
+                "evidence": [{"title": f"{key} evidence", "quote": "quote", "source": "ifind"}],
+                "open_questions": [],
+                "confidence": 0.6,
+                "data_gaps": [],
+            }
+        }
+    results["governance"] = {"error": "AI 未配置"}
+    merged = svc._merge_agent_results(built, results, [k for k, _, _ in svc.SIX_DIM_DEFS])
+    assert len(merged["dims"]) == 6
+    assert merged["agent_states"]["industry"] == "done"
+    assert merged["agent_states"]["governance"] == "failed"
+    gov = next(d for d in merged["dims"] if d["key"] == "governance")
+    assert gov["engine"] == "rule"
+    assert gov["agent_error"] == "AI 未配置"
+    assert len(merged["evidence"]) == 5
+
+
+def test_agent_payload_marks_governance_gap() -> None:
+    facts = {
+        "company": {"symbol": "000001.SZ"},
+        "as_of": "2026-10-30",
+        "price": 10,
+        "valuation": {"pe_ttm": 5},
+        "percentile": {},
+        "risk": {},
+        "industry": {},
+        "financials": [],
+        "data_gaps": [],
+    }
+    payload = svc._agent_payload(facts, "governance")
+    assert "governance_note" in payload
+    assert payload["market_data"]["price"] == 10

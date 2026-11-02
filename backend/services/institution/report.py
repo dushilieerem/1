@@ -12,6 +12,7 @@ from typing import Any
 
 DIM_EN: dict[str, str] = {
     "industry": "Business & industry",
+    "business_model": "Business model",
     "moat": "Moat",
     "financial": "Financial quality",
     "governance": "CEO & governance",
@@ -119,11 +120,15 @@ def _dimensions(version: dict[str, Any] | None) -> list[str]:
             f"- 状态 Status: {_status(dim.get('status'))}",
             f"- 核心问题 Question: {_text(dim.get('question'))}",
             f"- 结论摘要 Summary: {_text(dim.get('summary'))}",
+            f"- 分析引擎 Engine: {_text(dim.get('engine') or 'rule')}",
+            f"- 置信度 Confidence: {_text(dim.get('confidence'))}",
             "- 数据检查 Checks:",
             *["  " + x for x in _bullets(dim.get("checks"))],
             "- 反证条件 Falsifiers:",
             *["  " + x for x in _bullets(dim.get("counter"))],
         ]
+        if dim.get("data_gaps"):
+            lines += ["- 数据缺口 Data gaps:", *["  " + x for x in _bullets(dim.get("data_gaps"))]]
         ids = [str(x) for x in (dim.get("evidence_ids") or []) if x is not None]
         lines += [f"- 证据 ID Evidence IDs: {', '.join(ids) if ids else '—'}", ""]
     return lines

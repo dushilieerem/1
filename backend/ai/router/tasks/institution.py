@@ -15,6 +15,7 @@ from ai.errors import AiBadOutput
 from ai.router.specs import TaskRequest, TaskSpec, register
 
 PROMPT_VERSION = "inst-v1"
+DIM_PROMPT_VERSION = "inst-dim-v1"
 
 
 def _strip(raw: str) -> str:
@@ -25,8 +26,13 @@ def _strip(raw: str) -> str:
 
 
 def _load(raw: str) -> dict[str, Any]:
+    text = _strip(raw)
+    if not text.startswith("{"):
+        start, end = text.find("{"), text.rfind("}")
+        if start >= 0 and end > start:
+            text = text[start : end + 1]
     try:
-        data = json.loads(_strip(raw))
+        data = json.loads(text)
     except (json.JSONDecodeError, IndexError, ValueError) as exc:
         raise AiBadOutput("机构端 AI 返回不是有效 JSON") from exc
     if not isinstance(data, dict):
@@ -56,6 +62,38 @@ def validate_debate(raw: str, request: TaskRequest) -> dict[str, Any]:
             item.setdefault("confidence", 0.5)
             item.setdefault("round", 1)
         data[side] = items
+    return data
+
+
+def validate_dimension(raw: str, request: TaskRequest) -> dict[str, Any]:
+    data = _load(raw)
+    if not str(data.get("summary") or "").strip():
+        raise AiBadOutput("六维 Agent 缺少 summary")
+    for key in ("checks", "counter", "open_questions", "data_gaps"):
+        value = data.get(key)
+        data[key] = [str(x) for x in value if str(x).strip()] if isinstance(value, list) else []
+    items = data.get("evidence")
+    evidence = []
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        quote = str(item.get("quote") or "").strip()
+        if not title or not quote:
+            continue
+        evidence.append(
+            {
+                "title": title[:200],
+                "quote": quote[:500],
+                "source": str(item.get("source") or "agent").strip()[:80],
+            }
+        )
+    data["evidence"] = evidence
+    try:
+        confidence = float(data.get("confidence"))
+    except (TypeError, ValueError):
+        confidence = 0.5
+    data["confidence"] = max(0.0, min(1.0, confidence))
     return data
 
 
@@ -152,6 +190,31 @@ POST_INVESTMENT_ROLE_TASK = register(
     )
 )
 
+
+DIMENSION_TASK_SPECS = {
+    "industry": ("inst.dim.industry", "行业与产业 Agent：规模、竞争结构、供需与周期"),
+    "business_model": ("inst.dim.business_model", "商业模式 Agent：收入结构、客户价值、单位经济性"),
+    "moat": ("inst.dim.moat", "护城河 Agent：品牌、成本、网络、转换成本与侵蚀路径"),
+    "financial": ("inst.dim.financial", "财务质量 Agent：三表勾稽、ROIC/FCF、会计风险"),
+    "governance": ("inst.dim.governance", "治理 Agent：资本配置、承诺兑现、关联交易"),
+    "valuation": ("inst.dim.valuation", "估值 Agent：PE/PB 分位、DCF 假设、安全边际"),
+}
+
+DIMENSION_TASKS = {}
+for _key, (_task_id, _desc) in DIMENSION_TASK_SPECS.items():
+    DIMENSION_TASKS[_key] = register(
+        TaskSpec(
+            task_id=_task_id,
+            description=_desc,
+            temperature=0.2,
+            max_tokens=4096,
+            timeout_sec=120,
+            executors=("local",),
+            response_format={"type": "json_object"},
+            validator=validate_dimension,
+        )
+    )
+
 __all__ = [
     "FINANCIAL_ROLE_TASK",
     "GOVERNANCE_ROLE_TASK",
@@ -162,5 +225,8 @@ __all__ = [
     "RESEARCH_MEMO_TASK",
     "RISK_REVIEW_TASK",
     "validate_debate",
+    "DIMENSION_TASKS",
+    "DIM_PROMPT_VERSION",
+    "validate_dimension",
     "validate_memo",
 ]

@@ -102,14 +102,28 @@ proposal: draft → partner_review → chairman_review → risk_precheck → aut
 4. 浏览器 E2E 与六角色走查。
 5. 数据补齐：A 股全池财务、公告正文锚点、行业中文名。
 
-## 8. 自动化流程（2026-11-02）
+## 8. 六 Agent 研究与自动化（2026-11-02）
 
-机构端前端把研究到辩论的串行动作自动化：
+机构端研究改为 6 个独立 AI Agent，每个 Agent 有自己的 TaskSpec、提示词、输入与输出：
 
-1. 进入研究案：若尚无研究版本，自动执行「巴菲特六维分析」（`POST /cases/{id}/research`，full）。
-2. 生成完成后：自动调用 `POST /cases/{id}/ai/memo` 生成 AI 一页纸摘要。
+| 维度 | TaskSpec | 分析方向 |
+|---|---|---|
+| 商业与产业 | `inst.dim.industry` | 行业规模、竞争结构、供需周期 |
+| 公司商业模式 | `inst.dim.business_model` | 收入结构、客户价值、单位经济性、资本强度 |
+| 护城河 | `inst.dim.moat` | 品牌、成本、网络、转换成本与侵蚀路径 |
+| 财务质量 | `inst.dim.financial` | 三表勾稽、ROIC/FCF、会计风险 |
+| CEO 与治理 | `inst.dim.governance` | 资本配置、承诺兑现、关联交易 |
+| 估值与价格 | `inst.dim.valuation` | PE/PB 分位、DCF 假设、安全边际 |
+
+编排器 `_run_dimension_agents` 默认并发 3（`INST_AGENT_CONCURRENCY` 可调），每维独立重试，失败时回退到确定性规则模板并标记 `engine=rule`。Agent 证据写入 `inst_evidence`，按 hash 去重。
+
+前端把研究到辩论的串行动作自动化：
+
+1. 进入研究案：若尚无研究版本，自动执行 6 Agent 分析（`POST /cases/{id}/research`，full）。
+2. 6 个 Agent 完成后：自动调用 `POST /cases/{id}/ai/memo` 生成 AI 一页纸摘要（汇总 6 份结果）。
 3. 人工审核：保留「审核通过 / 退回」人工动作，不自动批准。
 4. 审核通过：自动跳转投资辩论，并自动调用 `POST /cases/{id}/debate`（`use_ai=true`）开始 AI 辩论。
-5. 若 AI 未配置或失败：研究流程不阻断，保留手动按钮与错误提示；辩论仍可由规则模板兜底。
+5. 若某个 Agent 失败：该维回退规则模板并标记 `engine=rule`、`agent_error`；其余 Agent 不受影响。
+6. 若 AI 全部不可用：研究流程不阻断，保留手动按钮与错误提示；辩论仍可由规则模板兜底。
 
-已用真实浏览器验证：新建万科A研究案 → 自动六维 + AI 摘要 → 审核通过 → 自动生成 3 条看多、4 条看空、主持结论「推进审议」。
+已用真实浏览器验证：新建深振业A研究案 → 6 个 Agent 完成 → AI 摘要 → 审核通过 → 自动辩论。

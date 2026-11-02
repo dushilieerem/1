@@ -16,6 +16,12 @@ type Dim = {
   checks?: string[];
   counter?: string[];
   evidence_ids?: number[];
+  open_questions?: string[];
+  data_gaps?: string[];
+  confidence?: number;
+  engine?: string;
+  agent?: string;
+  agent_error?: string;
 };
 
 type Version = {
@@ -245,7 +251,7 @@ export function InstResearchPage() {
         <PageHeader
           eyebrow="RESEARCH / 03"
           title={t("公司研究", "Company research")}
-          desc={t("进入研究案自动开展巴菲特六维分析并生成 AI 一页纸；审核通过后进入辩论会自动开始 AI 辩论。", "Opening a case runs the Buffett six-dimension analysis and AI memo automatically; approval leads to an auto-started AI debate.")}
+          desc={t("6 个 Agent 分别从产业、商业模式、护城河、财务、治理、估值独立分析，汇总后生成 AI 一页纸；审核通过后自动开始 AI 辩论。", "Six agents analyze industry, business model, moat, financials, governance and valuation independently, then an AI memo is generated; approval auto-starts the AI debate.")}
         />
         {error ? <ErrorBox message={error} onRetry={loadList} /> : null}
         {items.length ? (
@@ -328,7 +334,7 @@ export function InstResearchPage() {
                 onClick={() => void autopilot()}
               >
                 <Sparkles className="mr-1 h-4 w-4" />
-                {busy === "auto" ? t("自动分析中…", "Auto-analysis…") : t("自动开展巴菲特六维分析", "Run Buffett six-dimension analysis")}
+                {busy === "auto" ? t("6 个 Agent 分析中…", "6 agents analyzing…") : t("自动开展巴菲特六维分析", "Run Buffett six-dimension analysis")}
               </Button>
             }
           >
@@ -338,7 +344,12 @@ export function InstResearchPage() {
                   <article key={dim.key} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-4">
                     <div className="flex items-start justify-between gap-2">
                       <h3 className="text-sm font-semibold text-[#171923]">{dim.title}</h3>
-                      <StatusBadge status={dim.status} />
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <StatusBadge status={dim.status} />
+                        <Badge tone={dim.engine === "agent" ? "gold" : "slate"}>
+                          {dim.engine === "agent" ? `AI Agent${dim.confidence != null ? ` · ${dim.confidence.toFixed(2)}` : ""}` : t("规则兜底", "Rule fallback")}
+                        </Badge>
+                      </div>
                     </div>
                     <p className="mt-1 text-[11px] leading-relaxed text-[#68738b]">{dim.question}</p>
                     <p className="mt-2 text-xs leading-relaxed text-[#505369]">{dim.summary || t("待补充", "TBD")}</p>
@@ -351,6 +362,12 @@ export function InstResearchPage() {
                     ) : null}
                     {dim.counter?.length ? (
                       <p className="mt-2 text-[11px] text-amber-700">{t("反证", "Falsifier")}：{dim.counter[0]}</p>
+                    ) : null}
+                    {dim.data_gaps?.length ? (
+                      <p className="mt-2 text-[11px] text-[#68738b]">{t("数据缺口", "Data gaps")}：{dim.data_gaps.join("；")}</p>
+                    ) : null}
+                    {dim.agent_error ? (
+                      <p className="mt-2 text-[11px] text-red-600">{t("Agent 失败", "Agent failed")}：{dim.agent_error}</p>
                     ) : null}
                     {dim.evidence_ids?.length ? (
                       <p className="mt-2 font-mono text-[10px] text-[#77718c]">

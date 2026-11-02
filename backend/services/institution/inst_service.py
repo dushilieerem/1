@@ -11,7 +11,10 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -60,11 +63,11 @@ DEMO_COMPANIES: tuple[dict[str, Any], ...] = (
 
 SIX_DIM_DEFS: tuple[tuple[str, str, str], ...] = (
     ("industry", "商业与产业", "行业规模、竞争结构、供需与周期"),
+    ("business_model", "公司商业模式", "收入结构、客户价值、单位经济性与资本强度"),
     ("moat", "护城河", "品牌、成本、网络、转换成本与可持续性"),
     ("financial", "财务质量", "收入、利润、现金流、ROE 与三表勾稽"),
     ("governance", "CEO 与治理", "资本配置、承诺兑现、关联交易与治理结构"),
     ("valuation", "估值与价格", "PE/PB 分位、DCF 参数、安全边际"),
-    ("evidence", "证据与反证", "关键证据、反证条件、待核验事项"),
 )
 
 
@@ -715,16 +718,21 @@ def _build_research(company: dict[str, Any], mode: str = "full") -> dict[str, An
             ["分位低不等于便宜；需结合盈利周期与资产质量"],
             [ev_price, ev_pe, ev_pb],
         )
-    if "evidence" in want:
+    if "business_model" in want:
         dim(
-            "evidence",
-            "证据与反证",
-            "哪些证据支持论点？哪些事实可能推翻它？",
-            "done" if evidence else "partial",
-            f"当前收集 {len([e for e in evidence if e])} 条结构化证据；反证条件与待核验事项需人工确认。",
-            ["证据必须带来源与时间", "重大结论无证据 ID 不得进入审批包"],
-            ["数据缺口本身也是反证：不得补造缺失数据"],
-            [ev_risk, ev_fin],
+            "business_model",
+            "公司商业模式",
+            "公司靠什么赚钱？客户价值、收入结构与资本强度是否可持续？",
+            "done" if has_fin else "partial",
+            f"收入 {_yi(latest_fin.get('revenue'))}，净利 {_yi(latest_fin.get('net_profit'))}，毛利率 {_pc(gross_margin)}，净利率 {_pc(latest_fin.get('net_margin'))}；分部/客户/渠道数据待补充。",
+            [
+                f"营收同比：{_pc(latest_fin.get('revenue_yoy'))}",
+                f"净利同比：{_pc(latest_fin.get('profit_yoy'))}",
+                f"毛利率：{_pc(gross_margin)}",
+                f"自由现金流：{_yi(latest_fin.get('free_cash_flow'))}",
+            ],
+            ["财务结果不等于商业模式；需分部收入、客户集中度、渠道与定价机制"],
+            [ev_fin, ev_gm],
         )
 
     valuation = None
@@ -764,7 +772,245 @@ def _build_research(company: dict[str, Any], mode: str = "full") -> dict[str, An
         "evidence": evidence,
         "valuation": valuation,
         "data_gaps": [] if has_fin else ["财务三表未接入或未公告"],
+        "facts": {
+            "company": {
+                "symbol": symbol,
+                "name": company.get("name"),
+                "market": company.get("market"),
+                "industry": company.get("industry"),
+                "data_status": company.get("data_status"),
+                "ref_price": company.get("ref_price"),
+            },
+            "as_of": (bar or {}).get("trade_date") or latest_fin.get("notice_date"),
+            "price": price,
+            "valuation": val,
+            "percentile": pct,
+            "risk": risk,
+            "industry": ind,
+            "financials": fin[:8],
+            "data_gaps": [] if has_fin else ["财务三表未接入或未公告"],
+        },
     }
+
+
+DIMENSION_TASK_IDS: dict[str, str] = {
+    "industry": "inst.dim.industry",
+    "business_model": "inst.dim.business_model",
+    "moat": "inst.dim.moat",
+    "financial": "inst.dim.financial",
+    "governance": "inst.dim.governance",
+    "valuation": "inst.dim.valuation",
+}
+
+_DIM_OUTPUT = (
+    '只输出 JSON，不要 markdown：{"summary":"...","checks":["..."],"counter":["..."],'
+    '"evidence":[{"title":"...","quote":"...","source":"..."}],"open_questions":["..."],'
+    '"confidence":0.6,"data_gaps":["..."]}。'
+    "数据不足写待补充并放入 data_gaps；禁止编造数字、人名或事实；"
+    "summary≤120字，checks≤4条，counter≤3条，evidence≤4条，open_questions≤3条，data_gaps≤4条，"
+    "总输出不超过1200字；不给买卖点、目标价、涨跌预测或收益承诺；不改变业务状态。"
+)
+
+_DIMENSION_PROMPTS: dict[str, str] = {
+    "industry": (
+        "你是旸谷资本机构研究部的产业研究 Agent，服务巴菲特式价值投资。"
+        "只依据输入的公司、行情、行业与财务数据，分析行业规模、竞争结构、供需与周期、产业链位置与行业吸引力。"
+        "没有行业规模/份额数据时必须列入 data_gaps，不得编造。" + _DIM_OUTPUT
+    ),
+    "business_model": (
+        "你是旸谷资本机构研究部的商业模式 Agent，服务巴菲特式价值投资。"
+        "只依据输入数据分析：公司靠什么赚钱、客户价值、收入结构、单位经济性、资本强度与可复制性。"
+        "没有分部收入、客户集中度、渠道数据时只能做财务结构推断，并在 data_gaps 明确标注。" + _DIM_OUTPUT
+    ),
+    "moat": (
+        "你是旸谷资本机构研究部的护城河 Agent，服务巴菲特式价值投资。"
+        "只依据输入数据分析品牌、成本优势、网络效应、转换成本、规模与可持续性；"
+        "毛利率、ROE、增速只是线索，不等于护城河；必须给出可检验的护城河证据、侵蚀路径与反证条件。" + _DIM_OUTPUT
+    ),
+    "financial": (
+        "你是旸谷资本机构研究部的财务质量 Agent，服务巴菲特式价值投资。"
+        "只依据输入财务数据分析三表勾稽、ROE/ROIC、自由现金流、应收存货、资本化与会计风险；"
+        "指出利润与现金流是否互相印证，以及需要回原始公告核验的项目。" + _DIM_OUTPUT
+    ),
+    "governance": (
+        "你是旸谷资本机构研究部的 CEO 与治理 Agent，服务巴菲特式价值投资。"
+        "只依据输入数据分析资本配置、承诺兑现、关联交易、分红回购与治理结构；"
+        "输入若没有公告、管理层履历或治理数据，必须把缺口写入 data_gaps，禁止编造人名、履历或违规事实。" + _DIM_OUTPUT
+    ),
+    "valuation": (
+        "你是旸谷资本机构研究部的估值与价格 Agent，服务巴菲特式价值投资。"
+        "只依据输入数据分析 PE/PB 分位、DCF 假设与局限、安全边际与估值风险；"
+        "不给目标价或买卖点，必须说明估值口径、数据缺口与哪些假设会推翻结论。" + _DIM_OUTPUT
+    ),
+}
+
+
+def _agent_payload(facts: dict[str, Any], key: str) -> dict[str, Any]:
+    val = facts.get("valuation") or {}
+    pct = facts.get("percentile") or {}
+    risk = facts.get("risk") or {}
+    payload: dict[str, Any] = {
+        "company": facts.get("company"),
+        "as_of": facts.get("as_of"),
+        "market_data": {
+            "price": facts.get("price"),
+            "pe_ttm": val.get("pe_ttm"),
+            "pb_mrq": val.get("pb_mrq"),
+            "pe_percentile": pct.get("pe_percentile"),
+            "pb_percentile": pct.get("pb_percentile"),
+            "max_drawdown": risk.get("max_drawdown"),
+            "annual_vol": risk.get("annual_vol"),
+            "total_mv": val.get("total_mv"),
+            "float_mv": val.get("float_mv"),
+            "total_shares": val.get("total_shares"),
+        },
+        "industry": facts.get("industry"),
+        "financials": facts.get("financials") or [],
+        "data_gaps": facts.get("data_gaps") or [],
+    }
+    if key == "governance":
+        payload["governance_note"] = "输入不含公告正文、管理层履历或关联交易明细，必须据此列 data_gaps。"
+    if key == "business_model":
+        payload["business_model_note"] = "输入没有分部收入、客户集中度和渠道数据，只能从财务结构推断并标注缺口。"
+    return payload
+
+
+def _run_dimension_agent(key: str, facts: dict[str, Any]) -> dict[str, Any]:
+    from ai.router import available_task, run_task
+
+    task_id = DIMENSION_TASK_IDS[key]
+    if not available_task(task_id):
+        return {"error": "AI 未配置"}
+    payload = _agent_payload(facts, key)
+    out = run_task(
+        task_id,
+        messages=[
+            {"role": "system", "content": _DIMENSION_PROMPTS[key]},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)},
+        ],
+    )
+    data = out.get("data")
+    if not isinstance(data, dict):
+        content = str(out.get("content") or "")
+        data = json.loads(content) if content.strip().startswith("{") else {}
+    if not isinstance(data, dict) or not str(data.get("summary") or "").strip():
+        return {"error": "Agent 返回缺少 summary"}
+    return {"data": data}
+
+
+def _run_dimension_agents(facts: dict[str, Any], keys: list[str]) -> dict[str, dict[str, Any]]:
+    results: dict[str, dict[str, Any]] = {}
+    if not keys:
+        return results
+
+    def one(key: str) -> dict[str, Any]:
+        last: dict[str, Any] = {}
+        for attempt in range(3):
+            try:
+                result = _run_dimension_agent(key, facts)
+                if result.get("data"):
+                    return result
+                last = result
+            except Exception as exc:  # noqa: BLE001 - 单个 Agent 失败不能阻断其他 Agent
+                last = {"error": str(exc)}
+            if attempt < 2:
+                time.sleep(1.2 * (attempt + 1))
+        return last
+
+    try:
+        workers = max(1, min(6, int(os.getenv("INST_AGENT_CONCURRENCY", "3"))))
+    except ValueError:
+        workers = 3
+    with ThreadPoolExecutor(max_workers=min(workers, len(keys))) as pool:
+        futures = {pool.submit(one, key): key for key in keys}
+        for future in as_completed(futures):
+            key = futures[future]
+            try:
+                results[key] = future.result()
+            except Exception as exc:  # noqa: BLE001
+                results[key] = {"error": str(exc)}
+    return results
+
+
+def _merge_agent_results(
+    built: dict[str, Any],
+    results: dict[str, dict[str, Any]],
+    keys: list[str],
+) -> dict[str, Any]:
+    built_dims = {d["key"]: d for d in built.get("dims") or []}
+    evidence = list(built.get("evidence") or [])
+    as_of = (built.get("facts") or {}).get("as_of")
+    gaps = list(built.get("data_gaps") or [])
+    dims: list[dict[str, Any]] = []
+    states: dict[str, str] = {}
+    key_set = set(keys)
+
+    for key, title, question in SIX_DIM_DEFS:
+        if key not in key_set:
+            continue
+        fallback = built_dims.get(key) or {"key": key, "title": title, "question": question}
+        item = results.get(key) or {}
+        data = item.get("data") or {}
+        err = str(item.get("error") or "")
+        if data and str(data.get("summary") or "").strip():
+            ev_idx: list[int] = []
+            for ev in data.get("evidence") or []:
+                ev_title = str(ev.get("title") or "").strip()
+                ev_quote = str(ev.get("quote") or "").strip()
+                if not ev_title or not ev_quote:
+                    continue
+                idx = len(evidence)
+                evidence.append(
+                    {
+                        "title": ev_title[:200],
+                        "quote": ev_quote[:500],
+                        "source": str(ev.get("source") or "agent")[:80],
+                        "evidence_type": "research",
+                        "as_of": as_of,
+                        "hash": _hash([ev_title, ev_quote]),
+                        "_idx": idx,
+                    }
+                )
+                ev_idx.append(idx)
+            for gap in data.get("data_gaps") or []:
+                gap_text = str(gap).strip()
+                if gap_text and gap_text not in gaps:
+                    gaps.append(gap_text)
+            status = "partial" if data.get("data_gaps") else "done"
+            dims.append(
+                {
+                    "key": key,
+                    "title": title,
+                    "question": question,
+                    "status": status,
+                    "summary": str(data.get("summary")),
+                    "checks": data.get("checks") or [],
+                    "counter": data.get("counter") or [],
+                    "open_questions": data.get("open_questions") or [],
+                    "data_gaps": data.get("data_gaps") or [],
+                    "confidence": data.get("confidence", 0.5),
+                    "engine": "agent",
+                    "agent": f"AI-{key}",
+                    "evidence_idx": ev_idx,
+                    "evidence_ids": [],
+                }
+            )
+            states[key] = status
+        else:
+            fallback = dict(fallback)
+            fallback["engine"] = "rule"
+            fallback["agent"] = f"AI-{key}"
+            fallback["agent_error"] = err or "Agent 未返回有效结果"
+            fallback["evidence_ids"] = []
+            dims.append(fallback)
+            states[key] = "failed"
+
+    built = dict(built)
+    built["dims"] = dims
+    built["evidence"] = evidence
+    built["data_gaps"] = gaps
+    built["agent_states"] = states
+    return built
 
 
 def generate_research(
@@ -774,6 +1020,7 @@ def generate_research(
     mode: str = "full",
     actor_member_id: int | None,
 ) -> dict[str, Any]:
+    # 1) 先校验权限并取公司，关闭连接后再跑 6 个模型 Agent，避免长时间占用 DB 连接
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "manager", "partner")
@@ -786,46 +1033,70 @@ def generate_research(
         if not case:
             raise LookupError("研究案不存在")
         company = dict(case)
-        built = _build_research(company, mode=mode)
-        # 任务
-        tasks = SIX_DIM_DEFS if mode == "full" else tuple(d for d in SIX_DIM_DEFS if d[0] == mode)
-        for key, title, _ in tasks:
+
+    built = _build_research(company, mode=mode)
+    keys = [d[0] for d in SIX_DIM_DEFS] if mode == "full" else [mode]
+    results = _run_dimension_agents(built["facts"], keys)
+    built = _merge_agent_results(built, results, keys)
+
+    # 2) 持久化：任务、证据、版本
+    with get_conn() as conn:
+        if mode == "full":
+            conn.execute(
+                "DELETE FROM inst_research_task WHERE case_id=%s AND NOT (task_key = ANY(%s))",
+                (case_id, keys),
+            )
+        for key, title, _ in SIX_DIM_DEFS:
+            if key not in keys:
+                continue
+            dim = next((d for d in built["dims"] if d["key"] == key), {})
+            status = built["agent_states"].get(key, "done")
+            task_status = {"done": "done", "partial": "needs_review", "failed": "failed"}.get(status, status)
             conn.execute(
                 """
                 INSERT INTO inst_research_task (case_id, task_key, title, agent, status, progress, result)
-                VALUES (%s,%s,%s,%s,'done',100,%s)
+                VALUES (%s,%s,%s,%s,%s,100,%s)
                 ON CONFLICT (case_id, task_key) DO UPDATE
-                  SET status='done', progress=100, result=EXCLUDED.result, updated_at=NOW()
+                  SET status=EXCLUDED.status, progress=100, result=EXCLUDED.result, updated_at=NOW()
                 """,
-                (case_id, key, title, f"AI-{key}", _j(next((d for d in built["dims"] if d["key"] == key), {}))),
+                (case_id, key, title, f"AI-{key}", task_status, _j(dim)),
             )
-        # 证据先落库拿 ID
+
         ev_ids: list[int] = []
         idx_to_id: dict[int, int] = {}
+        seen_hash: dict[str, int] = {}
         for ev in built["evidence"]:
-            row = conn.execute(
-                """
-                INSERT INTO inst_evidence
-                  (org_id, case_id, evidence_type, title, quote, source, as_of, hash, added_by)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
-                """,
-                (
-                    org_id,
-                    case_id,
-                    ev.get("evidence_type") or "fact",
-                    ev["title"],
-                    ev.get("quote"),
-                    ev["source"],
-                    ev.get("as_of"),
-                    ev["hash"],
-                    actor_member_id,
-                ),
-            ).fetchone()
-            eid = int(row["id"])
-            ev_ids.append(eid)
+            digest = str(ev.get("hash") or "")
+            eid = seen_hash.get(digest)
+            if eid is None:
+                row = conn.execute(
+                    """
+                    INSERT INTO inst_evidence
+                      (org_id, case_id, evidence_type, title, quote, source, as_of, hash, added_by)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+                    """,
+                    (
+                        org_id,
+                        case_id,
+                        ev.get("evidence_type") or "fact",
+                        ev["title"],
+                        ev.get("quote"),
+                        ev["source"],
+                        ev.get("as_of"),
+                        ev["hash"],
+                        actor_member_id,
+                    ),
+                ).fetchone()
+                eid = int(row["id"])
+                if digest:
+                    seen_hash[digest] = eid
             idx_to_id[int(ev["_idx"])] = eid
+            if eid not in ev_ids:
+                ev_ids.append(eid)
+
         for dim in built["dims"]:
             dim["evidence_ids"] = [idx_to_id.get(i) for i in dim.pop("evidence_idx", []) if i in idx_to_id]
+
         version_no = conn.execute(
             "SELECT COALESCE(MAX(version_no),0)+1 AS n FROM inst_research_version WHERE case_id=%s",
             (case_id,),
@@ -866,10 +1137,9 @@ def generate_research(
             action="research.generate",
             object_type="inst_research_version",
             object_id=int(row["id"]),
-            after={"case_id": case_id, "version_no": version_no, "mode": mode},
+            after={"case_id": case_id, "version_no": version_no, "mode": mode, "agents": built["agent_states"]},
         )
     return get_case(org_id, case_id)  # type: ignore[return-value]
-
 
 def review_research(
     org_id: int,

@@ -172,6 +172,7 @@ export function StatusBadge({ status }: { status?: string | null }) {
     failed: { zh: "失败", en: "Failed", tone: "red" },
     done: { zh: "已完成", en: "Done", tone: "green" },
     partial: { zh: "待补充", en: "Partial", tone: "amber" },
+    needs_review: { zh: "待复核", en: "Needs review", tone: "amber" },
     missing: { zh: "无数据", en: "No data", tone: "red" },
     real: { zh: "真实数据", en: "Real data", tone: "green" },
     pass: { zh: "通过", en: "Pass", tone: "green" },

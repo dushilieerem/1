@@ -9,6 +9,7 @@ from ai.router.tasks.factor_generation import FACTOR_TASK  # noqa: F401  导入�
 from ai.router.tasks.institution import (  # noqa: F401  导入即注册
     CHAIRMAN_MEMO_TASK,
     DEBATE_TASK,
+    DIMENSION_TASKS,
     FINANCIAL_ROLE_TASK,
     GOVERNANCE_ROLE_TASK,
     POST_INVESTMENT_ROLE_TASK,

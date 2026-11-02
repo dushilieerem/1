@@ -93,9 +93,9 @@ export function InstPortfolioPage() {
           [t("已投资", "Invested"), fmtMoney(data?.invested)],
           [t("仓位", "Exposure"), fmtPct(data?.invested_ratio)],
         ].map(([label, value]) => (
-          <div key={label} className="rounded-2xl border border-[#e7e3d8] bg-white p-5">
-            <p className="text-xs text-slate-500">{label}</p>
-            <p className="mt-2 font-mono text-xl font-semibold text-slate-900">{value}</p>
+          <div key={label} className="rounded-xl border border-[#dde5f2] bg-white p-5">
+            <p className="text-xs text-[#68738b]">{label}</p>
+            <p className="mt-2 font-mono text-xl font-semibold text-[#171923]">{value}</p>
           </div>
         ))}
       </div>
@@ -110,7 +110,7 @@ export function InstPortfolioPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-[#f0ece2] text-[11px] text-slate-400">
+                  <tr className="border-b border-[#e3eaf8] text-[11px] text-[#77718c]">
                     <th className="py-2">{t("标的", "Symbol")}</th>
                     <th className="py-2">{t("行业", "Industry")}</th>
                     <th className="py-2 text-right">{t("数量", "Qty")}</th>
@@ -121,12 +121,12 @@ export function InstPortfolioPage() {
                 </thead>
                 <tbody>
                   {positions.map((p) => (
-                    <tr key={p.id} className="border-b border-[#f7f4ec] last:border-0">
+                    <tr key={p.id} className="border-b border-[#eef1f8] last:border-0">
                       <td className="py-2.5">
-                        <p className="font-medium text-slate-800">{p.name || p.symbol}</p>
-                        <p className="font-mono text-[10px] text-slate-400">{p.symbol}</p>
+                        <p className="font-medium text-[#252533]">{p.name || p.symbol}</p>
+                        <p className="font-mono text-[10px] text-[#77718c]">{p.symbol}</p>
                       </td>
-                      <td className="py-2.5 text-xs text-slate-500">{p.industry || "—"}</td>
+                      <td className="py-2.5 text-xs text-[#68738b]">{p.industry || "—"}</td>
                       <td className="py-2.5 text-right font-mono text-xs">{fmtMoney(p.qty)}</td>
                       <td className="py-2.5 text-right font-mono text-xs">{fmtMoney(p.cost, 2)}</td>
                       <td className="py-2.5 text-right font-mono text-xs">{fmtMoney(p.market_value)}</td>
@@ -138,7 +138,7 @@ export function InstPortfolioPage() {
             </div>
           ) : (
             <Empty>
-              <PieChart className="mx-auto mb-2 h-6 w-6 text-slate-300" />
+              <PieChart className="mx-auto mb-2 h-6 w-6 text-[#a9a4bd]" />
               {t("还没有持仓。授权并执行后，持仓才会出现。", "No positions yet; they appear after an authorization is executed.")}
             </Empty>
           )}
@@ -150,8 +150,8 @@ export function InstPortfolioPage() {
             <Field label={t("最低现金储备", "Minimum cash")} value="10%" />
             <Field label={t("参考净值", "Reference NAV")} value={fmtMoney(pf?.nav)} />
             <Field label={t("组合状态", "Status")} value={<StatusBadge status={positions.length ? "qualified" : "draft"} />} />
-            <p className="mt-3 flex items-start gap-2 text-[11px] leading-relaxed text-slate-400">
-              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#8a6a2f]" />
+            <p className="mt-3 flex items-start gap-2 text-[11px] leading-relaxed text-[#77718c]">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#b42345]" />
               {t("风控硬阻断不可由 Chairman 或 AI 绕过；解除冻结须独立风控重新核验。", "Hard risk blocks cannot be bypassed by Chairman or AI; unfreezing requires a fresh independent risk review.")}
             </p>
           </Card>
@@ -162,12 +162,12 @@ export function InstPortfolioPage() {
                 {exposure.map(([name, weight]) => (
                   <div key={name}>
                     <div className="mb-1 flex items-center justify-between text-xs">
-                      <span className="text-slate-600">{name}</span>
-                      <span className="font-mono text-slate-900">{fmtPct(weight)}</span>
+                      <span className="text-[#68738b]">{name}</span>
+                      <span className="font-mono text-[#171923]">{fmtPct(weight)}</span>
                     </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-[#f0ece2]">
+                    <div className="h-1.5 overflow-hidden rounded-full bg-[#eef3ff]">
                       <div
-                        className="h-full rounded-full bg-[#c9a15e]"
+                        className="h-full rounded-full bg-[#7950ba]"
                         style={{ width: `${Math.min(100, Number(weight) * 100)}%` }}
                       />
                     </div>
@@ -181,7 +181,7 @@ export function InstPortfolioPage() {
         </div>
       </div>
 
-      <p className="text-[11px] leading-relaxed text-slate-400">
+      <p className="text-[11px] leading-relaxed text-[#77718c]">
         {t("组合数据为演示账本；A 股价格来自公开 EOD 数据。配置与偏离只做展示，不自动调仓。", "Portfolio is a demo ledger; A-share prices come from public EOD data. Allocation and deviation are display-only; no auto rebalancing.")}
       </p>
     </div>

@@ -133,7 +133,7 @@ export function InstIdeasPage() {
       <Card>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#77718c]" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -144,13 +144,13 @@ export function InstIdeasPage() {
                 "输入公司名、代码或行业，回车筛选",
                 "Search company, ticker or sector; press Enter",
               )}
-              className="w-full rounded-lg border border-[#dcd6c8] bg-[#faf9f5] py-2 pl-9 pr-3 text-sm outline-none focus:border-[#c9a15e]"
+              className="w-full rounded-lg border border-[#dde5f2] bg-[#f8faff] py-2 pl-9 pr-3 text-sm outline-none focus:border-[#7950ba]"
             />
           </div>
           <Button variant="gold" onClick={search}>
             {t("筛选", "Search")}
           </Button>
-          <span className="text-[11px] text-slate-400">{scopeNote}</span>
+          <span className="text-[11px] text-[#77718c]">{scopeNote}</span>
         </div>
         {error ? <div className="mt-3"><ErrorBox message={error} onRetry={() => fetchPage(0, false)} /></div> : null}
       </Card>
@@ -159,7 +159,7 @@ export function InstIdeasPage() {
 
       {!loading && !items.length ? (
         <Empty>
-          <Telescope className="mx-auto mb-2 h-6 w-6 text-slate-300" />
+          <Telescope className="mx-auto mb-2 h-6 w-6 text-[#a9a4bd]" />
           {t("没有匹配的研究对象。换一个关键词或恢复市场筛选。", "No matching names. Try another keyword.")}
         </Empty>
       ) : null}
@@ -167,11 +167,11 @@ export function InstIdeasPage() {
       {!loading && items.length ? (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {items.map((c) => (
-            <article key={c.id} className="flex flex-col rounded-2xl border border-[#e7e3d8] bg-white p-5">
+            <article key={c.id} className="flex flex-col rounded-xl border border-[#dde5f2] bg-white p-5">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <h3 className="font-display text-base font-semibold text-slate-900">{c.name}</h3>
-                  <p className="mt-0.5 font-mono text-[11px] text-slate-500">{c.symbol}</p>
+                  <h3 className="font-display text-base font-semibold text-[#171923]">{c.name}</h3>
+                  <p className="mt-0.5 font-mono text-[11px] text-[#68738b]">{c.symbol}</p>
                 </div>
                 <StatusBadge status={c.data_status} />
               </div>
@@ -181,19 +181,19 @@ export function InstIdeasPage() {
                 {c.pool_status === "watch" ? <Badge tone="amber">{t("观察池", "Watchlist")}</Badge> : null}
                 {c.pool_status === "dropped" ? <Badge tone="red">{t("已放弃", "Dropped")}</Badge> : null}
               </div>
-              <dl className="mt-3 space-y-1.5 text-xs text-slate-500">
+              <dl className="mt-3 space-y-1.5 text-xs text-[#68738b]">
                 <div className="flex justify-between gap-2">
                   <dt>{t("参考价", "Reference price")}</dt>
-                  <dd className="font-mono text-slate-800">{fmtNum(c.ref_price, 2)}</dd>
+                  <dd className="font-mono text-[#252533]">{fmtNum(c.ref_price, 2)}</dd>
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt>{t("研究关注点", "Focus")}</dt>
-                  <dd className="max-w-[70%] text-right text-slate-700">
+                  <dd className="max-w-[70%] text-right text-[#505369]">
                     {(c.research_points || [])[0] || t("待补充", "TBD")}
                   </dd>
                 </div>
               </dl>
-              <div className="mt-4 flex flex-wrap gap-2 border-t border-[#f0ece2] pt-3">
+              <div className="mt-4 flex flex-wrap gap-2 border-t border-[#e3eaf8] pt-3">
                 <Button variant="primary" disabled={!canWrite || busy === c.id} onClick={() => enterResearch(c)}>
                   {busy === c.id ? t("处理中…", "Working…") : t("进入研究", "Start research")}
                 </Button>
@@ -217,7 +217,7 @@ export function InstIdeasPage() {
         </div>
       ) : null}
 
-      <p className="text-[11px] leading-relaxed text-slate-400">
+      <p className="text-[11px] leading-relaxed text-[#77718c]">
         {t(
           "中文研究范围为 A 股全市场，英文研究范围为美股全市场；A 股研究使用真实公开行情与财务，美股当前只有行情，基本面标注“待补充”。机会发现结果不是投资建议。",
           "The Chinese scope is the full A-share market; the English scope is the full US market. A-shares use real public prices and financials; US currently has prices only, with fundamentals marked TBD. Discovery results are not investment advice.",

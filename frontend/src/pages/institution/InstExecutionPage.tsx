@@ -135,7 +135,7 @@ export function InstExecutionPage() {
 
       {error ? <ErrorBox message={error} onRetry={load} /> : null}
       {message ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm text-emerald-700">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm text-emerald-700">
           {message}
         </div>
       ) : null}
@@ -146,9 +146,9 @@ export function InstExecutionPage() {
           [t("组合现金", "Portfolio cash"), fmtMoney(pf?.cash)],
           [t("组合净值", "Portfolio NAV"), fmtMoney(pf?.nav)],
         ].map(([label, value]) => (
-          <div key={label} className="rounded-2xl border border-[#e7e3d8] bg-white p-5">
-            <p className="text-xs text-slate-500">{label}</p>
-            <p className="mt-2 font-mono text-xl font-semibold text-slate-900">{value}</p>
+          <div key={label} className="rounded-xl border border-[#dde5f2] bg-white p-5">
+            <p className="text-xs text-[#68738b]">{label}</p>
+            <p className="mt-2 font-mono text-xl font-semibold text-[#171923]">{value}</p>
           </div>
         ))}
       </div>
@@ -160,11 +160,11 @@ export function InstExecutionPage() {
               {items.map((a) => {
                 const s = a.snapshot || {};
                 return (
-                  <article key={a.id} className="rounded-xl border border-[#f0ece2] bg-[#faf9f5] p-4">
+                  <article key={a.id} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
-                        <h3 className="text-sm font-semibold text-slate-900">{a.company_name}</h3>
-                        <p className="mt-0.5 font-mono text-[11px] text-slate-500">
+                        <h3 className="text-sm font-semibold text-[#171923]">{a.company_name}</h3>
+                        <p className="mt-0.5 font-mono text-[11px] text-[#68738b]">
                           AUTH-{a.id} · {a.symbol} · {t("议案", "Proposal")} #{a.proposal_id}
                         </p>
                       </div>
@@ -177,7 +177,7 @@ export function InstExecutionPage() {
                       <Field label={t("有效期", "Valid until")} value={String(s.valid_until || "—")} />
                     </div>
                     <div className="mt-3 flex items-center justify-between gap-2">
-                      <p className="text-[11px] text-slate-400">{t("执行前会再次校验授权、版本、现金与价格。", "Authorization, version, cash and price are re-checked before execution.")}</p>
+                      <p className="text-[11px] text-[#77718c]">{t("执行前会再次校验授权、版本、现金与价格。", "Authorization, version, cash and price are re-checked before execution.")}</p>
                       <div className="flex gap-2">
                         <Button variant="ghost" onClick={() => check(a.id)}>
                           {t("执行前校验", "Pre-check")}
@@ -191,7 +191,7 @@ export function InstExecutionPage() {
                     {prechecks[a.id] ? (
                       <ul className="mt-2 space-y-1 rounded-lg bg-white p-2 text-[11px]">
                         {(prechecks[a.id].checks || []).map((c: Record<string, any>) => (
-                          <li key={c.key} className={c.ok ? "text-slate-600" : "text-red-600"}>
+                          <li key={c.key} className={c.ok ? "text-[#68738b]" : "text-red-600"}>
                             {c.ok ? "✓" : "✕"} {c.label}：{c.detail}
                           </li>
                         ))}
@@ -203,7 +203,7 @@ export function InstExecutionPage() {
             </div>
           ) : (
             <Empty>
-              <ArrowLeftRight className="mx-auto mb-2 h-6 w-6 text-slate-300" />
+              <ArrowLeftRight className="mx-auto mb-2 h-6 w-6 text-[#a9a4bd]" />
               {t("没有可执行授权。完成合伙人、Chairman 与风控复核后生成授权。", "No executable authorizations. Complete partner, Chairman and risk reviews first.")}
             </Empty>
           )}
@@ -214,8 +214,8 @@ export function InstExecutionPage() {
           <Field label={t("交易后现金下限", "Post-trade cash floor")} value="10%" />
           <Field label={t("重复提交", "Duplicate submission")} value={t("幂等拦截", "Idempotent")} />
           <Field label={t("异常处理", "Exception handling")} value={t("待对账 / 人工处置", "Reconciliation / manual")} />
-          <p className="mt-3 flex items-start gap-2 text-[11px] leading-relaxed text-slate-400">
-            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#8a6a2f]" />
+          <p className="mt-3 flex items-start gap-2 text-[11px] leading-relaxed text-[#77718c]">
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#b42345]" />
             {t("SimBroker 只在服务端生成纸面订单与成交；未配置真实适配时不能真实下单。", "SimBroker only creates paper orders/fills server-side; without a real adapter no live order is sent.")}
           </p>
         </Card>
@@ -232,8 +232,8 @@ export function InstExecutionPage() {
                     {t("标记已处理", "Resolve")}
                   </Button>
                 </div>
-                <p className="mt-1 text-slate-600">{String(ex.detail || "—")}</p>
-                <p className="mt-1 text-[10px] text-slate-400">
+                <p className="mt-1 text-[#68738b]">{String(ex.detail || "—")}</p>
+                <p className="mt-1 text-[10px] text-[#77718c]">
                   AUTH-{String(ex.authorization_id ?? "—")} · {String(ex.created_at || "")}
                 </p>
               </li>
@@ -249,7 +249,7 @@ export function InstExecutionPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-[#f0ece2] text-[11px] text-slate-400">
+                <tr className="border-b border-[#e3eaf8] text-[11px] text-[#77718c]">
                   <th className="py-2">{t("标的", "Symbol")}</th>
                   <th className="py-2 text-right">{t("数量", "Qty")}</th>
                   <th className="py-2 text-right">{t("市值", "Value")}</th>
@@ -258,10 +258,10 @@ export function InstExecutionPage() {
               </thead>
               <tbody>
                 {pf.positions.map((p) => (
-                  <tr key={p.id} className="border-b border-[#f7f4ec] last:border-0">
+                  <tr key={p.id} className="border-b border-[#eef1f8] last:border-0">
                     <td className="py-2.5">
-                      <p className="font-medium text-slate-800">{p.name || p.symbol}</p>
-                      <p className="font-mono text-[10px] text-slate-400">{p.symbol}</p>
+                      <p className="font-medium text-[#252533]">{p.name || p.symbol}</p>
+                      <p className="font-mono text-[10px] text-[#77718c]">{p.symbol}</p>
                     </td>
                     <td className="py-2.5 text-right font-mono text-xs">{fmtMoney(p.qty)}</td>
                     <td className="py-2.5 text-right font-mono text-xs">{fmtMoney(p.market_value)}</td>

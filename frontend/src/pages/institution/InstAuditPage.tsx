@@ -65,27 +65,27 @@ export function InstAuditPage() {
         <Loading label={t("正在加载审计日志…", "Loading audit log…")} />
       ) : items.length ? (
         <Card title={t("最近 200 条", "Latest 200")} desc={t("按时间倒序；不含业务内容正文。", "Newest first; no business content bodies.")}>
-          <ul className="divide-y divide-[#f0ece2]">
+          <ul className="divide-y divide-[#e3eaf8]">
             {items.map((row) => (
               <li key={row.id} className="py-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-mono text-xs text-slate-800">{row.action}</span>
-                  <span className="text-[10px] text-slate-400">{row.created_at || "—"}</span>
+                  <span className="font-mono text-xs text-[#252533]">{row.action}</span>
+                  <span className="text-[10px] text-[#77718c]">{row.created_at || "—"}</span>
                 </div>
-                <p className="mt-1 text-[11px] text-slate-500">
+                <p className="mt-1 text-[11px] text-[#68738b]">
                   {row.object_type || "—"}
                   {row.object_id != null ? ` #${row.object_id}` : ""} · {t("操作人", "Actor")}{" "}
                   {row.actor_member_id ?? "—"} · {row.policy_version || "—"}
                   {row.ip ? ` · ${row.ip}` : ""}
                 </p>
-                <p className="mt-1 break-all font-mono text-[10px] text-slate-400">{summarise(row.after)}</p>
+                <p className="mt-1 break-all font-mono text-[10px] text-[#77718c]">{summarise(row.after)}</p>
               </li>
             ))}
           </ul>
         </Card>
       ) : (
         <Empty>
-          <ScrollText className="mx-auto mb-2 h-6 w-6 text-slate-300" />
+          <ScrollText className="mx-auto mb-2 h-6 w-6 text-[#a9a4bd]" />
           {t("还没有审计记录。", "No audit records yet.")}
         </Empty>
       )}

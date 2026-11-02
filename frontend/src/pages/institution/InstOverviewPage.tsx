@@ -38,10 +38,10 @@ const WORKFLOW: Array<[string, string, string, string]> = [
 
 function Metric({ label, value, note }: { label: string; value: string; note: string }) {
   return (
-    <div className="rounded-2xl border border-[#e7e3d8] bg-white p-5">
-      <p className="text-xs tracking-wide text-slate-500">{label}</p>
-      <p className="mt-2 font-mono text-2xl font-semibold text-slate-900">{value}</p>
-      <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{note}</p>
+    <div className="rounded-xl border border-[#dde5f2] bg-white p-5">
+      <p className="text-xs tracking-wide text-[#68738b]">{label}</p>
+      <p className="mt-2 font-mono text-2xl font-semibold text-[#171923]">{value}</p>
+      <p className="mt-2 text-[11px] leading-relaxed text-[#77718c]">{note}</p>
     </div>
   );
 }
@@ -91,20 +91,29 @@ export function InstOverviewPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <section className="rounded-2xl border border-[#e7e3d8] bg-white px-6 py-7">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-[11px] tracking-[0.18em] text-[#8a6a2f]">INVESTMENT OFFICE / 01</p>
-            <h1 className="mt-2 font-display text-2xl font-semibold text-slate-900 sm:text-3xl">
+      <section className="relative overflow-hidden rounded-xl border-0 bg-[#f4f0ff] px-6 py-8">
+        <span aria-hidden className="pointer-events-none absolute -top-7 right-8 select-none font-serif text-[150px] leading-none text-[#dfd5fa]">
+          旸
+        </span>
+        <div className="relative z-10 flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-2xl">
+            <p className="text-[11px] tracking-[0.18em] text-[#b42345]">INVESTMENT OFFICE / 01</p>
+            <h1 className="mt-2 font-display text-2xl font-semibold text-[#171923] sm:text-[26px]">
               {t("以企业为起点，以证据做决策", "Start with the business, decide with evidence")}
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+            <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-[#68738b]">
               {t("发现卓越企业，让每一项投资判断都经得起反方检验。当前为", "Find exceptional businesses; every call must survive the bear case. Current view:")}
-              <span className="mx-1 font-medium text-slate-800">{session.org.name_cn}</span>
+              <span className="mx-1 font-medium text-[#252533]">{session.org.name_cn}</span>
               · {locale === "en" ? session.role_label_en : session.role_label_cn}
             </p>
+            <Link
+              to="/inst/ideas"
+              className="mt-4 inline-flex items-center gap-1 rounded-md bg-[#b42345] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#a31f42]"
+            >
+              {t("发现投资机会", "Discover opportunities")} <ArrowUpRight className="h-3.5 w-3.5" />
+            </Link>
           </div>
-          <div className="rounded-xl border border-[#c9a15e]/40 bg-[#fbf6ea] px-3 py-2 text-[11px] leading-relaxed text-[#8a6a2f]">
+          <div className="relative z-10 rounded-xl border border-[#d9c8f0] bg-white/70 px-3 py-2 text-[11px] leading-relaxed text-[#7950ba]">
             {t("模拟环境 · 无真实交易", "Simulated environment · no real trading")}
             <br />
             {t("数据日", "Data date")} {data.data_date || "—"} · {t("不构成投资建议", "Not investment advice")}
@@ -132,44 +141,44 @@ export function InstOverviewPage() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-[#e7e3d8] bg-white p-6">
+        <div className="rounded-xl border border-[#dde5f2] bg-white p-6">
           <div className="flex items-center justify-between">
-            <h2 className="font-display text-lg font-semibold text-slate-900">{t("今天需要关注", "Needs attention")}</h2>
-            <button type="button" onClick={load} className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600">
+            <h2 className="font-display text-lg font-semibold text-[#171923]">{t("今天需要关注", "Needs attention")}</h2>
+            <button type="button" onClick={load} className="inline-flex items-center gap-1 text-[11px] text-[#77718c] hover:text-[#68738b]">
               <RefreshCw className="h-3 w-3" /> {t("刷新", "Refresh")}
             </button>
           </div>
           {attention.length ? (
-            <ul className="mt-4 divide-y divide-[#f0ece2]">
+            <ul className="mt-4 divide-y divide-[#e3eaf8]">
               {attention.map((item) => (
                 <li key={item.label}>
                   <Link
                     to={item.to}
-                    className="flex items-center justify-between gap-3 py-3 text-sm text-slate-700 transition-colors hover:text-slate-900"
+                    className="flex items-center justify-between gap-3 py-3 text-sm text-[#505369] transition-colors hover:text-[#171923]"
                   >
                     <span>{item.label}</span>
                     <span className="flex items-center gap-2">
-                      <span className={`font-mono text-sm ${item.count > 0 ? "text-[#8a6a2f]" : "text-slate-400"}`}>
+                      <span className={`font-mono text-sm ${item.count > 0 ? "text-[#b42345]" : "text-[#77718c]"}`}>
                         {String(item.count).padStart(2, "0")}
                       </span>
-                      <ArrowUpRight className="h-3.5 w-3.5 text-slate-300" aria-hidden />
+                      <ArrowUpRight className="h-3.5 w-3.5 text-[#a9a4bd]" aria-hidden />
                     </span>
                   </Link>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="mt-4 rounded-lg bg-[#faf8f2] px-3 py-6 text-center text-sm text-slate-500">
+            <p className="mt-4 rounded-lg bg-[#f5f0ff] px-3 py-6 text-center text-sm text-[#68738b]">
               {t("当前角色没有需要处理的审批或监控事项。", "Nothing awaiting this role.")}
             </p>
           )}
-          <p className="mt-4 text-[11px] leading-relaxed text-slate-400">
+          <p className="mt-4 text-[11px] leading-relaxed text-[#77718c]">
             {t("驾驶舱只汇总待办与状态；审批、风控与执行分别在对应工作区完成。", "The cockpit only aggregates to-dos and status; approvals, risk and execution happen in their workspaces.")}
           </p>
         </div>
 
-        <div className="rounded-2xl border border-[#e7e3d8] bg-white p-6">
-          <h2 className="font-display text-lg font-semibold text-slate-900">{t("组合约束", "Portfolio constraints")}</h2>
+        <div className="rounded-xl border border-[#dde5f2] bg-white p-6">
+          <h2 className="font-display text-lg font-semibold text-[#171923]">{t("组合约束", "Portfolio constraints")}</h2>
           <dl className="mt-4 space-y-3 text-sm">
             {[
               [t("单股仓位上限", "Single-name cap"), fmtPct(data.policy?.max_single_weight)],
@@ -177,30 +186,30 @@ export function InstOverviewPage() {
               [t("参考净值", "Reference NAV"), fmtMoney(data.policy?.nav)],
               [t("政策版本", "Policy version"), data.policy?.policy_version || "—"],
             ].map(([k, v]) => (
-              <div key={k} className="flex items-center justify-between border-b border-[#f0ece2] pb-3">
-                <dt className="text-slate-500">{k}</dt>
-                <dd className="font-mono text-slate-900">{v}</dd>
+              <div key={k} className="flex items-center justify-between border-b border-[#e3eaf8] pb-3">
+                <dt className="text-[#68738b]">{k}</dt>
+                <dd className="font-mono text-[#171923]">{v}</dd>
               </div>
             ))}
           </dl>
-          <p className="mt-4 flex items-start gap-2 text-[11px] leading-relaxed text-slate-400">
-            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#8a6a2f]" aria-hidden />
+          <p className="mt-4 flex items-start gap-2 text-[11px] leading-relaxed text-[#77718c]">
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#b42345]" aria-hidden />
             {t("以上为内部演示政策，不是监管限额；正式政策按基金合同、账户与市场分别配置。", "Internal demo policy, not a regulatory limit; production policy is set per mandate, account and market.")}
           </p>
         </div>
       </section>
 
-      <section className="rounded-2xl border border-[#e7e3d8] bg-white p-6">
+      <section className="rounded-xl border border-[#dde5f2] bg-white p-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-display text-lg font-semibold text-slate-900">{t("投资工作流", "Investment workflow")}</h2>
+          <h2 className="font-display text-lg font-semibold text-[#171923]">{t("投资工作流", "Investment workflow")}</h2>
           <Badge tone="gold">{t("九工作区已接入首版闭环", "Nine workspaces wired end to end")}</Badge>
         </div>
         <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {WORKFLOW.map(([zh, en, descZh, descEn], index) => (
-            <li key={zh} className="rounded-xl border border-[#f0ece2] bg-[#faf9f5] p-4">
-              <span className="font-mono text-[11px] text-[#8a6a2f]">{String(index + 1).padStart(2, "0")}</span>
-              <p className="mt-1 text-sm font-medium text-slate-800">{locale === "en" ? en : zh}</p>
-              <p className="mt-1 text-[11px] text-slate-500">{locale === "en" ? descEn : descZh}</p>
+            <li key={zh} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-4">
+              <span className="font-mono text-[11px] text-[#b42345]">{String(index + 1).padStart(2, "0")}</span>
+              <p className="mt-1 text-sm font-medium text-[#252533]">{locale === "en" ? en : zh}</p>
+              <p className="mt-1 text-[11px] text-[#68738b]">{locale === "en" ? descEn : descZh}</p>
             </li>
           ))}
         </ol>

@@ -147,12 +147,12 @@ export function InstApprovalsPage() {
                 key={p.id}
                 type="button"
                 onClick={() => setParams({ proposal: String(p.id) })}
-                className="w-full rounded-2xl border border-[#e7e3d8] bg-white p-5 text-left transition hover:border-[#c9a15e]"
+                className="w-full rounded-xl border border-[#dde5f2] bg-white p-5 text-left transition hover:border-[#7950ba]"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="font-display text-base font-semibold text-slate-900">{p.company_name}</p>
-                    <p className="mt-0.5 font-mono text-[11px] text-slate-500">
+                    <p className="font-display text-base font-semibold text-[#171923]">{p.company_name}</p>
+                    <p className="mt-0.5 font-mono text-[11px] text-[#68738b]">
                       #{p.id} · {p.symbol} · {p.direction === "buy" ? t("买入", "Buy") : p.direction === "sell" ? t("卖出", "Sell") : t("退出", "Exit")}
                     </p>
                   </div>
@@ -162,7 +162,7 @@ export function InstApprovalsPage() {
                     {p.authorization_status ? <StatusBadge status={p.authorization_status} /> : null}
                   </div>
                 </div>
-                <p className="mt-3 text-xs text-slate-500">
+                <p className="mt-3 text-xs text-[#68738b]">
                   {t("当前版本", "Current version")} v{p.version_no || 1} · {t("点击进入审批详情", "Open approval detail")}
                 </p>
               </button>
@@ -170,7 +170,7 @@ export function InstApprovalsPage() {
           </div>
         ) : (
           <Empty>
-            <BadgeCheck className="mx-auto mb-2 h-6 w-6 text-slate-300" />
+            <BadgeCheck className="mx-auto mb-2 h-6 w-6 text-[#a9a4bd]" />
             {t("还没有议案。完成研究与辩论后，经理可在议案页创建。", "No proposals yet. After research and debate, a manager can create one.")}
           </Empty>
         )}
@@ -221,7 +221,7 @@ export function InstApprovalsPage() {
               <Field label={t("有效期", "Valid until")} value={String(snapshot.valid_until || "—")} />
             </div>
             {Array.isArray(snapshot.monitoring) && snapshot.monitoring.length ? (
-              <div className="mt-3 rounded-xl border border-[#c9a15e]/30 bg-[#fbf6ea] p-3 text-xs text-[#8a6a2f]">
+              <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs text-[#b42345]">
                 <p className="font-medium">{t("监控条件", "Monitoring conditions")}</p>
                 <ul className="mt-1 list-disc pl-4">
                   {snapshot.monitoring.map((x: string) => (
@@ -237,11 +237,11 @@ export function InstApprovalsPage() {
               {(["partner", "chairman", "risk_precheck"] as const).map((step) => {
                 const a = approvalMap.get(step);
                 return (
-                  <div key={step} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#f0ece2] bg-[#faf9f5] px-4 py-3">
+                  <div key={step} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#e3eaf8] bg-[#f8faff] px-4 py-3">
                     <div>
-                      <p className="text-sm font-medium text-slate-800">{stepLabel(step)}</p>
-                      <p className="mt-1 text-xs text-slate-500">{a?.comment || t("尚未处理", "Pending")}</p>
-                      {a?.decided_at ? <p className="mt-1 text-[10px] text-slate-400">{a.decided_at}</p> : null}
+                      <p className="text-sm font-medium text-[#252533]">{stepLabel(step)}</p>
+                      <p className="mt-1 text-xs text-[#68738b]">{a?.comment || t("尚未处理", "Pending")}</p>
+                      {a?.decided_at ? <p className="mt-1 text-[10px] text-[#77718c]">{a.decided_at}</p> : null}
                     </div>
                     <StatusBadge status={a?.decision || "pending"} />
                   </div>
@@ -250,12 +250,12 @@ export function InstApprovalsPage() {
             </div>
 
             {canWrite ? (
-              <div className="mt-4 space-y-3 rounded-xl border border-[#f0ece2] p-4">
+              <div className="mt-4 space-y-3 rounded-xl border border-[#e3eaf8] p-4">
                 <textarea
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
                   placeholder={t("审批意见（通过/拒绝/退回均建议填写）", "Review comment (recommended for approve/reject/return)")}
-                  className="min-h-[72px] w-full rounded-lg border border-[#dcd6c8] bg-[#faf9f5] p-2 text-xs outline-none focus:border-[#c9a15e]"
+                  className="min-h-[72px] w-full rounded-lg border border-[#dde5f2] bg-[#f8faff] p-2 text-xs outline-none focus:border-[#7950ba]"
                 />
                 <div className="flex flex-wrap gap-2">
                   {role === "partner" ? (
@@ -264,7 +264,7 @@ export function InstApprovalsPage() {
                         value={target}
                         onChange={(e) => setTarget(e.target.value)}
                         placeholder={t("目标仓位，如 0.05", "Target weight, e.g. 0.05")}
-                        className="w-36 rounded-lg border border-[#dcd6c8] bg-white px-2 py-2 text-xs outline-none"
+                        className="w-36 rounded-lg border border-[#dde5f2] bg-white px-2 py-2 text-xs outline-none"
                       />
                       <Button
                         variant="gold"
@@ -365,7 +365,7 @@ export function InstApprovalsPage() {
                     </Button>
                   ) : null}
                 </div>
-                <p className="text-[11px] leading-relaxed text-slate-400">
+                <p className="text-[11px] leading-relaxed text-[#77718c]">
                   {t("角色校验在服务端执行；按钮显隐只是展示。风控阻断后 Chairman 不能批准。", "Roles are enforced server-side; button visibility is only display. Chairman cannot approve after a risk block.")}
                 </p>
               </div>
@@ -378,8 +378,8 @@ export function InstApprovalsPage() {
             {detail.approvals?.length ? (
               <ul className="space-y-2 text-xs">
                 {detail.approvals.map((a) => (
-                  <li key={a.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#f0ece2] px-3 py-2">
-                    <span className="text-slate-600">{stepLabel(a.step)}</span>
+                  <li key={a.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#e3eaf8] px-3 py-2">
+                    <span className="text-[#68738b]">{stepLabel(a.step)}</span>
                     <StatusBadge status={a.decision} />
                   </li>
                 ))}
@@ -429,7 +429,7 @@ export function InstApprovalsPage() {
               </Button>
             </div>
             {memo ? (
-              <div className="mt-3 rounded-xl border border-[#c9a15e]/30 bg-[#fbf6ea] p-3 text-xs leading-relaxed text-[#8a6a2f]">
+              <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs leading-relaxed text-[#b42345]">
                 <p className="font-medium">{t("AI 摘要（非投资建议，需真人确认）", "AI summary (not advice; human confirmation required)")}</p>
                 <p className="mt-1">{memo.summary || "—"}</p>
                 {Array.isArray(memo.risks) && memo.risks.length ? (
@@ -487,7 +487,7 @@ export function InstApprovalsPage() {
                   <Badge tone={chairmanMode.ready ? "green" : "red"}>
                     {chairmanMode.ready ? t("预检查通过", "Pre-check passed") : t("需人工处理", "Human required")}
                   </Badge>
-                  <span className="text-slate-600">
+                  <span className="text-[#68738b]">
                     {t("建议", "Recommendation")}：{chairmanMode.recommendation}
                   </span>
                   {chairmanMode.mode === "ai_simulated" ? (
@@ -498,7 +498,7 @@ export function InstApprovalsPage() {
                 </div>
                 <ul className="space-y-1">
                   {(chairmanMode.checks || []).map((c: Record<string, any>) => (
-                    <li key={c.key} className={c.ok ? "text-slate-600" : c.severity === "block" ? "text-red-600" : "text-amber-700"}>
+                    <li key={c.key} className={c.ok ? "text-[#68738b]" : c.severity === "block" ? "text-red-600" : "text-amber-700"}>
                       {c.ok ? "✓" : "✕"} {c.label}：{c.detail}
                     </li>
                   ))}
@@ -508,7 +508,7 @@ export function InstApprovalsPage() {
                     value={handoverNote}
                     onChange={(e) => setHandoverNote(e.target.value)}
                     placeholder={t("移交备注（可选）", "Handover note (optional)")}
-                    className="w-56 rounded-lg border border-[#dcd6c8] bg-white px-2 py-2 text-xs outline-none"
+                    className="w-56 rounded-lg border border-[#dde5f2] bg-white px-2 py-2 text-xs outline-none"
                   />
                   <Button
                     variant="ghost"
@@ -535,18 +535,18 @@ export function InstApprovalsPage() {
             {detail.authorizations?.length ? (
               <ul className="space-y-2">
                 {detail.authorizations.map((a) => (
-                  <li key={a.id} className="rounded-xl border border-[#f0ece2] bg-[#faf9f5] p-3">
+                  <li key={a.id} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-xs text-slate-700">AUTH-{a.id}</span>
+                      <span className="font-mono text-xs text-[#505369]">AUTH-{a.id}</span>
                       <StatusBadge status={a.status} />
                     </div>
-                    <p className="mt-1 text-[10px] text-slate-400">{a.issued_at}</p>
+                    <p className="mt-1 text-[10px] text-[#77718c]">{a.issued_at}</p>
                   </li>
                 ))}
               </ul>
             ) : (
               <Empty>
-                <Stamp className="mx-auto mb-2 h-6 w-6 text-slate-300" />
+                <Stamp className="mx-auto mb-2 h-6 w-6 text-[#a9a4bd]" />
                 {t("尚未生成授权。完成合伙人、Chairman 与风控复核后可生成。", "No authorization yet. Generate it after partner, Chairman and risk reviews.")}
               </Empty>
             )}
@@ -557,7 +557,7 @@ export function InstApprovalsPage() {
               <ul className="space-y-2">
                 {detail.versions.map((v) => (
                   <li key={v.id} className="flex items-center justify-between gap-2 text-xs">
-                    <span className="text-slate-600">v{v.version_no}</span>
+                    <span className="text-[#68738b]">v{v.version_no}</span>
                     <StatusBadge status={v.status} />
                   </li>
                 ))}
@@ -569,7 +569,7 @@ export function InstApprovalsPage() {
         </div>
       </div>
 
-      <p className="text-[11px] leading-relaxed text-slate-400">
+      <p className="text-[11px] leading-relaxed text-[#77718c]">
         {t("审批记录与授权快照写入领域审计；演示环境无真实交易，任何批准都不代表成交。", "Approvals and authorization snapshots are written to the audit trail; demo environment has no real trading and approval is not a fill.")}
       </p>
     </div>

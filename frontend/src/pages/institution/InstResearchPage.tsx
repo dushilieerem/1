@@ -201,12 +201,12 @@ export function InstResearchPage() {
               <Link
                 key={c.id}
                 to={`/inst/research?case=${c.id}`}
-                className="rounded-2xl border border-[#e7e3d8] bg-white p-5 transition hover:border-[#c9a15e]"
+                className="rounded-xl border border-[#dde5f2] bg-white p-5 transition hover:border-[#7950ba]"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <h3 className="font-display text-base font-semibold text-slate-900">{c.company_name}</h3>
-                    <p className="mt-0.5 font-mono text-[11px] text-slate-500">
+                    <h3 className="font-display text-base font-semibold text-[#171923]">{c.company_name}</h3>
+                    <p className="mt-0.5 font-mono text-[11px] text-[#68738b]">
                       {c.symbol} · {c.case_no}
                     </p>
                   </div>
@@ -216,7 +216,7 @@ export function InstResearchPage() {
                   <Badge tone="gold">{c.industry || t("行业待补充", "Industry n/a")}</Badge>
                   <StatusBadge status={c.data_status} />
                 </div>
-                <p className="mt-3 text-xs text-slate-500">
+                <p className="mt-3 text-xs text-[#68738b]">
                   {t("点击进入研究案，生成六维结论、资料包与审核记录。", "Open the case to generate six dimensions, the evidence pack and reviews.")}
                 </p>
               </Link>
@@ -224,7 +224,7 @@ export function InstResearchPage() {
           </div>
         ) : (
           <Empty>
-            <FileSearch className="mx-auto mb-2 h-6 w-6 text-slate-300" />
+            <FileSearch className="mx-auto mb-2 h-6 w-6 text-[#a9a4bd]" />
             {t("还没有研究案。先到「机会发现」选择一家公司并进入研究。", "No research cases yet. Pick a company in Discovery and start research.")}
           </Empty>
         )}
@@ -286,15 +286,15 @@ export function InstResearchPage() {
             {version?.six_dim?.length ? (
               <div className="grid gap-3 sm:grid-cols-2">
                 {version.six_dim.map((dim) => (
-                  <article key={dim.key} className="rounded-xl border border-[#f0ece2] bg-[#faf9f5] p-4">
+                  <article key={dim.key} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-4">
                     <div className="flex items-start justify-between gap-2">
-                      <h3 className="text-sm font-semibold text-slate-900">{dim.title}</h3>
+                      <h3 className="text-sm font-semibold text-[#171923]">{dim.title}</h3>
                       <StatusBadge status={dim.status} />
                     </div>
-                    <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{dim.question}</p>
-                    <p className="mt-2 text-xs leading-relaxed text-slate-700">{dim.summary || t("待补充", "TBD")}</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-[#68738b]">{dim.question}</p>
+                    <p className="mt-2 text-xs leading-relaxed text-[#505369]">{dim.summary || t("待补充", "TBD")}</p>
                     {dim.checks?.length ? (
-                      <ul className="mt-2 space-y-1 text-[11px] text-slate-500">
+                      <ul className="mt-2 space-y-1 text-[11px] text-[#68738b]">
                         {dim.checks.map((x) => (
                           <li key={x}>· {x}</li>
                         ))}
@@ -304,7 +304,7 @@ export function InstResearchPage() {
                       <p className="mt-2 text-[11px] text-amber-700">{t("反证", "Falsifier")}：{dim.counter[0]}</p>
                     ) : null}
                     {dim.evidence_ids?.length ? (
-                      <p className="mt-2 font-mono text-[10px] text-slate-400">
+                      <p className="mt-2 font-mono text-[10px] text-[#77718c]">
                         {t("证据 ID", "Evidence IDs")}：{dim.evidence_ids.join(", ")}
                       </p>
                     ) : null}
@@ -318,19 +318,19 @@ export function InstResearchPage() {
 
           <Card title={t("证据与反证", "Evidence & counter-evidence")} desc={t("重大结论必须可回源；无证据 ID 的结论不能进入审批包。", "Material conclusions must be traceable; conclusions without evidence IDs cannot enter the approval package.")}>
             {detail.evidence?.length ? (
-              <ul className="divide-y divide-[#f0ece2]">
+              <ul className="divide-y divide-[#e3eaf8]">
                 {detail.evidence.map((ev) => (
                   <li key={ev.id} className="py-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-sm font-medium text-slate-800">
+                        <p className="text-sm font-medium text-[#252533]">
                           #{ev.id} {ev.title}
                         </p>
-                        <p className="mt-1 text-xs leading-relaxed text-slate-600">{ev.quote || "—"}</p>
+                        <p className="mt-1 text-xs leading-relaxed text-[#68738b]">{ev.quote || "—"}</p>
                       </div>
                       <div className="shrink-0 text-right">
                         <Badge>{ev.source}</Badge>
-                        <p className="mt-1 text-[10px] text-slate-400">{ev.as_of || "—"}</p>
+                        <p className="mt-1 text-[10px] text-[#77718c]">{ev.as_of || "—"}</p>
                       </div>
                     </div>
                   </li>
@@ -367,7 +367,7 @@ export function InstResearchPage() {
                   </Button>
                 </div>
                 {memo ? (
-                  <div className="mt-3 rounded-xl border border-[#c9a15e]/30 bg-[#fbf6ea] p-3 text-xs leading-relaxed text-[#8a6a2f]">
+                  <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs leading-relaxed text-[#b42345]">
                     <p className="font-medium">{t("AI 摘要（非投资建议）", "AI summary (not investment advice)")}</p>
                     <p className="mt-1">{memo.summary || "—"}</p>
                     {Array.isArray(memo.risks) && memo.risks.length ? (
@@ -383,7 +383,7 @@ export function InstResearchPage() {
                   </div>
                 ) : null}
                 {version.valuation ? (
-                  <div className="mt-3 rounded-xl border border-[#c9a15e]/30 bg-[#fbf6ea] p-3 text-xs text-[#8a6a2f]">
+                  <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs text-[#b42345]">
                     <p className="font-medium">{t("估值口径", "Valuation basis")}</p>
                     <p className="mt-1 leading-relaxed">
                       {String((version.valuation as Record<string, unknown>).note || t("演示口径，不是目标价。", "Demo basis, not a target price."))}
@@ -391,8 +391,8 @@ export function InstResearchPage() {
                   </div>
                 ) : null}
                 {detail.company_id ? (
-                  <div className="mt-3 rounded-xl border border-[#e7e3d8] bg-white p-3">
-                    <p className="text-xs font-semibold text-slate-700">
+                  <div className="mt-3 rounded-xl border border-[#dde5f2] bg-white p-3">
+                    <p className="text-xs font-semibold text-[#505369]">
                       {t("五年 DCF（确定性计算 · 不是目标价）", "Five-year DCF (deterministic, not a target price)")}
                     </p>
                     <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
@@ -404,13 +404,13 @@ export function InstResearchPage() {
                         ["terminal_growth", t("永续 %", "Terminal %")],
                         ["shares", t("股本（可选）", "Shares (optional)")],
                       ].map(([key, label]) => (
-                        <label key={key} className="space-y-1 text-slate-500">
+                        <label key={key} className="space-y-1 text-[#68738b]">
                           <span>{label}</span>
                           <input
                             value={(dcfIn as Record<string, string>)[key]}
                             onChange={(e) => setDcfIn((v) => ({ ...v, [key]: e.target.value }))}
                             inputMode="decimal"
-                            className="w-full rounded-lg border border-[#dcd6c8] bg-[#faf9f5] px-2 py-1 text-xs text-slate-800 outline-none focus:border-[#c9a15e]"
+                            className="w-full rounded-lg border border-[#dde5f2] bg-[#f8faff] px-2 py-1 text-xs text-[#252533] outline-none focus:border-[#7950ba]"
                           />
                         </label>
                       ))}
@@ -421,7 +421,7 @@ export function InstResearchPage() {
                       </Button>
                     </div>
                     {dcf?.range ? (
-                      <div className="mt-2 text-xs leading-relaxed text-slate-600">
+                      <div className="mt-2 text-xs leading-relaxed text-[#68738b]">
                         <p>
                           {t("区间", "Range")}：{fmtNum(dcf.range.low, 2)} – {fmtNum(dcf.range.high, 2)}
                           {dcf.range.base_per_share != null
@@ -429,7 +429,7 @@ export function InstResearchPage() {
                             : ""}
                         </p>
                         {Array.isArray(dcf.limits) ? (
-                          <p className="mt-1 text-[11px] text-slate-400">{dcf.limits.join("；")}</p>
+                          <p className="mt-1 text-[11px] text-[#77718c]">{dcf.limits.join("；")}</p>
                         ) : null}
                       </div>
                     ) : null}
@@ -441,7 +441,7 @@ export function InstResearchPage() {
                       value={comment}
                       onChange={(e) => setComment(e.target.value)}
                       placeholder={t("审核意见（退回时必须填写）", "Review comment (required when returning)")}
-                      className="min-h-[72px] w-full rounded-lg border border-[#dcd6c8] bg-[#faf9f5] p-2 text-xs outline-none focus:border-[#c9a15e]"
+                      className="min-h-[72px] w-full rounded-lg border border-[#dde5f2] bg-[#f8faff] p-2 text-xs outline-none focus:border-[#7950ba]"
                     />
                     <div className="flex gap-2">
                       <Button
@@ -500,9 +500,9 @@ export function InstResearchPage() {
               <ul className="space-y-2">
                 {detail.tasks.map((t) => (
                   <li key={t.id} className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-slate-700">{t.title}</span>
+                    <span className="text-[#505369]">{t.title}</span>
                     <span className="flex items-center gap-2">
-                      <span className="font-mono text-[11px] text-slate-400">{t.progress}%</span>
+                      <span className="font-mono text-[11px] text-[#77718c]">{t.progress}%</span>
                       <StatusBadge status={t.status} />
                     </span>
                   </li>
@@ -523,7 +523,7 @@ export function InstResearchPage() {
         </div>
       </div>
 
-      <p className="text-[11px] leading-relaxed text-slate-400">
+      <p className="text-[11px] leading-relaxed text-[#77718c]">
         {t("研究结论由数据与规则生成，AI 仅提供解释与反证建议；估值口径为演示，不是目标价。数据不足时显示「待补充」，不构成投资建议。", "Conclusions come from data and rules; AI only explains and suggests falsifiers. Valuation is illustrative, not a target price. Missing data shows TBD. Not investment advice.")}
       </p>
     </div>

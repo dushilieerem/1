@@ -148,16 +148,16 @@ export function InstDebatePage() {
               <Link
                 key={c.id}
                 to={`/inst/debate?case=${c.id}`}
-                className="rounded-2xl border border-[#e7e3d8] bg-white p-5 transition hover:border-[#c9a15e]"
+                className="rounded-xl border border-[#dde5f2] bg-white p-5 transition hover:border-[#7950ba]"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <h3 className="font-display text-base font-semibold text-slate-900">{c.company_name}</h3>
-                    <p className="mt-0.5 font-mono text-[11px] text-slate-500">{c.symbol}</p>
+                    <h3 className="font-display text-base font-semibold text-[#171923]">{c.company_name}</h3>
+                    <p className="mt-0.5 font-mono text-[11px] text-[#68738b]">{c.symbol}</p>
                   </div>
                   <StatusBadge status={c.stage} />
                 </div>
-                <p className="mt-3 text-xs text-slate-500">
+                <p className="mt-3 text-xs text-[#68738b]">
                   {c.debates?.length ? t(`已有 ${c.debates.length} 场辩论`, `${c.debates.length} debate(s)`) : t("尚未开始辩论", "No debate yet")}
                 </p>
               </Link>
@@ -165,7 +165,7 @@ export function InstDebatePage() {
           </div>
         ) : (
           <Empty>
-            <MessagesSquare className="mx-auto mb-2 h-6 w-6 text-slate-300" />
+            <MessagesSquare className="mx-auto mb-2 h-6 w-6 text-[#a9a4bd]" />
             {t("还没有研究案。先从「机会发现」进入研究。", "No research cases yet. Start from Discovery.")}
           </Empty>
         )}
@@ -202,7 +202,7 @@ export function InstDebatePage() {
 
       {!approvedVersion ? (
         <Card title={t("辩论门禁", "Debate gate")}>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-[#68738b]">
             {t("研究审核尚未通过，不能进入辩论。请先在研究页确认研究成果。", "Research is not approved yet; confirm it on the research page first.")}
           </p>
         </Card>
@@ -215,7 +215,7 @@ export function InstDebatePage() {
             <Play className="mr-1 h-4 w-4" />
             {busy ? t("辩论生成中…", "Generating…") : t("开始两轮辩论", "Start two-round debate")}
           </Button>
-          <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
+          <p className="mt-3 text-[11px] leading-relaxed text-[#77718c]">
             {t("论点必须引用证据 ID；AI 不可用时使用规则模板并标注。辩论不产生买卖建议。", "Arguments must cite evidence IDs; when AI is unavailable, rule templates are used and labeled. Debate produces no trade advice.")}
           </p>
         </Card>
@@ -226,7 +226,7 @@ export function InstDebatePage() {
             desc={`${t("场次", "Session")} #${debate.id} · ${t("状态", "Status")} ${debate.status} · FactPack ${String(debate.factpack_hash || "").slice(0, 12)}…`}
             actions={<StatusBadge status={debate.status} />}
           >
-            <div className="mb-4 rounded-xl border border-[#c9a15e]/30 bg-[#fbf6ea] px-4 py-3 text-sm text-[#8a6a2f]">
+            <div className="mb-4 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] px-4 py-3 text-sm text-[#b42345]">
               {t("主持结论", "Chair conclusion")}：<b>{debate.conclusion || t("待定", "TBD")}</b>
               <span className="ml-2 text-[11px]">{t("（流程建议，不构成投资建议）", "(process suggestion, not investment advice)")}</span>
             </div>
@@ -235,9 +235,9 @@ export function InstDebatePage() {
                 { key: "bull", title: t("正方 · 看多", "Bull case"), tone: "green" as const, items: groups.bull },
                 { key: "bear", title: t("反方 · 看空", "Bear case"), tone: "red" as const, items: groups.bear },
               ].map((col) => (
-                <div key={col.key} className="rounded-xl border border-[#f0ece2] bg-[#faf9f5] p-4">
+                <div key={col.key} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-4">
                   <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-slate-900">{col.title}</h3>
+                    <h3 className="text-sm font-semibold text-[#171923]">{col.title}</h3>
                     <Badge tone={col.tone}>{col.items.length} {t("条", "items")}</Badge>
                   </div>
                   {col.items.length ? (
@@ -246,20 +246,20 @@ export function InstDebatePage() {
                         <li key={a.id} className="rounded-lg border border-white bg-white p-3">
                           <div className="flex items-center justify-between gap-2">
                             <Badge>{locale === "en" ? `Round ${a.round}` : `第 ${a.round} 轮`}</Badge>
-                            <span className="font-mono text-[10px] text-slate-400">
+                            <span className="font-mono text-[10px] text-[#77718c]">
                               {t("置信度", "Confidence")} {a.confidence?.toFixed?.(2) ?? "—"}
                             </span>
                           </div>
-                          <p className="mt-2 text-xs leading-relaxed text-slate-700">{a.claim}</p>
+                          <p className="mt-2 text-xs leading-relaxed text-[#505369]">{a.claim}</p>
                           {a.evidence_ids?.length ? (
-                            <p className="mt-2 font-mono text-[10px] text-slate-400">
+                            <p className="mt-2 font-mono text-[10px] text-[#77718c]">
                               {t("证据", "Evidence")}：{a.evidence_ids.join(", ")}
                             </p>
                           ) : (
                             <p className="mt-2 text-[10px] text-amber-600">{t("无有效证据引用，不计入裁决", "No valid evidence citation; excluded from the verdict")}</p>
                           )}
                           {a.falsifier ? (
-                            <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+                            <p className="mt-2 text-[11px] leading-relaxed text-[#68738b]">
                               {t("可证伪条件", "Falsifier")}：{a.falsifier}
                             </p>
                           ) : null}
@@ -278,7 +278,7 @@ export function InstDebatePage() {
             {groups.chair.length ? (
               <ul className="space-y-2">
                 {groups.chair.map((a) => (
-                  <li key={a.id} className="rounded-xl border border-[#f0ece2] bg-[#faf9f5] p-3 text-xs leading-relaxed text-slate-700">
+                  <li key={a.id} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3 text-xs leading-relaxed text-[#505369]">
                     {a.claim}
                   </li>
                 ))}
@@ -287,12 +287,12 @@ export function InstDebatePage() {
               <Empty>{t("暂无主持记录。", "No chair record.")}</Empty>
             )}
             <div className="mt-4 flex flex-wrap items-end gap-2">
-              <label className="text-[11px] text-slate-500">
+              <label className="text-[11px] text-[#68738b]">
                 {t("目标仓位", "Target weight")}
                 <input
                   value={target}
                   onChange={(e) => setTarget(e.target.value)}
-                  className="ml-2 w-24 rounded-lg border border-[#dcd6c8] bg-white px-2 py-1.5 text-xs text-slate-800 outline-none"
+                  className="ml-2 w-24 rounded-lg border border-[#dde5f2] bg-white px-2 py-1.5 text-xs text-[#252533] outline-none"
                   placeholder="0.05"
                 />
               </label>
@@ -325,7 +325,7 @@ export function InstDebatePage() {
                 {t("返回辩论列表", "Back to debate list")}
               </Button>
             </div>
-            <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+            <p className="mt-2 text-[11px] leading-relaxed text-[#77718c]">
               {t("创建议案后进入合伙人复核 → Chairman 审批 → 执行前风控 → 授权。任何一步拒绝都不能跳级。", "A proposal then goes through partner review → Chairman approval → pre-execution risk check → authorization. No step can be skipped.")}
             </p>
           </Card>

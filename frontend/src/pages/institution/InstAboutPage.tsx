@@ -41,7 +41,7 @@ export function InstAboutPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-[#f0ece2] text-[11px] text-slate-400">
+              <tr className="border-b border-[#e3eaf8] text-[11px] text-[#77718c]">
                 <th className="py-2">{t("角色", "Role")}</th>
                 <th className="py-2">{t("核心职责", "Responsibilities")}</th>
                 <th className="py-2">{t("权限边界", "Boundaries")}</th>
@@ -49,10 +49,10 @@ export function InstAboutPage() {
             </thead>
             <tbody>
               {ROLES.map(([roleZh, roleEn, dutyZh, dutyEn, boundZh, boundEn]) => (
-                <tr key={roleZh} className="border-b border-[#f7f4ec] last:border-0">
-                  <td className="whitespace-nowrap py-3 font-medium text-slate-800">{locale === "en" ? roleEn : roleZh}</td>
-                  <td className="py-3 text-xs leading-relaxed text-slate-600">{locale === "en" ? dutyEn : dutyZh}</td>
-                  <td className="py-3 text-xs leading-relaxed text-slate-500">{locale === "en" ? boundEn : boundZh}</td>
+                <tr key={roleZh} className="border-b border-[#eef1f8] last:border-0">
+                  <td className="whitespace-nowrap py-3 font-medium text-[#252533]">{locale === "en" ? roleEn : roleZh}</td>
+                  <td className="py-3 text-xs leading-relaxed text-[#68738b]">{locale === "en" ? dutyEn : dutyZh}</td>
+                  <td className="py-3 text-xs leading-relaxed text-[#68738b]">{locale === "en" ? boundEn : boundZh}</td>
                 </tr>
               ))}
             </tbody>
@@ -64,9 +64,9 @@ export function InstAboutPage() {
         <Card title={t("AI 角色与能力", "AI roles & capabilities")} desc={t("25 个岗位按七阶段组织；AI 只给建议，不改变业务状态。", "25 roles across seven stages; AI advises and never changes business state.")}>
           <ul className="space-y-3">
             {AI_ROLES.map(([nameZh, nameEn, descZh, descEn]) => (
-              <li key={nameZh} className="rounded-xl border border-[#f0ece2] bg-[#faf9f5] p-3">
-                <p className="text-sm font-medium text-slate-800">{locale === "en" ? nameEn : nameZh}</p>
-                <p className="mt-1 text-xs leading-relaxed text-slate-500">{locale === "en" ? descEn : descZh}</p>
+              <li key={nameZh} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+                <p className="text-sm font-medium text-[#252533]">{locale === "en" ? nameEn : nameZh}</p>
+                <p className="mt-1 text-xs leading-relaxed text-[#68738b]">{locale === "en" ? descEn : descZh}</p>
               </li>
             ))}
           </ul>
@@ -74,16 +74,16 @@ export function InstAboutPage() {
 
         <div className="space-y-4">
           <Card title={t("硬约束", "Hard rules")} desc={t("这些规则在服务端执行，任何角色与 AI 都不能绕过。", "Enforced server-side; no role or AI can bypass them.")}>
-            <ul className="space-y-2 text-xs leading-relaxed text-slate-600">
-              <li className="flex gap-2"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#8a6a2f]" />{t("单股目标仓位 ≤ 15%，交易后现金 ≥ 10%（内部演示政策，不是监管限额）。", "Single-name target ≤ 15%, post-trade cash ≥ 10% (internal demo policy, not a regulatory limit).")}</li>
-              <li className="flex gap-2"><BadgeCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#8a6a2f]" />{t("提案人不得审批自己的议案；合伙人不得批准自己提交的最终配置。", "Proposers cannot approve their own proposals; partners cannot approve their own final sizing.")}</li>
-              <li className="flex gap-2"><Users className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#8a6a2f]" />{t("授权是不可变快照；研究、仓位、价格、账户、汇率、有效期发生实质变更，旧批准与授权自动失效。", "Authorizations are immutable snapshots; material changes to research, size, price, account, FX or validity void prior approvals and authorizations.")}</li>
-              <li className="flex gap-2"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#8a6a2f]" />{t("风控否决终局；冻结期间 Chairman 不能批准，解除须独立风控重新核验。", "Risk veto is final; Chairman cannot approve while frozen, and unfreezing requires a fresh independent risk review.")}</li>
+            <ul className="space-y-2 text-xs leading-relaxed text-[#68738b]">
+              <li className="flex gap-2"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#b42345]" />{t("单股目标仓位 ≤ 15%，交易后现金 ≥ 10%（内部演示政策，不是监管限额）。", "Single-name target ≤ 15%, post-trade cash ≥ 10% (internal demo policy, not a regulatory limit).")}</li>
+              <li className="flex gap-2"><BadgeCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#b42345]" />{t("提案人不得审批自己的议案；合伙人不得批准自己提交的最终配置。", "Proposers cannot approve their own proposals; partners cannot approve their own final sizing.")}</li>
+              <li className="flex gap-2"><Users className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#b42345]" />{t("授权是不可变快照；研究、仓位、价格、账户、汇率、有效期发生实质变更，旧批准与授权自动失效。", "Authorizations are immutable snapshots; material changes to research, size, price, account, FX or validity void prior approvals and authorizations.")}</li>
+              <li className="flex gap-2"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#b42345]" />{t("风控否决终局；冻结期间 Chairman 不能批准，解除须独立风控重新核验。", "Risk veto is final; Chairman cannot approve while frozen, and unfreezing requires a fresh independent risk review.")}</li>
             </ul>
           </Card>
 
           <Card title={t("免责声明", "Disclaimer")}>
-            <p className="text-xs leading-relaxed text-slate-500">
+            <p className="text-xs leading-relaxed text-[#68738b]">
               {t("本平台为研究与流程演示，不构成投资建议、不承诺收益、不代客理财、不接真实资金交易。原型与研究数据中的公司、价格、财务、证据与仓位仅用于验证流程；演示数据不得进入真实审批。", "This platform demonstrates research and workflow only; it is not investment advice, promises no returns, manages no assets and connects to no real trading. Companies, prices, financials, evidence and positions are for process validation; demo data must not enter real approvals.")}
             </p>
           </Card>

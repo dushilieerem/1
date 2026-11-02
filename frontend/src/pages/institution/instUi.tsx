@@ -14,13 +14,13 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-[#e7e3d8] bg-white px-6 py-6">
+    <div className="flex flex-wrap items-start justify-between gap-4 px-0 py-1">
       <div>
         {eyebrow ? (
-          <p className="text-[11px] tracking-[0.18em] text-[#8a6a2f]">{eyebrow}</p>
+          <p className="text-[11px] tracking-[0.18em] text-[#b42345]">{eyebrow}</p>
         ) : null}
-        <h1 className="mt-1 font-display text-2xl font-semibold text-slate-900">{title}</h1>
-        {desc ? <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">{desc}</p> : null}
+        <h1 className="mt-1 font-display text-[29px] font-semibold leading-tight tracking-[-0.03em] text-[#171923]">{title}</h1>
+        {desc ? <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-[#68738b]">{desc}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
@@ -41,12 +41,12 @@ export function Card({
   className?: string;
 }) {
   return (
-    <section className={`rounded-2xl border border-[#e7e3d8] bg-white p-5 ${className}`}>
+    <section className={`rounded-xl border border-[#dde5f2] bg-white p-5 ${className}`}>
       {title || actions ? (
         <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
           <div>
-            {title ? <h2 className="font-display text-lg font-semibold text-slate-900">{title}</h2> : null}
-            {desc ? <p className="mt-1 text-xs leading-relaxed text-slate-500">{desc}</p> : null}
+            {title ? <h2 className="font-display text-lg font-semibold text-[#171923]">{title}</h2> : null}
+            {desc ? <p className="mt-1 text-xs leading-relaxed text-[#68738b]">{desc}</p> : null}
           </div>
           {actions}
         </div>
@@ -72,10 +72,10 @@ export function Button({
   title?: string;
 }) {
   const styles: Record<string, string> = {
-    primary: "bg-[#0b1220] text-white hover:bg-[#16233a]",
-    gold: "bg-[#c9a15e] text-[#1b2436] hover:bg-[#d8b476]",
-    ghost: "border border-[#dcd6c8] bg-white text-slate-700 hover:bg-[#faf8f2]",
-    danger: "border border-[#d9a3a3] bg-[#fff5f5] text-[#9b2c2c] hover:bg-[#fdecec]",
+    primary: "bg-[#b42345] text-white hover:bg-[#a31f42]",
+    gold: "bg-[#7950ba] text-white hover:bg-[#8a63c9]",
+    ghost: "border border-[#dde5f2] bg-white text-[#505369] hover:bg-[#f5f0ff]",
+    danger: "border border-[#e6b7c4] bg-[#fff0f4] text-[#9a2a48] hover:bg-[#fbe8ef]",
   };
   return (
     <button
@@ -98,12 +98,12 @@ export function Badge({
   tone?: "slate" | "gold" | "green" | "red" | "amber" | "blue";
 }) {
   const map: Record<string, string> = {
-    slate: "border-slate-200 bg-slate-50 text-slate-600",
-    gold: "border-[#c9a15e]/40 bg-[#fbf6ea] text-[#8a6a2f]",
-    green: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    red: "border-red-200 bg-red-50 text-red-700",
-    amber: "border-amber-200 bg-amber-50 text-amber-700",
-    blue: "border-sky-200 bg-sky-50 text-sky-700",
+    slate: "border-[#dde5f2] bg-[#f3f6fd] text-[#68738b]",
+    gold: "border-[#7950ba]/40 bg-[#f2eafa] text-[#7950ba]",
+    green: "border-[#cfe3d8] bg-[#eef8f1] text-[#2f6b4f]",
+    red: "border-[#e6b7c4] bg-[#fff0f4] text-[#9a2a48]",
+    amber: "border-[#eadfbe] bg-[#fdf8ea] text-[#8a6a2f]",
+    blue: "border-[#c9d8f5] bg-[#eef3ff] text-[#3b5f9e]",
   };
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${map[tone]}`}>
@@ -114,7 +114,7 @@ export function Badge({
 
 export function Loading({ label = "加载中…" }: { label?: string }) {
   return (
-    <div className="flex items-center justify-center gap-2 rounded-2xl border border-[#e7e3d8] bg-white py-16 text-sm text-slate-500">
+    <div className="flex items-center justify-center gap-2 rounded-xl border border-[#dde5f2] bg-white py-16 text-sm text-[#68738b]">
       <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
       {label}
     </div>
@@ -123,7 +123,7 @@ export function Loading({ label = "加载中…" }: { label?: string }) {
 
 export function ErrorBox({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+    <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
       <div className="flex items-start gap-2">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
         <div className="flex-1">
@@ -141,7 +141,7 @@ export function ErrorBox({ message, onRetry }: { message: string; onRetry?: () =
 
 export function Empty({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-dashed border-[#dcd6c8] bg-[#faf9f5] px-4 py-10 text-center text-sm text-slate-500">
+    <div className="rounded-xl border border-dashed border-[#dde5f2] bg-[#f8faff] px-4 py-10 text-center text-sm text-[#68738b]">
       {children}
     </div>
   );
@@ -186,9 +186,9 @@ export function StatusBadge({ status }: { status?: string | null }) {
 
 export function Field({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-[#f0ece2] py-2.5 text-sm last:border-0">
-      <span className="text-slate-500">{label}</span>
-      <span className="text-right font-medium text-slate-900">{value}</span>
+    <div className="flex items-start justify-between gap-4 border-b border-[#e3eaf8] py-2.5 text-sm last:border-0">
+      <span className="text-[#68738b]">{label}</span>
+      <span className="text-right font-medium text-[#171923]">{value}</span>
     </div>
   );
 }

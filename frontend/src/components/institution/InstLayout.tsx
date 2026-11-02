@@ -16,7 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { clearInstSession, fetchInstMe, getInstToken, type InstSession } from "@/lib/instAuth";
-import { accessBadge, visibleWorkspaces, workspaceForPath } from "@/data/instNav";
+import { visibleWorkspaces, workspaceForPath } from "@/data/instNav";
 import { InstSessionContext } from "./instSessionContext";
 import { InstLocaleProvider, useInstLocale } from "./instLocale";
 
@@ -62,7 +62,6 @@ function SidebarNav({ session, onNavigate }: { session: InstSession; onNavigate?
     <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
       {items.map((item) => {
         const Icon = ICONS[item.key] || LayoutDashboard;
-        const badge = accessBadge(item.access);
         return (
           <NavLink
             key={item.key}
@@ -78,11 +77,6 @@ function SidebarNav({ session, onNavigate }: { session: InstSession; onNavigate?
           >
             <Icon className="h-4 w-4 shrink-0" aria-hidden />
             <span className="flex-1 truncate">{locale === "en" ? item.label_en : item.label_cn}</span>
-            {badge ? (
-              <span className="rounded border border-[#e0d9ef] px-1.5 py-0.5 text-[10px] text-[#68738b]">
-                {badge === "只读" ? t("只读", "Read-only") : badge === "仅摘要" ? t("仅摘要", "Summary only") : badge}
-              </span>
-            ) : null}
           </NavLink>
         );
       })}
@@ -263,11 +257,6 @@ function InstLayoutInner() {
               <span className="truncate text-sm font-medium text-[#252533]">
                 {current ? (locale === "en" ? current.label_en : current.label_cn) : t("投资驾驶舱", "Overview")}
               </span>
-              {current && accessBadge(current.access) ? (
-                <span className="rounded border border-[#dde5f2] px-1.5 py-0.5 text-[10px] text-[#68738b]">
-                  {accessBadge(current.access) === "只读" ? t("只读", "Read-only") : accessBadge(current.access) === "仅摘要" ? t("仅摘要", "Summary only") : accessBadge(current.access)}
-                </span>
-              ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-3">
               <button
@@ -278,9 +267,6 @@ function InstLayoutInner() {
               >
                 {locale === "zh" ? "EN" : "中文"}
               </button>
-              <span className="hidden rounded-full border border-[#7950ba]/40 bg-[#f2eafa] px-2.5 py-1 text-[11px] text-[#b42345] sm:inline">
-                {t("模拟环境 · 无真实交易", "Simulation · no real trading")}
-              </span>
               <div className="text-right">
                 <p className="text-xs font-medium text-[#252533]">
                   {session.user.display_name || session.user.username}

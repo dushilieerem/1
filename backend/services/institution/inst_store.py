@@ -34,15 +34,15 @@ ROLE_LABELS: dict[str, tuple[str, str]] = {
 
 # 九个工作区，与需求文档 §2.2 一致
 WORKSPACE_LABELS: dict[str, tuple[str, str]] = {
-    "overview": ("投资驾驶舱", "Overview"),
+    "overview": ("投资总览", "Investment overview"),
     "ideas": ("机会发现", "Discovery"),
     "research": ("公司研究", "Research"),
     "debate": ("投资辩论室", "Debate room"),
-    "portfolio": ("投资组合", "Portfolio"),
-    "approvals": ("投委会与审批", "IC & approvals"),
+    "approvals": ("投委会审批", "IC approvals"),
     "execution": ("交易执行", "Execution"),
-    "monitor": ("投后与退出", "Monitoring & exits"),
-    "about": ("关于我们", "About us"),
+    "portfolio": ("投资组合", "Portfolio"),
+    "monitor": ("投后管理", "Post-investment"),
+    "about": ("Agent能力", "Agent capabilities"),
 }
 
 # write = 可写与操作；read = 只读；digest = 仅关联摘要；none = 无权限且菜单隐藏

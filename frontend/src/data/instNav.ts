@@ -6,9 +6,9 @@ export const INST_WORKSPACE_ORDER = [
   "ideas",
   "research",
   "debate",
-  "portfolio",
   "approvals",
   "execution",
+  "portfolio",
   "monitor",
   "about",
 ] as const;

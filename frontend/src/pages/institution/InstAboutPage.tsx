@@ -28,8 +28,8 @@ export function InstAboutPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <PageHeader
-        eyebrow="ABOUT / 09"
-        title={t("关于我们", "About")}
+        eyebrow="AGENTS / 09"
+        title={t("Agent能力", "Agent capabilities")}
         desc={`${locale === "en" ? session.org.name_en || session.org.name_cn : session.org.name_cn} · ${t("SVQuant 机构端 · 主观价值投资。本期为演示环境，无真实资金交易。", "SVQuant Institution · Subjective value investing. Demo environment; no real money trades.")}`}
         actions={<Badge tone="gold">{locale === "en" ? session.role_label_en : session.role_label_cn}</Badge>}
       />

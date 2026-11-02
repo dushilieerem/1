@@ -115,7 +115,7 @@ proposal: draft → partner_review → chairman_review → risk_precheck → aut
 | CEO 与治理 | `inst.dim.governance` | 资本配置、承诺兑现、关联交易 |
 | 估值与价格 | `inst.dim.valuation` | PE/PB 分位、DCF 假设、安全边际 |
 
-编排器 `_run_dimension_agents` 默认并发 3（`INST_AGENT_CONCURRENCY` 可调），每维独立重试，失败时回退到确定性规则模板并标记 `engine=rule`。Agent 证据写入 `inst_evidence`，按 hash 去重。
+编排器 `_run_dimension_agents` 默认 6 个并发（`INST_AGENT_CONCURRENCY` 可调），每维独立重试，失败时回退到确定性规则模板并标记 `engine=rule`。Agent 证据写入 `inst_evidence`，按 hash 去重。
 
 前端每 2 秒轮询研究案任务：6 个 Agent 分别为 pending/running/done/needs_review/failed，完成一个就展示该维摘要；全部完成后再生成 AI 一页纸。
 

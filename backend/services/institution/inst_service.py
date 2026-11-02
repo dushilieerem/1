@@ -957,9 +957,9 @@ def _run_dimension_agents(
         return last
 
     try:
-        workers = max(1, min(6, int(os.getenv("INST_AGENT_CONCURRENCY", "3"))))
+        workers = max(1, min(6, int(os.getenv("INST_AGENT_CONCURRENCY", "6"))))
     except ValueError:
-        workers = 3
+        workers = 6
     with ThreadPoolExecutor(max_workers=min(workers, len(keys))) as pool:
         futures = {pool.submit(one, key): key for key in keys}
         for future in as_completed(futures):

@@ -83,6 +83,7 @@ export function InstResearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [memo, setMemo] = useState<Record<string, any> | null>(null);
+  const [memoBusy, setMemoBusy] = useState(false);
   const autoRan = useRef(false);
   const memoRan = useRef(false);
   const [dcf, setDcf] = useState<Record<string, any> | null>(null);
@@ -188,8 +189,13 @@ export function InstResearchPage() {
   }, [detail]);
 
   const loadMemo = async () => {
-    const res = await instApi<{ memo: Record<string, any> }>(`/cases/${caseId}/ai/memo`, { method: "POST" });
-    setMemo(res.memo);
+    setMemoBusy(true);
+    try {
+      const res = await instApi<{ memo: Record<string, any> }>(`/cases/${caseId}/ai/memo`, { method: "POST" });
+      setMemo(res.memo);
+    } finally {
+      setMemoBusy(false);
+    }
   };
 
   const autopilot = async () => {
@@ -500,17 +506,18 @@ export function InstResearchPage() {
                     variant="ghost"
                     disabled={!!busy || !detail.evidence?.length}
                     onClick={() =>
-                      run("memo", async () => {
-                        const res = await instApi<{ memo: Record<string, any> }>(`/cases/${caseId}/ai/memo`, {
-                          method: "POST",
-                        });
-                        setMemo(res.memo);
-                      })
+                      run("memo", () => loadMemo())
                     }
                   >
-                    {busy === "memo" ? t("生成中…", "Generating…") : t("AI 研究一页纸", "AI research memo")}
+                    {busy === "memo" || memoBusy ? t("生成中…", "Generating…") : t("AI 研究一页纸", "AI research memo")}
                   </Button>
                 </div>
+                {memoBusy ? (
+                  <div className="mt-3 flex items-center gap-2 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs text-[#7950ba]">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {t("AI 一页纸生成中…", "Generating AI memo…")}
+                  </div>
+                ) : null}
                 {memo ? (
                   <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs leading-relaxed text-[#b42345]">
                     <p className="font-medium">{t("AI 摘要（非投资建议）", "AI summary (not investment advice)")}</p>

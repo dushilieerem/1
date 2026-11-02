@@ -37,18 +37,18 @@ function loginUrl(next: string) {
 }
 
 function Brand({ compact = false }: { compact?: boolean }) {
-  const { t } = useInstLocale();
+  const { locale } = useInstLocale();
   return (
-    <div className={`flex items-center gap-3 ${compact ? "px-4 py-4" : "px-5 py-5"}`}>
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#b42345]/70 bg-white font-display text-lg text-[#b42345]">
+    <div className={`flex items-center gap-3 ${compact ? "px-2 py-4" : "px-2 py-6"}`}>
+      <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center border border-[#b42345] bg-white font-serif text-[22px] leading-none text-[#b42345]">
         旸
       </span>
       <div className="min-w-0">
-        <p className="truncate font-display text-base font-semibold tracking-wide text-[#171923]">
-          旸谷资本
+        <p className="truncate font-display text-[17px] font-semibold tracking-[2px] text-[#171923]">
+          {locale === "en" ? "SUNVALLEY" : "旸谷资本"}
         </p>
-        <p className="truncate text-[11px] tracking-wide text-[#68738b]">
-          {t("SVQuant 机构端 · 主观价值投资", "SVQuant Institution · Subjective Value Investing")}
+        <p className="mt-1 truncate text-[9px] tracking-[2px] text-[#78728a]">
+          VALUE INVESTMENT OFFICE
         </p>
       </div>
     </div>

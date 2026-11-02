@@ -33,7 +33,7 @@ def test_income_single_quarter_to_ytd() -> None:
     frame = pd.DataFrame(
         {
             "symbol": ["600519.SH"] * 4 + ["000001.SZ"],
-            "m_timetag": ["20260331", "20260630", "20260930", "20251231", "20260630"],
+            "m_timetag": ["20260331", "20260630", "20260930", "20250630", "20260630"],
             "revenue": [100.0, 120.0, None, 80.0, 50.0],
             "oper_profit": [50.0, 60.0, None, 30.0, 20.0],
             "net_profit_excl_min_int_inc": [40.0, 45.0, None, 20.0, 10.0],
@@ -47,6 +47,27 @@ def test_income_single_quarter_to_ytd() -> None:
     assert out["revenue"].iloc[4] == 50.0
     assert math.isclose(out["gross_profit"].iloc[1], 220.0 * 0.88)
     assert math.isnan(out["gross_profit"].iloc[4])
+
+
+def test_annual_only_rows_stay_null_for_single_quarter_fields() -> None:
+    import math
+
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        {
+            "symbol": ["600519.SH", "600519.SH"],
+            "m_timetag": ["20141231", "20151231"],
+            "revenue": [1.004e10, 9.71e9],  # 实为 Q4 单季
+            "oper_profit": [6.79e9, 5.86e9],
+            "net_profit_excl_min_int_inc": [4.66e9, 4.08e9],
+            "gross_margin": [92.59, 92.23],
+        }
+    )
+    out = loader._to_ytd(frame)
+    assert all(math.isnan(v) for v in out["revenue"])
+    assert all(math.isnan(v) for v in out["net_profit_excl_min_int_inc"])
+    assert all(math.isnan(v) for v in out["gross_profit"])
 
 
 def test_valuation_frame_maps_and_filters(monkeypatch) -> None:

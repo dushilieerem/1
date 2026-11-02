@@ -122,7 +122,12 @@ def _to_ytd(income):
     gross_profit 用“累计 revenue × YTD gross_margin”重算（平台原值为单季近似）。
     """
     income = income.copy()
-    income["_fy"] = income["m_timetag"].astype(str).str[:4]
+    period = income["m_timetag"].astype(str)
+    income["_fy"] = period.str[:4]
+    # 2014/2015 只有年报行：单季字段实为 Q4，无法还原全年；留空而不是冒充累计
+    annual_only = period.str.endswith("1231") & (
+        income.groupby(["symbol", "_fy"], sort=False)["m_timetag"].transform("size") == 1
+    )
     for col in ("revenue", "oper_profit", "net_profit_excl_min_int_inc"):
         if col not in income.columns:
             continue
@@ -130,7 +135,7 @@ def _to_ytd(income):
         ytd = income.groupby(["symbol", "_fy"], sort=False)[col].transform(
             lambda s: s.cumsum().where(s.notna().cumsum() > 0)
         )
-        income[col] = ytd.where(income[col].notna())
+        income[col] = ytd.where(income[col].notna() & ~annual_only)
     if "gross_margin" in income.columns:
         income["gross_profit"] = income["revenue"] * income["gross_margin"] / 100.0
     return income.drop(columns=["_fy"])

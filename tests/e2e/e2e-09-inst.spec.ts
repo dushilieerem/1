@@ -236,7 +236,9 @@ test("退出流程：投后回链 → 辩论默认 exit/0 → 创建议案", asy
 
   await login(page);
   await page.goto(`${BASE}/inst/monitor`, { waitUntil: "networkidle" });
-  const exitCard = page.locator("li", { hasText: `EX-${exitId}` });
+  const exitCard = page
+    .locator("li")
+    .filter({ hasText: new RegExp(`EX-${exitId}(?!\\d)`) });
   await expect(exitCard).toBeVisible({ timeout: 20_000 });
   await expect(exitCard).toContainText("论点失效");
   const researchLink = exitCard.getByRole("link", { name: new RegExp(`退出研究案\\s*#${caseId}`) });
@@ -262,12 +264,13 @@ test("退出流程：投后回链 → 辩论默认 exit/0 → 创建议案", asy
   expect(Number(detail.target_weight)).toBe(0);
   expect(detail.exit_case?.id).toBe(exitId);
   expect(detail.exit_case?.status).toBe("submitted");
-  await expect(page.getByText(`退出案 EX-${exitId}`)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(new RegExp(`退出案 EX-${exitId}(?!\\d)`))).toBeVisible({ timeout: 20_000 });
 
   // 投后列表回链议案，状态与议案一致。
   await page.goto(`${BASE}/inst/monitor`, { waitUntil: "networkidle" });
   const proposalLink = page
-    .locator("li", { hasText: `EX-${exitId}` })
+    .locator("li")
+    .filter({ hasText: new RegExp(`EX-${exitId}(?!\\d)`) })
     .getByRole("link", { name: new RegExp(`退出议案\\s*#${proposalId}`) });
   await expect(proposalLink).toBeVisible();
 });

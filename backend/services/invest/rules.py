@@ -780,7 +780,28 @@ def build_search(conn: Any, q: str) -> dict[str, Any]:
                 "items": [card(s, f"股息率 {s['dividend_yield']:.2f}%") for s in dividend],
             },
         ]
-    return {"results": results, "presets": presets}
+    return {"q": q, "results": results, "presets": presets}
+
+
+def build_news(conn: Any, kind: str | None = None) -> dict[str, Any]:
+    if kind and kind != "all":
+        items = rows(conn, "SELECT * FROM news WHERE kind=? ORDER BY published_at DESC LIMIT 20", (kind,))
+    else:
+        items = rows(conn, "SELECT * FROM news ORDER BY published_at DESC LIMIT 20")
+    real = conn.execute("SELECT COUNT(*) AS n FROM news WHERE id LIKE 'doc-%' OR id LIKE 'news-%' OR id LIKE 'ann-%' OR id LIKE 'rep-%'").fetchone()["n"]
+    seed_news = conn.execute("SELECT COUNT(*) AS n FROM news WHERE kind='news' AND id NOT LIKE 'news-%'").fetchone()["n"]
+    return {"items": items, "disclaimer": "公告/研报仅保留标题、来源、时间与原文链接；非投资建议。",
+            "isDemo": not bool(real), "demoKinds": ["news"] if seed_news else []}
+
+
+def build_meta(conn: Any) -> dict[str, Any]:
+    meta = data_meta(conn)
+    row = conn.execute("SELECT value FROM meta WHERE key='updated_at'").fetchone()
+    age = max(0, (date.today() - date.fromisoformat(meta["dataDate"])).days)
+    return {"dataDate": meta["dataDate"], "source": meta["dataSource"],
+            "isDemo": meta["isDemo"], "disclaimer": DISCLAIMER,
+            "updatedAt": row["value"] if row else meta["dataDate"],
+            "ageDays": age, "isStale": age > 2}
 
 
 def build_data_quality(conn: Any) -> dict[str, Any]:

@@ -25,3 +25,11 @@ def test_find_term_by_alias() -> None:
     beta = glossary.find_term("β 是什么")
     assert beta and beta["id"] == "beta"
     assert glossary.find_term("不存在的词") is None
+
+
+def test_rules_exposes_meta_and_news_helpers() -> None:
+    from services.invest import rules
+
+    assert callable(getattr(rules, "build_meta", None))
+    assert callable(getattr(rules, "build_news", None))
+    assert callable(getattr(rules, "build_search", None))

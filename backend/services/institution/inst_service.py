@@ -457,6 +457,115 @@ def update_company_pool(
     return {"ok": True, "id": company_id, "pool_status": pool_status}
 
 
+def ideas_push(org_id: int, *, limit: int = 12) -> dict[str, Any]:
+    """量化策略推送：A 股 20 日动量 + 估值初筛，收盘后计算。
+
+    不是实时信号，也不构成投资建议。候选池取机构公司池中未放弃的 A 股，
+    按 20 个交易日动量排序，只推正动量；PE/PB 仅作为估值上下文展示。
+    """
+    cap = max(1, min(int(limit), 30))
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT c.id, c.symbol, c.name, c.market, c.industry, c.ref_price,
+                   c.data_status, c.pool_status, c.tags, c.research_points,
+                   v.pe_ttm, v.pb_mrq, v.trade_date AS valuation_date
+              FROM inst_company c
+              LEFT JOIN LATERAL (
+                SELECT pe_ttm, pb_mrq, trade_date
+                  FROM md_valuation_daily
+                 WHERE symbol=c.symbol
+                 ORDER BY trade_date DESC LIMIT 1
+              ) v ON TRUE
+             WHERE c.org_id=%s AND c.market='CN' AND c.pool_status <> 'dropped'
+             ORDER BY (c.data_status='real') DESC, (v.pe_ttm IS NOT NULL) DESC, c.id
+             LIMIT 500
+            """,
+            (org_id,),
+        ).fetchall()
+        symbols = [str(r["symbol"]) for r in rows]
+        bars: list[Any] = []
+        if symbols:
+            bars = conn.execute(
+                """
+                SELECT symbol, close, trade_date,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY symbol ORDER BY trade_date DESC
+                       ) AS rn
+                  FROM md_daily_bar
+                 WHERE symbol = ANY(%s) AND adjust='none'
+                   AND trade_date >= CURRENT_DATE - INTERVAL '60 days'
+                """,
+                (symbols,),
+            ).fetchall()
+    closes: dict[str, dict[int, float]] = {}
+    latest_date = None
+    for b in bars:
+        if b["close"] is None:
+            continue
+        closes.setdefault(str(b["symbol"]), {})[int(b["rn"])] = float(b["close"])
+        if latest_date is None or b["trade_date"] > latest_date:
+            latest_date = b["trade_date"]
+
+    items: list[dict[str, Any]] = []
+    for r in rows:
+        series = closes.get(str(r["symbol"]), {})
+        if 1 not in series or len(series) < 3:
+            continue
+        # 测试库可能只有最近几天数据；窗口自动缩短到可用长度，生产环境最多 20 日。
+        window = min(20, max(series) - 1)
+        base = series.get(window + 1)
+        if window < 2 or not base:
+            continue
+        momentum = series[1] / base - 1
+        if momentum <= 0:
+            continue
+        pe = r["pe_ttm"]
+        pb = r["pb_mrq"]
+        # 估值初筛：有 PE/PB 时必须为正，PE 超过 100 视为不具备估值吸引力。
+        if pe is not None and not (0 < float(pe) <= 100):
+            continue
+        if pb is not None and float(pb) <= 0:
+            continue
+        reasons = [f"近 {window} 日动量 {momentum * 100:.1f}%"]
+        if pe is not None:
+            reasons.append(f"PE TTM {float(pe):.2f}")
+        if pb is not None:
+            reasons.append(f"PB MRQ {float(pb):.2f}")
+        items.append(
+            {
+                "id": int(r["id"]),
+                "symbol": r["symbol"],
+                "name": r["name"],
+                "market": r["market"],
+                "industry": r["industry"],
+                "ref_price": r["ref_price"],
+                "data_status": r["data_status"],
+                "pool_status": r["pool_status"],
+                "tags": r["tags"] or [],
+                "research_points": r["research_points"] or [],
+                "pe_ttm": pe,
+                "pb_mrq": pb,
+                "last_close": series[1],
+                "momentum": momentum,
+                "momentum_window": window,
+                "reason": "；".join(reasons),
+            }
+        )
+    items.sort(key=lambda x: x["momentum"], reverse=True)
+    return {
+        "strategy": {
+            "key": "momentum_valuation",
+            "name": "动量 + 估值初筛",
+            "note": "动量窗口取最近 2-20 个交易日（数据不足时自动缩短）；PE TTM 限 0-100、PB 限正值；收盘后计算，非实时推送；不构成投资建议。",
+        },
+        "as_of": str(latest_date) if latest_date else None,
+        "scanned": len(rows),
+        "qualified": len(items),
+        "items": items[:cap],
+    }
+
+
 def get_company(org_id: int, company_id: int) -> dict[str, Any] | None:
     with get_conn() as conn:
         row = conn.execute(
@@ -3575,6 +3684,7 @@ __all__ = [
     "get_company",
     "get_debate",
     "get_proposal",
+    "ideas_push",
     "list_audit",
     "list_authorizations",
     "list_cases",

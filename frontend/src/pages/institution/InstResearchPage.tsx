@@ -60,7 +60,14 @@ type CaseItem = {
   data_status?: string;
   ref_price?: number;
   versions?: Version[];
-  evidence?: Array<{ id: number; title: string; quote?: string; source: string; as_of?: string }>;
+  evidence?: Array<{
+    id: number;
+    title: string;
+    quote?: string;
+    source: string;
+    as_of?: string;
+    evidence_type?: string;
+  }>;
   tasks?: Array<{
     id: number;
     task_key?: string;
@@ -80,6 +87,25 @@ const AGENT_TITLES: Array<[string, string]> = [
   ["governance", "CEO 与治理"],
   ["valuation", "估值与价格"],
 ];
+
+const EVIDENCE_TYPE_META: Record<string, { label: string; note: string; tone: "slate" | "gold" | "green" | "red" | "amber" | "blue" }> = {
+  market: { label: "行情", note: "收盘价、估值或交易数据，来自行情库。", tone: "blue" },
+  financial: { label: "财务", note: "财报口径的营收、利润、现金流等，需回公告核对。", tone: "green" },
+  fact: { label: "事实", note: "行业归属、基础资料等公开事实。", tone: "slate" },
+  filing: { label: "公告", note: "公司公告或监管文件摘录。", tone: "amber" },
+  news: { label: "新闻", note: "媒体报道，需与公告交叉验证。", tone: "amber" },
+  research: { label: "研究", note: "AI Agent 在本次研究中给出的引用。", tone: "gold" },
+  counter: { label: "反证", note: "用于推翻结论的反面证据。", tone: "red" },
+};
+
+function sourceLabel(source?: string): string {
+  const raw = String(source || "").trim();
+  if (!raw) return "来源待补充";
+  if (raw.startsWith("ifind")) return "iFinD 行情/财务库";
+  if (raw === "eastmoney") return "东方财富";
+  if (raw === "agent") return "AI Agent";
+  return raw;
+}
 
 export function InstResearchPage() {
   const session = useInstSession();
@@ -210,7 +236,9 @@ export function InstResearchPage() {
     [dims, activeDim],
   );
   useEffect(() => {
-    if (dims.length && !dims.some((d) => d.key === activeDim)) setActiveDim(dims[0].key);
+    if (activeDim !== "memo" && dims.length && !dims.some((d) => d.key === activeDim)) {
+      setActiveDim(dims[0].key);
+    }
   }, [dims, activeDim]);
 
   // 版本更新（六维重生成/单维重分析）后，旧一页纸作废，重新生成。
@@ -479,8 +507,8 @@ export function InstResearchPage() {
       <div className="grid gap-4 lg:grid-cols-[1.55fr_1fr]">
         <div className="space-y-4">
           <Card
-            title={t("巴菲特六维分析", "Buffett six-dimension analysis")}
-            desc={t("单维查看与追问：先选维度目录，再单独分析或向 AI 追问；整体审核在右侧一次完成。", "View one dimension at a time: pick a tab, re-analyze it or ask AI; final approval is done once on the right.")}
+            title={t("六维分析", "Six-dimension analysis")}
+            desc={t("按目录切换六个维度或 AI 一页纸；单维可单独分析、向 AI 追问。整体审核在右侧一次完成。", "Switch between the six dimensions and the AI one-pager; each dimension can be re-analyzed or queried. Final approval is done once on the right.")}
             actions={
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <div role="tablist" aria-label={t("维度目录", "Dimension directory")} className="flex flex-wrap gap-1">
@@ -503,6 +531,19 @@ export function InstResearchPage() {
                       </button>
                     );
                   })}
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeDim === "memo"}
+                    onClick={() => setActiveDim("memo")}
+                    className={`rounded-md border px-2 py-1 text-[11px] transition ${
+                      activeDim === "memo"
+                        ? "border-[#b42345] bg-[#fbe9ef] text-[#a31f42]"
+                        : "border-[#dde5f2] bg-white text-[#68738b] hover:border-[#7950ba]"
+                    }`}
+                  >
+                    {t("AI 一页纸", "AI one-pager")}
+                  </button>
                 </div>
                 <Button
                   variant="gold"
@@ -521,7 +562,7 @@ export function InstResearchPage() {
               </div>
             }
           >
-            {activeDimData ? (
+            {activeDim === "memo" ? null : activeDimData ? (
               <div className="space-y-3">
                 <article className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-4">
                   <div className="flex items-start justify-between gap-2">
@@ -636,6 +677,7 @@ export function InstResearchPage() {
             )}
           </Card>
 
+          {activeDim === "memo" ? (
           <Card
             title={t("AI 一页纸", "AI one-pager")}
             desc={t("按六维结构输出：总结结论、关键指标、六维要点、核心风险与下一步核验。", "Structured one-pager: summary, key metrics, six dimension highlights, key risks and next checks.")}
@@ -746,6 +788,7 @@ export function InstResearchPage() {
               </Empty>
             )}
           </Card>
+          ) : null}
         </div>
 
         <div className="space-y-4">
@@ -890,25 +933,48 @@ export function InstResearchPage() {
         </div>
       </div>
 
-      <Card title={t("证据与反证", "Evidence & counter-evidence")} desc={t("重大结论必须可回源；无证据 ID 的结论不能进入审批包。", "Material conclusions must be traceable; conclusions without evidence IDs cannot enter the approval package.")}>
-        {detail.evidence?.length ? (
-          <ul className="divide-y divide-[#e3eaf8]">
-            {detail.evidence.map((ev) => (
-              <li key={ev.id} className="py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-[#252533]">
-                      #{ev.id} {ev.title}
-                    </p>
-                    <p className="mt-1 text-xs leading-relaxed text-[#68738b]">{ev.quote || "—"}</p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <Badge>{ev.source}</Badge>
-                    <p className="mt-1 text-[10px] text-[#77718c]">{ev.as_of || "—"}</p>
-                  </div>
-                </div>
-              </li>
+      <Card
+        title={t("证据与反证", "Evidence & counter-evidence")}
+        desc={t("每条结论引用的证据都在这里。先看类型和来源，再核对原文摘录；没有证据 ID 的结论不能进入审批包。", "Every cited evidence item is listed here. Check its type and source first, then the quote; conclusions without evidence IDs cannot enter the approval package.")}
+        actions={<Badge tone="gold">{detail.evidence?.length || 0} {t("条证据", "items")}</Badge>}
+      >
+        <div className="mb-4 rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+          <p className="text-xs font-semibold text-[#505369]">{t("证据类型说明", "Evidence types")}</p>
+          <div className="mt-2 grid gap-1.5 text-[11px] text-[#68738b] sm:grid-cols-2">
+            {Object.entries(EVIDENCE_TYPE_META).map(([key, meta]) => (
+              <span key={key} className="flex items-start gap-2">
+                <Badge tone={meta.tone}>{meta.label}</Badge>
+                <span className="leading-relaxed">{meta.note}</span>
+              </span>
             ))}
+          </div>
+        </div>
+        {detail.evidence?.length ? (
+          <ul className="space-y-3">
+            {detail.evidence.map((ev) => {
+              const meta = EVIDENCE_TYPE_META[ev.evidence_type || "fact"] || EVIDENCE_TYPE_META.fact;
+              return (
+                <li key={ev.id} className="rounded-xl border border-[#e3eaf8] bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="min-w-0 text-sm font-medium text-[#252533]">
+                      <span className="mr-2 font-mono text-[10px] text-[#77718c]">#{ev.id}</span>
+                      {ev.title}
+                    </p>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <Badge tone={meta.tone}>{meta.label}</Badge>
+                    <Badge>{sourceLabel(ev.source)}</Badge>
+                    <span className="text-[10px] text-[#77718c]">
+                      {t("数据日期", "As of")}：{ev.as_of || t("待补充", "TBD")}
+                    </span>
+                  </div>
+                  <blockquote className="mt-2 rounded-lg border-l-2 border-[#7950ba]/40 bg-[#f8faff] px-3 py-2 text-xs leading-relaxed text-[#505369]">
+                    {ev.quote || t("原始摘录待补充，需回源核对。", "Quote pending; verify against the source.")}
+                  </blockquote>
+                  <p className="mt-1.5 text-[10px] leading-relaxed text-[#77718c]">{meta.note}</p>
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <Empty>{t("还没有证据。生成研究会写入行情、估值与财务证据。", "No evidence yet; generating research writes price, valuation and financial evidence.")}</Empty>

@@ -292,3 +292,18 @@ def test_research_memo_has_metrics_and_rule_fallback(fixture, monkeypatch) -> No
     assert fallback["engine"] == "rule"
     assert fallback["summary"]
     assert isinstance(fallback["metrics"], list)
+
+
+def test_ideas_push_contract(fixture) -> None:
+    """量化推送：返回策略元信息与只含正动量、估值过滤后的条目。"""
+    out = svc.ideas_push(fixture["org_id"], limit=5)
+    assert out["strategy"]["key"] == "momentum_valuation"
+    assert isinstance(out["items"], list)
+    assert out["as_of"] is None or isinstance(out["as_of"], str)
+    for item in out["items"]:
+        assert item["momentum"] > 0
+        assert 2 <= item["momentum_window"] <= 20
+        if item["pe_ttm"] is not None:
+            assert 0 < float(item["pe_ttm"]) <= 100
+        if item["pb_mrq"] is not None:
+            assert float(item["pb_mrq"]) > 0

@@ -110,6 +110,7 @@ test("机构端侧栏名称与顺序", async ({ page }) => {
 test("研究、审批、执行、投后、Agent能力页面可达", async ({ page }) => {
   await login(page);
   for (const [path, text] of [
+    ["/inst/ideas", "量化策略推送"],
     ["/inst/research", "公司研究"],
     ["/inst/approvals", "投委会审批"],
     ["/inst/execution", "交易执行"],

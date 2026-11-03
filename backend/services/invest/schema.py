@@ -259,7 +259,7 @@ def refresh_invest_stocks(conn=None) -> int:
             INSERT INTO invest_stocks
               (code,name,pinyin,industry,asset,price,prev_close,open,high,low,market_cap,
                pe_ttm,pb,dividend_yield,turnover,volume,amount,beta,next_report_date,updated_at)
-            SELECT CASE WHEN s.symbol LIKE '%.SH' OR s.symbol LIKE '%.SZ' OR s.symbol LIKE '%.BJ' THEN split_part(s.symbol, '.', 1) ELSE s.symbol END, s.name, NULL, COALESCE((SELECT f.raw->>'INDUSTRY_NAME' FROM fin_income_statement f WHERE f.symbol=s.symbol AND f.raw ? 'INDUSTRY_NAME' ORDER BY f.report_date DESC LIMIT 1), i.industry_code, '未分类'), 'stock',
+            SELECT CASE WHEN s.symbol LIKE '%.SH' OR s.symbol LIKE '%.SZ' OR s.symbol LIKE '%.BJ' THEN split_part(s.symbol, '.', 1) ELSE s.symbol END, s.name, NULL, COALESCE((SELECT f.raw->>'INDUSTRY_NAME' FROM fin_income_statement f WHERE f.symbol=s.symbol AND f.raw ? 'INDUSTRY_NAME' ORDER BY f.report_date DESC LIMIT 1), ri.name, i.industry_code, '未分类'), 'stock',
                    l.close, p.close, l.open, l.high, l.low,
                    COALESCE(v.total_mv, v.float_mv)/1e8, v.pe_ttm, v.pb_mrq,
                    v.dividend_yield_ttm,
@@ -271,6 +271,7 @@ def refresh_invest_stocks(conn=None) -> int:
               LEFT JOIN hfq h ON h.symbol=s.symbol AND h.rn=1
               LEFT JOIN val v ON v.symbol=s.symbol AND v.rn=1
               LEFT JOIN ind i ON i.symbol=s.symbol AND i.rn=1
+              LEFT JOIN ref_industry ri ON ri.industry_code=i.industry_code AND ri.level=1
              WHERE s.status='listed' AND s.market IN ('CN','US')
             """
         )

@@ -349,6 +349,16 @@ def plan_sync(
         start = (min(candidates) + timedelta(days=1)) if candidates else date(2016, 1, 1)
     end = view.data_date
     if start > end and not force and not full:
+        # 新 view 可能数据日不变、只补了行业/指数权重/risk_daily 等派生列；
+        # 这种情况仍要跑一次轻量元数据同步，不能直接 fresh。
+        if state and state.get("view_id") and state.get("view_id") != view.view_id:
+            return {
+                "status": "sync_meta",
+                "view_id": view.view_id,
+                "data_date": end.isoformat(),
+                "start": end.isoformat(),
+                "end": end.isoformat(),
+            }
         return {
             "status": "fresh",
             "view_id": view.view_id,
@@ -972,6 +982,21 @@ def sync_view(
             if plan["status"] in {"unchanged", "fresh"}:
                 _upsert_state(conn, view, "ok", rows=(state or {}).get("rows"))
                 return plan
+            if plan["status"] == "sync_meta":
+                end = _parse_day(plan["end"])
+                assert end
+                _prepare_temp_tables(conn)
+                rows: dict[str, int] = {}
+                rows["ref_security"] = _sync_ref_security(conn, view)
+                rows["calendar"] = _sync_calendar(conn, view)
+                rows["industry"] = _sync_industry(conn, view)
+                rows["index"] = _sync_index(conn, view)
+                rows["risk"] = _sync_risk(conn, view, end, end)
+                _merge_temp_tables(conn)
+                rows["invest_stocks"] = _refresh_serving(conn, view)
+                _upsert_state(conn, view, "ok", rows=rows)
+                _record_run(conn, view, "ok", rows=rows)
+                return {**plan, "status": "ok", "rows": rows}
             start = _parse_day(plan["start"])
             end = _parse_day(plan["end"])
             assert start and end

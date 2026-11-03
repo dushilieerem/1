@@ -86,6 +86,17 @@ def test_plan_incremental_from_min_state_and_db(tmp_path: Path):
     assert out["end"] == "2026-11-02"
 
 
+def test_plan_sync_meta_when_new_view_same_date(tmp_path: Path):
+    view = ViewInfo("v2", tmp_path, _manifest(), "2026-11-01", date(2026, 11, 2))
+    out = plan_sync(
+        view,
+        {"view_id": "v1", "data_date": date(2026, 11, 2)},
+        max_db_date=date(2026, 11, 2),
+    )
+    assert out["status"] == "sync_meta"
+    assert out["start"] == "2026-11-02"
+
+
 def test_plan_fresh_when_start_after_end(tmp_path: Path):
     view = ViewInfo("v", tmp_path, _manifest(), "2026-11-01", date(2026, 11, 2))
     out = plan_sync(view, None, max_db_date=date(2026, 11, 2))

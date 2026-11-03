@@ -212,11 +212,14 @@ VIEWS: tuple[str, ...] = (
 )
 
 
-def refresh_invest_stocks() -> int:
-    """从 ref_*/md_* 重建服务层快照；ETL 后运行，不在每次请求中扫描大表。"""
-    with get_conn() as conn:
-        conn.execute("DELETE FROM invest_stocks")
-        conn.execute(
+def refresh_invest_stocks(conn=None) -> int:
+    """从 ref_*/md_* 重建服务层快照；ETL 后运行，不在每次请求中扫描大表。
+
+    传入 conn 时复用调用方事务，保证数据同步和快照切换原子提交。
+    """
+    def _run(active) -> int:
+        active.execute("DELETE FROM invest_stocks")
+        active.execute(
             """
             WITH latest AS (
               SELECT symbol, trade_date, open, high, low, close, volume, amount, turnover,
@@ -253,8 +256,13 @@ def refresh_invest_stocks() -> int:
              WHERE s.status='listed' AND s.market IN ('CN','US')
             """
         )
-        n = conn.execute("SELECT COUNT(*) AS n FROM invest_stocks").fetchone()["n"]
-    return int(n)
+        n = active.execute("SELECT COUNT(*) AS n FROM invest_stocks").fetchone()["n"]
+        return int(n)
+
+    if conn is not None:
+        return _run(conn)
+    with get_conn() as owned:
+        return _run(owned)
 
 def seed() -> None:
     with get_conn() as conn:

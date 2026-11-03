@@ -18,6 +18,9 @@ def materialized_view_root() -> Path | None:
     if not root or not view:
         return None
     base = Path(root) / "views" / view
+    # views/current 通常直接指向某个 view 的 materialized 目录。
+    if (base / "manifest.json").exists():
+        return base.resolve()
     # 容器内优先用指向 /marketdata 的物化；宿主机用普通物化
     for name in ("materialized-container", "materialized"):
         candidate = base / name

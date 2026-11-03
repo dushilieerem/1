@@ -797,11 +797,13 @@ def build_news(conn: Any, kind: str | None = None) -> dict[str, Any]:
 def build_meta(conn: Any) -> dict[str, Any]:
     meta = data_meta(conn)
     row = conn.execute("SELECT value FROM meta WHERE key='updated_at'").fetchone()
+    view_row = conn.execute("SELECT value FROM meta WHERE key='dataView'").fetchone()
     start = date.fromisoformat(meta["dataDate"])
     age = max(0, (date.today() - start).days)
     # 周末不算“未更新”：周五数据到周二只有 2 个交易日，不应报过期
     weekdays = sum(1 for n in range(1, age + 1) if (start + timedelta(days=n)).weekday() < 5)
-    return {"dataDate": meta["dataDate"], "source": meta["dataSource"],
+    return {"dataDate": meta["dataDate"], "dataView": view_row["value"] if view_row else None,
+            "source": meta["dataSource"],
             "isDemo": meta["isDemo"], "disclaimer": DISCLAIMER,
             "updatedAt": row["value"] if row else meta["dataDate"],
             "ageDays": age, "ageTradingDays": weekdays, "isStale": weekdays > 1}

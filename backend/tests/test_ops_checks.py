@@ -35,6 +35,19 @@ def test_pending_migrations_and_stale_data() -> None:
     assert "data_stale" in codes
 
 
+def test_data_sync_failure_is_critical() -> None:
+    health = {
+        **HEALTHY,
+        "data_sync": {
+            "status": "failed",
+            "view_id": "research-rv-test",
+            "last_error": "contract mismatch",
+        },
+    }
+    alerts = evaluate_signals(health=health)
+    assert any(a.code == "data_sync_failed" and a.level == "critical" for a in alerts)
+
+
 def test_disk_and_backlog() -> None:
     alerts = evaluate_signals(
         health=HEALTHY,

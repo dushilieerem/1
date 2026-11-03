@@ -1,0 +1,12 @@
+[Unit]
+Description=Run SVQuant data sync every 10 minutes
+Documentation=file://__REPO_DIR__/docs/运维/数据自动同步.md
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+Persistent=true
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

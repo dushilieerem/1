@@ -335,3 +335,15 @@ def test_exit_case_off_flow_review_does_not_close_draft(fixture) -> None:
     )
     assert review["thesis_verdict"] == "mixed"
     assert _exit_status(fixture, exit_id) == "draft"
+
+
+def test_e2e_guard_reports_real_db_name(fixture) -> None:
+    """写库闸门必须返回服务端真实库名，而不是客户端自证。"""
+    client = TestClient(app)
+    data = _ok(
+        client.get("/api/inst/_e2e/guard", headers=_h(fixture["tokens"]["manager"]))
+    )
+    with get_conn() as conn:
+        name = str(conn.execute("SELECT current_database() AS db_name").fetchone()["db_name"])
+    assert data["db_name"] == name
+    assert data["writable"] == ("_test" in name or "_e2e" in name)

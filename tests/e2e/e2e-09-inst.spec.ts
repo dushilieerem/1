@@ -6,12 +6,14 @@ import { evaluateWriteGuard } from "./helpers/write-guard.mjs";
  * 主观机构端 E2E 冒烟：登录、侧栏顺序、九个工作区可达、退出流程。
  * 默认连本地 Vite 9533 + 后端 8771；可用 INST_BASE / INST_API 覆盖。
  *
- * 默认只跑只读用例。退出流程会建持仓/研究案/退出案/议案，属于写库用例，
- * 必须显式开启并确认目标为独立测试库（禁止指向生产库 svquant）：
- *   INST_E2E_ALLOW_WRITE=1 INST_E2E_DB=safe npx playwright test e2e-09-inst.spec.ts
- * 只设 ALLOW_WRITE 而 INST_E2E_DB 不安全时直接失败，避免静默写入生产。
+ * 默认只跑只读用例。退出流程会建持仓/研究案/退出案/议案，属于写库用例：
+ *   INST_E2E_ALLOW_WRITE=1 npx playwright test e2e-09-inst.spec.ts
+ * 写库前必须请求服务端 GET /api/inst/_e2e/guard，只有服务端返回的真实库名含
+ * _test/_e2e 才放行；生产库 svquant、端点不可达或返回缺失都直接失败。
+ * 可选 INST_E2E_EXPECT_DB 精确比对服务端返回的库名。
  */
-const WRITE_GUARD = evaluateWriteGuard();
+const ALLOW_WRITE = process.env.INST_E2E_ALLOW_WRITE === "1";
+let writeGuard = evaluateWriteGuard({ allowWrite: false });
 const BASE = process.env.INST_BASE || "http://127.0.0.1:9533";
 const API = process.env.INST_API || "http://127.0.0.1:8771";
 const USER = process.env.INST_USER || "inst_manager";
@@ -35,6 +37,24 @@ async function loginApi(request: APIRequestContext, username: string): Promise<s
   return data.token;
 }
 
+/** 读服务端真实库名；不可达/非 200/返回缺失都交给 guard 判 fatal。 */
+async function resolveWriteGuard(request: APIRequestContext) {
+  let guardResponse: any = null;
+  try {
+    const res = await request.get(`${API}/api/inst/_e2e/guard`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    guardResponse = res.ok() ? await res.json() : { error: `HTTP ${res.status()}` };
+  } catch {
+    guardResponse = null;
+  }
+  return evaluateWriteGuard({
+    allowWrite: true,
+    guardResponse,
+    expectDb: process.env.INST_E2E_EXPECT_DB,
+  });
+}
+
 async function call(
   request: APIRequestContext,
   method: "GET" | "POST",
@@ -53,7 +73,6 @@ async function call(
 }
 
 test.beforeAll(async ({ request }) => {
-  if (WRITE_GUARD.fatal) throw new Error(WRITE_GUARD.fatal);
   token = await loginApi(request, USER);
   tokens.manager = token;
   await Promise.all(
@@ -61,6 +80,10 @@ test.beforeAll(async ({ request }) => {
       tokens[role] = await loginApi(request, `inst_${role}`);
     }),
   );
+  if (ALLOW_WRITE) {
+    writeGuard = await resolveWriteGuard(request);
+    if (writeGuard.fatal) throw new Error(writeGuard.fatal);
+  }
 });
 
 async function login(page: import("@playwright/test").Page) {
@@ -197,8 +220,8 @@ async function prepareExitCase(
 
 test("退出流程：投后回链 → 辩论默认 exit/0 → 创建议案", async ({ page, request }) => {
   test.skip(
-    !WRITE_GUARD.enabled,
-    "写库用例默认关闭：需 INST_E2E_ALLOW_WRITE=1 且 INST_E2E_DB=safe（独立测试库，禁止生产 svquant）",
+    !writeGuard.enabled,
+    "写库用例默认关闭：需 INST_E2E_ALLOW_WRITE=1，且服务端 /api/inst/_e2e/guard 确认库名含 _test/_e2e（生产 svquant 永远拒绝）",
   );
   test.setTimeout(300_000);
   const { exitId, caseId } = await prepareExitCase(request);

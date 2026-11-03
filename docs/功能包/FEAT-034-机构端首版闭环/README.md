@@ -185,19 +185,24 @@ submitted/approved --执行成交/退出复盘--> closed
 
 ### 9.7 E2E 写库安全（2026-11-03）
 
-`e2e-09-inst.spec.ts` 默认只跑只读用例（登录、九工作区、无横向溢出）。退出流程会创建持仓、研究案、退出案与议案，属于写库用例，必须显式开启：
+`e2e-09-inst.spec.ts` 默认只跑只读用例（登录、九工作区、无横向溢出）。退出流程会创建持仓、研究案、退出案与议案，属于写库用例：
 
 ```bash
-# 只读（默认，可指向演示库）
+# 只读（默认）
 npx playwright test e2e-09-inst.spec.ts
 
-# 写库：必须使用独立测试库，禁止指向生产库 svquant
-INST_E2E_ALLOW_WRITE=1 INST_E2E_DB=safe \
+# 写库：人工开关 + 服务端真实库名校验
+INST_E2E_ALLOW_WRITE=1 \
+  npx playwright test e2e-09-inst.spec.ts
+
+# 可选：精确锁定服务端返回的库名
+INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
   npx playwright test e2e-09-inst.spec.ts
 ```
 
-- `INST_E2E_ALLOW_WRITE=1` 才会考虑写库；未设置时写库用例 skip。
-- `INST_E2E_DB` 必须为 `safe`，或库名含 `_test` / `_e2e`（如 `svquant_test`）。
-- 只设 `INST_E2E_ALLOW_WRITE=1` 但目标库不安全时，`beforeAll` 直接失败，不会静默写入。
+- `INST_E2E_ALLOW_WRITE=1` 只是人工开关；未设置时写库用例 skip。
+- 写库用例启动时请求 `GET /api/inst/_e2e/guard`，服务端用 `SELECT current_database()` 返回真实 `db_name` 与 `writable`。
+- 只有真实库名含 `_test` / `_e2e` 且 `writable=true` 才放行；生产库 `svquant` 永远拒绝。
+- 端点不可达、非 200、返回缺失、库名不是测试库、`INST_E2E_EXPECT_DB` 不一致，全部 `beforeAll` 直接失败，不会静默写入。
 - `backend/.env` 的 `DATABASE_URL` 也必须指向该独立测试库；本地调试用的 `.env` 不提交。
 - guard 逻辑在 `tests/e2e/helpers/write-guard.mjs`，单测：`cd tests/e2e && npm run test:guard`。

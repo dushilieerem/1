@@ -24,13 +24,6 @@ type Dim = {
   agent_error?: string;
 };
 
-type DimReview = {
-  decision: "approve" | "reject";
-  comment?: string | null;
-  reviewer_member_id?: number;
-  at?: string;
-};
-
 type Version = {
   id: number;
   version_no: number;
@@ -42,7 +35,6 @@ type Version = {
   counter_evidence?: string[];
   open_questions?: string[];
   evidence_ids?: number[];
-  dim_reviews?: Record<string, DimReview>;
 };
 
 type Memo = {
@@ -107,7 +99,6 @@ export function InstResearchPage() {
   const memoRan = useRef(false);
   const [activeDim, setActiveDim] = useState("industry");
   const [dimBusy, setDimBusy] = useState<string | null>(null);
-  const [dimComments, setDimComments] = useState<Record<string, string>>({});
   const [chats, setChats] = useState<Record<string, ChatMessage[]>>({});
   const [chatInput, setChatInput] = useState<Record<string, string>>({});
   const [chatBusy, setChatBusy] = useState<string | null>(null);
@@ -218,10 +209,6 @@ export function InstResearchPage() {
     () => dims.find((d) => d.key === activeDim) || dims[0] || null,
     [dims, activeDim],
   );
-  const dimReviews = version?.dim_reviews || {};
-  const approvedDims = AGENT_TITLES.filter(([key]) => dimReviews[key]?.decision === "approve").length;
-  const allDimsApproved = approvedDims === AGENT_TITLES.length;
-
   useEffect(() => {
     if (dims.length && !dims.some((d) => d.key === activeDim)) setActiveDim(dims[0].key);
   }, [dims, activeDim]);
@@ -313,30 +300,6 @@ export function InstResearchPage() {
     }
   };
 
-  const reviewDim = async (key: string, decision: "approve" | "reject") => {
-    if (!version) return;
-    const note = (dimComments[key] || "").trim();
-    if (decision === "reject" && !note) {
-      setError(t("该维度不通过时必须填写原因。", "A reason is required when rejecting a dimension."));
-      return;
-    }
-    setBusy(`review:${key}`);
-    setError(null);
-    try {
-      await instApi(`/research/${version.id}/dimensions/${key}/review`, {
-        method: "POST",
-        body: { decision, comment: note || undefined },
-      });
-      const next = await instApi<CaseItem>(`/cases/${caseId}`);
-      setDetail(next);
-      setDimComments((prev) => ({ ...prev, [key]: "" }));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const sendChat = async (key: string) => {
     const question = (chatInput[key] || "").trim();
     if (!question || chatBusy) return;
@@ -363,10 +326,6 @@ export function InstResearchPage() {
 
   const approveAndDebate = async () => {
     if (!version) return;
-    if (!allDimsApproved) {
-      setError(t("请先逐条审核通过六个维度，再提交整体审核。", "Approve all six dimensions one by one before final approval."));
-      return;
-    }
     setBusy("approve");
     setError(null);
     try {
@@ -521,13 +480,12 @@ export function InstResearchPage() {
         <div className="space-y-4">
           <Card
             title={t("巴菲特六维分析", "Buffett six-dimension analysis")}
-            desc={t("单维查看与审核：先选维度目录，再单独分析或向 AI 追问；六维全部通过后才能整体审核。", "View and review one dimension at a time: pick a tab, re-analyze it or ask AI, then approve all six before final review.")}
+            desc={t("单维查看与追问：先选维度目录，再单独分析或向 AI 追问；整体审核在右侧一次完成。", "View one dimension at a time: pick a tab, re-analyze it or ask AI; final approval is done once on the right.")}
             actions={
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <div role="tablist" aria-label={t("维度目录", "Dimension directory")} className="flex flex-wrap gap-1">
                   {AGENT_TITLES.map(([key, label]) => {
                     const selected = (activeDimData?.key || activeDim) === key;
-                    const review = dimReviews[key]?.decision;
                     return (
                       <button
                         key={key}
@@ -542,7 +500,6 @@ export function InstResearchPage() {
                         }`}
                       >
                         {label}
-                        {review === "approve" ? " ✓" : review === "reject" ? " ✕" : ""}
                       </button>
                     );
                   })}
@@ -576,13 +533,6 @@ export function InstResearchPage() {
                           ? `AI Agent${activeDimData.confidence != null ? ` · ${activeDimData.confidence.toFixed(2)}` : ""}`
                           : t("规则兜底", "Rule fallback")}
                       </Badge>
-                      {dimReviews[activeDimData.key] ? (
-                        <Badge tone={dimReviews[activeDimData.key].decision === "approve" ? "green" : "red"}>
-                          {dimReviews[activeDimData.key].decision === "approve"
-                            ? t("该维已通过", "Dimension approved")
-                            : t("该维不通过", "Dimension rejected")}
-                        </Badge>
-                      ) : null}
                     </div>
                   </div>
                   <p className="mt-1 text-[11px] leading-relaxed text-[#68738b]">{activeDimData.question}</p>
@@ -625,54 +575,6 @@ export function InstResearchPage() {
                     ) : null}
                   </div>
                 </article>
-
-                {version?.status === "pending_review" ? (
-                  <div className="rounded-xl border border-[#e3eaf8] bg-white p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-xs font-semibold text-[#505369]">{t("逐维审核", "Per-dimension review")}</p>
-                      {dimReviews[activeDimData.key] ? (
-                        <Badge tone={dimReviews[activeDimData.key].decision === "approve" ? "green" : "red"}>
-                          {dimReviews[activeDimData.key].decision === "approve"
-                            ? t("已通过", "Approved")
-                            : t("不通过", "Rejected")}
-                        </Badge>
-                      ) : (
-                        <Badge>{t("待审核", "Pending")}</Badge>
-                      )}
-                    </div>
-                    {dimReviews[activeDimData.key]?.comment ? (
-                      <p className="mt-1 text-[11px] text-[#68738b]">
-                        {t("审核意见", "Comment")}：{dimReviews[activeDimData.key].comment}
-                      </p>
-                    ) : null}
-                    <textarea
-                      value={dimComments[activeDimData.key] || ""}
-                      onChange={(e) =>
-                        setDimComments((prev) => ({ ...prev, [activeDimData.key]: e.target.value }))
-                      }
-                      placeholder={t("审核意见（不通过时必填）", "Review comment (required when rejecting)")}
-                      className="mt-2 min-h-[56px] w-full rounded-lg border border-[#dde5f2] bg-[#f8faff] p-2 text-xs outline-none focus:border-[#7950ba]"
-                    />
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Button
-                        variant="gold"
-                        disabled={!canWrite || !!busy}
-                        onClick={() => void reviewDim(activeDimData.key, "approve")}
-                      >
-                        {busy === `review:${activeDimData.key}`
-                          ? t("提交中…", "Submitting…")
-                          : t("该维度通过", "Approve dimension")}
-                      </Button>
-                      <Button
-                        variant="danger"
-                        disabled={!canWrite || !!busy}
-                        onClick={() => void reviewDim(activeDimData.key, "reject")}
-                      >
-                        {t("该维度不通过", "Reject dimension")}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
 
                 <div className="rounded-xl border border-[#e3eaf8] bg-white p-3">
                   <div className="flex items-center justify-between gap-2">
@@ -734,28 +636,114 @@ export function InstResearchPage() {
             )}
           </Card>
 
-          <Card title={t("证据与反证", "Evidence & counter-evidence")} desc={t("重大结论必须可回源；无证据 ID 的结论不能进入审批包。", "Material conclusions must be traceable; conclusions without evidence IDs cannot enter the approval package.")}>
-            {detail.evidence?.length ? (
-              <ul className="divide-y divide-[#e3eaf8]">
-                {detail.evidence.map((ev) => (
-                  <li key={ev.id} className="py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-[#252533]">
-                          #{ev.id} {ev.title}
-                        </p>
-                        <p className="mt-1 text-xs leading-relaxed text-[#68738b]">{ev.quote || "—"}</p>
+          <Card
+            title={t("AI 一页纸", "AI one-pager")}
+            desc={t("按六维结构输出：总结结论、关键指标、六维要点、核心风险与下一步核验。", "Structured one-pager: summary, key metrics, six dimension highlights, key risks and next checks.")}
+            actions={
+              <Button
+                variant="ghost"
+                disabled={!!busy || memoBusy}
+                onClick={() => {
+                  void loadMemo().catch((e: Error) => setError(e.message));
+                }}
+              >
+                {memoBusy
+                  ? t("生成中…", "Generating…")
+                  : memo
+                    ? t("重新生成一页纸", "Regenerate one-pager")
+                    : t("生成 AI 一页纸", "Generate AI one-pager")}
+              </Button>
+            }
+          >
+            {memo ? (
+              <div className="rounded-2xl border border-[#e3eaf8] bg-white p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-display text-xl font-semibold text-[#171923]">
+                      {detail.company_name}{" "}
+                      <span className="font-mono text-sm font-normal text-[#68738b]">（{detail.symbol}）</span>
+                    </h3>
+                    <p className="mt-1 text-[11px] text-[#77718c]">
+                      {t("AI 投资研究摘要 · 六维分析", "AI investment research summary · six dimensions")}
+                    </p>
+                  </div>
+                  <Badge tone="gold">{version?.conclusion || t("待补充研究", "Research TBD")}</Badge>
+                </div>
+
+                <section className="mt-4">
+                  <h4 className="text-sm font-semibold text-[#171923]">{t("总结结论", "Summary")}</h4>
+                  <p className="mt-1 text-xs leading-relaxed text-[#505369]">
+                    {memo.summary || t("待补充", "TBD")}
+                  </p>
+                </section>
+
+                {memo.metrics?.length ? (
+                  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {memo.metrics.map((m) => (
+                      <div key={m.label} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+                        <p className="text-[10px] text-[#77718c]">{m.label}</p>
+                        <p className="mt-1 font-display text-lg font-semibold text-[#171923]">{m.value}</p>
+                        {m.note ? <p className="mt-0.5 text-[10px] text-[#68738b]">{m.note}</p> : null}
                       </div>
-                      <div className="shrink-0 text-right">
-                        <Badge>{ev.source}</Badge>
-                        <p className="mt-1 text-[10px] text-[#77718c]">{ev.as_of || "—"}</p>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="mt-5 space-y-4">
+                  {dims.map((d, i) => (
+                    <section key={d.key} className="border-t border-[#e3eaf8] pt-4">
+                      <h4 className="text-xs font-semibold text-[#171923]">
+                        {String(i + 1).padStart(2, "0")} {d.title}
+                      </h4>
+                      <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-[#505369]">
+                        <li>· {d.summary || t("待补充", "TBD")}</li>
+                        {d.counter?.[0] ? (
+                          <li>· {t("关键问题", "Key question")}：{d.counter[0]}</li>
+                        ) : d.checks?.[0] ? (
+                          <li>· {d.checks[0]}</li>
+                        ) : null}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
+
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  <section className="border-t border-[#e3eaf8] pt-4">
+                    <h4 className="text-xs font-semibold text-[#171923]">{t("核心关注风险", "Key risks")}</h4>
+                    {memo.risks?.length ? (
+                      <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-[#505369]">
+                        {memo.risks.map((x) => (
+                          <li key={x}>{x}</li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <p className="mt-2 text-[11px] text-[#77718c]">{t("待补充", "TBD")}</p>
+                    )}
+                  </section>
+                  <section className="border-t border-[#e3eaf8] pt-4">
+                    <h4 className="text-xs font-semibold text-[#171923]">{t("下一步重点核验", "Next checks")}</h4>
+                    {memo.open_questions?.length ? (
+                      <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-[#505369]">
+                        {memo.open_questions.map((x) => (
+                          <li key={x}>☐ {x}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-[11px] text-[#77718c]">{t("待补充", "TBD")}</p>
+                    )}
+                  </section>
+                </div>
+
+                <p className="mt-4 border-t border-[#e3eaf8] pt-3 text-[10px] text-[#77718c]">
+                  {t("AI 辅助研究，数据及结论仅供核对参考，不构成投资建议。", "AI-assisted research; data and conclusions are for verification only and are not investment advice.")}
+                </p>
+              </div>
             ) : (
-              <Empty>{t("还没有证据。生成研究会写入行情、估值与财务证据。", "No evidence yet; generating research writes price, valuation and financial evidence.")}</Empty>
+              <Empty>
+                {memoBusy
+                  ? t("AI 一页纸生成中…", "Generating AI one-pager…")
+                  : t("还没有 AI 一页纸，点击右上角生成。", "No AI one-pager yet; generate it from the top-right button.")}
+              </Empty>
             )}
           </Card>
         </div>
@@ -768,24 +756,6 @@ export function InstResearchPage() {
                 <Field label={t("状态", "Status")} value={<StatusBadge status={version.status} />} />
                 <Field label={t("结论", "Conclusion")} value={version.conclusion || t("待补充", "TBD")} />
                 <Field label={t("证据数", "Evidence")} value={`${version.evidence_ids?.length || 0} ${t("条", "items")}`} />
-                <div className="mt-3 rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
-                  <p className="text-xs font-semibold text-[#505369]">
-                    {t("逐维审核进度", "Per-dimension review")}：{approvedDims}/{AGENT_TITLES.length}
-                  </p>
-                  <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-[#68738b]">
-                    {AGENT_TITLES.map(([key, label]) => {
-                      const decision = dimReviews[key]?.decision;
-                      return (
-                        <span key={key} className="flex items-center justify-between gap-2">
-                          <span>{label}</span>
-                          <span className={decision === "approve" ? "text-emerald-700" : decision === "reject" ? "text-red-600" : "text-[#a9a4bd]"}>
-                            {decision === "approve" ? "✓" : decision === "reject" ? "✕" : "—"}
-                          </span>
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
                 {version.valuation ? (
                   <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs text-[#b42345]">
                     <p className="font-medium">{t("估值口径", "Valuation basis")}</p>
@@ -850,7 +820,7 @@ export function InstResearchPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <Button
                         variant="gold"
-                        disabled={!canWrite || !!busy || !allDimsApproved}
+                        disabled={!canWrite || !!busy}
                         onClick={() => void approveAndDebate()}
                       >
                         {busy === "approve" ? t("提交中…", "Submitting…") : t("审核通过", "Approve")}
@@ -870,14 +840,6 @@ export function InstResearchPage() {
                         {t("退回", "Return")}
                       </Button>
                     </div>
-                    {!allDimsApproved ? (
-                      <p className="text-[11px] text-amber-700">
-                        {t(
-                          `已通过 ${approvedDims}/${AGENT_TITLES.length} 个维度，剩余维度需逐条审核。`,
-                          `Approved ${approvedDims}/${AGENT_TITLES.length}; review the rest one by one.`,
-                        )}
-                      </p>
-                    ) : null}
                   </div>
                 ) : null}
                 {version.status === "approved" ? (
@@ -928,114 +890,28 @@ export function InstResearchPage() {
         </div>
       </div>
 
-      <Card
-        title={t("AI 一页纸", "AI one-pager")}
-        desc={t("按六维结构输出：总结结论、关键指标、六维要点、核心风险与下一步核验。", "Structured one-pager: summary, key metrics, six dimension highlights, key risks and next checks.")}
-        actions={
-          <Button
-            variant="ghost"
-            disabled={!!busy || memoBusy}
-            onClick={() => {
-              void loadMemo().catch((e: Error) => setError(e.message));
-            }}
-          >
-            {memoBusy
-              ? t("生成中…", "Generating…")
-              : memo
-                ? t("重新生成一页纸", "Regenerate one-pager")
-                : t("生成 AI 一页纸", "Generate AI one-pager")}
-          </Button>
-        }
-      >
-        {memo ? (
-          <div className="rounded-2xl border border-[#e3eaf8] bg-white p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="font-display text-xl font-semibold text-[#171923]">
-                  {detail.company_name}{" "}
-                  <span className="font-mono text-sm font-normal text-[#68738b]">（{detail.symbol}）</span>
-                </h3>
-                <p className="mt-1 text-[11px] text-[#77718c]">
-                  {t("AI 投资研究摘要 · 六维分析", "AI investment research summary · six dimensions")}
-                </p>
-              </div>
-              <Badge tone="gold">{version?.conclusion || t("待补充研究", "Research TBD")}</Badge>
-            </div>
-
-            <section className="mt-4">
-              <h4 className="text-sm font-semibold text-[#171923]">{t("总结结论", "Summary")}</h4>
-              <p className="mt-1 text-xs leading-relaxed text-[#505369]">
-                {memo.summary || t("待补充", "TBD")}
-              </p>
-            </section>
-
-            {memo.metrics?.length ? (
-              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {memo.metrics.map((m) => (
-                  <div key={m.label} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
-                    <p className="text-[10px] text-[#77718c]">{m.label}</p>
-                    <p className="mt-1 font-display text-lg font-semibold text-[#171923]">{m.value}</p>
-                    {m.note ? <p className="mt-0.5 text-[10px] text-[#68738b]">{m.note}</p> : null}
+      <Card title={t("证据与反证", "Evidence & counter-evidence")} desc={t("重大结论必须可回源；无证据 ID 的结论不能进入审批包。", "Material conclusions must be traceable; conclusions without evidence IDs cannot enter the approval package.")}>
+        {detail.evidence?.length ? (
+          <ul className="divide-y divide-[#e3eaf8]">
+            {detail.evidence.map((ev) => (
+              <li key={ev.id} className="py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-[#252533]">
+                      #{ev.id} {ev.title}
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-[#68738b]">{ev.quote || "—"}</p>
                   </div>
-                ))}
-              </div>
-            ) : null}
-
-            <div className="mt-5 space-y-4">
-              {dims.map((d, i) => (
-                <section key={d.key} className="border-t border-[#e3eaf8] pt-4">
-                  <h4 className="text-xs font-semibold text-[#171923]">
-                    {String(i + 1).padStart(2, "0")} {d.title}
-                  </h4>
-                  <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-[#505369]">
-                    <li>· {d.summary || t("待补充", "TBD")}</li>
-                    {d.counter?.[0] ? (
-                      <li>· {t("关键问题", "Key question")}：{d.counter[0]}</li>
-                    ) : d.checks?.[0] ? (
-                      <li>· {d.checks[0]}</li>
-                    ) : null}
-                  </ul>
-                </section>
-              ))}
-            </div>
-
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <section className="border-t border-[#e3eaf8] pt-4">
-                <h4 className="text-xs font-semibold text-[#171923]">{t("核心关注风险", "Key risks")}</h4>
-                {memo.risks?.length ? (
-                  <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-[#505369]">
-                    {memo.risks.map((x) => (
-                      <li key={x}>{x}</li>
-                    ))}
-                  </ol>
-                ) : (
-                  <p className="mt-2 text-[11px] text-[#77718c]">{t("待补充", "TBD")}</p>
-                )}
-              </section>
-              <section className="border-t border-[#e3eaf8] pt-4">
-                <h4 className="text-xs font-semibold text-[#171923]">{t("下一步重点核验", "Next checks")}</h4>
-                {memo.open_questions?.length ? (
-                  <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-[#505369]">
-                    {memo.open_questions.map((x) => (
-                      <li key={x}>☐ {x}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-2 text-[11px] text-[#77718c]">{t("待补充", "TBD")}</p>
-                )}
-              </section>
-            </div>
-
-            <p className="mt-4 border-t border-[#e3eaf8] pt-3 text-[10px] text-[#77718c]">
-              {t("AI 辅助研究，数据及结论仅供核对参考，不构成投资建议。", "AI-assisted research; data and conclusions are for verification only and are not investment advice.")}
-            </p>
-          </div>
+                  <div className="shrink-0 text-right">
+                    <Badge>{ev.source}</Badge>
+                    <p className="mt-1 text-[10px] text-[#77718c]">{ev.as_of || "—"}</p>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
         ) : (
-          <Empty>
-            {memoBusy
-              ? t("AI 一页纸生成中…", "Generating AI one-pager…")
-              : t("还没有 AI 一页纸，点击右上角生成。", "No AI one-pager yet; generate it from the top-right button.")}
-          </Empty>
+          <Empty>{t("还没有证据。生成研究会写入行情、估值与财务证据。", "No evidence yet; generating research writes price, valuation and financial evidence.")}</Empty>
         )}
       </Card>
 

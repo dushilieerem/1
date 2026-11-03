@@ -129,3 +129,56 @@ proposal: draft → partner_review → chairman_review → risk_precheck → aut
 6. 若 AI 全部不可用：研究流程不阻断，保留手动按钮与错误提示；辩论仍可由规则模板兜底。
 
 已用真实浏览器验证：新建深振业A研究案 → 6 个 Agent 完成 → AI 摘要 → 审核通过 → 自动辩论。
+
+## 9. 退出流程闭环（2026-11-03）
+
+补齐「投后退出研究 → 研究/辩论 → 退出议案 → 审批 → 授权 → 执行」的断点。
+
+### 9.1 缺口与修复
+
+| 缺口 | 修复 |
+|---|---|
+| 辩论页创建议案硬编码 `direction: "buy"` | 根据研究案是否关联退出案决定方向：退出案默认 `exit`，普通研究案仍为 `buy` |
+| 退出案状态只写 `draft`，复盘分支不可达 | 新增退出案状态机，议案提交/审批/授权/执行时合法迁移并写审计 |
+| 议案与投后列表看不到退出案进度 | 议案详情返回 `exit_case`；投后列表返回 `case_id/case_no/proposal_id/proposal_status/authorization_status`，页面可回链 |
+
+### 9.2 状态机
+
+```text
+draft --提交议案--> submitted
+submitted --Chairman 通过--> approved
+submitted/approved --Chairman 拒绝/风控阻断--> rejected
+submitted/approved --执行成交/退出复盘--> closed
+```
+
+- 迁移由 `_transition_exit_case` 校验，非法迁移返回 403；并发写入用 `WHERE status=<旧状态>` 保护。
+- 每次迁移写 `inst_audit_event`：`monitor.exit.submit|approve|reject|risk_block|authorize|close`。
+- 退出案没有独立「已授权」状态：授权保持 `approved`，另写 `monitor.exit.authorize` 审计（含 `authorization_id`），执行成交后才 `closed`。
+- 旧数据里仍为 `draft` 的退出案，在审批/授权/执行前先补一条 `submitted` 迁移，保持审计链完整。
+
+### 9.3 方向与默认值
+
+- `POST /api/inst/cases/{id}/proposals`：带退出案的 case 只接受 `sell/exit`，传 `buy` 返回 400；未传方向/仓位时默认 `exit` + `0`（清仓）。
+- 普通研究案默认值仍为 `buy` + `0.05`。
+- `config` 快照新增 `exit_case_id`，授权快照可追溯退出案。
+
+### 9.4 前端
+
+- `InstDebatePage`：退出案显示「退出辩论」，选择栏提示只能建退出议案，目标仓位默认 0，按钮为「创建退出议案」。
+- `InstMonitorPage`：退出案卡片显示 `EX-{id}`、研究案编号、研究案/议案回链、议案与授权状态。
+- `InstApprovalsPage`：议案快照增加退出案区块（原因、状态、回链研究案）。
+
+### 9.5 验证
+
+| 项 | 结果 |
+|---|---|
+| `pytest tests/test_inst_exit_flow.py` | 通过：方向校验、默认 exit/0、状态迁移顺序、审计顺序、投后回链 |
+| `pytest tests/test_inst_*.py` | 42 passed（含既有机构端全链路） |
+| `tsc --noEmit` | 通过 |
+| `npm run test:inst` | 5 passed |
+| `playwright test tests/e2e/e2e-09-inst.spec.ts` | 4 passed：登录/九工作区/无横向溢出/退出路径 |
+
+### 9.6 边界
+
+- 未新增表或列；`inst_exit_case` 既有 `case_id/proposal_id/status` 足够承载。
+- 退出议案被拒后目前不能在同一退出案上重新建案；如需重试需新建退出研究案。

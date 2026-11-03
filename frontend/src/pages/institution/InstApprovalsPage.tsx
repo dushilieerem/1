@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { BadgeCheck, ShieldAlert, Stamp } from "lucide-react";
 import { instApi, fmtNum, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
@@ -28,11 +28,20 @@ type Approval = {
   decided_at?: string;
 };
 
+type ExitCase = {
+  id: number;
+  status: string;
+  reason_type?: string;
+  memo?: string;
+  case_id?: number;
+};
+
 type ProposalDetail = ProposalListItem & {
   current_version?: { id: number; version_no: number; status: string; snapshot: Record<string, any> };
   versions?: Array<{ id: number; version_no: number; status: string; snapshot: Record<string, any> }>;
   approvals?: Approval[];
   authorizations?: Array<{ id: number; status: string; issued_at: string; snapshot: Record<string, any> }>;
+  exit_case?: ExitCase | null;
 };
 
 const STEP_LABEL_ZH: Record<string, string> = {
@@ -44,6 +53,14 @@ const STEP_LABEL_EN: Record<string, string> = {
   partner: "Partner review",
   chairman: "Chairman approval",
   risk_precheck: "Pre-execution risk check",
+};
+
+const EXIT_REASON: Record<string, [string, string]> = {
+  thesis_invalid: ["论点失效", "Thesis broken"],
+  valuation: ["估值透支", "Valuation stretched"],
+  better_allocation: ["更优资本配置", "Better allocation"],
+  portfolio_constraint: ["组合/资金约束", "Portfolio constraint"],
+  other: ["其他", "Other"],
 };
 
 export function InstApprovalsPage() {
@@ -228,6 +245,33 @@ export function InstApprovalsPage() {
                     <li key={x}>{x}</li>
                   ))}
                 </ul>
+              </div>
+            ) : null}
+            {detail.exit_case ? (
+              <div className="mt-3 rounded-xl border border-[#b42345]/30 bg-[#fbe9ef] p-3 text-xs text-[#a31f42]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-medium">
+                    {t("退出案", "Exit case")} EX-{detail.exit_case.id}
+                  </p>
+                  <StatusBadge status={detail.exit_case.status} />
+                </div>
+                <p className="mt-1">
+                  {t("退出原因", "Reason")}：
+                  {EXIT_REASON[detail.exit_case.reason_type || ""]
+                    ? locale === "en"
+                      ? EXIT_REASON[detail.exit_case.reason_type || ""][1]
+                      : EXIT_REASON[detail.exit_case.reason_type || ""][0]
+                    : detail.exit_case.reason_type || "—"}
+                </p>
+                {detail.exit_case.memo ? <p className="mt-1">{detail.exit_case.memo}</p> : null}
+                {detail.exit_case.case_id ? (
+                  <Link
+                    className="mt-2 inline-block text-[#b42345] underline underline-offset-2"
+                    to={`/inst/research?case=${detail.exit_case.case_id}`}
+                  >
+                    {t("查看退出研究案", "Open exit research case")} →
+                  </Link>
+                ) : null}
               </div>
             ) : null}
           </Card>

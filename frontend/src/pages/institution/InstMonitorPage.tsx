@@ -36,6 +36,12 @@ type ExitCase = {
   reason_type: string;
   status: string;
   memo?: string;
+  case_id?: number;
+  case_no?: string;
+  proposal_id?: number;
+  proposal_status?: string;
+  proposal_direction?: string;
+  authorization_status?: string;
 };
 
 type Thesis = {
@@ -536,7 +542,33 @@ export function InstMonitorPage() {
                       <span className="text-sm text-[#252533]">{x.company_name}</span>
                       <StatusBadge status={x.status} />
                     </div>
-                    <p className="mt-1 text-xs text-[#68738b]">{REASON[x.reason_type] ? (locale === "en" ? REASON[x.reason_type][1] : REASON[x.reason_type][0]) : x.reason_type}</p>
+                    <p className="mt-1 text-xs text-[#68738b]">
+                      {REASON[x.reason_type] ? (locale === "en" ? REASON[x.reason_type][1] : REASON[x.reason_type][0]) : x.reason_type}
+                      {" · "}EX-{x.id}
+                      {x.case_no ? ` · ${x.case_no}` : ""}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                      {x.case_id ? (
+                        <Link
+                          to={`/inst/research?case=${x.case_id}`}
+                          className="rounded-md border border-[#dde5f2] px-2 py-1 text-[#7950ba] transition hover:border-[#7950ba]"
+                        >
+                          {t("退出研究案", "Exit research")} #{x.case_id}
+                        </Link>
+                      ) : null}
+                      {x.proposal_id ? (
+                        <Link
+                          to={`/inst/approvals?proposal=${x.proposal_id}`}
+                          className="rounded-md border border-[#dde5f2] px-2 py-1 text-[#7950ba] transition hover:border-[#7950ba]"
+                        >
+                          {t("退出议案", "Exit proposal")} #{x.proposal_id}
+                        </Link>
+                      ) : (
+                        <span className="text-[#77718c]">{t("尚未创建议案", "No proposal yet")}</span>
+                      )}
+                      {x.proposal_status ? <StatusBadge status={x.proposal_status} /> : null}
+                      {x.authorization_status ? <StatusBadge status={x.authorization_status} /> : null}
+                    </div>
                   </li>
                 ))}
               </ul>

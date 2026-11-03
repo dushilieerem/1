@@ -53,22 +53,22 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
   docker run -d --rm --name "$PG_CONTAINER" \
     -e POSTGRES_USER=svquant \
     -e POSTGRES_PASSWORD=svquant \
-    -e POSTGRES_DB=svquant \
+    -e POSTGRES_DB=svquant_ci \
     -p "127.0.0.1:${PG_PORT}:5432" \
     postgres:16-alpine >/dev/null
   STARTED_PG=1
 
   for _ in $(seq 1 60); do
-    if docker exec "$PG_CONTAINER" pg_isready -U svquant -d svquant >/dev/null 2>&1; then
+    if docker exec "$PG_CONTAINER" pg_isready -U svquant -d svquant_ci >/dev/null 2>&1; then
       break
     fi
     sleep 1
   done
-  docker exec "$PG_CONTAINER" pg_isready -U svquant -d svquant >/dev/null 2>&1 || {
+  docker exec "$PG_CONTAINER" pg_isready -U svquant -d svquant_ci >/dev/null 2>&1 || {
     log "PostgreSQL 未在 60s 内就绪"
     exit 1
   }
-  export DATABASE_URL="postgresql://svquant:svquant@127.0.0.1:${PG_PORT}/svquant"
+  export DATABASE_URL="postgresql://svquant:svquant@127.0.0.1:${PG_PORT}/svquant_ci"
 fi
 
 # backend/.env 不存在时，模块导入期会因 YG_RE_BASE 缺失直接抛错。

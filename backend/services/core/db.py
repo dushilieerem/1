@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import queue
+import sys
 import threading
 from typing import Iterator
+from urllib.parse import urlparse
 
 import psycopg
 from psycopg.rows import dict_row
@@ -18,8 +20,36 @@ _POOL_COUNTS: dict[bool, int] = {}
 _POOL_LOCK = threading.Lock()
 
 
+def _running_under_pytest() -> bool:
+    return any(name == "pytest" or name.startswith("_pytest") for name in sys.modules)
+
+
+def _assert_test_database(url: str) -> None:
+    """pytest 进程禁止连接生产库，避免测试建表/写数据污染 svquant。"""
+    if not _running_under_pytest():
+        return
+    name = urlparse(url).path.lstrip("/").split("/")[0]
+    safe = (
+        name.endswith("_test")
+        or name.endswith("_dev")
+        or name.endswith("_ci")
+        or name.endswith("_e2e")
+        or name.endswith("_local")
+        or "_test" in name
+        or "_dev" in name
+        or "_e2e" in name
+    )
+    if name and not safe:
+        raise RuntimeError(
+            f"测试拒绝连接数据库 {name}：请使用 svquant_test / svquant_dev / *_ci，"
+            "不要把 backend/.env 指向生产 svquant。"
+        )
+
+
 def database_url() -> str:
-    return env("DATABASE_URL", DEFAULT_URL) or DEFAULT_URL
+    url = env("DATABASE_URL", DEFAULT_URL) or DEFAULT_URL
+    _assert_test_database(url)
+    return url
 
 
 def _pool_size() -> int:

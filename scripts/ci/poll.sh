@@ -34,6 +34,26 @@ if ! flock -n 9; then
   exit 0
 fi
 
+# 数据 view 同步挂在已有的 poll timer 上：不新增 systemd unit、不需要 root。
+# 后台执行，避免阻塞代码部署；flock 防止长同步与下一轮重叠。
+SYNC_SCRIPT="$ROOT_DIR/scripts/ops/sync_data_production.sh"
+SYNC_LOCK="$STATE_DIR/data-sync.lock"
+sync_data_bg() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    return 0
+  fi
+  [[ -x "$SYNC_SCRIPT" ]] || return 0
+  (
+    exec 9>&-
+    if command -v flock >/dev/null 2>&1; then
+      flock -n "$SYNC_LOCK" "$SYNC_SCRIPT"
+    else
+      "$SYNC_SCRIPT"
+    fi
+  ) >>"$STATE_DIR/data-sync.log" 2>&1 &
+}
+trap sync_data_bg EXIT
+
 cd "$ROOT_DIR"
 if ! git fetch --prune --tags origin >/dev/null 2>&1; then
   log "git fetch 失败，检查远端凭据与网络"

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 from collections import OrderedDict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from statistics import median
 from typing import Any, Iterable
 
@@ -797,11 +797,14 @@ def build_news(conn: Any, kind: str | None = None) -> dict[str, Any]:
 def build_meta(conn: Any) -> dict[str, Any]:
     meta = data_meta(conn)
     row = conn.execute("SELECT value FROM meta WHERE key='updated_at'").fetchone()
-    age = max(0, (date.today() - date.fromisoformat(meta["dataDate"])).days)
+    start = date.fromisoformat(meta["dataDate"])
+    age = max(0, (date.today() - start).days)
+    # 周末不算“未更新”：周五数据到周二只有 2 个交易日，不应报过期
+    weekdays = sum(1 for n in range(1, age + 1) if (start + timedelta(days=n)).weekday() < 5)
     return {"dataDate": meta["dataDate"], "source": meta["dataSource"],
             "isDemo": meta["isDemo"], "disclaimer": DISCLAIMER,
             "updatedAt": row["value"] if row else meta["dataDate"],
-            "ageDays": age, "isStale": age > 2}
+            "ageDays": age, "ageTradingDays": weekdays, "isStale": weekdays > 2}
 
 
 def build_data_quality(conn: Any) -> dict[str, Any]:

@@ -302,9 +302,6 @@ export default function AiChat() {
       {error ? <ErrorState message={error} onRetry={() => setError(null)} /> : null}
 
       <div className="ai-composer">
-        <button className={`round-btn ${recording ? "recording" : ""}`} onClick={() => void toggleRecord()} aria-label={recording ? "停止录音" : "语音输入"}>
-          {recording ? <MicOff size={18} /> : <Mic size={18} />}
-        </button>
         <input
           ref={inputRef}
           value={input}
@@ -314,12 +311,17 @@ export default function AiChat() {
           }}
           placeholder={recording ? "录音中，点麦克风结束…" : "问个股、组合、复盘或条件选股"}
         />
-        <button className={`chip ${deep ? "on" : ""}`} onClick={() => setDeep((v) => !v)} title="深度思考">
-          深度
-        </button>
-        <button className="btn btn-primary btn-sm" onClick={() => void send()} disabled={busy || !input.trim()}>
-          <Send size={15} /> 发送
-        </button>
+        <div className="ai-composer-actions">
+          <button className={`round-btn ${recording ? "recording" : ""}`} onClick={() => void toggleRecord()} aria-label={recording ? "停止录音" : "语音输入"}>
+            {recording ? <MicOff size={18} /> : <Mic size={18} />}
+          </button>
+          <button className={`chip ${deep ? "on" : ""}`} onClick={() => setDeep((v) => !v)} title="深度思考">
+            深度
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={() => void send()} disabled={busy || !input.trim()}>
+            <Send size={15} /> 发送
+          </button>
+        </div>
       </div>
       {memory.lastStock ? (
         <p className="hint">会话记忆：上一标的 {memory.lastStock.name || memory.lastStock.code}（可在「我的」清除）</p>

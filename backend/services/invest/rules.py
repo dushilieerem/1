@@ -232,11 +232,18 @@ def _sensitivity(beta: float | None) -> dict[str, Any]:
         level = "较高"
     else:
         level = "高"
+    note = "按近一年 Beta 分档：<0.8 低、0.8–1.2 中、1.2–1.5 较高、≥1.5 高；仅描述历史敏感度。"
+    if abs(beta) < 0.1:
+        note = (
+            "近一年 Beta 接近 0，说明该股与沪深300的日收益相关性很低；"
+            "这不等于低风险，可能是个股独立行情或样本期结构性背离，仅作历史描述。"
+        )
+    display_beta = 0.0 if abs(beta) < 0.005 else round(beta, 2)
     return {
         "available": True,
         "level": level,
-        "beta": round(beta, 2),
-        "note": "按近一年 Beta 分档：<0.8 低、0.8–1.2 中、1.2–1.5 较高、≥1.5 高；仅描述历史敏感度。",
+        "beta": display_beta,
+        "note": note,
     }
 
 

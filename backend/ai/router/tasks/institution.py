@@ -106,6 +106,23 @@ def validate_memo(raw: str, request: TaskRequest) -> dict[str, Any]:
     return data
 
 
+def validate_chat(raw: str, request: TaskRequest) -> dict[str, Any]:
+    """单维对话：接受 JSON {"answer": ...} 或纯文本。"""
+    text = _strip(raw)
+    if not text:
+        raise AiBadOutput("机构端对话返回为空")
+    if text.startswith("{"):
+        try:
+            data = json.loads(text)
+        except (json.JSONDecodeError, ValueError):
+            data = None
+        if isinstance(data, dict):
+            answer = str(data.get("answer") or data.get("content") or "").strip()
+            if answer:
+                return {"answer": answer[:4000]}
+    return {"answer": text[:4000]}
+
+
 DEBATE_TASK = register(
     TaskSpec(
         task_id="inst.debate",
@@ -127,6 +144,18 @@ RESEARCH_MEMO_TASK = register(
         timeout_sec=120,
         executors=("local",),
         validator=validate_memo,
+    )
+)
+
+DIMENSION_CHAT_TASK = register(
+    TaskSpec(
+        task_id="inst.dim.chat",
+        description="机构端单维对话：围绕一个研究维度与证据回答追问",
+        temperature=0.3,
+        max_tokens=1500,
+        timeout_sec=90,
+        executors=("local",),
+        validator=validate_chat,
     )
 )
 
@@ -221,6 +250,7 @@ __all__ = [
     "POST_INVESTMENT_ROLE_TASK",
     "CHAIRMAN_MEMO_TASK",
     "DEBATE_TASK",
+    "DIMENSION_CHAT_TASK",
     "PROMPT_VERSION",
     "RESEARCH_MEMO_TASK",
     "RISK_REVIEW_TASK",

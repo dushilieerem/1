@@ -206,3 +206,44 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 端点不可达、非 200、返回缺失、库名不是测试库、`INST_E2E_EXPECT_DB` 不一致，全部 `beforeAll` 直接失败，不会静默写入。
 - `backend/.env` 的 `DATABASE_URL` 也必须指向该独立测试库；本地调试用的 `.env` 不提交。
 - guard 逻辑在 `tests/e2e/helpers/write-guard.mjs`，单测：`cd tests/e2e && npm run test:guard`。
+
+## 10. 研究页单维视图、逐维审核与 AI 一页纸（2026-11-03）
+
+按 2026-11-03 前端需求调整投资经理角色的公司研究流程。
+
+### 10.1 生成态文案
+
+- 首次进入且尚无研究版本时，按钮与进度卡显示「正在生成」；已有版本后才显示「重新生成六维分析 / 重新生成中」。
+
+### 10.2 单维视图与单维分析
+
+- 六维卡改为「目录 + 单维正文」：六个维度 Tab 放在「重新生成六维分析」按钮旁；正文只展示当前维度。
+- 新增「单独分析该维度」：`POST /api/inst/cases/{id}/research`（`mode=<维度>`）只重跑该维 Agent，并合并进最近版本，保留其余五维；版本号 +1、回到 `pending_review`，旧版本保留。
+- 未新增表；`inst_research_version` 增加 `dim_reviews JSONB`，在 `inst_schema.py` 用幂等 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` 补列。
+
+### 10.3 单维追问
+
+- 每个维度下方新增 AI 对话框：`POST /api/inst/cases/{id}/dimensions/{key}/chat`，只带该维结论、检查项、反证、证据与最近 8 条对话。
+- 新增 AI TaskSpec `inst.dim.chat`（`backend/ai/router/tasks/institution.py`）；AI 不可用时返回 503，不伪造回答。
+- 对话仅保存在当前页面会话，不写入业务表；提问与回答摘要写 `inst_audit_event`。
+
+### 10.4 逐维审核
+
+- 新增 `POST /api/inst/research/{version_id}/dimensions/{key}/review`，`decision=approve|reject`，写入 `dim_reviews` 并审计 `research.review.dimension.*`。
+- 前端要求六个维度全部通过后，整体「审核通过」才可点击；单维不通过必须填写原因。
+- 整体审核接口保持原语义，既有自动化链路（研究 → 审核 → 辩论）不受影响。
+
+### 10.5 AI 一页纸格式
+
+- 一页纸改为结构化卡片：总结结论、关键指标（营业收入/净利润/ROE/PE）、01-06 六维要点、核心关注风险、下一步重点核验、免责声明。
+- 后端 `ai_research_memo` 增加确定性 `metrics`（来自行情/估值/财务，缺失不编造）；AI 不可用时回退规则摘要（`engine=rule`），页面仍按同一格式展示。
+
+### 10.6 验证
+
+| 项 | 结果 |
+|---|---|
+| `pytest tests/test_inst_research_dimensions.py` | 4 passed：单维合并、逐维审核、单维追问、一页纸 metrics 与规则回退 |
+| `pytest tests/test_inst_*.py` | 47 passed |
+| `tsc --noEmit` | 通过 |
+| e2e-09 只读 | 3 passed / 1 skipped |
+| Playwright 走查 | 目录切换、单维正文、单独分析按钮、追问框、逐维通过、结构化一页纸均可见 |

@@ -24,6 +24,13 @@ type Dim = {
   agent_error?: string;
 };
 
+type DimReview = {
+  decision: "approve" | "reject";
+  comment?: string | null;
+  reviewer_member_id?: number;
+  at?: string;
+};
+
 type Version = {
   id: number;
   version_no: number;
@@ -35,7 +42,19 @@ type Version = {
   counter_evidence?: string[];
   open_questions?: string[];
   evidence_ids?: number[];
+  dim_reviews?: Record<string, DimReview>;
 };
+
+type Memo = {
+  summary?: string;
+  evidence?: string[];
+  risks?: string[];
+  open_questions?: string[];
+  metrics?: Array<{ label: string; value: string; note?: string }>;
+  engine?: string;
+};
+
+type ChatMessage = { role: "user" | "assistant"; content: string };
 
 type CaseItem = {
   id: number;
@@ -82,10 +101,16 @@ export function InstResearchPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [comment, setComment] = useState("");
-  const [memo, setMemo] = useState<Record<string, any> | null>(null);
+  const [memo, setMemo] = useState<Memo | null>(null);
   const [memoBusy, setMemoBusy] = useState(false);
   const autoRan = useRef(false);
   const memoRan = useRef(false);
+  const [activeDim, setActiveDim] = useState("industry");
+  const [dimBusy, setDimBusy] = useState<string | null>(null);
+  const [dimComments, setDimComments] = useState<Record<string, string>>({});
+  const [chats, setChats] = useState<Record<string, ChatMessage[]>>({});
+  const [chatInput, setChatInput] = useState<Record<string, string>>({});
+  const [chatBusy, setChatBusy] = useState<string | null>(null);
   const [dcf, setDcf] = useState<Record<string, any> | null>(null);
   const [dcfIn, setDcfIn] = useState({
     base_revenue: "100",
@@ -188,10 +213,29 @@ export function InstResearchPage() {
     return map;
   }, [detail]);
 
+  const dims = useMemo<Dim[]>(() => version?.six_dim || [], [version]);
+  const activeDimData = useMemo<Dim | null>(
+    () => dims.find((d) => d.key === activeDim) || dims[0] || null,
+    [dims, activeDim],
+  );
+  const dimReviews = version?.dim_reviews || {};
+  const approvedDims = AGENT_TITLES.filter(([key]) => dimReviews[key]?.decision === "approve").length;
+  const allDimsApproved = approvedDims === AGENT_TITLES.length;
+
+  useEffect(() => {
+    if (dims.length && !dims.some((d) => d.key === activeDim)) setActiveDim(dims[0].key);
+  }, [dims, activeDim]);
+
+  // 版本更新（六维重生成/单维重分析）后，旧一页纸作废，重新生成。
+  useEffect(() => {
+    setMemo(null);
+    memoRan.current = false;
+  }, [version?.id]);
+
   const loadMemo = async () => {
     setMemoBusy(true);
     try {
-      const res = await instApi<{ memo: Record<string, any> }>(`/cases/${caseId}/ai/memo`, { method: "POST" });
+      const res = await instApi<{ memo: Memo }>(`/cases/${caseId}/ai/memo`, { method: "POST" });
       setMemo(res.memo);
     } finally {
       setMemoBusy(false);
@@ -255,8 +299,74 @@ export function InstResearchPage() {
   }, [detail]);
   const hasLiveTasks = (detail?.tasks || []).some((t) => t.status === "pending" || t.status === "running");
 
+  const regenDim = async (key: string) => {
+    setDimBusy(key);
+    setError(null);
+    try {
+      await instApi(`/cases/${caseId}/research`, { method: "POST", body: { mode: key } });
+      const next = await instApi<CaseItem>(`/cases/${caseId}`);
+      setDetail(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDimBusy(null);
+    }
+  };
+
+  const reviewDim = async (key: string, decision: "approve" | "reject") => {
+    if (!version) return;
+    const note = (dimComments[key] || "").trim();
+    if (decision === "reject" && !note) {
+      setError(t("该维度不通过时必须填写原因。", "A reason is required when rejecting a dimension."));
+      return;
+    }
+    setBusy(`review:${key}`);
+    setError(null);
+    try {
+      await instApi(`/research/${version.id}/dimensions/${key}/review`, {
+        method: "POST",
+        body: { decision, comment: note || undefined },
+      });
+      const next = await instApi<CaseItem>(`/cases/${caseId}`);
+      setDetail(next);
+      setDimComments((prev) => ({ ...prev, [key]: "" }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const sendChat = async (key: string) => {
+    const question = (chatInput[key] || "").trim();
+    if (!question || chatBusy) return;
+    const history = chats[key] || [];
+    setChats((prev) => ({ ...prev, [key]: [...(prev[key] || []), { role: "user", content: question }] }));
+    setChatInput((prev) => ({ ...prev, [key]: "" }));
+    setChatBusy(key);
+    setError(null);
+    try {
+      const res = await instApi<{ answer: string }>(`/cases/${caseId}/dimensions/${key}/chat`, {
+        method: "POST",
+        body: { question, history: history.slice(-6) },
+      });
+      setChats((prev) => ({
+        ...prev,
+        [key]: [...(prev[key] || []), { role: "assistant", content: res.answer }],
+      }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setChatBusy(null);
+    }
+  };
+
   const approveAndDebate = async () => {
     if (!version) return;
+    if (!allDimsApproved) {
+      setError(t("请先逐条审核通过六个维度，再提交整体审核。", "Approve all six dimensions one by one before final approval."));
+      return;
+    }
     setBusy("approve");
     setError(null);
     try {
@@ -373,7 +483,7 @@ export function InstResearchPage() {
 
       {busy === "auto" || hasLiveTasks ? (
         <Card
-          title={t("6 个 Agent 实时进度", "6 agents live progress")}
+          title={version ? t("6 个 Agent 实时进度", "6 agents live progress") : t("6 个 Agent 正在生成", "Generating with 6 agents")}
           desc={t("每个 Agent 独立分析，完成后立即显示该维结论；全部完成后再生成 AI 一页纸。", "Each agent analyzes independently; its conclusion appears as soon as it finishes, followed by the AI memo.")}
         >
           <div className="grid gap-2 sm:grid-cols-2">
@@ -411,56 +521,213 @@ export function InstResearchPage() {
         <div className="space-y-4">
           <Card
             title={t("巴菲特六维分析", "Buffett six-dimension analysis")}
-            desc={t("每维包含核心问题、数据检查、反证条件与证据 ID；数据不足显示「待补充」，不补造数字。", "Each dimension includes the core question, data checks, falsifiers and evidence IDs. Missing data is marked TBD, never fabricated.")}
+            desc={t("单维查看与审核：先选维度目录，再单独分析或向 AI 追问；六维全部通过后才能整体审核。", "View and review one dimension at a time: pick a tab, re-analyze it or ask AI, then approve all six before final review.")}
             actions={
-              <Button
-                variant="gold"
-                disabled={!canWrite || !!busy}
-                onClick={() => void autopilot()}
-              >
-                <Sparkles className="mr-1 h-4 w-4" />
-                {busy === "auto" ? t("6 个 Agent 重新生成中…", "Regenerating with 6 agents…") : t("重新生成六维分析", "Regenerate six-dimension analysis")}
-              </Button>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <div role="tablist" aria-label={t("维度目录", "Dimension directory")} className="flex flex-wrap gap-1">
+                  {AGENT_TITLES.map(([key, label]) => {
+                    const selected = (activeDimData?.key || activeDim) === key;
+                    const review = dimReviews[key]?.decision;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        role="tab"
+                        aria-selected={selected}
+                        onClick={() => setActiveDim(key)}
+                        className={`rounded-md border px-2 py-1 text-[11px] transition ${
+                          selected
+                            ? "border-[#b42345] bg-[#fbe9ef] text-[#a31f42]"
+                            : "border-[#dde5f2] bg-white text-[#68738b] hover:border-[#7950ba]"
+                        }`}
+                      >
+                        {label}
+                        {review === "approve" ? " ✓" : review === "reject" ? " ✕" : ""}
+                      </button>
+                    );
+                  })}
+                </div>
+                <Button
+                  variant="gold"
+                  disabled={!canWrite || !!busy || !!dimBusy}
+                  onClick={() => void autopilot()}
+                >
+                  <Sparkles className="mr-1 h-4 w-4" />
+                  {busy === "auto"
+                    ? version
+                      ? t("6 个 Agent 重新生成中…", "Regenerating with 6 agents…")
+                      : t("6 个 Agent 正在生成中…", "Generating with 6 agents…")
+                    : version
+                      ? t("重新生成六维分析", "Regenerate six-dimension analysis")
+                      : t("生成六维分析", "Generate six-dimension analysis")}
+                </Button>
+              </div>
             }
           >
-            {version?.six_dim?.length ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {version.six_dim.map((dim) => (
-                  <article key={dim.key} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="text-sm font-semibold text-[#171923]">{dim.title}</h3>
-                      <div className="flex shrink-0 flex-col items-end gap-1">
-                        <StatusBadge status={dim.status} />
-                        <Badge tone={dim.engine === "agent" ? "gold" : "slate"}>
-                          {dim.engine === "agent" ? `AI Agent${dim.confidence != null ? ` · ${dim.confidence.toFixed(2)}` : ""}` : t("规则兜底", "Rule fallback")}
+            {activeDimData ? (
+              <div className="space-y-3">
+                <article className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-[#171923]">{activeDimData.title}</h3>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <StatusBadge status={activeDimData.status} />
+                      <Badge tone={activeDimData.engine === "agent" ? "gold" : "slate"}>
+                        {activeDimData.engine === "agent"
+                          ? `AI Agent${activeDimData.confidence != null ? ` · ${activeDimData.confidence.toFixed(2)}` : ""}`
+                          : t("规则兜底", "Rule fallback")}
+                      </Badge>
+                      {dimReviews[activeDimData.key] ? (
+                        <Badge tone={dimReviews[activeDimData.key].decision === "approve" ? "green" : "red"}>
+                          {dimReviews[activeDimData.key].decision === "approve"
+                            ? t("该维已通过", "Dimension approved")
+                            : t("该维不通过", "Dimension rejected")}
                         </Badge>
-                      </div>
+                      ) : null}
                     </div>
-                    <p className="mt-1 text-[11px] leading-relaxed text-[#68738b]">{dim.question}</p>
-                    <p className="mt-2 text-xs leading-relaxed text-[#505369]">{dim.summary || t("待补充", "TBD")}</p>
-                    {dim.checks?.length ? (
-                      <ul className="mt-2 space-y-1 text-[11px] text-[#68738b]">
-                        {dim.checks.map((x) => (
-                          <li key={x}>· {x}</li>
-                        ))}
-                      </ul>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-[#68738b]">{activeDimData.question}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-[#505369]">{activeDimData.summary || t("待补充", "TBD")}</p>
+                  {activeDimData.checks?.length ? (
+                    <ul className="mt-2 space-y-1 text-[11px] text-[#68738b]">
+                      {activeDimData.checks.map((x) => (
+                        <li key={x}>· {x}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {activeDimData.counter?.length ? (
+                    <p className="mt-2 text-[11px] text-amber-700">{t("反证", "Falsifier")}：{activeDimData.counter[0]}</p>
+                  ) : null}
+                  {activeDimData.data_gaps?.length ? (
+                    <p className="mt-2 text-[11px] text-[#68738b]">{t("数据缺口", "Data gaps")}：{activeDimData.data_gaps.join("；")}</p>
+                  ) : null}
+                  {activeDimData.agent_error ? (
+                    <p className="mt-2 text-[11px] text-red-600">{t("Agent 失败", "Agent failed")}：{activeDimData.agent_error}</p>
+                  ) : null}
+                  {activeDimData.evidence_ids?.length ? (
+                    <p className="mt-2 font-mono text-[10px] text-[#77718c]">
+                      {t("证据 ID", "Evidence IDs")}：{activeDimData.evidence_ids.join(", ")}
+                    </p>
+                  ) : null}
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      disabled={!canWrite || !!busy || !!dimBusy}
+                      onClick={() => void regenDim(activeDimData.key)}
+                    >
+                      {dimBusy === activeDimData.key
+                        ? t("该维度分析中…", "Analyzing this dimension…")
+                        : t("单独分析该维度", "Analyze this dimension")}
+                    </Button>
+                    {dimBusy === activeDimData.key ? (
+                      <span className="text-[11px] text-[#7950ba]">
+                        {t("只更新本维，其余五维保留", "Only this dimension is updated; the other five are kept")}
+                      </span>
                     ) : null}
-                    {dim.counter?.length ? (
-                      <p className="mt-2 text-[11px] text-amber-700">{t("反证", "Falsifier")}：{dim.counter[0]}</p>
-                    ) : null}
-                    {dim.data_gaps?.length ? (
-                      <p className="mt-2 text-[11px] text-[#68738b]">{t("数据缺口", "Data gaps")}：{dim.data_gaps.join("；")}</p>
-                    ) : null}
-                    {dim.agent_error ? (
-                      <p className="mt-2 text-[11px] text-red-600">{t("Agent 失败", "Agent failed")}：{dim.agent_error}</p>
-                    ) : null}
-                    {dim.evidence_ids?.length ? (
-                      <p className="mt-2 font-mono text-[10px] text-[#77718c]">
-                        {t("证据 ID", "Evidence IDs")}：{dim.evidence_ids.join(", ")}
+                  </div>
+                </article>
+
+                {version?.status === "pending_review" ? (
+                  <div className="rounded-xl border border-[#e3eaf8] bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-[#505369]">{t("逐维审核", "Per-dimension review")}</p>
+                      {dimReviews[activeDimData.key] ? (
+                        <Badge tone={dimReviews[activeDimData.key].decision === "approve" ? "green" : "red"}>
+                          {dimReviews[activeDimData.key].decision === "approve"
+                            ? t("已通过", "Approved")
+                            : t("不通过", "Rejected")}
+                        </Badge>
+                      ) : (
+                        <Badge>{t("待审核", "Pending")}</Badge>
+                      )}
+                    </div>
+                    {dimReviews[activeDimData.key]?.comment ? (
+                      <p className="mt-1 text-[11px] text-[#68738b]">
+                        {t("审核意见", "Comment")}：{dimReviews[activeDimData.key].comment}
                       </p>
                     ) : null}
-                  </article>
-                ))}
+                    <textarea
+                      value={dimComments[activeDimData.key] || ""}
+                      onChange={(e) =>
+                        setDimComments((prev) => ({ ...prev, [activeDimData.key]: e.target.value }))
+                      }
+                      placeholder={t("审核意见（不通过时必填）", "Review comment (required when rejecting)")}
+                      className="mt-2 min-h-[56px] w-full rounded-lg border border-[#dde5f2] bg-[#f8faff] p-2 text-xs outline-none focus:border-[#7950ba]"
+                    />
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button
+                        variant="gold"
+                        disabled={!canWrite || !!busy}
+                        onClick={() => void reviewDim(activeDimData.key, "approve")}
+                      >
+                        {busy === `review:${activeDimData.key}`
+                          ? t("提交中…", "Submitting…")
+                          : t("该维度通过", "Approve dimension")}
+                      </Button>
+                      <Button
+                        variant="danger"
+                        disabled={!canWrite || !!busy}
+                        onClick={() => void reviewDim(activeDimData.key, "reject")}
+                      >
+                        {t("该维度不通过", "Reject dimension")}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="rounded-xl border border-[#e3eaf8] bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-[#505369]">
+                      {t("向 AI 追问（仅限本维度）", "Ask AI (this dimension only)")}
+                    </p>
+                    <Badge tone="gold">{t("AI 对话", "AI chat")}</Badge>
+                  </div>
+                  <div className="mt-2 max-h-64 space-y-2 overflow-y-auto">
+                    {(chats[activeDimData.key] || []).length ? (
+                      (chats[activeDimData.key] || []).map((m, i) => (
+                        <div
+                          key={`${m.role}-${i}`}
+                          className={`rounded-lg px-3 py-2 text-xs leading-relaxed ${
+                            m.role === "user"
+                              ? "ml-8 bg-[#f2eafa] text-[#5a3d85]"
+                              : "mr-8 bg-[#f8faff] text-[#505369]"
+                          }`}
+                        >
+                          {m.content}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-[11px] text-[#77718c]">
+                        {t(
+                          "可以问：关键反证是什么？哪些数据还缺失？",
+                          "Ask: what is the key falsifier? What data is missing?",
+                        )}
+                      </p>
+                    )}
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      value={chatInput[activeDimData.key] || ""}
+                      onChange={(e) =>
+                        setChatInput((prev) => ({ ...prev, [activeDimData.key]: e.target.value }))
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          void sendChat(activeDimData.key);
+                        }
+                      }}
+                      placeholder={t("向 AI 提出关于本维度的问题…", "Ask a question about this dimension…")}
+                      className="min-w-0 flex-1 rounded-lg border border-[#dde5f2] bg-[#f8faff] px-2 py-1.5 text-xs outline-none focus:border-[#7950ba]"
+                    />
+                    <Button
+                      variant="ghost"
+                      disabled={!chatInput[activeDimData.key]?.trim() || chatBusy === activeDimData.key}
+                      onClick={() => void sendChat(activeDimData.key)}
+                    >
+                      {chatBusy === activeDimData.key ? t("回答中…", "Answering…") : t("发送", "Send")}
+                    </Button>
+                  </div>
+                </div>
               </div>
             ) : (
               <Empty>{t("正在自动开展六维分析；如未开始，可点击右上角。", "Six-dimension analysis starts automatically; use the top-right button if needed.")}</Empty>
@@ -501,39 +768,24 @@ export function InstResearchPage() {
                 <Field label={t("状态", "Status")} value={<StatusBadge status={version.status} />} />
                 <Field label={t("结论", "Conclusion")} value={version.conclusion || t("待补充", "TBD")} />
                 <Field label={t("证据数", "Evidence")} value={`${version.evidence_ids?.length || 0} ${t("条", "items")}`} />
-                <div className="mt-3">
-                  <Button
-                    variant="ghost"
-                    disabled={!!busy || !detail.evidence?.length}
-                    onClick={() =>
-                      run("memo", () => loadMemo())
-                    }
-                  >
-                    {busy === "memo" || memoBusy ? t("重新生成中…", "Regenerating…") : t("重新生成 AI 一页纸", "Regenerate AI memo")}
-                  </Button>
+                <div className="mt-3 rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+                  <p className="text-xs font-semibold text-[#505369]">
+                    {t("逐维审核进度", "Per-dimension review")}：{approvedDims}/{AGENT_TITLES.length}
+                  </p>
+                  <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-[#68738b]">
+                    {AGENT_TITLES.map(([key, label]) => {
+                      const decision = dimReviews[key]?.decision;
+                      return (
+                        <span key={key} className="flex items-center justify-between gap-2">
+                          <span>{label}</span>
+                          <span className={decision === "approve" ? "text-emerald-700" : decision === "reject" ? "text-red-600" : "text-[#a9a4bd]"}>
+                            {decision === "approve" ? "✓" : decision === "reject" ? "✕" : "—"}
+                          </span>
+                        </span>
+                      );
+                    })}
+                  </div>
                 </div>
-                {memoBusy ? (
-                  <div className="mt-3 flex items-center gap-2 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs text-[#7950ba]">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    {t("AI 一页纸生成中…", "Generating AI memo…")}
-                  </div>
-                ) : null}
-                {memo ? (
-                  <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs leading-relaxed text-[#b42345]">
-                    <p className="font-medium">{t("AI 摘要（非投资建议）", "AI summary (not investment advice)")}</p>
-                    <p className="mt-1">{memo.summary || "—"}</p>
-                    {Array.isArray(memo.risks) && memo.risks.length ? (
-                      <ul className="mt-2 list-disc pl-4">
-                        {memo.risks.map((x: string) => (
-                          <li key={x}>{x}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                    {Array.isArray(memo.open_questions) && memo.open_questions.length ? (
-                      <p className="mt-2">{t("待核验", "To verify")}：{memo.open_questions.join("；")}</p>
-                    ) : null}
-                  </div>
-                ) : null}
                 {version.valuation ? (
                   <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs text-[#b42345]">
                     <p className="font-medium">{t("估值口径", "Valuation basis")}</p>
@@ -595,10 +847,10 @@ export function InstResearchPage() {
                       placeholder={t("审核意见（退回时必须填写）", "Review comment (required when returning)")}
                       className="min-h-[72px] w-full rounded-lg border border-[#dde5f2] bg-[#f8faff] p-2 text-xs outline-none focus:border-[#7950ba]"
                     />
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Button
                         variant="gold"
-                        disabled={!canWrite || !!busy}
+                        disabled={!canWrite || !!busy || !allDimsApproved}
                         onClick={() => void approveAndDebate()}
                       >
                         {busy === "approve" ? t("提交中…", "Submitting…") : t("审核通过", "Approve")}
@@ -618,6 +870,14 @@ export function InstResearchPage() {
                         {t("退回", "Return")}
                       </Button>
                     </div>
+                    {!allDimsApproved ? (
+                      <p className="text-[11px] text-amber-700">
+                        {t(
+                          `已通过 ${approvedDims}/${AGENT_TITLES.length} 个维度，剩余维度需逐条审核。`,
+                          `Approved ${approvedDims}/${AGENT_TITLES.length}; review the rest one by one.`,
+                        )}
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
                 {version.status === "approved" ? (
@@ -667,6 +927,117 @@ export function InstResearchPage() {
           </Card>
         </div>
       </div>
+
+      <Card
+        title={t("AI 一页纸", "AI one-pager")}
+        desc={t("按六维结构输出：总结结论、关键指标、六维要点、核心风险与下一步核验。", "Structured one-pager: summary, key metrics, six dimension highlights, key risks and next checks.")}
+        actions={
+          <Button
+            variant="ghost"
+            disabled={!!busy || memoBusy}
+            onClick={() => {
+              void loadMemo().catch((e: Error) => setError(e.message));
+            }}
+          >
+            {memoBusy
+              ? t("生成中…", "Generating…")
+              : memo
+                ? t("重新生成一页纸", "Regenerate one-pager")
+                : t("生成 AI 一页纸", "Generate AI one-pager")}
+          </Button>
+        }
+      >
+        {memo ? (
+          <div className="rounded-2xl border border-[#e3eaf8] bg-white p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-display text-xl font-semibold text-[#171923]">
+                  {detail.company_name}{" "}
+                  <span className="font-mono text-sm font-normal text-[#68738b]">（{detail.symbol}）</span>
+                </h3>
+                <p className="mt-1 text-[11px] text-[#77718c]">
+                  {t("AI 投资研究摘要 · 六维分析", "AI investment research summary · six dimensions")}
+                </p>
+              </div>
+              <Badge tone="gold">{version?.conclusion || t("待补充研究", "Research TBD")}</Badge>
+            </div>
+
+            <section className="mt-4">
+              <h4 className="text-sm font-semibold text-[#171923]">{t("总结结论", "Summary")}</h4>
+              <p className="mt-1 text-xs leading-relaxed text-[#505369]">
+                {memo.summary || t("待补充", "TBD")}
+              </p>
+            </section>
+
+            {memo.metrics?.length ? (
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {memo.metrics.map((m) => (
+                  <div key={m.label} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+                    <p className="text-[10px] text-[#77718c]">{m.label}</p>
+                    <p className="mt-1 font-display text-lg font-semibold text-[#171923]">{m.value}</p>
+                    {m.note ? <p className="mt-0.5 text-[10px] text-[#68738b]">{m.note}</p> : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="mt-5 space-y-4">
+              {dims.map((d, i) => (
+                <section key={d.key} className="border-t border-[#e3eaf8] pt-4">
+                  <h4 className="text-xs font-semibold text-[#171923]">
+                    {String(i + 1).padStart(2, "0")} {d.title}
+                  </h4>
+                  <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-[#505369]">
+                    <li>· {d.summary || t("待补充", "TBD")}</li>
+                    {d.counter?.[0] ? (
+                      <li>· {t("关键问题", "Key question")}：{d.counter[0]}</li>
+                    ) : d.checks?.[0] ? (
+                      <li>· {d.checks[0]}</li>
+                    ) : null}
+                  </ul>
+                </section>
+              ))}
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <section className="border-t border-[#e3eaf8] pt-4">
+                <h4 className="text-xs font-semibold text-[#171923]">{t("核心关注风险", "Key risks")}</h4>
+                {memo.risks?.length ? (
+                  <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-[#505369]">
+                    {memo.risks.map((x) => (
+                      <li key={x}>{x}</li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="mt-2 text-[11px] text-[#77718c]">{t("待补充", "TBD")}</p>
+                )}
+              </section>
+              <section className="border-t border-[#e3eaf8] pt-4">
+                <h4 className="text-xs font-semibold text-[#171923]">{t("下一步重点核验", "Next checks")}</h4>
+                {memo.open_questions?.length ? (
+                  <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-[#505369]">
+                    {memo.open_questions.map((x) => (
+                      <li key={x}>☐ {x}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-[11px] text-[#77718c]">{t("待补充", "TBD")}</p>
+                )}
+              </section>
+            </div>
+
+            <p className="mt-4 border-t border-[#e3eaf8] pt-3 text-[10px] text-[#77718c]">
+              {t("AI 辅助研究，数据及结论仅供核对参考，不构成投资建议。", "AI-assisted research; data and conclusions are for verification only and are not investment advice.")}
+            </p>
+          </div>
+        ) : (
+          <Empty>
+            {memoBusy
+              ? t("AI 一页纸生成中…", "Generating AI one-pager…")
+              : t("还没有 AI 一页纸，点击右上角生成。", "No AI one-pager yet; generate it from the top-right button.")}
+          </Empty>
+        )}
+      </Card>
 
       <p className="text-[11px] leading-relaxed text-[#77718c]">
         {t("研究结论由数据与规则生成，AI 仅提供解释与反证建议；估值口径为演示，不是目标价。数据不足时显示「待补充」，不构成投资建议。", "Conclusions come from data and rules; AI only explains and suggests falsifiers. Valuation is illustrative, not a target price. Missing data shows TBD. Not investment advice.")}

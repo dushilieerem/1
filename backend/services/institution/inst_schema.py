@@ -97,6 +97,7 @@ DDL: tuple[str, ...] = (
       counter_evidence JSONB,
       open_questions  JSONB,
       evidence_ids    JSONB,
+      dim_reviews     JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_by      BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
       created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       frozen_at       TIMESTAMPTZ,
@@ -408,6 +409,11 @@ def ensure_inst_business_schema(*, include_indexes: bool = True) -> None:
         conn.execute(
             "ALTER TABLE inst_exit_case ADD COLUMN IF NOT EXISTS case_id BIGINT "
             "REFERENCES inst_research_case(id) ON DELETE SET NULL"
+        )
+        # 逐维审核记录：{dim_key: {decision, comment, reviewer_member_id, at}}
+        conn.execute(
+            "ALTER TABLE inst_research_version ADD COLUMN IF NOT EXISTS "
+            "dim_reviews JSONB NOT NULL DEFAULT '{}'::jsonb"
         )
         if include_indexes:
             for idx in INDEXES:

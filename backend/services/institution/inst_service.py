@@ -1160,6 +1160,37 @@ def generate_research(
         for dim in built["dims"]:
             dim["evidence_ids"] = [idx_to_id.get(i) for i in dim.pop("evidence_idx", []) if i in idx_to_id]
 
+        # 单维重新分析：合并到最近一版，保留其余五维，而不是用只含一维的版本覆盖。
+        existing = None
+        if mode != "full":
+            existing = conn.execute(
+                "SELECT * FROM inst_research_version WHERE case_id=%s "
+                "ORDER BY version_no DESC LIMIT 1",
+                (case_id,),
+            ).fetchone()
+        if existing:
+            new_dim = next((d for d in built["dims"] if d.get("key") == mode), None)
+            old_dims = [d for d in (existing["six_dim"] or []) if isinstance(d, dict)]
+            if new_dim and any(d.get("key") == mode for d in old_dims):
+                merged = [dict(new_dim) if d.get("key") == mode else d for d in old_dims]
+            elif new_dim:
+                merged = [*old_dims, dict(new_dim)]
+            else:
+                merged = old_dims
+            order = {k: i for i, (k, _, _) in enumerate(SIX_DIM_DEFS)}
+            merged.sort(key=lambda d: order.get(str(d.get("key")), 99))
+            built["dims"] = merged
+            seen_ids = [int(x) for x in (existing["evidence_ids"] or [])]
+            for eid in ev_ids:
+                if eid not in seen_ids:
+                    seen_ids.append(eid)
+            ev_ids = seen_ids
+            built["data_gaps"] = list(
+                dict.fromkeys([*(existing["open_questions"] or []), *built["data_gaps"]])
+            )
+            if existing["valuation"]:
+                built["valuation"] = existing["valuation"]
+
         version_no = conn.execute(
             "SELECT COALESCE(MAX(version_no),0)+1 AS n FROM inst_research_version WHERE case_id=%s",
             (case_id,),
@@ -1200,7 +1231,13 @@ def generate_research(
             action="research.generate",
             object_type="inst_research_version",
             object_id=int(row["id"]),
-            after={"case_id": case_id, "version_no": version_no, "mode": mode, "agents": built["agent_states"]},
+            after={
+                "case_id": case_id,
+                "version_no": version_no,
+                "mode": mode,
+                "agents": built["agent_states"],
+                "merged_from_version_no": int(existing["version_no"]) if existing else None,
+            },
         )
     return get_case(org_id, case_id)  # type: ignore[return-value]
 
@@ -1254,6 +1291,68 @@ def review_research(
             object_id=version_id,
             before={"status": row["status"]},
             after={"decision": decision, "comment": comment},
+        )
+    return get_case(org_id, int(row["case_id"]))  # type: ignore[return-value]
+
+
+def review_research_dimension(
+    org_id: int,
+    version_id: int,
+    key: str,
+    *,
+    decision: str,
+    comment: str | None,
+    actor_member_id: int | None,
+) -> dict[str, Any]:
+    """逐维审核：记录单维通过/不通过，不改版本整体状态。
+
+    整体「审核通过」仍走 review_research；前端要求六维全部通过后才允许提交。
+    """
+    if decision not in {"approve", "reject"}:
+        raise ValueError("decision 必须是 approve/reject")
+    dim_keys = {d[0] for d in SIX_DIM_DEFS}
+    if key not in dim_keys:
+        raise ValueError("未知研究维度")
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager", "partner")
+        row = conn.execute(
+            """
+            SELECT v.*, c.id AS case_id
+              FROM inst_research_version v
+              JOIN inst_research_case c ON c.id=v.case_id
+             WHERE v.id=%s AND c.org_id=%s
+            """,
+            (version_id, org_id),
+        ).fetchone()
+        if not row:
+            raise LookupError("研究版本不存在")
+        if str(row["status"]) != "pending_review":
+            raise PermissionError("当前研究版本不在待审核状态")
+        dims = row["six_dim"] or []
+        if not any(isinstance(d, dict) and d.get("key") == key for d in dims):
+            raise LookupError("该维度尚未生成")
+        before = dict(row["dim_reviews"] or {})
+        reviews = dict(before)
+        reviews[key] = {
+            "decision": decision,
+            "comment": (comment or "").strip() or None,
+            "reviewer_member_id": actor_member_id,
+            "at": datetime.now().isoformat(timespec="seconds"),
+        }
+        conn.execute(
+            "UPDATE inst_research_version SET dim_reviews=%s WHERE id=%s",
+            (_j(reviews), version_id),
+        )
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action=f"research.review.dimension.{decision}",
+            object_type="inst_research_version",
+            object_id=version_id,
+            before={"dim_reviews": before},
+            after={"key": key, "decision": decision, "comment": comment},
         )
     return get_case(org_id, int(row["case_id"]))  # type: ignore[return-value]
 
@@ -3002,6 +3101,71 @@ def _ai_task(task_id: str, payload: dict[str, Any], system: str) -> dict[str, An
     return {"summary": str(out.get("content") or "")}
 
 
+def _memo_metrics(case: dict[str, Any]) -> list[dict[str, Any]]:
+    """一页纸顶部指标：只展示已有数据，缺失不编造。"""
+    symbol = str(case.get("symbol") or "")
+    fin = md.financials(symbol, limit=2) or []
+    latest = fin[0] if fin else {}
+    val = md.valuation_latest(symbol) or {}
+    pct = md.valuation_percentile(symbol, years=3) or {}
+    out: list[dict[str, Any]] = []
+    if latest.get("revenue") is not None:
+        out.append(
+            {
+                "label": "营业收入",
+                "value": _yi(latest.get("revenue")),
+                "note": f"同比 {_pc(latest.get('revenue_yoy'))}"
+                if latest.get("revenue_yoy") is not None
+                else "最近报告期",
+            }
+        )
+    if latest.get("net_profit") is not None:
+        out.append(
+            {
+                "label": "净利润",
+                "value": _yi(latest.get("net_profit")),
+                "note": f"同比 {_pc(latest.get('profit_yoy'))}"
+                if latest.get("profit_yoy") is not None
+                else "最近报告期",
+            }
+        )
+    if latest.get("roe") is not None:
+        out.append({"label": "ROE", "value": _pc(latest.get("roe")), "note": "最近报告期"})
+    if val.get("pe_ttm") is not None:
+        out.append(
+            {
+                "label": "PE TTM",
+                "value": f"{float(val['pe_ttm']):.2f}",
+                "note": f"历史分位 {_pc(pct.get('pe_percentile'))}",
+            }
+        )
+    elif val.get("pb_mrq") is not None:
+        out.append(
+            {
+                "label": "PB MRQ",
+                "value": f"{float(val['pb_mrq']):.2f}",
+                "note": f"历史分位 {_pc(pct.get('pb_percentile'))}",
+            }
+        )
+    return out
+
+
+def _rule_memo(version: dict[str, Any]) -> dict[str, Any]:
+    dims = [d for d in (version.get("six_dim") or []) if isinstance(d, dict)]
+    risks = [str(c) for d in dims for c in (d.get("counter") or [])][:5]
+    questions = [
+        str(q) for d in dims for q in (d.get("open_questions") or d.get("data_gaps") or [])
+    ][:8]
+    return {
+        "summary": version.get("conclusion")
+        or "六维分析已完成；AI 摘要暂不可用，以下为规则摘要，请以各维证据为准。",
+        "evidence": [],
+        "risks": risks,
+        "open_questions": questions,
+        "engine": "rule",
+    }
+
+
 def ai_research_memo(org_id: int, case_id: int) -> dict[str, Any]:
     case = get_case(org_id, case_id)
     if not case:
@@ -3015,14 +3179,106 @@ def ai_research_memo(org_id: int, case_id: int) -> dict[str, Any]:
             for e in (case.get("evidence") or [])
         ],
     }
-    data = _ai_task(
-        "inst.research_memo",
-        payload,
-        "你是机构研究一页纸助手。只使用输入中的公司、六维与证据；结论必须可回源；"
-        "数据不足写待补充；不给买卖建议、目标价或收益承诺。只输出 JSON："
-        '{"summary":"...","evidence":["..."],"risks":["..."],"open_questions":["..."]}。',
-    )
+    try:
+        data = _ai_task(
+            "inst.research_memo",
+            payload,
+            "你是机构研究一页纸助手。只使用输入中的公司、六维与证据；结论必须可回源；"
+            "数据不足写待补充；不给买卖建议、目标价或收益承诺。只输出 JSON："
+            '{"summary":"...","evidence":["..."],"risks":["..."],"open_questions":["..."]}。',
+        )
+        data.setdefault("engine", "agent")
+    except AiUnavailable:
+        # AI 未配置时仍给出一页纸骨架，内容全部来自六维规则结果。
+        data = _rule_memo(version)
+    data["metrics"] = _memo_metrics(case)
     return {"memo": data, "task": "inst.research_memo", "version_no": version.get("version_no")}
+
+
+def ai_dimension_chat(
+    org_id: int,
+    case_id: int,
+    key: str,
+    *,
+    question: str,
+    history: list[dict[str, Any]] | None = None,
+    actor_member_id: int | None = None,
+) -> dict[str, Any]:
+    """单维追问：只带该维结论、证据与最近对话，不改业务状态。"""
+    q = str(question or "").strip()
+    if not q:
+        raise ValueError("问题不能为空")
+    dim_keys = {d[0] for d in SIX_DIM_DEFS}
+    if key not in dim_keys:
+        raise ValueError("未知研究维度")
+    case = get_case(org_id, case_id)
+    if not case:
+        raise LookupError("研究案不存在")
+    version = (case.get("versions") or [{}])[0]
+    dims = [d for d in (version.get("six_dim") or []) if isinstance(d, dict)]
+    dim = next((d for d in dims if d.get("key") == key), None)
+    if not dim:
+        raise LookupError("该维度尚未生成")
+    ev_ids = {int(x) for x in (dim.get("evidence_ids") or []) if str(x).isdigit()}
+    evidence = [e for e in (case.get("evidence") or []) if int(e.get("id") or 0) in ev_ids]
+    history_in: list[dict[str, str]] = []
+    for item in (history or [])[-8:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "")
+        content = str(item.get("content") or "").strip()
+        if role in {"user", "assistant"} and content:
+            history_in.append({"role": role, "content": content[:2000]})
+    payload = {
+        "company": {k: case.get(k) for k in ("symbol", "company_name", "market", "industry", "ref_price")},
+        "dimension": {
+            k: dim.get(k)
+            for k in (
+                "key",
+                "title",
+                "question",
+                "summary",
+                "checks",
+                "counter",
+                "open_questions",
+                "data_gaps",
+                "confidence",
+                "engine",
+            )
+        },
+        "evidence": [
+            {"id": e.get("id"), "title": e.get("title"), "quote": e.get("quote"), "source": e.get("source")}
+            for e in evidence
+        ],
+        "history": history_in,
+        "question": q[:2000],
+    }
+    data = _ai_task(
+        "inst.dim.chat",
+        payload,
+        "你是机构研究单维对话助手。只依据输入的该维结论、检查项、反证与证据回答；"
+        "不扩展到其他维度、不编造数据、不给买卖建议/目标价/收益承诺；数据不足直接说待补充。"
+        "用简洁中文回答，可引用证据标题，不要输出 JSON 以外的格式要求。",
+    )
+    answer = str(data.get("answer") or data.get("summary") or "").strip()
+    if not answer:
+        raise AiUnavailable("AI 未返回内容")
+    with get_conn() as conn:
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="research.dimension.chat",
+            object_type="inst_research_version",
+            object_id=int(version.get("id") or 0),
+            after={"case_id": case_id, "key": key, "question": q[:200], "answer": answer[:300]},
+        )
+    return {
+        "answer": answer,
+        "dimension": key,
+        "task": "inst.dim.chat",
+        "engine": str(data.get("engine") or "agent"),
+    }
 
 
 def ai_risk_review(org_id: int, proposal_id: int) -> dict[str, Any]:

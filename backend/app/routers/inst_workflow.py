@@ -197,6 +197,31 @@ def review_research(
         raise _handle(exc) from exc
 
 
+@router.post("/research/{version_id}/dimensions/{key}/review")
+def review_research_dimension(
+    version_id: int,
+    key: str,
+    body: dict[str, Any],
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "research")
+    try:
+        return {
+            "ok": True,
+            **svc.review_research_dimension(
+                org_id,
+                version_id,
+                key,
+                decision=str(body.get("decision") or "approve"),
+                comment=body.get("comment"),
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.get("/cases/{case_id}/report")
 def export_case_report(
     case_id: int, ctx: dict[str, Any] = Depends(require_inst_user)
@@ -222,6 +247,31 @@ def research_memo(case_id: int, ctx: dict[str, Any] = Depends(require_inst_user)
     _require_ws(ctx, "research")
     try:
         return {"ok": True, **svc.ai_research_memo(org_id, case_id)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/cases/{case_id}/dimensions/{key}/chat")
+def dimension_chat(
+    case_id: int,
+    key: str,
+    body: dict[str, Any],
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "research")
+    try:
+        return {
+            "ok": True,
+            **svc.ai_dimension_chat(
+                org_id,
+                case_id,
+                key,
+                question=str(body.get("question") or ""),
+                history=body.get("history") or [],
+                actor_member_id=member_id,
+            ),
+        }
     except Exception as exc:
         raise _handle(exc) from exc
 

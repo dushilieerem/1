@@ -42,7 +42,17 @@ def _files(root: Path, dataset: str) -> list[Path]:
     return sorted(base.rglob("*.parquet"))
 
 
-def _read(root: Path, dataset: str, columns: list[str] | None = None, *, domain: str = "derived"):
+def _read(
+    root: Path,
+    dataset: str,
+    columns: list[str] | None = None,
+    *,
+    domain: str = "derived",
+    start: str | None = None,
+    end: str | None = None,
+):
+    import re
+
     import pyarrow as pa
     import pyarrow.parquet as pq
 
@@ -50,6 +60,22 @@ def _read(root: Path, dataset: str, columns: list[str] | None = None, *, domain:
     if not base.exists():
         raise FileNotFoundError(str(base))
     paths = sorted(base.rglob("*.parquet"))
+    if start or end:
+        start_year = int(str(start)[:4]) if start else None
+        end_year = int(str(end)[:4]) if end else None
+        picked = []
+        for path in paths:
+            match = re.search(r"(?:^|/)year=(\d{4})(?:/|$)", str(path))
+            if not match:
+                picked.append(path)
+                continue
+            year = int(match.group(1))
+            if start_year is not None and year < start_year:
+                continue
+            if end_year is not None and year > end_year:
+                continue
+            picked.append(path)
+        paths = picked
     if not paths:
         return pa.table({})
     schemas = [pq.ParquetFile(path).schema_arrow for path in paths]
@@ -244,11 +270,13 @@ def _copy_rows(conn, table: str, columns: list[str], rows: list[tuple]) -> None:
             copy.write(buffer.read())
 
 
-def load_financials(symbols: Iterable[str] | None = None) -> dict[str, int]:
+def load_financials(
+    symbols: Iterable[str] | None = None, *, root: Path | None = None
+) -> dict[str, int]:
     """把财务四表写入 fin_income_statement / fin_balance_sheet / fin_cash_flow / fin_indicator。"""
     import pandas as pd
 
-    root = view_root()
+    root = root or view_root()
     income, balance, cashflow, indicator = _statement_frames(root, symbols)
     today = date.today().isoformat()
     source = "svquant-data"
@@ -369,10 +397,16 @@ def load_financials(symbols: Iterable[str] | None = None) -> dict[str, int]:
     return {"income": len(inc_rows), "balance": len(bal_rows), "cashflow": len(cf_rows), "indicator": len(ind_rows)}
 
 
-def valuation_frame(start: str | None = None, end: str | None = None, symbols: Iterable[str] | None = None):
+def valuation_frame(
+    start: str | None = None,
+    end: str | None = None,
+    symbols: Iterable[str] | None = None,
+    *,
+    root: Path | None = None,
+):
     import pandas as pd
 
-    table = _read(view_root(), "valuation_daily", VALUATION_FIELDS)
+    table = _read(root or view_root(), "valuation_daily", VALUATION_FIELDS, start=start, end=end)
     frame = table.to_pandas()
     if start:
         frame = frame[frame["date"] >= start]
@@ -386,8 +420,14 @@ def valuation_frame(start: str | None = None, end: str | None = None, symbols: I
     return frame.where(frame.notna(), None)
 
 
-def load_valuations(start: str | None = None, end: str | None = None, symbols: Iterable[str] | None = None) -> int:
-    frame = valuation_frame(start, end, symbols)
+def load_valuations(
+    start: str | None = None,
+    end: str | None = None,
+    symbols: Iterable[str] | None = None,
+    *,
+    root: Path | None = None,
+) -> int:
+    frame = valuation_frame(start, end, symbols, root=root)
     if frame.empty:
         return 0
     columns = ["symbol", "date", "pe_ttm", "pb_mrq", "pcf_ocf_ttm", "dividend_yield_ttm", "float_mv", "total_mv", "source"]

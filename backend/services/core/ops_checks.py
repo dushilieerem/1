@@ -41,6 +41,16 @@ def evaluate_signals(
     if pending > 0:
         alerts.append(Alert("critical", "migrations_pending", f"存在 {pending} 个未应用迁移"))
 
+    sync = (health or {}).get("data_sync") or {}
+    if sync.get("status") == "failed":
+        alerts.append(
+            Alert(
+                "critical",
+                "data_sync_failed",
+                f"数据同步失败：{sync.get('last_error') or 'unknown'}（view={sync.get('view_id') or '-'}）",
+            )
+        )
+
     if data_age_days is not None and data_age_days > max_data_age_days:
         alerts.append(
             Alert(

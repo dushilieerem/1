@@ -141,6 +141,23 @@ def _chart(conn: PGConn, code: str) -> dict[str, Any]:
     }
 
 
+_PORTFOLIO_DEEP_SYSTEM = (
+    "你是 SVQuant Invest 的组合风险深度解读助手。只依据输入 JSON 中的组合快照、8 项体检、"
+    "归因、穿透、压力测试、配置偏离与成本数据作答；不得补造任何数字或事实，数据缺失或样本不足时"
+    "明确写“数据缺失/待补充”，并说明这会让结论可信度下降。只输出 JSON，不要 markdown。"
+    '结构：{"summary":"一句话结论","sections":[{"key":"...","title":"...","type":"text","body":"..."}],'
+    '"disclaimer":"AI 生成 · 非投资建议","meta":{"dataSource":"组合体检 + 穿透 + 压力测试"}}。'
+    "必须按顺序输出 7 个 section，key 固定为："
+    "structure=结构成因（这几项为什么越线）、transmission=传导路径（越线会怎么伤到组合）、"
+    "profile=组合画像（什么风格的组合）、sources=收益来源（过去的钱从哪来）、"
+    "history=历史对照（类似结构后来怎样，样本不足就写不足）、watchlist=观察清单（接下来盯什么）、"
+    "caveats=口径与局限（这份解读可信到什么程度）。"
+    "profile/sources/history 没有数据时也要保留 section，正文写“数据待补充”，不要省略。"
+    "只描述事实、口径与风险；不写买卖建议、目标价、涨跌预测、仓位指令或收益承诺。"
+    + RED_LINE
+)
+
+
 _ALLOCATION_SYSTEM = (
     "你是配置与定投解释助手。只依据输入的期限、风险偏好、组合偏离、风险测评与政策阈值作答；"
     "不推荐具体标的，不给买入金额、目标价、收益承诺或调仓指令。只输出 JSON 卡片："
@@ -481,6 +498,13 @@ def daily_ai(user: dict[str, Any] = Depends(require_user), conn: PGConn = Depend
 @router.post("/portfolio")
 def portfolio_ai(user: dict[str, Any] = Depends(require_user), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
     return {"ok": True, **_call("invest.portfolio", rules.build_portfolio(conn, int(user["id"])))}
+
+
+@router.post("/portfolio/deep")
+def portfolio_deep_ai(user: dict[str, Any] = Depends(require_user), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
+    """组合体检的「AI 深度解读」：7 个必答维度，按钮触发，不占首屏。"""
+    data = rules.build_portfolio(conn, int(user["id"]))
+    return {"ok": True, **_call("invest.portfolio", data, system=_PORTFOLIO_DEEP_SYSTEM)}
 
 
 @router.post("/announcement")

@@ -119,8 +119,9 @@ PORTFOLIO_TASK = register(
         task_id="invest.portfolio",
         description="Invest 组合诊断：问题 → 依据 → 风险提示（不给调仓指令）",
         temperature=0.25,
-        max_tokens=3000,
-        timeout_sec=120,
+        # 深度解读要输出 7 个维度；推理模型会先消耗 reasoning token，留足额度
+        max_tokens=6000,
+        timeout_sec=180,
         executors=("local",),
         validator=validate_card,
     )

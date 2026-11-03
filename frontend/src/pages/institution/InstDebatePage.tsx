@@ -28,6 +28,15 @@ type Debate = {
   arguments?: Argument[];
 };
 
+type ExitCase = {
+  id: number;
+  status: string;
+  reason_type?: string;
+  memo?: string;
+  case_id?: number;
+  proposal_id?: number;
+};
+
 type CaseItem = {
   id: number;
   company_name: string;
@@ -35,6 +44,7 @@ type CaseItem = {
   stage: string;
   versions?: Array<{ id: number; status: string; version_no: number }>;
   debates?: Array<{ id: number; status: string; conclusion?: string }>;
+  exit_case?: ExitCase | null;
 };
 
 export function InstDebatePage() {
@@ -97,6 +107,12 @@ export function InstDebatePage() {
     () => (detail?.versions || []).find((v) => v.status === "approved"),
     [detail],
   );
+  const hasExitCase = Boolean(detail?.exit_case);
+
+  // 退出案的默认目标是清仓（0），普通研究案默认 5%。
+  useEffect(() => {
+    setTarget(hasExitCase ? "0" : "0.05");
+  }, [hasExitCase]);
 
   const start = async () => {
     if (!caseId) return;
@@ -198,8 +214,11 @@ export function InstDebatePage() {
     <div className="mx-auto max-w-6xl space-y-5">
       <PageHeader
         eyebrow="DEBATE / 04"
-        title={t(`${detail.company_name} · 投资辩论`, `${detail.company_name} · Investment debate`)}
-        desc={`${detail.symbol} · ${t("正反方独立立论，保留未解决异议；结论只做流程建议，不生成订单。", "Independent bull/bear arguments, with unresolved dissent retained. Conclusions are process suggestions only and never create orders.")}`}
+        title={t(
+          `${detail.company_name} · ${hasExitCase ? "退出辩论" : "投资辩论"}`,
+          `${detail.company_name} · ${hasExitCase ? "Exit debate" : "Investment debate"}`,
+        )}
+        desc={`${detail.symbol} · ${hasExitCase ? t("退出研究案：结论用于退出议案，方向固定为卖出/退出。", "Exit research case: the conclusion feeds an exit proposal; direction is sell/exit.") : t("正反方独立立论，保留未解决异议；结论只做流程建议，不生成订单。", "Independent bull/bear arguments, with unresolved dissent retained. Conclusions are process suggestions only and never create orders.")}`}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" onClick={() => nav(`/inst/research?case=${caseId}`)}>
@@ -298,28 +317,64 @@ export function InstDebatePage() {
             ) : (
               <Empty>{t("暂无主持记录。", "No chair record.")}</Empty>
             )}
+            {hasExitCase ? (
+              <div className="mt-4 rounded-xl border border-[#b42345]/30 bg-[#fbe9ef] px-4 py-3 text-xs leading-relaxed text-[#a31f42]">
+                {t(
+                  "这是退出研究案：只能创建退出议案（方向 sell/exit），目标仓位默认 0（清仓），不能创建买入议案。",
+                  "This is an exit research case: only sell/exit proposals are allowed, target weight defaults to 0 (full exit), and buy proposals are rejected.",
+                )}
+              </div>
+            ) : null}
             <div className="mt-4 flex flex-wrap items-end gap-2">
               <label className="text-[11px] text-[#68738b]">
-                {t("目标仓位", "Target weight")}
+                {hasExitCase ? t("目标仓位（0 = 清仓）", "Target weight (0 = full exit)") : t("目标仓位", "Target weight")}
                 <input
                   value={target}
                   onChange={(e) => setTarget(e.target.value)}
+                  data-testid="inst-proposal-target"
                   className="ml-2 w-24 rounded-lg border border-[#dde5f2] bg-white px-2 py-1.5 text-xs text-[#252533] outline-none"
-                  placeholder="0.05"
+                  placeholder={hasExitCase ? "0" : "0.05"}
                 />
               </label>
               <Button
                 variant="primary"
+                testId="inst-proposal-create"
                 disabled={!canWrite || busy || proposalBusy}
                 onClick={async () => {
+                  const parsed = Number(target);
+                  if (target.trim() === "" || !Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+                    setError(
+                      t(
+                        "目标仓位必须是 0-1 之间的数字；空值不会按 0 清仓处理。",
+                        "Target weight must be a number between 0 and 1; blank is not treated as a full exit.",
+                      ),
+                    );
+                    return;
+                  }
+                  if (!hasExitCase && parsed <= 0) {
+                    setError(t("买入议案的目标仓位必须大于 0。", "A buy proposal needs a target weight above 0."));
+                    return;
+                  }
+                  if (
+                    hasExitCase &&
+                    parsed === 0 &&
+                    !window.confirm(
+                      t(
+                        "目标仓位为 0，表示全部清仓。确认创建退出议案？",
+                        "Target weight 0 means a full exit. Create the exit proposal?",
+                      ),
+                    )
+                  ) {
+                    return;
+                  }
                   setProposalBusy(true);
                   setError(null);
                   try {
                     const res = await instApi<{ id: number }>(`/cases/${caseId}/proposals`, {
                       method: "POST",
                       body: {
-                        direction: "buy",
-                        target_weight: Number(target) || 0.05,
+                        direction: hasExitCase ? "exit" : "buy",
+                        target_weight: parsed,
                         config: { price_low: null, price_high: null },
                       },
                     });
@@ -331,7 +386,11 @@ export function InstDebatePage() {
                   }
                 }}
               >
-                {proposalBusy ? t("创建中…", "Creating…") : t("创建议案", "Create proposal")}
+                {proposalBusy
+                  ? t("创建中…", "Creating…")
+                  : hasExitCase
+                    ? t("创建退出议案", "Create exit proposal")
+                    : t("创建议案", "Create proposal")}
               </Button>
               <Button variant="ghost" onClick={() => nav("/inst/debate")}>
                 {t("返回辩论列表", "Back to debate list")}

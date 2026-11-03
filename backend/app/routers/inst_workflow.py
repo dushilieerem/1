@@ -383,14 +383,17 @@ def create_proposal(
     org_id, member_id, _ = _ctx(ctx)
     _require_ws(ctx, "approvals")
     try:
+        direction = body.get("direction")
+        target = body.get("target_weight")
         return {
             "ok": True,
             **svc.create_proposal(
                 org_id,
                 case_id,
                 actor_member_id=member_id,
-                direction=str(body.get("direction") or "buy"),
-                target_weight=float(body.get("target_weight") or 0.05),
+                # 方向与目标仓位的默认值由服务层按是否退出案决定（退出案默认 exit / 0）。
+                direction=str(direction) if direction not in (None, "") else None,
+                target_weight=float(target) if target not in (None, "") else None,
                 config=body.get("config") or {},
             ),
         }

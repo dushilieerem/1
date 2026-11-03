@@ -63,6 +63,7 @@ export function Button({
   variant = "primary",
   type = "button",
   title,
+  testId,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -70,6 +71,7 @@ export function Button({
   variant?: "primary" | "ghost" | "danger" | "gold";
   type?: "button" | "submit";
   title?: string;
+  testId?: string;
 }) {
   const styles: Record<string, string> = {
     primary: "bg-[#b42345] text-white hover:bg-[#a31f42]",
@@ -81,6 +83,7 @@ export function Button({
     <button
       type={type}
       title={title}
+      data-testid={testId}
       onClick={onClick}
       disabled={disabled}
       className={`inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${styles[variant]}`}

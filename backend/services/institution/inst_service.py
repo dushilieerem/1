@@ -568,12 +568,17 @@ def get_case(org_id: int, case_id: int) -> dict[str, Any] | None:
         proposals = conn.execute(
             "SELECT * FROM inst_proposal WHERE case_id=%s ORDER BY id DESC", (case_id,)
         ).fetchall()
+        exit_case = conn.execute(
+            "SELECT * FROM inst_exit_case WHERE case_id=%s AND org_id=%s ORDER BY id DESC LIMIT 1",
+            (case_id, org_id),
+        ).fetchone()
     out = _row_dict(case) or {}
     out["tasks"] = [_row_dict(r) for r in tasks]
     out["versions"] = [_row_dict(r) for r in versions]
     out["evidence"] = [_row_dict(r) for r in evidence]
     out["debates"] = [_row_dict(r) for r in sessions]
     out["proposals"] = [_row_dict(r) for r in proposals]
+    out["exit_case"] = _row_dict(exit_case)
     return out
 
 
@@ -1542,19 +1547,114 @@ def _proposal_row(conn, org_id: int, proposal_id: int) -> dict[str, Any] | None:
     return _row_dict(row)
 
 
+# ---------------------------------------------------------------- 退出案状态机
+
+
+_EXIT_TRANSITIONS: dict[str, set[str]] = {
+    "draft": {"submitted"},
+    "submitted": {"approved", "rejected", "closed"},
+    "approved": {"rejected", "closed"},
+    "rejected": set(),
+    "closed": set(),
+}
+
+
+def _exit_case_for_case(conn, org_id: int, case_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT * FROM inst_exit_case WHERE case_id=%s AND org_id=%s ORDER BY id DESC LIMIT 1",
+        (case_id, org_id),
+    ).fetchone()
+    return _row_dict(row)
+
+
+def _exit_case_for_proposal(conn, org_id: int, proposal_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT * FROM inst_exit_case WHERE proposal_id=%s AND org_id=%s ORDER BY id DESC LIMIT 1",
+        (proposal_id, org_id),
+    ).fetchone()
+    return _row_dict(row)
+
+
+def _transition_exit_case(
+    conn,
+    org_id: int,
+    exit_case: dict[str, Any],
+    new_status: str,
+    *,
+    actor_member_id: int | None,
+    action: str,
+    extra: dict[str, Any] | None = None,
+) -> bool:
+    """按状态机迁移退出案；非法迁移直接拒绝，成功迁移写审计。"""
+    old_status = str(exit_case.get("status") or "draft")
+    if new_status == old_status:
+        return False
+    if new_status not in _EXIT_TRANSITIONS.get(old_status, set()):
+        raise PermissionError(f"退出案状态不能从 {old_status} 迁移到 {new_status}")
+    row = conn.execute(
+        "UPDATE inst_exit_case SET status=%s WHERE id=%s AND org_id=%s AND status=%s RETURNING id",
+        (new_status, int(exit_case["id"]), org_id, old_status),
+    ).fetchone()
+    if not row:
+        raise PermissionError("退出案状态已变化，请刷新后重试")
+    _audit(
+        conn,
+        org_id=org_id,
+        actor_member_id=actor_member_id,
+        action=action,
+        object_type="inst_exit_case",
+        object_id=int(exit_case["id"]),
+        before={"status": old_status},
+        after={"status": new_status, **(extra or {})},
+    )
+    return True
+
+
+def _advance_exit_case(
+    conn,
+    org_id: int,
+    exit_case: dict[str, Any],
+    new_status: str,
+    *,
+    actor_member_id: int | None,
+    action: str,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """兼容旧数据：仍为 draft 的退出案先补 submitted，再前进到目标状态。"""
+    if new_status in {"approved", "rejected", "closed"} and str(
+        exit_case.get("status") or "draft"
+    ) == "draft":
+        _transition_exit_case(
+            conn,
+            org_id,
+            exit_case,
+            "submitted",
+            actor_member_id=actor_member_id,
+            action="monitor.exit.submit",
+            extra={"auto": True},
+        )
+        exit_case = {**exit_case, "status": "submitted"}
+    _transition_exit_case(
+        conn,
+        org_id,
+        exit_case,
+        new_status,
+        actor_member_id=actor_member_id,
+        action=action,
+        extra=extra,
+    )
+    return {**exit_case, "status": new_status}
+
+
 def create_proposal(
     org_id: int,
     case_id: int,
     *,
     actor_member_id: int | None,
-    direction: str = "buy",
-    target_weight: float = 0.05,
+    direction: str | None = None,
+    target_weight: float | None = None,
     config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if direction not in {"buy", "sell", "exit"}:
-        raise ValueError("direction 必须是 buy/sell/exit")
-    if not (0 <= target_weight <= 1):
-        raise ValueError("target_weight 必须在 0-1")
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "manager")
@@ -1575,12 +1675,28 @@ def create_proposal(
             "SELECT * FROM inst_debate_session WHERE case_id=%s AND status='completed' ORDER BY id DESC LIMIT 1",
             (case_id,),
         ).fetchone()
+        exit_case = _exit_case_for_case(conn, org_id, case_id)
+        if exit_case and exit_case.get("proposal_id"):
+            raise PermissionError("该退出研究案已关联议案，不能重复创建")
+        resolved_direction = str(direction or ("exit" if exit_case else "buy")).strip()
+        if resolved_direction not in {"buy", "sell", "exit"}:
+            raise ValueError("direction 必须是 buy/sell/exit")
+        # 退出案只能清仓/减持，不允许借退出研究案创建买入议案。
+        if exit_case and resolved_direction not in {"sell", "exit"}:
+            raise ValueError("退出研究案只能创建 sell/exit 方向的退出议案")
+        if target_weight is None:
+            resolved_target = 0.0 if exit_case else 0.05
+        else:
+            resolved_target = float(target_weight)
+        if not (0 <= resolved_target <= 1):
+            raise ValueError("target_weight 必须在 0-1")
         snapshot = {
             "research_version_id": int(version["id"]),
             "research_version_no": int(version["version_no"]),
             "debate_session_id": int(debate["id"]) if debate else None,
-            "direction": direction,
-            "target_weight": target_weight,
+            "direction": resolved_direction,
+            "target_weight": resolved_target,
+            "exit_case_id": int(exit_case["id"]) if exit_case else None,
             "price_low": None,
             "price_high": None,
             "account": "SIM-001",
@@ -1597,13 +1713,27 @@ def create_proposal(
             INSERT INTO inst_proposal (org_id, case_id, company_id, direction, target_weight, current_version_no, status, created_by)
             VALUES (%s,%s,%s,%s,%s,1,'draft',%s) RETURNING *
             """,
-            (org_id, case_id, case["company_id"], direction, target_weight, actor_member_id),
+            (org_id, case_id, case["company_id"], resolved_direction, resolved_target, actor_member_id),
         ).fetchone()
         conn.execute(
             "INSERT INTO inst_proposal_version (proposal_id, version_no, snapshot, status, created_by) "
             "VALUES (%s,1,%s,'draft',%s)",
             (row["id"], _j(snapshot), actor_member_id),
         )
+        if exit_case:
+            conn.execute(
+                "UPDATE inst_exit_case SET proposal_id=%s WHERE id=%s AND org_id=%s",
+                (row["id"], int(exit_case["id"]), org_id),
+            )
+            _transition_exit_case(
+                conn,
+                org_id,
+                exit_case,
+                "submitted",
+                actor_member_id=actor_member_id,
+                action="monitor.exit.submit",
+                extra={"proposal_id": int(row["id"]), "direction": resolved_direction},
+            )
         _audit(
             conn,
             org_id=org_id,
@@ -1611,7 +1741,12 @@ def create_proposal(
             action="proposal.create",
             object_type="inst_proposal",
             object_id=int(row["id"]),
-            after={"case_id": case_id, "target_weight": target_weight},
+            after={
+                "case_id": case_id,
+                "direction": resolved_direction,
+                "target_weight": resolved_target,
+                "exit_case_id": int(exit_case["id"]) if exit_case else None,
+            },
         )
     return get_proposal(org_id, int(row["id"]))  # type: ignore[return-value]
 
@@ -1620,7 +1755,8 @@ def list_proposals(org_id: int, *, status: str | None = None) -> list[dict[str, 
     sql = """
         SELECT p.*, co.symbol, co.name AS company_name, co.market,
                v.version_no, v.snapshot, v.status AS version_status,
-               a.id AS authorization_id, a.status AS authorization_status
+               a.id AS authorization_id, a.status AS authorization_status,
+               x.id AS exit_case_id, x.status AS exit_status, x.reason_type AS exit_reason_type
           FROM inst_proposal p
           JOIN inst_company co ON co.id=p.company_id
           LEFT JOIN LATERAL (
@@ -1631,6 +1767,10 @@ def list_proposals(org_id: int, *, status: str | None = None) -> list[dict[str, 
             SELECT id, status FROM inst_authorization
              WHERE proposal_version_id=v.id AND status='qualified' ORDER BY id DESC LIMIT 1
           ) a ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT id, status, reason_type FROM inst_exit_case
+             WHERE proposal_id=p.id ORDER BY id DESC LIMIT 1
+          ) x ON TRUE
          WHERE p.org_id=%s
     """
     params: list[Any] = [org_id]
@@ -1664,10 +1804,15 @@ def get_proposal(org_id: int, proposal_id: int) -> dict[str, Any] | None:
                 "SELECT * FROM inst_authorization WHERE proposal_version_id=%s ORDER BY id DESC",
                 (version["id"],),
             ).fetchall()
+        exit_case = conn.execute(
+            "SELECT * FROM inst_exit_case WHERE proposal_id=%s AND org_id=%s ORDER BY id DESC LIMIT 1",
+            (proposal_id, org_id),
+        ).fetchone()
     proposal["versions"] = [_row_dict(r) for r in versions]
     proposal["current_version"] = version
     proposal["approvals"] = [_row_dict(r) for r in approvals]
     proposal["authorizations"] = [_row_dict(r) for r in auths]
+    proposal["exit_case"] = _row_dict(exit_case)
     return proposal
 
 
@@ -1782,6 +1927,27 @@ def chairman_review(
         conn.execute("UPDATE inst_proposal SET status=%s, updated_at=NOW() WHERE id=%s", (status, proposal_id))
         if decision in {"approve", "conditional"}:
             conn.execute("UPDATE inst_proposal_version SET status='chairman_approved' WHERE id=%s", (current["id"],))
+        exit_case = _exit_case_for_proposal(conn, org_id, proposal_id)
+        if exit_case and decision in {"approve", "conditional"}:
+            _advance_exit_case(
+                conn,
+                org_id,
+                exit_case,
+                "approved",
+                actor_member_id=actor_member_id,
+                action="monitor.exit.approve",
+                extra={"proposal_id": proposal_id, "decision": decision},
+            )
+        elif exit_case and decision == "reject":
+            _advance_exit_case(
+                conn,
+                org_id,
+                exit_case,
+                "rejected",
+                actor_member_id=actor_member_id,
+                action="monitor.exit.reject",
+                extra={"proposal_id": proposal_id, "decision": decision},
+            )
         _audit(
             conn,
             org_id=org_id,
@@ -1889,6 +2055,17 @@ def risk_check(
                 "UPDATE inst_proposal SET status='frozen', updated_at=NOW() WHERE id=%s", (proposal_id,)
             )
             conn.execute("UPDATE inst_proposal_version SET status='revoked' WHERE id=%s", (current["id"],))
+            exit_case = _exit_case_for_proposal(conn, org_id, proposal_id)
+            if exit_case:
+                _advance_exit_case(
+                    conn,
+                    org_id,
+                    exit_case,
+                    "rejected",
+                    actor_member_id=actor_member_id,
+                    action="monitor.exit.risk_block",
+                    extra={"proposal_id": proposal_id, "risk_decision": decision},
+                )
         else:
             conn.execute(
                 "UPDATE inst_proposal SET status='risk_precheck', updated_at=NOW() WHERE id=%s", (proposal_id,)
@@ -1962,6 +2139,32 @@ def authorize(org_id: int, proposal_id: int, *, actor_member_id: int | None) -> 
             "UPDATE inst_proposal SET status='authorized', updated_at=NOW() WHERE id=%s", (proposal_id,)
         )
         conn.execute("UPDATE inst_proposal_version SET status='authorized' WHERE id=%s", (current["id"],))
+        exit_case = _exit_case_for_proposal(conn, org_id, proposal_id)
+        if exit_case:
+            # 退出案状态没有独立「已授权」态：授权不改状态，只写审计，下一步执行后关闭。
+            exit_case = _advance_exit_case(
+                conn,
+                org_id,
+                exit_case,
+                "approved",
+                actor_member_id=actor_member_id,
+                action="monitor.exit.approve",
+                extra={"proposal_id": proposal_id, "authorization_id": int(row["id"])},
+            )
+            _audit(
+                conn,
+                org_id=org_id,
+                actor_member_id=actor_member_id,
+                action="monitor.exit.authorize",
+                object_type="inst_exit_case",
+                object_id=int(exit_case["id"]),
+                before={"status": exit_case["status"]},
+                after={
+                    "status": exit_case["status"],
+                    "proposal_id": proposal_id,
+                    "authorization_id": int(row["id"]),
+                },
+            )
         _audit(
             conn,
             org_id=org_id,
@@ -2027,6 +2230,17 @@ def execute_authorization(
             "SELECT * FROM inst_order WHERE authorization_id=%s", (authorization_id,)
         ).fetchone()
         if existing:
+            exit_case = _exit_case_for_proposal(conn, org_id, int(auth["proposal_id"]))
+            if exit_case:
+                _advance_exit_case(
+                    conn,
+                    org_id,
+                    exit_case,
+                    "closed",
+                    actor_member_id=actor_member_id,
+                    action="monitor.exit.close",
+                    extra={"order_id": int(existing["id"]), "authorization_id": authorization_id},
+                )
             return {"ok": True, "idempotent": True, "order": _row_dict(existing)}
         if auth["status"] != "qualified":
             raise PermissionError(f"授权状态为 {auth['status']}，不可执行")
@@ -2141,6 +2355,17 @@ def execute_authorization(
         conn.execute(
             "UPDATE inst_proposal SET status='executed', updated_at=NOW() WHERE id=%s", (auth["proposal_id"],)
         )
+        exit_case = _exit_case_for_proposal(conn, org_id, int(auth["proposal_id"]))
+        if exit_case:
+            _advance_exit_case(
+                conn,
+                org_id,
+                exit_case,
+                "closed",
+                actor_member_id=actor_member_id,
+                action="monitor.exit.close",
+                extra={"order_id": int(order["id"]), "authorization_id": authorization_id},
+            )
         conn.execute(
             "UPDATE inst_execution_exception SET status='resolved', resolution='执行成功自动关闭', "
             "resolved_by=%s, resolved_at=NOW() "
@@ -2460,8 +2685,22 @@ def monitor(org_id: int) -> dict[str, Any]:
             (org_id,),
         ).fetchall()
         exits = conn.execute(
-            "SELECT x.*, co.symbol, co.name AS company_name FROM inst_exit_case x "
-            "JOIN inst_company co ON co.id=x.company_id WHERE x.org_id=%s ORDER BY x.created_at DESC LIMIT 50",
+            """
+            SELECT x.*, co.symbol, co.name AS company_name, c.case_no,
+                   p.status AS proposal_status, p.direction AS proposal_direction,
+                   a.status AS authorization_status
+              FROM inst_exit_case x
+              JOIN inst_company co ON co.id=x.company_id
+              LEFT JOIN inst_research_case c ON c.id=x.case_id
+              LEFT JOIN inst_proposal p ON p.id=x.proposal_id
+              LEFT JOIN LATERAL (
+                SELECT au.status FROM inst_authorization au
+                  JOIN inst_proposal_version v ON v.id=au.proposal_version_id
+                 WHERE v.proposal_id=x.proposal_id
+                 ORDER BY au.id DESC LIMIT 1
+              ) a ON TRUE
+             WHERE x.org_id=%s ORDER BY x.created_at DESC LIMIT 50
+            """,
             (org_id,),
         ).fetchall()
         theses = conn.execute(
@@ -2667,7 +2906,7 @@ def review_exit(
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "manager", "partner", "monitoring")
         exit_case = conn.execute(
-            "SELECT id, status FROM inst_exit_case WHERE id=%s AND org_id=%s",
+            "SELECT * FROM inst_exit_case WHERE id=%s AND org_id=%s",
             (exit_case_id, org_id),
         ).fetchone()
         if not exit_case:
@@ -2688,10 +2927,17 @@ def review_exit(
             """,
             (exit_case_id, realized_return, holding_days, thesis_verdict, lessons, actor_member_id),
         ).fetchone()
-        conn.execute(
-            "UPDATE inst_exit_case SET status='closed' WHERE id=%s AND status IN ('approved','submitted')",
-            (exit_case_id,),
-        )
+        current_status = str(exit_case["status"] or "draft")
+        if current_status in {"approved", "submitted"}:
+            _transition_exit_case(
+                conn,
+                org_id,
+                _row_dict(exit_case) or {},
+                "closed",
+                actor_member_id=actor_member_id,
+                action="monitor.exit.close",
+                extra={"review_id": int(row["id"]), "source": "post_mortem"},
+            )
         _audit(
             conn,
             org_id=org_id,

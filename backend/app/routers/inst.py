@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from app.deps import require_inst_user
 from services.core.audit_log_store import write_audit
+from services.core.db import get_conn
 from services.core.env_config import env
 from services.core.rate_limit import enforce_rate_limit
 from services.auth.auth_store import user_from_authorization
@@ -101,6 +102,20 @@ def inst_login(body: dict[str, Any], request: Request) -> dict:
 @router.get("/api/inst/me")
 def inst_me(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict:
     return me_payload(ctx)
+
+
+@router.get("/api/inst/_e2e/guard")
+def inst_e2e_guard(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict:
+    """E2E 写库闸门：返回服务端真实库名，供写库用例判断能否落库。
+
+    只读接口。`writable` 由 `current_database()` 是否含 `_test` / `_e2e` 计算，
+    不接受客户端自证；生产库 `svquant` 永远返回 False。
+    """
+    with get_conn() as conn:
+        row = conn.execute("SELECT current_database() AS db_name").fetchone()
+    db_name = str((row or {}).get("db_name") or "")
+    writable = "_test" in db_name or "_e2e" in db_name
+    return {"ok": True, "db_name": db_name, "writable": writable}
 
 
 def _membership_brief(m: dict[str, Any]) -> dict[str, Any]:

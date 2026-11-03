@@ -341,6 +341,32 @@ export function InstDebatePage() {
                 testId="inst-proposal-create"
                 disabled={!canWrite || busy || proposalBusy}
                 onClick={async () => {
+                  const parsed = Number(target);
+                  if (target.trim() === "" || !Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+                    setError(
+                      t(
+                        "目标仓位必须是 0-1 之间的数字；空值不会按 0 清仓处理。",
+                        "Target weight must be a number between 0 and 1; blank is not treated as a full exit.",
+                      ),
+                    );
+                    return;
+                  }
+                  if (!hasExitCase && parsed <= 0) {
+                    setError(t("买入议案的目标仓位必须大于 0。", "A buy proposal needs a target weight above 0."));
+                    return;
+                  }
+                  if (
+                    hasExitCase &&
+                    parsed === 0 &&
+                    !window.confirm(
+                      t(
+                        "目标仓位为 0，表示全部清仓。确认创建退出议案？",
+                        "Target weight 0 means a full exit. Create the exit proposal?",
+                      ),
+                    )
+                  ) {
+                    return;
+                  }
                   setProposalBusy(true);
                   setError(null);
                   try {
@@ -348,7 +374,7 @@ export function InstDebatePage() {
                       method: "POST",
                       body: {
                         direction: hasExitCase ? "exit" : "buy",
-                        target_weight: hasExitCase ? Number(target) || 0 : Number(target) || 0.05,
+                        target_weight: parsed,
                         config: { price_low: null, price_high: null },
                       },
                     });

@@ -182,3 +182,22 @@ submitted/approved --执行成交/退出复盘--> closed
 
 - 未新增表或列；`inst_exit_case` 既有 `case_id/proposal_id/status` 足够承载。
 - 退出议案被拒后目前不能在同一退出案上重新建案；如需重试需新建退出研究案。
+
+### 9.7 E2E 写库安全（2026-11-03）
+
+`e2e-09-inst.spec.ts` 默认只跑只读用例（登录、九工作区、无横向溢出）。退出流程会创建持仓、研究案、退出案与议案，属于写库用例，必须显式开启：
+
+```bash
+# 只读（默认，可指向演示库）
+npx playwright test e2e-09-inst.spec.ts
+
+# 写库：必须使用独立测试库，禁止指向生产库 svquant
+INST_E2E_ALLOW_WRITE=1 INST_E2E_DB=safe \
+  npx playwright test e2e-09-inst.spec.ts
+```
+
+- `INST_E2E_ALLOW_WRITE=1` 才会考虑写库；未设置时写库用例 skip。
+- `INST_E2E_DB` 必须为 `safe`，或库名含 `_test` / `_e2e`（如 `svquant_test`）。
+- 只设 `INST_E2E_ALLOW_WRITE=1` 但目标库不安全时，`beforeAll` 直接失败，不会静默写入。
+- `backend/.env` 的 `DATABASE_URL` 也必须指向该独立测试库；本地调试用的 `.env` 不提交。
+- guard 逻辑在 `tests/e2e/helpers/write-guard.mjs`，单测：`cd tests/e2e && npm run test:guard`。

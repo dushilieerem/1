@@ -1,12 +1,17 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
+import { evaluateWriteGuard } from "./helpers/write-guard.mjs";
+
 /**
  * 主观机构端 E2E 冒烟：登录、侧栏顺序、九个工作区可达、退出流程。
  * 默认连本地 Vite 9533 + 后端 8771；可用 INST_BASE / INST_API 覆盖。
  *
- * 退出用例会通过 API 准备一笔持仓和退出研究案（demo 库已有演示机构/账号），
- * 再在浏览器里验证：投后退出案可回链、辩论页默认 exit + 0、不能建买入议案。
+ * 默认只跑只读用例。退出流程会建持仓/研究案/退出案/议案，属于写库用例，
+ * 必须显式开启并确认目标为独立测试库（禁止指向生产库 svquant）：
+ *   INST_E2E_ALLOW_WRITE=1 INST_E2E_DB=safe npx playwright test e2e-09-inst.spec.ts
+ * 只设 ALLOW_WRITE 而 INST_E2E_DB 不安全时直接失败，避免静默写入生产。
  */
+const WRITE_GUARD = evaluateWriteGuard();
 const BASE = process.env.INST_BASE || "http://127.0.0.1:9533";
 const API = process.env.INST_API || "http://127.0.0.1:8771";
 const USER = process.env.INST_USER || "inst_manager";
@@ -48,6 +53,7 @@ async function call(
 }
 
 test.beforeAll(async ({ request }) => {
+  if (WRITE_GUARD.fatal) throw new Error(WRITE_GUARD.fatal);
   token = await loginApi(request, USER);
   tokens.manager = token;
   await Promise.all(
@@ -190,6 +196,10 @@ async function prepareExitCase(
 }
 
 test("退出流程：投后回链 → 辩论默认 exit/0 → 创建议案", async ({ page, request }) => {
+  test.skip(
+    !WRITE_GUARD.enabled,
+    "写库用例默认关闭：需 INST_E2E_ALLOW_WRITE=1 且 INST_E2E_DB=safe（独立测试库，禁止生产 svquant）",
+  );
   test.setTimeout(300_000);
   const { exitId, caseId } = await prepareExitCase(request);
 
@@ -217,6 +227,8 @@ test("退出流程：投后回链 → 辩论默认 exit/0 → 创建议案", asy
   await expect(page.getByTestId("inst-proposal-target")).toHaveValue("0");
   const createBtn = page.getByTestId("inst-proposal-create");
   await expect(createBtn).toHaveText("创建退出议案");
+  // 目标仓位 0 会弹清仓确认。
+  page.once("dialog", (dialog) => dialog.accept());
   await createBtn.click();
   await page.waitForURL(/\/inst\/approvals\?proposal=\d+/, { timeout: 30_000 });
 

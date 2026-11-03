@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "description": "R5 E2E tests (Playwright). Creates only R5_TEST_* data; auto cleanup.",
   "scripts": {
-    "test": "playwright test"
+    "test": "playwright test",
+    "test:guard": "node --test write-guard.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0"

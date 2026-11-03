@@ -4,6 +4,7 @@ import { Bookmark, Flag, Heart, MessageSquare } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { Disclaimer, ErrorState, LoadingCards, PageHeader, Sheet, Tag } from "../components";
+import { useLocale } from "../i18n";
 
 type Post = {
   id: number;
@@ -32,6 +33,12 @@ export default function PostDetail() {
   const { id } = useParams();
   const nav = useNavigate();
   const { user } = useAuth();
+  const { t, locale } = useLocale();
+  const sectionLabel = (label: string) =>
+    locale === "en"
+      ? ({ 策略分享: "Strategy share", 因子笔记: "Factor notes", 问答: "Q&A", 热点分析: "Market topics", 官方: "Official" } as Record<string, string>)[label] ||
+        label
+      : label;
   const postId = Number(id);
   const [post, setPost] = useState<Post | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -78,7 +85,7 @@ export default function PostDetail() {
       setText("");
       load();
     } catch (e: any) {
-      setError(e.message || "回复失败");
+      setError(e.message || t("回复失败", "Reply failed"));
     } finally {
       setBusy(false);
     }
@@ -96,7 +103,7 @@ export default function PostDetail() {
       });
       load();
     } catch (e: any) {
-      setError(e.message || "操作失败");
+      setError(e.message || t("操作失败", "Action failed"));
     }
   };
 
@@ -126,9 +133,9 @@ export default function PostDetail() {
       });
       setReportOpen(false);
       setReportDetail("");
-      setNotice("举报已提交，我们会尽快处理。");
+      setNotice(t("举报已提交，我们会尽快处理。", "Report submitted; we will review it as soon as possible."));
     } catch (e: any) {
-      setError(e.message || "举报失败");
+      setError(e.message || t("举报失败", "Report failed"));
     } finally {
       setBusy(false);
     }
@@ -147,14 +154,14 @@ export default function PostDetail() {
       }
       load();
     } catch (e: any) {
-      setError(e.message || "操作失败");
+      setError(e.message || t("操作失败", "Action failed"));
     }
   };
 
   if (error && !post) {
     return (
       <div className="page">
-        <PageHeader title="帖子" back onBack={() => nav(-1)} />
+        <PageHeader title={t("帖子", "Post")} back onBack={() => nav(-1)} />
         <ErrorState message={error} onRetry={load} />
       </div>
     );
@@ -163,7 +170,7 @@ export default function PostDetail() {
   if (!post) {
     return (
       <div className="page">
-        <PageHeader title="帖子" back onBack={() => nav(-1)} />
+        <PageHeader title={t("帖子", "Post")} back onBack={() => nav(-1)} />
         <LoadingCards rows={3} />
       </div>
     );
@@ -171,7 +178,7 @@ export default function PostDetail() {
 
   return (
     <div className="page">
-      <PageHeader title="社区帖子" back onBack={() => nav(-1)} right={<Tag tone="gray">{post.section_label}</Tag>} />
+      <PageHeader title={t("社区帖子", "Community post")} back onBack={() => nav(-1)} right={<Tag tone="gray">{sectionLabel(post.section_label)}</Tag>} />
 
       {error ? <ErrorState message={error} onRetry={load} /> : null}
       {notice ? <div className="callout blue">{notice}</div> : null}
@@ -179,45 +186,45 @@ export default function PostDetail() {
       <article className="card">
         <h2 style={{ fontSize: 19, lineHeight: 1.4, fontWeight: 700 }}>{post.title}</h2>
         <div className="post-row-meta" style={{ marginTop: 6 }}>
-          <span>{post.author?.display_name || post.author?.username || "匿名"}</span>
+          <span>{post.author?.display_name || post.author?.username || t("匿名", "Anonymous")}</span>
           <span>· {post.created_at?.slice(0, 10)}</span>
-          <span>· {post.view_count} 阅读</span>
+          <span>· {t(`${post.view_count} 阅读`, `${post.view_count} views`)}</span>
         </div>
         <p className="post-body" style={{ marginTop: 12 }}>{post.body}</p>
         <div className="post-row-stats" style={{ marginTop: 14 }}>
-          <button className="chip" onClick={like} aria-label="点赞">
+          <button className="chip" onClick={like} aria-label={t("点赞", "Like")}>
             <Heart size={13} /> {post.like_count}
           </button>
-          <button className="chip" onClick={favorite} aria-label="收藏">
-            <Bookmark size={13} /> {post.favorited ? "已收藏" : "收藏"}
+          <button className="chip" onClick={favorite} aria-label={t("收藏", "Save")}>
+            <Bookmark size={13} /> {post.favorited ? t("已收藏", "Saved") : t("收藏", "Save")}
           </button>
           <span className="chip">
             <MessageSquare size={13} /> {post.comment_count}
           </span>
-          <button className="chip" onClick={() => openReport("post", post.id)} aria-label="举报帖子">
-            <Flag size={13} /> 举报
+          <button className="chip" onClick={() => openReport("post", post.id)} aria-label={t("举报帖子", "Report post")}>
+            <Flag size={13} /> {t("举报", "Report")}
           </button>
         </div>
       </article>
 
       <section className="card">
-        <h3 style={{ fontSize: 14, fontWeight: 700 }}>评论 {comments.length}</h3>
+        <h3 style={{ fontSize: 14, fontWeight: 700 }}>{t(`评论 ${comments.length}`, `Comments ${comments.length}`)}</h3>
         {comments.length ? (
           <div>
             {comments.map((c) => (
               <div key={c.id} className="comment-item">
                 <div className="comment-meta">
-                  {c.author?.display_name || c.author?.username || "匿名"} · {c.created_at?.slice(0, 16).replace("T", " ")}
+                  {c.author?.display_name || c.author?.username || t("匿名", "Anonymous")} · {c.created_at?.slice(0, 16).replace("T", " ")}
                 </div>
                 <div className="comment-text">{c.body}</div>
                 <button className="chip" style={{ marginTop: 6 }} onClick={() => openReport("comment", c.id)}>
-                  举报
+                  {t("举报", "Report")}
                 </button>
               </div>
             ))}
           </div>
         ) : (
-          <p className="hint">还没有评论，来说两句。</p>
+          <p className="hint">{t("还没有评论，来说两句。", "No comments yet—be the first to share your thoughts.")}</p>
         )}
 
         <div style={{ marginTop: 12 }}>
@@ -225,12 +232,12 @@ export default function PostDetail() {
             value={text}
             onChange={(e) => setText(e.target.value)}
             maxLength={2000}
-            placeholder={user ? "写下你的看法…" : "登录后可参与讨论"}
+            placeholder={user ? t("写下你的看法…", "Write your thoughts…") : t("登录后可参与讨论", "Log in to join the discussion")}
             disabled={!user}
             style={{ width: "100%", minHeight: 86, padding: 10, borderRadius: 10, border: "1px solid var(--line)", fontSize: 13 }}
           />
           <button className="btn btn-primary w100" disabled={busy || !text.trim()} onClick={submit} style={{ marginTop: 8 }}>
-            {busy ? "发送中…" : "发表评论"}
+            {busy ? t("发送中…", "Sending…") : t("发表评论", "Post comment")}
           </button>
         </div>
       </section>
@@ -238,37 +245,37 @@ export default function PostDetail() {
       <Sheet
         open={reportOpen}
         onClose={() => setReportOpen(false)}
-        title="举报内容"
-        sub="请选择原因；恶意举报会被记录"
+        title={t("举报内容", "Report content")}
+        sub={t("请选择原因；恶意举报会被记录", "Choose a reason; malicious reports will be recorded")}
         footer={
           <button className="btn btn-primary w100" disabled={busy} onClick={submitReport}>
-            {busy ? "提交中…" : "提交举报"}
+            {busy ? t("提交中…", "Submitting…") : t("提交举报", "Submit report")}
           </button>
         }
       >
         <label className="field">
-          <span>原因</span>
+          <span>{t("原因", "Reason")}</span>
           <select value={reportReason} onChange={(e) => setReportReason(e.target.value)}>
-            <option value="spam">垃圾广告</option>
-            <option value="abuse">辱骂骚扰</option>
-            <option value="illegal">违法违规</option>
-            <option value="misinfo">不实信息</option>
-            <option value="other">其他</option>
+            <option value="spam">{t("垃圾广告", "Spam")}</option>
+            <option value="abuse">{t("辱骂骚扰", "Harassment")}</option>
+            <option value="illegal">{t("违法违规", "Illegal content")}</option>
+            <option value="misinfo">{t("不实信息", "Misinformation")}</option>
+            <option value="other">{t("其他", "Other")}</option>
           </select>
         </label>
         <label className="field">
-          <span>补充说明（可选）</span>
+          <span>{t("补充说明（可选）", "Additional details (optional)")}</span>
           <textarea
             value={reportDetail}
             onChange={(e) => setReportDetail(e.target.value)}
             maxLength={500}
-            placeholder="请描述问题"
+            placeholder={t("请描述问题", "Describe the issue")}
             style={{ minHeight: 80 }}
           />
         </label>
       </Sheet>
 
-      <Disclaimer>社区内容为用户观点，不构成投资建议。</Disclaimer>
+      <Disclaimer>{t("社区内容为用户观点，不构成投资建议。", "Community content reflects users' views and is not investment advice.")}</Disclaimer>
     </div>
   );
 }

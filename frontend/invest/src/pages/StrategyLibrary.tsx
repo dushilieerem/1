@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { EmptyState, ErrorState, LoadingCards, PageHeader, Sheet, Tag } from "../components";
+import { useLocale } from "../i18n";
 
 type Strategy = {
   id: string;
@@ -17,6 +18,7 @@ type Detail = Strategy & { strategy_code?: string };
 
 export default function StrategyLibrary() {
   const nav = useNavigate();
+  const { t } = useLocale();
   const [items, setItems] = useState<Strategy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,22 +50,32 @@ export default function StrategyLibrary() {
       setDetail(d);
       setOpen(true);
     } catch (e: any) {
-      setError(e.message || "加载失败");
+      setError(e.message || t("加载失败", "Failed to load"));
     }
   };
 
   return (
     <div className="page">
-      <PageHeader title="策略库" sub={`${items.length} 个内置经典策略`} back onBack={() => nav(-1)} />
+      <PageHeader
+        title={t("策略库", "Strategy Library")}
+        sub={t(`${items.length} 个内置经典策略`, `${items.length} built-in classic strategies`)}
+        back
+        onBack={() => nav(-1)}
+      />
       {error ? <ErrorState message={error} onRetry={() => window.location.reload()} /> : null}
       {loading ? <LoadingCards rows={3} /> : null}
-      {!loading && !items.length ? <EmptyState title="策略库为空" detail="管理员同步后可查看。" /> : null}
+      {!loading && !items.length ? (
+        <EmptyState
+          title={t("策略库为空", "Strategy library is empty")}
+          detail={t("管理员同步后可查看。", "Available after an admin syncs it.")}
+        />
+      ) : null}
       {!loading && items.length ? (
         <>
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="搜索策略名称、类型或标签"
+            placeholder={t("搜索策略名称、类型或标签", "Search strategy name, type, or tag")}
             style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid var(--line)", fontSize: 13 }}
           />
           <div className="post-list">
@@ -81,9 +93,9 @@ export default function StrategyLibrary() {
         </>
       ) : null}
 
-      <Sheet open={open} onClose={() => setOpen(false)} title={detail?.name || "策略"} sub={detail?.strategy_type_label}>
+      <Sheet open={open} onClose={() => setOpen(false)} title={detail?.name || t("策略", "Strategy")} sub={detail?.strategy_type_label}>
         <p className="hint">
-          执行模式：{detail?.execution_mode} · 版本：{detail?.current_version}
+          {t("执行模式：", "Execution mode: ")}{detail?.execution_mode} · {t("版本：", "Version: ")}{detail?.current_version}
         </p>
         <pre
           style={{
@@ -98,7 +110,7 @@ export default function StrategyLibrary() {
             lineHeight: 1.6,
           }}
         >
-          {detail?.strategy_code || "（无源码快照）"}
+          {detail?.strategy_code || t("（无源码快照）", "(No source snapshot)")}
         </pre>
       </Sheet>
     </div>

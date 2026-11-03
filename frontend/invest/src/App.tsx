@@ -29,12 +29,14 @@ import QuantSignals from "./pages/QuantSignals";
 import QuantBacktests from "./pages/QuantBacktests";
 import StrategyPlaza from "./pages/StrategyPlaza";
 import { Privacy, Terms } from "./pages/Legal";
+import { useLocale } from "./i18n";
 
 function Splash() {
+  const { t } = useLocale();
   return (
     <div className="splash">
       <div className="brand-mark">SV</div>
-      <p>加载 Invest…</p>
+      <p>{t("加载 Invest…", "Loading Invest…")}</p>
     </div>
   );
 }

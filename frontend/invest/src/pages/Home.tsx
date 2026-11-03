@@ -7,24 +7,30 @@ import { Disclaimer, ErrorState, LoadingCards, SectionHead, Sparkline, Tag } fro
 import { fmtPct, formatPrice } from "../lib";
 import GlossarySheet from "../GlossarySheet";
 import AiPanel from "../components/AiPanel";
+import { LocaleToggle, useLocale, withMarket } from "../i18n";
 
 type HomeData = any;
 
 export default function Home() {
   const { user } = useAuth();
   const nav = useNavigate();
+  const { t, market } = useLocale();
+  const displayName = user?.display_name === "演示用户"
+    ? t("演示用户", "Demo user")
+    : user?.display_name || t("演示用户", "Demo user");
   const [data, setData] = useState<HomeData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [glossary, setGlossary] = useState(false);
 
   const load = () => {
     setError(null);
-    api<HomeData>("/api/invest/home")
+    setData(null);
+    api<HomeData>(withMarket("/api/invest/home", market))
       .then(setData)
       .catch((e) => setError(e.message));
   };
 
-  useEffect(load, []);
+  useEffect(load, [market]);
 
   const openLink = (link: any) => {
     if (!link) return;
@@ -38,33 +44,47 @@ export default function Home() {
       <header className="home-head">
         <div className="home-row">
           <div>
-            <h1>下午好，{user?.display_name || "演示用户"}</h1>
-            <p>先看懂，再决定 · {data?.dataDate || "2026-10-23"} · {data?.isDemo ? "演示数据" : "公开 EOD"}</p>
+            <h1>{t("下午好，", "Good afternoon, ")}{displayName}</h1>
+            <p>
+              {t("先看懂，再决定", "Understand first, then decide")} · {data?.dataDate || "2026-10-23"} ·{" "}
+              {data?.isDemo ? t("演示数据", "Demo data") : market === "US" ? "Public EOD (US)" : t("公开 EOD", "Public EOD")}
+            </p>
           </div>
           <div className="home-actions">
-            <button className="round-btn" aria-label="通知" onClick={() => nav("/watch")}>
+            <LocaleToggle />
+            <button className="round-btn" aria-label={t("通知", "Notifications")} onClick={() => nav("/watch")}>
               <Bell size={20} />
               <i className="notice-dot" />
             </button>
-            <button className="avatar" onClick={() => nav("/me")} aria-label="我的">
-              {(user?.display_name || "演").slice(0, 1)}
+            <button className="avatar" onClick={() => nav("/me")} aria-label={t("我的", "Me")}>
+              {(displayName || t("演", "D")).slice(0, 1)}
             </button>
           </div>
         </div>
         <button className="searchbar" onClick={() => nav("/search")}>
           <Search size={18} />
-          <span>搜索股票 / 行业 / 主题</span>
+          <span>{market === "US" ? t("搜索美股代码，如 AAPL", "Search US ticker, e.g. AAPL") : t("搜索股票 / 行业 / 主题", "Search stocks / industries / themes")}</span>
         </button>
-        <button className="ai-entry" onClick={() => nav("/ai")}>
-          <Sparkles size={16} />
-          <span>AI 管家 · 问个股、组合或复盘</span>
-          <ChevronRight size={15} />
-        </button>
+        {market === "CN" ? (
+          <button className="ai-entry" onClick={() => nav("/ai")}>
+            <Sparkles size={16} />
+            <span>{t("AI 管家 · 问个股、组合或复盘", "AI copilot · ask about a stock, portfolio or review")}</span>
+            <ChevronRight size={15} />
+          </button>
+        ) : (
+          <div className="ai-entry market-note">
+            <Sparkles size={16} />
+            <span>{t("美股版当前提供行情与自选；AI 与基本面数据待接入。", "US mode currently covers quotes and watchlists; AI and fundamentals are not connected yet.")}</span>
+          </div>
+        )}
       </header>
 
       {data?.isStale ? (
         <div className="stale-banner">
-          数据截至 {data.dataDate}，落后 {data.ageTradingDays ?? data.ageDays} 个交易日；请先刷新 EOD 数据再判断。
+          {t(
+            `数据截至 ${data.dataDate}，落后 ${data.ageTradingDays ?? data.ageDays} 个交易日；请先刷新 EOD 数据再判断。`,
+            `Data as of ${data.dataDate}, ${data.ageTradingDays ?? data.ageDays} trading day(s) behind; refresh EOD data before drawing conclusions.`,
+          )}
         </div>
       ) : null}
 
@@ -77,9 +97,9 @@ export default function Home() {
             <div className="daily-head">
               <div className="row gap6">
                 <Sparkles size={15} />
-                <b>今日概览</b>
+                <b>{t("今日概览", "Today")}</b>
               </div>
-              <span className="daily-tag">收盘后更新</span>
+              <span className="daily-tag">{t("收盘后更新", "Updated after close")}</span>
             </div>
             <div className="daily-list">
               {data.daily.map((item: any, idx: number) => (
@@ -93,20 +113,25 @@ export default function Home() {
                 </button>
               ))}
             </div>
-            <div className="daily-foot">按自选、组合与收盘数据生成 · 非投资建议</div>
+            <div className="daily-foot">{t("按自选、组合与收盘数据生成 · 非投资建议", "Built from watchlist, portfolio and EOD data · not investment advice")}</div>
           </section>
 
-          <AiPanel
-            title="AI 今日解读"
-            subtitle="基于自选、持仓与收盘数据生成；只解释今天发生了什么，不构成投资建议。"
-            endpoint="/api/invest/ai/daily"
-            buttonLabel="生成今日解读"
-          />
+          {market === "CN" ? (
+            <AiPanel
+              title={t("AI 今日解读", "AI daily brief")}
+              subtitle={t(
+                "基于自选、持仓与收盘数据生成；只解释今天发生了什么，不构成投资建议。",
+                "Generated from watchlist, holdings and EOD data; explains what happened today, not investment advice.",
+              )}
+              endpoint="/api/invest/ai/daily"
+              buttonLabel={t("生成今日解读", "Generate daily brief")}
+            />
+          ) : null}
 
           <section className="card">
             <div className="card-title-row">
-              <h2>收盘复盘</h2>
-              <span className="hint">规则摘要 · 非投资建议</span>
+              <h2>{data.review.title || t("收盘复盘", "Close review")}</h2>
+              <span className="hint">{t("规则摘要 · 非投资建议", "Rule-based summary · not investment advice")}</span>
             </div>
             <p className="review-summary">{data.review.summary}</p>
             <ul className="fact-list">
@@ -116,49 +141,55 @@ export default function Home() {
             </ul>
           </section>
 
-          <div className="index-strip">
-            {data.indices.map((it: any) => (
-              <div className="index-cell" key={it.name}>
-                <span>{it.name}</span>
-                <b>{it.value}</b>
-                <em className={it.change >= 0 ? "up" : "down"}>{fmtPct(it.change)}</em>
+          {data.indices.length ? (
+            <div className="index-strip">
+              {data.indices.map((it: any) => (
+                <div className="index-cell" key={it.name}>
+                  <span>{it.name}</span>
+                  <b>{it.value}</b>
+                  <em className={it.change >= 0 ? "up" : "down"}>{fmtPct(it.change)}</em>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {data.topics.length ? (
+            <>
+              <SectionHead
+                title={t("今日热点", "Today's themes")}
+                sub={t("按板块热度排序", "Ranked by sector heat")}
+                action={<button className="link-btn" onClick={() => nav("/search")}>{t("全部", "All")} <ChevronRight size={14} /></button>}
+              />
+              <div className="stack">
+                {data.topics.map((topic: any) => (
+                  <button className="topic-card" key={topic.id} onClick={() => nav(`/topic/${topic.id}`)}>
+                    <div className="topic-top">
+                      <div>
+                        <span className="topic-kicker">{t("行业 / 主题", "Sector / theme")}</span>
+                        <h3>{topic.name}</h3>
+                      </div>
+                      <Sparkline values={topic.spark} />
+                    </div>
+                    <p>{topic.summary}</p>
+                    <div className="topic-foot">
+                      <Tag tone="amber">{t("估值", "Valuation")} {topic.valuationPercentile?.toFixed?.(0) ?? topic.valuationPercentile}% {t("分位", "pct")}</Tag>
+                      <Tag tone="gray">{t("热度", "Heat")} {topic.heat?.toFixed?.(0) ?? topic.heat}</Tag>
+                      <span className="topic-go">{t("查看", "View")} <ArrowRight size={14} /></span>
+                    </div>
+                  </button>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          ) : null}
 
           <SectionHead
-            title="今日热点"
-            sub="按板块热度排序"
-            action={<button className="link-btn" onClick={() => nav("/search")}>全部 <ChevronRight size={14} /></button>}
-          />
-          <div className="stack">
-            {data.topics.map((t: any) => (
-              <button className="topic-card" key={t.id} onClick={() => nav(`/topic/${t.id}`)}>
-                <div className="topic-top">
-                  <div>
-                    <span className="topic-kicker">行业 / 主题</span>
-                    <h3>{t.name}</h3>
-                  </div>
-                  <Sparkline values={t.spark} />
-                </div>
-                <p>{t.summary}</p>
-                <div className="topic-foot">
-                  <Tag tone="amber">估值 {t.valuationPercentile?.toFixed?.(0) ?? t.valuationPercentile}% 分位</Tag>
-                  <Tag tone="gray">热度 {t.heat?.toFixed?.(0) ?? t.heat}</Tag>
-                  <span className="topic-go">查看 <ArrowRight size={14} /></span>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          <SectionHead
-            title="我的自选"
-            sub={`${data.watchlist.length} 只`}
-            action={<button className="link-btn" onClick={() => nav("/watch")}>管理 <ChevronRight size={14} /></button>}
+            title={t("我的自选", "My watchlist")}
+            sub={t(`${data.watchlist.length} 只`, `${data.watchlist.length} name(s)`)}
+            action={<button className="link-btn" onClick={() => nav("/watch")}>{t("管理", "Manage")} <ChevronRight size={14} /></button>}
           />
           <div className="card list-card">
             {data.watchlist.length === 0 ? (
-              <div className="empty-inline">还没有自选，去搜索添加。</div>
+              <div className="empty-inline">{t("还没有自选，去搜索添加。", "No names yet. Search to add some.")}</div>
             ) : (
               data.watchlist.map((s: any) => (
                 <button className="stock-row" key={s.code} onClick={() => nav(`/stock/${s.code}`)}>
@@ -175,21 +206,29 @@ export default function Home() {
             )}
           </div>
 
-          <SectionHead title="3 分钟学习" sub="术语随问随学" />
+          <SectionHead title={t("3 分钟学习", "3-minute learn")} sub={t("术语随问随学", "Tap a term to learn")} />
           <button className="learn-card" onClick={() => setGlossary(true)}>
             <div className="learn-icon"><BookOpen size={20} /></div>
             <div>
-              <b>估值分位：贵不贵，跟什么比？</b>
-              <p>先搞懂 PE 分位、拥挤度，再看热点。</p>
+              <b>{t("估值分位：贵不贵，跟什么比？", "Valuation percentile: expensive versus what?")}</b>
+              <p>{t("先搞懂 PE 分位、拥挤度，再看热点。", "Understand P/E percentile and crowding before chasing themes.")}</p>
             </div>
             <ChevronRight size={18} />
           </button>
 
-          <Disclaimer>{data.isDemo ? "演示数据" : "行情/组合/主题：公开 EOD（主题为等权代理） · 资讯：公开标题"} · 收盘后更新 · 不构成投资建议</Disclaimer>
+          <Disclaimer>
+            {market === "US"
+              ? t("美股行情：公开 EOD · 无财务/估值/新闻/指数", "US quotes: public EOD · no fundamentals, valuation, news or indices")
+              : data.isDemo
+                ? t("演示数据", "Demo data")
+                : t("行情/组合/主题：公开 EOD（主题为等权代理） · 资讯：公开标题", "Quotes/portfolio/themes: public EOD (themes are equal-weight proxies) · News: public headlines")}
+            {" · "}
+            {t("收盘后更新 · 不构成投资建议", "Updated after close · not investment advice")}
+          </Disclaimer>
         </>
       ) : null}
 
-      <GlossarySheet open={glossary} onClose={() => setGlossary(false)} />
+      <GlossarySheet open={glossary} onClose={() => setGlossary(false)} items={data?.glossary} />
     </div>
   );
 }

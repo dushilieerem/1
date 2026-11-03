@@ -5,6 +5,7 @@ import { api } from "../api";
 import { BarRow, Disclaimer, EmptyState, ErrorState, LoadingCards, PageHeader, RiskRing, Sheet, Tag } from "../components";
 import { fmtPct, fmtSignedMoney, fmtWan } from "../lib";
 import { useToast } from "../toast";
+import { useLocale } from "../i18n";
 import AiPanel from "../components/AiPanel";
 
 type RangeKey = "1m" | "3m" | "1y";
@@ -18,7 +19,11 @@ type NavData = {
   note?: string;
 };
 
-const RANGE_LABEL: Record<RangeKey, string> = { "1m": "近1月", "3m": "近3月", "1y": "近1年" };
+const RANGE_LABEL: Record<RangeKey, { zh: string; en: string }> = {
+  "1m": { zh: "近1月", en: "1M" },
+  "3m": { zh: "近3月", en: "3M" },
+  "1y": { zh: "近1年", en: "1Y" },
+};
 const TONE_COLOR: Record<string, string> = {
   green: "var(--green)",
   amber: "var(--amber)",
@@ -31,6 +36,67 @@ const TONE_TAG: Record<string, "green" | "amber" | "orange" | "red"> = {
   orange: "orange",
   red: "red",
 };
+const RISK_LABEL_EN: Record<string, string> = {
+  分散: "Diversified",
+  偏集中: "Moderately concentrated",
+  较集中: "Concentrated",
+  高度集中: "Highly concentrated",
+};
+const KPI_LABEL_EN: Record<string, string> = {
+  总资产: "Total assets",
+  前三大持仓: "Top 3 weight",
+  最大行业暴露: "Largest sector",
+  历史最大回撤: "Max drawdown",
+};
+const STATUS_EN: Record<string, string> = {
+  达标: "On target",
+  超配: "Overweight",
+  低配: "Underweight",
+};
+const STRESS_NAME_EN: Record<string, string> = {
+  "沪深 300 −10%": "CSI 300 −10%",
+  "利率 +50bp": "Rates +50bp",
+  "新能源 −15%": "New energy −15%",
+  "消费 −10%": "Consumption −10%",
+};
+const METHOD_LABEL_EN: Record<string, string> = {
+  集中度: "Concentration",
+  行业集中: "Sector concentration",
+  "ETF 穿透": "ETF look-through",
+  相关性: "Correlation",
+  估值分位: "Valuation percentile",
+  换手成本: "Turnover cost",
+};
+const DIAG_TITLE_EN: Record<string, string> = {
+  单票集中: "Single-name concentration",
+  前三大持仓偏高: "Top-3 concentration",
+  行业集中度偏高: "Sector concentration",
+  穿透后集中度更高: "Higher look-through concentration",
+  持仓相关性偏高: "High holding correlation",
+  低流动性持仓偏高: "Illiquid holdings",
+  估值分位偏高: "High valuation percentile",
+  换手成本偏高: "High turnover cost",
+};
+
+function localized(map: Record<string, string>, value: string, locale: string) {
+  return locale === "en" ? map[value] || value : value;
+}
+
+function localizedRiskSummary(value: string, locale: string) {
+  if (locale !== "en" || !value) return value;
+  if (value.startsWith("风险主要来自「")) {
+    const inner = value.slice("风险主要来自「".length, value.indexOf("」"));
+    const labels = inner
+      .split(" + ")
+      .map((x) => METHOD_LABEL_EN[x] || x)
+      .join(" + ");
+    return `Risk mainly comes from "${labels}", not broad market moves.`;
+  }
+  if (value.startsWith("持仓结构相对分散")) {
+    return "The portfolio structure is relatively diversified; the main uncertainty comes from broad market moves.";
+  }
+  return value;
+}
 
 function signedPctPoints(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
@@ -44,11 +110,12 @@ function toneClass(value: number | null | undefined) {
 }
 
 function Curve({ nav, loading }: { nav: NavData | null; loading: boolean }) {
-  if (loading) return <div className="pf-curve-empty">曲线加载中…</div>;
+  const { t } = useLocale();
+  if (loading) return <div className="pf-curve-empty">{t("曲线加载中…", "Loading chart…")}</div>;
   const dates = nav?.dates || [];
   const portfolio = nav?.portfolio || [];
   const benchmark = nav?.benchmark || [];
-  if (dates.length < 2) return <div className="pf-curve-empty">净值曲线待补充</div>;
+  if (dates.length < 2) return <div className="pf-curve-empty">{t("净值曲线待补充", "NAV curve not yet available")}</div>;
 
   const all = [...portfolio, ...benchmark].filter((v): v is number => v !== null && v !== undefined);
   const min = Math.min(0, ...all);
@@ -75,7 +142,7 @@ function Curve({ nav, loading }: { nav: NavData | null; loading: boolean }) {
   };
   const zeroY = y(0);
   return (
-    <svg className="pf-curve" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="我的组合与沪深300净值曲线">
+    <svg className="pf-curve" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t("我的组合与沪深300净值曲线", "My portfolio vs CSI 300 NAV curve")}>
       {min < 0 && max > 0 ? (
         <line x1={P} x2={W - P} y1={zeroY} y2={zeroY} className="pf-zero" />
       ) : null}
@@ -96,6 +163,7 @@ function TargetSheet({
   onClose: () => void;
   onDone: (data: any) => void;
 }) {
+  const { t } = useLocale();
   const toast = useToast();
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -120,9 +188,9 @@ function TargetSheet({
         }),
       });
       onDone(data);
-      toast(allZero ? "已清除目标配置" : "目标配置已保存");
+      toast(allZero ? t("已清除目标配置", "Target allocation cleared") : t("目标配置已保存", "Target allocation saved"));
     } catch (e: any) {
-      toast(e.message || "保存失败");
+      toast(e.message || t("保存失败", "Save failed"));
     } finally {
       setBusy(false);
     }
@@ -132,11 +200,11 @@ function TargetSheet({
     <Sheet
       open={open}
       onClose={onClose}
-      title="设定目标配置"
-      sub="目标合计需为 100%；全部为 0 表示清除目标"
+      title={t("设定目标配置", "Set target allocation")}
+      sub={t("目标合计需为 100%；全部为 0 表示清除目标", "Targets must sum to 100%; all zeros clears the target")}
       footer={
         <button className="btn btn-primary w100" onClick={submit} disabled={busy || !valid}>
-          {busy ? "保存中…" : `保存目标（合计 ${total.toFixed(1)}%）`}
+          {busy ? t("保存中…", "Saving…") : `${t("保存目标", "Save targets")}${t("（", " (")}${t("合计", "total")} ${total.toFixed(1)}%${t("）", ")")}`}
         </button>
       }
     >
@@ -145,7 +213,7 @@ function TargetSheet({
           <div className="target-row" key={h.code}>
             <div>
               <b>{h.name}</b>
-              <span>{h.code} · 当前 {h.weight}%</span>
+              <span>{h.code} · {t("当前", "Current")} {h.weight}%</span>
             </div>
             <div className="target-input">
               <input
@@ -155,7 +223,7 @@ function TargetSheet({
                 step={0.1}
                 value={values[h.code] ?? ""}
                 onChange={(e) => setValues({ ...values, [h.code]: e.target.value })}
-                aria-label={`${h.name} 目标权重`}
+                aria-label={`${h.name} ${t("目标权重", "target weight")}`}
               />
               <span>%</span>
             </div>
@@ -163,17 +231,20 @@ function TargetSheet({
         ))}
       </div>
       <p className={valid ? "hint" : "hint down"}>
-        {allZero ? "全部为 0：保存后清除目标配置。" : `当前合计 ${total.toFixed(1)}%，需为 100%。`}
+        {allZero
+          ? t("全部为 0：保存后清除目标配置。", "All zeros: saving clears the target allocation.")
+          : t(`当前合计 ${total.toFixed(1)}%，需为 100%。`, `Current total ${total.toFixed(1)}%; must equal 100%.`)}
       </p>
       <div className="callout blue">
         <Info size={15} />
-        <span>目标只用于展示偏离，不构成调仓建议；本产品不自动调仓。</span>
+        <span>{t("目标只用于展示偏离，不构成调仓建议；本产品不自动调仓。", "Targets are for showing deviations only and are not rebalancing advice; this product never trades automatically.")}</span>
       </div>
     </Sheet>
   );
 }
 
 export default function Portfolio() {
+  const { t, locale } = useLocale();
   const nav = useNavigate();
   const toast = useToast();
   const [data, setData] = useState<any>(null);
@@ -228,7 +299,7 @@ export default function Portfolio() {
     navCache.current = {};
     setNavData(null);
     setImportOpen(false);
-    toast("持仓已更新");
+    toast(t("持仓已更新", "Holdings updated"));
     if (next?.holdings?.length) {
       setNavLoading(true);
       api<NavData>(`/api/invest/portfolio/nav?range=${range}`)
@@ -245,14 +316,14 @@ export default function Portfolio() {
     return (
       <div className="page">
         <PageHeader
-          title="组合"
-          sub="尚未导入持仓"
-          right={<button className="round-btn" onClick={() => setImportOpen(true)} aria-label="导入持仓"><Upload size={18} /></button>}
+          title={t("组合", "Portfolio")}
+          sub={t("尚未导入持仓", "No holdings imported yet")}
+          right={<button className="round-btn" onClick={() => setImportOpen(true)} aria-label={t("导入持仓", "Import holdings")}><Upload size={18} /></button>}
         />
         <EmptyState
-          title="还没有组合"
-          detail="导入 CSV 或手工持仓，才能看收益、归因、集中度、行业暴露与压力测试。"
-          action={<button className="btn btn-primary" onClick={() => setImportOpen(true)}>导入持仓</button>}
+          title={t("还没有组合", "No portfolio yet")}
+          detail={t("导入 CSV 或手工持仓，才能看收益、归因、集中度、行业暴露与压力测试。", "Import a CSV or enter holdings manually to see returns, attribution, concentration, sector exposure and stress tests.")}
+          action={<button className="btn btn-primary" onClick={() => setImportOpen(true)}>{t("导入持仓", "Import holdings")}</button>}
         />
         <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} onDone={handleImported} />
       </div>
@@ -274,14 +345,14 @@ export default function Portfolio() {
   return (
     <div className="page">
       <PageHeader
-        title="组合"
-        sub={data ? `${data.holdings.length} 个持仓 · ${data.dataDate}` : "加载中"}
-        right={<button className="round-btn" onClick={() => setImportOpen(true)} aria-label="导入持仓"><Upload size={18} /></button>}
+        title={t("组合", "Portfolio")}
+        sub={data ? `${data.holdings.length} ${t("个持仓", "holdings")} · ${data.dataDate}` : t("加载中", "Loading")}
+        right={<button className="round-btn" onClick={() => setImportOpen(true)} aria-label={t("导入持仓", "Import holdings")}><Upload size={18} /></button>}
       />
 
-      <div className="seg" role="tablist" aria-label="组合视图">
-        <button className={`seg-btn ${tab === "holdings" ? "on" : ""}`} role="tab" aria-selected={tab === "holdings"} onClick={() => switchTab("holdings")}>持仓</button>
-        <button className={`seg-btn ${tab === "checkup" ? "on" : ""}`} role="tab" aria-selected={tab === "checkup"} onClick={() => switchTab("checkup")}>体检</button>
+      <div className="pf-seg" role="tablist" aria-label={t("组合视图", "Portfolio view")}>
+        <button className={`pf-seg-btn ${tab === "holdings" ? "on" : ""}`} role="tab" aria-selected={tab === "holdings"} onClick={() => switchTab("holdings")}>{t("持仓", "Holdings")}</button>
+        <button className={`pf-seg-btn ${tab === "checkup" ? "on" : ""}`} role="tab" aria-selected={tab === "checkup"} onClick={() => switchTab("checkup")}>{t("体检", "Checkup")}</button>
       </div>
 
       {error ? <ErrorState message={error} onRetry={load} /> : null}
@@ -290,41 +361,41 @@ export default function Portfolio() {
       {data && tab === "holdings" ? (
         <>
           <section className="card pf-overview">
-            <div className="pf-total-label">总资产（元）</div>
+            <div className="pf-total-label">{t("总资产（元）", "Total assets (CNY)")}</div>
             <div className="pf-total">{fmtWan(data.totalValue)}</div>
             <div className="pf-returns">
               <div className="pf-ret">
-                <span>今日</span>
+                <span>{t("今日", "Today")}</span>
                 <b className={toneClass(data.dailyChange)}>{fmtPct(data.dailyChange)}</b>
                 <em className={toneClass(data.dailyPnl)}>{fmtSignedMoney(data.dailyPnl)}</em>
               </div>
               <div className="pf-ret">
-                <span>累计</span>
+                <span>{t("累计", "Total")}</span>
                 <b className={toneClass(data.totalPnlPct)}>{fmtPct(data.totalPnlPct)}</b>
                 <em className={toneClass(data.totalPnl)}>{fmtSignedMoney(data.totalPnl)}</em>
               </div>
             </div>
-            <div className="pf-range" role="group" aria-label="曲线区间">
+            <div className="pf-range" role="group" aria-label={t("曲线区间", "Chart range")}>
               {(["1m", "3m", "1y"] as RangeKey[]).map((r) => (
-                <button key={r} className={range === r ? "on" : ""} onClick={() => setRange(r)}>{RANGE_LABEL[r]}</button>
+                <button key={r} className={range === r ? "on" : ""} onClick={() => setRange(r)}>{t(RANGE_LABEL[r].zh, RANGE_LABEL[r].en)}</button>
               ))}
             </div>
             <div className="pf-legend">
-              <span><i className="pf-dot mine" />我的组合</span>
-              <span><i className="pf-dot bench" />沪深300</span>
+              <span><i className="pf-dot mine" />{t("我的组合", "My portfolio")}</span>
+              <span><i className="pf-dot bench" />{t("沪深300", "CSI 300")}</span>
             </div>
             <Curve nav={navData} loading={navLoading} />
-            <p className="hint">按当前持仓回溯，买入并持有假设；不代表真实历史成交。</p>
+            <p className="hint">{t("按当前持仓回溯，买入并持有假设；不代表真实历史成交。", "Backtested from current holdings under a buy-and-hold assumption; not actual historical trades.")}</p>
           </section>
 
           <section className="card">
             <div className="card-title-row">
-              <h2>今日归因</h2>
-              <span className="hint">贡献 = 权重 × 涨跌</span>
+              <h2>{t("今日归因", "Today's attribution")}</h2>
+              <span className="hint">{t("贡献 = 权重 × 涨跌", "Contribution = weight × change")}</span>
             </div>
             {attribution.items.length ? (
               <div className="attr-list">
-                <div className="attr-row attr-head"><span>标的</span><span>当日</span><span>贡献</span></div>
+                <div className="attr-row attr-head"><span>{t("标的", "Asset")}</span><span>{t("当日", "Today")}</span><span>{t("贡献", "Contribution")}</span></div>
                 {attribution.items.map((it: any) => (
                   <div className="attr-row" key={it.code}>
                     <span className="attr-name">{it.name}</span>
@@ -333,27 +404,27 @@ export default function Portfolio() {
                   </div>
                 ))}
                 <div className="attr-row attr-total">
-                  <b>合计</b>
+                  <b>{t("合计", "Total")}</b>
                   <span className="muted">—</span>
                   <b className={toneClass(attribution.total)}>{signedPctPoints(attribution.total)}</b>
                 </div>
               </div>
             ) : (
-              <div className="empty-inline">暂无归因数据。</div>
+              <div className="empty-inline">{t("暂无归因数据。", "No attribution data yet.")}</div>
             )}
             <div className="attr-summary">
-              {attribution.needReview ? <Tag tone="amber">归因待核</Tag> : null}
+              {attribution.needReview ? <Tag tone="amber">{t("归因待核", "Attribution pending")}</Tag> : null}
               <span>{attribution.summary}</span>
             </div>
           </section>
 
           <section className="card">
             <div className="card-title-row">
-              <h2>持仓</h2>
-              <span className="hint">{holdings.length} 个 · 按权重</span>
+              <h2>{t("持仓", "Holdings")}</h2>
+              <span className="hint">{holdings.length} {t("个 · 按权重", "positions · by weight")}</span>
             </div>
             <div className="hold-head">
-              <span>名称</span><span>权重</span><span>市值</span><span>今日</span><span>浮盈亏</span>
+              <span>{t("名称", "Name")}</span><span>{t("权重", "Weight")}</span><span>{t("市值", "Value")}</span><span>{t("今日", "Today")}</span><span>{t("浮盈亏", "P&L")}</span>
             </div>
             <div className="hold-list">
               {holdings.map((h: any) => (
@@ -388,36 +459,36 @@ export default function Portfolio() {
           </section>
 
           <section className="card">
-            <div className="card-title-row"><h2>行业暴露</h2><span className="hint">按市值权重</span></div>
+            <div className="card-title-row"><h2>{t("行业暴露", "Sector exposure")}</h2><span className="hint">{t("按市值权重", "By market value weight")}</span></div>
             {exposure.map((e: any) => (
               <BarRow key={e.name} label={e.name} value={e.weight} width={(e.weight / maxWeight) * 100} />
             ))}
-            <div className="hint">直接持仓口径；ETF 穿过后在「体检」页查看。</div>
+            <div className="hint">{t("直接持仓口径；ETF 穿过后在「体检」页查看。", "Direct holdings only; see the Checkup tab for ETF look-through.")}</div>
           </section>
 
           <section className="card">
-            <div className="card-title-row"><h2>最近调仓</h2><span className="hint">最近 5 条 · 权重变化 / 金额</span></div>
+            <div className="card-title-row"><h2>{t("最近调仓", "Recent trades")}</h2><span className="hint">{t("最近 5 条 · 权重变化 / 金额", "Last 5 · weight change / amount")}</span></div>
             {data.recentTrades?.length ? (
               <div className="trade-list">
-                {data.recentTrades.map((t: any, i: number) => (
-                  <div className="trade-row" key={`${t.code}-${t.date}-${i}`}>
-                    <span className="trade-date">{t.date.slice(5)}</span>
-                    <span className="trade-name">{t.name}</span>
-                    <b className={toneClass(t.weightDelta)}>{fmtPct(t.weightDelta, 0)}</b>
-                    <b className={toneClass(t.amount)}>{fmtSignedMoney(t.amount)}</b>
+                {data.recentTrades.map((trade: any, i: number) => (
+                  <div className="trade-row" key={`${trade.code}-${trade.date}-${i}`}>
+                    <span className="trade-date">{trade.date.slice(5)}</span>
+                    <span className="trade-name">{trade.name}</span>
+                    <b className={toneClass(trade.weightDelta)}>{fmtPct(trade.weightDelta, 0)}</b>
+                    <b className={toneClass(trade.amount)}>{fmtSignedMoney(trade.amount)}</b>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="empty-inline">更新持仓后，这里会记录权重变化。</div>
+              <div className="empty-inline">{t("更新持仓后，这里会记录权重变化。", "Weight changes will appear here after you update holdings.")}</div>
             )}
-            <p className="hint">金额按调仓当日市值折算；只记录权重变化，不区分买入 / 卖出，也不构成建议。</p>
+            <p className="hint">{t("金额按调仓当日市值折算；只记录权重变化，不区分买入 / 卖出，也不构成建议。", "Amounts are converted at the market value on the trade date; only weight changes are recorded, buys and sells are not distinguished, and this is not advice.")}</p>
           </section>
 
           <div className="callout">
-            <b>组合边界：</b>只给风险来源与可核对数据，不推荐具体标的，不构成投资建议。
+            <b>{t("组合边界：", "Portfolio scope: ")}</b>{t("只给风险来源与可核对数据，不推荐具体标的，不构成投资建议。", "We only surface risk sources and verifiable data; we do not recommend specific securities and this is not investment advice.")}
           </div>
-          <Disclaimer>收盘数据 · 非实时 · 不构成投资建议</Disclaimer>
+          <Disclaimer>{t("收盘数据 · 非实时 · 不构成投资建议", "Closing data · Not real-time · Not investment advice")}</Disclaimer>
         </>
       ) : null}
 
@@ -427,113 +498,117 @@ export default function Portfolio() {
             <RiskRing score={data.riskScore ?? 0} color={TONE_COLOR[riskTone]} />
             <div className="ring-copy">
               <h2 className="row gap6">
-                {data.riskLabel}
-                <Tag tone={TONE_TAG[riskTone] || "amber"}>{data.riskScore > 40 ? "需关注" : "结构分散"}</Tag>
+                {localized(RISK_LABEL_EN, data.riskLabel, locale)}
+                <Tag tone={TONE_TAG[riskTone] || "amber"}>{data.riskScore > 40 ? t("需关注", "Needs attention") : t("结构分散", "Diversified")}</Tag>
               </h2>
-              <p>{data.riskSummary}</p>
-              <p className="hint">{data.riskNote}</p>
-              <button className="link-btn" onClick={() => setMethodOpen(true)}>风险分怎么算 →</button>
+              <p>{localizedRiskSummary(data.riskSummary, locale)}</p>
+              <p className="hint">{locale === "en" ? "The score reflects portfolio structure only and does not forecast returns; higher means more concentrated." : data.riskNote}</p>
+              <button className="link-btn" onClick={() => setMethodOpen(true)}>{t("风险分怎么算 →", "How is the risk score calculated →")}</button>
             </div>
           </section>
 
           <div className="kpi-grid">
             {(data.kpis || []).map((k: any) => (
-              <div className="kpi" key={k.label}><span>{k.label}</span><b>{k.value}</b></div>
+              <div className="kpi" key={k.label}><span>{localized(KPI_LABEL_EN, k.label, locale)}</span><b>{k.value}</b></div>
             ))}
           </div>
 
           <section className="card">
             <div className="card-title-row">
-              <h2>诊断结论</h2>
-              {diagnosis.length ? <Tag tone="amber">{diagnosis.length} 个待关注</Tag> : <span className="hint">未发现越线项</span>}
+              <h2>{t("诊断结论", "Diagnosis")}</h2>
+              {diagnosis.length ? <Tag tone="amber">{diagnosis.length} {t("个待关注", "flagged")}</Tag> : <span className="hint">{t("未发现越线项", "No breaches found")}</span>}
             </div>
             <div className="diag-list">
               {diagnosis.map((d: any) => (
                 <div className={`diag-item diag-${d.level}`} key={d.id}>
                   <AlertTriangle size={18} />
                   <div>
-                    <b>{d.title}</b>
+                    <b>{localized(DIAG_TITLE_EN, d.title, locale)}</b>
                     <span>{d.evidence}</span>
                     <em>{d.impact}</em>
                   </div>
                 </div>
               ))}
-              {!diagnosis.length ? <div className="empty-inline">未发现越线项。</div> : null}
+              {!diagnosis.length ? <div className="empty-inline">{t("未发现越线项。", "No breaches found.")}</div> : null}
             </div>
-            {data.diagnosisHidden ? <p className="hint">另有 {data.diagnosisHidden} 项未展开，按严重度优先展示前 5 项。</p> : null}
+            {data.diagnosisHidden ? <p className="hint">{t(`另有 ${data.diagnosisHidden} 项未展开，按严重度优先展示前 5 项。`, `${data.diagnosisHidden} more items are hidden; the top 5 by severity are shown.`)}</p> : null}
             {penetration ? (
               <p className="hint">
-                ETF 穿透覆盖 {penetration.coveragePct ?? 0}%
-                {penetration.unmapped?.length ? `；未覆盖：${penetration.unmapped.map((x: any) => x.name).join("、")}` : ""}
-                。未覆盖部分不计为 0。
+                {t("ETF 穿透覆盖", "ETF look-through coverage")} {penetration.coveragePct ?? 0}%
+                {penetration.unmapped?.length ? t(`；未覆盖：${penetration.unmapped.map((x: any) => x.name).join("、")}`, `; uncovered: ${penetration.unmapped.map((x: any) => x.name).join(", ")}`) : ""}
+                {t("。未覆盖部分不计为 0。", ". Uncovered positions are not counted as zero.")}
               </p>
             ) : null}
           </section>
 
           <AiPanel
-            title="AI 深度解读"
-            subtitle="在诊断结论之上，逐项展开风险来源、历史对照与需要留意的变量。约 1–2 分钟。"
+            title={t("AI 深度解读", "AI deep dive")}
+            subtitle={t("在诊断结论之上，逐项展开风险来源、历史对照与需要留意的变量。约 1–2 分钟。", "Builds on the diagnosis to unpack each risk source, historical comparison and variables to watch. About 1–2 minutes.")}
             endpoint="/api/invest/ai/portfolio/deep"
-            buttonLabel="生成深度解读"
+            buttonLabel={t("生成深度解读", "Generate deep dive")}
           />
 
           <section className="card">
-            <div className="card-title-row"><h2>配置偏离</h2><span className="hint">目标 vs 当前</span></div>
+            <div className="card-title-row"><h2>{t("配置偏离", "Allocation drift")}</h2><span className="hint">{t("目标 vs 当前", "Target vs current")}</span></div>
             {targetConfigured ? (
               <>
                 <div className="dev-list">
                   {(data.deviation || []).map((d: any) => (
                     <div className="dev-row" key={d.code}>
                       <span>{d.name}</span>
-                      <span>目标 {d.target}% · 当前 {d.current}%</span>
+                      <span>{t("目标", "Target")} {d.target}% · {t("当前", "Current")} {d.current}%</span>
                       <b className={toneClass(d.diff)}>{fmtPct(d.diff, 0)}</b>
-                      <Tag tone={d.status === "达标" ? "green" : "amber"}>{d.status}</Tag>
+                      <Tag tone={d.status === "达标" ? "green" : "amber"}>{localized(STATUS_EN, d.status, locale)}</Tag>
                     </div>
                   ))}
                 </div>
-                <button className="btn btn-ghost btn-sm" onClick={() => setTargetOpen(true)}>调整目标配置</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setTargetOpen(true)}>{t("调整目标配置", "Adjust targets")}</button>
               </>
             ) : (
               <div className="target-empty">
-                <b>还没有设定目标配置</b>
-                <p className="hint">设定后才能看到目标与当前的偏离；不会把当前权重自动当成目标。</p>
-                <button className="btn btn-primary btn-sm" onClick={() => setTargetOpen(true)}>设定目标配置</button>
+                <b>{t("还没有设定目标配置", "No target allocation set")}</b>
+                <p className="hint">{t("设定后才能看到目标与当前的偏离；不会把当前权重自动当成目标。", "Set targets to see target-vs-current drift; current weights are never treated as targets automatically.")}</p>
+                <button className="btn btn-primary btn-sm" onClick={() => setTargetOpen(true)}>{t("设定目标配置", "Set target allocation")}</button>
               </div>
             )}
-            <div className="callout blue"><Info size={15} /><span>偏离只用于理解组合，不构成调仓建议；本产品不自动调仓。</span></div>
+            <div className="callout blue"><Info size={15} /><span>{t("偏离只用于理解组合，不构成调仓建议；本产品不自动调仓。", "Drift is for understanding the portfolio only and is not rebalancing advice; this product never trades automatically.")}</span></div>
           </section>
 
           <section className="card">
-            <div className="card-title-row"><h2>压力测试与成本</h2><span className="hint">假设冲击 · 非预测</span></div>
+            <div className="card-title-row"><h2>{t("压力测试与成本", "Stress tests & costs")}</h2><span className="hint">{t("假设冲击 · 非预测", "Hypothetical shocks · Not forecasts")}</span></div>
             {stress.map((s: any) => (
               <div className="stress-row" key={s.key || s.name}>
-                <span>{s.name}</span>
+                <span>{localized(STRESS_NAME_EN, s.name, locale)}</span>
                 {s.value === null || s.value === undefined ? (
-                  <span className="muted">无相关暴露</span>
+                  <span className="muted">{t("无相关暴露", "No exposure")}</span>
                 ) : (
                   <b className={toneClass(s.value)}>{fmtPct(s.value, 1)}</b>
                 )}
               </div>
             ))}
-            <p className="hint">情景是假设不是预测，未考虑相关性变化与流动性冲击。</p>
+            <p className="hint">{t("情景是假设不是预测，未考虑相关性变化与流动性冲击。", "Scenarios are hypothetical, not forecasts, and do not account for correlation shifts or liquidity shocks.")}</p>
             <button className="cost-toggle" onClick={() => setCostOpen((v) => !v)} aria-expanded={costOpen}>
-              成本明细 <ChevronDown size={15} className={costOpen ? "rot" : ""} />
+              {t("成本明细", "Cost breakdown")} <ChevronDown size={15} className={costOpen ? "rot" : ""} />
             </button>
             {costOpen ? (
               <div className="cost-list">
-                <div className="kv"><span>预估再平衡交易成本</span><b>约 {costs.tradeCostPct}%</b></div>
-                <div className="kv"><span>示例年化换手率</span><b>{costs.annualTurnover}%</b></div>
-                <div className="kv"><span>单次调仓冲击成本</span><b>约 {costs.impactCostPct}%</b></div>
-                <div className="kv"><span>年化换手成本</span><b>{costs.turnoverCostPct}%</b></div>
+                <div className="kv"><span>{t("预估再平衡交易成本", "Estimated rebalancing cost")}</span><b>{t("约", "~")} {costs.tradeCostPct}%</b></div>
+                <div className="kv"><span>{t("示例年化换手率", "Example annual turnover")}</span><b>{costs.annualTurnover}%</b></div>
+                <div className="kv"><span>{t("单次调仓冲击成本", "One-time market impact cost")}</span><b>{t("约", "~")} {costs.impactCostPct}%</b></div>
+                <div className="kv"><span>{t("年化换手成本", "Annual turnover cost")}</span><b>{costs.turnoverCostPct}%</b></div>
               </div>
             ) : null}
           </section>
 
           <div className="callout">
-            <b>体检边界：</b>分数只反映持仓结构，不预测盈亏；只给风险来源与可核对数据。
+            <b>{t("体检边界：", "Checkup scope: ")}</b>{t("分数只反映持仓结构，不预测盈亏；只给风险来源与可核对数据。", "Scores reflect portfolio structure only and do not predict profit or loss; we only surface risk sources and verifiable data.")}
           </div>
-          <Disclaimer>收盘数据 · 非实时 · 不构成投资建议</Disclaimer>
+          <Disclaimer>{t("收盘数据 · 非实时 · 不构成投资建议", "Closing data · Not real-time · Not investment advice")}</Disclaimer>
         </>
+      ) : null}
+
+      {locale === "en" ? (
+        <p className="hint">{t("英文版组合页仍展示 A 股持仓；美股暂不支持组合导入。", "The English build still shows A-share holdings; US portfolio import is not supported yet.")}</p>
       ) : null}
 
       <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} onDone={handleImported} />
@@ -547,25 +622,25 @@ export default function Portfolio() {
         }}
       />
 
-      <Sheet open={methodOpen} onClose={() => setMethodOpen(false)} title="风险分怎么算" sub="6 项加权 · 分数越高，代表风险越集中">
+      <Sheet open={methodOpen} onClose={() => setMethodOpen(false)} title={t("风险分怎么算", "How the risk score works")} sub={t("6 项加权 · 分数越高，代表风险越集中", "6 weighted factors · The higher the score, the more concentrated the risk")}>
         <div className="method-list">
           {riskMethod.items?.map((it: any) => (
             <div className="method-row" key={it.key}>
               <div>
-                <b>{it.label}</b>
+                <b>{localized(METHOD_LABEL_EN, it.label, locale)}</b>
                 <span>{it.detail}</span>
               </div>
               <div className="method-score">
-                <b>{it.available ? Math.round(it.score) : "待补充"}</b>
-                <small>权重 {it.weight}%</small>
+                <b>{it.available ? Math.round(it.score) : t("待补充", "Pending")}</b>
+                <small>{t("权重", "Weight")} {it.weight}%</small>
               </div>
             </div>
           ))}
         </div>
-        <p className="hint">本次覆盖率 {riskMethod.coveragePct}%；缺失项不参与计算。</p>
+        <p className="hint">{t("本次覆盖率", "Coverage this run")} {riskMethod.coveragePct}%{t("；缺失项不参与计算。", "; missing items are excluded from the calculation.")}</p>
         <div className="callout blue">
           <Info size={15} />
-          <span>分数只反映持仓结构，不预测盈亏；数据缺失时结论可信度下降，页面会标注「待补充」。</span>
+          <span>{t("分数只反映持仓结构，不预测盈亏；数据缺失时结论可信度下降，页面会标注「待补充」。", "The score reflects portfolio structure only and does not predict profit or loss; when data is missing, confidence drops and the page marks it as \"Pending\".")}</span>
         </div>
       </Sheet>
     </div>
@@ -573,6 +648,7 @@ export default function Portfolio() {
 }
 
 function ImportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: (data: any) => void }) {
+  const { t } = useLocale();
   const toast = useToast();
   const [text, setText] = useState("600036,4845,38.20\n300750,894,252.00\n600519,116,1620.00\n510300,46046,3.95\nCASH,86400,1");
   const [busy, setBusy] = useState(false);
@@ -584,21 +660,21 @@ function ImportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => 
         const [code, shares, cost] = line.split(",").map((x) => x.trim());
         return { code, shares: Number(shares), cost: Number(cost) };
       });
-      if (holdings.some((h) => !h.code || !Number.isFinite(h.shares))) throw new Error("格式：代码,数量,成本；CASH 的数量即金额");
+      if (holdings.some((h) => !h.code || !Number.isFinite(h.shares))) throw new Error(t("格式：代码,数量,成本；CASH 的数量即金额", "Format: code,shares,cost; for CASH the shares column is the amount"));
       const data = await api("/api/invest/portfolio/import", { method: "POST", body: JSON.stringify({ holdings }) });
       onDone(data);
     } catch (e: any) {
-      toast(e.message || "导入失败");
+      toast(e.message || t("导入失败", "Import failed"));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title="导入持仓" sub="本地解析 · 不上传券商密码" footer={<button className="btn btn-primary w100" onClick={submit} disabled={busy}>{busy ? "导入中…" : "导入并体检"}</button>}>
-      <p className="muted small">每行：代码,数量,成本。现金用 <code>CASH,金额,1</code>。示例数据可直接修改。</p>
+    <Sheet open={open} onClose={onClose} title={t("导入持仓", "Import holdings")} sub={t("本地解析 · 不上传券商密码", "Parsed locally · Broker password never uploaded")} footer={<button className="btn btn-primary w100" onClick={submit} disabled={busy}>{busy ? t("导入中…", "Importing…") : t("导入并体检", "Import & run checkup")}</button>}>
+      <p className="muted small">{t("每行：代码,数量,成本。现金用", "Each line: code,shares,cost. Use")} <code>CASH,{t("金额", "amount")},1</code>{t("。示例数据可直接修改。", ". You can edit the sample data directly.")}</p>
       <textarea className="csv-input" rows={7} value={text} onChange={(e) => setText(e.target.value)} />
-      <div className="callout blue"><Info size={15} /><span>持仓只用于组合体检；公开版还需补注册、找回密码、客服与正式合规流程。</span></div>
+      <div className="callout blue"><Info size={15} /><span>{t("持仓只用于组合体检；公开版还需补注册、找回密码、客服与正式合规流程。", "Holdings are used only for the portfolio checkup; the public release still needs sign-up, password recovery, support and formal compliance flows.")}</span></div>
     </Sheet>
   );
 }

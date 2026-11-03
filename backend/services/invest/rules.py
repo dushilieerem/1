@@ -13,6 +13,85 @@ from typing import Any, Iterable
 
 DATA_DATE = date.today().isoformat()  # fallback when a DB has no bars
 DISCLAIMER = "收盘数据 · 非实时 · 非投资建议"
+DISCLAIMER_EN = "EOD data · not real-time · not investment advice"
+
+# H5 市场切换：A 股代码为 6 位数字，美股代码带交易所后缀（如 AAPL.O）
+US_EN_NAMES: dict[str, str] = {
+    "AAPL.O": "Apple", "MSFT.O": "Microsoft", "NVDA.O": "NVIDIA", "AMZN.O": "Amazon",
+    "GOOGL.O": "Alphabet A", "GOOG.O": "Alphabet C", "META.O": "Meta", "TSLA.O": "Tesla",
+    "AVGO.O": "Broadcom", "AMD.O": "AMD", "NFLX.O": "Netflix", "INTC.O": "Intel",
+    "JPM.N": "JPMorgan", "BAC.N": "Bank of America", "V.N": "Visa", "MA.N": "Mastercard",
+    "KO.N": "Coca-Cola", "PEP.O": "PepsiCo", "WMT.N": "Walmart", "DIS.N": "Disney",
+    "XOM.N": "Exxon Mobil", "CVX.N": "Chevron", "UNH.N": "UnitedHealth", "JNJ.N": "Johnson & Johnson",
+}
+
+US_GLOSSARY = [
+    {"term": "PE percentile", "text": "Where current P/E sits in its own history; lower is usually cheaper, but it does not predict returns."},
+    {"term": "Crowding", "text": "Volume and turnover heat in a sector; crowded names tend to swing more in the short run."},
+    {"term": "Base rate", "text": "How often similar setups happened before; use a distribution instead of a gut feeling."},
+    {"term": "Max drawdown", "text": "Largest peak-to-trough decline, a measure of holding experience."},
+    {"term": "Turnover", "text": "How frequently a stock is traded; very high turnover can signal emotional trading."},
+    {"term": "Beta", "text": "Sensitivity to broad-market moves; higher beta means larger swings with the index."},
+    {"term": "Allocation gap", "text": "Difference between target and current weight; shown for context, not a trade instruction."},
+    {"term": "ROE", "text": "Return on equity, a measure of how efficiently capital is used."},
+]
+
+
+def normalize_market(market: str | None) -> str:
+    return "US" if str(market or "").strip().upper() == "US" else "CN"
+
+
+def _market_sql(market: str) -> str:
+    return "code LIKE '%.%'" if normalize_market(market) == "US" else "code NOT LIKE '%.%'"
+
+
+def _is_us_code(code: str | None) -> bool:
+    return "." in str(code or "")
+
+
+def _display_name(stock: dict[str, Any], market: str | None = None) -> str:
+    code = str(stock.get("code") or "")
+    if normalize_market(market) == "US" or _is_us_code(code):
+        return US_EN_NAMES.get(code) or code.split(".")[0]
+    return str(stock.get("name") or code)
+
+
+def _display_industry(stock: dict[str, Any], market: str | None = None) -> str:
+    raw = str(stock.get("industry") or "")
+    if normalize_market(market) == "US" or _is_us_code(stock.get("code")):
+        return "US equity" if not raw or raw == "未分类" else raw
+    return raw
+
+
+def _market_date(conn: Any, market: str) -> str:
+    if normalize_market(market) == "US":
+        try:
+            row = conn.execute(
+                "SELECT MAX(updated_at) AS d FROM stocks WHERE code LIKE '%.%' AND price IS NOT NULL"
+            ).fetchone()
+            if row and row.get("d"):
+                return str(row["d"])[:10]
+        except Exception:
+            pass
+    return latest_date(conn)
+
+
+def _market_meta(conn: Any, market: str) -> dict[str, Any]:
+    if normalize_market(market) == "US":
+        data_date = _market_date(conn, "US")
+        start = date.fromisoformat(data_date)
+        age = max(0, (date.today() - start).days)
+        weekdays = sum(1 for n in range(1, age + 1) if (start + timedelta(days=n)).weekday() < 5)
+        return {
+            "dataDate": data_date, "dataSource": "Public EOD (US)", "isDemo": False,
+            "ageDays": age, "ageTradingDays": weekdays, "isStale": weekdays > 1,
+        }
+    meta = data_meta(conn)
+    data_date = meta["dataDate"]
+    start = date.fromisoformat(data_date)
+    age = max(0, (date.today() - start).days)
+    weekdays = sum(1 for n in range(1, age + 1) if (start + timedelta(days=n)).weekday() < 5)
+    return {**meta, "ageDays": age, "ageTradingDays": weekdays, "isStale": weekdays > 1}
 
 
 def rows(conn: Any, sql: str, args: Iterable[Any] = ()) -> list[dict[str, Any]]:
@@ -276,12 +355,16 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     stock = one(conn, "SELECT * FROM stocks WHERE code=?", (code,))
     if not stock:
         return None
-    meta = data_meta(conn)
+    is_us = _is_us_code(stock.get("code"))
+    market = "US" if is_us else "CN"
+    meta = _market_meta(conn, market) if is_us else data_meta(conn)
+    display_name = _display_name(stock, market)
+    display_industry = _display_industry(stock, market)
     if not stock.get("price"):
         # 全市场检索可以命中，但池外标的可能尚未同步日线；给出明确空态而不是 500。
         return {
             "quote": {
-                "code": stock["code"], "name": stock["name"], "industry": stock.get("industry"),
+                "code": stock["code"], "name": display_name, "industry": display_industry,
                 "asset": stock.get("asset"), "price": None, "prevClose": None,
                 "change": None, "changePct": None, "open": None, "high": None, "low": None,
                 "marketCap": stock.get("market_cap"), "pe": stock.get("pe_ttm"), "pb": stock.get("pb"),
@@ -292,27 +375,54 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
             "chart": {"period": period, "bars": [], "ma5": [], "ma10": [], "ma20": []},
             "technical": {
                 "ma5": None, "ma10": None, "ma20": None, "drawdown": None, "return20": None,
-                "volumeRatio": None, "trend": "数据暂缺",
-                "summary": ["该标的暂无可用收盘行情；请先同步该标的日线，再做技术面判断。"],
+                "volumeRatio": None, "trend": "Data pending" if is_us else "数据暂缺",
+                "summary": (
+                    ["No EOD close is available for this ticker yet; sync its daily bars before technical read-through."]
+                    if is_us else ["该标的暂无可用收盘行情；请先同步该标的日线，再做技术面判断。"]
+                ),
             },
-            "summary": ["该标的暂无可用收盘行情；当前只能展示证券主数据，不能做估值分位、技术面与财务对比。"],
+            "summary": (
+                ["No EOD close is available. Only reference data is shown; valuation, technical and financial comparisons are unavailable."]
+                if is_us else ["该标的暂无可用收盘行情；当前只能展示证券主数据，不能做估值分位、技术面与财务对比。"]
+            ),
             "valuation": {
                 "pe": stock.get("pe_ttm"), "pb": stock.get("pb"), "pePercentile": None,
-                "pbPercentile": None, "industryPe": None, "samples": 0, "label": "无估值数据",
+                "pbPercentile": None, "industryPe": None, "samples": 0,
+                "label": "No valuation data" if is_us else "无估值数据",
             },
             "financials": [],
             "report": None,
             "risks": [
-                {"title": "行情数据暂缺", "detail": "该标的尚未同步日线；不要基于空数据做判断。", "level": "amber"}
+                {
+                    "title": "Quote missing" if is_us else "行情数据暂缺",
+                    "detail": (
+                        "Daily bars have not been synced for this ticker; do not infer from empty data."
+                        if is_us else "该标的尚未同步日线；不要基于空数据做判断。"
+                    ),
+                    "level": "amber",
+                }
             ],
             "news": rows(conn, "SELECT * FROM news WHERE code=? ORDER BY published_at DESC LIMIT 6", (code,)),
             "todayNews": rows(conn, "SELECT * FROM news WHERE code=? ORDER BY published_at DESC LIMIT 3", (code,)),
-            "earningsFlash": _earnings_flash(None, None),
-            "institutionalView": _institutional_view(),
-            "sensitivity": _sensitivity(None),
-            "sentiment": _sentiment([], None),
+            "earningsFlash": (
+                {"available": False, "highlights": [], "concerns": [], "consensusGap": "Financial data not available"}
+                if is_us else _earnings_flash(None, None)
+            ),
+            "institutionalView": (
+                {"available": False, "ratings": [], "target": None, "forecast": None,
+                 "note": "Institutional ratings, target prices and forecasts are not available for US names yet."}
+                if is_us else _institutional_view()
+            ),
+            "sensitivity": (
+                {"available": False, "level": None, "beta": None, "note": "Beta data not available"}
+                if is_us else _sensitivity(None)
+            ),
+            "sentiment": (
+                {"available": False, "note": "No news coverage for US names yet", "source": "News headlines"}
+                if is_us else _sentiment([], None)
+            ),
             "dataDate": meta["dataDate"],
-            "disclaimer": DISCLAIMER,
+            "disclaimer": DISCLAIMER_EN if is_us else DISCLAIMER,
             "isDemo": meta["isDemo"],
             "dataSource": meta["dataSource"],
         }
@@ -329,8 +439,8 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     ma20_daily = ma(daily_closes, 20)[-1] if daily_closes else None
     high_180 = max(daily_closes) if daily_closes else stock["price"]
     dd = (stock["price"] / high_180 - 1) * 100 if high_180 else 0
-    avg_vol = sum(b["volume"] for b in daily[-20:]) / max(1, len(daily[-20:]))
-    vol_ratio = stock["volume"] / avg_vol if avg_vol else 0
+    avg_vol = sum(float(b.get("volume") or 0) for b in daily[-20:]) / max(1, len(daily[-20:]))
+    vol_ratio = float(stock.get("volume") or 0) / avg_vol if avg_vol else 0
     ret20 = pct(stock["price"], daily_closes[-21]) if len(daily_closes) > 21 else 0
 
     valuations = rows(conn, """SELECT pe_ttm, pb FROM (
@@ -352,32 +462,63 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     prev = fins[-2] if len(fins) > 1 else None
 
     risks = []
-    if pe_pct is not None and pe_pct >= 70:
-        risks.append({"title": "估值分位偏高", "detail": f"当前 PE {stock['pe_ttm']:.2f}x，处于近 3 年 {pe_pct:.1f}% 分位。", "level": "amber"})
-    if dd <= -15:
-        risks.append({"title": "趋势偏弱", "detail": f"较近 180 日高点回撤 {dd:.1f}%，现价位于 MA20 {'下方' if ma20_daily and stock['price'] < ma20_daily else '上方'}。", "level": "red"})
-    if vol_ratio >= 1.5:
-        risks.append({"title": "成交放大", "detail": f"成交量为 20 日均量的 {vol_ratio:.1f} 倍，关注放量方向。", "level": "amber"})
-    if latest and prev and latest.get("gross_margin") is not None and prev.get("gross_margin") is not None:
-        if latest["gross_margin"] < prev["gross_margin"]:
-            risks.append({"title": "毛利率下滑", "detail": f"最新报告期毛利率 {latest['gross_margin']:.1f}%，较上期 {prev['gross_margin']:.1f}% 下降。", "level": "amber"})
-    if not risks:
-        risks.append({"title": "暂未触发规则风险", "detail": "估值、趋势、成交与毛利率未同时触发预设阈值；仍需独立判断。", "level": "green"})
+    if is_us:
+        if dd <= -15:
+            risks.append({
+                "title": "Weak trend",
+                "detail": f"Price is {dd:.1f}% below its 180-day high and sits {'below' if ma20_daily and stock['price'] < ma20_daily else 'above'} MA20.",
+                "level": "red",
+            })
+        if vol_ratio >= 1.5:
+            risks.append({
+                "title": "Volume spike",
+                "detail": f"Volume is {vol_ratio:.1f}x the 20-day average; watch the direction of the move.",
+                "level": "amber",
+            })
+        if not risks:
+            risks.append({
+                "title": "No rule-based risk triggered",
+                "detail": "Trend and volume did not cross the preset thresholds; fundamentals and valuation are not covered for US names yet.",
+                "level": "green",
+            })
+    else:
+        if pe_pct is not None and pe_pct >= 70:
+            risks.append({"title": "估值分位偏高", "detail": f"当前 PE {stock['pe_ttm']:.2f}x，处于近 3 年 {pe_pct:.1f}% 分位。", "level": "amber"})
+        if dd <= -15:
+            risks.append({"title": "趋势偏弱", "detail": f"较近 180 日高点回撤 {dd:.1f}%，现价位于 MA20 {'下方' if ma20_daily and stock['price'] < ma20_daily else '上方'}。", "level": "red"})
+        if vol_ratio >= 1.5:
+            risks.append({"title": "成交放大", "detail": f"成交量为 20 日均量的 {vol_ratio:.1f} 倍，关注放量方向。", "level": "amber"})
+        if latest and prev and latest.get("gross_margin") is not None and prev.get("gross_margin") is not None:
+            if latest["gross_margin"] < prev["gross_margin"]:
+                risks.append({"title": "毛利率下滑", "detail": f"最新报告期毛利率 {latest['gross_margin']:.1f}%，较上期 {prev['gross_margin']:.1f}% 下降。", "level": "amber"})
+        if not risks:
+            risks.append({"title": "暂未触发规则风险", "detail": "估值、趋势、成交与毛利率未同时触发预设阈值；仍需独立判断。", "level": "green"})
 
     summary = []
-    if stock["asset"] != "etf" and pe_pct is not None:
-        summary.append(f"当前 PE {stock['pe_ttm']:.2f}x，处于近 3 年 {pe_pct:.1f}% 分位；PB {stock['pb']:.2f}x。")
-    if latest:
-        summary.append(f"{latest['period']} 营收 {latest['revenue']:.0f} 亿元（同比 {latest['revenue_yoy']:+.1f}%），归母净利 {latest['net_profit']:.0f} 亿元（同比 {latest['profit_yoy']:+.1f}%）。")
-        summary.append(f"毛利率 {latest['gross_margin']:.1f}%，ROE {latest['roe']:.1f}%。")
-    if daily_closes:
-        summary.append(f"股价较近 180 日高点回撤 {dd:.1f}%，现价{'低于' if ma20_daily and stock['price'] < ma20_daily else '高于'} MA20；近 20 日涨跌 {ret20:+.1f}%。")
+    if is_us:
+        if daily_closes:
+            summary.append(
+                f"Price is {dd:.1f}% vs its 180-day high and {'above' if ma20_daily and stock['price'] >= ma20_daily else 'below'} MA20; "
+                f"20-day change {ret20:+.1f}%."
+            )
+        summary.append("Fundamentals, valuation and news are not covered for US names in this build; only EOD quotes and technical context are shown.")
+        fins = []
+        latest = prev = None
+    else:
+        if stock["asset"] != "etf" and pe_pct is not None:
+            summary.append(f"当前 PE {stock['pe_ttm']:.2f}x，处于近 3 年 {pe_pct:.1f}% 分位；PB {stock['pb']:.2f}x。")
+        if latest:
+            summary.append(f"{latest['period']} 营收 {latest['revenue']:.0f} 亿元（同比 {latest['revenue_yoy']:+.1f}%），归母净利 {latest['net_profit']:.0f} 亿元（同比 {latest['profit_yoy']:+.1f}%）。")
+            summary.append(f"毛利率 {latest['gross_margin']:.1f}%，ROE {latest['roe']:.1f}%。")
+        if daily_closes:
+            summary.append(f"股价较近 180 日高点回撤 {dd:.1f}%，现价{'低于' if ma20_daily and stock['price'] < ma20_daily else '高于'} MA20；近 20 日涨跌 {ret20:+.1f}%。")
 
     beta_value = stock.get("beta")
+    prev_close = float(stock.get("prev_close") or stock["price"])
     q = {
-        "code": stock["code"], "name": stock["name"], "industry": stock["industry"],
-        "asset": stock["asset"], "price": stock["price"], "prevClose": stock["prev_close"],
-        "change": stock["price"] - stock["prev_close"], "changePct": pct(stock["price"], stock["prev_close"]),
+        "code": stock["code"], "name": display_name, "industry": display_industry,
+        "asset": stock["asset"], "price": stock["price"], "prevClose": stock.get("prev_close"),
+        "change": float(stock["price"]) - prev_close, "changePct": pct(float(stock["price"]), prev_close),
         "open": stock["open"], "high": stock["high"], "low": stock["low"],
         "marketCap": stock["market_cap"], "pe": stock["pe_ttm"], "pb": stock["pb"],
         "dividendYield": stock["dividend_yield"], "turnover": stock["turnover"],
@@ -395,13 +536,16 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     technical = {
         "ma5": ma5[-1] if ma5 else None, "ma10": ma10[-1] if ma10 else None, "ma20": ma20[-1] if ma20 else None,
         "drawdown": dd, "return20": ret20, "volumeRatio": vol_ratio,
-        "trend": "偏强" if ma20_daily and stock["price"] >= ma20_daily else "偏弱",
+        "trend": (
+            ("Above MA20" if ma20_daily and stock["price"] >= ma20_daily else "Below MA20")
+            if is_us else ("偏强" if ma20_daily and stock["price"] >= ma20_daily else "偏弱")
+        ),
         "summary": summary,
     }
     valuation = {
         "pe": stock["pe_ttm"], "pb": stock["pb"], "pePercentile": pe_pct, "pbPercentile": pb_pct,
         "industryPe": peer["pe"] if peer else None, "samples": len(pe_vals),
-        "label": "近 3 年历史分位" if pe_vals else "无估值数据",
+        "label": ("No valuation data" if is_us else ("近 3 年历史分位" if pe_vals else "无估值数据")),
     }
     report = None
     if latest:
@@ -412,18 +556,32 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
             "grossMargin": latest["gross_margin"], "roe": latest["roe"], "ocf": latest["ocf"],
             "prev": prev,
         }
-    news = rows(conn, "SELECT * FROM news WHERE code=? ORDER BY published_at DESC LIMIT 6", (code,))
-    meta = data_meta(conn)
+    news = [] if is_us else rows(conn, "SELECT * FROM news WHERE code=? ORDER BY published_at DESC LIMIT 6", (code,))
+    meta = _market_meta(conn, "US") if is_us else data_meta(conn)
     return {
         "quote": q, "chart": chart, "technical": technical, "summary": summary,
         "valuation": valuation, "financials": fins, "report": report, "risks": risks,
         "news": news, "todayNews": news[:3],
-        "earningsFlash": _earnings_flash(latest, prev),
-        "institutionalView": _institutional_view(),
-        "sensitivity": _sensitivity(beta_value),
-        "sentiment": _sentiment(news, stock.get("turnover")),
-        "dataDate": all_bars[-1]["date"] if all_bars else meta["dataDate"],
-        "disclaimer": DISCLAIMER, "isDemo": meta["isDemo"], "dataSource": meta["dataSource"],
+        "earningsFlash": (
+            {"available": False, "highlights": [], "concerns": [], "consensusGap": "Financial data not available"}
+            if is_us else _earnings_flash(latest, prev)
+        ),
+        "institutionalView": (
+            {"available": False, "ratings": [], "target": None, "forecast": None,
+             "note": "Institutional ratings, target prices and forecasts are not available for US names yet."}
+            if is_us else _institutional_view()
+        ),
+        "sensitivity": (
+            {"available": False, "level": None, "beta": None, "note": "Beta data not available"}
+            if is_us else _sensitivity(beta_value)
+        ),
+        "sentiment": (
+            {"available": False, "note": "No news coverage for US names yet", "source": "News headlines"}
+            if is_us else _sentiment(news, stock.get("turnover"))
+        ),
+        "dataDate": meta["dataDate"] if is_us else (all_bars[-1]["date"] if all_bars else meta["dataDate"]),
+        "disclaimer": DISCLAIMER_EN if is_us else DISCLAIMER,
+        "isDemo": meta["isDemo"], "dataSource": meta["dataSource"],
     }
 
 
@@ -1150,8 +1308,88 @@ def portfolio_nav(conn: Any, user_id: int, period: str = "1m") -> dict[str, Any]
     }
 
 
-def build_home(conn: Any, user_id: int) -> dict[str, Any]:
-    stocks = rows(conn, "SELECT * FROM stocks")
+def build_home_us(conn: Any, user_id: int) -> dict[str, Any]:
+    """英文版首页：美股 EOD 广度 + 自选异动 + 领涨领跌；无指数/主题数据。"""
+    meta = _market_meta(conn, "US")
+    data_date = meta["dataDate"]
+    stocks = rows(conn, "SELECT * FROM stocks WHERE code LIKE '%.%' AND asset='stock' AND price IS NOT NULL")
+    by_code = {s["code"]: s for s in stocks}
+    watch = rows(conn, "SELECT * FROM watchlist WHERE user_id=?", (user_id,))
+    watch_cards = []
+    for w in watch:
+        s = by_code.get(w["code"])
+        if s:
+            watch_cards.append({
+                "code": s["code"], "name": _display_name(s, "US"), "price": s["price"],
+                "changePct": pct(float(s["price"]), float(s.get("prev_close") or s["price"])),
+                "group": w["group_name"],
+            })
+    pool = [s for s in stocks if s.get("prev_close")]
+    changes = [pct(float(s["price"]), float(s["prev_close"])) for s in pool]
+    advancers = sum(1 for x in changes if x > 0)
+    decliners = sum(1 for x in changes if x < 0)
+    average = sum(changes) / len(changes) if changes else 0.0
+    liquid = sorted(stocks, key=lambda s: float(s.get("amount") or 0), reverse=True)[:500]
+    gainers = sorted(liquid, key=lambda s: pct(float(s["price"]), float(s.get("prev_close") or s["price"])), reverse=True)[:5]
+    losers = sorted(liquid, key=lambda s: pct(float(s["price"]), float(s.get("prev_close") or s["price"])))[:5]
+
+    daily: list[dict[str, Any]] = []
+    if watch_cards:
+        s = max(watch_cards, key=lambda x: abs(float(x["changePct"])))
+        daily.append({
+            "tag": "Watchlist · move",
+            "title": f"{s['name']} {float(s['changePct']):+.2f}%",
+            "detail": f"Last close {float(s['price']):.2f}; open the ticker for chart and risk context.",
+            "link": {"type": "stock", "id": s["code"]},
+        })
+    if gainers:
+        s = gainers[0]
+        daily.append({
+            "tag": "US · top gainer",
+            "title": f"{_display_name(s, 'US')} {pct(float(s['price']), float(s['prev_close'])):+.2f}%",
+            "detail": f"Among the most active US names; last close {float(s['price']):.2f}.",
+            "link": {"type": "stock", "id": s["code"]},
+        })
+    daily.append({
+        "tag": "US · breadth",
+        "title": f"{advancers} up / {decliners} down",
+        "detail": f"Average move {average:+.2f}% across {len(changes)} US tickers with EOD data.",
+        "link": None,
+    })
+    if losers and len(daily) < 3:
+        s = losers[0]
+        daily.append({
+            "tag": "US · top loser",
+            "title": f"{_display_name(s, 'US')} {pct(float(s['price']), float(s['prev_close'])):+.2f}%",
+            "detail": f"Among the most active US names; last close {float(s['price']):.2f}.",
+            "link": {"type": "stock", "id": s["code"]},
+        })
+    daily = daily[:3]
+
+    review = {
+        "title": "US close",
+        "summary": (
+            f"US EOD snapshot {data_date}: {advancers} advancers vs {decliners} decliners, "
+            f"average move {average:+.2f}%. This build covers quotes and charts only; "
+            "fundamentals, valuation, news and US indices are not available yet."
+        ),
+        "facts": [
+            f"{len(stocks)} US tickers have a latest price; {sum(1 for s in stocks if s.get('amount'))} have dollar volume.",
+            "Most active names are ranked by latest dollar volume to avoid illiquid microcaps.",
+            "Data is an end-of-day snapshot, not real-time.",
+        ],
+    }
+    return {
+        **meta, "user": {"id": user_id, "name": "Demo user"}, "daily": daily, "review": review,
+        "indices": [], "topics": [], "watchlist": watch_cards, "glossary": US_GLOSSARY,
+        "disclaimer": DISCLAIMER_EN, "market": "US",
+    }
+
+
+def build_home(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
+    if normalize_market(market) == "US":
+        return build_home_us(conn, user_id)
+    stocks = rows(conn, "SELECT * FROM stocks WHERE code NOT LIKE '%.%'")
     by_code = {s["code"]: s for s in stocks}
     meta = data_meta(conn)
     data_date = meta["dataDate"]
@@ -1232,19 +1470,21 @@ def build_home(conn: Any, user_id: int) -> dict[str, Any]:
             "ageDays": meta_info["ageDays"], "isStale": meta_info["isStale"],
             "user": {"id": user_id, "name": "演示用户"}, "daily": daily, "review": review,
             "indices": indices, "topics": topic_cards, "watchlist": watch_cards, "glossary": glossary,
-            "disclaimer": DISCLAIMER}
+            "disclaimer": DISCLAIMER, "market": "CN"}
 
 
-def build_watchlist(conn: Any, user_id: int) -> dict[str, Any]:
+def build_watchlist(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
+    market = normalize_market(market)
     watch = rows(conn, "SELECT * FROM watchlist WHERE user_id=? ORDER BY created_at ASC", (user_id,))
     groups: dict[str, list[dict[str, Any]]] = {}
     for w in watch:
-        s = one(conn, "SELECT * FROM stocks WHERE code=?", (w["code"],))
+        s = one(conn, f"SELECT * FROM stocks WHERE code=? AND {_market_sql(market)}", (w["code"],))
         if not s:
             continue
-        groups.setdefault(w["group_name"] or "默认", []).append({
-            "code": s["code"], "name": s["name"], "industry": s["industry"], "price": s["price"],
-            "changePct": pct(s["price"], s["prev_close"]),
+        groups.setdefault(w["group_name"] or ("Default" if market == "US" else "默认"), []).append({
+            "code": s["code"], "name": _display_name(s, market),
+            "industry": _display_industry(s, market), "price": s["price"],
+            "changePct": pct(float(s["price"] or 0), float(s.get("prev_close") or s["price"] or 0)),
         })
     events = rows(conn, "SELECT * FROM events WHERE user_id=? ORDER BY id DESC", (user_id,))
     for e in events:
@@ -1252,16 +1492,84 @@ def build_watchlist(conn: Any, user_id: int) -> dict[str, Any]:
         s = one(conn, "SELECT name FROM stocks WHERE code=?", (e["code"],))
         e["name"] = (t or s or {}).get("name") or e["code"]
     logs = rows(conn, "SELECT * FROM event_logs WHERE user_id=? ORDER BY triggered_at DESC", (user_id,))
-    return {"groups": [{"name": k, "items": v} for k, v in groups.items()], "events": events, "logs": logs,
-            "disclaimer": "关注事件在收盘后更新；不提供实时推送。"}
+    return {
+        "groups": [{"name": k, "items": v} for k, v in groups.items()], "events": events, "logs": logs,
+        "market": market,
+        "disclaimer": (
+            "Watch events refresh after the close; no real-time push."
+            if market == "US" else "关注事件在收盘后更新；不提供实时推送。"
+        ),
+    }
 
 
-def build_search(conn: Any, q: str) -> dict[str, Any]:
+def build_search(conn: Any, q: str, market: str = "CN") -> dict[str, Any]:
+    market = normalize_market(market)
     q = (q or "").strip()
+    if market == "US":
+        pool = [
+            s for s in rows(conn, "SELECT * FROM stocks WHERE code LIKE '%.%'")
+            if s.get("asset") == "stock" and s.get("price") is not None
+        ]
+        if q:
+            lowered = q.lower()
+            alias_codes = {
+                code for code, name in US_EN_NAMES.items() if lowered in name.lower()
+            }
+            stocks = [
+                s for s in pool
+                if lowered in str(s.get("code") or "").lower()
+                or lowered in str(s.get("name") or "").lower()
+                or s["code"] in alias_codes
+            ][:8]
+        else:
+            stocks = []
+        by_code = {s["code"]: s for s in pool}
+
+        def us_card(s: dict[str, Any], reason: str) -> dict[str, Any]:
+            return {
+                "type": "stock", "id": s["code"], "name": _display_name(s, "US"),
+                "sub": f"{s['code']} · US equity", "price": s["price"],
+                "changePct": pct(float(s["price"]), float(s.get("prev_close") or s["price"])),
+                "reason": reason,
+            }
+
+        results = [
+            {"type": "stock", "id": s["code"], "name": _display_name(s, "US"),
+             "sub": f"{s['code']} · US equity", "price": s["price"],
+             "changePct": pct(float(s["price"]), float(s.get("prev_close") or s["price"]))}
+            for s in stocks
+        ]
+        presets = []
+        if not q:
+            liquid = sorted(pool, key=lambda s: float(s.get("amount") or 0), reverse=True)[:8]
+            gainers = sorted(
+                pool, key=lambda s: pct(float(s["price"]), float(s.get("prev_close") or s["price"])), reverse=True
+            )[:8]
+            majors = [by_code[c] for c in US_EN_NAMES if c in by_code][:8]
+            presets = [
+                {
+                    "key": "active", "label": "Most active",
+                    "desc": "Ranked by latest dollar volume",
+                    "items": [us_card(s, f"Volume ${float(s.get('amount') or 0)/1e9:.1f}B") for s in liquid],
+                },
+                {
+                    "key": "gainers", "label": "Top gainers",
+                    "desc": "Ranked by latest session change",
+                    "items": [us_card(s, f"{pct(float(s['price']), float(s.get('prev_close') or s['price'])):+.1f}%") for s in gainers],
+                },
+                {
+                    "key": "majors", "label": "US majors",
+                    "desc": "Liquid large-cap reference names",
+                    "items": [us_card(s, _display_name(s, "US")) for s in majors],
+                },
+            ]
+        return {"q": q, "results": results, "presets": presets, "market": "US"}
+
     stocks = []
     if q:
         like = f"%{q}%"
-        stocks = rows(conn, """SELECT * FROM stocks WHERE name LIKE ? OR code LIKE ? OR pinyin LIKE ? OR industry LIKE ?
+        stocks = rows(conn, """SELECT * FROM stocks WHERE code NOT LIKE '%.%' AND
+                              (name LIKE ? OR code LIKE ? OR pinyin LIKE ? OR industry LIKE ?)
                               LIMIT 8""", (like, like, like, like))
     topics = rows(conn, "SELECT * FROM topics WHERE name LIKE ? LIMIT 4", (f"%{q}%",)) if q else []
     results = [{"type": "stock", "id": s["code"], "name": s["name"], "sub": f"{s['code']} · {s['industry']}",
@@ -1273,7 +1581,7 @@ def build_search(conn: Any, q: str) -> dict[str, Any]:
     if not q:
         # 只用服务层快照字段，避免每次搜索对全市场逐股扫 750 天 bars/valuations
         pool = [
-            s for s in rows(conn, "SELECT * FROM stocks")
+            s for s in rows(conn, "SELECT * FROM stocks WHERE code NOT LIKE '%.%'")
             if s["asset"] == "stock" and s.get("price") is not None
         ]
 
@@ -1309,10 +1617,18 @@ def build_search(conn: Any, q: str) -> dict[str, Any]:
                 "items": [card(s, f"股息率 {s['dividend_yield']:.2f}%") for s in dividend],
             },
         ]
-    return {"q": q, "results": results, "presets": presets}
+    return {"q": q, "results": results, "presets": presets, "market": "CN"}
 
 
-def build_news(conn: Any, kind: str | None = None) -> dict[str, Any]:
+def build_news(conn: Any, kind: str | None = None, market: str = "CN") -> dict[str, Any]:
+    if normalize_market(market) == "US":
+        return {
+            "items": [],
+            "market": "US",
+            "note": "US news coverage is not available yet. This build only ships US quotes and charts.",
+            "disclaimer": "News coverage coming later; not investment advice.",
+            "isDemo": False, "demoKinds": [],
+        }
     if kind and kind != "all":
         items = rows(conn, "SELECT * FROM news WHERE kind=? ORDER BY published_at DESC LIMIT 20", (kind,))
     else:
@@ -1320,22 +1636,23 @@ def build_news(conn: Any, kind: str | None = None) -> dict[str, Any]:
     real = conn.execute("SELECT COUNT(*) AS n FROM news WHERE id LIKE 'doc-%' OR id LIKE 'news-%' OR id LIKE 'ann-%' OR id LIKE 'rep-%'").fetchone()["n"]
     seed_news = conn.execute("SELECT COUNT(*) AS n FROM news WHERE kind='news' AND id NOT LIKE 'news-%'").fetchone()["n"]
     return {"items": items, "disclaimer": "公告/研报仅保留标题、来源、时间与原文链接；非投资建议。",
-            "isDemo": not bool(real), "demoKinds": ["news"] if seed_news else []}
+            "isDemo": not bool(real), "demoKinds": ["news"] if seed_news else [], "market": "CN"}
 
 
-def build_meta(conn: Any) -> dict[str, Any]:
-    meta = data_meta(conn)
+def build_meta(conn: Any, market: str = "CN") -> dict[str, Any]:
+    market = normalize_market(market)
+    meta = _market_meta(conn, market)
     row = conn.execute("SELECT value FROM meta WHERE key='updated_at'").fetchone()
     view_row = conn.execute("SELECT value FROM meta WHERE key='dataView'").fetchone()
-    start = date.fromisoformat(meta["dataDate"])
-    age = max(0, (date.today() - start).days)
-    # 周末不算“未更新”：周五数据到周二只有 2 个交易日，不应报过期
-    weekdays = sum(1 for n in range(1, age + 1) if (start + timedelta(days=n)).weekday() < 5)
-    return {"dataDate": meta["dataDate"], "dataView": view_row["value"] if view_row else None,
-            "source": meta["dataSource"],
-            "isDemo": meta["isDemo"], "disclaimer": DISCLAIMER,
-            "updatedAt": row["value"] if row else meta["dataDate"],
-            "ageDays": age, "ageTradingDays": weekdays, "isStale": weekdays > 1}
+    return {
+        "dataDate": meta["dataDate"], "dataView": view_row["value"] if view_row else None,
+        "source": meta["dataSource"], "market": market,
+        "isDemo": meta["isDemo"],
+        "disclaimer": DISCLAIMER_EN if market == "US" else DISCLAIMER,
+        "updatedAt": row["value"] if row else meta["dataDate"],
+        "ageDays": meta["ageDays"], "ageTradingDays": meta["ageTradingDays"],
+        "isStale": meta["isStale"],
+    }
 
 
 def build_data_quality(conn: Any) -> dict[str, Any]:

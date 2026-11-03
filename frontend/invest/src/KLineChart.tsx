@@ -7,6 +7,7 @@ import {
   LineSeries,
   createChart,
 } from "lightweight-charts";
+import { useLocale } from "./i18n";
 
 type Bar = { time: string; open: number; high: number; low: number; close: number; volume: number };
 type Line = { time: string; value: number };
@@ -24,6 +25,7 @@ export default function KLineChart({
   ma20?: Line[];
   height?: number;
 }) {
+  const { t, locale } = useLocale();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -52,7 +54,7 @@ export default function KLineChart({
         fixLeftEdge: true,
         fixRightEdge: true,
       },
-      localization: { locale: "zh-CN" },
+      localization: { locale: locale === "en" ? "en-US" : "zh-CN" },
     });
 
     const candle = chart.addSeries(CandlestickSeries, {
@@ -121,8 +123,18 @@ export default function KLineChart({
       ro.disconnect();
       chart.remove();
     };
-  }, [bars, ma5, ma10, ma20, height]);
+  }, [bars, ma5, ma10, ma20, height, locale]);
 
-  if (!bars.length) return <div className="kline-empty">暂无行情数据</div>;
-  return <div className="kline" ref={ref} role="img" aria-label={`K 线图，共 ${bars.length} 根，最新收盘 ${bars[bars.length - 1]?.close}`} />;
+  if (!bars.length) return <div className="kline-empty">{t("暂无行情数据", "No market data")}</div>;
+  return (
+    <div
+      className="kline"
+      ref={ref}
+      role="img"
+      aria-label={t(
+        `K 线图，共 ${bars.length} 根，最新收盘 ${bars[bars.length - 1]?.close}`,
+        `K-line chart, ${bars.length} bars, latest close ${bars[bars.length - 1]?.close}`,
+      )}
+    />
+  );
 }

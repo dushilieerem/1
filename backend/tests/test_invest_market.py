@@ -1,0 +1,107 @@
+# -*- coding: utf-8 -*-
+"""H5 中英文/中美市场切换：市场过滤、美股首页、搜索与个股本地化。"""
+from __future__ import annotations
+
+import pytest
+
+from services.invest import rules
+
+
+class FakeConn:
+    def execute(self, sql, params=()):
+        return self
+
+    def fetchall(self):
+        return []
+
+    def fetchone(self):
+        return {"d": "2026-10-29"}
+
+
+def _us(code, name, price, prev, amount=1e9, pe=None):
+    return {
+        "code": code, "name": name, "industry": "未分类", "asset": "stock",
+        "price": price, "prev_close": prev, "open": price, "high": price, "low": price,
+        "amount": amount, "pe_ttm": pe,
+        "market_cap": None, "beta": None, "dividend_yield": None, "pb": None,
+        "turnover": None, "volume": None, "updated_at": "2026-10-29",
+        "next_report_date": None, "pinyin": None,
+    }
+
+
+def test_market_helpers():
+    assert rules._market_sql("US") == "code LIKE '%.%'"
+    assert rules._market_sql("CN") == "code NOT LIKE '%.%'"
+    assert rules._display_name({"code": "AAPL.O", "name": "苹果"}, "US") == "Apple"
+    assert rules._display_name({"code": "600519", "name": "贵州茅台"}, "CN") == "贵州茅台"
+    assert rules._display_industry({"code": "AAPL.O", "industry": "未分类"}, "US") == "US equity"
+
+
+def test_us_home_breadth(monkeypatch):
+    stocks = [
+        _us("AAPL.O", "苹果", 110, 100, amount=5e9),
+        _us("MSFT.O", "微软", 90, 100, amount=4e9),
+        _us("NVDA.O", "英伟达", 120, 100, amount=3e9),
+    ]
+    monkeypatch.setattr(rules, "rows", lambda conn, sql, args=(): (
+        stocks if "FROM stocks" in sql else []
+    ))
+    out = rules.build_home(conn=FakeConn(), user_id=1, market="US")
+    assert out["market"] == "US"
+    assert out["indices"] == [] and out["topics"] == []
+    assert "advancers" in out["review"]["summary"]
+    assert out["daily"][0]["tag"].startswith("US")
+
+
+def test_us_search_presets(monkeypatch):
+    stocks = [
+        _us("AAPL.O", "苹果", 110, 100, amount=5e9),
+        _us("MSFT.O", "微软", 90, 100, amount=4e9),
+        _us("NVDA.O", "英伟达", 120, 100, amount=3e9),
+    ]
+    monkeypatch.setattr(rules, "rows", lambda conn, sql, args=(): stocks if "FROM stocks" in sql else [])
+    out = rules.build_search(FakeConn(), "", "US")
+    assert out["market"] == "US"
+    assert {p["key"] for p in out["presets"]} == {"active", "gainers", "majors"}
+    assert out["presets"][0]["items"][0]["name"] == "Apple"
+    by_q = rules.build_search(FakeConn(), "AAPL", "US")
+    assert by_q["results"][0]["id"] == "AAPL.O"
+    assert by_q["results"][0]["name"] == "Apple"
+
+
+def test_us_watchlist_filters_market(monkeypatch):
+    def fake_rows(conn, sql, args=()):
+        if "FROM watchlist" in sql:
+            return [{"code": "AAPL.O", "group_name": "Default"}]
+        return []
+
+    monkeypatch.setattr(rules, "rows", fake_rows)
+    def one(conn, sql, args=()):
+        if "FROM stocks" in sql and "code=?" in sql:
+            if args and args[0] == "AAPL.O":
+                return _us("AAPL.O", "苹果", 110, 100)
+            return None
+        return None
+    monkeypatch.setattr(rules, "one", one)
+    out = rules.build_watchlist(FakeConn(), 1, "US")
+    assert out["market"] == "US"
+    assert out["groups"][0]["items"][0]["name"] == "Apple"
+    assert out["groups"][0]["items"][0]["industry"] == "US equity"
+    assert "no real-time push" in out["disclaimer"]
+
+
+def test_us_stock_is_localized(monkeypatch):
+    stock = _us("AAPL.O", "苹果", 110, 100)
+    monkeypatch.setattr(rules, "one", lambda conn, sql, args=(): stock if "FROM stocks" in sql and "code=?" in sql else None)
+    monkeypatch.setattr(rules, "rows", lambda conn, sql, args=(): [])
+    monkeypatch.setattr(rules, "stock_bars", lambda conn, code, limit=750: [
+        {"date": f"2026-10-{i:02d}", "open": 100 + i, "high": 101 + i, "low": 99 + i,
+         "close": 100 + i, "volume": 1000} for i in range(1, 29)
+    ])
+    out = rules.build_stock(FakeConn(), "AAPL.O")
+    assert out["quote"]["name"] == "Apple"
+    assert out["quote"]["industry"] == "US equity"
+    assert out["financials"] == [] and out["news"] == []
+    assert out["valuation"]["label"] == "No valuation data"
+    assert out["dataSource"] == "Public EOD (US)"
+    assert all(ord(ch) < 128 for ch in " ".join(out["summary"]))

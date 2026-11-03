@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { EmptyState, ErrorState, LoadingCards, PageHeader, Sheet, Tag } from "../components";
+import { humanizeEnum } from "../lib";
 import { useLocale } from "../i18n";
 
 type Strategy = {
@@ -18,7 +19,8 @@ type Detail = Strategy & { strategy_code?: string };
 
 export default function StrategyLibrary() {
   const nav = useNavigate();
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const typeLabel = (s: Strategy) => (locale === "en" ? humanizeEnum(s.strategy_type) : s.strategy_type_label || s.strategy_type);
   const [items, setItems] = useState<Strategy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -83,8 +85,8 @@ export default function StrategyLibrary() {
               <button key={s.id} type="button" className="post-row" style={{ textAlign: "left" }} onClick={() => void show(s.id)}>
                 <div className="post-row-title">{s.name}</div>
                 <div className="post-row-meta">
-                  <Tag tone="gray">{s.strategy_type_label || s.strategy_type}</Tag>
-                  <span>{s.execution_mode}</span>
+                  <Tag tone="gray">{typeLabel(s)}</Tag>
+                  <span>{humanizeEnum(s.execution_mode)}</span>
                   <span>v{s.current_version}</span>
                 </div>
               </button>
@@ -93,9 +95,9 @@ export default function StrategyLibrary() {
         </>
       ) : null}
 
-      <Sheet open={open} onClose={() => setOpen(false)} title={detail?.name || t("策略", "Strategy")} sub={detail?.strategy_type_label}>
+      <Sheet open={open} onClose={() => setOpen(false)} title={detail?.name || t("策略", "Strategy")} sub={detail ? typeLabel(detail) : undefined}>
         <p className="hint">
-          {t("执行模式：", "Execution mode: ")}{detail?.execution_mode} · {t("版本：", "Version: ")}{detail?.current_version}
+          {t("执行模式：", "Execution mode: ")}{humanizeEnum(detail?.execution_mode)} · {t("版本：", "Version: ")}{detail?.current_version}
         </p>
         <pre
           style={{

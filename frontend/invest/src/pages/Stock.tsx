@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ChevronRight, FileText, Share2, Star, TrendingDown, TrendingUp, X } from "lucide-react";
 import { api } from "../api";
 import { Disclaimer, ErrorState, Kv, LoadingCards, PageHeader, Sheet, Tag } from "../components";
-import { fmtMoney, fmtPct, formatPrice } from "../lib";
+import { displayIndustry, fmtMarketCap, fmtMoney, fmtPct, fmtShares, formatPrice } from "../lib";
 import { useToast } from "../toast";
 import GlossarySheet from "../GlossarySheet";
 import AiPanel from "../components/AiPanel";
@@ -207,7 +207,7 @@ export default function Stock() {
     <div className="page stock-page">
       <PageHeader
         title={q.name}
-        sub={`${q.code} · ${q.industry}`}
+        sub={`${q.code} · ${displayIndustry(q.industry)}`}
         back
         onBack={() => nav(-1)}
         right={
@@ -278,12 +278,20 @@ export default function Stock() {
           <div><span>{t("最低", "Low")}</span><b>{formatPrice(q.low)}</b></div>
           <div><span>{t("今开", "Open")}</span><b>{formatPrice(q.open)}</b></div>
           <div><span>{t("昨收", "Prev close")}</span><b>{formatPrice(q.prevClose)}</b></div>
-          <div><span>{t("流通市值", "Float mcap")}</span><b>{fmtMoney(q.marketCap)}</b></div>
+          <div title={t("优先总市值，缺失时回退流通市值；单位亿元", "Total market cap preferred, falls back to float cap; unit CNY 100m")}>
+            <span>{t("总市值", "Market cap")}</span><b>{fmtMarketCap(q.marketCap)}</b>
+          </div>
           <div><span>{t("换手率", "Turnover")}</span><b>{q.turnover != null ? `${q.turnover.toFixed(2)}%` : "—"}</b></div>
-          <div><span>{t("成交额", "Amount")}</span><b>{fmtMoney(q.amount)}</b></div>
+          <div><span>{t("成交额（元）", "Amount (CNY)")}</span><b>{fmtMoney(q.amount)}</b></div>
+          <div><span>{t("成交量", "Volume")}</span><b>{fmtShares(q.volume)}</b></div>
           <div><span>PE(TTM)</span><b>{q.pe?.toFixed?.(2) ?? "—"}</b></div>
           <div><span>PB</span><b>{q.pb?.toFixed?.(2) ?? "—"}</b></div>
         </div>
+        <p className="hint">
+          {isUs
+            ? t("美股当前不提供市值、PE/PB 与换手率；显示 — 表示数据未接入，不是 0。成交量单位：股。", "Market cap, PE/PB and turnover are not available for US names; — means missing, not zero. Volume is in shares.")
+            : t("市值单位：亿元（优先总市值，缺失回退流通市值）；成交额单位：元；成交量单位：股；— 表示缺失，不填 0。", "Market cap in CNY 100m (total preferred, float as fallback); amount in CNY; volume in shares; — means missing, not zero.")}
+        </p>
       </section>
 
       <section className="card chart-card">
@@ -345,6 +353,12 @@ export default function Stock() {
         <div className="tech-row"><span>{t("价格趋势", "Trend")}</span><b>{tech.trend}</b><em>{t("回撤", "Drawdown")} {fmtPct(tech.drawdown, 1)} · {t("20 日", "20-day")} {fmtPct(tech.return20, 1)}</em></div>
         <div className="tech-row"><span>{t("均线系统", "Moving averages")}</span><b>MA20 {tech.ma20 ? formatPrice(tech.ma20) : "—"}</b><em>MA5 {tech.ma5 ? formatPrice(tech.ma5) : "—"} · MA10 {tech.ma10 ? formatPrice(tech.ma10) : "—"}</em></div>
         <div className="tech-row"><span>{t("成交量", "Volume")}</span><b>{tech.volumeRatio?.toFixed?.(1)}x</b><em>{t("相对 20 日均量", "vs 20-day average")}</em></div>
+        <p className="hint">
+          {t(
+            "趋势 = 现价相对 MA20；回撤 = 距近 180 日高点；量比 = 当前成交量相对 20 日均量。",
+            "Trend = price vs MA20; drawdown = from the 180-day high; volume ratio = current volume vs the 20-day average.",
+          )}
+        </p>
       </section>
 
       <div className="seg stock-seg">
@@ -365,10 +379,18 @@ export default function Stock() {
             ))}
           </div>
           <div className="divider" />
-          <Kv k={t("行业", "Industry")} v={q.industry} />
-          <Kv k="Beta" v={q.beta?.toFixed?.(2) ?? "—"} />
-          <Kv k={t("股息率", "Dividend yield")} v={q.dividendYield != null ? `${q.dividendYield.toFixed(2)}%` : "—"} />
-          <Kv k={t("下次财报（预计）", "Next report (est.)")} v={q.nextReportDate || "—"} />
+          <Kv k={t("行业", "Industry")} v={displayIndustry(q.industry)} />
+          <Kv k={<span>Beta <Help term="beta" /></span>} v={q.beta != null ? q.beta.toFixed(2) : t("风险指标待补充", "Risk metric pending")} />
+          <Kv k={<span>{t("股息率", "Dividend yield")} <Help term="dividend_yield" /></span>} v={q.dividendYield != null ? `${q.dividendYield.toFixed(2)}%` : t("待补充", "Pending")} />
+          <Kv k={t("下次财报（预计）", "Next report (est.)")} v={q.nextReportDate || t("待补充（数据源未接入）", "Pending (source not connected)")} />
+          {q.beta == null || !q.nextReportDate ? (
+            <p className="hint">
+              {t(
+                "Beta 与预计财报日来自风险/财报数据源；当前缺失时显示「待补充」，不代表没有风险或没有财报。",
+                "Beta and the next report date come from risk/financial data sources. When missing they show as pending; it does not mean the risk or report does not exist.",
+              )}
+            </p>
+          ) : null}
         </section>
       )}
 

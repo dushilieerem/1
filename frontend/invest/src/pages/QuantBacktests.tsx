@@ -4,6 +4,7 @@ import { Sparkles } from "lucide-react";
 import { api } from "../api";
 import { AiCard } from "../components/AiCard";
 import { EmptyState, ErrorState, LoadingCards, PageHeader, Sheet, Sparkline, Tag } from "../components";
+import { humanizeEnum } from "../lib";
 import { useLocale } from "../i18n";
 
 type Translate = (zh: string, en: string) => string;
@@ -131,7 +132,7 @@ export default function QuantBacktests() {
               <button key={run.id} className="post-row" style={{ textAlign: "left" }} onClick={() => void open(run)}>
                 <div className="post-row-title">{run.name || t("未命名回测", "Unnamed backtest")}</div>
                 <div className="post-row-meta">
-                  <Tag tone="gray">{run.request?.universe || "—"}</Tag>
+                  <Tag tone="gray">{humanizeEnum(run.request?.universe)}</Tag>
                   <span>{run.finishedAt?.slice(0, 10) || "—"}</span>
                 </div>
                 <div className="hint">

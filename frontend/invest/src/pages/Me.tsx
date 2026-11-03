@@ -4,6 +4,7 @@ import { AlertTriangle, Bell, ChevronRight, Download, FileText, Info, LogOut, Sh
 import { api, getToken } from "../api";
 import { useAuth } from "../auth";
 import { Disclaimer, Kv, PageHeader, Sheet, Tag } from "../components";
+import { humanizeEnum } from "../lib";
 import { useToast } from "../toast";
 import { useLocale, withMarket } from "../i18n";
 
@@ -83,7 +84,7 @@ export default function Me() {
         {risk?.level ? (
           <>
             <div className="risk-profile-row">
-              <div><span>{t("风险等级", "Risk level")}</span><b>{risk.level}</b></div>
+              <div><span>{t("风险等级", "Risk level")}</span><b>{humanizeEnum(risk.level)}</b></div>
               <div><span>{t("风险分", "Risk score")}</span><b>{risk.score}</b></div>
             </div>
             <button className="btn btn-ghost w100" onClick={() => setRiskOpen(true)}>{t("重新测评", "Retake assessment")}</button>
@@ -96,12 +97,20 @@ export default function Me() {
       <section className="card">
         <div className="card-title-row"><h2>{t("数据与口径", "Data & definitions")}</h2><Tag tone={meta?.isDemo ? "amber" : "green"}>{meta?.isDemo ? t("演示数据", "Demo data") : t("公开 EOD", "Public EOD")}</Tag></div>
         <Kv k={t("数据日期", "Data date")} v={meta?.dataDate || "2026-10-23"} />
-        <Kv k={t("数据来源", "Data source")} v={meta?.source || t("本地演示数据", "Local demo data")} />
+        <Kv k={t("数据来源", "Data source")} v={meta?.source ? humanizeEnum(meta.source) : t("本地演示数据", "Local demo data")} />
         <Kv k={t("更新时间", "Updated at")} v={meta?.updatedAt || "2026-10-26 18:30"} />
         <Kv k={t("行情口径", "Quote basis")} v={t("前复权 · 收盘快照 · 非实时", "Forward-adjusted · close snapshot · not real-time")} />
         <Kv k={t("质量检查", "Quality check")} v={quality ? (quality.ok ? (quality.checks?.some?.((c: any) => c.status === "warn") ? t("通过（有提醒）", "Passed (with warnings)") : t("通过", "Passed")) : t("有异常", "Issues found")) : t("检查中", "Checking")} />
         <Kv k={t("数据新鲜度", "Data freshness")} v={meta ? (meta.isStale ? t(`落后 ${meta.ageTradingDays ?? meta.ageDays} 个交易日`, `${meta.ageTradingDays ?? meta.ageDays} trading day(s) behind`) : t("T-0 / 正常", "T-0 / Normal")) : t("检查中", "Checking")} />
         {meta?.disabledModules?.length ? <Kv k={t("模块状态", "Module status")} v={t(`临时关闭：${meta.disabledModules.join("、")}`, `Temporarily disabled: ${meta.disabledModules.join(", ")}`)} /> : null}
+        {quality && !quality.ok ? (
+          <p className="hint">
+            {t(
+              "数据质量检查有异常：当页缺失字段不会填 0，会显示 — 或「待补充」；具体修复由数据平台跟进。",
+              "The data quality check found issues. Missing fields are not filled with 0; they show — or “pending”. The data platform owns the fix.",
+            )}
+          </p>
+        ) : null}
         <div className="hint">
           {meta?.isDemo
             ? t("当前为演示数据，不代表真实行情；公开运行前需逐源核对数据条款。", "Currently using demo data, not real market quotes; source terms must be verified before public launch.")

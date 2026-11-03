@@ -4,7 +4,7 @@ import { Sparkles } from "lucide-react";
 import { api } from "../api";
 import { AiCard } from "../components/AiCard";
 import { Disclaimer, EmptyState, ErrorState, LoadingCards, PageHeader, Tag } from "../components";
-import { fmtMoney } from "../lib";
+import { fmtMoney, humanizeEnum } from "../lib";
 import { useLocale } from "../i18n";
 
 type Account = {
@@ -73,7 +73,7 @@ export default function Paper() {
         <section className="card" key={account.id}>
           <div className="card-title-row">
             <h2>{account.name}</h2>
-            <Tag tone={account.status === "active" ? "green" : "amber"}>{account.status}</Tag>
+            <Tag tone={account.status === "active" ? "green" : "amber"}>{humanizeEnum(account.status)}</Tag>
           </div>
           <p className="hint">{account.projectName || t("策略项目", "Strategy project")} · {t("最近结算", "Last settled")} {account.lastSettledDate || "—"}</p>
           <div className="kpi-grid">

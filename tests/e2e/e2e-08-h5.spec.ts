@@ -324,6 +324,20 @@ test("中英文切换：英文首页展示美股数据", async ({ page }) => {
   await noHorizontalOverflow(page);
 });
 
+test("360 宽关键页面无横向溢出，行业代码不裸奔", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await loginByToken(page);
+  for (const path of ["/", "/watch", "/portfolio", "/news", "/learn", "/me", "/quant", "/community"]) {
+    await page.goto(`${H5}${path}`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(350);
+    await noHorizontalOverflow(page);
+  }
+  await page.goto(`${H5}/stock/600036`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".page-head p")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".page-head p")).not.toContainText(/\d{6}\.SI/);
+  await noHorizontalOverflow(page);
+});
+
 test("轻量因子选股页渲染规则打分", async ({ page }) => {
   await loginByToken(page);
   await page.route("**/api/invest/quant/select*", (route) =>

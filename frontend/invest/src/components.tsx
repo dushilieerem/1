@@ -219,7 +219,7 @@ export function BarRow({ label, value, width, suffix = "%" }: { label: string; v
   );
 }
 
-export function Kv({ k, v }: { k: string; v: ReactNode }) {
+export function Kv({ k, v }: { k: ReactNode; v: ReactNode }) {
   return (
     <div className="kv">
       <span>{k}</span>

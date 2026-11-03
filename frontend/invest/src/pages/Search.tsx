@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Plus, Search as SearchIcon, X } from "lucide-react";
 import { api } from "../api";
 import { EmptyState, ErrorState, PageHeader, SectionHead, Tag } from "../components";
-import { fmtPct, formatPrice } from "../lib";
+import { displayIndustryText, fmtPct, formatPrice } from "../lib";
 import { useToast } from "../toast";
 import { useLocale, withMarket } from "../i18n";
 
@@ -107,7 +107,7 @@ export default function Search() {
                 <div className="card-title-row"><h2>{p.label}</h2><span className="hint">{p.desc}</span></div>
                 {p.items.length === 0 ? <div className="empty-inline">{t("今日无符合项。", "No matches today.")}</div> : p.items.map((s: any, si: number) => (
                   <button className="search-result" key={`${s.code}-${si}`} onClick={() => nav(`/stock/${s.code}`)}>
-                    <div><b>{s.name}</b><span>{s.sub || s.code}</span></div>
+                    <div><b>{s.name}</b><span>{displayIndustryText(s.sub || s.code)}</span></div>
                     <div className="search-price"><b>{formatPrice(s.price)}</b><em className={s.changePct >= 0 ? "up" : "down"}>{fmtPct(s.changePct)}</em></div>
                     <Tag tone="gray">{s.reason}</Tag>
                   </button>
@@ -128,7 +128,7 @@ export default function Search() {
               {data.results.map((r: any) => (
                 <div className="search-result-row" key={`${r.type}-${r.id}`}>
                   <button className="search-result-main" onClick={() => nav(r.type === "stock" ? `/stock/${r.id}` : `/topic/${r.id}`)}>
-                    <div><b>{r.name}</b><span>{r.sub}</span></div>
+                    <div><b>{r.name}</b><span>{displayIndustryText(r.sub)}</span></div>
                     {r.type === "stock" ? (
                       <div className="search-price"><b>{formatPrice(r.price)}</b><em className={r.changePct >= 0 ? "up" : "down"}>{fmtPct(r.changePct)}</em></div>
                     ) : <Tag tone="red">{t("主题", "Theme")}</Tag>}

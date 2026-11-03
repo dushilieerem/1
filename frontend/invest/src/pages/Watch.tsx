@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Bell, Plus, Search, Trash2, X } from "lucide-react";
 import { api } from "../api";
 import { Disclaimer, EmptyState, ErrorState, LoadingCards, PageHeader, SectionHead, Sheet, Tag } from "../components";
-import { fmtPct, formatPrice } from "../lib";
+import { displayIndustry, fmtPct, formatPrice } from "../lib";
 import { useToast } from "../toast";
 import { useLocale, withMarket } from "../i18n";
 
@@ -63,7 +63,7 @@ export default function Watch() {
                 {g.items.map((s: any) => (
                   <div className="stock-row with-action" key={s.code}>
                     <button className="stock-main" onClick={() => nav(`/stock/${s.code}`)}>
-                      <div><b>{s.name}</b><span>{s.code} · {s.industry}</span></div>
+                      <div><b>{s.name}</b><span>{s.code} · {displayIndustry(s.industry)}</span></div>
                       <div className="stock-price">
                         <b>{formatPrice(s.price)}</b>
                         <em className={s.changePct >= 0 ? "up" : "down"}>{fmtPct(s.changePct)}</em>

@@ -4,7 +4,7 @@ import { ArrowLeft, Sparkles } from "lucide-react";
 import { api } from "../api";
 import { AiCard, type AiCardData } from "../components/AiCard";
 import { Disclaimer, ErrorState, PageHeader, Tag } from "../components";
-import { fmtPct } from "../lib";
+import { displayIndustry, fmtPct } from "../lib";
 import { useLocale } from "../i18n";
 
 type Stock = any;
@@ -116,7 +116,7 @@ export default function Compare() {
             {results.map((it: any) => (
               <button key={it.code} type="button" className="post-row" style={{ textAlign: "left" }} onClick={() => nav(`/compare/${a}/${it.code}`)}>
                 <div className="post-row-title">{it.name}</div>
-                <div className="hint">{it.code} · {it.industry || "—"}</div>
+                <div className="hint">{it.code} · {it.industry ? displayIndustry(it.industry) : "—"}</div>
               </button>
             ))}
           </div>
@@ -128,12 +128,12 @@ export default function Compare() {
           <div className="card compare-head">
             <div>
               <b>{sa.quote?.name || a}</b>
-              <span className="hint">{sa.quote?.code} · {sa.quote?.industry || "—"}</span>
+              <span className="hint">{sa.quote?.code} · {sa.quote?.industry ? displayIndustry(sa.quote.industry) : "—"}</span>
             </div>
             <Tag tone="gray">vs</Tag>
             <div>
               <b>{sb.quote?.name || b}</b>
-              <span className="hint">{sb.quote?.code} · {sb.quote?.industry || "—"}</span>
+              <span className="hint">{sb.quote?.code} · {sb.quote?.industry ? displayIndustry(sb.quote.industry) : "—"}</span>
             </div>
           </div>
           <div className="card">

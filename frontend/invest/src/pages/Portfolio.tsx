@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { AlertTriangle, ChevronDown, Info, Upload } from "lucide-react";
 import { api } from "../api";
 import { BarRow, Disclaimer, EmptyState, ErrorState, LoadingCards, PageHeader, RiskRing, Sheet, Tag } from "../components";
-import { fmtPct, fmtSignedMoney, fmtWan } from "../lib";
+import { displayIndustry, fmtPct, fmtSignedMoney, fmtWan } from "../lib";
 import { useToast } from "../toast";
 import { useLocale } from "../i18n";
 import AiPanel from "../components/AiPanel";
@@ -80,6 +80,14 @@ const DIAG_TITLE_EN: Record<string, string> = {
 
 function localized(map: Record<string, string>, value: string, locale: string) {
   return locale === "en" ? map[value] || value : value;
+}
+
+function kpiValue(value: string, locale: string) {
+  if (locale !== "en") return value;
+  const text = String(value || "");
+  if (text.endsWith(" 万")) return `${(Number.parseFloat(text) * 10).toFixed(0)}K`;
+  if (text.endsWith(" 亿")) return `${(Number.parseFloat(text) / 10).toFixed(2)}B`;
+  return text;
 }
 
 function localizedRiskSummary(value: string, locale: string) {
@@ -440,7 +448,7 @@ export default function Portfolio() {
                 >
                   <div className="hold-name">
                     <b>{h.name}</b>
-                    <span title={h.industryFull || h.industry}>{h.isCash ? "—" : `${h.code} · ${h.industry}`}</span>
+                    <span title={h.industryFull || h.industry}>{h.isCash ? "—" : `${h.code} · ${displayIndustry(h.industry)}`}</span>
                   </div>
                   <span className="hold-cell">{h.weight}%</span>
                   <span className="hold-cell">{fmtWan(h.value)}</span>
@@ -461,7 +469,7 @@ export default function Portfolio() {
           <section className="card">
             <div className="card-title-row"><h2>{t("行业暴露", "Sector exposure")}</h2><span className="hint">{t("按市值权重", "By market value weight")}</span></div>
             {exposure.map((e: any) => (
-              <BarRow key={e.name} label={e.name} value={e.weight} width={(e.weight / maxWeight) * 100} />
+              <BarRow key={e.name} label={displayIndustry(e.name)} value={e.weight} width={(e.weight / maxWeight) * 100} />
             ))}
             <div className="hint">{t("直接持仓口径；ETF 穿过后在「体检」页查看。", "Direct holdings only; see the Checkup tab for ETF look-through.")}</div>
           </section>
@@ -509,7 +517,7 @@ export default function Portfolio() {
 
           <div className="kpi-grid">
             {(data.kpis || []).map((k: any) => (
-              <div className="kpi" key={k.label}><span>{localized(KPI_LABEL_EN, k.label, locale)}</span><b>{k.value}</b></div>
+              <div className="kpi" key={k.label}><span>{localized(KPI_LABEL_EN, k.label, locale)}</span><b>{kpiValue(k.value, locale)}</b></div>
             ))}
           </div>
 

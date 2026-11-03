@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { EmptyState, ErrorState, LoadingCards, PageHeader, Tag } from "../components";
-import { fmtMoney } from "../lib";
+import { fmtMoney, humanizeEnum } from "../lib";
 import { useLocale } from "../i18n";
 
 export default function QuantSignals() {
@@ -37,7 +37,7 @@ export default function QuantSignals() {
         <section className="card" key={a.id}>
           <div className="card-title-row">
             <h2>{a.name}</h2>
-            <Tag tone={a.status === "active" ? "green" : "amber"}>{a.signal}</Tag>
+            <Tag tone={a.status === "active" ? "green" : "amber"}>{humanizeEnum(a.signal)}</Tag>
           </div>
           <p className="hint">
             {a.strategyName || t("策略", "Strategy")} · {t("权益", "Equity")} {fmtMoney(a.totalEquity || 0)} · {t("现金", "Cash")} {fmtMoney(a.cash || 0)}
@@ -53,7 +53,11 @@ export default function QuantSignals() {
           </div>
         </section>
       ))}
-      {data ? <p className="hint">{data.note}</p> : null}
+      {data ? (
+        <p className="hint">
+          {t(data.note, data.note === "信号来自模拟盘最新持仓，不是实时交易指令。" ? "Signals come from the latest paper-trading positions, not live trading instructions." : data.note)}
+        </p>
+      ) : null}
     </div>
   );
 }

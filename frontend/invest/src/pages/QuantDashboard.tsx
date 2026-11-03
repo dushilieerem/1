@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { EmptyState, ErrorState, LoadingCards, PageHeader, Tag } from "../components";
+import { humanizeEnum } from "../lib";
 import { useLocale } from "../i18n";
 
 export default function QuantDashboard() {
@@ -63,12 +64,17 @@ export default function QuantDashboard() {
                   <td>{r.factor_name}</td>
                   <td>{r.ic == null ? t("待补充", "N/A") : Number(r.ic).toFixed(3)}</td>
                   <td>{r.ir == null ? t("待补充", "N/A") : Number(r.ir).toFixed(2)}</td>
-                  <td><Tag tone={r.verify_status === "passed" ? "green" : r.verify_status === "failed" ? "red" : "gray"}>{r.verify_status || "pending"}</Tag></td>
+                  <td><Tag tone={r.verify_status === "passed" ? "green" : r.verify_status === "failed" ? "red" : "gray"}>{humanizeEnum(r.verify_status || "pending")}</Tag></td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="hint">{t("IC/IR 为平台口径缓存；不构成因子推荐。", "IC/IR are platform-defined cached values; not a factor recommendation.")}</p>
+          <p className="hint">
+            {t(
+              "IC = 因子与未来收益的相关性；IR = IC 的稳定性（IC / 波动）。平台口径缓存，不构成因子推荐。",
+              "IC = correlation between the factor and future returns; IR = IC consistency (IC / volatility). Platform-defined cache, not a factor recommendation.",
+            )}
+          </p>
         </section>
       ) : null}
     </div>

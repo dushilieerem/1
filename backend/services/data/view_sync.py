@@ -667,6 +667,38 @@ def _sync_index(conn, view: ViewInfo) -> int:
     return total
 
 
+def _sync_risk(conn, view: ViewInfo, start: date, end: date) -> int:
+    """可选：数据平台提供 risk_daily 时同步到 md_risk_daily。"""
+    if "risk_daily" not in (view.manifest.get("datasets") or {}):
+        return 0
+    total = 0
+    for _, frame in _iter_frames(
+        view,
+        "risk_daily",
+        ["date", "symbol", "beta_1y", "vol_1y", "max_drawdown_1y", "calc_version"],
+        start,
+        end,
+    ):
+        rows = (
+            (
+                str(row.symbol),
+                str(row.date)[:10],
+                _clean(row.beta_1y),
+                _clean(row.vol_1y),
+                _clean(row.max_drawdown_1y),
+                str(row.calc_version or "v1"),
+            )
+            for row in frame.itertuples(index=False)
+        )
+        total += _copy_rows(
+            conn,
+            "tmp_md_risk_daily",
+            ["symbol", "trade_date", "beta_1y", "vol_1y", "max_drawdown_1y", "calc_version"],
+            rows,
+        )
+    return total
+
+
 def _sync_ref_security(conn, view: ViewInfo) -> int:
     files = _dataset_files(view, "security_master")
     frame = pq.read_table(
@@ -769,6 +801,7 @@ def _prepare_temp_tables(conn) -> None:
         "CREATE TEMP TABLE IF NOT EXISTS tmp_md_valuation_daily (LIKE md_valuation_daily INCLUDING DEFAULTS) ON COMMIT DROP",
         "CREATE TEMP TABLE IF NOT EXISTS tmp_md_status_daily (LIKE md_status_daily INCLUDING DEFAULTS) ON COMMIT DROP",
         "CREATE TEMP TABLE IF NOT EXISTS tmp_md_index_bar (LIKE md_index_bar INCLUDING DEFAULTS) ON COMMIT DROP",
+        "CREATE TEMP TABLE IF NOT EXISTS tmp_md_risk_daily (LIKE md_risk_daily INCLUDING DEFAULTS) ON COMMIT DROP",
         "CREATE TEMP TABLE IF NOT EXISTS tmp_ref_security (LIKE ref_security INCLUDING DEFAULTS) ON COMMIT DROP",
         "CREATE TEMP TABLE IF NOT EXISTS tmp_ref_trading_calendar (LIKE ref_trading_calendar INCLUDING DEFAULTS) ON COMMIT DROP",
         "CREATE TEMP TABLE IF NOT EXISTS tmp_ref_security_industry (LIKE ref_security_industry INCLUDING DEFAULTS) ON COMMIT DROP",
@@ -831,6 +864,17 @@ def _merge_temp_tables(conn) -> None:
         ON CONFLICT (index_code, trade_date) DO UPDATE SET
           open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low, close=EXCLUDED.close,
           source=EXCLUDED.source
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO md_risk_daily
+          (symbol, trade_date, beta_1y, vol_1y, max_drawdown_1y, calc_version)
+        SELECT symbol, trade_date, beta_1y, vol_1y, max_drawdown_1y, calc_version
+          FROM tmp_md_risk_daily
+        ON CONFLICT (symbol, trade_date, calc_version) DO UPDATE SET
+          beta_1y=EXCLUDED.beta_1y, vol_1y=EXCLUDED.vol_1y,
+          max_drawdown_1y=EXCLUDED.max_drawdown_1y
         """
     )
     conn.execute(
@@ -941,6 +985,7 @@ def sync_view(
             rows["valuations"] = _sync_valuations(conn, view, start, end)
             rows["status"] = _sync_status(conn, view, start, end)
             rows["index"] = _sync_index(conn, view)
+            rows["risk"] = _sync_risk(conn, view, start, end)
             if with_financials:
                 financial = view_loader.load_financials(root=view.root)
                 rows["financials"] = sum(int(v or 0) for v in financial.values())

@@ -162,8 +162,14 @@ def _beta_or_none(stock: dict[str, Any]) -> float | None:
 
         risk = md_store.risk_stats(_with_suffix(str(stock.get("code") or "")), index_code="000300.SH")
         beta = risk.get("beta_1y") if risk else None
-        # 近零 Beta 多为日期对齐/数据质量问题，宁可不展示
-        return float(beta) if beta is not None and abs(float(beta)) >= 0.1 else None
+        # 2026 年部分大盘股与沪深300相关性显著下降，近零 Beta 可能是真实样本期特征；
+        # 不再用 abs<0.1 直接丢弃，交给 _sensitivity 按区间解释，并标注样本期。
+        if beta is None:
+            return None
+        try:
+            return float(beta) if math.isfinite(float(beta)) else None
+        except (TypeError, ValueError):
+            return None
     except Exception:
         return None
 

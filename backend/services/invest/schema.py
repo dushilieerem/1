@@ -255,6 +255,10 @@ def refresh_invest_stocks(conn=None) -> int:
               SELECT symbol, industry_code,
                      ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY effective_from DESC) AS rn
                 FROM ref_security_industry WHERE level=1
+            ), risk AS (
+              SELECT symbol, beta_1y,
+                     ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY trade_date DESC) AS rn
+                FROM md_risk_daily
             )
             INSERT INTO invest_stocks
               (code,name,pinyin,industry,asset,price,prev_close,open,high,low,market_cap,
@@ -264,7 +268,7 @@ def refresh_invest_stocks(conn=None) -> int:
                    COALESCE(v.total_mv, v.float_mv)/1e8, v.pe_ttm, v.pb_mrq,
                    v.dividend_yield_ttm,
                    COALESCE(l.turnover, h.turnover), COALESCE(l.volume, h.volume),
-                   COALESCE(l.amount, h.amount), NULL, NULL, l.trade_date::text
+                   COALESCE(l.amount, h.amount), r.beta_1y, NULL, l.trade_date::text
               FROM ref_security s
               LEFT JOIN latest l ON l.symbol=s.symbol AND l.rn=1
               LEFT JOIN latest p ON p.symbol=s.symbol AND p.rn=2
@@ -272,6 +276,7 @@ def refresh_invest_stocks(conn=None) -> int:
               LEFT JOIN val v ON v.symbol=s.symbol AND v.rn=1
               LEFT JOIN ind i ON i.symbol=s.symbol AND i.rn=1
               LEFT JOIN ref_industry ri ON ri.industry_code=i.industry_code AND ri.level=1
+              LEFT JOIN risk r ON r.symbol=s.symbol AND r.rn=1
              WHERE s.status='listed' AND s.market IN ('CN','US')
             """
         )

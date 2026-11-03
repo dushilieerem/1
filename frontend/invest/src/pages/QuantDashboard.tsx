@@ -5,6 +5,16 @@ import { EmptyState, ErrorState, LoadingCards, PageHeader, Tag } from "../compon
 import { humanizeEnum } from "../lib";
 import { useLocale } from "../i18n";
 
+const UNIVERSE_LABEL: Record<string, { zh: string; en: string }> = {
+  CSI300: { zh: "沪深300", en: "CSI 300" },
+  CSI500: { zh: "中证500", en: "CSI 500" },
+};
+const PERIOD_LABEL: Record<string, { zh: string; en: string }> = {
+  "3m": { zh: "近3月", en: "3M" },
+  "1y": { zh: "近1年", en: "1Y" },
+  "3y": { zh: "近3年", en: "3Y" },
+};
+
 export default function QuantDashboard() {
   const nav = useNavigate();
   const { t } = useLocale();
@@ -36,10 +46,14 @@ export default function QuantDashboard() {
       />
       <div className="seg">
         {["CSI300", "CSI500"].map((x) => (
-          <button key={x} className={universe === x ? "on" : ""} onClick={() => setUniverse(x)}>{x}</button>
+          <button key={x} className={universe === x ? "on" : ""} onClick={() => setUniverse(x)}>
+            {t(UNIVERSE_LABEL[x].zh, UNIVERSE_LABEL[x].en)}
+          </button>
         ))}
         {["3m", "1y", "3y"].map((x) => (
-          <button key={x} className={period === x ? "on" : ""} onClick={() => setPeriod(x)}>{x}</button>
+          <button key={x} className={period === x ? "on" : ""} onClick={() => setPeriod(x)}>
+            {t(PERIOD_LABEL[x].zh, PERIOD_LABEL[x].en)}
+          </button>
         ))}
       </div>
       {error ? <ErrorState message={error} onRetry={() => setError(null)} /> : null}

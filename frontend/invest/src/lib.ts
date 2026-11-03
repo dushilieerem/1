@@ -136,12 +136,41 @@ const ENUM_EN: Record<string, string> = {
   本地演示数据: "Local demo data",
 };
 
+const ENUM_ZH: Record<string, string> = {
+  pending: "待校验",
+  passed: "已通过",
+  failed: "未通过",
+  active: "生效中",
+  inactive: "已停止",
+  archived: "已归档",
+  vectorized: "向量化",
+  event_driven: "事件驱动",
+  local: "本地",
+  remote: "远程",
+  paper: "模拟盘",
+  live: "实盘",
+  stock: "股票",
+  etf: "ETF",
+  csi300: "沪深300",
+  csi500: "中证500",
+  csi1000: "中证1000",
+  trend: "趋势",
+  momentum: "动量",
+  reversal: "反转",
+  low_volatility: "低波动",
+  minimum_variance: "最小方差",
+  statistical_arbitrage: "统计套利",
+  value: "价值",
+  value_growth: "价值成长",
+  custom: "自定义",
+};
+
 /** 把 pending/passed、vectorized、持有/空仓 等枚举转成人话；未知值原样返回。 */
 export function humanizeEnum(value: string | null | undefined) {
   const text = String(value ?? "").trim();
   if (!text) return "—";
-  if (!isEn()) return text;
-  return ENUM_EN[text] || ENUM_EN[text.toLowerCase()] || text;
+  const map = isEn() ? ENUM_EN : ENUM_ZH;
+  return map[text] || map[text.toLowerCase()] || text;
 }
 
 /** 行业字段兜底：不要把 801780.SI 这类代码直接丢给用户。 */

@@ -362,7 +362,7 @@ export default function Stock() {
       </section>
 
       <div className="seg stock-seg">
-        {TABS.filter((x) => !isUs || (x.key !== "finance" && x.key !== "valuation")).map((x) => (
+        {TABS.map((x) => (
           <button key={x.key} className={tab === x.key ? "on" : ""} onClick={() => setTab(x.key)}>{t(x.zh, x.en)}</button>
         ))}
       </div>
@@ -412,9 +412,9 @@ export default function Stock() {
         <section className="card">
           <div className="card-title-row">
             <h2>{t("财务趋势", "Financial trend")}</h2>
-            <button className="link-btn" onClick={() => setReportOpen(true)}>{t("查看财报", "View report")} <ChevronRight size={14} /></button>
+            {!isUs ? <button className="link-btn" onClick={() => setReportOpen(true)}>{t("查看财报", "View report")} <ChevronRight size={14} /></button> : null}
           </div>
-          {q.asset === "etf" ? <div className="empty-inline">{t("ETF 不适用公司财务指标。", "Company financial metrics do not apply to ETFs.")}</div> : (
+          {isUs ? <div className="empty-inline">{t("美股暂无财务数据源；当前只提供行情与 K 线。", "US financial data is not available yet; this build only provides quotes and charts.")}</div> : q.asset === "etf" ? <div className="empty-inline">{t("ETF 不适用公司财务指标。", "Company financial metrics do not apply to ETFs.")}</div> : (
             <>
               {data.earningsFlash?.available ? (
                 <div className="flash-card">
@@ -452,6 +452,8 @@ export default function Stock() {
       {tab === "valuation" && (
         <section className="card">
           <div className="card-title-row"><h2>{t("估值位置", "Valuation")}</h2><span className="hint">{t("近 3 年历史分位", "3-year percentile")}</span></div>
+          {isUs ? <div className="empty-inline">{t("美股暂无估值数据源；当前只提供行情与 K 线。", "US valuation data is not available yet; this build only provides quotes and charts.")}</div> : (
+          <>
           <div className="valuation-nums">
             <div><span>PE(TTM)<Help term="pe_ttm" /></span><b>{v.pe?.toFixed?.(2) ?? "—"}x</b></div>
             <div><span>PB<Help term="pb" /></span><b>{v.pb?.toFixed?.(2) ?? "—"}x</b></div>
@@ -476,6 +478,8 @@ export default function Stock() {
             <p className="muted small">{data.institutionalView?.note || t("机构评级 / 目标价 / 盈利预测数据待补充", "Institutional ratings, target prices and forecasts are pending.")}</p>
           )}
           <div className="hint">{t("估值按收盘价与已披露 EPS 计算；不是一致预期。", "Valuation uses EOD price and reported EPS; not consensus estimates.")}</div>
+          </>
+          )}
         </section>
       )}
 

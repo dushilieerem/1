@@ -111,6 +111,21 @@ export default function Me() {
             )}
           </p>
         ) : null}
+        {quality?.checks?.length ? (
+          <div className="quality-list">
+            {quality.checks.map((c: any) => (
+              <div className="quality-row" key={c.key || c.label}>
+                <div>
+                  <b>{c.label}</b>
+                  <span>{c.detail}</span>
+                </div>
+                <Tag tone={c.status === "pass" ? "green" : c.status === "warn" ? "amber" : "red"}>
+                  {c.status === "pass" ? t("通过", "Passed") : c.status === "warn" ? t("提醒", "Warning") : t("异常", "Failed")}
+                </Tag>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div className="hint">
           {meta?.isDemo
             ? t("当前为演示数据，不代表真实行情；公开运行前需逐源核对数据条款。", "Currently using demo data, not real market quotes; source terms must be verified before public launch.")

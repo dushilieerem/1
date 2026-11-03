@@ -890,8 +890,14 @@ def build_portfolio(conn: Any, user_id: int, *, include_penetration: bool = True
             "kpis": [{"label": "总资产", "value": "0 万"}, {"label": "前三大持仓", "value": "—"},
                      {"label": "最大行业暴露", "value": "—"}, {"label": "历史最大回撤", "value": "—"}],
             "holdings": [], "attribution": {"items": [], "total": 0, "needReview": False, "summary": "",
-                                            "benchmark": None, "note": "贡献 = 权重 × 涨跌"},
-            "diagnosis": [], "exposure": [], "exposureAll": [], "recentTrades": [],
+                                            "benchmark": None, "note": "贡献 = 权重 × 涨跌",
+                                            "explain": {"meaning": "导入持仓后解释今日涨跌来源。",
+                                                        "risk": "尚未导入，无法判断贡献集中度。",
+                                                        "next": "先导入持仓，再看归因。"}},
+            "diagnosis": [], "diagnosisExplain": {"meaning": "导入持仓后生成体检结论。",
+                                                  "risk": "尚未导入，无法做结构风险判断。",
+                                                  "next": "先导入持仓，再看诊断。"},
+            "exposure": [], "exposureAll": [], "recentTrades": [],
             "deviation": [], "targetConfigured": False, "stress": [],
             "costs": {"tradeCostPct": meta["trade_cost_pct"], "annualTurnover": meta["annual_turnover"],
                       "impactCostPct": meta["impact_cost_pct"], "turnoverCostPct": 0, "extraCost": 0.5},
@@ -1142,6 +1148,32 @@ def build_portfolio(conn: Any, user_id: int, *, include_penetration: bool = True
         {"label": "历史最大回撤", "value": f"{weighted_dd:.1f}%"},
     ]
 
+    diagnosis_explain = {
+        "meaning": (
+            f"当前有 {len(diagnosis)} 项体检指标越过阈值，最靠前的是「{diagnosis[0]['title']}」。"
+            if diagnosis else "当前没有指标越过预设阈值，持仓结构未触发体检提示。"
+        ),
+        "risk": (
+            "越线项越靠前，组合越容易受单一标的、行业或成本影响；这是结构风险，不预测涨跌。"
+            if diagnosis else "未触发阈值不等于没有风险；市场整体波动、流动性等仍可能影响组合。"
+        ),
+        "next": (
+            "先看前几项的依据与影响，再结合「压力测试与成本」和「AI 深度解读」；不构成调仓建议。"
+            if diagnosis else "可继续看压力测试与配置偏离；若后续权重变化，体检结果会重新计算。"
+        ),
+    }
+    attribution_explain = {
+        "meaning": (
+            "今日涨跌 = 各持仓「权重 × 当日涨跌」的合计；贡献越大的标的，对今天净值影响越大。"
+        ),
+        "risk": (
+            "贡献集中在少数标的时，单日净值更依赖它们的事件与波动；归因待核时说明数据口径存在差异。"
+        ),
+        "next": (
+            "把贡献前几名与自己的持仓预期对照，再看它们是否有公告/财报；归因只解释今天，不预测明天。"
+        ),
+    }
+
     return {
         "totalValue": round(total, 0), "totalCost": round(total_cost, 0),
         "dailyPnl": round(daily_pnl, 0), "dailyChange": round(daily_change, 2),
@@ -1161,8 +1193,10 @@ def build_portfolio(conn: Any, user_id: int, *, include_penetration: bool = True
                           "changePct": round(benchmark_change, 2) if benchmark_change is not None else None},
             "summary": _attribution_summary(attribution_items, daily_change, benchmark_change),
             "note": "贡献 = 权重 × 涨跌；合计与组合今日收益误差 > 0.1pct 时标注「归因待核」。",
+            "explain": attribution_explain,
         },
         "diagnosis": diagnosis, "diagnosisHidden": hidden_count,
+        "diagnosisExplain": diagnosis_explain,
         "exposure": exposure, "exposureAll": exposure_all,
         "recentTrades": recent_trades,
         "deviation": deviation, "targetConfigured": target_configured,

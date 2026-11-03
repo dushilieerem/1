@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""手机端术语库：分类/搜索/别名匹配。"""
+"""手机端术语库：分类/搜索/别名匹配，以及人话正文/例子/常见误用。"""
 from __future__ import annotations
 
 import sys
@@ -33,3 +33,19 @@ def test_rules_exposes_meta_and_news_helpers() -> None:
     assert callable(getattr(rules, "build_meta", None))
     assert callable(getattr(rules, "build_news", None))
     assert callable(getattr(rules, "build_search", None))
+
+
+def test_glossary_terms_have_plain_example_and_misuse() -> None:
+    out = glossary.list_terms()
+    assert out["items"]
+    for item in out["items"]:
+        assert item.get("plain"), item["id"]
+        assert item.get("example"), item["id"]
+        assert item.get("misuse"), item["id"]
+
+
+def test_glossary_find_term_returns_explain() -> None:
+    item = glossary.find_term("PE 分位是多少")
+    assert item and item["id"] == "pe_ttm"
+    assert item["plain"] and item["misuse"]
+    assert "投资建议" not in item["plain"]

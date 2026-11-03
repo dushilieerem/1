@@ -12,6 +12,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -469,7 +470,8 @@ def ideas_push(org_id: int, *, limit: int = 12) -> dict[str, Any]:
             """
             SELECT c.id, c.symbol, c.name, c.market, c.industry, c.ref_price,
                    c.data_status, c.pool_status, c.tags, c.research_points,
-                   v.pe_ttm, v.pb_mrq, v.trade_date AS valuation_date
+                   v.pe_ttm, v.pb_mrq, v.trade_date AS valuation_date,
+                   ind.name AS industry_name
               FROM inst_company c
               LEFT JOIN LATERAL (
                 SELECT pe_ttm, pb_mrq, trade_date
@@ -477,6 +479,15 @@ def ideas_push(org_id: int, *, limit: int = 12) -> dict[str, Any]:
                  WHERE symbol=c.symbol
                  ORDER BY trade_date DESC LIMIT 1
               ) v ON TRUE
+              LEFT JOIN LATERAL (
+                SELECT ri.name
+                  FROM ref_security_industry rsi
+                  JOIN ref_industry ri
+                    ON ri.industry_code = rsi.industry_code AND ri.level = 1
+                 WHERE rsi.symbol = c.symbol AND rsi.level = 1
+                 ORDER BY rsi.effective_from DESC
+                 LIMIT 1
+              ) ind ON TRUE
              WHERE c.org_id=%s AND c.market='CN' AND c.pool_status <> 'dropped'
              ORDER BY (c.data_status='real') DESC, (v.pe_ttm IS NOT NULL) DESC, c.id
              LIMIT 500
@@ -532,13 +543,17 @@ def ideas_push(org_id: int, *, limit: int = 12) -> dict[str, Any]:
             reasons.append(f"PE TTM {float(pe):.2f}")
         if pb is not None:
             reasons.append(f"PB MRQ {float(pb):.2f}")
+        industry = r["industry_name"] or r["industry"]
+        if industry and re.match(r"^\d{6}\.", str(industry)):
+            # 801120.SI 这类申万代码对用户不可读；交给前端显示「行业待补充」。
+            industry = None
         items.append(
             {
                 "id": int(r["id"]),
                 "symbol": r["symbol"],
                 "name": r["name"],
                 "market": r["market"],
-                "industry": r["industry"],
+                "industry": industry,
                 "ref_price": r["ref_price"],
                 "data_status": r["data_status"],
                 "pool_status": r["pool_status"],

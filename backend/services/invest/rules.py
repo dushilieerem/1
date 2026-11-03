@@ -1354,17 +1354,23 @@ def build_data_quality(conn: Any) -> dict[str, Any]:
         "status": "fail" if not pool or stale else "pass",
         "detail": f"CN {latest_by_market.get('CN','—')} / US {latest_by_market.get('US','—')}；有日线 {len(pool)}/{len(stocks)} 只，未更新 {len(stale)}",
     }]
-    pool_codes = [s["code"] for s in pool]
+    pool_cn = [s for s in pool if market_of(s["code"]) == "CN"]
+    pool_codes = [s["code"] for s in pool_cn]
     fin_codes = {r["code"] for r in rows(conn, "SELECT DISTINCT code FROM financials")}
     no_fin = [c for c in pool_codes if c not in fin_codes]
     fin_cov = (len(pool_codes) - len(no_fin)) / len(pool_codes) if pool_codes else 1.0
+    fin_latest_row = conn.execute("SELECT MAX(report_date) AS d FROM financials").fetchone()
+    fin_latest = (fin_latest_row or {}).get("d") or "—"
     checks.append({
         "key": "financials",
         "label": "已披露财务",
-        "status": "pass" if not no_fin else ("warn" if fin_cov > 0 else "fail"),
-        "detail": f"有财务 {len(pool_codes) - len(no_fin)}/{len(pool_codes)} 只；最新 {latest}",
+        "status": "pass" if fin_cov >= 0.95 else ("warn" if fin_cov >= 0.8 else "fail"),
+        "detail": (
+            f"A 股有财务 {len(pool_codes) - len(no_fin)}/{len(pool_codes)} 只"
+            f"（{fin_cov:.1%}）；最新报告期 {fin_latest}；"
+            f"缺 {len(no_fin)} 只（新股/未披露/无财务口径）；美股无财务源，已排除"
+        ),
     })
-    pool_cn = [s for s in pool if market_of(s["code"]) == "CN"]
     no_val = [s["code"] for s in pool_cn if s.get("pe_ttm") is None]
     checks.append({
         "key": "valuations",

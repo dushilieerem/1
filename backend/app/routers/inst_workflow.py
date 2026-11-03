@@ -74,6 +74,15 @@ def companies(
     }
 
 
+@router.get("/ideas/push")
+def ideas_push(
+    limit: int = 12, ctx: dict[str, Any] = Depends(require_inst_user)
+) -> dict[str, Any]:
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "ideas")
+    return {"ok": True, **svc.ideas_push(org_id, limit=limit)}
+
+
 @router.get("/companies/{company_id}")
 def company(company_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)

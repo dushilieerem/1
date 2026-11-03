@@ -237,14 +237,45 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 
 - 一页纸改为结构化卡片：总结结论、关键指标（营业收入/净利润/ROE/PE）、01-06 六维要点、核心关注风险、下一步重点核验、免责声明。
 - 后端 `ai_research_memo` 增加确定性 `metrics`（来自行情/估值/财务，缺失不编造）；AI 不可用时回退规则摘要（`engine=rule`），页面仍按同一格式展示。
-- 版式：AI 一页纸移到六维分析卡下方（左栏），「证据与反证」移到底部整行。
+- 版式：AI 一页纸作为「六维分析」的第七个 Tab（六个维度 + AI 一页纸），不再单列卡片；「证据与反证」在页面底部整行展示。
 
 ### 10.6 验证
 
 | 项 | 结果 |
 |---|---|
-| `pytest tests/test_inst_research_dimensions.py` | 4 passed：单维合并、逐维审核接口（可选）、单维追问、一页纸 metrics 与规则回退 |
-| `pytest tests/test_inst_*.py` | 47 passed |
+| `pytest tests/test_inst_research_dimensions.py` | 5 passed：单维合并、逐维审核接口（可选）、单维追问、一页纸 metrics 与规则回退、量化推送契约 |
+| `pytest tests/test_inst_*.py` | 48 passed（svquant_test） |
 | `tsc --noEmit` | 通过 |
 | e2e-09 只读 | 3 passed / 1 skipped |
 | Playwright 走查 | 目录切换、单维正文、单独分析按钮、追问框、一键审核、结构化一页纸均可见；一页纸在证据与反证上方 |
+
+## 11. 机会发现三 Tab、研究页 Tab 化与证据可读性（2026-11-03）
+
+### 11.1 机会发现
+
+`/inst/ideas` 从「全市场列表」改为三个 Tab：
+
+| Tab | 数据 | 说明 |
+|---|---|---|
+| 量化策略推送 | `GET /api/inst/ideas/push` | A 股机构公司池，按近 2-20 个交易日动量 + 估值初筛；只推动量为正、PE TTM 0-100、PB 为正的标的 |
+| 关注与自选 | `GET /api/inst/companies?pool_status=watch` | 观察池；可进入研究或取消关注 |
+| 当前持仓 | `GET /api/inst/portfolio` | 组合持仓、成本、市值、权重；可进入研究或跳投后 |
+
+量化推送规则写在接口返回的 `strategy.note` 与页面底部：窗口自动缩短（测试库只有最近几天数据时会用 3 日）、收盘后计算、不是实时信号、不构成投资建议。推送卡片展示参考价、动量、PE TTM、PB MRQ、筛选理由与标签；`industry` 为指数代码（如 `801120.SI`）时显示「行业待补充」。
+
+### 11.2 研究页
+
+- 「巴菲特六维分析」更名为「六维分析」。
+- AI 一页纸改为六维分析的第七个 Tab（六个维度 + AI 一页纸）；选中时展示结构化一页纸，其余维度 Tab 不受影响。
+- 「证据与反证」改为更易读的卡片：类型图例（行情/财务/事实/公告/新闻/研究/反证）、来源中文说明、数据日期、原文摘录块与「这条证据说明什么」提示。
+- 证据类型来自 `inst_evidence.evidence_type`；来源 `ifind:*` 显示为「iFinD 行情/财务库」，`eastmoney` 显示为「东方财富」，`agent` 显示为「AI Agent」。
+
+### 11.3 验证
+
+| 项 | 结果 |
+|---|---|
+| `pytest tests/test_inst_*.py` | 48 passed（svquant_test） |
+| `tsc --noEmit` | 通过 |
+| `npm run test:inst` | 5 passed |
+| e2e-09 只读 | 3 passed / 1 skipped（新增机会发现页可达） |
+| Playwright 走查 | 三个 Tab 计数 12/1/1；关注/取消关注可用；持仓卡片可见；研究页 7 个 Tab、AI 一页纸 Tab、单维正文、证据图例与类型标签均可见 |

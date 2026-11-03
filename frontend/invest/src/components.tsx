@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { AlertTriangle, ChevronLeft, RefreshCw, X } from "lucide-react";
 
-export function Tag({ children, tone = "gray" }: { children: ReactNode; tone?: "red" | "green" | "amber" | "gray" | "blue" }) {
+export function Tag({ children, tone = "gray" }: { children: ReactNode; tone?: "red" | "green" | "amber" | "orange" | "gray" | "blue" }) {
   return <span className={`tag tag-${tone}`}>{children}</span>;
 }
 
@@ -177,7 +177,7 @@ export function Sparkline({ values, width = 96, height = 34 }: { values: number[
   );
 }
 
-export function RiskRing({ score, size = 92 }: { score: number; size?: number }) {
+export function RiskRing({ score, size = 92, color }: { score: number; size?: number; color?: string }) {
   const pct = Math.max(0, Math.min(100, score));
   return (
     <div
@@ -185,7 +185,7 @@ export function RiskRing({ score, size = 92 }: { score: number; size?: number })
       style={{
         width: size,
         height: size,
-        background: `conic-gradient(var(--red) ${pct * 3.6}deg, #f0f0f0 0deg)`,
+        background: `conic-gradient(${color || "var(--red)"} ${pct * 3.6}deg, #f0f0f0 0deg)`,
       }}
     >
       <div className="risk-ring-in">

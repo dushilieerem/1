@@ -186,7 +186,7 @@ def _log_once(conn: Any, user_id: int, code: str, title: str, detail: str) -> bo
 def risk_scan(conn: Any, user_id: int, *, persist: bool = True) -> dict[str, Any]:
     """组合诊断 + 自选异常，生成可落库的提醒（同日同标题去重）。"""
     alerts: list[dict[str, Any]] = []
-    pf = rules.build_portfolio(conn, user_id)
+    pf = rules.build_portfolio(conn, user_id, include_penetration=False)
     for item in pf.get("diagnosis") or []:
         alerts.append(
             {

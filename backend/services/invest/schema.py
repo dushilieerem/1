@@ -79,6 +79,24 @@ DDL: tuple[str, ...] = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS invest_portfolio_trade (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      trade_date TEXT NOT NULL,
+      code TEXT NOT NULL,
+      name TEXT,
+      weight_before DOUBLE PRECISION NOT NULL DEFAULT 0,
+      weight_after DOUBLE PRECISION NOT NULL DEFAULT 0,
+      weight_delta DOUBLE PRECISION NOT NULL DEFAULT 0,
+      amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_invest_portfolio_trade_user
+      ON invest_portfolio_trade (user_id, trade_date DESC, id DESC)
+    """,
+    """
     CREATE TABLE IF NOT EXISTS invest_risk_profile (
       user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       level TEXT NOT NULL DEFAULT '稳健型', score INTEGER NOT NULL DEFAULT 62,

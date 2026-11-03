@@ -21,6 +21,7 @@ PURGE_TABLES: tuple[tuple[str, str], ...] = (
     ("invest_event_log", "user_id"),
     ("invest_portfolio", "user_id"),
     ("invest_portfolio_meta", "user_id"),
+    ("invest_portfolio_trade", "user_id"),
     ("invest_risk_profile", "user_id"),
     ("portfolio", "user_id"),
     ("portfolio_meta", "user_id"),

@@ -247,6 +247,50 @@ test("多标的对比页渲染同口径表与 AI 入口", async ({ page }) => {
   await noHorizontalOverflow(page);
 });
 
+test("组合页：持仓 / 体检切换与关键区块", async ({ page, request }) => {
+  const headers = { Authorization: `Bearer ${token}` };
+  const imported = await request.post(`${API}/api/invest/portfolio/import`, {
+    headers,
+    data: {
+      holdings: [
+        { code: "600036", shares: 4845, cost: 35 },
+        { code: "510300", shares: 46046, cost: 3.75 },
+        { code: "CASH", shares: 86400, cost: 1 },
+      ],
+    },
+  });
+  expect(imported.ok(), `导入组合失败 HTTP ${imported.status()}`).toBeTruthy();
+  // 第二次导入改变权重，生成「最近调仓」记录
+  const rebalanced = await request.post(`${API}/api/invest/portfolio/import`, {
+    headers,
+    data: {
+      holdings: [
+        { code: "600036", shares: 3000, cost: 35 },
+        { code: "510300", shares: 40000, cost: 3.75 },
+        { code: "CASH", shares: 120000, cost: 1 },
+      ],
+    },
+  });
+  expect(rebalanced.ok(), `再次导入组合失败 HTTP ${rebalanced.status()}`).toBeTruthy();
+
+  await loginByToken(page);
+  await page.goto(`${H5}/portfolio`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".pf-total")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("tab", { name: "持仓" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "今日归因" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "行业暴露" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "最近调仓" })).toBeVisible();
+  await expect(page.locator(".trade-row").first()).toBeVisible();
+  await noHorizontalOverflow(page);
+
+  await page.getByRole("tab", { name: "体检" }).click();
+  await expect(page.locator(".risk-ring")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "诊断结论" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "配置偏离" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "压力测试与成本" })).toBeVisible();
+  await noHorizontalOverflow(page);
+});
+
 test("轻量因子选股页渲染规则打分", async ({ page }) => {
   await loginByToken(page);
   await page.route("**/api/invest/quant/select*", (route) =>

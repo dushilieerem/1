@@ -308,6 +308,58 @@ def portfolio(user: dict[str, Any] = Depends(require_user), conn: PGConn = Depen
     return rules.build_portfolio(conn, _uid(user))
 
 
+@router.get("/portfolio/nav")
+def portfolio_nav(
+    range: str = Query("1m"),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """组合净值曲线：近 1 月 / 3 月 / 1 年，与沪深 300 对比。"""
+    if range not in {"1m", "3m", "1y"}:
+        raise HTTPException(status_code=400, detail="range 必须是 1m/3m/1y")
+    return rules.portfolio_nav(conn, _uid(user), range)
+
+
+@router.post("/portfolio/targets")
+def portfolio_targets(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """设置目标配置；合计必须为 100%，全 0 表示清除目标。"""
+    uid = _uid(user)
+    items = body.get("targets")
+    if not isinstance(items, list):
+        raise HTTPException(status_code=400, detail="targets 必须是列表")
+    existing = {r["code"] for r in conn.execute(
+        "SELECT code FROM invest_portfolio WHERE user_id=?", (uid,)
+    ).fetchall()}
+    parsed: dict[str, float] = {}
+    for item in items:
+        code = str(item.get("code") or "").strip()
+        if code not in existing:
+            raise HTTPException(status_code=400, detail=f"持仓中没有 {code}")
+        try:
+            weight = float(item.get("targetWeight"))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"{code} 的目标权重无效")
+        if weight < 0 or weight > 100:
+            raise HTTPException(status_code=400, detail="目标权重必须在 0–100 之间")
+        parsed[code] = weight
+    total = sum(parsed.values())
+    if total > 0 and abs(total - 100) > 0.1:
+        raise HTTPException(status_code=400, detail=f"目标权重合计需为 100%（当前 {total:.1f}%）")
+    if parsed and set(parsed) != existing:
+        raise HTTPException(status_code=400, detail="需提交全部持仓的目标权重，避免合计口径不一致")
+    for code, weight in parsed.items():
+        conn.execute(
+            "UPDATE invest_portfolio SET target_weight=? WHERE user_id=? AND code=?",
+            (round(weight, 2), uid, code),
+        )
+    conn.commit()
+    return rules.build_portfolio(conn, uid)
+
+
 @router.post("/portfolio/import")
 def import_portfolio(
     body: dict[str, Any] = Body(...),
@@ -318,6 +370,7 @@ def import_portfolio(
     items = body.get("holdings")
     if not isinstance(items, list) or not items:
         raise HTTPException(status_code=400, detail="holdings 不能为空")
+    before = rules.portfolio_rows(conn, uid)
     old_targets = {
         r["code"]: r["target_weight"]
         for r in conn.execute("SELECT code, target_weight FROM invest_portfolio WHERE user_id=?", (uid,)).fetchall()
@@ -344,12 +397,15 @@ def import_portfolio(
     conn.execute("DELETE FROM invest_portfolio WHERE user_id=?", (uid,))
     for code, shares, cost, value, industry in prepared:
         weight = value / total * 100
-        target = float(old_targets.get(code, weight))
+        # 没有历史目标就不自动把当前权重当目标；由用户在「设定目标配置」里明确设置。
+        target = float(old_targets.get(code, 0))
         conn.execute(
             "INSERT INTO invest_portfolio (user_id, code, shares, cost, weight, target_weight, industry) "
             "VALUES (?,?,?,?,?,?,?)",
             (uid, code, shares, cost, round(weight, 2), round(target, 2), industry),
         )
+    after = rules.portfolio_rows(conn, uid)
+    rules.record_portfolio_trades(conn, uid, before, after)
     conn.commit()
     return rules.build_portfolio(conn, uid)
 

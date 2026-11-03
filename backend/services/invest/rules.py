@@ -518,106 +518,635 @@ def compute_base_rate(bars: list[dict[str, Any]]) -> dict[str, Any]:
 
 def portfolio_rows(conn: Any, user_id: int) -> list[dict[str, Any]]:
     return rows(conn, """SELECT p.*, s.name, s.industry AS stock_industry, s.price, s.prev_close, s.beta,
-                                s.asset FROM portfolio p LEFT JOIN stocks s ON s.code=p.code
+                                s.asset, s.amount AS stock_amount, s.pe_ttm,
+                                ri.name AS industry_name, ri.level AS industry_level
+                         FROM portfolio p
+                         LEFT JOIN stocks s ON s.code=p.code
+                         LEFT JOIN LATERAL (
+                           SELECT name, level FROM ref_industry
+                            WHERE industry_code=s.industry
+                            ORDER BY level ASC LIMIT 1
+                         ) ri ON TRUE
                          WHERE p.user_id=?""", (user_id,))
 
 
-def build_portfolio(conn: Any, user_id: int) -> dict[str, Any]:
+def _holding_value(h: dict[str, Any]) -> float:
+    if str(h.get("code")) == "CASH":
+        return float(h.get("shares") or 0)
+    return float(h.get("shares") or 0) * float(h.get("price") or 0)
+
+
+def portfolio_weights(holdings: list[dict[str, Any]]) -> tuple[float, dict[str, float]]:
+    """按当前市值折算权重（%）；总市值为 0 时返回空权重。"""
+    total = sum(_holding_value(h) for h in holdings)
+    if total <= 0:
+        return 0.0, {}
+    return total, {str(h["code"]): _holding_value(h) / total * 100 for h in holdings}
+
+
+RISK_WEIGHTS = {
+    "concentration": 30,
+    "industry": 25,
+    "penetration": 15,
+    "correlation": 15,
+    "valuation": 10,
+    "turnover": 5,
+}
+LIQUIDITY_AMOUNT_FLOOR = 50_000_000  # 日均成交额 < 5000 万视为低流动性
+
+
+def _industry_label(h: dict[str, Any]) -> tuple[str, str]:
+    """返回（常用名，完整名）。常用名优先一级行业，完整名放 tooltip。"""
+    raw = h.get("stock_industry") or h.get("industry")
+    name = h.get("industry_name")
+    if name:
+        level = h.get("industry_level")
+        full = f"申万{level}级：{name}" if level else f"行业：{name}"
+        # stock_industry 可能是 801780.SI 这类行业代码；代码不作为常用名
+        raw_text = str(raw) if raw else ""
+        is_code = raw_text.split(".")[0].isdigit()
+        common = raw_text if raw_text and not is_code else name
+        return str(common), full
+    name = raw or "其他"
+    return str(name), str(name)
+
+
+def _corr(a: list[float], b: list[float]) -> float | None:
+    n = min(len(a), len(b))
+    if n < 5:
+        return None
+    a, b = a[-n:], b[-n:]
+    ma, mb = sum(a) / n, sum(b) / n
+    cov = sum((x - ma) * (y - mb) for x, y in zip(a, b))
+    va = sum((x - ma) ** 2 for x in a)
+    vb = sum((y - mb) ** 2 for y in b)
+    if va <= 0 or vb <= 0:
+        return None
+    return cov / math.sqrt(va * vb)
+
+
+def _mean_correlation(conn: Any, stock_values: list[tuple[dict[str, Any], float]]) -> float | None:
+    """持仓两两日收益相关系数均值；样本不足返回 None。"""
+    series: dict[str, dict[str, float]] = {}
+    for h, _ in stock_values:
+        bars = stock_bars(conn, str(h["code"]), 180)
+        if len(bars) < 30:
+            continue
+        series[str(h["code"])] = {str(b["date"]): float(b["close"]) for b in bars if b.get("close") is not None}
+    if len(series) < 2:
+        return None
+    common = set.intersection(*[set(v) for v in series.values()])
+    dates = sorted(common)[-60:]
+    if len(dates) < 20:
+        return None
+    returns: dict[str, list[float]] = {}
+    for code, closes in series.items():
+        vals = [closes[d] for d in dates]
+        returns[code] = [vals[i] / vals[i - 1] - 1 for i in range(1, len(vals)) if vals[i - 1]]
+    codes = list(returns)
+    pairs = []
+    for i in range(len(codes)):
+        for j in range(i + 1, len(codes)):
+            value = _corr(returns[codes[i]], returns[codes[j]])
+            if value is not None:
+                pairs.append(value)
+    return sum(pairs) / len(pairs) if pairs else None
+
+
+def _weighted_pe_percentile(conn: Any, stock_values: list[tuple[dict[str, Any], float]]) -> tuple[float | None, float]:
+    """权重加权的 PE 历史分位；返回（分位，覆盖权重）。"""
+    acc = 0.0
+    covered = 0.0
+    since = (date.today() - timedelta(days=365 * 3)).isoformat()
+    for h, _ in stock_values:
+        pe = h.get("pe_ttm")
+        if pe is None or float(pe) <= 0:
+            continue
+        try:
+            hist = [
+                float(r["pe_ttm"])
+                for r in conn.execute(
+                    "SELECT pe_ttm FROM valuations WHERE code=? AND date>=? AND pe_ttm > 0",
+                    (h["code"], since),
+                ).fetchall()
+                if r.get("pe_ttm") is not None
+            ]
+        except Exception:
+            continue
+        if len(hist) < 60:
+            continue
+        p = percentile(hist, float(pe))
+        if p is None:
+            continue
+        acc += p * float(h["weight"])
+        covered += float(h["weight"])
+    return (acc / covered if covered > 0 else None), covered
+
+
+def _risk_band(score: int) -> tuple[str, str]:
+    if score <= 40:
+        return "分散", "green"
+    if score <= 70:
+        return "偏集中", "amber"
+    if score <= 85:
+        return "较集中", "orange"
+    return "高度集中", "red"
+
+
+def _diag_item(
+    key: str,
+    title: str,
+    value: float,
+    threshold: float,
+    high_above: float,
+    evidence: str,
+    impact: str,
+    *,
+    digits: int = 1,
+) -> dict[str, Any] | None:
+    excess = value - threshold
+    if excess <= 0:
+        return None
+    level = "high" if excess > high_above else "medium"
+    return {
+        "id": key,
+        "title": title,
+        "level": level,
+        "value": round(value, digits),
+        "threshold": threshold,
+        "excess": round(excess, digits),
+        "evidence": evidence,
+        "detail": evidence,
+        "impact": impact,
+    }
+
+
+def _stress_scenarios(industries: dict[str, float], beta: float) -> list[dict[str, Any]]:
+    def group_weight(names: Iterable[str]) -> float:
+        return sum(industries.get(name, 0) for name in names)
+
+    rate_affected = {"银行": -0.02, "房地产": -0.03, "非银金融": -0.02}
+    rate_hit = sum(industries.get(name, 0) * shock for name, shock in rate_affected.items())
+    # 申万一级里新能源/消费分散在多个行业，按常用行业组聚合
+    new_energy = group_weight(("新能源", "电力设备", "有色金属"))
+    consumer = group_weight(("食品饮料", "家用电器", "商贸零售", "社会服务", "纺织服饰", "美容护理"))
+    scenarios = [
+        {"key": "market", "name": "沪深 300 −10%", "value": round((beta or 0.87) * -10, 1)},
+        {"key": "rate", "name": "利率 +50bp", "value": round(rate_hit, 1) if rate_hit else None},
+        {"key": "newenergy", "name": "新能源 −15%", "value": round(new_energy * -0.15, 1) if new_energy else None},
+        {"key": "consumer", "name": "消费 −10%", "value": round(consumer * -0.10, 1) if consumer else None},
+    ]
+    scenarios.sort(key=lambda s: (s["value"] is None, -abs(s["value"] or 0)))
+    return scenarios
+
+
+def _attribution_summary(items: list[dict[str, Any]], daily_change: float, benchmark: float | None) -> str:
+    positive = sorted([i for i in items if float(i["contributionPct"]) > 0], key=lambda i: -float(i["contributionPct"]))
+    negative = sorted([i for i in items if float(i["contributionPct"]) < 0], key=lambda i: float(i["contributionPct"]))
+    parts = []
+    if positive:
+        parts.append("、".join(str(i["name"]) for i in positive[:2]) + "贡献主要收益")
+    if negative:
+        parts.append(f"{negative[0]['name']}形成拖累")
+    text = "，".join(parts) + "。" if parts else "今日各持仓贡献接近 0。"
+    if benchmark is not None:
+        diff = daily_change - benchmark
+        verb = "跑赢" if diff > 0.005 else ("跑输" if diff < -0.005 else "持平")
+        text += f"整体 {signed(daily_change, 2)}，{verb}沪深300（{signed(benchmark, 2)}）。"
+    return text
+
+
+def build_portfolio(conn: Any, user_id: int, *, include_penetration: bool = True) -> dict[str, Any]:
     holdings = portfolio_rows(conn, user_id)
+    meta = one(conn, "SELECT * FROM portfolio_meta WHERE user_id=?", (user_id,)) or {
+        "trade_cost_pct": 0.4, "annual_turnover": 35, "impact_cost_pct": 0.08,
+    }
+    data_meta_value = data_meta(conn)
     if not holdings:
         return {
-            "totalValue": 0, "riskScore": 0, "riskLabel": "未导入", "dailyChange": 0,
+            "totalValue": 0, "totalCost": 0, "dailyPnl": 0, "dailyChange": 0,
+            "totalPnl": 0, "totalPnlPct": None,
+            "riskScore": 0, "riskLabel": "未导入", "riskTone": "gray",
+            "riskNote": "分数越高，代表风险越集中", "riskSummary": "尚未导入持仓。",
+            "riskMethod": {"items": [], "coveragePct": 0, "note": "导入持仓后计算。"},
             "kpis": [{"label": "总资产", "value": "0 万"}, {"label": "前三大持仓", "value": "—"},
                      {"label": "最大行业暴露", "value": "—"}, {"label": "历史最大回撤", "value": "—"}],
-            "holdings": [], "diagnosis": [], "exposure": [], "deviation": [], "stress": [],
-            "costs": {"tradeCostPct": 0, "annualTurnover": 0, "impactCostPct": 0, "extraCost": 0},
+            "holdings": [], "attribution": {"items": [], "total": 0, "needReview": False, "summary": "",
+                                            "benchmark": None, "note": "贡献 = 权重 × 涨跌"},
+            "diagnosis": [], "exposure": [], "exposureAll": [], "recentTrades": [],
+            "deviation": [], "targetConfigured": False, "stress": [],
+            "costs": {"tradeCostPct": meta["trade_cost_pct"], "annualTurnover": meta["annual_turnover"],
+                      "impactCostPct": meta["impact_cost_pct"], "turnoverCostPct": 0, "extraCost": 0.5},
             "summary": "尚未导入持仓；导入后才能做集中度、行业暴露与压力测试。",
-            "beta": 0, "dataDate": latest_date(conn), "disclaimer": DISCLAIMER,
+            "beta": 0, "penetration": None, "dataDate": latest_date(conn), "disclaimer": DISCLAIMER,
+            **data_meta_value,
         }
-    values = []
+
+    values: list[tuple[dict[str, Any], float, float]] = []
     for h in holdings:
-        if h["code"] == "CASH":
-            value = h["shares"] or 0
-            price = 1.0
-            change = 0.0
+        if str(h["code"]) == "CASH":
+            value, price, change = float(h["shares"] or 0), 1.0, 0.0
         else:
-            value = (h["shares"] or 0) * (h["price"] or 0)
-            price = h["price"] or 0
-            change = pct(price, h["prev_close"] or price)
+            price = float(h.get("price") or 0)
+            value = float(h["shares"] or 0) * price
+            change = pct(price, float(h.get("prev_close") or price))
         values.append((h, value, change))
     total = sum(v for _, v, _ in values) or 1
     for h, value, _ in values:
         h["value"] = value
         h["weight"] = value / total * 100
-    stock_values = [(h, v) for h, v, _ in values if h["code"] != "CASH"]
-    top3 = sum(h["weight"] for h, _ in sorted(stock_values, key=lambda x: x[1], reverse=True)[:3])
+    stock_values = [(h, v) for h, v, _ in values if str(h["code"]) != "CASH"]
+    stock_values.sort(key=lambda x: x[1], reverse=True)
+
+    total_cost = sum(
+        (float(h["shares"] or 0) if str(h["code"]) == "CASH" else float(h["shares"] or 0) * float(h["cost"] or 0))
+        for h, _, _ in values
+    )
+    daily_pnl = sum(v * change / 100 for _, v, change in values)
+    prev_total = total - daily_pnl
+    daily_change = daily_pnl / prev_total * 100 if prev_total > 0 else sum(
+        h["weight"] * change / 100 for h, _, change in values
+    )
+    total_pnl = total - total_cost
+    total_pnl_pct = total_pnl / total_cost * 100 if total_cost > 0 else None
+
+    top3 = sum(h["weight"] for h, _ in stock_values[:3])
+    max_single = stock_values[0][0]["weight"] if stock_values else 0.0
     industries: dict[str, float] = {}
+    industry_full: dict[str, str] = {}
     for h, _ in stock_values:
-        ind = h["stock_industry"] or h["industry"] or "其他"
-        industries[ind] = industries.get(ind, 0) + h["weight"]
-    max_ind = max(industries.values()) if industries else 0
-    beta = sum((h["beta"] or 0) * h["weight"] / 100 for h, _ in stock_values)
-    daily_change = sum(h["weight"] * c / 100 for h, _, c in values)
+        common, full = _industry_label(h)
+        industries[common] = industries.get(common, 0) + h["weight"]
+        industry_full.setdefault(common, full)
+    industry_ranked = sorted(industries.items(), key=lambda x: x[1], reverse=True)
+    top2_industry = sum(w for _, w in industry_ranked[:2])
+    max_ind = industry_ranked[0][1] if industry_ranked else 0.0
+    beta = sum((float(h.get("beta") or 0)) * h["weight"] / 100 for h, _ in stock_values)
     weighted_dd = 0.0
     for h, _ in stock_values:
-        bars = stock_bars(conn, h["code"], 180)
+        bars = stock_bars(conn, str(h["code"]), 180)
         if bars:
-            weighted_dd += max_drawdown([b["close"] for b in bars]) * h["weight"] / 100
+            weighted_dd += max_drawdown([float(b["close"]) for b in bars]) * h["weight"] / 100
 
-    score = round(min(95, max(20, 18 + top3 * 0.55 + max_ind * 0.45 + abs(weighted_dd) * 0.6)))
-    label = "偏集中" if score >= 65 else "相对均衡"
-    diagnosis = []
-    if max_ind >= 24:
-        diagnosis.append({"title": "行业集中度偏高", "detail": f"最大行业 {max(industries, key=industries.get)} 占 {max_ind:.0f}%；单行业波动会被放大。", "evidence": f"行业暴露：{max(industries, key=industries.get)} {max_ind:.0f}%", "risk": "行业回撤会直接拖累组合。"})
-    if top3 >= 60:
-        diagnosis.append({"title": "前三大持仓占比偏高", "detail": f"前三大合计 {top3:.0f}%，重仓股波动会显著影响组合。", "evidence": f"前三大 {top3:.0f}%", "risk": "个股事件可能造成较大净值波动。"})
-    devs = []
-    for h, _, _ in values:
-        diff = h["weight"] - (h["target_weight"] or 0)
-        if abs(diff) >= 3:
-            devs.append((h, diff))
-    if devs:
-        h, diff = max(devs, key=lambda x: abs(x[1]))
-        diagnosis.append({"title": "配置偏离超过阈值", "detail": f"{h['name'] or h['code']} 当前 {h['weight']:.0f}%，目标 {h['target_weight']:.0f}%，偏离 {diff:+.0f}%。", "evidence": f"目标 vs 当前偏离 {diff:+.0f}%", "risk": "偏离只展示，不构成调仓建议；是否调整由你决定。"})
-    meta = one(conn, "SELECT * FROM portfolio_meta WHERE user_id=?", (user_id,)) or {"trade_cost_pct": 0.4, "annual_turnover": 35, "impact_cost_pct": 0.08}
-    if meta["annual_turnover"] >= 30:
-        diagnosis.append({"title": "换手与成本需要关注", "detail": f"示例年化换手 {meta['annual_turnover']:.0f}%，预估再平衡成本 {meta['trade_cost_pct']:.1f}%。", "evidence": f"单次冲击成本约 {meta['impact_cost_pct']:.2f}%", "risk": "频繁调仓会侵蚀收益。"})
-
-    exposure = [{"name": k, "weight": round(v, 1)} for k, v in sorted(industries.items(), key=lambda x: x[1], reverse=True)]
-    if any(h["code"] == "CASH" for h, _, _ in values):
-        cash = sum(h["weight"] for h, _, _ in values if h["code"] == "CASH")
-        exposure.append({"name": "现金", "weight": round(cash, 1)})
-    deviation = []
-    for h, _, _ in values:
-        diff = h["weight"] - (h["target_weight"] or 0)
-        deviation.append({"name": h["name"] or ("现金" if h["code"] == "CASH" else h["code"]),
-                          "current": round(h["weight"], 1), "target": h["target_weight"],
-                          "diff": round(diff, 1), "status": "超配" if diff > 0.5 else ("低配" if diff < -0.5 else "达标")})
-    stress = [
-        {"name": "沪深 300 −10%", "value": round(beta * -10, 1)},
-        {"name": "利率 +50bp", "value": -2.4},
-        {"name": "新能源 −15%", "value": round(industries.get("新能源", 0) * -0.15, 1)},
-        {"name": "消费 −10%", "value": round(industries.get("食品饮料", 0) * -0.10, 1)},
+    # 归因：权重 × 当日涨跌，合计与组合今日收益交叉校验
+    attribution_items = [
+        {
+            "code": h["code"],
+            "name": h.get("name") or ("现金" if str(h["code"]) == "CASH" else h["code"]),
+            "weight": round(h["weight"], 1),
+            "changePct": round(change, 2),
+            "contributionPct": round(h["weight"] * change / 100, 2),
+            "isCash": str(h["code"]) == "CASH",
+        }
+        for h, _, change in values
     ]
+    attribution_items.sort(key=lambda x: x["contributionPct"], reverse=True)
+    contribution_total = sum(i["contributionPct"] for i in attribution_items)
+    benchmark_row = one(conn, "SELECT price, prev_close FROM indices WHERE code LIKE '000300%' LIMIT 1")
+    benchmark_name = "沪深300"
+    if not benchmark_row:
+        benchmark_row = one(conn, "SELECT price, prev_close FROM stocks WHERE code='510300' LIMIT 1")
+        benchmark_name = "沪深300（ETF 代理）"
+    benchmark_change = None
+    if benchmark_row and benchmark_row.get("price") is not None and benchmark_row.get("prev_close"):
+        benchmark_change = pct(float(benchmark_row["price"]), float(benchmark_row["prev_close"]))
+
+    # 穿透（可选，较慢；首页/扫描可跳过）
+    penetration = None
+    if include_penetration and stock_values:
+        try:
+            from services.invest import agent_tools as _agent_tools
+            penetration = _agent_tools.portfolio_penetration(conn, user_id, top=30)
+        except Exception:
+            penetration = None
+    lt_top3 = float(penetration["top3"]) if penetration and penetration.get("top3") is not None else top3
+    lt_coverage = float(penetration.get("coveragePct") or 0) if penetration else 100.0
+    # 有 ETF 但穿透覆盖为 0 时，直接持仓 top3 不能冒充穿透结果
+    pen_usable = True
+    if penetration is not None:
+        pen_usable = float(penetration.get("etfWeight") or 0) <= 0 or lt_coverage > 0
+
+    corr = _mean_correlation(conn, stock_values)
+    pe_pct, pe_covered = _weighted_pe_percentile(conn, stock_values)
+    illiquid_weight = sum(
+        h["weight"] for h, _ in stock_values
+        if h.get("stock_amount") is not None and float(h["stock_amount"]) < LIQUIDITY_AMOUNT_FLOOR
+    )
+    has_amount = any(h.get("stock_amount") is not None for h, _ in stock_values)
+    turnover_cost = round(float(meta["annual_turnover"]) / 100 * float(meta["trade_cost_pct"]), 2)
+
+    diagnosis: list[dict[str, Any]] = []
+    for item in (
+        _diag_item("single", "单票集中", max_single, 30, 5,
+                   f"最大单一持仓 {max_single:.1f}%（阈值 30%）。",
+                   "重仓单只股票的波动会直接放大组合净值。"),
+        _diag_item("top3", "前三大持仓偏高", top3, 60, 8,
+                   f"前三大合计 {top3:.1f}%（阈值 60%）。",
+                   "重仓股波动会放大净值波动。"),
+        _diag_item("industry", "行业集中度偏高", top2_industry, 40, 8,
+                   f"{' + '.join(name for name, _ in industry_ranked[:2])} 合计 {top2_industry:.1f}%（阈值 40%）。" if industry_ranked else "",
+                   "单一行业回撤会直接拖累组合。"),
+        _diag_item("penetration", "穿透后集中度更高", lt_top3, 65, 6,
+                   f"穿透后前三大 {lt_top3:.1f}%（阈值 65%，覆盖 {lt_coverage:.0f}%）。"
+                   + ("仅覆盖已穿透部分。" if lt_coverage < 99.9 else ""),
+                   "表面分散会低估实际暴露。") if pen_usable else None,
+        _diag_item("correlation", "持仓相关性偏高", corr or 0.0, 0.65, 0.10,
+                   f"持仓两两相关系数均值 {corr:.2f}（阈值 0.65）。" if corr is not None else "",
+                   "相关性高时，分散配置可能同时回撤。", digits=2),
+        _diag_item("liquidity", "低流动性持仓偏高", illiquid_weight if has_amount else 0.0, 15, 5,
+                   f"日均成交 < 5000 万的标的权重 {illiquid_weight:.1f}%（阈值 15%）。",
+                   "极端行情下可能难以及时成交。"),
+        _diag_item("valuation", "估值分位偏高", pe_pct or 0.0, 85, 7,
+                   f"权重加权 PE 历史分位 {pe_pct:.0f}%（阈值 85%，覆盖 {pe_covered:.0f}%）。" if pe_pct is not None else "",
+                   "高估值对盈利不及预期更敏感。"),
+        _diag_item("turnover", "换手成本偏高", turnover_cost, 0.5, 0.5,
+                   f"年化换手 × 单边成本 = {turnover_cost:.2f}%（阈值 0.50%）。",
+                   "频繁调仓会侵蚀收益。", digits=2),
+    ):
+        if item is not None:
+            diagnosis.append(item)
+    diagnosis.sort(key=lambda d: (0 if d["level"] == "high" else 1, -d["excess"]))
+    hidden_count = max(0, len(diagnosis) - 5)
+    diagnosis = diagnosis[:5]
+
+    # 风险分：6 项加权；缺失项按可用权重重新归一，并给出覆盖率
+    sub_scores = [
+        ("concentration", "集中度", max_single / 30, top3 / 60, f"最大单票 {max_single:.1f}%，前三大 {top3:.1f}%"),
+        ("industry", "行业集中", top2_industry / 40, None, f"前两大行业 {top2_industry:.1f}%"),
+        ("penetration", "ETF 穿透", lt_top3 / 65 if pen_usable else None, None,
+         f"穿透后前三大 {lt_top3:.1f}%" if pen_usable else "穿透覆盖不足"),
+        ("correlation", "相关性", corr / 0.65 if corr is not None else None, None,
+         f"两两相关系数均值 {corr:.2f}" if corr is not None else "样本不足"),
+        ("valuation", "估值分位", pe_pct / 85 if pe_pct is not None else None, None,
+         f"加权 PE 分位 {pe_pct:.0f}%" if pe_pct is not None else "数据待补充"),
+        ("turnover", "换手成本", turnover_cost / 0.5, None, f"年化换手成本 {turnover_cost:.2f}%"),
+    ]
+    risk_items = []
+    weighted_score = 0.0
+    available_weight = 0.0
+    for key, label, raw, raw2, detail in sub_scores:
+        raw_value = max(raw, raw2) if raw2 is not None else raw
+        available = raw_value is not None
+        score_part = round(max(0.0, min(100.0, raw_value * 100)), 0) if available else None
+        weight = RISK_WEIGHTS[key]
+        risk_items.append({
+            "key": key, "label": label, "weight": weight, "score": score_part,
+            "available": available, "detail": detail,
+        })
+        if available:
+            weighted_score += score_part * weight
+            available_weight += weight
+    risk_score = round(weighted_score / available_weight) if available_weight else 0
+    risk_label, risk_tone = _risk_band(risk_score)
+    ranked_risks = sorted(
+        [i for i in risk_items if i["available"] and i["score"] >= 50],
+        key=lambda i: i["weight"] * (i["score"] or 0), reverse=True,
+    )
+    risk_summary = (
+        f"风险主要来自「{' + '.join(i['label'] for i in ranked_risks[:2])}」，不是来自市场整体。"
+        if ranked_risks else "持仓结构相对分散；主要不确定性来自市场整体波动。"
+    )
+
+    # 行业暴露：最多 6 条，其余合并「其他」
+    exposure_all = [{"name": k, "weight": round(v, 1), "fullName": industry_full.get(k, k)}
+                    for k, v in industry_ranked]
+    if any(str(h["code"]) == "CASH" for h, _, _ in values):
+        cash = sum(h["weight"] for h, _, _ in values if str(h["code"]) == "CASH")
+        exposure_all.append({"name": "现金", "weight": round(cash, 1), "fullName": "现金"})
+        exposure_all.sort(key=lambda x: x["weight"], reverse=True)
+    exposure = exposure_all[:6]
+    if len(exposure_all) > 6:
+        exposure.append({"name": "其他", "weight": round(sum(x["weight"] for x in exposure_all[6:]), 1),
+                         "fullName": "其余行业合并"})
+
+    target_configured = any(float(h.get("target_weight") or 0) > 0 for h, _, _ in values)
+    deviation = []
+    if target_configured:
+        for h, _, _ in values:
+            target = float(h.get("target_weight") or 0)
+            diff = h["weight"] - target
+            deviation.append({
+                "code": h["code"],
+                "name": h.get("name") or ("现金" if str(h["code"]) == "CASH" else h["code"]),
+                "current": round(h["weight"], 1),
+                "target": round(target, 1),
+                "diff": round(diff, 1),
+                "status": "超配" if diff > 0.5 else ("低配" if diff < -0.5 else "达标"),
+            })
+        deviation.sort(key=lambda x: abs(x["diff"]), reverse=True)
+
+    stress = _stress_scenarios(industries, beta)
+
+    recent_trades: list[dict[str, Any]] = []
+    try:
+        for r in conn.execute(
+            "SELECT trade_date, code, name, weight_delta, amount FROM invest_portfolio_trade "
+            "WHERE user_id=? ORDER BY trade_date DESC, id DESC LIMIT 5",
+            (user_id,),
+        ).fetchall():
+            recent_trades.append({
+                "date": str(r["trade_date"])[:10],
+                "code": r["code"],
+                "name": r.get("name") or r["code"],
+                "weightDelta": round(float(r.get("weight_delta") or 0), 1),
+                "amount": round(float(r.get("amount") or 0), 0),
+            })
+    except Exception:
+        recent_trades = []
+
+    cash_weight = sum(h["weight"] for h, _, _ in values if str(h["code"]) == "CASH")
+    holdings_out = []
+    for h, value, change in values:
+        is_cash = str(h["code"]) == "CASH"
+        common, full = _industry_label(h) if not is_cash else ("现金", "现金")
+        price = float(h.get("price") or 0)
+        cost = float(h.get("cost") or 0)
+        pnl_pct = (price / cost - 1) * 100 if cost > 0 and price > 0 else None
+        pnl_amount = (price - cost) * float(h["shares"] or 0) if cost > 0 and price > 0 else None
+        holdings_out.append({
+            "code": h["code"], "name": h.get("name") or ("现金" if is_cash else h["code"]),
+            "industry": common, "industryFull": full,
+            "weight": round(h["weight"], 1), "value": round(value, 0),
+            "shares": h["shares"], "cost": h["cost"], "price": round(price, 3),
+            "todayPct": None if is_cash else round(change, 2),
+            "todayPnl": 0 if is_cash else round(value * change / 100, 0),
+            "pnlPct": None if is_cash else (round(pnl_pct, 1) if pnl_pct is not None else None),
+            "pnlAmount": 0 if is_cash else (round(pnl_amount, 0) if pnl_amount is not None else None),
+            "targetWeight": round(float(h.get("target_weight") or 0), 1),
+            "isCash": is_cash,
+        })
+    holdings_out.sort(key=lambda h: h["weight"], reverse=True)
+
     kpis = [
         {"label": "总资产", "value": f"{total/10000:.1f} 万"},
         {"label": "前三大持仓", "value": f"{top3:.0f}%"},
         {"label": "最大行业暴露", "value": f"{max_ind:.0f}%"},
         {"label": "历史最大回撤", "value": f"{weighted_dd:.1f}%"},
     ]
-    summary = f"风险主要来自{'行业集中' if max_ind >= 24 else '个股与市场波动'}，不是来自市场整体。"
+
     return {
-        "totalValue": total, "riskScore": score, "riskLabel": label, "dailyChange": daily_change,
-        "kpis": kpis, "holdings": [{"code": h["code"], "name": h["name"] or ("现金" if h["code"] == "CASH" else h["code"]),
-                                    "industry": h["stock_industry"] or h["industry"] or "现金",
-                                    "weight": round(h["weight"], 1), "value": round(h["value"], 0),
-                                    "shares": h["shares"], "cost": h["cost"], "price": h.get("price") or 1,
-                                    "pnlPct": round((h.get("price") or 1) / h["cost"] * 100 - 100, 1) if h["cost"] else 0}
-                                   for h, _, _ in values],
-        "diagnosis": diagnosis, "exposure": exposure, "deviation": deviation, "stress": stress,
-        "costs": {"tradeCostPct": meta["trade_cost_pct"], "annualTurnover": meta["annual_turnover"],
-                  "impactCostPct": meta["impact_cost_pct"], "extraCost": 0.5},
-        "summary": summary, "beta": round(beta, 2), "dataDate": latest_date(conn), "disclaimer": DISCLAIMER,
+        "totalValue": round(total, 0), "totalCost": round(total_cost, 0),
+        "dailyPnl": round(daily_pnl, 0), "dailyChange": round(daily_change, 2),
+        "totalPnl": round(total_pnl, 0),
+        "totalPnlPct": round(total_pnl_pct, 2) if total_pnl_pct is not None else None,
+        "riskScore": risk_score, "riskLabel": risk_label, "riskTone": risk_tone,
+        "riskNote": "分数只反映持仓结构，不预测盈亏；分数越高，代表风险越集中。",
+        "riskSummary": risk_summary,
+        "riskMethod": {"items": risk_items, "coveragePct": round(available_weight, 0),
+                       "note": "按 6 项加权；数据缺失项不参与计算，覆盖率 = 可用权重之和。"},
+        "kpis": kpis,
+        "holdings": holdings_out,
+        "attribution": {
+            "items": attribution_items, "total": round(contribution_total, 2),
+            "needReview": abs(contribution_total - daily_change) > 0.1,
+            "benchmark": {"name": benchmark_name,
+                          "changePct": round(benchmark_change, 2) if benchmark_change is not None else None},
+            "summary": _attribution_summary(attribution_items, daily_change, benchmark_change),
+            "note": "贡献 = 权重 × 涨跌；合计与组合今日收益误差 > 0.1pct 时标注「归因待核」。",
+        },
+        "diagnosis": diagnosis, "diagnosisHidden": hidden_count,
+        "exposure": exposure, "exposureAll": exposure_all,
+        "recentTrades": recent_trades,
+        "deviation": deviation, "targetConfigured": target_configured,
+        "stress": stress,
+        "costs": {
+            "tradeCostPct": meta["trade_cost_pct"], "annualTurnover": meta["annual_turnover"],
+            "impactCostPct": meta["impact_cost_pct"], "turnoverCostPct": turnover_cost, "extraCost": 0.5,
+        },
+        "summary": risk_summary, "beta": round(beta, 2),
+        "penetration": penetration,
+        "cashWeight": round(cash_weight, 1),
+        "dataDate": latest_date(conn), "disclaimer": DISCLAIMER,
+        **data_meta_value,
+    }
+
+
+def record_portfolio_trades(conn: Any, user_id: int, before: list[dict[str, Any]],
+                            after: list[dict[str, Any]]) -> None:
+    """导入持仓后记录权重变化。首次导入（无旧市值）不记录。"""
+    old_total, old_weights = portfolio_weights(before)
+    new_total, new_weights = portfolio_weights(after)
+    if old_total <= 0 or new_total <= 0:
+        return
+    names = {
+        str(h["code"]): (h.get("name") or ("现金" if str(h["code"]) == "CASH" else h["code"]))
+        for h in after
+    }
+    today = date.today().isoformat()
+    for code in set(old_weights) | set(new_weights):
+        before_w = old_weights.get(code, 0.0)
+        after_w = new_weights.get(code, 0.0)
+        delta = after_w - before_w
+        if abs(delta) < 0.1:
+            continue
+        conn.execute(
+            "INSERT INTO invest_portfolio_trade "
+            "(user_id, trade_date, code, name, weight_before, weight_after, weight_delta, amount) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (user_id, today, code, names.get(code, code), round(before_w, 2), round(after_w, 2),
+             round(delta, 2), round(delta / 100 * new_total, 0)),
+        )
+
+
+def _index_bars(conn: Any, limit: int) -> list[dict[str, Any]]:
+    try:
+        rows_ = rows(
+            conn,
+            """SELECT * FROM (
+                 SELECT trade_date::text AS date, close
+                   FROM md_index_bar
+                  WHERE split_part(index_code, '.', 1)='000300' AND close IS NOT NULL
+                  ORDER BY trade_date DESC LIMIT ?
+               ) t ORDER BY date ASC""",
+            (limit,),
+        )
+        if rows_:
+            return rows_
+    except Exception:
+        pass
+    return [{"date": b["date"], "close": b["close"]} for b in stock_bars(conn, "510300", limit)]
+
+
+def portfolio_nav(conn: Any, user_id: int, period: str = "1m") -> dict[str, Any]:
+    """按当前持仓回溯净值曲线（买入并持有假设），与沪深 300 对比。"""
+    days = {"1m": 22, "3m": 66, "1y": 250}.get(period, 22)
+    holdings = portfolio_rows(conn, user_id)
+    total, weights = portfolio_weights(holdings)
+    if total <= 0:
+        return {"period": period, "dates": [], "portfolio": [], "benchmark": [],
+                "benchmarkName": "沪深300", "coveragePct": 0,
+                "note": "尚未导入持仓。"}
+    cash_weight = weights.get("CASH", 0.0)
+    benchmark_bars = _index_bars(conn, days + 5)
+    master_dates = [str(b["date"]) for b in benchmark_bars][-days:]
+    series: dict[str, dict[str, float]] = {}
+    included_weight = 0.0
+    for h in holdings:
+        code = str(h["code"])
+        if code == "CASH":
+            continue
+        bars = stock_bars(conn, code, days + 20)
+        if len(bars) < max(2, days // 2):
+            continue
+        mapping = {str(b["date"]): float(b["close"]) for b in bars if b.get("close") is not None}
+        series[code] = mapping
+        included_weight += weights.get(code, 0.0)
+    if not series:
+        return {"period": period, "dates": [], "portfolio": [], "benchmark": [],
+                "benchmarkName": "沪深300", "coveragePct": 0,
+                "note": "持仓历史行情不足，暂不能回溯。"}
+    if not master_dates:
+        master_dates = sorted(set.union(*[set(m) for m in series.values()]))[-days:]
+    scale = (100 - cash_weight) / included_weight if included_weight > 0 else 0
+    bases: dict[str, float | None] = {}
+    for code, mapping in series.items():
+        base = next((mapping[d] for d in master_dates if d in mapping), None)
+        bases[code] = base
+    portfolio_points: list[float | None] = []
+    benchmark_points: list[float | None] = []
+    benchmark_map = {str(b["date"]): float(b["close"]) for b in benchmark_bars if b.get("close") is not None}
+    bench_base = None
+    for d in master_dates:
+        if bench_base is None and d in benchmark_map:
+            bench_base = benchmark_map[d]
+        benchmark_points.append(
+            round((benchmark_map[d] / bench_base - 1) * 100, 2)
+            if bench_base and d in benchmark_map else None
+        )
+        value = cash_weight
+        valid = True
+        for h in holdings:
+            code = str(h["code"])
+            if code == "CASH":
+                continue
+            mapping = series.get(code)
+            if not mapping:
+                continue
+            weight = weights.get(code, 0.0)
+            if weight <= 0:
+                continue
+            # 用最近一个不晚于目标日期的收盘价，避免停牌造成空洞
+            price = None
+            for back in range(0, 8):
+                probe = (date.fromisoformat(d) - timedelta(days=back)).isoformat()
+                if probe in mapping:
+                    price = mapping[probe]
+                    break
+            base = bases.get(code)
+            if price is None or not base:
+                valid = False
+                break
+            value += weight * scale * (price / base)
+        portfolio_points.append(round(value - 100, 2) if valid else None)
+    pairs = [(d, p, b) for d, p, b in zip(master_dates, portfolio_points, benchmark_points) if p is not None]
+    return {
+        "period": period,
+        "dates": [p[0] for p in pairs],
+        "portfolio": [p[1] for p in pairs],
+        "benchmark": [p[2] for p in pairs],
+        "benchmarkName": "沪深300",
+        "coveragePct": round(included_weight, 1),
+        "note": "按当前持仓回溯（买入并持有假设），不代表真实历史成交；未覆盖持仓不计入。",
     }
 
 
@@ -659,7 +1188,7 @@ def build_home(conn: Any, user_id: int) -> dict[str, Any]:
         daily.append({"tag": "自选 · 异动", "title": f"{s['name']} {s['changePct']:+.2f}%",
                       "detail": f"收盘 {s['price']:.2f} 元；打开个股查看估值与风险。",
                       "link": {"type": "stock", "id": s["code"]}})
-    pf = build_portfolio(conn, user_id)
+    pf = build_portfolio(conn, user_id, include_penetration=False)
     if pf["deviation"]:
         d = max(pf["deviation"], key=lambda x: abs(x["diff"]))
         daily.append({"tag": "组合 · 偏离", "title": f"{d['name']} {d['diff']:+.0f}%",

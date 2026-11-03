@@ -64,7 +64,7 @@ export default function Home() {
 
       {data?.isStale ? (
         <div className="stale-banner">
-          数据截至 {data.dataDate}，已 {data.ageDays} 天未更新；请先刷新 EOD 数据再判断。
+          数据截至 {data.dataDate}，落后 {data.ageTradingDays ?? data.ageDays} 个交易日；请先刷新 EOD 数据再判断。
         </div>
       ) : null}
 

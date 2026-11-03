@@ -804,7 +804,7 @@ def build_meta(conn: Any) -> dict[str, Any]:
     return {"dataDate": meta["dataDate"], "source": meta["dataSource"],
             "isDemo": meta["isDemo"], "disclaimer": DISCLAIMER,
             "updatedAt": row["value"] if row else meta["dataDate"],
-            "ageDays": age, "ageTradingDays": weekdays, "isStale": weekdays > 2}
+            "ageDays": age, "ageTradingDays": weekdays, "isStale": weekdays > 1}
 
 
 def build_data_quality(conn: Any) -> dict[str, Any]:

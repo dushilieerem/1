@@ -95,7 +95,7 @@ export default function Me() {
         <Kv k="更新时间" v={meta?.updatedAt || "2026-10-26 18:30"} />
         <Kv k="行情口径" v="前复权 · 收盘快照 · 非实时" />
         <Kv k="质量检查" v={quality ? (quality.ok ? (quality.checks?.some?.((c: any) => c.status === "warn") ? "通过（有提醒）" : "通过") : "有异常") : "检查中"} />
-        <Kv k="数据新鲜度" v={meta ? (meta.isStale ? `已 ${meta.ageDays} 天未更新` : "T-0 / 正常") : "检查中"} />
+        <Kv k="数据新鲜度" v={meta ? (meta.isStale ? `落后 ${meta.ageTradingDays ?? meta.ageDays} 个交易日` : "T-0 / 正常") : "检查中"} />
         {meta?.disabledModules?.length ? <Kv k="模块状态" v={`临时关闭：${meta.disabledModules.join("、")}`} /> : null}
         <div className="hint">
           {meta?.isDemo

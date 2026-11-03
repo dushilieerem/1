@@ -739,57 +739,48 @@ def build_search(conn: Any, q: str) -> dict[str, Any]:
                 "price": s["price"], "changePct": pct(s["price"], s["prev_close"])} for s in stocks]
     results += [{"type": "topic", "id": t["id"], "name": t["name"], "sub": "行业 / 主题",
                  "price": None, "changePct": None} for t in topics]
+
     presets = []
-    all_stocks = [
-        s for s in rows(conn, "SELECT * FROM stocks")
-        if s["asset"] == "stock" and s.get("price") is not None
-    ]
-    for key, label, desc in [("low_pe", "低估值", "PE 分位 < 30%"), ("momentum", "高动量", "近 20 日涨幅 > 5%"),
-                             ("low_vol", "低波动", "年化波动率低于中位数")]:
-        items = []
-        for s in all_stocks:
-            vals = rows(conn, """SELECT pe_ttm FROM (
-                                   SELECT pe_ttm, date FROM valuations WHERE code=? AND pe_ttm IS NOT NULL
-                                   ORDER BY date DESC LIMIT 750
-                                 )""", (s["code"],))
-            pctile = percentile([v["pe_ttm"] for v in vals], s["pe_ttm"])
-            bars = stock_bars(conn, s["code"], 60)
-            closes = [b["close"] for b in bars]
-            ret20 = pct(s["price"], closes[-21]) if len(closes) > 21 else 0
-            vol = volatility(closes)
-            if key == "low_pe" and pctile is not None and pctile < 30:
-                items.append((s, f"PE 分位 {pctile:.0f}%"))
-            elif key == "momentum" and ret20 > 5:
-                items.append((s, f"20 日 {ret20:+.1f}%"))
-            elif key == "low_vol" and vol < 28:
-                items.append((s, f"波动 {vol:.0f}%"))
-        items = sorted(items, key=lambda x: x[0]["market_cap"] or 0, reverse=True)[:5]
-        presets.append({"key": key, "label": label, "desc": desc,
-                        "items": [{"code": s["code"], "name": s["name"], "industry": s["industry"],
-                                   "price": s["price"], "changePct": pct(s["price"], s["prev_close"]),
-                                   "reason": reason} for s, reason in items]})
-    return {"q": q, "results": results, "presets": presets}
+    if not q:
+        # 只用服务层快照字段，避免每次搜索对全市场逐股扫 750 天 bars/valuations
+        pool = [
+            s for s in rows(conn, "SELECT * FROM stocks")
+            if s["asset"] == "stock" and s.get("price") is not None
+        ]
 
+        def card(s: dict[str, Any], reason: str) -> dict[str, Any]:
+            return {
+                "type": "stock", "id": s["code"], "name": s["name"],
+                "sub": f"{s['code']} · {s['industry']}", "price": s["price"],
+                "changePct": pct(s["price"], s["prev_close"]), "reason": reason,
+            }
 
-def build_news(conn: Any, kind: str | None = None) -> dict[str, Any]:
-    if kind and kind != "all":
-        items = rows(conn, "SELECT * FROM news WHERE kind=? ORDER BY published_at DESC LIMIT 20", (kind,))
-    else:
-        items = rows(conn, "SELECT * FROM news ORDER BY published_at DESC LIMIT 20")
-    real = conn.execute("SELECT COUNT(*) AS n FROM news WHERE id LIKE 'doc-%' OR id LIKE 'news-%' OR id LIKE 'ann-%' OR id LIKE 'rep-%'").fetchone()["n"]
-    seed_news = conn.execute("SELECT COUNT(*) AS n FROM news WHERE kind='news' AND id NOT LIKE 'news-%'").fetchone()["n"]
-    return {"items": items, "disclaimer": "公告/研报仅保留标题、来源、时间与原文链接；非投资建议。",
-            "isDemo": not bool(real), "demoKinds": ["news"] if seed_news else []}
-
-
-def build_meta(conn: Any) -> dict[str, Any]:
-    meta = data_meta(conn)
-    row = conn.execute("SELECT value FROM meta WHERE key='updated_at'").fetchone()
-    age = max(0, (date.today() - date.fromisoformat(meta["dataDate"])).days)
-    return {"dataDate": meta["dataDate"], "source": meta["dataSource"],
-            "isDemo": meta["isDemo"], "disclaimer": DISCLAIMER,
-            "updatedAt": row["value"] if row else meta["dataDate"],
-            "ageDays": age, "isStale": age > 2}
+        low_pe = sorted(
+            [s for s in pool if s.get("pe_ttm") is not None and s["pe_ttm"] > 0],
+            key=lambda s: s["pe_ttm"],
+        )[:5]
+        momentum = sorted(
+            pool, key=lambda s: pct(s["price"], s["prev_close"]), reverse=True
+        )[:5]
+        dividend = sorted(
+            [s for s in pool if s.get("dividend_yield") is not None and s["dividend_yield"] > 0],
+            key=lambda s: s["dividend_yield"], reverse=True,
+        )[:5]
+        presets = [
+            {
+                "key": "low_pe", "label": "低估值", "desc": "按当前 PE 快照从低到高（非历史分位）",
+                "items": [card(s, f"PE {s['pe_ttm']:.1f}x") for s in low_pe],
+            },
+            {
+                "key": "momentum", "label": "今日强势", "desc": "按当日涨幅快照（非 20 日动量）",
+                "items": [card(s, f"今日 {pct(s['price'], s['prev_close']):+.1f}%") for s in momentum],
+            },
+            {
+                "key": "dividend", "label": "高股息", "desc": "按当前股息率快照从高到低",
+                "items": [card(s, f"股息率 {s['dividend_yield']:.2f}%") for s in dividend],
+            },
+        ]
+    return {"results": results, "presets": presets}
 
 
 def build_data_quality(conn: Any) -> dict[str, Any]:

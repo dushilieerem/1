@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Activity, AlertTriangle, ClipboardList } from "lucide-react";
-import { instApi, fmtMoney, fmtPct } from "@/lib/instApi";
+import { instApi, fmtMoney, fmtPct, fmtDateTime } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
-import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge } from "./instUi";
+import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge, industryLabel } from "./instUi";
 
 type Position = {
   id: number;
@@ -13,8 +13,10 @@ type Position = {
   name?: string;
   industry?: string;
   qty: number;
+  cost?: number;
   market_value: number;
   weight: number;
+  as_of?: string;
 };
 
 type Event = {
@@ -87,6 +89,20 @@ const REASON: Record<string, [string, string]> = {
   better_allocation: ["更优资本配置", "Better allocation"],
   portfolio_constraint: ["组合/资金约束", "Portfolio constraint"],
   other: ["其他", "Other"],
+};
+
+const SEVERITY: Record<string, [string, string]> = {
+  info: ["提示", "Info"],
+  warning: ["警告", "Warning"],
+  critical: ["严重", "Critical"],
+};
+
+const EVENT_TYPE: Record<string, [string, string]> = {
+  manual: ["手工记录", "Manual"],
+  price: ["价格异动", "Price move"],
+  valuation: ["估值变化", "Valuation"],
+  governance: ["治理事件", "Governance"],
+  thesis: ["论点复核", "Thesis review"],
 };
 
 export function InstMonitorPage() {
@@ -279,10 +295,10 @@ export function InstMonitorPage() {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          [t("组合净值", "Portfolio NAV"), fmtMoney(pf?.nav)],
-          [t("现金", "Cash"), fmtMoney(pf?.cash)],
-          [t("仓位", "Exposure"), fmtPct(pf?.invested_ratio)],
-          [t("持仓数", "Positions"), String(positions.length)],
+          [t("组合净值（CNY）", "Portfolio NAV (CNY)"), fmtMoney(pf?.nav)],
+          [t("现金（CNY）", "Cash (CNY)"), fmtMoney(pf?.cash)],
+          [t("仓位（已投资/净值）", "Exposure (invested/NAV)"), fmtPct(pf?.invested_ratio)],
+          [t("持仓数（只）", "Positions"), String(positions.length)],
         ].map(([label, value]) => (
           <div key={label} className="rounded-xl border border-[#dde5f2] bg-white p-5">
             <p className="text-xs text-[#68738b]">{label}</p>
@@ -291,9 +307,13 @@ export function InstMonitorPage() {
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+      <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
         <div className="space-y-4">
-          <Card title={t("持仓与论点台账", "Holdings & thesis ledger")} desc={t("每笔持仓应有买入理由、关键假设、KPI、复核时间与推翻条件。", "Every holding needs a thesis, assumptions, KPIs, review date and falsifiers.")}>
+          <Card
+            title={t("持仓与论点台账", "Holdings & thesis ledger")}
+            desc={t("每笔持仓应有买入理由、关键假设、KPI、复核时间与推翻条件。", "Every holding needs a thesis, assumptions, KPIs, review date and falsifiers.")}
+            actions={positions[0]?.as_of ? <Badge tone="gold">{t("快照", "Snapshot")} {positions[0].as_of}</Badge> : null}
+          >
             {positions.length ? (
               <div className="space-y-3">
                 {positions.map((p) => (
@@ -303,14 +323,28 @@ export function InstMonitorPage() {
                         <p className="text-sm font-semibold text-[#171923]">{p.name || p.symbol}</p>
                         <p className="mt-0.5 font-mono text-[11px] text-[#68738b]">{p.symbol}</p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Badge>{p.industry || t("行业待补充", "Industry n/a")}</Badge>
-                        <Badge tone="gold">{fmtPct(p.weight)}</Badge>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge>{industryLabel(p.industry, locale)}</Badge>
+                        <Badge tone="gold" title={t("权重 = 持仓市值 / 组合净值", "Weight = market value / NAV")}>
+                          {p.weight == null ? t("权重待补充", "Weight TBD") : `${t("权重", "Weight")} ${fmtPct(p.weight)}`}
+                        </Badge>
                       </div>
                     </div>
                     <div className="mt-2 grid gap-x-6 sm:grid-cols-2">
-                      <Field label={t("数量", "Qty")} value={fmtMoney(p.qty)} />
-                      <Field label={t("市值", "Value")} value={fmtMoney(p.market_value)} />
+                      <Field label={t("数量（股）", "Qty (shares)")} value={fmtMoney(p.qty)} />
+                      <Field
+                        label={t("成本（CNY/股）", "Cost (CNY/sh)")}
+                        value={
+                          p.cost == null ? (
+                            <span className="text-[#a9a4bd]" title={t("缺少成本价，无法计算收益。", "Cost basis missing; return cannot be computed.")}>
+                              {t("成本待补充", "Cost TBD")}
+                            </span>
+                          ) : (
+                            fmtMoney(p.cost, 2)
+                          )
+                        }
+                      />
+                      <Field label={t("市值（CNY）", "Value (CNY)")} value={fmtMoney(p.market_value)} />
                     </div>
                   </div>
                 ))}
@@ -416,15 +450,20 @@ export function InstMonitorPage() {
                   <li key={e.id} className="rounded-xl border border-[#e3eaf8] bg-white p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <Badge tone={e.severity === "critical" ? "red" : e.severity === "warning" ? "amber" : "slate"}>
-                          {e.severity}
+                        <Badge
+                          tone={e.severity === "critical" ? "red" : e.severity === "warning" ? "amber" : "slate"}
+                          title={t("提示：记录事实；警告：需要复核；严重：优先处理。", "Info: record only; warning: needs review; critical: prioritize.")}
+                        >
+                          {SEVERITY[e.severity] ? (locale === "en" ? SEVERITY[e.severity][1] : SEVERITY[e.severity][0]) : e.severity}
                         </Badge>
-                        <span className="text-sm font-medium text-[#252533]">{e.company_name || e.symbol || e.type}</span>
+                        <span className="text-sm font-medium text-[#252533]">
+                          {e.company_name || e.symbol || (EVENT_TYPE[e.type] ? (locale === "en" ? EVENT_TYPE[e.type][1] : EVENT_TYPE[e.type][0]) : e.type)}
+                        </span>
                       </div>
                       <StatusBadge status={e.status} />
                     </div>
                     <p className="mt-1 text-xs text-[#68738b]">{e.detail?.text || "—"}</p>
-                    <p className="mt-1 font-mono text-[10px] text-[#77718c]">{e.created_at}</p>
+                    <p className="mt-1 text-[10px] text-[#77718c]">{fmtDateTime(e.created_at)}</p>
                   </li>
                 ))}
               </ul>

@@ -3,7 +3,7 @@ import { PieChart, ShieldCheck } from "lucide-react";
 import { instApi, fmtMoney, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
-import { Badge, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge } from "./instUi";
+import { Badge, Card, Empty, ErrorBox, Field, Loading, PageHeader, industryLabel } from "./instUi";
 
 type Position = {
   id: number;
@@ -76,6 +76,7 @@ export function InstPortfolioPage() {
   const pf = data?.portfolio;
   const positions = data?.positions || [];
   const exposure = Object.entries(data?.industry_exposure || {}).sort((a, b) => b[1] - a[1]);
+  const snapshotDate = positions[0]?.as_of;
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -88,10 +89,10 @@ export function InstPortfolioPage() {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          [t("组合净值", "NAV"), fmtMoney(data?.nav)],
-          [t("现金", "Cash"), fmtMoney(data?.cash)],
-          [t("已投资", "Invested"), fmtMoney(data?.invested)],
-          [t("仓位", "Exposure"), fmtPct(data?.invested_ratio)],
+          [t("组合净值（CNY）", "NAV (CNY)"), fmtMoney(data?.nav)],
+          [t("现金（CNY）", "Cash (CNY)"), fmtMoney(data?.cash)],
+          [t("已投资（CNY）", "Invested (CNY)"), fmtMoney(data?.invested)],
+          [t("仓位（已投资/净值）", "Exposure (invested/NAV)"), fmtPct(data?.invested_ratio)],
         ].map(([label, value]) => (
           <div key={label} className="rounded-xl border border-[#dde5f2] bg-white p-5">
             <p className="text-xs text-[#68738b]">{label}</p>
@@ -100,11 +101,16 @@ export function InstPortfolioPage() {
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+      <div className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
         <Card
           title={t("持仓明细", "Positions")}
-          desc={t("按最新持仓快照展示；持仓只在确认成交后更新。", "Latest position snapshot; positions update only after a confirmed fill.")}
-          actions={<Badge>{positions.length} {t("只", "names")}</Badge>}
+          desc={t("按最新持仓快照展示；持仓只在确认成交后更新。成本为快照成本，权重按市值/净值计算。", "Latest position snapshot; positions update only after a confirmed fill. Cost is snapshot cost; weight = market value / NAV.")}
+          actions={
+            <div className="flex flex-wrap gap-1.5">
+              <Badge>{positions.length} {t("只", "names")}</Badge>
+              {snapshotDate ? <Badge tone="gold">{t("快照", "Snapshot")} {snapshotDate}</Badge> : null}
+            </div>
+          }
         >
           {positions.length ? (
             <div className="overflow-x-auto">
@@ -113,10 +119,10 @@ export function InstPortfolioPage() {
                   <tr className="border-b border-[#e3eaf8] text-[11px] text-[#77718c]">
                     <th className="py-2">{t("标的", "Symbol")}</th>
                     <th className="py-2">{t("行业", "Industry")}</th>
-                    <th className="py-2 text-right">{t("数量", "Qty")}</th>
-                    <th className="py-2 text-right">{t("成本", "Cost")}</th>
-                    <th className="py-2 text-right">{t("市值", "Value")}</th>
-                    <th className="py-2 text-right">{t("权重", "Weight")}</th>
+                    <th className="py-2 text-right">{t("数量（股）", "Qty (shares)")}</th>
+                    <th className="py-2 text-right">{t("成本（CNY/股）", "Cost (CNY/sh)")}</th>
+                    <th className="py-2 text-right">{t("市值（CNY）", "Value (CNY)")}</th>
+                    <th className="py-2 text-right">{t("权重（占净值）", "Weight (of NAV)")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -126,11 +132,29 @@ export function InstPortfolioPage() {
                         <p className="font-medium text-[#252533]">{p.name || p.symbol}</p>
                         <p className="font-mono text-[10px] text-[#77718c]">{p.symbol}</p>
                       </td>
-                      <td className="py-2.5 text-xs text-[#68738b]">{p.industry || "—"}</td>
+                      <td className="py-2.5 text-xs text-[#68738b]">{industryLabel(p.industry, locale)}</td>
                       <td className="py-2.5 text-right font-mono text-xs">{fmtMoney(p.qty)}</td>
-                      <td className="py-2.5 text-right font-mono text-xs">{fmtMoney(p.cost, 2)}</td>
-                      <td className="py-2.5 text-right font-mono text-xs">{fmtMoney(p.market_value)}</td>
-                      <td className="py-2.5 text-right font-mono text-xs">{fmtPct(p.weight)}</td>
+                      <td className="py-2.5 text-right font-mono text-xs">
+                        {p.cost == null ? (
+                          <span className="text-[#a9a4bd]" title={t("缺少成本价，无法计算已实现/未实现收益。", "Cost basis missing; realized/unrealized return cannot be computed.")}>
+                            {t("成本待补充", "Cost TBD")}
+                          </span>
+                        ) : (
+                          fmtMoney(p.cost, 2)
+                        )}
+                      </td>
+                      <td className="py-2.5 text-right font-mono text-xs">
+                        {p.market_value == null ? t("待补充", "TBD") : fmtMoney(p.market_value)}
+                      </td>
+                      <td className="py-2.5 text-right font-mono text-xs">
+                        {p.weight == null ? (
+                          <span className="text-[#a9a4bd]" title={t("缺少市值或净值，无法计算权重。", "Weight cannot be computed without market value or NAV.")}>
+                            {t("权重待补充", "Weight TBD")}
+                          </span>
+                        ) : (
+                          fmtPct(p.weight)
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -148,8 +172,15 @@ export function InstPortfolioPage() {
           <Card title={t("组合约束", "Portfolio constraints")} desc={t("内部演示政策，不是监管限额。", "Internal demo policy, not a regulatory limit.")}>
             <Field label={t("单股仓位上限", "Single-name cap")} value="15%" />
             <Field label={t("最低现金储备", "Minimum cash")} value="10%" />
-            <Field label={t("参考净值", "Reference NAV")} value={fmtMoney(pf?.nav)} />
-            <Field label={t("组合状态", "Status")} value={<StatusBadge status={positions.length ? "qualified" : "draft"} />} />
+            <Field label={t("参考净值（CNY）", "Reference NAV (CNY)")} value={fmtMoney(pf?.nav)} />
+            <Field
+              label={t("组合状态", "Status")}
+              value={
+                <Badge tone={positions.length ? "green" : "slate"}>
+                  {positions.length ? t(`有持仓 ${positions.length} 只`, `${positions.length} held`) : t("空仓", "Empty")}
+                </Badge>
+              }
+            />
             <p className="mt-3 flex items-start gap-2 text-[11px] leading-relaxed text-[#77718c]">
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#b42345]" />
               {t("风控硬阻断不可由 Chairman 或 AI 绕过；解除冻结须独立风控重新核验。", "Hard risk blocks cannot be bypassed by Chairman or AI; unfreezing requires a fresh independent risk review.")}
@@ -162,7 +193,9 @@ export function InstPortfolioPage() {
                 {exposure.map(([name, weight]) => (
                   <div key={name}>
                     <div className="mb-1 flex items-center justify-between text-xs">
-                      <span className="text-[#68738b]">{name}</span>
+                      <span className="text-[#68738b]">
+                        {name === "未分类" ? t("行业待补充", "Sector TBD") : name}
+                      </span>
                       <span className="font-mono text-[#171923]">{fmtPct(weight)}</span>
                     </div>
                     <div className="h-1.5 overflow-hidden rounded-full bg-[#eef3ff]">
@@ -173,6 +206,12 @@ export function InstPortfolioPage() {
                     </div>
                   </div>
                 ))}
+                <p className="pt-1 text-[10px] leading-relaxed text-[#77718c]">
+                  {t(
+                    "“行业待补充”表示持仓缺少行业映射，仍计入总仓位；不是零敞口。",
+                    "'Sector TBD' means the holding lacks an industry mapping; it is still included in total exposure, not zero.",
+                  )}
+                </p>
               </div>
             ) : (
               <Empty>{t("暂无行业敞口。", "No sector exposure.")}</Empty>

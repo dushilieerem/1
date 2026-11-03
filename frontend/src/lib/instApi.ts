@@ -61,3 +61,19 @@ export const fmtNum = (value: number | null | undefined, digits = 2) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
   return Number(value).toFixed(digits);
 };
+
+/** ISO 时间转本地可读格式；无法解析时保留原文，避免丢信息。 */
+export const fmtDateTime = (value: string | null | undefined) => {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+};

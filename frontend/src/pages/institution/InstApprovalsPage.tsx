@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { BadgeCheck, ShieldAlert, Stamp } from "lucide-react";
-import { instApi, fmtNum, fmtPct } from "@/lib/instApi";
+import { instApi, fmtNum, fmtPct, fmtDateTime } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
 import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge } from "./instUi";
@@ -67,6 +67,14 @@ export function InstApprovalsPage() {
   const session = useInstSession();
   const { locale, t } = useInstLocale();
   const stepLabel = (step: string) => (locale === "en" ? STEP_LABEL_EN[step] : STEP_LABEL_ZH[step]) || step;
+  const directionLabel = (direction?: string) =>
+    direction === "buy"
+      ? t("买入", "Buy")
+      : direction === "sell"
+        ? t("卖出", "Sell")
+        : direction === "exit"
+          ? t("退出", "Exit")
+          : direction || "—";
   const [params, setParams] = useSearchParams();
   const selectedId = Number(params.get("proposal") || 0);
   const [items, setItems] = useState<ProposalListItem[]>([]);
@@ -170,11 +178,13 @@ export function InstApprovalsPage() {
                   <div>
                     <p className="font-display text-base font-semibold text-[#171923]">{p.company_name}</p>
                     <p className="mt-0.5 font-mono text-[11px] text-[#68738b]">
-                      #{p.id} · {p.symbol} · {p.direction === "buy" ? t("买入", "Buy") : p.direction === "sell" ? t("卖出", "Sell") : t("退出", "Exit")}
+                      #{p.id} · {p.symbol} · {directionLabel(p.direction)}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone="gold">{t("目标", "Target")} {fmtPct(p.target_weight)}</Badge>
+                    <Badge tone="gold" title={t("目标仓位 = 目标持仓市值 / 组合净值", "Target weight = target position value / NAV")}>
+                      {t("目标仓位", "Target")} {fmtPct(p.target_weight)}
+                    </Badge>
                     <StatusBadge status={p.status} />
                     {p.authorization_status ? <StatusBadge status={p.authorization_status} /> : null}
                   </div>
@@ -205,13 +215,14 @@ export function InstApprovalsPage() {
   }
 
   const snapshot = detail.current_version?.snapshot || {};
+  const hasPriceRange = snapshot.price_low != null || snapshot.price_high != null;
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <PageHeader
         eyebrow="APPROVALS / 06"
         title={`${detail.company_name} · ${t("议案", "Proposal")} #${detail.id}`}
-        desc={`${detail.symbol} · ${detail.direction === "buy" ? t("买入", "Buy") : detail.direction === "sell" ? t("卖出", "Sell") : t("退出", "Exit")} · ${t("当前版本", "Current version")} v${detail.current_version?.version_no || 1}`}
+        desc={`${detail.symbol} · ${directionLabel(detail.direction)} · ${t("当前版本", "Current version")} v${detail.current_version?.version_no || 1}`}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" onClick={() => setParams({})}>
@@ -224,19 +235,44 @@ export function InstApprovalsPage() {
 
       {error ? <ErrorBox message={error} onRetry={() => loadDetail(selectedId)} /> : null}
 
-      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+      <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
         <div className="space-y-4">
           <Card title={t("议案快照", "Proposal snapshot")} desc={t("授权绑定研究版本、议案版本、配置、批准人与有效期。", "Authorization binds research version, proposal version, configuration, approver and validity.")}>
             <div className="grid gap-x-6 sm:grid-cols-2">
               <Field label={t("议案版本", "Proposal version")} value={`v${detail.current_version?.version_no || 1}`} />
               <Field label={t("研究版本", "Research version")} value={String(snapshot.research_version_no || snapshot.research_version_id || "—")} />
-              <Field label={t("方向", "Direction")} value={detail.direction} />
-              <Field label={t("目标仓位", "Target weight")} value={fmtPct(snapshot.target_weight ?? detail.target_weight)} />
-              <Field label={t("价格区间", "Price range")} value={`${fmtNum(snapshot.price_low, 2)} - ${fmtNum(snapshot.price_high, 2)}`} />
-              <Field label={t("账户", "Account")} value={String(snapshot.account || "—")} />
-              <Field label={t("币种 / 汇率", "Currency / FX")} value={`${snapshot.currency || "CNY"} / ${snapshot.fx_rate ?? "—"}`} />
-              <Field label={t("有效期", "Valid until")} value={String(snapshot.valid_until || "—")} />
+              <Field label={t("方向", "Direction")} value={directionLabel(detail.direction)} />
+              <Field label={t("目标仓位（占净值）", "Target weight (of NAV)")} value={fmtPct(snapshot.target_weight ?? detail.target_weight)} />
+              <Field
+                label={t("价格区间（CNY）", "Price range (CNY)")}
+                value={
+                  hasPriceRange ? (
+                    `${fmtNum(snapshot.price_low, 2)} - ${fmtNum(snapshot.price_high, 2)}`
+                  ) : (
+                    <span className="text-[#a9a4bd]" title={t("未设置价格区间，执行时不按价格区间校验。", "No price range set; execution will not check price bounds.")}>
+                      {t("未设置", "Not set")}
+                    </span>
+                  )
+                }
+              />
+              <Field
+                label={t("账户", "Account")}
+                value={snapshot.account ? t(`模拟账户 ${snapshot.account}`, `Sim account ${snapshot.account}`) : t("未指定", "Not specified")}
+              />
+              <Field
+                label={t("币种 / 汇率", "Currency / FX")}
+                value={`${snapshot.currency === "CNY" || !snapshot.currency ? t("人民币（CNY）", "CNY") : snapshot.currency} / ${snapshot.fx_rate ?? "—"}`}
+              />
+              <Field label={t("有效期", "Valid until")} value={String(snapshot.valid_until || t("未设置", "Not set"))} />
             </div>
+            {!hasPriceRange ? (
+              <p className="mt-2 text-[10px] leading-relaxed text-[#77718c]">
+                {t(
+                  "价格区间未设置：执行时不按价格区间校验；如需限价，请在议案配置中补充。",
+                  "No price range: execution will not enforce price bounds. Add one in the proposal config if a limit is required.",
+                )}
+              </p>
+            ) : null}
             {Array.isArray(snapshot.monitoring) && snapshot.monitoring.length ? (
               <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs text-[#b42345]">
                 <p className="font-medium">{t("监控条件", "Monitoring conditions")}</p>
@@ -284,8 +320,14 @@ export function InstApprovalsPage() {
                   <div key={step} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#e3eaf8] bg-[#f8faff] px-4 py-3">
                     <div>
                       <p className="text-sm font-medium text-[#252533]">{stepLabel(step)}</p>
-                      <p className="mt-1 text-xs text-[#68738b]">{a?.comment || t("尚未处理", "Pending")}</p>
-                      {a?.decided_at ? <p className="mt-1 text-[10px] text-[#77718c]">{a.decided_at}</p> : null}
+                      <p className="mt-1 text-xs text-[#68738b]">
+                        {a ? a.comment || t("无审批意见", "No comment") : t("尚未处理", "Pending")}
+                      </p>
+                      {a?.decided_at ? (
+                        <p className="mt-1 text-[10px] text-[#77718c]">
+                          {t("处理时间", "Decided at")}：{fmtDateTime(a.decided_at)}
+                        </p>
+                      ) : null}
                     </div>
                     <StatusBadge status={a?.decision || "pending"} />
                   </div>
@@ -395,7 +437,7 @@ export function InstApprovalsPage() {
                     </Button>
                   ) : null}
 
-                  {canAuthorize ? (
+                  {canAuthorize && detail.status === "risk_precheck" ? (
                     <Button
                       variant="gold"
                       disabled={!!busy}
@@ -407,6 +449,10 @@ export function InstApprovalsPage() {
                     >
                       {busy === "authorize" ? t("生成中…", "Creating…") : t("生成授权快照", "Create authorization")}
                     </Button>
+                  ) : detail.status === "executed" || detail.status === "authorized" ? (
+                    <p className="w-full text-[11px] leading-relaxed text-[#77718c]">
+                      {t("该议案已生成授权并执行，授权不可重复生成。", "This proposal is already authorized/executed; a new authorization cannot be created.")}
+                    </p>
                   ) : null}
                 </div>
                 <p className="text-[11px] leading-relaxed text-[#77718c]">
@@ -581,10 +627,17 @@ export function InstApprovalsPage() {
                 {detail.authorizations.map((a) => (
                   <li key={a.id} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-xs text-[#505369]">AUTH-{a.id}</span>
+                      <span className="text-xs font-medium text-[#505369]">{t("授权", "Authorization")} #{a.id}</span>
                       <StatusBadge status={a.status} />
                     </div>
-                    <p className="mt-1 text-[10px] text-[#77718c]">{a.issued_at}</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-[#68738b]">
+                      {directionLabel(String(a.snapshot?.direction || detail.direction))} · {t("目标仓位", "Target")}{" "}
+                      {fmtPct(a.snapshot?.target_weight ?? detail.target_weight)} · {t("有效期", "Valid until")}{" "}
+                      {String(a.snapshot?.valid_until || "—")}
+                    </p>
+                    <p className="mt-1 text-[10px] text-[#77718c]">
+                      {t("签发时间", "Issued at")}：{fmtDateTime(a.issued_at)}
+                    </p>
                   </li>
                 ))}
               </ul>

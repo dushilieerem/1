@@ -96,9 +96,11 @@ export function Button({
 export function Badge({
   children,
   tone = "slate",
+  title,
 }: {
   children: ReactNode;
   tone?: "slate" | "gold" | "green" | "red" | "amber" | "blue";
+  title?: string;
 }) {
   const map: Record<string, string> = {
     slate: "border-[#dde5f2] bg-[#f3f6fd] text-[#68738b]",
@@ -109,7 +111,7 @@ export function Badge({
     blue: "border-[#c9d8f5] bg-[#eef3ff] text-[#3b5f9e]",
   };
   return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${map[tone]}`}>
+    <span title={title} className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${map[tone]}`}>
       {children}
     </span>
   );
@@ -156,11 +158,13 @@ export function StatusBadge({ status }: { status?: string | null }) {
     draft: { zh: "草稿", en: "Draft", tone: "slate" },
     planning: { zh: "计划中", en: "Planning", tone: "slate" },
     researching: { zh: "研究中", en: "Researching", tone: "blue" },
-    pending_review: { zh: "待研究审核", en: "Pending research review", tone: "amber" },
+    pending_review: { zh: "待审核", en: "Pending review", tone: "amber" },
     package_ready: { zh: "资料包就绪", en: "Package ready", tone: "blue" },
-    approved: { zh: "研究已通过", en: "Research approved", tone: "green" },
+    approved: { zh: "已通过", en: "Approved", tone: "green" },
+    changed: { zh: "已退回", en: "Returned", tone: "amber" },
     debate: { zh: "辩论中", en: "Debating", tone: "blue" },
     proposal: { zh: "已进入议案", en: "Proposal stage", tone: "gold" },
+    submitted: { zh: "已提交", en: "Submitted", tone: "blue" },
     closed: { zh: "已关闭", en: "Closed", tone: "slate" },
     partner_review: { zh: "待合伙人复核", en: "Partner review", tone: "amber" },
     chairman_review: { zh: "待 Chairman 审批", en: "Chairman review", tone: "amber" },
@@ -178,14 +182,48 @@ export function StatusBadge({ status }: { status?: string | null }) {
     needs_review: { zh: "待复核", en: "Needs review", tone: "amber" },
     missing: { zh: "无数据", en: "No data", tone: "red" },
     real: { zh: "真实数据", en: "Real data", tone: "green" },
+    demo: { zh: "演示数据", en: "Demo data", tone: "amber" },
+    research: { zh: "研究中", en: "Researching", tone: "blue" },
+    watch: { zh: "观察中", en: "Watching", tone: "amber" },
+    dropped: { zh: "已放弃", en: "Dropped", tone: "slate" },
     pass: { zh: "通过", en: "Pass", tone: "green" },
+    approve: { zh: "通过", en: "Approved", tone: "green" },
+    conditional: { zh: "附条件通过", en: "Conditional", tone: "amber" },
+    return: { zh: "退回", en: "Returned", tone: "amber" },
     block: { zh: "阻断", en: "Blocked", tone: "red" },
     veto: { zh: "否决", en: "Vetoed", tone: "red" },
     qualified: { zh: "有效授权", en: "Qualified", tone: "green" },
     filled: { zh: "已成交", en: "Filled", tone: "green" },
+    revoked: { zh: "已撤销", en: "Revoked", tone: "red" },
+    expired: { zh: "已过期", en: "Expired", tone: "slate" },
+    open: { zh: "待处理", en: "Open", tone: "amber" },
+    reviewing: { zh: "复核中", en: "Reviewing", tone: "blue" },
+    resolved: { zh: "已解决", en: "Resolved", tone: "green" },
+    active: { zh: "正常", en: "Active", tone: "green" },
+    inactive: { zh: "停用", en: "Inactive", tone: "slate" },
   };
   const item = map[status || ""] || { zh: status || "—", en: status || "—", tone: "slate" as const };
   return <Badge tone={item.tone}>{locale === "en" ? item.en : item.zh}</Badge>;
+}
+
+/** 申万行业代码（如 801120.SI）不适合直接展示，统一兜底为“行业待补充”。 */
+export function industryLabel(value: string | null | undefined, locale: string): string {
+  const text = String(value || "").trim();
+  if (!text || /^\d{6}\./.test(text)) return locale === "en" ? "Sector TBD" : "行业待补充";
+  return text;
+}
+
+/** 轻量说明入口：鼠标悬停显示解释，避免页面上大段说明文字。 */
+export function HelpTip({ text }: { text: string }) {
+  return (
+    <span
+      title={text}
+      aria-label={text}
+      className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-[#dde5f2] text-[9px] font-medium text-[#77718c]"
+    >
+      ?
+    </span>
+  );
 }
 
 export function Field({ label, value }: { label: string; value: ReactNode }) {

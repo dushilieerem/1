@@ -46,6 +46,23 @@ function Metric({ label, value, note }: { label: string; value: string; note: st
   );
 }
 
+/** 按工作日估算数据落后几天；不是交易所日历，只用于提示“数据不是最新”。 */
+function tradingDaysLag(dateStr?: string): number | null {
+  if (!dateStr) return null;
+  const start = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(start.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let count = 0;
+  const cur = new Date(start);
+  while (cur < today) {
+    cur.setDate(cur.getDate() + 1);
+    const day = cur.getDay();
+    if (day !== 0 && day !== 6 && cur <= today) count += 1;
+  }
+  return count;
+}
+
 export function InstOverviewPage() {
   const session = useInstSession();
   const { locale, t } = useInstLocale();
@@ -82,6 +99,7 @@ export function InstOverviewPage() {
     );
   }
 
+  const lag = tradingDaysLag(data.data_date);
   const attention = [
     { label: t("待我处理的议案", "Proposals awaiting me"), count: data.my_pending ?? data.pending_approvals, to: "/inst/approvals", key: "approvals" },
     { label: t("风控硬性阻断", "Hard risk blocks"), count: data.risk_blocks, to: "/inst/approvals", key: "approvals" },
@@ -116,26 +134,35 @@ export function InstOverviewPage() {
           <div className="relative z-10 rounded-xl border border-[#d9c8f0] bg-white/70 px-3 py-2 text-[11px] leading-relaxed text-[#7950ba]">
             {t("模拟环境 · 无真实交易", "Simulated environment · no real trading")}
             <br />
-            {t("数据日", "Data date")} {data.data_date || "—"} · {t("不构成投资建议", "Not investment advice")}
+            {t("数据日", "Data date")} {data.data_date || "—"}
+            {lag !== null
+              ? ` · ${lag > 0 ? t(`约落后 ${lag} 个交易日`, `~${lag} trading days behind`) : t("最新", "Latest")}`
+              : ""}
+            <br />
+            {t("不构成投资建议", "Not investment advice")}
           </div>
         </div>
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Metric
-          label={t("模拟资产净值 · CNY", "Simulated NAV · CNY")}
+          label={t("模拟资产净值（CNY）", "Simulated NAV (CNY)")}
           value={fmtMoney(data.portfolio?.nav)}
-          note={`${t("现金", "Cash")} ${fmtMoney(data.portfolio?.cash)} · ${t("仓位", "Exposure")} ${fmtPct(data.portfolio?.invested_ratio)}`}
-        />
-        <Metric label={t("在研研究案", "Active research cases")} value={String(data.active_cases).padStart(2, "0")} note={`${t("研究对象", "Universe")} ${data.companies}`} />
-        <Metric
-          label={t("待审批 / 风控阻断", "Pending approvals / risk blocks")}
-          value={`${String(data.pending_approvals).padStart(2, "0")} / ${String(data.risk_blocks).padStart(2, "0")}`}
-          note={t("跨市场共享同一研究流程", "One research process across markets")}
+          note={`${t("现金", "Cash")} ${fmtMoney(data.portfolio?.cash)} · ${t("仓位（已投资/净值）", "Exposure (invested/NAV)")} ${fmtPct(data.portfolio?.invested_ratio)}`}
         />
         <Metric
-          label={t("监控预警", "Monitoring alerts")}
-          value={String(data.monitor_alerts).padStart(2, "0")}
+          label={t("在研研究案（个）", "Active research cases")}
+          value={String(data.active_cases)}
+          note={`${t("公司池", "Universe")} ${Number(data.companies).toLocaleString("zh-CN")} ${t("家", "names")}`}
+        />
+        <Metric
+          label={t("待审批 / 风控阻断（件）", "Pending approvals / risk blocks")}
+          value={`${data.pending_approvals} / ${data.risk_blocks}`}
+          note={t("任一阻断都不能生成授权", "Any block prevents authorization")}
+        />
+        <Metric
+          label={t("监控预警（条）", "Monitoring alerts")}
+          value={String(data.monitor_alerts)}
           note={`${t("独立风控 · 单股上限", "Independent risk · single-name cap")} ${fmtPct(data.policy?.max_single_weight)}`}
         />
       </section>
@@ -159,7 +186,7 @@ export function InstOverviewPage() {
                     <span>{item.label}</span>
                     <span className="flex items-center gap-2">
                       <span className={`font-mono text-sm ${item.count > 0 ? "text-[#b42345]" : "text-[#77718c]"}`}>
-                        {String(item.count).padStart(2, "0")}
+                        {item.count}
                       </span>
                       <ArrowUpRight className="h-3.5 w-3.5 text-[#a9a4bd]" aria-hidden />
                     </span>
@@ -183,8 +210,13 @@ export function InstOverviewPage() {
             {[
               [t("单股仓位上限", "Single-name cap"), fmtPct(data.policy?.max_single_weight)],
               [t("最低现金储备", "Minimum cash"), fmtPct(data.policy?.min_cash_ratio)],
-              [t("参考净值", "Reference NAV"), fmtMoney(data.policy?.nav)],
-              [t("政策版本", "Policy version"), data.policy?.policy_version || "—"],
+              [t("参考净值（CNY）", "Reference NAV (CNY)"), fmtMoney(data.policy?.nav)],
+              [
+                t("政策版本", "Policy version"),
+                data.policy?.policy_version === "demo-v1"
+                  ? t("演示政策 v1", "Demo policy v1")
+                  : data.policy?.policy_version || "—",
+              ],
             ].map(([k, v]) => (
               <div key={k} className="flex items-center justify-between border-b border-[#e3eaf8] pb-3">
                 <dt className="text-[#68738b]">{k}</dt>

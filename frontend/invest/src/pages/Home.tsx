@@ -6,7 +6,6 @@ import { useAuth } from "../auth";
 import { Disclaimer, ErrorState, LoadingCards, SectionHead, Sparkline, Tag } from "../components";
 import { fmtPct, formatPrice } from "../lib";
 import GlossarySheet from "../GlossarySheet";
-import AiPanel from "../components/AiPanel";
 import { LocaleToggle, useLocale, withMarket } from "../i18n";
 
 type HomeData = any;
@@ -149,18 +148,6 @@ export default function Home() {
             </div>
             <div className="daily-foot">{t("按自选、组合与收盘数据生成 · 非投资建议", "Built from watchlist, portfolio and EOD data · not investment advice")}</div>
           </section>
-
-          {market === "CN" ? (
-            <AiPanel
-              title={t("AI 今日解读", "AI daily brief")}
-              subtitle={t(
-                "基于自选、持仓与收盘数据生成；只解释今天发生了什么，不构成投资建议。",
-                "Generated from watchlist, holdings and EOD data; explains what happened today, not investment advice.",
-              )}
-              endpoint="/api/invest/ai/daily"
-              buttonLabel={t("生成今日解读", "Generate daily brief")}
-            />
-          ) : null}
 
           <section className="card">
             <div className="card-title-row">

@@ -159,6 +159,61 @@ test("量化研究入口与因子/策略库可打开", async ({ page }) => {
   await noHorizontalOverflow(page);
 });
 
+test("量化研究入口页展示今日关注与四个入口", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/quant`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "量化研究" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".quant-entry")).toHaveCount(4);
+  await expect(page.locator(".quant-focus-bar")).toBeVisible();
+  await expect(page.locator(".quant-style-card")).toBeVisible();
+  await expect(page.locator(".tab.on")).toContainText("我的");
+  await noHorizontalOverflow(page);
+});
+
+test("因子页展示市场风格与 6 行因子榜", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/quant/factors`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "因子" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".quant-factor-row")).toHaveCount(6, { timeout: 30_000 });
+  await expect(page.getByText("因子入门")).toBeVisible();
+  await noHorizontalOverflow(page);
+});
+
+test("策略页四个分区可切换", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/quant/strategies?tab=quick`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("一句话建策略")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "我的策略", exact: true }).click();
+  await expect(page.getByText("还没有跟踪中的策略")).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "草稿", exact: true }).click();
+  await expect(page.getByText("在上面的快速实验里跑完一次")).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "策略广场", exact: true }).click();
+  await expect(page.locator(".quant-plaza-card").first()).toBeVisible({ timeout: 30_000 });
+  await noHorizontalOverflow(page);
+});
+
+test("回测与模拟盘空态明确，且模拟盘标注模拟", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/quant/backtests`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("还没有回测记录")).toBeVisible({ timeout: 30_000 });
+  await page.goto(`${H5}/quant/papers`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("还没有模拟盘")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("不接券商").first()).toBeVisible();
+  await noHorizontalOverflow(page);
+});
+
+test("AI 记忆入口从我的移到管家工具条，首页不再有 AI 今日解读", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/me`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("AI 记忆")).toHaveCount(0);
+  await page.goto(`${H5}/`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("AI 今日解读")).toHaveCount(0);
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("button", { name: "记忆" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "深度" })).toBeVisible();
+  await noHorizontalOverflow(page);
+});
+
 test("个股分时视图可切换（有数据或明确空态）", async ({ page }) => {
   await loginByToken(page);
   await page.goto(`${H5}/stock/600519`, { waitUntil: "domcontentloaded" });
@@ -387,7 +442,7 @@ test("英文模式可搜索并打开真实美股", async ({ page }) => {
 test("360 宽关键页面无横向溢出，行业代码不裸奔", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await loginByToken(page);
-  for (const path of ["/", "/watch", "/portfolio", "/news", "/learn", "/me", "/quant", "/community"]) {
+  for (const path of ["/", "/watch", "/portfolio", "/news", "/learn", "/me", "/quant", "/quant/factors", "/quant/strategies?tab=quick", "/quant/strategies?tab=plaza", "/quant/backtests", "/quant/papers", "/community"]) {
     await page.goto(`${H5}${path}`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(350);
     await noHorizontalOverflow(page);

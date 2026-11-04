@@ -53,6 +53,9 @@ def main():
             input=json.dumps(response.json()).encode(), timeout=15,
         ))
         assert not result.get("error"), "engine returned an error"
+        for key in ("execution_timing", "commission_rate", "stamp_tax", "slippage_rate"):
+            if key in payload:
+                assert result.get("meta", {}).get(key) == payload[key], "engine parameter mismatch: " + key
         assert result.get("_svquant_verified_token"), "missing result signature"
         if args.require_provenance:
             for field in ("data_release_id", "spec_hash", "run_id"):
@@ -75,6 +78,9 @@ def main():
         expected_meta = {k: v for k, v in result["meta"].items() if k != "code_hash"}
         assert stored["result"]["meta"] == expected_meta
         assert stored["result"]["date_range"] == result["date_range"]
+        for key in ("execution_timing", "commission_rate", "stamp_tax", "slippage_rate"):
+            if key in payload:
+                assert stored["request"].get(key) == payload[key], "stored parameter mismatch: " + key
         tampered = copy.deepcopy(body)
         tampered["name"] = "cx_quant_签名篡改验收负例_不可用于研究"
         tampered["description"] = "自动化安全验收负例：人为改写指标，仅验证不能获得 verified 标记。"
@@ -99,7 +105,7 @@ def main():
         "tamper_outcome": tamper_outcome,
         "missing_provenance": [k for k in ("data_release_id", "spec_hash", "run_id") if not meta.get(k)],
         "checks": ["unauthenticated access rejected", "real login", "real synchronous strategy computation",
-                   "Node JSON roundtrip", "signed PostgreSQL persistence and reopen", "tampered result cannot obtain verified=true"],
+                   "Node JSON roundtrip", "execution timing and costs match request", "signed PostgreSQL persistence and reopen", "tampered result cannot obtain verified=true"],
         "model_used": False,
         "limitations": ["development acceptance, not production", "missing provenance is not fabricated",
                         "does not establish strategy quality, PIT completeness or investment approval"],

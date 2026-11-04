@@ -39,6 +39,10 @@ type Version = {
 
 type Memo = {
   summary?: string;
+  decision?: "proceed" | "watch" | "avoid" | string;
+  six_dim_scores?: Array<{ key: string; score: number; confidence?: number; note?: string }>;
+  conflicts?: string[];
+  key_variables?: string[];
   evidence?: string[];
   risks?: string[];
   open_questions?: string[];
@@ -827,7 +831,22 @@ export function InstResearchPage() {
                   {t("AI 投资研究摘要 · 六维分析", "AI investment research summary · six dimensions")}
                 </p>
               </div>
-              <Badge tone="gold">{version?.conclusion || t("待补充研究", "Research TBD")}</Badge>
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                {memo.decision ? (
+                  <Badge
+                    tone={
+                      memo.decision === "proceed" ? "green" : memo.decision === "avoid" ? "red" : "amber"
+                    }
+                  >
+                    {memo.decision === "proceed"
+                      ? t("研究建议：推进辩论", "Research: proceed")
+                      : memo.decision === "avoid"
+                        ? t("研究建议：回避", "Research: avoid")
+                        : t("研究建议：观察", "Research: watch")}
+                  </Badge>
+                ) : null}
+                <Badge tone="gold">{version?.conclusion || t("待补充研究", "Research TBD")}</Badge>
+              </div>
             </div>
 
             <section className="mt-4">
@@ -854,6 +873,56 @@ export function InstResearchPage() {
                 "Definitions: revenue/net profit are the latest reporting period, YoY is period-over-period; ROE is the reporting-period ratio; PE TTM is trailing twelve months and its percentile uses the last 3 years. Missing metrics are omitted, not treated as zero.",
               )}
             </p>
+
+            {memo.six_dim_scores?.length ? (
+              <section className="mt-4">
+                <h4 className="text-sm font-semibold text-[#171923]">{t("六维评分（1-5）", "Six-dimension scores (1-5)")}</h4>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {memo.six_dim_scores.map((score) => (
+                    <div key={score.key} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-[#505369]">
+                          {AGENT_TITLES.find(([key]) => key === score.key)?.[1] || score.key}
+                        </span>
+                        <span className="font-display text-lg font-semibold text-[#171923]">
+                          {score.score.toFixed(1)}
+                        </span>
+                      </div>
+                      {score.note ? (
+                        <p className="mt-1 text-[10px] leading-relaxed text-[#68738b]">{score.note}</p>
+                      ) : null}
+                      {score.confidence != null ? (
+                        <p className="mt-1 font-mono text-[10px] text-[#77718c]">
+                          {t("置信度", "Confidence")} {Number(score.confidence).toFixed(2)}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {memo.conflicts?.length ? (
+              <section className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <h4 className="text-sm font-semibold text-amber-900">{t("未解决分歧", "Unresolved conflicts")}</h4>
+                <ul className="mt-1 space-y-1 text-[11px] leading-relaxed text-amber-800">
+                  {memo.conflicts.map((conflict, index) => (
+                    <li key={`${index}-${conflict}`}>· {conflict}</li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
+            {memo.key_variables?.length ? (
+              <section className="mt-4">
+                <h4 className="text-sm font-semibold text-[#171923]">{t("关键变量", "Key variables")}</h4>
+                <ul className="mt-1 space-y-1 text-[11px] leading-relaxed text-[#505369]">
+                  {memo.key_variables.map((variable, index) => (
+                    <li key={`${index}-${variable}`}>· {variable}</li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
 
             <div className="mt-5 space-y-4">
               {dims.map((d, i) => (

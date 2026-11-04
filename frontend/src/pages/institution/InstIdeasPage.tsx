@@ -6,6 +6,17 @@ import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
 import { Badge, Button, Card, DataFreshness, Empty, ErrorBox, HelpTip, Loading, PageHeader, StatusBadge } from "./instUi";
 
+type IdeaQuestions = {
+  source?: string;
+  why_now: string;
+  circle_of_competence: string;
+  circle_note?: string;
+  data_sufficiency: "sufficient" | "partial" | "missing";
+  suggestion: "initiate" | "watch";
+  reason: string;
+  data_gaps?: string[];
+};
+
 type Company = {
   id: number;
   symbol: string;
@@ -17,6 +28,7 @@ type Company = {
   pool_status?: string;
   tags?: string[];
   research_points?: string[];
+  idea?: IdeaQuestions;
 };
 
 type PushItem = Company & {
@@ -47,6 +59,9 @@ type Position = {
   market_value: number;
   weight: number;
   last_close?: number;
+  market?: string;
+  data_status?: string;
+  idea?: IdeaQuestions;
 };
 
 type PortfolioData = {
@@ -58,6 +73,64 @@ type PortfolioData = {
 };
 
 type TabKey = "push" | "watch" | "holdings";
+
+type DecisionTarget = {
+  id: number;
+  name: string;
+  symbol: string;
+  source: TabKey;
+  idea: IdeaQuestions;
+};
+
+type DecisionSource = {
+  id?: number;
+  company_id?: number;
+  name?: string;
+  symbol: string;
+  market?: string;
+  data_status?: string;
+  research_points?: string[];
+  reason?: string;
+  idea?: IdeaQuestions;
+};
+
+function fallbackIdea(company: DecisionSource, source: TabKey): IdeaQuestions {
+  if (company.idea) return company.idea;
+  const market = String(company.market || "CN").toUpperCase();
+  const status = String(company.data_status || "missing");
+  const sufficiency: IdeaQuestions["data_sufficiency"] =
+    market === "US" || market === "HK"
+      ? "missing"
+      : status === "real"
+        ? "sufficient"
+        : status === "partial" || status === "demo"
+          ? "partial"
+          : "missing";
+  const whyNow =
+    source === "holdings"
+      ? "当前持仓；需要复核原投资论点是否仍成立，以及是否继续持有。"
+      : source === "watch"
+        ? String(company.research_points?.[0] || "已在观察池，等待新的价格或基本面变化。")
+        : String(company.reason || "量化初筛通过，需要说明为什么是现在。");
+  const gaps: string[] = [];
+  if (market === "US" || market === "HK") gaps.push("美股/港股暂无财务、公告、行业数据源，只有行情");
+  if (sufficiency === "partial") gaps.push("财务/公告数据不完整，关键结论需回源核对");
+  if (sufficiency === "missing" && market === "CN") gaps.push("核心财务/公告数据缺失");
+  return {
+    why_now: whyNow,
+    circle_of_competence: "unknown",
+    circle_note: "需投资经理确认：能否用三句话说清它怎么赚钱？",
+    data_sufficiency: sufficiency,
+    suggestion: sufficiency === "sufficient" ? "initiate" : "watch",
+    reason:
+      sufficiency === "sufficient"
+        ? "资料齐备，可进入研究；能力圈需投资经理确认。"
+        : sufficiency === "partial"
+          ? "资料部分缺失，建议先观察并补齐关键数据。"
+          : "核心资料缺失，建议观察或放弃，不直接立项。",
+    data_gaps: gaps,
+  };
+}
 
 export function InstIdeasPage() {
   const session = useInstSession();
@@ -71,6 +144,12 @@ export function InstIdeasPage() {
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [decision, setDecision] = useState<DecisionTarget | null>(null);
+  const [decisionAction, setDecisionAction] = useState<"initiate" | "watch" | "reject">("initiate");
+  const [decisionReason, setDecisionReason] = useState("");
+  const [circleConfirmed, setCircleConfirmed] = useState(false);
+  const [decisionBusy, setDecisionBusy] = useState(false);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
 
   const canWrite = (session.permissions.ideas || "none") === "write";
 
@@ -79,6 +158,15 @@ export function InstIdeasPage() {
     // 全市场同步进来的行业有时是 801120.SI 这类指数代码，不适合直接展示。
     return v && !/^\d{6}\./.test(v) ? v : t("行业待补充", "Sector TBD");
   };
+
+  const suffLabel = (value: IdeaQuestions["data_sufficiency"]) =>
+    value === "sufficient"
+      ? t("资料齐备", "Data sufficient")
+      : value === "partial"
+        ? t("部分缺失", "Data partial")
+        : t("核心缺失", "Data missing");
+  const suffTone = (value: IdeaQuestions["data_sufficiency"]) =>
+    value === "sufficient" ? ("green" as const) : value === "partial" ? ("amber" as const) : ("red" as const);
 
   useEffect(() => {
     let alive = true;
@@ -108,20 +196,59 @@ export function InstIdeasPage() {
     };
   }, [market, reloadKey]);
 
-  const enterResearch = async (companyId: number) => {
+  const openDecision = (company: DecisionSource, source: TabKey) => {
     if (!canWrite) return;
-    setBusy(companyId);
-    setError(null);
+    const id = Number(company.id ?? company.company_id ?? 0);
+    if (!id) return;
+    const idea = fallbackIdea(company, source);
+    setDecision({
+      id,
+      name: String(company.name || company.symbol),
+      symbol: company.symbol,
+      source,
+      idea,
+    });
+    setDecisionAction(idea.suggestion);
+    setDecisionReason("");
+    setCircleConfirmed(false);
+    setDecisionError(null);
+  };
+
+  const submitDecision = async (action: "initiate" | "watch" | "reject") => {
+    if (!decision) return;
+    const reason = decisionReason.trim();
+    if (!reason) {
+      setDecisionError(t("请填写决策理由。", "A decision reason is required."));
+      return;
+    }
+    if (action === "initiate" && !circleConfirmed) {
+      setDecisionError(
+        t("立项前请确认能力圈：能否用三句话说清它怎么赚钱。", "Confirm the circle of competence before initiating: can you explain how it makes money in three sentences?"),
+      );
+      return;
+    }
+    setDecisionBusy(true);
+    setDecisionError(null);
     try {
-      const res = await instApi<{ id: number }>("/cases", {
+      const res = await instApi<{ case_id?: number }>(`/ideas/${decision.id}/decision`, {
         method: "POST",
-        body: { company_id: companyId },
+        body: {
+          source: decision.source,
+          action,
+          reason,
+          circle_confirmed: circleConfirmed,
+        },
       });
-      nav(`/inst/research?case=${res.id}`);
+      setDecision(null);
+      if (action === "initiate" && res.case_id) {
+        nav(`/inst/research?case=${res.case_id}`);
+      } else {
+        setReloadKey((v) => v + 1);
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setDecisionError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(null);
+      setDecisionBusy(false);
     }
   };
 
@@ -295,25 +422,20 @@ export function InstIdeasPage() {
                         {t("研究关注点", "Research focus")}：{(c.research_points || [])[0]}
                       </p>
                     ) : null}
-                    <div className="mt-4 flex flex-wrap gap-2 border-t border-[#e3eaf8] pt-3">
+                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#e3eaf8] pt-3">
                       <Button
                         variant="primary"
                         disabled={!canWrite || busy === c.id}
-                        onClick={() => void enterResearch(c.id)}
+                        onClick={() => openDecision(c, "push")}
                       >
-                        {busy === c.id ? t("处理中…", "Working…") : t("进入研究", "Start research")}
+                        {t("立项评估", "Assess idea")}
                       </Button>
+                      <Badge tone={suffTone((c.idea || fallbackIdea(c, "push")).data_sufficiency)}>
+                        {suffLabel((c.idea || fallbackIdea(c, "push")).data_sufficiency)}
+                      </Badge>
                       {c.pool_status === "watch" ? (
                         <Badge tone="amber">{t("已在关注", "Watching")}</Badge>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          disabled={!canWrite || busy === c.id}
-                          onClick={() => void setPool(c.id, "watch")}
-                        >
-                          {t("关注", "Watch")}
-                        </Button>
-                      )}
+                      ) : null}
                     </div>
                   </article>
                 ))}
@@ -394,14 +516,17 @@ export function InstIdeasPage() {
                       )}
                     </span>
                   </p>
-                  <div className="mt-4 flex flex-wrap gap-2 border-t border-[#e3eaf8] pt-3">
+                  <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#e3eaf8] pt-3">
                     <Button
                       variant="primary"
                       disabled={!canWrite || busy === c.id}
-                      onClick={() => void enterResearch(c.id)}
+                      onClick={() => openDecision(c, "watch")}
                     >
-                      {busy === c.id ? t("处理中…", "Working…") : t("进入研究", "Start research")}
+                      {t("立项评估", "Assess idea")}
                     </Button>
+                    <Badge tone={suffTone((c.idea || fallbackIdea(c, "watch")).data_sufficiency)}>
+                      {suffLabel((c.idea || fallbackIdea(c, "watch")).data_sufficiency)}
+                    </Badge>
                     <Button
                       variant="ghost"
                       disabled={!canWrite || busy === c.id}
@@ -474,14 +599,26 @@ export function InstIdeasPage() {
                         <dd className="font-mono text-[#252533]">{fmtNum((p.weight || 0) * 100, 2)}%</dd>
                       </div>
                     </dl>
-                    <div className="mt-4 flex flex-wrap gap-2 border-t border-[#e3eaf8] pt-3">
+                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#e3eaf8] pt-3">
                       {p.company_id ? (
                         <Button
                           variant="primary"
                           disabled={!canWrite || busy === p.company_id}
-                          onClick={() => void enterResearch(Number(p.company_id))}
+                          onClick={() =>
+                            openDecision(
+                              {
+                                id: Number(p.company_id),
+                                name: p.name,
+                                symbol: p.symbol,
+                                market: p.market,
+                                data_status: p.data_status,
+                                idea: p.idea,
+                              },
+                              "holdings",
+                            )
+                          }
                         >
-                          {busy === p.company_id ? t("处理中…", "Working…") : t("进入研究", "Start research")}
+                          {t("复核立项", "Review idea")}
                         </Button>
                       ) : null}
                       <Button variant="ghost" onClick={() => nav("/inst/monitor")}>
@@ -512,6 +649,132 @@ export function InstIdeasPage() {
           "Data status: Real = prices/financials are fairly complete; Partial = some data missing; No data = not ingested. Missing data limits research depth and is never treated as zero.",
         )}
       </p>
+
+      {decision ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#171923]/45 p-3 sm:p-6"
+          role="presentation"
+          onClick={() => {
+            if (!decisionBusy) setDecision(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="idea-decision-title"
+            className="my-4 w-full max-w-2xl rounded-2xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e3eaf8] px-5 py-4">
+              <div>
+                <p className="text-[11px] tracking-[0.18em] text-[#b42345]">{t("立项三问", "IDEA CHECK")}</p>
+                <h2 id="idea-decision-title" className="mt-1 font-display text-lg font-semibold text-[#171923]">
+                  {decision.name}
+                </h2>
+                <p className="mt-0.5 font-mono text-[11px] text-[#68738b]">
+                  {decision.symbol} ·{" "}
+                  {decision.source === "push"
+                    ? t("量化推送", "Quant signal")
+                    : decision.source === "watch"
+                      ? t("关注与自选", "Watchlist")
+                      : t("当前持仓", "Holding")}
+                </p>
+              </div>
+              <Button variant="ghost" disabled={decisionBusy} onClick={() => setDecision(null)}>
+                {t("关闭", "Close")}
+              </Button>
+            </div>
+
+            <div className="space-y-3 px-5 py-4">
+              <div className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+                <p className="text-xs font-semibold text-[#505369]">1. {t("为什么现在", "Why now")}</p>
+                <p className="mt-1 text-xs leading-relaxed text-[#68738b]">{decision.idea.why_now}</p>
+              </div>
+              <div className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+                <p className="text-xs font-semibold text-[#505369]">2. {t("能力圈", "Circle of competence")}</p>
+                <p className="mt-1 text-xs leading-relaxed text-[#68738b]">
+                  {decision.idea.circle_note || decision.idea.circle_of_competence}
+                </p>
+                <label className="mt-2 flex items-start gap-2 text-[11px] leading-relaxed text-[#505369]">
+                  <input
+                    type="checkbox"
+                    checked={circleConfirmed}
+                    onChange={(e) => setCircleConfirmed(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  {t("我确认能用三句话说清它怎么赚钱。", "I can explain how it makes money in three sentences.")}
+                </label>
+              </div>
+              <div className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-[#505369]">3. {t("资料齐备", "Data sufficiency")}</p>
+                  <Badge tone={suffTone(decision.idea.data_sufficiency)}>
+                    {suffLabel(decision.idea.data_sufficiency)}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-[#68738b]">{decision.idea.reason}</p>
+                {decision.idea.data_gaps?.length ? (
+                  <ul className="mt-1 space-y-0.5 text-[11px] text-amber-700">
+                    {decision.idea.data_gaps.map((gap) => (
+                      <li key={gap}>· {gap}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone={decision.idea.suggestion === "initiate" ? "green" : "amber"}>
+                  {t("规则建议", "Rule suggestion")}：
+                  {decision.idea.suggestion === "initiate" ? t("可立项", "Initiate") : t("先观察", "Watch")}
+                </Badge>
+                <span className="text-[10px] text-[#77718c]">
+                  {t("这是规则初筛，不是 AI 结论；最终由你拍板。", "Rule-based screen, not an AI conclusion; the decision is yours.")}
+                </span>
+              </div>
+
+              <label className="block text-xs text-[#68738b]">
+                {t("决策理由（必填）", "Decision reason (required)")}
+                <textarea
+                  value={decisionReason}
+                  onChange={(e) => setDecisionReason(e.target.value)}
+                  placeholder={
+                    decisionAction === "initiate"
+                      ? t("为什么现在立项？关键假设和下一步核验是什么？", "Why initiate now? What are the key assumptions and next checks?")
+                      : t("为什么观察或放弃？保留理由，避免只记成功案例。", "Why watch or reject? Keep the reason so only successes are not remembered.")
+                  }
+                  className="mt-1 min-h-[76px] w-full rounded-lg border border-[#dde5f2] bg-[#f8faff] p-2 text-xs outline-none focus:border-[#7950ba]"
+                />
+              </label>
+              {decisionError ? (
+                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">
+                  {decisionError}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 border-t border-[#e3eaf8] px-5 py-4">
+              <Button
+                variant="primary"
+                disabled={decisionBusy || decision.idea.data_sufficiency === "missing"}
+                onClick={() => void submitDecision("initiate")}
+              >
+                {t("立项并进入研究", "Initiate & research")}
+              </Button>
+              <Button variant="ghost" disabled={decisionBusy} onClick={() => void submitDecision("watch")}>
+                {t("加入观察", "Watch")}
+              </Button>
+              <Button variant="danger" disabled={decisionBusy} onClick={() => void submitDecision("reject")}>
+                {t("放弃", "Reject")}
+              </Button>
+              {decision.idea.data_sufficiency === "missing" ? (
+                <span className="text-[10px] text-amber-700">
+                  {t("资料不足，立项不可用；可先观察或放弃。", "Data missing: initiate is unavailable; watch or reject instead.")}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

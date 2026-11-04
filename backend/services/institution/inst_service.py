@@ -432,6 +432,7 @@ def list_companies(
             item["industry"] = item["industry_name"]
         elif re.match(r"^\d{6}\.", str(item.get("industry") or "")):
             item["industry"] = None
+        item["idea"] = _idea_questions(item, "watch")
         out.append(item)
     return {"items": out, "total": total, "limit": limit, "offset": offset}
 
@@ -470,6 +471,180 @@ def update_company_pool(
             after={"pool_status": pool_status, "drop_reason": reason},
         )
     return {"ok": True, "id": company_id, "pool_status": pool_status}
+
+
+def _idea_data_sufficiency(company: dict[str, Any]) -> str:
+    """立项三问的资料判断：美股/港股当前只有行情，按 missing 处理。"""
+    market = str(company.get("market") or "CN").upper()
+    if market in {"US", "HK"}:
+        return "missing"
+    status = str(company.get("data_status") or "missing")
+    if status == "real":
+        return "sufficient"
+    if status in {"partial", "demo"}:
+        return "partial"
+    return "missing"
+
+
+def _idea_questions(
+    company: dict[str, Any],
+    source: str,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """规则版立项三问。
+
+    只使用已有行情/资料状态，不冒充 AI 判断；能力圈始终标为 unknown，
+    由投资经理在立项弹窗中确认。后续接入 `inst.idea` 时可替换本函数。
+    """
+    sufficiency = _idea_data_sufficiency(company)
+    if source == "holdings":
+        why_now = "当前持仓；需要复核原投资论点是否仍成立，以及是否继续持有。"
+    elif source == "watch":
+        points = company.get("research_points") or []
+        why_now = str(points[0]) if points else "已在观察池，等待新的价格或基本面变化。"
+    else:
+        why_now = str(reason or "").strip() or "量化初筛通过，需要说明为什么是现在。"
+
+    gaps: list[str] = []
+    if str(company.get("market") or "CN").upper() in {"US", "HK"}:
+        gaps.append("美股/港股暂无财务、公告、行业与指数数据源，只有行情")
+    elif sufficiency == "partial":
+        gaps.append("财务/公告数据不完整，关键结论需回源核对")
+    elif sufficiency == "missing":
+        gaps.append("核心财务/公告数据缺失，暂不能形成可靠判断")
+    if not str(company.get("industry") or "").strip():
+        gaps.append("行业分类待补充")
+
+    suggestion = "initiate" if sufficiency == "sufficient" else "watch"
+    reason_text = {
+        "sufficient": "资料齐备，可进入研究；能力圈需投资经理确认。",
+        "partial": "资料部分缺失，建议先观察并补齐关键数据。",
+        "missing": "核心资料缺失，建议观察或放弃，不直接立项。",
+    }[sufficiency]
+    return {
+        "source": source,
+        "why_now": why_now,
+        "circle_of_competence": "unknown",
+        "circle_note": "需投资经理确认：能否用三句话说清它怎么赚钱？",
+        "data_sufficiency": sufficiency,
+        "suggestion": suggestion,
+        "reason": reason_text,
+        "data_gaps": gaps,
+    }
+
+
+def record_idea_decision(
+    org_id: int,
+    company_id: int,
+    *,
+    source: str,
+    action: str,
+    reason: str | None,
+    circle_confirmed: bool,
+    actor_member_id: int | None,
+) -> dict[str, Any]:
+    """记录投资经理的立项/观察/放弃决策。
+
+    立项必须同时满足：资料充分 + 能力圈已确认；观察/放弃必须写理由。
+    决策写入 inst_idea_decision，公司池状态同步更新，并写审计。
+    """
+    if source not in {"push", "watch", "holdings"}:
+        raise ValueError("source 必须是 push/watch/holdings")
+    if action not in {"initiate", "watch", "reject"}:
+        raise ValueError("action 必须是 initiate/watch/reject")
+    reason = str(reason or "").strip()
+    if not reason:
+        raise ValueError("请填写决策理由")
+
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager")
+        row = conn.execute(
+            "SELECT * FROM inst_company WHERE id=%s AND org_id=%s", (company_id, org_id)
+        ).fetchone()
+        if not row:
+            raise LookupError("公司不存在")
+        company = dict(row)
+        idea = _idea_questions(company, source, reason)
+        if action == "initiate":
+            if idea["data_sufficiency"] == "missing":
+                raise ValueError("核心资料缺失，建议先观察，不能立项")
+            if not circle_confirmed:
+                raise ValueError("立项前需确认能力圈：能否用三句话说清它怎么赚钱")
+
+        case_id: int | None = None
+        case_no: str | None = None
+        if action == "initiate":
+            case_no = f"RC-{date.today():%Y%m%d}-{str(company['symbol']).split('.')[0]}-{_uid()[:4]}"
+            case_row = conn.execute(
+                "INSERT INTO inst_research_case (org_id, company_id, case_no, stage, created_by) "
+                "VALUES (%s,%s,%s,'draft',%s) RETURNING id",
+                (org_id, company_id, case_no, actor_member_id),
+            ).fetchone()
+            case_id = int(case_row["id"])
+
+        pool_status = {"initiate": "research", "watch": "watch", "reject": "dropped"}[action]
+        before = {"pool_status": company.get("pool_status"), "drop_reason": company.get("drop_reason")}
+        conn.execute(
+            "UPDATE inst_company SET pool_status=%s, drop_reason=%s, updated_at=NOW() "
+            "WHERE id=%s AND org_id=%s",
+            (pool_status, reason if action == "reject" else None, company_id, org_id),
+        )
+        decision = conn.execute(
+            """
+            INSERT INTO inst_idea_decision
+              (org_id, company_id, source, action, reason, circle_confirmed, data_sufficiency, actor_member_id)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING *
+            """,
+            (
+                org_id,
+                company_id,
+                source,
+                action,
+                reason,
+                bool(circle_confirmed),
+                idea["data_sufficiency"],
+                actor_member_id,
+            ),
+        ).fetchone()
+        decision_id = int(decision["id"])
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="idea.decision",
+            object_type="inst_idea_decision",
+            object_id=decision_id,
+            before=before,
+            after={
+                "company_id": company_id,
+                "source": source,
+                "action": action,
+                "reason": reason,
+                "circle_confirmed": bool(circle_confirmed),
+                "data_sufficiency": idea["data_sufficiency"],
+                "case_id": case_id,
+            },
+        )
+        if case_id:
+            _audit(
+                conn,
+                org_id=org_id,
+                actor_member_id=actor_member_id,
+                action="research.case.create",
+                object_type="inst_research_case",
+                object_id=case_id,
+                after={"company_id": company_id, "case_no": case_no, "from_idea_decision": decision_id},
+            )
+    return {
+        "ok": True,
+        "id": decision_id,
+        "action": action,
+        "pool_status": pool_status,
+        "case_id": case_id,
+        "idea": idea,
+    }
 
 
 def ideas_push(org_id: int, *, limit: int = 12) -> dict[str, Any]:
@@ -561,26 +736,26 @@ def ideas_push(org_id: int, *, limit: int = 12) -> dict[str, Any]:
         if industry and re.match(r"^\d{6}\.", str(industry)):
             # 801120.SI 这类申万代码对用户不可读；交给前端显示「行业待补充」。
             industry = None
-        items.append(
-            {
-                "id": int(r["id"]),
-                "symbol": r["symbol"],
-                "name": r["name"],
-                "market": r["market"],
-                "industry": industry,
-                "ref_price": r["ref_price"],
-                "data_status": r["data_status"],
-                "pool_status": r["pool_status"],
-                "tags": r["tags"] or [],
-                "research_points": r["research_points"] or [],
-                "pe_ttm": pe,
-                "pb_mrq": pb,
-                "last_close": series[1],
-                "momentum": momentum,
-                "momentum_window": window,
-                "reason": "；".join(reasons),
-            }
-        )
+        item = {
+            "id": int(r["id"]),
+            "symbol": r["symbol"],
+            "name": r["name"],
+            "market": r["market"],
+            "industry": industry,
+            "ref_price": r["ref_price"],
+            "data_status": r["data_status"],
+            "pool_status": r["pool_status"],
+            "tags": r["tags"] or [],
+            "research_points": r["research_points"] or [],
+            "pe_ttm": pe,
+            "pb_mrq": pb,
+            "last_close": series[1],
+            "momentum": momentum,
+            "momentum_window": window,
+            "reason": "；".join(reasons),
+        }
+        item["idea"] = _idea_questions(item, "push", item["reason"])
+        items.append(item)
     items.sort(key=lambda x: x["momentum"], reverse=True)
     return {
         "strategy": {
@@ -976,41 +1151,87 @@ _DIM_OUTPUT = (
     '只输出 JSON，不要 markdown：{"summary":"...","checks":["..."],"counter":["..."],'
     '"evidence":[{"title":"...","quote":"...","source":"..."}],"open_questions":["..."],'
     '"confidence":0.6,"data_gaps":["..."]}。'
-    "数据不足写待补充并放入 data_gaps；禁止编造数字、人名或事实；"
-    "summary≤120字，checks≤4条，counter≤3条，evidence≤4条，open_questions≤3条，data_gaps≤4条，"
-    "总输出不超过1200字；不给买卖点、目标价、涨跌预测或收益承诺；不改变业务状态。"
+    "结论先行，说人话：summary 前 200 字直接给判断，每个判断给数字、区间或明确方向；"
+    "不是确定事实的内容标【推断】或【不知道】，不要写成确定结论；"
+    "数据不足不等于没结论，写“在补到 X 之前，我的判断是 Y，置信度低”，并列入 data_gaps；"
+    "禁止编造数字、人名、公告或事实；禁止“建议进一步研究/有待观察”这类空话；"
+    "summary≤200字，checks≤5条，counter≤3条，evidence≤5条，open_questions≤3条，data_gaps≤5条，"
+    "总输出不超过1800字；不给买卖点、目标价、涨跌预测或收益承诺；不改变业务状态。"
 )
 
 _DIMENSION_PROMPTS: dict[str, str] = {
     "industry": (
-        "你是旸谷资本机构研究部的产业研究 Agent，服务巴菲特式价值投资。"
-        "只依据输入的公司、行情、行业与财务数据，分析行业规模、竞争结构、供需与周期、产业链位置与行业吸引力。"
-        "没有行业规模/份额数据时必须列入 data_gaps，不得编造。" + _DIM_OUTPUT
+        "你是旸谷资本机构研究部的产业研究 Agent，有卖方研究和买方投资双重背景。"
+        "任务：判断公司所处产业的景气位置、产业链卡位是否成立、是否可持续。"
+        "分析基准：以输入 as_of 为基准日，不假设未来数据；中文，术语首次出现保留英文。\n"
+        "数据纪律：关键数据标来源与报告期；只在公告/年报/统计局/协会/第三方研究之间取舍；"
+        "查不到就写“未获取到公开数据”，并给出推算逻辑和可信度；区分【事实】【公司口径】【推断】；每个结论附证伪条件。\n"
+        "分析框架：1 产业定义与边界；2 产业链拆解与利润池；3 市场规模与增速（TAM/SAM/SOM，量×价×结构）；"
+        "4 生命周期与周期位置；5 竞争格局（CR3/CR5、进入壁垒、波特五力）；6 技术路线与政策；"
+        "7 行业盈利水平与海外对标；8 公司卡位与份额；9 财务验证；10 催化剂、风险与跟踪指标。\n"
+        "输入没有行业规模、份额、价格或政策数据时，只能给方向性判断并把缺口写入 data_gaps，不得编造。"
+        + _DIM_OUTPUT
     ),
     "business_model": (
-        "你是旸谷资本机构研究部的商业模式 Agent，服务巴菲特式价值投资。"
-        "只依据输入数据分析：公司靠什么赚钱、客户价值、收入结构、单位经济性、资本强度与可复制性。"
-        "没有分部收入、客户集中度、渠道数据时只能做财务结构推断，并在 data_gaps 明确标注。" + _DIM_OUTPUT
+        "你是旸谷资本机构研究部的商业模式 Agent，做过一级市场尽调和二级市场研究。"
+        "任务：拆清公司靠什么赚钱、为什么能持续、能长多大；多业务分别建模再合并。"
+        "分析基准：以输入 as_of 为基准日，回溯最近 5 个完整年度和最近 4 个季度可用数据。\n"
+        "数据纪律：收入口径核对（总额/净额、含税、并表范围、分部）；剔除补助、资本化、股权激励、汇兑等干扰；"
+        "区分【事实】【公司口径】【推断】；每个结论附证伪条件。\n"
+        "分析框架：1 一句话定义商业模式（≤30字）；2 客户与需求；3 价值主张与替代；4 收入模型与量价结构；"
+        "5 成本结构与毛利（固定/变动、规模效应）；6 单位经济（LTV/CAC、回收期，能算则算）；"
+        "7 现金流特征（OCF/净利、CCC、capex/收入）；8 护城河与壁垒；9 可复制性与边界；10 同业对比与脆弱性测试。\n"
+        "输入没有分部收入、客户集中度、渠道和单位经济数据时，只能从财务结构推断并标注缺口。"
+        + _DIM_OUTPUT
     ),
     "moat": (
-        "你是旸谷资本机构研究部的护城河 Agent，服务巴菲特式价值投资。"
-        "只依据输入数据分析品牌、成本优势、网络效应、转换成本、规模与可持续性；"
-        "毛利率、ROE、增速只是线索，不等于护城河；必须给出可检验的护城河证据、侵蚀路径与反证条件。" + _DIM_OUTPUT
+        "你是旸谷资本机构研究部的护城河 Agent，偏 Morningstar 质量投资框架。"
+        "任务：判断护城河有没有、哪一类、多宽、变宽还是变窄、还能维持多久。"
+        "护城河不是形容词，必须能被财务数据、竞争对手和十年以上时间检验；毛利率/ROE/增速只是结果，不是原因。\n"
+        "数据纪律：选真正可比公司；区分事实/公司口径/推断；每条护城河给独立机制证据；禁止循环论证；附证伪条件。\n"
+        "分析框架：1 先排除伪护城河（景气、补贴、先发、单客户、会计口径、高资本开支）；"
+        "2 五类护城河验证（无形资产、转换成本、网络效应、成本优势、有效规模），每类给机制/证据/复制成本/评级；"
+        "3 财务证据链（ROIC-WACC 利差、溢价稳定性、穿越周期、份额、留存、费用率、占款能力）；"
+        "4 红队测试与被攻破路径；5 趋势、半衰期与边界；6 结论：真优势还是行业红利+运气。\n"
+        "输入缺少 10 年财务、份额或同业数据时，只能给条件性判断并列入 data_gaps。"
+        + _DIM_OUTPUT
     ),
     "financial": (
-        "你是旸谷资本机构研究部的财务质量 Agent，服务巴菲特式价值投资。"
-        "只依据输入财务数据分析三表勾稽、ROE/ROIC、自由现金流、应收存货、资本化与会计风险；"
-        "指出利润与现金流是否互相印证，以及需要回原始公告核验的项目。" + _DIM_OUTPUT
+        "你是旸谷资本机构研究部的财务质量 Agent，审计出身转买方。信条：利润是观点，现金是事实，附注是真相。"
+        "任务：判断利润是否真实、赚的是不是现金、增长质量如何、有无盈余管理或粉饰。"
+        "分析基准：以输入 as_of 为基准日，优先使用最近 8-10 年可用报表与附注。\n"
+        "数据纪律：标来源与报告期；三表勾稽（净利↔OCF、收入↔收现、capex↔固资、有息负债↔利息）；"
+        "合并与母公司报表对比；口径变化还原；区分事实/公司口径/推断；附证伪条件。\n"
+        "分析框架：1 结论先行（含金量/稳健性/造假风险分开评级）；2 利润真实性；"
+        "3 现金含量（净现比、收现比、FCF、存贷双高）；4 盈利能力质量（毛利率vs同业、资本化、补助）；"
+        "5 资产质量（商誉、在建、其他应收）；6 负债与偿债；7 会计稳健性；8 审计信号（意见、KAM、问询函）；"
+        "9 红旗清单（出现/未出现/需解释）；10 结论。\n"
+        "输入缺少附注、母公司报表或审计报告时，明确写“无法验证”，不得把缺失当成正常。"
+        + _DIM_OUTPUT
     ),
     "governance": (
-        "你是旸谷资本机构研究部的 CEO 与治理 Agent，服务巴菲特式价值投资。"
-        "只依据输入数据分析资本配置、承诺兑现、关联交易、分红回购与治理结构；"
-        "输入若没有公告、管理层履历或治理数据，必须把缺口写入 data_gaps，禁止编造人名、履历或违规事实。" + _DIM_OUTPUT
+        "你是旸谷资本机构研究部的 CEO 与治理 Agent。原则：诚信优先于能力，行为优先于言辞，资本配置记录优先于战略叙事。"
+        "任务：评估实控人/CEO 是否可信、是否与中小股东一致、资本配置记录和治理系统风险。"
+        "分析基准：以输入 as_of 为基准日，重点看近 5-8 年；只用公开可查证行为。\n"
+        "数据纪律：区分【公开表态】【实际行动】【媒体报道】；负面信息给公司回应与核实程度；禁止结果偏见；"
+        "禁止编造人名、履历、违规事实；输入没有公告/管理层履历/关联交易明细时，把“无法验证”写入 data_gaps。\n"
+        "分析框架：1 结论先行；2 人与履历（仅用输入数据）；3 承诺兑现对照；4 资本配置记录（融资/分红回购/并购/商誉/capex增量ROIC/减持质押）；"
+        "5 薪酬与激励一致性；6 治理结构（股权/独董/关联交易/占用/内控）；7 战略判断力；8 组织执行力；9 关键人物与接班；10 结论。"
+        "重点回答：股东利益的代理人，还是自身利益最大化的经营者。"
+        + _DIM_OUTPUT
     ),
     "valuation": (
-        "你是旸谷资本机构研究部的估值与价格 Agent，服务巴菲特式价值投资。"
-        "只依据输入数据分析 PE/PB 分位、DCF 假设与局限、安全边际与估值风险；"
-        "不给目标价或买卖点，必须说明估值口径、数据缺口与哪些假设会推翻结论。" + _DIM_OUTPUT
+        "你是旸谷资本机构研究部的估值与价格 Agent。核心：估值不是算精确数字，而是回答当前价格隐含了什么预期、预期是否合理、错了会亏多少。"
+        "任务：判断当前价隐含什么、贵还是便宜、安全边际多大、什么情况会造成永久亏损。"
+        "分析基准：以输入 as_of 的收盘价与市值为准，价格与财务时点匹配，币种统一。\n"
+        "数据纪律：输入标来源+时点；缺失写“未获取”+假设；区分【事实】/[假设]/【推断】；"
+        "DCF 给完整假设表；可比公司说明为什么可比；结论是区间，不给虚假精确；附证伪条件。\n"
+        "分析框架：1 结论先行（价值区间、位置、隐含预期、安全边际、评级）；2 方法选择；"
+        "3 相对估值（可比+历史分位）；4 绝对估值 DCF（FCF、WACC 拆解、终值占比>75%预警）；"
+        "5 反向 DCF 隐含预期；6 分部/周期调整（有数据才做）；7 敏感性；8 情景与期望值；"
+        "9 价格与价值分离（杀估值/业绩/逻辑）；10 催化剂、时间成本与结论。\n"
+        "不给目标价或买卖点；输入缺少现金流、WACC、可比公司数据时，只做相对估值方向判断并明确缺口。"
+        + _DIM_OUTPUT
     ),
 }
 
@@ -2960,7 +3181,7 @@ def portfolio(org_id: int) -> dict[str, Any]:
         if latest and latest["d"]:
             rows = conn.execute(
                 """
-                SELECT ps.*, co.id AS company_id, co.name, co.industry, co.market
+                SELECT ps.*, co.id AS company_id, co.name, co.industry, co.market, co.data_status
                   FROM inst_position_snapshot ps
                   LEFT JOIN inst_company co ON co.symbol=ps.symbol AND co.org_id=%s
                  WHERE ps.portfolio_id=%s AND ps.as_of=%s AND ps.qty > 0
@@ -2975,6 +3196,7 @@ def portfolio(org_id: int) -> dict[str, Any]:
                 if bar and bar.get("close") is not None and p.get("qty") is not None:
                     p["last_close"] = bar["close"]
                     p["market_value"] = float(p["qty"]) * float(bar["close"])
+                p["idea"] = _idea_questions(p, "holdings")
     invested = sum(float(p.get("market_value") or 0) for p in positions)
     cash = float(pf["cash"] or 0)
     nav = cash + invested
@@ -3382,6 +3604,10 @@ def _rule_memo(version: dict[str, Any]) -> dict[str, Any]:
     return {
         "summary": version.get("conclusion")
         or "六维分析已完成；AI 摘要暂不可用，以下为规则摘要，请以各维证据为准。",
+        "decision": "watch",
+        "six_dim_scores": [],
+        "conflicts": [],
+        "key_variables": questions[:3],
         "evidence": [],
         "risks": risks,
         "open_questions": questions,
@@ -3406,9 +3632,17 @@ def ai_research_memo(org_id: int, case_id: int) -> dict[str, Any]:
         data = _ai_task(
             "inst.research_memo",
             payload,
-            "你是机构研究一页纸助手。只使用输入中的公司、六维与证据；结论必须可回源；"
-            "数据不足写待补充；不给买卖建议、目标价或收益承诺。只输出 JSON："
-            '{"summary":"...","evidence":["..."],"risks":["..."],"open_questions":["..."]}。',
+            "你是基金 CIO，面前有六份独立研究。职责是找出矛盾、裁决矛盾、检验逻辑链闭合，给出可执行的研究建议；"
+            "以“敢于说不”和“结论先行”著称。只使用输入中的公司、六维与证据，不引入报告外事实。\n"
+            "否决规则（任一触发，decision=avoid）：财务质量为 C/D；治理诚信不足；出现造假或占款实质证据。\n"
+            "降级规则（最高 watch）：产业衰退或份额下滑；FCF 长期为负无转正；护城河无/负。\n"
+            "冲突裁决：证据强度 > 一手数据 > 时效新；强度相当则保留为未解决分歧，不取平均。\n"
+            "只输出 JSON：{\"summary\":\"...\",\"decision\":\"proceed|watch|avoid\","
+            "\"six_dim_scores\":[{\"key\":\"industry|business_model|moat|financial|governance|valuation\","
+            "\"score\":1-5,\"confidence\":0-1,\"note\":\"...\"}],"
+            "\"conflicts\":[\"...\"],\"key_variables\":[\"...\"],\"evidence\":[\"...\"],"
+            "\"risks\":[\"...\"],\"open_questions\":[\"...\"]}。"
+            "summary≤200字；decision 是研究建议，不是买卖指令；不给目标价或收益承诺；数据不足明确写“缺 X，暂不能判断”。",
         )
         data.setdefault("engine", "agent")
     except AiUnavailable:

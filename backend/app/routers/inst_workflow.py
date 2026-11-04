@@ -83,6 +83,28 @@ def ideas_push(
     return {"ok": True, **svc.ideas_push(org_id, limit=limit)}
 
 
+@router.post("/ideas/{company_id}/decision")
+def decide_idea(
+    company_id: int,
+    body: dict[str, Any],
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "ideas")
+    try:
+        return svc.record_idea_decision(
+            org_id,
+            company_id,
+            source=str(body.get("source") or "push"),
+            action=str(body.get("action") or "watch"),
+            reason=body.get("reason"),
+            circle_confirmed=body.get("circle_confirmed") is True,
+            actor_member_id=member_id,
+        )
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.get("/companies/{company_id}")
 def company(company_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)

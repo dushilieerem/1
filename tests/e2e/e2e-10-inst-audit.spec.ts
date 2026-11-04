@@ -137,7 +137,7 @@ test("详情页：研究、辩论、审批（有数据时）", async ({ browser 
     await expect(page.getByText("辩论记录", { exact: false }).first()).toBeVisible({
       timeout: 20_000,
     });
-    await expect(page.getByText("估值复核：五年 DCF", { exact: false })).toBeVisible();
+    await expect(page.getByText("五年 DCF", { exact: false })).toHaveCount(0);
   }
   if (proposalId) {
     await page.goto(`${BASE}/inst/approvals?proposal=${proposalId}`, { waitUntil: "networkidle" });

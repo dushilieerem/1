@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, MessagesSquare, Play } from "lucide-react";
-import { instApi, fmtNum } from "@/lib/instApi";
+import { instApi } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
 import { Badge, Button, Card, Empty, ErrorBox, Loading, PageHeader, StatusBadge } from "./instUi";
@@ -39,7 +39,6 @@ type ExitCase = {
 
 type CaseItem = {
   id: number;
-  company_id?: number;
   company_name: string;
   symbol: string;
   stage: string;
@@ -63,46 +62,10 @@ export function InstDebatePage() {
   const [error, setError] = useState<string | null>(null);
   const [target, setTarget] = useState("0.05");
   const [proposalBusy, setProposalBusy] = useState(false);
-  const [dcf, setDcf] = useState<Record<string, any> | null>(null);
-  const [dcfIn, setDcfIn] = useState({
-    base_revenue: "100",
-    revenue_growth: "10",
-    cashflow_margin: "30",
-    discount_rate: "10",
-    terminal_growth: "2",
-    shares: "",
-  });
-  const [dcfBusy, setDcfBusy] = useState(false);
-  const [dcfError, setDcfError] = useState<string | null>(null);
   const autoStarted = useRef(false);
   const autoProposal = useRef(false);
 
   const canWrite = (session.permissions.debate || "none") === "write";
-
-  const runDcf = async () => {
-    if (!detail?.company_id) return;
-    setDcfBusy(true);
-    setDcfError(null);
-    try {
-      const res = await instApi<Record<string, any>>(`/companies/${detail.company_id}/dcf`, {
-        method: "POST",
-        body: {
-          base_revenue: Number(dcfIn.base_revenue),
-          revenue_growth: Number(dcfIn.revenue_growth) / 100,
-          cashflow_margin: Number(dcfIn.cashflow_margin) / 100,
-          discount_rate: Number(dcfIn.discount_rate) / 100,
-          terminal_growth: Number(dcfIn.terminal_growth) / 100,
-          shares_outstanding: dcfIn.shares ? Number(dcfIn.shares) : undefined,
-          years: 5,
-        },
-      });
-      setDcf(res);
-    } catch (e) {
-      setDcfError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setDcfBusy(false);
-    }
-  };
 
   const loadCases = () => {
     setLoading(true);
@@ -181,8 +144,6 @@ export function InstDebatePage() {
   useEffect(() => {
     autoStarted.current = false;
     autoProposal.current = false;
-    setDcf(null);
-    setDcfError(null);
   }, [caseId]);
 
   const submitProposal = async (direction: string, targetWeight: number, auto: boolean) => {
@@ -388,63 +349,6 @@ export function InstDebatePage() {
               ))}
             </div>
           </Card>
-
-          {detail.company_id ? (
-            <Card
-              title={t("估值复核：五年 DCF", "Valuation check: five-year DCF")}
-              desc={t(
-                "辩论中的确定性估值复核：按固定假设推演五年现金流并折现，用来检查正反方对价格的假设是否离谱；不是目标价，也不预测股价。",
-                "A deterministic valuation check for the debate: projects five years of cash flow from fixed assumptions and discounts them, to test whether either side's price assumption is unreasonable. Not a target price and not a price forecast.",
-              )}
-            >
-              <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
-                {[
-                  ["base_revenue", t("基期收入", "Base revenue")],
-                  ["revenue_growth", t("增长率 %", "Growth %")],
-                  ["cashflow_margin", t("现金流率 %", "Cash-flow margin %")],
-                  ["discount_rate", t("折现率 %", "Discount rate %")],
-                  ["terminal_growth", t("永续 %", "Terminal %")],
-                  ["shares", t("股本（可选）", "Shares (optional)")],
-                ].map(([key, label]) => (
-                  <label key={key} className="space-y-1 text-[#68738b]">
-                    <span>{label}</span>
-                    <input
-                      value={(dcfIn as Record<string, string>)[key]}
-                      onChange={(e) => setDcfIn((v) => ({ ...v, [key]: e.target.value }))}
-                      inputMode="decimal"
-                      className="w-full rounded-lg border border-[#dde5f2] bg-[#f8faff] px-2 py-1.5 text-xs text-[#252533] outline-none focus:border-[#7950ba]"
-                    />
-                  </label>
-                ))}
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Button variant="ghost" disabled={dcfBusy} onClick={() => void runDcf()}>
-                  {dcfBusy ? t("计算中…", "Calculating…") : t("计算估值区间", "Calculate range")}
-                </Button>
-                <span className="text-[10px] text-[#77718c]">
-                  {t("输入为演示假设，可按辩论中的情景调整。", "Inputs are illustrative assumptions and can be adjusted to the debate scenario.")}
-                </span>
-              </div>
-              {dcfError ? (
-                <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">
-                  {dcfError}
-                </p>
-              ) : null}
-              {dcf?.range ? (
-                <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs leading-relaxed text-[#5a3d85]">
-                  <p>
-                    {t("区间", "Range")}：{fmtNum(dcf.range.low, 2)} – {fmtNum(dcf.range.high, 2)}
-                    {dcf.range.base_per_share != null
-                      ? `；${t("每股", "per share")} ${fmtNum(dcf.range.low_per_share, 2)} / ${fmtNum(dcf.range.base_per_share, 2)} / ${fmtNum(dcf.range.high_per_share, 2)}`
-                      : ""}
-                  </p>
-                  {Array.isArray(dcf.limits) && dcf.limits.length ? (
-                    <p className="mt-1 text-[10px] leading-relaxed text-[#77718c]">{dcf.limits.join("；")}</p>
-                  ) : null}
-                </div>
-              ) : null}
-            </Card>
-          ) : null}
 
           <Card title={t("主持与裁决", "Chair & ruling")} desc={t("主持只做流程建议：推进审议 / 补充研究 / 继续观察 / 拒绝。", "The chair only recommends: proceed / supplement research / keep watching / reject.")}>
             {groups.chair.length ? (

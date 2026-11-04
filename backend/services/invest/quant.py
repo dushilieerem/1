@@ -13,6 +13,7 @@ psycopg。因子面板在内存中按数据日期缓存，回测/模拟盘复用
 from __future__ import annotations
 
 import json
+import logging
 import math
 import threading
 import time
@@ -81,6 +82,14 @@ FACTORS: tuple[dict[str, Any], ...] = (
 )
 FACTOR_BY_KEY = {f["key"]: f for f in FACTORS}
 
+def re_universe(universe: str) -> str:
+    return {"hs300": "CSI300", "zz500": "CSI500", "all": "ALL_A"}.get(universe, "CSI300")
+
+
+def re_benchmark(universe: str) -> str:
+    return "CSI500" if re_universe(universe) == "CSI500" else "CSI300"
+
+
 UNIVERSES: dict[str, dict[str, str]] = {
     "hs300": {"name": "沪深300", "name_en": "CSI 300", "index": "000300.SH"},
     "zz500": {"name": "中证500", "name_en": "CSI 500", "index": "000905.SH"},
@@ -99,6 +108,7 @@ _PANEL_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
 _BOARD_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
 _CACHE_LOCK = threading.Lock()
 _CACHE_TTL = 1800.0
+_LOGGER = logging.getLogger(__name__)
 
 
 class QuantDataError(ValueError):
@@ -978,6 +988,7 @@ def run_backtest(
     except Exception:
         data_date = date.today().isoformat()
     re_result = None
+    re_error = None
     try:
         from services.invest import quant_re
 
@@ -993,7 +1004,9 @@ def run_backtest(
                 end_date=data_date,
                 name=name,
             )
-    except Exception:
+    except Exception as exc:
+        re_error = str(exc)[:300]
+        _LOGGER.warning("quant RE backtest fallback: %s", re_error)
         re_result = None
     if re_result:
         shortened = False
@@ -1014,6 +1027,7 @@ def run_backtest(
             "data_date": data_date,
             "engine": "re",
             "engine_reason": None,
+            "engine_error": None,
             "disclaimer": "历史回测 · 非真实收益 · 不代表未来",
         }
     else:
@@ -1052,6 +1066,7 @@ def run_backtest(
             "data_date": panel["data_date"],
             "engine": "local",
             "engine_reason": reason,
+            "engine_error": re_error,
             "disclaimer": "历史回测 · 非真实收益 · 不代表未来",
         }
     if persist:
@@ -1133,7 +1148,8 @@ def _h5_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
 def _quant_config(factors: list[dict[str, str]], universe: str, *, draft: bool = False) -> dict[str, Any]:
     from services.strategy import strategy_store
 
-    uni = {"hs300": "CSI300", "zz500": "CSI500", "all": "ALL_A"}.get(universe, "CSI300")
+    uni = re_universe(universe)
+    benchmark = re_benchmark(universe)
     code = ""
     try:
         from services.invest import quant_re
@@ -1141,24 +1157,11 @@ def _quant_config(factors: list[dict[str, str]], universe: str, *, draft: bool =
         code = quant_re.build_strategy_code(factors)
     except Exception:
         code = ""
-    if not code:
-        # 基本面因子暂不在 RE 策略 DSL 中：草稿仍可保存，模拟盘/RE 回测会明确拒绝。
-        code = (
-            "from app.services.strategy.vectorized.factor_strategy import (\n"
-            "    EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, signal,\n"
-            ")\n\n"
-            "class H5QuantFallback(FactorPortfolioStrategy):\n"
-            "    selector = TopN(20)\n"
-            "    weighting = EqualWeight()\n"
-            "    rebalance = EveryNTradingDays(20)\n\n"
-            "    @signal\n"
-            "    def score(self):\n"
-            "        return self.close * 0\n"
-        )
+    local_only = not bool(code)
     cfg = strategy_store._default_config()
     cfg.update({
         "universe": uni,
-        "benchmark": "CSI300",
+        "benchmark": benchmark,
         "rangeMode": "period",
         "backtestPeriod": "1y",
         "commission_rate": 0.001,
@@ -1170,6 +1173,7 @@ def _quant_config(factors: list[dict[str, str]], universe: str, *, draft: bool =
         "strategy_code": code,
         "engine_mode": "vectorized",
         "quant": True,
+        "quant_local_only": local_only,
         "quant_factors": factors,
         "quant_universe": universe,
         "quant_draft": draft,
@@ -1188,13 +1192,14 @@ def _ensure_project(
 ) -> str:
     from services.strategy import strategy_store
 
+    cfg = _quant_config(factors, universe, draft=draft)
     out = strategy_store.upsert_project(
         user_id,
         {
             "id": project_id or str(uuid.uuid4()),
             "name": name,
-            "description": "H5 量化研究",
-            "config": _quant_config(factors, universe, draft=draft),
+            "description": "H5 本地降级记录（不可执行）" if cfg.get("quant_local_only") else "H5 量化研究",
+            "config": cfg,
         },
     )
     return str(out["project"]["id"])
@@ -1203,16 +1208,30 @@ def _ensure_project(
 def _root_project(user_id: int, factors: list[dict[str, str]], universe: str) -> str:
     from services.strategy import strategy_store
 
+    existing = None
     for project in (strategy_store.list_projects(user_id).get("projects") or []):
-        cfg = project.get("config") or {}
-        if cfg.get("quant_root"):
-            return str(project["id"])
-    pid = _ensure_project(user_id, "H5 快速实验", factors, universe, draft=False)
+        if (project.get("config") or {}).get("quant_root"):
+            existing = project
+            break
+    name = (existing or {}).get("name") or "H5 快速实验"
+    pid = _ensure_project(user_id, name, factors, universe, project_id=(existing or {}).get("id"))
     project = strategy_store.get_project(user_id, pid)["project"]
     cfg = dict(project.get("config") or {})
+    # 快速实验的根项目只承载回测记录，不在 Web 侧提供可执行策略，
+    # 避免把“记录项目”误当成可回测策略。
     cfg["quant_root"] = True
     cfg["quant_draft"] = False
-    strategy_store.upsert_project(user_id, {"id": pid, "name": project["name"], "description": project.get("description") or "", "config": cfg})
+    cfg["quant_local_only"] = True
+    cfg["strategy_code"] = ""
+    strategy_store.upsert_project(
+        user_id,
+        {
+            "id": pid,
+            "name": project["name"],
+            "description": "H5 快速实验记录（不可执行）",
+            "config": cfg,
+        },
+    )
     return pid
 
 
@@ -1248,6 +1267,7 @@ def _run_storage_payload(result: dict[str, Any]) -> dict[str, Any]:
             "factors": result.get("factor_meta") or [],
             "engine": result.get("engine") or "local",
             "engine_reason": result.get("engine_reason"),
+            "engine_error": result.get("engine_error"),
             "shortened": bool(result.get("shortened")),
         },
     }
@@ -1277,6 +1297,7 @@ def _save_quant_run(
                 "universe": universe,
                 "engine": result.get("engine") or "local",
                 "engine_reason": result.get("engine_reason"),
+                "engine_error": result.get("engine_error"),
                 "start": result.get("start_date"),
                 "end": result.get("end_date"),
             },
@@ -1322,6 +1343,7 @@ def _run_to_backtest(run: dict[str, Any]) -> dict[str, Any]:
         "shortened": bool(quant.get("shortened")),
         "engine": quant.get("engine") or request.get("engine") or "local",
         "engine_reason": quant.get("engine_reason") or request.get("engine_reason"),
+        "engine_error": quant.get("engine_error") or request.get("engine_error"),
         "created_at": run.get("finishedAt"),
         "disclaimer": "历史回测 · 非真实收益 · 不代表未来",
     }
@@ -1944,9 +1966,17 @@ def create_strategy(conn: Any, user_id: int, body: dict[str, Any]) -> dict[str, 
     selected = _normalize_factors(body.get("factors"))
     universe = _normalize_universe(body.get("universe"))
     name = str(body.get("name") or " + ".join(FACTOR_BY_KEY[f["key"]]["name"] for f in selected))[:80]
-    pid = str(body.get("project_id") or "").strip() or _ensure_project(
-        user_id, name, selected, universe
-    )
+    try:
+        from services.invest import quant_re
+
+        supported = quant_re.supports(selected)
+    except Exception:
+        supported = False
+    pid = None
+    if supported:
+        pid = str(body.get("project_id") or "").strip() or _ensure_project(
+            user_id, name, selected, universe
+        )
     row = rules.one(
         conn,
         "INSERT INTO invest_quant_strategy (user_id,name,factors,universe,status,project_id,backtest_id,created_at,updated_at) "

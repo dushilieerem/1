@@ -99,6 +99,7 @@ export type Backtest = {
   shortened: boolean;
   engine?: "re" | "local";
   engine_reason?: string | null;
+  engine_error?: string | null;
   created_at?: string;
   disclaimer?: string;
 };

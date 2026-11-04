@@ -107,6 +107,14 @@ def test_backtest_persist_false_has_assumptions(monkeypatch):
     assert out["disclaimer"].startswith("历史回测")
 
 
+def test_re_universe_and_benchmark_mapping():
+    assert quant.re_universe("hs300") == "CSI300"
+    assert quant.re_universe("zz500") == "CSI500"
+    assert quant.re_universe("all") == "ALL_A"
+    assert quant.re_benchmark("hs300") == "CSI300"
+    assert quant.re_benchmark("zz500") == "CSI500"
+
+
 def test_re_adapter_builds_strategy_code_for_supported_factors():
     code = quant_re.build_strategy_code([
         {"key": "value", "direction": "high"},

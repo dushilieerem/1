@@ -56,6 +56,13 @@ export default function QuantStrategies() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [plaza, setPlaza] = useState<PlazaItem[]>([]);
+  const [savedPlaza, setSavedPlaza] = useState<number[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("svq_quant_plaza_saved") || "[]");
+    } catch {
+      return [];
+    }
+  });
   const [plazaSort, setPlazaSort] = useState("followers");
   const [plazaDetail, setPlazaDetail] = useState<PlazaDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,7 +111,7 @@ export default function QuantStrategies() {
   const loadPlaza = (sort: string) => {
     setLoading(true);
     api<{ items: PlazaItem[] }>(`/api/invest/quant/plaza?sort=${sort}`)
-      .then((d) => setPlaza(d.items || []))
+      .then((d) => setPlaza((d.items || []).map((item) => ({ ...item, followed: savedPlaza.includes(item.id) }))))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
@@ -261,16 +268,19 @@ export default function QuantStrategies() {
     }
   };
 
-  const followPlaza = async (item: PlazaItem) => {
+  const followPlaza = (item: PlazaItem) => {
+    const next = savedPlaza.includes(item.id)
+      ? savedPlaza.filter((id) => id !== item.id)
+      : [...savedPlaza, item.id];
+    setSavedPlaza(next);
     try {
-      const data = await api<{ followed: boolean; followers: number }>(`/api/invest/quant/plaza/${item.id}/follow`, {
-        method: "POST",
-        body: JSON.stringify({ followed: !item.followed }),
-      });
-      setPlaza((prev) => prev.map((x) => (x.id === item.id ? { ...x, followed: data.followed, followers: data.followers } : x)));
-    } catch (e: any) {
-      setError(e.message);
+      localStorage.setItem("svq_quant_plaza_saved", JSON.stringify(next));
+    } catch {
+      /* 本机存储不可用时只影响本次会话 */
     }
+    const followed = next.includes(item.id);
+    setPlaza((prev) => prev.map((x) => (x.id === item.id ? { ...x, followed } : x)));
+    setPlazaDetail((prev) => (prev && prev.id === item.id ? { ...prev, followed } : prev));
   };
 
   const openPlaza = async (item: PlazaItem) => {
@@ -533,6 +543,7 @@ export default function QuantStrategies() {
             ))}
           </div>
           <p className="hint">{t("年化与回撤来自作者回测快照，未做跨策略统一，不能横向比大小。", "Figures come from author snapshots, are not normalized, and cannot be compared across strategies.")}</p>
+          <p className="hint">{t("收藏仅保存在本机，不同步到账号；榜单中的「浏览」来自广场快照。", "Saved items are stored on this device only and do not sync to your account; view counts come from the plaza snapshot.")}</p>
           {loading ? <LoadingCards rows={3} /> : null}
           {!loading && !plaza.length ? (
             <div className="state-box">
@@ -555,7 +566,7 @@ export default function QuantStrategies() {
               </div>
               <div className="row between">
                 <Sparkline values={item.curve || []} width={190} height={36} />
-                <button className={`link-btn ${item.followed ? "on" : ""}`} onClick={() => void followPlaza(item)}>
+                <button className={`link-btn ${item.followed ? "on" : ""}`} onClick={() => followPlaza(item)}>
                   <Bookmark size={13} /> {item.followed ? t("已收藏", "Saved") : t("收藏", "Save")}
                 </button>
               </div>
@@ -574,7 +585,7 @@ export default function QuantStrategies() {
         footer={
           plazaDetail ? (
             <div className="row gap6">
-              <button className="btn btn-ghost btn-sm" onClick={() => void followPlaza(plazaDetail as unknown as PlazaItem)}>
+              <button className="btn btn-ghost btn-sm" onClick={() => followPlaza(plazaDetail as unknown as PlazaItem)}>
                 <Bookmark size={14} /> {plazaDetail.followed ? t("已收藏", "Saved") : t("收藏", "Save")}
               </button>
               <button className="btn btn-primary btn-sm" onClick={() => void copyPlaza(plazaDetail.id)}>

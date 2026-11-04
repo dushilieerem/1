@@ -140,17 +140,19 @@ def run_re_strategy(
         status, _headers, data = _forward_re(
             "POST", "/api/backtest/strategy", payload=payload, timeout=120
         )
-    except Exception:
-        return None
-    if status != 200 or not isinstance(data, dict) or data.get("error"):
-        return None
-    if data.get("run_id") or not (data.get("metrics") or data.get("equity_curve")):
+    except Exception as exc:
+        raise RuntimeError(f"RE strategy backtest failed: {exc}") from exc
+    if status != 200 or not isinstance(data, dict):
+        raise RuntimeError(f"RE strategy backtest returned HTTP {status}")
+    if data.get("error"):
+        raise RuntimeError(str(data["error"]))
+    if data.get("run_id"):
         # RE 当前策略回测是同步入口；出现 run_id 说明契约变化，交给调用方降级。
-        return None
+        raise RuntimeError("RE returned async run_id; this BFF expects sync strategy backtests")
     metrics = data.get("metrics") or {}
     curve = _curve(data.get("equity_curve"))
     if not curve:
-        return None
+        raise RuntimeError("RE strategy backtest missing equity_curve")
     bench = _curve(data.get("benchmark_curve"))
     bench_by_date = {p["date"]: p["value"] for p in bench}
     curve = [

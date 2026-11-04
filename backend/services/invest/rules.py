@@ -1206,6 +1206,19 @@ def build_portfolio(conn: Any, user_id: int, *, include_penetration: bool = True
             "先看前几项的依据与影响，再结合「压力测试与成本」和「AI 深度解读」；不构成调仓建议。"
             if diagnosis else "可继续看压力测试与配置偏离；若后续权重变化，体检结果会重新计算。"
         ),
+        "meaning_en": (
+            f"{len(diagnosis)} checks are above their thresholds; the top one is \"{diagnosis[0]['title']}\"."
+            if diagnosis else "No check is above its preset threshold; the portfolio structure has not triggered a flag."
+        ),
+        "risk_en": (
+            "Flags closer to the top have more influence on the portfolio through a single name, sector or cost base; "
+            "this is structural risk, not a price forecast."
+            if diagnosis else "No flag does not mean no risk; market volatility and liquidity can still affect the portfolio."
+        ),
+        "next_en": (
+            "Review the top flags and their evidence, then use stress/cost and AI deep-dive; this is not a rebalancing recommendation."
+            if diagnosis else "Continue with stress testing and allocation drift; diagnosis is recalculated when weights change."
+        ),
     }
     attribution_explain = {
         "meaning": (
@@ -1216,6 +1229,16 @@ def build_portfolio(conn: Any, user_id: int, *, include_penetration: bool = True
         ),
         "next": (
             "把贡献前几名与自己的持仓预期对照，再看它们是否有公告/财报；归因只解释今天，不预测明天。"
+        ),
+        "meaning_en": (
+            "Today's return = sum of each holding's weight × daily move; larger contributors have more impact on NAV today."
+        ),
+        "risk_en": (
+            "When contribution is concentrated in a few names, daily NAV depends more on their events and volatility; "
+            "a review flag means data conventions differ."
+        ),
+        "next_en": (
+            "Compare top contributors with your thesis and check for filings/earnings; attribution explains today only."
         ),
     }
 

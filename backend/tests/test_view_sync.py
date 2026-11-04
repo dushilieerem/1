@@ -12,6 +12,7 @@ from services.data.view_sync import (
     _clean,
     _dataset_files,
     _is_safe_db,
+    _prune_us_snapshot,
     plan_sync,
     resolve_view,
     validate_view,
@@ -132,3 +133,27 @@ def test_clean_bool_and_nan():
     assert _clean(False) == "false"
     assert _clean(float("nan")) is None
     assert _clean(None) is None
+
+
+class _SnapshotConn:
+    def __init__(self, count: int):
+        self.count = count
+        self.sql: list[str] = []
+
+    def execute(self, sql, *args):
+        self.sql.append(sql)
+        return self
+
+    def fetchone(self):
+        return {"n": self.count}
+
+
+def test_prune_us_snapshot_only_when_source_non_empty():
+    empty = _SnapshotConn(0)
+    assert _prune_us_snapshot(empty) == 0
+    assert not any("DELETE FROM md_us_stock_snapshot" in s for s in empty.sql)
+
+    full = _SnapshotConn(3)
+    assert _prune_us_snapshot(full) == 3
+    assert any("DELETE FROM md_us_stock_snapshot" in s for s in full.sql)
+    assert any("tmp_md_us_stock_snapshot" in s for s in full.sql)

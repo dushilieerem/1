@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
-from app.deps import require_quant_user
+from app.deps import require_quant_researcher, require_quant_user
 from services.core.audit_log_store import write_audit
 from services.core.env_config import env
 from services.core.rate_limit import enforce_rate_limit
@@ -45,7 +45,7 @@ def _login_limit() -> int:
         return 10
 
 
-def _quant_uid(ctx: dict[str, Any] = Depends(require_quant_user)) -> int:
+def _quant_uid(ctx: dict[str, Any] = Depends(require_quant_researcher)) -> int:
     try:
         return resolve_db_user_id(ctx["user"])
     except PermissionError as exc:
@@ -312,7 +312,7 @@ def quant_strategy_run_delete(run_id: str, uid: int = Depends(_quant_uid)) -> di
 
 
 @router.get("/api/inst/quant/strategy/library")
-def quant_strategy_library(ctx: dict[str, Any] = Depends(require_quant_user)) -> dict:
+def quant_strategy_library(ctx: dict[str, Any] = Depends(require_quant_researcher)) -> dict:
     from app.routers import strategy
 
     return strategy.strategy_builtin_list(_user=ctx["user"])
@@ -320,7 +320,7 @@ def quant_strategy_library(ctx: dict[str, Any] = Depends(require_quant_user)) ->
 
 @router.get("/api/inst/quant/strategy/library/{strategy_id}")
 def quant_strategy_library_source(
-    strategy_id: str, ctx: dict[str, Any] = Depends(require_quant_user)
+    strategy_id: str, ctx: dict[str, Any] = Depends(require_quant_researcher)
 ) -> dict:
     from app.routers import strategy
 
@@ -487,7 +487,7 @@ def quant_factor_library_factor_delete(
 @router.post("/api/inst/quant/backtest/factor")
 def quant_backtest_factor(
     body: dict[str, Any] = Body(...),
-    ctx: dict[str, Any] = Depends(require_quant_user),
+    ctx: dict[str, Any] = Depends(require_quant_researcher),
     uid: int = Depends(_quant_uid),
 ) -> JSONResponse:
     from app.routers import factor
@@ -498,7 +498,7 @@ def quant_backtest_factor(
 @router.get("/api/inst/quant/backtest/factor/{run_id}")
 def quant_backtest_factor_poll(
     run_id: str,
-    ctx: dict[str, Any] = Depends(require_quant_user),
+    ctx: dict[str, Any] = Depends(require_quant_researcher),
     uid: int = Depends(_quant_uid),
 ) -> JSONResponse:
     from app.routers import factor
@@ -508,7 +508,7 @@ def quant_backtest_factor_poll(
 
 @router.delete("/api/inst/quant/backtest/factor/{run_id}")
 def quant_backtest_factor_cancel(
-    run_id: str, ctx: dict[str, Any] = Depends(require_quant_user)
+    run_id: str, ctx: dict[str, Any] = Depends(require_quant_researcher)
 ) -> JSONResponse:
     from app.routers import factor
 
@@ -518,7 +518,7 @@ def quant_backtest_factor_cancel(
 @router.post("/api/inst/quant/backtest/strategy")
 def quant_backtest_strategy(
     body: dict[str, Any] = Body(...),
-    ctx: dict[str, Any] = Depends(require_quant_user),
+    ctx: dict[str, Any] = Depends(require_quant_researcher),
 ) -> JSONResponse:
     from app.routers import re_gateway
 
@@ -531,7 +531,7 @@ def quant_backtest_strategy(
 @router.post("/api/inst/quant/ai/factor-generations")
 def quant_ai_factor_generation(
     body: dict[str, Any] = Body(...),
-    ctx: dict[str, Any] = Depends(require_quant_user),
+    ctx: dict[str, Any] = Depends(require_quant_researcher),
 ) -> dict[str, Any]:
     from app.routers import ai_factor_generation
 
@@ -541,7 +541,7 @@ def quant_ai_factor_generation(
 @router.post("/api/inst/quant/ai/strategy-generations")
 def quant_ai_strategy_generation(
     body: dict[str, Any] = Body(...),
-    ctx: dict[str, Any] = Depends(require_quant_user),
+    ctx: dict[str, Any] = Depends(require_quant_researcher),
 ) -> dict[str, Any]:
     from app.routers import ai_strategy_generation
 

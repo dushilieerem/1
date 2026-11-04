@@ -31,11 +31,12 @@ ROLE_LABELS: dict[str, tuple[str, str]] = {
     "execution": ("交易执行", "Execution"),
     "monitoring": ("组合监控", "Portfolio monitoring"),
     "quant_researcher": ("量化研究员", "Quant researcher"),
+    "quant_reviewer": ("量化研究复核", "Quant research reviewer"),
 }
 
 # 机构量化成员只使用 /api/inst/quant/*；对主观投资九工作区一律无权限。
 # 这是产品线隔离，不是“只靠前端隐藏”：服务端权限矩阵全部为 none。
-QUANT_ROLES = frozenset({"quant_researcher"})
+QUANT_ROLES = frozenset({"quant_researcher", "quant_reviewer"})
 
 # 九个工作区，与需求文档 §2.2 一致
 WORKSPACE_LABELS: dict[str, tuple[str, str]] = {
@@ -122,6 +123,7 @@ ROLE_WORKSPACE_ACCESS: dict[str, dict[str, Access]] = {
         "about": "read",
     },
     "quant_researcher": {key: "none" for key in WORKSPACES},
+    "quant_reviewer": {key: "none" for key in WORKSPACES},
 }
 
 DEMO_ORG = {
@@ -202,7 +204,7 @@ def ensure_inst_schema() -> None:
               created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
               updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
               CONSTRAINT inst_members_role_chk CHECK (
-                role IN ('manager', 'partner', 'chairman', 'risk', 'execution', 'monitoring', 'quant_researcher')
+                role IN ('manager', 'partner', 'chairman', 'risk', 'execution', 'monitoring', 'quant_researcher', 'quant_reviewer')
               ),
               CONSTRAINT inst_members_status_chk CHECK (status IN ('active', 'disabled')),
               CONSTRAINT inst_members_org_user_key UNIQUE (org_id, user_id)
@@ -409,7 +411,11 @@ def _quant_context(user: dict[str, Any], membership: dict[str, Any]) -> dict[str
         "role_label_en": label_en,
         # 第一期量化资产按 user_id 隔离，不把成员私有数据伪装成机构共享。
         "visibility": "member_private",
-        "permissions": {"quant": "write"},
+        "permissions": {
+            "quant": "review" if role == "quant_reviewer" else "write",
+        },
+        "can_review": role == "quant_reviewer",
+        "can_write": role == "quant_researcher",
         "workspaces": [],
         "demo": _demo_mode(),
     }

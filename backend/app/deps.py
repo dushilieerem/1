@@ -67,6 +67,24 @@ def require_quant_user(
     return ctx
 
 
+def require_quant_researcher(
+    ctx: dict[str, Any] = Depends(require_quant_user),
+) -> dict[str, Any]:
+    """可执行研究/回测/写资产的量化角色；复核角色不能走这些接口。"""
+    if not ctx.get("can_write"):
+        raise HTTPException(status_code=403, detail="该量化角色只有复核权限")
+    return ctx
+
+
+def require_quant_reviewer(
+    ctx: dict[str, Any] = Depends(require_quant_user),
+) -> dict[str, Any]:
+    """独立量化复核角色；业务路由必须再校验 reviewer 不是候选作者。"""
+    if not ctx.get("can_review"):
+        raise HTTPException(status_code=403, detail="需要机构量化复核权限")
+    return ctx
+
+
 def soft_db_user_id(user: dict[str, Any] | None = Depends(optional_user)) -> int | None:
     if not user:
         return None

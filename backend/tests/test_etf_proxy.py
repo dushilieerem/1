@@ -23,7 +23,7 @@ def test_normalize_and_map() -> None:
 
 
 def test_profile_unmapped() -> None:
-    out = etf.profile("511990")
+    out = etf.profile("512990")
     assert out["tracking"] == "unmapped"
     assert out["tracked_index"] is None
 

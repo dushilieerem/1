@@ -164,21 +164,9 @@ class ProvidersTargetTest(unittest.TestCase):
             with self.assertRaises(AiNotConfigured):
                 providers.resolve_target(slot=providers.SLOT_DEFAULT)
 
-    def test_code_slot_uses_ark(self):
-        def fake_env(name, default=None):
-            return {"ARK_API_KEY": "k", "AI_FACTOR_BASE_URL": "http://ark"}.get(name, default)
-
-        with patch.object(providers, "env", side_effect=fake_env), patch.object(
-            providers, "key_env", side_effect=lambda name: "k" if name == "ARK_API_KEY" else ""
-        ):
-            target = providers.resolve_target(slot=providers.SLOT_CODE)
-        self.assertEqual(target.provider, "ark")
-        self.assertTrue(target.direct)
-
-    def test_code_slot_can_explicitly_use_default_gateway(self):
+    def test_code_slot_defaults_to_llm_gateway(self):
         def fake_env(name, default=None):
             return {
-                "AI_CODE_PROVIDER": "default",
                 "LLM_API_KEY": "k",
                 "LLM_BASE_URL": "http://llm",
                 "LLM_MODEL": "deepseek-code",
@@ -191,14 +179,23 @@ class ProvidersTargetTest(unittest.TestCase):
         self.assertEqual(target.model, "deepseek-code")
         self.assertFalse(target.direct)
 
-    def test_code_slot_override_without_key_fails_loudly(self):
-        with patch.object(
-            providers,
-            "env",
-            side_effect=lambda name, default=None: "default"
-            if name == "AI_CODE_PROVIDER"
-            else default,
+    def test_code_slot_can_explicitly_use_ark(self):
+        def fake_env(name, default=None):
+            return {
+                "AI_CODE_PROVIDER": "ark",
+                "ARK_API_KEY": "k",
+                "AI_FACTOR_BASE_URL": "http://ark",
+            }.get(name, default)
+
+        with patch.object(providers, "env", side_effect=fake_env), patch.object(
+            providers, "key_env", side_effect=lambda name: "k" if name == "ARK_API_KEY" else ""
         ):
+            target = providers.resolve_target(slot=providers.SLOT_CODE)
+        self.assertEqual(target.provider, "ark")
+        self.assertTrue(target.direct)
+
+    def test_code_slot_missing_default_key_fails_loudly(self):
+        with patch.object(providers, "env", side_effect=lambda name, default=None: default):
             with self.assertRaises(AiNotConfigured):
                 providers.resolve_target(slot=providers.SLOT_CODE)
 

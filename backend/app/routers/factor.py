@@ -209,9 +209,22 @@ def _proxy_response(
 
 
 def _sign_factor_result(uid: int, status: int, data: Any) -> Any:
-    """P1-F09：给检测结果签发 HMAC，落库时据此判定来源。"""
+    """P1-F09：给检测结果签发 HMAC，落库时据此判定来源。
+
+    RE 异步轮询返回的是任务包装 ``{status: "succeeded", result: {...}}``，
+    结果在嵌套的 ``result`` 里；前端成功时也只把 ``result`` 带去落库。
+    因此签名必须签嵌套结果，并把 token 放进同一个对象，否则异步检测
+    会被保存成未验证结果。
+    """
     if not isinstance(data, dict) or not (200 <= int(status) < 300):
         return data
+    nested = data.get("result")
+    if str(data.get("status") or "") == "succeeded" and isinstance(nested, dict):
+        signed = {
+            **nested,
+            "_svquant_verified_token": sign_result(int(uid), nested),
+        }
+        return {**data, "result": signed}
     if (
         data.get("status") in ("done", "success", "finished")
         or data.get("metrics")

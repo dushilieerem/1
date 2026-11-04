@@ -10,12 +10,17 @@ os.environ.setdefault("JWT_SECRET_KEY", "0123456789abcdef0123456789abcdef")
 
 from services.auth.auth_store import decode_token, issue_token  # noqa: E402
 from services.institution.inst_store import (  # noqa: E402
+    QUANT_ROLES,
     ROLE_LABELS,
     WORKSPACES,
     _org_payload,
     issue_inst_token,
+    issue_quant_token,
+    login_inst,
+    login_quant,
     permissions_for,
     user_from_inst_authorization,
+    user_from_quant_authorization,
     workspaces_for,
 )
 
@@ -87,6 +92,17 @@ EXPECTED = {
         "monitor": "write",
         "about": "read",
     },
+    "quant_researcher": {
+        "overview": "none",
+        "ideas": "none",
+        "research": "none",
+        "debate": "none",
+        "portfolio": "none",
+        "approvals": "none",
+        "execution": "none",
+        "monitor": "none",
+        "about": "none",
+    },
 }
 
 
@@ -148,6 +164,66 @@ class TokenBoundaryTest(unittest.TestCase):
     def test_missing_header_returns_none(self):
         self.assertIsNone(user_from_inst_authorization(None))
         self.assertIsNone(user_from_inst_authorization("Bearer not-a-jwt"))
+
+
+class QuantSessionTest(unittest.TestCase):
+    def test_quant_role_has_no_subjective_workspace_access(self):
+        self.assertIn("quant_researcher", QUANT_ROLES)
+        self.assertEqual(set(permissions_for("quant_researcher").values()), {"none"})
+        self.assertEqual(
+            [w for w in workspaces_for("quant_researcher") if w["visible"]], []
+        )
+
+    def test_quant_token_has_product_and_org(self):
+        token = issue_quant_token(
+            {"id": 7, "username": "cx_quant", "role": "user"},
+            {"org_id": 9, "role": "quant_researcher"},
+        )
+        payload = decode_token(token)
+        self.assertEqual(payload["scope"], "inst")
+        self.assertEqual(payload["product"], "quant")
+        self.assertEqual(payload["org_id"], 9)
+        self.assertEqual(payload["inst_role"], "quant_researcher")
+
+    def test_subjective_inst_token_is_rejected_by_quant_session(self):
+        token = issue_inst_token(
+            {"id": 7, "username": "inst_manager", "role": "user"},
+            {"org_id": 3, "role": "manager"},
+        )
+        self.assertIsNone(user_from_quant_authorization(f"Bearer {token}"))
+
+    def test_quant_token_requires_quant_role(self):
+        with self.assertRaises(PermissionError):
+            issue_quant_token(
+                {"id": 7, "username": "inst_manager", "role": "user"},
+                {"org_id": 3, "role": "manager"},
+            )
+
+    def test_login_quant_rejects_non_quant_member(self):
+        from unittest.mock import patch
+
+        with patch(
+            "services.institution.inst_store.authenticate_user",
+            return_value={"id": 7, "username": "cx_quant", "role": "user"},
+        ), patch(
+            "services.institution.inst_store.get_membership",
+            return_value={"org_id": 9, "role": "manager"},
+        ):
+            with self.assertRaises(PermissionError):
+                login_quant(username="cx_quant", password="x")
+
+    def test_subjective_login_rejects_quant_role(self):
+        from unittest.mock import patch
+
+        with patch(
+            "services.institution.inst_store.authenticate_user",
+            return_value={"id": 7, "username": "cx_quant", "role": "user"},
+        ), patch(
+            "services.institution.inst_store.get_membership",
+            return_value={"org_id": 9, "role": "quant_researcher"},
+        ):
+            with self.assertRaises(PermissionError):
+                login_inst(username="cx_quant", password="x")
 
 
 if __name__ == "__main__":

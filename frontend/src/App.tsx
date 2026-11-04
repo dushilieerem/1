@@ -37,6 +37,9 @@ const StrategyResearchListPage = lazy(() =>
     default: m.StrategyResearchListPage,
   })),
 );
+const QuantStrategyPage = lazy(() => import("./pages/institutional-workflow/QuantStrategyPage").then(m => ({ default: m.QuantStrategyPage })));
+const QuantStrategyReportsPage = lazy(() => import("./pages/institutional-workflow/QuantStrategyReportsPage").then(m => ({ default: m.QuantStrategyReportsPage })));
+const QuantStrategyReportPage = lazy(() => import("./pages/institutional-workflow/QuantStrategyReportPage").then(m => ({ default: m.QuantStrategyReportPage })));
 const StrategyBacktestPage = lazy(() =>
   import("./pages/StrategyBacktestPage").then((m) => ({ default: m.StrategyBacktestPage })),
 );
@@ -335,6 +338,12 @@ export default function App() {
           <Route path="/factor/library/custom/:name" element={<Navigate to="/factor/library" replace />} />
           <Route path="/factor/custom/new" element={<Navigate to="/factor/library" replace />} />
 
+          <Route path="/quant" element={<Navigate to="/quant/factor" replace />} />
+          <Route path="/quant/strategy" element={<Authed><QuantStrategyPage /></Authed>} />
+          <Route path="/quant/strategy/reports" element={<Authed><QuantStrategyReportsPage /></Authed>} />
+          <Route path="/quant/strategy/:projectId/reports" element={<Authed><QuantStrategyReportsPage /></Authed>} />
+          <Route path="/quant/strategy/report/:runId" element={<Authed><QuantStrategyReportPage /></Authed>} />
+          <Route path="/quant/strategy/:projectId" element={<Authed><QuantStrategyPage /></Authed>} />
           <Route path="/quant/factor" element={<Authed><QuantFactorPage /></Authed>} />
           <Route path="/quant/factor/reports" element={<Authed><QuantFactorReportsPage /></Authed>} />
           <Route path="/quant/factor/:projectId/reports" element={<Authed><QuantFactorReportsPage /></Authed>} />

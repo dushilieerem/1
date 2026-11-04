@@ -32,7 +32,7 @@ export function QuantFactorPage() {
     load();
     const unsubscribe = subscribeAuth(() => { setCode(""); setHypothesis(""); setName(""); setTitle(""); load(); });
     return () => { live = false; ++generation; unsubscribe(); };
-  }, []);
+  }, [projectId]);
   async function create() {
     if (busy) return;
     setBusy(true); setError("");

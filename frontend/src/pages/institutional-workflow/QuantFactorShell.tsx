@@ -1,3 +1,4 @@
+import { QuantModuleNav } from "./QuantModuleNav";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "@/pages/institution/instUi";
@@ -16,6 +17,7 @@ export function QuantFactorShell({ stage, projectId, children }: {
 }) {
   const linkClass = (active: boolean) => active ? "font-semibold text-[#65358D]" : "text-slate-600 hover:text-[#65358D]";
   return <section className="mx-auto min-w-0 max-w-[1600px] space-y-5 bg-[#f7f8fc] p-3 sm:p-5">
+    <QuantModuleNav/>
     <PageHeader eyebrow="SUNVALLEY · 量化机构端" title="因子工厂"
       desc="研究定义、计算检验和检测报告共用平台工具；已有因子可以直接复用。"
       actions={<Link className="text-sm text-[#65358D] underline" to="/factor/library">打开平台因子库</Link>} />

@@ -1,6 +1,9 @@
 import type { InstAccess, InstWorkspace } from "@/lib/instAuth";
 
-/** 菜单顺序与需求文档 §2.2 的九个工作区一致；未知 key 排在末尾。 */
+/** 线性流程 B：交易执行合并进审批通过动作，不再作为独立菜单。 */
+const HIDDEN_WORKSPACE_KEYS = new Set(["execution"]);
+
+/** 菜单顺序：保留服务端工作区 key，隐藏项不影响权限矩阵。 */
 export const INST_WORKSPACE_ORDER = [
   "overview",
   "ideas",
@@ -33,6 +36,7 @@ export function visibleWorkspaces(list: InstWorkspace[] | null | undefined): Ins
   const out: InstWorkspace[] = [];
   for (const item of sortWorkspaces(list)) {
     if (!item || !item.key || seen.has(item.key)) continue;
+    if (HIDDEN_WORKSPACE_KEYS.has(item.key)) continue;
     if (!item.visible || item.access === "none") continue;
     seen.add(item.key);
     out.push(item);

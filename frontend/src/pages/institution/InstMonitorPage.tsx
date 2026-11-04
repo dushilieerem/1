@@ -330,9 +330,9 @@ export function InstMonitorPage() {
                         {p.market && p.market !== "CN" ? (
                           <Badge
                             tone="amber"
-                            title={t("美股/港股只有行情，财务/公告未接入。", "US/HK has prices only; financials/filings are not ingested.")}
+                            title={t("美股/港股暂无财务、公告、行业与指数数据源；只有行情。", "No fundamental, filing, industry or index data source for US/HK; prices only.")}
                           >
-                            {t("暂无基本面", "No fundamentals")}
+                            {t("暂无数据源", "No data source")}
                           </Badge>
                         ) : null}
                         <Badge tone="gold" title={t("权重 = 持仓市值 / 组合净值", "Weight = market value / NAV")}>

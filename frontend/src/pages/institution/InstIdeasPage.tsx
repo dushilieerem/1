@@ -365,11 +365,11 @@ export function InstIdeasPage() {
                       <Badge
                         tone="amber"
                         title={t(
-                          "美股/港股当前只有行情，财务与公告未接入；研究结论会标记数据缺口。",
-                          "US/HK currently has prices only; financials and filings are not ingested, so research marks data gaps.",
+                          "美股/港股暂无财务、公告、行业与指数数据源；只有行情，研究结论会标记数据缺口。",
+                          "No fundamental, filing, industry or index data source for US/HK; prices only, and research marks data gaps.",
                         )}
                       >
-                        {t("暂无基本面", "No fundamentals")}
+                        {t("暂无数据源", "No data source")}
                       </Badge>
                     ) : null}
                     {(c.tags || []).slice(0, 3).map((tag) => (

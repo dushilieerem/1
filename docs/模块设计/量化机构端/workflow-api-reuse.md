@@ -1,5 +1,16 @@
 # 流程版的已有能力复用清单
 
+## 当前主 SPA 接入（V3.2）
+
+已直接复用 /api/detect/projects、/api/detect/runs、/api/backtest/factor、已有因子库与认证；真实因子报告通过公司签名验证并写入 svquant_dev。
+代码草稿复用 /api/ai/factor-generations；统一网关配置与真实模型验证尚待完成。
+策略将直接复用 /api/strategy/projects、/api/strategy/runs、同步 /api/backtest/strategy。
+不创建另一套计算队列，不继续扩展旧计算适配器来替代标准 API。部署和验收边界见同目录开发进度。
+
+## 历史独立工作台复用清单（保留供迁移核对）
+
+以下表格和部署边界描述 V3.1 独立版本，不代表当前主 SPA 的接口或完成状态。
+
 2026-11-04。原则：先查已有 API 和服务；数据契约不匹配时做适配，不另造同类计算引擎。业务层不能直接导入 ResearchEngine 的 Python 实现，所有计算经 HTTP 边界。
 
 | 能力 | 当前复用位置 | 机构流程版新增内容 |

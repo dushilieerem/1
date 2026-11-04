@@ -184,6 +184,12 @@ const InstAboutPage = lazy(() =>
   import("./pages/institution/InstAboutPage").then((m) => ({ default: m.InstAboutPage })),
 );
 
+const QuantFactorPage = lazy(() => import("./pages/institutional-workflow/QuantFactorPage").then(m => ({ default: m.QuantFactorPage })));
+
+const QuantFactorReportsPage = lazy(() => import("./pages/institutional-workflow/QuantFactorReportsPage").then(m => ({ default: m.QuantFactorReportsPage })));
+
+const QuantFactorReportPage = lazy(() => import("./pages/institutional-workflow/QuantFactorReportPage").then(m => ({ default: m.QuantFactorReportPage })));
+
 function Authed({ children }: { children: ReactNode }) {
   return <RequireAuth>{children}</RequireAuth>;
 }
@@ -329,6 +335,11 @@ export default function App() {
           <Route path="/factor/library/custom/:name" element={<Navigate to="/factor/library" replace />} />
           <Route path="/factor/custom/new" element={<Navigate to="/factor/library" replace />} />
 
+          <Route path="/quant/factor" element={<Authed><QuantFactorPage /></Authed>} />
+          <Route path="/quant/factor/reports" element={<Authed><QuantFactorReportsPage /></Authed>} />
+          <Route path="/quant/factor/:projectId/reports" element={<Authed><QuantFactorReportsPage /></Authed>} />
+          <Route path="/quant/factor/report/:runId" element={<Authed><QuantFactorReportPage /></Authed>} />
+          <Route path="/quant/factor/:projectId" element={<Authed><QuantFactorPage /></Authed>} />
           <Route path="/factor/detect" element={<Authed><FactorDetectListPage /></Authed>} />
           <Route path="/factor/detect/report/:runId" element={<Authed><FactorDetectReportPage /></Authed>} />
           <Route path="/factor/detect/:projectId/history" element={<Authed><FactorDetectHistoryPage /></Authed>} />

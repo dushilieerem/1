@@ -709,6 +709,40 @@ def _sync_risk(conn, view: ViewInfo, start: date, end: date) -> int:
     return total
 
 
+def _sync_us_stock(conn, view: ViewInfo) -> int:
+    """可选：数据平台 us_stock_snapshot → md_us_stock_snapshot。"""
+    if "us_stock_snapshot" not in (view.manifest.get("datasets") or {}):
+        return 0
+    total = 0
+    for _, frame in _iter_frames(
+        view,
+        "us_stock_snapshot",
+        ["symbol", "name", "last", "prev_close", "amount", "turnover", "trade_date", "market"],
+    ):
+        rows = (
+            (
+                str(row.symbol),
+                str(row.name or "") or None,
+                _clean(row.last),
+                _clean(row.prev_close),
+                _clean(row.amount),
+                _clean(row.turnover),
+                str(row.trade_date)[:10] if row.trade_date else None,
+                str(row.market or "US"),
+                view.view_id,
+            )
+            for row in frame.itertuples(index=False)
+        )
+        total += _copy_rows(
+            conn,
+            "tmp_md_us_stock_snapshot",
+            ["symbol", "name", "last", "prev_close", "amount", "turnover",
+             "trade_date", "market", "source"],
+            rows,
+        )
+    return total
+
+
 def _sync_ref_security(conn, view: ViewInfo) -> int:
     files = _dataset_files(view, "security_master")
     frame = pq.read_table(
@@ -812,6 +846,7 @@ def _prepare_temp_tables(conn) -> None:
         "CREATE TEMP TABLE IF NOT EXISTS tmp_md_status_daily (LIKE md_status_daily INCLUDING DEFAULTS) ON COMMIT DROP",
         "CREATE TEMP TABLE IF NOT EXISTS tmp_md_index_bar (LIKE md_index_bar INCLUDING DEFAULTS) ON COMMIT DROP",
         "CREATE TEMP TABLE IF NOT EXISTS tmp_md_risk_daily (LIKE md_risk_daily INCLUDING DEFAULTS) ON COMMIT DROP",
+        "CREATE TEMP TABLE IF NOT EXISTS tmp_md_us_stock_snapshot (LIKE md_us_stock_snapshot INCLUDING DEFAULTS) ON COMMIT DROP",
         "CREATE TEMP TABLE IF NOT EXISTS tmp_ref_security (LIKE ref_security INCLUDING DEFAULTS) ON COMMIT DROP",
         "CREATE TEMP TABLE IF NOT EXISTS tmp_ref_trading_calendar (LIKE ref_trading_calendar INCLUDING DEFAULTS) ON COMMIT DROP",
         "CREATE TEMP TABLE IF NOT EXISTS tmp_ref_security_industry (LIKE ref_security_industry INCLUDING DEFAULTS) ON COMMIT DROP",
@@ -885,6 +920,19 @@ def _merge_temp_tables(conn) -> None:
         ON CONFLICT (symbol, trade_date, calc_version) DO UPDATE SET
           beta_1y=EXCLUDED.beta_1y, vol_1y=EXCLUDED.vol_1y,
           max_drawdown_1y=EXCLUDED.max_drawdown_1y
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO md_us_stock_snapshot
+          (symbol, name, last, prev_close, amount, turnover, trade_date, market, source, ingested_at)
+        SELECT symbol, name, last, prev_close, amount, turnover, trade_date, market, source, NOW()
+          FROM tmp_md_us_stock_snapshot
+        ON CONFLICT (symbol) DO UPDATE SET
+          name=EXCLUDED.name, last=EXCLUDED.last, prev_close=EXCLUDED.prev_close,
+          amount=EXCLUDED.amount, turnover=EXCLUDED.turnover,
+          trade_date=EXCLUDED.trade_date, market=EXCLUDED.market,
+          source=EXCLUDED.source, ingested_at=NOW()
         """
     )
     conn.execute(
@@ -992,6 +1040,7 @@ def sync_view(
                 rows["industry"] = _sync_industry(conn, view)
                 rows["index"] = _sync_index(conn, view)
                 rows["risk"] = _sync_risk(conn, view, end, end)
+                rows["us_stock"] = _sync_us_stock(conn, view)
                 _merge_temp_tables(conn)
                 rows["invest_stocks"] = _refresh_serving(conn, view)
                 _upsert_state(conn, view, "ok", rows=rows)
@@ -1011,6 +1060,7 @@ def sync_view(
             rows["status"] = _sync_status(conn, view, start, end)
             rows["index"] = _sync_index(conn, view)
             rows["risk"] = _sync_risk(conn, view, start, end)
+            rows["us_stock"] = _sync_us_stock(conn, view)
             if with_financials:
                 financial = view_loader.load_financials(root=view.root)
                 rows["financials"] = sum(int(v or 0) for v in financial.values())

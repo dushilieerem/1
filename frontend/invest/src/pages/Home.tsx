@@ -95,7 +95,7 @@ export default function Home() {
             <span>
               {usUnavailable
                 ? t("当前数据视图没有美股行情；切换到中文查看 A 股。", "This data view has no US quotes; switch to 中文 for A-share coverage.")
-                : t("美股版当前提供行情与自选；AI 与基本面数据待接入。", "US mode currently covers quotes and watchlists; AI and fundamentals are not connected yet.")}
+                : t("美股版当前提供行情与自选；AI 与基本面数据待接入。", "US mode currently covers quotes and watchlists; AI and fundamentals are not available (no free stable source).")}
             </span>
           </div>
         )}

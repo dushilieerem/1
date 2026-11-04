@@ -181,6 +181,20 @@ test("configFromRunRequest 还原过滤开关，老 run 回落 false", () => {
   assert.equal(restored.filter_limit_down, false);
 });
 
+test("configFromRunRequest 还原 execution_timing，缺省/非法值回落 next_close", () => {
+  for (const timing of ["next_open", "same_close", "next_close"] as const) {
+    assert.equal(
+      configFromRunRequest({ execution_timing: timing }).execution_timing,
+      timing,
+    );
+  }
+  assert.equal(configFromRunRequest({}).execution_timing, "next_close");
+  assert.equal(
+    configFromRunRequest({ execution_timing: "bad" as never }).execution_timing,
+    "next_close",
+  );
+});
+
 // ---------- C. 因子侧快照往返 ----------
 
 test("因子侧：四个过滤开关经快照往返后保持", () => {

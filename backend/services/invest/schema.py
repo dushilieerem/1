@@ -16,6 +16,7 @@ DDL: tuple[str, ...] = (
     """
     CREATE TABLE IF NOT EXISTS invest_stocks (
       code TEXT PRIMARY KEY, name TEXT, pinyin TEXT, industry TEXT, asset TEXT,
+      market TEXT,
       price DOUBLE PRECISION, prev_close DOUBLE PRECISION, open DOUBLE PRECISION,
       high DOUBLE PRECISION, low DOUBLE PRECISION, market_cap DOUBLE PRECISION,
       pe_ttm DOUBLE PRECISION, pb DOUBLE PRECISION, dividend_yield DOUBLE PRECISION,
@@ -24,8 +25,23 @@ DDL: tuple[str, ...] = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS md_us_stock_snapshot (
+      symbol       TEXT PRIMARY KEY,
+      name         TEXT,
+      last         DOUBLE PRECISION,
+      prev_close   DOUBLE PRECISION,
+      amount       DOUBLE PRECISION,
+      turnover     DOUBLE PRECISION,
+      trade_date   DATE,
+      market       TEXT NOT NULL DEFAULT 'US',
+      source       TEXT DEFAULT 'svquant-data',
+      ingested_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS invest_etf (
       code TEXT PRIMARY KEY, name TEXT, pinyin TEXT, industry TEXT, asset TEXT,
+      market TEXT,
       price DOUBLE PRECISION, prev_close DOUBLE PRECISION, open DOUBLE PRECISION,
       high DOUBLE PRECISION, low DOUBLE PRECISION, market_cap DOUBLE PRECISION,
       pe_ttm DOUBLE PRECISION, pb DOUBLE PRECISION, dividend_yield DOUBLE PRECISION,
@@ -261,9 +277,9 @@ def refresh_invest_stocks(conn=None) -> int:
                 FROM md_risk_daily
             )
             INSERT INTO invest_stocks
-              (code,name,pinyin,industry,asset,price,prev_close,open,high,low,market_cap,
+              (code,name,pinyin,industry,asset,market,price,prev_close,open,high,low,market_cap,
                pe_ttm,pb,dividend_yield,turnover,volume,amount,beta,next_report_date,updated_at)
-            SELECT CASE WHEN s.symbol LIKE '%.SH' OR s.symbol LIKE '%.SZ' OR s.symbol LIKE '%.BJ' THEN split_part(s.symbol, '.', 1) ELSE s.symbol END, s.name, NULL, COALESCE((SELECT f.raw->>'INDUSTRY_NAME' FROM fin_income_statement f WHERE f.symbol=s.symbol AND f.raw ? 'INDUSTRY_NAME' ORDER BY f.report_date DESC LIMIT 1), ri.name, i.industry_code, '未分类'), 'stock',
+            SELECT CASE WHEN s.symbol LIKE '%.SH' OR s.symbol LIKE '%.SZ' OR s.symbol LIKE '%.BJ' THEN split_part(s.symbol, '.', 1) ELSE s.symbol END, s.name, NULL, COALESCE((SELECT f.raw->>'INDUSTRY_NAME' FROM fin_income_statement f WHERE f.symbol=s.symbol AND f.raw ? 'INDUSTRY_NAME' ORDER BY f.report_date DESC LIMIT 1), ri.name, i.industry_code, '未分类'), 'stock', s.market,
                    l.close, p.close, l.open, l.high, l.low,
                    COALESCE(v.total_mv, v.float_mv)/1e8, v.pe_ttm, v.pb_mrq,
                    v.dividend_yield_ttm,
@@ -278,6 +294,21 @@ def refresh_invest_stocks(conn=None) -> int:
               LEFT JOIN ref_industry ri ON ri.industry_code=i.industry_code AND ri.level=1
               LEFT JOIN risk r ON r.symbol=s.symbol AND r.rn=1
              WHERE s.status='listed' AND s.market IN ('CN','US')
+            """
+        )
+        # 美股快照来自数据平台 us_stock_snapshot；与 A 股共用 invest_stocks，
+        # 供 H5 英文模式查询。没有估值/财务就留空，不要填 0。
+        active.execute(
+            """
+            INSERT INTO invest_stocks
+              (code,name,industry,asset,market,price,prev_close,amount,turnover,updated_at)
+            SELECT symbol, name, 'US equity', 'stock', COALESCE(market, 'US'),
+                   last, prev_close, amount, turnover, trade_date::text
+              FROM md_us_stock_snapshot
+            ON CONFLICT (code) DO UPDATE SET
+              name=EXCLUDED.name, industry=EXCLUDED.industry, asset=EXCLUDED.asset,
+              market=EXCLUDED.market, price=EXCLUDED.price, prev_close=EXCLUDED.prev_close,
+              amount=EXCLUDED.amount, turnover=EXCLUDED.turnover, updated_at=EXCLUDED.updated_at
             """
         )
         n = active.execute("SELECT COUNT(*) AS n FROM invest_stocks").fetchone()["n"]
@@ -323,8 +354,12 @@ def ensure_invest_schema() -> None:
     with get_conn() as conn:
         for ddl in DDL:
             conn.execute(ddl)
+        # 旧库先补列，再重建 stocks UNION 视图，避免列数不一致。
+        conn.execute("ALTER TABLE invest_stocks ADD COLUMN IF NOT EXISTS market TEXT")
+        conn.execute("ALTER TABLE invest_etf ADD COLUMN IF NOT EXISTS market TEXT")
         for ddl in VIEWS:
             conn.execute(ddl)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_invest_stocks_market ON invest_stocks (market)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invest_stocks_industry ON invest_stocks (industry)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invest_stocks_name ON invest_stocks (name)")
     seed()

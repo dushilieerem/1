@@ -52,7 +52,7 @@ def _is_us_code(code: str | None) -> bool:
 def _display_name(stock: dict[str, Any], market: str | None = None) -> str:
     code = str(stock.get("code") or "")
     if normalize_market(market) == "US" or _is_us_code(code):
-        return US_EN_NAMES.get(code) or code.split(".")[0]
+        return US_EN_NAMES.get(code) or str(stock.get("name") or "").strip() or code.split(".")[0]
     return str(stock.get("name") or code)
 
 
@@ -404,7 +404,8 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
         return {
             "quote": {
                 "code": stock["code"], "name": display_name, "industry": display_industry,
-                "asset": stock.get("asset"), "price": None, "prevClose": None,
+                "asset": stock.get("asset"), "market": stock.get("market") or ("US" if is_us else "CN"),
+                "price": None, "prevClose": None,
                 "change": None, "changePct": None, "open": None, "high": None, "low": None,
                 "marketCap": stock.get("market_cap"), "pe": stock.get("pe_ttm"), "pb": stock.get("pb"),
                 "dividendYield": stock.get("dividend_yield"), "turnover": stock.get("turnover"),
@@ -558,7 +559,8 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     prev_close = float(stock.get("prev_close") or stock["price"])
     q = {
         "code": stock["code"], "name": display_name, "industry": display_industry,
-        "asset": stock["asset"], "price": stock["price"], "prevClose": stock.get("prev_close"),
+        "asset": stock["asset"], "market": stock.get("market") or ("US" if is_us else "CN"),
+        "price": stock["price"], "prevClose": stock.get("prev_close"),
         "change": float(stock["price"]) - prev_close, "changePct": pct(float(stock["price"]), prev_close),
         "open": stock["open"], "high": stock["high"], "low": stock["low"],
         "marketCap": stock["market_cap"], "pe": stock["pe_ttm"], "pb": stock["pb"],
@@ -1631,14 +1633,14 @@ def build_search(conn: Any, q: str, market: str = "CN") -> dict[str, Any]:
         def us_card(s: dict[str, Any], reason: str) -> dict[str, Any]:
             return {
                 "type": "stock", "id": s["code"], "name": _display_name(s, "US"),
-                "sub": f"{s['code']} · US equity", "price": s["price"],
+                "sub": f"{s['code']} · US equity", "market": "US", "price": s["price"],
                 "changePct": pct(float(s["price"]), float(s.get("prev_close") or s["price"])),
                 "reason": reason,
             }
 
         results = [
             {"type": "stock", "id": s["code"], "name": _display_name(s, "US"),
-             "sub": f"{s['code']} · US equity", "price": s["price"],
+             "sub": f"{s['code']} · US equity", "market": "US", "price": s["price"],
              "changePct": pct(float(s["price"]), float(s.get("prev_close") or s["price"]))}
             for s in stocks
         ]
@@ -1686,7 +1688,7 @@ def build_search(conn: Any, q: str, market: str = "CN") -> dict[str, Any]:
                               LIMIT 8""", (like, like, like, like))
     topics = rows(conn, "SELECT * FROM topics WHERE name LIKE ? LIMIT 4", (f"%{q}%",)) if q else []
     results = [{"type": "stock", "id": s["code"], "name": s["name"], "sub": f"{s['code']} · {s['industry']}",
-                "price": s["price"], "changePct": pct(s["price"], s["prev_close"])} for s in stocks]
+                "market": "CN", "price": s["price"], "changePct": pct(s["price"], s["prev_close"])} for s in stocks]
     results += [{"type": "topic", "id": t["id"], "name": t["name"], "sub": "行业 / 主题",
                  "price": None, "changePct": None} for t in topics]
 
@@ -1701,7 +1703,7 @@ def build_search(conn: Any, q: str, market: str = "CN") -> dict[str, Any]:
         def card(s: dict[str, Any], reason: str) -> dict[str, Any]:
             return {
                 "type": "stock", "id": s["code"], "name": s["name"],
-                "sub": f"{s['code']} · {s['industry']}", "price": s["price"],
+                "sub": f"{s['code']} · {s['industry']}", "market": "CN", "price": s["price"],
                 "changePct": pct(s["price"], s["prev_close"]), "reason": reason,
             }
 

@@ -249,7 +249,9 @@ def revoke_user_tokens(user_id: int) -> None:
         )
 
 
-def user_from_authorization(header: str | None, *, allow_quant: bool = False) -> dict[str, Any] | None:
+def user_from_authorization(
+    header: str | None, *, allow_inst: bool = False, allow_quant: bool = False
+) -> dict[str, Any] | None:
     if dev_skip_auth():
         return {
             "id": 0,
@@ -268,6 +270,8 @@ def user_from_authorization(header: str | None, *, allow_quant: bool = False) ->
         return None
     try:
         payload = decode_token(parts[1].strip())
+        if payload.get("scope") == "inst" and not (allow_inst or allow_quant):
+            return None
         if payload.get("product") == "quant" and not allow_quant:
             return None
         uid = int(payload["sub"])

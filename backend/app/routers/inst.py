@@ -134,7 +134,7 @@ def _membership_brief(m: dict[str, Any]) -> dict[str, Any]:
 @router.get("/api/inst/auth/orgs")
 def inst_orgs(authorization: str | None = Header(default=None, alias="Authorization")) -> dict:
     """列出当前登录用户可进入的机构（个人令牌或机构令牌均可）。"""
-    user = user_from_authorization(authorization)
+    user = user_from_authorization(authorization, allow_inst=True)
     if not user:
         raise HTTPException(status_code=401, detail="未登录")
     memberships = list_memberships(int(user["id"]))
@@ -156,7 +156,7 @@ def inst_sso(
     enforce_rate_limit(request, scope="inst.auth.sso", limit=_login_limit(), window_sec=60)
     raw = str(body.get("token") or "").strip()
     header = f"Bearer {raw}" if raw else authorization
-    user = user_from_authorization(header)
+    user = user_from_authorization(header, allow_inst=True)
     if not user:
         raise HTTPException(status_code=401, detail="令牌无效或用户已停用")
     memberships = list_memberships(int(user["id"]))

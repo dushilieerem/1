@@ -434,7 +434,7 @@ def user_from_inst_authorization(header: str | None) -> dict[str, Any] | None:
     user_row = get_user_by_id(uid)
     if not user_row or user_row.get("status") != "active":
         return None
-    user = user_from_authorization(header)
+    user = user_from_authorization(header, allow_inst=True)
     if not user:
         return None
     # 角色以数据库为准，令牌里的 inst_role 只作签发时的快照

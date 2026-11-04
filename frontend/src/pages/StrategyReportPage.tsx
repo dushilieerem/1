@@ -252,7 +252,18 @@ function mddMarkLine(troughDate: string) {
   };
 }
 
-export function StrategyReportPage() {
+export type StrategyReportNavigation = {
+  listPath?: string;
+  projectPath?: (projectId: string) => string;
+  reportPath?: (runId: string) => string;
+  historyPath?: (projectId: string) => string;
+};
+
+export function StrategyReportPage({ navigation }: { navigation?: StrategyReportNavigation } = {}) {
+  const listPath = navigation?.listPath || "/strategy/research";
+  const projectPath = navigation?.projectPath || ((id: string) => `/strategy/research/${id}`);
+  const reportPath = navigation?.reportPath || ((id: string) => `/strategy/research/report/${id}`);
+  const historyPath = navigation?.historyPath || ((id: string) => `/strategy/research/${id}/history`);
   const { runId = "", archiveStrategyId = "" } = useParams();
   const navigate = useNavigate();
   const isArchiveSnap = Boolean(archiveStrategyId.trim());
@@ -665,7 +676,7 @@ export function StrategyReportPage() {
             : "没有找到回测结果。"}
         </p>
         <Link
-          to={isArchiveSnap ? "/strategy/library" : "/strategy/research"}
+          to={isArchiveSnap ? "/strategy/library" : listPath}
           className="mt-4 inline-block text-sm font-medium text-blue-600 underline"
         >
           {isArchiveSnap ? "返回策略库" : "返回策略研究"}
@@ -701,7 +712,7 @@ export function StrategyReportPage() {
         // 内置策略源码是历史快照，但过渡期不在用户分享/展示链路中暴露。
         strategyCode: req?.strategy_id ? undefined : req?.strategy_code,
         runId: rec.id || runId,
-        returnTo: `/strategy/research/report/${rec.id || runId}`,
+        returnTo: reportPath(rec.id || runId),
         returnLabel: "返回策略回测报告",
       });
       navigate(next, { state: draft });
@@ -712,7 +723,7 @@ export function StrategyReportPage() {
     if (!getStoredUser()) {
       prepareAuthHandoff();
       navigate(
-        `/login?next=${encodeURIComponent(`/strategy/research/report/${runId}`)}`,
+        `/login?next=${encodeURIComponent(reportPath(runId))}`,
       );
       return;
     }
@@ -802,12 +813,12 @@ export function StrategyReportPage() {
                 </>
               ) : (
                 <>
-                  <Link to="/strategy/research" className="hover:text-blue-600">
+                  <Link to={listPath} className="hover:text-blue-600">
                     策略研究
                   </Link>
                   {" / "}
                   <Link
-                    to={`/strategy/research/${rec.projectId}`}
+                    to={projectPath(rec.projectId)}
                     className="hover:text-blue-600"
                   >
                     {rec.name || rec.description}
@@ -854,14 +865,14 @@ export function StrategyReportPage() {
                   <span className="hidden sm:inline">分享到社区</span>
                 </button>
                 <Link
-                  to={`/strategy/research/${rec.projectId}/history`}
+                  to={historyPath(rec.projectId)}
                   className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
                 >
                   <span className="sm:hidden">历史</span>
                   <span className="hidden sm:inline">历史记录</span>
                 </Link>
                 <Link
-                  to={`/strategy/research/${rec.projectId}?runId=${encodeURIComponent(rec.id)}`}
+                  to={`${projectPath(rec.projectId)}?runId=${encodeURIComponent(rec.id)}`}
                   className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
                 >
                   返回配置

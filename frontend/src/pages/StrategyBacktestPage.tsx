@@ -91,7 +91,18 @@ function syncProjectCode(cfg: StrategyProjectConfig): string {
   return cfg.strategy_id ? cfg.strategy_code : syncCodeFromLeft(cfg);
 }
 
-export function StrategyBacktestPage() {
+export type StrategyBacktestNavigation = {
+  listPath?: string;
+  projectPath?: (projectId: string) => string;
+  reportPath?: (runId: string) => string;
+  historyPath?: (projectId: string) => string;
+};
+
+export function StrategyBacktestPage({ navigation }: { navigation?: StrategyBacktestNavigation } = {}) {
+  const listPath = navigation?.listPath || "/strategy/research";
+  const projectPath = navigation?.projectPath || ((id: string) => `/strategy/research/${id}`);
+  const reportPath = navigation?.reportPath || ((id: string) => `/strategy/research/report/${id}`);
+  const historyPath = navigation?.historyPath || ((id: string) => `/strategy/research/${id}/history`);
   const { projectId = "" } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -425,7 +436,7 @@ export function StrategyBacktestPage() {
         setProject(next);
         setCfg(config);
         clearStrategyCloneDraft();
-        navigate(`/strategy/research/${saved.id}`, { replace: true });
+        navigate(projectPath(saved.id), { replace: true });
         return next;
       }
       const saved = await saveStrategyProject({
@@ -588,7 +599,7 @@ export function StrategyBacktestPage() {
         }
       }
       pushLog(`已保存 · ${sec}s`);
-      navigate(`/strategy/research/report/${run.id}`);
+      navigate(reportPath(run.id));
     } catch (e) {
       if ((e as Error)?.name === "AbortError") pushLog("已取消");
       else pushLog(e instanceof Error ? e.message : String(e));
@@ -610,7 +621,7 @@ export function StrategyBacktestPage() {
     return (
       <div className="p-10 text-center">
         <p className="text-slate-600">{loadErr || "项目不存在"}</p>
-        <Link to="/strategy/research" className="mt-3 inline-block text-blue-600 underline">
+        <Link to={listPath} className="mt-3 inline-block text-blue-600 underline">
           返回列表
         </Link>
       </div>
@@ -622,7 +633,7 @@ export function StrategyBacktestPage() {
       <div className="flex flex-col gap-2 border-b border-slate-200 bg-white px-3 py-2.5 sm:px-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-2 text-sm">
           <Link
-            to="/strategy/research"
+            to={listPath}
             className="hidden text-slate-400 hover:text-slate-700 sm:inline"
           >
             策略研究
@@ -667,7 +678,7 @@ export function StrategyBacktestPage() {
             </button>
           ) : null}
           <Link
-            to={`/strategy/research/${projectId}/history`}
+            to={historyPath(projectId)}
             className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
           >
             <BarChart3 className="h-3.5 w-3.5" />
@@ -675,7 +686,7 @@ export function StrategyBacktestPage() {
             <span className="sm:hidden">报告</span>
           </Link>
           <Link
-            to="/strategy/research"
+            to={listPath}
             className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"
           >
             <ArrowLeft className="h-3.5 w-3.5" />

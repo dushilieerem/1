@@ -65,10 +65,17 @@ export default function EtfDetail() {
             <div className="card-title-row">
               <h2>{profile.etf}</h2>
               <Tag tone={profile.tracking === "index_proxy" ? "amber" : "gray"}>
-                {profile.tracking === "index_proxy" ? t("指数代理", "Index proxy") : t("未映射", "Unmapped")}
+                {profile.tracking === "index_proxy"
+                  ? t("指数代理", "Index proxy")
+                  : profile.tracking === "cash_management"
+                    ? t("货币 ETF", "Money-market ETF")
+                    : t("未映射", "Unmapped")}
               </Tag>
             </div>
-            <p className="hint">{t("跟踪指数", "Tracked index")}{t("：", ": ")}{profile.tracked_index || "—"}</p>
+            <p className="hint">
+              {t("跟踪指数", "Tracked index")}{t("：", ": ")}
+              {profile.tracked_index || (profile.tracking === "cash_management" ? t("不适用（货币 ETF）", "N/A (money-market ETF)") : "—")}
+            </p>
             {profile.warning ? <div className="callout blue">{profile.warning}</div> : null}
           </section>
 
@@ -96,7 +103,14 @@ export default function EtfDetail() {
               </div>
             </section>
           ) : (
-            <EmptyState title={t("没有成分数据", "No constituent data")} detail={t("该 ETF 尚未登记跟踪指数，需要补充官方持仓或映射。", "This ETF has no tracked index yet; official holdings or a mapping need to be added.")} />
+            <EmptyState
+              title={profile.tracking === "cash_management" ? t("货币 ETF 没有股票成分", "Money-market ETF has no equity constituents") : t("没有成分数据", "No constituent data")}
+              detail={
+                profile.tracking === "cash_management"
+                  ? t("这是现金管理工具，不适用股票穿透；ETF 日线仅到 2026-10-23，不能当实时净值。", "This is a cash-management tool and is not subject to equity look-through; ETF daily data ends 2026-10-23 and is not a real-time NAV.")
+                  : t("该 ETF 尚未登记跟踪指数，需要补充官方持仓或映射。", "This ETF has no tracked index yet; official holdings or a mapping need to be added.")
+              }
+            />
           )}
 
           <section className="card">

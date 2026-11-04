@@ -286,6 +286,9 @@ test("组合页：持仓 / 体检切换与关键区块", async ({ page, request 
   await page.getByRole("tab", { name: "体检" }).click();
   await expect(page.locator(".risk-ring")).toBeVisible();
   await expect(page.getByRole("heading", { name: "诊断结论" })).toBeVisible();
+  await expect(page.getByText("这意味着什么").first()).toBeVisible();
+  await expect(page.getByText("风险在哪").first()).toBeVisible();
+  await expect(page.getByText("下一步看什么").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "配置偏离" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "压力测试与成本" })).toBeVisible();
   await noHorizontalOverflow(page);
@@ -321,6 +324,15 @@ test("中英文切换：英文首页展示美股数据", async ({ page }) => {
   await expect(page.locator(".locale-toggle")).toBeVisible();
   await page.locator(".locale-toggle").click();
   await expect(page.getByRole("heading", { name: /下午好/ })).toBeVisible({ timeout: 30_000 });
+  await noHorizontalOverflow(page);
+});
+
+test("学习中心术语详情有人话正文、例子与常见误用", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/learn?term=pe_ttm`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("一句话理解")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("例子", { exact: true })).toBeVisible();
+  await expect(page.getByText("常见误用")).toBeVisible();
   await noHorizontalOverflow(page);
 });
 

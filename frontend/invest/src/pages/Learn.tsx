@@ -14,6 +14,8 @@ type Term = {
   how_to: string;
   range: string;
   example: string;
+  plain?: string;
+  misuse?: string;
   related?: string[];
 };
 
@@ -59,9 +61,14 @@ export default function Learn() {
     return items.filter((item) => {
       if (category !== "全部" && item.category !== category) return false;
       if (!text) return true;
-      return [item.term, item.definition, ...(item.aliases || [])].join(" ").toLowerCase().includes(text);
+      return [item.term, item.definition, item.plain || "", item.misuse || "", ...(item.aliases || [])].join(" ").toLowerCase().includes(text);
     });
   }, [items, category, q]);
+
+  const categoryLabel = (value: string) => {
+    const known = CATEGORIES.find((x) => x.zh === value);
+    return known ? t(known.zh, known.en) : value;
+  };
 
   const open = (term: Term) => {
     setActive(term);
@@ -101,7 +108,7 @@ export default function Learn() {
                 <button key={item.id} className="post-row" style={{ textAlign: "left" }} onClick={() => open(item)}>
                   <div className="post-row-title">{item.term}</div>
                   <div className="post-row-meta">
-                    <Tag tone="gray">{item.category}</Tag>
+                    <Tag tone="gray">{categoryLabel(item.category)}</Tag>
                     {item.aliases?.length ? <span>{item.aliases.join(" / ")}</span> : null}
                   </div>
                   <div className="hint">{item.definition}</div>
@@ -112,13 +119,15 @@ export default function Learn() {
         </>
       ) : null}
 
-      <Sheet open={!!active} onClose={close} title={active?.term || t("术语", "Term")} sub={active ? t(`${active.category} · 术语库`, `${active.category} · Glossary`) : ""}>
+      <Sheet open={!!active} onClose={close} title={active?.term || t("术语", "Term")} sub={active ? `${categoryLabel(active.category)} · ${t("术语库", "Glossary")}` : ""}>
         {active ? (
           <div className="term-detail">
             <p className="term-def">{active.definition}</p>
+            {active.plain ? <div className="term-block"><b>{t("一句话理解", "In one sentence")}</b><p>{active.plain}</p></div> : null}
             <div className="term-block"><b>{t("怎么看", "How to read")}</b><p>{active.how_to}</p></div>
             <div className="term-block"><b>{t("参考区间", "Reference range")}</b><p>{active.range}</p></div>
             <div className="term-block"><b>{t("例子", "Example")}</b><p>{active.example}</p></div>
+            {active.misuse ? <div className="term-block"><b>{t("常见误用", "Common misuse")}</b><p>{active.misuse}</p></div> : null}
             {active.related?.length ? (
               <p className="hint">{t("相关：", "Related: ")}{active.related.join(t("、", ", "))}</p>
             ) : null}

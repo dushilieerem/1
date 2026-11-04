@@ -157,6 +157,12 @@ export default function QuantBacktests() {
               <div className="kpi"><span>Beta</span><b>{numValue(metrics.beta, t)}</b></div>
               <div className="kpi"><span>Alpha</span><b>{pctValue(metrics.alpha, t)}</b></div>
             </div>
+            <p className="hint">
+              {t(
+                "夏普 = 每单位波动的超额收益；Alpha = 扣掉市场后的超额；Beta = 相对市场敏感度；胜率 = 盈利交易占比；波动率 = 收益的年化标准差。",
+                "Sharpe = excess return per unit of volatility; Alpha = excess after market moves; Beta = sensitivity to the market; win rate = share of profitable trades; volatility = annualized standard deviation of returns.",
+              )}
+            </p>
             {curve.length ? (
               <div className="ai-chart">
                 <Sparkline values={curve} width={280} height={56} />

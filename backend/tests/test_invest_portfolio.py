@@ -74,6 +74,8 @@ def test_portfolio_returns_and_attribution(fake_rules):
 
     cash = next(h for h in out["holdings"] if h["isCash"])
     assert cash["todayPct"] is None and cash["pnlPct"] is None
+    assert set(out["attribution"]["explain"]) == {"meaning", "risk", "next"}
+    assert set(out["diagnosisExplain"]) == {"meaning", "risk", "next"}
 
 
 def test_portfolio_diagnosis_sorted_and_capped(fake_rules):

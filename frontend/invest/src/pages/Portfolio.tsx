@@ -82,6 +82,18 @@ function localized(map: Record<string, string>, value: string, locale: string) {
   return locale === "en" ? map[value] || value : value;
 }
 
+function Explain({ items }: { items?: { meaning?: string; risk?: string; next?: string } }) {
+  const { t } = useLocale();
+  if (!items) return null;
+  return (
+    <div className="explain-grid">
+      <div><span>{t("这意味着什么", "What it means")}</span><p>{items.meaning}</p></div>
+      <div><span>{t("风险在哪", "Where the risk is")}</span><p>{items.risk}</p></div>
+      <div><span>{t("下一步看什么", "What to check next")}</span><p>{items.next}</p></div>
+    </div>
+  );
+}
+
 function kpiValue(value: string, locale: string) {
   if (locale !== "en") return value;
   const text = String(value || "");
@@ -424,6 +436,7 @@ export default function Portfolio() {
               {attribution.needReview ? <Tag tone="amber">{t("归因待核", "Attribution pending")}</Tag> : null}
               <span>{attribution.summary}</span>
             </div>
+            <Explain items={attribution.explain} />
           </section>
 
           <section className="card">
@@ -539,6 +552,7 @@ export default function Portfolio() {
               ))}
               {!diagnosis.length ? <div className="empty-inline">{t("未发现越线项。", "No breaches found.")}</div> : null}
             </div>
+            <Explain items={data.diagnosisExplain} />
             {data.diagnosisHidden ? <p className="hint">{t(`另有 ${data.diagnosisHidden} 项未展开，按严重度优先展示前 5 项。`, `${data.diagnosisHidden} more items are hidden; the top 5 by severity are shown.`)}</p> : null}
             {penetration ? (
               <p className="hint">

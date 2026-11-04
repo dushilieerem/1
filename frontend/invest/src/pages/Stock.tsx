@@ -316,7 +316,14 @@ export default function Stock() {
           ) : (
             <div className="empty-inline">{t("暂无分时数据（仅支持 2025 年以来的交易日）", "No intraday data yet (only sessions since 2025 are supported).")}</div>
           )
-        ) : loading ? <div className="kline-loading">{t("加载行情…", "Loading quotes…")}</div> : (
+        ) : loading ? <div className="kline-loading">{t("加载行情…", "Loading quotes…")}</div> : isUs && !data.chart.bars.length ? (
+          <div className="empty-inline">
+            {t(
+              "美股当前只有最新价快照，日线 K 线未接入；价格、成交额与换手率仍来自快照。",
+              "US mode currently provides a latest-price snapshot only; daily bars are not connected. Price, amount and turnover still come from the snapshot.",
+            )}
+          </div>
+        ) : (
           <Suspense fallback={<div className="kline-loading">{t("加载图表…", "Loading chart…")}</div>}>
             <KLineChart bars={data.chart.bars} ma5={data.chart.ma5} ma10={data.chart.ma10} ma20={data.chart.ma20} />
           </Suspense>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getRun, type DetectRunRecord } from "@/lib/detectStore";
-import { subscribeAuth } from "@/lib/auth";
+import { subscribeAuth } from "@/lib/researchClient";
 import { FactorDetectReportPage } from "@/pages/FactorDetectReportPage";
 import { QuantFactorShell, quantProjectPath, quantReportPath, quantReportsPath } from "./QuantFactorShell";
 

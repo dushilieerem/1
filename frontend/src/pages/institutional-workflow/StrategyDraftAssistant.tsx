@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ygGenerateStrategyDraft, type AiStrategyDraft, type AiStrategyGenerationResult } from "@/lib/aiStrategyApi";
-import { subscribeAuth } from "@/lib/auth";
+import { subscribeAuth } from "@/lib/researchClient";
 
 export function StrategyDraftAssistant({ hypothesis, name, draftVersion, onApply }: {
   hypothesis: string; name: string; draftVersion: string; onApply: (strategy: AiStrategyDraft) => void;

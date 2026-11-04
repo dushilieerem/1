@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getStrategyRun, type StrategyRunRecord } from "@/lib/strategyStore";
-import { subscribeAuth } from "@/lib/auth";
+import { subscribeAuth } from "@/lib/researchClient";
 import { StrategyReportPage } from "@/pages/StrategyReportPage";
 import { QuantStrategyShell, strategyProjectPath, strategyReportPath, strategyReportsPath } from "./QuantStrategyShell";
 

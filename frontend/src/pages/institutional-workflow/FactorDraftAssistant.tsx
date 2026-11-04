@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ygGenerateFactorDraft, type AiFactorDraft, type AiFactorGenerationResult } from "@/lib/aiFactorApi";
-import { subscribeAuth } from "@/lib/auth";
+import { subscribeAuth } from "@/lib/researchClient";
 
 export function FactorDraftAssistant({ hypothesis, name, draftVersion, onApply }: {
   hypothesis: string; name: string; draftVersion: string; onApply: (factor: AiFactorDraft) => void;

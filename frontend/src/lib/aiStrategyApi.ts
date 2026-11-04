@@ -1,6 +1,7 @@
+import { researchFetch as fetch } from "./researchClient";
 /** AI 策略草稿生成：经本机 /api 转发计算服务，浏览器不直连对方。 */
 
-import { authHeaders } from "./auth";
+import { authHeaders } from "./researchClient";
 
 export type AiStrategyContext = {
   universe?: string | null;

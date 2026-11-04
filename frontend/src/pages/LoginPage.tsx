@@ -1,3 +1,4 @@
+import { quantLogin, safeLoginNext, isQuantPath } from "@/lib/quantAuth";
 import { FormEvent, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { clearSession, login } from "@/lib/auth";
@@ -20,7 +21,8 @@ const DEMO_PASSWORD = "inst123456";
 
 export function LoginPage() {
   const [params] = useSearchParams();
-  const [mode, setMode] = useState<Mode>(params.get("mode") === "inst" ? "inst" : "personal");
+  const [mode, setMode] = useState<Mode>(params.get("mode") === "inst" || params.get("product") === "quant" || isQuantPath((params.get("next") || "").split(/[?#]/)[0]) ? "inst" : "personal");
+  const [product, setProduct] = useState<"quant" | "subjective">(params.get("product") === "quant" || isQuantPath((params.get("next") || "").split(/[?#]/)[0]) ? "quant" : "subjective");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -40,9 +42,9 @@ export function LoginPage() {
     setLoading(true);
     try {
       if (mode === "inst") {
-        await instLogin(username.trim(), password);
-        const next = params.get("next") || "/inst";
-        window.location.assign(next.startsWith("/inst") ? next : "/inst");
+        if (product === "quant") await quantLogin(username.trim(), password);
+        else await instLogin(username.trim(), password);
+        window.location.assign(safeLoginNext(params.get("next"), product));
         return;
       }
       clearSession();
@@ -50,7 +52,7 @@ export function LoginPage() {
       migrateLegacyRunsOnBoot();
       await login(username.trim(), password);
       const next = params.get("next") || "/";
-      window.location.assign(next.startsWith("/") ? next : "/");
+      window.location.assign(safeLoginNext(next, "personal"));
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : String(ex));
       setLoading(false);
@@ -69,7 +71,7 @@ export function LoginPage() {
             {isInst ? "旸谷资本" : "SVQuant"}
           </p>
           <p className="mt-2 text-sm text-slate-500 sm:mt-3 sm:text-base">
-            {isInst ? "SVQuant 机构端 · 主观价值投资" : "从想法到回测"}
+            {isInst ? (product === "quant" ? "SVQuant 机构端 · 量化投研" : "SVQuant 机构端 · 主观价值投资") : "从想法到回测"}
           </p>
         </div>
 
@@ -101,12 +103,20 @@ export function LoginPage() {
             </button>
           </div>
 
+          {isInst && <fieldset className="mb-6">
+            <legend className="mb-2 text-xs text-slate-500">选择机构产品</legend>
+            <div className="grid grid-cols-2 gap-2">
+              {([["quant", "量化投研"], ["subjective", "主观投资"]] as const).map(([value,label]) => <button key={value} type="button" aria-pressed={product === value}
+                onClick={() => { setProduct(value); setErr(null); }}
+                className={"rounded-lg border px-3 py-2.5 text-sm " + (product === value ? "border-[#65358D] bg-[#f3eaf8] font-medium text-[#65358D]" : "border-slate-200 text-slate-500")}>{label}</button>)}
+            </div>
+          </fieldset>}
           <h1 className="font-display text-2xl font-semibold text-slate-900">
-            {isInst ? "机构端登录" : "登录"}
+            {isInst ? (product === "quant" ? "机构量化登录" : "机构主观投资登录") : "登录"}
           </h1>
           {isInst ? (
             <p className="mt-2 text-xs leading-relaxed text-slate-500">
-              机构身份与个人版账号通用，权限由机构角色决定；演示环境不产生真实交易。
+              账号须由管理员开通相应的机构产品权限。机构量化与主观投资分别进入各自工作区。
             </p>
           ) : null}
 
@@ -146,11 +156,11 @@ export function LoginPage() {
                 isInst ? "bg-[#0b1220] hover:bg-[#16233a]" : "bg-red-600 hover:bg-red-700"
               }`}
             >
-              {loading ? "登录中…" : isInst ? "进入机构端" : "登录"}
+              {loading ? "登录中…" : isInst ? (product === "quant" ? "进入机构量化平台" : "进入主观投资平台") : "登录"}
             </button>
           </form>
 
-          {isInst && import.meta.env.DEV ? (
+          {isInst && product === "subjective" && import.meta.env?.DEV ? (
             <div className="mt-6 rounded-xl border border-[#e7e3d8] bg-[#faf9f5] p-4">
               <p className="text-[11px] font-medium text-[#8a6a2f]">
                 开发环境演示账号（密码 {DEMO_PASSWORD}）

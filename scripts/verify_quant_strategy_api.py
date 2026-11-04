@@ -24,7 +24,10 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--allow-development-write", action="store_true")
     parser.add_argument("--require-provenance", action="store_true")
+    parser.add_argument("--institutional", action="store_true", help="Use the institution quant login and API scope")
     args = parser.parse_args()
+    api = "/api/inst/quant" if args.institutional else "/api"
+    login_path = api + "/auth/login"
     target = urlparse(args.base_url)
     if not args.allow_development_write:
         parser.error("--allow-development-write is required")
@@ -37,15 +40,15 @@ def main():
     payload = {k: v for k, v in source["request"].items() if not k.startswith("_")}
     started = time.monotonic()
     with httpx.Client(base_url=args.base_url, trust_env=False, timeout=180) as client:
-        assert client.get("/api/strategy/projects").status_code == 401
-        login = client.post("/api/auth/login", json={k: credentials[k] for k in ("username", "password")})
+        assert client.get(api + "/strategy/projects").status_code == 401
+        login = client.post(login_path, json={k: credentials[k] for k in ("username", "password")})
         login.raise_for_status()
         client.headers["Authorization"] = "Bearer " + login.json()["token"]
-        project = client.get("/api/strategy/projects/" + source["projectId"])
+        project = client.get(api + "/strategy/projects/" + source["projectId"])
         project.raise_for_status()
         project = project.json()["project"]
         assert project["name"].startswith("cx_quant_"), "only dedicated acceptance projects"
-        response = client.post("/api/backtest/strategy", json=payload)
+        response = client.post(api + "/backtest/strategy", json=payload)
         response.raise_for_status()
         # Reproduce the same JSON representation used by browser submissions.
         result = json.loads(subprocess.check_output(
@@ -66,10 +69,10 @@ def main():
             "request": source["request"], "result": result,
             "elapsedSec": round(time.monotonic() - started, 3),
         }
-        response = client.post("/api/strategy/runs", json=body)
+        response = client.post(api + "/strategy/runs", json=body)
         response.raise_for_status()
         report_id = response.json()["run"]["id"]
-        reopened = client.get("/api/strategy/runs/" + report_id)
+        reopened = client.get(api + "/strategy/runs/" + report_id)
         reopened.raise_for_status()
         stored = reopened.json()["run"]
         assert stored["verified"] is True
@@ -85,7 +88,7 @@ def main():
         tampered["name"] = "cx_quant_签名篡改验收负例_不可用于研究"
         tampered["description"] = "自动化安全验收负例：人为改写指标，仅验证不能获得 verified 标记。"
         tampered["result"]["metrics"]["sharpe"] = 12345.0
-        rejected = client.post("/api/strategy/runs", json=tampered)
+        rejected = client.post(api + "/strategy/runs", json=tampered)
         # Existing strategy API keeps legacy/unverified research records; unlike
         # factor persistence it rejects trust, not necessarily storage.
         if rejected.status_code == 400:
@@ -96,10 +99,10 @@ def main():
             assert negative["verified"] is False, "tampered report cannot be trusted"
             tamper_outcome = "stored_unverified_negative_test:" + negative["id"]
         client.headers.pop("Authorization")
-        assert client.get("/api/strategy/runs/" + report_id).status_code == 401
+        assert client.get(api + "/strategy/runs/" + report_id).status_code == 401
     meta = result.get("meta") or {}
     evidence = {
-        "passed": True, "project_id": source["projectId"], "report_id": report_id,
+        "passed": True, "identity_scope": "institutional_quant" if args.institutional else "personal", "project_id": source["projectId"], "report_id": report_id,
         "verified": stored["verified"], "result_hash": stored["resultHash"],
         "date_range": result.get("date_range"), "meta": meta,
         "tamper_outcome": tamper_outcome,

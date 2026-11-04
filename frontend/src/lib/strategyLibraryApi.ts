@@ -1,6 +1,7 @@
+import { researchFetch as fetch } from "./researchClient";
 /** 平台内置策略库 — PG `builtin_strategies`；用户库见 userStrategyLibraries */
 
-import { authHeaders, assertAuthConsistency } from "./auth";
+import { authHeaders, assertAuthConsistency } from "./researchClient";
 import {
   inferEngineModeFromCode,
   parseParamsFromCode,

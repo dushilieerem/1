@@ -24,7 +24,10 @@ def main():
     parser.add_argument("--request", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--allow-development-write", action="store_true")
+    parser.add_argument("--institutional", action="store_true", help="Use the institution quant login and API scope")
     args = parser.parse_args()
+    api = "/api/inst/quant" if args.institutional else "/api"
+    login_path = api + "/auth/login"
     if not args.allow_development_write:
         parser.error("explicit --allow-development-write is required")
     url = urlparse(args.base_url)
@@ -37,19 +40,19 @@ def main():
     payload = payload.get("request", payload)
     started = time.monotonic()
     with httpx.Client(base_url=args.base_url, timeout=120, trust_env=False) as client:
-        assert client.get("/api/detect/projects").status_code == 401
-        login = client.post("/api/auth/login", json={
+        assert client.get(api + "/detect/projects").status_code == 401
+        login = client.post(login_path, json={
             k: credentials[k] for k in ("username", "password")
         })
         login.raise_for_status()
         client.headers["Authorization"] = "Bearer " + login.json()["token"]
-        projects = client.get("/api/detect/projects")
+        projects = client.get(api + "/detect/projects")
         projects.raise_for_status()
         existing = [p for p in projects.json()["projects"] if not p.get("sample") and not p.get("isSample")]
         project = next((p for p in existing if p.get("factorName") == payload["factor_name"]), None)
         if project is None:
             raise RuntimeError("create the acceptance research project through the UI first")
-        response = client.post("/api/backtest/factor", json=payload)
+        response = client.post(api + "/backtest/factor", json=payload)
         response.raise_for_status()
         task = response.json()
         run_id = task["run_id"]
@@ -57,7 +60,7 @@ def main():
         deadline = time.monotonic() + 180
         while task.get("status") in {"queued", "running", "pending"} and time.monotonic() < deadline:
             time.sleep(1)
-            response = client.get("/api/backtest/factor/" + run_id)
+            response = client.get(api + "/backtest/factor/" + run_id)
             response.raise_for_status()
             task = response.json()
         if task.get("status") != "succeeded":
@@ -78,9 +81,9 @@ def main():
             "request": {**payload, "_re_run_id": run_id},
             "result": result, "elapsedSec": round(time.monotonic() - started, 3),
         }
-        saved = client.post("/api/detect/runs", json=body)
+        saved = client.post(api + "/detect/runs", json=body)
         saved.raise_for_status()
-        reopened = client.get("/api/detect/runs/" + report_id)
+        reopened = client.get(api + "/detect/runs/" + report_id)
         reopened.raise_for_status()
         stored = reopened.json()["run"]
         assert stored["result"]["_svquant_verified"] is True
@@ -91,13 +94,13 @@ def main():
         tampered = copy.deepcopy(body)
         tampered["id"] = report_id + "_tampered"
         tampered["result"]["meta"]["spec_hash"] = "tampered"
-        rejected = client.post("/api/detect/runs", json=tampered)
+        rejected = client.post(api + "/detect/runs", json=tampered)
         assert rejected.status_code == 400, "tampered signed report must be rejected"
-        assert client.get("/api/detect/runs/" + tampered["id"]).status_code == 404
+        assert client.get(api + "/detect/runs/" + tampered["id"]).status_code == 404
         client.headers.pop("Authorization")
-        assert client.get("/api/detect/runs/" + report_id).status_code == 401
+        assert client.get(api + "/detect/runs/" + report_id).status_code == 401
     evidence = {
-        "passed": True, "run_id": run_id, "report_id": report_id,
+        "passed": True, "identity_scope": "institutional_quant" if args.institutional else "personal", "run_id": run_id, "report_id": report_id,
         "project_id": project["id"], "release_id": meta["data_release_id"],
         "spec_hash": meta["spec_hash"], "request": payload,
         "checks": ["unauthenticated access rejected", "real login",

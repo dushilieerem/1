@@ -1,3 +1,4 @@
+import { researchPagePath, inQuantWorkspace } from "@/lib/researchClient";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactECharts from "echarts-for-react";
@@ -15,7 +16,7 @@ import {
   Archive,
 } from "lucide-react";
 import { AiBacktestInterpretDialog } from "@/components/AiBacktestInterpretDialog";
-import { getStoredUser } from "@/lib/auth";
+import { getStoredUser } from "@/lib/researchClient";
 import { buildFactorDetectShareDraft } from "@/lib/communityShare";
 import {
   CHART,
@@ -984,7 +985,7 @@ export function FactorDetectReportPage({ navigation }: { navigation?: FactorRepo
                 入库
               </button>
             ) : null}
-            <button
+            {!inQuantWorkspace() && (<button
               type="button"
               onClick={shareToCommunity}
               className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
@@ -992,7 +993,7 @@ export function FactorDetectReportPage({ navigation }: { navigation?: FactorRepo
               <Share2 className="h-3.5 w-3.5 shrink-0" />
               <span className="sm:hidden">分享</span>
               <span className="hidden sm:inline">分享到社区</span>
-            </button>
+            </button>)}
             <Link
               to={`${projectPath(rec.projectId)}?runId=${encodeURIComponent(rec.id || runId)}`}
               className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"

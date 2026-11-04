@@ -1,3 +1,4 @@
+import { researchPagePath, inQuantWorkspace } from "@/lib/researchClient";
 import { useEffect, useMemo, useState, Fragment, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactECharts from "echarts-for-react";
@@ -25,7 +26,7 @@ import {
   darkTooltip,
   legendBase,
 } from "@/components/chartTheme";
-import { getStoredUser, prepareAuthHandoff } from "@/lib/auth";
+import { getStoredUser, prepareAuthHandoff } from "@/lib/researchClient";
 import { buildStrategyShareDraft } from "@/lib/communityShare";
 import {
   STRATEGY_BENCHMARK_OPTIONS,
@@ -676,7 +677,7 @@ export function StrategyReportPage({ navigation }: { navigation?: StrategyReport
             : "没有找到回测结果。"}
         </p>
         <Link
-          to={isArchiveSnap ? "/strategy/library" : listPath}
+          to={isArchiveSnap ? researchPagePath("/strategy/library") : listPath}
           className="mt-4 inline-block text-sm font-medium text-blue-600 underline"
         >
           {isArchiveSnap ? "返回策略库" : "返回策略研究"}
@@ -800,7 +801,7 @@ export function StrategyReportPage({ navigation }: { navigation?: StrategyReport
             <p className="text-xs text-slate-500 sm:text-sm">
               {isArchiveSnap || rec.immutable ? (
                 <>
-                  <Link to="/strategy/library" className="hover:text-blue-600">
+                  <Link to={researchPagePath("/strategy/library")} className="hover:text-blue-600">
                     策略库
                   </Link>
                   {rec.libraryName ? (
@@ -839,14 +840,14 @@ export function StrategyReportPage({ navigation }: { navigation?: StrategyReport
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             {isArchiveSnap || rec.immutable ? (
               <Link
-                to="/strategy/library"
+                to={researchPagePath("/strategy/library")}
                 className="col-span-2 inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 sm:col-span-1"
               >
                 返回策略库
               </Link>
             ) : (
               <>
-                <button
+                {!inQuantWorkspace() && (<button
                   type="button"
                   onClick={shareToPlaza}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-cyan-300 bg-cyan-50 px-3 py-1.5 text-sm font-medium text-cyan-950 hover:bg-cyan-100"
@@ -854,8 +855,8 @@ export function StrategyReportPage({ navigation }: { navigation?: StrategyReport
                   <Share2 className="h-3.5 w-3.5" />
                   <span className="sm:hidden">广场</span>
                   <span className="hidden sm:inline">分享到策略广场</span>
-                </button>
-                <button
+                </button>)}
+                {!inQuantWorkspace() && (<button
                   type="button"
                   onClick={shareToCommunity}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
@@ -863,7 +864,7 @@ export function StrategyReportPage({ navigation }: { navigation?: StrategyReport
                   <Share2 className="h-3.5 w-3.5" />
                   <span className="sm:hidden">社区</span>
                   <span className="hidden sm:inline">分享到社区</span>
-                </button>
+                </button>)}
                 <Link
                   to={historyPath(rec.projectId)}
                   className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"

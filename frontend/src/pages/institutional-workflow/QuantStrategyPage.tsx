@@ -2,7 +2,7 @@ import { StrategyDraftAssistant } from "./StrategyDraftAssistant";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { createStrategyProject, createStrategyProjectFromCode, listStrategyProjects, type StrategyProject } from "@/lib/strategyStore";
-import { subscribeAuth } from "@/lib/auth";
+import { subscribeAuth } from "@/lib/researchClient";
 import { StrategyBacktestPage } from "@/pages/StrategyBacktestPage";
 import { Card } from "@/pages/institution/instUi";
 import { QuantStrategyShell, strategyProjectPath, strategyReportPath, strategyReportsPath } from "./QuantStrategyShell";
@@ -58,7 +58,7 @@ export function QuantStrategyPage() {
             <label className="block text-sm">构建方式<select className={input} value={source} onChange={e=>setSource(e.target.value as "library"|"code")} disabled={busy}><option value="library">在工作台选用已有因子</option><option value="code">使用已有策略代码或因子函数</option></select></label>
             <StrategyDraftAssistant hypothesis={description} name="" draftVersion={JSON.stringify([name,description,source,code])} onApply={draft=>{setSource("code");setCode(draft.strategy_code);}}/>
             {source==="code"?<label className="block text-sm">策略代码或因子函数<textarea required rows={10} className={input+" font-mono"} value={code} onChange={e=>setCode(e.target.value)} disabled={busy} spellCheck={false}/></label>:<p className="text-sm text-slate-500">下一步使用平台因子选择器配置因子和权重；初始空模板尚无有效选股信号，请配置后再回测。</p>}
-            <div className="flex flex-wrap items-center gap-4"><button disabled={busy} className="rounded-lg bg-[#65358D] px-5 py-2.5 text-sm text-white disabled:opacity-50">{busy?"正在保存…":"保存并构建策略"}</button><Link to="/strategy/ai" className="text-sm text-[#65358D] underline">使用平台 AI 策略助手</Link></div>
+            <div className="flex flex-wrap items-center gap-4"><button disabled={busy} className="rounded-lg bg-[#65358D] px-5 py-2.5 text-sm text-white disabled:opacity-50">{busy?"正在保存…":"保存并构建策略"}</button></div>
           </form>
         </Card>
         <Card title="已有研究项目" desc="直接继续已有策略研究，或复用平台策略库。">

@@ -1,3 +1,4 @@
+import { QuantLayout } from "@/pages/institutional-workflow/QuantLayout";
 import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "./components/Layout";
@@ -237,9 +238,27 @@ export default function App() {
           <Route path="about" element={<InstAboutPage />} />
         </Route>
 
+        <Route path="/login" element={<LoginPage />} />
+        <Route element={<QuantLayout />}>
+          <Route path="/quant" element={<Navigate to="/quant/factor" replace />} />
+          <Route path="/quant/strategy" element={<QuantStrategyPage />} />
+          <Route path="/quant/strategy/reports" element={<QuantStrategyReportsPage />} />
+          <Route path="/quant/strategy/:projectId/reports" element={<QuantStrategyReportsPage />} />
+          <Route path="/quant/strategy/report/:runId" element={<QuantStrategyReportPage />} />
+          <Route path="/quant/strategy/:projectId" element={<QuantStrategyPage />} />
+          <Route path="/quant/factor" element={<QuantFactorPage />} />
+          <Route path="/quant/factor/reports" element={<QuantFactorReportsPage />} />
+          <Route path="/quant/factor/:projectId/reports" element={<QuantFactorReportsPage />} />
+          <Route path="/quant/factor/report/:runId" element={<QuantFactorReportPage />} />
+          <Route path="/quant/factor/:projectId" element={<QuantFactorPage />} />
+          <Route path="/quant/factor/library" element={<FactorLibraryPage />} />
+          <Route path="/quant/strategy/library" element={<StrategyLibraryPage />} />
+          <Route path="/quant/strategy/library/archive/:archiveStrategyId" element={<StrategyReportPage navigation={{ listPath: "/quant/strategy/library", projectPath: id => "/quant/strategy/" + encodeURIComponent(id), reportPath: id => "/quant/strategy/report/" + encodeURIComponent(id), historyPath: id => "/quant/strategy/" + encodeURIComponent(id) + "/reports" }} />} />
+          <Route path="/quant/*" element={<Navigate to="/quant" replace />} />
+        </Route>
+
         <Route element={<Layout />}>
           <Route path="/" element={<HomePage />} />
-          <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/support" element={<Authed><SupportPage /></Authed>} />
@@ -338,17 +357,6 @@ export default function App() {
           <Route path="/factor/library/custom/:name" element={<Navigate to="/factor/library" replace />} />
           <Route path="/factor/custom/new" element={<Navigate to="/factor/library" replace />} />
 
-          <Route path="/quant" element={<Navigate to="/quant/factor" replace />} />
-          <Route path="/quant/strategy" element={<Authed><QuantStrategyPage /></Authed>} />
-          <Route path="/quant/strategy/reports" element={<Authed><QuantStrategyReportsPage /></Authed>} />
-          <Route path="/quant/strategy/:projectId/reports" element={<Authed><QuantStrategyReportsPage /></Authed>} />
-          <Route path="/quant/strategy/report/:runId" element={<Authed><QuantStrategyReportPage /></Authed>} />
-          <Route path="/quant/strategy/:projectId" element={<Authed><QuantStrategyPage /></Authed>} />
-          <Route path="/quant/factor" element={<Authed><QuantFactorPage /></Authed>} />
-          <Route path="/quant/factor/reports" element={<Authed><QuantFactorReportsPage /></Authed>} />
-          <Route path="/quant/factor/:projectId/reports" element={<Authed><QuantFactorReportsPage /></Authed>} />
-          <Route path="/quant/factor/report/:runId" element={<Authed><QuantFactorReportPage /></Authed>} />
-          <Route path="/quant/factor/:projectId" element={<Authed><QuantFactorPage /></Authed>} />
           <Route path="/factor/detect" element={<Authed><FactorDetectListPage /></Authed>} />
           <Route path="/factor/detect/report/:runId" element={<Authed><FactorDetectReportPage /></Authed>} />
           <Route path="/factor/detect/:projectId/history" element={<Authed><FactorDetectHistoryPage /></Authed>} />

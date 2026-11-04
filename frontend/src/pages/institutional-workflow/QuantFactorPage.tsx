@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { createDetectProjectFromSnippet, listProjects, saveProject, type DetectProject } from "@/lib/detectStore";
-import { subscribeAuth } from "@/lib/auth";
+import { subscribeAuth } from "@/lib/researchClient";
 import { FactorDetectPage } from "@/pages/FactorDetectPage";
 import { Card } from "@/pages/institution/instUi";
 import { QuantFactorShell, quantReportsPath, quantReportPath } from "./QuantFactorShell";
@@ -61,7 +61,7 @@ export function QuantFactorPage() {
           <label className="block text-sm">因子 Python 函数<textarea required rows={9} className={input+" font-mono"} value={code} onChange={e=>setCode(e.target.value)} disabled={busy} spellCheck={false}/></label>
           <div className="flex flex-wrap items-center gap-4">
             <button disabled={busy} className="rounded-lg bg-[#65358D] px-5 py-2.5 text-sm text-white disabled:opacity-50">{busy ? "正在保存…" : "保存并配置检验"}</button>
-            <Link className="text-sm text-[#65358D] underline" to="/factor/ai">使用平台 AI 因子助手</Link>
+
           </div>
         </form>
       </Card>

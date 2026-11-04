@@ -175,6 +175,44 @@ class ProvidersTargetTest(unittest.TestCase):
         self.assertEqual(target.provider, "ark")
         self.assertTrue(target.direct)
 
+    def test_code_slot_can_explicitly_use_default_gateway(self):
+        def fake_env(name, default=None):
+            return {
+                "AI_CODE_PROVIDER": "default",
+                "LLM_API_KEY": "k",
+                "LLM_BASE_URL": "http://llm",
+                "LLM_MODEL": "deepseek-code",
+            }.get(name, default)
+
+        with patch.object(providers, "env", side_effect=fake_env):
+            target = providers.resolve_target(slot=providers.SLOT_CODE)
+        self.assertEqual(target.provider, "openai_compatible")
+        self.assertEqual(target.base_url, "http://llm")
+        self.assertEqual(target.model, "deepseek-code")
+        self.assertFalse(target.direct)
+
+    def test_code_slot_override_without_key_fails_loudly(self):
+        with patch.object(
+            providers,
+            "env",
+            side_effect=lambda name, default=None: "default"
+            if name == "AI_CODE_PROVIDER"
+            else default,
+        ):
+            with self.assertRaises(AiNotConfigured):
+                providers.resolve_target(slot=providers.SLOT_CODE)
+
+    def test_code_slot_rejects_unknown_provider(self):
+        with patch.object(
+            providers,
+            "env",
+            side_effect=lambda name, default=None: "fake"
+            if name == "AI_CODE_PROVIDER"
+            else default,
+        ):
+            with self.assertRaises(AiNotConfigured):
+                providers.resolve_target(slot=providers.SLOT_CODE)
+
     def test_target_repr_hides_key(self):
         target = providers.ChatTarget(
             provider="ark", base_url="http://x", api_key="SECRET", model="m"

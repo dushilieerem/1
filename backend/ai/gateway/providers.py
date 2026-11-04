@@ -229,10 +229,29 @@ def resolve_target(
         return target
 
     if slot == SLOT_CODE:
-        target = ark_target()
-        if target is None:
-            raise AiNotConfigured("未配置 ARK_API_KEY / AI_FACTOR_API_KEY")
-        return target
+        # 代码生成默认复用现有 LLM_* 网关；需要火山方舟时显式设
+        # AI_CODE_PROVIDER=ark。绝不静默降级：缺对应密钥时明确报未配置。
+        code_provider = (env("AI_CODE_PROVIDER", "") or "").strip().lower()
+        if not code_provider or code_provider in {"default", "openai", "openai_compatible", "llm"}:
+            target = openai_target()
+            if target is None:
+                raise AiNotConfigured(
+                    "代码生成未配置 LLM_API_KEY（默认走 LLM_* 网关；如需 Ark 请设 AI_CODE_PROVIDER=ark）"
+                )
+            return target
+        if code_provider == "ark":
+            target = ark_target()
+            if target is None:
+                raise AiNotConfigured("AI_CODE_PROVIDER=ark 但未配置 ARK_API_KEY / AI_FACTOR_API_KEY")
+            return target
+        if code_provider == "siliconflow":
+            target = siliconflow_target()
+            if target is None:
+                raise AiNotConfigured("AI_CODE_PROVIDER=siliconflow 但未配置 SILICONFLOW_API_KEY")
+            return target
+        raise AiNotConfigured(
+            f"AI_CODE_PROVIDER={code_provider!r} 不受支持（可选 default/ark/siliconflow）"
+        )
 
     if slot == SLOT_FAST:
         target = openai_target() or ark_target()

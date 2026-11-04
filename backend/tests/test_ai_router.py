@@ -164,9 +164,28 @@ class ProvidersTargetTest(unittest.TestCase):
             with self.assertRaises(AiNotConfigured):
                 providers.resolve_target(slot=providers.SLOT_DEFAULT)
 
-    def test_code_slot_uses_ark(self):
+    def test_code_slot_defaults_to_llm_gateway(self):
         def fake_env(name, default=None):
-            return {"ARK_API_KEY": "k", "AI_FACTOR_BASE_URL": "http://ark"}.get(name, default)
+            return {
+                "LLM_API_KEY": "k",
+                "LLM_BASE_URL": "http://llm",
+                "LLM_MODEL": "deepseek-code",
+            }.get(name, default)
+
+        with patch.object(providers, "env", side_effect=fake_env):
+            target = providers.resolve_target(slot=providers.SLOT_CODE)
+        self.assertEqual(target.provider, "openai_compatible")
+        self.assertEqual(target.base_url, "http://llm")
+        self.assertEqual(target.model, "deepseek-code")
+        self.assertFalse(target.direct)
+
+    def test_code_slot_can_explicitly_use_ark(self):
+        def fake_env(name, default=None):
+            return {
+                "AI_CODE_PROVIDER": "ark",
+                "ARK_API_KEY": "k",
+                "AI_FACTOR_BASE_URL": "http://ark",
+            }.get(name, default)
 
         with patch.object(providers, "env", side_effect=fake_env), patch.object(
             providers, "key_env", side_effect=lambda name: "k" if name == "ARK_API_KEY" else ""
@@ -174,6 +193,22 @@ class ProvidersTargetTest(unittest.TestCase):
             target = providers.resolve_target(slot=providers.SLOT_CODE)
         self.assertEqual(target.provider, "ark")
         self.assertTrue(target.direct)
+
+    def test_code_slot_missing_default_key_fails_loudly(self):
+        with patch.object(providers, "env", side_effect=lambda name, default=None: default):
+            with self.assertRaises(AiNotConfigured):
+                providers.resolve_target(slot=providers.SLOT_CODE)
+
+    def test_code_slot_rejects_unknown_provider(self):
+        with patch.object(
+            providers,
+            "env",
+            side_effect=lambda name, default=None: "fake"
+            if name == "AI_CODE_PROVIDER"
+            else default,
+        ):
+            with self.assertRaises(AiNotConfigured):
+                providers.resolve_target(slot=providers.SLOT_CODE)
 
     def test_target_repr_hides_key(self):
         target = providers.ChatTarget(

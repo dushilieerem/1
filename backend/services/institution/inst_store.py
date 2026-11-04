@@ -426,7 +426,7 @@ def user_from_inst_authorization(header: str | None) -> dict[str, Any] | None:
         return None
     try:
         payload = decode_token(parts[1].strip())
-        if payload.get("scope") != "inst":
+        if payload.get("scope") != "inst" or payload.get("product") == "quant":
             return None
         uid = int(payload["sub"])
     except Exception:
@@ -467,7 +467,7 @@ def user_from_quant_authorization(header: str | None) -> dict[str, Any] | None:
     user_row = get_user_by_id(uid)
     if not user_row or user_row.get("status") != "active":
         return None
-    user = user_from_authorization(header)
+    user = user_from_authorization(header, allow_quant=True)
     if not user:
         return None
     # 每次请求实时回查成员/机构/角色，停用立即失效。

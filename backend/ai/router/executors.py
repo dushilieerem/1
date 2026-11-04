@@ -19,6 +19,24 @@ from ai.gateway import providers
 from ai.router.specs import EXECUTOR_LOCAL, EXECUTOR_RE, TaskRequest, TaskSpec
 
 
+def _code_response_format(spec: TaskSpec) -> dict[str, Any] | None:
+    """代码生成任务的格式选择；默认 auto 保留任务原格式并允许网关降级。"""
+    if spec.slot != providers.SLOT_CODE or spec.response_format is None:
+        return spec.response_format
+    from services.core.env_config import env
+
+    mode = (env("AI_CODE_RESPONSE_FORMAT", "auto") or "auto").strip().lower()
+    if mode in ("", "auto"):
+        return spec.response_format
+    if mode in ("none", "off", "disabled"):
+        return None
+    if mode in ("json_object", "object"):
+        return {"type": "json_object"}
+    raise AiNotConfigured(
+        f"AI_CODE_RESPONSE_FORMAT={mode!r} 不受支持（可选 auto/json_object/none）"
+    )
+
+
 def run_local(spec: TaskSpec, request: TaskRequest) -> dict[str, Any]:
     target = providers.resolve_target(slot=spec.slot, model=request.model)
     messages = list(request.messages)
@@ -34,7 +52,7 @@ def run_local(spec: TaskSpec, request: TaskRequest) -> dict[str, Any]:
         max_tokens=spec.max_tokens,
         tools=tools,
         tool_choice=request.tool_choice if tools else None,
-        response_format=spec.response_format,
+        response_format=_code_response_format(spec),
         timeout=spec.timeout_sec,
     )
     if spec.validator is not None:

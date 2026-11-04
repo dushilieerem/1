@@ -1195,7 +1195,7 @@ def _build_research(company: dict[str, Any], mode: str = "full") -> dict[str, An
                 "data_status": company.get("data_status"),
                 "ref_price": company.get("ref_price"),
             },
-            "as_of": (bar or {}).get("trade_date") or latest_fin.get("notice_date"),
+            "as_of": (bar or {}).get("trade_date") or latest_fin.get("notice_date") or date.today().isoformat(),
             "price": price,
             "valuation": val,
             "percentile": pct,
@@ -1440,7 +1440,7 @@ def _merge_agent_results(
 ) -> dict[str, Any]:
     built_dims = {d["key"]: d for d in built.get("dims") or []}
     evidence = list(built.get("evidence") or [])
-    as_of = (built.get("facts") or {}).get("as_of")
+    as_of = (built.get("facts") or {}).get("as_of") or date.today().isoformat()
     gaps = list(built.get("data_gaps") or [])
     dims: list[dict[str, Any]] = []
     states: dict[str, str] = {}

@@ -964,6 +964,20 @@ def _merge_temp_tables(conn) -> None:
           max_drawdown_1y=EXCLUDED.max_drawdown_1y
         """
     )
+    # 美股快照是 active set：数据平台会移除更名/退市代码（如 GNTA.O -> SAEN.O、
+    # GCDT.A 退市）。必须同步删除旧代码，否则 invest_stocks 会把它们当仍在交易。
+    snapshot_count = conn.execute(
+        "SELECT COUNT(*) AS n FROM tmp_md_us_stock_snapshot"
+    ).fetchone()["n"]
+    if int(snapshot_count or 0) > 0:
+        conn.execute(
+            """
+            DELETE FROM md_us_stock_snapshot m
+             WHERE NOT EXISTS (
+               SELECT 1 FROM tmp_md_us_stock_snapshot t WHERE t.symbol = m.symbol
+             )
+            """
+        )
     conn.execute(
         """
         INSERT INTO md_us_stock_snapshot

@@ -123,7 +123,11 @@ export default function QuantPaperDetail() {
                   <div className="quant-trade-row" key={`${trade.date}-${trade.code}-${i}`}>
                     <div>
                       <b>{trade.name}</b>
-                      <span>{trade.date} · {trade.side === "buy" ? t("买入", "Buy") : t("卖出", "Sell")} {trade.weight_delta > 0 ? "+" : ""}{trade.weight_delta.toFixed(2)}%</span>
+                      <span>
+                        {trade.date} · {trade.side === "buy" ? t("买入", "Buy") : t("卖出", "Sell")}
+                        {trade.quantity ? ` · ${trade.quantity} ${t("股", "sh")}` : trade.weight_delta ? ` ${trade.weight_delta > 0 ? "+" : ""}${trade.weight_delta.toFixed(2)}%` : ""}
+                        {trade.price ? ` · ${trade.price.toFixed(2)}` : ""}
+                      </span>
                     </div>
                     <div>
                       <Tag tone="amber">{t("模拟成交", "Simulated")}</Tag>

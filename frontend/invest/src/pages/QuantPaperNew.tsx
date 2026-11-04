@@ -10,6 +10,7 @@ type Source = {
   key: string;
   type: "strategy" | "draft";
   id: number;
+  backtest_id?: string | null;
   name: string;
   factors: Array<{ key: string; name: string; name_en: string }>;
   universe: string;

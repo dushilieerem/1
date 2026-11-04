@@ -85,7 +85,7 @@ export type Overview = {
 };
 
 export type Backtest = {
-  id: number;
+  id: string;
   name: string;
   factors: Array<FactorMeta & { chosen_direction?: string }>;
   universe: string;
@@ -97,6 +97,8 @@ export type Backtest = {
   assumptions: Record<string, string | number | boolean>;
   holdings: Array<{ code: string; name: string }>;
   shortened: boolean;
+  engine?: "re" | "local";
+  engine_reason?: string | null;
   created_at?: string;
   disclaimer?: string;
 };
@@ -107,7 +109,7 @@ export type Draft = {
   factors: Array<FactorMeta & { chosen_direction?: string }>;
   universe: string;
   universe_name?: string;
-  last_backtest_id?: number | null;
+  last_backtest_id?: string | null;
   created_at?: string;
 };
 
@@ -124,7 +126,8 @@ export type Strategy = {
   drawdown?: number | null;
   next_rebalance?: string;
   paper_id?: number | null;
-  backtest_id?: number | null;
+  backtest_id?: string | null;
+  project_id?: string | null;
   deviation?: number | null;
   created_at?: string;
   backtest?: Backtest | null;
@@ -155,6 +158,7 @@ export type Paper = {
     weight_after: number;
     weight_delta: number;
     price: number | null;
+    quantity?: number | null;
     simulated: boolean;
   }>;
   factors: FactorMeta[];
@@ -182,9 +186,9 @@ export type PlazaItem = {
   range: string;
 };
 
-export type PlazaDetail = PlazaItem & {
+export type PlazaDetail = Omit<PlazaItem, "curve"> & {
   metrics: Record<string, number | null>;
-  curve: Array<{ date: string; nav: number; benchmark: number }>;
+  curve: Array<{ date: string; nav: number; benchmark?: number }>;
   note: string;
 };
 

@@ -16,6 +16,7 @@ import json
 import math
 import threading
 import time
+import uuid
 from datetime import date, timedelta
 from statistics import median
 from typing import Any, Iterable
@@ -25,6 +26,7 @@ try:  # 生产环境有 numpy 时用它加速横截面；没有则退回纯 Pyth
 except Exception:  # pragma: no cover - 依赖缺失时的兜底
     np = None
 
+from services.factor.factor_combo import combine as combine_factors
 from services.invest import rules
 
 RISK_FREE = 0.02
@@ -759,19 +761,26 @@ def _cross_section(panel: dict[str, Any], i: int, keys: Iterable[str], *, requir
 
 
 def _scores(panel: dict[str, Any], i: int, factors: list[dict[str, str]]) -> dict[str, float]:
+    """复用 factor_combo.combine：MAD 去极值 → 横截面 z-score → 等权合成。"""
     raws = _cross_section(panel, i, [f["key"] for f in factors])
-    zs = {key: _standardize(values) for key, values in raws.items()}
-    scores: dict[str, float] = {}
+    if not raws or any(not values for values in raws.values()):
+        return {}
+    symbols = sorted(set().union(*(set(values) for values in raws.values())))
+    factor_series: dict[str, list[float | None]] = {}
     for factor in factors:
-        meta = FACTOR_BY_KEY[factor["key"]]
-        sign = _direction_sign(meta, factor.get("direction"))
-        for symbol, z in zs.get(factor["key"], {}).items():
-            scores[symbol] = scores.get(symbol, 0.0) + z * sign
-    # 只保留所有选中因子都有值的股票，避免缺数据被中性化后误选。
-    if len(zs) == len(factors):
-        valid = set.intersection(*(set(z) for z in zs.values())) if zs else set()
-        scores = {s: v for s, v in scores.items() if s in valid}
-    return {s: v / len(factors) for s, v in scores.items()}
+        key = factor["key"]
+        sign = _direction_sign(FACTOR_BY_KEY[key], factor.get("direction"))
+        values = raws.get(key) or {}
+        factor_series[key] = [values[s] * sign if s in values else None for s in symbols]
+    combined = combine_factors(factors=factor_series, scheme="equal", winsorize=True)
+    scores = combined.get("scores") or []
+    coverage = combined.get("coverage") or []
+    need = len(factors)
+    return {
+        symbol: float(score)
+        for symbol, score, covered in zip(symbols, scores, coverage)
+        if score is not None and covered == need
+    }
 
 
 def _pick(panel: dict[str, Any], i: int, factors: list[dict[str, str]], n: int = DEFAULT_HOLDINGS) -> list[str]:
@@ -959,62 +968,100 @@ def run_backtest(
     persist: bool = False,
     user_id: int | None = None,
     name: str | None = None,
+    project_id: str | None = None,
 ) -> dict[str, Any]:
     selected = _normalize_factors(factors)
     universe_key = _normalize_universe(universe)
-    panel = _load_panel(conn, universe_key)
-    start_idx = None
-    if start_date:
+    name = name or " + ".join(FACTOR_BY_KEY[f["key"]]["name"] for f in selected)
+    try:
+        data_date = rules.latest_date(conn)
+    except Exception:
+        data_date = date.today().isoformat()
+    re_result = None
+    try:
+        from services.invest import quant_re
+
+        if quant_re.supports(selected):
+            try:
+                re_start = start_date or (date.fromisoformat(data_date) - timedelta(days=365)).isoformat()
+            except ValueError:
+                re_start = start_date
+            re_result = quant_re.run_re_strategy(
+                factors=selected,
+                universe=universe_key,
+                start_date=re_start,
+                end_date=data_date,
+                name=name,
+            )
+    except Exception:
+        re_result = None
+    if re_result:
+        shortened = False
+        result = {
+            "id": None,
+            "name": name,
+            "factors": selected,
+            "factor_meta": [_factor_meta(f["key"]) | {"chosen_direction": f["direction"]} for f in selected],
+            "universe": universe_key,
+            "start_date": re_result.get("start_date"),
+            "end_date": re_result.get("end_date"),
+            "metrics": re_result.get("metrics") or {},
+            "curve": re_result.get("curve") or [],
+            "assumptions": re_result.get("assumptions") or {},
+            "holdings": re_result.get("holdings") or [],
+            "benchmark": "index",
+            "shortened": False,
+            "data_date": data_date,
+            "engine": "re",
+            "engine_reason": None,
+            "disclaimer": "历史回测 · 非真实收益 · 不代表未来",
+        }
+    else:
+        panel = _load_panel(conn, universe_key)
+        start_idx = None
+        if start_date:
+            try:
+                start_idx = next(i for i, d in enumerate(panel["dates"]) if d >= _date(start_date))
+            except StopIteration:
+                raise QuantDataError("起始日期晚于最新数据") from None
+        curve = _run_curve(panel, selected, start_idx=start_idx)
+        shortened = bool(len(panel["dates"]) <= 200)
         try:
-            start_idx = next(i for i, d in enumerate(panel["dates"]) if d >= _date(start_date))
-        except StopIteration:
-            raise QuantDataError("起始日期晚于最新数据") from None
-    curve = _run_curve(panel, selected, start_idx=start_idx)
-    shortened = bool(len(panel["dates"]) <= 200)
-    result = {
-        "id": None,
-        "name": name or " + ".join(FACTOR_BY_KEY[f["key"]]["name"] for f in selected),
-        "factors": selected,
-        "factor_meta": [_factor_meta(f["key"]) | {"chosen_direction": f["direction"]} for f in selected],
-        "universe": universe_key,
-        "start_date": curve["start_date"],
-        "end_date": curve["end_date"],
-        "metrics": curve["metrics"],
-        "curve": curve["curve"],
-        "assumptions": _assumptions(panel, selected, universe_key, DEFAULT_HOLDINGS, shortened),
-        "holdings": [
-            {"code": code, "name": panel["name"].get(code, code)}
-            for code in curve["holdings"][:DEFAULT_HOLDINGS]
-        ],
-        "benchmark": curve["bench_kind"],
-        "shortened": shortened,
-        "data_date": panel["data_date"],
-        "disclaimer": "历史回测 · 非真实收益 · 不代表未来",
-    }
+            from services.invest import quant_re
+
+            reason = "unsupported_factors" if quant_re.unsupported_keys(selected) else "re_unavailable"
+        except Exception:
+            reason = "re_unavailable"
+        result = {
+            "id": None,
+            "name": name,
+            "factors": selected,
+            "factor_meta": [_factor_meta(f["key"]) | {"chosen_direction": f["direction"]} for f in selected],
+            "universe": universe_key,
+            "start_date": curve["start_date"],
+            "end_date": curve["end_date"],
+            "metrics": curve["metrics"],
+            "curve": curve["curve"],
+            "assumptions": _assumptions(panel, selected, universe_key, DEFAULT_HOLDINGS, shortened),
+            "holdings": [
+                {"code": code, "name": panel["name"].get(code, code)}
+                for code in curve["holdings"][:DEFAULT_HOLDINGS]
+            ],
+            "benchmark": curve["bench_kind"],
+            "shortened": shortened,
+            "data_date": panel["data_date"],
+            "engine": "local",
+            "engine_reason": reason,
+            "disclaimer": "历史回测 · 非真实收益 · 不代表未来",
+        }
     if persist:
         if user_id is None:
             raise QuantDataError("保存回测需要用户")
-        row = rules.one(
-            conn,
-            "INSERT INTO invest_quant_backtest "
-            "(user_id,name,factors,universe,start_date,end_date,metrics,curve,assumptions,holdings,shortened,created_at) "
-            "VALUES (?,?,?::jsonb,?,?,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?,to_char(NOW(),'YYYY-MM-DD HH24:MI:SS')) "
-            "RETURNING id",
-            (
-                user_id,
-                result["name"],
-                json.dumps(selected, ensure_ascii=False),
-                universe_key,
-                result["start_date"],
-                result["end_date"],
-                json.dumps(result["metrics"], ensure_ascii=False),
-                json.dumps(result["curve"], ensure_ascii=False),
-                json.dumps(result["assumptions"], ensure_ascii=False),
-                json.dumps(result["holdings"], ensure_ascii=False),
-                shortened,
-            ),
+        pid = project_id or _root_project(user_id, selected, universe_key)
+        result["project_id"] = pid
+        result["id"] = _save_quant_run(
+            user_id, pid, result, factors=selected, universe=universe_key
         )
-        result["id"] = int(row["id"]) if row else None
     return result
 
 
@@ -1046,51 +1093,291 @@ def _row_json(row: dict[str, Any], key: str, default: Any) -> Any:
     return value
 
 
-def list_backtests(conn: Any, user_id: int, limit: int = 50) -> dict[str, Any]:
-    rows = rules.rows(
-        conn,
-        "SELECT id,name,factors,universe,start_date,end_date,metrics,shortened,created_at "
-        "FROM invest_quant_backtest WHERE user_id=? ORDER BY id DESC LIMIT ?",
-        (user_id, limit),
+PCT_KEYS = {
+    "cumulative", "annual_return", "max_drawdown", "win_rate", "volatility",
+    "alpha", "benchmark_return", "benchmark_annual", "excess", "turnover_cost",
+}
+
+
+def _re_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
+    """H5 百分数点 → RE/strategy_runs 的小数口径。"""
+    out: dict[str, Any] = {}
+    for key, value in (metrics or {}).items():
+        if value is None:
+            out[key] = None
+        elif key in PCT_KEYS:
+            try:
+                out[key] = float(value) / 100.0
+            except (TypeError, ValueError):
+                out[key] = None
+        else:
+            out[key] = value
+    return out
+
+
+def _h5_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, value in (metrics or {}).items():
+        if value is None:
+            out[key] = None
+        elif key in PCT_KEYS:
+            try:
+                out[key] = float(value) * 100.0
+            except (TypeError, ValueError):
+                out[key] = None
+        else:
+            out[key] = value
+    return out
+
+
+def _quant_config(factors: list[dict[str, str]], universe: str, *, draft: bool = False) -> dict[str, Any]:
+    from services.strategy import strategy_store
+
+    uni = {"hs300": "CSI300", "zz500": "CSI500", "all": "ALL_A"}.get(universe, "CSI300")
+    code = ""
+    try:
+        from services.invest import quant_re
+
+        code = quant_re.build_strategy_code(factors)
+    except Exception:
+        code = ""
+    if not code:
+        # 基本面因子暂不在 RE 策略 DSL 中：草稿仍可保存，模拟盘/RE 回测会明确拒绝。
+        code = (
+            "from app.services.strategy.vectorized.factor_strategy import (\n"
+            "    EqualWeight, EveryNTradingDays, FactorPortfolioStrategy, TopN, signal,\n"
+            ")\n\n"
+            "class H5QuantFallback(FactorPortfolioStrategy):\n"
+            "    selector = TopN(20)\n"
+            "    weighting = EqualWeight()\n"
+            "    rebalance = EveryNTradingDays(20)\n\n"
+            "    @signal\n"
+            "    def score(self):\n"
+            "        return self.close * 0\n"
+        )
+    cfg = strategy_store._default_config()
+    cfg.update({
+        "universe": uni,
+        "benchmark": "CSI300",
+        "rangeMode": "period",
+        "backtestPeriod": "1y",
+        "commission_rate": 0.001,
+        "stamp_tax": 0.0,
+        "slippage_rate": 0.0,
+        "initial_capital": 1_000_000,
+        "top_n": 20,
+        "rebalance_days": 20,
+        "strategy_code": code,
+        "engine_mode": "vectorized",
+        "quant": True,
+        "quant_factors": factors,
+        "quant_universe": universe,
+        "quant_draft": draft,
+    })
+    return cfg
+
+
+def _ensure_project(
+    user_id: int,
+    name: str,
+    factors: list[dict[str, str]],
+    universe: str,
+    *,
+    project_id: str | None = None,
+    draft: bool = False,
+) -> str:
+    from services.strategy import strategy_store
+
+    out = strategy_store.upsert_project(
+        user_id,
+        {
+            "id": project_id or str(uuid.uuid4()),
+            "name": name,
+            "description": "H5 量化研究",
+            "config": _quant_config(factors, universe, draft=draft),
+        },
     )
-    items = []
-    for row in rows:
-        metrics = _row_json(row, "metrics", {})
-        items.append({
-            "id": row["id"],
-            "name": row.get("name"),
-            "factors": _row_factor_meta(row),
-            "universe": row.get("universe"),
-            "range": f"{_date(row.get('start_date'))} ~ {_date(row.get('end_date'))}",
-            "start_date": _date(row.get("start_date")),
-            "end_date": _date(row.get("end_date")),
-            "cumulative": metrics.get("cumulative"),
-            "benchmark_return": metrics.get("benchmark_return"),
-            "shortened": bool(row.get("shortened")),
-            "created_at": row.get("created_at"),
-        })
-    return {"items": items, "note": "不同区间的记录不做横向收益比较。"}
+    return str(out["project"]["id"])
 
 
-def get_backtest(conn: Any, user_id: int, backtest_id: int) -> dict[str, Any] | None:
-    row = rules.one(conn, "SELECT * FROM invest_quant_backtest WHERE id=? AND user_id=?", (backtest_id, user_id))
-    if not row:
-        return None
+def _root_project(user_id: int, factors: list[dict[str, str]], universe: str) -> str:
+    from services.strategy import strategy_store
+
+    for project in (strategy_store.list_projects(user_id).get("projects") or []):
+        cfg = project.get("config") or {}
+        if cfg.get("quant_root"):
+            return str(project["id"])
+    pid = _ensure_project(user_id, "H5 快速实验", factors, universe, draft=False)
+    project = strategy_store.get_project(user_id, pid)["project"]
+    cfg = dict(project.get("config") or {})
+    cfg["quant_root"] = True
+    cfg["quant_draft"] = False
+    strategy_store.upsert_project(user_id, {"id": pid, "name": project["name"], "description": project.get("description") or "", "config": cfg})
+    return pid
+
+
+def _run_storage_payload(result: dict[str, Any]) -> dict[str, Any]:
+    curve = result.get("curve") or []
+    metrics_pct = result.get("metrics") or {}
+    equity = [{"date": p.get("date"), "value": float(p.get("nav") or 0)} for p in curve]
+    benchmark = [{"date": p.get("date"), "value": float(p.get("benchmark") or 0)} for p in curve]
     return {
-        "id": row["id"],
-        "name": row.get("name"),
-        "factors": _row_factor_meta(row),
-        "universe": row.get("universe"),
-        "start_date": _date(row.get("start_date")),
-        "end_date": _date(row.get("end_date")),
-        "metrics": _row_json(row, "metrics", {}),
-        "curve": _row_json(row, "curve", []),
-        "assumptions": _row_json(row, "assumptions", {}),
-        "holdings": _row_json(row, "holdings", []),
-        "shortened": bool(row.get("shortened")),
-        "created_at": row.get("created_at"),
+        "metrics": _re_metrics(metrics_pct),
+        "equity_curve": equity,
+        "benchmark_curve": benchmark,
+        "date_range": {"start": result.get("start_date"), "end": result.get("end_date")},
+        "excess_return": (float(metrics_pct.get("excess") or 0) / 100.0),
+        "assumptions": result.get("assumptions") or {},
+        "positions": [{
+            "date": result.get("end_date"),
+            "holdings": [
+                {"symbol": h.get("code"), "name": h.get("name"), "weight": 1.0 / max(1, len(result.get("holdings") or []))}
+                for h in (result.get("holdings") or [])
+            ],
+        }],
+        "meta": {
+            "source": "h5_quant",
+            "engine": result.get("engine") or "local",
+            "universe": result.get("universe"),
+        },
+        "quant": {
+            "metrics_pct": metrics_pct,
+            "curve": curve,
+            "assumptions": result.get("assumptions") or {},
+            "holdings": result.get("holdings") or [],
+            "factors": result.get("factor_meta") or [],
+            "engine": result.get("engine") or "local",
+            "engine_reason": result.get("engine_reason"),
+            "shortened": bool(result.get("shortened")),
+        },
+    }
+
+
+def _save_quant_run(
+    user_id: int,
+    project_id: str,
+    result: dict[str, Any],
+    *,
+    factors: list[dict[str, str]],
+    universe: str,
+    elapsed: float = 0,
+) -> str:
+    from services.strategy import strategy_store
+
+    saved = strategy_store.save_run(
+        user_id,
+        {
+            "projectId": project_id,
+            "name": result.get("name") or "量化回测",
+            "description": "H5 量化研究",
+            "elapsedSec": elapsed,
+            "request": {
+                "quant": True,
+                "quant_factors": factors,
+                "universe": universe,
+                "engine": result.get("engine") or "local",
+                "engine_reason": result.get("engine_reason"),
+                "start": result.get("start_date"),
+                "end": result.get("end_date"),
+            },
+            "result": _run_storage_payload(result),
+        },
+    )
+    return str(saved["run"]["id"])
+
+
+def _run_to_backtest(run: dict[str, Any]) -> dict[str, Any]:
+    result = run.get("result") or {}
+    request = run.get("request") or {}
+    quant = result.get("quant") or {}
+    metrics_pct = quant.get("metrics_pct") or _h5_metrics(result.get("metrics") or {})
+    curve = quant.get("curve") or [
+        {"date": p.get("date"), "nav": p.get("value"), "benchmark": None}
+        for p in (result.get("equity_curve") or [])
+    ]
+    if curve and curve[0].get("benchmark") is None:
+        benches = {p.get("date"): p.get("value") for p in (result.get("benchmark_curve") or [])}
+        for point in curve:
+            point["benchmark"] = benches.get(point.get("date"))
+    date_range = result.get("date_range") or {}
+    assumptions = quant.get("assumptions") or result.get("assumptions") or {}
+    holdings = quant.get("holdings") or []
+    if not holdings:
+        positions = result.get("positions") or []
+        if positions:
+            holdings = [{"code": h.get("symbol"), "name": h.get("name")} for h in (positions[-1].get("holdings") or [])]
+    factors = request.get("quant_factors") or []
+    return {
+        "id": run.get("id"),
+        "project_id": run.get("projectId"),
+        "name": run.get("name") or "量化回测",
+        "factors": _row_factor_meta({"factors": factors}),
+        "universe": request.get("universe") or assumptions.get("universe") or "hs300",
+        "start_date": date_range.get("start") or request.get("start"),
+        "end_date": date_range.get("end") or request.get("end"),
+        "metrics": metrics_pct,
+        "curve": curve,
+        "assumptions": assumptions,
+        "holdings": holdings,
+        "shortened": bool(quant.get("shortened")),
+        "engine": quant.get("engine") or request.get("engine") or "local",
+        "engine_reason": quant.get("engine_reason") or request.get("engine_reason"),
+        "created_at": run.get("finishedAt"),
         "disclaimer": "历史回测 · 非真实收益 · 不代表未来",
     }
+
+
+def list_backtests(conn: Any, user_id: int, limit: int = 50) -> dict[str, Any]:
+    from services.strategy import strategy_store
+
+    projects = strategy_store.list_projects(user_id).get("projects") or []
+    quant_projects = {
+        str(p["id"]): p for p in projects if (p.get("config") or {}).get("quant")
+    }
+    runs: list[dict[str, Any]] = []
+    for project_id in quant_projects:
+        runs.extend(strategy_store.list_runs(user_id, project_id).get("runs") or [])
+    runs.sort(key=lambda r: str(r.get("finishedAt") or ""), reverse=True)
+    items = []
+    for run in runs[:limit]:
+        result = run.get("result") or {}
+        request = run.get("request") or {}
+        metrics = _h5_metrics(result.get("metrics") or {})
+        date_range = result.get("date_range") or {}
+        factors = request.get("quant_factors") or []
+        items.append({
+            "id": str(run["id"]),
+            "name": run.get("name"),
+            "factors": _row_factor_meta({"factors": factors}),
+            "universe": request.get("universe") or "hs300",
+            "range": f"{date_range.get('start') or '—'} ~ {date_range.get('end') or '—'}",
+            "start_date": date_range.get("start"),
+            "end_date": date_range.get("end"),
+            "cumulative": metrics.get("cumulative"),
+            "benchmark_return": metrics.get("benchmark_return"),
+            "shortened": bool((result.get("quant") or {}).get("shortened")),
+            "created_at": run.get("finishedAt"),
+            "engine": request.get("engine") or (result.get("meta") or {}).get("engine"),
+        })
+    return {"items": items, "note": "不同区间的记录不做横向比较。"}
+
+
+def get_backtest(conn: Any, user_id: int, backtest_id: str) -> dict[str, Any] | None:
+    from services.strategy import strategy_store
+
+    try:
+        run = strategy_store.get_run(user_id, str(backtest_id)).get("run")
+    except (KeyError, ValueError):
+        return None
+    if not run:
+        return None
+    try:
+        project = strategy_store.get_project(user_id, str(run.get("projectId"))).get("project") or {}
+    except KeyError:
+        return None
+    if not (project.get("config") or {}).get("quant"):
+        return None
+    return _run_to_backtest(run)
 
 
 def _correlation_matrix(series: dict[str, list[float]]) -> list[list[float | None]]:
@@ -1479,38 +1766,22 @@ def factor_detail(conn: Any, key: str) -> dict[str, Any] | None:
 
 
 def _overview_counts(conn: Any, user_id: int) -> dict[str, Any]:
-    def count(sql: str, args: tuple[Any, ...] = ()) -> int:
-        row = rules.one(conn, sql, args)
-        return int((row or {}).get("n") or 0)
-
-    strategies = count("SELECT COUNT(*) AS n FROM invest_quant_strategy WHERE user_id=?", (user_id,))
-    drafts = count("SELECT COUNT(*) AS n FROM invest_quant_draft WHERE user_id=?", (user_id,))
-    backtests = count("SELECT COUNT(*) AS n FROM invest_quant_backtest WHERE user_id=?", (user_id,))
-    papers = count("SELECT COUNT(*) AS n FROM invest_quant_paper WHERE user_id=? AND status='running'", (user_id,))
-    latest = rules.one(
-        conn,
-        "SELECT start_date::text AS s, end_date::text AS e FROM invest_quant_backtest "
-        "WHERE user_id=? ORDER BY id DESC LIMIT 1",
-        (user_id,),
-    )
+    strategies = list_strategies(conn, user_id).get("items") or []
+    drafts = list_drafts(conn, user_id).get("items") or []
+    backtests = list_backtests(conn, user_id).get("items") or []
+    papers = list_papers(conn, user_id).get("items") or []
+    latest = backtests[0].get("range") if backtests else None
     return {
-        "strategies": strategies, "drafts": drafts, "backtests": backtests, "papers": papers,
-        "latest_backtest": f"{_date(latest.get('s'))} ~ {_date(latest.get('e'))}" if latest else None,
+        "strategies": len(strategies), "drafts": len(drafts), "backtests": len(backtests),
+        "papers": sum(1 for p in papers if str(p.get("status")) == "active"),
+        "latest_backtest": latest,
     }
 
 
 def _focus(conn: Any, user_id: int, board: dict[str, Any], counts: dict[str, Any]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    strategies = rules.rows(
-        conn,
-        "SELECT s.id,s.name,s.status,s.paper_id,p.last_snapshot FROM invest_quant_strategy s "
-        "LEFT JOIN invest_quant_paper p ON p.id=s.paper_id "
-        "WHERE s.user_id=? ORDER BY s.id DESC",
-        (user_id,),
-    )
-    for row in strategies:
-        snap = _row_json(row, "last_snapshot", {})
-        deviation = _num((snap or {}).get("deviation"))
+    for row in (list_strategies(conn, user_id).get("items") or []):
+        deviation = _num(row.get("deviation"))
         status = str(row.get("status") or "tracking")
         if status != "tracking" or (deviation is not None and abs(deviation) >= 1):
             items.append({
@@ -1521,14 +1792,8 @@ def _focus(conn: Any, user_id: int, board: dict[str, Any], counts: dict[str, Any
                 "deviation": abs(deviation or 0), "link": f"/quant/strategies/{row.get('id')}",
                 "severity": 0,
             })
-    papers = rules.rows(
-        conn,
-        "SELECT id,name,last_snapshot FROM invest_quant_paper WHERE user_id=? AND status='running' ORDER BY id DESC",
-        (user_id,),
-    )
-    for row in papers:
-        snap = _row_json(row, "last_snapshot", {})
-        deviation = _num((snap or {}).get("deviation"))
+    for row in (list_papers(conn, user_id).get("items") or []):
+        deviation = _num(row.get("deviation"))
         if deviation is not None and abs(deviation) >= 1:
             items.append({
                 "type": "paper", "id": row.get("id"), "title": f"模拟盘「{row.get('name')}」偏离回测",
@@ -1550,7 +1815,7 @@ def _focus(conn: Any, user_id: int, board: dict[str, Any], counts: dict[str, Any
     if counts.get("drafts"):
         drafts = rules.rows(
             conn,
-            "SELECT id,name FROM invest_quant_draft WHERE user_id=? AND last_backtest_id IS NULL ORDER BY id DESC LIMIT 5",
+            "SELECT id,name FROM invest_quant_draft WHERE user_id=? AND (last_backtest_id IS NULL OR last_backtest_id='') ORDER BY id DESC LIMIT 5",
             (user_id,),
         )
         for row in drafts:
@@ -1614,6 +1879,7 @@ def _draft_payload(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row.get("id"), "name": row.get("name"), "factors": _row_factor_meta(row),
         "universe": row.get("universe"), "universe_name": UNIVERSES.get(row.get("universe"), {}).get("name"),
+        "project_id": row.get("project_id"),
         "last_backtest_id": row.get("last_backtest_id"), "created_at": row.get("created_at"),
     }
 
@@ -1621,7 +1887,7 @@ def _draft_payload(row: dict[str, Any]) -> dict[str, Any]:
 def list_drafts(conn: Any, user_id: int) -> dict[str, Any]:
     rows = rules.rows(
         conn,
-        "SELECT id,name,factors,universe,last_backtest_id,created_at FROM invest_quant_draft "
+        "SELECT id,name,factors,universe,project_id,last_backtest_id,created_at FROM invest_quant_draft "
         "WHERE user_id=? ORDER BY id DESC",
         (user_id,),
     )
@@ -1634,9 +1900,9 @@ def create_draft(conn: Any, user_id: int, body: dict[str, Any]) -> dict[str, Any
     name = str(body.get("name") or " + ".join(FACTOR_BY_KEY[f["key"]]["name"] for f in selected))[:80]
     row = rules.one(
         conn,
-        "INSERT INTO invest_quant_draft (user_id,name,factors,universe,last_backtest_id,created_at,updated_at) "
-        "VALUES (?,?,?::jsonb,?,?,to_char(NOW(),'YYYY-MM-DD HH24:MI:SS'),to_char(NOW(),'YYYY-MM-DD HH24:MI:SS')) RETURNING *",
-        (user_id, name, json.dumps(selected, ensure_ascii=False), universe, body.get("last_backtest_id")),
+        "INSERT INTO invest_quant_draft (user_id,name,factors,universe,project_id,last_backtest_id,created_at,updated_at) "
+        "VALUES (?,?,?::jsonb,?,?,?,to_char(NOW(),'YYYY-MM-DD HH24:MI:SS'),to_char(NOW(),'YYYY-MM-DD HH24:MI:SS')) RETURNING *",
+        (user_id, name, json.dumps(selected, ensure_ascii=False), universe, body.get("project_id"), body.get("last_backtest_id")),
     )
     return _draft_payload(row or {})
 
@@ -1646,8 +1912,8 @@ def delete_draft(conn: Any, user_id: int, draft_id: int) -> bool:
     return True
 
 
-def _strategy_payload(row: dict[str, Any]) -> dict[str, Any]:
-    snap = _row_json(row, "last_snapshot", {}) or {}
+def _strategy_payload(row: dict[str, Any], snap: dict[str, Any] | None = None) -> dict[str, Any]:
+    snap = snap or _row_json(row, "last_snapshot", {}) or {}
     deviation = _num((snap or {}).get("deviation"))
     status = str(row.get("status") or "tracking")
     attention = status != "tracking" or (deviation is not None and abs(deviation) >= 1)
@@ -1660,6 +1926,7 @@ def _strategy_payload(row: dict[str, Any]) -> dict[str, Any]:
         "today": snap.get("today"), "drawdown": snap.get("max_drawdown"),
         "next_rebalance": snap.get("next_rebalance") or "下一个月初",
         "paper_id": row.get("paper_id"), "backtest_id": row.get("backtest_id"),
+        "project_id": row.get("project_id"),
         "deviation": deviation, "created_at": row.get("created_at"),
     }
 
@@ -1667,22 +1934,24 @@ def _strategy_payload(row: dict[str, Any]) -> dict[str, Any]:
 def list_strategies(conn: Any, user_id: int) -> dict[str, Any]:
     rows = rules.rows(
         conn,
-        "SELECT s.*, p.last_snapshot FROM invest_quant_strategy s "
-        "LEFT JOIN invest_quant_paper p ON p.id=s.paper_id WHERE s.user_id=? ORDER BY s.id DESC",
+        "SELECT * FROM invest_quant_strategy WHERE user_id=? ORDER BY id DESC",
         (user_id,),
     )
-    return {"items": [_strategy_payload(r) for r in rows]}
+    return {"items": [_strategy_payload(r, _strategy_snapshot(conn, user_id, r)) for r in rows]}
 
 
 def create_strategy(conn: Any, user_id: int, body: dict[str, Any]) -> dict[str, Any]:
     selected = _normalize_factors(body.get("factors"))
     universe = _normalize_universe(body.get("universe"))
     name = str(body.get("name") or " + ".join(FACTOR_BY_KEY[f["key"]]["name"] for f in selected))[:80]
+    pid = str(body.get("project_id") or "").strip() or _ensure_project(
+        user_id, name, selected, universe
+    )
     row = rules.one(
         conn,
-        "INSERT INTO invest_quant_strategy (user_id,name,factors,universe,status,backtest_id,created_at,updated_at) "
-        "VALUES (?,?,?::jsonb,?,'tracking',?,to_char(NOW(),'YYYY-MM-DD HH24:MI:SS'),to_char(NOW(),'YYYY-MM-DD HH24:MI:SS')) RETURNING *",
-        (user_id, name, json.dumps(selected, ensure_ascii=False), universe, body.get("backtest_id")),
+        "INSERT INTO invest_quant_strategy (user_id,name,factors,universe,status,project_id,backtest_id,created_at,updated_at) "
+        "VALUES (?,?,?::jsonb,?,'tracking',?,?,to_char(NOW(),'YYYY-MM-DD HH24:MI:SS'),to_char(NOW(),'YYYY-MM-DD HH24:MI:SS')) RETURNING *",
+        (user_id, name, json.dumps(selected, ensure_ascii=False), universe, pid, body.get("backtest_id")),
     )
     return _strategy_payload(row or {})
 
@@ -1715,14 +1984,13 @@ def _portfolio_beta(conn: Any, user_id: int) -> tuple[float | None, list[dict[st
 def strategy_detail(conn: Any, user_id: int, strategy_id: int) -> dict[str, Any] | None:
     row = rules.one(
         conn,
-        "SELECT s.*, p.last_snapshot FROM invest_quant_strategy s "
-        "LEFT JOIN invest_quant_paper p ON p.id=s.paper_id WHERE s.id=? AND s.user_id=?",
+        "SELECT * FROM invest_quant_strategy WHERE id=? AND user_id=?",
         (strategy_id, user_id),
     )
     if not row:
         return None
-    payload = _strategy_payload(row)
-    backtest = get_backtest(conn, user_id, int(row["backtest_id"])) if row.get("backtest_id") else None
+    payload = _strategy_payload(row, _strategy_snapshot(conn, user_id, row))
+    backtest = get_backtest(conn, user_id, str(row["backtest_id"])) if row.get("backtest_id") else None
     beta, holdings, codes = _portfolio_beta(conn, user_id)
     overlap = sum(1 for h in (backtest or {}).get("holdings", []) if h.get("code") in codes)
     risk_compare = [
@@ -1744,17 +2012,113 @@ def delete_strategy(conn: Any, user_id: int, strategy_id: int) -> bool:
     return True
 
 
-def _paper_row(conn: Any, user_id: int, paper_id: int) -> dict[str, Any] | None:
-    return rules.one(conn, "SELECT * FROM invest_quant_paper WHERE id=? AND user_id=?", (paper_id, user_id))
+def _quant_projects(user_id: int) -> dict[str, dict[str, Any]]:
+    from services.strategy import strategy_store
+
+    projects = strategy_store.list_projects(user_id).get("projects") or []
+    return {str(p["id"]): p for p in projects if (p.get("config") or {}).get("quant")}
+
+
+def _strategy_for_project(conn: Any, user_id: int, project_id: str) -> dict[str, Any] | None:
+    return rules.one(
+        conn,
+        "SELECT * FROM invest_quant_strategy WHERE user_id=? AND project_id=? ORDER BY id DESC LIMIT 1",
+        (user_id, project_id),
+    )
+
+
+def _paper_run_return(conn: Any, user_id: int, strategy_row: dict[str, Any] | None, start: str, end: str) -> float | None:
+    if not strategy_row or not strategy_row.get("backtest_id"):
+        return None
+    bt = get_backtest(conn, user_id, str(strategy_row["backtest_id"]))
+    if not bt:
+        return None
+    points = [
+        p for p in (bt.get("curve") or [])
+        if start <= str(p.get("date")) <= end and p.get("nav") is not None
+    ]
+    if len(points) < 2 or not points[0]["nav"]:
+        return None
+    return (float(points[-1]["nav"]) / float(points[0]["nav"]) - 1.0) * 100
+
+
+def _paper_summary(conn: Any, user_id: int, account: dict[str, Any], strategy_row: dict[str, Any] | None = None) -> dict[str, Any]:
+    from services.paper import paper_store
+
+    account_id = int(account["id"])
+    initial = float(account.get("initialCash") or 1.0) or 1.0
+    try:
+        equity = paper_store.list_equity(user_id, account_id).get("equity") or []
+    except Exception:
+        equity = []
+    navs = [float(e.get("totalEquity") or initial) / initial for e in equity] or [1.0]
+    cumulative = (navs[-1] - 1.0) * 100
+    today = None
+    if len(navs) >= 2 and navs[-2]:
+        today = (navs[-1] / navs[-2] - 1.0) * 100
+    try:
+        positions = paper_store.list_positions(user_id, account_id)
+    except Exception:
+        positions = []
+    start = str(account.get("firstSettlementDate") or "")
+    end = str(account.get("lastSettledDate") or account.get("nextSettlementDate") or "")
+    bt_return = _paper_run_return(conn, user_id, strategy_row, start, end) if start and end else None
+    deviation = round(cumulative - bt_return, 2) if bt_return is not None else None
+    rets = [navs[i] / navs[i - 1] - 1 for i in range(1, len(navs)) if navs[i - 1]]
+    annual = None
+    if len(navs) > 1 and navs[-1] > 0:
+        annual = (navs[-1] ** (252.0 / max(1, len(navs) - 1)) - 1.0) * 100
+    vol = (_stdev(rets) or 0.0) * math.sqrt(252) * 100
+    sharpe = ((annual or 0.0) / 100.0 - RISK_FREE) / (vol / 100.0) if vol > 0 else None
+    attention = (deviation is not None and abs(deviation) >= 1) or bool(account.get("lastErrorCode"))
+    return {
+        "id": account_id,
+        "name": account.get("name"),
+        "status": account.get("status") or "active",
+        "initial_cash": initial,
+        "start_date": start,
+        "data_date": end,
+        "run_days": len(equity),
+        "cumulative": _pct(cumulative),
+        "today": _pct(today),
+        "deviation": deviation,
+        "position_count": len(positions),
+        "max_drawdown": _pct(_max_drawdown(navs)),
+        "annual_return": _pct(annual),
+        "volatility": _pct(vol),
+        "sharpe": float(round(sharpe, 2)) if sharpe is not None else None,
+        "next_settlement": account.get("nextSettlementDate"),
+        "attention": attention,
+        "positions": positions,
+        "equity": equity,
+    }
+
+
+def _strategy_snapshot(conn: Any, user_id: int, row: dict[str, Any]) -> dict[str, Any]:
+    summary = None
+    if row.get("paper_id"):
+        try:
+            from services.paper import paper_store
+
+            account = paper_store.get_account(user_id, int(row["paper_id"])).get("account") or {}
+            summary = _paper_summary(conn, user_id, account, row)
+        except Exception:
+            summary = None
+    return summary or {}
 
 
 def create_paper(conn: Any, user_id: int, body: dict[str, Any]) -> dict[str, Any]:
+    from services.paper import paper_store
+    from services.strategy import strategy_store
+    from services.invest import quant_re
+
     source_type = str(body.get("source_type") or body.get("source") or "draft")
     source_id = body.get("source_id") or body.get("draft_id") or body.get("strategy_id") or body.get("backtest_id")
     factors = None
     universe = "hs300"
     name = str(body.get("name") or "").strip()
-    strategy_id = None
+    project_id = None
+    strategy_row = None
     backtest_id = None
     if source_type == "draft":
         draft = rules.one(conn, "SELECT * FROM invest_quant_draft WHERE id=? AND user_id=?", (source_id, user_id))
@@ -1763,204 +2127,174 @@ def create_paper(conn: Any, user_id: int, body: dict[str, Any]) -> dict[str, Any
         factors = _row_json(draft, "factors", [])
         universe = draft.get("universe") or "hs300"
         name = name or str(draft.get("name") or "量化模拟盘")
+        project_id = draft.get("project_id")
         backtest_id = draft.get("last_backtest_id")
     elif source_type == "strategy":
-        strategy = rules.one(conn, "SELECT * FROM invest_quant_strategy WHERE id=? AND user_id=?", (source_id, user_id))
-        if not strategy:
+        strategy_row = rules.one(conn, "SELECT * FROM invest_quant_strategy WHERE id=? AND user_id=?", (source_id, user_id))
+        if not strategy_row:
             raise QuantDataError("策略不存在")
-        factors = _row_json(strategy, "factors", [])
-        universe = strategy.get("universe") or "hs300"
-        name = name or str(strategy.get("name") or "量化模拟盘")
-        strategy_id = int(strategy["id"])
-        backtest_id = strategy.get("backtest_id")
+        factors = _row_json(strategy_row, "factors", [])
+        universe = strategy_row.get("universe") or "hs300"
+        name = name or str(strategy_row.get("name") or "量化模拟盘")
+        project_id = strategy_row.get("project_id")
+        backtest_id = strategy_row.get("backtest_id")
     elif source_type == "backtest":
-        bt = get_backtest(conn, user_id, int(source_id))
+        bt = get_backtest(conn, user_id, str(source_id))
         if not bt:
             raise QuantDataError("回测记录不存在")
-        factors = bt["factors"]
+        factors = [{"key": f["key"], "direction": f.get("chosen_direction") or f.get("direction")} for f in bt["factors"]]
         universe = bt.get("universe") or "hs300"
         name = name or f"{bt.get('name')} · 模拟"
-        backtest_id = int(bt["id"])
+        project_id = bt.get("project_id")
+        backtest_id = bt.get("id")
     else:
         factors = _normalize_factors(body.get("factors"))
     selected = _normalize_factors(factors)
-    data_date = _load_panel(conn, _normalize_universe(universe))["data_date"]
-    start = _next_trading_day(conn, data_date)
+    if not quant_re.supports(selected):
+        raise QuantDataError("RE 暂不支持该因子组合的模拟盘（缺少基本面字段）；可先保存为草稿")
+    name = name or " + ".join(FACTOR_BY_KEY[f["key"]]["name"] for f in selected)
+    pid = str(project_id or "").strip() or _ensure_project(user_id, name, selected, _normalize_universe(universe))
+    _ensure_project(user_id, name, selected, _normalize_universe(universe), project_id=pid)
     capital = _num(body.get("start_capital")) or 1_000_000.0
-    if strategy_id is None:
-        strategy_row = rules.one(
-            conn,
-            "INSERT INTO invest_quant_strategy (user_id,name,factors,universe,status,backtest_id,created_at,updated_at) "
-            "VALUES (?,?,?::jsonb,?,'tracking',?,to_char(NOW(),'YYYY-MM-DD HH24:MI:SS'),to_char(NOW(),'YYYY-MM-DD HH24:MI:SS')) RETURNING id",
-            (user_id, name, json.dumps(selected, ensure_ascii=False), _normalize_universe(universe), backtest_id),
-        )
-        strategy_id = int(strategy_row["id"]) if strategy_row else None
-    row = rules.one(
-        conn,
-        "INSERT INTO invest_quant_paper "
-        "(user_id,name,strategy_id,factors,universe,start_capital,start_date,status,last_snapshot,created_at,updated_at) "
-        "VALUES (?,?,?,?::jsonb,?,?,?,'running','{}'::jsonb,to_char(NOW(),'YYYY-MM-DD HH24:MI:SS'),to_char(NOW(),'YYYY-MM-DD HH24:MI:SS')) RETURNING *",
-        (user_id, name, strategy_id, json.dumps(selected, ensure_ascii=False), _normalize_universe(universe), capital, start),
+    account = paper_store.create_account(
+        user_id,
+        {"strategy_project_id": pid, "name": name, "initial_cash": capital},
     )
-    if row and strategy_id:
-        conn.execute("UPDATE invest_quant_strategy SET paper_id=? WHERE id=?", (row["id"], strategy_id))
-    return paper_detail(conn, user_id, int(row["id"])) if row else {}
+    account_id = int(account["id"])
+    if source_type == "draft":
+        conn.execute("UPDATE invest_quant_draft SET project_id=?, updated_at=to_char(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE user_id=? AND id=?", (pid, user_id, source_id))
+    if strategy_row:
+        conn.execute("UPDATE invest_quant_strategy SET paper_id=?, project_id=? WHERE id=?", (account_id, pid, strategy_row["id"]))
+    else:
+        row = rules.one(
+            conn,
+            "INSERT INTO invest_quant_strategy (user_id,name,factors,universe,status,project_id,backtest_id,paper_id,created_at,updated_at) "
+            "VALUES (?,?,?::jsonb,?,'tracking',?,?,?,to_char(NOW(),'YYYY-MM-DD HH24:MI:SS'),to_char(NOW(),'YYYY-MM-DD HH24:MI:SS')) RETURNING id",
+            (user_id, name, json.dumps(selected, ensure_ascii=False), _normalize_universe(universe), pid, backtest_id, account_id),
+        )
+        if row:
+            strategy_row = rules.one(conn, "SELECT * FROM invest_quant_strategy WHERE id=?", (row["id"],))
+    return paper_detail(conn, user_id, account_id)
 
 
 def paper_detail(conn: Any, user_id: int, paper_id: int) -> dict[str, Any] | None:
-    row = _paper_row(conn, user_id, paper_id)
-    if not row:
+    from services.paper import paper_store
+    from services.strategy import strategy_store
+
+    try:
+        data = paper_store.get_account(user_id, int(paper_id))
+    except (KeyError, ValueError):
         return None
-    factors = _row_json(row, "factors", [])
-    selected = _normalize_factors(factors)
-    universe = _normalize_universe(row.get("universe"))
-    panel = _load_panel(conn, universe)
-    capital = _num(row.get("start_capital")) or 1_000_000.0
-    start = _date(row.get("start_date"))
+    account = data.get("account") or {}
+    project_id = str(account.get("projectId") or "")
     try:
-        start_idx = next(i for i, d in enumerate(panel["dates"]) if d >= start)
-    except StopIteration:
-        snap = {"deviation": None, "today": None, "max_drawdown": None,
-                "cumulative": 0.0, "position_count": 0, "run_days": 0, "date": panel["data_date"]}
-        try:
-            conn.execute("UPDATE invest_quant_paper SET last_snapshot=?::jsonb, updated_at=to_char(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=?", (json.dumps(snap, ensure_ascii=False), paper_id))
-        except Exception:
-            pass
-        return {
-            "id": row["id"], "name": row.get("name"), "status": "running",
-            "start_capital": capital, "start_date": start, "data_date": panel["data_date"], "run_days": 0,
-            "cumulative": 0.0, "today": None, "deviation": None,
-            "metrics": {}, "positions": [], "trades": [],
-            "message": "还没有持仓，等下一次调仓", "factors": _row_factor_meta(row),
-            "universe": universe, "universe_name": UNIVERSES[universe]["name"], "positions_empty_text": "还没有持仓，等下一次调仓",
-        }
-    # 从创建后的第一个交易日开始，按月调仓；不产生真实委托。
-    end = len(panel["dates"]) - 1
-    groups = _monthly_groups(panel, start_idx, end)
-    nav = 1.0
-    navs = [1.0]
-    old_weights: dict[str, float] = {}
-    trades: list[dict[str, Any]] = []
-    positions: list[str] = []
-    peak = 1.0
-    max_dd = 0.0
-    for r_idx, p_end in groups:
-        picked = _pick(panel, r_idx, selected)
-        if not picked:
-            continue
-        weights = {s: 1.0 / len(picked) for s in picked}
-        for symbol in set(weights) | set(old_weights):
-            before = old_weights.get(symbol, 0.0)
-            after = weights.get(symbol, 0.0)
-            if abs(after - before) < 1e-9:
-                continue
-            trades.append({
-                "date": panel["dates"][r_idx],
-                "code": symbol,
-                "name": panel["name"].get(symbol, symbol),
-                "side": "buy" if after > before else "sell",
-                "weight_before": round(before * 100, 2),
-                "weight_after": round(after * 100, 2),
-                "weight_delta": round((after - before) * 100, 2),
-                "price": (panel["close"].get(symbol) or [None] * len(panel["dates"]))[r_idx],
-                "simulated": True,
-            })
-        turnover = 1.0 if not old_weights else 0.5 * sum(
-            abs(weights.get(s, 0.0) - old_weights.get(s, 0.0)) for s in set(weights) | set(old_weights)
-        )
-        nav *= 1.0 - turnover * COST_ONE_WAY
-        for i in range(r_idx, p_end + 1):
-            if i >= end:
-                break
-            port_ret = 0.0
-            covered = 0.0
-            for symbol, weight in weights.items():
-                r = _ret_next(panel, symbol, i)
-                if r is not None:
-                    port_ret += weight * r
-                    covered += weight
-            if covered > 0 and covered < 1:
-                port_ret /= covered
-            nav = float(nav * (1.0 + port_ret))
-            navs.append(nav)
-            peak = max(peak, nav)
-            max_dd = min(max_dd, nav / peak - 1)
-        old_weights = weights
-        positions = picked
-    # 与同区间回测对照。
-    deviation = None
-    try:
-        bt = run_backtest(conn, selected, universe, start_date=start)
-        deviation = round(((nav - 1) * 100) - (bt["metrics"].get("cumulative") or 0), 2)
-    except QuantDataError:
-        bt = None
-    daily = _daily_rets(navs)
-    vol = (_stdev(daily) or 0.0) * math.sqrt(252) * 100
-    annual = _annualized(navs)
-    sharpe = ((annual or 0.0) / 100.0 - RISK_FREE) / (vol / 100.0) if vol > 0 else None
-    metrics = {
-        "cumulative": _pct((nav - 1) * 100),
-        "annual_return": _pct(annual),
-        "max_drawdown": _pct(max_dd * 100),
-        "sharpe": float(round(sharpe, 2)) if sharpe is not None else None,
-        "volatility": _pct(vol),
-        "excess": _pct(deviation) if deviation is not None else None,
-    }
-    latest_date = panel["dates"][end]
-    position_rows = []
-    for symbol in positions:
-        price = (panel["close"].get(symbol) or [None] * len(panel["dates"]))[end]
-        weight = 1.0 / len(positions) if positions else 0.0
-        position_rows.append({
-            "code": symbol, "name": panel["name"].get(symbol, symbol),
-            "weight": round(weight * 100, 2),
-            "price": price,
-            "market_value": round(capital * nav * weight, 2) if price else None,
+        project = strategy_store.get_project(user_id, project_id).get("project") or {}
+    except KeyError:
+        return None
+    cfg = project.get("config") or {}
+    if not cfg.get("quant"):
+        return None
+    strategy_row = _strategy_for_project(conn, user_id, project_id)
+    summary = _paper_summary(conn, user_id, account, strategy_row)
+    positions = []
+    total_equity = float(account.get("totalEquity") or 0.0)
+    for position in summary.get("positions") or []:
+        value = position.get("marketValue")
+        positions.append({
+            "code": position.get("symbol"),
+            "name": position.get("symbol"),
+            "weight": round((float(value) / total_equity * 100), 2) if value and total_equity else 0.0,
+            "price": position.get("markPrice"),
+            "market_value": value,
         })
-    snap = {"deviation": deviation, "today": _pct((nav / navs[-2] - 1) * 100) if len(navs) > 1 else None,
-            "max_drawdown": _pct(max_dd * 100), "cumulative": _pct((nav - 1) * 100),
-            "position_count": len(positions), "run_days": max(0, len(navs) - 1), "date": latest_date}
     try:
-        conn.execute("UPDATE invest_quant_paper SET last_snapshot=?::jsonb, updated_at=to_char(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=?", (json.dumps(snap, ensure_ascii=False), paper_id))
+        fills = paper_store.list_fills(user_id, int(paper_id), limit=100).get("fills") or []
     except Exception:
-        pass
+        fills = []
+    trades = [
+        {
+            "date": item.get("settlementDate"),
+            "code": item.get("symbol"),
+            "name": item.get("symbol"),
+            "side": "buy" if str(item.get("side") or "").lower() in {"buy", "b"} else "sell",
+            "weight_before": 0.0,
+            "weight_after": 0.0,
+            "weight_delta": 0.0,
+            "price": item.get("price"),
+            "quantity": item.get("quantity"),
+            "simulated": True,
+        }
+        for item in fills
+    ]
+    curve = [
+        {"date": point.get("date"), "nav": float(point.get("totalEquity") or 0) / (summary.get("initial_cash") or 1)}
+        for point in (summary.get("equity") or [])
+    ]
+    metrics = {
+        "cumulative": summary.get("cumulative"),
+        "annual_return": summary.get("annual_return"),
+        "max_drawdown": summary.get("max_drawdown"),
+        "sharpe": summary.get("sharpe"),
+        "volatility": summary.get("volatility"),
+        "excess": summary.get("deviation"),
+    }
     return {
-        "id": row["id"], "name": row.get("name"), "status": row.get("status") or "running",
-        "start_capital": capital, "start_date": start, "data_date": latest_date,
-        "run_days": max(0, len(navs) - 1), "cumulative": _pct((nav - 1) * 100),
-        "today": snap["today"], "deviation": deviation,
-        "metrics": metrics, "positions": position_rows if positions else [],
-        "trades": trades[-80:], "factors": _row_factor_meta(row),
-        "universe": universe, "universe_name": UNIVERSES[universe]["name"],
-        "backtest": bt, "curve": [{"date": panel["dates"][start_idx + i] if start_idx + i < len(panel["dates"]) else latest_date, "nav": n} for i, n in enumerate(navs)],
+        "id": int(paper_id),
+        "name": account.get("name"),
+        "status": "running" if account.get("status") == "active" else account.get("status"),
+        "start_capital": summary.get("initial_cash"),
+        "start_date": summary.get("start_date"),
+        "data_date": summary.get("data_date"),
+        "run_days": summary.get("run_days") or 0,
+        "cumulative": summary.get("cumulative"),
+        "today": summary.get("today"),
+        "deviation": summary.get("deviation"),
+        "metrics": metrics,
+        "positions": positions,
+        "trades": trades,
+        "factors": _row_factor_meta({"factors": cfg.get("quant_factors") or []}),
+        "universe": cfg.get("quant_universe") or "hs300",
+        "universe_name": UNIVERSES.get(cfg.get("quant_universe") or "hs300", {}).get("name"),
+        "curve": curve,
         "message": None if positions else "还没有持仓，等下一次调仓",
-        "disclaimer": "模拟盘只做记账，不接券商、不产生真实委托；历史记录，非建议。",
+        "disclaimer": "模拟盘由 ResearchEngine 结算，只做记账，不接券商、不产生真实委托；历史记录，非建议。",
     }
 
 
 def list_papers(conn: Any, user_id: int) -> dict[str, Any]:
-    rows = rules.rows(
-        conn,
-        "SELECT p.*, s.name AS strategy_name FROM invest_quant_paper p "
-        "LEFT JOIN invest_quant_strategy s ON s.id=p.strategy_id WHERE p.user_id=? ORDER BY p.id DESC",
-        (user_id,),
-    )
+    from services.paper import paper_store
+
+    projects = _quant_projects(user_id)
+    accounts = paper_store.list_accounts(user_id).get("accounts") or []
     items = []
-    for row in rows:
-        snap = _row_json(row, "last_snapshot", {}) or {}
+    for account in accounts:
+        pid = str(account.get("projectId") or "")
+        if pid not in projects:
+            continue
+        strategy_row = _strategy_for_project(conn, user_id, pid)
+        summary = _paper_summary(conn, user_id, account, strategy_row)
         items.append({
-            "id": row.get("id"), "name": row.get("name"),
-            "strategy_name": row.get("strategy_name") or "—",
-            "position_count": snap.get("position_count"),
-            "run_days": snap.get("run_days"), "cumulative": snap.get("cumulative"),
-            "today": snap.get("today"), "deviation": snap.get("deviation"),
-            "status": row.get("status") or "running", "start_date": row.get("start_date"),
+            "id": account.get("id"),
+            "name": account.get("name"),
+            "strategy_name": (strategy_row or {}).get("name") or account.get("projectName") or "—",
+            "position_count": summary.get("position_count"),
+            "run_days": summary.get("run_days"),
+            "cumulative": summary.get("cumulative"),
+            "today": summary.get("today"),
+            "deviation": summary.get("deviation"),
+            "status": account.get("status") or "active",
+            "start_date": summary.get("start_date"),
         })
     return {"items": items}
 
 
 def delete_paper(conn: Any, user_id: int, paper_id: int) -> bool:
-    conn.execute("DELETE FROM invest_quant_paper WHERE id=? AND user_id=?", (paper_id, user_id))
+    from services.paper import paper_store
+
+    try:
+        paper_store.update_account(user_id, int(paper_id), {"status": "closed"})
+    except (KeyError, ValueError):
+        return False
     return True
 
 
@@ -1968,113 +2302,106 @@ def delete_paper(conn: Any, user_id: int, paper_id: int) -> bool:
 # 策略广场（示例模板；真实社区策略仍走 /api/strategy/plaza）
 # ---------------------------------------------------------------------------
 
-PLAZA_SEEDS: tuple[dict[str, Any], ...] = (
-    {"title": "低估值 + 质量 · 沪深300", "author": "SVQuant 示例", "factors": [{"key": "value", "direction": "high"}, {"key": "quality", "direction": "high"}], "universe": "hs300"},
-    {"title": "动量 + 低波动 · 中证500", "author": "SVQuant 示例", "factors": [{"key": "momentum", "direction": "high"}, {"key": "volatility", "direction": "low"}], "universe": "zz500"},
-    {"title": "成长 + 流动性 · 全市场", "author": "SVQuant 示例", "factors": [{"key": "growth", "direction": "high"}, {"key": "liquidity", "direction": "high"}], "universe": "all"},
-    {"title": "估值 + 动量 + 质量 · 沪深300", "author": "SVQuant 示例", "factors": [{"key": "value", "direction": "high"}, {"key": "momentum", "direction": "high"}, {"key": "quality", "direction": "high"}], "universe": "hs300"},
-)
+def _plaza_snapshot(row: dict[str, Any]) -> dict[str, Any]:
+    snap = row.get("snapshot") or {}
+    if isinstance(snap, str):
+        try:
+            snap = json.loads(snap)
+        except ValueError:
+            snap = {}
+    return snap if isinstance(snap, dict) else {}
 
 
-def _ensure_plaza(conn: Any) -> None:
-    count = rules.one(conn, "SELECT COUNT(*) AS n FROM invest_quant_plaza")
-    if count and int(count.get("n") or 0) > 0:
-        return
-    for seed in PLAZA_SEEDS:
-        conn.execute(
-            "INSERT INTO invest_quant_plaza (title,author_name,factors,universe,range,metrics,curve,followers,is_demo,created_at) "
-            "VALUES (?,?,?::jsonb,?,'1y','{}'::jsonb,'[]'::jsonb,0,TRUE,to_char(NOW(),'YYYY-MM-DD HH24:MI:SS'))",
-            (seed["title"], seed["author"], json.dumps(seed["factors"], ensure_ascii=False), seed["universe"]),
-        )
-
-
-def _plaza_metrics(conn: Any, row: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    metrics = _row_json(row, "metrics", {}) or {}
-    curve = _row_json(row, "curve", []) or []
-    if metrics:
-        return metrics, curve
-    try:
-        bt = run_backtest(conn, _row_json(row, "factors", []), row.get("universe") or "hs300")
-        metrics = bt.get("metrics") or {}
-        curve = bt.get("curve") or []
-        conn.execute(
-            "UPDATE invest_quant_plaza SET metrics=?::jsonb, curve=?::jsonb WHERE id=?",
-            (json.dumps(metrics, ensure_ascii=False), json.dumps(curve, ensure_ascii=False), row["id"]),
-        )
-    except QuantDataError:
-        metrics, curve = {}, []
-    return metrics, curve
+def _plaza_item(row: dict[str, Any], *, detail: bool = False) -> dict[str, Any]:
+    snap = _plaza_snapshot(row)
+    metrics = _h5_metrics(snap.get("metrics") or {})
+    curve = snap.get("equity_curve") or []
+    values = [float(p.get("value")) for p in curve if isinstance(p, dict) and p.get("value") is not None]
+    author = row.get("author") or {}
+    factors = snap.get("quant_factors") or []
+    date_range = snap.get("date_range") or {}
+    item = {
+        "id": int(row["id"]),
+        "title": row.get("title"),
+        "author": author.get("display_name") or author.get("username") or "社区作者",
+        "factors": _row_factor_meta({"factors": factors}),
+        "universe": str(snap.get("universe") or "").lower(),
+        "universe_name": snap.get("universe_label"),
+        "annual_return": metrics.get("annual_return"),
+        "max_drawdown": metrics.get("max_drawdown"),
+        "sharpe": metrics.get("sharpe"),
+        "curve": values[-60:],
+        "followers": int(row.get("view_count") or 0),
+        "followed": False,
+        "is_demo": False,
+        "range": snap.get("range_label") or (
+            f"{date_range.get('start')} ~ {date_range.get('end')}" if date_range else "近 1 年"
+        ),
+    }
+    if detail:
+        item.update({
+            "metrics": metrics,
+            "curve_points": [
+                {"date": p.get("date"), "nav": p.get("value")}
+                for p in curve if isinstance(p, dict) and p.get("date") and p.get("value") is not None
+            ],
+            "curve": [
+                {"date": p.get("date"), "nav": p.get("value")}
+                for p in curve if isinstance(p, dict) and p.get("date") and p.get("value") is not None
+            ],
+            "note": "区间与基准均来自作者回测快照；不能与其它策略横向比较。",
+            "body": row.get("body") or "",
+        })
+    return item
 
 
 def list_plaza(conn: Any, user_id: int, sort: str = "followers") -> dict[str, Any]:
-    _ensure_plaza(conn)
-    rows = rules.rows(conn, "SELECT * FROM invest_quant_plaza ORDER BY id DESC")
-    items = []
-    for row in rows:
-        metrics, curve = _plaza_metrics(conn, row)
-        follows = rules.one(conn, "SELECT COUNT(*) AS n FROM invest_quant_plaza_follow WHERE plaza_id=?", (row["id"],))
-        follower_count = int((follows or {}).get("n") or 0)
-        mine = rules.one(conn, "SELECT 1 AS n FROM invest_quant_plaza_follow WHERE plaza_id=? AND user_id=?", (row["id"], user_id))
-        items.append({
-            "id": row["id"], "title": row.get("title"), "author": row.get("author_name") or "示例",
-            "factors": _row_factor_meta(row), "universe": row.get("universe"),
-            "universe_name": UNIVERSES.get(row.get("universe"), {}).get("name"),
-            "annual_return": metrics.get("annual_return"), "max_drawdown": metrics.get("max_drawdown"),
-            "sharpe": metrics.get("sharpe"), "curve": [c.get("nav") for c in curve[-40:]],
-            "followers": follower_count, "followed": bool(mine), "is_demo": bool(row.get("is_demo")),
-            "range": "近 1 年",
-        })
-    if sort == "annual":
-        items.sort(key=lambda x: x.get("annual_return") or -999, reverse=True)
-    elif sort == "mdd":
-        items.sort(key=lambda x: x.get("max_drawdown") or 999)
-    else:
-        items.sort(key=lambda x: x.get("followers") or 0, reverse=True)
+    from services.strategy import strategy_plaza_store
+
+    sort_key = {"annual": "annual", "mdd": "mdd", "followers": "views"}.get(sort, "views")
+    data = strategy_plaza_store.list_plaza_items(limit=100, sort=sort_key)
+    items = [_plaza_item(row) for row in (data.get("items") or [])]
     label = {"annual": "收益榜", "mdd": "回撤榜", "followers": "关注榜"}.get(sort, "关注榜")
     return {
-        "items": items, "sort": sort, "sort_label": label,
+        "items": items,
+        "sort": sort,
+        "sort_label": label,
         "note": f"当前排序：{label}；年化与回撤取自作者回测快照，未做跨策略统一，不能横向比大小。",
-        "disclaimer": "示例策略 · 历史数据不代表未来 · 不构成推荐。",
+        "disclaimer": "社区策略快照 · 历史数据不代表未来 · 不构成推荐。",
     }
 
 
 def get_plaza(conn: Any, user_id: int, plaza_id: int) -> dict[str, Any] | None:
-    row = rules.one(conn, "SELECT * FROM invest_quant_plaza WHERE id=?", (plaza_id,))
-    if not row:
-        return None
-    metrics, curve = _plaza_metrics(conn, row)
-    mine = rules.one(conn, "SELECT 1 AS n FROM invest_quant_plaza_follow WHERE plaza_id=? AND user_id=?", (plaza_id, user_id))
-    follows = rules.one(conn, "SELECT COUNT(*) AS n FROM invest_quant_plaza_follow WHERE plaza_id=?", (plaza_id,))
-    return {
-        "id": row["id"], "title": row.get("title"), "author": row.get("author_name") or "示例",
-        "factors": _row_factor_meta(row), "universe": row.get("universe"),
-        "universe_name": UNIVERSES.get(row.get("universe"), {}).get("name"),
-        "metrics": metrics, "curve": curve, "followers": int((follows or {}).get("n") or 0),
-        "followed": bool(mine), "is_demo": bool(row.get("is_demo")),
-        "note": "区间与基准均来自作者回测快照；不能与其它策略横向比较。",
-    }
+    from services.strategy import strategy_plaza_store
+
+    row = strategy_plaza_store.get_plaza_item(int(plaza_id), bump_view=False)
+    return _plaza_item(row, detail=True) if row else None
 
 
 def copy_plaza(conn: Any, user_id: int, plaza_id: int) -> dict[str, Any]:
-    row = rules.one(conn, "SELECT * FROM invest_quant_plaza WHERE id=?", (plaza_id,))
+    from services.strategy import strategy_plaza_store
+
+    row = strategy_plaza_store.get_plaza_item(int(plaza_id), bump_view=False)
     if not row:
         raise QuantDataError("策略不存在")
+    snap = _plaza_snapshot(row)
+    factors = snap.get("quant_factors") or []
+    if not factors:
+        raise QuantDataError("该策略没有手机端因子配置，无法复制到草稿")
     return create_draft(conn, user_id, {
-        "name": f"{row.get('title')}（副本）", "factors": _row_json(row, "factors", []),
-        "universe": row.get("universe"),
+        "name": f"{row.get('title')}（副本）", "factors": factors,
+        "universe": snap.get("quant_universe") or "hs300",
     })
 
 
 def follow_plaza(conn: Any, user_id: int, plaza_id: int, followed: bool) -> dict[str, Any]:
-    if followed:
-        conn.execute(
-            "INSERT INTO invest_quant_plaza_follow (user_id,plaza_id) VALUES (?,?) ON CONFLICT DO NOTHING",
-            (user_id, plaza_id),
-        )
-    else:
-        conn.execute("DELETE FROM invest_quant_plaza_follow WHERE user_id=? AND plaza_id=?", (user_id, plaza_id))
-    row = rules.one(conn, "SELECT COUNT(*) AS n FROM invest_quant_plaza_follow WHERE plaza_id=?", (plaza_id,))
-    return {"followed": followed, "followers": int((row or {}).get("n") or 0)}
+    """关注暂不落库：复用现有广场 view_count，前端用本机收藏状态。"""
+    from services.strategy import strategy_plaza_store
+
+    row = strategy_plaza_store.get_plaza_item(int(plaza_id), bump_view=False)
+    if not row:
+        raise QuantDataError("策略不存在")
+    return {"followed": bool(followed), "followers": int(row.get("view_count") or 0)}
 
 
 # ---------------------------------------------------------------------------

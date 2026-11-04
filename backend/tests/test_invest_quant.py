@@ -7,6 +7,7 @@ from datetime import date, timedelta
 import pytest
 
 from services.invest import quant
+from services.invest import quant_re
 
 
 def _fake_panel(n_dates: int = 45, n_symbols: int = 8) -> dict:
@@ -104,6 +105,63 @@ def test_backtest_persist_false_has_assumptions(monkeypatch):
     assert out["assumptions"]["holdings"] == 20
     assert out["holdings"]
     assert out["disclaimer"].startswith("历史回测")
+
+
+def test_re_adapter_builds_strategy_code_for_supported_factors():
+    code = quant_re.build_strategy_code([
+        {"key": "value", "direction": "high"},
+        {"key": "momentum", "direction": "high"},
+        {"key": "volatility", "direction": "low"},
+        {"key": "liquidity", "direction": "high"},
+    ])
+    assert "FactorPortfolioStrategy" in code
+    assert "1.0 / self.pe_ttm" in code
+    assert "self.close.shift(1).pct_change(20)" in code
+    assert "-self.close.pct_change().rolling(20).std()" in code
+    assert "self.amount.rolling(20).mean()" in code
+    assert "self.rank" in code
+
+
+def test_re_adapter_rejects_fundamental_factors():
+    assert quant_re.supports([{"key": "value"}])
+    assert not quant_re.supports([{"key": "quality"}, {"key": "growth"}])
+    assert quant_re.build_strategy_code([{"key": "quality"}]) == ""
+    assert set(quant_re.unsupported_keys([{"key": "value"}, {"key": "growth"}])) == {"growth"}
+
+
+def test_re_adapter_maps_sync_strategy_result(monkeypatch):
+    fake = {
+        "metrics": {
+            "annual_return": 0.12,
+            "max_drawdown": -0.08,
+            "sharpe": 1.1,
+            "win_rate": 0.55,
+            "volatility": 0.16,
+            "beta": 0.9,
+            "alpha": 0.03,
+            "benchmark_return": 0.04,
+            "excess_return": 0.08,
+            "total_return": 0.12,
+            "trade_count": 12,
+        },
+        "equity_curve": [{"date": "2026-01-01", "value": 1.0}, {"date": "2026-01-02", "value": 1.12}],
+        "benchmark_curve": [{"date": "2026-01-01", "value": 1.0}, {"date": "2026-01-02", "value": 1.04}],
+        "date_range": {"start": "2026-01-01", "end": "2026-01-02"},
+        "positions": [{"date": "2026-01-02", "holdings": [{"symbol": "600519.SH", "name": "贵州茅台", "weight": 1.0}]}],
+    }
+    monkeypatch.setattr(
+        quant_re, "_forward_re", lambda *args, **kwargs: (200, {}, fake)
+    )
+    out = quant_re.run_re_strategy(
+        factors=[{"key": "value", "direction": "high"}, {"key": "momentum", "direction": "high"}],
+        universe="hs300", start_date="2026-01-01", end_date="2026-01-02", name="RE测试",
+    )
+    assert out is not None
+    assert out["engine"] == "re"
+    assert out["metrics"]["annual_return"] == 12.0
+    assert out["metrics"]["max_drawdown"] == -8.0
+    assert out["holdings"][0]["code"] == "600519.SH"
+    assert out["curve"][-1]["benchmark"] == 1.04
 
 
 def test_factor_direction_low_inverts_score():

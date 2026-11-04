@@ -376,6 +376,7 @@ def quant_backtest_create(
         persist=True,
         user_id=_uid(user),
         name=body.get("name"),
+        project_id=body.get("project_id"),
     )
     conn.commit()
     return data
@@ -383,7 +384,7 @@ def quant_backtest_create(
 
 @router.get("/quant/backtests/{backtest_id}")
 def quant_backtest_detail(
-    backtest_id: int,
+    backtest_id: str,
     user: dict[str, Any] = Depends(require_user),
     conn: PGConn = Depends(invest_conn),
 ) -> dict[str, Any]:
@@ -395,7 +396,7 @@ def quant_backtest_detail(
 
 @router.post("/quant/backtests/{backtest_id}/commentary")
 def quant_backtest_commentary(
-    backtest_id: int,
+    backtest_id: str,
     user: dict[str, Any] = Depends(require_user),
     conn: PGConn = Depends(invest_conn),
 ) -> dict[str, Any]:

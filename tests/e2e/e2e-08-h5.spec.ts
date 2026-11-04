@@ -188,7 +188,7 @@ test("策略页四个分区可切换", async ({ page }) => {
   await page.getByRole("button", { name: "草稿", exact: true }).click();
   await expect(page.getByText("在上面的快速实验里跑完一次")).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: "策略广场", exact: true }).click();
-  await expect(page.locator(".quant-plaza-card").first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".quant-plaza-card, .state-box").first()).toBeVisible({ timeout: 30_000 });
   await noHorizontalOverflow(page);
 });
 

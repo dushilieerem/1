@@ -90,6 +90,7 @@ export default function QuantBacktestReport() {
               </Tag>
             ))}
             <Tag tone="blue">{universeLabel(data.universe, t)}</Tag>
+            <Tag tone={data.engine === "re" ? "green" : "amber"}>{data.engine === "re" ? t("RE 回测", "RE engine") : t("本地降级", "Local fallback")}</Tag>
             {data.shortened ? <Tag tone="amber">{t("已缩短区间", "Shortened range")}</Tag> : null}
           </div>
 
@@ -160,6 +161,13 @@ export default function QuantBacktestReport() {
           ) : null}
 
           <p className="quant-foot">{data.disclaimer || t("历史回测 · 非真实收益 · 不代表未来", "Historical backtest · not real returns · not indicative of future results")}</p>
+          {data.engine !== "re" ? (
+            <p className="quant-foot">
+              {data.engine_reason === "unsupported_factors"
+                ? t("口径说明：含 RE 暂无的基本面因子，本报告由本地数据补算。", "Basis: contains a factor not yet in RE; this report was computed locally.")
+                : t("口径说明：RE 暂不可用，本报告为本地降级计算。", "Basis: RE was unavailable; this report used the local fallback.")}
+            </p>
+          ) : null}
         </>
       ) : null}
     </div>

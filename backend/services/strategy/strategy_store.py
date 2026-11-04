@@ -623,6 +623,8 @@ def _list_runs_query(user_id: int, *, project_id: str | None) -> dict[str, Any]:
                 SELECT id, project_id, name, description, remark, flagged, verified, result_hash,
                        finished_at, elapsed_sec,
                        COALESCE(result->'metrics', '{}'::jsonb) AS metrics,
+                       COALESCE(result->'date_range', '{}'::jsonb) AS date_range,
+                       COALESCE(request->'quant_factors', '[]'::jsonb) AS quant_factors,
                        NULLIF(TRIM(COALESCE(
                          request->>'universe',
                          result->'meta'->>'universe',
@@ -640,6 +642,8 @@ def _list_runs_query(user_id: int, *, project_id: str | None) -> dict[str, Any]:
                 SELECT id, project_id, name, description, remark, flagged, verified, result_hash,
                        finished_at, elapsed_sec,
                        COALESCE(result->'metrics', '{}'::jsonb) AS metrics,
+                       COALESCE(result->'date_range', '{}'::jsonb) AS date_range,
+                       COALESCE(request->'quant_factors', '[]'::jsonb) AS quant_factors,
                        NULLIF(TRIM(COALESCE(
                          request->>'universe',
                          result->'meta'->>'universe',
@@ -661,6 +665,20 @@ def _list_runs_query(user_id: int, *, project_id: str | None) -> dict[str, Any]:
         slim_req: dict[str, Any] = {}
         if universe:
             slim_req["universe"] = universe
+        quant_factors = row.get("quant_factors")
+        if isinstance(quant_factors, str):
+            try:
+                quant_factors = json.loads(quant_factors)
+            except ValueError:
+                quant_factors = []
+        if quant_factors:
+            slim_req["quant_factors"] = quant_factors
+        date_range = row.get("date_range") or {}
+        if isinstance(date_range, str):
+            try:
+                date_range = json.loads(date_range)
+            except ValueError:
+                date_range = {}
         runs.append(
             {
                 "id": row["id"],
@@ -671,7 +689,7 @@ def _list_runs_query(user_id: int, *, project_id: str | None) -> dict[str, Any]:
                 "flagged": bool(row.get("flagged")),
                 "verified": bool(row.get("verified")),
                 "request": slim_req,
-                "result": {"metrics": metrics},
+                "result": {"metrics": metrics, "date_range": date_range},
                 "finishedAt": _iso(row.get("finished_at")),
                 "elapsedSec": float(row.get("elapsed_sec") or 0),
             }

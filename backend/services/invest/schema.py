@@ -159,7 +159,7 @@ DDL: tuple[str, ...] = (
       id BIGSERIAL PRIMARY KEY,
       user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       name TEXT NOT NULL, factors JSONB NOT NULL DEFAULT '[]'::jsonb,
-      universe TEXT NOT NULL DEFAULT 'hs300', last_backtest_id BIGINT,
+      universe TEXT NOT NULL DEFAULT 'hs300', project_id TEXT, last_backtest_id TEXT,
       created_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
       updated_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
     )
@@ -174,7 +174,7 @@ DDL: tuple[str, ...] = (
       user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       name TEXT NOT NULL, factors JSONB NOT NULL DEFAULT '[]'::jsonb,
       universe TEXT NOT NULL DEFAULT 'hs300', status TEXT NOT NULL DEFAULT 'tracking',
-      backtest_id BIGINT, paper_id BIGINT,
+      project_id TEXT, backtest_id TEXT, paper_id BIGINT,
       created_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
       updated_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
     )
@@ -183,57 +183,8 @@ DDL: tuple[str, ...] = (
     CREATE INDEX IF NOT EXISTS idx_invest_quant_strategy_user
       ON invest_quant_strategy (user_id, id DESC)
     """,
-    """
-    CREATE TABLE IF NOT EXISTS invest_quant_backtest (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      name TEXT NOT NULL, factors JSONB NOT NULL DEFAULT '[]'::jsonb,
-      universe TEXT NOT NULL DEFAULT 'hs300', start_date TEXT, end_date TEXT,
-      metrics JSONB NOT NULL DEFAULT '{}'::jsonb, curve JSONB NOT NULL DEFAULT '[]'::jsonb,
-      assumptions JSONB NOT NULL DEFAULT '{}'::jsonb, holdings JSONB NOT NULL DEFAULT '[]'::jsonb,
-      shortened BOOLEAN NOT NULL DEFAULT FALSE,
-      created_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
-    )
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_invest_quant_backtest_user
-      ON invest_quant_backtest (user_id, id DESC)
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS invest_quant_paper (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      name TEXT NOT NULL, strategy_id BIGINT, factors JSONB NOT NULL DEFAULT '[]'::jsonb,
-      universe TEXT NOT NULL DEFAULT 'hs300', start_capital DOUBLE PRECISION NOT NULL DEFAULT 1000000,
-      start_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'running',
-      last_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
-      updated_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
-    )
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_invest_quant_paper_user
-      ON invest_quant_paper (user_id, id DESC)
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS invest_quant_plaza (
-      id BIGSERIAL PRIMARY KEY,
-      title TEXT NOT NULL, author_name TEXT, factors JSONB NOT NULL DEFAULT '[]'::jsonb,
-      universe TEXT NOT NULL DEFAULT 'hs300', range TEXT NOT NULL DEFAULT '1y',
-      metrics JSONB NOT NULL DEFAULT '{}'::jsonb, curve JSONB NOT NULL DEFAULT '[]'::jsonb,
-      followers INTEGER NOT NULL DEFAULT 0, is_demo BOOLEAN NOT NULL DEFAULT TRUE,
-      created_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS invest_quant_plaza_follow (
-      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      plaza_id BIGINT NOT NULL REFERENCES invest_quant_plaza(id) ON DELETE CASCADE,
-      created_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
-      PRIMARY KEY (user_id, plaza_id)
-    )
-    """,
 )
+
 
 VIEWS: tuple[str, ...] = (
     "DROP VIEW IF EXISTS stocks, bars, valuations, financials, news, indices, topics, topic_bars, topic_stocks, watchlist, events, event_logs, portfolio, portfolio_meta, risk_profiles, meta, auth_events CASCADE",
@@ -443,6 +394,10 @@ def ensure_invest_schema() -> None:
         # 旧库先补列，再重建 stocks UNION 视图，避免列数不一致。
         conn.execute("ALTER TABLE invest_stocks ADD COLUMN IF NOT EXISTS market TEXT")
         conn.execute("ALTER TABLE invest_etf ADD COLUMN IF NOT EXISTS market TEXT")
+        conn.execute("ALTER TABLE invest_quant_draft ADD COLUMN IF NOT EXISTS project_id TEXT")
+        conn.execute("ALTER TABLE invest_quant_draft ALTER COLUMN last_backtest_id TYPE TEXT USING last_backtest_id::text")
+        conn.execute("ALTER TABLE invest_quant_strategy ADD COLUMN IF NOT EXISTS project_id TEXT")
+        conn.execute("ALTER TABLE invest_quant_strategy ALTER COLUMN backtest_id TYPE TEXT USING backtest_id::text")
         for ddl in VIEWS:
             conn.execute(ddl)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invest_stocks_market ON invest_stocks (market)")

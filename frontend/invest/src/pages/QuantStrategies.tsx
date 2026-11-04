@@ -216,7 +216,7 @@ export default function QuantStrategies() {
     }
   };
 
-  const startPaper = async (sourceType: "backtest" | "draft", sourceId: number, name?: string) => {
+  const startPaper = async (sourceType: "backtest" | "draft", sourceId: string | number, name?: string) => {
     try {
       const data = await api<any>("/api/invest/quant/papers", {
         method: "POST",
@@ -435,9 +435,21 @@ export default function QuantStrategies() {
             <section className="card quant-result">
               <div className="card-title-row">
                 <h2>{t("回测结果", "Backtest result")}</h2>
-                <Tag tone={backtest.shortened ? "amber" : "green"}>{backtest.shortened ? t("已缩短区间", "Shortened range") : t("近 1 年", "Last year")}</Tag>
+                <div className="row gap6">
+                  <Tag tone={backtest.engine === "re" ? "green" : "amber"}>
+                    {backtest.engine === "re" ? t("RE 回测", "RE engine") : t("本地降级", "Local fallback")}
+                  </Tag>
+                  <Tag tone={backtest.shortened ? "amber" : "gray"}>{backtest.shortened ? t("已缩短区间", "Shortened range") : t("近 1 年", "Last year")}</Tag>
+                </div>
               </div>
               <p className="hint">{backtest.start_date} ~ {backtest.end_date} · {universeLabel(backtest.universe, t)}</p>
+              {backtest.engine !== "re" ? (
+                <p className="hint">
+                  {backtest.engine_reason === "unsupported_factors"
+                    ? t("该组合含 RE 暂无的基本面因子，本次由本地数据补算；指标口径仍按同一套公式。", "This combo contains a factor not yet in RE; it was computed locally with the same metric definitions.")
+                    : t("RE 暂不可用，本次由本地降级计算，结果页已标注。", "RE was unavailable; this run used the local fallback and is labeled accordingly.")}
+                </p>
+              ) : null}
               <div className="kpi-grid quant-kpi-grid">
                 {METRIC_ROWS.map(([key, zh, en, style]) => (
                   <div className="kpi" key={key}>
@@ -522,13 +534,20 @@ export default function QuantStrategies() {
           </div>
           <p className="hint">{t("年化与回撤来自作者回测快照，未做跨策略统一，不能横向比大小。", "Figures come from author snapshots, are not normalized, and cannot be compared across strategies.")}</p>
           {loading ? <LoadingCards rows={3} /> : null}
+          {!loading && !plaza.length ? (
+            <div className="state-box">
+              <div className="empty-dot" />
+              <b>{t("广场暂时没有公开策略", "No public strategies yet")}</b>
+              <p>{t("网页端发布带因子配置的回测快照后，会出现在这里。", "Backtest snapshots with factor configs will appear here after they are published on the web.")}</p>
+            </div>
+          ) : null}
           {plaza.map((item) => (
             <section className="card quant-plaza-card" key={item.id}>
               <div className="card-title-row">
                 <h2>{item.title}</h2>
                 {item.is_demo ? <Tag tone="gray">{t("示例", "Demo")}</Tag> : null}
               </div>
-              <p className="hint">{item.author} · {universeLabel(item.universe, t)} · {t("关注", "Followers")} {item.followers}</p>
+              <p className="hint">{item.author} · {universeLabel(item.universe, t)} · {t("浏览", "Views")} {item.followers}</p>
               <div className="quant-plaza-metrics">
                 <div><span>{t("年化", "Annual")}</span><b className={trendClass(item.annual_return)}>{metric(item.annual_return, "pct")}</b></div>
                 <div><span>{t("最大回撤", "Max DD")}</span><b>{metric(item.max_drawdown, "pct")}</b></div>
@@ -537,7 +556,7 @@ export default function QuantStrategies() {
               <div className="row between">
                 <Sparkline values={item.curve || []} width={190} height={36} />
                 <button className={`link-btn ${item.followed ? "on" : ""}`} onClick={() => void followPlaza(item)}>
-                  <Bookmark size={13} /> {item.followed ? t("已关注", "Following") : t("关注", "Follow")}
+                  <Bookmark size={13} /> {item.followed ? t("已收藏", "Saved") : t("收藏", "Save")}
                 </button>
               </div>
               <button className="btn btn-ghost btn-sm w100" onClick={() => void openPlaza(item)}>{t("查看详情", "View details")}</button>
@@ -556,7 +575,7 @@ export default function QuantStrategies() {
           plazaDetail ? (
             <div className="row gap6">
               <button className="btn btn-ghost btn-sm" onClick={() => void followPlaza(plazaDetail as unknown as PlazaItem)}>
-                <Bookmark size={14} /> {plazaDetail.followed ? t("已关注", "Following") : t("关注", "Follow")}
+                <Bookmark size={14} /> {plazaDetail.followed ? t("已收藏", "Saved") : t("收藏", "Save")}
               </button>
               <button className="btn btn-primary btn-sm" onClick={() => void copyPlaza(plazaDetail.id)}>
                 <Copy size={14} /> {t("复制到我的草稿", "Copy to drafts")}

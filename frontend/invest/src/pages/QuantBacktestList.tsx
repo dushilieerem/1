@@ -7,7 +7,7 @@ import { useLocale } from "../i18n";
 import { fmtSignedPct, trendClass, universeLabel } from "../quant";
 
 type Row = {
-  id: number;
+  id: string;
   name: string;
   factors: Array<{ name: string; name_en: string }>;
   universe: string;

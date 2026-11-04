@@ -39,6 +39,7 @@ from app.routers import (  # noqa: E402
     factor,
     health,
     inst,
+    inst_quant,
     inst_workflow,
     invest,
     invest_ai,
@@ -178,6 +179,7 @@ for mod in (
     health,
     auth,
     inst,
+    inst_quant,
     inst_workflow,
     invest,
     invest_ai,
@@ -294,7 +296,7 @@ async def audit_access_log(request: Request, call_next) -> Response:
                 auth = request.headers.get("authorization") or request.headers.get(
                     "Authorization"
                 )
-                user = user_from_authorization(auth) if auth else None
+                user = user_from_authorization(auth, allow_inst=True, allow_quant=True) if auth else None
                 ms = int((time.perf_counter() - t0) * 1000)
                 action = infer_action(method, path)
                 detail = None

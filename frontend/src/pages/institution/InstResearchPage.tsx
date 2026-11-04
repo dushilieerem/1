@@ -5,7 +5,7 @@ import { instApi, fmtNum } from "@/lib/instApi";
 import { getInstToken } from "@/lib/instAuth";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
-import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge, industryLabel } from "./instUi";
+import { Badge, Button, Card, DataFreshness, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge, industryLabel } from "./instUi";
 
 type Dim = {
   key: string;
@@ -235,6 +235,13 @@ export function InstResearchPage() {
     () => dims.find((d) => d.key === activeDim) || dims[0] || null,
     [dims, activeDim],
   );
+  const latestEvidenceDate = useMemo(() => {
+    const dates = (detail?.evidence || [])
+      .map((e) => e.as_of)
+      .filter((d): d is string => Boolean(d))
+      .sort();
+    return dates.length ? dates[dates.length - 1] : null;
+  }, [detail]);
   useEffect(() => {
     if (activeDim !== "memo" && dims.length && !dims.some((d) => d.key === activeDim)) {
       setActiveDim(dims[0].key);
@@ -461,12 +468,22 @@ export function InstResearchPage() {
               <Download className="mr-1 h-4 w-4" />
               {busy === "export" ? t("导出中…", "Exporting…") : t("导出简报", "Export report")}
             </Button>
+            <DataFreshness date={latestEvidenceDate} label={t("证据日", "Evidence")} />
             <StatusBadge status={detail.stage} />
           </div>
         }
       />
 
       {error ? <ErrorBox message={error} onRetry={() => loadDetail(caseId)} /> : null}
+
+      {detail.market && detail.market !== "CN" ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] leading-relaxed text-amber-800">
+          {t(
+            "美股/港股当前只有行情，财务与公告数据未接入；六维结论会大量落入“数据缺口/待补充”，仅用于流程演示。",
+            "US/HK currently has prices only; financials and filings are not ingested. Most dimensions will show data gaps / TBD and are for workflow demo only.",
+          )}
+        </div>
+      ) : null}
 
       {busy === "auto" || hasLiveTasks ? (
         <Card

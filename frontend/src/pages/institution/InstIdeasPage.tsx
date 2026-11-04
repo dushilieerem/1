@@ -4,7 +4,7 @@ import { Briefcase, Eye, Telescope } from "lucide-react";
 import { instApi, fmtNum } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
-import { Badge, Button, Card, Empty, ErrorBox, HelpTip, Loading, PageHeader, StatusBadge } from "./instUi";
+import { Badge, Button, Card, DataFreshness, Empty, ErrorBox, HelpTip, Loading, PageHeader, StatusBadge } from "./instUi";
 
 type Company = {
   id: number;
@@ -208,7 +208,7 @@ export function InstIdeasPage() {
               <div className="flex flex-wrap gap-1.5">
                 <Badge tone="gold">{t("扫描", "Scanned")} {push?.scanned ?? 0}</Badge>
                 <Badge tone="green">{t("符合", "Qualified")} {push?.qualified ?? 0}</Badge>
-                {push?.as_of ? <Badge>{t("数据日", "As of")} {push.as_of}</Badge> : null}
+                <DataFreshness date={push?.as_of} label={t("行情", "Market")} />
               </div>
             }
           >
@@ -234,7 +234,18 @@ export function InstIdeasPage() {
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[#68738b]">
                       <div>
                         <p>{t("参考价", "Reference")}</p>
-                        <p className="font-mono text-[#252533]">{fmtNum(c.ref_price, 2)}</p>
+                        <p className="font-mono text-[#252533]">
+                          {c.ref_price == null ? (
+                            <span
+                              className="text-[#a9a4bd]"
+                              title={t("该标的暂无参考价；不影响其他初筛字段。", "No reference price; other screen fields are unaffected.")}
+                            >
+                              {t("待补充", "TBD")}
+                            </span>
+                          ) : (
+                            fmtNum(c.ref_price, 2)
+                          )}
+                        </p>
                       </div>
                       <div>
                         <p className="flex items-center gap-1">
@@ -350,6 +361,17 @@ export function InstIdeasPage() {
                   </div>
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     <Badge>{c.market}</Badge>
+                    {c.market !== "CN" ? (
+                      <Badge
+                        tone="amber"
+                        title={t(
+                          "美股/港股当前只有行情，财务与公告未接入；研究结论会标记数据缺口。",
+                          "US/HK currently has prices only; financials and filings are not ingested, so research marks data gaps.",
+                        )}
+                      >
+                        {t("暂无基本面", "No fundamentals")}
+                      </Badge>
+                    ) : null}
                     {(c.tags || []).slice(0, 3).map((tag) => (
                       <Badge key={tag} tone="gold">{tag}</Badge>
                     ))}
@@ -359,7 +381,18 @@ export function InstIdeasPage() {
                   </p>
                   <p className="mt-2 text-xs text-[#68738b]">
                     {t("参考价", "Reference")}：
-                    <span className="ml-1 font-mono text-[#252533]">{fmtNum(c.ref_price, 2)}</span>
+                    <span className="ml-1 font-mono text-[#252533]">
+                      {c.ref_price == null ? (
+                        <span
+                          className="text-[#a9a4bd]"
+                          title={t("该标的暂无参考价；美股/港股行情未接入时常见。", "No reference price; common when US/HK market data is not ingested.")}
+                        >
+                          {t("待补充", "TBD")}
+                        </span>
+                      ) : (
+                        fmtNum(c.ref_price, 2)
+                      )}
+                    </span>
                   </p>
                   <div className="mt-4 flex flex-wrap gap-2 border-t border-[#e3eaf8] pt-3">
                     <Button

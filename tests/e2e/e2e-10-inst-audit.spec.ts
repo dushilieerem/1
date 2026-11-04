@@ -121,15 +121,23 @@ test("详情页：研究、辩论、审批（有数据时）", async ({ browser 
   const { ctx, page } = await openPage(browser, TOKENS.manager!);
   if (researchCaseId) {
     await page.goto(`${BASE}/inst/research?case=${researchCaseId}`, { waitUntil: "networkidle" });
-    await expect(page.getByText("六维分析", { exact: true })).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByRole("tab", { name: /AI 一页纸|AI one-pager/ })).toBeVisible();
-    await expect(page.getByText("证据与反证", { exact: true })).toBeVisible();
+    await expect(page.getByText("公司信息", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("六维分析", { exact: true })).toBeVisible();
+    await expect(page.getByText("AI 一页纸", { exact: true })).toBeVisible();
+    const evidenceButton = page.getByRole("button", { name: /证据与反证|Evidence/ });
+    await expect(evidenceButton).toBeVisible();
+    await evidenceButton.click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.getByText("证据类型说明", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /关闭|Close/ }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
   }
   if (debateCaseId) {
     await page.goto(`${BASE}/inst/debate?case=${debateCaseId}`, { waitUntil: "networkidle" });
     await expect(page.getByText("辩论记录", { exact: false }).first()).toBeVisible({
       timeout: 20_000,
     });
+    await expect(page.getByText("估值复核：五年 DCF", { exact: false })).toBeVisible();
   }
   if (proposalId) {
     await page.goto(`${BASE}/inst/approvals?proposal=${proposalId}`, { waitUntil: "networkidle" });

@@ -128,35 +128,7 @@ export function InstResearchPage() {
   const [chats, setChats] = useState<Record<string, ChatMessage[]>>({});
   const [chatInput, setChatInput] = useState<Record<string, string>>({});
   const [chatBusy, setChatBusy] = useState<string | null>(null);
-  const [dcf, setDcf] = useState<Record<string, any> | null>(null);
-  const [dcfIn, setDcfIn] = useState({
-    base_revenue: "100",
-    revenue_growth: "10",
-    cashflow_margin: "30",
-    discount_rate: "10",
-    terminal_growth: "2",
-    shares: "",
-  });
-  const runDcf = () => {
-    if (!detail?.company_id) return;
-    setBusy("dcf");
-    setError(null);
-    instApi<Record<string, any>>(`/companies/${detail.company_id}/dcf`, {
-      method: "POST",
-      body: {
-        base_revenue: Number(dcfIn.base_revenue),
-        revenue_growth: Number(dcfIn.revenue_growth) / 100,
-        cashflow_margin: Number(dcfIn.cashflow_margin) / 100,
-        discount_rate: Number(dcfIn.discount_rate) / 100,
-        terminal_growth: Number(dcfIn.terminal_growth) / 100,
-        shares_outstanding: dcfIn.shares ? Number(dcfIn.shares) : undefined,
-        years: 5,
-      },
-    })
-      .then(setDcf)
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setBusy(null));
-  };
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
 
   const canWrite = (session.permissions.research || "none") === "write";
 
@@ -243,10 +215,19 @@ export function InstResearchPage() {
     return dates.length ? dates[dates.length - 1] : null;
   }, [detail]);
   useEffect(() => {
-    if (activeDim !== "memo" && dims.length && !dims.some((d) => d.key === activeDim)) {
+    if (dims.length && !dims.some((d) => d.key === activeDim)) {
       setActiveDim(dims[0].key);
     }
   }, [dims, activeDim]);
+
+  useEffect(() => {
+    if (!evidenceOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setEvidenceOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [evidenceOpen]);
 
   // 版本更新（六维重生成/单维重分析）后，旧一页纸作废，重新生成。
   useEffect(() => {
@@ -458,11 +439,19 @@ export function InstResearchPage() {
       <PageHeader
         eyebrow="RESEARCH / 03"
         title={detail.company_name}
-        desc={`${detail.symbol} · ${industryLabel(detail.industry, locale)} · ${detail.case_no}`}
+        desc={t("六维分析、AI 一页纸与证据链；审核通过后自动进入辩论。", "Six dimensions, AI one-pager and evidence chain; approval starts the debate automatically.")}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" onClick={() => nav("/inst/research")}>
               <ArrowLeft className="mr-1 h-4 w-4" /> {t("返回列表", "Back to list")}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setEvidenceOpen(true)}
+              title={t("查看证据类型、来源、数据日期与原文摘录", "View evidence types, sources, dates and quotes")}
+            >
+              <FileSearch className="mr-1 h-4 w-4" />
+              {t("证据与反证", "Evidence")}（{detail.evidence?.length || 0}）
             </Button>
             <Button variant="ghost" disabled={!!busy} onClick={exportReport}>
               <Download className="mr-1 h-4 w-4" />
@@ -473,6 +462,42 @@ export function InstResearchPage() {
           </div>
         }
       />
+
+      <Card
+        title={t("公司信息", "Company")}
+        actions={<Badge tone="gold">{detail.case_no}</Badge>}
+      >
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 xl:grid-cols-5">
+          <div>
+            <p className="text-[10px] text-[#77718c]">{t("代码", "Symbol")}</p>
+            <p className="mt-0.5 font-mono text-sm font-medium text-[#171923]">{detail.symbol}</p>
+          </div>
+          <div>
+            <p className="text-[10px] text-[#77718c]">{t("市场", "Market")}</p>
+            <p className="mt-0.5 text-sm font-medium text-[#171923]">{detail.market || t("待补充", "TBD")}</p>
+          </div>
+          <div>
+            <p className="text-[10px] text-[#77718c]">{t("行业", "Industry")}</p>
+            <p className="mt-0.5 text-sm font-medium text-[#171923]">{industryLabel(detail.industry, locale)}</p>
+          </div>
+          <div>
+            <p className="text-[10px] text-[#77718c]">{t("数据状态", "Data status")}</p>
+            <p className="mt-1"><StatusBadge status={detail.data_status} /></p>
+          </div>
+          <div>
+            <p className="text-[10px] text-[#77718c]">{t("参考价（CNY）", "Reference price (CNY)")}</p>
+            <p className="mt-0.5 font-mono text-sm font-medium text-[#171923]">{fmtNum(detail.ref_price, 2)}</p>
+          </div>
+        </div>
+        {detail.data_status && detail.data_status !== "real" ? (
+          <p className="mt-3 border-t border-[#e3eaf8] pt-2 text-[10px] leading-relaxed text-[#77718c]">
+            {t(
+              "数据状态“待补充”表示财务、公告或行业数据不完整；相关维度会标记数据缺口，但流程仍可继续。",
+              "Data status 'Partial' means financial, filing or industry data is incomplete; affected dimensions mark data gaps but the workflow can continue.",
+            )}
+          </p>
+        ) : null}
+      </Card>
 
       {error ? <ErrorBox message={error} onRetry={() => loadDetail(caseId)} /> : null}
 
@@ -525,7 +550,7 @@ export function InstResearchPage() {
         <div className="space-y-4">
           <Card
             title={t("六维分析", "Six-dimension analysis")}
-            desc={t("按目录切换六个维度或 AI 一页纸；单维可单独分析、向 AI 追问。整体审核在右侧一次完成。", "Switch between the six dimensions and the AI one-pager; each dimension can be re-analyzed or queried. Final approval is done once on the right.")}
+            desc={t("按目录切换六个维度；单维可单独分析、向 AI 追问。AI 一页纸在下方单独展示，整体审核在右侧一次完成。", "Switch between the six dimensions; each can be re-analyzed or queried. The AI one-pager is shown separately below, and final approval is done once on the right.")}
             actions={
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <div role="tablist" aria-label={t("维度目录", "Dimension directory")} className="flex flex-wrap gap-1">
@@ -548,19 +573,6 @@ export function InstResearchPage() {
                       </button>
                     );
                   })}
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={activeDim === "memo"}
-                    onClick={() => setActiveDim("memo")}
-                    className={`rounded-md border px-2 py-1 text-[11px] transition ${
-                      activeDim === "memo"
-                        ? "border-[#b42345] bg-[#fbe9ef] text-[#a31f42]"
-                        : "border-[#dde5f2] bg-white text-[#68738b] hover:border-[#7950ba]"
-                    }`}
-                  >
-                    {t("AI 一页纸", "AI one-pager")}
-                  </button>
                 </div>
                 <Button
                   variant="gold"
@@ -579,7 +591,7 @@ export function InstResearchPage() {
               </div>
             }
           >
-            {activeDim === "memo" ? null : activeDimData ? (
+            {activeDimData ? (
               <div className="space-y-3">
                 {activeDimData.engine === "rule" && activeDimData.agent_error ? (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
@@ -710,124 +722,6 @@ export function InstResearchPage() {
             )}
           </Card>
 
-          {activeDim === "memo" ? (
-          <Card
-            title={t("AI 一页纸", "AI one-pager")}
-            desc={t("按六维结构输出：总结结论、关键指标、六维要点、核心风险与下一步核验。", "Structured one-pager: summary, key metrics, six dimension highlights, key risks and next checks.")}
-            actions={
-              <Button
-                variant="ghost"
-                disabled={!!busy || memoBusy}
-                onClick={() => {
-                  void loadMemo().catch((e: Error) => setError(e.message));
-                }}
-              >
-                {memoBusy
-                  ? t("生成中…", "Generating…")
-                  : memo
-                    ? t("重新生成一页纸", "Regenerate one-pager")
-                    : t("生成 AI 一页纸", "Generate AI one-pager")}
-              </Button>
-            }
-          >
-            {memo ? (
-              <div className="rounded-2xl border border-[#e3eaf8] bg-white p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-display text-xl font-semibold text-[#171923]">
-                      {detail.company_name}{" "}
-                      <span className="font-mono text-sm font-normal text-[#68738b]">（{detail.symbol}）</span>
-                    </h3>
-                    <p className="mt-1 text-[11px] text-[#77718c]">
-                      {t("AI 投资研究摘要 · 六维分析", "AI investment research summary · six dimensions")}
-                    </p>
-                  </div>
-                  <Badge tone="gold">{version?.conclusion || t("待补充研究", "Research TBD")}</Badge>
-                </div>
-
-                <section className="mt-4">
-                  <h4 className="text-sm font-semibold text-[#171923]">{t("总结结论", "Summary")}</h4>
-                  <p className="mt-1 text-xs leading-relaxed text-[#505369]">
-                    {memo.summary || t("待补充", "TBD")}
-                  </p>
-                </section>
-
-                {memo.metrics?.length ? (
-                  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    {memo.metrics.map((m) => (
-                      <div key={m.label} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
-                        <p className="text-[10px] text-[#77718c]">{m.label}</p>
-                        <p className="mt-1 font-display text-lg font-semibold text-[#171923]">{m.value}</p>
-                        {m.note ? <p className="mt-0.5 text-[10px] text-[#68738b]">{m.note}</p> : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-                <p className="mt-2 text-[10px] leading-relaxed text-[#77718c]">
-                  {t(
-                    "口径：营收/净利为最近报告期，同比为报告期同比；ROE 为报告期口径；PE TTM 为滚动市盈率，历史分位取近 3 年。缺失指标不展示，不代表为 0。",
-                    "Definitions: revenue/net profit are the latest reporting period, YoY is period-over-period; ROE is the reporting-period ratio; PE TTM is trailing twelve months and its percentile uses the last 3 years. Missing metrics are omitted, not treated as zero.",
-                  )}
-                </p>
-
-                <div className="mt-5 space-y-4">
-                  {dims.map((d, i) => (
-                    <section key={d.key} className="border-t border-[#e3eaf8] pt-4">
-                      <h4 className="text-xs font-semibold text-[#171923]">
-                        {String(i + 1).padStart(2, "0")} {d.title}
-                      </h4>
-                      <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-[#505369]">
-                        <li>· {d.summary || t("待补充", "TBD")}</li>
-                        {d.counter?.[0] ? (
-                          <li>· {t("关键问题", "Key question")}：{d.counter[0]}</li>
-                        ) : d.checks?.[0] ? (
-                          <li>· {d.checks[0]}</li>
-                        ) : null}
-                      </ul>
-                    </section>
-                  ))}
-                </div>
-
-                <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                  <section className="border-t border-[#e3eaf8] pt-4">
-                    <h4 className="text-xs font-semibold text-[#171923]">{t("核心关注风险", "Key risks")}</h4>
-                    {memo.risks?.length ? (
-                      <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-[#505369]">
-                        {memo.risks.map((x) => (
-                          <li key={x}>{x}</li>
-                        ))}
-                      </ol>
-                    ) : (
-                      <p className="mt-2 text-[11px] text-[#77718c]">{t("待补充", "TBD")}</p>
-                    )}
-                  </section>
-                  <section className="border-t border-[#e3eaf8] pt-4">
-                    <h4 className="text-xs font-semibold text-[#171923]">{t("下一步重点核验", "Next checks")}</h4>
-                    {memo.open_questions?.length ? (
-                      <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-[#505369]">
-                        {memo.open_questions.map((x) => (
-                          <li key={x}>☐ {x}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-2 text-[11px] text-[#77718c]">{t("待补充", "TBD")}</p>
-                    )}
-                  </section>
-                </div>
-
-                <p className="mt-4 border-t border-[#e3eaf8] pt-3 text-[10px] text-[#77718c]">
-                  {t("AI 辅助研究，数据及结论仅供核对参考，不构成投资建议。", "AI-assisted research; data and conclusions are for verification only and are not investment advice.")}
-                </p>
-              </div>
-            ) : (
-              <Empty>
-                {memoBusy
-                  ? t("AI 一页纸生成中…", "Generating AI one-pager…")
-                  : t("还没有 AI 一页纸，点击右上角生成。", "No AI one-pager yet; generate it from the top-right button.")}
-              </Empty>
-            )}
-          </Card>
-          ) : null}
         </div>
 
         <div className="space-y-4">
@@ -844,51 +738,6 @@ export function InstResearchPage() {
                     <p className="mt-1 leading-relaxed">
                       {String((version.valuation as Record<string, unknown>).note || t("演示口径，不是目标价。", "Demo basis, not a target price."))}
                     </p>
-                  </div>
-                ) : null}
-                {detail.company_id ? (
-                  <div className="mt-3 rounded-xl border border-[#dde5f2] bg-white p-3">
-                    <p className="text-xs font-semibold text-[#505369]">
-                      {t("五年 DCF（确定性计算 · 不是目标价）", "Five-year DCF (deterministic, not a target price)")}
-                    </p>
-                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-                      {[
-                        ["base_revenue", t("基期收入", "Base revenue")],
-                        ["revenue_growth", t("增长率 %", "Growth %")],
-                        ["cashflow_margin", t("现金流率 %", "Cash-flow margin %")],
-                        ["discount_rate", t("折现率 %", "Discount rate %")],
-                        ["terminal_growth", t("永续 %", "Terminal %")],
-                        ["shares", t("股本（可选）", "Shares (optional)")],
-                      ].map(([key, label]) => (
-                        <label key={key} className="space-y-1 text-[#68738b]">
-                          <span>{label}</span>
-                          <input
-                            value={(dcfIn as Record<string, string>)[key]}
-                            onChange={(e) => setDcfIn((v) => ({ ...v, [key]: e.target.value }))}
-                            inputMode="decimal"
-                            className="w-full rounded-lg border border-[#dde5f2] bg-[#f8faff] px-2 py-1 text-xs text-[#252533] outline-none focus:border-[#7950ba]"
-                          />
-                        </label>
-                      ))}
-                    </div>
-                    <div className="mt-2">
-                      <Button variant="ghost" disabled={!!busy} onClick={runDcf}>
-                        {busy === "dcf" ? t("计算中…", "Calculating…") : t("计算估值区间", "Calculate range")}
-                      </Button>
-                    </div>
-                    {dcf?.range ? (
-                      <div className="mt-2 text-xs leading-relaxed text-[#68738b]">
-                        <p>
-                          {t("区间", "Range")}：{fmtNum(dcf.range.low, 2)} – {fmtNum(dcf.range.high, 2)}
-                          {dcf.range.base_per_share != null
-                            ? `；${t("每股", "per share")} ${fmtNum(dcf.range.low_per_share, 2)} / ${fmtNum(dcf.range.base_per_share, 2)} / ${fmtNum(dcf.range.high_per_share, 2)}`
-                            : ""}
-                        </p>
-                        {Array.isArray(dcf.limits) ? (
-                          <p className="mt-1 text-[11px] text-[#77718c]">{dcf.limits.join("；")}</p>
-                        ) : null}
-                      </div>
-                    ) : null}
                   </div>
                 ) : null}
                 {version.status === "pending_review" ? (
@@ -944,95 +793,211 @@ export function InstResearchPage() {
             )}
           </Card>
 
-          <Card title={t("研究任务", "Research tasks")} desc={t("任务状态与进度由研究生成流程写入。", "Task status and progress are written by the research pipeline.")}>
-            {detail.tasks?.length ? (
-              <ul className="space-y-2">
-                {detail.tasks.map((task) => (
-                  <li key={task.id} className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-[#505369]">{task.title}</span>
-                    <span className="flex items-center gap-2">
-                      <span className="font-mono text-[11px] text-[#77718c]">{task.progress}%</span>
-                      {task.status === "failed" ? (
-                        <Badge tone="amber" title={t("AI Agent 失败后已回退规则模板，该维仍可审核。", "After an agent failure this dimension fell back to the rule template and can still be reviewed.")}>
-                          {t("已回退规则", "Rule fallback")}
-                        </Badge>
-                      ) : (
-                        <StatusBadge status={task.status} />
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <Empty>{t("生成研究后自动创建六维任务。", "Six-dimension tasks appear after research is generated.")}</Empty>
-            )}
-          </Card>
-
-          <Card title={t("公司信息", "Company")}>
-            <Field label={t("代码", "Symbol")} value={<span className="font-mono">{detail.symbol}</span>} />
-            <Field label={t("市场", "Market")} value={detail.market} />
-            <Field label={t("行业", "Industry")} value={industryLabel(detail.industry, locale)} />
-            <Field label={t("数据状态", "Data status")} value={<StatusBadge status={detail.data_status} />} />
-            <Field label={t("参考价（CNY）", "Reference price (CNY)")} value={fmtNum(detail.ref_price, 2)} />
-            {detail.data_status && detail.data_status !== "real" ? (
-              <p className="mt-2 text-[10px] leading-relaxed text-[#77718c]">
-                {t(
-                  "数据状态“待补充”表示财务、公告或行业数据不完整；相关维度会标记数据缺口，但流程仍可继续。",
-                  "Data status 'Partial' means financial, filing or industry data is incomplete; affected dimensions mark data gaps but the workflow can continue.",
-                )}
-              </p>
-            ) : null}
-          </Card>
         </div>
       </div>
 
       <Card
-        title={t("证据与反证", "Evidence & counter-evidence")}
-        desc={t("每条结论引用的证据都在这里。先看类型和来源，再核对原文摘录；没有证据 ID 的结论不能进入审批包。", "Every cited evidence item is listed here. Check its type and source first, then the quote; conclusions without evidence IDs cannot enter the approval package.")}
-        actions={<Badge tone="gold">{detail.evidence?.length || 0} {t("条证据", "items")}</Badge>}
+        title={t("AI 一页纸", "AI one-pager")}
+        desc={t("按六维结构输出：总结结论、关键指标、六维要点、核心风险与下一步核验。", "Structured one-pager: summary, key metrics, six dimension highlights, key risks and next checks.")}
+        actions={
+          <Button
+            variant="ghost"
+            disabled={!!busy || memoBusy}
+            onClick={() => {
+              void loadMemo().catch((e: Error) => setError(e.message));
+            }}
+          >
+            {memoBusy
+              ? t("生成中…", "Generating…")
+              : memo
+                ? t("重新生成一页纸", "Regenerate one-pager")
+                : t("生成 AI 一页纸", "Generate AI one-pager")}
+          </Button>
+        }
       >
-        <div className="mb-4 rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
-          <p className="text-xs font-semibold text-[#505369]">{t("证据类型说明", "Evidence types")}</p>
-          <div className="mt-2 grid gap-1.5 text-[11px] text-[#68738b] sm:grid-cols-2">
-            {Object.entries(EVIDENCE_TYPE_META).map(([key, meta]) => (
-              <span key={key} className="flex items-start gap-2">
-                <Badge tone={meta.tone}>{meta.label}</Badge>
-                <span className="leading-relaxed">{meta.note}</span>
-              </span>
-            ))}
+        {memo ? (
+          <div className="rounded-2xl border border-[#e3eaf8] bg-white p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-display text-xl font-semibold text-[#171923]">
+                  {detail.company_name}{" "}
+                  <span className="font-mono text-sm font-normal text-[#68738b]">（{detail.symbol}）</span>
+                </h3>
+                <p className="mt-1 text-[11px] text-[#77718c]">
+                  {t("AI 投资研究摘要 · 六维分析", "AI investment research summary · six dimensions")}
+                </p>
+              </div>
+              <Badge tone="gold">{version?.conclusion || t("待补充研究", "Research TBD")}</Badge>
+            </div>
+
+            <section className="mt-4">
+              <h4 className="text-sm font-semibold text-[#171923]">{t("总结结论", "Summary")}</h4>
+              <p className="mt-1 text-xs leading-relaxed text-[#505369]">
+                {memo.summary || t("待补充", "TBD")}
+              </p>
+            </section>
+
+            {memo.metrics?.length ? (
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {memo.metrics.map((m) => (
+                  <div key={m.label} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+                    <p className="text-[10px] text-[#77718c]">{m.label}</p>
+                    <p className="mt-1 font-display text-lg font-semibold text-[#171923]">{m.value}</p>
+                    {m.note ? <p className="mt-0.5 text-[10px] text-[#68738b]">{m.note}</p> : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <p className="mt-2 text-[10px] leading-relaxed text-[#77718c]">
+              {t(
+                "口径：营收/净利为最近报告期，同比为报告期同比；ROE 为报告期口径；PE TTM 为滚动市盈率，历史分位取近 3 年。缺失指标不展示，不代表为 0。",
+                "Definitions: revenue/net profit are the latest reporting period, YoY is period-over-period; ROE is the reporting-period ratio; PE TTM is trailing twelve months and its percentile uses the last 3 years. Missing metrics are omitted, not treated as zero.",
+              )}
+            </p>
+
+            <div className="mt-5 space-y-4">
+              {dims.map((d, i) => (
+                <section key={d.key} className="border-t border-[#e3eaf8] pt-4">
+                  <h4 className="text-xs font-semibold text-[#171923]">
+                    {String(i + 1).padStart(2, "0")} {d.title}
+                  </h4>
+                  <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-[#505369]">
+                    <li>· {d.summary || t("待补充", "TBD")}</li>
+                    {d.counter?.[0] ? (
+                      <li>· {t("关键问题", "Key question")}：{d.counter[0]}</li>
+                    ) : d.checks?.[0] ? (
+                      <li>· {d.checks[0]}</li>
+                    ) : null}
+                  </ul>
+                </section>
+              ))}
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <section className="border-t border-[#e3eaf8] pt-4">
+                <h4 className="text-xs font-semibold text-[#171923]">{t("核心关注风险", "Key risks")}</h4>
+                {memo.risks?.length ? (
+                  <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-[#505369]">
+                    {memo.risks.map((x) => (
+                      <li key={x}>{x}</li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="mt-2 text-[11px] text-[#77718c]">{t("待补充", "TBD")}</p>
+                )}
+              </section>
+              <section className="border-t border-[#e3eaf8] pt-4">
+                <h4 className="text-xs font-semibold text-[#171923]">{t("下一步重点核验", "Next checks")}</h4>
+                {memo.open_questions?.length ? (
+                  <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-[#505369]">
+                    {memo.open_questions.map((x) => (
+                      <li key={x}>☐ {x}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-[11px] text-[#77718c]">{t("待补充", "TBD")}</p>
+                )}
+              </section>
+            </div>
+
+            <p className="mt-4 border-t border-[#e3eaf8] pt-3 text-[10px] text-[#77718c]">
+              {t("AI 辅助研究，数据及结论仅供核对参考，不构成投资建议。", "AI-assisted research; data and conclusions are for verification only and are not investment advice.")}
+            </p>
           </div>
-        </div>
-        {detail.evidence?.length ? (
-          <ul className="space-y-3">
-            {detail.evidence.map((ev) => {
-              const meta = EVIDENCE_TYPE_META[ev.evidence_type || "fact"] || EVIDENCE_TYPE_META.fact;
-              return (
-                <li key={ev.id} className="rounded-xl border border-[#e3eaf8] bg-white p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <p className="min-w-0 text-sm font-medium text-[#252533]">
-                      <span className="mr-2 font-mono text-[10px] text-[#77718c]">#{ev.id}</span>
-                      {ev.title}
-                    </p>
-                  </div>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                    <Badge tone={meta.tone}>{meta.label}</Badge>
-                    <Badge>{sourceLabel(ev.source)}</Badge>
-                    <span className="text-[10px] text-[#77718c]">
-                      {t("数据日期", "As of")}：{ev.as_of || t("待补充", "TBD")}
-                    </span>
-                  </div>
-                  <blockquote className="mt-2 rounded-lg border-l-2 border-[#7950ba]/40 bg-[#f8faff] px-3 py-2 text-xs leading-relaxed text-[#505369]">
-                    {ev.quote || t("原始摘录待补充，需回源核对。", "Quote pending; verify against the source.")}
-                  </blockquote>
-                  <p className="mt-1.5 text-[10px] leading-relaxed text-[#77718c]">{meta.note}</p>
-                </li>
-              );
-            })}
-          </ul>
         ) : (
-          <Empty>{t("还没有证据。生成研究会写入行情、估值与财务证据。", "No evidence yet; generating research writes price, valuation and financial evidence.")}</Empty>
+          <Empty>
+            {memoBusy
+              ? t("AI 一页纸生成中…", "Generating AI one-pager…")
+              : t("还没有 AI 一页纸，点击右上角生成。", "No AI one-pager yet; generate it from the top-right button.")}
+          </Empty>
         )}
       </Card>
+
+      {evidenceOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#171923]/45 p-3 sm:p-6"
+          onClick={() => setEvidenceOpen(false)}
+          role="presentation"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="evidence-dialog-title"
+            className="my-4 w-full max-w-4xl rounded-2xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 flex flex-wrap items-start justify-between gap-3 rounded-t-2xl border-b border-[#e3eaf8] bg-white px-5 py-4">
+              <div>
+                <h2 id="evidence-dialog-title" className="font-display text-lg font-semibold text-[#171923]">
+                  {t("证据与反证", "Evidence & counter-evidence")}
+                </h2>
+                <p className="mt-1 max-w-2xl text-xs leading-relaxed text-[#68738b]">
+                  {t(
+                    "每条结论引用的证据都在这里。先看类型和来源，再核对原文摘录；没有证据 ID 的结论不能进入审批包。",
+                    "Every cited evidence item is here. Check its type and source first, then the quote; conclusions without evidence IDs cannot enter the approval package.",
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge tone="gold">
+                  {detail.evidence?.length || 0} {t("条证据", "items")}
+                </Badge>
+                <Button variant="ghost" onClick={() => setEvidenceOpen(false)}>
+                  {t("关闭", "Close")}
+                </Button>
+              </div>
+            </div>
+            <div className="px-5 py-4">
+              <div className="mb-4 rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+                <p className="text-xs font-semibold text-[#505369]">{t("证据类型说明", "Evidence types")}</p>
+                <div className="mt-2 grid gap-1.5 text-[11px] text-[#68738b] sm:grid-cols-2">
+                  {Object.entries(EVIDENCE_TYPE_META).map(([key, meta]) => (
+                    <span key={key} className="flex items-start gap-2">
+                      <Badge tone={meta.tone}>{meta.label}</Badge>
+                      <span className="leading-relaxed">{meta.note}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {detail.evidence?.length ? (
+                <ul className="space-y-3">
+                  {detail.evidence.map((ev) => {
+                    const meta = EVIDENCE_TYPE_META[ev.evidence_type || "fact"] || EVIDENCE_TYPE_META.fact;
+                    return (
+                      <li key={ev.id} className="rounded-xl border border-[#e3eaf8] bg-white p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <p className="min-w-0 text-sm font-medium text-[#252533]">
+                            <span className="mr-2 font-mono text-[10px] text-[#77718c]">#{ev.id}</span>
+                            {ev.title}
+                          </p>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <Badge tone={meta.tone}>{meta.label}</Badge>
+                          <Badge>{sourceLabel(ev.source)}</Badge>
+                          <span className="text-[10px] text-[#77718c]">
+                            {t("数据日期", "As of")}：{ev.as_of || t("待补充", "TBD")}
+                          </span>
+                        </div>
+                        <blockquote className="mt-2 rounded-lg border-l-2 border-[#7950ba]/40 bg-[#f8faff] px-3 py-2 text-xs leading-relaxed text-[#505369]">
+                          {ev.quote || t("原始摘录待补充，需回源核对。", "Quote pending; verify against the source.")}
+                        </blockquote>
+                        <p className="mt-1.5 text-[10px] leading-relaxed text-[#77718c]">{meta.note}</p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <Empty>
+                  {t(
+                    "还没有证据。生成研究会写入行情、估值与财务证据。",
+                    "No evidence yet; generating research writes price, valuation and financial evidence.",
+                  )}
+                </Empty>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <p className="text-[11px] leading-relaxed text-[#77718c]">
         {t("研究结论由数据与规则生成，AI 仅提供解释与反证建议；估值口径为演示，不是目标价。数据不足时显示「待补充」，不构成投资建议。", "Conclusions come from data and rules; AI only explains and suggests falsifiers. Valuation is illustrative, not a target price. Missing data shows TBD. Not investment advice.")}

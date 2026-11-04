@@ -42,7 +42,12 @@ def latest(uid,org,stage,project_id=None):
     if project_id:get_project(uid,project_id)
     with get_conn() as c:
         row=c.execute('SELECT id FROM quant_factor_agent_jobs WHERE user_id=%s AND org_id=%s AND stage=%s AND project_id IS NOT DISTINCT FROM %s ORDER BY created_at DESC LIMIT 1',(uid,org,stage,project_id)).fetchone()
-    return read(uid,org,row['id']) if row else None
+    if not row:return None
+    # A completed F1 proposal already used to create a project is not a new task.
+    if stage=='F1' and project_id is None:
+        used={p.get('config',{}).get('researchContext',{}).get('agentJobId') for p in list_projects(uid).get('projects',[])}
+        if row['id'] in used:return None
+    return read(uid,org,row['id'])
 
 def update(uid,org,jid,status,entry,output=None):
     with get_conn() as c:
@@ -62,8 +67,10 @@ def create(uid,org,stage,project_id,draft,request_key):
             if old['input']!=inputs:raise WorkflowError('同一请求编号不能用于不同输入。')
             jid=old['id']
         else:
-            active=c.execute("SELECT id FROM quant_factor_agent_jobs WHERE user_id=%s AND org_id=%s AND stage=%s AND project_id IS NOT DISTINCT FROM %s AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1",(uid,org,stage,project_id)).fetchone()
-            if active:jid=active['id']
+            active=c.execute("SELECT id,input FROM quant_factor_agent_jobs WHERE user_id=%s AND org_id=%s AND stage=%s AND project_id IS NOT DISTINCT FROM %s AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1",(uid,org,stage,project_id)).fetchone()
+            if active:
+                if active['input']!=inputs:raise WorkflowError('本环节已有不同输入的 Agent 任务正在运行，请等待或人工接管后再委托。')
+                jid=active['id']
             else:
                 pending=c.execute("SELECT COUNT(*) AS n FROM quant_factor_agent_jobs WHERE status IN ('queued','running')").fetchone()['n']
                 if pending>=4:raise WorkflowError('Agent 任务队列繁忙，请稍后再试。')
@@ -119,7 +126,9 @@ def run(uid,org,jid):
             from app.routers.ai_factor_generation import ai_factor_generations
             assert_quota_available(uid)
             if not update(uid,org,jid,'running',event('model_started',tool='research.generate_factor',message='调用平台因子生成与静态校验工具（失败时最多修正一次）')):return
-            out=ai_factor_generations({'prompt':draft.get('hypothesis',''),'context':{'frequency':'1d','preferred_factor_name':draft.get('name') or None},'idempotency_key':jid},_user={'id':uid})
+            prompt=json.dumps({k:draft.get(k,'') for k in ('hypothesis','candidateExpression','improvementScope','target','name','code','mode')},ensure_ascii=False)
+            instruction=('按 improvementScope 明确允许的范围改进实现；范围中授权的窗口或数学变换可以调整初始 candidateExpression，除此以外保留定义、经济假设与方向。不得为了过门槛简单反号、偷偷改目标或使用未来信息。若没有合理改进就保留原代码。' if draft.get('mode')=='improve' else '按照研究定义实现初始因子。保留初始表达式的窗口、缺失值处理和预测口径。禁止未来数据。')
+            out=ai_factor_generations({'prompt':instruction+'\n'+prompt,'context':{'frequency':'1d','preferred_factor_name':draft.get('name') or None},'idempotency_key':jid},_user={'id':uid})
             record_usage(user_id=uid,run_id=jid,skill='research.generate_factor')
             if out.get('status')!='ready' or out.get('validation',{}).get('status')!='passed':raise WorkflowError('代码未通过平台校验：'+'；'.join(out.get('validation',{}).get('errors',[])))
             output={**out,'fields':{'name':out['factor']['factor_name'],'code':out['factor']['factor_code']},'model':out.get('meta',{}).get('model_alias'),'prompt_version':out.get('meta',{}).get('prompt_version')}

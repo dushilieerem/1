@@ -27,22 +27,24 @@ def current(uid,org,cid):
     except (KeyError,WorkflowError): row['stale']=True
     return public(row)
 
-def create(uid,org,project_id):
+def create(uid,org,project_id,expected_snapshot_hash=None):
     with get_conn() as c:
         # Serialize creation per actor: budget and duplicate checks must be atomic.
         c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9106,uid))
         p=c.execute('SELECT * FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,project_id)).fetchone()
         if not p: raise KeyError(project_id)
         snap=snapshot(_row_project(dict(p))); sha=digest(snap)
+        if expected_snapshot_hash and sha!=expected_snapshot_hash:raise WorkflowError('研究输入已变更，停止自动提交，未覆盖人工修改。')
         existing=c.execute('SELECT id FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s AND snapshot_hash=%s',(uid,org,project_id,sha)).fetchone()
-        if existing: return current(uid,org,existing['id'])
-        count=c.execute('SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s',(uid,org,project_id)).fetchone()['n']
-        if count>=snap['plan']['maxTrials']: raise WorkflowError('本研究已达到登记的候选尝试预算；请先复盘并明确修订计划')
-        pending=c.execute("SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE status LIKE '%%_running'").fetchone()['n']
-        if pending>=4: raise WorkflowError('验证计算队列繁忙，请稍后提交')
-        cid=str(uuid.uuid4())
-        c.execute('INSERT INTO quant_factor_candidates(id,user_id,org_id,project_id,snapshot,snapshot_hash,status,events) VALUES(%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb)',(cid,uid,org,project_id,store.encode(snap),sha,'development_running',store.encode([event('candidate_frozen',snapshot_hash=sha),event('development_queued')])) )
-    POOL.submit(run,uid,org,cid,'development')
+        if existing:cid=existing['id']
+        else:
+            count=c.execute('SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s',(uid,org,project_id)).fetchone()['n']
+            if count>=snap['plan']['maxTrials']: raise WorkflowError('本研究已达到登记的候选尝试预算；请先复盘并明确修订计划')
+            pending=c.execute("SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE status LIKE '%%_running'").fetchone()['n']
+            if pending>=4: raise WorkflowError('验证计算队列繁忙，请稍后提交')
+            cid=str(uuid.uuid4())
+            c.execute('INSERT INTO quant_factor_candidates(id,user_id,org_id,project_id,snapshot,snapshot_hash,status,events) VALUES(%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb)',(cid,uid,org,project_id,store.encode(snap),sha,'development_running',store.encode([event('candidate_frozen',snapshot_hash=sha),event('development_queued')])) )
+    if not existing:POOL.submit(run,uid,org,cid,'development')
     return current(uid,org,cid)
 
 def validate(uid,org,cid):

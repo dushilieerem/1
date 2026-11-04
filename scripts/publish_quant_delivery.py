@@ -15,9 +15,11 @@ def page(md,title):
 OUT.mkdir(parents=True,exist_ok=True)
 prd=(DOCS/'PRD.md').read_text()
 report=(DOCS/'今日成果-2026-11-04.md').read_text()
-(DOCS/'prd.html').write_text(page(prd,'SVQuant 机构量化 · 需求文档 V3.6'))
-(OUT/'prd.html').write_text(page(prd,'SVQuant 机构量化 · 需求文档 V3.6'))
+(DOCS/'prd.html').write_text(page(prd,'SVQuant 机构量化 · 需求文档 V3.7'))
+(OUT/'prd.html').write_text(page(prd,'SVQuant 机构量化 · 需求文档 V3.7'))
 (OUT/'index.html').write_text(page(report,'SVQuant 机构量化 · 今日成果'))
+(OUT/'factor-iteration.html').write_text(page((DOCS/'因子工厂自动迭代与报告.md').read_text(),'因子工厂 · 自动迭代与报告'))
+shutil.copyfile(DOCS/'因子工厂自动迭代与报告.md',OUT/'因子工厂自动迭代与报告.md')
 shutil.copyfile(DOCS/'PRD.md',OUT/'PRD.md')
 shutil.copyfile(DOCS/'今日成果-2026-11-04.md',OUT/'今日成果.md')
 # Keep the actual interactive design intact and visibly identified as a prototype.
@@ -51,7 +53,7 @@ embedded=embedded.replace('sunvalley.workflow.prototype.v3.20261104','sunvalley.
 (OUT/'prototype-module.html').write_text(embedded)
 
 with zipfile.ZipFile(OUT/'quant-delivery.zip','w',zipfile.ZIP_DEFLATED) as archive:
- for name in ['index.html','prototype.html','prd.html','PRD.md','今日成果.md']:
+ for name in ['index.html','prototype.html','prd.html','PRD.md','今日成果.md','factor-iteration.html','因子工厂自动迭代与报告.md']:
   archive.write(OUT/name,name)
 print('Published internal review pack:',OUT)
 

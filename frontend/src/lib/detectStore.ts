@@ -19,6 +19,7 @@ export type DraftDetectFactor = {
 
 export type FactorResearchPlan = {
   candidateExpression?: string;
+  improvementScope?: string;
   rules?: {icMetric?:'ic'|'rank_ic'; minSignedIc:number; maxDrawdown:number; minObservations:number; direction:'positive'|'negative'};
   revision: string; hypothesis: string; target: string; frequency: string;
   developmentStart: string; developmentEnd: string;

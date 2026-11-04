@@ -113,3 +113,29 @@ def agent_status(jid:str,ctx=Depends(require_quant_researcher)):
 def agent_cancel(jid:str,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import agent_jobs
     return invoke(agent_jobs.cancel,*identity(ctx),jid)
+
+class IterationBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    max_rounds:int=Field(default=3,ge=1,le=20,strict=True)
+
+@router.get('/projects/{project_id}/iterations/latest')
+def iteration_latest(project_id:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import iterations
+    return {'iteration':invoke(iterations.latest,*identity(ctx),project_id)}
+
+@router.post('/projects/{project_id}/iterations',status_code=202)
+def iteration_start(project_id:str,body:IterationBody,request:Request,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import iterations
+    from services.core.rate_limit import enforce_rate_limit
+    enforce_rate_limit(request,scope='quant.factor.iteration',limit=6,window_sec=60)
+    return invoke(iterations.start,*identity(ctx),project_id,body.max_rounds)
+
+@router.get('/iterations/{jid}')
+def iteration_get(jid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import iterations
+    return invoke(iterations.read,*identity(ctx),jid)
+
+@router.post('/iterations/{jid}/pause')
+def iteration_pause(jid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import iterations
+    return invoke(iterations.pause,*identity(ctx),jid)

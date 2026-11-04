@@ -57,3 +57,13 @@ class PlanFormatRepairTests(unittest.TestCase):
   with patch.object(a,'get_project',return_value={'project':{'name':'study','config':{}}}),patch.object(a,'get_task'),patch.object(a,'assert_quota_available'),patch.object(a,'run_task',return_value={'content':'{}'}) as run,patch.object(a,'record_usage'):
    with self.assertRaises(RuntimeError):a.suggest(1,2,'p',progress=lambda _:False)
    run.assert_called_once()
+
+class AgentAuditTests(unittest.TestCase):
+ def test_consumed_f1_proposal_is_not_restored_as_a_new_task(self):
+  c=MagicMock();c.execute.return_value.fetchone.return_value={'id':'used'};conn=MagicMock();conn.__enter__.return_value=c
+  with patch.object(jobs,'get_conn',return_value=conn),patch.object(jobs,'list_projects',return_value={'projects':[{'config':{'researchContext':{'agentJobId':'used'}}}]}),patch.object(jobs,'read') as read:
+   self.assertIsNone(jobs.latest(1,2,'F1'));read.assert_not_called()
+ def test_f3_generation_receives_expression_and_manual_code(self):
+  d={'hypothesis':'h','candidateExpression':'window=5; zero range -> NaN','target':'1 day','name':'factor','code':'manual code'}
+  with patch.object(jobs,'read',return_value={'status':'queued','stage':'F3','project_id':'p','input':{'draft':d}}),patch.object(jobs,'assert_quota_available'),patch.object(jobs,'record_usage'),patch('app.routers.ai_factor_generation.ai_factor_generations',return_value={'status':'rejected','validation':{'status':'failed','errors':['stop']}}) as gen,patch.object(jobs,'update',return_value=True):
+   jobs.run(1,2,'j');prompt=gen.call_args.args[0]['prompt'];self.assertIn('window=5',prompt);self.assertIn('manual code',prompt);self.assertIn('1 day',prompt)

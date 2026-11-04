@@ -3,7 +3,7 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
 import { evaluateWriteGuard } from "./helpers/write-guard.mjs";
 
 /**
- * 机构端展示与可用性审计：九个工作区、六角色、窄屏、空态/错误态/加载态、
+ * 机构端展示与可用性审计：八个工作区、六角色、窄屏、空态/错误态/加载态、
  * 控制台错误与接口 5xx。默认只读；创建空研究案的用例需写库闸门放行。
  */
 const BASE = process.env.INST_BASE || "http://127.0.0.1:9533";
@@ -18,7 +18,6 @@ const WORKSPACES: Array<[string, string]> = [
   ["/inst/research", "RESEARCH / 03"],
   ["/inst/debate", "DEBATE / 04"],
   ["/inst/approvals", "APPROVALS / 06"],
-  ["/inst/execution", "EXECUTION / 07"],
   ["/inst/portfolio", "PORTFOLIO / 05"],
   ["/inst/monitor", "MONITOR / 08"],
   ["/inst/about", "AGENTS / 09"],
@@ -86,7 +85,7 @@ test.beforeAll(async ({ request, browser }) => {
   await ctx.close();
 });
 
-test("九个工作区可达，无控制台错误与接口 5xx", async ({ browser }) => {
+test("八个工作区可达，无控制台错误与接口 5xx", async ({ browser }) => {
   const { ctx, page } = await openPage(browser, TOKENS.manager!);
   const errors: string[] = [];
   const failures: string[] = [];
@@ -106,6 +105,11 @@ test("九个工作区可达，无控制台错误与接口 5xx", async ({ browser
     );
     expect(overflow, `${path} 横向溢出 ${overflow}px`).toBeLessThanOrEqual(1);
   }
+
+  // 方案 B：交易执行不再是独立工作区，旧入口重定向到投资组合。
+  await page.goto(`${BASE}/inst/execution`, { waitUntil: "networkidle" });
+  await expect(page).toHaveURL(/\/inst\/portfolio/);
+  await expect(page.getByRole("link", { name: "交易执行" })).toHaveCount(0);
 
   expect(errors, `控制台错误：${errors.join(" | ")}`).toEqual([]);
   expect(failures, `接口 5xx：${failures.join(" | ")}`).toEqual([]);
@@ -134,7 +138,7 @@ test("详情页：研究、辩论、审批（有数据时）", async ({ browser 
   await ctx.close();
 });
 
-test("窄屏 1024 九个工作区无横向溢出", async ({ browser }) => {
+test("窄屏 1024 八个工作区无横向溢出", async ({ browser }) => {
   const { ctx, page } = await openPage(browser, TOKENS.manager!, { width: 1024, height: 900 });
   for (const [path, text] of WORKSPACES) {
     await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
@@ -149,12 +153,12 @@ test("窄屏 1024 九个工作区无横向溢出", async ({ browser }) => {
 
 test("六角色菜单与权限边界", async ({ browser }) => {
   const expected: Record<Role, string[]> = {
-    manager: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "交易执行", "投资组合", "投后管理", "Agent能力"],
-    partner: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "交易执行", "投资组合", "投后管理", "Agent能力"],
-    chairman: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "交易执行", "投资组合", "投后管理", "Agent能力"],
-    risk: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "交易执行", "投资组合", "投后管理", "Agent能力"],
-    execution: ["投资总览", "投委会审批", "交易执行", "投资组合", "投后管理", "Agent能力"],
-    monitoring: ["投资总览", "公司研究", "投委会审批", "交易执行", "投资组合", "投后管理", "Agent能力"],
+    manager: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent能力"],
+    partner: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent能力"],
+    chairman: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent能力"],
+    risk: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent能力"],
+    execution: ["投资总览", "投委会审批", "投资组合", "投后管理", "Agent能力"],
+    monitoring: ["投资总览", "公司研究", "投委会审批", "投资组合", "投后管理", "Agent能力"],
   };
   for (const role of ROLES) {
     const { ctx, page } = await openPage(browser, TOKENS[role]!);

@@ -99,7 +99,6 @@ test("机构端侧栏名称与顺序", async ({ page }) => {
     "公司研究",
     "投资辩论室",
     "投委会审批",
-    "交易执行",
     "投资组合",
     "投后管理",
     "Agent能力",
@@ -107,13 +106,13 @@ test("机构端侧栏名称与顺序", async ({ page }) => {
   await expect(page.getByText("以企业为起点，以证据做决策")).toBeVisible();
 });
 
-test("研究、审批、执行、投后、Agent能力页面可达", async ({ page }) => {
+test("研究、审批、组合、投后、Agent能力页面可达", async ({ page }) => {
   await login(page);
   for (const [path, text] of [
     ["/inst/ideas", "量化策略推送"],
     ["/inst/research", "公司研究"],
     ["/inst/approvals", "投委会审批"],
-    ["/inst/execution", "交易执行"],
+    ["/inst/portfolio", "投资组合"],
     ["/inst/monitor", "投后管理"],
     ["/inst/about", "Agent能力"],
   ]) {
@@ -219,7 +218,7 @@ async function prepareExitCase(
   return { exitId: Number(exitCase.id), caseId };
 }
 
-test("退出流程：投后回链 → 辩论默认 exit/0 → 创建议案", async ({ page, request }) => {
+test("退出流程：投后回链 → 辩论后自动建 exit/0 议案", async ({ page, request }) => {
   test.skip(
     !writeGuard.enabled,
     "写库用例默认关闭：需 INST_E2E_ALLOW_WRITE=1，且服务端 /api/inst/_e2e/guard 确认库名含 _test/_e2e（生产 svquant 永远拒绝）",
@@ -245,18 +244,9 @@ test("退出流程：投后回链 → 辩论默认 exit/0 → 创建议案", asy
   const researchLink = exitCard.getByRole("link", { name: new RegExp(`退出研究案\\s*#${caseId}`) });
   await expect(researchLink).toBeVisible();
 
-  // 辩论页：退出案默认 exit + 目标仓位 0，文案明确为退出议案。
+  // 线性流程：辩论完成后自动创建退出议案（exit + 0），并跳到审批页。
   await page.goto(`${BASE}/inst/debate?case=${caseId}`, { waitUntil: "networkidle" });
-  await expect(page.getByText("这是退出研究案", { exact: false })).toBeVisible({
-    timeout: 20_000,
-  });
-  await expect(page.getByTestId("inst-proposal-target")).toHaveValue("0");
-  const createBtn = page.getByTestId("inst-proposal-create");
-  await expect(createBtn).toHaveText("创建退出议案");
-  // 目标仓位 0 会弹清仓确认。
-  page.once("dialog", (dialog) => dialog.accept());
-  await createBtn.click();
-  await page.waitForURL(/\/inst\/approvals\?proposal=\d+/, { timeout: 30_000 });
+  await page.waitForURL(/\/inst\/approvals\?proposal=\d+/, { timeout: 60_000 });
 
   const proposalId = Number(new URL(page.url()).searchParams.get("proposal"));
   expect(proposalId).toBeGreaterThan(0);

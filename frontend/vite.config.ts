@@ -76,6 +76,7 @@ const ygApiProxy = {
 };
 
 export default defineConfig({
+  cacheDir: process.env.SVQUANT_VITE_CACHE_DIR || "node_modules/.vite",
   plugins: [react(), tailwindcss(), ...(useHttps ? [basicSsl()] : [])],
   resolve: {
     alias: { "@": path.resolve(__dirname, "src") },

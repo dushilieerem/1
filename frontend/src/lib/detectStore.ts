@@ -17,7 +17,16 @@ export type DraftDetectFactor = {
   body: string;
 };
 
+export type FactorResearchPlan = {
+  revision: string; hypothesis: string; target: string; frequency: string;
+  developmentStart: string; developmentEnd: string;
+  validationStart: string; validationEnd: string;
+  acceptance: string; maxTrials: number;
+};
+
 export type DetectProjectConfig = {
+  researchPlan?: FactorResearchPlan;
+
   source?: DetectSource;
   factorCodes: string[];
   /**

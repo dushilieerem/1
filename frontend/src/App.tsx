@@ -188,6 +188,7 @@ const InstAboutPage = lazy(() =>
   import("./pages/institution/InstAboutPage").then((m) => ({ default: m.InstAboutPage })),
 );
 
+const FactorWorkflowPage = lazy(() => import("./pages/institutional-workflow/FactorWorkflowPage").then(m => ({ default: m.FactorWorkflowPage })));
 const QuantFactorPage = lazy(() => import("./pages/institutional-workflow/QuantFactorPage").then(m => ({ default: m.QuantFactorPage })));
 
 const QuantFactorReportsPage = lazy(() => import("./pages/institutional-workflow/QuantFactorReportsPage").then(m => ({ default: m.QuantFactorReportsPage })));
@@ -246,7 +247,8 @@ export default function App() {
           <Route path="/quant/strategy/:projectId/reports" element={<QuantStrategyReportsPage />} />
           <Route path="/quant/strategy/report/:runId" element={<QuantStrategyReportPage />} />
           <Route path="/quant/strategy/:projectId" element={<QuantStrategyPage />} />
-          <Route path="/quant/factor" element={<QuantFactorPage />} />
+          <Route path="/quant/factor" element={<FactorWorkflowPage />} />
+          <Route path="/quant/factor/workflow/:projectId/:step" element={<FactorWorkflowPage />} />
           <Route path="/quant/factor/reports" element={<QuantFactorReportsPage />} />
           <Route path="/quant/factor/:projectId/reports" element={<QuantFactorReportsPage />} />
           <Route path="/quant/factor/report/:runId" element={<QuantFactorReportPage />} />

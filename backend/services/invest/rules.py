@@ -1762,10 +1762,19 @@ def build_data_quality(conn: Any) -> dict[str, Any]:
     }]
     pool_cn = [s for s in pool if market_of(s["code"]) == "CN"]
     pool_codes = [s["code"] for s in pool_cn]
-    fin_codes = {r["code"] for r in rows(conn, "SELECT DISTINCT code FROM financials")}
+    # 直接读 fin_income_statement 的 symbol 索引，避免 financials 视图对 90 万行做
+    # code 变换 + DISTINCT；H5 的 code 不带交易所后缀，这里统一去掉后缀。
+    fin_codes = {
+        (symbol.split(".", 1)[0] if "." in symbol else symbol)
+        for symbol in (
+            r["symbol"] for r in rows(conn, "SELECT DISTINCT symbol FROM fin_income_statement")
+        )
+    }
     no_fin = [c for c in pool_codes if c not in fin_codes]
     fin_cov = (len(pool_codes) - len(no_fin)) / len(pool_codes) if pool_codes else 1.0
-    fin_latest_row = conn.execute("SELECT MAX(report_date) AS d FROM financials").fetchone()
+    fin_latest_row = conn.execute(
+        "SELECT MAX(report_date) AS d FROM fin_income_statement"
+    ).fetchone()
     fin_latest = (fin_latest_row or {}).get("d") or "—"
     checks.append({
         "key": "financials",

@@ -165,6 +165,18 @@ test("六角色菜单与权限边界", async ({ browser }) => {
 });
 
 test("空态：美股关注列表为空、只读角色可研究案空态", async ({ browser, request }) => {
+  test.skip(!writeEnabled, "创建空研究案/清理关注列表需要 INST_E2E_ALLOW_WRITE=1 且服务端库名为 svquant_test");
+  // 测试库会累计历史 e2e 关注项；先在隔离库清空，保证空态断言可重复。
+  const watchRes = await request.get(`${API}/api/inst/companies?pool_status=watch&limit=100`, {
+    headers: { Authorization: `Bearer ${TOKENS.manager}` },
+  });
+  const watchItems = watchRes.ok() ? (await watchRes.json()).items || [] : [];
+  for (const item of watchItems) {
+    await request.post(`${API}/api/inst/companies/${item.id}/pool`, {
+      headers: { Authorization: `Bearer ${TOKENS.manager}` },
+      data: { pool_status: "research" },
+    });
+  }
   // 美股关注列表为空（locale 切 EN 后 market=US）。
   const { ctx, page } = await openPage(browser, TOKENS.manager!, { width: 1280, height: 900 });
   await page.goto(`${BASE}/inst/overview`, { waitUntil: "networkidle" });
@@ -174,7 +186,6 @@ test("空态：美股关注列表为空、只读角色可研究案空态", async
   await expect(page.getByText(/No watchlist names|还没有关注对象/)).toBeVisible({ timeout: 20_000 });
   await ctx.close();
 
-  test.skip(!writeEnabled, "创建空研究案需要 INST_E2E_ALLOW_WRITE=1 且服务端库名为 svquant_test");
   const companies = await request.get(`${API}/api/inst/companies?q=600519&limit=1`, {
     headers: { Authorization: `Bearer ${TOKENS.manager}` },
   });

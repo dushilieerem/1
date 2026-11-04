@@ -162,8 +162,14 @@ def _beta_or_none(stock: dict[str, Any]) -> float | None:
 
         risk = md_store.risk_stats(_with_suffix(str(stock.get("code") or "")), index_code="000300.SH")
         beta = risk.get("beta_1y") if risk else None
-        # 近零 Beta 多为日期对齐/数据质量问题，宁可不展示
-        return float(beta) if beta is not None and abs(float(beta)) >= 0.1 else None
+        # 2026 年部分大盘股与沪深300相关性显著下降，近零 Beta 可能是真实样本期特征；
+        # 不再用 abs<0.1 直接丢弃，交给 _sensitivity 按区间解释，并标注样本期。
+        if beta is None:
+            return None
+        try:
+            return float(beta) if math.isfinite(float(beta)) else None
+        except (TypeError, ValueError):
+            return None
     except Exception:
         return None
 
@@ -226,11 +232,18 @@ def _sensitivity(beta: float | None) -> dict[str, Any]:
         level = "较高"
     else:
         level = "高"
+    note = "按近一年 Beta 分档：<0.8 低、0.8–1.2 中、1.2–1.5 较高、≥1.5 高；仅描述历史敏感度。"
+    if abs(beta) < 0.1:
+        note = (
+            "近一年 Beta 接近 0，说明该股与沪深300的日收益相关性很低；"
+            "这不等于低风险，可能是个股独立行情或样本期结构性背离，仅作历史描述。"
+        )
+    display_beta = 0.0 if abs(beta) < 0.005 else round(beta, 2)
     return {
         "available": True,
         "level": level,
-        "beta": round(beta, 2),
-        "note": "按近一年 Beta 分档：<0.8 低、0.8–1.2 中、1.2–1.5 较高、≥1.5 高；仅描述历史敏感度。",
+        "beta": display_beta,
+        "note": note,
     }
 
 
@@ -1354,17 +1367,23 @@ def build_data_quality(conn: Any) -> dict[str, Any]:
         "status": "fail" if not pool or stale else "pass",
         "detail": f"CN {latest_by_market.get('CN','—')} / US {latest_by_market.get('US','—')}；有日线 {len(pool)}/{len(stocks)} 只，未更新 {len(stale)}",
     }]
-    pool_codes = [s["code"] for s in pool]
+    pool_cn = [s for s in pool if market_of(s["code"]) == "CN"]
+    pool_codes = [s["code"] for s in pool_cn]
     fin_codes = {r["code"] for r in rows(conn, "SELECT DISTINCT code FROM financials")}
     no_fin = [c for c in pool_codes if c not in fin_codes]
     fin_cov = (len(pool_codes) - len(no_fin)) / len(pool_codes) if pool_codes else 1.0
+    fin_latest_row = conn.execute("SELECT MAX(report_date) AS d FROM financials").fetchone()
+    fin_latest = (fin_latest_row or {}).get("d") or "—"
     checks.append({
         "key": "financials",
         "label": "已披露财务",
-        "status": "pass" if not no_fin else ("warn" if fin_cov > 0 else "fail"),
-        "detail": f"有财务 {len(pool_codes) - len(no_fin)}/{len(pool_codes)} 只；最新 {latest}",
+        "status": "pass" if fin_cov >= 0.95 else ("warn" if fin_cov >= 0.8 else "fail"),
+        "detail": (
+            f"A 股有财务 {len(pool_codes) - len(no_fin)}/{len(pool_codes)} 只"
+            f"（{fin_cov:.1%}）；最新报告期 {fin_latest}；"
+            f"缺 {len(no_fin)} 只（新股/未披露/无财务口径）；美股无财务源，已排除"
+        ),
     })
-    pool_cn = [s for s in pool if market_of(s["code"]) == "CN"]
     no_val = [s["code"] for s in pool_cn if s.get("pe_ttm") is None]
     checks.append({
         "key": "valuations",

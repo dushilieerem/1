@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { createProject, getProject, listProjects, saveProject, type DetectProject, type FactorResearchPlan } from '@/lib/detectStore';
 import { subscribeAuth } from '@/lib/researchClient';
 import { factorStages } from './factorWorkflow';
+import { FactorPlanAssistant } from './FactorPlanAssistant';
+import { FactorEvidencePanel } from './FactorEvidencePanel';
 import { FactorDraftAssistant } from './FactorDraftAssistant';
 import { FactorDetectPage } from '@/pages/FactorDetectPage';
 import { quantReportsPath, quantReportPath } from './QuantFactorShell';
@@ -10,7 +12,7 @@ import { Card, PageHeader } from '@/pages/institution/instUi';
 const input = 'mt-2 w-full rounded-lg border border-[#e0d9ef] bg-white p-3 text-sm';
 const button = 'rounded-lg bg-[#65358D] px-4 py-2 text-sm text-white disabled:opacity-50';
 const route = (id:string, step:string) => `/quant/factor/workflow/${encodeURIComponent(id)}/${step}`;
-const emptyPlan = (): FactorResearchPlan => ({revision:'',hypothesis:'',target:'未来5个交易日收益',frequency:'1d',developmentStart:'',developmentEnd:'',validationStart:'',validationEnd:'',acceptance:'',maxTrials:10});
+const emptyPlan = (): FactorResearchPlan => ({revision:'',hypothesis:'',target:'未来5个交易日收益',frequency:'1d',developmentStart:'',developmentEnd:'',validationStart:'',validationEnd:'',acceptance:'',maxTrials:10,rules:{minSignedIc:0.01,maxDrawdown:0.3,minObservations:60,direction:'positive'}});
 export function FactorWorkflowPage() {
  const {projectId,step='F1'}=useParams(); const navigate=useNavigate();
  const [projects,setProjects]=useState<DetectProject[]>([]),[project,setProject]=useState<DetectProject>();
@@ -44,14 +46,16 @@ export function FactorWorkflowPage() {
  {loading?<p role="status">正在读取研究…</p>:<>
  {(step==='F1'||!projectId)&&<div className="grid gap-5 lg:grid-cols-2"><Card title="研究起点" desc="创建任务不要求先写代码，也不依赖上游产生新因子。"><form onSubmit={e=>{e.preventDefault();void perform(create);}}><label>研究名称<input required maxLength={100} className={input} value={title} onChange={e=>setTitle(e.target.value)}/></label><button disabled={busy} className={button+' mt-4'}>建立研究任务</button></form><Link className="mt-5 block text-sm text-[#65358D]" to="/quant/factor/library">检索已有因子与研究资产 →</Link><Link className="mt-3 block text-sm text-[#65358D]" to="/quant/factor/reports">查看历史实验报告 →</Link></Card><Card title="继续已有研究">{projects.map(p=><Link className="block border-b py-3 text-sm" key={p.id} to={route(p.id,'F2')}><strong>{p.name}</strong><p className="mt-1 text-xs text-slate-500">{p.description||'尚未填写假设'} · {p.runCount}份报告</p></Link>)}</Card></div>}
  {project&&step==='F2'&&<Card title="假设与验证计划" desc="在计算前明确研究目标、样本范围与筛选条件。"><form className="grid gap-4 md:grid-cols-2" onSubmit={e=>{e.preventDefault();void perform(persistPlan);}}>
+ <div className="md:col-span-2"><FactorPlanAssistant projectId={project.id} draft={{hypothesis:plan.hypothesis,target:plan.target,acceptance:plan.acceptance}} onApply={draft=>setPlan({...plan,...draft})}/></div>
  <label className="md:col-span-2">经济或行为假设<textarea required rows={3} className={input} value={plan.hypothesis} onChange={e=>setPlan({...plan,hypothesis:e.target.value})}/></label>
  <label>预测目标<input className={input} value={plan.target} onChange={e=>setPlan({...plan,target:e.target.value})}/></label><label>最大尝试次数<input type="number" min={1} max={1000} className={input} value={plan.maxTrials} onChange={e=>setPlan({...plan,maxTrials:Number(e.target.value)})}/></label>
  {([['developmentStart','研发开始'],['developmentEnd','研发结束'],['validationStart','验证开始'],['validationEnd','验证结束']] as const).map(([key,label])=><label key={key}>{label}<input required type="date" className={input} value={plan[key]} onChange={e=>setPlan({...plan,[key]:e.target.value})}/></label>)}
  <label className="md:col-span-2">预先约定的筛选条件<textarea required rows={3} className={input} placeholder="填写指标、成本、稳定性要求与不通过时的处理原则" value={plan.acceptance} onChange={e=>setPlan({...plan,acceptance:e.target.value})}/></label>
+ <fieldset className="grid gap-3 rounded-lg border p-4 md:col-span-2 md:grid-cols-4"><legend className="px-2 text-sm">固定版本检验的硬条件（示例初值，须按研究政策确认）</legend>{([['minSignedIc','最低方向IC'],['maxDrawdown','最大回撤（0—1）'],['minObservations','最少IC观测数']] as const).map(([key,label])=><label key={key} className="text-sm">{label}<input required type="number" step={key==='minObservations'?1:.001} min={key==='minObservations'?2:0} max={key==='minObservations'?10000:1} className={input} value={plan.rules?.[key]??''} onChange={e=>setPlan({...plan,rules:{...emptyPlan().rules!,...plan.rules,[key]:Number(e.target.value)}})}/></label>)}<label className="text-sm">预设因子方向<select className={input} value={plan.rules?.direction||'positive'} onChange={e=>setPlan({...plan,rules:{...emptyPlan().rules!,...plan.rules,direction:e.target.value as 'positive'|'negative'}})}><option value="positive">正向</option><option value="negative">反向</option></select></label></fieldset>
  <div className="flex items-center gap-4 md:col-span-2"><button disabled={busy} className={button}>保存计划</button><Link to={route(project.id,'F3')}>进入工程计算 →</Link></div></form></Card>}
  {project&&step==='F3'&&<Card title="因子实现" desc="人工编辑或采纳 AI 代码，保存到同一研究任务。"><div className="space-y-4"><label className="block">因子函数名<input className={input} value={name} onChange={e=>setName(e.target.value)}/></label><FactorDraftAssistant hypothesis={plan.hypothesis} name={name} draftVersion={JSON.stringify([plan,name,code])} onApply={f=>{setName(f.factor_name);setCode(f.factor_code);}}/><label className="block">Python 实现<textarea rows={15} spellCheck={false} className={input+' font-mono'} value={code} onChange={e=>setCode(e.target.value)}/></label><button disabled={busy} className={button} onClick={()=>void perform(persistCode)}>保存实现</button><Link className="ml-4 text-sm" to={route(project.id,'F4')}>进入研发检验 →</Link></div></Card>}
- {project&&step==='F4'&&<div className="space-y-4"><Card title="研发检验" desc="以下操作直接调用平台现有 ResearchEngine；全部检测结果保存到当前研究任务。"><Link className="text-sm text-[#65358D]" to={quantReportsPath(project.id)}>查看全部实验报告 →</Link></Card><FactorDetectPage key={project.id} navigation={{listPath:route(project.id,'F4'),reportPath:quantReportPath}}/></div>}
- {project&&(step==='F5'||step==='F6')&&<Card title={active.title} desc="此步骤正在接入服务端证据与权限校验。"><p className="text-sm text-slate-600">{step==='F5'?'当前普通回测不能作为独立验证。冻结、受控验证及报告绑定完成前，不允许标记通过。':'已有研究报告可以留档和登记研究资产；独立验证与审批接入完成前，不开放正式准入。'}</p><Link className="mt-4 inline-block text-sm text-[#65358D]" to={'/quant/factor/'+encodeURIComponent(project.id)+'/reports'}>查看真实研究报告</Link></Card>}
+ {project&&step==='F4'&&<div className="space-y-4"><FactorEvidencePanel projectId={project.id} step="F4"/><Card title="研发检验" desc="以下操作直接调用平台现有 ResearchEngine；全部检测结果保存到当前研究任务。"><Link className="text-sm text-[#65358D]" to={quantReportsPath(project.id)}>查看全部实验报告 →</Link></Card><FactorDetectPage key={project.id} navigation={{listPath:route(project.id,'F4'),reportPath:quantReportPath}}/></div>}
+ {project&&(step==='F5'||step==='F6')&&<FactorEvidencePanel projectId={project.id} step={step}/>}
  </>}
  </section>;
 }

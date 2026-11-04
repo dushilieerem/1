@@ -81,3 +81,6 @@ deploy/webhook-logs/
 
 # Generated internal product review pack (rebuild with scripts/publish_quant_delivery.py)
 /frontend/public/quant-delivery/
+
+# Isolated developer service state
+/.runtime/

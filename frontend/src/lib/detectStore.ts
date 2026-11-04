@@ -18,6 +18,7 @@ export type DraftDetectFactor = {
 };
 
 export type FactorResearchPlan = {
+  rules?: {minSignedIc:number; maxDrawdown:number; minObservations:number; direction:'positive'|'negative'};
   revision: string; hypothesis: string; target: string; frequency: string;
   developmentStart: string; developmentEnd: string;
   validationStart: string; validationEnd: string;

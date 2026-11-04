@@ -48,9 +48,9 @@ export function StrategyDraftAssistant({ hypothesis, name, draftVersion, onApply
       <h3 className="text-sm font-semibold text-[#65358D]">AI 策略草稿助手</h3>
       <button type="button" disabled={busy} onClick={() => void generate()} className="rounded-lg border border-purple-300 bg-white px-3 py-2 text-sm text-[#65358D] disabled:opacity-50">{busy ? "生成并校验中…" : "根据研究假设生成代码"}</button>
     </div>
-    <p className="text-xs text-slate-600">使用平台现有生成与静态校验能力。建议经你采纳后才填入表单；不会自动保存、回测或审批。</p>
+    <p className="text-xs text-slate-600">使用平台现有生成与静态校验能力。采纳只填入代码；股票池、日期和费用仍需在下一步配置。自由策略的持仓和调仓规则由代码决定；不会自动保存、回测或审批。</p>
     {busy && <div role="status" className="text-sm">正在请求平台生成草稿并进行静态校验。<button type="button" className="ml-3 underline" onClick={stopWaiting}>停止等待</button></div>}
-    {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+    {error && <div role="alert" className="text-sm text-red-700"><p>本次请求未完成，未采纳任何代码。</p><details className="mt-1"><summary className="cursor-pointer">错误详情</summary><p className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all">{error}</p></details></div>}
     {result && <div className="space-y-3">
       <p className="text-sm font-medium">{result.validation.status === "passed" ? "静态校验通过，等待采纳" : "未通过静态校验"}</p>
       {result.validation.errors?.map((value,i) => <p key={i} className="text-sm text-red-700">{value}</p>)}

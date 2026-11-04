@@ -1,10 +1,11 @@
 # 流程版的已有能力复用清单
 
-## 当前主 SPA 接入（V3.2）
+## 当前主 SPA 接入（V3.3）
 
 已直接复用 /api/detect/projects、/api/detect/runs、/api/backtest/factor、已有因子库与认证；真实因子报告通过公司签名验证并写入 svquant_dev。
-代码草稿复用 /api/ai/factor-generations；统一网关配置与真实模型验证尚待完成。
-策略将直接复用 /api/strategy/projects、/api/strategy/runs、同步 /api/backtest/strategy。
+因子/策略草稿分别复用 /api/ai/factor-generations 和 /api/ai/strategy-generations；公司统一网关真实生成、校验、人工采纳与真实计算已通过首批验收。
+策略已直接复用 /api/strategy/projects、/api/strategy/runs、同步 /api/backtest/strategy。
+当前自用BFF18799消费公司共享标准RE9527，独立18797已停止；未改共享服务。
 不创建另一套计算队列，不继续扩展旧计算适配器来替代标准 API。部署和验收边界见同目录开发进度。
 
 ## 历史独立工作台复用清单（保留供迁移核对）

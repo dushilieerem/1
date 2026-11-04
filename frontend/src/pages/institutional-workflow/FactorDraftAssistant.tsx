@@ -50,7 +50,7 @@ export function FactorDraftAssistant({ hypothesis, name, draftVersion, onApply }
     </div>
     <p className="text-xs text-slate-600">使用平台现有生成与静态校验能力。建议经你采纳后才填入表单；不会自动保存、回测或审批。</p>
     {busy && <div role="status" className="text-sm">正在请求平台生成草稿并进行静态校验。<button type="button" className="ml-3 underline" onClick={stopWaiting}>停止等待</button></div>}
-    {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+    {error && <div role="alert" className="text-sm text-red-700"><p>本次请求未完成，未采纳任何代码。</p><details className="mt-1"><summary className="cursor-pointer">错误详情</summary><p className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all">{error}</p></details></div>}
     {result && <div className="space-y-3">
       <p className="text-sm font-medium">{result.validation.status === "passed" ? "静态校验通过，等待采纳" : "未通过静态校验"}</p>
       {result.validation.errors?.map((value,i) => <p key={i} className="text-sm text-red-700">{value}</p>)}

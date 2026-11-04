@@ -32,7 +32,7 @@ export function QuantStrategyReportPage() {
         <p className="mt-3 text-xs text-slate-500">签名校验仅验证结果来源和完整性，不代表策略质量合格或已通过投资审批。</p>
         <dl className="mt-3 grid gap-2 sm:grid-cols-[130px_minmax(0,1fr)]">
           <dt>报告编号</dt><dd className="break-all font-mono text-xs">{run.id}</dd>
-          <dt>计算任务</dt><dd className="break-all font-mono text-xs">{String(request?._re_run_id || "接口未返回任务编号")}</dd>
+          <dt>计算任务</dt><dd className="break-all font-mono text-xs">{String(meta.run_id || request?._re_run_id || "接口未返回任务编号")}</dd>
           <dt>数据发布标识</dt><dd className="break-all font-mono text-xs">{String(meta.data_release_id || "引擎未返回")}</dd>
           <dt>计算规格摘要</dt><dd className="break-all font-mono text-xs">{String(meta.spec_hash || "引擎未返回")}</dd>
         </dl>

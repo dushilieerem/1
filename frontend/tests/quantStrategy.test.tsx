@@ -79,11 +79,12 @@ test("report request failure is visible instead of an unhandled rejection",async
 
 test("strategy provenance uses the backend report verification flag, not a factor-only field",async()=>{
   identity();
-  const record={id:"signed",projectId:"p",name:"测试报告",description:"测试",verified:true,request:{start:"2025-01-01",end:"2025-06-30"},result:{metrics:{},meta:{}},finishedAt:"2025-07-01",elapsedSec:1};
+  const record={id:"signed",projectId:"p",name:"测试报告",description:"测试",verified:true,request:{start:"2025-01-01",end:"2025-06-30"},result:{metrics:{},meta:{run_id:"actual-engine-run"}},finishedAt:"2025-07-01",elapsedSec:1};
   globalThis.fetch=async()=>Response.json({run:record,project:{id:"p",config:defaultStrategyConfig()}});
   const view=render(<MemoryRouter initialEntries={["/quant/strategy/report/signed"]}><Routes><Route path="/quant/strategy/report/:runId" element={<QuantStrategyReportPage/>}/></Routes></MemoryRouter>);
   await waitFor(()=>assert.ok(view.getByText("计算来源 · 平台签名校验通过")));
   assert.ok(view.getAllByText("引擎未返回").length>=1);
+  assert.ok(view.getByText("actual-engine-run"));
 });
 
 test("strategy AI uses the shared generation endpoint and requires adoption",async()=>{

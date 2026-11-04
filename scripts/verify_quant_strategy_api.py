@@ -23,6 +23,7 @@ def main():
     parser.add_argument("--source-report", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--allow-development-write", action="store_true")
+    parser.add_argument("--require-provenance", action="store_true")
     args = parser.parse_args()
     target = urlparse(args.base_url)
     if not args.allow_development_write:
@@ -53,6 +54,9 @@ def main():
         ))
         assert not result.get("error"), "engine returned an error"
         assert result.get("_svquant_verified_token"), "missing result signature"
+        if args.require_provenance:
+            for field in ("data_release_id", "spec_hash", "run_id"):
+                assert result.get("meta", {}).get(field), "missing provenance: " + field
         body = {
             "projectId": source["projectId"], "name": project["name"],
             "description": "真实策略 API 开发验收",

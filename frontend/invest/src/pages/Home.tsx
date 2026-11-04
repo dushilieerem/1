@@ -11,6 +11,23 @@ import { LocaleToggle, useLocale, withMarket } from "../i18n";
 
 type HomeData = any;
 
+const INDEX_LABEL: Record<string, { zh: string; en: string }> = {
+  "000300": { zh: "沪深300", en: "CSI 300" },
+  "000905": { zh: "中证500", en: "CSI 500" },
+  "000015": { zh: "上证红利", en: "SSE Dividend" },
+  "399101": { zh: "深证综指", en: "SZ Composite" },
+  "399303": { zh: "国证2000", en: "CNI 2000" },
+  "399317": { zh: "国证A指", en: "CNI A" },
+};
+
+function indexLabel(name: string, t: (zh: string, en: string) => string) {
+  const key = String(name || "").replace(/\.(SH|SZ)$/i, "");
+  const item = INDEX_LABEL[key];
+  if (item) return t(item.zh, item.en);
+  if (/^\d{6}$/.test(key)) return t(`指数 ${key}`, `Index ${key}`);
+  return name;
+}
+
 export default function Home() {
   const { user } = useAuth();
   const nav = useNavigate();
@@ -21,6 +38,7 @@ export default function Home() {
   const [data, setData] = useState<HomeData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [glossary, setGlossary] = useState(false);
+  const usUnavailable = data?.market === "US" && data?.hasQuotes === false;
 
   const load = () => {
     setError(null);
@@ -47,7 +65,7 @@ export default function Home() {
             <h1>{t("下午好，", "Good afternoon, ")}{displayName}</h1>
             <p>
               {t("先看懂，再决定", "Understand first, then decide")} · {data?.dataDate || "2026-10-23"} ·{" "}
-              {data?.isDemo ? t("演示数据", "Demo data") : market === "US" ? "Public EOD (US)" : t("公开 EOD", "Public EOD")}
+              {data?.isDemo ? t("演示数据", "Demo data") : market === "US" ? (data?.dataSource || "Public EOD (US)") : t("公开 EOD", "Public EOD")}
             </p>
           </div>
           <div className="home-actions">
@@ -63,7 +81,7 @@ export default function Home() {
         </div>
         <button className="searchbar" onClick={() => nav("/search")}>
           <Search size={18} />
-          <span>{market === "US" ? t("搜索美股代码，如 AAPL", "Search US ticker, e.g. AAPL") : t("搜索股票 / 行业 / 主题", "Search stocks / industries / themes")}</span>
+          <span>{market === "US" ? (usUnavailable ? t("美股搜索暂不可用", "US search unavailable") : t("搜索美股代码，如 AAPL", "Search US ticker, e.g. AAPL")) : t("搜索股票 / 行业 / 主题", "Search stocks / industries / themes")}</span>
         </button>
         {market === "CN" ? (
           <button className="ai-entry" onClick={() => nav("/ai")}>
@@ -74,7 +92,11 @@ export default function Home() {
         ) : (
           <div className="ai-entry market-note">
             <Sparkles size={16} />
-            <span>{t("美股版当前提供行情与自选；AI 与基本面数据待接入。", "US mode currently covers quotes and watchlists; AI and fundamentals are not connected yet.")}</span>
+            <span>
+              {usUnavailable
+                ? t("当前数据视图没有美股行情；切换到中文查看 A 股。", "This data view has no US quotes; switch to 中文 for A-share coverage.")
+                : t("美股版当前提供行情与自选；AI 与基本面数据待接入。", "US mode currently covers quotes and watchlists; AI and fundamentals are not connected yet.")}
+            </span>
           </div>
         )}
       </header>
@@ -93,6 +115,18 @@ export default function Home() {
 
       {data ? (
         <>
+          {usUnavailable ? (
+            <section className="card empty-data">
+              <h2>{t("美股行情暂未接入", "US quotes not available")}</h2>
+              <p>
+                {t(
+                  "当前数据视图只有 A 股覆盖，美股行情、财务、估值、新闻都未接入。切换到中文可查看 A 股。",
+                  "The current data view only covers A-shares; US quotes, financials, valuation and news are not connected. Switch to 中文 for A-share coverage.",
+                )}
+              </p>
+            </section>
+          ) : (
+          <>
           <section className="daily-card">
             <div className="daily-head">
               <div className="row gap6">
@@ -145,7 +179,7 @@ export default function Home() {
             <div className="index-strip">
               {data.indices.map((it: any) => (
                 <div className="index-cell" key={it.name}>
-                  <span>{it.name}</span>
+                  <span>{indexLabel(it.name, t)}</span>
                   <b>{it.value}</b>
                   <em className={it.change >= 0 ? "up" : "down"}>{fmtPct(it.change)}</em>
                 </div>
@@ -168,7 +202,11 @@ export default function Home() {
                         <span className="topic-kicker">{t("行业 / 主题", "Sector / theme")}</span>
                         <h3>{topic.name}</h3>
                       </div>
-                      <Sparkline values={topic.spark} />
+                      {topic.spark?.length >= 2 ? (
+                        <Sparkline values={topic.spark} />
+                      ) : (
+                        <span className="hint">{t("走势待补充", "Trend pending")}</span>
+                      )}
                     </div>
                     <p>{topic.summary}</p>
                     <div className="topic-foot">
@@ -205,6 +243,8 @@ export default function Home() {
               ))
             )}
           </div>
+          </>
+          )}
 
           <SectionHead title={t("3 分钟学习", "3-minute learn")} sub={t("术语随问随学", "Tap a term to learn")} />
           <button className="learn-card" onClick={() => setGlossary(true)}>
@@ -218,7 +258,9 @@ export default function Home() {
 
           <Disclaimer>
             {market === "US"
-              ? t("美股行情：公开 EOD · 无财务/估值/新闻/指数", "US quotes: public EOD · no fundamentals, valuation, news or indices")
+              ? usUnavailable
+                ? t("美股行情未接入", "US quotes not connected")
+                : t("美股行情：公开 EOD · 无财务/估值/新闻/指数", "US quotes: public EOD · no fundamentals, valuation, news or indices")
               : data.isDemo
                 ? t("演示数据", "Demo data")
                 : t("行情/组合/主题：公开 EOD（主题为等权代理） · 资讯：公开标题", "Quotes/portfolio/themes: public EOD (themes are equal-weight proxies) · News: public headlines")}

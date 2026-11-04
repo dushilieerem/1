@@ -170,7 +170,14 @@ export function EmptyState({ title, detail, action }: { title: string; detail?: 
 }
 
 export function Sparkline({ values, width = 96, height = 34 }: { values: number[]; width?: number; height?: number }) {
-  if (!values || values.length < 2) return <div className="spark-empty" style={{ width, height }} />;
+  const { t } = useLocale();
+  if (!values || values.length < 2) {
+    return (
+      <div className="spark-empty" style={{ width, height }} title={t("走势待补充", "Trend data pending")}>
+        <span>—</span>
+      </div>
+    );
+  }
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;

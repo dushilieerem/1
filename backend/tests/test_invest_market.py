@@ -53,6 +53,15 @@ def test_us_home_breadth(monkeypatch):
     assert out["daily"][0]["tag"].startswith("US")
 
 
+def test_us_home_without_coverage(monkeypatch):
+    monkeypatch.setattr(rules, "rows", lambda conn, sql, args=(): [])
+    out = rules.build_home(conn=FakeConn(), user_id=1, market="US")
+    assert out["market"] == "US" and out["hasQuotes"] is False
+    assert out["daily"] == []
+    assert "unavailable" in out["review"]["title"].lower()
+    assert out["watchlist"] == []
+
+
 def test_us_search_presets(monkeypatch):
     stocks = [
         _us("AAPL.O", "苹果", 110, 100, amount=5e9),

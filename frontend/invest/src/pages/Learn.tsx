@@ -129,7 +129,7 @@ export default function Learn() {
             <div className="term-block"><b>{t("例子", "Example")}</b><p>{active.example}</p></div>
             {active.misuse ? <div className="term-block"><b>{t("常见误用", "Common misuse")}</b><p>{active.misuse}</p></div> : null}
             {active.related?.length ? (
-              <p className="hint">{t("相关：", "Related: ")}{active.related.join(t("、", ", "))}</p>
+              <p className="hint">{t("相关：", "Related: ")}{active.related.map((id) => items.find((x) => x.id === id)?.term || id).join(t("、", ", "))}</p>
             ) : null}
             <p className="hint">
               <BookOpen size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />

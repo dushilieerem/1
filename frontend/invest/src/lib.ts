@@ -134,6 +134,7 @@ const ENUM_EN: Record<string, string> = {
   保守型: "Conservative",
   "公开 EOD（腾讯 / 东方财富）": "Public EOD (Tencent / Eastmoney)",
   本地演示数据: "Local demo data",
+  "US coverage unavailable": "US coverage unavailable",
 };
 
 const ENUM_ZH: Record<string, string> = {
@@ -163,6 +164,7 @@ const ENUM_ZH: Record<string, string> = {
   value: "价值",
   value_growth: "价值成长",
   custom: "自定义",
+  "US coverage unavailable": "美股数据未接入",
 };
 
 /** 把 pending/passed、vectorized、持有/空仓 等枚举转成人话；未知值原样返回。 */

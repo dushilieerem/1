@@ -98,7 +98,17 @@ export default function Search() {
 
       {error ? <ErrorState message={error} /> : null}
 
-      {!q && data ? (
+      {!q && data && market === "US" && data.available === false ? (
+        <EmptyState
+          title={t("美股行情暂未接入", "US quotes not available")}
+          detail={t(
+            "当前数据视图只有 A 股覆盖，美股搜索与预设暂不可用。切换到中文查看 A 股。",
+            "The current data view only covers A-shares; US search and presets are unavailable. Switch to 中文 for A-share coverage.",
+          )}
+        />
+      ) : null}
+
+      {!q && data && !(market === "US" && data.available === false) ? (
         <>
           <SectionHead title={t("预设条件", "Presets")} sub={t("基于收盘快照 · 仅供研究", "Based on the EOD snapshot · research only")} />
           <div className="stack">

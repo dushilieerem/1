@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "test": "node --import tsx --test tests/aiFactorFeedback.test.tsx tests/aiStrategyFeedback.test.tsx tests/backtestFilters.test.tsx tests/commentThreads.test.mjs tests/communityForms.test.tsx tests/communityLimits.test.mjs tests/factorIcMetrics.test.ts tests/factorPanelSort.test.ts tests/factorRegressions.test.tsx tests/factorFlowNavigation.test.tsx tests/newsFilters.test.tsx tests/paperTrading.test.ts tests/instNav.test.ts tests/autosave.test.ts tests/i18n.test.ts tests/commentProgressive.test.tsx",
+    "test": "node --import tsx --test tests/aiFactorFeedback.test.tsx tests/aiStrategyFeedback.test.tsx tests/backtestFilters.test.tsx tests/commentThreads.test.mjs tests/communityForms.test.tsx tests/communityLimits.test.mjs tests/factorIcMetrics.test.ts tests/factorPanelSort.test.ts tests/factorRegressions.test.tsx tests/factorFlowNavigation.test.tsx tests/newsFilters.test.tsx tests/paperTrading.test.ts tests/strategyFactorSync.test.ts tests/instNav.test.ts tests/autosave.test.ts tests/i18n.test.ts tests/commentProgressive.test.tsx",
     "test:inst": "node --import tsx --test tests/instNav.test.ts",
     "test:ai-factor": "node --import tsx --test tests/aiFactorFeedback.test.tsx",
     "test:ai-strategy": "node --import tsx --test tests/aiStrategyFeedback.test.tsx",

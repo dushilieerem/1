@@ -29,6 +29,7 @@ import {
   FACTORS_BEGIN,
   FACTORS_END,
   applySignalFactorsToCode,
+  findUneditedFactorStub,
   hydrateSignalSelection,
   normalizeSignalPowers,
   normalizeSignalWeights,
@@ -509,6 +510,13 @@ export function StrategyBacktestPage() {
     const snapshotCode = cfg.strategy_code.trim();
     if (!strategyId && !snapshotCode) {
       pushLog("策略代码为空");
+      return;
+    }
+    const uneditedStub = findUneditedFactorStub(snapshotCode);
+    if (uneditedStub) {
+      pushLog(
+        `临时因子「${uneditedStub}」尚未编辑（仍是零值占位），请先补全公式再回测`,
+      );
       return;
     }
     const range = resolveStrategyRange(cfg);

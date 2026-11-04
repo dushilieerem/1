@@ -37,6 +37,9 @@ ETF_INDEX: dict[str, str] = {
 
 _ETF_RE = re.compile(r"^(5[168]\d{4}\.SH|1[56]\d{4}\.SZ)$")
 
+# 货币 ETF/现金管理工具没有股票成分，不能按指数代理展示。
+CASH_ETFS = {"511880.SH", "511990.SH", "511660.SH", "511620.SH", "511850.SH"}
+
 
 def normalize_etf(code: str) -> str:
     text = (code or "").strip().upper()
@@ -85,6 +88,19 @@ def load_weights(index_code: str) -> list[dict[str, Any]]:
 
 def profile(code: str, *, top: int = 20) -> dict[str, Any]:
     symbol = normalize_etf(code)
+    if symbol in CASH_ETFS:
+        return {
+            "ok": True,
+            "etf": symbol,
+            "tracking": "cash_management",
+            "tracked_index": None,
+            "constituent_count": 0,
+            "constituents": [],
+            "warning": (
+                "货币 ETF/现金管理工具，没有股票成分，不适用指数穿透；"
+                "它不是“数据缺失”，也不代表收益承诺。ETF 日线仅到 2026-10-23，不能当实时净值。"
+            ),
+        }
     index_code = ETF_INDEX.get(symbol)
     if not index_code:
         return {

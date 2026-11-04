@@ -10,11 +10,21 @@ type Argument = {
   id: number;
   side: "bull" | "bear" | "chair";
   round: number;
+  claim_id?: string;
+  claim_type?: string;
   claim: string;
   evidence_ids?: number[];
   confidence?: number;
   falsifier?: string;
   valid?: boolean;
+};
+
+type EvidenceCheck = {
+  claim_id: string;
+  evidence_id: number;
+  status: "verified" | "partially_verified" | "unverified" | "contradicted" | string;
+  grade?: string;
+  issues?: string[];
 };
 
 type Debate = {
@@ -26,6 +36,14 @@ type Debate = {
   company_name?: string;
   symbol?: string;
   arguments?: Argument[];
+  evidence_checks?: EvidenceCheck[];
+};
+
+const EVIDENCE_CHECK_LABEL: Record<string, string> = {
+  verified: "已核验",
+  partially_verified: "部分核验",
+  unverified: "待核验",
+  contradicted: "与原文矛盾",
 };
 
 type ExitCase = {
@@ -185,6 +203,8 @@ export function InstDebatePage() {
       chair: args.filter((a) => a.side === "chair"),
     };
   }, [debate]);
+  const checksFor = (claimId?: string) =>
+    (debate?.evidence_checks || []).filter((check) => check.claim_id === claimId);
 
   if (loading) {
     return (
@@ -302,10 +322,22 @@ export function InstDebatePage() {
             </div>
             <p className="mb-3 text-[11px] leading-relaxed text-[#77718c]">
               {t(
-                "证据 ID 对应研究页「证据与反证」中的编号；没有有效证据引用的论点不计入裁决。",
-                "Evidence IDs refer to the numbers in the research page's Evidence & counter-evidence card; arguments without valid citations are excluded from the verdict.",
+                "证据 ID 对应研究页「证据与反证」中的编号；没有有效证据引用的论点不计入裁决。D 级证据不能单独支撑结论。",
+                "Evidence IDs refer to the numbers in the research page's Evidence & counter-evidence card; arguments without valid citations are excluded from the verdict. Grade D evidence cannot support a conclusion alone.",
               )}
             </p>
+            {debate.evidence_checks?.length ? (
+              <p className="mb-3 flex flex-wrap gap-1.5 text-[10px] text-[#68738b]">
+                {(["verified", "partially_verified", "unverified", "contradicted"] as const).map((status) => {
+                  const count = debate.evidence_checks!.filter((check) => check.status === status).length;
+                  return count ? (
+                    <span key={status} className="rounded bg-[#f2f4f9] px-1.5 py-0.5">
+                      {EVIDENCE_CHECK_LABEL[status]} {count}
+                    </span>
+                  ) : null;
+                })}
+              </p>
+            ) : null}
             <div className="grid gap-4 md:grid-cols-2">
               {[
                 { key: "bull", title: t("正方 · 看多", "Bull case"), tone: "green" as const, items: groups.bull },
@@ -327,13 +359,34 @@ export function InstDebatePage() {
                             </span>
                           </div>
                           <p className="mt-2 text-xs leading-relaxed text-[#505369]">{a.claim}</p>
-                          {a.evidence_ids?.length ? (
+                          {a.evidence_ids?.length && a.valid !== false ? (
                             <p className="mt-2 font-mono text-[10px] text-[#77718c]">
                               {t("证据", "Evidence")}：{a.evidence_ids.join(", ")}
                             </p>
                           ) : (
                             <p className="mt-2 text-[10px] text-amber-600">{t("无有效证据引用，不计入裁决", "No valid evidence citation; excluded from the verdict")}</p>
                           )}
+                          {checksFor(a.claim_id).length ? (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {checksFor(a.claim_id).map((check) => (
+                                <span
+                                  key={`${check.claim_id}-${check.evidence_id}`}
+                                  className={`rounded px-1.5 py-0.5 text-[10px] ${
+                                    check.status === "verified"
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : check.status === "contradicted"
+                                        ? "bg-red-50 text-red-700"
+                                        : check.status === "partially_verified"
+                                          ? "bg-amber-50 text-amber-700"
+                                          : "bg-[#f2f4f9] text-[#77718c]"
+                                  }`}
+                                  title={(check.issues || []).join("；")}
+                                >
+                                  #{check.evidence_id} {EVIDENCE_CHECK_LABEL[check.status] || check.status}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
                           {a.falsifier ? (
                             <p className="mt-2 text-[11px] leading-relaxed text-[#68738b]">
                               {t("可证伪条件", "Falsifier")}：{a.falsifier}

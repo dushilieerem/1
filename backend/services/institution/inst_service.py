@@ -102,6 +102,65 @@ def _hash(payload: Any) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _ensure_version_hash(conn, version: Any) -> dict[str, Any]:
+    """为旧版本补内容 hash；新版本在生成时已写入。"""
+    row = dict(version)
+    if row.get("content_hash"):
+        return row
+    ev_ids = [int(x) for x in (row.get("evidence_ids") or []) if str(x).isdigit()]
+    evidence_rows = []
+    if ev_ids:
+        evidence_rows = conn.execute(
+            "SELECT hash, available_time, as_of FROM inst_evidence WHERE id = ANY(%s) ORDER BY id",
+            (ev_ids,),
+        ).fetchall()
+    cutoff = max(
+        (
+            str(e.get("available_time") or e.get("as_of"))
+            for e in evidence_rows
+            if e.get("available_time") or e.get("as_of")
+        ),
+        default=date.today().isoformat(),
+    )
+    digest = _hash(
+        {
+            "case_id": row.get("case_id"),
+            "six_dim": row.get("six_dim") or [],
+            "valuation": row.get("valuation"),
+            "conclusion": row.get("conclusion"),
+            "assumptions": row.get("assumptions") or [],
+            "counter_evidence": row.get("counter_evidence") or [],
+            "open_questions": row.get("open_questions") or [],
+            "evidence_ids": ev_ids,
+            "evidence_hashes": sorted(str(e.get("hash") or "") for e in evidence_rows),
+            "cutoff": cutoff,
+        }
+    )
+    conn.execute(
+        "UPDATE inst_research_version SET content_hash=%s, cutoff=COALESCE(cutoff,%s) WHERE id=%s",
+        (digest, cutoff, row["id"]),
+    )
+    row["content_hash"] = digest
+    row["cutoff"] = row.get("cutoff") or cutoff
+    return row
+
+
+def _evidence_grade(source: str, kind: str, explicit: Any = None) -> str:
+    """证据等级：A 公告/年报，B 交易所/数据平台，C 第三方/媒体，D AI/推断。"""
+    if str(explicit or "").upper() in {"A", "B", "C", "D"}:
+        return str(explicit).upper()
+    text = f"{source} {kind}".lower()
+    if "agent" in text:
+        return "D"
+    if kind == "filing":
+        return "A"
+    if kind in {"financial", "market"} and "ifind" in text:
+        return "B"
+    if kind in {"filing", "news", "research", "fact"}:
+        return "C"
+    return "D"
+
+
 def _yi(value: Any) -> str:
     if value is None:
         return "待补充"
@@ -946,14 +1005,24 @@ def _build_research(company: dict[str, Any], mode: str = "full") -> dict[str, An
     def add_ev(title: str, quote: str, kind: str = "fact") -> int:
         # 先占位，写入时再拿真实 ID；用负数占位，_persist_research 替换
         idx = len(evidence)
+        source = "ifind:parquet" if kind in {"market", "financial"} else "eastmoney"
+        as_of = (bar or {}).get("trade_date") or latest_fin.get("notice_date") or date.today().isoformat()
+        grade = _evidence_grade(source, kind)
         evidence.append(
             {
                 "title": title,
                 "quote": quote,
-                "source": "ifind:parquet" if kind in {"market", "financial"} else "eastmoney",
+                "source": source,
                 "evidence_type": kind,
-                "as_of": (bar or {}).get("trade_date") or latest_fin.get("notice_date"),
-                "hash": _hash([title, quote]),
+                "grade": grade,
+                "as_of": as_of,
+                "event_time": as_of,
+                "available_time": as_of,
+                "cutoff": as_of,
+                "document_id": None,
+                "page_ref": None,
+                "source_uri": None,
+                "hash": _hash([title, quote, source, grade, as_of]),
                 "_idx": idx,
             }
         )
@@ -1521,17 +1590,25 @@ def generate_research(
                 row = conn.execute(
                     """
                     INSERT INTO inst_evidence
-                      (org_id, case_id, evidence_type, title, quote, source, as_of, hash, added_by)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+                      (org_id, case_id, evidence_type, grade, title, quote, source, as_of,
+                       event_time, available_time, document_id, page_ref, source_uri, cutoff, hash, added_by)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
                     """,
                     (
                         org_id,
                         case_id,
                         ev.get("evidence_type") or "fact",
+                        ev.get("grade") or _evidence_grade(str(ev.get("source") or ""), str(ev.get("evidence_type") or "fact")),
                         ev["title"],
                         ev.get("quote"),
                         ev["source"],
                         ev.get("as_of"),
+                        ev.get("event_time") or ev.get("as_of"),
+                        ev.get("available_time") or ev.get("as_of"),
+                        ev.get("document_id"),
+                        ev.get("page_ref"),
+                        ev.get("source_uri"),
+                        ev.get("cutoff") or ev.get("available_time") or ev.get("as_of"),
                         ev["hash"],
                         actor_member_id,
                     ),
@@ -1582,12 +1659,42 @@ def generate_research(
             (case_id,),
         ).fetchone()["n"]
         conclusion = "有条件通过" if built["data_gaps"] == [] else "待补充"
+        assumptions = [built["valuation"]["assumptions"]] if built["valuation"] else []
+        counter_evidence = [c for d in built["dims"] for c in d.get("counter", [])]
+        open_questions = built["data_gaps"]
+        version_evidence = conn.execute(
+            "SELECT hash, available_time, as_of FROM inst_evidence "
+            "WHERE id = ANY(%s) ORDER BY id",
+            (ev_ids,),
+        ).fetchall()
+        cutoff = max(
+            (
+                str(ev.get("available_time") or ev.get("as_of"))
+                for ev in version_evidence
+                if ev.get("available_time") or ev.get("as_of")
+            ),
+            default=date.today().isoformat(),
+        )
+        content_hash = _hash(
+            {
+                "case_id": case_id,
+                "six_dim": built["dims"],
+                "valuation": built["valuation"],
+                "conclusion": conclusion,
+                "assumptions": assumptions,
+                "counter_evidence": counter_evidence,
+                "open_questions": open_questions,
+                "evidence_ids": ev_ids,
+                "evidence_hashes": sorted(str(ev.get("hash") or "") for ev in version_evidence),
+                "cutoff": cutoff,
+            }
+        )
         row = conn.execute(
             """
             INSERT INTO inst_research_version
               (case_id, version_no, status, six_dim, valuation, conclusion, assumptions,
-               counter_evidence, open_questions, evidence_ids, created_by)
-            VALUES (%s,%s,'pending_review',%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *
+               counter_evidence, open_questions, evidence_ids, content_hash, cutoff, created_by)
+            VALUES (%s,%s,'pending_review',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *
             """,
             (
                 case_id,
@@ -1595,10 +1702,12 @@ def generate_research(
                 _j(built["dims"]),
                 _j(built["valuation"]),
                 conclusion,
-                _j([built["valuation"]["assumptions"]] if built["valuation"] else []),
-                _j([c for d in built["dims"] for c in d.get("counter", [])]),
-                _j(built["data_gaps"]),
+                _j(assumptions),
+                _j(counter_evidence),
+                _j(open_questions),
                 _j(ev_ids),
+                content_hash,
+                cutoff,
                 actor_member_id,
             ),
         ).fetchone()
@@ -1623,6 +1732,8 @@ def generate_research(
                 "mode": mode,
                 "agents": built["agent_states"],
                 "merged_from_version_no": int(existing["version_no"]) if existing else None,
+                "content_hash": content_hash,
+                "cutoff": cutoff,
             },
         )
     return get_case(org_id, case_id)  # type: ignore[return-value]
@@ -1652,6 +1763,7 @@ def review_research(
         if not row:
             raise LookupError("研究版本不存在")
         if decision == "approve":
+            row = _ensure_version_hash(conn, row)
             conn.execute(
                 "UPDATE inst_research_version SET status='approved', frozen_at=NOW(), approved_by=%s, approved_at=NOW() WHERE id=%s",
                 (actor_member_id, version_id),
@@ -1791,7 +1903,9 @@ def _evidence_payload(conn, evidence_ids: list[int]) -> list[dict[str, Any]]:
     if not evidence_ids:
         return []
     rows = conn.execute(
-        "SELECT id, title, quote, source, as_of FROM inst_evidence WHERE id = ANY(%s)", (evidence_ids,)
+        "SELECT id, title, quote, source, as_of, grade, event_time, available_time, "
+        "document_id, page_ref, source_uri, cutoff FROM inst_evidence WHERE id = ANY(%s)",
+        (evidence_ids,),
     ).fetchall()
     return [_row_dict(r) or {} for r in rows]
 
@@ -1874,6 +1988,7 @@ def start_debate(
         ).fetchone()
         if not version:
             raise PermissionError("研究未审核通过，不能进入辩论")
+        version = _ensure_version_hash(conn, version)
         ev_ids = list(version.get("evidence_ids") or [])
         evidence = _evidence_payload(conn, [int(x) for x in ev_ids])
         factpack = {
@@ -1894,25 +2009,59 @@ def start_debate(
             ai_args = _ai_debate(dict(case), evidence, version.get("valuation"), ev_ids)
             if ai_args:
                 args = ai_args
+        evidence_by_id = {int(e["id"]): e for e in evidence}
         for side in ("bull", "bear", "chair"):
-            for item in args.get(side, []):
+            for index, item in enumerate(args.get(side, []), start=1):
+                round_no = int(item.get("round") or 1)
+                evidence_ids = [int(x) for x in (item.get("evidence_ids") or []) if str(x).isdigit()]
+                claim_id = str(item.get("claim_id") or f"{side}-{round_no}-{index}")
+                valid = bool(evidence_ids) if side in {"bull", "bear"} else True
                 conn.execute(
                     """
                     INSERT INTO inst_debate_argument
-                      (session_id, side, round, claim, evidence_ids, confidence, falsifier, valid)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                      (session_id, side, round, claim_id, claim_type, claim, evidence_ids,
+                       confidence, falsifier, valid)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     """,
                     (
                         int(session["id"]),
                         side,
-                        int(item.get("round") or 1),
+                        round_no,
+                        claim_id,
+                        str(item.get("claim_type") or "inference"),
                         str(item.get("claim") or ""),
-                        _j(item.get("evidence_ids") or []),
+                        _j(evidence_ids),
                         float(item.get("confidence") or 0),
                         item.get("falsifier"),
-                        True,
+                        valid,
                     ),
                 )
+                for evidence_id in evidence_ids:
+                    ev = evidence_by_id.get(evidence_id)
+                    grade = str((ev or {}).get("grade") or "D")
+                    status = (
+                        "verified"
+                        if grade == "A"
+                        else "partially_verified"
+                        if grade in {"B", "C"}
+                        else "unverified"
+                    )
+                    issues = []
+                    if ev is None:
+                        issues.append("证据 ID 不在本版本证据包")
+                    elif grade == "D":
+                        issues.append("D 级证据不得单独支撑结论")
+                    elif grade in {"B", "C"}:
+                        issues.append("需回原始公告或文件核对")
+                    conn.execute(
+                        """
+                        INSERT INTO inst_evidence_check
+                          (session_id, claim_id, evidence_id, status, grade, issues)
+                        VALUES (%s,%s,%s,%s,%s,%s)
+                        ON CONFLICT (session_id, claim_id, evidence_id) DO NOTHING
+                        """,
+                        (int(session["id"]), claim_id, evidence_id, status, grade, _j(issues)),
+                    )
         conclusion = "补充研究" if not evidence else "推进审议"
         conn.execute(
             "UPDATE inst_debate_session SET status='completed', agenda_step=9, conclusion=%s, ended_at=NOW() WHERE id=%s",
@@ -2002,8 +2151,13 @@ def get_debate(org_id: int, session_id: int) -> dict[str, Any] | None:
             "SELECT * FROM inst_debate_argument WHERE session_id=%s ORDER BY round, side, id",
             (session_id,),
         ).fetchall()
+        checks = conn.execute(
+            "SELECT * FROM inst_evidence_check WHERE session_id=%s ORDER BY claim_id, evidence_id",
+            (session_id,),
+        ).fetchall()
     out = _row_dict(row) or {}
     out["arguments"] = [_row_dict(r) for r in args]
+    out["evidence_checks"] = [_row_dict(r) for r in checks]
     return out
 
 
@@ -2156,6 +2310,7 @@ def create_proposal(
         ).fetchone()
         if not version:
             raise PermissionError("没有已审核通过的研究版本")
+        version = _ensure_version_hash(conn, version)
         debate = conn.execute(
             "SELECT * FROM inst_debate_session WHERE case_id=%s AND status='completed' ORDER BY id DESC LIMIT 1",
             (case_id,),
@@ -2175,9 +2330,16 @@ def create_proposal(
             resolved_target = float(target_weight)
         if not (0 <= resolved_target <= 1):
             raise ValueError("target_weight 必须在 0-1")
+        version_evidence_ids = [int(x) for x in (version.get("evidence_ids") or []) if str(x).isdigit()]
+        evidence_hash = (
+            _hash(_evidence_payload(conn, version_evidence_ids)) if version_evidence_ids else None
+        )
         snapshot = {
             "research_version_id": int(version["id"]),
             "research_version_no": int(version["version_no"]),
+            "research_content_hash": version.get("content_hash"),
+            "research_cutoff": (version.get("cutoff").isoformat() if hasattr(version.get("cutoff"), "isoformat") else version.get("cutoff")),
+            "evidence_hash": evidence_hash,
             "debate_session_id": int(debate["id"]) if debate else None,
             "direction": resolved_direction,
             "target_weight": resolved_target,
@@ -2458,6 +2620,24 @@ def _risk_checks(conn, org_id: int, proposal: dict[str, Any], version: dict[str,
     cash_after = (cash - amount) / nav if nav else 0
     valid_until = snapshot.get("valid_until")
     expired = bool(valid_until and str(valid_until)[:10] < date.today().isoformat())
+    research_id = snapshot.get("research_version_id")
+    research_row = (
+        conn.execute("SELECT * FROM inst_research_version WHERE id=%s", (research_id,)).fetchone()
+        if research_id
+        else None
+    )
+    research = dict(research_row) if research_row else {}
+    research_hash = str(research.get("content_hash") or "")
+    research_ev_ids = [int(x) for x in (research.get("evidence_ids") or []) if str(x).isdigit()]
+    current_evidence_hash = _hash(_evidence_payload(conn, research_ev_ids)) if research_ev_ids else None
+    snapshot_research_hash = str(snapshot.get("research_content_hash") or "")
+    snapshot_evidence_hash = snapshot.get("evidence_hash")
+    hash_ok = bool(
+        research
+        and research_hash
+        and snapshot_research_hash == research_hash
+        and snapshot_evidence_hash == current_evidence_hash
+    )
     checks = [
         {
             "key": "single_weight",
@@ -2478,7 +2658,14 @@ def _risk_checks(conn, org_id: int, proposal: dict[str, Any], version: dict[str,
             "label": "研究/议案版本一致",
             "threshold": None,
             "value": f"research={snapshot.get('research_version_id')} proposal={version.get('version_no')}",
-            "status": "pass" if snapshot.get("research_version_id") else "block",
+            "status": "pass" if research and snapshot.get("research_version_id") else "block",
+        },
+        {
+            "key": "hash_binding",
+            "label": "研究内容/证据 hash 一致",
+            "threshold": None,
+            "value": f"research={snapshot_research_hash[:12] or '缺失'} evidence={str(snapshot_evidence_hash or '缺失')[:12]}",
+            "status": "pass" if hash_ok else "block",
         },
         {
             "key": "validity",
@@ -2598,7 +2785,11 @@ def authorize(org_id: int, proposal_id: int, *, actor_member_id: int | None) -> 
             "proposal_id": proposal_id,
             "proposal_version_id": int(current["id"]),
             "proposal_version_no": int(current["version_no"]),
+            "proposal_hash": _hash(current.get("snapshot") or {}),
             "research_version_id": (current.get("snapshot") or {}).get("research_version_id"),
+            "research_content_hash": (current.get("snapshot") or {}).get("research_content_hash"),
+            "research_cutoff": (current.get("snapshot") or {}).get("research_cutoff"),
+            "evidence_hash": (current.get("snapshot") or {}).get("evidence_hash"),
             "direction": proposal["direction"],
             "target_weight": (current.get("snapshot") or {}).get("target_weight", proposal["target_weight"]),
             "price_low": (current.get("snapshot") or {}).get("price_low"),

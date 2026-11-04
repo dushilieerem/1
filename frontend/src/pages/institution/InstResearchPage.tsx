@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Download, FileSearch, Loader2, Lock, Sparkles } from "lucide-react";
-import { instApi, fmtNum } from "@/lib/instApi";
+import { instApi, fmtNum, fmtDateTime } from "@/lib/instApi";
 import { getInstToken } from "@/lib/instAuth";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
@@ -35,6 +35,9 @@ type Version = {
   counter_evidence?: string[];
   open_questions?: string[];
   evidence_ids?: number[];
+  content_hash?: string;
+  cutoff?: string;
+  frozen_at?: string;
 };
 
 type Memo = {
@@ -71,6 +74,12 @@ type CaseItem = {
     source: string;
     as_of?: string;
     evidence_type?: string;
+    grade?: string;
+    event_time?: string;
+    available_time?: string;
+    document_id?: string;
+    page_ref?: string;
+    source_uri?: string;
   }>;
   tasks?: Array<{
     id: number;
@@ -100,6 +109,13 @@ const EVIDENCE_TYPE_META: Record<string, { label: string; note: string; tone: "s
   news: { label: "新闻", note: "媒体报道，需与公告交叉验证。", tone: "amber" },
   research: { label: "研究", note: "AI Agent 在本次研究中给出的引用。", tone: "gold" },
   counter: { label: "反证", note: "用于推翻结论的反面证据。", tone: "red" },
+};
+
+const EVIDENCE_GRADE_META: Record<string, { label: string; note: string; tone: "green" | "gold" | "amber" | "red" }> = {
+  A: { label: "A 级", note: "公告/年报/审计报告等一手文件。", tone: "green" },
+  B: { label: "B 级", note: "交易所、监管、协会或数据平台口径。", tone: "gold" },
+  C: { label: "C 级", note: "第三方研究、券商或权威媒体，需交叉验证。", tone: "amber" },
+  D: { label: "D 级", note: "AI 文本、媒体或推断，不能单独支撑结论。", tone: "red" },
 };
 
 function sourceLabel(source?: string): string {
@@ -736,6 +752,23 @@ export function InstResearchPage() {
                 <Field label={t("状态", "Status")} value={<StatusBadge status={version.status} />} />
                 <Field label={t("结论", "Conclusion")} value={version.conclusion || t("待补充", "TBD")} />
                 <Field label={t("证据数", "Evidence")} value={`${version.evidence_ids?.length || 0} ${t("条", "items")}`} />
+                <Field label={t("截止日", "Cutoff")} value={version.cutoff || t("待补充", "TBD")} />
+                <Field
+                  label={t("内容 hash", "Content hash")}
+                  value={
+                    version.content_hash ? (
+                      <span className="font-mono text-[10px]" title={version.content_hash}>
+                        {version.content_hash.slice(0, 12)}…
+                      </span>
+                    ) : (
+                      t("待补充", "TBD")
+                    )
+                  }
+                />
+                <Field
+                  label={t("冻结时间", "Frozen at")}
+                  value={version.frozen_at ? fmtDateTime(version.frozen_at) : t("未冻结", "Not frozen")}
+                />
                 {version.valuation ? (
                   <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs text-[#b42345]">
                     <p className="font-medium">{t("估值口径", "Valuation basis")}</p>
@@ -1017,10 +1050,21 @@ export function InstResearchPage() {
               </div>
             </div>
             <div className="px-5 py-4">
-              <div className="mb-4 rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+              <div className="mb-3 rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
                 <p className="text-xs font-semibold text-[#505369]">{t("证据类型说明", "Evidence types")}</p>
                 <div className="mt-2 grid gap-1.5 text-[11px] text-[#68738b] sm:grid-cols-2">
                   {Object.entries(EVIDENCE_TYPE_META).map(([key, meta]) => (
+                    <span key={key} className="flex items-start gap-2">
+                      <Badge tone={meta.tone}>{meta.label}</Badge>
+                      <span className="leading-relaxed">{meta.note}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="mb-4 rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+                <p className="text-xs font-semibold text-[#505369]">{t("证据等级", "Evidence grades")}</p>
+                <div className="mt-2 grid gap-1.5 text-[11px] text-[#68738b] sm:grid-cols-2">
+                  {Object.entries(EVIDENCE_GRADE_META).map(([key, meta]) => (
                     <span key={key} className="flex items-start gap-2">
                       <Badge tone={meta.tone}>{meta.label}</Badge>
                       <span className="leading-relaxed">{meta.note}</span>
@@ -1032,6 +1076,7 @@ export function InstResearchPage() {
                 <ul className="space-y-3">
                   {detail.evidence.map((ev) => {
                     const meta = EVIDENCE_TYPE_META[ev.evidence_type || "fact"] || EVIDENCE_TYPE_META.fact;
+                    const grade = EVIDENCE_GRADE_META[ev.grade || "D"] || EVIDENCE_GRADE_META.D;
                     return (
                       <li key={ev.id} className="rounded-xl border border-[#e3eaf8] bg-white p-4">
                         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1041,11 +1086,20 @@ export function InstResearchPage() {
                           </p>
                         </div>
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <Badge tone={grade.tone}>{grade.label}</Badge>
                           <Badge tone={meta.tone}>{meta.label}</Badge>
                           <Badge>{sourceLabel(ev.source)}</Badge>
                           <span className="text-[10px] text-[#77718c]">
                             {t("数据日期", "As of")}：{ev.as_of || t("待补充", "TBD")}
                           </span>
+                          <span className="text-[10px] text-[#77718c]">
+                            {t("可用时间", "Available")}：{ev.available_time || ev.as_of || t("待补充", "TBD")}
+                          </span>
+                          {ev.document_id || ev.page_ref ? (
+                            <span className="text-[10px] text-[#77718c]">
+                              {t("原文", "Source")}：{[ev.document_id, ev.page_ref].filter(Boolean).join(" / ")}
+                            </span>
+                          ) : null}
                         </div>
                         <blockquote className="mt-2 rounded-lg border-l-2 border-[#7950ba]/40 bg-[#f8faff] px-3 py-2 text-xs leading-relaxed text-[#505369]">
                           {ev.quote || t("原始摘录待补充，需回源核对。", "Quote pending; verify against the source.")}

@@ -75,3 +75,6 @@ deploy/.last-good.env
 deploy/runtime/
 deploy/backups/
 deploy/webhook-logs/
+
+# Private server runtime and historical isolated checkouts
+/institutional-workflow/

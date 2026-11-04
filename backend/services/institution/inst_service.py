@@ -2441,6 +2441,62 @@ def authorize(org_id: int, proposal_id: int, *, actor_member_id: int | None) -> 
     return get_proposal(org_id, proposal_id)  # type: ignore[return-value]
 
 
+def approve_and_execute(
+    org_id: int,
+    proposal_id: int,
+    *,
+    actor_member_id: int | None,
+    price: float | None = None,
+) -> dict[str, Any]:
+    """线性流程 B：审批最后一关通过后，一次动作完成授权 + 模拟成交。
+
+    - 已有已成交授权：幂等返回原结果；
+    - 已有有效授权（上次成交失败）：直接重试成交，不重复生成授权；
+    - 否则先 authorize，再以系统执行方式调用 SimBroker。
+    """
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "chairman", "risk")
+        proposal = _proposal_row(conn, org_id, proposal_id)
+    if not proposal:
+        raise LookupError("议案不存在")
+    if proposal.get("status") == "executed":
+        current = get_proposal(org_id, proposal_id) or {}
+        for auth in current.get("authorizations") or []:
+            if auth.get("status") == "filled":
+                return {
+                    "proposal": current,
+                    "authorization_id": int(auth["id"]),
+                    "execution": {"ok": True, "idempotent": True},
+                }
+    current = get_proposal(org_id, proposal_id) or {}
+    qualified = [
+        a for a in (current.get("authorizations") or []) if a.get("status") == "qualified"
+    ]
+    if qualified:
+        auth_id = int(qualified[0]["id"])
+    else:
+        authorized = authorize(org_id, proposal_id, actor_member_id=actor_member_id)
+        qualified = [
+            a for a in (authorized.get("authorizations") or []) if a.get("status") == "qualified"
+        ]
+        if not qualified:
+            raise PermissionError("授权生成失败")
+        auth_id = int(qualified[0]["id"])
+    execution = execute_authorization(
+        org_id,
+        auth_id,
+        actor_member_id=actor_member_id,
+        price=price,
+        bypass_role=True,
+    )
+    return {
+        "proposal": get_proposal(org_id, proposal_id),
+        "authorization_id": auth_id,
+        "execution": execution,
+    }
+
+
 def list_authorizations(org_id: int, *, status: str | None = None) -> list[dict[str, Any]]:
     sql = """
         SELECT a.*, p.id AS proposal_id, p.company_id, co.symbol, co.name AS company_name,
@@ -2470,10 +2526,12 @@ def execute_authorization(
     *,
     actor_member_id: int | None,
     price: float | None = None,
+    bypass_role: bool = False,
 ) -> dict[str, Any]:
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
-        _require_role(member, "execution")
+        if not bypass_role:
+            _require_role(member, "execution")
         row = conn.execute(
             """
             SELECT a.*, v.snapshot AS version_snapshot, p.id AS proposal_id, p.company_id, p.direction,
@@ -3714,7 +3772,15 @@ def create_exit_case(
 def list_audit(org_id: int, limit: int = 100) -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM inst_audit_event WHERE org_id=%s ORDER BY id DESC LIMIT %s",
+            """
+            SELECT e.*, m.role AS actor_role,
+                   COALESCE(u.display_name, u.username) AS actor_name
+              FROM inst_audit_event e
+              LEFT JOIN inst_members m ON m.id=e.actor_member_id
+              LEFT JOIN users u ON u.id=m.user_id
+             WHERE e.org_id=%s
+             ORDER BY e.id DESC LIMIT %s
+            """,
             (org_id, max(1, min(limit, 500))),
         ).fetchall()
     return [_row_dict(r) or {} for r in rows]
@@ -3727,6 +3793,7 @@ __all__ = [
     "ai_chairman_memo",
     "ai_research_memo",
     "ai_risk_review",
+    "approve_and_execute",
     "authorize",
     "chairman_review",
     "create_case",

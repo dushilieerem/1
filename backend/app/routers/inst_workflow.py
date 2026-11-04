@@ -547,6 +547,31 @@ def authorize(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)
         raise _handle(exc) from exc
 
 
+@router.post("/proposals/{proposal_id}/approve-and-execute")
+def approve_and_execute(
+    proposal_id: int,
+    body: dict[str, Any] | None = None,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    """方案 B：审批最后一关通过后生成授权并立即模拟成交。"""
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "approvals")
+    payload = body or {}
+    price = payload.get("price")
+    try:
+        return {
+            "ok": True,
+            **svc.approve_and_execute(
+                org_id,
+                proposal_id,
+                actor_member_id=member_id,
+                price=float(price) if price not in (None, "") else None,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.get("/authorizations")
 def authorizations(
     status: str | None = None,

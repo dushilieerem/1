@@ -133,11 +133,14 @@ test("详情页：研究、辩论、审批（有数据时）", async ({ browser 
     await expect(page.getByRole("dialog")).toHaveCount(0);
   }
   if (debateCaseId) {
-    await page.goto(`${BASE}/inst/debate?case=${debateCaseId}`, { waitUntil: "networkidle" });
-    await expect(page.getByText("辩论记录", { exact: false }).first()).toBeVisible({
+    // 用 partner（辩论只读）打开：manager 会触发「辩论完成自动建案」并跳转审批页。
+    const partner = await openPage(browser, TOKENS.partner!);
+    await partner.page.goto(`${BASE}/inst/debate?case=${debateCaseId}`, { waitUntil: "networkidle" });
+    await expect(partner.page.getByText("辩论记录", { exact: false }).first()).toBeVisible({
       timeout: 20_000,
     });
-    await expect(page.getByText("五年 DCF", { exact: false })).toHaveCount(0);
+    await expect(partner.page.getByText("五年 DCF", { exact: false })).toHaveCount(0);
+    await partner.ctx.close();
   }
   if (proposalId) {
     await page.goto(`${BASE}/inst/approvals?proposal=${proposalId}`, { waitUntil: "networkidle" });

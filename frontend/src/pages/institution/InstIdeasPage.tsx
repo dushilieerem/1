@@ -4,7 +4,7 @@ import { Briefcase, Eye, Telescope } from "lucide-react";
 import { instApi, fmtNum } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
-import { Badge, Button, Card, Empty, ErrorBox, Loading, PageHeader, StatusBadge } from "./instUi";
+import { Badge, Button, Card, Empty, ErrorBox, HelpTip, Loading, PageHeader, StatusBadge } from "./instUi";
 
 type Company = {
   id: number;
@@ -199,8 +199,8 @@ export function InstIdeasPage() {
             desc={
               push?.strategy
                 ? t(
-                    `策略：${push.strategy.name}。${push.strategy.note}`,
-                    `Strategy: ${push.strategy.name}. ${push.strategy.note}`,
+                    `策略：${push.strategy.name}（仅 A 股）。${push.strategy.note}`,
+                    `Strategy: ${push.strategy.name} (A-shares only). ${push.strategy.note}`,
                   )
                 : t("收盘后按动量与估值初筛。", "Screened after close by momentum and valuation.")
             }
@@ -219,7 +219,13 @@ export function InstIdeasPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <h3 className="font-display text-base font-semibold text-[#171923]">{c.name}</h3>
-                        <p className="mt-0.5 font-mono text-[11px] text-[#68738b]">
+                        <p
+                          className="mt-0.5 font-mono text-[11px] text-[#68738b]"
+                          title={t(
+                            "行业优先取公司池或申万分类中文名；缺失时显示“行业待补充”，不影响动量与估值初筛。",
+                            "Industry uses the pool/SW Chinese name when available; missing values show 'Sector TBD' and do not affect the screen.",
+                          )}
+                        >
                           {c.symbol} · {industryText(c.industry)}
                         </p>
                       </div>
@@ -231,7 +237,15 @@ export function InstIdeasPage() {
                         <p className="font-mono text-[#252533]">{fmtNum(c.ref_price, 2)}</p>
                       </div>
                       <div>
-                        <p>{t("近 N 日动量", "Momentum")}</p>
+                        <p className="flex items-center gap-1">
+                          {t("近 N 日动量", "Momentum")}
+                          <HelpTip
+                            text={t(
+                              "最近 N 个交易日的收盘价涨幅；数据不足时 N 自动缩短，生产环境最多 20 日。",
+                              "Close-to-close return over the latest N trading days; N shrinks when history is short, up to 20 days in production.",
+                            )}
+                          />
+                        </p>
                         <p className="font-mono text-emerald-700">
                           +{((c.momentum || 0) * 100).toFixed(1)}%
                           <span className="ml-1 text-[10px] text-[#77718c]">
@@ -240,15 +254,22 @@ export function InstIdeasPage() {
                         </p>
                       </div>
                       <div>
-                        <p>PE TTM</p>
+                        <p className="flex items-center gap-1">
+                          PE TTM
+                          <HelpTip text={t("滚动市盈率 = 市值 / 最近 12 个月净利润；初筛要求 0-100。", "Trailing P/E = market cap / last 12 months net profit; screen requires 0-100.")} />
+                        </p>
                         <p className="font-mono text-[#252533]">{fmtNum(c.pe_ttm, 2)}</p>
                       </div>
                       <div>
-                        <p>PB MRQ</p>
+                        <p className="flex items-center gap-1">
+                          PB MRQ
+                          <HelpTip text={t("市净率 = 市值 / 最近一期净资产；初筛要求为正。", "Price-to-book = market cap / latest book value; screen requires positive.")} />
+                        </p>
                         <p className="font-mono text-[#252533]">{fmtNum(c.pb_mrq, 2)}</p>
                       </div>
                     </div>
                     <p className="mt-3 rounded-lg bg-[#f8faff] px-2 py-1.5 text-[11px] leading-relaxed text-[#505369]">
+                      <span className="font-medium">{t("为什么推它", "Why it is here")}：</span>
                       {c.reason || t("动量与估值初筛通过", "Passed momentum and valuation screen")}
                     </p>
                     {(c.tags || []).length ? (
@@ -450,6 +471,12 @@ export function InstIdeasPage() {
         {t(
           `研究范围为 A 股全市场；当前语言环境为 ${locale === "zh" ? "中文" : "英文"}。推送、关注与持仓展示都不是投资建议。`,
           `Research scope is the A-share market; current locale is ${locale === "zh" ? "Chinese" : "English"}. Signals, watchlist and holdings are not investment advice.`,
+        )}
+      </p>
+      <p className="text-[11px] leading-relaxed text-[#77718c]">
+        {t(
+          "数据状态说明：真实数据 = 行情/财务较完整；待补充 = 部分数据缺失；无数据 = 尚未接入。缺失数据会影响研究深度，但不会把缺失当成 0。",
+          "Data status: Real = prices/financials are fairly complete; Partial = some data missing; No data = not ingested. Missing data limits research depth and is never treated as zero.",
         )}
       </p>
     </div>

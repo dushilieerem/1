@@ -236,6 +236,11 @@ export function InstDebatePage() {
           <p className="text-sm text-[#68738b]">
             {t("研究审核尚未通过，不能进入辩论。请先在研究页确认研究成果。", "Research is not approved yet; confirm it on the research page first.")}
           </p>
+          <div className="mt-3">
+            <Button variant="gold" onClick={() => nav(`/inst/research?case=${caseId}`)}>
+              {t("去研究页审核", "Go to research review")}
+            </Button>
+          </div>
         </Card>
       ) : !debate ? (
         <Card
@@ -254,13 +259,19 @@ export function InstDebatePage() {
         <>
           <Card
             title={t("辩论记录", "Debate record")}
-            desc={`${t("场次", "Session")} #${debate.id} · ${t("状态", "Status")} ${debate.status} · FactPack ${String(debate.factpack_hash || "").slice(0, 12)}…`}
+            desc={`${t("场次", "Session")} #${debate.id} · ${t("事实包指纹", "Fact pack hash")} ${String(debate.factpack_hash || "").slice(0, 12)}…`}
             actions={<StatusBadge status={debate.status} />}
           >
             <div className="mb-4 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] px-4 py-3 text-sm text-[#b42345]">
               {t("主持结论", "Chair conclusion")}：<b>{debate.conclusion || t("待定", "TBD")}</b>
               <span className="ml-2 text-[11px]">{t("（流程建议，不构成投资建议）", "(process suggestion, not investment advice)")}</span>
             </div>
+            <p className="mb-3 text-[11px] leading-relaxed text-[#77718c]">
+              {t(
+                "证据 ID 对应研究页「证据与反证」中的编号；没有有效证据引用的论点不计入裁决。",
+                "Evidence IDs refer to the numbers in the research page's Evidence & counter-evidence card; arguments without valid citations are excluded from the verdict.",
+              )}
+            </p>
             <div className="grid gap-4 md:grid-cols-2">
               {[
                 { key: "bull", title: t("正方 · 看多", "Bull case"), tone: "green" as const, items: groups.bull },
@@ -327,7 +338,9 @@ export function InstDebatePage() {
             ) : null}
             <div className="mt-4 flex flex-wrap items-end gap-2">
               <label className="text-[11px] text-[#68738b]">
-                {hasExitCase ? t("目标仓位（0 = 清仓）", "Target weight (0 = full exit)") : t("目标仓位", "Target weight")}
+                {hasExitCase
+                  ? t("目标仓位（0 = 清仓）", "Target weight (0 = full exit)")
+                  : t("目标仓位（占净值）", "Target weight (of NAV)")}
                 <input
                   value={target}
                   onChange={(e) => setTarget(e.target.value)}

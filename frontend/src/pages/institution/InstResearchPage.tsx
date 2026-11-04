@@ -5,7 +5,7 @@ import { instApi, fmtNum } from "@/lib/instApi";
 import { getInstToken } from "@/lib/instAuth";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
-import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge } from "./instUi";
+import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge, industryLabel } from "./instUi";
 
 type Dim = {
   key: string;
@@ -109,7 +109,7 @@ function sourceLabel(source?: string): string {
 
 export function InstResearchPage() {
   const session = useInstSession();
-  const { t } = useInstLocale();
+  const { locale, t } = useInstLocale();
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const caseId = Number(params.get("case") || 0);
@@ -451,7 +451,7 @@ export function InstResearchPage() {
       <PageHeader
         eyebrow="RESEARCH / 03"
         title={detail.company_name}
-        desc={`${detail.symbol} · ${detail.industry || t("行业待补充", "Industry n/a")} · ${detail.case_no}`}
+        desc={`${detail.symbol} · ${industryLabel(detail.industry, locale)} · ${detail.case_no}`}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" onClick={() => nav("/inst/research")}>
@@ -564,6 +564,14 @@ export function InstResearchPage() {
           >
             {activeDim === "memo" ? null : activeDimData ? (
               <div className="space-y-3">
+                {activeDimData.engine === "rule" && activeDimData.agent_error ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
+                    {t(
+                      "AI 未配置或本次分析失败，本维已回退规则模板；结论仍可审核，但关键数据需人工补充。",
+                      "AI is unavailable or this run failed; this dimension used the rule template. The conclusion can still be reviewed, but key data needs manual input.",
+                    )}
+                  </div>
+                ) : null}
                 <article className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-4">
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="text-sm font-semibold text-[#171923]">{activeDimData.title}</h3>
@@ -592,7 +600,15 @@ export function InstResearchPage() {
                     <p className="mt-2 text-[11px] text-[#68738b]">{t("数据缺口", "Data gaps")}：{activeDimData.data_gaps.join("；")}</p>
                   ) : null}
                   {activeDimData.agent_error ? (
-                    <p className="mt-2 text-[11px] text-red-600">{t("Agent 失败", "Agent failed")}：{activeDimData.agent_error}</p>
+                    <p
+                      className="mt-2 text-[11px] text-amber-700"
+                      title={String(activeDimData.agent_error)}
+                    >
+                      {t(
+                        "AI 分析未完成，已使用规则模板；技术原因可悬停查看。",
+                        "AI analysis did not complete; the rule template was used. Hover for the technical reason.",
+                      )}
+                    </p>
                   ) : null}
                   {activeDimData.evidence_ids?.length ? (
                     <p className="mt-2 font-mono text-[10px] text-[#77718c]">
@@ -730,6 +746,12 @@ export function InstResearchPage() {
                     ))}
                   </div>
                 ) : null}
+                <p className="mt-2 text-[10px] leading-relaxed text-[#77718c]">
+                  {t(
+                    "口径：营收/净利为最近报告期，同比为报告期同比；ROE 为报告期口径；PE TTM 为滚动市盈率，历史分位取近 3 年。缺失指标不展示，不代表为 0。",
+                    "Definitions: revenue/net profit are the latest reporting period, YoY is period-over-period; ROE is the reporting-period ratio; PE TTM is trailing twelve months and its percentile uses the last 3 years. Missing metrics are omitted, not treated as zero.",
+                  )}
+                </p>
 
                 <div className="mt-5 space-y-4">
                   {dims.map((d, i) => (
@@ -908,12 +930,18 @@ export function InstResearchPage() {
           <Card title={t("研究任务", "Research tasks")} desc={t("任务状态与进度由研究生成流程写入。", "Task status and progress are written by the research pipeline.")}>
             {detail.tasks?.length ? (
               <ul className="space-y-2">
-                {detail.tasks.map((t) => (
-                  <li key={t.id} className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-[#505369]">{t.title}</span>
+                {detail.tasks.map((task) => (
+                  <li key={task.id} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="text-[#505369]">{task.title}</span>
                     <span className="flex items-center gap-2">
-                      <span className="font-mono text-[11px] text-[#77718c]">{t.progress}%</span>
-                      <StatusBadge status={t.status} />
+                      <span className="font-mono text-[11px] text-[#77718c]">{task.progress}%</span>
+                      {task.status === "failed" ? (
+                        <Badge tone="amber" title={t("AI Agent 失败后已回退规则模板，该维仍可审核。", "After an agent failure this dimension fell back to the rule template and can still be reviewed.")}>
+                          {t("已回退规则", "Rule fallback")}
+                        </Badge>
+                      ) : (
+                        <StatusBadge status={task.status} />
+                      )}
                     </span>
                   </li>
                 ))}
@@ -926,9 +954,17 @@ export function InstResearchPage() {
           <Card title={t("公司信息", "Company")}>
             <Field label={t("代码", "Symbol")} value={<span className="font-mono">{detail.symbol}</span>} />
             <Field label={t("市场", "Market")} value={detail.market} />
-            <Field label={t("行业", "Industry")} value={detail.industry || t("待补充", "TBD")} />
+            <Field label={t("行业", "Industry")} value={industryLabel(detail.industry, locale)} />
             <Field label={t("数据状态", "Data status")} value={<StatusBadge status={detail.data_status} />} />
-            <Field label={t("参考价", "Reference price")} value={fmtNum(detail.ref_price, 2)} />
+            <Field label={t("参考价（CNY）", "Reference price (CNY)")} value={fmtNum(detail.ref_price, 2)} />
+            {detail.data_status && detail.data_status !== "real" ? (
+              <p className="mt-2 text-[10px] leading-relaxed text-[#77718c]">
+                {t(
+                  "数据状态“待补充”表示财务、公告或行业数据不完整；相关维度会标记数据缺口，但流程仍可继续。",
+                  "Data status 'Partial' means financial, filing or industry data is incomplete; affected dimensions mark data gaps but the workflow can continue.",
+                )}
+              </p>
+            ) : null}
           </Card>
         </div>
       </div>

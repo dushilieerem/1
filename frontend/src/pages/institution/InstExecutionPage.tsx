@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { ArrowLeftRight, PlayCircle, ShieldCheck } from "lucide-react";
-import { instApi, fmtMoney, fmtNum, fmtPct } from "@/lib/instApi";
+import { instApi, fmtMoney, fmtNum, fmtPct, fmtDateTime } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
-import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge } from "./instUi";
+import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge, industryLabel } from "./instUi";
 
 type Authorization = {
   id: number;
@@ -16,17 +16,39 @@ type Authorization = {
   snapshot: Record<string, any>;
 };
 
+const DIRECTION_LABEL: Record<string, [string, string]> = {
+  buy: ["买入", "Buy"],
+  sell: ["卖出", "Sell"],
+  exit: ["退出", "Exit"],
+};
+
+const EXCEPTION_TYPE: Record<string, [string, string]> = {
+  suspended_or_st: ["停牌或 ST", "Suspended / ST"],
+  price_invalid: ["无有效价格", "No valid price"],
+  manual: ["手工登记", "Manual"],
+  reconciliation: ["对账差异", "Reconciliation mismatch"],
+};
+
 type PortfolioData = {
   cash: number;
   nav: number;
   invested: number;
   invested_ratio: number;
-  positions: Array<{ id: number; symbol: string; name?: string; qty: number; market_value: number; weight: number }>;
+  positions: Array<{
+    id: number;
+    symbol: string;
+    name?: string;
+    industry?: string;
+    qty: number;
+    cost?: number;
+    market_value: number;
+    weight: number;
+  }>;
 };
 
 export function InstExecutionPage() {
   const session = useInstSession();
-  const { t } = useInstLocale();
+  const { locale, t } = useInstLocale();
   const [items, setItems] = useState<Authorization[]>([]);
   const [pf, setPf] = useState<PortfolioData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -142,9 +164,9 @@ export function InstExecutionPage() {
 
       <div className="grid gap-3 sm:grid-cols-3">
         {[
-          [t("授权可用", "Qualified authorizations"), String(items.length)],
-          [t("组合现金", "Portfolio cash"), fmtMoney(pf?.cash)],
-          [t("组合净值", "Portfolio NAV"), fmtMoney(pf?.nav)],
+          [t("可执行授权（个）", "Qualified authorizations"), String(items.length)],
+          [t("组合现金（CNY）", "Portfolio cash (CNY)"), fmtMoney(pf?.cash)],
+          [t("组合净值（CNY）", "Portfolio NAV (CNY)"), fmtMoney(pf?.nav)],
         ].map(([label, value]) => (
           <div key={label} className="rounded-xl border border-[#dde5f2] bg-white p-5">
             <p className="text-xs text-[#68738b]">{label}</p>
@@ -153,7 +175,7 @@ export function InstExecutionPage() {
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+      <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
         <Card title={t("可执行授权", "Executable authorizations")} desc={t("只显示 qualified 授权；重复提交由服务端幂等拦截。", "Only qualified authorizations; duplicate submissions are idempotent at the server.")}>
           {items.length ? (
             <div className="space-y-3">
@@ -164,18 +186,50 @@ export function InstExecutionPage() {
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
                         <h3 className="text-sm font-semibold text-[#171923]">{a.company_name}</h3>
-                        <p className="mt-0.5 font-mono text-[11px] text-[#68738b]">
-                          AUTH-{a.id} · {a.symbol} · {t("议案", "Proposal")} #{a.proposal_id}
+                        <p className="mt-0.5 text-[11px] text-[#68738b]">
+                          {t("授权", "Authorization")} #{a.id} · {a.symbol} · {t("议案", "Proposal")} #{a.proposal_id}
                         </p>
                       </div>
                       <StatusBadge status={a.status} />
                     </div>
                     <div className="mt-3 grid gap-x-6 sm:grid-cols-2">
-                      <Field label={t("目标仓位", "Target weight")} value={fmtPct(s.target_weight)} />
-                      <Field label={t("价格区间", "Price range")} value={`${fmtNum(s.price_low, 2)} - ${fmtNum(s.price_high, 2)}`} />
-                      <Field label={t("账户", "Account")} value={String(s.account || "—")} />
-                      <Field label={t("有效期", "Valid until")} value={String(s.valid_until || "—")} />
+                      <Field
+                        label={t("方向", "Direction")}
+                        value={
+                          DIRECTION_LABEL[String(s.direction)]
+                            ? locale === "en"
+                              ? DIRECTION_LABEL[String(s.direction)][1]
+                              : DIRECTION_LABEL[String(s.direction)][0]
+                            : String(s.direction || "—")
+                        }
+                      />
+                      <Field label={t("目标仓位（占净值）", "Target weight (of NAV)")} value={fmtPct(s.target_weight)} />
+                      <Field
+                        label={t("价格区间（CNY）", "Price range (CNY)")}
+                        value={
+                          s.price_low == null && s.price_high == null ? (
+                            <span className="text-[#a9a4bd]" title={t("未设置价格区间，执行时不按价格区间校验。", "No price range set; execution will not check price bounds.")}>
+                              {t("未设置（不校验价格）", "Not set (no price check)")}
+                            </span>
+                          ) : (
+                            `${fmtNum(s.price_low, 2)} - ${fmtNum(s.price_high, 2)}`
+                          )
+                        }
+                      />
+                      <Field
+                        label={t("账户", "Account")}
+                        value={s.account ? t(`模拟账户 ${s.account}`, `Sim account ${s.account}`) : t("未指定", "Not specified")}
+                      />
+                      <Field label={t("有效期", "Valid until")} value={String(s.valid_until || t("未设置", "Not set"))} />
                     </div>
+                    {s.price_low == null && s.price_high == null ? (
+                      <p className="mt-2 text-[10px] leading-relaxed text-[#77718c]">
+                        {t(
+                          "价格区间未设置：执行时不校验成交价上下限。",
+                          "No price range: execution does not enforce price bounds.",
+                        )}
+                      </p>
+                    ) : null}
                     <div className="mt-3 flex items-center justify-between gap-2">
                       <p className="text-[11px] text-[#77718c]">{t("执行前会再次校验授权、版本、现金与价格。", "Authorization, version, cash and price are re-checked before execution.")}</p>
                       <div className="flex gap-2">
@@ -212,7 +266,10 @@ export function InstExecutionPage() {
         <Card title={t("执行约束", "Execution constraints")} desc={t("执行角色不得修改标的、方向、仓位与价格范围。", "Execution may not change symbol, direction, size or price range.")}>
           <Field label={t("单股仓位上限", "Single-name cap")} value="15%" />
           <Field label={t("交易后现金下限", "Post-trade cash floor")} value="10%" />
-          <Field label={t("重复提交", "Duplicate submission")} value={t("幂等拦截", "Idempotent")} />
+          <Field
+            label={t("重复提交", "Duplicate submission")}
+            value={t("返回同一订单，不重复成交", "Same order returned; no double fill")}
+          />
           <Field label={t("异常处理", "Exception handling")} value={t("待对账 / 人工处置", "Reconciliation / manual")} />
           <p className="mt-3 flex items-start gap-2 text-[11px] leading-relaxed text-[#77718c]">
             <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#b42345]" />
@@ -227,14 +284,21 @@ export function InstExecutionPage() {
             {exceptions.map((ex) => (
               <li key={ex.id} className="rounded-xl border border-red-100 bg-red-50/40 p-3 text-xs">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-mono text-red-700">{String(ex.type)}</span>
+                  <span className="text-red-700">
+                    {EXCEPTION_TYPE[String(ex.type)]
+                      ? locale === "en"
+                        ? EXCEPTION_TYPE[String(ex.type)][1]
+                        : EXCEPTION_TYPE[String(ex.type)][0]
+                      : String(ex.type)}
+                  </span>
                   <Button variant="ghost" onClick={() => void resolveException(Number(ex.id))}>
                     {t("标记已处理", "Resolve")}
                   </Button>
                 </div>
                 <p className="mt-1 text-[#68738b]">{String(ex.detail || "—")}</p>
                 <p className="mt-1 text-[10px] text-[#77718c]">
-                  AUTH-{String(ex.authorization_id ?? "—")} · {String(ex.created_at || "")}
+                  {t("授权", "Authorization")} #{String(ex.authorization_id ?? "—")} ·{" "}
+                  {fmtDateTime(String(ex.created_at || ""))}
                 </p>
               </li>
             ))}
@@ -251,9 +315,11 @@ export function InstExecutionPage() {
               <thead>
                 <tr className="border-b border-[#e3eaf8] text-[11px] text-[#77718c]">
                   <th className="py-2">{t("标的", "Symbol")}</th>
-                  <th className="py-2 text-right">{t("数量", "Qty")}</th>
-                  <th className="py-2 text-right">{t("市值", "Value")}</th>
-                  <th className="py-2 text-right">{t("权重", "Weight")}</th>
+                  <th className="py-2">{t("行业", "Industry")}</th>
+                  <th className="py-2 text-right">{t("数量（股）", "Qty (shares)")}</th>
+                  <th className="py-2 text-right">{t("成本（CNY/股）", "Cost (CNY/sh)")}</th>
+                  <th className="py-2 text-right">{t("市值（CNY）", "Value (CNY)")}</th>
+                  <th className="py-2 text-right">{t("权重（占净值）", "Weight (of NAV)")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -263,9 +329,21 @@ export function InstExecutionPage() {
                       <p className="font-medium text-[#252533]">{p.name || p.symbol}</p>
                       <p className="font-mono text-[10px] text-[#77718c]">{p.symbol}</p>
                     </td>
+                    <td className="py-2.5 text-xs text-[#68738b]">{industryLabel(p.industry, locale)}</td>
                     <td className="py-2.5 text-right font-mono text-xs">{fmtMoney(p.qty)}</td>
+                    <td className="py-2.5 text-right font-mono text-xs">
+                      {p.cost == null ? (
+                        <span className="text-[#a9a4bd]" title={t("缺少成本价，无法计算收益。", "Cost basis missing; return cannot be computed.")}>
+                          {t("待补充", "TBD")}
+                        </span>
+                      ) : (
+                        fmtMoney(p.cost, 2)
+                      )}
+                    </td>
                     <td className="py-2.5 text-right font-mono text-xs">{fmtMoney(p.market_value)}</td>
-                    <td className="py-2.5 text-right font-mono text-xs">{fmtPct(p.weight)}</td>
+                    <td className="py-2.5 text-right font-mono text-xs">
+                      {p.weight == null ? t("待补充", "TBD") : fmtPct(p.weight)}
+                    </td>
                   </tr>
                 ))}
               </tbody>

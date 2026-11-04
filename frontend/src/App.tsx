@@ -174,9 +174,6 @@ const InstPortfolioPage = lazy(() =>
 const InstApprovalsPage = lazy(() =>
   import("./pages/institution/InstApprovalsPage").then((m) => ({ default: m.InstApprovalsPage })),
 );
-const InstExecutionPage = lazy(() =>
-  import("./pages/institution/InstExecutionPage").then((m) => ({ default: m.InstExecutionPage })),
-);
 const InstMonitorPage = lazy(() =>
   import("./pages/institution/InstMonitorPage").then((m) => ({ default: m.InstMonitorPage })),
 );
@@ -225,7 +222,7 @@ export default function App() {
           <Route path="debate" element={<InstDebatePage />} />
           <Route path="portfolio" element={<InstPortfolioPage />} />
           <Route path="approvals" element={<InstApprovalsPage />} />
-          <Route path="execution" element={<InstExecutionPage />} />
+          <Route path="execution" element={<Navigate to="/inst/portfolio" replace />} />
           <Route path="monitor" element={<InstMonitorPage />} />
           <Route path="audit" element={<InstAuditPage />} />
           <Route path="about" element={<InstAboutPage />} />

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { BadgeCheck, ShieldAlert, Stamp } from "lucide-react";
 import { instApi, fmtNum, fmtPct, fmtDateTime } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
@@ -76,6 +76,7 @@ export function InstApprovalsPage() {
           ? t("退出", "Exit")
           : direction || "—";
   const [params, setParams] = useSearchParams();
+  const nav = useNavigate();
   const selectedId = Number(params.get("proposal") || 0);
   const [items, setItems] = useState<ProposalListItem[]>([]);
   const [detail, setDetail] = useState<ProposalDetail | null>(null);
@@ -131,6 +132,8 @@ export function InstApprovalsPage() {
     approvalMap.get("partner")?.decision === "approve" &&
     ["approve", "conditional"].includes(approvalMap.get("chairman")?.decision || "") &&
     approvalMap.get("risk_precheck")?.decision === "pass";
+  // 方案 B：最后一关由 Chairman/风控完成，通过即授权并模拟成交。
+  const canAutoExecute = canAuthorize && (role === "chairman" || role === "risk");
 
   const act = async (label: string, fn: () => Promise<unknown>) => {
     if (!selectedId) return;
@@ -142,6 +145,31 @@ export function InstApprovalsPage() {
       loadDetail(selectedId);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const approveAndExecute = async () => {
+    if (!selectedId) return;
+    setBusy("approve-execute");
+    setError(null);
+    try {
+      const res = await instApi<{ authorization_id: number }>(
+        `/proposals/${selectedId}/approve-and-execute`,
+        { method: "POST" },
+      );
+      nav("/inst/portfolio", {
+        state: {
+          flash: t(
+            `议案 #${selectedId} 已通过并模拟成交（授权 #${res.authorization_id}），持仓已更新。`,
+            `Proposal #${selectedId} approved and simulated fill completed (authorization #${res.authorization_id}); positions updated.`,
+          ),
+        },
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      loadDetail(selectedId);
     } finally {
       setBusy(null);
     }
@@ -437,26 +465,43 @@ export function InstApprovalsPage() {
                     </Button>
                   ) : null}
 
-                  {canAuthorize && detail.status === "risk_precheck" ? (
+                  {canAutoExecute && ["risk_precheck", "authorized"].includes(detail.status) ? (
                     <Button
                       variant="gold"
                       disabled={!!busy}
-                      onClick={() =>
-                        act("authorize", () =>
-                          instApi(`/proposals/${selectedId}/authorize`, { method: "POST" }),
-                        )
-                      }
+                      onClick={() => void approveAndExecute()}
                     >
-                      {busy === "authorize" ? t("生成中…", "Creating…") : t("生成授权快照", "Create authorization")}
+                      {busy === "approve-execute"
+                        ? t("成交中…", "Executing…")
+                        : detail.status === "authorized"
+                          ? t("重试模拟成交", "Retry simulated fill")
+                          : t("批准并模拟成交", "Approve & simulate fill")}
                     </Button>
-                  ) : detail.status === "executed" || detail.status === "authorized" ? (
+                  ) : detail.status === "executed" ? (
+                    <p className="w-full text-[11px] leading-relaxed text-emerald-700">
+                      {t("该议案已通过并模拟成交，持仓已更新。", "This proposal is approved and simulated-filled; positions are updated.")}
+                    </p>
+                  ) : detail.status === "authorized" ? (
+                    <p className="w-full text-[11px] leading-relaxed text-amber-700">
+                      {t(
+                        "授权已生成但成交未完成；请由 Chairman/风控重试，或到投资组合查看执行异常。",
+                        "Authorization created but the fill is incomplete; Chairman/Risk can retry, or check Portfolio for execution exceptions.",
+                      )}
+                    </p>
+                  ) : canAuthorize ? (
                     <p className="w-full text-[11px] leading-relaxed text-[#77718c]">
-                      {t("该议案已生成授权并执行，授权不可重复生成。", "This proposal is already authorized/executed; a new authorization cannot be created.")}
+                      {t(
+                        "等待 Chairman/风控完成最后一步；通过后自动模拟成交。",
+                        "Waiting for Chairman/Risk to complete the final step; it will auto-fill on approval.",
+                      )}
                     </p>
                   ) : null}
                 </div>
                 <p className="text-[11px] leading-relaxed text-[#77718c]">
-                  {t("角色校验在服务端执行；按钮显隐只是展示。风控阻断后 Chairman 不能批准。", "Roles are enforced server-side; button visibility is only display. Chairman cannot approve after a risk block.")}
+                  {t(
+                    "方案 B：最后一关通过后自动生成授权并模拟成交，持仓随后出现在投资组合；风控阻断后不能批准。",
+                    "Flow B: the final approval creates the authorization and simulated fill automatically; the position then appears in Portfolio. A risk block prevents approval.",
+                  )}
                 </p>
               </div>
             ) : null}

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { PieChart, ShieldCheck } from "lucide-react";
-import { instApi, fmtMoney, fmtPct } from "@/lib/instApi";
+import { instApi, fmtMoney, fmtPct, fmtDateTime } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
-import { Badge, Card, DataFreshness, Empty, ErrorBox, Field, Loading, PageHeader, industryLabel } from "./instUi";
+import { Badge, Button, Card, DataFreshness, Empty, ErrorBox, Field, Loading, PageHeader, industryLabel } from "./instUi";
 
 type Position = {
   id: number;
@@ -16,6 +17,21 @@ type Position = {
   market_value: number;
   weight: number;
   as_of: string;
+};
+
+type ExecutionException = {
+  id: number;
+  type: string;
+  detail?: { text?: string } | string;
+  authorization_id?: number;
+  created_at?: string;
+};
+
+const EXCEPTION_TYPE: Record<string, [string, string]> = {
+  suspended_or_st: ["停牌或 ST", "Suspended / ST"],
+  price_invalid: ["无有效价格", "No valid price"],
+  manual: ["手工登记", "Manual"],
+  reconciliation: ["对账差异", "Reconciliation mismatch"],
 };
 
 type PortfolioData = {
@@ -40,17 +56,45 @@ type PortfolioData = {
 export function InstPortfolioPage() {
   const session = useInstSession();
   const { locale, t } = useInstLocale();
+  const location = useLocation();
+  const flash = (location.state as { flash?: string } | null)?.flash;
   const [data, setData] = useState<PortfolioData | null>(null);
+  const [exceptions, setExceptions] = useState<ExecutionException[]>([]);
+  const [resolving, setResolving] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
     setError(null);
-    instApi<PortfolioData>("/portfolio")
-      .then(setData)
+    Promise.all([
+      instApi<PortfolioData>("/portfolio"),
+      instApi<{ items: ExecutionException[] }>("/execution/exceptions?status=open").catch(
+        () => ({ items: [] as ExecutionException[] }),
+      ),
+    ])
+      .then(([portfolio, ex]) => {
+        setData(portfolio);
+        setExceptions(ex.items || []);
+      })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
+  };
+
+  const resolveException = async (id: number) => {
+    setResolving(id);
+    setError(null);
+    try {
+      await instApi(`/execution/exceptions/${id}/resolve`, {
+        method: "POST",
+        body: { status: "resolved", resolution: t("已人工核对", "Checked manually") },
+      });
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setResolving(null);
+    }
   };
 
   useEffect(load, []);
@@ -86,6 +130,12 @@ export function InstPortfolioPage() {
         desc={`${session.org.name_cn} · ${locale === "en" ? session.role_label_en : session.role_label_cn} · ${t("展示批准后的持仓与敞口；未成交的批准不计入持仓。", "Approved positions and exposures; unexecuted approvals are not positions.")}`}
         actions={<Badge tone="gold">{pf?.base_currency || "CNY"} {t("基准", "base")}</Badge>}
       />
+
+      {flash ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm text-emerald-700">
+          {flash}
+        </div>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
@@ -234,8 +284,50 @@ export function InstPortfolioPage() {
         </div>
       </div>
 
+      <Card
+        title={t("执行异常", "Execution exceptions")}
+        desc={t(
+          "审批通过后会自动模拟成交；停牌、无有效价格或对账差异会登记在这里，人工核对后关闭。",
+          "Approvals auto-execute; trading halts, missing prices or reconciliation mismatches are recorded here and closed after manual review.",
+        )}
+        actions={
+          <Badge tone={exceptions.length ? "red" : "green"}>
+            {exceptions.length} {t("条待处理", "open")}
+          </Badge>
+        }
+      >
+        {exceptions.length ? (
+          <ul className="space-y-2">
+            {exceptions.map((ex) => (
+              <li key={ex.id} className="rounded-xl border border-red-100 bg-red-50/40 p-3 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-red-700">
+                    {EXCEPTION_TYPE[ex.type] ? (locale === "en" ? EXCEPTION_TYPE[ex.type][1] : EXCEPTION_TYPE[ex.type][0]) : ex.type}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    disabled={resolving === ex.id}
+                    onClick={() => void resolveException(ex.id)}
+                  >
+                    {resolving === ex.id ? t("处理中…", "Resolving…") : t("标记已处理", "Resolve")}
+                  </Button>
+                </div>
+                <p className="mt-1 text-[#68738b]">
+                  {typeof ex.detail === "string" ? ex.detail : ex.detail?.text || "—"}
+                </p>
+                <p className="mt-1 text-[10px] text-[#77718c]">
+                  {t("授权", "Authorization")} #{ex.authorization_id ?? "—"} · {fmtDateTime(ex.created_at)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <Empty>{t("没有待处理的执行异常。", "No open execution exceptions.")}</Empty>
+        )}
+      </Card>
+
       <p className="text-[11px] leading-relaxed text-[#77718c]">
-        {t("组合数据为演示账本；A 股价格来自公开 EOD 数据。配置与偏离只做展示，不自动调仓。", "Portfolio is a demo ledger; A-share prices come from public EOD data. Allocation and deviation are display-only; no auto rebalancing.")}
+        {t("组合数据为演示账本；A 股价格来自公开 EOD 数据。审批通过后自动模拟成交，持仓随成交更新；配置与偏离只做展示，不自动调仓。", "Portfolio is a demo ledger; A-share prices come from public EOD data. Approvals auto-execute and positions update with fills; allocation and deviation are display-only, with no auto rebalancing.")}
       </p>
     </div>
   );

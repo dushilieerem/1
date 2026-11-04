@@ -214,6 +214,13 @@ VIEWS: tuple[str, ...] = (
            CASE WHEN symbol LIKE '%.SH' OR symbol LIKE '%.SZ' OR symbol LIKE '%.BJ' THEN split_part(symbol, '.', 1) ELSE symbol END AS code,
            NULL::text AS topic_id, url
       FROM doc_item
+    UNION ALL
+    SELECT doc_id AS id, title, COALESCE(summary, '') AS summary, COALESCE(source, 'data_platform') AS source,
+           COALESCE(published_at::text, '') AS published_at, 'news' AS kind,
+           CASE WHEN symbol LIKE '%.SH' OR symbol LIKE '%.SZ' OR symbol LIKE '%.BJ' THEN split_part(symbol, '.', 1) ELSE symbol END AS code,
+           NULL::text AS topic_id, url
+      FROM derived_news d
+     WHERE NOT EXISTS (SELECT 1 FROM doc_item i WHERE 'doc-' || i.id = d.doc_id)
     """,
     """
     CREATE VIEW indices AS

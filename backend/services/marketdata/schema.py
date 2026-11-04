@@ -150,6 +150,19 @@ DDL: tuple[str, ...] = (
       PRIMARY KEY (symbol, trade_date, calc_version)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS derived_news (
+      doc_id       TEXT PRIMARY KEY,
+      source       TEXT,
+      published_at TIMESTAMPTZ,
+      title        TEXT NOT NULL,
+      url          TEXT,
+      symbol       TEXT,
+      summary      TEXT,
+      as_of        DATE,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
     # ---------------------------------------------------------------- 财务与公司行动
     """
     CREATE TABLE IF NOT EXISTS fin_income_statement (

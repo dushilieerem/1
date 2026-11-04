@@ -839,6 +839,48 @@ def _refresh_serving(conn, view: ViewInfo) -> int:
     return int(count)
 
 
+def _sync_news_dataset(conn, view: ViewInfo) -> int:
+    """可选：数据平台 news 数据集，供 H5 资讯页读取；与 doc_item 去重。"""
+    if "news" not in (view.manifest.get("datasets") or {}):
+        return 0
+    frame = _read_frame(
+        view, "news", ["doc_id", "source", "published_at", "title", "url", "symbol", "summary"]
+    )
+    if frame.empty:
+        return 0
+    conn.execute("DELETE FROM derived_news")
+    rows = []
+    for row in frame.itertuples(index=False):
+        doc_id = str(row.doc_id or "").strip()
+        if not doc_id:
+            continue
+        published = row.published_at
+        published_text = None
+        try:
+            if published is not None and not pd.isna(published):
+                published_text = str(published)[:19]
+        except (TypeError, ValueError):
+            published_text = None
+        rows.append(
+            (
+                doc_id,
+                _clean(row.source),
+                published_text,
+                str(row.title or ""),
+                _clean(row.url),
+                _clean(row.symbol),
+                _clean(row.summary),
+                view.data_date,
+            )
+        )
+    return _copy_rows(
+        conn,
+        "derived_news",
+        ["doc_id", "source", "published_at", "title", "url", "symbol", "summary", "as_of"],
+        rows,
+    )
+
+
 def _prepare_temp_tables(conn) -> None:
     ddl = (
         "CREATE TEMP TABLE IF NOT EXISTS tmp_md_daily_bar (LIKE md_daily_bar INCLUDING DEFAULTS) ON COMMIT DROP",
@@ -1041,6 +1083,7 @@ def sync_view(
                 rows["index"] = _sync_index(conn, view)
                 rows["risk"] = _sync_risk(conn, view, end, end)
                 rows["us_stock"] = _sync_us_stock(conn, view)
+                rows["news"] = _sync_news_dataset(conn, view)
                 _merge_temp_tables(conn)
                 rows["invest_stocks"] = _refresh_serving(conn, view)
                 _upsert_state(conn, view, "ok", rows=rows)
@@ -1061,6 +1104,7 @@ def sync_view(
             rows["index"] = _sync_index(conn, view)
             rows["risk"] = _sync_risk(conn, view, start, end)
             rows["us_stock"] = _sync_us_stock(conn, view)
+            rows["news"] = _sync_news_dataset(conn, view)
             if with_financials:
                 financial = view_loader.load_financials(root=view.root)
                 rows["financials"] = sum(int(v or 0) for v in financial.values())

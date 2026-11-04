@@ -364,6 +364,26 @@ test("学习中心术语详情有人话正文、例子与常见误用", async ({
   await noHorizontalOverflow(page);
 });
 
+test("资讯页展示数据平台 news 数据集", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/news`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".news-item, .empty-inline").first()).toBeVisible({ timeout: 20_000 });
+  expect(await page.locator(".news-item").count()).toBeGreaterThan(0);
+  await noHorizontalOverflow(page);
+});
+
+test("英文模式可搜索并打开真实美股", async ({ page }) => {
+  await loginByToken(page);
+  await page.addInitScript(() => localStorage.setItem("svq_invest_locale", "en"));
+  await page.goto(`${H5}/search`, { waitUntil: "domcontentloaded" });
+  const input = page.getByPlaceholder("Enter a US ticker or name, e.g. AAPL");
+  await input.fill("AAPL");
+  await expect(page.getByText("Apple").first()).toBeVisible({ timeout: 20_000 });
+  await page.getByText("Apple").first().click();
+  await expect(page.getByText("AAPL.O · US equity")).toBeVisible({ timeout: 20_000 });
+  await noHorizontalOverflow(page);
+});
+
 test("360 宽关键页面无横向溢出，行业代码不裸奔", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await loginByToken(page);

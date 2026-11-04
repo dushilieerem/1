@@ -30,9 +30,11 @@ def _us(code, name, price, prev, amount=1e9, pe=None):
 
 
 def test_market_helpers():
-    assert rules._market_sql("US") == "code LIKE '%.%'"
-    assert rules._market_sql("CN") == "code NOT LIKE '%.%'"
+    assert rules._market_sql("US") == "market='US'"
+    assert rules._market_sql("CN") == "COALESCE(market,'CN')='CN'"
     assert rules._display_name({"code": "AAPL.O", "name": "苹果"}, "US") == "Apple"
+    assert rules._display_name({"code": "A.N", "name": "安捷伦科技"}, "US") == "A"
+    assert rules._display_name({"code": "XYZ.O", "name": "Acme Corp"}, "US") == "Acme Corp"
     assert rules._display_name({"code": "600519", "name": "贵州茅台"}, "CN") == "贵州茅台"
     assert rules._display_industry({"code": "AAPL.O", "industry": "未分类"}, "US") == "US equity"
 

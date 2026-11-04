@@ -6,6 +6,7 @@ No LLM, no generated opinions: each sentence is backed by a number in the DB.
 from __future__ import annotations
 
 import math
+import re
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from statistics import median
@@ -42,7 +43,7 @@ def normalize_market(market: str | None) -> str:
 
 
 def _market_sql(market: str) -> str:
-    return "code LIKE '%.%'" if normalize_market(market) == "US" else "code NOT LIKE '%.%'"
+    return "market='US'" if normalize_market(market) == "US" else "COALESCE(market,'CN')='CN'"
 
 
 def _is_us_code(code: str | None) -> bool:
@@ -52,7 +53,14 @@ def _is_us_code(code: str | None) -> bool:
 def _display_name(stock: dict[str, Any], market: str | None = None) -> str:
     code = str(stock.get("code") or "")
     if normalize_market(market) == "US" or _is_us_code(code):
-        return US_EN_NAMES.get(code) or str(stock.get("name") or "").strip() or code.split(".")[0]
+        mapped = US_EN_NAMES.get(code)
+        if mapped:
+            return mapped
+        name = str(stock.get("name") or "").strip()
+        # 英文模式优先英文名；数据平台美股 name 多为中文时回退到 ticker。
+        if name and not re.search(r"[一-鿿]", name):
+            return name
+        return code.split(".")[0]
     return str(stock.get("name") or code)
 
 
@@ -67,7 +75,7 @@ def _market_date(conn: Any, market: str) -> str:
     if normalize_market(market) == "US":
         try:
             row = conn.execute(
-                "SELECT MAX(updated_at) AS d FROM stocks WHERE code LIKE '%.%' AND price IS NOT NULL"
+                "SELECT MAX(updated_at) AS d FROM stocks WHERE market='US' AND price IS NOT NULL"
             ).fetchone()
             if row and row.get("d"):
                 return str(row["d"])[:10]
@@ -91,7 +99,7 @@ def _market_meta(conn: Any, market: str) -> dict[str, Any]:
         age = max(0, (date.today() - start).days)
         weekdays = sum(1 for n in range(1, age + 1) if (start + timedelta(days=n)).weekday() < 5)
         try:
-            has_us = bool(conn.execute("SELECT 1 FROM stocks WHERE code LIKE '%.%' LIMIT 1").fetchone())
+            has_us = bool(conn.execute("SELECT 1 FROM stocks WHERE market='US' LIMIT 1").fetchone())
         except Exception:
             has_us = False
         return {
@@ -382,7 +390,9 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     stock = one(conn, "SELECT * FROM stocks WHERE code=?", (code,))
     if not stock:
         return None
-    is_us = _is_us_code(stock.get("code"))
+    is_us = str(stock.get("market") or "").upper() == "US" or (
+        not stock.get("market") and _is_us_code(stock.get("code"))
+    )
     market = "US" if is_us else "CN"
     meta = _market_meta(conn, market) if is_us else data_meta(conn)
     display_name = _display_name(stock, market)
@@ -1414,7 +1424,7 @@ def build_home_us(conn: Any, user_id: int) -> dict[str, Any]:
     """英文版首页：美股 EOD 广度 + 自选异动 + 领涨领跌；无指数/主题数据。"""
     meta = _market_meta(conn, "US")
     data_date = meta["dataDate"]
-    stocks = rows(conn, "SELECT * FROM stocks WHERE code LIKE '%.%' AND asset='stock' AND price IS NOT NULL")
+    stocks = rows(conn, "SELECT * FROM stocks WHERE market='US' AND asset='stock' AND price IS NOT NULL")
     if not stocks:
         return {
             **meta, "user": {"id": user_id, "name": "Demo user"}, "hasQuotes": False,
@@ -1511,7 +1521,7 @@ def build_home_us(conn: Any, user_id: int) -> dict[str, Any]:
 def build_home(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
     if normalize_market(market) == "US":
         return build_home_us(conn, user_id)
-    stocks = rows(conn, "SELECT * FROM stocks WHERE code NOT LIKE '%.%'")
+    stocks = rows(conn, "SELECT * FROM stocks WHERE COALESCE(market,'CN')='CN'")
     by_code = {s["code"]: s for s in stocks}
     meta = data_meta(conn)
     data_date = meta["dataDate"]
@@ -1617,7 +1627,7 @@ def build_watchlist(conn: Any, user_id: int, market: str = "CN") -> dict[str, An
     available = True
     if market == "US":
         try:
-            available = bool(conn.execute("SELECT 1 FROM stocks WHERE code LIKE '%.%' LIMIT 1").fetchone())
+            available = bool(conn.execute("SELECT 1 FROM stocks WHERE market='US' LIMIT 1").fetchone())
         except Exception:
             available = False
     return {
@@ -1635,7 +1645,7 @@ def build_search(conn: Any, q: str, market: str = "CN") -> dict[str, Any]:
     q = (q or "").strip()
     if market == "US":
         pool = [
-            s for s in rows(conn, "SELECT * FROM stocks WHERE code LIKE '%.%'")
+            s for s in rows(conn, "SELECT * FROM stocks WHERE market='US'")
             if s.get("asset") == "stock" and s.get("price") is not None
         ]
         if q:
@@ -1706,7 +1716,7 @@ def build_search(conn: Any, q: str, market: str = "CN") -> dict[str, Any]:
     stocks = []
     if q:
         like = f"%{q}%"
-        stocks = rows(conn, """SELECT * FROM stocks WHERE code NOT LIKE '%.%' AND
+        stocks = rows(conn, """SELECT * FROM stocks WHERE COALESCE(market,'CN')='CN' AND
                               (name LIKE ? OR code LIKE ? OR pinyin LIKE ? OR industry LIKE ?)
                               LIMIT 8""", (like, like, like, like))
     topics = rows(conn, "SELECT * FROM topics WHERE name LIKE ? LIMIT 4", (f"%{q}%",)) if q else []
@@ -1719,7 +1729,7 @@ def build_search(conn: Any, q: str, market: str = "CN") -> dict[str, Any]:
     if not q:
         # 只用服务层快照字段，避免每次搜索对全市场逐股扫 750 天 bars/valuations
         pool = [
-            s for s in rows(conn, "SELECT * FROM stocks WHERE code NOT LIKE '%.%'")
+            s for s in rows(conn, "SELECT * FROM stocks WHERE COALESCE(market,'CN')='CN'")
             if s["asset"] == "stock" and s.get("price") is not None
         ]
 
@@ -1771,8 +1781,14 @@ def build_news(conn: Any, kind: str | None = None, market: str = "CN") -> dict[s
         items = rows(conn, "SELECT * FROM news WHERE kind=? ORDER BY published_at DESC LIMIT 20", (kind,))
     else:
         items = rows(conn, "SELECT * FROM news ORDER BY published_at DESC LIMIT 20")
-    real = conn.execute("SELECT COUNT(*) AS n FROM news WHERE id LIKE 'doc-%' OR id LIKE 'news-%' OR id LIKE 'ann-%' OR id LIKE 'rep-%'").fetchone()["n"]
-    seed_news = conn.execute("SELECT COUNT(*) AS n FROM news WHERE kind='news' AND id NOT LIKE 'news-%'").fetchone()["n"]
+    real = conn.execute(
+        "SELECT COUNT(*) AS n FROM news WHERE id LIKE 'doc-%' OR id LIKE 'news-%' OR id LIKE 'ann-%' "
+        "OR id LIKE 'rep-%' OR id LIKE 'cninfo-%' OR id LIKE 'sina%'"
+    ).fetchone()["n"]
+    seed_news = conn.execute(
+        "SELECT COUNT(*) AS n FROM news WHERE kind='news' AND id NOT LIKE 'news-%' "
+        "AND id NOT LIKE 'cninfo-%' AND id NOT LIKE 'sina%'"
+    ).fetchone()["n"]
     return {"items": items, "disclaimer": "公告/研报仅保留标题、来源、时间与原文链接；非投资建议。",
             "isDemo": not bool(real), "demoKinds": ["news"] if seed_news else [], "market": "CN"}
 

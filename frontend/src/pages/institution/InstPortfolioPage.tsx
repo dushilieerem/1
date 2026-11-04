@@ -3,7 +3,7 @@ import { PieChart, ShieldCheck } from "lucide-react";
 import { instApi, fmtMoney, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
-import { Badge, Card, Empty, ErrorBox, Field, Loading, PageHeader, industryLabel } from "./instUi";
+import { Badge, Card, DataFreshness, Empty, ErrorBox, Field, Loading, PageHeader, industryLabel } from "./instUi";
 
 type Position = {
   id: number;
@@ -12,7 +12,7 @@ type Position = {
   industry?: string;
   market?: string;
   qty: number;
-  cost: number;
+  cost?: number;
   market_value: number;
   weight: number;
   as_of: string;
@@ -108,7 +108,7 @@ export function InstPortfolioPage() {
           actions={
             <div className="flex flex-wrap gap-1.5">
               <Badge>{positions.length} {t("只", "names")}</Badge>
-              {snapshotDate ? <Badge tone="gold">{t("快照", "Snapshot")} {snapshotDate}</Badge> : null}
+              <DataFreshness date={snapshotDate} label={t("快照", "Snapshot")} />
             </div>
           }
         >
@@ -131,6 +131,14 @@ export function InstPortfolioPage() {
                       <td className="py-2.5">
                         <p className="font-medium text-[#252533]">{p.name || p.symbol}</p>
                         <p className="font-mono text-[10px] text-[#77718c]">{p.symbol}</p>
+                        {p.market && p.market !== "CN" ? (
+                          <p
+                            className="text-[10px] text-amber-700"
+                            title={t("美股/港股只有行情，财务/公告未接入。", "US/HK has prices only; financials/filings are not ingested.")}
+                          >
+                            {t("暂无基本面", "No fundamentals")}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="py-2.5 text-xs text-[#68738b]">{industryLabel(p.industry, locale)}</td>
                       <td className="py-2.5 text-right font-mono text-xs">{fmtMoney(p.qty)}</td>
@@ -210,6 +218,12 @@ export function InstPortfolioPage() {
                   {t(
                     "“行业待补充”表示持仓缺少行业映射，仍计入总仓位；不是零敞口。",
                     "'Sector TBD' means the holding lacks an industry mapping; it is still included in total exposure, not zero.",
+                  )}
+                </p>
+                <p className="text-[10px] leading-relaxed text-[#77718c]">
+                  {t(
+                    "当前未接入指数/ETF 成分权重；后续展示时，空权重会显示“权重待补充”，不按 0 计入。",
+                    "Index/ETF constituent weights are not ingested yet; when shown, missing weights will display 'Weight TBD' and will not be treated as zero.",
                   )}
                 </p>
               </div>

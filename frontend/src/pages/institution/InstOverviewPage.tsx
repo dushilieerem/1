@@ -4,7 +4,7 @@ import { ArrowUpRight, RefreshCw, ShieldCheck } from "lucide-react";
 import { instApi, fmtMoney, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
-import { Badge, ErrorBox, Loading } from "./instUi";
+import { Badge, DataFreshness, ErrorBox, Loading } from "./instUi";
 
 type Overview = {
   companies: number;
@@ -46,23 +46,6 @@ function Metric({ label, value, note }: { label: string; value: string; note: st
   );
 }
 
-/** 按工作日估算数据落后几天；不是交易所日历，只用于提示“数据不是最新”。 */
-function tradingDaysLag(dateStr?: string): number | null {
-  if (!dateStr) return null;
-  const start = new Date(`${dateStr}T00:00:00`);
-  if (Number.isNaN(start.getTime())) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  let count = 0;
-  const cur = new Date(start);
-  while (cur < today) {
-    cur.setDate(cur.getDate() + 1);
-    const day = cur.getDay();
-    if (day !== 0 && day !== 6 && cur <= today) count += 1;
-  }
-  return count;
-}
-
 export function InstOverviewPage() {
   const session = useInstSession();
   const { locale, t } = useInstLocale();
@@ -99,7 +82,6 @@ export function InstOverviewPage() {
     );
   }
 
-  const lag = tradingDaysLag(data.data_date);
   const attention = [
     { label: t("待我处理的议案", "Proposals awaiting me"), count: data.my_pending ?? data.pending_approvals, to: "/inst/approvals", key: "approvals" },
     { label: t("风控硬性阻断", "Hard risk blocks"), count: data.risk_blocks, to: "/inst/approvals", key: "approvals" },
@@ -134,10 +116,7 @@ export function InstOverviewPage() {
           <div className="relative z-10 rounded-xl border border-[#d9c8f0] bg-white/70 px-3 py-2 text-[11px] leading-relaxed text-[#7950ba]">
             {t("模拟环境 · 无真实交易", "Simulated environment · no real trading")}
             <br />
-            {t("数据日", "Data date")} {data.data_date || "—"}
-            {lag !== null
-              ? ` · ${lag > 0 ? t(`约落后 ${lag} 个交易日`, `~${lag} trading days behind`) : t("最新", "Latest")}`
-              : ""}
+            <DataFreshness date={data.data_date} />
             <br />
             {t("不构成投资建议", "Not investment advice")}
           </div>

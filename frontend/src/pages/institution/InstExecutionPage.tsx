@@ -3,7 +3,7 @@ import { ArrowLeftRight, PlayCircle, ShieldCheck } from "lucide-react";
 import { instApi, fmtMoney, fmtNum, fmtPct, fmtDateTime } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
-import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge, industryLabel } from "./instUi";
+import { Badge, Button, Card, DataFreshness, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge, industryLabel } from "./instUi";
 
 type Authorization = {
   id: number;
@@ -43,6 +43,7 @@ type PortfolioData = {
     cost?: number;
     market_value: number;
     weight: number;
+    as_of?: string;
   }>;
 };
 
@@ -308,7 +309,10 @@ export function InstExecutionPage() {
         )}
       </Card>
 
-      <Card title={t("当前持仓", "Current positions")}>
+      <Card
+        title={t("当前持仓", "Current positions")}
+        actions={<DataFreshness date={pf?.positions?.[0]?.as_of} label={t("快照", "Snapshot")} />}
+      >
         {pf?.positions?.length ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">

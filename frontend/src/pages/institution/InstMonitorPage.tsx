@@ -4,7 +4,7 @@ import { Activity, AlertTriangle, ClipboardList } from "lucide-react";
 import { instApi, fmtMoney, fmtPct, fmtDateTime } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
-import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge, industryLabel } from "./instUi";
+import { Badge, Button, Card, DataFreshness, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge, industryLabel } from "./instUi";
 
 type Position = {
   id: number;
@@ -12,6 +12,7 @@ type Position = {
   symbol: string;
   name?: string;
   industry?: string;
+  market?: string;
   qty: number;
   cost?: number;
   market_value: number;
@@ -283,6 +284,7 @@ export function InstMonitorPage() {
         desc={t("跟踪持仓、集中度、经营预警与原始论点复核；退出必须重新走研究、辩论、审批与风控。", "Track positions, concentration, operating alerts and thesis reviews; exits must go through research, debate, approval and risk again.")}
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <DataFreshness date={positions[0]?.as_of} label={t("快照", "Snapshot")} />
             <Badge tone={openAlerts ? "amber" : "green"}>{openAlerts} {t("条待处理预警", "open alerts")}</Badge>
             <Link to="/inst/audit">
               <Button variant="ghost">{t("审计日志", "Audit log")}</Button>
@@ -312,7 +314,7 @@ export function InstMonitorPage() {
           <Card
             title={t("持仓与论点台账", "Holdings & thesis ledger")}
             desc={t("每笔持仓应有买入理由、关键假设、KPI、复核时间与推翻条件。", "Every holding needs a thesis, assumptions, KPIs, review date and falsifiers.")}
-            actions={positions[0]?.as_of ? <Badge tone="gold">{t("快照", "Snapshot")} {positions[0].as_of}</Badge> : null}
+            actions={<DataFreshness date={positions[0]?.as_of} label={t("快照", "Snapshot")} />}
           >
             {positions.length ? (
               <div className="space-y-3">
@@ -325,6 +327,14 @@ export function InstMonitorPage() {
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge>{industryLabel(p.industry, locale)}</Badge>
+                        {p.market && p.market !== "CN" ? (
+                          <Badge
+                            tone="amber"
+                            title={t("美股/港股只有行情，财务/公告未接入。", "US/HK has prices only; financials/filings are not ingested.")}
+                          >
+                            {t("暂无基本面", "No fundamentals")}
+                          </Badge>
+                        ) : null}
                         <Badge tone="gold" title={t("权重 = 持仓市值 / 组合净值", "Weight = market value / NAV")}>
                           {p.weight == null ? t("权重待补充", "Weight TBD") : `${t("权重", "Weight")} ${fmtPct(p.weight)}`}
                         </Badge>

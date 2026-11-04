@@ -213,6 +213,69 @@ export function industryLabel(value: string | null | undefined, locale: string):
   return text;
 }
 
+/** 按工作日估算数据落后几天；不是交易所日历，只用于提示“数据不是最新”。 */
+export function tradingDaysLag(dateStr?: string | null): number | null {
+  if (!dateStr) return null;
+  const start = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(start.getTime())) return null;
+  const now = new Date();
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  // 收盘前（按 16:00 近似）不把“今天”算作已完成交易日，避免早上误报落后。
+  const end = new Date(today);
+  if (now.getHours() < 16) end.setDate(end.getDate() - 1);
+  let count = 0;
+  const cur = new Date(start);
+  while (cur < end) {
+    cur.setDate(cur.getDate() + 1);
+    const day = cur.getDay();
+    if (day !== 0 && day !== 6 && cur <= end) count += 1;
+  }
+  return count;
+}
+
+/** 统一的数据日/新鲜度徽标：日期缺失也明确说明，不留空。 */
+export function DataFreshness({
+  date,
+  label,
+}: {
+  date?: string | null;
+  label?: string;
+}) {
+  const { locale } = useInstLocale();
+  const basis = label || (locale === "en" ? "Data date" : "数据日");
+  if (!date) {
+    return (
+      <Badge
+        tone="amber"
+        title={locale === "en" ? "Backend did not return a data date." : "后端未返回数据日。"}
+      >
+        {basis} {locale === "en" ? "TBD" : "待补充"}
+      </Badge>
+    );
+  }
+  const lag = tradingDaysLag(date);
+  const suffix =
+    lag === null
+      ? ""
+      : lag === 0
+        ? ` · ${locale === "en" ? "latest" : "最新"}`
+        : ` · ${locale === "en" ? `~${lag}d behind` : `约落后 ${lag} 个交易日`}`;
+  return (
+    <Badge
+      tone={lag === 0 ? "green" : lag !== null && lag <= 1 ? "gold" : "amber"}
+      title={
+        locale === "en"
+          ? "Trading-day lag is estimated by weekdays; not an exchange calendar."
+          : "落后交易日按工作日估算，不是交易所日历。"
+      }
+    >
+      {basis} {date}
+      {suffix}
+    </Badge>
+  );
+}
+
 /** 轻量说明入口：鼠标悬停显示解释，避免页面上大段说明文字。 */
 export function HelpTip({ text }: { text: string }) {
   return (

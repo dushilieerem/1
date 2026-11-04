@@ -394,7 +394,8 @@ def list_companies(
     sql = f"""
         SELECT c.*,
                v.pe_ttm, v.pb_mrq, v.float_mv,
-               b.close AS last_close, b.trade_date AS last_trade_date
+               b.close AS last_close, b.trade_date AS last_trade_date,
+               ind.name AS industry_name
           FROM inst_company c
           LEFT JOIN LATERAL (
             SELECT pe_ttm, pb_mrq, float_mv FROM md_valuation_daily
@@ -404,6 +405,15 @@ def list_companies(
             SELECT close, trade_date FROM md_daily_bar
              WHERE symbol=c.symbol AND adjust='none' ORDER BY trade_date DESC LIMIT 1
           ) b ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT ri.name
+              FROM ref_security_industry rsi
+              JOIN ref_industry ri
+                ON ri.industry_code = rsi.industry_code AND ri.level = 1
+             WHERE rsi.symbol = c.symbol AND rsi.level = 1
+             ORDER BY rsi.effective_from DESC
+             LIMIT 1
+          ) ind ON TRUE
          WHERE {clause}
          ORDER BY c.market, c.symbol
          LIMIT %s OFFSET %s
@@ -418,6 +428,10 @@ def list_companies(
     for r in rows:
         item = _row_dict(r) or {}
         item["ref_price"] = item.get("last_close") or item.get("ref_price")
+        if item.get("industry_name"):
+            item["industry"] = item["industry_name"]
+        elif re.match(r"^\d{6}\.", str(item.get("industry") or "")):
+            item["industry"] = None
         out.append(item)
     return {"items": out, "total": total, "limit": limit, "offset": offset}
 
@@ -581,14 +595,37 @@ def ideas_push(org_id: int, *, limit: int = 12) -> dict[str, Any]:
     }
 
 
+def _mapped_industry(conn, symbol: str, raw: Any) -> str | None:
+    """行业展示：优先申万中文名；行业代码（801120.SI）不裸展示。"""
+    text = str(raw or "").strip()
+    if text and not re.match(r"^\d{6}\.", text):
+        return text
+    row = conn.execute(
+        """
+        SELECT ri.name
+          FROM ref_security_industry rsi
+          JOIN ref_industry ri
+            ON ri.industry_code = rsi.industry_code AND ri.level = 1
+         WHERE rsi.symbol=%s AND rsi.level=1
+         ORDER BY rsi.effective_from DESC
+         LIMIT 1
+        """,
+        (symbol,),
+    ).fetchone()
+    return str(row["name"]) if row and row["name"] else None
+
+
 def get_company(org_id: int, company_id: int) -> dict[str, Any] | None:
     with get_conn() as conn:
         row = conn.execute(
             "SELECT * FROM inst_company WHERE id=%s AND org_id=%s", (company_id, org_id)
         ).fetchone()
-    if not row:
-        return None
-    company = _row_dict(row) or {}
+        if not row:
+            return None
+        company = _row_dict(row) or {}
+        company["industry"] = _mapped_industry(
+            conn, str(company.get("symbol") or ""), company.get("industry")
+        )
     symbol = company["symbol"]
     company["market_data"] = {
         "bar": md.latest_bar(symbol, adjust="none"),
@@ -669,6 +706,10 @@ def get_case(org_id: int, case_id: int) -> dict[str, Any] | None:
         ).fetchone()
         if not case:
             return None
+        case = dict(case)
+        case["industry"] = _mapped_industry(
+            conn, str(case.get("symbol") or ""), case.get("industry")
+        )
         tasks = conn.execute(
             "SELECT * FROM inst_research_task WHERE case_id=%s ORDER BY id", (case_id,)
         ).fetchall()

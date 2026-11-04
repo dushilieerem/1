@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { factorGate, factorStages, type FactorEvidence } from '../src/pages/institutional-workflow/factorWorkflow';
+const good: FactorEvidence = { currentVersion: 'v1', frozenVersion: 'v1', development: { version: 'v1', reportId: 'research-1', passed: true }, independent: { version: 'v1', reportId: 'validation-1', passed: true, isolated: true } };
+test('PRD contains exactly six factor steps', () => assert.deepEqual(factorStages.map(s=>s.id), ['F1','F2','F3','F4','F5','F6']));
+test('existing assets and early research do not wait for upstream', () => assert.equal(factorGate('F1', {currentVersion:'v1'}), null));
+test('failed development cannot enter independent validation', () => assert.ok(factorGate('F5', {...good, development:{...good.development!, passed:false}})));
+test('changing candidate invalidates prior evidence', () => assert.ok(factorGate('F6', {...good, currentVersion:'v2'})));
+test('ordinary backtest is not independent validation', () => assert.ok(factorGate('F6', {...good, independent:{...good.independent!, reportId:'research-1'}})));
+test('validation must actually be isolated', () => assert.ok(factorGate('F6', {...good, independent:{...good.independent!, isolated:false}})));
+test('valid current evidence permits submission, not automatic approval', () => assert.equal(factorGate('F6', good), null));

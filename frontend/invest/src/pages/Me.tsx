@@ -106,8 +106,8 @@ export default function Me() {
         {!quality ? (
           <p className="hint">
             {t(
-              "正在检查数据质量；财务覆盖统计约需数秒，不阻塞页面其他内容。",
-              "Checking data quality; financial coverage can take a few seconds and does not block the rest of the page.",
+              "正在检查数据质量，不阻塞页面其他内容。",
+              "Checking data quality; the rest of the page stays available.",
             )}
           </p>
         ) : null}

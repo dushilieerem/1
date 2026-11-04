@@ -225,7 +225,7 @@ function AddWatchSheet({
       ) : (
         <div className="callout">
           <b>{t("注意：", "Note:")}</b>
-          {t("美股版只加入自选，不创建关注事件。", "US mode only adds the ticker to the watchlist; watch events are not available yet.")}
+          {t("美股版只加入自选，不创建关注事件。", "US mode only adds the ticker to the watchlist; watch events are not available.")}
         </div>
       )}
     </Sheet>

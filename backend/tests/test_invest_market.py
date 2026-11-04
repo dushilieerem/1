@@ -48,6 +48,7 @@ def test_us_home_breadth(monkeypatch):
     ))
     out = rules.build_home(conn=FakeConn(), user_id=1, market="US")
     assert out["market"] == "US"
+    assert out["coverage"]["quotes"] is True and out["coverage"]["news"] is False
     assert out["indices"] == [] and out["topics"] == []
     assert "advancers" in out["review"]["summary"]
     assert out["daily"][0]["tag"].startswith("US")
@@ -57,6 +58,7 @@ def test_us_home_without_coverage(monkeypatch):
     monkeypatch.setattr(rules, "rows", lambda conn, sql, args=(): [])
     out = rules.build_home(conn=FakeConn(), user_id=1, market="US")
     assert out["market"] == "US" and out["hasQuotes"] is False
+    assert out["coverage"]["quotes"] is False and out["coverage"]["fundamentals"] is False
     assert out["daily"] == []
     assert "unavailable" in out["review"]["title"].lower()
     assert out["watchlist"] == []
@@ -113,4 +115,34 @@ def test_us_stock_is_localized(monkeypatch):
     assert out["financials"] == [] and out["news"] == []
     assert out["valuation"]["label"] == "No valuation data"
     assert out["dataSource"] == "Public EOD (US)"
+    assert out["coverage"]["valuation"] is False
     assert all(ord(ch) < 128 for ch in " ".join(out["summary"]))
+
+
+def test_cn_stock_beta_falls_back_to_risk_daily(monkeypatch):
+    stock = {
+        "code": "600519", "name": "贵州茅台", "industry": "食品饮料", "asset": "stock",
+        "price": 1480.0, "prev_close": 1439.1, "open": 1450.0, "high": 1480.0, "low": 1435.0,
+        "market_cap": 18500.0, "pe_ttm": 22.5, "pb": 6.8, "dividend_yield": 1.9,
+        "turnover": 0.6, "volume": 1000, "amount": 1e9, "beta": None,
+        "updated_at": "2026-11-03", "next_report_date": None, "pinyin": None,
+    }
+
+    def one(conn, sql, args=()):
+        if "FROM stocks" in sql and "code=?" in sql:
+            return stock
+        if "md_risk_daily" in sql:
+            return {"beta_1y": 1.23}
+        return None
+
+    monkeypatch.setattr(rules, "one", one)
+    monkeypatch.setattr(rules, "rows", lambda conn, sql, args=(): [])
+    monkeypatch.setattr(rules, "data_meta", lambda conn: {"dataDate": "2026-11-03", "dataSource": "test", "isDemo": False})
+    monkeypatch.setattr(rules, "latest_date", lambda conn: "2026-11-03")
+    monkeypatch.setattr(rules, "stock_bars", lambda conn, code, limit=750: [
+        {"date": f"2026-09-{i:02d}", "open": 100 + i, "high": 101 + i, "low": 99 + i,
+         "close": 100 + i, "volume": 1000} for i in range(1, 29)
+    ])
+    out = rules.build_stock(FakeConn(), "600519")
+    assert out["quote"]["beta"] == 1.23
+    assert out["quote"]["nextReportDateAvailable"] is False

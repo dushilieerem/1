@@ -382,12 +382,20 @@ export default function Stock() {
           <Kv k={t("行业", "Industry")} v={displayIndustry(q.industry)} />
           <Kv k={<span>Beta <Help term="beta" /></span>} v={q.beta != null ? (Math.abs(q.beta) < 0.005 ? "0.00" : q.beta.toFixed(2)) : t("风险指标待补充", "Risk metric pending")} />
           <Kv k={<span>{t("股息率", "Dividend yield")} <Help term="dividend_yield" /></span>} v={q.dividendYield != null ? `${q.dividendYield.toFixed(2)}%` : t("待补充", "Pending")} />
-          <Kv k={t("下次财报（预计）", "Next report (est.)")} v={q.nextReportDate || t("待补充（数据源未接入）", "Pending (source not connected)")} />
+          <Kv
+            k={t("下次财报（预计）", "Next report (est.)")}
+            v={
+              q.nextReportDate ||
+              (q.nextReportDateAvailable === false
+                ? t("暂无可靠未来日历", "No reliable forward calendar")
+                : t("待补充", "Pending"))
+            }
+          />
           {q.beta == null || !q.nextReportDate ? (
             <p className="hint">
               {t(
-                "Beta 与预计财报日来自风险/财报数据源；当前缺失时显示「待补充」，不代表没有风险或没有财报。",
-                "Beta and the next report date come from risk/financial data sources. When missing they show as pending; it does not mean the risk or report does not exist.",
+                "Beta 来自风险日表，缺失时显示「待补充」；预计财报日暂无可靠免费未来日历，显示「暂无可靠未来日历」不代表没有财报。",
+                "Beta comes from the risk daily table and shows as pending when missing. There is no reliable free forward calendar for the next report date; “No reliable forward calendar” does not mean no report exists.",
               )}
             </p>
           ) : null}
@@ -414,7 +422,7 @@ export default function Stock() {
             <h2>{t("财务趋势", "Financial trend")}</h2>
             {!isUs ? <button className="link-btn" onClick={() => setReportOpen(true)}>{t("查看财报", "View report")} <ChevronRight size={14} /></button> : null}
           </div>
-          {isUs ? <div className="empty-inline">{t("美股暂无财务数据源；当前只提供行情与 K 线。", "US financial data is not available yet; this build only provides quotes and charts.")}</div> : q.asset === "etf" ? <div className="empty-inline">{t("ETF 不适用公司财务指标。", "Company financial metrics do not apply to ETFs.")}</div> : (
+          {isUs ? <div className="empty-inline">{t("美股暂无财务数据源；当前只提供行情与 K 线。", "US financial data is not available (no free stable source); this build only provides quotes and charts.")}</div> : q.asset === "etf" ? <div className="empty-inline">{t("ETF 不适用公司财务指标。", "Company financial metrics do not apply to ETFs.")}</div> : (
             <>
               {data.earningsFlash?.available ? (
                 <div className="flash-card">
@@ -452,7 +460,7 @@ export default function Stock() {
       {tab === "valuation" && (
         <section className="card">
           <div className="card-title-row"><h2>{t("估值位置", "Valuation")}</h2><span className="hint">{t("近 3 年历史分位", "3-year percentile")}</span></div>
-          {isUs ? <div className="empty-inline">{t("美股暂无估值数据源；当前只提供行情与 K 线。", "US valuation data is not available yet; this build only provides quotes and charts.")}</div> : (
+          {isUs ? <div className="empty-inline">{t("美股暂无估值数据源；当前只提供行情与 K 线。", "US valuation data is not available (no free stable source); this build only provides quotes and charts.")}</div> : (
           <>
           <div className="valuation-nums">
             <div><span>PE(TTM)<Help term="pe_ttm" /></span><b>{v.pe?.toFixed?.(2) ?? "—"}x</b></div>
@@ -473,7 +481,7 @@ export default function Stock() {
           <div className="divider" />
           <div className="card-title-row"><h2>{t("机构观点", "Institutional view")}</h2><span className="hint">{t("机构观点 · 非 AI 判断 · 非投资建议", "Institutional view · not AI · not investment advice")}</span></div>
           {data.institutionalView?.available ? (
-            <p className="muted small">{t("评级分布与目标价区间待接入。", "Rating distribution and target range are not connected yet.")}</p>
+            <p className="muted small">{t("评级分布与目标价区间待接入。", "Rating distribution and target range are not available (no free stable source).")}</p>
           ) : (
             <p className="muted small">{data.institutionalView?.note || t("机构评级 / 目标价 / 盈利预测数据待补充", "Institutional ratings, target prices and forecasts are pending.")}</p>
           )}
@@ -512,7 +520,7 @@ export default function Stock() {
 
       <button className="news-entry" onClick={() => setNewsOpen(true)}>
         <FileText size={18} />
-        <span>{isUs ? t("美股资讯：暂未接入", "US news: not connected yet") : t("个股资讯：要闻、公告、研报", "Stock news: headlines, filings, research")}</span>
+        <span>{isUs ? t("美股资讯：暂未接入", "US news: no free stable source") : t("个股资讯：要闻、公告、研报", "Stock news: headlines, filings, research")}</span>
         <ChevronRight size={16} />
       </button>
 
@@ -564,7 +572,7 @@ export default function Stock() {
                 {annBusy === String(n.id) ? t("解读中…", "Summarizing…") : t("AI 解读", "AI summary")}
               </button>
             </div>
-          )) : <div className="empty-inline">{t("暂无个股资讯。", isUs ? "US news coverage is not connected yet." : "No stock news yet.")}</div>}
+          )) : <div className="empty-inline">{t("暂无个股资讯。", isUs ? "US news coverage is not available (no free stable source)." : "No stock news yet.")}</div>}
         </div>
         {annAi ? <AiCard data={annAi} title={t("公告解读", "Filing summary")} /> : null}
       </Sheet>

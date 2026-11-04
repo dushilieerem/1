@@ -76,6 +76,14 @@ def _market_date(conn: Any, market: str) -> str:
     return latest_date(conn)
 
 
+def _us_coverage(quotes: bool) -> dict[str, bool]:
+    """美股覆盖标记：除行情外，其余数据源当前明确不提供。"""
+    return {
+        "quotes": quotes, "fundamentals": False, "valuation": False,
+        "news": False, "industry": False, "index": False,
+    }
+
+
 def _market_meta(conn: Any, market: str) -> dict[str, Any]:
     if normalize_market(market) == "US":
         data_date = _market_date(conn, "US")
@@ -379,6 +387,18 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     meta = _market_meta(conn, market) if is_us else data_meta(conn)
     display_name = _display_name(stock, market)
     display_industry = _display_industry(stock, market)
+    if stock.get("beta") is None:
+        # beta 不在 invest_stocks 快照里，从风险日表取最新一条；缺失时仍显示待补充。
+        try:
+            risk = one(
+                conn,
+                "SELECT beta_1y FROM md_risk_daily WHERE symbol=? ORDER BY trade_date DESC LIMIT 1",
+                (_with_suffix(stock["code"]),),
+            )
+            if risk and risk.get("beta_1y") is not None:
+                stock["beta"] = float(risk["beta_1y"])
+        except Exception:
+            pass
     if not stock.get("price"):
         # 全市场检索可以命中，但池外标的可能尚未同步日线；给出明确空态而不是 500。
         return {
@@ -390,6 +410,7 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
                 "dividendYield": stock.get("dividend_yield"), "turnover": stock.get("turnover"),
                 "volume": stock.get("volume"), "amount": stock.get("amount"), "beta": stock.get("beta"),
                 "updatedAt": stock.get("updated_at"), "nextReportDate": stock.get("next_report_date"),
+                "nextReportDateAvailable": bool(stock.get("next_report_date")),
             },
             "chart": {"period": period, "bars": [], "ma5": [], "ma10": [], "ma20": []},
             "technical": {
@@ -429,7 +450,7 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
             ),
             "institutionalView": (
                 {"available": False, "ratings": [], "target": None, "forecast": None,
-                 "note": "Institutional ratings, target prices and forecasts are not available for US names yet."}
+                 "note": "Institutional ratings, target prices and forecasts are not available for US names (no free stable source)."}
                 if is_us else _institutional_view()
             ),
             "sensitivity": (
@@ -437,13 +458,14 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
                 if is_us else _sensitivity(None)
             ),
             "sentiment": (
-                {"available": False, "note": "No news coverage for US names yet", "source": "News headlines"}
+                {"available": False, "note": "US news source not available (no free stable source)", "source": "News headlines"}
                 if is_us else _sentiment([], None)
             ),
             "dataDate": meta["dataDate"],
             "disclaimer": DISCLAIMER_EN if is_us else DISCLAIMER,
             "isDemo": meta["isDemo"],
             "dataSource": meta["dataSource"],
+            **({"coverage": _us_coverage(False)} if is_us else {}),
         }
     all_bars = stock_bars(conn, code)
     chart_bars = aggregate(all_bars, period)
@@ -497,7 +519,7 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
         if not risks:
             risks.append({
                 "title": "No rule-based risk triggered",
-                "detail": "Trend and volume did not cross the preset thresholds; fundamentals and valuation are not covered for US names yet.",
+                "detail": "Trend and volume did not cross the preset thresholds; fundamentals and valuation are not available for US names (no free stable source).",
                 "level": "green",
             })
     else:
@@ -520,7 +542,7 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
                 f"Price is {dd:.1f}% vs its 180-day high and {'above' if ma20_daily and stock['price'] >= ma20_daily else 'below'} MA20; "
                 f"20-day change {ret20:+.1f}%."
             )
-        summary.append("Fundamentals, valuation and news are not covered for US names in this build; only EOD quotes and technical context are shown.")
+        summary.append("Fundamentals, valuation and news are not available for US names (no free stable source); only EOD quotes and technical context are shown.")
         fins = []
         latest = prev = None
     else:
@@ -543,6 +565,7 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
         "dividendYield": stock["dividend_yield"], "turnover": stock["turnover"],
         "volume": stock["volume"], "amount": stock["amount"], "beta": beta_value,
         "updatedAt": stock["updated_at"], "nextReportDate": stock["next_report_date"],
+        "nextReportDateAvailable": bool(stock.get("next_report_date")),
     }
     chart = {
         "period": period,
@@ -587,7 +610,7 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
         ),
         "institutionalView": (
             {"available": False, "ratings": [], "target": None, "forecast": None,
-             "note": "Institutional ratings, target prices and forecasts are not available for US names yet."}
+             "note": "Institutional ratings, target prices and forecasts are not available for US names (no free stable source)."}
             if is_us else _institutional_view()
         ),
         "sensitivity": (
@@ -595,12 +618,13 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
             if is_us else _sensitivity(beta_value)
         ),
         "sentiment": (
-            {"available": False, "note": "No news coverage for US names yet", "source": "News headlines"}
+            {"available": False, "note": "US news source not available (no free stable source)", "source": "News headlines"}
             if is_us else _sentiment(news, stock.get("turnover"))
         ),
         "dataDate": meta["dataDate"] if is_us else (all_bars[-1]["date"] if all_bars else meta["dataDate"]),
         "disclaimer": DISCLAIMER_EN if is_us else DISCLAIMER,
         "isDemo": meta["isDemo"], "dataSource": meta["dataSource"],
+        **({"coverage": _us_coverage(True)} if is_us else {}),
     }
 
 
@@ -1369,12 +1393,12 @@ def build_home_us(conn: Any, user_id: int) -> dict[str, Any]:
     if not stocks:
         return {
             **meta, "user": {"id": user_id, "name": "Demo user"}, "hasQuotes": False,
-            "daily": [],
+            "coverage": _us_coverage(False), "daily": [],
             "review": {
                 "title": "US quotes unavailable",
                 "summary": (
                     "This data view does not contain US quote rows. US financials, valuation, "
-                    "news and indices are also not connected. Switch to 中文 for A-share coverage."
+                    "news and indices are also not available. Switch to 中文 for A-share coverage."
                 ),
                 "facts": [
                     "No US tickers with a latest price were found in the current service-layer snapshot.",
@@ -1443,7 +1467,7 @@ def build_home_us(conn: Any, user_id: int) -> dict[str, Any]:
         "summary": (
             f"US EOD snapshot {data_date}: {advancers} advancers vs {decliners} decliners, "
             f"average move {average:+.2f}%. This build covers quotes and charts only; "
-            "fundamentals, valuation, news and US indices are not available yet."
+            "fundamentals, valuation, news and US indices are not available (no free stable source)."
         ),
         "facts": [
             f"{len(stocks)} US tickers have a latest price; {sum(1 for s in stocks if s.get('amount'))} have dollar volume.",
@@ -1453,7 +1477,7 @@ def build_home_us(conn: Any, user_id: int) -> dict[str, Any]:
     }
     return {
         **meta, "user": {"id": user_id, "name": "Demo user"}, "hasQuotes": True,
-        "daily": daily, "review": review,
+        "coverage": _us_coverage(True), "daily": daily, "review": review,
         "indices": [], "topics": [], "watchlist": watch_cards, "glossary": US_GLOSSARY,
         "disclaimer": DISCLAIMER_EN, "market": "US",
     }
@@ -1714,7 +1738,7 @@ def build_news(conn: Any, kind: str | None = None, market: str = "CN") -> dict[s
         return {
             "items": [],
             "market": "US",
-            "note": "US news coverage is not available yet. This build only ships US quotes and charts.",
+            "note": "US news coverage is not available (no free stable source). This build only ships US quotes and charts.",
             "disclaimer": "News coverage coming later; not investment advice.",
             "isDemo": False, "demoKinds": [],
         }

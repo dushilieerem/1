@@ -328,3 +328,27 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 | 前端 | 一页纸展示研究建议、六维评分、未解决分歧、关键变量；仍不给目标价或买卖指令 |
 
 验证：`pytest tests/test_inst_*.py` 56 passed；`e2e-10` 8 passed；`tsc`、`npm run test:inst` 通过。
+
+### 11.7 证据可信层与 hash 绑定（2026-11-04，B2）
+
+| 项 | 实现 |
+|---|---|
+| 证据分级 | `inst_evidence.grade` A-D：A 公告/年报、B 交易所/数据平台、C 第三方/媒体、D AI/推断；旧证据按来源幂等回填 |
+| PIT | `event_time` / `available_time` / `cutoff`；行情用交易日，财务用公告日；缺失日期以生成日兜底并标注 |
+| 原文锚点 | `document_id` / `page_ref` / `source_uri` 字段已建，当前数据源未提供时为空，不编造 |
+| 版本 hash | `inst_research_version.content_hash` + `cutoff`；生成时计算，旧版本在审核/辩论/议案前补齐 |
+| 议案绑定 | `inst_proposal_version.snapshot` 绑 `research_content_hash`、`research_cutoff`、`evidence_hash` |
+| 授权绑定 | 授权快照绑 `proposal_hash`、`research_content_hash`、`evidence_hash` |
+| 风控 | `hash_binding` 硬检查：研究内容/证据 hash 与快照不一致直接 block |
+| 辩论核验 | `inst_evidence_check` 记录 claim/证据核验状态；D 级不能单独支撑结论，无有效证据的论点 `valid=false` |
+| 前端 | 证据弹窗展示等级、可用时间、原文锚点；版本卡展示截止日、内容 hash、冻结时间；辩论页展示核验汇总与逐条证据状态 |
+
+验证（svquant_test，-28，dataDate 2026-11-03）：
+
+| 项 | 结果 |
+|---|---|
+| `pytest tests/test_inst_*.py` | 66 passed（新增 B2 证据/ hash 2 条，线性流程补 hash 断言） |
+| `tsc --noEmit` | 通过 |
+| `npm run test:inst` | 5 passed |
+| `e2e-09/10/11` | 13 passed |
+| 控制台错误 / 接口 5xx / 横向溢出 | 0 |

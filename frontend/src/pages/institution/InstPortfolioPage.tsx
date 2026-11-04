@@ -184,9 +184,9 @@ export function InstPortfolioPage() {
                         {p.market && p.market !== "CN" ? (
                           <p
                             className="text-[10px] text-amber-700"
-                            title={t("美股/港股只有行情，财务/公告未接入。", "US/HK has prices only; financials/filings are not ingested.")}
+                            title={t("美股/港股暂无财务、公告、行业与指数数据源；只有行情。", "No fundamental, filing, industry or index data source for US/HK; prices only.")}
                           >
-                            {t("暂无基本面", "No fundamentals")}
+                            {t("暂无数据源", "No data source")}
                           </p>
                         ) : null}
                       </td>
@@ -272,8 +272,8 @@ export function InstPortfolioPage() {
                 </p>
                 <p className="text-[10px] leading-relaxed text-[#77718c]">
                   {t(
-                    "当前未接入指数/ETF 成分权重；后续展示时，空权重会显示“权重待补充”，不按 0 计入。",
-                    "Index/ETF constituent weights are not ingested yet; when shown, missing weights will display 'Weight TBD' and will not be treated as zero.",
+                    "指数/ETF 成分权重已在数据平台（index_membership，含空权重与 0 的区分），等待 PG 服务层同步；展示时空权重显示“权重待补充”，不按 0 计入。",
+                    "Index/ETF constituent weights exist in the data platform (index_membership, with null vs 0 distinguished) and await PG service-layer sync; missing weights show 'Weight TBD' and are not treated as zero.",
                   )}
                 </p>
               </div>

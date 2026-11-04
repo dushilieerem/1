@@ -479,8 +479,8 @@ export function InstResearchPage() {
       {detail.market && detail.market !== "CN" ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] leading-relaxed text-amber-800">
           {t(
-            "美股/港股当前只有行情，财务与公告数据未接入；六维结论会大量落入“数据缺口/待补充”，仅用于流程演示。",
-            "US/HK currently has prices only; financials and filings are not ingested. Most dimensions will show data gaps / TBD and are for workflow demo only.",
+            "美股/港股暂无财务、公告、行业与指数数据源，只有行情；六维结论会标注数据缺口，仅用于流程演示。",
+            "No fundamental, filing, industry or index data source for US/HK; prices only. Dimensions will mark data gaps and are for workflow demo only.",
           )}
         </div>
       ) : null}

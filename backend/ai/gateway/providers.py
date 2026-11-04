@@ -362,10 +362,21 @@ def _failure_to_error(failure: _HttpFailure, target: ChatTarget) -> AiUpstreamEr
 
 
 def _response_format_unsupported(failure: _HttpFailure) -> bool:
-    """供应商明确拒绝 response_format（与 ResearchEngine 同口径）。"""
+    """供应商明确拒绝 response_format（与 ResearchEngine 同口径）。
+
+    不同网关文案不一致：Ark 常见 ``response_format.type ... not supported``，
+    LiteLLM/DeepSeek 返回 ``This response_format type is unavailable now``。
+    只认 400 + response_format 相关字样，避免把普通参数错误误判为格式不支持。
+    """
     if failure.status != 400:
         return False
-    return "response_format.type" in failure.body and "not supported" in failure.body
+    body = (failure.body or "").lower()
+    if "response_format" not in body:
+        return False
+    return any(
+        marker in body
+        for marker in ("not supported", "unavailable", "unsupported", "invalid", "unknown")
+    )
 
 
 def _send(
@@ -375,18 +386,35 @@ def _send(
     timeout: int,
     stream: bool,
 ):
-    """发送请求；`response_format` 被拒时去掉该字段重试一次。"""
+    """发送请求；`response_format` 被拒时降级重试。
+
+    顺序：原格式 → `json_object`（仅原格式是 json_schema 时）→ 去掉格式。
+    模型输出仍必须通过任务 validator，降级不会放宽 JSON/代码静态校验。
+    """
     try:
         return _post(target, payload, timeout=timeout, stream=stream)
     except _HttpFailure as failure:
-        if payload.get("response_format") is not None and _response_format_unsupported(failure):
+        current = payload.get("response_format")
+        if current is None or not _response_format_unsupported(failure):
+            raise _failure_to_error(failure, target) from failure
+        retries: list[dict[str, Any] | None] = []
+        if isinstance(current, dict) and current.get("type") == "json_schema":
+            retries.append({"type": "json_object"})
+        retries.append(None)
+        last = failure
+        for fmt in retries:
             retry = dict(payload)
-            retry.pop("response_format", None)
+            if fmt is None:
+                retry.pop("response_format", None)
+            else:
+                retry["response_format"] = fmt
             try:
                 return _post(target, retry, timeout=timeout, stream=stream)
             except _HttpFailure as retry_failure:
-                raise _failure_to_error(retry_failure, target) from retry_failure
-        raise _failure_to_error(failure, target) from failure
+                last = retry_failure
+                if not _response_format_unsupported(retry_failure):
+                    raise _failure_to_error(retry_failure, target) from retry_failure
+        raise _failure_to_error(last, target) from last
 
 
 class _CompletionCache:

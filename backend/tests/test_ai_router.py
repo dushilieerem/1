@@ -26,6 +26,13 @@ TEST_CHAIN = register(
         re_path="/api/ai/test",
     )
 )
+CODE_LOCAL = register(
+    TaskSpec(
+        task_id="test.code_local",
+        slot=providers.SLOT_CODE,
+        response_format={"type": "json_schema", "json_schema": {"name": "x", "schema": {}}},
+    )
+)
 
 _OK = {
     "content": "ok",
@@ -215,6 +222,72 @@ class ProvidersTargetTest(unittest.TestCase):
             provider="ark", base_url="http://x", api_key="SECRET", model="m"
         )
         self.assertNotIn("SECRET", repr(target))
+
+    def test_response_format_unavailable_degrades_to_json_object(self):
+        target = providers.ChatTarget(
+            provider="openai_compatible", base_url="http://x", api_key="k", model="m"
+        )
+        calls = []
+
+        def fake_post(target, payload, *, timeout, stream):
+            calls.append(payload.get("response_format"))
+            if len(calls) == 1:
+                raise providers._HttpFailure(
+                    400,
+                    '{"error":{"message":"This response_format type is unavailable now"}}',
+                    "Bad Request",
+                )
+            return {"ok": True}
+
+        with patch.object(providers, "_post", side_effect=fake_post):
+            out = providers._send(
+                target,
+                {"response_format": {"type": "json_schema"}},
+                timeout=5,
+                stream=False,
+            )
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(calls, [{"type": "json_schema"}, {"type": "json_object"}])
+
+    def test_response_format_unavailable_degrades_to_none(self):
+        target = providers.ChatTarget(
+            provider="openai_compatible", base_url="http://x", api_key="k", model="m"
+        )
+        calls = []
+
+        def fake_post(target, payload, *, timeout, stream):
+            calls.append(payload.get("response_format"))
+            if payload.get("response_format") is not None:
+                raise providers._HttpFailure(
+                    400,
+                    '{"error":"response_format type is unavailable"}',
+                    "Bad Request",
+                )
+            return {"ok": True}
+
+        with patch.object(providers, "_post", side_effect=fake_post):
+            out = providers._send(
+                target,
+                {"response_format": {"type": "json_object"}},
+                timeout=5,
+                stream=False,
+            )
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(calls, [{"type": "json_object"}, None])
+
+    def test_code_response_format_can_be_disabled_explicitly(self):
+        target = providers.ChatTarget(
+            provider="openai_compatible", base_url="http://x", api_key="k", model="m"
+        )
+
+        def fake_env(name, default=None):
+            return "none" if name == "AI_CODE_RESPONSE_FORMAT" else default
+
+        with patch.object(providers, "resolve_target", return_value=target), patch.object(
+            providers, "complete", return_value=dict(_OK)
+        ) as complete, patch("services.core.env_config.env", side_effect=fake_env):
+            run_task("test.code_local", messages=[{"role": "user", "content": "hi"}])
+        self.assertIsNone(complete.call_args.kwargs["response_format"])
 
 
 if __name__ == "__main__":

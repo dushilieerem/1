@@ -6,6 +6,7 @@ No LLM, no generated opinions: each sentence is backed by a number in the DB.
 from __future__ import annotations
 
 import math
+import re
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from statistics import median
@@ -52,7 +53,14 @@ def _is_us_code(code: str | None) -> bool:
 def _display_name(stock: dict[str, Any], market: str | None = None) -> str:
     code = str(stock.get("code") or "")
     if normalize_market(market) == "US" or _is_us_code(code):
-        return US_EN_NAMES.get(code) or str(stock.get("name") or "").strip() or code.split(".")[0]
+        mapped = US_EN_NAMES.get(code)
+        if mapped:
+            return mapped
+        name = str(stock.get("name") or "").strip()
+        # 英文模式优先英文名；数据平台美股 name 多为中文时回退到 ticker。
+        if name and not re.search(r"[一-鿿]", name):
+            return name
+        return code.split(".")[0]
     return str(stock.get("name") or code)
 
 

@@ -7,7 +7,10 @@ from fastapi import Depends, Header, HTTPException, Request
 
 from services.auth.auth_store import user_from_authorization
 from services.factor.user_factor_store import resolve_db_user_id
-from services.institution.inst_store import user_from_inst_authorization
+from services.institution.inst_store import (
+    user_from_inst_authorization,
+    user_from_quant_authorization,
+)
 
 
 def _auth_header(
@@ -51,6 +54,16 @@ def require_inst_user(
     ctx = user_from_inst_authorization(authorization)
     if not ctx:
         raise HTTPException(status_code=401, detail="机构端未登录或会话已失效")
+    return ctx
+
+
+def require_quant_user(
+    authorization: str | None = Depends(_auth_header),
+) -> dict[str, Any]:
+    """机构量化会话：product=quant，且成员角色在 QUANT_ROLES。"""
+    ctx = user_from_quant_authorization(authorization)
+    if not ctx:
+        raise HTTPException(status_code=401, detail="机构量化端未登录或会话已失效")
     return ctx
 
 

@@ -30,7 +30,12 @@ ROLE_LABELS: dict[str, tuple[str, str]] = {
     "risk": ("独立风控", "Independent risk"),
     "execution": ("交易执行", "Execution"),
     "monitoring": ("组合监控", "Portfolio monitoring"),
+    "quant_researcher": ("量化研究员", "Quant researcher"),
 }
+
+# 机构量化成员只使用 /api/inst/quant/*；对主观投资九工作区一律无权限。
+# 这是产品线隔离，不是“只靠前端隐藏”：服务端权限矩阵全部为 none。
+QUANT_ROLES = frozenset({"quant_researcher"})
 
 # 九个工作区，与需求文档 §2.2 一致
 WORKSPACE_LABELS: dict[str, tuple[str, str]] = {
@@ -116,6 +121,7 @@ ROLE_WORKSPACE_ACCESS: dict[str, dict[str, Access]] = {
         "monitor": "write",
         "about": "read",
     },
+    "quant_researcher": {key: "none" for key in WORKSPACES},
 }
 
 DEMO_ORG = {
@@ -196,7 +202,7 @@ def ensure_inst_schema() -> None:
               created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
               updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
               CONSTRAINT inst_members_role_chk CHECK (
-                role IN ('manager', 'partner', 'chairman', 'risk', 'execution', 'monitoring')
+                role IN ('manager', 'partner', 'chairman', 'risk', 'execution', 'monitoring', 'quant_researcher')
               ),
               CONSTRAINT inst_members_status_chk CHECK (status IN ('active', 'disabled')),
               CONSTRAINT inst_members_org_user_key UNIQUE (org_id, user_id)
@@ -304,13 +310,43 @@ def issue_inst_token(
     )
 
 
+def issue_quant_token(
+    user: dict[str, Any], membership: dict[str, Any], *, org_id: int | None = None
+) -> str:
+    """机构量化会话：scope 仍是 inst，但 product=quant，只给 quant API 使用。"""
+    role = str(membership.get("role") or "")
+    if role not in QUANT_ROLES:
+        raise PermissionError("该账号没有机构量化权限")
+    return issue_token(
+        user,
+        extra={
+            "scope": "inst",
+            "product": "quant",
+            "org_id": int(org_id if org_id is not None else membership["org_id"]),
+            "inst_role": role,
+        },
+    )
+
+
 def login_inst(*, username: str, password: str) -> dict[str, Any]:
     """校验账号密码并确认机构成员身份；失败抛 ValueError（调用方转 HTTP）。"""
     user = authenticate_user(username=username, password=password)
     membership = get_membership(int(user["id"]))
     if not membership:
         raise PermissionError("该账号未加入机构，请联系管理员")
+    if str(membership.get("role") or "") in QUANT_ROLES:
+        raise PermissionError("该账号为机构量化角色，请使用机构量化入口登录")
     token = issue_inst_token(user, membership)
+    return {"user": user, "membership": membership, "token": token}
+
+
+def login_quant(*, username: str, password: str) -> dict[str, Any]:
+    """机构量化入口：必须是 active 成员且角色在 QUANT_ROLES。"""
+    user = authenticate_user(username=username, password=password)
+    membership = get_membership(int(user["id"]))
+    if not membership or str(membership.get("role") or "") not in QUANT_ROLES:
+        raise PermissionError("该账号没有机构量化权限")
+    token = issue_quant_token(user, membership)
     return {"user": user, "membership": membership, "token": token}
 
 
@@ -359,6 +395,26 @@ def _dev_context() -> dict[str, Any]:
     return ctx
 
 
+def _quant_context(user: dict[str, Any], membership: dict[str, Any]) -> dict[str, Any]:
+    role = str(membership.get("role") or "")
+    label_cn, label_en = ROLE_LABELS.get(role, (role, role))
+    return {
+        "product": "quant",
+        "quant": True,
+        "user": user,
+        "member_id": int(membership.get("id") or 0),
+        "org": _org_payload(membership),
+        "role": role,
+        "role_label_cn": label_cn,
+        "role_label_en": label_en,
+        # 第一期量化资产按 user_id 隔离，不把成员私有数据伪装成机构共享。
+        "visibility": "member_private",
+        "permissions": {"quant": "write"},
+        "workspaces": [],
+        "demo": _demo_mode(),
+    }
+
+
 def user_from_inst_authorization(header: str | None) -> dict[str, Any] | None:
     """解析机构令牌；个人版令牌（无 scope=inst）一律拒绝。"""
     if dev_skip_auth():
@@ -388,12 +444,50 @@ def user_from_inst_authorization(header: str | None) -> dict[str, Any] | None:
     return _context(user, membership)
 
 
+def user_from_quant_authorization(header: str | None) -> dict[str, Any] | None:
+    """解析机构量化令牌；个人令牌和主观机构令牌都不能进入量化 API。"""
+    if dev_skip_auth():
+        ctx = _dev_context()
+        ctx.update({"product": "quant", "quant": True, "visibility": "member_private"})
+        ctx["permissions"] = {"quant": "write"}
+        ctx["workspaces"] = []
+        return ctx
+    if not header:
+        return None
+    parts = header.strip().split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    try:
+        payload = decode_token(parts[1].strip())
+        if payload.get("scope") != "inst" or payload.get("product") != "quant":
+            return None
+        uid = int(payload["sub"])
+    except Exception:
+        return None
+    user_row = get_user_by_id(uid)
+    if not user_row or user_row.get("status") != "active":
+        return None
+    user = user_from_authorization(header)
+    if not user:
+        return None
+    # 每次请求实时回查成员/机构/角色，停用立即失效。
+    membership = get_membership(uid, payload.get("org_id"))
+    if not membership or str(membership.get("role") or "") not in QUANT_ROLES:
+        return None
+    return _quant_context(user, membership)
+
+
 def me_payload(context: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, **context}
 
 
 def login_payload(result: dict[str, Any]) -> dict[str, Any]:
     ctx = _context(result["user"], result["membership"])
+    return {"ok": True, "token": result["token"], **ctx}
+
+
+def login_quant_payload(result: dict[str, Any]) -> dict[str, Any]:
+    ctx = _quant_context(result["user"], result["membership"])
     return {"ok": True, "token": result["token"], **ctx}
 
 

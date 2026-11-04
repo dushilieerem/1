@@ -839,8 +839,11 @@ def _weighted_pe_percentile(conn: Any, stock_values: list[tuple[dict[str, Any], 
             hist = [
                 float(r["pe_ttm"])
                 for r in conn.execute(
-                    "SELECT pe_ttm FROM valuations WHERE code=? AND date>=? AND pe_ttm > 0",
-                    (h["code"], since),
+                    # 直接走 md_valuation_daily(symbol,trade_date) 主键/索引；
+                    # valuations 视图对 code 做 split_part，生产会全表扫描 1500 万行。
+                    "SELECT pe_ttm FROM md_valuation_daily "
+                    "WHERE symbol=? AND trade_date>=?::date AND pe_ttm > 0",
+                    (_with_suffix(h["code"]), since),
                 ).fetchall()
                 if r.get("pe_ttm") is not None
             ]

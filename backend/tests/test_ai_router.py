@@ -26,6 +26,13 @@ TEST_CHAIN = register(
         re_path="/api/ai/test",
     )
 )
+CODE_LOCAL = register(
+    TaskSpec(
+        task_id="test.code_local",
+        slot=providers.SLOT_CODE,
+        response_format={"type": "json_schema", "json_schema": {"name": "x", "schema": {}}},
+    )
+)
 
 _OK = {
     "content": "ok",
@@ -164,9 +171,28 @@ class ProvidersTargetTest(unittest.TestCase):
             with self.assertRaises(AiNotConfigured):
                 providers.resolve_target(slot=providers.SLOT_DEFAULT)
 
-    def test_code_slot_uses_ark(self):
+    def test_code_slot_defaults_to_llm_gateway(self):
         def fake_env(name, default=None):
-            return {"ARK_API_KEY": "k", "AI_FACTOR_BASE_URL": "http://ark"}.get(name, default)
+            return {
+                "LLM_API_KEY": "k",
+                "LLM_BASE_URL": "http://llm",
+                "LLM_MODEL": "deepseek-code",
+            }.get(name, default)
+
+        with patch.object(providers, "env", side_effect=fake_env):
+            target = providers.resolve_target(slot=providers.SLOT_CODE)
+        self.assertEqual(target.provider, "openai_compatible")
+        self.assertEqual(target.base_url, "http://llm")
+        self.assertEqual(target.model, "deepseek-code")
+        self.assertFalse(target.direct)
+
+    def test_code_slot_can_explicitly_use_ark(self):
+        def fake_env(name, default=None):
+            return {
+                "AI_CODE_PROVIDER": "ark",
+                "ARK_API_KEY": "k",
+                "AI_FACTOR_BASE_URL": "http://ark",
+            }.get(name, default)
 
         with patch.object(providers, "env", side_effect=fake_env), patch.object(
             providers, "key_env", side_effect=lambda name: "k" if name == "ARK_API_KEY" else ""
@@ -175,11 +201,93 @@ class ProvidersTargetTest(unittest.TestCase):
         self.assertEqual(target.provider, "ark")
         self.assertTrue(target.direct)
 
+    def test_code_slot_missing_default_key_fails_loudly(self):
+        with patch.object(providers, "env", side_effect=lambda name, default=None: default):
+            with self.assertRaises(AiNotConfigured):
+                providers.resolve_target(slot=providers.SLOT_CODE)
+
+    def test_code_slot_rejects_unknown_provider(self):
+        with patch.object(
+            providers,
+            "env",
+            side_effect=lambda name, default=None: "fake"
+            if name == "AI_CODE_PROVIDER"
+            else default,
+        ):
+            with self.assertRaises(AiNotConfigured):
+                providers.resolve_target(slot=providers.SLOT_CODE)
+
     def test_target_repr_hides_key(self):
         target = providers.ChatTarget(
             provider="ark", base_url="http://x", api_key="SECRET", model="m"
         )
         self.assertNotIn("SECRET", repr(target))
+
+    def test_response_format_unavailable_degrades_to_json_object(self):
+        target = providers.ChatTarget(
+            provider="openai_compatible", base_url="http://x", api_key="k", model="m"
+        )
+        calls = []
+
+        def fake_post(target, payload, *, timeout, stream):
+            calls.append(payload.get("response_format"))
+            if len(calls) == 1:
+                raise providers._HttpFailure(
+                    400,
+                    '{"error":{"message":"This response_format type is unavailable now"}}',
+                    "Bad Request",
+                )
+            return {"ok": True}
+
+        with patch.object(providers, "_post", side_effect=fake_post):
+            out = providers._send(
+                target,
+                {"response_format": {"type": "json_schema"}},
+                timeout=5,
+                stream=False,
+            )
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(calls, [{"type": "json_schema"}, {"type": "json_object"}])
+
+    def test_response_format_unavailable_degrades_to_none(self):
+        target = providers.ChatTarget(
+            provider="openai_compatible", base_url="http://x", api_key="k", model="m"
+        )
+        calls = []
+
+        def fake_post(target, payload, *, timeout, stream):
+            calls.append(payload.get("response_format"))
+            if payload.get("response_format") is not None:
+                raise providers._HttpFailure(
+                    400,
+                    '{"error":"response_format type is unavailable"}',
+                    "Bad Request",
+                )
+            return {"ok": True}
+
+        with patch.object(providers, "_post", side_effect=fake_post):
+            out = providers._send(
+                target,
+                {"response_format": {"type": "json_object"}},
+                timeout=5,
+                stream=False,
+            )
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(calls, [{"type": "json_object"}, None])
+
+    def test_code_response_format_can_be_disabled_explicitly(self):
+        target = providers.ChatTarget(
+            provider="openai_compatible", base_url="http://x", api_key="k", model="m"
+        )
+
+        def fake_env(name, default=None):
+            return "none" if name == "AI_CODE_RESPONSE_FORMAT" else default
+
+        with patch.object(providers, "resolve_target", return_value=target), patch.object(
+            providers, "complete", return_value=dict(_OK)
+        ) as complete, patch("services.core.env_config.env", side_effect=fake_env):
+            run_task("test.code_local", messages=[{"role": "user", "content": "hi"}])
+        self.assertIsNone(complete.call_args.kwargs["response_format"])
 
 
 if __name__ == "__main__":

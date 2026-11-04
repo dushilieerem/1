@@ -44,7 +44,8 @@ services:
       MARKETDATA_DIR: /marketdata
       # 独立数据平台只读视图（物化 symlink 指向 /marketdata）
       SVQUANT_DATA_ROOT: /data/svquant-data
-      SVQUANT_DATA_VIEW: ${SVQUANT_DATA_VIEW:-current}
+      # 始终跟随数据平台 current；不再接受 .env 里 pin 死某个 view
+      SVQUANT_DATA_VIEW: current
       TZ: Asia/Shanghai
     depends_on:
       db:

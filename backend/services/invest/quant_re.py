@@ -110,7 +110,11 @@ def run_re_strategy(
     end_date: str | None,
     name: str,
 ) -> dict[str, Any] | None:
-    """调用 RE 同步策略回测；返回手机端结构，失败/不支持返回 None。"""
+    """调用 RE 同步策略回测；返回手机端结构。
+
+    因子不在 RE DSL 内时返回 None；RE 不可达、返回 HTTP 错误、异步 run_id
+    或缺少净值时抛出 ``RuntimeError``，由调用方记录诊断并决定是否本地降级。
+    """
     if not supports(factors):
         return None
     code = build_strategy_code(factors)

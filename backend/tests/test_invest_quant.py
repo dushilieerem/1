@@ -172,6 +172,68 @@ def test_re_adapter_maps_sync_strategy_result(monkeypatch):
     assert out["curve"][-1]["benchmark"] == 1.04
 
 
+def test_paper_project_reuse_rules():
+    assert quant._is_reusable_paper_project({"strategy_code": "class X: ..."})
+    assert not quant._is_reusable_paper_project({"strategy_code": "class X: ...", "quant_root": True})
+    assert not quant._is_reusable_paper_project({"strategy_code": "", "quant_local_only": True})
+    assert not quant._is_reusable_paper_project({"strategy_code": ""})
+
+
+def test_create_paper_does_not_turn_root_project_executable(monkeypatch):
+    monkeypatch.setenv("YG_RE_BASE", "http://127.0.0.1:9")
+    import importlib
+
+    from services.core import re_config
+    importlib.reload(re_config)
+    from services.invest import quant_re
+    from services.paper import paper_store
+    from services.strategy import strategy_store
+
+    root_id = "root-project"
+    calls: list[str | None] = []
+    strategy_row = {
+        "id": 9,
+        "name": "测试策略",
+        "factors": '[{"key":"value","direction":"high"},{"key":"momentum","direction":"high"}]',
+        "universe": "hs300",
+        "project_id": root_id,
+        "backtest_id": None,
+    }
+    monkeypatch.setattr(quant.rules, "one", lambda conn, sql, args=(): strategy_row)
+    monkeypatch.setattr(
+        strategy_store,
+        "get_project",
+        lambda uid, pid: {"project": {"id": pid, "name": "root", "config": {
+            "strategy_code": "", "quant_root": True, "quant_local_only": True,
+        }}},
+    )
+    monkeypatch.setattr(
+        quant,
+        "_ensure_project",
+        lambda uid, name, factors, universe, project_id=None, draft=False: (
+            calls.append(project_id), "new-paper-project"
+        )[1],
+    )
+    monkeypatch.setattr(quant_re, "supports", lambda factors: True)
+    monkeypatch.setattr(paper_store, "create_account", lambda uid, payload: {"id": 7})
+    monkeypatch.setattr(quant, "paper_detail", lambda conn, uid, pid: {"id": pid})
+
+    class Conn:
+        def __init__(self):
+            self.sql: list[str] = []
+        def execute(self, sql, args=()):
+            self.sql.append(sql)
+            return self
+        def commit(self):
+            pass
+
+    conn = Conn()
+    out = quant.create_paper(conn, 1, {"source_type": "strategy", "source_id": 9})
+    assert out == {"id": 7}
+    assert calls == [None]  # 新建 paper project，不是复用/改写 root
+    assert any("UPDATE invest_quant_strategy" in sql for sql in conn.sql)
+
+
 def test_factor_direction_low_inverts_score():
     panel = _fake_panel()
     high = quant._scores(panel, len(panel["dates"]) - 1, [{"key": "volatility", "direction": "high"}])

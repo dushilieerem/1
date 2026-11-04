@@ -2124,6 +2124,15 @@ def _paper_summary(conn: Any, user_id: int, account: dict[str, Any], strategy_ro
     }
 
 
+def _is_reusable_paper_project(config: dict[str, Any]) -> bool:
+    """根项目/本地降级项目只存回测记录，不能被改造成可执行模拟盘项目。"""
+    return bool(
+        str(config.get("strategy_code") or "").strip()
+        and not config.get("quant_root")
+        and not config.get("quant_local_only")
+    )
+
+
 def _strategy_snapshot(conn: Any, user_id: int, row: dict[str, Any]) -> dict[str, Any]:
     summary = None
     if row.get("paper_id"):
@@ -2183,8 +2192,21 @@ def create_paper(conn: Any, user_id: int, body: dict[str, Any]) -> dict[str, Any
     if not quant_re.supports(selected):
         raise QuantDataError("RE 暂不支持该因子组合的模拟盘（缺少基本面字段）；可先保存为草稿")
     name = name or " + ".join(FACTOR_BY_KEY[f["key"]]["name"] for f in selected)
-    pid = str(project_id or "").strip() or _ensure_project(user_id, name, selected, _normalize_universe(universe))
-    _ensure_project(user_id, name, selected, _normalize_universe(universe), project_id=pid)
+    pid = str(project_id or "").strip()
+    if pid:
+        try:
+            source_project = strategy_store.get_project(user_id, pid).get("project") or {}
+        except KeyError:
+            source_project = {}
+        cfg = source_project.get("config") or {}
+        # 根项目/本地降级项目只用于存回测记录，不能改成可执行策略；
+        # 开模拟盘时新建独立的 paper project，避免污染记录项目。
+        if not _is_reusable_paper_project(cfg):
+            pid = ""
+    if pid:
+        _ensure_project(user_id, name, selected, _normalize_universe(universe), project_id=pid)
+    else:
+        pid = _ensure_project(user_id, name, selected, _normalize_universe(universe))
     capital = _num(body.get("start_capital")) or 1_000_000.0
     account = paper_store.create_account(
         user_id,

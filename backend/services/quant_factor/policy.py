@@ -34,6 +34,9 @@ def snapshot(project):
            'maxDrawdown':number(rules.get('maxDrawdown'),'最大回撤',0,1),
            'minObservations':number(rules.get('minObservations'),'最少IC观测数',2,10000),
            'direction':rules.get('direction')}
+    if p['rules'].get('icMetric') is not None:
+        if p['rules']['icMetric'] not in ('ic','rank_ic'): raise WorkflowError('请选择已实现的IC口径')
+        rules['icMetric']=p['rules']['icMetric']
     if rules['direction'] not in ('positive','negative'): raise WorkflowError('请选择预设因子方向')
     if rules['minObservations']!=int(rules['minObservations']): raise WorkflowError('观测数必须为整数')
     codes=c.get('factorCodes') or []
@@ -62,7 +65,8 @@ def evaluate(result, rules):
     metrics=result.get('metrics') or {}; fa=result.get('factor_analysis') or {}; meta=result.get('meta') or {}
     if not all(meta.get(k) for k in ('data_release_id','spec_hash','factor_source_hash')):
         raise WorkflowError('计算结果缺少数据版本、计算规格或源码指纹')
-    ic=number(metrics.get('ic',fa.get('ic_mean')),'IC',-1,1)
+    metric=rules.get('icMetric','ic')
+    ic=number(metrics.get(metric,fa.get('rank_ic_mean' if metric=='rank_ic' else 'ic_mean')),'IC',-1,1)
     drawdown=abs(number(metrics.get('max_drawdown'),'回撤',-1,1))
     series=fa.get('ic_series') or []
     observations=0
@@ -70,7 +74,7 @@ def evaluate(result, rules):
         v=item.get('value',item.get('ic')) if isinstance(item,dict) else None
         if isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v): observations+=1
     signed=ic*(1 if rules['direction']=='positive' else -1)
-    checks=[{'name':'方向IC','actual':signed,'operator':'>=','threshold':rules['minSignedIc'],'passed':signed>=rules['minSignedIc']},
+    checks=[{'name':'方向Rank IC' if metric=='rank_ic' else '方向IC','actual':signed,'operator':'>=','threshold':rules['minSignedIc'],'passed':signed>=rules['minSignedIc']},
             {'name':'最大回撤','actual':drawdown,'operator':'<=','threshold':rules['maxDrawdown'],'passed':drawdown<=rules['maxDrawdown']},
             {'name':'有效IC观测数','actual':observations,'operator':'>=','threshold':rules['minObservations'],'passed':observations>=rules['minObservations']}]
     return {'passed':all(x['passed'] for x in checks),'checks':checks,'sealed':False,

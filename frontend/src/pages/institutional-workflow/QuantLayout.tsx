@@ -1,11 +1,12 @@
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { clearQuantSession, fetchQuantMe, getQuantSession, quantLoginUrl, subscribeQuantAuth, type QuantSession } from "@/lib/quantAuth";
 
 export function QuantLayout() {
  const location = useLocation(), navigate = useNavigate();
+ const [menuOpen,setMenuOpen]=useState(false);
  const [session, setSession] = useState<QuantSession | null>(null);
  const [error, setError] = useState("");
  const [retry, setRetry] = useState(0);
@@ -26,22 +27,18 @@ export function QuantLayout() {
  if (!session) return <main className="min-h-screen bg-[#f7f8fc] p-8 text-sm">
    {error ? <div role="alert">{error}<button className="ml-4 underline" onClick={() => { setError(""); setRetry(n => n + 1); }}>重试</button></div> : <p role="status">正在验证机构量化身份…</p>}
  </main>;
- const nav = [["/quant/factor", "因子工厂"], ["/quant/strategy", "策略研究"], ["/quant/factor/library", "因子库"], ["/quant/strategy/library", "策略库"]];
- return <div className="min-h-screen bg-[#f7f8fc] text-[#171923]">
-   <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-[#e0d9ef] bg-white px-5 py-4">
-     <div><p className="font-display text-lg font-semibold tracking-wider">旸谷资本 <span className="ml-3 text-sm font-normal tracking-normal text-[#65358D]">机构量化平台</span></p>
-       <p className="mt-1 text-xs text-slate-500">{session.org.name_cn} · {session.user.display_name || session.user.username} · 量化研究员</p></div>
-     <div className="flex items-center gap-4 text-xs text-slate-500"><span>开发环境 · 不连接实盘交易</span>
-       <button className="text-[#65358D] hover:underline" onClick={() => { clearQuantSession(); navigate(quantLoginUrl(), { replace: true }); }}>退出量化工作区</button></div>
-   </header>
-   <div className="mx-auto flex max-w-[1900px] flex-col lg:flex-row">
-     <aside className="shrink-0 border-b border-[#e0d9ef] bg-white p-4 lg:min-h-[calc(100vh-81px)] lg:w-52 lg:border-r lg:border-b-0">
-       <p className="mb-3 px-3 text-[11px] tracking-widest text-slate-400">量化投研</p>
-       <nav aria-label="机构量化导航" className="flex flex-wrap gap-1 lg:flex-col">{nav.map(([to,label]) => <NavLink key={to} to={to}
-         className={() => "rounded-lg px-3 py-2.5 text-sm " + ((location.pathname === to || (to === "/quant/factor" || to === "/quant/strategy") && location.pathname.startsWith(to + "/") && !location.pathname.includes("/library")) ? "bg-[#f3eaf8] font-medium text-[#65358D]" : "text-slate-600 hover:bg-slate-50")}>{label}</NavLink>)}</nav>
-       <p className="mt-6 hidden px-3 text-xs leading-6 text-slate-500 lg:block">当前研究资产按成员私有管理。机构共享与投资审批尚未开放。</p>
-     </aside>
-     <main className="min-w-0 flex-1"><ConfirmProvider><ScrollToTop /><Outlet /></ConfirmProvider></main>
-   </div>
- </div>;
+ const reviewer = session.permissions.quant === "review";
+ if (reviewer && location.pathname !== "/quant/reviews/factors") return <Navigate to="/quant/reviews/factors" replace />;
+ const sections=[{label:'工作空间',items:[['/quant','管理驾驶舱','◫']]},{label:'业务模块',items:[['/quant/data','数据资源','▤'],['/quant/factor','因子工厂','ƒ'],['/quant/strategy','策略研究','⌁'],['/quant/portfolio','组合与执行','▦'],['/quant/monitor','运行与风险','◉']]},{label:'协作与管理',items:[['/quant/reviews','审查中心','✓'],['/quant/agents','Agent 管理','✦']]}];
+ const current=sections.flatMap(g=>g.items).find(([to])=>to==='/quant'?location.pathname==='/quant':location.pathname===to||location.pathname.startsWith(to+'/'));
+ return <div className={'quant-shell'+(menuOpen?' menu-open':'')}><div className="app-shell">
+   <aside className="sidebar"><button className="close mobile-close" aria-label="关闭导航" onClick={()=>setMenuOpen(false)}>×</button>
+     <NavLink to="/quant" className="brand"><span className="seal">旸</span><span><strong>旸谷资本</strong><small>SUNVALLEY CAPITAL</small></span></NavLink>
+     <div className="workspace-name"><b>SVQuant · 机构量化平台</b>研究与运行工作区</div>
+     <nav aria-label="机构量化导航">{sections.map(g=><div key={g.label}><div className="nav-label">{g.label}</div>{g.items.map(([to,label,icon])=>reviewer&&to!=='/quant/reviews'?<span key={to} className="nav-item" aria-disabled="true" title="当前身份为独立研究复核员"><span className="nav-icon" aria-hidden="true">{icon}</span>{label}</span>:<NavLink key={to} to={reviewer?"/quant/reviews/factors":to} end={to==='/quant'} className="nav-item" onClick={()=>setMenuOpen(false)}><span className="nav-icon" aria-hidden="true">{icon}</span>{label}</NavLink>)}</div>)}</nav>
+     <div className="side-footer"><a href="/quant-delivery/prd.html" target="_blank" rel="noopener">产品需求文档 ↗</a><a href="/quant-delivery/prototype.html#factor" target="_blank" rel="noopener">V3 设计原型 ↗</a><span className="version">INSTITUTIONAL QUANT · 开发环境</span></div>
+   </aside>
+   <div className="stage-area"><header className="topbar"><button className="btn small menu-toggle" aria-label="打开导航" onClick={()=>setMenuOpen(true)}>☰ 导航</button><div className="crumb">机构工作区 / <b>{current?.[1]||'量化投研'}</b></div><div className="top-actions"><span className="preview-label">因子研究接入中 · 未接实盘</span><span className="identity"><span className="avatar" aria-hidden="true">{(session.user.display_name||session.user.username).slice(0,1)}</span><span className="fine">{session.org.name_cn} · {session.user.display_name||session.user.username} · {reviewer?'独立研究复核员':'量化研究员'}</span></span><button className="btn small" onClick={()=>{clearQuantSession();navigate(quantLoginUrl(),{replace:true});}}>退出</button></div></header>
+   <main className="main"><ConfirmProvider><ScrollToTop/><Outlet/></ConfirmProvider></main></div>
+ </div></div>;
 }

@@ -91,7 +91,7 @@ test("institutional shell validates membership and supplies existing tool dialog
  function Tool() { const ask = useConfirm(); return <button onClick={()=>void ask({title:"入库确认",message:"保存到成员私有资产库"})}>工具操作</button>; }
  const v=render(<MemoryRouter initialEntries={["/quant/factor"]}><Routes><Route element={<QuantLayout/>}><Route path="/quant/factor" element={<Tool/>}/></Route></Routes></MemoryRouter>);
  await waitFor(()=>assert.ok(v.getByRole("button",{name:"工具操作"})));
- assert.ok(v.getByText("机构量化平台"));assert.ok(v.getByText(/测试机构/));
+ assert.ok(v.getByText("SVQuant · 机构量化平台"));assert.ok(v.getByText(/测试机构/));
  fireEvent.click(v.getByRole("button",{name:"工具操作"}));
  assert.ok(v.getByRole("dialog",{name:"入库确认"}));
 });
@@ -101,4 +101,22 @@ test("revoked quant access never falls back to a previously cached research proj
  await listProjects();reject=true;
  assert.equal(await getProject("private"),undefined);
  assert.equal(getQuantSession(),null);
+});
+
+test("reviewer session can only post dedicated feedback, never researcher operations",async()=>{
+ quant();setQuantSession({...session,permissions:{quant:'review'},can_write:false,can_review:true});
+ assert.ok(getQuantSession());let calls=0;
+ globalThis.fetch=async(input,init)=>{calls++;assert.equal(String(input),'/api/inst/quant/factor-workflow/reviews/c');return Response.json({});};
+ await researchFetch('/api/factor-workflow/reviews/c',{method:'POST',body:JSON.stringify({decision:'needs_revision',note:'evidence'})});
+ for(const path of ['/api/factor-workflow/candidates/c/validate','/api/factor-workflow/candidates/c/archive','/api/factor-workflow/projects/p/assistant','/api/detect/projects'])await assert.rejects(researchFetch(path,{method:'POST'}));
+ assert.equal(calls,1);
+});
+
+test("reviewer lands on review workbench without mounting researcher tools",async()=>{
+ quant();const reviewer={...session,permissions:{quant:'review'} as const,can_write:false,can_review:true};setQuantSession(reviewer);
+ globalThis.fetch=async()=>Response.json(reviewer);
+ const v=render(<MemoryRouter initialEntries={['/quant/factor']}><Routes><Route element={<QuantLayout/>}><Route path="/quant/factor" element={<p>researcher tools must not mount</p>}/><Route path="/quant/reviews/factors" element={<p>review workbench</p>}/></Route></Routes></MemoryRouter>);
+ await waitFor(()=>assert.ok(v.getByText('review workbench')));
+ assert.equal(v.queryByText('researcher tools must not mount'),null);
+ assert.ok(v.getByText(/独立研究复核员/));
 });

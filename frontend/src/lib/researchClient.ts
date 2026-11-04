@@ -35,8 +35,11 @@ export function researchPagePath(path: string) {
   .replace(/^\/(factor|strategy)\/library(?=\/|$)/, "/quant/$1/library");
 }
 const protectedPaths = [
+ /^\/factor-workflow\/agent-jobs(?:\/[^/]+(?:\/cancel)?)?$/,
+ /^\/factor-workflow\/overview$/,
+ /^\/factor-workflow\/reviews(?:\/[^/]+)?$/,
  /^\/factor-workflow\/projects\/[^/]+\/(candidates|assistant)$/,
- /^\/factor-workflow\/candidates\/[^/]+(?:\/(validate|cancel|archive|submit|register))?$/,
+ /^\/factor-workflow\/candidates\/[^/]+(?:\/(validate|cancel|archive|submit|register|review-request))?$/,
  /^\/detect\/(projects|runs)(\/[^/]+)?(\/runs)?$/,
  /^\/strategy\/(projects|runs)(\/[^/]+)?(\/runs)?$/,
  /^\/factor\/libraries(\/factors|\/[^/]+(\/factors(\/[^/]+)?)?)?$/,
@@ -62,7 +65,7 @@ export async function researchFetch(input: string | URL | Request, init?: Reques
    if (!url.pathname.startsWith("/api/") || !protectedPaths.some(p => p.test(relative))) throw new Error("此功能未开放给机构量化工作区");
    const s = getQuantSession();
    if (!s) throw new Error("请登录机构量化平台");
-   if (method !== "GET" && s.permissions.quant !== "write") throw new Error("当前机构角色没有写入权限");
+   if (method !== "GET" && s.permissions.quant !== "write" && !(method === "POST" && s.permissions.quant === "review" && /^\/factor-workflow\/reviews\/[^/]+$/.test(relative))) throw new Error("当前机构角色没有写入权限");
    if (relative === "/strategy/library/sync") throw new Error("内置策略目录由平台管理");
    url.pathname = "/api/inst/quant" + relative;
    headers.set("Authorization", "Bearer " + s.token);

@@ -1,42 +1,31 @@
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { getRun, type DetectRunRecord } from "@/lib/detectStore";
-import { subscribeAuth } from "@/lib/researchClient";
-import { FactorDetectReportPage } from "@/pages/FactorDetectReportPage";
-import { QuantFactorShell, quantProjectPath, quantReportPath, quantReportsPath } from "./QuantFactorShell";
-
-export function QuantFactorReportPage() {
-  const { runId = "" } = useParams();
-  const [run, setRun] = useState<DetectRunRecord>();
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let active = true;
-    let generation = 0;
-    function load() {
-      const current = ++generation;
-      setRun(undefined); setLoading(true);
-      getRun(runId).then(row => { if (active && current === generation) setRun(row); })
-        .finally(() => { if (active && current === generation) setLoading(false); });
-    }
-    load(); const unsubscribe = subscribeAuth(load);
-    return () => { active = false; ++generation; unsubscribe(); };
-  }, [runId]);
-  const meta = (run?.result as unknown as { meta?: Record<string, unknown> } | undefined)?.meta || {};
-  const request = run?.request as unknown as Record<string, unknown> | undefined;
-  const verified = (run?.result as unknown as Record<string, unknown> | undefined)?._svquant_verified === true;
-  return <QuantFactorShell stage="reports" projectId={run?.projectId}>
-    {loading ? <p role="status">正在读取报告…</p> : !run ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm">无法读取报告，请检查访问权限或稍后重试。<Link className="ml-3 underline" to={quantReportsPath()}>返回报告列表</Link></div> : <>
-      <details className="rounded-xl border border-[#dde5f2] bg-white p-4 text-sm">
-        <summary className="cursor-pointer font-medium">计算来源 · {verified ? "平台签名校验通过" : "未验证签名"}</summary>
-        <p className="mt-3 text-xs text-slate-500">签名校验仅验证结果来源和完整性，不代表因子质量合格或已通过投资审批。</p>
-        <dl className="mt-3 grid gap-2 sm:grid-cols-[130px_minmax(0,1fr)]">
-          <dt>报告编号</dt><dd className="break-all font-mono text-xs">{run.id}</dd>
-          <dt>计算任务</dt><dd className="break-all font-mono text-xs">{String(request?._re_run_id || "历史报告未记录")}</dd>
-          <dt>数据发布标识</dt><dd className="break-all font-mono text-xs">{String(meta.data_release_id || "引擎未返回")}</dd>
-          <dt>计算规格摘要</dt><dd className="break-all font-mono text-xs">{String(meta.spec_hash || "引擎未返回")}</dd>
-        </dl>
-      </details>
-      <FactorDetectReportPage key={runId} navigation={{ listPath: quantReportsPath(run.projectId), projectPath: quantProjectPath, reportPath: quantReportPath }} />
-    </>}
-  </QuantFactorShell>;
+import {useEffect,useState} from 'react';
+import {Link,useParams} from 'react-router-dom';
+import {getRun,type DetectRunRecord} from '@/lib/detectStore';
+import {subscribeAuth} from '@/lib/researchClient';
+import {WorkspaceHeading,FactorModuleTabs} from './QuantWorkspacePages';
+import {quantReportsPath} from './QuantFactorShell';
+export function formatResearchNumber(value:unknown,percent=false){return typeof value==='number'&&Number.isFinite(value)?(percent?(value*100).toFixed(2)+'%':Number(value.toFixed(5)).toString()):'未返回';}
+const metricLabels:Record<string,string>={ic:'Pearson IC',rank_ic:'Rank IC',ic_ir:'IC IR',rank_ic_ir:'Rank IC IR',annual_return:'年化收益',total_return:'累计收益',max_drawdown:'最大回撤',sharpe_ratio:'夏普比率',sharpe:'夏普比率',volatility:'波动率',win_rate:'胜率',turnover:'换手率'};
+const percentKeys=new Set(['annual_return','total_return','max_drawdown','volatility','win_rate']);
+function Curve({title,points}:{title:string;points:Array<{date:string;value?:number|null}>}){
+ const good=points.filter(p=>typeof p.value==='number'&&Number.isFinite(p.value));
+ if(good.length<2)return <div className="card card-pad"><h3>{title}</h3><p className="empty">当前报告未返回足够的有效序列。</p></div>;
+ const values=good.map(p=>p.value as number),min=Math.min(...values),max=Math.max(...values),range=max-min||Math.max(Math.abs(max)*.1,.01);
+ const segments:string[]=[];let current:string[]=[];points.forEach((p,i)=>{if(typeof p.value==='number'&&Number.isFinite(p.value))current.push(`${50+i/Math.max(1,points.length-1)*600},${185-(p.value-min)/range*155}`);else if(current.length){segments.push(current.join(' '));current=[];}});if(current.length)segments.push(current.join(' '));
+ return <div className="card card-pad"><h3>{title}</h3><svg className="research-curve" viewBox="0 0 700 225" role="img" aria-label={title+'，'+points[0].date+'至'+points[points.length-1].date}><line x1="50" x2="650" y1="185" y2="185" stroke="#d8d1e0"/><text x="45" y="30" textAnchor="end">{formatResearchNumber(max)}</text><text x="45" y="185" textAnchor="end">{formatResearchNumber(min)}</text>{segments.map((points,i)=><polyline key={i} points={points} fill="none" stroke="#785399" strokeWidth="2"/>)}<text x="50" y="215">{points[0].date}</text><text x="650" y="215" textAnchor="end">{points[points.length-1].date}</text></svg><span className="fine">{good.length} 个有效观测；缺失值保留断点。</span></div>;
+}
+function exportRecord(run:DetectRunRecord){const url=URL.createObjectURL(new Blob([JSON.stringify(run,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='factor-report-'+run.id+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+export function QuantFactorReportPage(){
+ const {runId=''}=useParams(),[run,setRun]=useState<DetectRunRecord>(),[loading,setLoading]=useState(true),[error,setError]=useState(''),[revision,setRevision]=useState(0),[view,setView]=useState('summary');
+ useEffect(()=>{let alive=true;setRun(undefined);setError('');setLoading(true);getRun(runId).then(r=>{if(!alive)return;if(!r)throw Error('报告不存在、无权访问或服务暂不可用。');setRun(r);}).catch(e=>{if(alive)setError(e.message);}).finally(()=>{if(alive)setLoading(false);});const off=subscribeAuth(()=>setRevision(n=>n+1));return()=>{alive=false;off();};},[runId,revision]);
+ const result=run?.result,meta=result?.meta||{},fa=result?.factor_analysis,request=run?.request;
+ return <><WorkspaceHeading title="因子实验报告" description="查看本次固定输入、真实计算结果和来源记录。报告不代替研究准入与投资审批。">{run&&<button className="btn" onClick={()=>exportRecord(run)}>导出完整报告</button>}<Link className="btn" to={quantReportsPath(run?.projectId)}>返回实验记录</Link></WorkspaceHeading><FactorModuleTabs active="experiments" projectId={run?.projectId}/>
+ {loading?<p role="status">正在读取报告…</p>:error?<p className="hint error" role="alert">{error}<button className="btn small" onClick={()=>setRevision(n=>n+1)}>重试</button></p>:run&&<>
+ <div className="card card-pad"><div className="section-title"><h2>{run.factorName||run.description||'因子实验'}</h2><Link className="btn" to={'/quant/factor/workflow/'+run.projectId+'/F4'}>返回研究工作流程</Link></div><p className="fine">{new Date(run.finishedAt).toLocaleString()} · 耗时 {run.elapsedSec>0?run.elapsedSec+' 秒':'未记录'} · 报告 {run.id}</p><p className="hint">{(result as unknown as Record<string,unknown>)._svquant_verified===true?'平台签名校验通过':'本记录未显示签名校验通过'}。签名表示结果来源与完整性，不表示研究质量合格。</p></div>
+ <div className="tabs" role="tablist" aria-label="报告内容">{[['summary','结果概览'],['diagnostics','因子诊断'],['definition','输入与定义'],['records','来源与原始记录']].map(([id,label])=><button className="tab" role="tab" key={id} aria-selected={view===id} onClick={()=>setView(id)}>{label}</button>)}</div>
+ {view==='summary'&&<><div className="kpis">{[['Pearson IC',result?.metrics?.ic??fa?.ic_mean,false],['Rank IC',result?.metrics?.rank_ic??fa?.rank_ic_mean,false],['最大回撤',result?.metrics?.max_drawdown,true],['年化收益',result?.metrics?.annual_return,true]].map(([label,value,percent])=><div className="card kpi" key={String(label)}><div className="label">{String(label)}</div><strong>{formatResearchNumber(value,Boolean(percent))}</strong></div>)}</div><Curve title="研究组合净值" points={result?.equity_curve||[]}/><div className="card card-pad"><h3>全部返回指标</h3><dl className="report-metrics">{Object.entries(result?.metrics||{}).map(([key,value])=><div key={key}><dt>{metricLabels[key]||key}</dt><dd>{formatResearchNumber(value,percentKeys.has(key))}</dd></div>)}</dl></div></>}
+ {view==='diagnostics'&&<><Curve title="日度 Pearson IC" points={fa?.ic_series||[]}/><Curve title="累计 IC" points={fa?.cumulative_ic_series||[]}/><div className="card card-pad"><h3>分层表现与诊断口径</h3>{fa?.layered_returns?<dl className="report-metrics">{Object.entries(fa.layered_returns).map(([k,v])=><div key={k}><dt>{k}</dt><dd>{formatResearchNumber(v,/^layer\d+$/.test(k)||k==='spread'||k==='long_short_return')}</dd></div>)}</dl>:<p className="fine">引擎未返回分层收益。</p>}<details><summary>查看分层、行业及口径原始记录</summary><pre className="code-preview">{JSON.stringify({quantile_metrics:fa?.quantile_metrics,definition:fa?.definition,industry_equity_curves:fa?.industry_equity_curves},null,2)}</pre></details></div></>}
+ {view==='definition'&&<div className="card card-pad"><h3>当次计算输入</h3><dl className="details-grid"><dt>因子</dt><dd>{request?.factor_name}</dd><dt>来源库</dt><dd>{String(request?.library_name||'研究代码')}</dd><dt>股票池 / 基准</dt><dd>{request?.universe} / {request?.benchmark}</dd><dt>请求日期</dt><dd>{request?.start} — {request?.end}</dd><dt>实际返回日期</dt><dd>{result?.date_range?.start||'未返回'} — {result?.date_range?.end||'未返回'}</dd><dt>成交时点</dt><dd>{request?.execution_timing||'历史记录未注明'}</dd><dt>佣金 / 印花税 / 滑点</dt><dd>{formatResearchNumber(request?.commission_rate,true)} / {formatResearchNumber(request?.stamp_tax,true)} / {formatResearchNumber(request?.slippage_rate,true)}</dd></dl><h3>因子定义</h3><pre className="code-preview">{request?.factor_code||run.draftFactor?.body||'本次使用平台内置定义，来源与源码指纹见记录。'}</pre><details><summary>完整请求与研究快照</summary><pre className="code-preview">{JSON.stringify(request,null,2)}</pre></details></div>}
+ {view==='records'&&<div className="card card-pad"><h3>数据与计算来源</h3><dl className="details-grid">{['data_release_id','spec_hash','factor_source_hash','factor_price_adjustment'].map(k=><div className="detail-row" key={k}><dt>{k}</dt><dd>{String(meta[k]||'引擎未返回')}</dd></div>)}</dl><p className="fine">来源字段仅显示引擎实际返回值。结果包含局限、假设及原始序列，可随完整报告导出。</p><details><summary>完整计算返回</summary><pre className="code-preview">{JSON.stringify(result,null,2)}</pre></details></div>}
+ </> }</>;
 }

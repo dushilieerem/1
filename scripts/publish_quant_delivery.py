@@ -1,6 +1,7 @@
 """Build the internal review pack from tracked product docs; no server or database changes."""
 from pathlib import Path
-import importlib.util, shutil, zipfile, html
+import importlib.util, shutil, zipfile, html, json
+from html.parser import HTMLParser
 ROOT=Path(__file__).resolve().parents[1]
 DOCS=ROOT/'docs/模块设计/量化机构端'
 OUT=ROOT/'frontend/public/quant-delivery'
@@ -14,15 +15,52 @@ def page(md,title):
 OUT.mkdir(parents=True,exist_ok=True)
 prd=(DOCS/'PRD.md').read_text()
 report=(DOCS/'今日成果-2026-11-04.md').read_text()
-(DOCS/'prd.html').write_text(page(prd,'SVQuant 机构量化 · 需求文档 V3.4'))
-(OUT/'prd.html').write_text(page(prd,'SVQuant 机构量化 · 需求文档 V3.4'))
+(DOCS/'prd.html').write_text(page(prd,'SVQuant 机构量化 · 需求文档 V3.6'))
+(OUT/'prd.html').write_text(page(prd,'SVQuant 机构量化 · 需求文档 V3.6'))
 (OUT/'index.html').write_text(page(report,'SVQuant 机构量化 · 今日成果'))
 shutil.copyfile(DOCS/'PRD.md',OUT/'PRD.md')
 shutil.copyfile(DOCS/'今日成果-2026-11-04.md',OUT/'今日成果.md')
 # Keep the actual interactive design intact and visibly identified as a prototype.
 proto=(DOCS/'index.html').read_text().replace('href="/"', 'href="/quant"')
 (OUT/'prototype.html').write_text(proto)
+# Keep every original form, library, modal and Agent interaction for modules
+# that are not implemented yet. Only adapt the surrounding navigation.
+embedded_style = """<style id="quant-embedded-style">
+html,body{margin:0;min-height:0;background:transparent}body>.app-shell,#app>.app-shell{display:block;min-height:0}
+.sidebar,.topbar{display:none!important}.stage-area{min-width:0}.main{padding:0!important;max-width:none!important}
+.bottom-caption{margin-bottom:8px}.menu-toggle{display:none!important}
+</style>"""
+embedded_bridge = """<script id="quant-embedded-bridge">
+(function(){
+ const pages=['overview','data','factor','strategy','portfolio','monitor','review','agents'];
+ function report(){
+  if(parent===window)return;
+  const page=location.hash.slice(1).split('/')[0]||'overview';
+  parent.postMessage({type:'quant-prototype-state',page,hash:location.hash,height:Math.ceil(document.body.getBoundingClientRect().height)},location.origin);
+ }
+ let scheduled=false;
+ function schedule(){if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;report();});}
+ new MutationObserver(schedule).observe(document.getElementById('app'),{childList:true,subtree:true,attributes:true});
+ new ResizeObserver(schedule).observe(document.getElementById('app'));
+ addEventListener('hashchange',schedule);addEventListener('resize',schedule);schedule();
+})();
+</script>"""
+embedded=proto.replace('</head>',embedded_style+'</head>').replace('</body>',embedded_bridge+'</body>')
+# Preview records must not collide with the standalone design review copy.
+embedded=embedded.replace('sunvalley.workflow.prototype.v3.20261104','sunvalley.workflow.prototype.v3.20261104.embedded')
+(OUT/'prototype-module.html').write_text(embedded)
+
 with zipfile.ZipFile(OUT/'quant-delivery.zip','w',zipfile.ZIP_DEFLATED) as archive:
  for name in ['index.html','prototype.html','prd.html','PRD.md','今日成果.md']:
   archive.write(OUT/name,name)
 print('Published internal review pack:',OUT)
+
+class BlueprintReader(HTMLParser):
+ def handle_starttag(self,tag,attrs):self.active=tag=='script' and dict(attrs).get('type')=='application/json'
+ def handle_data(self,data):
+  if getattr(self,'active',False):
+   try:
+    obj=json.loads(data)
+    if 'diagrams' in obj:(OUT/'factor-fishbone.svg').write_text(obj['diagrams']['factor'])
+   except ValueError:pass
+BlueprintReader().feed(proto)

@@ -1,0 +1,49 @@
+"""Independent research feedback. Never grants publication or investment authority."""
+from datetime import datetime,timezone
+from services.core.db import get_conn
+from . import store
+from .service import event,current,public
+from .policy import WorkflowError
+
+def request_review(uid,org,cid,note):
+    if not note.strip():raise WorkflowError('请说明需要复核的研究问题')
+    with get_conn() as c:
+        row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE',(cid,uid,org)).fetchone()
+        if not row:raise KeyError(cid)
+        card=dict(row['archive'] or {})
+        if not card or row['status'].endswith('_running') or not row['evidence'].get('development',{}).get('gate'):
+            raise WorkflowError('请先完成研发检验并保存研究因子卡')
+        if card.get('review'):return public(dict(row))
+        card['review']={'status':'requested','question':note.strip(),'at':datetime.now(timezone.utc).isoformat(),'snapshot_hash':row['snapshot_hash'],'purpose':'research_feedback_only'}
+        c.execute('UPDATE quant_factor_candidates SET archive=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s',(store.encode(card),store.encode([event('review_requested')]),cid))
+    return current(uid,org,cid)
+
+def queue(uid,org):
+    with get_conn() as c:
+        rows=c.execute("SELECT id,snapshot_hash,status,snapshot->>'name' AS name,archive,updated_at FROM quant_factor_candidates WHERE org_id=%s AND user_id<>%s AND archive->'review' IS NOT NULL ORDER BY updated_at DESC LIMIT 100",(org,uid)).fetchall()
+    return [dict(r) for r in rows]
+
+def ensure_reviewer(row,uid):
+    if not row:raise KeyError('candidate')
+    if int(row['user_id'])==uid:raise WorkflowError('不能复核自己的研究候选')
+    if not (row['archive'] or {}).get('review'):raise KeyError('candidate')
+
+def detail(uid,org,cid):
+    with get_conn() as c:
+        row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND org_id=%s',(cid,org)).fetchone()
+    ensure_reviewer(row,uid)
+    return public(dict(row))
+
+def record(uid,org,cid,decision,note):
+    if decision not in ('research_supported','needs_revision','rejected') or not note.strip():raise WorkflowError('请给出研究复核结论及依据')
+    with get_conn() as c:
+        row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND org_id=%s FOR UPDATE',(cid,org)).fetchone()
+        ensure_reviewer(row,uid)
+        card=dict(row['archive']);review=dict(card['review'])
+        if review['status']!='requested':raise WorkflowError('此版本已复核，不能覆盖原结论；新研究版本须单独提交')
+        review.update(status='reviewed',decision=decision,note=note.strip(),reviewer_id=uid,reviewed_at=datetime.now(timezone.utc).isoformat())
+        card['review']=review
+        # Neither research feedback nor a passing gate can modify approved/sealed.
+        assert card['approved'] is False and card['sealed'] is False
+        c.execute('UPDATE quant_factor_candidates SET archive=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s',(store.encode(card),store.encode([event('review_recorded',reviewer_id=uid,decision=decision)]),cid))
+    return detail(uid,org,cid)

@@ -18,7 +18,8 @@ export type DraftDetectFactor = {
 };
 
 export type FactorResearchPlan = {
-  rules?: {minSignedIc:number; maxDrawdown:number; minObservations:number; direction:'positive'|'negative'};
+  candidateExpression?: string;
+  rules?: {icMetric?:'ic'|'rank_ic'; minSignedIc:number; maxDrawdown:number; minObservations:number; direction:'positive'|'negative'};
   revision: string; hypothesis: string; target: string; frequency: string;
   developmentStart: string; developmentEnd: string;
   validationStart: string; validationEnd: string;
@@ -27,6 +28,7 @@ export type FactorResearchPlan = {
 
 export type DetectProjectConfig = {
   researchPlan?: FactorResearchPlan;
+  researchContext?: {direction:string;question:string;background:string;agentJobId?:string};
 
   source?: DetectSource;
   factorCodes: string[];

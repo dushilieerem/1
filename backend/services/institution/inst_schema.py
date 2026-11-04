@@ -37,6 +37,25 @@ DDL: tuple[str, ...] = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS inst_idea_decision (
+      id                 BIGSERIAL PRIMARY KEY,
+      org_id             BIGINT NOT NULL REFERENCES inst_orgs(id) ON DELETE CASCADE,
+      company_id         BIGINT NOT NULL REFERENCES inst_company(id) ON DELETE CASCADE,
+      source             TEXT NOT NULL,
+      action             TEXT NOT NULL,
+      reason             TEXT NOT NULL,
+      circle_confirmed   BOOLEAN NOT NULL DEFAULT FALSE,
+      data_sufficiency   TEXT,
+      actor_member_id    BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT inst_idea_decision_source_chk CHECK (source IN ('push','watch','holdings')),
+      CONSTRAINT inst_idea_decision_action_chk CHECK (action IN ('initiate','watch','reject')),
+      CONSTRAINT inst_idea_decision_sufficiency_chk CHECK (
+        data_sufficiency IS NULL OR data_sufficiency IN ('sufficient','partial','missing')
+      )
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS inst_portfolio (
       id            BIGSERIAL PRIMARY KEY,
       org_id        BIGINT NOT NULL REFERENCES inst_orgs(id) ON DELETE CASCADE,
@@ -384,6 +403,7 @@ DDL: tuple[str, ...] = (
 INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_inst_company_org ON inst_company (org_id, pool_status)",
     "CREATE INDEX IF NOT EXISTS idx_inst_company_symbol ON inst_company (symbol, market)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_idea_decision_company ON inst_idea_decision (company_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_research_case_company ON inst_research_case (company_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_research_version_case ON inst_research_version (case_id, version_no DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_evidence_case ON inst_evidence (case_id, created_at DESC)",

@@ -258,10 +258,17 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 | Tab | 数据 | 说明 |
 |---|---|---|
 | 量化策略推送 | `GET /api/inst/ideas/push` | A 股机构公司池，按近 2-20 个交易日动量 + 估值初筛；只推动量为正、PE TTM 0-100、PB 为正的标的 |
-| 关注与自选 | `GET /api/inst/companies?pool_status=watch` | 观察池；可进入研究或取消关注 |
-| 当前持仓 | `GET /api/inst/portfolio` | 组合持仓、成本、市值、权重；可进入研究或跳投后 |
+| 关注与自选 | `GET /api/inst/companies?pool_status=watch` | 观察池；立项评估后进入研究，或取消关注 |
+| 当前持仓 | `GET /api/inst/portfolio` | 组合持仓、成本、市值、权重；复核立项或跳投后 |
 
 量化推送规则写在接口返回的 `strategy.note` 与页面底部：窗口自动缩短（测试库只有最近几天数据时会用 3 日）、收盘后计算、不是实时信号、不构成投资建议。推送卡片展示参考价、动量、PE TTM、PB MRQ、筛选理由与标签；`industry` 为指数代码（如 `801120.SI`）时显示「行业待补充」。
+
+**立项三问与决策门（2026-11-04）**
+
+- 三个入口统一走「立项评估」弹窗：为什么现在、能力圈、资料齐备；数据不足显示「核心缺失」并禁止立项。
+- 投资经理三选一：立项并进入研究 / 加入观察 / 放弃；三种决策都必须填写理由。
+- `POST /api/inst/ideas/{company_id}/decision` 记录 `inst_idea_decision`（source/action/reason/circle_confirmed/data_sufficiency/actor/time）；立项额外创建研究案，放弃写 `drop_reason`，并写审计。
+- 能力圈由投资经理勾选确认，不由规则或 AI 代替；规则建议明确标注「不是 AI 结论」。
 
 ### 11.2 研究页
 
@@ -292,3 +299,18 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 | 证据与反证 | 不再在页面底部内联罗列；页头增加「证据与反证（N）」入口，点击打开弹窗查看类型图例、来源、数据日期、原文摘录与解释；支持遮罩/关闭按钮/Esc 关闭 |
 | 五年 DCF | 按用户要求暂时移除计算器（研究页与辩论页均不再展示）；估值维度仍保留 DCF 假设的讨论与数据缺口提示，后续需要时再恢复 |
 | 页面排版 | 主区域改为六维分析（左）+ 版本与审核（右）两栏，AI 一页纸在下方整行；1024 窄屏自动堆叠，无横向溢出 |
+
+### 11.5 机会发现立项三问（2026-11-04）
+
+按《11.4 白欣宜主观机构端产品方案（开发版）》先落地立项决策门：
+
+| 项 | 实现 |
+|---|---|
+| 三问 | 为什么现在 / 能力圈 / 资料齐备；资料状态按 `data_status` + 市场判断，美股/港股标 `missing` |
+| 决策 | 立项并进入研究 / 加入观察 / 放弃；三种决策均必须填写理由 |
+| 约束 | 资料 `missing` 禁止立项；立项必须勾选能力圈确认；决策人必须是投资经理 |
+| 留痕 | 新表 `inst_idea_decision` 记录来源、动作、理由、能力圈确认、资料状态、操作人与时间；写 `idea.decision` 审计 |
+| 接口 | `POST /api/inst/ideas/{company_id}/decision` |
+| 前端 | 三个入口卡片统一「立项评估」弹窗；卡片显示资料齐备度；不直接跳研究 |
+
+验证：`pytest tests/test_inst_*.py` 54 passed；`e2e-10` 8 passed（新增立项三问弹窗用例）；`tsc` 与 `npm run test:inst` 通过。

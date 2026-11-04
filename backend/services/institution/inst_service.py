@@ -432,6 +432,7 @@ def list_companies(
             item["industry"] = item["industry_name"]
         elif re.match(r"^\d{6}\.", str(item.get("industry") or "")):
             item["industry"] = None
+        item["idea"] = _idea_questions(item, "watch")
         out.append(item)
     return {"items": out, "total": total, "limit": limit, "offset": offset}
 
@@ -470,6 +471,180 @@ def update_company_pool(
             after={"pool_status": pool_status, "drop_reason": reason},
         )
     return {"ok": True, "id": company_id, "pool_status": pool_status}
+
+
+def _idea_data_sufficiency(company: dict[str, Any]) -> str:
+    """立项三问的资料判断：美股/港股当前只有行情，按 missing 处理。"""
+    market = str(company.get("market") or "CN").upper()
+    if market in {"US", "HK"}:
+        return "missing"
+    status = str(company.get("data_status") or "missing")
+    if status == "real":
+        return "sufficient"
+    if status in {"partial", "demo"}:
+        return "partial"
+    return "missing"
+
+
+def _idea_questions(
+    company: dict[str, Any],
+    source: str,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """规则版立项三问。
+
+    只使用已有行情/资料状态，不冒充 AI 判断；能力圈始终标为 unknown，
+    由投资经理在立项弹窗中确认。后续接入 `inst.idea` 时可替换本函数。
+    """
+    sufficiency = _idea_data_sufficiency(company)
+    if source == "holdings":
+        why_now = "当前持仓；需要复核原投资论点是否仍成立，以及是否继续持有。"
+    elif source == "watch":
+        points = company.get("research_points") or []
+        why_now = str(points[0]) if points else "已在观察池，等待新的价格或基本面变化。"
+    else:
+        why_now = str(reason or "").strip() or "量化初筛通过，需要说明为什么是现在。"
+
+    gaps: list[str] = []
+    if str(company.get("market") or "CN").upper() in {"US", "HK"}:
+        gaps.append("美股/港股暂无财务、公告、行业与指数数据源，只有行情")
+    elif sufficiency == "partial":
+        gaps.append("财务/公告数据不完整，关键结论需回源核对")
+    elif sufficiency == "missing":
+        gaps.append("核心财务/公告数据缺失，暂不能形成可靠判断")
+    if not str(company.get("industry") or "").strip():
+        gaps.append("行业分类待补充")
+
+    suggestion = "initiate" if sufficiency == "sufficient" else "watch"
+    reason_text = {
+        "sufficient": "资料齐备，可进入研究；能力圈需投资经理确认。",
+        "partial": "资料部分缺失，建议先观察并补齐关键数据。",
+        "missing": "核心资料缺失，建议观察或放弃，不直接立项。",
+    }[sufficiency]
+    return {
+        "source": source,
+        "why_now": why_now,
+        "circle_of_competence": "unknown",
+        "circle_note": "需投资经理确认：能否用三句话说清它怎么赚钱？",
+        "data_sufficiency": sufficiency,
+        "suggestion": suggestion,
+        "reason": reason_text,
+        "data_gaps": gaps,
+    }
+
+
+def record_idea_decision(
+    org_id: int,
+    company_id: int,
+    *,
+    source: str,
+    action: str,
+    reason: str | None,
+    circle_confirmed: bool,
+    actor_member_id: int | None,
+) -> dict[str, Any]:
+    """记录投资经理的立项/观察/放弃决策。
+
+    立项必须同时满足：资料充分 + 能力圈已确认；观察/放弃必须写理由。
+    决策写入 inst_idea_decision，公司池状态同步更新，并写审计。
+    """
+    if source not in {"push", "watch", "holdings"}:
+        raise ValueError("source 必须是 push/watch/holdings")
+    if action not in {"initiate", "watch", "reject"}:
+        raise ValueError("action 必须是 initiate/watch/reject")
+    reason = str(reason or "").strip()
+    if not reason:
+        raise ValueError("请填写决策理由")
+
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager")
+        row = conn.execute(
+            "SELECT * FROM inst_company WHERE id=%s AND org_id=%s", (company_id, org_id)
+        ).fetchone()
+        if not row:
+            raise LookupError("公司不存在")
+        company = dict(row)
+        idea = _idea_questions(company, source, reason)
+        if action == "initiate":
+            if idea["data_sufficiency"] == "missing":
+                raise ValueError("核心资料缺失，建议先观察，不能立项")
+            if not circle_confirmed:
+                raise ValueError("立项前需确认能力圈：能否用三句话说清它怎么赚钱")
+
+        case_id: int | None = None
+        case_no: str | None = None
+        if action == "initiate":
+            case_no = f"RC-{date.today():%Y%m%d}-{str(company['symbol']).split('.')[0]}-{_uid()[:4]}"
+            case_row = conn.execute(
+                "INSERT INTO inst_research_case (org_id, company_id, case_no, stage, created_by) "
+                "VALUES (%s,%s,%s,'draft',%s) RETURNING id",
+                (org_id, company_id, case_no, actor_member_id),
+            ).fetchone()
+            case_id = int(case_row["id"])
+
+        pool_status = {"initiate": "research", "watch": "watch", "reject": "dropped"}[action]
+        before = {"pool_status": company.get("pool_status"), "drop_reason": company.get("drop_reason")}
+        conn.execute(
+            "UPDATE inst_company SET pool_status=%s, drop_reason=%s, updated_at=NOW() "
+            "WHERE id=%s AND org_id=%s",
+            (pool_status, reason if action == "reject" else None, company_id, org_id),
+        )
+        decision = conn.execute(
+            """
+            INSERT INTO inst_idea_decision
+              (org_id, company_id, source, action, reason, circle_confirmed, data_sufficiency, actor_member_id)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING *
+            """,
+            (
+                org_id,
+                company_id,
+                source,
+                action,
+                reason,
+                bool(circle_confirmed),
+                idea["data_sufficiency"],
+                actor_member_id,
+            ),
+        ).fetchone()
+        decision_id = int(decision["id"])
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="idea.decision",
+            object_type="inst_idea_decision",
+            object_id=decision_id,
+            before=before,
+            after={
+                "company_id": company_id,
+                "source": source,
+                "action": action,
+                "reason": reason,
+                "circle_confirmed": bool(circle_confirmed),
+                "data_sufficiency": idea["data_sufficiency"],
+                "case_id": case_id,
+            },
+        )
+        if case_id:
+            _audit(
+                conn,
+                org_id=org_id,
+                actor_member_id=actor_member_id,
+                action="research.case.create",
+                object_type="inst_research_case",
+                object_id=case_id,
+                after={"company_id": company_id, "case_no": case_no, "from_idea_decision": decision_id},
+            )
+    return {
+        "ok": True,
+        "id": decision_id,
+        "action": action,
+        "pool_status": pool_status,
+        "case_id": case_id,
+        "idea": idea,
+    }
 
 
 def ideas_push(org_id: int, *, limit: int = 12) -> dict[str, Any]:
@@ -561,26 +736,26 @@ def ideas_push(org_id: int, *, limit: int = 12) -> dict[str, Any]:
         if industry and re.match(r"^\d{6}\.", str(industry)):
             # 801120.SI 这类申万代码对用户不可读；交给前端显示「行业待补充」。
             industry = None
-        items.append(
-            {
-                "id": int(r["id"]),
-                "symbol": r["symbol"],
-                "name": r["name"],
-                "market": r["market"],
-                "industry": industry,
-                "ref_price": r["ref_price"],
-                "data_status": r["data_status"],
-                "pool_status": r["pool_status"],
-                "tags": r["tags"] or [],
-                "research_points": r["research_points"] or [],
-                "pe_ttm": pe,
-                "pb_mrq": pb,
-                "last_close": series[1],
-                "momentum": momentum,
-                "momentum_window": window,
-                "reason": "；".join(reasons),
-            }
-        )
+        item = {
+            "id": int(r["id"]),
+            "symbol": r["symbol"],
+            "name": r["name"],
+            "market": r["market"],
+            "industry": industry,
+            "ref_price": r["ref_price"],
+            "data_status": r["data_status"],
+            "pool_status": r["pool_status"],
+            "tags": r["tags"] or [],
+            "research_points": r["research_points"] or [],
+            "pe_ttm": pe,
+            "pb_mrq": pb,
+            "last_close": series[1],
+            "momentum": momentum,
+            "momentum_window": window,
+            "reason": "；".join(reasons),
+        }
+        item["idea"] = _idea_questions(item, "push", item["reason"])
+        items.append(item)
     items.sort(key=lambda x: x["momentum"], reverse=True)
     return {
         "strategy": {
@@ -2960,7 +3135,7 @@ def portfolio(org_id: int) -> dict[str, Any]:
         if latest and latest["d"]:
             rows = conn.execute(
                 """
-                SELECT ps.*, co.id AS company_id, co.name, co.industry, co.market
+                SELECT ps.*, co.id AS company_id, co.name, co.industry, co.market, co.data_status
                   FROM inst_position_snapshot ps
                   LEFT JOIN inst_company co ON co.symbol=ps.symbol AND co.org_id=%s
                  WHERE ps.portfolio_id=%s AND ps.as_of=%s AND ps.qty > 0
@@ -2975,6 +3150,7 @@ def portfolio(org_id: int) -> dict[str, Any]:
                 if bar and bar.get("close") is not None and p.get("qty") is not None:
                     p["last_close"] = bar["close"]
                     p["market_value"] = float(p["qty"]) * float(bar["close"])
+                p["idea"] = _idea_questions(p, "holdings")
     invested = sum(float(p.get("market_value") or 0) for p in positions)
     cash = float(pf["cash"] or 0)
     nav = cash + invested

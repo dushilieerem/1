@@ -797,7 +797,7 @@ export function StrategyBacktestPage({ navigation }: { navigation?: StrategyBack
                 <h2 className="text-sm font-bold text-slate-400">因子选择 + 权重</h2>
                 <p className="mt-1 text-[11px] leading-snug text-slate-400">
                   当前为 <code className="text-slate-500">generate_signals()</code>{" "}
-                  自由策略，左侧因子积木已隐藏；请直接改右侧代码。
+                  自由策略，左侧因子积木与持仓数/调仓周期表单已隐藏；这些参数由代码内常量控制，请直接改右侧代码。
                   平台策略库已统一为 FactorPortfolio 模板，可从策略库重新打开以刷新。
                 </p>
               </section>
@@ -919,7 +919,8 @@ export function StrategyBacktestPage({ navigation }: { navigation?: StrategyBack
                     </label>
                   </>
                 )}
-                {cfg.engine_mode === "event" ? null : (
+                {cfg.engine_mode === "event" ? null : cfg.strategy_id ||
+                  usesFactorPortfolioTemplate(cfg.strategy_code) ? (
                   <>
                     <label className="block text-xs text-slate-500">
                       持仓数
@@ -964,6 +965,10 @@ export function StrategyBacktestPage({ navigation }: { navigation?: StrategyBack
                       />
                     </label>
                   </>
+                ) : (
+                  <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-3 py-2.5 text-[11px] leading-relaxed text-slate-500 lg:col-span-2">
+                    当前为 <code>generate_signals()</code> 自由策略，持仓数、调仓周期由代码内常量控制；这里的表单改不到策略内部，已隐藏。请直接修改右侧代码。
+                  </p>
                 )}
                 <label className="block text-xs text-slate-500">
                   佣金率

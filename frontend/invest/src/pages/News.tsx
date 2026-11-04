@@ -41,7 +41,7 @@ export default function News() {
 
       {data ? (
         <div className="news-list card">
-          {data.items.length === 0 ? <div className="empty-inline">{market === "US" ? t("美股资讯暂未接入；当前只提供行情与自选。", "US news is not connected yet; this build covers quotes and watchlists only.") : t("暂无资讯。", "No news yet.")}</div> : data.items.map((n: any) => (
+          {data.items.length === 0 ? <div className="empty-inline">{market === "US" ? t("美股资讯暂未接入；当前只提供行情与自选。", "US news is not connected yet; this build covers quotes and watchlists only.") : t("当前数据视图暂无资讯；公告/研报/要闻由数据平台同步，缺失时不会用演示内容填充。", "No news in the current data view; filings, research and headlines are synced by the data platform, and missing items are not filled with demo content.")}</div> : data.items.map((n: any) => (
             <a className="news-item" key={n.id} href={n.url} target="_blank" rel="noreferrer">
               <div className="news-item-top">
                 <Tag tone={n.kind === "announcement" ? "blue" : n.kind === "research" ? "amber" : "gray"}>

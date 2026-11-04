@@ -4,7 +4,7 @@ import { ArrowLeft, Sparkles } from "lucide-react";
 import { api } from "../api";
 import { AiCard, type AiCardData } from "../components/AiCard";
 import { Disclaimer, ErrorState, PageHeader, Tag } from "../components";
-import { displayIndustry, fmtPct } from "../lib";
+import { displayIndustry, fmtPct, formatPrice } from "../lib";
 import { useLocale } from "../i18n";
 
 type Stock = any;
@@ -32,16 +32,16 @@ function cell(stock: Stock, key: string) {
 }
 
 const ROWS: Array<{ key: string; label: { zh: string; en: string }; fmt?: (v: any) => string }> = [
-  { key: "price", label: { zh: "收盘价", en: "Close" } },
+  { key: "price", label: { zh: "收盘价", en: "Close" }, fmt: (v) => formatPrice(v) },
   { key: "changePct", label: { zh: "当日涨跌", en: "Daily change" }, fmt: (v) => fmtPct(v) },
-  { key: "pe", label: { zh: "PE(TTM)", en: "PE (TTM)" } },
-  { key: "pb", label: { zh: "PB", en: "PB" } },
-  { key: "pePercentile", label: { zh: "PE 分位", en: "PE percentile" }, fmt: (v) => (v == null ? "—" : `${Number(v).toFixed(0)}%`) },
-  { key: "dividendYield", label: { zh: "股息率", en: "Dividend yield" } },
+  { key: "pe", label: { zh: "PE(TTM)", en: "PE (TTM)" }, fmt: (v) => `${Number(v).toFixed(2)}x` },
+  { key: "pb", label: { zh: "PB", en: "PB" }, fmt: (v) => `${Number(v).toFixed(2)}x` },
+  { key: "pePercentile", label: { zh: "PE 分位", en: "PE percentile" }, fmt: (v) => `${Number(v).toFixed(0)}%` },
+  { key: "dividendYield", label: { zh: "股息率", en: "Dividend yield" }, fmt: (v) => `${Number(v).toFixed(2)}%` },
   { key: "return20", label: { zh: "近 20 日", en: "Last 20 days" }, fmt: (v) => fmtPct(v) },
   { key: "drawdown", label: { zh: "阶段回撤", en: "Drawdown" }, fmt: (v) => fmtPct(v) },
-  { key: "revenue", label: { zh: "营收(亿)", en: "Revenue (100M)" } },
-  { key: "netProfit", label: { zh: "净利(亿)", en: "Net profit (100M)" } },
+  { key: "revenue", label: { zh: "营收（亿元）", en: "Revenue (CNY 100m)" }, fmt: (v) => Number(v).toFixed(2) },
+  { key: "netProfit", label: { zh: "净利（亿元）", en: "Net profit (CNY 100m)" }, fmt: (v) => Number(v).toFixed(2) },
   { key: "grossMargin", label: { zh: "毛利率", en: "Gross margin" }, fmt: (v) => (v == null ? "—" : `${Number(v).toFixed(1)}%`) },
   { key: "roe", label: { zh: "ROE", en: "ROE" }, fmt: (v) => (v == null ? "—" : `${Number(v).toFixed(1)}%`) },
 ];

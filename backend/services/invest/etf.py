@@ -71,10 +71,14 @@ def load_weights(index_code: str) -> list[dict[str, Any]]:
     path = _weights_path(index_code)
     if path is None:
         return []
-    import pyarrow.parquet as pq
+    try:
+        import pyarrow.parquet as pq
 
-    table = pq.read_table(path, columns=["Symbol", "Weight"])
-    rows = table.to_pylist()
+        table = pq.read_table(path, columns=["Symbol", "Weight"])
+        rows = table.to_pylist()
+    except Exception:
+        # 可选依赖/文件异常不应让 H5 500；页面会显示“成分数据待补充”。
+        return []
     out = []
     for row in rows:
         try:
@@ -119,7 +123,10 @@ def profile(code: str, *, top: int = 20) -> dict[str, Any]:
         "tracked_index": index_code,
         "constituent_count": len(weights),
         "constituents": weights[: max(1, min(top, 200))],
-        "warning": "代理口径：以跟踪指数成分/权重代替 ETF 官方持仓，非真实持仓",
+        "warning": (
+            "代理口径：以跟踪指数成分/权重代替 ETF 官方持仓，非真实持仓"
+            if weights else "跟踪指数已登记，但成分权重文件缺失或读取失败；显示待补充，不按 0 处理。"
+        ),
     }
 
 

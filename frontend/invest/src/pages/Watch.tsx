@@ -32,6 +32,7 @@ export default function Watch() {
   };
 
   const count = data?.groups?.reduce((n: number, g: any) => n + g.items.length, 0) || 0;
+  const usUnavailable = market === "US" && data?.available === false;
 
   return (
     <div className="page">
@@ -53,8 +54,8 @@ export default function Watch() {
           {count === 0 ? (
             <EmptyState
               title={t("还没有自选", "No watchlist names yet")}
-              detail={market === "US" ? t("搜索美股代码并加入自选，查看美股行情。", "Search a US ticker and add it to the watchlist to track US quotes.") : t("搜索股票并加入自选，收盘后查看事件日志。", "Search a stock and add it to the watchlist; events refresh after the close.")}
-              action={<button className="btn btn-primary" onClick={() => setAddOpen(true)}>{t("添加自选", "Add to watchlist")}</button>}
+              detail={usUnavailable ? t("当前数据视图只有 A 股覆盖，美股自选暂不可用。切换到中文查看 A 股。", "The current data view only covers A-shares; US watchlists are unavailable. Switch to 中文 for A-share coverage.") : market === "US" ? t("搜索美股代码并加入自选，查看美股行情。", "Search a US ticker and add it to the watchlist to track US quotes.") : t("搜索股票并加入自选，收盘后查看事件日志。", "Search a stock and add it to the watchlist; events refresh after the close.")}
+              action={usUnavailable ? undefined : <button className="btn btn-primary" onClick={() => setAddOpen(true)}>{t("添加自选", "Add to watchlist")}</button>}
             />
           ) : (
             data.groups.map((g: any) => (

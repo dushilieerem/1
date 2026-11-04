@@ -351,12 +351,12 @@ export default function Stock() {
       <section className="card tech-card">
         <div className="card-title-row"><h2>{t("技术面速览", "Technical snapshot")}</h2><span className="hint">{t("基于日 K", "Based on daily bars")}</span></div>
         <div className="tech-row"><span>{t("价格趋势", "Trend")}</span><b>{tech.trend}</b><em>{t("回撤", "Drawdown")} {fmtPct(tech.drawdown, 1)} · {t("20 日", "20-day")} {fmtPct(tech.return20, 1)}</em></div>
-        <div className="tech-row"><span>{t("均线系统", "Moving averages")}</span><b>MA20 {tech.ma20 ? formatPrice(tech.ma20) : "—"}</b><em>MA5 {tech.ma5 ? formatPrice(tech.ma5) : "—"} · MA10 {tech.ma10 ? formatPrice(tech.ma10) : "—"}</em></div>
+        <div className="tech-row"><span>{t("均线系统", "Moving averages")}</span><b>MA20 {tech.ma20 ? formatPrice(tech.ma20) : t("待补充", "N/A")}</b><em>MA5 {tech.ma5 ? formatPrice(tech.ma5) : t("待补充", "N/A")} · MA10 {tech.ma10 ? formatPrice(tech.ma10) : t("待补充", "N/A")}</em></div>
         <div className="tech-row"><span>{t("成交量", "Volume")}</span><b>{tech.volumeRatio?.toFixed?.(1)}x</b><em>{t("相对 20 日均量", "vs 20-day average")}</em></div>
         <p className="hint">
           {t(
-            "趋势 = 现价相对 MA20；回撤 = 距近 180 日高点；量比 = 当前成交量相对 20 日均量。",
-            "Trend = price vs MA20; drawdown = from the 180-day high; volume ratio = current volume vs the 20-day average.",
+            "趋势 = 现价相对 MA20；回撤 = 距近 180 日高点；量比 = 当前成交量相对 20 日均量；均线显示待补充表示历史不足 20 个交易日。",
+            "Trend = price vs MA20; drawdown = from the 180-day high; volume ratio = current volume vs the 20-day average; N/A on moving averages means fewer than 20 trading days of history.",
           )}
         </p>
       </section>
@@ -380,7 +380,7 @@ export default function Stock() {
           </div>
           <div className="divider" />
           <Kv k={t("行业", "Industry")} v={displayIndustry(q.industry)} />
-          <Kv k={<span>Beta <Help term="beta" /></span>} v={q.beta != null ? q.beta.toFixed(2) : t("风险指标待补充", "Risk metric pending")} />
+          <Kv k={<span>Beta <Help term="beta" /></span>} v={q.beta != null ? (Math.abs(q.beta) < 0.005 ? "0.00" : q.beta.toFixed(2)) : t("风险指标待补充", "Risk metric pending")} />
           <Kv k={<span>{t("股息率", "Dividend yield")} <Help term="dividend_yield" /></span>} v={q.dividendYield != null ? `${q.dividendYield.toFixed(2)}%` : t("待补充", "Pending")} />
           <Kv k={t("下次财报（预计）", "Next report (est.)")} v={q.nextReportDate || t("待补充（数据源未接入）", "Pending (source not connected)")} />
           {q.beta == null || !q.nextReportDate ? (

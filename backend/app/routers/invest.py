@@ -109,7 +109,10 @@ def stock(code: str, period: str = Query("daily"), conn: PGConn = Depends(invest
         raise HTTPException(status_code=400, detail="period 必须是 daily/weekly/monthly")
     data = rules.build_stock(conn, code, period)
     if not data:
-        raise HTTPException(status_code=404, detail="标的未收录")
+        raise HTTPException(
+            status_code=404,
+            detail="US ticker not available in the current data view" if "." in code else "标的未收录",
+        )
     if "." not in code:
         data["behavior"] = agent_tools.behavior_alert_from_stock(conn, code, data)
     return data

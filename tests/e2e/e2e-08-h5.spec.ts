@@ -327,6 +327,34 @@ test("中英文切换：英文首页展示美股数据", async ({ page }) => {
   await noHorizontalOverflow(page);
 });
 
+test("无美股数据时英文模式给出明确空态", async ({ page }) => {
+  await loginByToken(page);
+  await page.addInitScript(() => localStorage.setItem("svq_invest_locale", "en"));
+  await page.route("**/api/invest/home*", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        market: "US", hasQuotes: false, dataDate: "2026-11-03", dataSource: "US coverage unavailable",
+        isDemo: false, user: { id: 2, name: "Demo user" }, daily: [],
+        review: { title: "US quotes unavailable", summary: "No US quotes.", facts: [] },
+        indices: [], topics: [], watchlist: [], glossary: [],
+      }),
+    }),
+  );
+  await page.route("**/api/invest/search*", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ q: "", market: "US", available: false, results: [], presets: [], note: "No US quotes." }),
+    }),
+  );
+  await page.goto(`${H5}/`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("US quotes not available").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("0 up / 0 down")).toHaveCount(0);
+  await page.goto(`${H5}/search`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("US quotes not available").first()).toBeVisible({ timeout: 20_000 });
+  await noHorizontalOverflow(page);
+});
+
 test("学习中心术语详情有人话正文、例子与常见误用", async ({ page }) => {
   await loginByToken(page);
   await page.goto(`${H5}/learn?term=pe_ttm`, { waitUntil: "domcontentloaded" });

@@ -82,8 +82,14 @@ def _market_meta(conn: Any, market: str) -> dict[str, Any]:
         start = date.fromisoformat(data_date)
         age = max(0, (date.today() - start).days)
         weekdays = sum(1 for n in range(1, age + 1) if (start + timedelta(days=n)).weekday() < 5)
+        try:
+            has_us = bool(conn.execute("SELECT 1 FROM stocks WHERE code LIKE '%.%' LIMIT 1").fetchone())
+        except Exception:
+            has_us = False
         return {
-            "dataDate": data_date, "dataSource": "Public EOD (US)", "isDemo": False,
+            "dataDate": data_date,
+            "dataSource": "Public EOD (US)" if has_us else "US coverage unavailable",
+            "isDemo": False,
             "ageDays": age, "ageTradingDays": weekdays, "isStale": weekdays > 1,
         }
     meta = data_meta(conn)
@@ -1360,6 +1366,25 @@ def build_home_us(conn: Any, user_id: int) -> dict[str, Any]:
     meta = _market_meta(conn, "US")
     data_date = meta["dataDate"]
     stocks = rows(conn, "SELECT * FROM stocks WHERE code LIKE '%.%' AND asset='stock' AND price IS NOT NULL")
+    if not stocks:
+        return {
+            **meta, "user": {"id": user_id, "name": "Demo user"}, "hasQuotes": False,
+            "daily": [],
+            "review": {
+                "title": "US quotes unavailable",
+                "summary": (
+                    "This data view does not contain US quote rows. US financials, valuation, "
+                    "news and indices are also not connected. Switch to 中文 for A-share coverage."
+                ),
+                "facts": [
+                    "No US tickers with a latest price were found in the current service-layer snapshot.",
+                    "The page does not fill missing quotes with 0.",
+                    "Ask the data platform to publish US quotes before relying on English mode.",
+                ],
+            },
+            "indices": [], "topics": [], "watchlist": [], "glossary": US_GLOSSARY,
+            "disclaimer": DISCLAIMER_EN, "market": "US",
+        }
     by_code = {s["code"]: s for s in stocks}
     watch = rows(conn, "SELECT * FROM watchlist WHERE user_id=?", (user_id,))
     watch_cards = []
@@ -1427,7 +1452,8 @@ def build_home_us(conn: Any, user_id: int) -> dict[str, Any]:
         ],
     }
     return {
-        **meta, "user": {"id": user_id, "name": "Demo user"}, "daily": daily, "review": review,
+        **meta, "user": {"id": user_id, "name": "Demo user"}, "hasQuotes": True,
+        "daily": daily, "review": review,
         "indices": [], "topics": [], "watchlist": watch_cards, "glossary": US_GLOSSARY,
         "disclaimer": DISCLAIMER_EN, "market": "US",
     }
@@ -1517,7 +1543,7 @@ def build_home(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
             "ageDays": meta_info["ageDays"], "isStale": meta_info["isStale"],
             "user": {"id": user_id, "name": "演示用户"}, "daily": daily, "review": review,
             "indices": indices, "topics": topic_cards, "watchlist": watch_cards, "glossary": glossary,
-            "disclaimer": DISCLAIMER, "market": "CN"}
+            "disclaimer": DISCLAIMER, "market": "CN", "hasQuotes": True}
 
 
 def build_watchlist(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
@@ -1539,9 +1565,15 @@ def build_watchlist(conn: Any, user_id: int, market: str = "CN") -> dict[str, An
         s = one(conn, "SELECT name FROM stocks WHERE code=?", (e["code"],))
         e["name"] = (t or s or {}).get("name") or e["code"]
     logs = rows(conn, "SELECT * FROM event_logs WHERE user_id=? ORDER BY triggered_at DESC", (user_id,))
+    available = True
+    if market == "US":
+        try:
+            available = bool(conn.execute("SELECT 1 FROM stocks WHERE code LIKE '%.%' LIMIT 1").fetchone())
+        except Exception:
+            available = False
     return {
         "groups": [{"name": k, "items": v} for k, v in groups.items()], "events": events, "logs": logs,
-        "market": market,
+        "market": market, "available": available,
         "disclaimer": (
             "Watch events refresh after the close; no real-time push."
             if market == "US" else "关注事件在收盘后更新；不提供实时推送。"
@@ -1610,7 +1642,17 @@ def build_search(conn: Any, q: str, market: str = "CN") -> dict[str, Any]:
                     "items": [us_card(s, _display_name(s, "US")) for s in majors],
                 },
             ]
-        return {"q": q, "results": results, "presets": presets, "market": "US"}
+        available = bool(pool)
+        if not q and not available:
+            presets = []
+        return {
+            "q": q, "results": results, "presets": presets, "market": "US",
+            "available": available,
+            "note": (
+                "US quote data is not available in the current data view. Switch to 中文 for A-share coverage."
+                if not available else ""
+            ),
+        }
 
     stocks = []
     if q:
@@ -1664,7 +1706,7 @@ def build_search(conn: Any, q: str, market: str = "CN") -> dict[str, Any]:
                 "items": [card(s, f"股息率 {s['dividend_yield']:.2f}%") for s in dividend],
             },
         ]
-    return {"q": q, "results": results, "presets": presets, "market": "CN"}
+    return {"q": q, "results": results, "presets": presets, "market": "CN", "available": True}
 
 
 def build_news(conn: Any, kind: str | None = None, market: str = "CN") -> dict[str, Any]:

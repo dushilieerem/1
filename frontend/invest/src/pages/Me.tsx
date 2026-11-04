@@ -103,6 +103,14 @@ export default function Me() {
         <Kv k={t("质量检查", "Quality check")} v={quality ? (quality.ok ? (quality.checks?.some?.((c: any) => c.status === "warn") ? t("通过（有提醒）", "Passed (with warnings)") : t("通过", "Passed")) : t("有异常", "Issues found")) : t("检查中", "Checking")} />
         <Kv k={t("数据新鲜度", "Data freshness")} v={meta ? (meta.isStale ? t(`落后 ${meta.ageTradingDays ?? meta.ageDays} 个交易日`, `${meta.ageTradingDays ?? meta.ageDays} trading day(s) behind`) : t("T-0 / 正常", "T-0 / Normal")) : t("检查中", "Checking")} />
         {meta?.disabledModules?.length ? <Kv k={t("模块状态", "Module status")} v={t(`临时关闭：${meta.disabledModules.join("、")}`, `Temporarily disabled: ${meta.disabledModules.join(", ")}`)} /> : null}
+        {!quality ? (
+          <p className="hint">
+            {t(
+              "正在检查数据质量；财务覆盖统计约需数秒，不阻塞页面其他内容。",
+              "Checking data quality; financial coverage can take a few seconds and does not block the rest of the page.",
+            )}
+          </p>
+        ) : null}
         {quality && !quality.ok ? (
           <p className="hint">
             {t(

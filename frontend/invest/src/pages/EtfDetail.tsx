@@ -14,6 +14,15 @@ type Profile = {
   warning?: string;
 };
 
+const INDEX_NAME: Record<string, string> = {
+  "000300.SH": "沪深300",
+  "000905.SH": "中证500",
+  "000016.SH": "上证50",
+  "000852.SH": "中证1000",
+  "000688.SH": "科创50",
+  "399006.SZ": "创业板指",
+};
+
 type Overlap = {
   a: { etf: string; tracked_index: string | null };
   b: { etf: string; tracked_index: string | null };
@@ -63,7 +72,7 @@ export default function EtfDetail() {
         <>
           <section className="card">
             <div className="card-title-row">
-              <h2>{profile.etf}</h2>
+              <h2>{profile.etf.replace(/\.(SH|SZ)$/i, "")}</h2>
               <Tag tone={profile.tracking === "index_proxy" ? "amber" : "gray"}>
                 {profile.tracking === "index_proxy"
                   ? t("指数代理", "Index proxy")
@@ -74,7 +83,11 @@ export default function EtfDetail() {
             </div>
             <p className="hint">
               {t("跟踪指数", "Tracked index")}{t("：", ": ")}
-              {profile.tracked_index || (profile.tracking === "cash_management" ? t("不适用（货币 ETF）", "N/A (money-market ETF)") : "—")}
+              {profile.tracked_index
+                ? `${INDEX_NAME[profile.tracked_index] || profile.tracked_index}${INDEX_NAME[profile.tracked_index] ? `（${profile.tracked_index}）` : ""}`
+                : profile.tracking === "cash_management"
+                  ? t("不适用（货币 ETF）", "N/A (money-market ETF)")
+                  : "—"}
             </p>
             {profile.warning ? <div className="callout blue">{profile.warning}</div> : null}
           </section>
@@ -108,7 +121,15 @@ export default function EtfDetail() {
               detail={
                 profile.tracking === "cash_management"
                   ? t("这是现金管理工具，不适用股票穿透；ETF 日线仅到 2026-10-23，不能当实时净值。", "This is a cash-management tool and is not subject to equity look-through; ETF daily data ends 2026-10-23 and is not a real-time NAV.")
-                  : t("该 ETF 尚未登记跟踪指数，需要补充官方持仓或映射。", "This ETF has no tracked index yet; official holdings or a mapping need to be added.")
+                  : profile.tracked_index
+                    ? t(
+                        "跟踪指数已登记，但成分权重文件缺失或读取失败；显示待补充，不按 0 处理。",
+                        "The tracked index is registered, but the weight file is missing or unreadable; shown as pending, not zero.",
+                      )
+                    : t(
+                        "该 ETF 尚未登记跟踪指数，需要补充官方持仓或映射。",
+                        "This ETF has no tracked index yet; official holdings or a mapping need to be added.",
+                      )
               }
             />
           )}

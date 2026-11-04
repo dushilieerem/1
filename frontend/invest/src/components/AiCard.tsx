@@ -1,4 +1,5 @@
 import { Sparkles } from "lucide-react";
+import { useLocale } from "../i18n";
 
 export type AiSection = {
   key?: string;
@@ -13,14 +14,16 @@ export type AiCardData = {
   blocked?: boolean;
 };
 
-export function AiCard({ data, title = "AI 解读" }: { data: AiCardData; title?: string }) {
+export function AiCard({ data, title }: { data: AiCardData; title?: string }) {
+  const { t } = useLocale();
+  const resolvedTitle = title ?? t("AI 解读", "AI insights");
   const card = data.card;
   if (!card?.summary && !card?.sections?.length) return null;
   return (
     <section className="card ai-panel">
       <div className="card-title-row">
-        <h2 className="row gap6"><Sparkles size={15} /> {title}</h2>
-        <span className="hint">AI 生成 · 非投资建议</span>
+        <h2 className="row gap6"><Sparkles size={15} /> {resolvedTitle}</h2>
+        <span className="hint">{t("AI 生成 · 非投资建议", "AI-generated · Not investment advice")}</span>
       </div>
       {data.blocked ? <div className="ai-blocked">{card.summary}</div> : <p className="ai-summary">{card.summary}</p>}
       {(card.sections || []).map((s, i) => (
@@ -31,7 +34,7 @@ export function AiCard({ data, title = "AI 解读" }: { data: AiCardData; title?
             <ul>
               {s.items.map((it, k) => (
                 <li key={k}>
-                  {it.k ? <span>{it.k}：</span> : null}
+                  {it.k ? <span>{it.k}{t("：", ": ")}</span> : null}
                   {it.v}
                 </li>
               ))}
@@ -39,7 +42,7 @@ export function AiCard({ data, title = "AI 解读" }: { data: AiCardData; title?
           ) : null}
         </div>
       ))}
-      <p className="hint">{card.disclaimer || "AI 生成 · 非投资建议"}</p>
+      <p className="hint">{card.disclaimer || t("AI 生成 · 非投资建议", "AI-generated · Not investment advice")}</p>
     </section>
   );
 }

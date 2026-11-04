@@ -69,8 +69,8 @@ def _audit(conn: PGConn, request: Request, user: dict[str, Any], action: str, de
 
 
 @router.get("/meta")
-def meta(conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
-    return {**rules.build_meta(conn), "disabledModules": sorted(disabled_modules())}
+def meta(market: str = Query("CN"), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
+    return {**rules.build_meta(conn, market), "disabledModules": sorted(disabled_modules())}
 
 
 @router.get("/data-quality")
@@ -87,8 +87,12 @@ def glossary(
 
 
 @router.get("/home", dependencies=[Depends(_guard("home"))])
-def home(user: dict[str, Any] = Depends(require_user), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
-    return rules.build_home(conn, _uid(user))
+def home(
+    market: str = Query("CN"),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return rules.build_home(conn, _uid(user), market)
 
 
 @router.get("/topic/{topic_id}", dependencies=[Depends(_guard("topic"))])
@@ -106,18 +110,27 @@ def stock(code: str, period: str = Query("daily"), conn: PGConn = Depends(invest
     data = rules.build_stock(conn, code, period)
     if not data:
         raise HTTPException(status_code=404, detail="标的未收录")
-    data["behavior"] = agent_tools.behavior_alert_from_stock(conn, code, data)
+    if "." not in code:
+        data["behavior"] = agent_tools.behavior_alert_from_stock(conn, code, data)
     return data
 
 
 @router.get("/search", dependencies=[Depends(_guard("search"))])
-def search(q: str = Query(""), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
-    return rules.build_search(conn, q)
+def search(
+    q: str = Query(""),
+    market: str = Query("CN"),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return rules.build_search(conn, q, market)
 
 
 @router.get("/news", dependencies=[Depends(_guard("news"))])
-def news(kind: str | None = Query(None), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
-    return rules.build_news(conn, kind)
+def news(
+    kind: str | None = Query(None),
+    market: str = Query("CN"),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return rules.build_news(conn, kind, market)
 
 
 @router.get("/etf/overlap")
@@ -217,13 +230,18 @@ def quant_signals(
 
 
 @router.get("/watchlist")
-def watchlist(user: dict[str, Any] = Depends(require_user), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
-    return rules.build_watchlist(conn, _uid(user))
+def watchlist(
+    market: str = Query("CN"),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return rules.build_watchlist(conn, _uid(user), market)
 
 
 @router.post("/watchlist")
 def add_watchlist(
     body: dict[str, Any] = Body(...),
+    market: str = Query("CN"),
     user: dict[str, Any] = Depends(require_user),
     conn: PGConn = Depends(invest_conn),
 ) -> dict[str, Any]:
@@ -231,24 +249,26 @@ def add_watchlist(
     exists = conn.execute("SELECT 1 FROM stocks WHERE code=?", (code,)).fetchone()
     if not exists:
         raise HTTPException(status_code=404, detail="标的未收录")
+    default_group = "Default" if rules.normalize_market(market) == "US" else "默认"
     conn.execute(
         "INSERT INTO invest_watchlist (user_id, code, group_name, created_at) VALUES (?,?,?,?) "
         "ON CONFLICT (user_id, code) DO NOTHING",
-        (_uid(user), code, str(body.get("group") or "默认"), _now()),
+        (_uid(user), code, str(body.get("group") or default_group), _now()),
     )
     conn.commit()
-    return rules.build_watchlist(conn, _uid(user))
+    return rules.build_watchlist(conn, _uid(user), market)
 
 
 @router.delete("/watchlist/{code}")
 def remove_watchlist(
     code: str,
+    market: str = Query("CN"),
     user: dict[str, Any] = Depends(require_user),
     conn: PGConn = Depends(invest_conn),
 ) -> dict[str, Any]:
     conn.execute("DELETE FROM invest_watchlist WHERE user_id=? AND code=?", (_uid(user), code))
     conn.commit()
-    return rules.build_watchlist(conn, _uid(user))
+    return rules.build_watchlist(conn, _uid(user), market)
 
 
 @router.post("/events")

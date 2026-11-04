@@ -291,6 +291,53 @@ test("组合页：持仓 / 体检切换与关键区块", async ({ page, request 
   await noHorizontalOverflow(page);
 });
 
+test("中英文切换：英文首页展示美股数据", async ({ page }) => {
+  await loginByToken(page);
+  await page.addInitScript(() => localStorage.setItem("svq_invest_locale", "en"));
+  await page.route("**/api/invest/home*", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        dataDate: "2026-10-29",
+        dataSource: "Public EOD (US)",
+        isDemo: false,
+        isStale: false,
+        ageDays: 0,
+        ageTradingDays: 0,
+        user: { id: 2, name: "Demo user" },
+        daily: [{ tag: "US · top gainer", title: "Apple +1.48%", detail: "Among the most active US names.", link: { type: "stock", id: "AAPL.O" } }],
+        review: { title: "US close", summary: "US EOD snapshot: breadth is positive.", facts: ["Quotes and charts only.", "Not real-time."] },
+        indices: [],
+        topics: [],
+        watchlist: [{ code: "AAPL.O", name: "Apple", price: 348.91, changePct: 1.48, group: "Default" }],
+        glossary: [],
+      }),
+    }),
+  );
+  await page.goto(`${H5}/`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: /Good afternoon/ })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Apple", { exact: false }).first()).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Bottom navigation" })).toBeVisible();
+  await expect(page.locator(".locale-toggle")).toBeVisible();
+  await page.locator(".locale-toggle").click();
+  await expect(page.getByRole("heading", { name: /下午好/ })).toBeVisible({ timeout: 30_000 });
+  await noHorizontalOverflow(page);
+});
+
+test("360 宽关键页面无横向溢出，行业代码不裸奔", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await loginByToken(page);
+  for (const path of ["/", "/watch", "/portfolio", "/news", "/learn", "/me", "/quant", "/community"]) {
+    await page.goto(`${H5}${path}`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(350);
+    await noHorizontalOverflow(page);
+  }
+  await page.goto(`${H5}/stock/600036`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".page-head p")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".page-head p")).not.toContainText(/\d{6}\.SI/);
+  await noHorizontalOverflow(page);
+});
+
 test("轻量因子选股页渲染规则打分", async ({ page }) => {
   await loginByToken(page);
   await page.route("**/api/invest/quant/select*", (route) =>

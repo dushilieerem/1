@@ -43,7 +43,11 @@ export async function api<T = any>(path: string, init: RequestInit = {}): Promis
       setToken(null);
       window.dispatchEvent(new Event("svq:auth-expired"));
     }
-    throw new ApiError(res.status, data?.detail || data?.error || `请求失败（${res.status}）`);
+    const fallback =
+      localStorage.getItem("svq_invest_locale") === "en"
+        ? `Request failed (${res.status})`
+        : `请求失败（${res.status}）`;
+    throw new ApiError(res.status, data?.detail || data?.error || fallback);
   }
   return data as T;
 }

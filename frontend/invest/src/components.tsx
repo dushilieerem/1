@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { AlertTriangle, ChevronLeft, RefreshCw, X } from "lucide-react";
+import { LocaleToggle, useLocale } from "./i18n";
 
 export function Tag({ children, tone = "gray" }: { children: ReactNode; tone?: "red" | "green" | "amber" | "orange" | "gray" | "blue" }) {
   return <span className={`tag tag-${tone}`}>{children}</span>;
@@ -18,10 +19,11 @@ export function PageHeader({
   back?: boolean;
   onBack?: () => void;
 }) {
+  const { t } = useLocale();
   return (
     <header className="page-head">
       {back ? (
-        <button className="round-btn" onClick={onBack} aria-label="返回">
+        <button className="round-btn" onClick={onBack} aria-label={t("返回", "Back")}>
           <ChevronLeft size={22} />
         </button>
       ) : null}
@@ -29,7 +31,10 @@ export function PageHeader({
         <h1>{title}</h1>
         {sub ? <p>{sub}</p> : null}
       </div>
-      {right ? <div className="page-head-right">{right}</div> : null}
+      <div className="page-head-right">
+        <LocaleToggle compact />
+        {right}
+      </div>
     </header>
   );
 }
@@ -61,6 +66,7 @@ export function Sheet({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  const { t } = useLocale();
   const sheetRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -111,7 +117,7 @@ export function Sheet({
             <h3>{title}</h3>
             {sub ? <p>{sub}</p> : null}
           </div>
-          <button className="round-btn" onClick={onClose} aria-label="关闭">
+          <button className="round-btn" onClick={onClose} aria-label={t("关闭", "Close")}>
             <X size={18} />
           </button>
         </div>
@@ -137,14 +143,15 @@ export function LoadingCards({ rows = 3 }: { rows?: number }) {
 }
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  const { t } = useLocale();
   return (
     <div className="state-box">
       <AlertTriangle size={26} />
-      <b>加载失败</b>
+      <b>{t("加载失败", "Failed to load")}</b>
       <p>{message}</p>
       {onRetry ? (
         <button className="btn btn-ghost" onClick={onRetry}>
-          <RefreshCw size={16} /> 重试
+          <RefreshCw size={16} /> {t("重试", "Retry")}
         </button>
       ) : null}
     </div>
@@ -178,6 +185,7 @@ export function Sparkline({ values, width = 96, height = 34 }: { values: number[
 }
 
 export function RiskRing({ score, size = 92, color }: { score: number; size?: number; color?: string }) {
+  const { t } = useLocale();
   const pct = Math.max(0, Math.min(100, score));
   return (
     <div
@@ -190,7 +198,7 @@ export function RiskRing({ score, size = 92, color }: { score: number; size?: nu
     >
       <div className="risk-ring-in">
         <b>{score}</b>
-        <span>风险分</span>
+        <span>{t("风险分", "Risk")}</span>
       </div>
     </div>
   );
@@ -211,7 +219,7 @@ export function BarRow({ label, value, width, suffix = "%" }: { label: string; v
   );
 }
 
-export function Kv({ k, v }: { k: string; v: ReactNode }) {
+export function Kv({ k, v }: { k: ReactNode; v: ReactNode }) {
   return (
     <div className="kv">
       <span>{k}</span>
@@ -221,5 +229,10 @@ export function Kv({ k, v }: { k: string; v: ReactNode }) {
 }
 
 export function Disclaimer({ children }: { children?: ReactNode }) {
-  return <div className="disclaimer">{children || "收盘数据 · 非实时 · 不构成投资建议"}</div>;
+  const { t } = useLocale();
+  return (
+    <div className="disclaimer">
+      {children || t("收盘数据 · 非实时 · 不构成投资建议", "EOD data · not real-time · not investment advice")}
+    </div>
+  );
 }

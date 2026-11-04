@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ChevronDown, ChevronUp, Mic, MicOff, Send, Sparkles } from "lucide-react";
 import { api } from "../api";
 import { Disclaimer, ErrorState, PageHeader, Sparkline, Tag } from "../components";
+import { useLocale } from "../i18n";
 
 type Section = { key?: string; title?: string; body?: string; type?: string; items?: Array<{ k?: string; v?: string }> };
 type Card = { summary?: string; sections?: Section[]; disclaimer?: string; meta?: { dataSource?: string } };
@@ -20,23 +21,29 @@ type Msg = {
   evidence?: Array<{ title?: string; detail?: string }>;
 };
 
-type Template = { id: string; label: string; text: string };
+type Template = { id: string; label: { zh: string; en: string }; text: { zh: string; en: string } };
 
 const TEMPLATES: Template[] = [
-  { id: "stock", label: "个股解读", text: "分析 [标的] 的基本面、估值和主要风险" },
-  { id: "debate", label: "多空分析", text: "看多和看空 [标的] 的主要依据分别是什么" },
-  { id: "compare", label: "多标的对比", text: "对比 [标的A] 和 [标的B] 的估值与财务" },
-  { id: "portfolio", label: "组合诊断", text: "我的组合风险主要在哪里" },
-  { id: "condition", label: "条件选股", text: "帮我找 [条件] 的股票" },
-  { id: "announcement", label: "公告解读", text: "解读公告：[标题]" },
-  { id: "review", label: "每日复盘", text: "今天复盘" },
-  { id: "allocation", label: "配置/定投", text: "我计划 [期限]、风险偏好 [风险偏好]，如何理解当前配置和定投节奏" },
-  { id: "glossary", label: "术语解释", text: "什么是 [术语]" },
+  { id: "stock", label: { zh: "个股解读", en: "Stock analysis" }, text: { zh: "分析 [标的] 的基本面、估值和主要风险", en: "Analyze the fundamentals, valuation and main risks of [ticker]" } },
+  { id: "debate", label: { zh: "多空分析", en: "Bull vs bear" }, text: { zh: "看多和看空 [标的] 的主要依据分别是什么", en: "What are the main bull and bear cases for [ticker]?" } },
+  { id: "compare", label: { zh: "多标的对比", en: "Compare stocks" }, text: { zh: "对比 [标的A] 和 [标的B] 的估值与财务", en: "Compare the valuation and financials of [ticker A] and [ticker B]" } },
+  { id: "portfolio", label: { zh: "组合诊断", en: "Portfolio checkup" }, text: { zh: "我的组合风险主要在哪里", en: "Where is the main risk in my portfolio?" } },
+  { id: "condition", label: { zh: "条件选股", en: "Screen stocks" }, text: { zh: "帮我找 [条件] 的股票", en: "Find me stocks matching [criteria]" } },
+  { id: "announcement", label: { zh: "公告解读", en: "Filing analysis" }, text: { zh: "解读公告：[标题]", en: "Explain this filing: [title]" } },
+  { id: "review", label: { zh: "每日复盘", en: "Daily review" }, text: { zh: "今天复盘", en: "Review today's market" } },
+  { id: "allocation", label: { zh: "配置/定投", en: "Allocation / DCA" }, text: { zh: "我计划 [期限]、风险偏好 [风险偏好]，如何理解当前配置和定投节奏", en: "My horizon is [horizon] and my risk appetite is [risk appetite]; how should I think about my allocation and DCA pace?" } },
+  { id: "glossary", label: { zh: "术语解释", en: "Explain a term" }, text: { zh: "什么是 [术语]", en: "What is [term]?" } },
 ];
 
 const ORDER_KEY = "svq_ai_template_order";
 const MEMORY_KEY = "svq_ai_memory";
-const QUICK = ["今天复盘", "我的组合风险", "贵州茅台多空", "宁德时代和比亚迪对比", "我计划 3 年以上、稳健型，每月定投多少合适"];
+const QUICK: Array<{ zh: string; en: string }> = [
+  { zh: "今天复盘", en: "Review today's market" },
+  { zh: "我的组合风险", en: "Risks in my portfolio" },
+  { zh: "贵州茅台多空", en: "Kweichow Moutai bull vs bear" },
+  { zh: "宁德时代和比亚迪对比", en: "CATL vs BYD comparison" },
+  { zh: "我计划 3 年以上、稳健型，每月定投多少合适", en: "I have a 3+ year horizon and a conservative profile; how much should I invest monthly?" },
+];
 
 function loadOrder(): string[] {
   try {
@@ -70,6 +77,7 @@ function splitSections(card?: Card) {
 }
 
 export default function AiChat() {
+  const { t } = useLocale();
   const nav = useNavigate();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -138,7 +146,7 @@ export default function AiChat() {
         ...prev,
         {
           role: "ai",
-          text: data.need_clarify?.length ? `还需要：${data.need_clarify.join("、")}` : undefined,
+          text: data.need_clarify?.length ? t(`还需要：${data.need_clarify.join("、")}`, `Also needed: ${data.need_clarify.join(", ")}`) : undefined,
           card: data.card,
           chart: data.chart,
           intent: data.intent,
@@ -154,7 +162,7 @@ export default function AiChat() {
         saveMemory(next);
       }
     } catch (e: any) {
-      setError(e.message || "AI 请求失败");
+      setError(e.message || t("AI 请求失败", "AI request failed"));
     } finally {
       setBusy(false);
     }
@@ -173,7 +181,7 @@ export default function AiChat() {
         if (ev.data.size) chunks.current.push(ev.data);
       };
       mr.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
+        stream.getTracks().forEach((track) => track.stop());
         setRecording(false);
         const blob = new Blob(chunks.current, { type: mr.mimeType || "audio/webm" });
         if (!blob.size) return;
@@ -190,10 +198,10 @@ export default function AiChat() {
             setInput(text);
             const fixes = data.corrected?.corrections || [];
             if (fixes.length) {
-              setMessages((prev) => [...prev, { role: "ai", text: `语音已转写。可确认：${fixes.map((f: any) => `${f.from} → ${f.to}`).join("；")}` }]);
+              setMessages((prev) => [...prev, { role: "ai", text: t(`语音已转写。可确认：${fixes.map((f: any) => `${f.from} → ${f.to}`).join("；")}`, `Voice transcribed. Please confirm: ${fixes.map((f: any) => `${f.from} → ${f.to}`).join("; ")}`) }]);
             }
           } catch (e: any) {
-            setError(e.message || "语音识别失败");
+            setError(e.message || t("语音识别失败", "Speech recognition failed"));
           } finally {
             setBusy(false);
           }
@@ -204,31 +212,31 @@ export default function AiChat() {
       mr.start();
       setRecording(true);
     } catch (e: any) {
-      setError(e.message || "无法访问麦克风");
+      setError(e.message || t("无法访问麦克风", "Cannot access the microphone"));
     }
   };
 
   return (
     <div className="page ai-chat-page">
-      <PageHeader title="AI 管家" sub="听懂问题、分发到个股/组合/量化能力；只解释数据，不构成投资建议" back onBack={() => nav(-1)} />
+      <PageHeader title={t("AI 管家", "AI Assistant")} sub={t("听懂问题、分发到个股/组合/量化能力；只解释数据，不构成投资建议", "Understands your question and routes it to stock, portfolio or quant capabilities; it only explains data and is not investment advice")} back onBack={() => nav(-1)} />
 
       <div className="ai-template-bar">
-        {templates.slice(0, 6).map((t) => (
-          <button key={t.id} className="chip" onClick={() => fill(t.text)}>{t.label}</button>
+        {templates.slice(0, 6).map((tpl) => (
+          <button key={tpl.id} className="chip" onClick={() => fill(t(tpl.text.zh, tpl.text.en))}>{t(tpl.label.zh, tpl.label.en)}</button>
         ))}
         <button className="chip chip-more" onClick={() => setPanel((v) => !v)}>
-          全部 {panel ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          {t("全部", "All")} {panel ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
         </button>
       </div>
       {panel ? (
         <section className="card ai-template-panel">
-          <div className="card-title-row"><h2>快捷功能</h2><span className="hint">顺序会保存到本机</span></div>
-          {templates.map((t, i) => (
-            <div key={t.id} className="template-row">
-              <button className="template-fill" onClick={() => fill(t.text)}>{t.label}</button>
+          <div className="card-title-row"><h2>{t("快捷功能", "Quick actions")}</h2><span className="hint">{t("顺序会保存到本机", "Order is saved on this device")}</span></div>
+          {templates.map((tpl, i) => (
+            <div key={tpl.id} className="template-row">
+              <button className="template-fill" onClick={() => fill(t(tpl.text.zh, tpl.text.en))}>{t(tpl.label.zh, tpl.label.en)}</button>
               <div className="template-actions">
-                <button aria-label="上移" disabled={i === 0} onClick={() => move(i, -1)}><ChevronUp size={14} /></button>
-                <button aria-label="下移" disabled={i === templates.length - 1} onClick={() => move(i, 1)}><ChevronDown size={14} /></button>
+                <button aria-label={t("上移", "Move up")} disabled={i === 0} onClick={() => move(i, -1)}><ChevronUp size={14} /></button>
+                <button aria-label={t("下移", "Move down")} disabled={i === templates.length - 1} onClick={() => move(i, 1)}><ChevronDown size={14} /></button>
               </div>
             </div>
           ))}
@@ -238,13 +246,13 @@ export default function AiChat() {
       {!messages.length && !panel ? (
         <section className="card">
           <div className="card-title-row">
-            <h2 className="row gap6"><Sparkles size={15} /> 可以这样问</h2>
-            <Tag tone="blue">EOD 数据</Tag>
+            <h2 className="row gap6"><Sparkles size={15} /> {t("可以这样问", "Try asking")}</h2>
+            <Tag tone="blue">{t("EOD 数据", "EOD data")}</Tag>
           </div>
           <div className="post-list">
             {QUICK.map((q) => (
-              <button key={q} className="post-row" type="button" style={{ textAlign: "left" }} onClick={() => void send(q)}>
-                <div className="post-row-title">{q}</div>
+              <button key={q.zh} className="post-row" type="button" style={{ textAlign: "left" }} onClick={() => void send(t(q.zh, q.en))}>
+                <div className="post-row-title">{t(q.zh, q.en)}</div>
               </button>
             ))}
           </div>
@@ -257,7 +265,7 @@ export default function AiChat() {
             {m.role === "user" ? <p>{m.text}</p> : null}
             {m.role === "ai" ? (
               <>
-                {m.intent ? <div className="ai-msg-meta"><Tag tone={m.blocked ? "red" : "gray"}>{m.blocked ? "已拦截" : m.intent}</Tag></div> : null}
+                {m.intent ? <div className="ai-msg-meta"><Tag tone={m.blocked ? "red" : "gray"}>{m.blocked ? t("已拦截", "Blocked") : m.intent}</Tag></div> : null}
                 {m.steps?.length ? (
                   <div className="deep-steps">
                     {m.steps.map((step) => (
@@ -275,20 +283,20 @@ export default function AiChat() {
                     {s.title ? <b>{s.title}</b> : null}
                     {s.body ? <p>{s.body}</p> : null}
                     {s.items?.length ? (
-                      <ul>{s.items.map((it, k) => <li key={k}>{it.k ? <span>{it.k}：</span> : null}{it.v}</li>)}</ul>
+                      <ul>{s.items.map((it, k) => <li key={k}>{it.k ? <span>{it.k}{t("：", ": ")}</span> : null}{it.v}</li>)}</ul>
                     ) : null}
                   </div>
                 ))}
                 {m.evidence?.length ? (
                   <div className="ai-section">
-                    <b>证据链</b>
-                    <ul>{m.evidence.slice(0, 4).map((ev, k) => <li key={k}>{ev.title}：{ev.detail}</li>)}</ul>
+                    <b>{t("证据链", "Evidence chain")}</b>
+                    <ul>{m.evidence.slice(0, 4).map((ev, k) => <li key={k}>{ev.title}{t("：", ": ")}{ev.detail}</li>)}</ul>
                   </div>
                 ) : null}
                 {m.chart?.bars?.length ? (
                   <div className="ai-chart">
                     <Sparkline values={m.chart.bars.map((b) => Number(b.close || 0))} width={220} height={44} />
-                    <span className="hint">{m.chart.code} · 近 {m.chart.bars.length} 个交易日</span>
+                    <span className="hint">{m.chart.code} · {t("近", "Last")} {m.chart.bars.length} {t("个交易日", "trading days")}</span>
                   </div>
                 ) : null}
                 {m.card?.disclaimer ? <p className="hint">{m.card.disclaimer}</p> : null}
@@ -296,7 +304,7 @@ export default function AiChat() {
             ) : null}
           </div>
         ))}
-        {busy ? <div className="ai-msg ai"><p className="hint">{deep ? "深度模式：取数 → 分析 → 护栏 → 汇总…" : "正在基于收盘数据生成…"}</p></div> : null}
+        {busy ? <div className="ai-msg ai"><p className="hint">{deep ? t("深度模式：取数 → 分析 → 护栏 → 汇总…", "Deep mode: fetch data → analyze → guardrails → summarize…") : t("正在基于收盘数据生成…", "Generating from closing data…")}</p></div> : null}
       </div>
 
       {error ? <ErrorState message={error} onRetry={() => setError(null)} /> : null}
@@ -309,26 +317,26 @@ export default function AiChat() {
           onKeyDown={(e) => {
             if (e.key === "Enter") void send();
           }}
-          placeholder={recording ? "录音中，点麦克风结束…" : "问个股、组合、复盘或条件选股"}
+          placeholder={recording ? t("录音中，点麦克风结束…", "Recording — tap the microphone to stop…") : t("问个股、组合、复盘或条件选股", "Ask about stocks, your portfolio, reviews or screening")}
         />
         <div className="ai-composer-actions">
-          <button className={`round-btn ${recording ? "recording" : ""}`} onClick={() => void toggleRecord()} aria-label={recording ? "停止录音" : "语音输入"}>
+          <button className={`round-btn ${recording ? "recording" : ""}`} onClick={() => void toggleRecord()} aria-label={recording ? t("停止录音", "Stop recording") : t("语音输入", "Voice input")}>
             {recording ? <MicOff size={18} /> : <Mic size={18} />}
           </button>
-          <button className={`chip ${deep ? "on" : ""}`} onClick={() => setDeep((v) => !v)} title="深度思考">
-            深度
+          <button className={`chip ${deep ? "on" : ""}`} onClick={() => setDeep((v) => !v)} title={t("深度思考", "Deep thinking")}>
+            {t("深度", "Deep")}
           </button>
           <button className="btn btn-primary btn-sm" onClick={() => void send()} disabled={busy || !input.trim()}>
-            <Send size={15} /> 发送
+            <Send size={15} /> {t("发送", "Send")}
           </button>
         </div>
       </div>
       {memory.lastStock ? (
-        <p className="hint">会话记忆：上一标的 {memory.lastStock.name || memory.lastStock.code}（可在「我的」清除）</p>
+        <p className="hint">{t("会话记忆：上一标的", "Conversation memory: last asset")} {memory.lastStock.name || memory.lastStock.code}{t("（可在「我的」清除）", " (clear it in Me)")}</p>
       ) : null}
-      <Disclaimer>AI 生成内容仅作研究辅助；不提供买卖点、目标价、收益承诺。</Disclaimer>
+      <Disclaimer>{t("AI 生成内容仅作研究辅助；不提供买卖点、目标价、收益承诺。", "AI-generated content is for research support only; no entry/exit levels, target prices or return promises.")}</Disclaimer>
       <button className="btn btn-ghost btn-sm" onClick={() => nav(-1)} style={{ marginTop: 8 }}>
-        <ArrowLeft size={14} /> 返回
+        <ArrowLeft size={14} /> {t("返回", "Back")}
       </button>
     </div>
   );

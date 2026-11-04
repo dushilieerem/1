@@ -4,14 +4,15 @@ import { ArrowLeft, Sparkles } from "lucide-react";
 import { api } from "../api";
 import { AiCard, type AiCardData } from "../components/AiCard";
 import { Disclaimer, ErrorState, PageHeader, Tag } from "../components";
-import { fmtPct } from "../lib";
+import { displayIndustry, fmtPct } from "../lib";
+import { useLocale } from "../i18n";
 
 type Stock = any;
 
 function cell(stock: Stock, key: string) {
   const q = stock?.quote || {};
   const v = stock?.valuation || {};
-  const t = stock?.technical || {};
+  const tech = stock?.technical || {};
   const r = stock?.report || {};
   const map: Record<string, any> = {
     price: q.price,
@@ -20,8 +21,8 @@ function cell(stock: Stock, key: string) {
     pb: v.pb,
     pePercentile: v.pePercentile,
     dividendYield: q.dividendYield,
-    return20: t.return20,
-    drawdown: t.drawdown,
+    return20: tech.return20,
+    drawdown: tech.drawdown,
     revenue: r.revenue,
     netProfit: r.netProfit,
     grossMargin: r.grossMargin,
@@ -30,22 +31,23 @@ function cell(stock: Stock, key: string) {
   return map[key];
 }
 
-const ROWS: Array<{ key: string; label: string; fmt?: (v: any) => string }> = [
-  { key: "price", label: "收盘价" },
-  { key: "changePct", label: "当日涨跌", fmt: (v) => fmtPct(v) },
-  { key: "pe", label: "PE(TTM)" },
-  { key: "pb", label: "PB" },
-  { key: "pePercentile", label: "PE 分位", fmt: (v) => (v == null ? "—" : `${Number(v).toFixed(0)}%`) },
-  { key: "dividendYield", label: "股息率" },
-  { key: "return20", label: "近 20 日", fmt: (v) => fmtPct(v) },
-  { key: "drawdown", label: "阶段回撤", fmt: (v) => fmtPct(v) },
-  { key: "revenue", label: "营收(亿)" },
-  { key: "netProfit", label: "净利(亿)" },
-  { key: "grossMargin", label: "毛利率", fmt: (v) => (v == null ? "—" : `${Number(v).toFixed(1)}%`) },
-  { key: "roe", label: "ROE", fmt: (v) => (v == null ? "—" : `${Number(v).toFixed(1)}%`) },
+const ROWS: Array<{ key: string; label: { zh: string; en: string }; fmt?: (v: any) => string }> = [
+  { key: "price", label: { zh: "收盘价", en: "Close" } },
+  { key: "changePct", label: { zh: "当日涨跌", en: "Daily change" }, fmt: (v) => fmtPct(v) },
+  { key: "pe", label: { zh: "PE(TTM)", en: "PE (TTM)" } },
+  { key: "pb", label: { zh: "PB", en: "PB" } },
+  { key: "pePercentile", label: { zh: "PE 分位", en: "PE percentile" }, fmt: (v) => (v == null ? "—" : `${Number(v).toFixed(0)}%`) },
+  { key: "dividendYield", label: { zh: "股息率", en: "Dividend yield" } },
+  { key: "return20", label: { zh: "近 20 日", en: "Last 20 days" }, fmt: (v) => fmtPct(v) },
+  { key: "drawdown", label: { zh: "阶段回撤", en: "Drawdown" }, fmt: (v) => fmtPct(v) },
+  { key: "revenue", label: { zh: "营收(亿)", en: "Revenue (100M)" } },
+  { key: "netProfit", label: { zh: "净利(亿)", en: "Net profit (100M)" } },
+  { key: "grossMargin", label: { zh: "毛利率", en: "Gross margin" }, fmt: (v) => (v == null ? "—" : `${Number(v).toFixed(1)}%`) },
+  { key: "roe", label: { zh: "ROE", en: "ROE" }, fmt: (v) => (v == null ? "—" : `${Number(v).toFixed(1)}%`) },
 ];
 
 export default function Compare() {
+  const { t } = useLocale();
   const nav = useNavigate();
   const { a = "", b = "" } = useParams();
   const [sa, setSa] = useState<Stock | null>(null);
@@ -99,26 +101,26 @@ export default function Compare() {
 
   return (
     <div className="page">
-      <PageHeader title="多标的对比" sub="同口径差异，不判断谁更好" back onBack={() => nav(-1)} />
+      <PageHeader title={t("多标的对比", "Stock comparison")} sub={t("同口径差异，不判断谁更好", "Like-for-like differences, without picking a winner")} back onBack={() => nav(-1)} />
       {error ? <ErrorState message={error} onRetry={() => setError(null)} /> : null}
       {!b ? (
         <section className="card">
-          <div className="card-title-row"><h2>选择第二个标的</h2><span className="hint">{a}</span></div>
+          <div className="card-title-row"><h2>{t("选择第二个标的", "Choose a second stock")}</h2><span className="hint">{a}</span></div>
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="输入代码或名称"
+            placeholder={t("输入代码或名称", "Enter a code or name")}
             style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid var(--line)", fontSize: 13 }}
           />
           <div className="post-list">
             {results.map((it: any) => (
               <button key={it.code} type="button" className="post-row" style={{ textAlign: "left" }} onClick={() => nav(`/compare/${a}/${it.code}`)}>
                 <div className="post-row-title">{it.name}</div>
-                <div className="hint">{it.code} · {it.industry || "—"}</div>
+                <div className="hint">{it.code} · {it.industry ? displayIndustry(it.industry) : "—"}</div>
               </button>
             ))}
           </div>
-          {!results.length ? <p className="hint">搜索后选择要对比的标的。</p> : null}
+          {!results.length ? <p className="hint">{t("搜索后选择要对比的标的。", "Search, then pick a stock to compare.")}</p> : null}
         </section>
       ) : null}
       {sa && sb ? (
@@ -126,41 +128,41 @@ export default function Compare() {
           <div className="card compare-head">
             <div>
               <b>{sa.quote?.name || a}</b>
-              <span className="hint">{sa.quote?.code} · {sa.quote?.industry || "—"}</span>
+              <span className="hint">{sa.quote?.code} · {sa.quote?.industry ? displayIndustry(sa.quote.industry) : "—"}</span>
             </div>
             <Tag tone="gray">vs</Tag>
             <div>
               <b>{sb.quote?.name || b}</b>
-              <span className="hint">{sb.quote?.code} · {sb.quote?.industry || "—"}</span>
+              <span className="hint">{sb.quote?.code} · {sb.quote?.industry ? displayIndustry(sb.quote.industry) : "—"}</span>
             </div>
           </div>
           <div className="card">
             <table className="data-table">
               <thead>
-                <tr><th>指标</th><th>{sa.quote?.name}</th><th>{sb.quote?.name}</th></tr>
+                <tr><th>{t("指标", "Metric")}</th><th>{sa.quote?.name}</th><th>{sb.quote?.name}</th></tr>
               </thead>
               <tbody>
                 {ROWS.map((row) => (
                   <tr key={row.key}>
-                    <td>{row.label}</td>
+                    <td>{t(row.label.zh, row.label.en)}</td>
                     {[sa, sb].map((s, i) => {
                       const v = cell(s, row.key);
-                      return <td key={i}>{v == null ? "待补充" : row.fmt ? row.fmt(v) : String(v)}</td>;
+                      return <td key={i}>{v == null ? t("待补充", "Pending") : row.fmt ? row.fmt(v) : String(v)}</td>;
                     })}
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p className="hint">数据缺失时显示“待补充”；对比不构成投资建议。</p>
+            <p className="hint">{t("数据缺失时显示“待补充”；对比不构成投资建议。", "Missing data shows as \"Pending\"; this comparison is not investment advice.")}</p>
           </div>
           <button className="btn btn-primary btn-sm" onClick={() => void runAi()} disabled={busy}>
-            <Sparkles size={15} /> {busy ? "生成中…" : "生成 AI 对比解读"}
+            <Sparkles size={15} /> {busy ? t("生成中…", "Generating…") : t("生成 AI 对比解读", "Generate AI comparison")}
           </button>
           {ai ? <AiCard data={ai} /> : null}
         </>
       ) : null}
-      <Disclaimer>AI 生成内容仅作研究辅助，不构成投资建议。</Disclaimer>
-      <button className="btn btn-ghost btn-sm" onClick={() => nav(-1)}><ArrowLeft size={14} /> 返回</button>
+      <Disclaimer>{t("AI 生成内容仅作研究辅助，不构成投资建议。", "AI-generated content is for research support only and is not investment advice.")}</Disclaimer>
+      <button className="btn btn-ghost btn-sm" onClick={() => nav(-1)}><ArrowLeft size={14} /> {t("返回", "Back")}</button>
     </div>
   );
 }

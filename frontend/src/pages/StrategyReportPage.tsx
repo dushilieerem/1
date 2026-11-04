@@ -935,7 +935,7 @@ export function StrategyReportPage({ navigation }: { navigation?: StrategyReport
 
       <div className="mx-auto max-w-[1400px] px-3 py-4 sm:px-6 sm:py-5">
         <nav className="sticky top-0 z-10 mb-4 flex gap-1 overflow-x-auto border-b border-slate-200 bg-white/95 pb-2 backdrop-blur [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
-          {NAV.map((item) => (
+          {NAV.filter(item => !inQuantWorkspace() || item.id !== "ai").map((item) => (
             <button
               key={item.id}
               type="button"
@@ -952,7 +952,7 @@ export function StrategyReportPage({ navigation }: { navigation?: StrategyReport
         <div className="flex gap-6">
           <aside className="hidden w-44 shrink-0 lg:block">
             <nav className="sticky top-20 space-y-0.5">
-              {NAV.map((item) => (
+              {NAV.filter(item => !inQuantWorkspace() || item.id !== "ai").map((item) => (
                 <button
                   key={item.id}
                   type="button"

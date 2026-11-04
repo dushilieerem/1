@@ -29,6 +29,7 @@ export function prepareAuthHandoff() {
 }
 export function researchPagePath(path: string) {
  if (!inQuantWorkspace()) return path;
+ if (path === "/factor/detect") return "/quant/factor/reports";
  return path.replace(/^\/factor\/detect(?=\/|$)/, "/quant/factor")
   .replace(/^\/strategy\/research(?=\/|$)/, "/quant/strategy")
   .replace(/^\/(factor|strategy)\/library(?=\/|$)/, "/quant/$1/library");

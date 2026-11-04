@@ -78,3 +78,6 @@ deploy/webhook-logs/
 
 # Private server runtime and historical isolated checkouts
 /institutional-workflow/
+
+# Generated internal product review pack (rebuild with scripts/publish_quant_delivery.py)
+/frontend/public/quant-delivery/

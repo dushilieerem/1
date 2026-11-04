@@ -440,7 +440,7 @@ export function FactorDetectReportPage({ navigation }: { navigation?: FactorRepo
     }
   };
 
-  const visibleNav = useMemo(() => visibleNavFor(rec), [rec]);
+  const visibleNav = useMemo(() => visibleNavFor(rec).filter(item => !inQuantWorkspace() || item.id !== "ai"), [rec]);
 
   useEffect(() => {
     if (!visibleNav.some((n) => n.id === tab)) {

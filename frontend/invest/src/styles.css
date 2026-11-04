@@ -303,7 +303,8 @@ input, select, textarea { outline: none; }
 .risk-dot.red { background: var(--red); }
 .risk-dot.green { background: var(--green); }
 .news-list { display: flex; flex-direction: column; }
-.news-item { display: block; padding: 10px 0; border-bottom: 1px solid var(--line2); }
+.news-item { display: block; min-width: 0; padding: 10px 0; border-bottom: 1px solid var(--line2); }
+.news-item b, .news-item p, .news-item span { overflow-wrap: anywhere; word-break: break-word; }
 .news-item:last-child { border-bottom: 0; }
 .news-item b { display: block; font-size: 12.5px; line-height: 1.5; }
 .news-item p { margin-top: 3px; font-size: 11.5px; line-height: 1.55; color: var(--muted); }

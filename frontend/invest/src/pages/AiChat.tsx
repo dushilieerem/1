@@ -168,6 +168,11 @@ export default function AiChat() {
     }
   };
 
+  const clearMemory = () => {
+    setMemory({});
+    saveMemory({});
+  };
+
   const toggleRecord = async () => {
     if (recording) {
       recorder.current?.stop();
@@ -219,29 +224,6 @@ export default function AiChat() {
   return (
     <div className="page ai-chat-page">
       <PageHeader title={t("AI 管家", "AI Assistant")} sub={t("听懂问题、分发到个股/组合/量化能力；只解释数据，不构成投资建议", "Understands your question and routes it to stock, portfolio or quant capabilities; it only explains data and is not investment advice")} back onBack={() => nav(-1)} />
-
-      <div className="ai-template-bar">
-        {templates.slice(0, 6).map((tpl) => (
-          <button key={tpl.id} className="chip" onClick={() => fill(t(tpl.text.zh, tpl.text.en))}>{t(tpl.label.zh, tpl.label.en)}</button>
-        ))}
-        <button className="chip chip-more" onClick={() => setPanel((v) => !v)}>
-          {t("全部", "All")} {panel ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-        </button>
-      </div>
-      {panel ? (
-        <section className="card ai-template-panel">
-          <div className="card-title-row"><h2>{t("快捷功能", "Quick actions")}</h2><span className="hint">{t("顺序会保存到本机", "Order is saved on this device")}</span></div>
-          {templates.map((tpl, i) => (
-            <div key={tpl.id} className="template-row">
-              <button className="template-fill" onClick={() => fill(t(tpl.text.zh, tpl.text.en))}>{t(tpl.label.zh, tpl.label.en)}</button>
-              <div className="template-actions">
-                <button aria-label={t("上移", "Move up")} disabled={i === 0} onClick={() => move(i, -1)}><ChevronUp size={14} /></button>
-                <button aria-label={t("下移", "Move down")} disabled={i === templates.length - 1} onClick={() => move(i, 1)}><ChevronDown size={14} /></button>
-              </div>
-            </div>
-          ))}
-        </section>
-      ) : null}
 
       {!messages.length && !panel ? (
         <section className="card">
@@ -309,6 +291,29 @@ export default function AiChat() {
 
       {error ? <ErrorState message={error} onRetry={() => setError(null)} /> : null}
 
+      <div className="ai-template-bar">
+        {templates.slice(0, 6).map((tpl) => (
+          <button key={tpl.id} className="chip" onClick={() => fill(t(tpl.text.zh, tpl.text.en))}>{t(tpl.label.zh, tpl.label.en)}</button>
+        ))}
+        <button className="chip chip-more" onClick={() => setPanel((v) => !v)}>
+          {t("全部", "All")} {panel ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </button>
+      </div>
+      {panel ? (
+        <section className="card ai-template-panel">
+          <div className="card-title-row"><h2>{t("快捷功能", "Quick actions")}</h2><span className="hint">{t("顺序会保存到本机", "Order is saved on this device")}</span></div>
+          {templates.map((tpl, i) => (
+            <div key={tpl.id} className="template-row">
+              <button className="template-fill" onClick={() => fill(t(tpl.text.zh, tpl.text.en))}>{t(tpl.label.zh, tpl.label.en)}</button>
+              <div className="template-actions">
+                <button aria-label={t("上移", "Move up")} disabled={i === 0} onClick={() => move(i, -1)}><ChevronUp size={14} /></button>
+                <button aria-label={t("下移", "Move down")} disabled={i === templates.length - 1} onClick={() => move(i, 1)}><ChevronDown size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </section>
+      ) : null}
+
       <div className="ai-composer">
         <input
           ref={inputRef}
@@ -326,14 +331,19 @@ export default function AiChat() {
           <button className={`chip ${deep ? "on" : ""}`} onClick={() => setDeep((v) => !v)} title={t("深度思考", "Deep thinking")}>
             {t("深度", "Deep")}
           </button>
+          <button
+            className={`chip ${memory.lastStock ? "on" : ""}`}
+            onClick={clearMemory}
+            disabled={!memory.lastStock}
+            title={memory.lastStock ? t(`清除会话记忆：${memory.lastStock.name || memory.lastStock.code}`, `Clear session memory: ${memory.lastStock.name || memory.lastStock.code}`) : t("暂无会话记忆", "No session memory")}
+          >
+            {t("记忆", "Memory")}
+          </button>
           <button className="btn btn-primary btn-sm" onClick={() => void send()} disabled={busy || !input.trim()}>
             <Send size={15} /> {t("发送", "Send")}
           </button>
         </div>
       </div>
-      {memory.lastStock ? (
-        <p className="hint">{t("会话记忆：上一标的", "Conversation memory: last asset")} {memory.lastStock.name || memory.lastStock.code}{t("（可在「我的」清除）", " (clear it in Me)")}</p>
-      ) : null}
       <Disclaimer>{t("AI 生成内容仅作研究辅助；不提供买卖点、目标价、收益承诺。", "AI-generated content is for research support only; no entry/exit levels, target prices or return promises.")}</Disclaimer>
       <button className="btn btn-ghost btn-sm" onClick={() => nav(-1)} style={{ marginTop: 8 }}>
         <ArrowLeft size={14} /> {t("返回", "Back")}

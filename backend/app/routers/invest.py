@@ -20,6 +20,7 @@ from services.core.public_switches import disabled_modules
 from services.invest import agent_tools
 from services.invest import etf as etf_service
 from services.invest import glossary as glossary_service
+from services.invest import quant
 from services.invest import rules
 from services.invest.db import PGConn, invest_conn
 
@@ -230,6 +231,289 @@ def quant_signals(
 ) -> dict[str, Any]:
     """F27：模拟盘策略信号监控（最新持仓与现金）。"""
     return agent_tools.quant_signals(_uid(user))
+
+
+# ---------------------------------------------------------------------------
+# 量化研究（11.4 功能设计）：因子 / 草稿 / 策略 / 回测 / 模拟盘 / 广场
+# ---------------------------------------------------------------------------
+
+def _quant_call(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except quant.QuantDataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/quant/overview")
+def quant_overview(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return _quant_call(quant.overview, conn, _uid(user))
+
+
+@router.get("/quant/factors")
+def quant_factors(
+    range: str = Query("1m"),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return _quant_call(quant.factor_board, conn, range)
+
+
+@router.get("/quant/factors/{key}")
+def quant_factor_detail(
+    key: str,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.factor_detail, conn, key)
+    if not data:
+        raise HTTPException(status_code=404, detail="因子不存在")
+    return data
+
+
+@router.get("/quant/drafts")
+def quant_drafts(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return _quant_call(quant.list_drafts, conn, _uid(user))
+
+
+@router.post("/quant/drafts")
+def quant_draft_create(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.create_draft, conn, _uid(user), body)
+    conn.commit()
+    return data
+
+
+@router.delete("/quant/drafts/{draft_id}")
+def quant_draft_delete(
+    draft_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    _quant_call(quant.delete_draft, conn, _uid(user), draft_id)
+    conn.commit()
+    return {"ok": True}
+
+
+@router.post("/quant/strategies/parse")
+def quant_strategy_parse(
+    body: dict[str, Any] = Body(...),
+    _user: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    return _quant_call(quant.parse_intent, str(body.get("text") or body.get("query") or ""))
+
+
+@router.get("/quant/strategies")
+def quant_strategies(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return _quant_call(quant.list_strategies, conn, _uid(user))
+
+
+@router.post("/quant/strategies")
+def quant_strategy_create(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.create_strategy, conn, _uid(user), body)
+    conn.commit()
+    return data
+
+
+@router.get("/quant/strategies/{strategy_id}")
+def quant_strategy_detail(
+    strategy_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.strategy_detail, conn, _uid(user), strategy_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="策略不存在")
+    conn.commit()
+    return data
+
+
+@router.delete("/quant/strategies/{strategy_id}")
+def quant_strategy_delete(
+    strategy_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    _quant_call(quant.delete_strategy, conn, _uid(user), strategy_id)
+    conn.commit()
+    return {"ok": True}
+
+
+@router.get("/quant/backtests")
+def quant_backtests(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return _quant_call(quant.list_backtests, conn, _uid(user))
+
+
+@router.post("/quant/backtests")
+def quant_backtest_create(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(
+        quant.run_backtest,
+        conn,
+        body.get("factors"),
+        body.get("universe"),
+        persist=True,
+        user_id=_uid(user),
+        name=body.get("name"),
+        project_id=body.get("project_id"),
+    )
+    conn.commit()
+    return data
+
+
+@router.get("/quant/backtests/{backtest_id}")
+def quant_backtest_detail(
+    backtest_id: str,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.get_backtest, conn, _uid(user), backtest_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="回测记录不存在")
+    return data
+
+
+@router.post("/quant/backtests/{backtest_id}/commentary")
+def quant_backtest_commentary(
+    backtest_id: str,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.get_backtest, conn, _uid(user), backtest_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="回测记录不存在")
+    payload = {
+        "name": data.get("name"), "factors": data.get("factors"), "universe": data.get("universe"),
+        "period": {"start": data.get("start_date"), "end": data.get("end_date")},
+        "metrics": data.get("metrics"), "assumptions": data.get("assumptions"),
+        "holdings": data.get("holdings"),
+        "note": "历史回测结果，非真实收益；AI 不得改算任何数值。",
+    }
+    return _quant_call(quant.ai_commentary, "backtest", payload)
+
+
+@router.get("/quant/papers")
+def quant_papers(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return _quant_call(quant.list_papers, conn, _uid(user))
+
+
+@router.post("/quant/papers")
+def quant_paper_create(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.create_paper, conn, _uid(user), body)
+    conn.commit()
+    return data
+
+
+@router.get("/quant/papers/{paper_id}")
+def quant_paper_detail(
+    paper_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.paper_detail, conn, _uid(user), paper_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="模拟盘不存在")
+    conn.commit()
+    return data
+
+
+@router.post("/quant/papers/{paper_id}/commentary")
+def quant_paper_commentary(
+    paper_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.paper_detail, conn, _uid(user), paper_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="模拟盘不存在")
+    return _quant_call(quant.ai_commentary, "paper", data)
+
+
+@router.delete("/quant/papers/{paper_id}")
+def quant_paper_delete(
+    paper_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    _quant_call(quant.delete_paper, conn, _uid(user), paper_id)
+    conn.commit()
+    return {"ok": True}
+
+
+@router.get("/quant/plaza")
+def quant_plaza(
+    sort: str = Query("followers"),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.list_plaza, conn, _uid(user), sort)
+    conn.commit()
+    return data
+
+
+@router.get("/quant/plaza/{plaza_id}")
+def quant_plaza_detail(
+    plaza_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.get_plaza, conn, _uid(user), plaza_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="策略不存在")
+    conn.commit()
+    return data
+
+
+@router.post("/quant/plaza/{plaza_id}/copy")
+def quant_plaza_copy(
+    plaza_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.copy_plaza, conn, _uid(user), plaza_id)
+    conn.commit()
+    return data
+
+
+@router.post("/quant/plaza/{plaza_id}/follow")
+def quant_plaza_follow(
+    plaza_id: int,
+    body: dict[str, Any] | None = Body(None),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    payload = body or {}
+    data = _quant_call(quant.follow_plaza, conn, _uid(user), plaza_id, bool(payload.get("followed", True)))
+    conn.commit()
+    return data
 
 
 @router.get("/watchlist")

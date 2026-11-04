@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Bell, ChevronRight, Download, FileText, Info, LogOut, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, Bell, ChevronRight, Download, FileText, Info, LogOut, ShieldCheck, Trash2 } from "lucide-react";
 import { api, getToken } from "../api";
 import { useAuth } from "../auth";
 import { Disclaimer, Kv, PageHeader, Sheet, Tag } from "../components";
@@ -23,14 +23,6 @@ export default function Me() {
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [aiMemory, setAiMemory] = useState<any>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("svq_ai_memory") || "{}");
-    } catch {
-      return {};
-    }
-  });
-
   useEffect(() => {
     api("/api/invest/risk-profile").then(setRisk).catch(() => {});
     api(withMarket("/api/invest/meta", market)).then(setMeta).catch(() => {});
@@ -141,35 +133,9 @@ export default function Me() {
         </div>
       </section>
 
-      <section className="card">
-        <div className="card-title-row"><h2>{t("AI 记忆", "AI memory")}</h2><span className="hint">{t("仅存本机", "Stored locally only")}</span></div>
-        <p className="muted small">
-          {aiMemory?.lastStock
-            ? t(`上一标的：${aiMemory.lastStock.name || aiMemory.lastStock.code}（${aiMemory.lastStock.code}）`, `Last symbol: ${aiMemory.lastStock.name || aiMemory.lastStock.code} (${aiMemory.lastStock.code})`)
-            : t("暂无会话记忆；AI 不会保留跨会话推断。", "No session memory; AI does not keep inferences across sessions.")}
-        </p>
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={() => {
-            try {
-              localStorage.removeItem("svq_ai_memory");
-            } catch {
-              /* ignore */
-            }
-            setAiMemory({});
-            toast(t("AI 会话记忆已清除", "AI session memory cleared"));
-          }}
-        >
-          <Trash2 size={14} /> {t("清除 AI 记忆", "Clear AI memory")}
-        </button>
-      </section>
-
       <div className="menu">
         <button className="menu-item" onClick={() => nav("/quant")}>
           <FileText size={18} /><span>{t("量化研究", "Quant research")}</span><ChevronRight size={16} />
-        </button>
-        <button className="menu-item" onClick={() => nav("/paper")}>
-          <FileText size={18} /><span>{t("模拟盘", "Paper trading")}</span><ChevronRight size={16} />
         </button>
         <button className="menu-item" onClick={() => nav("/notifications")}>
           <Bell size={18} /><span>{t("消息通知", "Notifications")}</span><ChevronRight size={16} />

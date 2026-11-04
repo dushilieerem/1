@@ -14,8 +14,8 @@ from typing import Any
 from ai.errors import AiBadOutput
 from ai.router.specs import TaskRequest, TaskSpec, register
 
-PROMPT_VERSION = "inst-v1"
-DIM_PROMPT_VERSION = "inst-dim-v1"
+PROMPT_VERSION = "inst-v2"
+DIM_PROMPT_VERSION = "inst-dim-v2"
 
 
 def _strip(raw: str) -> str:
@@ -106,6 +106,47 @@ def validate_memo(raw: str, request: TaskRequest) -> dict[str, Any]:
     return data
 
 
+DIMENSION_KEYS = {"industry", "business_model", "moat", "financial", "governance", "valuation"}
+
+
+def validate_research_memo(raw: str, request: TaskRequest) -> dict[str, Any]:
+    """CIO 一页纸：保留摘要字段，并校验研究建议与六维评分。"""
+    data = validate_memo(raw, request)
+    decision = str(data.get("decision") or "").strip().lower()
+    data["decision"] = decision if decision in {"proceed", "watch", "avoid"} else "watch"
+
+    scores = []
+    for item in data.get("six_dim_scores") if isinstance(data.get("six_dim_scores"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "").strip()
+        if key not in DIMENSION_KEYS:
+            continue
+        try:
+            score = float(item.get("score"))
+        except (TypeError, ValueError):
+            continue
+        if not 1 <= score <= 5:
+            continue
+        try:
+            confidence = float(item.get("confidence"))
+        except (TypeError, ValueError):
+            confidence = 0.5
+        scores.append(
+            {
+                "key": key,
+                "score": round(score, 1),
+                "confidence": max(0.0, min(1.0, confidence)),
+                "note": str(item.get("note") or "")[:200],
+            }
+        )
+    data["six_dim_scores"] = scores
+    for key in ("conflicts", "key_variables"):
+        value = data.get(key)
+        data[key] = [str(x)[:300] for x in value if str(x).strip()] if isinstance(value, list) else []
+    return data
+
+
 def validate_chat(raw: str, request: TaskRequest) -> dict[str, Any]:
     """单维对话：接受 JSON {"answer": ...} 或纯文本。"""
     text = _strip(raw)
@@ -138,12 +179,12 @@ DEBATE_TASK = register(
 RESEARCH_MEMO_TASK = register(
     TaskSpec(
         task_id="inst.research_memo",
-        description="机构端研究一页纸：结论、证据、反证、待核验",
+        description="机构端 CIO 一页纸：研究建议、六维评分、矛盾、证据与待核验",
         temperature=0.3,
-        max_tokens=3000,
+        max_tokens=3600,
         timeout_sec=120,
         executors=("local",),
-        validator=validate_memo,
+        validator=validate_research_memo,
     )
 )
 
@@ -259,4 +300,5 @@ __all__ = [
     "DIM_PROMPT_VERSION",
     "validate_dimension",
     "validate_memo",
+    "validate_research_memo",
 ]

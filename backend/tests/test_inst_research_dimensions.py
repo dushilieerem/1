@@ -291,6 +291,7 @@ def test_research_memo_has_metrics_and_rule_fallback(fixture, monkeypatch) -> No
     )["memo"]
     assert fallback["engine"] == "rule"
     assert fallback["summary"]
+    assert fallback["decision"] == "watch"
     assert isinstance(fallback["metrics"], list)
 
 

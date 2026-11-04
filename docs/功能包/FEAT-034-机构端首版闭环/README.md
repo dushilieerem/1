@@ -314,3 +314,17 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 | 前端 | 三个入口卡片统一「立项评估」弹窗；卡片显示资料齐备度；不直接跳研究 |
 
 验证：`pytest tests/test_inst_*.py` 54 passed；`e2e-10` 8 passed（新增立项三问弹窗用例）；`tsc` 与 `npm run test:inst` 通过。
+
+### 11.6 六维提示词与 CIO 一页纸（2026-11-04）
+
+按白欣宜产品方案的提示词和 CIO 合成口径升级：
+
+| 项 | 实现 |
+|---|---|
+| 六维提示词 | `inst-dim-v2`：产业/商业模式/护城河/财务/治理/估值补充数据纪律、分析框架、结论先行、区分事实/推断/不知道、每条结论附证伪条件；基准日使用输入 `as_of`，不再硬编码日期 |
+| 一页纸 | `inst.research_memo` 增加 `decision`（proceed/watch/avoid）、`six_dim_scores`、`conflicts`、`key_variables`；提示词加入否决/降级规则与冲突裁决 |
+| 校验 | `validate_research_memo`：decision 非法回落 watch；六维 key 与 1-5 分校验，非法项丢弃 |
+| 规则兜底 | AI 不可用时 `decision=watch`，不伪造评分/矛盾；页面显示“研究建议：观察” |
+| 前端 | 一页纸展示研究建议、六维评分、未解决分歧、关键变量；仍不给目标价或买卖指令 |
+
+验证：`pytest tests/test_inst_*.py` 56 passed；`e2e-10` 8 passed；`tsc`、`npm run test:inst` 通过。

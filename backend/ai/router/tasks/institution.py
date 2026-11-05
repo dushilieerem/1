@@ -95,7 +95,7 @@ def validate_dimension(raw: str, request: TaskRequest) -> dict[str, Any]:
     data = _load(raw)
     summary = str(data.get("summary") or "").strip()
     if not summary:
-        summary = _first_paragraph(data.get("analysis_md")) or str(data.get("one_line") or "").strip()
+        summary = str(data.get("one_line") or "").strip() or _first_paragraph(data.get("analysis_md"))
     if not summary:
         raise AiBadOutput("六维 Agent 缺少 summary/one_line/analysis_md")
     data["summary"] = clip_brief(summary)
@@ -268,8 +268,19 @@ def _confidence_number(value: Any) -> float:
 def validate_research_memo(raw: str, request: TaskRequest) -> dict[str, Any]:
     """CIO 一页纸：兼容 A10 契约（dimension_scores/price_band/memo_md）与旧字段。"""
     data = validate_memo(raw, request)
+    sentences = data.get("three_sentences")
+    if isinstance(sentences, dict):
+        combined = "；".join(
+            part
+            for part in (
+                str(sentences.get("decision") or "").strip(),
+                str(sentences.get("thesis") or "").strip(),
+            )
+            if part
+        )
+        if combined:
+            data["summary"] = clip_brief(combined)
     if not data.get("summary"):
-        sentences = data.get("three_sentences")
         if isinstance(sentences, dict):
             data["summary"] = clip_brief(sentences.get("decision") or sentences.get("thesis"))
     if not data.get("summary"):
@@ -434,8 +445,8 @@ DEBATE_TASK = register(
         task_id="inst.debate",
         description="机构端投资辩论：正/反/主持三段论证，必须引用 evidence id",
         temperature=0.3,
-        max_tokens=4000,
-        timeout_sec=150,
+        max_tokens=16000,
+        timeout_sec=240,
         executors=("local",),
         validator=validate_debate,
     )
@@ -446,8 +457,8 @@ INDUSTRY_TASK = register(
         task_id="inst.industry",
         description="机构端独立行业分析：空间、周期、产业链、竞争格局与政策",
         temperature=0.2,
-        max_tokens=3000,
-        timeout_sec=120,
+        max_tokens=16000,
+        timeout_sec=240,
         executors=("local",),
         response_format={"type": "json_object"},
         validator=validate_dimension,
@@ -459,8 +470,8 @@ RESEARCH_MEMO_TASK = register(
         task_id="inst.research_memo",
         description="机构端 CIO 一页纸：研究建议、六维评分、矛盾、证据与待核验",
         temperature=0.3,
-        max_tokens=3600,
-        timeout_sec=120,
+        max_tokens=16000,
+        timeout_sec=240,
         executors=("local",),
         validator=validate_research_memo,
     )
@@ -471,8 +482,8 @@ DIMENSION_CHAT_TASK = register(
         task_id="inst.dim.chat",
         description="机构端单维对话：围绕一个研究维度与证据回答追问",
         temperature=0.3,
-        max_tokens=1500,
-        timeout_sec=90,
+        max_tokens=4000,
+        timeout_sec=120,
         executors=("local",),
         validator=validate_chat,
     )
@@ -483,8 +494,8 @@ RISK_REVIEW_TASK = register(
         task_id="inst.risk_review",
         description="机构端独立风控复核意见（只建议，不改变状态）",
         temperature=0.2,
-        max_tokens=2500,
-        timeout_sec=120,
+        max_tokens=8000,
+        timeout_sec=180,
         executors=("local",),
         validator=validate_memo,
     )
@@ -495,8 +506,8 @@ CHAIRMAN_MEMO_TASK = register(
         task_id="inst.chairman_memo",
         description="机构端 Chairman 一页式决策摘要（不含目标价与买卖指令）",
         temperature=0.2,
-        max_tokens=3000,
-        timeout_sec=120,
+        max_tokens=8000,
+        timeout_sec=180,
         executors=("local",),
         validator=validate_memo,
     )
@@ -507,8 +518,8 @@ FINANCIAL_ROLE_TASK = register(
         task_id="inst.role.financial",
         description="机构端 AI 岗位：财务与取证（三表勾稽、ROIC/FCF、应收存货与会计风险）",
         temperature=0.2,
-        max_tokens=3000,
-        timeout_sec=120,
+        max_tokens=12000,
+        timeout_sec=240,
         executors=("local",),
         validator=validate_memo,
     )
@@ -519,8 +530,8 @@ GOVERNANCE_ROLE_TASK = register(
         task_id="inst.role.governance",
         description="机构端 AI 岗位：治理/估值/反证（资本配置、DCF 假设、可检验反证条件）",
         temperature=0.2,
-        max_tokens=3000,
-        timeout_sec=120,
+        max_tokens=12000,
+        timeout_sec=240,
         executors=("local",),
         validator=validate_memo,
     )
@@ -531,8 +542,8 @@ POST_INVESTMENT_ROLE_TASK = register(
         task_id="inst.role.post_investment",
         description="机构端 AI 岗位：投后/退出/复盘（论点台账、经营预警、退出备忘录与归因）",
         temperature=0.2,
-        max_tokens=3000,
-        timeout_sec=120,
+        max_tokens=12000,
+        timeout_sec=240,
         executors=("local",),
         validator=validate_memo,
     )
@@ -555,8 +566,8 @@ for _key, (_task_id, _desc) in DIMENSION_TASK_SPECS.items():
             task_id=_task_id,
             description=_desc,
             temperature=0.2,
-            max_tokens=4096,
-            timeout_sec=120,
+            max_tokens=12000,
+            timeout_sec=240,
             executors=("local",),
             response_format={"type": "json_object"},
             validator=validate_dimension,

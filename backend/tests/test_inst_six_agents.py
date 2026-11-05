@@ -141,7 +141,7 @@ def test_validate_dimension_accepts_a04_six_dim_contract() -> None:
         ensure_ascii=False,
     )
     data = validate_dimension(raw, None)  # type: ignore[arg-type]
-    assert data["summary"].startswith("① 结论")
+    assert data["summary"].startswith("份额有望从 25% 升至 35%")
     assert data["checks"][0].startswith("份额：25%")
     assert data["counter"][0].startswith("份额跌破 20%")
     assert data["open_questions"][0].startswith("渠道库存")

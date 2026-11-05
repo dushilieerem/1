@@ -67,6 +67,8 @@ type Memo = {
   three_sentences?: { thesis?: string; max_risk?: string; decision?: string };
   price_band?: number[];
   base_value?: number;
+  stale?: boolean;
+  generated_at?: string;
   metrics?: Array<{ label: string; value: string; note?: string }>;
   engine?: string;
 };
@@ -294,6 +296,29 @@ export function InstResearchPage() {
     }
   };
 
+  // 进入页面先读已持久化的一页纸；只有写角色且确实没有时，才触发生成。
+  const loadMemoOnEntry = async () => {
+    setMemoBusy(true);
+    try {
+      const cached = await instApi<{ memo: Memo | null; missing?: boolean }>(
+        `/cases/${caseId}/ai/memo`,
+      );
+      if (cached.memo) {
+        setMemo(cached.memo);
+        return;
+      }
+      if (canWrite) {
+        const generated = await instApi<{ memo: Memo }>(`/cases/${caseId}/ai/memo`, {
+          method: "POST",
+          body: { refresh: false },
+        });
+        setMemo(generated.memo);
+      }
+    } finally {
+      setMemoBusy(false);
+    }
+  };
+
   const autopilot = async () => {
     setBusy("auto");
     setError(null);
@@ -316,10 +341,10 @@ export function InstResearchPage() {
   }, [caseId, detail, version, canWrite]);
 
   useEffect(() => {
-    if (!caseId || !detail || !version || memo || memoRan.current || !canWrite) return;
+    if (!caseId || !detail || !version || memo || memoRan.current) return;
     memoRan.current = true;
-    void loadMemo().catch(() => {
-      /* 自动摘要失败时保留手动按钮 */
+    void loadMemoOnEntry().catch(() => {
+      /* 自动加载/生成失败时保留手动按钮 */
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId, detail, version, memo, canWrite]);
@@ -1040,6 +1065,14 @@ export function InstResearchPage() {
                       : memo.decision === "avoid"
                         ? t("研究建议：回避", "Research: avoid")
                         : t("研究建议：观察", "Research: watch")}
+                  </Badge>
+                ) : null}
+                {memo.engine === "rule" ? (
+                  <Badge tone="slate">{t("规则兜底", "Rule fallback")}</Badge>
+                ) : null}
+                {memo.stale ? (
+                  <Badge tone="amber" title={t("提示词或输入已变化，当前展示上次生成的结论；可点「重新生成一页纸」。", "Prompt or inputs changed; showing the last persisted memo. Regenerate to update.")}>
+                    {t("已持久化 · 可重新生成", "Persisted · regenerate to update")}
                   </Badge>
                 ) : null}
                 <Badge tone="gold">{version?.conclusion || t("待补充研究", "Research TBD")}</Badge>

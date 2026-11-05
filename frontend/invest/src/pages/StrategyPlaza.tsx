@@ -25,7 +25,7 @@ const SORTS: Array<{ key: string; zh: string; en: string }> = [
 
 function pct(value: any, t: Translate): string {
   const n = Number(value);
-  return Number.isFinite(n) ? `${n.toFixed(1)}%` : t("待补充", "N/A");
+  return Number.isFinite(n) ? `${n.toFixed(1)}%` : "—";
 }
 
 function curveValues(item: PlazaItem): number[] {

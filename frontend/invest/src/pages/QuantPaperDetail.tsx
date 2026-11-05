@@ -115,7 +115,7 @@ export default function QuantPaperDetail() {
                 {data.positions.map((p) => (
                   <button className="quant-hold-row" key={p.code} onClick={() => nav(`/stock/${p.code}`)}>
                     <div><b>{p.name}</b><span>{p.code}</span></div>
-                    <div><b>{p.weight.toFixed(2)}%</b><span>{p.market_value === null ? t("市值待补充", "Value pending") : p.market_value.toLocaleString()}</span></div>
+                    <div><b>{p.weight.toFixed(2)}%</b><span>{p.market_value === null ? "—" : p.market_value.toLocaleString()}</span></div>
                   </button>
                 ))}
               </div>

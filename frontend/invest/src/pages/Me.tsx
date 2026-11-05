@@ -106,8 +106,8 @@ export default function Me() {
         {quality && !quality.ok ? (
           <p className="hint">
             {t(
-              "数据质量检查有异常：当页缺失字段不会填 0，会显示 — 或「待补充」；具体修复由数据平台跟进。",
-              "The data quality check found issues. Missing fields are not filled with 0; they show — or “pending”. The data platform owns the fix.",
+              "数据质量检查有异常：当页缺失字段不会填 0，会显示 —；具体修复由数据平台跟进。",
+              "The data quality check found issues. Missing fields are not filled with 0; they show —. The data platform owns the fix.",
             )}
           </p>
         ) : null}

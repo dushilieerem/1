@@ -569,7 +569,7 @@ export default function Stock() {
               <Kv k={t("净利同比", "Profit YoY")} v={fmtPct(data.report.profitYoY, 1)} />
               <Kv k={t("毛利率", "Gross margin")} v={`${data.report.grossMargin?.toFixed?.(2)}%`} />
               <Kv k="ROE" v={`${data.report.roe?.toFixed?.(1)}%`} />
-              <Kv k={t("经营现金流", "Operating cash flow")} v={data.report.ocf != null ? t(`${data.report.ocf.toFixed(1)} 亿元`, `CNY ${(data.report.ocf / 100).toFixed(2)}B`) : t("数据暂缺", "Data pending")} />
+              <Kv k={t("经营现金流", "Operating cash flow")} v={data.report.ocf != null ? t(`${data.report.ocf.toFixed(1)} 亿元`, `CNY ${(data.report.ocf / 100).toFixed(2)}B`) : "—"} />
             </div>
             <div className="hint">{t("结构化财务数据；要闻、公告、研报在「个股资讯」里，两者不重复。", "Structured financials; headlines, filings and research live under Stock news and are not duplicated here.")}</div>
           </>

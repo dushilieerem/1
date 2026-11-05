@@ -123,8 +123,8 @@ export default function EtfDetail() {
                   ? t("这是现金管理工具，不适用股票穿透；ETF 日线仅到 2026-10-23，不能当实时净值。", "This is a cash-management tool and is not subject to equity look-through; ETF daily data ends 2026-10-23 and is not a real-time NAV.")
                   : profile.tracked_index
                     ? t(
-                        "跟踪指数已登记，但成分权重文件缺失或读取失败；显示待补充，不按 0 处理。",
-                        "The tracked index is registered, but the weight file is missing or unreadable; shown as pending, not zero.",
+                        "跟踪指数已登记，但成分数据暂不可用；不按 0 处理。",
+                        "The tracked index is registered, but constituent data is unavailable; not treated as zero.",
                       )
                     : t(
                         "该 ETF 尚未登记跟踪指数，需要补充官方持仓或映射。",

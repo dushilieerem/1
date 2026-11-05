@@ -51,7 +51,7 @@ def recipe(payload: dict) -> dict:
         if item.get("direction", "positive") not in ("positive", "negative"):
             raise ValueError("因子方向只能是 positive/negative")
         entry = str(item["factor"]).strip()
-        row = {"factor": entry, "direction": item.get("direction", "positive")}
+        row = {"factor": entry, "direction": item.get("direction", "positive"), "library": str(item.get("library") or "主因子库")}
         if item.get("code"):
             row["entry"] = str(item.get("entry") or entry)
             row["code"] = validated_factor_code(str(item["code"]), row["entry"])

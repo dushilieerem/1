@@ -35,9 +35,9 @@ def summarize(org_id: int) -> list[dict[str, Any]]:
             row = dict(company)
             version = conn.execute(
                 "SELECT version_no, status, six_dim, evidence_ids FROM inst_research_version "
-                "WHERE case_id IN (SELECT id FROM inst_research_case WHERE company_id=%s) "
+                "WHERE case_id IN (SELECT id FROM inst_research_case WHERE company_id=%s AND org_id=%s) "
                 "ORDER BY version_no DESC LIMIT 1",
-                (row["id"],),
+                (row["id"], org_id),
             ).fetchone()
             dims = (version["six_dim"] if version else []) or []
             out.append(

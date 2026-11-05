@@ -231,3 +231,24 @@ class TakeoverTest(unittest.TestCase):
              patch.object(ledger, 'get_conn', return_value=connection):
             with self.assertRaises(KeyError):
                 ledger.takeover_branch(1, 2, 't', 'foreign')
+
+
+class LockedViewTest(unittest.TestCase):
+    def test_topic_view_drift_blocks_new_compute(self):
+        from unittest.mock import MagicMock, patch
+        from services.quant_factor import service
+        cursor = MagicMock(); cursor.execute.return_value = cursor; cursor.fetchone.return_value = {'view_id': 'old'}
+        connection = MagicMock(); connection.__enter__.return_value = cursor
+        with patch.object(service, 'get_conn', return_value=connection), \
+             patch('services.workflow_workspace.platform_data.published_view', return_value={'view_id': 'new'}):
+            msg = service._locked_view_error(1, 2, 'p')
+        self.assertIn('旧台账接到新视图', msg)
+
+    def test_same_view_is_allowed(self):
+        from unittest.mock import MagicMock, patch
+        from services.quant_factor import service
+        cursor = MagicMock(); cursor.execute.return_value = cursor; cursor.fetchone.return_value = {'view_id': 'v'}
+        connection = MagicMock(); connection.__enter__.return_value = cursor
+        with patch.object(service, 'get_conn', return_value=connection), \
+             patch('services.workflow_workspace.platform_data.published_view', return_value={'view_id': 'v'}):
+            self.assertIsNone(service._locked_view_error(1, 2, 'p'))

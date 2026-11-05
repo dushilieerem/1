@@ -48,7 +48,7 @@ def view_snapshot() -> dict:
     return {
         "view_id": view["view_id"],
         "view_manifest_sha256": view.get("manifest_sha256") or "",
-        "contract_revision": str(view.get("contract_version") or ""),
+        "contract_revision": str(view.get("contract_revision") or view.get("contract_version") or ""),
         "as_of": max(dates) if dates else None,
         "release_ids": release_ids,
         "datasets": datasets,

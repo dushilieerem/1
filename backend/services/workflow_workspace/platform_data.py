@@ -4,6 +4,15 @@ import json
 import re
 from services.data.platform_view import materialized_view_root
 
+def _contract_revision(root) -> str:
+    """The data contract's revision (not the manifest schema version)."""
+    path = root / "data_contract.yaml"
+    if not path.is_file():
+        return ""
+    match = re.search(r"^revision:\s*'?([^'\n]+)'?\s*$", path.read_text(encoding="utf-8"), re.M)
+    return match.group(1).strip() if match else ""
+
+
 def published_view():
     root = materialized_view_root()
     if root is None:
@@ -29,6 +38,7 @@ def published_view():
     return {
         "view_id": view_id, "manifest_sha256": hashlib.sha256(raw).hexdigest(),
         "contract_version": manifest.get("contract_version"),
+        "contract_revision": _contract_revision(root),
         "generated_at": manifest.get("generated_at"), "datasets": datasets,
         "research_ready": False,
         "integration_status": "metadata_only",

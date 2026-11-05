@@ -28,7 +28,21 @@ def current(uid,org,cid):
     except (KeyError,WorkflowError): row['stale']=True
     return public(row)
 
+def _locked_view_error(uid,org,project_id):
+    """A topic locks its view; never silently compute a locked topic on a newer view."""
+    with get_conn() as c:
+        topic=c.execute("SELECT view_id FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s",(uid,org,project_id)).fetchone()
+    if not topic:return None
+    from services.workflow_workspace.platform_data import published_view
+    current=published_view()['view_id']
+    if topic['view_id']!=current:
+        return f"课题锁定数据视图 {topic['view_id']}，当前发布视图为 {current}；请新建计划版本/课题，不能把旧台账接到新视图"
+    return None
+
+
 def create(uid,org,project_id,expected_snapshot_hash=None,reference=None):
+    locked=_locked_view_error(uid,org,project_id)
+    if locked:raise WorkflowError(locked)
     with get_conn() as c:
         # Serialize creation per actor: budget and duplicate checks must be atomic.
         c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9106,uid))

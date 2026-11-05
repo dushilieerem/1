@@ -64,7 +64,7 @@ def validation_seen(candidates,plan):
 def start(uid,org,pid,max_rounds):
  if isinstance(max_rounds,bool) or not isinstance(max_rounds,int) or not 1<=max_rounds<=20:raise WorkflowError('自动迭代轮数须为1—20的整数。')
  with get_conn() as c:
-  c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9109,0))
+  c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9109,uid))
   old=c.execute("SELECT id FROM quant_factor_iterations WHERE user_id=%s AND org_id=%s AND project_id=%s AND status IN ('queued','running')",(uid,org,pid)).fetchone()
   if old:jid=old['id']
   else:
@@ -77,8 +77,9 @@ def start(uid,org,pid,max_rounds):
    candidates=[dict(r) for r in c.execute('SELECT snapshot,evidence,status FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s',(uid,org,pid)).fetchall()]
    if any(x['status'].endswith('_running') for x in candidates):raise WorkflowError('已有检验正在执行，请等计算结束再启动自动迭代。')
    if validation_seen(candidates,snap['plan']):raise WorkflowError('该样本外区间已被本研究查看过。请先人工复盘并登记新的未使用验证区间，不能继续针对已看过的验证集调参。')
-   if len(candidates)>=snap['plan']['maxTrials']:raise WorkflowError('已达到研究总尝试预算，请先人工复盘。')
-   if max_rounds>snap['plan']['maxTrials']:raise WorkflowError('自动迭代轮数不能超过预登记的研究尝试预算。')
+   remaining=snap['plan']['maxTrials']-len(candidates)
+   if remaining<=0:raise WorkflowError('已达到研究总尝试预算，请先人工复盘。')
+   if max_rounds>remaining:raise WorkflowError(f'剩余研究尝试预算 {remaining} 次，本次请求 {max_rounds} 轮；请减少轮数或先复盘修订计划。')
    pending=c.execute("SELECT COUNT(*) AS n FROM quant_factor_iterations WHERE user_id=%s AND org_id=%s AND status IN ('queued','running')",(uid,org)).fetchone()['n']
    if pending>=1:raise WorkflowError('自动研究队列繁忙，请稍后再试。')
    jid=str(uuid.uuid4())

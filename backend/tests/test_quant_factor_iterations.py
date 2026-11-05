@@ -95,8 +95,26 @@ class TenantScopeTests(unittest.TestCase):
   c.execute.side_effect=execute;c.fetchone.side_effect=lambda:c.next_row;c.fetchall.return_value=[]
   with patch.object(it,'get_conn',return_value=conn),patch.object(it,'_row_project',return_value={}),patch.object(it,'snapshot',return_value={'plan':{'researchPurpose':'replication','maxTrials':4}}),patch.object(it.POOL,'submit'),patch.object(it,'read',return_value={'id':'i'}):
    it.start(1,2,'p',2)
+  self.assertEqual(c.execute.call_args_list[0].args[1],(9109,1))
   pending=[x for x in c.execute.call_args_list if 'COUNT(*) AS n' in x.args[0] and 'quant_factor_iterations' in x.args[0]]
   self.assertTrue(pending);self.assertEqual(pending[-1].args[1],(1,2))
+
+ def test_budget_rejects_existing_plus_rounds_before_writing(self):
+  c=MagicMock();conn=MagicMock();conn.__enter__.return_value=c
+  def execute(sql,params=None):
+   if 'COUNT(*) AS n' in sql:c.next_row={'n':0}
+   elif 'FROM quant_factor_iterations' in sql and 'status IN' in sql:c.next_row=None
+   elif 'FROM detect_projects' in sql:c.next_row={'id':'p'}
+   elif 'quant_factor_agent_jobs' in sql:c.next_row=None
+   else:c.next_row=None
+   return c
+  c.execute.side_effect=execute;c.fetchone.side_effect=lambda:c.next_row
+  c.fetchall.return_value=[{'status':'development_failed','evidence':{}}]*3
+  with patch.object(it,'get_conn',return_value=conn),patch.object(it,'_row_project',return_value={}),patch.object(it,'snapshot',return_value={'plan':{'researchPurpose':'replication','maxTrials':4}}),patch.object(it.POOL,'submit') as pool:
+   with self.assertRaisesRegex(WorkflowError,'剩余研究尝试预算 1 次'):
+    it.start(1,2,'p',2)
+  pool.assert_not_called()
+  self.assertFalse(any('INSERT INTO quant_factor_iterations' in x.args[0] for x in c.execute.call_args_list))
 
  def test_checkpoint_heartbeat_is_tenant_scoped(self):
   c=MagicMock();conn=MagicMock();conn.__enter__.return_value=c

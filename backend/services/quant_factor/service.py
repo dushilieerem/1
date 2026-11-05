@@ -20,10 +20,15 @@ def _dispatch(uid,org,cid,phase=None):
     mode=(env('QUANT_FACTOR_JOB_MODE','inline') or 'inline').strip().lower()
     if mode=='queue':
         from . import jobs
-        if phase:
-            jobs.enqueue_run(uid,org,cid,phase)
-        else:
-            jobs.enqueue_retry(uid,org,cid)
+        try:
+            if phase:
+                jobs.enqueue_run(uid,org,cid,phase)
+            else:
+                jobs.enqueue_retry(uid,org,cid)
+        except Exception as exc:
+            status=(phase+'_error') if phase else 'development_error'
+            store.update(uid,org,cid,status,event('queue_error',message='长任务入队失败，未自动重试'))
+            raise WorkflowError('长任务入队失败：'+str(exc)[:300]) from exc
         return
     if phase:
         POOL.submit(run,uid,org,cid,phase)

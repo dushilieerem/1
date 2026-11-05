@@ -38,3 +38,16 @@ def test_dispatch_inline_mode(monkeypatch):
     with patch.object(service.POOL, "submit") as submit:
         service._dispatch(1, 2, "c", "development")
     submit.assert_called_once_with(service.run, 1, 2, "c", "development")
+
+def test_dispatch_queue_failure_marks_candidate(monkeypatch):
+    monkeypatch.setenv("QUANT_FACTOR_JOB_MODE", "queue")
+    with patch.object(jobs, "enqueue_run", side_effect=RuntimeError("db down")), \
+         patch.object(service.store, "update") as update:
+        try:
+            service._dispatch(1, 2, "c", "development")
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected dispatch failure")
+    update.assert_called_once()
+    assert update.call_args.args[0:4] == (1, 2, "c", "development_error")

@@ -54,6 +54,7 @@ export function QuantFactorHomePage(){
   const d=await r.json();if(!r.ok){setError(typeof d.detail==='string'?d.detail:'课题状态更新失败');return;}
   setTopics(list=>list.map(t=>t.id===d.id?{...t,status:d.status}:t));
  }
+ async function resumeF0(){if(!f0)return;const r=await researchFetch('/api/inst/quant/factor-workflow/f0-runs/'+f0.id+'/resume',{method:'POST'});const d=await r.json();if(!r.ok){setError(typeof d.detail==='string'?d.detail:'F0 继续失败');return;}setF0(d);}
  async function takeOver(){
   if(!ledger||!selectedBranch)return;
   const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(ledger.topic.id)+'/branches/'+encodeURIComponent(selectedBranch.id)+'/takeover',{method:'POST'});
@@ -103,7 +104,7 @@ export function QuantFactorHomePage(){
    <div className="card-head">
     <div><div className="row-flex"><span className="hid">{selectedBranch.id.slice(0,8)}</span><h2>{selectedBranch.source==='manual'?'人工分支':'Agent 分支'}</h2></div>
      <p className="fine">假设 v{selectedBranch.hypothesis_version} · 实现 v{selectedBranch.implementation_version} · {selectedBranch.status}</p></div>
-    <div className="actions"><button className="btn small primary" onClick={()=>void takeOver()}>从此分支接手</button><button className="btn small" onClick={()=>void handBackF0()} disabled={f0&&['queued','running'].includes(f0.status)}>交回 Agent（F0 走一步）</button><Link className="btn small" to={'/quant/factor/workflow/'+(topic?.project_id||'')+'/F4'}>打开人工工作台</Link>{f0&&<span className="fine">F0：{f0.status}{f0.decision?.candidate_status?' · '+f0.decision.candidate_status:''}{f0.stop_reason?' · '+f0.stop_reason:''}</span>}</div>
+    <div className="actions"><button className="btn small primary" onClick={()=>void takeOver()}>从此分支接手</button><button className="btn small" onClick={()=>void handBackF0()} disabled={f0&&['queued','running'].includes(f0.status)}>交回 Agent（F0）</button>{f0&&f0.stop_reason?.includes('中断')&&<button className="btn small" onClick={()=>void resumeF0()}>继续 F0</button>}<Link className="btn small" to={'/quant/factor/workflow/'+(topic?.project_id||'')+'/F4'}>打开人工工作台</Link>{f0&&<span className="fine">F0：{f0.status}{f0.decision?.candidate_status?' · '+f0.decision.candidate_status:''}{f0.stop_reason?' · '+f0.stop_reason:''}</span>}</div>
    </div>
    <div className="card-body">
     <div className="kv">

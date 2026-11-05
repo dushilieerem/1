@@ -10,10 +10,15 @@ from __future__ import annotations
 import time
 
 
-def run_steps(*, decide, execute, max_steps: int = 3, stop_when=None, on_step=None):
+def run_steps(*, decide, execute, max_steps: int = 3, stop_when=None, on_step=None, before_step=None):
     steps = []
     stop_reason = ""
     for step in range(1, max_steps + 1):
+        if before_step:
+            blocked = before_step(step)
+            if blocked:
+                stop_reason = blocked
+                break
         decision, usage = decide(step)
         result = execute(decision, step)
         entry = {"step": step, "at": time.strftime("%Y-%m-%dT%H:%M:%S"),

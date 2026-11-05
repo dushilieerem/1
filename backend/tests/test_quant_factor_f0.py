@@ -91,8 +91,10 @@ class DecisionValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(WorkflowError, '新假设'):
             self.decide({'action': 'revise', 'rationale': 'E1 NW t -0.76，需修订实现', 'next_hypothesis': ''})
 
-    def test_request_seal_is_not_executed_by_f0(self):
+    def test_request_seal_without_passed_candidate_stops(self):
         decision = f0_agent.Decision(action='request_seal', rationale='E4 研发已通过，应由 F5 封存')
-        result = f0_agent.execute(1, 2, 'run', TOPIC, decision, 1)
+        with patch.object(f0_agent, 'get_conn') as gc:
+            gc.return_value.__enter__.return_value.execute.return_value.fetchone.return_value = None
+            result = f0_agent.execute(1, 2, 'run', TOPIC, decision, 1)
         self.assertEqual(result['status'], 'stopped')
-        self.assertIn('F5', result['reason'])
+        self.assertIn('没有研发达标', result['reason'])

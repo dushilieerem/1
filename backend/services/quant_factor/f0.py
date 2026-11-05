@@ -99,11 +99,21 @@ def run(uid, org, run_id):
                 c.execute("UPDATE quant_factor_f0_runs SET rounds=%s,decision=%s::jsonb,updated_at=NOW() WHERE id=%s AND status='running'",
                           (step, service.store.encode({"steps": current}), run_id))
 
+        k0 = ledger.current_k(ledger._trials(uid, org, topic["id"]), topic["primary_holding_period"])
+        max_steps = min(12, max(1, int(topic["max_trials"]) - k0 + 2))
+
+        def before_step(step):
+            current = _topic(uid, org, topic["id"])
+            if current["status"] != "active":
+                return "课题已暂停/归档，F0 停止"
+            return ""
+
         steps, stop_reason = decision_engine.run_steps(
             decide=lambda step: f0_agent.decide(uid, org, topic, run_id),
             execute=lambda decision, step: f0_agent.execute(uid, org, run_id, topic, decision, step),
-            max_steps=3,
-            stop_when=lambda decision, result: ("研发已通过，交人工复核/封存" if result.get("candidate_status") == "development_passed" else ""),
+            max_steps=max_steps,
+            before_step=before_step,
+            stop_when=lambda decision, result: ("封存完成，交人工审查" if result.get("action") == "request_seal" else ""),
             on_step=on_step)
         with get_conn() as c:
             c.execute("""UPDATE quant_factor_f0_runs
@@ -115,6 +125,27 @@ def run(uid, org, run_id):
             c.execute(
                 "UPDATE quant_factor_f0_runs SET status='stopped',stop_reason=%s,updated_at=NOW() WHERE id=%s AND status IN ('queued','running')",
                 (str(exc)[:1000], run_id))
+
+
+def mark_interrupted():
+    """Called on BFF startup: no in-process worker survived, so running runs are interrupted."""
+    with get_conn() as c:
+        return c.execute(
+            "UPDATE quant_factor_f0_runs SET status='stopped',stop_reason='服务重启，任务已中断；可一键继续',updated_at=NOW() WHERE status IN ('queued','running')").rowcount
+
+
+def resume(uid, org, run_id):
+    with get_conn() as c:
+        row = c.execute(
+            "SELECT * FROM quant_factor_f0_runs WHERE id=%s AND user_id=%s AND org_id=%s",
+            (run_id, uid, org)).fetchone()
+        if not row:
+            raise KeyError(run_id)
+        if row["status"] not in ("stopped", "failed"):
+            raise service.WorkflowError("只有已中断/停止的任务可以继续")
+        c.execute("UPDATE quant_factor_f0_runs SET status='queued',stop_reason='',updated_at=NOW() WHERE id=%s", (run_id,))
+    POOL.submit(run, uid, org, run_id)
+    return read(uid, org, run_id)
 
 
 def latest(uid, org, topic_id):
@@ -135,4 +166,4 @@ def read(uid, org, run_id):
     return _public(row)
 
 
-__all__ = ["latest", "read", "run", "start"]
+__all__ = ["latest", "mark_interrupted", "read", "resume", "run", "start"]

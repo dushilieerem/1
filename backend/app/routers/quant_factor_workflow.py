@@ -312,6 +312,11 @@ def f0_latest(tid:str,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import f0
     return invoke(f0.latest,*identity(ctx),tid)
 
+@router.post('/f0-runs/{rid}/resume',status_code=202)
+def f0_resume(rid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import f0
+    return invoke_ledger(f0.resume,*identity(ctx),rid)
+
 @router.get('/f0-runs/{rid}')
 def f0_read(rid:str,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import f0

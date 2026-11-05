@@ -18,7 +18,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from services.core.db import get_conn
 from services.factor.detect_store import get_project, upsert_project
 
-from . import agent_jobs, assistant, ledger, service
+from . import agent_jobs, assistant, ledger, review, sealed, service
+from .novelty_policy import handoff_allowed
 from .metrics import threshold
 
 TASK = "quant.factor.f0_decider"
@@ -81,7 +82,7 @@ def decide(uid, org, topic, run_id):
         "rationale 必须引用具体 trial 编号和指标（如 E2 的 NW t、K、t*(K)），不能空泛。"
         "revise/pivot 必须给出具体 next_hypothesis 与 change_scope；没有实质修订就 stop。"
         "不得改变门槛、数据范围、预算，不得声称 novelty 可用，不得批准入库或封存。"
-        "request_seal 仅在研发已通过时使用；否则 stop。预算为 0 时必须 stop。\n最近一次研发检验失败且预算允许时，优先选择 revise 或 pivot，并给出实质性的新假设；不得只重跑同一实现。"
+        "request_seal 仅在最近研发已通过、且（发现类）新颖性已通过时使用；否则 stop。预算为 0 时必须 stop。\n最近一次研发检验失败且预算允许时，优先选择 revise 或 pivot，并给出实质性的新假设；不得只重跑同一实现。"
     )
     try:
         get_task(TASK)
@@ -177,7 +178,29 @@ def execute(uid, org, run_id, topic, decision, step):
     if ctx["remaining"] <= 0 and action != "request_seal":
         return {"status": "stopped", "reason": "预算用尽（按 K 计）"}
     if action == "request_seal":
-        return {"status": "stopped", "reason": "封存必须由 F5/人工执行，F0 不自动申请"}
+        with get_conn() as c:
+            cand = c.execute(
+                "SELECT * FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s AND status='development_passed' ORDER BY updated_at DESC LIMIT 1",
+                (uid, org, topic["project_id"])).fetchone()
+        if not cand:
+            return {"status": "stopped", "reason": "没有研发达标的候选，F0 不能申请封存"}
+        cand = dict(cand)
+        if cand["snapshot"]["plan"].get("researchPurpose") == "discovery" and not handoff_allowed(cand):
+            return {"status": "stopped", "reason": "新颖性未通过或不可用，不能申请封存"}
+        row = sealed.request(uid, org, cand["id"])
+        deadline = time.monotonic() + 1800
+        while time.monotonic() < deadline:
+            current = sealed.detail(uid, org, cand["id"], False)
+            if current["status"] in ("passed", "failed", "error", "cancelled"):
+                if current["status"] == "passed":
+                    review.request_review(uid, org, cand["id"], "封存验证通过，提交独立复核；入库仍由复核人决定。")
+                return {"status": "completed" if current["status"] == "passed" else "stopped",
+                        "action": "request_seal", "sealed_id": row["id"],
+                        "sealed_status": current["status"],
+                        "candidate_id": cand["id"],
+                        "reason": "" if current["status"] == "passed" else "封存未通过，交人工复盘"}
+            time.sleep(2)
+        return {"status": "stopped", "reason": "封存计算超时，交人工重试"}
     if action in ("revise", "pivot"):
         out = _revise(uid, org, topic["project_id"], decision.branch_id, decision, run_id, topic["id"])
         return {"status": "completed", "action": action, **out}

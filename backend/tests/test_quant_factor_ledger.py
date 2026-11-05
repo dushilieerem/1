@@ -157,3 +157,28 @@ class SealedBudgetTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ServerDerivedTrialFieldsTest(unittest.TestCase):
+    def call(self, payload):
+        from unittest.mock import MagicMock, patch
+        from services.quant_factor import ledger
+        topic = {'id': 't', 'project_id': 'p', 'view_id': 'v', 'release_id': '',
+                 'release_ids': {}, 'view_manifest_sha256': '', 'contract_revision': '',
+                 'as_of': None, 'primary_holding_period': 1}
+        cursor = MagicMock(); cursor.execute.return_value.fetchone.return_value = {'id': 'b'}
+        connection = MagicMock(); connection.__enter__.return_value = cursor
+        base = {'branch_id': 'b', 'implementation_hash': 'h', 'executor': 'human', 'outcome': 'passed'}
+        with patch.object(ledger, '_topic', return_value=topic), patch.object(ledger, 'get_conn', return_value=connection):
+            ledger.append_trial(1, 2, 't', {**base, **payload})
+
+    def test_rerun_kind_and_outcome_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'kind'):
+            self.call({'kind': 'rerun'})
+        with self.assertRaisesRegex(ValueError, 'outcome'):
+            self.call({'outcome': 'rerun'})
+
+    def test_diagnostic_and_sealed_kinds_are_rejected(self):
+        for kind in ('static_check', 'compile', 'smoke', 'smoke_test', 'sealed_validation'):
+            with self.assertRaisesRegex(ValueError, 'kind'):
+                self.call({'kind': kind})

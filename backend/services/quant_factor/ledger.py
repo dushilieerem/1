@@ -381,11 +381,11 @@ def append_trial(uid: int, org: int, topic_id: str, payload: dict) -> dict:
     if executor not in ("human", "agent", "service"):
         raise ValueError("executor 必须是 human、agent 或 service")
     outcome = str(payload.get("outcome") or "").strip()
-    if outcome not in set(COUNTED_OUTCOMES) | set(CONDITIONAL_OUTCOMES) | set(RERUN_OUTCOMES):
-        raise ValueError("outcome 不合法")
+    if outcome not in set(COUNTED_OUTCOMES) | set(CONDITIONAL_OUTCOMES):
+        raise ValueError("outcome 不合法；rerun 只能由服务端派生")
     kind = str(payload.get("kind") or "research").strip()
-    if kind not in DIAGNOSTIC_KINDS | EDIT_KINDS | RERUN_KINDS | SEALED_KINDS | {"research", "manual", "agent", "iteration"}:
-        raise ValueError("kind 不合法")
+    if kind not in {"research", "manual", "agent", "iteration"}:
+        raise ValueError("kind 不合法；诊断/封存/rerun 不能通过 trials 写入")
     parameters = payload.get("parameters") or {}
     result_summary = payload.get("result_summary") or {}
     if not isinstance(parameters, dict) or not isinstance(result_summary, dict):
@@ -396,16 +396,15 @@ def append_trial(uid: int, org: int, topic_id: str, payload: dict) -> dict:
         isinstance(nested, dict) and isinstance(nested.get("metrics"), dict) and nested["metrics"])
     holding = _as_int(payload.get("holding_period", topic["primary_holding_period"]),
                       "holding_period", 1, 20)
-    view_id = str(payload.get("view_id") or topic["view_id"])
-    if view_id != topic["view_id"]:
-        raise ValueError("试验数据视图必须与课题锁定的 view_id 一致")
-    release_id = str(payload.get("release_id") or topic["release_id"] or "")
-    release_ids = payload.get("release_ids") or topic.get("release_ids") or {}
+    # Reproducibility fields come only from the topic lock, never from the request.
+    view_id = topic["view_id"]
+    release_id = str(topic["release_id"] or "")
+    release_ids = topic.get("release_ids") or {}
     if not isinstance(release_ids, dict):
-        raise ValueError("release_ids 必须是 JSON 对象")
-    view_manifest_sha256 = str(payload.get("view_manifest_sha256") or topic.get("view_manifest_sha256") or "")
-    contract_revision = str(payload.get("contract_revision") or topic["contract_revision"] or "")
-    as_of = _as_date(payload["as_of"], "as_of") if payload.get("as_of") else topic.get("as_of")
+        raise ValueError("课题 release_ids 数据损坏")
+    view_manifest_sha256 = str(topic.get("view_manifest_sha256") or "")
+    contract_revision = str(topic["contract_revision"] or "")
+    as_of = topic.get("as_of")
     trial_id = str(uuid.uuid4())
     with get_conn() as c:
         c.execute("SELECT pg_advisory_xact_lock(%s,%s)", (9111, uid))

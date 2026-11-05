@@ -122,3 +122,12 @@ def test_reviewer_cannot_read_ledger_or_append_trial():
  app.dependency_overrides[require_quant_user]=lambda:{**ctx,'can_write':False,'can_review':True}
  assert client.get('/api/inst/quant/factor-workflow/topics/t/ledger').status_code==403
  assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={'branch_id':'b','implementation_hash':'h','executor':'human','outcome':'passed'}).status_code==403
+
+def test_trial_append_rejects_client_rerun_and_diagnostic_kinds():
+ base={'branch_id':'b','implementation_hash':'h','executor':'human','outcome':'passed'}
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912):
+  for kind in ('rerun','static_check','compile','smoke','sealed_validation','manual_edit'):
+   assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={**base,'kind':kind}).status_code==422
+  assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={**base,'outcome':'rerun'}).status_code==422
+  for key,value in (('view_id','other'),('release_ids',{'ifind':'x'}),('view_manifest_sha256','x'),('as_of','2020-01-01'),('contract_revision','x'),('release_id','x')):
+   assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={**base,key:value}).status_code==422

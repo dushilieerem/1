@@ -157,21 +157,17 @@ test("详情页：研究、辩论、审批（有数据时）", async ({ browser 
   await ctx.close();
 });
 
-test("机会发现：立项三问入口与弹窗", async ({ browser }) => {
+test("机会发现：公司卡直接展示立项研究与放弃", async ({ browser }) => {
   const { ctx, page } = await openPage(browser, TOKENS.manager!);
   await page.goto(`${BASE}/inst/ideas`, { waitUntil: "networkidle" });
-  const assess = page.getByRole("button", { name: /立项评估|Assess idea/ }).first();
-  if (!(await assess.count())) {
+  const start = page.getByRole("button", { name: /立项研究|Start research/ }).first();
+  if (!(await start.count())) {
     await ctx.close();
     test.skip(true, "测试库暂无可用推送候选");
   }
-  await assess.click();
-  await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByText("1. 为什么现在", { exact: false })).toBeVisible();
-  await expect(page.getByText("2. 能力圈", { exact: false })).toBeVisible();
-  await expect(page.getByText("3. 资料齐备", { exact: false })).toBeVisible();
-  await page.getByRole("button", { name: /关闭|Close/ }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(start).toBeVisible();
+  await expect(page.getByRole("button", { name: /^放弃$|^Reject$/ }).first()).toBeVisible();
+  await expect(page.getByText("立项三问", { exact: false })).toHaveCount(0);
   await ctx.close();
 });
 

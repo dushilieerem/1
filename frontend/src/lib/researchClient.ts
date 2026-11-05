@@ -42,7 +42,7 @@ const protectedPaths = [
  /^\/factor-workflow\/imports\/svquant-existing(?:\/reference)?$/,
  /^\/factor-workflow\/projects\/[^/]+\/topics$/,
  /^\/factor-workflow\/topics$/, 
- /^\/factor-workflow\/topics\/[^/]+(?:\/(ledger|threshold|branches|trials|handback))?$/,
+ /^\/factor-workflow\/topics\/[^/]+(?:\/(ledger|threshold|branches|trials|handback|pause|resume))?$/,
  /^\/factor-workflow\/topics\/[^/]+\/branches\/[^/]+\/(takeover|f0)$/,
  /^\/factor-workflow\/f0-runs\/[^/]+$/,
  /^\/factor-workflow\/reviews(?:\/[^/]+)?$/,

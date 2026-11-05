@@ -8,7 +8,7 @@ type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;stat
 type Trial={trial_no:number;branch_id:string;kind:string;outcome:string;executor:string;report_id?:string|null;created_at?:string;returned_metrics?:boolean;rerun_of?:string|null;result_summary?:{gate?:{checks?:{name:string;actual:number|null;threshold:number;passed:boolean}[]}}};
 type Ledger={topic:Topic;branches:Branch[];trials:Trial[];k:number;threshold:number|null;threshold_next_if_counted:number;next_trial_no:number};
 
-const statusText=(s:string)=>s==='active'?'研究中':s==='archived'?'已归档':s;
+const statusText=(s:string)=>s==='active'?'研究中':s==='paused'?'已暂停':s==='archived'?'已归档':s;
 const outcomeText=(t:Trial)=>t.outcome==='passed'?'通过':t.outcome==='failed'?'未达标':t.outcome==='error'?'执行错误':t.outcome;
 const nwText=(t:Trial)=>{const c=t.result_summary?.gate?.checks?.find(x=>x.name==='方向 NW t');return c&&typeof c.actual==='number'?` · NW t ${c.actual.toFixed(2)} / 需 ${c.threshold.toFixed(2)}`:'';};
 
@@ -48,6 +48,12 @@ export function QuantFactorHomePage(){
   const d=await r.json();if(!r.ok){setError(typeof d.detail==='string'?d.detail:'F0 启动失败');return;}setF0(d);
  }
  useEffect(()=>{if(!f0||!['queued','running'].includes(f0.status))return;const t=setInterval(()=>{void researchFetch('/api/inst/quant/factor-workflow/f0-runs/'+f0.id).then(r=>r.ok?r.json():null).then(d=>{if(d)setF0(d);});},4000);return()=>clearInterval(t);},[f0?.id,f0?.status]);
+ async function setTopicStatus(status:'paused'|'active'){
+  if(!ledger)return;
+  const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(ledger.topic.id)+'/'+(status==='paused'?'pause':'resume'),{method:'POST'});
+  const d=await r.json();if(!r.ok){setError(typeof d.detail==='string'?d.detail:'课题状态更新失败');return;}
+  setTopics(list=>list.map(t=>t.id===d.id?{...t,status:d.status}:t));
+ }
  async function takeOver(){
   if(!ledger||!selectedBranch)return;
   const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(ledger.topic.id)+'/branches/'+encodeURIComponent(selectedBranch.id)+'/takeover',{method:'POST'});
@@ -145,7 +151,7 @@ export function QuantFactorHomePage(){
    <div className="card-head">
     <div><div className="row-flex"><span className="tid">{topic.id.slice(0,8)}</span><h2>{topic.project_name||'未命名课题'}</h2><span className="badge live">{statusText(topic.status)}</span></div>
      <p className="fine">视图 {topic.view_id} · 主持有期 {topic.primary_holding_period} 日</p></div>
-    <div className="actions"><Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'}>人工工作台（项目级）</Link><Link className="btn small" to={'/quant/factor/ledger?project='+topic.project_id}>台账</Link></div>
+    <div className="actions">{topic.status==='active'?<button className="btn small" onClick={()=>void setTopicStatus('paused')}>暂停课题</button>:topic.status==='paused'?<button className="btn small" onClick={()=>void setTopicStatus('active')}>继续课题</button>:null}<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'}>人工工作台（项目级）</Link><Link className="btn small" to={'/quant/factor/ledger?project='+topic.project_id}>台账</Link></div>
    </div>
    <div className="card-body">
     <div className="ledger">

@@ -252,3 +252,12 @@ class LockedViewTest(unittest.TestCase):
         with patch.object(service, 'get_conn', return_value=connection), \
              patch('services.workflow_workspace.platform_data.published_view', return_value={'view_id': 'v'}):
             self.assertIsNone(service._locked_view_error(1, 2, 'p'))
+
+
+class TopicPauseTest(unittest.TestCase):
+    def test_archived_topic_cannot_resume(self):
+        from unittest.mock import patch
+        from services.quant_factor import ledger
+        with patch.object(ledger, '_topic', return_value={'id': 't', 'status': 'archived'}):
+            with self.assertRaisesRegex(ValueError, '归档'):
+                ledger.set_topic_status(1, 2, 't', 'active')

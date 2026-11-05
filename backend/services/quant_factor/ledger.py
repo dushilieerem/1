@@ -316,6 +316,19 @@ def list_topics(uid: int, org: int, project_id: str) -> list[dict]:
     return [_public(row) for row in rows]
 
 
+def set_topic_status(uid: int, org: int, topic_id: str, status: str) -> dict:
+    if status not in ("active", "paused"):
+        raise ValueError("课题状态只能是 active 或 paused")
+    topic = _topic(uid, org, topic_id)
+    if topic["status"] == "archived":
+        raise ValueError("已归档课题不能恢复")
+    with get_conn() as c:
+        row = c.execute(
+            "UPDATE quant_factor_topics SET status=%s,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s RETURNING *",
+            (status, topic_id, uid, org)).fetchone()
+    return _public(row)
+
+
 def list_org_topics(uid: int, org: int) -> list[dict]:
     """All topics visible to the current quant member, newest first."""
     with get_conn() as c:
@@ -537,6 +550,7 @@ __all__ = [
     "ledger_view",
     "list_branches",
     "list_org_topics",
+    "set_topic_status",
     "list_topics",
     "sealed_request_error",
     "threshold_view",

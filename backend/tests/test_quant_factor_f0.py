@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from services.quant_factor import f0
 
-TOPIC = {'id': 't', 'project_id': 'p', 'view_id': 'v', 'max_trials': 4, 'primary_holding_period': 1}
+TOPIC = {'id': 't', 'project_id': 'p', 'view_id': 'v', 'max_trials': 4, 'primary_holding_period': 1, 'status': 'active'}
 
 
 def conn(fetchone=None):
@@ -90,3 +90,15 @@ class F0DecisionTest(unittest.TestCase):
             out = f0.start(1, 2, 't', 'b', 'k')
         self.assertEqual(out['status'], 'stopped')
         self.assertEqual(rec.call_args.args[6]['reason'], 'development_passed')
+
+
+class F0PauseTest(unittest.TestCase):
+    def test_paused_topic_stops_without_scheduling(self):
+        w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None]
+        topic = {**TOPIC, 'status': 'paused'}
+        with patch.object(f0, '_topic', return_value=topic), \
+             patch.object(f0, 'get_conn', return_value=w), \
+             patch.object(f0, '_record', return_value={'status': 'stopped'}) as rec:
+            out = f0.start(1, 2, 't', 'b', 'k')
+        self.assertEqual(out['status'], 'stopped')
+        self.assertEqual(rec.call_args.args[6]['reason'], 'topic_paused')

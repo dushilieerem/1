@@ -228,6 +228,16 @@ def branch_takeover(tid:str,bid:str,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import ledger
     return invoke_ledger(ledger.takeover_branch,*identity(ctx),tid,bid)
 
+@router.post('/topics/{tid}/pause')
+def topic_pause(tid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return invoke_ledger(ledger.set_topic_status,*identity(ctx),tid,'paused')
+
+@router.post('/topics/{tid}/resume')
+def topic_resume(tid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return invoke_ledger(ledger.set_topic_status,*identity(ctx),tid,'active')
+
 @router.post('/topics/{tid}/handback')
 def branch_handback(tid:str,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import ledger

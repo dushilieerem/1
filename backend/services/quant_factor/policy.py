@@ -39,6 +39,8 @@ def snapshot(project):
         rules['icMetric']=p['rules']['icMetric']
     if rules['direction'] not in ('positive','negative'): raise WorkflowError('请选择预设因子方向')
     if rules['minObservations']!=int(rules['minObservations']): raise WorkflowError('观测数必须为整数')
+    from .novelty_policy import policy as novelty_policy
+    if p.get('researchPurpose') is not None:novelty_policy(p)
     codes=c.get('factorCodes') or []
     if len(codes)!=1: raise WorkflowError('冻结验证当前支持单因子；请在工程计算中保存单因子实现')
     name=codes[0]; draft=c.get('draftFactor') or {}

@@ -58,6 +58,8 @@ def record(uid,org,cid,decision,note):
     with get_conn() as c:
         row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND org_id=%s FOR UPDATE',(cid,org)).fetchone()
         ensure_reviewer(row,uid)
+        from .novelty_policy import handoff_allowed
+        if decision=='research_supported' and row['snapshot']['plan'].get('researchPurpose')=='discovery' and not handoff_allowed(row):raise WorkflowError('新因子候选尚未通过完整去重检验，可反馈补充研究，不能确认新成果依据充分。')
         card=dict(row['archive']);review=dict(card['review'])
         if review['status']!='requested':raise WorkflowError('此版本已复核，不能覆盖原结论；新研究版本须单独提交')
         ensure_assigned(review,uid)

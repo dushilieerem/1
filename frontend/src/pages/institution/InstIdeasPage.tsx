@@ -329,7 +329,7 @@ export function InstIdeasPage() {
                         }
                         onClick={() => void initiateResearch(c.id, "push")}
                       >
-                        {busy === c.id ? t("处理中…", "Working…") : t("立项研究", "Start research")}
+                        {busy === c.id ? t("处理中…", "Working…") : t("进入研究", "Enter research")}
                       </Button>
                       <Button
                         variant="danger"
@@ -368,7 +368,7 @@ export function InstIdeasPage() {
         <Card
           title={t("关注与自选", "Watchlist")}
           desc={t(
-            "已加入观察池的标的。可以直接立项研究，或放弃并留下理由。",
+            "已加入观察池的标的。可以直接进入研究，或放弃并留下理由。",
             "Names in the watch pool. Start research directly, or reject with a reason.",
           )}
           actions={<Badge tone="amber">{watch.length} {t("个对象", "names")}</Badge>}
@@ -432,7 +432,7 @@ export function InstIdeasPage() {
                       }
                       onClick={() => void initiateResearch(c.id, "watch")}
                     >
-                      {busy === c.id ? t("处理中…", "Working…") : t("立项研究", "Start research")}
+                      {busy === c.id ? t("处理中…", "Working…") : t("进入研究", "Enter research")}
                     </Button>
                     <Button
                       variant="danger"
@@ -521,7 +521,7 @@ export function InstIdeasPage() {
                           >
                             {busy === p.company_id
                               ? t("处理中…", "Working…")
-                              : t("立项研究", "Start research")}
+                              : t("进入研究", "Enter research")}
                           </Button>
                           <Button
                             variant="danger"

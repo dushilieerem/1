@@ -80,7 +80,13 @@ test("辩论后补议案 → 审批 → 自动授权成交 → 持仓更新", as
   const company = (companies.items || []).find(
     (c: any) =>
       c.market === "CN" &&
-      Number(c.ref_price) > 0 &&
+      Number(c.ref_price) >= 5 &&
+      c.data_status === "real" &&
+      c.up_down_status === "非涨跌停" &&
+      !c.is_st &&
+      !c.is_suspended &&
+      !String(c.name || "").includes("ST") &&
+      !String(c.name || "").includes("退") &&
       !held.has(String(c.symbol)) &&
       !crowded.has(String(c.industry || "")) &&
       // 风控会硬阻断 ST/*ST/退市整理标的，E2E 不选它们。

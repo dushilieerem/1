@@ -493,6 +493,43 @@ def ai_role_run(
         raise _handle(exc) from exc
 
 
+@router.get("/proposals/{proposal_id}/ai/partner-memo")
+def partner_memo_ai_cached(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "approvals")
+    try:
+        return {
+            "ok": True,
+            **svc.ai_partner_memo(
+                org_id, proposal_id, refresh=False, actor_member_id=member_id
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/proposals/{proposal_id}/ai/partner-memo")
+def partner_memo_ai(
+    proposal_id: int,
+    body: dict[str, Any] | None = None,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "approvals")
+    try:
+        return {
+            "ok": True,
+            **svc.ai_partner_memo(
+                org_id,
+                proposal_id,
+                refresh=bool((body or {}).get("refresh")),
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.get("/proposals/{proposal_id}/ai/chairman-memo")
 def chairman_memo_ai_cached(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
@@ -613,11 +650,19 @@ def debate(session_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) ->
 @router.get("/proposals")
 def proposals(
     status: str | None = None,
+    scope: str = "pending",
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
-    org_id, _, _ = _ctx(ctx)
+    org_id, member_id, role = _ctx(ctx)
     _require_ws(ctx, "approvals")
-    return {"ok": True, "items": svc.list_proposals(org_id, status=status)}
+    if scope not in {"pending", "reviewed"}:
+        raise HTTPException(status_code=422, detail="scope 必须是 pending/reviewed")
+    items = svc.list_proposals_for_member(
+        org_id, int(member_id or 0), role, scope=scope
+    )
+    if status:
+        items = [item for item in items if str(item.get("status")) == status]
+    return {"ok": True, "items": items, "scope": scope, "role": role}
 
 
 @router.post("/cases/{case_id}/proposals")
@@ -655,9 +700,14 @@ def create_proposal(
 
 @router.get("/proposals/{proposal_id}")
 def proposal_detail(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
-    org_id, _, _ = _ctx(ctx)
+    org_id, member_id, role = _ctx(ctx)
     _require_ws(ctx, "approvals")
-    data = svc.get_proposal(org_id, proposal_id)
+    try:
+        data = svc.get_proposal_for_member(
+            org_id, proposal_id, member_id=int(member_id or 0), role=role
+        )
+    except Exception as exc:
+        raise _handle(exc) from exc
     if not data:
         raise HTTPException(status_code=404, detail="议案不存在")
     return {"ok": True, **data}

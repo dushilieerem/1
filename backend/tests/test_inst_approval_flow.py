@@ -232,22 +232,26 @@ def test_fixed_order_and_risk_veto(fixture) -> None:
         == 403
     )
 
-    _ok(
+    first = _ok(
         client.post(
             f"/api/inst/proposals/{proposal_id}/partner",
             json={"decision": "approve"},
             headers=_h(tokens["p1"]),
         )
     )
-    # 同角色多人：合伙人环节通过即关闭，第二位合伙人不能再改结论。
-    assert (
+    # 同角色多人：全部合伙人给出意见后才进入风控。
+    assert first["status"] == "partner_review"
+    pending = _ok(client.get("/api/inst/proposals", headers=_h(tokens["p2"])))
+    assert any(int(item["id"]) == proposal_id for item in pending["items"])
+
+    second = _ok(
         client.post(
             f"/api/inst/proposals/{proposal_id}/partner",
-            json={"decision": "return"},
+            json={"decision": "approve"},
             headers=_h(tokens["p2"]),
-        ).status_code
-        == 403
+        )
     )
+    assert second["status"] == "risk_precheck"
 
     passed = _ok(
         client.post(
@@ -256,11 +260,11 @@ def test_fixed_order_and_risk_veto(fixture) -> None:
             headers=_h(tokens["r1"]),
         )
     )
-    assert passed["status"] == "chairman_review"
+    assert passed["status"] == "risk_precheck"
     assert {c["key"] for c in passed["risk_checks"]} == RISK_CHECK_KEYS
     assert all(c["status"] in {"pass", "warn", "block"} for c in passed["risk_checks"])
 
-    # 另一名风控在 Chairman 批准前追加否决：一票否决终局。
+    # 另一名风控否决：一票否决终局，Chairman 不能救。
     veto = _ok(
         client.post(
             f"/api/inst/proposals/{proposal_id}/risk-check",
@@ -277,9 +281,14 @@ def test_fixed_order_and_risk_veto(fixture) -> None:
         ).status_code
         == 403
     )
-    detail = _ok(client.get(f"/api/inst/proposals/{proposal_id}", headers=_h(tokens["m"])))
-    risk_rows = [a for a in detail["approvals"] if a["step"] == "risk_precheck"]
-    assert len(risk_rows) == 2
+    with get_conn() as conn:
+        risk_rows = conn.execute(
+            "SELECT COUNT(*) AS n FROM inst_approval a"
+            " JOIN inst_proposal_version v ON v.id=a.proposal_version_id"
+            " WHERE v.proposal_id=%s AND a.step='risk_precheck'",
+            (proposal_id,),
+        ).fetchone()["n"]
+    assert int(risk_rows) == 2
 
 
 def test_proposer_cannot_approve_own_proposal(fixture) -> None:
@@ -317,7 +326,14 @@ def test_conditions_flow_and_execution_gate(fixture) -> None:
             headers=_h(tokens["p1"]),
         )
     )
-    assert partner["status"] == "risk_precheck"
+    assert partner["status"] == "partner_review"
+    _ok(
+        client.post(
+            f"/api/inst/proposals/{proposal_id}/partner",
+            json={"decision": "approve"},
+            headers=_h(tokens["p2"]),
+        )
+    )
     risk = _ok(
         client.post(
             f"/api/inst/proposals/{proposal_id}/risk-check",
@@ -329,7 +345,14 @@ def test_conditions_flow_and_execution_gate(fixture) -> None:
             headers=_h(tokens["r1"]),
         )
     )
-    assert risk["status"] == "chairman_review"
+    assert risk["status"] == "risk_precheck"
+    _ok(
+        client.post(
+            f"/api/inst/proposals/{proposal_id}/risk-check",
+            json={"decision": "pass"},
+            headers=_h(tokens["r2"]),
+        )
+    )
     chairman = _ok(
         client.post(
             f"/api/inst/proposals/{proposal_id}/chairman",

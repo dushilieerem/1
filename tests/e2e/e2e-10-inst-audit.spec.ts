@@ -199,15 +199,15 @@ test("详情页：研究、辩论、审批（有数据时）", async ({ browser 
   }
   if (proposalId) {
     await page.goto(`${BASE}/inst/approvals?proposal=${proposalId}`, { waitUntil: "networkidle" });
-    await expect(page.getByText("议案快照", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("议案详情", { exact: true })).toBeVisible({ timeout: 20_000 });
   }
   await ctx.close();
 });
 
-test("机会发现：公司卡直接展示立项研究与放弃", async ({ browser }) => {
+test("机会发现：公司卡直接展示进入研究与放弃", async ({ browser }) => {
   const { ctx, page } = await openPage(browser, TOKENS.manager!);
   await page.goto(`${BASE}/inst/ideas`, { waitUntil: "networkidle" });
-  const start = page.getByRole("button", { name: /立项研究|Start research/ }).first();
+  const start = page.getByRole("button", { name: /进入研究|Enter research/ }).first();
   if (!(await start.count())) {
     await ctx.close();
     test.skip(true, "测试库暂无可用推送候选");

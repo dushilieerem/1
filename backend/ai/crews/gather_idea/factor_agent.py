@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 _TZ = timezone(timedelta(hours=8))
-_ALLOWED_FIELDS = {"close", "open", "high", "low", "volume", "amount", "turnover", "current_mv", "pe_ttm", "pb_mrq", "dividend_yield_ttm", "pcf_operating_cash_flow_ttm", "listed_status", "the_sw_industry_code", "up_and_down_status"}
+_ALLOWED_FIELDS = {"close", "open", "high", "low", "volume", "amount", "turnover", "current_mv", "listed_status", "the_sw_industry_code", "up_and_down_status"}
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,47}$")
 
 

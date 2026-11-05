@@ -70,8 +70,8 @@ def _context(uid, org, topic, run_id):
         "recent_f0_stops": [r["stop_reason"] for r in recent],
         "novelty": "不可用：共享 9527 无 R4/novelty 路由",
         "scope": "锁定视图与预登记区间；不得扩大数据范围、改门槛或加预算",
-        "available_fields": ["open", "high", "low", "close", "volume", "amount", "turnover", "current_mv", "pe_ttm", "pb_mrq", "the_sw_industry_code"],
-        "field_limits": "行业为当前分类版本，不是历史 PIT；流通市值暂不可用",
+        "available_fields": ["open", "high", "low", "close", "volume", "amount", "turnover", "current_mv", "the_sw_industry_code"],
+        "field_limits": "行业为当前分类版本，不是历史 PIT；流通市值暂不可用；pe_ttm 有前视已移除",
     }
 
 

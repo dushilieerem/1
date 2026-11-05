@@ -96,6 +96,15 @@ DIMENSION_PROMPTS: dict[str, str] = {
     ),
 }
 
+INDUSTRY_PROMPT = (
+    "你是旸谷资本机构研究部的行业研究 Agent。任务：只研究公司所处行业本身，不评价公司个股，"
+    "为后续六维和一页纸提供行业底图。分析行业空间、增速与景气周期、产业链上下游、竞争格局、"
+    "政策与监管、关键变量。以输入 as_of 为基准日，关键数据标来源与年份，查不到写“未获取到公开数据”；"
+    "区分【事实】【公司口径】【推断】；每个结论附证伪条件；不得编造。"
+    "输出 summary 50 字以内、checks/counter/open_questions/data_gaps 各条 50 字以内。"
+    + DIM_OUTPUT
+)
+
 RESEARCH_MEMO_PROMPT = (
     "你是基金 CIO，面前有六份独立研究。职责是找出矛盾、裁决矛盾、检验逻辑链闭合，给出可执行的研究建议；"
     "以“敢于说不”和“结论先行”著称。只使用输入中的公司、六维与证据，不引入报告外事实。\n"
@@ -106,8 +115,11 @@ RESEARCH_MEMO_PROMPT = (
     "\"six_dim_scores\":[{\"key\":\"industry|business_model|moat|financial|governance|valuation\","
     "\"score\":1-5,\"confidence\":0-1,\"note\":\"...\"}],"
     "\"conflicts\":[\"...\"],\"key_variables\":[\"...\"],\"evidence\":[\"...\"],"
-    "\"risks\":[\"...\"],\"open_questions\":[\"...\"]}。"
+    "\"risks\":[\"...\"],\"open_questions\":[\"...\"],"
+    "\"price_range\":{\"low\":0,\"base\":0,\"high\":0,\"note\":\"研究区间，不是目标价\"},"
+    "\"holding_period\":\"...\"}。"
     "summary≤50字，直击要害；conflicts/key_variables/risks/open_questions 每条≤50字；"
+    "price_range 必须基于输入估值数据，标“研究区间，不是目标价”；holding_period 写条件性期限（如1-3年、按季复核）；"
     "decision 是研究建议，不是买卖指令；不给目标价或收益承诺；数据不足明确写“缺 X，暂不能判断”。"
 )
 
@@ -181,6 +193,7 @@ def _agent(
 
 
 INSTITUTION_AGENTS: list[dict[str, Any]] = [
+    _agent("inst.industry", "行业分析", "研究", "独立行业空间、周期、产业链与竞争格局", auto_run=True),
     _agent("inst.dim.industry", "商业与产业", "研究", "产业景气、竞争格局与公司卡位", auto_run=True),
     _agent("inst.dim.business_model", "公司商业模式", "研究", "收入结构、单位经济与可复制性", auto_run=True),
     _agent("inst.dim.moat", "护城河", "研究", "护城河类型、宽度与侵蚀路径", auto_run=True),
@@ -202,6 +215,7 @@ def default_prompt(task_id: str) -> str:
     if task_id.startswith("inst.dim.") and task_id not in {"inst.dim.chat"}:
         return DIMENSION_PROMPTS.get(task_id.removeprefix("inst.dim."), "")
     return {
+        "inst.industry": INDUSTRY_PROMPT,
         "inst.research_memo": RESEARCH_MEMO_PROMPT,
         "inst.debate": DEBATE_PROMPT,
         "inst.risk_review": RISK_REVIEW_PROMPT,

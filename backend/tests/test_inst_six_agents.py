@@ -93,3 +93,26 @@ def test_agent_payload_marks_governance_gap() -> None:
     payload = svc._agent_payload(facts, "governance")
     assert "governance_note" in payload
     assert payload["market_data"]["price"] == 10
+
+
+def test_merge_industry_block_is_separate_from_six_dims() -> None:
+    built = {"evidence": [], "facts": {"as_of": "2026-10-30"}}
+    block = svc._merge_industry(
+        built,
+        {
+            "data": {
+                "summary": "行业增速 8%，竞争格局稳定。",
+                "checks": ["空间 1000 亿"],
+                "counter": ["增速低于预期"],
+                "open_questions": ["份额"],
+                "data_gaps": [],
+                "evidence": [{"title": "行业规模", "quote": "1000 亿", "source": "ifind"}],
+                "confidence": 0.6,
+            }
+        },
+        {},
+    )
+    assert block["key"] == "industry"
+    assert block["summary"].startswith("行业增速")
+    assert block["evidence_idx"] == [0]
+    assert built["evidence"][0]["title"] == "行业规模"

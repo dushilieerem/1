@@ -6,6 +6,7 @@ import { getInstToken } from "@/lib/instAuth";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
 import { Badge, Button, Card, DataFreshness, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge, industryLabel } from "./instUi";
+import { InstKlineCard } from "./InstKlineCard";
 
 type Dim = {
   key: string;
@@ -35,6 +36,7 @@ type Version = {
   counter_evidence?: string[];
   open_questions?: string[];
   evidence_ids?: number[];
+  industry_analysis?: Dim | null;
   content_hash?: string;
   cutoff?: string;
   frozen_at?: string;
@@ -46,6 +48,8 @@ type Memo = {
   six_dim_scores?: Array<{ key: string; score: number; confidence?: number; note?: string }>;
   conflicts?: string[];
   key_variables?: string[];
+  price_range?: { low?: number | null; base?: number | null; high?: number | null; note?: string } | null;
+  holding_period?: string;
   evidence?: string[];
   risks?: string[];
   open_questions?: string[];
@@ -550,6 +554,58 @@ export function InstResearchPage() {
         ) : null}
       </Card>
 
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card
+          title={t("行业分析（独立板块）", "Industry analysis (standalone)")}
+          desc={t("不属于六维；只研究行业空间、周期、产业链与竞争格局，为六维和一页纸提供行业底图。", "Not one of the six dimensions; it covers industry space, cycle, chain and competition as the industry base for the six dimensions and the one-pager.")}
+          actions={
+            version?.industry_analysis ? (
+              <div className="flex flex-wrap gap-1.5">
+                <StatusBadge status={version.industry_analysis.status} />
+                <Badge tone={version.industry_analysis.engine === "agent" ? "gold" : "slate"}>
+                  {version.industry_analysis.engine === "agent" ? t("AI Agent", "AI Agent") : t("规则兜底", "Rule fallback")}
+                </Badge>
+              </div>
+            ) : null
+          }
+        >
+          {version?.industry_analysis ? (
+            <div className="space-y-2">
+              <p className="text-xs leading-relaxed text-[#505369]">
+                {clipBrief(version.industry_analysis.summary) || t("待补充", "TBD")}
+              </p>
+              {version.industry_analysis.checks?.length ? (
+                <ul className="space-y-1 text-[11px] leading-relaxed text-[#68738b]">
+                  {version.industry_analysis.checks.slice(0, 5).map((item) => (
+                    <li key={item}>· {clipBrief(item)}</li>
+                  ))}
+                </ul>
+              ) : null}
+              {version.industry_analysis.counter?.length ? (
+                <p className="text-[11px] leading-relaxed text-amber-700">
+                  {t("反证", "Falsifier")}：{clipBrief(version.industry_analysis.counter[0])}
+                </p>
+              ) : null}
+              {version.industry_analysis.data_gaps?.length ? (
+                <p className="text-[10px] leading-relaxed text-[#77718c]">
+                  {t("数据缺口", "Data gaps")}：{version.industry_analysis.data_gaps.map(clipBrief).join("；")}
+                </p>
+              ) : null}
+              <p className="text-[10px] text-[#77718c]">
+                {t("证据", "Evidence")}：{version.industry_analysis.evidence_ids?.length || 0} {t("条", "items")}
+              </p>
+            </div>
+          ) : (
+            <Empty>
+              {busy === "auto"
+                ? t("行业分析生成中…", "Generating industry analysis…")
+                : t("还没有独立行业分析；生成六维分析后自动生成。", "No standalone industry analysis yet; it is generated with the six dimensions.")}
+            </Empty>
+          )}
+        </Card>
+        <InstKlineCard companyId={Number(detail.company_id || 0)} symbol={detail.symbol} />
+      </div>
+
       {error ? <ErrorBox message={error} onRetry={() => loadDetail(caseId)} /> : null}
 
       {detail.market && detail.market !== "CN" ? (
@@ -919,6 +975,26 @@ export function InstResearchPage() {
                 {clipBrief(memo.summary) || t("待补充", "TBD")}
               </p>
             </section>
+
+            {memo.price_range || memo.holding_period ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-[#e3eaf8] bg-[#f8faff] px-3 py-2 text-xs text-[#505369]">
+                {memo.price_range ? (
+                  <span>
+                    {t("研究估值区间", "Research valuation range")}：
+                    <span className="font-mono">
+                      {fmtNum(memo.price_range.low, 2)} – {fmtNum(memo.price_range.high, 2)}
+                      {memo.price_range.base != null ? `（${t("基准", "base")} ${fmtNum(memo.price_range.base, 2)}）` : ""}
+                    </span>
+                  </span>
+                ) : null}
+                {memo.holding_period ? (
+                  <span>
+                    {t("建议持有期", "Holding period")}：{memo.holding_period}
+                  </span>
+                ) : null}
+                <span className="text-[10px] text-[#77718c]">{t("研究区间，不是目标价或收益承诺。", "Research range, not a target price or return promise.")}</span>
+              </div>
+            ) : null}
 
             {memo.metrics?.length ? (
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">

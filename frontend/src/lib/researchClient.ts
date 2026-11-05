@@ -35,6 +35,7 @@ export function researchPagePath(path: string) {
   .replace(/^\/(factor|strategy)\/library(?=\/|$)/, "/quant/$1/library");
 }
 const protectedPaths = [
+ /^\/strategy-research\/topics(?:\/[^/]+(?:\/(ledger|branches))?)?$/,
  /^\/factor-workflow\/projects\/[^/]+\/iterations(?:\/latest)?$/,
  /^\/factor-workflow\/iterations\/[^/]+(?:\/pause)?$/,
  /^\/factor-workflow\/agent-jobs(?:\/[^/]+(?:\/cancel)?)?$/,

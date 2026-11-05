@@ -1,5 +1,6 @@
 from __future__ import annotations
 import copy
+import hashlib
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -105,14 +106,42 @@ def run(uid,org,cid,phase):
             gate={**gate,'numerical_passed':gate['passed'],'passed':gate['passed'] and novelty.get('gate',{}).get('passed') is True}
             data['gate']=gate
             store.update(uid,org,cid,running,event('novelty_completed',status=novelty_status,message=novelty['message']))
+        final_status=phase+('_error' if novelty_status in ('unavailable','incomplete') else '_passed' if gate['passed'] else '_failed')
         with get_conn() as c:
             locked=c.execute('SELECT status FROM quant_factor_candidates WHERE id=%s FOR UPDATE',(cid,)).fetchone()
             if locked['status']=='cancelled': return
             c.execute('UPDATE quant_factor_candidates SET status=%s,evidence=evidence||%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s',
-                      (phase+('_error' if novelty_status in ('unavailable','incomplete') else '_passed' if gate['passed'] else '_failed'),store.encode({phase:data}),store.encode([event(phase+'_completed',passed=gate['passed'],checks=gate['checks'],report_id=report_id)]),cid))
+                      (final_status,store.encode({phase:data}),store.encode([event(phase+'_completed',passed=gate['passed'],checks=gate['checks'],report_id=report_id)]),cid))
+        if phase=='development':
+            outcome='error' if final_status=='development_error' else 'passed' if final_status=='development_passed' else 'failed'
+            try:_append_development_trial(uid,org,row,req,result,gate,outcome,report_id)
+            except Exception as exc:store.update(uid,org,cid,final_status,event('ledger_append_failed',message=str(exc)[:300]))
     except Exception as exc:
         with get_conn() as c:
             c.execute("UPDATE quant_factor_candidates SET status=%s,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status<>'cancelled'",(phase+'_error',store.encode([event(phase+'_error',message=str(exc)[:1200])]),cid,uid,org))
+
+def _append_development_trial(uid,org,row,req,result,gate,outcome,report_id):
+    """Best-effort ledger row for a completed development test. Never blocks research."""
+    from . import ledger
+    with get_conn() as c:
+        topic=c.execute("SELECT * FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s",(uid,org,row['project_id'])).fetchone()
+        if not topic:return None
+        branch=c.execute("SELECT id FROM quant_factor_branches WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at LIMIT 1",(uid,org,topic['id'])).fetchone()
+    if not branch:return None
+    fa=result.get('factor_analysis') or {}
+    metrics=result.get('metrics') or {}
+    if not metrics and fa.get('rank_ic_mean') is not None:metrics={'rank_ic_mean':fa.get('rank_ic_mean')}
+    code=(row.get('snapshot',{}).get('request') or {}).get('factor_code') or ''
+    source_hash=(result.get('meta') or {}).get('factor_source_hash')
+    implementation_hash=hashlib.sha256(code.encode()).hexdigest() if code else (source_hash or 'unknown')
+    parameters={k:req.get(k) for k in ('universe','benchmark','groups','rebalance_days','execution_timing','portfolio_type')}
+    parameters['holding_period']=topic['primary_holding_period']
+    return ledger.append_trial(uid,org,topic['id'],{
+        'branch_id':branch['id'],'implementation_hash':implementation_hash,'kind':'research',
+        'parameters':parameters,'result_summary':{'metrics':metrics,'gate':{'passed':gate.get('passed'),'checks':gate.get('checks')}},
+        'report_id':report_id,'executor':'human','outcome':outcome,
+        'holding_period':topic['primary_holding_period']})
+
 
 def _compare_library(uid,org,cid,row,data):
     from .novelty import assess

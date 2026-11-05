@@ -56,7 +56,7 @@ def create(uid,org,stage,project_id,draft,request_key):
     key=request_key or digest(inputs)
     with get_conn() as c:
         c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9108,uid))
-        c.execute("UPDATE quant_factor_agent_jobs SET status='failed',events=events||%s::jsonb,updated_at=NOW() WHERE status IN ('queued','running') AND updated_at<NOW()-INTERVAL '5 minutes'",(store.encode([event('interrupted',message='任务超出恢复窗口，停止自动回填。')]),))
+        c.execute("UPDATE quant_factor_agent_jobs SET status='failed',events=events||%s::jsonb,updated_at=NOW() WHERE user_id=%s AND org_id=%s AND status IN ('queued','running') AND updated_at<NOW()-INTERVAL '5 minutes'",(store.encode([event('interrupted',message='任务超出恢复窗口，停止自动回填。')]),uid,org))
         old=c.execute('SELECT id,input FROM quant_factor_agent_jobs WHERE user_id=%s AND org_id=%s AND request_key=%s',(uid,org,key)).fetchone()
         if old:
             if old['input']!=inputs:raise WorkflowError('同一请求编号不能用于不同输入。')
@@ -65,7 +65,7 @@ def create(uid,org,stage,project_id,draft,request_key):
             active=c.execute("SELECT id FROM quant_factor_agent_jobs WHERE user_id=%s AND org_id=%s AND stage=%s AND project_id IS NOT DISTINCT FROM %s AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1",(uid,org,stage,project_id)).fetchone()
             if active:jid=active['id']
             else:
-                pending=c.execute("SELECT COUNT(*) AS n FROM quant_factor_agent_jobs WHERE status IN ('queued','running')").fetchone()['n']
+                pending=c.execute("SELECT COUNT(*) AS n FROM quant_factor_agent_jobs WHERE user_id=%s AND org_id=%s AND status IN ('queued','running')",(uid,org)).fetchone()['n']
                 if pending>=4:raise WorkflowError('Agent 任务队列繁忙，请稍后再试。')
                 assert_quota_available(uid)
                 jid=str(uuid.uuid4())

@@ -644,6 +644,12 @@ export function InstResearchPage() {
               <p className="text-[10px] text-[#77718c]">
                 {t("证据", "Evidence")}：{version.industry_analysis.evidence_ids?.length || 0} {t("条", "items")}
               </p>
+              {version.industry_analysis.agent_error ? (
+                <p className="text-[10px] leading-relaxed text-amber-700">
+                  {t("AI 行业分析未完成：", "AI industry analysis failed: ")}
+                  {version.industry_analysis.agent_error}
+                </p>
+              ) : null}
               {version.industry_analysis.analysis_md ? (
                 <details className="rounded-lg border border-[#e3eaf8] bg-white px-3 py-2">
                   <summary className="cursor-pointer text-[11px] font-medium text-[#7950ba]">

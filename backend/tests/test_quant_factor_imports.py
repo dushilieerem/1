@@ -53,3 +53,33 @@ class SyncTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ReferenceInventoryTest(unittest.TestCase):
+    def test_existing_panel_rows_are_labelled_as_reference_only(self):
+        base = {'id': 'a', 'source_library': '主因子库', 'source_factor_id': 'F1', 'factor_name': 'f1',
+                'display_name': 'F1', 'definition': 'd', 'status': 'imported_unreviewed',
+                'metrics_status': 'pending'}
+        rows = [
+            {**base, 'reference_universe': 'CSI300', 'reference_period': '3y',
+             'reference_filter_limit_up': 1, 'reference_filter_suspended': 1,
+             'reference_rules_version': 'yg_v1', 'reference_rank_ic': 0.04,
+             'reference_ic_mean': 0.03, 'reference_ir': 0.5, 'reference_turnover': 0.2,
+             'reference_coverage_pool': 0.9, 'reference_computed_at': '2026-11-01'},
+            {**base, 'id': 'b', 'source_factor_id': 'F2', 'factor_name': 'f2',
+             'reference_universe': None, 'reference_period': None,
+             'reference_filter_limit_up': None, 'reference_filter_suspended': None,
+             'reference_rules_version': None, 'reference_rank_ic': None,
+             'reference_ic_mean': None, 'reference_ir': None, 'reference_turnover': None,
+             'reference_coverage_pool': None, 'reference_computed_at': None},
+        ]
+        cursor = MagicMock(); cursor.execute.return_value = cursor
+        cursor.fetchall.return_value = rows
+        connection = MagicMock(); connection.__enter__.return_value = cursor
+        with patch.object(imports, 'get_conn', return_value=connection):
+            out = imports.reference_inventory(7, 9)
+        self.assertEqual((out['total'], out['found'], out['missing']), (2, 1, 1))
+        self.assertEqual(out['items'][0]['reference']['rule_version'], 'yg_v1')
+        self.assertIn('不是 import-benchmark-v1', out['items'][0]['reference']['note'])
+        self.assertIsNone(out['items'][1]['reference'])
+        self.assertEqual(out['items'][0]['metrics_status'], 'pending')

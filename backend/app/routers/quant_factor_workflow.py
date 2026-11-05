@@ -234,7 +234,6 @@ def import_summary(ctx=Depends(require_quant_researcher)):
     from services.quant_factor import imports
     return invoke(imports.summary,*identity(ctx))
 
-
 class MetricsBatchBody(BaseModel):
     model_config=ConfigDict(extra='forbid')
     limit:int=Field(default=5,ge=1,le=20,strict=True)
@@ -253,3 +252,9 @@ def import_metrics_status(batch_id:str,ctx=Depends(require_quant_researcher)):
 def import_metrics_retry(factor_id:str,ctx=Depends(require_quant_manager)):
     from services.quant_factor import import_metrics
     return invoke(import_metrics.retry_one,*identity(ctx),factor_id)
+
+@router.get('/imports/svquant-existing/reference')
+def import_reference(ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import imports
+    return invoke(imports.reference_inventory,*identity(ctx))
+

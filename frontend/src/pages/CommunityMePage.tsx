@@ -3,7 +3,6 @@ import { Link, useSearchParams } from "react-router-dom";
 import {
   Activity,
   Bell,
-  Bot,
   Bookmark,
   BookOpen,
   ChevronLeft,
@@ -33,7 +32,6 @@ import {
   type CommunityPost,
 } from "@/lib/communityApi";
 import { NewsFeedCard } from "@/components/NewsFeedCard";
-import { MeAgentsPanel } from "@/pages/MeAgentsPanel";
 import { PageJump } from "@/components/PageJump";
 import {
   AuthorAvatar,
@@ -52,7 +50,6 @@ import {
 export type MeTab =
   | "workspace"
   | "usage"
-  | "agents"
   | "messages"
   | "mine"
   | "drafts"
@@ -64,7 +61,6 @@ export type MeTab =
 const TAB_IDS: MeTab[] = [
   "workspace",
   "usage",
-  "agents",
   "messages",
   "mine",
   "drafts",
@@ -90,7 +86,6 @@ const SIDE_NAV: {
 }[] = [
   { id: "workspace", label: "工作台", icon: LayoutDashboard },
   { id: "usage", label: "AI 用量", icon: Activity },
-  { id: "agents", label: "Agent 管理", icon: Bot },
   { id: "messages", label: "消息中心", icon: Bell },
   { id: "mine", label: "我的发帖", icon: FileText },
   { id: "drafts", label: "草稿箱", icon: FilePenLine },
@@ -671,7 +666,6 @@ export function CommunityMePage() {
           ) : (
             <div className="flex min-h-[min(70vh,calc(100vh-9rem))] flex-col overflow-hidden rounded-2xl border border-white/80 bg-white/95 shadow-[0_8px_30px_rgba(15,23,42,0.06)] backdrop-blur animate-fade-up lg:h-[calc(100vh-5.5rem)]">
               {tab === "usage" && <MeUsagePanel />}
-              {tab === "agents" && <MeAgentsPanel />}
               {tab === "messages" && <MeMessagesPanel />}
               {tab === "mine" && <MePostsPanel />}
               {tab === "drafts" && <MeDraftsPanel />}

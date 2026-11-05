@@ -5,10 +5,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.deps import require_admin, require_db_user_id, require_user
+from app.deps import require_db_user_id, require_user
 from ai.gateway.llm_client import LlmError
 from ai.crews.strategy_research import run_backtest, run_backtest_chat
-from ai.runtime import agent_store as agent_prompt_store, chain_store, eval_store, research_run_store
+from ai.runtime import chain_store, eval_store, research_run_store
 from ai.runtime import store as agent_store
 from ai.runtime.runtime import start_run
 from services.factor.factor_store import add_custom_factor
@@ -17,8 +17,6 @@ from ai.runtime.store import (
     usage_admin_summary,
     usage_summary_for_user,
 )
-from services.ai_agents import catalog as agent_catalog
-from services.core.audit_log_store import write_audit
 from ai.crews.gather_idea import (
     run_backtest_pipeline,
     run_eval_pipeline,
@@ -387,91 +385,3 @@ def agent_strategy_research_chat(
         raise _perm_http(exc) from exc
     except (ValueError, LlmError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-# ---------------------------------------------------------------- Agent 管理
-
-@router.get("/api/agent/agents")
-def list_ai_agents(user: dict = Depends(require_user)) -> dict:
-    include_prompt = str(user.get("role") or "") == "admin"
-    items = agent_catalog.list_agents(include_prompt=include_prompt)
-    return {
-        "items": items,
-        "count": len(items),
-        "editable_count": sum(1 for item in items if item.get("editable")),
-        "can_edit": include_prompt,
-    }
-
-
-@router.get("/api/agent/agents/{task_id}")
-def get_ai_agent(task_id: str, user: dict = Depends(require_user)) -> dict:
-    include_prompt = str(user.get("role") or "") == "admin"
-    item = agent_catalog.get_agent(task_id, include_prompt=include_prompt)
-    if not item:
-        raise HTTPException(status_code=404, detail="Agent 不存在")
-    return item
-
-
-@router.put("/api/agent/agents/{task_id}/prompt")
-def save_ai_agent_prompt(
-    task_id: str,
-    body: dict[str, Any],
-    user: dict = Depends(require_admin),
-) -> dict:
-    if not agent_catalog.is_editable_institution(task_id):
-        raise HTTPException(status_code=400, detail="该 Agent 暂未接入提示词管理")
-    try:
-        result = agent_prompt_store.save_prompt(
-            task_id,
-            str(body.get("prompt") or ""),
-            updated_by=int(user["id"]),
-            note=str(body.get("note") or "")[:200] or None,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    write_audit(
-        action="agent.prompt.save",
-        user_id=int(user["id"]),
-        username=str(user.get("username") or ""),
-        role=str(user.get("role") or ""),
-        module="agent",
-        resource=task_id,
-        method="PUT",
-        path=f"/api/agent/agents/{task_id}/prompt",
-        status_code=200,
-        detail=f"version={result['version']}",
-    )
-    item = agent_catalog.get_agent(task_id, include_prompt=True)
-    return {"ok": True, **result, "agent": item}
-
-
-@router.post("/api/agent/agents/{task_id}/prompt/reset")
-def reset_ai_agent_prompt(task_id: str, user: dict = Depends(require_admin)) -> dict:
-    if not agent_catalog.is_editable_institution(task_id):
-        raise HTTPException(status_code=400, detail="该 Agent 暂未接入提示词管理")
-    result = agent_prompt_store.reset_prompt(task_id, updated_by=int(user["id"]))
-    write_audit(
-        action="agent.prompt.reset",
-        user_id=int(user["id"]),
-        username=str(user.get("username") or ""),
-        role=str(user.get("role") or ""),
-        module="agent",
-        resource=task_id,
-        method="POST",
-        path=f"/api/agent/agents/{task_id}/prompt/reset",
-        status_code=200,
-        detail=f"version={result['version']}",
-    )
-    item = agent_catalog.get_agent(task_id, include_prompt=True)
-    return {"ok": True, **result, "agent": item}
-
-
-@router.get("/api/agent/agents/{task_id}/prompt/history")
-def ai_agent_prompt_history(task_id: str, user: dict = Depends(require_admin)) -> dict:
-    if not agent_catalog.is_editable_institution(task_id):
-        raise HTTPException(status_code=400, detail="该 Agent 暂未接入提示词管理")
-    return {
-        "ok": True,
-        "items": agent_prompt_store.list_prompt_history(task_id),
-        "agent": agent_catalog.get_agent(task_id, include_prompt=True),
-    }

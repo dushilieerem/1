@@ -48,7 +48,7 @@ WORKSPACE_LABELS: dict[str, tuple[str, str]] = {
     "execution": ("交易执行", "Execution"),
     "portfolio": ("投资组合", "Portfolio"),
     "monitor": ("投后管理", "Post-investment"),
-    "about": ("Agent能力", "Agent capabilities"),
+    "about": ("Agent管理", "Agent management"),
 }
 
 # write = 可写与操作；read = 只读；digest = 仅关联摘要；none = 无权限且菜单隐藏

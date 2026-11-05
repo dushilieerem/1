@@ -316,3 +316,9 @@ def f0_latest(tid:str,ctx=Depends(require_quant_researcher)):
 def f0_read(rid:str,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import f0
     return invoke(f0.read,*identity(ctx),rid)
+
+
+@router.post('/reviews/{cid}/independent-opinion')
+def independent_opinion(cid:str,ctx=Depends(require_quant_reviewer)):
+    from services.quant_factor import f5
+    return invoke(f5.opinion,*identity(ctx),cid)

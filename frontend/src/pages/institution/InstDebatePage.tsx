@@ -40,8 +40,7 @@ type Debate = {
 };
 
 function clipBrief(value?: string): string {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
-  return text.length <= 50 ? text : `${text.slice(0, 49)}…`;
+  return String(value || "").replace(/\s+/g, " ").trim();
 }
 
 const EVIDENCE_CHECK_LABEL: Record<string, string> = {

@@ -44,8 +44,8 @@ agent_store.ensure_ai_agent_schema()
 
 
 def test_clip_brief_and_validators() -> None:
-    long_text = "这是一个明显超过五十个字符的摘要，需要被截断而不是完整展示出来，确保界面直击要害。"
-    assert len(clip_brief(long_text)) <= 50
+    long_text = "这是一个明显超过五十个字符的摘要，需要完整保留而不是截断，确保投资经理能看到全部依据。"
+    assert clip_brief(long_text) == long_text
     dim = validate_dimension(
         json.dumps(
             {
@@ -59,8 +59,11 @@ def test_clip_brief_and_validators() -> None:
         ),
         TaskRequest(),
     )
-    assert len(dim["summary"]) <= 50
-    assert all(len(x) <= 50 for x in dim["checks"] + dim["counter"] + dim["open_questions"] + dim["data_gaps"])
+    assert dim["summary"] == long_text
+    assert long_text in dim["checks"]
+    assert dim["counter"] == [long_text]
+    assert dim["open_questions"] == [long_text]
+    assert dim["data_gaps"] == [long_text]
 
     memo = validate_research_memo(
         json.dumps(
@@ -76,13 +79,14 @@ def test_clip_brief_and_validators() -> None:
         ),
         TaskRequest(),
     )
-    assert len(memo["summary"]) <= 50
-    assert len(memo["six_dim_scores"][0]["note"]) <= 50
-    assert all(len(x) <= 50 for x in memo["conflicts"] + memo["key_variables"] + memo["risks"] + memo["open_questions"])
+    assert memo["summary"] == long_text
+    assert memo["six_dim_scores"][0]["note"] == long_text
+    assert memo["conflicts"] == [long_text]
+    assert memo["key_variables"] == [long_text]
 
     risk = validate_memo(json.dumps({"summary": long_text, "risks": [long_text]}), TaskRequest())
-    assert len(risk["summary"]) <= 50
-    assert len(risk["risks"][0]) <= 50
+    assert risk["summary"] == long_text
+    assert risk["risks"] == [long_text]
 
 
 def test_prompt_override_and_reset() -> None:

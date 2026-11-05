@@ -34,12 +34,67 @@ def test_research_memo_keeps_supported_decision_and_scores() -> None:
     assert out["key_variables"] == ["份额", "FCF"]
 
 
-def test_research_memo_defaults_to_watch_for_invalid_decision() -> None:
-    out = validate_research_memo(
-        json.dumps({"summary": "观察", "decision": "buy", "six_dim_scores": "bad"}),
+def test_research_memo_maps_buy_and_defaults_invalid_to_watch() -> None:
+    buy = validate_research_memo(
+        json.dumps({"summary": "买入", "decision": "buy", "six_dim_scores": "bad"}),
         TaskRequest(),
     )
-    assert out["decision"] == "watch"
-    assert out["six_dim_scores"] == []
-    assert out["conflicts"] == []
-    assert out["key_variables"] == []
+    assert buy["decision"] == "proceed"
+    assert buy["six_dim_scores"] == []
+    assert buy["conflicts"] == []
+    assert buy["key_variables"] == []
+
+    invalid = validate_research_memo(
+        json.dumps({"summary": "观察", "decision": "maybe"}),
+        TaskRequest(),
+    )
+    assert invalid["decision"] == "watch"
+
+
+def test_research_memo_accepts_a10_dimension_scores_and_price_band() -> None:
+    out = validate_research_memo(
+        json.dumps(
+            {
+                "decision": "buy",
+                "price_band": [12, 16],
+                "base_value": 18,
+                "mos": 0.3,
+                "holding_period": "1-3 年，按季复核",
+                "dimension_scores": [
+                    {
+                        "dimension": "industry_position",
+                        "rating": 4,
+                        "gate": "pass",
+                        "confidence": "H",
+                        "one_line": "份额提升 2pct（E17）",
+                    }
+                ],
+                "conflicts": [
+                    {"issue": "行业与财务分歧", "ruling": "以审计数据为准", "unresolved": False}
+                ],
+                "key_variable": {
+                    "name": "份额",
+                    "current": "25%",
+                    "threshold": "20%",
+                    "source": "E17",
+                    "frequency": "季度",
+                },
+                "pre_mortem": [{"reason": "价格战", "probability": 0.4, "early_signal": "吨价跌破成本"}],
+                "unresolved": [{"issue": "渠道库存"}],
+                "memo_md": "结论：买入。\n\n三条理由……",
+            }
+        ),
+        TaskRequest(),
+    )
+    assert out["decision"] == "proceed"
+    assert out["summary"].startswith("结论：买入")
+    assert out["six_dim_scores"][0]["key"] == "industry"
+    assert out["six_dim_scores"][0]["score"] == 4.0
+    assert out["six_dim_scores"][0]["confidence"] == 0.9
+    assert out["price_range"]["low"] == 12.0
+    assert out["price_range"]["high"] == 16.0
+    assert out["conflicts"][0].startswith("行业与财务分歧")
+    assert out["key_variables"][0].startswith("份额：当前 25%")
+    assert out["risks"][0].startswith("价格战")
+    assert out["open_questions"] == ["渠道库存"]
+    assert out["holding_period"] == "1-3 年，按季复核"

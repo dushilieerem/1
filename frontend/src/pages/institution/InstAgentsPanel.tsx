@@ -243,8 +243,8 @@ export function InstAgentsPanel() {
             </label>
             <p className="mt-1 text-[10px] leading-relaxed text-[#77718c]">
               {t(
-                "系统仍强制 JSON 校验、50 字摘要、证据引用、hash 绑定与审批门禁；提示词不能关闭这些规则。",
-                "JSON validation, 50-character summaries, evidence citations, hash binding and approval gates remain enforced.",
+                "系统仍强制 JSON 校验、证据引用、hash 绑定与审批门禁；提示词不能关闭这些规则。",
+                "JSON validation, evidence citations, hash binding and approval gates remain enforced.",
               )}
             </p>
 

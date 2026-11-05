@@ -454,3 +454,32 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 放弃时要求填写理由，写入 `inst_idea_decision`、公司池 `drop_reason` 与审计。
 
 验证：e2e-09/10/11 15 passed、tsc/unit 通过。
+
+### 11.16 Agent 提示词按 11.5 全集更新，移除 50 字限制（2026-11-05）
+
+- 机构端所有 Agent 默认提示词改为「§0 通用底座 + 对应 Agent 段落」：行业 A03、六维 A04–A09、一页纸 A10、辩论 A11/A12/A15/A16、风控 A19、Chairman A20、岗位 A07/A13、A08/A09、A23/A24。
+- 六个维度使用 A04–A09 共用的「六维统一输出契约」；一页纸使用 A10 的 dimension_scores / price_band / memo_md 等字段；风控与 Chairman 使用 A19/A20 的 checks / verdict / conditions / proposed_authorization 字段。
+- validator 兼容新契约并归一化为平台字段（summary / checks / counter / evidence / risks / open_questions / six_dim_scores / price_range），旧缓存与旧调用不受影响。
+- 移除 50 字摘要限制：后端不再截断 summary/checks/counter/risks 等；前端去掉 `clipBrief` 截断与「50 字摘要」文案。
+- 研究页新增「完整分析 / 完整行业分析 / 完整一页纸与六张表」折叠区，展示 analysis_md / memo_md 全文；六维显示评级与 gate。
+- Agent 管理中已保存的自定义提示词仍优先于默认值；需要采用新默认值时在 Agent 管理里「恢复默认」。
+
+验证：pytest 81 passed、e2e-09/10/11 15 passed、tsc/unit 通过。
+
+### 11.17 行业 Agent 空内容根因修复（2026-11-05）
+
+**根因**：LLM 网关当前模型是推理模型。`inst.industry` 的 `max_tokens=3000` 全部被推理 token 消耗（`reasoning_tokens=3000`、`finish_reason=length`），正式 `content` 为空；网关 `_normalize` 只看到空 content，丢弃了 `finish_reason` 与 reasoning 用量，直接抛 `AiBadOutput`，且空内容不触发重试/兜底，最终变成研究 500。
+
+**修复**：
+- 提高机构端任务输出预算：行业/一页纸/辩论 16000，六维/岗位 12000，风控/Chairman 8000，单维追问 4000；超时同步放宽。
+- 网关保留 `finish_reason`、`reasoning_tokens`、`reasoning_chars` 并记录日志；`finish_reason=length` 抛新的 `AiOutputTruncated`。
+- `complete` 遇到截断自动把 `max_tokens` 翻倍重试（上限 `LLM_MAX_OUTPUT_TOKENS`，默认 32000），再切换兜底模型；`content_filter` 不重试。
+- `.env.example` 增加 `LLM_MAX_OUTPUT_TOKENS` 说明。
+
+**实测**：同一行业 Prompt 走后端真实网关——
+- `max_tokens=3000`：reasoning 3000、content 0、finish_reason=length（复现空内容）；
+- `max_tokens=12000`：reasoning 6092、content 9943、finish_reason=stop；
+- `max_tokens=16000`：reasoning 8230、tokens_out 15087、JSON 通过 validator。
+- 不再依赖 #104 的“失败即降级”兜底；正常路径即可产出完整行业分析。
+
+验证：`pytest tests/test_inst_*.py tests/test_llm_fallback.py tests/test_ai_router.py tests/test_ai_layer_boundary.py` 114 passed。

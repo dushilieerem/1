@@ -20,6 +20,16 @@ type Dim = {
   open_questions?: string[];
   data_gaps?: string[];
   confidence?: number;
+  confidence_label?: string;
+  rating?: number | null;
+  gate?: string | null;
+  analysis_md?: string;
+  key_numbers?: unknown[];
+  falsifiers?: unknown[];
+  thesis_links?: unknown[];
+  one_line?: string;
+  attractiveness?: number | null;
+  implication_for_company?: string;
   engine?: string;
   agent?: string;
   agent_error?: string;
@@ -53,6 +63,10 @@ type Memo = {
   evidence?: string[];
   risks?: string[];
   open_questions?: string[];
+  memo_md?: string;
+  three_sentences?: { thesis?: string; max_risk?: string; decision?: string };
+  price_band?: number[];
+  base_value?: number;
   metrics?: Array<{ label: string; value: string; note?: string }>;
   engine?: string;
 };
@@ -97,7 +111,7 @@ type CaseItem = {
 };
 
 const AGENT_TITLES: Array<[string, string]> = [
-  ["industry", "商业与产业"],
+  ["industry", "产业研究"],
   ["business_model", "公司商业模式"],
   ["moat", "护城河"],
   ["financial", "财务质量"],
@@ -123,8 +137,7 @@ const EVIDENCE_GRADE_META: Record<string, { label: string; note: string; tone: "
 };
 
 function clipBrief(value?: string): string {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
-  return text.length <= 50 ? text : `${text.slice(0, 49)}…`;
+  return String(value || "").replace(/\s+/g, " ").trim();
 }
 
 function sourceLabel(source?: string): string {
@@ -597,6 +610,11 @@ export function InstResearchPage() {
                 <Badge tone={version.industry_analysis.engine === "agent" ? "gold" : "slate"}>
                   {version.industry_analysis.engine === "agent" ? t("AI Agent", "AI Agent") : t("规则兜底", "Rule fallback")}
                 </Badge>
+                {version.industry_analysis.attractiveness != null ? (
+                  <Badge tone={version.industry_analysis.gate === "fail" ? "red" : version.industry_analysis.gate === "watch" ? "amber" : "green"}>
+                    {`${t("吸引力", "Attractiveness")} ${version.industry_analysis.attractiveness}/5`}
+                  </Badge>
+                ) : null}
               </div>
             ) : null
           }
@@ -626,6 +644,22 @@ export function InstResearchPage() {
               <p className="text-[10px] text-[#77718c]">
                 {t("证据", "Evidence")}：{version.industry_analysis.evidence_ids?.length || 0} {t("条", "items")}
               </p>
+              {version.industry_analysis.agent_error ? (
+                <p className="text-[10px] leading-relaxed text-amber-700">
+                  {t("AI 行业分析未完成：", "AI industry analysis failed: ")}
+                  {version.industry_analysis.agent_error}
+                </p>
+              ) : null}
+              {version.industry_analysis.analysis_md ? (
+                <details className="rounded-lg border border-[#e3eaf8] bg-white px-3 py-2">
+                  <summary className="cursor-pointer text-[11px] font-medium text-[#7950ba]">
+                    {t("完整行业分析", "Full industry analysis")}
+                  </summary>
+                  <div className="mt-2 whitespace-pre-wrap text-[11px] leading-relaxed text-[#505369]">
+                    {version.industry_analysis.analysis_md}
+                  </div>
+                </details>
+              ) : null}
             </div>
           ) : (
             <Empty>
@@ -750,10 +784,25 @@ export function InstResearchPage() {
                           ? `AI Agent${activeDimData.confidence != null ? ` · ${activeDimData.confidence.toFixed(2)}` : ""}`
                           : t("规则兜底", "Rule fallback")}
                       </Badge>
+                      {activeDimData.rating != null ? (
+                        <Badge tone={activeDimData.gate === "fail" ? "red" : activeDimData.gate === "watch" ? "amber" : "green"}>
+                          {`${t("评级", "Rating")} ${activeDimData.rating}/5${activeDimData.gate ? ` · ${activeDimData.gate}` : ""}`}
+                        </Badge>
+                      ) : null}
                     </div>
                   </div>
                   <p className="mt-1 text-[11px] leading-relaxed text-[#68738b]">{activeDimData.question}</p>
                   <p className="mt-2 text-xs leading-relaxed text-[#505369]">{clipBrief(activeDimData.summary) || t("待补充", "TBD")}</p>
+                  {activeDimData.analysis_md ? (
+                    <details className="mt-2 rounded-lg border border-[#e3eaf8] bg-white px-3 py-2">
+                      <summary className="cursor-pointer text-[11px] font-medium text-[#7950ba]">
+                        {t("完整分析", "Full analysis")}
+                      </summary>
+                      <div className="mt-2 whitespace-pre-wrap text-[11px] leading-relaxed text-[#505369]">
+                        {activeDimData.analysis_md}
+                      </div>
+                    </details>
+                  ) : null}
                   {activeDimData.checks?.length ? (
                     <ul className="mt-2 space-y-1 text-[11px] text-[#68738b]">
                       {activeDimData.checks.map((x) => (
@@ -1002,6 +1051,16 @@ export function InstResearchPage() {
               <p className="mt-1 text-xs leading-relaxed text-[#505369]">
                 {clipBrief(memo.summary) || t("待补充", "TBD")}
               </p>
+              {memo.memo_md ? (
+                <details className="mt-2 rounded-lg border border-[#e3eaf8] bg-[#f8faff] px-3 py-2">
+                  <summary className="cursor-pointer text-[11px] font-medium text-[#7950ba]">
+                    {t("完整一页纸与六张表", "Full one-pager and tables")}
+                  </summary>
+                  <div className="mt-2 whitespace-pre-wrap text-[11px] leading-relaxed text-[#505369]">
+                    {memo.memo_md}
+                  </div>
+                </details>
+              ) : null}
             </section>
 
             {memo.price_range || memo.holding_period ? (

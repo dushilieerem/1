@@ -116,3 +116,83 @@ def test_merge_industry_block_is_separate_from_six_dims() -> None:
     assert block["summary"].startswith("行业增速")
     assert block["evidence_idx"] == [0]
     assert built["evidence"][0]["title"] == "行业规模"
+
+
+def test_validate_dimension_accepts_a04_six_dim_contract() -> None:
+    raw = json.dumps(
+        {
+            "dimension": "industry_position",
+            "rating": 4,
+            "gate": "pass",
+            "one_line": "份额有望从 25% 升至 35%（E17）",
+            "analysis_md": "① 结论：卡位成立。\n\n② 份额与驱动：……",
+            "key_numbers": [
+                {"name": "份额", "value": "25%", "period": "2025A", "source": "E17", "evidence_id": "E17", "caliber": "收入口径"}
+            ],
+            "evidence": [
+                {"evidence_id": "E17", "grade": "A", "document_id": "年报", "page": "12", "quote": "份额 25%"}
+            ],
+            "falsifiers": [
+                {"condition": "份额跌破 20%", "threshold": "20%", "observe": "季度份额", "frequency": "季度"}
+            ],
+            "data_gaps": [{"item": "渠道库存", "impact": "M", "workaround": "经销商调研"}],
+            "confidence": "H",
+        },
+        ensure_ascii=False,
+    )
+    data = validate_dimension(raw, None)  # type: ignore[arg-type]
+    assert data["summary"].startswith("份额有望从 25% 升至 35%")
+    assert data["checks"][0].startswith("份额：25%")
+    assert data["counter"][0].startswith("份额跌破 20%")
+    assert data["open_questions"][0].startswith("渠道库存")
+    assert data["confidence"] == 0.9
+    assert data["confidence_label"] == "H"
+    assert data["rating"] == 4
+    assert data["gate"] == "pass"
+    assert data["analysis_md"].startswith("① 结论")
+
+
+def test_validate_memo_accepts_a19_and_a20_contracts() -> None:
+    from ai.router.tasks.institution import validate_memo
+
+    risk = validate_memo(
+        json.dumps(
+            {
+                "verdict": "block",
+                "reason": "集中度 18% 超过 15% 硬上限。",
+                "checks": [
+                    {"item": "concentration", "status": "block", "detail": "交易后 18% > 15%", "evidence_ids": ["E1"]},
+                    {"item": "cash", "status": "pass", "detail": "交易后 12%"},
+                ],
+                "conditions": [{"text": "降至 15% 以下再提交"}],
+            },
+            ensure_ascii=False,
+        ),
+        None,  # type: ignore[arg-type]
+    )
+    assert risk["summary"].startswith("集中度 18%")
+    assert risk["risks"][0].startswith("concentration")
+    assert risk["open_questions"] == ["降至 15% 以下再提交"]
+    assert risk["evidence"] == ["E1"]
+
+    chairman = validate_memo(
+        json.dumps(
+            {
+                "decision": "conditional",
+                "reason": "资本配置可接受，带条件批准。",
+                "checks": [
+                    {"item": "partner", "pass": True, "note": "已通过"},
+                    {"item": "risk", "pass": False, "note": "风控附加条件未满足"},
+                ],
+                "conditions": [{"text": "执行前确认条件"}],
+                "unresolved": [{"issue": "渠道库存待核"}],
+                "memo_md": "审批备忘录全文。",
+            },
+            ensure_ascii=False,
+        ),
+        None,  # type: ignore[arg-type]
+    )
+    assert chairman["summary"].startswith("资本配置可接受")
+    assert any("risk" in x for x in chairman["risks"])
+    assert "执行前确认条件" in chairman["open_questions"]
+    assert "渠道库存待核" in chairman["open_questions"]

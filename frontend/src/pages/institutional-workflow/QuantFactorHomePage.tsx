@@ -108,7 +108,7 @@ export function QuantFactorHomePage(){
    <div className="card-body">
     <div className="kv">
      <span>分支来源</span><div>{selectedBranch.source==='manual'?'人工':'Agent'}（parent：{selectedBranch.parent_id?selectedBranch.parent_id.slice(0,8):'无'}）</div>
-     <span>说明</span><div className="fine">“从此分支接手”会新建人工分支并把它设为工作台写入分支；交回 Agent/F0 尚未接入。</div>
+     <span>说明</span><div className="fine">“从此分支接手”会新建人工分支并把它设为工作台写入分支；交回按钮执行规则版单步 F0（模型决策尚未接入）。</div>
     </div>
     <h3 style={{margin:'16px 0 4px'}}>试验与决定</h3>
     {trials.length===0?<p className="subtle">该分支尚无记录。</p>:trials.map(t=>(
@@ -129,7 +129,7 @@ export function QuantFactorHomePage(){
     <div className="card-body">
      <div className="units">
       <div className="unit"><span className="ui">⇅</span><div><b>课题调度</b><small>规则排队/跨课题预算：未接入</small></div></div>
-      <div className="unit agent"><span className="ui">F0</span><div><b>研究决策</b><small>自动推进：未接入</small></div></div>
+      <div className="unit agent"><span className="ui">F0</span><div><b>研究决策</b><small>规则版单步可用；模型决策未接入</small></div></div>
       <div className="unit"><span className="ui">F1</span><div><b>起点检索</b><small>因子库与历史试验：可用</small></div></div>
       <div className="unit agent"><span className="ui">F2</span><div><b>假设研究</b><small>Agent 草稿：可用，需人工确认</small></div></div>
       <div className="unit agent"><span className="ui">F3</span><div><b>因子实现</b><small>Agent 生成与校验：可用</small></div></div>

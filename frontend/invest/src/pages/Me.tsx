@@ -137,9 +137,6 @@ export default function Me() {
         <button className="menu-item" onClick={() => nav("/agents")}>
           <Bot size={18} /><span>{t("Agent 管理", "Agent management")}</span><ChevronRight size={16} />
         </button>
-        <button className="menu-item" onClick={() => nav("/quant")}>
-          <FileText size={18} /><span>{t("量化研究", "Quant research")}</span><ChevronRight size={16} />
-        </button>
         <button className="menu-item" onClick={() => nav("/notifications")}>
           <Bell size={18} /><span>{t("消息通知", "Notifications")}</span><ChevronRight size={16} />
         </button>

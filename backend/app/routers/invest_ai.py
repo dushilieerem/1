@@ -196,6 +196,19 @@ def _user_context(conn: PGConn, user_id: int) -> dict[str, Any]:
     }
 
 
+def _extract_compare_pair(query: str) -> tuple[str, str]:
+    """从「对比宁德时代和茅台」这类中文问句里兜底抽两个标的。"""
+    text = (query or "").strip()
+    text = re.sub(r"^(请|帮我|帮忙|麻烦)?\s*(对比|比较|看看|查一下|分析)\s*", "", text)
+    text = re.sub(r"(的)?(估值|财务|基本面|风险|数据|哪个好|怎么样|如何).*$", "", text)
+    parts = [
+        p.strip(" 　[]【】（）()的")
+        for p in re.split(r"\s*(?:和|与|跟|vs\.?|versus|、|,|，)\s*", text, flags=re.I)
+        if p.strip(" 　[]【】（）()的")
+    ]
+    return (parts[0], parts[1]) if len(parts) >= 2 else ("", "")
+
+
 def _stock_context(conn: PGConn, code: str) -> dict[str, Any]:
     data = rules.build_stock(conn, code)
     if not data:
@@ -285,6 +298,11 @@ def chat(
     except Exception:
         routed = {"intent": "chat", "slots": {}}
     intent_name = str(routed.get("intent") or "chat")
+    # 中文「对比 A 和 B」在模型缺槽位时仍可确定性路由。
+    pair_first, pair_second = _extract_compare_pair(q)
+    if pair_first and pair_second and re.search(r"对比|比较|vs\.?|versus", q, flags=re.I):
+        intent_name = "compare"
+        routed = {"intent": "compare", "slots": {"stock": pair_first, "stock2": pair_second}}
     if intent_name == "compliance_block":
         return {
             "ok": True,
@@ -368,6 +386,10 @@ def chat(
         slots = routed.get("slots") or {}
         first = str(slots.get("stock") or slots.get("symbol") or slots.get("company") or "").strip()
         second = str(slots.get("stock2") or slots.get("symbol2") or slots.get("company2") or "").strip()
+        if not first or not second:
+            parsed_first, parsed_second = _extract_compare_pair(q)
+            first = first or parsed_first
+            second = second or parsed_second
         if not first or not second:
             return {
                 "ok": True,

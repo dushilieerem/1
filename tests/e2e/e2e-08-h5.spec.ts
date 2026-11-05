@@ -166,7 +166,7 @@ test("量化研究入口页展示今日关注与四个入口", async ({ page }) 
   await expect(page.locator(".quant-entry")).toHaveCount(4);
   await expect(page.locator(".quant-focus-bar")).toBeVisible();
   await expect(page.locator(".quant-style-card")).toBeVisible();
-  await expect(page.locator(".tab.on")).toContainText("我的");
+  await expect(page.locator(".tab.on")).toContainText("量化");
   await noHorizontalOverflow(page);
 });
 
@@ -176,6 +176,8 @@ test("因子页展示市场风格与 6 行因子榜", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "因子" })).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".quant-factor-row")).toHaveCount(6, { timeout: 30_000 });
   await expect(page.getByText("因子入门")).toBeVisible();
+  await page.locator(".quant-factor-row").first().click();
+  await expect(page.locator(".quant-detail")).toBeVisible({ timeout: 20_000 });
   await noHorizontalOverflow(page);
 });
 

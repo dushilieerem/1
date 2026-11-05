@@ -1753,24 +1753,34 @@ def factor_detail(conn: Any, key: str) -> dict[str, Any] | None:
     crowd_pct = item.get("crowding_percentile")
     if ic is None:
         effectiveness = "历史 IC 样本不足，暂不判断有效性。"
+        effectiveness_en = "Not enough IC history to judge efficacy."
     elif ic >= 0.03 and (ic_win or 0) >= 55:
         effectiveness = f"近 60 日 IC 均值 {ic:.3f}，方向命中 {int(ic_win or 0)}%，历史有效性尚可。"
+        effectiveness_en = f"60-day IC mean {ic:.3f}, hit rate {int(ic_win or 0)}%; efficacy is acceptable."
     elif ic <= -0.02:
         effectiveness = f"近 60 日 IC 均值 {ic:.3f}，方向偏反向，历史有效性走弱。"
+        effectiveness_en = f"60-day IC mean {ic:.3f}; the direction has weakened."
     else:
         effectiveness = f"近 60 日 IC 均值 {ic:.3f}，方向命中 {int(ic_win or 0)}%，有效性一般。"
+        effectiveness_en = f"60-day IC mean {ic:.3f}, hit rate {int(ic_win or 0)}%; efficacy is average."
     if crowd_pct is None:
         crowding = "拥挤度样本不足，暂不判断。"
+        crowding_en = "Not enough crowding history to judge."
     elif crowd_pct >= 80:
         crowding = f"多头成交额占全市场 {item.get('crowding')}%，历史分位 {int(crowd_pct)}%，拥挤度偏高。"
+        crowding_en = f"Long book is {item.get('crowding')}% of market turnover, at the {int(crowd_pct)}th percentile; crowding is high."
     else:
         crowding = f"多头成交额占全市场 {item.get('crowding')}%，历史分位 {int(crowd_pct)}%，拥挤度未到偏高区间。"
+        crowding_en = f"Long book is {item.get('crowding')}% of market turnover, at the {int(crowd_pct)}th percentile; crowding is not high."
     if (crowd_pct or 0) >= 80:
         fails = "拥挤度回落或风格反转时，多空收益可能先于基本面收敛，需要复核。"
+        fails_en = "If crowding falls or style reverses, the long-short spread may converge before fundamentals do."
     elif ic is not None and ic < 0:
         fails = "当 IC 继续走弱、或与主流因子相关性明显上升时，这套方向容易失效。"
+        fails_en = "The direction can fail if IC keeps weakening or correlation with mainstream factors rises."
     else:
         fails = "当市场风格切换、该因子与动量/波动因子的相关性显著上升时，多空收益可能收敛。"
+        fails_en = "The spread can converge if market style changes or correlation with momentum/volatility rises."
     return {
         **item,
         "explain": meta["plain"] + "。分位只描述取值大小，不表达好坏。",

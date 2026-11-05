@@ -233,3 +233,23 @@ def import_existing(ctx=Depends(require_quant_manager)):
 def import_summary(ctx=Depends(require_quant_researcher)):
     from services.quant_factor import imports
     return invoke(imports.summary,*identity(ctx))
+
+
+class MetricsBatchBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    limit:int=Field(default=5,ge=1,le=20,strict=True)
+
+@router.post('/imports/metrics-batch',status_code=202)
+def import_metrics_start(body:MetricsBatchBody,ctx=Depends(require_quant_manager)):
+    from services.quant_factor import import_metrics
+    return invoke_ledger(import_metrics.start_batch,*identity(ctx),body.limit)
+
+@router.get('/imports/metrics-batch/{batch_id}')
+def import_metrics_status(batch_id:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import import_metrics
+    return invoke(import_metrics.batch_status,*identity(ctx)[1:],batch_id)
+
+@router.post('/imports/{factor_id}/metrics-retry')
+def import_metrics_retry(factor_id:str,ctx=Depends(require_quant_manager)):
+    from services.quant_factor import import_metrics
+    return invoke(import_metrics.retry_one,*identity(ctx),factor_id)

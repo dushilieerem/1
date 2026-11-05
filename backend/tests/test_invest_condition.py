@@ -32,12 +32,12 @@ def test_six_presets_parse_exact_conditions():
         assert not parsed["conflicts"], query
 
 
-def test_fund_flow_presets_are_explicitly_unsupported():
+def test_fund_flow_presets_are_supported():
     for query in (PRESETS[2], PRESETS[3]):
         parsed = condition.parse_query(query)
-        assert parsed["all_recognized"] is False
-        assert {c["key"] for c in parsed["unsupported"]} >= {"main_net_inflow_5d"}
-        assert all(c["supported"] is False for c in parsed["unsupported"])
+        assert parsed["all_recognized"] is True
+        assert not parsed["unsupported"]
+        assert {c["key"] for c in parsed["conditions"]} >= {"main_net_inflow_5d"}
 
 
 def test_partial_recognition_gives_two_alternatives():
@@ -55,11 +55,24 @@ def test_conflict_blocks_execution():
     assert parsed["all_recognized"] is False
 
 
-def test_normalize_conditions_roundtrip_after_removing_fund_flow():
+def test_normalize_conditions_roundtrip_keeps_fund_flow():
     parsed = condition.parse_query(PRESETS[2])
-    kept = condition.normalize_conditions([c for c in parsed["conditions"] if c["supported"]])
-    assert [c["key"] for c in kept] == ["market_cap", "return_20d"]
+    kept = condition.normalize_conditions(parsed["conditions"])
+    assert [c["key"] for c in kept] == ["market_cap", "return_20d", "main_net_inflow_5d"]
     assert all(c["supported"] for c in kept)
+
+
+def test_fund_flow_candidate_is_converted_to_wan_and_days(monkeypatch):
+    monkeypatch.setattr(
+        condition.rules, "rows",
+        lambda *args, **kwargs: [{
+            "symbol": "600519.SH", "main_net_inflow_5d": 85_550_000.0,
+            "consecutive_inflow_days": 4,
+        }],
+    )
+    out = condition._load_fund_flow(object(), ["600519"])
+    assert out["600519"]["main_net_inflow_5d"] == 8555.0
+    assert out["600519"]["main_inflow_days"] == 4
 
 
 def test_roe_is_normalized_to_percent(monkeypatch):

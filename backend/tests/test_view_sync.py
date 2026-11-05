@@ -225,3 +225,41 @@ def test_sync_index_falls_back_when_old_view_has_no_volume_amount(tmp_path: Path
     row = captured["rows"][0]
     assert row[0] == "000300.SH"
     assert row[6] is None and row[7] is None
+
+
+def test_sync_fund_flow_candidate_reads_core_fields(tmp_path: Path, monkeypatch):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from services.data import view_sync
+
+    base = tmp_path / "derived" / "fund_flow_candidate" / "year=2026"
+    base.mkdir(parents=True)
+    pq.write_table(
+        pa.table({
+            "symbol": ["600519.SH"], "trade_date": ["2026-11-05"],
+            "main_net_inflow_5d": [85_550_000.0], "main_net_inflow_latest": [69_476_704.0],
+            "main_net_ratio_latest": [4.86], "inflow_days_5d": [3],
+            "consecutive_inflow_days": [4], "consecutive_outflow_days": [0],
+            "days_available": [5], "source": ["eastmoney_stock_fundflow"],
+            "observed_at": ["2026-11-05T17:15:20"],
+        }),
+        base / "part.parquet",
+    )
+    view = ViewInfo("v", tmp_path, _manifest(data_date="2026-11-05"), "2026-11-01", date(2026, 11, 5))
+    captured = {}
+
+    def fake_copy(conn, table, columns, rows):
+        captured["table"] = table
+        captured["columns"] = columns
+        captured["rows"] = list(rows)
+        return len(captured["rows"])
+
+    assert "fund_flow_candidate" not in view.manifest["datasets"]
+    view.manifest["datasets"]["fund_flow_candidate"] = {"path": "derived/fund_flow_candidate"}
+    monkeypatch.setattr(view_sync, "_copy_rows", fake_copy)
+    total = view_sync._sync_fund_flow_candidate(object(), view)
+    assert total == 1
+    assert captured["table"] == "tmp_md_fund_flow_candidate"
+    assert captured["rows"][0][0] == "600519.SH"
+    assert captured["rows"][0][6] == 4

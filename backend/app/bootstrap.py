@@ -234,26 +234,14 @@ def bootstrap_schemas() -> None:
         # P0-10：迁移失败必须 fail-fast，不能带着不确定 schema 启动。
         raise RuntimeError(f"数据库迁移失败: {exc}") from exc
 
-    try:
-        from services.news.news_ingest import start_news_ingest_scheduler
+    from services.core.env_config import env as _env
 
-        start_news_ingest_scheduler()
-    except Exception as exc:
-        print(f"  news ingest scheduler 跳过: {exc}")
+    if (_env("SVQUANT_SCHEDULER_MODE", "inline") or "inline").strip().lower() == "inline":
+        from services.core.schedulers import start_all
 
-    try:
-        from services.factor.dashboard_scheduler import start_dashboard_daily_scheduler
-
-        start_dashboard_daily_scheduler()
-    except Exception as exc:
-        print(f"  panel daily scheduler 跳过: {exc}")
-
-    try:
-        from services.paper.scheduler import start_paper_settlement_scheduler
-
-        start_paper_settlement_scheduler()
-    except Exception as exc:
-        print(f"  paper trading scheduler 跳过: {exc}")
+        start_all()
+    else:
+        print("  后台调度器交由 worker 进程（SVQUANT_SCHEDULER_MODE=worker）")
 
     try:
         from services.factor.dashboard_store import read_job
@@ -265,13 +253,6 @@ def bootstrap_schemas() -> None:
             )
     except Exception:
         pass
-
-    try:
-        from services.factor.catalog_scheduler import start_re_catalog_sync_scheduler
-
-        start_re_catalog_sync_scheduler()
-    except Exception as exc:
-        print(f"  re-catalog 定时同步跳过: {exc}")
 
     try:
         from services.core.env_config import env

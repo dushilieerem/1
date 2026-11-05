@@ -19,6 +19,7 @@ if ROOT not in sys.path:
 
 def main() -> int:
     from services.core.job_queue import ensure_job_schema
+    from services.core.env_config import env
     from services.quant_factor.jobs import start_worker
 
     for attempt in range(30):
@@ -33,6 +34,11 @@ def main() -> int:
         return 1
 
     start_worker(poll_sec=2.0)
+    if (env("SVQUANT_SCHEDULER_MODE", "inline") or "inline").strip().lower() == "worker":
+        from services.core.schedulers import start_all
+
+        start_all()
+        print("[worker] background schedulers started", file=sys.stderr)
     stop = threading.Event()
 
     def _stop(_signum, _frame) -> None:

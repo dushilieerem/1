@@ -60,7 +60,7 @@ def require_inst_user(
 def require_quant_user(
     authorization: str | None = Depends(_auth_header),
 ) -> dict[str, Any]:
-    """机构量化会话：product=quant，且成员角色在 QUANT_ROLES。"""
+    """机构量化会话：product=quant，且成员角色在 QUANT_LOGIN_ROLES。"""
     ctx = user_from_quant_authorization(authorization)
     if not ctx:
         raise HTTPException(status_code=401, detail="机构量化端未登录或会话已失效")

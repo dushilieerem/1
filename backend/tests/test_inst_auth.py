@@ -11,6 +11,7 @@ os.environ.setdefault("JWT_SECRET_KEY", "0123456789abcdef0123456789abcdef")
 from app.deps import require_quant_researcher, require_quant_reviewer  # noqa: E402
 from services.auth.auth_store import decode_token, issue_token  # noqa: E402
 from services.institution.inst_store import (  # noqa: E402
+    QUANT_LOGIN_ROLES,
     QUANT_ROLES,
     ROLE_LABELS,
     WORKSPACES,
@@ -182,6 +183,8 @@ class QuantSessionTest(unittest.TestCase):
     def test_quant_role_has_no_subjective_workspace_access(self):
         self.assertIn("quant_researcher", QUANT_ROLES)
         self.assertIn("quant_reviewer", QUANT_ROLES)
+        self.assertNotIn("manager", QUANT_ROLES)
+        self.assertIn("manager", QUANT_LOGIN_ROLES)
         self.assertEqual(set(permissions_for("quant_researcher").values()), {"none"})
         self.assertEqual(set(permissions_for("quant_reviewer").values()), {"none"})
         self.assertEqual(
@@ -202,6 +205,22 @@ class QuantSessionTest(unittest.TestCase):
         self.assertEqual(payload["org_id"], 9)
         self.assertEqual(payload["inst_role"], "quant_researcher")
 
+    def test_manager_keeps_subjective_institution_login(self):
+        from unittest.mock import patch
+
+        with patch(
+            "services.institution.inst_store.authenticate_user",
+            return_value={"id": 7, "username": "inst_manager", "role": "user"},
+        ), patch(
+            "services.institution.inst_store.get_membership",
+            return_value={"org_id": 3, "role": "manager"},
+        ):
+            result = login_inst(username="inst_manager", password="x")
+        payload = decode_token(result["token"])
+        self.assertEqual(payload["scope"], "inst")
+        self.assertEqual(payload["inst_role"], "manager")
+        self.assertNotEqual(payload.get("product"), "quant")
+
     def test_subjective_inst_token_is_rejected_by_quant_session(self):
         token = issue_inst_token(
             {"id": 7, "username": "inst_manager", "role": "user"},
@@ -214,7 +233,9 @@ class QuantSessionTest(unittest.TestCase):
             {"id": 7, "username": "inst_manager", "role": "user"},
             {"org_id": 3, "role": "manager"},
         )
-        self.assertEqual(decode_token(token)["inst_role"], "manager")
+        payload = decode_token(token)
+        self.assertEqual(payload["inst_role"], "manager")
+        self.assertEqual(payload["product"], "quant")
         with self.assertRaises(PermissionError):
             issue_quant_token(
                 {"id": 8, "username": "partner", "role": "user"},

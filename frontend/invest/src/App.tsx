@@ -4,6 +4,7 @@ import Shell from "./pages/Shell";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Home from "./pages/Home";
+import Topics from "./pages/Topics";
 import Topic from "./pages/Topic";
 import Stock from "./pages/Stock";
 import Watch from "./pages/Watch";
@@ -72,6 +73,7 @@ export default function App() {
         }
       >
         <Route index element={<Home />} />
+        <Route path="topics" element={<Topics />} />
         <Route path="topic/:id" element={<Topic />} />
         <Route path="stock/:code" element={<Stock />} />
         <Route path="watch" element={<Watch />} />

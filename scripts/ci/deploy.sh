@@ -50,9 +50,30 @@ fi
 log "发布 $TAG（$NEW_BACKEND / $NEW_WEB）"
 bash "$ROOT_DIR/scripts/ci/docker-build.sh" "$TAG"
 
-# 没有迁移框架，破坏性变更只能靠备份兜底；备份失败就不发布
-if [[ "${SKIP_DB_BACKUP:-0}" != "1" ]]; then
+# 纯代码发布不重复全量备份（8GB+ 库的 pg_dump 是 CD 主耗时）；
+# 只有 migrations 变化、首次发布或显式 FORCE_DB_BACKUP=1 才备份。
+PREV_TAG=""
+if [[ -n "$PREV_BACKEND" ]]; then
+  PREV_TAG="${PREV_BACKEND##*:}"
+fi
+NEED_DB_BACKUP=0
+BACKUP_REASON="首次发布/无上一版本"
+if [[ "${FORCE_DB_BACKUP:-0}" == "1" ]]; then
+  NEED_DB_BACKUP=1; BACKUP_REASON="FORCE_DB_BACKUP=1"
+elif [[ "${SKIP_DB_BACKUP:-0}" == "1" ]]; then
+  NEED_DB_BACKUP=0; BACKUP_REASON="SKIP_DB_BACKUP=1"
+elif [[ -n "$PREV_TAG" ]] && git -C "$ROOT_DIR" rev-parse --verify --quiet "$PREV_TAG^{commit}" >/dev/null; then
+  if ! git -C "$ROOT_DIR" diff --quiet "$PREV_TAG" "$TAG" -- backend/migrations; then
+    NEED_DB_BACKUP=1; BACKUP_REASON="migrations 变化（$PREV_TAG → $TAG）"
+  else
+    BACKUP_REASON="纯代码发布，migrations 未变化（$PREV_TAG → $TAG）"
+  fi
+fi
+if [[ "$NEED_DB_BACKUP" == "1" ]]; then
+  log "数据库备份：$BACKUP_REASON"
   bash "$ROOT_DIR/scripts/ci/backup-db.sh" "$TAG" || { log "数据库备份失败，终止发布"; exit 1; }
+else
+  log "跳过数据库备份：$BACKUP_REASON；如需强制备份设 FORCE_DB_BACKUP=1"
 fi
 
 log "启动新版本"

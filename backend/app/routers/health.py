@@ -19,6 +19,7 @@ def health() -> dict:
     db_ok = False
     schema: dict | None = None
     data_sync: dict | None = None
+    queue: dict | None = None
     try:
         with get_conn() as conn:
             conn.execute("SELECT 1")
@@ -52,6 +53,7 @@ def health() -> dict:
         "db_pool": pool_stats(),
         "schema": schema,
         "data_sync": data_sync,
+        "queue": queue,
         "worker_mode": (env("SVQUANT_WORKER_MODE", "single") or "single"),
         "multi_instance_supported": False,
         "in_memory_state": [

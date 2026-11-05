@@ -369,6 +369,45 @@ def list_branches(uid: int, org: int, topic_id: str) -> list[dict]:
     return [_public(row) for row in _branches(uid, org, topic_id)]
 
 
+def takeover_branch(uid: int, org: int, topic_id: str, parent_id: str) -> dict:
+    """Create a manual branch from a real parent and make it the active workbench branch."""
+    topic = _topic(uid, org, topic_id)
+    with get_conn() as c:
+        parent = c.execute(
+            """SELECT * FROM quant_factor_branches
+               WHERE id=%s AND user_id=%s AND org_id=%s AND topic_id=%s""",
+            (parent_id, uid, org, topic_id)).fetchone()
+        if not parent:
+            raise KeyError(parent_id)
+        branch_id = str(uuid.uuid4())
+        c.execute(
+            """INSERT INTO quant_factor_branches
+               (id,user_id,org_id,topic_id,parent_id,source,owner_id,hypothesis_version,implementation_version)
+               VALUES (%s,%s,%s,%s,%s,'manual',%s,%s,%s)""",
+            (branch_id, uid, org, topic_id, parent_id, uid,
+             int(parent["hypothesis_version"]) + 1, int(parent["implementation_version"])))
+        c.execute(
+            """UPDATE detect_projects
+               SET config=jsonb_set(COALESCE(config,'{}'::jsonb),'{v5ActiveBranch}',to_jsonb(%s::text)),
+                   updated_at=NOW()
+               WHERE user_id=%s AND id=%s""",
+            (branch_id, uid, topic["project_id"]))
+        row = c.execute("SELECT * FROM quant_factor_branches WHERE id=%s", (branch_id,)).fetchone()
+    return _public(row)
+
+
+def handback_branch(uid: int, org: int, topic_id: str) -> dict:
+    """Clear the active manual branch. F0 hand-back is not available yet."""
+    topic = _topic(uid, org, topic_id)
+    with get_conn() as c:
+        c.execute(
+            """UPDATE detect_projects
+               SET config=config-'v5ActiveBranch', updated_at=NOW()
+               WHERE user_id=%s AND id=%s""",
+            (uid, topic["project_id"]))
+    return {"active_branch": None, "agent_handback": "未接入：F0 自动推进尚未上线"}
+
+
 def ledger_view(uid: int, org: int, topic_id: str) -> dict:
     topic = _topic(uid, org, topic_id)
     trials = _trials(uid, org, topic_id)

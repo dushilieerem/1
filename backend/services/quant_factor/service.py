@@ -136,7 +136,13 @@ def _append_development_trial(uid,org,row,req,result,gate,outcome,report_id):
     with get_conn() as c:
         topic=c.execute("SELECT * FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s",(uid,org,row['project_id'])).fetchone()
         if not topic:return None
-        branch=c.execute("SELECT id FROM quant_factor_branches WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at LIMIT 1",(uid,org,topic['id'])).fetchone()
+        project=c.execute("SELECT config FROM detect_projects WHERE user_id=%s AND id=%s",(uid,row['project_id'])).fetchone()
+        active=((project or {}).get('config') or {}).get('v5ActiveBranch')
+        branch=None
+        if active:
+            branch=c.execute("SELECT id FROM quant_factor_branches WHERE id=%s AND user_id=%s AND org_id=%s AND topic_id=%s",(active,uid,org,topic['id'])).fetchone()
+        if not branch:
+            branch=c.execute("SELECT id FROM quant_factor_branches WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at LIMIT 1",(uid,org,topic['id'])).fetchone()
     if not branch:return None
     fa=result.get('factor_analysis') or {}
     metrics=result.get('metrics') or {}

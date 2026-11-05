@@ -200,3 +200,34 @@ class OrgTopicsTest(unittest.TestCase):
         self.assertEqual(out[0]['branch_count'], 1)
         self.assertEqual(cursor.execute.call_args.args[1], (1, 2))
         trials.assert_called_once_with(1, 2, 't1')
+
+
+class TakeoverTest(unittest.TestCase):
+    def test_takeover_creates_manual_child_and_sets_active_branch(self):
+        from unittest.mock import MagicMock, patch
+        from services.quant_factor import ledger
+        cursor = MagicMock(); cursor.execute.return_value = cursor
+        cursor.fetchone.side_effect = [
+            {'id': 'parent', 'hypothesis_version': 1, 'implementation_version': 2},
+            {'id': 'new', 'user_id': 1, 'org_id': 2, 'topic_id': 't', 'parent_id': 'parent',
+             'source': 'manual', 'status': 'active', 'hypothesis_version': 2, 'implementation_version': 2},
+        ]
+        connection = MagicMock(); connection.__enter__.return_value = cursor
+        with patch.object(ledger, '_topic', return_value={'id': 't', 'project_id': 'p'}), \
+             patch.object(ledger, 'get_conn', return_value=connection):
+            out = ledger.takeover_branch(1, 2, 't', 'parent')
+        self.assertEqual(out['parent_id'], 'parent')
+        insert = [x for x in cursor.execute.call_args_list if 'INSERT INTO quant_factor_branches' in x.args[0]][0]
+        self.assertEqual(insert.args[1][4], 'parent')
+        update = [x for x in cursor.execute.call_args_list if 'v5ActiveBranch' in x.args[0]][0]
+        self.assertEqual(update.args[1][1], 1)
+
+    def test_takeover_rejects_foreign_parent(self):
+        from unittest.mock import MagicMock, patch
+        from services.quant_factor import ledger
+        cursor = MagicMock(); cursor.execute.return_value = cursor; cursor.fetchone.return_value = None
+        connection = MagicMock(); connection.__enter__.return_value = cursor
+        with patch.object(ledger, '_topic', return_value={'id': 't', 'project_id': 'p'}), \
+             patch.object(ledger, 'get_conn', return_value=connection):
+            with self.assertRaises(KeyError):
+                ledger.takeover_branch(1, 2, 't', 'foreign')

@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useState,type ReactElement} from 'react';
-import {Link} from 'react-router-dom';
+import {Link,useNavigate} from 'react-router-dom';
 import {researchFetch} from '@/lib/researchClient';
 import {FactorModuleTabs,WorkspaceHeading} from './QuantWorkspacePages';
 
@@ -19,6 +19,7 @@ export function QuantFactorHomePage(){
  const [node,setNode]=useState<string>();
  const [error,setError]=useState('');
  const [loading,setLoading]=useState(true);
+ const navigate=useNavigate();
 
  useEffect(()=>{
   let alive=true;setLoading(true);
@@ -40,6 +41,12 @@ export function QuantFactorHomePage(){
   return()=>{alive=false;};
  },[selected]);
 
+ async function takeOver(){
+  if(!ledger||!selectedBranch)return;
+  const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(ledger.topic.id)+'/branches/'+encodeURIComponent(selectedBranch.id)+'/takeover',{method:'POST'});
+  if(!r.ok){const d=await r.json().catch(()=>({}));setError(typeof d.detail==='string'?d.detail:'接手失败');return;}
+  navigate('/quant/factor/workflow/'+ledger.topic.project_id+'/F4');
+ }
  const children=useMemo(()=>{const map=new Map<string,Branch[]>();for(const b of ledger?.branches||[])map.set(b.parent_id||'root',[...(map.get(b.parent_id||'root')||[]),b]);return map;},[ledger]);
  const trialsByBranch=useMemo(()=>{const map=new Map<string,Trial[]>();for(const t of ledger?.trials||[])map.set(t.branch_id,[...(map.get(t.branch_id)||[]),t]);return map;},[ledger]);
  const topic=topics.find(t=>t.id===selected);
@@ -83,12 +90,12 @@ export function QuantFactorHomePage(){
    <div className="card-head">
     <div><div className="row-flex"><span className="hid">{selectedBranch.id.slice(0,8)}</span><h2>{selectedBranch.source==='manual'?'人工分支':'Agent 分支'}</h2></div>
      <p className="fine">假设 v{selectedBranch.hypothesis_version} · 实现 v{selectedBranch.implementation_version} · {selectedBranch.status}</p></div>
-    <Link className="btn small primary" to={'/quant/factor/workflow/'+(topic?.project_id||'')+'/F4'}>打开人工工作台（项目级，非按分支写入）</Link>
+    <div className="actions"><button className="btn small primary" onClick={()=>void takeOver()}>从此分支接手</button><Link className="btn small" to={'/quant/factor/workflow/'+(topic?.project_id||'')+'/F4'}>打开人工工作台</Link><span className="subtle">交回 Agent：F0 未接入</span></div>
    </div>
    <div className="card-body">
     <div className="kv">
      <span>分支来源</span><div>{selectedBranch.source==='manual'?'人工':'Agent'}（parent：{selectedBranch.parent_id?selectedBranch.parent_id.slice(0,8):'无'}）</div>
-     <span>说明</span><div className="fine">分支级人工回写尚未实现；此处只读展示真实试验。</div>
+     <span>说明</span><div className="fine">“从此分支接手”会新建人工分支并把它设为工作台写入分支；交回 Agent/F0 尚未接入。</div>
     </div>
     <h3 style={{margin:'16px 0 4px'}}>试验与决定</h3>
     {trials.length===0?<p className="subtle">该分支尚无记录。</p>:trials.map(t=>(

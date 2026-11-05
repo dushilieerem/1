@@ -32,3 +32,28 @@ class ReviewQueueTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CurrentKReviewTest(unittest.TestCase):
+    def row(self):
+        return {'id': 'c', 'user_id': 5, 'org_id': 2, 'project_id': 'p', 'snapshot_hash': 'h',
+                'archive': {'review': {'status': 'requested', 'assigned_to': 9}, 'approved': False, 'sealed': False},
+                'snapshot': {'plan': {'researchPurpose': 'replication'}},
+                'evidence': {'development': {'gate': {'checks': [
+                    {'name': '方向 NW t', 'actual': 2.0, 'operator': '>=', 'threshold': 2.1, 'passed': False}]}}}}
+
+    def test_record_blocks_when_current_k_raises_bar(self):
+        c = MagicMock(); c.execute.return_value.fetchone.return_value = self.row()
+        conn = MagicMock(); conn.__enter__.return_value = c
+        with patch.object(review, 'get_conn', return_value=conn), \
+             patch.object(review, '_ledger_context', return_value={'k': 4, 'threshold': 2.5, 'trials': [], 'topic': {}}):
+            with self.assertRaisesRegex(review.WorkflowError, '当前 K'):
+                review.record(9, 2, 'c', 'research_supported', 'ok')
+
+    def test_record_allows_when_current_threshold_met(self):
+        c = MagicMock(); c.execute.return_value.fetchone.return_value = self.row()
+        conn = MagicMock(); conn.__enter__.return_value = c
+        with patch.object(review, 'get_conn', return_value=conn), \
+             patch.object(review, '_ledger_context', return_value={'k': 4, 'threshold': 1.9, 'trials': [], 'topic': {}}), \
+             patch.object(review, 'detail', return_value={'id': 'c'}):
+            self.assertEqual(review.record(9, 2, 'c', 'research_supported', 'ok'), {'id': 'c'})

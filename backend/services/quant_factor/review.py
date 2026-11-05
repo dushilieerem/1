@@ -4,6 +4,8 @@ from services.core.db import get_conn
 from . import store
 from .service import event,current,public
 from .policy import WorkflowError
+from . import ledger
+from .metrics import threshold
 
 def request_review(uid,org,cid,note):
     if not note.strip():raise WorkflowError('请说明需要复核的研究问题')
@@ -47,11 +49,26 @@ def ensure_assigned(review,uid):
     if int(review['assigned_to'])!=uid:
         raise WorkflowError('该事项已指派给其他复核人')
 
+def _ledger_context(org,project_id):
+    with get_conn() as c:
+        topic=c.execute("SELECT * FROM quant_factor_topics WHERE org_id=%s AND project_id=%s",(org,project_id)).fetchone()
+        if not topic:return None
+        trials=[dict(row) for row in c.execute(
+            "SELECT * FROM quant_factor_trials WHERE org_id=%s AND topic_id=%s ORDER BY trial_no",
+            (org,topic['id'])).fetchall()]
+    k=ledger.current_k(trials,topic['primary_holding_period'])
+    return {'topic':ledger._public(topic),'trials':[ledger._public(row) for row in trials],
+            'k':k,'threshold':threshold(k) if k>=1 else None}
+
+
 def detail(uid,org,cid):
     with get_conn() as c:
         row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND org_id=%s',(cid,org)).fetchone()
     ensure_reviewer(row,uid)
-    return public(dict(row))
+    out=public(dict(row))
+    ctx=_ledger_context(org,row['project_id'])
+    if ctx:out.update(ctx)
+    return out
 
 def record(uid,org,cid,decision,note):
     if decision not in ('research_supported','needs_revision','rejected') or not note.strip():raise WorkflowError('请给出研究复核结论及依据')
@@ -59,7 +76,15 @@ def record(uid,org,cid,decision,note):
         row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND org_id=%s FOR UPDATE',(cid,org)).fetchone()
         ensure_reviewer(row,uid)
         from .novelty_policy import handoff_allowed
-        if decision=='research_supported' and row['snapshot']['plan'].get('researchPurpose')=='discovery' and not handoff_allowed(row):raise WorkflowError('新因子候选尚未通过完整去重检验，可反馈补充研究，不能确认新成果依据充分。')
+        if decision=='research_supported':
+            ctx=_ledger_context(org,row['project_id'])
+            if ctx:
+                checks=(row['evidence'].get('development') or {}).get('gate',{}).get('checks') or []
+                nw=[x for x in checks if x.get('name')=='方向 NW t']
+                if not nw:raise WorkflowError('候选缺少日度 Rank IC 的 NW t 证据，不能确认入库')
+                if ctx['threshold'] is not None and float(nw[0]['actual'])<float(ctx['threshold']):
+                    raise WorkflowError('按课题当前 K 校正后 NW t 未达标，只能退回补证或归档')
+            if row['snapshot']['plan'].get('researchPurpose')=='discovery' and not handoff_allowed(row):raise WorkflowError('新因子候选尚未通过完整去重检验，可反馈补充研究，不能确认新成果依据充分。')
         card=dict(row['archive']);review=dict(card['review'])
         if review['status']!='requested':raise WorkflowError('此版本已复核，不能覆盖原结论；新研究版本须单独提交')
         ensure_assigned(review,uid)

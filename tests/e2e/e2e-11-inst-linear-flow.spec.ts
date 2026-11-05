@@ -82,7 +82,9 @@ test("辩论后补议案 → 审批 → 自动授权成交 → 持仓更新", as
       c.market === "CN" &&
       Number(c.ref_price) > 0 &&
       !held.has(String(c.symbol)) &&
-      !crowded.has(String(c.industry || "")),
+      !crowded.has(String(c.industry || "")) &&
+      // 风控会硬阻断 ST/*ST/退市整理标的，E2E 不选它们。
+      !/(^|\*)ST|退/.test(String(c.name || "")),
   );
   expect(company, "找不到可用于买入流程的未持仓标的").toBeTruthy();
   const symbol = String(company.symbol);

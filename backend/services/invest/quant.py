@@ -15,10 +15,12 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import threading
 import time
 import uuid
 from datetime import date, timedelta
+from pathlib import Path
 from statistics import median
 from typing import Any, Iterable
 
@@ -105,6 +107,12 @@ _STYLE_TEXT = {
 }
 
 _PANEL_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
+_BOARD_PAYLOAD_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
+_BOARD_CACHE_VERSION = 1
+_BOARD_CACHE_ROOT = Path(
+    os.environ.get("SVQUANT_QUANT_CACHE_DIR")
+    or (Path(__file__).resolve().parents[2] / "data" / "invest_quant_cache")
+)
 _BOARD_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
 _CACHE_LOCK = threading.Lock()
 _CACHE_TTL = 1800.0
@@ -1552,20 +1560,80 @@ def _board_numpy(panel: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _board_cache_path(data_date: str, range_key: str) -> Path:
+    return _BOARD_CACHE_ROOT / f"board_{data_date}_{range_key}.json"
+
+
+def _load_board_payload(data_date: str, range_key: str) -> dict[str, Any] | None:
+    key = (data_date, range_key)
+    now = time.time()
+    with _CACHE_LOCK:
+        hit = _BOARD_PAYLOAD_CACHE.get(key)
+        if hit and now - hit[0] < _CACHE_TTL:
+            return hit[1]
+    path = _board_cache_path(data_date, range_key)
+    try:
+        wrapped = json.loads(path.read_text(encoding="utf-8"))
+        if wrapped.get("version") != _BOARD_CACHE_VERSION:
+            return None
+        payload = wrapped.get("payload")
+        if not isinstance(payload, dict) or payload.get("data_date") != data_date:
+            return None
+        with _CACHE_LOCK:
+            _BOARD_PAYLOAD_CACHE[key] = (now, payload)
+        return payload
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _save_board_payload(data_date: str, range_key: str, payload: dict[str, Any]) -> None:
+    key = (data_date, range_key)
+    with _CACHE_LOCK:
+        _BOARD_PAYLOAD_CACHE[key] = (time.time(), payload)
+    path = _board_cache_path(data_date, range_key)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(
+            json.dumps({"version": _BOARD_CACHE_VERSION, "payload": payload}, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        tmp.replace(path)
+    except OSError:
+        # 缓存失败不影响主流程；下次请求重新计算。
+        pass
+
+
+def warm_board(conn: Any) -> None:
+    """启动预热：把 board 的 1m/1y 响应写入内存与磁盘缓存。"""
+    for range_key in ("1m", "1y"):
+        factor_board(conn, range_key)
+
+
 def factor_board(conn: Any, range_key: str = "1m") -> dict[str, Any]:
+    range_key = "1y" if range_key == "1y" else "1m"
+    row = rules.one(conn, "SELECT MAX(trade_date)::text AS d FROM md_daily_bar WHERE adjust='hfq'")
+    data_date = _date((row or {}).get("d"))
+    if data_date:
+        cached = _load_board_payload(data_date, range_key)
+        if cached is not None:
+            return cached
     panel = _load_panel(conn, "board")
     cache_key = (panel["data_date"], "board")
     now = time.time()
     with _CACHE_LOCK:
         hit = _BOARD_CACHE.get(cache_key)
-        if hit and now - hit[0] < _CACHE_TTL:
-            board = hit[1]
-            return _board_payload(panel, board, range_key)
+    if hit and now - hit[0] < _CACHE_TTL:
+        payload = _board_payload(panel, hit[1], range_key)
+        _save_board_payload(panel["data_date"], range_key, payload)
+        return payload
     if np is not None:
         board = _board_numpy(panel)
         with _CACHE_LOCK:
             _BOARD_CACHE[cache_key] = (now, board)
-        return _board_payload(panel, board, range_key)
+        payload = _board_payload(panel, board, range_key)
+        _save_board_payload(panel["data_date"], range_key, payload)
+        return payload
     dates = panel["dates"]
     n = len(dates)
     start = max(21, n - 1 - MAX_HISTORY)
@@ -1651,7 +1719,9 @@ def factor_board(conn: Any, range_key: str = "1m") -> dict[str, Any]:
     }
     with _CACHE_LOCK:
         _BOARD_CACHE[cache_key] = (now, board)
-    return _board_payload(panel, board, range_key)
+    payload = _board_payload(panel, board, range_key)
+    _save_board_payload(panel["data_date"], range_key, payload)
+    return payload
 
 
 def _board_payload(panel: dict[str, Any], board: dict[str, Any], range_key: str) -> dict[str, Any]:

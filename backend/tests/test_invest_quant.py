@@ -240,3 +240,22 @@ def test_factor_direction_low_inverts_score():
     low = quant._scores(panel, len(panel["dates"]) - 1, [{"key": "volatility", "direction": "low"}])
     # 波动率是常数时分数接近 0；至少方向相反不报错。
     assert high.keys() == low.keys()
+
+
+def test_board_payload_disk_cache_roundtrip(monkeypatch, tmp_path):
+    monkeypatch.setattr(quant, "_BOARD_CACHE_ROOT", tmp_path)
+    quant._BOARD_PAYLOAD_CACHE.clear()
+    payload = {
+        "data_date": "2026-11-04",
+        "range": "1m",
+        "factors": [{"key": "value", "return_1m": 1.2}],
+        "style": {"key": "attack"},
+        "correlations": {},
+        "disclaimer": "test",
+    }
+    quant._save_board_payload("2026-11-04", "1m", payload)
+    # 清掉内存缓存，仍能从磁盘读回。
+    quant._BOARD_PAYLOAD_CACHE.clear()
+    assert quant._load_board_payload("2026-11-04", "1m") == payload
+    # 日期不同的缓存不能串用。
+    assert quant._load_board_payload("2026-11-03", "1m") is None

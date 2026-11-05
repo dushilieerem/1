@@ -483,3 +483,26 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 不再依赖 #104 的“失败即降级”兜底；正常路径即可产出完整行业分析。
 
 验证：`pytest tests/test_inst_*.py tests/test_llm_fallback.py tests/test_ai_router.py tests/test_ai_layer_boundary.py` 114 passed。
+
+### 11.18 Agent 管理只展示机构端 Agent（2026-11-05）
+
+- `GET /api/inst/agents` 只返回 `source=institution` 的主观机构端 Agent，不再混入平台 Agent 与 Agent 技能。
+- 页面移除「机构/平台/技能/全部」筛选，只保留搜索；卡片去掉来源徽标，描述改为「只展示主观机构端自己的 Agent」。
+- 平台/个人中心的 Agent 目录接口不受影响。
+
+验证：pytest `test_inst_agent_prompt_api.py` 通过；e2e-10 Agent 管理用例通过；tsc 通过。
+
+### 11.19 AI 一页纸持久化（2026-11-05）
+
+**问题**：进入已有研究案仍显示「AI 一页纸生成中」。原因是只按 `input_hash + prompt_version` 精确命中缓存；提示词/输入变化（包括本次 11.5 提示词升级）后，已有 AI 输出无法命中，页面每次进入都重新调用模型；规则兜底结果又因为 `engine=rule` 不落盘，导致每次进入都重算。
+
+**修复**：
+- `GET /cases/{id}/ai/memo` 改为只读 peek：命中已持久化结果直接返回，未命中返回 `missing`，不触发生成。
+- `POST /cases/{id}/ai/memo` 仅在用户进入页面且确实没有结果时生成；生成后无论 AI 还是规则兜底都写入 `ai_agent_output`，提示词变化不再让旧结论消失。
+- 精确缓存未命中时按 `scope_key`（研究案 + 版本）读取最近一次结果，返回 `cached=true` / `stale=true`；用户点「重新生成一页纸」才覆盖。
+- 前端进入页面先 GET；已持久化时直接展示，只有写角色且无结果才 POST 生成；显示「已持久化 · 可重新生成」提示。
+- 风控/Chairman AI 摘要同样增加 scope 最近结果回退，提示词变化不会导致页面反复重新生成。
+
+**实测**：已有研究案首次 POST 生成规则/AI 结论并落盘；随后 GET 直接返回同一 `summary`（`cached=true`），再次 POST 不再调用模型；E2E 用例覆盖。
+
+验证：`pytest tests/test_inst_*.py tests/test_llm_fallback.py` 91 passed；e2e-10 一页纸持久化用例通过；tsc 通过。

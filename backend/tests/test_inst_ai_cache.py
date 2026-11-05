@@ -159,3 +159,103 @@ def test_industry_agent_ai_failure_falls_back_without_raising(monkeypatch):
     out = svc._run_industry_agent({"as_of": "2026-11-04", "company": {"symbol": "600519.SH"}})
     assert "error" in out
     assert "暂不可用" in out["error"]
+
+
+def test_memo_survives_prompt_change_and_supports_peek(monkeypatch) -> None:
+    tag = uuid.uuid4().hex[:8]
+    with get_conn() as conn:
+        org = conn.execute(
+            "INSERT INTO inst_orgs (code, name_cn) VALUES (%s,%s) RETURNING id",
+            (f"persist-{tag}", f"持久化测试机构 {tag}"),
+        ).fetchone()
+        org_id = int(org["id"])
+        company = conn.execute(
+            "INSERT INTO inst_company (org_id, symbol, name, market) "
+            "VALUES (%s,%s,'持久化测试公司','CN') RETURNING id",
+            (org_id, f"PST{tag[:4].upper()}.SH"),
+        ).fetchone()
+        case = conn.execute(
+            "INSERT INTO inst_research_case (org_id, company_id, case_no) VALUES (%s,%s,%s) RETURNING id",
+            (org_id, int(company["id"]), f"PS-{tag}"),
+        ).fetchone()
+        conn.execute(
+            "INSERT INTO inst_research_version "
+            "(case_id, version_no, status, six_dim, conclusion, evidence_ids) "
+            "VALUES (%s,1,'pending_review',%s,'有条件通过',%s)",
+            (int(case["id"]), Jsonb([]), Jsonb([])),
+        )
+    case_id = int(case["id"])
+    calls = {"n": 0}
+
+    def fake_ai(task_id, payload, system):
+        calls["n"] += 1
+        return {"summary": f"第 {calls['n']} 次结论", "engine": "agent"}
+
+    monkeypatch.setattr(svc, "_ai_task", fake_ai)
+    first = svc.ai_research_memo(org_id, case_id)
+    assert first["cached"] is False
+    assert calls["n"] == 1
+
+    # 提示词改动后，旧结论仍然可读，不应重新调用模型。
+    agent_store.save_prompt("inst.research_memo", "新的机构一页纸提示词", updated_by=None)
+    try:
+        stale = svc.ai_research_memo(org_id, case_id)
+        assert stale["cached"] is True
+        assert stale["stale"] is True
+        assert stale["memo"]["summary"] == "第 1 次结论"
+        assert calls["n"] == 1
+
+        # 页面进入时的只读 peek：有持久化内容就直接返回，不生成。
+        peek = svc.ai_research_memo(org_id, case_id, generate=False)
+        assert peek["memo"]["summary"] == "第 1 次结论"
+        assert calls["n"] == 1
+
+        # 用户主动重新生成才覆盖。
+        refreshed = svc.ai_research_memo(org_id, case_id, refresh=True)
+        assert refreshed["cached"] is False
+        assert refreshed["memo"]["summary"] == "第 2 次结论"
+        assert calls["n"] == 2
+    finally:
+        agent_store.reset_prompt("inst.research_memo")
+
+
+def test_rule_memo_is_persisted(monkeypatch) -> None:
+    tag = uuid.uuid4().hex[:8]
+    with get_conn() as conn:
+        org = conn.execute(
+            "INSERT INTO inst_orgs (code, name_cn) VALUES (%s,%s) RETURNING id",
+            (f"rule-{tag}", f"规则落盘测试机构 {tag}"),
+        ).fetchone()
+        org_id = int(org["id"])
+        company = conn.execute(
+            "INSERT INTO inst_company (org_id, symbol, name, market) "
+            "VALUES (%s,%s,'规则落盘测试公司','CN') RETURNING id",
+            (org_id, f"RUL{tag[:4].upper()}.SH"),
+        ).fetchone()
+        case = conn.execute(
+            "INSERT INTO inst_research_case (org_id, company_id, case_no) VALUES (%s,%s,%s) RETURNING id",
+            (org_id, int(company["id"]), f"RU-{tag}"),
+        ).fetchone()
+        conn.execute(
+            "INSERT INTO inst_research_version "
+            "(case_id, version_no, status, six_dim, conclusion, evidence_ids) "
+            "VALUES (%s,1,'pending_review',%s,'规则结论',%s)",
+            (int(case["id"]), Jsonb([{"key": "financial", "summary": "现金流健康"}]), Jsonb([])),
+        )
+    case_id = int(case["id"])
+
+    def unavailable(*_args, **_kwargs):
+        raise svc.AiUnavailable("AI 未配置")
+
+    monkeypatch.setattr(svc, "_ai_task", unavailable)
+    first = svc.ai_research_memo(org_id, case_id)
+    assert first["memo"]["engine"] == "rule"
+    assert first["cached"] is False
+
+    # 第二次进入直接读落盘结果，不再尝试模型。
+    second = svc.ai_research_memo(org_id, case_id)
+    assert second["cached"] is True
+    assert second["memo"]["engine"] == "rule"
+
+    peek = svc.ai_research_memo(org_id, case_id, generate=False)
+    assert peek["memo"]["summary"] == first["memo"]["summary"]

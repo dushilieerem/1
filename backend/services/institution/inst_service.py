@@ -25,6 +25,7 @@ from ai.runtime import agent_store
 from ai.runtime.agent_store import (
     get_cached_output,
     get_effective_prompt,
+    get_latest_output,
     input_hash as agent_input_hash,
     save_output,
 )
@@ -4628,6 +4629,7 @@ def ai_research_memo(
     case_id: int,
     *,
     refresh: bool = False,
+    generate: bool = True,
     actor_member_id: int | None = None,
 ) -> dict[str, Any]:
     case = get_case(org_id, case_id)
@@ -4658,6 +4660,11 @@ def ai_research_memo(
             input_hash=cache_key,
             prompt_version=prompt_version,
         )
+        stale = False
+        if not hit:
+            # 提示词/输入变化后仍优先展示已生成的结论，避免每次进入都重新生成。
+            hit = get_latest_output("inst.research_memo", org_id=org_id, scope_key=scope_key)
+            stale = bool(hit)
         if hit:
             memo = dict(hit["output"])
             memo["metrics"] = _memo_metrics(case)
@@ -4666,8 +4673,17 @@ def ai_research_memo(
                 "task": "inst.research_memo",
                 "version_no": version.get("version_no"),
                 "cached": True,
+                "stale": stale,
                 "generated_at": hit.get("created_at"),
             }
+    if not generate:
+        return {
+            "memo": None,
+            "task": "inst.research_memo",
+            "version_no": version.get("version_no"),
+            "cached": False,
+            "missing": True,
+        }
     try:
         data = _ai_task("inst.research_memo", payload, prompt)
         data.setdefault("engine", "agent")
@@ -4675,17 +4691,17 @@ def ai_research_memo(
         # AI 未配置时仍给出一页纸骨架，内容全部来自六维规则结果。
         data = _rule_memo(version)
     data["metrics"] = _memo_metrics(case)
-    if data.get("engine") != "rule":
-        save_output(
-            "inst.research_memo",
-            org_id=org_id,
-            scope_key=scope_key,
-            input_hash=cache_key,
-            prompt_version=prompt_version,
-            output=data,
-            engine=str(data.get("engine") or "agent"),
-            created_by=actor_member_id,
-        )
+    # 规则兜底也落盘：避免 AI 暂不可用时每次进入页面都重新生成。
+    save_output(
+        "inst.research_memo",
+        org_id=org_id,
+        scope_key=scope_key,
+        input_hash=cache_key,
+        prompt_version=prompt_version,
+        output=data,
+        engine=str(data.get("engine") or "agent"),
+        created_by=actor_member_id,
+    )
     return {
         "memo": data,
         "task": "inst.research_memo",
@@ -4843,12 +4859,17 @@ def ai_risk_review(
             input_hash=cache_key,
             prompt_version=prompt_version,
         )
+        stale = False
+        if not hit:
+            hit = get_latest_output("inst.risk_review", org_id=org_id, scope_key=scope_key)
+            stale = bool(hit)
         if hit:
             return {
                 "memo": hit["output"],
                 "task": "inst.risk_review",
                 "checks": checks,
                 "cached": True,
+                "stale": stale,
                 "generated_at": hit.get("created_at"),
             }
     data = _ai_task("inst.risk_review", payload, prompt)
@@ -4896,12 +4917,17 @@ def ai_chairman_memo(
             input_hash=cache_key,
             prompt_version=prompt_version,
         )
+        stale = False
+        if not hit:
+            hit = get_latest_output("inst.chairman_memo", org_id=org_id, scope_key=scope_key)
+            stale = bool(hit)
         if hit:
             return {
                 "memo": hit["output"],
                 "task": "inst.chairman_memo",
                 "version_no": version.get("version_no"),
                 "cached": True,
+                "stale": stale,
                 "generated_at": hit.get("created_at"),
             }
     data = _ai_task("inst.chairman_memo", payload, prompt)
@@ -5225,10 +5251,14 @@ AI_ROLE_CATALOG: tuple[tuple[str, str, str], ...] = (
 
 
 def institution_agent_catalog(org_id: int, *, can_edit: bool) -> dict[str, Any]:
-    """机构 Agent 管理目录：机构 14 个 + 平台/技能只读；仅经理可看提示词正文。"""
+    """机构 Agent 管理目录：只返回主观机构端自己的 Agent；仅经理可看提示词正文。"""
     from services.ai_agents import catalog as agent_catalog
 
-    items = agent_catalog.list_agents(include_prompt=can_edit)
+    items = [
+        item
+        for item in agent_catalog.list_agents(include_prompt=can_edit)
+        if item.get("source") == "institution"
+    ]
     return {
         "items": items,
         "count": len(items),

@@ -37,6 +37,23 @@ async function login(request: APIRequestContext, username: string): Promise<stri
   return (await res.json()).token;
 }
 
+async function apiCall(
+  request: APIRequestContext,
+  method: "GET" | "POST",
+  path: string,
+  token: string,
+  data?: Record<string, unknown>,
+): Promise<any> {
+  const res = await request.fetch(`${API}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}` },
+    data,
+  });
+  const text = await res.text();
+  if (!res.ok()) throw new Error(`${method} ${path} → ${res.status()} ${text.slice(0, 300)}`);
+  return text ? JSON.parse(text) : {};
+}
+
 async function openPage(
   browser: import("@playwright/test").Browser,
   token: string,
@@ -82,6 +99,36 @@ test.beforeAll(async ({ request, browser }) => {
   const { ctx, page } = await openPage(browser, TOKENS.manager!);
   await page.goto(`${BASE}/inst/overview`, { waitUntil: "networkidle" });
   await ctx.close();
+});
+
+test("AI 一页纸落盘后可重复读取，不重复生成", async ({ request }) => {
+  test.skip(!writeEnabled || !researchCaseId, "需要写库闸门与已有研究案");
+  test.setTimeout(300_000);
+  const first = await apiCall(
+    request,
+    "POST",
+    `/api/inst/cases/${researchCaseId}/ai/memo`,
+    TOKENS.manager!,
+    { refresh: false },
+  );
+  expect(first.memo?.summary, "首次生成应有一页纸内容").toBeTruthy();
+  const peek = await apiCall(
+    request,
+    "GET",
+    `/api/inst/cases/${researchCaseId}/ai/memo`,
+    TOKENS.manager!,
+  );
+  expect(peek.memo?.summary).toBe(first.memo.summary);
+  expect(peek.cached).toBe(true);
+  const again = await apiCall(
+    request,
+    "POST",
+    `/api/inst/cases/${researchCaseId}/ai/memo`,
+    TOKENS.manager!,
+    { refresh: false },
+  );
+  expect(again.cached).toBe(true);
+  expect(again.memo?.summary).toBe(first.memo.summary);
 });
 
 test("七个工作区可达，无控制台错误与接口 5xx", async ({ browser }) => {

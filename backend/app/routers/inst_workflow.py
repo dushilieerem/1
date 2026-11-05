@@ -292,10 +292,14 @@ def export_case_report(
 
 @router.get("/cases/{case_id}/ai/memo")
 def research_memo_cached(case_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    """只读取已持久化的一页纸；没有则返回 missing，由前端决定是否触发生成。"""
     org_id, _, _ = _ctx(ctx)
     _require_ws(ctx, "research")
     try:
-        return {"ok": True, **svc.ai_research_memo(org_id, case_id, refresh=False)}
+        return {
+            "ok": True,
+            **svc.ai_research_memo(org_id, case_id, refresh=False, generate=False),
+        }
     except Exception as exc:
         raise _handle(exc) from exc
 

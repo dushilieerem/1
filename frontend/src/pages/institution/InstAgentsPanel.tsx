@@ -28,13 +28,7 @@ type PromptHistory = {
   created_at?: string;
 };
 
-const SOURCE_LABEL: Record<string, string> = {
-  institution: "机构 Agent",
-  platform: "平台 Agent",
-  skill: "Agent 技能",
-};
-
-/** 机构端 Agent 管理：替代原 Agent 能力页，展示全部 Agent，经理可改提示词。 */
+/** 机构端 Agent 管理：只展示主观机构端自己的 Agent，经理可改提示词。 */
 export function InstAgentsPanel() {
   const session = useInstSession();
   const { t } = useInstLocale();
@@ -42,7 +36,6 @@ export function InstAgentsPanel() {
   const [canEdit, setCanEdit] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "institution" | "platform" | "skill">("institution");
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<AiAgent | null>(null);
   const [draft, setDraft] = useState("");
@@ -66,12 +59,11 @@ export function InstAgentsPanel() {
 
   const filtered = useMemo(() => {
     const keyword = q.trim().toLowerCase();
-    return items.filter((item) => {
-      if (filter !== "all" && item.source !== filter) return false;
-      if (!keyword) return true;
-      return `${item.name} ${item.task_id} ${item.group} ${item.description}`.toLowerCase().includes(keyword);
-    });
-  }, [items, filter, q]);
+    if (!keyword) return items;
+    return items.filter((item) =>
+      `${item.name} ${item.task_id} ${item.group} ${item.description}`.toLowerCase().includes(keyword),
+    );
+  }, [items, q]);
 
   const open = (item: AiAgent) => {
     setSelected(item);
@@ -138,8 +130,8 @@ export function InstAgentsPanel() {
     <Card
       title={t("Agent 管理", "Agent management")}
       desc={t(
-        "展示系统内全部 Agent；机构/平台 Agent 由投资经理维护提示词，改动会记录版本并可恢复默认。",
-        "All agents in the system. The investment manager can edit institution/platform prompts with version history and reset.",
+        "只展示主观机构端自己的 Agent；投资经理可维护提示词，改动会记录版本并可恢复默认。",
+        "Only this institution's own agents. The investment manager can edit prompts with version history and reset.",
       )}
       actions={<Badge tone="gold">{items.length} {t("个 Agent", "agents")}</Badge>}
     >
@@ -147,25 +139,6 @@ export function InstAgentsPanel() {
       {loading ? <Loading label={t("正在加载 Agent…", "Loading agents…")} /> : null}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {[
-          ["institution", t("机构 Agent", "Institution")],
-          ["platform", t("平台 Agent", "Platform")],
-          ["skill", t("Agent 技能", "Skills")],
-          ["all", t("全部", "All")],
-        ].map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setFilter(key as typeof filter)}
-            className={`rounded-lg border px-3 py-1.5 text-xs transition ${
-              filter === key
-                ? "border-[#b42345] bg-[#fbe9ef] text-[#a31f42]"
-                : "border-[#dde5f2] bg-white text-[#68738b] hover:border-[#7950ba]"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
         <label className="ml-auto flex min-w-[190px] items-center gap-2 rounded-lg border border-[#dde5f2] bg-white px-3 py-1.5">
           <Search className="h-3.5 w-3.5 text-[#a9a4bd]" />
           <input
@@ -192,9 +165,6 @@ export function InstAgentsPanel() {
                 <p className="text-sm font-semibold text-[#171923]">{item.name}</p>
                 <p className="mt-0.5 font-mono text-[10px] text-[#77718c]">{item.task_id}</p>
               </div>
-              <Badge tone={item.source === "institution" ? "gold" : "slate"}>
-                {SOURCE_LABEL[item.source] || item.source}
-              </Badge>
             </div>
             <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-[#68738b]">{item.description}</p>
             <div className="mt-2 flex flex-wrap gap-1 text-[10px] text-[#77718c]">
@@ -226,7 +196,7 @@ export function InstAgentsPanel() {
               <ShieldCheck className="h-4 w-4 text-[#b42345]" />
               {canEdit && selected.editable
                 ? t("投资经理可编辑；保存后版本 +1，旧 AI 结果缓存自动失效。", "Manager can edit; saving bumps the version and invalidates cached AI results.")
-                : t("当前角色只读；机构/平台 Agent 提示词仅投资经理可改。", "Read-only for this role; only the investment manager can edit institution/platform prompts.")}
+                : t("当前角色只读；机构 Agent 提示词仅投资经理可改。", "Read-only for this role; only the investment manager can edit institution prompts.")}
               <Badge tone="slate">v{selected.prompt_version}</Badge>
               {selected.override ? <Badge tone="gold">{t("已覆盖", "Overridden")}</Badge> : null}
               <span className="ml-auto text-[10px]">{session.role_label_cn}</span>

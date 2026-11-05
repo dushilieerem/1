@@ -83,6 +83,8 @@ def test_institution_agent_catalog_and_prompt_versions(fixture) -> None:
     data = listing.json()
     assert data["can_edit"] is True
     assert data["count"] >= 14
+    assert all(item["source"] == "institution" for item in data["items"])
+    assert all(item["task_id"].startswith("inst.") for item in data["items"])
     memo = next(item for item in data["items"] if item["task_id"] == "inst.research_memo")
     assert memo["editable"] is True
     assert memo["prompt"]

@@ -218,6 +218,41 @@ def get_cached_output(
         return None
 
 
+def get_latest_output(
+    task_id: str,
+    *,
+    org_id: int,
+    scope_key: str,
+) -> dict[str, Any] | None:
+    """同一 scope 下最近一次生成结果。
+
+    不按 input_hash/prompt_version 过滤：提示词或输入变化时，旧结论仍是已生成的
+    业务资产，读页面应直接展示；用户点「重新生成」才覆盖。
+    """
+    try:
+        ensure_ai_agent_schema()
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT output, engine, input_hash, prompt_version, created_at, updated_at "
+                "FROM ai_agent_output WHERE task_id=%s AND org_id=%s AND scope_key=%s "
+                "ORDER BY updated_at DESC, id DESC LIMIT 1",
+                (task_id, org_id, scope_key),
+            ).fetchone()
+        if not row:
+            return None
+        out = row["output"] if isinstance(row["output"], dict) else json.loads(row["output"] or "{}")
+        return {
+            "output": out,
+            "engine": row["engine"],
+            "input_hash": row["input_hash"],
+            "prompt_version": row["prompt_version"],
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+        }
+    except Exception:
+        return None
+
+
 def save_output(
     task_id: str,
     *,

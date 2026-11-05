@@ -141,3 +141,17 @@ def test_memo_cache_hit_and_refresh(monkeypatch) -> None:
     refreshed = svc.ai_research_memo(org_id, int(case["id"]), refresh=True)
     assert refreshed["cached"] is False
     assert calls["n"] == 2
+
+
+def test_industry_agent_ai_failure_falls_back_without_raising(monkeypatch):
+    from ai import router as ai_router
+
+    monkeypatch.setattr(ai_router, "available_task", lambda _task: True)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("上游返回空内容")
+
+    monkeypatch.setattr(ai_router, "run_task", boom)
+    out = svc._run_industry_agent({"as_of": "2026-11-04", "company": {"symbol": "600519.SH"}})
+    assert "error" in out
+    assert "暂不可用" in out["error"]

@@ -81,3 +81,15 @@ def test_review_decision_requires_explicit_assignment():
  for review in ({}, {'status':'requested'}, {'status':'requested','assigned_to':900}):
   with pytest.raises(WorkflowError):ensure_assigned(review,912)
  ensure_assigned({'status':'requested','assigned_to':912},912)
+
+def test_iteration_bound_and_identity_are_server_validated():
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.iterations.start',return_value={'id':'i'}) as start:
+  assert client.post('/api/inst/quant/factor-workflow/projects/p/iterations',json={'max_rounds':2}).status_code==202
+  start.assert_called_once_with(912,261,'p',2)
+  for body in [{'max_rounds':0},{'max_rounds':True},{'max_rounds':21},{'max_rounds':2,'approved':True}]:
+   assert client.post('/api/inst/quant/factor-workflow/projects/p/iterations',json=body).status_code==422
+
+def test_reviewer_cannot_start_or_pause_iteration():
+ app.dependency_overrides[require_quant_user]=lambda:{**ctx,'can_write':False,'can_review':True}
+ assert client.post('/api/inst/quant/factor-workflow/projects/p/iterations',json={'max_rounds':2}).status_code==403
+ assert client.post('/api/inst/quant/factor-workflow/iterations/i/pause').status_code==403

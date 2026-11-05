@@ -154,7 +154,7 @@ export function QuantFactorHomePage(){
    <div className="card-head">
     <div><div className="row-flex"><span className="tid">{topic.id.slice(0,8)}</span><h2>{topic.project_name||'未命名课题'}</h2><span className="badge live">{statusText(topic.status)}</span></div>
      <p className="fine">视图 {topic.view_id} · 主持有期 {topic.primary_holding_period} 日</p></div>
-    <div className="actions">{topic.status==='active'?<button className="btn small" onClick={()=>void setTopicStatus('paused')}>暂停课题</button>:topic.status==='paused'?<button className="btn small" onClick={()=>void setTopicStatus('active')}>继续课题</button>:null}<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'}>人工工作台（项目级）</Link><Link className="btn small" to={'/quant/factor/ledger?project='+topic.project_id}>台账</Link></div>
+    <div className="actions">{topic.status==='active'?<button className="btn small" onClick={()=>void setTopicStatus('paused')}>暂停课题</button>:topic.status==='paused'?<button className="btn small" onClick={()=>void setTopicStatus('active')}>继续课题</button>:null}<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>打开人工工作台</Link><Link className="btn small" to={'/quant/factor/ledger?project='+topic.project_id}>台账</Link></div>
    </div>
    <div className="card-body">
     <div className="ledger">
@@ -182,8 +182,8 @@ export function QuantFactorHomePage(){
      <div className="kpi"><span>课题</span><b>{topics.length}</b><small>研究中 {topics.filter(t=>t.status==='active').length}</small></div>
      <div className="kpi"><span>试验台账</span><b>{totalTrials}</b><small>次</small></div>
      <div className="kpi"><span>封存样本已用</span><b>—</b><small>待接入</small></div>
-     <div className="kpi"><span>待人决定</span><b>—</b><small>审查队列待接入</small></div>
-     <div className="kpi"><span>Token</span><b>—</b><small>未上报</small></div>
+     <div className="kpi"><span>待人决定</span><b>{pending==null?'—':pending}</b><small>待复核候选</small></div>
+     <div className="kpi"><span>F0 Token</span><b>{f0?.decision?.steps?f0.decision.steps.reduce((n,s)=>n+(s.usage?.tokens_in||0)+(s.usage?.tokens_out||0),0):'—'}</b><small>最近一次 F0</small></div>
     </div>
    </div>
    {error&&<div className="card card-pad"><p className="hint error" role="alert">{error}</p></div>}

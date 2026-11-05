@@ -52,6 +52,10 @@ def _context(uid, org, topic, run_id):
         recent = [dict(r) for r in c.execute(
             "SELECT stop_reason FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s AND stop_reason<>'' ORDER BY created_at DESC LIMIT 3",
             (uid, org, topic["id"])).fetchall()]
+    with get_conn() as c:
+        project = c.execute("SELECT config FROM detect_projects WHERE user_id=%s AND id=%s",
+                            (uid, topic["project_id"])).fetchone()
+    purpose = ((project or {}).get("config") or {}).get("researchPlan", {}).get("researchPurpose", "")
     latest = trials[-1] if trials else None
     summary = {}
     if latest:
@@ -66,7 +70,7 @@ def _context(uid, org, topic, run_id):
         "trials": [{k: t.get(k) for k in (
             "trial_no", "branch_id", "kind", "outcome", "returned_metrics", "rerun_of", "report_id")}
             for t in trials[-8:]],
-        "latest_report": summary, "branches": branches,
+        "latest_report": summary, "branches": branches, "research_purpose": purpose,
         "recent_f0_stops": [r["stop_reason"] for r in recent],
         "novelty": "不可用：共享 9527 无 R4/novelty 路由",
         "scope": "锁定视图与预登记区间；不得扩大数据范围、改门槛或加预算",
@@ -84,7 +88,7 @@ def decide(uid, org, topic, run_id):
         "rationale 必须引用具体 trial 编号和指标（如 E2 的 NW t、K、t*(K)），不能空泛。"
         "revise/pivot 必须给出具体 next_hypothesis 与 change_scope；没有实质修订就 stop。"
         "不得改变门槛、数据范围、预算，不得声称 novelty 可用，不得批准入库或封存。"
-        "request_seal 仅在最近研发已通过、且（发现类）新颖性已通过时使用；否则 stop。预算为 0 时必须 stop。\n最近一次研发检验失败且预算允许时，优先选择 revise 或 pivot，并给出实质性的新假设；不得只重跑同一实现。"
+        "request_seal 仅在最近研发已通过时使用；发现类（discovery）还需新颖性通过，已有因子复现（replication）不需要 novelty/R4，可直接 request_seal。否则 stop。预算为 0 时必须 stop。\n最近一次研发检验失败且预算允许时，优先选择 revise 或 pivot，并给出实质性的新假设；不得只重跑同一实现。"
     )
     try:
         get_task(TASK)

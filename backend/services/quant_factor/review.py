@@ -20,6 +20,13 @@ def request_review(uid,org,cid,note):
         c.execute('UPDATE quant_factor_candidates SET archive=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s',(store.encode(card),store.encode([event('review_requested')]),cid))
     return current(uid,org,cid)
 
+def pending_count(org):
+    with get_conn() as c:
+        return c.execute(
+            "SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE org_id=%s AND archive->'review'->>'status'='requested'",
+            (org,)).fetchone()["n"]
+
+
 def queue(uid,org):
     with get_conn() as c:
         rows=c.execute("SELECT id,snapshot_hash,status,snapshot->>'name' AS name,archive,updated_at FROM quant_factor_candidates WHERE org_id=%s AND user_id<>%s AND archive->'review'->>'status'='requested' ORDER BY updated_at DESC LIMIT 100",(org,uid)).fetchall()

@@ -13,7 +13,7 @@ from __future__ import annotations
 import ast
 from typing import Any
 
-ALLOWED_FIELDS = frozenset({"open", "high", "low", "close", "volume", "amount"})
+ALLOWED_FIELDS = frozenset({"open", "high", "low", "close", "volume", "amount", "turnover", "current_mv", "pe_ttm", "pb_mrq", "dividend_yield_ttm", "pcf_operating_cash_flow_ttm", "listed_status", "the_sw_industry_code", "up_and_down_status"})
 ALLOWED_METHODS = frozenset(
     {
         "abs", "clip", "diff", "fillna", "mean", "median", "min", "max", "pct_change",

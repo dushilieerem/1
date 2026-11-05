@@ -135,7 +135,7 @@ function Curve({ nav, loading }: { nav: NavData | null; loading: boolean }) {
   const dates = nav?.dates || [];
   const portfolio = nav?.portfolio || [];
   const benchmark = nav?.benchmark || [];
-  if (dates.length < 2) return <div className="pf-curve-empty">{t("净值曲线待补充", "NAV curve not yet available")}</div>;
+  if (dates.length < 2) return <div className="pf-curve-empty">{t("净值曲线暂不可用", "NAV curve unavailable")}</div>;
 
   const all = [...portfolio, ...benchmark].filter((v): v is number => v !== null && v !== undefined);
   const min = Math.min(0, ...all);
@@ -564,10 +564,9 @@ export default function Portfolio() {
           </section>
 
           <AiPanel
-            title={t("AI 深度解读", "AI deep dive")}
-            subtitle={t("在诊断结论之上，逐项展开风险来源、历史对照与需要留意的变量。约 1–2 分钟。", "Builds on the diagnosis to unpack each risk source, historical comparison and variables to watch. About 1–2 minutes.")}
+            title={t("AI 关键结论", "AI takeaway")}
+            subtitle={t("自动生成，50 字以内，只讲最需要先看的一件事；不满意可重新生成。", "Generated automatically in under 50 characters, focused on the one thing to look at first.")}
             endpoint="/api/invest/ai/portfolio/deep"
-            buttonLabel={t("生成深度解读", "Generate deep dive")}
           />
 
           <section className="card">
@@ -653,7 +652,7 @@ export default function Portfolio() {
                 <span>{it.detail}</span>
               </div>
               <div className="method-score">
-                <b>{it.available ? Math.round(it.score) : t("待补充", "Pending")}</b>
+                <b>{it.available ? Math.round(it.score) : "—"}</b>
                 <small>{t("权重", "Weight")} {it.weight}%</small>
               </div>
             </div>
@@ -662,7 +661,7 @@ export default function Portfolio() {
         <p className="hint">{t("本次覆盖率", "Coverage this run")} {riskMethod.coveragePct}%{t("；缺失项不参与计算。", "; missing items are excluded from the calculation.")}</p>
         <div className="callout blue">
           <Info size={15} />
-          <span>{t("分数只反映持仓结构，不预测盈亏；数据缺失时结论可信度下降，页面会标注「待补充」。", "The score reflects portfolio structure only and does not predict profit or loss; when data is missing, confidence drops and the page marks it as \"Pending\".")}</span>
+          <span>{t("分数只反映持仓结构，不预测盈亏；缺失项不参与计算，并以 — 展示。", "The score reflects portfolio structure only and does not predict profit or loss; missing items are excluded and shown as —.")}</span>
         </div>
       </Sheet>
     </div>

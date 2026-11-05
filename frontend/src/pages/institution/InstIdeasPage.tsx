@@ -47,6 +47,8 @@ type Position = {
   market_value: number;
   weight: number;
   last_close?: number;
+  market?: string;
+  data_status?: string;
 };
 
 type PortfolioData = {
@@ -80,6 +82,10 @@ export function InstIdeasPage() {
     return v && !/^\d{6}\./.test(v) ? v : t("行业待补充", "Sector TBD");
   };
 
+  const initiateBlocked = (company: { market?: string; data_status?: string }) =>
+    ["US", "HK"].includes(String(company.market || "CN").toUpperCase()) ||
+    String(company.data_status || "missing") === "missing";
+
   useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -108,16 +114,25 @@ export function InstIdeasPage() {
     };
   }, [market, reloadKey]);
 
-  const enterResearch = async (companyId: number) => {
-    if (!canWrite) return;
+  const initiateResearch = async (companyId: number, source: TabKey) => {
+    if (!canWrite || busy === companyId) return;
     setBusy(companyId);
     setError(null);
     try {
-      const res = await instApi<{ id: number }>("/cases", {
+      const res = await instApi<{ case_id?: number }>(`/ideas/${companyId}/decision`, {
         method: "POST",
-        body: { company_id: companyId },
+        body: {
+          source,
+          action: "initiate",
+          reason: t("机会发现页直接立项", "Initiated from Discovery"),
+          circle_confirmed: true,
+        },
       });
-      nav(`/inst/research?case=${res.id}`);
+      if (res.case_id) {
+        nav(`/inst/research?case=${res.case_id}`);
+      } else {
+        setReloadKey((v) => v + 1);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -125,19 +140,27 @@ export function InstIdeasPage() {
     }
   };
 
-  const setPool = async (companyId: number, pool_status: "watch" | "research" | "dropped") => {
-    if (!canWrite) return;
+  const rejectCompany = async (companyId: number, source: TabKey, name: string) => {
+    if (!canWrite || busy === companyId) return;
+    const reason = window.prompt(
+      t(`放弃「${name}」的理由（必填）：`, `Reason for rejecting ${name} (required):`),
+      "",
+    );
+    if (reason === null) return;
+    if (!reason.trim()) {
+      setError(t("放弃必须填写理由，避免以后只记得投对过的。", "A rejection reason is required."));
+      return;
+    }
     setBusy(companyId);
     setError(null);
     try {
-      await instApi(`/companies/${companyId}/pool`, {
+      await instApi(`/ideas/${companyId}/decision`, {
         method: "POST",
         body: {
-          pool_status,
-          reason:
-            pool_status === "dropped"
-              ? t("未入选：待补充研究理由", "Not selected: research rationale pending")
-              : null,
+          source,
+          action: "reject",
+          reason: reason.trim(),
+          circle_confirmed: false,
         },
       });
       setReloadKey((v) => v + 1);
@@ -295,25 +318,29 @@ export function InstIdeasPage() {
                         {t("研究关注点", "Research focus")}：{(c.research_points || [])[0]}
                       </p>
                     ) : null}
-                    <div className="mt-4 flex flex-wrap gap-2 border-t border-[#e3eaf8] pt-3">
+                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#e3eaf8] pt-3">
                       <Button
                         variant="primary"
-                        disabled={!canWrite || busy === c.id}
-                        onClick={() => void enterResearch(c.id)}
+                        disabled={!canWrite || busy === c.id || initiateBlocked(c)}
+                        title={
+                          initiateBlocked(c)
+                            ? t("核心资料缺失或暂无数据源，不能立项。", "Core data or a data source is missing; research cannot start.")
+                            : undefined
+                        }
+                        onClick={() => void initiateResearch(c.id, "push")}
                       >
-                        {busy === c.id ? t("处理中…", "Working…") : t("进入研究", "Start research")}
+                        {busy === c.id ? t("处理中…", "Working…") : t("进入研究", "Enter research")}
+                      </Button>
+                      <Button
+                        variant="danger"
+                        disabled={!canWrite || busy === c.id}
+                        onClick={() => void rejectCompany(c.id, "push", c.name)}
+                      >
+                        {t("放弃", "Reject")}
                       </Button>
                       {c.pool_status === "watch" ? (
                         <Badge tone="amber">{t("已在关注", "Watching")}</Badge>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          disabled={!canWrite || busy === c.id}
-                          onClick={() => void setPool(c.id, "watch")}
-                        >
-                          {t("关注", "Watch")}
-                        </Button>
-                      )}
+                      ) : null}
                     </div>
                   </article>
                 ))}
@@ -341,8 +368,8 @@ export function InstIdeasPage() {
         <Card
           title={t("关注与自选", "Watchlist")}
           desc={t(
-            "已加入观察池的标的。可以从这里进入研究，或移出关注。",
-            "Names in the watch pool. Start research or remove them from the watchlist.",
+            "已加入观察池的标的。可以直接进入研究，或放弃并留下理由。",
+            "Names in the watch pool. Start research directly, or reject with a reason.",
           )}
           actions={<Badge tone="amber">{watch.length} {t("个对象", "names")}</Badge>}
         >
@@ -394,20 +421,25 @@ export function InstIdeasPage() {
                       )}
                     </span>
                   </p>
-                  <div className="mt-4 flex flex-wrap gap-2 border-t border-[#e3eaf8] pt-3">
+                  <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#e3eaf8] pt-3">
                     <Button
                       variant="primary"
-                      disabled={!canWrite || busy === c.id}
-                      onClick={() => void enterResearch(c.id)}
+                      disabled={!canWrite || busy === c.id || initiateBlocked(c)}
+                      title={
+                        initiateBlocked(c)
+                          ? t("核心资料缺失或暂无数据源，不能立项。", "Core data or a data source is missing; research cannot start.")
+                          : undefined
+                      }
+                      onClick={() => void initiateResearch(c.id, "watch")}
                     >
-                      {busy === c.id ? t("处理中…", "Working…") : t("进入研究", "Start research")}
+                      {busy === c.id ? t("处理中…", "Working…") : t("进入研究", "Enter research")}
                     </Button>
                     <Button
-                      variant="ghost"
+                      variant="danger"
                       disabled={!canWrite || busy === c.id}
-                      onClick={() => void setPool(c.id, "research")}
+                      onClick={() => void rejectCompany(c.id, "watch", c.name)}
                     >
-                      {t("取消关注", "Unwatch")}
+                      {t("放弃", "Reject")}
                     </Button>
                   </div>
                 </article>
@@ -474,19 +506,34 @@ export function InstIdeasPage() {
                         <dd className="font-mono text-[#252533]">{fmtNum((p.weight || 0) * 100, 2)}%</dd>
                       </div>
                     </dl>
-                    <div className="mt-4 flex flex-wrap gap-2 border-t border-[#e3eaf8] pt-3">
+                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#e3eaf8] pt-3">
                       {p.company_id ? (
-                        <Button
-                          variant="primary"
-                          disabled={!canWrite || busy === p.company_id}
-                          onClick={() => void enterResearch(Number(p.company_id))}
-                        >
-                          {busy === p.company_id ? t("处理中…", "Working…") : t("进入研究", "Start research")}
-                        </Button>
+                        <>
+                          <Button
+                            variant="primary"
+                            disabled={!canWrite || busy === p.company_id || initiateBlocked(p)}
+                            title={
+                              initiateBlocked(p)
+                                ? t("核心资料缺失或暂无数据源，不能立项。", "Core data or a data source is missing; research cannot start.")
+                                : undefined
+                            }
+                            onClick={() => void initiateResearch(Number(p.company_id), "holdings")}
+                          >
+                            {busy === p.company_id
+                              ? t("处理中…", "Working…")
+                              : t("进入研究", "Enter research")}
+                          </Button>
+                          <Button
+                            variant="danger"
+                            disabled={!canWrite || busy === p.company_id}
+                            onClick={() =>
+                              void rejectCompany(Number(p.company_id), "holdings", p.name || p.symbol)
+                            }
+                          >
+                            {t("放弃", "Reject")}
+                          </Button>
+                        </>
                       ) : null}
-                      <Button variant="ghost" onClick={() => nav("/inst/monitor")}>
-                        {t("去投后管理", "Post-investment")}
-                      </Button>
                     </div>
                   </article>
                 ))}
@@ -512,6 +559,7 @@ export function InstIdeasPage() {
           "Data status: Real = prices/financials are fairly complete; Partial = some data missing; No data = not ingested. Missing data limits research depth and is never treated as zero.",
         )}
       </p>
+
     </div>
   );
 }

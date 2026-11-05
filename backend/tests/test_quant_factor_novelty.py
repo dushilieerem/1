@@ -86,3 +86,20 @@ class NoveltyIntegrationBoundaryTests(TestCase):
   with patch.object(service,'get_conn',return_value=conn),patch.object(service.POOL,'submit') as pool:
    with self.assertRaises(KeyError):service.retry_novelty(1,2,'foreign')
   self.assertEqual(c.execute.call_args.args[1],('foreign',1,2));pool.assert_not_called()
+
+class HandoffEvidenceTests(TestCase):
+ def test_comparison_payload_does_not_copy_verified_token(self):
+  from services.quant_factor.novelty import comparison_request
+  snapshot={'plan':{'developmentStart':'2025-01-01','developmentEnd':'2025-06-30','noveltyPolicy':{'scope':'all_accessible',**DEFAULTS}},'request':{'factor_name':'f'}}
+  development={'meta':{'data_release_id':'r','factor_source_hash':'c'},'result':{'_svquant_verified_token':'do-not-copy','metrics':{'rank_ic':.03}}}
+  refs={'builtins':[{'library_name':'lib','factor_name':'known'}],'owned':[]}
+  payload=comparison_request(snapshot,development,refs,{'minPairs':30})
+  self.assertNotIn('do-not-copy',repr(payload));self.assertNotIn('_svquant_verified_token',payload)
+
+ def test_residual_rank_ic_is_never_fabricated_or_passed_through(self):
+  result={'expected_count':1,'meta':{'data_release_id':'r','candidate_source_hash':'c','spec_hash':'s'},'residual_rank_ic':.5,
+          'comparisons':[{'reference_id':'lib:f','status':'succeeded','mean_abs_spearman':.2,'valid_days':120,'min_pairs':200,'coverage':.95}]}
+  rules=policy({'researchPurpose':'discovery','noveltyPolicy':{'scope':'all_accessible',**DEFAULTS}})
+  out=evaluate_comparison(result,rules,'r','c')
+  self.assertEqual(out['residual'],{'status':'not_supported'})
+  self.assertNotIn('residual_rank_ic',out)

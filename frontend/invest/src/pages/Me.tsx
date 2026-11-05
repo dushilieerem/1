@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Bell, ChevronRight, Download, FileText, Info, LogOut, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, Bell, Bot, ChevronRight, Download, FileText, Info, LogOut, ShieldCheck, Trash2 } from "lucide-react";
 import { api, getToken } from "../api";
 import { useAuth } from "../auth";
 import { Disclaimer, Kv, PageHeader, Sheet, Tag } from "../components";
@@ -23,14 +23,6 @@ export default function Me() {
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [aiMemory, setAiMemory] = useState<any>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("svq_ai_memory") || "{}");
-    } catch {
-      return {};
-    }
-  });
-
   useEffect(() => {
     api("/api/invest/risk-profile").then(setRisk).catch(() => {});
     api(withMarket("/api/invest/meta", market)).then(setMeta).catch(() => {});
@@ -114,8 +106,8 @@ export default function Me() {
         {quality && !quality.ok ? (
           <p className="hint">
             {t(
-              "数据质量检查有异常：当页缺失字段不会填 0，会显示 — 或「待补充」；具体修复由数据平台跟进。",
-              "The data quality check found issues. Missing fields are not filled with 0; they show — or “pending”. The data platform owns the fix.",
+              "数据质量检查有异常：当页缺失字段不会填 0，会显示 —；具体修复由数据平台跟进。",
+              "The data quality check found issues. Missing fields are not filled with 0; they show —. The data platform owns the fix.",
             )}
           </p>
         ) : null}
@@ -141,35 +133,9 @@ export default function Me() {
         </div>
       </section>
 
-      <section className="card">
-        <div className="card-title-row"><h2>{t("AI 记忆", "AI memory")}</h2><span className="hint">{t("仅存本机", "Stored locally only")}</span></div>
-        <p className="muted small">
-          {aiMemory?.lastStock
-            ? t(`上一标的：${aiMemory.lastStock.name || aiMemory.lastStock.code}（${aiMemory.lastStock.code}）`, `Last symbol: ${aiMemory.lastStock.name || aiMemory.lastStock.code} (${aiMemory.lastStock.code})`)
-            : t("暂无会话记忆；AI 不会保留跨会话推断。", "No session memory; AI does not keep inferences across sessions.")}
-        </p>
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={() => {
-            try {
-              localStorage.removeItem("svq_ai_memory");
-            } catch {
-              /* ignore */
-            }
-            setAiMemory({});
-            toast(t("AI 会话记忆已清除", "AI session memory cleared"));
-          }}
-        >
-          <Trash2 size={14} /> {t("清除 AI 记忆", "Clear AI memory")}
-        </button>
-      </section>
-
       <div className="menu">
-        <button className="menu-item" onClick={() => nav("/quant")}>
-          <FileText size={18} /><span>{t("量化研究", "Quant research")}</span><ChevronRight size={16} />
-        </button>
-        <button className="menu-item" onClick={() => nav("/paper")}>
-          <FileText size={18} /><span>{t("模拟盘", "Paper trading")}</span><ChevronRight size={16} />
+        <button className="menu-item" onClick={() => nav("/agents")}>
+          <Bot size={18} /><span>{t("Agent 管理", "Agent management")}</span><ChevronRight size={16} />
         </button>
         <button className="menu-item" onClick={() => nav("/notifications")}>
           <Bell size={18} /><span>{t("消息通知", "Notifications")}</span><ChevronRight size={16} />
@@ -218,7 +184,7 @@ export default function Me() {
       <PrivacySheet open={privacyOpen} onClose={() => setPrivacyOpen(false)} onOpenFull={() => { setPrivacyOpen(false); nav("/privacy"); }} />
       <Sheet open={aboutOpen} onClose={() => setAboutOpen(false)} title={t("关于", "About")} sub="SVQuant Invest · MVP">
         <p className="muted small">
-          {t("独立手机版 H5，复用 SVQuant 账号。当前为收盘后数据与规则解读，不含 AI 生成内容、不含实时行情、不含推送。", "A standalone mobile H5 that reuses your SVQuant account. It currently offers post-close data and rule-based interpretation, with no AI-generated content, no real-time quotes, and no push notifications.")}
+          {t("独立手机版 H5，复用 SVQuant 账号。当前为收盘后数据，含自动生成的 50 字 AI 结论；不含实时行情与推送。", "A standalone mobile H5 that reuses your SVQuant account. It uses post-close data and auto-generated 50-character AI takeaways; no real-time quotes or push notifications.")}
         </p>
         <div className="divider" />
         <Kv k={t("版本", "Version")} v="0.1.0-demo" />

@@ -50,7 +50,7 @@ def checkpoint(uid,org,jid,expected=None):
  if expected is not None:
   p=get_project(uid,row['project_id'])['project']
   if digest(snapshot(p))!=expected:raise WorkflowError('研究输入被人工修改，自动迭代停止；未覆盖人工修改。')
- with get_conn() as c:c.execute("UPDATE quant_factor_iterations SET updated_at=NOW() WHERE id=%s AND status IN ('queued','running')",(jid,))
+ with get_conn() as c:c.execute("UPDATE quant_factor_iterations SET updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status IN ('queued','running')",(jid,uid,org))
  return row
 
 def validation_seen(candidates,plan):
@@ -64,7 +64,7 @@ def validation_seen(candidates,plan):
 def start(uid,org,pid,max_rounds):
  if isinstance(max_rounds,bool) or not isinstance(max_rounds,int) or not 1<=max_rounds<=20:raise WorkflowError('自动迭代轮数须为1—20的整数。')
  with get_conn() as c:
-  c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9109,0))
+  c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9109,uid))
   old=c.execute("SELECT id FROM quant_factor_iterations WHERE user_id=%s AND org_id=%s AND project_id=%s AND status IN ('queued','running')",(uid,org,pid)).fetchone()
   if old:jid=old['id']
   else:
@@ -77,9 +77,10 @@ def start(uid,org,pid,max_rounds):
    candidates=[dict(r) for r in c.execute('SELECT snapshot,evidence,status FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s',(uid,org,pid)).fetchall()]
    if any(x['status'].endswith('_running') for x in candidates):raise WorkflowError('已有检验正在执行，请等计算结束再启动自动迭代。')
    if validation_seen(candidates,snap['plan']):raise WorkflowError('该样本外区间已被本研究查看过。请先人工复盘并登记新的未使用验证区间，不能继续针对已看过的验证集调参。')
-   if len(candidates)>=snap['plan']['maxTrials']:raise WorkflowError('已达到研究总尝试预算，请先人工复盘。')
-   if max_rounds>snap['plan']['maxTrials']:raise WorkflowError('自动迭代轮数不能超过预登记的研究尝试预算。')
-   pending=c.execute("SELECT COUNT(*) AS n FROM quant_factor_iterations WHERE status IN ('queued','running')").fetchone()['n']
+   remaining=snap['plan']['maxTrials']-len(candidates)
+   if remaining<=0:raise WorkflowError('已达到研究总尝试预算，请先人工复盘。')
+   if max_rounds>remaining:raise WorkflowError(f'剩余研究尝试预算 {remaining} 次，本次请求 {max_rounds} 轮；请减少轮数或先复盘修订计划。')
+   pending=c.execute("SELECT COUNT(*) AS n FROM quant_factor_iterations WHERE user_id=%s AND org_id=%s AND status IN ('queued','running')",(uid,org)).fetchone()['n']
    if pending>=1:raise WorkflowError('自动研究队列繁忙，请稍后再试。')
    jid=str(uuid.uuid4())
    if snap['plan'].get('researchPurpose')=='discovery':
@@ -166,13 +167,13 @@ def submit_research(uid,org,jid,candidate,number,expected):
   service.archive(uid,org,candidate['id'],note)
   request_review(uid,org,candidate['id'],'请独立核对经济解释、数据覆盖、交易成本、重复试验与样本外证据。'+note)
   reason='研发与样本外硬门槛通过，已整理证据送交独立研究复核；未自动审批或正式准入。'
-  c.execute("UPDATE quant_factor_iterations SET status='review_pending',stop_reason=%s,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s",(reason,store.encode([service.event('review_pending',message=reason)]),jid))
+  c.execute("UPDATE quant_factor_iterations SET status='review_pending',stop_reason=%s,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s",(reason,store.encode([service.event('review_pending',message=reason)]),jid,uid,org))
 
 def run(uid,org,jid):
  expected=None;data_release=None;reference_source=None
  try:
   row=checkpoint(uid,org,jid);pid=row['project_id'];baseline=copy.deepcopy(row['baseline']);reference=baseline.pop('_library_reference',None);expected=digest(baseline);change='检验已保存的初始实现。'
-  with get_conn() as c:c.execute("UPDATE quant_factor_iterations SET status='running',updated_at=NOW() WHERE id=%s AND status='queued'",(jid,))
+  with get_conn() as c:c.execute("UPDATE quant_factor_iterations SET status='running',updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status='queued'",(jid,uid,org))
   for number in range(1,row['max_rounds']+1):
    checkpoint(uid,org,jid,expected)
    log(uid,org,jid,'development',f'第 {number} 轮：冻结实现并调用真实研发检验。',round=number,tool='ResearchEngine.factor')

@@ -44,6 +44,16 @@ class AiTimeout(AiUpstreamError):
     http_status = 504
 
 
+class AiOutputTruncated(AiUpstreamError):
+    """推理/输出 token 耗尽，content 为空或未生成完。
+
+    单独成类用于触发「提高 max_tokens 后重试」，而不是当成不可恢复的坏输出。
+    """
+
+    code = "ai_output_truncated"
+    http_status = 502
+
+
 class AiBadOutput(AiError):
     """上游返回内容不满足任务契约（空内容、JSON 结构不符、AST 校验失败）。"""
 
@@ -70,6 +80,7 @@ __all__ = [
     "AiNotConfigured",
     "AiUpstreamError",
     "AiTimeout",
+    "AiOutputTruncated",
     "AiBadOutput",
     "AiQuotaExceeded",
     "AiInvalidRequest",

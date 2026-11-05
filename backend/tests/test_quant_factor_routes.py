@@ -1,3 +1,4 @@
+import pytest
 from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -68,6 +69,19 @@ def test_self_review_and_unsubmitted_candidates_rejected():
  with pytest.raises(KeyError):ensure_reviewer({'user_id':900,'archive':None},912)
  with pytest.raises(KeyError):ensure_reviewer(None,912)
 
+def test_review_claim_uses_authorized_identity():
+ app.dependency_overrides[require_quant_user]=lambda:{**ctx,'can_write':False,'can_review':True}
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.review.claim',return_value={'id':'c'}) as claim:
+  assert client.post('/api/inst/quant/factor-workflow/reviews/c/claim').status_code==200
+  claim.assert_called_once_with(912,261,'c')
+
+def test_review_decision_requires_explicit_assignment():
+ from services.quant_factor.review import ensure_assigned
+ from services.quant_factor.policy import WorkflowError
+ for review in ({}, {'status':'requested'}, {'status':'requested','assigned_to':900}):
+  with pytest.raises(WorkflowError):ensure_assigned(review,912)
+ ensure_assigned({'status':'requested','assigned_to':912},912)
+
 def test_iteration_bound_and_identity_are_server_validated():
  with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.iterations.start',return_value={'id':'i'}) as start:
   assert client.post('/api/inst/quant/factor-workflow/projects/p/iterations',json={'max_rounds':2}).status_code==202
@@ -79,3 +93,53 @@ def test_reviewer_cannot_start_or_pause_iteration():
  app.dependency_overrides[require_quant_user]=lambda:{**ctx,'can_write':False,'can_review':True}
  assert client.post('/api/inst/quant/factor-workflow/projects/p/iterations',json={'max_rounds':2}).status_code==403
  assert client.post('/api/inst/quant/factor-workflow/iterations/i/pause').status_code==403
+
+TOPIC_BODY={'view_id':'research-rv-1','development_start':'2020-01-01','development_end':'2022-12-31','validation_start':'2023-01-01','validation_end':'2023-12-31','primary_holding_period':1,'policy_version':'v5-p0','max_trials':4}
+
+def test_topic_create_uses_session_identity_and_validates_body():
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.ledger.create_topic',return_value={'topic':{'id':'t'}}) as create:
+  assert client.post('/api/inst/quant/factor-workflow/projects/p/topics',json={**TOPIC_BODY,'user_id':999}).status_code==422
+  assert client.post('/api/inst/quant/factor-workflow/projects/p/topics',json={**TOPIC_BODY,'primary_holding_period':0}).status_code==422
+  assert client.post('/api/inst/quant/factor-workflow/projects/p/topics',json=TOPIC_BODY).status_code==200
+  create.assert_called_once()
+  assert create.call_args.args[:3]==(912,261,'p')
+
+def test_trial_append_rejects_server_derived_fields_and_passes_valid_body():
+ body={'branch_id':'b','implementation_hash':'h','executor':'human','outcome':'passed'}
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.ledger.append_trial',return_value={'id':'t'}) as append:
+  assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={**body,'rerun_of':'x'}).status_code==422
+  assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={**body,'returned_metrics':True}).status_code==422
+  assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json=body).status_code==200
+  append.assert_called_once()
+  assert append.call_args.args[:3]==(912,261,'t')
+
+def test_threshold_endpoint_passes_k():
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.ledger.threshold_view',return_value={'k':5,'threshold':2.57}) as view:
+  assert client.get('/api/inst/quant/factor-workflow/topics/t/threshold?k=5').status_code==200
+  view.assert_called_once_with(912,261,'t',5)
+
+def test_reviewer_cannot_read_ledger_or_append_trial():
+ app.dependency_overrides[require_quant_user]=lambda:{**ctx,'can_write':False,'can_review':True}
+ assert client.get('/api/inst/quant/factor-workflow/topics/t/ledger').status_code==403
+ assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={'branch_id':'b','implementation_hash':'h','executor':'human','outcome':'passed'}).status_code==403
+
+def test_trial_append_rejects_client_rerun_and_diagnostic_kinds():
+ base={'branch_id':'b','implementation_hash':'h','executor':'human','outcome':'passed'}
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912):
+  for kind in ('rerun','static_check','compile','smoke','sealed_validation','manual_edit'):
+   assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={**base,'kind':kind}).status_code==422
+  assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={**base,'outcome':'rerun'}).status_code==422
+  for key,value in (('view_id','other'),('release_ids',{'ifind':'x'}),('view_manifest_sha256','x'),('as_of','2020-01-01'),('contract_revision','x'),('release_id','x')):
+   assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={**base,key:value}).status_code==422
+
+def test_import_requires_manager_and_researcher_is_forbidden():
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.imports.sync_existing',return_value={'inserted':1}) as sync:
+  assert client.post('/api/inst/quant/factor-workflow/imports/svquant-existing').status_code==403
+  app.dependency_overrides[require_quant_user]=lambda:{**ctx,'can_manage':True,'can_write':True,'role':'manager'}
+  assert client.post('/api/inst/quant/factor-workflow/imports/svquant-existing').status_code==200
+  sync.assert_called_once_with(912,261)
+
+def test_import_summary_allows_researcher():
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.imports.summary',return_value={'total':331}) as summary:
+  assert client.get('/api/inst/quant/factor-workflow/imports/svquant-existing').status_code==200
+  summary.assert_called_once_with(912,261)

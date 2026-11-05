@@ -1,43 +1,43 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Bell, BookOpen, ChevronRight, Search, Sparkles } from "lucide-react";
+import { Bell, BookOpen, ChevronRight, Search, Sparkles } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { Disclaimer, ErrorState, LoadingCards, SectionHead, Sparkline, Tag } from "../components";
-import { fmtPct, formatPrice } from "../lib";
-import GlossarySheet from "../GlossarySheet";
-import AiPanel from "../components/AiPanel";
+import { Disclaimer, ErrorState, LoadingCards, Sheet, Tag } from "../components";
+import { fmtPct } from "../lib";
 import { LocaleToggle, useLocale, withMarket } from "../i18n";
 
 type HomeData = any;
 
-const INDEX_LABEL: Record<string, { zh: string; en: string }> = {
-  "000300": { zh: "沪深300", en: "CSI 300" },
-  "000905": { zh: "中证500", en: "CSI 500" },
-  "000015": { zh: "上证红利", en: "SSE Dividend" },
-  "399101": { zh: "深证综指", en: "SZ Composite" },
-  "399303": { zh: "国证2000", en: "CNI 2000" },
-  "399317": { zh: "国证A指", en: "CNI A" },
+const fmtIndex = (value: any) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
-function indexLabel(name: string, t: (zh: string, en: string) => string) {
-  const key = String(name || "").replace(/\.(SH|SZ)$/i, "");
-  const item = INDEX_LABEL[key];
-  if (item) return t(item.zh, item.en);
-  if (/^\d{6}$/.test(key)) return t(`指数 ${key}`, `Index ${key}`);
-  return name;
-}
+const fmtTurnover = (value: any) => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  return `${(n / 10000).toFixed(2)} 万亿`;
+};
+
+const mmdd = (value?: string | null) => {
+  const text = String(value || "");
+  return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(5, 10) : "—";
+};
 
 export default function Home() {
   const { user } = useAuth();
   const nav = useNavigate();
-  const { t, market } = useLocale();
+  const { t, market, locale } = useLocale();
   const displayName = user?.display_name === "演示用户"
     ? t("演示用户", "Demo user")
     : user?.display_name || t("演示用户", "Demo user");
   const [data, setData] = useState<HomeData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [glossary, setGlossary] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [aiLine, setAiLine] = useState("");
+  const [aiPending, setAiPending] = useState(false);
   const usUnavailable = data?.market === "US" && data?.hasQuotes === false;
 
   const load = () => {
@@ -50,12 +50,40 @@ export default function Home() {
 
   useEffect(load, [market]);
 
+  useEffect(() => {
+    if (!data || market !== "CN" || !data.daily?.length) {
+      setAiLine("");
+      setAiPending(false);
+      return;
+    }
+    let cancelled = false;
+    setAiPending(true);
+    api<{ card?: { summary?: string } }>("/api/invest/ai/daily?refresh=0", { method: "POST" })
+      .then((res) => { if (!cancelled) setAiLine(res.card?.summary || ""); })
+      .catch(() => { if (!cancelled) setAiLine(""); })
+      .finally(() => { if (!cancelled) setAiPending(false); });
+    return () => { cancelled = true; };
+  }, [data, market]);
+
   const openLink = (link: any) => {
     if (!link) return;
     if (link.type === "stock") nav(`/stock/${link.id}`);
-    else if (link.type === "topic") nav(`/topic/${link.id}`);
+    else if (link.type === "topic") nav("/topics");
     else if (link.type === "portfolio") nav("/portfolio");
   };
+
+  const portfolio = data?.portfolioSnapshot || {
+    hasHoldings: false, holdingCount: 0, dailyChange: null, lastCheckupDate: null,
+  };
+  const pulse = data?.marketPulse || {
+    statusLabel: "收盘", statusLabelEn: "Close", asOf: data?.dataDate,
+    indices: [], turnover: { value: null, change: null, available: false, note: "" },
+  };
+  const turnover = pulse.turnover || { value: null, change: null, available: false, note: "" };
+  const daily = data?.daily || [];
+  const review = data?.review || {};
+  const topics = data?.topics || [];
+  const learn = data?.learn || {};
 
   return (
     <div className="page home-page">
@@ -64,13 +92,13 @@ export default function Home() {
           <div>
             <h1>{t("下午好，", "Good afternoon, ")}{displayName}</h1>
             <p>
-              {t("先看懂，再决定", "Understand first, then decide")} · {data?.dataDate || "2026-10-23"} ·{" "}
+              {data?.dataDate || "2026-10-23"} ·{" "}
               {data?.isDemo ? t("演示数据", "Demo data") : market === "US" ? (data?.dataSource || "Public EOD (US)") : t("公开 EOD", "Public EOD")}
             </p>
           </div>
           <div className="home-actions">
             <LocaleToggle />
-            <button className="round-btn" aria-label={t("通知", "Notifications")} onClick={() => nav("/watch")}>
+            <button className="round-btn" aria-label={t("通知", "Notifications")} onClick={() => nav("/notifications")}>
               <Bell size={20} />
               <i className="notice-dot" />
             </button>
@@ -79,26 +107,15 @@ export default function Home() {
             </button>
           </div>
         </div>
-        <button className="searchbar" onClick={() => nav("/search")}>
-          <Search size={18} />
-          <span>{market === "US" ? (usUnavailable ? t("美股搜索暂不可用", "US search unavailable") : t("搜索美股代码，如 AAPL", "Search US ticker, e.g. AAPL")) : t("搜索股票 / 行业 / 主题", "Search stocks / industries / themes")}</span>
-        </button>
-        {market === "CN" ? (
-          <button className="ai-entry" onClick={() => nav("/ai")}>
-            <Sparkles size={16} />
-            <span>{t("AI 管家 · 问个股、组合或复盘", "AI copilot · ask about a stock, portfolio or review")}</span>
-            <ChevronRight size={15} />
+        <div className="home-search-row">
+          <button className="searchbar home-search" onClick={() => nav("/search")}>
+            <Search size={18} />
+            <span>{market === "US" ? (usUnavailable ? t("美股搜索暂不可用", "US search unavailable") : t("搜索美股代码，如 AAPL", "Search US ticker, e.g. AAPL")) : t("搜索股票 / 行业", "Search stocks / industries")}</span>
           </button>
-        ) : (
-          <div className="ai-entry market-note">
-            <Sparkles size={16} />
-            <span>
-              {usUnavailable
-                ? t("当前数据视图没有美股行情；切换到中文查看 A 股。", "This data view has no US quotes; switch to 中文 for A-share coverage.")
-                : t("美股版当前提供行情与自选；AI 与基本面数据待接入。", "US mode currently covers quotes and watchlists; AI and fundamentals are not available (no free stable source).")}
-            </span>
-          </div>
-        )}
+          <button className="home-spark" aria-label={t("AI 管家", "AI assistant")} onClick={() => nav("/ai")}>
+            <Sparkles size={18} />
+          </button>
+        </div>
       </header>
 
       {data?.isStale ? (
@@ -126,135 +143,176 @@ export default function Home() {
               </p>
             </section>
           ) : (
-          <>
-          <section className="daily-card">
-            <div className="daily-head">
-              <div className="row gap6">
-                <Sparkles size={15} />
-                <b>{t("今日概览", "Today")}</b>
-              </div>
-              <span className="daily-tag">{t("收盘后更新", "Updated after close")}</span>
-            </div>
-            <div className="daily-list">
-              {data.daily.map((item: any, idx: number) => (
-                <button className="daily-item" key={idx} onClick={() => openLink(item.link)}>
-                  <span className={`dot dot-${idx === 0 ? "red" : idx === 1 ? "amber" : "gray"}`} />
-                  <span className="daily-text">
-                    <b>{item.title}</b>
-                    <span>{item.detail}</span>
-                  </span>
-                  <ChevronRight size={15} className="daily-arrow" />
-                </button>
-              ))}
-            </div>
-            <div className="daily-foot">{t("按自选、组合与收盘数据生成 · 非投资建议", "Built from watchlist, portfolio and EOD data · not investment advice")}</div>
-          </section>
-
-          {market === "CN" ? (
-            <AiPanel
-              title={t("AI 今日解读", "AI daily brief")}
-              subtitle={t(
-                "基于自选、持仓与收盘数据生成；只解释今天发生了什么，不构成投资建议。",
-                "Generated from watchlist, holdings and EOD data; explains what happened today, not investment advice.",
-              )}
-              endpoint="/api/invest/ai/daily"
-              buttonLabel={t("生成今日解读", "Generate daily brief")}
-            />
-          ) : null}
-
-          <section className="card">
-            <div className="card-title-row">
-              <h2>{data.review.title || t("收盘复盘", "Close review")}</h2>
-              <span className="hint">{t("规则摘要 · 非投资建议", "Rule-based summary · not investment advice")}</span>
-            </div>
-            <p className="review-summary">{data.review.summary}</p>
-            <ul className="fact-list">
-              {data.review.facts.map((f: string, i: number) => (
-                <li key={i}>{f}</li>
-              ))}
-            </ul>
-          </section>
-
-          {data.indices.length ? (
-            <div className="index-strip">
-              {data.indices.map((it: any) => (
-                <div className="index-cell" key={it.name}>
-                  <span>{indexLabel(it.name, t)}</span>
-                  <b>{it.value}</b>
-                  <em className={it.change >= 0 ? "up" : "down"}>{fmtPct(it.change)}</em>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {data.topics.length ? (
             <>
-              <SectionHead
-                title={t("今日热点", "Today's themes")}
-                sub={t("按板块热度排序", "Ranked by sector heat")}
-                action={<button className="link-btn" onClick={() => nav("/search")}>{t("全部", "All")} <ChevronRight size={14} /></button>}
-              />
-              <div className="stack">
-                {data.topics.map((topic: any) => (
-                  <button className="topic-card" key={topic.id} onClick={() => nav(`/topic/${topic.id}`)}>
-                    <div className="topic-top">
-                      <div>
-                        <span className="topic-kicker">{t("行业 / 主题", "Sector / theme")}</span>
-                        <h3>{topic.name}</h3>
+              <section className="today-card">
+                <div className="today-mine">
+                  <div className="today-head">
+                    <span>{t("今日", "Today")}</span>
+                    <span className="today-status">{locale === "en" ? pulse.statusLabelEn : pulse.statusLabel}</span>
+                  </div>
+                  {portfolio.hasHoldings ? (
+                    <button className="today-mine-row" onClick={() => nav("/portfolio")}>
+                      <div className="today-mine-main">
+                        <span>{t("我的", "Mine")}</span>
+                        <b className={Number(portfolio.dailyChange) >= 0 ? "today-up" : "today-down"}>
+                          {portfolio.dailyChange == null ? "—" : fmtPct(portfolio.dailyChange)}
+                        </b>
                       </div>
-                      {topic.spark?.length >= 2 ? (
-                        <Sparkline values={topic.spark} />
+                      <div className="today-checkup">
+                        <span>{t("上次体检", "Last checkup")}</span>
+                        <b>{mmdd(portfolio.lastCheckupDate)}</b>
+                      </div>
+                      <ChevronRight size={17} />
+                    </button>
+                  ) : (
+                    <button className="today-build" onClick={() => nav("/portfolio")}>
+                      <div>
+                        <b>{t("建立组合", "Build your portfolio")}</b>
+                        <span>{t("导入持仓后看今日收益", "Import holdings to see today's return")}</span>
+                      </div>
+                      <ChevronRight size={17} />
+                    </button>
+                  )}
+                </div>
+
+                <div className="today-market">
+                  <div className="today-market-head">
+                    <span>{t("市场", "Market")}</span>
+                    <span>{pulse.asOf}</span>
+                  </div>
+                  {(pulse.indices || []).length ? (
+                    <div className="today-grid">
+                      {(pulse.indices || []).map((item: any) => (
+                        <div className={`today-cell ${item.available ? "" : "missing"}`} key={item.code || item.label}>
+                          <span>{locale === "en" ? item.label_en || item.label : item.label}</span>
+                          <b>{item.available ? fmtIndex(item.value) : "—"}</b>
+                          <em className={!item.available ? "muted" : Number(item.change) >= 0 ? "up" : "down"}>
+                            {item.available && item.change != null ? fmtPct(item.change) : ""}
+                          </em>
+                        </div>
+                      ))}
+                      <div className={`today-cell ${turnover.available ? "" : "missing"}`}>
+                        <span>{t("两市成交", "Turnover")}</span>
+                        <b>{turnover.available ? fmtTurnover(turnover.value) : "—"}</b>
+                        <em className={turnover.available && Number(turnover.change) >= 0 ? "up" : "down"}>
+                          {turnover.available && turnover.change != null
+                            ? t(`较昨 ${fmtPct(turnover.change)}`, `${fmtPct(turnover.change)} vs prior`)
+                            : turnover.note || ""}
+                        </em>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="today-market-empty">
+                      <b>{t("市场指数暂不可用", "Market indices are unavailable")}</b>
+                      <span>{t("当前无法获取指数行情，不影响其他内容。", "Index quotes are currently unavailable; the rest of the page is unaffected.")}</span>
+                    </div>
+                  )}
+                  {turnover.available && turnover.basisLabel ? (
+                    <p className="today-basis">
+                      {locale === "en" ? turnover.basisLabelEn || turnover.basisLabel : turnover.basisLabel}
+                    </p>
+                  ) : null}
+                </div>
+              </section>
+
+              {daily.length ? (
+                <section className="home-overview">
+                  <div className="home-section-head">
+                    <div>
+                      <h2>{t("今日概览", "Today's brief")}</h2>
+                      <span>
+                        {aiLine
+                          ? t("AI 生成 · 规则校验", "AI-generated · rule-checked")
+                          : aiPending
+                            ? t("AI 生成中 · 规则摘要", "AI generating · rule-based summary")
+                            : t("规则生成 · 非投资建议", "Rule-based · not investment advice")}
+                      </span>
+                    </div>
+                    <button className="link-btn" onClick={() => setReportOpen(true)}>
+                      {t("查看完整日报", "Full brief")} <ChevronRight size={14} />
+                    </button>
+                  </div>
+                  {aiLine || review.line ? <p className="overview-line">{aiLine || review.line}</p> : null}
+                  <div className="overview-list">
+                    {daily.slice(0, 3).map((item: any, idx: number) => {
+                      const body = (
+                        <>
+                          <span className={`overview-dot dot-${item.source || (idx === 0 ? "stock" : idx === 1 ? "portfolio" : "market")}`} />
+                          <span className="overview-text">
+                            <b>{item.title}</b>
+                            <span>{item.detail}</span>
+                          </span>
+                          {item.link ? <ChevronRight size={15} className="overview-arrow" /> : null}
+                        </>
+                      );
+                      return item.link ? (
+                        <button className="overview-row" key={`${item.title}-${idx}`} onClick={() => openLink(item.link)}>{body}</button>
                       ) : (
-                        <span className="hint">{t("走势待补充", "Trend pending")}</span>
-                      )}
+                        <div className="overview-row" key={`${item.title}-${idx}`}>{body}</div>
+                      );
+                    })}
+                  </div>
+                </section>
+              ) : null}
+
+              {topics.length ? (
+                <section className="home-topics">
+                  <div className="home-section-head">
+                    <div>
+                      <h2>{t("今日热点", "Today's themes")}</h2>
+                      <span>{t("按热度排序 · 每条带风险提示", "Ranked by heat · every row carries a risk flag")}</span>
                     </div>
-                    <p>{topic.summary}</p>
-                    <div className="topic-foot">
-                      <Tag tone="amber">{t("估值", "Valuation")} {topic.valuationPercentile?.toFixed?.(0) ?? topic.valuationPercentile}% {t("分位", "pct")}</Tag>
-                      <Tag tone="gray">{t("热度", "Heat")} {topic.heat?.toFixed?.(0) ?? topic.heat}</Tag>
-                      <span className="topic-go">{t("查看", "View")} <ArrowRight size={14} /></span>
-                    </div>
-                  </button>
-                ))}
-              </div>
+                    <button className="link-btn" onClick={() => nav("/topics")}>
+                      {t("全部", "All")} <ChevronRight size={14} />
+                    </button>
+                  </div>
+                  <div className="hot-list">
+                    {topics.slice(0, 3).map((topic: any) => {
+                      const fallbackValue = topic.valuationPercentile ?? topic.turnoverPercentile;
+                      const tags = topic.riskTags?.length
+                        ? topic.riskTags
+                        : [{
+                            label: fallbackValue != null
+                              ? `估值分位 ${Number(fallbackValue).toFixed(0)}%`
+                              : `热度 ${Number(topic.heat || 0).toFixed(0)}`,
+                            label_en: fallbackValue != null
+                              ? `Valuation percentile ${Number(fallbackValue).toFixed(0)}%`
+                              : `Heat ${Number(topic.heat || 0).toFixed(0)}`,
+                            tone: "gray",
+                          }];
+                      const body = (
+                        <>
+                          <div className="hot-top">
+                            <b>{topic.name}</b>
+                            <span className="hot-heat">{t("热度", "Heat")} {Number(topic.heat || 0).toFixed(0)}</span>
+                          </div>
+                          <p>{topic.summary}</p>
+                          <div className="hot-tags">
+                            {tags.map((tag: any) => (
+                              <Tag key={tag.label} tone={tag.tone || "gray"}>
+                                {locale === "en" ? tag.label_en || tag.label : tag.label}
+                              </Tag>
+                            ))}
+                          </div>
+                        </>
+                      );
+                      return topic.detailAvailable ? (
+                        <button className="hot-row" key={topic.id} onClick={() => nav(`/topic/${topic.id}`)}>{body}</button>
+                      ) : (
+                        <div className="hot-row hot-row-static" key={topic.id}>{body}</div>
+                      );
+                    })}
+                  </div>
+                </section>
+              ) : null}
+
+              <button className="home-learn-row" onClick={() => nav(learn.link || "/learn")}>
+                <BookOpen size={16} />
+                <span>{locale === "en" ? learn.titleEn || "Valuation percentile: expensive versus what?" : learn.title || "估值分位：贵不贵，跟什么比？"}</span>
+                <ChevronRight size={17} />
+              </button>
             </>
-          ) : null}
-
-          <SectionHead
-            title={t("我的自选", "My watchlist")}
-            sub={t(`${data.watchlist.length} 只`, `${data.watchlist.length} name(s)`)}
-            action={<button className="link-btn" onClick={() => nav("/watch")}>{t("管理", "Manage")} <ChevronRight size={14} /></button>}
-          />
-          <div className="card list-card">
-            {data.watchlist.length === 0 ? (
-              <div className="empty-inline">{t("还没有自选，去搜索添加。", "No names yet. Search to add some.")}</div>
-            ) : (
-              data.watchlist.map((s: any) => (
-                <button className="stock-row" key={s.code} onClick={() => nav(`/stock/${s.code}`)}>
-                  <div>
-                    <b>{s.name}</b>
-                    <span>{s.code} · {s.group}</span>
-                  </div>
-                  <div className="stock-price">
-                    <b>{formatPrice(s.price)}</b>
-                    <em className={s.changePct >= 0 ? "up" : "down"}>{fmtPct(s.changePct)}</em>
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-          </>
           )}
-
-          <SectionHead title={t("3 分钟学习", "3-minute learn")} sub={t("术语随问随学", "Tap a term to learn")} />
-          <button className="learn-card" onClick={() => setGlossary(true)}>
-            <div className="learn-icon"><BookOpen size={20} /></div>
-            <div>
-              <b>{t("估值分位：贵不贵，跟什么比？", "Valuation percentile: expensive versus what?")}</b>
-              <p>{t("先搞懂 PE 分位、拥挤度，再看热点。", "Understand P/E percentile and crowding before chasing themes.")}</p>
-            </div>
-            <ChevronRight size={18} />
-          </button>
 
           <Disclaimer>
             {market === "US"
@@ -267,10 +325,34 @@ export default function Home() {
             {" · "}
             {t("收盘后更新 · 不构成投资建议", "Updated after close · not investment advice")}
           </Disclaimer>
+
+          <Sheet
+            open={reportOpen}
+            onClose={() => setReportOpen(false)}
+            title={t("今日日报", "Today's brief")}
+            sub={data.dataDate}
+          >
+            <div className="home-report">
+              {daily.map((item: any, idx: number) => (
+                <div className="report-row" key={`${item.title}-${idx}`}>
+                  <span className={`overview-dot dot-${item.source || "market"}`} />
+                  <div>
+                    <b>{item.title}</b>
+                    <p>{item.detail}</p>
+                  </div>
+                </div>
+              ))}
+              {review.summary ? <p className="report-summary">{review.summary}</p> : null}
+              {review.facts?.length ? (
+                <ul className="fact-list">
+                  {review.facts.map((f: string, i: number) => <li key={i}>{f}</li>)}
+                </ul>
+              ) : null}
+              <p className="hint">{t("规则生成 · 历史 EOD 数据 · 不构成投资建议", "Rule-based · historical EOD data · not investment advice")}</p>
+            </div>
+          </Sheet>
         </>
       ) : null}
-
-      <GlossarySheet open={glossary} onClose={() => setGlossary(false)} items={data?.glossary} />
     </div>
   );
 }

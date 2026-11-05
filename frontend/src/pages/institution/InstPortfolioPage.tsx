@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { PieChart, ShieldCheck } from "lucide-react";
 import { instApi, fmtMoney, fmtPct, fmtDateTime } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
-import { Badge, Button, Card, DataFreshness, Empty, ErrorBox, Field, Loading, PageHeader, industryLabel } from "./instUi";
+import { Badge, Button, Card, DataFreshness, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge, industryLabel } from "./instUi";
 
 type Position = {
   id: number;
@@ -25,6 +25,27 @@ type ExecutionException = {
   detail?: { text?: string } | string;
   authorization_id?: number;
   created_at?: string;
+};
+
+type ExitCase = {
+  id: number;
+  company_name: string;
+  symbol: string;
+  reason_type: string;
+  status: string;
+  memo?: string;
+  case_id?: number;
+  case_no?: string;
+  proposal_id?: number;
+  proposal_status?: string;
+};
+
+const EXIT_REASON: Record<string, [string, string]> = {
+  thesis_invalid: ["论点失效", "Thesis broken"],
+  valuation: ["估值透支", "Valuation stretched"],
+  better_allocation: ["更优资本配置", "Better allocation"],
+  portfolio_constraint: ["组合/资金约束", "Portfolio constraint"],
+  other: ["其他", "Other"],
 };
 
 const EXCEPTION_TYPE: Record<string, [string, string]> = {
@@ -60,6 +81,7 @@ export function InstPortfolioPage() {
   const flash = (location.state as { flash?: string } | null)?.flash;
   const [data, setData] = useState<PortfolioData | null>(null);
   const [exceptions, setExceptions] = useState<ExecutionException[]>([]);
+  const [exits, setExits] = useState<ExitCase[]>([]);
   const [resolving, setResolving] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,10 +94,12 @@ export function InstPortfolioPage() {
       instApi<{ items: ExecutionException[] }>("/execution/exceptions?status=open").catch(
         () => ({ items: [] as ExecutionException[] }),
       ),
+      instApi<{ exits: ExitCase[] }>("/monitor").catch(() => ({ exits: [] as ExitCase[] })),
     ])
-      .then(([portfolio, ex]) => {
+      .then(([portfolio, ex, monitor]) => {
         setData(portfolio);
         setExceptions(ex.items || []);
+        setExits(monitor.exits || []);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -102,7 +126,7 @@ export function InstPortfolioPage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
-        <PageHeader eyebrow="PORTFOLIO / 05" title={t("投资组合", "Portfolio")} />
+        <PageHeader eyebrow="PORTFOLIO / 05" title={t("投资管理", "Investment management")} />
         <Loading label={t("正在加载组合…", "Loading portfolio…")} />
       </div>
     );
@@ -111,7 +135,7 @@ export function InstPortfolioPage() {
   if (error) {
     return (
       <div className="mx-auto max-w-6xl space-y-5">
-        <PageHeader eyebrow="PORTFOLIO / 05" title={t("投资组合", "Portfolio")} />
+        <PageHeader eyebrow="PORTFOLIO / 05" title={t("投资管理", "Investment management")} />
         <ErrorBox message={error} onRetry={load} />
       </div>
     );
@@ -126,7 +150,7 @@ export function InstPortfolioPage() {
     <div className="mx-auto max-w-6xl space-y-5">
       <PageHeader
         eyebrow="PORTFOLIO / 05"
-        title={t("投资组合", "Portfolio")}
+        title={t("投资管理", "Investment management")}
         desc={`${session.org.name_cn} · ${locale === "en" ? session.role_label_en : session.role_label_cn} · ${t("展示批准后的持仓与敞口；未成交的批准不计入持仓。", "Approved positions and exposures; unexecuted approvals are not positions.")}`}
         actions={<Badge tone="gold">{pf?.base_currency || "CNY"} {t("基准", "base")}</Badge>}
       />
@@ -173,6 +197,7 @@ export function InstPortfolioPage() {
                     <th className="py-2 text-right">{t("成本（CNY/股）", "Cost (CNY/sh)")}</th>
                     <th className="py-2 text-right">{t("市值（CNY）", "Value (CNY)")}</th>
                     <th className="py-2 text-right">{t("权重（占净值）", "Weight (of NAV)")}</th>
+                    <th className="py-2 text-right">{t("盘中管理", "Intraday")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -212,6 +237,14 @@ export function InstPortfolioPage() {
                         ) : (
                           fmtPct(p.weight)
                         )}
+                      </td>
+                      <td className="py-2.5 text-right">
+                        <Link
+                          to={`/inst/portfolio/${encodeURIComponent(p.symbol)}`}
+                          className="text-xs font-medium text-[#7950ba] hover:underline"
+                        >
+                          {t("查看详情（盘中管理）", "Details (intraday)")} →
+                        </Link>
                       </td>
                     </tr>
                   ))}
@@ -283,6 +316,48 @@ export function InstPortfolioPage() {
           </Card>
         </div>
       </div>
+
+      <Card
+        title={t("在途退出审理", "Exit reviews")}
+        desc={t(
+          "单票盘中管理提交的减仓/清仓审理会出现在这里；退出与买入一样要重新研究、辩论和审批。",
+          "Trim/exit reviews submitted from a holding's intraday page appear here; exits require fresh research, debate and approval.",
+        )}
+        actions={<Badge tone={exits.length ? "amber" : "green"}>{exits.length}</Badge>}
+      >
+        {exits.length ? (
+          <ul className="space-y-2">
+            {exits.slice(0, 8).map((x) => (
+              <li key={x.id} className="rounded-xl border border-[#e3eaf8] px-3 py-2 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium text-[#252533]">
+                    EX-{x.id} · {x.company_name}
+                  </span>
+                  <StatusBadge status={x.status} />
+                </div>
+                <p className="mt-1 text-[#68738b]">
+                  {locale === "en" ? EXIT_REASON[x.reason_type]?.[1] : EXIT_REASON[x.reason_type]?.[0] || x.reason_type}
+                  {x.memo ? ` · ${x.memo}` : ""}
+                </p>
+                <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-[#7950ba]">
+                  {x.case_id ? (
+                    <Link to={`/inst/research?case=${x.case_id}`} className="hover:underline">
+                      {t("退出研究案", "Exit research case")} #{x.case_id}
+                    </Link>
+                  ) : null}
+                  {x.proposal_id ? (
+                    <Link to={`/inst/approvals?proposal=${x.proposal_id}`} className="hover:underline">
+                      {t("退出议案", "Exit proposal")} #{x.proposal_id}
+                    </Link>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <Empty>{t("没有在途退出审理。", "No exit reviews in progress.")}</Empty>
+        )}
+      </Card>
 
       <Card
         title={t("执行异常", "Execution exceptions")}

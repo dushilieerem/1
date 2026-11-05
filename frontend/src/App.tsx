@@ -179,8 +179,8 @@ const InstPortfolioPage = lazy(() =>
 const InstApprovalsPage = lazy(() =>
   import("./pages/institution/InstApprovalsPage").then((m) => ({ default: m.InstApprovalsPage })),
 );
-const InstMonitorPage = lazy(() =>
-  import("./pages/institution/InstMonitorPage").then((m) => ({ default: m.InstMonitorPage })),
+const InstHoldingPage = lazy(() =>
+  import("./pages/institution/InstHoldingPage").then((m) => ({ default: m.InstHoldingPage })),
 );
 const InstAuditPage = lazy(() =>
   import("./pages/institution/InstAuditPage").then((m) => ({ default: m.InstAuditPage })),
@@ -233,9 +233,10 @@ export default function App() {
           <Route path="research" element={<InstResearchPage />} />
           <Route path="debate" element={<InstDebatePage />} />
           <Route path="portfolio" element={<InstPortfolioPage />} />
+          <Route path="portfolio/:symbol" element={<InstHoldingPage />} />
           <Route path="approvals" element={<InstApprovalsPage />} />
           <Route path="execution" element={<Navigate to="/inst/portfolio" replace />} />
-          <Route path="monitor" element={<InstMonitorPage />} />
+          <Route path="monitor" element={<Navigate to="/inst/portfolio" replace />} />
           <Route path="audit" element={<InstAuditPage />} />
           <Route path="about" element={<InstAboutPage />} />
         </Route>

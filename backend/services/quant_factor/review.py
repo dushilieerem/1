@@ -20,13 +20,32 @@ def request_review(uid,org,cid,note):
 
 def queue(uid,org):
     with get_conn() as c:
-        rows=c.execute("SELECT id,snapshot_hash,status,snapshot->>'name' AS name,archive,updated_at FROM quant_factor_candidates WHERE org_id=%s AND user_id<>%s AND archive->'review' IS NOT NULL ORDER BY updated_at DESC LIMIT 100",(org,uid)).fetchall()
+        rows=c.execute("SELECT id,snapshot_hash,status,snapshot->>'name' AS name,archive,updated_at FROM quant_factor_candidates WHERE org_id=%s AND user_id<>%s AND archive->'review'->>'status'='requested' ORDER BY updated_at DESC LIMIT 100",(org,uid)).fetchall()
     return [dict(r) for r in rows]
 
 def ensure_reviewer(row,uid):
     if not row:raise KeyError('candidate')
     if int(row['user_id'])==uid:raise WorkflowError('不能复核自己的研究候选')
     if not (row['archive'] or {}).get('review'):raise KeyError('candidate')
+
+def claim(uid,org,cid):
+    with get_conn() as c:
+        row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND org_id=%s FOR UPDATE',(cid,org)).fetchone()
+        ensure_reviewer(row,uid)
+        card=dict(row['archive']);review=dict(card['review'])
+        if review.get('status')!='requested':raise WorkflowError('此版本已复核，不能重复领取')
+        assigned=review.get('assigned_to')
+        if assigned is not None and int(assigned)!=uid:raise WorkflowError('该事项已指派给其他复核人')
+        review.update(assigned_to=uid,assigned_at=datetime.now(timezone.utc).isoformat())
+        card['review']=review
+        c.execute('UPDATE quant_factor_candidates SET archive=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s',(store.encode(card),store.encode([event('review_claimed',reviewer_id=uid)]),cid))
+    return detail(uid,org,cid)
+
+def ensure_assigned(review,uid):
+    if not isinstance(review,dict) or review.get('assigned_to') is None:
+        raise WorkflowError('请先领取该复核事项再作决定')
+    if int(review['assigned_to'])!=uid:
+        raise WorkflowError('该事项已指派给其他复核人')
 
 def detail(uid,org,cid):
     with get_conn() as c:
@@ -43,6 +62,7 @@ def record(uid,org,cid,decision,note):
         if decision=='research_supported' and row['snapshot']['plan'].get('researchPurpose')=='discovery' and not handoff_allowed(row):raise WorkflowError('新因子候选尚未通过完整去重检验，可反馈补充研究，不能确认新成果依据充分。')
         card=dict(row['archive']);review=dict(card['review'])
         if review['status']!='requested':raise WorkflowError('此版本已复核，不能覆盖原结论；新研究版本须单独提交')
+        ensure_assigned(review,uid)
         review.update(status='reviewed',decision=decision,note=note.strip(),reviewer_id=uid,reviewed_at=datetime.now(timezone.utc).isoformat())
         card['review']=review
         # Neither research feedback nor a passing gate can modify approved/sealed.

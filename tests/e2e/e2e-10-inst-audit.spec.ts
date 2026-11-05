@@ -3,7 +3,7 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
 import { evaluateWriteGuard } from "./helpers/write-guard.mjs";
 
 /**
- * 机构端展示与可用性审计：八个工作区、六角色、窄屏、空态/错误态/加载态、
+ * 机构端展示与可用性审计：七个工作区、六角色、窄屏、空态/错误态/加载态、
  * 控制台错误与接口 5xx。默认只读；创建空研究案的用例需写库闸门放行。
  */
 const BASE = process.env.INST_BASE || "http://127.0.0.1:9533";
@@ -19,7 +19,6 @@ const WORKSPACES: Array<[string, string]> = [
   ["/inst/debate", "DEBATE / 04"],
   ["/inst/approvals", "APPROVALS / 06"],
   ["/inst/portfolio", "PORTFOLIO / 05"],
-  ["/inst/monitor", "MONITOR / 08"],
   ["/inst/about", "AGENTS / 09"],
 ];
 
@@ -36,6 +35,23 @@ async function login(request: APIRequestContext, username: string): Promise<stri
   });
   expect(res.ok(), `登录失败 ${username} HTTP ${res.status()}`).toBeTruthy();
   return (await res.json()).token;
+}
+
+async function apiCall(
+  request: APIRequestContext,
+  method: "GET" | "POST",
+  path: string,
+  token: string,
+  data?: Record<string, unknown>,
+): Promise<any> {
+  const res = await request.fetch(`${API}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}` },
+    data,
+  });
+  const text = await res.text();
+  if (!res.ok()) throw new Error(`${method} ${path} → ${res.status()} ${text.slice(0, 300)}`);
+  return text ? JSON.parse(text) : {};
 }
 
 async function openPage(
@@ -85,7 +101,37 @@ test.beforeAll(async ({ request, browser }) => {
   await ctx.close();
 });
 
-test("八个工作区可达，无控制台错误与接口 5xx", async ({ browser }) => {
+test("AI 一页纸落盘后可重复读取，不重复生成", async ({ request }) => {
+  test.skip(!writeEnabled || !researchCaseId, "需要写库闸门与已有研究案");
+  test.setTimeout(300_000);
+  const first = await apiCall(
+    request,
+    "POST",
+    `/api/inst/cases/${researchCaseId}/ai/memo`,
+    TOKENS.manager!,
+    { refresh: false },
+  );
+  expect(first.memo?.summary, "首次生成应有一页纸内容").toBeTruthy();
+  const peek = await apiCall(
+    request,
+    "GET",
+    `/api/inst/cases/${researchCaseId}/ai/memo`,
+    TOKENS.manager!,
+  );
+  expect(peek.memo?.summary).toBe(first.memo.summary);
+  expect(peek.cached).toBe(true);
+  const again = await apiCall(
+    request,
+    "POST",
+    `/api/inst/cases/${researchCaseId}/ai/memo`,
+    TOKENS.manager!,
+    { refresh: false },
+  );
+  expect(again.cached).toBe(true);
+  expect(again.memo?.summary).toBe(first.memo.summary);
+});
+
+test("七个工作区可达，无控制台错误与接口 5xx", async ({ browser }) => {
   const { ctx, page } = await openPage(browser, TOKENS.manager!);
   const errors: string[] = [];
   const failures: string[] = [];
@@ -122,8 +168,17 @@ test("详情页：研究、辩论、审批（有数据时）", async ({ browser 
   if (researchCaseId) {
     await page.goto(`${BASE}/inst/research?case=${researchCaseId}`, { waitUntil: "networkidle" });
     await expect(page.getByText("公司信息", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("行业分析（独立板块）", { exact: true })).toBeVisible();
+    await expect(page.getByText("K 线（实时行情）", { exact: true })).toBeVisible();
     await expect(page.getByText("六维分析", { exact: true })).toBeVisible();
     await expect(page.getByText("AI 一页纸", { exact: true })).toBeVisible();
+    const returnButton = page.getByRole("button", { name: /退回并重跑|Return & rerun/ });
+    if (await returnButton.count()) {
+      await returnButton.click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await expect(page.getByText("行业分析", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: /取消|Cancel/ }).click();
+    }
     const evidenceButton = page.getByRole("button", { name: /证据与反证|Evidence/ });
     await expect(evidenceButton).toBeVisible();
     await evidenceButton.click();
@@ -144,12 +199,37 @@ test("详情页：研究、辩论、审批（有数据时）", async ({ browser 
   }
   if (proposalId) {
     await page.goto(`${BASE}/inst/approvals?proposal=${proposalId}`, { waitUntil: "networkidle" });
-    await expect(page.getByText("议案快照", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("议案详情", { exact: true })).toBeVisible({ timeout: 20_000 });
   }
   await ctx.close();
 });
 
-test("窄屏 1024 八个工作区无横向溢出", async ({ browser }) => {
+test("机会发现：公司卡直接展示进入研究与放弃", async ({ browser }) => {
+  const { ctx, page } = await openPage(browser, TOKENS.manager!);
+  await page.goto(`${BASE}/inst/ideas`, { waitUntil: "networkidle" });
+  const start = page.getByRole("button", { name: /进入研究|Enter research/ }).first();
+  if (!(await start.count())) {
+    await ctx.close();
+    test.skip(true, "测试库暂无可用推送候选");
+  }
+  await expect(start).toBeVisible();
+  await expect(page.getByRole("button", { name: /^放弃$|^Reject$/ }).first()).toBeVisible();
+  await expect(page.getByText("立项三问", { exact: false })).toHaveCount(0);
+  await ctx.close();
+});
+
+test("机构端：Agent 管理列表与编辑入口", async ({ browser }) => {
+  const { ctx, page } = await openPage(browser, TOKENS.manager!);
+  await page.goto(`${BASE}/inst/about`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { name: "Agent 管理" }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/个 Agent/)).toBeVisible();
+  await page.getByText("AI 一页纸", { exact: true }).first().click();
+  await expect(page.locator("textarea")).toBeVisible();
+  await expect(page.getByRole("button", { name: /保存提示词/ })).toBeVisible();
+  await ctx.close();
+});
+
+test("窄屏 1024 七个工作区无横向溢出", async ({ browser }) => {
   const { ctx, page } = await openPage(browser, TOKENS.manager!, { width: 1024, height: 900 });
   for (const [path, text] of WORKSPACES) {
     await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
@@ -164,12 +244,12 @@ test("窄屏 1024 八个工作区无横向溢出", async ({ browser }) => {
 
 test("六角色菜单与权限边界", async ({ browser }) => {
   const expected: Record<Role, string[]> = {
-    manager: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent能力"],
-    partner: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent能力"],
-    chairman: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent能力"],
-    risk: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent能力"],
-    execution: ["投资总览", "投委会审批", "投资组合", "投后管理", "Agent能力"],
-    monitoring: ["投资总览", "公司研究", "投委会审批", "投资组合", "投后管理", "Agent能力"],
+    manager: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "投资管理", "Agent管理"],
+    partner: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "投资管理", "Agent管理"],
+    chairman: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "投资管理", "Agent管理"],
+    risk: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "投资管理", "Agent管理"],
+    execution: ["投资总览", "投委会审批", "投资管理", "Agent管理"],
+    monitoring: ["投资总览", "公司研究", "投委会审批", "投资管理", "Agent管理"],
   };
   for (const role of ROLES) {
     const { ctx, page } = await openPage(browser, TOKENS[role]!);

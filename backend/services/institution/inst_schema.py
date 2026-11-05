@@ -37,6 +37,25 @@ DDL: tuple[str, ...] = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS inst_idea_decision (
+      id                 BIGSERIAL PRIMARY KEY,
+      org_id             BIGINT NOT NULL REFERENCES inst_orgs(id) ON DELETE CASCADE,
+      company_id         BIGINT NOT NULL REFERENCES inst_company(id) ON DELETE CASCADE,
+      source             TEXT NOT NULL,
+      action             TEXT NOT NULL,
+      reason             TEXT NOT NULL,
+      circle_confirmed   BOOLEAN NOT NULL DEFAULT FALSE,
+      data_sufficiency   TEXT,
+      actor_member_id    BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT inst_idea_decision_source_chk CHECK (source IN ('push','watch','holdings')),
+      CONSTRAINT inst_idea_decision_action_chk CHECK (action IN ('initiate','watch','reject')),
+      CONSTRAINT inst_idea_decision_sufficiency_chk CHECK (
+        data_sufficiency IS NULL OR data_sufficiency IN ('sufficient','partial','missing')
+      )
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS inst_portfolio (
       id            BIGSERIAL PRIMARY KEY,
       org_id        BIGINT NOT NULL REFERENCES inst_orgs(id) ON DELETE CASCADE,
@@ -97,7 +116,10 @@ DDL: tuple[str, ...] = (
       counter_evidence JSONB,
       open_questions  JSONB,
       evidence_ids    JSONB,
+      industry_analysis JSONB,
       dim_reviews     JSONB NOT NULL DEFAULT '{}'::jsonb,
+      content_hash    TEXT,
+      cutoff          DATE,
       created_by      BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
       created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       frozen_at       TIMESTAMPTZ,
@@ -117,16 +139,24 @@ DDL: tuple[str, ...] = (
       version_id    BIGINT REFERENCES inst_research_version(id) ON DELETE SET NULL,
       doc_item_id   BIGINT,
       evidence_type TEXT NOT NULL DEFAULT 'fact',
+      grade         TEXT NOT NULL DEFAULT 'D',
       title         TEXT NOT NULL,
       quote         TEXT,
       source        TEXT NOT NULL,
       as_of         DATE,
+      event_time    DATE,
+      available_time DATE,
+      document_id   TEXT,
+      page_ref      TEXT,
+      source_uri    TEXT,
+      cutoff        DATE,
       hash          TEXT,
       added_by      BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
       created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT inst_evidence_type_chk CHECK (
         evidence_type IN ('fact','filing','financial','market','news','research','counter')
-      )
+      ),
+      CONSTRAINT inst_evidence_grade_chk CHECK (grade IN ('A','B','C','D'))
     )
     """,
     """
@@ -150,6 +180,8 @@ DDL: tuple[str, ...] = (
       session_id   BIGINT NOT NULL REFERENCES inst_debate_session(id) ON DELETE CASCADE,
       side         TEXT NOT NULL,
       round        SMALLINT NOT NULL DEFAULT 1,
+      claim_id     TEXT,
+      claim_type   TEXT NOT NULL DEFAULT 'inference',
       claim        TEXT NOT NULL,
       evidence_ids JSONB,
       confidence   DOUBLE PRECISION,
@@ -157,6 +189,37 @@ DDL: tuple[str, ...] = (
       valid        BOOLEAN NOT NULL DEFAULT TRUE,
       created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT inst_debate_side_chk CHECK (side IN ('bull','bear','chair'))
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS inst_evidence_check (
+      id           BIGSERIAL PRIMARY KEY,
+      session_id   BIGINT NOT NULL REFERENCES inst_debate_session(id) ON DELETE CASCADE,
+      claim_id     TEXT NOT NULL,
+      evidence_id  BIGINT NOT NULL REFERENCES inst_evidence(id) ON DELETE CASCADE,
+      status       TEXT NOT NULL,
+      grade        TEXT,
+      issues       JSONB,
+      checked_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT inst_evidence_check_status_chk CHECK (
+        status IN ('verified','partially_verified','unverified','contradicted')
+      ),
+      CONSTRAINT inst_evidence_check_session_claim_ev_key UNIQUE (session_id, claim_id, evidence_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS inst_ai_chat_message (
+      id                BIGSERIAL PRIMARY KEY,
+      org_id            BIGINT NOT NULL REFERENCES inst_orgs(id) ON DELETE CASCADE,
+      case_id           BIGINT NOT NULL REFERENCES inst_research_case(id) ON DELETE CASCADE,
+      dim_key           TEXT NOT NULL,
+      user_id           BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      member_id         BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
+      role              TEXT NOT NULL,
+      content           TEXT NOT NULL,
+      client_message_id TEXT,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT inst_ai_chat_role_chk CHECK (role IN ('user','assistant'))
     )
     """,
     """
@@ -384,14 +447,21 @@ DDL: tuple[str, ...] = (
 INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_inst_company_org ON inst_company (org_id, pool_status)",
     "CREATE INDEX IF NOT EXISTS idx_inst_company_symbol ON inst_company (symbol, market)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_idea_decision_company ON inst_idea_decision (company_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_research_case_company ON inst_research_case (company_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_research_version_case ON inst_research_version (case_id, version_no DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_evidence_case ON inst_evidence (case_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_debate_session_case ON inst_debate_session (case_id, started_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_debate_argument_session ON inst_debate_argument (session_id, side, round)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_evidence_check_session ON inst_evidence_check (session_id, claim_id)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_ai_chat_thread ON inst_ai_chat_message (org_id, case_id, dim_key, user_id, id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_inst_ai_chat_client_msg ON inst_ai_chat_message "
+    "(org_id, case_id, dim_key, user_id, client_message_id) WHERE client_message_id IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_inst_proposal_org ON inst_proposal (org_id, status, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_proposal_version_prop ON inst_proposal_version (proposal_id, version_no DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_authorization_status ON inst_authorization (status, issued_at DESC)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_inst_approval_version_step_approver "
+    "ON inst_approval (proposal_version_id, step, approver_member_id)",
     "CREATE INDEX IF NOT EXISTS idx_inst_position_portfolio ON inst_position_snapshot (portfolio_id, as_of DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_monitor_org ON inst_monitor_event (org_id, status, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_audit_org ON inst_audit_event (org_id, created_at DESC)",
@@ -414,6 +484,61 @@ def ensure_inst_business_schema(*, include_indexes: bool = True) -> None:
         conn.execute(
             "ALTER TABLE inst_research_version ADD COLUMN IF NOT EXISTS "
             "dim_reviews JSONB NOT NULL DEFAULT '{}'::jsonb"
+        )
+        # B2 证据可信层：旧库补列，保留已有证据（默认 D 级，需人工核验）。
+        for column, ddl in (
+            ("grade", "TEXT NOT NULL DEFAULT 'D'"),
+            ("event_time", "DATE"),
+            ("available_time", "DATE"),
+            ("document_id", "TEXT"),
+            ("page_ref", "TEXT"),
+            ("source_uri", "TEXT"),
+            ("cutoff", "DATE"),
+        ):
+            conn.execute(f"ALTER TABLE inst_evidence ADD COLUMN IF NOT EXISTS {column} {ddl}")
+        conn.execute("ALTER TABLE inst_research_version ADD COLUMN IF NOT EXISTS industry_analysis JSONB")
+        conn.execute("ALTER TABLE inst_research_version ADD COLUMN IF NOT EXISTS content_hash TEXT")
+        conn.execute("ALTER TABLE inst_research_version ADD COLUMN IF NOT EXISTS cutoff DATE")
+        conn.execute("ALTER TABLE inst_debate_argument ADD COLUMN IF NOT EXISTS claim_id TEXT")
+        conn.execute(
+            "ALTER TABLE inst_debate_argument ADD COLUMN IF NOT EXISTS claim_type TEXT NOT NULL DEFAULT 'inference'"
+        )
+        # 投委会审批：同角色可多人，各人独立留痕；附条件随议案向下传递。
+        conn.execute("ALTER TABLE inst_approval ADD COLUMN IF NOT EXISTS conditions JSONB")
+        conn.execute(
+            """
+            DO $$
+            BEGIN
+              IF EXISTS (
+                SELECT 1 FROM pg_constraint
+                 WHERE conrelid='inst_approval'::regclass
+                   AND conname='inst_approval_version_step_key'
+              ) THEN
+                ALTER TABLE inst_approval DROP CONSTRAINT inst_approval_version_step_key;
+              END IF;
+            END $$;
+            """
+        )
+        # 旧证据补等级与可用时间；只回填仍是默认 D 的行，避免覆盖人工调整。
+        conn.execute(
+            """
+            UPDATE inst_evidence
+               SET grade = CASE
+                 WHEN evidence_type = 'filing' THEN 'A'
+                 WHEN source LIKE 'ifind%' AND evidence_type IN ('financial','market') THEN 'B'
+                 WHEN source = 'eastmoney' THEN 'C'
+                 ELSE grade END
+             WHERE grade = 'D'
+            """
+        )
+        conn.execute(
+            """
+            UPDATE inst_evidence
+               SET event_time = COALESCE(event_time, as_of),
+                   available_time = COALESCE(available_time, as_of),
+                   cutoff = COALESCE(cutoff, as_of)
+             WHERE as_of IS NOT NULL
+            """
         )
         if include_indexes:
             for idx in INDEXES:

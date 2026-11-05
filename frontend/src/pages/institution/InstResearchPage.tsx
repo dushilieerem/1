@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Download, FileSearch, Loader2, Lock, Sparkles } from "lucide-react";
-import { instApi, fmtNum } from "@/lib/instApi";
+import { instApi, fmtNum, fmtDateTime } from "@/lib/instApi";
 import { getInstToken } from "@/lib/instAuth";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { useInstLocale } from "@/components/institution/instLocale";
 import { Badge, Button, Card, DataFreshness, Empty, ErrorBox, Field, Loading, PageHeader, StatusBadge, industryLabel } from "./instUi";
+import { InstKlineCard } from "./InstKlineCard";
 
 type Dim = {
   key: string;
@@ -19,6 +20,16 @@ type Dim = {
   open_questions?: string[];
   data_gaps?: string[];
   confidence?: number;
+  confidence_label?: string;
+  rating?: number | null;
+  gate?: string | null;
+  analysis_md?: string;
+  key_numbers?: unknown[];
+  falsifiers?: unknown[];
+  thesis_links?: unknown[];
+  one_line?: string;
+  attractiveness?: number | null;
+  implication_for_company?: string;
   engine?: string;
   agent?: string;
   agent_error?: string;
@@ -35,18 +46,34 @@ type Version = {
   counter_evidence?: string[];
   open_questions?: string[];
   evidence_ids?: number[];
+  industry_analysis?: Dim | null;
+  content_hash?: string;
+  cutoff?: string;
+  frozen_at?: string;
 };
 
 type Memo = {
   summary?: string;
+  decision?: "proceed" | "watch" | "avoid" | string;
+  six_dim_scores?: Array<{ key: string; score: number; confidence?: number; note?: string }>;
+  conflicts?: string[];
+  key_variables?: string[];
+  price_range?: { low?: number | null; base?: number | null; high?: number | null; note?: string } | null;
+  holding_period?: string;
   evidence?: string[];
   risks?: string[];
   open_questions?: string[];
+  memo_md?: string;
+  three_sentences?: { thesis?: string; max_risk?: string; decision?: string };
+  price_band?: number[];
+  base_value?: number;
+  stale?: boolean;
+  generated_at?: string;
   metrics?: Array<{ label: string; value: string; note?: string }>;
   engine?: string;
 };
 
-type ChatMessage = { role: "user" | "assistant"; content: string };
+type ChatMessage = { role: "user" | "assistant"; content: string; created_at?: string };
 
 type CaseItem = {
   id: number;
@@ -67,6 +94,12 @@ type CaseItem = {
     source: string;
     as_of?: string;
     evidence_type?: string;
+    grade?: string;
+    event_time?: string;
+    available_time?: string;
+    document_id?: string;
+    page_ref?: string;
+    source_uri?: string;
   }>;
   tasks?: Array<{
     id: number;
@@ -80,7 +113,7 @@ type CaseItem = {
 };
 
 const AGENT_TITLES: Array<[string, string]> = [
-  ["industry", "商业与产业"],
+  ["industry", "产业研究"],
   ["business_model", "公司商业模式"],
   ["moat", "护城河"],
   ["financial", "财务质量"],
@@ -97,6 +130,17 @@ const EVIDENCE_TYPE_META: Record<string, { label: string; note: string; tone: "s
   research: { label: "研究", note: "AI Agent 在本次研究中给出的引用。", tone: "gold" },
   counter: { label: "反证", note: "用于推翻结论的反面证据。", tone: "red" },
 };
+
+const EVIDENCE_GRADE_META: Record<string, { label: string; note: string; tone: "green" | "gold" | "amber" | "red" }> = {
+  A: { label: "A 级", note: "公告/年报/审计报告等一手文件。", tone: "green" },
+  B: { label: "B 级", note: "交易所、监管、协会或数据平台口径。", tone: "gold" },
+  C: { label: "C 级", note: "第三方研究、券商或权威媒体，需交叉验证。", tone: "amber" },
+  D: { label: "D 级", note: "AI 文本、媒体或推断，不能单独支撑结论。", tone: "red" },
+};
+
+function clipBrief(value?: string): string {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
 
 function sourceLabel(source?: string): string {
   const raw = String(source || "").trim();
@@ -119,10 +163,14 @@ export function InstResearchPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [comment, setComment] = useState("");
+  const [returnOpen, setReturnOpen] = useState(false);
+  const [returnTargets, setReturnTargets] = useState<string[]>(["industry", ...AGENT_TITLES.map(([key]) => key)]);
+  const [returnError, setReturnError] = useState<string | null>(null);
   const [memo, setMemo] = useState<Memo | null>(null);
   const [memoBusy, setMemoBusy] = useState(false);
   const autoRan = useRef(false);
   const memoRan = useRef(false);
+  const chatLoaded = useRef<Set<string>>(new Set());
   const [activeDim, setActiveDim] = useState("industry");
   const [dimBusy, setDimBusy] = useState<string | null>(null);
   const [chats, setChats] = useState<Record<string, ChatMessage[]>>({});
@@ -235,11 +283,37 @@ export function InstResearchPage() {
     memoRan.current = false;
   }, [version?.id]);
 
-  const loadMemo = async () => {
+  const loadMemo = async (refresh = false) => {
     setMemoBusy(true);
     try {
-      const res = await instApi<{ memo: Memo }>(`/cases/${caseId}/ai/memo`, { method: "POST" });
+      const res = await instApi<{ memo: Memo }>(`/cases/${caseId}/ai/memo`, {
+        method: "POST",
+        body: { refresh },
+      });
       setMemo(res.memo);
+    } finally {
+      setMemoBusy(false);
+    }
+  };
+
+  // 进入页面先读已持久化的一页纸；只有写角色且确实没有时，才触发生成。
+  const loadMemoOnEntry = async () => {
+    setMemoBusy(true);
+    try {
+      const cached = await instApi<{ memo: Memo | null; missing?: boolean }>(
+        `/cases/${caseId}/ai/memo`,
+      );
+      if (cached.memo) {
+        setMemo(cached.memo);
+        return;
+      }
+      if (canWrite) {
+        const generated = await instApi<{ memo: Memo }>(`/cases/${caseId}/ai/memo`, {
+          method: "POST",
+          body: { refresh: false },
+        });
+        setMemo(generated.memo);
+      }
     } finally {
       setMemoBusy(false);
     }
@@ -267,13 +341,28 @@ export function InstResearchPage() {
   }, [caseId, detail, version, canWrite]);
 
   useEffect(() => {
-    if (!caseId || !detail || !version || memo || memoRan.current || !canWrite) return;
+    if (!caseId || !detail || !version || memo || memoRan.current) return;
     memoRan.current = true;
-    void loadMemo().catch(() => {
-      /* 自动摘要失败时保留手动按钮 */
+    void loadMemoOnEntry().catch(() => {
+      /* 自动加载/生成失败时保留手动按钮 */
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId, detail, version, memo, canWrite]);
+
+  useEffect(() => {
+    const key = activeDimData?.key;
+    if (!caseId || !key || chatLoaded.current.has(key)) return;
+    chatLoaded.current.add(key);
+    instApi<{ items: ChatMessage[] }>(`/cases/${caseId}/dimensions/${key}/chat`)
+      .then((res) => {
+        if (!res.items?.length) return;
+        setChats((prev) => ({ ...prev, [key]: res.items }));
+      })
+      .catch(() => {
+        /* 历史加载失败不影响新提问 */
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId, activeDimData?.key]);
 
   useEffect(() => {
     if (busy !== "auto" || !caseId) return;
@@ -327,7 +416,14 @@ export function InstResearchPage() {
     try {
       const res = await instApi<{ answer: string }>(`/cases/${caseId}/dimensions/${key}/chat`, {
         method: "POST",
-        body: { question, history: history.slice(-6) },
+        body: {
+          question,
+          history: history.slice(-6),
+          client_message_id:
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID()
+              : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        },
       });
       setChats((prev) => ({
         ...prev,
@@ -337,6 +433,35 @@ export function InstResearchPage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setChatBusy(null);
+    }
+  };
+
+  const submitReturn = async () => {
+    if (!version) return;
+    const reason = comment.trim();
+    if (!reason) {
+      setReturnError(t("请填写退回原因。", "A return reason is required."));
+      return;
+    }
+    if (!returnTargets.length) {
+      setReturnError(t("请至少选择一个要退回的板块或维度。", "Select at least one section or dimension to return."));
+      return;
+    }
+    setBusy("return");
+    setError(null);
+    setReturnError(null);
+    try {
+      const next = await instApi<CaseItem>(`/research/${version.id}/review`, {
+        method: "POST",
+        body: { decision: "return", comment: reason, targets: returnTargets },
+      });
+      setDetail(next);
+      setReturnOpen(false);
+      setComment("");
+    } catch (e) {
+      setReturnError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -499,6 +624,79 @@ export function InstResearchPage() {
         ) : null}
       </Card>
 
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card
+          title={t("行业分析（独立板块）", "Industry analysis (standalone)")}
+          desc={t("不属于六维；只研究行业空间、周期、产业链与竞争格局，为六维和一页纸提供行业底图。", "Not one of the six dimensions; it covers industry space, cycle, chain and competition as the industry base for the six dimensions and the one-pager.")}
+          actions={
+            version?.industry_analysis ? (
+              <div className="flex flex-wrap gap-1.5">
+                <StatusBadge status={version.industry_analysis.status} />
+                <Badge tone={version.industry_analysis.engine === "agent" ? "gold" : "slate"}>
+                  {version.industry_analysis.engine === "agent" ? t("AI Agent", "AI Agent") : t("规则兜底", "Rule fallback")}
+                </Badge>
+                {version.industry_analysis.attractiveness != null ? (
+                  <Badge tone={version.industry_analysis.gate === "fail" ? "red" : version.industry_analysis.gate === "watch" ? "amber" : "green"}>
+                    {`${t("吸引力", "Attractiveness")} ${version.industry_analysis.attractiveness}/5`}
+                  </Badge>
+                ) : null}
+              </div>
+            ) : null
+          }
+        >
+          {version?.industry_analysis ? (
+            <div className="space-y-2">
+              <p className="text-xs leading-relaxed text-[#505369]">
+                {clipBrief(version.industry_analysis.summary) || t("待补充", "TBD")}
+              </p>
+              {version.industry_analysis.checks?.length ? (
+                <ul className="space-y-1 text-[11px] leading-relaxed text-[#68738b]">
+                  {version.industry_analysis.checks.slice(0, 5).map((item) => (
+                    <li key={item}>· {clipBrief(item)}</li>
+                  ))}
+                </ul>
+              ) : null}
+              {version.industry_analysis.counter?.length ? (
+                <p className="text-[11px] leading-relaxed text-amber-700">
+                  {t("反证", "Falsifier")}：{clipBrief(version.industry_analysis.counter[0])}
+                </p>
+              ) : null}
+              {version.industry_analysis.data_gaps?.length ? (
+                <p className="text-[10px] leading-relaxed text-[#77718c]">
+                  {t("数据缺口", "Data gaps")}：{version.industry_analysis.data_gaps.map(clipBrief).join("；")}
+                </p>
+              ) : null}
+              <p className="text-[10px] text-[#77718c]">
+                {t("证据", "Evidence")}：{version.industry_analysis.evidence_ids?.length || 0} {t("条", "items")}
+              </p>
+              {version.industry_analysis.agent_error ? (
+                <p className="text-[10px] leading-relaxed text-amber-700">
+                  {t("AI 行业分析未完成：", "AI industry analysis failed: ")}
+                  {version.industry_analysis.agent_error}
+                </p>
+              ) : null}
+              {version.industry_analysis.analysis_md ? (
+                <details className="rounded-lg border border-[#e3eaf8] bg-white px-3 py-2">
+                  <summary className="cursor-pointer text-[11px] font-medium text-[#7950ba]">
+                    {t("完整行业分析", "Full industry analysis")}
+                  </summary>
+                  <div className="mt-2 whitespace-pre-wrap text-[11px] leading-relaxed text-[#505369]">
+                    {version.industry_analysis.analysis_md}
+                  </div>
+                </details>
+              ) : null}
+            </div>
+          ) : (
+            <Empty>
+              {busy === "auto"
+                ? t("行业分析生成中…", "Generating industry analysis…")
+                : t("还没有独立行业分析；生成六维分析后自动生成。", "No standalone industry analysis yet; it is generated with the six dimensions.")}
+            </Empty>
+          )}
+        </Card>
+        <InstKlineCard companyId={Number(detail.company_id || 0)} symbol={detail.symbol} />
+      </div>
+
       {error ? <ErrorBox message={error} onRetry={() => loadDetail(caseId)} /> : null}
 
       {detail.market && detail.market !== "CN" ? (
@@ -611,10 +809,25 @@ export function InstResearchPage() {
                           ? `AI Agent${activeDimData.confidence != null ? ` · ${activeDimData.confidence.toFixed(2)}` : ""}`
                           : t("规则兜底", "Rule fallback")}
                       </Badge>
+                      {activeDimData.rating != null ? (
+                        <Badge tone={activeDimData.gate === "fail" ? "red" : activeDimData.gate === "watch" ? "amber" : "green"}>
+                          {`${t("评级", "Rating")} ${activeDimData.rating}/5${activeDimData.gate ? ` · ${activeDimData.gate}` : ""}`}
+                        </Badge>
+                      ) : null}
                     </div>
                   </div>
                   <p className="mt-1 text-[11px] leading-relaxed text-[#68738b]">{activeDimData.question}</p>
-                  <p className="mt-2 text-xs leading-relaxed text-[#505369]">{activeDimData.summary || t("待补充", "TBD")}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-[#505369]">{clipBrief(activeDimData.summary) || t("待补充", "TBD")}</p>
+                  {activeDimData.analysis_md ? (
+                    <details className="mt-2 rounded-lg border border-[#e3eaf8] bg-white px-3 py-2">
+                      <summary className="cursor-pointer text-[11px] font-medium text-[#7950ba]">
+                        {t("完整分析", "Full analysis")}
+                      </summary>
+                      <div className="mt-2 whitespace-pre-wrap text-[11px] leading-relaxed text-[#505369]">
+                        {activeDimData.analysis_md}
+                      </div>
+                    </details>
+                  ) : null}
                   {activeDimData.checks?.length ? (
                     <ul className="mt-2 space-y-1 text-[11px] text-[#68738b]">
                       {activeDimData.checks.map((x) => (
@@ -732,6 +945,23 @@ export function InstResearchPage() {
                 <Field label={t("状态", "Status")} value={<StatusBadge status={version.status} />} />
                 <Field label={t("结论", "Conclusion")} value={version.conclusion || t("待补充", "TBD")} />
                 <Field label={t("证据数", "Evidence")} value={`${version.evidence_ids?.length || 0} ${t("条", "items")}`} />
+                <Field label={t("截止日", "Cutoff")} value={version.cutoff || t("待补充", "TBD")} />
+                <Field
+                  label={t("内容 hash", "Content hash")}
+                  value={
+                    version.content_hash ? (
+                      <span className="font-mono text-[10px]" title={version.content_hash}>
+                        {version.content_hash.slice(0, 12)}…
+                      </span>
+                    ) : (
+                      t("待补充", "TBD")
+                    )
+                  }
+                />
+                <Field
+                  label={t("冻结时间", "Frozen at")}
+                  value={version.frozen_at ? fmtDateTime(version.frozen_at) : t("未冻结", "Not frozen")}
+                />
                 {version.valuation ? (
                   <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs text-[#b42345]">
                     <p className="font-medium">{t("估值口径", "Valuation basis")}</p>
@@ -759,16 +989,12 @@ export function InstResearchPage() {
                       <Button
                         variant="danger"
                         disabled={!canWrite || !!busy}
-                        onClick={() =>
-                          run("return", () =>
-                            instApi(`/research/${version.id}/review`, {
-                              method: "POST",
-                              body: { decision: "return", comment: comment || t("退回补充研究", "Return for more research") },
-                            }),
-                          )
-                        }
+                        onClick={() => {
+                          setReturnError(null);
+                          setReturnOpen(true);
+                        }}
                       >
-                        {t("退回", "Return")}
+                        {busy === "return" ? t("重跑中…", "Rerunning…") : t("退回并重跑", "Return & rerun")}
                       </Button>
                     </div>
                   </div>
@@ -804,7 +1030,7 @@ export function InstResearchPage() {
             variant="ghost"
             disabled={!!busy || memoBusy}
             onClick={() => {
-              void loadMemo().catch((e: Error) => setError(e.message));
+              void loadMemo(true).catch((e: Error) => setError(e.message));
             }}
           >
             {memoBusy
@@ -827,15 +1053,68 @@ export function InstResearchPage() {
                   {t("AI 投资研究摘要 · 六维分析", "AI investment research summary · six dimensions")}
                 </p>
               </div>
-              <Badge tone="gold">{version?.conclusion || t("待补充研究", "Research TBD")}</Badge>
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                {memo.decision ? (
+                  <Badge
+                    tone={
+                      memo.decision === "proceed" ? "green" : memo.decision === "avoid" ? "red" : "amber"
+                    }
+                  >
+                    {memo.decision === "proceed"
+                      ? t("研究建议：推进辩论", "Research: proceed")
+                      : memo.decision === "avoid"
+                        ? t("研究建议：回避", "Research: avoid")
+                        : t("研究建议：观察", "Research: watch")}
+                  </Badge>
+                ) : null}
+                {memo.engine === "rule" ? (
+                  <Badge tone="slate">{t("规则兜底", "Rule fallback")}</Badge>
+                ) : null}
+                {memo.stale ? (
+                  <Badge tone="amber" title={t("提示词或输入已变化，当前展示上次生成的结论；可点「重新生成一页纸」。", "Prompt or inputs changed; showing the last persisted memo. Regenerate to update.")}>
+                    {t("已持久化 · 可重新生成", "Persisted · regenerate to update")}
+                  </Badge>
+                ) : null}
+                <Badge tone="gold">{version?.conclusion || t("待补充研究", "Research TBD")}</Badge>
+              </div>
             </div>
 
             <section className="mt-4">
               <h4 className="text-sm font-semibold text-[#171923]">{t("总结结论", "Summary")}</h4>
               <p className="mt-1 text-xs leading-relaxed text-[#505369]">
-                {memo.summary || t("待补充", "TBD")}
+                {clipBrief(memo.summary) || t("待补充", "TBD")}
               </p>
+              {memo.memo_md ? (
+                <details className="mt-2 rounded-lg border border-[#e3eaf8] bg-[#f8faff] px-3 py-2">
+                  <summary className="cursor-pointer text-[11px] font-medium text-[#7950ba]">
+                    {t("完整一页纸与六张表", "Full one-pager and tables")}
+                  </summary>
+                  <div className="mt-2 whitespace-pre-wrap text-[11px] leading-relaxed text-[#505369]">
+                    {memo.memo_md}
+                  </div>
+                </details>
+              ) : null}
             </section>
+
+            {memo.price_range || memo.holding_period ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-[#e3eaf8] bg-[#f8faff] px-3 py-2 text-xs text-[#505369]">
+                {memo.price_range ? (
+                  <span>
+                    {t("研究估值区间", "Research valuation range")}：
+                    <span className="font-mono">
+                      {fmtNum(memo.price_range.low, 2)} – {fmtNum(memo.price_range.high, 2)}
+                      {memo.price_range.base != null ? `（${t("基准", "base")} ${fmtNum(memo.price_range.base, 2)}）` : ""}
+                    </span>
+                  </span>
+                ) : null}
+                {memo.holding_period ? (
+                  <span>
+                    {t("建议持有期", "Holding period")}：{memo.holding_period}
+                  </span>
+                ) : null}
+                <span className="text-[10px] text-[#77718c]">{t("研究区间，不是目标价或收益承诺。", "Research range, not a target price or return promise.")}</span>
+              </div>
+            ) : null}
 
             {memo.metrics?.length ? (
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -855,6 +1134,56 @@ export function InstResearchPage() {
               )}
             </p>
 
+            {memo.six_dim_scores?.length ? (
+              <section className="mt-4">
+                <h4 className="text-sm font-semibold text-[#171923]">{t("六维评分（1-5）", "Six-dimension scores (1-5)")}</h4>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {memo.six_dim_scores.map((score) => (
+                    <div key={score.key} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-[#505369]">
+                          {AGENT_TITLES.find(([key]) => key === score.key)?.[1] || score.key}
+                        </span>
+                        <span className="font-display text-lg font-semibold text-[#171923]">
+                          {score.score.toFixed(1)}
+                        </span>
+                      </div>
+                      {score.note ? (
+                        <p className="mt-1 text-[10px] leading-relaxed text-[#68738b]">{score.note}</p>
+                      ) : null}
+                      {score.confidence != null ? (
+                        <p className="mt-1 font-mono text-[10px] text-[#77718c]">
+                          {t("置信度", "Confidence")} {Number(score.confidence).toFixed(2)}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {memo.conflicts?.length ? (
+              <section className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <h4 className="text-sm font-semibold text-amber-900">{t("未解决分歧", "Unresolved conflicts")}</h4>
+                <ul className="mt-1 space-y-1 text-[11px] leading-relaxed text-amber-800">
+                  {memo.conflicts.map((conflict, index) => (
+                    <li key={`${index}-${conflict}`}>· {clipBrief(conflict)}</li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
+            {memo.key_variables?.length ? (
+              <section className="mt-4">
+                <h4 className="text-sm font-semibold text-[#171923]">{t("关键变量", "Key variables")}</h4>
+                <ul className="mt-1 space-y-1 text-[11px] leading-relaxed text-[#505369]">
+                  {memo.key_variables.map((variable, index) => (
+                    <li key={`${index}-${variable}`}>· {clipBrief(variable)}</li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
             <div className="mt-5 space-y-4">
               {dims.map((d, i) => (
                 <section key={d.key} className="border-t border-[#e3eaf8] pt-4">
@@ -862,7 +1191,7 @@ export function InstResearchPage() {
                     {String(i + 1).padStart(2, "0")} {d.title}
                   </h4>
                   <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-[#505369]">
-                    <li>· {d.summary || t("待补充", "TBD")}</li>
+                    <li>· {clipBrief(d.summary) || t("待补充", "TBD")}</li>
                     {d.counter?.[0] ? (
                       <li>· {t("关键问题", "Key question")}：{d.counter[0]}</li>
                     ) : d.checks?.[0] ? (
@@ -879,7 +1208,7 @@ export function InstResearchPage() {
                 {memo.risks?.length ? (
                   <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-[#505369]">
                     {memo.risks.map((x) => (
-                      <li key={x}>{x}</li>
+                      <li key={x}>{clipBrief(x)}</li>
                     ))}
                   </ol>
                 ) : (
@@ -891,7 +1220,7 @@ export function InstResearchPage() {
                 {memo.open_questions?.length ? (
                   <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-[#505369]">
                     {memo.open_questions.map((x) => (
-                      <li key={x}>☐ {x}</li>
+                      <li key={x}>☐ {clipBrief(x)}</li>
                     ))}
                   </ul>
                 ) : (
@@ -912,6 +1241,79 @@ export function InstResearchPage() {
           </Empty>
         )}
       </Card>
+
+      {returnOpen && version ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#171923]/45 p-3 sm:p-6"
+          role="presentation"
+          onClick={() => {
+            if (busy !== "return") setReturnOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="return-dialog-title"
+            className="my-4 w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="return-dialog-title" className="font-display text-lg font-semibold text-[#171923]">
+              {t("退回并重跑", "Return & rerun")}
+            </h2>
+            <p className="mt-1 text-xs leading-relaxed text-[#68738b]">
+              {t("勾选要重跑的板块/维度并填写原因；系统会保留其余内容，重跑后版本号 +1，旧版本作废。", "Select the sections or dimensions to rerun and give a reason; the rest is kept, the version increments, and the old version is voided.")}
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-1.5 text-xs">
+              <label className="flex items-center gap-2 rounded-lg border border-[#dee5f2] px-2 py-1.5">
+                <input
+                  type="checkbox"
+                  checked={returnTargets.includes("industry")}
+                  onChange={(e) =>
+                    setReturnTargets((prev) =>
+                      e.target.checked ? [...new Set([...prev, "industry"])] : prev.filter((x) => x !== "industry"),
+                    )
+                  }
+                />
+                {t("行业分析", "Industry")}
+              </label>
+              {AGENT_TITLES.map(([key, label]) => (
+                <label key={key} className="flex items-center gap-2 rounded-lg border border-[#dee5f2] px-2 py-1.5">
+                  <input
+                    type="checkbox"
+                    checked={returnTargets.includes(key)}
+                    onChange={(e) =>
+                      setReturnTargets((prev) =>
+                        e.target.checked ? [...new Set([...prev, key])] : prev.filter((x) => x !== key),
+                      )
+                    }
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <label className="mt-3 block text-xs text-[#68738b]">
+              {t("退回原因（必填）", "Return reason (required)")}
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                className="mt-1 min-h-[76px] w-full rounded-lg border border-[#dde5f2] bg-[#f8faff] p-2 text-xs outline-none focus:border-[#7950ba]"
+                placeholder={t("例如：财务维度未验证现金流与利润勾稽；行业规模数据缺失。", "e.g. financial cash-flow cross-check missing; industry size data missing.")}
+              />
+            </label>
+            {returnError ? (
+              <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">{returnError}</p>
+            ) : null}
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <Button variant="ghost" disabled={busy === "return"} onClick={() => setReturnOpen(false)}>
+                {t("取消", "Cancel")}
+              </Button>
+              <Button variant="danger" disabled={busy === "return"} onClick={() => void submitReturn()}>
+                {busy === "return" ? t("重跑中…", "Rerunning…") : t("确认退回并重跑", "Return & rerun")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {evidenceOpen ? (
         <div
@@ -948,10 +1350,21 @@ export function InstResearchPage() {
               </div>
             </div>
             <div className="px-5 py-4">
-              <div className="mb-4 rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+              <div className="mb-3 rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
                 <p className="text-xs font-semibold text-[#505369]">{t("证据类型说明", "Evidence types")}</p>
                 <div className="mt-2 grid gap-1.5 text-[11px] text-[#68738b] sm:grid-cols-2">
                   {Object.entries(EVIDENCE_TYPE_META).map(([key, meta]) => (
+                    <span key={key} className="flex items-start gap-2">
+                      <Badge tone={meta.tone}>{meta.label}</Badge>
+                      <span className="leading-relaxed">{meta.note}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="mb-4 rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3">
+                <p className="text-xs font-semibold text-[#505369]">{t("证据等级", "Evidence grades")}</p>
+                <div className="mt-2 grid gap-1.5 text-[11px] text-[#68738b] sm:grid-cols-2">
+                  {Object.entries(EVIDENCE_GRADE_META).map(([key, meta]) => (
                     <span key={key} className="flex items-start gap-2">
                       <Badge tone={meta.tone}>{meta.label}</Badge>
                       <span className="leading-relaxed">{meta.note}</span>
@@ -963,6 +1376,7 @@ export function InstResearchPage() {
                 <ul className="space-y-3">
                   {detail.evidence.map((ev) => {
                     const meta = EVIDENCE_TYPE_META[ev.evidence_type || "fact"] || EVIDENCE_TYPE_META.fact;
+                    const grade = EVIDENCE_GRADE_META[ev.grade || "D"] || EVIDENCE_GRADE_META.D;
                     return (
                       <li key={ev.id} className="rounded-xl border border-[#e3eaf8] bg-white p-4">
                         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -972,11 +1386,20 @@ export function InstResearchPage() {
                           </p>
                         </div>
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <Badge tone={grade.tone}>{grade.label}</Badge>
                           <Badge tone={meta.tone}>{meta.label}</Badge>
                           <Badge>{sourceLabel(ev.source)}</Badge>
                           <span className="text-[10px] text-[#77718c]">
                             {t("数据日期", "As of")}：{ev.as_of || t("待补充", "TBD")}
                           </span>
+                          <span className="text-[10px] text-[#77718c]">
+                            {t("可用时间", "Available")}：{ev.available_time || ev.as_of || t("待补充", "TBD")}
+                          </span>
+                          {ev.document_id || ev.page_ref ? (
+                            <span className="text-[10px] text-[#77718c]">
+                              {t("原文", "Source")}：{[ev.document_id, ev.page_ref].filter(Boolean).join(" / ")}
+                            </span>
+                          ) : null}
                         </div>
                         <blockquote className="mt-2 rounded-lg border-l-2 border-[#7950ba]/40 bg-[#f8faff] px-3 py-2 text-xs leading-relaxed text-[#505369]">
                           {ev.quote || t("原始摘录待补充，需回源核对。", "Quote pending; verify against the source.")}

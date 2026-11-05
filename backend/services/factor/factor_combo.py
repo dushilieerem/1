@@ -32,6 +32,22 @@ def zscore(values: list[float | None]) -> list[float | None]:
     return [(v - mean) / std if v is not None else None for v in values]
 
 
+def _winsorize(values: list[float | None], k: float = 3.0) -> list[float | None]:
+    """MAD 去极值：与手机端因子口径一致；只在调用方显式开启时生效。"""
+    clean = [v for v in values if v is not None]
+    if len(clean) < 5:
+        return list(values)
+    clean_sorted = sorted(clean)
+    med = clean_sorted[len(clean_sorted) // 2]
+    deviations = sorted(abs(v - med) for v in clean_sorted)
+    mad = deviations[len(deviations) // 2]
+    if mad <= 0:
+        return list(values)
+    spread = 1.4826 * mad
+    lo, hi = med - k * spread, med + k * spread
+    return [min(hi, max(lo, v)) if v is not None else None for v in values]
+
+
 def _weights(scheme: str, factors: list[str], metrics: dict[str, Any], custom: dict[str, Any]) -> dict[str, float]:
     if scheme == "equal":
         w = {f: 1.0 for f in factors}
@@ -59,8 +75,14 @@ def combine(
     custom_weights: dict[str, Any] | None = None,
     timing: dict[str, float] | None = None,
     dates: list[str] | None = None,
+    winsorize: bool = False,
+    mad_k: float = 3.0,
 ) -> dict[str, Any]:
-    """factors: {factor_name: [value per stock]}；timing: {date: 0..1} 仅返回乘数。"""
+    """factors: {factor_name: [value per stock]}；timing: {date: 0..1} 仅返回乘数。
+
+    ``winsorize=True`` 时先做 MAD(k) 去极值，再做横截面 z-score；手机端量化研究
+    复用同一实现，不再维护第二套标准化。
+    """
     names = [k for k, v in factors.items() if isinstance(v, list)]
     if not names:
         raise ValueError("至少需要一个因子序列")
@@ -68,7 +90,10 @@ def combine(
     if len(lengths) != 1:
         raise ValueError("各因子序列长度必须一致")
     weights = _weights(scheme, names, metrics or {}, custom_weights or {})
-    normalized = {n: zscore(factors[n]) for n in names}
+    normalized = {
+        n: zscore(_winsorize(factors[n], mad_k) if winsorize else factors[n])
+        for n in names
+    }
     scores: list[float | None] = []
     for i in range(lengths.pop()):
         total = 0.0

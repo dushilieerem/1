@@ -14,35 +14,39 @@ export type AiCardData = {
   blocked?: boolean;
 };
 
-export function AiCard({ data, title }: { data: AiCardData; title?: string }) {
+export function AiCard({
+  data,
+  title,
+  onRegenerate,
+  busy = false,
+}: {
+  data: AiCardData;
+  title?: string;
+  onRegenerate?: () => void;
+  busy?: boolean;
+}) {
   const { t } = useLocale();
   const resolvedTitle = title ?? t("AI 解读", "AI insights");
   const card = data.card;
-  if (!card?.summary && !card?.sections?.length) return null;
+  const summary = card?.summary
+    || (card?.sections || []).find((s) => s.body)?.body
+    || "";
+  if (!summary) return null;
   return (
     <section className="card ai-panel">
       <div className="card-title-row">
         <h2 className="row gap6"><Sparkles size={15} /> {resolvedTitle}</h2>
         <span className="hint">{t("AI 生成 · 非投资建议", "AI-generated · Not investment advice")}</span>
       </div>
-      {data.blocked ? <div className="ai-blocked">{card.summary}</div> : <p className="ai-summary">{card.summary}</p>}
-      {(card.sections || []).map((s, i) => (
-        <div key={s.key || i} className="ai-section">
-          {s.title ? <b>{s.title}</b> : null}
-          {s.body ? <p>{s.body}</p> : null}
-          {s.items?.length ? (
-            <ul>
-              {s.items.map((it, k) => (
-                <li key={k}>
-                  {it.k ? <span>{it.k}{t("：", ": ")}</span> : null}
-                  {it.v}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ))}
-      <p className="hint">{card.disclaimer || t("AI 生成 · 非投资建议", "AI-generated · Not investment advice")}</p>
+      {data.blocked ? <div className="ai-blocked">{summary}</div> : <p className="ai-summary">{summary}</p>}
+      <div className="row gap6">
+        <p className="hint" style={{ flex: 1 }}>{card.disclaimer || t("AI 生成 · 非投资建议", "AI-generated · Not investment advice")}</p>
+        {onRegenerate ? (
+          <button className="btn btn-ghost btn-sm" onClick={onRegenerate} disabled={busy}>
+            {busy ? t("生成中…", "Generating…") : t("重新生成", "Regenerate")}
+          </button>
+        ) : null}
+      </div>
     </section>
   );
 }

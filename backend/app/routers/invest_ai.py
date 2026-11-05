@@ -13,10 +13,10 @@ import json
 import re
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from app.deps import require_user
-from services.invest import agent_tools, glossary, rules
+from services.invest import agent_prompts, agent_tools, ai_cache, glossary, rules
 from services.invest.db import PGConn, invest_conn
 
 router = APIRouter(prefix="/api/invest/ai", tags=["invest-ai"])
@@ -63,17 +63,53 @@ def post_scan(text: str) -> str:
 
 
 def _card_system() -> str:
-    return (
-        "你是 SVQuant Invest 的数据解读助手。只使用用户输入 JSON 中的数据，不得补造任何数字或事实；"
-        "数据缺失时明确写“数据缺失/待补充”。只输出 JSON，不要 markdown。"
-        '结构：{"summary":"一句话结论","sections":[{"key":"...","title":"...","type":"text","body":"..."}],'
-        '"disclaimer":"AI 生成 · 非投资建议","meta":{"dataSource":"..."}}。'
-        "summary 与 sections 只描述事实、口径与风险，不写买卖建议、目标价、涨跌预测或收益承诺。"
-        + RED_LINE
-    )
+    return agent_prompts.CARD_SYSTEM
 
 
-def _call(task_id: str, payload: dict[str, Any], system: str | None = None) -> dict[str, Any]:
+def _clip50(text: Any) -> str:
+    value = str(text or "").strip()
+    if len(value) <= 50:
+        return value
+    return value[:49].rstrip("，。；、,.; ") + "…"
+
+
+def _compact_result(result: dict[str, Any]) -> dict[str, Any]:
+    if result.get("blocked"):
+        return result
+    card = result.get("card") if isinstance(result.get("card"), dict) else {}
+    summary = card.get("summary")
+    if not summary:
+        for section in card.get("sections") or []:
+            if isinstance(section, dict) and section.get("body"):
+                summary = section.get("body")
+                break
+            if isinstance(section, dict) and section.get("title"):
+                summary = section.get("title")
+                break
+    card = {
+        "summary": _clip50(summary or "数据不足，暂无法给出结论。"),
+        "sections": [],
+        "disclaimer": card.get("disclaimer") or "AI 生成 · 非投资建议",
+        "meta": card.get("meta") or {"dataSource": "服务端结构化数据"},
+    }
+    return {**result, "card": card}
+
+
+def _call(
+    task_id: str,
+    payload: dict[str, Any],
+    system: str | None = None,
+    *,
+    user_id: int | None = None,
+    refresh: bool = False,
+) -> dict[str, Any]:
+    base_prompt = system or (agent_prompts.AGENT_BY_ID.get(task_id) or {}).get("default_prompt") or _card_system()
+    prompt = agent_prompts.resolve_prompt(user_id, task_id, base_prompt)
+    cache_key = ai_cache.make_key(task_id, payload, prompt)
+    if not refresh:
+        cached = ai_cache.get(user_id, "call", cache_key)
+        if cached:
+            return {**cached, "cached": True}
     try:
         from ai.router import available_task, run_task
     except Exception as exc:
@@ -84,7 +120,7 @@ def _call(task_id: str, payload: dict[str, Any], system: str | None = None) -> d
         out = run_task(
             task_id,
             messages=[
-                {"role": "system", "content": system or _card_system()},
+                {"role": "system", "content": prompt},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
             ],
         )
@@ -94,12 +130,18 @@ def _call(task_id: str, payload: dict[str, Any], system: str | None = None) -> d
     if isinstance(data, dict):
         text = json.dumps(data, ensure_ascii=False)
         if post_scan(text) == BLOCK_MESSAGE:
-            return {"card": {"summary": BLOCK_MESSAGE, "sections": []}, "blocked": True, "raw": out}
-        return {"card": data, "raw": out}
-    content = str(out.get("content") or "")
-    if post_scan(content) == BLOCK_MESSAGE:
-        return {"card": {"summary": BLOCK_MESSAGE, "sections": []}, "blocked": True, "raw": out}
-    return {"card": {"summary": content, "sections": []}, "raw": out}
+            result = {"card": {"summary": BLOCK_MESSAGE, "sections": []}, "blocked": True}
+        else:
+            result = {"card": data}
+    else:
+        content = str(out.get("content") or "")
+        if post_scan(content) == BLOCK_MESSAGE:
+            result = {"card": {"summary": BLOCK_MESSAGE, "sections": []}, "blocked": True}
+        else:
+            result = {"card": {"summary": content, "sections": []}}
+    result = _compact_result(result)
+    ai_cache.put(user_id, "call", cache_key, result)
+    return result
 
 
 _TARGET = {
@@ -141,30 +183,8 @@ def _chart(conn: PGConn, code: str) -> dict[str, Any]:
     }
 
 
-_PORTFOLIO_DEEP_SYSTEM = (
-    "你是 SVQuant Invest 的组合风险深度解读助手。只依据输入 JSON 中的组合快照、8 项体检、"
-    "归因、穿透、压力测试、配置偏离与成本数据作答；不得补造任何数字或事实，数据缺失或样本不足时"
-    "明确写“数据缺失/待补充”，并说明这会让结论可信度下降。只输出 JSON，不要 markdown。"
-    '结构：{"summary":"一句话结论","sections":[{"key":"...","title":"...","type":"text","body":"..."}],'
-    '"disclaimer":"AI 生成 · 非投资建议","meta":{"dataSource":"组合体检 + 穿透 + 压力测试"}}。'
-    "必须按顺序输出 7 个 section，key 固定为："
-    "structure=结构成因（这几项为什么越线）、transmission=传导路径（越线会怎么伤到组合）、"
-    "profile=组合画像（什么风格的组合）、sources=收益来源（过去的钱从哪来）、"
-    "history=历史对照（类似结构后来怎样，样本不足就写不足）、watchlist=观察清单（接下来盯什么）、"
-    "caveats=口径与局限（这份解读可信到什么程度）。"
-    "profile/sources/history 没有数据时也要保留 section，正文写“数据待补充”，不要省略。"
-    "只描述事实、口径与风险；不写买卖建议、目标价、涨跌预测、仓位指令或收益承诺。"
-    + RED_LINE
-)
-
-
-_ALLOCATION_SYSTEM = (
-    "你是配置与定投解释助手。只依据输入的期限、风险偏好、组合偏离、风险测评与政策阈值作答；"
-    "不推荐具体标的，不给买入金额、目标价、收益承诺或调仓指令。只输出 JSON 卡片："
-    '{"summary":"...","sections":[{"title":"...","type":"text","body":"..."}],'
-    '"disclaimer":"AI 生成 · 非投资建议","meta":{"dataSource":"组合体检 + 风险测评"}}。'
-    "说明风险预算、集中度、现金下限与配置偏离的含义；数据不足写待补充。"
-)
+_PORTFOLIO_DEEP_SYSTEM = agent_prompts.PORTFOLIO_DEEP_SYSTEM
+_ALLOCATION_SYSTEM = agent_prompts.ALLOCATION_SYSTEM
 
 
 def _user_context(conn: PGConn, user_id: int) -> dict[str, Any]:
@@ -174,6 +194,19 @@ def _user_context(conn: PGConn, user_id: int) -> dict[str, Any]:
         "watchlist": [x.get("code") for x in watch][:20],
         "risk_profile": {"level": profile.get("level"), "score": profile.get("score")},
     }
+
+
+def _extract_compare_pair(query: str) -> tuple[str, str]:
+    """从「对比宁德时代和茅台」这类中文问句里兜底抽两个标的。"""
+    text = (query or "").strip()
+    text = re.sub(r"^(请|帮我|帮忙|麻烦)?\s*(对比|比较|看看|查一下|分析)\s*", "", text)
+    text = re.sub(r"(的)?(估值|财务|基本面|风险|数据|哪个好|怎么样|如何).*$", "", text)
+    parts = [
+        p.strip(" 　[]【】（）()的")
+        for p in re.split(r"\s*(?:和|与|跟|vs\.?|versus|、|,|，)\s*", text, flags=re.I)
+        if p.strip(" 　[]【】（）()的")
+    ]
+    return (parts[0], parts[1]) if len(parts) >= 2 else ("", "")
 
 
 def _stock_context(conn: PGConn, code: str) -> dict[str, Any]:
@@ -200,7 +233,7 @@ def status() -> dict[str, Any]:
         tasks = [
             "invest.intent", "invest.daily", "invest.stock", "invest.portfolio",
             "invest.announcement", "invest.condition", "invest.compare",
-            "invest.paper", "invest.quant",
+            "invest.paper", "invest.quant", "invest.backtest", "invest.allocation",
         ]
         return {"ok": True, "enabled": {t: available_task(t) for t in tasks}}
     except Exception as exc:
@@ -238,6 +271,7 @@ def chat(
     body: dict[str, Any] = Body(...),
     user: dict[str, Any] = Depends(require_user),
     conn: PGConn = Depends(invest_conn),
+    refresh: bool = Query(False),
 ) -> dict[str, Any]:
     q = str(body.get("query") or "").strip()
     if not q:
@@ -264,6 +298,11 @@ def chat(
     except Exception:
         routed = {"intent": "chat", "slots": {}}
     intent_name = str(routed.get("intent") or "chat")
+    # 中文「对比 A 和 B」在模型缺槽位时仍可确定性路由。
+    pair_first, pair_second = _extract_compare_pair(q)
+    if pair_first and pair_second and re.search(r"对比|比较|vs\.?|versus", q, flags=re.I):
+        intent_name = "compare"
+        routed = {"intent": "compare", "slots": {"stock": pair_first, "stock2": pair_second}}
     if intent_name == "compliance_block":
         return {
             "ok": True,
@@ -316,7 +355,7 @@ def chat(
             "policy": {"max_single_weight": 15, "min_cash_ratio": 10},
             "data_gaps": [] if pf.get("holdings") else ["尚未导入组合，无法计算配置偏离"],
         }
-        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.allocation", payload, _ALLOCATION_SYSTEM)}
+        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.allocation", payload, _ALLOCATION_SYSTEM, user_id=int(user["id"]), refresh=refresh)}
 
     if intent_name == "glossary":
         term = glossary.find_term(q)
@@ -348,6 +387,10 @@ def chat(
         first = str(slots.get("stock") or slots.get("symbol") or slots.get("company") or "").strip()
         second = str(slots.get("stock2") or slots.get("symbol2") or slots.get("company2") or "").strip()
         if not first or not second:
+            parsed_first, parsed_second = _extract_compare_pair(q)
+            first = first or parsed_first
+            second = second or parsed_second
+        if not first or not second:
             return {
                 "ok": True,
                 "intent": intent_name,
@@ -368,7 +411,7 @@ def chat(
             ctx = agent_tools.compare_context(conn, codes[0], codes[1])
         except ValueError as exc:
             return {"ok": True, "intent": intent_name, "card": {"summary": str(exc), "sections": []}, **_meta(intent_name)}
-        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.compare", ctx)}
+        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.compare", ctx, user_id=int(user["id"]), refresh=refresh)}
 
     if intent_name in {"stock", "debate"}:
         slots = routed.get("slots") or {}
@@ -400,18 +443,18 @@ def chat(
             "intent": intent_name,
             "chart": _chart(conn, str(stock["code"])),
             **_meta(intent_name),
-            **_call("invest.stock", stock_ctx),
+            **_call("invest.stock", stock_ctx, user_id=int(user["id"]), refresh=refresh),
         }
     if intent_name in {"portfolio"}:
         data = rules.build_portfolio(conn, int(user["id"]))
-        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.portfolio", data)}
+        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.portfolio", data, user_id=int(user["id"]), refresh=refresh)}
     if intent_name in {"brief", "review"}:
         data = rules.build_home(conn, int(user["id"]))
         data["portfolio"] = rules.build_portfolio(conn, int(user["id"]))
         data["user_context"] = _user_context(conn, int(user["id"]))
-        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.daily", data)}
+        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.daily", data, user_id=int(user["id"]), refresh=refresh)}
     if intent_name == "condition":
-        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.condition", {"query": q})}
+        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.condition", {"query": q}, user_id=int(user["id"]), refresh=refresh)}
     return {
         "ok": True,
         "intent": intent_name,
@@ -428,6 +471,7 @@ def deep(
     body: dict[str, Any] = Body(...),
     user: dict[str, Any] = Depends(require_user),
     conn: PGConn = Depends(invest_conn),
+    refresh: bool = Query(False),
 ) -> dict[str, Any]:
     """深度模式：按真实执行顺序返回步骤；不做假动画。"""
     q = str(body.get("query") or "").strip()
@@ -448,7 +492,7 @@ def deep(
         }
     steps.append({"key": "guard", "label": "合规前置检查", "status": "done"})
 
-    result = chat({"query": q}, user, conn)
+    result = chat({"query": q}, user, conn, refresh=refresh)
     intent_name = str(result.get("intent") or "chat")
     steps[0]["detail"] = f"意图：{intent_name}"
     steps.append(
@@ -483,54 +527,81 @@ def deep(
 
 
 @router.post("/stock/{code}")
-def stock_ai(code: str, user: dict[str, Any] = Depends(require_user), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
-    return {"ok": True, **_call("invest.stock", _stock_context(conn, code))}
+def stock_ai(
+    code: str,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+    refresh: bool = Query(False),
+) -> dict[str, Any]:
+    return {"ok": True, **_call("invest.stock", _stock_context(conn, code), user_id=int(user["id"]), refresh=refresh)}
 
 
 @router.post("/daily")
-def daily_ai(user: dict[str, Any] = Depends(require_user), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
+def daily_ai(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+    refresh: bool = Query(False),
+) -> dict[str, Any]:
     data = rules.build_home(conn, int(user["id"]))
     data["portfolio"] = rules.build_portfolio(conn, int(user["id"]))
     data["user_context"] = _user_context(conn, int(user["id"]))
-    return {"ok": True, **_call("invest.daily", data)}
+    return {"ok": True, **_call("invest.daily", data, user_id=int(user["id"]), refresh=refresh)}
 
 
 @router.post("/portfolio")
-def portfolio_ai(user: dict[str, Any] = Depends(require_user), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
-    return {"ok": True, **_call("invest.portfolio", rules.build_portfolio(conn, int(user["id"])))}
+def portfolio_ai(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+    refresh: bool = Query(False),
+) -> dict[str, Any]:
+    return {"ok": True, **_call("invest.portfolio", rules.build_portfolio(conn, int(user["id"])), user_id=int(user["id"]), refresh=refresh)}
 
 
 @router.post("/portfolio/deep")
-def portfolio_deep_ai(user: dict[str, Any] = Depends(require_user), conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
-    """组合体检的「AI 深度解读」：7 个必答维度，按钮触发，不占首屏。"""
+def portfolio_deep_ai(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+    refresh: bool = Query(False),
+) -> dict[str, Any]:
+    """组合体检的 AI 深度解读：自动生成，50 字结论，可重新生成。"""
     data = rules.build_portfolio(conn, int(user["id"]))
-    return {"ok": True, **_call("invest.portfolio", data, system=_PORTFOLIO_DEEP_SYSTEM)}
+    return {"ok": True, **_call("invest.portfolio", data, system=_PORTFOLIO_DEEP_SYSTEM, user_id=int(user["id"]), refresh=refresh)}
 
 
 @router.post("/announcement")
-def announcement_ai(body: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(require_user)) -> dict[str, Any]:
+def announcement_ai(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    refresh: bool = Query(False),
+) -> dict[str, Any]:
     title = str(body.get("title") or "").strip()
     summary = str(body.get("summary") or "").strip()
     if not title:
         raise HTTPException(status_code=400, detail="title 不能为空")
     payload = {"title": title[:500], "summary": summary[:4000]}
-    return {"ok": True, **_call("invest.announcement", payload)}
+    return {"ok": True, **_call("invest.announcement", payload, user_id=int(user["id"]), refresh=refresh)}
 
 
 @router.post("/condition")
-def condition_ai(body: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(require_user)) -> dict[str, Any]:
+def condition_ai(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    refresh: bool = Query(False),
+) -> dict[str, Any]:
     q = str(body.get("query") or "").strip()
     if not q:
         raise HTTPException(status_code=400, detail="query 不能为空")
     if compliance_block(q):
         return {"ok": True, "blocked": True, "conditions": [], "explain": BLOCK_MESSAGE}
-    return {"ok": True, **_call("invest.condition", {"query": q})}
+    return {"ok": True, **_call("invest.condition", {"query": q}, user_id=int(user["id"]), refresh=refresh)}
 
 
 @router.post("/compare")
 def compare(
     body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
     conn: PGConn = Depends(invest_conn),
+    refresh: bool = Query(False),
 ) -> dict[str, Any]:
     a = str(body.get("a") or body.get("code_a") or "").strip()
     b = str(body.get("b") or body.get("code_b") or "").strip()
@@ -540,13 +611,14 @@ def compare(
         ctx = agent_tools.compare_context(conn, a, b)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return {"ok": True, "compare": ctx, **_call("invest.compare", ctx)}
+    return {"ok": True, "compare": ctx, **_call("invest.compare", ctx, user_id=int(user["id"]), refresh=refresh)}
 
 
 @router.post("/paper")
 def paper(
     body: dict[str, Any] = Body(...),
     user: dict[str, Any] = Depends(require_user),
+    refresh: bool = Query(False),
 ) -> dict[str, Any]:
     try:
         account_id = int(body.get("account_id"))
@@ -556,31 +628,27 @@ def paper(
         ctx = agent_tools.paper_review(int(user["id"]), account_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return {"ok": True, "paper": ctx, **_call("invest.paper", ctx)}
+    return {"ok": True, "paper": ctx, **_call("invest.paper", ctx, user_id=int(user["id"]), refresh=refresh)}
 
 
 @router.post("/quant")
 def quant(
     user: dict[str, Any] = Depends(require_user),
     conn: PGConn = Depends(invest_conn),
+    refresh: bool = Query(False),
 ) -> dict[str, Any]:
     ctx = agent_tools.quant_context(conn, int(user["id"]))
-    return {"ok": True, "quant": ctx, **_call("invest.quant", ctx)}
+    return {"ok": True, "quant": ctx, **_call("invest.quant", ctx, user_id=int(user["id"]), refresh=refresh)}
 
 
-_BACKTEST_SYSTEM = (
-    "你是回测解读助手。只依据输入的指标、净值曲线与交易摘要，解释收益来源、回撤特征与风格风险；"
-    "不给未来预测、买卖建议、目标价或收益承诺。只输出 JSON 卡片："
-    '{"summary":"...","sections":[{"title":"...","type":"text","body":"..."}],'
-    '"disclaimer":"历史口径 · 非真实收益 · 非投资建议","meta":{"dataSource":"回测结果缓存"}}。'
-    "数据不足写待补充；结论限定在“这段区间发生了什么”。"
-)
+_BACKTEST_SYSTEM = agent_prompts.BACKTEST_SYSTEM
 
 
 @router.post("/backtest")
 def backtest_ai(
     body: dict[str, Any] = Body(...),
     user: dict[str, Any] = Depends(require_user),
+    refresh: bool = Query(False),
 ) -> dict[str, Any]:
     payload = {
         "name": str(body.get("name") or "")[:120],
@@ -591,7 +659,7 @@ def backtest_ai(
         "trades": body.get("trades") if isinstance(body.get("trades"), (int, float)) else None,
         "note": "历史回测结果，非真实收益。",
     }
-    return {"ok": True, **_call("invest.backtest", payload, _BACKTEST_SYSTEM)}
+    return {"ok": True, **_call("invest.backtest", payload, _BACKTEST_SYSTEM, user_id=int(user["id"]), refresh=refresh)}
 
 
 @router.post("/voice")

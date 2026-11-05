@@ -12,19 +12,22 @@ export function PageHeader({
   right,
   back,
   onBack,
+  backLabel,
 }: {
   title: string;
   sub?: string;
   right?: ReactNode;
   back?: boolean;
   onBack?: () => void;
+  backLabel?: string;
 }) {
   const { t } = useLocale();
   return (
     <header className="page-head">
       {back ? (
-        <button className="round-btn" onClick={onBack} aria-label={t("返回", "Back")}>
+        <button className={`round-btn page-back ${backLabel ? "with-label" : ""}`} onClick={onBack} aria-label={t("返回", "Back")}>
           <ChevronLeft size={22} />
+          {backLabel ? <span>{backLabel}</span> : null}
         </button>
       ) : null}
       <div className="page-head-text">

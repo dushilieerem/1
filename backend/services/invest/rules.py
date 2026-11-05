@@ -684,6 +684,7 @@ def build_topic(conn: Any, topic_id: str) -> dict[str, Any] | None:
         "stocks": stock_cards, "news": news, "spark": spark, "disclaimer": DISCLAIMER,
         "isDemo": meta["isDemo"], "dataSource": "等权代理：成分股收盘数据" if not meta["isDemo"] else "主题演示数据",
         "newsIsDemo": news_is_demo,
+        "detailAvailable": _topic_detail_available(conn, str(topic_id)),
     }
 
 
@@ -1445,6 +1446,14 @@ def build_home_us(conn: Any, user_id: int) -> dict[str, Any]:
                 ],
             },
             "indices": [], "topics": [], "watchlist": [], "glossary": US_GLOSSARY,
+            "portfolioSnapshot": {"hasHoldings": False, "holdingCount": 0, "dailyChange": None,
+                                   "totalValue": 0, "riskScore": 0, "lastCheckupDate": None},
+            "marketPulse": {"asOf": data_date, "status": "close", "statusLabel": "收盘",
+                             "statusLabelEn": "Close", "indices": [],
+                             "turnover": {"value": None, "change": None, "available": False,
+                                          "note": "US quotes are not connected."}},
+            "learn": {"title": "Valuation percentile: expensive versus what?",
+                       "titleEn": "Valuation percentile: expensive versus what?", "link": "/learn"},
             "disclaimer": DISCLAIMER_EN, "market": "US",
         }
     by_code = {s["code"]: s for s in stocks}
@@ -1471,6 +1480,7 @@ def build_home_us(conn: Any, user_id: int) -> dict[str, Any]:
     if watch_cards:
         s = max(watch_cards, key=lambda x: abs(float(x["changePct"])))
         daily.append({
+            "source": "stock",
             "tag": "Watchlist · move",
             "title": f"{s['name']} {float(s['changePct']):+.2f}%",
             "detail": f"Last close {float(s['price']):.2f}; open the ticker for chart and risk context.",
@@ -1479,12 +1489,14 @@ def build_home_us(conn: Any, user_id: int) -> dict[str, Any]:
     if gainers:
         s = gainers[0]
         daily.append({
+            "source": "stock",
             "tag": "US · top gainer",
             "title": f"{_display_name(s, 'US')} {pct(float(s['price']), float(s['prev_close'])):+.2f}%",
             "detail": f"Among the most active US names; last close {float(s['price']):.2f}.",
             "link": {"type": "stock", "id": s["code"]},
         })
     daily.append({
+        "source": "market",
         "tag": "US · breadth",
         "title": f"{advancers} up / {decliners} down",
         "detail": f"Average move {average:+.2f}% across {len(changes)} US tickers with EOD data.",
@@ -1493,6 +1505,7 @@ def build_home_us(conn: Any, user_id: int) -> dict[str, Any]:
     if losers and len(daily) < 3:
         s = losers[0]
         daily.append({
+            "source": "stock",
             "tag": "US · top loser",
             "title": f"{_display_name(s, 'US')} {pct(float(s['price']), float(s['prev_close'])):+.2f}%",
             "detail": f"Among the most active US names; last close {float(s['price']):.2f}.",
@@ -1500,8 +1513,13 @@ def build_home_us(conn: Any, user_id: int) -> dict[str, Any]:
         })
     daily = daily[:3]
 
+    portfolio = _home_portfolio(conn, user_id)
     review = {
         "title": "US close",
+        "line": _clip_home(
+            f"{advancers} up / {decliners} down, average {average:+.2f}%." if changes else "No US breadth snapshot yet.",
+            30,
+        ),
         "summary": (
             f"US EOD snapshot {data_date}: {advancers} advancers vs {decliners} decliners, "
             f"average move {average:+.2f}%. This build covers quotes and charts only; "
@@ -1516,10 +1534,296 @@ def build_home_us(conn: Any, user_id: int) -> dict[str, Any]:
     return {
         **meta, "user": {"id": user_id, "name": "Demo user"}, "hasQuotes": True,
         "coverage": _us_coverage(True), "daily": daily, "review": review,
-        "indices": [], "topics": [], "watchlist": watch_cards, "glossary": US_GLOSSARY,
+        "portfolioSnapshot": portfolio,
+        "marketPulse": {
+            "asOf": data_date, "status": "close", "statusLabel": "收盘", "statusLabelEn": "Close",
+            "indices": [], "turnover": {"value": None, "change": None, "available": False,
+                                        "note": "US index and consolidated turnover are not connected."},
+        },
+        "indices": [], "topics": [], "watchlist": watch_cards,
+        "learn": {"title": "Valuation percentile: expensive versus what?",
+                   "titleEn": "Valuation percentile: expensive versus what?", "link": "/learn"},
+        "glossary": US_GLOSSARY,
         "disclaimer": DISCLAIMER_EN, "market": "US",
     }
 
+
+
+HOME_INDICES = (
+    ("000001.SH", "上证指数", "SSE Composite"),
+    ("399001.SZ", "深证成指", "SZSE Component"),
+    ("399006.SZ", "创业板指", "ChiNext"),
+)
+
+
+def _home_index_quote(conn: Any, code: str, data_date: str) -> tuple[float | None, float | None]:
+    bars = rows(
+        conn,
+        "SELECT trade_date, close FROM md_index_bar WHERE index_code=? AND trade_date <= ? "
+        "ORDER BY trade_date DESC LIMIT 2",
+        (code, data_date),
+    )
+    if bars and bars[0].get("close") is not None:
+        latest = float(bars[0]["close"])
+        prev = float(bars[1]["close"]) if len(bars) > 1 and bars[1].get("close") is not None else None
+        return latest, pct(latest, prev) if prev else None
+    # 兼容旧 indices 表；没有对应代码时明确 unavailable，不用别的指数冒充。
+    row = one(conn, "SELECT price, prev_close FROM indices WHERE code=? LIMIT 1", (code,))
+    if row and row.get("price") is not None:
+        latest = float(row["price"])
+        prev = float(row["prev_close"]) if row.get("prev_close") is not None else None
+        return latest, pct(latest, prev) if prev else None
+    return None, None
+
+
+def _home_market(conn: Any, data_date: str) -> dict[str, Any]:
+    indices = []
+    for code, label, label_en in HOME_INDICES:
+        value, change = _home_index_quote(conn, code, data_date)
+        indices.append({
+            "code": code, "label": label, "label_en": label_en,
+            "value": round(value, 2) if value is not None else None,
+            "change": round(change, 2) if change is not None else None,
+            "available": value is not None,
+        })
+    now = datetime.now()
+    amount: float | None = None
+    prev_amount: float | None = None
+    turnover_note = ""
+    basis = "stocks"
+    if data_date == now.date().isoformat() and now.hour < 10:
+        turnover_note = "10:00 前成交额未成形"
+    else:
+        # 数据平台已补 000001.SH / 399001.SZ 的指数 amount；优先用指数口径。
+        index_row = one(
+            conn,
+            "SELECT SUM(amount) AS amt, COUNT(amount) AS n FROM md_index_bar "
+            "WHERE trade_date=? AND index_code IN ('000001.SH','399001.SZ') AND amount IS NOT NULL",
+            (data_date,),
+        )
+        if index_row and index_row.get("amt") is not None and int(index_row.get("n") or 0) >= 2:
+            amount = float(index_row["amt"]) / 1e8
+            basis = "index"
+            prev_date = one(
+                conn,
+                "SELECT MAX(trade_date) AS d FROM md_index_bar "
+                "WHERE trade_date < ? AND index_code IN ('000001.SH','399001.SZ') AND amount IS NOT NULL",
+                (data_date,),
+            )
+            if prev_date and prev_date.get("d"):
+                prev = one(
+                    conn,
+                    "SELECT SUM(amount) AS amt, COUNT(amount) AS n FROM md_index_bar "
+                    "WHERE trade_date=? AND index_code IN ('000001.SH','399001.SZ') AND amount IS NOT NULL",
+                    (prev_date["d"],),
+                )
+                if prev and prev.get("amt") is not None and int(prev.get("n") or 0) >= 2:
+                    prev_amount = float(prev["amt"]) / 1e8
+        else:
+            row = one(
+                conn,
+                "SELECT SUM(amount) AS amt FROM md_daily_bar WHERE trade_date=? AND adjust='none' "
+                "AND split_part(symbol,'.',2) IN ('SH','SZ') AND amount IS NOT NULL",
+                (data_date,),
+            )
+            if row and row.get("amt") is not None:
+                amount = float(row["amt"]) / 1e8
+            prev_date = one(
+                conn,
+                "SELECT MAX(trade_date) AS d FROM md_daily_bar WHERE trade_date < ?",
+                (data_date,),
+            )
+            if prev_date and prev_date.get("d"):
+                prev = one(
+                    conn,
+                    "SELECT SUM(amount) AS amt FROM md_daily_bar WHERE trade_date=? AND adjust='none' "
+                    "AND split_part(symbol,'.',2) IN ('SH','SZ') AND amount IS NOT NULL",
+                    (prev_date["d"],),
+                )
+                if prev and prev.get("amt") is not None:
+                    prev_amount = float(prev["amt"]) / 1e8
+    turnover_change = pct(amount, prev_amount) if amount is not None and prev_amount else None
+    is_rest = date.today().weekday() >= 5
+    return {
+        "asOf": data_date,
+        "status": "rest" if is_rest else "close",
+        "statusLabel": "休市" if is_rest else "收盘",
+        "statusLabelEn": "Closed" if is_rest else "Close",
+        "indices": indices,
+        "turnover": {
+            "value": round(amount, 1) if amount is not None else None,
+            "change": round(turnover_change, 2) if turnover_change is not None else None,
+            "available": amount is not None,
+            "basis": basis if amount is not None else None,
+            "basisLabel": (
+                "沪深两市成交额（指数口径）" if amount is not None and basis == "index"
+                else "行情汇总口径，非交易所官方" if amount is not None else ""
+            ),
+            "basisLabelEn": (
+                "SSE + SZSE turnover (index basis)" if amount is not None and basis == "index"
+                else "Stock-sum basis, not exchange official" if amount is not None else ""
+            ),
+            "note": turnover_note,
+        },
+    }
+
+
+def _home_portfolio(conn: Any, user_id: int, pf: dict[str, Any] | None = None) -> dict[str, Any]:
+    if pf is None:
+        try:
+            held = portfolio_rows(conn, user_id)
+        except Exception:
+            held = []
+        if not held:
+            return {
+                "hasHoldings": False, "holdingCount": 0, "dailyChange": None,
+                "totalValue": 0, "riskScore": 0, "lastCheckupDate": None,
+            }
+        pf = build_portfolio(conn, user_id, include_penetration=False)
+    meta = one(conn, "SELECT updated_at FROM portfolio_meta WHERE user_id=?", (user_id,))
+    last_checkup = str(meta.get("updated_at") or "")[:10] if meta else None
+    if not last_checkup:
+        trade = one(conn, "SELECT MAX(created_at) AS d FROM invest_portfolio_trade WHERE user_id=?", (user_id,))
+        if trade and trade.get("d"):
+            last_checkup = str(trade["d"])[:10]
+    holdings = pf.get("holdings") or []
+    return {
+        "hasHoldings": bool(holdings),
+        "holdingCount": len(holdings),
+        "dailyChange": round(float(pf.get("dailyChange") or 0), 2) if holdings else None,
+        "totalValue": round(float(pf.get("totalValue") or 0), 0),
+        "riskScore": pf.get("riskScore"),
+        "lastCheckupDate": last_checkup,
+    }
+
+
+def _clip_home(text: str, limit: int) -> str:
+    text = re.sub(r"\s+", " ", str(text or "")).strip()
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _topic_risk_tags(topic: dict[str, Any]) -> list[dict[str, str]]:
+    """用现有估值/成交分位给出可解释的风险标签；没有阈值触发时展示真实分位，不用“数据待验证”兜底。"""
+    tags: list[dict[str, str]] = []
+    valuation = topic.get("valuation_percentile")
+    turnover = topic.get("turnover_percentile")
+    if valuation is not None:
+        value = float(valuation)
+        if value >= 85:
+            tags.append({"label": "估值偏高", "label_en": "Valuation elevated", "tone": "red"})
+        elif value >= 70:
+            tags.append({"label": "估值不低", "label_en": "Valuation not cheap", "tone": "amber"})
+        else:
+            tags.append({"label": f"估值分位 {value:.0f}%", "label_en": f"Valuation percentile {value:.0f}%", "tone": "gray"})
+    elif turnover is not None:
+        tags.append({"label": f"成交分位 {float(turnover):.0f}%", "label_en": f"Turnover percentile {float(turnover):.0f}%", "tone": "gray"})
+    if turnover is not None and float(turnover) >= 80:
+        tags.append({"label": "拥挤度高", "label_en": "Crowded", "tone": "amber"})
+    if not tags:
+        heat = float(topic.get("heat") or 0)
+        tags.append({"label": f"热度 {heat:.0f}", "label_en": f"Heat {heat:.0f}", "tone": "gray"})
+    return tags
+
+
+def _home_daily(conn: Any, user_id: int, data_date: str, pf: dict[str, Any],
+                market: dict[str, Any], by_code: dict[str, dict[str, Any]],
+                watch_codes: set[str]) -> list[dict[str, Any]]:
+    daily: list[dict[str, Any]] = []
+    today = date.fromisoformat(data_date)
+    holding_codes = {str(h["code"]) for h in (pf.get("holdings") or []) if str(h["code"]) != "CASH"}
+    pool_codes = watch_codes | holding_codes
+    pool = [s for s in by_code.values() if str(s.get("code")) in pool_codes and s.get("price") is not None]
+    upcoming = [
+        s for s in pool
+        if s.get("next_report_date")
+        and data_date <= str(s["next_report_date"])
+        and (date.fromisoformat(str(s["next_report_date"])) - today).days <= 7
+    ]
+    stock_event = None
+    if upcoming:
+        s = min(upcoming, key=lambda x: str(x["next_report_date"]))
+        days = (date.fromisoformat(str(s["next_report_date"])) - today).days
+        stock_event = {
+            "source": "stock",
+            "tag": "自选 · 事件",
+            "title": f"{s['name']} {str(s['next_report_date'])[5:]} 预约披露",
+            "detail": _clip_home(f"距预约披露 {days} 天，关注财报与现金流。", 40),
+            "link": {"type": "stock", "id": s["code"]},
+        }
+    elif pool:
+        s = max(pool, key=lambda x: abs(pct(x["price"], x.get("prev_close") or x["price"])))
+        change = pct(s["price"], s.get("prev_close") or s["price"])
+        stock_event = {
+            "source": "stock",
+            "tag": "自选 / 持仓 · 异动",
+            "title": f"{s['name']} {change:+.2f}%",
+            "detail": _clip_home(f"今日{'上涨' if change >= 0 else '下跌'}{abs(change):.2f}%，先看估值与风险。", 40),
+            "link": {"type": "stock", "id": s["code"]},
+        }
+    if stock_event:
+        daily.append(stock_event)
+
+    diagnosis = pf.get("diagnosis") or []
+    if diagnosis:
+        d = diagnosis[0]
+        evidence = str(d.get("evidence") or "").rstrip("。；;，, ")
+        daily.append({
+            "source": "portfolio",
+            "tag": "组合 · 体检",
+            "title": str(d.get("title") or "组合体检提示"),
+            "detail": _clip_home(f"{evidence}，超出阈值 {d.get('excess')}。", 40),
+            "link": {"type": "portfolio"},
+        })
+    elif pf.get("deviation"):
+        d = max(pf["deviation"], key=lambda x: abs(float(x.get("diff") or 0)))
+        daily.append({
+            "source": "portfolio",
+            "tag": "组合 · 偏离",
+            "title": f"{d['name']} {float(d['diff']):+.1f}%",
+            "detail": _clip_home(f"当前 {d['current']}%，目标 {d['target']}%；只展示偏离。", 40),
+            "link": {"type": "portfolio"},
+        })
+
+    turnover = market.get("turnover") or {}
+    if turnover.get("available"):
+        change = turnover.get("change")
+        detail = f"较上一交易日 {change:+.1f}%" if change is not None else "成交额已更新"
+        daily.append({
+            "source": "market",
+            "tag": "市场 · 成交",
+            "title": f"两市成交额 {float(turnover['value']) / 10000:.2f} 万亿",
+            "detail": _clip_home(detail, 40),
+            "link": None,
+        })
+    else:
+        changes = [pct(s["price"], s.get("prev_close") or s["price"]) for s in by_code.values() if s.get("price") is not None]
+        up = sum(1 for x in changes if x > 0)
+        down = sum(1 for x in changes if x < 0)
+        daily.append({
+            "source": "market",
+            "tag": "市场 · 广度",
+            "title": f"涨跌家数 {up} / {down}",
+            "detail": "上涨与下跌家数接近，市场分化。" if up and down and abs(up - down) / max(up + down, 1) < 0.2 else "涨跌家数差距扩大，注意结构分化。",
+            "link": None,
+        })
+    return daily[:3]
+
+
+def _home_review_line(conn: Any, pf: dict[str, Any], market: dict[str, Any]) -> str:
+    index_change = None
+    row = one(conn, "SELECT price, prev_close FROM indices WHERE code LIKE '000300%' LIMIT 1")
+    if row and row.get("price") is not None and row.get("prev_close"):
+        index_change = pct(float(row["price"]), float(row["prev_close"]))
+    turnover = market.get("turnover") or {}
+    if index_change is not None and pf.get("holdings"):
+        return _clip_home(f"沪深300 {index_change:+.2f}%，组合 {float(pf.get('dailyChange') or 0):+.2f}%。", 30)
+    if index_change is not None:
+        if turnover.get("available"):
+            return _clip_home(f"沪深300 {index_change:+.2f}%，成交额 {float(turnover.get('value') or 0) / 10000:.2f} 万亿。", 30)
+        return _clip_home(f"沪深300 {index_change:+.2f}%。", 30)
+    if turnover.get("available"):
+        return _clip_home(f"两市成交额 {float(turnover['value']) / 10000:.2f} 万亿，较昨日 {float(turnover.get('change') or 0):+.1f}%。", 30)
+    return "今日还没有可用的市场快照。"
 
 def build_home(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
     if normalize_market(market) == "US":
@@ -1529,8 +1833,8 @@ def build_home(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
     meta = data_meta(conn)
     data_date = meta["dataDate"]
     meta_info = build_meta(conn)
-    real_today = date.fromisoformat(data_date)
     watch = rows(conn, "SELECT * FROM watchlist WHERE user_id=?", (user_id,))
+    watch_codes = {str(w["code"]) for w in watch}
     watch_cards = []
     for w in watch:
         s = by_code.get(w["code"])
@@ -1541,56 +1845,41 @@ def build_home(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
     topic_cards = []
     for t in topics:
         bars = rows(conn, "SELECT close FROM topic_bars WHERE topic_id=? ORDER BY date DESC LIMIT 30", (t["id"],))
-        topic_cards.append({"id": t["id"], "name": t["name"], "summary": t["summary"], "heat": t["heat"],
-                            "valuationPercentile": t["valuation_percentile"],
-                            "spark": [b["close"] for b in reversed(bars)]})
+        topic_cards.append({
+            "id": t["id"], "name": t["name"], "summary": t["summary"], "heat": t["heat"],
+            "valuationPercentile": t["valuation_percentile"],
+            "turnoverPercentile": t.get("turnover_percentile"),
+            "riskTags": _topic_risk_tags(t),
+            "spark": [b["close"] for b in reversed(bars)],
+            "detailAvailable": _topic_detail_available(conn, str(t["id"])),
+        })
 
-    daily = []
-    watch_codes = {w["code"] for w in watch}
-    upcoming = [s for s in by_code.values()
-                if s["code"] in watch_codes and s["next_report_date"] and s["next_report_date"] >= data_date]
-    if upcoming:
-        s = sorted(upcoming, key=lambda x: x["next_report_date"])[0]
-        days = (date.fromisoformat(s["next_report_date"]) - real_today).days
-        when = "今天预计披露" if days == 0 else (f"距预计披露还有 {days} 天" if days > 0 else f"已于 {s['next_report_date']} 披露")
-        daily.append({"tag": "自选 · 财报", "title": f"{s['name']}：{s['next_report_date']} 预计披露",
-                      "detail": f"{when}，关注毛利率与现金流。",
-                      "link": {"type": "stock", "id": s["code"]}})
-    if watch_cards:
-        s = max(watch_cards, key=lambda x: abs(x["changePct"]))
-        daily.append({"tag": "自选 · 异动", "title": f"{s['name']} {s['changePct']:+.2f}%",
-                      "detail": f"收盘 {s['price']:.2f} 元；打开个股查看估值与风险。",
-                      "link": {"type": "stock", "id": s["code"]}})
     pf = build_portfolio(conn, user_id, include_penetration=False)
-    if pf["deviation"]:
-        d = max(pf["deviation"], key=lambda x: abs(x["diff"]))
-        daily.append({"tag": "组合 · 偏离", "title": f"{d['name']} {d['diff']:+.0f}%",
-                      "detail": f"当前 {d['current']}%，目标 {d['target']}%；只展示偏离，不构成调仓建议。",
-                      "link": {"type": "portfolio"}})
-    t = max(topics, key=lambda x: x["valuation_percentile"])
-    daily.append({"tag": "市场 · 热度", "title": f"{t['name']} 估值 {t['valuation_percentile']:.0f}% 分位",
-                  "detail": f"热度 {t['heat']:.0f}；先看历史 base rate，再决定要不要追。",
-                  "link": {"type": "topic", "id": t["id"]}})
-    daily = daily[:3]
-
+    portfolio = _home_portfolio(conn, user_id, pf)
+    market_pulse = _home_market(conn, data_date)
+    daily = _home_daily(conn, user_id, data_date, pf, market_pulse, by_code, watch_codes)
     etf = by_code.get("510300")
     review = {
         "title": "收盘复盘",
-        "summary": (f"沪深 300 ETF 收盘 {etf['price']:.3f}（{pct(etf['price'], etf['prev_close']):+.2f}%）；你的组合今日 {signed(pf['dailyChange'])}，风险主要来自行业集中。" if pf["holdings"] else f"沪深 300 ETF 收盘 {etf['price']:.3f}（{pct(etf['price'], etf['prev_close']):+.2f}%）；尚未导入组合，先做一次体检。") if etf else "",
+        "line": _home_review_line(conn, pf, market_pulse),
+        "summary": (
+            f"沪深 300 ETF 收盘 {etf['price']:.3f}（{pct(etf['price'], etf['prev_close']):+.2f}%）；"
+            f"你的组合今日 {signed(pf['dailyChange'])}，风险主要来自行业集中。"
+            if pf["holdings"] else
+            f"沪深 300 ETF 收盘 {etf['price']:.3f}（{pct(etf['price'], etf['prev_close']):+.2f}%）；"
+            "尚未导入组合，先做一次体检。"
+        ) if etf else "",
         "facts": [
             f"组合总资产 {pf['totalValue']/10000:.1f} 万元，风险分 {pf['riskScore']}。" if pf["holdings"] else "尚未导入组合，去「组合」页导入 CSV 或手工持仓。",
             f"前三大持仓 {pf['kpis'][1]['value']}，最大行业 {pf['kpis'][2]['value']}。" if pf["holdings"] else "导入后才能计算集中度、行业暴露与配置偏离。",
             "数据为收盘后快照，不是实时行情。",
         ],
     }
-    idx_rows = rows(conn, "SELECT * FROM indices ORDER BY code")
-    indices = [{"name": r["name"], "value": f"{r['price']:.1f}", "change": pct(r["price"], r["prev_close"])}
-               for r in idx_rows]
-    if not indices:
-        indices = [
-            {"name": "沪深 300", "value": "4128.6", "change": 0.68},
-            {"name": "创业板指", "value": "2214.8", "change": 1.12},
-        ]
+    indices = [
+        {"name": i["label"], "labelEn": i["label_en"], "value": i["value"],
+         "change": i["change"], "available": i["available"]}
+        for i in market_pulse["indices"]
+    ]
     glossary = [
         {"term": "PE 分位", "text": "当前市盈率在过去 N 年里的位置；分位越低通常越“便宜”，但不预测涨跌。"},
         {"term": "拥挤度", "text": "板块成交 / 换手的热度；拥挤度偏高，短期波动通常更大。"},
@@ -1601,11 +1890,41 @@ def build_home(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
         {"term": "配置偏离", "text": "目标权重与当前权重的差；只展示，不构成调仓建议。"},
         {"term": "ROE", "text": "净资产收益率，衡量股东投入资本的盈利效率。"},
     ]
-    return {"dataDate": data_date, "dataSource": meta["dataSource"], "isDemo": meta["isDemo"],
-            "ageDays": meta_info["ageDays"], "isStale": meta_info["isStale"],
-            "user": {"id": user_id, "name": "演示用户"}, "daily": daily, "review": review,
-            "indices": indices, "topics": topic_cards, "watchlist": watch_cards, "glossary": glossary,
-            "disclaimer": DISCLAIMER, "market": "CN", "hasQuotes": True}
+    return {
+        "dataDate": data_date, "dataSource": meta["dataSource"], "isDemo": meta["isDemo"],
+        "ageDays": meta_info["ageDays"], "isStale": meta_info["isStale"],
+        "user": {"id": user_id, "name": "演示用户"},
+        "portfolioSnapshot": portfolio, "marketPulse": market_pulse,
+        "daily": daily, "review": review,
+        "indices": indices, "topics": topic_cards, "watchlist": watch_cards,
+        "learn": {"title": "估值分位：贵不贵，跟什么比？", "titleEn": "Valuation percentile: expensive versus what?", "link": "/learn"},
+        "glossary": glossary, "disclaimer": DISCLAIMER, "market": "CN", "hasQuotes": True,
+    }
+
+def _topic_detail_available(conn: Any, topic_id: str) -> bool:
+    row = one(
+        conn,
+        "SELECT EXISTS(SELECT 1 FROM topic_bars WHERE topic_id=?) AS bars, "
+        "EXISTS(SELECT 1 FROM topic_stocks WHERE topic_id=?) AS stocks",
+        (topic_id, topic_id),
+    )
+    return bool(row and (row.get("bars") or row.get("stocks")))
+
+
+def build_topics(conn: Any) -> dict[str, Any]:
+    topics = rows(conn, "SELECT * FROM topics ORDER BY heat DESC")
+    items = []
+    for t in topics:
+        bars = rows(conn, "SELECT close FROM topic_bars WHERE topic_id=? ORDER BY date DESC LIMIT 30", (t["id"],))
+        items.append({
+            "id": t["id"], "name": t["name"], "summary": t["summary"], "heat": t["heat"],
+            "valuationPercentile": t["valuation_percentile"],
+            "turnoverPercentile": t.get("turnover_percentile"),
+            "riskTags": _topic_risk_tags(t),
+            "spark": [b["close"] for b in reversed(bars)],
+            "detailAvailable": _topic_detail_available(conn, str(t["id"])),
+        })
+    return {"items": items, "dataDate": latest_date(conn), "disclaimer": DISCLAIMER}
 
 
 def build_watchlist(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
@@ -1725,8 +2044,12 @@ def build_search(conn: Any, q: str, market: str = "CN") -> dict[str, Any]:
     topics = rows(conn, "SELECT * FROM topics WHERE name LIKE ? LIMIT 4", (f"%{q}%",)) if q else []
     results = [{"type": "stock", "id": s["code"], "name": s["name"], "sub": f"{s['code']} · {s['industry']}",
                 "market": "CN", "price": s["price"], "changePct": pct(s["price"], s["prev_close"])} for s in stocks]
-    results += [{"type": "topic", "id": t["id"], "name": t["name"], "sub": "行业 / 主题",
-                 "price": None, "changePct": None} for t in topics]
+    # 热点详情缺少 bars/成分数据时，搜索不放出主题入口，避免点进去是空页。
+    results += [
+        {"type": "topic", "id": t["id"], "name": t["name"], "sub": "行业 / 主题",
+         "price": None, "changePct": None}
+        for t in topics if _topic_detail_available(conn, str(t["id"]))
+    ]
 
     presets = []
     if not q:
@@ -1812,6 +2135,15 @@ def build_meta(conn: Any, market: str = "CN") -> dict[str, Any]:
     }
 
 
+def coverage_status(stale_count: int, total: int) -> str:
+    """全市场日线覆盖：零星停牌/新股只提示，超过 2% 才判失败。"""
+    if total <= 0:
+        return "fail"
+    if stale_count <= 0:
+        return "pass"
+    return "warn" if stale_count / total <= 0.02 else "fail"
+
+
 def build_data_quality(conn: Any) -> dict[str, Any]:
     latest = latest_date(conn)
     stocks = rows(conn, "SELECT code, name, asset, price, pe_ttm, updated_at FROM stocks")
@@ -1822,11 +2154,15 @@ def build_data_quality(conn: Any) -> dict[str, Any]:
     latest_by_market = {m: max((s.get("updated_at") or "")[:10] for s in pool if market_of(s["code"]) == m)
                         for m in {market_of(s["code"]) for s in pool}}
     stale = [s["code"] for s in pool if (s.get("updated_at") or "")[:10] != latest_by_market.get(market_of(s["code"]))]
+    # 全市场切换日常有零星停牌/新股未更新；少量缺口只提示，不把整页判为异常。
+    stale_ratio = len(stale) / len(pool) if pool else 1.0
+    bars_status = coverage_status(len(stale), len(pool))
     checks = [{
         "key": "bars",
         "label": "日线覆盖",
-        "status": "fail" if not pool or stale else "pass",
-        "detail": f"CN {latest_by_market.get('CN','—')} / US {latest_by_market.get('US','—')}；有日线 {len(pool)}/{len(stocks)} 只，未更新 {len(stale)}",
+        "status": bars_status,
+        "detail": f"CN {latest_by_market.get('CN','—')} / US {latest_by_market.get('US','—')}；有日线 {len(pool)}/{len(stocks)} 只，未更新 {len(stale)}"
+                  + ("（≤2% 仅提示；超过 2% 才判失败）" if 0 < stale_ratio <= 0.02 else ""),
     }]
     pool_cn = [s for s in pool if market_of(s["code"]) == "CN"]
     pool_codes = [s["code"] for s in pool_cn]

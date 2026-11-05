@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import socket
 import threading
@@ -26,11 +27,14 @@ from ai.errors import (
     AiBadOutput,
     AiInvalidRequest,
     AiNotConfigured,
+    AiOutputTruncated,
     AiTimeout,
     AiUpstreamError,
 )
 from services.core.env_config import env
 from services.core.lan_http import urlopen_direct
+
+logger = logging.getLogger(__name__)
 
 # —— 模型目录（SV 助手可选项；加/删模型只改这里）——
 CHAT_MODELS: list[dict[str, str]] = [
@@ -532,28 +536,62 @@ def complete(
         max_retries = max(0, int(env("LLM_MAX_RETRIES", "1") or "1"))
     except (TypeError, ValueError):
         max_retries = 1
+    try:
+        output_cap = max(1024, int(env("LLM_MAX_OUTPUT_TOKENS", "32000") or "32000"))
+    except (TypeError, ValueError):
+        output_cap = 32000
 
+    base_payload = dict(payload)
+    base_budget = base_payload.get("max_tokens")
     attempts = [target, *_fallback_targets(target)]
     last_error: Exception | None = None
     for index, current in enumerate(attempts):
-        # 兜底模型用自己的 model 字段
-        if index > 0:
-            payload = {**payload, "model": current.model}
-        for retry in range(max_retries + 1):
+        # 每个兜底模型都从任务原始预算开始；推理模型被截断时再逐次提高。
+        payload = {**base_payload, "model": current.model}
+        budget = base_budget
+        retry = 0
+        expansions = 0
+        while True:
             try:
                 resp = _send(
                     current, payload, timeout=int(timeout or current.timeout), stream=False
                 )
-                result = _normalize(_read_json(resp), current)
+                result = _normalize(_read_json(resp), current, max_tokens=budget)
                 if index > 0:
                     result["fallback_from"] = target.model
                 if cache_ttl > 0:
                     _CACHE.put(key, result, cache_ttl)
                 return result
+            except AiOutputTruncated as exc:
+                last_error = exc
+                if budget and budget < output_cap and expansions < 3:
+                    budget = min(budget * 2, output_cap)
+                    expansions += 1
+                    payload = {**payload, "max_tokens": budget}
+                    logger.warning(
+                        "LLM 输出被截断，提高 max_tokens 后重试：model=%s budget=%s detail=%s",
+                        current.model,
+                        budget,
+                        exc.detail,
+                    )
+                    continue
+                break
+            except AiBadOutput as exc:
+                last_error = exc
+                if "内容审核" in str(exc) or "content_filter" in str(exc):
+                    break
+                if retry < max_retries:
+                    retry += 1
+                    time.sleep(0.4 * retry)
+                    continue
+                break
             except (AiTimeout, AiUpstreamError) as exc:
                 last_error = exc
                 if retry < max_retries:
-                    time.sleep(0.4 * (retry + 1))
+                    retry += 1
+                    time.sleep(0.4 * retry)
+                    continue
+                break
     assert last_error is not None
     raise last_error
 
@@ -570,23 +608,53 @@ def _read_json(resp) -> dict[str, Any]:
     return data
 
 
-def _normalize(data: dict[str, Any], target: ChatTarget) -> dict[str, Any]:
+def _normalize(
+    data: dict[str, Any], target: ChatTarget, *, max_tokens: int | None = None
+) -> dict[str, Any]:
     choices = data.get("choices") or []
     if not isinstance(choices, list) or not choices:
         raise AiBadOutput("上游无 choices")
-    message = choices[0].get("message") or {}
+    choice = choices[0] or {}
+    message = choice.get("message") or {}
     content = message.get("content")
     tool_calls = message.get("tool_calls") or []
+    reasoning = message.get("reasoning_content") or message.get("reasoning") or ""
+    finish_reason = str(choice.get("finish_reason") or "")
     text = content if isinstance(content, str) else ""
-    if not text.strip() and not tool_calls:
-        raise AiBadOutput("上游返回空内容")
     usage = data.get("usage") or {}
+    details = usage.get("completion_tokens_details") or {}
+    reasoning_tokens = _int(details.get("reasoning_tokens"))
+    diagnostics = {
+        "model": data.get("model") or target.model,
+        "finish_reason": finish_reason,
+        "max_tokens": max_tokens,
+        "completion_tokens": _int(usage.get("completion_tokens")),
+        "reasoning_tokens": reasoning_tokens,
+        "reasoning_chars": len(str(reasoning)),
+        "content_chars": len(text),
+    }
+    detail = json.dumps(diagnostics, ensure_ascii=False)
+    if finish_reason == "length":
+        logger.warning("LLM 输出达到 token 上限：%s", detail)
+        raise AiOutputTruncated("上游输出达到 max_tokens 上限，内容不完整", detail=detail)
+    if not text.strip() and not tool_calls:
+        logger.warning("LLM 返回空内容：%s", detail)
+        if finish_reason == "content_filter":
+            raise AiBadOutput("上游内容审核拦截，content 为空", detail=detail)
+        if finish_reason == "length" or (
+            max_tokens and reasoning_tokens >= max(1, int(max_tokens * 0.95))
+        ):
+            raise AiOutputTruncated("上游推理/输出 token 耗尽，content 为空", detail=detail)
+        raise AiBadOutput("上游返回空内容", detail=detail)
     return {
         "content": text.strip(),
         "message": message,
         "tool_calls": tool_calls if isinstance(tool_calls, list) else [],
         "tokens_in": _int(usage.get("prompt_tokens")),
         "tokens_out": _int(usage.get("completion_tokens")),
+        "reasoning_tokens": reasoning_tokens,
+        "reasoning_chars": len(str(reasoning)),
+        "finish_reason": finish_reason,
         "model": data.get("model") or target.model,
         "provider": target.provider,
         "usage": usage if isinstance(usage, dict) else {},

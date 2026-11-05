@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { api } from "../api";
 import { ErrorState } from "../components";
@@ -33,33 +33,41 @@ export default function AiPanel({
   subtitle,
   endpoint,
   body,
-  buttonLabel,
 }: {
   title?: string;
   subtitle?: string;
   endpoint: string;
   body?: Record<string, unknown>;
-  buttonLabel?: string;
 }) {
   const { t } = useLocale();
   const resolvedTitle = title ?? t("AI 解读", "AI insights");
   const resolvedSubtitle = subtitle ?? t("AI 只做数据解读与风险提示，不构成投资建议", "AI only interprets data and flags risks; it is not investment advice");
-  const resolvedButtonLabel = buttonLabel ?? t("生成 AI 解读", "Generate AI insights");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<AiResponse | null>(null);
+  const bodyKey = JSON.stringify(body || {});
+  const startedKey = useRef("");
 
-  const run = () => {
+  const run = (refresh = false) => {
     setLoading(true);
     setError(null);
-    api<AiResponse>(endpoint, {
+    const sep = endpoint.includes("?") ? "&" : "?";
+    api<AiResponse>(`${endpoint}${sep}refresh=${refresh ? 1 : 0}`, {
       method: "POST",
-      body: JSON.stringify(body || {}),
+      body: bodyKey,
     })
       .then(setData)
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   };
+
+  useEffect(() => {
+    const key = `${endpoint}|${bodyKey}`;
+    if (startedKey.current === key) return;
+    startedKey.current = key;
+    run(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endpoint, bodyKey]);
 
   const card = data?.card;
   return (
@@ -71,13 +79,8 @@ export default function AiPanel({
         <span className="hint">{t("AI 生成 · 非投资建议", "AI-generated · Not investment advice")}</span>
       </div>
       <p className="ai-sub">{resolvedSubtitle}</p>
-      {!card && !error ? (
-        <button className="btn btn-primary btn-sm ai-run" onClick={run} disabled={loading}>
-          {loading ? t("生成中…", "Generating…") : resolvedButtonLabel}
-        </button>
-      ) : null}
-      {loading ? <div className="ai-loading">{t("正在基于当前数据生成，通常需要 5–30 秒…", "Generating from current data; usually takes 5–30 seconds…")}</div> : null}
-      {error ? <ErrorState message={error} onRetry={run} /> : null}
+      {loading && !card ? <div className="ai-loading">{t("正在基于当前数据生成，通常需要 5–30 秒…", "Generating from current data; usually takes 5–30 seconds…")}</div> : null}
+      {error ? <ErrorState message={error} onRetry={() => run(false)} /> : null}
       {data?.blocked ? (
         <div className="ai-blocked">
           {card?.summary || t("该请求涉及买卖点/目标价/收益承诺，已按合规规则拦截。", "This request involves entry/exit levels, target prices or return promises and was blocked by compliance rules.")}
@@ -105,8 +108,8 @@ export default function AiPanel({
           <p className="ai-disclaimer">
             {card.disclaimer || t("AI 生成 · 非投资建议", "AI-generated · Not investment advice")} · {card.meta?.dataSource || t("数据口径见页面", "See the page for data basis")}
           </p>
-          <button className="btn btn-ghost btn-sm" onClick={run} disabled={loading}>
-            {t("重新生成", "Regenerate")}
+          <button className="btn btn-ghost btn-sm" onClick={() => run(true)} disabled={loading}>
+            {loading ? t("生成中…", "Generating…") : t("重新生成", "Regenerate")}
           </button>
         </div>
       ) : null}

@@ -68,6 +68,96 @@ test("登录后首页渲染且保留收盘/非实时标识", async ({ page }) =>
   await expect(page.locator("body")).toContainText(/收盘|非实时/);
 });
 
+test("首页改版：今日卡/概览/热点，底部不再有我的", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/home*", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        dataDate: "2026-11-04", dataSource: "Public EOD", isDemo: false, isStale: false,
+        ageDays: 0, ageTradingDays: 0, user: { id: 2, name: "Demo user" },
+        market: "CN", hasQuotes: true,
+        portfolioSnapshot: {
+          hasHoldings: true, holdingCount: 3, dailyChange: 0.86, totalValue: 386000,
+          riskScore: 62, lastCheckupDate: "2026-10-24",
+        },
+        marketPulse: {
+          asOf: "2026-11-04", status: "close", statusLabel: "收盘", statusLabelEn: "Close",
+          indices: [
+            { code: "000001.SH", label: "上证指数", label_en: "SSE Composite", value: 3345.67, change: -0.12, available: true },
+            { code: "399001.SZ", label: "深证成指", label_en: "SZSE Component", value: 10876.54, change: 0.34, available: true },
+            { code: "399006.SZ", label: "创业板指", label_en: "ChiNext", value: 2214.8, change: 1.12, available: true },
+          ],
+          turnover: {
+            value: 17029.1, change: -4.5, available: true, note: "",
+            basis: "index", basisLabel: "沪深两市成交额（指数口径）",
+            basisLabelEn: "SSE + SZSE turnover (index basis)",
+          },
+        },
+        daily: [
+          { source: "stock", tag: "自选 · 事件", title: "宁德时代 10-30 预约披露", detail: "距预约披露 4 天，关注财报与现金流。", link: { type: "stock", id: "300750" } },
+          { source: "portfolio", tag: "组合 · 体检", title: "行业集中度偏高", detail: "新能源合计 42.0%（阈值 40%），超出阈值 2.0。", link: { type: "portfolio" } },
+          { source: "market", tag: "市场 · 成交", title: "两市成交额 1.70 万亿", detail: "较上一交易日 -4.5%", link: null },
+        ],
+        review: {
+          title: "收盘复盘", line: "沪深300 -0.20%，组合 +0.86%。",
+          summary: "沪深300 收盘 -0.20%；组合今日 +0.86%，风险主要来自行业集中。",
+          facts: ["组合总资产 38.6 万元，风险分 62。", "数据为收盘后快照，不是实时行情。"],
+        },
+        topics: [
+          { id: "ai", name: "AI 算力", summary: "算力与模型迭代驱动的产业链热度", heat: 86, valuationPercentile: 88, turnoverPercentile: 72, riskTags: [{ label: "估值偏高", label_en: "Valuation elevated", tone: "red" }] },
+          { id: "dividend", name: "高股息", summary: "现金流与分红确定性", heat: 64, valuationPercentile: 42, turnoverPercentile: 38, riskTags: [{ label: "估值分位 42%", label_en: "Valuation percentile 42%", tone: "gray" }] },
+          { id: "new-energy", name: "新能源", summary: "供需与价格周期", heat: 58, valuationPercentile: 35, turnoverPercentile: 61, riskTags: [{ label: "估值分位 35%", label_en: "Valuation percentile 35%", tone: "gray" }] },
+        ],
+        learn: { title: "估值分位：贵不贵，跟什么比？", titleEn: "Valuation percentile: expensive versus what?", link: "/learn" },
+      }),
+    }),
+  );
+  await page.goto(`${H5}/`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".today-card")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".today-mine-main b")).toHaveText("+0.86%");
+  await expect(page.getByText("上次体检")).toBeVisible();
+  await expect(page.getByText("上证指数")).toBeVisible();
+  await expect(page.getByText("两市成交", { exact: true })).toBeVisible();
+  await expect(page.getByText("沪深两市成交额（指数口径）")).toBeVisible();
+  await expect(page.locator(".overview-row")).toHaveCount(3);
+  await expect(page.locator(".hot-row")).toHaveCount(3);
+  await expect(page.locator(".card")).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "底部导航" }).getByText("我的")).toHaveCount(0);
+  await page.getByRole("button", { name: "查看完整日报" }).click();
+  await expect(page.getByText("规则生成 · 历史 EOD 数据 · 不构成投资建议")).toBeVisible();
+  await page.getByRole("button", { name: "关闭" }).click();
+  await page.setViewportSize({ width: 360, height: 800 });
+  await noHorizontalOverflow(page);
+  await page.getByRole("button", { name: "我的", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "我的" })).toBeVisible({ timeout: 20_000 });
+});
+
+test("首页热点「全部」进入热点列表页", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/topics", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        dataDate: "2026-11-04",
+        items: [
+          { id: "ai", name: "AI 算力", summary: "算力与模型迭代驱动的产业链热度", heat: 86, riskTags: [{ label: "估值偏高", label_en: "Valuation elevated", tone: "red" }] },
+          { id: "dividend", name: "高股息", summary: "现金流与分红确定性", heat: 64, riskTags: [{ label: "估值分位 42%", label_en: "Valuation percentile 42%", tone: "gray" }] },
+          { id: "new-energy", name: "新能源", summary: "供需与价格周期", heat: 58, riskTags: [{ label: "估值分位 35%", label_en: "Valuation percentile 35%", tone: "gray" }] },
+        ],
+        disclaimer: "收盘数据 · 非实时 · 非投资建议",
+      }),
+    }),
+  );
+  await page.goto(`${H5}/topics`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "今日热点" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".list-hot-row")).toHaveCount(3);
+  await expect(page.getByText("估值偏高")).toBeVisible();
+  await noHorizontalOverflow(page);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await noHorizontalOverflow(page);
+});
+
 test("「我的」页有数据口径与账号注销入口", async ({ page }) => {
   await loginByToken(page);
   await page.goto(`${H5}/me`, { waitUntil: "domcontentloaded" });
@@ -159,6 +249,90 @@ test("量化研究入口与因子/策略库可打开", async ({ page }) => {
   await noHorizontalOverflow(page);
 });
 
+test("量化研究入口页展示今日关注与四个入口", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/quant`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "量化研究" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".quant-entry")).toHaveCount(4);
+  await expect(page.locator(".quant-focus-bar")).toBeVisible();
+  await expect(page.locator(".quant-style-card")).toBeVisible();
+  await expect(page.locator(".tab.on")).toContainText("量化");
+  await noHorizontalOverflow(page);
+});
+
+test("因子页展示市场风格与 6 行因子榜", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/quant/factors`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "因子" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".quant-factor-row")).toHaveCount(6, { timeout: 30_000 });
+  await expect(page.getByText("因子入门")).toBeVisible();
+  await page.locator(".quant-factor-row").first().click();
+  await expect(page.locator(".quant-detail")).toBeVisible({ timeout: 20_000 });
+  await noHorizontalOverflow(page);
+});
+
+test("策略页四个分区可切换", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/quant/strategies?tab=quick`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("一句话建策略")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "我的策略", exact: true }).click();
+  await expect(page.getByText("还没有跟踪中的策略")).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "草稿", exact: true }).click();
+  await expect(page.getByText("在上面的快速实验里跑完一次")).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "策略广场", exact: true }).click();
+  await expect(page.locator(".quant-plaza-card, .state-box").first()).toBeVisible({ timeout: 30_000 });
+  await noHorizontalOverflow(page);
+});
+
+test("回测与模拟盘空态明确，且模拟盘标注模拟", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/quant/backtests`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("还没有回测记录")).toBeVisible({ timeout: 30_000 });
+  await page.goto(`${H5}/quant/papers`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("还没有模拟盘")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("不接券商").first()).toBeVisible();
+  await noHorizontalOverflow(page);
+});
+
+test("AI 记忆入口从我的移到管家工具条，首页不再有 AI 今日解读", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/me`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("AI 记忆")).toHaveCount(0);
+  await page.goto(`${H5}/`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("AI 今日解读")).toHaveCount(0);
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("button", { name: "记忆" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "深度" })).toBeVisible();
+  await noHorizontalOverflow(page);
+});
+
+test("个股 AI 解读进入页面自动生成", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/ai/stock/**", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, card: { summary: "估值处于历史中位，关注盈利稳定性。", sections: [] } }),
+    }),
+  );
+  await page.goto(`${H5}/stock/600519`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("估值处于历史中位，关注盈利稳定性。")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "生成 AI 解读" })).toHaveCount(0);
+  await noHorizontalOverflow(page);
+});
+
+test("Agent 管理页展示 Agent 与提示词编辑", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/agents`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Agent 管理" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".agent-card").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".agent-prompt").first()).toBeVisible();
+  const prompt = page.locator(".agent-prompt").first();
+  await prompt.fill("只讲最关键的估值风险，不展开。");
+  await page.getByRole("button", { name: "保存" }).first().click();
+  await expect(page.getByText(/已保存/)).toBeVisible({ timeout: 20_000 });
+  await noHorizontalOverflow(page);
+});
+
 test("个股分时视图可切换（有数据或明确空态）", async ({ page }) => {
   await loginByToken(page);
   await page.goto(`${H5}/stock/600519`, { waitUntil: "domcontentloaded" });
@@ -220,7 +394,131 @@ test("AI 管家可发送问题并渲染卡片", async ({ page }) => {
   await noHorizontalOverflow(page);
 });
 
-test("多标的对比页渲染同口径表与 AI 入口", async ({ page }) => {
+test("AI 管家选股：面板填句 → 条件卡 → 结果卡与行业分布", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/condition/screen", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        status: "ok",
+        query: "PE 分位低于 30%，近 3 年净利润连续增长，ROE 大于 10%",
+        conditions: [
+          { key: "pe_percentile", label: "PE 分位", label_en: "PE percentile", op: "max", value: 30, unit: "%", text: "PE 分位 ≤ 30%", supported: true },
+          { key: "profit_growth_years", label: "近 3 年净利润连续增长", label_en: "Profit growth streak", op: "bool", value: 3, text: "近 3 年净利润连续增长", supported: true },
+          { key: "roe", label: "ROE", label_en: "ROE", op: "min", value: 10, unit: "%", text: "ROE ≥ 10%", supported: true },
+        ],
+        count: 2,
+        items: [
+          { code: "600519", name: "贵州茅台", industry: "食品饮料", price: 1439.1, change_pct: 1.2, roe: 30.1 },
+          { code: "000001", name: "平安银行", industry: "银行", price: 11.2, change_pct: -0.4, roe: 11.5 },
+        ],
+        summary: ["共筛出 2 只，按条件逐项过滤。", "总市值中位数 461 亿。"],
+        risk: "筛选基于历史 EOD 数据，不含实时与资金流；结果非投资建议。",
+        industry_distribution: [
+          { name: "食品饮料", count: 1, pct: 50 },
+          { name: "银行", count: 1, pct: 50 },
+        ],
+        followups: ["这批股票属于哪些行业", "按 ROE 从高到低看", "把条件放宽一点"],
+      }),
+    }),
+  );
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "打开选股面板" }).click();
+  await expect(page.getByText("选股方向")).toBeVisible();
+  await expect(page.getByText("低估优选")).toBeVisible();
+  await page.getByRole("button", { name: /低估优选/ }).click();
+  const input = page.locator(".ai-composer textarea");
+  await expect(input).toHaveValue("PE 分位低于 30%，近 3 年净利润连续增长，ROE 大于 10%");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText("按你设定的 3 个条件，共筛出 2 只。")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".condition-tag")).toHaveCount(3);
+  await expect(page.getByText("贵州茅台")).toBeVisible();
+  await page.getByRole("button", { name: /这批股票属于哪些行业/ }).click();
+  await expect(page.getByText("行业分布 · 申万一级")).toBeVisible();
+  await noHorizontalOverflow(page);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await noHorizontalOverflow(page);
+});
+
+test("AI 管家直接输入条件句也会进入筛选", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/condition/screen", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true, status: "too_broad", count: 355,
+        conditions: [{ key: "pe_percentile", label: "PE 分位", op: "max", value: 30, unit: "%", text: "PE 分位 ≤ 30%", supported: true }],
+        diagnostic: {
+          blocking: "条件偏松",
+          suggestion: "当前范围超过 200 只，再补一条估值、盈利或成交条件即可收窄。",
+          relax_actions: [{ type: "add", query: "ROE 大于 10%", label: "加一条 ROE 大于 10%" }],
+        },
+        risk: "历史 EOD 数据。",
+      }),
+    }),
+  );
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.locator(".ai-composer textarea").fill("PE 分位低于 30% 的股票");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText("355 只 · 条件偏松")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/超过 200 只上限/)).toBeVisible();
+  await noHorizontalOverflow(page);
+});
+
+test("AI 管家选股：资金流条件标红并可去掉后重筛", async ({ page }) => {
+  await loginByToken(page);
+  let calls = 0;
+  await page.route("**/api/invest/condition/screen", (route) => {
+    calls += 1;
+    const body = route.request().postDataJSON();
+    if (body?.conditions) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          status: "ok",
+          conditions: body.conditions,
+          count: 1,
+          items: [{ code: "600519", name: "贵州茅台", industry: "食品饮料", price: 1439.1, change_pct: 1.2 }],
+          summary: ["共筛出 1 只。"],
+          risk: "历史 EOD 数据。",
+          industry_distribution: [{ name: "食品饮料", count: 1, pct: 100 }],
+          followups: ["这批股票属于哪些行业", "按 ROE 从高到低看", "把条件放宽一点"],
+        }),
+      });
+    }
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        status: "needs_input",
+        conditions: [
+          { key: "market_cap", label: "总市值", op: "max", value: 200, unit: "亿", text: "总市值 ≤ 200亿", supported: true },
+          { key: "main_net_inflow_5d", label: "5 日主力净流入", op: "min", value: 5000, unit: "万", text: "5 日主力净流入 ≥ 5000万", supported: false, supported_reason: "当前版本暂不支持" },
+        ],
+        unsupported: [{ key: "main_net_inflow_5d", label: "5 日主力净流入", supported: false }],
+        message: "当前版本暂不支持该类条件，未执行筛选。",
+        disclaimer: "历史 EOD 数据 · 不含实时与资金流 · 非投资建议",
+      }),
+    });
+  });
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "打开选股面板" }).click();
+  await expect(page.getByRole("button", { name: /小市值弹性/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /主力连续流入/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "关闭" }).click();
+  await page.locator(".ai-composer textarea").fill("近 5 日主力净流入大于 5000 万");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText("暂不支持", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("当前版本暂不支持该类条件", { exact: false }).first()).toBeVisible();
+  await page.getByRole("button", { name: /删除条件 5 日主力净流入/ }).click();
+  await expect(page.getByText("共 1 只")).toBeVisible({ timeout: 20_000 });
+  expect(calls).toBeGreaterThan(1);
+  await noHorizontalOverflow(page);
+});
+
+test("多标的对比页渲染同口径表并自动生成 AI 结论", async ({ page }) => {
   await loginByToken(page);
   const stock = (code: string, name: string) => ({
     quote: { code, name, industry: "白酒", price: 100, changePct: 1.2 },
@@ -234,7 +532,7 @@ test("多标的对比页渲染同口径表与 AI 入口", async ({ page }) => {
   await page.route("**/api/invest/stock/300750", (route) =>
     route.fulfill({ contentType: "application/json", body: JSON.stringify(stock("300750", "宁德时代")) }),
   );
-  await page.route("**/api/invest/ai/compare", (route) =>
+  await page.route("**/api/invest/ai/compare**", (route) =>
     route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ ok: true, card: { summary: "两者估值与增速不同。", sections: [] } }),
@@ -242,7 +540,6 @@ test("多标的对比页渲染同口径表与 AI 入口", async ({ page }) => {
   );
   await page.goto(`${H5}/compare/600519/300750`, { waitUntil: "domcontentloaded" });
   await expect(page.locator(".data-table")).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("button", { name: /生成 AI 对比解读/ }).click();
   await expect(page.getByText("两者估值与增速不同")).toBeVisible({ timeout: 20_000 });
   await noHorizontalOverflow(page);
 });
@@ -387,7 +684,7 @@ test("英文模式可搜索并打开真实美股", async ({ page }) => {
 test("360 宽关键页面无横向溢出，行业代码不裸奔", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await loginByToken(page);
-  for (const path of ["/", "/watch", "/portfolio", "/news", "/learn", "/me", "/quant", "/community"]) {
+  for (const path of ["/", "/watch", "/portfolio", "/news", "/learn", "/me", "/quant", "/quant/factors", "/quant/strategies?tab=quick", "/quant/strategies?tab=plaza", "/quant/backtests", "/quant/papers", "/agents", "/community"]) {
     await page.goto(`${H5}${path}`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(350);
     await noHorizontalOverflow(page);

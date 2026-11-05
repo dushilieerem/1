@@ -35,7 +35,12 @@ must use; the client cannot self-report a rerun to avoid K.
 """
 from __future__ import annotations
 
+import json
+import uuid
+from datetime import date
 from typing import Iterable
+
+from services.core.db import get_conn
 
 from .metrics import threshold
 
@@ -201,6 +206,255 @@ def can_request_sealed(trials: Iterable[dict], candidate_id: str,
     return sealed_request_error(trials, candidate_id, limit) is None
 
 
+def _public(row) -> dict:
+    return {key: value for key, value in dict(row).items() if key not in ("user_id", "org_id")}
+
+
+def _as_date(value, field: str) -> date:
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        raise ValueError(f"{field} 必须是 YYYY-MM-DD 日期") from None
+
+
+def _as_int(value, field: str, low: int, high: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        raise ValueError(f"{field} 必须是 {low}—{high} 的整数")
+    return value
+
+
+def _topic(uid: int, org: int, topic_id: str) -> dict:
+    with get_conn() as c:
+        row = c.execute(
+            "SELECT * FROM quant_factor_topics WHERE id=%s AND user_id=%s AND org_id=%s",
+            (topic_id, uid, org)).fetchone()
+    if not row:
+        raise KeyError(topic_id)
+    return dict(row)
+
+
+def _trials(uid: int, org: int, topic_id: str) -> list[dict]:
+    with get_conn() as c:
+        rows = c.execute(
+            "SELECT * FROM quant_factor_trials WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY trial_no",
+            (uid, org, topic_id)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _branches(uid: int, org: int, topic_id: str) -> list[dict]:
+    with get_conn() as c:
+        rows = c.execute(
+            "SELECT * FROM quant_factor_branches WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at",
+            (uid, org, topic_id)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_topic(uid: int, org: int, project_id: str, payload: dict) -> dict:
+    """Create the one topic bound to a project and its default manual branch."""
+    view_id = str(payload.get("view_id") or "").strip()
+    if not view_id:
+        raise ValueError("view_id 不能为空")
+    development_start = _as_date(payload.get("development_start"), "development_start")
+    development_end = _as_date(payload.get("development_end"), "development_end")
+    validation_start = _as_date(payload.get("validation_start"), "validation_start")
+    validation_end = _as_date(payload.get("validation_end"), "validation_end")
+    if not (development_start <= development_end < validation_start <= validation_end):
+        raise ValueError("区间必须满足研发开始≤研发结束<封存开始≤封存结束")
+    holding = _as_int(payload.get("primary_holding_period"), "primary_holding_period", 1, 20)
+    max_trials = _as_int(payload.get("max_trials"), "max_trials", 1, 1000)
+    max_sealed = _as_int(payload.get("max_sealed", 3), "max_sealed", 1, 3)
+    policy_version = str(payload.get("policy_version") or "").strip()
+    if not policy_version:
+        raise ValueError("policy_version 不能为空")
+    release_id = str(payload.get("release_id") or "")
+    release_ids = payload.get("release_ids") or {}
+    if not isinstance(release_ids, dict):
+        raise ValueError("release_ids 必须是 JSON 对象")
+    view_manifest_sha256 = str(payload.get("view_manifest_sha256") or "")
+    contract_revision = str(payload.get("contract_revision") or "")
+    as_of = _as_date(payload["as_of"], "as_of") if payload.get("as_of") else None
+    topic_id, branch_id = str(uuid.uuid4()), str(uuid.uuid4())
+    with get_conn() as c:
+        c.execute("SELECT pg_advisory_xact_lock(%s,%s)", (9110, uid))
+        existing = c.execute(
+            "SELECT * FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s",
+            (uid, org, project_id)).fetchone()
+        if existing:
+            return {"topic": _public(existing), "created": False}
+        if not c.execute("SELECT id FROM detect_projects WHERE user_id=%s AND id=%s",
+                         (uid, project_id)).fetchone():
+            raise KeyError(project_id)
+        c.execute(
+            """INSERT INTO quant_factor_topics
+               (id,user_id,org_id,project_id,view_id,release_id,release_ids,view_manifest_sha256,
+                contract_revision,as_of,development_start,development_end,
+                validation_start,validation_end,primary_holding_period,policy_version,
+                max_trials,max_sealed)
+               VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (topic_id, uid, org, project_id, view_id, release_id,
+             json.dumps(release_ids, ensure_ascii=False), view_manifest_sha256,
+             contract_revision, as_of, development_start, development_end,
+             validation_start, validation_end, holding, policy_version,
+             max_trials, max_sealed))
+        c.execute(
+            """INSERT INTO quant_factor_branches
+               (id,user_id,org_id,topic_id,source,owner_id,hypothesis_version,implementation_version)
+               VALUES (%s,%s,%s,%s,'manual',%s,1,1)""",
+            (branch_id, uid, org, topic_id, uid))
+        row = c.execute(
+            "SELECT * FROM quant_factor_topics WHERE id=%s", (topic_id,)).fetchone()
+    return {"topic": _public(row), "created": True}
+
+
+def list_topics(uid: int, org: int, project_id: str) -> list[dict]:
+    with get_conn() as c:
+        rows = c.execute(
+            "SELECT * FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s ORDER BY created_at",
+            (uid, org, project_id)).fetchall()
+    return [_public(row) for row in rows]
+
+
+def create_branch(uid: int, org: int, topic_id: str, payload: dict) -> dict:
+    topic = _topic(uid, org, topic_id)
+    source = str(payload.get("source") or "").strip()
+    if source not in ("agent", "manual"):
+        raise ValueError("source 必须是 agent 或 manual")
+    parent_id = payload.get("parent_id") or None
+    if parent_id:
+        with get_conn() as c:
+            parent = c.execute(
+                "SELECT id FROM quant_factor_branches WHERE id=%s AND user_id=%s AND org_id=%s AND topic_id=%s",
+                (parent_id, uid, org, topic_id)).fetchone()
+        if not parent:
+            raise KeyError(parent_id)
+    hypothesis = _as_int(payload.get("hypothesis_version", 1), "hypothesis_version", 1, 100000)
+    implementation = _as_int(payload.get("implementation_version", 1), "implementation_version", 1, 100000)
+    branch_id = str(uuid.uuid4())
+    with get_conn() as c:
+        c.execute(
+            """INSERT INTO quant_factor_branches
+               (id,user_id,org_id,topic_id,parent_id,source,owner_id,hypothesis_version,implementation_version)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (branch_id, uid, org, topic["id"], parent_id, source, uid, hypothesis, implementation))
+        row = c.execute("SELECT * FROM quant_factor_branches WHERE id=%s", (branch_id,)).fetchone()
+    return _public(row)
+
+
+def list_branches(uid: int, org: int, topic_id: str) -> list[dict]:
+    _topic(uid, org, topic_id)
+    return [_public(row) for row in _branches(uid, org, topic_id)]
+
+
+def ledger_view(uid: int, org: int, topic_id: str) -> dict:
+    topic = _topic(uid, org, topic_id)
+    trials = _trials(uid, org, topic_id)
+    k = current_k(trials, topic["primary_holding_period"])
+    return {
+        "topic": _public(topic),
+        "branches": [_public(row) for row in _branches(uid, org, topic_id)],
+        "trials": [_public(row) for row in trials],
+        "k": k,
+        "threshold": threshold(k) if k >= 1 else None,
+        "threshold_next_if_counted": threshold(max(1, k + 1)),
+        "next_trial_no": next_trial_no(trials),
+    }
+
+
+def append_trial(uid: int, org: int, topic_id: str, payload: dict) -> dict:
+    """Append one trial. rerun_of and returned_metrics are server-derived."""
+    topic = _topic(uid, org, topic_id)
+    branch_id = str(payload.get("branch_id") or "").strip()
+    if not branch_id:
+        raise ValueError("branch_id 不能为空")
+    with get_conn() as c:
+        branch = c.execute(
+            "SELECT id FROM quant_factor_branches WHERE id=%s AND user_id=%s AND org_id=%s AND topic_id=%s",
+            (branch_id, uid, org, topic_id)).fetchone()
+    if not branch:
+        raise KeyError(branch_id)
+    implementation_hash = str(payload.get("implementation_hash") or "").strip()
+    if not implementation_hash:
+        raise ValueError("implementation_hash 不能为空")
+    executor = str(payload.get("executor") or "").strip()
+    if executor not in ("human", "agent", "service"):
+        raise ValueError("executor 必须是 human、agent 或 service")
+    outcome = str(payload.get("outcome") or "").strip()
+    if outcome not in set(COUNTED_OUTCOMES) | set(CONDITIONAL_OUTCOMES):
+        raise ValueError("outcome 不合法；rerun 只能由服务端派生")
+    kind = str(payload.get("kind") or "research").strip()
+    if kind not in {"research", "manual", "agent", "iteration"}:
+        raise ValueError("kind 不合法；诊断/封存/rerun 不能通过 trials 写入")
+    parameters = payload.get("parameters") or {}
+    result_summary = payload.get("result_summary") or {}
+    if not isinstance(parameters, dict) or not isinstance(result_summary, dict):
+        raise ValueError("parameters 和 result_summary 必须是 JSON 对象")
+    metrics = result_summary.get("metrics")
+    nested = result_summary.get("result")
+    returned_metrics = bool(isinstance(metrics, dict) and metrics) or bool(
+        isinstance(nested, dict) and isinstance(nested.get("metrics"), dict) and nested["metrics"])
+    holding = _as_int(payload.get("holding_period", topic["primary_holding_period"]),
+                      "holding_period", 1, 20)
+    # Reproducibility fields come only from the topic lock, never from the request.
+    view_id = topic["view_id"]
+    release_id = str(topic["release_id"] or "")
+    release_ids = topic.get("release_ids") or {}
+    if not isinstance(release_ids, dict):
+        raise ValueError("课题 release_ids 数据损坏")
+    view_manifest_sha256 = str(topic.get("view_manifest_sha256") or "")
+    contract_revision = str(topic["contract_revision"] or "")
+    as_of = topic.get("as_of")
+    trial_id = str(uuid.uuid4())
+    with get_conn() as c:
+        c.execute("SELECT pg_advisory_xact_lock(%s,%s)", (9111, uid))
+        trial_no = c.execute(
+            "SELECT COALESCE(MAX(trial_no),0)+1 AS n FROM quant_factor_trials WHERE user_id=%s AND org_id=%s AND project_id=%s",
+            (uid, org, topic["project_id"])).fetchone()["n"]
+        prior = c.execute(
+            """SELECT id,implementation_hash,release_id,release_ids,view_manifest_sha256,view_id,parameters
+               FROM quant_factor_trials
+               WHERE user_id=%s AND org_id=%s AND project_id=%s
+                 AND implementation_hash=%s AND release_id=%s AND view_id=%s
+                 AND parameters=%s::jsonb
+               ORDER BY trial_no DESC LIMIT 1""",
+            (uid, org, topic["project_id"], implementation_hash, release_id, view_id,
+             json.dumps(parameters, ensure_ascii=False, sort_keys=True))).fetchone()
+        rerun_of = None
+        if prior and prior["release_ids"] == release_ids and prior["view_manifest_sha256"] == view_manifest_sha256 and is_deterministic_rerun(
+                {"implementation_hash": prior["implementation_hash"],
+                 "data_release_id": prior["release_id"],
+                 "view_id": prior["view_id"], "parameters": prior["parameters"]},
+                {"implementation_hash": implementation_hash, "data_release_id": release_id,
+                 "view_id": view_id, "parameters": parameters}):
+            rerun_of = prior["id"]
+        c.execute(
+            """INSERT INTO quant_factor_trials
+               (id,user_id,org_id,project_id,topic_id,branch_id,trial_no,kind,
+                implementation_hash,parameters,result_summary,report_id,executor,outcome,
+                returned_metrics,rerun_of,holding_period,view_id,release_id,release_ids,
+                view_manifest_sha256,contract_revision,as_of)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s)""",
+            (trial_id, uid, org, topic["project_id"], topic_id, branch_id, trial_no, kind,
+             implementation_hash, json.dumps(parameters, ensure_ascii=False),
+             json.dumps(result_summary, ensure_ascii=False), payload.get("report_id"),
+             executor, outcome, returned_metrics, rerun_of, holding, view_id,
+             release_id, json.dumps(release_ids, ensure_ascii=False),
+             view_manifest_sha256, contract_revision, as_of))
+        row = c.execute("SELECT * FROM quant_factor_trials WHERE id=%s", (trial_id,)).fetchone()
+    return _public(row)
+
+
+def threshold_view(uid: int, org: int, topic_id: str, k: int | None = None) -> dict:
+    topic = _topic(uid, org, topic_id)
+    trials = _trials(uid, org, topic_id)
+    current = current_k(trials, topic["primary_holding_period"])
+    if isinstance(k, str) and k.isdigit():
+        k = int(k)
+    selected = current if k is None else _as_int(k, "k", 1, 100000)
+    return {"k": selected, "current_k": current, "threshold": threshold(selected)}
+
+
 __all__ = [
     "COUNTED_OUTCOMES",
     "CONDITIONAL_OUTCOMES",
@@ -216,5 +470,12 @@ __all__ = [
     "k_after_append",
     "k_summary",
     "next_trial_no",
+    "append_trial",
+    "create_branch",
+    "create_topic",
+    "ledger_view",
+    "list_branches",
+    "list_topics",
     "sealed_request_error",
+    "threshold_view",
 ]

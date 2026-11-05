@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sparkles } from "lucide-react";
 import { api } from "../api";
 import { AiCard } from "../components/AiCard";
 import { EmptyState, ErrorState, LoadingCards, PageHeader, Tag } from "../components";
@@ -20,6 +19,7 @@ export default function QuantSelect() {
   const [ai, setAi] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const aiStarted = useRef(false);
 
   const load = () => {
     setError(null);
@@ -29,16 +29,23 @@ export default function QuantSelect() {
   };
   useEffect(load, []);
 
-  const explain = async () => {
+  const explain = async (refresh = false) => {
     setBusy(true);
     try {
-      setAi(await api<any>("/api/invest/ai/quant", { method: "POST" }));
+      setAi(await api<any>(`/api/invest/ai/quant?refresh=${refresh ? 1 : 0}`, { method: "POST" }));
     } catch (e: any) {
       setError(e.message);
     } finally {
       setBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (!data || aiStarted.current) return;
+    aiStarted.current = true;
+    void explain(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
 
   return (
     <div className="page">
@@ -63,7 +70,7 @@ export default function QuantSelect() {
                 <tr key={it.code}>
                   <td><button className="link-btn" onClick={() => nav(`/stock/${it.code}`)}>{it.name}</button><br /><span className="hint">{it.code}</span></td>
                   <td>{it.score}</td>
-                  <td>{it.parts?.map((p: any) => `${factorLabel(p[0])} ${p[1]}`).join(" · ") || t("待补充", "N/A")}</td>
+                  <td>{it.parts?.map((p: any) => `${factorLabel(p[0])} ${p[1]}`).join(" · ") || "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -81,10 +88,8 @@ export default function QuantSelect() {
       {!data?.items?.length && data ? (
         <EmptyState title={t("暂无候选", "No candidates yet")} detail={t("数据不足时不会给出名单。", "No list is shown when data is insufficient.")} />
       ) : null}
-      <button className="btn btn-primary btn-sm" onClick={() => void explain()} disabled={busy}>
-        <Sparkles size={14} /> {busy ? t("生成中…", "Generating…") : t("AI 解释打分口径", "AI: explain scoring method")}
-      </button>
-      {ai ? <AiCard data={ai} title={t("AI 量化解释", "AI quant commentary")} /> : null}
+      <p className="hint">{t("AI 解释自动生成 · 50 字结论 · 不满意可重新生成", "AI explanation is generated automatically · 50-character takeaway · regenerate if needed")}</p>
+      {ai ? <AiCard data={ai} title={t("AI 量化解释", "AI quant commentary")} onRegenerate={() => void explain(true)} busy={busy} /> : null}
       <Tag tone="gray">{t("历史口径 · 非真实收益", "Historical basis · not real returns")}</Tag>
     </div>
   );

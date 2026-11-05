@@ -258,10 +258,17 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 | Tab | 数据 | 说明 |
 |---|---|---|
 | 量化策略推送 | `GET /api/inst/ideas/push` | A 股机构公司池，按近 2-20 个交易日动量 + 估值初筛；只推动量为正、PE TTM 0-100、PB 为正的标的 |
-| 关注与自选 | `GET /api/inst/companies?pool_status=watch` | 观察池；可进入研究或取消关注 |
-| 当前持仓 | `GET /api/inst/portfolio` | 组合持仓、成本、市值、权重；可进入研究或跳投后 |
+| 关注与自选 | `GET /api/inst/companies?pool_status=watch` | 观察池；立项评估后进入研究，或取消关注 |
+| 当前持仓 | `GET /api/inst/portfolio` | 组合持仓、成本、市值、权重；复核立项或跳投后 |
 
 量化推送规则写在接口返回的 `strategy.note` 与页面底部：窗口自动缩短（测试库只有最近几天数据时会用 3 日）、收盘后计算、不是实时信号、不构成投资建议。推送卡片展示参考价、动量、PE TTM、PB MRQ、筛选理由与标签；`industry` 为指数代码（如 `801120.SI`）时显示「行业待补充」。
+
+**立项三问与决策门（2026-11-04）**
+
+- 三个入口统一走「立项评估」弹窗：为什么现在、能力圈、资料齐备；数据不足显示「核心缺失」并禁止立项。
+- 投资经理三选一：立项并进入研究 / 加入观察 / 放弃；三种决策都必须填写理由。
+- `POST /api/inst/ideas/{company_id}/decision` 记录 `inst_idea_decision`（source/action/reason/circle_confirmed/data_sufficiency/actor/time）；立项额外创建研究案，放弃写 `drop_reason`，并写审计。
+- 能力圈由投资经理勾选确认，不由规则或 AI 代替；规则建议明确标注「不是 AI 结论」。
 
 ### 11.2 研究页
 
@@ -292,3 +299,226 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 | 证据与反证 | 不再在页面底部内联罗列；页头增加「证据与反证（N）」入口，点击打开弹窗查看类型图例、来源、数据日期、原文摘录与解释；支持遮罩/关闭按钮/Esc 关闭 |
 | 五年 DCF | 按用户要求暂时移除计算器（研究页与辩论页均不再展示）；估值维度仍保留 DCF 假设的讨论与数据缺口提示，后续需要时再恢复 |
 | 页面排版 | 主区域改为六维分析（左）+ 版本与审核（右）两栏，AI 一页纸在下方整行；1024 窄屏自动堆叠，无横向溢出 |
+
+### 11.5 机会发现立项三问（2026-11-04）
+
+按《11.4 白欣宜主观机构端产品方案（开发版）》先落地立项决策门：
+
+| 项 | 实现 |
+|---|---|
+| 三问 | 为什么现在 / 能力圈 / 资料齐备；资料状态按 `data_status` + 市场判断，美股/港股标 `missing` |
+| 决策 | 立项并进入研究 / 加入观察 / 放弃；三种决策均必须填写理由 |
+| 约束 | 资料 `missing` 禁止立项；立项必须勾选能力圈确认；决策人必须是投资经理 |
+| 留痕 | 新表 `inst_idea_decision` 记录来源、动作、理由、能力圈确认、资料状态、操作人与时间；写 `idea.decision` 审计 |
+| 接口 | `POST /api/inst/ideas/{company_id}/decision` |
+| 前端 | 三个入口卡片统一「立项评估」弹窗；卡片显示资料齐备度；不直接跳研究 |
+
+验证：`pytest tests/test_inst_*.py` 54 passed；`e2e-10` 8 passed（新增立项三问弹窗用例）；`tsc` 与 `npm run test:inst` 通过。
+
+### 11.6 六维提示词与 CIO 一页纸（2026-11-04）
+
+按白欣宜产品方案的提示词和 CIO 合成口径升级：
+
+| 项 | 实现 |
+|---|---|
+| 六维提示词 | `inst-dim-v2`：产业/商业模式/护城河/财务/治理/估值补充数据纪律、分析框架、结论先行、区分事实/推断/不知道、每条结论附证伪条件；基准日使用输入 `as_of`，不再硬编码日期 |
+| 一页纸 | `inst.research_memo` 增加 `decision`（proceed/watch/avoid）、`six_dim_scores`、`conflicts`、`key_variables`；提示词加入否决/降级规则与冲突裁决 |
+| 校验 | `validate_research_memo`：decision 非法回落 watch；六维 key 与 1-5 分校验，非法项丢弃 |
+| 规则兜底 | AI 不可用时 `decision=watch`，不伪造评分/矛盾；页面显示“研究建议：观察” |
+| 前端 | 一页纸展示研究建议、六维评分、未解决分歧、关键变量；仍不给目标价或买卖指令 |
+
+验证：`pytest tests/test_inst_*.py` 56 passed；`e2e-10` 8 passed；`tsc`、`npm run test:inst` 通过。
+
+### 11.7 证据可信层与 hash 绑定（2026-11-04，B2）
+
+| 项 | 实现 |
+|---|---|
+| 证据分级 | `inst_evidence.grade` A-D：A 公告/年报、B 交易所/数据平台、C 第三方/媒体、D AI/推断；旧证据按来源幂等回填 |
+| PIT | `event_time` / `available_time` / `cutoff`；行情用交易日，财务用公告日；缺失日期以生成日兜底并标注 |
+| 原文锚点 | `document_id` / `page_ref` / `source_uri` 字段已建，当前数据源未提供时为空，不编造 |
+| 版本 hash | `inst_research_version.content_hash` + `cutoff`；生成时计算，旧版本在审核/辩论/议案前补齐 |
+| 议案绑定 | `inst_proposal_version.snapshot` 绑 `research_content_hash`、`research_cutoff`、`evidence_hash` |
+| 授权绑定 | 授权快照绑 `proposal_hash`、`research_content_hash`、`evidence_hash` |
+| 风控 | `hash_binding` 硬检查：研究内容/证据 hash 与快照不一致直接 block |
+| 辩论核验 | `inst_evidence_check` 记录 claim/证据核验状态；D 级不能单独支撑结论，无有效证据的论点 `valid=false` |
+| 前端 | 证据弹窗展示等级、可用时间、原文锚点；版本卡展示截止日、内容 hash、冻结时间；辩论页展示核验汇总与逐条证据状态 |
+
+验证（svquant_test，-28，dataDate 2026-11-03）：
+
+| 项 | 结果 |
+|---|---|
+| `pytest tests/test_inst_*.py` | 66 passed（新增 B2 证据/ hash 2 条，线性流程补 hash 断言） |
+| `tsc --noEmit` | 通过 |
+| `npm run test:inst` | 5 passed |
+| `e2e-09/10/11` | 13 passed |
+| 控制台错误 / 接口 5xx / 横向溢出 | 0 |
+
+### 11.8 AI 自动运行、50 字摘要与结果落盘（2026-11-05，PR A）
+
+| 项 | 实现 |
+|---|---|
+| 自动运行 | 研究一页纸、审批 AI 风控/Chairman 进入页面自动加载；有缓存直接展示，无缓存且有写权限才生成；按钮改为「重新生成」`refresh=true` |
+| 50 字摘要 | 六维 summary、一页纸 summary、审批/岗位 summary 及列表项均截 50 字；评分、证据、风险结构保留；辩论 claim 前端显示 50 字摘要，完整原文悬浮 |
+| 落库 | 新增 `ai_agent_output` 缓存（task + org + 对象 + 输入 hash + 提示词版本）；一页纸/审批 AI 命中缓存不重复调用模型；规则兜底不缓存，保留重试 AI 的机会 |
+| 追问落库 | 新增 `inst_ai_chat_message`，单维追问按用户持久化；进入维度加载历史，发送带 `client_message_id` |
+| 提示词覆盖 | 新增 `ai_agent_prompt` + `services/institution/prompts.py` 默认提示词；`_ai_task`、六维、辩论调用前解析全局覆盖，版本 +1 后缓存自动失效 |
+| 安全 | 生成仍受机构工作区权限约束；AI 只读，不改审批/授权/持仓状态 |
+
+验证：`pytest tests/test_inst_*.py` 69 passed；新增 AI cache/prompt test；`tsc` 通过。Agent 管理 UI 在 PR B。
+
+### 11.9 机构端 Agent 管理（2026-11-05，PR B）
+
+| 项 | 实现 |
+|---|---|
+| 入口 | `/inst/about`，原「Agent能力」页改为「Agent 管理」；侧栏名称同步 |
+| 目录 | 展示 51 个 Agent：机构 15 个（含独立行业分析）、平台 TaskSpec 28 个、Agent 技能 8 个；支持分组、搜索 |
+| 可编辑 | 投资经理可改机构 Agent 提示词；平台/技能本批只读，标注「只读」；H5/invest Agent 由 #95 的 H5 页面管理 |
+| 版本 | 保存写入 `ai_agent_prompt` 新版本、旧版本归档；可查看历史、恢复默认；提示词版本变化自动失效 AI 结果缓存 |
+| 权限 | 机构角色登录可看；保存/重置/历史仅 `manager`；其他角色看不到提示词正文 |
+| 安全 | 系统仍强制 JSON 校验、50 字摘要、证据引用与风控约束；提示词不能关闭这些规则 |
+| 审计 | `ai_agent_prompt` 保留版本/操作人/时间；保存/重置同时写系统审计 |
+
+验证：`pytest tests/test_inst_*.py` 70 passed（含 Agent 目录/权限/版本/重置）；`e2e-09/10/11` 14 passed；`tsc`、`npm run test:inst` 通过。
+
+### 11.10 价值分析页：独立行业分析、K 线与研究区间（2026-11-05，11.5 文档第一批）
+
+按《11.5 主观机构使用说明》先落地价值分析页：
+
+| 项 | 实现 |
+|---|---|
+| 独立行业分析 | 新增 `inst.industry` Agent 与 `inst_research_version.industry_analysis`；与六维并行生成，独立卡片展示空间/周期/产业链/竞争/政策摘要、反证与数据缺口 |
+| K 线 | 新增 `GET /api/inst/companies/{id}/bars`（未复权日线，最近 120 日）；研究页右上 K 线卡，测试库数据不足时显示实际可用根数 |
+| 一页纸 | 增加 `price_range`（low/base/high，注明“研究区间，不是目标价”）与 `holding_period`（条件性期限）；规则兜底从版本估值区间生成 |
+| 页面顺序 | 公司信息 → 行业分析 + K 线 → 六维/版本 → 一页纸，符合 11.5 文档的“第二行”结构；1024 自动堆叠 |
+| 自动保存 | 行业分析随版本落库并纳入 content_hash；一页纸缓存/重生成沿用现有机制 |
+
+验证：pytest 71 passed、e2e-09/10/11 14 passed、tsc/unit 通过。
+
+后续批次（未在本 PR）：退回勾选行业/维度并重跑、辩论页投资意见与可编辑议案、合伙人→风控→Chairman 多人审批、组合/投后逐持仓状态与退出备忘录。
+
+### 11.11 退回勾选与按板块重跑（2026-11-05，11.5 文档第二批）
+
+按《11.5 主观机构使用说明（欣宜2）》补齐价值分析页的退回闭环：
+
+- 研究页「退回」改为弹窗：勾选「行业分析」和/或六个维度，填写退回原因；至少选一项。
+- `POST /api/inst/research/{version_id}/review` 支持 `targets`；退回后自动重跑所选板块/维度并生成新版本（版本 +1），未选内容保留。
+- 行业分析与六维均可单独重跑；旧版本置为 `changed`，新版本回到 `pending_review`。
+- 重跑复用现有 AI Agent、提示词覆盖、证据 hash 与 50 字摘要规则。
+
+验证：pytest 72 passed、e2e-09/10/11 14 passed、tsc/unit 通过。
+
+### 11.12 辩论后投资意见与可编辑议案（2026-11-05，11.5 欣宜2 第三批）
+
+按新文档补齐第③步：
+
+- 辩论完成后不再自动建案跳转；页面展示议案骨架（方向、目标仓位、价格上下限、资金来源、有效期、监控/退出条件），由投资经理确认/修改。
+- 新增「投资意见」独立输入区，生成议案时一并写入议案快照并送审批；审批页展示。
+- 价格上下限默认取研究估值区间，可收窄/放宽；注明“研究区间，不是目标价”。
+- 后端 `POST /cases/{id}/proposals` 显式接收并校验方向、仓位、价格、资金来源、有效期、监控条件、投资意见；不再允许 config 任意覆盖锁定的研究/辩论绑定字段。
+- 退出研究案仍强制 exit/0，不可建买入议案。
+
+验证：pytest 72 passed、e2e-09/10/11 14 passed、tsc/unit 通过。
+
+### 11.13 投委会审批顺序、多人审批与六项风控（2026-11-05，11.5 欣宜2 第四批）
+
+按新文档补齐第④步：
+
+- 审批顺序固定为 合伙人 → 独立风控 → Chairman，不能跳级；风控未放行不能进 Chairman。
+- 同角色支持多人：审批记录按人留痕，附意见与条件；提案人不得审批自己的议案。
+- 风控任一审批人否决即终局（`frozen`），Chairman 不能批准；风控通过后、Chairman 批准前仍可追加否决。
+- 六项风控检查：集中度（同发行人 ≤15%、同行业 ≤30%，含跨市场同公司）、交易后现金 ≥10%、研究/辩论/证据版本一致、有效期与价格、交易资格（停牌/涨跌停/ST/资金或持仓）、重复与冲突。
+- 合伙人/风控/Chairman 均支持「附条件」；条件写入审批记录并进入授权快照，执行前需执行人确认条件已满足（`conditions_met=true`）。
+- 审批页按角色展示可执行动作、多人审批链与六项检查结果。
+
+验证：pytest 75 passed、e2e-09/10/11 14 passed、tsc/unit 通过。
+
+### 11.14 投资管理合并、单票盘中管理与 K 线升级（2026-11-05，11.5 欣宜2 第五批）
+
+按新文档补齐第⑥步与行情图：
+
+- 「投资组合」更名为「投资管理」；「投后管理」不再作为独立菜单，旧 `/inst/monitor` 重定向到 `/inst/portfolio`，接口权限保留。
+- 投资管理主页保留组合总览、持仓明细、组合约束、行业敞口、执行异常，并新增「在途退出审理」回链。
+- 持仓行新增「查看详情（盘中管理）」→ `/inst/portfolio/:symbol` 单票页：持股信息、买入论点台账、监控事件与论点核对、投资经理意见。
+- 论点台账从最近买入议案/研究版本重新生成，旧台账保留；仅在用户点「重新生成台账」时写入，不自动覆盖。
+- 自动监控扫描：复核到期与价格较成本下跌超 10% 自动登记事件（7 天内去重），由有写权限用户点「重新扫描」触发。
+- 经理意见可「记录并继续持有」或「提交减仓/清仓审理」，退出仍走研究 → 辩论 → 审批全流程。
+- K 线支持日/周/月切换（周月由日线聚合）、MA5/10/20/60 勾选、30 秒轮询；分时/1/5/15/60 分钟按钮保留，但当前行情源只有日线，明确返回「未接入」而不是伪造数据。
+
+验证：pytest 78 passed、e2e-09/10/11 15 passed、tsc/unit 通过。
+
+### 11.15 机会发现移除立项三问（2026-11-05）
+
+- 候选卡移除「立项评估」入口和三问弹窗（为什么现在 / 能力圈 / 资料齐备）。
+- 每个公司卡直接展示「进入研究」「放弃」两个动作；持仓卡同样可重新立项或放弃。
+- 进入研究直接创建研究案并进入价值分析；核心资料缺失或美股/港股无数据源的标的禁用立项并说明原因。
+- 放弃时要求填写理由，写入 `inst_idea_decision`、公司池 `drop_reason` 与审计。
+
+验证：e2e-09/10/11 15 passed、tsc/unit 通过。
+
+### 11.16 Agent 提示词按 11.5 全集更新，移除 50 字限制（2026-11-05）
+
+- 机构端所有 Agent 默认提示词改为「§0 通用底座 + 对应 Agent 段落」：行业 A03、六维 A04–A09、一页纸 A10、辩论 A11/A12/A15/A16、风控 A19、Chairman A20、岗位 A07/A13、A08/A09、A23/A24。
+- 六个维度使用 A04–A09 共用的「六维统一输出契约」；一页纸使用 A10 的 dimension_scores / price_band / memo_md 等字段；风控与 Chairman 使用 A19/A20 的 checks / verdict / conditions / proposed_authorization 字段。
+- validator 兼容新契约并归一化为平台字段（summary / checks / counter / evidence / risks / open_questions / six_dim_scores / price_range），旧缓存与旧调用不受影响。
+- 移除 50 字摘要限制：后端不再截断 summary/checks/counter/risks 等；前端去掉 `clipBrief` 截断与「50 字摘要」文案。
+- 研究页新增「完整分析 / 完整行业分析 / 完整一页纸与六张表」折叠区，展示 analysis_md / memo_md 全文；六维显示评级与 gate。
+- Agent 管理中已保存的自定义提示词仍优先于默认值；需要采用新默认值时在 Agent 管理里「恢复默认」。
+
+验证：pytest 81 passed、e2e-09/10/11 15 passed、tsc/unit 通过。
+
+### 11.17 行业 Agent 空内容根因修复（2026-11-05）
+
+**根因**：LLM 网关当前模型是推理模型。`inst.industry` 的 `max_tokens=3000` 全部被推理 token 消耗（`reasoning_tokens=3000`、`finish_reason=length`），正式 `content` 为空；网关 `_normalize` 只看到空 content，丢弃了 `finish_reason` 与 reasoning 用量，直接抛 `AiBadOutput`，且空内容不触发重试/兜底，最终变成研究 500。
+
+**修复**：
+- 提高机构端任务输出预算：行业/一页纸/辩论 16000，六维/岗位 12000，风控/Chairman 8000，单维追问 4000；超时同步放宽。
+- 网关保留 `finish_reason`、`reasoning_tokens`、`reasoning_chars` 并记录日志；`finish_reason=length` 抛新的 `AiOutputTruncated`。
+- `complete` 遇到截断自动把 `max_tokens` 翻倍重试（上限 `LLM_MAX_OUTPUT_TOKENS`，默认 32000），再切换兜底模型；`content_filter` 不重试。
+- `.env.example` 增加 `LLM_MAX_OUTPUT_TOKENS` 说明。
+
+**实测**：同一行业 Prompt 走后端真实网关——
+- `max_tokens=3000`：reasoning 3000、content 0、finish_reason=length（复现空内容）；
+- `max_tokens=12000`：reasoning 6092、content 9943、finish_reason=stop；
+- `max_tokens=16000`：reasoning 8230、tokens_out 15087、JSON 通过 validator。
+- 不再依赖 #104 的“失败即降级”兜底；正常路径即可产出完整行业分析。
+
+验证：`pytest tests/test_inst_*.py tests/test_llm_fallback.py tests/test_ai_router.py tests/test_ai_layer_boundary.py` 114 passed。
+
+### 11.18 Agent 管理只展示机构端 Agent（2026-11-05）
+
+- `GET /api/inst/agents` 只返回 `source=institution` 的主观机构端 Agent，不再混入平台 Agent 与 Agent 技能。
+- 页面移除「机构/平台/技能/全部」筛选，只保留搜索；卡片去掉来源徽标，描述改为「只展示主观机构端自己的 Agent」。
+- 平台/个人中心的 Agent 目录接口不受影响。
+
+验证：pytest `test_inst_agent_prompt_api.py` 通过；e2e-10 Agent 管理用例通过；tsc 通过。
+
+### 11.19 AI 一页纸持久化（2026-11-05）
+
+**问题**：进入已有研究案仍显示「AI 一页纸生成中」。原因是只按 `input_hash + prompt_version` 精确命中缓存；提示词/输入变化（包括本次 11.5 提示词升级）后，已有 AI 输出无法命中，页面每次进入都重新调用模型；规则兜底结果又因为 `engine=rule` 不落盘，导致每次进入都重算。
+
+**修复**：
+- `GET /cases/{id}/ai/memo` 改为只读 peek：命中已持久化结果直接返回，未命中返回 `missing`，不触发生成。
+- `POST /cases/{id}/ai/memo` 仅在用户进入页面且确实没有结果时生成；生成后无论 AI 还是规则兜底都写入 `ai_agent_output`，提示词变化不再让旧结论消失。
+- 精确缓存未命中时按 `scope_key`（研究案 + 版本）读取最近一次结果，返回 `cached=true` / `stale=true`；用户点「重新生成一页纸」才覆盖。
+- 前端进入页面先 GET；已持久化时直接展示，只有写角色且无结果才 POST 生成；显示「已持久化 · 可重新生成」提示。
+- 风控/Chairman AI 摘要同样增加 scope 最近结果回退，提示词变化不会导致页面反复重新生成。
+
+**实测**：已有研究案首次 POST 生成规则/AI 结论并落盘；随后 GET 直接返回同一 `summary`（`cached=true`），再次 POST 不再调用模型；E2E 用例覆盖。
+
+验证：`pytest tests/test_inst_*.py tests/test_llm_fallback.py` 91 passed；e2e-10 一页纸持久化用例通过；tsc 通过。
+
+### 11.20 投委会审批四套角色页面（2026-11-05，11.5 欣宜3）
+
+按新文档把审批台改为「一个入口、四套角色页面」，权限由服务端强制：
+
+- **投资经理**：只读「我的议案」，只看自己提交的议案与三关进度；无审批按钮、无风控逐项核查、无任何 Agent 建议。
+- **合伙人**：待审/已审；详情为议案 + 投资意见 + 研究与辩论摘要 + 操作区；右侧只放「合伙人 Agent · 审批建议」（新增 A18 Agent）。
+- **独立风控**：待审/已审；详情为议案 + 投资意见 + 六项硬约束 + 交易资格 + 合伙人结论 + 操作区；右侧只放风控 Agent；不展示研究与辩论全文。
+- **Chairman**：待审/已审；详情为议案 + 完整审批链 + 风控结论 + 研究与辩论裁决 + 操作区；右侧只放 Chairman Agent；不展示六项逐条明细。
+- 页面骨架统一为左侧单列主工作区（约 72%）+ 右侧固定辅助区（约 28%）；顶部吸顶摘要条显示标的、版本、当前关卡、总体状态与角色。
+- 列表按角色过滤：只显示轮到你这一关且你本人尚未给意见的议案；已审进入「已审」，进度显示「已审 x / 共 n」。
+- 跨角色直接打开议案返回 403「该议案不在你当前角色的审批范围」，不会退化成只读完整审批页。
+- 同角色多人改为**全部给出意见才推进下一关**；任一风控否决仍立即冻结终局；附条件随议案传递。
+- 新增 `inst.partner_memo`（A18 合伙人 Agent）及 `/proposals/{id}/ai/partner-memo`，结果按议案版本落盘。
+
+验证：pytest 92 passed、e2e-09/10/11/12 共 17 passed、tsc/unit 通过。

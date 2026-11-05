@@ -63,13 +63,36 @@ async function holdingQty(request: APIRequestContext, symbol: string): Promise<n
     .reduce((sum: number, p: any) => sum + Number(p.qty || 0), 0);
 }
 
-test("辩论自动建案 → 审批 → 自动授权成交 → 持仓更新", async ({ page, request }) => {
+test("辩论后补议案 → 审批 → 自动授权成交 → 持仓更新", async ({ page, request }) => {
   test.skip(!writeEnabled, "写库用例需要 INST_E2E_ALLOW_WRITE=1 且服务端库名为 svquant_test");
   test.setTimeout(300_000);
 
-  const companies = await call(request, "GET", "/api/inst/companies?q=600519&limit=1", T.manager);
-  const company = (companies.items || [])[0];
-  expect(company, "找不到 600519").toBeTruthy();
+  // 选一只尚未持有、且行业未过度集中的标的：重复运行不会把自己持有的票越买越集中。
+  const portfolioBefore = await call(request, "GET", "/api/inst/portfolio", T.manager);
+  const positionsBefore = (portfolioBefore.positions || []).filter((p: any) => Number(p.qty) > 0);
+  const held = new Set(positionsBefore.map((p: any) => String(p.symbol)));
+  const crowded = new Set(
+    positionsBefore
+      .filter((p: any) => Number(p.weight || 0) > 0.2 && p.industry)
+      .map((p: any) => String(p.industry)),
+  );
+  const companies = await call(request, "GET", "/api/inst/companies?limit=200", T.manager);
+  const company = (companies.items || []).find(
+    (c: any) =>
+      c.market === "CN" &&
+      Number(c.ref_price) >= 5 &&
+      c.data_status === "real" &&
+      c.up_down_status === "非涨跌停" &&
+      !c.is_st &&
+      !c.is_suspended &&
+      !String(c.name || "").includes("ST") &&
+      !String(c.name || "").includes("退") &&
+      !held.has(String(c.symbol)) &&
+      !crowded.has(String(c.industry || "")) &&
+      // 风控会硬阻断 ST/*ST/退市整理标的，E2E 不选它们。
+      !/(^|\*)ST|退/.test(String(c.name || "")),
+  );
+  expect(company, "找不到可用于买入流程的未持仓标的").toBeTruthy();
   const symbol = String(company.symbol);
   const beforeQty = await holdingQty(request, symbol);
 
@@ -93,29 +116,35 @@ test("辩论自动建案 → 审批 → 自动授权成交 → 持仓更新", as
     use_ai: false,
   });
 
-  // 打开辩论页：应自动创建议案并跳到审批页。
+  // 打开辩论页：填写投资意见并生成议案（不再自动建案跳转）。
   await page.addInitScript((t) => sessionStorage.setItem("svquant_inst_token", t), T.manager);
   await page.goto(`${BASE}/inst/debate?case=${caseId}`, { waitUntil: "networkidle" });
+  await page.getByTestId("inst-investment-opinion").fill("E2E 投资意见：关键假设与退出条件");
+  // 价格区间必须覆盖现价，否则风控会按「现价超出批准区间」否决。
+  await page.getByTestId("inst-price-low").fill("1");
+  await page.getByTestId("inst-price-high").fill("1000");
+  await page.getByTestId("inst-proposal-create").click();
   await page.waitForURL(/\/inst\/approvals\?proposal=\d+/, { timeout: 60_000 });
   const proposalId = Number(new URL(page.url()).searchParams.get("proposal"));
   expect(proposalId).toBeGreaterThan(0);
 
-  // 合伙人 → Chairman → 风控。
+  // 顺序固定：合伙人 → 风控 → Chairman。
   await call(request, "POST", `/api/inst/proposals/${proposalId}/partner`, T.partner, {
     decision: "approve",
   });
+  const risk = await call(request, "POST", `/api/inst/proposals/${proposalId}/risk-check`, T.risk, {});
+  expect(risk.status, "风控应放行").toBe("chairman_review");
   await call(request, "POST", `/api/inst/proposals/${proposalId}/chairman`, T.chairman, {
     decision: "approve",
   });
-  await call(request, "POST", `/api/inst/proposals/${proposalId}/risk-check`, T.risk, {});
 
-  // 方案 B：最后一关一次完成授权 + 模拟成交。
+  // 方案 B：授权 + 模拟成交。
   const executed = await call(
     request,
     "POST",
     `/api/inst/proposals/${proposalId}/approve-and-execute`,
     T.chairman,
-    { price: 100 },
+    { price: Number(company.ref_price) || 42 },
   );
   expect(executed.proposal?.status).toBe("executed");
   expect(executed.execution?.order?.side).toBe("buy");

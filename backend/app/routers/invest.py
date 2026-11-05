@@ -17,9 +17,11 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from app.deps import require_user
 from services.core.db import get_conn
 from services.core.public_switches import disabled_modules
-from services.invest import agent_tools
+from services.invest import agent_prompts, agent_tools
+from services.invest import condition as condition_service
 from services.invest import etf as etf_service
 from services.invest import glossary as glossary_service
+from services.invest import quant
 from services.invest import rules
 from services.invest.db import PGConn, invest_conn
 
@@ -93,6 +95,11 @@ def home(
     conn: PGConn = Depends(invest_conn),
 ) -> dict[str, Any]:
     return rules.build_home(conn, _uid(user), market)
+
+
+@router.get("/topics", dependencies=[Depends(_guard("topic"))])
+def topics(conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
+    return rules.build_topics(conn)
 
 
 @router.get("/topic/{topic_id}", dependencies=[Depends(_guard("topic"))])
@@ -232,6 +239,315 @@ def quant_signals(
     return agent_tools.quant_signals(_uid(user))
 
 
+# ---------------------------------------------------------------------------
+# AI Agent 管理：展示 H5 可用 Agent，按用户保存提示词覆盖
+# ---------------------------------------------------------------------------
+
+@router.get("/agents")
+def agents(
+    user: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    return agent_prompts.list_agents(_uid(user))
+
+
+@router.put("/agents/{task_id}")
+def agent_prompt_save(
+    task_id: str,
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    try:
+        data = agent_prompts.save_prompt(_uid(user), task_id, str(body.get("prompt") or ""))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, **data}
+
+
+# ---------------------------------------------------------------------------
+# 量化研究（11.4 功能设计）：因子 / 草稿 / 策略 / 回测 / 模拟盘 / 广场
+# ---------------------------------------------------------------------------
+
+def _quant_call(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except quant.QuantDataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/quant/overview")
+def quant_overview(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return _quant_call(quant.overview, conn, _uid(user))
+
+
+@router.get("/quant/factors")
+def quant_factors(
+    range: str = Query("1m"),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return _quant_call(quant.factor_board, conn, range)
+
+
+@router.get("/quant/factors/{key}")
+def quant_factor_detail(
+    key: str,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.factor_detail, conn, key)
+    if not data:
+        raise HTTPException(status_code=404, detail="因子不存在")
+    return data
+
+
+@router.get("/quant/drafts")
+def quant_drafts(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return _quant_call(quant.list_drafts, conn, _uid(user))
+
+
+@router.post("/quant/drafts")
+def quant_draft_create(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.create_draft, conn, _uid(user), body)
+    conn.commit()
+    return data
+
+
+@router.delete("/quant/drafts/{draft_id}")
+def quant_draft_delete(
+    draft_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    _quant_call(quant.delete_draft, conn, _uid(user), draft_id)
+    conn.commit()
+    return {"ok": True}
+
+
+@router.post("/quant/strategies/parse")
+def quant_strategy_parse(
+    body: dict[str, Any] = Body(...),
+    _user: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    return _quant_call(quant.parse_intent, str(body.get("text") or body.get("query") or ""))
+
+
+@router.get("/quant/strategies")
+def quant_strategies(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return _quant_call(quant.list_strategies, conn, _uid(user))
+
+
+@router.post("/quant/strategies")
+def quant_strategy_create(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.create_strategy, conn, _uid(user), body)
+    conn.commit()
+    return data
+
+
+@router.get("/quant/strategies/{strategy_id}")
+def quant_strategy_detail(
+    strategy_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.strategy_detail, conn, _uid(user), strategy_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="策略不存在")
+    conn.commit()
+    return data
+
+
+@router.delete("/quant/strategies/{strategy_id}")
+def quant_strategy_delete(
+    strategy_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    _quant_call(quant.delete_strategy, conn, _uid(user), strategy_id)
+    conn.commit()
+    return {"ok": True}
+
+
+@router.get("/quant/backtests")
+def quant_backtests(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return _quant_call(quant.list_backtests, conn, _uid(user))
+
+
+@router.post("/quant/backtests")
+def quant_backtest_create(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(
+        quant.run_backtest,
+        conn,
+        body.get("factors"),
+        body.get("universe"),
+        persist=True,
+        user_id=_uid(user),
+        name=body.get("name"),
+        project_id=body.get("project_id"),
+    )
+    conn.commit()
+    return data
+
+
+@router.get("/quant/backtests/{backtest_id}")
+def quant_backtest_detail(
+    backtest_id: str,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.get_backtest, conn, _uid(user), backtest_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="回测记录不存在")
+    return data
+
+
+@router.post("/quant/backtests/{backtest_id}/commentary")
+def quant_backtest_commentary(
+    backtest_id: str,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+    refresh: bool = Query(False),
+) -> dict[str, Any]:
+    data = _quant_call(quant.get_backtest, conn, _uid(user), backtest_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="回测记录不存在")
+    payload = {
+        "name": data.get("name"), "factors": data.get("factors"), "universe": data.get("universe"),
+        "period": {"start": data.get("start_date"), "end": data.get("end_date")},
+        "metrics": data.get("metrics"), "assumptions": data.get("assumptions"),
+        "holdings": data.get("holdings"),
+        "note": "历史回测结果，非真实收益；AI 不得改算任何数值。",
+    }
+    return _quant_call(quant.ai_commentary, "backtest", payload, user_id=_uid(user), refresh=refresh)
+
+
+@router.get("/quant/papers")
+def quant_papers(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    return _quant_call(quant.list_papers, conn, _uid(user))
+
+
+@router.post("/quant/papers")
+def quant_paper_create(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.create_paper, conn, _uid(user), body)
+    conn.commit()
+    return data
+
+
+@router.get("/quant/papers/{paper_id}")
+def quant_paper_detail(
+    paper_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.paper_detail, conn, _uid(user), paper_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="模拟盘不存在")
+    conn.commit()
+    return data
+
+
+@router.post("/quant/papers/{paper_id}/commentary")
+def quant_paper_commentary(
+    paper_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+    refresh: bool = Query(False),
+) -> dict[str, Any]:
+    data = _quant_call(quant.paper_detail, conn, _uid(user), paper_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="模拟盘不存在")
+    return _quant_call(quant.ai_commentary, "paper", data, user_id=_uid(user), refresh=refresh)
+
+
+@router.delete("/quant/papers/{paper_id}")
+def quant_paper_delete(
+    paper_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    _quant_call(quant.delete_paper, conn, _uid(user), paper_id)
+    conn.commit()
+    return {"ok": True}
+
+
+@router.get("/quant/plaza")
+def quant_plaza(
+    sort: str = Query("followers"),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.list_plaza, conn, _uid(user), sort)
+    conn.commit()
+    return data
+
+
+@router.get("/quant/plaza/{plaza_id}")
+def quant_plaza_detail(
+    plaza_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.get_plaza, conn, _uid(user), plaza_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="策略不存在")
+    conn.commit()
+    return data
+
+
+@router.post("/quant/plaza/{plaza_id}/copy")
+def quant_plaza_copy(
+    plaza_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    data = _quant_call(quant.copy_plaza, conn, _uid(user), plaza_id)
+    conn.commit()
+    return data
+
+
+@router.post("/quant/plaza/{plaza_id}/follow")
+def quant_plaza_follow(
+    plaza_id: int,
+    body: dict[str, Any] | None = Body(None),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    payload = body or {}
+    data = _quant_call(quant.follow_plaza, conn, _uid(user), plaza_id, bool(payload.get("followed", True)))
+    conn.commit()
+    return data
+
+
 @router.get("/watchlist")
 def watchlist(
     market: str = Query("CN"),
@@ -272,6 +588,92 @@ def remove_watchlist(
     conn.execute("DELETE FROM invest_watchlist WHERE user_id=? AND code=?", (_uid(user), code))
     conn.commit()
     return rules.build_watchlist(conn, _uid(user), market)
+
+
+@router.post("/condition/parse")
+def parse_condition(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """解析自然语言选股条件；只解析，不执行。"""
+    del user
+    return condition_service.parse_query(str(body.get("query") or ""))
+
+
+@router.post("/condition/screen")
+def screen_condition(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """执行条件筛选。
+
+    前端删除标签后回传 ``conditions``；首次请求可只传 ``query``。
+    未识别、冲突或资金流等无数据源的条件直接返回 needs_input，绝不猜测执行。
+    """
+    del user
+    query = str(body.get("query") or "").strip()
+    parsed: dict[str, Any] | None = None
+    raw_conditions = body.get("conditions")
+    if isinstance(raw_conditions, list) and raw_conditions:
+        conds = condition_service.normalize_conditions([c for c in raw_conditions if isinstance(c, dict)])
+        if not conds:
+            raise HTTPException(status_code=400, detail="没有可执行条件")
+    else:
+        parsed = condition_service.parse_query(query)
+        conds = parsed["conditions"]
+        if not parsed["all_recognized"]:
+            message = parsed.get("message")
+            if parsed.get("unrecognized"):
+                message = "有部分条件暂时无法识别，请按下面的说法调整后重试。"
+            elif parsed.get("conflicts"):
+                message = "条件之间存在冲突，未执行筛选。"
+            elif parsed.get("unsupported"):
+                message = "当前版本暂不支持该类条件，未执行筛选。"
+            return {**parsed, "status": "needs_input", "message": message}
+    unsupported = [c for c in conds if not c.get("supported", True)]
+    if unsupported:
+        return {
+            "ok": True, "status": "needs_input", "conditions": conds,
+            "query": query, "unsupported": unsupported,
+            "message": "当前版本暂不支持该类条件，未执行筛选。",
+            "disclaimer": condition_service.DATA_DISCLAIMER,
+        }
+    result = condition_service.screen_conditions(conn, conds)
+    result["query"] = query
+    if parsed:
+        result["parsed"] = parsed
+    return result
+
+
+@router.post("/condition/watchlist")
+def condition_watchlist(
+    body: dict[str, Any] = Body(...),
+    market: str = Query("CN"),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """把筛选结果批量存为自选分组。"""
+    codes = [str(c) for c in (body.get("codes") or []) if str(c).strip()][:200]
+    if not codes:
+        raise HTTPException(status_code=400, detail="缺少标的")
+    group = str(body.get("group") or "条件选股").strip()[:40] or "条件选股"
+    existing = {
+        str(r["code"]) for r in rules.rows(
+            conn, "SELECT code FROM stocks WHERE code = ANY(?)", (codes,)
+        )
+    }
+    kept = [c for c in codes if c in existing]
+    added = 0
+    for code in kept:
+        cur = conn.execute(
+            "INSERT INTO invest_watchlist (user_id, code, group_name, created_at) VALUES (?,?,?,?) "
+            "ON CONFLICT (user_id, code) DO NOTHING",
+            (_uid(user), code, group, _now()),
+        )
+        added += max(0, int(getattr(cur, "rowcount", 0) or 0))
+    conn.commit()
+    return {"ok": True, "added": added, "group": group, "watchlist": rules.build_watchlist(conn, _uid(user), market)}
 
 
 @router.post("/events")

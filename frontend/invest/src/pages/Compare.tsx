@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Sparkles } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { api } from "../api";
 import { AiCard, type AiCardData } from "../components/AiCard";
 import { Disclaimer, ErrorState, PageHeader, Tag } from "../components";
@@ -57,6 +57,7 @@ export default function Compare() {
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState("");
   const [results, setResults] = useState<any[]>([]);
+  const aiStarted = useRef("");
 
   useEffect(() => {
     if (b) return;
@@ -83,11 +84,11 @@ export default function Compare() {
       .catch((e) => setError(e.message));
   }, [a, b]);
 
-  const runAi = async () => {
+  const runAi = async (refresh = false) => {
     setBusy(true);
     setError(null);
     try {
-      const data = await api<any>("/api/invest/ai/compare", {
+      const data = await api<any>(`/api/invest/ai/compare?refresh=${refresh ? 1 : 0}`, {
         method: "POST",
         body: JSON.stringify({ a, b }),
       });
@@ -98,6 +99,15 @@ export default function Compare() {
       setBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (!sa || !sb || !a || !b) return;
+    const key = `${a}|${b}`;
+    if (aiStarted.current === key) return;
+    aiStarted.current = key;
+    void runAi(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sa, sb, a, b]);
 
   return (
     <div className="page">
@@ -147,18 +157,17 @@ export default function Compare() {
                     <td>{t(row.label.zh, row.label.en)}</td>
                     {[sa, sb].map((s, i) => {
                       const v = cell(s, row.key);
-                      return <td key={i}>{v == null ? t("待补充", "Pending") : row.fmt ? row.fmt(v) : String(v)}</td>;
+                      return <td key={i}>{v == null ? "—" : row.fmt ? row.fmt(v) : String(v)}</td>;
                     })}
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p className="hint">{t("数据缺失时显示“待补充”；对比不构成投资建议。", "Missing data shows as \"Pending\"; this comparison is not investment advice.")}</p>
+            <p className="hint">{t("缺失项显示 —；对比不构成投资建议。", "Missing values show as —; this comparison is not investment advice.")}</p>
           </div>
-          <button className="btn btn-primary btn-sm" onClick={() => void runAi()} disabled={busy}>
-            <Sparkles size={15} /> {busy ? t("生成中…", "Generating…") : t("生成 AI 对比解读", "Generate AI comparison")}
-          </button>
-          {ai ? <AiCard data={ai} /> : null}
+          <p className="hint">{t("AI 对比结论自动生成 · 50 字以内 · 不满意可重新生成", "AI comparison is generated automatically · 50-character takeaway · regenerate if needed")}</p>
+          {busy && !ai ? <div className="ai-loading">{t("AI 正在对比…", "AI is comparing…")}</div> : null}
+          {ai ? <AiCard data={ai} onRegenerate={() => void runAi(true)} busy={busy} /> : null}
         </>
       ) : null}
       <Disclaimer>{t("AI 生成内容仅作研究辅助，不构成投资建议。", "AI-generated content is for research support only and is not investment advice.")}</Disclaimer>

@@ -83,6 +83,28 @@ def ideas_push(
     return {"ok": True, **svc.ideas_push(org_id, limit=limit)}
 
 
+@router.post("/ideas/{company_id}/decision")
+def decide_idea(
+    company_id: int,
+    body: dict[str, Any],
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "ideas")
+    try:
+        return svc.record_idea_decision(
+            org_id,
+            company_id,
+            source=str(body.get("source") or "push"),
+            action=str(body.get("action") or "watch"),
+            reason=body.get("reason"),
+            circle_confirmed=body.get("circle_confirmed") is True,
+            actor_member_id=member_id,
+        )
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.get("/companies/{company_id}")
 def company(company_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
@@ -91,6 +113,23 @@ def company(company_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -
     if not data:
         raise HTTPException(status_code=404, detail="公司不存在")
     return {"ok": True, **data}
+
+
+@router.get("/companies/{company_id}/bars")
+def company_bars(
+    company_id: int,
+    limit: int = 120,
+    period: str = "day",
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, _, _ = _ctx(ctx)
+    perms = ctx.get("permissions") or {}
+    if perms.get("research", "none") == "none" and perms.get("portfolio", "none") == "none":
+        raise HTTPException(status_code=403, detail="当前角色无权访问该工作区")
+    try:
+        return {"ok": True, **svc.company_bars(org_id, company_id, limit=limit, period=period)}
+    except Exception as exc:
+        raise _handle(exc) from exc
 
 
 @router.post("/companies/{company_id}/pool")
@@ -199,6 +238,7 @@ def review_research(
                 version_id,
                 decision=str(body.get("decision") or "approve"),
                 comment=body.get("comment"),
+                targets=[str(x) for x in (body.get("targets") or [])] or None,
                 actor_member_id=member_id,
             ),
         }
@@ -250,12 +290,52 @@ def export_case_report(
     )
 
 
-@router.post("/cases/{case_id}/ai/memo")
-def research_memo(case_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+@router.get("/cases/{case_id}/ai/memo")
+def research_memo_cached(case_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    """只读取已持久化的一页纸；没有则返回 missing，由前端决定是否触发生成。"""
     org_id, _, _ = _ctx(ctx)
     _require_ws(ctx, "research")
     try:
-        return {"ok": True, **svc.ai_research_memo(org_id, case_id)}
+        return {
+            "ok": True,
+            **svc.ai_research_memo(org_id, case_id, refresh=False, generate=False),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/cases/{case_id}/ai/memo")
+def research_memo(
+    case_id: int,
+    body: dict[str, Any] | None = None,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "research")
+    try:
+        return {
+            "ok": True,
+            **svc.ai_research_memo(
+                org_id,
+                case_id,
+                refresh=bool((body or {}).get("refresh")),
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.get("/cases/{case_id}/dimensions/{key}/chat")
+def dimension_chat_history(
+    case_id: int,
+    key: str,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "research")
+    try:
+        return {"ok": True, **svc.ai_dimension_chat_history(org_id, case_id, key, actor_member_id=member_id)}
     except Exception as exc:
         raise _handle(exc) from exc
 
@@ -279,18 +359,103 @@ def dimension_chat(
                 question=str(body.get("question") or ""),
                 history=body.get("history") or [],
                 actor_member_id=member_id,
+                client_message_id=body.get("client_message_id"),
             ),
         }
     except Exception as exc:
         raise _handle(exc) from exc
 
 
-@router.post("/proposals/{proposal_id}/ai/risk-review")
-def risk_review_ai(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+@router.get("/proposals/{proposal_id}/ai/risk-review")
+def risk_review_ai_cached(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
     _require_ws(ctx, "approvals")
     try:
-        return {"ok": True, **svc.ai_risk_review(org_id, proposal_id)}
+        return {"ok": True, **svc.ai_risk_review(org_id, proposal_id, refresh=False)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/proposals/{proposal_id}/ai/risk-review")
+def risk_review_ai(
+    proposal_id: int,
+    body: dict[str, Any] | None = None,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "approvals")
+    try:
+        return {
+            "ok": True,
+            **svc.ai_risk_review(
+                org_id,
+                proposal_id,
+                refresh=bool((body or {}).get("refresh")),
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.get("/agents")
+def institution_agents(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    org_id, _, role = _ctx(ctx)
+    _require_ws(ctx, "about")
+    return {"ok": True, **svc.institution_agent_catalog(org_id, can_edit=role == "manager")}
+
+
+@router.put("/agents/{task_id}/prompt")
+def save_institution_agent(
+    task_id: str,
+    body: dict[str, Any],
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "about")
+    try:
+        return {
+            "ok": True,
+            **svc.save_institution_agent_prompt(
+                org_id,
+                task_id,
+                str(body.get("prompt") or ""),
+                note=str(body.get("note") or "")[:200] or None,
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/agents/{task_id}/prompt/reset")
+def reset_institution_agent(
+    task_id: str,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "about")
+    try:
+        return {
+            "ok": True,
+            **svc.reset_institution_agent_prompt(org_id, task_id, actor_member_id=member_id),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.get("/agents/{task_id}/prompt/history")
+def institution_agent_history(
+    task_id: str,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "about")
+    try:
+        return {
+            "ok": True,
+            **svc.institution_agent_prompt_history(org_id, task_id, actor_member_id=member_id),
+        }
     except Exception as exc:
         raise _handle(exc) from exc
 
@@ -328,12 +493,71 @@ def ai_role_run(
         raise _handle(exc) from exc
 
 
-@router.post("/proposals/{proposal_id}/ai/chairman-memo")
-def chairman_memo_ai(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+@router.get("/proposals/{proposal_id}/ai/partner-memo")
+def partner_memo_ai_cached(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "approvals")
+    try:
+        return {
+            "ok": True,
+            **svc.ai_partner_memo(
+                org_id, proposal_id, refresh=False, actor_member_id=member_id
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/proposals/{proposal_id}/ai/partner-memo")
+def partner_memo_ai(
+    proposal_id: int,
+    body: dict[str, Any] | None = None,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "approvals")
+    try:
+        return {
+            "ok": True,
+            **svc.ai_partner_memo(
+                org_id,
+                proposal_id,
+                refresh=bool((body or {}).get("refresh")),
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.get("/proposals/{proposal_id}/ai/chairman-memo")
+def chairman_memo_ai_cached(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
     _require_ws(ctx, "approvals")
     try:
-        return {"ok": True, **svc.ai_chairman_memo(org_id, proposal_id)}
+        return {"ok": True, **svc.ai_chairman_memo(org_id, proposal_id, refresh=False)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/proposals/{proposal_id}/ai/chairman-memo")
+def chairman_memo_ai(
+    proposal_id: int,
+    body: dict[str, Any] | None = None,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "approvals")
+    try:
+        return {
+            "ok": True,
+            **svc.ai_chairman_memo(
+                org_id,
+                proposal_id,
+                refresh=bool((body or {}).get("refresh")),
+                actor_member_id=member_id,
+            ),
+        }
     except Exception as exc:
         raise _handle(exc) from exc
 
@@ -426,11 +650,19 @@ def debate(session_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) ->
 @router.get("/proposals")
 def proposals(
     status: str | None = None,
+    scope: str = "pending",
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
-    org_id, _, _ = _ctx(ctx)
+    org_id, member_id, role = _ctx(ctx)
     _require_ws(ctx, "approvals")
-    return {"ok": True, "items": svc.list_proposals(org_id, status=status)}
+    if scope not in {"pending", "reviewed"}:
+        raise HTTPException(status_code=422, detail="scope 必须是 pending/reviewed")
+    items = svc.list_proposals_for_member(
+        org_id, int(member_id or 0), role, scope=scope
+    )
+    if status:
+        items = [item for item in items if str(item.get("status")) == status]
+    return {"ok": True, "items": items, "scope": scope, "role": role}
 
 
 @router.post("/cases/{case_id}/proposals")
@@ -453,6 +685,12 @@ def create_proposal(
                 # 方向与目标仓位的默认值由服务层按是否退出案决定（退出案默认 exit / 0）。
                 direction=str(direction) if direction not in (None, "") else None,
                 target_weight=float(target) if target not in (None, "") else None,
+                price_low=float(body["price_low"]) if body.get("price_low") not in (None, "") else None,
+                price_high=float(body["price_high"]) if body.get("price_high") not in (None, "") else None,
+                funding_source=str(body.get("funding_source") or "") or None,
+                valid_until=str(body.get("valid_until") or "") or None,
+                monitoring=body.get("monitoring"),
+                investment_opinion=body.get("investment_opinion"),
                 config=body.get("config") or {},
             ),
         }
@@ -462,9 +700,14 @@ def create_proposal(
 
 @router.get("/proposals/{proposal_id}")
 def proposal_detail(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
-    org_id, _, _ = _ctx(ctx)
+    org_id, member_id, role = _ctx(ctx)
     _require_ws(ctx, "approvals")
-    data = svc.get_proposal(org_id, proposal_id)
+    try:
+        data = svc.get_proposal_for_member(
+            org_id, proposal_id, member_id=int(member_id or 0), role=role
+        )
+    except Exception as exc:
+        raise _handle(exc) from exc
     if not data:
         raise HTTPException(status_code=404, detail="议案不存在")
     return {"ok": True, **data}
@@ -487,6 +730,7 @@ def partner_review(
                 decision=str(body.get("decision") or "approve"),
                 comment=body.get("comment"),
                 updates=body.get("updates") or {},
+                conditions=body.get("conditions"),
                 actor_member_id=member_id,
             ),
         }
@@ -510,6 +754,7 @@ def chairman_review(
                 proposal_id,
                 decision=str(body.get("decision") or "approve"),
                 comment=body.get("comment"),
+                conditions=body.get("conditions"),
                 actor_member_id=member_id,
             ),
         }
@@ -530,7 +775,12 @@ def risk_check(
         return {
             "ok": True,
             **svc.risk_check(
-                org_id, proposal_id, actor_member_id=member_id, comment=payload.get("comment")
+                org_id,
+                proposal_id,
+                actor_member_id=member_id,
+                comment=payload.get("comment"),
+                decision=payload.get("decision"),
+                conditions=payload.get("conditions"),
             ),
         }
     except Exception as exc:
@@ -566,6 +816,7 @@ def approve_and_execute(
                 proposal_id,
                 actor_member_id=member_id,
                 price=float(price) if price not in (None, "") else None,
+                conditions_met=bool(payload.get("conditions_met")),
             ),
         }
     except Exception as exc:
@@ -600,6 +851,7 @@ def execute(
                 authorization_id,
                 actor_member_id=member_id,
                 price=float(price) if price is not None else None,
+                conditions_met=bool(payload.get("conditions_met")),
             ),
         }
     except Exception as exc:
@@ -681,6 +933,35 @@ def monitor(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
     _require_ws(ctx, "monitor")
     return {"ok": True, **svc.monitor(org_id)}
+
+
+@router.post("/monitor/scan")
+def scan_monitor(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    """自动扫描持仓：复核到期、价格异常，登记监控事件。"""
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "monitor")
+    try:
+        return {"ok": True, **svc.scan_holdings(org_id, actor_member_id=member_id)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/monitor/theses/refresh")
+def refresh_thesis(body: dict[str, Any], ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    """从最近买入议案重新生成单票论点台账；旧台账保留。"""
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "monitor")
+    try:
+        return {
+            "ok": True,
+            **svc.refresh_thesis(
+                org_id,
+                int(body.get("company_id") or 0),
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
 
 
 @router.post("/monitor/events")

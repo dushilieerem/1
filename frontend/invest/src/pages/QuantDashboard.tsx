@@ -76,8 +76,8 @@ export default function QuantDashboard() {
               {rows.map((r: any) => (
                 <tr key={`${r.library}-${r.factor_name}`}>
                   <td>{r.factor_name}</td>
-                  <td>{r.ic == null ? t("待补充", "N/A") : Number(r.ic).toFixed(3)}</td>
-                  <td>{r.ir == null ? t("待补充", "N/A") : Number(r.ir).toFixed(2)}</td>
+                  <td>{r.ic == null ? "—" : Number(r.ic).toFixed(3)}</td>
+                  <td>{r.ir == null ? "—" : Number(r.ir).toFixed(2)}</td>
                   <td><Tag tone={r.verify_status === "passed" ? "green" : r.verify_status === "failed" ? "red" : "gray"}>{humanizeEnum(r.verify_status || "pending")}</Tag></td>
                 </tr>
               ))}

@@ -153,6 +153,12 @@ def test_approve_and_execute_full_linear_flow(fixture) -> None:
         )
     )
     version_id = int(research["versions"][0]["id"])
+    version = research["versions"][0]
+    assert version.get("content_hash")
+    assert version.get("cutoff")
+    assert research.get("evidence")
+    assert all(ev.get("grade") in {"A", "B", "C", "D"} for ev in research["evidence"])
+    assert all(ev.get("available_time") or ev.get("as_of") for ev in research["evidence"])
     _ok(
         client.post(
             f"/api/inst/research/{version_id}/review",
@@ -160,21 +166,51 @@ def test_approve_and_execute_full_linear_flow(fixture) -> None:
             headers=_h(tokens["partner"]),
         )
     )
-    _ok(
+    debate = _ok(
         client.post(
             f"/api/inst/cases/{case_id}/debate",
             json={"use_ai": False},
             headers=_h(tokens["manager"]),
         )
     )
+    checks = _ok(
+        client.get(f"/api/inst/debates/{int(debate['id'])}", headers=_h(tokens["manager"]))
+    ).get("evidence_checks") or []
+    assert checks
+    assert all(item["status"] in {"verified", "partially_verified", "unverified", "contradicted"} for item in checks)
+    assert all(item.get("claim_id") for item in checks)
     proposal = _ok(
         client.post(
             f"/api/inst/cases/{case_id}/proposals",
-            json={"direction": "buy", "target_weight": 0.02},
+            json={
+                "direction": "buy",
+                "target_weight": 0.02,
+                "price_low": 100,
+                "price_high": 120,
+                "funding_source": "现金",
+                "valid_until": "2099-12-31",
+                "monitoring": ["季度财报后复核"],
+                "investment_opinion": "E2E 投资意见：关键假设成立才持有",
+            },
             headers=_h(tokens["manager"]),
         )
     )
     proposal_id = int(proposal["id"])
+    with get_conn() as conn:
+        snapshot = conn.execute(
+            "SELECT snapshot FROM inst_proposal_version WHERE proposal_id=%s ORDER BY version_no DESC LIMIT 1",
+            (proposal_id,),
+        ).fetchone()["snapshot"]
+        version_hash = conn.execute(
+            "SELECT content_hash FROM inst_research_version WHERE id=%s", (version_id,)
+        ).fetchone()["content_hash"]
+    assert snapshot["research_content_hash"] == version_hash
+    assert snapshot["evidence_hash"]
+    assert snapshot["price_low"] == 100
+    assert snapshot["price_high"] == 120
+    assert snapshot["funding_source"] == "现金"
+    assert snapshot["investment_opinion"].startswith("E2E 投资意见")
+    assert snapshot["monitoring"] == ["季度财报后复核"]
     _ok(
         client.post(
             f"/api/inst/proposals/{proposal_id}/partner",
@@ -184,16 +220,16 @@ def test_approve_and_execute_full_linear_flow(fixture) -> None:
     )
     _ok(
         client.post(
-            f"/api/inst/proposals/{proposal_id}/chairman",
-            json={"decision": "approve"},
-            headers=_h(tokens["chairman"]),
+            f"/api/inst/proposals/{proposal_id}/risk-check",
+            json={},
+            headers=_h(tokens["risk"]),
         )
     )
     _ok(
         client.post(
-            f"/api/inst/proposals/{proposal_id}/risk-check",
-            json={},
-            headers=_h(tokens["risk"]),
+            f"/api/inst/proposals/{proposal_id}/chairman",
+            json={"decision": "approve"},
+            headers=_h(tokens["chairman"]),
         )
     )
 
@@ -217,6 +253,13 @@ def test_approve_and_execute_full_linear_flow(fixture) -> None:
     assert out["proposal"]["status"] == "executed"
     assert out["execution"]["order"]["side"] == "buy"
     assert int(out["authorization_id"]) > 0
+    with get_conn() as conn:
+        auth_snapshot = conn.execute(
+            "SELECT snapshot FROM inst_authorization WHERE id=%s", (int(out["authorization_id"]),)
+        ).fetchone()["snapshot"]
+    assert auth_snapshot["research_content_hash"] == version_hash
+    assert auth_snapshot["evidence_hash"]
+    assert auth_snapshot["proposal_hash"]
 
     portfolio = _ok(client.get("/api/inst/portfolio", headers=_h(tokens["manager"])))
     positions = [p for p in portfolio["positions"] if int(p["qty"]) > 0]

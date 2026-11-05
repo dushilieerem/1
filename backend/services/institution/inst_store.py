@@ -37,6 +37,10 @@ ROLE_LABELS: dict[str, tuple[str, str]] = {
 # 机构量化成员只使用 /api/inst/quant/*；对主观投资九工作区一律无权限。
 # 这是产品线隔离，不是“只靠前端隐藏”：服务端权限矩阵全部为 none。
 QUANT_ROLES = frozenset({"quant_researcher", "quant_reviewer"})
+# P0 research lead is the existing manager. Managers may enter quant, but they
+# keep their subjective institution login and must not be blocked by the
+# "quant roles cannot use subjective login" guard.
+QUANT_LOGIN_ROLES = QUANT_ROLES | {"manager"}
 
 # 九个工作区，与需求文档 §2.2 一致
 WORKSPACE_LABELS: dict[str, tuple[str, str]] = {
@@ -46,9 +50,9 @@ WORKSPACE_LABELS: dict[str, tuple[str, str]] = {
     "debate": ("投资辩论室", "Debate room"),
     "approvals": ("投委会审批", "IC approvals"),
     "execution": ("交易执行", "Execution"),
-    "portfolio": ("投资组合", "Portfolio"),
+    "portfolio": ("投资管理", "Investment management"),
     "monitor": ("投后管理", "Post-investment"),
-    "about": ("Agent能力", "Agent capabilities"),
+    "about": ("Agent管理", "Agent management"),
 }
 
 # write = 可写与操作；read = 只读；digest = 仅关联摘要；none = 无权限且菜单隐藏
@@ -317,7 +321,7 @@ def issue_quant_token(
 ) -> str:
     """机构量化会话：scope 仍是 inst，但 product=quant，只给 quant API 使用。"""
     role = str(membership.get("role") or "")
-    if role not in QUANT_ROLES:
+    if role not in QUANT_LOGIN_ROLES:
         raise PermissionError("该账号没有机构量化权限")
     return issue_token(
         user,
@@ -343,10 +347,10 @@ def login_inst(*, username: str, password: str) -> dict[str, Any]:
 
 
 def login_quant(*, username: str, password: str) -> dict[str, Any]:
-    """机构量化入口：必须是 active 成员且角色在 QUANT_ROLES。"""
+    """机构量化入口：active 成员且角色在 QUANT_LOGIN_ROLES（含 manager）。"""
     user = authenticate_user(username=username, password=password)
     membership = get_membership(int(user["id"]))
-    if not membership or str(membership.get("role") or "") not in QUANT_ROLES:
+    if not membership or str(membership.get("role") or "") not in QUANT_LOGIN_ROLES:
         raise PermissionError("该账号没有机构量化权限")
     token = issue_quant_token(user, membership)
     return {"user": user, "membership": membership, "token": token}
@@ -415,7 +419,8 @@ def _quant_context(user: dict[str, Any], membership: dict[str, Any]) -> dict[str
             "quant": "review" if role == "quant_reviewer" else "write",
         },
         "can_review": role == "quant_reviewer",
-        "can_write": role == "quant_researcher",
+        "can_write": role in ("quant_researcher", "manager"),
+        "can_manage": role == "manager",
         "workspaces": [],
         "demo": _demo_mode(),
     }
@@ -478,7 +483,7 @@ def user_from_quant_authorization(header: str | None) -> dict[str, Any] | None:
         return None
     # 每次请求实时回查成员/机构/角色，停用立即失效。
     membership = get_membership(uid, payload.get("org_id"))
-    if not membership or str(membership.get("role") or "") not in QUANT_ROLES:
+    if not membership or str(membership.get("role") or "") not in QUANT_LOGIN_ROLES:
         return None
     return _quant_context(user, membership)
 

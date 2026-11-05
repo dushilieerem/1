@@ -133,6 +133,29 @@ def _case_with_research(client: TestClient, fixture: dict) -> tuple[int, dict]:
     return case_id, data
 
 
+def test_return_targets_reruns_selected_and_keeps_others(fixture) -> None:
+    client = TestClient(app)
+    case_id, data = _case_with_research(client, fixture)
+    first = data["versions"][0]
+    assert first.get("industry_analysis")
+    out = _ok(
+        client.post(
+            f"/api/inst/research/{int(first['id'])}/review",
+            json={
+                "decision": "return",
+                "comment": "行业和财务需要重跑",
+                "targets": ["industry", "financial"],
+            },
+            headers=_h(fixture["tokens"]["partner"]),
+        )
+    )
+    latest = out["versions"][0]
+    assert int(latest["version_no"]) == int(first["version_no"]) + 1
+    assert latest["status"] == "pending_review"
+    assert [d["key"] for d in latest["six_dim"]] == DIM_KEYS
+    assert latest.get("industry_analysis")
+    assert latest.get("industry_analysis", {}).get("summary")
+
 def test_single_dimension_regeneration_keeps_six_dims(fixture) -> None:
     client = TestClient(app)
     case_id, data = _case_with_research(client, fixture)
@@ -287,10 +310,15 @@ def test_research_memo_has_metrics_and_rule_fallback(fixture, monkeypatch) -> No
 
     monkeypatch.setattr(svc, "_ai_task", unavailable)
     fallback = _ok(
-        client.post(f"/api/inst/cases/{case_id}/ai/memo", headers=_h(fixture["tokens"]["manager"]))
+        client.post(
+            f"/api/inst/cases/{case_id}/ai/memo",
+            json={"refresh": True},
+            headers=_h(fixture["tokens"]["manager"]),
+        )
     )["memo"]
     assert fallback["engine"] == "rule"
     assert fallback["summary"]
+    assert fallback["decision"] == "watch"
     assert isinstance(fallback["metrics"], list)
 
 

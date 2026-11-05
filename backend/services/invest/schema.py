@@ -154,7 +154,46 @@ DDL: tuple[str, ...] = (
       code TEXT NOT NULL, PRIMARY KEY (topic_id, code)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS invest_quant_draft (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, factors JSONB NOT NULL DEFAULT '[]'::jsonb,
+      universe TEXT NOT NULL DEFAULT 'hs300', project_id TEXT, last_backtest_id TEXT,
+      created_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
+      updated_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_invest_quant_draft_user
+      ON invest_quant_draft (user_id, id DESC)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS invest_quant_strategy (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, factors JSONB NOT NULL DEFAULT '[]'::jsonb,
+      universe TEXT NOT NULL DEFAULT 'hs300', status TEXT NOT NULL DEFAULT 'tracking',
+      project_id TEXT, backtest_id TEXT, paper_id BIGINT,
+      created_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
+      updated_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_invest_quant_strategy_user
+      ON invest_quant_strategy (user_id, id DESC)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS invest_ai_agent_prompt (
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      task_id TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
+      PRIMARY KEY (user_id, task_id)
+    )
+    """,
 )
+
 
 VIEWS: tuple[str, ...] = (
     "DROP VIEW IF EXISTS stocks, bars, valuations, financials, news, indices, topics, topic_bars, topic_stocks, watchlist, events, event_logs, portfolio, portfolio_meta, risk_profiles, meta, auth_events CASCADE",
@@ -364,6 +403,10 @@ def ensure_invest_schema() -> None:
         # 旧库先补列，再重建 stocks UNION 视图，避免列数不一致。
         conn.execute("ALTER TABLE invest_stocks ADD COLUMN IF NOT EXISTS market TEXT")
         conn.execute("ALTER TABLE invest_etf ADD COLUMN IF NOT EXISTS market TEXT")
+        conn.execute("ALTER TABLE invest_quant_draft ADD COLUMN IF NOT EXISTS project_id TEXT")
+        conn.execute("ALTER TABLE invest_quant_draft ALTER COLUMN last_backtest_id TYPE TEXT USING last_backtest_id::text")
+        conn.execute("ALTER TABLE invest_quant_strategy ADD COLUMN IF NOT EXISTS project_id TEXT")
+        conn.execute("ALTER TABLE invest_quant_strategy ALTER COLUMN backtest_id TYPE TEXT USING backtest_id::text")
         for ddl in VIEWS:
             conn.execute(ddl)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invest_stocks_market ON invest_stocks (market)")

@@ -37,7 +37,12 @@ def _get(path: str) -> dict | None:
 
 def _metrics() -> str:
     try:
-        with urllib.request.urlopen(f"{BASE}/api/metrics", timeout=TIMEOUT) as resp:
+        headers = {}
+        token = (os.environ.get("METRICS_TOKEN") or "").strip()
+        if token:
+            headers["X-Metrics-Token"] = token
+        req = urllib.request.Request(f"{BASE}/api/metrics", headers=headers)
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
             return resp.read().decode("utf-8", "replace")
     except (urllib.error.URLError, TimeoutError):
         return ""

@@ -20,7 +20,7 @@ def request_review(uid,org,cid,note):
 
 def queue(uid,org):
     with get_conn() as c:
-        rows=c.execute("SELECT id,snapshot_hash,status,snapshot->>'name' AS name,archive,updated_at FROM quant_factor_candidates WHERE org_id=%s AND user_id<>%s AND archive->'review' IS NOT NULL ORDER BY updated_at DESC LIMIT 100",(org,uid)).fetchall()
+        rows=c.execute("SELECT id,snapshot_hash,status,snapshot->>'name' AS name,archive,updated_at FROM quant_factor_candidates WHERE org_id=%s AND user_id<>%s AND archive->'review'->>'status'='requested' ORDER BY updated_at DESC LIMIT 100",(org,uid)).fetchall()
     return [dict(r) for r in rows]
 
 def ensure_reviewer(row,uid):

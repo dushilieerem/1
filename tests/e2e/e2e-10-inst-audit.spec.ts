@@ -126,6 +126,13 @@ test("详情页：研究、辩论、审批（有数据时）", async ({ browser 
     await expect(page.getByText("K 线（日线）", { exact: true })).toBeVisible();
     await expect(page.getByText("六维分析", { exact: true })).toBeVisible();
     await expect(page.getByText("AI 一页纸", { exact: true })).toBeVisible();
+    const returnButton = page.getByRole("button", { name: /退回并重跑|Return & rerun/ });
+    if (await returnButton.count()) {
+      await returnButton.click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await expect(page.getByText("行业分析", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: /取消|Cancel/ }).click();
+    }
     const evidenceButton = page.getByRole("button", { name: /证据与反证|Evidence/ });
     await expect(evidenceButton).toBeVisible();
     await evidenceButton.click();

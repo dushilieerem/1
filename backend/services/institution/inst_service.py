@@ -1022,7 +1022,7 @@ def _dim_status(has_data: bool) -> str:
     return "done" if has_data else "partial"
 
 
-def _build_research(company: dict[str, Any], mode: str = "full") -> dict[str, Any]:
+def _build_research(company: dict[str, Any], mode: str = "full", targets: list[str] | None = None) -> dict[str, Any]:
     symbol = company["symbol"]
     bar = md.latest_bar(symbol, adjust="none")
     val = md.valuation_latest(symbol) or {}
@@ -1104,10 +1104,15 @@ def _build_research(company: dict[str, Any], mode: str = "full") -> dict[str, An
             }
         )
 
-    if mode != "full" and mode not in {d[0] for d in SIX_DIM_DEFS}:
-        raise ValueError("mode 必须是 full 或六个维度之一")
-
-    want = {d[0] for d in SIX_DIM_DEFS} if mode == "full" else {mode}
+    dim_keys = {d[0] for d in SIX_DIM_DEFS}
+    if targets is not None:
+        want = {t for t in targets if t in dim_keys}
+        if not want and "industry" not in targets:
+            raise ValueError("退回目标至少包含一个行业/维度")
+    else:
+        if mode != "full" and mode not in dim_keys:
+            raise ValueError("mode 必须是 full 或六个维度之一")
+        want = dim_keys if mode == "full" else {mode}
     if "industry" in want:
         dim(
             "industry",
@@ -1558,6 +1563,7 @@ def generate_research(
     case_id: int,
     *,
     mode: str = "full",
+    targets: list[str] | None = None,
     actor_member_id: int | None,
 ) -> dict[str, Any]:
     # 1) 先校验权限并取公司，关闭连接后再跑 6 个模型 Agent，避免长时间占用 DB 连接
@@ -1574,8 +1580,23 @@ def generate_research(
             raise LookupError("研究案不存在")
         company = dict(case)
 
-    built = _build_research(company, mode=mode)
-    keys = [d[0] for d in SIX_DIM_DEFS] if mode == "full" else [mode]
+    dim_keys = {d[0] for d in SIX_DIM_DEFS}
+    if targets is not None:
+        allowed = dim_keys | {"industry"}
+        targets = list(dict.fromkeys(str(t) for t in targets))
+        if not targets or any(t not in allowed for t in targets):
+            raise ValueError("退回目标必须是行业或六个维度")
+        keys = [d[0] for d in SIX_DIM_DEFS if d[0] in targets]
+        rework = True
+        mode_label = "rework"
+    else:
+        if mode != "full" and mode not in dim_keys:
+            raise ValueError("mode 必须是 full 或六个维度之一")
+        keys = [d[0] for d in SIX_DIM_DEFS] if mode == "full" else [mode]
+        rework = mode != "full"
+        mode_label = mode
+    built = _build_research(company, mode=mode, targets=targets)
+    run_industry = mode == "full" or (targets is not None and "industry" in targets)
     with get_conn() as conn:
         for key, title, _ in SIX_DIM_DEFS:
             if key not in keys:
@@ -1589,29 +1610,22 @@ def generate_research(
                 """,
                 (case_id, key, title, f"AI-{key}"),
             )
-    if mode == "full":
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            industry_future = pool.submit(_run_industry_agent, built["facts"])
-            results = _run_dimension_agents(
-                built["facts"],
-                keys,
-                on_event=lambda key, status, payload: _update_task_progress(case_id, key, status, payload),
-            )
-            industry_result = industry_future.result()
-        built = _merge_agent_results(built, results, keys)
-        built["industry_analysis"] = _merge_industry(
-            built, industry_result, built.get("industry_analysis") or {}
-        )
-    else:
-        built = _merge_agent_results(built, _run_dimension_agents(
+    if keys:
+        results = _run_dimension_agents(
             built["facts"],
             keys,
             on_event=lambda key, status, payload: _update_task_progress(case_id, key, status, payload),
-        ), keys)
+        )
+        built = _merge_agent_results(built, results, keys)
+    if run_industry:
+        industry_result = _run_industry_agent(built["facts"])
+        built["industry_analysis"] = _merge_industry(
+            built, industry_result, built.get("industry_analysis") or {}
+        )
 
     # 2) 持久化：任务、证据、版本
     with get_conn() as conn:
-        if mode == "full":
+        if mode == "full" and targets is None:
             conn.execute(
                 "DELETE FROM inst_research_task WHERE case_id=%s AND NOT (task_key = ANY(%s))",
                 (case_id, keys),
@@ -1682,21 +1696,20 @@ def generate_research(
 
         # 单维重新分析：合并到最近一版，保留其余五维，而不是用只含一维的版本覆盖。
         existing = None
-        if mode != "full":
+        if rework:
             existing = conn.execute(
                 "SELECT * FROM inst_research_version WHERE case_id=%s "
                 "ORDER BY version_no DESC LIMIT 1",
                 (case_id,),
             ).fetchone()
         if existing:
-            new_dim = next((d for d in built["dims"] if d.get("key") == mode), None)
+            selected = set(keys)
+            new_dims = {d["key"]: d for d in built["dims"] if d.get("key") in selected}
             old_dims = [d for d in (existing["six_dim"] or []) if isinstance(d, dict)]
-            if new_dim and any(d.get("key") == mode for d in old_dims):
-                merged = [dict(new_dim) if d.get("key") == mode else d for d in old_dims]
-            elif new_dim:
-                merged = [*old_dims, dict(new_dim)]
-            else:
-                merged = old_dims
+            merged = [new_dims.get(str(d.get("key")), d) for d in old_dims]
+            for key in selected:
+                if key not in {str(d.get("key")) for d in old_dims} and key in new_dims:
+                    merged.append(new_dims[key])
             order = {k: i for i, (k, _, _) in enumerate(SIX_DIM_DEFS)}
             merged.sort(key=lambda d: order.get(str(d.get("key")), 99))
             built["dims"] = merged
@@ -1708,10 +1721,10 @@ def generate_research(
             built["data_gaps"] = list(
                 dict.fromkeys([*(existing["open_questions"] or []), *built["data_gaps"]])
             )
-            if existing["valuation"]:
-                built["valuation"] = existing["valuation"]
-            if existing.get("industry_analysis"):
+            if not run_industry and existing.get("industry_analysis"):
                 built["industry_analysis"] = existing["industry_analysis"]
+            if "valuation" not in selected and existing["valuation"]:
+                built["valuation"] = existing["valuation"]
 
         version_no = conn.execute(
             "SELECT COALESCE(MAX(version_no),0)+1 AS n FROM inst_research_version WHERE case_id=%s",
@@ -1790,7 +1803,8 @@ def generate_research(
             after={
                 "case_id": case_id,
                 "version_no": version_no,
-                "mode": mode,
+                "mode": mode_label,
+                "targets": targets,
                 "agents": built["agent_states"],
                 "merged_from_version_no": int(existing["version_no"]) if existing else None,
                 "content_hash": content_hash,
@@ -1805,6 +1819,7 @@ def review_research(
     *,
     decision: str,
     comment: str | None,
+    targets: list[str] | None = None,
     actor_member_id: int | None,
 ) -> dict[str, Any]:
     if decision not in {"approve", "return"}:
@@ -1834,6 +1849,8 @@ def review_research(
                 (row["case_id"],),
             )
         else:
+            if targets and not str(comment or "").strip():
+                raise ValueError("退回时必须填写退回原因")
             conn.execute(
                 "UPDATE inst_research_version SET status='changed' WHERE id=%s", (version_id,)
             )
@@ -1849,7 +1866,14 @@ def review_research(
             object_type="inst_research_version",
             object_id=version_id,
             before={"status": row["status"]},
-            after={"decision": decision, "comment": comment},
+            after={"decision": decision, "comment": comment, "targets": targets},
+        )
+    if decision == "return" and targets:
+        return generate_research(
+            org_id,
+            int(row["case_id"]),
+            targets=targets,
+            actor_member_id=actor_member_id,
         )
     return get_case(org_id, int(row["case_id"]))  # type: ignore[return-value]
 

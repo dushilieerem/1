@@ -191,3 +191,37 @@ def test_sync_index_reads_volume_and_amount(tmp_path: Path, monkeypatch):
     assert "volume" in captured["columns"] and "amount" in captured["columns"]
     row = captured["rows"][0]
     assert row[0] == "000001.SH" and row[6] == 599394361.0 and row[7] == 953265155867.1
+
+
+def test_sync_index_falls_back_when_old_view_has_no_volume_amount(tmp_path: Path, monkeypatch):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from services.data import view_sync
+
+    base = tmp_path / "derived" / "index_price" / "year=2026"
+    base.mkdir(parents=True)
+    # 旧 view 没有 volume/amount 列；不能按 null 判断，必须按列是否存在回退。
+    pq.write_table(
+        pa.table({
+            "date": ["2026-11-04"],
+            "index_code": ["000300.SH"],
+            "open": [4000.0], "high": [4050.0], "low": [3980.0], "close": [4008.87],
+        }),
+        base / "part.parquet",
+    )
+    view = ViewInfo("v", tmp_path, _manifest(data_date="2026-11-04"), "2026-11-01", date(2026, 11, 4))
+    captured = {}
+
+    def fake_copy(conn, table, columns, rows):
+        captured["columns"] = columns
+        captured["rows"] = list(rows)
+        return len(captured["rows"])
+
+    monkeypatch.setattr(view_sync, "_copy_rows", fake_copy)
+    total = view_sync._sync_index(object(), view)
+    assert total == 1
+    assert "volume" in captured["columns"] and "amount" in captured["columns"]
+    row = captured["rows"][0]
+    assert row[0] == "000300.SH"
+    assert row[6] is None and row[7] is None

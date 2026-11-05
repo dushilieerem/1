@@ -332,3 +332,7 @@ async def cache_control_headers(request: Request, call_next) -> Response:
         response.headers["Pragma"] = "no-cache"
         response.headers["Vary"] = "Authorization"
     return response
+
+# Institutional factor workflow uses the same quant identity and existing compute APIs.
+from app.routers.quant_factor_workflow import router as quant_factor_workflow_router
+app.include_router(quant_factor_workflow_router)

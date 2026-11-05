@@ -23,7 +23,15 @@ manual edit      only when followed by a counted test        yes (the test)
 A manual code change is not itself a trial: the next completed test after the
 change is a new trial and counts once.  Each parameter/window variant is a
 separate trial and counts separately.  Only the topic's pre-registered primary
-holding period counts; diagnostic horizons in the same report do not add K.
+holding period counts; diagnostic horizons in the same report do not add K.  If
+the topic has a primary holding period and a row has no horizon, the row is
+rejected rather than silently counted or dropped.
+
+Trust boundary: ``rerun_of``, ``kind='rerun'`` and edit markers are ledger
+fields written by the server after it compares implementation hash, data
+release, view and parameters.  They must never be accepted from an API request
+body.  ``is_deterministic_rerun`` is the pure comparison helper the append path
+must use; the client cannot self-report a rerun to avoid K.
 """
 from __future__ import annotations
 
@@ -32,6 +40,7 @@ from typing import Iterable
 from .metrics import threshold
 
 DIAGNOSTIC_KINDS = frozenset({"static_check", "compile", "smoke", "smoke_test"})
+EDIT_KINDS = frozenset({"manual_edit", "code_edit", "edit"})
 RERUN_KINDS = frozenset({"rerun"})
 SEALED_KINDS = frozenset({"sealed", "sealed_validation", "holdout_validation"})
 COUNTED_OUTCOMES = frozenset({"passed", "failed"})
@@ -77,12 +86,32 @@ def is_sealed(trial: dict) -> bool:
     return _kind(trial) in SEALED_KINDS
 
 
+def is_deterministic_rerun(original: dict, trial: dict) -> bool:
+    """Server-side test: same implementation, data release, view and parameters.
+
+    Any missing identity field fails closed (returns False), so an incomplete
+    payload cannot claim a free rerun.  The append path must compute this from
+    stored values and set ``rerun_of`` itself; never trust a request field.
+    """
+    if not isinstance(original, dict) or not isinstance(trial, dict):
+        raise TypeError("original 和 trial 必须是字典")
+    for key in ("implementation_hash", "data_release_id", "parameters"):
+        if original.get(key) is None or trial.get(key) is None:
+            return False
+        if original[key] != trial[key]:
+            return False
+    if "view_id" in original and "view_id" in trial:
+        if original.get("view_id") is None or original["view_id"] != trial["view_id"]:
+            return False
+    return True
+
+
 def counts_toward_k(trial: dict, primary_holding_period=None) -> bool:
     """Return whether one ledger row advances the topic's K."""
     if not isinstance(trial, dict):
         raise TypeError("trial 必须是字典")
     kind = _kind(trial)
-    if kind in DIAGNOSTIC_KINDS or kind in RERUN_KINDS or kind in SEALED_KINDS:
+    if kind in DIAGNOSTIC_KINDS or kind in EDIT_KINDS or kind in RERUN_KINDS or kind in SEALED_KINDS:
         return False
     if trial.get("rerun_of") is not None:
         return False
@@ -91,7 +120,9 @@ def counts_toward_k(trial: dict, primary_holding_period=None) -> bool:
         return False
     if primary_holding_period is not None:
         holding = _holding_period(trial)
-        if holding is not None and int(holding) != int(primary_holding_period):
+        if holding is None:
+            raise ValueError("课题已登记主持有期，但试验缺少持有期，不能判断是否计入 K")
+        if int(holding) != int(primary_holding_period):
             return False
     if outcome in COUNTED_OUTCOMES:
         return True
@@ -121,12 +152,20 @@ def next_trial_no(trials: Iterable[dict]) -> int:
     return max(numbers, default=0) + 1
 
 
-def next_k(trials: Iterable[dict], primary_holding_period=None) -> int:
-    return current_k(trials, primary_holding_period) + 1
+def k_after_append(trials: Iterable[dict], trial: dict, primary_holding_period=None) -> int:
+    """K after appending one proposed row; rerun/static/sealed rows add zero."""
+    trials = list(trials)
+    current = current_k(trials, primary_holding_period)
+    return current + (1 if counts_toward_k(trial, primary_holding_period) else 0)
 
 
 def k_summary(trials: Iterable[dict], submitted_k: int, primary_holding_period=None) -> dict:
-    """Show submission-time K next to current K, with both thresholds."""
+    """Show submission-time K next to current K, with both thresholds.
+
+    ``submitted_k`` must be at least 1: before a candidate is submitted there is
+    no submission-time K, so pre-submission UI should show "尚未提交" and not
+    call this function with 0.
+    """
     if isinstance(submitted_k, bool) or not isinstance(submitted_k, int) or submitted_k < 1:
         raise ValueError("提交时 K 必须是大于等于 1 的整数")
     trials = list(trials)
@@ -166,14 +205,16 @@ __all__ = [
     "COUNTED_OUTCOMES",
     "CONDITIONAL_OUTCOMES",
     "DIAGNOSTIC_KINDS",
+    "EDIT_KINDS",
     "MAX_SEALED_PER_TOPIC",
     "SEALED_KINDS",
     "can_request_sealed",
     "counts_toward_k",
     "current_k",
+    "is_deterministic_rerun",
     "is_sealed",
+    "k_after_append",
     "k_summary",
-    "next_k",
     "next_trial_no",
     "sealed_request_error",
 ]

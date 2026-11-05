@@ -5,8 +5,9 @@ from services.quant_factor.ledger import (
     can_request_sealed,
     counts_toward_k,
     current_k,
+    is_deterministic_rerun,
+    k_after_append,
     k_summary,
-    next_k,
     next_trial_no,
     sealed_request_error,
 )
@@ -53,16 +54,43 @@ class CountsTowardKTest(unittest.TestCase):
     def test_only_primary_holding_period_counts(self):
         self.assertTrue(counts_toward_k(trial(1, "passed", holding_period=1), 1))
         self.assertFalse(counts_toward_k(trial(2, "passed", holding_period=5), 1))
-        self.assertTrue(counts_toward_k(trial(3, "passed"), 1))  # unknown horizon: do not silently drop
 
-    def test_manual_edit_is_not_a_trial_but_the_next_test_counts(self):
-        edits = [trial(1, "passed", kind="research", manual_edit=True),
-                 trial(2, "failed", kind="research", manual_edit=True)]
-        self.assertEqual(current_k(edits), 2)
+    def test_missing_holding_period_fails_closed_when_topic_has_primary(self):
+        with self.assertRaisesRegex(ValueError, "缺少持有期"):
+            counts_toward_k(trial(1, "passed"), 1)
+        # Without a registered primary horizon the call is not making that claim.
+        self.assertTrue(counts_toward_k(trial(2, "passed")))
+
+    def test_manual_edit_event_is_not_a_trial_but_the_next_test_counts(self):
+        rows = [trial(1, "passed", kind="manual_edit"),
+                trial(2, "failed", kind="manual_edit"),
+                trial(3, "passed", kind="research")]
+        self.assertEqual(current_k(rows), 1)
 
     def test_unknown_outcome_is_a_defect(self):
         with self.assertRaisesRegex(ValueError, "outcome"):
             counts_toward_k(trial(1, "maybe"))
+
+
+class DeterministicRerunTest(unittest.TestCase):
+    def identity(self, **kwargs):
+        base = {"implementation_hash": "h1", "data_release_id": "r1",
+                "view_id": "v1", "parameters": {"window": 5, "direction": "positive"}}
+        return {**base, **kwargs}
+
+    def test_same_identity_is_server_derived_rerun(self):
+        self.assertTrue(is_deterministic_rerun(self.identity(), self.identity()))
+
+    def test_any_changed_identity_is_not_a_rerun(self):
+        self.assertFalse(is_deterministic_rerun(self.identity(), self.identity(implementation_hash="h2")))
+        self.assertFalse(is_deterministic_rerun(self.identity(), self.identity(data_release_id="r2")))
+        self.assertFalse(is_deterministic_rerun(self.identity(), self.identity(view_id="v2")))
+        self.assertFalse(is_deterministic_rerun(self.identity(), self.identity(parameters={"window": 10})))
+
+    def test_missing_identity_fails_closed(self):
+        for key in ("implementation_hash", "data_release_id", "parameters"):
+            self.assertFalse(is_deterministic_rerun(self.identity(), self.identity(**{key: None})))
+            self.assertFalse(is_deterministic_rerun(self.identity(**{key: None}), self.identity()))
 
 
 class CurrentKTest(unittest.TestCase):
@@ -80,10 +108,12 @@ class CurrentKTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 current_k([{"trial_no": bad, "outcome": "passed"}])
 
-    def test_next_trial_no_uses_all_rows_but_next_k_uses_counted(self):
+    def test_next_trial_no_uses_all_rows_and_k_after_append_respects_kind(self):
         rows = [trial(1, "passed"), trial(2, "rerun"), trial(3, "failed")]
         self.assertEqual(next_trial_no(rows), 4)
-        self.assertEqual(next_k(rows), 3)
+        self.assertEqual(k_after_append(rows, trial(4, "passed")), 3)
+        self.assertEqual(k_after_append(rows, trial(4, "rerun")), 2)
+        self.assertEqual(k_after_append(rows, trial(4, "passed", kind="sealed_validation")), 2)
 
 
 class SummaryTest(unittest.TestCase):
@@ -100,6 +130,11 @@ class SummaryTest(unittest.TestCase):
         summary = k_summary([trial(1, "passed")], submitted_k=1)
         self.assertFalse(summary["changed"])
         self.assertEqual(summary["threshold_submitted"], summary["threshold_current"])
+
+    def test_pre_submission_zero_is_not_a_valid_submitted_k(self):
+        for value in (0, None, True):
+            with self.assertRaises(ValueError):
+                k_summary([trial(1, "passed")], submitted_k=value)
 
 
 class SealedBudgetTest(unittest.TestCase):

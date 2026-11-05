@@ -5,11 +5,12 @@ import {FactorModuleTabs,WorkspaceHeading} from './QuantWorkspacePages';
 
 type Topic={id:string;project_id:string;project_name:string;view_id:string;primary_holding_period:number;max_trials:number;max_sealed:number;status:string;k:number;branch_count:number;trial_count:number;created_at?:string};
 type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;status:string;hypothesis_version:number;implementation_version:number;created_at?:string};
-type Trial={trial_no:number;branch_id:string;kind:string;outcome:string;executor:string;report_id?:string|null;created_at?:string;returned_metrics?:boolean;rerun_of?:string|null};
+type Trial={trial_no:number;branch_id:string;kind:string;outcome:string;executor:string;report_id?:string|null;created_at?:string;returned_metrics?:boolean;rerun_of?:string|null;result_summary?:{gate?:{checks?:{name:string;actual:number|null;threshold:number;passed:boolean}[]}}};
 type Ledger={topic:Topic;branches:Branch[];trials:Trial[];k:number;threshold:number|null;threshold_next_if_counted:number;next_trial_no:number};
 
 const statusText=(s:string)=>s==='active'?'运行中':s==='archived'?'已归档':s;
 const outcomeText=(t:Trial)=>t.outcome==='passed'?'通过':t.outcome==='failed'?'未达标':t.outcome==='error'?'执行错误':t.outcome;
+const nwText=(t:Trial)=>{const c=t.result_summary?.gate?.checks?.find(x=>x.name==='方向 NW t');return c&&typeof c.actual==='number'?` · NW t ${c.actual.toFixed(2)} / 需 ${c.threshold.toFixed(2)}`:'';};
 
 export function QuantFactorHomePage(){
  const [topics,setTopics]=useState<Topic[]>([]);
@@ -93,7 +94,7 @@ export function QuantFactorHomePage(){
     {trials.length===0?<p className="subtle">该分支尚无记录。</p>:trials.map(t=>(
      <div className="trial-row" key={t.trial_no}>
       <span className="tk">E{t.trial_no}</span>
-      <div className="tb"><b>{outcomeText(t)} · {t.kind}</b><small>{new Date(t.created_at||'').toLocaleString()} · {t.executor} · {t.returned_metrics?'已返回研发指标':'未返回指标'}{t.rerun_of?' · 确定性 rerun':''}</small></div>
+      <div className="tb"><b>{outcomeText(t)} · {t.kind}</b><small>{new Date(t.created_at||'').toLocaleString()} · {t.executor} · {t.returned_metrics?'已返回研发指标':'未返回指标'}{nwText(t)}{t.rerun_of?' · 确定性 rerun':''}</small></div>
       {t.report_id?<Link className="btn small" to={'/quant/factor/report/'+t.report_id}>报告</Link>:<span className="fine">无报告</span>}
      </div>
     ))}

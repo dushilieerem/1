@@ -18,6 +18,7 @@ from app.deps import require_user
 from services.core.db import get_conn
 from services.core.public_switches import disabled_modules
 from services.invest import agent_prompts, agent_tools
+from services.invest import condition as condition_service
 from services.invest import etf as etf_service
 from services.invest import glossary as glossary_service
 from services.invest import quant
@@ -94,6 +95,11 @@ def home(
     conn: PGConn = Depends(invest_conn),
 ) -> dict[str, Any]:
     return rules.build_home(conn, _uid(user), market)
+
+
+@router.get("/topics", dependencies=[Depends(_guard("topic"))])
+def topics(conn: PGConn = Depends(invest_conn)) -> dict[str, Any]:
+    return rules.build_topics(conn)
 
 
 @router.get("/topic/{topic_id}", dependencies=[Depends(_guard("topic"))])
@@ -582,6 +588,92 @@ def remove_watchlist(
     conn.execute("DELETE FROM invest_watchlist WHERE user_id=? AND code=?", (_uid(user), code))
     conn.commit()
     return rules.build_watchlist(conn, _uid(user), market)
+
+
+@router.post("/condition/parse")
+def parse_condition(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """解析自然语言选股条件；只解析，不执行。"""
+    del user
+    return condition_service.parse_query(str(body.get("query") or ""))
+
+
+@router.post("/condition/screen")
+def screen_condition(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """执行条件筛选。
+
+    前端删除标签后回传 ``conditions``；首次请求可只传 ``query``。
+    未识别、冲突或资金流等无数据源的条件直接返回 needs_input，绝不猜测执行。
+    """
+    del user
+    query = str(body.get("query") or "").strip()
+    parsed: dict[str, Any] | None = None
+    raw_conditions = body.get("conditions")
+    if isinstance(raw_conditions, list) and raw_conditions:
+        conds = condition_service.normalize_conditions([c for c in raw_conditions if isinstance(c, dict)])
+        if not conds:
+            raise HTTPException(status_code=400, detail="没有可执行条件")
+    else:
+        parsed = condition_service.parse_query(query)
+        conds = parsed["conditions"]
+        if not parsed["all_recognized"]:
+            message = parsed.get("message")
+            if parsed.get("unrecognized"):
+                message = "有部分条件暂时无法识别，请按下面的说法调整后重试。"
+            elif parsed.get("conflicts"):
+                message = "条件之间存在冲突，未执行筛选。"
+            elif parsed.get("unsupported"):
+                message = "以下条件的数据源暂未接入，未执行筛选。"
+            return {**parsed, "status": "needs_input", "message": message}
+    unsupported = [c for c in conds if not c.get("supported", True)]
+    if unsupported:
+        return {
+            "ok": True, "status": "needs_input", "conditions": conds,
+            "query": query, "unsupported": unsupported,
+            "message": "以下条件的数据源暂未接入，未执行筛选。",
+            "disclaimer": condition_service.DATA_DISCLAIMER,
+        }
+    result = condition_service.screen_conditions(conn, conds)
+    result["query"] = query
+    if parsed:
+        result["parsed"] = parsed
+    return result
+
+
+@router.post("/condition/watchlist")
+def condition_watchlist(
+    body: dict[str, Any] = Body(...),
+    market: str = Query("CN"),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """把筛选结果批量存为自选分组。"""
+    codes = [str(c) for c in (body.get("codes") or []) if str(c).strip()][:200]
+    if not codes:
+        raise HTTPException(status_code=400, detail="缺少标的")
+    group = str(body.get("group") or "条件选股").strip()[:40] or "条件选股"
+    existing = {
+        str(r["code"]) for r in rules.rows(
+            conn, "SELECT code FROM stocks WHERE code = ANY(?)", (codes,)
+        )
+    }
+    kept = [c for c in codes if c in existing]
+    added = 0
+    for code in kept:
+        cur = conn.execute(
+            "INSERT INTO invest_watchlist (user_id, code, group_name, created_at) VALUES (?,?,?,?) "
+            "ON CONFLICT (user_id, code) DO NOTHING",
+            (_uid(user), code, group, _now()),
+        )
+        added += max(0, int(getattr(cur, "rowcount", 0) or 0))
+    conn.commit()
+    return {"ok": True, "added": added, "group": group, "watchlist": rules.build_watchlist(conn, _uid(user), market)}
 
 
 @router.post("/events")

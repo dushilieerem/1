@@ -80,3 +80,35 @@ class NoveltyIterationTests(unittest.TestCase):
   a=candidate();b=candidate()
   for c,sha in [(a,'one'),(b,'two')]:c['evidence']['development']['novelty']={'status':'failed','meta':{'reference_source_hash':sha}}
   h=self.run_mock([a,b]);self.assertEqual(h['finish'].call_args.args[3],'failed');self.assertIn('源码版本',h['finish'].call_args.args[4])
+
+class TenantScopeTests(unittest.TestCase):
+ def test_pending_iteration_count_is_tenant_scoped(self):
+  c=MagicMock();conn=MagicMock();conn.__enter__.return_value=c
+  def execute(sql,params=None):
+   c.last_call=(sql,params)
+   if 'COUNT(*) AS n' in sql:c.next_row={'n':0}
+   elif 'FROM quant_factor_iterations' in sql and 'status IN' in sql:c.next_row=None
+   elif 'FROM detect_projects' in sql:c.next_row={'id':'p'}
+   elif 'quant_factor_agent_jobs' in sql:c.next_row=None
+   else:c.next_row=None
+   return c
+  c.execute.side_effect=execute;c.fetchone.side_effect=lambda:c.next_row;c.fetchall.return_value=[]
+  with patch.object(it,'get_conn',return_value=conn),patch.object(it,'_row_project',return_value={}),patch.object(it,'snapshot',return_value={'plan':{'researchPurpose':'replication','maxTrials':4}}),patch.object(it.POOL,'submit'),patch.object(it,'read',return_value={'id':'i'}):
+   it.start(1,2,'p',2)
+  pending=[x for x in c.execute.call_args_list if 'COUNT(*) AS n' in x.args[0] and 'quant_factor_iterations' in x.args[0]]
+  self.assertTrue(pending);self.assertEqual(pending[-1].args[1],(1,2))
+
+ def test_checkpoint_heartbeat_is_tenant_scoped(self):
+  c=MagicMock();conn=MagicMock();conn.__enter__.return_value=c
+  with patch.object(it,'read',return_value=JOB),patch.object(it,'get_conn',return_value=conn):
+   it.checkpoint(1,2,'i')
+  heartbeat=[x for x in c.execute.call_args_list if 'SET updated_at=NOW()' in x.args[0]]
+  self.assertTrue(heartbeat);self.assertEqual(heartbeat[-1].args[1],('i',1,2))
+
+ def test_review_handoff_update_is_tenant_scoped(self):
+  c=MagicMock();c.execute.return_value.fetchone.return_value={'status':'running'};conn=MagicMock();conn.__enter__.return_value=c
+  cand=candidate();cand['snapshot']['plan']['researchPurpose']='replication'
+  with patch.object(it,'checkpoint'),patch.object(it,'get_conn',return_value=conn),patch.object(it.service,'archive'),patch('services.quant_factor.review.request_review'):
+   it.submit_research(1,2,'i',cand,1,None)
+  handoff=[x for x in c.execute.call_args_list if "status='review_pending'" in x.args[0]]
+  self.assertTrue(handoff);self.assertEqual(handoff[-1].args[1][-2:],(1,2))

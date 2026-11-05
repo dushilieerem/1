@@ -5225,10 +5225,14 @@ AI_ROLE_CATALOG: tuple[tuple[str, str, str], ...] = (
 
 
 def institution_agent_catalog(org_id: int, *, can_edit: bool) -> dict[str, Any]:
-    """机构 Agent 管理目录：机构 14 个 + 平台/技能只读；仅经理可看提示词正文。"""
+    """机构 Agent 管理目录：只返回主观机构端自己的 Agent；仅经理可看提示词正文。"""
     from services.ai_agents import catalog as agent_catalog
 
-    items = agent_catalog.list_agents(include_prompt=can_edit)
+    items = [
+        item
+        for item in agent_catalog.list_agents(include_prompt=can_edit)
+        if item.get("source") == "institution"
+    ]
     return {
         "items": items,
         "count": len(items),

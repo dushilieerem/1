@@ -483,3 +483,11 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 不再依赖 #104 的“失败即降级”兜底；正常路径即可产出完整行业分析。
 
 验证：`pytest tests/test_inst_*.py tests/test_llm_fallback.py tests/test_ai_router.py tests/test_ai_layer_boundary.py` 114 passed。
+
+### 11.18 Agent 管理只展示机构端 Agent（2026-11-05）
+
+- `GET /api/inst/agents` 只返回 `source=institution` 的主观机构端 Agent，不再混入平台 Agent 与 Agent 技能。
+- 页面移除「机构/平台/技能/全部」筛选，只保留搜索；卡片去掉来源徽标，描述改为「只展示主观机构端自己的 Agent」。
+- 平台/个人中心的 Agent 目录接口不受影响。
+
+验证：pytest `test_inst_agent_prompt_api.py` 通过；e2e-10 Agent 管理用例通过；tsc 通过。

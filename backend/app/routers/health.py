@@ -6,7 +6,7 @@ import os
 from fastapi import APIRouter
 
 from app.bootstrap import FACTOR_DIR
-from services.core.db import get_conn
+from services.core.db import get_conn, pool_stats
 from services.core.env_config import env
 
 router = APIRouter(tags=["health"])
@@ -49,6 +49,7 @@ def health() -> dict:
         "service": "svquant",
         "port": PORT,
         "db": "ok" if db_ok else "error",
+        "db_pool": pool_stats(),
         "schema": schema,
         "data_sync": data_sync,
         "worker_mode": (env("SVQUANT_WORKER_MODE", "single") or "single"),

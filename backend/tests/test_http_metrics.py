@@ -38,6 +38,7 @@ def test_route_template_and_request_id(monkeypatch) -> None:
     assert 'method="GET"' in text
     assert 'status="200"' in text
     assert "svquant_http_in_flight" in text
+    assert "svquant_db_pool_connections" in text
 
 
 def test_unmatched_route_is_not_raw_path(monkeypatch) -> None:

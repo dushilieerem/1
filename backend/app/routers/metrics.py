@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
 from services.core import http_metrics
-from services.core.db import get_conn
+from services.core.db import get_conn, pool_stats
 from services.core.env_config import env
 
 router = APIRouter(tags=["metrics"])
@@ -60,7 +60,7 @@ def metrics(request: Request) -> Response:
             ]
     except Exception:
         lines += ["# TYPE svquant_db_up gauge", "svquant_db_up 0"]
-    lines.append(http_metrics.render().rstrip("\n"))
+    lines.append(http_metrics.render(pool=pool_stats()).rstrip("\n"))
     return Response(
         content="\n".join(lines) + "\n", media_type="text/plain; version=0.0.4; charset=utf-8"
     )

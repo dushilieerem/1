@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ChevronDown, ChevronUp, Mic, MicOff, Send, SlidersHorizontal, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronUp, Mic, MicOff, Send, SlidersHorizontal, Sparkles } from "lucide-react";
 import { api } from "../api";
-import { Disclaimer, ErrorState, PageHeader, Sparkline, Tag } from "../components";
+import { ErrorState, PageHeader, Sparkline, Tag } from "../components";
 import { ConditionPicker, ConditionScreener, looksLikeCondition, type ConditionResponse, type RelaxAction } from "../components/ConditionScreener";
 import { useLocale } from "../i18n";
 
@@ -434,10 +434,10 @@ export default function AiChat() {
       <div className="ai-template-bar">
         <button
           className={`chip condition-trigger ${pickerOpen ? "on" : ""}`}
-          aria-label={t("打开选股面板", "Open stock screener")}
+          aria-label={t("打开条件选股", "Open stock screener")}
           onClick={() => { setPickerOpen((v) => !v); setPanel(false); }}
         >
-          <SlidersHorizontal size={12} /> {t("选股", "Screen")}
+          <SlidersHorizontal size={12} /> {t("条件选股", "Screen")}
         </button>
         <div className="ai-template-scroll">
           {templates.slice(0, 4).map((tpl) => (
@@ -499,10 +499,6 @@ export default function AiChat() {
           </button>
         </div>
       </div>
-      <Disclaimer>{t("AI 生成内容仅作研究辅助；不提供买卖点、目标价、收益承诺。", "AI-generated content is for research support only; no entry/exit levels, target prices or return promises.")}</Disclaimer>
-      <button className="btn btn-ghost btn-sm" onClick={() => nav(-1)} style={{ marginTop: 8 }}>
-        <ArrowLeft size={14} /> {t("返回", "Back")}
-      </button>
     </div>
   );
 }

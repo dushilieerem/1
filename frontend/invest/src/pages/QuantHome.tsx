@@ -8,7 +8,7 @@ import {
   History,
   Info,
   LineChart,
-  Sparkles,
+  Users,
   WalletCards,
 } from "lucide-react";
 import { api } from "../api";
@@ -21,6 +21,7 @@ const ICONS: Record<string, typeof Calculator> = {
   strategies: LineChart,
   backtests: History,
   papers: WalletCards,
+  community: Users,
 };
 
 const TYPE_LABEL: Record<string, [string, string]> = {
@@ -60,7 +61,7 @@ export default function QuantHome() {
     <div className="page quant-page">
       <PageHeader
         title={t("量化研究", "Quant research")}
-        sub={t("因子、策略、回测与模拟盘 · 只做研究与记账", "Factors, strategies, backtests and paper trading · research and bookkeeping only")}
+        sub={t("因子、策略、回测、模拟盘与社区 · 只做研究与记账", "Factors, strategies, backtests, paper trading and community · research and bookkeeping only")}
       />
 
       {error ? <ErrorState message={error} onRetry={load} /> : null}
@@ -68,27 +69,6 @@ export default function QuantHome() {
 
       {data ? (
         <>
-          <section className="card quant-style-card">
-            <div className="card-title-row">
-              <h2 className="row gap6"><Sparkles size={15} /> {t("市场风格", "Market style")}</h2>
-              <Tag tone={data.style?.key === "attack" ? "red" : data.style?.key === "defense" ? "blue" : "gray"}>
-                {locale === "en" ? data.style?.label_en : data.style?.label}
-              </Tag>
-            </div>
-            <p className="quant-style-sentence">
-              {locale === "en" ? data.style?.sentence_en : data.style?.sentence}
-            </p>
-            <div className="quant-tags">
-              {(locale === "en" ? data.style?.tags_en : data.style?.tags || []).map((tag) => (
-                <Tag key={tag} tone="gray">{tag}</Tag>
-              ))}
-            </div>
-            <p className="hint">
-              {locale === "en" ? data.style?.method_en : data.style?.method}
-            </p>
-            <p className="hint">{locale === "en" ? data.style?.note_en : data.style?.note}</p>
-          </section>
-
           <section className="quant-focus">
             <button
               className="quant-focus-bar"

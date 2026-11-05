@@ -89,6 +89,18 @@ export const CONDITION_PRESETS: ConditionPreset[] = [
     query: "股息率大于 3%，PE 分位低于 30%，近 1 年最大回撤小于 25%",
   },
   {
+    id: "smallcap",
+    name: { zh: "小市值弹性", en: "Small-cap beta" },
+    sub: { zh: "题材 + 成长 + 资金", en: "Theme + growth + flows" },
+    query: "总市值小于 200 亿，近 20 日涨幅大于 10%，近 5 日主力净流入大于 5000 万",
+  },
+  {
+    id: "inflow",
+    name: { zh: "主力连续流入", en: "Persistent inflow" },
+    sub: { zh: "资金连续买", en: "Consecutive buying" },
+    query: "近 5 日主力净流入合计大于 5000 万，且连续 3 日为正",
+  },
+  {
     id: "breakout",
     name: { zh: "放量突破", en: "Volume breakout" },
     sub: { zh: "新高 + 成交放大", en: "New high + volume expansion" },
@@ -131,7 +143,7 @@ export function ConditionPicker({
     <Sheet
       open
       onClose={onClose}
-      title={t("选股方向", "Screening direction")}
+      title={t("条件选股", "Stock screening")}
       sub={t("点一个方向，整句会填进输入框；数字和条件都可以改。", "Pick a direction to fill the full sentence into the input; edit numbers or conditions as needed.")}
     >
       <div className="condition-preset-list">

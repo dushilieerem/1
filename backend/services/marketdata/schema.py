@@ -151,6 +151,44 @@ DDL: tuple[str, ...] = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS md_fund_flow_daily (
+      symbol                    TEXT NOT NULL,
+      trade_date                DATE NOT NULL,
+      main_net_inflow           DOUBLE PRECISION,
+      small_net_inflow          DOUBLE PRECISION,
+      medium_net_inflow         DOUBLE PRECISION,
+      large_net_inflow          DOUBLE PRECISION,
+      super_large_net_inflow    DOUBLE PRECISION,
+      main_net_ratio            DOUBLE PRECISION,
+      small_net_ratio           DOUBLE PRECISION,
+      medium_net_ratio          DOUBLE PRECISION,
+      large_net_ratio           DOUBLE PRECISION,
+      super_large_net_ratio     DOUBLE PRECISION,
+      close                     DOUBLE PRECISION,
+      change_pct                DOUBLE PRECISION,
+      source                    TEXT,
+      observed_at               TEXT,
+      ingested_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (symbol, trade_date)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS md_fund_flow_candidate (
+      symbol                    TEXT PRIMARY KEY,
+      trade_date                DATE NOT NULL,
+      main_net_inflow_5d        DOUBLE PRECISION,
+      main_net_inflow_latest    DOUBLE PRECISION,
+      main_net_ratio_latest     DOUBLE PRECISION,
+      inflow_days_5d            INTEGER,
+      consecutive_inflow_days   INTEGER,
+      consecutive_outflow_days  INTEGER,
+      days_available            INTEGER,
+      source                    TEXT,
+      observed_at               TEXT,
+      ingested_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS derived_news (
       doc_id       TEXT PRIMARY KEY,
       source       TEXT,
@@ -364,6 +402,9 @@ INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_md_valuation_symbol ON md_valuation_daily (symbol)",
     "CREATE INDEX IF NOT EXISTS idx_md_status_date ON md_status_daily (trade_date)",
     "CREATE INDEX IF NOT EXISTS idx_md_status_symbol ON md_status_daily (symbol)",
+    "CREATE INDEX IF NOT EXISTS idx_md_fund_flow_date ON md_fund_flow_daily (trade_date)",
+    "CREATE INDEX IF NOT EXISTS idx_md_fund_flow_symbol ON md_fund_flow_daily (symbol, trade_date DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_md_fund_flow_candidate_date ON md_fund_flow_candidate (trade_date)",
     "CREATE INDEX IF NOT EXISTS idx_ref_security_name ON ref_security (name)",
     "CREATE INDEX IF NOT EXISTS idx_ref_security_market ON ref_security (market, status)",
     "CREATE INDEX IF NOT EXISTS idx_ref_calendar_date ON ref_trading_calendar (trade_date)",

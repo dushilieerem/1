@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { BookOpen, Calculator, Home, Newspaper, PieChart, Star, Users } from "lucide-react";
+import { BookOpen, Calculator, Home, Newspaper, PieChart, Star } from "lucide-react";
 import { useLocale } from "../i18n";
 
 const TABS = [
@@ -9,7 +9,6 @@ const TABS = [
   { to: "/portfolio", zh: "组合", en: "Portfolio", icon: PieChart },
   { to: "/news", zh: "资讯", en: "News", icon: Newspaper },
   { to: "/learn", zh: "学习", en: "Learn", icon: BookOpen },
-  { to: "/community", zh: "社区", en: "Community", icon: Users },
   { to: "/quant", zh: "量化", en: "Quant", icon: Calculator },
 ];
 

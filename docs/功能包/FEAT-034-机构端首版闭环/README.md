@@ -352,3 +352,16 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 | `npm run test:inst` | 5 passed |
 | `e2e-09/10/11` | 13 passed |
 | 控制台错误 / 接口 5xx / 横向溢出 | 0 |
+
+### 11.8 AI 自动运行、50 字摘要与结果落盘（2026-11-05，PR A）
+
+| 项 | 实现 |
+|---|---|
+| 自动运行 | 研究一页纸、审批 AI 风控/Chairman 进入页面自动加载；有缓存直接展示，无缓存且有写权限才生成；按钮改为「重新生成」`refresh=true` |
+| 50 字摘要 | 六维 summary、一页纸 summary、审批/岗位 summary 及列表项均截 50 字；评分、证据、风险结构保留；辩论 claim 前端显示 50 字摘要，完整原文悬浮 |
+| 落库 | 新增 `ai_agent_output` 缓存（task + org + 对象 + 输入 hash + 提示词版本）；一页纸/审批 AI 命中缓存不重复调用模型；规则兜底不缓存，保留重试 AI 的机会 |
+| 追问落库 | 新增 `inst_ai_chat_message`，单维追问按用户持久化；进入维度加载历史，发送带 `client_message_id` |
+| 提示词覆盖 | 新增 `ai_agent_prompt` + `services/institution/prompts.py` 默认提示词；`_ai_task`、六维、辩论调用前解析全局覆盖，版本 +1 后缓存自动失效 |
+| 安全 | 生成仍受机构工作区权限约束；AI 只读，不改审批/授权/持仓状态 |
+
+验证：`pytest tests/test_inst_*.py` 69 passed；新增 AI cache/prompt test；`tsc` 通过。Agent 管理 UI 在 PR B。

@@ -39,6 +39,11 @@ type Debate = {
   evidence_checks?: EvidenceCheck[];
 };
 
+function clipBrief(value?: string): string {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length <= 50 ? text : `${text.slice(0, 49)}…`;
+}
+
 const EVIDENCE_CHECK_LABEL: Record<string, string> = {
   verified: "已核验",
   partially_verified: "部分核验",
@@ -358,7 +363,7 @@ export function InstDebatePage() {
                               {t("置信度", "Confidence")} {a.confidence?.toFixed?.(2) ?? "—"}
                             </span>
                           </div>
-                          <p className="mt-2 text-xs leading-relaxed text-[#505369]">{a.claim}</p>
+                          <p className="mt-2 text-xs leading-relaxed text-[#505369]" title={a.claim}>{clipBrief(a.claim)}</p>
                           {a.evidence_ids?.length && a.valid !== false ? (
                             <p className="mt-2 font-mono text-[10px] text-[#77718c]">
                               {t("证据", "Evidence")}：{a.evidence_ids.join(", ")}
@@ -407,8 +412,8 @@ export function InstDebatePage() {
             {groups.chair.length ? (
               <ul className="space-y-2">
                 {groups.chair.map((a) => (
-                  <li key={a.id} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3 text-xs leading-relaxed text-[#505369]">
-                    {a.claim}
+                  <li key={a.id} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] p-3 text-xs leading-relaxed text-[#505369]" title={a.claim}>
+                    {clipBrief(a.claim)}
                   </li>
                 ))}
               </ul>

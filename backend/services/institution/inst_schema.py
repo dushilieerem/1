@@ -207,6 +207,21 @@ DDL: tuple[str, ...] = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS inst_ai_chat_message (
+      id                BIGSERIAL PRIMARY KEY,
+      org_id            BIGINT NOT NULL REFERENCES inst_orgs(id) ON DELETE CASCADE,
+      case_id           BIGINT NOT NULL REFERENCES inst_research_case(id) ON DELETE CASCADE,
+      dim_key           TEXT NOT NULL,
+      user_id           BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      member_id         BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
+      role              TEXT NOT NULL,
+      content           TEXT NOT NULL,
+      client_message_id TEXT,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT inst_ai_chat_role_chk CHECK (role IN ('user','assistant'))
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS inst_proposal (
       id                 BIGSERIAL PRIMARY KEY,
       org_id              BIGINT NOT NULL REFERENCES inst_orgs(id) ON DELETE CASCADE,
@@ -438,6 +453,9 @@ INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_inst_debate_session_case ON inst_debate_session (case_id, started_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_debate_argument_session ON inst_debate_argument (session_id, side, round)",
     "CREATE INDEX IF NOT EXISTS idx_inst_evidence_check_session ON inst_evidence_check (session_id, claim_id)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_ai_chat_thread ON inst_ai_chat_message (org_id, case_id, dim_key, user_id, id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_inst_ai_chat_client_msg ON inst_ai_chat_message "
+    "(org_id, case_id, dim_key, user_id, client_message_id) WHERE client_message_id IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_inst_proposal_org ON inst_proposal (org_id, status, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_proposal_version_prop ON inst_proposal_version (proposal_id, version_no DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_authorization_status ON inst_authorization (status, issued_at DESC)",

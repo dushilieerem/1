@@ -16,6 +16,15 @@ from ai.router.specs import TaskRequest, TaskSpec, register
 
 PROMPT_VERSION = "inst-v2"
 DIM_PROMPT_VERSION = "inst-dim-v2"
+BRIEF_MAX_CHARS = 50
+
+
+def clip_brief(value: Any) -> str:
+    """摘要/结论字段上限 50 字；超长时保留前 49 字 + 省略号。"""
+    text = " ".join(str(value or "").split())
+    if len(text) <= BRIEF_MAX_CHARS:
+        return text
+    return text[: BRIEF_MAX_CHARS - 1] + "…"
 
 
 def _strip(raw: str) -> str:
@@ -69,9 +78,10 @@ def validate_dimension(raw: str, request: TaskRequest) -> dict[str, Any]:
     data = _load(raw)
     if not str(data.get("summary") or "").strip():
         raise AiBadOutput("六维 Agent 缺少 summary")
+    data["summary"] = clip_brief(data.get("summary"))
     for key in ("checks", "counter", "open_questions", "data_gaps"):
         value = data.get(key)
-        data[key] = [str(x) for x in value if str(x).strip()] if isinstance(value, list) else []
+        data[key] = [clip_brief(x) for x in value if str(x).strip()] if isinstance(value, list) else []
     items = data.get("evidence")
     evidence = []
     for item in items if isinstance(items, list) else []:
@@ -103,6 +113,10 @@ def validate_memo(raw: str, request: TaskRequest) -> dict[str, Any]:
         value = data.get(key)
         if value is None:
             data[key] = [] if key != "summary" else ""
+    data["summary"] = clip_brief(data.get("summary"))
+    for key in ("evidence", "risks", "open_questions"):
+        value = data.get(key)
+        data[key] = [clip_brief(x) for x in value if str(x).strip()] if isinstance(value, list) else []
     return data
 
 
@@ -141,9 +155,11 @@ def validate_research_memo(raw: str, request: TaskRequest) -> dict[str, Any]:
             }
         )
     data["six_dim_scores"] = scores
+    for item in scores:
+        item["note"] = clip_brief(item.get("note"))
     for key in ("conflicts", "key_variables"):
         value = data.get(key)
-        data[key] = [str(x)[:300] for x in value if str(x).strip()] if isinstance(value, list) else []
+        data[key] = [clip_brief(x) for x in value if str(x).strip()] if isinstance(value, list) else []
     return data
 
 

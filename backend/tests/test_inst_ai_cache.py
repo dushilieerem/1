@@ -1,0 +1,143 @@
+# -*- coding: utf-8 -*-
+"""AI 提示词覆盖、50 字摘要与结果缓存。"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import uuid
+from pathlib import Path
+
+import pytest
+
+os.environ.setdefault("JWT_SECRET_KEY", "0123456789abcdef0123456789abcdef")
+os.environ.setdefault("DEV_SKIP_AUTH", "0")
+os.environ.setdefault("RE_CATALOG_SYNC_ENABLED", "0")
+os.environ.setdefault("SVQUANT_PANEL_DAILY_ENABLED", "0")
+os.environ.setdefault("SVQUANT_PAPER_TRADING_ENABLED", "0")
+os.environ.setdefault("NEWS_INGEST_INTERVAL_SEC", "0")
+os.environ.setdefault("RE_CATALOG_WARM_ENABLED", "0")
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from psycopg.types.json import Jsonb  # noqa: E402
+
+from ai.router.specs import TaskRequest  # noqa: E402
+from ai.router.tasks.institution import (  # noqa: E402
+    clip_brief,
+    validate_dimension,
+    validate_memo,
+    validate_research_memo,
+)
+from ai.runtime import agent_store  # noqa: E402
+from services.auth.auth_store import ensure_schema  # noqa: E402
+from services.core.db import get_conn  # noqa: E402
+from services.institution import inst_service as svc  # noqa: E402
+from services.institution.inst_schema import ensure_inst_business_schema  # noqa: E402
+from services.institution.inst_store import ensure_inst_schema  # noqa: E402
+
+ensure_schema()
+ensure_inst_schema()
+ensure_inst_business_schema()
+agent_store.ensure_ai_agent_schema()
+
+
+def test_clip_brief_and_validators() -> None:
+    long_text = "这是一个明显超过五十个字符的摘要，需要被截断而不是完整展示出来，确保界面直击要害。"
+    assert len(clip_brief(long_text)) <= 50
+    dim = validate_dimension(
+        json.dumps(
+            {
+                "summary": long_text,
+                "checks": [long_text, "短句"],
+                "counter": [long_text],
+                "evidence": [{"title": "t", "quote": "q", "source": "s"}],
+                "open_questions": [long_text],
+                "data_gaps": [long_text],
+            }
+        ),
+        TaskRequest(),
+    )
+    assert len(dim["summary"]) <= 50
+    assert all(len(x) <= 50 for x in dim["checks"] + dim["counter"] + dim["open_questions"] + dim["data_gaps"])
+
+    memo = validate_research_memo(
+        json.dumps(
+            {
+                "summary": long_text,
+                "decision": "proceed",
+                "six_dim_scores": [{"key": "industry", "score": 3, "confidence": 0.5, "note": long_text}],
+                "conflicts": [long_text],
+                "key_variables": [long_text],
+                "risks": [long_text],
+                "open_questions": [long_text],
+            }
+        ),
+        TaskRequest(),
+    )
+    assert len(memo["summary"]) <= 50
+    assert len(memo["six_dim_scores"][0]["note"]) <= 50
+    assert all(len(x) <= 50 for x in memo["conflicts"] + memo["key_variables"] + memo["risks"] + memo["open_questions"])
+
+    risk = validate_memo(json.dumps({"summary": long_text, "risks": [long_text]}), TaskRequest())
+    assert len(risk["summary"]) <= 50
+    assert len(risk["risks"][0]) <= 50
+
+
+def test_prompt_override_and_reset() -> None:
+    task_id = "inst.research_memo"
+    original = agent_store.get_effective_prompt(task_id, "default")[0]
+    agent_store.save_prompt(task_id, "自定义提示词：只输出结论", updated_by=None)
+    prompt, version = agent_store.get_effective_prompt(task_id, "default")
+    assert prompt.startswith("自定义提示词")
+    assert version != "0"
+    history = agent_store.list_prompt_history(task_id)
+    assert history and history[0]["action"] == "save"
+
+    agent_store.reset_prompt(task_id)
+    prompt, version = agent_store.get_effective_prompt(task_id, "default")
+    assert prompt == "default"
+    assert version == "0"
+
+
+def test_memo_cache_hit_and_refresh(monkeypatch) -> None:
+    tag = uuid.uuid4().hex[:8]
+    with get_conn() as conn:
+        org = conn.execute(
+            "INSERT INTO inst_orgs (code, name_cn) VALUES (%s,%s) RETURNING id",
+            (f"cache-{tag}", f"缓存测试机构 {tag}"),
+        ).fetchone()
+        org_id = int(org["id"])
+        company = conn.execute(
+            "INSERT INTO inst_company (org_id, symbol, name, market) "
+            "VALUES (%s,%s,'缓存测试公司','CN') RETURNING id",
+            (org_id, f"CAH{tag[:4].upper()}.SH"),
+        ).fetchone()
+        case = conn.execute(
+            "INSERT INTO inst_research_case (org_id, company_id, case_no) VALUES (%s,%s,%s) RETURNING id",
+            (org_id, int(company["id"]), f"CA-{tag}"),
+        ).fetchone()
+        conn.execute(
+            "INSERT INTO inst_research_version "
+            "(case_id, version_no, status, six_dim, conclusion, evidence_ids) "
+            "VALUES (%s,1,'pending_review',%s,'有条件通过',%s)",
+            (int(case["id"]), Jsonb([]), Jsonb([])),
+        )
+    calls = {"n": 0, "systems": []}
+
+    def fake_ai(task_id, payload, system):
+        calls["n"] += 1
+        calls["systems"].append(system)
+        return {"summary": "缓存摘要", "engine": "agent"}
+
+    monkeypatch.setattr(svc, "_ai_task", fake_ai)
+    first = svc.ai_research_memo(org_id, int(case["id"]))
+    second = svc.ai_research_memo(org_id, int(case["id"]))
+    assert first["memo"]["summary"] == "缓存摘要"
+    assert second["cached"] is True
+    assert calls["n"] == 1
+
+    refreshed = svc.ai_research_memo(org_id, int(case["id"]), refresh=True)
+    assert refreshed["cached"] is False
+    assert calls["n"] == 2

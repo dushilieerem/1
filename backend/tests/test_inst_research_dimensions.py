@@ -287,7 +287,11 @@ def test_research_memo_has_metrics_and_rule_fallback(fixture, monkeypatch) -> No
 
     monkeypatch.setattr(svc, "_ai_task", unavailable)
     fallback = _ok(
-        client.post(f"/api/inst/cases/{case_id}/ai/memo", headers=_h(fixture["tokens"]["manager"]))
+        client.post(
+            f"/api/inst/cases/{case_id}/ai/memo",
+            json={"refresh": True},
+            headers=_h(fixture["tokens"]["manager"]),
+        )
     )["memo"]
     assert fallback["engine"] == "rule"
     assert fallback["summary"]

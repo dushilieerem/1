@@ -1,9 +1,12 @@
+import json
 import unittest
 from unittest.mock import MagicMock, patch
 
-from services.quant_factor import f0
+from services.quant_factor import f0, f0_agent
+from services.quant_factor.policy import WorkflowError
 
-TOPIC = {'id': 't', 'project_id': 'p', 'view_id': 'v', 'max_trials': 4, 'primary_holding_period': 1, 'status': 'active'}
+TOPIC = {'id': 't', 'project_id': 'p', 'view_id': 'v', 'max_trials': 4,
+         'primary_holding_period': 1, 'status': 'active'}
 
 
 def conn(fetchone=None):
@@ -13,92 +16,83 @@ def conn(fetchone=None):
 
 
 class F0StartTest(unittest.TestCase):
-    def test_view_drift_stops_before_writing_compute(self):
+    def test_view_drift_stops(self):
         w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None]
-        with patch.object(f0, '_topic', return_value=TOPIC), \
-             patch.object(f0, 'get_conn', return_value=w), \
+        with patch.object(f0, '_topic', return_value=TOPIC), patch.object(f0, 'get_conn', return_value=w), \
              patch.object(f0, 'published_view', return_value={'view_id': 'new'}), \
-             patch.object(f0, '_record', return_value={'status': 'stopped', 'stop_reason': 'view'}) as rec:
-            out = f0.start(1, 2, 't', 'b', 'k1')
-        self.assertEqual(out['status'], 'stopped')
-        self.assertEqual(rec.call_args.args[5], 'stopped')
-
-    def test_budget_exhausted_stops(self):
-        w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None, {'n': 4}]
-        with patch.object(f0, '_topic', return_value=TOPIC), \
-             patch.object(f0, 'get_conn', return_value=w), \
-             patch.object(f0, 'published_view', return_value={'view_id': 'v'}), \
              patch.object(f0, '_record', return_value={'status': 'stopped'}) as rec:
             out = f0.start(1, 2, 't', 'b', 'k1')
         self.assertEqual(out['status'], 'stopped')
-        self.assertIn('预算', rec.call_args.args[7])
+        self.assertEqual(rec.call_args.args[6]['reason'], 'locked_view_drift')
 
-    def test_duplicate_key_returns_existing_without_new_record(self):
-        w, c = conn(fetchone={'id': 'run1', 'status': 'queued', 'user_id': 1, 'org_id': 2, 'decision': {'action': 'run_development_test'}})
-        with patch.object(f0, '_topic', return_value=TOPIC), \
-             patch.object(f0, 'get_conn', return_value=w), \
+    def test_budget_uses_k_not_candidates(self):
+        w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None]
+        with patch.object(f0, '_topic', return_value=TOPIC), patch.object(f0, 'get_conn', return_value=w), \
+             patch.object(f0, 'published_view', return_value={'view_id': 'v'}), \
+             patch.object(f0.ledger, '_trials', return_value=[]), \
+             patch.object(f0.ledger, 'current_k', return_value=4), \
+             patch.object(f0, '_record', return_value={'status': 'stopped'}) as rec:
+            f0.start(1, 2, 't', 'b', 'k1')
+        self.assertEqual(rec.call_args.args[6]['reason'], 'budget_exhausted')
+
+    def test_duplicate_key_returns_existing(self):
+        w, c = conn(fetchone={'id': 'run1', 'status': 'queued', 'user_id': 1, 'org_id': 2})
+        with patch.object(f0, '_topic', return_value=TOPIC), patch.object(f0, 'get_conn', return_value=w), \
              patch.object(f0, '_record') as rec:
             out = f0.start(1, 2, 't', 'b', 'same')
         self.assertEqual(out['id'], 'run1')
         rec.assert_not_called()
 
-    def test_foreign_branch_is_rejected(self):
+    def test_foreign_branch_rejected(self):
         w, c = conn(fetchone=None)
         with patch.object(f0, '_topic', return_value=TOPIC), patch.object(f0, 'get_conn', return_value=w):
             with self.assertRaises(KeyError):
                 f0.start(1, 2, 't', 'foreign', 'k1')
 
+    def test_paused_topic_stops(self):
+        w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None]
+        with patch.object(f0, '_topic', return_value={**TOPIC, 'status': 'paused'}), \
+             patch.object(f0, 'get_conn', return_value=w), patch.object(f0, '_record', return_value={'status': 'stopped'}) as rec:
+            f0.start(1, 2, 't', 'b', 'k1')
+        self.assertEqual(rec.call_args.args[6]['reason'], 'topic_paused')
+
 
 class F0RunTest(unittest.TestCase):
-    def test_one_authorised_test_executes_and_completes(self):
-        w, c = conn(fetchone={'id': 'run1', 'project_id': 'p', 'status': 'queued',
-                              'user_id': 1, 'org_id': 2, 'decision': {'action': 'run_development_test'}})
-        candidate = {'id': 'c1', 'status': 'development_passed'}
-        with patch.object(f0, 'get_conn', return_value=w), \
-             patch.object(f0, 'service') as svc:
-            svc.create.return_value = candidate
-            svc.current.return_value = candidate
+    def test_stop_decision_is_persisted(self):
+        w, c = conn(fetchone={'id': 'run1', 'status': 'queued', 'user_id': 1, 'org_id': 2,
+                              'topic_id': 't', 'project_id': 'p', 'decision': {}})
+        decision = f0_agent.Decision(action='stop', rationale='E1 NW t -0.76 未达标，停止', stop_reason='no_improvement')
+        with patch.object(f0, 'get_conn', return_value=w), patch.object(f0, '_topic', return_value=TOPIC), \
+             patch.object(f0_agent, 'decide', return_value=(decision, {})), \
+             patch.object(f0_agent, 'execute', return_value={'status': 'stopped', 'reason': 'no_improvement'}):
             f0.run(1, 2, 'run1')
-        svc.create.assert_called_once_with(1, 2, 'p')
-        updates = [x for x in c.execute.call_args_list if "status='completed'" in x.args[0]]
-        self.assertTrue(updates)
+        stops = [x for x in c.execute.call_args_list if "stop_reason=%s" in x.args[0]]
+        self.assertTrue(stops)
+        self.assertEqual(stops[-1].args[1][1], 'no_improvement')
 
 
-class F0DecisionTest(unittest.TestCase):
-    def test_failed_trial_derives_branch_without_rerun(self):
-        w, c = conn(); c.fetchone.side_effect = [
-            {'id': 'b', 'source': 'manual'}, None, {'n': 0}, None]
-        latest = {'trial_no': 1, 'outcome': 'failed'}
-        with patch.object(f0, '_topic', return_value=TOPIC), \
-             patch.object(f0, 'get_conn', return_value=w), \
-             patch.object(f0, 'published_view', return_value={'view_id': 'v'}), \
-             patch.object(f0.ledger, '_trials', return_value=[latest]), \
-             patch.object(f0.POOL, 'submit'), \
-             patch.object(f0, '_record', return_value={'id': 'run', 'status': 'queued'}) as rec:
-            out = f0.start(1, 2, 't', 'b', 'k')
-        decision = rec.call_args.args[6]
-        self.assertEqual(decision['action'], 'derive_branch')
-        self.assertEqual(decision['from_trial'], 1)
+class DecisionValidationTest(unittest.TestCase):
+    def decide(self, payload):
+        with patch.object(f0_agent, '_context', return_value={'branches': [], 'remaining': 2}), \
+             patch.object(f0_agent, 'get_task'), patch.object(f0_agent, 'assert_quota_available'), \
+             patch.object(f0_agent, 'record_usage'), \
+             patch.object(f0_agent, 'run_task', return_value={'content': json.dumps(payload)}):
+            return f0_agent.decide(1, 2, TOPIC, 'run')
 
-    def test_passed_trial_stops_for_human(self):
-        w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None, {'n': 0}]
-        with patch.object(f0, '_topic', return_value=TOPIC), \
-             patch.object(f0, 'get_conn', return_value=w), \
-             patch.object(f0, 'published_view', return_value={'view_id': 'v'}), \
-             patch.object(f0.ledger, '_trials', return_value=[{'trial_no': 1, 'outcome': 'passed'}]), \
-             patch.object(f0, '_record', return_value={'status': 'stopped'}) as rec:
-            out = f0.start(1, 2, 't', 'b', 'k')
-        self.assertEqual(out['status'], 'stopped')
-        self.assertEqual(rec.call_args.args[6]['reason'], 'development_passed')
+    def test_unknown_action_rejected(self):
+        with self.assertRaisesRegex(WorkflowError, '白名单'):
+            self.decide({'action': 'widen_scope', 'rationale': 'E1 未达标所以要扩数据'})
 
+    def test_short_rationale_rejected(self):
+        with self.assertRaisesRegex(WorkflowError, '理由'):
+            self.decide({'action': 'run_test', 'rationale': 'x'})
 
-class F0PauseTest(unittest.TestCase):
-    def test_paused_topic_stops_without_scheduling(self):
-        w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None]
-        topic = {**TOPIC, 'status': 'paused'}
-        with patch.object(f0, '_topic', return_value=topic), \
-             patch.object(f0, 'get_conn', return_value=w), \
-             patch.object(f0, '_record', return_value={'status': 'stopped'}) as rec:
-            out = f0.start(1, 2, 't', 'b', 'k')
-        self.assertEqual(out['status'], 'stopped')
-        self.assertEqual(rec.call_args.args[6]['reason'], 'topic_paused')
+    def test_revise_without_hypothesis_rejected(self):
+        with self.assertRaisesRegex(WorkflowError, '新假设'):
+            self.decide({'action': 'revise', 'rationale': 'E1 NW t -0.76，需修订实现', 'next_hypothesis': ''})
+
+    def test_request_seal_is_not_executed_by_f0(self):
+        decision = f0_agent.Decision(action='request_seal', rationale='E4 研发已通过，应由 F5 封存')
+        result = f0_agent.execute(1, 2, 'run', TOPIC, decision, 1)
+        self.assertEqual(result['status'], 'stopped')
+        self.assertIn('F5', result['reason'])

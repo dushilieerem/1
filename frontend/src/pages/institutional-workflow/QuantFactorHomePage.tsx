@@ -17,7 +17,7 @@ export function QuantFactorHomePage(){
  const [selected,setSelected]=useState<string>();
  const [ledger,setLedger]=useState<Ledger>();
  const [node,setNode]=useState<string>();
- const [f0,setF0]=useState<{id:string;status:string;decision?:{candidate_status?:string;reason?:string};stop_reason?:string}>();
+ const [f0,setF0]=useState<{id:string;status:string;decision?:{candidate_status?:string;reason?:string;steps?:Array<{step:number;decision:{action:string;rationale:string};result:{status?:string;candidate_status?:string;reason?:string}}>};stop_reason?:string}>();
  const [error,setError]=useState('');
  const [loading,setLoading]=useState(true);
  const navigate=useNavigate();
@@ -37,7 +37,7 @@ export function QuantFactorHomePage(){
   let alive=true;
   researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(selected)+'/ledger')
    .then(r=>r.ok?r.json():Promise.reject(Error('研究树读取失败')))
-   .then(d=>{if(!alive)return;setLedger(d);setNode(cur=>cur&&(d.branches||[]).some((b:Branch)=>b.id===cur)?cur:(d.branches||[])[0]?.id);})
+   .then(d=>{if(!alive)return;setLedger(d);setNode(cur=>cur&&(d.branches||[]).some((b:Branch)=>b.id===cur)?cur:(d.branches||[])[0]?.id);void researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(selected)+'/f0-runs').then(r=>r.ok?r.json():null).then(f=>{if(alive)setF0(f||undefined);});})
    .catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));});
   return()=>{alive=false;};
  },[selected]);
@@ -118,6 +118,7 @@ export function QuantFactorHomePage(){
       {t.report_id?<Link className="btn small" to={'/quant/factor/report/'+t.report_id}>报告</Link>:<span className="fine">无报告</span>}
      </div>
     ))}
+    {f0?.decision?.steps&&<div style={{marginTop:14}}><h3 style={{margin:'0 0 6px'}}>F0 决策事件</h3>{f0.decision.steps.map(s=><div className="trial-row" key={s.step}><span className="tk">S{s.step}</span><div className="tb"><b>{s.decision.action}</b><small>{s.decision.rationale}</small></div><span className="fine">{s.result.status||''}{s.result.candidate_status?' · '+s.result.candidate_status:''}</span></div>)}</div>}
    </div>
   </div>
  ):null;

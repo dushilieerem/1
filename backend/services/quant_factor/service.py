@@ -56,8 +56,14 @@ def create(uid,org,project_id,expected_snapshot_hash=None,reference=None):
                 raise WorkflowError('已有候选的对照库版本不同，请复盘后开启新的研究任务。')
             cid=existing['id']
         else:
-            count=c.execute('SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s',(uid,org,project_id)).fetchone()['n']
-            if count>=snap['plan']['maxTrials']: raise WorkflowError('本研究已达到登记的候选尝试预算；请先复盘并明确修订计划')
+            from . import ledger
+            topic=c.execute("SELECT * FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s",(uid,org,project_id)).fetchone()
+            if topic:
+                used=ledger.current_k(ledger._trials(uid,org,topic['id']),topic['primary_holding_period'])
+                if used>=int(topic['max_trials']): raise WorkflowError('课题 K 已达到试验预算；请先复盘并明确修订计划')
+            else:
+                count=c.execute('SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s',(uid,org,project_id)).fetchone()['n']
+                if count>=snap['plan']['maxTrials']: raise WorkflowError('本研究已达到登记的候选尝试预算；请先复盘并明确修订计划')
             pending=c.execute("SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND status LIKE '%%_running'",(uid,org)).fetchone()['n']
             if pending>=4: raise WorkflowError('验证计算队列繁忙，请稍后提交')
             cid=str(uuid.uuid4())

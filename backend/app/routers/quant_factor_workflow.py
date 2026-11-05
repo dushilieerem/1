@@ -307,6 +307,11 @@ def f0_start(tid:str,bid:str,body:F0Body,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import f0
     return invoke_ledger(f0.start,*identity(ctx),tid,bid,body.idempotency_key)
 
+@router.get('/topics/{tid}/f0-runs')
+def f0_latest(tid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import f0
+    return invoke(f0.latest,*identity(ctx),tid)
+
 @router.get('/f0-runs/{rid}')
 def f0_read(rid:str,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import f0

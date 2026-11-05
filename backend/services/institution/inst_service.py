@@ -32,6 +32,7 @@ from services.core.db import get_conn
 from services.institution.prompts import (
     CHAIRMAN_MEMO_PROMPT,
     CHAT_PROMPT,
+    INDUSTRY_PROMPT,
     DEBATE_PROMPT,
     DIMENSION_PROMPTS as _DIMENSION_PROMPTS,
     RESEARCH_MEMO_PROMPT,
@@ -143,6 +144,7 @@ def _ensure_version_hash(conn, version: Any) -> dict[str, Any]:
         {
             "case_id": row.get("case_id"),
             "six_dim": row.get("six_dim") or [],
+            "industry_analysis": row.get("industry_analysis"),
             "valuation": row.get("valuation"),
             "conclusion": row.get("conclusion"),
             "assumptions": row.get("assumptions") or [],
@@ -728,6 +730,19 @@ def record_idea_decision(
     }
 
 
+def company_bars(org_id: int, company_id: int, *, limit: int = 120) -> dict[str, Any]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT symbol, name, market FROM inst_company WHERE id=%s AND org_id=%s",
+            (company_id, org_id),
+        ).fetchone()
+    if not row:
+        raise LookupError("公司不存在")
+    symbol = str(row["symbol"])
+    items = md.bar_history(symbol, adjust="none", limit=max(20, min(int(limit), 300)))
+    return {"symbol": symbol, "name": row["name"], "market": row["market"], "adjust": "none", "items": items}
+
+
 def ideas_push(org_id: int, *, limit: int = 12) -> dict[str, Any]:
     """量化策略推送：A 股 20 日动量 + 估值初筛，收盘后计算。
 
@@ -1203,9 +1218,28 @@ def _build_research(company: dict[str, Any], mode: str = "full") -> dict[str, An
                 "shares_source": shares_source,
                 "note": "演示口径，不是目标价；未计税费、营运资本、汇率与治理折价；股本为估算值。",
             }
+    industry_analysis = {
+        "key": "industry",
+        "title": "行业分析",
+        "question": "行业空间、景气周期、产业链与竞争格局处于什么位置？",
+        "status": _dim_status(bool(ind)),
+        "summary": _clip_brief(
+            f"行业：{ind_label}；行业规模、增速与竞争格局需补充数据后判断。"
+        ),
+        "checks": [
+            _clip_brief(f"行业归属：{ind.get('industry_code') or '待补充'} / {ind_label}"),
+            _clip_brief(f"参考价：{price or '待补充'}"),
+        ],
+        "counter": [_clip_brief("行业分类为当前快照，历史归属需另行核验")],
+        "open_questions": [],
+        "data_gaps": [] if ind else ["行业规模/份额/景气数据未接入"],
+        "evidence_idx": [ev_ind] if ev_ind is not None else [],
+        "engine": "rule",
+    }
     return {
         "dims": dims,
         "evidence": evidence,
+        "industry_analysis": industry_analysis,
         "valuation": valuation,
         "data_gaps": [] if has_fin else ["财务三表未接入或未公告"],
         "facts": {
@@ -1318,6 +1352,77 @@ def _update_task_progress(
     except Exception:
         # 进度展示失败不能阻断研究生成
         pass
+
+
+def _run_industry_agent(facts: dict[str, Any]) -> dict[str, Any]:
+    from ai.router import available_task, run_task
+
+    if not available_task("inst.industry"):
+        return {"error": "AI 未配置"}
+    payload = _agent_payload(facts, "industry")
+    system, _ = get_effective_prompt("inst.industry", INDUSTRY_PROMPT)
+    out = run_task(
+        "inst.industry",
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)},
+        ],
+    )
+    data = out.get("data")
+    if not isinstance(data, dict):
+        content = str(out.get("content") or "")
+        data = json.loads(content) if content.strip().startswith("{") else {}
+    if not isinstance(data, dict) or not str(data.get("summary") or "").strip():
+        return {"error": "行业 Agent 返回缺少 summary"}
+    return {"data": data}
+
+
+def _merge_industry(
+    built: dict[str, Any],
+    result: dict[str, Any],
+    fallback: dict[str, Any],
+) -> dict[str, Any]:
+    data = (result or {}).get("data") or {}
+    if not data:
+        block = dict(fallback or {})
+        block["engine"] = "rule"
+        block["agent_error"] = str((result or {}).get("error") or "")
+        return block
+    evidence = list(built.get("evidence") or [])
+    ev_idx: list[int] = []
+    for ev in data.get("evidence") or []:
+        title = str(ev.get("title") or "").strip()
+        quote = str(ev.get("quote") or "").strip()
+        if not title or not quote:
+            continue
+        idx = len(evidence)
+        evidence.append(
+            {
+                "title": title[:200],
+                "quote": quote[:500],
+                "source": str(ev.get("source") or "agent")[:80],
+                "evidence_type": "research",
+                "as_of": (built.get("facts") or {}).get("as_of") or date.today().isoformat(),
+                "hash": _hash([title, quote, "agent"]),
+                "_idx": idx,
+            }
+        )
+        ev_idx.append(idx)
+    built["evidence"] = evidence
+    return {
+        "key": "industry",
+        "title": "行业分析",
+        "question": str(data.get("question") or "行业空间、景气周期、产业链与竞争格局处于什么位置？"),
+        "status": "partial" if data.get("data_gaps") else "done",
+        "summary": _clip_brief(data.get("summary")),
+        "checks": [_clip_brief(x) for x in (data.get("checks") or [])][:5],
+        "counter": [_clip_brief(x) for x in (data.get("counter") or [])][:3],
+        "open_questions": [_clip_brief(x) for x in (data.get("open_questions") or [])][:3],
+        "data_gaps": [_clip_brief(x) for x in (data.get("data_gaps") or [])][:5],
+        "evidence_idx": ev_idx,
+        "confidence": data.get("confidence"),
+        "engine": "agent",
+    }
 
 
 def _run_dimension_agents(
@@ -1484,12 +1589,25 @@ def generate_research(
                 """,
                 (case_id, key, title, f"AI-{key}"),
             )
-    results = _run_dimension_agents(
-        built["facts"],
-        keys,
-        on_event=lambda key, status, payload: _update_task_progress(case_id, key, status, payload),
-    )
-    built = _merge_agent_results(built, results, keys)
+    if mode == "full":
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            industry_future = pool.submit(_run_industry_agent, built["facts"])
+            results = _run_dimension_agents(
+                built["facts"],
+                keys,
+                on_event=lambda key, status, payload: _update_task_progress(case_id, key, status, payload),
+            )
+            industry_result = industry_future.result()
+        built = _merge_agent_results(built, results, keys)
+        built["industry_analysis"] = _merge_industry(
+            built, industry_result, built.get("industry_analysis") or {}
+        )
+    else:
+        built = _merge_agent_results(built, _run_dimension_agents(
+            built["facts"],
+            keys,
+            on_event=lambda key, status, payload: _update_task_progress(case_id, key, status, payload),
+        ), keys)
 
     # 2) 持久化：任务、证据、版本
     with get_conn() as conn:
@@ -1556,6 +1674,11 @@ def generate_research(
 
         for dim in built["dims"]:
             dim["evidence_ids"] = [idx_to_id.get(i) for i in dim.pop("evidence_idx", []) if i in idx_to_id]
+        industry_block = dict(built.get("industry_analysis") or {})
+        industry_block["evidence_ids"] = [
+            idx_to_id.get(i) for i in industry_block.pop("evidence_idx", []) if i in idx_to_id
+        ]
+        built["industry_analysis"] = industry_block
 
         # 单维重新分析：合并到最近一版，保留其余五维，而不是用只含一维的版本覆盖。
         existing = None
@@ -1587,6 +1710,8 @@ def generate_research(
             )
             if existing["valuation"]:
                 built["valuation"] = existing["valuation"]
+            if existing.get("industry_analysis"):
+                built["industry_analysis"] = existing["industry_analysis"]
 
         version_no = conn.execute(
             "SELECT COALESCE(MAX(version_no),0)+1 AS n FROM inst_research_version WHERE case_id=%s",
@@ -1613,6 +1738,7 @@ def generate_research(
             {
                 "case_id": case_id,
                 "six_dim": built["dims"],
+                "industry_analysis": built.get("industry_analysis"),
                 "valuation": built["valuation"],
                 "conclusion": conclusion,
                 "assumptions": assumptions,
@@ -1626,14 +1752,15 @@ def generate_research(
         row = conn.execute(
             """
             INSERT INTO inst_research_version
-              (case_id, version_no, status, six_dim, valuation, conclusion, assumptions,
+              (case_id, version_no, status, six_dim, industry_analysis, valuation, conclusion, assumptions,
                counter_evidence, open_questions, evidence_ids, content_hash, cutoff, created_by)
-            VALUES (%s,%s,'pending_review',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *
+            VALUES (%s,%s,'pending_review',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *
             """,
             (
                 case_id,
                 version_no,
                 _j(built["dims"]),
+                _j(built.get("industry_analysis")),
                 _j(built["valuation"]),
                 conclusion,
                 _j(assumptions),
@@ -3771,6 +3898,15 @@ def _rule_memo(version: dict[str, Any]) -> dict[str, Any]:
     questions = [
         str(q) for d in dims for q in (d.get("open_questions") or d.get("data_gaps") or [])
     ][:8]
+    valuation = version.get("valuation") or {}
+    price_range = None
+    if any(valuation.get(k) is not None for k in ("low", "base", "high")):
+        price_range = {
+            "low": valuation.get("low"),
+            "base": valuation.get("base"),
+            "high": valuation.get("high"),
+            "note": "研究区间，不是目标价",
+        }
     return {
         "summary": _clip_brief(version.get("conclusion")
         or "六维分析已完成；AI 摘要暂不可用，以下为规则摘要，请以各维证据为准。"),
@@ -3781,6 +3917,8 @@ def _rule_memo(version: dict[str, Any]) -> dict[str, Any]:
         "evidence": [],
         "risks": [_clip_brief(x) for x in risks],
         "open_questions": [_clip_brief(x) for x in questions],
+        "price_range": price_range,
+        "holding_period": "1-3 年（论点成立前提下，按季复核）",
         "engine": "rule",
     }
 

@@ -371,7 +371,7 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 | 项 | 实现 |
 |---|---|
 | 入口 | `/inst/about`，原「Agent能力」页改为「Agent 管理」；侧栏名称同步 |
-| 目录 | 展示 50 个 Agent：机构 14 个、平台 TaskSpec 28 个、Agent 技能 8 个；支持分组、搜索 |
+| 目录 | 展示 51 个 Agent：机构 15 个（含独立行业分析）、平台 TaskSpec 28 个、Agent 技能 8 个；支持分组、搜索 |
 | 可编辑 | 投资经理可改机构 Agent 提示词；平台/技能本批只读，标注「只读」；H5/invest Agent 由 #95 的 H5 页面管理 |
 | 版本 | 保存写入 `ai_agent_prompt` 新版本、旧版本归档；可查看历史、恢复默认；提示词版本变化自动失效 AI 结果缓存 |
 | 权限 | 机构角色登录可看；保存/重置/历史仅 `manager`；其他角色看不到提示词正文 |
@@ -379,3 +379,19 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 | 审计 | `ai_agent_prompt` 保留版本/操作人/时间；保存/重置同时写系统审计 |
 
 验证：`pytest tests/test_inst_*.py` 70 passed（含 Agent 目录/权限/版本/重置）；`e2e-09/10/11` 14 passed；`tsc`、`npm run test:inst` 通过。
+
+### 11.10 价值分析页：独立行业分析、K 线与研究区间（2026-11-05，11.5 文档第一批）
+
+按《11.5 主观机构使用说明》先落地价值分析页：
+
+| 项 | 实现 |
+|---|---|
+| 独立行业分析 | 新增 `inst.industry` Agent 与 `inst_research_version.industry_analysis`；与六维并行生成，独立卡片展示空间/周期/产业链/竞争/政策摘要、反证与数据缺口 |
+| K 线 | 新增 `GET /api/inst/companies/{id}/bars`（未复权日线，最近 120 日）；研究页右上 K 线卡，测试库数据不足时显示实际可用根数 |
+| 一页纸 | 增加 `price_range`（low/base/high，注明“研究区间，不是目标价”）与 `holding_period`（条件性期限）；规则兜底从版本估值区间生成 |
+| 页面顺序 | 公司信息 → 行业分析 + K 线 → 六维/版本 → 一页纸，符合 11.5 文档的“第二行”结构；1024 自动堆叠 |
+| 自动保存 | 行业分析随版本落库并纳入 content_hash；一页纸缓存/重生成沿用现有机制 |
+
+验证：pytest 71 passed、e2e-09/10/11 14 passed、tsc/unit 通过。
+
+后续批次（未在本 PR）：退回勾选行业/维度并重跑、辩论页投资意见与可编辑议案、合伙人→风控→Chairman 多人审批、组合/投后逐持仓状态与退出备忘录。

@@ -160,6 +160,20 @@ def validate_research_memo(raw: str, request: TaskRequest) -> dict[str, Any]:
     for key in ("conflicts", "key_variables"):
         value = data.get(key)
         data[key] = [clip_brief(x) for x in value if str(x).strip()] if isinstance(value, list) else []
+    raw_range = data.get("price_range")
+    if isinstance(raw_range, dict):
+        price_range = {}
+        for key in ("low", "base", "high"):
+            try:
+                value = float(raw_range.get(key))
+            except (TypeError, ValueError):
+                value = None
+            price_range[key] = value
+        price_range["note"] = clip_brief(raw_range.get("note") or "研究区间，不是目标价")
+        data["price_range"] = price_range if any(price_range.get(k) is not None for k in ("low", "base", "high")) else None
+    else:
+        data["price_range"] = None
+    data["holding_period"] = clip_brief(data.get("holding_period"))
     return data
 
 
@@ -189,6 +203,19 @@ DEBATE_TASK = register(
         timeout_sec=150,
         executors=("local",),
         validator=validate_debate,
+    )
+)
+
+INDUSTRY_TASK = register(
+    TaskSpec(
+        task_id="inst.industry",
+        description="机构端独立行业分析：空间、周期、产业链、竞争格局与政策",
+        temperature=0.2,
+        max_tokens=3000,
+        timeout_sec=120,
+        executors=("local",),
+        response_format={"type": "json_object"},
+        validator=validate_dimension,
     )
 )
 
@@ -310,6 +337,7 @@ __all__ = [
     "DIMENSION_CHAT_TASK",
     "PROMPT_VERSION",
     "RESEARCH_MEMO_TASK",
+    "INDUSTRY_TASK",
     "RISK_REVIEW_TASK",
     "validate_debate",
     "DIMENSION_TASKS",

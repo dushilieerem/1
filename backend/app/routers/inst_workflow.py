@@ -115,6 +115,20 @@ def company(company_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -
     return {"ok": True, **data}
 
 
+@router.get("/companies/{company_id}/bars")
+def company_bars(
+    company_id: int,
+    limit: int = 120,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "research")
+    try:
+        return {"ok": True, **svc.company_bars(org_id, company_id, limit=limit)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.post("/companies/{company_id}/pool")
 def update_pool(
     company_id: int,

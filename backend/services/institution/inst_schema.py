@@ -116,6 +116,7 @@ DDL: tuple[str, ...] = (
       counter_evidence JSONB,
       open_questions  JSONB,
       evidence_ids    JSONB,
+      industry_analysis JSONB,
       dim_reviews     JSONB NOT NULL DEFAULT '{}'::jsonb,
       content_hash    TEXT,
       cutoff          DATE,
@@ -493,6 +494,7 @@ def ensure_inst_business_schema(*, include_indexes: bool = True) -> None:
             ("cutoff", "DATE"),
         ):
             conn.execute(f"ALTER TABLE inst_evidence ADD COLUMN IF NOT EXISTS {column} {ddl}")
+        conn.execute("ALTER TABLE inst_research_version ADD COLUMN IF NOT EXISTS industry_analysis JSONB")
         conn.execute("ALTER TABLE inst_research_version ADD COLUMN IF NOT EXISTS content_hash TEXT")
         conn.execute("ALTER TABLE inst_research_version ADD COLUMN IF NOT EXISTS cutoff DATE")
         conn.execute("ALTER TABLE inst_debate_argument ADD COLUMN IF NOT EXISTS claim_id TEXT")

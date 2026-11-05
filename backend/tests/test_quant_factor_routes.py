@@ -131,3 +131,15 @@ def test_trial_append_rejects_client_rerun_and_diagnostic_kinds():
   assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={**base,'outcome':'rerun'}).status_code==422
   for key,value in (('view_id','other'),('release_ids',{'ifind':'x'}),('view_manifest_sha256','x'),('as_of','2020-01-01'),('contract_revision','x'),('release_id','x')):
    assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={**base,key:value}).status_code==422
+
+def test_import_requires_manager_and_researcher_is_forbidden():
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.imports.sync_existing',return_value={'inserted':1}) as sync:
+  assert client.post('/api/inst/quant/factor-workflow/imports/svquant-existing').status_code==403
+  app.dependency_overrides[require_quant_user]=lambda:{**ctx,'can_manage':True,'can_write':True,'role':'manager'}
+  assert client.post('/api/inst/quant/factor-workflow/imports/svquant-existing').status_code==200
+  sync.assert_called_once_with(912,261)
+
+def test_import_summary_allows_researcher():
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.imports.summary',return_value={'total':331}) as summary:
+  assert client.get('/api/inst/quant/factor-workflow/imports/svquant-existing').status_code==200
+  summary.assert_called_once_with(912,261)

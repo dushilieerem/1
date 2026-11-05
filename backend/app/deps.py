@@ -60,7 +60,7 @@ def require_inst_user(
 def require_quant_user(
     authorization: str | None = Depends(_auth_header),
 ) -> dict[str, Any]:
-    """机构量化会话：product=quant，且成员角色在 QUANT_ROLES。"""
+    """机构量化会话：product=quant，且成员角色在 QUANT_LOGIN_ROLES。"""
     ctx = user_from_quant_authorization(authorization)
     if not ctx:
         raise HTTPException(status_code=401, detail="机构量化端未登录或会话已失效")
@@ -73,6 +73,15 @@ def require_quant_researcher(
     """可执行研究/回测/写资产的量化角色；复核角色不能走这些接口。"""
     if not ctx.get("can_write"):
         raise HTTPException(status_code=403, detail="该量化角色只有复核权限")
+    return ctx
+
+
+def require_quant_manager(
+    ctx: dict[str, Any] = Depends(require_quant_user),
+) -> dict[str, Any]:
+    """研究负责人（P0 由 manager 承担）：机构共享因子库导入等管理动作。"""
+    if not ctx.get("can_manage"):
+        raise HTTPException(status_code=403, detail="需要研究负责人（manager）权限")
     return ctx
 
 

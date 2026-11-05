@@ -57,3 +57,16 @@ class CurrentKReviewTest(unittest.TestCase):
              patch.object(review, '_ledger_context', return_value={'k': 4, 'threshold': 1.9, 'trials': [], 'topic': {}}), \
              patch.object(review, 'detail', return_value={'id': 'c'}):
             self.assertEqual(review.record(9, 2, 'c', 'research_supported', 'ok'), {'id': 'c'})
+
+
+class ReviewIsolationTest(unittest.TestCase):
+    def test_detail_hides_research_events(self):
+        row = {'id': 'c', 'user_id': 5, 'org_id': 2, 'project_id': 'p', 'snapshot_hash': 'h',
+               'archive': {'review': {'status': 'requested'}}, 'events': [{'message': 'chat'}],
+               'snapshot': {}, 'evidence': {}}
+        c = MagicMock(); c.execute.return_value.fetchone.return_value = row
+        conn = MagicMock(); conn.__enter__.return_value = c
+        with patch.object(review, 'get_conn', return_value=conn), \
+             patch.object(review, '_ledger_context', return_value=None):
+            out = review.detail(9, 2, 'c')
+        self.assertNotIn('events', out)

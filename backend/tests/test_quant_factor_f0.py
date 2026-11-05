@@ -34,7 +34,7 @@ class F0StartTest(unittest.TestCase):
         self.assertIn('预算', rec.call_args.args[7])
 
     def test_duplicate_key_returns_existing_without_new_record(self):
-        w, c = conn(fetchone={'id': 'run1', 'status': 'queued', 'user_id': 1, 'org_id': 2})
+        w, c = conn(fetchone={'id': 'run1', 'status': 'queued', 'user_id': 1, 'org_id': 2, 'decision': {'action': 'run_development_test'}})
         with patch.object(f0, '_topic', return_value=TOPIC), \
              patch.object(f0, 'get_conn', return_value=w), \
              patch.object(f0, '_record') as rec:
@@ -52,7 +52,7 @@ class F0StartTest(unittest.TestCase):
 class F0RunTest(unittest.TestCase):
     def test_one_authorised_test_executes_and_completes(self):
         w, c = conn(fetchone={'id': 'run1', 'project_id': 'p', 'status': 'queued',
-                              'user_id': 1, 'org_id': 2})
+                              'user_id': 1, 'org_id': 2, 'decision': {'action': 'run_development_test'}})
         candidate = {'id': 'c1', 'status': 'development_passed'}
         with patch.object(f0, 'get_conn', return_value=w), \
              patch.object(f0, 'service') as svc:
@@ -62,3 +62,31 @@ class F0RunTest(unittest.TestCase):
         svc.create.assert_called_once_with(1, 2, 'p')
         updates = [x for x in c.execute.call_args_list if "status='completed'" in x.args[0]]
         self.assertTrue(updates)
+
+
+class F0DecisionTest(unittest.TestCase):
+    def test_failed_trial_derives_branch_without_rerun(self):
+        w, c = conn(); c.fetchone.side_effect = [
+            {'id': 'b', 'source': 'manual'}, None, {'n': 0}, None]
+        latest = {'trial_no': 1, 'outcome': 'failed'}
+        with patch.object(f0, '_topic', return_value=TOPIC), \
+             patch.object(f0, 'get_conn', return_value=w), \
+             patch.object(f0, 'published_view', return_value={'view_id': 'v'}), \
+             patch.object(f0.ledger, '_trials', return_value=[latest]), \
+             patch.object(f0.POOL, 'submit'), \
+             patch.object(f0, '_record', return_value={'id': 'run', 'status': 'queued'}) as rec:
+            out = f0.start(1, 2, 't', 'b', 'k')
+        decision = rec.call_args.args[6]
+        self.assertEqual(decision['action'], 'derive_branch')
+        self.assertEqual(decision['from_trial'], 1)
+
+    def test_passed_trial_stops_for_human(self):
+        w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None, {'n': 0}]
+        with patch.object(f0, '_topic', return_value=TOPIC), \
+             patch.object(f0, 'get_conn', return_value=w), \
+             patch.object(f0, 'published_view', return_value={'view_id': 'v'}), \
+             patch.object(f0.ledger, '_trials', return_value=[{'trial_no': 1, 'outcome': 'passed'}]), \
+             patch.object(f0, '_record', return_value={'status': 'stopped'}) as rec:
+            out = f0.start(1, 2, 't', 'b', 'k')
+        self.assertEqual(out['status'], 'stopped')
+        self.assertEqual(rec.call_args.args[6]['reason'], 'development_passed')

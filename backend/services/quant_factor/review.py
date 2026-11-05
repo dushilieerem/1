@@ -66,6 +66,8 @@ def detail(uid,org,cid):
         row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND org_id=%s',(cid,org)).fetchone()
     ensure_reviewer(row,uid)
     out=public(dict(row))
+    # Independent review sees frozen evidence only, not the research dialogue/operator events.
+    out.pop('events',None)
     ctx=_ledger_context(org,row['project_id'])
     if ctx:out.update(ctx)
     return out

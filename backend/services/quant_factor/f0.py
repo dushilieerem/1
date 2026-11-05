@@ -76,9 +76,27 @@ def start(uid, org, topic_id, branch_id, idempotency_key):
         return _public(_record(uid, org, topic, branch_id, key, "stopped",
                                {"action": "stop", "reason": "budget_exhausted"},
                                "课题试验预算已用尽，F0 停止"))
-    row = _record(uid, org, topic, branch_id, key, "queued",
-                  {"action": "run_development_test", "round": 1,
-                   "source_branch": branch["source"], "remaining_budget": remaining})
+    trials = ledger._trials(uid, org, topic_id)
+    latest = trials[-1] if trials else None
+    if latest and latest.get("outcome") == "passed":
+        return _public(_record(uid, org, topic, branch_id, key, "stopped",
+                               {"action": "stop", "reason": "development_passed"},
+                               "研发已通过，超出 F0 授权：等待人工复核/封存，不自动提交", rounds=0))
+    decision = {"action": "run_development_test", "round": 1,
+                "source_branch": branch["source"], "remaining_budget": remaining}
+    if latest and latest.get("outcome") in ("failed", "error"):
+        with get_conn() as c:
+            child = c.execute(
+                "SELECT id FROM quant_factor_branches WHERE user_id=%s AND org_id=%s AND topic_id=%s AND parent_id=%s AND source='agent'",
+                (uid, org, topic_id, branch_id)).fetchone()
+        if child:
+            return _public(_record(uid, org, topic, branch_id, key, "stopped",
+                                   {"action": "stop", "reason": "derive_already_exists"},
+                                   "失败后已派生分支，等待人工确认修订或换方向", rounds=0))
+        decision = {"action": "derive_branch", "from_trial": latest["trial_no"],
+                    "from_outcome": latest["outcome"], "source_branch": branch["source"],
+                    "remaining_budget": remaining}
+    row = _record(uid, org, topic, branch_id, key, "queued", decision)
     POOL.submit(run, uid, org, row["id"])
     return _public(row)
 
@@ -92,6 +110,23 @@ def run(uid, org, run_id):
             if not row or row["status"] not in ACTIVE:
                 return
             c.execute("UPDATE quant_factor_f0_runs SET status='running',updated_at=NOW() WHERE id=%s", (run_id,))
+        decision = row["decision"] or {}
+        if decision.get("action") == "derive_branch":
+            with get_conn() as c:
+                parent = c.execute(
+                    "SELECT * FROM quant_factor_branches WHERE id=%s AND user_id=%s AND org_id=%s",
+                    (row["branch_id"], uid, org)).fetchone()
+                child_id = str(uuid.uuid4())
+                c.execute(
+                    """INSERT INTO quant_factor_branches
+                       (id,user_id,org_id,topic_id,parent_id,source,owner_id,hypothesis_version,implementation_version)
+                       VALUES (%s,%s,%s,%s,%s,'agent',%s,%s,%s)""",
+                    (child_id, uid, org, row["topic_id"], row["branch_id"], uid,
+                     int(parent["hypothesis_version"]) + 1, int(parent["implementation_version"]) + 1))
+                c.execute(
+                    "UPDATE quant_factor_f0_runs SET status='completed',rounds=1,decision=decision||%s::jsonb,updated_at=NOW() WHERE id=%s AND status='running'",
+                    (service.store.encode({"branch_id": child_id}), run_id))
+            return
         candidate = service.create(uid, org, row["project_id"])
         deadline = time.monotonic() + 2400
         while candidate["status"].endswith("_running") and time.monotonic() < deadline:

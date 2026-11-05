@@ -165,9 +165,9 @@ def _ensure_version_hash(conn, version: Any) -> dict[str, Any]:
     return row
 
 
-def _clip_brief(value: Any, limit: int = 50) -> str:
-    text = " ".join(str(value or "").split())
-    return text if len(text) <= limit else text[: limit - 1] + "…"
+def _clip_brief(value: Any, limit: int | None = None) -> str:
+    """只归一化空白，不再按 50 字截断。保留 limit 参数兼容旧调用。"""
+    return " ".join(str(value or "").split())
 
 
 def _evidence_grade(source: str, kind: str, explicit: Any = None) -> str:
@@ -1489,6 +1489,16 @@ def _merge_industry(
         "data_gaps": [_clip_brief(x) for x in (data.get("data_gaps") or [])][:5],
         "evidence_idx": ev_idx,
         "confidence": data.get("confidence"),
+        "confidence_label": data.get("confidence_label"),
+        "analysis_md": str(data.get("analysis_md") or ""),
+        "attractiveness": data.get("attractiveness"),
+        "gate": data.get("gate"),
+        "one_line": data.get("one_line"),
+        "market_size": data.get("market_size"),
+        "competition": data.get("competition"),
+        "key_variables": data.get("key_variables") or [],
+        "falsifiers": data.get("falsifiers") or [],
+        "implication_for_company": data.get("implication_for_company"),
         "engine": "agent",
     }
 
@@ -1597,6 +1607,13 @@ def _merge_agent_results(
                     "open_questions": data.get("open_questions") or [],
                     "data_gaps": data.get("data_gaps") or [],
                     "confidence": data.get("confidence", 0.5),
+                    "confidence_label": data.get("confidence_label"),
+                    "rating": data.get("rating"),
+                    "gate": data.get("gate"),
+                    "analysis_md": str(data.get("analysis_md") or ""),
+                    "key_numbers": data.get("key_numbers") or [],
+                    "falsifiers": data.get("falsifiers") or [],
+                    "thesis_links": data.get("thesis_links") or [],
                     "engine": "agent",
                     "agent": f"AI-{key}",
                     "evidence_idx": ev_idx,
@@ -5205,24 +5222,6 @@ AI_ROLE_CATALOG: tuple[tuple[str, str, str], ...] = (
     ("risk", "风控 / 合规 / 交易", "inst.risk_review"),
     ("post_investment", "投后 / 退出 / 复盘", "inst.role.post_investment"),
 )
-
-_ROLE_PROMPTS = {
-    "financial": (
-        "你是机构端财务与取证岗位。只依据输入的财务、证据与估值数据；"
-        "检查三表勾稽、ROIC/FCF、应收存货与会计风险；不给买卖建议或目标价。只输出 JSON："
-        '{"summary":"...","evidence":["..."],"risks":["..."],"open_questions":["..."]}。'
-    ),
-    "governance": (
-        "你是机构端治理、估值与反证岗位。只依据输入数据；"
-        "评估资本配置、治理结构、DCF 假设与可检验的反证条件；不编造事实。只输出 JSON："
-        '{"summary":"...","evidence":["..."],"risks":["..."],"open_questions":["..."]}。'
-    ),
-    "post_investment": (
-        "你是机构端投后、退出与复盘岗位。只依据输入的持仓、论点台账、监控事件与退出案；"
-        "给出复核要点、预警与复盘问题；不直接给卖出指令。只输出 JSON："
-        '{"summary":"...","evidence":["..."],"risks":["..."],"open_questions":["..."]}。'
-    ),
-}
 
 
 def institution_agent_catalog(org_id: int, *, can_edit: bool) -> dict[str, Any]:

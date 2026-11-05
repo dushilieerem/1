@@ -148,6 +148,9 @@ export function InstResearchPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [comment, setComment] = useState("");
+  const [returnOpen, setReturnOpen] = useState(false);
+  const [returnTargets, setReturnTargets] = useState<string[]>(["industry", ...AGENT_TITLES.map(([key]) => key)]);
+  const [returnError, setReturnError] = useState<string | null>(null);
   const [memo, setMemo] = useState<Memo | null>(null);
   const [memoBusy, setMemoBusy] = useState(false);
   const autoRan = useRef(false);
@@ -392,6 +395,35 @@ export function InstResearchPage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setChatBusy(null);
+    }
+  };
+
+  const submitReturn = async () => {
+    if (!version) return;
+    const reason = comment.trim();
+    if (!reason) {
+      setReturnError(t("请填写退回原因。", "A return reason is required."));
+      return;
+    }
+    if (!returnTargets.length) {
+      setReturnError(t("请至少选择一个要退回的板块或维度。", "Select at least one section or dimension to return."));
+      return;
+    }
+    setBusy("return");
+    setError(null);
+    setReturnError(null);
+    try {
+      const next = await instApi<CaseItem>(`/research/${version.id}/review`, {
+        method: "POST",
+        body: { decision: "return", comment: reason, targets: returnTargets },
+      });
+      setDetail(next);
+      setReturnOpen(false);
+      setComment("");
+    } catch (e) {
+      setReturnError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -883,16 +915,12 @@ export function InstResearchPage() {
                       <Button
                         variant="danger"
                         disabled={!canWrite || !!busy}
-                        onClick={() =>
-                          run("return", () =>
-                            instApi(`/research/${version.id}/review`, {
-                              method: "POST",
-                              body: { decision: "return", comment: comment || t("退回补充研究", "Return for more research") },
-                            }),
-                          )
-                        }
+                        onClick={() => {
+                          setReturnError(null);
+                          setReturnOpen(true);
+                        }}
                       >
-                        {t("退回", "Return")}
+                        {busy === "return" ? t("重跑中…", "Rerunning…") : t("退回并重跑", "Return & rerun")}
                       </Button>
                     </div>
                   </div>
@@ -1121,6 +1149,79 @@ export function InstResearchPage() {
           </Empty>
         )}
       </Card>
+
+      {returnOpen && version ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#171923]/45 p-3 sm:p-6"
+          role="presentation"
+          onClick={() => {
+            if (busy !== "return") setReturnOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="return-dialog-title"
+            className="my-4 w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="return-dialog-title" className="font-display text-lg font-semibold text-[#171923]">
+              {t("退回并重跑", "Return & rerun")}
+            </h2>
+            <p className="mt-1 text-xs leading-relaxed text-[#68738b]">
+              {t("勾选要重跑的板块/维度并填写原因；系统会保留其余内容，重跑后版本号 +1，旧版本作废。", "Select the sections or dimensions to rerun and give a reason; the rest is kept, the version increments, and the old version is voided.")}
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-1.5 text-xs">
+              <label className="flex items-center gap-2 rounded-lg border border-[#dee5f2] px-2 py-1.5">
+                <input
+                  type="checkbox"
+                  checked={returnTargets.includes("industry")}
+                  onChange={(e) =>
+                    setReturnTargets((prev) =>
+                      e.target.checked ? [...new Set([...prev, "industry"])] : prev.filter((x) => x !== "industry"),
+                    )
+                  }
+                />
+                {t("行业分析", "Industry")}
+              </label>
+              {AGENT_TITLES.map(([key, label]) => (
+                <label key={key} className="flex items-center gap-2 rounded-lg border border-[#dee5f2] px-2 py-1.5">
+                  <input
+                    type="checkbox"
+                    checked={returnTargets.includes(key)}
+                    onChange={(e) =>
+                      setReturnTargets((prev) =>
+                        e.target.checked ? [...new Set([...prev, key])] : prev.filter((x) => x !== key),
+                      )
+                    }
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <label className="mt-3 block text-xs text-[#68738b]">
+              {t("退回原因（必填）", "Return reason (required)")}
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                className="mt-1 min-h-[76px] w-full rounded-lg border border-[#dde5f2] bg-[#f8faff] p-2 text-xs outline-none focus:border-[#7950ba]"
+                placeholder={t("例如：财务维度未验证现金流与利润勾稽；行业规模数据缺失。", "e.g. financial cash-flow cross-check missing; industry size data missing.")}
+              />
+            </label>
+            {returnError ? (
+              <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">{returnError}</p>
+            ) : null}
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <Button variant="ghost" disabled={busy === "return"} onClick={() => setReturnOpen(false)}>
+                {t("取消", "Cancel")}
+              </Button>
+              <Button variant="danger" disabled={busy === "return"} onClick={() => void submitReturn()}>
+                {busy === "return" ? t("重跑中…", "Rerunning…") : t("确认退回并重跑", "Return & rerun")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {evidenceOpen ? (
         <div

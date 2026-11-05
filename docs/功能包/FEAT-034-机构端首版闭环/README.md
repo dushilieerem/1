@@ -395,3 +395,14 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 验证：pytest 71 passed、e2e-09/10/11 14 passed、tsc/unit 通过。
 
 后续批次（未在本 PR）：退回勾选行业/维度并重跑、辩论页投资意见与可编辑议案、合伙人→风控→Chairman 多人审批、组合/投后逐持仓状态与退出备忘录。
+
+### 11.11 退回勾选与按板块重跑（2026-11-05，11.5 文档第二批）
+
+按《11.5 主观机构使用说明（欣宜2）》补齐价值分析页的退回闭环：
+
+- 研究页「退回」改为弹窗：勾选「行业分析」和/或六个维度，填写退回原因；至少选一项。
+- `POST /api/inst/research/{version_id}/review` 支持 `targets`；退回后自动重跑所选板块/维度并生成新版本（版本 +1），未选内容保留。
+- 行业分析与六维均可单独重跑；旧版本置为 `changed`，新版本回到 `pending_review`。
+- 重跑复用现有 AI Agent、提示词覆盖、证据 hash 与 50 字摘要规则。
+
+验证：pytest 72 passed、e2e-09/10/11 14 passed、tsc/unit 通过。

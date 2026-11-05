@@ -235,6 +235,7 @@ def review_research(
                 version_id,
                 decision=str(body.get("decision") or "approve"),
                 comment=body.get("comment"),
+                targets=[str(x) for x in (body.get("targets") or [])] or None,
                 actor_member_id=member_id,
             ),
         }

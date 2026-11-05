@@ -17,6 +17,7 @@ export function QuantFactorHomePage(){
  const [selected,setSelected]=useState<string>();
  const [ledger,setLedger]=useState<Ledger>();
  const [node,setNode]=useState<string>();
+ const [f0,setF0]=useState<{id:string;status:string;decision?:{candidate_status?:string;reason?:string};stop_reason?:string}>();
  const [error,setError]=useState('');
  const [loading,setLoading]=useState(true);
  const navigate=useNavigate();
@@ -41,6 +42,12 @@ export function QuantFactorHomePage(){
   return()=>{alive=false;};
  },[selected]);
 
+ async function handBackF0(){
+  if(!ledger||!selectedBranch)return;
+  const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(ledger.topic.id)+'/branches/'+encodeURIComponent(selectedBranch.id)+'/f0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:crypto.randomUUID()})});
+  const d=await r.json();if(!r.ok){setError(typeof d.detail==='string'?d.detail:'F0 启动失败');return;}setF0(d);
+ }
+ useEffect(()=>{if(!f0||!['queued','running'].includes(f0.status))return;const t=setInterval(()=>{void researchFetch('/api/inst/quant/factor-workflow/f0-runs/'+f0.id).then(r=>r.ok?r.json():null).then(d=>{if(d)setF0(d);});},4000);return()=>clearInterval(t);},[f0?.id,f0?.status]);
  async function takeOver(){
   if(!ledger||!selectedBranch)return;
   const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(ledger.topic.id)+'/branches/'+encodeURIComponent(selectedBranch.id)+'/takeover',{method:'POST'});
@@ -90,7 +97,7 @@ export function QuantFactorHomePage(){
    <div className="card-head">
     <div><div className="row-flex"><span className="hid">{selectedBranch.id.slice(0,8)}</span><h2>{selectedBranch.source==='manual'?'人工分支':'Agent 分支'}</h2></div>
      <p className="fine">假设 v{selectedBranch.hypothesis_version} · 实现 v{selectedBranch.implementation_version} · {selectedBranch.status}</p></div>
-    <div className="actions"><button className="btn small primary" onClick={()=>void takeOver()}>从此分支接手</button><Link className="btn small" to={'/quant/factor/workflow/'+(topic?.project_id||'')+'/F4'}>打开人工工作台</Link><span className="subtle">交回 Agent：F0 未接入</span></div>
+    <div className="actions"><button className="btn small primary" onClick={()=>void takeOver()}>从此分支接手</button><button className="btn small" onClick={()=>void handBackF0()} disabled={f0&&['queued','running'].includes(f0.status)}>交回 Agent（F0 走一步）</button><Link className="btn small" to={'/quant/factor/workflow/'+(topic?.project_id||'')+'/F4'}>打开人工工作台</Link>{f0&&<span className="fine">F0：{f0.status}{f0.decision?.candidate_status?' · '+f0.decision.candidate_status:''}{f0.stop_reason?' · '+f0.stop_reason:''}</span>}</div>
    </div>
    <div className="card-body">
     <div className="kv">

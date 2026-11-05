@@ -286,3 +286,18 @@ def sealed_detail(cid:str,ctx=Depends(require_quant_user)):
     uid,org=identity(ctx)
     full=bool(ctx.get('can_review') or ctx.get('can_manage'))
     return invoke(sealed.detail,uid,org,cid,full)
+
+
+class F0Body(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    idempotency_key:str=Field(min_length=1,max_length=100)
+
+@router.post('/topics/{tid}/branches/{bid}/f0',status_code=202)
+def f0_start(tid:str,bid:str,body:F0Body,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import f0
+    return invoke_ledger(f0.start,*identity(ctx),tid,bid,body.idempotency_key)
+
+@router.get('/f0-runs/{rid}')
+def f0_read(rid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import f0
+    return invoke(f0.read,*identity(ctx),rid)

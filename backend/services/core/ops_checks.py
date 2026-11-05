@@ -28,6 +28,10 @@ def evaluate_signals(
     queue_backlog: int = 0,
     max_queue_backlog: int = 100,
     pending_migrations: int = 0,
+    db_pool_used: int | None = None,
+    db_pool_limit: int | None = None,
+    db_pool_warn_ratio: float = 0.8,
+    db_pool_critical_ratio: float = 0.95,
 ) -> list[Alert]:
     alerts: list[Alert] = []
     if not health or health.get("ok") is not True:
@@ -69,6 +73,17 @@ def evaluate_signals(
         alerts.append(
             Alert("warning", "queue_backlog", f"后台任务积压 {queue_backlog}（阈值 {max_queue_backlog}）")
         )
+
+    if db_pool_used is not None and db_pool_limit and db_pool_limit > 0:
+        ratio = db_pool_used / db_pool_limit
+        if ratio >= db_pool_critical_ratio:
+            alerts.append(
+                Alert("critical", "db_pool_high", f"数据库连接池 {db_pool_used}/{db_pool_limit}（{ratio:.0%}）")
+            )
+        elif ratio >= db_pool_warn_ratio:
+            alerts.append(
+                Alert("warning", "db_pool_high", f"数据库连接池 {db_pool_used}/{db_pool_limit}（{ratio:.0%}）")
+            )
 
     if disk_free_ratio is not None and disk_free_ratio < min_disk_free_ratio:
         alerts.append(

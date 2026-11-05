@@ -84,8 +84,11 @@ def main() -> int:
     except OSError:
         free_ratio = None
 
+    pool = (health or {}).get("db_pool") or {}
     alerts = evaluate_signals(
         health=health,
+        db_pool_used=pool.get("used"),
+        db_pool_limit=pool.get("limit"),
         data_age_days=quality.get("ageDays"),
         max_data_age_days=float(os.environ.get("SVQ_MAX_DATA_AGE_DAYS") or "2"),
         open_reports=_metric_value(metrics, "svquant_open_community_reports"),

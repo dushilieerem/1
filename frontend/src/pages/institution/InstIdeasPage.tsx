@@ -621,8 +621,8 @@ export function InstIdeasPage() {
                           {t("复核立项", "Review idea")}
                         </Button>
                       ) : null}
-                      <Button variant="ghost" onClick={() => nav("/inst/monitor")}>
-                        {t("去投后管理", "Post-investment")}
+                      <Button variant="ghost" onClick={() => nav("/inst/portfolio")}>
+                        {t("去投资管理", "Investment management")}
                       </Button>
                     </div>
                   </article>

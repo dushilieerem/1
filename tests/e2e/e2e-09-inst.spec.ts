@@ -99,26 +99,38 @@ test("机构端侧栏名称与顺序", async ({ page }) => {
     "公司研究",
     "投资辩论室",
     "投委会审批",
-    "投资组合",
-    "投后管理",
+    "投资管理",
     "Agent管理",
   ]);
   await expect(page.getByText("以企业为起点，以证据做决策")).toBeVisible();
 });
 
-test("研究、审批、组合、投后、Agent管理页面可达", async ({ page }) => {
+test("研究、审批、投资管理、Agent管理页面可达", async ({ page }) => {
   await login(page);
   for (const [path, text] of [
     ["/inst/ideas", "量化策略推送"],
     ["/inst/research", "公司研究"],
     ["/inst/approvals", "投委会审批"],
-    ["/inst/portfolio", "投资组合"],
-    ["/inst/monitor", "投后管理"],
+    ["/inst/portfolio", "投资管理"],
     ["/inst/about", "Agent管理"],
   ]) {
     await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
     await expect(page.getByText(text, { exact: false }).first()).toBeVisible({ timeout: 20_000 });
   }
+});
+
+test("投资管理：持仓明细进入单票盘中管理", async ({ page }) => {
+  await login(page);
+  await page.goto(`${BASE}/inst/portfolio`, { waitUntil: "networkidle" });
+  const detailLink = page.getByRole("link", { name: /查看详情（盘中管理）/ }).first();
+  await expect(detailLink).toBeVisible({ timeout: 20_000 });
+  await detailLink.click();
+  await expect(page).toHaveURL(/\/inst\/portfolio\/[^/?]+/);
+  await expect(page.getByText("买入论点台账").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("监控事件与论点核对").first()).toBeVisible();
+  await expect(page.getByText("投资经理意见").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "日 K" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "月 K" })).toBeVisible();
 });
 
 test("机构端无横向溢出", async ({ page }) => {
@@ -172,10 +184,10 @@ async function ensureHolding(request: APIRequestContext): Promise<number> {
   await call(request, "POST", `/api/inst/proposals/${proposal.id}/partner`, tokens.partner!, {
     decision: "approve",
   });
+  await call(request, "POST", `/api/inst/proposals/${proposal.id}/risk-check`, tokens.risk!, {});
   await call(request, "POST", `/api/inst/proposals/${proposal.id}/chairman`, tokens.chairman!, {
     decision: "approve",
   });
-  await call(request, "POST", `/api/inst/proposals/${proposal.id}/risk-check`, tokens.risk!, {});
   const authorized = await call(
     request,
     "POST",
@@ -218,7 +230,7 @@ async function prepareExitCase(
   return { exitId: Number(exitCase.id), caseId };
 }
 
-test("退出流程：投后回链 → 辩论后自动建 exit/0 议案", async ({ page, request }) => {
+test("退出流程：投资管理回链 → 辩论后补 exit/0 议案", async ({ page, request }) => {
   test.skip(
     !writeGuard.enabled,
     "写库用例默认关闭：需 INST_E2E_ALLOW_WRITE=1，且服务端 /api/inst/_e2e/guard 确认库名含 _test/_e2e（生产 svquant 永远拒绝）",
@@ -235,7 +247,7 @@ test("退出流程：投后回链 → 辩论后自动建 exit/0 议案", async (
   expect(buyAttempt.status(), "退出案建买入议案应被拒绝").toBe(400);
 
   await login(page);
-  await page.goto(`${BASE}/inst/monitor`, { waitUntil: "networkidle" });
+  await page.goto(`${BASE}/inst/portfolio`, { waitUntil: "networkidle" });
   const exitCard = page
     .locator("li")
     .filter({ hasText: new RegExp(`EX-${exitId}(?!\\d)`) });
@@ -244,8 +256,14 @@ test("退出流程：投后回链 → 辩论后自动建 exit/0 议案", async (
   const researchLink = exitCard.getByRole("link", { name: new RegExp(`退出研究案\\s*#${caseId}`) });
   await expect(researchLink).toBeVisible();
 
-  // 线性流程：辩论完成后自动创建退出议案（exit + 0），并跳到审批页。
+  // 线性流程：辩论完成后填写意见并创建退出议案（exit + 0）。
   await page.goto(`${BASE}/inst/debate?case=${caseId}`, { waitUntil: "networkidle" });
+  const opinion = page.getByTestId("inst-investment-opinion");
+  await opinion.fill("E2E 退出意见：论点失效，清仓");
+  await expect(opinion).toHaveValue("E2E 退出意见：论点失效，清仓");
+  // 目标仓位 0 会弹清仓确认框，Playwright 默认自动取消；这里显式确认。
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("inst-proposal-create").click();
   await page.waitForURL(/\/inst\/approvals\?proposal=\d+/, { timeout: 60_000 });
 
   const proposalId = Number(new URL(page.url()).searchParams.get("proposal"));
@@ -258,7 +276,7 @@ test("退出流程：投后回链 → 辩论后自动建 exit/0 议案", async (
   await expect(page.getByText(new RegExp(`退出案 EX-${exitId}(?!\\d)`))).toBeVisible({ timeout: 20_000 });
 
   // 投后列表回链议案，状态与议案一致。
-  await page.goto(`${BASE}/inst/monitor`, { waitUntil: "networkidle" });
+  await page.goto(`${BASE}/inst/portfolio`, { waitUntil: "networkidle" });
   const proposalLink = page
     .locator("li")
     .filter({ hasText: new RegExp(`EX-${exitId}(?!\\d)`) })

@@ -3,7 +3,7 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
 import { evaluateWriteGuard } from "./helpers/write-guard.mjs";
 
 /**
- * 机构端展示与可用性审计：八个工作区、六角色、窄屏、空态/错误态/加载态、
+ * 机构端展示与可用性审计：七个工作区、六角色、窄屏、空态/错误态/加载态、
  * 控制台错误与接口 5xx。默认只读；创建空研究案的用例需写库闸门放行。
  */
 const BASE = process.env.INST_BASE || "http://127.0.0.1:9533";
@@ -19,7 +19,6 @@ const WORKSPACES: Array<[string, string]> = [
   ["/inst/debate", "DEBATE / 04"],
   ["/inst/approvals", "APPROVALS / 06"],
   ["/inst/portfolio", "PORTFOLIO / 05"],
-  ["/inst/monitor", "MONITOR / 08"],
   ["/inst/about", "AGENTS / 09"],
 ];
 
@@ -85,7 +84,7 @@ test.beforeAll(async ({ request, browser }) => {
   await ctx.close();
 });
 
-test("八个工作区可达，无控制台错误与接口 5xx", async ({ browser }) => {
+test("七个工作区可达，无控制台错误与接口 5xx", async ({ browser }) => {
   const { ctx, page } = await openPage(browser, TOKENS.manager!);
   const errors: string[] = [];
   const failures: string[] = [];
@@ -123,7 +122,7 @@ test("详情页：研究、辩论、审批（有数据时）", async ({ browser 
     await page.goto(`${BASE}/inst/research?case=${researchCaseId}`, { waitUntil: "networkidle" });
     await expect(page.getByText("公司信息", { exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText("行业分析（独立板块）", { exact: true })).toBeVisible();
-    await expect(page.getByText("K 线（日线）", { exact: true })).toBeVisible();
+    await expect(page.getByText("K 线（实时行情）", { exact: true })).toBeVisible();
     await expect(page.getByText("六维分析", { exact: true })).toBeVisible();
     await expect(page.getByText("AI 一页纸", { exact: true })).toBeVisible();
     const returnButton = page.getByRole("button", { name: /退回并重跑|Return & rerun/ });
@@ -187,7 +186,7 @@ test("机构端：Agent 管理列表与编辑入口", async ({ browser }) => {
   await ctx.close();
 });
 
-test("窄屏 1024 八个工作区无横向溢出", async ({ browser }) => {
+test("窄屏 1024 七个工作区无横向溢出", async ({ browser }) => {
   const { ctx, page } = await openPage(browser, TOKENS.manager!, { width: 1024, height: 900 });
   for (const [path, text] of WORKSPACES) {
     await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
@@ -202,12 +201,12 @@ test("窄屏 1024 八个工作区无横向溢出", async ({ browser }) => {
 
 test("六角色菜单与权限边界", async ({ browser }) => {
   const expected: Record<Role, string[]> = {
-    manager: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent管理"],
-    partner: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent管理"],
-    chairman: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent管理"],
-    risk: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent管理"],
-    execution: ["投资总览", "投委会审批", "投资组合", "投后管理", "Agent管理"],
-    monitoring: ["投资总览", "公司研究", "投委会审批", "投资组合", "投后管理", "Agent管理"],
+    manager: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "投资管理", "Agent管理"],
+    partner: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "投资管理", "Agent管理"],
+    chairman: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "投资管理", "Agent管理"],
+    risk: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "投资管理", "Agent管理"],
+    execution: ["投资总览", "投委会审批", "投资管理", "Agent管理"],
+    monitoring: ["投资总览", "公司研究", "投委会审批", "投资管理", "Agent管理"],
   };
   for (const role of ROLES) {
     const { ctx, page } = await openPage(browser, TOKENS[role]!);

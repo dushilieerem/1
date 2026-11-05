@@ -460,6 +460,8 @@ INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_inst_proposal_org ON inst_proposal (org_id, status, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_proposal_version_prop ON inst_proposal_version (proposal_id, version_no DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_authorization_status ON inst_authorization (status, issued_at DESC)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_inst_approval_version_step_approver "
+    "ON inst_approval (proposal_version_id, step, approver_member_id)",
     "CREATE INDEX IF NOT EXISTS idx_inst_position_portfolio ON inst_position_snapshot (portfolio_id, as_of DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_monitor_org ON inst_monitor_event (org_id, status, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_audit_org ON inst_audit_event (org_id, created_at DESC)",
@@ -500,6 +502,22 @@ def ensure_inst_business_schema(*, include_indexes: bool = True) -> None:
         conn.execute("ALTER TABLE inst_debate_argument ADD COLUMN IF NOT EXISTS claim_id TEXT")
         conn.execute(
             "ALTER TABLE inst_debate_argument ADD COLUMN IF NOT EXISTS claim_type TEXT NOT NULL DEFAULT 'inference'"
+        )
+        # 投委会审批：同角色可多人，各人独立留痕；附条件随议案向下传递。
+        conn.execute("ALTER TABLE inst_approval ADD COLUMN IF NOT EXISTS conditions JSONB")
+        conn.execute(
+            """
+            DO $$
+            BEGIN
+              IF EXISTS (
+                SELECT 1 FROM pg_constraint
+                 WHERE conrelid='inst_approval'::regclass
+                   AND conname='inst_approval_version_step_key'
+              ) THEN
+                ALTER TABLE inst_approval DROP CONSTRAINT inst_approval_version_step_key;
+              END IF;
+            END $$;
+            """
         )
         # 旧证据补等级与可用时间；只回填仍是默认 D 的行，避免覆盖人工调整。
         conn.execute(

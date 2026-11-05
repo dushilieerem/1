@@ -25,6 +25,10 @@ type Approval = {
   step: string;
   decision: string;
   comment?: string;
+  conditions?: string[];
+  approver_member_id?: number;
+  approver_name?: string;
+  approver_role?: string;
   decided_at?: string;
 };
 
@@ -41,6 +45,7 @@ type ProposalDetail = ProposalListItem & {
   versions?: Array<{ id: number; version_no: number; status: string; snapshot: Record<string, any> }>;
   approvals?: Approval[];
   authorizations?: Array<{ id: number; status: string; issued_at: string; snapshot: Record<string, any> }>;
+  risk_checks?: Array<{ key: string; label: string; value?: string; status: string }>;
   exit_case?: ExitCase | null;
 };
 
@@ -84,7 +89,8 @@ export function InstApprovalsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [comment, setComment] = useState("");
-  const [target, setTarget] = useState("");
+  const [conditionsText, setConditionsText] = useState("");
+  const [conditionsMet, setConditionsMet] = useState(false);
   const [riskMemo, setRiskMemo] = useState<Record<string, any> | null>(null);
   const [chairMemo, setChairMemo] = useState<Record<string, any> | null>(null);
   const [chairmanMode, setChairmanMode] = useState<Record<string, any> | null>(null);
@@ -109,7 +115,6 @@ export function InstApprovalsPage() {
     instApi<ProposalDetail>(`/proposals/${id}`)
       .then((d) => {
         setDetail(d);
-        setTarget(String(d.target_weight ?? d.current_version?.snapshot?.target_weight ?? ""));
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -148,18 +153,23 @@ export function InstApprovalsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, detail?.current_version?.id]);
 
-  const approvalMap = useMemo(() => {
-    const map = new Map<string, Approval>();
-    for (const a of detail?.approvals || []) map.set(a.step, a);
-    return map;
-  }, [detail]);
-
-  const canAuthorize =
-    approvalMap.get("partner")?.decision === "approve" &&
-    ["approve", "conditional"].includes(approvalMap.get("chairman")?.decision || "") &&
-    approvalMap.get("risk_precheck")?.decision === "pass";
-  // 方案 B：最后一关由 Chairman/风控完成，通过即授权并模拟成交。
+  const approvalsFor = useMemo(
+    () => (step: string) => (detail?.approvals || []).filter((a) => a.step === step),
+    [detail],
+  );
+  const partnerPassed = approvalsFor("partner").some((a) => ["approve", "conditional"].includes(a.decision));
+  const riskVetoed = approvalsFor("risk_precheck").some((a) => ["veto", "block"].includes(a.decision));
+  const riskPassed = approvalsFor("risk_precheck").some((a) => ["pass", "conditional"].includes(a.decision));
+  const chairmanPassed = approvalsFor("chairman").some((a) => ["approve", "conditional"].includes(a.decision));
+  const conditionsList = (detail?.approvals || []).flatMap((a) => a.conditions || []);
+  const canAuthorize = partnerPassed && riskPassed && !riskVetoed && chairmanPassed;
+  // 方案 B：授权已生成后由 Chairman/风控确认条件并模拟成交。
   const canAutoExecute = canAuthorize && (role === "chairman" || role === "risk");
+  const conditions = () =>
+    conditionsText
+      .split("\n")
+      .map((x) => x.trim())
+      .filter(Boolean);
 
   const act = async (label: string, fn: () => Promise<unknown>) => {
     if (!selectedId) return;
@@ -183,7 +193,7 @@ export function InstApprovalsPage() {
     try {
       const res = await instApi<{ authorization_id: number }>(
         `/proposals/${selectedId}/approve-and-execute`,
-        { method: "POST" },
+        { method: "POST", body: { conditions_met: conditionsMet } },
       );
       nav("/inst/portfolio", {
         state: {
@@ -199,6 +209,52 @@ export function InstApprovalsPage() {
     } finally {
       setBusy(null);
     }
+  };
+
+  const riskBlocked = Boolean(detail?.risk_checks?.some((c) => c.status === "block"));
+
+  const requireConditions = (list: string[]) => {
+    if (!list.length) {
+      setError(t("附条件决策必须填写具体条件（每行一条）。", "Conditional decisions require concrete conditions (one per line)."));
+      return false;
+    }
+    return true;
+  };
+
+  const submitPartner = (decision: "approve" | "conditional" | "return") => {
+    if (!selectedId) return;
+    const list = conditions();
+    if (decision === "conditional" && !requireConditions(list)) return;
+    void act("partner", () =>
+      instApi(`/proposals/${selectedId}/partner`, {
+        method: "POST",
+        body: { decision, comment, conditions: list },
+      }),
+    );
+  };
+
+  const submitRisk = (decision: "pass" | "conditional" | "veto") => {
+    if (!selectedId) return;
+    const list = conditions();
+    if (decision === "conditional" && !requireConditions(list)) return;
+    void act("risk", () =>
+      instApi(`/proposals/${selectedId}/risk-check`, {
+        method: "POST",
+        body: { decision, comment, conditions: list },
+      }),
+    );
+  };
+
+  const submitChairman = (decision: "approve" | "conditional" | "reject" | "return") => {
+    if (!selectedId) return;
+    const list = conditions();
+    if (decision === "conditional" && !requireConditions(list)) return;
+    void act("chairman", () =>
+      instApi(`/proposals/${selectedId}/chairman`, {
+        method: "POST",
+        body: { decision, comment, conditions: list },
+      }),
+    );
   };
 
   if (loading) {
@@ -314,6 +370,10 @@ export function InstApprovalsPage() {
                 value={snapshot.account ? t(`模拟账户 ${snapshot.account}`, `Sim account ${snapshot.account}`) : t("未指定", "Not specified")}
               />
               <Field
+                label={t("资金来源", "Funding source")}
+                value={String(snapshot.funding_source || t("未指定", "Not specified"))}
+              />
+              <Field
                 label={t("币种 / 汇率", "Currency / FX")}
                 value={`${snapshot.currency === "CNY" || !snapshot.currency ? t("人民币（CNY）", "CNY") : snapshot.currency} / ${snapshot.fx_rate ?? "—"}`}
               />
@@ -326,6 +386,12 @@ export function InstApprovalsPage() {
                   "No price range: execution will not enforce price bounds. Add one in the proposal config if a limit is required.",
                 )}
               </p>
+            ) : null}
+            {snapshot.investment_opinion ? (
+              <div className="mt-3 rounded-xl border border-[#dde5f2] bg-[#f8faff] p-3 text-xs leading-relaxed text-[#505369]">
+                <p className="font-medium text-[#b42345]">{t("投资经理意见", "Investment manager opinion")}</p>
+                <p className="mt-1 whitespace-pre-wrap">{String(snapshot.investment_opinion)}</p>
+              </div>
             ) : null}
             {Array.isArray(snapshot.monitoring) && snapshot.monitoring.length ? (
               <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs text-[#b42345]">
@@ -368,22 +434,48 @@ export function InstApprovalsPage() {
 
           <Card title={t("审批链", "Approval chain")} desc={t("职责分离：提案人不得批准自己的议案；风控否决终局。", "Separation of duties: proposers cannot approve their own proposal; risk veto is final.")}>
             <div className="space-y-3">
-              {(["partner", "chairman", "risk_precheck"] as const).map((step) => {
-                const a = approvalMap.get(step);
+              {(["partner", "risk_precheck", "chairman"] as const).map((step) => {
+                const rows = approvalsFor(step);
+                const passed =
+                  step === "risk_precheck"
+                    ? rows.some((a) => ["pass", "conditional"].includes(a.decision))
+                    : rows.some((a) => ["approve", "conditional"].includes(a.decision));
+                const vetoed = step === "risk_precheck" && rows.some((a) => ["veto", "block"].includes(a.decision));
                 return (
-                  <div key={step} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#e3eaf8] bg-[#f8faff] px-4 py-3">
-                    <div>
+                  <div key={step} className="rounded-xl border border-[#e3eaf8] bg-[#f8faff] px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm font-medium text-[#252533]">{stepLabel(step)}</p>
-                      <p className="mt-1 text-xs text-[#68738b]">
-                        {a ? a.comment || t("无审批意见", "No comment") : t("尚未处理", "Pending")}
-                      </p>
-                      {a?.decided_at ? (
-                        <p className="mt-1 text-[10px] text-[#77718c]">
-                          {t("处理时间", "Decided at")}：{fmtDateTime(a.decided_at)}
-                        </p>
-                      ) : null}
+                      <StatusBadge status={vetoed ? "veto" : passed ? "pass" : "pending"} />
                     </div>
-                    <StatusBadge status={a?.decision || "pending"} />
+                    {rows.length ? (
+                      <ul className="mt-2 space-y-2">
+                        {rows.map((a) => (
+                          <li key={a.id} className="rounded-lg border border-[#e3eaf8] bg-white px-3 py-2 text-xs">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-medium text-[#505369]">
+                                {a.approver_name || a.approver_role || t("审批人", "Approver")}
+                                {a.approver_role && a.approver_name ? ` · ${a.approver_role}` : ""}
+                              </span>
+                              <StatusBadge status={a.decision} />
+                            </div>
+                            {a.comment ? <p className="mt-1 text-[#68738b]">{a.comment}</p> : null}
+                            {a.conditions?.length ? (
+                              <div className="mt-1 rounded-md bg-amber-50 px-2 py-1 text-amber-800">
+                                <span className="font-medium">{t("附加条件", "Conditions")}：</span>
+                                {a.conditions.join("；")}
+                              </div>
+                            ) : null}
+                            {a.decided_at ? (
+                              <p className="mt-1 text-[10px] text-[#77718c]">
+                                {t("处理时间", "Decided at")}：{fmtDateTime(a.decided_at)}
+                              </p>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-1 text-xs text-[#68738b]">{t("尚未处理", "Pending")}</p>
+                    )}
                   </div>
                 );
               })}
@@ -397,112 +489,85 @@ export function InstApprovalsPage() {
                   placeholder={t("审批意见（通过/拒绝/退回均建议填写）", "Review comment (recommended for approve/reject/return)")}
                   className="min-h-[72px] w-full rounded-lg border border-[#dde5f2] bg-[#f8faff] p-2 text-xs outline-none focus:border-[#7950ba]"
                 />
+                <textarea
+                  value={conditionsText}
+                  onChange={(e) => setConditionsText(e.target.value)}
+                  placeholder={t(
+                    "附加条件（每行一条；选择「附条件」时必填），如：现价回到区间内才可执行",
+                    "Conditions (one per line; required for conditional decisions), e.g. execute only within the price band",
+                  )}
+                  className="min-h-[60px] w-full rounded-lg border border-[#dde5f2] bg-white p-2 text-xs outline-none focus:border-[#7950ba]"
+                />
                 <div className="flex flex-wrap gap-2">
-                  {role === "partner" ? (
+                  {role === "partner" && ["draft", "partner_review"].includes(detail.status) ? (
                     <>
-                      <input
-                        value={target}
-                        onChange={(e) => setTarget(e.target.value)}
-                        placeholder={t("目标仓位，如 0.05", "Target weight, e.g. 0.05")}
-                        className="w-36 rounded-lg border border-[#dde5f2] bg-white px-2 py-2 text-xs outline-none"
-                      />
-                      <Button
-                        variant="gold"
-                        disabled={!!busy}
-                        onClick={() =>
-                          act("partner", () =>
-                            instApi(`/proposals/${selectedId}/partner`, {
-                              method: "POST",
-                              body: {
-                                decision: "approve",
-                                comment,
-                                updates: target ? { target_weight: Number(target) } : {},
-                              },
-                            }),
-                          )
-                        }
-                      >
-                        {busy === "partner" ? t("提交中…", "Submitting…") : t("合伙人复核通过", "Partner approve")}
+                      <Button variant="gold" disabled={!!busy} onClick={() => submitPartner("approve")}>
+                        {busy === "partner" ? t("提交中…", "Submitting…") : t("复核通过", "Partner approve")}
                       </Button>
-                      <Button
-                        variant="danger"
-                        disabled={!!busy}
-                        onClick={() =>
-                          act("return", () =>
-                            instApi(`/proposals/${selectedId}/partner`, {
-                              method: "POST",
-                              body: { decision: "return", comment: comment || t("退回补充", "Return for more") },
-                            }),
-                          )
-                        }
-                      >
+                      <Button variant="primary" disabled={!!busy} onClick={() => submitPartner("conditional")}>
+                        {t("附条件通过", "Conditional approve")}
+                      </Button>
+                      <Button variant="danger" disabled={!!busy} onClick={() => submitPartner("return")}>
                         {t("退回", "Return")}
                       </Button>
                     </>
                   ) : null}
 
-                  {role === "chairman" ? (
+                  {role === "risk" && ["risk_precheck", "chairman_review"].includes(detail.status) ? (
                     <>
-                      <Button
-                        variant="gold"
-                        disabled={!!busy}
-                        onClick={() =>
-                          act("chairman", () =>
-                            instApi(`/proposals/${selectedId}/chairman`, {
-                              method: "POST",
-                              body: { decision: "approve", comment },
-                            }),
-                          )
-                        }
-                      >
-                        {busy === "chairman" ? t("提交中…", "Submitting…") : t("Chairman 批准", "Chairman approve")}
-                      </Button>
-                      <Button
-                        variant="danger"
-                        disabled={!!busy}
-                        onClick={() =>
-                          act("reject", () =>
-                            instApi(`/proposals/${selectedId}/chairman`, {
-                              method: "POST",
-                              body: { decision: "reject", comment: comment || t("不同意", "Reject") },
-                            }),
-                          )
-                        }
-                      >
-                        {t("拒绝", "Reject")}
+                      {detail.status === "risk_precheck" ? (
+                        <>
+                          <Button variant="gold" disabled={!!busy || riskBlocked} onClick={() => submitRisk("pass")}>
+                            {busy === "risk" ? t("复核中…", "Checking…") : t("放行", "Pass")}
+                          </Button>
+                          <Button variant="primary" disabled={!!busy || riskBlocked} onClick={() => submitRisk("conditional")}>
+                            {t("有条件放行", "Conditional pass")}
+                          </Button>
+                        </>
+                      ) : null}
+                      <Button variant="danger" disabled={!!busy} onClick={() => submitRisk("veto")}>
+                        {t("否决", "Veto")}
                       </Button>
                     </>
                   ) : null}
 
-                  {role === "risk" ? (
-                    <Button
-                      variant="primary"
-                      disabled={!!busy}
-                      onClick={() =>
-                        act("risk", () =>
-                          instApi(`/proposals/${selectedId}/risk-check`, {
-                            method: "POST",
-                            body: { comment: comment || t("执行前风控复核", "Pre-execution risk review") },
-                          }),
-                        )
-                      }
-                    >
-                      {busy === "risk" ? t("复核中…", "Checking…") : t("执行前风控复核", "Pre-execution risk check")}
-                    </Button>
+                  {role === "chairman" && detail.status === "chairman_review" && !riskVetoed ? (
+                    <>
+                      <Button variant="gold" disabled={!!busy} onClick={() => submitChairman("approve")}>
+                        {busy === "chairman" ? t("提交中…", "Submitting…") : t("批准", "Approve")}
+                      </Button>
+                      <Button variant="primary" disabled={!!busy} onClick={() => submitChairman("conditional")}>
+                        {t("附条件批准", "Conditional approve")}
+                      </Button>
+                      <Button variant="danger" disabled={!!busy} onClick={() => submitChairman("reject")}>
+                        {t("拒绝", "Reject")}
+                      </Button>
+                      <Button variant="danger" disabled={!!busy} onClick={() => submitChairman("return")}>
+                        {t("退回", "Return")}
+                      </Button>
+                    </>
                   ) : null}
 
-                  {canAutoExecute && ["risk_precheck", "authorized"].includes(detail.status) ? (
-                    <Button
-                      variant="gold"
-                      disabled={!!busy}
-                      onClick={() => void approveAndExecute()}
-                    >
-                      {busy === "approve-execute"
-                        ? t("成交中…", "Executing…")
-                        : detail.status === "authorized"
-                          ? t("重试模拟成交", "Retry simulated fill")
-                          : t("批准并模拟成交", "Approve & simulate fill")}
-                    </Button>
+                  {canAutoExecute && detail.status === "authorized" ? (
+                    <>
+                      {conditionsList.length ? (
+                        <label className="flex items-center gap-2 text-[11px] text-[#505369]">
+                          <input
+                            type="checkbox"
+                            checked={conditionsMet}
+                            onChange={(e) => setConditionsMet(e.target.checked)}
+                          />
+                          {t("确认附加条件已满足", "Conditions satisfied")}
+                        </label>
+                      ) : null}
+                      <Button
+                        variant="gold"
+                        disabled={!!busy || (conditionsList.length > 0 && !conditionsMet)}
+                        onClick={() => void approveAndExecute()}
+                      >
+                        {busy === "approve-execute" ? t("成交中…", "Executing…") : t("确认并模拟成交", "Confirm & simulate fill")}
+                      </Button>
+                    </>
                   ) : detail.status === "executed" ? (
                     <p className="w-full text-[11px] leading-relaxed text-emerald-700">
                       {t("该议案已通过并模拟成交，持仓已更新。", "This proposal is approved and simulated-filled; positions are updated.")}
@@ -514,19 +579,16 @@ export function InstApprovalsPage() {
                         "Authorization created but the fill is incomplete; Chairman/Risk can retry, or check Portfolio for execution exceptions.",
                       )}
                     </p>
-                  ) : canAuthorize ? (
-                    <p className="w-full text-[11px] leading-relaxed text-[#77718c]">
-                      {t(
-                        "等待 Chairman/风控完成最后一步；通过后自动模拟成交。",
-                        "Waiting for Chairman/Risk to complete the final step; it will auto-fill on approval.",
-                      )}
+                  ) : detail.status === "frozen" ? (
+                    <p className="w-full text-[11px] leading-relaxed text-red-700">
+                      {t("独立风控已否决，议案终止；Chairman 不能批准。", "Risk has vetoed this proposal; Chairman cannot approve.")}
                     </p>
                   ) : null}
                 </div>
                 <p className="text-[11px] leading-relaxed text-[#77718c]">
                   {t(
-                    "方案 B：最后一关通过后自动生成授权并模拟成交，持仓随后出现在投资组合；风控阻断后不能批准。",
-                    "Flow B: the final approval creates the authorization and simulated fill automatically; the position then appears in Portfolio. A risk block prevents approval.",
+                    "顺序固定：合伙人 → 风控 → Chairman。同角色多人各自留痕；任一风控否决即终止；附条件会随授权进入执行校验。",
+                    "Fixed order: Partner → Risk → Chairman. Multiple approvers per role; any risk veto is final; conditions flow into execution checks.",
                   )}
                 </p>
               </div>
@@ -535,23 +597,26 @@ export function InstApprovalsPage() {
         </div>
 
         <div className="space-y-4">
-          <Card title={t("风控检查", "Risk checks")} desc={t("硬性阻断：单股 >15%、交易后现金 <10%、版本不一致、无有效批准。", "Hard blocks: single name >15%, post-trade cash <10%, version mismatch, no valid approval.")}>
-            {detail.approvals?.length ? (
+          <Card title={t("风控检查（六项）", "Risk checks (six items)")} desc={t("硬性否决：集中度、现金、版本一致、有效期与价格、交易资格、重复与冲突。警告项由风控决定是否附条件。", "Hard vetoes: concentration, cash, version consistency, validity & price, trading eligibility, duplicate/conflict. Warnings are handled by risk with conditions.")}>
+            {detail.risk_checks?.length ? (
               <ul className="space-y-2 text-xs">
-                {detail.approvals.map((a) => (
-                  <li key={a.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#e3eaf8] px-3 py-2">
-                    <span className="text-[#68738b]">{stepLabel(a.step)}</span>
-                    <StatusBadge status={a.decision} />
+                {detail.risk_checks.map((c) => (
+                  <li key={c.key} className="rounded-lg border border-[#e3eaf8] px-3 py-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-medium text-[#505369]">{c.label}</span>
+                      <StatusBadge status={c.status} />
+                    </div>
+                    {c.value ? <p className="mt-1 leading-relaxed text-[#68738b]">{c.value}</p> : null}
                   </li>
                 ))}
               </ul>
             ) : (
-              <Empty>{t("尚未产生审批记录。", "No approval records yet.")}</Empty>
+              <Empty>{t("暂无风控检查结果。", "No risk checks available.")}</Empty>
             )}
-            {detail.approvals?.some((a) => a.decision === "block" || a.decision === "veto") ? (
+            {riskVetoed || detail.approvals?.some((a) => ["block", "veto"].includes(a.decision)) ? (
               <p className="mt-3 flex items-start gap-2 rounded-lg bg-red-50 p-3 text-[11px] text-red-700">
                 <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                {t("风控已阻断。需整改并由独立风控重新核验，Chairman 不能绕过。", "Risk has blocked this proposal. Remediate and obtain a fresh independent risk review; Chairman cannot bypass.")}
+                {t("风控已否决。需整改并由独立风控重新核验，Chairman 不能绕过。", "Risk has vetoed this proposal. Remediate and obtain a fresh independent risk review; Chairman cannot bypass.")}
               </p>
             ) : null}
           </Card>

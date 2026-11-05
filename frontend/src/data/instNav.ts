@@ -1,7 +1,7 @@
 import type { InstAccess, InstWorkspace } from "@/lib/instAuth";
 
-/** 线性流程 B：交易执行合并进审批通过动作，不再作为独立菜单。 */
-const HIDDEN_WORKSPACE_KEYS = new Set(["execution"]);
+/** 线性流程 B：交易执行合并进审批通过动作；投后管理合并进投资管理单票页。 */
+const HIDDEN_WORKSPACE_KEYS = new Set(["execution", "monitor"]);
 
 /** 菜单顺序：保留服务端工作区 key，隐藏项不影响权限矩阵。 */
 export const INST_WORKSPACE_ORDER = [

@@ -202,13 +202,11 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
             headers=_h(partner),
         )
     )
-    _ok(
-        client.post(
-            f"/api/inst/proposals/{proposal_id}/chairman",
-            json={"decision": "approve"},
-            headers=_h(chairman),
-        )
+    risk_out = _ok(
+        client.post(f"/api/inst/proposals/{proposal_id}/risk-check", json={}, headers=_h(risk))
     )
+    assert risk_out["status"] == "chairman_review"
+
     precheck = _ok(
         client.get(
             f"/api/inst/proposals/{proposal_id}/ai/chairman-precheck", headers=_h(chairman)
@@ -222,10 +220,13 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
     )
     assert simulate["simulated_decision"] in {"approve", "conditional", "handover"}
 
-    risk_out = _ok(
-        client.post(f"/api/inst/proposals/{proposal_id}/risk-check", json={}, headers=_h(risk))
+    _ok(
+        client.post(
+            f"/api/inst/proposals/{proposal_id}/chairman",
+            json={"decision": "approve"},
+            headers=_h(chairman),
+        )
     )
-    assert risk_out["status"] == "risk_precheck"
 
     authorized = _ok(
         client.post(f"/api/inst/proposals/{proposal_id}/authorize", headers=_h(chairman))
@@ -331,13 +332,6 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
             f"/api/inst/proposals/{blocked_id}/partner",
             json={"decision": "approve", "updates": {"target_weight": 0.30}},
             headers=_h(partner),
-        )
-    )
-    _ok(
-        client.post(
-            f"/api/inst/proposals/{blocked_id}/chairman",
-            json={"decision": "approve"},
-            headers=_h(chairman),
         )
     )
     risk_blocked = _ok(

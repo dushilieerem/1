@@ -33,9 +33,9 @@ def test_home_market_uses_required_indices_and_turnover(monkeypatch):
         return []
 
     def fake_one(conn, sql, args=()):
-        if "SUM(amount)" in sql:
-            return {"amt": 1_602_910_000_000.0 if str(args[0]).startswith("2026-11-03") else 1_702_910_000_000.0}
-        if "MAX(trade_date)" in sql:
+        if "md_index_bar" in sql and "SUM(amount)" in sql:
+            return {"amt": 1_602_910_000_000.0 if str(args[0]).startswith("2026-11-03") else 1_702_910_000_000.0, "n": 2}
+        if "md_index_bar" in sql and "MAX(trade_date)" in sql:
             return {"d": date(2026, 11, 3)}
         return None
 
@@ -46,6 +46,8 @@ def test_home_market_uses_required_indices_and_turnover(monkeypatch):
     assert market["turnover"]["available"] is True
     assert market["turnover"]["value"] == 17029.1
     assert market["turnover"]["change"] > 0
+    assert market["turnover"]["basis"] == "index"
+    assert "指数口径" in market["turnover"]["basisLabel"]
 
 
 def test_home_market_marks_missing_indices_without_proxy(monkeypatch):

@@ -651,27 +651,38 @@ def _sync_status(conn, view: ViewInfo, start: date, end: date) -> int:
     return total
 
 
+def _index_frames(view: ViewInfo):
+    """兼容旧 view：新 view 的 index_price 才有 volume/amount。"""
+    base = ["date", "index_code", "open", "high", "low", "close"]
+    try:
+        yield from _iter_frames(view, "index_price", base + ["volume", "amount"])
+    except Exception:
+        yield from _iter_frames(view, "index_price", base)
+
+
 def _sync_index(conn, view: ViewInfo) -> int:
     total = 0
-    for _, frame in _iter_frames(
-        view, "index_price", ["date", "index_code", "open", "high", "low", "close"]
-    ):
-        rows = (
-            (
+    for _, frame in _index_frames(view):
+        has_volume = "volume" in frame.columns
+        has_amount = "amount" in frame.columns
+        rows = []
+        for row in frame.itertuples(index=False):
+            rows.append((
                 str(row.index_code),
                 str(row.date)[:10],
                 _clean(row.open),
                 _clean(row.high),
                 _clean(row.low),
                 _clean(row.close),
+                _clean(getattr(row, "volume", None)) if has_volume else None,
+                _clean(getattr(row, "amount", None)) if has_amount else None,
                 view.view_id,
-            )
-            for row in frame.itertuples(index=False)
-        )
+            ))
         total += _copy_rows(
             conn,
             "tmp_md_index_bar",
-            ["index_code", "trade_date", "open", "high", "low", "close", "source"],
+            ["index_code", "trade_date", "open", "high", "low", "close",
+             "volume", "amount", "source"],
             rows,
         )
     return total
@@ -965,10 +976,12 @@ def _merge_temp_tables(conn) -> None:
     )
     conn.execute(
         """
-        INSERT INTO md_index_bar (index_code, trade_date, open, high, low, close, source)
-        SELECT index_code, trade_date, open, high, low, close, source FROM tmp_md_index_bar
+        INSERT INTO md_index_bar (index_code, trade_date, open, high, low, close, volume, amount, source)
+        SELECT index_code, trade_date, open, high, low, close, volume, amount, source FROM tmp_md_index_bar
         ON CONFLICT (index_code, trade_date) DO UPDATE SET
           open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low, close=EXCLUDED.close,
+          volume=COALESCE(EXCLUDED.volume, md_index_bar.volume),
+          amount=COALESCE(EXCLUDED.amount, md_index_bar.amount),
           source=EXCLUDED.source
         """
     )

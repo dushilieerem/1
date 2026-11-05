@@ -207,6 +207,11 @@ export default function Home() {
                       <span>{t("当前数据视图未提供对应市场指数；不使用其他指数冒充。", "This data view does not provide the required market indices; no proxy is substituted.")}</span>
                     </div>
                   )}
+                  {turnover.available && turnover.basisLabel ? (
+                    <p className="today-basis">
+                      {locale === "en" ? turnover.basisLabelEn || turnover.basisLabel : turnover.basisLabel}
+                    </p>
+                  ) : null}
                 </div>
               </section>
 

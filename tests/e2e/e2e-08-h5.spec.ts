@@ -88,7 +88,11 @@ test("首页改版：今日卡/概览/热点，底部不再有我的", async ({ 
             { code: "399001.SZ", label: "深证成指", label_en: "SZSE Component", value: 10876.54, change: 0.34, available: true },
             { code: "399006.SZ", label: "创业板指", label_en: "ChiNext", value: 2214.8, change: 1.12, available: true },
           ],
-          turnover: { value: 17029.1, change: -4.5, available: true, note: "" },
+          turnover: {
+            value: 17029.1, change: -4.5, available: true, note: "",
+            basis: "index", basisLabel: "沪深两市成交额（指数口径）",
+            basisLabelEn: "SSE + SZSE turnover (index basis)",
+          },
         },
         daily: [
           { source: "stock", tag: "自选 · 事件", title: "宁德时代 10-30 预约披露", detail: "距预约披露 4 天，关注财报与现金流。", link: { type: "stock", id: "300750" } },
@@ -115,6 +119,7 @@ test("首页改版：今日卡/概览/热点，底部不再有我的", async ({ 
   await expect(page.getByText("上次体检")).toBeVisible();
   await expect(page.getByText("上证指数")).toBeVisible();
   await expect(page.getByText("两市成交", { exact: true })).toBeVisible();
+  await expect(page.getByText("沪深两市成交额（指数口径）")).toBeVisible();
   await expect(page.locator(".overview-row")).toHaveCount(3);
   await expect(page.locator(".hot-row")).toHaveCount(3);
   await expect(page.locator(".card")).toHaveCount(0);

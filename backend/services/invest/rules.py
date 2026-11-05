@@ -1589,31 +1589,58 @@ def _home_market(conn: Any, data_date: str) -> dict[str, Any]:
     amount: float | None = None
     prev_amount: float | None = None
     turnover_note = ""
+    basis = "stocks"
     if data_date == now.date().isoformat() and now.hour < 10:
         turnover_note = "10:00 前成交额未成形"
     else:
-        row = one(
+        # 数据平台已补 000001.SH / 399001.SZ 的指数 amount；优先用指数口径。
+        index_row = one(
             conn,
-            "SELECT SUM(amount) AS amt FROM md_daily_bar WHERE trade_date=? AND adjust='none' "
-            "AND split_part(symbol,'.',2) IN ('SH','SZ') AND amount IS NOT NULL",
+            "SELECT SUM(amount) AS amt, COUNT(amount) AS n FROM md_index_bar "
+            "WHERE trade_date=? AND index_code IN ('000001.SH','399001.SZ') AND amount IS NOT NULL",
             (data_date,),
         )
-        if row and row.get("amt") is not None:
-            amount = float(row["amt"]) / 1e8
-        prev_date = one(
-            conn,
-            "SELECT MAX(trade_date) AS d FROM md_daily_bar WHERE trade_date < ?",
-            (data_date,),
-        )
-        if prev_date and prev_date.get("d"):
-            prev = one(
+        if index_row and index_row.get("amt") is not None and int(index_row.get("n") or 0) >= 2:
+            amount = float(index_row["amt"]) / 1e8
+            basis = "index"
+            prev_date = one(
+                conn,
+                "SELECT MAX(trade_date) AS d FROM md_index_bar "
+                "WHERE trade_date < ? AND index_code IN ('000001.SH','399001.SZ') AND amount IS NOT NULL",
+                (data_date,),
+            )
+            if prev_date and prev_date.get("d"):
+                prev = one(
+                    conn,
+                    "SELECT SUM(amount) AS amt, COUNT(amount) AS n FROM md_index_bar "
+                    "WHERE trade_date=? AND index_code IN ('000001.SH','399001.SZ') AND amount IS NOT NULL",
+                    (prev_date["d"],),
+                )
+                if prev and prev.get("amt") is not None and int(prev.get("n") or 0) >= 2:
+                    prev_amount = float(prev["amt"]) / 1e8
+        else:
+            row = one(
                 conn,
                 "SELECT SUM(amount) AS amt FROM md_daily_bar WHERE trade_date=? AND adjust='none' "
                 "AND split_part(symbol,'.',2) IN ('SH','SZ') AND amount IS NOT NULL",
-                (prev_date["d"],),
+                (data_date,),
             )
-            if prev and prev.get("amt") is not None:
-                prev_amount = float(prev["amt"]) / 1e8
+            if row and row.get("amt") is not None:
+                amount = float(row["amt"]) / 1e8
+            prev_date = one(
+                conn,
+                "SELECT MAX(trade_date) AS d FROM md_daily_bar WHERE trade_date < ?",
+                (data_date,),
+            )
+            if prev_date and prev_date.get("d"):
+                prev = one(
+                    conn,
+                    "SELECT SUM(amount) AS amt FROM md_daily_bar WHERE trade_date=? AND adjust='none' "
+                    "AND split_part(symbol,'.',2) IN ('SH','SZ') AND amount IS NOT NULL",
+                    (prev_date["d"],),
+                )
+                if prev and prev.get("amt") is not None:
+                    prev_amount = float(prev["amt"]) / 1e8
     turnover_change = pct(amount, prev_amount) if amount is not None and prev_amount else None
     is_rest = date.today().weekday() >= 5
     return {
@@ -1626,6 +1653,15 @@ def _home_market(conn: Any, data_date: str) -> dict[str, Any]:
             "value": round(amount, 1) if amount is not None else None,
             "change": round(turnover_change, 2) if turnover_change is not None else None,
             "available": amount is not None,
+            "basis": basis if amount is not None else None,
+            "basisLabel": (
+                "沪深两市成交额（指数口径）" if amount is not None and basis == "index"
+                else "行情汇总口径，非交易所官方" if amount is not None else ""
+            ),
+            "basisLabelEn": (
+                "SSE + SZSE turnover (index basis)" if amount is not None and basis == "index"
+                else "Stock-sum basis, not exchange official" if amount is not None else ""
+            ),
             "note": turnover_note,
         },
     }

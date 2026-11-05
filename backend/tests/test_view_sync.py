@@ -157,3 +157,37 @@ def test_prune_us_snapshot_only_when_source_non_empty():
     assert _prune_us_snapshot(full) == 3
     assert any("DELETE FROM md_us_stock_snapshot" in s for s in full.sql)
     assert any("tmp_md_us_stock_snapshot" in s for s in full.sql)
+
+
+def test_sync_index_reads_volume_and_amount(tmp_path: Path, monkeypatch):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from services.data import view_sync
+
+    base = tmp_path / "derived" / "index_price" / "year=2026"
+    base.mkdir(parents=True)
+    pq.write_table(
+        pa.table({
+            "date": ["2026-11-04"],
+            "index_code": ["000001.SH"],
+            "open": [3600.0], "high": [3700.0], "low": [3590.0], "close": [3686.17],
+            "prev_close": [3608.10], "volume": [599394361.0], "amount": [953265155867.1],
+            "source": ["eastmoney_index_kline"],
+        }),
+        base / "part.parquet",
+    )
+    view = ViewInfo("v", tmp_path, _manifest(data_date="2026-11-04"), "2026-11-01", date(2026, 11, 4))
+    captured = {}
+
+    def fake_copy(conn, table, columns, rows):
+        captured["columns"] = columns
+        captured["rows"] = list(rows)
+        return len(captured["rows"])
+
+    monkeypatch.setattr(view_sync, "_copy_rows", fake_copy)
+    total = view_sync._sync_index(object(), view)
+    assert total == 1
+    assert "volume" in captured["columns"] and "amount" in captured["columns"]
+    row = captured["rows"][0]
+    assert row[0] == "000001.SH" and row[6] == 599394361.0 and row[7] == 953265155867.1

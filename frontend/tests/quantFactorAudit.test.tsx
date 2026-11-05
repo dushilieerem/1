@@ -13,7 +13,7 @@ const originalFetch=globalThis.fetch;
 Object.defineProperty(globalThis,'sessionStorage',{value:window.sessionStorage,configurable:true});
 afterEach(()=>{cleanup();globalThis.fetch=originalFetch;sessionStorage.clear();window.history.replaceState({},'','/');});
 function login(){window.history.replaceState({},'','/quant/factor');setQuantSession({token:'test-double',product:'quant',user:{id:71,username:'test'},org:{id:21,code:'test',name_cn:'测试'},permissions:{quant:'write'}});}
-const plan={revision:'fixed',hypothesis:'h',candidateExpression:'',target:'1d',frequency:'1d',developmentStart:'2025-01-01',developmentEnd:'2025-06-30',validationStart:'2025-07-01',validationEnd:'2025-12-31',acceptance:'predefined',maxTrials:3,rules:{icMetric:'rank_ic',minSignedIc:.02,maxDrawdown:.3,minObservations:60,direction:'positive'}};
+const plan={researchPurpose:'replication',revision:'fixed',hypothesis:'h',candidateExpression:'',target:'1d',frequency:'1d',developmentStart:'2025-01-01',developmentEnd:'2025-06-30',validationStart:'2025-07-01',validationEnd:'2025-12-31',acceptance:'predefined',maxTrials:3,rules:{icMetric:'rank_ic',minSignedIc:.02,maxDrawdown:.3,minObservations:60,direction:'positive'}};
 const project={id:'p',name:'test',factorName:'f',description:'h',config:{factorCodes:['f'],researchPlan:plan}};
 const candidate={id:'c1',status:'development_failed',snapshot_hash:'sha',events:[],evidence:{development:{run_id:'r',gate:{passed:false,checks:[{name:'Rank IC',actual:.01,operator:'>=',threshold:.02,passed:false}]}}}};
 test('saving an unchanged research plan preserves revision and existing evidence',async()=>{

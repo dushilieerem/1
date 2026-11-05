@@ -7,10 +7,10 @@ FIELDS={'horizon_days':1,'title':'日内区间位置研究','direction':'量价'
 class AgentJobTests(unittest.TestCase):
  def test_real_tool_boundaries_return_valid_fields_and_usage(self):
   import json
-  with patch.object(jobs,'update',return_value=True) as update,patch.object(jobs,'list_projects',return_value={'projects':[{'name':'existing'}]}),patch('services.workflow_workspace.platform_data.published_view',return_value={'view_id':'release-x','datasets':{'daily_bars':{'rows':10}}}),patch.object(jobs,'get_task'),patch.object(jobs,'run_task',return_value={'content':'```json\n'+json.dumps(FIELDS)+'\n```','model':'test-double','tokens_in':10,'tokens_out':20}) as model,patch.object(jobs,'record_usage') as usage:
+  with patch.object(jobs,'update',return_value=True) as update,patch.object(jobs,'list_projects',return_value={'projects':[{'name':'existing'}]}),patch('services.workflow_workspace.platform_data.published_view',return_value={'view_id':'release-x','datasets':{'daily_bars':{'rows':10}}}),patch('services.quant_factor.asset_context.catalogue',return_value={'scope':'test','count':1,'hash':'h','builtins':[{'library_name':'lib','factor_name':'f','description':'known'}],'owned':[]}),patch.object(jobs,'get_task'),patch.object(jobs,'run_task',return_value={'content':'```json\n'+json.dumps(FIELDS)+'\n```','model':'test-double','tokens_in':10,'tokens_out':20}) as model,patch.object(jobs,'record_usage') as usage:
    result=jobs._plan_task(1,2,'j',{})
    self.assertEqual(result['fields'],{k:v for k,v in FIELDS.items() if k!='horizon_days'});self.assertEqual(result['existing_research_count'],1)
-   self.assertEqual([c.args[4]['action'] for c in update.call_args_list],['read_data','read_research','model_started'])
+   self.assertEqual([c.args[4]['action'] for c in update.call_args_list],['read_data','read_research','read_factor_library','factor_library_read','model_started'])
    self.assertEqual(usage.call_args.kwargs['tokens_out'],20);model.assert_called_once()
  def test_cancelled_job_never_calls_model_or_fills_fields(self):
   with patch.object(jobs,'read',return_value={'status':'cancelled'}),patch.object(jobs,'run_task') as model,patch.object(jobs,'update') as update:

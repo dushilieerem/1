@@ -71,6 +71,7 @@ def start(uid,org,pid,max_rounds):
    p=c.execute('SELECT * FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,pid)).fetchone()
    if not p:raise KeyError(pid)
    snap=snapshot(_row_project(dict(p)))
+   if snap['plan'].get('researchPurpose') not in ('discovery','replication'):raise WorkflowError('请在 F2 明确本次是新因子挖掘还是已有因子复现，再开始自动研究。')
    drafting=c.execute("SELECT id FROM quant_factor_agent_jobs WHERE user_id=%s AND org_id=%s AND project_id=%s AND status IN ('queued','running') LIMIT 1",(uid,org,pid)).fetchone()
    if drafting:raise WorkflowError('本研究仍有 Agent 正在填写，请保存其结果或人工接管后再启动自动迭代。')
    candidates=[dict(r) for r in c.execute('SELECT snapshot,evidence,status FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s',(uid,org,pid)).fetchall()]
@@ -81,6 +82,9 @@ def start(uid,org,pid,max_rounds):
    pending=c.execute("SELECT COUNT(*) AS n FROM quant_factor_iterations WHERE status IN ('queued','running')").fetchone()['n']
    if pending>=1:raise WorkflowError('自动研究队列繁忙，请稍后再试。')
    jid=str(uuid.uuid4())
+   if snap['plan'].get('researchPurpose')=='discovery':
+    from .asset_context import catalogue
+    snap['_library_reference']=catalogue(uid)
    c.execute("INSERT INTO quant_factor_iterations(id,user_id,org_id,project_id,status,max_rounds,baseline,events) VALUES(%s,%s,%s,%s,'queued',%s,%s::jsonb,%s::jsonb)",(jid,uid,org,pid,max_rounds,store.encode(snap),store.encode([service.event('queued',message='已固定研究计划、数据范围、交易参数与硬门槛。',max_rounds=max_rounds)])))
  if not old:POOL.submit(run,uid,org,jid)
  return read(uid,org,jid)
@@ -92,13 +96,13 @@ def remember_child(uid,org,jid,field,value):
  if not r:raise Stopped()
 
 def save_round(uid,org,jid,number,candidate,change):
- entry={'number':number,'candidate_id':candidate['id'],'status':candidate['status'],'snapshot_hash':candidate['snapshot_hash'],'change':change,'factor_name':candidate['snapshot']['request']['factor_name'],'evidence':{k:{'gate':v.get('gate'),'report_id':v.get('report_id'),'run_id':v.get('run_id')} for k,v in candidate['evidence'].items()}}
+ entry={'number':number,'candidate_id':candidate['id'],'status':candidate['status'],'snapshot_hash':candidate['snapshot_hash'],'change':change,'factor_name':candidate['snapshot']['request']['factor_name'],'evidence':{k:{'gate':v.get('gate'),'report_id':v.get('report_id'),'run_id':v.get('run_id'),'novelty':v.get('novelty')} for k,v in candidate['evidence'].items()}}
  with get_conn() as c:
   r=c.execute("UPDATE quant_factor_iterations SET rounds=(SELECT COALESCE(jsonb_agg(x),'[]'::jsonb) FROM jsonb_array_elements(rounds) x WHERE (x->>'number')::int<>%s)||%s::jsonb,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status IN ('queued','running') RETURNING id",(number,store.encode([entry]),jid,uid,org)).fetchone()
  if not r:raise Stopped()
 
 def wait_candidate(uid,org,jid,cid,expected):
- deadline=time.monotonic()+960
+ deadline=time.monotonic()+2220
  while time.monotonic()<deadline:
   checkpoint(uid,org,jid,expected)
   c=service.current(uid,org,cid)
@@ -152,24 +156,27 @@ def submit_research(uid,org,jid,candidate,number,expected):
  # Serialize pause vs handoff on the iteration row. Review remains a separate human action.
  from .review import request_review
  checkpoint(uid,org,jid,expected)
- note=f'自动迭代第{number}轮通过预登记研发和样本外数值门槛。版本：{candidate["snapshot_hash"]}。属于待人工复核的研究证据；未封存、未正式准入，不代表投资建议。'
+ from .novelty_policy import handoff_allowed
+ purpose='新因子候选（已通过冻结库范围去重）' if candidate['snapshot']['plan'].get('researchPurpose')=='discovery' else '已有因子复现（不申报新发现）'
+ note=purpose+f'，自动迭代第{number}轮通过预登记研发和样本外数值门槛。版本：{candidate["snapshot_hash"]}。属于待人工复核的研究证据；未封存、未正式准入，不代表投资建议。'
  with get_conn() as c:
   loop=c.execute('SELECT status FROM quant_factor_iterations WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE',(jid,uid,org)).fetchone()
   if not loop or loop['status'] not in ACTIVE:raise Stopped()
+  if candidate['snapshot']['plan'].get('researchPurpose')!='replication' and not handoff_allowed(candidate):raise WorkflowError('未取得完整、通过的因子库去重证据，不自动送审为新成果。')
   service.archive(uid,org,candidate['id'],note)
   request_review(uid,org,candidate['id'],'请独立核对经济解释、数据覆盖、交易成本、重复试验与样本外证据。'+note)
   reason='研发与样本外硬门槛通过，已整理证据送交独立研究复核；未自动审批或正式准入。'
   c.execute("UPDATE quant_factor_iterations SET status='review_pending',stop_reason=%s,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s",(reason,store.encode([service.event('review_pending',message=reason)]),jid))
 
 def run(uid,org,jid):
- expected=None;data_release=None
+ expected=None;data_release=None;reference_source=None
  try:
-  row=checkpoint(uid,org,jid);pid=row['project_id'];expected=digest(row['baseline']);change='检验已保存的初始实现。'
+  row=checkpoint(uid,org,jid);pid=row['project_id'];baseline=copy.deepcopy(row['baseline']);reference=baseline.pop('_library_reference',None);expected=digest(baseline);change='检验已保存的初始实现。'
   with get_conn() as c:c.execute("UPDATE quant_factor_iterations SET status='running',updated_at=NOW() WHERE id=%s AND status='queued'",(jid,))
   for number in range(1,row['max_rounds']+1):
    checkpoint(uid,org,jid,expected)
    log(uid,org,jid,'development',f'第 {number} 轮：冻结实现并调用真实研发检验。',round=number,tool='ResearchEngine.factor')
-   candidate=service.create(uid,org,pid,expected)
+   candidate=service.create(uid,org,pid,expected,reference=reference)
    try:remember_child(uid,org,jid,'candidate_id',candidate['id'])
    except Stopped:
     if candidate['status'].endswith('_running'):service.cancel(uid,org,candidate['id'])
@@ -179,6 +186,9 @@ def run(uid,org,jid):
    release=candidate['evidence'].get('development',{}).get('result',{}).get('meta',{}).get('data_release_id')
    if data_release is not None and release!=data_release:raise WorkflowError('迭代期间数据版本发生变化，停止跨版本比较；已有证据保留。')
    if release:data_release=release
+   ref_source=candidate['evidence'].get('development',{}).get('novelty',{}).get('meta',{}).get('reference_source_hash')
+   if reference_source and ref_source and reference_source!=ref_source:raise WorkflowError('对照因子源码版本变化，停止跨版本搜索。')
+   if ref_source:reference_source=ref_source
    if candidate['status']=='development_passed':
     log(uid,org,jid,'validation',f'第 {number} 轮研发门槛通过，执行一次固定样本外复验。',round=number)
     checkpoint(uid,org,jid,expected);service.validate(uid,org,candidate['id'])
@@ -187,15 +197,17 @@ def run(uid,org,jid):
     elif candidate['status']=='validation_failed':finish(uid,org,jid,'validation_failed','样本外门槛未通过。本轮研究停止，不针对已经查看的验证集继续调参；证据保留待人工复盘。')
     else:raise WorkflowError('样本外计算未完成，请核对保留的执行记录。')
     return
-   if candidate['status']!='development_failed':raise WorkflowError('研发计算异常或被取消；停止迭代，不把执行错误当成因子质量结论。')
+   if candidate['status']!='development_failed':raise WorkflowError(candidate.get('evidence',{}).get('development',{}).get('novelty',{}).get('message') or '研发计算异常或被取消；停止迭代，不把执行错误当成因子质量结论。')
    if number>=row['max_rounds']:
     finish(uid,org,jid,'limit_reached','已达到本次最大迭代轮数，候选尚未通过研发门槛。所有失败实验保留，不送审。');return
    checks=candidate['evidence']['development']['gate']['checks'];failed=[c['name'] for c in checks if not c['passed']]
+   novelty=candidate['evidence']['development'].get('novelty') or {}
+   if novelty.get('status')=='failed':failed.append('因子库去重')
    log(uid,org,jid,'improvement',f'第 {number} 轮未通过：'+'、'.join(failed)+'。Agent 仅依据研发结果改进实现。',round=number+1,tool='research.generate_factor')
    checkpoint(uid,org,jid,expected)
    p=get_project(uid,pid)['project'];plan=p['config']['researchPlan'];draft=p['config'].get('draftFactor') or {}
    # Holdout results are never included in model context.
-   feedback={'checks':checks,'metrics':candidate['evidence']['development']['result'].get('metrics',{}),'previous_change':change}
+   feedback={'checks':[{k:x[k] for k in ('name','actual','operator','threshold','passed')} for x in checks],'novelty':{'status':novelty.get('status'),'max_abs_correlation':novelty.get('gate',{}).get('max_abs_correlation'),'closest':{k:v for k,v in (novelty.get('gate',{}).get('closest') or {}).items() if k in ('reference_id','factor_name','mean_abs_spearman')},'duplicates':novelty.get('duplicates',[])[:3]}}
    hypothesis=plan['hypothesis']+'\n请基于下列研发反馈改进因子实现。不得改研究门槛、数据区间、交易参数，不得利用未来数据或验证集；保持经济假设一致，不能为过门槛伪造值。\n'+store.encode(feedback)
    a=agent_jobs.create(uid,org,'F3',pid,{'hypothesis':hypothesis,'candidateExpression':plan.get('candidateExpression',''),'improvementScope':plan.get('improvementScope','仅修复初始定义的实现，禁止改变窗口、公式语义和方向。'),'mode':'improve','target':plan.get('target',''),'name':draft.get('name') or p['config']['factorCodes'][0],'code':draft.get('body') or candidate['snapshot']['request'].get('factor_code','')},jid+':'+str(number+1))
    try:remember_child(uid,org,jid,'agent_job_id',a['id'])

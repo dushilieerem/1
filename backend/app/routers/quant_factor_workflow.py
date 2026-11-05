@@ -23,6 +23,9 @@ def create(project_id:str,ctx=Depends(require_quant_researcher)):
 def get(cid:str,ctx=Depends(require_quant_researcher)):return invoke(service.current,*identity(ctx),cid)
 @router.post('/candidates/{cid}/validate',status_code=202)
 def validate(cid:str,ctx=Depends(require_quant_researcher)):return invoke(service.validate,*identity(ctx),cid)
+@router.post('/candidates/{cid}/novelty/retry',status_code=202)
+def retry_novelty(cid:str,ctx=Depends(require_quant_researcher)):
+    return invoke(service.retry_novelty,*identity(ctx),cid)
 @router.post('/candidates/{cid}/cancel')
 def cancel(cid:str,ctx=Depends(require_quant_researcher)):return invoke(service.cancel,*identity(ctx),cid)
 @router.post('/candidates/{cid}/archive')

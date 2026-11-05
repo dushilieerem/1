@@ -69,3 +69,14 @@ class PauseTests(unittest.TestCase):
   with patch.object(it.agent_jobs,'cancel') as agent_cancel,patch.object(it.service,'cancel') as cancel,patch.object(it.service,'current') as read:
    it.cleanup_children(1,2,{'status':'paused','candidate_id':'c','agent_job_id':'a'})
    agent_cancel.assert_called_once_with(1,2,'a');cancel.assert_not_called();read.assert_not_called()
+
+class NoveltyIterationTests(unittest.TestCase):
+ run_mock=IterationTests.run_mock
+ def test_novelty_feedback_excludes_daily_panels_and_keeps_failed_gate(self):
+  c=candidate();c['evidence']['development']['novelty']={'status':'failed','gate':{'max_abs_correlation':.95,'closest':{'reference_id':'existing','factor_name':'known','mean_abs_spearman':.95,'series':['DO_NOT_SEND']*10000}},'comparisons':['DO_NOT_SEND']*10000}
+  h=self.run_mock([c,c]);draft=h['agent'].call_args.args[4]
+  self.assertIn('0.95',draft['hypothesis']);self.assertNotIn('DO_NOT_SEND',draft['hypothesis']);self.assertLess(len(draft['hypothesis']),1500)
+ def test_reference_source_drift_stops_iteration(self):
+  a=candidate();b=candidate()
+  for c,sha in [(a,'one'),(b,'two')]:c['evidence']['development']['novelty']={'status':'failed','meta':{'reference_source_hash':sha}}
+  h=self.run_mock([a,b]);self.assertEqual(h['finish'].call_args.args[3],'failed');self.assertIn('源码版本',h['finish'].call_args.args[4])

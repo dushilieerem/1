@@ -20,14 +20,14 @@ def public(row):
 
 def current(uid,org,cid):
     row=store.read(uid,org,cid)
-    if row['status'].endswith('_running') and (datetime.now(timezone.utc)-row['updated_at']).total_seconds()>1800:
+    if row['status'].endswith('_running') and (datetime.now(timezone.utc)-row['updated_at']).total_seconds()>2400:
         store.update(uid,org,cid,row['status'].replace('_running','_error'),event('execution_interrupted',message='计算超过恢复窗口，可能服务中断；已保留证据，未自动重试'))
         row=store.read(uid,org,cid)
     try: row['stale']=digest(snapshot(get_project(uid,row['project_id'])['project']))!=row['snapshot_hash']
     except (KeyError,WorkflowError): row['stale']=True
     return public(row)
 
-def create(uid,org,project_id,expected_snapshot_hash=None):
+def create(uid,org,project_id,expected_snapshot_hash=None,reference=None):
     with get_conn() as c:
         # Serialize creation per actor: budget and duplicate checks must be atomic.
         c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9106,uid))
@@ -35,15 +35,22 @@ def create(uid,org,project_id,expected_snapshot_hash=None):
         if not p: raise KeyError(project_id)
         snap=snapshot(_row_project(dict(p))); sha=digest(snap)
         if expected_snapshot_hash and sha!=expected_snapshot_hash:raise WorkflowError('研究输入已变更，停止自动提交，未覆盖人工修改。')
-        existing=c.execute('SELECT id FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s AND snapshot_hash=%s',(uid,org,project_id,sha)).fetchone()
-        if existing:cid=existing['id']
+        existing=c.execute('SELECT id,evidence FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s AND snapshot_hash=%s',(uid,org,project_id,sha)).fetchone()
+        if existing:
+            if reference and existing['evidence'].get('library_reference',{}).get('hash')!=reference['hash']:
+                raise WorkflowError('已有候选的对照库版本不同，请复盘后开启新的研究任务。')
+            cid=existing['id']
         else:
             count=c.execute('SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s',(uid,org,project_id)).fetchone()['n']
             if count>=snap['plan']['maxTrials']: raise WorkflowError('本研究已达到登记的候选尝试预算；请先复盘并明确修订计划')
             pending=c.execute("SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE status LIKE '%%_running'").fetchone()['n']
             if pending>=4: raise WorkflowError('验证计算队列繁忙，请稍后提交')
             cid=str(uuid.uuid4())
-            c.execute('INSERT INTO quant_factor_candidates(id,user_id,org_id,project_id,snapshot,snapshot_hash,status,events) VALUES(%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb)',(cid,uid,org,project_id,store.encode(snap),sha,'development_running',store.encode([event('candidate_frozen',snapshot_hash=sha),event('development_queued')])) )
+            evidence={}
+            if snap['plan'].get('researchPurpose')=='discovery':
+                from .asset_context import catalogue
+                evidence['library_reference']=reference or catalogue(uid)
+            c.execute('INSERT INTO quant_factor_candidates(id,user_id,org_id,project_id,snapshot,snapshot_hash,status,events,evidence) VALUES(%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb)',(cid,uid,org,project_id,store.encode(snap),sha,'development_running',store.encode([event('candidate_frozen',snapshot_hash=sha,reference_hash=evidence.get('library_reference',{}).get('hash')),event('development_queued')]),store.encode(evidence)))
     if not existing:POOL.submit(run,uid,org,cid,'development')
     return current(uid,org,cid)
 
@@ -88,14 +95,62 @@ def run(uid,org,cid,phase):
         save_run(uid,{'id':report_id,'projectId':row['project_id'],'factorName':req['factor_name'],
                      'description':snap['name']+' / '+phase,'request':{**req,'_re_run_id':rid},'result':signed})
         data={'run_id':rid,'report_id':report_id,'request':req,'result':result,'gate':gate}
+        novelty_status=None
+        if phase=='development' and snap['plan'].get('researchPurpose')=='discovery':
+            store.update(uid,org,cid,running,event('novelty_started',message='比对当前可访问因子库，代码不同不等于新因子。'))
+            # Persist numerical evidence before a dependent service is called.
+            store.update(uid,org,cid,running,event('numerical_checks_completed',passed=gate['passed']),{phase:data})
+            novelty=_compare_library(uid,org,cid,row,data)
+            data['novelty']=novelty;novelty_status=novelty['status']
+            gate={**gate,'numerical_passed':gate['passed'],'passed':gate['passed'] and novelty.get('gate',{}).get('passed') is True}
+            data['gate']=gate
+            store.update(uid,org,cid,running,event('novelty_completed',status=novelty_status,message=novelty['message']))
         with get_conn() as c:
             locked=c.execute('SELECT status FROM quant_factor_candidates WHERE id=%s FOR UPDATE',(cid,)).fetchone()
             if locked['status']=='cancelled': return
             c.execute('UPDATE quant_factor_candidates SET status=%s,evidence=evidence||%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s',
-                      (phase+('_passed' if gate['passed'] else '_failed'),store.encode({phase:data}),store.encode([event(phase+'_completed',passed=gate['passed'],checks=gate['checks'],report_id=report_id)]),cid))
+                      (phase+('_error' if novelty_status in ('unavailable','incomplete') else '_passed' if gate['passed'] else '_failed'),store.encode({phase:data}),store.encode([event(phase+'_completed',passed=gate['passed'],checks=gate['checks'],report_id=report_id)]),cid))
     except Exception as exc:
         with get_conn() as c:
             c.execute("UPDATE quant_factor_candidates SET status=%s,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status<>'cancelled'",(phase+'_error',store.encode([event(phase+'_error',message=str(exc)[:1200])]),cid,uid,org))
+
+def _compare_library(uid,org,cid,row,data):
+    from .novelty import assess
+    def progress(action,message,**details):
+        if store.read(uid,org,cid)['status']=='cancelled':return False
+        if action:store.update(uid,org,cid,'development_running',event(action,message=message,**details))
+        return True
+    try:
+        return assess(uid,row['snapshot'],data['result'],reference=row['evidence'].get('library_reference'),compute=data['gate'].get('numerical_passed',data['gate']['passed']),progress=progress)
+    except Exception:
+        # No exception/HTTP body can expose credentials; the saved report remains intact.
+        return {'status':'unavailable','message':'因子库对照服务未完成，原研发报告已保留。恢复服务后可仅重试对照，不重跑回测。','gate':{'passed':False,'complete':False,'expected_count':row['evidence'].get('library_reference',{}).get('count',0),'compared_count':0,'max_abs_correlation':None,'threshold':row['snapshot']['plan'].get('noveltyPolicy',{}).get('maxAbsCorrelation'),'limitation':'数值对照未完成。'}}
+
+def retry_novelty(uid,org,cid):
+    with get_conn() as c:
+        row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE',(cid,uid,org)).fetchone()
+        if not row:raise KeyError(cid)
+        if row['status']=='development_running':return public(dict(row))
+        data=row['evidence'].get('development') or {}
+        if row['status']!='development_error' or data.get('novelty',{}).get('status') not in ('unavailable','incomplete') or data.get('gate',{}).get('numerical_passed') is not True:
+            raise WorkflowError('仅允许重试数值检验已通过、对照服务未完成的固定候选。质量不通过须先改进研究。')
+        if not row['evidence'].get('library_reference') or row['evidence'].get('validation'):
+            raise WorkflowError('缺少冻结对照库或已进行样本外复验，不能重试本候选的研发对照。')
+        p=get_project(uid,row['project_id'])['project']
+        if digest(snapshot(p))!=row['snapshot_hash']:raise WorkflowError('研究输入已修改，不能用旧候选重试对照。')
+        if c.execute("SELECT id FROM quant_factor_iterations WHERE user_id=%s AND org_id=%s AND project_id=%s AND status IN ('queued','running')",(uid,org,row['project_id'])).fetchone():
+            raise WorkflowError('请等待当前自动循环停止后重试对照，避免并发执行。')
+        c.execute("UPDATE quant_factor_candidates SET status='development_running',events=events||%s::jsonb,updated_at=NOW() WHERE id=%s",(store.encode([event('novelty_retry_queued',message='仅重试冻结库对照，复用原研发报告，不新增候选或重跑回测。')]),cid))
+    POOL.submit(_retry_novelty,uid,org,cid)
+    return current(uid,org,cid)
+
+def _retry_novelty(uid,org,cid):
+    row=store.read(uid,org,cid);data=copy.deepcopy(row['evidence']['development'])
+    novelty=_compare_library(uid,org,cid,row,data)
+    data['novelty']=novelty
+    data['gate']={**data['gate'],'passed':novelty.get('gate',{}).get('passed') is True}
+    status='development_error' if novelty['status'] in ('unavailable','incomplete') else 'development_passed' if data['gate']['passed'] else 'development_failed'
+    store.update(uid,org,cid,status,event('novelty_retry_completed',message=novelty['message'],status=novelty['status']),{'development':data})
 
 def cancel(uid,org,cid):
     with get_conn() as c:

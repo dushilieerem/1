@@ -18,6 +18,8 @@ export type DraftDetectFactor = {
 };
 
 export type FactorResearchPlan = {
+  researchPurpose?: 'discovery'|'replication';
+  noveltyPolicy?: {scope:'all_accessible';maxAbsCorrelation:number;minDays:number;minPairs:number;minCoverage:number};
   candidateExpression?: string;
   improvementScope?: string;
   rules?: {icMetric?:'ic'|'rank_ic'; minSignedIc:number; maxDrawdown:number; minObservations:number; direction:'positive'|'negative'};

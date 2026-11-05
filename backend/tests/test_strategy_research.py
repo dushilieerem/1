@@ -49,3 +49,13 @@ class BranchGuardTest(unittest.TestCase):
     def test_buffer_range(self):
         with self.assertRaisesRegex(ValueError, 'buffer'):
             svc.recipe({'factors': ['f'], 'top_n': 30, 'rebalance_days': 10, 'buffer': 2})
+
+
+class SourceRecipeTest(unittest.TestCase):
+    def test_source_is_kept_and_validated(self):
+        rc = svc.recipe({'factors': [{'factor': 'f', 'code': 'def f(self):\n    return self.close'}],
+                         'top_n': 30, 'rebalance_days': 10})
+        self.assertIn('code', rc['factors'][0])
+        with self.assertRaises(ValueError):
+            svc.recipe({'factors': [{'factor': 'f', 'code': 'def f(self):\n    return ('}],
+                        'top_n': 30, 'rebalance_days': 10})

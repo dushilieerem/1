@@ -7,6 +7,7 @@ import uuid
 from datetime import date
 
 from services.core.db import get_conn
+from services.factor.code_validation import validated_factor_code
 from services.workflow_workspace.platform_data import published_view
 
 
@@ -49,8 +50,12 @@ def recipe(payload: dict) -> dict:
             raise ValueError("因子必须是非空标识")
         if item.get("direction", "positive") not in ("positive", "negative"):
             raise ValueError("因子方向只能是 positive/negative")
-        clean.append({"factor": str(item["factor"]).strip(),
-                      "direction": item.get("direction", "positive")})
+        entry = str(item["factor"]).strip()
+        row = {"factor": entry, "direction": item.get("direction", "positive")}
+        if item.get("code"):
+            row["entry"] = str(item.get("entry") or entry)
+            row["code"] = validated_factor_code(str(item["code"]), row["entry"])
+        clean.append(row)
     return {
         "factors": clean, "equal_weight": True,
         "top_n": _int(payload.get("top_n"), "top_n", 5, 300),

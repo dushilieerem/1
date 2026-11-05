@@ -365,3 +365,17 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 | 安全 | 生成仍受机构工作区权限约束；AI 只读，不改审批/授权/持仓状态 |
 
 验证：`pytest tests/test_inst_*.py` 69 passed；新增 AI cache/prompt test；`tsc` 通过。Agent 管理 UI 在 PR B。
+
+### 11.9 机构端 Agent 管理（2026-11-05，PR B）
+
+| 项 | 实现 |
+|---|---|
+| 入口 | `/inst/about`，原「Agent能力」页改为「Agent 管理」；侧栏名称同步 |
+| 目录 | 展示 50 个 Agent：机构 14 个、平台 TaskSpec 28 个、Agent 技能 8 个；支持分组、搜索 |
+| 可编辑 | 投资经理可改机构 Agent 提示词；平台/技能本批只读，标注「只读」；H5/invest Agent 由 #95 的 H5 页面管理 |
+| 版本 | 保存写入 `ai_agent_prompt` 新版本、旧版本归档；可查看历史、恢复默认；提示词版本变化自动失效 AI 结果缓存 |
+| 权限 | 机构角色登录可看；保存/重置/历史仅 `manager`；其他角色看不到提示词正文 |
+| 安全 | 系统仍强制 JSON 校验、50 字摘要、证据引用与风控约束；提示词不能关闭这些规则 |
+| 审计 | `ai_agent_prompt` 保留版本/操作人/时间；保存/重置同时写系统审计 |
+
+验证：`pytest tests/test_inst_*.py` 70 passed（含 Agent 目录/权限/版本/重置）；`e2e-09/10/11` 14 passed；`tsc`、`npm run test:inst` 通过。

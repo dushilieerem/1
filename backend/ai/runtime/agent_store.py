@@ -101,6 +101,21 @@ def get_effective_prompt(task_id: str, default: str) -> tuple[str, str]:
     return default, "0"
 
 
+def get_active_prompt(task_id: str) -> dict[str, Any] | None:
+    try:
+        ensure_ai_agent_schema()
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT version_no, prompt, prompt_hash, updated_by, created_at "
+                "FROM ai_agent_prompt WHERE task_id=%s AND scope='global' AND owner_id=0 "
+                "AND status='active' ORDER BY version_no DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+        return dict(row) if row else None
+    except Exception:
+        return None
+
+
 def save_prompt(
     task_id: str,
     prompt: str,

@@ -21,6 +21,7 @@ from typing import Any, Callable
 
 from psycopg.types.json import Jsonb
 
+from ai.runtime import agent_store
 from ai.runtime.agent_store import (
     get_cached_output,
     get_effective_prompt,
@@ -4380,6 +4381,96 @@ _ROLE_PROMPTS = {
         '{"summary":"...","evidence":["..."],"risks":["..."],"open_questions":["..."]}。'
     ),
 }
+
+
+def institution_agent_catalog(org_id: int, *, can_edit: bool) -> dict[str, Any]:
+    """机构 Agent 管理目录：机构 14 个 + 平台/技能只读；仅经理可看提示词正文。"""
+    from services.ai_agents import catalog as agent_catalog
+
+    items = agent_catalog.list_agents(include_prompt=can_edit)
+    return {
+        "items": items,
+        "count": len(items),
+        "editable_count": sum(1 for item in items if item.get("editable")),
+        "can_edit": can_edit,
+    }
+
+
+def save_institution_agent_prompt(
+    org_id: int,
+    task_id: str,
+    prompt: str,
+    *,
+    note: str | None,
+    actor_member_id: int | None,
+) -> dict[str, Any]:
+    from services.ai_agents import catalog as agent_catalog
+
+    if not agent_catalog.is_editable_institution(task_id):
+        raise ValueError("该 Agent 暂未接入提示词管理")
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager")
+        result = agent_store.save_prompt(
+            task_id, prompt, updated_by=actor_member_id, note=note
+        )
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="agent.prompt.save",
+            object_type="ai_agent_prompt",
+            object_id=0,
+            after={"task_id": task_id, "version": result["version"], "prompt_hash": result["prompt_hash"]},
+        )
+    result["agent"] = agent_catalog.get_agent(task_id, include_prompt=True)
+    return result
+
+
+def reset_institution_agent_prompt(
+    org_id: int,
+    task_id: str,
+    *,
+    actor_member_id: int | None,
+) -> dict[str, Any]:
+    from services.ai_agents import catalog as agent_catalog
+
+    if not agent_catalog.is_editable_institution(task_id):
+        raise ValueError("该 Agent 暂未接入提示词管理")
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager")
+        result = agent_store.reset_prompt(task_id, updated_by=actor_member_id)
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="agent.prompt.reset",
+            object_type="ai_agent_prompt",
+            object_id=0,
+            after={"task_id": task_id, "version": result["version"]},
+        )
+    result["agent"] = agent_catalog.get_agent(task_id, include_prompt=True)
+    return result
+
+
+def institution_agent_prompt_history(
+    org_id: int,
+    task_id: str,
+    *,
+    actor_member_id: int | None,
+) -> dict[str, Any]:
+    from services.ai_agents import catalog as agent_catalog
+
+    if not agent_catalog.is_editable_institution(task_id):
+        raise ValueError("该 Agent 暂未接入提示词管理")
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager")
+    return {
+        "items": agent_store.list_prompt_history(task_id),
+        "agent": agent_catalog.get_agent(task_id, include_prompt=True),
+    }
 
 
 def ai_role_catalog() -> list[dict[str, Any]]:

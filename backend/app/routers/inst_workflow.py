@@ -376,6 +376,68 @@ def risk_review_ai(
         raise _handle(exc) from exc
 
 
+@router.get("/agents")
+def institution_agents(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    org_id, _, role = _ctx(ctx)
+    _require_ws(ctx, "about")
+    return {"ok": True, **svc.institution_agent_catalog(org_id, can_edit=role == "manager")}
+
+
+@router.put("/agents/{task_id}/prompt")
+def save_institution_agent(
+    task_id: str,
+    body: dict[str, Any],
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "about")
+    try:
+        return {
+            "ok": True,
+            **svc.save_institution_agent_prompt(
+                org_id,
+                task_id,
+                str(body.get("prompt") or ""),
+                note=str(body.get("note") or "")[:200] or None,
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/agents/{task_id}/prompt/reset")
+def reset_institution_agent(
+    task_id: str,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "about")
+    try:
+        return {
+            "ok": True,
+            **svc.reset_institution_agent_prompt(org_id, task_id, actor_member_id=member_id),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.get("/agents/{task_id}/prompt/history")
+def institution_agent_history(
+    task_id: str,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "about")
+    try:
+        return {
+            "ok": True,
+            **svc.institution_agent_prompt_history(org_id, task_id, actor_member_id=member_id),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.get("/ai/roles")
 def ai_roles(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     """I01–I06：AI 岗位目录与可用性。"""

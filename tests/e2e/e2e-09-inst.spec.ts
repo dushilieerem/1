@@ -101,12 +101,12 @@ test("机构端侧栏名称与顺序", async ({ page }) => {
     "投委会审批",
     "投资组合",
     "投后管理",
-    "Agent能力",
+    "Agent管理",
   ]);
   await expect(page.getByText("以企业为起点，以证据做决策")).toBeVisible();
 });
 
-test("研究、审批、组合、投后、Agent能力页面可达", async ({ page }) => {
+test("研究、审批、组合、投后、Agent管理页面可达", async ({ page }) => {
   await login(page);
   for (const [path, text] of [
     ["/inst/ideas", "量化策略推送"],
@@ -114,7 +114,7 @@ test("研究、审批、组合、投后、Agent能力页面可达", async ({ pag
     ["/inst/approvals", "投委会审批"],
     ["/inst/portfolio", "投资组合"],
     ["/inst/monitor", "投后管理"],
-    ["/inst/about", "Agent能力"],
+    ["/inst/about", "Agent管理"],
   ]) {
     await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
     await expect(page.getByText(text, { exact: false }).first()).toBeVisible({ timeout: 20_000 });

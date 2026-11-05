@@ -167,6 +167,17 @@ test("机会发现：立项三问入口与弹窗", async ({ browser }) => {
   await ctx.close();
 });
 
+test("机构端：Agent 管理列表与编辑入口", async ({ browser }) => {
+  const { ctx, page } = await openPage(browser, TOKENS.manager!);
+  await page.goto(`${BASE}/inst/about`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { name: "Agent 管理" }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/个 Agent/)).toBeVisible();
+  await page.getByText("AI 一页纸", { exact: true }).first().click();
+  await expect(page.locator("textarea")).toBeVisible();
+  await expect(page.getByRole("button", { name: /保存提示词/ })).toBeVisible();
+  await ctx.close();
+});
+
 test("窄屏 1024 八个工作区无横向溢出", async ({ browser }) => {
   const { ctx, page } = await openPage(browser, TOKENS.manager!, { width: 1024, height: 900 });
   for (const [path, text] of WORKSPACES) {
@@ -182,12 +193,12 @@ test("窄屏 1024 八个工作区无横向溢出", async ({ browser }) => {
 
 test("六角色菜单与权限边界", async ({ browser }) => {
   const expected: Record<Role, string[]> = {
-    manager: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent能力"],
-    partner: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent能力"],
-    chairman: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent能力"],
-    risk: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent能力"],
-    execution: ["投资总览", "投委会审批", "投资组合", "投后管理", "Agent能力"],
-    monitoring: ["投资总览", "公司研究", "投委会审批", "投资组合", "投后管理", "Agent能力"],
+    manager: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent管理"],
+    partner: ["投资总览", "机会发现", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent管理"],
+    chairman: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent管理"],
+    risk: ["投资总览", "公司研究", "投资辩论室", "投委会审批", "投资组合", "投后管理", "Agent管理"],
+    execution: ["投资总览", "投委会审批", "投资组合", "投后管理", "Agent管理"],
+    monitoring: ["投资总览", "公司研究", "投委会审批", "投资组合", "投后管理", "Agent管理"],
   };
   for (const role of ROLES) {
     const { ctx, page } = await openPage(browser, TOKENS[role]!);

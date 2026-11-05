@@ -100,8 +100,8 @@ export const INST_PLACEHOLDERS: Record<
     points: ["投后论点台账", "经营预警与复核", "退出议案与复盘"],
   },
   about: {
-    summary: "AI 团队、角色权限矩阵与平台方案入口。",
-    points: ["六角色职责边界", "权限矩阵", "平台方案与免责声明"],
+    summary: "查看系统内全部 Agent，维护机构/平台提示词与版本。",
+    points: ["全部 Agent 目录", "提示词版本与恢复默认", "角色职责与硬约束"],
   },
 };
 

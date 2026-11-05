@@ -167,6 +167,34 @@ test("机会发现：立项三问入口与弹窗", async ({ browser }) => {
   await ctx.close();
 });
 
+test("个人中心：Agent 管理列表与编辑入口", async ({ browser, request }) => {
+  const login = await request.post(`${API}/api/auth/login`, {
+    data: {
+      username: process.env.R5_ADMIN_USER || "admin",
+      password: process.env.R5_ADMIN_PASSWORD || "admin123",
+    },
+  });
+  test.skip(!login.ok(), "测试库无全局管理员账号");
+  const loginBody = (await login.json()) as { token: string; user?: Record<string, unknown> };
+  const token = loginBody.token;
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const page = await ctx.newPage();
+  await page.addInitScript(
+    ({ t, u }) => {
+      sessionStorage.setItem("svquant_token", t);
+      if (u) sessionStorage.setItem("svquant_user", JSON.stringify(u));
+    },
+    { t: token, u: loginBody.user || null },
+  );
+  await page.goto(`${BASE}/community/me?tab=agents`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { name: "Agent 管理" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/个 Agent/)).toBeVisible();
+  await page.getByText("AI 一页纸", { exact: true }).first().click();
+  await expect(page.locator("textarea")).toBeVisible();
+  await expect(page.getByRole("button", { name: /保存提示词/ })).toBeVisible();
+  await ctx.close();
+});
+
 test("窄屏 1024 八个工作区无横向溢出", async ({ browser }) => {
   const { ctx, page } = await openPage(browser, TOKENS.manager!, { width: 1024, height: 900 });
   for (const [path, text] of WORKSPACES) {

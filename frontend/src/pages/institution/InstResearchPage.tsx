@@ -53,7 +53,7 @@ type Memo = {
   engine?: string;
 };
 
-type ChatMessage = { role: "user" | "assistant"; content: string };
+type ChatMessage = { role: "user" | "assistant"; content: string; created_at?: string };
 
 type CaseItem = {
   id: number;
@@ -118,6 +118,11 @@ const EVIDENCE_GRADE_META: Record<string, { label: string; note: string; tone: "
   D: { label: "D 级", note: "AI 文本、媒体或推断，不能单独支撑结论。", tone: "red" },
 };
 
+function clipBrief(value?: string): string {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length <= 50 ? text : `${text.slice(0, 49)}…`;
+}
+
 function sourceLabel(source?: string): string {
   const raw = String(source || "").trim();
   if (!raw) return "来源待补充";
@@ -143,6 +148,7 @@ export function InstResearchPage() {
   const [memoBusy, setMemoBusy] = useState(false);
   const autoRan = useRef(false);
   const memoRan = useRef(false);
+  const chatLoaded = useRef<Set<string>>(new Set());
   const [activeDim, setActiveDim] = useState("industry");
   const [dimBusy, setDimBusy] = useState<string | null>(null);
   const [chats, setChats] = useState<Record<string, ChatMessage[]>>({});
@@ -255,10 +261,13 @@ export function InstResearchPage() {
     memoRan.current = false;
   }, [version?.id]);
 
-  const loadMemo = async () => {
+  const loadMemo = async (refresh = false) => {
     setMemoBusy(true);
     try {
-      const res = await instApi<{ memo: Memo }>(`/cases/${caseId}/ai/memo`, { method: "POST" });
+      const res = await instApi<{ memo: Memo }>(`/cases/${caseId}/ai/memo`, {
+        method: "POST",
+        body: { refresh },
+      });
       setMemo(res.memo);
     } finally {
       setMemoBusy(false);
@@ -294,6 +303,21 @@ export function InstResearchPage() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId, detail, version, memo, canWrite]);
+
+  useEffect(() => {
+    const key = activeDimData?.key;
+    if (!caseId || !key || chatLoaded.current.has(key)) return;
+    chatLoaded.current.add(key);
+    instApi<{ items: ChatMessage[] }>(`/cases/${caseId}/dimensions/${key}/chat`)
+      .then((res) => {
+        if (!res.items?.length) return;
+        setChats((prev) => ({ ...prev, [key]: res.items }));
+      })
+      .catch(() => {
+        /* 历史加载失败不影响新提问 */
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId, activeDimData?.key]);
 
   useEffect(() => {
     if (busy !== "auto" || !caseId) return;
@@ -347,7 +371,14 @@ export function InstResearchPage() {
     try {
       const res = await instApi<{ answer: string }>(`/cases/${caseId}/dimensions/${key}/chat`, {
         method: "POST",
-        body: { question, history: history.slice(-6) },
+        body: {
+          question,
+          history: history.slice(-6),
+          client_message_id:
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID()
+              : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        },
       });
       setChats((prev) => ({
         ...prev,
@@ -634,7 +665,7 @@ export function InstResearchPage() {
                     </div>
                   </div>
                   <p className="mt-1 text-[11px] leading-relaxed text-[#68738b]">{activeDimData.question}</p>
-                  <p className="mt-2 text-xs leading-relaxed text-[#505369]">{activeDimData.summary || t("待补充", "TBD")}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-[#505369]">{clipBrief(activeDimData.summary) || t("待补充", "TBD")}</p>
                   {activeDimData.checks?.length ? (
                     <ul className="mt-2 space-y-1 text-[11px] text-[#68738b]">
                       {activeDimData.checks.map((x) => (
@@ -841,7 +872,7 @@ export function InstResearchPage() {
             variant="ghost"
             disabled={!!busy || memoBusy}
             onClick={() => {
-              void loadMemo().catch((e: Error) => setError(e.message));
+              void loadMemo(true).catch((e: Error) => setError(e.message));
             }}
           >
             {memoBusy
@@ -885,7 +916,7 @@ export function InstResearchPage() {
             <section className="mt-4">
               <h4 className="text-sm font-semibold text-[#171923]">{t("总结结论", "Summary")}</h4>
               <p className="mt-1 text-xs leading-relaxed text-[#505369]">
-                {memo.summary || t("待补充", "TBD")}
+                {clipBrief(memo.summary) || t("待补充", "TBD")}
               </p>
             </section>
 
@@ -940,7 +971,7 @@ export function InstResearchPage() {
                 <h4 className="text-sm font-semibold text-amber-900">{t("未解决分歧", "Unresolved conflicts")}</h4>
                 <ul className="mt-1 space-y-1 text-[11px] leading-relaxed text-amber-800">
                   {memo.conflicts.map((conflict, index) => (
-                    <li key={`${index}-${conflict}`}>· {conflict}</li>
+                    <li key={`${index}-${conflict}`}>· {clipBrief(conflict)}</li>
                   ))}
                 </ul>
               </section>
@@ -951,7 +982,7 @@ export function InstResearchPage() {
                 <h4 className="text-sm font-semibold text-[#171923]">{t("关键变量", "Key variables")}</h4>
                 <ul className="mt-1 space-y-1 text-[11px] leading-relaxed text-[#505369]">
                   {memo.key_variables.map((variable, index) => (
-                    <li key={`${index}-${variable}`}>· {variable}</li>
+                    <li key={`${index}-${variable}`}>· {clipBrief(variable)}</li>
                   ))}
                 </ul>
               </section>
@@ -964,7 +995,7 @@ export function InstResearchPage() {
                     {String(i + 1).padStart(2, "0")} {d.title}
                   </h4>
                   <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-[#505369]">
-                    <li>· {d.summary || t("待补充", "TBD")}</li>
+                    <li>· {clipBrief(d.summary) || t("待补充", "TBD")}</li>
                     {d.counter?.[0] ? (
                       <li>· {t("关键问题", "Key question")}：{d.counter[0]}</li>
                     ) : d.checks?.[0] ? (
@@ -981,7 +1012,7 @@ export function InstResearchPage() {
                 {memo.risks?.length ? (
                   <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-[#505369]">
                     {memo.risks.map((x) => (
-                      <li key={x}>{x}</li>
+                      <li key={x}>{clipBrief(x)}</li>
                     ))}
                   </ol>
                 ) : (
@@ -993,7 +1024,7 @@ export function InstResearchPage() {
                 {memo.open_questions?.length ? (
                   <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-[#505369]">
                     {memo.open_questions.map((x) => (
-                      <li key={x}>☐ {x}</li>
+                      <li key={x}>☐ {clipBrief(x)}</li>
                     ))}
                   </ul>
                 ) : (

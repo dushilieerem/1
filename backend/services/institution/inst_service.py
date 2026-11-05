@@ -21,7 +21,23 @@ from typing import Any, Callable
 
 from psycopg.types.json import Jsonb
 
+from ai.runtime.agent_store import (
+    get_cached_output,
+    get_effective_prompt,
+    input_hash as agent_input_hash,
+    save_output,
+)
 from services.core.db import get_conn
+from services.institution.prompts import (
+    CHAIRMAN_MEMO_PROMPT,
+    CHAT_PROMPT,
+    DEBATE_PROMPT,
+    DIMENSION_PROMPTS as _DIMENSION_PROMPTS,
+    RESEARCH_MEMO_PROMPT,
+    RISK_REVIEW_PROMPT,
+    ROLE_PROMPTS as _ROLE_PROMPTS,
+)
+from services.institution import inst_ai_store
 from services.institution.report import render_research_report, report_filename
 from services.marketdata import store as md
 
@@ -143,6 +159,11 @@ def _ensure_version_hash(conn, version: Any) -> dict[str, Any]:
     row["content_hash"] = digest
     row["cutoff"] = row.get("cutoff") or cutoff
     return row
+
+
+def _clip_brief(value: Any, limit: int = 50) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def _evidence_grade(source: str, kind: str, explicit: Any = None) -> str:
@@ -1060,9 +1081,9 @@ def _build_research(company: dict[str, Any], mode: str = "full") -> dict[str, An
                 "title": title,
                 "question": question,
                 "status": status,
-                "summary": summary,
-                "checks": checks,
-                "counter": counter,
+                "summary": _clip_brief(summary),
+                "checks": [_clip_brief(x) for x in checks],
+                "counter": [_clip_brief(x) for x in counter],
                 "evidence_idx": [x for x in evs if x is not None],
             }
         )
@@ -1216,95 +1237,6 @@ DIMENSION_TASK_IDS: dict[str, str] = {
     "valuation": "inst.dim.valuation",
 }
 
-_DIM_OUTPUT = (
-    '只输出 JSON，不要 markdown：{"summary":"...","checks":["..."],"counter":["..."],'
-    '"evidence":[{"title":"...","quote":"...","source":"..."}],"open_questions":["..."],'
-    '"confidence":0.6,"data_gaps":["..."]}。'
-    "结论先行，说人话：summary 前 200 字直接给判断，每个判断给数字、区间或明确方向；"
-    "不是确定事实的内容标【推断】或【不知道】，不要写成确定结论；"
-    "数据不足不等于没结论，写“在补到 X 之前，我的判断是 Y，置信度低”，并列入 data_gaps；"
-    "禁止编造数字、人名、公告或事实；禁止“建议进一步研究/有待观察”这类空话；"
-    "summary≤200字，checks≤5条，counter≤3条，evidence≤5条，open_questions≤3条，data_gaps≤5条，"
-    "总输出不超过1800字；不给买卖点、目标价、涨跌预测或收益承诺；不改变业务状态。"
-)
-
-_DIMENSION_PROMPTS: dict[str, str] = {
-    "industry": (
-        "你是旸谷资本机构研究部的产业研究 Agent，有卖方研究和买方投资双重背景。"
-        "任务：判断公司所处产业的景气位置、产业链卡位是否成立、是否可持续。"
-        "分析基准：以输入 as_of 为基准日，不假设未来数据；中文，术语首次出现保留英文。\n"
-        "数据纪律：关键数据标来源与报告期；只在公告/年报/统计局/协会/第三方研究之间取舍；"
-        "查不到就写“未获取到公开数据”，并给出推算逻辑和可信度；区分【事实】【公司口径】【推断】；每个结论附证伪条件。\n"
-        "分析框架：1 产业定义与边界；2 产业链拆解与利润池；3 市场规模与增速（TAM/SAM/SOM，量×价×结构）；"
-        "4 生命周期与周期位置；5 竞争格局（CR3/CR5、进入壁垒、波特五力）；6 技术路线与政策；"
-        "7 行业盈利水平与海外对标；8 公司卡位与份额；9 财务验证；10 催化剂、风险与跟踪指标。\n"
-        "输入没有行业规模、份额、价格或政策数据时，只能给方向性判断并把缺口写入 data_gaps，不得编造。"
-        + _DIM_OUTPUT
-    ),
-    "business_model": (
-        "你是旸谷资本机构研究部的商业模式 Agent，做过一级市场尽调和二级市场研究。"
-        "任务：拆清公司靠什么赚钱、为什么能持续、能长多大；多业务分别建模再合并。"
-        "分析基准：以输入 as_of 为基准日，回溯最近 5 个完整年度和最近 4 个季度可用数据。\n"
-        "数据纪律：收入口径核对（总额/净额、含税、并表范围、分部）；剔除补助、资本化、股权激励、汇兑等干扰；"
-        "区分【事实】【公司口径】【推断】；每个结论附证伪条件。\n"
-        "分析框架：1 一句话定义商业模式（≤30字）；2 客户与需求；3 价值主张与替代；4 收入模型与量价结构；"
-        "5 成本结构与毛利（固定/变动、规模效应）；6 单位经济（LTV/CAC、回收期，能算则算）；"
-        "7 现金流特征（OCF/净利、CCC、capex/收入）；8 护城河与壁垒；9 可复制性与边界；10 同业对比与脆弱性测试。\n"
-        "输入没有分部收入、客户集中度、渠道和单位经济数据时，只能从财务结构推断并标注缺口。"
-        + _DIM_OUTPUT
-    ),
-    "moat": (
-        "你是旸谷资本机构研究部的护城河 Agent，偏 Morningstar 质量投资框架。"
-        "任务：判断护城河有没有、哪一类、多宽、变宽还是变窄、还能维持多久。"
-        "护城河不是形容词，必须能被财务数据、竞争对手和十年以上时间检验；毛利率/ROE/增速只是结果，不是原因。\n"
-        "数据纪律：选真正可比公司；区分事实/公司口径/推断；每条护城河给独立机制证据；禁止循环论证；附证伪条件。\n"
-        "分析框架：1 先排除伪护城河（景气、补贴、先发、单客户、会计口径、高资本开支）；"
-        "2 五类护城河验证（无形资产、转换成本、网络效应、成本优势、有效规模），每类给机制/证据/复制成本/评级；"
-        "3 财务证据链（ROIC-WACC 利差、溢价稳定性、穿越周期、份额、留存、费用率、占款能力）；"
-        "4 红队测试与被攻破路径；5 趋势、半衰期与边界；6 结论：真优势还是行业红利+运气。\n"
-        "输入缺少 10 年财务、份额或同业数据时，只能给条件性判断并列入 data_gaps。"
-        + _DIM_OUTPUT
-    ),
-    "financial": (
-        "你是旸谷资本机构研究部的财务质量 Agent，审计出身转买方。信条：利润是观点，现金是事实，附注是真相。"
-        "任务：判断利润是否真实、赚的是不是现金、增长质量如何、有无盈余管理或粉饰。"
-        "分析基准：以输入 as_of 为基准日，优先使用最近 8-10 年可用报表与附注。\n"
-        "数据纪律：标来源与报告期；三表勾稽（净利↔OCF、收入↔收现、capex↔固资、有息负债↔利息）；"
-        "合并与母公司报表对比；口径变化还原；区分事实/公司口径/推断；附证伪条件。\n"
-        "分析框架：1 结论先行（含金量/稳健性/造假风险分开评级）；2 利润真实性；"
-        "3 现金含量（净现比、收现比、FCF、存贷双高）；4 盈利能力质量（毛利率vs同业、资本化、补助）；"
-        "5 资产质量（商誉、在建、其他应收）；6 负债与偿债；7 会计稳健性；8 审计信号（意见、KAM、问询函）；"
-        "9 红旗清单（出现/未出现/需解释）；10 结论。\n"
-        "输入缺少附注、母公司报表或审计报告时，明确写“无法验证”，不得把缺失当成正常。"
-        + _DIM_OUTPUT
-    ),
-    "governance": (
-        "你是旸谷资本机构研究部的 CEO 与治理 Agent。原则：诚信优先于能力，行为优先于言辞，资本配置记录优先于战略叙事。"
-        "任务：评估实控人/CEO 是否可信、是否与中小股东一致、资本配置记录和治理系统风险。"
-        "分析基准：以输入 as_of 为基准日，重点看近 5-8 年；只用公开可查证行为。\n"
-        "数据纪律：区分【公开表态】【实际行动】【媒体报道】；负面信息给公司回应与核实程度；禁止结果偏见；"
-        "禁止编造人名、履历、违规事实；输入没有公告/管理层履历/关联交易明细时，把“无法验证”写入 data_gaps。\n"
-        "分析框架：1 结论先行；2 人与履历（仅用输入数据）；3 承诺兑现对照；4 资本配置记录（融资/分红回购/并购/商誉/capex增量ROIC/减持质押）；"
-        "5 薪酬与激励一致性；6 治理结构（股权/独董/关联交易/占用/内控）；7 战略判断力；8 组织执行力；9 关键人物与接班；10 结论。"
-        "重点回答：股东利益的代理人，还是自身利益最大化的经营者。"
-        + _DIM_OUTPUT
-    ),
-    "valuation": (
-        "你是旸谷资本机构研究部的估值与价格 Agent。核心：估值不是算精确数字，而是回答当前价格隐含了什么预期、预期是否合理、错了会亏多少。"
-        "任务：判断当前价隐含什么、贵还是便宜、安全边际多大、什么情况会造成永久亏损。"
-        "分析基准：以输入 as_of 的收盘价与市值为准，价格与财务时点匹配，币种统一。\n"
-        "数据纪律：输入标来源+时点；缺失写“未获取”+假设；区分【事实】/[假设]/【推断】；"
-        "DCF 给完整假设表；可比公司说明为什么可比；结论是区间，不给虚假精确；附证伪条件。\n"
-        "分析框架：1 结论先行（价值区间、位置、隐含预期、安全边际、评级）；2 方法选择；"
-        "3 相对估值（可比+历史分位）；4 绝对估值 DCF（FCF、WACC 拆解、终值占比>75%预警）；"
-        "5 反向 DCF 隐含预期；6 分部/周期调整（有数据才做）；7 敏感性；8 情景与期望值；"
-        "9 价格与价值分离（杀估值/业绩/逻辑）；10 催化剂、时间成本与结论。\n"
-        "不给目标价或买卖点；输入缺少现金流、WACC、可比公司数据时，只做相对估值方向判断并明确缺口。"
-        + _DIM_OUTPUT
-    ),
-}
-
-
 def _agent_payload(facts: dict[str, Any], key: str) -> dict[str, Any]:
     val = facts.get("valuation") or {}
     pct = facts.get("percentile") or {}
@@ -1342,10 +1274,11 @@ def _run_dimension_agent(key: str, facts: dict[str, Any]) -> dict[str, Any]:
     if not available_task(task_id):
         return {"error": "AI 未配置"}
     payload = _agent_payload(facts, key)
+    system, _ = get_effective_prompt(task_id, _DIMENSION_PROMPTS[key])
     out = run_task(
         task_id,
         messages=[
-            {"role": "system", "content": _DIMENSION_PROMPTS[key]},
+            {"role": "system", "content": system},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)},
         ],
     )
@@ -2093,18 +2026,11 @@ def _ai_debate(company, evidence, valuation, ev_ids) -> dict[str, Any] | None:
             "evidence": [{"id": e.get("id"), "title": e.get("title"), "quote": e.get("quote"), "source": e.get("source")} for e in evidence],
             "valuation": valuation,
         }
+        system, _ = get_effective_prompt("inst.debate", DEBATE_PROMPT)
         out = run_task(
             "inst.debate",
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "你是投资辩论助手。只输出 JSON，结构："
-                        '{"bull":[{"claim":"...","evidence_ids":[1],"confidence":0.6,"falsifier":"...","round":1}],'
-                        '"bear":[...],"chair":[...]}。'
-                        "每条必须引用输入中存在的 evidence id；不给买卖建议、目标价或收益承诺。"
-                    ),
-                },
+                {"role": "system", "content": system},
                 {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
             ],
             variables={"evidence_ids": [int(x) for x in ev_ids]},
@@ -2608,6 +2534,56 @@ def chairman_review(
     return get_proposal(org_id, proposal_id)  # type: ignore[return-value]
 
 
+def _evidence_approval_check(conn, proposal: dict[str, Any]) -> dict[str, Any]:
+    """未验证/矛盾证据不得进入审批：检查本轮辩论中有效论点的证据核验状态。"""
+    case_id = proposal.get("case_id")
+    session = (
+        conn.execute(
+            "SELECT id FROM inst_debate_session WHERE case_id=%s AND status='completed' "
+            "ORDER BY id DESC LIMIT 1",
+            (case_id,),
+        ).fetchone()
+        if case_id
+        else None
+    )
+    if not session:
+        return {
+            "key": "evidence_verification",
+            "label": "证据核验可用于审批",
+            "value": "无已完成辩论",
+            "status": "block",
+        }
+    total = conn.execute(
+        """
+        SELECT COUNT(*) AS n
+          FROM inst_evidence_check ec
+          JOIN inst_debate_argument a
+            ON a.session_id=ec.session_id AND a.claim_id=ec.claim_id
+         WHERE ec.session_id=%s AND a.valid=TRUE AND a.side IN ('bull','bear')
+        """,
+        (int(session["id"]),),
+    ).fetchone()["n"]
+    bad = conn.execute(
+        """
+        SELECT COUNT(*) AS n
+          FROM inst_evidence_check ec
+          JOIN inst_debate_argument a
+            ON a.session_id=ec.session_id AND a.claim_id=ec.claim_id
+         WHERE ec.session_id=%s AND a.valid=TRUE AND a.side IN ('bull','bear')
+           AND ec.status IN ('unverified','contradicted')
+        """,
+        (int(session["id"]),),
+    ).fetchone()["n"]
+    total, bad = int(total or 0), int(bad or 0)
+    return {
+        "key": "evidence_verification",
+        "label": "证据核验可用于审批",
+        "threshold": None,
+        "value": f"有效证据 {total} 条，未验证/矛盾 {bad} 条",
+        "status": "pass" if total > 0 and bad == 0 else "block",
+    }
+
+
 def _risk_checks(conn, org_id: int, proposal: dict[str, Any], version: dict[str, Any]) -> list[dict[str, Any]]:
     snapshot = version.get("snapshot") or {}
     target = float(snapshot.get("target_weight") or proposal.get("target_weight") or 0)
@@ -2667,6 +2643,7 @@ def _risk_checks(conn, org_id: int, proposal: dict[str, Any], version: dict[str,
             "value": f"research={snapshot_research_hash[:12] or '缺失'} evidence={str(snapshot_evidence_hash or '缺失')[:12]}",
             "status": "pass" if hash_ok else "block",
         },
+        _evidence_approval_check(conn, proposal),
         {
             "key": "validity",
             "label": "审批有效期",
@@ -3724,6 +3701,7 @@ def _ai_task(task_id: str, payload: dict[str, Any], system: str) -> dict[str, An
         raise AiUnavailable(f"AI 路由层不可用：{exc}") from exc
     if not available_task(task_id):
         raise AiUnavailable("AI 未配置（缺少 LLM 网关或 Key）")
+    system, _ = get_effective_prompt(task_id, system)
     out = run_task(
         task_id,
         messages=[
@@ -3793,24 +3771,32 @@ def _rule_memo(version: dict[str, Any]) -> dict[str, Any]:
         str(q) for d in dims for q in (d.get("open_questions") or d.get("data_gaps") or [])
     ][:8]
     return {
-        "summary": version.get("conclusion")
-        or "六维分析已完成；AI 摘要暂不可用，以下为规则摘要，请以各维证据为准。",
+        "summary": _clip_brief(version.get("conclusion")
+        or "六维分析已完成；AI 摘要暂不可用，以下为规则摘要，请以各维证据为准。"),
         "decision": "watch",
         "six_dim_scores": [],
         "conflicts": [],
         "key_variables": questions[:3],
         "evidence": [],
-        "risks": risks,
-        "open_questions": questions,
+        "risks": [_clip_brief(x) for x in risks],
+        "open_questions": [_clip_brief(x) for x in questions],
         "engine": "rule",
     }
 
 
-def ai_research_memo(org_id: int, case_id: int) -> dict[str, Any]:
+def ai_research_memo(
+    org_id: int,
+    case_id: int,
+    *,
+    refresh: bool = False,
+    actor_member_id: int | None = None,
+) -> dict[str, Any]:
     case = get_case(org_id, case_id)
     if not case:
         raise LookupError("研究案不存在")
     version = (case.get("versions") or [{}])[0]
+    if not version.get("id"):
+        raise LookupError("还没有研究版本")
     payload = {
         "company": {k: case.get(k) for k in ("symbol", "company_name", "market", "industry", "ref_price")},
         "version": {k: version.get(k) for k in ("version_no", "status", "conclusion", "valuation", "six_dim")},
@@ -3819,28 +3805,70 @@ def ai_research_memo(org_id: int, case_id: int) -> dict[str, Any]:
             for e in (case.get("evidence") or [])
         ],
     }
-    try:
-        data = _ai_task(
+    prompt, prompt_version = get_effective_prompt("inst.research_memo", RESEARCH_MEMO_PROMPT)
+    scope_key = f"case:{case_id}:version:{version.get('id')}"
+    cache_key = agent_input_hash(
+        {"case_id": case_id, "version_id": version.get("id"), "content_hash": version.get("content_hash"), "payload": payload},
+        prompt,
+    )
+    if not refresh:
+        hit = get_cached_output(
             "inst.research_memo",
-            payload,
-            "你是基金 CIO，面前有六份独立研究。职责是找出矛盾、裁决矛盾、检验逻辑链闭合，给出可执行的研究建议；"
-            "以“敢于说不”和“结论先行”著称。只使用输入中的公司、六维与证据，不引入报告外事实。\n"
-            "否决规则（任一触发，decision=avoid）：财务质量为 C/D；治理诚信不足；出现造假或占款实质证据。\n"
-            "降级规则（最高 watch）：产业衰退或份额下滑；FCF 长期为负无转正；护城河无/负。\n"
-            "冲突裁决：证据强度 > 一手数据 > 时效新；强度相当则保留为未解决分歧，不取平均。\n"
-            "只输出 JSON：{\"summary\":\"...\",\"decision\":\"proceed|watch|avoid\","
-            "\"six_dim_scores\":[{\"key\":\"industry|business_model|moat|financial|governance|valuation\","
-            "\"score\":1-5,\"confidence\":0-1,\"note\":\"...\"}],"
-            "\"conflicts\":[\"...\"],\"key_variables\":[\"...\"],\"evidence\":[\"...\"],"
-            "\"risks\":[\"...\"],\"open_questions\":[\"...\"]}。"
-            "summary≤200字；decision 是研究建议，不是买卖指令；不给目标价或收益承诺；数据不足明确写“缺 X，暂不能判断”。",
+            org_id=org_id,
+            scope_key=scope_key,
+            input_hash=cache_key,
+            prompt_version=prompt_version,
         )
+        if hit:
+            memo = dict(hit["output"])
+            memo["metrics"] = _memo_metrics(case)
+            return {
+                "memo": memo,
+                "task": "inst.research_memo",
+                "version_no": version.get("version_no"),
+                "cached": True,
+                "generated_at": hit.get("created_at"),
+            }
+    try:
+        data = _ai_task("inst.research_memo", payload, prompt)
         data.setdefault("engine", "agent")
     except AiUnavailable:
         # AI 未配置时仍给出一页纸骨架，内容全部来自六维规则结果。
         data = _rule_memo(version)
     data["metrics"] = _memo_metrics(case)
-    return {"memo": data, "task": "inst.research_memo", "version_no": version.get("version_no")}
+    if data.get("engine") != "rule":
+        save_output(
+            "inst.research_memo",
+            org_id=org_id,
+            scope_key=scope_key,
+            input_hash=cache_key,
+            prompt_version=prompt_version,
+            output=data,
+            engine=str(data.get("engine") or "agent"),
+            created_by=actor_member_id,
+        )
+    return {
+        "memo": data,
+        "task": "inst.research_memo",
+        "version_no": version.get("version_no"),
+        "cached": False,
+    }
+
+
+def ai_dimension_chat_history(
+    org_id: int,
+    case_id: int,
+    key: str,
+    *,
+    actor_member_id: int | None = None,
+) -> dict[str, Any]:
+    user_id = inst_ai_store.member_user_id(org_id, actor_member_id)
+    items = (
+        inst_ai_store.list_messages(org_id, case_id, key, user_id, limit=50)
+        if user_id
+        else []
+    )
+    return {"items": items}
 
 
 def ai_dimension_chat(
@@ -3851,6 +3879,7 @@ def ai_dimension_chat(
     question: str,
     history: list[dict[str, Any]] | None = None,
     actor_member_id: int | None = None,
+    client_message_id: str | None = None,
 ) -> dict[str, Any]:
     """单维追问：只带该维结论、证据与最近对话，不改业务状态。"""
     q = str(question or "").strip()
@@ -3869,8 +3898,15 @@ def ai_dimension_chat(
         raise LookupError("该维度尚未生成")
     ev_ids = {int(x) for x in (dim.get("evidence_ids") or []) if str(x).isdigit()}
     evidence = [e for e in (case.get("evidence") or []) if int(e.get("id") or 0) in ev_ids]
+    user_id = inst_ai_store.member_user_id(org_id, actor_member_id)
+    stored = (
+        inst_ai_store.list_messages(org_id, case_id, key, user_id, limit=50)
+        if user_id
+        else []
+    )
+    history_source = stored[-8:] if stored else (history or [])[-8:]
     history_in: list[dict[str, str]] = []
-    for item in (history or [])[-8:]:
+    for item in history_source:
         if not isinstance(item, dict):
             continue
         role = str(item.get("role") or "")
@@ -3901,16 +3937,21 @@ def ai_dimension_chat(
         "history": history_in,
         "question": q[:2000],
     }
-    data = _ai_task(
-        "inst.dim.chat",
-        payload,
-        "你是机构研究单维对话助手。只依据输入的该维结论、检查项、反证与证据回答；"
-        "不扩展到其他维度、不编造数据、不给买卖建议/目标价/收益承诺；数据不足直接说待补充。"
-        "用简洁中文回答，可引用证据标题，不要输出 JSON 以外的格式要求。",
-    )
+    data = _ai_task("inst.dim.chat", payload, CHAT_PROMPT)
     answer = str(data.get("answer") or data.get("summary") or "").strip()
     if not answer:
         raise AiUnavailable("AI 未返回内容")
+    if user_id:
+        inst_ai_store.append_message(
+            org_id, case_id, key, user_id,
+            member_id=actor_member_id, role="user", content=q,
+            client_message_id=client_message_id,
+        )
+        inst_ai_store.append_message(
+            org_id, case_id, key, user_id,
+            member_id=actor_member_id, role="assistant", content=answer,
+            client_message_id=f"{client_message_id}:a" if client_message_id else None,
+        )
     with get_conn() as conn:
         _audit(
             conn,
@@ -3929,7 +3970,13 @@ def ai_dimension_chat(
     }
 
 
-def ai_risk_review(org_id: int, proposal_id: int) -> dict[str, Any]:
+def ai_risk_review(
+    org_id: int,
+    proposal_id: int,
+    *,
+    refresh: bool = False,
+    actor_member_id: int | None = None,
+) -> dict[str, Any]:
     proposal = get_proposal(org_id, proposal_id)
     if not proposal:
         raise LookupError("议案不存在")
@@ -3946,17 +3993,48 @@ def ai_risk_review(org_id: int, proposal_id: int) -> dict[str, Any]:
         current = _current_version(conn, proposal_id)
         checks = _risk_checks(conn, org_id, proposal_row or proposal, current or version)
     payload["checks"] = checks
-    data = _ai_task(
-        "inst.risk_review",
-        payload,
-        "你是独立风控复核助手。只依据输入中的检查项与政策阈值；"
-        "对通过/警告/阻断给出解释，但不得改变状态；不给买卖建议。只输出 JSON："
-        '{"summary":"...","evidence":["..."],"risks":["..."],"open_questions":["..."]}。',
-    )
-    return {"memo": data, "task": "inst.risk_review", "checks": checks}
+    prompt, prompt_version = get_effective_prompt("inst.risk_review", RISK_REVIEW_PROMPT)
+    scope_key = f"proposal:{proposal_id}:version:{(current or version).get('id')}:task:risk"
+    cache_key = agent_input_hash(payload, prompt)
+    if not refresh:
+        hit = get_cached_output(
+            "inst.risk_review",
+            org_id=org_id,
+            scope_key=scope_key,
+            input_hash=cache_key,
+            prompt_version=prompt_version,
+        )
+        if hit:
+            return {
+                "memo": hit["output"],
+                "task": "inst.risk_review",
+                "checks": checks,
+                "cached": True,
+                "generated_at": hit.get("created_at"),
+            }
+    data = _ai_task("inst.risk_review", payload, prompt)
+    data.setdefault("engine", "agent")
+    if data.get("engine") != "rule":
+        save_output(
+            "inst.risk_review",
+            org_id=org_id,
+            scope_key=scope_key,
+            input_hash=cache_key,
+            prompt_version=prompt_version,
+            output=data,
+            engine=str(data.get("engine") or "agent"),
+            created_by=actor_member_id,
+        )
+    return {"memo": data, "task": "inst.risk_review", "checks": checks, "cached": False}
 
 
-def ai_chairman_memo(org_id: int, proposal_id: int) -> dict[str, Any]:
+def ai_chairman_memo(
+    org_id: int,
+    proposal_id: int,
+    *,
+    refresh: bool = False,
+    actor_member_id: int | None = None,
+) -> dict[str, Any]:
     proposal = get_proposal(org_id, proposal_id)
     if not proposal:
         raise LookupError("议案不存在")
@@ -3968,14 +4046,39 @@ def ai_chairman_memo(org_id: int, proposal_id: int) -> dict[str, Any]:
         "authorizations": proposal.get("authorizations") or [],
         "policy": {"max_single_weight": MAX_SINGLE_WEIGHT, "min_cash_ratio": MIN_CASH_RATIO, "policy_version": POLICY_VERSION},
     }
-    data = _ai_task(
-        "inst.chairman_memo",
-        payload,
-        "你是 Chairman 审议辅助助手。只依据输入中的议案、审批与政策；"
-        "不得修改仓位、不得解除风控阻断、不得生成订单；不给目标价或收益承诺。只输出 JSON："
-        '{"summary":"...","evidence":["..."],"risks":["..."],"open_questions":["..."]}。',
-    )
-    return {"memo": data, "task": "inst.chairman_memo", "version_no": version.get("version_no")}
+    prompt, prompt_version = get_effective_prompt("inst.chairman_memo", CHAIRMAN_MEMO_PROMPT)
+    scope_key = f"proposal:{proposal_id}:version:{version.get('id')}:task:chairman"
+    cache_key = agent_input_hash(payload, prompt)
+    if not refresh:
+        hit = get_cached_output(
+            "inst.chairman_memo",
+            org_id=org_id,
+            scope_key=scope_key,
+            input_hash=cache_key,
+            prompt_version=prompt_version,
+        )
+        if hit:
+            return {
+                "memo": hit["output"],
+                "task": "inst.chairman_memo",
+                "version_no": version.get("version_no"),
+                "cached": True,
+                "generated_at": hit.get("created_at"),
+            }
+    data = _ai_task("inst.chairman_memo", payload, prompt)
+    data.setdefault("engine", "agent")
+    if data.get("engine") != "rule":
+        save_output(
+            "inst.chairman_memo",
+            org_id=org_id,
+            scope_key=scope_key,
+            input_hash=cache_key,
+            prompt_version=prompt_version,
+            output=data,
+            engine=str(data.get("engine") or "agent"),
+            created_by=actor_member_id,
+        )
+    return {"memo": data, "task": "inst.chairman_memo", "version_no": version.get("version_no"), "cached": False}
 
 
 # ---------------------------------------------------------------- AI Chairman 模式

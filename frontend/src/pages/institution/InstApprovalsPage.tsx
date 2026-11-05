@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { BadgeCheck, ShieldAlert, Stamp } from "lucide-react";
 import { instApi, fmtNum, fmtPct, fmtDateTime } from "@/lib/instApi";
@@ -85,8 +85,10 @@ export function InstApprovalsPage() {
   const [error, setError] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [target, setTarget] = useState("");
-  const [memo, setMemo] = useState<Record<string, any> | null>(null);
+  const [riskMemo, setRiskMemo] = useState<Record<string, any> | null>(null);
+  const [chairMemo, setChairMemo] = useState<Record<string, any> | null>(null);
   const [chairmanMode, setChairmanMode] = useState<Record<string, any> | null>(null);
+  const autoAiKey = useRef("");
   const [handoverNote, setHandoverNote] = useState("");
 
   const role = session.role;
@@ -121,6 +123,30 @@ export function InstApprovalsPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
+
+  useEffect(() => {
+    const versionId = detail?.current_version?.id;
+    if (!selectedId || !versionId) return;
+    const key = `${selectedId}:${versionId}`;
+    if (autoAiKey.current === key) return;
+    autoAiKey.current = key;
+    setRiskMemo(null);
+    setChairMemo(null);
+    const loadOne = async (path: string, set: (value: Record<string, any>) => void) => {
+      try {
+        const res = await instApi<{ memo: Record<string, any> }>(path, {
+          method: "POST",
+          body: { refresh: false },
+        });
+        if (res.memo) set(res.memo);
+      } catch {
+        /* AI 未配置时不阻断审批；按钮仍可重试 */
+      }
+    };
+    void loadOne(`/proposals/${selectedId}/ai/risk-review`, setRiskMemo);
+    void loadOne(`/proposals/${selectedId}/ai/chairman-memo`, setChairMemo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, detail?.current_version?.id]);
 
   const approvalMap = useMemo(() => {
     const map = new Map<string, Approval>();
@@ -530,55 +556,90 @@ export function InstApprovalsPage() {
             ) : null}
           </Card>
 
-          <Card title={t("AI 审议辅助", "AI review support")} desc={t("AI 只读议案、审批与风控检查，不改变状态；不提供目标价或买卖指令。", "AI only reads the proposal, approvals and risk checks; it never changes state or gives target prices/trade instructions.")}>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="ghost"
-                disabled={!!busy}
-                onClick={() =>
-                  act("ai-risk", async () => {
-                    const res = await instApi<{ memo: Record<string, any> }>(
-                      `/proposals/${selectedId}/ai/risk-review`,
-                      { method: "POST" },
-                    );
-                    setMemo(res.memo);
-                  })
-                }
-              >
-                {busy === "ai-risk" ? t("生成中…", "Generating…") : t("AI 风控意见", "AI risk opinion")}
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={!!busy}
-                onClick={() =>
-                  act("ai-chair", async () => {
-                    const res = await instApi<{ memo: Record<string, any> }>(
-                      `/proposals/${selectedId}/ai/chairman-memo`,
-                      { method: "POST" },
-                    );
-                    setMemo(res.memo);
-                  })
-                }
-              >
-                {busy === "ai-chair" ? t("生成中…", "Generating…") : t("AI Chairman 摘要", "AI Chairman memo")}
-              </Button>
-            </div>
-            {memo ? (
-              <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs leading-relaxed text-[#b42345]">
-                <p className="font-medium">{t("AI 摘要（非投资建议，需真人确认）", "AI summary (not advice; human confirmation required)")}</p>
-                <p className="mt-1">{memo.summary || "—"}</p>
-                {Array.isArray(memo.risks) && memo.risks.length ? (
-                  <ul className="mt-2 list-disc pl-4">
-                    {memo.risks.map((x: string) => (
-                      <li key={x}>{x}</li>
-                    ))}
-                  </ul>
-                ) : null}
-                {Array.isArray(memo.open_questions) && memo.open_questions.length ? (
-                  <p className="mt-2">{t("待核验", "To verify")}：{memo.open_questions.join("；")}</p>
+          <Card title={t("AI 审议辅助", "AI review support")} desc={t("进入议案后自动生成并落库；AI 只读议案、审批与风控检查，不改变状态；不提供目标价或买卖指令。", "Generated automatically on entry and persisted; AI only reads the proposal, approvals and risk checks, never changes state or gives target prices/trade instructions.")}>
+            <div className="space-y-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    disabled={!!busy}
+                    onClick={() =>
+                      act("ai-risk", async () => {
+                        const res = await instApi<{ memo: Record<string, any> }>(
+                          `/proposals/${selectedId}/ai/risk-review`,
+                          { method: "POST", body: { refresh: true } },
+                        );
+                        setRiskMemo(res.memo);
+                      })
+                    }
+                  >
+                    {busy === "ai-risk"
+                      ? t("生成中…", "Generating…")
+                      : riskMemo
+                        ? t("重新生成风控意见", "Regenerate risk opinion")
+                        : t("AI 风控意见", "AI risk opinion")}
+                  </Button>
+                  <Badge tone="slate">{t("只读建议", "Read-only")}</Badge>
+                </div>
+                {riskMemo ? (
+                  <div className="mt-2 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs leading-relaxed text-[#b42345]">
+                    <p className="font-medium">{t("AI 风控意见（非投资建议，需真人确认）", "AI risk opinion (not advice; human confirmation required)")}</p>
+                    <p className="mt-1">{riskMemo.summary || "—"}</p>
+                    {Array.isArray(riskMemo.risks) && riskMemo.risks.length ? (
+                      <ul className="mt-2 list-disc pl-4">
+                        {riskMemo.risks.map((x: string) => (
+                          <li key={x}>{x}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {Array.isArray(riskMemo.open_questions) && riskMemo.open_questions.length ? (
+                      <p className="mt-2">{t("待核验", "To verify")}：{riskMemo.open_questions.join("；")}</p>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
-            ) : null}
+
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    disabled={!!busy}
+                    onClick={() =>
+                      act("ai-chair", async () => {
+                        const res = await instApi<{ memo: Record<string, any> }>(
+                          `/proposals/${selectedId}/ai/chairman-memo`,
+                          { method: "POST", body: { refresh: true } },
+                        );
+                        setChairMemo(res.memo);
+                      })
+                    }
+                  >
+                    {busy === "ai-chair"
+                      ? t("生成中…", "Generating…")
+                      : chairMemo
+                        ? t("重新生成 Chairman 摘要", "Regenerate Chairman memo")
+                        : t("AI Chairman 摘要", "AI Chairman memo")}
+                  </Button>
+                  <Badge tone="slate">{t("只读建议", "Read-only")}</Badge>
+                </div>
+                {chairMemo ? (
+                  <div className="mt-2 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs leading-relaxed text-[#b42345]">
+                    <p className="font-medium">{t("AI Chairman 摘要（非投资建议，需真人确认）", "AI Chairman memo (not advice; human confirmation required)")}</p>
+                    <p className="mt-1">{chairMemo.summary || "—"}</p>
+                    {Array.isArray(chairMemo.risks) && chairMemo.risks.length ? (
+                      <ul className="mt-2 list-disc pl-4">
+                        {chairMemo.risks.map((x: string) => (
+                          <li key={x}>{x}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {Array.isArray(chairMemo.open_questions) && chairMemo.open_questions.length ? (
+                      <p className="mt-2">{t("待核验", "To verify")}：{chairMemo.open_questions.join("；")}</p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </Card>
 
           <Card

@@ -272,12 +272,48 @@ def export_case_report(
     )
 
 
-@router.post("/cases/{case_id}/ai/memo")
-def research_memo(case_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+@router.get("/cases/{case_id}/ai/memo")
+def research_memo_cached(case_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
     _require_ws(ctx, "research")
     try:
-        return {"ok": True, **svc.ai_research_memo(org_id, case_id)}
+        return {"ok": True, **svc.ai_research_memo(org_id, case_id, refresh=False)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/cases/{case_id}/ai/memo")
+def research_memo(
+    case_id: int,
+    body: dict[str, Any] | None = None,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "research")
+    try:
+        return {
+            "ok": True,
+            **svc.ai_research_memo(
+                org_id,
+                case_id,
+                refresh=bool((body or {}).get("refresh")),
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.get("/cases/{case_id}/dimensions/{key}/chat")
+def dimension_chat_history(
+    case_id: int,
+    key: str,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "research")
+    try:
+        return {"ok": True, **svc.ai_dimension_chat_history(org_id, case_id, key, actor_member_id=member_id)}
     except Exception as exc:
         raise _handle(exc) from exc
 
@@ -301,18 +337,41 @@ def dimension_chat(
                 question=str(body.get("question") or ""),
                 history=body.get("history") or [],
                 actor_member_id=member_id,
+                client_message_id=body.get("client_message_id"),
             ),
         }
     except Exception as exc:
         raise _handle(exc) from exc
 
 
-@router.post("/proposals/{proposal_id}/ai/risk-review")
-def risk_review_ai(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+@router.get("/proposals/{proposal_id}/ai/risk-review")
+def risk_review_ai_cached(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
     _require_ws(ctx, "approvals")
     try:
-        return {"ok": True, **svc.ai_risk_review(org_id, proposal_id)}
+        return {"ok": True, **svc.ai_risk_review(org_id, proposal_id, refresh=False)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/proposals/{proposal_id}/ai/risk-review")
+def risk_review_ai(
+    proposal_id: int,
+    body: dict[str, Any] | None = None,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "approvals")
+    try:
+        return {
+            "ok": True,
+            **svc.ai_risk_review(
+                org_id,
+                proposal_id,
+                refresh=bool((body or {}).get("refresh")),
+                actor_member_id=member_id,
+            ),
+        }
     except Exception as exc:
         raise _handle(exc) from exc
 
@@ -350,12 +409,34 @@ def ai_role_run(
         raise _handle(exc) from exc
 
 
-@router.post("/proposals/{proposal_id}/ai/chairman-memo")
-def chairman_memo_ai(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+@router.get("/proposals/{proposal_id}/ai/chairman-memo")
+def chairman_memo_ai_cached(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
     _require_ws(ctx, "approvals")
     try:
-        return {"ok": True, **svc.ai_chairman_memo(org_id, proposal_id)}
+        return {"ok": True, **svc.ai_chairman_memo(org_id, proposal_id, refresh=False)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/proposals/{proposal_id}/ai/chairman-memo")
+def chairman_memo_ai(
+    proposal_id: int,
+    body: dict[str, Any] | None = None,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "approvals")
+    try:
+        return {
+            "ok": True,
+            **svc.ai_chairman_memo(
+                org_id,
+                proposal_id,
+                refresh=bool((body or {}).get("refresh")),
+                actor_member_id=member_id,
+            ),
+        }
     except Exception as exc:
         raise _handle(exc) from exc
 

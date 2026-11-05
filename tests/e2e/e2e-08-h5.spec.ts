@@ -214,6 +214,33 @@ test("AI 记忆入口从我的移到管家工具条，首页不再有 AI 今日�
   await noHorizontalOverflow(page);
 });
 
+test("个股 AI 解读进入页面自动生成", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/ai/stock/**", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, card: { summary: "估值处于历史中位，关注盈利稳定性。", sections: [] } }),
+    }),
+  );
+  await page.goto(`${H5}/stock/600519`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("估值处于历史中位，关注盈利稳定性。")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "生成 AI 解读" })).toHaveCount(0);
+  await noHorizontalOverflow(page);
+});
+
+test("Agent 管理页展示 Agent 与提示词编辑", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/agents`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Agent 管理" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".agent-card").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".agent-prompt").first()).toBeVisible();
+  const prompt = page.locator(".agent-prompt").first();
+  await prompt.fill("只讲最关键的估值风险，不展开。");
+  await page.getByRole("button", { name: "保存" }).first().click();
+  await expect(page.getByText(/已保存/)).toBeVisible({ timeout: 20_000 });
+  await noHorizontalOverflow(page);
+});
+
 test("个股分时视图可切换（有数据或明确空态）", async ({ page }) => {
   await loginByToken(page);
   await page.goto(`${H5}/stock/600519`, { waitUntil: "domcontentloaded" });
@@ -275,7 +302,7 @@ test("AI 管家可发送问题并渲染卡片", async ({ page }) => {
   await noHorizontalOverflow(page);
 });
 
-test("多标的对比页渲染同口径表与 AI 入口", async ({ page }) => {
+test("多标的对比页渲染同口径表并自动生成 AI 结论", async ({ page }) => {
   await loginByToken(page);
   const stock = (code: string, name: string) => ({
     quote: { code, name, industry: "白酒", price: 100, changePct: 1.2 },
@@ -289,7 +316,7 @@ test("多标的对比页渲染同口径表与 AI 入口", async ({ page }) => {
   await page.route("**/api/invest/stock/300750", (route) =>
     route.fulfill({ contentType: "application/json", body: JSON.stringify(stock("300750", "宁德时代")) }),
   );
-  await page.route("**/api/invest/ai/compare", (route) =>
+  await page.route("**/api/invest/ai/compare**", (route) =>
     route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ ok: true, card: { summary: "两者估值与增速不同。", sections: [] } }),
@@ -297,7 +324,6 @@ test("多标的对比页渲染同口径表与 AI 入口", async ({ page }) => {
   );
   await page.goto(`${H5}/compare/600519/300750`, { waitUntil: "domcontentloaded" });
   await expect(page.locator(".data-table")).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("button", { name: /生成 AI 对比解读/ }).click();
   await expect(page.getByText("两者估值与增速不同")).toBeVisible({ timeout: 20_000 });
   await noHorizontalOverflow(page);
 });
@@ -442,7 +468,7 @@ test("英文模式可搜索并打开真实美股", async ({ page }) => {
 test("360 宽关键页面无横向溢出，行业代码不裸奔", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await loginByToken(page);
-  for (const path of ["/", "/watch", "/portfolio", "/news", "/learn", "/me", "/quant", "/quant/factors", "/quant/strategies?tab=quick", "/quant/strategies?tab=plaza", "/quant/backtests", "/quant/papers", "/community"]) {
+  for (const path of ["/", "/watch", "/portfolio", "/news", "/learn", "/me", "/quant", "/quant/factors", "/quant/strategies?tab=quick", "/quant/strategies?tab=plaza", "/quant/backtests", "/quant/papers", "/agents", "/community"]) {
     await page.goto(`${H5}${path}`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(350);
     await noHorizontalOverflow(page);

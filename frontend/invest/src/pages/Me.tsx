@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Bell, ChevronRight, Download, FileText, Info, LogOut, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertTriangle, Bell, Bot, ChevronRight, Download, FileText, Info, LogOut, ShieldCheck, Trash2 } from "lucide-react";
 import { api, getToken } from "../api";
 import { useAuth } from "../auth";
 import { Disclaimer, Kv, PageHeader, Sheet, Tag } from "../components";
@@ -134,6 +134,9 @@ export default function Me() {
       </section>
 
       <div className="menu">
+        <button className="menu-item" onClick={() => nav("/agents")}>
+          <Bot size={18} /><span>{t("Agent 管理", "Agent management")}</span><ChevronRight size={16} />
+        </button>
         <button className="menu-item" onClick={() => nav("/quant")}>
           <FileText size={18} /><span>{t("量化研究", "Quant research")}</span><ChevronRight size={16} />
         </button>
@@ -184,7 +187,7 @@ export default function Me() {
       <PrivacySheet open={privacyOpen} onClose={() => setPrivacyOpen(false)} onOpenFull={() => { setPrivacyOpen(false); nav("/privacy"); }} />
       <Sheet open={aboutOpen} onClose={() => setAboutOpen(false)} title={t("关于", "About")} sub="SVQuant Invest · MVP">
         <p className="muted small">
-          {t("独立手机版 H5，复用 SVQuant 账号。当前为收盘后数据与规则解读，不含 AI 生成内容、不含实时行情、不含推送。", "A standalone mobile H5 that reuses your SVQuant account. It currently offers post-close data and rule-based interpretation, with no AI-generated content, no real-time quotes, and no push notifications.")}
+          {t("独立手机版 H5，复用 SVQuant 账号。当前为收盘后数据，含自动生成的 50 字 AI 结论；不含实时行情与推送。", "A standalone mobile H5 that reuses your SVQuant account. It uses post-close data and auto-generated 50-character AI takeaways; no real-time quotes or push notifications.")}
         </p>
         <div className="divider" />
         <Kv k={t("版本", "Version")} v="0.1.0-demo" />

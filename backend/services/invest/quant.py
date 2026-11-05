@@ -2569,52 +2569,64 @@ def _ai_points(section: dict[str, Any]) -> list[dict[str, str]]:
     return out[:4]
 
 
-def ai_commentary(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
-    aspects = (
-        [
-            ("return_source", "收益来源"), ("risk", "风险特征"), ("stability", "稳定性"),
-            ("benchmark", "与基准比"), ("failure", "失效条件"),
-        ]
-        if kind == "backtest" else
-        [("deviation", "偏离原因"), ("concentration", "集中度"), ("consistency", "一致性"), ("watch", "要留意的变量")]
+def _clip50(text: Any) -> str:
+    value = str(text or "").strip()
+    if len(value) <= 50:
+        return value
+    return value[:49].rstrip("，。；、,.; ") + "…"
+
+
+def ai_commentary(
+    kind: str,
+    payload: dict[str, Any],
+    *,
+    user_id: int | None = None,
+    refresh: bool = False,
+) -> dict[str, Any]:
+    from services.invest import agent_prompts, ai_cache
+
+    task = "invest.backtest" if kind == "backtest" else "invest.paper" if kind == "paper" else "invest.quant"
+    default = (
+        agent_prompts.BACKTEST_SYSTEM
+        if kind == "backtest"
+        else agent_prompts.PAPER_COMMENTARY_SYSTEM if kind == "paper" else agent_prompts.QUANT_COMMENTARY_SYSTEM
     )
+    prompt = agent_prompts.resolve_prompt(user_id, task, default)
+    key = ai_cache.make_key(task, payload, prompt)
+    if not refresh:
+        cached = ai_cache.get(user_id, "commentary", key)
+        if cached:
+            return {**cached, "cached": True}
     try:
         from ai.router import available_task, run_task
 
-        task = "invest.backtest" if kind == "backtest" else "invest.quant"
         if not available_task(task):
             return {"available": False}
-        names = "、".join(f"{key}={title}" for key, title in aspects)
         out = run_task(
             task,
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "你是量化结果解释助手。只依据输入 JSON 中服务端算好的指标作答，不做任何运算，不编造数值。"
-                        "只输出 JSON：{\"summary\":\"...\",\"sections\":[{\"key\":\"...\",\"title\":\"...\","
-                        "\"points\":[{\"label\":\"不超过12字\",\"detail\":\"带一个数字或可核对依据，整条不超过28字\"}]}],"
-                        "\"disclaimer\":\"AI 生成 · 非投资建议\",\"meta\":{\"dataSource\":\"回测/模拟盘结果\"}}。"
-                        f"必须按这些方面输出：{names}。没有数据的方面整段不出现；禁止过渡词、建议、预测、目标价、收益承诺。"
-                    ),
-                },
+                {"role": "system", "content": prompt},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
             ],
         )
         data = out.get("data") if isinstance(out, dict) else None
         if not isinstance(data, dict):
             data = json.loads(str(out.get("content") or "{}"))
-        sections = data.get("sections") if isinstance(data, dict) else []
-        mapped = []
-        wanted = dict(aspects)
-        for section in sections if isinstance(sections, list) else []:
-            key = str(section.get("key") or "")
-            title = str(section.get("title") or wanted.get(key) or "").strip()
-            points = _ai_points(section)
-            if title and points:
-                mapped.append({"key": key or title, "title": title, "points": points})
-        if not mapped:
-            return {"available": False}
-        return {"available": True, "summary": str(data.get("summary") or ""), "aspects": mapped[:5]}
+        summary = str(data.get("summary") or "").strip()
+        if not summary:
+            for section in data.get("sections") or []:
+                if isinstance(section, dict) and section.get("body"):
+                    summary = str(section["body"])
+                    break
+                if isinstance(section, dict):
+                    for point in section.get("points") or []:
+                        if isinstance(point, dict) and point.get("detail"):
+                            summary = str(point["detail"])
+                            break
+                    if summary:
+                        break
+        result = {"available": True, "summary": _clip50(summary or "数据不足，暂无法给出结论。"), "aspects": []}
+        ai_cache.put(user_id, "commentary", key, result)
+        return result
     except Exception:
         return {"available": False}

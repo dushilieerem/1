@@ -183,6 +183,15 @@ DDL: tuple[str, ...] = (
     CREATE INDEX IF NOT EXISTS idx_invest_quant_strategy_user
       ON invest_quant_strategy (user_id, id DESC)
     """,
+    """
+    CREATE TABLE IF NOT EXISTS invest_ai_agent_prompt (
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      task_id TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
+      PRIMARY KEY (user_id, task_id)
+    )
+    """,
 )
 
 

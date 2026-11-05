@@ -4,7 +4,7 @@ import { FlaskConical, Play } from "lucide-react";
 import { api } from "../api";
 import { ErrorState, LoadingCards, PageHeader, Tag } from "../components";
 import { useLocale } from "../i18n";
-import { directionLabel, factorName, fmtSignedPct, metric, trendClass, universeLabel, type Strategy } from "../quant";
+import { directionLabel, factorName, fmtSignedPct, metric, supportsRePaper, trendClass, universeLabel, type Strategy } from "../quant";
 
 export default function QuantStrategyDetail() {
   const { id } = useParams();
@@ -118,10 +118,13 @@ export default function QuantStrategyDetail() {
                 <FlaskConical size={15} /> {t("查看模拟盘", "View paper account")}
               </button>
             ) : (
-              <button className="btn btn-primary w100" onClick={() => void startPaper()} disabled={busy}>
+              <button className="btn btn-primary w100" onClick={() => void startPaper()} disabled={busy || !supportsRePaper(data.factors)}>
                 <FlaskConical size={15} /> {busy ? t("创建中…", "Creating…") : t("开模拟盘", "Start paper account")}
               </button>
             )}
+            {!data.paper_id && !supportsRePaper(data.factors) ? (
+              <p className="hint">{t("该策略含 ROE/营收同比等 RE 暂无字段，暂不支持模拟盘；回测记录仍可查看。", "This strategy contains ROE/revenue YoY fields not yet in RE; paper trading is unavailable, but the backtest record remains.")}</p>
+            ) : null}
           </div>
           <p className="quant-foot">{t("策略状态不写「持有 / 买入 / 卖出」；历史数据不代表未来。", "Status never says hold/buy/sell; historical data does not predict the future.")}</p>
         </>

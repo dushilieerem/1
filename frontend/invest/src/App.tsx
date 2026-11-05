@@ -11,6 +11,7 @@ import Portfolio from "./pages/Portfolio";
 import Search from "./pages/Search";
 import News from "./pages/News";
 import Me from "./pages/Me";
+import Agents from "./pages/Agents";
 import Community from "./pages/Community";
 import PostDetail from "./pages/PostDetail";
 import PostNew from "./pages/PostNew";
@@ -103,6 +104,7 @@ export default function App() {
         <Route path="etf/:code" element={<EtfDetail />} />
         <Route path="learn" element={<Learn />} />
         <Route path="me" element={<Me />} />
+        <Route path="agents" element={<Agents />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

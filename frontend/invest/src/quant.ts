@@ -193,6 +193,13 @@ export type PlazaDetail = Omit<PlazaItem, "curve"> & {
   note: string;
 };
 
+export const RE_FACTOR_KEYS = new Set(["value", "momentum", "volatility", "liquidity"]);
+
+export function supportsRePaper(factors: Array<{ key: string }> | undefined): boolean {
+  const list = factors || [];
+  return list.length > 0 && list.every((f) => RE_FACTOR_KEYS.has(f.key));
+}
+
 export const UNIVERSE_LABEL: Record<string, { zh: string; en: string }> = {
   hs300: { zh: "沪深300", en: "CSI 300" },
   zz500: { zh: "中证500", en: "CSI 500" },

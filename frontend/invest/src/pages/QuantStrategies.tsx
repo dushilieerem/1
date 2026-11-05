@@ -11,6 +11,7 @@ import {
   factorFormula,
   factorName,
   fmtSignedPct,
+  supportsRePaper,
   metric,
   trendClass,
   universeLabel,
@@ -475,9 +476,12 @@ export default function QuantStrategies() {
               </div>
               <div className="quant-actions">
                 <button className="btn btn-ghost btn-sm" onClick={() => void saveDraft()}><Save size={14} /> {t("保存草稿", "Save draft")}</button>
-                <button className="btn btn-primary btn-sm" disabled={!backtest.id} onClick={() => void startPaper("backtest", backtest.id)}><FlaskConical size={14} /> {t("开模拟盘", "Paper trade")}</button>
+                <button className="btn btn-primary btn-sm" disabled={!backtest.id || !supportsRePaper(selectedMeta)} onClick={() => void startPaper("backtest", backtest.id)}><FlaskConical size={14} /> {t("开模拟盘", "Paper trade")}</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => setStep(1)}><RotateCcw size={14} /> {t("改因子重跑", "Edit & rerun")}</button>
               </div>
+              {!supportsRePaper(selectedMeta) ? (
+                <p className="hint">{t("该组合含 RE 暂无的基本面因子（ROE/营收同比），可保存草稿，但暂不能开模拟盘。", "This combo contains fundamental factors not yet in RE (ROE/revenue YoY); you can save a draft but cannot start a paper account.")}</p>
+              ) : null}
               <p className="quant-foot">{t("历史回测，不代表未来；不构成投资建议。", "Historical backtest, not a forecast; not investment advice.")}</p>
             </section>
           ) : null}
@@ -525,9 +529,10 @@ export default function QuantStrategies() {
               <p className="hint">
                 {t(`${(d.factors || []).length} 个因子 · ${universeLabel(d.universe, t)} · 保存于 ${(d.created_at || "").slice(0, 10)}`, `${(d.factors || []).length} factors · ${universeLabel(d.universe, t)} · saved ${(d.created_at || "").slice(0, 10)}`)}
               </p>
+              {!supportsRePaper(d.factors) ? <p className="hint">{t("含基本面因子：可回测/保存，暂不支持模拟盘。", "Contains fundamental factors: backtest/save is available, paper trading is not yet supported.")}</p> : null}
               <div className="row gap6">
                 <button className="btn btn-primary btn-sm" onClick={() => reuseDraft(d)}><Play size={14} /> {t("用这套配置去回测", "Backtest this config")}</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => void startPaper("draft", d.id)}><FlaskConical size={14} /> {t("直接开模拟盘", "Paper trade")}</button>
+                <button className="btn btn-ghost btn-sm" disabled={!supportsRePaper(d.factors)} onClick={() => void startPaper("draft", d.id)}><FlaskConical size={14} /> {t("直接开模拟盘", "Paper trade")}</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => void deleteDraft(d.id)}><Trash2 size={14} /> {t("删除", "Delete")}</button>
               </div>
             </section>

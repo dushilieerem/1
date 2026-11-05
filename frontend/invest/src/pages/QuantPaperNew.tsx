@@ -4,7 +4,7 @@ import { FlaskConical } from "lucide-react";
 import { api } from "../api";
 import { EmptyState, ErrorState, LoadingCards, PageHeader, Tag } from "../components";
 import { useLocale } from "../i18n";
-import { factorName, fmtSignedPct, metric, trendClass, universeLabel, type Draft, type Strategy } from "../quant";
+import { factorName, fmtSignedPct, metric, supportsRePaper, trendClass, universeLabel, type Draft, type Strategy } from "../quant";
 
 type Source = {
   key: string;
@@ -93,6 +93,7 @@ export default function QuantPaperNew() {
   }, []);
 
   const pick = (source: Source) => {
+    if (!supportsRePaper(source.factors)) return;
     setActive(source);
     setName(source.name);
   };
@@ -140,8 +141,9 @@ export default function QuantPaperNew() {
       {sources.map((source) => (
         <button
           key={source.key}
-          className={`quant-source-row ${active?.key === source.key ? "on" : ""}`}
+          className={`quant-source-row ${active?.key === source.key ? "on" : ""} ${!supportsRePaper(source.factors) ? "disabled" : ""}`}
           onClick={() => pick(source)}
+          disabled={!supportsRePaper(source.factors)}
         >
           <div>
             <div className="row gap6">
@@ -155,6 +157,7 @@ export default function QuantPaperNew() {
               {t("回测累计", "Backtest return")} <b className={trendClass(source.cumulative)}>{fmtSignedPct(source.cumulative)}</b>
               {" · "}{t("波动", "Volatility")} {metric(source.volatility, "pct")}
             </small>
+            {!supportsRePaper(source.factors) ? <small>{t("含 RE 暂无的基本面因子，暂不支持模拟盘", "Contains fundamentals not yet in RE; paper trading is unavailable")}</small> : null}
           </div>
           <span className={`quant-radio ${active?.key === source.key ? "on" : ""}`} />
         </button>

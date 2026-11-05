@@ -4,6 +4,7 @@ import json
 import math
 from datetime import date
 from services.factor.code_validation import validated_factor_code
+from .metrics import newey_west_t, threshold
 
 class WorkflowError(ValueError):
     pass
@@ -62,7 +63,7 @@ def snapshot(project):
         request['library_name']=library
     return {'schema':1,'projectId':project['id'],'name':project['name'],'plan':p,'rules':rules,'request':request}
 
-def evaluate(result, rules):
+def evaluate(result, rules, k=None):
     if result.get('error'): raise WorkflowError('计算返回错误：'+str(result['error']))
     metrics=result.get('metrics') or {}; fa=result.get('factor_analysis') or {}; meta=result.get('meta') or {}
     if not all(meta.get(k) for k in ('data_release_id','spec_hash','factor_source_hash')):
@@ -70,7 +71,7 @@ def evaluate(result, rules):
     metric=rules.get('icMetric','ic')
     ic=number(metrics.get(metric,fa.get('rank_ic_mean' if metric=='rank_ic' else 'ic_mean')),'IC',-1,1)
     drawdown=abs(number(metrics.get('max_drawdown'),'回撤',-1,1))
-    series=fa.get('ic_series') or []
+    series=fa.get('rank_ic_series') or fa.get('ic_series') or []
     observations=0
     for item in series:
         v=item.get('value',item.get('ic')) if isinstance(item,dict) else None
@@ -79,6 +80,18 @@ def evaluate(result, rules):
     checks=[{'name':'方向Rank IC' if metric=='rank_ic' else '方向IC','actual':signed,'operator':'>=','threshold':rules['minSignedIc'],'passed':signed>=rules['minSignedIc']},
             {'name':'最大回撤','actual':drawdown,'operator':'<=','threshold':rules['maxDrawdown'],'passed':drawdown<=rules['maxDrawdown']},
             {'name':'有效IC观测数','actual':observations,'operator':'>=','threshold':rules['minObservations'],'passed':observations>=rules['minObservations']}]
+    if metric=='rank_ic':
+        raw=fa.get('rank_ic_series')
+        if not raw:
+            checks.append({'name':'日度 Rank IC 序列','actual':None,'operator':'可用','threshold':True,'passed':False})
+        else:
+            try:
+                nw=newey_west_t(raw)
+                signed_t=nw['t']*(1 if rules['direction']=='positive' else -1)
+                required=threshold(k if isinstance(k,int) and k>=1 else 1)
+                checks.append({'name':'方向 NW t','actual':signed_t,'operator':'>=','threshold':required,'passed':signed_t>=required})
+            except ValueError as exc:
+                checks.append({'name':'方向 NW t','actual':None,'operator':'可计算','threshold':True,'passed':False,'reason':str(exc)})
     return {'passed':all(x['passed'] for x in checks),'checks':checks,'sealed':False,
             'limitation':'样本外复验；当前数据权限未封存，不构成独立封存验证或投资准入。'}
 

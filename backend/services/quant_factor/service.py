@@ -66,6 +66,16 @@ def validate(uid,org,cid):
     POOL.submit(run,uid,org,cid,'validation')
     return current(uid,org,cid)
 
+def _gate_k(uid,org,project_id,phase):
+    """K used for the threshold: this test counts on development, not on sealed validation."""
+    from . import ledger
+    with get_conn() as c:
+        topic=c.execute("SELECT * FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s",(uid,org,project_id)).fetchone()
+    if not topic:return 1
+    current=ledger.current_k(ledger._trials(uid,org,topic['id']),topic['primary_holding_period'])
+    return current+1 if phase=='development' else current
+
+
 def run(uid,org,cid,phase):
     running=phase+'_running'
     try:
@@ -88,7 +98,7 @@ def run(uid,org,cid,phase):
         else:
             proxy_cancel_factor_run(rid)
             raise WorkflowError('计算超过15分钟，已请求取消')
-        result=task.get('result') or {}; gate=evaluate(result,snap['rules'])
+        result=task.get('result') or {}; gate=evaluate(result,snap['rules'],_gate_k(uid,org,row['project_id'],phase))
         if phase=='validation': compare_identity(row['evidence']['development']['result'],result)
         # Trusted server-to-server result, signed through the existing report persistence contract.
         signed={**result,'_svquant_verified_token':sign_result(uid,result)}

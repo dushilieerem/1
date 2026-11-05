@@ -81,6 +81,8 @@ def evaluate(result, rules, k=None):
             {'name':'最大回撤','actual':drawdown,'operator':'<=','threshold':rules['maxDrawdown'],'passed':drawdown<=rules['maxDrawdown']},
             {'name':'有效IC观测数','actual':observations,'operator':'>=','threshold':rules['minObservations'],'passed':observations>=rules['minObservations']}]
     if metric=='rank_ic':
+        # Shared-9527 R1 deployment is not yet confirmed by RE; missing series
+        # must keep the gate closed rather than falling back to Pearson/mean IC.
         raw=fa.get('rank_ic_series')
         if not raw:
             checks.append({'name':'日度 Rank IC 序列','actual':None,'operator':'可用','threshold':True,'passed':False})

@@ -92,7 +92,7 @@ class ReferenceRangeTest(unittest.TestCase):
                'status': 'imported_unreviewed', 'metrics_status': 'pending',
                'reference_universe': 'CSI300', 'reference_period': '3y',
                'reference_filter_limit_up': 1, 'reference_filter_suspended': 1,
-               'reference_rules_version': 'yg_v1', 'reference_rank_ic': 8.8,
+               'reference_rules_version': 'yg_v1', 'reference_rank_ic': 880.0,
                'reference_ic_mean': 1, 'reference_ir': 1, 'reference_turnover': 0.2,
                'reference_coverage_pool': None, 'reference_computed_at': None}
         cursor = MagicMock(); cursor.execute.return_value = cursor; cursor.fetchall.return_value = [row]
@@ -101,5 +101,5 @@ class ReferenceRangeTest(unittest.TestCase):
             out = imports.reference_inventory(1, 2)
         ref = out['items'][0]['reference']
         self.assertIsNone(ref['rank_ic'])
-        self.assertEqual(ref['rank_ic_raw'], 8.8)
+        self.assertEqual(ref['rank_ic_raw'], 880.0)
         self.assertIn('口径', ref['rank_ic_note'])

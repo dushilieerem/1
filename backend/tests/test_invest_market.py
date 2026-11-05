@@ -29,6 +29,13 @@ def _us(code, name, price, prev, amount=1e9, pe=None):
     }
 
 
+def test_data_quality_coverage_status():
+    assert rules.coverage_status(0, 19049) == "pass"
+    assert rules.coverage_status(2, 19049) == "warn"
+    assert rules.coverage_status(500, 19049) == "fail"
+    assert rules.coverage_status(1, 0) == "fail"
+
+
 def test_market_helpers():
     assert rules._market_sql("US") == "market='US'"
     assert rules._market_sql("CN") == "COALESCE(market,'CN')='CN'"

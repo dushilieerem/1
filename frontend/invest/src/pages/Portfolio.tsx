@@ -564,10 +564,9 @@ export default function Portfolio() {
           </section>
 
           <AiPanel
-            title={t("AI 深度解读", "AI deep dive")}
-            subtitle={t("在诊断结论之上，逐项展开风险来源、历史对照与需要留意的变量。约 1–2 分钟。", "Builds on the diagnosis to unpack each risk source, historical comparison and variables to watch. About 1–2 minutes.")}
+            title={t("AI 关键结论", "AI takeaway")}
+            subtitle={t("自动生成，50 字以内，只讲最需要先看的一件事；不满意可重新生成。", "Generated automatically in under 50 characters, focused on the one thing to look at first.")}
             endpoint="/api/invest/ai/portfolio/deep"
-            buttonLabel={t("生成深度解读", "Generate deep dive")}
           />
 
           <section className="card">

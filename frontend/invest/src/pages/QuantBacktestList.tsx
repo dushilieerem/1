@@ -15,6 +15,8 @@ type Row = {
   cumulative: number | null;
   benchmark_return: number | null;
   shortened: boolean;
+  engine?: "re" | "local";
+  engine_reason?: string | null;
   created_at?: string;
 };
 
@@ -64,6 +66,7 @@ export default function QuantBacktestList() {
             <div className="backtest-stats">
               <b className={trendClass(item.cumulative)}>{fmtSignedPct(item.cumulative)}</b>
               <small>{t("基准", "Benchmark")} {fmtSignedPct(item.benchmark_return)}</small>
+              <Tag tone={item.engine === "re" ? "green" : "amber"}>{item.engine === "re" ? t("RE", "RE") : t("本地降级", "Local fallback")}</Tag>
             </div>
             <ChevronRight size={16} />
           </button>

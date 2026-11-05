@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ExternalLink, Sparkles } from "lucide-react";
 import { api } from "../api";
@@ -31,6 +31,7 @@ export default function QuantBacktestReport() {
   const [ai, setAi] = useState<Commentary | null>(null);
   const [aiTried, setAiTried] = useState(false);
   const [busy, setBusy] = useState(false);
+  const aiStarted = useRef("");
 
   useEffect(() => {
     if (!id) return;
@@ -39,12 +40,12 @@ export default function QuantBacktestReport() {
       .catch((e) => setError(e.message));
   }, [id]);
 
-  const explain = async () => {
+  const explain = async (refresh = false) => {
     if (!id || busy) return;
     setBusy(true);
     setAiTried(true);
     try {
-      const result = await api<Commentary>(`/api/invest/quant/backtests/${id}/commentary`, { method: "POST" });
+      const result = await api<Commentary>(`/api/invest/quant/backtests/${id}/commentary?refresh=${refresh ? 1 : 0}`, { method: "POST" });
       setAi(result.available ? result : null);
     } catch {
       setAi(null);
@@ -52,6 +53,14 @@ export default function QuantBacktestReport() {
       setBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (!data || !id) return;
+    if (aiStarted.current === id) return;
+    aiStarted.current = id;
+    void explain(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, id]);
 
   const assumptions = data?.assumptions || {};
   const assumptionRows: Array<[string, string, string]> = [
@@ -135,12 +144,12 @@ export default function QuantBacktestReport() {
           <section className="card">
             <div className="card-title-row">
               <h2>{t("AI 点评", "AI review")}</h2>
-              <button className="btn btn-primary btn-sm" onClick={() => void explain()} disabled={busy}>
-                <Sparkles size={14} /> {busy ? t("生成中…", "Generating…") : t("生成点评", "Generate")}
+              <button className="btn btn-ghost btn-sm" onClick={() => void explain(true)} disabled={busy}>
+                <Sparkles size={14} /> {busy ? t("生成中…", "Generating…") : t("重新生成", "Regenerate")}
               </button>
             </div>
             {!ai ? (
-              <p className="hint">{t("按需生成；生成失败时只保留指标与图表，不做降级文案。", "Generated on demand; if it fails, only metrics and charts are shown.")}</p>
+              <p className="hint">{t("自动生成 · 50 字结论 · 不满意可重新生成", "Auto-generated · 50-character takeaway · regenerate if needed")}</p>
             ) : (
               <div className="quant-ai">
                 {ai.summary ? <p className="quant-ai-summary">{ai.summary}</p> : null}

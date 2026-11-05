@@ -256,10 +256,9 @@ export default function Stock() {
 
       {!isUs ? (
         <AiPanel
-          title={t("AI 个股解读", "AI stock read")}
-          subtitle={t("基于当前页面的行情、财务、估值与风险数据生成；只解释数据，不给买卖建议。", "Generated from the quote, financials, valuation and risk data on this page; explains data, never buy/sell advice.")}
+          title={t("AI 个股结论", "AI stock takeaway")}
+          subtitle={t("自动生成，50 字以内，只解释数据，不给买卖建议。", "Generated automatically in under 50 characters; explains data, never buy/sell advice.")}
           endpoint={`/api/invest/ai/stock/${code}`}
-          buttonLabel={t("生成 AI 解读", "Generate AI read")}
         />
       ) : null}
 

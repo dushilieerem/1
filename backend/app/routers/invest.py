@@ -17,7 +17,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from app.deps import require_user
 from services.core.db import get_conn
 from services.core.public_switches import disabled_modules
-from services.invest import agent_tools
+from services.invest import agent_prompts, agent_tools
 from services.invest import etf as etf_service
 from services.invest import glossary as glossary_service
 from services.invest import quant
@@ -234,6 +234,30 @@ def quant_signals(
 
 
 # ---------------------------------------------------------------------------
+# AI Agent 管理：展示 H5 可用 Agent，按用户保存提示词覆盖
+# ---------------------------------------------------------------------------
+
+@router.get("/agents")
+def agents(
+    user: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    return agent_prompts.list_agents(_uid(user))
+
+
+@router.put("/agents/{task_id}")
+def agent_prompt_save(
+    task_id: str,
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    try:
+        data = agent_prompts.save_prompt(_uid(user), task_id, str(body.get("prompt") or ""))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, **data}
+
+
+# ---------------------------------------------------------------------------
 # 量化研究（11.4 功能设计）：因子 / 草稿 / 策略 / 回测 / 模拟盘 / 广场
 # ---------------------------------------------------------------------------
 
@@ -399,6 +423,7 @@ def quant_backtest_commentary(
     backtest_id: str,
     user: dict[str, Any] = Depends(require_user),
     conn: PGConn = Depends(invest_conn),
+    refresh: bool = Query(False),
 ) -> dict[str, Any]:
     data = _quant_call(quant.get_backtest, conn, _uid(user), backtest_id)
     if not data:
@@ -410,7 +435,7 @@ def quant_backtest_commentary(
         "holdings": data.get("holdings"),
         "note": "历史回测结果，非真实收益；AI 不得改算任何数值。",
     }
-    return _quant_call(quant.ai_commentary, "backtest", payload)
+    return _quant_call(quant.ai_commentary, "backtest", payload, user_id=_uid(user), refresh=refresh)
 
 
 @router.get("/quant/papers")
@@ -450,11 +475,12 @@ def quant_paper_commentary(
     paper_id: int,
     user: dict[str, Any] = Depends(require_user),
     conn: PGConn = Depends(invest_conn),
+    refresh: bool = Query(False),
 ) -> dict[str, Any]:
     data = _quant_call(quant.paper_detail, conn, _uid(user), paper_id)
     if not data:
         raise HTTPException(status_code=404, detail="模拟盘不存在")
-    return _quant_call(quant.ai_commentary, "paper", data)
+    return _quant_call(quant.ai_commentary, "paper", data, user_id=_uid(user), refresh=refresh)
 
 
 @router.delete("/quant/papers/{paper_id}")

@@ -31,7 +31,7 @@ export default function Shell() {
         <nav className="tabbar" aria-label={t("底部导航", "Bottom navigation")}>
           {TABS.map((item) => {
             const Icon = item.icon;
-            const meArea = item.to === "/me" && /^\/(quant|paper|notifications)/.test(loc.pathname);
+            const meArea = item.to === "/me" && /^\/(quant|paper|notifications|agents)/.test(loc.pathname);
             const active = item.to === "/" ? loc.pathname === "/" : loc.pathname.startsWith(item.to) || meArea;
             return (
               <NavLink key={item.to} to={item.to} className={`tab ${active ? "on" : ""}`} aria-current={active ? "page" : undefined}>

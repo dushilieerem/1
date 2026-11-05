@@ -1812,6 +1812,15 @@ def build_meta(conn: Any, market: str = "CN") -> dict[str, Any]:
     }
 
 
+def coverage_status(stale_count: int, total: int) -> str:
+    """全市场日线覆盖：零星停牌/新股只提示，超过 2% 才判失败。"""
+    if total <= 0:
+        return "fail"
+    if stale_count <= 0:
+        return "pass"
+    return "warn" if stale_count / total <= 0.02 else "fail"
+
+
 def build_data_quality(conn: Any) -> dict[str, Any]:
     latest = latest_date(conn)
     stocks = rows(conn, "SELECT code, name, asset, price, pe_ttm, updated_at FROM stocks")
@@ -1822,11 +1831,15 @@ def build_data_quality(conn: Any) -> dict[str, Any]:
     latest_by_market = {m: max((s.get("updated_at") or "")[:10] for s in pool if market_of(s["code"]) == m)
                         for m in {market_of(s["code"]) for s in pool}}
     stale = [s["code"] for s in pool if (s.get("updated_at") or "")[:10] != latest_by_market.get(market_of(s["code"]))]
+    # 全市场切换日常有零星停牌/新股未更新；少量缺口只提示，不把整页判为异常。
+    stale_ratio = len(stale) / len(pool) if pool else 1.0
+    bars_status = coverage_status(len(stale), len(pool))
     checks = [{
         "key": "bars",
         "label": "日线覆盖",
-        "status": "fail" if not pool or stale else "pass",
-        "detail": f"CN {latest_by_market.get('CN','—')} / US {latest_by_market.get('US','—')}；有日线 {len(pool)}/{len(stocks)} 只，未更新 {len(stale)}",
+        "status": bars_status,
+        "detail": f"CN {latest_by_market.get('CN','—')} / US {latest_by_market.get('US','—')}；有日线 {len(pool)}/{len(stocks)} 只，未更新 {len(stale)}"
+                  + ("（少量停牌/新股，仅提示）" if 0 < stale_ratio <= 0.02 else ""),
     }]
     pool_cn = [s for s in pool if market_of(s["code"]) == "CN"]
     pool_codes = [s["code"] for s in pool_cn]

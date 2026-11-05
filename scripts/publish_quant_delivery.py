@@ -8,7 +8,7 @@ OUT=ROOT/'frontend/public/quant-delivery'
 spec=importlib.util.spec_from_file_location('prototype_renderer',ROOT/'frontend/institutional-workflow/prototype-v3/build.py')
 module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 CSS="""body{margin:0;background:#f7f8fc;color:#211a2d;font:15px/1.8 system-ui,'Microsoft YaHei',sans-serif}main{max-width:1120px;margin:36px auto;padding:36px;background:white;border:1px solid #e6e0ed;border-radius:16px}a{color:#65358d}nav{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:32px}h1{font-size:30px}h2{margin-top:36px}table{width:100%;border-collapse:collapse;font-size:14px}td,th{border:1px solid #e6e0ed;padding:10px;text-align:left;vertical-align:top}th{background:#f3eaf8}.table-wrap{overflow:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere}blockquote{border-left:3px solid #65358d;padding-left:16px;color:#655c70}code{background:#f6f3f9;padding:2px 4px}li{margin:8px 0}@media(max-width:700px){main{margin:0;padding:20px}h1{font-size:25px}}"""
-NAV='<nav><a href="/quant">真实机构量化系统</a><a href="index.html">今日成果</a><a href="prd.html">需求文档</a><a href="factor-novelty.html">新因子与去重验收</a><a href="prototype.html#overview">交互原型（模拟）</a><a href="quant-delivery.zip">下载交付包</a></nav>'
+NAV='<nav><a href="/quant">真实机构量化系统</a><a href="index.html">今日成果</a><a href="prd.html">需求文档</a><a href="factor-novelty.html">新因子与去重验收</a><a href="handoff.html">开发交接</a><a href="prototype.html#overview">交互原型（模拟）</a><a href="quant-delivery.zip">下载交付包</a></nav>'
 def page(md,title):
  body,_=module.markdown(md)
  return '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>'+html.escape(title)+'</title><style>'+CSS+'</style><main>'+NAV+body+'</main></html>'
@@ -22,6 +22,8 @@ report=(DOCS/'今日成果-2026-11-05.md').read_text()
 shutil.copyfile(DOCS/'因子工厂自动迭代与报告.md',OUT/'因子工厂自动迭代与报告.md')
 (OUT/'factor-novelty.html').write_text(page((DOCS/'因子新颖性与因子库对照.md').read_text(),'因子工厂 · 新因子与去重验收'))
 shutil.copyfile(DOCS/'因子新颖性与因子库对照.md',OUT/'因子新颖性与因子库对照.md')
+(OUT/'handoff.html').write_text(page((DOCS/'开发交接-2026-11-05.md').read_text(),'机构量化平台 · 开发交接'))
+shutil.copyfile(DOCS/'开发交接-2026-11-05.md',OUT/'开发交接.md')
 shutil.copyfile(DOCS/'PRD.md',OUT/'PRD.md')
 shutil.copyfile(DOCS/'今日成果-2026-11-05.md',OUT/'今日成果.md')
 # Keep the actual interactive design intact and visibly identified as a prototype.
@@ -55,7 +57,7 @@ embedded=embedded.replace('sunvalley.workflow.prototype.v3.20261104','sunvalley.
 (OUT/'prototype-module.html').write_text(embedded)
 
 with zipfile.ZipFile(OUT/'quant-delivery.zip','w',zipfile.ZIP_DEFLATED) as archive:
- for name in ['index.html','prototype.html','prd.html','PRD.md','今日成果.md','factor-iteration.html','因子工厂自动迭代与报告.md','factor-novelty.html','因子新颖性与因子库对照.md']:
+ for name in ['index.html','prototype.html','prd.html','PRD.md','今日成果.md','factor-iteration.html','因子工厂自动迭代与报告.md','factor-novelty.html','因子新颖性与因子库对照.md','handoff.html','开发交接.md']:
   archive.write(OUT/name,name)
 print('Published internal review pack:',OUT)
 

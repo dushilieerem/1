@@ -98,3 +98,33 @@ class DecisionValidationTest(unittest.TestCase):
             result = f0_agent.execute(1, 2, 'run', TOPIC, decision, 1)
         self.assertEqual(result['status'], 'stopped')
         self.assertIn('没有研发达标', result['reason'])
+
+
+class SealActionTest(unittest.TestCase):
+    def test_f0_requests_seal_and_submits_review_after_pass(self):
+        cand = {'id': 'c', 'status': 'development_passed', 'snapshot': {'plan': {'researchPurpose': 'replication'}}}
+        with patch.object(f0_agent, 'get_conn') as gc, \
+             patch.object(f0_agent.sealed, 'request', return_value={'id': 's'}) as req, \
+             patch.object(f0_agent.sealed, 'detail', return_value={'status': 'passed'}), \
+             patch.object(f0_agent.review, 'request_review') as rev:
+            gc.return_value.__enter__.return_value.execute.return_value.fetchone.return_value = cand
+            result = f0_agent.execute(1, 2, 'run', TOPIC, f0_agent.Decision(action='request_seal', rationale='E4 研发通过，申请封存'), 1)
+        req.assert_called_once_with(1, 2, 'c')
+        rev.assert_called_once()
+        self.assertEqual(result['status'], 'completed')
+        self.assertEqual(result['sealed_status'], 'passed')
+
+
+class EngineTest(unittest.TestCase):
+    def test_before_step_pause_and_max_steps(self):
+        from services.quant_factor import decision_engine
+        calls = []
+        def decide(step):
+            calls.append(step)
+            return f0_agent.Decision(action='run_test', rationale='E1 未达标，继续检验实现'), {}
+        def execute(decision, step):
+            return {'status': 'completed'}
+        steps, reason = decision_engine.run_steps(decide=decide, execute=execute, max_steps=5,
+                                                  before_step=lambda step: '课题已暂停' if step == 2 else '')
+        self.assertEqual(len(steps), 1)
+        self.assertIn('暂停', reason)

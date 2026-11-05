@@ -218,7 +218,7 @@ async function prepareExitCase(
   return { exitId: Number(exitCase.id), caseId };
 }
 
-test("退出流程：投后回链 → 辩论后自动建 exit/0 议案", async ({ page, request }) => {
+test("退出流程：投后回链 → 辩论后补 exit/0 议案", async ({ page, request }) => {
   test.skip(
     !writeGuard.enabled,
     "写库用例默认关闭：需 INST_E2E_ALLOW_WRITE=1，且服务端 /api/inst/_e2e/guard 确认库名含 _test/_e2e（生产 svquant 永远拒绝）",
@@ -244,8 +244,14 @@ test("退出流程：投后回链 → 辩论后自动建 exit/0 议案", async (
   const researchLink = exitCard.getByRole("link", { name: new RegExp(`退出研究案\\s*#${caseId}`) });
   await expect(researchLink).toBeVisible();
 
-  // 线性流程：辩论完成后自动创建退出议案（exit + 0），并跳到审批页。
+  // 线性流程：辩论完成后填写意见并创建退出议案（exit + 0）。
   await page.goto(`${BASE}/inst/debate?case=${caseId}`, { waitUntil: "networkidle" });
+  const opinion = page.getByTestId("inst-investment-opinion");
+  await opinion.fill("E2E 退出意见：论点失效，清仓");
+  await expect(opinion).toHaveValue("E2E 退出意见：论点失效，清仓");
+  // 目标仓位 0 会弹清仓确认框，Playwright 默认自动取消；这里显式确认。
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("inst-proposal-create").click();
   await page.waitForURL(/\/inst\/approvals\?proposal=\d+/, { timeout: 60_000 });
 
   const proposalId = Number(new URL(page.url()).searchParams.get("proposal"));

@@ -182,7 +182,16 @@ def test_approve_and_execute_full_linear_flow(fixture) -> None:
     proposal = _ok(
         client.post(
             f"/api/inst/cases/{case_id}/proposals",
-            json={"direction": "buy", "target_weight": 0.02},
+            json={
+                "direction": "buy",
+                "target_weight": 0.02,
+                "price_low": 100,
+                "price_high": 120,
+                "funding_source": "现金",
+                "valid_until": "2099-12-31",
+                "monitoring": ["季度财报后复核"],
+                "investment_opinion": "E2E 投资意见：关键假设成立才持有",
+            },
             headers=_h(tokens["manager"]),
         )
     )
@@ -197,6 +206,11 @@ def test_approve_and_execute_full_linear_flow(fixture) -> None:
         ).fetchone()["content_hash"]
     assert snapshot["research_content_hash"] == version_hash
     assert snapshot["evidence_hash"]
+    assert snapshot["price_low"] == 100
+    assert snapshot["price_high"] == 120
+    assert snapshot["funding_source"] == "现金"
+    assert snapshot["investment_opinion"].startswith("E2E 投资意见")
+    assert snapshot["monitoring"] == ["季度财报后复核"]
     _ok(
         client.post(
             f"/api/inst/proposals/{proposal_id}/partner",

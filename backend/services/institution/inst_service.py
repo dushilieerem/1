@@ -2370,6 +2370,12 @@ def create_proposal(
     actor_member_id: int | None,
     direction: str | None = None,
     target_weight: float | None = None,
+    price_low: float | None = None,
+    price_high: float | None = None,
+    funding_source: str | None = None,
+    valid_until: str | None = None,
+    monitoring: list[str] | None = None,
+    investment_opinion: str | None = None,
     config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     with get_conn() as conn:
@@ -2408,6 +2414,37 @@ def create_proposal(
             resolved_target = float(target_weight)
         if not (0 <= resolved_target <= 1):
             raise ValueError("target_weight 必须在 0-1")
+        if not exit_case and resolved_target <= 0:
+            raise ValueError("买入议案的目标仓位必须大于 0")
+        low = price_low
+        high = price_high
+        if low is None and config and config.get("price_low") is not None:
+            low = float(config["price_low"])
+        if high is None and config and config.get("price_high") is not None:
+            high = float(config["price_high"])
+        if low is not None or high is not None:
+            if low is None or high is None:
+                raise ValueError("价格区间必须同时填写上限和下限")
+            low, high = float(low), float(high)
+            if low <= 0 or high <= 0 or low > high:
+                raise ValueError("价格区间必须为正且下限不高于上限")
+        funding = str(funding_source or (config or {}).get("funding_source") or "现金").strip()[:100]
+        if not funding:
+            raise ValueError("请填写资金来源")
+        validity = str(valid_until or (config or {}).get("valid_until") or (date.today() + timedelta(days=30)).isoformat())[:10]
+        try:
+            valid_date = date.fromisoformat(validity)
+        except ValueError:
+            raise ValueError("有效期必须是 YYYY-MM-DD") from None
+        if valid_date < date.today():
+            raise ValueError("有效期不能早于今天")
+        monitor_items = monitoring if monitoring is not None else (config or {}).get("monitoring")
+        if isinstance(monitor_items, str):
+            monitor_items = [x.strip() for x in monitor_items.splitlines() if x.strip()]
+        if not isinstance(monitor_items, list) or not monitor_items:
+            monitor_items = ["季度财报后复核论点", "单股仓位超过 15% 触发复核"]
+        monitor_items = [str(x)[:200] for x in monitor_items if str(x).strip()][:10]
+        opinion = str(investment_opinion or (config or {}).get("investment_opinion") or "").strip()[:2000]
         version_evidence_ids = [int(x) for x in (version.get("evidence_ids") or []) if str(x).isdigit()]
         evidence_hash = (
             _hash(_evidence_payload(conn, version_evidence_ids)) if version_evidence_ids else None
@@ -2422,16 +2459,16 @@ def create_proposal(
             "direction": resolved_direction,
             "target_weight": resolved_target,
             "exit_case_id": int(exit_case["id"]) if exit_case else None,
-            "price_low": None,
-            "price_high": None,
+            "price_low": low,
+            "price_high": high,
             "account": "SIM-001",
-            "funding_source": "自有资金",
+            "funding_source": funding,
             "currency": "CNY",
             "fx_rate": 1.0,
-            "valid_until": (date.today() + timedelta(days=30)).isoformat(),
-            "monitoring": ["季度财报后复核论点", "单股仓位超过 15% 触发复核"],
+            "valid_until": validity,
+            "monitoring": monitor_items,
+            "investment_opinion": opinion,
             "created_at": datetime.now().isoformat(timespec="seconds"),
-            **(config or {}),
         }
         row = conn.execute(
             """

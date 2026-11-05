@@ -65,7 +65,12 @@ type CaseItem = {
   company_name: string;
   symbol: string;
   stage: string;
-  versions?: Array<{ id: number; status: string; version_no: number }>;
+  versions?: Array<{
+    id: number;
+    status: string;
+    version_no: number;
+    valuation?: { low?: number; base?: number; high?: number } | null;
+  }>;
   debates?: Array<{ id: number; status: string; conclusion?: string }>;
   proposals?: Array<{ id: number; direction?: string; status?: string }>;
   exit_case?: ExitCase | null;
@@ -84,9 +89,16 @@ export function InstDebatePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [target, setTarget] = useState("0.05");
+  const [direction, setDirection] = useState("buy");
+  const [priceLow, setPriceLow] = useState("");
+  const [priceHigh, setPriceHigh] = useState("");
+  const [fundingSource, setFundingSource] = useState("现金");
+  const [validUntil, setValidUntil] = useState("");
+  const [monitoring, setMonitoring] = useState("");
+  const [opinion, setOpinion] = useState("");
   const [proposalBusy, setProposalBusy] = useState(false);
   const autoStarted = useRef(false);
-  const autoProposal = useRef(false);
+  const initializedProposal = useRef("");
 
   const canWrite = (session.permissions.debate || "none") === "write";
 
@@ -166,39 +178,78 @@ export function InstDebatePage() {
 
   useEffect(() => {
     autoStarted.current = false;
-    autoProposal.current = false;
+    initializedProposal.current = "";
   }, [caseId]);
 
-  const submitProposal = async (direction: string, targetWeight: number, auto: boolean) => {
+  // 辩论完成后展示议案骨架，由投资经理补充并手动生成；不再自动建案跳转。
+  useEffect(() => {
+    if (!detail || !debate || debate.status !== "completed") return;
+    const key = `${detail.id}:${debate.id}`;
+    if (initializedProposal.current === key) return;
+    initializedProposal.current = key;
+    const isExit = Boolean(detail.exit_case);
+    setDirection(isExit ? "exit" : "buy");
+    setTarget(isExit ? "0" : "0.05");
+    const valuation = (detail.versions || []).find((v) => v.status === "approved")?.valuation;
+    setPriceLow(valuation?.low != null ? String(valuation.low) : "");
+    setPriceHigh(valuation?.high != null ? String(valuation.high) : "");
+    setFundingSource("现金");
+    const due = new Date();
+    due.setDate(due.getDate() + 30);
+    setValidUntil(due.toISOString().slice(0, 10));
+    const falsifiers = (debate.arguments || [])
+      .filter((a) => a.side === "chair" || a.side === "bear")
+      .map((a) => String(a.falsifier || "").trim())
+      .filter(Boolean);
+    setMonitoring(
+      [...new Set(falsifiers)].slice(0, 3).join("\n") ||
+        "季度财报后复核论点\n出现证伪条件时重新评估",
+    );
+    setOpinion("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail, debate]);
+
+  const submitProposal = async () => {
     if (!caseId || proposalBusy) return;
+    if (!opinion.trim()) {
+      setError(t("请先填写投资意见，再生成议案。", "Write your investment opinion before creating the proposal."));
+      return;
+    }
+    const parsedTarget = Number(target);
+    if (target.trim() === "" || !Number.isFinite(parsedTarget) || parsedTarget < 0 || parsedTarget > 1) {
+      setError(t("目标仓位必须是 0-1 之间的数字；空值不会按 0 清仓处理。", "Target weight must be between 0 and 1; blank is not a full exit."));
+      return;
+    }
+    if (!hasExitCase && parsedTarget <= 0) {
+      setError(t("买入议案的目标仓位必须大于 0。", "A buy proposal needs a target weight above 0."));
+      return;
+    }
+    if (hasExitCase && parsedTarget === 0 && !window.confirm(t("目标仓位为 0，表示全部清仓。确认创建退出议案？", "Target 0 means a full exit. Create the exit proposal?"))) {
+      return;
+    }
     setProposalBusy(true);
     setError(null);
     try {
       const res = await instApi<{ id: number }>(`/cases/${caseId}/proposals`, {
         method: "POST",
         body: {
-          direction,
-          target_weight: targetWeight,
-          config: { price_low: null, price_high: null },
+          direction: hasExitCase ? "exit" : direction,
+          target_weight: parsedTarget,
+          price_low: priceLow.trim() ? Number(priceLow) : null,
+          price_high: priceHigh.trim() ? Number(priceHigh) : null,
+          funding_source: fundingSource,
+          valid_until: validUntil,
+          monitoring: monitoring.split("\n").map((x) => x.trim()).filter(Boolean),
+          investment_opinion: opinion.trim(),
         },
       });
       nav(`/inst/approvals?proposal=${res.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-      if (auto) autoProposal.current = false;
     } finally {
       setProposalBusy(false);
     }
   };
-
-  // 线性流程：辩论完成后自动创建议案（普通案买入 5%；退出案 exit + 0 清仓）。
-  useEffect(() => {
-    if (!caseId || !detail || !debate || debate.status !== "completed" || !canWrite) return;
-    if ((detail.proposals || []).length || autoProposal.current) return;
-    autoProposal.current = true;
-    void submitProposal(hasExitCase ? "exit" : "buy", hasExitCase ? 0 : 0.05, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId, detail, debate, canWrite, hasExitCase]);
 
   const groups = useMemo(() => {
     const args = debate?.arguments || [];
@@ -428,8 +479,40 @@ export function InstDebatePage() {
                 )}
               </div>
             ) : null}
-            <div className="mt-4 flex flex-wrap items-end gap-2">
-              <label className="text-[11px] text-[#68738b]">
+          </Card>
+
+          <Card
+            title={t("投资意见", "Investment opinion")}
+            desc={t("投资经理自己的观点；生成议案时一并送入投委会审批。", "The manager's own view; it is sent with the proposal to the investment committee.")}
+          >
+            <textarea
+              value={opinion}
+              onChange={(e) => setOpinion(e.target.value)}
+              data-testid="inst-investment-opinion"
+              placeholder={t("写下你为什么投、关键假设、最担心什么，以及什么情况会改变判断。", "Why invest, key assumptions, main concern, and what would change your mind.")}
+              className="min-h-[96px] w-full rounded-xl border border-[#dde5f2] bg-[#f8faff] p-3 text-xs leading-relaxed outline-none focus:border-[#7950ba]"
+            />
+          </Card>
+
+          <Card
+            title={t("议案骨架（待确认）", "Proposal skeleton (to confirm)")}
+            desc={t("系统给出默认方向、仓位和估值区间；请逐项确认或修改，再由你生成锁版议案。", "Defaults for direction, size and valuation range are prefilled; confirm or edit, then create the locked proposal.")}
+          >
+            <div className="grid gap-3 text-xs sm:grid-cols-2">
+              <label className="space-y-1 text-[#68738b]">
+                {t("方向", "Direction")}
+                <select
+                  value={hasExitCase ? "exit" : direction}
+                  onChange={(e) => setDirection(e.target.value)}
+                  disabled={hasExitCase}
+                  className="w-full rounded-lg border border-[#dde5f2] bg-white px-2 py-1.5 text-xs text-[#252533] outline-none disabled:bg-[#f8faff]"
+                >
+                  {hasExitCase ? <option value="exit">{t("退出（卖出）", "Exit (sell)")}</option> : null}
+                  {!hasExitCase ? <option value="buy">{t("买入", "Buy")}</option> : null}
+                  {!hasExitCase ? <option value="sell">{t("卖出", "Sell")}</option> : null}
+                </select>
+              </label>
+              <label className="space-y-1 text-[#68738b]">
                 {hasExitCase
                   ? t("目标仓位（0 = 清仓）", "Target weight (0 = full exit)")
                   : t("目标仓位（占净值）", "Target weight (of NAV)")}
@@ -437,66 +520,89 @@ export function InstDebatePage() {
                   value={target}
                   onChange={(e) => setTarget(e.target.value)}
                   data-testid="inst-proposal-target"
-                  className="ml-2 w-24 rounded-lg border border-[#dde5f2] bg-white px-2 py-1.5 text-xs text-[#252533] outline-none"
+                  className="w-full rounded-lg border border-[#dde5f2] bg-white px-2 py-1.5 text-xs text-[#252533] outline-none"
                   placeholder={hasExitCase ? "0" : "0.05"}
                 />
               </label>
+              <label className="space-y-1 text-[#68738b]">
+                {t("价格下限（CNY）", "Price low (CNY)")}
+                <input
+                  value={priceLow}
+                  onChange={(e) => setPriceLow(e.target.value)}
+                  inputMode="decimal"
+                  className="w-full rounded-lg border border-[#dde5f2] bg-white px-2 py-1.5 text-xs text-[#252533] outline-none"
+                  placeholder={t("可留空", "Optional")}
+                />
+              </label>
+              <label className="space-y-1 text-[#68738b]">
+                {t("价格上限（CNY）", "Price high (CNY)")}
+                <input
+                  value={priceHigh}
+                  onChange={(e) => setPriceHigh(e.target.value)}
+                  inputMode="decimal"
+                  className="w-full rounded-lg border border-[#dde5f2] bg-white px-2 py-1.5 text-xs text-[#252533] outline-none"
+                  placeholder={t("可留空", "Optional")}
+                />
+              </label>
+              <label className="space-y-1 text-[#68738b]">
+                {t("资金来源", "Funding source")}
+                <select
+                  value={fundingSource}
+                  onChange={(e) => setFundingSource(e.target.value)}
+                  className="w-full rounded-lg border border-[#dde5f2] bg-white px-2 py-1.5 text-xs text-[#252533] outline-none"
+                >
+                  <option value="现金">{t("现金", "Cash")}</option>
+                  <option value="减仓换仓">{t("减仓换仓", "Reduce another holding")}</option>
+                </select>
+              </label>
+              <label className="space-y-1 text-[#68738b]">
+                {t("有效期", "Valid until")}
+                <input
+                  type="date"
+                  value={validUntil}
+                  onChange={(e) => setValidUntil(e.target.value)}
+                  className="w-full rounded-lg border border-[#dde5f2] bg-white px-2 py-1.5 text-xs text-[#252533] outline-none"
+                />
+              </label>
+            </div>
+            <label className="mt-3 block space-y-1 text-xs text-[#68738b]">
+              {t("监控 / 退出条件", "Monitoring / exit conditions")}
+              <textarea
+                value={monitoring}
+                onChange={(e) => setMonitoring(e.target.value)}
+                className="min-h-[72px] w-full rounded-lg border border-[#dde5f2] bg-[#f8faff] p-2 text-xs outline-none focus:border-[#7950ba]"
+                placeholder={t("每行一条；来自辩论的证伪条件，可补充", "One per line; prefilled from debate falsifiers and editable")}
+              />
+            </label>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               <Button
                 variant="primary"
                 testId="inst-proposal-create"
                 disabled={!canWrite || busy || proposalBusy || Boolean(detail.proposals?.length)}
-                onClick={async () => {
-                  const parsed = Number(target);
-                  if (target.trim() === "" || !Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
-                    setError(
-                      t(
-                        "目标仓位必须是 0-1 之间的数字；空值不会按 0 清仓处理。",
-                        "Target weight must be a number between 0 and 1; blank is not treated as a full exit.",
-                      ),
-                    );
-                    return;
-                  }
-                  if (!hasExitCase && parsed <= 0) {
-                    setError(t("买入议案的目标仓位必须大于 0。", "A buy proposal needs a target weight above 0."));
-                    return;
-                  }
-                  if (
-                    hasExitCase &&
-                    parsed === 0 &&
-                    !window.confirm(
-                      t(
-                        "目标仓位为 0，表示全部清仓。确认创建退出议案？",
-                        "Target weight 0 means a full exit. Create the exit proposal?",
-                      ),
-                    )
-                  ) {
-                    return;
-                  }
-                  await submitProposal(hasExitCase ? "exit" : "buy", parsed, false);
-                }}
+                onClick={() => void submitProposal()}
               >
                 {proposalBusy
                   ? t("创建中…", "Creating…")
                   : hasExitCase
-                    ? t("创建退出议案", "Create exit proposal")
-                    : t("创建议案", "Create proposal")}
+                    ? t("生成退出议案", "Create exit proposal")
+                    : t("生成议案", "Create proposal")}
               </Button>
               <Button variant="ghost" onClick={() => nav("/inst/debate")}>
                 {t("返回辩论列表", "Back to debate list")}
               </Button>
+              {detail.proposals?.length ? (
+                <span className="text-[11px] leading-relaxed text-[#7950ba]">
+                  {t("已创建议案", "Proposal created")} #{detail.proposals[0].id} ·{" "}
+                  <Link className="underline underline-offset-2" to={`/inst/approvals?proposal=${detail.proposals[0].id}`}>
+                    {t("去审批", "Go to approval")}
+                  </Link>
+                </span>
+              ) : null}
             </div>
-            {detail.proposals?.length ? (
-              <p className="mt-2 text-[11px] leading-relaxed text-[#7950ba]">
-                {t("已创建议案", "Proposal created")} #{detail.proposals[0].id} ·{" "}
-                <Link className="underline underline-offset-2" to={`/inst/approvals?proposal=${detail.proposals[0].id}`}>
-                  {t("去审批", "Go to approval")}
-                </Link>
-              </p>
-            ) : null}
             <p className="mt-2 text-[11px] leading-relaxed text-[#77718c]">
               {t(
-                "辩论完成后自动创建议案：普通研究案默认买入 5%，退出研究案默认 exit + 0（清仓）；合伙人复核时可调整目标仓位。之后进入 Chairman 审批 → 风控 → 自动模拟成交。",
-                "A proposal is created automatically after the debate: 5% buy by default, or exit + 0 for an exit case; the partner can adjust the target. It then goes through Chairman approval → risk → automatic simulated fill.",
+                "价格区间来自研究估值区间，可收窄或放宽；它是研究区间，不是目标价。辩论完成后自动给骨架，但必须由你写投资意见并点生成议案。",
+                "The price range comes from the research valuation range and can be adjusted; it is a research range, not a target price. The debate prefills a skeleton, but you must write the opinion and create the proposal.",
               )}
             </p>
           </Card>

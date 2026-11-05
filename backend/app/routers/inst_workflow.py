@@ -633,6 +633,12 @@ def create_proposal(
                 # 方向与目标仓位的默认值由服务层按是否退出案决定（退出案默认 exit / 0）。
                 direction=str(direction) if direction not in (None, "") else None,
                 target_weight=float(target) if target not in (None, "") else None,
+                price_low=float(body["price_low"]) if body.get("price_low") not in (None, "") else None,
+                price_high=float(body["price_high"]) if body.get("price_high") not in (None, "") else None,
+                funding_source=str(body.get("funding_source") or "") or None,
+                valid_until=str(body.get("valid_until") or "") or None,
+                monitoring=body.get("monitoring"),
+                investment_opinion=body.get("investment_opinion"),
                 config=body.get("config") or {},
             ),
         }

@@ -314,6 +314,10 @@ export function InstApprovalsPage() {
                 value={snapshot.account ? t(`模拟账户 ${snapshot.account}`, `Sim account ${snapshot.account}`) : t("未指定", "Not specified")}
               />
               <Field
+                label={t("资金来源", "Funding source")}
+                value={String(snapshot.funding_source || t("未指定", "Not specified"))}
+              />
+              <Field
                 label={t("币种 / 汇率", "Currency / FX")}
                 value={`${snapshot.currency === "CNY" || !snapshot.currency ? t("人民币（CNY）", "CNY") : snapshot.currency} / ${snapshot.fx_rate ?? "—"}`}
               />
@@ -326,6 +330,12 @@ export function InstApprovalsPage() {
                   "No price range: execution will not enforce price bounds. Add one in the proposal config if a limit is required.",
                 )}
               </p>
+            ) : null}
+            {snapshot.investment_opinion ? (
+              <div className="mt-3 rounded-xl border border-[#dde5f2] bg-[#f8faff] p-3 text-xs leading-relaxed text-[#505369]">
+                <p className="font-medium text-[#b42345]">{t("投资经理意见", "Investment manager opinion")}</p>
+                <p className="mt-1 whitespace-pre-wrap">{String(snapshot.investment_opinion)}</p>
+              </div>
             ) : null}
             {Array.isArray(snapshot.monitoring) && snapshot.monitoring.length ? (
               <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs text-[#b42345]">

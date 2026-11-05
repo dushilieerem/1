@@ -63,7 +63,7 @@ async function holdingQty(request: APIRequestContext, symbol: string): Promise<n
     .reduce((sum: number, p: any) => sum + Number(p.qty || 0), 0);
 }
 
-test("辩论自动建案 → 审批 → 自动授权成交 → 持仓更新", async ({ page, request }) => {
+test("辩论后补议案 → 审批 → 自动授权成交 → 持仓更新", async ({ page, request }) => {
   test.skip(!writeEnabled, "写库用例需要 INST_E2E_ALLOW_WRITE=1 且服务端库名为 svquant_test");
   test.setTimeout(300_000);
 
@@ -93,9 +93,11 @@ test("辩论自动建案 → 审批 → 自动授权成交 → 持仓更新", as
     use_ai: false,
   });
 
-  // 打开辩论页：应自动创建议案并跳到审批页。
+  // 打开辩论页：填写投资意见并生成议案（不再自动建案跳转）。
   await page.addInitScript((t) => sessionStorage.setItem("svquant_inst_token", t), T.manager);
   await page.goto(`${BASE}/inst/debate?case=${caseId}`, { waitUntil: "networkidle" });
+  await page.getByTestId("inst-investment-opinion").fill("E2E 投资意见：关键假设与退出条件");
+  await page.getByTestId("inst-proposal-create").click();
   await page.waitForURL(/\/inst\/approvals\?proposal=\d+/, { timeout: 60_000 });
   const proposalId = Number(new URL(page.url()).searchParams.get("proposal"));
   expect(proposalId).toBeGreaterThan(0);
@@ -115,7 +117,7 @@ test("辩论自动建案 → 审批 → 自动授权成交 → 持仓更新", as
     "POST",
     `/api/inst/proposals/${proposalId}/approve-and-execute`,
     T.chairman,
-    { price: 100 },
+    { price: 900 },
   );
   expect(executed.proposal?.status).toBe("executed");
   expect(executed.execution?.order?.side).toBe("buy");

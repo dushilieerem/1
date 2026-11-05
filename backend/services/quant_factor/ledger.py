@@ -320,12 +320,13 @@ def list_org_topics(uid: int, org: int) -> list[dict]:
     """All topics visible to the current quant member, newest first."""
     with get_conn() as c:
         rows = [dict(row) for row in c.execute(
-            """SELECT t.*,
+            """SELECT t.*, p.name AS project_name,
                       (SELECT COUNT(*) FROM quant_factor_branches b
                         WHERE b.user_id=t.user_id AND b.org_id=t.org_id AND b.topic_id=t.id) AS branch_count,
                       (SELECT COUNT(*) FROM quant_factor_trials r
                         WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id) AS trial_count
                FROM quant_factor_topics t
+               JOIN detect_projects p ON p.user_id=t.user_id AND p.id=t.project_id
                WHERE t.user_id=%s AND t.org_id=%s
                ORDER BY t.created_at DESC""",
             (uid, org)).fetchall()]

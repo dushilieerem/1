@@ -85,7 +85,7 @@ export function InstOverviewPage() {
   const attention = [
     { label: t("待我处理的议案", "Proposals awaiting me"), count: data.my_pending ?? data.pending_approvals, to: "/inst/approvals", key: "approvals" },
     { label: t("风控硬性阻断", "Hard risk blocks"), count: data.risk_blocks, to: "/inst/approvals", key: "approvals" },
-    { label: t("监控预警", "Monitoring alerts"), count: data.monitor_alerts, to: "/inst/monitor", key: "monitor" },
+    { label: t("监控预警", "Monitoring alerts"), count: data.monitor_alerts, to: "/inst/portfolio", key: "monitor" },
     { label: t("在研研究案", "Active research cases"), count: data.active_cases, to: "/inst/research", key: "research" },
   ].filter((item) => allowed(item.key));
 

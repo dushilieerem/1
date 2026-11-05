@@ -67,10 +67,24 @@ test("辩论后补议案 → 审批 → 自动授权成交 → 持仓更新", as
   test.skip(!writeEnabled, "写库用例需要 INST_E2E_ALLOW_WRITE=1 且服务端库名为 svquant_test");
   test.setTimeout(300_000);
 
-  // 选一只演示组合尚未持有的标的：风控集中度会拦已持仓超限的买入。
-  const companies = await call(request, "GET", "/api/inst/companies?q=600036&limit=1", T.manager);
-  const company = (companies.items || [])[0];
-  expect(company, "找不到 600036").toBeTruthy();
+  // 选一只尚未持有、且行业未过度集中的标的：重复运行不会把自己持有的票越买越集中。
+  const portfolioBefore = await call(request, "GET", "/api/inst/portfolio", T.manager);
+  const positionsBefore = (portfolioBefore.positions || []).filter((p: any) => Number(p.qty) > 0);
+  const held = new Set(positionsBefore.map((p: any) => String(p.symbol)));
+  const crowded = new Set(
+    positionsBefore
+      .filter((p: any) => Number(p.weight || 0) > 0.2 && p.industry)
+      .map((p: any) => String(p.industry)),
+  );
+  const companies = await call(request, "GET", "/api/inst/companies?limit=200", T.manager);
+  const company = (companies.items || []).find(
+    (c: any) =>
+      c.market === "CN" &&
+      Number(c.ref_price) > 0 &&
+      !held.has(String(c.symbol)) &&
+      !crowded.has(String(c.industry || "")),
+  );
+  expect(company, "找不到可用于买入流程的未持仓标的").toBeTruthy();
   const symbol = String(company.symbol);
   const beforeQty = await holdingQty(request, symbol);
 

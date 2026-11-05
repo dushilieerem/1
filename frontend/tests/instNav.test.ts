@@ -32,7 +32,14 @@ test("visibleWorkspaces 隐藏 none 与 visible=false，并按固定顺序排序
     ws("about", "read", false),
   ];
   const out = visibleWorkspaces(list).map((x) => x.key);
-  assert.deepEqual(out, ["overview", "approvals", "monitor"]);
+  assert.deepEqual(out, ["overview", "approvals"]);
+});
+
+test("投后管理合并进投资管理后 monitor 不再作为独立菜单", () => {
+  const out = visibleWorkspaces([ws("monitor", "write"), ws("portfolio", "write")]).map(
+    (x) => x.key,
+  );
+  assert.deepEqual(out, ["portfolio"]);
 });
 
 test("visibleWorkspaces 对空值返回空数组并去重", () => {

@@ -119,12 +119,15 @@ def company(company_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -
 def company_bars(
     company_id: int,
     limit: int = 120,
+    period: str = "day",
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
-    _require_ws(ctx, "research")
+    perms = ctx.get("permissions") or {}
+    if perms.get("research", "none") == "none" and perms.get("portfolio", "none") == "none":
+        raise HTTPException(status_code=403, detail="当前角色无权访问该工作区")
     try:
-        return {"ok": True, **svc.company_bars(org_id, company_id, limit=limit)}
+        return {"ok": True, **svc.company_bars(org_id, company_id, limit=limit, period=period)}
     except Exception as exc:
         raise _handle(exc) from exc
 
@@ -876,6 +879,35 @@ def monitor(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
     _require_ws(ctx, "monitor")
     return {"ok": True, **svc.monitor(org_id)}
+
+
+@router.post("/monitor/scan")
+def scan_monitor(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    """自动扫描持仓：复核到期、价格异常，登记监控事件。"""
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "monitor")
+    try:
+        return {"ok": True, **svc.scan_holdings(org_id, actor_member_id=member_id)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/monitor/theses/refresh")
+def refresh_thesis(body: dict[str, Any], ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    """从最近买入议案重新生成单票论点台账；旧台账保留。"""
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "monitor")
+    try:
+        return {
+            "ok": True,
+            **svc.refresh_thesis(
+                org_id,
+                int(body.get("company_id") or 0),
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
 
 
 @router.post("/monitor/events")

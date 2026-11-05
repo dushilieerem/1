@@ -731,7 +731,43 @@ def record_idea_decision(
     }
 
 
-def company_bars(org_id: int, company_id: int, *, limit: int = 120) -> dict[str, Any]:
+def _resample_bars(items: list[dict[str, Any]], period: str) -> list[dict[str, Any]]:
+    """把日线聚合成周线/月线：开=首日开，高=最高，低=最低，收=末日收，量=合计。"""
+    grouped: list[dict[str, Any]] = []
+    key: Any = None
+    for bar in items:
+        day = date.fromisoformat(str(bar["trade_date"])[:10])
+        bucket = day.isocalendar()[:2] if period == "week" else (day.year, day.month)
+        if bucket != key:
+            key = bucket
+            grouped.append(
+                {
+                    "trade_date": str(bar["trade_date"])[:10],
+                    "open": float(bar["open"]),
+                    "high": float(bar["high"]),
+                    "low": float(bar["low"]),
+                    "close": float(bar["close"]),
+                    "volume": float(bar.get("volume") or 0),
+                    "amount": float(bar.get("amount") or 0),
+                }
+            )
+        else:
+            cur = grouped[-1]
+            cur["trade_date"] = str(bar["trade_date"])[:10]
+            cur["high"] = max(cur["high"], float(bar["high"]))
+            cur["low"] = min(cur["low"], float(bar["low"]))
+            cur["close"] = float(bar["close"])
+            cur["volume"] += float(bar.get("volume") or 0)
+            cur["amount"] += float(bar.get("amount") or 0)
+    return grouped
+
+
+def company_bars(
+    org_id: int, company_id: int, *, limit: int = 120, period: str = "day"
+) -> dict[str, Any]:
+    """行情 K 线。日/周/月由日线聚合；分钟线依赖行情源，未接入时明确返回不可用。"""
+    if period not in {"min", "1min", "5min", "15min", "60min", "day", "week", "month"}:
+        raise ValueError("period 必须是 min/1min/5min/15min/60min/day/week/month")
     with get_conn() as conn:
         row = conn.execute(
             "SELECT symbol, name, market FROM inst_company WHERE id=%s AND org_id=%s",
@@ -740,8 +776,31 @@ def company_bars(org_id: int, company_id: int, *, limit: int = 120) -> dict[str,
     if not row:
         raise LookupError("公司不存在")
     symbol = str(row["symbol"])
-    items = md.bar_history(symbol, adjust="none", limit=max(20, min(int(limit), 300)))
-    return {"symbol": symbol, "name": row["name"], "market": row["market"], "adjust": "none", "items": items}
+    limit = max(20, min(int(limit), 300))
+    if period.endswith("min"):
+        return {
+            "symbol": symbol,
+            "name": row["name"],
+            "market": row["market"],
+            "adjust": "none",
+            "period": period,
+            "available": False,
+            "note": "当前行情源仅提供日线，分钟线尚未接入；日/周/月可正常查看。",
+            "items": [],
+        }
+    fetch_limit = 5000 if period in {"week", "month"} else limit
+    items = md.bar_history(symbol, adjust="none", limit=fetch_limit)
+    if period in {"week", "month"}:
+        items = _resample_bars(items, period)[-limit:]
+    return {
+        "symbol": symbol,
+        "name": row["name"],
+        "market": row["market"],
+        "adjust": "none",
+        "period": period,
+        "available": True,
+        "items": items,
+    }
 
 
 def ideas_push(org_id: int, *, limit: int = 12) -> dict[str, Any]:
@@ -4015,6 +4074,181 @@ def monitor(org_id: int) -> dict[str, Any]:
         "theses": [_row_dict(r) for r in theses],
         "exit_reviews": [_row_dict(r) for r in exit_reviews],
     }
+
+
+def scan_holdings(org_id: int, *, actor_member_id: int | None = None) -> dict[str, Any]:
+    """自动监控：复核到期与持仓价格异常，登记监控事件；7 天内同类不重复。"""
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager", "risk", "monitoring", "partner")
+        rows = conn.execute(
+            """
+            SELECT ps.symbol, ps.qty, ps.cost, co.id AS company_id, co.name AS company_name
+              FROM inst_position_snapshot ps
+              JOIN inst_portfolio p ON p.id=ps.portfolio_id
+              LEFT JOIN inst_company co ON co.symbol=ps.symbol AND co.org_id=p.org_id
+             WHERE p.org_id=%s AND ps.qty>0
+               AND ps.as_of=(SELECT MAX(as_of) FROM inst_position_snapshot WHERE portfolio_id=p.id)
+            """,
+            (org_id,),
+        ).fetchall()
+        created: list[dict[str, Any]] = []
+        for pos in rows:
+            company_id = pos["company_id"]
+            if not company_id:
+                continue
+            ledger = conn.execute(
+                "SELECT * FROM inst_thesis_ledger WHERE org_id=%s AND company_id=%s "
+                "ORDER BY updated_at DESC LIMIT 1",
+                (org_id, int(company_id)),
+            ).fetchone()
+            due = ledger.get("review_due") if ledger else None
+            if due and due < date.today():
+                exists = conn.execute(
+                    "SELECT 1 FROM inst_monitor_event WHERE org_id=%s AND company_id=%s "
+                    "AND type='thesis' AND created_at > NOW() - INTERVAL '7 days' LIMIT 1",
+                    (org_id, int(company_id)),
+                ).fetchone()
+                if not exists:
+                    event = conn.execute(
+                        "INSERT INTO inst_monitor_event (org_id, company_id, type, severity, detail) "
+                        "VALUES (%s,%s,'thesis','warning',%s) RETURNING *",
+                        (
+                            org_id,
+                            int(company_id),
+                            _j({"text": f"买入论点复核到期（约定 {due.isoformat()}）"}),
+                        ),
+                    ).fetchone()
+                    created.append(_row_dict(event) or {})
+            bar = (
+                conn.execute(
+                    "SELECT close FROM md_daily_bar WHERE symbol=%s AND adjust='none' "
+                    "ORDER BY trade_date DESC LIMIT 1",
+                    (str(pos["symbol"]),),
+                ).fetchone()
+                if pos["symbol"]
+                else None
+            )
+            cost = float(pos.get("cost") or 0)
+            close = float(bar["close"]) if bar and bar.get("close") is not None else 0.0
+            if cost > 0 and close > 0 and close < cost * 0.9:
+                exists = conn.execute(
+                    "SELECT 1 FROM inst_monitor_event WHERE org_id=%s AND company_id=%s "
+                    "AND type='price' AND created_at > NOW() - INTERVAL '7 days' LIMIT 1",
+                    (org_id, int(company_id)),
+                ).fetchone()
+                if not exists:
+                    event = conn.execute(
+                        "INSERT INTO inst_monitor_event (org_id, company_id, type, severity, detail) "
+                        "VALUES (%s,%s,'price','warning',%s) RETURNING *",
+                        (
+                            org_id,
+                            int(company_id),
+                            _j(
+                                {
+                                    "text": (
+                                        f"现价 {close:g} 较成本 {cost:g} 下跌 "
+                                        f"{(1 - close / cost) * 100:.1f}%，需复核论点是否仍成立"
+                                    )
+                                }
+                            ),
+                        ),
+                    ).fetchone()
+                    created.append(_row_dict(event) or {})
+        if created:
+            _audit(
+                conn,
+                org_id=org_id,
+                actor_member_id=actor_member_id,
+                action="monitor.scan",
+                object_type="inst_monitor_event",
+                object_id=None,
+                after={"created": len(created)},
+            )
+    return {"created": len(created), "events": created}
+
+
+def refresh_thesis(org_id: int, company_id: int, *, actor_member_id: int | None = None) -> dict[str, Any]:
+    """从最近一笔买入议案/研究版本重新生成论点台账；旧台账保留，不自动覆盖。"""
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager", "partner", "monitoring")
+        company = conn.execute(
+            "SELECT id, symbol, name FROM inst_company WHERE id=%s AND org_id=%s",
+            (company_id, org_id),
+        ).fetchone()
+        if not company:
+            raise LookupError("公司不存在")
+        proposal = conn.execute(
+            """
+            SELECT p.*, v.snapshot
+              FROM inst_proposal p
+              JOIN LATERAL (
+                SELECT snapshot FROM inst_proposal_version
+                 WHERE proposal_id=p.id ORDER BY version_no DESC LIMIT 1
+              ) v ON TRUE
+             WHERE p.org_id=%s AND p.company_id=%s AND p.direction='buy'
+             ORDER BY p.updated_at DESC LIMIT 1
+            """,
+            (org_id, company_id),
+        ).fetchone()
+        if not proposal:
+            raise PermissionError("该公司还没有可生成台账的买入议案")
+        snapshot = dict(proposal.get("snapshot") or {})
+        research = {}
+        if snapshot.get("research_version_id"):
+            row = conn.execute(
+                "SELECT * FROM inst_research_version WHERE id=%s",
+                (snapshot["research_version_id"],),
+            ).fetchone()
+            research = dict(row) if row else {}
+        thesis = (
+            str(snapshot.get("investment_opinion") or "").strip()
+            or str(research.get("conclusion") or "").strip()
+            or f"{company['name']} 买入论点待补充"
+        )
+        assumptions: list[str] = []
+        for dim in research.get("six_dim") or []:
+            if isinstance(dim, dict):
+                text = str(dim.get("summary") or dim.get("conclusion") or "").strip()
+            else:
+                text = str(dim).strip()
+            if text:
+                assumptions.append(text[:200])
+        monitoring = snapshot.get("monitoring") or []
+        falsifiers = [str(x)[:200] for x in monitoring if str(x).strip()]
+        row = conn.execute(
+            """
+            INSERT INTO inst_thesis_ledger
+              (org_id, company_id, proposal_id, symbol, thesis, key_assumptions, kpis, falsifiers,
+               review_due, created_by)
+            VALUES (%s,%s,%s,%s,%s,%s,'[]'::jsonb,%s,%s,%s) RETURNING *
+            """,
+            (
+                org_id,
+                company_id,
+                int(proposal["id"]),
+                company["symbol"],
+                thesis[:2000],
+                _j(assumptions[:6]),
+                _j(falsifiers[:8]),
+                date.today() + timedelta(days=30),
+                actor_member_id,
+            ),
+        ).fetchone()
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="monitor.thesis.refresh",
+            object_type="inst_thesis_ledger",
+            object_id=int(row["id"]),
+            after={"company_id": company_id, "proposal_id": int(proposal["id"])},
+        )
+        out = _row_dict(row) or {}
+        out["company_name"] = company["name"]
+        out["review_count"] = 0
+    return out
 
 
 def _validated_list(value: Any, label: str) -> list[Any]:

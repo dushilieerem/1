@@ -46,7 +46,7 @@ WORKSPACE_LABELS: dict[str, tuple[str, str]] = {
     "debate": ("投资辩论室", "Debate room"),
     "approvals": ("投委会审批", "IC approvals"),
     "execution": ("交易执行", "Execution"),
-    "portfolio": ("投资组合", "Portfolio"),
+    "portfolio": ("投资管理", "Investment management"),
     "monitor": ("投后管理", "Post-investment"),
     "about": ("Agent管理", "Agent management"),
 }

@@ -187,6 +187,7 @@ export function StatusBadge({ status }: { status?: string | null }) {
     watch: { zh: "观察中", en: "Watching", tone: "amber" },
     dropped: { zh: "已放弃", en: "Dropped", tone: "slate" },
     pass: { zh: "通过", en: "Pass", tone: "green" },
+    warn: { zh: "警告", en: "Warning", tone: "amber" },
     approve: { zh: "通过", en: "Approved", tone: "green" },
     conditional: { zh: "附条件通过", en: "Conditional", tone: "amber" },
     return: { zh: "退回", en: "Returned", tone: "amber" },

@@ -673,6 +673,7 @@ def partner_review(
                 decision=str(body.get("decision") or "approve"),
                 comment=body.get("comment"),
                 updates=body.get("updates") or {},
+                conditions=body.get("conditions"),
                 actor_member_id=member_id,
             ),
         }
@@ -696,6 +697,7 @@ def chairman_review(
                 proposal_id,
                 decision=str(body.get("decision") or "approve"),
                 comment=body.get("comment"),
+                conditions=body.get("conditions"),
                 actor_member_id=member_id,
             ),
         }
@@ -716,7 +718,12 @@ def risk_check(
         return {
             "ok": True,
             **svc.risk_check(
-                org_id, proposal_id, actor_member_id=member_id, comment=payload.get("comment")
+                org_id,
+                proposal_id,
+                actor_member_id=member_id,
+                comment=payload.get("comment"),
+                decision=payload.get("decision"),
+                conditions=payload.get("conditions"),
             ),
         }
     except Exception as exc:
@@ -752,6 +759,7 @@ def approve_and_execute(
                 proposal_id,
                 actor_member_id=member_id,
                 price=float(price) if price not in (None, "") else None,
+                conditions_met=bool(payload.get("conditions_met")),
             ),
         }
     except Exception as exc:
@@ -786,6 +794,7 @@ def execute(
                 authorization_id,
                 actor_member_id=member_id,
                 price=float(price) if price is not None else None,
+                conditions_met=bool(payload.get("conditions_met")),
             ),
         }
     except Exception as exc:

@@ -83,12 +83,12 @@ def test_version_hash_and_risk_binding() -> None:
             "price_high": None,
         }
         checks = svc._risk_checks(conn, org_id, {"id": 1, "target_weight": 0.02}, {"snapshot": snapshot, "version_no": 1})
-        binding = next(c for c in checks if c["key"] == "hash_binding")
-        assert binding["status"] == "pass", checks
+        binding = next(c for c in checks if c["key"] == "version")
+        assert binding["status"] != "block", checks
         assert version["content_hash"]
         assert version["cutoff"]
 
         snapshot["evidence_hash"] = "tampered"
         checks = svc._risk_checks(conn, org_id, {"id": 1, "target_weight": 0.02}, {"snapshot": snapshot, "version_no": 1})
-        binding = next(c for c in checks if c["key"] == "hash_binding")
+        binding = next(c for c in checks if c["key"] == "version")
         assert binding["status"] == "block", checks

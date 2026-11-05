@@ -237,12 +237,19 @@ def test_exit_flow_state_machine_and_direction_guard(fixture) -> None:
     assert detail["exit_case"]["case_id"] == case_id
     assert detail["exit_case"]["status"] == "submitted"
 
-    # 4) 合伙人 → Chairman 审批：submitted → approved。
+    # 4) 合伙人 → 风控 → Chairman：顺序固定，Chairman 通过后 approved。
     _ok(
         client.post(
             f"/api/inst/proposals/{proposal_id}/partner",
             json={"decision": "approve"},
             headers=_h(tokens["partner"]),
+        )
+    )
+    _ok(
+        client.post(
+            f"/api/inst/proposals/{proposal_id}/risk-check",
+            json={},
+            headers=_h(tokens["risk"]),
         )
     )
     _ok(
@@ -254,14 +261,7 @@ def test_exit_flow_state_machine_and_direction_guard(fixture) -> None:
     )
     assert _exit_status(fixture, exit_id) == "approved"
 
-    # 5) 风控 → 授权：授权写审计，状态保持 approved。
-    _ok(
-        client.post(
-            f"/api/inst/proposals/{proposal_id}/risk-check",
-            json={},
-            headers=_h(tokens["risk"]),
-        )
-    )
+    # 5) 授权：授权写审计，状态保持 approved。
     authorized = _ok(
         client.post(
             f"/api/inst/proposals/{proposal_id}/authorize",

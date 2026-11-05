@@ -60,7 +60,7 @@ def evaluate(
         _check(
             "risk_precheck",
             "执行前风控复核通过",
-            risk.get("decision") == "pass",
+            risk.get("decision") in {"pass", "conditional"},
             "block",
             f"风控复核：{risk.get('decision') or '未执行'}",
         )

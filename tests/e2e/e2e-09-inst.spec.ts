@@ -172,10 +172,10 @@ async function ensureHolding(request: APIRequestContext): Promise<number> {
   await call(request, "POST", `/api/inst/proposals/${proposal.id}/partner`, tokens.partner!, {
     decision: "approve",
   });
+  await call(request, "POST", `/api/inst/proposals/${proposal.id}/risk-check`, tokens.risk!, {});
   await call(request, "POST", `/api/inst/proposals/${proposal.id}/chairman`, tokens.chairman!, {
     decision: "approve",
   });
-  await call(request, "POST", `/api/inst/proposals/${proposal.id}/risk-check`, tokens.risk!, {});
   const authorized = await call(
     request,
     "POST",

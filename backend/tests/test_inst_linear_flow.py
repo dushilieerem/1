@@ -220,16 +220,16 @@ def test_approve_and_execute_full_linear_flow(fixture) -> None:
     )
     _ok(
         client.post(
-            f"/api/inst/proposals/{proposal_id}/chairman",
-            json={"decision": "approve"},
-            headers=_h(tokens["chairman"]),
+            f"/api/inst/proposals/{proposal_id}/risk-check",
+            json={},
+            headers=_h(tokens["risk"]),
         )
     )
     _ok(
         client.post(
-            f"/api/inst/proposals/{proposal_id}/risk-check",
-            json={},
-            headers=_h(tokens["risk"]),
+            f"/api/inst/proposals/{proposal_id}/chairman",
+            json={"decision": "approve"},
+            headers=_h(tokens["chairman"]),
         )
     )
 

@@ -45,6 +45,7 @@ from services.marketdata import store as md
 
 POLICY_VERSION = "demo-v1"
 MAX_SINGLE_WEIGHT = 0.15
+MAX_INDUSTRY_WEIGHT = 0.30
 MIN_CASH_RATIO = 0.10
 DEFAULT_NAV = 10_000_000.0
 
@@ -2559,7 +2560,11 @@ def get_proposal(org_id: int, proposal_id: int) -> dict[str, Any] | None:
         auths = []
         if version:
             approvals = conn.execute(
-                "SELECT * FROM inst_approval WHERE proposal_version_id=%s ORDER BY decided_at",
+                "SELECT a.*, u.username AS approver_name, m.role AS approver_role "
+                "FROM inst_approval a "
+                "LEFT JOIN inst_members m ON m.id=a.approver_member_id "
+                "LEFT JOIN users u ON u.id=m.user_id "
+                "WHERE a.proposal_version_id=%s ORDER BY a.decided_at, a.id",
                 (version["id"],),
             ).fetchall()
             auths = conn.execute(
@@ -2570,12 +2575,90 @@ def get_proposal(org_id: int, proposal_id: int) -> dict[str, Any] | None:
             "SELECT * FROM inst_exit_case WHERE proposal_id=%s AND org_id=%s ORDER BY id DESC LIMIT 1",
             (proposal_id, org_id),
         ).fetchone()
+        # 六项风控检查按实时数据计算，供审批页在人工复核前查看。
+        risk_checks = _risk_checks(conn, org_id, proposal, version) if version else []
     proposal["versions"] = [_row_dict(r) for r in versions]
     proposal["current_version"] = version
     proposal["approvals"] = [_row_dict(r) for r in approvals]
     proposal["authorizations"] = [_row_dict(r) for r in auths]
+    proposal["risk_checks"] = risk_checks
     proposal["exit_case"] = _row_dict(exit_case)
     return proposal
+
+
+def _approval_rows(conn, version_id: int) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT * FROM inst_approval WHERE proposal_version_id=%s ORDER BY decided_at, id",
+        (version_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _approval_state(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """按角色汇总多人审批：合伙人/Chairman 任一通过即可，风控任一否决即终局。"""
+    state: dict[str, dict[str, Any]] = {}
+    for step in ("partner", "risk_precheck", "chairman"):
+        items = [r for r in rows if str(r.get("step") or "") == step]
+        decisions = [str(r.get("decision") or "") for r in items]
+        if step == "risk_precheck":
+            passed = any(d in {"pass", "conditional"} for d in decisions)
+            vetoed = any(d in {"veto", "block"} for d in decisions)
+        else:
+            passed = any(d in {"approve", "conditional"} for d in decisions)
+            vetoed = False
+        state[step] = {
+            "items": items,
+            "latest": items[-1] if items else None,
+            "passed": passed,
+            "vetoed": vetoed,
+            "conditions": [
+                str(c).strip()
+                for r in items
+                for c in (r.get("conditions") or [])
+                if str(c).strip()
+            ],
+        }
+    return state
+
+
+def _clean_conditions(conditions: Any) -> list[str]:
+    if isinstance(conditions, str):
+        conditions = [x.strip() for x in conditions.splitlines()]
+    if not isinstance(conditions, list):
+        return []
+    return [str(x).strip()[:300] for x in conditions if str(x).strip()][:10]
+
+
+def _insert_approval(
+    conn,
+    *,
+    version_id: int,
+    step: str,
+    actor_member_id: int | None,
+    decision: str,
+    comment: str | None,
+    conditions: list[str] | None = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO inst_approval
+          (proposal_version_id, step, approver_member_id, decision, comment, policy_version, conditions)
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (proposal_version_id, step, approver_member_id) DO UPDATE
+          SET decision=EXCLUDED.decision, comment=EXCLUDED.comment,
+              conditions=EXCLUDED.conditions, policy_version=EXCLUDED.policy_version,
+              decided_at=NOW()
+        """,
+        (
+            version_id,
+            step,
+            actor_member_id,
+            decision,
+            comment,
+            POLICY_VERSION,
+            _j(conditions or []),
+        ),
+    )
 
 
 def partner_review(
@@ -2586,15 +2669,24 @@ def partner_review(
     comment: str | None,
     updates: dict[str, Any] | None,
     actor_member_id: int | None,
+    conditions: list[str] | None = None,
 ) -> dict[str, Any]:
-    if decision not in {"approve", "return"}:
-        raise ValueError("decision 必须是 approve/return")
+    if decision not in {"approve", "conditional", "return"}:
+        raise ValueError("decision 必须是 approve/conditional/return")
+    condition_list = _clean_conditions(conditions)
+    if decision == "conditional" and not condition_list:
+        raise ValueError("附条件通过必须填写具体条件")
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "partner")
         proposal = _proposal_row(conn, org_id, proposal_id)
         if not proposal:
             raise LookupError("议案不存在")
+        if int(proposal.get("created_by") or 0) == int(actor_member_id or 0):
+            raise PermissionError("提案人不得审批自己的议案")
+        # 顺序固定：合伙人 → 风控 → Chairman，合伙人通过后本环节关闭。
+        if proposal["status"] not in {"draft", "partner_review"}:
+            raise PermissionError("合伙人审批环节已结束，不能重复审批")
         current = _current_version(conn, proposal_id)
         if not current:
             raise LookupError("议案版本不存在")
@@ -2610,24 +2702,23 @@ def partner_review(
                 (proposal_id, version_no, _j(snapshot), actor_member_id),
             ).fetchone()
             version_id = int(row["id"])
-        conn.execute(
-            """
-            INSERT INTO inst_approval (proposal_version_id, step, approver_member_id, decision, comment, policy_version)
-            VALUES (%s,'partner',%s,%s,%s,%s)
-            ON CONFLICT (proposal_version_id, step) DO UPDATE
-              SET approver_member_id=EXCLUDED.approver_member_id, decision=EXCLUDED.decision,
-                  comment=EXCLUDED.comment, decided_at=NOW()
-            """,
-            (version_id, actor_member_id, "approve" if decision == "approve" else "return", comment, POLICY_VERSION),
+        _insert_approval(
+            conn,
+            version_id=version_id,
+            step="partner",
+            actor_member_id=actor_member_id,
+            decision=decision,
+            comment=comment,
+            conditions=condition_list,
         )
-        new_status = "chairman_review" if decision == "approve" else "partner_review"
+        new_status = "risk_precheck" if decision in {"approve", "conditional"} else "partner_review"
         conn.execute(
             "UPDATE inst_proposal SET status=%s, current_version_no=%s, updated_at=NOW() WHERE id=%s",
             (new_status, version_no, proposal_id),
         )
         conn.execute(
             "UPDATE inst_proposal_version SET status=%s WHERE id=%s",
-            ("partner_submitted" if decision == "approve" else "draft", version_id),
+            ("partner_submitted" if decision in {"approve", "conditional"} else "draft", version_id),
         )
         _audit(
             conn,
@@ -2637,7 +2728,12 @@ def partner_review(
             object_type="inst_proposal",
             object_id=proposal_id,
             before={"status": proposal["status"], "version_no": current["version_no"]},
-            after={"status": new_status, "version_no": version_no, "comment": comment},
+            after={
+                "status": new_status,
+                "version_no": version_no,
+                "comment": comment,
+                "conditions": condition_list,
+            },
         )
     return get_proposal(org_id, proposal_id)  # type: ignore[return-value]
 
@@ -2649,9 +2745,13 @@ def chairman_review(
     decision: str,
     comment: str | None,
     actor_member_id: int | None,
+    conditions: list[str] | None = None,
 ) -> dict[str, Any]:
     if decision not in {"approve", "conditional", "return", "reject"}:
         raise ValueError("decision 必须是 approve/conditional/return/reject")
+    condition_list = _clean_conditions(conditions)
+    if decision == "conditional" and not condition_list:
+        raise ValueError("附条件批准必须填写具体条件")
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "chairman")
@@ -2660,35 +2760,40 @@ def chairman_review(
             raise LookupError("议案不存在")
         if int(proposal.get("created_by") or 0) == int(actor_member_id or 0):
             raise PermissionError("提案人不得审批自己的议案")
+        # 顺序固定：合伙人 → 风控 → Chairman，不能跳级。
+        if proposal["status"] != "chairman_review":
+            raise PermissionError("议案尚未到达 Chairman 环节（需合伙人、风控先后通过）")
         current = _current_version(conn, proposal_id)
         if not current:
             raise LookupError("议案版本不存在")
-        partner = conn.execute(
-            "SELECT * FROM inst_approval WHERE proposal_version_id=%s AND step='partner'",
-            (current["id"],),
-        ).fetchone()
-        if not partner or partner["decision"] not in {"approve"}:
+        state = _approval_state(_approval_rows(conn, int(current["id"])))
+        if state["risk_precheck"]["vetoed"]:
+            raise PermissionError("独立风控已否决，Chairman 不能批准")
+        if not state["partner"]["passed"]:
             raise PermissionError("合伙人复核未通过，不能提交 Chairman")
-        blocked = conn.execute(
-            "SELECT 1 FROM inst_approval WHERE proposal_version_id=%s AND step='risk_precheck' AND decision IN ('block','veto')",
-            (current["id"],),
-        ).fetchone()
-        if blocked:
-            raise PermissionError("独立风控已阻断，Chairman 不能批准")
-        conn.execute(
-            """
-            INSERT INTO inst_approval (proposal_version_id, step, approver_member_id, decision, comment, policy_version)
-            VALUES (%s,'chairman',%s,%s,%s,%s)
-            ON CONFLICT (proposal_version_id, step) DO UPDATE
-              SET approver_member_id=EXCLUDED.approver_member_id, decision=EXCLUDED.decision,
-                  comment=EXCLUDED.comment, decided_at=NOW()
-            """,
-            (current["id"], actor_member_id, "approve" if decision in {"approve", "conditional"} else decision, comment, POLICY_VERSION),
+        if not state["risk_precheck"]["passed"]:
+            raise PermissionError("独立风控尚未放行，不能提交 Chairman")
+        _insert_approval(
+            conn,
+            version_id=int(current["id"]),
+            step="chairman",
+            actor_member_id=actor_member_id,
+            decision=decision,
+            comment=comment,
+            conditions=condition_list,
         )
-        status = "risk_precheck" if decision in {"approve", "conditional"} else ("rejected" if decision == "reject" else "partner_review")
+        status = (
+            "authorized"
+            if decision in {"approve", "conditional"}
+            else ("rejected" if decision == "reject" else "partner_review")
+        )
         conn.execute("UPDATE inst_proposal SET status=%s, updated_at=NOW() WHERE id=%s", (status, proposal_id))
         if decision in {"approve", "conditional"}:
             conn.execute("UPDATE inst_proposal_version SET status='chairman_approved' WHERE id=%s", (current["id"],))
+        elif decision == "return":
+            conn.execute("UPDATE inst_proposal_version SET status='draft' WHERE id=%s", (current["id"],))
+        else:
+            conn.execute("UPDATE inst_proposal_version SET status='rejected' WHERE id=%s", (current["id"],))
         exit_case = _exit_case_for_proposal(conn, org_id, proposal_id)
         if exit_case and decision in {"approve", "conditional"}:
             _advance_exit_case(
@@ -2718,7 +2823,7 @@ def chairman_review(
             object_type="inst_proposal",
             object_id=proposal_id,
             before={"status": proposal["status"]},
-            after={"status": status, "comment": comment},
+            after={"status": status, "comment": comment, "conditions": condition_list},
         )
     return get_proposal(org_id, proposal_id)  # type: ignore[return-value]
 
@@ -2773,18 +2878,102 @@ def _evidence_approval_check(conn, proposal: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _issuer_key(name: Any) -> str:
+    return re.sub(r"[\s\-·（）()]+", "", str(name or "")).lower()
+
+
 def _risk_checks(conn, org_id: int, proposal: dict[str, Any], version: dict[str, Any]) -> list[dict[str, Any]]:
+    """六项硬约束：集中度、现金、版本一致、有效期与价格、交易资格、重复与冲突。
+
+    状态：pass 通过 / warn 警告 / block 否决。
+    """
     snapshot = version.get("snapshot") or {}
+    direction = str(proposal.get("direction") or snapshot.get("direction") or "buy")
+    is_buy = direction == "buy"
     target = float(snapshot.get("target_weight") or proposal.get("target_weight") or 0)
     portfolio = conn.execute(
-        "SELECT nav, cash FROM inst_portfolio WHERE org_id=%s ORDER BY id LIMIT 1", (org_id,)
+        "SELECT id, nav, cash FROM inst_portfolio WHERE org_id=%s ORDER BY id LIMIT 1", (org_id,)
     ).fetchone()
-    nav = float(portfolio["nav"] or DEFAULT_NAV) if portfolio else DEFAULT_NAV
-    cash = float(portfolio["cash"] or nav) if portfolio else nav
-    amount = target * nav
-    cash_after = (cash - amount) / nav if nav else 0
-    valid_until = snapshot.get("valid_until")
-    expired = bool(valid_until and str(valid_until)[:10] < date.today().isoformat())
+    pf = dict(portfolio) if portfolio else {}
+    nav = float(pf.get("nav") or DEFAULT_NAV)
+    cash = float(pf.get("cash") or nav)
+    amount = target * nav if is_buy else 0.0
+    cash_after = (cash - amount) / nav if nav else 0.0
+
+    company_row = (
+        conn.execute(
+            "SELECT * FROM inst_company WHERE id=%s AND org_id=%s",
+            (proposal.get("company_id"), org_id),
+        ).fetchone()
+        if proposal.get("company_id")
+        else None
+    )
+    company = dict(company_row) if company_row else {}
+    symbol = str(company.get("symbol") or proposal.get("symbol") or "")
+    company_key = _issuer_key(company.get("name"))
+    industry = str(company.get("industry") or "")
+
+    # 现有持仓（最新快照）：同发行人（同公司名，跨 A/H/美股）与同行业聚合。
+    positions = [
+        dict(r)
+        for r in conn.execute(
+            """
+            SELECT ps.symbol, ps.qty, ps.market_value, co.name, co.industry
+              FROM inst_position_snapshot ps
+              JOIN inst_portfolio p ON p.id=ps.portfolio_id
+              LEFT JOIN inst_company co ON co.symbol=ps.symbol AND co.org_id=p.org_id
+             WHERE p.org_id=%s AND ps.qty>0
+               AND ps.as_of=(SELECT MAX(as_of) FROM inst_position_snapshot WHERE portfolio_id=p.id)
+            """,
+            (org_id,),
+        ).fetchall()
+    ]
+    issuer_weight = sum(
+        float(p.get("market_value") or 0)
+        for p in positions
+        if company_key and _issuer_key(p.get("name")) == company_key
+    ) / nav if nav else 0.0
+    industry_weight = sum(
+        float(p.get("market_value") or 0)
+        for p in positions
+        if industry and str(p.get("industry") or "") == industry
+    ) / nav if nav else 0.0
+    issuer_after = issuer_weight + target if is_buy else issuer_weight
+    industry_after = industry_weight + target if is_buy else industry_weight
+
+    if not is_buy:
+        concentration = {"status": "pass", "value": "减持/退出不受集中度限制"}
+    elif not company_key:
+        concentration = {"status": "warn", "value": "缺少公司信息，无法核对同发行人集中度"}
+    else:
+        status = "pass"
+        if issuer_after > MAX_SINGLE_WEIGHT or industry_after > MAX_INDUSTRY_WEIGHT:
+            status = "block"
+        elif issuer_after >= MAX_SINGLE_WEIGHT * 0.85 or industry_after >= MAX_INDUSTRY_WEIGHT * 0.85:
+            status = "warn"
+        if not industry:
+            status = "warn" if status == "pass" else status
+        concentration = {
+            "status": status,
+            "value": (
+                f"同发行人 {issuer_after:.1%}（已持 {issuer_weight:.1%} + 本议案 {target:.1%}）；"
+                f"同行业 {industry_after:.1%}（{industry or '行业待补充'}）"
+            ),
+        }
+
+    if is_buy:
+        cash_status = "pass"
+        if cash_after < MIN_CASH_RATIO:
+            cash_status = "block"
+        elif cash_after < MIN_CASH_RATIO * 1.2:
+            cash_status = "warn"
+        cash_check = {
+            "status": cash_status,
+            "value": f"交易后现金 {cash_after:.1%}（现金 {cash:,.0f} / 净值 {nav:,.0f}）",
+        }
+    else:
+        cash_check = {"status": "pass", "value": "卖出增加现金，不做现金下限校验"}
+
     research_id = snapshot.get("research_version_id")
     research_row = (
         conn.execute("SELECT * FROM inst_research_version WHERE id=%s", (research_id,)).fetchone()
@@ -2803,60 +2992,208 @@ def _risk_checks(conn, org_id: int, proposal: dict[str, Any], version: dict[str,
         and snapshot_research_hash == research_hash
         and snapshot_evidence_hash == current_evidence_hash
     )
-    checks = [
+    debate = (
+        conn.execute(
+            "SELECT id FROM inst_debate_session WHERE case_id=%s AND status='completed' "
+            "ORDER BY id DESC LIMIT 1",
+            (proposal.get("case_id"),),
+        ).fetchone()
+        if proposal.get("case_id")
+        else None
+    )
+    evidence_check = _evidence_approval_check(conn, proposal)
+    if not proposal.get("case_id"):
+        evidence_status = "warn"
+    else:
+        evidence_status = str(evidence_check.get("status") or "warn")
+    version_status = "pass"
+    if not research or not snapshot.get("research_version_id") or not hash_ok:
+        version_status = "block"
+    elif evidence_status == "block":
+        version_status = "block"
+    elif not debate:
+        version_status = "warn"
+    version_check = {
+        "status": version_status,
+        "value": (
+            f"研究 v{snapshot.get('research_version_no') or '缺失'} / "
+            f"辩论 #{int(debate['id']) if debate else '缺失'} / "
+            f"hash {snapshot_research_hash[:10] or '缺失'} / "
+            f"{evidence_check.get('value') or '证据未核验'}"
+        ),
+    }
+
+    valid_until = snapshot.get("valid_until")
+    expired = bool(valid_until and str(valid_until)[:10] < date.today().isoformat())
+    low, high = snapshot.get("price_low"), snapshot.get("price_high")
+    inverted = low is not None and high is not None and float(low) > float(high)
+    bar = (
+        conn.execute(
+            "SELECT close FROM md_daily_bar WHERE symbol=%s AND adjust='none' "
+            "ORDER BY trade_date DESC LIMIT 1",
+            (symbol,),
+        ).fetchone()
+        if symbol
+        else None
+    )
+    last_px = float((dict(bar) if bar else {}).get("close") or 0) if bar else 0.0
+    price_status = "pass"
+    price_notes: list[str] = []
+    if expired:
+        price_status = "block"
+        price_notes.append(f"授权已于 {str(valid_until)[:10]} 过期")
+    if inverted:
+        price_status = "block"
+        price_notes.append(f"价格区间倒挂（{low} - {high}）")
+    elif is_buy and low is not None and high is not None and last_px > 0:
+        if last_px < float(low) or last_px > float(high):
+            price_status = "block"
+            price_notes.append(f"现价 {last_px:g} 超出批准区间 {float(low):g}-{float(high):g}")
+    if not price_notes:
+        price_notes.append(
+            f"有效期 {str(valid_until)[:10] or '未设置'}；"
+            + (f"现价 {last_px:g} / 区间 {low}-{high}" if last_px else "无最新行情")
+        )
+    validity_check = {"status": price_status, "value": "；".join(price_notes)}
+
+    status_row = (
+        conn.execute(
+            "SELECT trade_date, listed_status, up_down_status, is_st, is_suspended "
+            "FROM md_status_daily WHERE symbol=%s ORDER BY trade_date DESC LIMIT 1",
+            (symbol,),
+        ).fetchone()
+        if symbol
+        else None
+    )
+    if status_row:
+        status_row = dict(status_row)
+    trading_status = "pass"
+    trading_notes: list[str] = []
+    if status_row:
+        listed = str(status_row.get("listed_status") or "")
+        updown = str(status_row.get("up_down_status") or "")
+        if status_row.get("is_suspended") or updown == "停牌":
+            trading_status = "block"
+            trading_notes.append("停牌")
+        if status_row.get("is_st") or "ST" in listed:
+            trading_status = "block"
+            trading_notes.append(listed or "ST")
+        if listed in {"退市整理", "终止上市"}:
+            trading_status = "block"
+            trading_notes.append(listed)
+        if updown in {"涨停", "跌停"}:
+            trading_status = "block"
+            trading_notes.append(updown)
+        if not trading_notes:
+            trading_notes.append(f"{listed or '在市'} / {updown or '正常'}")
+    else:
+        trading_status = "warn"
+        trading_notes.append("无交易状态数据")
+    pos_row = (
+        conn.execute(
+            "SELECT qty FROM inst_position_snapshot ps JOIN inst_portfolio p ON p.id=ps.portfolio_id "
+            "WHERE p.org_id=%s AND ps.symbol=%s AND ps.qty>0 ORDER BY ps.as_of DESC LIMIT 1",
+            (org_id, symbol),
+        ).fetchone()
+        if symbol
+        else None
+    )
+    if is_buy:
+        if amount > cash:
+            trading_status = "block"
+            trading_notes.append(f"现金不足（需 {amount:,.0f}，可用 {cash:,.0f}）")
+    else:
+        if not pos_row or float(pos_row["qty"]) <= 0:
+            trading_status = "block"
+            trading_notes.append("无可卖持仓")
+        else:
+            trading_notes.append(f"可卖 {float(pos_row['qty']):,.0f} 股")
+    trading_check = {"status": trading_status, "value": "；".join(trading_notes)}
+
+    duplicate_status = "pass"
+    duplicate_notes: list[str] = []
+    if proposal.get("company_id"):
+        others = conn.execute(
+            """
+            SELECT id, status, direction, target_weight FROM inst_proposal
+             WHERE org_id=%s AND company_id=%s AND id<>%s
+               AND status IN ('draft','partner_review','risk_precheck','chairman_review','authorized')
+            """,
+            (org_id, proposal.get("company_id"), proposal.get("id") or 0),
+        ).fetchall()
+        if others:
+            duplicate_status = "warn"
+            duplicate_notes.append(f"同标的有 {len(others)} 个在途议案")
+        committed = 0.0
+        for r in conn.execute(
+            """
+            SELECT target_weight FROM inst_proposal
+             WHERE org_id=%s AND direction='buy'
+               AND status IN ('partner_review','risk_precheck','chairman_review','authorized')
+               AND id<>%s
+            """,
+            (org_id, proposal.get("id") or 0),
+        ).fetchall():
+            committed += float(r["target_weight"] or 0) * nav
+        if is_buy:
+            committed += amount
+        if committed > cash:
+            duplicate_status = "block"
+            duplicate_notes.append(f"在途买入合计 {committed:,.0f} 超过现金 {cash:,.0f}")
+        qualified = conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM inst_authorization a
+              JOIN inst_proposal_version v ON v.id=a.proposal_version_id
+              JOIN inst_proposal p ON p.id=v.proposal_id
+             WHERE p.org_id=%s AND p.company_id=%s AND p.id<>%s AND a.status='qualified'
+            """,
+            (org_id, proposal.get("company_id"), proposal.get("id") or 0),
+        ).fetchone()["n"]
+        if int(qualified or 0) > 0:
+            duplicate_status = "warn" if duplicate_status == "pass" else duplicate_status
+            duplicate_notes.append(f"已有 {int(qualified)} 个未执行授权")
+    if not duplicate_notes:
+        duplicate_notes.append("无重复下单或在途资金冲突")
+    duplicate_check = {"status": duplicate_status, "value": "；".join(duplicate_notes)}
+
+    return [
         {
-            "key": "single_weight",
-            "label": "单股目标仓位 ≤ 15%",
+            "key": "concentration",
+            "label": "集中度（同发行人 ≤15% / 同行业 ≤30%）",
             "threshold": MAX_SINGLE_WEIGHT,
-            "value": target,
-            "status": "pass" if target <= MAX_SINGLE_WEIGHT else "block",
+            **concentration,
         },
         {
-            "key": "cash_after",
-            "label": "交易后现金 ≥ 10%",
+            "key": "cash",
+            "label": "交易后现金 ≥10%",
             "threshold": MIN_CASH_RATIO,
-            "value": cash_after,
-            "status": "pass" if cash_after >= MIN_CASH_RATIO else "block",
+            **cash_check,
         },
         {
             "key": "version",
-            "label": "研究/议案版本一致",
+            "label": "研究/辩论/证据版本一致",
             "threshold": None,
-            "value": f"research={snapshot.get('research_version_id')} proposal={version.get('version_no')}",
-            "status": "pass" if research and snapshot.get("research_version_id") else "block",
+            **version_check,
         },
         {
-            "key": "hash_binding",
-            "label": "研究内容/证据 hash 一致",
+            "key": "validity_price",
+            "label": "有效期与价格",
             "threshold": None,
-            "value": f"research={snapshot_research_hash[:12] or '缺失'} evidence={str(snapshot_evidence_hash or '缺失')[:12]}",
-            "status": "pass" if hash_ok else "block",
-        },
-        _evidence_approval_check(conn, proposal),
-        {
-            "key": "validity",
-            "label": "审批有效期",
-            "threshold": valid_until,
-            "value": date.today().isoformat(),
-            "status": "block" if expired else "pass",
+            **validity_check,
         },
         {
-            "key": "price_range",
-            "label": "价格区间合法",
+            "key": "trading_qualification",
+            "label": "交易资格（停牌/涨跌停/ST/资金或持仓）",
             "threshold": None,
-            "value": f"{snapshot.get('price_low')} - {snapshot.get('price_high')}",
-            "status": (
-                "pass"
-                if not (
-                    snapshot.get("price_low") is not None
-                    and snapshot.get("price_high") is not None
-                    and float(snapshot["price_low"]) > float(snapshot["price_high"])
-                )
-                else "block"
-            ),
+            **trading_check,
+        },
+        {
+            "key": "duplicate_conflict",
+            "label": "重复与冲突",
+            "threshold": None,
+            **duplicate_check,
         },
     ]
-    return checks
 
 
 def risk_check(
@@ -2865,30 +3202,45 @@ def risk_check(
     *,
     actor_member_id: int | None,
     comment: str | None = None,
+    decision: str | None = None,
+    conditions: list[str] | None = None,
 ) -> dict[str, Any]:
+    if decision not in {None, "pass", "conditional", "veto"}:
+        raise ValueError("decision 必须是 pass/conditional/veto")
+    condition_list = _clean_conditions(conditions)
+    if decision == "conditional" and not condition_list:
+        raise ValueError("有条件放行必须填写具体条件")
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "risk")
         proposal = _proposal_row(conn, org_id, proposal_id)
         if not proposal:
             raise LookupError("议案不存在")
+        if int(proposal.get("created_by") or 0) == int(actor_member_id or 0):
+            raise PermissionError("提案人不得审批自己的议案")
         current = _current_version(conn, proposal_id)
         if not current:
             raise LookupError("议案版本不存在")
+        state = _approval_state(_approval_rows(conn, int(current["id"])))
+        if not state["partner"]["passed"]:
+            raise PermissionError("合伙人复核未通过，不能进入风控")
+        # 顺序固定：合伙人 → 风控 → Chairman；风控可在 Chairman 批准前追加否决。
+        if proposal["status"] not in {"risk_precheck", "chairman_review"}:
+            raise PermissionError("议案已离开风控环节，不能再审批")
         checks = _risk_checks(conn, org_id, proposal, current)
-        blocked = any(c["status"] == "block" for c in checks)
-        decision = "block" if blocked else "pass"
-        conn.execute(
-            """
-            INSERT INTO inst_approval (proposal_version_id, step, approver_member_id, decision, comment, policy_version)
-            VALUES (%s,'risk_precheck',%s,%s,%s,%s)
-            ON CONFLICT (proposal_version_id, step) DO UPDATE
-              SET approver_member_id=EXCLUDED.approver_member_id, decision=EXCLUDED.decision,
-                  comment=EXCLUDED.comment, decided_at=NOW()
-            """,
-            (current["id"], actor_member_id, decision, comment, POLICY_VERSION),
+        hard_blocks = [c for c in checks if c["status"] == "block"]
+        effective = "veto" if hard_blocks else (decision or "pass")
+        _insert_approval(
+            conn,
+            version_id=int(current["id"]),
+            step="risk_precheck",
+            actor_member_id=actor_member_id,
+            decision=effective,
+            comment=comment,
+            conditions=condition_list,
         )
-        if blocked:
+        if effective == "veto":
+            reason = "；".join(str(c["label"]) for c in hard_blocks) or "风控否决"
             conn.execute(
                 "UPDATE inst_proposal SET status='frozen', updated_at=NOW() WHERE id=%s", (proposal_id,)
             )
@@ -2902,21 +3254,23 @@ def risk_check(
                     "rejected",
                     actor_member_id=actor_member_id,
                     action="monitor.exit.risk_block",
-                    extra={"proposal_id": proposal_id, "risk_decision": decision},
+                    extra={"proposal_id": proposal_id, "risk_decision": effective},
                 )
         else:
             conn.execute(
-                "UPDATE inst_proposal SET status='risk_precheck', updated_at=NOW() WHERE id=%s", (proposal_id,)
+                "UPDATE inst_proposal SET status='chairman_review', updated_at=NOW() WHERE id=%s",
+                (proposal_id,),
             )
             conn.execute("UPDATE inst_proposal_version SET status='risk_passed' WHERE id=%s", (current["id"],))
+            reason = ""
         _audit(
             conn,
             org_id=org_id,
             actor_member_id=actor_member_id,
-            action=f"proposal.risk.{decision}",
+            action=f"proposal.risk.{effective}",
             object_type="inst_proposal",
             object_id=proposal_id,
-            after={"checks": checks, "comment": comment},
+            after={"checks": checks, "comment": comment, "conditions": condition_list, "reason": reason},
         )
     out = get_proposal(org_id, proposal_id) or {}
     out["risk_checks"] = checks
@@ -2931,21 +3285,30 @@ def authorize(org_id: int, proposal_id: int, *, actor_member_id: int | None) -> 
         current = _current_version(conn, proposal_id)
         if not current:
             raise LookupError("议案版本不存在")
-        approvals = {
-            r["step"]: dict(r)
-            for r in conn.execute(
-                "SELECT * FROM inst_approval WHERE proposal_version_id=%s", (current["id"],)
-            ).fetchall()
-        }
-        if approvals.get("partner", {}).get("decision") != "approve":
+        approvals = _approval_rows(conn, int(current["id"]))
+        state = _approval_state(approvals)
+        if not state["partner"]["passed"]:
             raise PermissionError("缺少合伙人批准")
-        if approvals.get("chairman", {}).get("decision") not in {"approve", "conditional"}:
+        if not state["chairman"]["passed"]:
             raise PermissionError("缺少 Chairman 批准")
-        risk = approvals.get("risk_precheck", {})
-        if risk.get("decision") != "pass":
-            raise PermissionError("执行前风控复核未通过")
-        if proposal["status"] == "frozen":
-            raise PermissionError("风控冻结期间不能生成授权")
+        if state["risk_precheck"]["vetoed"]:
+            raise PermissionError("独立风控已否决，不能生成授权")
+        if not state["risk_precheck"]["passed"]:
+            raise PermissionError("风控尚未放行")
+        if proposal["status"] != "authorized":
+            raise PermissionError("议案尚未完成审批，不能生成授权")
+        risk = state["risk_precheck"]["latest"] or {}
+        approval_conditions = [
+            {
+                "step": r.get("step"),
+                "decision": r.get("decision"),
+                "comment": r.get("comment"),
+                "conditions": r.get("conditions") or [],
+                "approver_member_id": r.get("approver_member_id"),
+            }
+            for r in approvals
+            if r.get("conditions")
+        ]
         snapshot = {
             "authorization_id": None,
             "proposal_id": proposal_id,
@@ -2965,7 +3328,23 @@ def authorize(org_id: int, proposal_id: int, *, actor_member_id: int | None) -> 
             "currency": (current.get("snapshot") or {}).get("currency"),
             "fx_rate": (current.get("snapshot") or {}).get("fx_rate"),
             "valid_until": (current.get("snapshot") or {}).get("valid_until"),
-            "conditions": (current.get("snapshot") or {}).get("monitoring") or [],
+            "monitoring": (current.get("snapshot") or {}).get("monitoring") or [],
+            "approval_conditions": approval_conditions,
+            "approval_chain": [
+                {
+                    "step": r.get("step"),
+                    "decision": r.get("decision"),
+                    "comment": r.get("comment"),
+                    "conditions": r.get("conditions") or [],
+                    "approver_member_id": r.get("approver_member_id"),
+                    "decided_at": (
+                        r["decided_at"].isoformat()
+                        if hasattr(r.get("decided_at"), "isoformat")
+                        else r.get("decided_at")
+                    ),
+                }
+                for r in approvals
+            ],
             "policy_version": POLICY_VERSION,
             "issued_at": datetime.now().isoformat(timespec="seconds"),
         }
@@ -3025,6 +3404,7 @@ def approve_and_execute(
     *,
     actor_member_id: int | None,
     price: float | None = None,
+    conditions_met: bool = False,
 ) -> dict[str, Any]:
     """线性流程 B：审批最后一关通过后，一次动作完成授权 + 模拟成交。
 
@@ -3067,6 +3447,7 @@ def approve_and_execute(
         actor_member_id=actor_member_id,
         price=price,
         bypass_role=True,
+        conditions_met=conditions_met,
     )
     return {
         "proposal": get_proposal(org_id, proposal_id),
@@ -3105,6 +3486,7 @@ def execute_authorization(
     actor_member_id: int | None,
     price: float | None = None,
     bypass_role: bool = False,
+    conditions_met: bool = False,
 ) -> dict[str, Any]:
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
@@ -3145,6 +3527,9 @@ def execute_authorization(
         if auth["status"] != "qualified":
             raise PermissionError(f"授权状态为 {auth['status']}，不可执行")
         snapshot = auth.get("snapshot") or {}
+        approval_conditions = snapshot.get("approval_conditions") or []
+        if approval_conditions and not conditions_met:
+            raise PermissionError("存在审批附加条件，执行人需确认条件已满足后再成交")
         valid_until = snapshot.get("valid_until")
         if valid_until and str(valid_until)[:10] < date.today().isoformat():
             raise PermissionError("授权已过期")
@@ -4303,11 +4688,32 @@ def _chairman_context(
         current = _current_version(conn, proposal_id)
         if not current:
             raise LookupError("议案版本不存在")
+        rows = _approval_rows(conn, int(current["id"]))
+        state = _approval_state(rows)
+
+        def _summary(step: str, passed_decisions: set[str]) -> dict[str, Any]:
+            item = state[step]
+            decisions = [str(r.get("decision") or "") for r in item["items"]]
+            if "conditional" in decisions:
+                decision = "conditional"
+            elif item["passed"]:
+                decision = next((d for d in decisions if d in passed_decisions), "approve")
+            elif item["vetoed"]:
+                decision = "veto"
+            else:
+                decision = item["latest"].get("decision") if item["latest"] else None
+            return {
+                "step": step,
+                "decision": decision,
+                "passed": item["passed"],
+                "vetoed": item["vetoed"],
+                "conditions": item["conditions"],
+            }
+
         approvals = {
-            str(r["step"]): dict(r)
-            for r in conn.execute(
-                "SELECT * FROM inst_approval WHERE proposal_version_id=%s", (current["id"],)
-            ).fetchall()
+            "partner": _summary("partner", {"approve", "conditional"}),
+            "risk_precheck": _summary("risk_precheck", {"pass", "conditional"}),
+            "chairman": _summary("chairman", {"approve", "conditional"}),
         }
         snapshot = current.get("snapshot") or {}
         risk_checks = _risk_checks(conn, org_id, proposal, current)

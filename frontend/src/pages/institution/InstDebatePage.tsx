@@ -530,6 +530,7 @@ export function InstDebatePage() {
                   value={priceLow}
                   onChange={(e) => setPriceLow(e.target.value)}
                   inputMode="decimal"
+                  data-testid="inst-price-low"
                   className="w-full rounded-lg border border-[#dde5f2] bg-white px-2 py-1.5 text-xs text-[#252533] outline-none"
                   placeholder={t("可留空", "Optional")}
                 />
@@ -540,6 +541,7 @@ export function InstDebatePage() {
                   value={priceHigh}
                   onChange={(e) => setPriceHigh(e.target.value)}
                   inputMode="decimal"
+                  data-testid="inst-price-high"
                   className="w-full rounded-lg border border-[#dde5f2] bg-white px-2 py-1.5 text-xs text-[#252533] outline-none"
                   placeholder={t("可留空", "Optional")}
                 />

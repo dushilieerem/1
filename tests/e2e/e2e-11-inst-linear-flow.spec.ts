@@ -67,9 +67,10 @@ test("辩论后补议案 → 审批 → 自动授权成交 → 持仓更新", as
   test.skip(!writeEnabled, "写库用例需要 INST_E2E_ALLOW_WRITE=1 且服务端库名为 svquant_test");
   test.setTimeout(300_000);
 
-  const companies = await call(request, "GET", "/api/inst/companies?q=600519&limit=1", T.manager);
+  // 选一只演示组合尚未持有的标的：风控集中度会拦已持仓超限的买入。
+  const companies = await call(request, "GET", "/api/inst/companies?q=600036&limit=1", T.manager);
   const company = (companies.items || [])[0];
-  expect(company, "找不到 600519").toBeTruthy();
+  expect(company, "找不到 600036").toBeTruthy();
   const symbol = String(company.symbol);
   const beforeQty = await holdingQty(request, symbol);
 
@@ -97,27 +98,31 @@ test("辩论后补议案 → 审批 → 自动授权成交 → 持仓更新", as
   await page.addInitScript((t) => sessionStorage.setItem("svquant_inst_token", t), T.manager);
   await page.goto(`${BASE}/inst/debate?case=${caseId}`, { waitUntil: "networkidle" });
   await page.getByTestId("inst-investment-opinion").fill("E2E 投资意见：关键假设与退出条件");
+  // 价格区间必须覆盖现价，否则风控会按「现价超出批准区间」否决。
+  await page.getByTestId("inst-price-low").fill("1");
+  await page.getByTestId("inst-price-high").fill("1000");
   await page.getByTestId("inst-proposal-create").click();
   await page.waitForURL(/\/inst\/approvals\?proposal=\d+/, { timeout: 60_000 });
   const proposalId = Number(new URL(page.url()).searchParams.get("proposal"));
   expect(proposalId).toBeGreaterThan(0);
 
-  // 合伙人 → Chairman → 风控。
+  // 顺序固定：合伙人 → 风控 → Chairman。
   await call(request, "POST", `/api/inst/proposals/${proposalId}/partner`, T.partner, {
     decision: "approve",
   });
+  const risk = await call(request, "POST", `/api/inst/proposals/${proposalId}/risk-check`, T.risk, {});
+  expect(risk.status, "风控应放行").toBe("chairman_review");
   await call(request, "POST", `/api/inst/proposals/${proposalId}/chairman`, T.chairman, {
     decision: "approve",
   });
-  await call(request, "POST", `/api/inst/proposals/${proposalId}/risk-check`, T.risk, {});
 
-  // 方案 B：最后一关一次完成授权 + 模拟成交。
+  // 方案 B：授权 + 模拟成交。
   const executed = await call(
     request,
     "POST",
     `/api/inst/proposals/${proposalId}/approve-and-execute`,
     T.chairman,
-    { price: 900 },
+    { price: Number(company.ref_price) || 42 },
   );
   expect(executed.proposal?.status).toBe("executed");
   expect(executed.execution?.order?.side).toBe("buy");

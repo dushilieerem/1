@@ -46,7 +46,7 @@ const protectedPaths = [
  /^\/factor-workflow\/topics\/[^/]+\/branches\/[^/]+\/takeover$/,
  /^\/factor-workflow\/reviews(?:\/[^/]+)?$/,
  /^\/factor-workflow\/projects\/[^/]+\/(candidates|assistant)$/,
- /^\/factor-workflow\/candidates\/[^/]+(?:\/(validate|cancel|archive|submit|register|review-request))?$/,
+ /^\/factor-workflow\/candidates\/[^/]+(?:\/(validate|cancel|archive|submit|register|review-request|sealed-validation))?$/,
  /^\/detect\/(projects|runs)(\/[^/]+)?(\/runs)?$/,
  /^\/strategy\/(projects|runs)(\/[^/]+)?(\/runs)?$/,
  /^\/factor\/libraries(\/factors|\/[^/]+(\/factors(\/[^/]+)?)?)?$/,

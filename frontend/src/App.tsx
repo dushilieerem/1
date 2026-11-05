@@ -1,6 +1,7 @@
 import {QuantFactorLibraryPage} from "@/pages/institutional-workflow/QuantFactorLibraryPage";
 import {QuantFactorLedgerPage} from "@/pages/institutional-workflow/QuantFactorLedgerPage";
 import {QuantFactorHomePage} from "@/pages/institutional-workflow/QuantFactorHomePage";
+import {QuantFactorCapabilitiesPage} from "@/pages/institutional-workflow/QuantFactorCapabilitiesPage";
 import {QuantPrototypeModulePage} from "@/pages/institutional-workflow/QuantPrototypeModulePage";
 import {QuantOverviewPage,QuantResearchReviews,QuantFactorExperimentsPage} from "@/pages/institutional-workflow/QuantWorkspacePages";
 import "@/pages/institutional-workflow/quantWorkspace.css";
@@ -266,6 +267,7 @@ export default function App() {
           <Route path="/quant/factor/:projectId" element={<FactorWorkflowRedirect />} />
           <Route path="/quant/factor/library" element={<QuantFactorLibraryPage />} />
           <Route path="/quant/factor/ledger" element={<QuantFactorLedgerPage />} />
+          <Route path="/quant/factor/capabilities" element={<QuantFactorCapabilitiesPage />} />
           <Route path="/quant/strategy/library" element={<QuantPrototypeModulePage />} />
           <Route path="/quant/strategy/library/archive/:archiveStrategyId" element={<QuantPrototypeModulePage />} />
           <Route path="/quant/*" element={<Navigate to="/quant" replace />} />

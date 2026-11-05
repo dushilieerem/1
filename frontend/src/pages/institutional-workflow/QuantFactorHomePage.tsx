@@ -8,7 +8,7 @@ type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;stat
 type Trial={trial_no:number;branch_id:string;kind:string;outcome:string;executor:string;report_id?:string|null;created_at?:string;returned_metrics?:boolean;rerun_of?:string|null;result_summary?:{gate?:{checks?:{name:string;actual:number|null;threshold:number;passed:boolean}[]}}};
 type Ledger={topic:Topic;branches:Branch[];trials:Trial[];k:number;threshold:number|null;threshold_next_if_counted:number;next_trial_no:number};
 
-const statusText=(s:string)=>s==='active'?'运行中':s==='archived'?'已归档':s;
+const statusText=(s:string)=>s==='active'?'研究中':s==='archived'?'已归档':s;
 const outcomeText=(t:Trial)=>t.outcome==='passed'?'通过':t.outcome==='failed'?'未达标':t.outcome==='error'?'执行错误':t.outcome;
 const nwText=(t:Trial)=>{const c=t.result_summary?.gate?.checks?.find(x=>x.name==='方向 NW t');return c&&typeof c.actual==='number'?` · NW t ${c.actual.toFixed(2)} / 需 ${c.threshold.toFixed(2)}`:'';};
 
@@ -163,7 +163,7 @@ export function QuantFactorHomePage(){
    <div className="sys">
     <div className="sys-state"><span className="ico">⇅</span><div><b>研究系统</b><small className="fine">{loading?'读取中':`真实课题 ${topics.length} 个 · 台账 ${totalTrials} 次`}</small></div></div>
     <div className="kpis">
-     <div className="kpi"><span>课题</span><b>{topics.length}</b><small>运行 {topics.filter(t=>t.status==='active').length}</small></div>
+     <div className="kpi"><span>课题</span><b>{topics.length}</b><small>研究中 {topics.filter(t=>t.status==='active').length}</small></div>
      <div className="kpi"><span>试验台账</span><b>{totalTrials}</b><small>次</small></div>
      <div className="kpi"><span>封存样本已用</span><b>—</b><small>待接入</small></div>
      <div className="kpi"><span>待人决定</span><b>—</b><small>审查队列待接入</small></div>

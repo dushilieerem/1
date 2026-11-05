@@ -1,6 +1,6 @@
 from fastapi import APIRouter,Depends,HTTPException,Request
 from pydantic import BaseModel,ConfigDict,Field
-from app.deps import require_quant_manager, require_quant_researcher, require_quant_reviewer
+from app.deps import require_quant_manager, require_quant_researcher, require_quant_reviewer, require_quant_user
 from app.routers.inst_quant import _quant_uid
 from services.quant_factor import service,store
 from services.quant_factor.policy import WorkflowError
@@ -273,3 +273,16 @@ def import_reference(ctx=Depends(require_quant_researcher)):
     from services.quant_factor import imports
     return invoke(imports.reference_inventory,*identity(ctx))
 
+
+
+@router.post('/candidates/{cid}/sealed-validation',status_code=202)
+def sealed_request(cid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import sealed
+    return invoke(sealed.request,*identity(ctx),cid)
+
+@router.get('/candidates/{cid}/sealed-validation')
+def sealed_detail(cid:str,ctx=Depends(require_quant_user)):
+    from services.quant_factor import sealed
+    uid,org=identity(ctx)
+    full=bool(ctx.get('can_review') or ctx.get('can_manage'))
+    return invoke(sealed.detail,uid,org,cid,full)

@@ -346,3 +346,37 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
         ).status_code
         == 403
     )
+
+
+def test_other_org_cannot_read_case_or_company(fixture) -> None:
+    """跨机构直接读 case/company 必须 403/404，列表不得混入其他 org。"""
+    tokens = fixture["tokens"]
+    client = TestClient(app)
+    created = _ok(
+        client.post(
+            "/api/inst/cases",
+            json={"company_id": fixture["company_id"]},
+            headers=_h(tokens["manager"]),
+        )
+    )
+    case_id = int(created["id"])
+    tag = uuid.uuid4().hex[:8]
+    with get_conn() as conn:
+        org2 = conn.execute(
+            "INSERT INTO inst_orgs (code, name_cn) VALUES (%s,%s) RETURNING id",
+            (f"e2e-b-{tag}", f"E2E B {tag}"),
+        ).fetchone()
+        user2, _membership2, token2 = _mk_member(conn, int(org2["id"]), "manager", f"b{tag}")
+    try:
+        h2 = _h(token2)
+        assert client.get(f"/api/inst/cases/{case_id}", headers=h2).status_code in (403, 404)
+        assert client.get(
+            f"/api/inst/companies/{fixture['company_id']}", headers=h2
+        ).status_code in (403, 404)
+        assert client.get(f"/api/inst/cases/{case_id}/report", headers=h2).status_code in (403, 404)
+        listed = _ok(client.get("/api/inst/cases", headers=h2))
+        assert case_id not in {int(row["id"]) for row in listed.get("items", [])}
+    finally:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM inst_orgs WHERE id=%s", (int(org2["id"]),))
+            conn.execute("DELETE FROM users WHERE id=%s", (int(user2["id"]),))

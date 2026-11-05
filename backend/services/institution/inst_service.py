@@ -1426,13 +1426,16 @@ def _run_industry_agent(facts: dict[str, Any]) -> dict[str, Any]:
         return {"error": "AI 未配置"}
     payload = _agent_payload(facts, "industry")
     system, _ = get_effective_prompt("inst.industry", INDUSTRY_PROMPT)
-    out = run_task(
-        "inst.industry",
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)},
-        ],
-    )
+    try:
+        out = run_task(
+            "inst.industry",
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)},
+            ],
+        )
+    except Exception as exc:  # AI 上游失败/空内容不应让整个研究 500
+        return {"error": f"行业 Agent 暂不可用：{str(exc)[:240]}"}
     data = out.get("data")
     if not isinstance(data, dict):
         content = str(out.get("content") or "")

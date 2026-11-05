@@ -243,6 +243,11 @@ def topic_resume(tid:str,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import ledger
     return invoke_ledger(ledger.set_topic_status,*identity(ctx),tid,'active')
 
+@router.post('/topics/{tid}/branches/{bid}/activate')
+def branch_activate(tid:str,bid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return invoke_ledger(ledger.activate_branch,*identity(ctx),tid,bid)
+
 @router.post('/topics/{tid}/handback')
 def branch_handback(tid:str,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import ledger

@@ -409,6 +409,20 @@ def takeover_branch(uid: int, org: int, topic_id: str, parent_id: str) -> dict:
     return _public(row)
 
 
+def activate_branch(uid: int, org: int, topic_id: str, branch_id: str) -> dict:
+    topic = _topic(uid, org, topic_id)
+    with get_conn() as c:
+        branch = c.execute(
+            "SELECT id,source FROM quant_factor_branches WHERE id=%s AND user_id=%s AND org_id=%s AND topic_id=%s",
+            (branch_id, uid, org, topic_id)).fetchone()
+        if not branch:
+            raise KeyError(branch_id)
+        c.execute(
+            """UPDATE detect_projects SET config=jsonb_set(COALESCE(config,'{}'::jsonb),'{v5ActiveBranch}',to_jsonb(%s::text)),updated_at=NOW()
+               WHERE user_id=%s AND id=%s""", (branch_id, uid, topic["project_id"]))
+    return {"topic_id": topic_id, "branch_id": branch_id, "source": branch["source"]}
+
+
 def handback_branch(uid: int, org: int, topic_id: str) -> dict:
     """Clear the active manual branch. F0 hand-back is not available yet."""
     topic = _topic(uid, org, topic_id)
@@ -544,6 +558,7 @@ __all__ = [
     "k_after_append",
     "k_summary",
     "next_trial_no",
+    "activate_branch",
     "append_trial",
     "create_branch",
     "create_topic",

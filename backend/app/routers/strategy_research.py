@@ -64,4 +64,4 @@ def topic_ledger(tid: str, ctx=Depends(require_quant_researcher)):
 
 @router.post("/topics/{tid}/branches")
 def branch_create(tid: str, body: BranchBody, ctx=Depends(require_quant_researcher)):
-    return invoke(svc.create_branch, *identity(ctx), tid, body.model_dump())
+    return invoke(svc.create_branch, *identity(ctx), tid, body.model_dump(), ("manual",))

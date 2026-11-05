@@ -21,3 +21,31 @@ class RecipeTest(unittest.TestCase):
             svc.recipe({'factors': ['f'], 'top_n': 3, 'rebalance_days': 10})
         with self.assertRaises(ValueError):
             svc.recipe({'factors': ['f'], 'top_n': 30, 'rebalance_days': 0})
+
+
+class BranchGuardTest(unittest.TestCase):
+    def call(self, source='agent', topic_view='v', current='v'):
+        from unittest.mock import MagicMock, patch
+        c = MagicMock(); c.execute.return_value = c
+        c.fetchone.return_value = {'id': 't', 'view_id': topic_view}
+        conn = MagicMock(); conn.__enter__.return_value = c
+        with patch.object(svc, 'get_conn', return_value=conn), \
+             patch.object(svc, 'published_view', return_value={'view_id': current, 'datasets': {}}):
+            svc.create_branch(1, 2, 't', {'source': source, 'hypothesis': 'h', 'factors': ['f'],
+                                          'top_n': 30, 'rebalance_days': 10})
+
+    def test_public_entry_rejects_agent_source(self):
+        from unittest.mock import MagicMock, patch
+        c = MagicMock(); c.execute.return_value = c; c.fetchone.return_value = {'id': 't', 'view_id': 'v'}
+        conn = MagicMock(); conn.__enter__.return_value = c
+        with patch.object(svc, 'get_conn', return_value=conn), patch.object(svc, 'published_view', return_value={'view_id': 'v', 'datasets': {}}):
+            with self.assertRaisesRegex(ValueError, '来源'):
+                svc.create_branch(1, 2, 't', {'source': 'agent', 'hypothesis': 'h', 'factors': ['f'], 'top_n': 30, 'rebalance_days': 10})
+
+    def test_view_drift_rejected(self):
+        with self.assertRaisesRegex(ValueError, '视图'):
+            self.call(topic_view='old', current='new')
+
+    def test_buffer_range(self):
+        with self.assertRaisesRegex(ValueError, 'buffer'):
+            svc.recipe({'factors': ['f'], 'top_n': 30, 'rebalance_days': 10, 'buffer': 2})

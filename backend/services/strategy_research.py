@@ -27,6 +27,16 @@ def _int(value, name, low, high):
     return value
 
 
+def _buffer(value) -> float:
+    try:
+        v = float(value or 0)
+    except (TypeError, ValueError):
+        raise ValueError("buffer 必须是 0—1 的数值") from None
+    if not 0 <= v <= 1:
+        raise ValueError("buffer 必须在 0 与 1 之间")
+    return v
+
+
 def recipe(payload: dict) -> dict:
     factors = payload.get("factors")
     if not isinstance(factors, list) or not 1 <= len(factors) <= 3:
@@ -45,7 +55,7 @@ def recipe(payload: dict) -> dict:
         "factors": clean, "equal_weight": True,
         "top_n": _int(payload.get("top_n"), "top_n", 5, 300),
         "rebalance_days": _int(payload.get("rebalance_days"), "rebalance_days", 1, 60),
-        "buffer": float(payload.get("buffer", 0) or 0),
+        "buffer": _buffer(payload.get("buffer", 0)),
     }
 
 
@@ -103,12 +113,17 @@ def list_topics(uid, org):
     return [_public(r) for r in rows]
 
 
-def create_branch(uid, org, topic_id, payload):
+def create_branch(uid, org, topic_id, payload, allowed_sources=("manual",)):
     with get_conn() as c:
         topic = c.execute("SELECT * FROM strategy_topics WHERE id=%s AND user_id=%s AND org_id=%s",
                           (topic_id, uid, org)).fetchone()
         if not topic:
             raise KeyError(topic_id)
+        if topic["view_id"] != published_view()["view_id"]:
+            raise ValueError("课题锁定视图与当前发布视图不一致；请新建计划版本/课题，不能用新视图结果接旧台账")
+        source = str(payload.get("source") or "manual")
+        if source not in allowed_sources:
+            raise ValueError("该入口不允许创建此来源的分支")
         parent_id = payload.get("parent_id") or None
         if parent_id:
             parent = c.execute(
@@ -128,7 +143,7 @@ def create_branch(uid, org, topic_id, payload):
             """INSERT INTO strategy_branches
                (id,user_id,org_id,topic_id,parent_id,source,owner_id,hypothesis,recipe,implementation_hash,version)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s)""",
-            (bid, uid, org, topic_id, parent_id, payload.get("source", "manual"), uid,
+            (bid, uid, org, topic_id, parent_id, source, uid,
              hypothesis, json.dumps(rc, ensure_ascii=False), _recipe_hash(rc), version))
         row = c.execute("SELECT * FROM strategy_branches WHERE id=%s", (bid,)).fetchone()
     return _public(row)
@@ -153,7 +168,7 @@ def ledger(uid, org, topic_id):
     k = sum(1 for t in trials if counts(t))
     return {"topic": _public(topic), "branches": [_public(b) for b in branches],
             "trials": [_public(t) for t in trials], "k": k,
-            "ir_threshold": "需产品确认：IR 随 K 的具体公式未在规格给出"}
+            "ir_threshold": None, "ir_threshold_status": "pending_product_confirmation"}
 
 
 __all__ = ["create_branch", "create_topic", "ledger", "list_topics", "recipe"]

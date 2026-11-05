@@ -8,7 +8,7 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 COMPOSE_FILE="$ROOT_DIR/deploy/compose.yml"
 ENV_FILE="$ROOT_DIR/deploy/.env"
 BACKUP_DIR="$ROOT_DIR/deploy/backups"
-KEEP="${BACKUP_KEEP:-5}"
+KEEP="${BACKUP_KEEP:-2}"
 LABEL="${1:-manual}"
 
 log() { printf '[backup-db] %s\n' "$*" >&2; }

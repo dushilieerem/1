@@ -32,6 +32,7 @@ from ai.runtime.agent_store import (
 from services.core.db import get_conn
 from services.institution.prompts import (
     CHAIRMAN_MEMO_PROMPT,
+    PARTNER_MEMO_PROMPT,
     CHAT_PROMPT,
     INDUSTRY_PROMPT,
     DEBATE_PROMPT,
@@ -480,6 +481,7 @@ def list_companies(
         SELECT c.*,
                v.pe_ttm, v.pb_mrq, v.float_mv,
                b.close AS last_close, b.trade_date AS last_trade_date,
+               st.listed_status, st.up_down_status, st.is_st, st.is_suspended,
                ind.name AS industry_name
           FROM inst_company c
           LEFT JOIN LATERAL (
@@ -490,6 +492,11 @@ def list_companies(
             SELECT close, trade_date FROM md_daily_bar
              WHERE symbol=c.symbol AND adjust='none' ORDER BY trade_date DESC LIMIT 1
           ) b ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT listed_status, up_down_status, is_st, is_suspended
+              FROM md_status_daily WHERE symbol=c.symbol
+             ORDER BY trade_date DESC LIMIT 1
+          ) st ON TRUE
           LEFT JOIN LATERAL (
             SELECT ri.name
               FROM ref_security_industry rsi
@@ -2626,6 +2633,353 @@ def list_proposals(org_id: int, *, status: str | None = None) -> list[dict[str, 
     return [_row_dict(r) or {} for r in rows]
 
 
+STAGE_ROLE = {"partner": "partner", "risk_precheck": "risk", "chairman": "chairman"}
+
+
+def _member_role_counts(conn, org_id: int) -> dict[str, int]:
+    rows = conn.execute(
+        "SELECT role, COUNT(*) AS n FROM inst_members WHERE org_id=%s AND status='active' GROUP BY role",
+        (org_id,),
+    ).fetchall()
+    return {str(r["role"]): int(r["n"]) for r in rows}
+
+
+def _stage_time(value: Any) -> Any:
+    return value.isoformat() if hasattr(value, "isoformat") else value
+
+
+def _stage_summary(
+    step: str, rows: list[dict[str, Any]], total: int, *, include_items: bool = False
+) -> dict[str, Any]:
+    items = [dict(r) for r in rows if str(r.get("step") or "") == step]
+    decisions = [str(r.get("decision") or "") for r in items]
+    reviewed = len(
+        {int(r["approver_member_id"]) for r in items if r.get("approver_member_id")}
+    )
+    if step == "partner":
+        status = (
+            "approved"
+            if any(d in {"approve", "conditional"} for d in decisions)
+            else "returned"
+            if any(d == "return" for d in decisions)
+            else "in_progress"
+            if items
+            else "not_started"
+        )
+    elif step == "risk_precheck":
+        status = (
+            "vetoed"
+            if any(d in {"veto", "block"} for d in decisions)
+            else "conditional"
+            if any(d == "conditional" for d in decisions)
+            else "passed"
+            if any(d == "pass" for d in decisions)
+            else "in_progress"
+            if items
+            else "not_started"
+        )
+    else:
+        status = (
+            "rejected"
+            if any(d == "reject" for d in decisions)
+            else "returned"
+            if any(d == "return" for d in decisions)
+            else "conditional"
+            if any(d == "conditional" for d in decisions)
+            else "approved"
+            if any(d == "approve" for d in decisions)
+            else "in_progress"
+            if items
+            else "not_started"
+        )
+    conditions = [
+        str(c)
+        for r in items
+        for c in (r.get("conditions") or [])
+        if str(c).strip()
+    ]
+    latest = items[-1] if items else None
+    out = {
+        "status": status,
+        "reviewed": reviewed,
+        "total": max(total, reviewed),
+        "decision": latest.get("decision") if latest else None,
+        "comment": latest.get("comment") if latest else None,
+        "conditions": conditions,
+        "decided_at": _stage_time(latest.get("decided_at")) if latest else None,
+    }
+    if include_items:
+        out["items"] = [
+            {
+                "approver_member_id": r.get("approver_member_id"),
+                "approver_name": r.get("approver_name"),
+                "approver_role": r.get("approver_role"),
+                "decision": r.get("decision"),
+                "comment": r.get("comment"),
+                "conditions": r.get("conditions") or [],
+                "decided_at": _stage_time(r.get("decided_at")),
+            }
+            for r in items
+        ]
+    return out
+
+
+def _proposal_progress(conn, org_id: int, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    counts = _member_role_counts(conn, org_id)
+    return {
+        "partner": _stage_summary("partner", rows, counts.get("partner", 0)),
+        "risk_precheck": _stage_summary("risk_precheck", rows, counts.get("risk", 0)),
+        "chairman": _stage_summary("chairman", rows, counts.get("chairman", 0)),
+    }
+
+
+def _authorization_summary(data: dict[str, Any]) -> dict[str, Any] | None:
+    auths = data.get("authorizations") or []
+    if not auths:
+        return None
+    latest = auths[0]
+    snapshot = latest.get("snapshot") or {}
+    return {
+        "id": latest.get("id"),
+        "status": latest.get("status"),
+        "issued_at": _stage_time(latest.get("issued_at")),
+        "valid_until": snapshot.get("valid_until"),
+    }
+
+
+def _research_debate_summary(conn, org_id: int, case_id: int) -> dict[str, Any] | None:
+    version = conn.execute(
+        "SELECT * FROM inst_research_version WHERE case_id=%s ORDER BY version_no DESC LIMIT 1",
+        (case_id,),
+    ).fetchone()
+    if not version:
+        return None
+    version = dict(version)
+    session = conn.execute(
+        "SELECT * FROM inst_debate_session WHERE case_id=%s AND status='completed' "
+        "ORDER BY id DESC LIMIT 1",
+        (case_id,),
+    ).fetchone()
+    debate = None
+    if session:
+        args = conn.execute(
+            "SELECT * FROM inst_debate_argument WHERE session_id=%s ORDER BY id",
+            (int(session["id"]),),
+        ).fetchall()
+        checks = conn.execute(
+            "SELECT * FROM inst_evidence_check WHERE session_id=%s ORDER BY id",
+            (int(session["id"]),),
+        ).fetchall()
+        debate = {
+            "id": int(session["id"]),
+            "conclusion": session.get("conclusion"),
+            "arguments": [_row_dict(r) or {} for r in args],
+            "evidence_checks": [_row_dict(r) or {} for r in checks],
+        }
+    memo = get_latest_output(
+        "inst.research_memo",
+        org_id=org_id,
+        scope_key=f"case:{case_id}:version:{int(version['id'])}",
+    )
+    return {
+        "version_no": version.get("version_no"),
+        "status": version.get("status"),
+        "industry_analysis": version.get("industry_analysis"),
+        "six_dim": version.get("six_dim") or [],
+        "memo": (memo or {}).get("output") if memo else None,
+        "debate": debate,
+    }
+
+
+def list_proposals_for_member(
+    org_id: int, member_id: int, role: str, *, scope: str = "pending"
+) -> list[dict[str, Any]]:
+    sql = """
+        SELECT p.*, co.symbol, co.name AS company_name, co.market,
+               v.version_no, v.snapshot, v.status AS version_status,
+               a.id AS authorization_id, a.status AS authorization_status,
+               x.id AS exit_case_id, x.status AS exit_status, x.reason_type AS exit_reason_type
+          FROM inst_proposal p
+          JOIN inst_company co ON co.id=p.company_id
+          LEFT JOIN LATERAL (
+            SELECT version_no, snapshot, status, id FROM inst_proposal_version
+             WHERE proposal_id=p.id ORDER BY version_no DESC LIMIT 1
+          ) v ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT id, status FROM inst_authorization
+             WHERE proposal_version_id=v.id AND status='qualified' ORDER BY id DESC LIMIT 1
+          ) a ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT id, status, reason_type FROM inst_exit_case
+             WHERE proposal_id=p.id ORDER BY id DESC LIMIT 1
+          ) x ON TRUE
+         WHERE p.org_id=%s
+    """
+    params: list[Any] = [org_id]
+    if role == "manager":
+        sql += " AND p.created_by=%s"
+        params.append(member_id)
+    elif role == "partner":
+        if scope == "reviewed":
+            sql += (
+                " AND EXISTS (SELECT 1 FROM inst_approval ap"
+                " JOIN inst_proposal_version pv ON pv.id=ap.proposal_version_id"
+                " WHERE pv.proposal_id=p.id AND ap.step='partner' AND ap.approver_member_id=%s)"
+            )
+        else:
+            sql += (
+                " AND p.status IN ('draft','partner_review')"
+                " AND NOT EXISTS (SELECT 1 FROM inst_approval ap"
+                " JOIN inst_proposal_version pv ON pv.id=ap.proposal_version_id"
+                " WHERE pv.proposal_id=p.id AND ap.step='partner' AND ap.approver_member_id=%s)"
+            )
+        params.append(member_id)
+    elif role == "risk":
+        if scope == "reviewed":
+            sql += (
+                " AND EXISTS (SELECT 1 FROM inst_approval ap"
+                " JOIN inst_proposal_version pv ON pv.id=ap.proposal_version_id"
+                " WHERE pv.proposal_id=p.id AND ap.step='risk_precheck' AND ap.approver_member_id=%s)"
+            )
+        else:
+            sql += (
+                " AND p.status IN ('risk_precheck','chairman_review')"
+                " AND NOT EXISTS (SELECT 1 FROM inst_approval ap"
+                " JOIN inst_proposal_version pv ON pv.id=ap.proposal_version_id"
+                " WHERE pv.proposal_id=p.id AND ap.step='risk_precheck' AND ap.approver_member_id=%s)"
+            )
+        params.append(member_id)
+    elif role == "chairman":
+        if scope == "reviewed":
+            sql += (
+                " AND EXISTS (SELECT 1 FROM inst_approval ap"
+                " JOIN inst_proposal_version pv ON pv.id=ap.proposal_version_id"
+                " WHERE pv.proposal_id=p.id AND ap.step='chairman' AND ap.approver_member_id=%s)"
+            )
+        else:
+            sql += (
+                " AND p.status='chairman_review'"
+                " AND NOT EXISTS (SELECT 1 FROM inst_approval ap"
+                " JOIN inst_proposal_version pv ON pv.id=ap.proposal_version_id"
+                " WHERE pv.proposal_id=p.id AND ap.step='chairman' AND ap.approver_member_id=%s)"
+                " AND NOT EXISTS (SELECT 1 FROM inst_approval ar"
+                " JOIN inst_proposal_version pvr ON pvr.id=ar.proposal_version_id"
+                " WHERE pvr.proposal_id=p.id AND ar.step='risk_precheck' AND ar.decision IN ('veto','block'))"
+            )
+        params.append(member_id)
+    else:
+        return []
+    sql += " ORDER BY p.updated_at DESC"
+    with get_conn() as conn:
+        rows = conn.execute(sql, tuple(params)).fetchall()
+    return [_row_dict(r) or {} for r in rows]
+
+
+def _proposal_common(data: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "id", "status", "direction", "target_weight", "company_id", "symbol",
+        "company_name", "market", "industry", "created_by", "created_at", "updated_at",
+        "case_id", "exit_case",
+    )
+    out = {k: data.get(k) for k in keys}
+    out["current_version"] = data.get("current_version")
+    return out
+
+
+def _my_decision(
+    rows: list[dict[str, Any]], step: str, member_id: int
+) -> dict[str, Any] | None:
+    for row in reversed(rows):
+        if (
+            str(row.get("step") or "") == step
+            and int(row.get("approver_member_id") or 0) == int(member_id)
+        ):
+            return {
+                "decision": row.get("decision"),
+                "comment": row.get("comment"),
+                "conditions": row.get("conditions") or [],
+                "decided_at": _stage_time(row.get("decided_at")),
+            }
+    return None
+
+
+def get_proposal_for_member(
+    org_id: int, proposal_id: int, *, member_id: int, role: str
+) -> dict[str, Any] | None:
+    data = get_proposal(org_id, proposal_id)
+    if not data:
+        return None
+    rows = data.get("approvals") or []
+    status = str(data.get("status") or "")
+    created_by = int(data.get("created_by") or 0)
+
+    def has_step(step: str) -> bool:
+        return any(
+            str(r.get("step") or "") == step
+            and int(r.get("approver_member_id") or 0) == int(member_id)
+            for r in rows
+        )
+
+    if role == "manager":
+        if created_by != int(member_id):
+            raise PermissionError("该议案不在你当前角色的审批范围")
+        out = _proposal_common(data)
+        with get_conn() as conn:
+            out["progress"] = _proposal_progress(conn, org_id, rows)
+        out["authorization"] = _authorization_summary(data)
+        return out
+
+    if role == "partner":
+        if not (status in {"draft", "partner_review"} or has_step("partner")):
+            raise PermissionError("该议案不在你当前角色的审批范围")
+        out = _proposal_common(data)
+        out["my_decision"] = _my_decision(rows, "partner", int(member_id))
+        with get_conn() as conn:
+            out["progress"] = _proposal_progress(conn, org_id, rows)
+            out["research_debate"] = (
+                _research_debate_summary(conn, org_id, int(data["case_id"]))
+                if data.get("case_id")
+                else None
+            )
+        return out
+
+    if role == "risk":
+        if not (status in {"risk_precheck", "chairman_review"} or has_step("risk_precheck")):
+            raise PermissionError("该议案不在你当前角色的审批范围")
+        out = _proposal_common(data)
+        out["my_decision"] = _my_decision(rows, "risk_precheck", int(member_id))
+        with get_conn() as conn:
+            out["progress"] = _proposal_progress(conn, org_id, rows)
+        out["risk_checks"] = data.get("risk_checks") or []
+        out["partner_stage"] = out["progress"]["partner"]
+        return out
+
+    if role == "chairman":
+        if not (status == "chairman_review" or has_step("chairman")):
+            raise PermissionError("该议案不在你当前角色的审批范围")
+        out = _proposal_common(data)
+        out["my_decision"] = _my_decision(rows, "chairman", int(member_id))
+        with get_conn() as conn:
+            out["progress"] = _proposal_progress(conn, org_id, rows)
+            out["research_debate"] = (
+                _research_debate_summary(conn, org_id, int(data["case_id"]))
+                if data.get("case_id")
+                else None
+            )
+        out["risk_stage"] = out["progress"]["risk_precheck"]
+        out["approval_chain"] = _stage_summary(
+            "partner", rows, out["progress"]["partner"]["total"], include_items=True
+        )["items"] + _stage_summary(
+            "risk_precheck", rows, out["progress"]["risk_precheck"]["total"], include_items=True
+        )["items"] + _stage_summary(
+            "chairman", rows, out["progress"]["chairman"]["total"], include_items=True
+        )["items"]
+        out["authorization"] = _authorization_summary(data)
+        return out
+
+    raise PermissionError("该议案不在你当前角色的审批范围")
+
+
 def get_proposal(org_id: int, proposal_id: int) -> dict[str, Any] | None:
     with get_conn() as conn:
         proposal = _proposal_row(conn, org_id, proposal_id)
@@ -2707,6 +3061,17 @@ def _clean_conditions(conditions: Any) -> list[str]:
     if not isinstance(conditions, list):
         return []
     return [str(x).strip()[:300] for x in conditions if str(x).strip()][:10]
+
+
+def _role_member_ids(
+    conn, org_id: int, role: str, *, exclude_member_id: int | None = None
+) -> set[int]:
+    rows = conn.execute(
+        "SELECT id FROM inst_members WHERE org_id=%s AND role=%s AND status='active'",
+        (org_id, role),
+    ).fetchall()
+    exclude = int(exclude_member_id or 0)
+    return {int(r["id"]) for r in rows if int(r["id"]) != exclude}
 
 
 def _insert_approval(
@@ -2791,14 +3156,32 @@ def partner_review(
             comment=comment,
             conditions=condition_list,
         )
-        new_status = "risk_precheck" if decision in {"approve", "conditional"} else "partner_review"
+        rows = _approval_rows(conn, version_id)
+        partner_rows = [r for r in rows if r.get("step") == "partner"]
+        decided = {
+            int(r["approver_member_id"])
+            for r in partner_rows
+            if r.get("approver_member_id")
+        }
+        required = _role_member_ids(
+            conn, org_id, "partner", exclude_member_id=proposal.get("created_by")
+        )
+        if not required:
+            raise PermissionError("当前机构没有可用的合伙人审批人")
+        returned = any(str(r.get("decision")) == "return" for r in partner_rows)
+        # 同角色多人：全部给出意见、且无人退回，才进入风控。
+        new_status = (
+            "partner_review"
+            if returned or not required <= decided
+            else "risk_precheck"
+        )
         conn.execute(
             "UPDATE inst_proposal SET status=%s, current_version_no=%s, updated_at=NOW() WHERE id=%s",
             (new_status, version_no, proposal_id),
         )
         conn.execute(
             "UPDATE inst_proposal_version SET status=%s WHERE id=%s",
-            ("partner_submitted" if decision in {"approve", "conditional"} else "draft", version_id),
+            ("draft" if decision == "return" else "partner_submitted", version_id),
         )
         _audit(
             conn,
@@ -2813,6 +3196,8 @@ def partner_review(
                 "version_no": version_no,
                 "comment": comment,
                 "conditions": condition_list,
+                "reviewed": len(decided),
+                "required": len(required),
             },
         )
     return get_proposal(org_id, proposal_id)  # type: ignore[return-value]
@@ -2862,20 +3247,35 @@ def chairman_review(
             comment=comment,
             conditions=condition_list,
         )
-        status = (
-            "authorized"
-            if decision in {"approve", "conditional"}
-            else ("rejected" if decision == "reject" else "partner_review")
+        rows = _approval_rows(conn, int(current["id"]))
+        chair_rows = [r for r in rows if r.get("step") == "chairman"]
+        decided = {
+            int(r["approver_member_id"])
+            for r in chair_rows
+            if r.get("approver_member_id")
+        }
+        required = _role_member_ids(
+            conn, org_id, "chairman", exclude_member_id=proposal.get("created_by")
         )
+        if not required:
+            raise PermissionError("当前机构没有可用的 Chairman 审批人")
+        if decision == "reject":
+            status = "rejected"
+        elif decision == "return":
+            status = "partner_review"
+        elif required <= decided:
+            status = "authorized"
+        else:
+            status = "chairman_review"
         conn.execute("UPDATE inst_proposal SET status=%s, updated_at=NOW() WHERE id=%s", (status, proposal_id))
-        if decision in {"approve", "conditional"}:
+        if status == "authorized":
             conn.execute("UPDATE inst_proposal_version SET status='chairman_approved' WHERE id=%s", (current["id"],))
         elif decision == "return":
             conn.execute("UPDATE inst_proposal_version SET status='draft' WHERE id=%s", (current["id"],))
-        else:
+        elif decision == "reject":
             conn.execute("UPDATE inst_proposal_version SET status='rejected' WHERE id=%s", (current["id"],))
         exit_case = _exit_case_for_proposal(conn, org_id, proposal_id)
-        if exit_case and decision in {"approve", "conditional"}:
+        if exit_case and status == "authorized":
             _advance_exit_case(
                 conn,
                 org_id,
@@ -2903,7 +3303,13 @@ def chairman_review(
             object_type="inst_proposal",
             object_id=proposal_id,
             before={"status": proposal["status"]},
-            after={"status": status, "comment": comment, "conditions": condition_list},
+            after={
+                "status": status,
+                "comment": comment,
+                "conditions": condition_list,
+                "reviewed": len(decided),
+                "required": len(required),
+            },
         )
     return get_proposal(org_id, proposal_id)  # type: ignore[return-value]
 
@@ -3337,11 +3743,30 @@ def risk_check(
                     extra={"proposal_id": proposal_id, "risk_decision": effective},
                 )
         else:
-            conn.execute(
-                "UPDATE inst_proposal SET status='chairman_review', updated_at=NOW() WHERE id=%s",
-                (proposal_id,),
+            rows = _approval_rows(conn, int(current["id"]))
+            risk_rows = [r for r in rows if r.get("step") == "risk_precheck"]
+            decided = {
+                int(r["approver_member_id"])
+                for r in risk_rows
+                if r.get("approver_member_id")
+            }
+            required = _role_member_ids(
+                conn, org_id, "risk", exclude_member_id=proposal.get("created_by")
             )
-            conn.execute("UPDATE inst_proposal_version SET status='risk_passed' WHERE id=%s", (current["id"],))
+            if not required:
+                raise PermissionError("当前机构没有可用的风控审批人")
+            # 同角色多人：全部给出意见且无人否决，才进入 Chairman。
+            if required <= decided:
+                conn.execute(
+                    "UPDATE inst_proposal SET status='chairman_review', updated_at=NOW() WHERE id=%s",
+                    (proposal_id,),
+                )
+                conn.execute("UPDATE inst_proposal_version SET status='risk_passed' WHERE id=%s", (current["id"],))
+            else:
+                conn.execute(
+                    "UPDATE inst_proposal SET status='risk_precheck', updated_at=NOW() WHERE id=%s",
+                    (proposal_id,),
+                )
             reason = ""
         _audit(
             conn,
@@ -3350,7 +3775,14 @@ def risk_check(
             action=f"proposal.risk.{effective}",
             object_type="inst_proposal",
             object_id=proposal_id,
-            after={"checks": checks, "comment": comment, "conditions": condition_list, "reason": reason},
+            after={
+                "checks": checks,
+                "comment": comment,
+                "conditions": condition_list,
+                "reason": reason,
+                "reviewed": len(decided) if effective != "veto" else None,
+                "required": len(required) if effective != "veto" else None,
+            },
         )
     out = get_proposal(org_id, proposal_id) or {}
     out["risk_checks"] = checks
@@ -4822,6 +5254,93 @@ def ai_dimension_chat(
         "dimension": key,
         "task": "inst.dim.chat",
         "engine": str(data.get("engine") or "agent"),
+    }
+
+
+def ai_partner_memo(
+    org_id: int,
+    proposal_id: int,
+    *,
+    refresh: bool = False,
+    actor_member_id: int | None = None,
+) -> dict[str, Any]:
+    """合伙人审批建议：只给合伙人本人看，独立于其他合伙人意见。"""
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "partner")
+    proposal = get_proposal(org_id, proposal_id)
+    if not proposal:
+        raise LookupError("议案不存在")
+    version = proposal.get("current_version") or {}
+    research = None
+    if proposal.get("case_id"):
+        with get_conn() as conn:
+            research = _research_debate_summary(conn, org_id, int(proposal["case_id"]))
+    pf = portfolio(org_id)
+    payload = {
+        "proposal": {
+            k: proposal.get(k)
+            for k in (
+                "id", "status", "direction", "target_weight", "symbol", "company_name",
+                "market", "industry",
+            )
+        },
+        "version": {"version_no": version.get("version_no"), "snapshot": version.get("snapshot")},
+        "research_debate": research,
+        "portfolio": {
+            "nav": pf.get("nav"),
+            "cash": pf.get("cash"),
+            "invested_ratio": pf.get("invested_ratio"),
+            "positions": [
+                {
+                    k: pos.get(k)
+                    for k in ("symbol", "name", "industry", "qty", "cost", "weight")
+                }
+                for pos in (pf.get("positions") or [])
+            ],
+        },
+    }
+    prompt, prompt_version = get_effective_prompt("inst.partner_memo", PARTNER_MEMO_PROMPT)
+    scope_key = f"proposal:{proposal_id}:version:{version.get('id')}:task:partner"
+    cache_key = agent_input_hash(payload, prompt)
+    if not refresh:
+        hit = get_cached_output(
+            "inst.partner_memo",
+            org_id=org_id,
+            scope_key=scope_key,
+            input_hash=cache_key,
+            prompt_version=prompt_version,
+        )
+        stale = False
+        if not hit:
+            hit = get_latest_output("inst.partner_memo", org_id=org_id, scope_key=scope_key)
+            stale = bool(hit)
+        if hit:
+            return {
+                "memo": hit["output"],
+                "task": "inst.partner_memo",
+                "version_no": version.get("version_no"),
+                "cached": True,
+                "stale": stale,
+                "generated_at": hit.get("created_at"),
+            }
+    data = _ai_task("inst.partner_memo", payload, prompt)
+    data.setdefault("engine", "agent")
+    save_output(
+        "inst.partner_memo",
+        org_id=org_id,
+        scope_key=scope_key,
+        input_hash=cache_key,
+        prompt_version=prompt_version,
+        output=data,
+        engine=str(data.get("engine") or "agent"),
+        created_by=actor_member_id,
+    )
+    return {
+        "memo": data,
+        "task": "inst.partner_memo",
+        "version_no": version.get("version_no"),
+        "cached": False,
     }
 
 

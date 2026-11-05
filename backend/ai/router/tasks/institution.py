@@ -501,6 +501,18 @@ RISK_REVIEW_TASK = register(
     )
 )
 
+PARTNER_MEMO_TASK = register(
+    TaskSpec(
+        task_id="inst.partner_memo",
+        description="机构端合伙人审批建议（研究质量、议案合理性、附条件）",
+        temperature=0.2,
+        max_tokens=12000,
+        timeout_sec=240,
+        executors=("local",),
+        validator=validate_memo,
+    )
+)
+
 CHAIRMAN_MEMO_TASK = register(
     TaskSpec(
         task_id="inst.chairman_memo",
@@ -579,6 +591,7 @@ __all__ = [
     "GOVERNANCE_ROLE_TASK",
     "POST_INVESTMENT_ROLE_TASK",
     "CHAIRMAN_MEMO_TASK",
+    "PARTNER_MEMO_TASK",
     "DEBATE_TASK",
     "DIMENSION_CHAT_TASK",
     "PROMPT_VERSION",

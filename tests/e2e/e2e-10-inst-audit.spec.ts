@@ -199,7 +199,7 @@ test("详情页：研究、辩论、审批（有数据时）", async ({ browser 
   }
   if (proposalId) {
     await page.goto(`${BASE}/inst/approvals?proposal=${proposalId}`, { waitUntil: "networkidle" });
-    await expect(page.getByText("议案快照", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("议案详情", { exact: true })).toBeVisible({ timeout: 20_000 });
   }
   await ctx.close();
 });

@@ -55,3 +55,17 @@ class AssistantSchemaTests(unittest.TestCase):
   from pydantic import ValidationError
   from services.quant_factor.assistant import Suggestion
   with self.assertRaises(ValidationError):Suggestion.model_validate({'hypothesis':'h','target':'t','acceptance':'a','summary':'s','limitations':[],'approved':True})
+
+class MetricContractTests(unittest.TestCase):
+ def test_rank_metric_uses_rank_not_pearson(self):
+  rules=snapshot(project())['rules'];rules['icMetric']='rank_ic'
+  r=result();r['metrics']['rank_ic']=-.1
+  gate=evaluate(r,rules)
+  self.assertFalse(gate['passed']);self.assertEqual(gate['checks'][0]['name'],'方向Rank IC')
+ def test_missing_requested_rank_cannot_pass_on_pearson(self):
+  rules=snapshot(project())['rules'];rules['icMetric']='rank_ic'
+  with self.assertRaises(WorkflowError):evaluate(result(),rules)
+ def test_old_pearson_snapshot_remains_identical(self):
+  p=project();old=snapshot(p);self.assertNotIn('icMetric',old['rules'])
+  p['config']['researchPlan']['rules']['icMetric']='rank_ic'
+  self.assertNotEqual(digest(old),digest(snapshot(p)))

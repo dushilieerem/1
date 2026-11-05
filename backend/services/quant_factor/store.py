@@ -23,4 +23,3 @@ def update(uid,org,cid,status,event,evidence=None):
         if row['status']=='cancelled': return False
         ev=dict(row['evidence'] or {});ev.update(evidence or {})
         c.execute('UPDATE quant_factor_candidates SET status=%s,evidence=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s',(status,encode(ev),encode([event]),cid))
-

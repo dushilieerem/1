@@ -182,3 +182,21 @@ class ServerDerivedTrialFieldsTest(unittest.TestCase):
         for kind in ('static_check', 'compile', 'smoke', 'smoke_test', 'sealed_validation'):
             with self.assertRaisesRegex(ValueError, 'kind'):
                 self.call({'kind': kind})
+
+
+class OrgTopicsTest(unittest.TestCase):
+    def test_list_org_topics_scopes_by_session_and_returns_k(self):
+        from unittest.mock import MagicMock, patch
+        from services.quant_factor import ledger
+        cursor = MagicMock(); cursor.execute.return_value = cursor
+        cursor.fetchall.return_value = [
+            {'id': 't1', 'user_id': 1, 'org_id': 2, 'project_id': 'p', 'primary_holding_period': 1,
+             'view_id': 'v', 'branch_count': 1, 'trial_count': 1, 'created_at': None},
+        ]
+        connection = MagicMock(); connection.__enter__.return_value = cursor
+        with patch.object(ledger, 'get_conn', return_value=connection), patch.object(ledger, '_trials', return_value=[trial(1, 'passed', holding_period=1)]) as trials:
+            out = ledger.list_org_topics(1, 2)
+        self.assertEqual(out[0]['k'], 1)
+        self.assertEqual(out[0]['branch_count'], 1)
+        self.assertEqual(cursor.execute.call_args.args[1], (1, 2))
+        trials.assert_called_once_with(1, 2, 't1')

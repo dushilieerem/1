@@ -316,6 +316,27 @@ def list_topics(uid: int, org: int, project_id: str) -> list[dict]:
     return [_public(row) for row in rows]
 
 
+def list_org_topics(uid: int, org: int) -> list[dict]:
+    """All topics visible to the current quant member, newest first."""
+    with get_conn() as c:
+        rows = [dict(row) for row in c.execute(
+            """SELECT t.*,
+                      (SELECT COUNT(*) FROM quant_factor_branches b
+                        WHERE b.user_id=t.user_id AND b.org_id=t.org_id AND b.topic_id=t.id) AS branch_count,
+                      (SELECT COUNT(*) FROM quant_factor_trials r
+                        WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id) AS trial_count
+               FROM quant_factor_topics t
+               WHERE t.user_id=%s AND t.org_id=%s
+               ORDER BY t.created_at DESC""",
+            (uid, org)).fetchall()]
+    out = []
+    for row in rows:
+        item = _public(row)
+        item["k"] = current_k(_trials(uid, org, row["id"]), row["primary_holding_period"])
+        out.append(item)
+    return out
+
+
 def create_branch(uid: int, org: int, topic_id: str, payload: dict) -> dict:
     topic = _topic(uid, org, topic_id)
     source = str(payload.get("source") or "").strip()
@@ -475,6 +496,7 @@ __all__ = [
     "create_topic",
     "ledger_view",
     "list_branches",
+    "list_org_topics",
     "list_topics",
     "sealed_request_error",
     "threshold_view",

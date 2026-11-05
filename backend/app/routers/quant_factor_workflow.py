@@ -193,6 +193,11 @@ def topic_create(project_id:str,body:TopicBody,ctx=Depends(require_quant_researc
     from services.quant_factor import ledger
     return invoke_ledger(ledger.create_topic,*identity(ctx),project_id,body.model_dump())
 
+@router.get('/topics')
+def topic_list_all(ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return {'topics':invoke(ledger.list_org_topics,*identity(ctx))}
+
 @router.get('/projects/{project_id}/topics')
 def topic_list(project_id:str,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import ledger

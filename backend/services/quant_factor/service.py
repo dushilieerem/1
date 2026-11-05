@@ -40,7 +40,7 @@ def _locked_view_error(uid,org,project_id):
     return None
 
 
-def create(uid,org,project_id,expected_snapshot_hash=None,reference=None):
+def create(uid,org,project_id,expected_snapshot_hash=None,reference=None,executor='human',f0_run_id=None):
     locked=_locked_view_error(uid,org,project_id)
     if locked:raise WorkflowError(locked)
     with get_conn() as c:
@@ -72,7 +72,7 @@ def create(uid,org,project_id,expected_snapshot_hash=None,reference=None):
                 from .asset_context import catalogue
                 evidence['library_reference']=reference or catalogue(uid)
             c.execute('INSERT INTO quant_factor_candidates(id,user_id,org_id,project_id,snapshot,snapshot_hash,status,events,evidence) VALUES(%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb)',(cid,uid,org,project_id,store.encode(snap),sha,'development_running',store.encode([event('candidate_frozen',snapshot_hash=sha,reference_hash=evidence.get('library_reference',{}).get('hash')),event('development_queued')]),store.encode(evidence)))
-    if not existing:POOL.submit(run,uid,org,cid,'development')
+    if not existing:POOL.submit(run,uid,org,cid,'development',executor,f0_run_id)
     return current(uid,org,cid)
 
 def validate(uid,org,cid):
@@ -83,7 +83,7 @@ def validate(uid,org,cid):
         p=c.execute('SELECT * FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,row['project_id'])).fetchone()
         if not p or digest(snapshot(_row_project(dict(p))))!=row['snapshot_hash']: raise WorkflowError('研究输入已变化，请重新冻结并检验当前版本')
         c.execute("UPDATE quant_factor_candidates SET status='validation_running',events=events||%s::jsonb,updated_at=NOW() WHERE id=%s",(store.encode([event('validation_queued',sealed=False)]),cid))
-    POOL.submit(run,uid,org,cid,'validation')
+    POOL.submit(run,uid,org,cid,'validation','human',None)
     return current(uid,org,cid)
 
 def _gate_k(uid,org,project_id,phase):
@@ -96,7 +96,7 @@ def _gate_k(uid,org,project_id,phase):
     return current+1 if phase=='development' else current
 
 
-def run(uid,org,cid,phase):
+def run(uid,org,cid,phase,executor='human',f0_run_id=None):
     running=phase+'_running'
     try:
         row=store.read(uid,org,cid);snap=row['snapshot']; req=copy.deepcopy(snap['request']);plan=snap['plan']
@@ -144,13 +144,13 @@ def run(uid,org,cid,phase):
                       (final_status,store.encode({phase:data}),store.encode([event(phase+'_completed',passed=gate['passed'],checks=gate['checks'],report_id=report_id)]),cid))
         if phase=='development':
             outcome='error' if final_status=='development_error' else 'passed' if final_status=='development_passed' else 'failed'
-            try:_append_development_trial(uid,org,row,req,result,gate,outcome,report_id)
+            try:_append_development_trial(uid,org,row,req,result,gate,outcome,report_id,executor,f0_run_id)
             except Exception as exc:store.update(uid,org,cid,final_status,event('ledger_append_failed',message=str(exc)[:300]))
     except Exception as exc:
         with get_conn() as c:
             c.execute("UPDATE quant_factor_candidates SET status=%s,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status<>'cancelled'",(phase+'_error',store.encode([event(phase+'_error',message=str(exc)[:1200])]),cid,uid,org))
 
-def _append_development_trial(uid,org,row,req,result,gate,outcome,report_id):
+def _append_development_trial(uid,org,row,req,result,gate,outcome,report_id,executor='human',f0_run_id=None):
     """Best-effort ledger row for a completed development test. Never blocks research."""
     from . import ledger
     with get_conn() as c:
@@ -175,7 +175,7 @@ def _append_development_trial(uid,org,row,req,result,gate,outcome,report_id):
     return ledger.append_trial(uid,org,topic['id'],{
         'branch_id':branch['id'],'implementation_hash':implementation_hash,'kind':'research',
         'parameters':parameters,'result_summary':{'metrics':metrics,'gate':{'passed':gate.get('passed'),'checks':gate.get('checks')}},
-        'report_id':report_id,'executor':'human','outcome':outcome,
+        'report_id':report_id,'executor':executor,'outcome':outcome,'f0_run_id':f0_run_id,
         'holding_period':topic['primary_holding_period']})
 
 

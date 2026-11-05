@@ -128,8 +128,8 @@ def _wait_candidate(uid, org, cid):
     return cand
 
 
-def _run_test(uid, org, project_id):
-    cand = service.create(uid, org, project_id)
+def _run_test(uid, org, project_id, f0_run_id=None):
+    cand = service.create(uid, org, project_id, executor='agent', f0_run_id=f0_run_id)
     return _wait_candidate(uid, org, cand["id"])
 
 
@@ -171,7 +171,7 @@ def _revise(uid, org, project_id, parent_id, decision, run_id, topic_id):
                            "description": hypothesis},
            "factorCodes": [fields["name"]], "v5ActiveBranch": new_branch}
     upsert_project(uid, {**project, "config": cfg, "description": hypothesis})
-    cand = _run_test(uid, org, project_id)
+    cand = _run_test(uid, org, project_id, run_id)
     return {"branch_id": new_branch, "hypothesis": hypothesis, "candidate_id": cand["id"],
             "candidate_status": cand["status"], "f3_job": job["id"]}
 
@@ -210,6 +210,6 @@ def execute(uid, org, run_id, topic, decision, step):
     if action in ("revise", "pivot"):
         out = _revise(uid, org, topic["project_id"], decision.branch_id, decision, run_id, topic["id"])
         return {"status": "completed", "action": action, **out}
-    cand = _run_test(uid, org, topic["project_id"])
+    cand = _run_test(uid, org, topic["project_id"], run_id)
     return {"status": "completed", "action": "run_test", "candidate_id": cand["id"],
             "candidate_status": cand["status"]}

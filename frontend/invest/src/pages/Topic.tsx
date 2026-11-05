@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { AlertTriangle, ArrowRight, ChevronRight, Share2 } from "lucide-react";
 import { api } from "../api";
 import { Disclaimer, ErrorState, LoadingCards, PageHeader, Sheet, Tag } from "../components";
@@ -39,6 +39,10 @@ export default function Topic() {
         <LoadingCards rows={4} />
       </div>
     );
+  }
+
+  if (data.detailAvailable === false) {
+    return <Navigate to="/topics" replace />;
   }
 
   const vp = Number(data.valuationPercentile ?? 0);

@@ -684,6 +684,7 @@ def build_topic(conn: Any, topic_id: str) -> dict[str, Any] | None:
         "stocks": stock_cards, "news": news, "spark": spark, "disclaimer": DISCLAIMER,
         "isDemo": meta["isDemo"], "dataSource": "等权代理：成分股收盘数据" if not meta["isDemo"] else "主题演示数据",
         "newsIsDemo": news_is_demo,
+        "detailAvailable": _topic_detail_available(conn, str(topic_id)),
     }
 
 
@@ -1850,6 +1851,7 @@ def build_home(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
             "turnoverPercentile": t.get("turnover_percentile"),
             "riskTags": _topic_risk_tags(t),
             "spark": [b["close"] for b in reversed(bars)],
+            "detailAvailable": _topic_detail_available(conn, str(t["id"])),
         })
 
     pf = build_portfolio(conn, user_id, include_penetration=False)
@@ -1899,6 +1901,16 @@ def build_home(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
         "glossary": glossary, "disclaimer": DISCLAIMER, "market": "CN", "hasQuotes": True,
     }
 
+def _topic_detail_available(conn: Any, topic_id: str) -> bool:
+    row = one(
+        conn,
+        "SELECT EXISTS(SELECT 1 FROM topic_bars WHERE topic_id=?) AS bars, "
+        "EXISTS(SELECT 1 FROM topic_stocks WHERE topic_id=?) AS stocks",
+        (topic_id, topic_id),
+    )
+    return bool(row and (row.get("bars") or row.get("stocks")))
+
+
 def build_topics(conn: Any) -> dict[str, Any]:
     topics = rows(conn, "SELECT * FROM topics ORDER BY heat DESC")
     items = []
@@ -1910,6 +1922,7 @@ def build_topics(conn: Any) -> dict[str, Any]:
             "turnoverPercentile": t.get("turnover_percentile"),
             "riskTags": _topic_risk_tags(t),
             "spark": [b["close"] for b in reversed(bars)],
+            "detailAvailable": _topic_detail_available(conn, str(t["id"])),
         })
     return {"items": items, "dataDate": latest_date(conn), "disclaimer": DISCLAIMER}
 
@@ -2031,8 +2044,12 @@ def build_search(conn: Any, q: str, market: str = "CN") -> dict[str, Any]:
     topics = rows(conn, "SELECT * FROM topics WHERE name LIKE ? LIMIT 4", (f"%{q}%",)) if q else []
     results = [{"type": "stock", "id": s["code"], "name": s["name"], "sub": f"{s['code']} · {s['industry']}",
                 "market": "CN", "price": s["price"], "changePct": pct(s["price"], s["prev_close"])} for s in stocks]
-    results += [{"type": "topic", "id": t["id"], "name": t["name"], "sub": "行业 / 主题",
-                 "price": None, "changePct": None} for t in topics]
+    # 热点详情缺少 bars/成分数据时，搜索不放出主题入口，避免点进去是空页。
+    results += [
+        {"type": "topic", "id": t["id"], "name": t["name"], "sub": "行业 / 主题",
+         "price": None, "changePct": None}
+        for t in topics if _topic_detail_available(conn, str(t["id"]))
+    ]
 
     presets = []
     if not q:

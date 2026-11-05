@@ -68,7 +68,7 @@ export default function Home() {
   const openLink = (link: any) => {
     if (!link) return;
     if (link.type === "stock") nav(`/stock/${link.id}`);
-    else if (link.type === "topic") nav(`/topic/${link.id}`);
+    else if (link.type === "topic") nav("/topics");
     else if (link.type === "portfolio") nav("/portfolio");
   };
 
@@ -110,7 +110,7 @@ export default function Home() {
         <div className="home-search-row">
           <button className="searchbar home-search" onClick={() => nav("/search")}>
             <Search size={18} />
-            <span>{market === "US" ? (usUnavailable ? t("美股搜索暂不可用", "US search unavailable") : t("搜索美股代码，如 AAPL", "Search US ticker, e.g. AAPL")) : t("搜索股票 / 行业 / 主题", "Search stocks / industries / themes")}</span>
+            <span>{market === "US" ? (usUnavailable ? t("美股搜索暂不可用", "US search unavailable") : t("搜索美股代码，如 AAPL", "Search US ticker, e.g. AAPL")) : t("搜索股票 / 行业", "Search stocks / industries")}</span>
           </button>
           <button className="home-spark" aria-label={t("AI 管家", "AI assistant")} onClick={() => nav("/ai")}>
             <Sparkles size={18} />
@@ -280,8 +280,8 @@ export default function Home() {
                               : `Heat ${Number(topic.heat || 0).toFixed(0)}`,
                             tone: "gray",
                           }];
-                      return (
-                        <button className="hot-row" key={topic.id} onClick={() => nav(`/topic/${topic.id}`)}>
+                      const body = (
+                        <>
                           <div className="hot-top">
                             <b>{topic.name}</b>
                             <span className="hot-heat">{t("热度", "Heat")} {Number(topic.heat || 0).toFixed(0)}</span>
@@ -294,7 +294,12 @@ export default function Home() {
                               </Tag>
                             ))}
                           </div>
-                        </button>
+                        </>
+                      );
+                      return topic.detailAvailable ? (
+                        <button className="hot-row" key={topic.id} onClick={() => nav(`/topic/${topic.id}`)}>{body}</button>
+                      ) : (
+                        <div className="hot-row hot-row-static" key={topic.id}>{body}</div>
                       );
                     })}
                   </div>

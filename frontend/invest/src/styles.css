@@ -1042,3 +1042,4 @@ input, select, textarea { outline: none; }
 .list-hot-row { padding: 13px 0; }
 .hot-list-go { margin-left: auto; display: inline-flex; align-items: center; gap: 1px; font-size: 10.5px; color: var(--red); }
 .today-basis { margin-top: 6px; font-size: 9px; line-height: 1.4; color: var(--faint); }
+.hot-row-static { cursor: default; }

@@ -107,8 +107,10 @@ def test_build_topics_returns_risk_tags_and_spark(monkeypatch):
 
     monkeypatch.setattr(rules, "rows", fake_rows)
     monkeypatch.setattr(rules, "latest_date", lambda conn: "2026-11-04")
+    monkeypatch.setattr(rules, "_topic_detail_available", lambda conn, topic_id: False)
     out = rules.build_topics(object())
     assert len(out["items"]) == 2
     assert out["items"][0]["riskTags"][0]["label"] == "估值偏高"
     assert out["items"][1]["riskTags"][0]["label"] == "估值分位 42%"
     assert out["items"][0]["spark"] == [11, 10]
+    assert out["items"][0]["detailAvailable"] is False

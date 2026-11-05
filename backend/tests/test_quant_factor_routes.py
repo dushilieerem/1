@@ -6,7 +6,7 @@ from app.deps import require_quant_user
 from services.quant_factor.policy import WorkflowError
 
 app=FastAPI();app.include_router(router);client=TestClient(app)
-ctx={'org':{'id':261},'user':{'id':912,'username':'cx_test'}}
+ctx={'org':{'id':261},'user':{'id':912,'username':'cx_test'},'can_write':True,'can_review':False}
 
 def setup_function():
  app.dependency_overrides[require_quant_user]=lambda:ctx
@@ -39,3 +39,12 @@ def test_archive_rejects_extra_fields():
 def test_unauthenticated_denied():
  app.dependency_overrides.clear()
  assert client.get('/api/inst/quant/factor-workflow/projects/p/candidates').status_code==401
+
+def test_reviewer_cannot_write_candidates():
+ app.dependency_overrides[require_quant_user]=lambda:{**ctx,'can_write':False,'can_review':True}
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912):
+  assert client.post('/api/inst/quant/factor-workflow/projects/p/candidates').status_code==403
+  assert client.post('/api/inst/quant/factor-workflow/candidates/c/validate').status_code==403
+  assert client.post('/api/inst/quant/factor-workflow/candidates/c/archive',json={'note':'x'}).status_code==403
+  assert client.post('/api/inst/quant/factor-workflow/candidates/c/register',json={'library_id':1}).status_code==403
+  assert client.post('/api/inst/quant/factor-workflow/projects/p/assistant',json={}).status_code==403

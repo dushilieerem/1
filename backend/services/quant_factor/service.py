@@ -38,7 +38,7 @@ def create(uid,org,project_id):
         if existing: return current(uid,org,existing['id'])
         count=c.execute('SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s',(uid,org,project_id)).fetchone()['n']
         if count>=snap['plan']['maxTrials']: raise WorkflowError('本研究已达到登记的候选尝试预算；请先复盘并明确修订计划')
-        pending=c.execute("SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE status LIKE '%%_running'").fetchone()['n']
+        pending=c.execute("SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND status LIKE '%%_running'",(uid,org)).fetchone()['n']
         if pending>=4: raise WorkflowError('验证计算队列繁忙，请稍后提交')
         cid=str(uuid.uuid4())
         c.execute('INSERT INTO quant_factor_candidates(id,user_id,org_id,project_id,snapshot,snapshot_hash,status,events) VALUES(%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb)',(cid,uid,org,project_id,store.encode(snap),sha,'development_running',store.encode([event('candidate_frozen',snapshot_hash=sha),event('development_queued')])) )

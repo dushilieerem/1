@@ -135,7 +135,7 @@ function Curve({ nav, loading }: { nav: NavData | null; loading: boolean }) {
   const dates = nav?.dates || [];
   const portfolio = nav?.portfolio || [];
   const benchmark = nav?.benchmark || [];
-  if (dates.length < 2) return <div className="pf-curve-empty">{t("净值曲线待补充", "NAV curve not yet available")}</div>;
+  if (dates.length < 2) return <div className="pf-curve-empty">{t("净值曲线暂不可用", "NAV curve unavailable")}</div>;
 
   const all = [...portfolio, ...benchmark].filter((v): v is number => v !== null && v !== undefined);
   const min = Math.min(0, ...all);
@@ -652,7 +652,7 @@ export default function Portfolio() {
                 <span>{it.detail}</span>
               </div>
               <div className="method-score">
-                <b>{it.available ? Math.round(it.score) : t("待补充", "Pending")}</b>
+                <b>{it.available ? Math.round(it.score) : "—"}</b>
                 <small>{t("权重", "Weight")} {it.weight}%</small>
               </div>
             </div>
@@ -661,7 +661,7 @@ export default function Portfolio() {
         <p className="hint">{t("本次覆盖率", "Coverage this run")} {riskMethod.coveragePct}%{t("；缺失项不参与计算。", "; missing items are excluded from the calculation.")}</p>
         <div className="callout blue">
           <Info size={15} />
-          <span>{t("分数只反映持仓结构，不预测盈亏；数据缺失时结论可信度下降，页面会标注「待补充」。", "The score reflects portfolio structure only and does not predict profit or loss; when data is missing, confidence drops and the page marks it as \"Pending\".")}</span>
+          <span>{t("分数只反映持仓结构，不预测盈亏；缺失项不参与计算，并以 — 展示。", "The score reflects portfolio structure only and does not predict profit or loss; missing items are excluded and shown as —.")}</span>
         </div>
       </Sheet>
     </div>

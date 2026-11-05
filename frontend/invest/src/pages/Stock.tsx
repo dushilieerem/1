@@ -96,6 +96,7 @@ export default function Stock() {
   const { t } = useLocale();
   const isUs = Boolean(code && code.includes("."));
   const market = isUs ? "US" : "CN";
+  const visibleTabs = isUs ? TABS.filter((x) => x.key === "overview" || x.key === "risk") : TABS;
   const [period, setPeriod] = useState("daily");
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -111,6 +112,10 @@ export default function Stock() {
   const [minuteLoading, setMinuteLoading] = useState(false);
   const [annAi, setAnnAi] = useState<any>(null);
   const [annBusy, setAnnBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTab("overview");
+  }, [code]);
 
   const load = (nextPeriod = period) => {
     setError(null);
@@ -357,18 +362,18 @@ export default function Stock() {
       <section className="card tech-card">
         <div className="card-title-row"><h2>{t("技术面速览", "Technical snapshot")}</h2><span className="hint">{t("基于日 K", "Based on daily bars")}</span></div>
         <div className="tech-row"><span>{t("价格趋势", "Trend")}</span><b>{tech.trend}</b><em>{t("回撤", "Drawdown")} {fmtPct(tech.drawdown, 1)} · {t("20 日", "20-day")} {fmtPct(tech.return20, 1)}</em></div>
-        <div className="tech-row"><span>{t("均线系统", "Moving averages")}</span><b>MA20 {tech.ma20 ? formatPrice(tech.ma20) : t("待补充", "N/A")}</b><em>MA5 {tech.ma5 ? formatPrice(tech.ma5) : t("待补充", "N/A")} · MA10 {tech.ma10 ? formatPrice(tech.ma10) : t("待补充", "N/A")}</em></div>
+        <div className="tech-row"><span>{t("均线系统", "Moving averages")}</span><b>MA20 {tech.ma20 ? formatPrice(tech.ma20) : "—"}</b><em>MA5 {tech.ma5 ? formatPrice(tech.ma5) : "—"} · MA10 {tech.ma10 ? formatPrice(tech.ma10) : "—"}</em></div>
         <div className="tech-row"><span>{t("成交量", "Volume")}</span><b>{tech.volumeRatio?.toFixed?.(1)}x</b><em>{t("相对 20 日均量", "vs 20-day average")}</em></div>
         <p className="hint">
           {t(
-            "趋势 = 现价相对 MA20；回撤 = 距近 180 日高点；量比 = 当前成交量相对 20 日均量；均线显示待补充表示历史不足 20 个交易日。",
-            "Trend = price vs MA20; drawdown = from the 180-day high; volume ratio = current volume vs the 20-day average; N/A on moving averages means fewer than 20 trading days of history.",
+            "趋势 = 现价相对 MA20；回撤 = 距近 180 日高点；量比 = 当前成交量相对 20 日均量；— 表示历史不足 20 个交易日。",
+            "Trend = price vs MA20; drawdown = from the 180-day high; volume ratio = current volume vs the 20-day average; — means fewer than 20 trading days of history.",
           )}
         </p>
       </section>
 
       <div className="seg stock-seg">
-        {TABS.map((x) => (
+        {visibleTabs.map((x) => (
           <button key={x.key} className={tab === x.key ? "on" : ""} onClick={() => setTab(x.key)}>{t(x.zh, x.en)}</button>
         ))}
       </div>
@@ -386,25 +391,9 @@ export default function Stock() {
           </div>
           <div className="divider" />
           <Kv k={t("行业", "Industry")} v={displayIndustry(q.industry)} />
-          <Kv k={<span>Beta <Help term="beta" /></span>} v={q.beta != null ? (Math.abs(q.beta) < 0.005 ? "0.00" : q.beta.toFixed(2)) : t("风险指标待补充", "Risk metric pending")} />
-          <Kv k={<span>{t("股息率", "Dividend yield")} <Help term="dividend_yield" /></span>} v={q.dividendYield != null ? `${q.dividendYield.toFixed(2)}%` : t("待补充", "Pending")} />
-          <Kv
-            k={t("下次财报（预计）", "Next report (est.)")}
-            v={
-              q.nextReportDate ||
-              (q.nextReportDateAvailable === false
-                ? t("暂无可靠未来日历", "No reliable forward calendar")
-                : t("待补充", "Pending"))
-            }
-          />
-          {q.beta == null || !q.nextReportDate ? (
-            <p className="hint">
-              {t(
-                "Beta 来自风险日表，缺失时显示「待补充」；预计财报日暂无可靠免费未来日历，显示「暂无可靠未来日历」不代表没有财报。",
-                "Beta comes from the risk daily table and shows as pending when missing. There is no reliable free forward calendar for the next report date; “No reliable forward calendar” does not mean no report exists.",
-              )}
-            </p>
-          ) : null}
+          {q.beta != null ? <Kv k={<span>Beta <Help term="beta" /></span>} v={Math.abs(q.beta) < 0.005 ? "0.00" : q.beta.toFixed(2)} /> : null}
+          {q.dividendYield != null ? <Kv k={<span>{t("股息率", "Dividend yield")} <Help term="dividend_yield" /></span>} v={`${q.dividendYield.toFixed(2)}%`} /> : null}
+          {q.nextReportDate ? <Kv k={t("下次财报（预计）", "Next report (est.)")} v={q.nextReportDate} /> : null}
         </section>
       )}
 
@@ -422,7 +411,7 @@ export default function Stock() {
         </section>
       ) : null}
 
-      {tab === "finance" && (
+      {!isUs && tab === "finance" && (
         <section className="card">
           <div className="card-title-row">
             <h2>{t("财务趋势", "Financial trend")}</h2>
@@ -437,7 +426,6 @@ export default function Stock() {
                     <div><span className="up">{t("亮点", "Highlights")}</span><ul>{data.earningsFlash.highlights.map((x: string) => <li key={x}>{x}</li>)}</ul></div>
                     <div><span className="down">{t("隐忧", "Concerns")}</span><ul>{data.earningsFlash.concerns.map((x: string) => <li key={x}>{x}</li>)}</ul></div>
                   </div>
-                  <p className="hint">{data.earningsFlash.consensusGap}</p>
                 </div>
               ) : null}
               <FinancialBars fins={data.financials} />
@@ -463,7 +451,7 @@ export default function Stock() {
         </section>
       )}
 
-      {tab === "valuation" && (
+      {!isUs && tab === "valuation" && (
         <section className="card">
           <div className="card-title-row"><h2>{t("估值位置", "Valuation")}</h2><span className="hint">{t("近 3 年历史分位", "3-year percentile")}</span></div>
           {isUs ? <div className="empty-inline">{t("美股暂无估值数据源；当前只提供行情与 K 线。", "US valuation data is not available (no free stable source); this build only provides quotes and charts.")}</div> : (
@@ -484,13 +472,6 @@ export default function Stock() {
             )}
           </p>
           <button className="link-btn" onClick={() => setGlossary(true)}>{t("查术语", "Glossary")} <ChevronRight size={14} /></button>
-          <div className="divider" />
-          <div className="card-title-row"><h2>{t("机构观点", "Institutional view")}</h2><span className="hint">{t("机构观点 · 非 AI 判断 · 非投资建议", "Institutional view · not AI · not investment advice")}</span></div>
-          {data.institutionalView?.available ? (
-            <p className="muted small">{t("评级分布与目标价区间待接入。", "Rating distribution and target range are not available (no free stable source).")}</p>
-          ) : (
-            <p className="muted small">{data.institutionalView?.note || t("机构评级 / 目标价 / 盈利预测数据待补充", "Institutional ratings, target prices and forecasts are pending.")}</p>
-          )}
           <div className="hint">{t("估值按收盘价与已披露 EPS 计算；不是一致预期。", "Valuation uses EOD price and reported EPS; not consensus estimates.")}</div>
           </>
           )}
@@ -501,13 +482,15 @@ export default function Stock() {
         <section className="card">
           <div className="card-title-row"><h2>{t("市场敏感度", "Market sensitivity")}</h2><span className="hint">{t("历史 Beta 分档", "Historical beta bucket")}</span></div>
           {data.sensitivity?.available ? (
-            <div className="kpi-grid">
-              <div className="kpi"><span>{t("敏感度", "Sensitivity")}</span><b>{data.sensitivity.level}</b></div>
-              <div className="kpi"><span>Beta</span><b>{data.sensitivity.beta}</b></div>
-            </div>
-          ) : <p className="muted small">{data.sensitivity?.note || t("Beta 待补充", "Beta pending")}</p>}
-          <p className="hint">{data.sensitivity?.note}</p>
-          <div className="divider" />
+            <>
+              <div className="kpi-grid">
+                <div className="kpi"><span>{t("敏感度", "Sensitivity")}</span><b>{data.sensitivity.level}</b></div>
+                <div className="kpi"><span>Beta</span><b>{data.sensitivity.beta}</b></div>
+              </div>
+              {data.sensitivity.note ? <p className="hint">{data.sensitivity.note}</p> : null}
+              <div className="divider" />
+            </>
+          ) : null}
           <div className="card-title-row"><h2>{t("风险清单", "Risk list")}</h2><span className="hint">{t("规则扫描", "Rule scan")}</span></div>
           <div className="risk-list">
             {data.risks.map((r: any, i: number) => (
@@ -524,11 +507,13 @@ export default function Stock() {
         </section>
       )}
 
-      <button className="news-entry" onClick={() => setNewsOpen(true)}>
-        <FileText size={18} />
-        <span>{isUs ? t("美股资讯：暂未接入", "US news: no free stable source") : t("个股资讯：要闻、公告、研报", "Stock news: headlines, filings, research")}</span>
-        <ChevronRight size={16} />
-      </button>
+      {!isUs && data.news?.length ? (
+        <button className="news-entry" onClick={() => setNewsOpen(true)}>
+          <FileText size={18} />
+          <span>{t("个股资讯：要闻", "Stock news: headlines")}</span>
+          <ChevronRight size={16} />
+        </button>
+      ) : null}
 
       <Disclaimer>{data.dataSource || t("收盘数据", "EOD data")} · {t("非实时 · 不构成投资建议", "not real-time · not investment advice")}</Disclaimer>
 
@@ -584,7 +569,7 @@ export default function Stock() {
               <Kv k={t("净利同比", "Profit YoY")} v={fmtPct(data.report.profitYoY, 1)} />
               <Kv k={t("毛利率", "Gross margin")} v={`${data.report.grossMargin?.toFixed?.(2)}%`} />
               <Kv k="ROE" v={`${data.report.roe?.toFixed?.(1)}%`} />
-              <Kv k={t("经营现金流", "Operating cash flow")} v={data.report.ocf != null ? t(`${data.report.ocf.toFixed(1)} 亿元`, `CNY ${(data.report.ocf / 100).toFixed(2)}B`) : t("数据暂缺", "Data pending")} />
+              <Kv k={t("经营现金流", "Operating cash flow")} v={data.report.ocf != null ? t(`${data.report.ocf.toFixed(1)} 亿元`, `CNY ${(data.report.ocf / 100).toFixed(2)}B`) : "—"} />
             </div>
             <div className="hint">{t("结构化财务数据；要闻、公告、研报在「个股资讯」里，两者不重复。", "Structured financials; headlines, filings and research live under Stock news and are not duplicated here.")}</div>
           </>

@@ -14,7 +14,7 @@ const TABS = [
 ];
 
 export default function Shell() {
-  const { t } = useLocale();
+  const { t, market } = useLocale();
   const loc = useLocation();
   const hideTab = /^\/(stock|topic)\//.test(loc.pathname);
 
@@ -29,7 +29,7 @@ export default function Shell() {
       </main>
       {!hideTab ? (
         <nav className="tabbar" aria-label={t("底部导航", "Bottom navigation")}>
-          {TABS.map((item) => {
+          {(market === "US" ? TABS.filter((item) => item.to !== "/news") : TABS).map((item) => {
             const Icon = item.icon;
             const active = item.to === "/" ? loc.pathname === "/" : loc.pathname.startsWith(item.to);
             return (

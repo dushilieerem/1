@@ -119,12 +119,12 @@ _SPECS: tuple[dict[str, Any], ...] = (
     {
         "key": "main_inflow_days", "label": "主力连续净流入", "label_en": "Consecutive main inflow",
         "pattern": r"连续(\d+)日为正", "unit": "日", "metric": "main_inflow_days", "force_op": "min",
-        "supported": False, "reason": "资金流数据源暂未接入",
+        "supported": False, "reason": "当前版本暂不支持",
     },
     {
         "key": "main_net_inflow_5d", "label": "5 日主力净流入", "label_en": "5-day main net inflow",
         "pattern": r"主力净流入|净流入", "unit": "万", "metric": "main_net_inflow_5d",
-        "supported": False, "reason": "资金流数据源暂未接入",
+        "supported": False, "reason": "当前版本暂不支持",
     },
     {
         "key": "industry", "label": "行业", "label_en": "Industry",
@@ -201,7 +201,7 @@ def parse_query(query: str) -> dict[str, Any]:
     raw = (query or "").strip()
     cleaned = re.sub(r"^(请|帮我|帮忙|麻烦)?\s*(找|筛选|选|看看|查一下)\s*", "", raw)
     cleaned = re.sub(r"(的)?(股票|标的|个股)$", "", cleaned).strip()
-    # “小市值弹性：总市值…” 这类方向名不是条件，去掉冒号前的短标题。
+    # “方向标题：具体条件…” 这类标题不是条件，去掉冒号前的短标题。
     cleaned = re.sub(r"^[^：:，,；;]{1,12}[：:]", "", cleaned)
     segments = [s for s in re.split(r"[，,；;]|并且|以及|而且|且", cleaned) if s.strip()]
     conditions: list[dict[str, Any]] = []

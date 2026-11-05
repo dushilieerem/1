@@ -22,9 +22,16 @@ export default function Topics() {
       {data?.items?.length ? (
         <div className="hot-list budget-list">
           {data.items.map((topic: any) => {
-            const tags = topic.riskTags?.length ? topic.riskTags : [{ label: "数据待验证", label_en: "Data unverified", tone: "gray" }];
-            return (
-              <button className="hot-row list-hot-row" key={topic.id} onClick={() => nav(`/topic/${topic.id}`)}>
+            const fallbackValue = topic.valuationPercentile ?? topic.turnoverPercentile;
+            const tags = topic.riskTags?.length
+              ? topic.riskTags
+              : [{
+                  label: fallbackValue != null ? `估值分位 ${Number(fallbackValue).toFixed(0)}%` : `热度 ${Number(topic.heat || 0).toFixed(0)}`,
+                  label_en: fallbackValue != null ? `Valuation percentile ${Number(fallbackValue).toFixed(0)}%` : `Heat ${Number(topic.heat || 0).toFixed(0)}`,
+                  tone: "gray",
+                }];
+            const body = (
+              <>
                 <div className="hot-top">
                   <b>{topic.name}</b>
                   <span className="hot-heat">{t("热度", "Heat")} {Number(topic.heat || 0).toFixed(0)}</span>
@@ -34,9 +41,14 @@ export default function Topics() {
                   {tags.map((tag: any) => (
                     <Tag key={tag.label} tone={tag.tone || "gray"}>{locale === "en" ? tag.label_en || tag.label : tag.label}</Tag>
                   ))}
-                  <span className="hot-list-go">{t("详情", "Details")} <ChevronRight size={13} /></span>
+                  {topic.detailAvailable ? <span className="hot-list-go">{t("详情", "Details")} <ChevronRight size={13} /></span> : null}
                 </div>
-              </button>
+              </>
+            );
+            return topic.detailAvailable ? (
+              <button className="hot-row list-hot-row" key={topic.id} onClick={() => nav(`/topic/${topic.id}`)}>{body}</button>
+            ) : (
+              <div className="hot-row list-hot-row hot-row-static" key={topic.id}>{body}</div>
             );
           })}
         </div>

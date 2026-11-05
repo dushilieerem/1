@@ -2,7 +2,9 @@
 """SVQuant FastAPI 入口（对齐旧 api_server 路径与响应形状）。"""
 from __future__ import annotations
 
+import logging
 import sys
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -68,10 +70,26 @@ def _configure_threadpool() -> None:
         pass
 
 
+def _warm_quant_cache() -> None:
+    """后台预热量化因子面板，避免首次进入 /quant 等待全市场计算。"""
+    if "pytest" in sys.modules:
+        return
+    try:
+        from services.core.db import get_conn
+        from services.invest import quant
+        from services.invest.db import PGConn
+
+        with get_conn() as raw:
+            quant.warm_board(PGConn(raw))
+    except Exception:
+        logging.getLogger(__name__).warning("quant cache prewarm failed", exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     _configure_threadpool()
     bootstrap_schemas()
+    threading.Thread(target=_warm_quant_cache, name="quant-prewarm", daemon=True).start()
     yield
 
 

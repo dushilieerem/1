@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Bell, Settings } from "lucide-react";
+import { Bell } from "lucide-react";
 import { api } from "../api";
-import { EmptyState, ErrorState, LoadingCards, PageHeader, Sheet } from "../components";
+import { EmptyState, ErrorState, LoadingCards, PageHeader } from "../components";
 import { useLocale } from "../i18n";
 
 type CommunityNotification = {
@@ -41,8 +41,6 @@ const TABS: Array<{ key: "all" | "guard" | "community"; zh: string; en: string }
   { key: "community", zh: "社区互动", en: "Community" },
 ];
 
-const PREFS_KEY = "svq_notify_prefs";
-
 export default function Notifications() {
   const nav = useNavigate();
   const { t } = useLocale();
@@ -52,14 +50,6 @@ export default function Notifications() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"all" | "guard" | "community">("all");
-  const [settings, setSettings] = useState(false);
-  const [prefs, setPrefs] = useState<any>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
-    } catch {
-      return {};
-    }
-  });
 
   const load = () => {
     setLoading(true);
@@ -116,15 +106,6 @@ export default function Notifications() {
     }
   };
 
-  const savePrefs = (next: any) => {
-    setPrefs(next);
-    try {
-      localStorage.setItem(PREFS_KEY, JSON.stringify(next));
-    } catch {
-      /* ignore */
-    }
-  };
-
   return (
     <div className="page">
       <PageHeader
@@ -133,10 +114,7 @@ export default function Notifications() {
         back
         onBack={() => nav(-1)}
         right={
-          <div className="row gap6">
-            <button className="chip" onClick={() => setSettings(true)} aria-label={t("通知设置", "Notification settings")}><Settings size={14} /></button>
-            {unread ? <button className="chip" onClick={markAll} disabled={busy}>{busy ? t("处理中…", "Processing…") : t("全部已读", "Mark all read")}</button> : null}
-          </div>
+          unread ? <button className="chip" onClick={markAll} disabled={busy}>{busy ? t("处理中…", "Processing…") : t("全部已读", "Mark all read")}</button> : undefined
         }
       />
 
@@ -191,33 +169,6 @@ export default function Notifications() {
         </div>
       ) : null}
 
-      <Sheet open={settings} onClose={() => setSettings(false)} title={t("通知设置", "Notification settings")} sub={t("当前仅站内通知，外部推送通道未接入", "In-app notifications only; external push channels are not connected")}>
-        <label className="hint" style={{ display: "block", marginBottom: 6 }}>
-          {t("提醒频率", "Alert frequency")}
-          <select
-            value={prefs.frequency || "daily"}
-            onChange={(e) => savePrefs({ ...prefs, frequency: e.target.value })}
-            style={{ width: "100%", marginTop: 6, padding: 8, borderRadius: 8, border: "1px solid var(--line)" }}
-          >
-            <option value="realtime">{t("尽量即时（站内）", "As soon as possible (in-app)")}</option>
-            <option value="daily">{t("每日汇总", "Daily digest")}</option>
-            <option value="important">{t("仅重要提醒", "Important alerts only")}</option>
-          </select>
-        </label>
-        <label className="hint" style={{ display: "block", marginBottom: 6 }}>
-          {t("免打扰时段", "Quiet hours")}
-          <select
-            value={prefs.quiet || "22-8"}
-            onChange={(e) => savePrefs({ ...prefs, quiet: e.target.value })}
-            style={{ width: "100%", marginTop: 6, padding: 8, borderRadius: 8, border: "1px solid var(--line)" }}
-          >
-            <option value="none">{t("不开启", "Off")}</option>
-            <option value="22-8">22:00–08:00</option>
-            <option value="20-9">20:00–09:00</option>
-          </select>
-        </label>
-        <p className="hint">{t("频率与免打扰仅影响站内提醒展示；推送通道（H01/外部通道）未接入。", "Frequency and quiet hours only affect in-app alert display; push channels (H01/external channels) are not connected.")}</p>
-      </Sheet>
     </div>
   );
 }

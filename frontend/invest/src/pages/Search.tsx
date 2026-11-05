@@ -45,7 +45,7 @@ export default function Search() {
     <div className="page">
       <PageHeader
         title={t("搜索", "Search")}
-        sub={market === "US" ? t("美股代码 / 名称", "US ticker / name") : t("股票 / 行业 / 主题 / 预设条件", "Stocks / sectors / themes / presets")}
+        sub={market === "US" ? t("美股代码 / 名称", "US ticker / name") : t("股票 / 行业 / 预设条件", "Stocks / sectors / presets")}
       />
       <div className="search-input">
         <SearchIcon size={18} />
@@ -54,7 +54,7 @@ export default function Search() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={market === "US" ? t("输入美股代码或名称，如 AAPL", "Enter a US ticker or name, e.g. AAPL") : t("输入名称、代码、拼音，如 宁德 / 300750", "Name, code or pinyin, e.g. CATL / 300750")}
-          aria-label={t("搜索股票、行业或主题", "Search stocks, sectors or themes")}
+          aria-label={t("搜索股票或行业", "Search stocks or sectors")}
         />
         {q ? <button className="clear-btn" onClick={() => setQ("")} aria-label={t("清空", "Clear")}><X size={16} /></button> : null}
       </div>

@@ -20,12 +20,12 @@ type Run = {
 
 function pctValue(value: any, t: Translate): string {
   const n = Number(value);
-  return Number.isFinite(n) ? `${n.toFixed(1)}%` : t("待补充", "N/A");
+  return Number.isFinite(n) ? `${n.toFixed(1)}%` : "—";
 }
 
 function numValue(value: any, t: Translate, digits = 2): string {
   const n = Number(value);
-  return Number.isFinite(n) ? n.toFixed(digits) : t("待补充", "N/A");
+  return Number.isFinite(n) ? n.toFixed(digits) : "—";
 }
 
 function equitySeries(result: any): number[] {
@@ -168,10 +168,10 @@ export default function QuantBacktests() {
                 <Sparkline values={curve} width={280} height={56} />
                 <span className="hint">{t(`净值曲线 · ${curve.length} 个点`, `Equity curve · ${curve.length} points`)}</span>
               </div>
-            ) : <p className="hint">{t("净值曲线待补充。", "Equity curve not available yet.")}</p>}
+            ) : <p className="hint">{t("净值曲线暂不可用。", "Equity curve not available yet.")}</p>}
             <p className="hint">
               {t(
-                `交易摘要：${tradeCount ?? "待补充"}${tradesIsArray ? " 笔" : ""}；区间 ${startDate} → ${endDate}。`,
+                `交易摘要：${tradeCount ?? "—"}${tradesIsArray ? " 笔" : ""}；区间 ${startDate} → ${endDate}。`,
                 `Trade summary: ${tradeCount ?? "N/A"}${tradesIsArray ? " trades" : ""}; period ${startDate} → ${endDate}.`,
               )}
             </p>

@@ -68,7 +68,7 @@ export default function Home() {
   const openLink = (link: any) => {
     if (!link) return;
     if (link.type === "stock") nav(`/stock/${link.id}`);
-    else if (link.type === "topic") nav(`/topic/${link.id}`);
+    else if (link.type === "topic") nav("/topics");
     else if (link.type === "portfolio") nav("/portfolio");
   };
 
@@ -110,7 +110,7 @@ export default function Home() {
         <div className="home-search-row">
           <button className="searchbar home-search" onClick={() => nav("/search")}>
             <Search size={18} />
-            <span>{market === "US" ? (usUnavailable ? t("美股搜索暂不可用", "US search unavailable") : t("搜索美股代码，如 AAPL", "Search US ticker, e.g. AAPL")) : t("搜索股票 / 行业 / 主题", "Search stocks / industries / themes")}</span>
+            <span>{market === "US" ? (usUnavailable ? t("美股搜索暂不可用", "US search unavailable") : t("搜索美股代码，如 AAPL", "Search US ticker, e.g. AAPL")) : t("搜索股票 / 行业", "Search stocks / industries")}</span>
           </button>
           <button className="home-spark" aria-label={t("AI 管家", "AI assistant")} onClick={() => nav("/ai")}>
             <Sparkles size={18} />
@@ -187,7 +187,7 @@ export default function Home() {
                           <span>{locale === "en" ? item.label_en || item.label : item.label}</span>
                           <b>{item.available ? fmtIndex(item.value) : "—"}</b>
                           <em className={!item.available ? "muted" : Number(item.change) >= 0 ? "up" : "down"}>
-                            {item.available && item.change != null ? fmtPct(item.change) : t("数据待补", "Pending")}
+                            {item.available && item.change != null ? fmtPct(item.change) : ""}
                           </em>
                         </div>
                       ))}
@@ -197,16 +197,21 @@ export default function Home() {
                         <em className={turnover.available && Number(turnover.change) >= 0 ? "up" : "down"}>
                           {turnover.available && turnover.change != null
                             ? t(`较昨 ${fmtPct(turnover.change)}`, `${fmtPct(turnover.change)} vs prior`)
-                            : turnover.note || t("数据待补", "Pending")}
+                            : turnover.note || ""}
                         </em>
                       </div>
                     </div>
                   ) : (
                     <div className="today-market-empty">
-                      <b>{t("指数与成交数据待补", "Index and turnover data pending")}</b>
-                      <span>{t("当前数据视图未提供对应市场指数；不使用其他指数冒充。", "This data view does not provide the required market indices; no proxy is substituted.")}</span>
+                      <b>{t("市场指数暂不可用", "Market indices are unavailable")}</b>
+                      <span>{t("当前无法获取指数行情，不影响其他内容。", "Index quotes are currently unavailable; the rest of the page is unaffected.")}</span>
                     </div>
                   )}
+                  {turnover.available && turnover.basisLabel ? (
+                    <p className="today-basis">
+                      {locale === "en" ? turnover.basisLabelEn || turnover.basisLabel : turnover.basisLabel}
+                    </p>
+                  ) : null}
                 </div>
               </section>
 
@@ -263,11 +268,20 @@ export default function Home() {
                   </div>
                   <div className="hot-list">
                     {topics.slice(0, 3).map((topic: any) => {
+                      const fallbackValue = topic.valuationPercentile ?? topic.turnoverPercentile;
                       const tags = topic.riskTags?.length
                         ? topic.riskTags
-                        : [{ label: "数据待验证", label_en: "Data unverified", tone: "gray" }];
-                      return (
-                        <button className="hot-row" key={topic.id} onClick={() => nav(`/topic/${topic.id}`)}>
+                        : [{
+                            label: fallbackValue != null
+                              ? `估值分位 ${Number(fallbackValue).toFixed(0)}%`
+                              : `热度 ${Number(topic.heat || 0).toFixed(0)}`,
+                            label_en: fallbackValue != null
+                              ? `Valuation percentile ${Number(fallbackValue).toFixed(0)}%`
+                              : `Heat ${Number(topic.heat || 0).toFixed(0)}`,
+                            tone: "gray",
+                          }];
+                      const body = (
+                        <>
                           <div className="hot-top">
                             <b>{topic.name}</b>
                             <span className="hot-heat">{t("热度", "Heat")} {Number(topic.heat || 0).toFixed(0)}</span>
@@ -280,7 +294,12 @@ export default function Home() {
                               </Tag>
                             ))}
                           </div>
-                        </button>
+                        </>
+                      );
+                      return topic.detailAvailable ? (
+                        <button className="hot-row" key={topic.id} onClick={() => nav(`/topic/${topic.id}`)}>{body}</button>
+                      ) : (
+                        <div className="hot-row hot-row-static" key={topic.id}>{body}</div>
                       );
                     })}
                   </div>

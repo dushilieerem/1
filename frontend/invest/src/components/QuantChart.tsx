@@ -26,7 +26,7 @@ export default function QuantChart({
   if (data.length < 2) {
     return (
       <div className="quant-chart-empty" style={{ height }}>
-        <span>{t("净值曲线待补充", "Equity curve pending")}</span>
+        <span>{t("净值曲线暂不可用", "Equity curve unavailable")}</span>
       </div>
     );
   }

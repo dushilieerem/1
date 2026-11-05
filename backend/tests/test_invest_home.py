@@ -9,9 +9,9 @@ from services.invest import rules
 
 def test_topic_risk_tags_always_have_at_least_one():
     assert rules._topic_risk_tags({"valuation_percentile": 88, "turnover_percentile": 50})[0]["label"] == "估值偏高"
-    assert rules._topic_risk_tags({"valuation_percentile": 42, "turnover_percentile": 81})[0]["label"] == "拥挤度高"
+    assert [t["label"] for t in rules._topic_risk_tags({"valuation_percentile": 42, "turnover_percentile": 81})] == ["估值分位 42%", "拥挤度高"]
     tags = rules._topic_risk_tags({"valuation_percentile": 42, "turnover_percentile": 38})
-    assert len(tags) == 1 and tags[0]["label"] == "数据待验证"
+    assert len(tags) == 1 and tags[0]["label"] == "估值分位 42%"
     for t in tags:
         assert t["tone"] in {"red", "amber", "gray"}
 
@@ -33,9 +33,9 @@ def test_home_market_uses_required_indices_and_turnover(monkeypatch):
         return []
 
     def fake_one(conn, sql, args=()):
-        if "SUM(amount)" in sql:
-            return {"amt": 1_602_910_000_000.0 if str(args[0]).startswith("2026-11-03") else 1_702_910_000_000.0}
-        if "MAX(trade_date)" in sql:
+        if "md_index_bar" in sql and "SUM(amount)" in sql:
+            return {"amt": 1_602_910_000_000.0 if str(args[0]).startswith("2026-11-03") else 1_702_910_000_000.0, "n": 2}
+        if "md_index_bar" in sql and "MAX(trade_date)" in sql:
             return {"d": date(2026, 11, 3)}
         return None
 
@@ -46,6 +46,8 @@ def test_home_market_uses_required_indices_and_turnover(monkeypatch):
     assert market["turnover"]["available"] is True
     assert market["turnover"]["value"] == 17029.1
     assert market["turnover"]["change"] > 0
+    assert market["turnover"]["basis"] == "index"
+    assert "指数口径" in market["turnover"]["basisLabel"]
 
 
 def test_home_market_marks_missing_indices_without_proxy(monkeypatch):
@@ -105,8 +107,10 @@ def test_build_topics_returns_risk_tags_and_spark(monkeypatch):
 
     monkeypatch.setattr(rules, "rows", fake_rows)
     monkeypatch.setattr(rules, "latest_date", lambda conn: "2026-11-04")
+    monkeypatch.setattr(rules, "_topic_detail_available", lambda conn, topic_id: False)
     out = rules.build_topics(object())
     assert len(out["items"]) == 2
     assert out["items"][0]["riskTags"][0]["label"] == "估值偏高"
-    assert out["items"][1]["riskTags"][0]["label"] == "数据待验证"
+    assert out["items"][1]["riskTags"][0]["label"] == "估值分位 42%"
     assert out["items"][0]["spark"] == [11, 10]
+    assert out["items"][0]["detailAvailable"] is False

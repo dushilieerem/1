@@ -70,7 +70,7 @@ export default function QuantSelect() {
                 <tr key={it.code}>
                   <td><button className="link-btn" onClick={() => nav(`/stock/${it.code}`)}>{it.name}</button><br /><span className="hint">{it.code}</span></td>
                   <td>{it.score}</td>
-                  <td>{it.parts?.map((p: any) => `${factorLabel(p[0])} ${p[1]}`).join(" · ") || t("待补充", "N/A")}</td>
+                  <td>{it.parts?.map((p: any) => `${factorLabel(p[0])} ${p[1]}`).join(" · ") || "—"}</td>
                 </tr>
               ))}
             </tbody>

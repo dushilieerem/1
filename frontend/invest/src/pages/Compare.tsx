@@ -157,13 +157,13 @@ export default function Compare() {
                     <td>{t(row.label.zh, row.label.en)}</td>
                     {[sa, sb].map((s, i) => {
                       const v = cell(s, row.key);
-                      return <td key={i}>{v == null ? t("待补充", "Pending") : row.fmt ? row.fmt(v) : String(v)}</td>;
+                      return <td key={i}>{v == null ? "—" : row.fmt ? row.fmt(v) : String(v)}</td>;
                     })}
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p className="hint">{t("数据缺失时显示“待补充”；对比不构成投资建议。", "Missing data shows as \"Pending\"; this comparison is not investment advice.")}</p>
+            <p className="hint">{t("缺失项显示 —；对比不构成投资建议。", "Missing values show as —; this comparison is not investment advice.")}</p>
           </div>
           <p className="hint">{t("AI 对比结论自动生成 · 50 字以内 · 不满意可重新生成", "AI comparison is generated automatically · 50-character takeaway · regenerate if needed")}</p>
           {busy && !ai ? <div className="ai-loading">{t("AI 正在对比…", "AI is comparing…")}</div> : null}

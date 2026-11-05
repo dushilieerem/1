@@ -684,6 +684,7 @@ def build_topic(conn: Any, topic_id: str) -> dict[str, Any] | None:
         "stocks": stock_cards, "news": news, "spark": spark, "disclaimer": DISCLAIMER,
         "isDemo": meta["isDemo"], "dataSource": "等权代理：成分股收盘数据" if not meta["isDemo"] else "主题演示数据",
         "newsIsDemo": news_is_demo,
+        "detailAvailable": _topic_detail_available(conn, str(topic_id)),
     }
 
 
@@ -1589,31 +1590,58 @@ def _home_market(conn: Any, data_date: str) -> dict[str, Any]:
     amount: float | None = None
     prev_amount: float | None = None
     turnover_note = ""
+    basis = "stocks"
     if data_date == now.date().isoformat() and now.hour < 10:
         turnover_note = "10:00 前成交额未成形"
     else:
-        row = one(
+        # 数据平台已补 000001.SH / 399001.SZ 的指数 amount；优先用指数口径。
+        index_row = one(
             conn,
-            "SELECT SUM(amount) AS amt FROM md_daily_bar WHERE trade_date=? AND adjust='none' "
-            "AND split_part(symbol,'.',2) IN ('SH','SZ') AND amount IS NOT NULL",
+            "SELECT SUM(amount) AS amt, COUNT(amount) AS n FROM md_index_bar "
+            "WHERE trade_date=? AND index_code IN ('000001.SH','399001.SZ') AND amount IS NOT NULL",
             (data_date,),
         )
-        if row and row.get("amt") is not None:
-            amount = float(row["amt"]) / 1e8
-        prev_date = one(
-            conn,
-            "SELECT MAX(trade_date) AS d FROM md_daily_bar WHERE trade_date < ?",
-            (data_date,),
-        )
-        if prev_date and prev_date.get("d"):
-            prev = one(
+        if index_row and index_row.get("amt") is not None and int(index_row.get("n") or 0) >= 2:
+            amount = float(index_row["amt"]) / 1e8
+            basis = "index"
+            prev_date = one(
+                conn,
+                "SELECT MAX(trade_date) AS d FROM md_index_bar "
+                "WHERE trade_date < ? AND index_code IN ('000001.SH','399001.SZ') AND amount IS NOT NULL",
+                (data_date,),
+            )
+            if prev_date and prev_date.get("d"):
+                prev = one(
+                    conn,
+                    "SELECT SUM(amount) AS amt, COUNT(amount) AS n FROM md_index_bar "
+                    "WHERE trade_date=? AND index_code IN ('000001.SH','399001.SZ') AND amount IS NOT NULL",
+                    (prev_date["d"],),
+                )
+                if prev and prev.get("amt") is not None and int(prev.get("n") or 0) >= 2:
+                    prev_amount = float(prev["amt"]) / 1e8
+        else:
+            row = one(
                 conn,
                 "SELECT SUM(amount) AS amt FROM md_daily_bar WHERE trade_date=? AND adjust='none' "
                 "AND split_part(symbol,'.',2) IN ('SH','SZ') AND amount IS NOT NULL",
-                (prev_date["d"],),
+                (data_date,),
             )
-            if prev and prev.get("amt") is not None:
-                prev_amount = float(prev["amt"]) / 1e8
+            if row and row.get("amt") is not None:
+                amount = float(row["amt"]) / 1e8
+            prev_date = one(
+                conn,
+                "SELECT MAX(trade_date) AS d FROM md_daily_bar WHERE trade_date < ?",
+                (data_date,),
+            )
+            if prev_date and prev_date.get("d"):
+                prev = one(
+                    conn,
+                    "SELECT SUM(amount) AS amt FROM md_daily_bar WHERE trade_date=? AND adjust='none' "
+                    "AND split_part(symbol,'.',2) IN ('SH','SZ') AND amount IS NOT NULL",
+                    (prev_date["d"],),
+                )
+                if prev and prev.get("amt") is not None:
+                    prev_amount = float(prev["amt"]) / 1e8
     turnover_change = pct(amount, prev_amount) if amount is not None and prev_amount else None
     is_rest = date.today().weekday() >= 5
     return {
@@ -1626,6 +1654,15 @@ def _home_market(conn: Any, data_date: str) -> dict[str, Any]:
             "value": round(amount, 1) if amount is not None else None,
             "change": round(turnover_change, 2) if turnover_change is not None else None,
             "available": amount is not None,
+            "basis": basis if amount is not None else None,
+            "basisLabel": (
+                "沪深两市成交额（指数口径）" if amount is not None and basis == "index"
+                else "行情汇总口径，非交易所官方" if amount is not None else ""
+            ),
+            "basisLabelEn": (
+                "SSE + SZSE turnover (index basis)" if amount is not None and basis == "index"
+                else "Stock-sum basis, not exchange official" if amount is not None else ""
+            ),
             "note": turnover_note,
         },
     }
@@ -1666,6 +1703,7 @@ def _clip_home(text: str, limit: int) -> str:
 
 
 def _topic_risk_tags(topic: dict[str, Any]) -> list[dict[str, str]]:
+    """用现有估值/成交分位给出可解释的风险标签；没有阈值触发时展示真实分位，不用“数据待验证”兜底。"""
     tags: list[dict[str, str]] = []
     valuation = topic.get("valuation_percentile")
     turnover = topic.get("turnover_percentile")
@@ -1675,10 +1713,15 @@ def _topic_risk_tags(topic: dict[str, Any]) -> list[dict[str, str]]:
             tags.append({"label": "估值偏高", "label_en": "Valuation elevated", "tone": "red"})
         elif value >= 70:
             tags.append({"label": "估值不低", "label_en": "Valuation not cheap", "tone": "amber"})
+        else:
+            tags.append({"label": f"估值分位 {value:.0f}%", "label_en": f"Valuation percentile {value:.0f}%", "tone": "gray"})
+    elif turnover is not None:
+        tags.append({"label": f"成交分位 {float(turnover):.0f}%", "label_en": f"Turnover percentile {float(turnover):.0f}%", "tone": "gray"})
     if turnover is not None and float(turnover) >= 80:
         tags.append({"label": "拥挤度高", "label_en": "Crowded", "tone": "amber"})
     if not tags:
-        tags.append({"label": "数据待验证", "label_en": "Data unverified", "tone": "gray"})
+        heat = float(topic.get("heat") or 0)
+        tags.append({"label": f"热度 {heat:.0f}", "label_en": f"Heat {heat:.0f}", "tone": "gray"})
     return tags
 
 
@@ -1808,6 +1851,7 @@ def build_home(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
             "turnoverPercentile": t.get("turnover_percentile"),
             "riskTags": _topic_risk_tags(t),
             "spark": [b["close"] for b in reversed(bars)],
+            "detailAvailable": _topic_detail_available(conn, str(t["id"])),
         })
 
     pf = build_portfolio(conn, user_id, include_penetration=False)
@@ -1857,6 +1901,16 @@ def build_home(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
         "glossary": glossary, "disclaimer": DISCLAIMER, "market": "CN", "hasQuotes": True,
     }
 
+def _topic_detail_available(conn: Any, topic_id: str) -> bool:
+    row = one(
+        conn,
+        "SELECT EXISTS(SELECT 1 FROM topic_bars WHERE topic_id=?) AS bars, "
+        "EXISTS(SELECT 1 FROM topic_stocks WHERE topic_id=?) AS stocks",
+        (topic_id, topic_id),
+    )
+    return bool(row and (row.get("bars") or row.get("stocks")))
+
+
 def build_topics(conn: Any) -> dict[str, Any]:
     topics = rows(conn, "SELECT * FROM topics ORDER BY heat DESC")
     items = []
@@ -1868,6 +1922,7 @@ def build_topics(conn: Any) -> dict[str, Any]:
             "turnoverPercentile": t.get("turnover_percentile"),
             "riskTags": _topic_risk_tags(t),
             "spark": [b["close"] for b in reversed(bars)],
+            "detailAvailable": _topic_detail_available(conn, str(t["id"])),
         })
     return {"items": items, "dataDate": latest_date(conn), "disclaimer": DISCLAIMER}
 
@@ -1989,8 +2044,12 @@ def build_search(conn: Any, q: str, market: str = "CN") -> dict[str, Any]:
     topics = rows(conn, "SELECT * FROM topics WHERE name LIKE ? LIMIT 4", (f"%{q}%",)) if q else []
     results = [{"type": "stock", "id": s["code"], "name": s["name"], "sub": f"{s['code']} · {s['industry']}",
                 "market": "CN", "price": s["price"], "changePct": pct(s["price"], s["prev_close"])} for s in stocks]
-    results += [{"type": "topic", "id": t["id"], "name": t["name"], "sub": "行业 / 主题",
-                 "price": None, "changePct": None} for t in topics]
+    # 热点详情缺少 bars/成分数据时，搜索不放出主题入口，避免点进去是空页。
+    results += [
+        {"type": "topic", "id": t["id"], "name": t["name"], "sub": "行业 / 主题",
+         "price": None, "changePct": None}
+        for t in topics if _topic_detail_available(conn, str(t["id"]))
+    ]
 
     presets = []
     if not q:

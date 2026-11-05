@@ -88,7 +88,11 @@ test("首页改版：今日卡/概览/热点，底部不再有我的", async ({ 
             { code: "399001.SZ", label: "深证成指", label_en: "SZSE Component", value: 10876.54, change: 0.34, available: true },
             { code: "399006.SZ", label: "创业板指", label_en: "ChiNext", value: 2214.8, change: 1.12, available: true },
           ],
-          turnover: { value: 17029.1, change: -4.5, available: true, note: "" },
+          turnover: {
+            value: 17029.1, change: -4.5, available: true, note: "",
+            basis: "index", basisLabel: "沪深两市成交额（指数口径）",
+            basisLabelEn: "SSE + SZSE turnover (index basis)",
+          },
         },
         daily: [
           { source: "stock", tag: "自选 · 事件", title: "宁德时代 10-30 预约披露", detail: "距预约披露 4 天，关注财报与现金流。", link: { type: "stock", id: "300750" } },
@@ -102,8 +106,8 @@ test("首页改版：今日卡/概览/热点，底部不再有我的", async ({ 
         },
         topics: [
           { id: "ai", name: "AI 算力", summary: "算力与模型迭代驱动的产业链热度", heat: 86, valuationPercentile: 88, turnoverPercentile: 72, riskTags: [{ label: "估值偏高", label_en: "Valuation elevated", tone: "red" }] },
-          { id: "dividend", name: "高股息", summary: "现金流与分红确定性", heat: 64, valuationPercentile: 42, turnoverPercentile: 38, riskTags: [{ label: "数据待验证", label_en: "Data unverified", tone: "gray" }] },
-          { id: "new-energy", name: "新能源", summary: "供需与价格周期", heat: 58, valuationPercentile: 35, turnoverPercentile: 61, riskTags: [{ label: "数据待验证", label_en: "Data unverified", tone: "gray" }] },
+          { id: "dividend", name: "高股息", summary: "现金流与分红确定性", heat: 64, valuationPercentile: 42, turnoverPercentile: 38, riskTags: [{ label: "估值分位 42%", label_en: "Valuation percentile 42%", tone: "gray" }] },
+          { id: "new-energy", name: "新能源", summary: "供需与价格周期", heat: 58, valuationPercentile: 35, turnoverPercentile: 61, riskTags: [{ label: "估值分位 35%", label_en: "Valuation percentile 35%", tone: "gray" }] },
         ],
         learn: { title: "估值分位：贵不贵，跟什么比？", titleEn: "Valuation percentile: expensive versus what?", link: "/learn" },
       }),
@@ -115,6 +119,7 @@ test("首页改版：今日卡/概览/热点，底部不再有我的", async ({ 
   await expect(page.getByText("上次体检")).toBeVisible();
   await expect(page.getByText("上证指数")).toBeVisible();
   await expect(page.getByText("两市成交", { exact: true })).toBeVisible();
+  await expect(page.getByText("沪深两市成交额（指数口径）")).toBeVisible();
   await expect(page.locator(".overview-row")).toHaveCount(3);
   await expect(page.locator(".hot-row")).toHaveCount(3);
   await expect(page.locator(".card")).toHaveCount(0);
@@ -137,8 +142,8 @@ test("首页热点「全部」进入热点列表页", async ({ page }) => {
         dataDate: "2026-11-04",
         items: [
           { id: "ai", name: "AI 算力", summary: "算力与模型迭代驱动的产业链热度", heat: 86, riskTags: [{ label: "估值偏高", label_en: "Valuation elevated", tone: "red" }] },
-          { id: "dividend", name: "高股息", summary: "现金流与分红确定性", heat: 64, riskTags: [{ label: "数据待验证", label_en: "Data unverified", tone: "gray" }] },
-          { id: "new-energy", name: "新能源", summary: "供需与价格周期", heat: 58, riskTags: [{ label: "数据待验证", label_en: "Data unverified", tone: "gray" }] },
+          { id: "dividend", name: "高股息", summary: "现金流与分红确定性", heat: 64, riskTags: [{ label: "估值分位 42%", label_en: "Valuation percentile 42%", tone: "gray" }] },
+          { id: "new-energy", name: "新能源", summary: "供需与价格周期", heat: 58, riskTags: [{ label: "估值分位 35%", label_en: "Valuation percentile 35%", tone: "gray" }] },
         ],
         disclaimer: "收盘数据 · 非实时 · 非投资建议",
       }),
@@ -490,20 +495,23 @@ test("AI 管家选股：资金流条件标红并可去掉后重筛", async ({ pa
         status: "needs_input",
         conditions: [
           { key: "market_cap", label: "总市值", op: "max", value: 200, unit: "亿", text: "总市值 ≤ 200亿", supported: true },
-          { key: "main_net_inflow_5d", label: "5 日主力净流入", op: "min", value: 5000, unit: "万", text: "5 日主力净流入 ≥ 5000万", supported: false, supported_reason: "资金流数据源暂未接入" },
+          { key: "main_net_inflow_5d", label: "5 日主力净流入", op: "min", value: 5000, unit: "万", text: "5 日主力净流入 ≥ 5000万", supported: false, supported_reason: "当前版本暂不支持" },
         ],
         unsupported: [{ key: "main_net_inflow_5d", label: "5 日主力净流入", supported: false }],
-        message: "以下条件的数据源暂未接入，未执行筛选。",
+        message: "当前版本暂不支持该类条件，未执行筛选。",
         disclaimer: "历史 EOD 数据 · 不含实时与资金流 · 非投资建议",
       }),
     });
   });
   await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "打开选股面板" }).click();
-  await page.getByRole("button", { name: /小市值弹性/ }).click();
+  await expect(page.getByRole("button", { name: /小市值弹性/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /主力连续流入/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "关闭" }).click();
+  await page.locator(".ai-composer textarea").fill("近 5 日主力净流入大于 5000 万");
   await page.getByRole("button", { name: "发送" }).click();
-  await expect(page.getByText("数据待补").first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText("资金流数据源暂未接入", { exact: false })).toBeVisible();
+  await expect(page.getByText("暂不支持", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("当前版本暂不支持该类条件", { exact: false }).first()).toBeVisible();
   await page.getByRole("button", { name: /删除条件 5 日主力净流入/ }).click();
   await expect(page.getByText("共 1 只")).toBeVisible({ timeout: 20_000 });
   expect(calls).toBeGreaterThan(1);

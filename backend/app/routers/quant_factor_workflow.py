@@ -152,6 +152,8 @@ class TopicBody(BaseModel):
     model_config=ConfigDict(extra='forbid')
     view_id:str=Field(min_length=1,max_length=200)
     release_id:str=Field(default='',max_length=200)
+    release_ids:dict=Field(default_factory=dict)
+    view_manifest_sha256:str=Field(default='',max_length=64)
     contract_revision:str=Field(default='',max_length=200)
     as_of:str|None=Field(default=None,max_length=10)
     development_start:str=Field(min_length=10,max_length=10)
@@ -183,6 +185,8 @@ class TrialBody(BaseModel):
     holding_period:int|None=Field(default=None,ge=1,le=20,strict=True)
     view_id:str|None=Field(default=None,max_length=200)
     release_id:str|None=Field(default=None,max_length=200)
+    release_ids:dict=Field(default_factory=dict)
+    view_manifest_sha256:str|None=Field(default=None,max_length=64)
     contract_revision:str|None=Field(default=None,max_length=200)
     as_of:str|None=Field(default=None,max_length=10)
 

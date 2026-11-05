@@ -269,6 +269,10 @@ def create_topic(uid: int, org: int, project_id: str, payload: dict) -> dict:
     if not policy_version:
         raise ValueError("policy_version 不能为空")
     release_id = str(payload.get("release_id") or "")
+    release_ids = payload.get("release_ids") or {}
+    if not isinstance(release_ids, dict):
+        raise ValueError("release_ids 必须是 JSON 对象")
+    view_manifest_sha256 = str(payload.get("view_manifest_sha256") or "")
     contract_revision = str(payload.get("contract_revision") or "")
     as_of = _as_date(payload["as_of"], "as_of") if payload.get("as_of") else None
     topic_id, branch_id = str(uuid.uuid4()), str(uuid.uuid4())
@@ -284,13 +288,16 @@ def create_topic(uid: int, org: int, project_id: str, payload: dict) -> dict:
             raise KeyError(project_id)
         c.execute(
             """INSERT INTO quant_factor_topics
-               (id,user_id,org_id,project_id,view_id,release_id,contract_revision,as_of,
-                development_start,development_end,validation_start,validation_end,
-                primary_holding_period,policy_version,max_trials,max_sealed)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (topic_id, uid, org, project_id, view_id, release_id, contract_revision, as_of,
-             development_start, development_end, validation_start, validation_end,
-             holding, policy_version, max_trials, max_sealed))
+               (id,user_id,org_id,project_id,view_id,release_id,release_ids,view_manifest_sha256,
+                contract_revision,as_of,development_start,development_end,
+                validation_start,validation_end,primary_holding_period,policy_version,
+                max_trials,max_sealed)
+               VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (topic_id, uid, org, project_id, view_id, release_id,
+             json.dumps(release_ids, ensure_ascii=False), view_manifest_sha256,
+             contract_revision, as_of, development_start, development_end,
+             validation_start, validation_end, holding, policy_version,
+             max_trials, max_sealed))
         c.execute(
             """INSERT INTO quant_factor_branches
                (id,user_id,org_id,topic_id,source,owner_id,hypothesis_version,implementation_version)
@@ -393,6 +400,10 @@ def append_trial(uid: int, org: int, topic_id: str, payload: dict) -> dict:
     if view_id != topic["view_id"]:
         raise ValueError("试验数据视图必须与课题锁定的 view_id 一致")
     release_id = str(payload.get("release_id") or topic["release_id"] or "")
+    release_ids = payload.get("release_ids") or topic.get("release_ids") or {}
+    if not isinstance(release_ids, dict):
+        raise ValueError("release_ids 必须是 JSON 对象")
+    view_manifest_sha256 = str(payload.get("view_manifest_sha256") or topic.get("view_manifest_sha256") or "")
     contract_revision = str(payload.get("contract_revision") or topic["contract_revision"] or "")
     as_of = _as_date(payload["as_of"], "as_of") if payload.get("as_of") else topic.get("as_of")
     trial_id = str(uuid.uuid4())
@@ -402,7 +413,7 @@ def append_trial(uid: int, org: int, topic_id: str, payload: dict) -> dict:
             "SELECT COALESCE(MAX(trial_no),0)+1 AS n FROM quant_factor_trials WHERE user_id=%s AND org_id=%s AND project_id=%s",
             (uid, org, topic["project_id"])).fetchone()["n"]
         prior = c.execute(
-            """SELECT id,implementation_hash,release_id,view_id,parameters
+            """SELECT id,implementation_hash,release_id,release_ids,view_manifest_sha256,view_id,parameters
                FROM quant_factor_trials
                WHERE user_id=%s AND org_id=%s AND project_id=%s
                  AND implementation_hash=%s AND release_id=%s AND view_id=%s
@@ -411,7 +422,7 @@ def append_trial(uid: int, org: int, topic_id: str, payload: dict) -> dict:
             (uid, org, topic["project_id"], implementation_hash, release_id, view_id,
              json.dumps(parameters, ensure_ascii=False, sort_keys=True))).fetchone()
         rerun_of = None
-        if prior and is_deterministic_rerun(
+        if prior and prior["release_ids"] == release_ids and prior["view_manifest_sha256"] == view_manifest_sha256 and is_deterministic_rerun(
                 {"implementation_hash": prior["implementation_hash"],
                  "data_release_id": prior["release_id"],
                  "view_id": prior["view_id"], "parameters": prior["parameters"]},
@@ -422,13 +433,15 @@ def append_trial(uid: int, org: int, topic_id: str, payload: dict) -> dict:
             """INSERT INTO quant_factor_trials
                (id,user_id,org_id,project_id,topic_id,branch_id,trial_no,kind,
                 implementation_hash,parameters,result_summary,report_id,executor,outcome,
-                returned_metrics,rerun_of,holding_period,view_id,release_id,contract_revision,as_of)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                returned_metrics,rerun_of,holding_period,view_id,release_id,release_ids,
+                view_manifest_sha256,contract_revision,as_of)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s)""",
             (trial_id, uid, org, topic["project_id"], topic_id, branch_id, trial_no, kind,
              implementation_hash, json.dumps(parameters, ensure_ascii=False),
              json.dumps(result_summary, ensure_ascii=False), payload.get("report_id"),
              executor, outcome, returned_metrics, rerun_of, holding, view_id,
-             release_id, contract_revision, as_of))
+             release_id, json.dumps(release_ids, ensure_ascii=False),
+             view_manifest_sha256, contract_revision, as_of))
         row = c.execute("SELECT * FROM quant_factor_trials WHERE id=%s", (trial_id,)).fetchone()
     return _public(row)
 

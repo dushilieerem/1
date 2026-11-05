@@ -249,14 +249,17 @@ test("量化研究入口与因子/策略库可打开", async ({ page }) => {
   await noHorizontalOverflow(page);
 });
 
-test("量化研究入口页展示今日关注与四个入口", async ({ page }) => {
+test("量化研究入口页展示今日关注与五个入口", async ({ page }) => {
   await loginByToken(page);
   await page.goto(`${H5}/quant`, { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "量化研究" })).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator(".quant-entry")).toHaveCount(4);
+  await expect(page.locator(".quant-entry")).toHaveCount(5);
+  await expect(page.locator(".quant-entry").last()).toContainText("社区");
   await expect(page.locator(".quant-focus-bar")).toBeVisible();
-  await expect(page.locator(".quant-style-card")).toBeVisible();
+  await expect(page.locator(".quant-style-card")).toHaveCount(0);
   await expect(page.locator(".tab.on")).toContainText("量化");
+  await page.locator(".quant-entry").last().click();
+  await expect(page.getByRole("heading", { name: "社区" })).toBeVisible({ timeout: 20_000 });
   await noHorizontalOverflow(page);
 });
 
@@ -424,8 +427,8 @@ test("AI 管家选股：面板填句 → 条件卡 → 结果卡与行业分布"
     }),
   );
   await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "打开选股面板" }).click();
-  await expect(page.getByText("选股方向")).toBeVisible();
+  await page.getByRole("button", { name: "打开条件选股" }).click();
+  await expect(page.getByText("条件选股").last()).toBeVisible();
   await expect(page.getByText("低估优选")).toBeVisible();
   await page.getByRole("button", { name: /低估优选/ }).click();
   const input = page.locator(".ai-composer textarea");
@@ -504,7 +507,7 @@ test("AI 管家选股：资金流条件标红并可去掉后重筛", async ({ pa
     });
   });
   await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "打开选股面板" }).click();
+  await page.getByRole("button", { name: "打开条件选股" }).click();
   await expect(page.getByRole("button", { name: /小市值弹性/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /主力连续流入/ })).toHaveCount(0);
   await page.getByRole("button", { name: "关闭" }).click();

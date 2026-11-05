@@ -1937,7 +1937,12 @@ def overview(conn: Any, user_id: int) -> dict[str, Any]:
     counts = _overview_counts(conn, user_id)
     focus = _focus(conn, user_id, board, counts)
     style = board.get("style") or {}
-    strongest = style.get("strongest_name") or "待补充"
+    strongest = style.get("strongest_name")
+    factor_status = f"{len(board.get('factors') or [])} 个 · 今天偏{style.get('label') or '均衡'}"
+    factor_status_en = f"{len(board.get('factors') or [])} factors · {style.get('label_en') or 'Balanced'} today"
+    if strongest:
+        factor_status += f" · 最强 {strongest}"
+        factor_status_en += f" · strongest {style.get('strongest_name_en') or strongest}"
     return {
         "data_date": board.get("data_date"),
         "style": style,
@@ -1945,8 +1950,8 @@ def overview(conn: Any, user_id: int) -> dict[str, Any]:
         "entries": [
             {
                 "key": "factors", "title": "因子", "title_en": "Factors",
-                "status": f"{len(board.get('factors') or [])} 个 · 今天偏{style.get('label') or '均衡'} · 最强 {strongest}",
-                "status_en": f"{len(board.get('factors') or [])} factors · {style.get('label_en') or 'Balanced'} today · strongest {style.get('strongest_name_en') or 'n/a'}",
+                "status": factor_status,
+                "status_en": factor_status_en,
                 "link": "/quant/factors",
             },
             {
@@ -1966,6 +1971,12 @@ def overview(conn: Any, user_id: int) -> dict[str, Any]:
                 "status": f"{counts['papers']} 个运行中",
                 "status_en": f"{counts['papers']} running",
                 "link": "/quant/papers",
+            },
+            {
+                "key": "community", "title": "社区", "title_en": "Community",
+                "status": "策略、因子与热点讨论",
+                "status_en": "Strategy, factor and market discussions",
+                "link": "/community",
             },
         ],
         "counts": counts,

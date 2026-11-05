@@ -974,20 +974,20 @@ input, select, textarea { outline: none; }
 .home-search { margin-top: 0; flex: 1; min-width: 0; }
 .home-spark { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; background: linear-gradient(135deg, var(--red-soft), #fff); border: 1px solid var(--red-line); color: var(--red-dark); }
 .today-card { margin: 16px 0 2px; background: #fff; border: 1px solid var(--line); border-radius: 20px; overflow: hidden; box-shadow: 0 10px 26px rgba(28, 20, 24, 0.07); }
-.today-mine { padding: 14px 14px 13px; background: linear-gradient(145deg, #e60012 0%, #c0000f 55%, #8d0009 100%); color: #fff; }
-.today-head { display: flex; align-items: center; justify-content: space-between; font-size: 10.5px; color: rgba(255, 255, 255, 0.72); }
-.today-status { padding: 2px 7px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 999px; background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.88); }
-.today-mine-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 0 0; text-align: left; color: #fff; }
+.today-mine { padding: 14px 14px 13px; background: linear-gradient(145deg, #f7f8fb 0%, #eef0f5 100%); color: var(--ink); border-bottom: 1px solid var(--line2); }
+.today-head { display: flex; align-items: center; justify-content: space-between; font-size: 10.5px; color: var(--faint); }
+.today-status { padding: 2px 7px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--muted); }
+.today-mine-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 0 0; text-align: left; color: var(--ink); }
 .today-mine-main { flex: 1; min-width: 0; }
-.today-mine-main span { display: block; font-size: 11px; color: rgba(255, 255, 255, 0.74); }
+.today-mine-main span { display: block; font-size: 11px; color: var(--muted); }
 .today-mine-main b { display: block; margin-top: 2px; font-size: 28px; line-height: 1.2; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
-.today-up { color: #fff; }
-.today-down { color: #ffd4d4; }
-.today-checkup { flex: none; text-align: right; font-size: 10px; color: rgba(255, 255, 255, 0.68); }
-.today-checkup b { display: block; margin-top: 2px; font-size: 12px; color: #fff; font-weight: 600; }
-.today-build { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 0 3px; text-align: left; color: #fff; }
-.today-build b { display: block; font-size: 20px; letter-spacing: -0.02em; }
-.today-build span { display: block; margin-top: 2px; font-size: 10.5px; color: rgba(255, 255, 255, 0.72); }
+.today-up { color: var(--red); }
+.today-down { color: var(--green); }
+.today-checkup { flex: none; text-align: right; font-size: 10px; color: var(--faint); }
+.today-checkup b { display: block; margin-top: 2px; font-size: 12px; color: var(--ink); font-weight: 600; }
+.today-build { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 0 3px; text-align: left; color: var(--ink); }
+.today-build b { display: block; font-size: 20px; letter-spacing: -0.02em; color: var(--ink); }
+.today-build span { display: block; margin-top: 2px; font-size: 10.5px; color: var(--muted); }
 .today-market { padding: 11px 12px 12px; background: #fff; }
 .today-market-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 7px; font-size: 10.5px; color: var(--faint); }
 .today-market-head > span:first-child { font-size: 11.5px; color: var(--ink2); font-weight: 600; }
@@ -1043,3 +1043,10 @@ input, select, textarea { outline: none; }
 .hot-list-go { margin-left: auto; display: inline-flex; align-items: center; gap: 1px; font-size: 10.5px; color: var(--red); }
 .today-basis { margin-top: 6px; font-size: 9px; line-height: 1.4; color: var(--faint); }
 .hot-row-static { cursor: default; }
+
+/* AI 管家：聊天框贴底，工具条右侧渐隐 */
+.ai-chat-page { display: flex; flex-direction: column; min-height: calc(100dvh - 76px); padding-bottom: 0; }
+.ai-chat-page .ai-chat-list { flex: 1; }
+.ai-template-bar { position: relative; }
+.ai-template-scroll { padding-right: 52px; }
+.ai-template-bar .chip-more { position: absolute; right: 0; top: 50%; transform: translateY(-50%); z-index: 2; padding: 6px 8px 6px 20px; border: 0; border-radius: 999px 0 0 999px; background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.92) 45%, #fff 100%); color: var(--muted); box-shadow: none; }

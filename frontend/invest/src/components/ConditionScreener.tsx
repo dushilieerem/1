@@ -131,7 +131,7 @@ export function ConditionPicker({
     <Sheet
       open
       onClose={onClose}
-      title={t("选股方向", "Screening direction")}
+      title={t("条件选股", "Stock screening")}
       sub={t("点一个方向，整句会填进输入框；数字和条件都可以改。", "Pick a direction to fill the full sentence into the input; edit numbers or conditions as needed.")}
     >
       <div className="condition-preset-list">

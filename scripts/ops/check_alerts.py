@@ -86,11 +86,14 @@ def main() -> int:
 
     pool = (health or {}).get("db_pool") or {}
     queue = (health or {}).get("queue") or {}
+    db_conn = (health or {}).get("db_connections") or {}
     alerts = evaluate_signals(
         health=health,
         db_pool_used=pool.get("used"),
         db_pool_limit=pool.get("limit"),
         queue_backlog=int(queue.get("queued") or 0),
+        db_connections_used=db_conn.get("used"),
+        db_connections_limit=db_conn.get("limit"),
         data_age_days=quality.get("ageDays"),
         max_data_age_days=float(os.environ.get("SVQ_MAX_DATA_AGE_DAYS") or "2"),
         open_reports=_metric_value(metrics, "svquant_open_community_reports"),

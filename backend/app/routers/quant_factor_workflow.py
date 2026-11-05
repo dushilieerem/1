@@ -147,3 +147,78 @@ def iteration_get(jid:str,ctx=Depends(require_quant_researcher)):
 def iteration_pause(jid:str,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import iterations
     return invoke(iterations.pause,*identity(ctx),jid)
+
+class TopicBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    view_id:str=Field(min_length=1,max_length=200)
+    release_id:str=Field(default='',max_length=200)
+    release_ids:dict=Field(default_factory=dict)
+    view_manifest_sha256:str=Field(default='',max_length=64)
+    contract_revision:str=Field(default='',max_length=200)
+    as_of:str|None=Field(default=None,max_length=10)
+    development_start:str=Field(min_length=10,max_length=10)
+    development_end:str=Field(min_length=10,max_length=10)
+    validation_start:str=Field(min_length=10,max_length=10)
+    validation_end:str=Field(min_length=10,max_length=10)
+    primary_holding_period:int=Field(ge=1,le=20,strict=True)
+    policy_version:str=Field(min_length=1,max_length=100)
+    max_trials:int=Field(ge=1,le=1000,strict=True)
+    max_sealed:int=Field(default=3,ge=1,le=3,strict=True)
+
+class BranchBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    source:str=Field(pattern='^(agent|manual)$')
+    parent_id:str|None=Field(default=None,max_length=100)
+    hypothesis_version:int=Field(default=1,ge=1,strict=True)
+    implementation_version:int=Field(default=1,ge=1,strict=True)
+
+class TrialBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    branch_id:str=Field(min_length=1,max_length=100)
+    implementation_hash:str=Field(min_length=1,max_length=200)
+    kind:str=Field(default='research',pattern='^(research|manual|agent|iteration)$')
+    parameters:dict=Field(default_factory=dict)
+    result_summary:dict=Field(default_factory=dict)
+    report_id:str|None=Field(default=None,max_length=200)
+    executor:str=Field(pattern='^(human|agent|service)$')
+    outcome:str=Field(pattern='^(passed|failed|error|timeout|cancelled)$')
+    holding_period:int|None=Field(default=None,ge=1,le=20,strict=True)
+
+def invoke_ledger(fn,*args):
+    try:return invoke(fn,*args)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from exc
+
+@router.post('/projects/{project_id}/topics')
+def topic_create(project_id:str,body:TopicBody,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return invoke_ledger(ledger.create_topic,*identity(ctx),project_id,body.model_dump())
+
+@router.get('/projects/{project_id}/topics')
+def topic_list(project_id:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return {'topics':invoke(ledger.list_topics,*identity(ctx),project_id)}
+
+@router.get('/topics/{tid}/ledger')
+def ledger_get(tid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return invoke(ledger.ledger_view,*identity(ctx),tid)
+
+@router.get('/topics/{tid}/threshold')
+def ledger_threshold(tid:str,k:int|None=None,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return invoke_ledger(ledger.threshold_view,*identity(ctx),tid,k)
+
+@router.get('/topics/{tid}/branches')
+def branch_list(tid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return {'branches':invoke(ledger.list_branches,*identity(ctx),tid)}
+
+@router.post('/topics/{tid}/branches')
+def branch_create(tid:str,body:BranchBody,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return invoke_ledger(ledger.create_branch,*identity(ctx),tid,body.model_dump())
+
+@router.post('/topics/{tid}/trials')
+def trial_append(tid:str,body:TrialBody,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return invoke_ledger(ledger.append_trial,*identity(ctx),tid,body.model_dump())

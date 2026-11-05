@@ -93,3 +93,41 @@ def test_reviewer_cannot_start_or_pause_iteration():
  app.dependency_overrides[require_quant_user]=lambda:{**ctx,'can_write':False,'can_review':True}
  assert client.post('/api/inst/quant/factor-workflow/projects/p/iterations',json={'max_rounds':2}).status_code==403
  assert client.post('/api/inst/quant/factor-workflow/iterations/i/pause').status_code==403
+
+TOPIC_BODY={'view_id':'research-rv-1','development_start':'2020-01-01','development_end':'2022-12-31','validation_start':'2023-01-01','validation_end':'2023-12-31','primary_holding_period':1,'policy_version':'v5-p0','max_trials':4}
+
+def test_topic_create_uses_session_identity_and_validates_body():
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.ledger.create_topic',return_value={'topic':{'id':'t'}}) as create:
+  assert client.post('/api/inst/quant/factor-workflow/projects/p/topics',json={**TOPIC_BODY,'user_id':999}).status_code==422
+  assert client.post('/api/inst/quant/factor-workflow/projects/p/topics',json={**TOPIC_BODY,'primary_holding_period':0}).status_code==422
+  assert client.post('/api/inst/quant/factor-workflow/projects/p/topics',json=TOPIC_BODY).status_code==200
+  create.assert_called_once()
+  assert create.call_args.args[:3]==(912,261,'p')
+
+def test_trial_append_rejects_server_derived_fields_and_passes_valid_body():
+ body={'branch_id':'b','implementation_hash':'h','executor':'human','outcome':'passed'}
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.ledger.append_trial',return_value={'id':'t'}) as append:
+  assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={**body,'rerun_of':'x'}).status_code==422
+  assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={**body,'returned_metrics':True}).status_code==422
+  assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json=body).status_code==200
+  append.assert_called_once()
+  assert append.call_args.args[:3]==(912,261,'t')
+
+def test_threshold_endpoint_passes_k():
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.ledger.threshold_view',return_value={'k':5,'threshold':2.57}) as view:
+  assert client.get('/api/inst/quant/factor-workflow/topics/t/threshold?k=5').status_code==200
+  view.assert_called_once_with(912,261,'t',5)
+
+def test_reviewer_cannot_read_ledger_or_append_trial():
+ app.dependency_overrides[require_quant_user]=lambda:{**ctx,'can_write':False,'can_review':True}
+ assert client.get('/api/inst/quant/factor-workflow/topics/t/ledger').status_code==403
+ assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={'branch_id':'b','implementation_hash':'h','executor':'human','outcome':'passed'}).status_code==403
+
+def test_trial_append_rejects_client_rerun_and_diagnostic_kinds():
+ base={'branch_id':'b','implementation_hash':'h','executor':'human','outcome':'passed'}
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912):
+  for kind in ('rerun','static_check','compile','smoke','sealed_validation','manual_edit'):
+   assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={**base,'kind':kind}).status_code==422
+  assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={**base,'outcome':'rerun'}).status_code==422
+  for key,value in (('view_id','other'),('release_ids',{'ifind':'x'}),('view_manifest_sha256','x'),('as_of','2020-01-01'),('contract_revision','x'),('release_id','x')):
+   assert client.post('/api/inst/quant/factor-workflow/topics/t/trials',json={**base,key:value}).status_code==422

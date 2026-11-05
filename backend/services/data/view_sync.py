@@ -898,6 +898,25 @@ def _prepare_temp_tables(conn) -> None:
         conn.execute(statement)
 
 
+def _prune_us_snapshot(conn) -> int:
+    """美股快照是 active set：删除更名/退市旧代码，避免 invest_stocks 残留。"""
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM tmp_md_us_stock_snapshot"
+    ).fetchone()
+    count = int((row or {}).get("n") or 0)
+    if count <= 0:
+        return 0
+    conn.execute(
+        """
+        DELETE FROM md_us_stock_snapshot m
+         WHERE NOT EXISTS (
+           SELECT 1 FROM tmp_md_us_stock_snapshot t WHERE t.symbol = m.symbol
+         )
+        """
+    )
+    return count
+
+
 def _merge_temp_tables(conn) -> None:
     conn.execute(
         """
@@ -964,6 +983,7 @@ def _merge_temp_tables(conn) -> None:
           max_drawdown_1y=EXCLUDED.max_drawdown_1y
         """
     )
+    _prune_us_snapshot(conn)
     conn.execute(
         """
         INSERT INTO md_us_stock_snapshot

@@ -629,14 +629,14 @@ def screen_condition(
             elif parsed.get("conflicts"):
                 message = "条件之间存在冲突，未执行筛选。"
             elif parsed.get("unsupported"):
-                message = "以下条件的数据源暂未接入，未执行筛选。"
+                message = "当前版本暂不支持该类条件，未执行筛选。"
             return {**parsed, "status": "needs_input", "message": message}
     unsupported = [c for c in conds if not c.get("supported", True)]
     if unsupported:
         return {
             "ok": True, "status": "needs_input", "conditions": conds,
             "query": query, "unsupported": unsupported,
-            "message": "以下条件的数据源暂未接入，未执行筛选。",
+            "message": "当前版本暂不支持该类条件，未执行筛选。",
             "disclaimer": condition_service.DATA_DISCLAIMER,
         }
     result = condition_service.screen_conditions(conn, conds)

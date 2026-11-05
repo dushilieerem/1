@@ -9,9 +9,9 @@ from services.invest import rules
 
 def test_topic_risk_tags_always_have_at_least_one():
     assert rules._topic_risk_tags({"valuation_percentile": 88, "turnover_percentile": 50})[0]["label"] == "估值偏高"
-    assert rules._topic_risk_tags({"valuation_percentile": 42, "turnover_percentile": 81})[0]["label"] == "拥挤度高"
+    assert [t["label"] for t in rules._topic_risk_tags({"valuation_percentile": 42, "turnover_percentile": 81})] == ["估值分位 42%", "拥挤度高"]
     tags = rules._topic_risk_tags({"valuation_percentile": 42, "turnover_percentile": 38})
-    assert len(tags) == 1 and tags[0]["label"] == "数据待验证"
+    assert len(tags) == 1 and tags[0]["label"] == "估值分位 42%"
     for t in tags:
         assert t["tone"] in {"red", "amber", "gray"}
 
@@ -110,5 +110,5 @@ def test_build_topics_returns_risk_tags_and_spark(monkeypatch):
     out = rules.build_topics(object())
     assert len(out["items"]) == 2
     assert out["items"][0]["riskTags"][0]["label"] == "估值偏高"
-    assert out["items"][1]["riskTags"][0]["label"] == "数据待验证"
+    assert out["items"][1]["riskTags"][0]["label"] == "估值分位 42%"
     assert out["items"][0]["spark"] == [11, 10]

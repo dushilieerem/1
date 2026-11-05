@@ -1702,6 +1702,7 @@ def _clip_home(text: str, limit: int) -> str:
 
 
 def _topic_risk_tags(topic: dict[str, Any]) -> list[dict[str, str]]:
+    """用现有估值/成交分位给出可解释的风险标签；没有阈值触发时展示真实分位，不用“数据待验证”兜底。"""
     tags: list[dict[str, str]] = []
     valuation = topic.get("valuation_percentile")
     turnover = topic.get("turnover_percentile")
@@ -1711,10 +1712,15 @@ def _topic_risk_tags(topic: dict[str, Any]) -> list[dict[str, str]]:
             tags.append({"label": "估值偏高", "label_en": "Valuation elevated", "tone": "red"})
         elif value >= 70:
             tags.append({"label": "估值不低", "label_en": "Valuation not cheap", "tone": "amber"})
+        else:
+            tags.append({"label": f"估值分位 {value:.0f}%", "label_en": f"Valuation percentile {value:.0f}%", "tone": "gray"})
+    elif turnover is not None:
+        tags.append({"label": f"成交分位 {float(turnover):.0f}%", "label_en": f"Turnover percentile {float(turnover):.0f}%", "tone": "gray"})
     if turnover is not None and float(turnover) >= 80:
         tags.append({"label": "拥挤度高", "label_en": "Crowded", "tone": "amber"})
     if not tags:
-        tags.append({"label": "数据待验证", "label_en": "Data unverified", "tone": "gray"})
+        heat = float(topic.get("heat") or 0)
+        tags.append({"label": f"热度 {heat:.0f}", "label_en": f"Heat {heat:.0f}", "tone": "gray"})
     return tags
 
 

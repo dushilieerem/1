@@ -22,7 +22,14 @@ export default function Topics() {
       {data?.items?.length ? (
         <div className="hot-list budget-list">
           {data.items.map((topic: any) => {
-            const tags = topic.riskTags?.length ? topic.riskTags : [{ label: "数据待验证", label_en: "Data unverified", tone: "gray" }];
+            const fallbackValue = topic.valuationPercentile ?? topic.turnoverPercentile;
+            const tags = topic.riskTags?.length
+              ? topic.riskTags
+              : [{
+                  label: fallbackValue != null ? `估值分位 ${Number(fallbackValue).toFixed(0)}%` : `热度 ${Number(topic.heat || 0).toFixed(0)}`,
+                  label_en: fallbackValue != null ? `Valuation percentile ${Number(fallbackValue).toFixed(0)}%` : `Heat ${Number(topic.heat || 0).toFixed(0)}`,
+                  tone: "gray",
+                }];
             return (
               <button className="hot-row list-hot-row" key={topic.id} onClick={() => nav(`/topic/${topic.id}`)}>
                 <div className="hot-top">

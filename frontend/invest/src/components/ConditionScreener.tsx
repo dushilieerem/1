@@ -73,7 +73,6 @@ export type ConditionPreset = {
   name: { zh: string; en: string };
   sub: { zh: string; en: string };
   query: string;
-  dataNote?: { zh: string; en: string };
 };
 
 export const CONDITION_PRESETS: ConditionPreset[] = [
@@ -88,20 +87,6 @@ export const CONDITION_PRESETS: ConditionPreset[] = [
     name: { zh: "高股息防守", en: "Dividend defense" },
     sub: { zh: "低估值 + 高分红", en: "Low valuation + high payout" },
     query: "股息率大于 3%，PE 分位低于 30%，近 1 年最大回撤小于 25%",
-  },
-  {
-    id: "smallcap",
-    name: { zh: "小市值弹性", en: "Small-cap beta" },
-    sub: { zh: "题材 + 成长 + 资金", en: "Theme + growth + flows" },
-    query: "总市值小于 200 亿，近 20 日涨幅大于 10%，近 5 日主力净流入大于 5000 万",
-    dataNote: { zh: "资金流数据待补", en: "Fund-flow data pending" },
-  },
-  {
-    id: "inflow",
-    name: { zh: "主力连续流入", en: "Persistent inflow" },
-    sub: { zh: "资金连续买", en: "Consecutive buying" },
-    query: "近 5 日主力净流入合计大于 5000 万，且连续 3 日为正",
-    dataNote: { zh: "资金流数据待补", en: "Fund-flow data pending" },
   },
   {
     id: "breakout",
@@ -156,7 +141,6 @@ export function ConditionPicker({
               <b>{t(p.name.zh, p.name.en)}</b>
               <span>{t(p.sub.zh, p.sub.en)}</span>
             </div>
-            {p.dataNote ? <Tag tone="gray">{t(p.dataNote.zh, p.dataNote.en)}</Tag> : null}
           </button>
         ))}
         <button className="condition-preset self" onClick={() => onSelect("")}>
@@ -246,9 +230,9 @@ export function ConditionScreener({
       {conditions.map((c) => {
         const bad = c.supported === false;
         return (
-          <span className={`condition-tag ${bad ? "danger" : ""}`} key={`${c.key}-${c.text || c.label}`} title={bad ? c.supported_reason || t("数据待补", "Data pending") : c.text}>
+          <span className={`condition-tag ${bad ? "danger" : ""}`} key={`${c.key}-${c.text || c.label}`} title={bad ? t("当前版本暂不支持该条件", "This condition is not supported yet") : c.text}>
             {label(c, en)}
-            {bad ? <em>{t("数据待补", "Data pending")}</em> : null}
+            {bad ? <em>{t("暂不支持", "Not supported")}</em> : null}
             {removable || bad ? (
               <button aria-label={t(`删除条件 ${label(c, en)}`, `Remove condition ${label(c, en)}`)} disabled={busy} onClick={() => onRemoveCondition(c.key)}>
                 <X size={11} />
@@ -290,7 +274,7 @@ export function ConditionScreener({
         {conflicts.map((c) => <p className="condition-conflict" key={c}>⚠ {c}</p>)}
         {unsupported.length ? (
           <p className="condition-conflict">
-            ⚠ {t("资金流数据源暂未接入；点上方红色标签可先去掉该条件，其余条件可继续筛选。", "Fund-flow data is not connected yet. Remove the red condition to screen with the rest.")}
+            ⚠ {t("当前版本暂不支持该类条件；点上方红色标签可先去掉该条件，其余条件可继续筛选。", "This condition is not supported in this version. Remove it to screen with the rest.")}
           </p>
         ) : null}
         {data.message ? <p className="hint">{data.message}</p> : null}

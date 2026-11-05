@@ -532,15 +532,6 @@ export default function Stock() {
 
       <Disclaimer>{data.dataSource || t("收盘数据", "EOD data")} · {t("非实时 · 不构成投资建议", "not real-time · not investment advice")}</Disclaimer>
 
-      <div className="bottom-cta">
-        <button className="btn btn-ghost" onClick={toggleWatch} disabled={watchBusy}>
-          <Star size={16} fill={inWatch ? "currentColor" : "none"} /> {inWatch ? t("移出自选", "Remove") : t("加入自选", "Add to watchlist")}
-        </button>
-        {!isUs ? (
-          <button className="btn btn-primary" onClick={() => nav("/portfolio")}>{t("看组合风险", "View portfolio risk")} <ChevronRight size={16} /></button>
-        ) : null}
-      </div>
-
       <Sheet open={newsOpen} onClose={() => setNewsOpen(false)} title={t("个股资讯", "Stock news")} sub={t("标题 + 链接 · 非投资建议", "Headlines + links · not investment advice")}>
         {data.todayNews?.length ? (
           <div className="today-news">

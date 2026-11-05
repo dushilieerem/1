@@ -79,7 +79,6 @@ export default function AiPanel({
         <span className="hint">{t("AI 生成 · 非投资建议", "AI-generated · Not investment advice")}</span>
       </div>
       <p className="ai-sub">{resolvedSubtitle}</p>
-      <p className="hint">{t("自动生成 · 50 字结论 · 不满意可重新生成", "Auto-generated · 50-character takeaway · regenerate if needed")}</p>
       {loading && !card ? <div className="ai-loading">{t("正在基于当前数据生成，通常需要 5–30 秒…", "Generating from current data; usually takes 5–30 seconds…")}</div> : null}
       {error ? <ErrorState message={error} onRetry={() => run(false)} /> : null}
       {data?.blocked ? (

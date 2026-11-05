@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.routers import invest_ai
-from app.routers.invest_ai import _clip50, _compact_result
+from app.routers.invest_ai import _clip50, _compact_result, _extract_compare_pair
 from services.invest import agent_prompts, ai_cache
 
 
@@ -55,6 +55,12 @@ def test_call_uses_cache_until_refresh(monkeypatch, tmp_path):
     assert first["card"]["sections"] == []
     invest_ai._call("invest.stock", {"code": "600519"}, user_id=7, refresh=True)
     assert calls["n"] == 2
+
+
+def test_compare_pair_fallback_parser():
+    assert _extract_compare_pair("对比宁德时代和茅台的估值与财务") == ("宁德时代", "茅台")
+    assert _extract_compare_pair("比较贵州茅台 vs 五粮液") == ("贵州茅台", "五粮液")
+    assert _extract_compare_pair("对比 [标的A] 和 [标的B] 的估值与财务") == ("标的A", "标的B")
 
 
 def test_agent_registry_has_editable_h5_agents():

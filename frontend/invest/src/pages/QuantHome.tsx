@@ -61,9 +61,6 @@ export default function QuantHome() {
       <PageHeader
         title={t("量化研究", "Quant research")}
         sub={t("因子、策略、回测与模拟盘 · 只做研究与记账", "Factors, strategies, backtests and paper trading · research and bookkeeping only")}
-        back
-        backLabel={t("我的", "Me")}
-        onBack={() => nav("/me")}
       />
 
       {error ? <ErrorState message={error} onRetry={load} /> : null}

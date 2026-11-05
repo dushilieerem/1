@@ -292,9 +292,11 @@ export default function AiChat() {
       {error ? <ErrorState message={error} onRetry={() => setError(null)} /> : null}
 
       <div className="ai-template-bar">
-        {templates.slice(0, 6).map((tpl) => (
-          <button key={tpl.id} className="chip" onClick={() => fill(t(tpl.text.zh, tpl.text.en))}>{t(tpl.label.zh, tpl.label.en)}</button>
-        ))}
+        <div className="ai-template-scroll">
+          {templates.slice(0, 4).map((tpl) => (
+            <button key={tpl.id} className="chip" onClick={() => fill(t(tpl.text.zh, tpl.text.en))}>{t(tpl.label.zh, tpl.label.en)}</button>
+          ))}
+        </div>
         <button className="chip chip-more" onClick={() => setPanel((v) => !v)}>
           {t("全部", "All")} {panel ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
         </button>

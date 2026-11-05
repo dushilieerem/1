@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import sys
 import threading
+import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -54,6 +56,7 @@ from app.routers import (  # noqa: E402
     strategy,
     watchlists,
 )
+from services.core import http_metrics  # noqa: E402
 from services.core.env_config import env  # noqa: E402
 from services.core.public_switches import docs_enabled  # noqa: E402
 from services.core.rate_limit import enforce_rate_limit_key  # noqa: E402
@@ -179,6 +182,36 @@ async def write_rate_limit(request: Request, call_next):
             headers=exc.headers or {"Retry-After": "60"},
         )
     return await call_next(request)
+
+
+@app.middleware("http")
+async def request_metrics(request: Request, call_next):
+    """记录按路由模板聚合的耗时/状态；/api/metrics 自身不计入，避免抓取噪声。"""
+    if request.url.path == "/api/metrics":
+        return await call_next(request)
+    rid = (request.headers.get("x-request-id") or uuid.uuid4().hex).strip()[:64]
+    request.state.request_id = rid
+    http_metrics.in_flight(1)
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        route = getattr(request.scope.get("route"), "path", None) or "unmatched"
+        http_metrics.observe(
+            method=request.method, route=route, status=500,
+            seconds=time.perf_counter() - started,
+        )
+        raise
+    else:
+        route = getattr(request.scope.get("route"), "path", None) or "unmatched"
+        http_metrics.observe(
+            method=request.method, route=route, status=response.status_code,
+            seconds=time.perf_counter() - started,
+        )
+        response.headers.setdefault("X-Request-ID", rid)
+        return response
+    finally:
+        http_metrics.in_flight(-1)
 
 
 @app.middleware("http")

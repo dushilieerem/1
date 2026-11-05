@@ -263,3 +263,36 @@ def test_sync_fund_flow_candidate_reads_core_fields(tmp_path: Path, monkeypatch)
     assert captured["table"] == "tmp_md_fund_flow_candidate"
     assert captured["rows"][0][0] == "600519.SH"
     assert captured["rows"][0][6] == 4
+
+
+def test_sync_ref_security_includes_chinext_star_and_bse(tmp_path: Path, monkeypatch):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from services.data import view_sync
+
+    base = tmp_path / "free" / "security_master"
+    base.mkdir(parents=True)
+    pq.write_table(
+        pa.table({
+            "Symbol": ["600000.SH", "300750.SZ", "688981.SH", "920001.BJ"],
+            "Name": ["浦发银行", "宁德时代", "中芯国际", "北交样本"],
+            "IsQuitGP": ["0", "0", "0", "0"],
+            "J_start": ["1999-11-10", "2018-06-11", "2020-07-16", "2024-01-01"],
+            "HSStockKind": [1, 3, 4, 2],
+        }),
+        base / "security_master.parquet",
+    )
+    view = ViewInfo("v", tmp_path, _manifest(), "2026-11-01", date(2026, 11, 4))
+    view.manifest["datasets"]["security_master"] = {"path": "free/security_master"}
+    captured = {}
+
+    def fake_copy(conn, table, columns, rows):
+        captured["rows"] = list(rows)
+        return len(captured["rows"])
+
+    monkeypatch.setattr(view_sync, "_copy_rows", fake_copy)
+    total = view_sync._sync_ref_security(object(), view)
+    assert total == 4
+    boards = {row[0]: row[4] for row in captured["rows"]}
+    assert boards == {"600000.SH": "SH_MAIN", "300750.SZ": "ChiNext", "688981.SH": "STAR", "920001.BJ": "BSE"}

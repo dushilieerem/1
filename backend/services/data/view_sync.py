@@ -818,7 +818,8 @@ def _sync_ref_security(conn, view: ViewInfo) -> int:
     frame = pq.read_table(
         files[0], columns=["Symbol", "Name", "IsQuitGP", "J_start", "HSStockKind"]
     ).to_pandas()
-    frame = frame[frame["HSStockKind"].astype(str) == "1"]
+    # 1=沪深主板、2=北交所、3=创业板、4=科创板；只同步股票，不把基金/指数混进来。
+    frame = frame[frame["HSStockKind"].astype(str).isin({"1", "2", "3", "4"})]
     rows = []
     for row in frame.itertuples(index=False):
         symbol = str(row.Symbol or "").strip()
@@ -829,7 +830,7 @@ def _sync_ref_security(conn, view: ViewInfo) -> int:
             board = "STAR"
         elif code.startswith(("300", "301")):
             board = "ChiNext"
-        elif code.startswith(("8", "4")):
+        elif code.startswith(("8", "4", "92")):
             board = "BSE"
         elif exchange == "SH":
             board = "SH_MAIN"

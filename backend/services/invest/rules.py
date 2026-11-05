@@ -1839,7 +1839,7 @@ def build_data_quality(conn: Any) -> dict[str, Any]:
         "label": "日线覆盖",
         "status": bars_status,
         "detail": f"CN {latest_by_market.get('CN','—')} / US {latest_by_market.get('US','—')}；有日线 {len(pool)}/{len(stocks)} 只，未更新 {len(stale)}"
-                  + ("（少量停牌/新股，仅提示）" if 0 < stale_ratio <= 0.02 else ""),
+                  + ("（≤2% 仅提示；超过 2% 才判失败）" if 0 < stale_ratio <= 0.02 else ""),
     }]
     pool_cn = [s for s in pool if market_of(s["code"]) == "CN"]
     pool_codes = [s["code"] for s in pool_cn]

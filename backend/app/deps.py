@@ -76,6 +76,15 @@ def require_quant_researcher(
     return ctx
 
 
+def require_quant_manager(
+    ctx: dict[str, Any] = Depends(require_quant_user),
+) -> dict[str, Any]:
+    """研究负责人（P0 由 manager 承担）：机构共享因子库导入等管理动作。"""
+    if not ctx.get("can_manage"):
+        raise HTTPException(status_code=403, detail="需要研究负责人（manager）权限")
+    return ctx
+
+
 def require_quant_reviewer(
     ctx: dict[str, Any] = Depends(require_quant_user),
 ) -> dict[str, Any]:

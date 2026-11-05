@@ -209,11 +209,16 @@ class QuantSessionTest(unittest.TestCase):
         )
         self.assertIsNone(user_from_quant_authorization(f"Bearer {token}"))
 
-    def test_quant_token_requires_quant_role(self):
+    def test_quant_token_accepts_manager_as_research_lead(self):
+        token = issue_quant_token(
+            {"id": 7, "username": "inst_manager", "role": "user"},
+            {"org_id": 3, "role": "manager"},
+        )
+        self.assertEqual(decode_token(token)["inst_role"], "manager")
         with self.assertRaises(PermissionError):
             issue_quant_token(
-                {"id": 7, "username": "inst_manager", "role": "user"},
-                {"org_id": 3, "role": "manager"},
+                {"id": 8, "username": "partner", "role": "user"},
+                {"org_id": 3, "role": "partner"},
             )
 
     def test_login_quant_rejects_non_quant_member(self):
@@ -225,6 +230,15 @@ class QuantSessionTest(unittest.TestCase):
         ), patch(
             "services.institution.inst_store.get_membership",
             return_value={"org_id": 9, "role": "manager"},
+        ):
+            result = login_quant(username="cx_quant", password="x")
+            self.assertEqual(result["membership"]["role"], "manager")
+        with patch(
+            "services.institution.inst_store.authenticate_user",
+            return_value={"id": 7, "username": "cx_quant", "role": "user"},
+        ), patch(
+            "services.institution.inst_store.get_membership",
+            return_value={"org_id": 9, "role": "partner"},
         ):
             with self.assertRaises(PermissionError):
                 login_quant(username="cx_quant", password="x")

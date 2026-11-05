@@ -36,7 +36,7 @@ ROLE_LABELS: dict[str, tuple[str, str]] = {
 
 # 机构量化成员只使用 /api/inst/quant/*；对主观投资九工作区一律无权限。
 # 这是产品线隔离，不是“只靠前端隐藏”：服务端权限矩阵全部为 none。
-QUANT_ROLES = frozenset({"quant_researcher", "quant_reviewer"})
+QUANT_ROLES = frozenset({"manager", "quant_researcher", "quant_reviewer"})
 
 # 九个工作区，与需求文档 §2.2 一致
 WORKSPACE_LABELS: dict[str, tuple[str, str]] = {
@@ -415,7 +415,8 @@ def _quant_context(user: dict[str, Any], membership: dict[str, Any]) -> dict[str
             "quant": "review" if role == "quant_reviewer" else "write",
         },
         "can_review": role == "quant_reviewer",
-        "can_write": role == "quant_researcher",
+        "can_write": role in ("quant_researcher", "manager"),
+        "can_manage": role == "manager",
         "workspaces": [],
         "demo": _demo_mode(),
     }

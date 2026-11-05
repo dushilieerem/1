@@ -6,8 +6,14 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from services.core.db import DatabasePoolBusy
+
 
 def install_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(DatabasePoolBusy)
+    async def pool_busy_handler(_request: Request, exc: DatabasePoolBusy) -> JSONResponse:
+        return JSONResponse(status_code=503, content={"error": str(exc)})
+
     @app.exception_handler(HTTPException)
     async def http_exc_handler(_request: Request, exc: HTTPException) -> JSONResponse:
         detail = exc.detail

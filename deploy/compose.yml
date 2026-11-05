@@ -40,6 +40,8 @@ services:
       # 覆盖 .env 里的本机地址：容器内必须用服务名连库
       DATABASE_URL: postgresql://${POSTGRES_USER:-svquant}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-svquant}
       YG_RE_BASE: ${YG_RE_BASE:?deploy/.env 缺 YG_RE_BASE（ResearchEngine 地址）}
+      # inline=进程内线程池（默认）；queue=写 background_jobs，由 worker 服务消费
+      QUANT_FACTOR_JOB_MODE: ${QUANT_FACTOR_JOB_MODE:-inline}
       # P1-D01/D02/D07/D08：本地 marketdata release 只读挂载
       MARKETDATA_DIR: /marketdata
       # 独立数据平台只读视图（物化 symlink 指向 /marketdata）
@@ -67,6 +69,29 @@ services:
       timeout: 5s
       start_period: 40s
       retries: 12
+    restart: unless-stopped
+
+  worker:
+    # 量化长任务消费者；默认 API 仍是 inline，设 QUANT_FACTOR_JOB_MODE=queue 后启用。
+    image: ${BACKEND_IMAGE:-svquant-backend:local}
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-svquant}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-svquant}
+      YG_RE_BASE: ${YG_RE_BASE:?deploy/.env 缺 YG_RE_BASE（ResearchEngine 地址）}
+      QUANT_FACTOR_JOB_MODE: queue
+      SVQUANT_WORKER_MODE: worker
+      TZ: Asia/Shanghai
+    depends_on:
+      backend:
+        condition: service_healthy
+    command: ["python", "-u", "worker.py"]
+    volumes:
+      - backend-output:/app/backend/output
+      - backend-factor:/app/backend/factor
+      - kh-data:/app/KnowledgeHub/data
+      - ${MARKETDATA_HOST_DIR:-/home/dev01/project/marketdata}:/marketdata:ro
+      - ${SVQUANT_DATA_HOST_DIR:-/home/dev01/project/svquant-data}:/data/svquant-data:ro
     restart: unless-stopped
 
   web:

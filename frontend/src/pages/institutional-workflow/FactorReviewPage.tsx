@@ -52,16 +52,16 @@ type StrategyDetail={branch:StrategyItem&{reviewer_id?:number|null;review_decisi
 type Gate={checks?:Array<{name:string;actual:number|null;threshold?:number;passed:boolean|null}>;complete?:boolean;passed?:boolean;pending?:string[]};
 
 function StrategyReviewSection(){
- const [items,setItems]=useState<StrategyItem[]>([]),[current,setCurrent]=useState<StrategyDetail>(),[error,setError]=useState(''),[busy,setBusy]=useState(false),[note,setNote]=useState('');
+ const [items,setItems]=useState<StrategyItem[]>([]),[current,setCurrent]=useState<StrategyDetail>(),[error,setError]=useState(''),[busy,setBusy]=useState(false),[note,setNote]=useState(''),[denied,setDenied]=useState(false);
  const api=async(path:string,body?:unknown)=>{const r=await researchFetch('/api/inst/quant/strategy-research/reviews'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(typeof (d.detail||d.error)==='string'?(d.detail||d.error):'策略复核服务不可用');return d;};
- useEffect(()=>{let alive=true;void api('').then((d:{branches:StrategyItem[]})=>{if(alive)setItems(d.branches);}).catch(e=>{if(alive)setError(e.message);});return()=>{alive=false;};},[]);
+ useEffect(()=>{let alive=true;void researchFetch('/api/inst/quant/strategy-research/reviews').then(async r=>{if(!alive)return;if(r.status===403){setDenied(true);return;}const d=await r.json();if(!r.ok)throw Error(typeof (d.detail||d.error)==='string'?(d.detail||d.error):'策略复核服务不可用');setItems(d.branches||[]);}).catch(e=>{if(alive)setError(e.message);});return()=>{alive=false;};},[]);
  async function select(id:string){setBusy(true);setError('');try{setCurrent(await api('/'+id));}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}}
  async function claim(id:string){setBusy(true);setError('');try{await api('/'+id+'/claim',{});setCurrent(await api('/'+id));}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}}
  async function save(id:string,decision:'approved'|'rejected'){if(!note.trim())return;setBusy(true);setError('');try{await api('/'+id,{decision,note});setItems(a=>a.filter(x=>x.id!==id));setCurrent(undefined);setNote('');}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}}
  const g=current?.effective_gate;
  return <div className="card" style={{marginTop:16}}><div className="card-head"><h2>策略候选</h2><span className="fine">封存通过并提交的冻结配方；研究员不能自审</span></div><div className="card-body">
   {error&&<p className="hint error" role="alert">{error}</p>}
-  {items.length===0?<p className="empty">没有待审策略候选</p>:<div className="queue" style={{display:'flex',gap:8,flexWrap:'wrap'}}>{items.map(i=><button key={i.id} className={'qi'+(current?.branch.id===i.id?' sel':'')} disabled={busy} onClick={()=>void select(i.id)}><span className="subtle">{i.id.slice(0,8)} · {i.status}</span><b>{i.topic_name}</b><small>{i.hypothesis.slice(0,60)}</small></button>)}</div>}
+  {denied?<p className="hint">当前角色无策略复核权限；策略候选只对独立复核人展示。</p>:items.length===0?<p className="empty">没有待审策略候选</p>:<div className="queue" style={{display:'flex',gap:8,flexWrap:'wrap'}}>{items.map(i=><button key={i.id} className={'qi'+(current?.branch.id===i.id?' sel':'')} disabled={busy} onClick={()=>void select(i.id)}><span className="subtle">{i.id.slice(0,8)} · {i.status}</span><b>{i.topic_name}</b><small>{i.hypothesis.slice(0,60)}</small></button>)}</div>}
   {current&&<div style={{marginTop:12}}>
    <p className="fine">{current.topic.name} · {current.topic.universe}/{current.topic.benchmark} · 封存 {current.sealed?.status||'—'} · {current.branch.review_status||''}</p>
    <p>{current.branch.hypothesis}</p>

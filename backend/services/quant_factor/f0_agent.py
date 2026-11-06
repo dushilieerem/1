@@ -200,6 +200,8 @@ def execute(uid, org, run_id, topic, decision, step):
             if current["status"] in ("passed", "failed", "error", "cancelled"):
                 if current["status"] == "passed":
                     review.request_review(uid, org, cand["id"], "封存验证通过，提交独立复核；入库仍由复核人决定。")
+                else:
+                    review.open_seal_failed_review(uid, org, cand["id"], "封存未通过，进入复盘；不能入库")
                 return {"status": "completed" if current["status"] == "passed" else "stopped",
                         "action": "request_seal", "sealed_id": row["id"],
                         "sealed_status": current["status"],

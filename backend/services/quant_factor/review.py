@@ -68,6 +68,16 @@ def _ledger_context(org,project_id):
             'k':k,'threshold':threshold(k) if k>=1 else None}
 
 
+def open_seal_failed_review(uid,org,cid,reason):
+    with get_conn() as c:
+        row=c.execute("SELECT * FROM quant_factor_candidates WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE",(cid,uid,org)).fetchone()
+        if not row:raise KeyError(cid)
+        card=dict(row['archive'] or {})
+        card['review']={'status':'requested','purpose':'seal_failed_review','question':'封存未通过复盘：'+str(reason)[:1000],'at':datetime.now(timezone.utc).isoformat(),'snapshot_hash':row['snapshot_hash']}
+        c.execute("UPDATE quant_factor_candidates SET archive=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s",(store.encode(card),store.encode([event('seal_failed_review_requested')]),cid))
+    return detail(uid,org,cid)
+
+
 def detail(uid,org,cid):
     with get_conn() as c:
         row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND org_id=%s',(cid,org)).fetchone()
@@ -95,6 +105,8 @@ def record(uid,org,cid,decision,note):
                     raise WorkflowError('按课题当前 K 校正后 NW t 未达标，只能退回补证或归档')
             if row['snapshot']['plan'].get('researchPurpose')=='discovery' and not handoff_allowed(row):raise WorkflowError('新因子候选尚未通过完整去重检验，可反馈补充研究，不能确认新成果依据充分。')
         card=dict(row['archive']);review=dict(card['review'])
+        if review.get('purpose')=='seal_failed_review' and decision=='research_supported':
+            raise WorkflowError('封存未通过的复盘不能入库；只能驳回或退回课题新建计划')
         if review['status']!='requested':raise WorkflowError('此版本已复核，不能覆盖原结论；新研究版本须单独提交')
         ensure_assigned(review,uid)
         review.update(status='reviewed',decision=decision,note=note.strip(),reviewer_id=uid,reviewed_at=datetime.now(timezone.utc).isoformat())

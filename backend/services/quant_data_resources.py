@@ -66,14 +66,14 @@ FREQUENCY = {
 }
 
 
-_VIEW_CACHE: dict[str, tuple[float, dict]] = {}
+_VIEW_CACHE: dict[str, tuple[int, dict]] = {}
 
 
 def _view_yaml(view_id: str) -> dict:
     for path in (DATA_HOME / "views").glob("*.yaml"):
         if path.stem != view_id:
             continue
-        mtime = path.stat().st_mtime
+        mtime = path.stat().st_mtime_ns
         cached = _VIEW_CACHE.get(view_id)
         if cached and cached[0] == mtime:
             return cached[1]

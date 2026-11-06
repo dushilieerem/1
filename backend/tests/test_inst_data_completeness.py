@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import sys
+
+import pytest
 from pathlib import Path
 
 os.environ.setdefault("JWT_SECRET_KEY", "0123456789abcdef0123456789abcdef")
@@ -18,6 +20,20 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from services.institution import inst_service as svc  # noqa: E402
+
+
+def _data_platform_ready() -> bool:
+    try:
+        from services.core.db import get_conn
+
+        with get_conn() as conn:
+            row = conn.execute("SELECT to_regclass('svquant.holder_top10') AS t").fetchone()
+            return bool(row and row.get("t"))
+    except Exception:
+        return False
+
+
+DP_SKIP = pytest.mark.skipif(not _data_platform_ready(), reason="数据平台 A 组表未加载；由数据业务发布后运行")
 
 
 def test_history_summary_uses_annual_points() -> None:
@@ -122,6 +138,14 @@ def test_build_research_includes_peers_history_and_net_debt(monkeypatch) -> None
     monkeypatch.setattr(svc.md, "industry_peers", lambda *a, **k: peers)
     monkeypatch.setattr(svc.md, "share_capital_history", lambda *a, **k: [{"effective_date": "2025-12-31", "total_shares": 1_000_000_000}])
     monkeypatch.setattr(svc.md, "dividend_history", lambda *a, **k: [{"ex_date": "2025-06-30", "cash_per_share": 20}])
+    monkeypatch.setattr(svc.data_platform, "holder_summary", lambda *a, **k: {"report_date": "2025-12-31", "top10_ratio_pct": 72.2, "count": 10, "holders": [], "is_control_known": False, "note": "前十大股东合计"})
+    monkeypatch.setattr(svc.data_platform, "segment_summary", lambda *a, **k: {"report_date": "2025-12-31", "types": {}})
+    monkeypatch.setattr(svc.data_platform, "audit_summary", lambda *a, **k: {"report_date": "2025-12-31", "is_standard": True, "red_flag": False})
+    monkeypatch.setattr(svc.data_platform, "interest_debt_summary", lambda *a, **k: {
+        "is_financial": False, "net_debt": -10.0, "interest_debt_total": 80.0,
+        "source": "eastmoney_f10_balance", "net_debt_applicable": True,
+        "note": "有息负债合计不含租赁负债，现金未扣受限资金",
+    })
     built = svc._build_research(company, mode="valuation")
     facts = built["facts"]
     assert len(facts["financials"]) > 8
@@ -158,6 +182,7 @@ def test_governance_holders_do_not_unlock_gate() -> None:
     assert gated["gate"] == "fail"
 
 
+@DP_SKIP
 def test_data_platform_pilot_access() -> None:
     from services.core.db import get_conn
     from services.institution import data_platform
@@ -178,6 +203,7 @@ def test_data_platform_pilot_access() -> None:
     assert audit["red_flag"] is False
 
 
+@DP_SKIP
 def test_interest_debt_summary_and_financial_null() -> None:
     from services.core.db import get_conn
     from services.institution import data_platform
@@ -197,6 +223,9 @@ def test_interest_debt_summary_and_financial_null() -> None:
     assert normal["lease_in_total"] is False
     assert "不含租赁负债" in normal["note"]
     assert "未扣受限资金" in normal["note"]
+    # 0 只代表无余额或源未列示，不作为“有预收余额”的证据。
+    assert normal["advance_receipts"] == 0
+    assert normal["advance_receipts_positive"] is False
     assert bank and bank["is_financial"] is True
     assert bank["net_debt"] is None
     assert bank["interest_debt_total"] is None
@@ -204,6 +233,7 @@ def test_interest_debt_summary_and_financial_null() -> None:
     assert "不适用" in bank["note"]
 
 
+@DP_SKIP
 def test_build_research_uses_data_business_net_debt() -> None:
     company = {
         "symbol": "600519.SH",
@@ -216,6 +246,10 @@ def test_build_research_uses_data_business_net_debt() -> None:
     built = svc._build_research(company, mode="valuation")
     facts = built["facts"]
     assert facts["interest_debt_summary"]["net_debt_applicable"] is True
+    assert facts["interest_debt_summary"]["advance_receipts_positive"] is False
+    business = facts["data_completeness"]["business_model"]
+    assert not any("预收款项" in x for x in business["have"])
+    assert any("合同负债/预收款" in x for x in business["missing"])
     valuation = built["valuation"] or {}
     assert valuation.get("net_debt_proxy", {}).get("source") == "eastmoney_f10_balance"
     assert "有息负债合计" in str(valuation.get("net_debt_proxy", {}).get("label"))

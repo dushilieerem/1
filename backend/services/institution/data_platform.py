@@ -25,10 +25,11 @@ def _as_of(value: Any) -> date:
 
 
 def _query(conn, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]] | None:
+    # 数据平台表可能尚未加载；用 savepoint 隔离失败，避免把调用方事务打成 aborted。
+    savepoint = "data_platform_read"
+    conn.execute(f"SAVEPOINT {savepoint}")
     try:
-        # 外层事务里失败会污染整个事务；用保存点兜住缺表/缺 schema 的探测。
-        with conn.transaction():
-            rows = conn.execute(sql, params).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     except (
         psycopg.errors.UndefinedTable,
         psycopg.errors.UndefinedColumn,
@@ -36,8 +37,11 @@ def _query(conn, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]] | No
     ):
         # 空库/未加载数据平台时 schema svquant 也不存在，按数据缺口返回，
         # 不能把研究生成打成 500。
+        conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
         return None
-    return [dict(r) for r in rows]
+    else:
+        conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        return [dict(r) for r in rows]
 
 
 def holder_summary(
@@ -180,6 +184,9 @@ def interest_debt_summary(conn, symbol: str, as_of: Any) -> dict[str, Any] | Non
     is_financial = bool(row.get("is_financial"))
     net_debt = row.get("net_debt")
     interest_total = row.get("interest_debt_total")
+    advance_receipts = (
+        float(row["advance_receipts"]) if row.get("advance_receipts") is not None else None
+    )
     return {
         "report_date": str(row.get("report_date")),
         "interest_debt_total": float(interest_total) if interest_total is not None else None,
@@ -191,9 +198,8 @@ def interest_debt_summary(conn, symbol: str, as_of: Any) -> dict[str, Any] | Non
         "interest_debt_components": (
             "短期借款 + 一年内到期非流动负债 + 长期借款 + 应付债券"
         ),
-        "advance_receipts": (
-            float(row["advance_receipts"]) if row.get("advance_receipts") is not None else None
-        ),
+        "advance_receipts": advance_receipts,
+        "advance_receipts_positive": advance_receipts is not None and advance_receipts > 0,
         "contract_liabilities": (
             float(row["contract_liabilities"]) if row.get("contract_liabilities") is not None else None
         ),
@@ -206,7 +212,8 @@ def interest_debt_summary(conn, symbol: str, as_of: Any) -> dict[str, Any] | Non
             if is_financial
             else (
                 "有息负债合计不含租赁负债（源缺失）；净债务 = 有息负债合计 − 货币资金，"
-                "货币资金未扣受限资金；预收款项与合同负债不是同一科目，合同负债源未单列。"
+                "货币资金未扣受限资金；预收款项与合同负债不是同一科目，合同负债源未单列；"
+                "预收款项为 0 只表示该期期末无余额或源未列示，不作为有余额证据。"
             )
         ),
         "population_note": (

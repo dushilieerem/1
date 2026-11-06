@@ -1074,7 +1074,7 @@ def _data_completeness(
     if segments:
         business_have.append(f"分部收入/毛利（{segments.get('report_date')}，产品/地区/行业）")
         business_missing.remove("分产品/分地区收入与毛利")
-    if debt and debt.get("advance_receipts") is not None:
+    if debt and (debt.get("advance_receipts") or 0) > 0:
         business_have.append("预收款项（非合同负债，合同负债源未单列）")
         if "合同负债/预收款" in business_missing:
             business_missing.remove("合同负债/预收款")
@@ -1107,8 +1107,8 @@ def _data_completeness(
             financial_have.append("有息负债/净债务不适用（金融企业）")
         elif debt.get("net_debt") is not None:
             financial_have.append("有息负债/净债务（数据业务口径：不含租赁负债，未扣受限资金）")
-        if debt.get("advance_receipts") is not None:
-            financial_have.append("预收款项")
+        if (debt.get("advance_receipts") or 0) > 0:
+            financial_have.append("预收款项（>0，有余额证据）")
         financial_missing.append("受限资金/租赁负债/合同负债（源数据为空，B 组补）")
     governance_have: list[str] = []
     governance_missing = [

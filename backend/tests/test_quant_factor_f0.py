@@ -128,3 +128,38 @@ class EngineTest(unittest.TestCase):
                                                   before_step=lambda step: '课题已暂停' if step == 2 else '')
         self.assertEqual(len(steps), 1)
         self.assertIn('暂停', reason)
+
+
+class CapabilityFallbackTest(unittest.TestCase):
+    def test_detects_capability_message(self):
+        from services.quant_factor import f0_agent
+        msg = ("F3 未生成通过校验的实现：代码未通过平台校验：需求暂不支持："
+               "improvementScope 要求对因子值做 1%/99% 分位 winsorize、按行业分组、剔除成交额最低 5% 及停牌样本")
+        self.assertTrue(f0_agent._capability_failure(msg))
+        self.assertEqual(set(f0_agent._capability_gaps(msg)),
+                         {"winsorize", "行业分组", "成交额分位过滤", "停牌剔除"})
+
+    def test_generic_validation_failure_is_not_capability(self):
+        from services.quant_factor import f0_agent
+        self.assertFalse(f0_agent._capability_failure("F3 未生成通过校验的实现：语法错误"))
+
+    def test_revise_falls_back_instead_of_stopping(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from services.quant_factor import f0_agent
+        decision = SimpleNamespace(action="revise", branch_id="b1", change_scope="winsorize",
+                                   stop_reason="", next_hypothesis="h")
+        msg = "F3 未生成通过校验的实现：需求暂不支持：分位 winsorize"
+        calls = []
+        def fake_revise(*args, **kwargs):
+            calls.append(kwargs.get("scope_override"))
+            if kwargs.get("scope_override") is None:
+                raise f0_agent.service.WorkflowError(msg)
+            return {"branch_id": "b2", "candidate_status": "development_passed"}
+        with patch.object(f0_agent, "_context", return_value={"remaining": 5}), \
+             patch.object(f0_agent, "_revise", side_effect=fake_revise):
+            out = f0_agent.execute(1, 2, "r1", {"project_id": "p1", "id": "t1"}, decision, 1)
+        self.assertEqual(out["status"], "completed")
+        self.assertTrue(out["fallback"])
+        self.assertIn("winsorize", out["needed_capabilities"])
+        self.assertEqual(len(calls), 2)

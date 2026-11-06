@@ -56,6 +56,11 @@ def _context(uid, org, topic, run_id):
         project = c.execute("SELECT config FROM detect_projects WHERE user_id=%s AND id=%s",
                             (uid, topic["project_id"])).fetchone()
     purpose = ((project or {}).get("config") or {}).get("researchPlan", {}).get("researchPurpose", "")
+    with get_conn() as c:
+        run_row = c.execute("SELECT decision FROM quant_factor_f0_runs WHERE id=%s AND user_id=%s AND org_id=%s",
+                            (run_id, uid, org)).fetchone()
+    gaps = sorted({cap for s in ((run_row or {}).get("decision") or {}).get("steps", [])
+                   for cap in ((s.get("result") or {}).get("needed_capabilities") or [])})
     latest = trials[-1] if trials else None
     summary = {}
     if latest:
@@ -72,6 +77,7 @@ def _context(uid, org, topic, run_id):
             "trial_no", "branch_id", "kind", "outcome", "returned_metrics", "rerun_of", "report_id")}
             for t in trials[-8:]],
         "latest_report": summary, "branches": branches, "research_purpose": purpose,
+        "capability_gaps": gaps,
         # Same-topic history only, and never on a topic with no recorded trial:
         # a stale stop from an earlier broken run must not block the first real test.
         "recent_f0_stops": [f"run {r['id'][:8]}: {r['stop_reason']}" for r in recent] if trials else [],
@@ -91,7 +97,7 @@ def decide(uid, org, topic, run_id):
         "rationale 必须引用具体 trial 编号和指标（如 E2 的 NW t、K、t*(K)），不能空泛。"
         "revise/pivot 必须给出具体 next_hypothesis 与 change_scope；没有实质修订就 stop。"
         "不得改变门槛、数据范围、预算，不得声称 novelty 可用，不得批准入库或封存。"
-        "request_seal 仅在最近研发已通过时使用；发现类（discovery）还需新颖性通过，已有因子复现（replication）不需要 novelty/R4，可直接 request_seal。否则 stop。预算为 0 时必须 stop。threshold 始终给出（K=0 按 K=1 的 t*）。recent_f0_stops 只是本课题历史运行的记录，不是本 run 的检验证据，不能据此在无 trial 时停止。\n最近一次研发检验失败且预算允许时，优先选择 revise 或 pivot，并给出实质性的新假设；不得只重跑同一实现。"
+        "request_seal 仅在最近研发已通过时使用；发现类（discovery）还需新颖性通过，已有因子复现（replication）不需要 novelty/R4，可直接 request_seal。否则 stop。预算为 0 时必须 stop。threshold 始终给出（K=0 按 K=1 的 t*）。recent_f0_stops 只是本课题历史运行的记录，不是本 run 的检验证据，不能据此在无 trial 时停止。capability_gaps 是 F3 已确认不支持的能力，修订必须避开它们，改用可实现的截面 rank/z-score 或时序窗口。\n最近一次研发检验失败且预算允许时，优先选择 revise 或 pivot，并给出实质性的新假设；不得只重跑同一实现。"
     )
     try:
         get_task(TASK)
@@ -136,7 +142,31 @@ def _run_test(uid, org, project_id, f0_run_id=None):
     return _wait_candidate(uid, org, cand["id"])
 
 
-def _revise(uid, org, project_id, parent_id, decision, run_id, topic_id):
+_CAPABILITY_KEYWORDS = (
+    ("winsorize", ("winsor", "分位", "缩尾")),
+    ("行业分组", ("行业", "industry", "groupby")),
+    ("成交额分位过滤", ("成交额", "amount", "流动性")),
+    ("停牌剔除", ("停牌", "suspended")),
+    ("rank/z-score", ("rank", "z-score", "zscore", "标准化")),
+)
+
+_FALLBACK_SCOPE = (
+    "只使用平台已开放的面板 API：截面 rank、z-score、时序均值/标准差、按字段比较筛选；"
+    "禁止 winsorize、分位、行业分组、成交额分位过滤、停牌剔除；如仍无法实现，明确返回能力不足。"
+)
+
+
+def _capability_failure(message):
+    text = str(message or "")
+    return any(k in text for k in ("需求暂不支持", "不支持", "无法在不调用", "能力不足", "没有 quantile", "没有 quantile、groupby"))
+
+
+def _capability_gaps(message):
+    text = str(message or "").lower()
+    return [label for label, keys in _CAPABILITY_KEYWORDS if any(k.lower() in text for k in keys)]
+
+
+def _revise(uid, org, project_id, parent_id, decision, run_id, topic_id, scope_override=None):
     project = get_project(uid, project_id)["project"]
     cfg = project["config"]
     plan = cfg.get("researchPlan") or {}
@@ -148,7 +178,7 @@ def _revise(uid, org, project_id, parent_id, decision, run_id, topic_id):
     name = (cfg.get("draftFactor") or {}).get("name") or (cfg.get("factorCodes") or ["f0_factor"])[0]
     job = agent_jobs.create(uid, org, "F3", project_id, {
         "hypothesis": hypothesis, "candidateExpression": plan.get("candidateExpression", ""),
-        "improvementScope": decision.change_scope or "只改进实现，不改变经济假设和方向",
+        "improvementScope": scope_override or decision.change_scope or "只改进实现，不改变经济假设和方向",
         "target": plan.get("target", "未来1个交易日收益"), "name": name, "code": old_code,
         "mode": "improve"}, f"f0:{run_id}:{uuid.uuid4().hex[:8]}")
     deadline = time.monotonic() + 420
@@ -213,8 +243,24 @@ def execute(uid, org, run_id, topic, decision, step):
             time.sleep(2)
         return {"status": "stopped", "reason": "封存计算超时，交人工重试"}
     if action in ("revise", "pivot"):
-        out = _revise(uid, org, topic["project_id"], decision.branch_id, decision, run_id, topic["id"])
-        return {"status": "completed", "action": action, **out}
+        try:
+            out = _revise(uid, org, topic["project_id"], decision.branch_id, decision, run_id, topic["id"])
+            return {"status": "completed", "action": action, **out}
+        except service.WorkflowError as exc:
+            if not _capability_failure(str(exc)):
+                raise
+            gaps = _capability_gaps(str(exc))
+            try:
+                out = _revise(uid, org, topic["project_id"], decision.branch_id, decision, run_id,
+                              topic["id"], scope_override=_FALLBACK_SCOPE)
+                return {"status": "completed", "action": action, "fallback": True,
+                        "needed_capabilities": gaps, "capability_event": str(exc)[:400], **out}
+            except service.WorkflowError as retry:
+                # Not a reason to burn the remaining budget: continue with a simpler hypothesis.
+                return {"status": "skipped", "action": action, "fallback": True,
+                        "needed_capabilities": gaps,
+                        "reason": "F3 能力不支持，降级修订仍未生成合规实现，继续下一步",
+                        "capability_event": str(exc)[:400], "detail": str(retry)[:400]}
     cand = _run_test(uid, org, topic["project_id"], run_id)
     return {"status": "completed", "action": "run_test", "candidate_id": cand["id"],
             "candidate_status": cand["status"]}

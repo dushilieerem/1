@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from services import strategy_s0
-from app.deps import require_quant_researcher
+from app.deps import require_quant_researcher, require_quant_reviewer
 from app.routers.inst_quant import _quant_uid
 from services.quant_factor.policy import WorkflowError
 from services import strategy_research as svc
@@ -67,6 +67,71 @@ def topic_ledger(tid: str, ctx=Depends(require_quant_researcher)):
 def branch_backtest(bid: str, ctx=Depends(require_quant_researcher)):
     from services.strategy_backtest_runner import run_trial
     return invoke(run_trial, *identity(ctx), bid)
+
+
+@router.post("/branches/{bid}/diagnostics/cost-2x")
+def branch_cost_2x(bid: str, ctx=Depends(require_quant_researcher)):
+    from services import strategy_diagnostics
+    return invoke(strategy_diagnostics.cost_2x, *identity(ctx), bid)
+
+
+@router.post("/branches/{bid}/diagnostics/neighborhood")
+def branch_neighborhood(bid: str, ctx=Depends(require_quant_researcher)):
+    from services import strategy_diagnostics
+    return invoke(strategy_diagnostics.neighborhood, *identity(ctx), bid)
+
+
+@router.get("/branches/{bid}/diagnostics")
+def branch_diagnostics(bid: str, ctx=Depends(require_quant_researcher)):
+    from services import strategy_diagnostics
+    return {"diagnostics": invoke(strategy_diagnostics.latest, *identity(ctx), bid)}
+
+
+class SealBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: str = Field(min_length=1, max_length=100)
+
+
+@router.post("/branches/{bid}/seal", status_code=202)
+def branch_seal(bid: str, body: SealBody, ctx=Depends(require_quant_researcher)):
+    from services import strategy_sealed
+    return invoke(strategy_sealed.request, *identity(ctx), bid, body.idempotency_key)
+
+
+@router.get("/sealed/{sid}")
+def sealed_read(sid: str, ctx=Depends(require_quant_researcher)):
+    from services import strategy_sealed
+    return invoke(strategy_sealed.read, *identity(ctx), sid)
+
+
+@router.post("/branches/{bid}/submit-review")
+def branch_submit_review(bid: str, ctx=Depends(require_quant_researcher)):
+    from services import strategy_sealed
+    return invoke(strategy_sealed.submit_for_review, *identity(ctx), bid)
+
+
+@router.get("/reviews")
+def review_queue(ctx=Depends(require_quant_reviewer)):
+    from services import strategy_sealed
+    return {"branches": invoke(strategy_sealed.queue, *identity(ctx))}
+
+
+@router.post("/reviews/{bid}/claim")
+def review_claim(bid: str, ctx=Depends(require_quant_reviewer)):
+    from services import strategy_sealed
+    return invoke(strategy_sealed.claim, *identity(ctx), bid)
+
+
+class ReviewBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decision: str = Field(pattern="^(approved|rejected)$")
+    note: str = Field(default="", max_length=2000)
+
+
+@router.post("/reviews/{bid}")
+def review_record(bid: str, body: ReviewBody, ctx=Depends(require_quant_reviewer)):
+    from services import strategy_sealed
+    return invoke(strategy_sealed.decide, *identity(ctx), bid, body.decision, body.note)
 
 
 @router.post("/topics/{tid}/branches")

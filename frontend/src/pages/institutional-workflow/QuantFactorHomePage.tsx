@@ -17,7 +17,7 @@ export function QuantFactorHomePage(){
  const [selected,setSelected]=useState<string>();
  const [ledger,setLedger]=useState<Ledger>();
  const [node,setNode]=useState<string>();
- const [f0,setF0]=useState<{id:string;status:string;decision?:{candidate_status?:string;reason?:string;steps?:Array<{step:number;decision:{action:string;rationale:string};usage?:{tokens_in?:number;tokens_out?:number};result:{status?:string;candidate_status?:string;reason?:string}}>};stop_reason?:string}>();
+ const [f0,setF0]=useState<{id:string;status:string;decision?:{candidate_status?:string;reason?:string;steps?:Array<{step:number;decision:{action:string;rationale:string};usage?:{tokens_in?:number;tokens_out?:number};result:{status?:string;candidate_status?:string;reason?:string;needed_capabilities?:string[]}}>};stop_reason?:string}>();
  const [error,setError]=useState('');
  const [loading,setLoading]=useState(true);
  const [pending,setPending]=useState<number|null>(null);
@@ -71,6 +71,7 @@ export function QuantFactorHomePage(){
  const selectedBranch=(ledger?.branches||[]).find(b=>b.id===node);
  const feed=useMemo(()=>[...(ledger?.trials||[])].sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,12),[ledger]);
  const totalTrials=topics.reduce((n,t)=>n+t.trial_count,0);
+ const capabilityGaps=useMemo(()=>Array.from(new Set((f0?.decision?.steps||[]).flatMap(s=>s.result?.needed_capabilities||[]))),[f0]);
 
  function branchNode(b:Branch,depth=0):ReactElement{
   const trials=trialsByBranch.get(b.id)||[];
@@ -166,6 +167,7 @@ export function QuantFactorHomePage(){
      <span>当前 t*(K) <b>{ledger?.threshold==null?'待接入':ledger.threshold.toFixed(3)}</b></span>
      <span>下一次可计数检验 t* <b>{ledger?.threshold_next_if_counted?.toFixed(3)||'待接入'}</b></span>
     </div>
+    {capabilityGaps.length>0&&<p className="hint" role="status">需要的能力（F3 暂不支持）：{capabilityGaps.join('、')}。F0 已改用可实现的降级修订继续。</p>}
     <div className="section-title" style={{marginTop:16}}><h3>研究树</h3><span className="subtle">点击分支查看试验与报告</span></div>
     {tree}
    </div>

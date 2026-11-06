@@ -166,14 +166,26 @@ def ledger(uid, org, topic_id):
         trials = [dict(r) for r in c.execute(
             "SELECT * FROM strategy_trials WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY trial_no",
             (uid, org, topic_id)).fetchall()]
+        diag_rows = [dict(r) for r in c.execute(
+            "SELECT kind,payload,branch_id FROM strategy_diagnostics WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at DESC",
+            (uid, org, topic_id)).fetchall()]
     def counts(t):
         if t["outcome"] in ("passed", "failed"):
             return True
         return t["outcome"] in ("error", "timeout") and bool(t.get("metrics"))
     k = sum(1 for t in trials if counts(t))
     from . import strategy_gates
+    from .strategy_diagnostics import merged_gate
+    diag = {}
+    for row in diag_rows:
+        diag.setdefault(row["branch_id"], {}).setdefault(row["kind"], row)
+    public_trials = []
+    for t in trials:
+        item = _public(t)
+        item["effective_gate"] = merged_gate(item, diag.get(t["branch_id"], {}))
+        public_trials.append(item)
     return {"topic": _public(topic), "branches": [_public(b) for b in branches],
-            "trials": [_public(t) for t in trials], "k": k,
+            "trials": public_trials, "k": k,
             "ir_threshold": strategy_gates.need_ir(k),
             "policy": {"version": strategy_gates.POLICY_VERSION, **strategy_gates.POLICY},
             "policy_note": "测试阈值（原型默认值）；机构可发布新的策略政策版本"}

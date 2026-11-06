@@ -106,9 +106,9 @@ export function QuantFactorHomePage(){
       <span className="hid">{b.id.slice(0,8)}</span>
       <span className="bt">{b.source==='manual'?'人工分支':'Agent 分支'} · 假设 v{b.hypothesis_version} / 实现 v{b.implementation_version}</span>
       <span className={'badge '+(b.status==='active'?'live':'gray')}>{b.status==='active'?'进行中':b.status}</span>
-      <span className="by">{trials.length} 次试验</span>
+      <span className="by">{b.source==='manual'?'人工':'Agent'} · {trials.length} 次试验</span>
      </div>
-     {trials.length>0&&<div className="steps">{trials.map(t=><span key={t.trial_no} className={'chip '+(t.outcome==='passed'?'ok':t.outcome==='failed'?'fail':'warn')}>E{t.trial_no} · {outcomeText(t)}{t.rerun_of?' · rerun':''}</span>)}</div>}
+     {trials.length>0&&<div className="steps">{trials.map(t=>{const checks=t.result_summary?.gate?.checks||[];const ic=checks.find(c=>c.name.includes('方向IC')||c.name.includes('方向 Rank IC'));const nw=checks.find(c=>c.name.includes('NW t'));return <span key={t.trial_no} className={'chip '+(t.outcome==='passed'?'ok':t.outcome==='failed'?'fail':'warn')} title={checks.map(c=>`${c.name}: ${c.actual==null?'—':Number(c.actual).toFixed(3)} / ${String(c.threshold)}`).join(' · ')}>{`E${t.trial_no}`}{ic?.actual!=null?` · IC ${Number(ic.actual).toFixed(3)}`:''}{nw?.actual!=null?` · t ${Number(nw.actual).toFixed(2)} / ${Number(nw.threshold).toFixed(2)}`:` · ${outcomeText(t)}`}{t.rerun_of?' · rerun':''}</span>;})}</div>}
     </div>
     {(children.get(b.id)||[]).length>0&&<div className="children">{(children.get(b.id)||[]).map(c=>branchNode(c,depth+1))}</div>}
    </div>
@@ -200,7 +200,7 @@ export function QuantFactorHomePage(){
 
  return (
   <>
-   <WorkspaceHeading title="因子工厂" description="研究系统持续挖掘因子：你可以随时观察、介入，或亲自研究。">
+   <WorkspaceHeading eyebrow="FACTOR FACTORY" title="因子工厂" description="研究系统持续挖掘因子：你可以随时观察、介入，或亲自研究。">
     <button className="btn" onClick={()=>setAuthOpen(v=>!v)}>研究授权</button>
     <Link className="btn primary" to="/quant/factor/library">新建课题</Link>
    </WorkspaceHeading>

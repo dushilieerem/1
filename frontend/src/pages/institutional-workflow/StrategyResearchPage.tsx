@@ -4,7 +4,7 @@ import {researchFetch} from '@/lib/researchClient';
 import {WorkspaceHeading} from './QuantWorkspacePages';
 
 type Topic={id:string;name:string;universe:string;benchmark:string;status:string;k?:number;branch_count:number;trial_count:number;max_trials:number;development_start?:string;development_end?:string};
-type Branch={id:string;source:string;hypothesis:string;version:number;status:string;review_status?:string;sealed?:{status:string;result?:{excess_return?:number};gate?:Gate}|null;recipe:{factors:Array<{factor:string;library?:string;direction:string}>;top_n:number;rebalance_days:number}};
+type Branch={id:string;source:string;hypothesis:string;version:number;status:string;review_status?:string;sealed?:{status:string;result?:{excess_return?:number};gate?:Gate}|null;recipe:{factors:Array<{factor:string;library?:string;direction:string}>;top_n:number;rebalance_days:number;buffer?:number}};
 type Gate={basis?:string;checks?:Array<{name:string;actual:number|null;threshold?:number;passed:boolean|null}>;passed?:boolean;complete?:boolean;pending?:string[];policy_status?:string};
 type CurvePoint={date:string;value:number};
 type TrialReport={equity_curve?:CurvePoint[];benchmark_curve?:CurvePoint[];annual_returns?:Array<{year:number;return_value:number}>;assumptions?:Record<string,string>;period_excess?:number};
@@ -109,15 +109,45 @@ function LedgerCard({ledger,busy,run,openReport}:{ledger:Ledger;busy:boolean;run
 }
 
 function ManualView({ledger,busy,run,openReport}:{ledger:Ledger|null;busy:boolean;run:(p:string,k:string)=>Promise<void>;openReport:(id:string)=>Promise<void>}){
+ const [tool,setTool]=useState<'recipe'|'test'|'robust'|'seal'|'submit'>('recipe');
+ const [branchId,setBranchId]=useState<string>();
+ const [diag,setDiag]=useState<Record<string,{payload:{cells?:Array<{top_n:number;rebalance_days:number;excess:number;ir:number;passed:boolean}>;passed_cells?:number}}>>({});
+ const branch=ledger?.branches.find(b=>b.id===branchId)||ledger?.branches[0];
+ useEffect(()=>{if(!ledger||!branch){return;}setBranchId(cur=>cur&&ledger.branches.some(b=>b.id===cur)?cur:ledger.branches[0]?.id);},[ledger?.topic.id]);
+ useEffect(()=>{if(tool!=='robust'||!branch)return;let alive=true;void researchFetch('/api/inst/quant/strategy-research/branches/'+encodeURIComponent(branch.id)+'/diagnostics').then(r=>r.ok?r.json():null).then(d=>{if(alive&&d)setDiag(d.diagnostics||{});});return()=>{alive=false;};},[tool,branch?.id]);
  if(!ledger)return <div className="card card-pad"><p className="empty">先在“研究运行”选择课题。</p></div>;
- return <div className="card"><div className="card-head"><h2>人工研究</h2><span className="fine">{ledger.topic.name} · 人工与 S0 共用一本台账</span></div><div className="card-body">
-  <p className="fine">工具：查看冻结配方、运行回测、2 倍成本与邻域诊断、申请封存。人工回测同样计入 K；门槛不因人工操作改变。</p>
-  {ledger.branches.map(b=><div key={b.id} className="branch human"><div className="bh"><span className="hid">{b.id.slice(0,8)}</span><span className="bt">{b.hypothesis}</span><span className="by">{(b.recipe.factors||[]).map(f=>f.factor+'/'+f.direction).join(' + ')} · TopN {b.recipe.top_n} / {b.recipe.rebalance_days}日 · {b.status}</span></div><div className="form-actions"><button className="btn small primary" disabled={busy||b.status!=='active'} onClick={()=>void run('/branches/'+b.id+'/backtest','backtest')}>运行回测</button><button className="btn small" disabled={busy||b.status!=='active'} onClick={()=>void run('/branches/'+b.id+'/diagnostics/neighborhood','nbhd')}>参数邻域</button><button className="btn small" disabled={busy||b.status!=='active'} onClick={()=>void run('/branches/'+b.id+'/diagnostics/cost-2x','cost')}>成本敏感性</button></div></div>)}
-  <h3 style={{marginTop:14}}>最近试验</h3><div className="table-wrap"><table className="table"><thead><tr><th>#</th><th>结果</th><th>解释</th><th>报告</th></tr></thead><tbody>{ledger.trials.slice(-6).map(t=><tr key={t.id}><td>{t.trial_no}</td><td className="nowrap">{t.outcome} · {outcomeText(t)}</td><td>{t.report_id?<button className="text-link" onClick={()=>void openReport(t.id)}>打开</button>:'—'}</td></tr>)}</tbody></table></div>
-  <p className="hint">S0 自主推进入口在分支操作中复用同一决策引擎；本次只开放人工工具与真实回测。</p>
- </div></div>;
+ if(!branch)return <div className="card"><div className="card-body empty"><b>还没有接手的版本</b>在研究运行里选择一个版本，点“运行真实回测”或新建分支。<div style={{marginTop:12}}><Link className="btn primary" to="/quant/strategy">去研究运行</Link></div></div></div>;
+ const trials=ledger.trials.filter(t=>t.branch_id===branch.id);
+ const latest=trials.filter(t=>!t.rerun_of).slice(-1)[0];
+ const gate=latest?.effective_gate||latest?.gate;
+ const k=ledger.k, bar=ledger.ir_threshold;
+ const tools:[typeof tool,string][]=[['recipe','配方'],['test','回测'],['robust','稳健性'],['seal','封存验证'],['submit','提交']];
+ const nb=diag.neighborhood?.payload;
+ const body=tool==='recipe'?<>
+   <div className="kv"><span>因子与方向</span><div>{(branch.recipe.factors||[]).map(f=>f.factor+'/'+f.direction).join(' + ')}</div><span>持仓与调仓</span><div>TopN {branch.recipe.top_n} · {branch.recipe.rebalance_days} 日 · buffer {branch.recipe.buffer??0}</div><span>股票池/区间/成本</span><div>{ledger.topic.universe} / {ledger.topic.benchmark} · 由课题固定；单边成本按课题设定</div></div>
+   <p className="hint">只开放受控模板参数；任意代码策略、优化器不在本期。修改配方需新建分支。</p>
+   <div className="form-actions"><Link className="btn" to="/quant/factor/library">从因子库选择</Link><Link className="btn" to="/quant/strategy">新建分支</Link></div>
+  </>:tool==='test'?<>
+   <p className="fine">本次回测将记为课题第 {k+1} 次，IR 门槛升到 {bar?.toFixed(2)??'—'}。</p>
+   <div className="form-actions" style={{marginTop:8}}><button className="btn primary" disabled={busy||branch.status!=='active'} onClick={()=>void run('/branches/'+branch.id+'/backtest','backtest')}>运行回测</button>{latest&&<button className="btn" onClick={()=>void openReport(latest.id)}>查看完整报告</button>}<span className="fine">真实 RE；确定性重算不计 K</span></div>
+   {gate&&<div className="table-wrap" style={{marginTop:12}}><table className="table"><thead><tr><th>门槛</th><th>实际</th><th>要求</th><th>结果</th></tr></thead><tbody>{(gate.checks||[]).map(c=><tr key={c.name}><td>{c.name}</td><td>{c.actual==null?'—':Number(c.actual).toFixed(4)}</td><td>{c.threshold==null?'—':Number(c.threshold).toFixed(3)}</td><td className={c.passed?'ok-t':c.passed===false?'bad-t':''}>{c.passed==null?'待补':c.passed?'通过':'未通过'}</td></tr>)}</tbody></table></div>}
+  </>:tool==='robust'?<>
+   <p className="fine">2 倍成本与 3×3 邻域为稳健性检查，不计 K。邻域按年化超额 ≥3% 且 IR ≥0.5 判定。</p>
+   <div className="form-actions" style={{marginTop:8}}><button className="btn" disabled={busy||branch.status!=='active'} onClick={()=>void run('/branches/'+branch.id+'/diagnostics/cost-2x','cost')}>2 倍成本</button><button className="btn" disabled={busy||branch.status!=='active'} onClick={()=>void run('/branches/'+branch.id+'/diagnostics/neighborhood','nbhd')}>3×3 邻域（9 次）</button></div>
+   {nb?.cells?<div style={{marginTop:12}}><p>邻域：{nb.passed_cells}/9 通过</p><div className="table-wrap"><table className="table"><thead><tr><th>TopN</th><th>调仓</th><th>年化超额</th><th>IR</th><th>结果</th></tr></thead><tbody>{nb.cells.map((c,i)=><tr key={i}><td>{c.top_n}</td><td>{c.rebalance_days}</td><td>{pct(c.excess)}</td><td>{c.ir?.toFixed(2)}</td><td className={c.passed?'ok-t':'bad-t'}>{c.passed?'通过':'未通过'}</td></tr>)}</tbody></table></div></div>:<p className="empty">尚未执行邻域诊断。</p>}
+  </>:tool==='seal'?<>
+   <p className="fine">封存期每个候选只能使用一次；封存扣费后年化超额 &gt; 0 且 IR ≥ 0.3 才通过。失败保持失败，不进入复核。</p>
+   {branch.sealed?<p>封存 {branch.sealed.status}{branch.sealed.result?.excess_return!=null?` · 区间累计超额 ${pct(branch.sealed.result.excess_return)}`:''}{branch.sealed.gate?.basis==='annual'&&branch.sealed.gate?.checks?.[0]?.actual!=null?` · 年化超额 ${pct(branch.sealed.gate.checks[0].actual)}`:''}</p>:<button className="btn primary" disabled={busy||branch.status!=='active'||!(gate?.complete&&gate.passed)} onClick={()=>void run('/branches/'+branch.id+'/seal','seal')}>申请封存验证</button>}
+   {!(gate?.complete&&gate.passed)&&!branch.sealed&&<p className="hint warning">研发与稳健性门槛未全部通过，不能申请封存。</p>}
+  </>:<>
+   <p className="fine">封存通过后由独立复核人在审查中心决定是否入库；研究员不能审批自己的候选。</p>
+   <button className="btn primary" disabled={busy||branch.status!=='frozen'||branch.review_status!=='sealed_passed'} onClick={()=>void run('/branches/'+branch.id+'/submit-review','submit')}>{branch.review_status==='submitted'?'已提交':'提交审查'}</button>
+   {branch.review_status!=='sealed_passed'&&<p className="hint">封存验证通过后才能提交。</p>}
+  </>;
+ return <><div className="status-strip"><span className="status-icon">⌁</span><div className="status-main"><b>{ledger.topic.name} / {branch.id.slice(0,8)} · {branch.hypothesis.slice(0,40)}</b><p>课题台账 K={k} · 当前 IR 门槛 {bar?.toFixed(2)??'—'} · 预算 {k}/{ledger.topic.max_trials} · 分支状态 {branchStatusText(branch)}</p></div><div className="actions">{ledger.branches.length>1&&<select value={branch.id} onChange={e=>setBranchId(e.target.value)}>{ledger.branches.map(b=><option key={b.id} value={b.id}>{b.id.slice(0,8)} · v{b.version}</option>)}</select>}</div></div>
+ <div className="wb-grid"><div><div className="tool-tabs">{tools.map(([id,label])=><button key={id} className={tool===id?'on':''} onClick={()=>setTool(id)}>{label}</button>)}</div><div className="card"><div className="card-body">{body}</div></div></div>
+ <div className="card asst"><div className="card-head"><h2>研究助手</h2></div><div className="chat"><div className="msg ai">已加载 {branch.id.slice(0,8)}。助手只写草稿，执行由你确认；策略助手接口尚未接入，本区暂不产生模型建议。</div></div><div className="compose"><div className="qp"><button disabled>为什么不达标</button><button disabled>怎么降换手</button><button disabled>过拟合风险</button></div></div></div></div></>;
 }
-
 function LibraryView({library}:{library:Array<{id:string;topic_name:string;hypothesis:string;recipe:{factors?:Array<{factor:string}>;top_n:number;rebalance_days:number};version:number;trial_count:number;sealed_result?:{excess_return?:number}}>}){
  return <div className="card"><div className="card-head"><h2>策略库</h2><span className="fine">仅复核批准的研究用途版本；组合模块只读选用</span></div><div className="card-body">{library.length===0?<p className="empty">暂无已入库策略；需完成封存并通过独立复核。</p>:<div className="table-wrap"><table className="table"><thead><tr><th>课题</th><th>版本</th><th>配方</th><th>试验</th><th>封存超额</th><th>假设</th></tr></thead><tbody>{library.map(x=><tr key={x.id}><td>{x.topic_name}</td><td>v{x.version} · {x.id.slice(0,8)}</td><td>{(x.recipe.factors||[]).map(f=>f.factor).join(' + ')} · TopN {x.recipe.top_n} / {x.recipe.rebalance_days}日</td><td>{x.trial_count}</td><td>{x.sealed_result?.excess_return==null?'—':pct(x.sealed_result.excess_return)}</td><td className="fine">{x.hypothesis.slice(0,80)}</td></tr>)}</tbody></table></div>}</div></div>;
 }

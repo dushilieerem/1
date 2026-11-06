@@ -462,16 +462,12 @@ def update_company_pool(
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "manager")
-        before = conn.execute(
-            "SELECT pool_status, drop_reason FROM inst_company WHERE id=%s AND org_id=%s",
-            (company_id, org_id),
-        ).fetchone()
+        before = repo.set_company_pool(
+            conn, OrgScope(org_id), company_id, pool_status,
+            reason if pool_status == "dropped" else None,
+        )
         if not before:
             raise LookupError("公司不存在")
-        conn.execute(
-            "UPDATE inst_company SET pool_status=%s, drop_reason=%s, updated_at=NOW() WHERE id=%s AND org_id=%s",
-            (pool_status, reason if pool_status == "dropped" else None, company_id, org_id),
-        )
         _audit(
             conn,
             org_id=org_id,
@@ -4118,17 +4114,11 @@ def resolve_execution_exception(
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "manager", "partner", "execution")
-        row = conn.execute(
-            "SELECT * FROM inst_execution_exception WHERE id=%s AND org_id=%s",
-            (exception_id, org_id),
-        ).fetchone()
+        row, updated = repo.resolve_execution_exception(
+            conn, OrgScope(org_id), exception_id, status, resolution, actor_member_id
+        )
         if not row:
             raise LookupError("异常记录不存在")
-        updated = conn.execute(
-            "UPDATE inst_execution_exception SET status=%s, resolution=%s, resolved_by=%s, "
-            "resolved_at=NOW() WHERE id=%s RETURNING *",
-            (status, resolution, actor_member_id, exception_id),
-        ).fetchone()
         _audit(
             conn,
             org_id=org_id,
@@ -4636,11 +4626,9 @@ def create_monitor_event(
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "manager", "risk", "monitoring", "partner")
-        row = conn.execute(
-            "INSERT INTO inst_monitor_event (org_id, company_id, type, severity, detail) "
-            "VALUES (%s,%s,%s,%s,%s) RETURNING *",
-            (org_id, company_id, event_type, severity, _j({"text": detail})),
-        ).fetchone()
+        row = repo.create_monitor_event(
+            conn, OrgScope(org_id), company_id, event_type, severity, detail
+        )
         _audit(
             conn,
             org_id=org_id,

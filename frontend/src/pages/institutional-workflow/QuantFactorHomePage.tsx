@@ -141,9 +141,9 @@ export function QuantFactorHomePage(){
       <div className="unit agent"><span className="ui">F2</span><div><b>假设研究</b><small>Agent 草稿：可用，需人工确认</small></div></div>
       <div className="unit agent"><span className="ui">F3</span><div><b>因子实现</b><small>Agent 生成与校验：可用</small></div></div>
       <div className="unit"><span className="ui">F4</span><div><b>检验诊断</b><small>真实 RE 研发检验：可用</small></div></div>
-      <div className="unit indep"><span className="ui">F5</span><div><b>独立复核</b><small>独立意见可用 · 封存执行（无真实成功样例）</small></div></div>
+      <div className="unit indep"><span className="ui">F5</span><div><b>独立复核</b><small>独立意见可用 · 封存执行已接入（真实结果含失败）</small></div></div>
      </div>
-     <div className="svc"><span>数据视图</span><span>因子计算</span><span>试验台账</span><span>因子库查重</span><span>封存样本（未上线）</span></div>
+     <div className="svc"><span>数据视图</span><span>因子计算</span><span>试验台账</span><span>因子库查重</span><span>封存执行（真实）</span></div>
     </div>
    </div>
    <div className="card">

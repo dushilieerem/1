@@ -169,6 +169,10 @@ def ledger(uid, org, topic_id):
         diag_rows = [dict(r) for r in c.execute(
             "SELECT kind,payload,branch_id FROM strategy_diagnostics WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at DESC",
             (uid, org, topic_id)).fetchall()]
+        sealed_rows = [dict(r) for r in c.execute(
+            """SELECT branch_id,status,result,gate,report_id,created_at FROM strategy_sealed_validations
+               WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at DESC""",
+            (uid, org, topic_id)).fetchall()]
     def counts(t):
         if t["outcome"] in ("passed", "failed"):
             return True
@@ -179,16 +183,55 @@ def ledger(uid, org, topic_id):
     diag = {}
     for row in diag_rows:
         diag.setdefault(row["branch_id"], {}).setdefault(row["kind"], row)
+    sealed = {}
+    for row in sealed_rows:
+        sealed.setdefault(row["branch_id"], row)
     public_trials = []
     for t in trials:
         item = _public(t)
         item["effective_gate"] = merged_gate(item, diag.get(t["branch_id"], {}))
         public_trials.append(item)
-    return {"topic": _public(topic), "branches": [_public(b) for b in branches],
+    public_branches = []
+    for b in branches:
+        item = _public(b)
+        item["sealed"] = _public(sealed[b["id"]]) if b["id"] in sealed else None
+        public_branches.append(item)
+    return {"topic": _public(topic), "branches": public_branches,
             "trials": public_trials, "k": k,
             "ir_threshold": strategy_gates.need_ir(k),
             "policy": {"version": strategy_gates.POLICY_VERSION, **strategy_gates.POLICY},
             "policy_note": "测试阈值（原型默认值）；机构可发布新的策略政策版本"}
+
+
+def trial_report(uid, org, trial_id):
+    """One trial with its real gate, robustness diagnostics and sealed result."""
+    with get_conn() as c:
+        trial = c.execute("SELECT * FROM strategy_trials WHERE id=%s AND user_id=%s AND org_id=%s",
+                          (trial_id, uid, org)).fetchone()
+        if not trial:
+            raise KeyError(trial_id)
+        branch = c.execute("SELECT * FROM strategy_branches WHERE id=%s AND user_id=%s AND org_id=%s",
+                           (trial["branch_id"], uid, org)).fetchone()
+        topic = c.execute("SELECT * FROM strategy_topics WHERE id=%s AND user_id=%s AND org_id=%s",
+                          (trial["topic_id"], uid, org)).fetchone()
+        diag = [dict(r) for r in c.execute(
+            """SELECT kind,payload,created_at FROM strategy_diagnostics
+               WHERE user_id=%s AND org_id=%s AND branch_id=%s ORDER BY created_at DESC""",
+            (uid, org, trial["branch_id"])).fetchall()]
+        sealed = c.execute(
+            """SELECT id,status,result,gate,report_id,created_at FROM strategy_sealed_validations
+               WHERE user_id=%s AND org_id=%s AND branch_id=%s ORDER BY created_at DESC LIMIT 1""",
+            (uid, org, trial["branch_id"])).fetchone()
+    from . import strategy_gates
+    from .strategy_diagnostics import merged_gate
+    latest = {}
+    for row in diag:
+        latest.setdefault(row["kind"], row)
+    trial_public = _public(trial)
+    trial_public["effective_gate"] = merged_gate(trial_public, latest)
+    return {"trial": trial_public, "branch": _public(branch), "topic": _public(topic),
+            "diagnostics": latest, "sealed": _public(sealed) if sealed else None,
+            "policy": {"version": strategy_gates.POLICY_VERSION, **strategy_gates.POLICY}}
 
 
 def library(uid, org):
@@ -210,4 +253,4 @@ def library(uid, org):
     return [_public(r) for r in rows]
 
 
-__all__ = ["create_branch", "create_topic", "ledger", "library", "list_topics", "recipe"]
+__all__ = ["create_branch", "create_topic", "ledger", "library", "list_topics", "recipe", "trial_report"]

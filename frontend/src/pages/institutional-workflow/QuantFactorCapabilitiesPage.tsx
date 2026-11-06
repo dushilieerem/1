@@ -8,7 +8,7 @@ const units=[
  ['F2 假设研究','子 Agent','可用（人工确认）','草稿必须由研究员确认'],
  ['F3 因子实现','子 Agent','可用（人工确认）','生成后进入静态校验与 F4'],
  ['F4 检验诊断','能力单元','可用','真实 RE 单次回测；NW t 由 R1 日度序列计算'],
- ['F5 独立复核','独立 Agent','可用（部分）','独立意见可用；封存执行已有 API，真实成功样例待补'],
+ ['F5 独立复核','独立 Agent','可用（部分）','独立意见可用；封存执行已真实运行（AC-08/08b/08c 均为失败，未伪造成通过）'],
 ];
 
 export function QuantFactorCapabilitiesPage(){
@@ -17,7 +17,7 @@ export function QuantFactorCapabilitiesPage(){
   <FactorModuleTabs active="caps"/>
   <div className="card"><div className="card-head"><div><h2>研究系统组成</h2><p className="fine">每个课题一个研究决策 Agent；未接入/无样例的项按真实状态标注。</p></div></div><div className="card-body"><div className="units">
    {units.map(([name,form,status,note])=><div className="unit" key={name}><span className="ui">{name.startsWith('F')?name.slice(0,2):'⇅'}</span><div><b>{name}</b><small>{form} · {status}：{note}</small></div></div>)}
-  </div><div className="svc"><span>数据视图</span><span>因子计算</span><span>试验台账</span><span>因子库查重</span><span>封存样本（未上线）</span><span>R1 日度 Rank IC</span></div></div></div>
+  </div><div className="svc"><span>数据视图</span><span>因子计算</span><span>试验台账</span><span>因子库查重</span><span>封存执行（真实）</span><span>R1 日度 Rank IC</span></div></div></div>
   <div className="card"><div className="card-head"><h2>能力单元与评测</h2><span className="badge gray">评测集与得分：待接入</span></div><div className="table-wrap"><table className="table"><thead><tr><th>功能点</th><th>形态</th><th>状态</th><th>当前证据</th><th>评测得分</th></tr></thead><tbody>
    {units.map(([name,form,status,note])=><tr key={name}><td><strong>{name}</strong></td><td>{form}</td><td><span className={'badge '+(status==='可用'?'live':'gray')}>{status}</span></td><td className="fine">{note}</td><td>待接入</td></tr>)}
   </tbody></table></div></div>

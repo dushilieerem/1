@@ -69,6 +69,11 @@ def branch_backtest(bid: str, ctx=Depends(require_quant_researcher)):
     return invoke(run_trial, *identity(ctx), bid)
 
 
+@router.get("/trials/{tid}/report")
+def trial_report(tid: str, ctx=Depends(require_quant_researcher)):
+    return invoke(svc.trial_report, *identity(ctx), tid)
+
+
 @router.get("/library")
 def strategy_library(ctx=Depends(require_quant_researcher)):
     return {"strategies": invoke(svc.library, *identity(ctx))}

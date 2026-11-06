@@ -93,7 +93,7 @@ def evaluate(result, k: int, *, cost_2x_excess=None, neighborhood=None, sealed=F
             {"name": "封存信息比率", "actual": derived["ir"], "operator": ">=", "threshold": POLICY["seal_ir"],
              "passed": None if derived["ir"] is None else derived["ir"] >= POLICY["seal_ir"]},
         ]
-        return {"policy_version": POLICY_VERSION, "sealed": True, "checks": checks,
+        return {"policy_version": POLICY_VERSION, "basis": "annual", "sealed": True, "checks": checks,
                 "passed": all(c["passed"] is True for c in checks),
                 "complete": all(c["passed"] is not None for c in checks),
                 "pending": [c["name"] for c in checks if c["passed"] is None]}
@@ -114,7 +114,7 @@ def evaluate(result, k: int, *, cost_2x_excess=None, neighborhood=None, sealed=F
         {"name": "参数邻域达标", "actual": nb_ok, "operator": ">=", "threshold": POLICY["neighborhood_cells"],
          "passed": None if nb_ok is None else int(nb_ok) >= POLICY["neighborhood_cells"]},
     ]
-    return {"policy_version": POLICY_VERSION, "sealed": False, "checks": checks,
+    return {"policy_version": POLICY_VERSION, "basis": "annual", "sealed": False, "checks": checks,
             "passed": all(c["passed"] is True for c in checks),
             "complete": all(c["passed"] is not None for c in checks),
             "pending": [c["name"] for c in checks if c["passed"] is None],

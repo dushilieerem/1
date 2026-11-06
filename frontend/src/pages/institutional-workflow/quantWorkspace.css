@@ -133,10 +133,11 @@
 
 .quant-shell .branch-wrap{position:relative;min-width:0}
 .quant-shell .branch-wrap .children{position:relative;margin-left:26px;margin-top:8px;display:flex;flex-direction:column;gap:8px}
-.quant-shell .branch-wrap .children > .branch-wrap::before{content:'';position:absolute;left:-14px;top:-8px;bottom:-8px;border-left:1px dashed #d9cde4}
-.quant-shell .branch-wrap .children > .branch-wrap:last-child::before{bottom:50%}
-.quant-shell .branch-wrap .children > .branch-wrap::after{content:'';position:absolute;left:-14px;top:50%;width:14px;border-top:1px dashed #d9cde4}
 
 .quant-shell .strategy-table{min-width:980px}
 .quant-shell .table button{white-space:nowrap}
 .quant-shell .table td.nowrap{white-space:nowrap}
+
+.quant-shell .tree{position:relative}
+.quant-shell .tree-lines{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:0}
+.quant-shell .tree .branch-wrap{position:relative;z-index:1}

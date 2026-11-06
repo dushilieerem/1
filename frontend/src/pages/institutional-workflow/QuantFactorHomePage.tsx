@@ -1,4 +1,4 @@
-import {useEffect,useMemo,useState,type ReactElement} from 'react';
+import {useEffect,useLayoutEffect,useMemo,useRef,useState,type ReactElement} from 'react';
 import {Link,useNavigate} from 'react-router-dom';
 import {researchFetch} from '@/lib/researchClient';
 import {FactorModuleTabs,WorkspaceHeading} from './QuantWorkspacePages';
@@ -23,6 +23,8 @@ export function QuantFactorHomePage(){
  const [pending,setPending]=useState<number|null>(null);
  const [sealedUsed,setSealedUsed]=useState<number|null>(null);
  const [authOpen,setAuthOpen]=useState(false);
+ const treeRef=useRef<HTMLDivElement|null>(null);
+ const [treeLines,setTreeLines]=useState<string[]>([]);
  const navigate=useNavigate();
 
  useEffect(()=>{
@@ -68,6 +70,27 @@ export function QuantFactorHomePage(){
  }
  const children=useMemo(()=>{const map=new Map<string,Branch[]>();for(const b of ledger?.branches||[])map.set(b.parent_id||'root',[...(map.get(b.parent_id||'root')||[]),b]);return map;},[ledger]);
  const trialsByBranch=useMemo(()=>{const map=new Map<string,Trial[]>();for(const t of ledger?.trials||[])map.set(t.branch_id,[...(map.get(t.branch_id)||[]),t]);return map;},[ledger]);
+ useLayoutEffect(()=>{
+  const root=treeRef.current;
+  if(!root){setTreeLines([]);return;}
+  const draw=()=>{
+   const cr=root.getBoundingClientRect();
+   const cards=new Map<string,DOMRect>();
+   root.querySelectorAll<HTMLElement>('[data-bid]').forEach(el=>cards.set(el.dataset.bid||'',el.getBoundingClientRect()));
+   const paths:string[]=[];
+   for(const b of ledger?.branches||[]){
+    if(!b.parent_id)continue;
+    const p=cards.get(b.parent_id),c=cards.get(b.id);
+    if(!p||!c)continue;
+    const x=c.left-cr.left-14, y1=p.bottom-cr.top, y2=c.top-cr.top+c.height/2;
+    paths.push(`M ${x} ${y1} L ${x} ${y2} L ${c.left-cr.left} ${y2}`);
+   }
+   setTreeLines(paths);
+  };
+  const raf=requestAnimationFrame(draw);
+  window.addEventListener('resize',draw);
+  return ()=>{cancelAnimationFrame(raf);window.removeEventListener('resize',draw);};
+ },[ledger]);
  const topic=topics.find(t=>t.id===selected);
  const selectedBranch=(ledger?.branches||[]).find(b=>b.id===node);
  const feed=useMemo(()=>[...(ledger?.trials||[])].sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,12),[ledger]);
@@ -78,7 +101,7 @@ export function QuantFactorHomePage(){
   const trials=trialsByBranch.get(b.id)||[];
   return (
    <div key={b.id} className="branch-wrap">
-    <div className={'branch'+(b.source==='manual'?' human':'')+(node===b.id?' sel':'')} onClick={()=>setNode(b.id)} role="button" tabIndex={0}>
+    <div className={'branch'+(b.source==='manual'?' human':'')+(node===b.id?' sel':'')} data-bid={b.id} onClick={()=>setNode(b.id)} role="button" tabIndex={0}>
      <div className="bh">
       <span className="hid">{b.id.slice(0,8)}</span>
       <span className="bt">{b.source==='manual'?'人工分支':'Agent 分支'} · 假设 v{b.hypothesis_version} / 实现 v{b.implementation_version}</span>
@@ -102,7 +125,7 @@ export function QuantFactorHomePage(){
   </button>
  ));
 
- const tree=(ledger?.branches||[]).length>0?<div className="tree">{(children.get('root')||[]).map(b=>branchNode(b))}</div>:<div className="empty"><b>课题还没有分支</b>真实空态：无分支时不显示模拟节点。</div>;
+ const tree=(ledger?.branches||[]).length>0?<div className="tree" ref={treeRef}>{treeLines.length>0&&<svg className="tree-lines" aria-hidden="true">{treeLines.map((d,i)=><path key={i} d={d} fill="none" stroke="#cbb8dc" strokeWidth="1" strokeDasharray="4 4"/>)}</svg>}{(children.get('root')||[]).map(b=>branchNode(b))}</div>:<div className="empty"><b>课题还没有分支</b>真实空态：无分支时不显示模拟节点。</div>;
 
  const trials=(selectedBranch?trialsByBranch.get(selectedBranch.id):[])||[];
  const detail=selectedBranch?(

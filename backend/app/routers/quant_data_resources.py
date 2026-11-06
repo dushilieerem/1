@@ -58,7 +58,7 @@ def views(ctx=Depends(require_quant_researcher)):
 
 @router.get("/requests")
 def requests(ctx=Depends(require_quant_researcher)):
-    return {"requests": invoke(svc.list_requests, *identity(ctx))}
+    return {"requests": invoke(svc.list_requests, *identity(ctx), bool(ctx.get("can_manage")))}
 
 
 @router.post("/requests")

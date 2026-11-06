@@ -130,10 +130,15 @@ def _related(uid: int, org: int, related_type: str, related_id: str) -> bool:
     return bool(row)
 
 
-def list_requests(uid: int, org: int):
+def list_requests(uid: int, org: int, all_members: bool = False):
+    """Member-private by default; research managers see the whole org for handling."""
+    where, params = "r.org_id=%s", [org]
+    if not all_members:
+        where += " AND r.user_id=%s"
+        params.append(uid)
     with get_conn() as c:
         rows = c.execute(
-            """SELECT r.id,r.title,r.purpose,r.period,r.frequency,r.fields,r.related_type,
+            f"""SELECT r.id,r.title,r.purpose,r.period,r.frequency,r.fields,r.related_type,
                       r.related_id,r.delivered_view,r.status,r.note,r.handled_at,
                       r.created_at,r.updated_at,
                       COALESCE(fp.name, st.name, pp.name, '') AS related_name
@@ -149,7 +154,7 @@ def list_requests(uid: int, org: int):
                LEFT JOIN portfolio_plans pp
                  ON r.related_type='portfolio_plan' AND pp.id=r.related_id
                 AND pp.user_id=r.user_id AND pp.org_id=r.org_id
-               WHERE r.org_id=%s ORDER BY r.created_at DESC""", (org,)).fetchall()
+               WHERE {where} ORDER BY r.created_at DESC""", tuple(params)).fetchall()
     return [dict(r) for r in rows]
 
 

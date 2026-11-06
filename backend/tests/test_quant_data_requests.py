@@ -55,5 +55,23 @@ class UpdateRequestTest(unittest.TestCase):
             self._update("in_progress", {"status": "delivered"})
 
 
+class ListRequestScopeTest(unittest.TestCase):
+    def test_researcher_sees_own_requests_only(self):
+        cursor = MagicMock()
+        cursor.execute.return_value.fetchall.return_value = []
+        with patch.object(svc, "get_conn", return_value=_conn(cursor)):
+            svc.list_requests(9, 2)
+        self.assertIn("r.user_id=%s", cursor.execute.call_args.args[0])
+        self.assertEqual(cursor.execute.call_args.args[1], (2, 9))
+
+    def test_manager_sees_org_requests(self):
+        cursor = MagicMock()
+        cursor.execute.return_value.fetchall.return_value = []
+        with patch.object(svc, "get_conn", return_value=_conn(cursor)):
+            svc.list_requests(9, 2, True)
+        self.assertNotIn("r.user_id=%s", cursor.execute.call_args.args[0])
+        self.assertEqual(cursor.execute.call_args.args[1], (2,))
+
+
 if __name__ == "__main__":
     unittest.main()

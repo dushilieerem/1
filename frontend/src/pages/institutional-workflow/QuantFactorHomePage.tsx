@@ -77,7 +77,7 @@ export function QuantFactorHomePage(){
  function branchNode(b:Branch,depth=0):ReactElement{
   const trials=trialsByBranch.get(b.id)||[];
   return (
-   <div key={b.id} className="branch-wrap" style={{marginLeft:depth?26:0}}>
+   <div key={b.id} className="branch-wrap">
     <div className={'branch'+(b.source==='manual'?' human':'')+(node===b.id?' sel':'')} onClick={()=>setNode(b.id)} role="button" tabIndex={0}>
      <div className="bh">
       <span className="hid">{b.id.slice(0,8)}</span>
@@ -87,7 +87,7 @@ export function QuantFactorHomePage(){
      </div>
      {trials.length>0&&<div className="steps">{trials.map(t=><span key={t.trial_no} className={'chip '+(t.outcome==='passed'?'ok':t.outcome==='failed'?'fail':'warn')}>E{t.trial_no} · {outcomeText(t)}{t.rerun_of?' · rerun':''}</span>)}</div>}
     </div>
-    {(children.get(b.id)||[]).map(c=>branchNode(c,depth+1))}
+    {(children.get(b.id)||[]).length>0&&<div className="children">{(children.get(b.id)||[]).map(c=>branchNode(c,depth+1))}</div>}
    </div>
   );
  }

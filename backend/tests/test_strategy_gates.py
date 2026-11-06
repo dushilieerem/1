@@ -9,7 +9,7 @@ def result(excess=0.05, daily=0.0004, turnover=0.03, bench_daily=0.0002, n=60):
     s = b = 1.0
     for i in range(n):
         if i:
-            noise = (0.004 if i % 3 else -0.003)
+            noise = (0.001 if i % 3 else -0.002)
             s *= 1 + daily + noise
             b *= 1 + bench_daily
         day = str(date(2025, 1, 1) + timedelta(days=i))
@@ -42,9 +42,16 @@ class GateTest(unittest.TestCase):
         self.assertTrue(gate["passed"])
 
     def test_negative_excess_fails(self):
-        gate = g.evaluate(result(excess=-0.01), 1, cost_2x_excess=0.01,
+        gate = g.evaluate(result(daily=0.0001, bench_daily=0.0005), 1, cost_2x_excess=0.01,
                           neighborhood={"cells": 9, "passed_cells": 9})
         self.assertFalse(gate["checks"][0]["passed"])
+
+    def test_annual_excess_uses_daily_mean_not_cumulative(self):
+        data = result(daily=0.0004, bench_daily=0.0002)
+        data["excess_return"] = 9.99  # cumulative value must not be used as annual
+        gate = g.evaluate(data, 1)
+        self.assertAlmostEqual(gate["checks"][0]["actual"], 0.0504, delta=0.01)
+        self.assertLess(gate["checks"][0]["actual"], 1)
 
     def test_ir_from_daily_excess(self):
         gate = g.evaluate(result(daily=0.001, bench_daily=0.0002), 1)

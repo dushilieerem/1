@@ -42,8 +42,10 @@ def _series(result):
 
 def metrics_from_result(result) -> dict:
     """Daily excess and relative drawdown derived from the two equity curves."""
-    out = {"annual_excess": result.get("excess_return"), "ir": None, "relative_dd": None,
-           "turnover_annual": None}
+    # RE returns only the cumulative period excess; the gate needs the policy
+    # definition: annual arithmetic net excess = mean(daily net excess) * 252.
+    out = {"annual_excess": None, "period_excess": result.get("excess_return"),
+           "ir": None, "relative_dd": None, "turnover_annual": None}
     m = result.get("metrics") or {}
     try:
         if m.get("turnover") is not None:
@@ -63,6 +65,7 @@ def metrics_from_result(result) -> dict:
         mean = sum(rets) / len(rets)
         var = sum((x - mean) ** 2 for x in rets) / (len(rets) - 1)
         ann = mean * POLICY["trading_days"]
+        out["annual_excess"] = ann
         vol = math.sqrt(var) * math.sqrt(POLICY["trading_days"])
         if vol > 0:
             out["ir"] = ann / vol
@@ -85,7 +88,7 @@ def evaluate(result, k: int, *, cost_2x_excess=None, neighborhood=None, sealed=F
         neighborhood = result["neighborhood"]
     if sealed:
         checks = [
-            {"name": "封存扣费后超额", "actual": excess, "operator": ">", "threshold": POLICY["seal_excess"],
+            {"name": "封存扣费后年化超额", "actual": excess, "operator": ">", "threshold": POLICY["seal_excess"],
              "passed": None if excess is None else float(excess) > POLICY["seal_excess"]},
             {"name": "封存信息比率", "actual": derived["ir"], "operator": ">=", "threshold": POLICY["seal_ir"],
              "passed": None if derived["ir"] is None else derived["ir"] >= POLICY["seal_ir"]},

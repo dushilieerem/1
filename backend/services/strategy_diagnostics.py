@@ -54,8 +54,10 @@ def _save(uid, org, topic, branch, kind, payload):
 def cost_2x(uid, org, branch_id):
     topic, branch = _load(uid, org, branch_id)
     data = _call(topic, branch, double_cost=True)
-    excess = data.get("excess_return")
-    payload = {"excess": excess, "passed": isinstance(excess, (int, float)) and float(excess) > 0,
+    derived = strategy_gates.metrics_from_result(data)
+    excess = derived["annual_excess"]
+    payload = {"basis": "annual", "excess": excess, "period_excess": data.get("excess_return"),
+               "passed": isinstance(excess, (int, float)) and float(excess) > 0,
                "commission_rate": (runner._payload(topic, branch).get("commission_rate") or 0) * 2}
     return _save(uid, org, topic, branch, "cost_2x", payload)
 
@@ -69,13 +71,13 @@ def neighborhood(uid, org, branch_id):
         for reb in (5, 10, 20):
             data = _call(topic, branch, top_n=n, rebalance_days=reb)
             derived = strategy_gates.metrics_from_result(data)
-            excess = data.get("excess_return")
+            excess = derived["annual_excess"]
             ir = derived["ir"]
             passed = (isinstance(excess, (int, float)) and float(excess) >= strategy_gates.POLICY["neighborhood_excess"]
                       and ir is not None and ir >= strategy_gates.POLICY["neighborhood_ir"])
             cells.append({"top_n": n, "rebalance_days": reb, "excess": excess,
                           "ir": ir, "passed": bool(passed)})
-    payload = {"cells": cells, "passed_cells": sum(1 for c in cells if c["passed"]),
+    payload = {"basis": "annual", "cells": cells, "passed_cells": sum(1 for c in cells if c["passed"]),
                "required": strategy_gates.POLICY["neighborhood_cells"]}
     return _save(uid, org, topic, branch, "neighborhood", payload)
 
@@ -100,13 +102,13 @@ def merged_gate(trial, diagnostics):
     checks = [dict(c) for c in gate["checks"]]
     by_name = {c.get("name"): c for c in checks}
     cost = diagnostics.get("cost_2x")
-    if cost:
+    if cost and (cost.get("payload") or {}).get("basis") == "annual":
         c = by_name.get("2 倍成本下超额")
         if c:
             c["actual"] = cost["payload"].get("excess")
             c["passed"] = bool(cost["payload"].get("passed"))
     nb = diagnostics.get("neighborhood")
-    if nb:
+    if nb and (nb.get("payload") or {}).get("basis") == "annual":
         c = by_name.get("参数邻域达标")
         if c:
             c["actual"] = nb["payload"].get("passed_cells")

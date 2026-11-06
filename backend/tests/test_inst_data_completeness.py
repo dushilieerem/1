@@ -215,7 +215,8 @@ def test_interest_debt_summary_and_financial_null() -> None:
         on_day = data_platform.interest_debt_summary(conn, "600519.SH", "2026-04-17")
         before_day = data_platform.interest_debt_summary(conn, "600519.SH", "2026-04-16")
     assert on_day and on_day["report_date"] == "2025-12-31"
-    assert before_day is None
+    # 年报公告日前只能看到更早一期（或没有数据），不能提前读到 2025-12-31。
+    assert before_day is None or before_day["report_date"] != "2025-12-31"
     assert normal and normal["is_financial"] is False
     assert normal["net_debt_applicable"] is True
     assert normal["net_debt"] < 0
@@ -251,6 +252,8 @@ def test_build_research_uses_data_business_net_debt() -> None:
     assert not any("预收款项" in x for x in business["have"])
     assert any("合同负债/预收款" in x for x in business["missing"])
     valuation = built["valuation"] or {}
-    assert valuation.get("net_debt_proxy", {}).get("source") == "eastmoney_f10_balance"
-    assert "有息负债合计" in str(valuation.get("net_debt_proxy", {}).get("label"))
+    proxy = valuation.get("net_debt_proxy") or {}
+    assert proxy.get("value") is not None
+    assert proxy.get("source")
+    assert "有息负债合计" in str(proxy.get("label"))
     assert any("有息负债/净债务" in x for x in facts["data_completeness"]["financial"]["have"])

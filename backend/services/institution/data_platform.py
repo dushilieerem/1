@@ -107,12 +107,14 @@ def segment_summary(
         WITH latest AS (
           SELECT MAX(report_date) AS d FROM svquant.segment_revenue
            WHERE symbol=%s AND report_date <= %s AND available_time::date <= %s
+             AND is_subitem = FALSE
         )
         SELECT report_date, segment_type, segment_name, revenue, share_pct,
                gross_profit, gross_margin_pct, source, caliber
           FROM svquant.segment_revenue, latest
          WHERE symbol=%s AND report_date=latest.d
            AND available_time::date <= %s
+           AND is_subitem = FALSE
          ORDER BY segment_type, revenue DESC NULLS LAST
         """,
         (symbol, _as_of(as_of), _as_of(as_of), symbol, _as_of(as_of)),
@@ -126,7 +128,7 @@ def segment_summary(
         "report_date": str(rows[0].get("report_date")),
         "source": rows[0].get("source"),
         "types": {},
-        "note": "分部收入来自年报主营构成；产品/地区/行业三类并列，不互相替代。",
+        "note": "分部收入来自年报主营构成；产品/地区/行业三类并列，不互相替代；已剔除 is_subitem=true 的子项。",
     }
     for seg_type, items in by_type.items():
         total = sum(float(i.get("revenue") or 0) for i in items)

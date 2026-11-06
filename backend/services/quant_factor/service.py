@@ -1,6 +1,7 @@
 from __future__ import annotations
 import copy
 import hashlib
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -13,6 +14,7 @@ from .policy import WorkflowError,snapshot,digest,evaluate,compare_identity
 from . import store
 
 POOL=ThreadPoolExecutor(max_workers=2,thread_name_prefix='quant-factor-verify')
+_BACKFILL_LOCK=threading.Lock()
 
 def event(action,**details): return {'at':datetime.now(timezone.utc).isoformat(),'action':action,**details}
 
@@ -50,7 +52,7 @@ def create(uid,org,project_id,expected_snapshot_hash=None,reference=None,executo
         if not p: raise KeyError(project_id)
         snap=snapshot(_row_project(dict(p))); sha=digest(snap)
         if expected_snapshot_hash and sha!=expected_snapshot_hash:raise WorkflowError('研究输入已变更，停止自动提交，未覆盖人工修改。')
-        existing=c.execute('SELECT id,evidence FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s AND snapshot_hash=%s',(uid,org,project_id,sha)).fetchone()
+        existing=c.execute('SELECT id,status,evidence FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s AND snapshot_hash=%s',(uid,org,project_id,sha)).fetchone()
         if existing:
             if reference and existing['evidence'].get('library_reference',{}).get('hash')!=reference['hash']:
                 raise WorkflowError('已有候选的对照库版本不同，请复盘后开启新的研究任务。')
@@ -72,8 +74,32 @@ def create(uid,org,project_id,expected_snapshot_hash=None,reference=None,executo
                 from .asset_context import catalogue
                 evidence['library_reference']=reference or catalogue(uid)
             c.execute('INSERT INTO quant_factor_candidates(id,user_id,org_id,project_id,snapshot,snapshot_hash,status,events,evidence) VALUES(%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb)',(cid,uid,org,project_id,store.encode(snap),sha,'development_running',store.encode([event('candidate_frozen',snapshot_hash=sha,reference_hash=evidence.get('library_reference',{}).get('hash')),event('development_queued')]),store.encode(evidence)))
+    if existing and existing['status'] in ('development_passed','development_failed','development_error'):
+        try:_ensure_development_trial(uid,org,cid,executor,f0_run_id)
+        except Exception:pass
     if not existing:POOL.submit(run,uid,org,cid,'development',executor,f0_run_id)
     return current(uid,org,cid)
+
+
+def _ensure_development_trial(uid,org,cid,executor='human',f0_run_id=None):
+    """Append the trial for a terminal candidate that was computed before its ledger write succeeded.
+
+    Reusing a frozen candidate must never hide a completed test from K. Dedupe by report_id;
+    only fills the gap, never rewrites an existing row.
+    """
+    row=store.read(uid,org,cid)
+    if row['status'] not in ('development_passed','development_failed','development_error'):return None
+    data=(row.get('evidence') or {}).get('development') or {}
+    result=data.get('result') or {};gate=data.get('gate') or {}
+    if not result or not gate:return None
+    report_id=data.get('report_id') or 'qf_'+cid+'_development'
+    with _BACKFILL_LOCK:
+        with get_conn() as c:
+            exists=c.execute("SELECT id FROM quant_factor_trials WHERE user_id=%s AND org_id=%s AND project_id=%s AND report_id=%s",(uid,org,row['project_id'],report_id)).fetchone()
+        if exists:return None
+        outcome='error' if row['status']=='development_error' else 'passed' if row['status']=='development_passed' else 'failed'
+        req=data.get('request') or row['snapshot']['request']
+        return _append_development_trial(uid,org,row,req,result,gate,outcome,report_id,executor,f0_run_id)
 
 def validate(uid,org,cid):
     with get_conn() as c:

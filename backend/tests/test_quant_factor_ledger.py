@@ -281,3 +281,45 @@ class TrialInsertShapeTest(unittest.TestCase):
         placeholders = re.findall(r"%s", match.group(2))
         self.assertEqual(len(columns), len(placeholders),
                          f"{len(columns)} columns but {len(placeholders)} placeholders")
+
+
+class TerminalCandidateBackfillTest(unittest.TestCase):
+    """A reused terminal candidate must not hide a completed test from K."""
+
+    def _row(self):
+        return {
+            'id': 'c1', 'status': 'development_failed', 'project_id': 'p1',
+            'snapshot': {'request': {'factor_name': 'f'}},
+            'evidence': {'development': {
+                'request': {'universe': 'CSI500'},
+                'result': {'metrics': {'rank_ic_mean': 0.01}},
+                'gate': {'passed': False, 'checks': []},
+                'report_id': 'qf_c1_development'}},
+        }
+
+    def test_existing_trial_skips_backfill(self):
+        from unittest.mock import MagicMock, patch
+        from services.quant_factor import service
+        cursor = MagicMock(); cursor.execute.return_value = cursor
+        cursor.fetchone.return_value = {'id': 't1'}
+        connection = MagicMock(); connection.__enter__.return_value = cursor
+        with patch.object(service.store, 'read', return_value=self._row()), \
+             patch.object(service, 'get_conn', return_value=connection), \
+             patch.object(service, '_append_development_trial') as append:
+            self.assertIsNone(service._ensure_development_trial(1, 2, 'c1'))
+        append.assert_not_called()
+
+    def test_missing_trial_backfills_failed_outcome(self):
+        from unittest.mock import MagicMock, patch
+        from services.quant_factor import service
+        cursor = MagicMock(); cursor.execute.return_value = cursor
+        cursor.fetchone.return_value = None
+        connection = MagicMock(); connection.__enter__.return_value = cursor
+        with patch.object(service.store, 'read', return_value=self._row()), \
+             patch.object(service, 'get_conn', return_value=connection), \
+             patch.object(service, '_append_development_trial', return_value={'id': 't'}) as append:
+            self.assertEqual(service._ensure_development_trial(1, 2, 'c1', 'agent', 'r1'), {'id': 't'})
+        args = append.call_args.args
+        self.assertEqual(args[6], 'failed')
+        self.assertEqual(args[7], 'qf_c1_development')
+        self.assertEqual(args[9], 'r1')

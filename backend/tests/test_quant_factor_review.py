@@ -66,7 +66,7 @@ class ReviewIsolationTest(unittest.TestCase):
                'snapshot': {}, 'evidence': {}}
         c = MagicMock(); c.execute.return_value.fetchone.return_value = row
         conn = MagicMock(); conn.__enter__.return_value = c
-        with patch.object(review, 'get_conn', return_value=conn), \
+        with patch.object(review.repo, 'candidate_for_org', return_value=row), \
              patch.object(review, '_ledger_context', return_value=None):
             out = review.detail(9, 2, 'c')
         self.assertNotIn('events', out)

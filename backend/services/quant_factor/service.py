@@ -25,7 +25,10 @@ def _dispatch(uid,org,cid,phase=None,executor="human",f0_run_id=None):
         from . import jobs
         try:
             if phase:
-                jobs.enqueue_run(uid,org,cid,phase,executor,f0_run_id)
+                if executor == "human" and f0_run_id is None:
+                    jobs.enqueue_run(uid,org,cid,phase)
+                else:
+                    jobs.enqueue_run(uid,org,cid,phase,executor,f0_run_id)
             else:
                 jobs.enqueue_retry(uid,org,cid)
         except Exception as exc:
@@ -34,7 +37,10 @@ def _dispatch(uid,org,cid,phase=None,executor="human",f0_run_id=None):
             raise WorkflowError('长任务入队失败：'+str(exc)[:300]) from exc
         return
     if phase:
-        POOL.submit(run,uid,org,cid,phase,executor,f0_run_id)
+        if executor == "human" and f0_run_id is None:
+            POOL.submit(run,uid,org,cid,phase)
+        else:
+            POOL.submit(run,uid,org,cid,phase,executor,f0_run_id)
     else:
         POOL.submit(_retry_novelty,uid,org,cid)
 

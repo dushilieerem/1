@@ -562,3 +562,16 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 三只样例（600519/000858/300750）已载入 `svquant_test` 验证；全市场由数据业务 loader 写入，DSN 由运维注入。
 
 验证：pytest 96 passed（含 A 组数据接入测试）；tsc、e2e-09/10/11/12 17 passed。
+
+### 11.24 数据业务有息负债/净债务接入（2026-11-06）
+
+接入数据业务 `svquant.interest_debt`（有息负债、净债务、预收款、合同负债）：
+
+- `data_platform.interest_debt_summary`：按 `available_time`/`report_date` 做 PIT；返回短期借款、一年内到期非流动负债、长期借款、应付债券、租赁负债、有息负债合计、现金、受限现金、净债务、预收款/合同负债、母公司/少数股东权益、`is_financial`。
+- 净债务优先使用数据业务口径（有息负债合计 − 现金），原先的“有息负债代理 + 现金”只在表未加载时兜底，估值桥注明来源。
+- 金融企业（`is_financial=true`）不适用净债务桥：演示估值降为 `relative_only` 并写明原因，不拿 NULL 当 0。
+- 数据完备性：财务维度补充有息负债/净债务；商业模式补充预收款/合同负债；估值维度注明净债务口径。
+- 提示词 payload 增加 `interest_debt_summary`，并提示“金融企业不适用净债务”。
+- 已知口径：`net_debt` 对金融企业为 NULL；`advance_receipts`/`contract_liabilities` 仅在报表披露时非空，不参与 Gate 判定，只作商业模式证据。
+
+验证：pytest 98 passed（含 `test_interest_debt_summary_and_financial_null`、`test_build_research_uses_data_business_net_debt`）；tsc 通过；e2e-09/10/11/12 17 passed。

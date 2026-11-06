@@ -1058,6 +1058,7 @@ def _data_completeness(
     holders: dict[str, Any] | None = None,
     segments: dict[str, Any] | None = None,
     audit: dict[str, Any] | None = None,
+    debt: dict[str, Any] | None = None,
 ) -> dict[str, dict[str, Any]]:
     peer_note = f"同业公司 {len(peers)} 家" if peers else "同业公司未取到"
     business_have = ["10 年合并财务（营收/毛利/现金流）", peer_note]
@@ -1073,6 +1074,11 @@ def _data_completeness(
     if segments:
         business_have.append(f"分部收入/毛利（{segments.get('report_date')}，产品/地区/行业）")
         business_missing.remove("分产品/分地区收入与毛利")
+    if debt and debt.get("advance_receipts") is not None:
+        business_have.append("预收款项（数据业务口径）")
+        if "合同负债/预收款" in business_missing:
+            business_missing.remove("合同负债/预收款")
+            business_missing.append("合同负债（源数据为空，B 组补）")
     financial_have = ["10 年合并三表", "存货/应收/现金/负债总额"]
     financial_missing = [
         "附注明细（应收账龄/存货构成/在建/商誉/有息负债/受限资金）",
@@ -1096,6 +1102,14 @@ def _data_completeness(
         if audit.get("red_flag"):
             financial["gate_cap"] = "fail"
             financial["red_flag"] = f"审计意见为非标准：{audit.get('opinion_type')}"
+    if debt:
+        if debt.get("is_financial"):
+            financial_have.append("有息负债/净债务不适用（金融企业）")
+        elif debt.get("net_debt") is not None:
+            financial_have.append("有息负债/净债务（数据业务口径）")
+        if debt.get("advance_receipts") is not None:
+            financial_have.append("预收款项")
+        financial_missing.append("受限资金/租赁负债/合同负债（源数据为空，B 组补）")
     governance_have: list[str] = []
     governance_missing = [
         "实控人/董事长履历",
@@ -1140,8 +1154,19 @@ def _data_completeness(
         "governance": governance,
         "valuation": {
             "level": "partial" if val else "missing",
-            "have": ["PE/PB 与 3 年分位", "股息率", "净债务近似", peer_note],
-            "missing": ["PS/EV-EBITDA 序列与分位", "一致预期（营收/净利/目标价）", "driver-based 财务预测", "完整净债务/少数股东/期权", "无风险利率/β/ERP"],
+            "have": [
+                "PE/PB 与 3 年分位",
+                "股息率",
+                "净债务（有息负债−现金，非金融）" if debt and debt.get("net_debt_applicable") else "净债务近似（总负债−现金）",
+                peer_note,
+            ],
+            "missing": [
+                "PS/EV-EBITDA 序列与分位",
+                "一致预期（营收/净利/目标价）",
+                "driver-based 财务预测",
+                "期权/受限资金/租赁负债（B 组）",
+                "无风险利率/β/ERP",
+            ],
         },
     }
 
@@ -1160,19 +1185,36 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
     history_summary = _history_summary(fin)
     share_capital = md.share_capital_history(symbol)
     dividends = md.dividend_history(symbol)
-    net_debt = _net_debt_proxy(latest_fin)
-    valuation_extra = {
-        "dividend_yield_ttm": val.get("dividend_yield_ttm"),
-        "net_debt_proxy": net_debt,
-        "share_capital": share_capital,
-        "dividends": dividends,
-    }
     data_as_of = (bar or {}).get("trade_date") or latest_fin.get("notice_date") or date.today().isoformat()
     with get_conn() as conn:
         holder_summary = data_platform.holder_summary(conn, symbol, data_as_of)
         float_holder_summary = data_platform.holder_summary(conn, symbol, data_as_of, float_only=True)
         segment_summary = data_platform.segment_summary(conn, symbol, data_as_of)
         audit_summary = data_platform.audit_summary(conn, symbol, data_as_of)
+        debt_summary = data_platform.interest_debt_summary(conn, symbol, data_as_of)
+    net_debt = _net_debt_proxy(latest_fin)
+    if debt_summary:
+        if debt_summary.get("is_financial"):
+            net_debt = {
+                "value": None,
+                "applicable": False,
+                "label": "金融企业：有息负债/净债务不适用，不能作为净债务桥。",
+                "source": debt_summary.get("source"),
+            }
+        elif debt_summary.get("net_debt") is not None:
+            net_debt = {
+                "value": float(debt_summary["net_debt"]),
+                "applicable": True,
+                "label": "有息负债合计 − 现金（数据业务口径；受限资金/租赁负债为空）",
+                "source": debt_summary.get("source"),
+            }
+    valuation_extra = {
+        "dividend_yield_ttm": val.get("dividend_yield_ttm"),
+        "net_debt_proxy": net_debt,
+        "interest_debt": debt_summary,
+        "share_capital": share_capital,
+        "dividends": dividends,
+    }
     # 分部对账必须用同一报告期的合并营收，不能用最新半年报。
     if segment_summary:
         seg_date = str(segment_summary.get("report_date") or "")[:10]
@@ -1197,6 +1239,7 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
         holders=holder_summary,
         segments=segment_summary,
         audit=audit_summary,
+        debt=debt_summary,
     )
     gross_margin = latest_fin.get("gross_margin")
     if gross_margin is None and latest_fin.get("revenue") and latest_fin.get("gross_profit"):
@@ -1359,7 +1402,8 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
         )
 
     valuation = None
-    if has_fin and latest_fin.get("net_profit") and price:
+    is_financial = bool(debt_summary and debt_summary.get("is_financial"))
+    if has_fin and latest_fin.get("net_profit") and price and not is_financial:
         # 仅作演示口径：以最新净利为起点，不做目标价
         growth = 0.06
         discount = 0.10
@@ -1395,8 +1439,8 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
                     "high": per_share * 1.25,
                     "shares_source": shares_source,
                     "note": (
-                        "演示口径，不是目标价；股权价值 = 企业价值 − 净债务近似（总负债−现金），"
-                        "未拆分有息负债/受限资金/少数股东，未计税费、营运资本、汇率与治理折价；股本为估算值。"
+                        "演示口径，不是目标价；股权价值 = 企业价值 − 净债务（见 net_debt_proxy.label），"
+                        "未计税费、营运资本、汇率与治理折价；股本为估算值。"
                     ),
                 }
             else:
@@ -1407,8 +1451,16 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
                     "enterprise_value": enterprise_value,
                     "equity_value": equity_value,
                     "net_debt_proxy": net_debt,
-                    "note": "演示口径，不是目标价；净债务为总负债−现金的近似值。",
+                    "note": "演示口径，不是目标价；净债务口径见 net_debt_proxy.label。",
                 }
+    if is_financial and has_fin:
+        valuation = {
+            "method": "relative_only",
+            "is_demo": True,
+            "error": "金融企业不适用净债务桥（有息负债/净债务为 NULL），演示估值仅保留相对估值。",
+            "net_debt_proxy": net_debt,
+            "note": "银行/保险/证券不计算企业价值与净债务桥；请使用 PB/ROE 等相对估值。",
+        }
     industry_analysis = {
         "key": "industry",
         "title": "行业分析",
@@ -1473,6 +1525,7 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
             "float_holder_summary": float_holder_summary,
             "segment_summary": segment_summary,
             "audit_summary": audit_summary,
+            "interest_debt_summary": debt_summary,
             "data_completeness": data_completeness,
             "data_gaps": [] if has_fin else ["财务三表未接入或未公告"],
         },
@@ -1517,6 +1570,7 @@ def _agent_payload(facts: dict[str, Any], key: str) -> dict[str, Any]:
         "float_holder_summary": facts.get("float_holder_summary"),
         "segment_summary": facts.get("segment_summary"),
         "audit_summary": facts.get("audit_summary"),
+        "interest_debt_summary": facts.get("interest_debt_summary"),
         "data_completeness": facts.get("data_completeness"),
         "platform_rules": {
             "level_gate": {"missing": "fail", "partial": "watch", "sufficient": "pass"},

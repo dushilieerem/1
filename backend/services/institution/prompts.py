@@ -2289,7 +2289,8 @@ DATA_GATE_NOTE = """
 - 治理缺核心字段时 gate=fail（不可买入），不得用“待补充”替代。
 - 使用 net_debt_proxy 时明确标注“近似，未拆分有息负债”，不得把它当作完整股权价值。
 - peer_summary 只作同业对照，不得把同业中位数当作公司自身数据。
-- payload 还包含 holder_summary / float_holder_summary / segment_summary / audit_summary；holder_summary 的 ratio 只是报告期前十大合计，未认定一致行动人，不代表控制权集中度；audit_summary 只有意见类型。
+- payload 还包含 holder_summary / float_holder_summary / segment_summary / audit_summary / interest_debt_summary；holder_summary 的 ratio 只是报告期前十大合计，未认定一致行动人，不代表控制权集中度；audit_summary 只有意见类型。
+- interest_debt_summary 中金融企业（银行/保险/证券）的净债务为 NULL，不得用总负债−现金替代，也不得做净债务桥；受限资金/租赁负债/合同负债源数据为空，不得用近似值冒充。
 """
 
 DIM_GATE_NOTES: dict[str, str] = {

@@ -144,6 +144,60 @@ def segment_summary(
     return out
 
 
+def interest_debt_summary(conn, symbol: str, as_of: Any) -> dict[str, Any] | None:
+    """有息负债/净债务/预收款（数据业务口径）。
+
+    金融企业（银行/保险/证券）的 interest_debt_total 与 net_debt 为 NULL，
+    不得用总负债−现金替代；调用方应跳过净债务桥。
+    """
+    rows = _query(
+        conn,
+        """
+        SELECT report_date, shortterm_loan, non_current_liability_in_one_year,
+               long_term_loans, bonds_payable, lease_liabilities,
+               interest_debt_total, cash, restricted_cash, net_debt,
+               advance_receipts, contract_liabilities, parent_equity,
+               minority_equity, total_equity, sw_l1_code, is_financial,
+               source, caliber, available_time
+          FROM svquant.interest_debt
+         WHERE symbol=%s AND report_date <= %s AND available_time < %s
+         ORDER BY report_date DESC LIMIT 1
+        """,
+        (symbol, _as_of(as_of), _pit_upper(as_of)),
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    is_financial = bool(row.get("is_financial"))
+    net_debt = row.get("net_debt")
+    interest_total = row.get("interest_debt_total")
+    return {
+        "report_date": str(row.get("report_date")),
+        "interest_debt_total": float(interest_total) if interest_total is not None else None,
+        "cash": float(row["cash"]) if row.get("cash") is not None else None,
+        "net_debt": float(net_debt) if net_debt is not None else None,
+        "net_debt_applicable": (not is_financial) and net_debt is not None,
+        "is_financial": is_financial,
+        "advance_receipts": (
+            float(row["advance_receipts"]) if row.get("advance_receipts") is not None else None
+        ),
+        "contract_liabilities": (
+            float(row["contract_liabilities"]) if row.get("contract_liabilities") is not None else None
+        ),
+        "parent_equity": float(row["parent_equity"]) if row.get("parent_equity") is not None else None,
+        "minority_equity": float(row["minority_equity"]) if row.get("minority_equity") is not None else None,
+        "restricted_cash": float(row["restricted_cash"]) if row.get("restricted_cash") is not None else None,
+        "lease_liabilities": float(row["lease_liabilities"]) if row.get("lease_liabilities") is not None else None,
+        "note": (
+            "金融企业：有息负债/净债务不适用，不能作为净债务桥。"
+            if is_financial
+            else "净债务 = 有息负债合计 − 货币资金；受限资金/租赁负债/合同负债源数据为空，未用近似值。"
+        ),
+        "source": row.get("source"),
+        "caliber": row.get("caliber"),
+    }
+
+
 def audit_summary(conn, symbol: str, as_of: Any) -> dict[str, Any] | None:
     rows = _query(
         conn,
@@ -171,4 +225,9 @@ def audit_summary(conn, symbol: str, as_of: Any) -> dict[str, Any] | None:
     }
 
 
-__all__ = ["audit_summary", "holder_summary", "segment_summary"]
+__all__ = [
+    "audit_summary",
+    "holder_summary",
+    "interest_debt_summary",
+    "segment_summary",
+]

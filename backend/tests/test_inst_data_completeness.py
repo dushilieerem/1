@@ -153,3 +153,38 @@ def test_data_platform_pilot_access() -> None:
     assert any(block.get("revenue_vs_consolidated_pct") is not None for block in segments["types"].values())
     assert audit and audit["is_standard"] is True
     assert audit["red_flag"] is False
+
+
+def test_interest_debt_summary_and_financial_null() -> None:
+    from services.core.db import get_conn
+    from services.institution import data_platform
+
+    with get_conn() as conn:
+        normal = data_platform.interest_debt_summary(conn, "600519.SH", "2026-11-06")
+        bank = data_platform.interest_debt_summary(conn, "601288.SH", "2026-11-06")
+    assert normal and normal["is_financial"] is False
+    assert normal["net_debt_applicable"] is True
+    assert normal["net_debt"] < 0
+    assert normal["interest_debt_total"] is not None
+    assert bank and bank["is_financial"] is True
+    assert bank["net_debt"] is None
+    assert bank["net_debt_applicable"] is False
+    assert "不适用" in bank["note"]
+
+
+def test_build_research_uses_data_business_net_debt() -> None:
+    company = {
+        "symbol": "600519.SH",
+        "name": "贵州茅台",
+        "market": "CN",
+        "industry": "食品饮料",
+        "data_status": "real",
+        "ref_price": 1400,
+    }
+    built = svc._build_research(company, mode="valuation")
+    facts = built["facts"]
+    assert facts["interest_debt_summary"]["net_debt_applicable"] is True
+    valuation = built["valuation"] or {}
+    assert valuation.get("net_debt_proxy", {}).get("source") == "eastmoney_f10_balance"
+    assert "有息负债合计" in str(valuation.get("net_debt_proxy", {}).get("label"))
+    assert any("有息负债/净债务" in x for x in facts["data_completeness"]["financial"]["have"])

@@ -171,10 +171,39 @@ function StrategyReviewView(){
   <div className="card"><div className="card-head"><h2>复核决定</h2><span className="fine">入库只授予研究用途</span></div><div className="card-body">{detail.branch.review_decision?<p>已决定：{detail.branch.review_decision} · {detail.branch.review_note}</p>:<><label className="field"><span>复核依据</span><textarea rows={3} value={note} onChange={e=>setNote(e.target.value)}/></label><div className="form-actions"><button className="btn primary" disabled={busy||!note.trim()||!detail.effective_gate?.passed} onClick={()=>void decide('approved')}>批准入库</button><button className="btn danger" disabled={busy||!note.trim()} onClick={()=>void decide('rejected')}>驳回</button></div>{!detail.effective_gate?.passed&&<p className="hint warning">研发/稳健性门槛未全部通过，不能批准入库。</p>}</>}</div></div>
  </div>}</div>{error&&<p className="hint error">{error}</p>}</>;}
 
+type Importable={id:string;name:string;description?:string;run_count:number;updated_at:string;imported:boolean};
+type ImportedAsset={id:string;name:string;source_project_id:string;status:string;imported_at:string;implementation_hash:string};
+function PlatformImports(){
+ const [items,setItems]=useState<Importable[]>([]),[assets,setAssets]=useState<ImportedAsset[]>([]);
+ const [busy,setBusy]=useState(''),[err,setErr]=useState('');
+ async function load(){
+  try{
+   const [a,b]=await Promise.all([researchFetch('/api/inst/quant/strategy-research/importable'),researchFetch('/api/inst/quant/strategy-research/imports')]);
+   const [da,db]=await Promise.all([a.json(),b.json()]);
+   if(!a.ok)throw Error(typeof (da.detail||da.error)==='string'?(da.detail||da.error):'平台策略读取失败');
+   if(!b.ok)throw Error(typeof (db.detail||db.error)==='string'?(db.detail||db.error):'已导入策略读取失败');
+   setItems(da.projects||[]);setAssets(db.assets||[]);
+  }catch(e){setErr(e instanceof Error?e.message:String(e));}
+ }
+ useEffect(()=>{void load();},[]);
+ async function imp(id:string){
+  if(busy)return;setBusy(id);setErr('');
+  try{const r=await researchFetch('/api/inst/quant/strategy-research/imports',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:id})});const d=await r.json();if(!r.ok)throw Error(typeof (d.detail||d.error)==='string'?(d.detail||d.error):'导入失败');await load();}
+  catch(e){setErr(e instanceof Error?e.message:String(e));}finally{setBusy('');}
+ }
+ return <div className="card" style={{marginBottom:12}}><div className="card-head"><div><h2>平台已有策略</h2><p className="fine">导入你在 SVQuant 平台已建好的策略配置，作为外部参考资产；未经 V5 六门槛与独立复核，不能直接用于组合或实盘。</p></div><span className="badge gray">外部口径 · 未经 V5 复核</span></div>
+ <div className="table-wrap"><table className="table"><thead><tr><th>平台策略</th><th>已运行</th><th>平台更新时间</th><th>导入状态</th><th>操作</th></tr></thead><tbody>
+ {items.length===0?<tr><td colSpan={5} className="empty">平台暂无属于当前成员的策略；可先在策略研究页或平台策略工作台创建。</td></tr>:items.map(x=><tr key={x.id}><td><b>{x.name}</b><small>{x.description?x.description.slice(0,60):'—'}</small></td><td>{x.run_count} 次</td><td>{x.updated_at?new Date(x.updated_at).toLocaleString():'—'}</td><td>{x.imported?<span className="badge gray">已导入 · 外部口径</span>:'未导入'}</td><td>{x.imported?<span className="fine">已登记</span>:<button className="btn small" disabled={!!busy} onClick={()=>void imp(x.id)}>{busy===x.id?'导入中…':'导入'}</button>}</td></tr>)}
+ </tbody></table></div>
+ {assets.length>0&&<div className="card-body"><p className="fine">已导入 {assets.length} 项（仅登记配置与来源哈希，不改变原平台策略）：</p><ul className="fine">{assets.map(a=><li key={a.id}>{a.name} · 来源 {a.source_project_id.slice(0,8)} · 配置哈希 {a.implementation_hash.slice(0,12)} · {new Date(a.imported_at).toLocaleString()}</li>)}</ul></div>}
+ {err&&<div className="card-body"><p className="hint error" role="alert">{err}</p></div>}
+ </div>;
+}
+
 function LibraryView({library,selected,onSelect}:{library:Array<{id:string;topic_name:string;hypothesis:string;recipe:{factors?:Array<{factor:string}>;top_n:number;rebalance_days:number};version:number;trial_count:number;sealed_result?:{excess_return?:number};sealed_gate?:Gate;latest_gate?:Gate;latest_metrics?:{turnover?:number};reviewed_at?:string}>;selected?:string;onSelect:(id:string)=>void}){
  const ir=(g?:Gate)=>g?.checks?.find(c=>c.name.includes('信息比率'))?.actual;
  const sel=library.find(x=>x.id===selected);
- return <><div className="card"><div className="table-wrap"><table className="table"><thead><tr><th>策略</th><th>来源因子</th><th>配方</th><th>研发 IR / 封存 IR</th><th>封存区间超额</th><th>换手</th><th>入库</th></tr></thead><tbody>
+ return <><PlatformImports/><div className="card"><div className="table-wrap"><table className="table"><thead><tr><th>策略</th><th>来源因子</th><th>配方</th><th>研发 IR / 封存 IR</th><th>封存区间超额</th><th>换手</th><th>入库</th></tr></thead><tbody>
   {library.length===0?<tr><td colSpan={7} className="empty">暂无已入库策略；需完成封存并通过独立复核。</td></tr>:library.map(x=><tr key={x.id} style={{cursor:'pointer'}} onClick={()=>onSelect(x.id)}><td><b>{x.id.slice(0,8)} · {x.topic_name}</b><small>v{x.version} · {x.trial_count} 次试验</small></td><td>{(x.recipe.factors||[]).map((f,i)=><span key={i}>{f.factor}{i<(x.recipe.factors||[]).length-1&&<br/>}</span>)}<small>因子库 · 已复核</small></td><td>TopN {x.recipe.top_n} · {x.recipe.rebalance_days} 日</td><td>{ir(x.latest_gate)==null?'—':Number(ir(x.latest_gate)).toFixed(2)} / {ir(x.sealed_gate)==null?'—':Number(ir(x.sealed_gate)).toFixed(2)}</td><td>{pct(x.sealed_result?.excess_return)}</td><td>{x.latest_metrics?.turnover==null?'—':(Number(x.latest_metrics.turnover)*252).toFixed(1)+'×'}</td><td>{x.reviewed_at?new Date(x.reviewed_at).toLocaleDateString():'—'}</td></tr>)}
  </tbody></table></div></div>
  {sel&&<div className="card" style={{marginTop:12}}><div className="card-head"><h2>{sel.id.slice(0,8)} · {sel.topic_name}</h2><button className="btn small" onClick={()=>onSelect('')}>关闭</button></div><div className="card-body"><div className="kv"><span>允许用途</span><div>模拟组合；实盘需另行审批（本期不提供）</div><span>证据</span><div>研发报告、参数邻域、成本敏感性、封存报告、复核记录</div><span>局限</span><div>冲击成本与容量未建模</div></div><div style={{marginTop:10}}><Link className="btn small" to="/quant/portfolio">在组合中使用 →</Link></div></div></div>}

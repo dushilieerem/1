@@ -219,4 +219,40 @@ def theses(scope: OrgScope, *, status: str | None = None) -> list[dict[str, Any]
     return [dict(row) for row in rows]
 
 
-__all__ = ["authorizations", "case", "cases", "company", "monitor", "portfolio", "proposals", "theses"]
+def execution_exceptions(scope: OrgScope, *, status: str | None = None) -> list[dict[str, Any]]:
+    sql = (
+        "SELECT e.*, co.symbol, co.name AS company_name FROM inst_execution_exception e "
+        "LEFT JOIN inst_authorization a ON a.id=e.authorization_id "
+        "LEFT JOIN inst_proposal_version v ON v.id=a.proposal_version_id "
+        "LEFT JOIN inst_proposal p ON p.id=v.proposal_id "
+        "LEFT JOIN inst_company co ON co.id=p.company_id "
+        "WHERE e.org_id=%s"
+    )
+    params: list[Any] = [scope.org_id]
+    if status:
+        sql += " AND e.status=%s"
+        params.append(status)
+    sql += " ORDER BY e.created_at DESC LIMIT 200"
+    with get_conn() as c:
+        rows = c.execute(sql, tuple(params)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def audit(scope: OrgScope, limit: int = 100) -> list[dict[str, Any]]:
+    with get_conn() as c:
+        rows = c.execute(
+            """
+            SELECT e.*, m.role AS actor_role,
+                   COALESCE(u.display_name, u.username) AS actor_name
+              FROM inst_audit_event e
+              LEFT JOIN inst_members m ON m.id=e.actor_member_id
+              LEFT JOIN users u ON u.id=m.user_id
+             WHERE e.org_id=%s
+             ORDER BY e.id DESC LIMIT %s
+            """,
+            (scope.org_id, max(1, min(limit, 500))),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+__all__ = ["audit", "authorizations", "case", "cases", "company", "execution_exceptions", "monitor", "portfolio", "proposals", "theses"]

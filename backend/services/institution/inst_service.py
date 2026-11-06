@@ -4234,22 +4234,7 @@ def _record_blocked_execution(
 
 
 def list_execution_exceptions(org_id: int, *, status: str | None = None) -> list[dict[str, Any]]:
-    with get_conn() as conn:
-        sql = (
-            "SELECT e.*, co.symbol, co.name AS company_name FROM inst_execution_exception e "
-            "LEFT JOIN inst_authorization a ON a.id=e.authorization_id "
-            "LEFT JOIN inst_proposal_version v ON v.id=a.proposal_version_id "
-            "LEFT JOIN inst_proposal p ON p.id=v.proposal_id "
-            "LEFT JOIN inst_company co ON co.id=p.company_id "
-            "WHERE e.org_id=%s"
-        )
-        params: list[Any] = [org_id]
-        if status:
-            sql += " AND e.status=%s"
-            params.append(status)
-        sql += " ORDER BY e.created_at DESC LIMIT 200"
-        rows = conn.execute(sql, tuple(params)).fetchall()
-    return [_row_dict(r) for r in rows]
+    return repo.execution_exceptions(OrgScope(org_id), status=status)
 
 
 def resolve_execution_exception(
@@ -5551,20 +5536,7 @@ def create_exit_case(
 
 
 def list_audit(org_id: int, limit: int = 100) -> list[dict[str, Any]]:
-    with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT e.*, m.role AS actor_role,
-                   COALESCE(u.display_name, u.username) AS actor_name
-              FROM inst_audit_event e
-              LEFT JOIN inst_members m ON m.id=e.actor_member_id
-              LEFT JOIN users u ON u.id=m.user_id
-             WHERE e.org_id=%s
-             ORDER BY e.id DESC LIMIT %s
-            """,
-            (org_id, max(1, min(limit, 500))),
-        ).fetchall()
-    return [_row_dict(r) or {} for r in rows]
+    return repo.audit(OrgScope(org_id), limit=limit)
 
 
 __all__ = [

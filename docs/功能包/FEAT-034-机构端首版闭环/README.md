@@ -548,3 +548,17 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - **数据需求文档**：第二批数据需求已整理到 `docs/数据需求/机构六维数据需求-第二批.md`，供数据业务排期。
 
 验证：pytest 94 passed；tsc 通过；真实案例 `mode=full` 返回治理 gate=fail、其余 watch，一页纸 decision=watch。
+
+### 11.23 数据业务 A 组接入（2026-11-06）
+
+接入数据业务 A 组四张表（schema `svquant`）：
+
+- `holder_top10` / `holder_float_top10`：最新报告期前十大股东/流通股东、持股比例、变动；只作为治理可见性，`ratio` 是报告期前十大合计、未认定一致行动人，不当作控制权集中度。
+- `segment_revenue`：最近年报产品/地区/行业分部收入、占比、毛利率；与同一报告期合并营收做对账。
+- `audit_opinion`：最新年报审计意见类型；非标准意见会把财务维度 gate 直接降为 fail。
+- 新增 `services/institution/data_platform.py`：按 `available_time`/`report_date` 做 PIT，表未加载时返回 None，不影响研究生成。
+- 数据完备性更新：治理 level=partial 但 `gate_cap=fail`（A 组只有股东/审计，仍不可买入）；商业模式补分部收入；财务补审计意见；一页纸仍最高 watch。
+- 提示词 payload 增加 `holder_summary` / `float_holder_summary` / `segment_summary` / `audit_summary`，并明确股东比例口径。
+- 三只样例（600519/000858/300750）已载入 `svquant_test` 验证；全市场由数据业务 loader 写入，DSN 由运维注入。
+
+验证：pytest 96 passed（含 A 组数据接入测试）；tsc、e2e-09/10/11/12 17 passed。

@@ -59,7 +59,7 @@ def test_data_completeness_governance_is_missing() -> None:
     assert out["governance"]["level"] == "missing"
     assert out["industry"]["level"] == "partial"
     assert out["valuation"]["level"] == "partial"
-    assert any("前十大股东" in x for x in out["governance"]["missing"])
+    assert any("一致行动人" in x for x in out["governance"]["missing"])
 
 
 def test_data_gate_caps_agent_gate() -> None:
@@ -105,8 +105,51 @@ def test_build_research_includes_peers_history_and_net_debt() -> None:
     assert facts["peer_summary"]["count"] > 0
     assert facts["peer_summary"]["revenue_yoy_median"] is not None
     assert facts["history_summary"]["annual_points"] >= 1
-    assert facts["data_completeness"]["governance"]["level"] == "missing"
+    assert facts["data_completeness"]["governance"]["level"] == "partial"
+    assert facts["data_completeness"]["governance"]["gate_cap"] == "fail"
+    assert facts["holder_summary"]["is_control_known"] is False
     assert facts["valuation_extra"]["net_debt_proxy"] is not None
     valuation = built["valuation"] or {}
     assert "equity_value" in valuation
     assert valuation.get("net_debt_proxy")
+
+
+def test_governance_holders_do_not_unlock_gate() -> None:
+    out = svc._data_completeness(
+        ind={"industry_code": "801120.SI"},
+        peers=[{"symbol": "A"}],
+        history={"periods": 40},
+        fin=[{"report_date": "2025-12-31"}],
+        val={"pe_ttm": 10},
+        holders={"report_date": "2025-12-31", "top10_ratio_pct": 72.24},
+        segments={"report_date": "2025-12-31"},
+        audit={"report_date": "2025-12-31", "opinion_type": "标准无保留意见", "red_flag": False},
+    )
+    assert out["governance"]["level"] == "partial"
+    assert out["governance"]["gate_cap"] == "fail"
+    assert any("前十大股东" in x for x in out["governance"]["have"])
+    assert any("分部收入" in x for x in out["business_model"]["have"])
+    assert any("审计意见类型" in x for x in out["financial"]["have"])
+    # 治理 partial 但 gate_cap=fail，仍然必须 fail
+    gated = svc._apply_data_gate({"gate": "pass"}, out["governance"])
+    assert gated["gate"] == "fail"
+
+
+def test_data_platform_pilot_access() -> None:
+    from services.core.db import get_conn
+    from services.institution import data_platform
+
+    with get_conn() as conn:
+        holders = data_platform.holder_summary(conn, "600519.SH", "2026-11-06")
+        segments = data_platform.segment_summary(
+            conn, "600519.SH", "2026-11-06", consolidated_revenue=168837900000
+        )
+        audit = data_platform.audit_summary(conn, "600519.SH", "2026-11-06")
+    assert holders and holders["count"] == 10
+    assert holders["top10_ratio_pct"] > 0
+    assert holders["is_control_known"] is False
+    assert "前十大" in holders["note"]
+    assert segments and segments["types"]
+    assert any(block.get("revenue_vs_consolidated_pct") is not None for block in segments["types"].values())
+    assert audit and audit["is_standard"] is True
+    assert audit["red_flag"] is False

@@ -30,8 +30,33 @@ class ReviewQueueTest(unittest.TestCase):
                 review.claim(11, 22, 'c')
 
 
-if __name__ == '__main__':
-    unittest.main()
+class LegacyArchiveReviewTest(unittest.TestCase):
+    def test_rejected_decision_does_not_require_approved_keys(self):
+        row = {'id': 'c', 'user_id': 5, 'org_id': 2, 'project_id': 'p',
+               'archive': {'review': {'status': 'requested', 'purpose': 'seal_failed_review',
+                                      'assigned_to': 9}},
+               'snapshot': {}, 'evidence': {}}
+        cursor = MagicMock()
+        cursor.execute.return_value.fetchone.return_value = row
+        connection = MagicMock()
+        connection.__enter__.return_value = cursor
+        with patch.object(review, 'get_conn', return_value=connection), \
+             patch.object(review, 'detail', return_value={'id': 'c'}):
+            self.assertEqual(review.record(9, 2, 'c', 'rejected', '封存未通过'), {'id': 'c'})
+
+    def test_approved_or_sealed_archive_cannot_be_overwritten(self):
+        from services.quant_factor.policy import WorkflowError
+        row = {'id': 'c', 'user_id': 5, 'org_id': 2, 'project_id': 'p',
+               'archive': {'review': {'status': 'requested', 'assigned_to': 9}, 'approved': True},
+               'snapshot': {}, 'evidence': {}}
+        cursor = MagicMock()
+        cursor.execute.return_value.fetchone.return_value = row
+        connection = MagicMock()
+        connection.__enter__.return_value = cursor
+        with patch.object(review, 'get_conn', return_value=connection):
+            with self.assertRaisesRegex(WorkflowError, '已批准或已封存'):
+                review.record(9, 2, 'c', 'rejected', '不应改写')
+
 
 
 class CurrentKReviewTest(unittest.TestCase):
@@ -84,3 +109,7 @@ class SealFailedReviewReturnTest(unittest.TestCase):
              patch.object(review, "detail", side_effect=AssertionError("must not require reviewer")), \
              patch.object(review, "current", return_value={"id": "c"}):
             self.assertEqual(review.open_seal_failed_review(1, 2, "c", "sealed failed"), {"id": "c"})
+
+
+if __name__ == '__main__':
+    unittest.main()

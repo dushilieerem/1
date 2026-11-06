@@ -124,6 +124,7 @@ def record(uid,org,cid,decision,note):
         review.update(status='reviewed',decision=decision,note=note.strip(),reviewer_id=uid,reviewed_at=datetime.now(timezone.utc).isoformat())
         card['review']=review
         # Neither research feedback nor a passing gate can modify approved/sealed.
-        assert card['approved'] is False and card['sealed'] is False
+        if card.get('approved') or card.get('sealed'):
+            raise WorkflowError('已批准或已封存的版本不能改写复核结论')
         c.execute('UPDATE quant_factor_candidates SET archive=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s',(store.encode(card),store.encode([event('review_recorded',reviewer_id=uid,decision=decision)]),cid))
     return detail(uid,org,cid)

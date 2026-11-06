@@ -189,9 +189,11 @@ def _revise(uid, org, project_id, parent_id, decision, run_id, topic_id, scope_o
         "failure": (decision.rationale + " " + decision.change_scope)[:3000]})["suggestion"]
     hypothesis = suggestion["hypothesis"]
     name = (cfg.get("draftFactor") or {}).get("name") or (cfg.get("factorCodes") or ["f0_factor"])[0]
+    # F3 的输入契约上限 2000 字符；完整假设仍保存在分支/课题，仅提示词按预算截断。
     job = agent_jobs.create(uid, org, "F3", project_id, {
-        "hypothesis": hypothesis, "candidateExpression": plan.get("candidateExpression", ""),
-        "improvementScope": scope_override or decision.change_scope or "只改进实现，不改变经济假设和方向",
+        "hypothesis": hypothesis[:700],
+        "candidateExpression": str(plan.get("candidateExpression") or "")[:300],
+        "improvementScope": (scope_override or decision.change_scope or "只改进实现，不改变经济假设和方向")[:700],
         "target": plan.get("target", "未来1个交易日收益"), "name": name, "code": old_code,
         "mode": "improve"}, f"f0:{run_id}:{uuid.uuid4().hex[:8]}")
     deadline = time.monotonic() + 420

@@ -74,7 +74,7 @@ async function prepareProposal(request: APIRequestContext): Promise<number> {
       .map((p: any) => String(p.industry)),
   );
   const companies = await call(request, "GET", "/api/inst/companies?limit=200", T.manager);
-  const company = (companies.items || []).find(
+  const eligible = (companies.items || []).filter(
     (c: any) =>
       c.market === "CN" &&
       Number(c.ref_price) >= 5 &&
@@ -82,9 +82,11 @@ async function prepareProposal(request: APIRequestContext): Promise<number> {
       c.up_down_status === "非涨跌停" &&
       !c.is_st &&
       !c.is_suspended &&
-      !held.has(String(c.symbol)) &&
       !crowded.has(String(c.industry || "")),
   );
+  // 本用例不成交，已持仓标的也可复用；优先未持仓，避免重复运行后无候选。
+  const company =
+    eligible.find((c: any) => !held.has(String(c.symbol))) || eligible[0];
   expect(company, "找不到可用于审批角色测试的标的").toBeTruthy();
 
   const created = await call(request, "POST", "/api/inst/cases", T.manager, {

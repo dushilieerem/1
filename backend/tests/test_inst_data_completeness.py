@@ -59,7 +59,7 @@ def test_data_completeness_governance_is_missing() -> None:
     assert out["governance"]["level"] == "missing"
     assert out["industry"]["level"] == "partial"
     assert out["valuation"]["level"] == "partial"
-    assert any("前十大股东" in x for x in out["governance"]["missing"])
+    assert any("一致行动人" in x for x in out["governance"]["missing"])
 
 
 def test_data_gate_caps_agent_gate() -> None:
@@ -105,8 +105,95 @@ def test_build_research_includes_peers_history_and_net_debt() -> None:
     assert facts["peer_summary"]["count"] > 0
     assert facts["peer_summary"]["revenue_yoy_median"] is not None
     assert facts["history_summary"]["annual_points"] >= 1
-    assert facts["data_completeness"]["governance"]["level"] == "missing"
+    assert facts["data_completeness"]["governance"]["level"] == "partial"
+    assert facts["data_completeness"]["governance"]["gate_cap"] == "fail"
+    assert facts["holder_summary"]["is_control_known"] is False
     assert facts["valuation_extra"]["net_debt_proxy"] is not None
     valuation = built["valuation"] or {}
     assert "equity_value" in valuation
     assert valuation.get("net_debt_proxy")
+
+
+def test_governance_holders_do_not_unlock_gate() -> None:
+    out = svc._data_completeness(
+        ind={"industry_code": "801120.SI"},
+        peers=[{"symbol": "A"}],
+        history={"periods": 40},
+        fin=[{"report_date": "2025-12-31"}],
+        val={"pe_ttm": 10},
+        holders={"report_date": "2025-12-31", "top10_ratio_pct": 72.24},
+        segments={"report_date": "2025-12-31"},
+        audit={"report_date": "2025-12-31", "opinion_type": "标准无保留意见", "red_flag": False},
+    )
+    assert out["governance"]["level"] == "partial"
+    assert out["governance"]["gate_cap"] == "fail"
+    assert any("前十大股东" in x for x in out["governance"]["have"])
+    assert any("分部收入" in x for x in out["business_model"]["have"])
+    assert any("审计意见类型" in x for x in out["financial"]["have"])
+    # 治理 partial 但 gate_cap=fail，仍然必须 fail
+    gated = svc._apply_data_gate({"gate": "pass"}, out["governance"])
+    assert gated["gate"] == "fail"
+
+
+def test_data_platform_pilot_access() -> None:
+    from services.core.db import get_conn
+    from services.institution import data_platform
+
+    with get_conn() as conn:
+        holders = data_platform.holder_summary(conn, "600519.SH", "2026-11-06")
+        segments = data_platform.segment_summary(
+            conn, "600519.SH", "2026-11-06", consolidated_revenue=168837900000
+        )
+        audit = data_platform.audit_summary(conn, "600519.SH", "2026-11-06")
+    assert holders and holders["count"] == 10
+    assert holders["top10_ratio_pct"] > 0
+    assert holders["is_control_known"] is False
+    assert "前十大" in holders["note"]
+    assert segments and segments["types"]
+    assert any(block.get("revenue_vs_consolidated_pct") is not None for block in segments["types"].values())
+    assert audit and audit["is_standard"] is True
+    assert audit["red_flag"] is False
+
+
+def test_interest_debt_summary_and_financial_null() -> None:
+    from services.core.db import get_conn
+    from services.institution import data_platform
+
+    with get_conn() as conn:
+        normal = data_platform.interest_debt_summary(conn, "600519.SH", "2026-11-06")
+        bank = data_platform.interest_debt_summary(conn, "601288.SH", "2026-11-06")
+        # PIT：available_time 当天可见，前一天不可见（数据业务契约为 <=）
+        on_day = data_platform.interest_debt_summary(conn, "600519.SH", "2026-04-17")
+        before_day = data_platform.interest_debt_summary(conn, "600519.SH", "2026-04-16")
+    assert on_day and on_day["report_date"] == "2025-12-31"
+    assert before_day is None
+    assert normal and normal["is_financial"] is False
+    assert normal["net_debt_applicable"] is True
+    assert normal["net_debt"] < 0
+    assert normal["interest_debt_total"] is not None
+    assert normal["lease_in_total"] is False
+    assert "不含租赁负债" in normal["note"]
+    assert "未扣受限资金" in normal["note"]
+    assert bank and bank["is_financial"] is True
+    assert bank["net_debt"] is None
+    assert bank["interest_debt_total"] is None
+    assert bank["net_debt_applicable"] is False
+    assert "不适用" in bank["note"]
+
+
+def test_build_research_uses_data_business_net_debt() -> None:
+    company = {
+        "symbol": "600519.SH",
+        "name": "贵州茅台",
+        "market": "CN",
+        "industry": "食品饮料",
+        "data_status": "real",
+        "ref_price": 1400,
+    }
+    built = svc._build_research(company, mode="valuation")
+    facts = built["facts"]
+    assert facts["interest_debt_summary"]["net_debt_applicable"] is True
+    valuation = built["valuation"] or {}
+    assert valuation.get("net_debt_proxy", {}).get("source") == "eastmoney_f10_balance"
+    assert "有息负债合计" in str(valuation.get("net_debt_proxy", {}).get("label"))
+    assert any("有息负债/净债务" in x for x in facts["data_completeness"]["financial"]["have"])

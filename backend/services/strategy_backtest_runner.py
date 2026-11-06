@@ -66,14 +66,15 @@ def run_trial(uid, org, branch_id):
             c.execute(
                 """INSERT INTO strategy_trials
                    (id,user_id,org_id,topic_id,branch_id,trial_no,recipe,implementation_hash,outcome,
-                    metrics,gate,report_id,rerun_of,view_id,release_ids,view_manifest_sha256,contract_revision,as_of)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,'rerun',%s::jsonb,%s::jsonb,%s,%s,%s,%s::jsonb,%s,%s,%s)""",
+                    metrics,gate,report_id,rerun_of,view_id,release_ids,view_manifest_sha256,contract_revision,as_of,report)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,'rerun',%s::jsonb,%s::jsonb,%s,%s,%s,%s::jsonb,%s,%s,%s,%s::jsonb)""",
                 (trial_id, uid, org, topic["id"], branch_id, trial_no,
                  json.dumps(branch["recipe"], ensure_ascii=False), branch["implementation_hash"],
                  json.dumps(prior["metrics"], ensure_ascii=False), json.dumps(prior["gate"], ensure_ascii=False),
                  prior["report_id"], prior["id"], topic["view_id"],
                  json.dumps(topic["release_ids"], ensure_ascii=False),
-                 topic["view_manifest_sha256"], topic["contract_revision"], topic["as_of"]))
+                 topic["view_manifest_sha256"], topic["contract_revision"], topic["as_of"],
+                 json.dumps(prior.get("report") or {}, ensure_ascii=False)))
         return {"trial_id": trial_id, "trial_no": trial_no, "outcome": "rerun",
                 "metrics": prior["metrics"], "gate": prior["gate"], "report_id": prior["report_id"],
                 "rerun_of": prior["id"]}
@@ -99,13 +100,16 @@ def run_trial(uid, org, branch_id):
         c.execute(
             """INSERT INTO strategy_trials
                (id,user_id,org_id,topic_id,branch_id,trial_no,recipe,implementation_hash,outcome,
-                metrics,gate,report_id,view_id,release_ids,view_manifest_sha256,contract_revision,as_of)
-               VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s::jsonb,%s,%s,%s)""",
+                metrics,gate,report_id,view_id,release_ids,view_manifest_sha256,contract_revision,as_of,report)
+               VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s::jsonb,%s,%s,%s,%s::jsonb)""",
             (trial_id, uid, org, topic["id"], branch_id, trial_no,
              json.dumps(branch["recipe"], ensure_ascii=False), branch["implementation_hash"], outcome,
              json.dumps(metrics, ensure_ascii=False), json.dumps(gate, ensure_ascii=False),
              "strategy_" + trial_id, topic["view_id"], json.dumps(topic["release_ids"], ensure_ascii=False),
-             topic["view_manifest_sha256"], topic["contract_revision"], topic["as_of"]))
+             topic["view_manifest_sha256"], topic["contract_revision"], topic["as_of"],
+             json.dumps({k: data.get(k) for k in ("date_range", "equity_curve", "benchmark_curve",
+                                                   "annual_returns", "assumptions", "final_equity") }
+                        | {"period_excess": data.get("excess_return")}, ensure_ascii=False)))
     return {"trial_id": trial_id, "trial_no": trial_no, "outcome": outcome,
             "metrics": metrics, "gate": gate, "report_id": "strategy_" + trial_id,
             "meta": data.get("meta")}

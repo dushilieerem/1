@@ -356,5 +356,7 @@ from app.routers.quant_factor_workflow import router as quant_factor_workflow_ro
 app.include_router(quant_factor_workflow_router)
 from app.routers.quant_data_resources import router as quant_data_resources_router
 app.include_router(quant_data_resources_router)
+from app.routers.portfolio import router as portfolio_router
+app.include_router(portfolio_router)
 from app.routers.strategy_research import router as strategy_research_router
 app.include_router(strategy_research_router)

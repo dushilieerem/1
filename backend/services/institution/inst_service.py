@@ -398,54 +398,21 @@ def _sync_company_universe(conn, org_id: int) -> None:
 
 
 def overview(org_id: int, role: str) -> dict[str, Any]:
-    with get_conn() as conn:
-        def one(sql: str, params: tuple = ()) -> int:
-            row = conn.execute(sql, params).fetchone()
-            return int(row["n"] or 0) if row else 0
-
-        companies = one("SELECT COUNT(*) AS n FROM inst_company WHERE org_id=%s", (org_id,))
-        cases = one("SELECT COUNT(*) AS n FROM inst_research_case WHERE org_id=%s", (org_id,))
-        pending = one(
-            "SELECT COUNT(*) AS n FROM inst_proposal WHERE org_id=%s AND status IN "
-            "('partner_review','chairman_review','risk_precheck','authorized')",
-            (org_id,),
-        )
-        role_status = {
-            "manager": ("draft", "partner_review"),
-            "partner": ("partner_review",),
-            "chairman": ("chairman_review",),
-            "risk": ("risk_precheck",),
-            "execution": ("authorized",),
-            "monitoring": (),
-        }.get(role, ())
-        my_pending = one(
-            "SELECT COUNT(*) AS n FROM inst_proposal WHERE org_id=%s AND status = ANY(%s)",
-            (org_id, list(role_status)),
-        ) if role_status else 0
-        blocked = one(
-            "SELECT COUNT(*) AS n FROM inst_proposal WHERE org_id=%s AND status='frozen'",
-            (org_id,),
-        )
-        alerts = one("SELECT COUNT(*) AS n FROM inst_monitor_event WHERE org_id=%s AND status='open'", (org_id,))
-        portfolio = conn.execute(
-            "SELECT id, code, name, base_currency, nav, cash FROM inst_portfolio WHERE org_id=%s ORDER BY id LIMIT 1",
-            (org_id,),
-        ).fetchone()
-        latest = conn.execute("SELECT MAX(trade_date) AS d FROM md_daily_bar").fetchone()
-    pf = _row_dict(portfolio) or {}
+    data = repo.overview(OrgScope(org_id), role)
+    pf = data.get("portfolio") or {}
     nav = float(pf.get("nav") or DEFAULT_NAV)
     cash = float(pf.get("cash") or nav)
     return {
         "org_id": org_id,
         "role": role,
-        "companies": companies,
-        "active_cases": cases,
-        "pending_approvals": pending,
-        "my_pending": my_pending,
-        "risk_blocks": blocked,
-        "monitor_alerts": alerts,
+        "companies": data["companies"],
+        "active_cases": data["active_cases"],
+        "pending_approvals": data["pending_approvals"],
+        "my_pending": data["my_pending"],
+        "risk_blocks": data["risk_blocks"],
+        "monitor_alerts": data["monitor_alerts"],
         "portfolio": {**pf, "invested_ratio": (1 - cash / nav) if nav else 0},
-        "data_date": _iso(latest["d"]) if latest else None,
+        "data_date": _iso(data["data_date"]) if data.get("data_date") else None,
         "policy": {
             "max_single_weight": MAX_SINGLE_WEIGHT,
             "min_cash_ratio": MIN_CASH_RATIO,
@@ -2224,31 +2191,7 @@ def _ai_debate(company, evidence, valuation, ev_ids) -> dict[str, Any] | None:
 
 
 def get_debate(org_id: int, session_id: int) -> dict[str, Any] | None:
-    with get_conn() as conn:
-        row = conn.execute(
-            """
-            SELECT s.*, c.id AS case_id, co.symbol, co.name AS company_name, co.market
-              FROM inst_debate_session s
-              JOIN inst_research_case c ON c.id=s.case_id
-              JOIN inst_company co ON co.id=c.company_id
-             WHERE s.id=%s AND c.org_id=%s
-            """,
-            (session_id, org_id),
-        ).fetchone()
-        if not row:
-            return None
-        args = conn.execute(
-            "SELECT * FROM inst_debate_argument WHERE session_id=%s ORDER BY round, side, id",
-            (session_id,),
-        ).fetchall()
-        checks = conn.execute(
-            "SELECT * FROM inst_evidence_check WHERE session_id=%s ORDER BY claim_id, evidence_id",
-            (session_id,),
-        ).fetchall()
-    out = _row_dict(row) or {}
-    out["arguments"] = [_row_dict(r) for r in args]
-    out["evidence_checks"] = [_row_dict(r) for r in checks]
-    return out
+    return repo.debate(OrgScope(org_id), session_id)
 
 
 # ---------------------------------------------------------------- 议案 / 审批 / 授权

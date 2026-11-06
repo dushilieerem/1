@@ -385,4 +385,83 @@ def proposal_exit_case(scope: OrgScope, proposal_id: int, *, conn=None) -> dict[
     return dict(row) if row else None
 
 
-__all__ = ["audit", "authorizations", "case", "cases", "companies", "company", "execution_exceptions", "monitor", "portfolio", "proposal_approvals", "proposal_authorizations", "proposal_exit_case", "proposal_row", "proposal_versions", "proposals", "theses"]
+def debate(scope: OrgScope, session_id: int) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT s.*, c.id AS case_id, co.symbol, co.name AS company_name, co.market
+              FROM inst_debate_session s
+              JOIN inst_research_case c ON c.id=s.case_id
+              JOIN inst_company co ON co.id=c.company_id
+             WHERE s.id=%s AND c.org_id=%s
+            """,
+            (session_id, scope.org_id),
+        ).fetchone()
+        if not row:
+            return None
+        args = conn.execute(
+            "SELECT * FROM inst_debate_argument WHERE session_id=%s ORDER BY round, side, id",
+            (session_id,),
+        ).fetchall()
+        checks = conn.execute(
+            "SELECT * FROM inst_evidence_check WHERE session_id=%s ORDER BY claim_id, evidence_id",
+            (session_id,),
+        ).fetchall()
+    out = dict(row)
+    out["arguments"] = [dict(r) for r in args]
+    out["evidence_checks"] = [dict(r) for r in checks]
+    return out
+
+
+def overview(scope: OrgScope, role: str) -> dict[str, Any]:
+    role_status = {
+        "manager": ("draft", "partner_review"),
+        "partner": ("partner_review",),
+        "chairman": ("chairman_review",),
+        "risk": ("risk_precheck",),
+        "execution": ("authorized",),
+        "monitoring": (),
+    }.get(role, ())
+    with get_conn() as conn:
+        def one(sql: str, params: tuple = ()) -> int:
+            row = conn.execute(sql, params).fetchone()
+            return int(row["n"] or 0) if row else 0
+
+        counts = {
+            "companies": one("SELECT COUNT(*) AS n FROM inst_company WHERE org_id=%s", (scope.org_id,)),
+            "active_cases": one("SELECT COUNT(*) AS n FROM inst_research_case WHERE org_id=%s", (scope.org_id,)),
+            "pending_approvals": one(
+                "SELECT COUNT(*) AS n FROM inst_proposal WHERE org_id=%s AND status IN "
+                "('partner_review','chairman_review','risk_precheck','authorized')",
+                (scope.org_id,),
+            ),
+            "risk_blocks": one(
+                "SELECT COUNT(*) AS n FROM inst_proposal WHERE org_id=%s AND status='frozen'",
+                (scope.org_id,),
+            ),
+            "monitor_alerts": one(
+                "SELECT COUNT(*) AS n FROM inst_monitor_event WHERE org_id=%s AND status='open'",
+                (scope.org_id,),
+            ),
+        }
+        counts["my_pending"] = (
+            one(
+                "SELECT COUNT(*) AS n FROM inst_proposal WHERE org_id=%s AND status = ANY(%s)",
+                (scope.org_id, list(role_status)),
+            )
+            if role_status
+            else 0
+        )
+        portfolio = conn.execute(
+            "SELECT id, code, name, base_currency, nav, cash FROM inst_portfolio WHERE org_id=%s ORDER BY id LIMIT 1",
+            (scope.org_id,),
+        ).fetchone()
+        latest = conn.execute("SELECT MAX(trade_date) AS d FROM md_daily_bar").fetchone()
+    return {
+        **counts,
+        "portfolio": dict(portfolio) if portfolio else {},
+        "data_date": latest["d"] if latest else None,
+    }
+
+
+__all__ = ["audit", "authorizations", "case", "cases", "companies", "company", "debate", "execution_exceptions", "monitor", "overview", "portfolio", "proposal_approvals", "proposal_authorizations", "proposal_exit_case", "proposal_row", "proposal_versions", "proposals", "theses"]

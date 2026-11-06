@@ -87,7 +87,21 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    command: ["python", "-u", "worker.py"]
+    # 旧镜像回滚时可能没有 worker.py；不要因缺文件导致整个 compose 启动失败。
+    command:
+      - sh
+      - -c
+      - |
+        if [ -f worker.py ]; then exec python -u worker.py; fi
+        echo "worker.py not present in this image; idle"
+        exec sleep infinity
+    healthcheck:
+      # 后端镜像继承的 /api/health 检查不适用于 worker，这里只确认 PID1 存活。
+      test: ["CMD-SHELL", "test -e /proc/1/cmdline"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     volumes:
       - backend-output:/app/backend/output
       - backend-factor:/app/backend/factor

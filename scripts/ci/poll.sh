@@ -52,7 +52,18 @@ sync_data_bg() {
     fi
   ) >>"$STATE_DIR/data-sync.log" 2>&1 &
 }
-trap sync_data_bg EXIT
+BACKUP_SCRIPT="$ROOT_DIR/scripts/ci/daily-backup.sh"
+daily_backup_bg() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    return 0
+  fi
+  [[ -x "$BACKUP_SCRIPT" ]] || return 0
+  (
+    exec 9>&-
+    "$BACKUP_SCRIPT"
+  ) >>"$STATE_DIR/db-backup.log" 2>&1 &
+}
+trap 'sync_data_bg; daily_backup_bg' EXIT
 
 cd "$ROOT_DIR"
 if ! git fetch --prune --tags origin >/dev/null 2>&1; then

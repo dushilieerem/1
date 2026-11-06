@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from ai.router import TaskSpec,get_task,register,run_task
 from ai.runtime.skills import extract_json_object
 from ai.runtime.store import assert_quota_available,record_usage
-from pydantic import BaseModel,ConfigDict,Field,ValidationError
+from pydantic import BaseModel,ConfigDict,Field,ValidationError,field_validator
 from services.core.db import get_conn
 from services.quant_factor import decision_engine
 from . import strategy_research
@@ -17,6 +17,9 @@ class D(BaseModel):
  model_config=ConfigDict(extra='forbid')
  action:str; branch_id:str=''; rationale:str=Field(min_length=8,max_length=2000)
  top_n:int|None=None; rebalance_days:int|None=None; stop_reason:str=''
+ @field_validator('branch_id','stop_reason',mode='before')
+ @classmethod
+ def _none_to_empty(cls,v):return '' if v is None else v
  def norm(self):
   if self.action not in ACTIONS: raise ValueError('动作不在白名单：'+self.action)
   if self.action=='adjust' and not (self.top_n or self.rebalance_days): raise ValueError('adjust 未给出参数')
@@ -83,7 +86,7 @@ def run(uid,org,rid):
   with get_conn() as c:row=c.execute("SELECT * FROM strategy_s0_runs WHERE id=%s",(rid,)).fetchone()
   topic=_topic(uid,org,row['topic_id']);branch=_branch(uid,org,row['branch_id'])
   led=strategy_research.ledger(uid,org,topic['id']);remaining=max(0,int(topic['max_trials'])-led['k'])
-  def on_step(step,steps): 
+  def on_step(step,entry,steps): 
    with get_conn() as c:c.execute("UPDATE strategy_s0_runs SET rounds=%s,decision=%s::jsonb WHERE id=%s",(step,json.dumps({'steps':steps},ensure_ascii=False),rid))
   steps,reason=decision_engine.run_steps(decide=lambda s:decide(uid,org,topic,branch),execute=lambda d,s:execute(uid,org,topic,branch,d),max_steps=min(6,remaining+2),on_step=on_step)
   with get_conn() as c:c.execute("UPDATE strategy_s0_runs SET status='stopped',rounds=%s,stop_reason=%s,updated_at=NOW() WHERE id=%s",(len(steps),reason,rid))

@@ -153,19 +153,12 @@ function LibraryView({library}:{library:Array<{id:string;topic_name:string;hypot
 }
 
 function CapabilityView(){
- const units=[
-  ['S0 研究决策','复用 F0 决策引擎，真实回测','可用'],
-  ['S5 封存验证','独立区间执行，超额>0 且 IR≥0.3','可用（真实执行）'],
-  ['S6 独立复核','复核人领取/批准/驳回，不能自审','可用（需复核角色）'],
-  ['RE 策略回测','共享 9527 factor_refs','可用'],
-  ['六门槛','超额/IR/相对回撤/换手/2×成本/邻域','可用（policy strategy-v5-p0）'],
-  ['策略库','已批准版本只读列表','可用（当前为空）'],
-  ['参数优化器','多种模板/优化器','未接入（M2 不做）'],
-  ['模拟跟踪','观察中/待组合评估','未接入（M4）'],
- ];
- return <div className="card"><div className="card-head"><h2>能力与评测</h2><span className="fine">按真实接入状态展示，不填评测分</span></div><div className="card-body"><div className="table-wrap"><table className="table"><thead><tr><th>能力</th><th>实现</th><th>状态</th><th>评测分</th></tr></thead><tbody>{units.map(([n,d,s])=><tr key={n}><td>{n}</td><td className="fine">{d}</td><td><span className={'badge '+(s==='可用'||s.startsWith('可用')?'live':'gray')}>{s}</span></td><td>待接入</td></tr>)}</tbody></table></div><p className="fine">缺口：冲击成本与容量未建模；buffer 未在生成代码中建模；未接入参数优化器与模拟跟踪。</p></div></div>;
+ const units=[['S0','研究决策','复用 F0 决策引擎 · 每课题一个','Agent'],['S1','因子选择','从因子库检索、查相关与状态','能力单元'],['S2','配方构造','在模板参数内生成配方','能力单元'],['S3','回测与诊断','调用 RE 回测，解读成本与分年','能力单元'],['S4','稳健性检验','参数邻域、成本敏感性','能力单元'],['S5','独立复核','封存期 · 不共享研究上下文','独立 Agent']];
+ const aw=[['可自主执行','在模板参数内改 TopN/调仓；开分支；放弃；对达标候选申请一次封存；提交审查'],['需要人确认','使用导入/未复核因子；改股票池、区间、成本或门槛；增加预算'],['不允许','批准入库；删除或修改回测记录；重复使用封存期；下单']];
+ return <><div className="card"><div className="card-head"><div><h2>S0 研究决策 · 动作白名单</h2><p className="fine">程序校验每个动作；越权动作被拒绝并记录。</p></div></div><div className="card-body"><div className="split" style={{gridTemplateColumns:'1fr 1fr 1fr'}}>{aw.map(([n,d],i)=><div className={'diff'+(i===0?' new':'')} key={n} style={i===2?{background:'var(--red-bg)',borderColor:'#efd3da'}:undefined}><b>{n}</b><p>{d}</p></div>)}</div></div></div>
+ <div className="card"><div className="card-head"><div><h2>S0 与能力单元</h2><p className="fine">S0 复用 F0 决策引擎，只换动作白名单；评测与方法版本尚未接入。</p></div><span className="badge gray">评测待接入</span></div><div className="table-wrap"><table className="table"><thead><tr><th>单元</th><th>职责</th><th>形态</th><th>方法版本</th><th>评测得分</th></tr></thead><tbody>{units.map(u=><tr key={u[0]}><td><b>{u[0]} · {u[1]}</b></td><td className="fine">{u[2]}</td><td>{u[3]}</td><td>v1</td><td>待接入</td></tr>)}</tbody></table></div><div className="card-body"><Link className="btn small" to="/quant/agents">Agent 管理</Link></div></div>
+ <div className="card"><div className="card-head"><div><h2>策略门槛政策</h2><p className="fine">strategy-v5-p0 · 需按机构政策校准</p></div></div><div className="card-body"><div className="kv"><span>扣费后年化超额</span><div>≥ 3.0%</div><span>信息比率</span><div>≥ 0.5 + 0.15·√(2·ln K)</div><span>相对基准最大回撤</span><div>≤ 12%</div><span>单边年换手</span><div>≤ 15 倍</div><span>2 倍成本</span><div>年化超额 &gt; 0</div><span>参数邻域</span><div>3×3 至少 6 格达标</div></div><p className="hint">评测集与得分未接入，不填场景值。</p></div></div></>;
 }
-
 function ReportCard({report,onClose}:{report:Report;onClose:()=>void}){
  const t=report.trial,g=t.effective_gate||t.gate;
  const cost=report.diagnostics?.cost_2x?.payload as {excess?:number;passed?:boolean}|undefined;

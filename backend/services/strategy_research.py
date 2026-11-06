@@ -87,12 +87,16 @@ def create_topic(uid, org, payload):
     dates = [d.get("date_max") for d in view["datasets"].values() if d.get("date_max")]
     tid = str(uuid.uuid4())
     with get_conn() as c:
+        c.execute("SELECT pg_advisory_xact_lock(%s,%s)", (9112, uid))
+        display_no = c.execute(
+            "SELECT COALESCE(MAX(display_no),0)+1 AS n FROM strategy_topics WHERE user_id=%s AND org_id=%s",
+            (uid, org)).fetchone()["n"]
         c.execute(
             """INSERT INTO strategy_topics
                (id,user_id,org_id,name,objective,universe,benchmark,development_start,development_end,
                 validation_start,validation_end,cost_bps,policy_version,max_trials,view_id,
-                release_ids,view_manifest_sha256,contract_revision,as_of)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s)""",
+                release_ids,view_manifest_sha256,contract_revision,as_of,display_no)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s)""",
             (tid, uid, org, name, str(payload.get("objective") or ""), universe, benchmark,
              dev_start, dev_end, val_start, val_end, cost,
              str(payload.get("policy_version") or "strategy-v5-p0"),
@@ -100,7 +104,7 @@ def create_topic(uid, org, payload):
              view["view_id"], json.dumps({k: v.get("release") for k, v in view["datasets"].items()
                                           if v.get("release")}, ensure_ascii=False),
              view.get("manifest_sha256") or "", view.get("contract_revision") or "",
-             max(dates) if dates else None))
+             max(dates) if dates else None, display_no))
         row = c.execute("SELECT * FROM strategy_topics WHERE id=%s", (tid,)).fetchone()
     return _public(row)
 
@@ -154,6 +158,33 @@ def create_branch(uid, org, topic_id, payload, allowed_sources=("manual",)):
     return _public(row)
 
 
+def _branch_labels(branches):
+    by_parent = {}
+    for b in sorted(branches, key=lambda x: (str(x.get("created_at") or ""), str(x["id"]))):
+        by_parent.setdefault(b.get("parent_id"), []).append(b)
+    labels = {}
+    revision = [1]
+    letters = "abcdefghijklmnopqrstuvwxyz"
+
+    def visit(parent, parent_label):
+        parallel = 0
+        for child in by_parent.get(parent["id"] if parent else None, []):
+            if parent is None:
+                label = "V1" if parallel == 0 else "V1" + letters[min(parallel, 25)]
+                parallel += 1
+            elif child.get("source") == "manual":
+                label = parent_label + letters[min(parallel, 25)]
+                parallel += 1
+            else:
+                revision[0] += 1
+                label = "V" + str(revision[0])
+            labels[child["id"]] = label
+            visit(child, label)
+
+    visit(None, "")
+    return labels
+
+
 def ledger(uid, org, topic_id):
     with get_conn() as c:
         topic = c.execute("SELECT * FROM strategy_topics WHERE id=%s AND user_id=%s AND org_id=%s",
@@ -191,9 +222,11 @@ def ledger(uid, org, topic_id):
         item = _public(t)
         item["effective_gate"] = merged_gate(item, diag.get(t["branch_id"], {}))
         public_trials.append(item)
+    labels = _branch_labels(branches)
     public_branches = []
     for b in branches:
         item = _public(b)
+        item["display_label"] = labels.get(b["id"], "V?")
         item["sealed"] = _public(sealed[b["id"]]) if b["id"] in sealed else None
         public_branches.append(item)
     return {"topic": _public(topic), "branches": public_branches,

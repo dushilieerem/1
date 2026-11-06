@@ -572,7 +572,7 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
   - `interest_debt_total` = 短借 + 一年内到期非流动负债 + 长借 + 应付债券，**不含租赁负债**（源三表无该字段，固定 NULL，也未计入合计）；payload 用 `lease_in_total=false` 明示。
   - `net_debt = interest_debt_total − cash`，**cash 未扣受限资金**（`restricted_cash` 源缺失）；我们直接采用，不二次调整，展示标注“未扣受限资金”。
   - 金融企业 `interest_debt_total` 与 `net_debt` 均为 NULL，`is_financial=true` 是主判断；NULL 不得当 0，也不得用总负债−现金替代。
-  - `advance_receipts` 是预收款项；`contract_liabilities` 源未单列（NULL），两者不可相加，也不参与 Gate。
+  - `advance_receipts` 是预收款项；`contract_liabilities` 源未单列（NULL），两者不可相加，也不参与 Gate。`advance_receipts > 0` 才算“有预收余额”的正面证据，`=0` 只表示该期期末无余额或源未列示，NULL 表示缺失（全市场非空 191,484 行中 0 有 95,602 行）。
   - 2011–2015 归母权益已回补，但 `available_time` 取原表 `m_anntime`，不是 F10 `NOTICE_DATE`。
 - 净债务优先使用数据业务口径，原先的“有息负债代理 + 现金”只在表未加载时兜底，估值桥注明来源。
 - 金融企业（`is_financial=true`）不适用净债务桥：演示估值降为 `relative_only` 并写明原因，不拿 NULL 当 0。

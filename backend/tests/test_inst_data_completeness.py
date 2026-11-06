@@ -197,6 +197,9 @@ def test_interest_debt_summary_and_financial_null() -> None:
     assert normal["lease_in_total"] is False
     assert "不含租赁负债" in normal["note"]
     assert "未扣受限资金" in normal["note"]
+    # 0 只代表无余额或源未列示，不作为“有预收余额”的证据。
+    assert normal["advance_receipts"] == 0
+    assert normal["advance_receipts_positive"] is False
     assert bank and bank["is_financial"] is True
     assert bank["net_debt"] is None
     assert bank["interest_debt_total"] is None
@@ -216,6 +219,10 @@ def test_build_research_uses_data_business_net_debt() -> None:
     built = svc._build_research(company, mode="valuation")
     facts = built["facts"]
     assert facts["interest_debt_summary"]["net_debt_applicable"] is True
+    assert facts["interest_debt_summary"]["advance_receipts_positive"] is False
+    business = facts["data_completeness"]["business_model"]
+    assert not any("预收款项" in x for x in business["have"])
+    assert any("合同负债/预收款" in x for x in business["missing"])
     valuation = built["valuation"] or {}
     assert valuation.get("net_debt_proxy", {}).get("source") == "eastmoney_f10_balance"
     assert "有息负债合计" in str(valuation.get("net_debt_proxy", {}).get("label"))

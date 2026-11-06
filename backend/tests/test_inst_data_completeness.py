@@ -90,7 +90,7 @@ def test_memo_decision_capped_by_gates() -> None:
     assert all_pass["decision"] == "proceed"
 
 
-def test_build_research_includes_peers_history_and_net_debt() -> None:
+def test_build_research_includes_peers_history_and_net_debt(monkeypatch) -> None:
     company = {
         "symbol": "600519.SH",
         "name": "贵州茅台",
@@ -99,6 +99,29 @@ def test_build_research_includes_peers_history_and_net_debt() -> None:
         "data_status": "real",
         "ref_price": 1400,
     }
+    # 单测不依赖 CI 空库里的真实行情/财务；固定返回十年财务、同业和估值。
+    financials = [
+        {
+            "report_date": f"{2016 + i}-12-31", "notice_date": f"{2017 + i}-03-31",
+            "revenue": 100 + i * 10, "net_profit": 20 + i * 2, "gross_margin": 0.45,
+            "roe": 0.20, "operating_cf": 30 + i, "free_cash_flow": 20 + i,
+            "total_liabilities": 80.0, "cash": 50.0,
+        }
+        for i in range(9)
+    ]
+    peers = [
+        {"symbol": "A.SH", "revenue_yoy": 0.1, "gross_margin": 0.4, "roe": 0.12, "pe_ttm": 20, "pb_mrq": 3},
+        {"symbol": "B.SH", "revenue_yoy": 0.2, "gross_margin": 0.5, "roe": 0.15, "pe_ttm": 30, "pb_mrq": 4},
+    ]
+    monkeypatch.setattr(svc.md, "latest_bar", lambda *a, **k: {"close": 1400, "trade_date": "2026-11-05"})
+    monkeypatch.setattr(svc.md, "valuation_latest", lambda *a, **k: {"pe_ttm": 25.0, "pb_mrq": 8.0, "dividend_yield_ttm": 0.02, "total_shares": 1_000_000_000})
+    monkeypatch.setattr(svc.md, "valuation_percentile", lambda *a, **k: {"pe_percentile": 0.5, "pb_percentile": 0.6})
+    monkeypatch.setattr(svc.md, "risk_stats", lambda *a, **k: {"annual_vol": 0.2, "max_drawdown": -0.3})
+    monkeypatch.setattr(svc.md, "industry_latest", lambda *a, **k: {"industry_code": "801120.SI", "name": "食品饮料"})
+    monkeypatch.setattr(svc.md, "financials", lambda *a, **k: financials)
+    monkeypatch.setattr(svc.md, "industry_peers", lambda *a, **k: peers)
+    monkeypatch.setattr(svc.md, "share_capital_history", lambda *a, **k: [{"effective_date": "2025-12-31", "total_shares": 1_000_000_000}])
+    monkeypatch.setattr(svc.md, "dividend_history", lambda *a, **k: [{"ex_date": "2025-06-30", "cash_per_share": 20}])
     built = svc._build_research(company, mode="valuation")
     facts = built["facts"]
     assert len(facts["financials"]) > 8

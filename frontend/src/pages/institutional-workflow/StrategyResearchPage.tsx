@@ -27,8 +27,9 @@ export function StrategyResearchPage(){
  const [topics,setTopics]=useState<Topic[]>([]),[selected,setSelected]=useState<string>();
  const [ledger,setLedger]=useState<Ledger|null>(null);
  const [error,setError]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
- const [library,setLibrary]=useState<Array<{id:string;topic_name:string;hypothesis:string;recipe:{factors?:Array<{factor:string}>;top_n:number;rebalance_days:number};version:number;trial_count:number;sealed_result?:{excess_return?:number}}>>([]);
+ const [library,setLibrary]=useState<Array<{id:string;topic_name:string;hypothesis:string;recipe:{factors?:Array<{factor:string}>;top_n:number;rebalance_days:number};version:number;trial_count:number;sealed_result?:{excess_return?:number};sealed_gate?:Gate;latest_gate?:Gate;latest_metrics?:{turnover?:number};reviewed_at?:string}>>([]);
  const [report,setReport]=useState<Report>();
+ const [libSel,setLibSel]=useState<string>();
  const [reviewQueue,setReviewQueue]=useState<Array<{id:string;topic_name:string;hypothesis:string}>>([]),[reviewErr,setReviewErr]=useState('');
  const [factors,setFactors]=useState<Factor[]>([]),[creating,setCreating]=useState(false),[extra,setExtra]=useState(0);
  const [form,setForm]=useState({name:'CSI500 新课题',universe:'CSI500',benchmark:'CSI500',development_start:'2022-01-01',development_end:'2024-12-31',validation_start:'2025-01-01',validation_end:'2025-12-31',cost_bps:10,max_trials:8,factor:'SV06_0010',library:'主因子库',direction:'negative',factor2:'',direction2:'positive',factor3:'',direction3:'positive',top_n:50,rebalance_days:20});
@@ -85,7 +86,7 @@ export function StrategyResearchPage(){
   <div className="ops-grid"><div>{ledger&&<LedgerCard ledger={ledger} busy={busy} run={run} openReport={openReport}/>}</div><aside className="side"><SystemStatus/></aside></div></>)}
  {tab==='manual'&&<ManualView ledger={ledger} busy={busy} run={run} openReport={openReport}/>}
  {tab==='review'&&<div className="card"><div className="card-head"><h2>策略审查</h2><span className="fine">独立复核角色可见；研究员不能自审</span></div><div className="card-body">{reviewErr?<p className="hint">{reviewErr} <Link className="text-link" to="/quant/reviews/factors">前往统一审查入口</Link></p>:reviewQueue.length===0?<p className="empty">待我复核的策略候选为空。</p>:<ul>{reviewQueue.map(x=><li key={x.id}><b>{x.topic_name}</b> · {x.id.slice(0,8)}<p className="fine">{x.hypothesis}</p></li>)}</ul>}<p className="fine">复核人可在统一审查入口查看封存结果、全量试验并批准/驳回；批准只授予研究用途。</p></div></div>}
- {tab==='library'&&<LibraryView library={library}/>}
+ {tab==='library'&&<LibraryView library={library} selected={libSel} onSelect={setLibSel}/>}
  {tab==='capability'&&<CapabilityView/>}
  {report&&<ReportCard report={report} onClose={()=>setReport(undefined)}/>}
  </>;
@@ -148,10 +149,15 @@ function ManualView({ledger,busy,run,openReport}:{ledger:Ledger|null;busy:boolea
  <div className="wb-grid"><div><div className="tool-tabs">{tools.map(([id,label])=><button key={id} className={tool===id?'on':''} onClick={()=>setTool(id)}>{label}</button>)}</div><div className="card"><div className="card-body">{body}</div></div></div>
  <div className="card asst"><div className="card-head"><h2>研究助手</h2></div><div className="chat"><div className="msg ai">已加载 {branch.id.slice(0,8)}。助手只写草稿，执行由你确认；策略助手接口尚未接入，本区暂不产生模型建议。</div></div><div className="compose"><div className="qp"><button disabled>为什么不达标</button><button disabled>怎么降换手</button><button disabled>过拟合风险</button></div></div></div></div></>;
 }
-function LibraryView({library}:{library:Array<{id:string;topic_name:string;hypothesis:string;recipe:{factors?:Array<{factor:string}>;top_n:number;rebalance_days:number};version:number;trial_count:number;sealed_result?:{excess_return?:number}}>}){
- return <div className="card"><div className="card-head"><h2>策略库</h2><span className="fine">仅复核批准的研究用途版本；组合模块只读选用</span></div><div className="card-body">{library.length===0?<p className="empty">暂无已入库策略；需完成封存并通过独立复核。</p>:<div className="table-wrap"><table className="table"><thead><tr><th>课题</th><th>版本</th><th>配方</th><th>试验</th><th>封存超额</th><th>假设</th></tr></thead><tbody>{library.map(x=><tr key={x.id}><td>{x.topic_name}</td><td>v{x.version} · {x.id.slice(0,8)}</td><td>{(x.recipe.factors||[]).map(f=>f.factor).join(' + ')} · TopN {x.recipe.top_n} / {x.recipe.rebalance_days}日</td><td>{x.trial_count}</td><td>{x.sealed_result?.excess_return==null?'—':pct(x.sealed_result.excess_return)}</td><td className="fine">{x.hypothesis.slice(0,80)}</td></tr>)}</tbody></table></div>}</div></div>;
+function LibraryView({library,selected,onSelect}:{library:Array<{id:string;topic_name:string;hypothesis:string;recipe:{factors?:Array<{factor:string}>;top_n:number;rebalance_days:number};version:number;trial_count:number;sealed_result?:{excess_return?:number};sealed_gate?:Gate;latest_gate?:Gate;latest_metrics?:{turnover?:number};reviewed_at?:string}>;selected?:string;onSelect:(id:string)=>void}){
+ const ir=(g?:Gate)=>g?.checks?.find(c=>c.name.includes('信息比率'))?.actual;
+ const sel=library.find(x=>x.id===selected);
+ return <><div className="card"><div className="table-wrap"><table className="table"><thead><tr><th>策略</th><th>来源因子</th><th>配方</th><th>研发 IR / 封存 IR</th><th>封存区间超额</th><th>换手</th><th>入库</th></tr></thead><tbody>
+  {library.length===0?<tr><td colSpan={7} className="empty">暂无已入库策略；需完成封存并通过独立复核。</td></tr>:library.map(x=><tr key={x.id} style={{cursor:'pointer'}} onClick={()=>onSelect(x.id)}><td><b>{x.id.slice(0,8)} · {x.topic_name}</b><small>v{x.version} · {x.trial_count} 次试验</small></td><td>{(x.recipe.factors||[]).map((f,i)=><span key={i}>{f.factor}{i<(x.recipe.factors||[]).length-1&&<br/>}</span>)}<small>因子库 · 已复核</small></td><td>TopN {x.recipe.top_n} · {x.recipe.rebalance_days} 日</td><td>{ir(x.latest_gate)==null?'—':Number(ir(x.latest_gate)).toFixed(2)} / {ir(x.sealed_gate)==null?'—':Number(ir(x.sealed_gate)).toFixed(2)}</td><td>{pct(x.sealed_result?.excess_return)}</td><td>{x.latest_metrics?.turnover==null?'—':(Number(x.latest_metrics.turnover)*252).toFixed(1)+'×'}</td><td>{x.reviewed_at?new Date(x.reviewed_at).toLocaleDateString():'—'}</td></tr>)}
+ </tbody></table></div></div>
+ {sel&&<div className="card" style={{marginTop:12}}><div className="card-head"><h2>{sel.id.slice(0,8)} · {sel.topic_name}</h2><button className="btn small" onClick={()=>onSelect('')}>关闭</button></div><div className="card-body"><div className="kv"><span>允许用途</span><div>模拟组合；实盘需另行审批（本期不提供）</div><span>证据</span><div>研发报告、参数邻域、成本敏感性、封存报告、复核记录</div><span>局限</span><div>冲击成本与容量未建模</div></div><div style={{marginTop:10}}><Link className="btn small" to="/quant/portfolio">在组合中使用 →</Link></div></div></div>}
+ </>;
 }
-
 function CapabilityView(){
  const units=[['S0','研究决策','复用 F0 决策引擎 · 每课题一个','Agent'],['S1','因子选择','从因子库检索、查相关与状态','能力单元'],['S2','配方构造','在模板参数内生成配方','能力单元'],['S3','回测与诊断','调用 RE 回测，解读成本与分年','能力单元'],['S4','稳健性检验','参数邻域、成本敏感性','能力单元'],['S5','独立复核','封存期 · 不共享研究上下文','独立 Agent']];
  const aw=[['可自主执行','在模板参数内改 TopN/调仓；开分支；放弃；对达标候选申请一次封存；提交审查'],['需要人确认','使用导入/未复核因子；改股票池、区间、成本或门槛；增加预算'],['不允许','批准入库；删除或修改回测记录；重复使用封存期；下单']];

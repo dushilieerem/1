@@ -245,7 +245,16 @@ def library(uid, org):
                         WHERE r.user_id=b.user_id AND r.org_id=b.org_id AND r.branch_id=b.id AND r.rerun_of IS NULL) AS trial_count,
                       (SELECT v.result FROM strategy_sealed_validations v
                         WHERE v.user_id=b.user_id AND v.org_id=b.org_id AND v.branch_id=b.id
-                        ORDER BY v.created_at DESC LIMIT 1) AS sealed_result
+                        ORDER BY v.created_at DESC LIMIT 1) AS sealed_result,
+                      (SELECT v.gate FROM strategy_sealed_validations v
+                        WHERE v.user_id=b.user_id AND v.org_id=b.org_id AND v.branch_id=b.id
+                        ORDER BY v.created_at DESC LIMIT 1) AS sealed_gate,
+                      (SELECT r.gate FROM strategy_trials r
+                        WHERE r.user_id=b.user_id AND r.org_id=b.org_id AND r.branch_id=b.id
+                        ORDER BY r.trial_no DESC LIMIT 1) AS latest_gate,
+                      (SELECT r.metrics FROM strategy_trials r
+                        WHERE r.user_id=b.user_id AND r.org_id=b.org_id AND r.branch_id=b.id
+                        ORDER BY r.trial_no DESC LIMIT 1) AS latest_metrics
                FROM strategy_branches b JOIN strategy_topics t
                  ON t.user_id=b.user_id AND t.org_id=b.org_id AND t.id=b.topic_id
                WHERE b.user_id=%s AND b.org_id=%s AND b.status='approved'

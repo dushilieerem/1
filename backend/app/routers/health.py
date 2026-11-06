@@ -40,23 +40,23 @@ def health() -> dict:
                         "finished_at": str(row.get("finished_at") or "") or None,
                         "last_error": row.get("last_error"),
                     }
-        q_exists = conn.execute(
-            "SELECT to_regclass('public.background_jobs') AS t"
-        ).fetchone()
-        if q_exists and q_exists.get("t"):
-            rows = conn.execute(
-                "SELECT status, COUNT(*) AS n FROM background_jobs GROUP BY status"
-            ).fetchall()
-            queue = {str(r["status"]): int(r["n"] or 0) for r in rows}
-        conn_row = conn.execute(
-            "SELECT COUNT(*) AS used, current_setting('max_connections') AS max_conn "
-            "FROM pg_stat_activity"
-        ).fetchone()
-        if conn_row:
-            connections = {
-                "used": int(conn_row.get("used") or 0),
-                "limit": int(conn_row.get("max_conn") or 0),
-            }
+            q_exists = conn.execute(
+                "SELECT to_regclass('public.background_jobs') AS t"
+            ).fetchone()
+            if q_exists and q_exists.get("t"):
+                rows = conn.execute(
+                    "SELECT status, COUNT(*) AS n FROM background_jobs GROUP BY status"
+                ).fetchall()
+                queue = {str(r["status"]): int(r["n"] or 0) for r in rows}
+            conn_row = conn.execute(
+                "SELECT COUNT(*) AS used, current_setting('max_connections') AS max_conn "
+                "FROM pg_stat_activity"
+            ).fetchone()
+            if conn_row:
+                connections = {
+                    "used": int(conn_row.get("used") or 0),
+                    "limit": int(conn_row.get("max_conn") or 0),
+                }
         db_ok = True
         from services.core.migrations import status as migration_status
 

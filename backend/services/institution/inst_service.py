@@ -2575,35 +2575,7 @@ def create_proposal(
 
 
 def list_proposals(org_id: int, *, status: str | None = None) -> list[dict[str, Any]]:
-    sql = """
-        SELECT p.*, co.symbol, co.name AS company_name, co.market,
-               v.version_no, v.snapshot, v.status AS version_status,
-               a.id AS authorization_id, a.status AS authorization_status,
-               x.id AS exit_case_id, x.status AS exit_status, x.reason_type AS exit_reason_type
-          FROM inst_proposal p
-          JOIN inst_company co ON co.id=p.company_id
-          LEFT JOIN LATERAL (
-            SELECT version_no, snapshot, status, id FROM inst_proposal_version
-             WHERE proposal_id=p.id ORDER BY version_no DESC LIMIT 1
-          ) v ON TRUE
-          LEFT JOIN LATERAL (
-            SELECT id, status FROM inst_authorization
-             WHERE proposal_version_id=v.id AND status='qualified' ORDER BY id DESC LIMIT 1
-          ) a ON TRUE
-          LEFT JOIN LATERAL (
-            SELECT id, status, reason_type FROM inst_exit_case
-             WHERE proposal_id=p.id ORDER BY id DESC LIMIT 1
-          ) x ON TRUE
-         WHERE p.org_id=%s
-    """
-    params: list[Any] = [org_id]
-    if status:
-        sql += " AND p.status=%s"
-        params.append(status)
-    sql += " ORDER BY p.updated_at DESC"
-    with get_conn() as conn:
-        rows = conn.execute(sql, tuple(params)).fetchall()
-    return [_row_dict(r) or {} for r in rows]
+    return repo.proposals(OrgScope(org_id), status=status)
 
 
 STAGE_ROLE = {"partner": "partner", "risk_precheck": "risk", "chairman": "chairman"}
@@ -4431,57 +4403,7 @@ def portfolio(org_id: int) -> dict[str, Any]:
 
 
 def monitor(org_id: int) -> dict[str, Any]:
-    with get_conn() as conn:
-        events = conn.execute(
-            "SELECT e.*, co.symbol, co.name AS company_name FROM inst_monitor_event e "
-            "LEFT JOIN inst_company co ON co.id=e.company_id WHERE e.org_id=%s ORDER BY e.created_at DESC LIMIT 50",
-            (org_id,),
-        ).fetchall()
-        exits = conn.execute(
-            """
-            SELECT x.*, co.symbol, co.name AS company_name, c.case_no,
-                   p.status AS proposal_status, p.direction AS proposal_direction,
-                   a.status AS authorization_status
-              FROM inst_exit_case x
-              JOIN inst_company co ON co.id=x.company_id
-              LEFT JOIN inst_research_case c ON c.id=x.case_id
-              LEFT JOIN inst_proposal p ON p.id=x.proposal_id
-              LEFT JOIN LATERAL (
-                SELECT au.status FROM inst_authorization au
-                  JOIN inst_proposal_version v ON v.id=au.proposal_version_id
-                 WHERE v.proposal_id=x.proposal_id
-                 ORDER BY au.id DESC LIMIT 1
-              ) a ON TRUE
-             WHERE x.org_id=%s ORDER BY x.created_at DESC LIMIT 50
-            """,
-            (org_id,),
-        ).fetchall()
-        theses = conn.execute(
-            """
-            SELECT t.*, co.name AS company_name,
-                   (SELECT COUNT(*) FROM inst_thesis_review r WHERE r.ledger_id=t.id) AS review_count
-              FROM inst_thesis_ledger t
-              JOIN inst_company co ON co.id=t.company_id
-             WHERE t.org_id=%s
-             ORDER BY t.updated_at DESC LIMIT 100
-            """,
-            (org_id,),
-        ).fetchall()
-        exit_reviews = conn.execute(
-            """
-            SELECT r.* FROM inst_exit_review r
-              JOIN inst_exit_case x ON x.id=r.exit_case_id
-             WHERE x.org_id=%s ORDER BY r.created_at DESC LIMIT 50
-            """,
-            (org_id,),
-        ).fetchall()
-    return {
-        "portfolio": portfolio(org_id),
-        "events": [_row_dict(r) for r in events],
-        "exits": [_row_dict(r) for r in exits],
-        "theses": [_row_dict(r) for r in theses],
-        "exit_reviews": [_row_dict(r) for r in exit_reviews],
-    }
+    return {"portfolio": portfolio(org_id), **repo.monitor(OrgScope(org_id))}
 
 
 def scan_holdings(org_id: int, *, actor_member_id: int | None = None) -> dict[str, Any]:

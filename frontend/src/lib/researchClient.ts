@@ -48,6 +48,7 @@ const protectedPaths = [
  /^\/factor-workflow\/iterations\/[^/]+(?:\/pause)?$/,
  /^\/factor-workflow\/agent-jobs(?:\/[^/]+(?:\/cancel)?)?$/,
  /^\/factor-workflow\/overview$/,
+ /^\/factor-workflow\/published-view$/,
  /^\/factor-workflow\/imports\/svquant-existing(?:\/reference)?$/,
  /^\/factor-workflow\/projects\/[^/]+\/topics$/,
  /^\/factor-workflow\/topics$/, 

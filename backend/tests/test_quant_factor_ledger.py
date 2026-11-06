@@ -340,3 +340,32 @@ class TerminalBackfillScanTest(unittest.TestCase):
         sql = cursor.execute.call_args.args[0]
         self.assertIn('development_failed', sql)
         self.assertIn('development_passed', sql)
+
+
+class BranchLabelTest(unittest.TestCase):
+    def branches(self):
+        return [
+            {"id": "r", "parent_id": None, "source": "manual", "hypothesis_version": 1, "created_at": "2026-01-01"},
+            {"id": "a1", "parent_id": "r", "source": "agent", "hypothesis_version": 2, "created_at": "2026-01-02"},
+            {"id": "a2", "parent_id": "a1", "source": "agent", "hypothesis_version": 3, "created_at": "2026-01-03"},
+            {"id": "m1", "parent_id": "a1", "source": "manual", "hypothesis_version": 3, "created_at": "2026-01-04"},
+            {"id": "a2b", "parent_id": "a1", "source": "agent", "hypothesis_version": 3, "created_at": "2026-01-05"},
+        ]
+
+    def test_revision_and_parallel_labels(self):
+        from services.quant_factor import ledger
+        labels = ledger._branch_labels(1, 2, "t", self.branches())
+        self.assertEqual(labels["r"], "H1")
+        self.assertEqual(labels["a1"], "H2")
+        self.assertEqual(labels["a2"], "H3")
+        self.assertEqual(labels["m1"], "H2a")
+        self.assertEqual(labels["a2b"], "H4")
+
+    def test_existing_labels_stable_when_sibling_added(self):
+        from services.quant_factor import ledger
+        before = ledger._branch_labels(1, 2, "t", self.branches())
+        extra = {"id": "m2", "parent_id": "a1", "source": "manual", "hypothesis_version": 3, "created_at": "2026-01-06"}
+        after = ledger._branch_labels(1, 2, "t", self.branches() + [extra])
+        for key in ("r", "a1", "a2", "m1", "a2b"):
+            self.assertEqual(before[key], after[key])
+        self.assertEqual(after["m2"], "H2b")

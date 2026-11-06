@@ -286,18 +286,21 @@ def create_topic(uid: int, org: int, project_id: str, payload: dict) -> dict:
         if not c.execute("SELECT id FROM detect_projects WHERE user_id=%s AND id=%s",
                          (uid, project_id)).fetchone():
             raise KeyError(project_id)
+        display_no = c.execute(
+            "SELECT COALESCE(MAX(display_no),0)+1 AS n FROM quant_factor_topics WHERE user_id=%s AND org_id=%s",
+            (uid, org)).fetchone()["n"]
         c.execute(
             """INSERT INTO quant_factor_topics
                (id,user_id,org_id,project_id,view_id,release_id,release_ids,view_manifest_sha256,
                 contract_revision,as_of,development_start,development_end,
                 validation_start,validation_end,primary_holding_period,policy_version,
-                max_trials,max_sealed)
-               VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                max_trials,max_sealed,display_no)
+               VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (topic_id, uid, org, project_id, view_id, release_id,
              json.dumps(release_ids, ensure_ascii=False), view_manifest_sha256,
              contract_revision, as_of, development_start, development_end,
              validation_start, validation_end, holding, policy_version,
-             max_trials, max_sealed))
+             max_trials, max_sealed, display_no))
         c.execute(
             """INSERT INTO quant_factor_branches
                (id,user_id,org_id,topic_id,source,owner_id,hypothesis_version,implementation_version)
@@ -437,14 +440,119 @@ def handback_branch(uid: int, org: int, topic_id: str) -> dict:
     return {"active_branch": None, "agent_handback": "未接入：F0 自动推进尚未上线"}
 
 
+def _branch_labels(uid: int, org: int, topic_id: str, branches: list[dict]) -> dict:
+    """Stable V5 labels: root H1, revisions H2/H3, parallel children H2a/H2b."""
+    by_parent = {}
+    for b in sorted(branches, key=lambda x: (x.get("created_at").isoformat() if hasattr(x.get("created_at"), "isoformat") else str(x.get("created_at") or ""), str(x["id"]))):
+        by_parent.setdefault(b.get("parent_id"), []).append(b)
+    labels = {}
+    revision = [1]
+    letters = "abcdefghijklmnopqrstuvwxyz"
+
+    def visit(parent, parent_label):
+        parallel = 0
+        for child in by_parent.get(parent["id"] if parent else None, []):
+            is_parallel = child.get("source") == "manual" or (
+                parent is not None and int(child.get("hypothesis_version") or 1) <= int(parent.get("hypothesis_version") or 1))
+            if parent is None:
+                label = "H1" if parallel == 0 else "H1" + letters[min(parallel, 25)]
+                parallel += 1
+            elif is_parallel:
+                label = parent_label + letters[min(parallel, 25)]
+                parallel += 1
+            else:
+                revision[0] += 1
+                label = "H" + str(revision[0])
+            labels[child["id"]] = label
+            visit(child, label)
+
+    visit(None, "")
+    return labels
+
+
+def _branch_titles(uid: int, org: int, topic_id: str) -> dict:
+    titles = {}
+    with get_conn() as c:
+        rows = c.execute(
+            "SELECT decision FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at",
+            (uid, org, topic_id)).fetchall()
+    for row in rows:
+        for step in (row.get("decision") or {}).get("steps") or []:
+            result = step.get("result") or {}
+            decision = step.get("decision") or {}
+            bid = result.get("branch_id")
+            title = decision.get("next_hypothesis") or result.get("hypothesis")
+            if bid and isinstance(title, str) and title.strip():
+                titles[bid] = title.strip()
+    return titles
+
+
+def _branch_sealed(uid: int, org: int, topic_id: str) -> dict:
+    with get_conn() as c:
+        rows = c.execute(
+            """SELECT t.branch_id, s.status, s.created_at
+               FROM quant_factor_sealed_validations s
+               JOIN quant_factor_trials t
+                 ON t.user_id=s.user_id AND t.org_id=s.org_id
+                AND t.report_id='qf_' || s.candidate_id || '_development'
+               WHERE s.user_id=%s AND s.org_id=%s AND s.topic_id=%s
+               ORDER BY s.created_at""",
+            (uid, org, topic_id)).fetchall()
+    latest = {}
+    for row in rows:
+        latest[row["branch_id"]] = row["status"]
+    return latest
+
+
 def ledger_view(uid: int, org: int, topic_id: str) -> dict:
     topic = _topic(uid, org, topic_id)
     trials = _trials(uid, org, topic_id)
+    branches = [_public(row) for row in _branches(uid, org, topic_id)]
+    labels = _branch_labels(uid, org, topic_id, branches)
+    titles = _branch_titles(uid, org, topic_id)
+    sealed = _branch_sealed(uid, org, topic_id)
+    children = {}
+    for b in branches:
+        children.setdefault(b.get("parent_id"), []).append(b["id"])
+    latest_trial = {}
+    for t in trials:
+        latest_trial[t["branch_id"]] = t
+    for b in branches:
+        b["display_label"] = labels.get(b["id"], "H?")
+        b["display_title"] = titles.get(b["id"]) or f"假设 v{b.get('hypothesis_version', 1)}（未命名）"
+        b["source_label"] = "人工" if b.get("source") == "manual" else "Agent"
+        s_status = sealed.get(b["id"])
+        t = latest_trial.get(b["id"])
+        if b.get("status") in ("archived", "rejected", "submitted", "approved"):
+            b["display_status"] = {"archived": "已归档", "rejected": "已驳回",
+                                   "submitted": "待复核", "approved": "已入库"}[b["status"]]
+        elif s_status == "failed":
+            b["display_status"] = "封存失败，待复盘"
+        elif s_status == "passed":
+            b["display_status"] = "封存通过，待提交"
+        elif children.get(b["id"]):
+            b["display_status"] = "已派生修订"
+        elif t and t.get("outcome") == "passed":
+            b["display_status"] = "研发通过"
+        elif t and t.get("outcome") == "failed":
+            b["display_status"] = "未达标"
+        elif t:
+            b["display_status"] = t.get("outcome") or "已执行"
+        else:
+            b["display_status"] = "待检验"
+    with get_conn() as c:
+        f0 = c.execute(
+            "SELECT status,stop_reason,created_at FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at DESC LIMIT 1",
+            (uid, org, topic_id)).fetchone()
+    dispatch = None
+    if f0:
+        dispatch = {"status": f0["status"], "stop_reason": f0["stop_reason"] or ""}
     k = current_k(trials, topic["primary_holding_period"])
     return {
         "topic": _public(topic),
-        "branches": [_public(row) for row in _branches(uid, org, topic_id)],
+        "branches": branches,
         "trials": [_public(row) for row in trials],
+        "dispatch": dispatch,
         "k": k,
         # Before any counted trial the bar is still the K=1 threshold (t*=1.96), never null.
         "threshold": threshold(max(k, 1)),

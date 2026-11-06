@@ -1,12 +1,13 @@
 import {useEffect,useLayoutEffect,useMemo,useRef,useState,type ReactElement} from 'react';
 import {Link,useNavigate} from 'react-router-dom';
 import {researchFetch} from '@/lib/researchClient';
+import {createProject,saveProject} from '@/lib/detectStore';
 import {FactorModuleTabs,WorkspaceHeading} from './QuantWorkspacePages';
 
-type Topic={id:string;project_id:string;project_name:string;view_id:string;primary_holding_period:number;max_trials:number;max_sealed:number;sealed_used?:number;status:string;k:number;branch_count:number;trial_count:number;created_at?:string};
-type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;status:string;hypothesis_version:number;implementation_version:number;created_at?:string};
+type Topic={id:string;display_no?:number;project_id:string;project_name:string;view_id:string;primary_holding_period:number;max_trials:number;max_sealed:number;sealed_used?:number;status:string;k:number;branch_count:number;trial_count:number;created_at?:string};
+type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;status:string;hypothesis_version:number;implementation_version:number;created_at?:string;display_label?:string;display_title?:string;source_label?:string;display_status?:string};
 type Trial={trial_no:number;branch_id:string;kind:string;outcome:string;executor:string;report_id?:string|null;created_at?:string;returned_metrics?:boolean;rerun_of?:string|null;result_summary?:{gate?:{checks?:{name:string;actual:number|null;threshold:number;passed:boolean}[]}}};
-type Ledger={topic:Topic;branches:Branch[];trials:Trial[];k:number;threshold:number|null;threshold_next_if_counted:number;next_trial_no:number};
+type Ledger={topic:Topic;branches:Branch[];trials:Trial[];k:number;threshold:number|null;threshold_next_if_counted:number;next_trial_no:number;dispatch?:{status:string;stop_reason:string}|null};
 
 const statusText=(s:string)=>s==='active'?'研究中':s==='paused'?'已暂停':s==='archived'?'已归档':s;
 const outcomeText=(t:Trial)=>t.outcome==='passed'?'通过':t.outcome==='failed'?'未达标':t.outcome==='error'?'执行错误':t.outcome;
@@ -23,6 +24,9 @@ export function QuantFactorHomePage(){
  const [pending,setPending]=useState<number|null>(null);
  const [sealedUsed,setSealedUsed]=useState<number|null>(null);
  const [authOpen,setAuthOpen]=useState(false);
+ const [creating,setCreating]=useState(false),[creatingBusy,setCreatingBusy]=useState(false),[createErr,setCreateErr]=useState('');
+ const [importedFactors,setImportedFactors]=useState<Array<{source_library:string;factor_name:string;display_name?:string}>>([]);
+ const [nt,setNt]=useState({name:'新因子课题',universe:'CSI500',benchmark:'CSI500',development_start:'2022-01-01',development_end:'2024-12-31',validation_start:'2025-01-01',validation_end:'2025-12-31',holding:1,max_trials:8,max_sealed:1,factor:'SV06_0010',library:'主因子库',direction:'negative',hypothesis:'短周期因子在截面上有稳定预测力',acceptance:'方向 Rank IC ≥ 0.005，NW t ≥ t*(K)，有效观测 ≥ 60，最大回撤 ≤ 0.5',purpose:'replication' as 'replication'|'discovery'});
  const treeRef=useRef<HTMLDivElement|null>(null);
  const [treeLines,setTreeLines]=useState<string[]>([]);
  const navigate=useNavigate();
@@ -91,6 +95,19 @@ export function QuantFactorHomePage(){
   window.addEventListener('resize',draw);
   return ()=>{cancelAnimationFrame(raf);window.removeEventListener('resize',draw);};
  },[ledger]);
+ useEffect(()=>{if(!creating||importedFactors.length)return;void researchFetch('/api/inst/quant/factor-workflow/imports/svquant-existing/reference').then(r=>r.ok?r.json():null).then(d=>{if(d)setImportedFactors(d.items||[]);});},[creating,importedFactors.length]);
+ async function createTopic(){
+  if(creatingBusy)return;setCreatingBusy(true);setCreateErr('');
+  try{
+   const p=await createProject(nt.factor,nt.hypothesis,nt.name);
+   const plan={revision:'nt-'+Date.now(),hypothesis:nt.hypothesis,candidateExpression:'',improvementScope:'只改进实现，不改变经济假设和方向',target:'未来1个交易日收益',frequency:'daily',acceptance:nt.acceptance,developmentStart:nt.development_start,developmentEnd:nt.development_end,validationStart:nt.validation_start,validationEnd:nt.validation_end,maxTrials:Number(nt.max_trials),researchPurpose:nt.purpose,...(nt.purpose==='discovery'?{noveltyPolicy:{scope:'all_accessible' as const,maxAbsCorrelation:0.8,minDays:60,minPairs:30,minCoverage:0.8}}:{}),rules:{minSignedIc:0.005,maxDrawdown:0.5,minObservations:60,direction:nt.direction as 'positive'|'negative',icMetric:'rank_ic' as const}};
+   const saved=await saveProject({...p,name:nt.name,description:nt.hypothesis,config:{...p.config,factorCodes:[nt.factor],weights:[1],powers:[1],factorLibraries:{[nt.factor]:nt.library},researchPlan:plan,researchContext:{direction:'因子研究',question:nt.hypothesis,background:'新建课题：'+nt.factor}}});
+   const vr=await researchFetch('/api/inst/quant/factor-workflow/published-view');const v=await vr.json();if(!vr.ok)throw Error('发布视图读取失败');
+   const body={view_id:v.view_id,release_id:'',release_ids:v.release_ids||{},view_manifest_sha256:v.view_manifest_sha256||'',contract_revision:v.contract_revision||'',as_of:v.as_of,development_start:nt.development_start,development_end:nt.development_end,validation_start:nt.validation_start,validation_end:nt.validation_end,primary_holding_period:Number(nt.holding),policy_version:'v5-p0',max_trials:Number(nt.max_trials),max_sealed:Number(nt.max_sealed)};
+   const tr=await researchFetch('/api/inst/quant/factor-workflow/projects/'+encodeURIComponent(saved.id)+'/topics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const td=await tr.json();if(!tr.ok)throw Error(typeof (td.detail||td.error)==='string'?(td.detail||td.error):'建课题失败');
+   const rl=await researchFetch('/api/inst/quant/factor-workflow/topics');const d=await rl.json();setTopics(d.topics||[]);setSelected(td.topic?.id||d.topics?.[0]?.id);setCreating(false);
+  }catch(e){setCreateErr(e instanceof Error?e.message:String(e));}finally{setCreatingBusy(false);}
+ }
  const topic=topics.find(t=>t.id===selected);
  const selectedBranch=(ledger?.branches||[]).find(b=>b.id===node);
  const feed=useMemo(()=>[...(ledger?.trials||[])].sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,12),[ledger]);
@@ -103,12 +120,12 @@ export function QuantFactorHomePage(){
    <div key={b.id} className="branch-wrap">
     <div className={'branch'+(b.source==='manual'?' human':'')+(node===b.id?' sel':'')} data-bid={b.id} data-parent={b.parent_id||''} onClick={()=>setNode(b.id)} role="button" tabIndex={0}>
      <div className="bh">
-      <span className="hid">{b.id.slice(0,8)}</span>
-      <span className="bt">{b.source==='manual'?'人工分支':'Agent 分支'} · 假设 v{b.hypothesis_version} / 实现 v{b.implementation_version}</span>
-      <span className={'badge '+(b.status==='active'?'live':'gray')}>{b.status==='active'?'进行中':b.status}</span>
-      <span className="by">{b.source==='manual'?'人工':'Agent'} · {trials.length} 次试验</span>
+      <span className="hid">{b.display_label||'H?'}</span>
+      <span className="bt" title={b.display_title}>{b.display_title? (b.display_title.length>70?b.display_title.slice(0,70)+'…':b.display_title) : ('假设 v'+b.hypothesis_version+'（未命名）')}</span>
+      <span className={'badge '+(b.display_status==='研发通过'||b.display_status==='封存通过，待提交'?'live':b.display_status?.includes('失败')||b.display_status==='未达标'?'gray':'gray')}>{b.display_status||b.status}</span>
+      <span className="by">{b.source_label||(b.source==='manual'?'人工':'Agent')} · v{b.hypothesis_version}/v{b.implementation_version} · {trials.length} 次</span>
      </div>
-     {trials.length>0&&<div className="steps">{trials.map(t=>{const checks=t.result_summary?.gate?.checks||[];const ic=checks.find(c=>c.name.includes('方向IC')||c.name.includes('方向 Rank IC'));const nw=checks.find(c=>c.name.includes('NW t'));return <span key={t.trial_no} className={'chip '+(t.outcome==='passed'?'ok':t.outcome==='failed'?'fail':'warn')} title={checks.map(c=>`${c.name}: ${c.actual==null?'—':Number(c.actual).toFixed(3)} / ${String(c.threshold)}`).join(' · ')}>{`E${t.trial_no}`}{ic?.actual!=null?` · IC ${Number(ic.actual).toFixed(3)}`:''}{nw?.actual!=null?` · t ${Number(nw.actual).toFixed(2)} / ${Number(nw.threshold).toFixed(2)}`:` · ${outcomeText(t)}`}{t.rerun_of?' · rerun':''}</span>;})}</div>}
+     {trials.length>0&&<div className="steps">{trials.map(t=>{const checks=t.result_summary?.gate?.checks||[];const ic=checks.find(c=>c.name.includes('Rank IC')||c.name.includes('方向IC'));const nw=checks.find(c=>c.name.includes('NW t'));const label=`E${t.trial_no}${ic?.actual!=null?` · IC ${Number(ic.actual).toFixed(3)}`:''}${nw?.actual!=null?` · t ${Number(nw.actual).toFixed(2)} / ${Number(nw.threshold).toFixed(2)}`:` · ${outcomeText(t)}`}${t.rerun_of?' · rerun':''}${t.outcome==='passed'?' ✓':t.outcome==='failed'?' ✗':''}`;const title=checks.map(c=>`${c.name}: ${c.actual==null?'—':Number(c.actual).toFixed(3)} / ${String(c.threshold)}`).join(' · ');return t.report_id?<Link key={t.trial_no} className={'chip '+(t.outcome==='passed'?'ok':t.outcome==='failed'?'fail':'warn')} title={title} to={'/quant/factor/report/'+t.report_id}>{label}</Link>:<span key={t.trial_no} className={'chip '+(t.outcome==='passed'?'ok':t.outcome==='failed'?'fail':'warn')} title={title}>{label}</span>;})}</div>}
     </div>
     {(children.get(b.id)||[]).length>0&&<div className="children">{(children.get(b.id)||[]).map(c=>branchNode(c,depth+1))}</div>}
    </div>
@@ -117,7 +134,7 @@ export function QuantFactorHomePage(){
 
  const topicCards=topics.map(t=>(
   <button key={t.id} className={'topic'+(selected===t.id?' sel':'')} onClick={()=>setSelected(t.id)}>
-   <div className="top"><span className="tid">{t.id.slice(0,8)} · {t.primary_holding_period} 日</span><span className={'badge '+(t.status==='active'?'live':'gray')}>{statusText(t.status)}</span></div>
+   <div className="top"><span className="tid">T{t.display_no??'—'} · {t.primary_holding_period} 日</span><span className={'badge '+(t.status==='active'?'live':'gray')}>{statusText(t.status)}</span></div>
    <h3>{t.project_name||'未命名课题'}</h3>
    <div className="act">{t.trial_count>0?'已登记研发检验与台账。':'等待第一次真实研发检验。'}</div>
    <div className="bar"><i style={{width:Math.min(100,t.k/Math.max(1,t.max_trials)*100)+'%'}}/></div>
@@ -131,8 +148,8 @@ export function QuantFactorHomePage(){
  const detail=selectedBranch?(
   <div className="card">
    <div className="card-head">
-    <div><div className="row-flex"><span className="hid">{selectedBranch.id.slice(0,8)}</span><h2>{selectedBranch.source==='manual'?'人工分支':'Agent 分支'}</h2></div>
-     <p className="fine">假设 v{selectedBranch.hypothesis_version} · 实现 v{selectedBranch.implementation_version} · {selectedBranch.status}</p></div>
+    <div><div className="row-flex"><span className="hid">{selectedBranch.display_label||'H?'}</span><h2>{selectedBranch.display_title||('假设 v'+selectedBranch.hypothesis_version+'（未命名）')}</h2><span className="badge">{selectedBranch.display_status||selectedBranch.status}</span></div>
+     <p className="fine">{selectedBranch.source_label||(selectedBranch.source==='manual'?'人工':'Agent')} · 假设 v{selectedBranch.hypothesis_version} / 实现 v{selectedBranch.implementation_version} · 内部 ID {selectedBranch.id.slice(0,8)}</p></div>
     <div className="actions"><button className="btn small primary" onClick={()=>void takeOver()}>从此分支接手</button><button className="btn small" onClick={()=>void handBackF0()} disabled={f0&&['queued','running'].includes(f0.status)}>交回 Agent（F0）</button>{f0&&f0.stop_reason?.includes('中断')&&<button className="btn small" onClick={()=>void resumeF0()}>继续 F0</button>}<Link className="btn small" to={'/quant/factor/workflow/'+(topic?.project_id||'')+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>打开人工工作台</Link>{f0&&<span className="fine">F0：{f0.status}{f0.decision?.candidate_status?' · '+f0.decision.candidate_status:''}{f0.stop_reason?' · '+f0.stop_reason:''}</span>}</div>
    </div>
    <div className="card-body">
@@ -180,7 +197,7 @@ export function QuantFactorHomePage(){
  const main=topic?(
   <div className="card">
    <div className="card-head">
-    <div><div className="row-flex"><span className="tid">{topic.id.slice(0,8)}</span><h2>{topic.project_name||'未命名课题'}</h2><span className="badge live">{statusText(topic.status)}</span></div>
+    <div><div className="row-flex"><span className="tid">T{topic.display_no??'—'}</span><h2>{topic.project_name||'未命名课题'}</h2><span className="badge live">{statusText(topic.status)}</span></div>
      <p className="fine">视图 {topic.view_id} · 主持有期 {topic.primary_holding_period} 日</p></div>
     <div className="actions">{topic.status==='active'?<button className="btn small" onClick={()=>void setTopicStatus('paused')}>暂停课题</button>:topic.status==='paused'?<button className="btn small" onClick={()=>void setTopicStatus('active')}>继续课题</button>:null}<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>打开人工工作台</Link><Link className="btn small" to={'/quant/factor/ledger?project='+topic.project_id}>台账</Link><button className="btn small ghost" disabled title="待接入（P1）：研究意见写回研究决策上下文尚未实现">给研究意见</button></div>
    </div>
@@ -190,6 +207,7 @@ export function QuantFactorHomePage(){
      <span>分支 <b>{topic.branch_count}</b></span>
      <span>当前 t*(K) <b>{ledger?.threshold==null?'待接入':ledger.threshold.toFixed(3)}</b></span>
      <span>下一次可计数检验 t* <b>{ledger?.threshold_next_if_counted?.toFixed(3)||'待接入'}</b></span>
+     {ledger?.dispatch&&<span title={ledger.dispatch.stop_reason}>调度 <b>{ledger.dispatch.status==='running'?'F0 运行中':ledger.dispatch.status==='stopped'?'F0 已停止':ledger.dispatch.status}</b>{ledger.dispatch.stop_reason?' · 交人工复盘':''}</span>}
     </div>
     {capabilityGaps.length>0&&<p className="hint" role="status">需要的能力（F3 暂不支持）：{capabilityGaps.join('、')}。F0 已改用可实现的降级修订继续。</p>}
     <div className="section-title" style={{marginTop:16}}><h3>研究树</h3><span className="subtle">点击分支查看试验与报告</span></div>
@@ -202,7 +220,7 @@ export function QuantFactorHomePage(){
   <>
    <WorkspaceHeading eyebrow="FACTOR FACTORY" title="因子工厂" description="研究系统持续挖掘因子：你可以随时观察、介入，或亲自研究。">
     <button className="btn" onClick={()=>setAuthOpen(v=>!v)}>研究授权</button>
-    <Link className="btn primary" to="/quant/factor/library">新建课题</Link>
+    <button className="btn primary" onClick={()=>setCreating(v=>!v)}>{creating?'收起新建':'新建课题'}</button>
    </WorkspaceHeading>
    <FactorModuleTabs active="home"/>
    {authOpen&&<div className="card card-pad" style={{marginBottom:14}}><p className="fine">当前登录成员可在本机构范围创建因子课题、运行检验与申请封存；数据视图与预登记门槛由课题计划固定，Agent 不能改门槛、扩预算或批准入库。新建课题从因子库选择已授权资产开始。</p></div>}
@@ -216,6 +234,22 @@ export function QuantFactorHomePage(){
      <div className="kpi"><span>F0 Token</span><b>{f0?.decision?.steps?f0.decision.steps.reduce((n,s)=>n+(s.usage?.tokens_in||0)+(s.usage?.tokens_out||0),0):'—'}</b><small>最近一次 F0</small></div>
     </div><div className="actions"><button className="btn small" disabled title="AC-12 / P1：全局暂停接口未接入；本轮只验证单课题暂停/继续">暂停全部（AC-12）</button></div>
    </div>
+   {creating&&<div className="card"><div className="card-head"><h2>新建研究课题</h2><span className="fine">创建后冻结视图、区间、预算与初始因子</span></div><div className="card-body">{createErr&&<p className="hint error">{createErr}</p>}<div className="form-grid">
+    <label className="field"><span>课题名称</span><input value={nt.name} onChange={e=>setNt({...nt,name:e.target.value})}/></label>
+    <label className="field"><span>课题类型</span><select value={nt.purpose} onChange={e=>setNt({...nt,purpose:e.target.value as 'replication'|'discovery'})}><option value="replication">复现（已有因子）</option><option value="discovery">新发现（需因子库新颖性检验）</option></select><small>复现：存量因子直接进检验。新发现：走 0.70 相关性去重门槛；当前共享 9527 未提供新颖性/ R4 接口，新发现可能在对照阶段报“不可用”，不会伪造通过。</small></label>
+    <label className="field"><span>股票池</span><select value={nt.universe} onChange={e=>setNt({...nt,universe:e.target.value,benchmark:e.target.value})}><option>CSI500</option><option>CSI300</option><option>ALL_A</option></select></label>
+    <label className="field"><span>因子</span><select value={nt.factor} onChange={e=>{const f=importedFactors.find(x=>x.factor_name===e.target.value);setNt({...nt,factor:e.target.value,library:f?.source_library||nt.library});}}>{importedFactors.length===0&&<option value={nt.factor}>{nt.factor}</option>}{importedFactors.map(f=><option key={f.source_library+':'+f.factor_name} value={f.factor_name}>{f.factor_name} · {f.display_name||''}（{f.source_library}）</option>)}</select><small>导入资产标注“未经 V5 复核”；源码因子可后续在 F3 改写。</small></label>
+    <label className="field"><span>方向</span><select value={nt.direction} onChange={e=>setNt({...nt,direction:e.target.value})}><option value="positive">正向</option><option value="negative">负向</option></select></label>
+    <label className="field"><span>研发开始</span><input value={nt.development_start} onChange={e=>setNt({...nt,development_start:e.target.value})}/></label>
+    <label className="field"><span>研发结束</span><input value={nt.development_end} onChange={e=>setNt({...nt,development_end:e.target.value})}/></label>
+    <label className="field"><span>样本外开始</span><input value={nt.validation_start} onChange={e=>setNt({...nt,validation_start:e.target.value})}/></label>
+    <label className="field"><span>样本外结束</span><input value={nt.validation_end} onChange={e=>setNt({...nt,validation_end:e.target.value})}/></label>
+    <label className="field"><span>主持有期（日）</span><input type="number" min={1} max={20} value={nt.holding} onChange={e=>setNt({...nt,holding:Number(e.target.value)})}/></label>
+    <label className="field"><span>试验预算</span><input type="number" min={1} max={1000} value={nt.max_trials} onChange={e=>setNt({...nt,max_trials:Number(e.target.value)})}/></label>
+    <label className="field"><span>封存预算</span><input type="number" min={1} max={3} value={nt.max_sealed} onChange={e=>setNt({...nt,max_sealed:Number(e.target.value)})}/></label>
+    <label className="field full"><span>研究假设</span><textarea value={nt.hypothesis} onChange={e=>setNt({...nt,hypothesis:e.target.value})}/></label>
+    <label className="field full"><span>预登记验收条件</span><textarea value={nt.acceptance} onChange={e=>setNt({...nt,acceptance:e.target.value})}/></label>
+   </div><div className="form-actions"><button className="btn primary" disabled={creatingBusy||!nt.name.trim()} onClick={()=>void createTopic()}>创建课题并打开工作台</button><span className="fine">创建后回研究运行，检验仍走 F4 真实计算并计入台账。</span></div></div></div>}
    {error&&<div className="card card-pad"><p className="hint error" role="alert">{error}</p></div>}
    {loading?(
     <div className="card card-pad"><p role="status">正在读取真实课题、分支与台账…</p></div>

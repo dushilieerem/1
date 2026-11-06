@@ -92,6 +92,17 @@ def review_record(cid:str,body:ReviewBody,ctx=Depends(require_quant_reviewer)):
     from services.quant_factor.review import record
     return invoke(record,*identity(ctx),cid,body.decision,body.note)
 
+@router.get('/published-view')
+def published_view_meta(ctx=Depends(require_quant_researcher)):
+    from services.workflow_workspace.platform_data import published_view
+    v=published_view()
+    dates=[d.get('date_max') for d in (v.get('datasets') or {}).values() if d.get('date_max')]
+    return {'view_id':v['view_id'],
+            'release_ids':{k:d.get('release') for k,d in (v.get('datasets') or {}).items() if d.get('release')},
+            'view_manifest_sha256':v.get('manifest_sha256') or '',
+            'contract_revision':v.get('contract_revision') or '',
+            'as_of':max(dates) if dates else None}
+
 @router.get('/overview')
 def workspace_overview(ctx=Depends(require_quant_researcher)):
     from services.quant_factor.dashboard import overview

@@ -14,8 +14,9 @@ RUN_KIND = "quant.factor.run"
 RETRY_KIND = "quant.factor.retry_novelty"
 
 
-def enqueue_run(uid: int, org: int, cid: str, phase: str) -> int:
-    return enqueue(RUN_KIND, {"uid": int(uid), "org": int(org), "cid": str(cid), "phase": str(phase)})
+def enqueue_run(uid: int, org: int, cid: str, phase: str, executor: str = "human", f0_run_id: str | None = None) -> int:
+    return enqueue(RUN_KIND, {"uid": int(uid), "org": int(org), "cid": str(cid), "phase": str(phase),
+                              "executor": str(executor or "human"), "f0_run_id": f0_run_id})
 
 
 def enqueue_retry(uid: int, org: int, cid: str) -> int:
@@ -25,7 +26,8 @@ def enqueue_retry(uid: int, org: int, cid: str) -> int:
 def _handle_run(payload: dict[str, Any]) -> dict[str, Any] | None:
     from . import service
 
-    service.run(int(payload["uid"]), int(payload["org"]), str(payload["cid"]), str(payload["phase"]))
+    service.run(int(payload["uid"]), int(payload["org"]), str(payload["cid"]), str(payload["phase"]),
+                str(payload.get("executor") or "human"), payload.get("f0_run_id"))
     return None
 
 

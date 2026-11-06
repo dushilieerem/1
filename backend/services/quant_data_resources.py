@@ -106,11 +106,50 @@ def views(uid: int, org: int):
     return {"current": current, "views": rows}
 
 
+RELATED_TABLES = {
+    "factor_topic": "quant_factor_topics",
+    "strategy_topic": "strategy_topics",
+    "portfolio_plan": "portfolio_plans",
+}
+TRANSITIONS = {
+    "submitted": {"in_progress", "delivered", "unsupported"},
+    "in_progress": {"delivered", "unsupported"},
+    "delivered": set(),
+    "unsupported": set(),
+}
+
+
+def _related(uid: int, org: int, related_type: str, related_id: str) -> bool:
+    table = RELATED_TABLES.get(related_type)
+    if not table or not related_id:
+        return False
+    with get_conn() as c:
+        row = c.execute(
+            f"SELECT 1 FROM {table} WHERE id=%s AND user_id=%s AND org_id=%s",
+            (related_id, uid, org)).fetchone()
+    return bool(row)
+
+
 def list_requests(uid: int, org: int):
     with get_conn() as c:
         rows = c.execute(
-            """SELECT id,title,purpose,period,fields,status,note,created_at,updated_at
-               FROM quant_data_requests WHERE org_id=%s ORDER BY created_at DESC""", (org,)).fetchall()
+            """SELECT r.id,r.title,r.purpose,r.period,r.frequency,r.fields,r.related_type,
+                      r.related_id,r.delivered_view,r.status,r.note,r.handled_at,
+                      r.created_at,r.updated_at,
+                      COALESCE(fp.name, st.name, pp.name, '') AS related_name
+               FROM quant_data_requests r
+               LEFT JOIN quant_factor_topics ft
+                 ON r.related_type='factor_topic' AND ft.id=r.related_id
+                AND ft.user_id=r.user_id AND ft.org_id=r.org_id
+               LEFT JOIN detect_projects fp
+                 ON fp.user_id=ft.user_id AND fp.id=ft.project_id
+               LEFT JOIN strategy_topics st
+                 ON r.related_type='strategy_topic' AND st.id=r.related_id
+                AND st.user_id=r.user_id AND st.org_id=r.org_id
+               LEFT JOIN portfolio_plans pp
+                 ON r.related_type='portfolio_plan' AND pp.id=r.related_id
+                AND pp.user_id=r.user_id AND pp.org_id=r.org_id
+               WHERE r.org_id=%s ORDER BY r.created_at DESC""", (org,)).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -118,15 +157,51 @@ def submit_request(uid: int, org: int, payload: dict):
     title = str(payload.get("title") or "").strip()
     if not title:
         raise ValueError("请填写需要的数据")
+    related_type = str(payload.get("related_type") or "").strip()
+    related_id = str(payload.get("related_id") or "").strip()
+    if related_type not in RELATED_TABLES:
+        related_type, related_id = "", ""
+    elif not related_id or not _related(uid, org, related_type, related_id):
+        raise ValueError("关联对象不存在或不属于当前成员")
     rid = str(uuid.uuid4())
     with get_conn() as c:
         c.execute(
-            """INSERT INTO quant_data_requests(id,user_id,org_id,title,purpose,period,fields,status,note)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,'submitted','已记录；由开发同步数据业务处理')""",
+            """INSERT INTO quant_data_requests
+               (id,user_id,org_id,title,purpose,period,frequency,fields,related_type,related_id,status,note)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'submitted','已记录；由数据业务处理并回填状态')""",
             (rid, uid, org, title[:300], str(payload.get("purpose") or "")[:100],
-             str(payload.get("period") or "")[:200], str(payload.get("fields") or "")[:2000]))
+             str(payload.get("period") or "")[:200], str(payload.get("frequency") or "")[:100],
+             str(payload.get("fields") or "")[:2000], related_type, related_id[:100]))
         row = c.execute("SELECT * FROM quant_data_requests WHERE id=%s", (rid,)).fetchone()
     return {k: v for k, v in dict(row).items() if k not in ("user_id", "org_id")}
 
 
-__all__ = ["catalogue", "dataset", "list_requests", "submit_request", "views"]
+def update_request(uid: int, org: int, req_id: str, payload: dict):
+    status = str(payload.get("status") or "").strip()
+    note = str(payload.get("note") or "").strip()
+    delivered_view = str(payload.get("delivered_view") or "").strip()
+    with get_conn() as c:
+        row = c.execute(
+            "SELECT * FROM quant_data_requests WHERE id=%s AND org_id=%s FOR UPDATE",
+            (req_id, org)).fetchone()
+        if not row:
+            raise KeyError(req_id)
+        current = row["status"]
+        if status not in TRANSITIONS:
+            raise ValueError("状态只能是 in_progress / delivered / unsupported")
+        if status not in TRANSITIONS[current]:
+            raise ValueError(f"当前状态 {current} 不能改为 {status}")
+        if status == "unsupported" and not note:
+            raise ValueError("不予支持必须填写原因")
+        if status == "delivered" and not delivered_view:
+            raise ValueError("发布必须填写可用视图版本")
+        c.execute(
+            """UPDATE quant_data_requests
+               SET status=%s,note=%s,delivered_view=%s,handled_by=%s,handled_at=NOW(),updated_at=NOW()
+               WHERE id=%s AND org_id=%s""",
+            (status, note[:2000], delivered_view[:100], uid, req_id, org))
+        out = c.execute("SELECT * FROM quant_data_requests WHERE id=%s", (req_id,)).fetchone()
+    return {k: v for k, v in dict(out).items() if k not in ("user_id", "org_id")}
+
+
+__all__ = ["catalogue", "dataset", "list_requests", "submit_request", "update_request", "views"]

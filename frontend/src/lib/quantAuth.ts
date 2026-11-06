@@ -3,7 +3,7 @@ export type QuantSession = {
  token: string; product: "quant";
  user: { id: number; username: string; display_name?: string; role?: string; status?: string };
  org: { id: number; code: string; name_cn: string };
- role?: string; can_review?: boolean; can_write?: boolean; membership?: { role?: string }; permissions: { quant: "read" | "write" | "review" };
+ role?: string; can_review?: boolean; can_write?: boolean; can_manage?: boolean; membership?: { role?: string }; permissions: { quant: "read" | "write" | "review" };
 };
 const KEY = "svquant_quant_session";
 const listeners = new Set<() => void>();

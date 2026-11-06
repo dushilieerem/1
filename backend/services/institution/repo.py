@@ -64,4 +64,37 @@ def case(scope: OrgScope, case_id: int, *, conn=None) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-__all__ = ["case", "cases", "company"]
+def portfolio(scope: OrgScope, *, conn=None):
+    """返回 (portfolio_row, position_rows)；仓位按最新快照读取。"""
+    def _read(c):
+        pf = c.execute(
+            "SELECT * FROM inst_portfolio WHERE org_id=%s ORDER BY id LIMIT 1",
+            (scope.org_id,),
+        ).fetchone()
+        if not pf:
+            return None, []
+        latest = c.execute(
+            "SELECT MAX(as_of) AS d FROM inst_position_snapshot WHERE portfolio_id=%s",
+            (pf["id"],),
+        ).fetchone()
+        if not latest or not latest["d"]:
+            return dict(pf), []
+        rows = c.execute(
+            """
+            SELECT ps.*, co.id AS company_id, co.name, co.industry, co.market, co.data_status
+              FROM inst_position_snapshot ps
+              LEFT JOIN inst_company co ON co.symbol=ps.symbol AND co.org_id=%s
+             WHERE ps.portfolio_id=%s AND ps.as_of=%s AND ps.qty > 0
+             ORDER BY ps.market_value DESC
+            """,
+            (scope.org_id, pf["id"], latest["d"]),
+        ).fetchall()
+        return dict(pf), [dict(r) for r in rows]
+
+    if conn is not None:
+        return _read(conn)
+    with get_conn() as c:
+        return _read(c)
+
+
+__all__ = ["case", "cases", "company", "portfolio"]

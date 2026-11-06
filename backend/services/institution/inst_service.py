@@ -4396,27 +4396,9 @@ def reconcile_authorization(
 
 def portfolio(org_id: int) -> dict[str, Any]:
     with get_conn() as conn:
-        pf = conn.execute(
-            "SELECT * FROM inst_portfolio WHERE org_id=%s ORDER BY id LIMIT 1", (org_id,)
-        ).fetchone()
+        pf, positions = repo.portfolio(OrgScope(org_id), conn=conn)
         if not pf:
             return {"portfolio": None, "positions": [], "cash": 0, "nav": 0}
-        latest = conn.execute(
-            "SELECT MAX(as_of) AS d FROM inst_position_snapshot WHERE portfolio_id=%s", (pf["id"],)
-        ).fetchone()
-        positions = []
-        if latest and latest["d"]:
-            rows = conn.execute(
-                """
-                SELECT ps.*, co.id AS company_id, co.name, co.industry, co.market, co.data_status
-                  FROM inst_position_snapshot ps
-                  LEFT JOIN inst_company co ON co.symbol=ps.symbol AND co.org_id=%s
-                 WHERE ps.portfolio_id=%s AND ps.as_of=%s AND ps.qty > 0
-                 ORDER BY ps.market_value DESC
-                """,
-                (org_id, pf["id"], latest["d"]),
-            ).fetchall()
-            positions = [_row_dict(r) or {} for r in rows]
             # 按最新未复权收盘价做一次盯市；没有行情则保留成交时市值。
             for p in positions:
                 bar = md.latest_bar(str(p.get("symbol") or ""), adjust="none")

@@ -191,4 +191,23 @@ def ledger(uid, org, topic_id):
             "policy_note": "测试阈值（原型默认值）；机构可发布新的策略政策版本"}
 
 
-__all__ = ["create_branch", "create_topic", "ledger", "list_topics", "recipe"]
+def library(uid, org):
+    """Approved strategy versions available as research baselines."""
+    with get_conn() as c:
+        rows = [dict(r) for r in c.execute(
+            """SELECT b.id,b.topic_id,b.hypothesis,b.recipe,b.version,b.implementation_hash,
+                      b.reviewer_id,b.reviewed_at,b.review_note,
+                      t.name AS topic_name,t.universe,t.benchmark,t.development_start,t.development_end,
+                      (SELECT COUNT(*) FROM strategy_trials r
+                        WHERE r.user_id=b.user_id AND r.org_id=b.org_id AND r.branch_id=b.id AND r.rerun_of IS NULL) AS trial_count,
+                      (SELECT v.result FROM strategy_sealed_validations v
+                        WHERE v.user_id=b.user_id AND v.org_id=b.org_id AND v.branch_id=b.id
+                        ORDER BY v.created_at DESC LIMIT 1) AS sealed_result
+               FROM strategy_branches b JOIN strategy_topics t
+                 ON t.user_id=b.user_id AND t.org_id=b.org_id AND t.id=b.topic_id
+               WHERE b.user_id=%s AND b.org_id=%s AND b.status='approved'
+               ORDER BY b.reviewed_at DESC NULLS LAST""", (uid, org)).fetchall()]
+    return [_public(r) for r in rows]
+
+
+__all__ = ["create_branch", "create_topic", "ledger", "library", "list_topics", "recipe"]

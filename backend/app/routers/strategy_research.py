@@ -69,6 +69,11 @@ def branch_backtest(bid: str, ctx=Depends(require_quant_researcher)):
     return invoke(run_trial, *identity(ctx), bid)
 
 
+@router.get("/library")
+def strategy_library(ctx=Depends(require_quant_researcher)):
+    return {"strategies": invoke(svc.library, *identity(ctx))}
+
+
 @router.post("/branches/{bid}/diagnostics/cost-2x")
 def branch_cost_2x(bid: str, ctx=Depends(require_quant_researcher)):
     from services import strategy_diagnostics

@@ -339,4 +339,50 @@ def proposal_row(scope: OrgScope, proposal_id: int, *, conn=None) -> dict[str, A
     return dict(row) if row else None
 
 
-__all__ = ["audit", "authorizations", "case", "cases", "companies", "company", "execution_exceptions", "monitor", "portfolio", "proposal_row", "proposals", "theses"]
+def proposal_versions(proposal_id: int, *, conn=None) -> list[dict[str, Any]]:
+    sql = "SELECT * FROM inst_proposal_version WHERE proposal_id=%s ORDER BY version_no DESC"
+    if conn is not None:
+        rows = conn.execute(sql, (proposal_id,)).fetchall()
+    else:
+        with get_conn() as c:
+            rows = c.execute(sql, (proposal_id,)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def proposal_approvals(version_id: int, *, conn=None) -> list[dict[str, Any]]:
+    sql = (
+        "SELECT a.*, u.username AS approver_name, m.role AS approver_role "
+        "FROM inst_approval a "
+        "LEFT JOIN inst_members m ON m.id=a.approver_member_id "
+        "LEFT JOIN users u ON u.id=m.user_id "
+        "WHERE a.proposal_version_id=%s ORDER BY a.decided_at, a.id"
+    )
+    if conn is not None:
+        rows = conn.execute(sql, (version_id,)).fetchall()
+    else:
+        with get_conn() as c:
+            rows = c.execute(sql, (version_id,)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def proposal_authorizations(version_id: int, *, conn=None) -> list[dict[str, Any]]:
+    sql = "SELECT * FROM inst_authorization WHERE proposal_version_id=%s ORDER BY id DESC"
+    if conn is not None:
+        rows = conn.execute(sql, (version_id,)).fetchall()
+    else:
+        with get_conn() as c:
+            rows = c.execute(sql, (version_id,)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def proposal_exit_case(scope: OrgScope, proposal_id: int, *, conn=None) -> dict[str, Any] | None:
+    sql = "SELECT * FROM inst_exit_case WHERE proposal_id=%s AND org_id=%s ORDER BY id DESC LIMIT 1"
+    if conn is not None:
+        row = conn.execute(sql, (proposal_id, scope.org_id)).fetchone()
+    else:
+        with get_conn() as c:
+            row = c.execute(sql, (proposal_id, scope.org_id)).fetchone()
+    return dict(row) if row else None
+
+
+__all__ = ["audit", "authorizations", "case", "cases", "companies", "company", "execution_exceptions", "monitor", "portfolio", "proposal_approvals", "proposal_authorizations", "proposal_exit_case", "proposal_row", "proposal_versions", "proposals", "theses"]

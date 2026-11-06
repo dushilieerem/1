@@ -2871,38 +2871,22 @@ def get_proposal(org_id: int, proposal_id: int) -> dict[str, Any] | None:
         proposal = _proposal_row(conn, org_id, proposal_id)
         if not proposal:
             return None
-        versions = conn.execute(
-            "SELECT * FROM inst_proposal_version WHERE proposal_id=%s ORDER BY version_no DESC",
-            (proposal_id,),
-        ).fetchall()
-        version = _row_dict(versions[0]) if versions else None
+        versions = repo.proposal_versions(proposal_id, conn=conn)
+        version = versions[0] if versions else None
         approvals = []
         auths = []
         if version:
-            approvals = conn.execute(
-                "SELECT a.*, u.username AS approver_name, m.role AS approver_role "
-                "FROM inst_approval a "
-                "LEFT JOIN inst_members m ON m.id=a.approver_member_id "
-                "LEFT JOIN users u ON u.id=m.user_id "
-                "WHERE a.proposal_version_id=%s ORDER BY a.decided_at, a.id",
-                (version["id"],),
-            ).fetchall()
-            auths = conn.execute(
-                "SELECT * FROM inst_authorization WHERE proposal_version_id=%s ORDER BY id DESC",
-                (version["id"],),
-            ).fetchall()
-        exit_case = conn.execute(
-            "SELECT * FROM inst_exit_case WHERE proposal_id=%s AND org_id=%s ORDER BY id DESC LIMIT 1",
-            (proposal_id, org_id),
-        ).fetchone()
+            approvals = repo.proposal_approvals(version["id"], conn=conn)
+            auths = repo.proposal_authorizations(version["id"], conn=conn)
+        exit_case = repo.proposal_exit_case(OrgScope(org_id), proposal_id, conn=conn)
         # 六项风控检查按实时数据计算，供审批页在人工复核前查看。
         risk_checks = _risk_checks(conn, org_id, proposal, version) if version else []
-    proposal["versions"] = [_row_dict(r) for r in versions]
+    proposal["versions"] = versions
     proposal["current_version"] = version
-    proposal["approvals"] = [_row_dict(r) for r in approvals]
-    proposal["authorizations"] = [_row_dict(r) for r in auths]
+    proposal["approvals"] = approvals
+    proposal["authorizations"] = auths
     proposal["risk_checks"] = risk_checks
-    proposal["exit_case"] = _row_dict(exit_case)
+    proposal["exit_case"] = exit_case
     return proposal
 
 

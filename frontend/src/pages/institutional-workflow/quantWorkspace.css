@@ -102,3 +102,31 @@
 .quant-shell .tool-tabs a,.quant-shell .tool-tabs button{border:0;background:transparent;padding:7px 12px;border-radius:6px;font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;text-decoration:none}
 .quant-shell .tool-tabs a.on{background:var(--soft);color:var(--primary);font-weight:600}
 .quant-shell .tool-tabs i{font-style:normal;font-size:10px;color:#a69caf}
+
+.quant-shell .sys.compact{padding:11px 16px;margin-bottom:14px;gap:14px}
+.quant-shell .sys.compact .sys-state{min-width:190px}
+.quant-shell .sys.compact .sys-state .ico{width:30px;height:30px;font-size:16px}
+.quant-shell .sys.compact .kpis{gap:18px}
+.quant-shell .sys.compact .kpi b{font-size:16px}
+.quant-shell .topic-grid.wide{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:1250px){.quant-shell .topic-grid.wide{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:900px){.quant-shell .topic-grid.wide{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.quant-shell .topic-grid.wide{grid-template-columns:1fr}}
+.quant-shell .sys-strip{display:flex;align-items:center;gap:22px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 18px;margin-bottom:14px}
+.quant-shell .sys-strip .sys-state{display:flex;align-items:center;gap:10px;min-width:230px}
+.quant-shell .sys-strip .sys-state .ico{width:32px;height:32px;border-radius:9px;background:var(--soft);display:grid;place-items:center;color:var(--primary);font-size:17px}
+.quant-shell .sys-strip .sys-state b{font-size:13px;display:block}
+.quant-shell .sys-strip .kpis{display:flex;gap:26px;flex:1;flex-wrap:wrap}
+.quant-shell .sys-strip .kpi span{display:block;font-size:10px;color:var(--muted)}
+.quant-shell .sys-strip .kpi b{font-size:17px;font-weight:600}
+
+.quant-shell .sys.compact{padding:8px 16px}
+.quant-shell .sys.compact .kpi{padding:0}
+.quant-shell .sys.compact .sys-state .ico{width:28px;height:28px}
+.quant-shell .sys-strip{padding:10px 18px}
+.quant-shell .sys-strip .kpi{padding:0}
+.quant-shell .sys-strip .kpis{gap:22px}
+.quant-shell .tab[aria-current=page]{color:var(--primary);border-bottom-color:var(--primary);font-weight:600}
+
+.quant-shell .sys-strip .kpis{margin-bottom:0}
+.quant-shell .sys.compact .kpis{margin-bottom:0}

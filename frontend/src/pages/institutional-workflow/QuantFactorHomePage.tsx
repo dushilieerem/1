@@ -22,6 +22,7 @@ export function QuantFactorHomePage(){
  const [loading,setLoading]=useState(true);
  const [pending,setPending]=useState<number|null>(null);
  const [sealedUsed,setSealedUsed]=useState<number|null>(null);
+ const [authOpen,setAuthOpen]=useState(false);
  const navigate=useNavigate();
 
  useEffect(()=>{
@@ -176,12 +177,13 @@ export function QuantFactorHomePage(){
 
  return (
   <>
-   <WorkspaceHeading title="研究运行" description="课题看板、研究树与真实台账；失败和 rerun 同样留痕。">
-    <Link className="btn" to="/quant/factor/library">因子库</Link>
-    <Link className="btn" to="/quant/factor/experiments">历史报告</Link>
+   <WorkspaceHeading title="因子工厂" description="研究系统持续挖掘因子：你可以随时观察、介入，或亲自研究。">
+    <button className="btn" onClick={()=>setAuthOpen(v=>!v)}>研究授权</button>
+    <Link className="btn primary" to="/quant/factor/library">新建课题</Link>
    </WorkspaceHeading>
    <FactorModuleTabs active="home"/>
-   <div className="sys">
+   {authOpen&&<div className="card card-pad" style={{marginBottom:14}}><p className="fine">当前登录成员可在本机构范围创建因子课题、运行检验与申请封存；数据视图与预登记门槛由课题计划固定，Agent 不能改门槛、扩预算或批准入库。新建课题从因子库选择已授权资产开始。</p></div>}
+   <div className="sys compact">
     <div className="sys-state"><span className="ico">⇅</span><div><b>研究系统</b><small className="fine">{loading?'读取中':`真实课题 ${topics.length} 个 · 台账 ${totalTrials} 次`}</small></div></div>
     <div className="kpis">
      <div className="kpi"><span>课题</span><b>{topics.length}</b><small>研究中 {topics.filter(t=>t.status==='active').length}</small></div>

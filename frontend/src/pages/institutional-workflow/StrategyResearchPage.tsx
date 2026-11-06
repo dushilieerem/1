@@ -14,10 +14,12 @@ type Tab='run'|'manual'|'review'|'library'|'capability';
 const check=(t:Trial|Report['trial'],name:string)=>(t.effective_gate||t.gate)?.checks?.find(c=>c.name.includes(name));
 const pct=(v:number|null|undefined,digits=2)=>v==null?'—':(v*100).toFixed(digits)+'%';
 const gateText=(t:Trial)=>{const g=t.effective_gate||t.gate;if(!g?.checks?.length)return '无门槛记录';if(g.complete)return g.passed?'门槛通过':'门槛未通过';return `待补 ${g.pending?.length||0} 项`;};
+const statusText=(s:string)=>s==='active'?'运行中':s==='paused'?'暂停':s==='archived'?'已归档':s==='frozen'?'待复核':s==='submitted'?'待复核':s==='approved'?'已入库':s==='rejected'?'已驳回':s;
 const outcomeText=(t:Trial)=>{const g=t.effective_gate||t.gate;if(t.outcome==='error')return g?.complete&&g.passed?'执行未完成（诊断后门槛通过）':'执行错误（门槛未齐）';if(t.outcome==='failed')return '门槛未通过';if(t.outcome==='passed')return '门槛通过';return t.outcome;};
 
 export function StrategyResearchPage(){
  const [tab,setTab]=useState<Tab>('run');
+ const [authOpen,setAuthOpen]=useState(false);
  const [topics,setTopics]=useState<Topic[]>([]),[selected,setSelected]=useState<string>();
  const [ledger,setLedger]=useState<Ledger|null>(null);
  const [error,setError]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
@@ -52,8 +54,9 @@ export function StrategyResearchPage(){
 
  const tabs:Array<[Tab,string]>=[['run','研究运行'],['manual','人工研究'],['review','审查'],['library','策略库'],['capability','能力与评测']];
  const selectedTopic=topics.find(t=>t.id===selected);
- return <><WorkspaceHeading title="策略研究" description="冻结配方 → 策略台账 K → 回测 → 稳健性检验 → 封存 → 复核 → 策略库。"><Link className="btn" to="/quant/factor/library">浏览因子库</Link><button className="btn primary" onClick={()=>setCreating(v=>!v)}>{creating?'收起新建':'新建课题'}</button></WorkspaceHeading>
+ return <><WorkspaceHeading title="策略研究" description="用因子库里的因子构建交易规则；研究系统自主推进，你可以随时观察、介入或亲自研究。"><button className="btn" onClick={()=>setAuthOpen(v=>!v)}>研究授权</button><button className="btn primary" onClick={()=>setCreating(v=>!v)}>{creating?'收起新建':'新建课题'}</button></WorkspaceHeading>
  <nav className="tabs" aria-label="策略模块视图">{tabs.map(([k,label])=><button key={k} className={'tab'+(tab===k?' sel':'')} aria-current={tab===k?'page':undefined} onClick={()=>setTab(k)}>{label}</button>)}</nav>
+ {authOpen&&<div className="card card-pad" style={{marginBottom:14}}><p className="fine">研究授权：当前登录成员可在本机构范围创建策略课题、运行回测与申请封存；预算、股票池、区间、成本与门槛由课题计划冻结。Agent 只能在授权范围内调整 TopN 与调仓周期，不能批准入库；入库只授予研究用途，实盘不在本期。</p></div>}
  {error&&<div className="card card-pad"><p className="hint error" role="alert">{error}</p></div>}
  {creating&&<div className="card"><div className="card-head"><h2>新建策略课题</h2><span className="fine">计划与初始配方一次冻结；预算 {form.max_trials}</span></div><div className="card-body"><div className="form-grid">
   <label className="field"><span>课题名称</span><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
@@ -69,10 +72,10 @@ export function StrategyResearchPage(){
   <label className="field"><span>TopN</span><input type="number" min={5} max={300} value={form.top_n} onChange={e=>setForm({...form,top_n:Number(e.target.value)})}/></label>
   <label className="field"><span>调仓周期（日）</span><input type="number" min={1} max={60} value={form.rebalance_days} onChange={e=>setForm({...form,rebalance_days:Number(e.target.value)})}/></label>
  </div><div className="form-actions"><button className="btn primary" disabled={busy} onClick={()=>void createTopic()}>创建课题与首分支</button><span className="fine">创建后仍需运行回测；回测计入 K，确定性重算不计。因子来自导入资产时标注“未经 V5 复核”。</span></div></div></div>}
- {loading?<div className="card card-pad"><p role="status">正在读取真实策略课题…</p></div>:tab==='run'&&(topics.length===0?<div className="card card-pad"><h2>还没有策略课题</h2><p className="hint">使用右上角“新建课题”从因子库建立首个课题。</p></div>:<div className="ops-grid"><div>
-  <div className="topic-grid">{topics.map(t=><button key={t.id} className={'topic'+(selected===t.id?' sel':'')} onClick={()=>setSelected(t.id)}><div className="top"><span className="tid">{t.id.slice(0,8)} · {t.universe}</span><span className="badge live">{t.status}</span></div><h3>{t.name}</h3><div className="act">{t.development_start||''} → {t.development_end||''}</div><div className="meta"><span>分支 <b>{t.branch_count}</b></span><span>试验 <b>{t.trial_count}</b></span><span>预算 <b>{t.max_trials}</b></span></div></button>)}</div>
-  {ledger&&<LedgerCard ledger={ledger} busy={busy} run={run} openReport={openReport}/>}
- </div><aside className="side"><SystemStatus/></aside></div>)}
+ {loading?<div className="card card-pad"><p role="status">正在读取真实策略课题…</p></div>:tab==='run'&&(topics.length===0?<div className="card card-pad"><h2>还没有策略课题</h2><p className="hint">使用右上角“新建课题”从因子库建立首个课题。</p></div>:<>
+  <div className="sys-strip"><div className="sys-state"><span className="ico">⌁</span><div><b>策略研究系统运行中</b><small className="fine">授权：按课题计划与登录角色</small></div></div><div className="kpis"><div className="kpi"><span>课题</span><b>{topics.length}</b><small>研究中 {topics.filter(t=>t.status==='active').length}</small></div><div className="kpi"><span>试验台账</span><b>{topics.reduce((n,t)=>n+t.trial_count,0)}</b><small>次（含 rerun）</small></div><div className="kpi"><span>分支</span><b>{topics.reduce((n,t)=>n+t.branch_count,0)}</b><small>个冻结配方</small></div><div className="kpi"><span>门槛政策</span><b>{ledger?.policy?.version||'strategy-v5-p0'}</b><small>需按机构政策校准</small></div></div></div>
+  <div className="topic-grid wide">{topics.map(t=><button key={t.id} className={'topic'+(selected===t.id?' sel':'')} onClick={()=>setSelected(t.id)}><div className="top"><span className="tid">{t.id.slice(0,8)} · {t.universe}</span><span className="badge live">{statusText(t.status)}</span></div><h3>{t.name}</h3><div className="act">{t.development_start||''} → {t.development_end||''}</div><div className="meta"><span>分支 <b>{t.branch_count}</b></span><span>试验 <b>{t.trial_count}</b></span><span>预算 <b>{t.max_trials}</b></span></div></button>)}</div>
+  <div className="ops-grid"><div>{ledger&&<LedgerCard ledger={ledger} busy={busy} run={run} openReport={openReport}/>}</div><aside className="side"><SystemStatus/></aside></div></>)}
  {tab==='manual'&&<ManualView ledger={ledger} busy={busy} run={run} openReport={openReport}/>}
  {tab==='review'&&<div className="card"><div className="card-head"><h2>策略审查</h2><span className="fine">独立复核角色可见；研究员不能自审</span></div><div className="card-body">{reviewErr?<p className="hint">{reviewErr} <Link className="text-link" to="/quant/reviews/factors">前往统一审查入口</Link></p>:reviewQueue.length===0?<p className="empty">待我复核的策略候选为空。</p>:<ul>{reviewQueue.map(x=><li key={x.id}><b>{x.topic_name}</b> · {x.id.slice(0,8)}<p className="fine">{x.hypothesis}</p></li>)}</ul>}<p className="fine">复核人可在统一审查入口查看封存结果、全量试验并批准/驳回；批准只授予研究用途。</p></div></div>}
  {tab==='library'&&<LibraryView library={library}/>}
@@ -84,7 +87,7 @@ export function StrategyResearchPage(){
 function LedgerCard({ledger,busy,run,openReport}:{ledger:Ledger;busy:boolean;run:(p:string,k:string)=>Promise<void>;openReport:(id:string)=>Promise<void>}){
  return <div className="card"><div className="card-head"><div><div className="row-flex"><span className="tid">{ledger.topic.id.slice(0,8)}</span><h2>{ledger.topic.name}</h2></div><p className="fine">{ledger.topic.universe} / {ledger.topic.benchmark} · K {ledger.k} / {ledger.topic.max_trials} · 策略门槛 {ledger.policy?.version||''} · IR 门槛 {ledger.ir_threshold?.toFixed(2)??'—'}</p></div></div><div className="card-body">
   {ledger.branches.map(b=>{const bt=ledger.trials.filter(t=>t.branch_id===b.id&&!t.rerun_of).slice(-1)[0];const g=bt?.effective_gate||bt?.gate;const gatePassed=!!(g?.complete&&g.passed);
-   return <div className="branch human" key={b.id}><div className="bh"><span className="hid">{b.id.slice(0,8)}</span><span className="bt">{b.hypothesis}</span><span className="by">v{b.version} · {(b.recipe.factors||[]).map(f=>f.factor).join(' + ')} · TopN {b.recipe.top_n} / {b.recipe.rebalance_days}日 · {b.status}{b.review_status?' / '+b.review_status:''}{b.sealed?' · 封存 '+b.sealed.status:''}</span></div><div className="form-actions">
+   return <div className="branch human" key={b.id}><div className="bh"><span className="hid">{b.id.slice(0,8)}</span><span className="bt">{b.hypothesis}</span><span className="by">v{b.version} · {(b.recipe.factors||[]).map(f=>f.factor).join(' + ')} · TopN {b.recipe.top_n} / {b.recipe.rebalance_days}日 · {statusText(b.status)}{b.review_status?' / '+b.review_status:''}{b.sealed?' · 封存 '+b.sealed.status:''}</span></div><div className="form-actions">
     <button className="btn small primary" disabled={busy||b.status!=='active'} onClick={()=>void run('/branches/'+b.id+'/backtest','backtest')}>运行真实回测</button>
     <button className="btn small" disabled={busy||b.status!=='active'} onClick={()=>void run('/branches/'+b.id+'/diagnostics/cost-2x','cost')}>2×成本</button>
     <button className="btn small" disabled={busy||b.status!=='active'} onClick={()=>void run('/branches/'+b.id+'/diagnostics/neighborhood','nbhd')}>3×3邻域（9次）</button>
@@ -141,5 +144,6 @@ function ReportCard({report,onClose}:{report:Report;onClose:()=>void}){
 }
 
 function SystemStatus(){
- return <div className="card"><div className="card-head"><h2>策略系统</h2></div><div className="card-body"><div className="units"><div className="card" style={{marginBottom:10}}><div className="card-head"><h2>研究授权</h2></div><div className="card-body"><p className="fine">当前登录成员可在本机构范围创建课题、运行回测与申请封存；预算与门槛由课题计划固定。入库只授予研究用途，实盘不在本期。</p></div></div><div className="unit agent"><span className="ui">S0</span><div><b>研究决策</b><small>可用：复用 F0 决策引擎（真实回测）</small></div></div><div className="unit"><span className="ui">S5</span><div><b>独立复核</b><small>可用：封存→提交→复核</small></div></div><div className="unit"><span className="ui">▤</span><div><b>RE 策略回测</b><small>可用（共享 9527 / factor_refs）</small></div></div></div></div></div>;
+ const rows=[['S0','研究决策','复用 F0 决策引擎；每课题一个'],['S1','因子选择','从因子库选择；导入资产标注未复核'],['S2','配方构造','受控模板：1–3 因子等权、TopN、调仓'],['S3','回测与诊断','真实 RE；成本与参数邻域可复算'],['S4','稳健性检验','2×成本与 3×3 邻域；不计 K'],['S5','独立复核','封存→提交→复核；不能自审']];
+ return <div className="card"><div className="card-head"><div><h2>研究系统组成</h2></div><span className="fine">按真实状态</span></div><div className="card-body"><div className="units">{rows.map(([id,n,d])=><div className="unit" key={id}><span className="ui">{id}</span><div><b>{n}</b><small>{d}</small></div></div>)}</div></div></div>;
 }

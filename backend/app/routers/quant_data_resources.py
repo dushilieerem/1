@@ -43,7 +43,7 @@ class RequestUpdateBody(BaseModel):
 
 @router.get("/catalog")
 def catalog(ctx=Depends(require_quant_researcher)):
-    return invoke(svc.catalogue, *identity(ctx))
+    return invoke(svc.catalogue, *identity(ctx), bool(ctx.get("can_manage")))
 
 
 @router.get("/catalog/{name}")
@@ -58,7 +58,7 @@ def views(ctx=Depends(require_quant_researcher)):
 
 @router.get("/views/{view_id}/usage")
 def view_usage(view_id: str, ctx=Depends(require_quant_researcher)):
-    return invoke(svc.view_usage, *identity(ctx), view_id)
+    return invoke(svc.view_usage, *identity(ctx), view_id, bool(ctx.get("can_manage")))
 
 
 @router.get("/requests")

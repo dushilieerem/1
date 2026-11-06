@@ -66,11 +66,21 @@ FREQUENCY = {
 }
 
 
+_VIEW_CACHE: dict[str, tuple[float, dict]] = {}
+
+
 def _view_yaml(view_id: str) -> dict:
     for path in (DATA_HOME / "views").glob("*.yaml"):
-        if path.stem == view_id:
-            with path.open(encoding="utf-8") as fh:
-                return yaml.safe_load(fh) or {}
+        if path.stem != view_id:
+            continue
+        mtime = path.stat().st_mtime
+        cached = _VIEW_CACHE.get(view_id)
+        if cached and cached[0] == mtime:
+            return cached[1]
+        with path.open(encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+        _VIEW_CACHE[view_id] = (mtime, data)
+        return data
     return {}
 
 
@@ -101,7 +111,7 @@ def _published_views() -> set[str]:
     return {path.stem for path in (DATA_HOME / "views").glob("*.yaml")}
 
 
-def catalogue(uid: int, org: int):
+def catalogue(uid: int, org: int, all_members: bool = False):
     monitor = _read_json("docs/monitor-data.json")
     view_id, _ = _current_view()
     try:
@@ -109,12 +119,19 @@ def catalogue(uid: int, org: int):
     except (FileNotFoundError, ValueError):
         quality = {"view_id": view_id, "datasets": {}, "ok": None}
     with get_conn() as c:
+        factor_where, factor_params = "org_id=%s AND view_id=%s", [org, view_id]
+        strategy_where, strategy_params = "org_id=%s AND view_id=%s", [org, view_id]
+        if not all_members:
+            factor_where += " AND user_id=%s"
+            factor_params.append(uid)
+            strategy_where += " AND user_id=%s"
+            strategy_params.append(uid)
         factor_locked = c.execute(
-            "SELECT COUNT(*) AS n FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND view_id=%s",
-            (uid, org, view_id)).fetchone()["n"]
+            f"SELECT COUNT(*) AS n FROM quant_factor_topics WHERE {factor_where}",
+            tuple(factor_params)).fetchone()["n"]
         strategy_locked = c.execute(
-            "SELECT COUNT(*) AS n FROM strategy_topics WHERE user_id=%s AND org_id=%s AND view_id=%s",
-            (uid, org, view_id)).fetchone()["n"]
+            f"SELECT COUNT(*) AS n FROM strategy_topics WHERE {strategy_where}",
+            tuple(strategy_params)).fetchone()["n"]
     datasets = []
     for item in monitor.get("datasets") or []:
         name = item.get("name")
@@ -184,20 +201,27 @@ def views(uid: int, org: int):
     return {"current": current, "views": rows}
 
 
-def view_usage(uid: int, org: int, view_id: str):
+def view_usage(uid: int, org: int, view_id: str, all_members: bool = False):
     if view_id not in _published_views():
         raise KeyError(view_id)
+    factor_where, factor_params = "t.org_id=%s AND t.view_id=%s", [org, view_id]
+    strategy_where, strategy_params = "org_id=%s AND view_id=%s", [org, view_id]
+    if not all_members:
+        factor_where += " AND t.user_id=%s"
+        factor_params.append(uid)
+        strategy_where += " AND user_id=%s"
+        strategy_params.append(uid)
     with get_conn() as c:
         factors = [dict(r) for r in c.execute(
-            """SELECT t.id,t.display_no,p.name AS project_name
+            f"""SELECT t.id,t.display_no,p.name AS project_name
                FROM quant_factor_topics t
                JOIN detect_projects p ON p.user_id=t.user_id AND p.id=t.project_id
-               WHERE t.user_id=%s AND t.org_id=%s AND t.view_id=%s
-               ORDER BY t.display_no""", (uid, org, view_id)).fetchall()]
+               WHERE {factor_where}
+               ORDER BY t.display_no""", tuple(factor_params)).fetchall()]
         strategies = [dict(r) for r in c.execute(
-            """SELECT id,display_no,name FROM strategy_topics
-               WHERE user_id=%s AND org_id=%s AND view_id=%s ORDER BY display_no""",
-            (uid, org, view_id)).fetchall()]
+            f"""SELECT id,display_no,name FROM strategy_topics
+               WHERE {strategy_where} ORDER BY display_no""",
+            tuple(strategy_params)).fetchall()]
     return {
         "view_id": view_id,
         "factor_topics": [{"id": r["id"], "label": f"T{r['display_no']}", "name": r["project_name"]} for r in factors],

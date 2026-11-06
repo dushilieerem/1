@@ -77,5 +77,26 @@ class ListRequestScopeTest(unittest.TestCase):
         self.assertEqual(cursor.execute.call_args.args[1], (2,))
 
 
+class ViewUsageScopeTest(unittest.TestCase):
+    def test_researcher_usage_is_member_scoped(self):
+        cursor = MagicMock()
+        cursor.execute.return_value.fetchall.return_value = []
+        with patch.object(svc, "get_conn", return_value=_conn(cursor)):
+            out = svc.view_usage(9, 2, "research-rv-20261105-5")
+        self.assertEqual(out["view_id"], "research-rv-20261105-5")
+        factor_params = cursor.execute.call_args_list[0].args[1]
+        strategy_params = cursor.execute.call_args_list[1].args[1]
+        self.assertEqual(factor_params, (2, "research-rv-20261105-5", 9))
+        self.assertEqual(strategy_params, (2, "research-rv-20261105-5", 9))
+
+    def test_manager_usage_is_org_scoped(self):
+        cursor = MagicMock()
+        cursor.execute.return_value.fetchall.return_value = []
+        with patch.object(svc, "get_conn", return_value=_conn(cursor)):
+            svc.view_usage(9, 2, "research-rv-20261105-5", True)
+        self.assertEqual(cursor.execute.call_args_list[0].args[1], (2, "research-rv-20261105-5"))
+        self.assertEqual(cursor.execute.call_args_list[1].args[1], (2, "research-rv-20261105-5"))
+
+
 if __name__ == "__main__":
     unittest.main()

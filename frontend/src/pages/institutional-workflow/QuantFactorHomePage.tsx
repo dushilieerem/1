@@ -214,7 +214,7 @@ export function QuantFactorHomePage(){
      <div className="kpi"><span>封存样本已用</span><b>{sealedUsed==null?'—':sealedUsed}</b><small>累计封存（含失败）</small></div>
      <div className="kpi"><span>待人决定</span><b>{pending==null?'—':pending}</b><small>待复核候选</small></div>
      <div className="kpi"><span>F0 Token</span><b>{f0?.decision?.steps?f0.decision.steps.reduce((n,s)=>n+(s.usage?.tokens_in||0)+(s.usage?.tokens_out||0),0):'—'}</b><small>最近一次 F0</small></div>
-    </div>
+    </div><div className="actions"><button className="btn small" disabled title="AC-12 / P1：全局暂停接口未接入；本轮只验证单课题暂停/继续">暂停全部（AC-12）</button></div>
    </div>
    {error&&<div className="card card-pad"><p className="hint error" role="alert">{error}</p></div>}
    {loading?(

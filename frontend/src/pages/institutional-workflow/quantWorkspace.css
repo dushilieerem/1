@@ -170,3 +170,7 @@
 .quant-shell .qp{display:flex;flex-wrap:wrap;gap:5px}
 .quant-shell .qp button{font-size:10.5px;border:1px solid var(--line);background:#fbfafc;border-radius:12px;padding:2px 9px;color:#6d6378}
 @media(max-width:1100px){.quant-shell .wb-grid{grid-template-columns:minmax(0,1fr)}.quant-shell .asst{position:static}}
+
+.quant-shell .library-table th,.quant-shell .library-table td{white-space:nowrap}
+.quant-shell .library-table{min-width:980px}
+.quant-shell .filters{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px}

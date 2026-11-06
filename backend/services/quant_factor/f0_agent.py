@@ -59,9 +59,9 @@ def _context(uid, org, topic, run_id):
     with get_conn() as c:
         run_row = c.execute("SELECT decision FROM quant_factor_f0_runs WHERE id=%s AND user_id=%s AND org_id=%s",
                             (run_id, uid, org)).fetchone()
-        sealed_used = c.execute(
+        sealed_used = (c.execute(
             "SELECT COUNT(*) AS n FROM quant_factor_sealed_validations WHERE user_id=%s AND org_id=%s AND topic_id=%s",
-            (uid, org, topic["id"])).fetchone()["n"]
+            (uid, org, topic["id"])).fetchone() or {}).get("n", 0)
     gaps = sorted({cap for s in ((run_row or {}).get("decision") or {}).get("steps", [])
                    for cap in ((s.get("result") or {}).get("needed_capabilities") or [])})
     latest = trials[-1] if trials else None

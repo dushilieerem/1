@@ -539,7 +539,7 @@ def ledger_view(uid: int, org: int, topic_id: str) -> dict:
         elif t:
             b["display_status"] = t.get("outcome") or "已执行"
         else:
-            b["display_status"] = "待检验"
+            b["display_status"] = "人工接手，待检验" if b.get("source") == "manual" else "待检验"
     with get_conn() as c:
         f0 = c.execute(
             "SELECT status,stop_reason,created_at FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at DESC LIMIT 1",

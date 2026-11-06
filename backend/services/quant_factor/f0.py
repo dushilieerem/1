@@ -108,12 +108,25 @@ def run(uid, org, run_id):
                 return "课题已暂停/归档，F0 停止"
             return ""
 
+        streak = [0]
+
+        def stop_when(decision, result):
+            if result.get("action") == "request_seal":
+                return "封存完成，交人工审查"
+            if result.get("candidate_status") == "development_failed":
+                streak[0] += 1
+            else:
+                streak[0] = 0
+            if streak[0] >= 3:
+                return "连续 3 次研发失败且无实质修订，停止等待人工复盘"
+            return ""
+
         steps, stop_reason = decision_engine.run_steps(
             decide=lambda step: f0_agent.decide(uid, org, topic, run_id),
             execute=lambda decision, step: f0_agent.execute(uid, org, run_id, topic, decision, step),
             max_steps=max_steps,
             before_step=before_step,
-            stop_when=lambda decision, result: ("封存完成，交人工审查" if result.get("action") == "request_seal" else ""),
+            stop_when=stop_when,
             on_step=on_step)
         with get_conn() as c:
             c.execute("""UPDATE quant_factor_f0_runs

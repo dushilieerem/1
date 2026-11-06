@@ -522,7 +522,7 @@ def append_trial(uid: int, org: int, topic_id: str, payload: dict) -> dict:
                 implementation_hash,parameters,result_summary,report_id,executor,outcome,
                 returned_metrics,rerun_of,holding_period,view_id,release_id,release_ids,
                 view_manifest_sha256,contract_revision,as_of,f0_run_id)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s)""",
             (trial_id, uid, org, topic["project_id"], topic_id, branch_id, trial_no, kind,
              implementation_hash, json.dumps(parameters, ensure_ascii=False),
              json.dumps(result_summary, ensure_ascii=False), payload.get("report_id"),

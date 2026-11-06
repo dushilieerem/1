@@ -261,3 +261,23 @@ class TopicPauseTest(unittest.TestCase):
         with patch.object(ledger, '_topic', return_value={'id': 't', 'status': 'archived'}):
             with self.assertRaisesRegex(ValueError, '归档'):
                 ledger.set_topic_status(1, 2, 't', 'active')
+
+
+class TrialInsertShapeTest(unittest.TestCase):
+    """Regression: the f0_run_id column once had a value but no placeholder.
+
+    A mismatch only surfaces on a real INSERT, so guard the SQL shape statically.
+    """
+
+    def test_every_trial_column_has_a_placeholder(self):
+        import inspect
+        import re
+        from services.quant_factor import ledger
+        source = inspect.getsource(ledger.append_trial)
+        match = re.search(
+            r"INSERT INTO quant_factor_trials\s*\((.*?)\)\s*VALUES\s*\((.*?)\)", source, re.S)
+        self.assertIsNotNone(match)
+        columns = [c.strip() for c in match.group(1).split(',') if c.strip()]
+        placeholders = re.findall(r"%s", match.group(2))
+        self.assertEqual(len(columns), len(placeholders),
+                         f"{len(columns)} columns but {len(placeholders)} placeholders")

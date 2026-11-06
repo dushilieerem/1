@@ -22,7 +22,7 @@ ALLOWED_METHODS = frozenset(
         # industry demean / liquidity percentile / suspended filter.
         "quantile", "groupby", "transform", "sub", "div", "add", "mul",
         "eq", "ne", "gt", "ge", "lt", "le", "isin", "notna", "isna",
-        "mask", "replace", "between", "any", "all",
+        "mask", "replace", "between", "any", "all", "squeeze",
     }
 )
 
@@ -65,7 +65,7 @@ class _GeneratedFactorVisitor(ast.NodeVisitor):
         ast.Name, ast.Load, ast.Store, ast.Attribute, ast.Call, ast.Constant,
         ast.BinOp, ast.UnaryOp, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow,
         ast.USub, ast.Compare, ast.Eq, ast.NotEq, ast.Gt, ast.GtE, ast.Lt, ast.LtE,
-        ast.keyword,
+        ast.keyword, ast.Subscript, ast.Slice, ast.Tuple,
     }
 
     def __init__(self) -> None:
@@ -145,6 +145,11 @@ class _GeneratedFactorVisitor(ast.NodeVisitor):
                 for kw in node.keywords
             ):
                 self.errors.append("禁止未来数据：不允许用未来价格反向填充缺失值")
+        elif node.func.attr == "groupby":
+            # pandas>=2 removed DataFrame.groupby(axis=...); generated code must
+            # transpose and group on a 1-D industry Series instead.
+            if any(kw.arg == "axis" for kw in node.keywords):
+                self.errors.append("groupby 不支持 axis 参数；请转置后用行业 Series 分组")
         elif node.func.attr == "rolling":
             centered = next(
                 (kw.value for kw in node.keywords if kw.arg == "center"),

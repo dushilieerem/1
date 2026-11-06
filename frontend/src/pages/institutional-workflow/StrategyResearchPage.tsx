@@ -4,7 +4,7 @@ import {researchFetch} from '@/lib/researchClient';
 import {WorkspaceHeading} from './QuantWorkspacePages';
 
 type Topic={id:string;name:string;universe:string;benchmark:string;status:string;k?:number;branch_count:number;trial_count:number;max_trials:number;development_start?:string;development_end?:string};
-type Branch={id:string;source:string;hypothesis:string;version:number;status:string;review_status?:string;sealed?:{status:string;result?:{excess_return?:number}}|null;recipe:{factors:Array<{factor:string;library?:string;direction:string}>;top_n:number;rebalance_days:number}};
+type Branch={id:string;source:string;hypothesis:string;version:number;status:string;review_status?:string;sealed?:{status:string;result?:{excess_return?:number};gate?:Gate}|null;recipe:{factors:Array<{factor:string;library?:string;direction:string}>;top_n:number;rebalance_days:number}};
 type Gate={checks?:Array<{name:string;actual:number|null;threshold?:number;passed:boolean|null}>;passed?:boolean;complete?:boolean;pending?:string[];policy_status?:string};
 type CurvePoint={date:string;value:number};
 type TrialReport={equity_curve?:CurvePoint[];benchmark_curve?:CurvePoint[];annual_returns?:Array<{year:number;return_value:number}>;assumptions?:Record<string,string>;period_excess?:number};
@@ -99,7 +99,7 @@ function LedgerCard({ledger,busy,run,openReport}:{ledger:Ledger;busy:boolean;run
     <button className="btn small" disabled={busy||b.status!=='active'} onClick={()=>void run('/branches/'+b.id+'/diagnostics/neighborhood','nbhd')}>3×3邻域（9次）</button>
     {b.status==='active'&&<button className="btn small" disabled={busy||!gatePassed} title={gatePassed?'':'研发与稳健性门槛未全部通过'} onClick={()=>void run('/branches/'+b.id+'/seal','seal')}>申请封存</button>}
     {b.status==='frozen'&&b.review_status==='sealed_passed'&&<button className="btn small primary" disabled={busy} onClick={()=>void run('/branches/'+b.id+'/submit-review','submit')}>提交复核</button>}
-   </div>{b.sealed&&<p className="fine">封存 {b.sealed.status}{b.sealed.result?.excess_return!=null?` · 超额 ${pct(b.sealed.result.excess_return)}`:''}。封存失败保持失败，不进入复核。</p>}</div>;})}
+   </div>{b.sealed&&<p className="fine">封存 {b.sealed.status}{b.sealed.result?.excess_return!=null?` · 区间累计超额 ${pct(b.sealed.result.excess_return)}`:''}{b.sealed.gate?.checks?.[0]?.actual!=null?` · 年化超额 ${pct(b.sealed.gate.checks[0].actual)}`:''}。封存失败保持失败，不进入复核。</p>}</div>;})}
   {ledger.branches.length===0&&<p className="empty">课题没有分支。</p>}
   <h3 style={{marginTop:14}}>策略台账</h3><div className="table-wrap"><table className="table strategy-table"><thead><tr><th>#</th><th>分支</th><th>状态</th><th>扣费后超额</th><th>IR</th><th>相对回撤</th><th>单边年换手</th><th>门槛</th><th>报告</th></tr></thead><tbody>{ledger.trials.map(t=>{const ex=check(t,'超额'),ir=check(t,'信息比率'),dd=check(t,'回撤'),to=check(t,'换手');return <tr key={t.id}><td>{t.trial_no}{t.rerun_of?'（rerun）':''}</td><td>{t.branch_id.slice(0,8)}</td><td className="nowrap">{t.outcome} · {outcomeText(t)}</td><td>{pct(ex?.actual)}</td><td>{ir?.actual==null?'—':ir.actual.toFixed(2)}</td><td>{pct(dd?.actual)}</td><td>{to?.actual==null?'—':to.actual.toFixed(1)+'×'}</td><td>{gateText(t)}</td><td>{t.report_id?<button className="text-link" disabled={!t.id} onClick={()=>void openReport(t.id)}>真实报告</button>:'—'}</td></tr>;})}</tbody></table></div>
   {ledger.trials.length===0&&<p className="empty">尚无回测记录。</p>}
@@ -148,7 +148,7 @@ function ReportCard({report,onClose}:{report:Report;onClose:()=>void}){
   <p className="fine">引擎返回的是扣费后净值与相对基准区间超额；未单独返回毛收益与基准曲线到台账，报告不伪造“扣费前”。</p>
   <h3>六项门槛（当前 K 校正）</h3><div className="table-wrap"><table className="table"><thead><tr><th>检查</th><th>实际</th><th>要求</th><th>结果</th></tr></thead><tbody>{(g?.checks||[]).map(c=><tr key={c.name}><td>{c.name}</td><td>{c.actual==null?'—':Number(c.actual).toFixed(4)}</td><td>{c.threshold==null?'—':Number(c.threshold).toFixed(3)}</td><td className={c.passed?'ok-t':c.passed===false?'bad-t':''}>{c.passed==null?'待补':c.passed?'通过':'未通过'}</td></tr>)}</tbody></table></div>
   <h3>稳健性</h3><p>2 倍成本：{cost?.excess==null?'未执行':(pct(cost.excess)+' · '+(cost.passed?'通过':'未通过'))}</p><p>参数邻域：{nb?.passed_cells==null?'未执行':`${nb.passed_cells}/9 通过`}</p>{nb?.cells&&<div className="table-wrap"><table className="table"><thead><tr><th>TopN</th><th>调仓</th><th>超额</th><th>IR</th><th>结果</th></tr></thead><tbody>{nb.cells.map((c,i)=><tr key={i}><td>{c.top_n}</td><td>{c.rebalance_days}</td><td>{pct(c.excess)}</td><td>{c.ir?.toFixed(2)}</td><td className={c.passed?'ok-t':'bad-t'}>{c.passed?'通过':'未通过'}</td></tr>)}</tbody></table></div>}
-  <h3>封存</h3><p>{report.sealed?`${report.sealed.status} · ${report.sealed.result?.excess_return==null?'—':pct(report.sealed.result.excess_return)} · 报告 ${report.sealed.report_id||'—'}`:'尚无封存记录。封存通过后才可提交独立复核。'}</p>
+  <h3>封存</h3><p>{report.sealed?`${report.sealed.status} · 区间累计超额 ${report.sealed.result?.excess_return==null?'—':pct(report.sealed.result.excess_return)} · 年化超额 ${report.sealed.gate?.checks?.[0]?.actual==null?'—':pct(report.sealed.gate.checks[0].actual)} · 报告 ${report.sealed.report_id||'—'}`:'尚无封存记录。封存通过后才可提交独立复核。'}</p>
  </div></div>;
 }
 

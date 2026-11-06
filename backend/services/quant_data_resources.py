@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import os
 import uuid
+
+import yaml
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -38,7 +40,101 @@ def _current_view():
     return view_id, target
 
 
-def catalogue(uid: int, org: int):
+FREQUENCY = {
+    "minute_bars": "1 分钟",
+    "daily_bars": "日频", "daily_bars_unadjusted": "日频", "ifind_daily_bars_unadjusted": "日频",
+    "etf_daily": "日频", "us_stock_quotes_bfq": "日频", "us_stock_quotes_hfq": "日频",
+    "valuation": "日频", "valuation_daily": "日频", "ifind_valuation": "日频",
+    "index_price": "日频", "ifind_index_price": "日频", "index_weights": "日频",
+    "ifind_index_weights": "日频", "index_membership": "日频（成分按公告）",
+    "industry_daily": "日频", "industry_membership_history": "日频（历史生效日）",
+    "security_status_daily": "日频", "limit_prices": "日频", "margin_daily": "日频",
+    "fund_flow_daily": "日频", "fund_flow_candidate": "日频", "northbound_flow_daily": "日频",
+    "northbound_holdings_quarterly": "季度", "risk_daily": "日频",
+    "calendar": "日历", "us_stock_calendar": "日历", "ifind_calendar": "日历",
+    "news": "日更", "us_stock": "快照", "us_stock_snapshot": "快照",
+    "security_master": "快照", "ifind_security_master": "快照",
+    "us_stock_universe": "快照", "universe": "快照",
+    "analyst_consensus_snapshot": "快照",
+    "financial_balance": "报告期/公告日", "financial_cashflow": "报告期/公告日",
+    "financial_income": "报告期/公告日", "free_financial_income": "报告期/公告日",
+    "per_share": "报告期/公告日", "pershare_index": "报告期/公告日",
+    "holder_num": "报告期/公告日", "capital": "公告日", "dividend_actions": "公告日",
+    "buyback_plan": "公告日", "buyback_execution": "公告日",
+    "industry_code_map": "快照", "sector_concept": "快照",
+    "us_fundamentals_sec": "报告期/公告日",
+}
+
+
+_VIEW_CACHE: dict[str, tuple[int, dict]] = {}
+
+
+def _view_yaml(view_id: str) -> dict:
+    # Prefer the materialized artifact; a definition-only YAML is not a release.
+    candidates = [
+        DATA_HOME / "views" / view_id / "materialized" / "view.yaml",
+        DATA_HOME / "views" / f"{view_id}.yaml",
+    ]
+    for path in candidates:
+        if not path.is_file():
+            continue
+        mtime = path.stat().st_mtime_ns
+        cached = _VIEW_CACHE.get(view_id)
+        if cached and cached[0] == mtime:
+            return cached[1]
+        with path.open(encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+        _VIEW_CACHE[view_id] = (mtime, data)
+        return data
+    return {}
+
+
+def _published_views() -> set[str]:
+    """Actual releases: materialized dir with manifest and matching VIEW_ID."""
+    out: set[str] = set()
+    root = DATA_HOME / "views"
+    for path in root.iterdir() if root.is_dir() else []:
+        materialized = path / "materialized"
+        manifest = materialized / "manifest.json"
+        marker = materialized / "VIEW_ID"
+        if not (path.is_dir() and manifest.is_file() and marker.is_file()):
+            continue
+        try:
+            if marker.read_text(encoding="utf-8").strip() == path.name:
+                out.add(path.name)
+        except OSError:
+            continue
+    return out
+
+
+def _published_view_paths() -> dict[str, Path]:
+    return {vid: DATA_HOME / "views" / vid / "materialized" for vid in _published_views()}
+
+
+def _pit_label(rule: str) -> str:
+    rule = str(rule or "").strip()
+    if rule == "date <= as_of":
+        return "历史时点（date ≤ as_of）"
+    if rule == "latest_only":
+        return "仅最新快照"
+    if "announce" in rule:
+        return "按公告日"
+    return rule or "待确认"
+
+
+def _dataset_view_meta(view_id: str, name: str) -> dict:
+    entry = (_view_yaml(view_id).get("datasets") or {}).get(name) or {}
+    return {
+        "published": bool(entry),
+        "release": entry.get("release") or "",
+        "pit_rule": entry.get("pit_rule") or "",
+        "pit_label": _pit_label(entry.get("pit_rule")),
+        "batch_created_at": entry.get("created_at") or "",
+        "frequency": FREQUENCY.get(name, "待确认"),
+    }
+
+
+def catalogue(uid: int, org: int, all_members: bool = False):
     monitor = _read_json("docs/monitor-data.json")
     view_id, _ = _current_view()
     try:
@@ -46,27 +142,43 @@ def catalogue(uid: int, org: int):
     except (FileNotFoundError, ValueError):
         quality = {"view_id": view_id, "datasets": {}, "ok": None}
     with get_conn() as c:
+        factor_where, factor_params = "org_id=%s AND view_id=%s", [org, view_id]
+        strategy_where, strategy_params = "org_id=%s AND view_id=%s", [org, view_id]
+        if not all_members:
+            factor_where += " AND user_id=%s"
+            factor_params.append(uid)
+            strategy_where += " AND user_id=%s"
+            strategy_params.append(uid)
         factor_locked = c.execute(
-            "SELECT COUNT(*) AS n FROM quant_factor_topics WHERE org_id=%s AND view_id=%s", (org, view_id)).fetchone()["n"]
+            f"SELECT COUNT(*) AS n FROM quant_factor_topics WHERE {factor_where}",
+            tuple(factor_params)).fetchone()["n"]
         strategy_locked = c.execute(
-            "SELECT COUNT(*) AS n FROM strategy_topics WHERE org_id=%s AND view_id=%s", (org, view_id)).fetchone()["n"]
+            f"SELECT COUNT(*) AS n FROM strategy_topics WHERE {strategy_where}",
+            tuple(strategy_params)).fetchone()["n"]
     datasets = []
     for item in monitor.get("datasets") or []:
         name = item.get("name")
         q = (quality.get("datasets") or {}).get(name) or {}
+        meta = _dataset_view_meta(view_id, name)
         datasets.append({
             "name": name, "label": item.get("label"), "topic": item.get("topic"),
             "source": item.get("source"), "provenance": item.get("provenance"),
             "description": item.get("desc"), "rows": item.get("rows"),
             "start": item.get("start"), "end": item.get("end"), "updated": item.get("updated"),
             "field_count": item.get("field_count"),
+            **meta,
             "quality_ok": q.get("ok"), "quality_checks": q.get("results") or [],
             "limitations": KNOWN_LIMITS.get(name, []),
         })
+    checked = sum(1 for d in datasets if d["quality_ok"] is not None)
+    passed = sum(1 for d in datasets if d["quality_ok"] is True)
+    failed = sum(1 for d in datasets if d["quality_ok"] is False)
     return {
         "view_id": view_id, "generated_at": monitor.get("generated_at"),
         "summary": monitor.get("summary"), "quality_checked_at": quality.get("checked_at"),
         "quality_ok": quality.get("ok"),
+        "quality_summary": {"checked": checked, "passed": passed, "failed": failed,
+                            "unchecked": len(datasets) - checked, "total": len(datasets)},
         "locked_by": {"factor_topics": factor_locked, "strategy_topics": strategy_locked},
         "datasets": datasets,
     }
@@ -83,8 +195,10 @@ def dataset(uid: int, org: int, name: str):
         quality = (_read_json(f"ops/quality/{view_id}.json").get("datasets") or {}).get(name) or {}
     except (FileNotFoundError, ValueError):
         pass
+    meta = _dataset_view_meta(view_id, name)
     return {
         "view_id": view_id, "name": name, "label": item.get("label"), "topic": item.get("topic"),
+        **meta,
         "source": item.get("source"), "provenance": item.get("provenance"),
         "description": item.get("desc"), "rows": item.get("rows"),
         "start": item.get("start"), "end": item.get("end"), "updated": item.get("updated"),
@@ -97,13 +211,44 @@ def dataset(uid: int, org: int, name: str):
 def views(uid: int, org: int):
     current, _ = _current_view()
     rows = []
-    for path in sorted((DATA_HOME / "views").glob("*.yaml"), key=lambda p: p.stat().st_mtime, reverse=True):
-        vid = path.stem
+    for vid, path in sorted(_published_view_paths().items(), key=lambda kv: kv[1].stat().st_mtime, reverse=True):
+        meta = _view_yaml(vid)
         rows.append({
             "view_id": vid, "current": vid == current,
             "published_at": datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat(),
+            "created_at": meta.get("created_at") or "",
+            "contract_version": meta.get("contract_version") or "",
+            "dataset_count": len(meta.get("datasets") or {}),
         })
     return {"current": current, "views": rows}
+
+
+def view_usage(uid: int, org: int, view_id: str, all_members: bool = False):
+    if view_id not in _published_views():
+        raise KeyError(view_id)
+    factor_where, factor_params = "t.org_id=%s AND t.view_id=%s", [org, view_id]
+    strategy_where, strategy_params = "org_id=%s AND view_id=%s", [org, view_id]
+    if not all_members:
+        factor_where += " AND t.user_id=%s"
+        factor_params.append(uid)
+        strategy_where += " AND user_id=%s"
+        strategy_params.append(uid)
+    with get_conn() as c:
+        factors = [dict(r) for r in c.execute(
+            f"""SELECT t.id,t.display_no,p.name AS project_name
+               FROM quant_factor_topics t
+               JOIN detect_projects p ON p.user_id=t.user_id AND p.id=t.project_id
+               WHERE {factor_where}
+               ORDER BY t.display_no""", tuple(factor_params)).fetchall()]
+        strategies = [dict(r) for r in c.execute(
+            f"""SELECT id,display_no,name FROM strategy_topics
+               WHERE {strategy_where} ORDER BY display_no""",
+            tuple(strategy_params)).fetchall()]
+    return {
+        "view_id": view_id,
+        "factor_topics": [{"id": r["id"], "label": f"T{r['display_no']}", "name": r["project_name"]} for r in factors],
+        "strategy_topics": [{"id": r["id"], "label": f"S{r['display_no']}", "name": r["name"]} for r in strategies],
+    }
 
 
 RELATED_TABLES = {
@@ -198,8 +343,11 @@ def update_request(uid: int, org: int, req_id: str, payload: dict):
             raise ValueError(f"当前状态 {current} 不能改为 {status}")
         if status == "unsupported" and not note:
             raise ValueError("不予支持必须填写原因")
-        if status == "delivered" and not delivered_view:
-            raise ValueError("发布必须填写可用视图版本")
+        if status == "delivered":
+            if not delivered_view:
+                raise ValueError("发布必须填写可用视图版本")
+            if delivered_view not in _published_views():
+                raise ValueError("交付视图不存在或未发布")
         c.execute(
             """UPDATE quant_data_requests
                SET status=%s,note=%s,delivered_view=%s,handled_by=%s,handled_at=NOW(),updated_at=NOW()
@@ -209,4 +357,4 @@ def update_request(uid: int, org: int, req_id: str, payload: dict):
     return {k: v for k, v in dict(out).items() if k not in ("user_id", "org_id")}
 
 
-__all__ = ["catalogue", "dataset", "list_requests", "submit_request", "update_request", "views"]
+__all__ = ["catalogue", "dataset", "list_requests", "submit_request", "update_request", "view_usage", "views"]

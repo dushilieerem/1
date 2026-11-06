@@ -54,6 +54,15 @@ class UpdateRequestTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "视图"):
             self._update("in_progress", {"status": "delivered"})
 
+    def test_delivered_rejects_unpublished_view(self):
+        with self.assertRaisesRegex(ValueError, "不存在或未发布"):
+            self._update("in_progress", {"status": "delivered", "delivered_view": "research-rv-20990101-0"})
+
+    def test_delivered_rejects_definition_only_view(self):
+        # 20261105-3 只有 YAML 定义、没有 materialized 发布产物。
+        with self.assertRaisesRegex(ValueError, "不存在或未发布"):
+            self._update("in_progress", {"status": "delivered", "delivered_view": "research-rv-20261105-3"})
+
 
 class ListRequestScopeTest(unittest.TestCase):
     def test_researcher_sees_own_requests_only(self):
@@ -71,6 +80,27 @@ class ListRequestScopeTest(unittest.TestCase):
             svc.list_requests(9, 2, True)
         self.assertNotIn("r.user_id=%s", cursor.execute.call_args.args[0])
         self.assertEqual(cursor.execute.call_args.args[1], (2,))
+
+
+class ViewUsageScopeTest(unittest.TestCase):
+    def test_researcher_usage_is_member_scoped(self):
+        cursor = MagicMock()
+        cursor.execute.return_value.fetchall.return_value = []
+        with patch.object(svc, "get_conn", return_value=_conn(cursor)):
+            out = svc.view_usage(9, 2, "research-rv-20261105-5")
+        self.assertEqual(out["view_id"], "research-rv-20261105-5")
+        factor_params = cursor.execute.call_args_list[0].args[1]
+        strategy_params = cursor.execute.call_args_list[1].args[1]
+        self.assertEqual(factor_params, (2, "research-rv-20261105-5", 9))
+        self.assertEqual(strategy_params, (2, "research-rv-20261105-5", 9))
+
+    def test_manager_usage_is_org_scoped(self):
+        cursor = MagicMock()
+        cursor.execute.return_value.fetchall.return_value = []
+        with patch.object(svc, "get_conn", return_value=_conn(cursor)):
+            svc.view_usage(9, 2, "research-rv-20261105-5", True)
+        self.assertEqual(cursor.execute.call_args_list[0].args[1], (2, "research-rv-20261105-5"))
+        self.assertEqual(cursor.execute.call_args_list[1].args[1], (2, "research-rv-20261105-5"))
 
 
 if __name__ == "__main__":

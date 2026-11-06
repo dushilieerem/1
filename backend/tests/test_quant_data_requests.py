@@ -54,6 +54,10 @@ class UpdateRequestTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "视图"):
             self._update("in_progress", {"status": "delivered"})
 
+    def test_delivered_rejects_unpublished_view(self):
+        with self.assertRaisesRegex(ValueError, "不存在或未发布"):
+            self._update("in_progress", {"status": "delivered", "delivered_view": "research-rv-20990101-0"})
+
 
 class ListRequestScopeTest(unittest.TestCase):
     def test_researcher_sees_own_requests_only(self):

@@ -56,6 +56,11 @@ def views(ctx=Depends(require_quant_researcher)):
     return invoke(svc.views, *identity(ctx))
 
 
+@router.get("/views/{view_id}/usage")
+def view_usage(view_id: str, ctx=Depends(require_quant_researcher)):
+    return invoke(svc.view_usage, *identity(ctx), view_id)
+
+
 @router.get("/requests")
 def requests(ctx=Depends(require_quant_researcher)):
     return {"requests": invoke(svc.list_requests, *identity(ctx), bool(ctx.get("can_manage")))}

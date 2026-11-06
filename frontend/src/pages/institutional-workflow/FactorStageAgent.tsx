@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {researchFetch} from '@/lib/researchClient';
+import {newUuidV4} from '@/lib/uuid';
 export type FactorAgentJob={id:string;stage:string;status:string;input:{draft:Record<string,string>};output?:{fields:Record<string,string>;model?:string;prompt_version?:string;data_view?:string};events:Array<{at:string;action:string;message:string;tool?:string}>};
 const statusLabels:Record<string,string>={queued:'等待执行',running:'正在工作',ready:'本环节完成',failed:'执行未完成',cancelled:'已由人工接管'};
 const signature=(x:Record<string,string>)=>JSON.stringify(Object.keys(x).sort().map(k=>[k,x[k]]));
@@ -9,7 +10,7 @@ export function FactorStageAgent({stage,projectId,draft,onApply,autoStart=false,
  const current=useRef({draft,onApply});current.current={draft,onApply};const alive=useRef(true),requestSequence=useRef(0),lastApplied=useRef('');
  useEffect(()=>{if(job)onJob?.(job.id);},[job?.id,onJob]);
  const running=job?.status==='running'||job?.status==='queued';
- async function start(fresh=false){if(sending||running)return;const seq=++requestSequence.current;setSending(true);setError('');setPaused(false);setApplied('');setJob(undefined);try{const next=await api<FactorAgentJob>('',{stage,project_id:projectId||null,draft:current.current.draft,...(fresh?{request_key:crypto.randomUUID()}:{} )});if(alive.current&&seq===requestSequence.current)setJob(next);}catch(e){if(alive.current)setError(e instanceof Error?e.message:String(e));}finally{if(alive.current)setSending(false);}}
+ async function start(fresh=false){if(sending||running)return;const seq=++requestSequence.current;setSending(true);setError('');setPaused(false);setApplied('');setJob(undefined);try{const next=await api<FactorAgentJob>('',{stage,project_id:projectId||null,draft:current.current.draft,...(fresh?{request_key:newUuidV4()}:{} )});if(alive.current&&seq===requestSequence.current)setJob(next);}catch(e){if(alive.current)setError(e instanceof Error?e.message:String(e));}finally{if(alive.current)setSending(false);}}
  useEffect(()=>{alive.current=true;let stopped=false;setLoading(true);(resumeJobId?api<FactorAgentJob>('/'+resumeJobId).then(job=>({job})):api<{job:FactorAgentJob|null}>('/latest?stage='+stage+(projectId?'&project_id='+encodeURIComponent(projectId):''))).then(async ({job:existing})=>{if(stopped)return;if(existing)setJob(existing);else if(autoStart)await start(stage==='F1'&&!projectId);}).catch(e=>{if(!stopped)setError(e.message);}).finally(()=>{if(!stopped)setLoading(false);});return()=>{stopped=true;alive.current=false;++requestSequence.current;};},[stage,projectId]);
  useEffect(()=>{if(!running||!job)return;let stopped=false;const timer=setInterval(()=>{api<FactorAgentJob>('/'+job.id).then(next=>{if(!stopped){setJob(next);setError('');}}).catch(e=>{if(!stopped)setError(e.message);});},1500);return()=>{stopped=true;clearInterval(timer);};},[job?.id,running]);
  const alreadyFilled=!!job?.output?.fields&&Object.entries(job.output.fields).every(([key,value])=>key==='summary'||draft[key]===value);

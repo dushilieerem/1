@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ygGenerateFactorDraft, type AiFactorDraft, type AiFactorGenerationResult } from "@/lib/aiFactorApi";
 import { subscribeAuth } from "@/lib/researchClient";
+import {newUuidV4} from '@/lib/uuid';
 
 export function FactorDraftAssistant({ hypothesis, name, draftVersion, onApply }: {
   hypothesis: string; name: string; draftVersion: string; onApply: (factor: AiFactorDraft) => void;
@@ -27,7 +28,7 @@ export function FactorDraftAssistant({ hypothesis, name, draftVersion, onApply }
       const result = await ygGenerateFactorDraft({
         prompt: hypothesis.trim(),
         context: { frequency: "1d", preferred_factor_name: name.trim() || null },
-        idempotency_key: crypto.randomUUID(),
+        idempotency_key: newUuidV4(),
       }, controller.signal);
       if (current === sequence.current) setProposal({result, version});
     } catch (e) {

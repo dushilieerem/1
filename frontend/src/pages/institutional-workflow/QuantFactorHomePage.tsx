@@ -3,13 +3,23 @@ import {Link,useNavigate} from 'react-router-dom';
 import {researchFetch} from '@/lib/researchClient';
 import {createProject,saveProject} from '@/lib/detectStore';
 import {FactorModuleTabs,WorkspaceHeading} from './QuantWorkspacePages';
+import {newUuidV4} from '@/lib/uuid';
 
-type Topic={id:string;display_no?:number;project_id:string;project_name:string;view_id:string;primary_holding_period:number;max_trials:number;max_sealed:number;sealed_used?:number;status:string;k:number;branch_count:number;trial_count:number;created_at?:string};
+type Topic={id:string;display_no?:number;project_id:string;project_name:string;view_id:string;primary_holding_period:number;max_trials:number;max_sealed:number;sealed_used?:number;status:string;dispatch_status?:string|null;dispatch_stop_reason?:string|null;k:number;branch_count:number;trial_count:number;created_at?:string};
 type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;status:string;hypothesis_version:number;implementation_version:number;created_at?:string;display_label?:string;display_title?:string;hypothesis_text?:string;source_label?:string;display_status?:string};
 type Trial={trial_no:number;branch_id:string;kind:string;outcome:string;executor:string;report_id?:string|null;created_at?:string;returned_metrics?:boolean;rerun_of?:string|null;result_summary?:{gate?:{checks?:{name:string;actual:number|null;threshold:number;passed:boolean}[]}}};
 type Ledger={topic:Topic;branches:Branch[];trials:Trial[];k:number;threshold:number|null;threshold_next_if_counted:number;next_trial_no:number;dispatch?:{status:string;stop_reason:string}|null};
 
-const statusText=(s:string)=>s==='active'?'研究中':s==='paused'?'已暂停':s==='archived'?'已归档':s;
+const statusText=(t:Pick<Topic,'status'|'dispatch_status'>)=>{
+ if(t.status==='paused')return '已暂停';
+ if(t.status==='archived')return '已归档';
+ if(t.dispatch_status==='running')return '研究决策运行中';
+ if(t.dispatch_status==='queued')return '排队中';
+ if(t.dispatch_status==='stopped')return '已停止 · 待人工复盘';
+ if(t.dispatch_status==='completed')return '研究决策完成';
+ if(t.dispatch_status==='error'||t.dispatch_status==='failed')return '研究决策异常';
+ return '待启动';
+};
 const outcomeText=(t:Trial)=>t.outcome==='passed'?'通过':t.outcome==='failed'?'未达标':t.outcome==='error'?'执行错误':t.outcome;
 const nwText=(t:Trial)=>{const c=t.result_summary?.gate?.checks?.find(x=>x.name==='方向 NW t');return c&&typeof c.actual==='number'?` · NW t ${c.actual.toFixed(2)} / 需 ${c.threshold.toFixed(2)}`:'';};
 
@@ -55,10 +65,13 @@ export function QuantFactorHomePage(){
 
  async function handBackF0(){
   if(!ledger||!selectedBranch)return;
-  const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(ledger.topic.id)+'/branches/'+encodeURIComponent(selectedBranch.id)+'/f0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:crypto.randomUUID()})});
-  const d=await r.json();if(!r.ok){setError(typeof d.detail==='string'?d.detail:'F0 启动失败');return;}setF0(d);
+  const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(ledger.topic.id)+'/branches/'+encodeURIComponent(selectedBranch.id)+'/f0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:newUuidV4()})});
+  const d=await r.json();if(!r.ok){setError(typeof d.detail==='string'?d.detail:'F0 启动失败');return;}
+  setF0(d);
+  setTopics(list=>list.map(t=>t.id===ledger.topic.id?{...t,dispatch_status:d.status,dispatch_stop_reason:''}:t));
  }
  useEffect(()=>{if(!f0||!['queued','running'].includes(f0.status))return;const t=setInterval(()=>{void researchFetch('/api/inst/quant/factor-workflow/f0-runs/'+f0.id).then(r=>r.ok?r.json():null).then(d=>{if(d)setF0(d);});},4000);return()=>clearInterval(t);},[f0?.id,f0?.status]);
+ useEffect(()=>{if(!f0||!ledger)return;setTopics(list=>list.map(t=>t.id===ledger.topic.id?{...t,dispatch_status:f0.status,dispatch_stop_reason:f0.stop_reason||''}:t));},[f0?.status,f0?.stop_reason]);
  async function setTopicStatus(status:'paused'|'active'){
   if(!ledger)return;
   const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(ledger.topic.id)+'/'+(status==='paused'?'pause':'resume'),{method:'POST'});
@@ -101,7 +114,7 @@ export function QuantFactorHomePage(){
   try{
    const p=await createProject(nt.factor,nt.hypothesis,nt.name);
    const plan={revision:'nt-'+Date.now(),hypothesis:nt.hypothesis,candidateExpression:'',improvementScope:'只改进实现，不改变经济假设和方向',target:'未来1个交易日收益',frequency:'daily',acceptance:nt.acceptance,developmentStart:nt.development_start,developmentEnd:nt.development_end,validationStart:nt.validation_start,validationEnd:nt.validation_end,maxTrials:Number(nt.max_trials),researchPurpose:nt.purpose,...(nt.purpose==='discovery'?{noveltyPolicy:{scope:'all_accessible' as const,maxAbsCorrelation:0.8,minDays:60,minPairs:30,minCoverage:0.8}}:{}),rules:{minSignedIc:0.005,maxDrawdown:0.5,minObservations:60,direction:nt.direction as 'positive'|'negative',icMetric:'rank_ic' as const}};
-   const saved=await saveProject({...p,name:nt.name,description:nt.hypothesis,config:{...p.config,factorCodes:[nt.factor],weights:[1],powers:[1],factorLibraries:{[nt.factor]:nt.library},researchPlan:plan,researchContext:{direction:'因子研究',question:nt.hypothesis,background:'新建课题：'+nt.factor}}});
+   const saved=await saveProject({...p,name:nt.name,description:nt.hypothesis,config:{...p.config,universe:nt.universe,benchmark:nt.benchmark,factorCodes:[nt.factor],weights:[1],powers:[1],factorLibraries:{[nt.factor]:nt.library},researchPlan:plan,researchContext:{direction:'因子研究',question:nt.hypothesis,background:'新建课题：'+nt.factor}}});
    const vr=await researchFetch('/api/inst/quant/factor-workflow/published-view');const v=await vr.json();if(!vr.ok)throw Error('发布视图读取失败');
    const body={view_id:v.view_id,release_id:'',release_ids:v.release_ids||{},view_manifest_sha256:v.view_manifest_sha256||'',contract_revision:v.contract_revision||'',as_of:v.as_of,development_start:nt.development_start,development_end:nt.development_end,validation_start:nt.validation_start,validation_end:nt.validation_end,primary_holding_period:Number(nt.holding),policy_version:'v5-p0',max_trials:Number(nt.max_trials),max_sealed:Number(nt.max_sealed)};
    const tr=await researchFetch('/api/inst/quant/factor-workflow/projects/'+encodeURIComponent(saved.id)+'/topics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const td=await tr.json();if(!tr.ok)throw Error(typeof (td.detail||td.error)==='string'?(td.detail||td.error):'建课题失败');
@@ -134,7 +147,7 @@ export function QuantFactorHomePage(){
 
  const topicCards=topics.map(t=>(
   <button key={t.id} className={'topic'+(selected===t.id?' sel':'')} onClick={()=>setSelected(t.id)}>
-   <div className="top"><span className="tid">T{t.display_no??'—'} · {t.primary_holding_period} 日</span><span className={'badge '+(t.status==='active'?'live':'gray')}>{statusText(t.status)}</span></div>
+   <div className="top"><span className="tid">T{t.display_no??'—'} · {t.primary_holding_period} 日</span><span className={'badge '+(t.dispatch_status==='running'?'live':t.dispatch_status==='stopped'?'warn':'gray')}>{statusText(t)}</span></div>
    <h3>{t.project_name||'未命名课题'}</h3>
    <div className="act">{t.trial_count>0?'已登记研发检验与台账。':'等待第一次真实研发检验。'}</div>
    <div className="bar"><i style={{width:Math.min(100,t.k/Math.max(1,t.max_trials)*100)+'%'}}/></div>
@@ -198,7 +211,7 @@ export function QuantFactorHomePage(){
  const main=topic?(
   <div className="card">
    <div className="card-head">
-    <div><div className="row-flex"><span className="tid">T{topic.display_no??'—'}</span><h2>{topic.project_name||'未命名课题'}</h2><span className="badge live">{statusText(topic.status)}</span></div>
+    <div><div className="row-flex"><span className="tid">T{topic.display_no??'—'}</span><h2>{topic.project_name||'未命名课题'}</h2><span className={'badge '+(topic.dispatch_status==='running'?'live':topic.dispatch_status==='stopped'?'warn':'gray')}>{statusText(topic)}</span></div>
      <p className="fine">视图 {topic.view_id} · 主持有期 {topic.primary_holding_period} 日</p></div>
     <div className="actions">{topic.status==='active'?<button className="btn small" onClick={()=>void setTopicStatus('paused')}>暂停课题</button>:topic.status==='paused'?<button className="btn small" onClick={()=>void setTopicStatus('active')}>继续课题</button>:null}<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>打开人工工作台</Link><Link className="btn small" to={'/quant/factor/ledger?project='+topic.project_id}>台账</Link><button className="btn small ghost" disabled title="待接入（P1）：研究意见写回研究决策上下文尚未实现">给研究意见</button></div>
    </div>
@@ -226,9 +239,9 @@ export function QuantFactorHomePage(){
    <FactorModuleTabs active="home"/>
    {authOpen&&<div className="card card-pad" style={{marginBottom:14}}><p className="fine">当前登录成员可在本机构范围创建因子课题、运行检验与申请封存；数据视图与预登记门槛由课题计划固定，Agent 不能改门槛、扩预算或批准入库。新建课题从因子库选择已授权资产开始。</p></div>}
    <div className="sys compact">
-    <div className="sys-state"><span className="ico">⇅</span><div><b><span className={"live-dot"+(topics.some(t=>t.status==='active')?'':' off')}/> {topics.some(t=>t.status==='active')?'因子研究系统运行中':'因子研究系统空闲'}</b><small className="fine">{loading?'读取中':`真实课题 ${topics.length} 个 · 台账 ${totalTrials} 次`}</small></div></div>
+    <div className="sys-state"><span className="ico">⇅</span><div><b><span className={"live-dot"+(topics.some(t=>t.dispatch_status==='running'||t.dispatch_status==='queued')?'':' off')}/> {topics.some(t=>t.dispatch_status==='running'||t.dispatch_status==='queued')?'因子研究系统运行中':topics.some(t=>t.dispatch_status==='stopped')?'因子研究系统空闲 · 待人工复盘':'因子研究系统空闲 · 待启动'}</b><small className="fine">{loading?'读取中':`真实课题 ${topics.length} 个 · 台账 ${totalTrials} 次 · 运行中 ${topics.filter(t=>t.dispatch_status==='running'||t.dispatch_status==='queued').length}`}</small></div></div>
     <div className="kpis">
-     <div className="kpi"><span>课题</span><b>{topics.length}</b><small>研究中 {topics.filter(t=>t.status==='active').length}</small></div>
+     <div className="kpi"><span>课题</span><b>{topics.length}</b><small>运行中 {topics.filter(t=>t.dispatch_status==='running'||t.dispatch_status==='queued').length} · 待启动 {topics.filter(t=>!t.dispatch_status||t.dispatch_status==='idle').length}</small></div>
      <div className="kpi"><span>试验台账</span><b>{totalTrials}</b><small>次</small></div>
      <div className="kpi"><span>封存样本已用</span><b>{sealedUsed==null?'—':sealedUsed}</b><small>累计封存（含失败）</small></div>
      <div className="kpi"><span>待人决定</span><b>{pending==null?'—':pending}</b><small>待复核候选</small></div>

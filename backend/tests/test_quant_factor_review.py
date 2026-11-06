@@ -111,5 +111,22 @@ class SealFailedReviewReturnTest(unittest.TestCase):
             self.assertEqual(review.open_seal_failed_review(1, 2, "c", "sealed failed"), {"id": "c"})
 
 
+
+class NullArchiveReviewRequestTest(unittest.TestCase):
+    def test_request_review_initializes_archive_card(self):
+        row = {'id': 'c', 'user_id': 5, 'org_id': 2, 'snapshot_hash': 'h', 'archive': None,
+               'status': 'development_passed',
+               'evidence': {'development': {'gate': {'passed': True}}}}
+        cursor = MagicMock()
+        cursor.execute.return_value.fetchone.return_value = row
+        connection = MagicMock()
+        connection.__enter__.return_value = cursor
+        with patch.object(review, 'get_conn', return_value=connection), \
+             patch.object(review, 'current', return_value={'id': 'c'}):
+            self.assertEqual(review.request_review(5, 2, 'c', '提交复核'), {'id': 'c'})
+        params = cursor.execute.call_args_list[1].args[1]
+        self.assertIn('review', params[0])
+
+
 if __name__ == '__main__':
     unittest.main()

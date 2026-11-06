@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ygGenerateStrategyDraft, type AiStrategyDraft, type AiStrategyGenerationResult } from "@/lib/aiStrategyApi";
 import { subscribeAuth } from "@/lib/researchClient";
+import {newUuidV4} from '@/lib/uuid';
 
 export function StrategyDraftAssistant({ hypothesis, name, draftVersion, onApply }: {
   hypothesis: string; name: string; draftVersion: string; onApply: (strategy: AiStrategyDraft) => void;
@@ -27,7 +28,7 @@ export function StrategyDraftAssistant({ hypothesis, name, draftVersion, onApply
       const result = await ygGenerateStrategyDraft({
         prompt: hypothesis.trim(),
         context: { frequency: "1d", preferred_strategy_name: name.trim() || null },
-        idempotency_key: crypto.randomUUID(),
+        idempotency_key: newUuidV4(),
       }, controller.signal);
       if (current === sequence.current) setProposal({result, version});
     } catch (e) {

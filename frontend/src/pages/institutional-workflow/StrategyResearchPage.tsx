@@ -2,6 +2,7 @@ import {useEffect,useState} from 'react';
 import {Link} from 'react-router-dom';
 import {researchFetch} from '@/lib/researchClient';
 import {WorkspaceHeading} from './QuantWorkspacePages';
+import {newUuidV4} from '@/lib/uuid';
 
 type Topic={id:string;display_no?:number;name:string;universe:string;benchmark:string;status:string;k?:number;branch_count:number;trial_count:number;max_trials:number;development_start?:string;development_end?:string};
 type Branch={id:string;display_label?:string;source:string;hypothesis:string;version:number;status:string;review_status?:string;sealed?:{status:string;result?:{excess_return?:number};gate?:Gate}|null;recipe:{factors:Array<{factor:string;library?:string;direction:string}>;top_n:number;rebalance_days:number;buffer?:number}};
@@ -43,7 +44,7 @@ export function StrategyResearchPage(){
 
  async function run(path:string,kind:string){
   if(busy)return;setBusy(true);setError('');
-  try{const r=await researchFetch('/api/inst/quant/strategy-research'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:kind==='seal'?JSON.stringify({idempotency_key:crypto.randomUUID()}):undefined});const d=await r.json();if(!r.ok)throw Error(typeof (d.detail||d.error)==='string'?(d.detail||d.error):'操作失败');if(selected)await loadLedger(selected);if(kind==='backtest'&&d.trial_id)await openReport(d.trial_id);}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}
+  try{const r=await researchFetch('/api/inst/quant/strategy-research'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:kind==='seal'?JSON.stringify({idempotency_key:newUuidV4()}):undefined});const d=await r.json();if(!r.ok)throw Error(typeof (d.detail||d.error)==='string'?(d.detail||d.error):'操作失败');if(selected)await loadLedger(selected);if(kind==='backtest'&&d.trial_id)await openReport(d.trial_id);}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}
  }
  async function openReport(tid:string){setError('');try{const r=await researchFetch('/api/inst/quant/strategy-research/trials/'+encodeURIComponent(tid)+'/report');const d=await r.json();if(!r.ok)throw Error(typeof (d.detail||d.error)==='string'?(d.detail||d.error):'报告读取失败');setReport(d);}catch(e){setError(e instanceof Error?e.message:String(e));}}
  async function createTopic(){

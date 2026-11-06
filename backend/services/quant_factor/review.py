@@ -14,8 +14,8 @@ def request_review(uid,org,cid,note):
     with get_conn() as c:
         row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE',(cid,uid,org)).fetchone()
         if not row:raise KeyError(cid)
-        card=dict(row['archive'] or {})
-        if not card or row['status'].endswith('_running') or not row['evidence'].get('development',{}).get('gate'):
+        card=dict(row['archive'] or {'approved': False, 'sealed': False})
+        if row['status'].endswith('_running') or not row['evidence'].get('development',{}).get('gate'):
             raise WorkflowError('请先完成研发检验并保存研究因子卡')
         if card.get('review'):return public(dict(row))
         card['review']={'status':'requested','question':note.strip(),'at':datetime.now(timezone.utc).isoformat(),'snapshot_hash':row['snapshot_hash'],'purpose':'research_feedback_only'}
@@ -82,7 +82,7 @@ def open_seal_failed_review(uid,org,cid,reason):
     with get_conn() as c:
         row=c.execute("SELECT * FROM quant_factor_candidates WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE",(cid,uid,org)).fetchone()
         if not row:raise KeyError(cid)
-        card=dict(row['archive'] or {})
+        card=dict(row['archive'] or {'approved': False, 'sealed': False})
         card['review']={'status':'requested','purpose':'seal_failed_review','question':'封存未通过复盘：'+str(reason)[:1000],'at':datetime.now(timezone.utc).isoformat(),'snapshot_hash':row['snapshot_hash']}
         c.execute("UPDATE quant_factor_candidates SET archive=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s",(store.encode(card),store.encode([event('seal_failed_review_requested')]),cid))
     # The researcher opens this item; returning reviewer-only detail here would fail

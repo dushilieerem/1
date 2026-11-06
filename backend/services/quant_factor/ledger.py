@@ -326,7 +326,13 @@ def list_org_topics(uid: int, org: int) -> list[dict]:
                       (SELECT COUNT(*) FROM quant_factor_trials r
                         WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id) AS trial_count,
                       (SELECT COUNT(*) FROM quant_factor_sealed_validations v
-                        WHERE v.user_id=t.user_id AND v.org_id=t.org_id AND v.topic_id=t.id) AS sealed_used
+                        WHERE v.user_id=t.user_id AND v.org_id=t.org_id AND v.topic_id=t.id) AS sealed_used,
+                      (SELECT r.status FROM quant_factor_f0_runs r
+                        WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id
+                        ORDER BY r.created_at DESC LIMIT 1) AS dispatch_status,
+                      (SELECT r.stop_reason FROM quant_factor_f0_runs r
+                        WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id
+                        ORDER BY r.created_at DESC LIMIT 1) AS dispatch_stop_reason
                FROM quant_factor_topics t
                JOIN detect_projects p ON p.user_id=t.user_id AND p.id=t.project_id
                WHERE t.user_id=%s AND t.org_id=%s

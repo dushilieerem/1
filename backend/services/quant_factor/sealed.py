@@ -16,6 +16,7 @@ from services.factor.re_factor_async_proxy import proxy_get_factor_run, proxy_su
 
 from . import ledger, service, store
 from .policy import WorkflowError, evaluate
+from .metrics import default_lags
 
 POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="quant-factor-sealed")
 ACTIVE = ("queued", "running")
@@ -108,7 +109,10 @@ def run(uid: int, org: int, sid: str) -> None:
                 result = data.get("result") or {}
                 trial_rows = ledger._trials(uid, org, topic["id"])
                 k = ledger.current_k(trial_rows, topic["primary_holding_period"])
-                gate = evaluate(result, snap["rules"], k)
+                checks = (cand.get("evidence", {}).get("development") or {}).get("gate", {}).get("checks") or []
+                obs = next((x.get("actual") for x in checks if x.get("name") == "有效IC观测数"), None)
+                lags = default_lags(int(obs)) if isinstance(obs, (int, float)) and obs >= 2 else None
+                gate = evaluate(result, snap["rules"], k, lags=lags)
                 with get_conn() as c:
                     c.execute(
                         """UPDATE quant_factor_sealed_validations

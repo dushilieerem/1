@@ -95,3 +95,16 @@ class RankICGateTest(unittest.TestCase):
         out = evaluate(self.result([]), self.rules(), k=1)
         self.assertFalse(out['passed'])
         self.assertEqual([c for c in out['checks'] if c['name'] == '日度 Rank IC 序列'][0]['passed'], False)
+
+
+class NegativeFactorSealTest(unittest.TestCase):
+    def test_negative_direction_passes_with_negative_ic(self):
+        series = [{'value': -0.03 + 0.005 * ((i * 7) % 5 - 2)} for i in range(220)]
+        result = {'metrics': {'rank_ic': -0.03, 'max_drawdown': -0.1},
+                  'factor_analysis': {'rank_ic_mean': -0.03, 'rank_ic_series': series},
+                  'meta': {'data_release_id': 'r', 'spec_hash': 's', 'factor_source_hash': 'h'}}
+        rules = {'icMetric': 'rank_ic', 'direction': 'negative', 'minSignedIc': 0.005,
+                 'maxDrawdown': 0.5, 'minObservations': 60}
+        out = evaluate(result, rules, k=1, lags=4)
+        self.assertTrue(out['passed'])
+        self.assertTrue([c for c in out['checks'] if c['name'] == '方向 NW t'][0]['passed'])

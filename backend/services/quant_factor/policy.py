@@ -63,7 +63,7 @@ def snapshot(project):
         request['library_name']=library
     return {'schema':1,'projectId':project['id'],'name':project['name'],'plan':p,'rules':rules,'request':request}
 
-def evaluate(result, rules, k=None):
+def evaluate(result, rules, k=None, lags=None):
     if result.get('error'): raise WorkflowError('计算返回错误：'+str(result['error']))
     metrics=result.get('metrics') or {}; fa=result.get('factor_analysis') or {}; meta=result.get('meta') or {}
     if not all(meta.get(k) for k in ('data_release_id','spec_hash','factor_source_hash')):
@@ -88,7 +88,7 @@ def evaluate(result, rules, k=None):
             checks.append({'name':'日度 Rank IC 序列','actual':None,'operator':'可用','threshold':True,'passed':False})
         else:
             try:
-                nw=newey_west_t(raw)
+                nw=newey_west_t(raw, lags=lags)
                 signed_t=nw['t']*(1 if rules['direction']=='positive' else -1)
                 required=threshold(k if isinstance(k,int) and k>=1 else 1)
                 checks.append({'name':'方向 NW t','actual':signed_t,'operator':'>=','threshold':required,'passed':signed_t>=required})

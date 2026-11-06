@@ -133,6 +133,8 @@ def run(uid,org,jid):
             keys=('hypothesis','improvementScope','target','name','code') if draft.get('mode')=='improve' else ('hypothesis','candidateExpression','improvementScope','target','name','code')
             prompt=json.dumps({k:draft.get(k,'') for k in keys},ensure_ascii=False,separators=(',',':'))
             instruction=('按 improvementScope 明确允许的范围改进实现；范围中授权的窗口或数学变换可以调整初始 candidateExpression，除此以外保留定义、经济假设与方向。不得为了过门槛简单反号、偷偷改目标或使用未来信息。若没有合理改进就保留原代码。' if draft.get('mode')=='improve' else '按照研究定义实现初始因子。保留初始表达式的窗口、缺失值处理和预测口径。禁止未来数据。')
+            instruction += (' 代码只允许简单面板表达式：字段仅 open/high/low/close/volume/amount/turnover/current_mv/listed_status/the_sw_industry_code/up_and_down_status；运算符仅 + - * / ** 和比较；方法仅白名单（rank/rolling/shift/pct_change/mean/std/sum/where/mask/fillna/clip/groupby/transform 等）。'
+                            ' 禁止位运算 & | ^ ~、and/or/not、if/else、lambda、循环、import、多语句；布尔条件请用 where/mask 或乘法组合。禁止 groupby(axis=)。')
             from services.core.ai_factor_input import factor_prompt_error
             prompt_error=factor_prompt_error(instruction+'\n'+prompt)
             if prompt_error:raise WorkflowError(prompt_error+'；请精简研究说明，完整报告仍已保留。')

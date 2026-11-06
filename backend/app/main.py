@@ -92,6 +92,13 @@ def _warm_quant_cache() -> None:
 async def lifespan(_app: FastAPI):
     _configure_threadpool()
     bootstrap_schemas()
+    try:
+        from services.quant_factor.f0 import mark_interrupted
+        from services.quant_factor.service import mark_interrupted_candidates
+        mark_interrupted()
+        mark_interrupted_candidates()
+    except Exception:
+        pass
     threading.Thread(target=_warm_quant_cache, name="quant-prewarm", daemon=True).start()
     yield
 

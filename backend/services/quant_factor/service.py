@@ -318,3 +318,32 @@ def register_asset(uid,org,cid,library_id):
         card={**row['archive'],'factor':{'id':asset['id'],'libraryId':asset['libraryId'],'name':asset['name']}}
         c.execute('UPDATE quant_factor_candidates SET archive=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s',(store.encode(card),store.encode([event('factor_library_registered',factor_id=asset['id'],library_id=asset['libraryId'],purpose='research_only')]),cid))
     return current(uid,org,cid)
+
+
+def mark_interrupted_candidates() -> int:
+    """BFF 重启后在途 F4 线程已不存在；标记为可重试的中断，不伪造结果。"""
+    with get_conn() as c:
+        rows = [dict(r) for r in c.execute(
+            "SELECT id,user_id,org_id,status,evidence FROM quant_factor_candidates "
+            "WHERE status LIKE '%_running'").fetchall()]
+    marked = 0
+    for row in rows:
+        phase = str(row["status"]).split("_")[0]
+        if phase not in ("development", "validation"):
+            continue
+        evidence = dict(row.get("evidence") or {})
+        block = dict(evidence.get(phase) or {})
+        block.update({
+            "interrupted": True,
+            "message": "开发服务重启，在途计算未能回写；请从 F4 重新发起受控检验。",
+        })
+        evidence[phase] = block
+        try:
+            store.update(row["user_id"], row["org_id"], row["id"], phase + "_error",
+                         event("run_interrupted", message=block["message"]), evidence)
+            marked += 1
+        except Exception:
+            continue
+    return marked
+
+

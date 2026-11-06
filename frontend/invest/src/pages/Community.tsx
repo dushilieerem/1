@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { MessageSquare, Plus } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -31,6 +31,7 @@ const SECTION_EN: Record<string, string> = {
 
 export default function Community() {
   const { user } = useAuth();
+  const nav = useNavigate();
   const { t, locale } = useLocale();
   const sectionLabel = (label: string) => (locale === "en" ? SECTION_EN[label] || label : label);
   const [feed, setFeed] = useState<Feed | null>(null);
@@ -56,6 +57,8 @@ export default function Community() {
       <PageHeader
         title={t("社区", "Community")}
         sub={t("策略、因子与热点讨论 · 内容需遵守社区规范", "Strategies, factors, and market topics · follow the community guidelines")}
+        back
+        onBack={() => nav(-1)}
         right={
           user ? (
             <Link to="/community/new" className="round-btn" aria-label={t("发帖", "New post")}>

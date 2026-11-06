@@ -665,6 +665,7 @@ def backtest_ai(
 @router.post("/voice")
 def voice(
     body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
     conn: PGConn = Depends(invest_conn),
 ) -> dict[str, Any]:
     b64 = str(body.get("audio_base64") or "").strip()

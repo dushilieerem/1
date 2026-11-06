@@ -172,6 +172,8 @@ test("详情页：研究、辩论、审批（有数据时）", async ({ browser 
     await expect(page.getByText("K 线（实时行情）", { exact: true })).toBeVisible();
     await expect(page.getByText("六维分析", { exact: true })).toBeVisible();
     await expect(page.getByText("AI 一页纸", { exact: true })).toBeVisible();
+    await expect(page.getByText("版本与审核", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /进入投资辩论|Enter debate/ }).first()).toBeVisible();
     const returnButton = page.getByRole("button", { name: /退回并重跑|Return & rerun/ });
     if (await returnButton.count()) {
       await returnButton.click();

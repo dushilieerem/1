@@ -10,6 +10,8 @@ import json
 import uuid
 
 from services.core.db import get_conn
+from services.core.tenant import Tenant
+from . import repo
 from services.factor.re_factor_catalog import fetch_re_catalog
 
 EXPECTED_CATALOG_COUNT = 331
@@ -184,13 +186,8 @@ def reference_inventory(uid: int, org: int) -> dict:
 
 
 def summary(uid: int, org: int) -> dict:
-    with get_conn() as c:
-        rows = c.execute(
-            """SELECT status,metrics_status,COUNT(*) AS n
-               FROM quant_factor_imported_factors WHERE org_id=%s
-               GROUP BY status,metrics_status ORDER BY status,metrics_status""",
-            (org,)).fetchall()
-    return {"by_status": [dict(row) for row in rows], "total": sum(row["n"] for row in rows)}
+    rows = repo.imported_summary(Tenant.from_pair(uid, org))
+    return {"by_status": rows, "total": sum(row["n"] for row in rows)}
 
 
 __all__ = ["EXPECTED_CATALOG_COUNT", "REFERENCE_RULE_VERSION", "reference_inventory", "summary", "sync_existing"]

@@ -7,6 +7,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from services.core.db import get_conn
+from services.core.env_config import env
 from services.factor.detect_store import get_project, _row_project, save_run
 from services.factor.re_factor_async_proxy import proxy_submit_factor_backtest,proxy_get_factor_run,proxy_cancel_factor_run
 from services.strategy.result_signature import sign_result
@@ -17,6 +18,26 @@ POOL=ThreadPoolExecutor(max_workers=2,thread_name_prefix='quant-factor-verify')
 _BACKFILL_LOCK=threading.Lock()
 
 def event(action,**details): return {'at':datetime.now(timezone.utc).isoformat(),'action':action,**details}
+def _dispatch(uid,org,cid,phase=None,executor="human",f0_run_id=None):
+    """inline：进程内线程池；queue：写 background_jobs，由 worker.py 消费。"""
+    mode=(env('QUANT_FACTOR_JOB_MODE','inline') or 'inline').strip().lower()
+    if mode=='queue':
+        from . import jobs
+        try:
+            if phase:
+                jobs.enqueue_run(uid,org,cid,phase,executor,f0_run_id)
+            else:
+                jobs.enqueue_retry(uid,org,cid)
+        except Exception as exc:
+            status=(phase+'_error') if phase else 'development_error'
+            store.update(uid,org,cid,status,event('queue_error',message='长任务入队失败，未自动重试'))
+            raise WorkflowError('长任务入队失败：'+str(exc)[:300]) from exc
+        return
+    if phase:
+        POOL.submit(run,uid,org,cid,phase,executor,f0_run_id)
+    else:
+        POOL.submit(_retry_novelty,uid,org,cid)
+
 
 def public(row):
     return {k:v for k,v in row.items() if k not in ('user_id','org_id')}
@@ -77,7 +98,7 @@ def create(uid,org,project_id,expected_snapshot_hash=None,reference=None,executo
     if existing and existing['status'] in ('development_passed','development_failed','development_error'):
         try:_ensure_development_trial(uid,org,cid,executor,f0_run_id)
         except Exception:pass
-    if not existing:POOL.submit(run,uid,org,cid,'development',executor,f0_run_id)
+    if not existing:_dispatch(uid,org,cid,'development',executor,f0_run_id)
     return current(uid,org,cid)
 
 
@@ -120,7 +141,7 @@ def validate(uid,org,cid):
         p=c.execute('SELECT * FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,row['project_id'])).fetchone()
         if not p or digest(snapshot(_row_project(dict(p))))!=row['snapshot_hash']: raise WorkflowError('研究输入已变化，请重新冻结并检验当前版本')
         c.execute("UPDATE quant_factor_candidates SET status='validation_running',events=events||%s::jsonb,updated_at=NOW() WHERE id=%s",(store.encode([event('validation_queued',sealed=False)]),cid))
-    POOL.submit(run,uid,org,cid,'validation','human',None)
+    _dispatch(uid,org,cid,'validation','human',None)
     return current(uid,org,cid)
 
 def _gate_k(uid,org,project_id,phase):
@@ -243,7 +264,7 @@ def retry_novelty(uid,org,cid):
         if c.execute("SELECT id FROM quant_factor_iterations WHERE user_id=%s AND org_id=%s AND project_id=%s AND status IN ('queued','running')",(uid,org,row['project_id'])).fetchone():
             raise WorkflowError('请等待当前自动循环停止后重试对照，避免并发执行。')
         c.execute("UPDATE quant_factor_candidates SET status='development_running',events=events||%s::jsonb,updated_at=NOW() WHERE id=%s",(store.encode([event('novelty_retry_queued',message='仅重试冻结库对照，复用原研发报告，不新增候选或重跑回测。')]),cid))
-    POOL.submit(_retry_novelty,uid,org,cid)
+    _dispatch(uid,org,cid,None)
     return current(uid,org,cid)
 
 def _retry_novelty(uid,org,cid):

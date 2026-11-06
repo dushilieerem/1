@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Download, FileSearch, Loader2, Lock, Sparkles } from "lucide-react";
+import { ArrowLeft, Download, FileSearch, Loader2, Sparkles } from "lucide-react";
 import { instApi, fmtNum, fmtDateTime } from "@/lib/instApi";
 import { getInstToken } from "@/lib/instAuth";
 import { useInstSession } from "@/components/institution/instSessionContext";
@@ -24,6 +24,8 @@ type Dim = {
   rating?: number | null;
   gate?: string | null;
   analysis_md?: string;
+  gate_note?: string;
+  data_completeness?: { level?: string; have?: string[]; missing?: string[] };
   key_numbers?: unknown[];
   falsifiers?: unknown[];
   thesis_links?: unknown[];
@@ -69,6 +71,8 @@ type Memo = {
   base_value?: number;
   stale?: boolean;
   generated_at?: string;
+  data_gate_note?: string;
+  data_gates?: Record<string, string>;
   metrics?: Array<{ label: string; value: string; note?: string }>;
   engine?: string;
 };
@@ -149,6 +153,48 @@ function sourceLabel(source?: string): string {
   if (raw === "eastmoney") return "东方财富";
   if (raw === "agent") return "AI Agent";
   return raw;
+}
+
+function DataCompleteness({
+  data,
+}: {
+  data?: { level?: string; have?: string[]; missing?: string[] } | null;
+}) {
+  const { t } = useInstLocale();
+  if (!data?.level) return null;
+  const label =
+    data.level === "missing"
+      ? t("数据缺失", "Data missing")
+      : data.level === "partial"
+        ? t("数据部分可得", "Partial data")
+        : t("数据充分", "Sufficient data");
+  const tone = data.level === "missing" ? "red" : data.level === "partial" ? "amber" : "green";
+  const missing = data.missing || [];
+  return (
+    <details className="mt-2 rounded-lg border border-[#e3eaf8] bg-white px-3 py-2 text-[11px] text-[#68738b]">
+      <summary className="flex cursor-pointer flex-wrap items-center gap-2">
+        <span className="font-medium text-[#505369]">{t("数据完备性", "Data completeness")}</span>
+        <Badge tone={tone}>{label}</Badge>
+        {missing.length ? <span>{t("缺", "Missing")} {missing.length} {t("项", "items")}</span> : null}
+      </summary>
+      {missing.length ? (
+        <div className="mt-2">
+          <p className="font-medium text-[#505369]">{t("缺失数据", "Missing data")}</p>
+          <ul className="mt-1 list-disc pl-4">
+            {missing.map((x) => (
+              <li key={x}>{x}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {data.have?.length ? (
+        <p className="mt-2">
+          <span className="font-medium text-[#505369]">{t("已具备", "Available")}：</span>
+          {data.have.join("；")}
+        </p>
+      ) : null}
+    </details>
+  );
 }
 
 export function InstResearchPage() {
@@ -649,6 +695,10 @@ export function InstResearchPage() {
               <p className="text-xs leading-relaxed text-[#505369]">
                 {clipBrief(version.industry_analysis.summary) || t("待补充", "TBD")}
               </p>
+              <DataCompleteness data={version.industry_analysis.data_completeness} />
+              {version.industry_analysis.gate_note ? (
+                <p className="text-[11px] leading-relaxed text-amber-700">{version.industry_analysis.gate_note}</p>
+              ) : null}
               {version.industry_analysis.checks?.length ? (
                 <ul className="space-y-1 text-[11px] leading-relaxed text-[#68738b]">
                   {version.industry_analysis.checks.slice(0, 5).map((item) => (
@@ -744,51 +794,55 @@ export function InstResearchPage() {
         </Card>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-[1.55fr_1fr]">
-        <div className="space-y-4">
-          <Card
-            title={t("六维分析", "Six-dimension analysis")}
-            desc={t("按目录切换六个维度；单维可单独分析、向 AI 追问。AI 一页纸在下方单独展示，整体审核在右侧一次完成。", "Switch between the six dimensions; each can be re-analyzed or queried. The AI one-pager is shown separately below, and final approval is done once on the right.")}
-            actions={
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <div role="tablist" aria-label={t("维度目录", "Dimension directory")} className="flex flex-wrap gap-1">
-                  {AGENT_TITLES.map(([key, label]) => {
-                    const selected = (activeDimData?.key || activeDim) === key;
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        role="tab"
-                        aria-selected={selected}
-                        onClick={() => setActiveDim(key)}
-                        className={`rounded-md border px-2 py-1 text-[11px] transition ${
-                          selected
-                            ? "border-[#b42345] bg-[#fbe9ef] text-[#a31f42]"
-                            : "border-[#dde5f2] bg-white text-[#68738b] hover:border-[#7950ba]"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <Button
-                  variant="gold"
-                  disabled={!canWrite || !!busy || !!dimBusy}
-                  onClick={() => void autopilot()}
-                >
-                  <Sparkles className="mr-1 h-4 w-4" />
-                  {busy === "auto"
-                    ? version
-                      ? t("6 个 Agent 重新生成中…", "Regenerating with 6 agents…")
-                      : t("6 个 Agent 正在生成中…", "Generating with 6 agents…")
-                    : version
-                      ? t("重新生成六维分析", "Regenerate six-dimension analysis")
-                      : t("生成六维分析", "Generate six-dimension analysis")}
-                </Button>
-              </div>
-            }
+      <Card
+        title={t("六维分析", "Six-dimension analysis")}
+        desc={t("左侧选择维度，右侧查看该维结论、证据与追问；AI 一页纸在下方单独展示。", "Pick a dimension on the left and read its conclusion, evidence and follow-up on the right; the AI one-pager is shown below.")}
+        actions={
+          <Button
+            variant="gold"
+            disabled={!canWrite || !!busy || !!dimBusy}
+            onClick={() => void autopilot()}
           >
+            <Sparkles className="mr-1 h-4 w-4" />
+            {busy === "auto"
+              ? version
+                ? t("6 个 Agent 重新生成中…", "Regenerating with 6 agents…")
+                : t("6 个 Agent 正在生成中…", "Generating with 6 agents…")
+              : version
+                ? t("重新生成六维分析", "Regenerate six-dimension analysis")
+                : t("生成六维分析", "Generate six-dimension analysis")}
+          </Button>
+        }
+      >
+        <div className="grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
+          <div
+            role="tablist"
+            aria-label={t("维度目录", "Dimension directory")}
+            className="flex gap-1 overflow-x-auto pb-1 md:flex-col md:overflow-visible md:pb-0"
+          >
+            {AGENT_TITLES.map(([key, label]) => {
+              const selected = (activeDimData?.key || activeDim) === key;
+              const dim = dims.find((d) => d.key === key);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setActiveDim(key)}
+                  className={`flex shrink-0 items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-xs transition md:w-full ${
+                    selected
+                      ? "border-[#b42345] bg-[#fbe9ef] text-[#a31f42]"
+                      : "border-[#dde5f2] bg-white text-[#68738b] hover:border-[#7950ba]"
+                  }`}
+                >
+                  <span className="whitespace-nowrap">{label}</span>
+                  {dim?.status ? <StatusBadge status={dim.status} /> : null}
+                </button>
+              );
+            })}
+          </div>
+          <div className="min-w-0">
             {activeDimData ? (
               <div className="space-y-3">
                 {activeDimData.engine === "rule" && activeDimData.agent_error ? (
@@ -818,6 +872,10 @@ export function InstResearchPage() {
                   </div>
                   <p className="mt-1 text-[11px] leading-relaxed text-[#68738b]">{activeDimData.question}</p>
                   <p className="mt-2 text-xs leading-relaxed text-[#505369]">{clipBrief(activeDimData.summary) || t("待补充", "TBD")}</p>
+                  <DataCompleteness data={activeDimData.data_completeness} />
+                  {activeDimData.gate_note ? (
+                    <p className="text-[11px] leading-relaxed text-amber-700">{activeDimData.gate_note}</p>
+                  ) : null}
                   {activeDimData.analysis_md ? (
                     <details className="mt-2 rounded-lg border border-[#e3eaf8] bg-white px-3 py-2">
                       <summary className="cursor-pointer text-[11px] font-medium text-[#7950ba]">
@@ -931,96 +989,15 @@ export function InstResearchPage() {
                 </div>
               </div>
             ) : (
-              <Empty>{t("正在自动开展六维分析；如未开始，可点击右上角。", "Six-dimension analysis starts automatically; use the top-right button if needed.")}</Empty>
+              <Empty>
+                {version
+                  ? t("正在自动开展六维分析；如未开始，可点击右上角。", "Six-dimension analysis starts automatically; use the top-right button if needed.")
+                  : t("还没有研究版本。", "No research version yet.")}
+              </Empty>
             )}
-          </Card>
-
+          </div>
         </div>
-
-        <div className="space-y-4">
-          <Card title={t("版本与审核", "Version & review")}>
-            {version ? (
-              <>
-                <Field label={t("版本", "Version")} value={`v${version.version_no}`} />
-                <Field label={t("状态", "Status")} value={<StatusBadge status={version.status} />} />
-                <Field label={t("结论", "Conclusion")} value={version.conclusion || t("待补充", "TBD")} />
-                <Field label={t("证据数", "Evidence")} value={`${version.evidence_ids?.length || 0} ${t("条", "items")}`} />
-                <Field label={t("截止日", "Cutoff")} value={version.cutoff || t("待补充", "TBD")} />
-                <Field
-                  label={t("内容 hash", "Content hash")}
-                  value={
-                    version.content_hash ? (
-                      <span className="font-mono text-[10px]" title={version.content_hash}>
-                        {version.content_hash.slice(0, 12)}…
-                      </span>
-                    ) : (
-                      t("待补充", "TBD")
-                    )
-                  }
-                />
-                <Field
-                  label={t("冻结时间", "Frozen at")}
-                  value={version.frozen_at ? fmtDateTime(version.frozen_at) : t("未冻结", "Not frozen")}
-                />
-                {version.valuation ? (
-                  <div className="mt-3 rounded-xl border border-[#7950ba]/30 bg-[#f2eafa] p-3 text-xs text-[#b42345]">
-                    <p className="font-medium">{t("估值口径", "Valuation basis")}</p>
-                    <p className="mt-1 leading-relaxed">
-                      {String((version.valuation as Record<string, unknown>).note || t("演示口径，不是目标价。", "Demo basis, not a target price."))}
-                    </p>
-                  </div>
-                ) : null}
-                {version.status === "pending_review" ? (
-                  <div className="mt-4 space-y-2">
-                    <textarea
-                      value={comment}
-                      onChange={(e) => setComment(e.target.value)}
-                      placeholder={t("审核意见（退回时必须填写）", "Review comment (required when returning)")}
-                      className="min-h-[72px] w-full rounded-lg border border-[#dde5f2] bg-[#f8faff] p-2 text-xs outline-none focus:border-[#7950ba]"
-                    />
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        variant="gold"
-                        disabled={!canWrite || !!busy}
-                        onClick={() => void approveAndDebate()}
-                      >
-                        {busy === "approve" ? t("提交中…", "Submitting…") : t("审核通过", "Approve")}
-                      </Button>
-                      <Button
-                        variant="danger"
-                        disabled={!canWrite || !!busy}
-                        onClick={() => {
-                          setReturnError(null);
-                          setReturnOpen(true);
-                        }}
-                      >
-                        {busy === "return" ? t("重跑中…", "Rerunning…") : t("退回并重跑", "Return & rerun")}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-                {version.status === "approved" ? (
-                  <div className="mt-4">
-                    <div className="mb-2 flex items-center gap-2 text-[11px] text-emerald-700">
-                      <Lock className="h-3.5 w-3.5" /> {t("已冻结审核版本，可进入辩论", "Approved version is frozen; debate can start")}
-                    </div>
-                    <Button
-                      variant="primary"
-                      disabled={!canWrite || !!busy}
-                      onClick={() => nav(`/inst/debate?case=${caseId}`)}
-                    >
-                      {t("进入投资辩论", "Enter debate")}
-                    </Button>
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <Empty>{t("还没有研究版本。", "No research versions yet.")}</Empty>
-            )}
-          </Card>
-
-        </div>
-      </div>
+      </Card>
 
       <Card
         title={t("AI 一页纸", "AI one-pager")}
@@ -1084,6 +1061,11 @@ export function InstResearchPage() {
               <p className="mt-1 text-xs leading-relaxed text-[#505369]">
                 {clipBrief(memo.summary) || t("待补充", "TBD")}
               </p>
+              {memo.data_gate_note ? (
+                <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
+                  {memo.data_gate_note}
+                </p>
+              ) : null}
               {memo.memo_md ? (
                 <details className="mt-2 rounded-lg border border-[#e3eaf8] bg-[#f8faff] px-3 py-2">
                   <summary className="cursor-pointer text-[11px] font-medium text-[#7950ba]">
@@ -1241,6 +1223,31 @@ export function InstResearchPage() {
           </Empty>
         )}
       </Card>
+
+      {version ? (
+        <div className="flex flex-col items-center gap-2 py-2">
+          <Button
+            variant="gold"
+            disabled={!canWrite || !!busy}
+            onClick={() => {
+              if (version.status === "approved") {
+                nav(`/inst/debate?case=${caseId}`);
+              } else {
+                void approveAndDebate();
+              }
+            }}
+          >
+            {busy === "approve"
+              ? t("提交中…", "Submitting…")
+              : t("进入投资辩论", "Enter debate")}
+          </Button>
+          <p className="text-[11px] text-[#77718c]">
+            {version.status === "approved"
+              ? t("使用已冻结的研究版本进入投资辩论。", "Enter the debate with the frozen research version.")
+              : t("点击后将冻结当前研究版本，并进入投资辩论。", "This freezes the current research version and enters the investment debate.")}
+          </p>
+        </div>
+      ) : null}
 
       {returnOpen && version ? (
         <div

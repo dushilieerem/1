@@ -37,7 +37,12 @@ def _get(path: str) -> dict | None:
 
 def _metrics() -> str:
     try:
-        with urllib.request.urlopen(f"{BASE}/api/metrics", timeout=TIMEOUT) as resp:
+        headers = {}
+        token = (os.environ.get("METRICS_TOKEN") or "").strip()
+        if token:
+            headers["X-Metrics-Token"] = token
+        req = urllib.request.Request(f"{BASE}/api/metrics", headers=headers)
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
             return resp.read().decode("utf-8", "replace")
     except (urllib.error.URLError, TimeoutError):
         return ""
@@ -79,8 +84,16 @@ def main() -> int:
     except OSError:
         free_ratio = None
 
+    pool = (health or {}).get("db_pool") or {}
+    queue = (health or {}).get("queue") or {}
+    db_conn = (health or {}).get("db_connections") or {}
     alerts = evaluate_signals(
         health=health,
+        db_pool_used=pool.get("used"),
+        db_pool_limit=pool.get("limit"),
+        queue_backlog=int(queue.get("queued") or 0),
+        db_connections_used=db_conn.get("used"),
+        db_connections_limit=db_conn.get("limit"),
         data_age_days=quality.get("ageDays"),
         max_data_age_days=float(os.environ.get("SVQ_MAX_DATA_AGE_DAYS") or "2"),
         open_reports=_metric_value(metrics, "svquant_open_community_reports"),

@@ -249,14 +249,17 @@ test("量化研究入口与因子/策略库可打开", async ({ page }) => {
   await noHorizontalOverflow(page);
 });
 
-test("量化研究入口页展示今日关注与四个入口", async ({ page }) => {
+test("量化研究入口页展示今日关注与五个入口", async ({ page }) => {
   await loginByToken(page);
   await page.goto(`${H5}/quant`, { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "量化研究" })).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator(".quant-entry")).toHaveCount(4);
+  await expect(page.locator(".quant-entry")).toHaveCount(5);
+  await expect(page.locator(".quant-entry").last()).toContainText("社区");
   await expect(page.locator(".quant-focus-bar")).toBeVisible();
-  await expect(page.locator(".quant-style-card")).toBeVisible();
+  await expect(page.locator(".quant-style-card")).toHaveCount(0);
   await expect(page.locator(".tab.on")).toContainText("量化");
+  await page.locator(".quant-entry").last().click();
+  await expect(page.getByRole("heading", { name: "社区" })).toBeVisible({ timeout: 20_000 });
   await noHorizontalOverflow(page);
 });
 
@@ -394,6 +397,38 @@ test("AI 管家可发送问题并渲染卡片", async ({ page }) => {
   await noHorizontalOverflow(page);
 });
 
+test("AI 管家实时语音识别写入输入框，不自动发送", async ({ page }) => {
+  await loginByToken(page);
+  await page.addInitScript(() => {
+    class FakeSpeechRecognition {
+      lang = "";
+      continuous = false;
+      interimResults = false;
+      maxAlternatives = 1;
+      onstart: (() => void) | null = null;
+      onresult: ((event: any) => void) | null = null;
+      onerror: ((event: any) => void) | null = null;
+      onend: (() => void) | null = null;
+      start() {
+        this.onstart?.();
+        setTimeout(() => {
+          this.onresult?.({ results: [[{ transcript: "贵州茅台" }]] });
+          this.onend?.();
+        }, 30);
+      }
+      stop() { this.onend?.(); }
+      abort() { this.onend?.(); }
+    }
+    (window as any).SpeechRecognition = FakeSpeechRecognition;
+    (window as any).webkitSpeechRecognition = FakeSpeechRecognition;
+  });
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "语音输入" }).click();
+  await expect(page.locator(".ai-composer textarea")).toHaveValue("贵州茅台", { timeout: 10_000 });
+  await expect(page.locator(".ai-msg.user")).toHaveCount(0);
+  await noHorizontalOverflow(page);
+});
+
 test("AI 管家选股：面板填句 → 条件卡 → 结果卡与行业分布", async ({ page }) => {
   await loginByToken(page);
   await page.route("**/api/invest/condition/screen", (route) =>
@@ -424,8 +459,8 @@ test("AI 管家选股：面板填句 → 条件卡 → 结果卡与行业分布"
     }),
   );
   await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "打开选股面板" }).click();
-  await expect(page.getByText("选股方向")).toBeVisible();
+  await page.getByRole("button", { name: "打开条件选股" }).click();
+  await expect(page.getByText("条件选股").last()).toBeVisible();
   await expect(page.getByText("低估优选")).toBeVisible();
   await page.getByRole("button", { name: /低估优选/ }).click();
   const input = page.locator(".ai-composer textarea");
@@ -466,55 +501,37 @@ test("AI 管家直接输入条件句也会进入筛选", async ({ page }) => {
   await noHorizontalOverflow(page);
 });
 
-test("AI 管家选股：资金流条件标红并可去掉后重筛", async ({ page }) => {
+test("AI 管家选股：资金流预设可用并展示条件", async ({ page }) => {
   await loginByToken(page);
-  let calls = 0;
   await page.route("**/api/invest/condition/screen", (route) => {
-    calls += 1;
     const body = route.request().postDataJSON();
-    if (body?.conditions) {
-      return route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({
-          ok: true,
-          status: "ok",
-          conditions: body.conditions,
-          count: 1,
-          items: [{ code: "600519", name: "贵州茅台", industry: "食品饮料", price: 1439.1, change_pct: 1.2 }],
-          summary: ["共筛出 1 只。"],
-          risk: "历史 EOD 数据。",
-          industry_distribution: [{ name: "食品饮料", count: 1, pct: 100 }],
-          followups: ["这批股票属于哪些行业", "按 ROE 从高到低看", "把条件放宽一点"],
-        }),
-      });
-    }
     return route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
         ok: true,
-        status: "needs_input",
-        conditions: [
+        status: "ok",
+        conditions: body.conditions || [
           { key: "market_cap", label: "总市值", op: "max", value: 200, unit: "亿", text: "总市值 ≤ 200亿", supported: true },
-          { key: "main_net_inflow_5d", label: "5 日主力净流入", op: "min", value: 5000, unit: "万", text: "5 日主力净流入 ≥ 5000万", supported: false, supported_reason: "当前版本暂不支持" },
+          { key: "return_20d", label: "近 20 日涨幅", op: "min", value: 10, unit: "%", text: "近 20 日涨幅 ≥ 10%", supported: true },
+          { key: "main_net_inflow_5d", label: "5 日主力净流入", op: "min", value: 5000, unit: "万", text: "5 日主力净流入 ≥ 5000万", supported: true },
         ],
-        unsupported: [{ key: "main_net_inflow_5d", label: "5 日主力净流入", supported: false }],
-        message: "当前版本暂不支持该类条件，未执行筛选。",
-        disclaimer: "历史 EOD 数据 · 不含实时与资金流 · 非投资建议",
+        count: 1,
+        items: [{ code: "600519", name: "贵州茅台", industry: "食品饮料", price: 1439.1, change_pct: 1.2 }],
+        summary: ["共筛出 1 只。"],
+        risk: "历史 EOD 数据。",
+        industry_distribution: [{ name: "食品饮料", count: 1, pct: 100 }],
+        followups: ["这批股票属于哪些行业", "按 ROE 从高到低看", "把条件放宽一点"],
       }),
     });
   });
   await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "打开选股面板" }).click();
-  await expect(page.getByRole("button", { name: /小市值弹性/ })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /主力连续流入/ })).toHaveCount(0);
-  await page.getByRole("button", { name: "关闭" }).click();
-  await page.locator(".ai-composer textarea").fill("近 5 日主力净流入大于 5000 万");
+  await page.getByRole("button", { name: "打开条件选股" }).click();
+  await expect(page.getByRole("button", { name: /小市值弹性/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /主力连续流入/ })).toBeVisible();
+  await page.getByRole("button", { name: /小市值弹性/ }).click();
   await page.getByRole("button", { name: "发送" }).click();
-  await expect(page.getByText("暂不支持", { exact: true })).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText("当前版本暂不支持该类条件", { exact: false }).first()).toBeVisible();
-  await page.getByRole("button", { name: /删除条件 5 日主力净流入/ }).click();
-  await expect(page.getByText("共 1 只")).toBeVisible({ timeout: 20_000 });
-  expect(calls).toBeGreaterThan(1);
+  await expect(page.getByText("按你设定的 3 个条件，共筛出 1 只。")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("5 日主力净流入", { exact: true })).toBeVisible();
   await noHorizontalOverflow(page);
 });
 

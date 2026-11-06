@@ -6,7 +6,7 @@ import os
 from fastapi import APIRouter
 
 from app.bootstrap import FACTOR_DIR
-from services.core.db import get_conn
+from services.core.db import get_conn, pool_stats
 from services.core.env_config import env
 
 router = APIRouter(tags=["health"])
@@ -19,6 +19,8 @@ def health() -> dict:
     db_ok = False
     schema: dict | None = None
     data_sync: dict | None = None
+    queue: dict | None = None
+    connections: dict | None = None
     try:
         with get_conn() as conn:
             conn.execute("SELECT 1")
@@ -38,6 +40,23 @@ def health() -> dict:
                         "finished_at": str(row.get("finished_at") or "") or None,
                         "last_error": row.get("last_error"),
                     }
+            q_exists = conn.execute(
+                "SELECT to_regclass('public.background_jobs') AS t"
+            ).fetchone()
+            if q_exists and q_exists.get("t"):
+                rows = conn.execute(
+                    "SELECT status, COUNT(*) AS n FROM background_jobs GROUP BY status"
+                ).fetchall()
+                queue = {str(r["status"]): int(r["n"] or 0) for r in rows}
+            conn_row = conn.execute(
+                "SELECT COUNT(*) AS used, current_setting('max_connections') AS max_conn "
+                "FROM pg_stat_activity"
+            ).fetchone()
+            if conn_row:
+                connections = {
+                    "used": int(conn_row.get("used") or 0),
+                    "limit": int(conn_row.get("max_conn") or 0),
+                }
         db_ok = True
         from services.core.migrations import status as migration_status
 
@@ -49,8 +68,11 @@ def health() -> dict:
         "service": "svquant",
         "port": PORT,
         "db": "ok" if db_ok else "error",
+        "db_pool": pool_stats(),
         "schema": schema,
         "data_sync": data_sync,
+        "queue": queue,
+        "db_connections": connections,
         "worker_mode": (env("SVQUANT_WORKER_MODE", "single") or "single"),
         "multi_instance_supported": False,
         "in_memory_state": [

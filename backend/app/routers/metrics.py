@@ -1,16 +1,32 @@
 # -*- coding: utf-8 -*-
-"""最小 Prometheus 指标（P1-O03 首版）。
+"""Prometheus 指标：库表聚合计数 + 进程内 HTTP 指标。
 
-只暴露聚合计数，不含用户名/内容；建议仅内网抓取。
+只暴露聚合计数，不含用户名/内容；默认仅本机可读，生产采集端配置 METRICS_TOKEN。
 """
 from __future__ import annotations
 
-from fastapi import APIRouter
+import hmac
+
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
-from services.core.db import get_conn
+from services.core import http_metrics
+from services.core.db import get_conn, pool_stats
+from services.core.env_config import env
 
 router = APIRouter(tags=["metrics"])
+
+
+def _authorized(request: Request) -> bool:
+    token = (env("METRICS_TOKEN", "") or "").strip()
+    if token:
+        provided = request.headers.get("x-metrics-token") or ""
+        auth = request.headers.get("authorization") or ""
+        if auth.lower().startswith("bearer "):
+            provided = auth.split(None, 1)[1].strip()
+        return hmac.compare_digest(provided, token)
+    host = request.client.host if request.client else ""
+    return host in {"127.0.0.1", "::1"}
 
 
 def _count(conn, table: str, where: str = "") -> int:
@@ -22,7 +38,9 @@ def _count(conn, table: str, where: str = "") -> int:
 
 
 @router.get("/api/metrics")
-def metrics() -> Response:
+def metrics(request: Request) -> Response:
+    if not _authorized(request):
+        raise HTTPException(status_code=403, detail="metrics 需要 METRICS_TOKEN 或本机访问")
     lines = ["# HELP svquant_up SVQuant API up", "# TYPE svquant_up gauge", "svquant_up 1"]
     try:
         with get_conn() as conn:
@@ -42,4 +60,7 @@ def metrics() -> Response:
             ]
     except Exception:
         lines += ["# TYPE svquant_db_up gauge", "svquant_db_up 0"]
-    return Response(content="\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
+    lines.append(http_metrics.render(pool=pool_stats()).rstrip("\n"))
+    return Response(
+        content="\n".join(lines) + "\n", media_type="text/plain; version=0.0.4; charset=utf-8"
+    )

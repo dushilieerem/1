@@ -124,11 +124,32 @@ def job_status(job_id: int) -> dict[str, Any] | None:
     return item
 
 
+def recover_stale(kind: str, *, older_than_sec: float = 1800.0) -> int:
+    """把长时间 running 的任务重新排队；worker 崩溃后不会永久卡住。"""
+    ensure_job_schema()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            UPDATE background_jobs
+            SET status='queued', locked_at=NULL,
+                error=COALESCE(NULLIF(error,''), '') || CASE WHEN error IS NULL OR error='' THEN '' ELSE '; ' END || 'stale recovered',
+                updated_at=NOW()
+            WHERE kind=%s AND status='running'
+              AND locked_at IS NOT NULL
+              AND locked_at < NOW() - (%s * INTERVAL '1 second')
+            RETURNING id
+            """,
+            (str(kind), float(older_than_sec)),
+        ).fetchall()
+    return len(rows)
+
+
 def start_worker(
     kind: str,
     handler: Callable[[dict[str, Any]], dict[str, Any] | None],
     *,
     poll_sec: float = 5.0,
+    stale_sec: float = 1800.0,
 ) -> None:
     """每个实例启动一个轮询 worker（幂等）。"""
     global _started
@@ -137,7 +158,14 @@ def start_worker(
             return
 
         def _loop() -> None:
+            last_recover = 0.0
             while True:
+                if time.monotonic() - last_recover >= 60:
+                    try:
+                        recover_stale(kind, older_than_sec=stale_sec)
+                    except Exception:
+                        pass
+                    last_recover = time.monotonic()
                 job = None
                 try:
                     job = claim(kind)

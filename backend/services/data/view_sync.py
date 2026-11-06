@@ -688,6 +688,65 @@ def _sync_index(conn, view: ViewInfo) -> int:
     return total
 
 
+_FUND_FLOW_DAILY_COLUMNS = [
+    "date", "symbol", "main_net_inflow", "small_net_inflow", "medium_net_inflow",
+    "large_net_inflow", "super_large_net_inflow", "main_net_ratio", "small_net_ratio",
+    "medium_net_ratio", "large_net_ratio", "super_large_net_ratio", "close",
+    "change_pct", "source", "observed_at",
+]
+_FUND_FLOW_CANDIDATE_COLUMNS = [
+    "symbol", "trade_date", "main_net_inflow_5d", "main_net_inflow_latest",
+    "main_net_ratio_latest", "inflow_days_5d", "consecutive_inflow_days",
+    "consecutive_outflow_days", "days_available", "source", "observed_at",
+]
+
+
+def _sync_fund_flow_daily(conn, view: ViewInfo) -> int:
+    if "fund_flow_daily" not in (view.manifest.get("datasets") or {}):
+        return 0
+    total = 0
+    for _, frame in _iter_frames(view, "fund_flow_daily", _FUND_FLOW_DAILY_COLUMNS):
+        rows = (
+            (
+                str(row.symbol), str(row.date)[:10], _clean(row.main_net_inflow),
+                _clean(row.small_net_inflow), _clean(row.medium_net_inflow),
+                _clean(row.large_net_inflow), _clean(row.super_large_net_inflow),
+                _clean(row.main_net_ratio), _clean(row.small_net_ratio),
+                _clean(row.medium_net_ratio), _clean(row.large_net_ratio),
+                _clean(row.super_large_net_ratio), _clean(row.close),
+                _clean(row.change_pct), _clean(row.source), _clean(row.observed_at),
+            )
+            for row in frame.itertuples(index=False)
+        )
+        total += _copy_rows(conn, "tmp_md_fund_flow_daily", [
+            "symbol", "trade_date", "main_net_inflow", "small_net_inflow",
+            "medium_net_inflow", "large_net_inflow", "super_large_net_inflow",
+            "main_net_ratio", "small_net_ratio", "medium_net_ratio",
+            "large_net_ratio", "super_large_net_ratio", "close", "change_pct",
+            "source", "observed_at",
+        ], rows)
+    return total
+
+
+def _sync_fund_flow_candidate(conn, view: ViewInfo) -> int:
+    if "fund_flow_candidate" not in (view.manifest.get("datasets") or {}):
+        return 0
+    total = 0
+    for _, frame in _iter_frames(view, "fund_flow_candidate", _FUND_FLOW_CANDIDATE_COLUMNS):
+        rows = (
+            (
+                str(row.symbol), str(row.trade_date)[:10], _clean(row.main_net_inflow_5d),
+                _clean(row.main_net_inflow_latest), _clean(row.main_net_ratio_latest),
+                _clean(row.inflow_days_5d), _clean(row.consecutive_inflow_days),
+                _clean(row.consecutive_outflow_days), _clean(row.days_available),
+                _clean(row.source), _clean(row.observed_at),
+            )
+            for row in frame.itertuples(index=False)
+        )
+        total += _copy_rows(conn, "tmp_md_fund_flow_candidate", _FUND_FLOW_CANDIDATE_COLUMNS, rows)
+    return total
+
+
 def _sync_risk(conn, view: ViewInfo, start: date, end: date) -> int:
     """可选：数据平台提供 risk_daily 时同步到 md_risk_daily。"""
     if "risk_daily" not in (view.manifest.get("datasets") or {}):
@@ -759,7 +818,8 @@ def _sync_ref_security(conn, view: ViewInfo) -> int:
     frame = pq.read_table(
         files[0], columns=["Symbol", "Name", "IsQuitGP", "J_start", "HSStockKind"]
     ).to_pandas()
-    frame = frame[frame["HSStockKind"].astype(str) == "1"]
+    # 1=沪深主板、2=北交所、3=创业板、4=科创板；只同步股票，不把基金/指数混进来。
+    frame = frame[frame["HSStockKind"].astype(str).isin({"1", "2", "3", "4"})]
     rows = []
     for row in frame.itertuples(index=False):
         symbol = str(row.Symbol or "").strip()
@@ -770,7 +830,7 @@ def _sync_ref_security(conn, view: ViewInfo) -> int:
             board = "STAR"
         elif code.startswith(("300", "301")):
             board = "ChiNext"
-        elif code.startswith(("8", "4")):
+        elif code.startswith(("8", "4", "92")):
             board = "BSE"
         elif exchange == "SH":
             board = "SH_MAIN"
@@ -899,6 +959,8 @@ def _prepare_temp_tables(conn) -> None:
         "CREATE TEMP TABLE IF NOT EXISTS tmp_md_status_daily (LIKE md_status_daily INCLUDING DEFAULTS) ON COMMIT DROP",
         "CREATE TEMP TABLE IF NOT EXISTS tmp_md_index_bar (LIKE md_index_bar INCLUDING DEFAULTS) ON COMMIT DROP",
         "CREATE TEMP TABLE IF NOT EXISTS tmp_md_risk_daily (LIKE md_risk_daily INCLUDING DEFAULTS) ON COMMIT DROP",
+        "CREATE TEMP TABLE IF NOT EXISTS tmp_md_fund_flow_daily (LIKE md_fund_flow_daily INCLUDING DEFAULTS) ON COMMIT DROP",
+        "CREATE TEMP TABLE IF NOT EXISTS tmp_md_fund_flow_candidate (LIKE md_fund_flow_candidate INCLUDING DEFAULTS) ON COMMIT DROP",
         "CREATE TEMP TABLE IF NOT EXISTS tmp_md_us_stock_snapshot (LIKE md_us_stock_snapshot INCLUDING DEFAULTS) ON COMMIT DROP",
         "CREATE TEMP TABLE IF NOT EXISTS tmp_ref_security (LIKE ref_security INCLUDING DEFAULTS) ON COMMIT DROP",
         "CREATE TEMP TABLE IF NOT EXISTS tmp_ref_trading_calendar (LIKE ref_trading_calendar INCLUDING DEFAULTS) ON COMMIT DROP",
@@ -994,6 +1056,55 @@ def _merge_temp_tables(conn) -> None:
         ON CONFLICT (symbol, trade_date, calc_version) DO UPDATE SET
           beta_1y=EXCLUDED.beta_1y, vol_1y=EXCLUDED.vol_1y,
           max_drawdown_1y=EXCLUDED.max_drawdown_1y
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO md_fund_flow_daily
+          (symbol, trade_date, main_net_inflow, small_net_inflow, medium_net_inflow,
+           large_net_inflow, super_large_net_inflow, main_net_ratio, small_net_ratio,
+           medium_net_ratio, large_net_ratio, super_large_net_ratio, close, change_pct,
+           source, observed_at, ingested_at)
+        SELECT symbol, trade_date, main_net_inflow, small_net_inflow, medium_net_inflow,
+               large_net_inflow, super_large_net_inflow, main_net_ratio, small_net_ratio,
+               medium_net_ratio, large_net_ratio, super_large_net_ratio, close, change_pct,
+               source, observed_at, NOW()
+          FROM tmp_md_fund_flow_daily
+        ON CONFLICT (symbol, trade_date) DO UPDATE SET
+          main_net_inflow=EXCLUDED.main_net_inflow,
+          small_net_inflow=EXCLUDED.small_net_inflow,
+          medium_net_inflow=EXCLUDED.medium_net_inflow,
+          large_net_inflow=EXCLUDED.large_net_inflow,
+          super_large_net_inflow=EXCLUDED.super_large_net_inflow,
+          main_net_ratio=EXCLUDED.main_net_ratio,
+          small_net_ratio=EXCLUDED.small_net_ratio,
+          medium_net_ratio=EXCLUDED.medium_net_ratio,
+          large_net_ratio=EXCLUDED.large_net_ratio,
+          super_large_net_ratio=EXCLUDED.super_large_net_ratio,
+          close=EXCLUDED.close, change_pct=EXCLUDED.change_pct,
+          source=EXCLUDED.source, observed_at=EXCLUDED.observed_at, ingested_at=NOW()
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO md_fund_flow_candidate
+          (symbol, trade_date, main_net_inflow_5d, main_net_inflow_latest,
+           main_net_ratio_latest, inflow_days_5d, consecutive_inflow_days,
+           consecutive_outflow_days, days_available, source, observed_at, ingested_at)
+        SELECT symbol, trade_date, main_net_inflow_5d, main_net_inflow_latest,
+               main_net_ratio_latest, inflow_days_5d, consecutive_inflow_days,
+               consecutive_outflow_days, days_available, source, observed_at, NOW()
+          FROM tmp_md_fund_flow_candidate
+        ON CONFLICT (symbol) DO UPDATE SET
+          trade_date=EXCLUDED.trade_date,
+          main_net_inflow_5d=EXCLUDED.main_net_inflow_5d,
+          main_net_inflow_latest=EXCLUDED.main_net_inflow_latest,
+          main_net_ratio_latest=EXCLUDED.main_net_ratio_latest,
+          inflow_days_5d=EXCLUDED.inflow_days_5d,
+          consecutive_inflow_days=EXCLUDED.consecutive_inflow_days,
+          consecutive_outflow_days=EXCLUDED.consecutive_outflow_days,
+          days_available=EXCLUDED.days_available,
+          source=EXCLUDED.source, observed_at=EXCLUDED.observed_at, ingested_at=NOW()
         """
     )
     _prune_us_snapshot(conn)
@@ -1136,6 +1247,8 @@ def sync_view(
             rows["status"] = _sync_status(conn, view, start, end)
             rows["index"] = _sync_index(conn, view)
             rows["risk"] = _sync_risk(conn, view, start, end)
+            rows["fund_flow_daily"] = _sync_fund_flow_daily(conn, view)
+            rows["fund_flow_candidate"] = _sync_fund_flow_candidate(conn, view)
             rows["us_stock"] = _sync_us_stock(conn, view)
             rows["news"] = _sync_news_dataset(conn, view)
             if with_financials:

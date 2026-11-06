@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from services.quant_factor import review
+from services.quant_factor import repo, review
 
 
 class ReviewQueueTest(unittest.TestCase):
@@ -10,7 +10,7 @@ class ReviewQueueTest(unittest.TestCase):
         cursor.execute.return_value.fetchall.return_value = []
         connection = MagicMock()
         connection.__enter__.return_value = cursor
-        with patch.object(review, 'get_conn', return_value=connection):
+        with patch.object(repo, 'get_conn', return_value=connection):
             self.assertEqual(review.queue(11, 22), [])
         sql, params = cursor.execute.call_args.args
         self.assertIn("org_id=%s", sql)

@@ -119,12 +119,10 @@ _SPECS: tuple[dict[str, Any], ...] = (
     {
         "key": "main_inflow_days", "label": "主力连续净流入", "label_en": "Consecutive main inflow",
         "pattern": r"连续(\d+)日为正", "unit": "日", "metric": "main_inflow_days", "force_op": "min",
-        "supported": False, "reason": "当前版本暂不支持",
     },
     {
         "key": "main_net_inflow_5d", "label": "5 日主力净流入", "label_en": "5-day main net inflow",
         "pattern": r"主力净流入|净流入", "unit": "万", "metric": "main_net_inflow_5d",
-        "supported": False, "reason": "当前版本暂不支持",
     },
     {
         "key": "industry", "label": "行业", "label_en": "Industry",
@@ -505,6 +503,28 @@ def normalize_conditions(items: Iterable[dict[str, Any]]) -> list[dict[str, Any]
     return out
 
 
+def _load_fund_flow(conn: Any, codes: list[str]) -> dict[str, dict[str, float | int | None]]:
+    if not codes:
+        return {}
+    symbols = [_symbol(c) for c in codes]
+    rows = rules.rows(
+        conn,
+        "SELECT symbol, main_net_inflow_5d, consecutive_inflow_days "
+        "FROM md_fund_flow_candidate WHERE symbol = ANY(?)",
+        (symbols,),
+    )
+    out: dict[str, dict[str, float | int | None]] = {}
+    for row in rows:
+        amount = _num(row.get("main_net_inflow_5d"))
+        days = _num(row.get("consecutive_inflow_days"))
+        out[str(row["symbol"]).split(".")[0]] = {
+            # 候选表金额单位是元，条件标签用万元。
+            "main_net_inflow_5d": amount / 1e4 if amount is not None else None,
+            "main_inflow_days": int(days) if days is not None else None,
+        }
+    return out
+
+
 def screen_conditions(conn: Any, conditions: list[dict[str, Any]], *, limit: int = 200) -> dict[str, Any]:
     data_date = rules.latest_date(conn)
     base = _base_candidates(conn)
@@ -523,6 +543,16 @@ def screen_conditions(conn: Any, conditions: list[dict[str, Any]], *, limit: int
         diag = _diagnostic(conditions, base, current, stage_counts)
         return {"ok": True, "status": "empty", "count": 0, "conditions": conditions, "diagnostic": diag,
                 "summary": [], "risk": DATA_DISCLAIMER, "disclaimer": DATA_DISCLAIMER}
+
+    # 资金流候选表是每股一行；先过滤可显著缩小后续财务/行情查询。
+    fund_conds = [c for c in conditions if c["key"] in {"main_net_inflow_5d", "main_inflow_days"}]
+    if fund_conds and current:
+        fund = _load_fund_flow(conn, [item["code"] for item in current])
+        for item in current:
+            item.update(fund.get(item["code"], {}))
+        current = [item for item in current if all(_condition_ok(c, item) for c in fund_conds)]
+        for cond in fund_conds:
+            stage_counts[cond["key"]] = len(current)
 
     # 按“快照 → 财务 → 估值 → 行情”顺序逐层收窄：后续查询只跑存活标的。
     for cond in conditions:

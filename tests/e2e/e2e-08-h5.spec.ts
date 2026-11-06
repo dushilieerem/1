@@ -309,6 +309,22 @@ test("AI 记忆入口从我的移到管家工具条，首页不再有 AI 今日�
   await noHorizontalOverflow(page);
 });
 
+test("个股透视 P0：3×3 快照、财务/资金/简况切换，不显示无数据模块", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/stock/600519`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".stock-head")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".stock-grid3 > div")).toHaveCount(9);
+  await expect(page.locator(".stock-seg button", { hasText: "财务" })).toBeVisible();
+  await expect(page.locator(".stock-seg button", { hasText: "资金" })).toBeVisible();
+  await page.locator(".stock-seg button", { hasText: "资金" }).click();
+  await expect(page.getByText("主力资金")).toBeVisible();
+  await page.locator(".stock-seg button", { hasText: "简况" }).click();
+  await expect(page.getByText("同业比较")).toBeVisible();
+  await expect(page.getByText("股东", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("分红", { exact: false })).toHaveCount(0);
+  await noHorizontalOverflow(page);
+});
+
 test("个股 AI 解读进入页面自动生成", async ({ page }) => {
   await loginByToken(page);
   await page.route("**/api/invest/ai/stock/**", (route) =>
@@ -707,8 +723,8 @@ test("360 宽关键页面无横向溢出，行业代码不裸奔", async ({ page
     await noHorizontalOverflow(page);
   }
   await page.goto(`${H5}/stock/600036`, { waitUntil: "domcontentloaded" });
-  await expect(page.locator(".page-head p")).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator(".page-head p")).not.toContainText(/\d{6}\.SI/);
+  await expect(page.locator(".stock-head-title span")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".stock-head-title span")).not.toContainText(/\d{6}\.SI/);
   await noHorizontalOverflow(page);
 });
 

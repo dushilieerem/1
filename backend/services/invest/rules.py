@@ -125,6 +125,14 @@ def one(conn: Any, sql: str, args: Iterable[Any] = ()) -> dict[str, Any] | None:
     return dict(r) if r else None
 
 
+def _num(value: Any) -> float | None:
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return None
+    return n if math.isfinite(n) else None
+
+
 def pct(a: float, b: float) -> float:
     return (a / b - 1) * 100 if b else 0.0
 
@@ -422,6 +430,8 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
                 "volume": stock.get("volume"), "amount": stock.get("amount"), "beta": stock.get("beta"),
                 "updatedAt": stock.get("updated_at"), "nextReportDate": stock.get("next_report_date"),
                 "nextReportDateAvailable": bool(stock.get("next_report_date")),
+                "floatMarketCap": None, "volumeRatio": None, "board": None,
+                "exchange": None, "listDate": None, "totalShares": None, "floatShares": None,
             },
             "chart": {"period": period, "bars": [], "ma5": [], "ma10": [], "ma20": []},
             "technical": {
@@ -443,6 +453,10 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
             },
             "financials": [],
             "report": None,
+            "statements": {"period": None, "income": None, "balance": None, "cashflow": None},
+            "fundFlow": {"available": False, "days": 0, "latest": None, "five_day": None,
+                         "twenty_day": None, "distribution": [], "series": [], "divergence": None},
+            "peers": [],
             "risks": [
                 {
                     "title": "Quote missing" if is_us else "行情数据暂缺",
@@ -495,11 +509,13 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     vol_ratio = float(stock.get("volume") or 0) / avg_vol if avg_vol else 0
     ret20 = pct(stock["price"], daily_closes[-21]) if len(daily_closes) > 21 else 0
 
-    valuations = rows(conn, """SELECT pe_ttm, pb FROM (
-                                 SELECT pe_ttm, pb_mrq AS pb, trade_date AS date
+    valuations = rows(conn, """SELECT pe_ttm, pb, float_mv, total_mv, total_shares FROM (
+                                 SELECT pe_ttm, pb_mrq AS pb, float_mv, total_mv, total_shares,
+                                        trade_date AS date
                                    FROM md_valuation_daily
                                   WHERE symbol=? ORDER BY trade_date DESC LIMIT 750
                                ) t ORDER BY date ASC""", (_with_suffix(code),))
+    latest_val = valuations[-1] if valuations else {}
     pe_vals = [v["pe_ttm"] for v in valuations if v["pe_ttm"] is not None]
     pb_vals = [v["pb"] for v in valuations if v["pb"] is not None]
     pe_pct = percentile(pe_vals, stock["pe_ttm"])
@@ -567,6 +583,17 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
 
     beta_value = stock.get("beta")
     prev_close = float(stock.get("prev_close") or stock["price"])
+    ref_info = one(
+        conn,
+        "SELECT board, exchange, list_date::text AS list_date FROM ref_security WHERE symbol=?",
+        (_with_suffix(code),),
+    ) or {}
+    total_mv = _num(latest_val.get("total_mv"))
+    float_mv = _num(latest_val.get("float_mv"))
+    total_shares = _num(latest_val.get("total_shares"))
+    if total_shares is None and total_mv and stock.get("price"):
+        total_shares = total_mv / float(stock["price"])
+    float_shares = float_mv / float(stock["price"]) if float_mv and stock.get("price") else None
     q = {
         "code": stock["code"], "name": display_name, "industry": display_industry,
         "asset": stock["asset"], "market": stock.get("market") or ("US" if is_us else "CN"),
@@ -578,6 +605,13 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
         "volume": stock["volume"], "amount": stock["amount"], "beta": beta_value,
         "updatedAt": stock["updated_at"], "nextReportDate": stock["next_report_date"],
         "nextReportDateAvailable": bool(stock.get("next_report_date")),
+        "floatMarketCap": float_mv / 1e8 if float_mv is not None else None,
+        "volumeRatio": vol_ratio,
+        "board": ref_info.get("board"),
+        "exchange": ref_info.get("exchange"),
+        "listDate": ref_info.get("list_date"),
+        "totalShares": total_shares,
+        "floatShares": float_shares,
     }
     chart = {
         "period": period,
@@ -610,11 +644,90 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
             "grossMargin": latest["gross_margin"], "roe": latest["roe"], "ocf": latest["ocf"],
             "prev": prev,
         }
+    data_date = latest_date(conn)
+    symbol = _with_suffix(code)
+    balance = one(
+        conn,
+        "SELECT report_date::text AS period, total_assets, total_liabilities, total_equity, "
+        "current_assets, current_liabilities, cash, inventory, receivables "
+        "FROM fin_balance_sheet WHERE symbol=? AND report_date<=?::date "
+        "ORDER BY report_date DESC LIMIT 1",
+        (symbol, data_date),
+    )
+    cashflow = one(
+        conn,
+        "SELECT report_date::text AS period, operating_cf, investing_cf, financing_cf, free_cash_flow, capex "
+        "FROM fin_cash_flow WHERE symbol=? AND report_date<=?::date "
+        "ORDER BY report_date DESC LIMIT 1",
+        (symbol, data_date),
+    )
+    statements = {
+        "period": (balance or {}).get("period") or (cashflow or {}).get("period") or (report or {}).get("period"),
+        "income": report,
+        "balance": balance,
+        "cashflow": cashflow,
+    }
+    flow_rows = rows(
+        conn,
+        "SELECT trade_date::text AS d, main_net_inflow, small_net_inflow, medium_net_inflow, "
+        "large_net_inflow, super_large_net_inflow FROM md_fund_flow_daily "
+        "WHERE symbol=? ORDER BY trade_date DESC LIMIT 20",
+        (symbol,),
+    )
+    fund_flow = {"available": bool(flow_rows), "days": len(flow_rows), "latest": None,
+                 "five_day": None, "twenty_day": None, "distribution": [], "series": [],
+                 "divergence": None}
+    if flow_rows:
+        flow_rows = list(reversed(flow_rows))
+        to_yi = lambda v: round(float(v) / 1e8, 2) if v is not None else None
+        latest_flow = flow_rows[-1]
+        fund_flow["latest"] = to_yi(latest_flow.get("main_net_inflow"))
+        last5 = flow_rows[-5:]
+        if len(last5) >= 5:
+            fund_flow["five_day"] = round(sum(float(r.get("main_net_inflow") or 0) for r in last5) / 1e8, 2)
+        if len(flow_rows) >= 20:
+            fund_flow["twenty_day"] = round(sum(float(r.get("main_net_inflow") or 0) for r in flow_rows) / 1e8, 2)
+        for key, label, label_en in (
+            ("super_large_net_inflow", "特大单", "Super large"),
+            ("large_net_inflow", "大单", "Large"),
+            ("medium_net_inflow", "中单", "Medium"),
+            ("small_net_inflow", "小单", "Small"),
+        ):
+            fund_flow["distribution"].append({
+                "key": key, "label": label, "label_en": label_en,
+                "value": to_yi(latest_flow.get(key)),
+            })
+        fund_flow["series"] = [
+            {"date": r["d"], "value": to_yi(r.get("main_net_inflow"))} for r in flow_rows
+        ]
+        if len(last5) >= 5 and daily_closes:
+            flow_sum = sum(float(r.get("main_net_inflow") or 0) for r in last5)
+            price_ret = pct(daily_closes[-1], daily_closes[-min(6, len(daily_closes))]) if len(daily_closes) >= 2 else 0
+            if flow_sum and price_ret:
+                same = (flow_sum > 0) == (price_ret > 0)
+                fund_flow["divergence"] = {
+                    "same_direction": same,
+                    "text": "近 5 日资金与股价同向。" if same else "近 5 日资金与股价背离，关注承接。",
+                    "text_en": "Fund flow and price moved in the same direction over the last 5 days." if same else "Fund flow and price diverged over the last 5 days; watch for absorption.",
+                }
+    peers = rows(
+        conn,
+        "SELECT code, name, price, prev_close, pe_ttm, market_cap FROM stocks "
+        "WHERE COALESCE(market,'CN')='CN' AND asset='stock' AND industry=? AND code<>? "
+        "AND price IS NOT NULL ORDER BY market_cap DESC NULLS LAST LIMIT 8",
+        (stock.get("industry"), code),
+    )
+    peer_cards = [{
+        "code": r["code"], "name": r["name"], "price": _num(r.get("price")),
+        "changePct": pct(_num(r.get("price")) or 0, _num(r.get("prev_close")) or _num(r.get("price")) or 0),
+        "pe": _num(r.get("pe_ttm")), "marketCap": _num(r.get("market_cap")),
+    } for r in peers]
     news = [] if is_us else rows(conn, "SELECT * FROM news WHERE code=? ORDER BY published_at DESC LIMIT 6", (code,))
     meta = _market_meta(conn, "US") if is_us else data_meta(conn)
     return {
         "quote": q, "chart": chart, "technical": technical, "summary": summary,
-        "valuation": valuation, "financials": fins, "report": report, "risks": risks,
+        "valuation": valuation, "financials": fins, "report": report, "statements": statements,
+        "fundFlow": fund_flow, "peers": peer_cards, "risks": risks,
         "news": news, "todayNews": news[:3],
         "earningsFlash": (
             {"available": False, "highlights": [], "concerns": [], "consensusGap": "Financial data not available"}

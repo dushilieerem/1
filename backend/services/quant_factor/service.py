@@ -81,6 +81,17 @@ def create(uid,org,project_id,expected_snapshot_hash=None,reference=None,executo
     return current(uid,org,cid)
 
 
+def backfill_terminal_trials(uid,org,project_id,executor='agent',f0_run_id=None):
+    """Record completed tests for terminal candidates whose ledger write previously failed."""
+    with get_conn() as c:
+        rows=c.execute("SELECT id FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s AND status IN ('development_passed','development_failed','development_error') ORDER BY created_at",(uid,org,project_id)).fetchall()
+    added=[]
+    for r in rows:
+        item=_ensure_development_trial(uid,org,r['id'],executor,f0_run_id)
+        if item:added.append(item)
+    return added
+
+
 def _ensure_development_trial(uid,org,cid,executor='human',f0_run_id=None):
     """Append the trial for a terminal candidate that was computed before its ledger write succeeded.
 

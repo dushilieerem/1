@@ -323,3 +323,20 @@ class TerminalCandidateBackfillTest(unittest.TestCase):
         self.assertEqual(args[6], 'failed')
         self.assertEqual(args[7], 'qf_c1_development')
         self.assertEqual(args[9], 'r1')
+
+
+class TerminalBackfillScanTest(unittest.TestCase):
+    def test_scans_only_terminal_candidates_and_reports_added(self):
+        from unittest.mock import MagicMock, patch
+        from services.quant_factor import service
+        cursor = MagicMock(); cursor.execute.return_value = cursor
+        cursor.fetchall.return_value = [{'id': 'c1'}, {'id': 'c2'}]
+        connection = MagicMock(); connection.__enter__.return_value = cursor
+        with patch.object(service, 'get_conn', return_value=connection), \
+             patch.object(service, '_ensure_development_trial', side_effect=[{'id': 't1'}, None]) as ensure:
+            added = service.backfill_terminal_trials(1, 2, 'p1', 'agent', 'r1')
+        self.assertEqual([x['id'] for x in added], ['t1'])
+        self.assertEqual(ensure.call_count, 2)
+        sql = cursor.execute.call_args.args[0]
+        self.assertIn('development_failed', sql)
+        self.assertIn('development_passed', sql)

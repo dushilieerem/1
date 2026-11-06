@@ -99,6 +99,12 @@ def run(uid, org, run_id):
                 c.execute("UPDATE quant_factor_f0_runs SET rounds=%s,decision=%s::jsonb,updated_at=NOW() WHERE id=%s AND status='running'",
                           (step, service.store.encode({"steps": current}), run_id))
 
+        # A reused frozen candidate can carry a completed test that never reached the ledger;
+        # record it before deciding so K and the trial evidence are truthful.
+        try:
+            service.backfill_terminal_trials(uid, org, topic["project_id"], "agent", run_id)
+        except Exception:
+            pass
         k0 = ledger.current_k(ledger._trials(uid, org, topic["id"]), topic["primary_holding_period"])
         max_steps = min(12, max(1, int(topic["max_trials"]) - k0 + 2))
 

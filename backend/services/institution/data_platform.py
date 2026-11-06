@@ -172,6 +172,9 @@ def interest_debt_summary(conn, symbol: str, as_of: Any) -> dict[str, Any] | Non
     is_financial = bool(row.get("is_financial"))
     net_debt = row.get("net_debt")
     interest_total = row.get("interest_debt_total")
+    advance_receipts = (
+        float(row["advance_receipts"]) if row.get("advance_receipts") is not None else None
+    )
     return {
         "report_date": str(row.get("report_date")),
         "interest_debt_total": float(interest_total) if interest_total is not None else None,
@@ -183,9 +186,8 @@ def interest_debt_summary(conn, symbol: str, as_of: Any) -> dict[str, Any] | Non
         "interest_debt_components": (
             "短期借款 + 一年内到期非流动负债 + 长期借款 + 应付债券"
         ),
-        "advance_receipts": (
-            float(row["advance_receipts"]) if row.get("advance_receipts") is not None else None
-        ),
+        "advance_receipts": advance_receipts,
+        "advance_receipts_positive": advance_receipts is not None and advance_receipts > 0,
         "contract_liabilities": (
             float(row["contract_liabilities"]) if row.get("contract_liabilities") is not None else None
         ),
@@ -198,7 +200,8 @@ def interest_debt_summary(conn, symbol: str, as_of: Any) -> dict[str, Any] | Non
             if is_financial
             else (
                 "有息负债合计不含租赁负债（源缺失）；净债务 = 有息负债合计 − 货币资金，"
-                "货币资金未扣受限资金；预收款项与合同负债不是同一科目，合同负债源未单列。"
+                "货币资金未扣受限资金；预收款项与合同负债不是同一科目，合同负债源未单列；"
+                "预收款项为 0 只表示该期期末无余额或源未列示，不作为有余额证据。"
             )
         ),
         "population_note": (

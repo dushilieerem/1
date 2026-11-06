@@ -376,6 +376,25 @@ def test_other_org_cannot_read_case_or_company(fixture) -> None:
         assert client.get(f"/api/inst/cases/{case_id}/report", headers=h2).status_code in (403, 404)
         listed = _ok(client.get("/api/inst/cases", headers=h2))
         assert case_id not in {int(row["id"]) for row in listed.get("items", [])}
+        # 写路径也必须按 org 隔离：研究、议案、公司池、退出案均不得操作 org A 对象。
+        assert client.post(
+            f"/api/inst/cases/{case_id}/research", json={"mode": "full"}, headers=h2
+        ).status_code in (403, 404)
+        assert client.post(
+            f"/api/inst/cases/{case_id}/proposals",
+            json={"direction": "buy", "target_weight": 0.01},
+            headers=h2,
+        ).status_code in (403, 404)
+        assert client.post(
+            f"/api/inst/companies/{fixture['company_id']}/pool",
+            json={"pool_status": "watch"},
+            headers=h2,
+        ).status_code in (403, 404)
+        assert client.post(
+            "/api/inst/monitor/exits",
+            json={"company_id": fixture["company_id"], "reason_type": "thesis_invalid"},
+            headers=h2,
+        ).status_code in (403, 404)
     finally:
         with get_conn() as conn:
             conn.execute("DELETE FROM inst_orgs WHERE id=%s", (int(org2["id"]),))

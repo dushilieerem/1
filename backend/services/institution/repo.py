@@ -464,4 +464,93 @@ def overview(scope: OrgScope, role: str) -> dict[str, Any]:
     }
 
 
-__all__ = ["audit", "authorizations", "case", "cases", "companies", "company", "debate", "execution_exceptions", "monitor", "overview", "portfolio", "proposal_approvals", "proposal_authorizations", "proposal_exit_case", "proposal_row", "proposal_versions", "proposals", "theses"]
+def set_company_pool(
+    conn, scope: OrgScope, company_id: int, pool_status: str, reason: str | None
+) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT * FROM inst_company WHERE id=%s AND org_id=%s",
+        (company_id, scope.org_id),
+    ).fetchone()
+    if not row:
+        return None
+    conn.execute(
+        "UPDATE inst_company SET pool_status=%s, drop_reason=%s, updated_at=NOW() "
+        "WHERE id=%s AND org_id=%s",
+        (pool_status, reason, company_id, scope.org_id),
+    )
+    return dict(row)
+
+
+def create_monitor_event(
+    conn, scope: OrgScope, company_id: int, event_type: str, severity: str, detail: str
+) -> dict[str, Any]:
+    import json
+
+    row = conn.execute(
+        "INSERT INTO inst_monitor_event (org_id, company_id, type, severity, detail) "
+        "VALUES (%s,%s,%s,%s,%s) RETURNING *",
+        (scope.org_id, company_id, event_type, severity, json.dumps({"text": detail}, ensure_ascii=False)),
+    ).fetchone()
+    return dict(row)
+
+
+def resolve_execution_exception(
+    conn, scope: OrgScope, exception_id: int, status: str, resolution: str | None, actor_member_id: int | None
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    row = conn.execute(
+        "SELECT * FROM inst_execution_exception WHERE id=%s AND org_id=%s",
+        (exception_id, scope.org_id),
+    ).fetchone()
+    if not row:
+        return None, None
+    updated = conn.execute(
+        "UPDATE inst_execution_exception SET status=%s, resolution=%s, resolved_by=%s, "
+        "resolved_at=NOW() WHERE id=%s RETURNING *",
+        (status, resolution, actor_member_id, exception_id),
+    ).fetchone()
+    return dict(row), dict(updated) if updated else None
+
+
+def thesis_row(conn, scope: OrgScope, ledger_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT t.*, co.name AS company_name, co.market
+          FROM inst_thesis_ledger t
+          JOIN inst_company co ON co.id=t.company_id
+         WHERE t.id=%s AND t.org_id=%s
+        """,
+        (ledger_id, scope.org_id),
+    ).fetchone()
+    if not row:
+        return None
+    out = dict(row)
+    reviews = conn.execute(
+        "SELECT * FROM inst_thesis_review WHERE ledger_id=%s ORDER BY created_at DESC",
+        (ledger_id,),
+    ).fetchall()
+    out["reviews"] = [dict(r) for r in reviews]
+    return out
+
+
+def review_thesis(
+    conn, scope: OrgScope, ledger_id: int, *, kpi_status: str, conclusion: str,
+    note: str | None, actor_member_id: int | None
+) -> tuple[dict[str, Any] | None, str, dict[str, Any] | None]:
+    ledger = thesis_row(conn, scope, ledger_id)
+    if not ledger:
+        return None, "", None
+    conn.execute(
+        "INSERT INTO inst_thesis_review "
+        "(ledger_id, reviewer_member_id, kpi_status, conclusion, note) "
+        "VALUES (%s,%s,%s,%s,%s)",
+        (ledger_id, actor_member_id, kpi_status, conclusion, note),
+    )
+    new_status = "reviewed" if conclusion in {"hold", "reduce"} else "invalidated"
+    conn.execute(
+        "UPDATE inst_thesis_ledger SET status=%s, updated_at=NOW() WHERE id=%s",
+        (new_status, ledger_id),
+    )
+    return ledger, new_status, thesis_row(conn, scope, ledger_id)
+
+
+__all__ = ["audit", "authorizations", "case", "cases", "companies", "company", "create_monitor_event", "debate", "execution_exceptions", "monitor", "overview", "portfolio", "proposal_approvals", "proposal_authorizations", "proposal_exit_case", "proposal_row", "proposal_versions", "proposals", "resolve_execution_exception", "review_thesis", "set_company_pool", "theses", "thesis_row"]

@@ -462,16 +462,12 @@ def update_company_pool(
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "manager")
-        before = conn.execute(
-            "SELECT pool_status, drop_reason FROM inst_company WHERE id=%s AND org_id=%s",
-            (company_id, org_id),
-        ).fetchone()
+        before = repo.set_company_pool(
+            conn, OrgScope(org_id), company_id, pool_status,
+            reason if pool_status == "dropped" else None,
+        )
         if not before:
             raise LookupError("公司不存在")
-        conn.execute(
-            "UPDATE inst_company SET pool_status=%s, drop_reason=%s, updated_at=NOW() WHERE id=%s AND org_id=%s",
-            (pool_status, reason if pool_status == "dropped" else None, company_id, org_id),
-        )
         _audit(
             conn,
             org_id=org_id,
@@ -4118,17 +4114,11 @@ def resolve_execution_exception(
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "manager", "partner", "execution")
-        row = conn.execute(
-            "SELECT * FROM inst_execution_exception WHERE id=%s AND org_id=%s",
-            (exception_id, org_id),
-        ).fetchone()
+        row, updated = repo.resolve_execution_exception(
+            conn, OrgScope(org_id), exception_id, status, resolution, actor_member_id
+        )
         if not row:
             raise LookupError("异常记录不存在")
-        updated = conn.execute(
-            "UPDATE inst_execution_exception SET status=%s, resolution=%s, resolved_by=%s, "
-            "resolved_at=NOW() WHERE id=%s RETURNING *",
-            (status, resolution, actor_member_id, exception_id),
-        ).fetchone()
         _audit(
             conn,
             org_id=org_id,
@@ -4490,24 +4480,7 @@ def create_thesis(
 
 
 def _thesis_row(conn, org_id: int, ledger_id: int) -> dict[str, Any] | None:
-    row = conn.execute(
-        """
-        SELECT t.*, co.name AS company_name, co.market
-          FROM inst_thesis_ledger t
-          JOIN inst_company co ON co.id=t.company_id
-         WHERE t.id=%s AND t.org_id=%s
-        """,
-        (ledger_id, org_id),
-    ).fetchone()
-    if not row:
-        return None
-    out = _row_dict(row) or {}
-    reviews = conn.execute(
-        "SELECT * FROM inst_thesis_review WHERE ledger_id=%s ORDER BY created_at DESC",
-        (ledger_id,),
-    ).fetchall()
-    out["reviews"] = [_row_dict(r) for r in reviews]
-    return out
+    return repo.thesis_row(conn, OrgScope(org_id), ledger_id)
 
 
 def list_theses(org_id: int, *, status: str | None = None) -> list[dict[str, Any]]:
@@ -4530,25 +4503,13 @@ def review_thesis(
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "manager", "partner", "monitoring")
-        ledger = conn.execute(
-            "SELECT * FROM inst_thesis_ledger WHERE id=%s AND org_id=%s",
-            (ledger_id, org_id),
-        ).fetchone()
+        ledger, new_status, out = repo.review_thesis(
+            conn, OrgScope(org_id), ledger_id,
+            kpi_status=kpi_status, conclusion=conclusion, note=note,
+            actor_member_id=actor_member_id,
+        )
         if not ledger:
             raise LookupError("论点台账不存在")
-        conn.execute(
-            """
-            INSERT INTO inst_thesis_review
-              (ledger_id, reviewer_member_id, kpi_status, conclusion, note)
-            VALUES (%s,%s,%s,%s,%s)
-            """,
-            (ledger_id, actor_member_id, kpi_status, conclusion, note),
-        )
-        new_status = "reviewed" if conclusion in {"hold", "reduce"} else "invalidated"
-        conn.execute(
-            "UPDATE inst_thesis_ledger SET status=%s, updated_at=NOW() WHERE id=%s",
-            (new_status, ledger_id),
-        )
         _audit(
             conn,
             org_id=org_id,
@@ -4559,7 +4520,6 @@ def review_thesis(
             before={"status": ledger["status"]},
             after={"status": new_status, "kpi_status": kpi_status, "conclusion": conclusion},
         )
-        out = _thesis_row(conn, org_id, ledger_id)
     return out or {}
 
 
@@ -4636,11 +4596,9 @@ def create_monitor_event(
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "manager", "risk", "monitoring", "partner")
-        row = conn.execute(
-            "INSERT INTO inst_monitor_event (org_id, company_id, type, severity, detail) "
-            "VALUES (%s,%s,%s,%s,%s) RETURNING *",
-            (org_id, company_id, event_type, severity, _j({"text": detail})),
-        ).fetchone()
+        row = repo.create_monitor_event(
+            conn, OrgScope(org_id), company_id, event_type, severity, detail
+        )
         _audit(
             conn,
             org_id=org_id,

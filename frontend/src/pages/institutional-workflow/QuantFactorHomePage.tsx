@@ -3,7 +3,7 @@ import {Link,useNavigate} from 'react-router-dom';
 import {researchFetch} from '@/lib/researchClient';
 import {FactorModuleTabs,WorkspaceHeading} from './QuantWorkspacePages';
 
-type Topic={id:string;project_id:string;project_name:string;view_id:string;primary_holding_period:number;max_trials:number;max_sealed:number;status:string;k:number;branch_count:number;trial_count:number;created_at?:string};
+type Topic={id:string;project_id:string;project_name:string;view_id:string;primary_holding_period:number;max_trials:number;max_sealed:number;sealed_used?:number;status:string;k:number;branch_count:number;trial_count:number;created_at?:string};
 type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;status:string;hypothesis_version:number;implementation_version:number;created_at?:string};
 type Trial={trial_no:number;branch_id:string;kind:string;outcome:string;executor:string;report_id?:string|null;created_at?:string;returned_metrics?:boolean;rerun_of?:string|null;result_summary?:{gate?:{checks?:{name:string;actual:number|null;threshold:number;passed:boolean}[]}}};
 type Ledger={topic:Topic;branches:Branch[];trials:Trial[];k:number;threshold:number|null;threshold_next_if_counted:number;next_trial_no:number};
@@ -21,6 +21,7 @@ export function QuantFactorHomePage(){
  const [error,setError]=useState('');
  const [loading,setLoading]=useState(true);
  const [pending,setPending]=useState<number|null>(null);
+ const [sealedUsed,setSealedUsed]=useState<number|null>(null);
  const navigate=useNavigate();
 
  useEffect(()=>{
@@ -30,6 +31,8 @@ export function QuantFactorHomePage(){
    .then(d=>{if(!alive)return;const list=d.topics||[];setTopics(list);setSelected(cur=>cur&&list.some((t:Topic)=>t.id===cur)?cur:list[0]?.id);})
    .catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));})
    .finally(()=>{if(alive)setLoading(false);});
+  void researchFetch('/api/inst/quant/factor-workflow/overview').then(r=>r.ok?r.json():null).then(d=>{if(alive&&d?.counts)setSealedUsed(Number(d.counts.sealed_used)||0);});
+  void researchFetch('/api/inst/quant/factor-workflow/pending-review-count').then(r=>r.ok?r.json():null).then(d=>{if(alive&&d&&typeof d.count==='number')setPending(d.count);});
   return()=>{alive=false;};
  },[]);
 
@@ -93,7 +96,7 @@ export function QuantFactorHomePage(){
    <h3>{t.project_name||'未命名课题'}</h3>
    <div className="act">{t.trial_count>0?'已登记研发检验与台账。':'等待第一次真实研发检验。'}</div>
    <div className="bar"><i style={{width:Math.min(100,t.k/Math.max(1,t.max_trials)*100)+'%'}}/></div>
-   <div className="meta"><span>试验 <b>{t.k}/{t.max_trials}</b></span><span>分支 <b>{t.branch_count}</b></span><span>封存 <b>0/{t.max_sealed}</b></span></div>
+   <div className="meta"><span>试验 <b>{t.k}/{t.max_trials}</b></span><span>分支 <b>{t.branch_count}</b></span><span>封存 <b>{t.sealed_used??0}/{t.max_sealed}</b></span></div>
   </button>
  ));
 
@@ -181,7 +184,7 @@ export function QuantFactorHomePage(){
     <div className="kpis">
      <div className="kpi"><span>课题</span><b>{topics.length}</b><small>研究中 {topics.filter(t=>t.status==='active').length}</small></div>
      <div className="kpi"><span>试验台账</span><b>{totalTrials}</b><small>次</small></div>
-     <div className="kpi"><span>封存样本已用</span><b>—</b><small>待接入</small></div>
+     <div className="kpi"><span>封存样本已用</span><b>{sealedUsed==null?'—':sealedUsed}</b><small>累计封存（含失败）</small></div>
      <div className="kpi"><span>待人决定</span><b>{pending==null?'—':pending}</b><small>待复核候选</small></div>
      <div className="kpi"><span>F0 Token</span><b>{f0?.decision?.steps?f0.decision.steps.reduce((n,s)=>n+(s.usage?.tokens_in||0)+(s.usage?.tokens_out||0),0):'—'}</b><small>最近一次 F0</small></div>
     </div>

@@ -41,8 +41,10 @@ def _context(uid,org,topic,branch):
  led=strategy_research.ledger(uid,org,topic['id'])
  return {'topic':{k:topic.get(k) for k in ('id','name','universe','benchmark','max_trials','status')},
          'branch':{k:branch.get(k) for k in ('id','hypothesis','recipe','version')},
-         'k':led['k'],'trials':[{k:t.get(k) for k in ('trial_no','branch_id','outcome','metrics')} for t in led['trials'][-6:]],
-         'scope':'受控模板：1–3 因子、TopN、调仓周期；不得改股票池/区间/成本/门槛'}
+         'k':led['k'],'trials':[{**{k:t.get(k) for k in ('trial_no','branch_id','outcome','metrics')},
+                                 'rerun':bool(t.get('rerun_of'))} for t in led['trials'][-6:]],
+         'ir_threshold':led.get('ir_threshold'),'policy_version':(led.get('policy') or {}).get('version'),
+         'scope':'受控模板：1–3 因子、TopN、调仓周期；不得改股票池/区间/成本/门槛。rerun 是确定性重算，不是独立证据，不得据此声称已验证。'}
 
 def decide(uid,org,topic,branch):
  ctx=_context(uid,org,topic,branch)

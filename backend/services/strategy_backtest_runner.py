@@ -11,7 +11,7 @@ from services.core.lan_http import request_json
 from services.core.re_config import RE_BASE
 from services.workflow_workspace.platform_data import published_view
 
-from . import strategy_backtest, strategy_research
+from . import strategy_backtest, strategy_gates, strategy_research
 
 
 def _base():
@@ -87,11 +87,13 @@ def run_trial(uid, org, branch_id):
     if status != 200 or not isinstance(data, dict) or data.get("error"):
         raise ValueError("策略回测失败：" + str((data or {}).get("error") or status)[:500])
     metrics = data.get("metrics") or {}
-    excess = data.get("excess_return")
-    checks = [{"name": "扣费后超额", "actual": excess, "operator": ">", "threshold": 0,
-               "passed": isinstance(excess, (int, float)) and excess > 0}]
-    outcome = "failed" if checks and not checks[0]["passed"] else "error"
-    gate = {"policy_status": "pending_product_confirmation_ir_formula", "checks": checks}
+    # The trial being run will count, so the IR bar is the K after this test.
+    gate = strategy_gates.evaluate(data, k + 1)
+    any_failed = any(c["passed"] is False for c in gate["checks"])
+    outcome = "passed" if gate["passed"] and gate["complete"] else "failed" if any_failed else "error"
+    gate["policy_status"] = ("passed" if gate["passed"] and gate["complete"]
+                             else "incomplete_pending_diagnostics" if not any_failed
+                             else "failed")
     trial_id = str(uuid.uuid4())
     with get_conn() as c:
         c.execute(

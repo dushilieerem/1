@@ -337,7 +337,9 @@ def list_org_topics(uid: int, org: int) -> list[dict]:
                       (SELECT COUNT(*) FROM quant_factor_branches b
                         WHERE b.user_id=t.user_id AND b.org_id=t.org_id AND b.topic_id=t.id) AS branch_count,
                       (SELECT COUNT(*) FROM quant_factor_trials r
-                        WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id) AS trial_count
+                        WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id) AS trial_count,
+                      (SELECT COUNT(*) FROM quant_factor_sealed_validations v
+                        WHERE v.user_id=t.user_id AND v.org_id=t.org_id AND v.topic_id=t.id) AS sealed_used
                FROM quant_factor_topics t
                JOIN detect_projects p ON p.user_id=t.user_id AND p.id=t.project_id
                WHERE t.user_id=%s AND t.org_id=%s
@@ -444,7 +446,9 @@ def ledger_view(uid: int, org: int, topic_id: str) -> dict:
         "branches": [_public(row) for row in _branches(uid, org, topic_id)],
         "trials": [_public(row) for row in trials],
         "k": k,
-        "threshold": threshold(k) if k >= 1 else None,
+        # Before any counted trial the bar is still the K=1 threshold (t*=1.96), never null.
+        "threshold": threshold(max(k, 1)),
+        "threshold_k": max(k, 1),
         "threshold_next_if_counted": threshold(max(1, k + 1)),
         "next_trial_no": next_trial_no(trials),
     }

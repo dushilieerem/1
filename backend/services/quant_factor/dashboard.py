@@ -7,7 +7,7 @@ def overview(uid,org):
         projects=c.execute("SELECT id,name,updated_at,config FROM detect_projects WHERE user_id=%s ORDER BY updated_at DESC LIMIT 100",(uid,)).fetchall()
         factor_count=c.execute('SELECT COUNT(*) AS n FROM detect_projects WHERE user_id=%s',(uid,)).fetchone()['n']
         strategy_count=c.execute('SELECT COUNT(*) AS n FROM strategy_projects WHERE user_id=%s',(uid,)).fetchone()['n']
-        counts=c.execute("SELECT COUNT(*) AS candidates,COUNT(*) FILTER(WHERE status LIKE '%%_running') AS running,COUNT(*) FILTER(WHERE status LIKE '%%_error') AS errors,COUNT(*) FILTER(WHERE archive->'review'->>'status'='requested') AS pending_review FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s",(uid,org)).fetchone()
+        counts=c.execute("SELECT COUNT(*) AS candidates,COUNT(*) FILTER(WHERE status LIKE '%%_running') AS running,COUNT(*) FILTER(WHERE status LIKE '%%_error') AS errors,COUNT(*) FILTER(WHERE archive->'review'->>'status'='requested') AS pending_review,(SELECT COUNT(*) FROM quant_factor_sealed_validations WHERE user_id=%s AND org_id=%s) AS sealed_used FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s",(uid,org,uid,org)).fetchone()
         rows=c.execute("SELECT id,project_id,snapshot->>'name' AS name,snapshot_hash,status,archive,events,updated_at,evidence->'development'->'result'->'meta' AS data_meta FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s ORDER BY updated_at DESC LIMIT 30",(uid,org)).fetchall()
     tasks=[]
     for p in projects:

@@ -20,11 +20,20 @@ def request_review(uid,org,cid,note):
         c.execute('UPDATE quant_factor_candidates SET archive=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s',(store.encode(card),store.encode([event('review_requested')]),cid))
     return current(uid,org,cid)
 
-def pending_count(org):
+def pending_count(org, uid=None, reviewer=False):
+    """Reviewer sees items waiting for them; a researcher sees their own submissions."""
     with get_conn() as c:
+        if uid is None:
+            return c.execute(
+                "SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE org_id=%s AND archive->'review'->>'status'='requested'",
+                (org,)).fetchone()["n"]
+        if reviewer:
+            return c.execute(
+                "SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE org_id=%s AND user_id<>%s AND archive->'review'->>'status'='requested'",
+                (org, uid)).fetchone()["n"]
         return c.execute(
-            "SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE org_id=%s AND archive->'review'->>'status'='requested'",
-            (org,)).fetchone()["n"]
+            "SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE org_id=%s AND user_id=%s AND archive->'review'->>'status'='requested'",
+            (org, uid)).fetchone()["n"]
 
 
 def queue(uid,org):
@@ -65,7 +74,7 @@ def _ledger_context(org,project_id):
             (org,topic['id'])).fetchall()]
     k=ledger.current_k(trials,topic['primary_holding_period'])
     return {'topic':ledger._public(topic),'trials':[ledger._public(row) for row in trials],
-            'k':k,'threshold':threshold(k) if k>=1 else None}
+            'k':k,'threshold':threshold(max(k,1)),'threshold_k':max(k,1)}
 
 
 def open_seal_failed_review(uid,org,cid,reason):

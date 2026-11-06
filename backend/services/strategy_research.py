@@ -171,9 +171,12 @@ def ledger(uid, org, topic_id):
             return True
         return t["outcome"] in ("error", "timeout") and bool(t.get("metrics"))
     k = sum(1 for t in trials if counts(t))
+    from . import strategy_gates
     return {"topic": _public(topic), "branches": [_public(b) for b in branches],
             "trials": [_public(t) for t in trials], "k": k,
-            "ir_threshold": None, "ir_threshold_status": "pending_product_confirmation"}
+            "ir_threshold": strategy_gates.need_ir(k),
+            "policy": {"version": strategy_gates.POLICY_VERSION, **strategy_gates.POLICY},
+            "policy_note": "测试阈值（原型默认值）；机构可发布新的策略政策版本"}
 
 
 __all__ = ["create_branch", "create_topic", "ledger", "list_topics", "recipe"]

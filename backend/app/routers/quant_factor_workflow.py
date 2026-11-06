@@ -69,7 +69,8 @@ def review_request(cid:str,body:ArchiveBody,ctx=Depends(require_quant_researcher
 @router.get('/pending-review-count')
 def pending_review_count(ctx=Depends(require_quant_user)):
     from services.quant_factor import review
-    return {'count':invoke(review.pending_count,identity(ctx)[1])}
+    uid,org=identity(ctx)
+    return {'count':invoke(review.pending_count,org,uid,bool(ctx.get('can_review')))}
 
 @router.get('/reviews')
 def review_queue(ctx=Depends(require_quant_reviewer)):

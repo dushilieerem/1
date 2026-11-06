@@ -49,6 +49,16 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
     log "没有 docker 也没有 DATABASE_URL；刷新锁相关用例需要真实 PostgreSQL，请二选一提供"
     exit 1
   }
+  # 多个 Agent 可能同时跑 CI；默认端口被占用时自动向后找空闲端口。
+  _port_busy() { ss -ltn "sport = :$1" 2>/dev/null | grep -q LISTEN; }
+  if command -v ss >/dev/null 2>&1 && _port_busy "$PG_PORT"; then
+    original="$PG_PORT"
+    for candidate in $(seq $((PG_PORT + 1)) $((PG_PORT + 30))); do
+      if ! _port_busy "$candidate"; then PG_PORT="$candidate"; break; fi
+    done
+    [[ "$PG_PORT" != "$original" ]] || { log "端口 ${original} 被占用且找不到空闲 CI 端口"; exit 1; }
+    log "CI 端口 ${original} 被占用，改用 ${PG_PORT}"
+  fi
   log "启动一次性 PostgreSQL（:${PG_PORT}）"
   docker run -d --rm --name "$PG_CONTAINER" \
     -e POSTGRES_USER=svquant \

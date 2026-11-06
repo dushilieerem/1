@@ -19,7 +19,7 @@ from services.factor.generated_factor_validation import (
 )
 
 CATALOG_VERSION = "2026-07-01"
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 
 GENERATION_SCHEMA: dict[str, Any] = {
     "type": "json_schema",
@@ -66,6 +66,11 @@ SYSTEM_PROMPT = (
     "双下划线属性和投资建议。不要调用 self.get_data、self.get_field 或任何未列出的 "
     "self 方法。允许的面板方法仅为："
     f"{', '.join(sorted(ALLOWED_METHODS))}。"
+    "允许用白名单方法完成基础预处理：分位缩尾 quantile+clip、截面 rank/z-score、"
+    "按行业分组去均值 groupby(...,axis=1).transform('mean')、成交额分位过滤、停牌过滤。"
+    "up_and_down_status 是文本状态表，值为“停牌”“涨停”“跌停”等；剔除停牌写 "
+    "self.up_and_down_status != \"停牌\"。the_sw_industry_code 为当前分类版本（非历史 PIT），"
+    "行业中性化需在结果与假设中注明。以上预处理不得读取未来数据。"
     "不允许使用np、pd、math、sqrt、pow方法、astype或外部函数；平方根使用 ** 0.5。"
     "允许简单赋值、算术、比较及return，不使用if、raise、循环或辅助函数。"
     "只使用当前及历史数据；shift和pct_change的periods必须是可确定的非负整数，"

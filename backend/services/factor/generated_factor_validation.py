@@ -18,6 +18,11 @@ ALLOWED_METHODS = frozenset(
     {
         "abs", "clip", "diff", "fillna", "mean", "median", "min", "max", "pct_change",
         "rank", "rolling", "shift", "std", "sum", "where",
+        # Preprocessing primitives (QA-20): winsorize / cross-section standardise /
+        # industry demean / liquidity percentile / suspended filter.
+        "quantile", "groupby", "transform", "sub", "div", "add", "mul",
+        "eq", "ne", "gt", "ge", "lt", "le", "isin", "notna", "isna",
+        "mask", "replace", "between", "any", "all",
     }
 )
 

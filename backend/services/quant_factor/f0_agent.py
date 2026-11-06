@@ -157,8 +157,10 @@ _CAPABILITY_KEYWORDS = (
 )
 
 _FALLBACK_SCOPE = (
-    "只使用平台已开放的面板 API：截面 rank、z-score、时序均值/标准差、按字段比较筛选；"
-    "禁止 winsorize、分位、行业分组、成交额分位过滤、停牌剔除；如仍无法实现，明确返回能力不足。"
+    "平台面板 API 已开放：quantile+clip 缩尾、截面 rank、z-score、"
+    "groupby(行业,axis=1).transform('mean') 行业去均值、成交额分位过滤、"
+    "up_and_down_status != '停牌' 停牌过滤；优先用这些方法实现，不得读取未来数据；"
+    "如仍无法实现，明确返回能力不足。"
 )
 
 

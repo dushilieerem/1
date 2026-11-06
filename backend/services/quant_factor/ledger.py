@@ -321,6 +321,7 @@ def list_org_topics(uid: int, org: int) -> list[dict]:
     with get_conn() as c:
         rows = [dict(row) for row in c.execute(
             """SELECT t.*, p.name AS project_name,
+                      p.config->'researchPlan'->>'researchPurpose' AS research_purpose,
                       (SELECT COUNT(*) FROM quant_factor_branches b
                         WHERE b.user_id=t.user_id AND b.org_id=t.org_id AND b.topic_id=t.id) AS branch_count,
                       (SELECT COUNT(*) FROM quant_factor_trials r

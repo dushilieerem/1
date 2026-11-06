@@ -5,7 +5,7 @@ import {createProject,saveProject} from '@/lib/detectStore';
 import {FactorModuleTabs,WorkspaceHeading} from './QuantWorkspacePages';
 import {newUuidV4} from '@/lib/uuid';
 
-type Topic={id:string;display_no?:number;project_id:string;project_name:string;view_id:string;primary_holding_period:number;max_trials:number;max_sealed:number;sealed_used?:number;status:string;dispatch_status?:string|null;dispatch_stop_reason?:string|null;pending_review?:number;sealed_passed?:number;latest_outcome?:string|null;k:number;branch_count:number;trial_count:number;created_at?:string};
+type Topic={id:string;display_no?:number;project_id:string;project_name:string;view_id:string;primary_holding_period:number;max_trials:number;max_sealed:number;sealed_used?:number;status:string;dispatch_status?:string|null;dispatch_stop_reason?:string|null;pending_review?:number;sealed_passed?:number;latest_outcome?:string|null;research_purpose?:string|null;k:number;branch_count:number;trial_count:number;created_at?:string};
 type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;status:string;hypothesis_version:number;implementation_version:number;created_at?:string;display_label?:string;display_title?:string;hypothesis_text?:string;source_label?:string;display_status?:string};
 type Trial={trial_no:number;branch_id:string;kind:string;outcome:string;executor:string;report_id?:string|null;created_at?:string;returned_metrics?:boolean;rerun_of?:string|null;result_summary?:{gate?:{checks?:{name:string;actual:number|null;threshold:number;passed:boolean}[]}}};
 type Ledger={topic:Topic;branches:Branch[];trials:Trial[];k:number;threshold:number|null;threshold_next_if_counted:number;next_trial_no:number;dispatch?:{status:string;stop_reason:string}|null};
@@ -25,6 +25,8 @@ const statusText=(t:Pick<Topic,'status'|'dispatch_status'|'pending_review'|'seal
  if(t.dispatch_status==='error'||t.dispatch_status==='failed')return '研究决策异常';
  return '待启动';
 };
+
+const purposeText=(p?:string|null)=>p==='replication'?'复现':p==='discovery'?'新发现':'类型未记录';
 const outcomeText=(t:Trial)=>t.outcome==='passed'?'通过':t.outcome==='failed'?'未达标':t.outcome==='error'?'执行错误':t.outcome;
 const nwText=(t:Trial)=>{const c=t.result_summary?.gate?.checks?.find(x=>x.name==='方向 NW t');return c&&typeof c.actual==='number'?` · NW t ${c.actual.toFixed(2)} / 需 ${c.threshold.toFixed(2)}`:'';};
 
@@ -34,7 +36,7 @@ export function QuantFactorHomePage(){
  const [ledger,setLedger]=useState<Ledger>();
  const [node,setNode]=useState<string>();
  const [f0,setF0]=useState<{id:string;status:string;decision?:{candidate_status?:string;reason?:string;steps?:Array<{step:number;decision:{action:string;rationale:string};usage?:{tokens_in?:number;tokens_out?:number};result:{status?:string;candidate_status?:string;reason?:string;needed_capabilities?:string[]}}>};stop_reason?:string}>();
- const [error,setError]=useState('');
+ const [error,setError]=useState(''),[notice,setNotice]=useState(''),[starting,setStarting]=useState(false);
  const [loading,setLoading]=useState(true);
  const [pending,setPending]=useState<number|null>(null);
  const [sealedUsed,setSealedUsed]=useState<number|null>(null);
@@ -92,11 +94,15 @@ export function QuantFactorHomePage(){
  },[selected]);
 
  async function handBackF0(){
-  if(!ledger||!selectedBranch)return;
-  const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(ledger.topic.id)+'/branches/'+encodeURIComponent(selectedBranch.id)+'/f0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:newUuidV4()})});
-  const d=await r.json();if(!r.ok){setError(typeof d.detail==='string'?d.detail:'F0 启动失败');return;}
-  setF0(d);
-  setTopics(list=>list.map(t=>t.id===ledger.topic.id?{...t,dispatch_status:d.status,dispatch_stop_reason:''}:t));
+  if(!ledger||!selectedBranch||starting)return;
+  setStarting(true);setError('');setNotice('正在提交研究决策…');
+  try{
+   const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(ledger.topic.id)+'/branches/'+encodeURIComponent(selectedBranch.id)+'/f0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:newUuidV4()})});
+   const d=await r.json();if(!r.ok){setNotice('');setError(typeof d.detail==='string'?d.detail:'F0 启动失败');return;}
+   setF0(d);
+   setTopics(list=>list.map(t=>t.id===ledger.topic.id?{...t,dispatch_status:d.status,dispatch_stop_reason:''}:t));
+   setNotice(d.status==='queued'?'研究决策已提交，正在排队…':d.status==='running'?'研究决策已启动，正在运行…':'研究决策已创建，状态：'+d.status);
+  }catch(e){setNotice('');setError(e instanceof Error?e.message:String(e));}finally{setStarting(false);}
  }
  useEffect(()=>{if(!f0||!['queued','running'].includes(f0.status))return;const t=setInterval(()=>{void researchFetch('/api/inst/quant/factor-workflow/f0-runs/'+f0.id).then(r=>r.ok?r.json():null).then(d=>{if(!d)return;setF0(d);if(!['queued','running'].includes(d.status))void refreshAfterRun();});},4000);return()=>clearInterval(t);},[f0?.id,f0?.status,selected]);
  useEffect(()=>{if(!f0||!ledger)return;setTopics(list=>list.map(t=>t.id===ledger.topic.id?{...t,dispatch_status:f0.status,dispatch_stop_reason:f0.stop_reason||''}:t));},[f0?.status,f0?.stop_reason]);
@@ -105,6 +111,7 @@ export function QuantFactorHomePage(){
   const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(ledger.topic.id)+'/'+(status==='paused'?'pause':'resume'),{method:'POST'});
   const d=await r.json();if(!r.ok){setError(typeof d.detail==='string'?d.detail:'课题状态更新失败');return;}
   setTopics(list=>list.map(t=>t.id===d.id?{...t,status:d.status}:t));
+  setNotice(status==='active'?'课题已恢复，点击“启动研究”开始研究决策。':'课题已暂停，不会继续调度。');
  }
  async function resumeF0(){if(!f0)return;const r=await researchFetch('/api/inst/quant/factor-workflow/f0-runs/'+f0.id+'/resume',{method:'POST'});const d=await r.json();if(!r.ok){setError(typeof d.detail==='string'?d.detail:'F0 继续失败');return;}setF0(d);}
  async function takeOver(){
@@ -175,7 +182,7 @@ export function QuantFactorHomePage(){
 
  const topicCards=topics.map(t=>(
   <button key={t.id} className={'topic'+(selected===t.id?' sel':'')} onClick={()=>setSelected(t.id)}>
-   <div className="top"><span className="tid">T{t.display_no??'—'} · {t.primary_holding_period} 日</span><span className={'badge '+((t.pending_review||0)>0?'live':t.dispatch_status==='running'?'live':t.dispatch_status==='stopped'?'warn':'gray')}>{statusText(t)}</span></div>
+   <div className="top"><span className="tid">T{t.display_no??'—'} · {purposeText(t.research_purpose)}</span><span className={'badge '+((t.pending_review||0)>0?'live':t.dispatch_status==='running'?'live':t.dispatch_status==='stopped'?'warn':'gray')}>{statusText(t)}</span></div>
    <h3>{t.project_name||'未命名课题'}</h3>
    <div className="act">{t.trial_count>0?'已登记研发检验与台账。':'等待第一次真实研发检验。'}</div>
    <div className="bar"><i style={{width:Math.min(100,t.k/Math.max(1,t.max_trials)*100)+'%'}}/></div>
@@ -239,9 +246,9 @@ export function QuantFactorHomePage(){
  const main=topic?(
   <div className="card">
    <div className="card-head">
-    <div><div className="row-flex"><span className="tid">T{topic.display_no??'—'}</span><h2>{topic.project_name||'未命名课题'}</h2><span className={'badge '+((topic.pending_review||0)>0?'live':topic.dispatch_status==='running'?'live':topic.dispatch_status==='stopped'?'warn':'gray')}>{statusText(topic)}</span></div>
+    <div><div className="row-flex"><span className="tid">T{topic.display_no??'—'} · {purposeText(topic.research_purpose)}</span><h2>{topic.project_name||'未命名课题'}</h2><span className={'badge '+((topic.pending_review||0)>0?'live':topic.dispatch_status==='running'?'live':topic.dispatch_status==='stopped'?'warn':'gray')}>{statusText(topic)}</span></div>
      <p className="fine">视图 {topic.view_id} · 主持有期 {topic.primary_holding_period} 日</p></div>
-    <div className="actions">{topic.status==='active'?<button className="btn small" onClick={()=>void setTopicStatus('paused')}>暂停课题</button>:topic.status==='paused'?<button className="btn small" onClick={()=>void setTopicStatus('active')}>继续课题</button>:null}<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>打开人工工作台</Link><Link className="btn small" to={'/quant/factor/ledger?project='+topic.project_id}>台账</Link><button className="btn small ghost" disabled title="待接入（P1）：研究意见写回研究决策上下文尚未实现">给研究意见</button></div>
+    <div className="actions">{topic.status==='active'&&(!topic.dispatch_status||topic.dispatch_status==='idle')?<button className="btn small primary" disabled={starting||!selectedBranch} onClick={()=>void handBackF0()}>{starting?'正在提交…':'启动研究'}</button>:null}{topic.status==='active'?<button className="btn small" onClick={()=>void setTopicStatus('paused')}>暂停课题</button>:topic.status==='paused'?<button className="btn small" onClick={()=>void setTopicStatus('active')}>继续课题</button>:null}<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>打开人工工作台</Link><Link className="btn small" to={'/quant/factor/ledger?project='+topic.project_id}>台账</Link><button className="btn small ghost" disabled title="待接入（P1）：研究意见写回研究决策上下文尚未实现">给研究意见</button></div>
    </div>
    <div className="card-body">
     <div className="ledger">
@@ -293,6 +300,7 @@ export function QuantFactorHomePage(){
     <label className="field full"><span>研究假设</span><textarea value={nt.hypothesis} onChange={e=>setNt({...nt,hypothesis:e.target.value})}/></label>
     <label className="field full"><span>预登记验收条件</span><textarea value={nt.acceptance} onChange={e=>setNt({...nt,acceptance:e.target.value})}/></label>
    </div><div className="form-actions"><button className="btn primary" disabled={creatingBusy||!nt.name.trim()} onClick={()=>void createTopic()}>创建课题并打开工作台</button><span className="fine">创建后回研究运行，检验仍走 F4 真实计算并计入台账。</span></div></div></div></div>}
+   {notice&&<div className="card card-pad"><p className="hint" role="status">{notice}</p></div>}
    {error&&<div className="card card-pad"><p className="hint error" role="alert">{error}</p></div>}
    {loading?(
     <div className="card card-pad"><p role="status">正在读取真实课题、分支与台账…</p></div>

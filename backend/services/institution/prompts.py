@@ -2281,6 +2281,33 @@ ROLE_PROMPTS: dict[str, str] = {
 }
 
 
+DATA_GATE_NOTE = """
+# 平台当前数据边界与闸门（必须遵守）
+输入 payload 包含 peer_summary（同业中位数）、history_summary（10 年财务摘要）、valuation_extra（股息率/净债务近似/股本）与 data_completeness（本维 have/missing/level）。
+- data_completeness.level=partial：本维 gate 最高 watch；level=missing：gate 必须 fail。
+- 缺失项只能写进 data_gaps，不得用财务结果反推行业规模/份额、分部/客户、治理事实或审计结论。
+- 治理缺核心字段时 gate=fail（不可买入），不得用“待补充”替代。
+- 使用 net_debt_proxy 时明确标注“近似，未拆分有息负债”，不得把它当作完整股权价值。
+- peer_summary 只作同业对照，不得把同业中位数当作公司自身数据。
+"""
+
+DIM_GATE_NOTES: dict[str, str] = {
+    "industry": "本维没有行业规模/CR/份额/行业价格/产能/库存/政策文件；只能给方向性判断，gate 最高 watch。",
+    "business_model": "本维没有分部/客户/量价/成本/合同负债；不得声称增长来自量、价或结构。",
+    "moat": "本维没有份额/价格/留存序列；只能用 10 年财务与同业对照，gate 最高 watch。",
+    "financial": "本维没有附注/审计意见/问询函/母公司报表；不得下“无造假”结论。",
+    "governance": "本维没有股东名册/质押/关联交易/高管数据 → gate=fail，不可买入。",
+    "valuation": "本维没有一致预期/PS/EV-EBITDA；净债务为近似值；gate 最高 watch。",
+}
+
+for _dim_key in list(DIMENSION_PROMPTS):
+    DIMENSION_PROMPTS[_dim_key] += "\n\n" + DATA_GATE_NOTE + "\n" + DIM_GATE_NOTES.get(_dim_key, "")
+
+INDUSTRY_PROMPT += "\n\n" + DATA_GATE_NOTE + "\n本维没有行业规模/CR/份额/行业价格/产能/库存/政策文件；只能给方向性判断，gate 最高 watch。"
+
+RESEARCH_MEMO_PROMPT += "\n\n# 平台数据闸门\n若任一维度 gate != pass，decision 不得为 proceed（最高 watch）；governance gate=fail 时不得给买入。必须把 data_gates 与数据缺口写清楚。"
+
+
 def _agent(
     task_id: str,
     name: str,

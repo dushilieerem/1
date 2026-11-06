@@ -24,6 +24,8 @@ type Dim = {
   rating?: number | null;
   gate?: string | null;
   analysis_md?: string;
+  gate_note?: string;
+  data_completeness?: { level?: string; have?: string[]; missing?: string[] };
   key_numbers?: unknown[];
   falsifiers?: unknown[];
   thesis_links?: unknown[];
@@ -69,6 +71,8 @@ type Memo = {
   base_value?: number;
   stale?: boolean;
   generated_at?: string;
+  data_gate_note?: string;
+  data_gates?: Record<string, string>;
   metrics?: Array<{ label: string; value: string; note?: string }>;
   engine?: string;
 };
@@ -149,6 +153,48 @@ function sourceLabel(source?: string): string {
   if (raw === "eastmoney") return "东方财富";
   if (raw === "agent") return "AI Agent";
   return raw;
+}
+
+function DataCompleteness({
+  data,
+}: {
+  data?: { level?: string; have?: string[]; missing?: string[] } | null;
+}) {
+  const { t } = useInstLocale();
+  if (!data?.level) return null;
+  const label =
+    data.level === "missing"
+      ? t("数据缺失", "Data missing")
+      : data.level === "partial"
+        ? t("数据部分可得", "Partial data")
+        : t("数据充分", "Sufficient data");
+  const tone = data.level === "missing" ? "red" : data.level === "partial" ? "amber" : "green";
+  const missing = data.missing || [];
+  return (
+    <details className="mt-2 rounded-lg border border-[#e3eaf8] bg-white px-3 py-2 text-[11px] text-[#68738b]">
+      <summary className="flex cursor-pointer flex-wrap items-center gap-2">
+        <span className="font-medium text-[#505369]">{t("数据完备性", "Data completeness")}</span>
+        <Badge tone={tone}>{label}</Badge>
+        {missing.length ? <span>{t("缺", "Missing")} {missing.length} {t("项", "items")}</span> : null}
+      </summary>
+      {missing.length ? (
+        <div className="mt-2">
+          <p className="font-medium text-[#505369]">{t("缺失数据", "Missing data")}</p>
+          <ul className="mt-1 list-disc pl-4">
+            {missing.map((x) => (
+              <li key={x}>{x}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {data.have?.length ? (
+        <p className="mt-2">
+          <span className="font-medium text-[#505369]">{t("已具备", "Available")}：</span>
+          {data.have.join("；")}
+        </p>
+      ) : null}
+    </details>
+  );
 }
 
 export function InstResearchPage() {
@@ -649,6 +695,10 @@ export function InstResearchPage() {
               <p className="text-xs leading-relaxed text-[#505369]">
                 {clipBrief(version.industry_analysis.summary) || t("待补充", "TBD")}
               </p>
+              <DataCompleteness data={version.industry_analysis.data_completeness} />
+              {version.industry_analysis.gate_note ? (
+                <p className="text-[11px] leading-relaxed text-amber-700">{version.industry_analysis.gate_note}</p>
+              ) : null}
               {version.industry_analysis.checks?.length ? (
                 <ul className="space-y-1 text-[11px] leading-relaxed text-[#68738b]">
                   {version.industry_analysis.checks.slice(0, 5).map((item) => (
@@ -822,6 +872,10 @@ export function InstResearchPage() {
                   </div>
                   <p className="mt-1 text-[11px] leading-relaxed text-[#68738b]">{activeDimData.question}</p>
                   <p className="mt-2 text-xs leading-relaxed text-[#505369]">{clipBrief(activeDimData.summary) || t("待补充", "TBD")}</p>
+                  <DataCompleteness data={activeDimData.data_completeness} />
+                  {activeDimData.gate_note ? (
+                    <p className="text-[11px] leading-relaxed text-amber-700">{activeDimData.gate_note}</p>
+                  ) : null}
                   {activeDimData.analysis_md ? (
                     <details className="mt-2 rounded-lg border border-[#e3eaf8] bg-white px-3 py-2">
                       <summary className="cursor-pointer text-[11px] font-medium text-[#7950ba]">
@@ -935,7 +989,11 @@ export function InstResearchPage() {
                 </div>
               </div>
             ) : (
-              <Empty>{t("正在自动开展六维分析；如未开始，可点击右上角。", "Six-dimension analysis starts automatically; use the top-right button if needed.")}</Empty>
+              <Empty>
+                {version
+                  ? t("正在自动开展六维分析；如未开始，可点击右上角。", "Six-dimension analysis starts automatically; use the top-right button if needed.")
+                  : t("还没有研究版本。", "No research version yet.")}
+              </Empty>
             )}
           </div>
         </div>
@@ -1003,6 +1061,11 @@ export function InstResearchPage() {
               <p className="mt-1 text-xs leading-relaxed text-[#505369]">
                 {clipBrief(memo.summary) || t("待补充", "TBD")}
               </p>
+              {memo.data_gate_note ? (
+                <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
+                  {memo.data_gate_note}
+                </p>
+              ) : null}
               {memo.memo_md ? (
                 <details className="mt-2 rounded-lg border border-[#e3eaf8] bg-[#f8faff] px-3 py-2">
                   <summary className="cursor-pointer text-[11px] font-medium text-[#7950ba]">

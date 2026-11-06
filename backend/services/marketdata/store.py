@@ -401,3 +401,78 @@ __all__ = [
     "valuation_latest",
     "valuation_percentile",
 ]
+
+
+def industry_peers(
+    symbol: str, industry_code: str | None, *, limit: int = 40
+) -> list[dict[str, Any]]:
+    """同申万一级行业的可比公司及最新财务/估值指标（不含自身）。
+
+    只返回最近一期已公告指标；没有财务或估值的字段为 None，供上层计算中位数时跳过。
+    """
+    if not industry_code:
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT rsi.symbol,
+                   v.pe_ttm, v.pb_mrq, v.total_mv, v.float_mv,
+                   f.revenue_yoy, f.gross_margin, f.net_margin, f.roe,
+                   f.report_date
+              FROM ref_security_industry rsi
+              LEFT JOIN LATERAL (
+                SELECT pe_ttm, pb_mrq, total_mv, float_mv
+                  FROM md_valuation_daily
+                 WHERE symbol = rsi.symbol
+                 ORDER BY trade_date DESC LIMIT 1
+              ) v ON TRUE
+              LEFT JOIN LATERAL (
+                SELECT revenue_yoy, gross_margin, net_margin, roe, report_date
+                  FROM fin_indicator
+                 WHERE symbol = rsi.symbol AND notice_date IS NOT NULL
+                   AND notice_date <= CURRENT_DATE
+                 ORDER BY report_date DESC LIMIT 1
+              ) f ON TRUE
+             WHERE rsi.industry_code=%s AND rsi.level=1 AND rsi.symbol<>%s
+             ORDER BY v.total_mv DESC NULLS LAST, rsi.symbol
+             LIMIT %s
+            """,
+            (industry_code, symbol, max(1, min(int(limit), 100))),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def share_capital_history(symbol: str, *, limit: int = 8) -> list[dict[str, Any]]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT effective_date, announce_date, total_shares, float_shares
+              FROM fin_share_capital
+             WHERE symbol=%s AND total_shares IS NOT NULL
+             ORDER BY effective_date DESC LIMIT %s
+            """,
+            (symbol, max(1, min(int(limit), 40))),
+        ).fetchall()
+    out = [dict(r) for r in rows]
+    for item in out:
+        for key in ("effective_date", "announce_date"):
+            item[key] = _d(item.get(key))
+    return out
+
+
+def dividend_history(symbol: str, *, limit: int = 8) -> list[dict[str, Any]]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT plan_id, announce_date, record_date, ex_date, pay_date, cash_per_share
+              FROM fin_dividend
+             WHERE symbol=%s AND cash_per_share IS NOT NULL
+             ORDER BY announce_date DESC NULLS LAST LIMIT %s
+            """,
+            (symbol, max(1, min(int(limit), 40))),
+        ).fetchall()
+    out = [dict(r) for r in rows]
+    for item in out:
+        for key in ("announce_date", "record_date", "ex_date", "pay_date"):
+            item[key] = _d(item.get(key))
+    return out

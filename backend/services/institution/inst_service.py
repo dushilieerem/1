@@ -2263,17 +2263,7 @@ def _current_version(conn, proposal_id: int) -> dict[str, Any] | None:
 
 
 def _proposal_row(conn, org_id: int, proposal_id: int) -> dict[str, Any] | None:
-    row = conn.execute(
-        """
-        SELECT p.*, co.symbol, co.name AS company_name, co.market, co.industry, c.case_no
-          FROM inst_proposal p
-          JOIN inst_company co ON co.id=p.company_id
-          JOIN inst_research_case c ON c.id=p.case_id
-         WHERE p.id=%s AND p.org_id=%s
-        """,
-        (proposal_id, org_id),
-    ).fetchone()
-    return _row_dict(row)
+    return repo.proposal_row(OrgScope(org_id), proposal_id, conn=conn)
 
 
 # ---------------------------------------------------------------- 退出案状态机

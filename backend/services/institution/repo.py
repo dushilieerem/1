@@ -323,4 +323,20 @@ def companies(
     return [dict(row) for row in rows], total
 
 
-__all__ = ["audit", "authorizations", "case", "cases", "companies", "company", "execution_exceptions", "monitor", "portfolio", "proposals", "theses"]
+def proposal_row(scope: OrgScope, proposal_id: int, *, conn=None) -> dict[str, Any] | None:
+    sql = """
+        SELECT p.*, co.symbol, co.name AS company_name, co.market, co.industry, c.case_no
+          FROM inst_proposal p
+          JOIN inst_company co ON co.id=p.company_id
+          JOIN inst_research_case c ON c.id=p.case_id
+         WHERE p.id=%s AND p.org_id=%s
+    """
+    if conn is not None:
+        row = conn.execute(sql, (proposal_id, scope.org_id)).fetchone()
+    else:
+        with get_conn() as c:
+            row = c.execute(sql, (proposal_id, scope.org_id)).fetchone()
+    return dict(row) if row else None
+
+
+__all__ = ["audit", "authorizations", "case", "cases", "companies", "company", "execution_exceptions", "monitor", "portfolio", "proposal_row", "proposals", "theses"]

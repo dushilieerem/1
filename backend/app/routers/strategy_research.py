@@ -79,6 +79,26 @@ def strategy_library(ctx=Depends(require_quant_researcher)):
     return {"strategies": invoke(svc.library, *identity(ctx))}
 
 
+class ImportBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    project_id: str = Field(min_length=1, max_length=100)
+
+
+@router.get("/importable")
+def importable(ctx=Depends(require_quant_researcher)):
+    return {"projects": invoke(svc.importable, *identity(ctx))}
+
+
+@router.post("/imports")
+def import_create(body: ImportBody, ctx=Depends(require_quant_researcher)):
+    return invoke(svc.import_asset, *identity(ctx), body.project_id)
+
+
+@router.get("/imports")
+def import_list(ctx=Depends(require_quant_researcher)):
+    return {"assets": invoke(svc.imported_assets, *identity(ctx))}
+
+
 @router.post("/branches/{bid}/diagnostics/cost-2x")
 def branch_cost_2x(bid: str, ctx=Depends(require_quant_researcher)):
     from services import strategy_diagnostics

@@ -369,3 +369,12 @@ class BranchLabelTest(unittest.TestCase):
         for key in ("r", "a1", "a2", "m1", "a2b"):
             self.assertEqual(before[key], after[key])
         self.assertEqual(after["m2"], "H2b")
+
+
+def test_short_title_strips_reasoning_and_limits_length():
+    from services.quant_factor import ledger
+
+    assert ledger._short_title("单日信号噪声偏高；改为 5 日反转") == "单日信号噪声偏高"
+    assert ledger._short_title("  ") == ""
+    long = ledger._short_title("反转" * 20)
+    assert len(long) <= 23 and long.endswith("…")

@@ -267,6 +267,49 @@ def trial_report(uid, org, trial_id):
             "policy": {"version": strategy_gates.POLICY_VERSION, **strategy_gates.POLICY}}
 
 
+def importable(uid, org):
+    """SVQuant strategy projects owned by this member, not yet imported into V5."""
+    with get_conn() as c:
+        rows = [dict(r) for r in c.execute(
+            """SELECT p.id,p.name,p.description,p.run_count,p.updated_at,
+                      (i.id IS NOT NULL) AS imported
+               FROM strategy_projects p
+               LEFT JOIN strategy_imported_assets i
+                 ON i.user_id=%s AND i.org_id=%s AND i.source_project_id=p.id
+               WHERE p.user_id=%s ORDER BY p.updated_at DESC""", (uid, org, uid)).fetchall()]
+    return [_public(r) for r in rows]
+
+
+def import_asset(uid, org, project_id):
+    with get_conn() as c:
+        row = c.execute("SELECT * FROM strategy_projects WHERE id=%s AND user_id=%s",
+                        (project_id, uid)).fetchone()
+        if not row:
+            raise KeyError(project_id)
+        cfg = row["config"] or {}
+        h = hashlib.sha256(json.dumps(cfg, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        aid = str(uuid.uuid4())
+        c.execute(
+            """INSERT INTO strategy_imported_assets
+               (id,user_id,org_id,source_project_id,name,config,implementation_hash,status)
+               VALUES (%s,%s,%s,%s,%s,%s::jsonb,%s,'imported')
+               ON CONFLICT (user_id,org_id,source_project_id)
+               DO UPDATE SET name=EXCLUDED.name,config=EXCLUDED.config,
+                             implementation_hash=EXCLUDED.implementation_hash,imported_at=NOW()""",
+            (aid, uid, org, project_id, row["name"], json.dumps(cfg, ensure_ascii=False), h))
+        out = c.execute("SELECT * FROM strategy_imported_assets WHERE user_id=%s AND org_id=%s AND source_project_id=%s",
+                        (uid, org, project_id)).fetchone()
+    return _public(out)
+
+
+def imported_assets(uid, org):
+    with get_conn() as c:
+        rows = [dict(r) for r in c.execute(
+            "SELECT * FROM strategy_imported_assets WHERE user_id=%s AND org_id=%s AND status='imported' ORDER BY imported_at DESC",
+            (uid, org)).fetchall()]
+    return [_public(r) for r in rows]
+
+
 def library(uid, org):
     """Approved strategy versions available as research baselines."""
     with get_conn() as c:
@@ -295,4 +338,4 @@ def library(uid, org):
     return [_public(r) for r in rows]
 
 
-__all__ = ["create_branch", "create_topic", "ledger", "library", "list_topics", "recipe", "trial_report"]
+__all__ = ["create_branch", "create_topic", "import_asset", "importable", "imported_assets", "ledger", "library", "list_topics", "recipe", "trial_report"]

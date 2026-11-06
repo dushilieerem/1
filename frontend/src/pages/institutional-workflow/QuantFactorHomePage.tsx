@@ -150,7 +150,7 @@ export function QuantFactorHomePage(){
    <div className="card-head">
     <div><div className="row-flex"><span className="hid">{selectedBranch.display_label||'H?'}</span><h2>{selectedBranch.display_title||('假设 v'+selectedBranch.hypothesis_version+'（未命名）')}</h2><span className="badge">{selectedBranch.display_status||selectedBranch.status}</span></div>
      <p className="fine">{selectedBranch.source_label||(selectedBranch.source==='manual'?'人工':'Agent')} · 假设 v{selectedBranch.hypothesis_version} / 实现 v{selectedBranch.implementation_version} · 内部 ID {selectedBranch.id.slice(0,8)}</p></div>
-    <div className="actions"><button className="btn small primary" onClick={()=>void takeOver()}>从此分支接手</button><button className="btn small" onClick={()=>void handBackF0()} disabled={f0&&['queued','running'].includes(f0.status)}>交回 Agent（F0）</button>{f0&&f0.stop_reason?.includes('中断')&&<button className="btn small" onClick={()=>void resumeF0()}>继续 F0</button>}<Link className="btn small" to={'/quant/factor/workflow/'+(topic?.project_id||'')+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>打开人工工作台</Link>{f0&&<span className="fine">F0：{f0.status}{f0.decision?.candidate_status?' · '+f0.decision.candidate_status:''}{f0.stop_reason?' · '+f0.stop_reason:''}</span>}</div>
+    <div className="actions"><button className="btn small primary" onClick={()=>void takeOver()}>从此分支接手</button><button className="btn small" onClick={()=>void handBackF0()} disabled={f0&&['queued','running'].includes(f0.status)}>交回研究系统</button>{f0&&f0.stop_reason?.includes('中断')&&<button className="btn small" onClick={()=>void resumeF0()}>继续研究决策</button>}<Link className="btn small" to={'/quant/factor/workflow/'+(topic?.project_id||'')+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>打开人工工作台</Link>{f0&&<span className="fine">研究决策：{f0.status}{f0.decision?.candidate_status?' · '+f0.decision.candidate_status:''}{f0.stop_reason?' · '+f0.stop_reason:''}</span>}</div>
    </div>
    <div className="card-body">
     {selectedBranch.hypothesis_text&&<p className="agent-brief" style={{marginBottom:12}}>{selectedBranch.hypothesis_text}</p>}
@@ -166,7 +166,7 @@ export function QuantFactorHomePage(){
       {t.report_id?<Link className="btn small" to={'/quant/factor/report/'+t.report_id}>报告</Link>:<span className="fine">无报告</span>}
      </div>
     ))}
-    {f0?.decision?.steps&&<div style={{marginTop:14}}><h3 style={{margin:'0 0 6px'}}>F0 决策事件</h3>{f0.decision.steps.map(s=><div className="trial-row" key={s.step}><span className="tk">S{s.step}</span><div className="tb"><b>{s.decision.action}</b><small>{s.decision.rationale}</small></div><span className="fine">{s.result.status||''}{s.result.candidate_status?' · '+s.result.candidate_status:''}</span></div>)}</div>}
+    {f0?.decision?.steps&&<div style={{marginTop:14}}><h3 style={{margin:'0 0 6px'}}>研究决策记录</h3>{f0.decision.steps.map(s=><div className="trial-row" key={s.step}><span className="tk">S{s.step}</span><div className="tb"><b>{s.decision.action}</b><small>{s.decision.rationale}</small></div><span className="fine">{s.result.status||''}{s.result.candidate_status?' · '+s.result.candidate_status:''}</span></div>)}</div>}
    </div>
   </div>
  ):null;
@@ -208,7 +208,7 @@ export function QuantFactorHomePage(){
      <span>分支 <b>{topic.branch_count}</b></span>
      <span>当前 t*(K) <b>{ledger?.threshold==null?'待接入':ledger.threshold.toFixed(3)}</b></span>
      <span>下一次可计数检验 t* <b>{ledger?.threshold_next_if_counted?.toFixed(3)||'待接入'}</b></span>
-     {ledger?.dispatch&&<span title={ledger.dispatch.stop_reason}>调度 <b>{ledger.dispatch.status==='running'?'F0 运行中':ledger.dispatch.status==='stopped'?'F0 已停止':ledger.dispatch.status}</b>{ledger.dispatch.stop_reason?' · 交人工复盘':''}</span>}
+     {ledger?.dispatch&&<span title={ledger.dispatch.stop_reason}>调度 <b>{ledger.dispatch.status==='running'?'研究决策运行中':ledger.dispatch.status==='stopped'?'研究决策已停止':ledger.dispatch.status}</b>{ledger.dispatch.stop_reason?' · 交人工复盘':''}</span>}
     </div>
     {capabilityGaps.length>0&&<p className="hint" role="status">需要的能力（F3 暂不支持）：{capabilityGaps.join('、')}。F0 已改用可实现的降级修订继续。</p>}
     <div className="section-title" style={{marginTop:16}}><h3>研究树</h3><span className="subtle">点击分支查看试验与报告</span></div>
@@ -226,13 +226,13 @@ export function QuantFactorHomePage(){
    <FactorModuleTabs active="home"/>
    {authOpen&&<div className="card card-pad" style={{marginBottom:14}}><p className="fine">当前登录成员可在本机构范围创建因子课题、运行检验与申请封存；数据视图与预登记门槛由课题计划固定，Agent 不能改门槛、扩预算或批准入库。新建课题从因子库选择已授权资产开始。</p></div>}
    <div className="sys compact">
-    <div className="sys-state"><span className="ico">⇅</span><div><b>研究系统</b><small className="fine">{loading?'读取中':`真实课题 ${topics.length} 个 · 台账 ${totalTrials} 次`}</small></div></div>
+    <div className="sys-state"><span className="ico">⇅</span><div><b><span className={"live-dot"+(topics.some(t=>t.status==='active')?'':' off')}/> {topics.some(t=>t.status==='active')?'因子研究系统运行中':'因子研究系统空闲'}</b><small className="fine">{loading?'读取中':`真实课题 ${topics.length} 个 · 台账 ${totalTrials} 次`}</small></div></div>
     <div className="kpis">
      <div className="kpi"><span>课题</span><b>{topics.length}</b><small>研究中 {topics.filter(t=>t.status==='active').length}</small></div>
      <div className="kpi"><span>试验台账</span><b>{totalTrials}</b><small>次</small></div>
      <div className="kpi"><span>封存样本已用</span><b>{sealedUsed==null?'—':sealedUsed}</b><small>累计封存（含失败）</small></div>
      <div className="kpi"><span>待人决定</span><b>{pending==null?'—':pending}</b><small>待复核候选</small></div>
-     <div className="kpi"><span>F0 Token</span><b>{f0?.decision?.steps?f0.decision.steps.reduce((n,s)=>n+(s.usage?.tokens_in||0)+(s.usage?.tokens_out||0),0):'—'}</b><small>最近一次 F0</small></div>
+     <div className="kpi"><span>Token</span><b>{f0?.decision?.steps?f0.decision.steps.reduce((n,s)=>n+(s.usage?.tokens_in||0)+(s.usage?.tokens_out||0),0):'—'}</b><small>最近一次研究决策</small></div>
     </div><div className="actions"><button className="btn small" disabled title="AC-12 / P1：全局暂停接口未接入；本轮只验证单课题暂停/继续">暂停全部（AC-12）</button></div>
    </div>
    {creating&&<div className="modal-backdrop" role="dialog" aria-modal="true" onClick={()=>setCreating(false)}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><h2>新建研究课题</h2><p className="fine">创建后冻结数据视图、区间、预算与初始因子</p></div><button className="btn small" onClick={()=>setCreating(false)}>取消</button></div><div className="modal-body">{createErr&&<p className="hint error">{createErr}</p>}<div className="form-grid">

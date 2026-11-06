@@ -40,6 +40,7 @@ const protectedPaths = [
  /^\/strategy-research\/topics\/[^/]+\/branches\/[^/]+\/s0$/,
  /^\/strategy-research\/s0-runs\/[^/]+$/,
  /^\/strategy-research\/library$/,
+ /^\/strategy-research\/(importable|imports)$/,
  /^\/strategy-research\/trials\/[^/]+\/report$/,
  /^\/strategy-research\/branches\/[^/]+\/(seal|submit-review|diagnostics(?:\/(?:cost-2x|neighborhood))?)$/,
  /^\/strategy-research\/sealed\/[^/]+$/,

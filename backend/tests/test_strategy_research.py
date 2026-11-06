@@ -59,3 +59,45 @@ class SourceRecipeTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             svc.recipe({'factors': [{'factor': 'f', 'code': 'def f(self):\n    return ('}],
                         'top_n': 30, 'rebalance_days': 10})
+
+
+class ImportedAssetTest(unittest.TestCase):
+    def test_importable_hides_owner_ids(self):
+        from unittest.mock import MagicMock, patch
+        c = MagicMock()
+        c.execute.return_value.fetchall.return_value = [
+            {'id': 'p1', 'name': '平台动量', 'description': '', 'run_count': 2,
+             'updated_at': '2026-11-01', 'imported': False, 'user_id': 9, 'org_id': 2}]
+        conn = MagicMock(); conn.__enter__.return_value = c
+        with patch.object(svc, 'get_conn', return_value=conn):
+            rows = svc.importable(9, 2)
+        self.assertEqual(rows[0]['id'], 'p1')
+        self.assertNotIn('user_id', rows[0])
+        self.assertNotIn('org_id', rows[0])
+
+    def test_import_requires_owned_project_and_hashes_config(self):
+        from unittest.mock import MagicMock, patch
+        c = MagicMock()
+        project = MagicMock(); project.fetchone.return_value = {'name': '平台动量', 'config': {'top_n': 30}}
+        insert = MagicMock()
+        stored = MagicMock(); stored.fetchone.return_value = {
+            'id': 'a1', 'user_id': 9, 'org_id': 2, 'source_project_id': 'p1',
+            'name': '平台动量', 'config': {'top_n': 30}, 'implementation_hash': 'h',
+            'status': 'imported', 'imported_at': '2026-11-01'}
+        c.execute.side_effect = [project, insert, stored]
+        conn = MagicMock(); conn.__enter__.return_value = c
+        with patch.object(svc, 'get_conn', return_value=conn):
+            out = svc.import_asset(9, 2, 'p1')
+        self.assertEqual(out['name'], '平台动量')
+        self.assertNotIn('user_id', out)
+        params = c.execute.call_args_list[1].args[1]
+        self.assertEqual(len(params[6]), 64)
+        self.assertEqual(params[3], 'p1')
+
+    def test_import_missing_project_raises_keyerror(self):
+        from unittest.mock import MagicMock, patch
+        c = MagicMock(); c.execute.return_value.fetchone.return_value = None
+        conn = MagicMock(); conn.__enter__.return_value = c
+        with patch.object(svc, 'get_conn', return_value=conn):
+            with self.assertRaises(KeyError):
+                svc.import_asset(9, 2, 'missing')

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+from services import strategy_s0
 from app.deps import require_quant_researcher
 from app.routers.inst_quant import _quant_uid
 from services.quant_factor.policy import WorkflowError
@@ -71,3 +72,18 @@ def branch_backtest(bid: str, ctx=Depends(require_quant_researcher)):
 @router.post("/topics/{tid}/branches")
 def branch_create(tid: str, body: BranchBody, ctx=Depends(require_quant_researcher)):
     return invoke(svc.create_branch, *identity(ctx), tid, body.model_dump(), ("manual",))
+
+
+class S0Body(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: str = Field(min_length=1, max_length=100)
+
+
+@router.post("/topics/{tid}/branches/{bid}/s0", status_code=202)
+def s0_start(tid: str, bid: str, body: S0Body, ctx=Depends(require_quant_researcher)):
+    return invoke(strategy_s0.start, *identity(ctx), tid, bid, body.idempotency_key)
+
+
+@router.get("/s0-runs/{rid}")
+def s0_read(rid: str, ctx=Depends(require_quant_researcher)):
+    return invoke(strategy_s0.read, *identity(ctx), rid)

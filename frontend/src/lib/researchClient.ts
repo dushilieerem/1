@@ -37,6 +37,8 @@ export function researchPagePath(path: string) {
 const protectedPaths = [
  /^\/strategy-research\/topics(?:\/[^/]+(?:\/(ledger|branches))?)?$/,
  /^\/strategy-research\/branches\/[^/]+\/backtest$/,
+ /^\/strategy-research\/topics\/[^/]+\/branches\/[^/]+\/s0$/,
+ /^\/strategy-research\/s0-runs\/[^/]+$/,
  /^\/factor-workflow\/projects\/[^/]+\/iterations(?:\/latest)?$/,
  /^\/factor-workflow\/iterations\/[^/]+(?:\/pause)?$/,
  /^\/factor-workflow\/agent-jobs(?:\/[^/]+(?:\/cancel)?)?$/,

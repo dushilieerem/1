@@ -3,12 +3,12 @@
 
 约定：
 - 表在 schema `svquant`，由数据业务 loader 写入；
-- 所有查询按 available_time / report_date 做 PIT，不读未来数据；
+- PIT 规则：`report_date <= as_of` 且 `available_time::date <= as_of`（available_time 是公告/可见时点 m_anntime，截止日当天公告可见）；
 - 表不存在/未加载时返回 None，调用方按数据缺口处理，不影响研究生成。
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from typing import Any
 
 import psycopg
@@ -22,11 +22,6 @@ def _as_of(value: Any) -> date:
         return date.fromisoformat(text)
     except ValueError:
         return date.today()
-
-
-def _pit_upper(value: Any) -> str:
-    # 截止日当天可见的数据都算已可用；不读次日及以后。
-    return (_as_of(value) + timedelta(days=1)).isoformat()
 
 
 def _query(conn, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]] | None:
@@ -46,16 +41,16 @@ def holder_summary(
         f"""
         WITH latest AS (
           SELECT MAX(report_date) AS d FROM {table}
-           WHERE symbol=%s AND report_date <= %s AND available_time < %s
+           WHERE symbol=%s AND report_date <= %s AND available_time::date <= %s
         )
         SELECT rank, holder_name, is_org, shares, ratio_pct, shares_type,
                change_text, change_ratio_pct, report_date, source, caliber
           FROM {table}, latest
          WHERE symbol=%s AND report_date=latest.d
-           AND available_time < %s
+           AND available_time::date <= %s
          ORDER BY rank
         """,
-        (symbol, _as_of(as_of), _pit_upper(as_of), symbol, _pit_upper(as_of)),
+        (symbol, _as_of(as_of), _as_of(as_of), symbol, _as_of(as_of)),
     )
     if not rows:
         return None
@@ -99,16 +94,16 @@ def segment_summary(
         """
         WITH latest AS (
           SELECT MAX(report_date) AS d FROM svquant.segment_revenue
-           WHERE symbol=%s AND report_date <= %s AND available_time < %s
+           WHERE symbol=%s AND report_date <= %s AND available_time::date <= %s
         )
         SELECT report_date, segment_type, segment_name, revenue, share_pct,
                gross_profit, gross_margin_pct, source, caliber
           FROM svquant.segment_revenue, latest
          WHERE symbol=%s AND report_date=latest.d
-           AND available_time < %s
+           AND available_time::date <= %s
          ORDER BY segment_type, revenue DESC NULLS LAST
         """,
-        (symbol, _as_of(as_of), _pit_upper(as_of), symbol, _pit_upper(as_of)),
+        (symbol, _as_of(as_of), _as_of(as_of), symbol, _as_of(as_of)),
     )
     if not rows:
         return None
@@ -147,8 +142,14 @@ def segment_summary(
 def interest_debt_summary(conn, symbol: str, as_of: Any) -> dict[str, Any] | None:
     """有息负债/净债务/预收款（数据业务口径）。
 
-    金融企业（银行/保险/证券）的 interest_debt_total 与 net_debt 为 NULL，
-    不得用总负债−现金替代；调用方应跳过净债务桥。
+    口径（2026-11-06 数据业务确认）：
+    - interest_debt_total = 短期借款 + 一年内到期非流动负债 + 长期借款 + 应付债券，
+      **不含租赁负债**（源三表无 lease_liabilities，固定 NULL，也未计入合计）；
+    - net_debt = interest_debt_total − cash，cash **未扣受限资金**
+      （restricted_cash 源缺失，不做二次调整，避免与数据业务口径分叉）；
+    - advance_receipts 是预收款项；contract_liabilities 源未单列（NULL），两者不可相加；
+    - 金融企业（银行/保险/证券）interest_debt_total 与 net_debt 均为 NULL，
+      is_financial=true 是主判断，NULL 不得当 0，也不得用总负债−现金替代。
     """
     rows = _query(
         conn,
@@ -160,10 +161,10 @@ def interest_debt_summary(conn, symbol: str, as_of: Any) -> dict[str, Any] | Non
                minority_equity, total_equity, sw_l1_code, is_financial,
                source, caliber, available_time
           FROM svquant.interest_debt
-         WHERE symbol=%s AND report_date <= %s AND available_time < %s
+         WHERE symbol=%s AND report_date <= %s AND available_time::date <= %s
          ORDER BY report_date DESC LIMIT 1
         """,
-        (symbol, _as_of(as_of), _pit_upper(as_of)),
+        (symbol, _as_of(as_of), _as_of(as_of)),
     )
     if not rows:
         return None
@@ -178,6 +179,10 @@ def interest_debt_summary(conn, symbol: str, as_of: Any) -> dict[str, Any] | Non
         "net_debt": float(net_debt) if net_debt is not None else None,
         "net_debt_applicable": (not is_financial) and net_debt is not None,
         "is_financial": is_financial,
+        "lease_in_total": False,
+        "interest_debt_components": (
+            "短期借款 + 一年内到期非流动负债 + 长期借款 + 应付债券"
+        ),
         "advance_receipts": (
             float(row["advance_receipts"]) if row.get("advance_receipts") is not None else None
         ),
@@ -189,9 +194,15 @@ def interest_debt_summary(conn, symbol: str, as_of: Any) -> dict[str, Any] | Non
         "restricted_cash": float(row["restricted_cash"]) if row.get("restricted_cash") is not None else None,
         "lease_liabilities": float(row["lease_liabilities"]) if row.get("lease_liabilities") is not None else None,
         "note": (
-            "金融企业：有息负债/净债务不适用，不能作为净债务桥。"
+            "金融企业：有息负债合计与净债务均为 NULL，不适用净债务桥，不能按 0 处理。"
             if is_financial
-            else "净债务 = 有息负债合计 − 货币资金；受限资金/租赁负债/合同负债源数据为空，未用近似值。"
+            else (
+                "有息负债合计不含租赁负债（源缺失）；净债务 = 有息负债合计 − 货币资金，"
+                "货币资金未扣受限资金；预收款项与合同负债不是同一科目，合同负债源未单列。"
+            )
+        ),
+        "population_note": (
+            "2011–2015 归母权益已回补；available_time 取原表 m_anntime，不是 F10 NOTICE_DATE。"
         ),
         "source": row.get("source"),
         "caliber": row.get("caliber"),
@@ -204,10 +215,10 @@ def audit_summary(conn, symbol: str, as_of: Any) -> dict[str, Any] | None:
         """
         SELECT report_date, opinion_type, announce_date, available_time, source, caliber
           FROM svquant.audit_opinion
-         WHERE symbol=%s AND report_date <= %s AND available_time < %s
+         WHERE symbol=%s AND report_date <= %s AND available_time::date <= %s
          ORDER BY report_date DESC LIMIT 1
         """,
-        (symbol, _as_of(as_of), _pit_upper(as_of)),
+        (symbol, _as_of(as_of), _as_of(as_of)),
     )
     if not rows:
         return None

@@ -567,11 +567,16 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 
 接入数据业务 `svquant.interest_debt`（有息负债、净债务、预收款、合同负债）：
 
-- `data_platform.interest_debt_summary`：按 `available_time`/`report_date` 做 PIT；返回短期借款、一年内到期非流动负债、长期借款、应付债券、租赁负债、有息负债合计、现金、受限现金、净债务、预收款/合同负债、母公司/少数股东权益、`is_financial`。
-- 净债务优先使用数据业务口径（有息负债合计 − 现金），原先的“有息负债代理 + 现金”只在表未加载时兜底，估值桥注明来源。
+- `data_platform.interest_debt_summary`：按 `report_date <= as_of` 且 `available_time::date <= as_of` 做 PIT（available_time 为公告/可见时点 m_anntime）；返回短期借款、一年内到期非流动负债、长期借款、应付债券、租赁负债、有息负债合计、现金、受限现金、净债务、预收款/合同负债、母公司/少数股东权益、`is_financial`。
+- 口径以数据业务 2026-11-06 确认为准：
+  - `interest_debt_total` = 短借 + 一年内到期非流动负债 + 长借 + 应付债券，**不含租赁负债**（源三表无该字段，固定 NULL，也未计入合计）；payload 用 `lease_in_total=false` 明示。
+  - `net_debt = interest_debt_total − cash`，**cash 未扣受限资金**（`restricted_cash` 源缺失）；我们直接采用，不二次调整，展示标注“未扣受限资金”。
+  - 金融企业 `interest_debt_total` 与 `net_debt` 均为 NULL，`is_financial=true` 是主判断；NULL 不得当 0，也不得用总负债−现金替代。
+  - `advance_receipts` 是预收款项；`contract_liabilities` 源未单列（NULL），两者不可相加，也不参与 Gate。
+  - 2011–2015 归母权益已回补，但 `available_time` 取原表 `m_anntime`，不是 F10 `NOTICE_DATE`。
+- 净债务优先使用数据业务口径，原先的“有息负债代理 + 现金”只在表未加载时兜底，估值桥注明来源。
 - 金融企业（`is_financial=true`）不适用净债务桥：演示估值降为 `relative_only` 并写明原因，不拿 NULL 当 0。
-- 数据完备性：财务维度补充有息负债/净债务；商业模式补充预收款/合同负债；估值维度注明净债务口径。
-- 提示词 payload 增加 `interest_debt_summary`，并提示“金融企业不适用净债务”。
-- 已知口径：`net_debt` 对金融企业为 NULL；`advance_receipts`/`contract_liabilities` 仅在报表披露时非空，不参与 Gate 判定，只作商业模式证据。
+- 数据完备性：财务维度补充有息负债/净债务；商业模式补充预收款项（非合同负债）；估值维度注明净债务口径。
+- 提示词 payload 增加 `interest_debt_summary` 与上述口径说明。
 
-验证：pytest 98 passed（含 `test_interest_debt_summary_and_financial_null`、`test_build_research_uses_data_business_net_debt`）；tsc 通过；e2e-09/10/11/12 17 passed。
+验证：pytest 98 passed（含 `test_interest_debt_summary_and_financial_null` 的 PIT 当天/前一天边界、`test_build_research_uses_data_business_net_debt`）；tsc 通过；e2e-09/10/11/12 17 passed。

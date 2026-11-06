@@ -67,17 +67,21 @@ test("辩论后补议案 → 审批 → 自动授权成交 → 持仓更新", as
   test.skip(!writeEnabled, "写库用例需要 INST_E2E_ALLOW_WRITE=1 且服务端库名为 svquant_test");
   test.setTimeout(300_000);
 
-  // 选一只尚未持有、且行业未过度集中的标的：重复运行不会把自己持有的票越买越集中。
+  // 优先未持仓；重复运行把候选买完后，退回加仓低权重标的，
+  // 只要加 5% 后仍低于风控单票/行业上限，测试仍可重跑。
   const portfolioBefore = await call(request, "GET", "/api/inst/portfolio", T.manager);
   const positionsBefore = (portfolioBefore.positions || []).filter((p: any) => Number(p.qty) > 0);
   const held = new Set(positionsBefore.map((p: any) => String(p.symbol)));
+  const weightOf = new Map(
+    positionsBefore.map((p: any) => [String(p.symbol), Number(p.weight || 0)]),
+  );
   const crowded = new Set(
     positionsBefore
       .filter((p: any) => Number(p.weight || 0) > 0.2 && p.industry)
       .map((p: any) => String(p.industry)),
   );
   const companies = await call(request, "GET", "/api/inst/companies?limit=200", T.manager);
-  const company = (companies.items || []).find(
+  const eligible = (companies.items || []).filter(
     (c: any) =>
       c.market === "CN" &&
       Number(c.ref_price) >= 5 &&
@@ -85,13 +89,14 @@ test("辩论后补议案 → 审批 → 自动授权成交 → 持仓更新", as
       c.up_down_status === "非涨跌停" &&
       !c.is_st &&
       !c.is_suspended &&
-      !String(c.name || "").includes("ST") &&
-      !String(c.name || "").includes("退") &&
-      !held.has(String(c.symbol)) &&
       !crowded.has(String(c.industry || "")) &&
       // 风控会硬阻断 ST/*ST/退市整理标的，E2E 不选它们。
       !/(^|\*)ST|退/.test(String(c.name || "")),
   );
+  const company =
+    eligible.find((c: any) => !held.has(String(c.symbol))) ||
+    // 目标仓位默认 5%；单票上限 15%，留 2% 余量。
+    eligible.find((c: any) => Number(weightOf.get(String(c.symbol)) || 0) + 0.05 <= 0.13);
   expect(company, "找不到可用于买入流程的未持仓标的").toBeTruthy();
   const symbol = String(company.symbol);
   const beforeQty = await holdingQty(request, symbol);

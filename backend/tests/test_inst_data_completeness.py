@@ -162,12 +162,21 @@ def test_interest_debt_summary_and_financial_null() -> None:
     with get_conn() as conn:
         normal = data_platform.interest_debt_summary(conn, "600519.SH", "2026-11-06")
         bank = data_platform.interest_debt_summary(conn, "601288.SH", "2026-11-06")
+        # PIT：available_time 当天可见，前一天不可见（数据业务契约为 <=）
+        on_day = data_platform.interest_debt_summary(conn, "600519.SH", "2026-04-17")
+        before_day = data_platform.interest_debt_summary(conn, "600519.SH", "2026-04-16")
+    assert on_day and on_day["report_date"] == "2025-12-31"
+    assert before_day is None
     assert normal and normal["is_financial"] is False
     assert normal["net_debt_applicable"] is True
     assert normal["net_debt"] < 0
     assert normal["interest_debt_total"] is not None
+    assert normal["lease_in_total"] is False
+    assert "不含租赁负债" in normal["note"]
+    assert "未扣受限资金" in normal["note"]
     assert bank and bank["is_financial"] is True
     assert bank["net_debt"] is None
+    assert bank["interest_debt_total"] is None
     assert bank["net_debt_applicable"] is False
     assert "不适用" in bank["note"]
 

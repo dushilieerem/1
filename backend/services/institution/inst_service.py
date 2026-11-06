@@ -1075,7 +1075,7 @@ def _data_completeness(
         business_have.append(f"分部收入/毛利（{segments.get('report_date')}，产品/地区/行业）")
         business_missing.remove("分产品/分地区收入与毛利")
     if debt and debt.get("advance_receipts") is not None:
-        business_have.append("预收款项（数据业务口径）")
+        business_have.append("预收款项（非合同负债，合同负债源未单列）")
         if "合同负债/预收款" in business_missing:
             business_missing.remove("合同负债/预收款")
             business_missing.append("合同负债（源数据为空，B 组补）")
@@ -1106,7 +1106,7 @@ def _data_completeness(
         if debt.get("is_financial"):
             financial_have.append("有息负债/净债务不适用（金融企业）")
         elif debt.get("net_debt") is not None:
-            financial_have.append("有息负债/净债务（数据业务口径）")
+            financial_have.append("有息负债/净债务（数据业务口径：不含租赁负债，未扣受限资金）")
         if debt.get("advance_receipts") is not None:
             financial_have.append("预收款项")
         financial_missing.append("受限资金/租赁负债/合同负债（源数据为空，B 组补）")
@@ -1157,7 +1157,9 @@ def _data_completeness(
             "have": [
                 "PE/PB 与 3 年分位",
                 "股息率",
-                "净债务（有息负债−现金，非金融）" if debt and debt.get("net_debt_applicable") else "净债务近似（总负债−现金）",
+                "净债务（有息负债合计−现金；不含租赁负债、未扣受限资金）"
+                if debt and debt.get("net_debt_applicable")
+                else "净债务近似（总负债−现金）",
                 peer_note,
             ],
             "missing": [
@@ -1198,14 +1200,14 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
             net_debt = {
                 "value": None,
                 "applicable": False,
-                "label": "金融企业：有息负债/净债务不适用，不能作为净债务桥。",
+                "label": "金融企业：有息负债合计与净债务均为 NULL（不适用），不能作为净债务桥。",
                 "source": debt_summary.get("source"),
             }
         elif debt_summary.get("net_debt") is not None:
             net_debt = {
                 "value": float(debt_summary["net_debt"]),
                 "applicable": True,
-                "label": "有息负债合计 − 现金（数据业务口径；受限资金/租赁负债为空）",
+                "label": "有息负债合计 − 现金（数据业务口径；合计不含租赁负债，现金未扣受限资金）",
                 "source": debt_summary.get("source"),
             }
     valuation_extra = {

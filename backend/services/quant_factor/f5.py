@@ -81,7 +81,7 @@ def opinion(uid, org, cid):
                           response_format={"type": "json_object"}))
     assert_quota_available(uid)
     out = run_task(TASK, messages=[{"role": "system", "content": instructions},
-                                   {"role": "user", "content": json.dumps(ctx, ensure_ascii=False)}])
+                                   {"role": "user", "content": json.dumps(ctx, ensure_ascii=False, default=str)}])
     rid = "qff5_" + uuid.uuid4().hex
     record_usage(user_id=uid, run_id=rid, skill=TASK,
                  tokens_in=out.get("tokens_in", 0), tokens_out=out.get("tokens_out", 0))
@@ -100,7 +100,7 @@ def opinion(uid, org, cid):
         rev["independent_opinion"] = opinion_row
         card["review"] = rev
         c.execute("UPDATE quant_factor_candidates SET archive=%s::jsonb,updated_at=NOW() WHERE id=%s AND org_id=%s",
-                  (json.dumps(card, ensure_ascii=False), cid, org))
+                  (json.dumps(card, ensure_ascii=False, default=str), cid, org))
     return opinion_row
 
 

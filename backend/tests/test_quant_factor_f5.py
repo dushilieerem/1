@@ -1,5 +1,6 @@
 import json
 import unittest
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 from services.quant_factor import f5
@@ -37,3 +38,23 @@ class F5Test(unittest.TestCase):
                  patch.object(f5, 'record_usage'), patch.object(f5, 'run_task', return_value=out):
                 with self.assertRaisesRegex(WorkflowError, '结论不在允许范围'):
                     f5.opinion(9, 2, 'c')
+
+
+class F5DateSerializationTest(unittest.TestCase):
+    def test_date_in_frozen_snapshot_serializes(self):
+        row = {**ROW, 'user_id': 5, 'snapshot': {'plan': {'researchPurpose': 'replication'},
+                                                 'as_of': date(2026, 1, 1)}}
+        c = MagicMock(); c.execute.return_value.fetchone.return_value = row
+        conn = MagicMock(); conn.__enter__.return_value = c
+        seen = {}
+        out = {'content': json.dumps({'verdict': 'reject', 'rationale': '封存失败，不能入库',
+                                      'limitations': ['R4 未接入']})}
+        def run_task(task, messages):
+            seen['messages'] = messages
+            return out
+        with patch.object(f5, 'get_conn', return_value=conn), \
+             patch.object(f5, 'get_task'), patch.object(f5, 'assert_quota_available'), \
+             patch.object(f5, 'record_usage'), patch.object(f5, 'run_task', side_effect=run_task):
+            result = f5.opinion(9, 2, 'c')
+        self.assertEqual(result['verdict'], 'reject')
+        self.assertIn('2026-01-01', seen['messages'][1]['content'])

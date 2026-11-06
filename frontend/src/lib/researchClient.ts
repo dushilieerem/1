@@ -51,6 +51,7 @@ const protectedPaths = [
  /^\/factor-workflow\/published-view$/,
  /^\/data-resources\/(catalog(?:\/[^/]+)?|views|requests)$/,
  /^\/portfolio\/plans(?:\/[^/]+(?:\/(risk|revise|submit|approve|stop|simulate))?)?$/,
+ /^\/monitor\/overview$/,
  /^\/factor-workflow\/imports\/svquant-existing(?:\/reference)?$/,
  /^\/factor-workflow\/projects\/[^/]+\/topics$/,
  /^\/factor-workflow\/topics$/, 

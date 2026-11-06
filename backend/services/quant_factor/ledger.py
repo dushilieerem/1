@@ -332,7 +332,19 @@ def list_org_topics(uid: int, org: int) -> list[dict]:
                         ORDER BY r.created_at DESC LIMIT 1) AS dispatch_status,
                       (SELECT r.stop_reason FROM quant_factor_f0_runs r
                         WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id
-                        ORDER BY r.created_at DESC LIMIT 1) AS dispatch_stop_reason
+                        ORDER BY r.created_at DESC LIMIT 1) AS dispatch_stop_reason,
+                      (SELECT COUNT(DISTINCT c.id) FROM quant_factor_candidates c
+                        JOIN quant_factor_trials r
+                          ON r.user_id=c.user_id AND r.org_id=c.org_id
+                         AND r.report_id='qf_'||c.id||'_development'
+                        WHERE c.user_id=t.user_id AND c.org_id=t.org_id AND r.topic_id=t.id
+                          AND c.archive->'review'->>'status'='requested') AS pending_review,
+                      (SELECT COUNT(*) FROM quant_factor_sealed_validations v
+                        WHERE v.user_id=t.user_id AND v.org_id=t.org_id AND v.topic_id=t.id
+                          AND v.status='passed') AS sealed_passed,
+                      (SELECT r.outcome FROM quant_factor_trials r
+                        WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id
+                        ORDER BY r.trial_no DESC LIMIT 1) AS latest_outcome
                FROM quant_factor_topics t
                JOIN detect_projects p ON p.user_id=t.user_id AND p.id=t.project_id
                WHERE t.user_id=%s AND t.org_id=%s
@@ -490,6 +502,23 @@ def _branch_titles(uid: int, org: int, topic_id: str) -> dict:
     return titles
 
 
+def _branch_reviews(uid: int, org: int, topic_id: str) -> dict:
+    with get_conn() as c:
+        rows = c.execute(
+            """SELECT r.branch_id,c.id AS candidate_id,c.archive->'review'->>'status' AS review_status
+               FROM quant_factor_candidates c
+               JOIN quant_factor_trials r
+                 ON r.user_id=c.user_id AND r.org_id=c.org_id
+                AND r.report_id='qf_'||c.id||'_development'
+               WHERE c.user_id=%s AND c.org_id=%s AND r.topic_id=%s
+               ORDER BY c.updated_at""",
+            (uid, org, topic_id)).fetchall()
+    out = {}
+    for row in rows:
+        out[row["branch_id"]] = {"candidate_id": row["candidate_id"], "review_status": row["review_status"]}
+    return out
+
+
 def _branch_sealed(uid: int, org: int, topic_id: str) -> dict:
     with get_conn() as c:
         rows = c.execute(
@@ -514,6 +543,7 @@ def ledger_view(uid: int, org: int, topic_id: str) -> dict:
     labels = _branch_labels(uid, org, topic_id, branches)
     titles = _branch_titles(uid, org, topic_id)
     sealed = _branch_sealed(uid, org, topic_id)
+    reviews = _branch_reviews(uid, org, topic_id)
     children = {}
     for b in branches:
         children.setdefault(b.get("parent_id"), []).append(b["id"])
@@ -534,8 +564,11 @@ def ledger_view(uid: int, org: int, topic_id: str) -> dict:
         b["hypothesis_text"] = titles.get(b["id"]) or ""
         b["source_label"] = "人工" if b.get("source") == "manual" else "Agent"
         s_status = sealed.get(b["id"])
+        review = reviews.get(b["id"]) or {}
         t = latest_trial.get(b["id"])
-        if b.get("status") in ("archived", "rejected", "submitted", "approved"):
+        if review.get("review_status") == "requested":
+            b["display_status"] = "待复核"
+        elif b.get("status") in ("archived", "rejected", "submitted", "approved"):
             b["display_status"] = {"archived": "已归档", "rejected": "已驳回",
                                    "submitted": "待复核", "approved": "已入库"}[b["status"]]
         elif s_status == "failed":

@@ -360,5 +360,7 @@ from app.routers.portfolio import router as portfolio_router
 app.include_router(portfolio_router)
 from app.routers.quant_monitor import router as quant_monitor_router
 app.include_router(quant_monitor_router)
+from app.routers.quant_agents import router as quant_agents_router
+app.include_router(quant_agents_router)
 from app.routers.strategy_research import router as strategy_research_router
 app.include_router(strategy_research_router)

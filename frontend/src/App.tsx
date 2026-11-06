@@ -8,6 +8,7 @@ import {QuantPrototypeModulePage} from "@/pages/institutional-workflow/QuantProt
 import {QuantDataResourcesPage} from "@/pages/institutional-workflow/QuantDataResourcesPage";
 import {QuantPortfolioPage} from "@/pages/institutional-workflow/QuantPortfolioPage";
 import {QuantMonitorPage} from "@/pages/institutional-workflow/QuantMonitorPage";
+import {QuantAgentsPage} from "@/pages/institutional-workflow/QuantAgentsPage";
 import {QuantOverviewPage,QuantResearchReviews,QuantFactorExperimentsPage} from "@/pages/institutional-workflow/QuantWorkspacePages";
 import "@/pages/institutional-workflow/quantWorkspace.css";
 import { QuantLayout } from "@/pages/institutional-workflow/QuantLayout";
@@ -251,9 +252,9 @@ export default function App() {
 
         <Route path="/login" element={<LoginPage />} />
         <Route element={<QuantLayout />}>
-          <Route path="/quant/reviews" element={<QuantPrototypeModulePage />} />
+          <Route path="/quant/reviews" element={<QuantResearchReviews />} />
           <Route path="/quant/reviews/factors" element={<QuantResearchReviews />} />
-          <Route path="/quant/agents" element={<QuantPrototypeModulePage />} />
+          <Route path="/quant/agents" element={<QuantAgentsPage />} />
           <Route path="/quant/data" element={<QuantDataResourcesPage />} />
           <Route path="/quant/portfolio" element={<QuantPortfolioPage />} />
           <Route path="/quant/monitor" element={<QuantMonitorPage />} />

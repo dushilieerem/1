@@ -320,6 +320,23 @@ def register_asset(uid,org,cid,library_id):
     return current(uid,org,cid)
 
 
+def retry_development(uid, org, cid):
+    """Re-dispatch an interrupted/failed development run on the same frozen candidate."""
+    row = store.read(uid, org, cid)
+    if row["status"] != "development_error":
+        raise WorkflowError("只有研发计算异常的固定候选可以重试；已通过/未通过请新建研究版本")
+    evidence = dict(row.get("evidence") or {})
+    block = dict(evidence.get("development") or {})
+    if not block.get("interrupted"):
+        raise WorkflowError("该异常没有可重试的中断标记；请从 F4 重新发起研究")
+    block.update({"interrupted": False, "message": ""})
+    evidence["development"] = block
+    store.update(uid, org, cid, "development_running",
+                 event("development_retry", message="用户重试中断的研发检验"), evidence)
+    _dispatch(uid, org, cid, "development", "human")
+    return current(uid, org, cid)
+
+
 def mark_interrupted_candidates() -> int:
     """BFF 重启后在途 F4 线程已不存在；标记为可重试的中断，不伪造结果。"""
     with get_conn() as c:

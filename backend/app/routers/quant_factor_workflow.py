@@ -21,6 +21,10 @@ def create(project_id:str,ctx=Depends(require_quant_researcher)):
     return invoke(service.create,*identity(ctx),project_id)
 @router.get('/candidates/{cid}')
 def get(cid:str,ctx=Depends(require_quant_researcher)):return invoke(service.current,*identity(ctx),cid)
+@router.post('/candidates/{cid}/retry',status_code=202)
+def retry_candidate(cid:str,ctx=Depends(require_quant_researcher)):
+    return invoke(service.retry_development,*identity(ctx),cid)
+
 @router.post('/candidates/{cid}/validate',status_code=202)
 def validate(cid:str,ctx=Depends(require_quant_researcher)):return invoke(service.validate,*identity(ctx),cid)
 @router.post('/candidates/{cid}/novelty/retry',status_code=202)

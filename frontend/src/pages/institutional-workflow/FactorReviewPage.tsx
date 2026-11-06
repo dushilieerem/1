@@ -28,7 +28,7 @@ export function FactorReviewPage(){
  async function save(value=decision){if(!current||busy)return;const n=serial.current;setBusy(true);setError('');try{const c=await api<Item>('/'+current.id,{decision:value,note});if(n===serial.current){setCurrent(c);setItems(a=>a.map(x=>x.id===c.id?{...x,...c}:x));setAck(false);}}catch(e){if(n===serial.current)setError(e instanceof Error?e.message:String(e));}finally{if(n===serial.current)setBusy(false);}}
  const development=current?.evidence?.development;
  const checks=development?.gate?.checks||[];
- return <><WorkspaceHeading title="审查" description="独立复核冻结证据；只看候选、门槛与课题全部试验，不共享研究对话。"><span className="fine">仅复核权限可用</span></WorkspaceHeading><FactorModuleTabs active="review"/>
+ return <><WorkspaceHeading eyebrow="FACTOR FACTORY" title="审查" description="独立复核冻结证据；只看候选、门槛与课题全部试验，不共享研究对话。"><span className="fine">仅复核权限可用</span></WorkspaceHeading><FactorModuleTabs active="review"/>
  {error&&<div className="card card-pad"><p className="hint error" role="alert">{error}</p></div>}
  <div className="rv-grid">
   <aside className="queue">{items.length===0?<div className="card card-pad"><p className="empty">没有待审候选</p></div>:items.map(i=><button key={i.id} disabled={busy} className={'qi'+(current?.id===i.id?' sel':'')} onClick={()=>void select(i.id)}><span className="subtle">{i.id.slice(0,8)} · {i.status}</span><b>{i.name||i.snapshot?.name||i.id}</b><small>{i.archive.review.status==='requested'?'待复核':'已复核'}</small></button>)}</aside>

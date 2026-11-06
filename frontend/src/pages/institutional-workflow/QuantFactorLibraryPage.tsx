@@ -42,7 +42,7 @@ export function QuantFactorLibraryPage(){
  ];
  const rows=pool.filter(x=>filter==='all'||(filter==='imported'&&x.kind==='imported')||(filter==='platform'&&x.kind==='platform')).filter(x=>[x.name,x.display,x.definition,x.library].join(' ').toLowerCase().includes(query.toLowerCase()));
  return <>
-  <WorkspaceHeading title="因子库" description="真实目录与导入资产；参考指标为 SVQuant 面板口径，V5 正式指标缺失时显示待接入。"><button className="btn" onClick={()=>location.reload()} disabled={loading}>刷新目录</button></WorkspaceHeading>
+  <WorkspaceHeading eyebrow="FACTOR FACTORY" title="因子库" description="真实目录与导入资产；参考指标为 SVQuant 面板口径，V5 正式指标缺失时显示待接入。"><button className="btn" onClick={()=>location.reload()} disabled={loading}>刷新目录</button></WorkspaceHeading>
   <FactorModuleTabs active="library"/>
   {error&&<div className="card card-pad"><p className="hint error" role="alert">{error}</p></div>}
   <div className="filters">{[['all','全部'],['imported','SVQuant 已有'],['platform','平台内置']].map(([k,label])=><button key={k} className={filter===k?'on':''} onClick={()=>setFilter(k)}>{label}</button>)}</div>

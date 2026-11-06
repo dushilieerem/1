@@ -5,7 +5,7 @@ import {createProject,saveProject} from '@/lib/detectStore';
 import {FactorModuleTabs,WorkspaceHeading} from './QuantWorkspacePages';
 
 type Topic={id:string;display_no?:number;project_id:string;project_name:string;view_id:string;primary_holding_period:number;max_trials:number;max_sealed:number;sealed_used?:number;status:string;k:number;branch_count:number;trial_count:number;created_at?:string};
-type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;status:string;hypothesis_version:number;implementation_version:number;created_at?:string;display_label?:string;display_title?:string;source_label?:string;display_status?:string};
+type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;status:string;hypothesis_version:number;implementation_version:number;created_at?:string;display_label?:string;display_title?:string;hypothesis_text?:string;source_label?:string;display_status?:string};
 type Trial={trial_no:number;branch_id:string;kind:string;outcome:string;executor:string;report_id?:string|null;created_at?:string;returned_metrics?:boolean;rerun_of?:string|null;result_summary?:{gate?:{checks?:{name:string;actual:number|null;threshold:number;passed:boolean}[]}}};
 type Ledger={topic:Topic;branches:Branch[];trials:Trial[];k:number;threshold:number|null;threshold_next_if_counted:number;next_trial_no:number;dispatch?:{status:string;stop_reason:string}|null};
 
@@ -153,6 +153,7 @@ export function QuantFactorHomePage(){
     <div className="actions"><button className="btn small primary" onClick={()=>void takeOver()}>从此分支接手</button><button className="btn small" onClick={()=>void handBackF0()} disabled={f0&&['queued','running'].includes(f0.status)}>交回 Agent（F0）</button>{f0&&f0.stop_reason?.includes('中断')&&<button className="btn small" onClick={()=>void resumeF0()}>继续 F0</button>}<Link className="btn small" to={'/quant/factor/workflow/'+(topic?.project_id||'')+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>打开人工工作台</Link>{f0&&<span className="fine">F0：{f0.status}{f0.decision?.candidate_status?' · '+f0.decision.candidate_status:''}{f0.stop_reason?' · '+f0.stop_reason:''}</span>}</div>
    </div>
    <div className="card-body">
+    {selectedBranch.hypothesis_text&&<p className="agent-brief" style={{marginBottom:12}}>{selectedBranch.hypothesis_text}</p>}
     <div className="kv">
      <span>分支来源</span><div>{selectedBranch.source==='manual'?'人工':'Agent'}（parent：{selectedBranch.parent_id?selectedBranch.parent_id.slice(0,8):'无'}）</div>
      <span>说明</span><div className="fine">“从此分支接手”会新建人工分支并把它设为工作台写入分支；交回按钮交给模型 F0 连续推进；预算/暂停/视图不符会停止。</div>
@@ -234,7 +235,7 @@ export function QuantFactorHomePage(){
      <div className="kpi"><span>F0 Token</span><b>{f0?.decision?.steps?f0.decision.steps.reduce((n,s)=>n+(s.usage?.tokens_in||0)+(s.usage?.tokens_out||0),0):'—'}</b><small>最近一次 F0</small></div>
     </div><div className="actions"><button className="btn small" disabled title="AC-12 / P1：全局暂停接口未接入；本轮只验证单课题暂停/继续">暂停全部（AC-12）</button></div>
    </div>
-   {creating&&<div className="card"><div className="card-head"><h2>新建研究课题</h2><span className="fine">创建后冻结视图、区间、预算与初始因子</span></div><div className="card-body">{createErr&&<p className="hint error">{createErr}</p>}<div className="form-grid">
+   {creating&&<div className="modal-backdrop" role="dialog" aria-modal="true" onClick={()=>setCreating(false)}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><h2>新建研究课题</h2><p className="fine">创建后冻结数据视图、区间、预算与初始因子</p></div><button className="btn small" onClick={()=>setCreating(false)}>取消</button></div><div className="modal-body">{createErr&&<p className="hint error">{createErr}</p>}<div className="form-grid">
     <label className="field"><span>课题名称</span><input value={nt.name} onChange={e=>setNt({...nt,name:e.target.value})}/></label>
     <label className="field"><span>课题类型</span><select value={nt.purpose} onChange={e=>setNt({...nt,purpose:e.target.value as 'replication'|'discovery'})}><option value="replication">复现（已有因子）</option><option value="discovery">新发现（需因子库新颖性检验）</option></select><small>复现：存量因子直接进检验。新发现：走 0.70 相关性去重门槛；当前共享 9527 未提供新颖性/ R4 接口，新发现可能在对照阶段报“不可用”，不会伪造通过。</small></label>
     <label className="field"><span>股票池</span><select value={nt.universe} onChange={e=>setNt({...nt,universe:e.target.value,benchmark:e.target.value})}><option>CSI500</option><option>CSI300</option><option>ALL_A</option></select></label>
@@ -247,9 +248,10 @@ export function QuantFactorHomePage(){
     <label className="field"><span>主持有期（日）</span><input type="number" min={1} max={20} value={nt.holding} onChange={e=>setNt({...nt,holding:Number(e.target.value)})}/></label>
     <label className="field"><span>试验预算</span><input type="number" min={1} max={1000} value={nt.max_trials} onChange={e=>setNt({...nt,max_trials:Number(e.target.value)})}/></label>
     <label className="field"><span>封存预算</span><input type="number" min={1} max={3} value={nt.max_sealed} onChange={e=>setNt({...nt,max_sealed:Number(e.target.value)})}/></label>
+    <label className="field full"><span>授权数据范围</span><input readOnly value="当前发布视图；提交时锁定 view_id、release_ids、manifest 与 as_of"/><small>原型弹窗显式展示授权数据范围；实际版本在创建时写入课题。</small></label>
     <label className="field full"><span>研究假设</span><textarea value={nt.hypothesis} onChange={e=>setNt({...nt,hypothesis:e.target.value})}/></label>
     <label className="field full"><span>预登记验收条件</span><textarea value={nt.acceptance} onChange={e=>setNt({...nt,acceptance:e.target.value})}/></label>
-   </div><div className="form-actions"><button className="btn primary" disabled={creatingBusy||!nt.name.trim()} onClick={()=>void createTopic()}>创建课题并打开工作台</button><span className="fine">创建后回研究运行，检验仍走 F4 真实计算并计入台账。</span></div></div></div>}
+   </div><div className="form-actions"><button className="btn primary" disabled={creatingBusy||!nt.name.trim()} onClick={()=>void createTopic()}>创建课题并打开工作台</button><span className="fine">创建后回研究运行，检验仍走 F4 真实计算并计入台账。</span></div></div></div></div>}
    {error&&<div className="card card-pad"><p className="hint error" role="alert">{error}</p></div>}
    {loading?(
     <div className="card card-pad"><p role="status">正在读取真实课题、分支与台账…</p></div>

@@ -303,8 +303,8 @@ def create_topic(uid: int, org: int, project_id: str, payload: dict) -> dict:
              max_trials, max_sealed, display_no))
         c.execute(
             """INSERT INTO quant_factor_branches
-               (id,user_id,org_id,topic_id,source,owner_id,hypothesis_version,implementation_version)
-               VALUES (%s,%s,%s,%s,'manual',%s,1,1)""",
+               (id,user_id,org_id,topic_id,source,owner_id,hypothesis_version,implementation_version,title)
+               VALUES (%s,%s,%s,%s,'manual',%s,1,1,'初始假设')""",
             (branch_id, uid, org, topic_id, uid))
         row = c.execute(
             "SELECT * FROM quant_factor_topics WHERE id=%s", (topic_id,)).fetchone()
@@ -375,9 +375,10 @@ def create_branch(uid: int, org: int, topic_id: str, payload: dict) -> dict:
     with get_conn() as c:
         c.execute(
             """INSERT INTO quant_factor_branches
-               (id,user_id,org_id,topic_id,parent_id,source,owner_id,hypothesis_version,implementation_version)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (branch_id, uid, org, topic["id"], parent_id, source, uid, hypothesis, implementation))
+               (id,user_id,org_id,topic_id,parent_id,source,owner_id,hypothesis_version,implementation_version,title)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (branch_id, uid, org, topic["id"], parent_id, source, uid, hypothesis, implementation,
+             str(payload.get("title") or "").strip()[:60]))
         row = c.execute("SELECT * FROM quant_factor_branches WHERE id=%s", (branch_id,)).fetchone()
     return _public(row)
 
@@ -400,8 +401,8 @@ def takeover_branch(uid: int, org: int, topic_id: str, parent_id: str) -> dict:
         branch_id = str(uuid.uuid4())
         c.execute(
             """INSERT INTO quant_factor_branches
-               (id,user_id,org_id,topic_id,parent_id,source,owner_id,hypothesis_version,implementation_version)
-               VALUES (%s,%s,%s,%s,%s,'manual',%s,%s,%s)""",
+               (id,user_id,org_id,topic_id,parent_id,source,owner_id,hypothesis_version,implementation_version,title)
+               VALUES (%s,%s,%s,%s,%s,'manual',%s,%s,%s,'人工接手')""",
             (branch_id, uid, org, topic_id, parent_id, uid,
              int(parent["hypothesis_version"]) + 1, int(parent["implementation_version"])))
         c.execute(
@@ -519,7 +520,8 @@ def ledger_view(uid: int, org: int, topic_id: str) -> dict:
         latest_trial[t["branch_id"]] = t
     for b in branches:
         b["display_label"] = labels.get(b["id"], "H?")
-        b["display_title"] = titles.get(b["id"]) or f"假设 v{b.get('hypothesis_version', 1)}（未命名）"
+        b["display_title"] = str(b.get("title") or "").strip() or f"未命名（假设 v{b.get('hypothesis_version', 1)}）"
+        b["hypothesis_text"] = titles.get(b["id"]) or ""
         b["source_label"] = "人工" if b.get("source") == "manual" else "Agent"
         s_status = sealed.get(b["id"])
         t = latest_trial.get(b["id"])

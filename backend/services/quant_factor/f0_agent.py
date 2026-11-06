@@ -59,6 +59,9 @@ def _context(uid, org, topic, run_id):
     with get_conn() as c:
         run_row = c.execute("SELECT decision FROM quant_factor_f0_runs WHERE id=%s AND user_id=%s AND org_id=%s",
                             (run_id, uid, org)).fetchone()
+        sealed_used = c.execute(
+            "SELECT COUNT(*) AS n FROM quant_factor_sealed_validations WHERE user_id=%s AND org_id=%s AND topic_id=%s",
+            (uid, org, topic["id"])).fetchone()["n"]
     gaps = sorted({cap for s in ((run_row or {}).get("decision") or {}).get("steps", [])
                    for cap in ((s.get("result") or {}).get("needed_capabilities") or [])})
     latest = trials[-1] if trials else None
@@ -78,6 +81,7 @@ def _context(uid, org, topic, run_id):
             for t in trials[-8:]],
         "latest_report": summary, "branches": branches, "research_purpose": purpose,
         "capability_gaps": gaps,
+        "sealed_used": sealed_used, "max_sealed": int(topic.get("max_sealed") or 1),
         # Same-topic history only, and never on a topic with no recorded trial:
         # a stale stop from an earlier broken run must not block the first real test.
         "recent_f0_stops": [f"run {r['id'][:8]}: {r['stop_reason']}" for r in recent] if trials else [],
@@ -97,7 +101,7 @@ def decide(uid, org, topic, run_id):
         "rationale 必须引用具体 trial 编号和指标（如 E2 的 NW t、K、t*(K)），不能空泛。"
         "revise/pivot 必须给出具体 next_hypothesis 与 change_scope；没有实质修订就 stop。"
         "不得改变门槛、数据范围、预算，不得声称 novelty 可用，不得批准入库或封存。"
-        "request_seal 仅在最近研发已通过时使用；发现类（discovery）还需新颖性通过，已有因子复现（replication）不需要 novelty/R4，可直接 request_seal。否则 stop。预算为 0 时必须 stop。t_critical 始终给出（K=0 按 K=1 的 t*）。recent_f0_stops 只是本课题历史运行的记录，不是本 run 的检验证据，不能据此在无 trial 时停止。capability_gaps 是 F3 已确认不支持的能力，修订必须避开它们，改用可实现的截面 rank/z-score 或时序窗口。\n最近一次研发检验失败且预算允许时，优先选择 revise 或 pivot，并给出实质性的新假设；不得只重跑同一实现。"
+        "request_seal 仅在最近研发已通过时使用；发现类（discovery）还需新颖性通过，已有因子复现（replication）不需要 novelty/R4，可直接 request_seal。否则 stop。预算为 0 时必须 stop。t_critical 始终给出（K=0 按 K=1 的 t*）。recent_f0_stops 只是本课题历史运行的记录，不是本 run 的检验证据，不能据此在无 trial 时停止。capability_gaps 是 F3 已确认不支持的能力，修订必须避开它们，改用可实现的截面 rank/z-score 或时序窗口。sealed_used 达到 max_sealed 时不得 request_seal。\n最近一次研发检验失败且预算允许时，优先选择 revise 或 pivot，并给出实质性的新假设；不得只重跑同一实现。"
     )
     try:
         get_task(TASK)

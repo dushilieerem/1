@@ -255,4 +255,72 @@ def audit(scope: OrgScope, limit: int = 100) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-__all__ = ["audit", "authorizations", "case", "cases", "company", "execution_exceptions", "monitor", "portfolio", "proposals", "theses"]
+def companies(
+    scope: OrgScope,
+    *,
+    market: str | None = None,
+    q: str | None = None,
+    pool_status: str | None = None,
+    limit: int = 60,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    where = ["c.org_id=%s"]
+    params: list[Any] = [scope.org_id]
+    if market:
+        where.append("c.market=%s")
+        params.append(market)
+    if pool_status:
+        where.append("c.pool_status=%s")
+        params.append(pool_status)
+    if q:
+        where.append("(c.symbol ILIKE %s OR c.name ILIKE %s OR c.industry ILIKE %s)")
+        like = f"%{q.strip()}%"
+        params.extend([like, like, like])
+    clause = " AND ".join(where)
+    limit = max(1, min(int(limit), 200))
+    offset = max(0, int(offset))
+    sql = f"""
+        SELECT c.*,
+               v.pe_ttm, v.pb_mrq, v.float_mv,
+               b.close AS last_close, b.trade_date AS last_trade_date,
+               st.listed_status, st.up_down_status, st.is_st, st.is_suspended,
+               ind.name AS industry_name
+          FROM inst_company c
+          LEFT JOIN LATERAL (
+            SELECT pe_ttm, pb_mrq, float_mv FROM md_valuation_daily
+             WHERE symbol=c.symbol ORDER BY trade_date DESC LIMIT 1
+          ) v ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT close, trade_date FROM md_daily_bar
+             WHERE symbol=c.symbol AND adjust='none' ORDER BY trade_date DESC LIMIT 1
+          ) b ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT listed_status, up_down_status, is_st, is_suspended
+              FROM md_status_daily WHERE symbol=c.symbol
+             ORDER BY trade_date DESC LIMIT 1
+          ) st ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT ri.name
+              FROM ref_security_industry rsi
+              JOIN ref_industry ri
+                ON ri.industry_code = rsi.industry_code AND ri.level = 1
+             WHERE rsi.symbol = c.symbol AND rsi.level = 1
+             ORDER BY rsi.effective_from DESC
+             LIMIT 1
+          ) ind ON TRUE
+         WHERE {clause}
+         ORDER BY c.market, c.symbol
+         LIMIT %s OFFSET %s
+    """
+    with get_conn() as conn:
+        total = int(
+            conn.execute(
+                f"SELECT COUNT(*) AS n FROM inst_company c WHERE {clause}", tuple(params)
+            ).fetchone()["n"]
+            or 0
+        )
+        rows = conn.execute(sql, tuple(params + [limit, offset])).fetchall()
+    return [dict(row) for row in rows], total
+
+
+__all__ = ["audit", "authorizations", "case", "cases", "companies", "company", "execution_exceptions", "monitor", "portfolio", "proposals", "theses"]

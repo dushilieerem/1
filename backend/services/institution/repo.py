@@ -513,10 +513,23 @@ def resolve_execution_exception(
 
 def thesis_row(conn, scope: OrgScope, ledger_id: int) -> dict[str, Any] | None:
     row = conn.execute(
-        "SELECT * FROM inst_thesis_ledger WHERE id=%s AND org_id=%s",
+        """
+        SELECT t.*, co.name AS company_name, co.market
+          FROM inst_thesis_ledger t
+          JOIN inst_company co ON co.id=t.company_id
+         WHERE t.id=%s AND t.org_id=%s
+        """,
         (ledger_id, scope.org_id),
     ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    out = dict(row)
+    reviews = conn.execute(
+        "SELECT * FROM inst_thesis_review WHERE ledger_id=%s ORDER BY created_at DESC",
+        (ledger_id,),
+    ).fetchall()
+    out["reviews"] = [dict(r) for r in reviews]
+    return out
 
 
 def review_thesis(

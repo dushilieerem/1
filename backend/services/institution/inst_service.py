@@ -4480,24 +4480,7 @@ def create_thesis(
 
 
 def _thesis_row(conn, org_id: int, ledger_id: int) -> dict[str, Any] | None:
-    row = conn.execute(
-        """
-        SELECT t.*, co.name AS company_name, co.market
-          FROM inst_thesis_ledger t
-          JOIN inst_company co ON co.id=t.company_id
-         WHERE t.id=%s AND t.org_id=%s
-        """,
-        (ledger_id, org_id),
-    ).fetchone()
-    if not row:
-        return None
-    out = _row_dict(row) or {}
-    reviews = conn.execute(
-        "SELECT * FROM inst_thesis_review WHERE ledger_id=%s ORDER BY created_at DESC",
-        (ledger_id,),
-    ).fetchall()
-    out["reviews"] = [_row_dict(r) for r in reviews]
-    return out
+    return repo.thesis_row(conn, OrgScope(org_id), ledger_id)
 
 
 def list_theses(org_id: int, *, status: str | None = None) -> list[dict[str, Any]]:

@@ -25,11 +25,17 @@ def _as_of(value: Any) -> date:
 
 
 def _query(conn, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]] | None:
+    # 数据平台表可能尚未加载；用 savepoint 隔离失败，避免把调用方事务打成 aborted。
+    savepoint = "data_platform_read"
+    conn.execute(f"SAVEPOINT {savepoint}")
     try:
         rows = conn.execute(sql, params).fetchall()
     except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn):
+        conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
         return None
-    return [dict(r) for r in rows]
+    else:
+        conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        return [dict(r) for r in rows]
 
 
 def holder_summary(

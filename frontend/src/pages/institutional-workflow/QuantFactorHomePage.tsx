@@ -182,7 +182,7 @@ export function QuantFactorHomePage(){
    <div className="card-head">
     <div><div className="row-flex"><span className="tid">{topic.id.slice(0,8)}</span><h2>{topic.project_name||'未命名课题'}</h2><span className="badge live">{statusText(topic.status)}</span></div>
      <p className="fine">视图 {topic.view_id} · 主持有期 {topic.primary_holding_period} 日</p></div>
-    <div className="actions">{topic.status==='active'?<button className="btn small" onClick={()=>void setTopicStatus('paused')}>暂停课题</button>:topic.status==='paused'?<button className="btn small" onClick={()=>void setTopicStatus('active')}>继续课题</button>:null}<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>打开人工工作台</Link><Link className="btn small" to={'/quant/factor/ledger?project='+topic.project_id}>台账</Link></div>
+    <div className="actions">{topic.status==='active'?<button className="btn small" onClick={()=>void setTopicStatus('paused')}>暂停课题</button>:topic.status==='paused'?<button className="btn small" onClick={()=>void setTopicStatus('active')}>继续课题</button>:null}<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>打开人工工作台</Link><Link className="btn small" to={'/quant/factor/ledger?project='+topic.project_id}>台账</Link><button className="btn small ghost" disabled title="待接入（P1）：研究意见写回研究决策上下文尚未实现">给研究意见</button></div>
    </div>
    <div className="card-body">
     <div className="ledger">

@@ -1,13 +1,21 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ChevronRight, FileText, Share2, Star, TrendingDown, TrendingUp, X } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  ArrowLeft,
+  ChevronRight,
+  FileText,
+  Search,
+  Share2,
+  Star,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import { api } from "../api";
-import { Disclaimer, ErrorState, Kv, LoadingCards, PageHeader, Sheet, Tag } from "../components";
+import { Disclaimer, ErrorState, Kv, LoadingCards, Sheet, Tag } from "../components";
 import { displayIndustry, fmtMarketCap, fmtMoney, fmtPct, fmtShares, formatPrice } from "../lib";
 import { useToast } from "../toast";
 import GlossarySheet from "../GlossarySheet";
 import AiPanel from "../components/AiPanel";
-import { AiCard } from "../components/AiCard";
 import { useLocale, withMarket } from "../i18n";
 
 const KLineChart = lazy(() => import("../KLineChart"));
@@ -18,6 +26,20 @@ const PERIODS = [
   { key: "weekly", zh: "周K", en: "W" },
   { key: "monthly", zh: "月K", en: "M" },
 ];
+
+const BOARD_LABEL: Record<string, string> = {
+  SH_MAIN: "沪市主板",
+  SZ_MAIN: "深市主板",
+  ChiNext: "创业板",
+  STAR: "科创板",
+  BSE: "北交所",
+};
+
+const fmtYi = (value: any) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? `${(n / 1e8).toFixed(1)} 亿` : "—";
+};
+
 function MinuteChart({ items }: { items: any[] }) {
   const { t } = useLocale();
   const closes = items.map((x) => Number(x.close)).filter((x) => Number.isFinite(x));
@@ -35,13 +57,7 @@ function MinuteChart({ items }: { items: any[] }) {
   return (
     <div>
       <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-label={t("分时走势", "Intraday chart")} style={{ width: "100%", height: 170 }}>
-        <polyline
-          points={points}
-          fill="none"
-          stroke={up ? "#d14343" : "#1f9d55"}
-          strokeWidth="1.6"
-          strokeLinejoin="round"
-        />
+        <polyline points={points} fill="none" stroke={up ? "#d14343" : "#1f9d55"} strokeWidth="1.6" strokeLinejoin="round" />
       </svg>
       <div className="chart-legend">
         <span>{t("最新", "Last")} {formatPrice(last)}</span>
@@ -53,38 +69,61 @@ function MinuteChart({ items }: { items: any[] }) {
   );
 }
 
-const TABS = [
-  { key: "overview", zh: "概览", en: "Overview" },
-  { key: "finance", zh: "财务", en: "Financials" },
-  { key: "valuation", zh: "估值", en: "Valuation" },
-  { key: "risk", zh: "风险", en: "Risk" },
-];
-
-function Help({ term }: { term: string }) {
+function FinancialTrend({ fins }: { fins: any[] }) {
   const { t } = useLocale();
-  const nav = useNavigate();
+  const [metric, setMetric] = useState("revenue");
+  const options = [
+    { key: "revenue", label: t("营业收入", "Revenue"), field: "revenue", yoy: "revenue_yoy", unit: t("亿元", "CNY 100m") },
+    { key: "net_profit", label: t("归母净利", "Net profit"), field: "net_profit", yoy: "profit_yoy", unit: t("亿元", "CNY 100m") },
+    { key: "gross_margin", label: t("毛利率", "Gross margin"), field: "gross_margin", yoy: null, unit: "%" },
+    { key: "roe", label: "ROE", field: "roe", yoy: null, unit: "%" },
+  ];
+  const active = options.find((x) => x.key === metric) || options[0];
+  const rows = fins.slice(-4);
+  const max = Math.max(...rows.map((r) => Math.abs(Number(r[active.field]) || 0)), 1);
+  if (!fins.length) return <div className="empty-inline">{t("暂无财报", "No financials")}</div>;
   return (
-    <button className="metric-help" title={t("查看术语", "View glossary")} onClick={() => nav(`/learn?term=${term}`)}>?</button>
+    <div>
+      <div className="seg stock-fin-seg">
+        {options.map((o) => (
+          <button key={o.key} className={metric === o.key ? "on" : ""} onClick={() => setMetric(o.key)}>{o.label}</button>
+        ))}
+      </div>
+      <div className="fin-bars">
+        {rows.map((r) => {
+          const value = Number(r[active.field]);
+          const yoy = active.yoy ? Number(r[active.yoy]) : null;
+          return (
+            <div className="fin-row" key={r.period}>
+              <span className="fin-period">{String(r.period).replace("Q", " Q")}</span>
+              <div className="fin-track"><i style={{ width: `${Math.max(4, (Math.abs(value) / max) * 100)}%` }} /></div>
+              <span className="fin-value">
+                {Number.isFinite(value) ? `${value.toFixed(1)}${active.unit === "%" ? "%" : ""}` : "—"}
+                {Number.isFinite(yoy) ? <em className={yoy >= 0 ? "up" : "down"}> {yoy >= 0 ? "+" : ""}{yoy.toFixed(1)}%</em> : null}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="hint">{t("前三季累计口径；柱为指标值，橙色为同比。", "Cumulative first-three-quarter basis; bars are values and orange is YoY.")}</div>
+    </div>
   );
 }
 
-function FinancialBars({ fins }: { fins: any[] }) {
+function FundDistribution({ rows }: { rows: any[] }) {
   const { t } = useLocale();
-  if (!fins.length) return <div className="empty-inline">{t("暂无财务数据", "No financial data")}</div>;
-  const rows = fins.slice(-4);
-  const max = Math.max(...rows.map((r) => r.revenue || 0), 1);
+  const max = Math.max(1, ...rows.map((r) => Math.abs(Number(r.value) || 0)));
   return (
-    <div className="fin-bars">
+    <div className="fund-dist">
       {rows.map((r) => (
-        <div className="fin-row" key={r.period}>
-          <span className="fin-period">{r.period.replace("Q", " Q")}</span>
-          <div className="fin-track">
-            <i style={{ width: `${Math.max(4, (r.revenue / max) * 100)}%` }} />
+        <div className="fund-dist-row" key={r.key}>
+          <span>{t(r.label, r.label_en)}</span>
+          <div className="fund-dist-track">
+            <i className={Number(r.value) >= 0 ? "in" : "out"} style={{ width: `${Math.max(3, (Math.abs(Number(r.value)) / max) * 100)}%` }} />
           </div>
-          <span className="fin-value">{r.revenue?.toFixed?.(0) ?? r.revenue}</span>
+          <b className={Number(r.value) >= 0 ? "up" : "down"}>{Number(r.value) >= 0 ? "+" : ""}{Number(r.value).toFixed(2)} 亿</b>
         </div>
       ))}
-      <div className="hint">{t("营业收入（亿元）· 规则展示，非预测", "Revenue (CNY 100m) · rule-based display, not a forecast")}</div>
     </div>
   );
 }
@@ -96,40 +135,32 @@ export default function Stock() {
   const { t } = useLocale();
   const isUs = Boolean(code && code.includes("."));
   const market = isUs ? "US" : "CN";
-  const visibleTabs = isUs ? TABS.filter((x) => x.key === "overview" || x.key === "risk") : TABS;
-  const [period, setPeriod] = useState("daily");
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState("overview");
+  const [period, setPeriod] = useState("daily");
+  const [tab, setTab] = useState("news");
   const [newsOpen, setNewsOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [statementOpen, setStatementOpen] = useState(false);
   const [glossary, setGlossary] = useState(false);
   const [inWatch, setInWatch] = useState(false);
   const [watchBusy, setWatchBusy] = useState(false);
   const [minute, setMinute] = useState<any[] | null>(null);
   const [minuteError, setMinuteError] = useState<string | null>(null);
   const [minuteLoading, setMinuteLoading] = useState(false);
-  const [annAi, setAnnAi] = useState<any>(null);
-  const [annBusy, setAnnBusy] = useState<string | null>(null);
-
-  useEffect(() => {
-    setTab("overview");
-  }, [code]);
 
   const load = (nextPeriod = period) => {
     setError(null);
-    setLoading(true);
     api(`/api/invest/stock/${code}?period=${nextPeriod}`)
       .then(setData)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e) => setError(e.message));
   };
 
   useEffect(() => {
     setData(null);
-    setTab("overview");
-    load(period);
+    setPeriod("daily");
+    load("daily");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
 
   useEffect(() => {
@@ -177,7 +208,7 @@ export default function Stock() {
 
   const share = async () => {
     try {
-      await navigator.clipboard?.writeText(location.href);
+      await navigator.clipboard?.writeText(`${location.href}\n${t("历史数据，不构成投资建议。", "Historical data; not investment advice.")}`);
       toast(t("链接已复制 · 含风险提示", "Link copied · includes risk notice"));
     } catch {
       toast(t("复制失败，请手动复制地址栏", "Copy failed; please copy the address bar manually"));
@@ -186,150 +217,95 @@ export default function Stock() {
 
   if (error) {
     return (
-      <div className="page">
-        <PageHeader title={t("个股", "Stock")} back onBack={() => nav(-1)} />
+      <div className="page stock-page">
+        <button className="page-back" onClick={() => nav(-1)} aria-label={t("返回", "Back")}><ArrowLeft size={18} /></button>
         <ErrorState message={error} onRetry={() => load()} />
       </div>
     );
   }
   if (!data) {
     return (
-      <div className="page">
-        <PageHeader title={t("个股", "Stock")} back onBack={() => nav(-1)} />
+      <div className="page stock-page">
+        <button className="page-back" onClick={() => nav(-1)} aria-label={t("返回", "Back")}><ArrowLeft size={18} /></button>
         <LoadingCards rows={4} />
       </div>
     );
   }
 
-  const q = data.quote;
-  const tech = data.technical;
-  const v = data.valuation;
-  const up = q.changePct >= 0;
-  const peer = v.industryPe;
-  const pct = Math.max(0, Math.min(100, v.pePercentile ?? 50));
+  const q = data.quote || {};
+  const v = data.valuation || {};
+  const tech = data.technical || {};
+  const up = Number(q.changePct) >= 0;
+  const pct = Math.max(0, Math.min(100, Number(v.pePercentile ?? 50)));
+  const news = data.news || [];
+  const fund = data.fundFlow || { available: false, series: [], distribution: [] };
+  const peers = data.peers || [];
+  const statements = data.statements || {};
+  const tabs = [
+    ...(news.length ? [{ key: "news", label: t("资讯", "News") }] : []),
+    ...(!isUs && q.asset !== "etf" ? [{ key: "finance", label: t("财务", "Financials") }] : []),
+    ...(fund.available ? [{ key: "fund", label: t("资金", "Funds") }] : []),
+    { key: "profile", label: t("简况", "Profile") },
+  ];
+  const activeTab = tabs.some((x) => x.key === tab) ? tab : tabs[0]?.key;
+  const board = BOARD_LABEL[q.board] || q.board || displayIndustry(q.industry);
 
   return (
     <div className="page stock-page">
-      <PageHeader
-        title={q.name}
-        sub={`${q.code} · ${displayIndustry(q.industry)}`}
-        back
-        onBack={() => nav(-1)}
-        right={
-          <>
-            <button className={`round-btn ${inWatch ? "active" : ""}`} onClick={toggleWatch} aria-label={t("自选", "Watchlist")}>
-              <Star size={18} fill={inWatch ? "currentColor" : "none"} />
-            </button>
-            <button className="round-btn" onClick={share} aria-label={t("分享", "Share")}><Share2 size={18} /></button>
-          </>
-        }
-      />
-
-      <div className="topic-tags">
-        <Tag tone="red">{t("收盘数据", "EOD data")}</Tag>
-        <Tag tone="gray">{t("非实时", "Not real-time")}</Tag>
-        <Tag tone={data.isDemo ? "gray" : "green"}>{data.isDemo ? t("演示数据", "Demo data") : t("公开数据", "Public data")}</Tag>
-        {!isUs ? <button className="link-btn" onClick={() => nav(`/compare/${code}`)}>{t("对比", "Compare")}</button> : null}
-      </div>
-
-      <section className="ai-summary-card">
-        <div className="ai-summary-head">
-          <b>{t("数据摘要", "Data summary")}</b>
-          <span>{t("规则生成 · 非投资建议", "Rule-based · not investment advice")}</span>
+      <header className="stock-head">
+        <button className="round-btn" onClick={() => nav(-1)} aria-label={t("返回", "Back")}><ArrowLeft size={18} /></button>
+        <div className="stock-head-title">
+          <b>{q.name}</b>
+          <span>{q.code} · {board}</span>
         </div>
-        <ul className="fact-list">
-          {data.summary.map((line: string, i: number) => <li key={i}>{line}</li>)}
-        </ul>
-        <button className="link-btn" onClick={() => setTab("risk")}>{t("查看风险", "View risks")} <ChevronRight size={14} /></button>
-      </section>
+        <div className="stock-head-actions">
+          <button className="round-btn" onClick={() => nav("/search")} aria-label={t("搜个股", "Search stocks")}><Search size={18} /></button>
+          <button className="round-btn" onClick={share} aria-label={t("分享", "Share")}><Share2 size={18} /></button>
+        </div>
+      </header>
 
-      {data.behavior?.triggered ? (
-        <section className="card behavior-card">
-          <div className="card-title-row"><h2>{t("追高提醒", "Chase-high warning")}</h2><span className="hint">{t("行为护栏 · 非预测", "Behavior guard · not a forecast")}</span></div>
-          <p>{data.behavior.reasons?.join(t("；", "; "))}</p>
-          <p className="hint">
-            {data.behavior.baseRate?.sample
-              ? t(
-                  `${data.behavior.baseRate.period}：类似情况 ${data.behavior.baseRate.sample} 次，20 日中位收益 ${data.behavior.baseRate.medianReturn}%，中位最大回撤 ${data.behavior.baseRate.maxDrawdown}%，上涨占比 ${data.behavior.baseRate.winRate}%。`,
-                  `${data.behavior.baseRate.period}: ${data.behavior.baseRate.sample} similar cases; median 20-day return ${data.behavior.baseRate.medianReturn}%, median max drawdown ${data.behavior.baseRate.maxDrawdown}%, win rate ${data.behavior.baseRate.winRate}%.`,
-                )
-              : t("历史样本不足，无法给出 base rate。", "Not enough history for a base rate.")}
-          </p>
-          <p className="hint">{t("热度与估值是两件事；历史分布不是预测。", "Heat and valuation are different things; historical distributions are not forecasts.")}</p>
-        </section>
-      ) : null}
-
-      {!isUs ? (
-        <AiPanel
-          title={t("AI 个股结论", "AI stock takeaway")}
-          subtitle={t("自动生成，50 字以内，只解释数据，不给买卖建议。", "Generated automatically in under 50 characters; explains data, never buy/sell advice.")}
-          endpoint={`/api/invest/ai/stock/${code}`}
-        />
-      ) : null}
-
-      <section className="quote-card">
+      <section className="quote-card stock-quote">
         <div className="quote-main">
           <div>
             <b className={up ? "up" : "down"}>{formatPrice(q.price)}</b>
             <span className={up ? "up" : "down"}>
-              {up ? <TrendingUp size={14} /> : <TrendingDown size={14} />} {fmtPct(q.changePct)} · {q.change >= 0 ? "+" : ""}{q.change.toFixed(2)}
+              {up ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+              {fmtPct(q.changePct)} · {Number(q.change) >= 0 ? "+" : ""}{Number(q.change || 0).toFixed(2)}
             </span>
           </div>
-          <span className="quote-date">{t(`${data.dataDate} 收盘`, `${data.dataDate} close`)}</span>
+          <span className="quote-date">{data.dataDate} · {t("收盘", "close")}</span>
         </div>
-        <div className="quote-grid">
-          <div><span>{t("最高", "High")}</span><b>{formatPrice(q.high)}</b></div>
-          <div><span>{t("最低", "Low")}</span><b>{formatPrice(q.low)}</b></div>
-          <div><span>{t("今开", "Open")}</span><b>{formatPrice(q.open)}</b></div>
-          <div><span>{t("昨收", "Prev close")}</span><b>{formatPrice(q.prevClose)}</b></div>
-          <div title={t("优先总市值，缺失时回退流通市值；单位亿元", "Total market cap preferred, falls back to float cap; unit CNY 100m")}>
-            <span>{t("总市值", "Market cap")}</span><b>{fmtMarketCap(q.marketCap)}</b>
-          </div>
-          <div><span>{t("换手率", "Turnover")}</span><b>{q.turnover != null ? `${q.turnover.toFixed(2)}%` : "—"}</b></div>
-          <div><span>{t("成交额（元）", "Amount (CNY)")}</span><b>{fmtMoney(q.amount)}</b></div>
-          <div><span>{t("成交量", "Volume")}</span><b>{fmtShares(q.volume)}</b></div>
-          <div><span>PE(TTM)</span><b>{q.pe?.toFixed?.(2) ?? "—"}</b></div>
-          <div><span>PB</span><b>{q.pb?.toFixed?.(2) ?? "—"}</b></div>
+        <div className="stock-grid3">
+          <div><span>{t("高", "High")}</span><b>{formatPrice(q.high)}</b></div>
+          <div><span>{t("低", "Low")}</span><b>{formatPrice(q.low)}</b></div>
+          <div><span>{t("开", "Open")}</span><b>{formatPrice(q.open)}</b></div>
+          <div><span>{t("市值", "Mkt cap")}</span><b>{fmtMarketCap(q.marketCap)}</b></div>
+          <div><span>{t("流通", "Float")}</span><b>{fmtMarketCap(q.floatMarketCap)}</b></div>
+          <div><span>{t("市盈", "P/E")}</span><b>{q.pe != null ? Number(q.pe).toFixed(2) : "—"}</b></div>
+          <div><span>{t("量比", "Vol ratio")}</span><b>{q.volumeRatio != null ? Number(q.volumeRatio).toFixed(2) : "—"}</b></div>
+          <div><span>{t("换手", "Turnover")}</span><b>{q.turnover != null ? `${Number(q.turnover).toFixed(2)}%` : "—"}</b></div>
+          <div><span>{t("额", "Amount")}</span><b>{fmtMoney(q.amount)}</b></div>
         </div>
-        <p className="hint">
-          {isUs
-            ? t("美股当前不提供市值、PE/PB 与换手率；显示 — 表示数据未接入，不是 0。成交量单位：股。", "Market cap, PE/PB and turnover are not available for US names; — means missing, not zero. Volume is in shares.")
-            : t("市值单位：亿元（优先总市值，缺失回退流通市值）；成交额单位：元；成交量单位：股；— 表示缺失，不填 0。", "Market cap in CNY 100m (total preferred, float as fallback); amount in CNY; volume in shares; — means missing, not zero.")}
-        </p>
       </section>
 
       <section className="card chart-card">
         <div className="card-title-row">
-          <h2>{t("行情走势", "Price chart")}</h2>
+          <h2>{t("走势", "Price")}</h2>
           <span className="hint">{period === "minute" ? t("分时 · 非实时", "Intraday · not real-time") : t("收盘数据 · 非实时", "EOD · not real-time")}</span>
         </div>
         <div className="seg period-seg">
           {PERIODS.filter((p) => !isUs || p.key !== "minute").map((p) => (
-            <button key={p.key} className={period === p.key ? "on" : ""} onClick={() => changePeriod(p.key)}>
-              {t(p.zh, p.en)}
-            </button>
+            <button key={p.key} className={period === p.key ? "on" : ""} onClick={() => changePeriod(p.key)}>{t(p.zh, p.en)}</button>
           ))}
         </div>
         {period === "minute" ? (
-          minuteLoading ? (
-            <div className="kline-loading">{t("加载分时…", "Loading intraday…")}</div>
-          ) : minuteError ? (
-            <div className="empty-inline">{t(`分时数据不可用：${minuteError}`, `Intraday data unavailable: ${minuteError}`)}</div>
-          ) : minute?.length ? (
-            <MinuteChart items={minute} />
-          ) : (
-            <div className="empty-inline">{t("暂无分时数据（仅支持 2025 年以来的交易日）", "No intraday data yet (only sessions since 2025 are supported).")}</div>
-          )
-        ) : loading ? <div className="kline-loading">{t("加载行情…", "Loading quotes…")}</div> : isUs && !data.chart.bars.length ? (
-          <div className="empty-inline">
-            {t(
-              "美股当前只有最新价快照，日线 K 线未接入；价格、成交额与换手率仍来自快照。",
-              "US mode currently provides a latest-price snapshot only; daily bars are not connected. Price, amount and turnover still come from the snapshot.",
-            )}
-          </div>
+          minuteLoading ? <div className="kline-loading">{t("加载分时…", "Loading intraday…")}</div>
+            : minuteError ? <div className="empty-inline">{minuteError}</div>
+              : minute?.length ? <MinuteChart items={minute} />
+                : <div className="empty-inline">{t("暂无分时数据", "No intraday data")}</div>
         ) : (
           <Suspense fallback={<div className="kline-loading">{t("加载图表…", "Loading chart…")}</div>}>
-            <KLineChart bars={data.chart.bars} ma5={data.chart.ma5} ma10={data.chart.ma10} ma20={data.chart.ma20} />
+            <KLineChart bars={data.chart?.bars || []} ma5={data.chart?.ma5 || []} ma10={data.chart?.ma10 || []} ma20={data.chart?.ma20 || []} />
           </Suspense>
         )}
         <div className="chart-legend">
@@ -338,242 +314,171 @@ export default function Stock() {
           <span><i className="legend-purple" />MA10</span>
           <span><i className="legend-blue" />MA20</span>
         </div>
-        <details className="chart-data">
-          <summary>{t("查看最近 5 根 K 线数据", "Latest 5 bars")}</summary>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead><tr><th>{t("日期", "Date")}</th><th>{t("收盘", "Close")}</th><th>{t("最高", "High")}</th><th>{t("最低", "Low")}</th></tr></thead>
-              <tbody>
-                {data.chart.bars.slice(-5).reverse().map((b: any) => (
-                  <tr key={b.time}><td>{b.time}</td><td>{b.close}</td><td>{b.high}</td><td>{b.low}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-        <div className="hint">{t("日/周/月 K 由收盘数据聚合；前复权口径。图表引擎：TradingView Lightweight Charts。", "Daily/weekly/monthly candles are aggregated from EOD data; forward-adjusted. Chart engine: TradingView Lightweight Charts.")}</div>
-        {code && /^(5[168]|1[56])\d{4}$/.test(code) ? (
-          <Link to={`/etf/${code}`} className="link-btn" style={{ marginTop: 8, display: "inline-flex" }}>
-            {t("查看 ETF 穿透", "ETF look-through")}
-          </Link>
-        ) : null}
+        <div className="hint">{t("日/周/月 K 由收盘数据聚合；前复权口径。", "Daily/weekly/monthly candles are aggregated from EOD data; forward-adjusted.")}</div>
       </section>
 
-      <section className="card tech-card">
-        <div className="card-title-row"><h2>{t("技术面速览", "Technical snapshot")}</h2><span className="hint">{t("基于日 K", "Based on daily bars")}</span></div>
-        <div className="tech-row"><span>{t("价格趋势", "Trend")}</span><b>{tech.trend}</b><em>{t("回撤", "Drawdown")} {fmtPct(tech.drawdown, 1)} · {t("20 日", "20-day")} {fmtPct(tech.return20, 1)}</em></div>
-        <div className="tech-row"><span>{t("均线系统", "Moving averages")}</span><b>MA20 {tech.ma20 ? formatPrice(tech.ma20) : "—"}</b><em>MA5 {tech.ma5 ? formatPrice(tech.ma5) : "—"} · MA10 {tech.ma10 ? formatPrice(tech.ma10) : "—"}</em></div>
-        <div className="tech-row"><span>{t("成交量", "Volume")}</span><b>{tech.volumeRatio?.toFixed?.(1)}x</b><em>{t("相对 20 日均量", "vs 20-day average")}</em></div>
-        <p className="hint">
-          {t(
-            "趋势 = 现价相对 MA20；回撤 = 距近 180 日高点；量比 = 当前成交量相对 20 日均量；— 表示历史不足 20 个交易日。",
-            "Trend = price vs MA20; drawdown = from the 180-day high; volume ratio = current volume vs the 20-day average; — means fewer than 20 trading days of history.",
-          )}
-        </p>
-      </section>
+      {!isUs ? (
+        <AiPanel
+          title={t("AI 个股分析", "AI stock analysis")}
+          subtitle={t("自动生成，只解释数据，不给买卖建议。", "Generated automatically; explains data, never buy/sell advice.")}
+          endpoint={`/api/invest/ai/stock/${code}`}
+          hideOnError
+        />
+      ) : null}
 
       <div className="seg stock-seg">
-        {visibleTabs.map((x) => (
-          <button key={x.key} className={tab === x.key ? "on" : ""} onClick={() => setTab(x.key)}>{t(x.zh, x.en)}</button>
-        ))}
+        {tabs.map((x) => <button key={x.key} className={activeTab === x.key ? "on" : ""} onClick={() => setTab(x.key)}>{x.label}</button>)}
       </div>
 
-      {tab === "overview" && (
+      {activeTab === "news" ? (
         <section className="card">
-          <div className="card-title-row"><h2>{t("关键跟踪", "Key tracking")}</h2><span className="hint">{t("规则标签", "Rule tags")}</span></div>
-          <div className="risk-list compact">
-            {data.risks.map((r: any, i: number) => (
-              <div className="risk-item" key={i}>
-                <span className={`risk-dot ${r.level}`} />
-                <div><b>{r.title}</b><p>{r.detail}</p></div>
-              </div>
+          <div className="card-title-row">
+            <h2>{t("资讯", "News")}</h2>
+            {news.length > 4 ? <button className="link-btn" onClick={() => setNewsOpen(true)}>{t("查看全部", "All")} <ChevronRight size={14} /></button> : null}
+          </div>
+          <div className="news-list">
+            {news.slice(0, 4).map((n: any) => (
+              <a className="news-item" key={n.id} href={n.url} target="_blank" rel="noreferrer">
+                <b>{n.title}</b>
+                <span>{n.source} · {n.published_at}</span>
+              </a>
             ))}
           </div>
-          <div className="divider" />
-          <Kv k={t("行业", "Industry")} v={displayIndustry(q.industry)} />
-          {q.beta != null ? <Kv k={<span>Beta <Help term="beta" /></span>} v={Math.abs(q.beta) < 0.005 ? "0.00" : q.beta.toFixed(2)} /> : null}
-          {q.dividendYield != null ? <Kv k={<span>{t("股息率", "Dividend yield")} <Help term="dividend_yield" /></span>} v={`${q.dividendYield.toFixed(2)}%`} /> : null}
-          {q.nextReportDate ? <Kv k={t("下次财报（预计）", "Next report (est.)")} v={q.nextReportDate} /> : null}
-        </section>
-      )}
-
-      {tab === "overview" && data.sentiment?.available ? (
-        <section className="card">
-          <div className="card-title-row"><h2>{t("舆情与情绪", "News sentiment")}</h2><span className="hint">{t("规则估算 · 非全量舆情", "Rule-based estimate · not full coverage")}</span></div>
-          <div className="kpi-grid">
-            <div className="kpi"><span>{t("热度", "Heat")}</span><b>{data.sentiment.heat}</b></div>
-            <div className="kpi"><span>{t("偏正面", "Positive")}</span><b>{data.sentiment.positive}%</b></div>
-            <div className="kpi"><span>{t("偏负面", "Negative")}</span><b>{data.sentiment.negative}%</b></div>
-            <div className="kpi"><span>{t("中性/分歧", "Neutral / mixed")}</span><b>{data.sentiment.neutral}%</b></div>
-          </div>
-          <p className="muted small">{t("当前判断：", "Current read: ")}{data.sentiment.label}；{data.sentiment.note}</p>
-          {data.sentiment.topEvent ? <p className="hint">{t("代表事件：", "Top event: ")}{data.sentiment.topEvent}</p> : null}
         </section>
       ) : null}
 
-      {!isUs && tab === "finance" && (
-        <section className="card">
-          <div className="card-title-row">
-            <h2>{t("财务趋势", "Financial trend")}</h2>
-            {!isUs ? <button className="link-btn" onClick={() => setReportOpen(true)}>{t("查看财报", "View report")} <ChevronRight size={14} /></button> : null}
-          </div>
-          {isUs ? <div className="empty-inline">{t("美股暂无财务数据源；当前只提供行情与 K 线。", "US financial data is not available (no free stable source); this build only provides quotes and charts.")}</div> : q.asset === "etf" ? <div className="empty-inline">{t("ETF 不适用公司财务指标。", "Company financial metrics do not apply to ETFs.")}</div> : (
-            <>
-              {data.earningsFlash?.available ? (
-                <div className="flash-card">
-                  <div><b>{t("财报速读", "Earnings flash")}</b><span className="hint">{data.earningsFlash.period}</span></div>
-                  <div className="flash-cols">
-                    <div><span className="up">{t("亮点", "Highlights")}</span><ul>{data.earningsFlash.highlights.map((x: string) => <li key={x}>{x}</li>)}</ul></div>
-                    <div><span className="down">{t("隐忧", "Concerns")}</span><ul>{data.earningsFlash.concerns.map((x: string) => <li key={x}>{x}</li>)}</ul></div>
-                  </div>
-                </div>
-              ) : null}
-              <FinancialBars fins={data.financials} />
+      {activeTab === "finance" ? (
+        <>
+          <section className="card">
+            <div className="card-title-row"><h2>{t("财务指标趋势", "Financial trend")}</h2><span className="hint">{t("前三季累计", "First three quarters")}</span></div>
+            <FinancialTrend fins={data.financials || []} />
+          </section>
+          <section className="card">
+            <div className="card-title-row"><h2>{t("财务报表", "Statements")}</h2><span className="hint">{t("三张表", "Three statements")}</span></div>
+            <div className="stock-links">
+              <button onClick={() => setStatementOpen(true)}>{t("利润表 / 资产负债表 / 现金流量表", "Income / balance / cash flow")} <ChevronRight size={14} /></button>
+              <button onClick={() => setReportOpen(true)}>{t("查看财报摘要", "Report summary")} <ChevronRight size={14} /></button>
+            </div>
+          </section>
+          <section className="card">
+            <div className="card-title-row"><h2>{t("估值水平", "Valuation")}</h2><span className="hint">{t("近 3 年分位", "3-year percentile")}</span></div>
+            <div className="valuation-nums">
+              <div><span>PE(TTM)</span><b>{v.pe != null ? `${Number(v.pe).toFixed(2)}x` : "—"}</b></div>
+              <div><span>PB</span><b>{v.pb != null ? `${Number(v.pb).toFixed(2)}x` : "—"}</b></div>
+              <div><span>{t("股息率", "Dividend yield")}</span><b>{q.dividendYield != null ? `${Number(q.dividendYield).toFixed(2)}%` : "—"}</b></div>
+            </div>
+            <div className="valuation-track"><i style={{ left: `${pct}%` }} /></div>
+            <div className="valuation-labels"><span>{t("历史低位", "Low")}</span><span>{t("当前", "Now")} {v.pePercentile != null ? `${Number(v.pePercentile).toFixed(1)}%` : "—"}</span><span>{t("历史高位", "High")}</span></div>
+            <p className="hint">{t("PE 分位只描述历史位置；低分位不等于安全边际。", "PE percentile only describes history; low is not a margin of safety.")}</p>
+          </section>
+        </>
+      ) : null}
+
+      {activeTab === "fund" ? (
+        <>
+          <section className="card">
+            <div className="card-title-row"><h2>{t("主力资金", "Main capital")}</h2><span className="hint">{t("大单 + 特大单", "Large + super large")}</span></div>
+            <div className="fund-kpis">
+              <div><span>{t("今日", "Today")}</span><b className={Number(fund.latest) >= 0 ? "up" : "down"}>{fund.latest != null ? `${Number(fund.latest) >= 0 ? "+" : ""}${Number(fund.latest).toFixed(2)} 亿` : "—"}</b></div>
+              <div><span>{t("5 日", "5-day")}</span><b className={Number(fund.five_day) >= 0 ? "up" : "down"}>{fund.five_day != null ? `${Number(fund.five_day) >= 0 ? "+" : ""}${Number(fund.five_day).toFixed(2)} 亿` : "—"}</b></div>
+              <div><span>{t("20 日", "20-day")}</span><b className={Number(fund.twenty_day) >= 0 ? "up" : "down"}>{fund.twenty_day != null ? `${Number(fund.twenty_day) >= 0 ? "+" : ""}${Number(fund.twenty_day).toFixed(2)} 亿` : "—"}</b></div>
+            </div>
+          </section>
+          <section className="card">
+            <div className="card-title-row"><h2>{t("资金分布", "Flow distribution")}</h2><span className="hint">{t("当日净额", "Today's net")}</span></div>
+            <FundDistribution rows={fund.distribution || []} />
+          </section>
+          {fund.divergence ? <div className="callout blue">{fund.divergence.text}</div> : null}
+        </>
+      ) : null}
+
+      {activeTab === "profile" ? (
+        <>
+          <section className="card">
+            <div className="card-title-row"><h2>{t("基本信息", "Basics")}</h2></div>
+            <div className="stock-basic-grid">
+              <Kv k={t("上市日期", "Listed")} v={q.listDate || "—"} />
+              <Kv k={t("上市地", "Exchange")} v={q.exchange || "—"} />
+              <Kv k={t("总股本", "Total shares")} v={fmtShares(q.totalShares)} />
+              <Kv k={t("流通股本", "Float shares")} v={fmtShares(q.floatShares)} />
+            </div>
+          </section>
+          {peers.length ? (
+            <section className="card">
+              <div className="card-title-row"><h2>{t("同业比较", "Peers")}</h2><span className="hint">{t("按总市值", "By market cap")}</span></div>
               <div className="table-wrap">
                 <table className="data-table">
-                  <thead><tr><th>{t("报告期", "Period")}</th><th>{t("营收", "Revenue")}</th><th>{t("同比", "YoY")}</th><th>{t("归母净利", "Net profit")}</th><th>{t("毛利率", "Gross margin")} <Help term="gross_margin" /></th></tr></thead>
+                  <thead><tr><th>{t("名称", "Name")}</th><th>{t("最新价", "Price")}</th><th>{t("涨跌", "Change")}</th><th>PE</th><th>{t("市值", "Mkt cap")}</th></tr></thead>
                   <tbody>
-                    {data.financials.slice(-4).reverse().map((f: any) => (
-                      <tr key={f.period}>
-                        <td>{f.period}</td>
-                        <td>{f.revenue?.toFixed?.(0)}</td>
-                        <td className={f.revenue_yoy >= 0 ? "up" : "down"}>{fmtPct(f.revenue_yoy, 1)}</td>
-                        <td>{f.net_profit?.toFixed?.(0)}</td>
-                        <td>{f.gross_margin?.toFixed?.(1)}%</td>
+                    {peers.map((p: any) => (
+                      <tr key={p.code} onClick={() => nav(`/stock/${p.code}`)}>
+                        <td>{p.name}</td>
+                        <td>{formatPrice(p.price)}</td>
+                        <td className={Number(p.changePct) >= 0 ? "up" : "down"}>{fmtPct(p.changePct)}</td>
+                        <td>{p.pe != null ? Number(p.pe).toFixed(1) : "—"}</td>
+                        <td>{fmtMarketCap(p.marketCap)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <div className="hint">{t("单位：亿元；按报告期披露，存在滞后。", "Unit: CNY 100m; reported by period and may lag.")}</div>
-            </>
-          )}
-        </section>
-      )}
-
-      {!isUs && tab === "valuation" && (
-        <section className="card">
-          <div className="card-title-row"><h2>{t("估值位置", "Valuation")}</h2><span className="hint">{t("近 3 年历史分位", "3-year percentile")}</span></div>
-          {isUs ? <div className="empty-inline">{t("美股暂无估值数据源；当前只提供行情与 K 线。", "US valuation data is not available (no free stable source); this build only provides quotes and charts.")}</div> : (
-          <>
-          <div className="valuation-nums">
-            <div><span>PE(TTM)<Help term="pe_ttm" /></span><b>{v.pe?.toFixed?.(2) ?? "—"}x</b></div>
-            <div><span>PB<Help term="pb" /></span><b>{v.pb?.toFixed?.(2) ?? "—"}x</b></div>
-            <div><span>{t("行业 PE", "Industry PE")}</span><b>{peer?.toFixed?.(2) ?? "—"}x</b></div>
-          </div>
-          <div className="valuation-track">
-            <i style={{ left: `${pct}%` }} />
-          </div>
-          <div className="valuation-labels"><span>{t("历史低位", "Low")}</span><span>{t("当前", "Now")} {v.pePercentile?.toFixed?.(1) ?? "—"}%</span><span>{t("历史高位", "High")}</span></div>
-          <p className="muted small">
-            {t(
-              `PE 分位 ${v.pePercentile?.toFixed?.(1) ?? "—"}%，PB 分位 ${v.pbPercentile?.toFixed?.(1) ?? "—"}%；样本 ${v.samples} 个交易日。分位低不等于安全边际，需结合盈利趋势。`,
-              `PE percentile ${v.pePercentile?.toFixed?.(1) ?? "—"}%, PB percentile ${v.pbPercentile?.toFixed?.(1) ?? "—"}%; ${v.samples} trading days. A low percentile is not a margin of safety; pair it with earnings trends.`,
-            )}
-          </p>
-          <button className="link-btn" onClick={() => setGlossary(true)}>{t("查术语", "Glossary")} <ChevronRight size={14} /></button>
-          <div className="hint">{t("估值按收盘价与已披露 EPS 计算；不是一致预期。", "Valuation uses EOD price and reported EPS; not consensus estimates.")}</div>
-          </>
-          )}
-        </section>
-      )}
-
-      {tab === "risk" && (
-        <section className="card">
-          <div className="card-title-row"><h2>{t("市场敏感度", "Market sensitivity")}</h2><span className="hint">{t("历史 Beta 分档", "Historical beta bucket")}</span></div>
-          {data.sensitivity?.available ? (
-            <>
-              <div className="kpi-grid">
-                <div className="kpi"><span>{t("敏感度", "Sensitivity")}</span><b>{data.sensitivity.level}</b></div>
-                <div className="kpi"><span>Beta</span><b>{data.sensitivity.beta}</b></div>
-              </div>
-              {data.sensitivity.note ? <p className="hint">{data.sensitivity.note}</p> : null}
-              <div className="divider" />
-            </>
+            </section>
           ) : null}
-          <div className="card-title-row"><h2>{t("风险清单", "Risk list")}</h2><span className="hint">{t("规则扫描", "Rule scan")}</span></div>
-          <div className="risk-list">
-            {data.risks.map((r: any, i: number) => (
-              <div className="risk-item" key={i}>
-                <span className={`risk-dot ${r.level}`} />
-                <div><b>{r.title}</b><p>{r.detail}</p></div>
-              </div>
-            ))}
-          </div>
-          <div className="callout amber">
-            <b>{t("反向观察：", "Counter-view:")}</b>
-            {t("若后续毛利率企稳、成交缩量且估值分位回落，当前的部分风险标签可能被证伪。", "If margins stabilize, volume cools and valuation percentile falls, some current risk tags may be invalidated.")}
-          </div>
-        </section>
-      )}
-
-      {!isUs && data.news?.length ? (
-        <button className="news-entry" onClick={() => setNewsOpen(true)}>
-          <FileText size={18} />
-          <span>{t("个股资讯：要闻", "Stock news: headlines")}</span>
-          <ChevronRight size={16} />
-        </button>
+          <section className="card">
+            <div className="card-title-row"><h2>{t("主要风险", "Key risks")}</h2><span className="hint">{t("规则归纳", "Rule-based")}</span></div>
+            <div className="risk-list">
+              {(data.risks || []).slice(0, 4).map((r: any, i: number) => (
+                <div className="risk-item" key={i}>
+                  <span className={`risk-dot ${r.level}`} />
+                  <div><b>{r.title}</b><p>{r.detail}</p></div>
+                </div>
+              ))}
+            </div>
+          </section>
+          {q.asset === "etf" ? (
+            <button className="link-btn" onClick={() => nav(`/etf/${code}`)}>{t("查看 ETF 穿透", "ETF look-through")} <ChevronRight size={14} /></button>
+          ) : null}
+        </>
       ) : null}
 
       <Disclaimer>{data.dataSource || t("收盘数据", "EOD data")} · {t("非实时 · 不构成投资建议", "not real-time · not investment advice")}</Disclaimer>
 
-      <Sheet open={newsOpen} onClose={() => setNewsOpen(false)} title={t("个股资讯", "Stock news")} sub={t("标题 + 链接 · 非投资建议", "Headlines + links · not investment advice")}>
-        {data.todayNews?.length ? (
-          <div className="today-news">
-            <b>{t("今日要闻", "Today's headlines")}</b>
-            {data.todayNews.slice(0, 3).map((n: any) => (
-              <a key={n.id} href={n.url} target="_blank" rel="noreferrer">{n.title}</a>
-            ))}
-          </div>
-        ) : null}
+      <div className="stock-cta">
+        <button className="btn btn-ghost" onClick={() => nav("/ai")}>{t("问 AI", "Ask AI")}</button>
+        <button className={`btn ${inWatch ? "btn-ghost" : "btn-primary"}`} onClick={toggleWatch} disabled={watchBusy}>
+          {inWatch ? t("已加自选", "In watchlist") : t("加自选", "Add to watchlist")}
+        </button>
+      </div>
+
+      <Sheet open={newsOpen} onClose={() => setNewsOpen(false)} title={t("个股资讯", "Stock news")} sub={t("标题 + 来源", "Titles + sources")}>
         <div className="news-list">
-          {data.news.length ? data.news.map((n: any) => (
-            <div className="news-item" key={n.id}>
-              <a href={n.url} target="_blank" rel="noreferrer">
-                <b>{n.title}</b>
-                <p>{n.summary}</p>
-                <span>{n.source} · {n.published_at}</span>
-              </a>
-              <button
-                className="btn btn-ghost btn-sm"
-                disabled={annBusy === String(n.id)}
-                onClick={async () => {
-                  setAnnBusy(String(n.id));
-                  try {
-                    setAnnAi(await api("/api/invest/ai/announcement", {
-                      method: "POST",
-                      body: JSON.stringify({ title: n.title, summary: n.summary || "" }),
-                    }));
-                  } catch (e: any) {
-                    toast(e.message || t("解读失败", "Summary failed"));
-                  } finally {
-                    setAnnBusy(null);
-                  }
-                }}
-              >
-                {annBusy === String(n.id) ? t("解读中…", "Summarizing…") : t("AI 解读", "AI summary")}
-              </button>
-            </div>
-          )) : <div className="empty-inline">{t("暂无个股资讯。", isUs ? "US news coverage is not available (no free stable source)." : "No stock news yet.")}</div>}
+          {news.map((n: any) => (
+            <a className="news-item" key={n.id} href={n.url} target="_blank" rel="noreferrer">
+              <b>{n.title}</b>
+              <p>{n.summary}</p>
+              <span>{n.source} · {n.published_at}</span>
+            </a>
+          ))}
         </div>
-        {annAi ? <AiCard data={annAi} title={t("公告解读", "Filing summary")} /> : null}
       </Sheet>
 
-      <Sheet open={reportOpen} onClose={() => setReportOpen(false)} title={t("财报", "Financial report")} sub={data.report ? `${data.report.period} · ${t("披露", "reported")} ${data.report.reportDate}` : t("暂无", "None")}>
+      <Sheet open={reportOpen} onClose={() => setReportOpen(false)} title={t("财报摘要", "Report summary")} sub={data.report?.period || ""}>
         {data.report ? (
-          <>
-            <div className="report-grid">
-              <Kv k={t("营业收入", "Revenue")} v={data.report.revenue != null ? t(`${data.report.revenue.toFixed(1)} 亿元`, `CNY ${(data.report.revenue / 100).toFixed(2)}B`) : "—"} />
-              <Kv k={t("营收同比", "Revenue YoY")} v={fmtPct(data.report.revenueYoY, 1)} />
-              <Kv k={t("归母净利", "Net profit")} v={data.report.netProfit != null ? t(`${data.report.netProfit.toFixed(1)} 亿元`, `CNY ${(data.report.netProfit / 100).toFixed(2)}B`) : "—"} />
-              <Kv k={t("净利同比", "Profit YoY")} v={fmtPct(data.report.profitYoY, 1)} />
-              <Kv k={t("毛利率", "Gross margin")} v={`${data.report.grossMargin?.toFixed?.(2)}%`} />
-              <Kv k="ROE" v={`${data.report.roe?.toFixed?.(1)}%`} />
-              <Kv k={t("经营现金流", "Operating cash flow")} v={data.report.ocf != null ? t(`${data.report.ocf.toFixed(1)} 亿元`, `CNY ${(data.report.ocf / 100).toFixed(2)}B`) : "—"} />
-            </div>
-            <div className="hint">{t("结构化财务数据；要闻、公告、研报在「个股资讯」里，两者不重复。", "Structured financials; headlines, filings and research live under Stock news and are not duplicated here.")}</div>
-          </>
-        ) : <div className="empty-inline">{t("暂无财报数据。", "No financial report data yet.")}</div>}
+          <div className="report-grid">
+            <Kv k={t("营业收入", "Revenue")} v={data.report.revenue != null ? `${Number(data.report.revenue).toFixed(1)} 亿` : "—"} />
+            <Kv k={t("归母净利", "Net profit")} v={data.report.netProfit != null ? `${Number(data.report.netProfit).toFixed(1)} 亿` : "—"} />
+            <Kv k={t("毛利率", "Gross margin")} v={data.report.grossMargin != null ? `${Number(data.report.grossMargin).toFixed(1)}%` : "—"} />
+            <Kv k="ROE" v={data.report.roe != null ? `${Number(data.report.roe).toFixed(1)}%` : "—"} />
+          </div>
+        ) : <div className="empty-inline">{t("暂无财报", "No financials")}</div>}
+      </Sheet>
+
+      <Sheet open={statementOpen} onClose={() => setStatementOpen(false)} title={t("三大报表", "Three statements")} sub={statements.period || ""}>
+        <div className="statement-list">
+          <div><b>{t("利润表", "Income")}</b>{statements.income ? <p>{t("营收", "Revenue")} {Number(statements.income.revenue).toFixed(1)} 亿 · {t("归母净利", "Net profit")} {Number(statements.income.netProfit).toFixed(1)} 亿</p> : null}</div>
+          <div><b>{t("资产负债表", "Balance sheet")}</b>{statements.balance ? <p>{t("总资产", "Assets")} {fmtYi(statements.balance.total_assets)} · {t("总负债", "Liabilities")} {fmtYi(statements.balance.total_liabilities)} · {t("净资产", "Equity")} {fmtYi(statements.balance.total_equity)}</p> : null}</div>
+          <div><b>{t("现金流量表", "Cash flow")}</b>{statements.cashflow ? <p>{t("经营", "Operating")} {fmtYi(statements.cashflow.operating_cf)} · {t("投资", "Investing")} {fmtYi(statements.cashflow.investing_cf)} · {t("筹资", "Financing")} {fmtYi(statements.cashflow.financing_cf)}</p> : null}</div>
+        </div>
       </Sheet>
 
       <GlossarySheet open={glossary} onClose={() => setGlossary(false)} />

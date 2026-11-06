@@ -33,11 +33,13 @@ export default function AiPanel({
   subtitle,
   endpoint,
   body,
+  hideOnError = false,
 }: {
   title?: string;
   subtitle?: string;
   endpoint: string;
   body?: Record<string, unknown>;
+  hideOnError?: boolean;
 }) {
   const { t } = useLocale();
   const resolvedTitle = title ?? t("AI 解读", "AI insights");
@@ -70,6 +72,7 @@ export default function AiPanel({
   }, [endpoint, bodyKey]);
 
   const card = data?.card;
+  if (hideOnError && error) return null;
   return (
     <section className="card ai-panel">
       <div className="card-title-row">

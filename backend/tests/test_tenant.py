@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.core.tenant import Tenant
+from services.core.tenant import OrgScope, Tenant
 
 
 def test_tenant_validation_and_params():
@@ -19,3 +19,9 @@ def test_tenant_from_ctx():
     assert Tenant.from_ctx({"user_id": 8, "org": {"id": 4}}) == Tenant(8, 4)
     with pytest.raises(ValueError):
         Tenant.from_ctx({"user": {"id": 7}})
+
+def test_org_scope_validation():
+    assert OrgScope(3).org_id == 3
+    for value in (0, True, "3"):
+        with pytest.raises(ValueError):
+            OrgScope(value)

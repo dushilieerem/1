@@ -40,4 +40,14 @@ class Tenant:
         return self.user_id, self.org_id
 
 
-__all__ = ["Tenant"]
+@dataclass(frozen=True, slots=True)
+class OrgScope:
+    """只按机构隔离的读取（机构端服务没有个人 user 维度）。"""
+    org_id: int
+
+    def __post_init__(self) -> None:
+        if isinstance(self.org_id, bool) or not isinstance(self.org_id, int) or self.org_id <= 0:
+            raise ValueError("org_id 必须是正整数")
+
+
+__all__ = ["OrgScope", "Tenant"]

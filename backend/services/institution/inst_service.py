@@ -30,6 +30,8 @@ from ai.runtime.agent_store import (
     save_output,
 )
 from services.core.db import get_conn
+from services.core.tenant import OrgScope
+from . import repo
 from services.institution.prompts import (
     CHAIRMAN_MEMO_PROMPT,
     PARTNER_MEMO_PROMPT,
@@ -956,9 +958,7 @@ def _mapped_industry(conn, symbol: str, raw: Any) -> str | None:
 
 def get_company(org_id: int, company_id: int) -> dict[str, Any] | None:
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM inst_company WHERE id=%s AND org_id=%s", (company_id, org_id)
-        ).fetchone()
+        row = repo.company(OrgScope(org_id), company_id, conn=conn)
         if not row:
             return None
         company = _row_dict(row) or {}
@@ -983,24 +983,7 @@ def get_company(org_id: int, company_id: int) -> dict[str, Any] | None:
 
 
 def list_cases(org_id: int, *, company_id: int | None = None) -> list[dict[str, Any]]:
-    sql = """
-        SELECT c.*, co.symbol, co.name AS company_name, co.market, co.industry,
-               v.version_no, v.status AS version_status, v.conclusion
-          FROM inst_research_case c
-          JOIN inst_company co ON co.id=c.company_id
-          LEFT JOIN LATERAL (
-            SELECT version_no, status, conclusion FROM inst_research_version
-             WHERE case_id=c.id ORDER BY version_no DESC LIMIT 1
-          ) v ON TRUE
-         WHERE c.org_id=%s
-    """
-    params: list[Any] = [org_id]
-    if company_id:
-        sql += " AND c.company_id=%s"
-        params.append(company_id)
-    sql += " ORDER BY c.updated_at DESC"
-    with get_conn() as conn:
-        rows = conn.execute(sql, tuple(params)).fetchall()
+    rows = repo.cases(OrgScope(org_id), company_id=company_id)
     return [_row_dict(r) or {} for r in rows]
 
 
@@ -1033,19 +1016,9 @@ def create_case(org_id: int, company_id: int, actor_member_id: int | None) -> di
 
 def get_case(org_id: int, case_id: int) -> dict[str, Any] | None:
     with get_conn() as conn:
-        case = conn.execute(
-            """
-            SELECT c.*, co.symbol, co.name AS company_name, co.market, co.industry,
-                   co.data_status, co.ref_price
-              FROM inst_research_case c
-              JOIN inst_company co ON co.id=c.company_id
-             WHERE c.id=%s AND c.org_id=%s
-            """,
-            (case_id, org_id),
-        ).fetchone()
+        case = repo.case(OrgScope(org_id), case_id, conn=conn)
         if not case:
             return None
-        case = dict(case)
         case["industry"] = _mapped_industry(
             conn, str(case.get("symbol") or ""), case.get("industry")
         )

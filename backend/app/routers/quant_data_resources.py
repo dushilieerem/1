@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.deps import require_quant_researcher
+from app.deps import require_quant_manager, require_quant_researcher
 from app.routers.inst_quant import _quant_uid
 from services import quant_data_resources as svc
 
@@ -28,7 +28,17 @@ class RequestBody(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     purpose: str = Field(default="", max_length=100)
     period: str = Field(default="", max_length=200)
+    frequency: str = Field(default="", max_length=100)
     fields: str = Field(default="", max_length=2000)
+    related_type: str = Field(default="", max_length=50)
+    related_id: str = Field(default="", max_length=100)
+
+
+class RequestUpdateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str = Field(pattern="^(in_progress|delivered|unsupported)$")
+    note: str = Field(default="", max_length=2000)
+    delivered_view: str = Field(default="", max_length=100)
 
 
 @router.get("/catalog")
@@ -48,9 +58,14 @@ def views(ctx=Depends(require_quant_researcher)):
 
 @router.get("/requests")
 def requests(ctx=Depends(require_quant_researcher)):
-    return {"requests": invoke(svc.list_requests, *identity(ctx))}
+    return {"requests": invoke(svc.list_requests, *identity(ctx), bool(ctx.get("can_manage")))}
 
 
 @router.post("/requests")
 def request_create(body: RequestBody, ctx=Depends(require_quant_researcher)):
     return invoke(svc.submit_request, *identity(ctx), body.model_dump())
+
+
+@router.patch("/requests/{req_id}")
+def request_update(req_id: str, body: RequestUpdateBody, ctx=Depends(require_quant_manager)):
+    return invoke(svc.update_request, *identity(ctx), req_id, body.model_dump())

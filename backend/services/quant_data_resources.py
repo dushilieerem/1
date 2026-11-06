@@ -70,8 +70,13 @@ _VIEW_CACHE: dict[str, tuple[int, dict]] = {}
 
 
 def _view_yaml(view_id: str) -> dict:
-    for path in (DATA_HOME / "views").glob("*.yaml"):
-        if path.stem != view_id:
+    # Prefer the materialized artifact; a definition-only YAML is not a release.
+    candidates = [
+        DATA_HOME / "views" / view_id / "materialized" / "view.yaml",
+        DATA_HOME / "views" / f"{view_id}.yaml",
+    ]
+    for path in candidates:
+        if not path.is_file():
             continue
         mtime = path.stat().st_mtime_ns
         cached = _VIEW_CACHE.get(view_id)
@@ -82,6 +87,28 @@ def _view_yaml(view_id: str) -> dict:
         _VIEW_CACHE[view_id] = (mtime, data)
         return data
     return {}
+
+
+def _published_views() -> set[str]:
+    """Actual releases: materialized dir with manifest and matching VIEW_ID."""
+    out: set[str] = set()
+    root = DATA_HOME / "views"
+    for path in root.iterdir() if root.is_dir() else []:
+        materialized = path / "materialized"
+        manifest = materialized / "manifest.json"
+        marker = materialized / "VIEW_ID"
+        if not (path.is_dir() and manifest.is_file() and marker.is_file()):
+            continue
+        try:
+            if marker.read_text(encoding="utf-8").strip() == path.name:
+                out.add(path.name)
+        except OSError:
+            continue
+    return out
+
+
+def _published_view_paths() -> dict[str, Path]:
+    return {vid: DATA_HOME / "views" / vid / "materialized" for vid in _published_views()}
 
 
 def _pit_label(rule: str) -> str:
@@ -105,10 +132,6 @@ def _dataset_view_meta(view_id: str, name: str) -> dict:
         "batch_created_at": entry.get("created_at") or "",
         "frequency": FREQUENCY.get(name, "待确认"),
     }
-
-
-def _published_views() -> set[str]:
-    return {path.stem for path in (DATA_HOME / "views").glob("*.yaml")}
 
 
 def catalogue(uid: int, org: int, all_members: bool = False):
@@ -188,8 +211,7 @@ def dataset(uid: int, org: int, name: str):
 def views(uid: int, org: int):
     current, _ = _current_view()
     rows = []
-    for path in sorted((DATA_HOME / "views").glob("*.yaml"), key=lambda p: p.stat().st_mtime, reverse=True):
-        vid = path.stem
+    for vid, path in sorted(_published_view_paths().items(), key=lambda kv: kv[1].stat().st_mtime, reverse=True):
         meta = _view_yaml(vid)
         rows.append({
             "view_id": vid, "current": vid == current,

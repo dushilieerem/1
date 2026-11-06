@@ -58,6 +58,11 @@ class UpdateRequestTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "不存在或未发布"):
             self._update("in_progress", {"status": "delivered", "delivered_view": "research-rv-20990101-0"})
 
+    def test_delivered_rejects_definition_only_view(self):
+        # 20261105-3 只有 YAML 定义、没有 materialized 发布产物。
+        with self.assertRaisesRegex(ValueError, "不存在或未发布"):
+            self._update("in_progress", {"status": "delivered", "delivered_view": "research-rv-20261105-3"})
+
 
 class ListRequestScopeTest(unittest.TestCase):
     def test_researcher_sees_own_requests_only(self):

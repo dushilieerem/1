@@ -101,7 +101,7 @@ export function QuantFactorHomePage(){
   const trials=trialsByBranch.get(b.id)||[];
   return (
    <div key={b.id} className="branch-wrap">
-    <div className={'branch'+(b.source==='manual'?' human':'')+(node===b.id?' sel':'')} data-bid={b.id} onClick={()=>setNode(b.id)} role="button" tabIndex={0}>
+    <div className={'branch'+(b.source==='manual'?' human':'')+(node===b.id?' sel':'')} data-bid={b.id} data-parent={b.parent_id||''} onClick={()=>setNode(b.id)} role="button" tabIndex={0}>
      <div className="bh">
       <span className="hid">{b.id.slice(0,8)}</span>
       <span className="bt">{b.source==='manual'?'人工分支':'Agent 分支'} · 假设 v{b.hypothesis_version} / 实现 v{b.implementation_version}</span>

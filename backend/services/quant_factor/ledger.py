@@ -41,6 +41,8 @@ from datetime import date
 from typing import Iterable
 
 from services.core.db import get_conn
+from services.core.tenant import Tenant
+from . import repo
 
 from .metrics import threshold
 
@@ -226,29 +228,15 @@ def _as_int(value, field: str, low: int, high: int) -> int:
 
 
 def _topic(uid: int, org: int, topic_id: str) -> dict:
-    with get_conn() as c:
-        row = c.execute(
-            "SELECT * FROM quant_factor_topics WHERE id=%s AND user_id=%s AND org_id=%s",
-            (topic_id, uid, org)).fetchone()
-    if not row:
-        raise KeyError(topic_id)
-    return dict(row)
+    return repo.topic(Tenant.from_pair(uid, org), topic_id)
 
 
 def _trials(uid: int, org: int, topic_id: str) -> list[dict]:
-    with get_conn() as c:
-        rows = c.execute(
-            "SELECT * FROM quant_factor_trials WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY trial_no",
-            (uid, org, topic_id)).fetchall()
-    return [dict(row) for row in rows]
+    return repo.trials(Tenant.from_pair(uid, org), topic_id)
 
 
 def _branches(uid: int, org: int, topic_id: str) -> list[dict]:
-    with get_conn() as c:
-        rows = c.execute(
-            "SELECT * FROM quant_factor_branches WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at",
-            (uid, org, topic_id)).fetchall()
-    return [dict(row) for row in rows]
+    return repo.branches(Tenant.from_pair(uid, org), topic_id)
 
 
 def create_topic(uid: int, org: int, project_id: str, payload: dict) -> dict:
@@ -309,11 +297,7 @@ def create_topic(uid: int, org: int, project_id: str, payload: dict) -> dict:
 
 
 def list_topics(uid: int, org: int, project_id: str) -> list[dict]:
-    with get_conn() as c:
-        rows = c.execute(
-            "SELECT * FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s ORDER BY created_at",
-            (uid, org, project_id)).fetchall()
-    return [_public(row) for row in rows]
+    return [_public(row) for row in repo.topics(Tenant.from_pair(uid, org), project_id)]
 
 
 def create_branch(uid: int, org: int, topic_id: str, payload: dict) -> dict:

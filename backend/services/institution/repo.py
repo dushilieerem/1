@@ -182,4 +182,41 @@ def monitor(scope: OrgScope) -> dict[str, list[dict[str, Any]]]:
     }
 
 
-__all__ = ["case", "cases", "company", "monitor", "portfolio", "proposals"]
+def authorizations(scope: OrgScope, *, status: str | None = None) -> list[dict[str, Any]]:
+    sql = """
+        SELECT a.*, p.id AS proposal_id, p.company_id, co.symbol, co.name AS company_name,
+               v.version_no, v.snapshot AS version_snapshot
+          FROM inst_authorization a
+          JOIN inst_proposal_version v ON v.id=a.proposal_version_id
+          JOIN inst_proposal p ON p.id=v.proposal_id
+          JOIN inst_company co ON co.id=p.company_id
+         WHERE p.org_id=%s
+    """
+    params: list[Any] = [scope.org_id]
+    if status:
+        sql += " AND a.status=%s"
+        params.append(status)
+    sql += " ORDER BY a.issued_at DESC"
+    with get_conn() as c:
+        rows = c.execute(sql, tuple(params)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def theses(scope: OrgScope, *, status: str | None = None) -> list[dict[str, Any]]:
+    sql = (
+        "SELECT t.*, co.name AS company_name, co.market, "
+        "  (SELECT COUNT(*) FROM inst_thesis_review r WHERE r.ledger_id=t.id) AS review_count "
+        "  FROM inst_thesis_ledger t JOIN inst_company co ON co.id=t.company_id "
+        " WHERE t.org_id=%s"
+    )
+    params: list[Any] = [scope.org_id]
+    if status:
+        sql += " AND t.status=%s"
+        params.append(status)
+    sql += " ORDER BY t.updated_at DESC LIMIT 100"
+    with get_conn() as c:
+        rows = c.execute(sql, tuple(params)).fetchall()
+    return [dict(row) for row in rows]
+
+
+__all__ = ["authorizations", "case", "cases", "company", "monitor", "portfolio", "proposals", "theses"]

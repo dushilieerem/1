@@ -3914,23 +3914,7 @@ def approve_and_execute(
 
 
 def list_authorizations(org_id: int, *, status: str | None = None) -> list[dict[str, Any]]:
-    sql = """
-        SELECT a.*, p.id AS proposal_id, p.company_id, co.symbol, co.name AS company_name,
-               v.version_no, v.snapshot AS version_snapshot
-          FROM inst_authorization a
-          JOIN inst_proposal_version v ON v.id=a.proposal_version_id
-          JOIN inst_proposal p ON p.id=v.proposal_id
-          JOIN inst_company co ON co.id=p.company_id
-         WHERE p.org_id=%s
-    """
-    params: list[Any] = [org_id]
-    if status:
-        sql += " AND a.status=%s"
-        params.append(status)
-    sql += " ORDER BY a.issued_at DESC"
-    with get_conn() as conn:
-        rows = conn.execute(sql, tuple(params)).fetchall()
-    return [_row_dict(r) or {} for r in rows]
+    return repo.authorizations(OrgScope(org_id), status=status)
 
 
 # ---------------------------------------------------------------- 模拟执行 / 组合
@@ -4674,20 +4658,7 @@ def _thesis_row(conn, org_id: int, ledger_id: int) -> dict[str, Any] | None:
 
 
 def list_theses(org_id: int, *, status: str | None = None) -> list[dict[str, Any]]:
-    with get_conn() as conn:
-        sql = (
-            "SELECT t.*, co.name AS company_name, co.market, "
-            "  (SELECT COUNT(*) FROM inst_thesis_review r WHERE r.ledger_id=t.id) AS review_count "
-            "  FROM inst_thesis_ledger t JOIN inst_company co ON co.id=t.company_id "
-            " WHERE t.org_id=%s"
-        )
-        params: list[Any] = [org_id]
-        if status:
-            sql += " AND t.status=%s"
-            params.append(status)
-        sql += " ORDER BY t.updated_at DESC LIMIT 100"
-        rows = conn.execute(sql, tuple(params)).fetchall()
-    return [_row_dict(r) for r in rows]
+    return repo.theses(OrgScope(org_id), status=status)
 
 
 def review_thesis(

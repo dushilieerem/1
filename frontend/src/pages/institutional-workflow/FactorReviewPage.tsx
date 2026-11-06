@@ -43,5 +43,32 @@ export function FactorReviewPage(){
    </>}
   </div>
  </div>
+ <StrategyReviewSection/>
  </>;
+}
+
+type StrategyItem={id:string;topic_id:string;hypothesis:string;owner_id:number;status:string;review_status?:string;topic_name:string;universe:string;benchmark:string};
+type StrategyDetail={branch:StrategyItem&{reviewer_id?:number|null;review_decision?:string;review_note?:string};topic:{name:string;universe:string;benchmark:string};trials:Array<{trial_no:number;outcome:string;rerun_of?:string|null;gate?:Gate;effective_gate?:Gate}>;effective_gate?:Gate;sealed?:{status:string;gate?:Gate;result?:{excess_return?:number;metrics?:Record<string,number>}}|null;events:Array<{action:string;note:string;created_at:string}>};
+type Gate={checks?:Array<{name:string;actual:number|null;threshold?:number;passed:boolean|null}>;complete?:boolean;passed?:boolean;pending?:string[]};
+
+function StrategyReviewSection(){
+ const [items,setItems]=useState<StrategyItem[]>([]),[current,setCurrent]=useState<StrategyDetail>(),[error,setError]=useState(''),[busy,setBusy]=useState(false),[note,setNote]=useState('');
+ const api=async(path:string,body?:unknown)=>{const r=await researchFetch('/api/inst/quant/strategy-research/reviews'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(typeof (d.detail||d.error)==='string'?(d.detail||d.error):'策略复核服务不可用');return d;};
+ useEffect(()=>{let alive=true;void api('').then((d:{branches:StrategyItem[]})=>{if(alive)setItems(d.branches);}).catch(e=>{if(alive)setError(e.message);});return()=>{alive=false;};},[]);
+ async function select(id:string){setBusy(true);setError('');try{setCurrent(await api('/'+id));}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}}
+ async function claim(id:string){setBusy(true);setError('');try{await api('/'+id+'/claim',{});setCurrent(await api('/'+id));}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}}
+ async function save(id:string,decision:'approved'|'rejected'){if(!note.trim())return;setBusy(true);setError('');try{await api('/'+id,{decision,note});setItems(a=>a.filter(x=>x.id!==id));setCurrent(undefined);setNote('');}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}}
+ const g=current?.effective_gate;
+ return <div className="card" style={{marginTop:16}}><div className="card-head"><h2>策略候选</h2><span className="fine">封存通过并提交的冻结配方；研究员不能自审</span></div><div className="card-body">
+  {error&&<p className="hint error" role="alert">{error}</p>}
+  {items.length===0?<p className="empty">没有待审策略候选</p>:<div className="queue" style={{display:'flex',gap:8,flexWrap:'wrap'}}>{items.map(i=><button key={i.id} className={'qi'+(current?.branch.id===i.id?' sel':'')} disabled={busy} onClick={()=>void select(i.id)}><span className="subtle">{i.id.slice(0,8)} · {i.status}</span><b>{i.topic_name}</b><small>{i.hypothesis.slice(0,60)}</small></button>)}</div>}
+  {current&&<div style={{marginTop:12}}>
+   <p className="fine">{current.topic.name} · {current.topic.universe}/{current.topic.benchmark} · 封存 {current.sealed?.status||'—'} · {current.branch.review_status||''}</p>
+   <p>{current.branch.hypothesis}</p>
+   <div className="table-wrap"><table className="table"><thead><tr><th>试验</th><th>结果</th><th>计入 K</th></tr></thead><tbody>{current.trials.map(t=><tr key={t.trial_no}><td>#{t.trial_no}{t.rerun_of?'（rerun）':''}</td><td>{t.outcome}</td><td>{t.rerun_of?'否':'是'}</td></tr>)}</tbody></table></div>
+   <h4>门槛</h4><div className="table-wrap"><table className="table"><thead><tr><th>检查</th><th>实际</th><th>要求</th><th>结果</th></tr></thead><tbody>{(g?.checks||[]).map(c=><tr key={c.name}><td>{c.name}</td><td>{c.actual==null?'—':Number(c.actual).toFixed(4)}</td><td>{c.threshold==null?'—':Number(c.threshold).toFixed(3)}</td><td className={c.passed?'ok-t':c.passed===false?'bad-t':''}>{c.passed==null?'待补':c.passed?'通过':'未通过'}</td></tr>)}</tbody></table></div>
+   <h4>封存结果</h4><p className="fine">{current.sealed?`${current.sealed.status} · 超额 ${current.sealed.result?.excess_return==null?'—':(Number(current.sealed.result.excess_return)*100).toFixed(2)+'%'}`:'尚无封存记录'}</p>
+   {current.branch.reviewer_id==null?<button className="btn small" disabled={busy} onClick={()=>void claim(current.branch.id)}>领取复核</button>:<><label className="field" style={{display:'block',marginTop:10}}><span>复核依据</span><textarea rows={3} value={note} onChange={e=>setNote(e.target.value)}/></label><div className="decision" style={{marginTop:10}}><button className="btn primary" disabled={busy||!note.trim()} onClick={()=>void save(current.branch.id,'approved')}>批准入库</button><button className="btn danger" disabled={busy||!note.trim()} onClick={()=>void save(current.branch.id,'rejected')}>驳回</button></div></>}
+  </div>}
+ </div></div>;
 }

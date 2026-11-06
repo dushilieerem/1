@@ -150,6 +150,25 @@ def submit_for_review(uid, org, bid):
     return _public(_branch_topic(uid, org, bid)[0])
 
 
+def detail(uid, org, bid):
+    branch, topic = _branch_topic(uid, org, bid)
+    if branch["owner_id"] == uid:
+        raise ValueError("不能复核自己提交的策略")
+    led = strategy_research.ledger(uid, org, topic["id"])
+    trials = [t for t in led["trials"] if t["branch_id"] == bid]
+    with get_conn() as c:
+        sealed_row = c.execute(
+            "SELECT id,status,result,gate,report_id,created_at FROM strategy_sealed_validations WHERE user_id=%s AND org_id=%s AND branch_id=%s ORDER BY created_at DESC LIMIT 1",
+            (uid, org, bid)).fetchone()
+        events = [dict(r) for r in c.execute(
+            "SELECT action,actor_id,note,created_at FROM strategy_review_events WHERE user_id=%s AND org_id=%s AND branch_id=%s ORDER BY created_at",
+            (uid, org, bid)).fetchall()]
+    latest = trials[-1] if trials else None
+    return {"branch": _public(branch), "topic": _public(topic),
+            "trials": trials, "effective_gate": (latest or {}).get("effective_gate"),
+            "sealed": _public(sealed_row) if sealed_row else None, "events": events}
+
+
 def queue(uid, org):
     with get_conn() as c:
         rows = [dict(r) for r in c.execute(
@@ -197,4 +216,4 @@ def decide(uid, org, bid, decision, note=""):
     return _public(_branch_topic(uid, org, bid)[0])
 
 
-__all__ = ["claim", "decide", "queue", "read", "request", "submit_for_review"]
+__all__ = ["claim", "decide", "detail", "queue", "read", "request", "submit_for_review"]

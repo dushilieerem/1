@@ -116,6 +116,12 @@ def review_queue(ctx=Depends(require_quant_reviewer)):
     return {"branches": invoke(strategy_sealed.queue, *identity(ctx))}
 
 
+@router.get("/reviews/{bid}")
+def review_detail(bid: str, ctx=Depends(require_quant_reviewer)):
+    from services import strategy_sealed
+    return invoke(strategy_sealed.detail, *identity(ctx), bid)
+
+
 @router.post("/reviews/{bid}/claim")
 def review_claim(bid: str, ctx=Depends(require_quant_reviewer)):
     from services import strategy_sealed

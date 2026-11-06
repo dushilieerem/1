@@ -1,3 +1,17 @@
+import {QuantFactorLibraryPage} from "@/pages/institutional-workflow/QuantFactorLibraryPage";
+import {QuantFactorLedgerPage} from "@/pages/institutional-workflow/QuantFactorLedgerPage";
+import {QuantFactorHomePage} from "@/pages/institutional-workflow/QuantFactorHomePage";
+import {QuantFactorCapabilitiesPage} from "@/pages/institutional-workflow/QuantFactorCapabilitiesPage";
+import {QuantFactorManualPage} from "@/pages/institutional-workflow/QuantFactorManualPage";
+import {StrategyResearchPage} from "@/pages/institutional-workflow/StrategyResearchPage";
+import {QuantPrototypeModulePage} from "@/pages/institutional-workflow/QuantPrototypeModulePage";
+import {QuantDataResourcesPage} from "@/pages/institutional-workflow/QuantDataResourcesPage";
+import {QuantPortfolioPage} from "@/pages/institutional-workflow/QuantPortfolioPage";
+import {QuantMonitorPage} from "@/pages/institutional-workflow/QuantMonitorPage";
+import {QuantAgentsPage} from "@/pages/institutional-workflow/QuantAgentsPage";
+import {QuantOverviewPage,QuantResearchReviews,QuantFactorExperimentsPage} from "@/pages/institutional-workflow/QuantWorkspacePages";
+import "@/pages/institutional-workflow/quantWorkspace.css";
+import { QuantLayout } from "@/pages/institutional-workflow/QuantLayout";
 import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "./components/Layout";
@@ -184,6 +198,13 @@ const InstAboutPage = lazy(() =>
   import("./pages/institution/InstAboutPage").then((m) => ({ default: m.InstAboutPage })),
 );
 
+const FactorWorkflowRedirect = lazy(() => import("./pages/institutional-workflow/FactorWorkflowPage").then(m => ({ default: m.FactorWorkflowRedirect })));
+const FactorWorkflowPage = lazy(() => import("./pages/institutional-workflow/FactorWorkflowPage").then(m => ({ default: m.FactorWorkflowPage })));
+
+const QuantFactorReportsPage = lazy(() => import("./pages/institutional-workflow/QuantFactorReportsPage").then(m => ({ default: m.QuantFactorReportsPage })));
+
+const QuantFactorReportPage = lazy(() => import("./pages/institutional-workflow/QuantFactorReportPage").then(m => ({ default: m.QuantFactorReportPage })));
+
 function Authed({ children }: { children: ReactNode }) {
   return <RequireAuth>{children}</RequireAuth>;
 }
@@ -229,9 +250,38 @@ export default function App() {
           <Route path="about" element={<InstAboutPage />} />
         </Route>
 
+        <Route path="/login" element={<LoginPage />} />
+        <Route element={<QuantLayout />}>
+          <Route path="/quant/reviews" element={<QuantResearchReviews />} />
+          <Route path="/quant/reviews/factors" element={<QuantResearchReviews />} />
+          <Route path="/quant/agents" element={<QuantAgentsPage />} />
+          <Route path="/quant/data" element={<QuantDataResourcesPage />} />
+          <Route path="/quant/portfolio" element={<QuantPortfolioPage />} />
+          <Route path="/quant/monitor" element={<QuantMonitorPage />} />
+          <Route path="/quant/factor/experiments" element={<QuantFactorExperimentsPage />} />
+          <Route path="/quant" element={<QuantOverviewPage />} />
+          <Route path="/quant/strategy" element={<StrategyResearchPage />} />
+          <Route path="/quant/strategy/reports" element={<QuantPrototypeModulePage />} />
+          <Route path="/quant/strategy/:projectId/reports" element={<QuantPrototypeModulePage />} />
+          <Route path="/quant/strategy/report/:runId" element={<QuantPrototypeModulePage />} />
+          <Route path="/quant/strategy/:projectId" element={<QuantPrototypeModulePage />} />
+          <Route path="/quant/factor" element={<QuantFactorHomePage />} />
+          <Route path="/quant/factor/workflow/:projectId/:step" element={<FactorWorkflowPage />} />
+          <Route path="/quant/factor/reports" element={<QuantFactorReportsPage />} />
+          <Route path="/quant/factor/:projectId/reports" element={<QuantFactorReportsPage />} />
+          <Route path="/quant/factor/report/:runId" element={<QuantFactorReportPage />} />
+          <Route path="/quant/factor/:projectId" element={<FactorWorkflowRedirect />} />
+          <Route path="/quant/factor/library" element={<QuantFactorLibraryPage />} />
+          <Route path="/quant/factor/ledger" element={<QuantFactorLedgerPage />} />
+          <Route path="/quant/factor/capabilities" element={<QuantFactorCapabilitiesPage />} />
+          <Route path="/quant/factor/manual" element={<QuantFactorManualPage />} />
+          <Route path="/quant/strategy/library" element={<QuantPrototypeModulePage />} />
+          <Route path="/quant/strategy/library/archive/:archiveStrategyId" element={<QuantPrototypeModulePage />} />
+          <Route path="/quant/*" element={<Navigate to="/quant" replace />} />
+        </Route>
+
         <Route element={<Layout />}>
           <Route path="/" element={<HomePage />} />
-          <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/support" element={<Authed><SupportPage /></Authed>} />

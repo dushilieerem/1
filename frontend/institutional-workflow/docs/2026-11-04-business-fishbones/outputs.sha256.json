@@ -1,0 +1,19 @@
+{
+  "figures/01-data.png": "90335612ef98b74bd54ebf4d510a7c4c4f4d297fa4b639ea05cd11c01feca0e4",
+  "figures/01-data.svg": "d55ba78d0de19944a388aeaf755395fc093c43d641e9a397850322615f785403",
+  "figures/02-factor.png": "5516925ae73cd1c03d718841ef0f342dcdeab2d44996990d308b99603cddb3f0",
+  "figures/02-factor.svg": "adee1b534e71c650a6c20cac15a02b99cf99642de2d78540c62502f5a936c5e0",
+  "figures/03-strategy.png": "9eb6b87ecfff00265a61efdc6896475f094e5969a73af92cfc50667d9a5d7b4f",
+  "figures/03-strategy.svg": "dd11f5f5db7b995efc4d981ddad568d56fb4f288fbef9d4ea20275096fdf2460",
+  "figures/04-portfolio.png": "f35295932bab64cb3e998ea00e41c06b908ec3164d6be5398cf23490df2de494",
+  "figures/04-portfolio.svg": "08b49342f8571b78cf33ac1924bd460f1bb635ffecccc12193497b059ea96f2a",
+  "figures/05-monitor.png": "dede15e3985f8fa780a6b8a48f98f7694042c4f2518cfb4020f6ad98838cdc71",
+  "figures/05-monitor.svg": "608b0ecaf8dc4a4ef3bf3ad2005626c7debdbabfe1284a9c81b6f15c8e4d0aa4",
+  "figures/06-overview.png": "04e7a3fe4c9cec0fd7d48d721d62559a591587d6933d2324a733755aef1a7218",
+  "figures/06-overview.svg": "def86dcd53a104aa97180cf3628bce2e9d5b647aa4495ce408ac9e96fdcbede7",
+  "figures/07-review.png": "eb0f8dc1ff305032a2255e8366c7cf878bea8420f3a3052f4907aefecf58f24c",
+  "figures/07-review.svg": "d3cd1efe1fb255c284efc2603bdd29b5ad4db2fd6e1732702f5fa7a555928e68",
+  "figures/08-agent-management.png": "09bc223eb1d86af59a7280e1b37936db05652105a2dffb6a84143a672a6ace47",
+  "figures/08-agent-management.svg": "5f0a1d77c848a88f3d2121f768ba400436202a88f100a1e35be8b6b7fe3b251b",
+  "业务模块鱼骨图与Agent设计.md": "b914eaf81d5c659674edbaff6fad56b7b869296aa2694ba19da22d2e0e76eca4"
+}

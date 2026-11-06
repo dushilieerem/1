@@ -143,3 +143,18 @@ def test_import_summary_allows_researcher():
  with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.imports.summary',return_value={'total':331}) as summary:
   assert client.get('/api/inst/quant/factor-workflow/imports/svquant-existing').status_code==200
   summary.assert_called_once_with(912,261)
+
+def test_import_reference_inventory_is_readable_by_researcher():
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.imports.reference_inventory',return_value={'total':331}) as inv:
+  assert client.get('/api/inst/quant/factor-workflow/imports/svquant-existing/reference').status_code==200
+  inv.assert_called_once_with(912,261)
+
+
+def test_org_topics_use_session_identity_and_ignore_client_scope():
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.ledger.list_org_topics',return_value=[]) as rows:
+  assert client.get('/api/inst/quant/factor-workflow/topics?user_id=1&org_id=2').status_code==200
+  rows.assert_called_once_with(912,261)
+
+def test_reviewer_cannot_list_org_topics():
+ app.dependency_overrides[require_quant_user]=lambda:{**ctx,'can_write':False,'can_review':True}
+ assert client.get('/api/inst/quant/factor-workflow/topics').status_code==403

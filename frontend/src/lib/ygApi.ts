@@ -1,4 +1,5 @@
-import { authHeaders } from "./auth";
+import { researchFetch as fetch } from "./researchClient";
+import { authHeaders } from "./researchClient";
 
 export type YgDrawdown = {
   start: string;

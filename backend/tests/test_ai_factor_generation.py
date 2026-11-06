@@ -89,7 +89,7 @@ class RouteTest(unittest.TestCase):
         self.assertEqual(out["status"], "ready")
         self.assertTrue(out["generation_id"].startswith("fg_"))
         self.assertEqual(out["validation"]["status"], "passed")
-        self.assertEqual(out["meta"]["prompt_version"], "v2")
+        self.assertEqual(out["meta"]["prompt_version"], "v3")
 
     def test_rejected_when_code_invalid_and_repair_fails(self):
         first = self.response(model_output(factor_code="def ret_5d(self):\n    return self.close.shift(-1)\n"))

@@ -1,6 +1,6 @@
 from fastapi import APIRouter,Depends,HTTPException,Request
 from pydantic import BaseModel,ConfigDict,Field
-from app.deps import require_quant_manager, require_quant_researcher, require_quant_reviewer
+from app.deps import require_quant_manager, require_quant_researcher, require_quant_reviewer, require_quant_user
 from app.routers.inst_quant import _quant_uid
 from services.quant_factor import service,store
 from services.quant_factor.policy import WorkflowError
@@ -66,6 +66,12 @@ def review_request(cid:str,body:ArchiveBody,ctx=Depends(require_quant_researcher
     from services.quant_factor.review import request_review
     return invoke(request_review,*identity(ctx),cid,body.note)
 
+@router.get('/pending-review-count')
+def pending_review_count(ctx=Depends(require_quant_user)):
+    from services.quant_factor import review
+    uid,org=identity(ctx)
+    return {'count':invoke(review.pending_count,org,uid,bool(ctx.get('can_review')))}
+
 @router.get('/reviews')
 def review_queue(ctx=Depends(require_quant_reviewer)):
     from services.quant_factor.review import queue
@@ -85,6 +91,17 @@ def review_detail(cid:str,ctx=Depends(require_quant_reviewer)):
 def review_record(cid:str,body:ReviewBody,ctx=Depends(require_quant_reviewer)):
     from services.quant_factor.review import record
     return invoke(record,*identity(ctx),cid,body.decision,body.note)
+
+@router.get('/published-view')
+def published_view_meta(ctx=Depends(require_quant_researcher)):
+    from services.workflow_workspace.platform_data import published_view
+    v=published_view()
+    dates=[d.get('date_max') for d in (v.get('datasets') or {}).values() if d.get('date_max')]
+    return {'view_id':v['view_id'],
+            'release_ids':{k:d.get('release') for k,d in (v.get('datasets') or {}).items() if d.get('release')},
+            'view_manifest_sha256':v.get('manifest_sha256') or '',
+            'contract_revision':v.get('contract_revision') or '',
+            'as_of':max(dates) if dates else None}
 
 @router.get('/overview')
 def workspace_overview(ctx=Depends(require_quant_researcher)):
@@ -193,6 +210,11 @@ def topic_create(project_id:str,body:TopicBody,ctx=Depends(require_quant_researc
     from services.quant_factor import ledger
     return invoke_ledger(ledger.create_topic,*identity(ctx),project_id,body.model_dump())
 
+@router.get('/topics')
+def topic_list_all(ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return {'topics':invoke(ledger.list_org_topics,*identity(ctx))}
+
 @router.get('/projects/{project_id}/topics')
 def topic_list(project_id:str,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import ledger
@@ -218,6 +240,31 @@ def branch_create(tid:str,body:BranchBody,ctx=Depends(require_quant_researcher))
     from services.quant_factor import ledger
     return invoke_ledger(ledger.create_branch,*identity(ctx),tid,body.model_dump())
 
+@router.post('/topics/{tid}/branches/{bid}/takeover')
+def branch_takeover(tid:str,bid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return invoke_ledger(ledger.takeover_branch,*identity(ctx),tid,bid)
+
+@router.post('/topics/{tid}/pause')
+def topic_pause(tid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return invoke_ledger(ledger.set_topic_status,*identity(ctx),tid,'paused')
+
+@router.post('/topics/{tid}/resume')
+def topic_resume(tid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return invoke_ledger(ledger.set_topic_status,*identity(ctx),tid,'active')
+
+@router.post('/topics/{tid}/branches/{bid}/activate')
+def branch_activate(tid:str,bid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return invoke_ledger(ledger.activate_branch,*identity(ctx),tid,bid)
+
+@router.post('/topics/{tid}/handback')
+def branch_handback(tid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return invoke_ledger(ledger.handback_branch,*identity(ctx),tid)
+
 @router.post('/topics/{tid}/trials')
 def trial_append(tid:str,body:TrialBody,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import ledger
@@ -233,3 +280,72 @@ def import_existing(ctx=Depends(require_quant_manager)):
 def import_summary(ctx=Depends(require_quant_researcher)):
     from services.quant_factor import imports
     return invoke(imports.summary,*identity(ctx))
+
+class MetricsBatchBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    limit:int=Field(default=5,ge=1,le=20,strict=True)
+
+@router.post('/imports/metrics-batch',status_code=202)
+def import_metrics_start(body:MetricsBatchBody,ctx=Depends(require_quant_manager)):
+    from services.quant_factor import import_metrics
+    return invoke_ledger(import_metrics.start_batch,*identity(ctx),body.limit)
+
+@router.get('/imports/metrics-batch/{batch_id}')
+def import_metrics_status(batch_id:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import import_metrics
+    return invoke(import_metrics.batch_status,*identity(ctx)[1:],batch_id)
+
+@router.post('/imports/{factor_id}/metrics-retry')
+def import_metrics_retry(factor_id:str,ctx=Depends(require_quant_manager)):
+    from services.quant_factor import import_metrics
+    return invoke(import_metrics.retry_one,*identity(ctx),factor_id)
+
+@router.get('/imports/svquant-existing/reference')
+def import_reference(ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import imports
+    return invoke(imports.reference_inventory,*identity(ctx))
+
+
+
+@router.post('/candidates/{cid}/sealed-validation',status_code=202)
+def sealed_request(cid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import sealed
+    return invoke(sealed.request,*identity(ctx),cid)
+
+@router.get('/candidates/{cid}/sealed-validation')
+def sealed_detail(cid:str,ctx=Depends(require_quant_user)):
+    from services.quant_factor import sealed
+    uid,org=identity(ctx)
+    full=bool(ctx.get('can_review') or ctx.get('can_manage'))
+    return invoke(sealed.detail,uid,org,cid,full)
+
+
+class F0Body(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    idempotency_key:str=Field(min_length=1,max_length=100)
+
+@router.post('/topics/{tid}/branches/{bid}/f0',status_code=202)
+def f0_start(tid:str,bid:str,body:F0Body,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import f0
+    return invoke_ledger(f0.start,*identity(ctx),tid,bid,body.idempotency_key)
+
+@router.get('/topics/{tid}/f0-runs')
+def f0_latest(tid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import f0
+    return invoke(f0.latest,*identity(ctx),tid)
+
+@router.post('/f0-runs/{rid}/resume',status_code=202)
+def f0_resume(rid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import f0
+    return invoke_ledger(f0.resume,*identity(ctx),rid)
+
+@router.get('/f0-runs/{rid}')
+def f0_read(rid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import f0
+    return invoke(f0.read,*identity(ctx),rid)
+
+
+@router.post('/reviews/{cid}/independent-opinion')
+def independent_opinion(cid:str,ctx=Depends(require_quant_reviewer)):
+    from services.quant_factor import f5
+    return invoke(f5.opinion,*identity(ctx),cid)

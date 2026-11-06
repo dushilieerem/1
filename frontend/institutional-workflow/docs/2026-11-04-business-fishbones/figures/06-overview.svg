@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="1060" viewBox="0 0 1680 1060" role="img">
+<title>管理驾驶舱（公共入口）</title><desc>H1 接入事实 → H2 核对状态 → H3 汇总指标 → H4 重点摘要 → H5 钻取跟进 → H6 追踪闭环。；各支骨列出功能和责任角色，详细输入输出见配套说明。</desc>
+<rect width="1680" height="1060" fill="#FFFFFF"/>
+<text x="48.00" y="35.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="43" font-weight="600" fill="#272332">06  管理驾驶舱（公共入口）</text>
+<text x="1390.00" y="48.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="23" font-weight="400" fill="#625D6C">设计评审 · V2</text>
+<text x="48.00" y="105.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="25" font-weight="400" fill="#625D6C">业务分解鱼骨图 · 按编号读取推荐流程；支骨列功能，角色对应表见说明</text>
+<polyline points="48,505 1455,505" fill="none" stroke="#65517F" stroke-width="3"/>
+<polygon points="1467,505 1447,495 1447,515" fill="#65517F"/>
+<text x="1480.00" y="421.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#625D6C">模块交付</text>
+<text x="1480.00" y="464.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">公司运行</text>
+<text x="1480.00" y="508.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">可见可追踪</text>
+<polyline points="108,409 248,505" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="117.19999999999999,435.88 147.2,435.88" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="159.2,464.68 189.2,464.68" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<circle cx="248" cy="505" r="24" fill="#65517F"/>
+<text x="239.50" y="489.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#FFFFFF">1</text>
+<text x="48.00" y="160.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">H1  接入业务事实</text>
+<text x="48.00" y="205.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#65517F">事件与查询服务</text>
+<circle cx="53" cy="264" r="3" fill="#625D6C"/>
+<text x="67.00" y="251.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">统一任务和研究资产编号</text>
+<circle cx="53" cy="303" r="3" fill="#625D6C"/>
+<text x="67.00" y="290.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">接收各模块状态与事件</text>
+<circle cx="53" cy="342" r="3" fill="#625D6C"/>
+<text x="67.00" y="329.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">关联待审、风险和预算</text>
+<circle cx="53" cy="381" r="3" fill="#625D6C"/>
+<text x="67.00" y="368.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">保留来源与更新时间</text>
+<polyline points="310,622 450,505" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="319.2,589.24 349.2,589.24" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="361.2,554.14 391.2,554.14" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<circle cx="450" cy="505" r="24" fill="#65517F"/>
+<text x="441.50" y="489.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#FFFFFF">2</text>
+<text x="250.00" y="655.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">H2  核对状态与质量</text>
+<text x="250.00" y="700.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#65517F">T-A1 运行监测</text>
+<circle cx="255" cy="759" r="3" fill="#625D6C"/>
+<text x="269.00" y="746.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">区分排队、运行与等待</text>
+<circle cx="255" cy="798" r="3" fill="#625D6C"/>
+<text x="269.00" y="785.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">识别断更和状态不一致</text>
+<circle cx="255" cy="837" r="3" fill="#625D6C"/>
+<text x="269.00" y="824.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">核对活跃任务与产物</text>
+<circle cx="255" cy="876" r="3" fill="#625D6C"/>
+<text x="269.00" y="863.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">显示未知与故障状态</text>
+<polyline points="512,409 652,505" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="521.2,435.88 551.2,435.88" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="563.2,464.68 593.2,464.68" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<circle cx="652" cy="505" r="24" fill="#65517F"/>
+<text x="643.50" y="489.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#FFFFFF">3</text>
+<text x="452.00" y="160.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">H3  汇总公司指标</text>
+<text x="452.00" y="205.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#65517F">确定性统计服务</text>
+<circle cx="457" cy="264" r="3" fill="#625D6C"/>
+<text x="471.00" y="251.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">模块任务与阶段分布</text>
+<circle cx="457" cy="303" r="3" fill="#625D6C"/>
+<text x="471.00" y="290.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">成果、候选与审批计数</text>
+<circle cx="457" cy="342" r="3" fill="#625D6C"/>
+<text x="471.00" y="329.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">模型、计算和数据用量</text>
+<circle cx="457" cy="381" r="3" fill="#625D6C"/>
+<text x="471.00" y="368.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">异常数量与未闭环时长</text>
+<polyline points="714,622 854,505" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="723.2,589.24 753.2,589.24" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="765.2,554.14 795.2,554.14" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<circle cx="854" cy="505" r="24" fill="#65517F"/>
+<text x="845.50" y="489.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#FFFFFF">4</text>
+<text x="654.00" y="655.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">H4  生成重点摘要</text>
+<text x="654.00" y="700.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#65517F">T-A1 / T-A2</text>
+<circle cx="659" cy="759" r="3" fill="#625D6C"/>
+<text x="673.00" y="746.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">重点进展与本期变化</text>
+<circle cx="659" cy="798" r="3" fill="#625D6C"/>
+<text x="673.00" y="785.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">重大风险与阻塞事项</text>
+<circle cx="659" cy="837" r="3" fill="#625D6C"/>
+<text x="673.00" y="824.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">需人工决策的候选</text>
+<circle cx="659" cy="876" r="3" fill="#625D6C"/>
+<text x="673.00" y="863.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">逐项关联事实与证据</text>
+<polyline points="916,409 1056,505" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="925.2,435.88 955.2,435.88" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="967.2,464.68 997.2,464.68" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<circle cx="1056" cy="505" r="24" fill="#65517F"/>
+<text x="1047.50" y="489.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#FFFFFF">5</text>
+<text x="856.00" y="160.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">H5  钻取与跟进</text>
+<text x="856.00" y="205.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#65517F">负责人＋业务入口</text>
+<circle cx="861" cy="264" r="3" fill="#625D6C"/>
+<text x="875.00" y="251.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">进入具体研究或报告</text>
+<circle cx="861" cy="303" r="3" fill="#625D6C"/>
+<text x="875.00" y="290.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">查看实际 Agent 调用</text>
+<circle cx="861" cy="342" r="3" fill="#625D6C"/>
+<text x="875.00" y="329.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">处理待审与风险工单</text>
+<circle cx="861" cy="381" r="3" fill="#625D6C"/>
+<text x="875.00" y="368.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">进入原模块介入或接续</text>
+<polyline points="1118,622 1258,505" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="1127.2,589.24 1157.2,589.24" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="1169.2,554.14 1199.2,554.14" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<circle cx="1258" cy="505" r="24" fill="#65517F"/>
+<text x="1249.50" y="489.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#FFFFFF">6</text>
+<text x="1058.00" y="655.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">H6  追踪闭环与反馈</text>
+<text x="1058.00" y="700.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#65517F">T-A1 / T-A2</text>
+<circle cx="1063" cy="759" r="3" fill="#625D6C"/>
+<text x="1077.00" y="746.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">跟踪责任人与待办期限</text>
+<circle cx="1063" cy="798" r="3" fill="#625D6C"/>
+<text x="1077.00" y="785.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">同步审批和处置结果</text>
+<circle cx="1063" cy="837" r="3" fill="#625D6C"/>
+<text x="1077.00" y="824.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">呈现历史变化与证据</text>
+<circle cx="1063" cy="876" r="3" fill="#625D6C"/>
+<text x="1077.00" y="863.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">形成定期管理回顾</text>
+<polyline points="48,955 1632,955" fill="none" stroke="#B8AFCA" stroke-width="1"/>
+<text x="48.00" y="976.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#625D6C">权限边界：按人员权限汇总与钻取；不在总览页面另设一套审批或计算逻辑。</text>
+<text x="48.00" y="1015.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#625D6C">复用角色：T-A1 汇总运行事实，T-A2 辅助解释；计算统计由程序完成。</text>
+</svg>

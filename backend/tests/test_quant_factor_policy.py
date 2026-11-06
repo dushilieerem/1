@@ -69,3 +69,42 @@ class MetricContractTests(unittest.TestCase):
   p=project();old=snapshot(p);self.assertNotIn('icMetric',old['rules'])
   p['config']['researchPlan']['rules']['icMetric']='rank_ic'
   self.assertNotEqual(digest(old),digest(snapshot(p)))
+
+
+class RankICGateTest(unittest.TestCase):
+    def result(self, series):
+        return {'metrics': {'rank_ic': 0.03, 'max_drawdown': -0.1},
+                'factor_analysis': {'rank_ic_mean': 0.03, 'rank_ic_series': series},
+                'meta': {'data_release_id': 'r', 'spec_hash': 's', 'factor_source_hash': 'h'}}
+
+    def rules(self):
+        return {'icMetric': 'rank_ic', 'direction': 'positive', 'minSignedIc': 0.005,
+                'maxDrawdown': 0.5, 'minObservations': 20}
+
+    def series(self, n=120, value=0.03):
+        return [{'value': value + 0.01 * ((i * 7) % 5 - 2) / 2} for i in range(n)]
+
+    def test_nw_t_check_uses_k_threshold(self):
+        from services.quant_factor.metrics import threshold, newey_west_t
+        out = evaluate(self.result(self.series()), self.rules(), k=5)
+        check = [c for c in out['checks'] if c['name'] == '方向 NW t'][0]
+        self.assertAlmostEqual(check['threshold'], threshold(5), places=12)
+        self.assertAlmostEqual(check['actual'], newey_west_t(self.series())['t'], places=12)
+
+    def test_missing_rank_ic_series_blocks_gate(self):
+        out = evaluate(self.result([]), self.rules(), k=1)
+        self.assertFalse(out['passed'])
+        self.assertEqual([c for c in out['checks'] if c['name'] == '日度 Rank IC 序列'][0]['passed'], False)
+
+
+class NegativeFactorSealTest(unittest.TestCase):
+    def test_negative_direction_passes_with_negative_ic(self):
+        series = [{'value': -0.03 + 0.005 * ((i * 7) % 5 - 2)} for i in range(220)]
+        result = {'metrics': {'rank_ic': -0.03, 'max_drawdown': -0.1},
+                  'factor_analysis': {'rank_ic_mean': -0.03, 'rank_ic_series': series},
+                  'meta': {'data_release_id': 'r', 'spec_hash': 's', 'factor_source_hash': 'h'}}
+        rules = {'icMetric': 'rank_ic', 'direction': 'negative', 'minSignedIc': 0.005,
+                 'maxDrawdown': 0.5, 'minObservations': 60}
+        out = evaluate(result, rules, k=1, lags=4)
+        self.assertTrue(out['passed'])
+        self.assertTrue([c for c in out['checks'] if c['name'] == '方向 NW t'][0]['passed'])

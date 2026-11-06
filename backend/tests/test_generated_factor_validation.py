@@ -89,3 +89,41 @@ class CompileTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreprocessingCapabilityTest(unittest.TestCase):
+    """QA-20: the panel can express winsorize / rank / z-score / industry demean / filters."""
+
+    def test_winsorize_and_rank(self):
+        code = ("def rev_w(self, window=5):\n"
+                "    raw = -self.close.pct_change(window)\n"
+                "    lo = raw.quantile(0.01, axis=1)\n"
+                "    hi = raw.quantile(0.99, axis=1)\n"
+                "    clipped = raw.clip(lower=lo, upper=hi, axis=0)\n"
+                "    return clipped.rank(axis=1, pct=True)\n")
+        self.assertEqual(validate_generated_factor(
+            factor(code=code, name="rev_w", fields=("close",))), [])
+
+    def test_zscore_and_industry_demean(self):
+        code = ("def rev_ind(self, window=5):\n"
+                "    raw = -self.close.pct_change(window)\n"
+                "    z = raw.sub(raw.mean(axis=1), axis=0).div(raw.std(axis=1), axis=0)\n"
+                "    industry = self.the_sw_industry_code.T.iloc[:, 0]\n"
+                "    return z.sub(z.T.groupby(industry).transform(\"mean\").T)\n")
+        self.assertEqual(validate_generated_factor(
+            factor(code=code, name="rev_ind", fields=("close", "the_sw_industry_code"))), [])
+
+    def test_liquidity_and_suspension_filters(self):
+        code = ("def rev_liquid(self, window=5):\n"
+                "    raw = -self.close.pct_change(window)\n"
+                "    liquid = self.amount.rolling(20, min_periods=20).mean().rank(axis=1, pct=True).gt(0.05)\n"
+                "    return raw.where(liquid).where(self.up_and_down_status.ne(\"停牌\"))\n")
+        self.assertEqual(validate_generated_factor(
+            factor(code=code, name="rev_liquid", fields=("close", "amount", "up_and_down_status"))), [])
+
+    def test_groupby_axis_is_rejected_before_runtime(self):
+        code = ("def rev_ind(self, window=5):\n"
+                "    raw = -self.close.pct_change(window)\n"
+                "    return raw.groupby(self.the_sw_industry_code, axis=1).transform(\"mean\")\n")
+        errors = validate_generated_factor(factor(code=code, name="rev_ind", fields=("close", "the_sw_industry_code")))
+        self.assertTrue(any("groupby 不支持 axis" in e for e in errors), errors)

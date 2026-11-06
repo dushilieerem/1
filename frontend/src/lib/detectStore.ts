@@ -1,6 +1,8 @@
+import { researchIdentity, researchPagePath, inQuantWorkspace } from "./researchClient";
+import { researchFetch as fetch } from "./researchClient";
 import type { YgBacktestRequest, YgBacktestResponse } from "./ygApi";
 import type { DetectSource } from "./detectSource";
-import { authHeaders, assertAuthConsistency, getStoredUser, subscribeAuth, prepareAuthHandoff } from "./auth";
+import { authHeaders, assertAuthConsistency, getStoredUser, subscribeAuth, prepareAuthHandoff } from "./researchClient";
 import { renameMethodDef } from "./factorCatalog";
 
 export type WeightMode = "sum" | "product" | "custom";
@@ -15,7 +17,22 @@ export type DraftDetectFactor = {
   body: string;
 };
 
+export type FactorResearchPlan = {
+  researchPurpose?: 'discovery'|'replication';
+  noveltyPolicy?: {scope:'all_accessible';maxAbsCorrelation:number;minDays:number;minPairs:number;minCoverage:number};
+  candidateExpression?: string;
+  improvementScope?: string;
+  rules?: {icMetric?:'ic'|'rank_ic'; minSignedIc:number; maxDrawdown:number; minObservations:number; direction:'positive'|'negative'};
+  revision: string; hypothesis: string; target: string; frequency: string;
+  developmentStart: string; developmentEnd: string;
+  validationStart: string; validationEnd: string;
+  acceptance: string; maxTrials: number;
+};
+
 export type DetectProjectConfig = {
+  researchPlan?: FactorResearchPlan;
+  researchContext?: {direction:string;question:string;background:string;agentJobId?:string};
+
   source?: DetectSource;
   factorCodes: string[];
   /**
@@ -509,7 +526,7 @@ function normalizeProject(
 }
 
 const memoryRuns = new Map<string, DetectRunRecord>();
-let cacheUserId: number | null = null;
+let cacheUserId: string | null = null;
 let projectCache: DetectProject[] = [];
 
 function currentUserId(): number | null {
@@ -546,11 +563,11 @@ function purgeLegacyBrowserDetectKeys() {
 export function clearDetectClientCache() {
   projectCache = [];
   memoryRuns.clear();
-  cacheUserId = currentUserId();
+  cacheUserId = researchIdentity();
 }
 
 function ensureCacheOwner() {
-  const uid = currentUserId();
+  const uid = researchIdentity();
   if (cacheUserId !== uid) {
     projectCache = [];
     memoryRuns.clear();
@@ -656,7 +673,7 @@ export async function getProject(id: string): Promise<DetectProject | undefined>
     else projectCache.unshift(p);
     return p;
   } catch {
-    return hit;
+    return inQuantWorkspace() ? undefined : hit;
   }
 }
 
@@ -809,7 +826,7 @@ export async function getRun(runId: string): Promise<DetectRunRecord | undefined
     memoryRuns.set(runId, data.run);
     return data.run;
   } catch {
-    return hit;
+    return inQuantWorkspace() ? undefined : hit;
   }
 }
 
@@ -1047,7 +1064,7 @@ export async function createDetectProjectFromLibraryFactors(opts: {
 }
 
 function detectPath(projectId: string) {
-  return `/factor/detect/${encodeURIComponent(projectId)}`;
+  return researchPagePath(`/factor/detect/${encodeURIComponent(projectId)}`);
 }
 
 function isNarrowViewport() {
@@ -1110,6 +1127,7 @@ const DETECT_PROJECT_SEED_PREFIX = "svquant_detect_project_seed_";
 const DETECT_PROJECT_SEED_TTL_MS = 60_000;
 
 export function seedDetectProjectForNewTab(project: DetectProject): void {
+  if (inQuantWorkspace()) return;
   try {
     localStorage.setItem(
       `${DETECT_PROJECT_SEED_PREFIX}${project.id}`,
@@ -1121,6 +1139,7 @@ export function seedDetectProjectForNewTab(project: DetectProject): void {
 }
 
 export function consumeDetectProjectSeed(id: string): DetectProject | undefined {
+  if (inQuantWorkspace()) return undefined;
   const key = `${DETECT_PROJECT_SEED_PREFIX}${id}`;
   try {
     const raw = localStorage.getItem(key);

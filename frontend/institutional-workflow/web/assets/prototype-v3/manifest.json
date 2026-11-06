@@ -1,0 +1,15 @@
+{
+  "version": "3.0",
+  "status": "interactive_prototype",
+  "production_actions": false,
+  "files": {
+    "source.zip": "233228f90cc7102a4c281305c2f7400dd4b428811f5cc9c2784ad505e689a381",
+    "acceptance.md": "5cb44c778e2547f8cfa01551e581127452b1fdb1649d8584f8b04b663cf6921d",
+    "PRD.md": "1538cee331cb85cefe7a5cc690a0f059b2472fa2839cf346c4a2a2a7da875522",
+    "index.html": "b149fefcdd551a35034131e411e992263a0aaee54d473c20ee8c09bde32438b7",
+    "responsive-check.html": "ccb8d34a4c12e47407c7060819cbd1a59b44d59cb506567af1f21c2572345d5c",
+    "README.md": "a0d2955308340c0e5a0451324cdbd5b9bdb7021bde1fe768dd292bfe80fd15b0",
+    "prd.html": "8cd691269b310552ae00cd7b9a6d2fba23bf395d89e5677af4e9ccca93d98894",
+    "test-results.txt": "802017db19a6222fbbd95422506e7eef23e9f3ae70751d546c190f73f67cce6a"
+  }
+}

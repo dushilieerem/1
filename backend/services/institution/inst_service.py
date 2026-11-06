@@ -53,6 +53,180 @@ MAX_INDUSTRY_WEIGHT = 0.30
 MIN_CASH_RATIO = 0.10
 DEFAULT_NAV = 10_000_000.0
 
+# v3 六环节：0 机会发现 → 5 投资管理。stage_no 是服务端唯一阶段事实。
+STAGE_DEFS: tuple[dict[str, Any], ...] = (
+    {"no": 0, "key": "find", "name": "机会发现", "gate": "立项三问", "owner": "投资经理"},
+    {"no": 1, "key": "research", "name": "价值分析", "gate": "研究定稿", "owner": "投资经理"},
+    {"no": 2, "key": "debate", "name": "多空辩论", "gate": "议案锁定", "owner": "投资经理"},
+    {"no": 3, "key": "approve", "name": "投委会审批", "gate": "三关审批", "owner": "合伙人 → 风控 → Chairman"},
+    {"no": 4, "key": "execute", "name": "执行成交", "gate": "授权执行", "owner": "系统"},
+    {"no": 5, "key": "manage", "name": "投资管理", "gate": "监控 / 退出", "owner": "投资经理 / 投委会"},
+)
+STAGE_BY_NO = {int(x["no"]): x for x in STAGE_DEFS}
+STAGE_BY_KEY = {str(x["key"]): x for x in STAGE_DEFS}
+
+
+def _stage_def(stage_no: Any) -> dict[str, Any]:
+    try:
+        no = int(stage_no)
+    except (TypeError, ValueError):
+        no = 1
+    return STAGE_BY_NO.get(max(0, min(5, no)), STAGE_BY_NO[1])
+
+
+def _stage_payload(stage_no: Any) -> dict[str, Any]:
+    stage = _stage_def(stage_no)
+    return {
+        "stage_no": stage["no"],
+        "stage_key": stage["key"],
+        "stage_name": stage["name"],
+        "stage_gate": {"stage_no": stage["no"], "gate": stage["gate"]},
+    }
+
+
+def _record_gate(
+    conn,
+    *,
+    org_id: int,
+    case_id: int | None,
+    gate_key: str,
+    status: str,
+    checks: list[dict[str, Any]] | None,
+    object_type: str | None = None,
+    object_id: int | None = None,
+    actor_member_id: int | None = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO inst_gate_run
+          (org_id, case_id, gate_key, status, checks, object_type, object_id, created_by)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+        """,
+        (org_id, case_id, gate_key, status, _j(checks or []), object_type, object_id, actor_member_id),
+    )
+
+
+def _record_transition(
+    conn,
+    *,
+    org_id: int,
+    case_id: int,
+    from_stage: int | None,
+    to_stage: int,
+    trigger: str,
+    actor_member_id: int | None,
+    to_state: str = "in_progress",
+    object_type: str | None = None,
+    object_id: int | None = None,
+    detail: dict[str, Any] | None = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO inst_case_transition
+          (org_id, case_id, from_stage, to_stage, from_state, to_state, trigger,
+           actor_member_id, object_type, object_id, detail)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """,
+        (
+            org_id,
+            case_id,
+            from_stage,
+            to_stage,
+            None,
+            to_state,
+            trigger,
+            actor_member_id,
+            object_type,
+            object_id,
+            _j(detail or {}),
+        ),
+    )
+
+
+def _set_case_stage(
+    conn,
+    *,
+    org_id: int,
+    case_id: int,
+    to_stage: int,
+    trigger: str,
+    actor_member_id: int | None,
+    to_state: str = "in_progress",
+    gate_status: str | None = None,
+    gate_checks: list[dict[str, Any]] | None = None,
+    object_type: str | None = None,
+    object_id: int | None = None,
+    detail: dict[str, Any] | None = None,
+    terminal_reason: str | None = None,
+) -> dict[str, Any]:
+    """推进/回退阶段；写 transition，保留旧 stage 文本兼容。"""
+    row = conn.execute(
+        "SELECT stage_no FROM inst_research_case WHERE id=%s AND org_id=%s",
+        (case_id, org_id),
+    ).fetchone()
+    if not row:
+        raise LookupError("研究案不存在")
+    from_stage = int(row["stage_no"]) if row.get("stage_no") is not None else None
+    stage = _stage_def(to_stage)
+    old_stage_text = "draft"
+    if stage["no"] >= 2:
+        old_stage_text = "approved"
+    if stage["no"] >= 3:
+        old_stage_text = "proposal"
+    conn.execute(
+        """
+        UPDATE inst_research_case
+           SET stage=%s,
+               stage_no=%s,
+               stage_key=%s,
+               stage_gate=%s,
+               stage_state=%s,
+               terminal_reason=%s,
+               stage_locked_at=CASE WHEN %s >= 2 THEN COALESCE(stage_locked_at, NOW()) ELSE stage_locked_at END,
+               updated_at=NOW()
+         WHERE id=%s AND org_id=%s
+        """,
+        (
+            old_stage_text,
+            stage["no"],
+            stage["key"],
+            _j({"stage_no": stage["no"], "gate": stage["gate"], "status": gate_status or "pending", "checks": gate_checks or []}),
+            to_state,
+            terminal_reason,
+            stage["no"],
+            case_id,
+            org_id,
+        ),
+    )
+    if from_stage != stage["no"] or to_state != "in_progress":
+        _record_transition(
+            conn,
+            org_id=org_id,
+            case_id=case_id,
+            from_stage=from_stage,
+            to_stage=stage["no"],
+            trigger=trigger,
+            actor_member_id=actor_member_id,
+            to_state=to_state,
+            object_type=object_type,
+            object_id=object_id,
+            detail={**(detail or {}), "from_stage": from_stage, "to_stage": stage["no"], "state": to_state},
+        )
+    if gate_status:
+        _record_gate(
+            conn,
+            org_id=org_id,
+            case_id=case_id,
+            gate_key=trigger,
+            status=gate_status,
+            checks=gate_checks,
+            object_type=object_type,
+            object_id=object_id,
+            actor_member_id=actor_member_id,
+        )
+    return _stage_payload(stage["no"])
+
+
 
 class AiUnavailable(RuntimeError):
     """AI 未配置/不可用；由路由层映射为 503。"""
@@ -585,8 +759,8 @@ def record_idea_decision(
         if action == "initiate":
             case_no = f"RC-{date.today():%Y%m%d}-{str(company['symbol']).split('.')[0]}-{_uid()[:4]}"
             case_row = conn.execute(
-                "INSERT INTO inst_research_case (org_id, company_id, case_no, stage, created_by) "
-                "VALUES (%s,%s,%s,'draft',%s) RETURNING id",
+                "INSERT INTO inst_research_case (org_id, company_id, case_no, stage, stage_no, stage_key, stage_gate, created_by) "
+                "VALUES (%s,%s,%s,'draft',1,'research','{\"stage_no\":1,\"gate\":\"研究定稿\"}'::jsonb,%s) RETURNING id",
                 (org_id, company_id, case_no, actor_member_id),
             ).fetchone()
             case_id = int(case_row["id"])
@@ -893,6 +1067,239 @@ def get_company(org_id: int, company_id: int) -> dict[str, Any] | None:
     return company
 
 
+# ---------------------------------------------------------------- v3 流水线 / 结果页
+
+
+def _pipeline_card(case: dict[str, Any]) -> dict[str, Any]:
+    stage_no = case.get("stage_no")
+    if stage_no is None:
+        stage_no = _derive_case_stage(case)
+    stage = _stage_def(stage_no)
+    proposals = case.get("proposals") or []
+    latest_proposal = proposals[0] if proposals else None
+    return {
+        "key": f"case:{int(case['id'])}",
+        "case_id": int(case["id"]),
+        "company_id": int(case["company_id"]),
+        "symbol": case.get("symbol"),
+        "company_name": case.get("company_name"),
+        "industry": case.get("industry"),
+        "stage_no": int(stage_no),
+        "stage_key": stage["key"],
+        "stage_name": stage["name"],
+        "gate": stage["gate"],
+        "version_no": case.get("version_no"),
+        "version_status": case.get("version_status"),
+        "conclusion": case.get("conclusion"),
+        "proposal_status": (latest_proposal or {}).get("status"),
+        "owner_member_id": case.get("created_by"),
+        "updated_at": _iso(case.get("updated_at")),
+        "stale": bool(latest_proposal and latest_proposal.get("stale_at")),
+    }
+
+
+def pipeline(org_id: int) -> dict[str, Any]:
+    """v3 六阶段看板：stage 0 为候选线索，1–5 为研究案/议案/执行/持仓。"""
+    cases = [_row_dict(r) or {} for r in repo.cases(OrgScope(org_id))]
+    by_stage: dict[int, list[dict[str, Any]]] = {i: [] for i in range(6)}
+    case_company_ids: set[int] = set()
+    for case in cases:
+        card = _pipeline_card(case)
+        by_stage[card["stage_no"]].append(card)
+        case_company_ids.add(card["company_id"])
+    # stage 0：量化推送 + 观察池，排除已建研究案的公司。
+    push = ideas_push(org_id, limit=12).get("items") or []
+    watch = list_companies(org_id, pool_status="watch", limit=20).get("items") or []
+    candidates: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for source, items in (("push", push), ("watch", watch)):
+        for item in items:
+            company_id = int(item.get("id") or 0)
+            if not company_id or company_id in seen or company_id in case_company_ids:
+                continue
+            seen.add(company_id)
+            candidates.append({
+                "key": f"company:{company_id}",
+                "company_id": company_id,
+                "symbol": item.get("symbol"),
+                "company_name": item.get("name"),
+                "industry": item.get("industry"),
+                "stage_no": 0,
+                "stage_key": "find",
+                "stage_name": "机会发现",
+                "gate": "立项三问",
+                "source": source,
+                "idea": item.get("idea"),
+                "ref_price": item.get("ref_price") or item.get("last_close"),
+                "updated_at": None,
+            })
+    by_stage[0] = candidates[:20]
+    stages = []
+    for no in range(6):
+        stage = _stage_def(no)
+        items = by_stage[no]
+        stages.append({
+            "stage_no": no,
+            "stage_key": stage["key"],
+            "stage_name": stage["name"],
+            "gate": stage["gate"],
+            "owner": stage["owner"],
+            "count": len(items),
+            "items": items[:30],
+        })
+    return {"stages": stages, "total": sum(x["count"] for x in stages)}
+
+
+def _position_for_symbol(org_id: int, symbol: str) -> dict[str, Any] | None:
+    pf = portfolio(org_id)
+    for pos in pf.get("positions") or []:
+        if str(pos.get("symbol")) == str(symbol):
+            return pos
+    return None
+
+
+def project_result(org_id: int, key: str) -> dict[str, Any]:
+    """v3 结果页聚合：company:<id> 为 01 线索，case:<id> 为 02–06 结果。"""
+    kind, _, raw_id = str(key).partition(":")
+    try:
+        entity_id = int(raw_id)
+    except ValueError:
+        raise LookupError("项目不存在") from None
+    if kind == "company":
+        company = get_company(org_id, entity_id)
+        if not company:
+            raise LookupError("公司不存在")
+        idea = _idea_questions(company, "watch")
+        with get_conn() as conn:
+            decision = conn.execute(
+                "SELECT * FROM inst_idea_decision WHERE org_id=%s AND company_id=%s ORDER BY id DESC LIMIT 1",
+                (org_id, entity_id),
+            ).fetchone()
+        return {
+            "key": key,
+            "stage_no": 0,
+            "stage_key": "find",
+            "stage_name": "机会发现",
+            "company": {k: company.get(k) for k in ("id", "symbol", "name", "market", "industry", "ref_price", "data_status", "pool_status")},
+            "idea": idea,
+            "latest_decision": _row_dict(decision),
+        }
+    if kind != "case":
+        raise LookupError("项目不存在")
+    case = get_case(org_id, entity_id)
+    if not case:
+        raise LookupError("研究案不存在")
+    latest_version = (case.get("versions") or [{}])[0]
+    latest_debate = (case.get("debates") or [{}])[0]
+    latest_proposal = (case.get("proposals") or [{}])[0]
+    authorization = None
+    if latest_proposal.get("id"):
+        authorization = authorization_for_proposal(org_id, int(latest_proposal["id"]))
+    position = _position_for_symbol(org_id, str(case.get("symbol") or ""))
+    return {
+        "key": key,
+        "case": case,
+        "stage_no": case.get("stage_no"),
+        "stage_key": case.get("stage_key"),
+        "stage_name": case.get("stage_name"),
+        "stage_state": case.get("stage_state"),
+        "stage_gate": case.get("stage_gate"),
+        "locks": case.get("locks"),
+        "latest_version": latest_version,
+        "latest_debate": latest_debate,
+        "latest_proposal": latest_proposal,
+        "authorization": authorization,
+        "position": position,
+    }
+
+
+def authorization_for_proposal(org_id: int, proposal_id: int) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT a.* FROM inst_authorization a
+              JOIN inst_proposal_version v ON v.id=a.proposal_version_id
+              JOIN inst_proposal p ON p.id=v.proposal_id
+             WHERE p.id=%s AND p.org_id=%s
+             ORDER BY a.id DESC LIMIT 1
+            """,
+            (proposal_id, org_id),
+        ).fetchone()
+    return _row_dict(row)
+
+
+def holding_detail(org_id: int, symbol: str) -> dict[str, Any]:
+    """v3 单票盘中：持仓 + 论点台账 + 监控事件 + 在途退出。"""
+    pf = portfolio(org_id)
+    position = next((p for p in pf.get("positions") or [] if str(p.get("symbol")) == symbol), None)
+    if not position:
+        raise LookupError("持仓不存在")
+    company_id = position.get("company_id")
+    mon = monitor(org_id)
+    events = [e for e in mon.get("events") or [] if str(e.get("symbol")) == symbol]
+    theses = [t for t in mon.get("theses") or [] if int(t.get("company_id") or 0) == int(company_id or 0)]
+    exits = [
+        e for e in mon.get("exits") or []
+        if int(e.get("company_id") or 0) == int(company_id or 0)
+    ]
+    return {
+        "symbol": symbol,
+        "company_id": company_id,
+        "position": position,
+        "events": events,
+        "theses": theses,
+        "exits": exits,
+        "portfolio": pf.get("portfolio"),
+    }
+
+
+def playbook() -> dict[str, Any]:
+    """v3 流程与权限静态配置；前端不再硬编码阶段/门禁。"""
+    return {
+        "stages": [
+            {
+                "stage_no": x["no"],
+                "stage_key": x["key"],
+                "stage_name": x["name"],
+                "gate": x["gate"],
+                "owner": x["owner"],
+                "steps": {
+                    "research": ["行业分析", "六维结论", "一页纸", "研究定稿"],
+                    "debate": ["多空立论", "交叉质询", "估值复核", "议案"],
+                    "approve": ["议案提交", "合伙人", "风控", "Chairman", "授权"],
+                    "execute": ["授权核对", "下单成交", "对账", "持仓更新"],
+                    "manage": ["组合总览", "单票盘中", "预警与退出"],
+                }.get(x["key"], []),
+            }
+            for x in STAGE_DEFS
+        ],
+        "gates": [
+            {"key": "partner", "name": "合伙人", "rule": "研究质量与上会判断", "actions": ["复核通过", "退回", "附条件"]},
+            {"key": "risk", "name": "风控", "rule": "六项硬约束 · 一票否决", "actions": ["放行", "否决", "有条件放行"]},
+            {"key": "chairman", "name": "Chairman", "rule": "资本配置 · 最终拍板", "actions": ["批准", "附条件", "拒绝", "退回"]},
+        ],
+        "hard_constraints": [
+            "单票 ≤ 15%；同行业 / 同一发行人聚合 ≤ 15%",
+            "交易后现金 ≥ 10%",
+            "研究定稿 / 议案 / 证据校验码一致",
+            "授权在有效期内，价格在批准带内",
+            "停牌 / 涨跌停 / ST / 限售 / 资金股数",
+            "两份议案抢同一笔钱 = 拦",
+        ],
+        "evidence_grades": [
+            {"grade": "A", "source": "公告 / 年报 / 审计报告 / 问询回复 / 交易所披露", "rule": "重大结论至少 1 条 A 级"},
+            {"grade": "B", "source": "交易所、监管、行业协会、统计局、央行、海关", "rule": "或 2 条独立 B 级"},
+            {"grade": "C", "source": "第三方研究、券商研报、权威财经媒体", "rule": "辅助，不单独支撑重大结论"},
+            {"grade": "D", "source": "一般媒体、网络信息、推断、无来源", "rule": "不得支撑买入"},
+        ],
+        "rules": [
+            "提案人不能批自己的案子；同一角色多人时各看各的、按人留痕。",
+            "风控否决 = 终局，Chairman 不能越过。",
+            "下游只读引用，不复制、不改写；上游变更 → 下游版本作废重跑。",
+        ],
+    }
+
+
 # ---------------------------------------------------------------- 研究
 
 
@@ -912,8 +1319,8 @@ def create_case(org_id: int, company_id: int, actor_member_id: int | None) -> di
             raise LookupError("公司不存在")
         case_no = f"RC-{date.today():%Y%m%d}-{company['symbol'].split('.')[0]}-{_uid()[:4]}"
         row = conn.execute(
-            "INSERT INTO inst_research_case (org_id, company_id, case_no, stage, created_by) "
-            "VALUES (%s,%s,%s,'draft',%s) RETURNING *",
+            "INSERT INTO inst_research_case (org_id, company_id, case_no, stage, stage_no, stage_key, stage_gate, created_by) "
+            "VALUES (%s,%s,%s,'draft',1,'research','{\"stage_no\":1,\"gate\":\"研究定稿\"}'::jsonb,%s) RETURNING *",
             (org_id, company_id, case_no, actor_member_id),
         ).fetchone()
         _audit(
@@ -970,7 +1377,46 @@ def get_case(org_id: int, case_id: int) -> dict[str, Any] | None:
     out["debates"] = [_row_dict(r) for r in sessions]
     out["proposals"] = [_row_dict(r) for r in proposals]
     out["exit_case"] = _row_dict(exit_case)
+    stage_no = out.get("stage_no")
+    if stage_no is None:
+        stage_no = _derive_case_stage(out)
+    out.update(_stage_payload(stage_no))
+    out["stage_state"] = out.get("stage_state") or "in_progress"
+    out["stage_gate"] = out.get("stage_gate") or {"stage_no": int(stage_no), "gate": _stage_def(stage_no)["gate"]}
+    out["locks"] = {
+        "research": next(
+            (
+                {"version_id": int(v["id"]), "version_no": int(v["version_no"]), "locked_at": _iso(v.get("locked_at"))}
+                for v in out["versions"]
+                if str(v.get("status")) == "approved" and v.get("locked_at")
+            ),
+            None,
+        ),
+        "proposal": next(
+            (
+                {"proposal_id": int(p["id"]), "version_no": int(p.get("current_version_no") or 0), "locked_at": _iso(p.get("locked_at"))}
+                for p in out["proposals"]
+                if p.get("locked_at") and str(p.get("status")) not in {"draft", "rejected", "frozen"}
+            ),
+            None,
+        ),
+    }
     return out
+
+
+def _derive_case_stage(case: dict[str, Any]) -> int:
+    """旧数据兜底：没有 stage_no 时按版本/议案粗略推导。"""
+    proposals = case.get("proposals") or []
+    if any(str(p.get("status")) in {"executed"} for p in proposals):
+        return 5
+    if any(str(p.get("status")) in {"authorized"} for p in proposals):
+        return 4
+    if any(str(p.get("status")) in {"partner_review", "risk_precheck", "chairman_review", "frozen", "rejected"} for p in proposals):
+        return 3
+    versions = case.get("versions") or []
+    if any(str(v.get("status")) == "approved" for v in versions):
+        return 2
+    return 1
 
 
 def _dim_status(has_data: bool) -> str:
@@ -2185,12 +2631,21 @@ def review_research(
         if decision == "approve":
             row = _ensure_version_hash(conn, row)
             conn.execute(
-                "UPDATE inst_research_version SET status='approved', frozen_at=NOW(), approved_by=%s, approved_at=NOW() WHERE id=%s",
+                "UPDATE inst_research_version SET status='approved', frozen_at=NOW(), locked_at=COALESCE(locked_at,NOW()), approved_by=%s, approved_at=NOW() WHERE id=%s",
                 (actor_member_id, version_id),
             )
-            conn.execute(
-                "UPDATE inst_research_case SET stage='approved', updated_at=NOW() WHERE id=%s",
-                (row["case_id"],),
+            _set_case_stage(
+                conn,
+                org_id=org_id,
+                case_id=int(row["case_id"]),
+                to_stage=2,
+                trigger="research.lock",
+                actor_member_id=actor_member_id,
+                gate_status="pass",
+                gate_checks=[],
+                object_type="inst_research_version",
+                object_id=version_id,
+                detail={"version_no": int(row.get("version_no") or 0), "content_hash": row.get("content_hash")},
             )
         else:
             if targets and not str(comment or "").strip():
@@ -2198,9 +2653,17 @@ def review_research(
             conn.execute(
                 "UPDATE inst_research_version SET status='changed' WHERE id=%s", (version_id,)
             )
-            conn.execute(
-                "UPDATE inst_research_case SET stage='researching', updated_at=NOW() WHERE id=%s",
-                (row["case_id"],),
+            _set_case_stage(
+                conn,
+                org_id=org_id,
+                case_id=int(row["case_id"]),
+                to_stage=1,
+                trigger="research.return",
+                actor_member_id=actor_member_id,
+                to_state="returned",
+                object_type="inst_research_version",
+                object_id=version_id,
+                detail={"comment": comment, "targets": targets},
             )
         _audit(
             conn,
@@ -2823,6 +3286,336 @@ def create_proposal(
     return get_proposal(org_id, int(row["id"]))  # type: ignore[return-value]
 
 
+def _six_dim_list(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            value = []
+    return [x for x in (value or []) if isinstance(x, dict)]
+
+
+def evaluate_research_gate(version: dict[str, Any]) -> dict[str, Any]:
+    """v3 研究定稿门禁：六维完整、低置信处理、数据门禁、证据与 hash。"""
+    dims = _six_dim_list(version.get("six_dim"))
+    by_key = {str(d.get("key")): d for d in dims if d.get("key")}
+    checks: list[dict[str, Any]] = []
+    blocking = False
+
+    required = [x[0] for x in SIX_DIM_DEFS]
+    missing = [k for k in required if k not in by_key]
+    checks.append({
+        "key": "six_dim_complete",
+        "label": "六维 6/6",
+        "status": "block" if missing else "pass",
+        "detail": f"缺失：{', '.join(missing)}" if missing else "六维齐全",
+    })
+    blocking = blocking or bool(missing)
+
+    low: list[str] = []
+    for key in required:
+        d = by_key.get(key) or {}
+        rating = d.get("rating")
+        confidence = d.get("confidence")
+        resolved = ((version.get("dim_reviews") or {}).get(key) or {}).get("decision") == "approve"
+        is_low = (rating is not None and float(rating) < 3.3) or (
+            confidence is not None and float(confidence) < 0.66
+        )
+        if is_low and not resolved:
+            low.append(str(d.get("title") or key))
+    checks.append({
+        "key": "low_confidence",
+        "label": "低置信项已处理",
+        "status": "block" if low else "pass",
+        "detail": f"未处理：{'、'.join(low)}" if low else "无低置信项",
+    })
+    blocking = blocking or bool(low)
+
+    data_fail: list[str] = []
+    for key in required:
+        d = by_key.get(key) or {}
+        gate = str(d.get("gate") or "")
+        completeness = d.get("data_completeness") or {}
+        if gate == "fail" or str(completeness.get("gate_cap") or "") == "fail":
+            data_fail.append(str(d.get("title") or key))
+    checks.append({
+        "key": "data_gate",
+        "label": "数据门禁",
+        "status": "block" if data_fail else "pass",
+        "detail": f"gate=fail：{'、'.join(data_fail)}" if data_fail else "无 fail 维度",
+    })
+    blocking = blocking or bool(data_fail)
+
+    evidence_ids = [x for x in (version.get("evidence_ids") or []) if str(x).strip()]
+    checks.append({
+        "key": "evidence",
+        "label": "证据包",
+        "status": "pass" if evidence_ids else "warn",
+        "detail": f"{len(evidence_ids)} 条证据" if evidence_ids else "无证据 ID",
+    })
+    checks.append({
+        "key": "hash",
+        "label": "版本校验码",
+        "status": "pass" if version.get("content_hash") else "warn",
+        "detail": str(version.get("content_hash") or "未生成"),
+    })
+    status = "block" if blocking else ("warn" if any(x["status"] == "warn" for x in checks) else "pass")
+    return {"status": status, "checks": checks}
+
+
+def lock_research(
+    org_id: int,
+    version_id: int,
+    *,
+    actor_member_id: int | None,
+    allow_gaps: bool = False,
+    comment: str | None = None,
+) -> dict[str, Any]:
+    """v3 研究定稿：门禁通过后锁定 R3，阶段 1→2。"""
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager")
+        row = conn.execute(
+            """
+            SELECT v.*, c.id AS case_id, c.stage_no
+              FROM inst_research_version v
+              JOIN inst_research_case c ON c.id=v.case_id
+             WHERE v.id=%s AND c.org_id=%s
+            """,
+            (version_id, org_id),
+        ).fetchone()
+        if not row:
+            raise LookupError("研究版本不存在")
+        if row.get("locked_at"):
+            return get_case(org_id, int(row["case_id"]))  # type: ignore[return-value]
+        version = _row_dict(_ensure_version_hash(conn, row)) or {}
+        gate = evaluate_research_gate(version)
+        if gate["status"] == "block" and not allow_gaps:
+            raise PermissionError("研究门禁未通过：" + "；".join(
+                x["detail"] for x in gate["checks"] if x["status"] == "block"
+            ))
+        status = "warn" if gate["status"] == "block" and allow_gaps else gate["status"]
+        conn.execute(
+            """
+            UPDATE inst_research_version
+               SET status='approved', frozen_at=COALESCE(frozen_at,NOW()),
+                   locked_at=COALESCE(locked_at,NOW()), approved_by=%s, approved_at=NOW()
+             WHERE id=%s
+            """,
+            (actor_member_id, version_id),
+        )
+        _set_case_stage(
+            conn,
+            org_id=org_id,
+            case_id=int(row["case_id"]),
+            to_stage=2,
+            trigger="research.lock",
+            actor_member_id=actor_member_id,
+            gate_status=status,
+            gate_checks=gate["checks"],
+            object_type="inst_research_version",
+            object_id=version_id,
+            detail={"version_no": int(row.get("version_no") or 0), "allow_gaps": allow_gaps, "comment": comment},
+        )
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="research.lock",
+            object_type="inst_research_version",
+            object_id=version_id,
+            after={"case_id": int(row["case_id"]), "gate": gate, "allow_gaps": allow_gaps},
+        )
+    return get_case(org_id, int(row["case_id"]))  # type: ignore[return-value]
+
+
+def reopen_research(
+    org_id: int, case_id: int, *, reason: str, actor_member_id: int | None
+) -> dict[str, Any]:
+    """研究重开：锁定的下游议案作废、授权撤销，阶段回到 1。"""
+    if not str(reason or "").strip():
+        raise ValueError("重开研究必须填写原因")
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager", "partner")
+        case = conn.execute(
+            "SELECT * FROM inst_research_case WHERE id=%s AND org_id=%s", (case_id, org_id)
+        ).fetchone()
+        if not case:
+            raise LookupError("研究案不存在")
+        conn.execute(
+            "UPDATE inst_research_version SET superseded_at=NOW() WHERE case_id=%s AND status='approved' AND superseded_at IS NULL",
+            (case_id,),
+        )
+        conn.execute(
+            "UPDATE inst_proposal SET stale_at=NOW(), stale_reason=%s WHERE case_id=%s AND stale_at IS NULL",
+            (reason[:500], case_id),
+        )
+        conn.execute(
+            """
+            UPDATE inst_authorization a
+               SET status='revoked', revoked_at=NOW(), revoke_reason=%s
+              FROM inst_proposal_version pv
+              JOIN inst_proposal p ON p.id=pv.proposal_id
+             WHERE a.proposal_version_id=pv.id AND p.case_id=%s AND a.status='qualified'
+            """,
+            (reason[:500], case_id),
+        )
+        _set_case_stage(
+            conn,
+            org_id=org_id,
+            case_id=case_id,
+            to_stage=1,
+            trigger="research.reopen",
+            actor_member_id=actor_member_id,
+            to_state="returned",
+            object_type="inst_research_case",
+            object_id=case_id,
+            detail={"reason": reason},
+        )
+        conn.execute("UPDATE inst_research_case SET reopened_at=NOW() WHERE id=%s", (case_id,))
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="research.reopen",
+            object_type="inst_research_case",
+            object_id=case_id,
+            after={"reason": reason},
+        )
+    return get_case(org_id, case_id)  # type: ignore[return-value]
+
+
+def evaluate_proposal_gate(conn, proposal: dict[str, Any], version: dict[str, Any]) -> dict[str, Any]:
+    snapshot = version.get("snapshot") or {}
+    if isinstance(snapshot, str):
+        snapshot = json.loads(snapshot or "{}")
+    checks: list[dict[str, Any]] = []
+    blocking = False
+
+    research_id = snapshot.get("research_version_id")
+    research = conn.execute(
+        "SELECT * FROM inst_research_version WHERE id=%s AND case_id=%s",
+        (research_id, proposal.get("case_id")),
+    ).fetchone()
+    research_locked = bool(research and research.get("locked_at"))
+    checks.append({
+        "key": "research_lock",
+        "label": "研究定稿 R3",
+        "status": "pass" if research_locked else "block",
+        "detail": f"R{research.get('version_no')} 已锁定" if research_locked else "未锁定或版本不匹配",
+    })
+    blocking = blocking or not research_locked
+
+    debate = conn.execute(
+        "SELECT * FROM inst_debate_session WHERE id=%s AND case_id=%s AND status='completed'",
+        (snapshot.get("debate_session_id"), proposal.get("case_id")),
+    ).fetchone()
+    checks.append({
+        "key": "debate_complete",
+        "label": "辩论完成",
+        "status": "pass" if debate else "block",
+        "detail": f"辩论 #{debate['id']}" if debate else "没有已完成的辩论",
+    })
+    blocking = blocking or not debate
+
+    fields = {
+        "direction": snapshot.get("direction"),
+        "target_weight": snapshot.get("target_weight"),
+        "price_low": snapshot.get("price_low"),
+        "price_high": snapshot.get("price_high"),
+        "funding_source": snapshot.get("funding_source"),
+        "valid_until": snapshot.get("valid_until"),
+        "monitoring": snapshot.get("monitoring"),
+        "investment_opinion": snapshot.get("investment_opinion"),
+    }
+    missing = [
+        k for k, v in fields.items()
+        if v in (None, "", []) or (k == "target_weight" and float(v or 0) <= 0 and snapshot.get("direction") == "buy")
+    ]
+    checks.append({
+        "key": "proposal_fields",
+        "label": "议案要素齐全",
+        "status": "block" if missing else "pass",
+        "detail": f"缺失：{', '.join(missing)}" if missing else "方向/仓位/价格带/资金/有效期/监控齐全",
+    })
+    blocking = blocking or bool(missing)
+
+    bull = bear = 0
+    if debate:
+        counts = conn.execute(
+            "SELECT side, COUNT(*) AS n FROM inst_debate_argument WHERE session_id=%s GROUP BY side",
+            (int(debate["id"]),),
+        ).fetchall()
+        by_side = {str(r["side"]): int(r["n"]) for r in counts}
+        bull, bear = by_side.get("bull", 0), by_side.get("bear", 0)
+    checks.append({
+        "key": "debate_claims",
+        "label": "多空各 3 条",
+        "status": "pass" if bull >= 3 and bear >= 3 else "warn",
+        "detail": f"多方 {bull} 条 / 空方 {bear} 条",
+    })
+    status = "block" if blocking else ("warn" if any(x["status"] == "warn" for x in checks) else "pass")
+    return {"status": status, "checks": checks}
+
+
+def submit_proposal(
+    org_id: int, proposal_id: int, *, actor_member_id: int | None, allow_warnings: bool = True
+) -> dict[str, Any]:
+    """v3 议案锁定：P3 门禁通过后提交三关，阶段 2→3。"""
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager")
+        proposal = _proposal_row(conn, org_id, proposal_id)
+        if not proposal:
+            raise LookupError("议案不存在")
+        if proposal.get("stale_at"):
+            raise PermissionError("研究已重开，议案已作废，请重新生成")
+        if str(proposal.get("status")) != "draft":
+            raise PermissionError("只有草稿议案可以提交")
+        version = _current_version(conn, proposal_id)
+        if not version:
+            raise PermissionError("议案没有版本")
+        gate = evaluate_proposal_gate(conn, proposal, version)
+        if gate["status"] == "block" or (gate["status"] == "warn" and not allow_warnings):
+            raise PermissionError("议案门禁未通过：" + "；".join(
+                x["detail"] for x in gate["checks"] if x["status"] in {"block", "warn"}
+            ))
+        snapshot = version.get("snapshot") or {}
+        lock_hash = _hash(snapshot)
+        conn.execute(
+            "UPDATE inst_proposal SET status='partner_review', locked_at=COALESCE(locked_at,NOW()), updated_at=NOW() WHERE id=%s",
+            (proposal_id,),
+        )
+        conn.execute(
+            "UPDATE inst_proposal_version SET status='partner_submitted', locked_at=COALESCE(locked_at,NOW()), lock_hash=%s WHERE id=%s",
+            (lock_hash, int(version["id"])),
+        )
+        _set_case_stage(
+            conn,
+            org_id=org_id,
+            case_id=int(proposal["case_id"]),
+            to_stage=3,
+            trigger="proposal.lock",
+            actor_member_id=actor_member_id,
+            gate_status=gate["status"],
+            gate_checks=gate["checks"],
+            object_type="inst_proposal",
+            object_id=proposal_id,
+            detail={"proposal_version_id": int(version["id"]), "lock_hash": lock_hash},
+        )
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="proposal.lock",
+            object_type="inst_proposal",
+            object_id=proposal_id,
+            after={"case_id": int(proposal["case_id"]), "gate": gate, "lock_hash": lock_hash},
+        )
+    return get_proposal(org_id, proposal_id)  # type: ignore[return-value]
+
+
 def list_proposals(org_id: int, *, status: str | None = None) -> list[dict[str, Any]]:
     return repo.proposals(OrgScope(org_id), status=status)
 
@@ -2850,42 +3643,31 @@ def _stage_summary(
     reviewed = len(
         {int(r["approver_member_id"]) for r in items if r.get("approver_member_id")}
     )
+    required = max(int(total or 0), 0)
+    all_decided = required > 0 and reviewed >= required
     if step == "partner":
-        status = (
-            "approved"
-            if any(d in {"approve", "conditional"} for d in decisions)
-            else "returned"
-            if any(d == "return" for d in decisions)
-            else "in_progress"
-            if items
-            else "not_started"
-        )
+        if any(d == "return" for d in decisions):
+            status = "returned"
+        elif all_decided and all(d in {"approve", "conditional"} for d in decisions):
+            status = "conditional" if any(d == "conditional" for d in decisions) else "approved"
+        else:
+            status = "in_progress" if items else "not_started"
     elif step == "risk_precheck":
-        status = (
-            "vetoed"
-            if any(d in {"veto", "block"} for d in decisions)
-            else "conditional"
-            if any(d == "conditional" for d in decisions)
-            else "passed"
-            if any(d == "pass" for d in decisions)
-            else "in_progress"
-            if items
-            else "not_started"
-        )
+        if any(d in {"veto", "block"} for d in decisions):
+            status = "vetoed"
+        elif all_decided and all(d in {"pass", "conditional"} for d in decisions):
+            status = "conditional" if any(d == "conditional" for d in decisions) else "passed"
+        else:
+            status = "in_progress" if items else "not_started"
     else:
-        status = (
-            "rejected"
-            if any(d == "reject" for d in decisions)
-            else "returned"
-            if any(d == "return" for d in decisions)
-            else "conditional"
-            if any(d == "conditional" for d in decisions)
-            else "approved"
-            if any(d == "approve" for d in decisions)
-            else "in_progress"
-            if items
-            else "not_started"
-        )
+        if any(d in {"reject", "veto", "block"} for d in decisions):
+            status = "rejected"
+        elif any(d == "return" for d in decisions):
+            status = "returned"
+        elif all_decided and all(d in {"approve", "conditional"} for d in decisions):
+            status = "conditional" if any(d == "conditional" for d in decisions) else "approved"
+        else:
+            status = "in_progress" if items else "not_started"
     conditions = [
         str(c)
         for r in items
@@ -2896,6 +3678,8 @@ def _stage_summary(
     out = {
         "status": status,
         "reviewed": reviewed,
+        "decided": reviewed,
+        "required": required,
         "total": max(total, reviewed),
         "decision": latest.get("decision") if latest else None,
         "comment": latest.get("comment") if latest else None,
@@ -3206,23 +3990,46 @@ def _approval_rows(conn, version_id: int) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
-def _approval_state(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """按角色汇总多人审批：合伙人/Chairman 任一通过即可，风控任一否决即终局。"""
+def _approval_state(
+    rows: list[dict[str, Any]], required: dict[str, int] | None = None
+) -> dict[str, dict[str, Any]]:
+    """按角色汇总多人审批：全部有效审批人给出意见才算通过；风控否决终局。"""
+    role_for = {"partner": "partner", "risk_precheck": "risk", "chairman": "chairman"}
+    counts = required or {}
     state: dict[str, dict[str, Any]] = {}
     for step in ("partner", "risk_precheck", "chairman"):
         items = [r for r in rows if str(r.get("step") or "") == step]
         decisions = [str(r.get("decision") or "") for r in items]
+        approvers = {int(r.get("approver_member_id") or 0) for r in items if r.get("approver_member_id")}
+        req = int(counts.get(role_for[step], 0))
+        if req <= 0:
+            req = max(1, len(approvers))
         if step == "risk_precheck":
-            passed = any(d in {"pass", "conditional"} for d in decisions)
+            approved = [d for d in decisions if d in {"pass", "conditional"}]
             vetoed = any(d in {"veto", "block"} for d in decisions)
-        else:
-            passed = any(d in {"approve", "conditional"} for d in decisions)
+            passed = not vetoed and len(approvers) >= req and len(approved) >= req
+            blocked = vetoed
+        elif step == "chairman":
+            approved = [d for d in decisions if d in {"approve", "conditional"}]
+            rejected = any(d in {"reject", "veto", "block"} for d in decisions)
+            passed = not rejected and len(approvers) >= req and len(approved) >= req
             vetoed = False
+            blocked = rejected
+        else:
+            approved = [d for d in decisions if d in {"approve", "conditional"}]
+            returned = any(d in {"return", "reject"} for d in decisions)
+            passed = not returned and len(approvers) >= req and len(approved) >= req
+            vetoed = False
+            blocked = returned
         state[step] = {
             "items": items,
             "latest": items[-1] if items else None,
             "passed": passed,
             "vetoed": vetoed,
+            "blocked": blocked,
+            "required": req,
+            "decided": len(approvers),
+            "approved": len(approved),
             "conditions": [
                 str(c).strip()
                 for r in items
@@ -3409,7 +4216,7 @@ def chairman_review(
         current = _current_version(conn, proposal_id)
         if not current:
             raise LookupError("议案版本不存在")
-        state = _approval_state(_approval_rows(conn, int(current["id"])))
+        state = _approval_state(_approval_rows(conn, int(current["id"])), _member_role_counts(conn, org_id))
         if state["risk_precheck"]["vetoed"]:
             raise PermissionError("独立风控已否决，Chairman 不能批准")
         if not state["partner"]["passed"]:
@@ -3885,7 +4692,7 @@ def risk_check(
         current = _current_version(conn, proposal_id)
         if not current:
             raise LookupError("议案版本不存在")
-        state = _approval_state(_approval_rows(conn, int(current["id"])))
+        state = _approval_state(_approval_rows(conn, int(current["id"])), _member_role_counts(conn, org_id))
         if not state["partner"]["passed"]:
             raise PermissionError("合伙人复核未通过，不能进入风控")
         # 顺序固定：合伙人 → 风控 → Chairman；风控可在 Chairman 批准前追加否决。
@@ -3976,7 +4783,7 @@ def authorize(org_id: int, proposal_id: int, *, actor_member_id: int | None) -> 
         if not current:
             raise LookupError("议案版本不存在")
         approvals = _approval_rows(conn, int(current["id"]))
-        state = _approval_state(approvals)
+        state = _approval_state(approvals, _member_role_counts(conn, org_id))
         if not state["partner"]["passed"]:
             raise PermissionError("缺少合伙人批准")
         if not state["chairman"]["passed"]:
@@ -4050,6 +4857,19 @@ def authorize(org_id: int, proposal_id: int, *, actor_member_id: int | None) -> 
             "UPDATE inst_proposal SET status='authorized', updated_at=NOW() WHERE id=%s", (proposal_id,)
         )
         conn.execute("UPDATE inst_proposal_version SET status='authorized' WHERE id=%s", (current["id"],))
+        _set_case_stage(
+            conn,
+            org_id=org_id,
+            case_id=int(proposal["case_id"]),
+            to_stage=4,
+            trigger="authorization.issue",
+            actor_member_id=actor_member_id,
+            gate_status="pass",
+            gate_checks=[],
+            object_type="inst_authorization",
+            object_id=int(row["id"]),
+            detail={"proposal_id": proposal_id, "proposal_version_id": int(current["id"])},
+        )
         exit_case = _exit_case_for_proposal(conn, org_id, proposal_id)
         if exit_case:
             # 退出案状态没有独立「已授权」态：授权不改状态，只写审计，下一步执行后关闭。
@@ -4168,7 +4988,7 @@ def execute_authorization(
             _require_role(member, "execution")
         row = conn.execute(
             """
-            SELECT a.*, v.snapshot AS version_snapshot, p.id AS proposal_id, p.company_id, p.direction,
+            SELECT a.*, v.snapshot AS version_snapshot, p.id AS proposal_id, p.case_id, p.company_id, p.direction,
                    co.symbol, co.name AS company_name
               FROM inst_authorization a
               JOIN inst_proposal_version v ON v.id=a.proposal_version_id
@@ -4313,6 +5133,19 @@ def execute_authorization(
         conn.execute("UPDATE inst_authorization SET status='filled' WHERE id=%s", (authorization_id,))
         conn.execute(
             "UPDATE inst_proposal SET status='executed', updated_at=NOW() WHERE id=%s", (auth["proposal_id"],)
+        )
+        _set_case_stage(
+            conn,
+            org_id=org_id,
+            case_id=int(auth["case_id"]),
+            to_stage=5,
+            trigger="execution.filled",
+            actor_member_id=actor_member_id,
+            gate_status="pass",
+            gate_checks=[],
+            object_type="inst_order",
+            object_id=int(order["id"]),
+            detail={"authorization_id": authorization_id, "symbol": auth["symbol"], "qty": qty, "price": px},
         )
         exit_case = _exit_case_for_proposal(conn, org_id, int(auth["proposal_id"]))
         if exit_case:
@@ -4567,13 +5400,13 @@ def portfolio(org_id: int) -> dict[str, Any]:
         pf, positions = repo.portfolio(OrgScope(org_id), conn=conn)
         if not pf:
             return {"portfolio": None, "positions": [], "cash": 0, "nav": 0}
-            # 按最新未复权收盘价做一次盯市；没有行情则保留成交时市值。
-            for p in positions:
-                bar = md.latest_bar(str(p.get("symbol") or ""), adjust="none")
-                if bar and bar.get("close") is not None and p.get("qty") is not None:
-                    p["last_close"] = bar["close"]
-                    p["market_value"] = float(p["qty"]) * float(bar["close"])
-                p["idea"] = _idea_questions(p, "holdings")
+        # 按最新未复权收盘价做一次盯市；没有行情则保留成交时市值。
+        for p in positions:
+            bar = md.latest_bar(str(p.get("symbol") or ""), adjust="none")
+            if bar and bar.get("close") is not None and p.get("qty") is not None:
+                p["last_close"] = bar["close"]
+                p["market_value"] = float(p["qty"]) * float(bar["close"])
+            p["idea"] = _idea_questions(p, "holdings")
     invested = sum(float(p.get("market_value") or 0) for p in positions)
     cash = float(pf["cash"] or 0)
     nav = cash + invested
@@ -5543,7 +6376,7 @@ def _chairman_context(
         if not current:
             raise LookupError("议案版本不存在")
         rows = _approval_rows(conn, int(current["id"]))
-        state = _approval_state(rows)
+        state = _approval_state(rows, _member_role_counts(conn, org_id))
 
         def _summary(step: str, passed_decisions: set[str]) -> dict[str, Any]:
             item = state[step]
@@ -5733,8 +6566,8 @@ def create_exit_case(
         )
         case_no = f"EX-{date.today():%Y%m%d}-{str(company['symbol']).split('.')[0]}-{_uid()[:4]}"
         case = conn.execute(
-            "INSERT INTO inst_research_case (org_id, company_id, case_no, stage, created_by) "
-            "VALUES (%s,%s,%s,'draft',%s) RETURNING id",
+            "INSERT INTO inst_research_case (org_id, company_id, case_no, stage, stage_no, stage_key, stage_gate, created_by) "
+            "VALUES (%s,%s,%s,'draft',1,'research','{\"stage_no\":1,\"gate\":\"研究定稿\"}'::jsonb,%s) RETURNING id",
             (org_id, company_id, case_no, actor_member_id),
         ).fetchone()
         row = conn.execute(

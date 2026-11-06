@@ -55,10 +55,30 @@ def run_trial(uid, org, branch_id):
         existing = [dict(r) for r in c.execute(
             "SELECT * FROM strategy_trials WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY trial_no",
             (uid, org, topic["id"])).fetchall()]
+    prior = next((t for t in reversed(existing)
+                  if t["branch_id"] == branch_id
+                  and t["implementation_hash"] == branch["implementation_hash"]
+                  and t["view_id"] == topic["view_id"]), None)
+    trial_no = max((int(t["trial_no"]) for t in existing), default=0) + 1
+    if prior:
+        trial_id = str(uuid.uuid4())
+        with get_conn() as c:
+            c.execute(
+                """INSERT INTO strategy_trials
+                   (id,user_id,org_id,topic_id,branch_id,trial_no,recipe,implementation_hash,outcome,
+                    metrics,gate,report_id,rerun_of,view_id,release_ids,view_manifest_sha256,contract_revision,as_of)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,'rerun',%s::jsonb,%s::jsonb,%s,%s,%s,%s::jsonb,%s,%s,%s)""",
+                (trial_id, uid, org, topic["id"], branch_id, trial_no,
+                 json.dumps(branch["recipe"], ensure_ascii=False), branch["implementation_hash"],
+                 json.dumps(prior["metrics"], ensure_ascii=False), json.dumps(prior["gate"], ensure_ascii=False),
+                 prior["report_id"], prior["id"], topic["view_id"],
+                 json.dumps(topic["release_ids"], ensure_ascii=False),
+                 topic["view_manifest_sha256"], topic["contract_revision"], topic["as_of"]))
+        return {"trial_id": trial_id, "trial_no": trial_no, "outcome": "rerun",
+                "metrics": prior["metrics"], "gate": prior["gate"], "report_id": prior["report_id"],
+                "rerun_of": prior["id"]}
     k = sum(1 for t in existing if t["outcome"] in ("passed", "failed") or
             (t["outcome"] in ("error", "timeout") and t["metrics"]))
-    if k >= int(topic["max_trials"]) and not existing:
-        raise ValueError("策略课题 K 已达预算")
     if k >= int(topic["max_trials"]):
         raise ValueError("策略课题 K 已达预算")
     payload = _payload(topic, branch)
@@ -73,7 +93,6 @@ def run_trial(uid, org, branch_id):
     outcome = "failed" if checks and not checks[0]["passed"] else "error"
     gate = {"policy_status": "pending_product_confirmation_ir_formula", "checks": checks}
     trial_id = str(uuid.uuid4())
-    trial_no = max((int(t["trial_no"]) for t in existing), default=0) + 1
     with get_conn() as c:
         c.execute(
             """INSERT INTO strategy_trials

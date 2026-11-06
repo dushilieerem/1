@@ -77,6 +77,8 @@ export JWT_SECRET_KEY="${JWT_SECRET_KEY:-ci-test-secret-0123456789abcdefghijklmn
 export DEV_SKIP_AUTH=0
 
 cd "$BACKEND_DIR"
+log "迁移门禁：空库 apply 全部迁移"
+"$VENV_PY" "$ROOT_DIR/scripts/ci/migration-smoke.py"
 log "运行 pytest"
 "$VENV_PY" -m pytest tests -q ${PYTEST_ARGS:-}
 

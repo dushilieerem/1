@@ -1,6 +1,8 @@
 """Independent research feedback. Never grants publication or investment authority."""
 from datetime import datetime,timezone
 from services.core.db import get_conn
+from services.core.tenant import Tenant
+from . import repo
 from . import store
 from .service import event,current,public
 from .policy import WorkflowError
@@ -19,9 +21,7 @@ def request_review(uid,org,cid,note):
     return current(uid,org,cid)
 
 def queue(uid,org):
-    with get_conn() as c:
-        rows=c.execute("SELECT id,snapshot_hash,status,snapshot->>'name' AS name,archive,updated_at FROM quant_factor_candidates WHERE org_id=%s AND user_id<>%s AND archive->'review'->>'status'='requested' ORDER BY updated_at DESC LIMIT 100",(org,uid)).fetchall()
-    return [dict(r) for r in rows]
+    return repo.review_queue(Tenant.from_pair(uid,org),uid)
 
 def ensure_reviewer(row,uid):
     if not row:raise KeyError('candidate')
@@ -29,8 +29,9 @@ def ensure_reviewer(row,uid):
     if not (row['archive'] or {}).get('review'):raise KeyError('candidate')
 
 def claim(uid,org,cid):
+    tenant=Tenant.from_pair(uid,org)
     with get_conn() as c:
-        row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND org_id=%s FOR UPDATE',(cid,org)).fetchone()
+        row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND org_id=%s FOR UPDATE',(cid,tenant.org_id)).fetchone()
         ensure_reviewer(row,uid)
         card=dict(row['archive']);review=dict(card['review'])
         if review.get('status')!='requested':raise WorkflowError('此版本已复核，不能重复领取')
@@ -48,15 +49,15 @@ def ensure_assigned(review,uid):
         raise WorkflowError('该事项已指派给其他复核人')
 
 def detail(uid,org,cid):
-    with get_conn() as c:
-        row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND org_id=%s',(cid,org)).fetchone()
+    row=repo.candidate_for_org(Tenant.from_pair(uid,org),cid)
     ensure_reviewer(row,uid)
     return public(dict(row))
 
 def record(uid,org,cid,decision,note):
     if decision not in ('research_supported','needs_revision','rejected') or not note.strip():raise WorkflowError('请给出研究复核结论及依据')
+    tenant=Tenant.from_pair(uid,org)
     with get_conn() as c:
-        row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND org_id=%s FOR UPDATE',(cid,org)).fetchone()
+        row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND org_id=%s FOR UPDATE',(cid,tenant.org_id)).fetchone()
         ensure_reviewer(row,uid)
         from .novelty_policy import handoff_allowed
         if decision=='research_supported' and row['snapshot']['plan'].get('researchPurpose')=='discovery' and not handoff_allowed(row):raise WorkflowError('新因子候选尚未通过完整去重检验，可反馈补充研究，不能确认新成果依据充分。')

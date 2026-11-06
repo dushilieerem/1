@@ -76,3 +76,33 @@ def trials(tenant: Tenant, topic_id: str) -> list[dict]:
 
 
 __all__ = ["branches", "candidate", "candidates", "topic", "topics", "trials"]
+
+def candidate_for_org(tenant: Tenant, candidate_id: str) -> dict | None:
+    """复核人按 org 读取候选；user_id 由 ensure_reviewer 另行校验。"""
+    with get_conn() as c:
+        row = c.execute(
+            "SELECT * FROM quant_factor_candidates WHERE id=%s AND org_id=%s",
+            (candidate_id, tenant.org_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def review_queue(tenant: Tenant, reviewer_id: int) -> list[dict]:
+    with get_conn() as c:
+        rows = c.execute(
+            "SELECT id,snapshot_hash,status,snapshot->>'name' AS name,archive,updated_at "
+            "FROM quant_factor_candidates WHERE org_id=%s AND user_id<>%s "
+            "AND archive->'review'->>'status'='requested' ORDER BY updated_at DESC LIMIT 100",
+            (tenant.org_id, reviewer_id),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def imported_summary(tenant: Tenant) -> list[dict]:
+    with get_conn() as c:
+        rows = c.execute(
+            "SELECT status,metrics_status,COUNT(*) AS n FROM quant_factor_imported_factors "
+            "WHERE org_id=%s GROUP BY status,metrics_status ORDER BY status,metrics_status",
+            (tenant.org_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]

@@ -26,8 +26,16 @@ def _as_of(value: Any) -> date:
 
 def _query(conn, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]] | None:
     try:
-        rows = conn.execute(sql, params).fetchall()
-    except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn):
+        # 外层事务里失败会污染整个事务；用保存点兜住缺表/缺 schema 的探测。
+        with conn.transaction():
+            rows = conn.execute(sql, params).fetchall()
+    except (
+        psycopg.errors.UndefinedTable,
+        psycopg.errors.UndefinedColumn,
+        psycopg.errors.InvalidSchemaName,
+    ):
+        # 空库/未加载数据平台时 schema svquant 也不存在，按数据缺口返回，
+        # 不能把研究生成打成 500。
         return None
     return [dict(r) for r in rows]
 

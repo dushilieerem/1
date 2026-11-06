@@ -455,6 +455,18 @@ def _branch_labels(uid: int, org: int, topic_id: str, branches: list[dict]) -> d
     return labels
 
 
+def _short_title(text: object, limit: int = 22) -> str:
+    """把完整假设压成研究树可读的短标题；历史空标题不再显示“未命名”。"""
+    value = " ".join(str(text or "").split())
+    if not value:
+        return ""
+    for mark in ("。", "；", ";", "，", ","):
+        if mark in value:
+            value = value.split(mark, 1)[0]
+            break
+    return value[:limit] + ("…" if len(value) > limit else "")
+
+
 def _branch_titles(uid: int, org: int, topic_id: str) -> dict:
     titles = {}
     with get_conn() as c:
@@ -504,7 +516,15 @@ def ledger_view(uid: int, org: int, topic_id: str) -> dict:
         latest_trial[t["branch_id"]] = t
     for b in branches:
         b["display_label"] = labels.get(b["id"], "H?")
-        b["display_title"] = str(b.get("title") or "").strip() or f"未命名（假设 v{b.get('hypothesis_version', 1)}）"
+        title = str(b.get("title") or "").strip()
+        if not title:
+            title = _short_title(titles.get(b["id"]))
+        if not title:
+            if b.get("source") == "manual":
+                title = "人工接手" if b.get("parent_id") else "初始假设"
+            else:
+                title = f"假设 v{b.get('hypothesis_version', 1)}"
+        b["display_title"] = title
         b["hypothesis_text"] = titles.get(b["id"]) or ""
         b["source_label"] = "人工" if b.get("source") == "manual" else "Agent"
         s_status = sealed.get(b["id"])

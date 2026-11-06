@@ -397,6 +397,38 @@ test("AI 管家可发送问题并渲染卡片", async ({ page }) => {
   await noHorizontalOverflow(page);
 });
 
+test("AI 管家实时语音识别写入输入框，不自动发送", async ({ page }) => {
+  await loginByToken(page);
+  await page.addInitScript(() => {
+    class FakeSpeechRecognition {
+      lang = "";
+      continuous = false;
+      interimResults = false;
+      maxAlternatives = 1;
+      onstart: (() => void) | null = null;
+      onresult: ((event: any) => void) | null = null;
+      onerror: ((event: any) => void) | null = null;
+      onend: (() => void) | null = null;
+      start() {
+        this.onstart?.();
+        setTimeout(() => {
+          this.onresult?.({ results: [[{ transcript: "贵州茅台" }]] });
+          this.onend?.();
+        }, 30);
+      }
+      stop() { this.onend?.(); }
+      abort() { this.onend?.(); }
+    }
+    (window as any).SpeechRecognition = FakeSpeechRecognition;
+    (window as any).webkitSpeechRecognition = FakeSpeechRecognition;
+  });
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "语音输入" }).click();
+  await expect(page.locator(".ai-composer textarea")).toHaveValue("贵州茅台", { timeout: 10_000 });
+  await expect(page.locator(".ai-msg.user")).toHaveCount(0);
+  await noHorizontalOverflow(page);
+});
+
 test("AI 管家选股：面板填句 → 条件卡 → 结果卡与行业分布", async ({ page }) => {
   await loginByToken(page);
   await page.route("**/api/invest/condition/screen", (route) =>

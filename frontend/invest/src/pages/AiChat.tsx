@@ -78,7 +78,7 @@ function splitSections(card?: Card) {
 }
 
 export default function AiChat() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const nav = useNavigate();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -98,6 +98,8 @@ export default function AiChat() {
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const voiceBaseRef = useRef("");
 
   useEffect(() => {
     const el = inputRef.current;
@@ -105,6 +107,11 @@ export default function AiChat() {
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, [input]);
+
+  useEffect(() => () => {
+    recognitionRef.current?.abort?.();
+    recorder.current?.stop();
+  }, []);
 
   const choosePreset = (text: string) => {
     setInput(text);
@@ -299,15 +306,12 @@ export default function AiChat() {
     saveMemory({});
   };
 
-  const toggleRecord = async () => {
-    if (recording) {
-      recorder.current?.stop();
-      return;
-    }
+  const startBatchRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mr = new MediaRecorder(stream);
       chunks.current = [];
+      voiceBaseRef.current = input.trim() ? `${input.trim()} ` : "";
       mr.ondataavailable = (ev) => {
         if (ev.data.size) chunks.current.push(ev.data);
       };
@@ -326,7 +330,7 @@ export default function AiChat() {
               body: JSON.stringify({ audio_base64: b64, mime: blob.type }),
             });
             const text = data.corrected?.text || data.asr?.text || "";
-            setInput(text);
+            setInput(`${voiceBaseRef.current}${text}`);
             const fixes = data.corrected?.corrections || [];
             if (fixes.length) {
               setMessages((prev) => [...prev, { role: "ai", text: t(`语音已转写。可确认：${fixes.map((f: any) => `${f.from} → ${f.to}`).join("；")}`, `Voice transcribed. Please confirm: ${fixes.map((f: any) => `${f.from} → ${f.to}`).join("; ")}`) }]);
@@ -345,6 +349,66 @@ export default function AiChat() {
     } catch (e: any) {
       setError(e.message || t("无法访问麦克风", "Cannot access the microphone"));
     }
+  };
+
+  const startLiveRecognition = (SpeechRecognitionCtor: any) => {
+    const live = new SpeechRecognitionCtor();
+    live.lang = locale === "en" ? "en-US" : "zh-CN";
+    live.continuous = true;
+    live.interimResults = true;
+    live.maxAlternatives = 1;
+    voiceBaseRef.current = input.trim() ? `${input.trim()} ` : "";
+    recognitionRef.current = live;
+    setError(null);
+    live.onstart = () => setRecording(true);
+    live.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i += 1) {
+        transcript += event.results[i]?.[0]?.transcript || "";
+      }
+      setInput(`${voiceBaseRef.current}${transcript}`);
+    };
+    live.onerror = (event: any) => {
+      const code = String(event?.error || "");
+      if (code === "aborted") return;
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        setError(t("麦克风权限未开启，请在浏览器设置中允许麦克风。", "Microphone permission is blocked. Allow microphone access in your browser settings."));
+      } else if (code === "no-speech") {
+        setError(t("没有听到声音，请再说一次。", "No speech detected; please try again."));
+      } else {
+        setError(t("语音识别失败，请重试或改用文字输入。", "Speech recognition failed; retry or type instead."));
+      }
+    };
+    live.onend = () => {
+      recognitionRef.current = null;
+      setRecording(false);
+    };
+    try {
+      live.start();
+      setRecording(true);
+    } catch {
+      recognitionRef.current = null;
+      setRecording(false);
+      setError(t("当前浏览器无法启动实时语音识别，请改用文字输入。", "This browser cannot start live speech recognition; please type instead."));
+    }
+  };
+
+  const toggleRecord = async () => {
+    if (recording) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        setRecording(false);
+      } else {
+        recorder.current?.stop();
+      }
+      return;
+    }
+    const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognitionCtor) {
+      startLiveRecognition(SpeechRecognitionCtor);
+      return;
+    }
+    await startBatchRecording();
   };
 
   return (
@@ -477,7 +541,7 @@ export default function AiChat() {
               void send();
             }
           }}
-          placeholder={recording ? t("录音中，点麦克风结束…", "Recording — tap the microphone to stop…") : t("问个股、组合、复盘或条件选股", "Ask about stocks, your portfolio, reviews or screening")}
+          placeholder={recording ? t("正在听，点麦克风结束…", "Listening — tap the microphone to stop…") : t("问个股、组合、复盘或条件选股", "Ask about stocks, your portfolio, reviews or screening")}
         />
         <div className="ai-composer-actions">
           <button className={`round-btn ${recording ? "recording" : ""}`} onClick={() => void toggleRecord()} aria-label={recording ? t("停止录音", "Stop recording") : t("语音输入", "Voice input")}>

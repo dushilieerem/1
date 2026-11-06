@@ -4520,25 +4520,13 @@ def review_thesis(
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "manager", "partner", "monitoring")
-        ledger = conn.execute(
-            "SELECT * FROM inst_thesis_ledger WHERE id=%s AND org_id=%s",
-            (ledger_id, org_id),
-        ).fetchone()
+        ledger, new_status, out = repo.review_thesis(
+            conn, OrgScope(org_id), ledger_id,
+            kpi_status=kpi_status, conclusion=conclusion, note=note,
+            actor_member_id=actor_member_id,
+        )
         if not ledger:
             raise LookupError("论点台账不存在")
-        conn.execute(
-            """
-            INSERT INTO inst_thesis_review
-              (ledger_id, reviewer_member_id, kpi_status, conclusion, note)
-            VALUES (%s,%s,%s,%s,%s)
-            """,
-            (ledger_id, actor_member_id, kpi_status, conclusion, note),
-        )
-        new_status = "reviewed" if conclusion in {"hold", "reduce"} else "invalidated"
-        conn.execute(
-            "UPDATE inst_thesis_ledger SET status=%s, updated_at=NOW() WHERE id=%s",
-            (new_status, ledger_id),
-        )
         _audit(
             conn,
             org_id=org_id,
@@ -4549,7 +4537,6 @@ def review_thesis(
             before={"status": ledger["status"]},
             after={"status": new_status, "kpi_status": kpi_status, "conclusion": conclusion},
         )
-        out = _thesis_row(conn, org_id, ledger_id)
     return out or {}
 
 

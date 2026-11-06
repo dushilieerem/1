@@ -511,4 +511,33 @@ def resolve_execution_exception(
     return dict(row), dict(updated) if updated else None
 
 
-__all__ = ["audit", "authorizations", "case", "cases", "companies", "company", "create_monitor_event", "debate", "execution_exceptions", "monitor", "overview", "portfolio", "proposal_approvals", "proposal_authorizations", "proposal_exit_case", "proposal_row", "proposal_versions", "proposals", "resolve_execution_exception", "set_company_pool", "theses"]
+def thesis_row(conn, scope: OrgScope, ledger_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT * FROM inst_thesis_ledger WHERE id=%s AND org_id=%s",
+        (ledger_id, scope.org_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def review_thesis(
+    conn, scope: OrgScope, ledger_id: int, *, kpi_status: str, conclusion: str,
+    note: str | None, actor_member_id: int | None
+) -> tuple[dict[str, Any] | None, str, dict[str, Any] | None]:
+    ledger = thesis_row(conn, scope, ledger_id)
+    if not ledger:
+        return None, "", None
+    conn.execute(
+        "INSERT INTO inst_thesis_review "
+        "(ledger_id, reviewer_member_id, kpi_status, conclusion, note) "
+        "VALUES (%s,%s,%s,%s,%s)",
+        (ledger_id, actor_member_id, kpi_status, conclusion, note),
+    )
+    new_status = "reviewed" if conclusion in {"hold", "reduce"} else "invalidated"
+    conn.execute(
+        "UPDATE inst_thesis_ledger SET status=%s, updated_at=NOW() WHERE id=%s",
+        (new_status, ledger_id),
+    )
+    return ledger, new_status, thesis_row(conn, scope, ledger_id)
+
+
+__all__ = ["audit", "authorizations", "case", "cases", "companies", "company", "create_monitor_event", "debate", "execution_exceptions", "monitor", "overview", "portfolio", "proposal_approvals", "proposal_authorizations", "proposal_exit_case", "proposal_row", "proposal_versions", "proposals", "resolve_execution_exception", "review_thesis", "set_company_pool", "theses", "thesis_row"]

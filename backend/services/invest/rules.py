@@ -700,15 +700,19 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
         fund_flow["series"] = [
             {"date": r["d"], "value": to_yi(r.get("main_net_inflow"))} for r in flow_rows
         ]
-        if len(last5) >= 5 and daily_closes:
-            flow_sum = sum(float(r.get("main_net_inflow") or 0) for r in last5)
-            price_ret = pct(daily_closes[-1], daily_closes[-min(6, len(daily_closes))]) if len(daily_closes) >= 2 else 0
+        window = 20 if len(flow_rows) >= 20 else 5
+        window_rows = flow_rows[-window:]
+        if len(window_rows) >= 5 and daily_closes:
+            flow_sum = sum(float(r.get("main_net_inflow") or 0) for r in window_rows)
+            price_ret = pct(daily_closes[-1], daily_closes[-min(window + 1, len(daily_closes))]) if len(daily_closes) >= 2 else 0
             if flow_sum and price_ret:
                 same = (flow_sum > 0) == (price_ret > 0)
+                window_label = "20" if window == 20 else "5"
                 fund_flow["divergence"] = {
                     "same_direction": same,
-                    "text": "近 5 日资金与股价同向。" if same else "近 5 日资金与股价背离，关注承接。",
-                    "text_en": "Fund flow and price moved in the same direction over the last 5 days." if same else "Fund flow and price diverged over the last 5 days; watch for absorption.",
+                    "window": window,
+                    "text": f"近 {window_label} 日资金与股价同向。" if same else f"近 {window_label} 日资金与股价背离，关注承接。",
+                    "text_en": f"Fund flow and price moved in the same direction over the last {window_label} days." if same else f"Fund flow and price diverged over the last {window_label} days; watch for absorption.",
                 }
     peers = rows(
         conn,

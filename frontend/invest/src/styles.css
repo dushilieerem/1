@@ -1089,3 +1089,8 @@ input, select, textarea { outline: none; }
 @media (max-width: 374px) {
   .stock-cta { margin-left: -13px; margin-right: -13px; padding-left: 13px; padding-right: 13px; }
 }
+.fund-bars { display: flex; align-items: flex-end; gap: 3px; height: 78px; padding-top: 4px; }
+.fund-bars i { flex: 1; min-width: 2px; border-radius: 2px 2px 0 0; display: block; }
+.fund-bars i.in { background: var(--red); }
+.fund-bars i.out { background: var(--green); }
+.stock-page { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }

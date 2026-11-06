@@ -318,6 +318,7 @@ test("个股透视 P0：3×3 快照、财务/资金/简况切换，不显示无�
   await expect(page.locator(".stock-seg button", { hasText: "资金" })).toBeVisible();
   await page.locator(".stock-seg button", { hasText: "资金" }).click();
   await expect(page.getByText("主力资金")).toBeVisible();
+  await expect(page.getByText("近 20 日主力净流入")).toBeVisible();
   await page.locator(".stock-seg button", { hasText: "简况" }).click();
   await expect(page.getByText("同业比较")).toBeVisible();
   await expect(page.getByText("股东", { exact: false })).toHaveCount(0);

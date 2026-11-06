@@ -388,6 +388,18 @@ export default function Stock() {
             <div className="card-title-row"><h2>{t("资金分布", "Flow distribution")}</h2><span className="hint">{t("当日净额", "Today's net")}</span></div>
             <FundDistribution rows={fund.distribution || []} />
           </section>
+          {(fund.series || []).length >= 20 ? (
+            <section className="card">
+              <div className="card-title-row"><h2>{t("近 20 日主力净流入", "20-day main net inflow")}</h2><span className="hint">{t("红入 / 绿出", "Red in / green out")}</span></div>
+              <div className="fund-bars">
+                {(fund.series || []).slice(-20).map((p: any) => {
+                  const max = Math.max(1, ...(fund.series || []).slice(-20).map((x: any) => Math.abs(Number(x.value) || 0)));
+                  const value = Number(p.value) || 0;
+                  return <i key={p.date} className={value >= 0 ? "in" : "out"} style={{ height: `${Math.max(3, (Math.abs(value) / max) * 70)}px` }} title={`${p.date} ${value.toFixed(2)} 亿`} />;
+                })}
+              </div>
+            </section>
+          ) : null}
           {fund.divergence ? <div className="callout blue">{fund.divergence.text}</div> : null}
         </>
       ) : null}

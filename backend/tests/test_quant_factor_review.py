@@ -70,3 +70,17 @@ class ReviewIsolationTest(unittest.TestCase):
              patch.object(review, '_ledger_context', return_value=None):
             out = review.detail(9, 2, 'c')
         self.assertNotIn('events', out)
+
+
+class SealFailedReviewReturnTest(unittest.TestCase):
+    def test_returns_researcher_view_not_reviewer_detail(self):
+        from unittest.mock import MagicMock, patch
+        from services.quant_factor import review
+        cursor = MagicMock(); cursor.execute.return_value = cursor
+        cursor.fetchone.return_value = {"id": "c", "user_id": 1, "org_id": 2, "archive": {},
+                                        "snapshot_hash": "h", "status": "development_failed", "events": []}
+        connection = MagicMock(); connection.__enter__.return_value = cursor
+        with patch.object(review, "get_conn", return_value=connection), \
+             patch.object(review, "detail", side_effect=AssertionError("must not require reviewer")), \
+             patch.object(review, "current", return_value={"id": "c"}):
+            self.assertEqual(review.open_seal_failed_review(1, 2, "c", "sealed failed"), {"id": "c"})

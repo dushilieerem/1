@@ -84,7 +84,9 @@ def open_seal_failed_review(uid,org,cid,reason):
         card=dict(row['archive'] or {})
         card['review']={'status':'requested','purpose':'seal_failed_review','question':'封存未通过复盘：'+str(reason)[:1000],'at':datetime.now(timezone.utc).isoformat(),'snapshot_hash':row['snapshot_hash']}
         c.execute("UPDATE quant_factor_candidates SET archive=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s",(store.encode(card),store.encode([event('seal_failed_review_requested')]),cid))
-    return detail(uid,org,cid)
+    # The researcher opens this item; returning reviewer-only detail here would fail
+    # with a misleading self-review error and hide the sealed failure.
+    return current(uid,org,cid)
 
 
 def detail(uid,org,cid):

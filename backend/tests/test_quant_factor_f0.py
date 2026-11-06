@@ -163,3 +163,21 @@ class CapabilityFallbackTest(unittest.TestCase):
         self.assertTrue(out["fallback"])
         self.assertIn("winsorize", out["needed_capabilities"])
         self.assertEqual(len(calls), 2)
+
+
+class EchoedContextTest(unittest.TestCase):
+    def _decide(self, payload):
+        with patch.object(f0_agent, '_context', return_value={'branches': [], 'remaining': 2}), \
+             patch.object(f0_agent, 'get_task'), patch.object(f0_agent, 'assert_quota_available'), \
+             patch.object(f0_agent, 'record_usage'), \
+             patch.object(f0_agent, 'run_task', return_value={'content': json.dumps(payload)}):
+            return f0_agent.decide(1, 2, TOPIC, 'run')
+
+    def test_echoed_readonly_context_is_stripped(self):
+        decision, _ = self._decide({'action': 'run_test', 'rationale': 'K=0 首次检验，t*=1.96',
+                                    't_critical': 2.2414, 'threshold': 2.2414, 'k': 0})
+        self.assertEqual(decision.action, 'run_test')
+
+    def test_unknown_field_still_rejected(self):
+        with self.assertRaisesRegex(WorkflowError, '无法解析'):
+            self._decide({'action': 'run_test', 'rationale': 'K=0 首次检验，t*=1.96', 'surprise': 1})

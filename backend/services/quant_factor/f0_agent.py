@@ -112,7 +112,13 @@ def decide(uid, org, topic, run_id):
     record_usage(user_id=uid, run_id=rid, skill=TASK,
                  tokens_in=out.get("tokens_in", 0), tokens_out=out.get("tokens_out", 0))
     try:
-        decision = Decision.model_validate(extract_json_object(str(out.get("content") or "")))
+        parsed = extract_json_object(str(out.get("content") or ""))
+        if isinstance(parsed, dict):
+            # Models sometimes echo read-only context scalars; dropping only these known
+            # context keys keeps extra="forbid" for every real unknown field.
+            for key in ("threshold", "threshold_k", "t_critical", "t_critical_k", "k", "gate"):
+                parsed.pop(key, None)
+        decision = Decision.model_validate(parsed)
     except (ValueError, ValidationError, AiError) as exc:
         raise service.WorkflowError(f"F0 决策输出无法解析：{exc}") from None
     if decision.action not in ACTIONS:

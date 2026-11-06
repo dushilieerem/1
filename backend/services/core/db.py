@@ -163,6 +163,15 @@ def _return_conn(conn: psycopg.Connection, *, autocommit: bool) -> None:
             pass
 
 
+def pool_stats() -> dict[str, int]:
+    """连接池只读快照：used 为已占用槽位，idle 为池内空闲，limit 为硬上限。"""
+    with _POOL_LOCK:
+        used = _POOL_COUNT
+        idle = _POOL.qsize()
+        limit = _pool_size() + _pool_overflow()
+    return {"used": used, "idle": idle, "limit": limit}
+
+
 @contextmanager
 def get_conn(*, autocommit: bool = False) -> Iterator[psycopg.Connection]:
     conn = _borrow_conn(autocommit=autocommit)

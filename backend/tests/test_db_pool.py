@@ -102,3 +102,11 @@ def test_context_rolls_back_on_error(monkeypatch):
     assert conn is not None
     assert conn.rollbacks == 1
     assert conn.commits == 0
+
+def test_pool_stats_reports_used_idle_limit(monkeypatch):
+    monkeypatch.setattr(db, "_pool_overflow", lambda: 1)
+    conn = db._borrow_conn(autocommit=False)
+    stats = db.pool_stats()
+    assert stats == {"used": 1, "idle": 0, "limit": 2}
+    db._return_conn(conn, autocommit=False)
+    assert db.pool_stats() == {"used": 1, "idle": 1, "limit": 2}

@@ -62,3 +62,17 @@ def test_disk_and_backlog() -> None:
     assert codes["reports_backlog"] == "warning"
     assert codes["queue_backlog"] == "warning"
     assert codes["disk_low"] == "critical"
+
+def test_db_pool_thresholds() -> None:
+    warn = evaluate_signals(health=HEALTHY, db_pool_used=83, db_pool_limit=100)
+    assert any(a.code == "db_pool_high" and a.level == "warning" for a in warn)
+    crit = evaluate_signals(health=HEALTHY, db_pool_used=96, db_pool_limit=100)
+    assert any(a.code == "db_pool_high" and a.level == "critical" for a in crit)
+    assert evaluate_signals(health=HEALTHY, db_pool_used=50, db_pool_limit=100) == []
+
+def test_db_connections_thresholds() -> None:
+    warn = evaluate_signals(health=HEALTHY, db_connections_used=85, db_connections_limit=100)
+    assert any(a.code == "db_connections_high" and a.level == "warning" for a in warn)
+    crit = evaluate_signals(health=HEALTHY, db_connections_used=92, db_connections_limit=100)
+    assert any(a.code == "db_connections_high" and a.level == "critical" for a in crit)
+    assert evaluate_signals(health=HEALTHY, db_connections_used=50, db_connections_limit=100) == []

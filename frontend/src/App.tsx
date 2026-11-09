@@ -168,6 +168,24 @@ const OrgPage = lazy(() => import("./pages/OrgPage"));
 const InstLayout = lazy(() =>
   import("./components/institution/InstLayout").then((m) => ({ default: m.InstLayout })),
 );
+const InstV3Layout = lazy(() =>
+  import("./components/institution/v3/InstV3Layout").then((m) => ({ default: m.InstV3Layout })),
+);
+const InstV3DashboardPage = lazy(() =>
+  import("./pages/institution/v3/InstV3DashboardPage").then((m) => ({ default: m.InstV3DashboardPage })),
+);
+const InstV3PipelinePage = lazy(() =>
+  import("./pages/institution/v3/InstV3PipelinePage").then((m) => ({ default: m.InstV3PipelinePage })),
+);
+const InstV3ProjectResultPage = lazy(() =>
+  import("./pages/institution/v3/InstV3ProjectResultPage").then((m) => ({ default: m.InstV3ProjectResultPage })),
+);
+const InstV3PlaybookPage = lazy(() =>
+  import("./pages/institution/v3/InstV3PlaybookPage").then((m) => ({ default: m.InstV3PlaybookPage })),
+);
+const InstV3WorkspacePlaceholderPage = lazy(() =>
+  import("./pages/institution/v3/InstV3WorkspacePlaceholderPage").then((m) => ({ default: m.InstV3WorkspacePlaceholderPage })),
+);
 const InstOverviewPage = lazy(() =>
   import("./pages/institution/InstOverviewPage").then((m) => ({
     default: m.InstOverviewPage,
@@ -235,6 +253,18 @@ export default function App() {
     <Suspense fallback={<RouteFallback />}>
       <Routes>
         {/* 机构端：独立壳与会话，不复用个人版 Layout */}
+        <Route path="/inst-v3" element={<InstV3Layout />}>
+          <Route index element={<InstV3DashboardPage />} />
+          <Route path="pipeline" element={<InstV3PipelinePage />} />
+          <Route path="pipeline/result" element={<InstV3ProjectResultPage />} />
+          <Route path="research" element={<InstV3WorkspacePlaceholderPage />} />
+          <Route path="debate" element={<InstV3WorkspacePlaceholderPage />} />
+          <Route path="approvals" element={<InstV3WorkspacePlaceholderPage />} />
+          <Route path="execute" element={<InstV3WorkspacePlaceholderPage />} />
+          <Route path="manage" element={<InstV3WorkspacePlaceholderPage />} />
+          <Route path="playbook" element={<InstV3PlaybookPage />} />
+        </Route>
+
         <Route path="/inst" element={<InstLayout />}>
           <Route index element={<Navigate to="/inst/overview" replace />} />
           <Route path="overview" element={<InstOverviewPage />} />

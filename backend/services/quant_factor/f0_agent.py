@@ -152,7 +152,7 @@ def decide(uid, org, topic, run_id):
                           response_format={"type": "json_object"}))
     assert_quota_available(uid)
     out = run_task(TASK, messages=[{"role": "system", "content": instructions},
-                                   {"role": "user", "content": json.dumps(ctx, ensure_ascii=False)}])
+                                   {"role": "user", "content": json.dumps(ctx, ensure_ascii=False, default=str)}])
     rid = "qff0_" + uuid.uuid4().hex
     record_usage(user_id=uid, run_id=rid, skill=TASK,
                  tokens_in=out.get("tokens_in", 0), tokens_out=out.get("tokens_out", 0))

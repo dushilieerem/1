@@ -3363,6 +3363,24 @@ def evaluate_research_gate(version: dict[str, Any]) -> dict[str, Any]:
     return {"status": status, "checks": checks}
 
 
+def research_gate(org_id: int, version_id: int) -> dict[str, Any]:
+    """只读预览 R3 门禁；锁定前页面据此显示缺口与需处理的低置信项。"""
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT v.*
+              FROM inst_research_version v
+              JOIN inst_research_case c ON c.id=v.case_id
+             WHERE v.id=%s AND c.org_id=%s
+            """,
+            (version_id, org_id),
+        ).fetchone()
+        if not row:
+            raise LookupError("研究版本不存在")
+        version = _row_dict(_ensure_version_hash(conn, row)) or {}
+    return evaluate_research_gate(version)
+
+
 def lock_research(
     org_id: int,
     version_id: int,

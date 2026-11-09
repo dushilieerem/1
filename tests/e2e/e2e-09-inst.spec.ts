@@ -101,6 +101,19 @@ test("旧入口重定向到 v3", async ({ page }) => {
   }
 });
 
+test("宽屏内容区铺满，不使用窄版居中", async ({ page }) => {
+  await login(page);
+  await page.setViewportSize({ width: 1920, height: 1000 });
+  await page.goto(`${BASE}/inst/research`, { waitUntil: "networkidle" });
+  const main = await page.locator(".v3-main").boundingBox();
+  expect(main, "找不到 v3 内容区").toBeTruthy();
+  expect(main!.width, "1920 宽屏下内容区被 max-width 限制").toBeGreaterThan(1500);
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - window.innerWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
 test("机构端 1440 / 400 无横向溢出", async ({ page }) => {
   await login(page);
   for (const width of [1440, 400]) {

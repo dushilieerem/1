@@ -659,3 +659,14 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 新增 `e2e-14`：卖出议案 → AUTH → 执行 UI → 对账 → 记录预警 → 创建退出研究案。
 
 验证：pytest 105 passed；`tsc --noEmit`、`npm run build` 通过；Playwright `e2e-09..14` 15 passed。
+
+
+### 11.30 v3 内容区取消 1180px 窄版居中（2026-11-09）
+
+宽屏下 `.v3-main` 同时设置 `max-width:1180px` 与 `margin:0 auto`，在 1920 屏幕上左右各留出约 230px 空白，工作台被挤在中间。
+
+- 去掉 `max-width` 与居中 margin，内容区按 `width:100%` + 左右 28px 内边距铺满；侧栏与内容区仍各自独立。
+- 页面标题、流水线、结果页与工作台网格随宽度扩展；400/1024 断点和横向溢出规则不变。
+- e2e-09 新增 1920 宽屏断言：`.v3-main` 宽度 >1500px 且无横向滚动，防止重新引入窄版上限。
+
+验证：`tsc --noEmit`、`npm run build`、`npm run test:inst` 通过；Playwright `e2e-09..14` 16 passed。

@@ -129,6 +129,7 @@ export function InstV3ExecutePage() {
         body: { price: price ? Number(price) : null, conditions_met: conditionsMet },
       });
       setExecResult(res);
+      setSelected((prev) => (prev ? { ...prev, status: "filled" } : prev));
       setStep(2);
       const rows = await load();
       const next = rows.find((x) => x.id === selected.id);
@@ -220,14 +221,14 @@ export function InstV3ExecutePage() {
                 <section className="v3-card">
                   <div className="v3-card-head"><div><h2>下单成交</h2><p>同一授权只执行一次；成交不确定时停止重试，避免重复下单。</p></div><span className="v3-chip">幂等</span></div>
                   <div className="v3-form-grid">
-                    <div className="v3-field"><label>成交价（CNY）</label><input value={price} onChange={(e) => setPrice(e.target.value)} disabled={!canExecute} /></div>
+                    <div className="v3-field"><label>成交价（CNY）</label><input data-testid="inst-execute-price" value={price} onChange={(e) => setPrice(e.target.value)} disabled={!canExecute} /></div>
                     <div className="v3-field"><label>预计数量</label><input value={precheck?.qty ?? "—"} readOnly /></div>
                     <div className="v3-field span-2">
                       <label><input type="checkbox" checked={conditionsMet} onChange={(e) => setConditionsMet(e.target.checked)} disabled={!canExecute} /> 审批附加条件已确认满足</label>
                     </div>
                   </div>
                   <div style={{ marginTop: 10 }}>
-                    <button className="v3-btn primary" disabled={!canExecute || !!busy || executed} onClick={execute}><Play className="h-3.5 w-3.5" />{busy === "execute" ? "执行中…" : executed ? "已成交" : "执行成交"}</button>
+                    <button data-testid="inst-execute-submit" className="v3-btn primary" disabled={!canExecute || !!busy || executed} onClick={execute}><Play className="h-3.5 w-3.5" />{busy === "execute" ? "执行中…" : executed ? "已成交" : "执行成交"}</button>
                     {!canExecute ? <span className="ml-2 text-[10px] text-[#9b92a1]">仅交易执行角色可下单；其他角色只读。</span> : null}
                   </div>
                 </section>
@@ -242,7 +243,7 @@ export function InstV3ExecutePage() {
                       <div className="v3-kv"><dt>幂等</dt><dd>{execResult.idempotent ? "重复执行返回原订单" : "首次执行"}</dd></div>
                     </dl>
                   ) : <div className="v3-empty">请先完成下单成交。</div>}
-                  <div style={{ marginTop: 10 }}><button className="v3-btn primary" disabled={!executed || !!busy} onClick={runReconcile}><RefreshCw className="h-3.5 w-3.5" />{busy === "reconcile" ? "对账中…" : "执行对账"}</button></div>
+                  <div style={{ marginTop: 10 }}><button data-testid="inst-reconcile" className="v3-btn primary" disabled={!executed || !!busy} onClick={runReconcile}><RefreshCw className="h-3.5 w-3.5" />{busy === "reconcile" ? "对账中…" : "执行对账"}</button></div>
                   {reconcile ? <div className="v3-note" style={{ marginTop: 10 }}>{reconcile.matched ? "成交与授权一致，0 偏差。" : `差异：${(reconcile.differences || []).join("；")}`}</div> : null}
                 </section>
               ) : null}

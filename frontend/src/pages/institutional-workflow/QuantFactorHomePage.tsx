@@ -45,6 +45,7 @@ export function QuantFactorHomePage(){
  const [sealedUsed,setSealedUsed]=useState<number|null>(null);
  const [authOpen,setAuthOpen]=useState(false);
  const [creating,setCreating]=useState(false),[creatingBusy,setCreatingBusy]=useState(false),[createErr,setCreateErr]=useState('');
+ const [createdTask,setCreatedTask]=useState<{topicId:string;branchId?:string;projectId:string}>();
  const [importedFactors,setImportedFactors]=useState<Array<{source_library:string;factor_name:string;display_name?:string}>>([]);
  const [nt,setNt]=useState({name:'新因子挖掘任务',universe:'CSI500',benchmark:'CSI500',development_start:'2022-01-01',development_end:'2024-12-31',validation_start:'2025-01-01',validation_end:'2025-12-31',holding:1,max_trials:8,max_sealed:1,factor:'',library:'主因子库',direction:'negative',hypothesis:'短周期因子在截面上有稳定预测力',acceptance:'方向 Rank IC ≥ 0.005，NW t ≥ t*(K)，有效观测 ≥ 60，最大回撤 ≤ 0.5',purpose:'discovery' as 'replication'|'discovery'});
  const treeRef=useRef<HTMLDivElement|null>(null);
@@ -154,19 +155,36 @@ export function QuantFactorHomePage(){
   return ()=>{cancelAnimationFrame(raf);window.removeEventListener('resize',draw);};
  },[ledger]);
  useEffect(()=>{if(!creating||importedFactors.length)return;void researchFetch('/api/inst/quant/factor-workflow/imports/svquant-existing/reference').then(r=>r.ok?r.json():null).then(d=>{if(d)setImportedFactors(d.items||[]);});},[creating,importedFactors.length]);
- async function createTopic(){
-  if(creatingBusy)return;setCreatingBusy(true);setCreateErr('');
+ async function startCreatedTask(topicId:string,branchId?:string){
+  if(!branchId){setError('挖掘任务已创建，但初始分支未就绪；请刷新任务列表后重试启动。');return false;}
   try{
-   const p=await createProject(nt.factor,nt.hypothesis,nt.name);
-   const plan={revision:'nt-'+Date.now(),hypothesis:nt.hypothesis,candidateExpression:'',improvementScope:'只改进实现，不改变经济假设和方向',target:'未来1个交易日收益',frequency:'daily',acceptance:nt.acceptance,developmentStart:nt.development_start,developmentEnd:nt.development_end,validationStart:nt.validation_start,validationEnd:nt.validation_end,maxTrials:Number(nt.max_trials),researchPurpose:nt.purpose,...(nt.purpose==='discovery'?{noveltyPolicy:{scope:'all_accessible' as const,maxAbsCorrelation:0.7,minDays:60,minPairs:30,minCoverage:0.8}}:{}),rules:{minSignedIc:0.005,maxDrawdown:0.5,minObservations:60,direction:nt.direction as 'positive'|'negative',icMetric:'rank_ic' as const}};
-   const saved=await saveProject({...p,name:nt.name,description:nt.hypothesis,config:{...p.config,universe:nt.universe,benchmark:nt.benchmark,factorCodes:nt.factor?[nt.factor]:[],weights:nt.factor?[1]:[],powers:nt.factor?[1]:[],factorLibraries:nt.factor?{[nt.factor]:nt.library}:{},researchPlan:plan,researchContext:{direction:'因子研究',question:nt.hypothesis,background:'新建挖掘任务：'+nt.factor}}});
-   const vr=await researchFetch('/api/inst/quant/factor-workflow/published-view');const v=await vr.json();if(!vr.ok)throw Error('发布视图读取失败');
-   const body={view_id:v.view_id,release_id:'',release_ids:v.release_ids||{},view_manifest_sha256:v.view_manifest_sha256||'',contract_revision:v.contract_revision||'',as_of:v.as_of,development_start:nt.development_start,development_end:nt.development_end,validation_start:nt.validation_start,validation_end:nt.validation_end,primary_holding_period:Number(nt.holding),policy_version:'v5-p0',max_trials:Number(nt.max_trials),max_sealed:Number(nt.max_sealed)};
-   const tr=await researchFetch('/api/inst/quant/factor-workflow/projects/'+encodeURIComponent(saved.id)+'/topics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const td=await tr.json();if(!tr.ok)throw Error(typeof (td.detail||td.error)==='string'?(td.detail||td.error):'建挖掘任务失败');
-   const tl=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(td.topic.id)+'/ledger');const tld=await tl.json();const firstBranch=tld.branches?.[0]?.id;
-   if(firstBranch){const fr=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(td.topic.id)+'/branches/'+encodeURIComponent(firstBranch)+'/f0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:newUuidV4()})});const fd=await fr.json();if(fr.ok)setNotice('挖掘任务已创建并启动研究，等待排队/运行状态。');else setError(typeof (fd.detail||fd.error)==='string'?(fd.detail||fd.error):'任务已创建，但启动失败，可在任务详情重试。');}
-   const rl=await researchFetch('/api/inst/quant/factor-workflow/topics');const d=await rl.json();setTopics(d.topics||[]);setSelected(td.topic?.id||d.topics?.[0]?.id);setCreating(false);
-  }catch(e){setCreateErr(e instanceof Error?e.message:String(e));}finally{setCreatingBusy(false);}
+   const fr=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(topicId)+'/branches/'+encodeURIComponent(branchId)+'/f0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:newUuidV4()})});
+   const fd=await fr.json();if(!fr.ok){setError(typeof (fd.detail||fd.error)==='string'?(fd.detail||fd.error):'任务已创建，但启动失败，可在任务详情重试。');return false;}
+   setNotice('挖掘任务已创建并启动研究，等待排队/运行状态。');return true;
+  }catch(e){setError('任务已创建，但启动请求失败：'+(e instanceof Error?e.message:String(e))+'；请稍后重试，不会重复创建任务。');return false;}
+ }
+ async function createTopic(start=true){
+  if(creatingBusy)return;setCreatingBusy(true);setCreateErr('');setError('');
+  try{
+   let task=createdTask;
+   if(!task){
+    const p=await createProject(nt.factor,nt.hypothesis,nt.name);
+    const plan={revision:'nt-'+Date.now(),hypothesis:nt.hypothesis,candidateExpression:'',improvementScope:'只改进实现，不改变经济假设和方向',target:'未来1个交易日收益',frequency:'daily',acceptance:nt.acceptance,developmentStart:nt.development_start,developmentEnd:nt.development_end,validationStart:nt.validation_start,validationEnd:nt.validation_end,maxTrials:Number(nt.max_trials),researchPurpose:nt.purpose,...(nt.purpose==='discovery'?{noveltyPolicy:{scope:'all_accessible' as const,maxAbsCorrelation:0.7,minDays:60,minPairs:30,minCoverage:0.8}}:{}),rules:{minSignedIc:0.005,maxDrawdown:0.5,minObservations:60,direction:nt.direction as 'positive'|'negative',icMetric:'rank_ic' as const}};
+    const saved=await saveProject({...p,name:nt.name,description:nt.hypothesis,config:{...p.config,universe:nt.universe,benchmark:nt.benchmark,factorCodes:nt.factor?[nt.factor]:[],weights:nt.factor?[1]:[],powers:nt.factor?[1]:[],factorLibraries:nt.factor?{[nt.factor]:nt.library}:{},researchPlan:plan,researchContext:{direction:'因子研究',question:nt.hypothesis,background:'新建挖掘任务：'+nt.factor}}});
+    const vr=await researchFetch('/api/inst/quant/factor-workflow/published-view');const v=await vr.json();if(!vr.ok)throw Error('发布视图读取失败');
+    const body={view_id:v.view_id,release_id:'',release_ids:v.release_ids||{},view_manifest_sha256:v.view_manifest_sha256||'',contract_revision:v.contract_revision||'',as_of:v.as_of,development_start:nt.development_start,development_end:nt.development_end,validation_start:nt.validation_start,validation_end:nt.validation_end,primary_holding_period:Number(nt.holding),policy_version:'v5-p0',max_trials:Number(nt.max_trials),max_sealed:Number(nt.max_sealed)};
+    const tr=await researchFetch('/api/inst/quant/factor-workflow/projects/'+encodeURIComponent(saved.id)+'/topics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const td=await tr.json();if(!tr.ok)throw Error(typeof (td.detail||td.error)==='string'?(td.detail||td.error):'建挖掘任务失败');
+    let branchId:string|undefined;
+    try{const tl=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(td.topic.id)+'/ledger');const tld=await tl.json();branchId=tld.branches?.[0]?.id;}catch{/* 保留任务，启动时明确报分支未就绪 */}
+    task={topicId:td.topic.id,branchId,projectId:saved.id};setCreatedTask(task);
+   }
+   const rl=await researchFetch('/api/inst/quant/factor-workflow/topics');const d=await rl.json();setTopics(d.topics||[]);setSelected(task.topicId);
+   if(!start){setNotice('草稿已保存，未启动研究。');setCreating(false);setCreatedTask(undefined);return;}
+   const ok=await startCreatedTask(task.topicId,task.branchId);
+   setCreating(false);
+   if(ok)setCreatedTask(undefined);
+  }catch(e){setCreateErr(e instanceof Error?e.message:String(e));}
+  finally{setCreatingBusy(false);}
  }
  const topic=topics.find(t=>t.id===selected);
  const selectedBranch=(ledger?.branches||[]).find(b=>b.id===node);
@@ -312,7 +330,7 @@ export function QuantFactorHomePage(){
     <label className="field full"><span>研究假设</span><textarea value={nt.hypothesis} onChange={e=>setNt({...nt,hypothesis:e.target.value})}/></label>
     <label className="field full"><span>补充研究目标 / 说明（不改变执行门槛）</span><textarea value={nt.acceptance} onChange={e=>setNt({...nt,acceptance:e.target.value})}/><small>以下执行门槛由政策冻结，本说明不会改变门槛或权限。</small></label>
     <div className="field full"><span>实际执行门槛（只读）</span><div className="kv"><span>方向 Rank IC</span><div>≥ 0.005</div><span>最大回撤</span><div>≤ 0.50</div><span>有效观测</span><div>≥ 60</div><span>NW t</span><div>≥ t*(K)（Bonferroni，K 随试验数校正）</div><span>主持有期</span><div>1 日</div><span>股票池 / 基准</span><div>{nt.universe} / {nt.benchmark}</div><span>查重相关上限</span><div>0.70（新发现）</div></div></div>
-   </div><div className="form-actions"><button className="btn primary" disabled={creatingBusy||!nt.name.trim()} onClick={()=>void createTopic()}>创建并启动</button><span className="fine">创建后回研究运行，检验仍走 F4 真实计算并计入台账。</span></div></div></div></div>}
+   </div><div className="form-actions"><button className="btn primary" disabled={creatingBusy||!nt.name.trim()} onClick={()=>void createTopic(true)}>创建并启动</button><button className="btn" disabled={creatingBusy||!nt.name.trim()} onClick={()=>void createTopic(false)}>保存草稿</button><span className="fine">创建并启动会发真实研究请求；保存草稿只建任务不启动。</span></div></div></div></div>}
    {f0?.status==='stopped'&&f0.stop_reason&&!f0.stop_reason.includes('封存完成')&&!f0.stop_reason.includes('预算耗尽')&&<div className="card card-pad"><p className="hint error" role="alert"><b>研究决策已停止</b> · {f0.stop_reason}</p><p className="fine">阶段：研究决策执行；已保存的分支、试验和报告不会丢失。核对原因后可重试启动，或打开人工工作台接管。</p><div className="form-actions"><button className="btn small primary" disabled={starting||!selectedBranch} onClick={()=>void handBackF0()}>重试启动</button><Link className="btn small" to={'/quant/factor/workflow/'+(topic?.project_id||'')+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>打开人工工作台</Link></div></div>}
    {notice&&<div className="card card-pad"><p className="hint" role="status">{notice}</p></div>}
    {error&&<div className="card card-pad"><p className="hint error" role="alert">{error}</p></div>}

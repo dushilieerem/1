@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, Check, ShieldAlert, X } from "lucide-react";
+import { dedupeBy } from "@/lib/instDedupe";
 import { instApi, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 
@@ -38,6 +39,7 @@ type SixDim = {
 
 type DebateArg = {
   id?: number;
+  claim_id?: string;
   side?: string;
   round?: number;
   claim?: string;
@@ -98,7 +100,7 @@ type ProposalDetail = ProposalListItem & {
 const STEPS = [
   { name: "议案提交", sub: "全公司概览" },
   { name: "合伙人", sub: "研究质量 / 上会" },
-  { name: "风控", sub: "六项硬约束" },
+  { name: "风控", sub: "硬约束" },
   { name: "Chairman", sub: "资本配置" },
   { name: "授权", sub: "AUTH 快照" },
 ];
@@ -128,15 +130,15 @@ function ResearchDebateSummary({ data }: { data?: ResearchDebate | null }) {
   if (!data) {
     return (
       <section className="v3-card">
-        <div className="v3-card-head"><div><h2>研究与辩论摘要</h2><p>只读引用 02/03 锁定版本。</p></div></div>
+        <div className="v3-card-head"><div><h2>研究与辩论摘要</h2><p>只读引用上游锁定版本。</p></div></div>
         <div className="v3-empty">当前议案还没有可引用的研究/辩论记录。</div>
       </section>
     );
   }
-  const args = data.debate?.arguments || [];
+  const args = dedupeBy(data.debate?.arguments || [], (a) => a.id || a.claim_id);
   const bull = args.filter((x) => x.side === "bull").slice(0, 2);
   const bear = args.filter((x) => x.side === "bear").slice(0, 2);
-  const dims = data.six_dim || [];
+  const dims = dedupeBy(data.six_dim || [], (d) => d.key);
   return (
     <section className="v3-card">
       <div className="v3-card-head">
@@ -151,42 +153,42 @@ function ResearchDebateSummary({ data }: { data?: ResearchDebate | null }) {
       {data.industry_analysis?.summary ? (
         <div className="v3-note" style={{ marginTop: 8 }}>行业底图：{data.industry_analysis.summary}</div>
       ) : null}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 6, marginTop: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 8, marginTop: 8 }}>
         {dims.map((d) => (
-          <div key={d.key} className="v3-note" style={{ padding: "7px 8px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
-              <b style={{ fontSize: 10 }}>{d.title || d.key}</b>
+          <div key={d.key} className="v3-note" style={{ padding: "8px 12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+              <b style={{ fontSize: 11 }}>{d.title || d.key}</b>
               <span className={`v3-chip ${gateTone(d.gate)}`}>{d.gate || "—"}</span>
             </div>
-            <div style={{ fontSize: 9.5, lineHeight: 1.55, color: "#746b7c", marginTop: 4 }}>
+            <div style={{ fontSize: 11, lineHeight: 1.55, color: "#5f5766", marginTop: 4 }}>
               {d.summary || "—"}
             </div>
-            {d.rating != null ? <div style={{ fontSize: 9.5, color: "#9b92a1", marginTop: 3 }}>评级 {d.rating}/5{d.confidence != null ? ` · 置信 ${Number(d.confidence).toFixed(2)}` : ""}</div> : null}
+            {d.rating != null ? <div style={{ fontSize: 11, color: "#6b6370", marginTop: 4 }}>评级 {d.rating}/5{d.confidence != null ? ` · 置信 ${Number(d.confidence).toFixed(2)}` : ""}</div> : null}
           </div>
         ))}
       </div>
       {bull.length || bear.length ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8, marginTop: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8, marginTop: 8 }}>
           <div>
             <div className="v3-eyebrow">多方要点</div>
             {bull.map((a) => (
-              <div key={a.id} className="v3-claim" style={{ marginTop: 5 }}>
+              <div key={a.id} className="v3-claim" style={{ marginTop: 4 }}>
                 <div className="who">第 {a.round || 1} 轮 · 置信 {a.confidence?.toFixed?.(2) ?? "—"}</div>
                 <p>{a.claim}</p>
               </div>
             ))}
-            {!bull.length ? <div className="v3-empty" style={{ padding: "10px 4px" }}>暂无</div> : null}
+            {!bull.length ? <div className="v3-empty" style={{ padding: "8px 4px" }}>暂无</div> : null}
           </div>
           <div>
             <div className="v3-eyebrow">空方要点</div>
             {bear.map((a) => (
-              <div key={a.id} className="v3-claim" style={{ marginTop: 5 }}>
+              <div key={a.id} className="v3-claim" style={{ marginTop: 4 }}>
                 <div className="who">第 {a.round || 1} 轮 · 置信 {a.confidence?.toFixed?.(2) ?? "—"}</div>
                 <p>{a.claim}</p>
                 {a.falsifier ? <div className="fs">证伪：{a.falsifier}</div> : null}
               </div>
             ))}
-            {!bear.length ? <div className="v3-empty" style={{ padding: "10px 4px" }}>暂无</div> : null}
+            {!bear.length ? <div className="v3-empty" style={{ padding: "8px 4px" }}>暂无</div> : null}
           </div>
         </div>
       ) : null}
@@ -225,7 +227,7 @@ export function InstV3ApprovalsPage() {
   const memoDuty = role === "partner"
     ? "判断研究质量、上会资格与议案合理性；建议不替代本人意见。"
     : role === "risk"
-      ? "只看六项硬约束与组合影响；有阻断项就建议否决。"
+      ? "只看硬约束与组合影响；有阻断项就建议否决。"
       : "看资本配置与机会成本；建议不替代 Chairman 表决。";
 
   const loadList = async () => {
@@ -236,7 +238,7 @@ export function InstV3ApprovalsPage() {
       const seen = new Set(rows.map((x) => x.id));
       rows = rows.concat((reviewed.items || []).filter((x) => !seen.has(x.id)));
     }
-    setItems(rows);
+    setItems(dedupeBy(rows, (p) => p.id));
     return rows;
   };
 
@@ -342,7 +344,7 @@ export function InstV3ApprovalsPage() {
   };
 
   const progress = detail?.progress;
-  const riskChecks = detail?.risk_checks || [];
+  const riskChecks = dedupeBy(detail?.risk_checks || [], (c) => c.key);
   const stageForRole: Record<string, string> = { partner: "partner_review", risk: "risk_precheck", chairman: "chairman_review" };
   const canAct = (kind: "partner" | "risk" | "chairman") =>
     role === kind && detail?.status === stageForRole[kind];
@@ -357,11 +359,10 @@ export function InstV3ApprovalsPage() {
     <>
       <div className="v3-page-head">
         <div>
-          <div className="v3-eyebrow">DECISION / 04</div>
+          <div className="v3-eyebrow">DECISION</div>
           <h1>投委会审批</h1>
-          <p>合伙人 → 独立风控 → Chairman，顺序固定；每一关只看自己该看的字段，风控否决终局。</p>
         </div>
-        <span className="v3-chip info">{session.role_label_cn} · 按登录角色</span>
+        <span className="v3-chip info">{session.role_label_cn}</span>
       </div>
 
       <div className="v3-stepper">
@@ -382,7 +383,7 @@ export function InstV3ApprovalsPage() {
               <span>{p.symbol} · {p.direction} {fmtPct(p.target_weight)} · {p.status}</span>
             </button>
           ))}
-          {!items.length ? <div className="v3-empty" style={{ padding: "18px 8px" }}>当前没有待你处理的议案。</div> : null}
+          {!items.length ? <div className="v3-empty" style={{ padding: "16px" }}>当前没有待你处理的议案。</div> : null}
         </div>
 
         <div className="v3-work-main">
@@ -399,11 +400,15 @@ export function InstV3ApprovalsPage() {
             </section>
           ) : null}
 
+          {viewStep !== 0 && !detail ? (
+            <section className="v3-card"><div className="v3-empty">当前没有可查看的议案。</div></section>
+          ) : null}
+
           {viewStep !== 0 && detail ? (
             <>
               <section className="v3-card">
                 <div className="v3-card-head">
-                  <div><h2>{detail.company_name} <span className="font-mono text-[11px] font-normal text-[#9b92a1]">{detail.symbol}</span></h2><p>v{detail.current_version_no || detail.version_no || "—"} · {detail.direction} {fmtPct(detail.target_weight)} · {detail.status}</p></div>
+                  <div><h2>{detail.company_name} <span className="font-mono text-[11px] font-normal text-[#6b6370]">{detail.symbol}</span></h2><p>v{detail.current_version_no || detail.version_no || "—"} · {detail.direction} {fmtPct(detail.target_weight)} · {detail.status}</p></div>
                   <span className={`v3-chip ${statusTone(detail.status)}`}>{detail.status}</span>
                 </div>
                 <dl>
@@ -418,18 +423,18 @@ export function InstV3ApprovalsPage() {
                 <>
                 <ResearchDebateSummary data={detail.research_debate} />
                 <section className="v3-card">
-                  <div className="v3-card-head"><div><h2>合伙人复核</h2><p>研究质量、上会资格、议案合理性与机会成本；不看风控六项明细。</p></div><span className="v3-chip">{progress?.partner?.status || "—"}</span></div>
-                  <p style={{ fontSize: 11, lineHeight: 1.7, color: "#746b7c" }}>研究与辩论摘要由 02/03 锁定版本提供；合伙人只判断是否值得上会。提案人不能审批自己的议案。</p>
+                  <div className="v3-card-head"><div><h2>合伙人复核</h2><p>研究质量、上会资格、议案合理性与机会成本；不看风控逐项明细。</p></div><span className="v3-chip">{progress?.partner?.status || "—"}</span></div>
+                  <p style={{ fontSize: 12, lineHeight: 1.7, color: "#5f5766" }}>研究与辩论摘要由上游锁定版本提供；合伙人只判断是否值得上会。提案人不能审批自己的议案。</p>
                   {role === "partner" && !canAct("partner") ? (
                     <div className="v3-note">当前议案状态为 {detail.status}，合伙人环节已结束或尚未轮到，不能再操作。</div>
                   ) : null}
                   {role === "partner" && canAct("partner") ? (
                     <>
-                      <div className="v3-form-grid" style={{ marginTop: 10 }}>
+                      <div className="v3-form-grid" style={{ marginTop: 8 }}>
                         <div className="v3-field span-2"><label>审批意见</label><textarea value={comment} onChange={(e) => setComment(e.target.value)} /></div>
                         <div className="v3-field span-2"><label>附加条件（附条件时必填，每行一条）</label><textarea value={conditions} onChange={(e) => setConditions(e.target.value)} /></div>
                       </div>
-                      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                         <button className="v3-btn primary" disabled={!!busy} onClick={() => act("partner", "approve")}><Check className="h-3.5 w-3.5" />复核通过</button>
                         <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("partner", "conditional")}>附条件</button>
                         <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("partner", "return")}>退回</button>
@@ -443,7 +448,7 @@ export function InstV3ApprovalsPage() {
 
               {viewStep === 2 ? (
                 <section className="v3-card">
-                  <div className="v3-card-head"><div><h2>六项硬约束核查</h2><p>任何一项否决，议案即时终止；Chairman 不能越过。</p></div><span className="v3-chip">{riskChecks.length} 项</span></div>
+                  <div className="v3-card-head"><div><h2>硬约束核查</h2><p>任何一项否决，议案即时终止；Chairman 不能越过。</p></div><span className="v3-chip">{riskChecks.length} 项</span></div>
                   {riskChecks.map((c) => (
                     <div className="v3-kv" key={c.key}><dt>{c.label}</dt><dd>{c.value || "—"} <span className={`v3-chip ${c.status === "pass" ? "ok" : c.status === "warn" ? "warn" : "bad"}`}>{c.status}</span></dd></div>
                   ))}
@@ -453,11 +458,11 @@ export function InstV3ApprovalsPage() {
                   ) : null}
                   {role === "risk" && canAct("risk") ? (
                     <>
-                      <div className="v3-form-grid" style={{ marginTop: 10 }}>
+                      <div className="v3-form-grid" style={{ marginTop: 8 }}>
                         <div className="v3-field span-2"><label>风控意见</label><textarea value={comment} onChange={(e) => setComment(e.target.value)} /></div>
                         <div className="v3-field span-2"><label>附条件（有条件放行时必填，每行一条）</label><textarea value={conditions} onChange={(e) => setConditions(e.target.value)} /></div>
                       </div>
-                      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                         <button className="v3-btn primary" disabled={!!busy} onClick={() => act("risk", "pass")}><Check className="h-3.5 w-3.5" />放行</button>
                         <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("risk", "conditional")}>有条件放行</button>
                         <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("risk", "veto")}><X className="h-3.5 w-3.5" />否决（终局）</button>
@@ -472,7 +477,7 @@ export function InstV3ApprovalsPage() {
                 <>
                 <ResearchDebateSummary data={detail.research_debate} />
                 <section className="v3-card">
-                  <div className="v3-card-head"><div><h2>风控结论</h2><p>独立风控六项硬约束的结论与附加条件；详细核查值不回传 Chairman。</p></div><span className="v3-chip">{detail.risk_stage?.status || "—"}</span></div>
+                  <div className="v3-card-head"><div><h2>风控结论</h2><p>独立风控硬约束的结论与附加条件；详细核查值不回传 Chairman。</p></div><span className="v3-chip">{detail.risk_stage?.status || "—"}</span></div>
                   <dl>
                     <div className="v3-kv"><dt>结论</dt><dd>{detail.risk_stage?.decision || "—"}</dd></div>
                     <div className="v3-kv"><dt>意见</dt><dd>{detail.risk_stage?.comment || "—"}</dd></div>
@@ -490,11 +495,11 @@ export function InstV3ApprovalsPage() {
                   ) : null}
                   {role === "chairman" && canAct("chairman") ? (
                     <>
-                      <div className="v3-form-grid" style={{ marginTop: 10 }}>
+                      <div className="v3-form-grid" style={{ marginTop: 8 }}>
                         <div className="v3-field span-2"><label>Chairman 意见</label><textarea value={comment} onChange={(e) => setComment(e.target.value)} /></div>
                         <div className="v3-field span-2"><label>附条件（附条件时必填，每行一条）</label><textarea value={conditions} onChange={(e) => setConditions(e.target.value)} /></div>
                       </div>
-                      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                         <button className="v3-btn primary" disabled={!!busy} onClick={() => act("chairman", "approve")}><Check className="h-3.5 w-3.5" />批准并生成授权</button>
                         <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("chairman", "conditional")}>附条件批准</button>
                         <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("chairman", "return")}>退回</button>
@@ -509,7 +514,7 @@ export function InstV3ApprovalsPage() {
 
               {viewStep === 4 ? (
                 <section className="v3-card">
-                  <div className="v3-card-head"><div><h2>授权文件 AUTH</h2><p>Chairman 批准后生成不可修改的执行依据；05 只按这份授权执行。</p></div><span className={`v3-chip ${auth ? "ok" : "warn"}`}>{auth ? auth.status : "未生成"}</span></div>
+                  <div className="v3-card-head"><div><h2>授权文件 AUTH</h2><p>Chairman 批准后生成不可修改的执行依据；执行环节只按这份授权执行。</p></div><span className={`v3-chip ${auth ? "ok" : "warn"}`}>{auth ? auth.status : "未生成"}</span></div>
                   {auth ? (
                     <>
                       <dl>
@@ -517,7 +522,7 @@ export function InstV3ApprovalsPage() {
                         <div className="v3-kv"><dt>状态</dt><dd>{auth.status}</dd></div>
                         <div className="v3-kv"><dt>签发时间</dt><dd>{auth.issued_at || "—"}</dd></div>
                       </dl>
-                      <div style={{ marginTop: 10 }}><Link className="v3-btn primary" to={`/inst/execute?key=auth:${auth.id}`}>进入执行成交 <ArrowRight className="h-3.5 w-3.5" /></Link></div>
+                      <div style={{ marginTop: 8 }}><Link className="v3-btn primary" to={`/inst/execute?key=auth:${auth.id}`}>进入执行成交 <ArrowRight className="h-3.5 w-3.5" /></Link></div>
                     </>
                   ) : <div className="v3-empty">三关全部通过后生成授权。</div>}
                 </section>
@@ -540,9 +545,9 @@ export function InstV3ApprovalsPage() {
               {memo ? (
                 <div style={{ marginTop: 8 }}>
                   {memo.verdict || memo.decision || memo.recommendation ? (
-                    <div className="v3-note" style={{ marginBottom: 6 }}>{memo.verdict || memo.decision || memo.recommendation}</div>
+                    <div className="v3-note" style={{ marginBottom: 8 }}>{memo.verdict || memo.decision || memo.recommendation}</div>
                   ) : null}
-                  <p style={{ fontSize: 10.5, lineHeight: 1.7, color: "#4b4352" }}>{memo.summary || "—"}</p>
+                  <p style={{ fontSize: 11, lineHeight: 1.7, color: "#4b4352" }}>{memo.summary || "—"}</p>
                   {memo.risks?.length ? (
                     <div className="ar-row"><b>主要风险</b><br />{memo.risks.slice(0, 3).map((x) => `· ${x}`).join("；")}</div>
                   ) : null}
@@ -551,7 +556,7 @@ export function InstV3ApprovalsPage() {
                   ) : null}
                   {memo.evidence?.length ? <div className="ar-row"><b>引用证据</b><br />{memo.evidence.length} 条</div> : null}
                 </div>
-              ) : <div className="v3-empty" style={{ padding: "10px 2px" }}>还没有 Agent 建议。生成后仅作参考，不改变审批状态。</div>}
+              ) : <div className="v3-empty" style={{ padding: "8px 4px" }}>还没有 Agent 建议。生成后仅作参考，不改变审批状态。</div>}
               {memoError ? <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>{memoError}</div> : null}
               <button className="v3-btn ghost" style={{ width: "100%", marginTop: 8 }} disabled={memoBusy || !detail} onClick={() => generateMemo(!!memo)}>
                 {memoBusy ? "生成中…" : memo ? "重新生成建议" : "生成审批建议"}
@@ -561,7 +566,7 @@ export function InstV3ApprovalsPage() {
             <>
               <div className="ar-kicker">CURRENT GATE</div>
               <h3>{role === "manager" ? "提案人只读" : `${session.role_label_cn} · 审批关`}</h3>
-              <p>{role === "manager" ? "提案人只能查看自己的议案与三关进度，不能审批自己的议案。" : "按登录角色只看本关字段；所有动作由服务端校验。"}</p>
+              <p>{role === "manager" ? "提案人只能查看自己的议案与三关进度，不能审批自己的议案。" : "当前账号只看本关字段；所有动作由服务端校验。"}</p>
             </>
           )}
           <div className="ar-row"><b>进度</b><br />合伙人 {progress?.partner?.reviewed ?? 0}/{progress?.partner?.total ?? "—"} · 风控 {progress?.risk_precheck?.reviewed ?? 0}/{progress?.risk_precheck?.total ?? "—"} · Chairman {progress?.chairman?.reviewed ?? 0}/{progress?.chairman?.total ?? "—"}</div>

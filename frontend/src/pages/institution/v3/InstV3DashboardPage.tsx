@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Bell, LayoutDashboard, ListChecks, PieChart } from "lucide-react";
+import { dedupeBy } from "@/lib/instDedupe";
 import { instApi, fmtMoney, fmtPct } from "@/lib/instApi";
 import { fetchV3Pipeline, type V3Pipeline } from "@/lib/instV3Api";
 
@@ -48,11 +49,11 @@ export function InstV3DashboardPage() {
         key: x.key, name: x.company_name || x.symbol || "—", stage: "执行成交", note: `${x.stage_name} · ${x.gate}`, tone: "violet",
       })),
     ];
-    return items.slice(0, 4);
+    return dedupeBy(items, (x) => x.key).slice(0, 4);
   }, [pipeline]);
 
   const flowProjects = useMemo(
-    () => (pipeline ? [1, 2, 3, 4, 5].flatMap((n) => pipeline.stages[n]?.items || []).slice(0, 3) : []),
+    () => (pipeline ? dedupeBy([1, 2, 3, 4, 5].flatMap((n) => pipeline.stages[n]?.items || []), (x) => x.key).slice(0, 3) : []),
     [pipeline],
   );
 
@@ -63,7 +64,7 @@ export function InstV3DashboardPage() {
     <>
       <div className="v3-page-head">
         <div>
-          <div className="v3-eyebrow">INVESTMENT OFFICE / 00</div>
+          <div className="v3-eyebrow">INVESTMENT OFFICE</div>
           <h1>投资工作台</h1>
           <p>今天 {todos.length} 件事待处理；{data.monitor_alerts} 只持仓预警，{data.pending_approvals} 件议案在审批中。</p>
         </div>
@@ -72,13 +73,13 @@ export function InstV3DashboardPage() {
 
       <section className="v3-hero">
         <div>
-          <div className="v3-eyebrow">SUBJECTIVE INVESTMENT / V3</div>
+          <div className="v3-eyebrow">SUBJECTIVE INVESTMENT</div>
           <h2>从一条线索，到一笔<em>可追溯</em>的资本配置。</h2>
-          <p>AI 负责分析、计算与核查，人只在五个环节拍板。每一步的结论定稿归档，再交给下一步。</p>
+          <p>AI 负责分析、计算与核查，人只在关键环节拍板。每一步的结论定稿归档，再交给下一步。</p>
           <div className="v3-hero-tags">
-            <span className="v3-chip info">6 个环节</span>
-            <span className="v3-chip gold">5 个人工决策点</span>
-            <span className="v3-chip">1 个自动环节</span>
+            <span className="v3-chip info">全流程可追溯</span>
+            <span className="v3-chip gold">人工拍板</span>
+            <span className="v3-chip">自动执行</span>
             <span className="v3-chip ok">证据可回溯</span>
           </div>
         </div>
@@ -101,13 +102,13 @@ export function InstV3DashboardPage() {
           <section className="v3-card">
             <div className="v3-card-head"><div><h2><ListChecks className="mr-1 inline h-4 w-4" />今天要处理</h2><p>按当前登录角色汇总流程中的待办。</p></div><span className="v3-chip">{todos.length} 件</span></div>
             {todos.length ? todos.map((t) => (
-              <Link key={t.key} to={`/inst/pipeline/result?key=${encodeURIComponent(t.key)}`} className="flex items-center gap-3 border-b border-[#f0eaf3] py-2.5 last:border-0">
+              <Link key={t.key} to={`/inst/pipeline/result?key=${encodeURIComponent(t.key)}`} className="flex items-center gap-3 border-b border-[#f0eaf3] py-3 last:border-0">
                 <span className={`v3-chip ${t.tone}`}>{t.stage}</span>
                 <span className="min-w-0 flex-1">
                   <b className="block text-[12px] font-medium text-[#2b2533]">{t.name}</b>
-                  <span className="block text-[10px] text-[#9b92a1]">{t.note}</span>
+                  <span className="block text-[11px] text-[#6b6370]">{t.note}</span>
                 </span>
-                <ArrowRight className="h-3.5 w-3.5 text-[#b7afbc]" />
+                <ArrowRight className="h-3.5 w-3.5 text-[#6b6370]" />
               </Link>
             )) : <div className="v3-empty">今天没有待办，可以查看项目流水线或组合。</div>}
           </section>
@@ -115,11 +116,11 @@ export function InstV3DashboardPage() {
           <section className="v3-card">
             <div className="v3-card-head"><div><h2><LayoutDashboard className="mr-1 inline h-4 w-4" />在流程中的项目</h2><p>卡在哪、谁在等、下一步是什么。</p></div><Link className="v3-btn ghost" to="/inst/pipeline">全部 {pipeline.total} 个</Link></div>
             {flowProjects.map((p) => (
-              <Link key={p.key} to={`/inst/pipeline/result?key=${encodeURIComponent(p.key)}`} className="flex items-center gap-3 border-b border-[#f0eaf3] py-2.5 last:border-0">
+              <Link key={p.key} to={`/inst/pipeline/result?key=${encodeURIComponent(p.key)}`} className="flex items-center gap-3 border-b border-[#f0eaf3] py-3 last:border-0">
                 <span className="flex h-7 w-7 items-center justify-center rounded bg-[#f8edf3] text-[11px] font-semibold text-[#a03a5c]">{(p.company_name || p.symbol || "?").slice(0, 1)}</span>
                 <span className="min-w-0 flex-1">
                   <b className="block text-[12px] font-medium text-[#2b2533]">{p.company_name || p.symbol}</b>
-                  <span className="block text-[10px] text-[#9b92a1]">{p.stage_name} · {p.gate} · {p.symbol}</span>
+                  <span className="block text-[11px] text-[#6b6370]">{p.stage_name} · {p.gate} · {p.symbol}</span>
                 </span>
                 <span className="v3-chip">{p.stage_name}</span>
               </Link>

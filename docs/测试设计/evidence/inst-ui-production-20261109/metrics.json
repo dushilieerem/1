@@ -1,0 +1,6 @@
+{
+  "1280": {"font_sizes": {"11px": 65, "12px": 61, "16px": 4}, "below_11px": 0, "column_bottoms": [803, 803, 803], "topbar_height": 56, "sidebar_header_height": 56, "forbidden_text": [], "header_paragraph": false, "overflow_x": 0, "overflow_y": 0},
+  "1440": {"font_sizes": {"11px": 65, "12px": 61, "16px": 4}, "below_11px": 0, "column_bottoms": [803, 803, 803], "topbar_height": 56, "sidebar_header_height": 56, "forbidden_text": [], "header_paragraph": false, "overflow_x": 0, "overflow_y": 0},
+  "1920": {"font_sizes": {"11px": 65, "12px": 61, "16px": 4}, "below_11px": 0, "column_bottoms": [803, 803, 803], "topbar_height": 56, "sidebar_header_height": 56, "forbidden_text": [], "header_paragraph": false, "overflow_x": 0, "overflow_y": 0},
+  "long_text": {"overflow_x": 0, "overflow_y": 0}
+}

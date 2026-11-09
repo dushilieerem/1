@@ -1,6 +1,6 @@
 {
   "created_at": "2026-11-09T14:49:38.725935+00:00",
-  "status": "prepared_waiting_metering_patch",
+  "status": "real_handoff_verified_review_ui_fix_pending",
   "purpose": "Real functional acceptance of autonomous -> human takeover/edit -> return to Agent. Not an independent scientific comparison with A/B or a new success claim.",
   "name": "缺口承接与量能确认 · 人机研究 1109",
   "brief": "研究开盘缺口在当日交易中被承接或延续后的次日收益差异。仅使用截至当日收盘可得的open、high、low、close、volume，最多5个交易日回看。Agent自行提出可解释的缺口与日内价格修复、相对量能的候选评分，高分预期次日收益较高。初始实现与后续修改必须在同一研究台账中保留；人工会在研究中暂停并改进实现，然后交回Agent检验。不得改变固定方向、样本、日期、门槛，不得引入turnover等额外字段。",
@@ -103,7 +103,40 @@
     "run full334 comparison automatically",
     "concurrent compute"
   ],
-  "actual_project_id": null,
+  "actual_project_id": "5cc9d1ce-0362-46a0-8148-23aa7d29458a",
   "scientific_limitation": "This is another bounded functional research trial on already observed development data. Prior exploratory A/B exposure is disclosed and it is not held-out evidence. A genuine admission must separately satisfy the complete formal comparison and untouched validation requirements.",
-  "model_budget_authorization": "research-budget-authorization.json"
+  "model_budget_authorization": "research-budget-authorization.json",
+  "execution": {
+    "created_cst": "2026-11-09 23:40:43",
+    "manual_saved_cst": "2026-11-10 00:00:57",
+    "handoff_cst": "2026-11-10 00:02:40",
+    "stopped_cst": "2026-11-10 00:03:04",
+    "agent_e1": "9d13920b-26d2-43d8-8645-baac85519d13",
+    "manual_branch": "69e51456-4b77-478f-a18e-a5fad63729fe",
+    "manual_plan": "b7cc9a56-0455-45dc-aa31-d53e4e6951e0",
+    "manual_change": "gap.abs() -> (-gap).clip(lower=0); keep positive direction, 5-session volume mean, 40 stocks, both periods, all gates and trial cap2",
+    "e2": "4e6dbb1b-372f-4f14-b6d0-a24c625e6e4b",
+    "e2_run": "554882484b9c401085db6155e4053aba",
+    "e2_source_sha256": "a3ecdc371ba621b5ebde9a4404781a1ac3cf28205e97006afc3440db85faffd1",
+    "verified": "UI save/return/report plus independent readonly DB comparison: exact saved source and snapshot, originalE1 retained, K1->2/max2, no F3 regeneration on handoff",
+    "e2_result": {
+      "rank_ic": 0.011636148341631875,
+      "nw_t": 0.48510249508789544,
+      "threshold": 2.2414027276049464,
+      "n_obs": 60,
+      "max_drawdown": 0.032101542138005194,
+      "passed": false
+    },
+    "usage_actual_tokens": 28096,
+    "usage_pending_reservation": 0,
+    "actual_model_calls": 6,
+    "review": "not_submitted: actual F6 candidate binding effect re-mount loop; developer fixing; do not create a new revision just to review",
+    "no_full_novelty": true,
+    "no_sealed_validation": true,
+    "no_registered_asset": true,
+    "pause_coverage": "Actual live pause was not accomplished before F3 generation failed. Real acceptance covers takeover of stopped failed-run, edit and exact return; active-run pause race only engineering tests so far.",
+    "agent_failure": "second F3 finish_reason=length, completion8000/reasoning8000; no usable code, no E2 market call consumed by that failure",
+    "evidence": "../codex-factor-cr100-budget-20261109/hybrid-handoff-readonly.json",
+    "screenshot": "Observed via CUA; screenshot bytes not separately saved; no fabricated file path."
+  }
 }

@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-09T13:52:51.601455+00:00",
+  "updated_at": "2026-11-09T16:07:52.141423+00:00",
   "performed_by": "PM via product browser UI",
   "plan": "three-run-preparation.json",
   "A": {
@@ -111,7 +111,40 @@
     "priority": "Agent quality, hybrid assistance, factor UI usability"
   },
   "hybrid": {
-    "status": "pending_handoff_fixes",
-    "required": "human advice or explicit takeover -> edit and save -> return frozen human version to Agent -> real continuation with no stale overwrite or K reset"
+    "status": "real_handoff_verified_review_ui_fix_pending",
+    "required": "human advice or explicit takeover -> edit and save -> return frozen human version to Agent -> real continuation with no stale overwrite or K reset",
+    "execution": {
+      "created_cst": "2026-11-09 23:40:43",
+      "manual_saved_cst": "2026-11-10 00:00:57",
+      "handoff_cst": "2026-11-10 00:02:40",
+      "stopped_cst": "2026-11-10 00:03:04",
+      "agent_e1": "9d13920b-26d2-43d8-8645-baac85519d13",
+      "manual_branch": "69e51456-4b77-478f-a18e-a5fad63729fe",
+      "manual_plan": "b7cc9a56-0455-45dc-aa31-d53e4e6951e0",
+      "manual_change": "gap.abs() -> (-gap).clip(lower=0); keep positive direction, 5-session volume mean, 40 stocks, both periods, all gates and trial cap2",
+      "e2": "4e6dbb1b-372f-4f14-b6d0-a24c625e6e4b",
+      "e2_run": "554882484b9c401085db6155e4053aba",
+      "e2_source_sha256": "a3ecdc371ba621b5ebde9a4404781a1ac3cf28205e97006afc3440db85faffd1",
+      "verified": "UI save/return/report plus independent readonly DB comparison: exact saved source and snapshot, originalE1 retained, K1->2/max2, no F3 regeneration on handoff",
+      "e2_result": {
+        "rank_ic": 0.011636148341631875,
+        "nw_t": 0.48510249508789544,
+        "threshold": 2.2414027276049464,
+        "n_obs": 60,
+        "max_drawdown": 0.032101542138005194,
+        "passed": false
+      },
+      "usage_actual_tokens": 28096,
+      "usage_pending_reservation": 0,
+      "actual_model_calls": 6,
+      "review": "not_submitted: actual F6 candidate binding effect re-mount loop; developer fixing; do not create a new revision just to review",
+      "no_full_novelty": true,
+      "no_sealed_validation": true,
+      "no_registered_asset": true,
+      "pause_coverage": "Actual live pause was not accomplished before F3 generation failed. Real acceptance covers takeover of stopped failed-run, edit and exact return; active-run pause race only engineering tests so far.",
+      "agent_failure": "second F3 finish_reason=length, completion8000/reasoning8000; no usable code, no E2 market call consumed by that failure",
+      "evidence": "../codex-factor-cr100-budget-20261109/hybrid-handoff-readonly.json",
+      "screenshot": "Observed via CUA; screenshot bytes not separately saved; no fabricated file path."
+    }
   }
 }

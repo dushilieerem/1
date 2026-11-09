@@ -47,15 +47,38 @@ if [[ -f "$LAST_GOOD" ]]; then
   PREV_WEB="$(sed -n 's/^WEB_IMAGE=//p' "$LAST_GOOD" | head -n1)"
 fi
 
-log "发布 $TAG（$NEW_BACKEND / $NEW_WEB）"
-bash "$ROOT_DIR/scripts/ci/docker-build.sh" "$TAG"
-
-# 纯代码发布不重复全量备份（8GB+ 库的 pg_dump 是 CD 主耗时）；
-# 只有 migrations 变化、首次发布或显式 FORCE_DB_BACKUP=1 才备份。
 PREV_TAG=""
 if [[ -n "$PREV_BACKEND" ]]; then
   PREV_TAG="${PREV_BACKEND##*:}"
 fi
+
+# 前端相关文件没变就复用上一版 Web 镜像：docker/backend.Dockerfile 有层缓存（约 2s），
+# 前端 npm ci 在 package.json 变化时会从零重装（2~3 分钟），是 CD 的主要耗时。
+BUILD_WEB=1
+WEB_REASON="前端相关文件有变化或缺少可比对的上一版"
+if [[ -n "$PREV_WEB" && -n "$PREV_TAG" ]] \
+  && git -C "$ROOT_DIR" rev-parse --verify --quiet "$PREV_TAG^{commit}" >/dev/null; then
+  if git -C "$ROOT_DIR" diff --quiet "$PREV_TAG" "$TAG" -- \
+      frontend docker/frontend.Dockerfile docker/nginx.conf "docs/用户指南"; then
+    if docker image inspect "$PREV_WEB" >/dev/null 2>&1; then
+      BUILD_WEB=0
+      WEB_REASON="前端未变化（$PREV_TAG → $TAG），复用 $PREV_WEB"
+      docker tag "$PREV_WEB" "$NEW_WEB"
+    else
+      WEB_REASON="前端未变化，但上一版镜像 $PREV_WEB 已不在本机，需要重建"
+    fi
+  fi
+fi
+log "发布 $TAG（$NEW_BACKEND / $NEW_WEB）"
+if [[ "$BUILD_WEB" == "0" ]]; then
+  log "复用 Web 镜像：$WEB_REASON"
+else
+  log "构建 Web 镜像：$WEB_REASON"
+fi
+BUILD_WEB="$BUILD_WEB" bash "$ROOT_DIR/scripts/ci/docker-build.sh" "$TAG"
+
+# 纯代码发布不重复全量备份（8GB+ 库的 pg_dump 是 CD 主耗时）；
+# 只有 migrations 变化、首次发布或显式 FORCE_DB_BACKUP=1 才备份。
 NEED_DB_BACKUP=0
 BACKUP_REASON="首次发布/无上一版本"
 if [[ "${FORCE_DB_BACKUP:-0}" == "1" ]]; then

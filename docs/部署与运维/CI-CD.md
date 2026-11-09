@@ -143,6 +143,11 @@ serve-public.sh start           重启 invest-api 与手机 H5，创建或复用
 ```
 
 跳过备份：`SKIP_DB_BACKUP=1 bash scripts/ci/deploy.sh <tag>`（仅限确认无数据变更时）。
+
+复用 Web 镜像：上个发布 tag 到新 tag 之间 `frontend/`、`docker/frontend.Dockerfile`、
+`docker/nginx.conf`、`docs/用户指南` 都没变，且本机仍有上一版 `svquant-web:<上个 tag>`
+时，`deploy.sh` 直接 `docker tag` 复用，不再跑 `npm ci` + `vite build`（包依赖缓存失效时这一步要 2~3 分钟）。
+后端镜像有层缓存（约 2 秒），始终重建。需要强制重建时删掉上一版镜像或改前端任一文件。
 跳过手机 H5 与通道：`SKIP_PUBLIC_SERVICES=1`。
 
 `serve-public.sh` 启动的进程是长期进程，依赖两件事：

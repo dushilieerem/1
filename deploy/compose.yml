@@ -96,6 +96,8 @@ services:
       QUANT_FACTOR_JOB_MODE: queue
       SVQUANT_SCHEDULER_MODE: ${SVQUANT_SCHEDULER_MODE:-inline}
       SVQUANT_WORKER_MODE: worker
+      # 数据同步队列（poll.sh 投递 data.sync 任务时由这里消费）；写生产库需显式放行
+      SVQUANT_DATA_SYNC_ALLOW_PRODUCTION: ${SVQUANT_DATA_SYNC_ALLOW_PRODUCTION:-1}
       TZ: Asia/Shanghai
     depends_on:
       backend:

@@ -24,4 +24,11 @@ fi
 export SVQUANT_DATA_ROOT="${SVQUANT_DATA_ROOT:-/home/dev01/project/svquant-data}"
 
 PYTHON="${PYTHON:-/home/dev01/program/anaconda3/bin/python}"
+
+# 队列模式：只投递任务，由 worker 消费（失败可重试、结果落在 background_jobs）。
+# 在 deploy/.env 里设 SVQUANT_DATA_SYNC_VIA_QUEUE=1 开启；未开启时保持原来的直跑。
+if [[ "${SVQUANT_DATA_SYNC_VIA_QUEUE:-0}" == "1" && $# -eq 0 ]]; then
+  exec "$PYTHON" scripts/ops/enqueue_data_sync.py --view "${SVQUANT_DATA_SYNC_VIEW:-current}"
+fi
+
 exec "$PYTHON" scripts/sync_data_view.py --allow-production --json "$@"

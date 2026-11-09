@@ -34,6 +34,12 @@ def main() -> int:
         return 1
 
     start_worker(poll_sec=2.0)
+
+    # 数据 view → PG 同步（可选，默认由部署机脚本触发；开启队列模式后由这里消费）
+    from services.data.sync_jobs import start_worker as start_data_sync
+
+    start_data_sync(poll_sec=5.0)
+
     if (env("SVQUANT_SCHEDULER_MODE", "inline") or "inline").strip().lower() == "worker":
         from services.core.schedulers import start_all
 

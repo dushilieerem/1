@@ -7,8 +7,6 @@ import {
   Search,
   Share2,
   Star,
-  TrendingDown,
-  TrendingUp,
 } from "lucide-react";
 import { api } from "../api";
 import { Disclaimer, ErrorState, Kv, LoadingCards, Sheet, Tag } from "../components";
@@ -16,6 +14,7 @@ import { displayIndustry, fmtMarketCap, fmtMoney, fmtPct, fmtShares, formatPrice
 import { useToast } from "../toast";
 import GlossarySheet from "../GlossarySheet";
 import AiPanel from "../components/AiPanel";
+import FinancialTrend from "../components/FinancialTrend";
 import { useLocale, withMarket } from "../i18n";
 
 const KLineChart = lazy(() => import("../KLineChart"));
@@ -69,47 +68,6 @@ function MinuteChart({ items }: { items: any[] }) {
   );
 }
 
-function FinancialTrend({ fins }: { fins: any[] }) {
-  const { t } = useLocale();
-  const [metric, setMetric] = useState("revenue");
-  const options = [
-    { key: "revenue", label: t("营业收入", "Revenue"), field: "revenue", yoy: "revenue_yoy", unit: t("亿元", "CNY 100m") },
-    { key: "net_profit", label: t("归母净利", "Net profit"), field: "net_profit", yoy: "profit_yoy", unit: t("亿元", "CNY 100m") },
-    { key: "gross_margin", label: t("毛利率", "Gross margin"), field: "gross_margin", yoy: null, unit: "%" },
-    { key: "roe", label: "ROE", field: "roe", yoy: null, unit: "%" },
-  ];
-  const active = options.find((x) => x.key === metric) || options[0];
-  const rows = fins.slice(-4);
-  const max = Math.max(...rows.map((r) => Math.abs(Number(r[active.field]) || 0)), 1);
-  if (!fins.length) return <div className="empty-inline">{t("暂无财报", "No financials")}</div>;
-  return (
-    <div>
-      <div className="seg stock-fin-seg">
-        {options.map((o) => (
-          <button key={o.key} className={metric === o.key ? "on" : ""} onClick={() => setMetric(o.key)}>{o.label}</button>
-        ))}
-      </div>
-      <div className="fin-bars">
-        {rows.map((r) => {
-          const value = Number(r[active.field]);
-          const yoy = active.yoy ? Number(r[active.yoy]) : null;
-          return (
-            <div className="fin-row" key={r.period}>
-              <span className="fin-period">{String(r.period).replace("Q", " Q")}</span>
-              <div className="fin-track"><i style={{ width: `${Math.max(4, (Math.abs(value) / max) * 100)}%` }} /></div>
-              <span className="fin-value">
-                {Number.isFinite(value) ? `${value.toFixed(1)}${active.unit === "%" ? "%" : ""}` : "—"}
-                {Number.isFinite(yoy) ? <em className={yoy >= 0 ? "up" : "down"}> {yoy >= 0 ? "+" : ""}{yoy.toFixed(1)}%</em> : null}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      <div className="hint">{t("前三季累计口径；柱为指标值，橙色为同比。", "Cumulative first-three-quarter basis; bars are values and orange is YoY.")}</div>
-    </div>
-  );
-}
-
 function FundDistribution({ rows }: { rows: any[] }) {
   const { t } = useLocale();
   const max = Math.max(1, ...rows.map((r) => Math.abs(Number(r.value) || 0)));
@@ -140,7 +98,6 @@ export default function Stock() {
   const [period, setPeriod] = useState("daily");
   const [tab, setTab] = useState("news");
   const [newsOpen, setNewsOpen] = useState(false);
-  const [reportOpen, setReportOpen] = useState(false);
   const [statementOpen, setStatementOpen] = useState(false);
   const [glossary, setGlossary] = useState(false);
   const [inWatch, setInWatch] = useState(false);
@@ -241,6 +198,7 @@ export default function Stock() {
   const fund = data.fundFlow || { available: false, series: [], distribution: [] };
   const peers = data.peers || [];
   const statements = data.statements || {};
+  const latestFin = (data.financialTrend?.items || []).slice(-1)[0] || {};
   const tabs = [
     ...(news.length ? [{ key: "news", label: t("资讯", "News") }] : []),
     ...(!isUs && q.asset !== "etf" ? [{ key: "finance", label: t("财务", "Financials") }] : []),
@@ -256,7 +214,7 @@ export default function Stock() {
         <button className="round-btn" onClick={() => nav(-1)} aria-label={t("返回", "Back")}><ArrowLeft size={18} /></button>
         <div className="stock-head-title">
           <b>{q.name}</b>
-          <span>{q.code} · {board}</span>
+          <span>{q.code} · {displayIndustry(q.industry)} · {board}</span>
         </div>
         <div className="stock-head-actions">
           <button className="round-btn" onClick={() => nav("/search")} aria-label={t("搜个股", "Search stocks")}><Search size={18} /></button>
@@ -264,34 +222,38 @@ export default function Stock() {
         </div>
       </header>
 
-      <section className="quote-card stock-quote">
-        <div className="quote-main">
-          <div>
-            <b className={up ? "up" : "down"}>{formatPrice(q.price)}</b>
-            <span className={up ? "up" : "down"}>
-              {up ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-              {fmtPct(q.changePct)} · {Number(q.change) >= 0 ? "+" : ""}{Number(q.change || 0).toFixed(2)}
-            </span>
-          </div>
-          <span className="quote-date">{data.dataDate} · {t("收盘", "close")}</span>
+      <section className="stock-quote">
+        <div className="stock-quote-price">
+          <b className={up ? "up" : "down"}>{formatPrice(q.price)}</b>
+          <span className={up ? "up" : "down"}>
+            {Number(q.change) >= 0 ? "+" : ""}{Number(q.change || 0).toFixed(2)}
+            {" "}{fmtPct(q.changePct)}
+          </span>
         </div>
-        <div className="stock-grid3">
-          <div><span>{t("高", "High")}</span><b>{formatPrice(q.high)}</b></div>
-          <div><span>{t("低", "Low")}</span><b>{formatPrice(q.low)}</b></div>
-          <div><span>{t("开", "Open")}</span><b>{formatPrice(q.open)}</b></div>
-          <div><span>{t("市值", "Mkt cap")}</span><b>{fmtMarketCap(q.marketCap)}</b></div>
-          <div><span>{t("流通", "Float")}</span><b>{fmtMarketCap(q.floatMarketCap)}</b></div>
-          <div><span>{t("市盈", "P/E")}</span><b>{q.pe != null ? Number(q.pe).toFixed(2) : "—"}</b></div>
-          <div><span>{t("量比", "Vol ratio")}</span><b>{q.volumeRatio != null ? Number(q.volumeRatio).toFixed(2) : "—"}</b></div>
-          <div><span>{t("换手", "Turnover")}</span><b>{q.turnover != null ? `${Number(q.turnover).toFixed(2)}%` : "—"}</b></div>
-          <div><span>{t("额", "Amount")}</span><b>{fmtMoney(q.amount)}</b></div>
+        <div className="stock-quote-grid">
+          {[
+            [t("高", "High"), q.high, "price"],
+            [t("低", "Low"), q.low, "price"],
+            [t("开", "Open"), q.open, "price"],
+            [t("市值", "Mkt cap"), fmtMarketCap(q.marketCap), "plain"],
+            [t("流通", "Float"), fmtMarketCap(q.floatMarketCap), "plain"],
+            [t("市盈", "P/E"), q.pe != null ? Number(q.pe).toFixed(2) : "—", "plain"],
+            [t("量比", "Vol ratio"), q.volumeRatio != null ? Number(q.volumeRatio).toFixed(2) : "—", "plain"],
+            [t("换手", "Turnover"), q.turnover != null ? `${Number(q.turnover).toFixed(2)}%` : "—", "plain"],
+            [t("额", "Amount"), fmtMoney(q.amount), "plain"],
+          ].map(([label, value, kind], i) => {
+            const numeric = value === null || value === undefined || value === "—" ? NaN : Number(value);
+            const relative = Number.isFinite(numeric) && numeric >= Number(q.prevClose ?? q.price);
+            const tone = kind === "price" && Number.isFinite(numeric) ? (relative ? "up" : "down") : "";
+            return <div className={`stock-quote-cell ${tone}`} key={`${label}-${i}`}><span>{label}</span><b>{kind === "price" ? formatPrice(value) : value}</b></div>;
+          })}
         </div>
       </section>
 
       <section className="card chart-card">
         <div className="card-title-row">
           <h2>{t("走势", "Price")}</h2>
-          <span className="hint">{period === "minute" ? t("分时 · 非实时", "Intraday · not real-time") : t("收盘数据 · 非实时", "EOD · not real-time")}</span>
+          <span className="hint">{data.dataDate} · {period === "minute" ? t("分时 · 非实时", "Intraday · not real-time") : t("收盘 · 非实时", "Close · not real-time")}</span>
         </div>
         <div className="seg period-seg">
           {PERIODS.filter((p) => !isUs || p.key !== "minute").map((p) => (
@@ -350,21 +312,22 @@ export default function Stock() {
       {activeTab === "finance" ? (
         <>
           <section className="card">
-            <div className="card-title-row"><h2>{t("财务指标趋势", "Financial trend")}</h2><span className="hint">{t("前三季累计", "First three quarters")}</span></div>
-            <FinancialTrend fins={data.financials || []} />
+            <div className="card-title-row"><h2>{t("财务指标趋势", "Financial trend")}</h2><span className="hint">{t("同类型报告期累计", "Cumulative, same report period")}</span></div>
+            <FinancialTrend items={data.financialTrend?.items || []} />
           </section>
           <section className="card">
             <div className="card-title-row"><h2>{t("财务报表", "Statements")}</h2><span className="hint">{t("三张表", "Three statements")}</span></div>
             <div className="stock-links">
-              <button onClick={() => setStatementOpen(true)}>{t("利润表 / 资产负债表 / 现金流量表", "Income / balance / cash flow")} <ChevronRight size={14} /></button>
-              <button onClick={() => setReportOpen(true)}>{t("查看财报摘要", "Report summary")} <ChevronRight size={14} /></button>
+              <button onClick={() => setStatementOpen(true)}>{t("利润表", "Income statement")} <ChevronRight size={14} /></button>
+              <button onClick={() => setStatementOpen(true)}>{t("资产负债表", "Balance sheet")} <ChevronRight size={14} /></button>
+              <button onClick={() => setStatementOpen(true)}>{t("现金流量表", "Cash flow statement")} <ChevronRight size={14} /></button>
             </div>
           </section>
           <section className="card">
             <div className="card-title-row"><h2>{t("估值水平", "Valuation")}</h2><span className="hint">{t("近 3 年分位", "3-year percentile")}</span></div>
             <div className="valuation-nums">
-              <div><span>PE(TTM)</span><b>{v.pe != null ? `${Number(v.pe).toFixed(2)}x` : "—"}</b></div>
-              <div><span>PB</span><b>{v.pb != null ? `${Number(v.pb).toFixed(2)}x` : "—"}</b></div>
+              <div><span>PE(TTM)</span><b>{v.pe != null ? `${Number(v.pe).toFixed(2)}x` : "—"}</b>{v.industryPe != null ? <small>{t("行业", "Industry")} {Number(v.industryPe).toFixed(2)}x</small> : null}</div>
+              <div><span>PB</span><b>{v.pb != null ? `${Number(v.pb).toFixed(2)}x` : "—"}</b>{v.pbPercentile != null ? <small>{t("分位", "Percentile")} {Number(v.pbPercentile).toFixed(1)}%</small> : null}</div>
               <div><span>{t("股息率", "Dividend yield")}</span><b>{q.dividendYield != null ? `${Number(q.dividendYield).toFixed(2)}%` : "—"}</b></div>
             </div>
             <div className="valuation-track"><i style={{ left: `${pct}%` }} /></div>
@@ -474,22 +437,27 @@ export default function Stock() {
         </div>
       </Sheet>
 
-      <Sheet open={reportOpen} onClose={() => setReportOpen(false)} title={t("财报摘要", "Report summary")} sub={data.report?.period || ""}>
-        {data.report ? (
-          <div className="report-grid">
-            <Kv k={t("营业收入", "Revenue")} v={data.report.revenue != null ? `${Number(data.report.revenue).toFixed(1)} 亿` : "—"} />
-            <Kv k={t("归母净利", "Net profit")} v={data.report.netProfit != null ? `${Number(data.report.netProfit).toFixed(1)} 亿` : "—"} />
-            <Kv k={t("毛利率", "Gross margin")} v={data.report.grossMargin != null ? `${Number(data.report.grossMargin).toFixed(1)}%` : "—"} />
-            <Kv k="ROE" v={data.report.roe != null ? `${Number(data.report.roe).toFixed(1)}%` : "—"} />
-          </div>
-        ) : <div className="empty-inline">{t("暂无财报", "No financials")}</div>}
-      </Sheet>
 
       <Sheet open={statementOpen} onClose={() => setStatementOpen(false)} title={t("三大报表", "Three statements")} sub={statements.period || ""}>
         <div className="statement-list">
-          <div><b>{t("利润表", "Income")}</b>{statements.income ? <p>{t("营收", "Revenue")} {Number(statements.income.revenue).toFixed(1)} 亿 · {t("归母净利", "Net profit")} {Number(statements.income.netProfit).toFixed(1)} 亿</p> : null}</div>
-          <div><b>{t("资产负债表", "Balance sheet")}</b>{statements.balance ? <p>{t("总资产", "Assets")} {fmtYi(statements.balance.total_assets)} · {t("总负债", "Liabilities")} {fmtYi(statements.balance.total_liabilities)} · {t("净资产", "Equity")} {fmtYi(statements.balance.total_equity)}</p> : null}</div>
-          <div><b>{t("现金流量表", "Cash flow")}</b>{statements.cashflow ? <p>{t("经营", "Operating")} {fmtYi(statements.cashflow.operating_cf)} · {t("投资", "Investing")} {fmtYi(statements.cashflow.investing_cf)} · {t("筹资", "Financing")} {fmtYi(statements.cashflow.financing_cf)}</p> : null}</div>
+          <div>
+            <b>{t("利润表", "Income statement")}</b>
+            {statements.income ? (
+              <p>{t("营收", "Revenue")} {Number(statements.income.revenue).toFixed(1)} {t("亿", "100m")} · {t("归母净利", "Net profit")} {Number(statements.income.netProfit).toFixed(1)} {t("亿", "100m")} · {t("毛利率", "Gross margin")} {statements.income.grossMargin != null ? `${Number(statements.income.grossMargin).toFixed(1)}%` : "—"} · {t("净利率", "Net margin")} {latestFin.net_margin != null ? `${Number(latestFin.net_margin).toFixed(1)}%` : "—"}</p>
+            ) : <p className="hint">{t("暂无利润表", "No income statement")}</p>}
+          </div>
+          <div>
+            <b>{t("资产负债表", "Balance sheet")}</b>
+            {statements.balance ? (
+              <p>{t("总资产", "Assets")} {fmtYi(statements.balance.total_assets)} · {t("总负债", "Liabilities")} {fmtYi(statements.balance.total_liabilities)} · {t("净资产", "Equity")} {fmtYi(statements.balance.total_equity)} · {t("资产负债率", "Debt ratio")} {statements.balance.total_assets ? `${(Number(statements.balance.total_liabilities) / Number(statements.balance.total_assets) * 100).toFixed(1)}%` : "—"}</p>
+            ) : <p className="hint">{t("暂无资产负债表", "No balance sheet")}</p>}
+          </div>
+          <div>
+            <b>{t("现金流量表", "Cash flow statement")}</b>
+            {statements.cashflow ? (
+              <p>{t("经营", "Operating")} {fmtYi(statements.cashflow.operating_cf)} · {t("投资", "Investing")} {fmtYi(statements.cashflow.investing_cf)} · {t("筹资", "Financing")} {fmtYi(statements.cashflow.financing_cf)}</p>
+            ) : <p className="hint">{t("暂无现金流量表", "No cash flow statement")}</p>}
+          </div>
         </div>
       </Sheet>
 

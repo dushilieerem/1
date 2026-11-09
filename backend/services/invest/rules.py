@@ -394,6 +394,82 @@ def _sentiment(news: list[dict[str, Any]], turnover: float | None) -> dict[str, 
     }
 
 
+def _financial_trend(conn: Any, code: str) -> dict[str, Any]:
+    """同类型报告期跨年的累计财务序列（年报/中报/一季报/三季报）。"""
+    symbol = _with_suffix(code)
+    try:
+        data_rows = rows(
+            conn,
+            """
+            SELECT i.report_date::text AS report_date, i.revenue, i.net_profit, i.eps,
+                   NULLIF(i.raw->>'deducted_net_profit','')::double precision AS deducted_net_profit,
+                   ind.gross_margin, ind.net_margin, ind.roe, ind.revenue_yoy, ind.profit_yoy,
+                   cf.operating_cf
+              FROM fin_income_statement i
+              LEFT JOIN LATERAL (
+                SELECT gross_margin, net_margin, roe, revenue_yoy, profit_yoy
+                  FROM fin_indicator x
+                 WHERE x.symbol=i.symbol AND x.report_date=i.report_date
+                 ORDER BY x.notice_date DESC NULLS LAST LIMIT 1
+              ) ind ON TRUE
+              LEFT JOIN LATERAL (
+                SELECT operating_cf
+                  FROM fin_cash_flow c
+                 WHERE c.symbol=i.symbol AND c.report_date=i.report_date
+                 ORDER BY c.notice_date DESC NULLS LAST LIMIT 1
+              ) cf ON TRUE
+             WHERE i.symbol=? AND i.notice_date IS NOT NULL AND i.notice_date <= CURRENT_DATE
+             ORDER BY i.report_date
+            """,
+            (symbol,),
+        )
+    except Exception:
+        data_rows = []
+    out = []
+    for r in data_rows:
+        period = str(r.get("report_date") or "")[:10]
+        try:
+            year, month = int(period[:4]), int(period[5:7])
+        except (TypeError, ValueError):
+            continue
+        if month == 12:
+            report_type, type_label = "annual", f"{year}年报"
+        elif month == 6:
+            report_type, type_label = "h1", f"{year}H1"
+        elif month == 3:
+            report_type, type_label = "q1", f"{year}Q1"
+        elif month == 9:
+            report_type, type_label = "q3", f"{year}Q3"
+        else:
+            continue
+        out.append({
+            "year": year,
+            "report_type": report_type,
+            "label": type_label,
+            "report_date": period,
+            "revenue": (_num(r.get("revenue")) or 0) / 1e8 if r.get("revenue") is not None else None,
+            "net_profit": (_num(r.get("net_profit")) or 0) / 1e8 if r.get("net_profit") is not None else None,
+            "deducted_net_profit": (_num(r.get("deducted_net_profit")) or 0) / 1e8 if r.get("deducted_net_profit") is not None else None,
+            "eps": _num(r.get("eps")),
+            "gross_margin": (_num(r.get("gross_margin")) or 0) * 100 if r.get("gross_margin") is not None else None,
+            "net_margin": (_num(r.get("net_margin")) or 0) * 100 if r.get("net_margin") is not None else None,
+            "roe": (_num(r.get("roe")) or 0) * 100 if r.get("roe") is not None else None,
+            "operating_cf": (_num(r.get("operating_cf")) or 0) / 1e8 if r.get("operating_cf") is not None else None,
+            "revenue_yoy": (_num(r.get("revenue_yoy")) or 0) * 100 if r.get("revenue_yoy") is not None else None,
+            "profit_yoy": (_num(r.get("profit_yoy")) or 0) * 100 if r.get("profit_yoy") is not None else None,
+        })
+    by_key = {(x["year"], x["report_type"]): x for x in out}
+    for item in out:
+        prev = by_key.get((item["year"] - 1, item["report_type"]))
+        if not prev:
+            continue
+        for field in ("eps", "operating_cf", "deducted_net_profit"):
+            current, prior = _num(item.get(field)), _num(prev.get(field))
+            if current is not None and prior not in (None, 0):
+                item[f"{field}_yoy"] = round((current / prior - 1) * 100, 2)
+    return {"items": out, "available": bool(out)}
+
+
 def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] | None:
     stock = one(conn, "SELECT * FROM stocks WHERE code=?", (code,))
     if not stock:
@@ -452,6 +528,7 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
                 "label": "No valuation data" if is_us else "无估值数据",
             },
             "financials": [],
+            "financialTrend": {"items": [], "available": False},
             "report": None,
             "statements": {"period": None, "income": None, "balance": None, "cashflow": None},
             "fundFlow": {"available": False, "days": 0, "latest": None, "five_day": None,
@@ -731,7 +808,8 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     return {
         "quote": q, "chart": chart, "technical": technical, "summary": summary,
         "valuation": valuation, "financials": fins, "report": report, "statements": statements,
-        "fundFlow": fund_flow, "peers": peer_cards, "risks": risks,
+        "fundFlow": fund_flow, "financialTrend": _financial_trend(conn, code),
+        "peers": peer_cards, "risks": risks,
         "news": news, "todayNews": news[:3],
         "earningsFlash": (
             {"available": False, "highlights": [], "concerns": [], "consensusGap": "Financial data not available"}

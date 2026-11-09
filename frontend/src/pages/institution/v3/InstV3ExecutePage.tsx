@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, CheckCircle2, Play, RefreshCw } from "lucide-react";
 import { instApi } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
+import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
 
 type Authorization = {
   id: number;
@@ -151,6 +152,19 @@ export function InstV3ExecutePage() {
   };
 
   const executed = Boolean(execResult?.order) || selected?.status === "filled";
+  const agentDefs = useMemo<AgentPanelDef[]>(
+    () => [{
+      id: "engine",
+      name: "执行引擎",
+      code: "ENGINE",
+      model: "确定性代码 · 无 LLM",
+      tools: "授权 / 账户 / 回报",
+      output: `${STEPS[step].name}结果`,
+      role: "只核对授权、下单、对账、更新持仓；不做判断、不改单。",
+      engine: true,
+    }],
+    [step],
+  );
   const summary = useMemo(() => {
     if (!precheck) return [];
     return precheck.checks || [];
@@ -259,14 +273,16 @@ export function InstV3ExecutePage() {
           )}
         </div>
 
-        <aside className="v3-agent-rail">
-          <div className="ar-kicker">EXECUTION ENGINE</div>
-          <h3>确定性代码 · 无 LLM</h3>
-          <p>只核对授权、下单、对账、更新持仓；不读研究、不改价格、不手工改单。</p>
-          <div className="ar-row"><b>本步</b><br />{STEPS[step].name} · {STEPS[step].sub}</div>
-          <div className="ar-row"><b>异常</b><br />不一致/不足/超时/部分成交/对账差异一律停下上报。</div>
-          <div className="ar-row"><b>状态</b><br />{selected ? `${selected.symbol} · ${selected.status}` : "未选择授权"}</div>
-        </aside>
+        <InstV3AgentRail
+          agents={agentDefs}
+          activeId="engine"
+          onSelect={() => undefined}
+          contextRows={[
+            { label: "本步", value: `${STEPS[step].name} · ${STEPS[step].sub}` },
+            { label: "异常", value: "不一致/不足/超时/部分成交/对账差异一律停下上报。" },
+            { label: "状态", value: selected ? `${selected.symbol} · ${selected.status}` : "未选择授权" },
+          ]}
+        />
       </div>
     </>
   );

@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Activity, AlertTriangle, RefreshCw } from "lucide-react";
 import { instApi, fmtMoney, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
+import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
 
 type Position = {
   symbol: string;
@@ -103,6 +104,7 @@ export function InstV3ManagePage() {
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [holding, setHolding] = useState<Holding | null>(null);
   const [step, setStep] = useState(0);
+  const [agentId, setAgentId] = useState("pm");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -210,6 +212,23 @@ export function InstV3ManagePage() {
   const positions = portfolio?.positions || [];
   const activePosition = holding?.position || positions.find((p) => p.symbol === selectedSymbol) || null;
   const exposure = useMemo(() => Object.entries(portfolio?.industry_exposure || {}).sort((a, b) => b[1] - a[1]), [portfolio]);
+
+  useEffect(() => {
+    setAgentId(step === 1 ? "monitor" : "pm");
+  }, [step]);
+
+  const agentDefs = useMemo<AgentPanelDef[]>(() => {
+    if (step === 1) {
+      return [{ id: "monitor", name: "监控 Agent", code: "MONITOR", model: "监控 Agent", tools: "公告 / 行情 / KPI", output: "论点台账 + 事件提醒", role: "扫描事件、核对论点，不替人做卖出决定。" }];
+    }
+    if (step === 2) {
+      return [
+        { id: "pm", name: "组合经理", code: "PM", model: "组合经理 Agent", tools: "持仓 / 论点 / 组合约束", output: "持有 / 减仓 / 清仓建议", role: "比较三条路径的代价。" },
+        { id: "risk", name: "风控", code: "RISK", model: "风控 Agent", tools: "敞口 / 流动性 / 硬约束", output: "退出可行性意见", role: "检查退出是否触发硬约束。" },
+      ];
+    }
+    return [{ id: "pm", name: "组合经理", code: "PM", model: "组合经理 Agent", tools: "组合 / 约束 / 机会成本", output: "组合概览", role: "看钱在哪、风险在哪。" }];
+  }, [step]);
 
   if (loading) return <div className="v3-loading">正在加载投资管理…</div>;
   if (error && !portfolio) return <div className="v3-card">加载失败：{error}</div>;
@@ -350,14 +369,16 @@ export function InstV3ManagePage() {
           ) : null}
         </div>
 
-        <aside className="v3-agent-rail">
-          <div className="ar-kicker">MONITORING AGENT</div>
-          <h3>{step === 0 ? "组合经理" : "监控 Agent"}</h3>
-          <p>{step === 0 ? "看净值、现金、仓位与行业敞口；组合约束是硬约束。" : "跟踪公告、行情与 KPI；异常时通知负责人，不替人卖出。"}</p>
-          <div className="ar-row"><b>本步</b><br />{STEPS[step].name} · {STEPS[step].sub}</div>
-          <div className="ar-row"><b>卖出四类理由</b><br />论点失效 / 估值透支 / 更优机会 / 组合约束。</div>
-          <div className="ar-row"><b>约束</b><br />退出重走研究、辩论、审批；旧授权不复用。</div>
-        </aside>
+        <InstV3AgentRail
+          agents={agentDefs}
+          activeId={agentId}
+          onSelect={setAgentId}
+          contextRows={[
+            { label: "本步", value: `${STEPS[step].name} · ${STEPS[step].sub}` },
+            { label: "卖出四类理由", value: "论点失效 / 估值透支 / 更优机会 / 组合约束。" },
+            { label: "约束", value: "退出重走研究、辩论、审批；旧授权不复用。" },
+          ]}
+        />
       </div>
     </>
   );

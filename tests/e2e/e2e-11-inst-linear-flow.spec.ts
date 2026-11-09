@@ -146,6 +146,10 @@ test("研究 R3 → 辩论 P3 → 三关 → 授权执行 → 持仓更新", asy
   await page.goto(`${BASE}/inst/debate?key=${encodeURIComponent(`case:${caseId}`)}`, {
     waitUntil: "networkidle",
   });
+  // 右侧 Agent 面板：多空两个角色可切换，主区同步切换分析页。
+  await expect(page.locator(".v3-agent-pick")).toHaveCount(2);
+  await page.locator(".v3-agent-pick").filter({ hasText: "空头研究员" }).click();
+  await expect(page.getByText("空方 · 空头研究员 Agent", { exact: true })).toBeVisible();
   await page.locator(".v3-stepper .v3-step").nth(3).click();
   const opinion = page.getByTestId("inst-investment-opinion");
   await opinion.fill("E2E 投资意见：关键假设成立、估值有安全边际才持有");

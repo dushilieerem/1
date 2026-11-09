@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Play, Send } from "lucide-react";
 import { instApi } from "@/lib/instApi";
+import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
 
 type Arg = {
   id: number;
@@ -66,6 +67,7 @@ export function InstV3DebatePage() {
   const [detail, setDetail] = useState<CaseItem | null>(null);
   const [debate, setDebate] = useState<Debate | null>(null);
   const [step, setStep] = useState(0);
+  const [agentId, setAgentId] = useState("bull");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -131,8 +133,32 @@ export function InstV3DebatePage() {
   const bull = useMemo(() => (debate?.arguments || []).filter((a) => a.side === "bull"), [debate]);
   const bear = useMemo(() => (debate?.arguments || []).filter((a) => a.side === "bear"), [debate]);
 
+  useEffect(() => {
+    setAgentId(step === 0 ? "bull" : step === 1 ? "chair" : step === 2 ? "valuation" : "trader");
+  }, [step]);
+
+  const agentDefs = useMemo<AgentPanelDef[]>(() => {
+    if (step === 0) {
+      return [
+        { id: "bull", name: "多头研究员", code: "BULL", model: "多头 Agent", tools: "研究定稿 / 订单 / 估值", output: `${bull.length} 条多头论点`, role: "只找买入理由，不替空头说话。" },
+        { id: "bear", name: "空头研究员", code: "BEAR", model: "空头 Agent", tools: "研究定稿 / 应收 / 竞品", output: `${bear.length} 条空头攻击`, role: "只打最弱假设，不重复行业空间。" },
+      ];
+    }
+    if (step === 1) {
+      return [{ id: "chair", name: "研究经理 / 主持", code: "CHAIR", model: "主持 Agent", tools: "多空 claim / 证据核验", output: "分歧清单 + 核验结论", role: "只逼分歧、核证据，不投票、不取平均。" }];
+    }
+    if (step === 2) {
+      return [{ id: "valuation", name: "估值计算服务", code: "ENGINE", model: "确定性代码", tools: "DCF / 敏感性 / 反向 DCF", output: "价值区间 + IRR", role: "代码计算，不生成观点。", engine: true }];
+    }
+    return [{ id: "trader", name: "交易员", code: "TRADER", model: "交易员 Agent", tools: "裁决 / 议案模板 / 组合约束", output: "议案 P3", role: "把裁决写成可审批的议案。" }];
+  }, [step, bull.length, bear.length]);
+
+  const activeSide = agentId === "bear" ? bear : bull;
+  const sideName = agentId === "bear" ? "空头研究员" : "多头研究员";
+  const selectAgent = (id: string) => setAgentId(id);
+
   const selectCase = (id: number) => {
-    setStep(0); setDebate(null); setParams({ key: `case:${id}` });
+    setStep(0); setAgentId("bull"); setDebate(null); setParams({ key: `case:${id}` });
   };
 
   const startDebate = async () => {
@@ -216,17 +242,14 @@ export function InstV3DebatePage() {
                 {!debate ? <button className="v3-btn primary" disabled={!!busy} onClick={startDebate}><Play className="h-3.5 w-3.5" />{busy === "debate" ? "辩论生成中…" : "开始多空辩论"}</button> : <span className="v3-chip ok">已完成</span>}
               </div>
               {debate ? (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <div>
-                    <div className="v3-eyebrow">多方 · 投资经理 Agent</div>
-                    {bull.map((a) => <div className="v3-claim" key={a.id}><div className="who">第 {a.round} 轮 · 置信度 {a.confidence?.toFixed?.(2) ?? "—"}</div><p>{a.claim}</p>{a.falsifier ? <div className="fs">证伪：{a.falsifier}</div> : null}</div>)}
-                    {!bull.length ? <div className="v3-empty" style={{ marginTop: 8 }}>暂无多方论点</div> : null}
+                <div>
+                  <div className="v3-dim-list">
+                    <button className={`v3-dim-btn${agentId !== "bear" ? " on" : ""}`} onClick={() => setAgentId("bull")}>多头 Agent · {bull.length} 条</button>
+                    <button className={`v3-dim-btn${agentId === "bear" ? " on" : ""}`} onClick={() => setAgentId("bear")}>空头 Agent · {bear.length} 条</button>
                   </div>
-                  <div>
-                    <div className="v3-eyebrow">空方 · 风控 Agent</div>
-                    {bear.map((a) => <div className="v3-claim" key={a.id}><div className="who">第 {a.round} 轮 · 置信度 {a.confidence?.toFixed?.(2) ?? "—"}</div><p>{a.claim}</p>{a.falsifier ? <div className="fs">证伪：{a.falsifier}</div> : null}</div>)}
-                    {!bear.length ? <div className="v3-empty" style={{ marginTop: 8 }}>暂无空方论点</div> : null}
-                  </div>
+                  <div className="v3-eyebrow">{agentId === "bear" ? "空方 · 空头研究员 Agent" : "多方 · 多头研究员 Agent"}</div>
+                  {activeSide.map((a) => <div className="v3-claim" key={a.id}><div className="who">第 {a.round} 轮 · 置信度 {a.confidence?.toFixed?.(2) ?? "—"}</div><p>{a.claim}</p>{a.falsifier ? <div className="fs">证伪：{a.falsifier}</div> : null}</div>)}
+                  {!activeSide.length ? <div className="v3-empty" style={{ marginTop: 8 }}>暂无{sideName}论点</div> : null}
                 </div>
               ) : <div className="v3-empty">还没有辩论记录。点击右上角开始；结论不投票，只保留分歧。</div>}
             </section>
@@ -289,14 +312,16 @@ export function InstV3DebatePage() {
           ) : null}
         </div>
 
-        <aside className="v3-agent-rail">
-          <div className="ar-kicker">CURRENT AGENT</div>
-          <h3>{STEPS[step].agent}</h3>
-          <p>{STEPS[step].duty}</p>
-          <div className="ar-row"><b>本步产出</b><br />{step === 0 ? "多空论点" : step === 1 ? "分歧清单" : step === 2 ? "估值复核" : "议案 P3"}</div>
-          <div className="ar-row"><b>输入</b><br />研究定稿 R3、证据包、FactPack；不引用旧辩论输出作为证据。</div>
-          <div className="ar-row"><b>约束</b><br />辩论不投票、不取平均；估值数字由代码生成；锁定后审批只读。</div>
-        </aside>
+        <InstV3AgentRail
+          agents={agentDefs}
+          activeId={agentId}
+          onSelect={selectAgent}
+          contextRows={[
+            { label: "本步产出", value: step === 0 ? "多空论点" : step === 1 ? "分歧清单" : step === 2 ? "估值复核" : "议案 P3" },
+            { label: "输入", value: "研究定稿 R3、证据包、FactPack；不引用旧辩论输出作为证据。" },
+            { label: "约束", value: "辩论不投票、不取平均；估值数字由代码生成；锁定后审批只读。" },
+          ]}
+        />
       </div>
     </>
   );

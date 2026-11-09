@@ -25,7 +25,7 @@ const SV = {
   /* ---------- navigation ---------- */
   NAV: [
     ['WORKSPACE', '工作空间', [['overview', '◫', '管理驾驶舱', 'Cockpit', 'index.html']]],
-    ['MODULES', '业务模块', [['data', '▤', '数据资源', 'Data', 'data.html'], ['factor', 'ƒ', '因子工厂', 'Factor factory', 'factor.html'], ['strategy', '⌁', '策略研究', 'Strategy research', 'strategy.html'], ['portfolio', '◈', '组合与执行', 'Portfolio', 'portfolio.html'], ['risk', '◎', '运行与风险', 'Operations & risk', 'risk.html']]],
+    ['MODULES', '业务模块', [['data', '▤', '数据资源', 'Data', 'data.html'], ['factor', 'ƒ', '因子工厂', 'Factor factory', 'factor-factory.html'], ['strategy', '⌁', '策略研究', 'Strategy research', 'strategy.html'], ['portfolio', '◈', '组合与执行', 'Portfolio', 'portfolio.html'], ['risk', '◎', '运行与风险', 'Operations & risk', 'risk.html']]],
     ['COLLABORATION', '协作与管理', [['review', '▣', '审查中心', 'Review centre', 'review.html'], ['agents', '✧', 'Agent 管理', 'Agents', 'agents.html']]]
   ],
   sidebar(cur) {

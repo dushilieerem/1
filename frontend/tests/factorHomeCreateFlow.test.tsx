@@ -191,6 +191,7 @@ test('独立页面草稿路径：只保存一个项目和任务，不启动；�
  assert.equal(data.projectIds.length,1);assert.equal(data.topicProjects.length,1);assert.equal(data.starts.length,0);
  assert.ok(view.getByText('草稿已保存，未启动研究。'));
  assert.equal(view.queryByRole('button',{name:'暂停任务'}),null);
+ await waitFor(()=>assert.ok(view.getByText('研究目标')));
  fireEvent.click(view.getByRole('button',{name:'范围与预算'}));
  assert.ok(view.getByRole('dialog',{name:'范围与预算'}));assert.ok(view.getByText('已计入 0 次 / 上限 2 次'));
  fireEvent.keyDown(view.getByRole('dialog'),{key:'Escape'});assert.ok(!view.queryByRole('dialog'));
@@ -246,7 +247,7 @@ test('切换任务后丢弃前一任务的迟到台账及运行响应',async()=>
 });
 
 
-test('研发主区显示最新试验绑定的冻结定义，不随历史节点切换混用版本',async()=>{
+test('研发主区按所选E/H只读切换，无产物不冒用另一分支定义',async()=>{
  login();const data=scenario();data.topics.push({...oldTopic,id:'frozen-task',project_id:'frozen-project'});
  const baseFetch=globalThis.fetch;
  globalThis.fetch=async(input,init)=>{
@@ -263,7 +264,7 @@ test('研发主区显示最新试验绑定的冻结定义，不随历史节点�
  assert.ok(view.getByText('def fixed_factor(data): return data.close'));
  assert.ok(view.getByText('当前短标题',{selector:'h3'}));
  fireEvent.click(view.container.querySelector('[data-bid=older]')!);
- assert.ok(view.getByText('冻结假设正文'));assert.ok(view.getByText('当前短标题',{selector:'h3'}));
+ await waitFor(()=>assert.equal(view.queryByText('冻结假设正文'),null));assert.equal(view.queryByText('当前短标题',{selector:'h3'}),null);
 });
 
 
@@ -307,4 +308,9 @@ test('固定证券样本保存到config，启动预检拒绝时不创建项目�
  globalThis.fetch=async(input,init)=>{const path=new URL(String(input),'http://localhost').pathname;if(path.endsWith('/compute-preflight')){checks++;const body=JSON.parse(String(init?.body));assert.deepEqual(body.researchUniverseSymbols,['000001.SZ','600000.SH']);return Response.json({allowed:false,reasons:['日期区间未获准，未发起计算']});}return original(input,init);};
  const view=render(<MemoryRouter><QuantFactorHomePage/></MemoryRouter>);await openNew(view);fireEvent.change(view.getByLabelText('固定证券清单（可选，研究样本）'),{target:{value:'000001.sz,600000.SH'}});fireEvent.click(view.getByRole('button',{name:'创建并启动'}));await waitFor(()=>assert.ok(view.getByText('日期区间未获准，未发起计算')));assert.equal(checks,1);assert.equal(data.projectIds.length,0);assert.equal(data.starts.length,0);
  fireEvent.click(view.getByRole('button',{name:'保存草稿'}));await waitFor(()=>assert.ok(!view.queryByRole('dialog')));assert.deepEqual([...data.projects.values()][0].config.researchUniverseSymbols,['000001.SZ','600000.SH']);assert.equal(data.starts.length,0);fireEvent.click(view.getByRole('button',{name:'范围与预算'}));assert.ok(view.getByText('静态研究样本 · 2 个证券'));assert.ok(view.getByText('000001.SZ、600000.SH'));
+});
+
+test('纯人工已有试验但从未委托：提供明确交给Agent与继续人工入口，不误称重试',async()=>{
+ login();const data=scenario();data.topics.push({...oldTopic,id:'manual-task',project_id:'manual-project',dispatch_status:null,dispatch_stop_reason:null});const base=globalThis.fetch;globalThis.fetch=async(input,init)=>{if(new URL(String(input),'http://localhost').pathname.endsWith('/manual-task/f0-runs'))return Response.json(null);return base(input,init);};
+ const view=render(<MemoryRouter><QuantFactorHomePage/></MemoryRouter>);await waitFor(()=>assert.ok(view.getByRole('button',{name:'交给Agent研究'})));assert.equal(view.queryByRole('button',{name:'重试启动'}),null);assert.ok(view.getByRole('link',{name:'继续人工研究'}));assert.ok(view.getByLabelText('Agent 工作状态').textContent?.includes('尚未委托自动研究'));
 });

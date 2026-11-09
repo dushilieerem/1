@@ -6,7 +6,7 @@ class CandidateReadTests(unittest.TestCase):
  def evidence(self):return {'branch_id':'branch-uuid','method':{'method_id':'f0'},'development':{'run_id':'actual-run','gate':{'passed':False},'result':{'metrics':{'ic':0.01},'meta':{'source':'fixture'}}},'validation':None,'future_metadata':'scalar'}
  def test_actual_candidate_list_with_scalar_branch_metadata_returns_phase_summaries(self):
   row={'id':'candidate','evidence':self.evidence()}
-  with patch.object(store.repo,'candidates',return_value=[row]):out=store.list_candidates(5,2,'p')
+  with patch.object(store.repo,'candidates',return_value=[row]),patch('services.quant_factor.presentation.context',return_value={'branches':{},'labels':{},'trials':[]}):out=store.list_candidates(5,2,'p')
   self.assertEqual(set(out[0]['evidence']),{'development'});self.assertEqual(out[0]['evidence']['development']['run_id'],'actual-run');self.assertNotIn('result',out[0]['evidence']['development'])
  def test_actual_assistant_candidate_context_uses_same_mixed_evidence_safely(self):
   suggestion={'hypothesis':'假设','target':'目标','acceptance':'方法','summary':'已有研发未通过','limitations':['尚未通过查重']}

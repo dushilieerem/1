@@ -1,3 +1,4 @@
+import {staticResearchSample,researchScopeLabel} from '@/lib/factorPresentation';
 import {useEffect,useState} from 'react';
 import {getProject,saveProject,DETECT_UNIVERSE_OPTIONS,DETECT_BENCHMARK_OPTIONS,DETECT_GROUP_OPTIONS,type DetectProject,type DetectProjectConfig} from '@/lib/detectStore';
 const keys=['universe','benchmark','portfolioType','groups','rebalanceDays','executionTiming','commissionRate','stampTax','slippageRate','filterSt','filterSuspended','filterLimitUp','filterLimitDown'] as const;
@@ -5,6 +6,7 @@ const fingerprint=(c:DetectProjectConfig)=>JSON.stringify(keys.map(k=>c[k]));
 export function FactorResearchParameters({project,onSaved,onDirty}:{project:DetectProject;onSaved:(p:DetectProject)=>void;onDirty:(dirty:boolean)=>void}){
  const [draft,setDraft]=useState(project.config),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  useEffect(()=>{setDraft(project.config);},[project]);
+ const sample=staticResearchSample(draft);
  const dirty=fingerprint(draft)!==fingerprint(project.config);
  useEffect(()=>{onDirty(dirty);return()=>onDirty(false);},[dirty,onDirty]);
  function change<K extends keyof DetectProjectConfig>(key:K,value:DetectProjectConfig[K]){setDraft(d=>({...d,[key]:value}));setNotice('');}
@@ -17,7 +19,7 @@ export function FactorResearchParameters({project,onSaved,onDirty}:{project:Dete
   const saved=await saveProject({...fresh,config});onSaved(saved);setNotice('研发参数已保存。下方检验将冻结这些参数。');
  }catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}}
  return <form onSubmit={e=>{e.preventDefault();void save();}} aria-label="机构因子研发参数">
- <div className="form-grid"><label className="field"><span>研究股票池</span><select value={draft.universe} onChange={e=>change('universe',e.target.value)}>{DETECT_UNIVERSE_OPTIONS.map(x=><option key={x.code} value={x.code}>{x.code==='CSI_ALL'?'全A（当前数据口径含B股）':x.label}</option>)}</select></label><label className="field"><span>比较基准</span><select value={draft.benchmark} onChange={e=>change('benchmark',e.target.value)}>{DETECT_BENCHMARK_OPTIONS.map(x=><option key={x.code} value={x.code}>{x.label}</option>)}</select></label>
+ <div className="form-grid"><label className="field"><span>研究股票池</span>{sample?<><input readOnly aria-label="实际研究样本" value={researchScopeLabel(draft)}/><details><summary>查看固定证券清单</summary><p className="break-words">{sample.join('、')}</p></details><small>静态研究样本，不代表历史指数成分。此处查看已保存范围，股票池选项不会覆盖它。</small></>:<select value={draft.universe} onChange={e=>change('universe',e.target.value)}>{DETECT_UNIVERSE_OPTIONS.map(x=><option key={x.code} value={x.code}>{x.code==='CSI_ALL'?'全A（当前数据口径含B股）':x.label}</option>)}</select>}</label><label className="field"><span>比较基准</span><select value={draft.benchmark} onChange={e=>change('benchmark',e.target.value)}>{DETECT_BENCHMARK_OPTIONS.map(x=><option key={x.code} value={x.code}>{x.label}</option>)}</select></label>
  <label className="field"><span>分层数</span><select value={draft.groups} onChange={e=>change('groups',Number(e.target.value))}>{DETECT_GROUP_OPTIONS.map(n=><option key={n} value={n}>{n} 组</option>)}</select></label><label className="field"><span>调仓间隔（交易日）</span><input type="number" required min={1} max={252} value={draft.rebalanceDays} onChange={e=>change('rebalanceDays',Number(e.target.value))}/></label>
  <label className="field"><span>收益诊断组合</span><select value={draft.portfolioType} onChange={e=>change('portfolioType',e.target.value)}><option value="long_only">多头组合</option><option value="long_short">多空诊断组合</option></select></label><label className="field"><span>成交时点</span><select value={draft.executionTiming||'next_close'} onChange={e=>change('executionTiming',e.target.value as DetectProjectConfig['executionTiming'])}>{draft.executionTiming==='same_close'&&<option value="same_close">历史同日收盘（须更改）</option>}<option value="next_open">次日开盘</option><option value="next_close">次日收盘</option></select></label>
  {([['commissionRate','单边佣金率（%）'],['stampTax','卖出印花税率（%）'],['slippageRate','滑点率（%）']] as const).map(([key,label])=><label className="field" key={key}><span>{label}</span><input required type="number" min={0} max={10} step={.001} value={Number((draft[key]*100).toFixed(8))} onChange={e=>change(key,Number(e.target.value)/100)}/></label>)}

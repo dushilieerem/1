@@ -50,7 +50,7 @@ class SealedRunTest(unittest.TestCase):
   snap={'rules':{},'request':REQUEST};cand={'snapshot':snap,'snapshot_hash':digest(snap),'evidence':{}}
   c=MagicMock();c.execute.return_value.fetchall.return_value=[]
   @contextmanager
-  def locked(*args):yield c,cand,{'id':'t1','primary_holding_period':1}, {'id':'p'},row
+  def locked(*args):yield c,cand,{'id':'t1','primary_holding_period':1,'status':'active'}, {'id':'p'},row
   def persist(uid,org,cid,sid,status,block,report_id=None):writes.append((status,copy.deepcopy(block)));return True
   with patch.object(sealed,'_read',return_value=row),patch.object(sealed,'_candidate',return_value=cand),patch.object(sealed,'_locked',locked),patch.object(sealed,'_persist',side_effect=persist),patch.object(sealed,'_assert_unexposed'),patch.object(sealed,'snapshot',return_value=snap),patch.object(sealed,'_row_project',side_effect=lambda x:x),patch('services.quant_factor.causality.diagnose_source'),patch('services.quant_factor.resources.require',return_value=RECEIPT),patch.object(sealed.re_client,'base',return_value=TARGET['base']),patch.object(sealed,'proxy_submit_factor_backtest',side_effect=lambda req,**kwargs:(submit(req) if submit else (202,{}, {'run_id':'remote-1'}))) as post,patch.object(sealed,'proxy_get_factor_run',side_effect=lambda rid,**kwargs:(poll(rid) if poll else (200,{}, {'status':'succeeded','result':{'meta':EXPECTED}}))) as get,patch.object(sealed.ledger,'current_k',return_value=1),patch.object(sealed,'evaluate',return_value={'passed':True,'checks':[]}):
    sealed._run_once(1,2,'s1')
@@ -78,3 +78,31 @@ class SealedRunTest(unittest.TestCase):
  def test_changed_identity_never_becomes_passed(self):
   writes,c,_,_=self.execute(block={**ROW['result'],'run_id':'old-run'},poll=lambda rid:(200,{}, {'status':'succeeded','result':{'meta':{**EXPECTED,'spec_hash':'wrong'}}}))
   self.assertEqual(writes[-1][0],'error');self.assertFalse(any('evaluated_at=NOW' in x.args[0] for x in c.execute.call_args_list))
+
+class SealedControlTests(unittest.TestCase):
+ def test_paused_topic_rejects_new_seal_before_any_evidence_or_submit(self):
+  with self.assertRaisesRegex(WorkflowError,'暂停'):sealed._require_controller(MagicMock(),1,2,{'status':'paused'},{'run_id':'old','worker_epoch':'old'})
+ def test_superseded_f0_rejects_new_seal_inside_request_lock(self):
+  c=MagicMock();c.execute.return_value.fetchone.return_value=None
+  @contextmanager
+  def locked(*args):yield c,{'project_id':'p'},{'status':'active','project_id':'p'},None,None
+  with patch.object(sealed,'_locked',locked),patch.object(sealed,'_check_new') as check,patch.object(sealed.POOL,'submit') as submit,self.assertRaisesRegex(WorkflowError,'控制版本'):sealed.request(1,2,'c','old','old-epoch')
+  check.assert_not_called();submit.assert_not_called()
+
+ def test_manual_explicit_request_does_not_require_automatic_worker_or_active_topic(self):
+  c=MagicMock();c.execute.return_value.fetchone.side_effect=[{'n':0},{**ROW,'id':'manual'}]
+  @contextmanager
+  def locked(*args):yield c,{'project_id':'p','snapshot_hash':'fixed'},{'status':'paused','id':'t','max_sealed':1,'view_id':'v'},None,None
+  with patch.object(sealed,'_locked',locked),patch.object(sealed,'_check_new',return_value=({},[])),patch.object(sealed,'_require_controller') as guard,patch.object(sealed.POOL,'submit'):
+   self.assertEqual(sealed.request(1,2,'c')['id'],'manual')
+  guard.assert_not_called()
+ def test_global_pause_blocks_automatic_controller_before_worker_or_new_submission(self):
+  c=MagicMock();c.execute.return_value.fetchone.return_value={'paused':True}
+  with self.assertRaisesRegex(WorkflowError,'全局暂停'):sealed._require_controller(c,1,2,{'status':'active'},{'run_id':'r','worker_epoch':'e'})
+ def test_post_seal_review_uses_actual_controlled_review_scope(self):
+  from services.quant_factor import review
+  c=MagicMock()
+  @contextmanager
+  def locked(*args):yield c,{}, {'status':'paused'},None,None
+  with patch.object(sealed,'_locked',locked),self.assertRaisesRegex(WorkflowError,'暂停'):review.request_review(1,2,'c','问题',controller={'run_id':'old','worker_epoch':'old'})
+  c.execute.assert_not_called()

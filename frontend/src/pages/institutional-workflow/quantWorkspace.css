@@ -239,3 +239,27 @@
 .quant-shell .ff-fold{border:1px solid var(--border);border-radius:8px;background:white;margin-top:14px;font-size:12px}.quant-shell .ff-fold>summary{cursor:pointer;padding:14px 16px;color:#62516f}.quant-shell .ff-fold>div{padding:0 16px 17px}
 
 .quant-shell .factor-review-dialog{border:0;border-radius:10px;padding:0;margin:auto;max-width:min(680px,calc(100vw - 32px));max-height:calc(100vh - 40px);background:white;color:var(--ink)}.quant-shell .factor-review-dialog::backdrop{background:#251b344d}.quant-shell .factor-review-dialog .modal{max-width:100%;box-shadow:none}
+
+/* CR099: readable factor content; existing grids, navigation and palette remain. */
+.quant-shell .ff-detail,.quant-shell .factor-workspace,.quant-shell .quant-factor-report{font-size:14px;line-height:1.75}
+.quant-shell .ff-detail-head h2{font-size:22px}.quant-shell .ff-detail h3,.quant-shell .factor-workspace h3{font-size:17px}
+.quant-shell .ff-stage-card .card-body,.quant-shell .ff-live .card-body,.quant-shell .factor-workspace .card-body,.quant-shell .quant-factor-report .qr-section{padding:20px}
+.quant-shell .ff-detail .fine,.quant-shell .ff-detail .subtle,.quant-shell .ff-detail small,.quant-shell .ff-task-list small,.quant-shell .factor-workspace .fine,.quant-shell .factor-workspace small,.quant-shell .quant-factor-report small{font-size:12px;line-height:1.7}
+.quant-shell .ff-copy,.quant-shell .ff-now,.quant-shell .ff-detail .hint,.quant-shell .ff-task-list b,.quant-shell .ff-step b{font-size:14px}
+.quant-shell .ff-detail td,.quant-shell .quant-factor-report td{white-space:normal;overflow-wrap:anywhere;font-size:14px}
+.quant-shell .ff-detail pre,.quant-shell .factor-workspace pre,.quant-shell .quant-factor-report pre{max-width:100%;overflow:auto}
+.quant-shell .ff-detail summary,.quant-shell .factor-workspace summary{min-height:32px;cursor:pointer}
+
+/* CR099: inspect deterministic gates before return charts. */
+.quant-factor-report .qr-gate-summary{display:block;font-size:14px;padding:20px;margin:16px 0}
+.quant-factor-report .qr-gate-summary h3{font-size:17px;margin:0 0 14px}
+.qr-gate-checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.qr-gate-check{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px 16px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.qr-gate-check>strong{font-size:14px}.qr-gate-check>span{font-size:14px;overflow-wrap:anywhere}.qr-gate-check p{grid-column:1/-1;margin:0;font-size:12px}.qr-gate-check .fail{font-weight:650;color:var(--danger,#9b3450)}
+@media(max-width:760px){.qr-gate-checks{grid-template-columns:1fr}}
+
+/* Match the real factory selectors, including their former small-font rules. */
+.quant-shell .ff-task strong,.quant-shell .ff-kv,.quant-shell .ff-live .ff-now,.quant-shell .ff-live li,.quant-shell .ff-error{font-size:14px;line-height:1.75}
+.quant-shell .ff-live{padding:20px;font-size:14px}.quant-shell .ff-live p{font-size:14px;line-height:1.75}
+.quant-shell .ff-task time,.quant-shell .ff-detail-head p,.quant-shell .ff-step small,.quant-shell .ff-step em,.quant-shell .ff-label,.quant-shell .ff-live time,.quant-shell .ff-error details{font-size:12px;line-height:1.7}
+.quant-shell .ff-stage-grid .card-head,.quant-shell .ff-stage-grid .card-body{padding:20px}

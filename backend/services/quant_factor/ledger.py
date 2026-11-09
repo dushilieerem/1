@@ -310,9 +310,11 @@ def set_topic_status(uid: int, org: int, topic_id: str, status: str) -> dict:
     if topic["status"] == "archived":
         raise ValueError("已归档课题不能恢复")
     with get_conn() as c:
-        row = c.execute(
-            "UPDATE quant_factor_topics SET status=%s,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s RETURNING *",
-            (status, topic_id, uid, org)).fetchone()
+        c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9106,uid))
+        c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(f"quant-factor-start:{uid}:{org}:{topic_id}",))
+        c.execute('SELECT id FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,topic['project_id']))
+        c.execute("UPDATE detect_projects SET config=jsonb_set(COALESCE(config,'{}'::jsonb),'{v5ControlEpoch}',to_jsonb(%s::text)),updated_at=NOW() WHERE user_id=%s AND id=%s",(str(uuid.uuid4()),uid,topic['project_id']))
+        row=c.execute('UPDATE quant_factor_topics SET status=%s,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s RETURNING *',(status,topic_id,uid,org)).fetchone()
     return _public(row)
 
 
@@ -406,57 +408,67 @@ def list_branches(uid: int, org: int, topic_id: str) -> list[dict]:
     return [_public(row) for row in _branches(uid, org, topic_id)]
 
 
-def takeover_branch(uid: int, org: int, topic_id: str, parent_id: str) -> dict:
-    """Create a manual branch from a real parent and make it the active workbench branch."""
-    topic = _topic(uid, org, topic_id)
+def _lock_workbench(c,uid,org,topic,allow_paused_orchestrator=False):
+    c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9106,uid))
+    c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(f"quant-factor-start:{uid}:{org}:{topic['id']}",))
+    project=c.execute('SELECT * FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,topic['project_id'])).fetchone()
+    if not project:raise KeyError(topic['project_id'])
+    current_topic=c.execute('SELECT status FROM quant_factor_topics WHERE id=%s AND user_id=%s AND org_id=%s',(topic['id'],uid,org)).fetchone()
+    paused_takeover=allow_paused_orchestrator and current_topic and current_topic['status']=='paused'
+    for table,clause in [('quant_factor_f0_runs',"status IN ('queued','running')"),('quant_factor_candidates',"status LIKE '%%_running'"),('quant_factor_agent_jobs',"status IN ('queued','running')"),('quant_factor_iterations',"status IN ('queued','running')"),('quant_factor_sealed_validations',"status IN ('queued','running')")]:
+        if paused_takeover and table in ('quant_factor_f0_runs','quant_factor_agent_jobs'):continue
+        if c.execute('SELECT id FROM '+table+' WHERE user_id=%s AND org_id=%s AND project_id=%s AND '+clause+' LIMIT 1',(uid,org,topic['project_id'])).fetchone():raise ValueError('当前仍有研究或检验在运行，请先等待结束或暂停接管')
+    pending=c.execute("SELECT id FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s AND (archive->'review'->>'status'='requested' OR archive->'research_asset' IS NOT NULL) LIMIT 1",(uid,org,topic['project_id'])).fetchone()
+    if pending:raise ValueError('当前有待复核或已登记版本；请先结束复核，已登记成果请从因子库另建研究任务')
+    if paused_takeover:
+        c.execute("UPDATE quant_factor_agent_jobs SET status='cancelled',input=input||%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE user_id=%s AND org_id=%s AND project_id=%s AND status IN ('queued','running')",(json.dumps({'superseded_by_manual_takeover':True}),json.dumps([{'action':'manual_takeover','message':'人工已接手，旧建议不再自动回填；迟到产物保留供查看。'}],ensure_ascii=False),uid,org,topic['project_id']))
+        c.execute("UPDATE quant_factor_f0_runs SET status='stopped',stop_reason='人工已暂停并接手，迟到建议不写入当前工程',updated_at=NOW() WHERE user_id=%s AND org_id=%s AND project_id=%s AND status IN ('queued','running')",(uid,org,topic['project_id']))
+    return dict(project)
+
+
+def takeover_branch(uid:int,org:int,topic_id:str,parent_id:str,candidate_id=None,acknowledged=False,expected_control_epoch=None)->dict:
+    """Explicitly fork the selected frozen definition; never relabel an old candidate."""
+    if acknowledged is not True:raise ValueError('请明确确认所选候选及接手分支')
+    topic=_topic(uid,org,topic_id)
     with get_conn() as c:
-        parent = c.execute(
-            """SELECT * FROM quant_factor_branches
-               WHERE id=%s AND user_id=%s AND org_id=%s AND topic_id=%s""",
-            (parent_id, uid, org, topic_id)).fetchone()
-        if not parent:
-            raise KeyError(parent_id)
-        branch_id = str(uuid.uuid4())
-        c.execute(
-            """INSERT INTO quant_factor_branches
-               (id,user_id,org_id,topic_id,parent_id,source,owner_id,hypothesis_version,implementation_version,title)
-               VALUES (%s,%s,%s,%s,%s,'manual',%s,%s,%s,'人工接手')""",
-            (branch_id, uid, org, topic_id, parent_id, uid,
-             int(parent["hypothesis_version"]) + 1, int(parent["implementation_version"])))
-        c.execute(
-            """UPDATE detect_projects
-               SET config=jsonb_set(COALESCE(config,'{}'::jsonb),'{v5ActiveBranch}',to_jsonb(%s::text)),
-                   updated_at=NOW()
-               WHERE user_id=%s AND id=%s""",
-            (branch_id, uid, topic["project_id"]))
-        row = c.execute("SELECT * FROM quant_factor_branches WHERE id=%s", (branch_id,)).fetchone()
-    return _public(row)
+        project=_lock_workbench(c,uid,org,topic,allow_paused_orchestrator=True)
+        if expected_control_epoch is not None and (project.get('config') or {}).get('v5ControlEpoch')!=expected_control_epoch:raise ValueError('工作控制版本已变化，请重新核对接手对象，未覆盖当前工程')
+        parent=c.execute('SELECT * FROM quant_factor_branches WHERE id=%s AND user_id=%s AND org_id=%s AND topic_id=%s',(parent_id,uid,org,topic_id)).fetchone()
+        if not parent:raise KeyError(parent_id)
+        if not candidate_id:raise ValueError('请明确选择此分支的冻结候选，再从该版本接手修订')
+        candidate=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND user_id=%s AND org_id=%s AND project_id=%s FOR UPDATE',(candidate_id,uid,org,topic['project_id'])).fetchone()
+        if not candidate:raise KeyError(candidate_id)
+        trial=c.execute("SELECT id FROM quant_factor_trials WHERE user_id=%s AND org_id=%s AND topic_id=%s AND branch_id=%s AND report_id=%s LIMIT 1",(uid,org,topic_id,parent_id,'qf_'+candidate_id+'_development')).fetchone()
+        if not trial or (candidate.get('evidence') or {}).get('branch_id') not in (None,parent_id):raise ValueError('所选候选与父分支不一致，未接手其他分支')
+        from .presentation import checkout_config
+        branch_id=str(uuid.uuid4());config=checkout_config(project.get('config') or {},dict(candidate),branch_id);config['v5ControlEpoch']=str(uuid.uuid4())
+        c.execute("""INSERT INTO quant_factor_branches
+            (id,user_id,org_id,topic_id,parent_id,source,owner_id,hypothesis_version,implementation_version,title)
+            VALUES (%s,%s,%s,%s,%s,'manual',%s,%s,%s,'人工接手')""",(branch_id,uid,org,topic_id,parent_id,uid,int(parent['hypothesis_version'])+1,int(parent['implementation_version'])))
+        c.execute('UPDATE detect_projects SET config=%s::jsonb,updated_at=NOW() WHERE user_id=%s AND id=%s',(json.dumps(config,ensure_ascii=False),uid,topic['project_id']))
+        row=dict(c.execute('SELECT * FROM quant_factor_branches WHERE id=%s',(branch_id,)).fetchone())
+    return {**_public(row),'source_candidate_id':candidate_id,'requires_new_validation':True}
 
 
-def activate_branch(uid: int, org: int, topic_id: str, branch_id: str) -> dict:
-    topic = _topic(uid, org, topic_id)
+def activate_branch(uid:int,org:int,topic_id:str,branch_id:str,acknowledged=False,expected_active_branch=None)->dict:
+    """Bind only an explicitly confirmed working draft. GET/navigation never calls this."""
+    if acknowledged is not True:raise ValueError('请确认当前工作稿与目标分支后再写入')
+    topic=_topic(uid,org,topic_id)
     with get_conn() as c:
-        branch = c.execute(
-            "SELECT id,source FROM quant_factor_branches WHERE id=%s AND user_id=%s AND org_id=%s AND topic_id=%s",
-            (branch_id, uid, org, topic_id)).fetchone()
-        if not branch:
-            raise KeyError(branch_id)
-        c.execute(
-            """UPDATE detect_projects SET config=jsonb_set(COALESCE(config,'{}'::jsonb),'{v5ActiveBranch}',to_jsonb(%s::text)),updated_at=NOW()
-               WHERE user_id=%s AND id=%s""", (branch_id, uid, topic["project_id"]))
-    return {"topic_id": topic_id, "branch_id": branch_id, "source": branch["source"]}
+        project=_lock_workbench(c,uid,org,topic);config=dict(project.get('config') or {})
+        if config.get('v5ActiveBranch')!=expected_active_branch:raise ValueError('工作分支已变化，请重新读取并确认，未覆盖其他分支')
+        branch=c.execute('SELECT id,source FROM quant_factor_branches WHERE id=%s AND user_id=%s AND org_id=%s AND topic_id=%s',(branch_id,uid,org,topic_id)).fetchone()
+        if not branch:raise KeyError(branch_id)
+        recorded=c.execute('SELECT id FROM quant_factor_trials WHERE user_id=%s AND org_id=%s AND topic_id=%s AND branch_id=%s LIMIT 1',(uid,org,topic_id,branch_id)).fetchone()
+        if recorded:raise ValueError('该分支已有冻结试验，请选择明确候选并接手为新修订，不能将当前工程稿覆盖过去')
+        config['v5ActiveBranch']=branch_id;config['v5ControlEpoch']=str(uuid.uuid4())
+        c.execute('UPDATE detect_projects SET config=%s::jsonb,updated_at=NOW() WHERE user_id=%s AND id=%s',(json.dumps(config,ensure_ascii=False),uid,topic['project_id']))
+    return {'topic_id':topic_id,'branch_id':branch_id,'source':branch['source'],'binding_confirmed':True,'control_epoch':config['v5ControlEpoch']}
 
 
-def handback_branch(uid: int, org: int, topic_id: str) -> dict:
-    """Clear the active manual branch. F0 hand-back is not available yet."""
-    topic = _topic(uid, org, topic_id)
-    with get_conn() as c:
-        c.execute(
-            """UPDATE detect_projects
-               SET config=config-'v5ActiveBranch', updated_at=NOW()
-               WHERE user_id=%s AND id=%s""",
-            (uid, topic["project_id"]))
-    return {"active_branch": None, "agent_handback": "未接入：F0 自动推进尚未上线"}
+def handback_branch(uid:int,org:int,topic_id:str)->dict:
+    _topic(uid,org,topic_id)
+    raise ValueError('请从已保存的人工版本明确交回研究系统；此旧入口不会清除当前分支')
 
 
 def _branch_labels(uid: int, org: int, topic_id: str, branches: list[dict]) -> dict:
@@ -578,6 +590,8 @@ def ledger_view(uid: int, org: int, topic_id: str) -> dict:
                 title = f"假设 v{b.get('hypothesis_version', 1)}"
         b["display_title"] = title
         b["hypothesis_text"] = titles.get(b["id"]) or ""
+        from .presentation import branch_sources
+        b.update(branch_sources(b,latest_trial.get(b['id'])))
         b["source_label"] = "人工" if b.get("source") == "manual" else "Agent"
         s_status = sealed.get(b["id"])
         review = reviews.get(b["id"]) or {}
@@ -604,6 +618,8 @@ def ledger_view(uid: int, org: int, topic_id: str) -> dict:
                 b["display_status"] = "人工接手，待检验" if b.get("parent_id") else "待启动"
             else:
                 b["display_status"] = "待检验"
+    for trial in trials:
+        trial['branch_label']=labels.get(trial.get('branch_id'))
     with get_conn() as c:
         f0 = c.execute(
             "SELECT status,stop_reason,created_at FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at DESC LIMIT 1",

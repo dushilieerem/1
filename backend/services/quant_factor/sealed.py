@@ -59,6 +59,15 @@ def _assert_unexposed(c,uid,org,topic):
     if exposed:raise WorkflowError('此任务已有研究侧样本外检验记录，不能再视为未曝光的独立验证；请建立新的验证计划，原记录保留')
 
 
+def _require_controller(c,uid,org,topic,controller):
+    if topic.get('status')!='active':raise WorkflowError('任务已暂停或归档，旧自动动作未继续')
+    c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(f'quant-factor-org-control:{org}',))
+    control=c.execute('SELECT paused FROM quant_factor_org_controls WHERE org_id=%s',(org,)).fetchone()
+    if control and control['paused']:raise WorkflowError('自动研究已全局暂停，旧动作未继续')
+    owner=c.execute("SELECT id FROM quant_factor_f0_runs WHERE id=%s AND user_id=%s AND org_id=%s AND project_id=%s AND status='running' AND decision->>'runner_epoch'=%s",(controller['run_id'],uid,org,topic['project_id'],controller['worker_epoch'])).fetchone()
+    if not owner:raise WorkflowError('当前研究控制版本已变化，旧自动动作未继续')
+
+
 def _check_new(c,uid,org,cand,topic,project):
     if cand['status']!='development_passed':raise WorkflowError('只有研发检验通过的候选可以申请封存验证')
     if (cand.get('archive') or {}).get('research_asset'):raise WorkflowError('已登记版本不能重新验证')
@@ -84,7 +93,7 @@ def _check_new(c,uid,org,cand,topic,project):
             'snapshot_hash':cand['snapshot_hash'],'topic_id':topic['id'],'identity_method':receipt['identity_method'],'compute_backend':re_client.target(resource_receipt)},trials
 
 
-def request(uid,org,cid):
+def request(uid,org,cid,f0_run_id=None,worker_epoch=None):
     schedule=False
     with _locked(uid,org,cid) as (c,cand,topic,project,existing):
         if existing:
@@ -93,7 +102,10 @@ def request(uid,org,cid):
             schedule=existing['status'] in ACTIVE or (existing['status']=='error' and bool(block.get('run_id')) and block.get('confirmation')=='pending')
             row=existing
         else:
+            if f0_run_id:_require_controller(c,uid,org,topic,{'run_id':f0_run_id,'worker_epoch':worker_epoch})
             intent,trials=_check_new(c,uid,org,cand,topic,project)
+            if f0_run_id:intent['controller']={'run_id':f0_run_id,'worker_epoch':worker_epoch}
+
             n=c.execute('SELECT COUNT(*) AS n FROM quant_factor_sealed_validations WHERE user_id=%s AND org_id=%s AND topic_id=%s',(uid,org,topic['id'])).fetchone()['n']
             if n>=int(topic['max_sealed']):raise WorkflowError(f"课题封存验证已达上限 {topic['max_sealed']} 次")
             sid=str(uuid.uuid4());block={'intent':intent,'confirmation':'not_submitted'}
@@ -163,7 +175,23 @@ def _run_once(uid,org,sid):
             block['compute_backend']=current_target
             block.update(submission_started=True,confirmation='pending',message='正在确认独立验证结果')
             if not _persist(uid,org,cid,sid,'running',block):return
-            code,_,task=proxy_submit_factor_backtest(req,target=intent['compute_backend'])
+            # The durable unknown-submit marker is committed before any external
+            # request. Hold the existing actor/topic lock across this short submit
+            # so a completed pause/takeover cannot be followed by a new exposure.
+            with _locked(uid,org,cid) as (c,locked,topic,project,current):
+                if intent.get('controller') and topic.get('status')!='active':
+                    block.update(confirmation='cancelled',message='任务已暂停，独立验证尚未提交；原申请保留。')
+                    c.execute("UPDATE quant_factor_sealed_validations SET status='cancelled',result=%s::jsonb,updated_at=NOW() WHERE id=%s",(store.encode(block),sid));return
+                controller=intent.get('controller')
+                stale_controller=False
+                if controller:
+                    try:_require_controller(c,uid,org,topic,controller)
+                    except WorkflowError:stale_controller=True
+                if stale_controller or not project or digest(snapshot(_row_project(project)))!=intent['snapshot_hash']:
+                    block.update(confirmation='cancelled',message='研究控制版本或工程已变化，独立验证尚未提交；原申请保留。')
+                    c.execute("UPDATE quant_factor_sealed_validations SET status='cancelled',result=%s::jsonb,updated_at=NOW() WHERE id=%s",(store.encode(block),sid));return
+                code,_,task=proxy_submit_factor_backtest(req,target=intent['compute_backend'])
+
             if code not in (200,202) or not isinstance(task,dict) or not task.get('run_id'):raise WorkflowError('提交结果尚未确认，原验证额度保留；请核对原任务，不会重复提交')
             rid=task['run_id'];block['run_id']=rid
             if not _persist(uid,org,cid,sid,'running',block):return

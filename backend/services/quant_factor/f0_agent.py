@@ -125,7 +125,7 @@ def _context(uid, org, topic, run_id):
         "trials": [{k: t.get(k) for k in (
             "trial_no", "branch_id", "kind", "outcome", "returned_metrics", "rerun_of", "report_id")}
             for t in trials[-8:]],
-        "latest_report": summary,
+        "latest_report": summary, "manual_handoff": ((run_row or {}).get("decision") or {}).get("manual_handoff"),
         "research_question": {"hypothesis": plan.get("hypothesis") or cfg.get("description") or topic.get("name"),
                               "objective": plan.get("target"), "acceptance": plan.get("acceptance")},
         "branches": [{**b, "latest_trial": next(({"trial_no": t.get("trial_no"), "outcome": t.get("outcome"),
@@ -201,7 +201,32 @@ def _wait_candidate(uid, org, cid):
     return cand
 
 
-def _ensure_initial_implementation(uid, org, project_id, topic_id, branch_id, run_id):
+def _project_stamp(project):
+    from .policy import digest
+    return digest({key:project.get(key) for key in ('id','name','description','config','updatedAt')})
+
+
+from contextlib import contextmanager
+
+@contextmanager
+def _writable_project(uid,org,project,topic_id,run_id,worker_epoch=None):
+    from services.factor.detect_store import _row_project
+    with get_conn() as c:
+        c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9106,uid))
+        c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(f'quant-factor-start:{uid}:{org}:{topic_id}',))
+        row=c.execute('SELECT * FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,project['id'])).fetchone()
+        topic=c.execute('SELECT status FROM quant_factor_topics WHERE id=%s AND user_id=%s AND org_id=%s',(topic_id,uid,org)).fetchone()
+        run=c.execute('SELECT status,decision FROM quant_factor_f0_runs WHERE id=%s AND user_id=%s AND org_id=%s',(run_id,uid,org)).fetchone()
+        if not row or not topic or not run or topic['status']!='active' or run['status']!='running' or (worker_epoch is not None and (run.get('decision') or {}).get('runner_epoch')!=worker_epoch):raise service.WorkflowError('研究已暂停或由人工接手，迟到建议保留，未写入当前工程')
+        if _project_stamp(_row_project(dict(row)))!=_project_stamp(project):raise service.WorkflowError('人工输入或控制版本已变化，迟到建议未覆盖当前工程')
+        yield c
+
+
+def _save_generated(c,uid,project,config,description):
+    c.execute('UPDATE detect_projects SET factor_name=%s,description=%s,config=%s::jsonb,updated_at=NOW() WHERE user_id=%s AND id=%s',((config.get('factorCodes') or [project.get('factorName','')])[0],description,service.store.encode(config),uid,project['id']))
+
+
+def _ensure_initial_implementation(uid, org, project_id, topic_id, branch_id, run_id,worker_epoch=None):
     """新发现课题没有起点因子时，先在当前 H1 生成并通过静态校验的实现。"""
     project = get_project(uid, project_id)["project"]
     cfg = project["config"]
@@ -231,13 +256,14 @@ def _ensure_initial_implementation(uid, org, project_id, topic_id, branch_id, ru
                 "draftFactor": {**(cfg.get("draftFactor") or {}), "name": fields["name"],
                                 "body": fields["code"], "description": plan.get("hypothesis") or ""},
                 "factorCodes": [fields["name"]], "v5ActiveBranch": branch_id}
-    upsert_project(uid, {**project, "config": next_cfg,
-                         "description": plan.get("hypothesis") or project.get("description") or ""})
-    return fields
+    description=plan.get('hypothesis') or project.get('description') or ''
+    with _writable_project(uid,org,project,topic_id,run_id,worker_epoch) as c:_save_generated(c,uid,project,next_cfg,description)
+    from .policy import digest,snapshot
+    return {**fields,'snapshot_hash':digest(snapshot({**project,'config':next_cfg,'description':description})),'control_epoch':next_cfg.get('v5ControlEpoch')}
 
 
-def _run_test(uid, org, project_id, f0_run_id=None):
-    cand = service.create(uid, org, project_id, executor='agent', f0_run_id=f0_run_id)
+def _run_test(uid, org, project_id, f0_run_id=None,expected_snapshot_hash=None,expected_control_epoch=None,expected_run_epoch=None):
+    cand = service.create(uid, org, project_id, expected_snapshot_hash=expected_snapshot_hash,executor='agent', f0_run_id=f0_run_id,expected_control_epoch=expected_control_epoch,expected_run_epoch=expected_run_epoch)
     return _wait_candidate(uid, org, cand["id"])
 
 
@@ -277,7 +303,7 @@ def _branch_code(uid, org, topic_id, branch_id):
     return (row or {}).get("code") or ""
 
 
-def _revise(uid, org, project_id, parent_id, decision, run_id, topic_id, scope_override=None):
+def _revise(uid, org, project_id, parent_id, decision, run_id, topic_id, scope_override=None,worker_epoch=None):
     project = get_project(uid, project_id)["project"]
     cfg = project["config"]
     plan = cfg.get("researchPlan") or {}
@@ -306,29 +332,23 @@ def _revise(uid, org, project_id, parent_id, decision, run_id, topic_id, scope_o
     fields = job["output"]["fields"]
     if not str(fields.get("code") or "").strip() or str(fields["code"]).strip() == old_code.strip():
         raise service.WorkflowError("F3 未产生与父分支不同的实现，记作无实质修订并停止，不新增检验")
-    with get_conn() as c:
-        parent = c.execute("SELECT * FROM quant_factor_branches WHERE id=%s AND user_id=%s AND org_id=%s AND topic_id=%s",
-                           (parent_id, uid, org, topic_id)).fetchone()
-        if not parent:
-            raise service.WorkflowError("F0 引用的分支不存在")
-        new_branch = str(uuid.uuid4())
+    with _writable_project(uid,org,project,topic_id,run_id,worker_epoch) as c:
+        parent=c.execute('SELECT * FROM quant_factor_branches WHERE id=%s AND user_id=%s AND org_id=%s AND topic_id=%s',(parent_id,uid,org,topic_id)).fetchone()
+        if not parent:raise service.WorkflowError('研究系统引用的父分支不存在')
+        new_branch=str(uuid.uuid4())
         c.execute("""INSERT INTO quant_factor_branches
-                     (id,user_id,org_id,topic_id,parent_id,source,owner_id,hypothesis_version,implementation_version,title)
-                     VALUES (%s,%s,%s,%s,%s,'agent',%s,%s,%s,%s)""",
-                  (new_branch, uid, org, topic_id, parent_id, uid,
-                   int(parent["hypothesis_version"]) + 1, int(parent["implementation_version"]) + 1,
-                   decision.title.strip()[:60] or "Agent 修订"))
-    cfg = {**cfg, "researchPlan": {**plan, "revision": "f0-" + run_id[:8], "hypothesis": hypothesis},
-           "draftFactor": {**(cfg.get("draftFactor") or {}), "name": fields["name"], "body": fields["code"],
-                           "description": hypothesis},
-           "factorCodes": [fields["name"]], "v5ActiveBranch": new_branch}
-    upsert_project(uid, {**project, "config": cfg, "description": hypothesis})
-    cand = _run_test(uid, org, project_id, run_id)
+            (id,user_id,org_id,topic_id,parent_id,source,owner_id,hypothesis_version,implementation_version,title)
+            VALUES (%s,%s,%s,%s,%s,'agent',%s,%s,%s,%s)""",(new_branch,uid,org,topic_id,parent_id,uid,int(parent['hypothesis_version'])+1,int(parent['implementation_version'])+1,decision.title.strip()[:60] or '研究系统修订'))
+        cfg={**cfg,'researchPlan':{**plan,'revision':'f0-'+run_id[:8],'hypothesis':hypothesis},'draftFactor':{**(cfg.get('draftFactor') or {}),'name':fields['name'],'body':fields['code'],'description':hypothesis},'factorCodes':[fields['name']],'v5ActiveBranch':new_branch}
+        _save_generated(c,uid,project,cfg,hypothesis)
+    from .policy import digest,snapshot
+    expected=digest(snapshot({**project,'config':cfg,'description':hypothesis}))
+    cand=_run_test(uid,org,project_id,run_id,expected,cfg.get('v5ControlEpoch'),worker_epoch)
     return {"branch_id": new_branch, "hypothesis": hypothesis, "candidate_id": cand["id"],
             "candidate_status": cand["status"], "f3_job": job["id"]}
 
 
-def execute(uid, org, run_id, topic, decision, step):
+def execute(uid, org, run_id, topic, decision, step,worker_epoch=None):
     action = decision.action
     if action == "stop":
         return {"status": "stopped", "reason": decision.stop_reason or "F0 选择停止"}
@@ -345,15 +365,19 @@ def execute(uid, org, run_id, topic, decision, step):
         cand = dict(cand)
         if cand["snapshot"]["plan"].get("researchPurpose") == "discovery" and not handoff_allowed(cand):
             return {"status": "stopped", "reason": "新颖性未通过或不可用，不能申请封存"}
-        row = sealed.request(uid, org, cand["id"])
+        row = sealed.request(uid,org,cand["id"],f0_run_id=run_id,worker_epoch=worker_epoch) if worker_epoch else sealed.request(uid,org,cand["id"])
         deadline = time.monotonic() + 1800
         while time.monotonic() < deadline:
             current = sealed.detail(uid, org, cand["id"], False)
             if current["status"] in ("passed", "failed", "error", "cancelled"):
-                if current["status"] == "passed":
-                    review.request_review(uid, org, cand["id"], "封存验证通过，提交独立复核；入库仍由复核人决定。")
-                elif current.get('confirmation')!='pending':
-                    review.open_seal_failed_review(uid, org, cand["id"], "封存未通过，进入复盘；不能入库")
+                try:
+                    guard={'controller':{'run_id':run_id,'worker_epoch':worker_epoch}} if worker_epoch else {}
+                    if current['status']=='passed':
+                        review.request_review(uid,org,cand['id'],'封存验证通过，提交独立复核；入库仍由复核人决定。',**guard)
+                    elif current.get('confirmation')!='pending':
+                        review.open_seal_failed_review(uid,org,cand['id'],'封存未通过，进入复盘；不能入库',**guard)
+                except service.WorkflowError:
+                    return {'status':'stopped','action':'request_seal','sealed_status':current['status'],'candidate_id':cand['id'],'reason':'独立验证证据已保存；研究已暂停、接手或控制版本变化，未继续自动送审。'}
                 return {"status": "completed" if current["status"] == "passed" else "stopped",
                         "action": "request_seal", "sealed_id": row["id"],
                         "sealed_status": current["status"],
@@ -363,7 +387,7 @@ def execute(uid, org, run_id, topic, decision, step):
         return {"status": "stopped", "reason": "原封存计算仍待确认，保留运行身份，请继续查询原任务"}
     if action in ("revise", "pivot"):
         try:
-            out = _revise(uid, org, topic["project_id"], decision.branch_id, decision, run_id, topic["id"])
+            out = _revise(uid, org, topic["project_id"], decision.branch_id, decision, run_id, topic["id"],worker_epoch=worker_epoch)
             return {"status": "completed", "action": action, **out}
         except service.WorkflowError as exc:
             if not _capability_failure(str(exc)):
@@ -371,7 +395,7 @@ def execute(uid, org, run_id, topic, decision, step):
             gaps = _capability_gaps(str(exc))
             try:
                 out = _revise(uid, org, topic["project_id"], decision.branch_id, decision, run_id,
-                              topic["id"], scope_override=_FALLBACK_SCOPE)
+                              topic["id"], scope_override=_FALLBACK_SCOPE,worker_epoch=worker_epoch)
                 return {"status": "completed", "action": action, "fallback": True,
                         "needed_capabilities": gaps, "capability_event": str(exc)[:400], **out}
             except service.WorkflowError as retry:
@@ -389,7 +413,12 @@ def execute(uid, org, run_id, topic, decision, step):
                 row = c.execute("SELECT id FROM quant_factor_branches WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at LIMIT 1",
                                 (uid, org, topic["id"])).fetchone()
             branch_id = row["id"] if row else None
-        _ensure_initial_implementation(uid, org, topic["project_id"], topic["id"], branch_id, run_id)
-    cand = _run_test(uid, org, topic["project_id"], run_id)
+        generated=_ensure_initial_implementation(uid, org, topic['project_id'], topic['id'], branch_id, run_id,worker_epoch)
+        expected=generated['snapshot_hash'];epoch=generated.get('control_epoch')
+    else:
+        from .policy import digest,snapshot
+        manual=ctx.get('manual_handoff') if step==1 else None
+        expected=manual['snapshot_hash'] if manual else digest(snapshot(project));epoch=manual.get('control_epoch') if manual else cfg.get('v5ControlEpoch')
+    cand=_run_test(uid,org,topic['project_id'],run_id,expected,epoch,worker_epoch)
     return {"status": "completed", "action": "run_test", "candidate_id": cand["id"],
             "candidate_status": cand["status"]}

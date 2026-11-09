@@ -267,10 +267,21 @@ def branch_create(tid:str,body:BranchBody,ctx=Depends(require_quant_researcher))
     from services.quant_factor import ledger
     return invoke_ledger(ledger.create_branch,*identity(ctx),tid,body.model_dump())
 
+class BranchTakeoverBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    expected_control_epoch:str=Field(min_length=1,max_length=100)
+    candidate_id:str|None=Field(default=None,max_length=100)
+    acknowledged:bool=False
+
+class BranchBindingBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    acknowledged:bool=False
+    expected_active_branch:str|None=Field(default=None,max_length=100)
+
 @router.post('/topics/{tid}/branches/{bid}/takeover')
-def branch_takeover(tid:str,bid:str,ctx=Depends(require_quant_researcher)):
+def branch_takeover(tid:str,bid:str,body:BranchTakeoverBody,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import ledger
-    return invoke_ledger(ledger.takeover_branch,*identity(ctx),tid,bid)
+    return invoke_ledger(ledger.takeover_branch,*identity(ctx),tid,bid,body.candidate_id,body.acknowledged,body.expected_control_epoch)
 
 @router.post('/topics/{tid}/pause')
 def topic_pause(tid:str,ctx=Depends(require_quant_researcher)):
@@ -283,9 +294,9 @@ def topic_resume(tid:str,ctx=Depends(require_quant_researcher)):
     return invoke_ledger(ledger.set_topic_status,*identity(ctx),tid,'active')
 
 @router.post('/topics/{tid}/branches/{bid}/activate')
-def branch_activate(tid:str,bid:str,ctx=Depends(require_quant_researcher)):
+def branch_activate(tid:str,bid:str,body:BranchBindingBody,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import ledger
-    return invoke_ledger(ledger.activate_branch,*identity(ctx),tid,bid)
+    return invoke_ledger(ledger.activate_branch,*identity(ctx),tid,bid,body.acknowledged,body.expected_active_branch)
 
 @router.post('/topics/{tid}/handback')
 def branch_handback(tid:str,ctx=Depends(require_quant_researcher)):
@@ -347,14 +358,22 @@ def sealed_detail(cid:str,ctx=Depends(require_quant_user)):
     return invoke(sealed.detail,uid,org,cid,full)
 
 
+class ManualHandoffBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    snapshot_hash:str=Field(min_length=64,max_length=64)
+    control_epoch:str=Field(min_length=1,max_length=100)
+    acknowledged:bool=False
+    note:str=Field(default='',max_length=2000)
+
 class F0Body(BaseModel):
     model_config=ConfigDict(extra='forbid')
     idempotency_key:str=Field(min_length=1,max_length=100)
+    handoff:ManualHandoffBody|None=None
 
 @router.post('/topics/{tid}/branches/{bid}/f0',status_code=202)
 def f0_start(tid:str,bid:str,body:F0Body,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import f0
-    return invoke_ledger(f0.start,*identity(ctx),tid,bid,body.idempotency_key)
+    return invoke_ledger(f0.start,*identity(ctx),tid,bid,body.idempotency_key,*([body.handoff.model_dump()] if body.handoff else []))
 
 @router.get('/topics/{tid}/f0-runs')
 def f0_latest(tid:str,ctx=Depends(require_quant_researcher)):
@@ -410,3 +429,9 @@ def source_check(project_id:str,body:SourceCheckBody,ctx=Depends(require_quant_r
     invoke(get_project,identity(ctx)[0],project_id)
     try:return diagnose_source(body.code,body.name)
     except (ValueError,SyntaxError) as exc:raise HTTPException(409,str(exc)) from exc
+
+
+@router.get('/projects/{project_id}/workbench')
+def read_workbench(project_id:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor.presentation import workbench
+    return invoke(workbench,*identity(ctx),project_id)

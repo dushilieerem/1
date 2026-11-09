@@ -1,3 +1,4 @@
+import {trialCandidateLabel,type CandidateIdentity} from '@/lib/factorPresentation';
 import {useEffect,useLayoutEffect,useMemo,useRef,useState,type ReactElement} from 'react';
 import {Link,useNavigate} from 'react-router-dom';
 import {researchFetch} from '@/lib/researchClient';
@@ -10,8 +11,8 @@ import {deriveFactorTaskState} from '@/lib/factorTaskState';
 import {clearStartKey,getOrCreateStartKey} from '@/lib/factorStartRequest';
 
 type Topic={id:string;display_no?:number;project_id:string;project_name:string;view_id:string;primary_holding_period:number;max_trials:number;max_sealed:number;sealed_used?:number;status:string;dispatch_status?:string|null;dispatch_stop_reason?:string|null;dispatch_action?:string|null;pending_review?:number;sealed_passed?:number;sealed_running?:number;sealed_failed?:number;approved_count?:number;registered_count?:number;latest_outcome?:string|null;research_purpose?:string|null;k:number;branch_count:number;trial_count:number;development_start?:string;development_end?:string;validation_start?:string;validation_end?:string;created_at?:string;updated_at?:string};
-type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;status:string;hypothesis_version:number;implementation_version:number;created_at?:string;display_label?:string;display_title?:string;hypothesis_text?:string;source_label?:string;display_status?:string};
-type Trial={trial_no:number;branch_id:string;kind:string;outcome:string;executor:string;report_id?:string|null;created_at?:string;returned_metrics?:boolean;rerun_of?:string|null;result_summary?:{gate?:{checks?:{name:string;actual:number|null;threshold:number;passed:boolean}[]}}};
+type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;status:string;hypothesis_version:number;implementation_version:number;created_at?:string;display_label?:string;display_title?:string;hypothesis_text?:string;source_label?:string;creation_label?:string;execution_label?:string;display_status?:string};
+type Trial={branch_label?:string;trial_no:number;branch_id:string;kind:string;outcome:string;executor:string;report_id?:string|null;created_at?:string;returned_metrics?:boolean;rerun_of?:string|null;result_summary?:{gate?:{checks?:{name:string;actual:number|null;threshold:number;passed:boolean}[]}}};
 type Ledger={topic:Topic;branches:Branch[];trials:Trial[];k:number;threshold:number|null;threshold_next_if_counted:number;next_trial_no:number;dispatch?:{status:string;stop_reason:string}|null};
 
 const statusText=(t:Pick<Topic,'status'|'dispatch_status'|'pending_review'|'sealed_passed'|'latest_outcome'>)=>{
@@ -40,10 +41,11 @@ export function QuantFactorHomePage(){
  const [selected,setSelected]=useState<string>();
  const [ledger,setLedger]=useState<Ledger>();
  const [project,setProject]=useState<DetectProject>();
- const [candidate,setCandidate]=useState<{snapshot?:{name?:string;plan?:{hypothesis?:string};request?:{factor_name?:string;factor_code?:string;library_name?:string}}}>();
+ const [candidate,setCandidate]=useState<{id?:string;status?:string;presentation?:CandidateIdentity;feedback_eligibility?:{allowed:boolean};archive?:{review?:{status:string}};snapshot?:{name?:string;plan?:{hypothesis?:string};request?:{factor_name?:string;factor_code?:string;library_name?:string}}}>();
  const selectedRef=useRef(selected);selectedRef.current=selected;
  const [updatesError,setUpdatesError]=useState('');
  const [node,setNode]=useState<string>();
+ const [inspectedBranch,setInspectedBranch]=useState<string>(),[inspectedTrial,setInspectedTrial]=useState<number>();
  const [f0,setF0]=useState<{id:string;status:string;decision?:{candidate_status?:string;reason?:string;current_action?:string;steps?:Array<{step:number;at?:string;decision:{action:string;rationale:string};usage?:{tokens_in?:number;tokens_out?:number};result:{status?:string;candidate_status?:string;reason?:string;branch_id?:string;needed_capabilities?:string[]}}>};stop_reason?:string}>();
  const [error,setError]=useState(''),[notice,setNotice]=useState(''),[starting,setStarting]=useState(false);
  const canManage=!!getQuantSession()?.can_manage;
@@ -103,7 +105,7 @@ export function QuantFactorHomePage(){
  useEffect(()=>{let alive=true;void researchFetch('/api/inst/quant/factor-workflow/controls').then(r=>r.ok?r.json():null).then(d=>{if(alive&&d)setPaused(!!d.paused);});return()=>{alive=false;};},[]);
 
  useEffect(()=>{
-  setLedger(undefined);setF0(undefined);setProject(undefined);setNode(undefined);setUpdatesError('');setError('');setAuthOpen(false);
+  setLedger(undefined);setF0(undefined);setProject(undefined);setNode(undefined);setInspectedBranch(undefined);setInspectedTrial(undefined);setUpdatesError('');setError('');setAuthOpen(false);
   if(!selected)return;
   let alive=true,busy=false;
   const id=selected;
@@ -131,16 +133,21 @@ export function QuantFactorHomePage(){
 
  async function handBackF0(){
   if(!ledger||ledger.topic.id!==selectedRef.current||!selectedBranch||starting)return;
-  setStarting(true);setError('');setNotice('正在提交研究决策…');
+  setStarting(true);setError('');setNotice('');
   try{
+   const capability=await researchFetch('/api/inst/quant/factor-workflow/projects/'+ledger.topic.project_id+'/workbench');const work=await capability.json();if(!capability.ok)throw Error('分支接力接口尚未加载，未改变研究');
+   if(f0?.id&&selectedBranch.source!=='manual'){await resumeF0();return;}
+   const isFresh=ledger.k===0&&!f0?.id;
+   if(!isFresh&&(!work.can_handoff||work.branch_id!==selectedBranch.id||selectedBranch.source!=='manual')){
+    if(neverDelegated&&window.confirm('交给Agent前，请先确认要继续的冻结候选并接手为新的工作版本。现在打开人工工作台？'))navigate('/quant/factor/workflow/'+ledger.topic.project_id+'/F3?branch='+encodeURIComponent(selectedBranch.id));
+    else setNotice('请先从明确候选接手并保存人工版本，再从对应分支交回。');return;
+   }
+   if(!window.confirm(isFresh?'启动这项研究并在当前授权范围和预算内交给Agent执行？':'从已保存的 '+(selectedBranch.display_label||'人工分支')+' 继续？同快照检验会复用，原试验计数和剩余额度保留。'))return;
    const requestKey=getOrCreateStartKey(sessionStorage,ledger.topic.id,selectedBranch.id,newUuidV4);
-   const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(ledger.topic.id)+'/branches/'+encodeURIComponent(selectedBranch.id)+'/f0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:requestKey})});
-   const d=await r.json();if(selectedRef.current!==ledger.topic.id)return;if(!r.ok){setNotice('');setError(typeof d.detail==='string'?d.detail:'F0 启动失败');return;}
-   clearStartKey(sessionStorage,ledger.topic.id,selectedBranch.id);
-   setF0(d);
-   setTopics(list=>list.map(t=>t.id===ledger.topic.id?{...t,dispatch_status:d.status,dispatch_stop_reason:''}:t));
-   setNotice(d.status==='queued'?'研究决策已提交，正在排队…':d.status==='running'?'研究决策已启动，正在运行…':'研究决策已创建，状态：'+d.status);
-  }catch(e){setNotice('');setError(e instanceof Error?e.message:String(e));}finally{setStarting(false);}
+   const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+ledger.topic.id+'/branches/'+selectedBranch.id+'/f0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:requestKey,...(!isFresh?{handoff:{snapshot_hash:work.snapshot_hash,control_epoch:work.control_epoch,acknowledged:true}}:{})})});
+   const d=await r.json();if(selectedRef.current!==ledger.topic.id)return;if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:'交回结果尚未确认，请核对原提交');
+   clearStartKey(sessionStorage,ledger.topic.id,selectedBranch.id);setF0(d);setTopics(list=>list.map(t=>t.id===ledger.topic.id?{...t,dispatch_status:d.status,dispatch_stop_reason:d.stop_reason||''}:t));setNotice(d.status==='queued'?'已从确认的人工版本交回研究系统，原台账和预算保留。':d.stop_reason||'已读取原研究状态。');
+  }catch(e){setError(e instanceof Error?e.message:String(e));}finally{setStarting(false);}
  }
 
  async function toggleGlobalPause(){
@@ -157,11 +164,14 @@ export function QuantFactorHomePage(){
  }
  async function resumeF0(){if(!f0)return;const r=await researchFetch('/api/inst/quant/factor-workflow/f0-runs/'+f0.id+'/resume',{method:'POST'});const d=await r.json();if(!r.ok){setError(typeof d.detail==='string'?d.detail:'F0 继续失败');return;}setF0(d);}
  async function takeOver(){
-  if(!ledger||ledger.topic.id!==selectedRef.current||!selectedBranch)return;
-  const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(ledger.topic.id)+'/branches/'+encodeURIComponent(selectedBranch.id)+'/takeover',{method:'POST'});
-  if(!r.ok){const d=await r.json().catch(()=>({}));setError(typeof d.detail==='string'?d.detail:'接手失败');return;}
-  navigate('/quant/factor/workflow/'+ledger.topic.project_id+'/F4');
+  if(!ledger||ledger.topic.id!==selectedRef.current||!selectedBranch)return;const trial=viewTrial?.branch_id===selectedBranch.id?viewTrial:[...(trialsByBranch.get(selectedBranch.id)||[])].reverse().find(t=>/^qf_.+_development$/.test(t.report_id||''));const cid=trial?.report_id?.match(/^qf_(.+)_development$/)?.[1];if(!cid){setError('所选分支尚无冻结试验，请先打开当前工作稿明确绑定。');return;}
+  const capability=await researchFetch('/api/inst/quant/factor-workflow/projects/'+ledger.topic.project_id+'/workbench');if(!capability.ok){setError('分支接力接口尚未加载，未暂停或改变研究。');return;}
+  if(!window.confirm('暂停自动研究，从 '+(selectedBranch.display_label||'所选分支')+' / E'+trial!.trial_no+' 的冻结定义接手修订？旧试验和已用预算保留。'))return;
+  const pause=await researchFetch('/api/inst/quant/factor-workflow/topics/'+ledger.topic.id+'/pause',{method:'POST'});if(!pause.ok){setError('暂停结果未确认，未接手');return;}
+  const frozenWork=await researchFetch('/api/inst/quant/factor-workflow/projects/'+ledger.topic.project_id+'/workbench');const pausedWork=await frozenWork.json();if(!frozenWork.ok||!pausedWork.control_epoch){setError('暂停后的工作版本未确认，未接手');return;}
+  const response=await researchFetch('/api/inst/quant/factor-workflow/topics/'+ledger.topic.id+'/branches/'+selectedBranch.id+'/takeover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({candidate_id:cid,acknowledged:true,expected_control_epoch:pausedWork.control_epoch})});const body=await response.json();if(!response.ok){setError(body.detail||'当前计算尚未完成，请等待结果落账后重试接手。');return;}navigate('/quant/factor/workflow/'+ledger.topic.project_id+'/F3?branch='+encodeURIComponent(body.id));
  }
+
  const children=useMemo(()=>{const map=new Map<string,Branch[]>();for(const b of ledger?.branches||[])map.set(b.parent_id||'root',[...(map.get(b.parent_id||'root')||[]),b]);return map;},[ledger]);
  const trialsByBranch=useMemo(()=>{const map=new Map<string,Trial[]>();for(const t of ledger?.trials||[])map.set(t.branch_id,[...(map.get(t.branch_id)||[]),t]);return map;},[ledger]);
  useLayoutEffect(()=>{
@@ -262,10 +272,12 @@ export function QuantFactorHomePage(){
  },[topics,taskQuery,taskFilter,selected]);
  useEffect(()=>{if(!filteredTopics.length)return;if(!filteredTopics.some(t=>t.id===selected))setSelected(filteredTopics[0].id);},[filteredTopics.map(t=>t.id).join(','),selected]);
  const workLabels:Record<string,string>={run_test:'正在检验因子实现',revise:'正在修订假设与实现',pivot:'正在探索新的研究分支',request_seal:'正在整理并执行独立验证'};
- const agentWork=(f0?.status==='running'?workLabels[f0.decision?.current_action||'']:undefined)||taskState?.label||'暂无运行中的任务';
+ const neverDelegated=!f0?.id&&!topic?.dispatch_status;
+ const startLabel=taskState?.key==='draft'?'启动挖掘':neverDelegated?'交给Agent研究':'重试启动';
+ const agentWork=neverDelegated?'尚未委托自动研究，可继续人工研究或明确交给Agent':(f0?.status==='running'?workLabels[f0.decision?.current_action||'']:undefined)||taskState?.label||'暂无运行中的任务';
  const selectedBranch=(ledger?.branches||[]).find(b=>b.id===node);
  const latestDevelopmentTrial=[...(ledger?.trials||[])].filter(t=>!String(t.kind).includes('sealed')).sort((a,b)=>b.trial_no-a.trial_no)[0];
- const currentBranchId=f0?.decision?.steps?.at(-1)?.result.branch_id||latestDevelopmentTrial?.branch_id;
+ const currentBranchId=inspectedBranch||f0?.decision?.steps?.at(-1)?.result.branch_id||latestDevelopmentTrial?.branch_id;
  const currentBranch=(ledger?.branches||[]).find(b=>b.id===currentBranchId)||(ledger?.branches||[]).at(-1);
  const currentVersion=currentBranch?.implementation_version||1;
  const feed=useMemo(()=>{
@@ -275,7 +287,11 @@ export function QuantFactorHomePage(){
    ...(f0?.decision?.steps||[]).filter(s=>s.at).map(s=>({key:'action-'+s.step,at:s.at||'',label:s.result.status==='stopped'?'研究操作已停止':s.result.status==='skipped'?'研究操作已跳过':actionLabels[s.decision.action]||'已保存研究操作'})),
   ].sort((a,b)=>b.at.localeCompare(a.at)).slice(0,5);
  },[ledger,f0]);
- const candidateReport=[...(ledger&&ledger.topic.id===selected?ledger.trials:[])].reverse().find(t=>t.branch_id===currentBranch?.id&&/^qf_.+_development$/.test(t.report_id||''))?.report_id;
+ const viewTrial=[...(ledger&&ledger.topic.id===selected?ledger.trials:[])].reverse().find(t=>t.branch_id===currentBranch?.id&&(inspectedTrial===undefined||t.trial_no===inspectedTrial)&&/^qf_.+_development$/.test(t.report_id||''));
+ const candidateReport=viewTrial?.report_id;
+ const candidateId=candidateReport?.match(/^qf_(.+)_development$/)?.[1];
+ const candidateQuery=candidateId?'?candidate='+encodeURIComponent(candidateId)+(currentBranch?.id?'&branch='+encodeURIComponent(currentBranch.id):''):'';
+ const reviewPath=topic?'/quant/factor/workflow/'+topic.project_id+'/F6'+candidateQuery:'';
  useEffect(()=>{
   setCandidate(undefined);const id=selected;
   if(!candidateReport)return;
@@ -290,12 +306,12 @@ export function QuantFactorHomePage(){
   const trials=trialsByBranch.get(b.id)||[];
   return (
    <div key={b.id} className="branch-wrap">
-    <div className={'branch'+(b.source==='manual'?' human':'')+(node===b.id?' sel':'')} data-bid={b.id} data-parent={b.parent_id||''} onClick={()=>setNode(b.id)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setNode(b.id);}}} role="button" tabIndex={0}>
+    <div className={'branch'+(b.source==='manual'?' human':'')+(node===b.id?' sel':'')} data-bid={b.id} data-parent={b.parent_id||''} onClick={()=>{setNode(b.id);setInspectedBranch(b.id);setInspectedTrial(undefined);}} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setNode(b.id);setInspectedBranch(b.id);setInspectedTrial(undefined);}}} role="button" tabIndex={0}>
      <div className="bh">
       <span className="hid">{b.display_label||'H?'}</span>
       <span className="bt" title={b.display_title}>{b.display_title? (b.display_title.length>70?b.display_title.slice(0,70)+'…':b.display_title) : ('假设 v'+b.hypothesis_version+'（未命名）')}</span>
       <span className={'badge '+(b.display_status==='研发通过'||b.display_status==='封存通过，待提交'?'live':b.display_status?.includes('失败')||b.display_status==='未达标'?'gray':'gray')}>{b.display_status||b.status}</span>
-      <span className="by">{b.source==='manual'&&!b.parent_id?'初始分支':b.source_label||(b.source==='manual'?'人工':'Agent')} · v{b.hypothesis_version}/v{b.implementation_version} · {trials.length} 次</span>
+      <span className="by">{b.creation_label||(b.source==='manual'&&!b.parent_id?'人工建立课题':b.source==='manual'?'人工接手':'研究系统修订')} · v{b.hypothesis_version}/v{b.implementation_version} · {trials.length} 次</span>
      </div>
      {trials.length>0&&<div className="steps">{trials.map(t=>{const checks=t.result_summary?.gate?.checks||[];const ic=checks.find(c=>c.name.includes('Rank IC')||c.name.includes('方向IC'));const nw=checks.find(c=>c.name.includes('NW t'));const label=`E${t.trial_no}${ic?.actual!=null?` · IC ${Number(ic.actual).toFixed(3)}`:''}${nw?.actual!=null?` · t ${Number(nw.actual).toFixed(2)} / ${Number(nw.threshold).toFixed(2)}`:` · ${outcomeText(t)}`}${t.rerun_of?' · rerun':''}${t.outcome==='passed'?' ✓':t.outcome==='failed'?' ✗':''}`;const title=checks.map(c=>`${c.name}: ${c.actual==null?'—':Number(c.actual).toFixed(3)} / ${String(c.threshold)}`).join(' · ');return t.report_id?<Link key={t.trial_no} className={'chip '+(t.outcome==='passed'?'ok':t.outcome==='failed'?'fail':'warn')} title={title} to={'/quant/factor/report/'+t.report_id}>{label}</Link>:<span key={t.trial_no} className={'chip '+(t.outcome==='passed'?'ok':t.outcome==='failed'?'fail':'warn')} title={title}>{label}</span>;})}</div>}
     </div>
@@ -320,14 +336,14 @@ export function QuantFactorHomePage(){
   <div className="card">
    <div className="card-head">
     <div><div className="row-flex"><span className="hid">{selectedBranch.display_label||'H?'}</span><h2>{selectedBranch.display_title||('假设 v'+selectedBranch.hypothesis_version+'（未命名）')}</h2><span className="badge">{selectedBranch.display_status||selectedBranch.status}</span></div>
-     <p className="fine">{selectedBranch.source_label||(selectedBranch.source==='manual'?'人工':'Agent')} · 假设 v{selectedBranch.hypothesis_version} / 实现 v{selectedBranch.implementation_version} · 内部 ID {selectedBranch.id.slice(0,8)}</p></div>
+     <p className="fine">{selectedBranch.creation_label||(selectedBranch.source==='manual'&&!selectedBranch.parent_id?'人工建立课题':selectedBranch.source==='manual'?'人工接手':'研究系统修订')} · {selectedBranch.execution_label||executorText((trialsByBranch.get(selectedBranch.id)||[]).at(-1)?.executor||'')} · 假设第 {selectedBranch.hypothesis_version} 版 / 实现第 {selectedBranch.implementation_version} 版</p></div>
     <div className="actions"><button className="btn small primary" disabled={!canWrite} onClick={()=>void takeOver()}>从此分支接手</button><button className="btn small" onClick={()=>void handBackF0()} disabled={f0&&['queued','running'].includes(f0.status)}>交回研究系统</button>{f0&&f0.stop_reason?.includes('中断')&&<button className="btn small" onClick={()=>void resumeF0()}>继续研究决策</button>}<Link className="btn small" to={'/quant/factor/workflow/'+(topic?.project_id||'')+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>打开人工工作台</Link>{f0&&<span className="fine">研究决策：{f0.status}{f0.decision?.candidate_status?' · '+f0.decision.candidate_status:''}{f0.stop_reason?' · '+f0.stop_reason:''}</span>}</div>
    </div>
    <div className="card-body">
     {selectedBranch.hypothesis_text&&<p className="agent-brief" style={{marginBottom:12}}>{selectedBranch.hypothesis_text}</p>}
     <div className="kv">
-     <span>分支来源</span><div>{selectedBranch.source==='manual'?'人工':'Agent'}（parent：{selectedBranch.parent_id?selectedBranch.parent_id.slice(0,8):'无'}）</div>
-     <span>说明</span><div className="fine">“从此分支接手”会新建人工分支并把它设为工作台写入分支；交回按钮交给模型 F0 连续推进；预算/暂停/视图不符会停止。</div>
+     <span>分支来源</span><div>{selectedBranch.creation_label||(selectedBranch.source==='manual'?'人工建立':'研究系统修订')}；上游：{selectedBranch.parent_id?ledger?.branches.find(b=>b.id===selectedBranch.parent_id)?.display_label||'待确认':'初始分支'}</div>
+     <span>说明</span><div className="fine">“从此分支接手”会新建人工分支并把它设为工作台写入分支；交回时需确认已保存的人工版本，沿原试验台账和剩余额度继续。</div>
     </div>
     <h3 style={{margin:'16px 0 4px'}}>试验与决定</h3>
     {trials.length===0?<p className="subtle">该分支尚无记录。</p>:trials.map(t=>(
@@ -344,7 +360,7 @@ export function QuantFactorHomePage(){
 
  const side=(
   <aside className="ff-live" aria-label="Agent 工作状态">
-   <div><div className="eyebrow">当前工作</div><h3>{taskState?.stages.find(s=>s.id===taskState.currentStage)?.role||'暂无运行中的任务'}</h3><div className="ff-now">{agentWork}</div></div>
+   <div><div className="eyebrow">当前工作</div><h3>{neverDelegated?'人工研究':taskState?.stages.find(s=>s.id===taskState.currentStage)?.role||'暂无运行中的任务'}</h3><div className="ff-now">{agentWork}</div></div>
    <div><div className="eyebrow">最近事件</div>{feed.length===0?<p className="subtle">尚无事件记录。</p>:<ol>{feed.map(t=><li key={t.key}><time>{t.at?new Date(t.at).toLocaleString():'时间未记录'}</time>{t.label}</li>)}</ol>}</div>
    <div><hr className="ff-divider"/><div className="eyebrow">需要你处理</div><p>{taskState?.needsYou||'新建任务后在这里显示。'}</p></div>
    <div className="actions" style={{marginTop:12}}>{(taskState?.key==='review'||taskState?.key==='approved_unregistered')&&<Link className="btn small primary" to="/quant/reviews/factors">查看待审批</Link>}</div>
@@ -361,28 +377,28 @@ export function QuantFactorHomePage(){
    <div className="card-body">
     {stageView==='prepare'&&<>
      <dl className="ff-kv"><dt>研究目标</dt><dd>{project?.description||ledger?.branches?.[0]?.hypothesis_text||(ledger?.branches?.[0]?.display_title&&ledger.branches[0].display_title!=='初始假设'?ledger.branches[0].display_title:'尚无已保存假设；启动后由研究准备 Agent 生成。')}</dd><dt>任务类型</dt><dd>{purposeText(topic.research_purpose)}</dd><dt>数据范围</dt><dd>日频 · {topic.development_start||'—'} 至 {topic.validation_end||'—'} · 创建时锁定发布视图</dd><dt>试验预算</dt><dd>上限 {topic.max_trials} 次，已检验 {topic.trial_count} 次</dd><dt>用途</dt><dd>因子研究，不涉及实盘交易</dd></dl>
-     <div className="actions" style={{marginTop:12}}>{topic.status==='active'&&canStart&&<button className="btn small primary" disabled={!canWrite||starting||!selectedBranch} onClick={()=>void handBackF0()}>{starting?'正在提交…':taskState?.key==='draft'?'启动挖掘':'重试启动'}</button>}{topic.status==='paused'?<button className="btn small" disabled={!canWrite} onClick={()=>void setTopicStatus('active')}>恢复任务</button>:topic.status==='active'&&['preparing','running','validating'].includes(taskState?.key||'')?<button className="btn small" disabled={!canWrite} onClick={()=>void setTopicStatus('paused')}>暂停任务</button>:null}</div>
+     <div className="actions" style={{marginTop:12}}>{topic.status==='active'&&canStart&&<button className="btn small primary" disabled={!canWrite||starting||!selectedBranch} onClick={()=>void handBackF0()}>{starting?'正在提交…':startLabel}</button>}{topic.status==='paused'?<button className="btn small" disabled={!canWrite} onClick={()=>void setTopicStatus('active')}>恢复任务</button>:topic.status==='active'&&['preparing','running','validating'].includes(taskState?.key||'')?<button className="btn small" disabled={!canWrite} onClick={()=>void setTopicStatus('paused')}>暂停任务</button>:null}</div>
     </>}
     {stageView==='development'&&<>
-      <div className="ff-label">当前候选 · 第 {currentVersion} 版</div>
+      <div className="ff-label">{inspectedBranch?'查看候选':'当前候选'} · {currentBranch?.display_label||'分支待确认'} · 第 {currentVersion} 版{viewTrial?' · E'+viewTrial.trial_no:''}</div>{inspectedBranch&&<button className="btn small" onClick={()=>{setInspectedBranch(undefined);setInspectedTrial(undefined);}}>返回当前候选</button>}
       <h3>{currentBranch?.display_title||candidate?.snapshot?.request?.factor_name||'尚无已保存候选'}</h3>
       <p className="ff-copy">{candidate?.snapshot?.plan?.hypothesis||currentBranch?.hypothesis_text||'尚无该版本已保存的假设。'}</p>
-      {candidate?.snapshot?.request?.factor_code?<pre className="ff-code">{candidate.snapshot.request.factor_code}</pre>:candidate?.snapshot?.request?.library_name?<p className="ff-copy">已保存定义：{candidate.snapshot.request.factor_name}（{candidate.snapshot.request.library_name}）。完整定义与固定证据见试验报告。</p>:<p className="subtle">尚无该候选的已保存实现；有检验报告时可查看其固定版本。</p>}
+      {candidate?.snapshot?.request?.factor_code?<details className="small-details"><summary>查看已保存实现</summary><pre className="ff-code">{candidate.snapshot.request.factor_code}</pre></details>:candidate?.snapshot?.request?.library_name?<p className="ff-copy">已保存定义：{candidate.snapshot.request.factor_name}（{candidate.snapshot.request.library_name}）。完整定义与固定证据见试验报告。</p>:<p className="subtle">尚无该候选的已保存实现；有检验报告时可查看其固定版本。</p>}
       <hr className="ff-divider"/><h3>研发检验</h3>
 
      <div className="ff-now">已检验 {topic.trial_count} 次 / 上限 {topic.max_trials} 次 · 当前第 {currentVersion} 版</div>
-     <dl className="ff-kv" style={{marginTop:10}}><dt>最新结果</dt><dd>{latestDevelopmentTrial?outcomeText(latestDevelopmentTrial)+(latestDevelopmentTrial.report_id?' · 有报告':''):'尚无研发检验'}</dd><dt>假设分支</dt><dd>{topic.branch_count} 个</dd><dt>当前状态</dt><dd>{taskState?.label}</dd></dl>
-     <div className="actions" style={{marginTop:12}}><Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'}>人工研究</Link>{latestDevelopmentTrial?.report_id&&<Link className="btn small" to={'/quant/factor/report/'+latestDevelopmentTrial.report_id}>查看最新报告</Link>}<button className="btn small" onClick={()=>setStageView('validation')}>查看独立验证</button></div>
+     <dl className="ff-kv" style={{marginTop:10}}><dt>所选试验结果</dt><dd>{viewTrial?outcomeText(viewTrial)+(viewTrial.report_id?' · 有报告':''):'尚无研发检验'}</dd><dt>假设分支</dt><dd>{topic.branch_count} 个</dd><dt>当前状态</dt><dd>{taskState?.label}</dd></dl>
+     <div className="actions" style={{marginTop:12}}><Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+candidateQuery}>人工研究</Link>{viewTrial?.report_id&&<Link className="btn small" to={'/quant/factor/report/'+viewTrial.report_id}>查看所选报告</Link>}<button className="btn small" onClick={()=>setStageView('validation')}>查看独立验证</button></div>
     </>}
     {stageView==='validation'&&<>
      <dl className="ff-kv"><dt>封存已用</dt><dd>{topic.sealed_used||0} / {topic.max_sealed}</dd><dt>验证通过</dt><dd>{topic.sealed_passed||0} 次</dd><dt>验证中</dt><dd>{topic.sealed_running||0} 次</dd><dt>验证失败</dt><dd>{topic.sealed_failed||0} 次</dd><dt>待审批</dt><dd>{topic.pending_review||0} 项</dd></dl>
      {sealedTrials.length>0?<div className="trial-list" style={{marginTop:10}}>{sealedTrials.slice(0,5).map(t=><div className="trial-row" key={t.trial_no}><span className="tk">验证</span><div className="tb"><b>{outcomeText(t)}</b><small>{new Date(t.created_at||'').toLocaleString()}</small></div>{t.report_id?<Link className="btn small" to={'/quant/factor/report/'+t.report_id}>报告</Link>:null}</div>)}</div>:<p className="subtle">尚无封存验证记录。</p>}
-     <div className="actions" style={{marginTop:12}}>{(topic.pending_review||0)>0?<Link className="btn small primary" to="/quant/reviews/factors">进入待审批</Link>:<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'}>人工研究</Link>}</div>
+     <div className="actions" style={{marginTop:12}}>{(topic.pending_review||0)>0?<Link className="btn small primary" to="/quant/reviews/factors">进入待审批</Link>:<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+candidateQuery}>人工研究</Link>}</div>
     </>}
     {stageView==='approval'&&<>
      <dl className="ff-kv"><dt>本任务待审批</dt><dd>{topic.pending_review||0} 项</dd><dt>已批准待登记</dt><dd>{topic.approved_count||0} 项</dd><dt>已入库</dt><dd>{topic.registered_count?topic.registered_count+' 项':'尚未完成入库'}</dd></dl>
      <p className="fine" style={{marginTop:10}}>{(topic.pending_review||0)>0?'审批由独立复核人完成，研究员只能查看证据。':(topic.approved_count||0)>0?'审批已通过，资产登记尚未完成。':'当前任务还没有进入审批的候选。'}</p>
-     <div className="actions" style={{marginTop:12}}><Link className="btn small" to="/quant/reviews/factors">查看待审批</Link><Link className="btn small" to="/quant/factor/library">打开因子库</Link></div>
+     <div className="actions" style={{marginTop:12}}>{candidateId&&candidate?.feedback_eligibility?.allowed&&<Link className="btn small primary" to={reviewPath}>{candidate.archive?.review?.status==='requested'?'查看已提交研究复盘':candidate.archive?.review?.status==='reviewed'?'查看研究复盘结论':'提交研究复盘'}</Link>}<Link className="btn small" to="/quant/reviews/factors">查看待审批</Link><Link className="btn small" to="/quant/factor/library">打开因子库</Link></div>
     </>}
    </div>
   </article>
@@ -391,7 +407,7 @@ export function QuantFactorHomePage(){
   <section className="ff-detail">
    <header className="ff-detail-head">
     <div><span className={'badge '+taskState?.tone}>{taskState?.label}</span><h2>{topic.project_name||'未命名挖掘任务'}</h2><p>{purposeText(topic.research_purpose)} · 日频 · 已检验 {topic.trial_count} 次 / 上限 {topic.max_trials} 次 · 当前第 {currentVersion} 版</p></div>
-    <div className="actions"><button className="btn small" onClick={()=>setAuthOpen(true)}>范围与预算</button>{topic.status==='active'&&canStart?<button className="btn small primary" disabled={!canWrite||starting||!selectedBranch} onClick={()=>void handBackF0()}>{starting?'正在提交…':taskState?.key==='draft'?'启动挖掘':'重试启动'}</button>:null}<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>人工研究</Link></div>
+    <div className="actions"><button className="btn small" onClick={()=>setAuthOpen(true)}>范围与预算</button>{topic.status==='active'&&canStart?<button className="btn small primary" disabled={!canWrite||starting||!selectedBranch} onClick={()=>void handBackF0()}>{starting?'正在提交…':startLabel}</button>:null}<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>{neverDelegated?'继续人工研究':'人工研究'}</Link></div>
    </header>
    {updatesError&&<p className="hint error" role="alert">{updatesError}</p>}<nav className="ff-steps" aria-label="任务业务环节">
     {stageDefs.map((s,i)=><button key={s.id} className={'ff-step '+(stageView===s.id?'selected ':'')+(s.status==='current'?'current ':'')+(s.status==='done'?'done':'')} onClick={()=>setStageView(s.id)} aria-current={s.status==='current'?'step':undefined} aria-label={'查看'+s.label}><span className="ff-num">{s.status==='done'?'✓':i+1}</span><span><b>{s.label}</b><small>{s.role}</small><em>{s.status==='done'?'已完成':s.status==='current'?'当前环节':'尚未开始'}</em></span></button>)}
@@ -405,7 +421,7 @@ export function QuantFactorHomePage(){
     {tree}
     {detail}
     <h3 style={{margin:'16px 0 6px'}}>全部试验</h3>
-    {latestTrials.length===0?<p className="subtle">尚无试验记录。</p>:<div className="table-wrap"><table className="table"><thead><tr><th>试验</th><th>分支</th><th>结果</th><th>时间</th><th>报告</th></tr></thead><tbody>{latestTrials.map(t=><tr key={t.trial_no}><td>{t.trial_no}</td><td>{t.branch_id.slice(0,8)}</td><td>{outcomeText(t)} · {t.kind}</td><td>{new Date(t.created_at||'').toLocaleString()}</td><td>{t.report_id?<Link to={'/quant/factor/report/'+t.report_id}>查看</Link>:'—'}</td></tr>)}</tbody></table></div>}
+    {latestTrials.length===0?<p className="subtle">尚无试验记录。</p>:<div className="table-wrap"><table className="table"><thead><tr><th>试验</th><th>分支</th><th>结果</th><th>时间</th><th>报告</th></tr></thead><tbody>{latestTrials.map(t=><tr key={t.trial_no}><td><button className="btn small" onClick={()=>{setNode(t.branch_id);setInspectedBranch(t.branch_id);setInspectedTrial(t.trial_no);setStageView('development');}}>E{t.trial_no}</button></td><td>{t.branch_label||ledger?.branches.find(b=>b.id===t.branch_id)?.display_label||'分支待确认'}</td><td>{outcomeText(t)}</td><td>{new Date(t.created_at||'').toLocaleString()}</td><td>{t.report_id?<Link to={'/quant/factor/report/'+t.report_id}>查看</Link>:'—'}</td></tr>)}</tbody></table></div>}
    </details>
   </section>
  ):null;

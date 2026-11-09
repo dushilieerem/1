@@ -155,10 +155,15 @@ def quant_detect_project_put(
     project_id: str,
     body: dict[str, Any] = Body(...),
     uid: int = Depends(_quant_uid),
+    ctx: dict = Depends(require_quant_user),
 ) -> dict:
     from app.routers import detect
-
-    return detect.detect_put_project(project_id=project_id, body=body, uid=uid)
+    from services.quant_factor.presentation import save_workbench
+    try:
+        saved=save_workbench(uid,int(ctx['org']['id']),project_id,body)
+        return saved if saved is not None else detect.detect_put_project(project_id=project_id,body=body,uid=uid)
+    except (ValueError,KeyError) as exc:
+        raise HTTPException(status_code=409,detail=str(exc)) from exc
 
 
 @router.delete("/api/inst/quant/detect/projects/{project_id}")

@@ -62,6 +62,8 @@ def current(uid,org,cid):
     except (KeyError,WorkflowError): row['stale']=True
     with get_conn() as c:
         topic=c.execute('SELECT id FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s',(uid,org,row['project_id'])).fetchone()
+    from .presentation import context,candidate_identity
+    row['presentation']=candidate_identity(row,context(uid,org,row['project_id']))
     row['validation_mode']='sealed' if topic else 'legacy'
     from .review import feedback_materials
     try:row['feedback_eligibility']={'allowed':True,**feedback_materials(row)}
@@ -93,7 +95,7 @@ def _reserved_development(c,uid,org,project_id,exclude_id=''):
     return int(row['n'])
 
 
-def create(uid,org,project_id,expected_snapshot_hash=None,reference=None,executor='human',f0_run_id=None):
+def create(uid,org,project_id,expected_snapshot_hash=None,reference=None,executor='human',f0_run_id=None,expected_control_epoch=None,expected_run_epoch=None):
     locked=_locked_view_error(uid,org,project_id)
     if locked:raise WorkflowError(locked)
     with get_conn() as c:
@@ -101,6 +103,10 @@ def create(uid,org,project_id,expected_snapshot_hash=None,reference=None,executo
         c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9106,uid))
         p=c.execute('SELECT * FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,project_id)).fetchone()
         if not p: raise KeyError(project_id)
+        if executor=='agent' and f0_run_id:
+            owner=c.execute('SELECT status,decision FROM quant_factor_f0_runs WHERE id=%s AND user_id=%s AND org_id=%s AND project_id=%s',(f0_run_id,uid,org,project_id)).fetchone()
+            topic_state=c.execute('SELECT status FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s',(uid,org,project_id)).fetchone()
+            if not owner or owner['status']!='running' or (expected_run_epoch is not None and (owner.get('decision') or {}).get('runner_epoch')!=expected_run_epoch) or not topic_state or topic_state['status']!='active' or (p.get('config') or {}).get('v5ControlEpoch')!=expected_control_epoch:raise WorkflowError('研究控制版本已改变，未从旧的研究系统动作启动计算')
         snap=snapshot(_row_project(dict(p))); sha=digest(snap)
         if snap.get('sourceResearchAsset'):
             from .assets import detail as asset_detail
@@ -129,7 +135,7 @@ def create(uid,org,project_id,expected_snapshot_hash=None,reference=None,executo
             if pending>=4: raise WorkflowError('验证计算队列繁忙，请稍后提交')
             cid=str(uuid.uuid4())
             from .provenance import method_manifest
-            evidence={'method':method_manifest(sha,executor,f0_run_id)}
+            evidence={'method':{**method_manifest(sha,executor,f0_run_id),'control_epoch':(p.get('config') or {}).get('v5ControlEpoch')}}
             if snap['request'].get('factor_code'):
                 from .source_contract import inspect_source
                 evidence['method']['source_contract']=inspect_source(snap['request']['factor_code'],snap['request']['factor_name'])
@@ -284,7 +290,7 @@ def _run_once(uid,org,cid,phase,executor='human',f0_run_id=None,recovery_only=Fa
             return
         novelty_status=None
         if phase=='development' and snap['plan'].get('researchPurpose') in ('discovery','replication'):
-            if store.update(uid,org,cid,running,event('novelty_started',message='比对当前可访问因子库，代码不同不等于新因子。')) is False:return
+            if store.update(uid,org,cid,running,event('novelty_assessment_started',message='核对查重条件，未执行的对照不会视为完成')) is False:return
             # Persist numerical evidence before a dependent service is called.
             if store.update(uid,org,cid,running,event('numerical_checks_completed',passed=gate['passed']),{phase:data}) is False:return
             novelty=_compare_library(uid,org,cid,row,data)
@@ -292,7 +298,7 @@ def _run_once(uid,org,cid,phase,executor='human',f0_run_id=None,recovery_only=Fa
             numerical_passed=gate['passed']
             gate={**gate,'numerical_passed':numerical_passed,'passed':numerical_passed and (snap['plan'].get('researchPurpose')=='replication' or novelty.get('gate',{}).get('passed') is True)}
             data['gate']=gate
-            store.update(uid,org,cid,running,event('novelty_completed',status=novelty_status,message=novelty['message']))
+            store.update(uid,org,cid,running,event('novelty_status_updated',status=novelty_status,message=novelty['message']))
             if snap['plan'].get('researchPurpose')=='replication':novelty_status=None
         final_status=phase+('_error' if novelty_status in ('unavailable','incomplete','resource_pending') else '_passed' if gate['passed'] else '_failed')
         with get_conn() as c:
@@ -455,6 +461,7 @@ def control_status(uid, org):
 
 def set_global_pause(uid, org, paused):
     with get_conn() as c:
+        c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(f'quant-factor-org-control:{org}',))
         c.execute(
             """INSERT INTO quant_factor_org_controls(org_id,paused,paused_by,paused_at,updated_at)
                VALUES (%s,%s,%s,CASE WHEN %s THEN NOW() ELSE NULL END,NOW())

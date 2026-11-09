@@ -52,6 +52,10 @@ def latest(uid,org,stage,project_id=None):
 def update(uid,org,jid,status,entry,output=None):
     with get_conn() as c:
         result=c.execute("UPDATE quant_factor_agent_jobs SET status=%s,events=events||%s::jsonb,output=COALESCE(%s::jsonb,output),updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status IN ('queued','running') RETURNING id",(status,store.encode([entry]),store.encode(output) if output is not None else None,jid,uid,org)).fetchone()
+        if not result and status=='ready' and output is not None:
+            # A superseded model response remains an unadopted suggestion. It never
+            # reactivates the job or changes the manual working draft.
+            c.execute("UPDATE quant_factor_agent_jobs SET output=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status='cancelled' AND input->>'superseded_by_manual_takeover'='true'",(store.encode(output),store.encode([event('late_suggestion_saved',message='旧委托产物已保留，未采用到人工工作稿。')]),jid,uid,org))
     return bool(result)
 def create(uid,org,stage,project_id,draft,request_key):
     if stage not in ('F1','F2','F3'):raise WorkflowError('本期 Agent 自动回填支持 F1、F2、F3。')
@@ -62,10 +66,17 @@ def create(uid,org,stage,project_id,draft,request_key):
         rules=((project or {}).get('config') or {}).get('researchPlan',{}).get('rules') or {}
         if rules.get('direction') not in ('positive','negative'):raise WorkflowError('请先保存预登记的因子方向与检验口径，再委托实现')
         inputs['registered_rules']={**rules,'icMetric':rules.get('icMetric','ic')}
-    key=request_key or digest(inputs)
     with get_conn() as c:
+        c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9106,uid))
         c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9108,uid))
+        if project and project['config'].get('v5ActiveBranch'):
+            current=c.execute('SELECT config FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,project_id)).fetchone()
+            cfg=project['config'];now=(current or {}).get('config') or {}
+            if now.get('v5ActiveBranch')!=cfg.get('v5ActiveBranch') or now.get('v5ControlEpoch')!=cfg.get('v5ControlEpoch'):raise WorkflowError('工作分支已变化，请重新读取后委托，未发模型请求')
+            inputs['workbench']={'branch_id':cfg['v5ActiveBranch'],'control_epoch':cfg.get('v5ControlEpoch')}
+
         c.execute("UPDATE quant_factor_agent_jobs SET status='failed',events=events||%s::jsonb,updated_at=NOW() WHERE user_id=%s AND org_id=%s AND status IN ('queued','running') AND updated_at<NOW()-INTERVAL '5 minutes'",(store.encode([event('interrupted',message='任务超出恢复窗口，停止自动回填。')]),uid,org))
+        key=request_key or digest(inputs)
         old=c.execute('SELECT id,input FROM quant_factor_agent_jobs WHERE user_id=%s AND org_id=%s AND request_key=%s',(uid,org,key)).fetchone()
         if old:
             if old['input']!=inputs:raise WorkflowError('同一请求编号不能用于不同输入。')

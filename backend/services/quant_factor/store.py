@@ -25,8 +25,10 @@ def summarize_evidence(evidence,include_numbers=False):
 
 def list_candidates(uid,org,project):
     rows=repo.candidates(Tenant.from_pair(uid,org),project)
-    # Results stay on detail endpoint; list contains only gate summaries.
-    return [{**r,'evidence':summarize_evidence(r.get('evidence'))} for r in rows]
+    # Stable display identity is derived from the actual tenant-scoped ledger.
+    from .presentation import context,candidate_identity
+    facts=context(uid,org,project)
+    return [{**r,'presentation':candidate_identity(r,facts),'evidence':summarize_evidence(r.get('evidence'))} for r in rows]
 
 def update(uid,org,cid,status,event,evidence=None):
     t=Tenant.from_pair(uid,org)

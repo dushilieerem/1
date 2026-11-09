@@ -234,7 +234,7 @@ class F0ConcurrentStartTest(unittest.TestCase):
                 else: raise AssertionError(sql)
                 return self
             def fetchone(self): return self.row
-        def record(uid, org, topic, bid, key, status, *args):
+        def record(uid, org, topic, bid, key, status, *args, **kwargs):
             time.sleep(.02)
             row = {'id': 'one-run', 'key': key, 'status': status}
             runs.append(row)
@@ -289,3 +289,11 @@ class F0ResumeConsistencyTest(unittest.TestCase):
         d=f0_agent.Decision(action='stop',rationale='已有试验结果不满足要求，停止研究')
         steps,reason=run_steps(decide=lambda n:(d,{}),execute=lambda d,n:{'status':'stopped','reason':'done'},max_steps=1,initial_steps=[prior])
         self.assertEqual(steps[0],prior);self.assertEqual(steps[1]['step'],2);self.assertEqual(reason,'done')
+
+class LateSealReviewTests(unittest.TestCase):
+ def test_waited_seal_evidence_cannot_trigger_review_after_manual_takeover(self):
+  cand={'id':'c','status':'development_passed','snapshot':{'plan':{'researchPurpose':'replication'}}}
+  with patch.object(f0_agent,'get_conn') as gc,patch.object(f0_agent,'_context',return_value={'remaining':1}),patch.object(f0_agent.sealed,'request',return_value={'id':'s'}),patch.object(f0_agent.sealed,'detail',return_value={'status':'passed'}),patch.object(f0_agent.review,'request_review',side_effect=WorkflowError('人工已暂停并接手')) as review:
+   gc.return_value.__enter__.return_value.execute.return_value.fetchone.return_value=cand
+   out=f0_agent.execute(1,2,'r',TOPIC,f0_agent.Decision(action='request_seal',rationale='研发已通过，申请封存'),1,worker_epoch='original')
+  self.assertEqual(out['status'],'stopped');self.assertIn('未继续自动送审',out['reason']);self.assertEqual(review.call_args.kwargs['controller'],{'run_id':'r','worker_epoch':'original'})

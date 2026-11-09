@@ -37,9 +37,21 @@ def feedback_materials(row):
     return {'candidate_status':row['status'],'development_report_id':dev.get('report_id'),'has_numerical_result':numerical,'known_execution_failure':bool(known_failure or implementation_failure),'missing':missing,'allowed_decisions':['needs_revision','rejected'],'grants_admission':False}
 
 
-def request_review(uid,org,cid,note,purpose="research_admission"):
+from contextlib import contextmanager
+
+@contextmanager
+def _review_scope(uid,org,cid,controller):
+    if controller:
+        from . import sealed
+        with sealed._locked(uid,org,cid) as (c,cand,topic,project,seal):
+            sealed._require_controller(c,uid,org,topic,controller)
+            yield c
+    else:
+        with get_conn() as c:yield c
+
+def request_review(uid,org,cid,note,purpose="research_admission",controller=None):
     if not note.strip():raise WorkflowError('请说明需要复核的研究问题')
-    with get_conn() as c:
+    with _review_scope(uid,org,cid,controller) as c:
         row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE',(cid,uid,org)).fetchone()
         if not row:raise KeyError(cid)
         card=dict(row['archive'] or {'approved': False, 'sealed': False})
@@ -123,8 +135,8 @@ def _ledger_context(org,project_id):
             'k':k,'threshold':threshold(max(k,1)),'threshold_k':max(k,1)}
 
 
-def open_seal_failed_review(uid,org,cid,reason):
-    with get_conn() as c:
+def open_seal_failed_review(uid,org,cid,reason,controller=None):
+    with _review_scope(uid,org,cid,controller) as c:
         row=c.execute("SELECT * FROM quant_factor_candidates WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE",(cid,uid,org)).fetchone()
         if not row:raise KeyError(cid)
         card=dict(row['archive'] or {'approved': False, 'sealed': False})

@@ -9,12 +9,14 @@ from __future__ import annotations
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
+from functools import partial
 
 from services.core.db import get_conn
 from services.workflow_workspace.platform_data import published_view
 
 from . import decision_engine, f0_agent, ledger, service
-from .policy import WorkflowError
+from .policy import WorkflowError,digest,snapshot
 
 POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="quant-factor-f0")
 ACTIVE = ("queued", "running")
@@ -34,9 +36,9 @@ def _topic(uid, org, topic_id):
     return dict(row)
 
 
-def _record(uid, org, topic, branch_id, key, status, decision=None, reason="", rounds=0):
+def _record(uid, org, topic, branch_id, key, status, decision=None, reason="", rounds=0,connection=None):
     run_id = str(uuid.uuid4())
-    with get_conn() as c:
+    with nullcontext(connection) if connection is not None else get_conn() as c:
         c.execute(
             """INSERT INTO quant_factor_f0_runs
                (id,user_id,org_id,project_id,topic_id,branch_id,idempotency_key,status,
@@ -48,72 +50,78 @@ def _record(uid, org, topic, branch_id, key, status, decision=None, reason="", r
     return dict(row)
 
 
-def start(uid, org, topic_id, branch_id, idempotency_key):
-    # Serialize logical starts across HTTP workers, including different retry keys.
-    # Keep this transaction open until the accepted run is durably recorded.
+def start(uid,org,topic_id,branch_id,idempotency_key,handoff=None):
     with get_conn() as lock:
-        lock.execute("SELECT pg_advisory_xact_lock(%s,%s)",(9106,uid))
-        lock.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-                     (f"quant-factor-start:{uid}:{org}:{topic_id}",))
-        return _start_locked(uid, org, topic_id, branch_id, idempotency_key)
+        lock.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9106,uid))
+        lock.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(f'quant-factor-start:{uid}:{org}:{topic_id}',))
+        row=_start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff,lock)
+        schedule=row.pop('_schedule',False)
+    # The worker cannot observe an uncommitted queued row.
+    if schedule:POOL.submit(run,uid,org,row['id'])
+    return row
 
 
-def _start_locked(uid, org, topic_id, branch_id, idempotency_key):
-    key = str(idempotency_key or "").strip()
-    if not 1 <= len(key) <= 100:
-        raise WorkflowError("请提供 1—100 字符的幂等键")
-    topic = _topic(uid, org, topic_id)
-    with get_conn() as c:
-        branch = c.execute(
-            "SELECT * FROM quant_factor_branches WHERE id=%s AND user_id=%s AND org_id=%s AND topic_id=%s",
-            (branch_id, uid, org, topic_id)).fetchone()
-        if not branch:
-            raise KeyError(branch_id)
-        existing = c.execute(
-            "SELECT * FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s AND idempotency_key=%s",
-            (uid, org, topic_id, key)).fetchone()
-    if existing:
-        return _public(existing)
-    with get_conn() as c:
-        active = c.execute(
-            "SELECT * FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1",
-            (uid, org, topic_id)).fetchone()
-    if active:
-        return _public(active)
-    from services.factor.detect_store import get_project
-    from .resources import require_config
-    if topic["status"] != "active":
-        return _public(_record(uid, org, topic, branch_id, key, "stopped",
-                               {"action": "stop", "reason": "topic_" + topic["status"]},
-                               "课题处于暂停/归档状态，F0 不再调度"))
-    if service.control_status(uid, org)["paused"]:
-        return _public(_record(uid, org, topic, branch_id, key, "stopped",
-                               {"action": "stop", "reason": "global_pause"},
-                               "研究负责人已暂停全部：不启动新的自动研究动作"))
-    if topic["view_id"] != published_view()["view_id"]:
-        return _public(_record(uid, org, topic, branch_id, key, "stopped",
-                               {"action": "stop", "reason": "locked_view_drift"},
-                               "课题锁定视图与当前发布视图不一致，F0 停止"))
-    k_now = ledger.current_k(ledger._trials(uid, org, topic_id), topic["primary_holding_period"])
-    remaining = int(topic["max_trials"]) - k_now
-    can_seal=False
-    if remaining<=0:
-        from .novelty_policy import handoff_allowed
-        with get_conn() as c:
+def _start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff=None,connection=None):
+    key=str(idempotency_key or '').strip()
+    if not 1<=len(key)<=100:raise WorkflowError('请提供1至100字符的提交身份')
+    topic=_topic(uid,org,topic_id);record=partial(_record,connection=connection)
+    with nullcontext(connection) if connection is not None else get_conn() as c:
+        branch=c.execute('SELECT * FROM quant_factor_branches WHERE id=%s AND user_id=%s AND org_id=%s AND topic_id=%s',(branch_id,uid,org,topic_id)).fetchone()
+        if not branch:raise KeyError(branch_id)
+        existing=c.execute('SELECT * FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s AND idempotency_key=%s',(uid,org,topic_id,key)).fetchone()
+        if existing:
+            old=(existing.get('decision') or {}).get('manual_handoff') or {}
+            if handoff and old.get('snapshot_hash')!=handoff.get('snapshot_hash'):raise WorkflowError('此提交已绑定另一版本，请先核对原运行，未覆盖原记录')
+            return _public(existing)
+        active=c.execute("SELECT * FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1",(uid,org,topic_id)).fetchone()
+        if active:return _public(active)
+        if topic['status']!='active' and not (handoff and topic['status']=='paused'):
+            return _public(record(uid,org,topic,branch_id,key,'stopped',{'action':'stop','reason':'topic_'+topic['status']},'课题处于暂停/归档状态，研究系统不再调度'))
+        if service.control_status(uid,org)['paused']:
+            return _public(record(uid,org,topic,branch_id,key,'stopped',{'action':'stop','reason':'global_pause'},'研究负责人已暂停全部：不启动新的自动研究动作'))
+        if topic['view_id']!=published_view()['view_id']:
+            return _public(record(uid,org,topic,branch_id,key,'stopped',{'action':'stop','reason':'locked_view_drift'},'课题锁定视图与当前发布视图不一致，研究已停止'))
+        k_now=ledger.current_k(ledger._trials(uid,org,topic_id),topic['primary_holding_period']);remaining=int(topic['max_trials'])-k_now
+        can_seal=False
+        if remaining<=0:
+            from .novelty_policy import handoff_allowed
             candidate=c.execute("SELECT * FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s AND status='development_passed' ORDER BY updated_at DESC LIMIT 1",(uid,org,topic['project_id'])).fetchone()
             used=c.execute('SELECT COUNT(*) AS n FROM quant_factor_sealed_validations WHERE user_id=%s AND org_id=%s AND topic_id=%s',(uid,org,topic_id)).fetchone()['n']
-        can_seal=bool(candidate and handoff_allowed(candidate) and used<int(topic.get('max_sealed') or 1))
-    if remaining <= 0 and not can_seal:
-        return _public(_record(uid, org, topic, branch_id, key, "stopped",
-                               {"action": "stop", "reason": "budget_exhausted"},
-                               "课题试验预算已用尽，F0 停止"))
-    if remaining>0:require_config(get_project(uid,topic['project_id'])['project']['config'])
-    row = _record(uid, org, topic, branch_id, key, "queued", {"action": "decide"})
-    POOL.submit(run, uid, org, row["id"])
-    return _public(row)
+            can_seal=bool(candidate and handoff_allowed(candidate) and used<int(topic.get('max_sealed') or 1))
+        if remaining<=0 and not can_seal:
+            return _public(record(uid,org,topic,branch_id,key,'stopped',{'action':'stop','reason':'budget_exhausted'},'课题试验预算已用尽，研究已停止'))
+        from services.factor.detect_store import get_project,_row_project
+        from .resources import require_config
+        decision={'action':'decide'}
+        if handoff:
+            project_row=c.execute('SELECT * FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,topic['project_id'])).fetchone()
+            if not project_row:raise KeyError(topic['project_id'])
+            project=_row_project(dict(project_row));config=project['config'];epoch=config.get('v5ControlEpoch')
+            if handoff.get('acknowledged') is not True or branch['source']!='manual' or not epoch or epoch!=handoff.get('control_epoch') or config.get('v5ActiveBranch')!=branch_id:
+                raise WorkflowError('请明确确认当前人工分支及控制版本，未从其他分支继续')
+            if digest(snapshot(project))!=handoff.get('snapshot_hash'):raise WorkflowError('人工版本已变化，请重新读取并确认交回，未覆盖当前输入')
+            require_config(config)
+            for table,clause in [('quant_factor_candidates',"status LIKE '%%_running'"),('quant_factor_iterations',"status IN ('queued','running')"),('quant_factor_sealed_validations',"status IN ('queued','running')")]:
+                if c.execute('SELECT id FROM '+table+' WHERE user_id=%s AND org_id=%s AND project_id=%s AND '+clause+' LIMIT 1',(uid,org,topic['project_id'])).fetchone():raise WorkflowError('当前仍有在途检验，请等待结果落账后交回')
+            epoch=str(uuid.uuid4());config['v5ControlEpoch']=epoch
+            c.execute('UPDATE detect_projects SET config=%s::jsonb,updated_at=NOW() WHERE user_id=%s AND id=%s',(service.store.encode(config),uid,topic['project_id']))
+            c.execute("UPDATE quant_factor_topics SET status='active',updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s",(topic_id,uid,org))
+            decision['manual_handoff']={'snapshot_hash':handoff['snapshot_hash'],'branch_id':branch_id,'control_epoch':epoch,'note':str(handoff.get('note') or '')[:2000],'at':service.event('handoff')['at']}
+        elif remaining>0:
+            project=get_project(uid,topic['project_id'])['project'];config=project['config'];active_branch=config.get('v5ActiveBranch')
+            if active_branch and active_branch!=branch_id:raise WorkflowError('当前工程稿绑定另一分支，请明确选择当前版本或接手后继续')
+            require_config(config)
+        row=_public(record(uid,org,topic,branch_id,key,'queued',decision));row['_schedule']=True
+        return row
+
+
+def _owns_worker(uid,org,run_id,worker_epoch):
+    with get_conn() as c:
+        return c.execute("SELECT id FROM quant_factor_f0_runs WHERE id=%s AND user_id=%s AND org_id=%s AND status='running' AND decision->>'runner_epoch'=%s",(run_id,uid,org,worker_epoch)).fetchone() is not None
 
 
 def run(uid, org, run_id):
+    worker_epoch=None
     try:
         with get_conn() as c:
             row = c.execute(
@@ -121,22 +129,25 @@ def run(uid, org, run_id):
                 (run_id, uid, org)).fetchone()
             if not row or row["status"] != 'queued':
                 return
-            c.execute("UPDATE quant_factor_f0_runs SET status='running',updated_at=NOW() WHERE id=%s", (run_id,))
+            worker_epoch=str(uuid.uuid4())
+            c.execute("UPDATE quant_factor_f0_runs SET status='running',decision=jsonb_set(decision,'{runner_epoch}',to_jsonb(%s::text)),updated_at=NOW() WHERE id=%s",(worker_epoch,run_id))
         topic = _topic(uid, org, row["topic_id"])
         steps = []
         current_steps = list((row.get("decision") or {}).get("steps") or [])
+        base_decision={key:value for key,value in (row.get("decision") or {}).items() if key not in ("steps","current_action")}
         def execute_step(decision, step):
             with get_conn() as c:
-                c.execute("UPDATE quant_factor_f0_runs SET decision=%s::jsonb,updated_at=NOW() WHERE id=%s AND status='running'",
-                          (service.store.encode({"steps": current_steps, "current_action": decision.action}), run_id))
-            return f0_agent.execute(uid, org, run_id, topic, decision, step)
+                c.execute("UPDATE quant_factor_f0_runs SET decision=decision||%s::jsonb,updated_at=NOW() WHERE id=%s AND status='running' AND decision->>'runner_epoch'=%s",
+                          (service.store.encode({"steps": current_steps, "current_action": decision.action}), run_id,worker_epoch))
+            if not _owns_worker(uid,org,run_id,worker_epoch):raise WorkflowError('当前研究已由新的控制版本接管，旧动作未执行')
+            return f0_agent.execute(uid, org, run_id, topic, decision, step,worker_epoch=worker_epoch)
 
         def on_step(step, entry, current):
             nonlocal current_steps
             current_steps = list(current)
             with get_conn() as c:
-                c.execute("UPDATE quant_factor_f0_runs SET rounds=%s,decision=%s::jsonb,updated_at=NOW() WHERE id=%s AND status='running'",
-                          (step, service.store.encode({"steps": current}), run_id))
+                c.execute("UPDATE quant_factor_f0_runs SET rounds=%s,decision=decision||%s::jsonb,updated_at=NOW() WHERE id=%s AND status='running' AND decision->>'runner_epoch'=%s",
+                          (step, service.store.encode({"steps": current,"current_action":None}), run_id,worker_epoch))
 
         # A reused frozen candidate can carry a completed test that never reached the ledger;
         # record it before deciding so K and the trial evidence are truthful.
@@ -144,12 +155,13 @@ def run(uid, org, run_id):
         service.backfill_terminal_trials(uid, org, topic["project_id"], "agent", run_id)
         if (row.get("decision") or {}).get("recovery_only"):
             with get_conn() as c:
-                c.execute("UPDATE quant_factor_f0_runs SET status='stopped',stop_reason=%s,updated_at=NOW() WHERE id=%s AND status='running'",('locked_view_drift：原结果已恢复，等待固定数据版本计算能力；未发新研究',run_id))
+                c.execute("UPDATE quant_factor_f0_runs SET status='stopped',stop_reason=%s,updated_at=NOW() WHERE id=%s AND status='running' AND decision->>'runner_epoch'=%s",('locked_view_drift：原结果已恢复，等待固定数据版本计算能力；未发新研究',run_id,worker_epoch))
             return
         k0 = ledger.current_k(ledger._trials(uid, org, topic["id"]), topic["primary_holding_period"])
         max_steps = min(max(0, 12 - len(current_steps)), max(1, int(topic["max_trials"]) - k0 + 2))
 
         def before_step(step):
+            if not _owns_worker(uid,org,run_id,worker_epoch):return '研究已由新的控制版本接管'
             current = _topic(uid, org, topic["id"])
             if current["status"] != "active":
                 return "课题已暂停/归档，F0 停止"
@@ -173,7 +185,7 @@ def run(uid, org, run_id):
             return ""
 
         steps, stop_reason = decision_engine.run_steps(
-            decide=lambda step: f0_agent.decide(uid, org, topic, run_id),
+            decide=lambda step: (f0_agent.Decision(action='run_test',branch_id=base_decision['manual_handoff']['branch_id'],rationale='先按已确认人工版本检验；同一快照已有证据则复用，不重置试验计数'),{'tokens_in':0,'tokens_out':0,'manual_handoff':True}) if base_decision.get('manual_handoff') and step==1 else f0_agent.decide(uid, org, topic, run_id),
             execute=execute_step,
             max_steps=max_steps,
             before_step=before_step,
@@ -183,13 +195,14 @@ def run(uid, org, run_id):
         with get_conn() as c:
             c.execute("""UPDATE quant_factor_f0_runs
                        SET status='stopped',rounds=%s,stop_reason=%s,updated_at=NOW()
-                       WHERE id=%s AND status='running'""",
-                      (len(steps), stop_reason, run_id))
+                       WHERE id=%s AND status='running' AND decision->>'runner_epoch'=%s""",
+                      (len(steps), stop_reason, run_id,worker_epoch))
     except Exception as exc:
+        if worker_epoch is None:return
         with get_conn() as c:
             c.execute(
-                "UPDATE quant_factor_f0_runs SET status='failed',stop_reason=%s,updated_at=NOW() WHERE id=%s AND status IN ('queued','running')",
-                (str(exc)[:1000], run_id))
+                "UPDATE quant_factor_f0_runs SET status='failed',stop_reason=%s,updated_at=NOW() WHERE id=%s AND status='running' AND decision->>'runner_epoch'=%s",
+                (str(exc)[:1000], run_id,worker_epoch))
 
 
 def mark_interrupted():
@@ -230,7 +243,10 @@ def resume(uid, org, run_id):
             if not recovery_only:
                 from services.factor.detect_store import get_project
                 from .resources import require_config
-                require_config(get_project(uid,topic['project_id'])['project']['config'])
+                project=get_project(uid,topic['project_id'])['project'];config=project['config']
+                expected_branch=next((item.get('result',{}).get('branch_id') for item in reversed((row.get('decision') or {}).get('steps') or []) if item.get('result',{}).get('branch_id')),row['branch_id'])
+                if config.get('v5ActiveBranch') and config['v5ActiveBranch']!=expected_branch:raise WorkflowError('当前工程已由另一分支接手，请从已确认人工版本交回，不能恢复旧分支')
+                require_config(config)
             if int(row.get('rounds') or 0) >= 12:
                 raise WorkflowError("此运行已达到决策次数上限，原记录保留，请人工复盘")
             decision=dict(row.get('decision') or {});decision['recovery_only']=recovery_only

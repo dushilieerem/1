@@ -66,7 +66,7 @@ const protectedPaths = [
  /^\/factor-workflow\/pending-review-count$/,
  /^\/factor-workflow\/reviews(?:\/[^/]+)?$/,
  /^\/factor-workflow\/reviews\/[^/]+\/(claim|independent-opinion)$/,
- /^\/factor-workflow\/projects\/[^/]+\/(candidates|assistant|source-check)$/,
+ /^\/factor-workflow\/projects\/[^/]+\/(candidates|assistant|source-check|workbench)$/,
  /^\/factor-workflow\/candidates\/[^/]+(?:\/(validate|retry|cancel|archive|submit|register|review-request|sealed-validation))?$/,
  /^\/detect\/(projects|runs)(\/[^/]+)?(\/runs)?$/,
  /^\/strategy\/(projects|runs)(\/[^/]+)?(\/runs)?$/,

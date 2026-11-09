@@ -12,21 +12,31 @@ from .metrics import threshold
 def _require_novelty(row):
     novelty = (row.get('evidence') or {}).get('development', {}).get('novelty') or {}
     gate = novelty.get('gate') or {}
-    if gate.get('passed') is not True or gate.get('complete') is not True:
+    replication=(row.get('snapshot') or {}).get('plan',{}).get('researchPurpose')=='replication'
+    if gate.get('complete') is not True or (not replication and gate.get('passed') is not True):
         raise WorkflowError('候选缺少完整查重证据（R4/novelty），不能提交审查或批准入库')
 
 
-def request_review(uid,org,cid,note):
+def request_review(uid,org,cid,note,purpose="research_admission"):
     if not note.strip():raise WorkflowError('请说明需要复核的研究问题')
     with get_conn() as c:
         row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE',(cid,uid,org)).fetchone()
         if not row:raise KeyError(cid)
         card=dict(row['archive'] or {'approved': False, 'sealed': False})
+        if card.get('research_asset'):raise WorkflowError('此固定版本已登记，不能重开审批；改进请建立新候选')
         if row['status'].endswith('_running') or not row['evidence'].get('development',{}).get('gate'):
             raise WorkflowError('请先完成研发检验并保存研究因子卡')
-        _require_novelty(row)
-        if card.get('review'):return public(dict(row))
-        card['review']={'status':'requested','question':note.strip(),'at':datetime.now(timezone.utc).isoformat(),'snapshot_hash':row['snapshot_hash'],'purpose':'research_feedback_only'}
+        if purpose not in ('research_admission','research_feedback_only'):raise WorkflowError('复核事项类型无效')
+        existing=card.get('review') or {}
+        if existing.get('status')=='requested':
+            if existing.get('purpose')==purpose:return public(dict(row))
+            raise WorkflowError('既有复核事项尚未结束，不能将反馈直接升级为资产审批')
+        if purpose=='research_admission':
+            from .assets import eligibility
+            eligibility(dict(row),c,for_submission=True)
+        else:_require_novelty(row)
+        if existing:card['review_history']=[*(card.get('review_history') or []),existing]
+        card['review']={'status':'requested','question':note.strip(),'at':datetime.now(timezone.utc).isoformat(),'snapshot_hash':row['snapshot_hash'],'purpose':purpose}
         c.execute('UPDATE quant_factor_candidates SET archive=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s',(store.encode(card),store.encode([event('review_requested')]),cid))
     return current(uid,org,cid)
 
@@ -87,6 +97,7 @@ def _ledger_context(org,project_id):
     labels=ledger._branch_labels(topic['user_id'],org,topic['id'],branches)
     for trial in trials:
         trial['branch_label']=labels.get(trial.get('branch_id'),'H?')
+        trial['counts_toward_k']=ledger.counts_toward_k(trial,topic['primary_holding_period'])
     k=ledger.current_k(trials,topic['primary_holding_period'])
     return {'topic':ledger._public(topic),'trials':[ledger._public(row) for row in trials],
             'k':k,'threshold':threshold(max(k,1)),'threshold_k':max(k,1)}
@@ -97,6 +108,8 @@ def open_seal_failed_review(uid,org,cid,reason):
         row=c.execute("SELECT * FROM quant_factor_candidates WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE",(cid,uid,org)).fetchone()
         if not row:raise KeyError(cid)
         card=dict(row['archive'] or {'approved': False, 'sealed': False})
+        if card.get('research_asset'):raise WorkflowError('此固定版本已登记，不能重开复盘')
+        if card.get('review'):card['review_history']=[*(card.get('review_history') or []),card['review']]
         card['review']={'status':'requested','purpose':'seal_failed_review','question':'封存未通过复盘：'+str(reason)[:1000],'at':datetime.now(timezone.utc).isoformat(),'snapshot_hash':row['snapshot_hash']}
         c.execute("UPDATE quant_factor_candidates SET archive=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s",(store.encode(card),store.encode([event('seal_failed_review_requested')]),cid))
     # The researcher opens this item; returning reviewer-only detail here would fail
@@ -110,6 +123,10 @@ def detail(uid,org,cid):
     out=public(dict(row))
     # Independent review sees frozen evidence only, not the research dialogue/operator events.
     out.pop('events',None)
+    rev=(row.get('archive') or {}).get('review') or {}
+    assigned=rev.get('assigned_to')
+    out['review_actions']={'can_claim':rev.get('status')=='requested' and assigned is None,
+                           'can_decide':rev.get('status')=='requested' and assigned is not None and int(assigned)==uid}
     ctx=_ledger_context(org,row['project_id'])
     if ctx:out.update(ctx)
     with get_conn() as c:
@@ -117,6 +134,11 @@ def detail(uid,org,cid):
             "SELECT status,result,report_id,created_at FROM quant_factor_sealed_validations WHERE candidate_id=%s AND org_id=%s ORDER BY created_at DESC LIMIT 1",
             (cid,org)).fetchone()
     out['sealed']=dict(sealed) if sealed else None
+    if rev.get('purpose')=='research_admission' and rev.get('status')=='requested':
+        from .assets import eligibility
+        try:eligibility(dict(row));out['admission']={'allowed':True,'reason':''}
+        except (WorkflowError,ValueError,KeyError) as exc:out['admission']={'allowed':False,'reason':str(exc)}
+    else:out['admission']={'allowed':False,'reason':'此事项仅作研究反馈或复盘，不能直接批准入库'}
     return out
 
 def record(uid,org,cid,decision,note):
@@ -148,3 +170,29 @@ def record(uid,org,cid,decision,note):
             raise WorkflowError('已批准或已封存的版本不能改写复核结论')
         c.execute('UPDATE quant_factor_candidates SET archive=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s',(store.encode(card),store.encode([event('review_recorded',reviewer_id=uid,decision=decision)]),cid))
     return detail(uid,org,cid)
+
+
+def visible_queue(uid,org,can_review):
+    if can_review:return queue(uid,org)
+    with get_conn() as c:
+        rows=c.execute("SELECT id,user_id,org_id,snapshot_hash,status,snapshot->>'name' AS name,archive,updated_at FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND archive->'review' IS NOT NULL ORDER BY updated_at DESC LIMIT 100",(uid,org)).fetchall()
+    return [public(dict(row)) for row in rows]
+
+
+def visible_detail(uid,org,cid,can_review):
+    row=repo.candidate_for_org(Tenant.from_pair(uid,org),cid)
+    if not row:raise KeyError(cid)
+    if int(row['user_id'])!=uid:
+        if not can_review:raise KeyError(cid)
+        return detail(uid,org,cid)
+    if not (row.get('archive') or {}).get('review'):raise KeyError(cid)
+    out=public(dict(row));out.pop('events',None)
+    ctx=_ledger_context(org,row['project_id'])
+    if ctx:out.update(ctx)
+    with get_conn() as c:
+        sealed=c.execute('SELECT status,report_id,created_at FROM quant_factor_sealed_validations WHERE org_id=%s AND candidate_id=%s',(org,cid)).fetchone()
+    out['sealed']=dict(sealed) if sealed else None
+    out['review_actions']={'can_claim':False,'can_decide':False}
+    out['admission']={'allowed':False,'reason':'作者只能查看材料，不能批准自己的研究成果'}
+    out['is_author']=True
+    return out

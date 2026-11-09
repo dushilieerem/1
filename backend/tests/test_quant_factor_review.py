@@ -103,6 +103,7 @@ class ReviewIsolationTest(unittest.TestCase):
         c = MagicMock(); c.execute.return_value.fetchone.return_value = row
         conn = MagicMock(); conn.__enter__.return_value = c
         with patch.object(review.repo, 'candidate_for_org', return_value=row), \
+             patch.object(review, 'get_conn', return_value=conn), \
              patch.object(review, '_ledger_context', return_value=None):
             out = review.detail(9, 2, 'c')
         self.assertNotIn('events', out)
@@ -135,7 +136,7 @@ class NullArchiveReviewRequestTest(unittest.TestCase):
         connection.__enter__.return_value = cursor
         with patch.object(review, 'get_conn', return_value=connection), \
              patch.object(review, 'current', return_value={'id': 'c'}):
-            self.assertEqual(review.request_review(5, 2, 'c', '提交复核'), {'id': 'c'})
+            self.assertEqual(review.request_review(5, 2, 'c', '提交复核','research_feedback_only'), {'id': 'c'})
         params = cursor.execute.call_args_list[1].args[1]
         self.assertIn('review', params[0])
 

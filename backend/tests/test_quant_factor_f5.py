@@ -7,7 +7,7 @@ from services.quant_factor import f5
 from services.quant_factor.policy import WorkflowError
 
 ROW = {'id': 'c', 'user_id': 5, 'org_id': 2, 'project_id': 'p', 'status': 'validation_passed',
-       'snapshot_hash': 'h', 'archive': {'review': {'status': 'requested'}}, 'events': [{'x': 1}],
+       'snapshot_hash': 'h', 'archive': {'review': {'status': 'requested','assigned_to':9}}, 'events': [{'x': 1}],
        'snapshot': {'plan': {'researchPurpose': 'replication'}},
        'evidence': {'development': {'gate': {'passed': True}, 'report_id': 'r'}}}
 
@@ -22,9 +22,10 @@ class F5Test(unittest.TestCase):
                 f5.opinion(9, 2, 'c')
 
     def test_context_has_no_research_events(self):
-        ctx = f5._frozen_context(1, 2, ROW)
+        with patch.object(f5.review,'_ledger_context',return_value=None),patch.object(f5,'_sealed',return_value=None):
+            ctx = f5._frozen_context(1, 2, ROW)
         self.assertNotIn('events', ctx)
-        self.assertEqual(ctx['novelty_capability'].split('（')[0], 'unavailable')
+        self.assertEqual(ctx['novelty_evidence'],'尚无完整对照证据')
 
     def test_invalid_verdict_rejected(self):
         c = MagicMock(); c.execute.return_value.fetchone.return_value = {**ROW, 'user_id': 5}
@@ -53,6 +54,7 @@ class F5DateSerializationTest(unittest.TestCase):
             seen['messages'] = messages
             return out
         with patch.object(f5, 'get_conn', return_value=conn), \
+             patch.object(f5.review,'_ledger_context',return_value=None),patch.object(f5,'_sealed',return_value=None), \
              patch.object(f5, 'get_task'), patch.object(f5, 'assert_quota_available'), \
              patch.object(f5, 'record_usage'), patch.object(f5, 'run_task', side_effect=run_task):
             result = f5.opinion(9, 2, 'c')

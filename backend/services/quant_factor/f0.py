@@ -52,6 +52,7 @@ def start(uid, org, topic_id, branch_id, idempotency_key):
     # Serialize logical starts across HTTP workers, including different retry keys.
     # Keep this transaction open until the accepted run is durably recorded.
     with get_conn() as lock:
+        lock.execute("SELECT pg_advisory_xact_lock(%s,%s)",(9106,uid))
         lock.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
                      (f"quant-factor-start:{uid}:{org}:{topic_id}",))
         return _start_locked(uid, org, topic_id, branch_id, idempotency_key)
@@ -106,14 +107,14 @@ def run(uid, org, run_id):
     try:
         with get_conn() as c:
             row = c.execute(
-                "SELECT * FROM quant_factor_f0_runs WHERE id=%s AND user_id=%s AND org_id=%s",
+                "SELECT * FROM quant_factor_f0_runs WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE",
                 (run_id, uid, org)).fetchone()
-            if not row or row["status"] not in ACTIVE:
+            if not row or row["status"] != 'queued':
                 return
             c.execute("UPDATE quant_factor_f0_runs SET status='running',updated_at=NOW() WHERE id=%s", (run_id,))
         topic = _topic(uid, org, row["topic_id"])
         steps = []
-        current_steps = []
+        current_steps = list((row.get("decision") or {}).get("steps") or [])
         def execute_step(decision, step):
             with get_conn() as c:
                 c.execute("UPDATE quant_factor_f0_runs SET decision=%s::jsonb,updated_at=NOW() WHERE id=%s AND status='running'",
@@ -129,12 +130,14 @@ def run(uid, org, run_id):
 
         # A reused frozen candidate can carry a completed test that never reached the ledger;
         # record it before deciding so K and the trial evidence are truthful.
-        try:
-            service.backfill_terminal_trials(uid, org, topic["project_id"], "agent", run_id)
-        except Exception:
-            pass
+        service.recover_pending(uid, org, topic["project_id"],recovery_only=bool((row.get("decision") or {}).get("recovery_only")))
+        service.backfill_terminal_trials(uid, org, topic["project_id"], "agent", run_id)
+        if (row.get("decision") or {}).get("recovery_only"):
+            with get_conn() as c:
+                c.execute("UPDATE quant_factor_f0_runs SET status='stopped',stop_reason=%s,updated_at=NOW() WHERE id=%s AND status='running'",('locked_view_drift：原结果已恢复，等待固定数据版本计算能力；未发新研究',run_id))
+            return
         k0 = ledger.current_k(ledger._trials(uid, org, topic["id"]), topic["primary_holding_period"])
-        max_steps = min(12, max(1, int(topic["max_trials"]) - k0 + 2))
+        max_steps = min(max(0, 12 - len(current_steps)), max(1, int(topic["max_trials"]) - k0 + 2))
 
         def before_step(step):
             current = _topic(uid, org, topic["id"])
@@ -161,7 +164,8 @@ def run(uid, org, run_id):
             max_steps=max_steps,
             before_step=before_step,
             stop_when=stop_when,
-            on_step=on_step)
+            on_step=on_step,
+            initial_steps=current_steps)
         with get_conn() as c:
             c.execute("""UPDATE quant_factor_f0_runs
                        SET status='stopped',rounds=%s,stop_reason=%s,updated_at=NOW()
@@ -182,17 +186,39 @@ def mark_interrupted():
 
 
 def resume(uid, org, run_id):
-    with get_conn() as c:
-        row = c.execute(
-            "SELECT * FROM quant_factor_f0_runs WHERE id=%s AND user_id=%s AND org_id=%s",
-            (run_id, uid, org)).fetchone()
-        if not row:
-            raise KeyError(run_id)
-        if row["status"] not in ("stopped", "failed"):
-            raise service.WorkflowError("只有已中断/停止的任务可以继续")
-        c.execute("UPDATE quant_factor_f0_runs SET status='queued',stop_reason='',updated_at=NOW() WHERE id=%s", (run_id,))
-    POOL.submit(run, uid, org, run_id)
-    return read(uid, org, run_id)
+    original = read(uid, org, run_id)
+    topic_id = original["topic_id"]
+    with get_conn() as lock:
+        lock.execute("SELECT pg_advisory_xact_lock(%s,%s)",(9106,uid))
+        lock.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                     (f"quant-factor-start:{uid}:{org}:{topic_id}",))
+        with get_conn() as c:
+            row = c.execute(
+                "SELECT * FROM quant_factor_f0_runs WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE",
+                (run_id, uid, org)).fetchone()
+            if not row:
+                raise KeyError(run_id)
+            if row["status"] in ACTIVE:
+                return _public(row)
+            if row["status"] not in ("stopped", "failed"):
+                raise WorkflowError("只有已中断或停止的运行可以继续")
+            active = c.execute(
+                "SELECT * FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1",
+                (uid, org, topic_id)).fetchone()
+            if active:
+                return _public(active)
+            topic = _topic(uid, org, topic_id)
+            if topic["status"] != 'active' or service.control_status(uid, org)["paused"]:
+                raise WorkflowError("研究已暂停，请先恢复任务与自动研究")
+            recovery_only=topic["view_id"] != published_view()["view_id"]
+            if recovery_only and (not service.locked_view_available(topic) or not service.has_recoverable_run(uid,org,topic['project_id'])):
+                raise WorkflowError("固定数据版本目前无法确认或无原任务可恢复；不会用当前数据替换原计划")
+            if int(row.get('rounds') or 0) >= 12:
+                raise WorkflowError("此运行已达到决策次数上限，原记录保留，请人工复盘")
+            decision=dict(row.get('decision') or {});decision['recovery_only']=recovery_only
+            c.execute("UPDATE quant_factor_f0_runs SET status='queued',stop_reason='',decision=%s::jsonb,updated_at=NOW() WHERE id=%s", (service.store.encode(decision),run_id))
+        POOL.submit(run, uid, org, run_id)
+        return read(uid, org, run_id)
 
 
 def latest(uid, org, topic_id):

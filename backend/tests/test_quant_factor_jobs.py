@@ -83,6 +83,7 @@ class RetryBudgetTest(unittest.TestCase):
                'status': 'development_error', 'evidence': {'development': {'interrupted': True}}}
         cursor = MagicMock()
         cursor.execute.return_value.fetchone.side_effect = [
+            row,
             {'id': 't1', 'max_trials': 3, 'primary_holding_period': 1},
             {'n': 0},
         ]

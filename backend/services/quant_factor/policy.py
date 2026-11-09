@@ -61,7 +61,7 @@ def snapshot(project):
         library=(c.get('factorLibraries') or {}).get(name)
         if not library: raise WorkflowError('缺少因子实现或明确的来源库')
         request['library_name']=library
-    return {'schema':1,'projectId':project['id'],'name':project['name'],'plan':p,'rules':rules,'request':request}
+    return {'schema':1,'projectId':project['id'],'name':project['name'],'plan':p,'rules':rules,'request':request,**({'sourceResearchAsset':c['sourceResearchAsset']} if c.get('sourceResearchAsset') else {})}
 
 def evaluate(result, rules, k=None, lags=None):
     if result.get('error'): raise WorkflowError('计算返回错误：'+str(result['error']))

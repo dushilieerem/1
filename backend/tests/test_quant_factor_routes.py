@@ -47,8 +47,10 @@ def test_reviewer_cannot_mutate_researcher_workflow():
  for url in ('projects/p/candidates','projects/p/assistant','candidates/c/validate','candidates/c/cancel','candidates/c/archive','candidates/c/register','candidates/c/review-request'):
   assert client.post('/api/inst/quant/factor-workflow/'+url,json={'note':'x','library_id':1}).status_code==403
 
-def test_researcher_cannot_review_or_list_other_members():
- assert client.get('/api/inst/quant/factor-workflow/reviews').status_code==403
+def test_researcher_reads_only_own_review_material_and_cannot_decide():
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.review.visible_queue',return_value=[]) as queue:
+  assert client.get('/api/inst/quant/factor-workflow/reviews').status_code==200
+  queue.assert_called_once_with(912,261,False)
  assert client.post('/api/inst/quant/factor-workflow/reviews/c',json={'note':'x','decision':'research_supported'}).status_code==403
 
 def test_review_rejects_client_identity_and_approval():
@@ -158,3 +160,26 @@ def test_org_topics_use_session_identity_and_ignore_client_scope():
 def test_reviewer_cannot_list_org_topics():
  app.dependency_overrides[require_quant_user]=lambda:{**ctx,'can_write':False,'can_review':True}
  assert client.get('/api/inst/quant/factor-workflow/topics').status_code==403
+
+
+def test_asset_read_is_org_scoped_for_ordinary_researcher():
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.assets.detail',return_value={'id':'qfa_c','purpose':'research_only'}) as detail:
+  assert client.get('/api/inst/quant/factor-workflow/assets/qfa_c?org_id=999&full=true').status_code==200
+  detail.assert_called_once_with(912,261,'qfa_c',False)
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.assets.detail',side_effect=KeyError('qfa_c')):
+  assert client.get('/api/inst/quant/factor-workflow/assets/qfa_c').status_code==404
+
+def test_new_asset_decision_is_explicit_and_uses_reviewer_identity():
+ body={'decision':'approve_research_and_register','note':'独立核验证据','display_name':'业务名称','category':'反转因子','tags':['日频'],'acknowledged':True}
+ assert client.post('/api/inst/quant/factor-workflow/reviews/c',json=body).status_code==403
+ app.dependency_overrides[require_quant_user]=lambda:{**ctx,'can_write':False,'can_review':True}
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.assets.approve',return_value={'id':'qfa_c'}) as approve,patch('services.quant_factor.review.record') as legacy:
+  assert client.post('/api/inst/quant/factor-workflow/reviews/c',json=body).status_code==200
+  approve.assert_called_once_with(912,261,'c','独立核验证据',{'display_name':'业务名称','category':'反转因子','tags':['日频']},True)
+  legacy.assert_not_called()
+  assert client.post('/api/inst/quant/factor-workflow/reviews/c',json={**body,'org_id':999}).status_code==422
+
+def test_explicit_review_purpose_reaches_service_without_client_identity():
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.review.request_review',return_value={'id':'c'}) as request:
+  assert client.post('/api/inst/quant/factor-workflow/candidates/c/review-request',json={'note':'保留失败复盘','purpose':'research_feedback_only'}).status_code==200
+  request.assert_called_once_with(912,261,'c','保留失败复盘','research_feedback_only')

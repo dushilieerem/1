@@ -353,6 +353,11 @@ def list_org_topics(uid: int, org: int) -> list[dict]:
                         WHERE c.user_id=t.user_id AND c.org_id=t.org_id
                           AND c.project_id=t.project_id
                           AND c.archive->>'approved'='true') AS approved_count,
+                      (SELECT COUNT(*) FROM quant_factor_candidates c
+                        WHERE c.user_id=t.user_id AND c.org_id=t.org_id AND c.project_id=t.project_id
+                          AND c.archive->>'approved'='true'
+                          AND c.archive->'research_asset'->>'schema'='quant.research-asset.v1'
+                          AND c.archive->'research_asset'->>'snapshot_hash'=c.snapshot_hash) AS registered_count,
                       (SELECT r.outcome FROM quant_factor_trials r
                         WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id
                         ORDER BY r.trial_no DESC LIMIT 1) AS latest_outcome
@@ -666,6 +671,7 @@ def append_trial(uid: int, org: int, topic_id: str, payload: dict) -> dict:
     as_of = topic.get("as_of")
     trial_id = str(uuid.uuid4())
     with get_conn() as c:
+        c.execute("SELECT pg_advisory_xact_lock(%s,%s)", (9106, uid))
         c.execute("SELECT pg_advisory_xact_lock(%s,%s)", (9111, uid))
         trial_no = c.execute(
             "SELECT COALESCE(MAX(trial_no),0)+1 AS n FROM quant_factor_trials WHERE user_id=%s AND org_id=%s AND project_id=%s",

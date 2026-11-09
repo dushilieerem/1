@@ -1,5 +1,6 @@
 from fastapi import APIRouter,Depends,HTTPException,Request
 from pydantic import BaseModel,ConfigDict,Field
+from typing import Literal
 from app.deps import require_quant_manager, require_quant_researcher, require_quant_reviewer, require_quant_user
 from app.routers.inst_quant import _quant_uid
 from services.quant_factor import service,store
@@ -63,12 +64,19 @@ def assistant(project_id:str,body:DraftBody,request:Request,ctx=Depends(require_
     except (AiError,ValidationError,ValueError) as exc:raise HTTPException(502,'研究助手暂未返回有效建议，请稍后重试；原内容未更改。') from exc
 
 class ReviewBody(ArchiveBody):
-    decision: str = Field(pattern='^(research_supported|needs_revision|rejected)$')
+    decision: str = Field(pattern='^(research_supported|approve_research_and_register|needs_revision|rejected)$')
+    acknowledged:bool=False
+    display_name:str=Field(default='',max_length=100)
+    category:str=Field(default='',max_length=50)
+    tags:list[str]=Field(default_factory=list,max_length=12)
+
+class ReviewRequestBody(ArchiveBody):
+    purpose:Literal['research_admission','research_feedback_only']='research_admission'
 
 @router.post('/candidates/{cid}/review-request')
-def review_request(cid:str,body:ArchiveBody,ctx=Depends(require_quant_researcher)):
+def review_request(cid:str,body:ReviewRequestBody,ctx=Depends(require_quant_researcher)):
     from services.quant_factor.review import request_review
-    return invoke(request_review,*identity(ctx),cid,body.note)
+    return invoke(request_review,*identity(ctx),cid,body.note,body.purpose)
 
 @router.get('/pending-review-count')
 def pending_review_count(ctx=Depends(require_quant_user)):
@@ -77,9 +85,9 @@ def pending_review_count(ctx=Depends(require_quant_user)):
     return {'count':invoke(review.pending_count,org,uid,bool(ctx.get('can_review')))}
 
 @router.get('/reviews')
-def review_queue(ctx=Depends(require_quant_reviewer)):
-    from services.quant_factor.review import queue
-    return {'candidates':invoke(queue,*identity(ctx))}
+def review_queue(ctx=Depends(require_quant_user)):
+    from services.quant_factor.review import visible_queue
+    return {'candidates':invoke(visible_queue,*identity(ctx),bool(ctx.get('can_review')))}
 
 @router.post('/reviews/{cid}/claim')
 def review_claim(cid:str,ctx=Depends(require_quant_reviewer)):
@@ -87,13 +95,16 @@ def review_claim(cid:str,ctx=Depends(require_quant_reviewer)):
     return invoke(claim,*identity(ctx),cid)
 
 @router.get('/reviews/{cid}')
-def review_detail(cid:str,ctx=Depends(require_quant_reviewer)):
-    from services.quant_factor.review import detail
-    return invoke(detail,*identity(ctx),cid)
+def review_detail(cid:str,ctx=Depends(require_quant_user)):
+    from services.quant_factor.review import visible_detail
+    return invoke(visible_detail,*identity(ctx),cid,bool(ctx.get('can_review')))
 
 @router.post('/reviews/{cid}')
 def review_record(cid:str,body:ReviewBody,ctx=Depends(require_quant_reviewer)):
     from services.quant_factor.review import record
+    if body.decision=='approve_research_and_register':
+        from services.quant_factor.assets import approve
+        return invoke(approve,*identity(ctx),cid,body.note,{'display_name':body.display_name,'category':body.category,'tags':body.tags},body.acknowledged)
     return invoke(record,*identity(ctx),cid,body.decision,body.note)
 
 @router.get('/published-view')
@@ -365,3 +376,14 @@ def f0_read(rid:str,ctx=Depends(require_quant_researcher)):
 def independent_opinion(cid:str,ctx=Depends(require_quant_reviewer)):
     from services.quant_factor import f5
     return invoke(f5.opinion,*identity(ctx),cid)
+
+
+@router.get('/assets')
+def research_assets(ctx=Depends(require_quant_user)):
+    from services.quant_factor.assets import list_assets
+    return {'assets':invoke(list_assets,*identity(ctx))}
+
+@router.get('/assets/{asset_id}')
+def research_asset_detail(asset_id:str,ctx=Depends(require_quant_user)):
+    from services.quant_factor.assets import detail
+    return invoke(detail,*identity(ctx),asset_id,bool(ctx.get('can_review') or ctx.get('can_manage')))

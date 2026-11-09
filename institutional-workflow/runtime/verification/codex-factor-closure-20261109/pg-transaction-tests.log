@@ -1,0 +1,16 @@
+QUANT_FACTOR_PG_INTEGRATION=1
+COMMAND: ['/home/dev01/project/SVQuant/.ci/venv/bin/python', '-c', "from services.core.env_config import load_env; load_env(); import unittest; suite=unittest.defaultTestLoader.loadTestsFromName('tests.test_quant_factor_assets_pg'); result=unittest.TextTestRunner(verbosity=2).run(suite); raise SystemExit(not result.wasSuccessful())"]
+CWD: /home/dev01/project/SVQuant-zxd/backend
+EXIT: 0
+
+test_computed_unrecorded_candidate_reserves_budget_until_trial_exists (tests.test_quant_factor_assets_pg.IsolatedAssetPostgresTests.test_computed_unrecorded_candidate_reserves_budget_until_trial_exists) ... ok
+test_other_computed_candidate_without_ledger_blocks_real_approval (tests.test_quant_factor_assets_pg.IsolatedAssetPostgresTests.test_other_computed_candidate_without_ledger_blocks_real_approval) ... ok
+test_parallel_approval_is_idempotent_in_real_transactions (tests.test_quant_factor_assets_pg.IsolatedAssetPostgresTests.test_parallel_approval_is_idempotent_in_real_transactions) ... ok
+test_start_and_approval_use_compatible_lock_order (tests.test_quant_factor_assets_pg.IsolatedAssetPostgresTests.test_start_and_approval_use_compatible_lock_order) ... ok
+test_worker_recovery_lease_allows_only_one_execution (tests.test_quant_factor_assets_pg.IsolatedAssetPostgresTests.test_worker_recovery_lease_allows_only_one_execution) ... ok
+test_write_failure_rolls_back_approval_and_asset_and_event (tests.test_quant_factor_assets_pg.IsolatedAssetPostgresTests.test_write_failure_rolls_back_approval_and_asset_and_event) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.743s
+
+OK

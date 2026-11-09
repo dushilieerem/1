@@ -8,7 +8,7 @@ from services.core.re_config import RE_BASE
 from services.core.lan_http import request_json
 from services.factor.code_validation import validated_factor_code
 from .asset_context import catalogue,duplicate_matches
-from .novelty_policy import policy,evaluate_comparison
+from .novelty_policy import policy,evaluate_comparison,DEFAULTS
 from .policy import WorkflowError,digest
 
 
@@ -39,7 +39,8 @@ def validate_result(result,payload,development):
 
 def assess(uid,snapshot,development,reference=None,compute=True,progress=None,org=None):
     rules=policy(snapshot['plan'])
-    if rules['researchPurpose']!='discovery':
+    if rules['researchPurpose']=='replication':rules={**DEFAULTS,**rules}
+    if rules['researchPurpose'] not in ('discovery','replication'):
         return {'status':'not_assessed','message':'已有或历史研究：没有数值去重证据，不作为新发现。','gate':{'passed':False,'complete':False}}
     refs=reference or catalogue(uid, org)
     base={'reference_hash':refs['hash'],'reference_scope':refs['scope'],'reference_count':refs['count']}
@@ -47,7 +48,7 @@ def assess(uid,snapshot,development,reference=None,compute=True,progress=None,or
     duplicates=duplicate_matches(snapshot['request'].get('factor_code',''),refs)
     if not snapshot['request'].get('factor_code') and any(f['library_name']==snapshot['request'].get('library_name') and f['factor_name']==snapshot['request']['factor_name'] for f in refs['builtins']):
         duplicates.append({'name':snapshot['request']['factor_name'],'source_id':'builtin','library':snapshot['request']['library_name']})
-    if duplicates:
+    if duplicates and rules['researchPurpose']=='discovery':
         return {**base,'status':'failed','message':'与已有因子定义重复；改名、局部变量改名或改注释不作为新成果送审。','duplicates':duplicates,'gate':{**empty,'limitation':'源码/来源去重已命中，未执行数值相关性计算。'}}
     if not compute:
         return {**base,'status':'deferred','message':'研发数值门槛尚未通过，先改进候选；尚未执行全库数值对照，不认定为新发现。','gate':empty}
@@ -89,7 +90,7 @@ def assess(uid,snapshot,development,reference=None,compute=True,progress=None,or
         validate_result(result,payload,development)
         gate=evaluate_comparison(result,rules,development['meta']['data_release_id'],development['meta']['factor_source_hash'])
         status=gate['status']
-        message={'passed':'完整冻结对照库的预登记相关性门槛通过；仍需样本外与人工研究复核。','failed':'与已有因子值相关性超过预设上限，不作为新成果自动送审。','incomplete':'对照存在失败或覆盖不足，不能认定通过；请查看逐项证据。'}[status]
+        message={'passed':'完整冻结对照库的预登记相关性门槛通过；仍需样本外与人工研究复核。','failed':'已识别与既有因子高度相关；新发现不能送审，复现仅作为原定义的验证记录。','incomplete':'对照存在失败或覆盖不足，不能认定通过；请查看逐项证据。'}[status]
         return {**base,'status':status,'message':message,'gate':gate,'comparisons':result['comparisons'],'meta':result['meta']}
     except Exception as exc:
         cancel()

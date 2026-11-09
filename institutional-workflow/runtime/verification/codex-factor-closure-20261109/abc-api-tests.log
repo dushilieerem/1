@@ -1,0 +1,4 @@
+COMMAND: /home/dev01/project/SVQuant/.ci/venv/bin/python -m pytest tests/test_quant_factor_routes.py -q -p no:cacheprovider
+EXIT: 0
+............................                                             [100%]
+28 passed in 1.31s

@@ -234,3 +234,7 @@
 @media(max-width:800px){.quant-shell .ff-columns{grid-template-columns:1fr}.quant-shell .ff-task-list{position:static;max-height:340px}.quant-shell .ff-steps{grid-template-columns:repeat(2,minmax(0,1fr))}.quant-shell .ff-step{display:flex}}
 
 .quant-shell .ff-create-fields{border:0;padding:0;margin:0;min-width:0}
+
+.quant-shell .ff-fold{border:1px solid var(--border);border-radius:8px;background:white;margin-top:14px;font-size:12px}.quant-shell .ff-fold>summary{cursor:pointer;padding:14px 16px;color:#62516f}.quant-shell .ff-fold>div{padding:0 16px 17px}
+
+.quant-shell .factor-review-dialog{border:0;border-radius:10px;padding:0;margin:auto;max-width:min(680px,calc(100vw - 32px));max-height:calc(100vh - 40px);background:white;color:var(--ink)}.quant-shell .factor-review-dialog::backdrop{background:#251b344d}.quant-shell .factor-review-dialog .modal{max-width:100%;box-shadow:none}

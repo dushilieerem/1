@@ -10,10 +10,10 @@ from __future__ import annotations
 import time
 
 
-def run_steps(*, decide, execute, max_steps: int = 3, stop_when=None, on_step=None, before_step=None):
-    steps = []
+def run_steps(*, decide, execute, max_steps: int = 3, stop_when=None, on_step=None, before_step=None, initial_steps=None):
+    steps = list(initial_steps or [])
     stop_reason = ""
-    for step in range(1, max_steps + 1):
+    for step in range(len(steps) + 1, len(steps) + max_steps + 1):
         if before_step:
             blocked = before_step(step)
             if blocked:

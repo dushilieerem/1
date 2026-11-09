@@ -16,6 +16,10 @@ def conn(fetchone=None):
 
 
 class F0StartTest(unittest.TestCase):
+    def setUp(self):
+        control=patch.object(f0.service, 'control_status', return_value={'paused':False})
+        control.start();self.addCleanup(control.stop)
+
     def test_view_drift_stops(self):
         w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None, None]
         with patch.object(f0, '_topic', return_value=TOPIC), patch.object(f0, 'get_conn', return_value=w), \
@@ -76,6 +80,8 @@ class F0RunTest(unittest.TestCase):
                               'topic_id': 't', 'project_id': 'p', 'decision': {}})
         decision = f0_agent.Decision(action='stop', rationale='E1 NW t -0.76 未达标，停止', stop_reason='no_improvement')
         with patch.object(f0, 'get_conn', return_value=w), patch.object(f0, '_topic', return_value=TOPIC), \
+             patch.object(f0.service,'recover_pending'),patch.object(f0.service,'backfill_terminal_trials'), \
+             patch.object(f0.ledger,'_trials',return_value=[]), \
              patch.object(f0_agent, 'decide', return_value=(decision, {})), \
              patch.object(f0_agent, 'execute', return_value={'status': 'stopped', 'reason': 'no_improvement'}):
             f0.run(1, 2, 'run1')
@@ -106,7 +112,7 @@ class DecisionValidationTest(unittest.TestCase):
 
     def test_request_seal_without_passed_candidate_stops(self):
         decision = f0_agent.Decision(action='request_seal', rationale='E4 研发已通过，应由 F5 封存')
-        with patch.object(f0_agent, 'get_conn') as gc:
+        with patch.object(f0_agent, 'get_conn') as gc, patch.object(f0_agent, '_context', return_value={'remaining': 2}):
             gc.return_value.__enter__.return_value.execute.return_value.fetchone.return_value = None
             result = f0_agent.execute(1, 2, 'run', TOPIC, decision, 1)
         self.assertEqual(result['status'], 'stopped')
@@ -116,7 +122,7 @@ class DecisionValidationTest(unittest.TestCase):
 class SealActionTest(unittest.TestCase):
     def test_f0_requests_seal_and_submits_review_after_pass(self):
         cand = {'id': 'c', 'status': 'development_passed', 'snapshot': {'plan': {'researchPurpose': 'replication'}}}
-        with patch.object(f0_agent, 'get_conn') as gc, \
+        with patch.object(f0_agent, 'get_conn') as gc, patch.object(f0_agent, '_context', return_value={'remaining': 2}), \
              patch.object(f0_agent.sealed, 'request', return_value={'id': 's'}) as req, \
              patch.object(f0_agent.sealed, 'detail', return_value={'status': 'passed'}), \
              patch.object(f0_agent.review, 'request_review') as rev:
@@ -201,19 +207,19 @@ class F0ConcurrentStartTest(unittest.TestCase):
         import threading
         import time
         from concurrent.futures import ThreadPoolExecutor
-        mutex = threading.Lock()
+        mutex = threading.RLock()
         barrier = threading.Barrier(2)
         runs = []
         class FakeConnection:
             def __init__(self):
-                self.locked = False
+                self.locked = 0
                 self.row = None
             def __enter__(self): return self
             def __exit__(self, *args):
-                if self.locked: mutex.release()
+                for _ in range(self.locked): mutex.release()
             def execute(self, sql, params=()):
                 if 'pg_advisory_xact_lock' in sql:
-                    mutex.acquire(); self.locked = True
+                    mutex.acquire(); self.locked += 1
                 elif 'quant_factor_branches' in sql: self.row = {'id': 'b'}
                 elif 'idempotency_key=%s' in sql:
                     self.row = next((r for r in runs if r['key'] == params[-1]), None)
@@ -242,3 +248,35 @@ class F0ConcurrentStartTest(unittest.TestCase):
         self.assertEqual(len(runs), 1)
         self.assertEqual([r['id'] for r in results], ['one-run', 'one-run'])
         submit.assert_called_once()
+
+
+class F0ResumeConsistencyTest(unittest.TestCase):
+    def test_queued_resume_reuses_identity_without_new_worker(self):
+        row={'id':'r','topic_id':'t','status':'queued'}
+        w,c=conn(fetchone=row)
+        with patch.object(f0,'read',return_value=row),patch.object(f0,'get_conn',return_value=w),patch.object(f0.POOL,'submit') as submit:
+            self.assertEqual(f0.resume(1,2,'r')['id'],'r')
+        submit.assert_not_called()
+        self.assertEqual(c.execute.call_args_list[0].args[1],(9106,1))
+        self.assertEqual(c.execute.call_args_list[1].args[1],('quant-factor-start:1:2:t',))
+
+    def test_other_active_run_is_reused_instead_of_resuming_old_run(self):
+        old={'id':'old','topic_id':'t','status':'failed'}
+        w,c=conn();c.fetchone.side_effect=[old,{'id':'active','topic_id':'t','status':'running'}]
+        with patch.object(f0,'read',return_value=old),patch.object(f0,'get_conn',return_value=w),patch.object(f0.POOL,'submit') as submit:
+            self.assertEqual(f0.resume(1,2,'old')['id'],'active')
+        submit.assert_not_called()
+
+    def test_running_worker_cannot_be_claimed_twice(self):
+        w,c=conn(fetchone={'id':'r','status':'running'})
+        with patch.object(f0,'get_conn',return_value=w),patch.object(f0_agent,'decide') as decide:
+            f0.run(1,2,'r')
+        decide.assert_not_called()
+        self.assertIn('FOR UPDATE',c.execute.call_args.args[0])
+
+    def test_engine_resume_preserves_previous_events_and_step_identity(self):
+        from services.quant_factor.decision_engine import run_steps
+        prior={'step':1,'at':'2026-11-09T00:00:00','decision':{'action':'run_test'},'result':{'status':'completed'}}
+        d=f0_agent.Decision(action='stop',rationale='已有试验结果不满足要求，停止研究')
+        steps,reason=run_steps(decide=lambda n:(d,{}),execute=lambda d,n:{'status':'stopped','reason':'done'},max_steps=1,initial_steps=[prior])
+        self.assertEqual(steps[0],prior);self.assertEqual(steps[1]['step'],2);self.assertEqual(reason,'done')

@@ -1,0 +1,16 @@
+COMMAND: timeout 25s node --import tsx --test tests/factorAdmissionFlow.test.tsx
+CWD: /home/dev01/project/SVQuant-zxd/frontend
+EXIT: 0
+✔ 审查真实组件路径：先领取，意见响应不替换候选，批准弹窗确认后显示登记入口 (827.240284ms)
+✔ 旧反馈和作者只读不会出现新批准入口；取消弹窗回到触发按钮 (166.314118ms)
+✔ 作者只读材料没有批准、领取或决定按钮 (72.192022ms)
+✔ 冻结资产复用保存来源和原定义，不复制旧验证状态或自动运行 (5.452701ms)
+✔ 普通研究员从机构资产入口查看授权报告摘要与固定代码，无作者私有报告请求 (151.655796ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3410.572253

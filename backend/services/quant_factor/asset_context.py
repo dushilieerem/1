@@ -42,10 +42,19 @@ def catalogue(uid, org=None):
         from services.core.db import get_conn
         with get_conn() as c:
             rows=c.execute(
-                "SELECT id,snapshot->'request'->>'factor_name' AS factor_name,snapshot->'request'->>'factor_code' AS factor_code,snapshot->'request'->>'library_name' AS library_name FROM quant_factor_candidates WHERE org_id=%s AND archive->'review'->>'status'='requested' ORDER BY updated_at DESC",(org,)).fetchall()
-        pending=[{'factor_name':r['factor_name'],'factor_code':r['factor_code'],'source_id':'pending:'+r['id'],'library_name':'本机构待审候选','description':'同机构待审候选 '+(r['factor_name'] or '')} for r in rows if r.get('factor_code')]
+                "SELECT id,snapshot->'request'->>'factor_name' AS factor_name,snapshot->'request'->>'factor_code' AS factor_code,snapshot->'request'->>'library_name' AS library_name,archive->'research_asset' AS asset,snapshot,snapshot_hash FROM quant_factor_candidates WHERE org_id=%s AND (archive->'review'->>'status'='requested' OR (archive->>'approved'='true' AND archive->'research_asset'->>'schema'='quant.research-asset.v1' AND archive->'research_asset'->>'kind'='novel_factor')) ORDER BY updated_at DESC",(org,)).fetchall()
+        from .assets import serialize
+        for row in rows:
+            if row.get('asset'):
+                asset=serialize(row['asset'],org)
+                if row['snapshot_hash']!=asset['snapshot_hash'] or digest(row['snapshot'])!=asset['snapshot_hash']:raise WorkflowError('已登记定义与冻结版本不一致，暂停新对照')
+                definition=asset['definition']
+                if definition.get('factor_code'):pending.append({'factor_name':definition['factor_name'],'factor_code':definition['factor_code'],'source_id':'asset:'+asset['id'],'library_name':'机构研究库','description':asset['hypothesis']})
+            elif row.get('factor_code'):
+                pending.append({'factor_name':row['factor_name'],'factor_code':row['factor_code'],'source_id':'pending:'+row['id'],'library_name':'本机构待审候选','description':'同机构待审候选 '+(row['factor_name'] or '')})
+
     identities=[{'id':f['library_name']+':'+f['factor_name'],'metadata_hash':digest(f)} for f in builtins]+[{'id':f['source_id'],'hash':hashlib.sha256(f['factor_code'].encode()).hexdigest()} for f in owned+pending]
-    return {'scope':'平台内置目录、当前账号已有可计算定义的自建因子、本机构待审候选；不含无代码草稿和其他成员私有库','builtins':builtins,'owned':owned+pending,'hash':digest(identities),'catalogue_fetched_at':raw.get('fetched_at'),'count':len(identities)}
+    return {'scope':'平台内置目录、当前账号已有可计算定义的自建因子、本机构待审候选及已批准研究定义；不含无代码草稿和其他成员私有库','builtins':builtins,'owned':owned+pending,'hash':digest(identities),'catalogue_fetched_at':raw.get('fetched_at'),'count':len(identities)}
 
 def planner_context(refs):
     # Full visible metadata within a bounded context. Never silently truncate then claim full coverage.

@@ -1,0 +1,47 @@
+Diagnostic: wrap db._new_conn with allocation stack; close idle pool only in this test process. No BFF process touched.
+EXIT: 0
+ALLOCATIONS 1
+  File "/home/dev01/program/anaconda3/envs/researchengine/lib/python3.11/unittest/case.py", line 623, in run
+    self._callTestMethod(testMethod)
+  File "/home/dev01/program/anaconda3/envs/researchengine/lib/python3.11/unittest/case.py", line 579, in _callTestMethod
+    if method() is not None:
+  File "/home/dev01/project/SVQuant-zxd/backend/tests/test_quant_factor_f0.py", line 113, in test_request_seal_without_passed_candidate_stops
+    result = f0_agent.execute(1, 2, 'run', TOPIC, decision, 1)
+  File "/home/dev01/project/SVQuant-zxd/backend/services/quant_factor/f0_agent.py", line 336, in execute
+    ctx = _context(uid, org, topic, run_id)
+  File "/home/dev01/project/SVQuant-zxd/backend/services/quant_factor/f0_agent.py", line 58, in _context
+    trials = ledger._trials(uid, org, topic["id"])
+  File "/home/dev01/project/SVQuant-zxd/backend/services/quant_factor/ledger.py", line 235, in _trials
+    return repo.trials(Tenant.from_pair(uid, org), topic_id)
+  File "/home/dev01/project/SVQuant-zxd/backend/services/quant_factor/repo.py", line 70, in trials
+    with get_conn() as c:
+  File "/home/dev01/program/anaconda3/envs/researchengine/lib/python3.11/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+  File "/home/dev01/project/SVQuant-zxd/backend/services/core/db.py", line 177, in get_conn
+    conn = _borrow_conn(autocommit=autocommit)
+  File "/home/dev01/project/SVQuant-zxd/backend/services/core/db.py", line 121, in _borrow_conn
+    conn = _create_slot(autocommit=autocommit)
+  File "/home/dev01/project/SVQuant-zxd/backend/services/core/db.py", line 109, in _create_slot
+    return _new_conn(autocommit=autocommit)
+  File "<string>", line 6, in tracked
+
+POOL_AFTER_TEST {"used": 1, "idle": 1, "limit": 10}
+TEST_PROCESS_IDLE_CONNECTIONS_CLOSED 1
+
+..................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 178 tests in 0.441s
+
+OK
+
+After replacing f0_agent._context in isolated seal-execution tests:
+DATABASE_CONNECTION_ATTEMPTS 3
+POOL_AFTER_TEST {"used": 0, "idle": 0, "limit": 10}
+
+EXIT: 1; ResourceWarning occurrences: 0
+
+The no-connect guard additionally found omitted substitutes in F0StartTest.control_status and ReviewIsolationTest.detail sealed lookup; those reads now have explicit substitutes. Final guarded suite:
+DATABASE_CONNECTION_ATTEMPTS 0
+POOL_AFTER_TEST {"used": 0, "idle": 0, "limit": 10}
+
+EXIT: 0; ResourceWarning occurrences: 0

@@ -51,6 +51,7 @@ const protectedPaths = [
  /^\/factor-workflow\/(overview|controls)(?:\/pause)?$/,
  /^\/factor-workflow\/published-view$/,
  /^\/data-resources\/(catalog(?:\/[^/]+)?|views(?:\/[^/]+\/usage)?|requests(?:\/[^/]+)?)$/,
+ /^\/factor-workflow\/assets(?:\/[^/]+)?$/,
  /^\/factor-workflow\/topics$/,
  /^\/portfolio\/plans(?:\/[^/]+(?:\/(risk|revise|submit|approve|stop|simulate))?)?$/,
  /^\/monitor\/overview$/,
@@ -63,7 +64,7 @@ const protectedPaths = [
  /^\/factor-workflow\/f0-runs\/[^/]+(?:\/resume)?$/,
  /^\/factor-workflow\/pending-review-count$/,
  /^\/factor-workflow\/reviews(?:\/[^/]+)?$/,
- /^\/factor-workflow\/reviews\/[^/]+\/independent-opinion$/,
+ /^\/factor-workflow\/reviews\/[^/]+\/(claim|independent-opinion)$/,
  /^\/factor-workflow\/projects\/[^/]+\/(candidates|assistant)$/,
  /^\/factor-workflow\/candidates\/[^/]+(?:\/(validate|retry|cancel|archive|submit|register|review-request|sealed-validation))?$/,
  /^\/detect\/(projects|runs)(\/[^/]+)?(\/runs)?$/,
@@ -91,7 +92,7 @@ export async function researchFetch(input: string | URL | Request, init?: Reques
    if (!url.pathname.startsWith("/api/") || !protectedPaths.some(p => p.test(relative))) throw new Error("此功能未开放给机构量化工作区");
    const s = getQuantSession();
    if (!s) throw new Error("请登录机构量化平台");
-   if (method !== "GET" && s.permissions.quant !== "write" && !(method === "POST" && s.permissions.quant === "review" && /^\/factor-workflow\/reviews\/[^/]+$/.test(relative))) throw new Error("当前机构角色没有写入权限");
+   if (method !== "GET" && s.permissions.quant !== "write" && !(method === "POST" && s.permissions.quant === "review" && /^\/factor-workflow\/reviews\/[^/]+(?:\/(claim|independent-opinion))?$/.test(relative))) throw new Error("当前机构角色没有写入权限");
    if (relative === "/strategy/library/sync") throw new Error("内置策略目录由平台管理");
    url.pathname = "/api/inst/quant" + relative;
    headers.set("Authorization", "Bearer " + s.token);

@@ -1,0 +1,5 @@
+COMMAND: ['/home/dev01/project/SVQuant/.ci/venv/bin/python', '-m', 'pytest', 'tests/test_quant_data_routes.py', '-q', '-p', 'no:cacheprovider']
+CWD: /home/dev01/project/SVQuant-zxd/backend
+EXIT: 0
+........                                                                 [100%]
+8 passed in 0.79s

@@ -1,0 +1,3 @@
+# CR094最小元数据补充
+
+保留既有目录接口和字段，新增字段索引、publication_status/version、catalog_version、quality_status/version、applicability和详情field_availability。字段检索仅使用同view的monitor元数据，不读取行情表。发布按当前VIEW_ID/manifest成员及物化路径核对；quality文件必须匹配view。详情可选view_id不匹配返回409。适用性只展示版本契约原文、既有KNOWN_LIMITS及明确sw_pit_rule；不把date<=as_of当历史PIT授权。SW二级旧目录备注和物化契约可能冲突，保留原来源说明而不伪造空值/覆盖保证。机构/成员权限不更改。

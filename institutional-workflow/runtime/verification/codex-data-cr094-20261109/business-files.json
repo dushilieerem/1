@@ -1,0 +1,38 @@
+{
+  "files": [
+    "backend/app/routers/quant_data_resources.py",
+    "backend/services/quant_data_resources.py",
+    "backend/tests/test_quant_data_requests.py",
+    "backend/tests/test_quant_data_metadata.py",
+    "backend/tests/test_quant_data_requests_pg.py",
+    "backend/tests/test_quant_data_routes.py",
+    "frontend/package.json",
+    "frontend/src/pages/institutional-workflow/QuantDataResourcesPage.tsx",
+    "frontend/src/pages/institutional-workflow/quantWorkspace.css",
+    "frontend/src/pages/institutional-workflow/DataRequestForm.tsx",
+    "frontend/src/pages/institutional-workflow/QuantDataCatalog.tsx",
+    "frontend/src/pages/institutional-workflow/quantData.css",
+    "frontend/src/pages/institutional-workflow/quantDataClient.ts",
+    "frontend/src/pages/institutional-workflow/quantDataModel.ts",
+    "frontend/tests/quantDataCatalog.test.tsx",
+    "frontend/tests/quantDataFlow.test.tsx"
+  ],
+  "source_sha256": {
+    "backend/app/routers/quant_data_resources.py": "e6dee3fe4f3e54cfe8d5602f015295e864c2b3c8cc44eb0d0fe6996aa10824c2",
+    "backend/services/quant_data_resources.py": "30f7655e78a45d16944090e6479f0b30c727e8db879c56c9d9d3a66c1d68294e",
+    "backend/tests/test_quant_data_requests.py": "b2f2060ebe272f5b42e2ba8b2ef3b8098d6d5c1871007dd229f582c52b39a189",
+    "backend/tests/test_quant_data_metadata.py": "d0e15e7963dfe6f629fd09517f7eaebaa2f7d9c1510d28d79a05fb384e00a56d",
+    "backend/tests/test_quant_data_requests_pg.py": "f2d8718e1e60f00978b19ab77eb47941c542008f23653229296bbb4f88f38598",
+    "backend/tests/test_quant_data_routes.py": "eaca5fb7edfc08f5960fc3c4d3ce30c69b03f1e06592e99c63e3c358e16d0d78",
+    "frontend/package.json": "25d289aad4da289c9979b72ce019b078a5673d2c61dc5d817b3b905865be12c4",
+    "frontend/src/pages/institutional-workflow/QuantDataResourcesPage.tsx": "64402bde3a3cfbded483adc1f0709eeea9276409c6a420c4f5c3a423720e4f98",
+    "frontend/src/pages/institutional-workflow/quantWorkspace.css": "d6c8ebdc60e4667f4b7d6698c0b5cbd5c080b1aa6065ef18f53cb78ff5f6b250",
+    "frontend/src/pages/institutional-workflow/DataRequestForm.tsx": "b1f06d8756ab8dacd66d9f657536f9a87b147c980110317d788a285f2287db9c",
+    "frontend/src/pages/institutional-workflow/QuantDataCatalog.tsx": "b5f4c661384ad25bae53330a54da5a2dcf710ea9e77b739a2637091c9bac6429",
+    "frontend/src/pages/institutional-workflow/quantData.css": "86b2dc267bee45697e3b0af061788d526e08e1d3129709a2ae9818e7ff345a55",
+    "frontend/src/pages/institutional-workflow/quantDataClient.ts": "185f014f1f0139f6f0223e550b3559c9f293ba0160bd7d8a2cf227368e6e520d",
+    "frontend/src/pages/institutional-workflow/quantDataModel.ts": "945d8c8be3e4a4aa235832b55d6cf9fa352110257f78a04a2621bb29619a9b76",
+    "frontend/tests/quantDataCatalog.test.tsx": "43512973d325a5fc7a7a07bff1ed6a8778369f9a94f17f1e7ba12e0bae87cf6f",
+    "frontend/tests/quantDataFlow.test.tsx": "db421f2053895ef72fd718212312861649ac431ee42377511f33615413cdac6a"
+  }
+}

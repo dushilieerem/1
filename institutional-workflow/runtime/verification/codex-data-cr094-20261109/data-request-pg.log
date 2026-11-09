@@ -1,0 +1,13 @@
+QUANT_DATA_PG_INTEGRATION=1
+COMMAND: ['/home/dev01/project/SVQuant/.ci/venv/bin/python', '-c', "from services.core.env_config import load_env;load_env();import unittest;suite=unittest.defaultTestLoader.loadTestsFromName('tests.test_quant_data_requests_pg');result=unittest.TextTestRunner(verbosity=2).run(suite);raise SystemExit(not result.wasSuccessful())"]
+EXIT: 0
+
+test_changed_body_cannot_overwrite_original (tests.test_quant_data_requests_pg.RequestPersistenceTests.test_changed_body_cannot_overwrite_original) ... ok
+test_committed_server_result_survives_lost_response_then_replay (tests.test_quant_data_requests_pg.RequestPersistenceTests.test_committed_server_result_survives_lost_response_then_replay) ... ok
+test_parallel_same_identity_is_one_persisted_request (tests.test_quant_data_requests_pg.RequestPersistenceTests.test_parallel_same_identity_is_one_persisted_request) ... ok
+test_same_id_different_user_or_org_cannot_read_original (tests.test_quant_data_requests_pg.RequestPersistenceTests.test_same_id_different_user_or_org_cannot_read_original) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.192s
+
+OK

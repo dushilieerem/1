@@ -39,7 +39,7 @@ class UpdateRequestTest(unittest.TestCase):
     def _update(self, status, payload):
         cursor = MagicMock()
         cursor.execute.return_value.fetchone.return_value = {"id": "r1", "org_id": 2, "status": status}
-        with patch.object(svc, "get_conn", return_value=_conn(cursor)):
+        with patch.object(svc, "get_conn", return_value=_conn(cursor)), patch.object(svc, '_available_delivery_views', return_value={'fixture-published':None}):
             return svc.update_request(9, 2, "r1", payload)
 
     def test_rejects_illegal_transition(self):
@@ -86,7 +86,7 @@ class ViewUsageScopeTest(unittest.TestCase):
     def test_researcher_usage_is_member_scoped(self):
         cursor = MagicMock()
         cursor.execute.return_value.fetchall.return_value = []
-        with patch.object(svc, "get_conn", return_value=_conn(cursor)):
+        with patch.object(svc, "get_conn", return_value=_conn(cursor)), patch.object(svc, '_published_views', return_value={'research-rv-20261105-5'}):
             out = svc.view_usage(9, 2, "research-rv-20261105-5")
         self.assertEqual(out["view_id"], "research-rv-20261105-5")
         factor_params = cursor.execute.call_args_list[0].args[1]
@@ -97,7 +97,7 @@ class ViewUsageScopeTest(unittest.TestCase):
     def test_manager_usage_is_org_scoped(self):
         cursor = MagicMock()
         cursor.execute.return_value.fetchall.return_value = []
-        with patch.object(svc, "get_conn", return_value=_conn(cursor)):
+        with patch.object(svc, "get_conn", return_value=_conn(cursor)), patch.object(svc, '_published_views', return_value={'research-rv-20261105-5'}):
             svc.view_usage(9, 2, "research-rv-20261105-5", True)
         self.assertEqual(cursor.execute.call_args_list[0].args[1], (2, "research-rv-20261105-5"))
         self.assertEqual(cursor.execute.call_args_list[1].args[1], (2, "research-rv-20261105-5"))

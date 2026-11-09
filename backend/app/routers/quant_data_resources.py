@@ -1,3 +1,4 @@
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,6 +16,8 @@ def identity(ctx):
 def invoke(fn, *args):
     try:
         return fn(*args)
+    except svc.MetadataUnavailable as exc:
+        raise HTTPException(503,str(exc)) from None
     except KeyError:
         raise HTTPException(404, "数据集或记录不存在") from None
     except ValueError as exc:
@@ -25,6 +28,7 @@ def invoke(fn, *args):
 
 class RequestBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    request_id: UUID | None = None
     title: str = Field(min_length=1, max_length=300)
     purpose: str = Field(default="", max_length=100)
     period: str = Field(default="", max_length=200)
@@ -47,8 +51,8 @@ def catalog(ctx=Depends(require_quant_researcher)):
 
 
 @router.get("/catalog/{name}")
-def dataset(name: str, ctx=Depends(require_quant_researcher)):
-    return invoke(svc.dataset, *identity(ctx), name)
+def dataset(name: str, view_id: str | None = None, ctx=Depends(require_quant_researcher)):
+    return invoke(svc.dataset, *identity(ctx), name, view_id)
 
 
 @router.get("/views")

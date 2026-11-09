@@ -1,0 +1,16 @@
+import {useEffect,useRef,useState} from 'react';
+import {researchFetch,researchIdentity,subscribeAuth} from '@/lib/researchClient';
+export async function dataApi<T>(path:string,init?:RequestInit):Promise<T>{const r=await researchFetch('/api/inst/quant/data-resources/'+path,init);let d:any;try{d=await r.json();}catch{throw Error('服务返回的内容无法读取，请稍后重试。');}if(!r.ok)throw Error((r.status===409||r.status===422)&&typeof d.detail==='string'?d.detail:r.status===403?'当前身份无权执行此操作。':'数据服务读取或保存失败，请稍后重试。');return d;}
+export function useDataResource<T>(path:string,enabled:boolean,parse:(raw:any)=>T){
+ const [identity,setIdentity]=useState(researchIdentity),[revision,setRevision]=useState(0),[state,setState]=useState<{identity:string;path:string;loadedAt?:string;data?:T;error:string;loading:boolean}>({identity:researchIdentity(),path,error:'',loading:enabled});const serial=useRef(0),parser=useRef(parse);parser.current=parse;
+ useEffect(()=>subscribeAuth(()=>{++serial.current;const id=researchIdentity();setIdentity(id);setState({identity:id,path,error:'',loading:enabled});}),[enabled]);
+ useEffect(()=>{if(!enabled)return;const n=++serial.current;const controller=new AbortController();setState(x=>({identity,path,loadedAt:x.path===path?x.loadedAt:undefined,data:x.identity===identity&&x.path===path?x.data:undefined,error:'',loading:true}));dataApi<any>(path,{signal:controller.signal}).then(raw=>{const data=parser.current(raw);if(n===serial.current&&identity===researchIdentity())setState({identity,path,data,loadedAt:new Date().toLocaleString(),error:'',loading:false});}).catch(e=>{if(n===serial.current&&!controller.signal.aborted&&identity===researchIdentity())setState(x=>({...x,error:e instanceof Error?e.message:'读取失败',loading:false}));});return()=>{++serial.current;controller.abort();};},[path,enabled,identity,revision]);
+ const valid=state.identity===researchIdentity()&&state.path===path;return {data:valid?state.data:undefined,error:valid?state.error:'',loading:valid?state.loading:enabled,loadedAt:valid?state.loadedAt:undefined,reload:()=>setRevision(x=>x+1),setData:(fn:(data:T|undefined)=>T)=>setState(x=>({identity:researchIdentity(),path,loadedAt:new Date().toLocaleString(),data:fn(x.identity===researchIdentity()&&x.path===path?x.data:undefined),error:'',loading:false}))};
+}
+export type RequestForm={title:string;purpose:string;period:string;frequency:string;fields:string;related_type:string;related_id:string};
+export type RequestDraft={id:string;form:RequestForm;attempted:boolean};
+export const emptyDataRequest=():RequestForm=>({title:'',purpose:'因子研究',period:'',frequency:'',fields:'',related_type:'',related_id:''});
+export function requestDraftKey(scope:string){return 'svquant:data-request:'+scope;}
+export function readRequestDraft(scope:string):RequestDraft|undefined{try{const d=JSON.parse(sessionStorage.getItem(requestDraftKey(scope))||'null');if(d&&typeof d.id==='string'&&typeof d.form?.title==='string'&&typeof d.attempted==='boolean')return d;}catch{}return undefined;}
+export function saveRequestDraft(scope:string,draft:RequestDraft){try{sessionStorage.setItem(requestDraftKey(scope),JSON.stringify(draft));return true;}catch{return false;}}
+export function clearRequestDraft(scope:string){try{sessionStorage.removeItem(requestDraftKey(scope));}catch{}}

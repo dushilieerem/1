@@ -1,0 +1,32 @@
+COMMAND: ['/home/dev01/project/SVQuant/.ci/venv/bin/python', '-m', 'unittest', 'tests.test_quant_data_metadata', 'tests.test_quant_data_requests', '-v']
+CWD: /home/dev01/project/SVQuant-zxd/backend
+EXIT: 0
+
+test_catalogue_version_conflict_and_bad_catalog_schema_are_explicit (tests.test_quant_data_metadata.MetadataTests.test_catalogue_version_conflict_and_bad_catalog_schema_are_explicit) ... ok
+test_contract_file_inside_manifest_dataset_directory_is_accepted (tests.test_quant_data_metadata.MetadataTests.test_contract_file_inside_manifest_dataset_directory_is_accepted) ... ok
+test_external_symlink_is_not_published (tests.test_quant_data_metadata.MetadataTests.test_external_symlink_is_not_published) ... ok
+test_fixed_release_symlink_requires_all_manifest_definition_identities (tests.test_quant_data_metadata.MetadataTests.test_fixed_release_symlink_requires_all_manifest_definition_identities) ... ok
+test_manifest_unknown_dates_are_not_filled_from_monitor (tests.test_quant_data_metadata.MetadataTests.test_manifest_unknown_dates_are_not_filled_from_monitor) ... ok
+test_published_quality_denominator_excludes_monitor_only_items (tests.test_quant_data_metadata.MetadataTests.test_published_quality_denominator_excludes_monitor_only_items) ... ok
+test_quality_missing_corrupt_wrong_version_and_wrong_schema_differ_from_unchecked (tests.test_quant_data_metadata.MetadataTests.test_quality_missing_corrupt_wrong_version_and_wrong_schema_differ_from_unchecked) ... ok
+test_schema_bad_contract_does_not_crash_or_claim_applicability (tests.test_quant_data_metadata.MetadataTests.test_schema_bad_contract_does_not_crash_or_claim_applicability) ... ok
+test_search_index_uses_metadata_units_and_does_not_grant_historical_pit (tests.test_quant_data_metadata.MetadataTests.test_search_index_uses_metadata_units_and_does_not_grant_historical_pit) ... ok
+test_unknown_contract_format_is_not_claimed_matching (tests.test_quant_data_metadata.MetadataTests.test_unknown_contract_format_is_not_claimed_matching) ... ok
+test_unknown_or_path_traversal_view_rejected_and_old_published_view_not_silently_rebased (tests.test_quant_data_metadata.MetadataTests.test_unknown_or_path_traversal_view_rejected_and_old_published_view_not_silently_rebased) ... ok
+test_version_publication_time_is_never_inferred_from_directory_mtime (tests.test_quant_data_metadata.MetadataTests.test_version_publication_time_is_never_inferred_from_directory_mtime) ... ok
+test_manager_sees_org_requests (tests.test_quant_data_requests.ListRequestScopeTest.test_manager_sees_org_requests) ... ok
+test_researcher_sees_own_requests_only (tests.test_quant_data_requests.ListRequestScopeTest.test_researcher_sees_own_requests_only) ... ok
+test_invalid_related_object_is_rejected (tests.test_quant_data_requests.SubmitRequestTest.test_invalid_related_object_is_rejected) ... ok
+test_submit_records_frequency_and_relation (tests.test_quant_data_requests.SubmitRequestTest.test_submit_records_frequency_and_relation) ... ok
+test_delivered_rejects_definition_only_view (tests.test_quant_data_requests.UpdateRequestTest.test_delivered_rejects_definition_only_view) ... ok
+test_delivered_rejects_unpublished_view (tests.test_quant_data_requests.UpdateRequestTest.test_delivered_rejects_unpublished_view) ... ok
+test_delivered_requires_view (tests.test_quant_data_requests.UpdateRequestTest.test_delivered_requires_view) ... ok
+test_rejects_illegal_transition (tests.test_quant_data_requests.UpdateRequestTest.test_rejects_illegal_transition) ... ok
+test_unsupported_requires_reason (tests.test_quant_data_requests.UpdateRequestTest.test_unsupported_requires_reason) ... ok
+test_manager_usage_is_org_scoped (tests.test_quant_data_requests.ViewUsageScopeTest.test_manager_usage_is_org_scoped) ... ok
+test_researcher_usage_is_member_scoped (tests.test_quant_data_requests.ViewUsageScopeTest.test_researcher_usage_is_member_scoped) ... ok
+
+----------------------------------------------------------------------
+Ran 23 tests in 0.141s
+
+OK

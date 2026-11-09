@@ -1,3 +1,4 @@
+@import './quantData.css';
 /* Scoped directly from the accepted V3 prototype. */
 
 .quant-shell{color-scheme:light;--ink:#271e37;--muted:#756b80;--bg:#f6f4f9;--panel:#fff;--border:#e6e0ed;--primary:#65358d;--soft:#efe8f6;--green:#24765c;--green-bg:#eaf5ef;--amber:#93601e;--amber-bg:#fbf2e4;--red:#a33f52;--red-bg:#f9eaf0;--shadow:0 8px 30px rgba(44,29,65,.05)}

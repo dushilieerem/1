@@ -115,6 +115,30 @@ def test_research_lock_blocks_low_confidence() -> None:
             svc.lock_research(c["org_id"], c["version_id"], actor_member_id=c["member_id"])
 
 
+def test_research_gate_preview_and_dimension_review() -> None:
+    with _case(dims=_dims(low_key="governance")) as c:
+        gate = svc.research_gate(c["org_id"], c["version_id"])
+        assert gate["status"] == "block"
+        assert any(
+            x["key"] == "low_confidence" and x["status"] == "block"
+            for x in gate["checks"]
+        )
+        svc.review_research_dimension(
+            c["org_id"],
+            c["version_id"],
+            "governance",
+            decision="approve",
+            comment="已核对原始公告",
+            actor_member_id=c["member_id"],
+        )
+        gate_after = svc.research_gate(c["org_id"], c["version_id"])
+        assert gate_after["status"] == "pass"
+        locked = svc.lock_research(
+            c["org_id"], c["version_id"], actor_member_id=c["member_id"]
+        )
+        assert locked["stage_no"] == 2
+
+
 def test_proposal_lock_requires_debate_and_fields() -> None:
     with _case() as c:
         svc.lock_research(c["org_id"], c["version_id"], actor_member_id=c["member_id"])

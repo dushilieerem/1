@@ -1122,6 +1122,16 @@ def playbook(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]
     return {"ok": True, **svc.playbook()}
 
 
+@router.get("/research/{version_id}/gate")
+def research_gate(version_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "research")
+    try:
+        return {"ok": True, **svc.research_gate(org_id, version_id)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.post("/research/{version_id}/lock")
 def lock_research(
     version_id: int,

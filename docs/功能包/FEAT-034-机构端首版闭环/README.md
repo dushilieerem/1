@@ -610,3 +610,15 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 
 - 真实券商、多租户、SSO、WORM 审计仍未接入；执行仍为 SimBroker 纸面撮合。
 - 部分 v2 遗留接口仍保留兼容（如 `research/{id}/review`），v3 页面统一走 `research/{id}/lock` 与 `proposals/{id}/lock`。
+
+
+### 11.26 研究定稿门禁可视化与低置信复核（2026-11-09）
+
+补齐 v3 价值分析最后一步，避免用户只能看到“研究门禁未通过”而无处处理。
+
+- 新增 `GET /api/inst/research/{version_id}/gate`：返回六维 6/6、低置信、数据门禁、证据包、版本校验码五项检查与 `pass/warn/block`。
+- 定稿页展示门禁明细；低置信维度（评级 <3.3 或置信度 <0.66）列出待复核项，可逐维调用 `POST /research/{version_id}/dimensions/{key}/review` 复核通过，复核说明写入审计。
+- 正常门禁通过时使用「锁定研究定稿 R3」；仍有阻断项时，必须勾选“我已确认数据缺口”后才能「带缺口锁定」，服务端记录 `allow_gaps` 与原因。
+- 锁定后仍由服务端再次执行门禁，页面不能绕过。
+
+验证：pytest 104 passed；`tsc --noEmit`、`npm run build` 通过；Playwright `e2e-09..13` 共 14 passed（仅写 `svquant_test`）。

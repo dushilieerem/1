@@ -21,12 +21,20 @@ type Dim = {
   engine?: string;
 };
 
+type DimReview = {
+  decision?: string;
+  comment?: string | null;
+  reviewer_member_id?: number;
+  at?: string;
+};
+
 type Version = {
   id: number;
   version_no: number;
   status: string;
   conclusion?: string;
   six_dim?: Dim[];
+  dim_reviews?: Record<string, DimReview>;
   industry_analysis?: Dim | null;
   valuation?: Record<string, unknown> | null;
   evidence_ids?: number[];
@@ -34,6 +42,9 @@ type Version = {
   frozen_at?: string;
   locked_at?: string;
 };
+
+type GateCheck = { key: string; label: string; status: string; detail: string };
+type ResearchGate = { status: string; checks: GateCheck[] };
 
 type Memo = {
   summary?: string;
@@ -94,6 +105,10 @@ export function InstV3ResearchPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [gate, setGate] = useState<ResearchGate | null>(null);
+  const [gateLoading, setGateLoading] = useState(false);
+  const [reviewNote, setReviewNote] = useState("");
+  const [allowGaps, setAllowGaps] = useState(false);
 
   const selectedId = currentCaseId(params.get("key"));
 
@@ -111,6 +126,16 @@ export function InstV3ResearchPage() {
     if (version) {
       const found = (version.six_dim || []).find((x) => x.key === dimKey);
       if (!found && version.six_dim?.length) setDimKey(version.six_dim[0].key);
+      setGateLoading(true);
+      try {
+        setGate(await instApi<ResearchGate>(`/research/${version.id}/gate`));
+      } catch {
+        setGate(null);
+      } finally {
+        setGateLoading(false);
+      }
+    } else {
+      setGate(null);
     }
     return d;
   };
@@ -184,14 +209,41 @@ export function InstV3ResearchPage() {
     }
   };
 
-  const lockResearch = async () => {
+  const lockResearch = async (withGaps = false) => {
     if (!version) return;
-    setBusy("lock");
+    setBusy(withGaps ? "lock-gaps" : "lock");
     setError(null);
     try {
-      const res = await instApi<Record<string, unknown>>(`/research/${version.id}/lock`, { method: "POST", body: {} });
+      const res = await instApi<Record<string, unknown>>(`/research/${version.id}/lock`, {
+        method: "POST",
+        body: withGaps
+          ? { allow_gaps: true, comment: "研究经理已确认数据缺口，带缺口锁定 R3" }
+          : {},
+      });
       setDetail(res as unknown as CaseItem);
+      setGate(null);
       setStep(3);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const reviewLowDimension = async (key: string) => {
+    if (!version || !detail) return;
+    setBusy(`review:${key}`);
+    setError(null);
+    try {
+      await instApi(`/research/${version.id}/dimensions/${key}/review`, {
+        method: "POST",
+        body: {
+          decision: "approve",
+          comment: reviewNote.trim() || "研究经理复核确认：低置信项已处理",
+        },
+      });
+      setReviewNote("");
+      await loadDetail(detail.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -204,6 +256,15 @@ export function InstV3ResearchPage() {
   if (!detail) return <div className="v3-card">暂无可研究的项目。请先在项目流水线完成立项。</div>;
 
   const locked = Boolean(version?.locked_at || version?.frozen_at);
+  const gateBlocked = gate?.status === "block";
+  const lowDims = dims.filter(
+    (d) =>
+      (d.rating != null && Number(d.rating) < 3.3) ||
+      (d.confidence != null && Number(d.confidence) < 0.66),
+  );
+  const unresolvedLow = lowDims.filter(
+    (d) => version?.dim_reviews?.[d.key]?.decision !== "approve",
+  );
 
   return (
     <>
@@ -286,6 +347,7 @@ export function InstV3ResearchPage() {
                         <span className="v3-chip ok">{activeDim.status || "已完成"}</span>
                         {activeDim.rating != null ? <span className={`v3-chip ${activeDim.gate === "fail" ? "bad" : activeDim.gate === "watch" ? "warn" : "ok"}`}>评级 {activeDim.rating}/5 · {activeDim.gate || "pass"}</span> : null}
                         {activeDim.confidence != null ? <span className="v3-chip">置信度 {activeDim.confidence.toFixed ? activeDim.confidence.toFixed(2) : activeDim.confidence}</span> : null}
+                        {version?.dim_reviews?.[activeDim.key]?.decision === "approve" ? <span className="v3-chip ok">低置信已复核</span> : null}
                       </div>
                       <p style={{ marginTop: 8, fontSize: 11, lineHeight: 1.75, color: "#4b4352" }}>{activeDim.summary || "待补充"}</p>
                       {activeDim.checks?.length ? <ul className="v3-rule-list" style={{ marginTop: 8 }}>{activeDim.checks.map((x) => <li key={x}>{x}</li>)}</ul> : null}
@@ -333,7 +395,7 @@ export function InstV3ResearchPage() {
             <section className="v3-card">
               <div className="v3-card-head">
                 <div><h2>研究定稿</h2><p>六维 6/6、低置信项已处理、数据门禁通过后锁定 R3；锁定后 03 只读这一版。</p></div>
-                {locked ? <span className="v3-chip ok">已锁定</span> : <span className="v3-chip warn">未锁定</span>}
+                {locked ? <span className="v3-chip ok">已锁定</span> : gateLoading ? <span className="v3-chip">门禁检查中…</span> : <span className={`v3-chip ${gate?.status === "pass" ? "ok" : gate?.status === "warn" ? "warn" : "bad"}`}>门禁 {gate?.status || "未检查"}</span>}
               </div>
               <dl>
                 <div className="v3-kv"><dt>研究版本</dt><dd>{version ? `R${version.version_no} · ${version.status}` : "—"}</dd></div>
@@ -341,8 +403,75 @@ export function InstV3ResearchPage() {
                 <div className="v3-kv"><dt>证据条数</dt><dd>{version?.evidence_ids?.length ?? 0}</dd></div>
                 <div className="v3-kv"><dt>锁定时间</dt><dd>{version?.locked_at || version?.frozen_at || "—"}</dd></div>
               </dl>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-                {!locked ? <button data-testid="inst-research-lock" className="v3-btn primary" disabled={!!busy || !version} onClick={lockResearch}>{busy === "lock" ? "锁定中…" : "锁定研究定稿 R3"}</button> : null}
+
+              {gate?.checks?.length ? (
+                <div style={{ marginTop: 10 }}>
+                  {gate.checks.map((c) => (
+                    <div className="v3-kv" key={c.key}>
+                      <dt>{c.label}</dt>
+                      <dd>{c.detail} <span className={`v3-chip ${c.status === "pass" ? "ok" : c.status === "warn" ? "warn" : "bad"}`}>{c.status}</span></dd>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {unresolvedLow.length ? (
+                <div className="v3-note" style={{ marginTop: 10, borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>
+                  <b>低置信项未复核：</b>{unresolvedLow.map((d) => d.title || d.key).join("、")}。逐项复核通过后才能正常锁定；无法补齐时也可在下方显式带缺口锁定。
+                  <div className="v3-field" style={{ marginTop: 8 }}>
+                    <label>复核说明（写入审计）</label>
+                    <input value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} placeholder="例如：已核对原始公告，置信度低来自披露粒度，不影响结论。" />
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                    {unresolvedLow.map((d) => (
+                      <button
+                        key={d.key}
+                        className="v3-btn ghost"
+                        disabled={!!busy}
+                        onClick={() => reviewLowDimension(d.key)}
+                      >
+                        {busy === `review:${d.key}` ? "复核中…" : `复核通过 · ${d.title || d.key}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : lowDims.length ? (
+                <div className="v3-note" style={{ marginTop: 10 }}>低置信项已全部复核通过。</div>
+              ) : null}
+
+              {gateBlocked && unresolvedLow.length === 0 ? (
+                <div className="v3-note" style={{ marginTop: 10 }}>门禁仍有阻断项；请回步骤 1 补齐六维或重跑对应维度。确实无法补齐时，可显式带缺口锁定并记录。</div>
+              ) : null}
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12, alignItems: "center" }}>
+                {!locked ? (
+                  <>
+                    <button
+                      data-testid="inst-research-lock"
+                      className="v3-btn primary"
+                      disabled={!!busy || !version || gateBlocked}
+                      onClick={() => lockResearch(false)}
+                    >
+                      {busy === "lock" ? "锁定中…" : "锁定研究定稿 R3"}
+                    </button>
+                    {gateBlocked ? (
+                      <>
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "#746b7c" }}>
+                          <input type="checkbox" checked={allowGaps} onChange={(e) => setAllowGaps(e.target.checked)} />
+                          我已确认数据缺口，允许带缺口锁定
+                        </label>
+                        <button
+                          data-testid="inst-research-lock-gaps"
+                          className="v3-btn ghost"
+                          disabled={!allowGaps || !!busy}
+                          onClick={() => lockResearch(true)}
+                        >
+                          {busy === "lock-gaps" ? "锁定中…" : "带缺口锁定"}
+                        </button>
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
                 {locked ? <Link className="v3-btn primary" to={`/inst/debate?key=${encodeURIComponent(`case:${detail.id}`)}`}>移交多空辩论 <ArrowRight className="h-3.5 w-3.5" /></Link> : null}
                 <Link className="v3-btn ghost" to={`/inst/pipeline/result?key=${encodeURIComponent(`case:${detail.id}`)}`}>查看结果页</Link>
               </div>

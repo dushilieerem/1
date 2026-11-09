@@ -53,7 +53,7 @@ DDL: tuple[str, ...] = (
       CONSTRAINT inst_idea_decision_source_chk CHECK (source IN ('push','watch','holdings')),
       CONSTRAINT inst_idea_decision_action_chk CHECK (action IN ('initiate','watch','reject')),
       CONSTRAINT inst_idea_decision_sufficiency_chk CHECK (
-        data_sufficiency IS NULL OR data_sufficiency IN ('sufficient','partial','missing')
+        data_sufficiency IS NULL OR data_sufficiency IN ('sufficient','partial','missing','insufficient')
       )
     )
     """,
@@ -627,6 +627,15 @@ def ensure_inst_business_schema(*, include_indexes: bool = True) -> None:
         conn.execute(
             "ALTER TABLE inst_exit_case ADD COLUMN IF NOT EXISTS case_id BIGINT "
             "REFERENCES inst_research_case(id) ON DELETE SET NULL"
+        )
+        # 立项三问资料枚举对齐 11.9 Prompt 规范：insufficient 取代 missing。
+        conn.execute(
+            "ALTER TABLE inst_idea_decision DROP CONSTRAINT IF EXISTS inst_idea_decision_sufficiency_chk"
+        )
+        conn.execute(
+            "ALTER TABLE inst_idea_decision ADD CONSTRAINT inst_idea_decision_sufficiency_chk "
+            "CHECK (data_sufficiency IS NULL OR data_sufficiency IN "
+            "('sufficient','partial','missing','insufficient'))"
         )
         # 逐维审核记录：{dim_key: {decision, comment, reviewer_member_id, at}}
         conn.execute(

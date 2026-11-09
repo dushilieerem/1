@@ -708,8 +708,9 @@ def _idea_questions(
         "why_now": why_now,
         "circle_of_competence": "unknown",
         "circle_note": "需投资经理确认：能否用三句话说清它怎么赚钱？",
-        "data_sufficiency": sufficiency,
+        "data_sufficiency": "insufficient" if sufficiency == "missing" else sufficiency,
         "suggestion": suggestion,
+        "gate": "pass" if sufficiency == "sufficient" else "watch",
         "reason": reason_text,
         "data_gaps": gaps,
     }
@@ -749,7 +750,7 @@ def record_idea_decision(
         company = dict(row)
         idea = _idea_questions(company, source, reason)
         if action == "initiate":
-            if idea["data_sufficiency"] == "missing":
+            if idea["data_sufficiency"] in {"missing", "insufficient"}:
                 raise ValueError("核心资料缺失，建议先观察，不能立项")
             if not circle_confirmed:
                 raise ValueError("立项前需确认能力圈：能否用三句话说清它怎么赚钱")
@@ -2195,12 +2196,17 @@ def _merge_industry(
         "open_questions": [_clip_brief(x) for x in (data.get("open_questions") or [])][:3],
         "data_gaps": [_clip_brief(x) for x in (data.get("data_gaps") or [])][:5],
         "evidence_idx": ev_idx,
+        "direct_evidence_ids": [
+            int(x) for x in (data.get("evidence_ids") or []) if str(x).isdigit()
+        ],
         "confidence": data.get("confidence"),
         "confidence_label": data.get("confidence_label"),
         "analysis_md": str(data.get("analysis_md") or ""),
         "attractiveness": data.get("attractiveness"),
         "gate": data.get("gate"),
         "one_line": data.get("one_line"),
+        "headline": data.get("headline"),
+        "kpis": data.get("kpis") or [],
         "market_size": data.get("market_size"),
         "competition": data.get("competition"),
         "key_variables": data.get("key_variables") or [],
@@ -2322,6 +2328,8 @@ def _merge_agent_results(
                     "confidence_label": data.get("confidence_label"),
                     "rating": data.get("rating"),
                     "gate": data.get("gate"),
+                    "headline": data.get("headline"),
+                    "kpis": data.get("kpis") or [],
                     "analysis_md": str(data.get("analysis_md") or ""),
                     "key_numbers": data.get("key_numbers") or [],
                     "falsifiers": data.get("falsifiers") or [],
@@ -2333,6 +2341,9 @@ def _merge_agent_results(
                     "agent": f"AI-{key}",
                     "evidence_idx": ev_idx,
                     "evidence_ids": [],
+                    "direct_evidence_ids": [
+                        int(x) for x in (data.get("evidence_ids") or []) if str(x).isdigit()
+                    ],
                 }
             )
             states[key] = status
@@ -2482,11 +2493,19 @@ def generate_research(
                 ev_ids.append(eid)
 
         for dim in built["dims"]:
-            dim["evidence_ids"] = [idx_to_id.get(i) for i in dim.pop("evidence_idx", []) if i in idx_to_id]
+            mapped = [idx_to_id.get(i) for i in dim.pop("evidence_idx", []) if i in idx_to_id]
+            direct = [int(x) for x in dim.pop("direct_evidence_ids", []) if int(x) > 0]
+            dim["evidence_ids"] = list(dict.fromkeys([*mapped, *direct]))
+            for eid in direct:
+                if eid not in ev_ids:
+                    ev_ids.append(eid)
         industry_block = dict(built.get("industry_analysis") or {})
-        industry_block["evidence_ids"] = [
-            idx_to_id.get(i) for i in industry_block.pop("evidence_idx", []) if i in idx_to_id
-        ]
+        mapped = [idx_to_id.get(i) for i in industry_block.pop("evidence_idx", []) if i in idx_to_id]
+        direct = [int(x) for x in industry_block.pop("direct_evidence_ids", []) if int(x) > 0]
+        industry_block["evidence_ids"] = list(dict.fromkeys([*mapped, *direct]))
+        for eid in direct:
+            if eid not in ev_ids:
+                ev_ids.append(eid)
         built["industry_analysis"] = industry_block
 
         # 单维重新分析：合并到最近一版，保留其余五维，而不是用只含一维的版本覆盖。
@@ -2960,7 +2979,7 @@ def start_debate(
                         """,
                         (int(session["id"]), claim_id, evidence_id, status, grade, _j(issues)),
                     )
-        conclusion = "补充研究" if not evidence else "推进审议"
+        conclusion = str(args.get("conclusion") or ("补充研究" if not evidence else "推进审议"))
         conn.execute(
             "UPDATE inst_debate_session SET status='completed', agenda_step=9, conclusion=%s, ended_at=NOW() WHERE id=%s",
             (conclusion, session["id"]),
@@ -3004,6 +3023,14 @@ def _ai_debate(company, evidence, valuation, ev_ids) -> dict[str, Any] | None:
         if not isinstance(data, dict):
             return None
         valid_ids = {int(x) for x in ev_ids}
+        if not isinstance(data.get("chair"), list) and data.get("conclusion"):
+            data["chair"] = [{
+                "claim": str(data.get("conclusion") or ""),
+                "evidence_ids": [],
+                "confidence": 0.6,
+                "round": 2,
+                "falsifier": "证据核验未通过或未决项未处理",
+            }]
         for side in ("bull", "bear", "chair"):
             items = data.get(side)
             if not isinstance(items, list):
@@ -5585,11 +5612,21 @@ def refresh_thesis(org_id: int, company_id: int, *, actor_member_id: int | None 
                 (snapshot["research_version_id"],),
             ).fetchone()
             research = dict(row) if row else {}
-        thesis = (
-            str(snapshot.get("investment_opinion") or "").strip()
-            or str(research.get("conclusion") or "").strip()
-            or f"{company['name']} 买入论点待补充"
-        )
+        opinion = str(snapshot.get("investment_opinion") or "").strip()
+        conclusion = str(research.get("conclusion") or "").strip()
+        status_words = {"好", "ok", "OK", "有条件通过", "待补充", "推进审议"}
+        if opinion and opinion not in status_words and len(opinion) >= 6:
+            thesis = opinion
+        elif conclusion and conclusion not in status_words:
+            thesis = conclusion
+        else:
+            first_dim = next(
+                (str(d.get("summary") or "").strip() for d in research.get("six_dim") or [] if isinstance(d, dict) and str(d.get("summary") or "").strip()),
+                "",
+            )
+            thesis = first_dim or f"{company['name']} 买入论点待补充"
+        # 台账卡只显示一句买入假设：取第一句，最长 60 字；审批状态/短评不上台账。
+        thesis = _clip_brief(re.split(r"[；;。]", thesis)[0] or thesis)[:60]
         assumptions: list[str] = []
         for dim in research.get("six_dim") or []:
             if isinstance(dim, dict):
@@ -5598,14 +5635,18 @@ def refresh_thesis(org_id: int, company_id: int, *, actor_member_id: int | None 
                 text = str(dim).strip()
             if text:
                 assumptions.append(text[:200])
-        monitoring = snapshot.get("monitoring") or []
-        falsifiers = [str(x)[:200] for x in monitoring if str(x).strip()]
+        monitoring = [str(x).strip() for x in (snapshot.get("monitoring") or []) if str(x).strip()]
+        kpis = []
+        for line in monitoring[:4]:
+            name = re.split(r"[<>=≤≥（(→]", line)[0].strip()[:12] or "KPI"
+            kpis.append({"name": name, "target": line[:60]})
+        falsifiers = monitoring[:2]
         row = conn.execute(
             """
             INSERT INTO inst_thesis_ledger
               (org_id, company_id, proposal_id, symbol, thesis, key_assumptions, kpis, falsifiers,
                review_due, created_by)
-            VALUES (%s,%s,%s,%s,%s,%s,'[]'::jsonb,%s,%s,%s) RETURNING *
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *
             """,
             (
                 org_id,
@@ -5613,8 +5654,9 @@ def refresh_thesis(org_id: int, company_id: int, *, actor_member_id: int | None 
                 int(proposal["id"]),
                 company["symbol"],
                 thesis[:2000],
-                _j(assumptions[:6]),
-                _j(falsifiers[:8]),
+                _j(assumptions[:2]),
+                _j(kpis),
+                _j(falsifiers),
                 date.today() + timedelta(days=30),
                 actor_member_id,
             ),
@@ -5925,9 +5967,11 @@ def _rule_memo(version: dict[str, Any]) -> dict[str, Any]:
             "high": valuation.get("high"),
             "note": "研究区间，不是目标价",
         }
+    summary = _clip_brief(version.get("conclusion")
+        or "六维分析已完成；AI 摘要暂不可用，以下为规则摘要，请以各维证据为准。")
     return {
-        "summary": _clip_brief(version.get("conclusion")
-        or "六维分析已完成；AI 摘要暂不可用，以下为规则摘要，请以各维证据为准。"),
+        "summary": summary,
+        "conclusion": summary,
         "decision": "watch",
         "six_dim_scores": [],
         "conflicts": [],
@@ -5965,6 +6009,25 @@ def _apply_memo_data_gate(data: dict[str, Any], version: dict[str, Any]) -> dict
             f"以下维度数据缺失，按不可买入处理：{'、'.join(failed)}。"
         )
     return data
+
+
+def _sync_research_conclusion(org_id: int, version_id: int, memo: dict[str, Any]) -> None:
+    """一页纸落库后，把同一段结论写回研究版本 conclusion，供 04 三关读取。"""
+    conclusion = str(memo.get("conclusion") or memo.get("summary") or "").strip()
+    if not conclusion:
+        return
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT status, locked_at FROM inst_research_version WHERE id=%s AND case_id IN "
+            "(SELECT id FROM inst_research_case WHERE org_id=%s)",
+            (version_id, org_id),
+        ).fetchone()
+        if not row or row.get("locked_at") or str(row.get("status")) != "pending_review":
+            return
+        conn.execute(
+            "UPDATE inst_research_version SET conclusion=%s, content_hash=NULL WHERE id=%s AND conclusion IS DISTINCT FROM %s",
+            (conclusion[:2000], version_id, conclusion[:2000]),
+        )
 
 
 def ai_research_memo(
@@ -6017,7 +6080,9 @@ def ai_research_memo(
             stale = bool(hit)
         if hit:
             memo = _apply_memo_data_gate(dict(hit["output"]), version)
-            memo["metrics"] = _memo_metrics(case)
+            if not (isinstance(memo.get("metrics"), list) and len(memo.get("metrics") or []) >= 2):
+                memo["metrics"] = _memo_metrics(case)
+            _sync_research_conclusion(org_id, int(version["id"]), memo)
             return {
                 "memo": memo,
                 "task": "inst.research_memo",
@@ -6041,7 +6106,10 @@ def ai_research_memo(
         # AI 未配置时仍给出一页纸骨架，内容全部来自六维规则结果。
         data = _rule_memo(version)
     data = _apply_memo_data_gate(data, version)
-    data["metrics"] = _memo_metrics(case)
+    metrics = data.get("metrics")
+    if not (isinstance(metrics, list) and len(metrics) >= 2):
+        data["metrics"] = _memo_metrics(case)
+    _sync_research_conclusion(org_id, int(version["id"]), data)
     # 规则兜底也落盘：避免 AI 暂不可用时每次进入页面都重新生成。
     save_output(
         "inst.research_memo",

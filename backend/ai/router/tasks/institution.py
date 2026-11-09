@@ -14,8 +14,8 @@ from typing import Any
 from ai.errors import AiBadOutput
 from ai.router.specs import TaskRequest, TaskSpec, register
 
-PROMPT_VERSION = "inst-v3"
-DIM_PROMPT_VERSION = "inst-dim-v3"
+PROMPT_VERSION = "inst-v3.2"
+DIM_PROMPT_VERSION = "inst-dim-v3.2"
 
 
 def clip_brief(value: Any) -> str:
@@ -48,6 +48,14 @@ def _load(raw: str) -> dict[str, Any]:
 def validate_debate(raw: str, request: TaskRequest) -> dict[str, Any]:
     data = _load(raw)
     valid_ids = {int(x) for x in (request.variables.get("evidence_ids") or []) if str(x).isdigit()}
+    if not isinstance(data.get("chair"), list) and data.get("conclusion"):
+        data["chair"] = [{
+            "claim": str(data.get("conclusion") or ""),
+            "evidence_ids": [],
+            "confidence": 0.6,
+            "round": 2,
+            "falsifier": "证据核验未通过或未决项未处理",
+        }]
     for side in ("bull", "bear", "chair"):
         items = data.get(side)
         if not isinstance(items, list) or not items:
@@ -184,7 +192,20 @@ def validate_dimension(raw: str, request: TaskRequest) -> dict[str, Any]:
             confidence = float(data.get("confidence"))
         except (TypeError, ValueError):
             confidence = 0.5
-        data["confidence"] = max(0.0, min(1.0, confidence))
+        data["confidence"] = round(max(0.0, min(1.0, confidence)), 2)
+
+    try:
+        rating = float(data.get("rating"))
+        data["rating"] = round(max(0.0, min(5.0, rating)), 1)
+    except (TypeError, ValueError):
+        data["rating"] = None
+
+    gate = str(data.get("gate") or "").strip().lower()
+    data["gate"] = gate if gate in {"pass", "watch", "fail"} else None
+    if not isinstance(data.get("headline"), dict):
+        data["headline"] = None
+    if not isinstance(data.get("kpis"), list):
+        data["kpis"] = []
     return data
 
 
@@ -234,6 +255,13 @@ def validate_memo(raw: str, request: TaskRequest) -> dict[str, Any]:
     data["open_questions"] = (
         [clip_brief(x) for x in open_questions if str(x).strip()] if isinstance(open_questions, list) else []
     )
+
+    verdict = str(data.get("verdict") or data.get("decision") or data.get("recommendation") or "").strip()
+    if not verdict:
+        verdict = _first_paragraph(data.get("summary"))
+    data["verdict"] = clip_brief(verdict)
+    conclusion = str(data.get("conclusion") or verdict or data.get("summary") or "").strip()
+    data["conclusion"] = clip_brief(conclusion) or data["summary"]
     return data
 
 
@@ -290,6 +318,8 @@ def validate_research_memo(raw: str, request: TaskRequest) -> dict[str, Any]:
     if decision == "buy":
         decision = "proceed"
     data["decision"] = decision if decision in {"proceed", "watch", "avoid"} else "watch"
+    if not str(data.get("conclusion") or "").strip():
+        data["conclusion"] = data.get("summary") or ""
 
     raw_scores = data.get("dimension_scores") if isinstance(data.get("dimension_scores"), list) else data.get("six_dim_scores")
     scores = []

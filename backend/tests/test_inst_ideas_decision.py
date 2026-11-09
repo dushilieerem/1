@@ -2,7 +2,7 @@
 """机会发现立项三问与人工决策。
 
 覆盖：
-- 规则三问按资料状态给出 sufficient/partial/missing；
+- 规则三问按资料状态给出 sufficient/partial/insufficient；
 - 立项必须确认能力圈，资料缺失时只能观察/放弃；
 - 观察、放弃都保留理由与操作人；
 - 非投资经理不能做立项决策。
@@ -106,7 +106,7 @@ def test_idea_questions_by_data_sufficiency(fixture):
     assert partial_idea["data_gaps"]
 
     us_idea = svc._idea_questions(us, "holdings")
-    assert us_idea["data_sufficiency"] == "missing"
+    assert us_idea["data_sufficiency"] == "insufficient"
     assert us_idea["suggestion"] == "watch"
     assert any("美股/港股" in gap for gap in us_idea["data_gaps"])
 

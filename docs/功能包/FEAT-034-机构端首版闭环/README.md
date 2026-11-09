@@ -714,3 +714,25 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 新增测试 `test_pipeline_per_stage_limit`，确保环节条数与返回卡片一致。
 
 验证：pytest 106 passed；Playwright `e2e-09..14` 17 passed；流水线 API/UI 均为 6 环节 × 3 个，共 18 个。
+
+
+### 11.35 Agent Prompt 对齐 11.9 v2.1 规格（2026-11-09）
+
+按 `11.9欣宜Agent_Prompt_v3_呈现版.md` 重写机构端 Agent Prompt。
+
+- **通用底座**：换成规格 §2 的 v2 底座：唯一事实源、证据分级、数字四件套、字段字数预算、gate/confidence/rating 锚点、输出前 8 条自检。
+- **逐 Agent**：
+  - P02 行业、P03–P08 六维、P09 一页纸；
+  - P11 多头、P12 空头、P13 主持；
+  - P15 合伙人、P16 风控、P17 Chairman；
+  - P19 监控台账、P20 退出研究。
+- **字段契约**：六维强制 `rating / gate / confidence / summary / checks / counter`；行业 `checks` 禁止为空；审批建议统一 `verdict / summary / risks[3] / open_questions[3] / evidence[]`；辩论 claim 28–42 字、falsifier 12–22 字。
+- **落库链路**：
+  - 六维/行业保留 `headline / kpis / direct evidence_ids`，不再被合并层丢掉；
+  - 一页纸生成后把 `conclusion` 写回研究版本（未锁定时），并清空旧 `content_hash` 等下次门禁重算；
+  - 辩论采用 P13 的 `conclusion`（无 `chair` 时由校验器合成，兼容旧契约）。
+- **P01 机会发现**：`data_sufficiency` 对外改为 `insufficient`，数据库约束兼容旧 `missing`；台账兜底不再把“有条件通过”当买入论点，并从 monitoring 生成 KPI/证伪。
+- **版本**：`PROMPT_VERSION` / `DIM_PROMPT_VERSION` 升到 `inst-v3.2` / `inst-dim-v3.2`，避免旧缓存继续命中。
+- **边界**：P01 立项、P10 定稿复核、P14 议案、P18 组合总览、P21 退出风控当前仍是规则/人工/确定性步骤，没有独立 LLM Task；其字段契约已在对应代码中体现。若线上 Agent 管理里保存过全局 Prompt 覆盖，需重置为代码默认值后才会生效。
+
+验证：pytest 107 passed；`tsc --noEmit`、`npm run build`、`npm run test:inst` 通过；Playwright `e2e-09..14` 17 passed。

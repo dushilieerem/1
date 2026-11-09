@@ -338,8 +338,10 @@ export function QuantFactorHomePage(){
      {ledger?.dispatch&&<span title={ledger.dispatch.stop_reason}>调度 <b>{ledger.dispatch.status==='running'?'研究决策运行中':ledger.dispatch.status==='stopped'?'研究决策已停止':ledger.dispatch.status}</b>{ledger.dispatch.stop_reason?' · 交人工复盘':''}</span>}
     </div>
     {capabilityGaps.length>0&&<p className="hint" role="status">需要的能力（F3 暂不支持）：{capabilityGaps.join('、')}。F0 已改用可实现的降级修订继续。</p>}
-    <div className="section-title" style={{marginTop:16}}><h3>研究树</h3><span className="subtle">点击分支查看试验与报告</span></div>
-    {tree}
+    <details className="history-details" onToggle={e=>{if((e.currentTarget as HTMLDetailsElement).open)window.dispatchEvent(new Event('resize'));}}>
+     <summary><span><b>研究历程与迭代记录</b><small> {topic.branch_count} 个分支 · {topic.trial_count} 次试验 · 保留 H1/Ha/Hb 与虚线父子关系</small></span><span className="subtle">展开查看</span></summary>
+     {tree}
+    </details>
    </div>
   </div>
  ):null;

@@ -215,6 +215,21 @@ def test_approval_memo_cached_only_never_calls_ai(monkeypatch) -> None:
         assert out["missing"] is True
 
 
+def test_memo_syncs_version_conclusion(monkeypatch) -> None:
+    with _case() as c:
+        def _unavailable(*args, **kwargs):
+            raise svc.AiUnavailable("AI 未配置")
+
+        monkeypatch.setattr(svc, "_ai_task", _unavailable)
+        out = svc.ai_research_memo(
+            c["org_id"], c["case_id"], actor_member_id=c["member_id"]
+        )
+        assert out["memo"]["conclusion"]
+        case = svc.get_case(c["org_id"], c["case_id"])
+        assert case["versions"][0]["conclusion"] == out["memo"]["conclusion"]
+        assert case["versions"][0]["content_hash"] is None
+
+
 def test_stage_summary_waits_for_all_approvers() -> None:
     rows = [{"step": "partner", "decision": "approve", "approver_member_id": 1, "conditions": []}]
     state = svc._stage_summary("partner", rows, 2)

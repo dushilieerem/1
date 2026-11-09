@@ -1,0 +1,19 @@
+{
+  "change": "CR099 UI + CR100 Agent design",
+  "date": "2026-11-09T14:29:41.486949+00:00",
+  "status": "design baseline; business acceptance pending",
+  "files": {
+    "frontend/public/quant-delivery/v5/factor-factory.html": "2cf841aec6212aa7db5eef69d1dcb21c4babce3bb83fa27232eee3f94fcf9174",
+    "frontend/public/quant-delivery/v5/factor-factory.js": "e2ce804bb036e6792548202a5a0d99cf16dfec09339ff72311e3a678028c602b",
+    "frontend/public/quant-delivery/v5/factor-factory.css": "febdbdb5ea8c31588ce08e01abdc79e792cbca6e91fde219e46f856e75842893",
+    "frontend/public/quant-delivery/v5/shell.js": "c081365fd19b358263af1abe92594a384f3213f11fb0d4cceb410da39f43803b",
+    "docs/模块设计/量化机构端/因子工厂V5-用户界面与人机协作改进.md": "40617a924d77a847e2a789a08e9eb8501b7c646c99cfb2fd51f4c44c1c8d93ca",
+    "frontend/public/quant-delivery/v5/docs/因子工厂V5-用户界面与人机协作改进.md": "40617a924d77a847e2a789a08e9eb8501b7c646c99cfb2fd51f4c44c1c8d93ca",
+    "docs/模块设计/量化机构端/因子工厂V5-Agent研究子系统改进.md": "4d3279ed561bf3da2ad8f43ca4f49a7bdd7c5f819a7646e7c781081a5be09e62",
+    "frontend/public/quant-delivery/v5/docs/因子工厂V5-Agent研究子系统改进.md": "4d3279ed561bf3da2ad8f43ca4f49a7bdd7c5f819a7646e7c781081a5be09e62",
+    "docs/模块设计/量化机构端/机构量化V5-产品需求文档.md": "d4d35e3c06e8381ac907044ed337f9acdc9116f559513c71c5a26c445d50896a",
+    "frontend/public/quant-delivery/v5/docs/机构量化V5-产品需求文档.md": "1aacf5d43ac9f6c3bcfbd43482eb1e9daa962accfccf78239ecebe976f40a37b",
+    "institutional-workflow/runtime/verification/codex-factor-cr097-20261109/pm-real-user-acceptance.json": "943946bcefaaa5218dd649d4240a0c05a03ae2a43ad448c874cf83753ba81f0f",
+    "institutional-workflow/runtime/verification/pm-cr099-20261109/pm-ui-design-review.md": "839e0998bcfa76d234128f8e1cff48ac79f5079ff4fb37706b908cf43b7a20d6"
+  }
+}

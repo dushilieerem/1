@@ -1,0 +1,117 @@
+{
+  "updated_at": "2026-11-09T13:52:51.601455+00:00",
+  "performed_by": "PM via product browser UI",
+  "plan": "three-run-preparation.json",
+  "A": {
+    "name": "价量冲击修复 · 自动研究 1109",
+    "project_id": "b9d9c387-af10-420e-acb4-a88d831f2265",
+    "f0_run_id": "47b681e6-e427-45a4-bfbb-e2c130bb7629",
+    "started_cst": "2026-11-09 21:19:11",
+    "stopped_cst": "2026-11-09 21:21:31",
+    "workflow": "automatic initial implementation -> development E1 -> automatic revision -> development E2 -> budget stop -> research archive -> review request -> independent account claim -> rejected",
+    "trials": [
+      {
+        "id": "11f442c3-5523-45d1-a3e3-df44346eaeef",
+        "trial": 1,
+        "rank_ic": 0.026525,
+        "max_drawdown": 0.039718,
+        "n_obs": 59,
+        "nw_t": 1.1764,
+        "threshold": 1.9599639845400536,
+        "result": "failed",
+        "rss_bytes_developer_observed": 1161641984
+      },
+      {
+        "id": "fcdd28cb-8779-4f6f-b70a-be5523316ca8",
+        "trial": 2,
+        "rank_ic": 0.040558,
+        "max_drawdown": 0.056282,
+        "n_obs": 60,
+        "nw_t": 1.63461,
+        "threshold": 2.2414027276049464,
+        "result": "failed",
+        "rss_bytes_developer_observed": 1159585792
+      }
+    ],
+    "review": {
+      "submitted_cst": "2026-11-09 21:24:03",
+      "decision": "rejected",
+      "browser_verified": true,
+      "independent_account": true,
+      "same_PM_operated_both_accounts_for_QA": true,
+      "registered_asset": false
+    },
+    "novelty": "deferred, 0/334, not tested, no proven novelty",
+    "sealed": "not opened",
+    "limitations": [
+      "40 static selected equities; not historical membership or marketwide evidence",
+      "single-quarter development, zero transaction costs",
+      "initial implementation used turnover despite OHLCV narrative; revised implementation used OHLCV",
+      "newly generated source does not establish a new distinct factor without full numerical comparison"
+    ],
+    "browser_issues": [
+      "report omitted fixed research universe",
+      "initial branch source mislabeled as manual despite Agent-produced implementation",
+      "failed task needs direct research feedback entry",
+      "deferred novelty events incorrectly say comparison started/completed",
+      "F6 branch header and default candidate mismatch; opaque fingerprints",
+      "opening branch workflow implicitly activates branch"
+    ]
+  },
+  "B": {
+    "status": "completed_rejected",
+    "name": "抛压与相对量能修复 · 人工研究 1109",
+    "project_id": "ee19ef46-c368-4149-98c0-ccf482789be4",
+    "branch_id": "e7b60f40-a884-4d12-acb8-a6bd423c1bf2",
+    "created_cst": "2026-11-09 21:31:33",
+    "frozen_cst": "2026-11-09 21:34:54",
+    "workflow": "save manual draft -> manually enter preregistered code -> save and causal check -> freeze and compute E1 -> failed research review -> separate QA reviewer claim and rejection",
+    "trial": {
+      "candidate_id": "019059fb-ca85-4233-9c11-30fd12fcabd5",
+      "run_id": "85e8dede64ce4cc0adc427ab70e42274",
+      "rank_ic": -0.009901,
+      "nw_t": -0.339124,
+      "threshold": 1.9599639845400536,
+      "n_obs": 61,
+      "max_drawdown": 0.049235,
+      "result": "failed",
+      "duration_s_developer_observed": 16.276,
+      "rss_bytes_developer_observed": 1159868416
+    },
+    "agent_use": {
+      "f0_runs": 0,
+      "agent_jobs": 0,
+      "automatic_iterations": 0,
+      "verification": "developer read-only DB check; PM UI never delegated"
+    },
+    "review": {
+      "submitted_cst": "2026-11-09 21:38:52",
+      "decision": "rejected",
+      "decision_time": "approximately 21:42 CST; exact DB timestamp not read",
+      "browser_verified": true,
+      "independent_account": true,
+      "same_PM_operated_both_accounts_for_QA": true,
+      "registered_asset": false
+    },
+    "novelty": "deferred; not tested",
+    "sealed": "not opened",
+    "limitations": [
+      "40 static equities and one quarter",
+      "zero cost assumptions",
+      "new candidate source does not prove distinct factor",
+      "one remaining trial not reset or used to reverse sign after results"
+    ],
+    "screenshot_artifact": "UI observed through tool; no separate screenshot file saved"
+  },
+  "C": {
+    "status": "not_started"
+  },
+  "strategy": {
+    "status": "paused_by_user",
+    "priority": "Agent quality, hybrid assistance, factor UI usability"
+  },
+  "hybrid": {
+    "status": "pending_handoff_fixes",
+    "required": "human advice or explicit takeover -> edit and save -> return frozen human version to Agent -> real continuation with no stale overwrite or K reset"
+  }
+}

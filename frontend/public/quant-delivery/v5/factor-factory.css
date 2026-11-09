@@ -47,3 +47,58 @@
 @media(max-width:800px){.ff-columns,.ff-library{grid-template-columns:1fr}.ff-task-list{display:flex;flex-wrap:wrap;gap:7px}.ff-task-list h2{width:100%}.ff-task{width:calc(50% - 5px)}.ff-task-filter{width:100%}.ff-categories{border:0;display:flex;flex-wrap:wrap;gap:4px}.ff-category{width:auto}.ff-category.child{padding-left:9px}.ff-categories h3{width:100%}.ff-live{display:block}.ff-steps{grid-template-columns:repeat(2,minmax(0,1fr))}.ff-step{display:flex}.ff-preview{align-items:flex-start}}
 
 #factory-dialog [hidden]{display:none!important}
+
+
+/* CR-099 readability: same company palette and four-stage layout. */
+#factory{font-size:14px;line-height:1.7}
+#factory .page-head p,#factory .card-head p{font-size:14px;color:#675d72}
+#factory .tabs button{font-size:14px}
+#factory .btn{font-size:13px;min-height:34px}
+#factory .btn.small{font-size:12px;min-height:32px}
+#factory .badge,#factory .ff-pill{font-size:12px;line-height:1.5}
+.ff-preview{font-size:12px;line-height:1.6}
+.ff-preview select{font-size:12px}
+.ff-task-list h2,.ff-task-filter{font-size:13px}
+.ff-task strong{font-size:14px;line-height:1.7}
+.ff-task small,.ff-detail-head p{font-size:12px;color:#71667b}
+.ff-detail-head h2{font-size:23px;line-height:1.5;letter-spacing:0;overflow-wrap:anywhere}
+.ff-step b{font-size:14px}
+.ff-step small,.ff-step em{font-size:12px;line-height:1.5}
+.ff-num{width:24px;height:24px;font-size:12px}
+.ff-step{padding:12px 9px}
+.ff-stage-grid .card-head,.ff-stage-grid .card-body{padding:20px}
+#factory .card-head h2{font-size:17px}
+#factory .section-title h3{font-size:16px;line-height:1.6}
+.ff-label{font-size:12px;color:#71667b;letter-spacing:0}
+.ff-copy{font-size:14px;line-height:1.8;color:#43384f}
+.ff-kv{grid-template-columns:100px minmax(0,1fr);font-size:14px;gap:12px}
+.ff-kv dt{color:#71667b}
+.ff-source{border:1px solid var(--line);border-radius:8px;margin:16px 0;background:#fcfbfe}
+.ff-source summary{cursor:pointer;padding:12px 14px;color:#665172;font-size:13px}
+.ff-source .ff-code{margin:0 14px 12px}
+.ff-source>small{display:block;padding:0 14px 12px}
+.ff-code{font-size:13px;line-height:1.8}
+.ff-live{padding:20px;font-size:14px}
+.ff-live h3{font-size:15px}
+.ff-live .ff-now{font-size:15px}
+.ff-live p,.ff-live li{font-size:13px;line-height:1.7}
+.ff-live time{font-size:12px;color:#71667b}
+.ff-error,.ff-fold{font-size:14px}
+.ff-error details,.ff-node,.ff-error small{font-size:12px}
+.ff-fold>summary{font-size:14px;padding:16px}
+.ff-node{line-height:1.7;padding:12px}
+#factory .table th{font-size:12px}
+#factory .table td{font-size:14px;line-height:1.7;overflow-wrap:anywhere}
+#factory small,.ff-category.child,.ff-tags>span,.ff-results,.ff-footer{font-size:12px}
+.ff-category{font-size:14px}.ff-category span,.ff-tag{font-size:12px}
+.ff-outcome{border:1px solid #dacde5;border-left:3px solid var(--primary);border-radius:9px;background:#f9f6fc;padding:18px 20px;margin-bottom:16px}
+.ff-outcome h3{font-size:17px;line-height:1.6;margin:0 0 8px}
+.ff-outcome p{font-size:14px;color:#5a5065;margin-bottom:14px}
+#factory-dialog{font-size:14px;line-height:1.7}
+#factory-dialog .field{font-size:13px}
+#factory-dialog input,#factory-dialog select,#factory-dialog textarea{font-size:14px;line-height:1.7}
+#factory-dialog .hint,#factory-dialog small{font-size:12px}
+#factory-dialog .code{font:13px/1.8 ui-monospace,Consolas,monospace}
+#factory .ff-detail,#factory .ff-stage-grid>div{min-width:0}
+#factory :focus-visible,#factory-dialog :focus-visible{outline:2px solid var(--primary);outline-offset:3px}
+@media(max-width:1050px){.ff-step small{font-size:12px}.ff-step{padding:10px 7px}.ff-detail-head h2{font-size:21px}}

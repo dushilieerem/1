@@ -35,7 +35,7 @@ const SV = {
     <nav>${SV.NAV.map(([en, zh, items]) => `<div class="nav-label">${t(zh, en)}</div>` + items.map(([k, ico, z, e, href]) => {
       const cnt = k === 'review' && pend ? `<i class="count">${pend}</i>` : k === 'risk' && SV.openSevere() ? `<i class="count red-c">!</i>` : '';
       return `<a class="nav-item${k === cur ? ' selected' : ''}" href="${href}"${k === cur ? ' aria-current="page"' : ''}><span>${ico}</span>${t(z, e)}${cnt}</a>`; }).join('')).join('')}</nav>
-    <footer><span>${t('设计预览 V5 · 场景数据', 'Design preview V5 · scenario data')}</span><a href="README.md">${t('产品说明 ↗', 'Product notes ↗')}</a></footer>`;
+    <footer><span>${t('设计预览 V5 · 场景数据', 'Design preview V5 · scenario data')}</span></footer>`;
   },
   topbar(crumb) {
     const r = SV.ROLE[SV.role];

@@ -23,9 +23,11 @@ INVEST_H5_LOG="$RUNTIME_DIR/invest-h5.log"
 TUNNEL_FRONTEND_LOG="$RUNTIME_DIR/tunnel-frontend.log"
 TUNNEL_INVEST_LOG="$RUNTIME_DIR/tunnel-invest.log"
 # 开发端口刻意避开生产（9530 / 8766 / 5432），两套可同时运行
-BACKEND_PORT=8768
-FRONTEND_PORT=9531
-INVEST_H5_PORT=9541
+# 端口可用环境变量覆盖：多个 checkout（主仓 / -zxd / -lsb / -zmy）同时演示时，
+# 各用一组端口，避免 8768/9531/9541 写死导致的 --strictPort 冲突。
+BACKEND_PORT="${SVQUANT_DEV_BACKEND_PORT:-8768}"
+FRONTEND_PORT="${SVQUANT_DEV_FRONTEND_PORT:-9531}"
+INVEST_H5_PORT="${SVQUANT_DEV_INVEST_H5_PORT:-9541}"
 STARTUP_TIMEOUT_SECONDS=60
 TUNNEL_TIMEOUT_SECONDS=40
 CONDA_ENV_NAME="${SVQUANT_CONDA_ENV:-svquant}"
@@ -55,12 +57,16 @@ SVQuant 本地开发启动器
   ./scripts/svquant.sh untunnel           仅停止 cloudflared 临时通道
   ./scripts/svquant.sh install-cloudflared  下载 cloudflared 到 ~/.local/bin
 
-启动成功后：
-  主前端     http://127.0.0.1:9530
-  API        http://127.0.0.1:8766/docs
-  手机 H5    http://127.0.0.1:9540   （演示账号 demo / demo1234）
-  Invest API http://127.0.0.1:8767/docs
+启动成功后（端口默认 8768 / 9531 / 9541）：
+  主前端     http://127.0.0.1:${SVQUANT_DEV_FRONTEND_PORT:-9531}
+  API        http://127.0.0.1:${SVQUANT_DEV_BACKEND_PORT:-8768}/docs
+  手机 H5    http://127.0.0.1:${SVQUANT_DEV_INVEST_H5_PORT:-9541}   （演示账号 demo / demo1234）
   外网       *.trycloudflare.com，地址每次启动都会变，用 status 查看
+
+多 checkout 并行演示：各 checkout 用不同的端口组，例如
+  SVQUANT_DEV_BACKEND_PORT=8778 SVQUANT_DEV_FRONTEND_PORT=9532 \
+  SVQUANT_DEV_INVEST_H5_PORT=9542 ./scripts/svquant.sh start --no-tunnel
+注意：各 checkout 默认连同一个 svquant_dev 库，并行时数据与迁移版本是共享的。
 
 注意：cloudflared 快速通道对公网开放且没有额外鉴权，演示数据也会被访问到，
       仅用于临时演示，用完请 stop 或 untunnel。

@@ -1,0 +1,65 @@
+{
+  "checked_at_utc": "2026-11-09T13:18:19.439925+00:00",
+  "transport": "real HTTP to loaded18799; registered existing researcher; no ASGI auth/data substitution",
+  "checks": [
+    {
+      "path": "/api/inst/quant/factor-workflow/topics",
+      "http_status": 200,
+      "topic_count": 15
+    },
+    {
+      "path": "/api/inst/quant/factor-workflow/projects/e998d40c-9a78-497e-ba60-e455b218a209/candidates",
+      "http_status": 200,
+      "candidate_count": 1,
+      "task": 15,
+      "readonly": true
+    },
+    {
+      "path": "/api/inst/quant/factor-workflow/compute-preflight",
+      "http_status": 200,
+      "body": {
+        "allowed": true,
+        "version": "quant-controlled-worker-v1",
+        "service_version": "2.0.0",
+        "method_code_hash": "8abbfd63bf482e2d70cdbcdc8b2bad061b2594862f8920275e863d080040f7cb",
+        "candidate_warmup_sessions": 0,
+        "reasons": [],
+        "policy_hash": "4e2ad21f697e44394cbf6657ffe248ef72a73094803300a8390d5ee817432c5b",
+        "max_development_trials": 2,
+        "score_calendar_days": 92,
+        "security_count": 40,
+        "limits": {
+          "max_development_trials": 2,
+          "max_symbols": 40,
+          "max_score_days": 93,
+          "max_references": 1,
+          "address_space_bytes": 12884901888,
+          "rss_bytes": 3221225472,
+          "min_available_bytes": 17179869184,
+          "wall_seconds": 180,
+          "cpu_seconds": 120
+        }
+      },
+      "no_task_created": true
+    },
+    {
+      "path": "/api/inst/quant/factor-workflow/compute-preflight",
+      "http_status": 200,
+      "sample_omitted": true,
+      "allowed": false,
+      "no_task_created": true
+    },
+    {
+      "path": "/api/inst/quant/factor-workflow/topics",
+      "anonymous_http_status": 401
+    }
+  ],
+  "login_only_auth_write": true,
+  "scope_preflight_post_is_read_only": true,
+  "new_task_count": 0,
+  "business_writes": 0,
+  "model_calls": 0,
+  "backtest_calls": 0,
+  "approval_calls": 0,
+  "credentials_not_recorded": true
+}

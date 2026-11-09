@@ -1,0 +1,266 @@
+{
+  "started_at": "2026-11-09T13:14:49.866648+00:00",
+  "counts_before": {
+    "f0": 0,
+    "candidates": 0,
+    "sealed": 0,
+    "agent_jobs": 0,
+    "iterations": 0
+  },
+  "old_private_manager_count": "not exposed by old version; dedicated-instance DB/known-run evidence accepted by PM",
+  "old_unknown_run": "original9527 GET404; unchanged, not resubmitted",
+  "svquant_head": "51408e8c0fcca5b26f0261263fd1d78e136ff95f",
+  "private_re_head": "49961b0267946ab2ccae99bec1d53438092ac85b",
+  "services": {
+    "private-re": {
+      "old_pid": 1593249,
+      "new_pid": 2045830,
+      "cwd": "/home/dev01/project/SVQuant-zxd/.workspaces/research-engine-r4",
+      "original_argv_preserved": true,
+      "original_environment_preserved": true,
+      "environment_addition_names": [
+        "RE_CONTROLLED_EXECUTION_REQUIRED"
+      ],
+      "loaded_at": "2026-11-09T13:14:50.071074+00:00",
+      "shutdown": "SIGTERM graceful exit, no SIGKILL"
+    },
+    "bff": {
+      "old_pid": 436563,
+      "new_pid": 2047122,
+      "cwd": "/home/dev01/project/SVQuant-zxd",
+      "original_argv_preserved": true,
+      "original_environment_preserved": true,
+      "environment_addition_names": [
+        "QUANT_FACTOR_RE_BASE",
+        "QUANT_NOVELTY_RE_BASE",
+        "QUANT_NOVELTY_SERVICE_TOKEN"
+      ],
+      "loaded_at": "2026-11-09T13:14:55.837086+00:00",
+      "shutdown": "SIGTERM graceful exit, no SIGKILL"
+    }
+  },
+  "no_model_or_compute_submitted": true,
+  "private_re_health": {
+    "http_status": 200,
+    "body": {
+      "status": "ok",
+      "version": "2.0.0",
+      "engines": [
+        "native"
+      ]
+    }
+  },
+  "private_capabilities": {
+    "http_status": 200,
+    "body": {
+      "version": "quant-controlled-worker-v1",
+      "service_version": "2.0.0",
+      "method_code_hash": "8abbfd63bf482e2d70cdbcdc8b2bad061b2594862f8920275e863d080040f7cb",
+      "required": true,
+      "enabled": true,
+      "policy": {
+        "version": "quant-controlled-worker-v1",
+        "enabled": true,
+        "max_symbols": 40,
+        "max_score_days": 93,
+        "max_references": 1,
+        "address_space_bytes": 12884901888,
+        "rss_bytes": 3221225472,
+        "min_available_bytes": 17179869184,
+        "wall_seconds": 180,
+        "cpu_seconds": 120,
+        "approval_reference": "PM CR097 A/B 2026-11-09; sequential tasks, max_trials=2 each; no developer compute",
+        "allowed_symbols": [
+          "000001.SZ",
+          "000063.SZ",
+          "000100.SZ",
+          "000333.SZ",
+          "000338.SZ",
+          "000568.SZ",
+          "000625.SZ",
+          "000651.SZ",
+          "000725.SZ",
+          "000768.SZ",
+          "000776.SZ",
+          "000858.SZ",
+          "000895.SZ",
+          "000938.SZ",
+          "002027.SZ",
+          "002049.SZ",
+          "002142.SZ",
+          "002230.SZ",
+          "002415.SZ",
+          "002475.SZ",
+          "600000.SH",
+          "600009.SH",
+          "600030.SH",
+          "600031.SH",
+          "600036.SH",
+          "600048.SH",
+          "600050.SH",
+          "600104.SH",
+          "600276.SH",
+          "600309.SH",
+          "600406.SH",
+          "600438.SH",
+          "600519.SH",
+          "600585.SH",
+          "600690.SH",
+          "600703.SH",
+          "600809.SH",
+          "601166.SH",
+          "601318.SH",
+          "601888.SH"
+        ],
+        "score_windows": [
+          [
+            "2025-07-01",
+            "2025-09-30"
+          ],
+          [
+            "2026-06-22",
+            "2026-09-21"
+          ]
+        ],
+        "max_development_trials": 2,
+        "policy_hash": "4e2ad21f697e44394cbf6657ffe248ef72a73094803300a8390d5ee817432c5b"
+      },
+      "candidate_warmup_sessions": 0,
+      "single_compute_process": true,
+      "rss_monitor": "sum of own process-group resident pages sampled every 50ms; post-launch watchdog, not kernel RSS quota",
+      "address_space_limit": "RLIMIT_AS virtual address-space ceiling in child only",
+      "limitations": [
+        "Static universe snapshot is a fixed research sample, not historical point-in-time membership.",
+        "Candidate warmup is currently zero; missing scoring observations remain a failed gate.",
+        "No full-library novelty approval is authorised by this diagnostic policy."
+      ],
+      "activity": {
+        "queued": 0,
+        "running": 0
+      }
+    }
+  },
+  "readonly_331_preflight": {
+    "http_status": 200,
+    "body": {
+      "allowed": false,
+      "version": "quant-controlled-worker-v1",
+      "service_version": "2.0.0",
+      "method_code_hash": "8abbfd63bf482e2d70cdbcdc8b2bad061b2594862f8920275e863d080040f7cb",
+      "candidate_warmup_sessions": 0,
+      "reasons": [
+        "正式对照规模尚未获准，不会自动执行全库比较"
+      ],
+      "policy_hash": "4e2ad21f697e44394cbf6657ffe248ef72a73094803300a8390d5ee817432c5b",
+      "max_development_trials": 2,
+      "score_calendar_days": 92,
+      "security_count": 40,
+      "limits": {
+        "max_development_trials": 2,
+        "max_symbols": 40,
+        "max_score_days": 93,
+        "max_references": 1,
+        "address_space_bytes": 12884901888,
+        "rss_bytes": 3221225472,
+        "min_available_bytes": 17179869184,
+        "wall_seconds": 180,
+        "cpu_seconds": 120
+      }
+    },
+    "not_an_experiment_submission": true
+  },
+  "bff_health": {
+    "http_status": 200,
+    "body": {
+      "ok": true,
+      "service": "svquant",
+      "port": 8766,
+      "db": "ok",
+      "db_pool": {
+        "used": 1,
+        "idle": 1,
+        "limit": 10
+      },
+      "schema": {
+        "ok": true,
+        "current": "0037_quant_factor_org_controls",
+        "applied": [
+          "0001_baseline",
+          "0002_invest_portfolio_trade",
+          "0003_invest_us_market",
+          "0004_invest_quant",
+          "0005_inst_quant_role",
+          "0006_quant_factor_candidates",
+          "0007_inst_quant_reviewer_role",
+          "0008_quant_factor_agent_jobs",
+          "0009_quant_factor_iterations",
+          "0010_invest_ai_agent",
+          "0011_quant_factor_v5_ledger",
+          "0012_quant_factor_imports",
+          "0013_quant_factor_agent_job_project_fk",
+          "0014_quant_factor_ledger_audit_fields",
+          "0015_quant_factor_branch_parent_tenant_fk",
+          "0016_quant_factor_import_metrics",
+          "0017_quant_factor_f0_runs",
+          "0018_quant_factor_topic_pause",
+          "0019_quant_factor_import_category",
+          "0020_strategy_research_ledger",
+          "0021_strategy_ledger_tenant_constraints",
+          "0022_quant_factor_trial_f0_run",
+          "0023_strategy_s0_runs",
+          "0024_strategy_diagnostics",
+          "0025_strategy_review_events",
+          "0026_strategy_trial_report",
+          "0027_quant_factor_topic_display_no",
+          "0028_quant_factor_branch_title",
+          "0029_strategy_topic_display_no",
+          "0030_quant_data_requests",
+          "0031_portfolio_simulation",
+          "0032_strategy_imported_assets",
+          "0033_strategy_imported_assets_index",
+          "0034_strategy_imported_assets_retain",
+          "0035_quant_data_request_tracking",
+          "0036_quant_factor_controls",
+          "0037_quant_factor_org_controls"
+        ],
+        "pending": [],
+        "head": "0037_quant_factor_org_controls"
+      },
+      "data_sync": {
+        "view_id": "research-rv-20261103-23",
+        "data_date": "2026-11-02",
+        "status": "ok",
+        "finished_at": "2026-11-03 12:17:48.577854+08:00",
+        "last_error": null
+      },
+      "queue": {
+        "done": 841
+      },
+      "db_connections": {
+        "used": 31,
+        "limit": 100
+      },
+      "worker_mode": "single",
+      "multi_instance_supported": false,
+      "in_memory_state": [
+        "rate_limit",
+        "market_cache",
+        "factor_backtest_queue",
+        "kh_progress",
+        "audit_dedupe"
+      ],
+      "factor_dir": "/home/dev01/project/SVQuant-zxd/backend/factor",
+      "note": "single-worker deployment; shared state requires Redis/queue (D-06)"
+    }
+  },
+  "frontend": {
+    "http_status": 200,
+    "not_restarted": true
+  },
+  "post_load_activity": {
+    "queued": 0,
+    "running": 0
+  },
+  "completed_at": "2026-11-09T13:14:57.892383+00:00",
+  "status": "loaded_readonly_checks_passed"
+}

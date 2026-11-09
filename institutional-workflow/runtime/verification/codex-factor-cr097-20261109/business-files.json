@@ -82,5 +82,9 @@
     "institutional-workflow/runtime/verification/codex-data-cr094-20261109/data-online-readonly-http.json"
   ],
   "pm_files_excluded": true,
-  "existing_custom_lock_excluded": true
+  "existing_custom_lock_excluded": true,
+  "load_evidence_files": [
+    "institutional-workflow/runtime/verification/codex-factor-cr097-20261109/cr097-load-evidence.json",
+    "institutional-workflow/runtime/verification/codex-factor-cr097-20261109/cr097-online-readonly-http.json"
+  ]
 }

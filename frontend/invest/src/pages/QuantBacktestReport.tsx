@@ -149,7 +149,7 @@ export default function QuantBacktestReport() {
               </button>
             </div>
             {!ai ? (
-              <p className="hint">{t("自动生成 · 50 字结论 · 不满意可重新生成", "Auto-generated · 50-character takeaway · regenerate if needed")}</p>
+              <p className="hint">{t("自动生成 · AI 结论 · 不满意可重新生成", "Auto-generated · AI takeaway · regenerate if needed")}</p>
             ) : (
               <div className="quant-ai">
                 {ai.summary ? <p className="quant-ai-summary">{ai.summary}</p> : null}

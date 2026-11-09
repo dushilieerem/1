@@ -15,12 +15,13 @@ import { useToast } from "../toast";
 import GlossarySheet from "../GlossarySheet";
 import AiPanel from "../components/AiPanel";
 import FinancialTrend from "../components/FinancialTrend";
+
 import { useLocale, withMarket } from "../i18n";
 
 const KLineChart = lazy(() => import("../KLineChart"));
+const VolumeChart = lazy(() => import("../VolumeChart"));
 
 const PERIODS = [
-  { key: "minute", zh: "分时", en: "Intraday" },
   { key: "daily", zh: "日K", en: "D" },
   { key: "weekly", zh: "周K", en: "W" },
   { key: "monthly", zh: "月K", en: "M" },
@@ -38,35 +39,6 @@ const fmtYi = (value: any) => {
   const n = Number(value);
   return Number.isFinite(n) ? `${(n / 1e8).toFixed(1)} 亿` : "—";
 };
-
-function MinuteChart({ items }: { items: any[] }) {
-  const { t } = useLocale();
-  const closes = items.map((x) => Number(x.close)).filter((x) => Number.isFinite(x));
-  if (!closes.length) return <div className="empty-inline">{t("暂无有效分时价", "No valid intraday prices")}</div>;
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-  const span = max - min || 1;
-  const w = 320;
-  const h = 140;
-  const step = w / Math.max(1, closes.length - 1);
-  const points = closes.map((v, i) => `${(i * step).toFixed(2)},${(h - ((v - min) / span) * (h - 12) - 6).toFixed(2)}`).join(" ");
-  const first = closes[0];
-  const last = closes[closes.length - 1];
-  const up = last >= first;
-  return (
-    <div>
-      <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-label={t("分时走势", "Intraday chart")} style={{ width: "100%", height: 170 }}>
-        <polyline points={points} fill="none" stroke={up ? "#d14343" : "#1f9d55"} strokeWidth="1.6" strokeLinejoin="round" />
-      </svg>
-      <div className="chart-legend">
-        <span>{t("最新", "Last")} {formatPrice(last)}</span>
-        <span>{t("最高", "High")} {formatPrice(max)}</span>
-        <span>{t("最低", "Low")} {formatPrice(min)}</span>
-        <span>{up ? t("上涨", "Up") : t("下跌", "Down")} {(((last - first) / first) * 100).toFixed(2)}%</span>
-      </div>
-    </div>
-  );
-}
 
 function FundDistribution({ rows }: { rows: any[] }) {
   const { t } = useLocale();
@@ -102,9 +74,7 @@ export default function Stock() {
   const [glossary, setGlossary] = useState(false);
   const [inWatch, setInWatch] = useState(false);
   const [watchBusy, setWatchBusy] = useState(false);
-  const [minute, setMinute] = useState<any[] | null>(null);
-  const [minuteError, setMinuteError] = useState<string | null>(null);
-  const [minuteLoading, setMinuteLoading] = useState(false);
+  const [indicator, setIndicator] = useState<"ma" | "boll">("ma");
 
   const load = (nextPeriod = period) => {
     setError(null);
@@ -126,21 +96,10 @@ export default function Stock() {
       .catch(() => {});
   }, [code, market]);
 
-  const loadMinute = () => {
-    setMinuteLoading(true);
-    setMinuteError(null);
-    api<{ items: any[] }>(`/api/market-data/minute/${code}?freq=1m&limit_days=1`)
-      .then((d) => setMinute(d.items || []))
-      .catch((e) => setMinuteError(e.message))
-      .finally(() => setMinuteLoading(false));
-  };
-
   const changePeriod = (p: string) => {
     if (p === period) return;
-    if (isUs && p === "minute") return;
     setPeriod(p);
-    if (p === "minute") loadMinute();
-    else load(p);
+    load(p);
   };
 
   const toggleWatch = async () => {
@@ -199,6 +158,8 @@ export default function Stock() {
   const peers = data.peers || [];
   const statements = data.statements || {};
   const latestFin = (data.financialTrend?.items || []).slice(-1)[0] || {};
+  const latestBar = (data.chart?.bars || []).slice(-1)[0];
+  const latestVolume = latestBar?.volume != null ? `${(Number(latestBar.volume) / 1e4).toFixed(1)} 万` : "—";
   const tabs = [
     ...(news.length ? [{ key: "news", label: t("资讯", "News") }] : []),
     ...(!isUs && q.asset !== "etf" ? [{ key: "finance", label: t("财务", "Financials") }] : []),
@@ -253,29 +214,56 @@ export default function Stock() {
       <section className="card chart-card">
         <div className="card-title-row">
           <h2>{t("走势", "Price")}</h2>
-          <span className="hint">{data.dataDate} · {period === "minute" ? t("分时 · 非实时", "Intraday · not real-time") : t("收盘 · 非实时", "Close · not real-time")}</span>
+          <span className="hint">{data.dataDate} · {t("收盘 · 非实时", "Close · not real-time")}</span>
         </div>
         <div className="seg period-seg">
-          {PERIODS.filter((p) => !isUs || p.key !== "minute").map((p) => (
+          {PERIODS.map((p) => (
             <button key={p.key} className={period === p.key ? "on" : ""} onClick={() => changePeriod(p.key)}>{t(p.zh, p.en)}</button>
           ))}
         </div>
-        {period === "minute" ? (
-          minuteLoading ? <div className="kline-loading">{t("加载分时…", "Loading intraday…")}</div>
-            : minuteError ? <div className="empty-inline">{minuteError}</div>
-              : minute?.length ? <MinuteChart items={minute} />
-                : <div className="empty-inline">{t("暂无分时数据", "No intraday data")}</div>
-        ) : (
-          <Suspense fallback={<div className="kline-loading">{t("加载图表…", "Loading chart…")}</div>}>
-            <KLineChart bars={data.chart?.bars || []} ma5={data.chart?.ma5 || []} ma10={data.chart?.ma10 || []} ma20={data.chart?.ma20 || []} />
-          </Suspense>
-        )}
-        <div className="chart-legend">
-          <span><i className="legend-red" />{t("K 线", "Candles")}</span>
-          <span><i className="legend-amber" />MA5</span>
-          <span><i className="legend-purple" />MA10</span>
-          <span><i className="legend-blue" />MA20</span>
+        <div className="chart-topline">
+          <div className="chart-indicator-switch">
+            <button className={indicator === "ma" ? "on" : ""} onClick={() => setIndicator("ma")}>{t("均线", "MA")}</button>
+            <button className={indicator === "boll" ? "on" : ""} onClick={() => setIndicator("boll")}>BOLL</button>
+          </div>
+          <div className="chart-legend chart-legend-top">
+            <span><i className="legend-red" />{t("K 线", "Candles")}</span>
+            {indicator === "ma" ? (
+              <>
+                <span><i className="legend-amber" />MA5</span>
+                <span><i className="legend-purple" />MA10</span>
+                <span><i className="legend-blue" />MA20</span>
+              </>
+            ) : (
+              <>
+                <span><i className="legend-amber" />MID</span>
+                <span><i className="legend-red" />UP</span>
+                <span><i className="legend-blue" />LOW</span>
+              </>
+            )}
+          </div>
         </div>
+        <Suspense fallback={<div className="kline-loading">{t("加载图表…", "Loading chart…")}</div>}>
+          <KLineChart
+            bars={data.chart?.bars || []}
+            ma5={data.chart?.ma5 || []}
+            ma10={data.chart?.ma10 || []}
+            ma20={data.chart?.ma20 || []}
+            indicator={indicator}
+            height={230}
+          />
+        </Suspense>
+        <div className="volume-topline">
+          <div className="chart-legend">
+            <span><i className="volume-legend" />{t("成交量", "Volume")}</span>
+            <b className="volume-value">{latestVolume}</b>
+            <span><i className="legend-amber" />MA5</span>
+            <span><i className="legend-purple" />MA10</span>
+          </div>
+        </div>
+        <Suspense fallback={<div className="volume-empty">{t("加载成交量…", "Loading volume…")}</div>}>
+          <VolumeChart bars={data.chart?.bars || []} height={92} />
+        </Suspense>
         <div className="hint">{t("日/周/月 K 由收盘数据聚合；前复权口径。", "Daily/weekly/monthly candles are aggregated from EOD data; forward-adjusted.")}</div>
       </section>
 

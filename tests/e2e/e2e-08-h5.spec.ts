@@ -263,15 +263,23 @@ test("量化研究入口页展示今日关注与五个入口", async ({ page }) 
   await noHorizontalOverflow(page);
 });
 
-test("因子页展示市场风格与 6 行因子榜", async ({ page }) => {
+test("因子榜 7 大类可展开，因子库 27 细分可进入详情", async ({ page }) => {
   await loginByToken(page);
   await page.goto(`${H5}/quant/factors`, { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "因子" })).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator(".quant-factor-row")).toHaveCount(6, { timeout: 30_000 });
+  await expect(page.locator(".quant-category-card")).toHaveCount(7, { timeout: 30_000 });
   await expect(page.getByText("因子入门")).toBeVisible();
   await expect(page.locator(".quant-factor-cta")).toBeVisible();
-  await expect(page.getByText(/过去一段时间涨得相对好的股票|价格起伏越小|盈利效率/).first()).toBeVisible();
-  await page.locator(".quant-factor-row").first().click();
+  await expect(page.getByText(/过去一段时间涨得相对好的股票|涨得猛不猛|价格起伏越小/).first()).toBeVisible();
+  await page.locator(".quant-category-head").first().click();
+  await expect(page.locator(".quant-subfactor-row")).toHaveCount(5);
+  await page.locator(".quant-subfactor-row").nth(1).click();
+  await expect(page.locator(".quant-detail")).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "关闭", exact: true }).click();
+  await page.getByRole("button", { name: "因子库", exact: true }).click();
+  await expect(page.locator(".quant-library-group")).toHaveCount(7);
+  await expect(page.locator(".quant-library-row")).toHaveCount(27);
+  await page.locator(".quant-library-row").first().click();
   await expect(page.locator(".quant-detail")).toBeVisible({ timeout: 20_000 });
   await noHorizontalOverflow(page);
 });
@@ -293,7 +301,7 @@ test("快速实验：因子卡方向、配置预览与权重输入", async ({ pa
   await loginByToken(page);
   await page.goto(`${H5}/quant/strategies?tab=quick`, { waitUntil: "domcontentloaded" });
   await expect(page.locator(".quant-pick").first()).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator(".quant-pick")).toHaveCount(6);
+  await expect(page.locator(".quant-pick").first()).toBeVisible();
   await page.locator(".quant-pick").nth(0).click();
   await page.locator(".quant-pick").nth(1).click();
   await expect(page.locator(".pick-dir")).toHaveCount(2);
@@ -301,6 +309,8 @@ test("快速实验：因子卡方向、配置预览与权重输入", async ({ pa
   await page.getByRole("button", { name: /下一步：生成配置/ }).click();
   await expect(page.getByText("配置预览")).toBeVisible();
   await expect(page.locator(".seg button", { hasText: "前 10 只" })).toBeVisible();
+  await expect(page.locator(".seg button", { hasText: "日频" })).toBeVisible();
+  await expect(page.locator(".seg button", { hasText: "周频" })).toBeVisible();
   await expect(page.getByText("调仓：", { exact: false })).toBeVisible();
   await page.locator(".seg button", { hasText: "自定义" }).click();
   await expect(page.locator(".quant-weight-row input")).toHaveCount(2);
@@ -384,11 +394,21 @@ test("Agent 管理页展示 Agent 与提示词编辑", async ({ page }) => {
   await noHorizontalOverflow(page);
 });
 
-test("个股分时视图可切换（有数据或明确空态）", async ({ page }) => {
+test("个股走势移除分时，K 线支持均线/BOLL 切换且成交量独立", async ({ page }) => {
   await loginByToken(page);
   await page.goto(`${H5}/stock/600519`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "分时" }).click();
-  await expect(page.locator('svg[aria-label="分时走势"], .empty-inline')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".kline")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "分时" })).toHaveCount(0);
+  await expect(page.locator(".volume-chart")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".volume-topline b")).toContainText("万");
+  await expect(page.locator(".chart-indicator-switch button")).toHaveCount(2);
+  await expect(page.locator(".chart-legend-top").getByText("MA5", { exact: true })).toBeVisible();
+  await expect(page.locator(".volume-topline").getByText("MA5", { exact: true })).toBeVisible();
+  await expect(page.locator(".volume-topline").getByText("MA10", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "BOLL", exact: true }).click();
+  await expect(page.getByText("MID", { exact: true })).toBeVisible();
+  await expect(page.getByText("UP", { exact: true })).toBeVisible();
+  await expect(page.getByText("LOW", { exact: true })).toBeVisible();
   await noHorizontalOverflow(page);
 });
 

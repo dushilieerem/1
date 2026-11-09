@@ -259,3 +259,14 @@ def test_board_payload_disk_cache_roundtrip(monkeypatch, tmp_path):
     assert quant._load_board_payload("2026-11-04", "1m") == payload
     # 日期不同的缓存不能串用。
     assert quant._load_board_payload("2026-11-03", "1m") is None
+
+
+def test_factor_registry_has_27_factors_in_7_categories():
+    assert len(quant.FACTORS) == 27
+    counts = {}
+    for key in quant.FACTOR_BY_KEY:
+        cat = quant.CATEGORY_BY_KEY[key]
+        counts[cat] = counts.get(cat, 0) + 1
+    assert counts == {"momentum": 5, "value": 6, "quality": 5, "growth": 3, "volatility": 3, "liquidity": 3, "size": 2}
+    meta = quant._factor_meta("momentum")
+    assert meta["category_name"] == "动量" and meta["sub_name"] == "20 日涨幅"

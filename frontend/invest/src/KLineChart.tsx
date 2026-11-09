@@ -1,9 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   CandlestickSeries,
   ColorType,
   CrosshairMode,
-  HistogramSeries,
   LineSeries,
   createChart,
 } from "lightweight-charts";
@@ -17,16 +16,34 @@ export default function KLineChart({
   ma5 = [],
   ma10 = [],
   ma20 = [],
-  height = 260,
+  height = 230,
+  indicator = "ma",
 }: {
   bars: Bar[];
   ma5?: Line[];
   ma10?: Line[];
   ma20?: Line[];
   height?: number;
+  indicator?: "ma" | "boll";
 }) {
   const { t, locale } = useLocale();
   const ref = useRef<HTMLDivElement>(null);
+  const boll = useMemo(() => {
+    if (indicator !== "boll" || bars.length < 20) return { mid: [], up: [], low: [] };
+    const mid: Line[] = [];
+    const up: Line[] = [];
+    const low: Line[] = [];
+    for (let i = 19; i < bars.length; i += 1) {
+      const closes = bars.slice(i - 19, i + 1).map((b) => Number(b.close));
+      const mean = closes.reduce((sum, value) => sum + value, 0) / closes.length;
+      const variance = closes.reduce((sum, value) => sum + (value - mean) ** 2, 0) / closes.length;
+      const sd = Math.sqrt(variance);
+      mid.push({ time: bars[i].time, value: mean });
+      up.push({ time: bars[i].time, value: mean + 2 * sd });
+      low.push({ time: bars[i].time, value: mean - 2 * sd });
+    }
+    return { mid, up, low };
+  }, [bars, indicator]);
 
   useEffect(() => {
     if (!ref.current || !bars.length) return;
@@ -45,7 +62,7 @@ export default function KLineChart({
         horzLines: { color: "#f4f4f4" },
       },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: 0.24 } },
+      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: 0.08 } },
       timeScale: {
         borderVisible: false,
         timeVisible: false,
@@ -68,23 +85,6 @@ export default function KLineChart({
     });
     candle.setData(bars.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
 
-    const volume = chart.addSeries(HistogramSeries, {
-      priceFormat: { type: "price", precision: 0, minMove: 1 },
-      priceScaleId: "volume",
-      priceLineVisible: false,
-      lastValueVisible: false,
-    });
-    chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-    volume.priceScale().applyOptions({ visible: false });
-    volume.setData(
-      bars.map((b) => ({
-        time: b.time,
-        value: b.volume,
-        color: b.close >= b.open ? "rgba(230,0,18,.42)" : "rgba(22,163,74,.42)",
-      })),
-    );
-    volume.applyOptions({ lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false, title: "" });
-
     const addLine = (data: Line[], color: string) => {
       if (!data.length) return;
       const line = chart.addSeries(LineSeries, {
@@ -96,9 +96,15 @@ export default function KLineChart({
       });
       line.setData(data.map((d) => ({ time: d.time, value: d.value })));
     };
-    addLine(ma5, "#d97706");
-    addLine(ma10, "#9333ea");
-    addLine(ma20, "#2563eb");
+    if (indicator === "boll") {
+      addLine(boll.mid, "#d97706");
+      addLine(boll.up, "#e60012");
+      addLine(boll.low, "#2563eb");
+    } else {
+      addLine(ma5, "#d97706");
+      addLine(ma10, "#9333ea");
+      addLine(ma20, "#2563eb");
+    }
 
     chart.timeScale().fitContent();
 
@@ -123,7 +129,7 @@ export default function KLineChart({
       ro.disconnect();
       chart.remove();
     };
-  }, [bars, ma5, ma10, ma20, height, locale]);
+  }, [bars, ma5, ma10, ma20, boll, indicator, height, locale]);
 
   if (!bars.length) return <div className="kline-empty">{t("暂无行情数据", "No market data")}</div>;
   return (

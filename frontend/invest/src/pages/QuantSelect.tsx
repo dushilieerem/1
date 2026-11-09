@@ -88,7 +88,7 @@ export default function QuantSelect() {
       {!data?.items?.length && data ? (
         <EmptyState title={t("暂无候选", "No candidates yet")} detail={t("数据不足时不会给出名单。", "No list is shown when data is insufficient.")} />
       ) : null}
-      <p className="hint">{t("AI 解释自动生成 · 50 字结论 · 不满意可重新生成", "AI explanation is generated automatically · 50-character takeaway · regenerate if needed")}</p>
+      <p className="hint">{t("AI 解释自动生成 · 不满意可重新生成", "AI explanation is generated automatically · regenerate if needed")}</p>
       {ai ? <AiCard data={ai} title={t("AI 量化解释", "AI quant commentary")} onRegenerate={() => void explain(true)} busy={busy} /> : null}
       <Tag tone="gray">{t("历史口径 · 非真实收益", "Historical basis · not real returns")}</Tag>
     </div>

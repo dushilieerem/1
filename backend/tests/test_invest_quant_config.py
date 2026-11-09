@@ -30,8 +30,10 @@ def test_rebalance_groups_biweekly_and_quarterly():
     start = date(2026, 1, 1)
     dates = [(start + timedelta(days=i)).isoformat() for i in range(180)]
     panel = {"dates": dates}
+    daily = quant._rebalance_groups(panel, 0, len(dates) - 1, "daily")
+    weekly = quant._rebalance_groups(panel, 0, len(dates) - 1, "weekly")
     biweekly = quant._rebalance_groups(panel, 0, len(dates) - 1, "biweekly")
     monthly = quant._rebalance_groups(panel, 0, len(dates) - 1, "monthly")
     quarterly = quant._rebalance_groups(panel, 0, len(dates) - 1, "quarterly")
-    assert len(biweekly) > len(monthly) > len(quarterly)
+    assert len(daily) > len(weekly) > len(biweekly) > len(monthly) > len(quarterly)
     assert biweekly[0][0] == 0 and biweekly[-1][1] == len(dates) - 1

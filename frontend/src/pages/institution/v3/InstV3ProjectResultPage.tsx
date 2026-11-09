@@ -18,12 +18,12 @@ function text(v: unknown, fallback = "—"): string {
 }
 
 function stageLink(key: string, stageNo: number): string {
-  if (stageNo === 0) return `/inst-v3/research?key=${encodeURIComponent(key)}`;
-  if (stageNo === 1) return `/inst-v3/research?key=${encodeURIComponent(key)}`;
-  if (stageNo === 2) return `/inst-v3/debate?key=${encodeURIComponent(key)}`;
-  if (stageNo === 3) return `/inst-v3/approvals?key=${encodeURIComponent(key)}`;
-  if (stageNo === 4) return `/inst-v3/execute?key=${encodeURIComponent(key)}`;
-  return `/inst-v3/manage?key=${encodeURIComponent(key)}`;
+  if (stageNo === 0) return `/inst/research?key=${encodeURIComponent(key)}`;
+  if (stageNo === 1) return `/inst/research?key=${encodeURIComponent(key)}`;
+  if (stageNo === 2) return `/inst/debate?key=${encodeURIComponent(key)}`;
+  if (stageNo === 3) return `/inst/approvals?key=${encodeURIComponent(key)}`;
+  if (stageNo === 4) return `/inst/execute?key=${encodeURIComponent(key)}`;
+  return `/inst/manage?key=${encodeURIComponent(key)}`;
 }
 
 export function InstV3ProjectResultPage() {
@@ -65,7 +65,7 @@ export function InstV3ProjectResultPage() {
     <>
       <div className="v3-page-head">
         <div>
-          <Link className="v3-eyebrow inline-flex items-center gap-1" to="/inst-v3/pipeline"><ArrowLeft className="h-3 w-3" />返回项目流水线</Link>
+          <Link className="v3-eyebrow inline-flex items-center gap-1" to="/inst/pipeline"><ArrowLeft className="h-3 w-3" />返回项目流水线</Link>
           <h1>{title} <span className="font-mono text-[13px] font-normal text-[#9b92a1]">{symbol}</span></h1>
           <p>只读结果页：阶段性结论、证据、版本与下一关状态；不能在这里改数或重跑 Agent。</p>
         </div>

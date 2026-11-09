@@ -213,7 +213,7 @@ export function InstV3ResearchPage() {
           <h1>{detail.company_name} <span className="font-mono text-[13px] font-normal text-[#9b92a1]">{detail.symbol}</span></h1>
           <p>左侧选项目，中间按步骤跑行业分析 → 六维 → 一页纸 → 定稿；右侧只显示当前步骤的 Agent。</p>
         </div>
-        <Link className="v3-btn ghost" to={`/inst-v3/pipeline/result?key=${encodeURIComponent(`case:${detail.id}`)}`}>查看结果页</Link>
+        <Link className="v3-btn ghost" to={`/inst/pipeline/result?key=${encodeURIComponent(`case:${detail.id}`)}`}>查看结果页</Link>
       </div>
 
       <div className="v3-stepper">
@@ -342,9 +342,9 @@ export function InstV3ResearchPage() {
                 <div className="v3-kv"><dt>锁定时间</dt><dd>{version?.locked_at || version?.frozen_at || "—"}</dd></div>
               </dl>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-                {!locked ? <button className="v3-btn primary" disabled={!!busy || !version} onClick={lockResearch}>{busy === "lock" ? "锁定中…" : "锁定研究定稿 R3"}</button> : null}
-                {locked ? <Link className="v3-btn primary" to={`/inst-v3/debate?key=${encodeURIComponent(`case:${detail.id}`)}`}>移交多空辩论 <ArrowRight className="h-3.5 w-3.5" /></Link> : null}
-                <Link className="v3-btn ghost" to={`/inst-v3/pipeline/result?key=${encodeURIComponent(`case:${detail.id}`)}`}>查看结果页</Link>
+                {!locked ? <button data-testid="inst-research-lock" className="v3-btn primary" disabled={!!busy || !version} onClick={lockResearch}>{busy === "lock" ? "锁定中…" : "锁定研究定稿 R3"}</button> : null}
+                {locked ? <Link className="v3-btn primary" to={`/inst/debate?key=${encodeURIComponent(`case:${detail.id}`)}`}>移交多空辩论 <ArrowRight className="h-3.5 w-3.5" /></Link> : null}
+                <Link className="v3-btn ghost" to={`/inst/pipeline/result?key=${encodeURIComponent(`case:${detail.id}`)}`}>查看结果页</Link>
               </div>
             </section>
           ) : null}

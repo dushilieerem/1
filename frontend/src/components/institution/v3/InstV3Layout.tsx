@@ -33,7 +33,7 @@ function Sidebar({ session, onNavigate }: { session: InstSession; onNavigate?: (
               <NavLink
                 key={item.key}
                 to={item.path}
-                end={item.path === "/inst-v3"}
+                end={item.path === "/inst"}
                 onClick={onNavigate}
                 className={({ isActive }) => `v3-nav-item${isActive ? " on" : ""}`}
               >
@@ -53,7 +53,7 @@ function Sidebar({ session, onNavigate }: { session: InstSession; onNavigate?: (
         <div className="row"><span>自动环节</span><b>1 个</b></div>
       </div>
       <div className="v3-side-foot">
-        v3 预览 · 数据来自 svquant_test
+        数据来自当前环境
         <br />
         页面按登录角色裁剪，不提供角色切换
       </div>
@@ -96,7 +96,7 @@ export function InstV3Layout() {
   useEffect(() => {
     const onExpired = () => {
       clearInstSession();
-      window.location.href = loginUrl("/inst-v3");
+      window.location.href = loginUrl("/inst");
     };
     window.addEventListener("svq:inst-auth-expired", onExpired);
     return () => window.removeEventListener("svq:inst-auth-expired", onExpired);
@@ -115,7 +115,7 @@ export function InstV3Layout() {
       <div className="inst-v3">
         <div className="v3-loading">
           机构会话不可用：{error || "请重新登录"}<br />
-          <button className="v3-btn primary" style={{ marginTop: 12 }} onClick={() => navigate(loginUrl("/inst-v3"))}>重新登录</button>
+          <button className="v3-btn primary" style={{ marginTop: 12 }} onClick={() => navigate(loginUrl("/inst"))}>重新登录</button>
         </div>
       </div>
     );
@@ -124,7 +124,7 @@ export function InstV3Layout() {
   const currentTitle = v3TitleForPath(location.pathname);
   const submitSearch = () => {
     const q = search.trim();
-    navigate(q ? `/inst-v3/pipeline?q=${encodeURIComponent(q)}` : "/inst-v3/pipeline");
+    navigate(q ? `/inst/pipeline?q=${encodeURIComponent(q)}` : "/inst/pipeline");
   };
 
   return (
@@ -151,7 +151,7 @@ export function InstV3Layout() {
                 <button className="rounded-lg p-1.5 text-[#746b7c] hover:bg-[#f8edf3] lg:hidden" onClick={() => setDrawer(true)} aria-label="打开菜单">
                   <Menu className="h-4 w-4" />
                 </button>
-                <span>{location.pathname.startsWith("/inst-v3/playbook") ? "规则与说明" : location.pathname.startsWith("/inst-v3/approvals") || location.pathname.startsWith("/inst-v3/research") || location.pathname.startsWith("/inst-v3/debate") || location.pathname.startsWith("/inst-v3/execute") || location.pathname.startsWith("/inst-v3/manage") ? "流程工作台" : "投资工作空间"}</span>
+                <span>{location.pathname.startsWith("/inst/playbook") ? "规则与说明" : location.pathname.startsWith("/inst/approvals") || location.pathname.startsWith("/inst/research") || location.pathname.startsWith("/inst/debate") || location.pathname.startsWith("/inst/execute") || location.pathname.startsWith("/inst/manage") ? "流程工作台" : "投资工作空间"}</span>
                 <span>/</span>
                 <b>{currentTitle}</b>
               </div>
@@ -166,7 +166,7 @@ export function InstV3Layout() {
                     className="w-44 bg-transparent text-[11px] outline-none placeholder:text-[#b7afbc]"
                   />
                 </label>
-                <span className="v3-preview">v3 预览</span>
+                <span className="v3-preview">主观机构端 v3</span>
                 <span className="v3-role">{session.role_label_cn}</span>
                 <div className="v3-user">
                   <b>{session.user.display_name || session.user.username}</b>

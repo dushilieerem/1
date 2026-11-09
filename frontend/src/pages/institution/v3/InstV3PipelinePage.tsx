@@ -6,7 +6,7 @@ import { fetchV3Pipeline, type V3Pipeline, type V3PipelineItem } from "@/lib/ins
 function ProjectCard({ item }: { item: V3PipelineItem }) {
   const title = item.company_name || item.symbol || "—";
   return (
-    <Link className="v3-project" to={`/inst-v3/pipeline/result?key=${encodeURIComponent(item.key)}`}>
+    <Link className="v3-project" to={`/inst/pipeline/result?key=${encodeURIComponent(item.key)}`}>
       <span className="nm">{title}<span className="v3-chip gold">{item.stage_name}</span></span>
       <span className="cd">{item.symbol} {item.industry ? `· ${item.industry}` : ""}</span>
       <span className="ms">
@@ -65,7 +65,7 @@ export function InstV3PipelinePage() {
           <p>{data.total} 个项目分布在 6 个环节。点环节筛选，点卡片看结果；要跑 Agent 进入左侧工作台。</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link className="v3-btn ghost" to="/inst-v3/playbook">流程说明</Link>
+          <Link className="v3-btn ghost" to="/inst/playbook">流程说明</Link>
           <button className="v3-btn primary" onClick={() => window.alert("v3 预览：新建项目将在下一批接入")}><Plus className="h-3.5 w-3.5" />新建项目</button>
         </div>
       </div>

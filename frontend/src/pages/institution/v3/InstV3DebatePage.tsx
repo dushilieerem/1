@@ -166,7 +166,7 @@ export function InstV3DebatePage() {
         },
       });
       await instApi(`/proposals/${created.id}/lock`, { method: "POST", body: { allow_warnings: true } });
-      navigate(`/inst-v3/approvals?key=${encodeURIComponent(`proposal:${created.id}`)}`);
+      navigate(`/inst/approvals?key=${encodeURIComponent(`proposal:${created.id}`)}`);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(null); }
   };
@@ -183,7 +183,7 @@ export function InstV3DebatePage() {
           <h1>{detail.company_name} · 多空辩论 <span className="font-mono text-[13px] font-normal text-[#9b92a1]">{detail.symbol}</span></h1>
           <p>多头与空头各 3 条，主持逼分歧、核证据，估值复核只算数，议案 P3 锁定后进入审批。</p>
         </div>
-        <Link className="v3-btn ghost" to={`/inst-v3/pipeline/result?key=${encodeURIComponent(`case:${detail.id}`)}`}>查看结果页</Link>
+        <Link className="v3-btn ghost" to={`/inst/pipeline/result?key=${encodeURIComponent(`case:${detail.id}`)}`}>查看结果页</Link>
       </div>
 
       <div className="v3-stepper">
@@ -266,22 +266,22 @@ export function InstV3DebatePage() {
               {latestProposal && latestProposal.status !== "draft" ? (
                 <div>
                   <div className="v3-note">议案已锁定并进入审批：{latestProposal.status}</div>
-                  <div style={{ marginTop: 10 }}><Link className="v3-btn primary" to={`/inst-v3/approvals?key=${encodeURIComponent(`proposal:${latestProposal.id}`)}`}>进入投委会审批 <ArrowRight className="h-3.5 w-3.5" /></Link></div>
+                  <div style={{ marginTop: 10 }}><Link className="v3-btn primary" to={`/inst/approvals?key=${encodeURIComponent(`proposal:${latestProposal.id}`)}`}>进入投委会审批 <ArrowRight className="h-3.5 w-3.5" /></Link></div>
                 </div>
               ) : (
                 <>
                   <div className="v3-form-grid">
                     <div className="v3-field"><label>方向</label><select value={direction} onChange={(e) => setDirection(e.target.value)}><option value="buy">买入</option><option value="sell">卖出</option><option value="exit">退出</option></select></div>
-                    <div className="v3-field"><label>目标仓位（0-1）</label><input value={target} onChange={(e) => setTarget(e.target.value)} /></div>
-                    <div className="v3-field"><label>价格下限（CNY）</label><input value={priceLow} onChange={(e) => setPriceLow(e.target.value)} /></div>
-                    <div className="v3-field"><label>价格上限（CNY）</label><input value={priceHigh} onChange={(e) => setPriceHigh(e.target.value)} /></div>
+                    <div className="v3-field"><label>目标仓位（0-1）</label><input data-testid="inst-proposal-target" value={target} onChange={(e) => setTarget(e.target.value)} /></div>
+                    <div className="v3-field"><label>价格下限（CNY）</label><input data-testid="inst-price-low" value={priceLow} onChange={(e) => setPriceLow(e.target.value)} /></div>
+                    <div className="v3-field"><label>价格上限（CNY）</label><input data-testid="inst-price-high" value={priceHigh} onChange={(e) => setPriceHigh(e.target.value)} /></div>
                     <div className="v3-field"><label>资金来源</label><select value={funding} onChange={(e) => setFunding(e.target.value)}><option>现金</option><option>减仓换仓</option></select></div>
                     <div className="v3-field"><label>有效期</label><input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} /></div>
-                    <div className="v3-field span-2"><label>投资意见</label><textarea value={opinion} onChange={(e) => setOpinion(e.target.value)} placeholder="写清为什么投、关键假设、最担心什么、什么情况下改变判断。" /></div>
+                    <div className="v3-field span-2"><label>投资意见</label><textarea data-testid="inst-investment-opinion" value={opinion} onChange={(e) => setOpinion(e.target.value)} placeholder="写清为什么投、关键假设、最担心什么、什么情况下改变判断。" /></div>
                     <div className="v3-field span-2"><label>监控 / 退出条件</label><textarea value={monitoring} onChange={(e) => setMonitoring(e.target.value)} /></div>
                   </div>
                   <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
-                    <button className="v3-btn primary" disabled={!!busy || !opinion.trim()} onClick={createProposal}><Send className="h-3.5 w-3.5" />{busy === "proposal" ? "锁定中…" : "锁定议案并提交审批"}</button>
+                    <button data-testid="inst-proposal-create" className="v3-btn primary" disabled={!!busy || !opinion.trim()} onClick={createProposal}><Send className="h-3.5 w-3.5" />{busy === "proposal" ? "锁定中…" : "锁定议案并提交审批"}</button>
                   </div>
                 </>
               )}

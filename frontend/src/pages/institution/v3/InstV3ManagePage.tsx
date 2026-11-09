@@ -312,7 +312,7 @@ export function InstV3ManagePage() {
                 </div>
                 <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                   <button className="v3-btn primary" disabled={!canWrite || !exitMemo.trim() || !!busy} onClick={submitExit}>{busy === "exit" ? "提交中…" : "提交投委会复核"}</button>
-                  <Link className="v3-btn ghost" to="/inst-v3/pipeline">查看项目流水线</Link>
+                  <Link className="v3-btn ghost" to="/inst/pipeline">查看项目流水线</Link>
                 </div>
                 <div className="v3-note" style={{ marginTop: 10 }}>退出不复用买入授权：新议案、新版本、重走合伙人 → 风控 → Chairman；新退出议案获批时旧授权作废。</div>
               </section>

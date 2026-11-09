@@ -171,6 +171,9 @@ export function InstV3ApprovalsPage() {
 
   const progress = detail?.progress;
   const riskChecks = detail?.risk_checks || [];
+  const stageForRole: Record<string, string> = { partner: "partner_review", risk: "risk_precheck", chairman: "chairman_review" };
+  const canAct = (kind: "partner" | "risk" | "chairman") =>
+    role === kind && detail?.status === stageForRole[kind];
   const chain = detail?.approval_chain || [];
   const snapshot = (detail?.current_version?.snapshot || {}) as Record<string, unknown>;
   const auth = detail?.authorization;
@@ -243,7 +246,10 @@ export function InstV3ApprovalsPage() {
                 <section className="v3-card">
                   <div className="v3-card-head"><div><h2>合伙人复核</h2><p>研究质量、上会资格、议案合理性与机会成本；不看风控六项明细。</p></div><span className="v3-chip">{progress?.partner?.status || "—"}</span></div>
                   <p style={{ fontSize: 11, lineHeight: 1.7, color: "#746b7c" }}>研究与辩论摘要由 02/03 锁定版本提供；合伙人只判断是否值得上会。提案人不能审批自己的议案。</p>
-                  {role === "partner" ? (
+                  {role === "partner" && !canAct("partner") ? (
+                    <div className="v3-note">当前议案状态为 {detail.status}，合伙人环节已结束或尚未轮到，不能再操作。</div>
+                  ) : null}
+                  {role === "partner" && canAct("partner") ? (
                     <>
                       <div className="v3-form-grid" style={{ marginTop: 10 }}>
                         <div className="v3-field span-2"><label>审批意见</label><textarea value={comment} onChange={(e) => setComment(e.target.value)} /></div>
@@ -255,7 +261,8 @@ export function InstV3ApprovalsPage() {
                         <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("partner", "return")}>退回</button>
                       </div>
                     </>
-                  ) : <div className="v3-note">当前登录角色为 {session.role_label_cn}，只能查看；合伙人账号可操作。</div>}
+                  ) : null}
+                  {role !== "partner" ? <div className="v3-note">当前登录角色为 {session.role_label_cn}，只能查看；合伙人账号可操作。</div> : null}
                 </section>
               ) : null}
 
@@ -266,7 +273,10 @@ export function InstV3ApprovalsPage() {
                     <div className="v3-kv" key={c.key}><dt>{c.label}</dt><dd>{c.value || "—"} <span className={`v3-chip ${c.status === "pass" ? "ok" : c.status === "warn" ? "warn" : "bad"}`}>{c.status}</span></dd></div>
                   ))}
                   {!riskChecks.length ? <div className="v3-empty">当前议案还没有风控核查数据。</div> : null}
-                  {role === "risk" ? (
+                  {role === "risk" && !canAct("risk") ? (
+                    <div className="v3-note">当前议案状态为 {detail.status}，风控环节尚未轮到或已结束，不能操作。</div>
+                  ) : null}
+                  {role === "risk" && canAct("risk") ? (
                     <>
                       <div className="v3-form-grid" style={{ marginTop: 10 }}>
                         <div className="v3-field span-2"><label>风控意见</label><textarea value={comment} onChange={(e) => setComment(e.target.value)} /></div>
@@ -278,7 +288,8 @@ export function InstV3ApprovalsPage() {
                         <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("risk", "veto")}><X className="h-3.5 w-3.5" />否决（终局）</button>
                       </div>
                     </>
-                  ) : <div className="v3-note">当前登录角色为 {session.role_label_cn}，只能查看；独立风控账号可操作。</div>}
+                  ) : null}
+                  {role !== "risk" ? <div className="v3-note">当前登录角色为 {session.role_label_cn}，只能查看；独立风控账号可操作。</div> : null}
                 </section>
               ) : null}
 
@@ -288,7 +299,10 @@ export function InstV3ApprovalsPage() {
                   {chain.length ? chain.map((a, i) => (
                     <div className="v3-kv" key={`${a.step}-${i}`}><dt>{a.step} · {a.approver_name || a.approver_member_id || "—"}</dt><dd>{DECISION_LABEL[a.decision || ""] || a.decision || "待审"}{a.comment ? ` · ${a.comment}` : ""}</dd></div>
                   )) : <div className="v3-empty">还没有审批记录。</div>}
-                  {role === "chairman" ? (
+                  {role === "chairman" && !canAct("chairman") ? (
+                    <div className="v3-note">当前议案状态为 {detail.status}，Chairman 环节尚未轮到或已结束，不能操作。</div>
+                  ) : null}
+                  {role === "chairman" && canAct("chairman") ? (
                     <>
                       <div className="v3-form-grid" style={{ marginTop: 10 }}>
                         <div className="v3-field span-2"><label>Chairman 意见</label><textarea value={comment} onChange={(e) => setComment(e.target.value)} /></div>
@@ -301,7 +315,8 @@ export function InstV3ApprovalsPage() {
                         <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("chairman", "reject")}>拒绝</button>
                       </div>
                     </>
-                  ) : <div className="v3-note">当前登录角色为 {session.role_label_cn}，只能查看；Chairman 账号可操作。</div>}
+                  ) : null}
+                  {role !== "chairman" ? <div className="v3-note">当前登录角色为 {session.role_label_cn}，只能查看；Chairman 账号可操作。</div> : null}
                 </section>
               ) : null}
 
@@ -315,7 +330,7 @@ export function InstV3ApprovalsPage() {
                         <div className="v3-kv"><dt>状态</dt><dd>{auth.status}</dd></div>
                         <div className="v3-kv"><dt>签发时间</dt><dd>{auth.issued_at || "—"}</dd></div>
                       </dl>
-                      <div style={{ marginTop: 10 }}><Link className="v3-btn primary" to={`/inst-v3/execute?key=auth:${auth.id}`}>进入执行成交 <ArrowRight className="h-3.5 w-3.5" /></Link></div>
+                      <div style={{ marginTop: 10 }}><Link className="v3-btn primary" to={`/inst/execute?key=auth:${auth.id}`}>进入执行成交 <ArrowRight className="h-3.5 w-3.5" /></Link></div>
                     </>
                   ) : <div className="v3-empty">三关全部通过后生成授权。</div>}
                 </section>

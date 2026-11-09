@@ -3,8 +3,8 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
 import { evaluateWriteGuard } from "./helpers/write-guard.mjs";
 
 /**
- * 线性流程 B 全链路：辩论完成自动创建议案 → 合伙人 → Chairman → 风控
- * → 审批最后一关自动授权 + 模拟成交 → 投资组合持仓更新。
+ * v3 线性流程：研究定稿 R3 → 辩论 P3 → 合伙人 → 风控 → Chairman
+ * → 授权 AUTH → 执行成交 → 持仓与结果页。
  *
  * 只读环境 skip；写库需 INST_E2E_ALLOW_WRITE=1 且服务端 guard 返回安全库。
  */
@@ -42,14 +42,14 @@ async function call(
 }
 
 test.beforeAll(async ({ request }) => {
-  for (const role of ["manager", "partner", "chairman", "risk"]) {
+  for (const role of ["manager", "partner", "chairman", "risk", "execution"]) {
     T[role] = await login(request, `inst_${role}`);
   }
   if (ALLOW_WRITE) {
     const res = await request.get(`${API}/api/inst/_e2e/guard`, {
       headers: { Authorization: `Bearer ${T.manager}` },
     });
-    const data = res.ok() ? await res.json() : { error: `HTTP ${res.status()}` };
+    const data = res.ok() ? await res.json() : { error: `HTTP ${res.status}` };
     const guard = evaluateWriteGuard({ allowWrite: true, guardResponse: data });
     if (guard.fatal) throw new Error(guard.fatal);
     writeEnabled = guard.enabled;
@@ -63,20 +63,16 @@ async function holdingQty(request: APIRequestContext, symbol: string): Promise<n
     .reduce((sum: number, p: any) => sum + Number(p.qty || 0), 0);
 }
 
-test("辩论后补议案 → 审批 → 自动授权成交 → 持仓更新", async ({ page, request }) => {
-  test.skip(!writeEnabled, "写库用例需要 INST_E2E_ALLOW_WRITE=1 且服务端库名为 svquant_test");
-  test.setTimeout(300_000);
-
-  // 优先未持仓；重复运行把候选买完后，退回加仓低权重标的，
-  // 只要加 5% 后仍低于风控单票/行业上限，测试仍可重跑。
-  const portfolioBefore = await call(request, "GET", "/api/inst/portfolio", T.manager);
-  const positionsBefore = (portfolioBefore.positions || []).filter((p: any) => Number(p.qty) > 0);
-  const held = new Set(positionsBefore.map((p: any) => String(p.symbol)));
+/** 优先未持仓；重复运行把候选买完后，退回加仓低权重标的。 */
+async function pickCompany(request: APIRequestContext): Promise<any> {
+  const portfolio = await call(request, "GET", "/api/inst/portfolio", T.manager);
+  const positions = (portfolio.positions || []).filter((p: any) => Number(p.qty) > 0);
+  const held = new Set(positions.map((p: any) => String(p.symbol)));
   const weightOf = new Map(
-    positionsBefore.map((p: any) => [String(p.symbol), Number(p.weight || 0)]),
+    positions.map((p: any) => [String(p.symbol), Number(p.weight || 0)]),
   );
   const crowded = new Set(
-    positionsBefore
+    positions
       .filter((p: any) => Number(p.weight || 0) > 0.2 && p.industry)
       .map((p: any) => String(p.industry)),
   );
@@ -90,14 +86,36 @@ test("辩论后补议案 → 审批 → 自动授权成交 → 持仓更新", as
       !c.is_st &&
       !c.is_suspended &&
       !crowded.has(String(c.industry || "")) &&
-      // 风控会硬阻断 ST/*ST/退市整理标的，E2E 不选它们。
       !/(^|\*)ST|退/.test(String(c.name || "")),
   );
   const company =
     eligible.find((c: any) => !held.has(String(c.symbol))) ||
-    // 目标仓位默认 5%；单票上限 15%，留 2% 余量。
     eligible.find((c: any) => Number(weightOf.get(String(c.symbol)) || 0) + 0.05 <= 0.13);
-  expect(company, "找不到可用于买入流程的未持仓标的").toBeTruthy();
+  expect(company, "找不到可用于买入流程的标的").toBeTruthy();
+  return company;
+}
+
+async function lockResearch(request: APIRequestContext, versionId: number) {
+  let res = await request.post(`${API}/api/inst/research/${versionId}/lock`, {
+    headers: { Authorization: `Bearer ${T.manager}` },
+    data: {},
+  });
+  // 测试库允许带数据缺口锁定，但依然必须经过 v3 门禁并记录缺口。
+  if (!res.ok()) {
+    res = await request.post(`${API}/api/inst/research/${versionId}/lock`, {
+      headers: { Authorization: `Bearer ${T.manager}` },
+      data: { allow_gaps: true, comment: "E2E：带缺口锁定" },
+    });
+  }
+  expect(res.ok(), `研究锁定失败 HTTP ${res.status()} ${await res.text()}`).toBeTruthy();
+  return res.json();
+}
+
+test("研究 R3 → 辩论 P3 → 三关 → 授权执行 → 持仓更新", async ({ page, request }) => {
+  test.skip(!writeEnabled, "写库用例需要 INST_E2E_ALLOW_WRITE=1 且服务端库名为 svquant_test");
+  test.setTimeout(300_000);
+
+  const company = await pickCompany(request);
   const symbol = String(company.symbol);
   const beforeQty = await holdingQty(request, symbol);
 
@@ -113,53 +131,87 @@ test("辩论后补议案 → 审批 → 自动授权成交 → 持仓更新", as
     { mode: "full" },
   );
   const versionId = Number(research.versions[0].id);
-  await call(request, "POST", `/api/inst/research/${versionId}/review`, T.partner, {
-    decision: "approve",
-    comment: "E2E 线性流程",
-  });
+  await lockResearch(request, versionId);
+
+  const locked = await call(request, "GET", `/api/inst/cases/${caseId}`, T.manager);
+  expect(Number(locked.stage_no), "研究锁定后应进入 02→多空辩论").toBe(2);
+  expect(locked.versions?.[0]?.locked_at, "研究版本应有 locked_at").toBeTruthy();
+
   await call(request, "POST", `/api/inst/cases/${caseId}/debate`, T.manager, {
     use_ai: false,
   });
 
-  // 打开辩论页：填写投资意见并生成议案（不再自动建案跳转）。
+  // 打开 v3 辩论工作台：进入第 4 步「议案」，填写意见并锁定 P3。
   await page.addInitScript((t) => sessionStorage.setItem("svquant_inst_token", t), T.manager);
-  await page.goto(`${BASE}/inst/debate?case=${caseId}`, { waitUntil: "networkidle" });
-  await page.getByTestId("inst-investment-opinion").fill("E2E 投资意见：关键假设与退出条件");
-  // 价格区间必须覆盖现价，否则风控会按「现价超出批准区间」否决。
+  await page.goto(`${BASE}/inst/debate?key=${encodeURIComponent(`case:${caseId}`)}`, {
+    waitUntil: "networkidle",
+  });
+  await page.locator(".v3-stepper .v3-step").nth(3).click();
+  const opinion = page.getByTestId("inst-investment-opinion");
+  await opinion.fill("E2E 投资意见：关键假设成立、估值有安全边际才持有");
   await page.getByTestId("inst-price-low").fill("1");
   await page.getByTestId("inst-price-high").fill("1000");
   await page.getByTestId("inst-proposal-create").click();
-  await page.waitForURL(/\/inst\/approvals\?proposal=\d+/, { timeout: 60_000 });
-  const proposalId = Number(new URL(page.url()).searchParams.get("proposal"));
+  await page.waitForURL(/\/inst\/approvals\?key=proposal(:|%3A)\d+/, { timeout: 120_000 });
+
+  const proposalId = Number(
+    decodeURIComponent(new URL(page.url()).searchParams.get("key") || "").split(":")[1],
+  );
   expect(proposalId).toBeGreaterThan(0);
 
+  // 锁定后：议案状态应为 partner_review，阶段 3。
+  const submitted = await call(request, "GET", `/api/inst/proposals/${proposalId}`, T.manager);
+  expect(submitted.status).toBe("partner_review");
+  const caseAtApproval = await call(request, "GET", `/api/inst/cases/${caseId}`, T.manager);
+  expect(Number(caseAtApproval.stage_no)).toBe(3);
+
   // 顺序固定：合伙人 → 风控 → Chairman。
-  await call(request, "POST", `/api/inst/proposals/${proposalId}/partner`, T.partner, {
-    decision: "approve",
+  const partner = await call(
+    request,
+    "POST",
+    `/api/inst/proposals/${proposalId}/partner`,
+    T.partner,
+    { decision: "approve", comment: "E2E 合伙人复核" },
+  );
+  expect(partner.status, "合伙人全部通过后进入风控").toBe("risk_precheck");
+  const risk = await call(request, "POST", `/api/inst/proposals/${proposalId}/risk-check`, T.risk, {
+    decision: "pass",
   });
-  const risk = await call(request, "POST", `/api/inst/proposals/${proposalId}/risk-check`, T.risk, {});
   expect(risk.status, "风控应放行").toBe("chairman_review");
   await call(request, "POST", `/api/inst/proposals/${proposalId}/chairman`, T.chairman, {
     decision: "approve",
   });
 
-  // 方案 B：授权 + 模拟成交。
+  // AUTH 快照 → 执行成交。
+  const authorized = await call(
+    request,
+    "POST",
+    `/api/inst/proposals/${proposalId}/authorize`,
+    T.chairman,
+  );
+  const authId = Number(authorized.authorizations[0].id);
+  expect(authId).toBeGreaterThan(0);
   const executed = await call(
     request,
     "POST",
-    `/api/inst/proposals/${proposalId}/approve-and-execute`,
-    T.chairman,
+    `/api/inst/authorizations/${authId}/execute`,
+    T.execution,
     { price: Number(company.ref_price) || 42 },
   );
-  expect(executed.proposal?.status).toBe("executed");
-  expect(executed.execution?.order?.side).toBe("buy");
-  expect(executed.authorization_id).toBeGreaterThan(0);
+  expect(Number(executed.order?.qty || 0)).toBeGreaterThan(0);
 
   const afterQty = await holdingQty(request, symbol);
   expect(afterQty).toBeGreaterThan(beforeQty);
+  const caseAfter = await call(request, "GET", `/api/inst/cases/${caseId}`, T.manager);
+  expect(Number(caseAfter.stage_no), "成交后进入投资管理").toBe(5);
 
-  // 旧执行入口重定向，侧栏不再出现交易执行。
-  await page.goto(`${BASE}/inst/execution`, { waitUntil: "networkidle" });
-  await expect(page).toHaveURL(/\/inst\/portfolio/);
-  await expect(page.getByRole("link", { name: "交易执行" })).toHaveCount(0);
+  // 结果页展示三次锁定与最终持仓。
+  await page.goto(
+    `${BASE}/inst/pipeline/result?key=${encodeURIComponent(`case:${caseId}`)}`,
+    { waitUntil: "networkidle" },
+  );
+  await expect(page.getByText("研究锁定 R3", { exact: true })).toBeVisible();
+  await expect(page.getByText("议案锁定 P3", { exact: true })).toBeVisible();
+  await expect(page.getByText("授权 AUTH", { exact: true })).toBeVisible();
+  await expect(page.getByText(/股 · 权重/).first()).toBeVisible();
 });

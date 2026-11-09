@@ -28,7 +28,7 @@ export function InstV3PlaybookPage() {
           <h1>流程与权限</h1>
           <p>六环节、三关、三次锁定、六项硬约束与证据分级；所有门禁由服务端执行，页面只负责展示。</p>
         </div>
-        <Link className="v3-btn ghost" to="/inst-v3/pipeline"><BookOpen className="h-3.5 w-3.5" />返回流水线</Link>
+        <Link className="v3-btn ghost" to="/inst/pipeline"><BookOpen className="h-3.5 w-3.5" />返回流水线</Link>
       </div>
 
       <section className="v3-card">

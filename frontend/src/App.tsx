@@ -180,6 +180,12 @@ const InstV3PipelinePage = lazy(() =>
 const InstV3ProjectResultPage = lazy(() =>
   import("./pages/institution/v3/InstV3ProjectResultPage").then((m) => ({ default: m.InstV3ProjectResultPage })),
 );
+const InstV3ResearchPage = lazy(() =>
+  import("./pages/institution/v3/InstV3ResearchPage").then((m) => ({ default: m.InstV3ResearchPage })),
+);
+const InstV3DebatePage = lazy(() =>
+  import("./pages/institution/v3/InstV3DebatePage").then((m) => ({ default: m.InstV3DebatePage })),
+);
 const InstV3PlaybookPage = lazy(() =>
   import("./pages/institution/v3/InstV3PlaybookPage").then((m) => ({ default: m.InstV3PlaybookPage })),
 );
@@ -257,8 +263,8 @@ export default function App() {
           <Route index element={<InstV3DashboardPage />} />
           <Route path="pipeline" element={<InstV3PipelinePage />} />
           <Route path="pipeline/result" element={<InstV3ProjectResultPage />} />
-          <Route path="research" element={<InstV3WorkspacePlaceholderPage />} />
-          <Route path="debate" element={<InstV3WorkspacePlaceholderPage />} />
+          <Route path="research" element={<InstV3ResearchPage />} />
+          <Route path="debate" element={<InstV3DebatePage />} />
           <Route path="approvals" element={<InstV3WorkspacePlaceholderPage />} />
           <Route path="execute" element={<InstV3WorkspacePlaceholderPage />} />
           <Route path="manage" element={<InstV3WorkspacePlaceholderPage />} />

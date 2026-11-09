@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import date, datetime
 import uuid
 
 from ai.errors import AiError
@@ -40,6 +41,17 @@ class Decision(BaseModel):
     @classmethod
     def _none_to_empty(cls, value):
         return "" if value is None else value
+
+
+def _json_ready(value):
+    """把 PostgreSQL date/datetime 显式转为 ISO 字符串；其余类型原样保留。"""
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(k): _json_ready(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_ready(v) for v in value]
+    return value
 
 
 def _context(uid, org, topic, run_id):
@@ -152,7 +164,7 @@ def decide(uid, org, topic, run_id):
                           response_format={"type": "json_object"}))
     assert_quota_available(uid)
     out = run_task(TASK, messages=[{"role": "system", "content": instructions},
-                                   {"role": "user", "content": json.dumps(ctx, ensure_ascii=False, default=str)}])
+                                   {"role": "user", "content": json.dumps(_json_ready(ctx), ensure_ascii=False)}])
     rid = "qff0_" + uuid.uuid4().hex
     record_usage(user_id=uid, run_id=rid, skill=TASK,
                  tokens_in=out.get("tokens_in", 0), tokens_out=out.get("tokens_out", 0))
@@ -186,6 +198,40 @@ def _wait_candidate(uid, org, cid):
     if cand["status"].endswith("_running"):
         raise service.WorkflowError("研发检验超时")
     return cand
+
+
+def _ensure_initial_implementation(uid, org, project_id, topic_id, branch_id, run_id):
+    """新发现课题没有起点因子时，先在当前 H1 生成并通过静态校验的实现。"""
+    project = get_project(uid, project_id)["project"]
+    cfg = project["config"]
+    plan = cfg.get("researchPlan") or {}
+    hint = str(plan.get("candidateExpression") or "")
+    job = agent_jobs.create(uid, org, "F3", project_id, {
+        "hypothesis": (str(plan.get("hypothesis") or project.get("name") or "")
+                       + " 若假设未给出公式，请基于该假设自主提出一个可检验的短周期价量因子实现：明确使用字段、窗口（如20日）、方向、缺失值处理，禁止未来数据。")[:800],
+        "candidateExpression": hint[:200],
+        "improvementScope": "按已冻结假设实现首个可检验因子；不得改变研究目标、方向或数据范围",
+        "target": plan.get("target", "未来1个交易日收益"),
+        "name": (cfg.get("draftFactor") or {}).get("name") or "f0_factor",
+        "code": "",
+    }, f"f0-initial:{run_id}:{uuid.uuid4().hex[:8]}")
+    deadline = time.monotonic() + 420
+    while job["status"] in agent_jobs.ACTIVE and time.monotonic() < deadline:
+        time.sleep(2)
+        job = agent_jobs.read(uid, org, job["id"])
+    if job["status"] != "ready":
+        raise service.WorkflowError("F3 未生成通过校验的初始实现：" + job.get("events", [{}])[-1].get("message", "未知原因"))
+    fields = job["output"]["fields"]
+    if not str(fields.get("code") or "").strip():
+        raise service.WorkflowError("F3 返回空实现，不能启动新发现检验")
+    next_cfg = {**cfg,
+                "researchPlan": {**plan, "revision": "f0-initial-" + run_id[:8]},
+                "draftFactor": {**(cfg.get("draftFactor") or {}), "name": fields["name"],
+                                "body": fields["code"], "description": plan.get("hypothesis") or ""},
+                "factorCodes": [fields["name"]], "v5ActiveBranch": branch_id}
+    upsert_project(uid, {**project, "config": next_cfg,
+                         "description": plan.get("hypothesis") or project.get("description") or ""})
+    return fields
 
 
 def _run_test(uid, org, project_id, f0_run_id=None):
@@ -335,6 +381,16 @@ def execute(uid, org, run_id, topic, decision, step):
                         "needed_capabilities": gaps,
                         "reason": "F3 能力不支持，降级修订仍未生成合规实现，继续下一步",
                         "capability_event": str(exc)[:400], "detail": str(retry)[:400]}
+    project = get_project(uid, topic["project_id"])["project"]
+    cfg = project.get("config") or {}
+    if not (cfg.get("draftFactor") or {}).get("body") and not cfg.get("factorCodes"):
+        branch_id = decision.branch_id
+        if not branch_id:
+            with get_conn() as c:
+                row = c.execute("SELECT id FROM quant_factor_branches WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at LIMIT 1",
+                                (uid, org, topic["id"])).fetchone()
+            branch_id = row["id"] if row else None
+        _ensure_initial_implementation(uid, org, topic["project_id"], topic["id"], branch_id, run_id)
     cand = _run_test(uid, org, topic["project_id"], run_id)
     return {"status": "completed", "action": "run_test", "candidate_id": cand["id"],
             "candidate_status": cand["status"]}

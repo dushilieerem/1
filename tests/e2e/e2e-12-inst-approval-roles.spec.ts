@@ -162,6 +162,7 @@ test("四套审批角色页面：当前关可操作、跨关被拒", async ({ br
   const partner = await openPage(browser, T.partner);
   await partner.page.goto(url, { waitUntil: "networkidle" });
   await expect(partner.page.getByText("合伙人复核", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(partner.page.getByText("研究与辩论摘要", { exact: true }).first()).toBeVisible();
   await expect(partner.page.getByText("六项硬约束核查", { exact: false })).toHaveCount(0);
   await partner.page.getByRole("button", { name: "复核通过" }).click();
   await expect
@@ -190,6 +191,9 @@ test("四套审批角色页面：当前关可操作、跨关被拒", async ({ br
   const chairman = await openPage(browser, T.chairman);
   await chairman.page.goto(url, { waitUntil: "networkidle" });
   await expect(chairman.page.getByText("完整审批链", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(chairman.page.getByText("研究与辩论摘要", { exact: true }).first()).toBeVisible();
+  await expect(chairman.page.getByText("风控结论", { exact: true }).first()).toBeVisible();
+  await expect(chairman.page.getByText("六项硬约束核查", { exact: false })).toHaveCount(0);
   await expect(chairman.page.getByRole("button", { name: /批准并生成授权/ })).toBeVisible();
   await chairman.page.getByRole("button", { name: /批准并生成授权/ }).click();
   await expect(chairman.page.getByText("授权文件 AUTH", { exact: true })).toBeVisible({ timeout: 30_000 });

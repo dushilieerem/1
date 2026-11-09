@@ -5,6 +5,7 @@ import {createProject,saveProject} from '@/lib/detectStore';
 import {FactorModuleTabs,WorkspaceHeading} from './QuantWorkspacePages';
 import {newUuidV4} from '@/lib/uuid';
 import {getQuantSession} from '@/lib/quantAuth';
+import {ensureBranchForStart,ensureTopicForProject,type TaskIdentity} from '@/lib/factorTaskIdentity';
 
 type Topic={id:string;display_no?:number;project_id:string;project_name:string;view_id:string;primary_holding_period:number;max_trials:number;max_sealed:number;sealed_used?:number;status:string;dispatch_status?:string|null;dispatch_stop_reason?:string|null;pending_review?:number;sealed_passed?:number;latest_outcome?:string|null;research_purpose?:string|null;k:number;branch_count:number;trial_count:number;created_at?:string};
 type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;status:string;hypothesis_version:number;implementation_version:number;created_at?:string;display_label?:string;display_title?:string;hypothesis_text?:string;source_label?:string;display_status?:string};
@@ -41,11 +42,13 @@ export function QuantFactorHomePage(){
  const canManage=!!getQuantSession()?.can_manage;
  const [paused,setPaused]=useState(false),[controlBusy,setControlBusy]=useState(false);
  const [loading,setLoading]=useState(true);
+ const [stageView,setStageView]=useState<'prepare'|'development'|'validation'|'approval'>('prepare');
  const [pending,setPending]=useState<number|null>(null);
  const [sealedUsed,setSealedUsed]=useState<number|null>(null);
  const [authOpen,setAuthOpen]=useState(false);
  const [creating,setCreating]=useState(false),[creatingBusy,setCreatingBusy]=useState(false),[createErr,setCreateErr]=useState('');
- const [createdTask,setCreatedTask]=useState<{topicId:string;branchId?:string;projectId:string}>();
+ const [createdTask,setCreatedTask]=useState<TaskIdentity>();
+ const creatingLock=useRef(false);
  const [importedFactors,setImportedFactors]=useState<Array<{source_library:string;factor_name:string;display_name?:string}>>([]);
  const [nt,setNt]=useState({name:'新因子挖掘任务',universe:'CSI500',benchmark:'CSI500',development_start:'2022-01-01',development_end:'2024-12-31',validation_start:'2025-01-01',validation_end:'2025-12-31',holding:1,max_trials:8,max_sealed:1,factor:'',library:'主因子库',direction:'negative',hypothesis:'短周期因子在截面上有稳定预测力',acceptance:'方向 Rank IC ≥ 0.005，NW t ≥ t*(K)，有效观测 ≥ 60，最大回撤 ≤ 0.5',purpose:'discovery' as 'replication'|'discovery'});
  const treeRef=useRef<HTMLDivElement|null>(null);
@@ -155,8 +158,14 @@ export function QuantFactorHomePage(){
   return ()=>{cancelAnimationFrame(raf);window.removeEventListener('resize',draw);};
  },[ledger]);
  useEffect(()=>{if(!creating||importedFactors.length)return;void researchFetch('/api/inst/quant/factor-workflow/imports/svquant-existing/reference').then(r=>r.ok?r.json():null).then(d=>{if(d)setImportedFactors(d.items||[]);});},[creating,importedFactors.length]);
- async function startCreatedTask(topicId:string,branchId?:string){
-  if(!branchId){setError('挖掘任务已创建，但初始分支未就绪；请刷新任务列表后重试启动。');return false;}
+ async function loadFirstBranch(topicId:string):Promise<string|undefined>{
+  try{const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(topicId)+'/ledger');if(!r.ok)return undefined;const d=await r.json();return d.branches?.[0]?.id;}catch{return undefined;}
+ }
+ async function startCreatedTask(task:TaskIdentity){
+  const prep=await ensureBranchForStart(task,{loadLedger:async id=>{const branchId=await loadFirstBranch(id);return {branches:branchId?[{id:branchId}]:[]};}});
+  setCreatedTask(prep.identity);
+  if(prep.error){setError(prep.error);return false;}
+  const topicId=prep.identity.topicId!;const branchId=prep.identity.branchId!;
   try{
    const fr=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(topicId)+'/branches/'+encodeURIComponent(branchId)+'/f0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:newUuidV4()})});
    const fd=await fr.json();if(!fr.ok){setError(typeof (fd.detail||fd.error)==='string'?(fd.detail||fd.error):'任务已创建，但启动失败，可在任务详情重试。');return false;}
@@ -164,29 +173,69 @@ export function QuantFactorHomePage(){
   }catch(e){setError('任务已创建，但启动请求失败：'+(e instanceof Error?e.message:String(e))+'；请稍后重试，不会重复创建任务。');return false;}
  }
  async function createTopic(start=true){
-  if(creatingBusy)return;setCreatingBusy(true);setCreateErr('');setError('');
+  if(creatingLock.current)return;
+  creatingLock.current=true;setCreatingBusy(true);setCreateErr('');setError('');
   try{
-   let task=createdTask;
+   let task:TaskIdentity|undefined=createdTask;
    if(!task){
     const p=await createProject(nt.factor,nt.hypothesis,nt.name);
     const plan={revision:'nt-'+Date.now(),hypothesis:nt.hypothesis,candidateExpression:'',improvementScope:'只改进实现，不改变经济假设和方向',target:'未来1个交易日收益',frequency:'daily',acceptance:nt.acceptance,developmentStart:nt.development_start,developmentEnd:nt.development_end,validationStart:nt.validation_start,validationEnd:nt.validation_end,maxTrials:Number(nt.max_trials),researchPurpose:nt.purpose,...(nt.purpose==='discovery'?{noveltyPolicy:{scope:'all_accessible' as const,maxAbsCorrelation:0.7,minDays:60,minPairs:30,minCoverage:0.8}}:{}),rules:{minSignedIc:0.005,maxDrawdown:0.5,minObservations:60,direction:nt.direction as 'positive'|'negative',icMetric:'rank_ic' as const}};
     const saved=await saveProject({...p,name:nt.name,description:nt.hypothesis,config:{...p.config,universe:nt.universe,benchmark:nt.benchmark,factorCodes:nt.factor?[nt.factor]:[],weights:nt.factor?[1]:[],powers:nt.factor?[1]:[],factorLibraries:nt.factor?{[nt.factor]:nt.library}:{},researchPlan:plan,researchContext:{direction:'因子研究',question:nt.hypothesis,background:'新建挖掘任务：'+nt.factor}}});
+    task={projectId:saved.id};setCreatedTask(task);
+   }
+   if(!task.topicId){
     const vr=await researchFetch('/api/inst/quant/factor-workflow/published-view');const v=await vr.json();if(!vr.ok)throw Error('发布视图读取失败');
     const body={view_id:v.view_id,release_id:'',release_ids:v.release_ids||{},view_manifest_sha256:v.view_manifest_sha256||'',contract_revision:v.contract_revision||'',as_of:v.as_of,development_start:nt.development_start,development_end:nt.development_end,validation_start:nt.validation_start,validation_end:nt.validation_end,primary_holding_period:Number(nt.holding),policy_version:'v5-p0',max_trials:Number(nt.max_trials),max_sealed:Number(nt.max_sealed)};
-    const tr=await researchFetch('/api/inst/quant/factor-workflow/projects/'+encodeURIComponent(saved.id)+'/topics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const td=await tr.json();if(!tr.ok)throw Error(typeof (td.detail||td.error)==='string'?(td.detail||td.error):'建挖掘任务失败');
-    let branchId:string|undefined;
-    try{const tl=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(td.topic.id)+'/ledger');const tld=await tl.json();branchId=tld.branches?.[0]?.id;}catch{/* 保留任务，启动时明确报分支未就绪 */}
-    task={topicId:td.topic.id,branchId,projectId:saved.id};setCreatedTask(task);
+    const identity=await ensureTopicForProject(task,{
+     listProjectTopics:async(projectId)=>{
+      const r=await researchFetch('/api/inst/quant/factor-workflow/projects/'+encodeURIComponent(projectId)+'/topics');if(!r.ok)throw Error('读取项目已有挖掘任务失败');const d=await r.json();return (d.topics||[]).map((t:{id:string;branch_id?:string|null})=>({id:t.id,branch_id:t.branch_id}));
+     },
+     createTopic:async(projectId)=>{
+      const tr=await researchFetch('/api/inst/quant/factor-workflow/projects/'+encodeURIComponent(projectId)+'/topics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const td=await tr.json();if(!tr.ok)throw Error(typeof (td.detail||td.error)==='string'?(td.detail||td.error):'建挖掘任务失败');return {id:td.topic.id};
+     },
+    });
+    task=identity;setCreatedTask(identity);
    }
-   const rl=await researchFetch('/api/inst/quant/factor-workflow/topics');const d=await rl.json();setTopics(d.topics||[]);setSelected(task.topicId);
+   const rl=await researchFetch('/api/inst/quant/factor-workflow/topics');const d=await rl.json();setTopics(d.topics||[]);if(task.topicId)setSelected(task.topicId);
    if(!start){setNotice('草稿已保存，未启动研究。');setCreating(false);setCreatedTask(undefined);return;}
-   const ok=await startCreatedTask(task.topicId,task.branchId);
+   const ok=await startCreatedTask(task);
    setCreating(false);
    if(ok)setCreatedTask(undefined);
   }catch(e){setCreateErr(e instanceof Error?e.message:String(e));}
-  finally{setCreatingBusy(false);}
+  finally{creatingLock.current=false;setCreatingBusy(false);}
  }
  const topic=topics.find(t=>t.id===selected);
+ useEffect(()=>{if(!topic)return;if((topic.pending_review||0)>0||(topic.sealed_passed||0)>0)setStageView('validation');else if((topic.trial_count||0)>0)setStageView('development');else setStageView('prepare');},[topic?.id]); // 仅切换任务时定位真实当前环节；用户点环节不反向推进
+ const stageDefs=[
+  {id:'prepare' as const,label:'研究准备',hint:'任务、数据视图与预算'},
+  {id:'development' as const,label:'因子研发',hint:'真实检验与迭代'},
+  {id:'validation' as const,label:'独立验证',hint:'封存与复核'},
+  {id:'approval' as const,label:'审批入库',hint:'审批与因子库'},
+ ];
+ const stageDone=(id:typeof stageDefs[number]['id'])=>{
+  if(id==='prepare')return !!topic;
+  if(id==='development')return (topic?.trial_count||0)>0&&((topic?.pending_review||0)>0||(topic?.sealed_passed||0)>0);
+  if(id==='validation')return (topic?.sealed_passed||0)>0&&(topic?.pending_review||0)===0;
+  return false;
+ };
+ const stageCurrent=(id:typeof stageDefs[number]['id'])=>{
+  if(!topic)return id==='prepare';
+  if(id==='prepare')return false;
+  if(id==='development')return (topic.trial_count||0)===0||((topic.pending_review||0)===0&&(topic.sealed_passed||0)===0);
+  if(id==='validation')return (topic.pending_review||0)>0;
+  return false;
+ };
+ const agentWork=!topic?'暂无挖掘任务：可新建任务或从因子库发起。':topic.dispatch_status==='running'||topic.dispatch_status==='queued'?'研究决策正在推进当前分支，页面只读观察，不会推动阶段。':(topic.pending_review||0)>0?'独立验证有结果待复核，等待人工决定。':(topic.sealed_passed||0)>0?'封存已通过，等待提交独立复核。':topic.trial_count===0?'等待启动首次真实研发检验。':'当前无自动运行；可查看研究树、重试启动或到人工工作台接手。';
+ const stagePanel=topic?(
+  <div className="stage-panel">
+   <div className="stage-panel-head"><div><span className="eyebrow">CURRENT STAGE VIEW</span><h3>{stageDefs.find(s=>s.id===stageView)?.label}</h3></div><span className="badge">{stageCurrent(stageView)?'当前环节':stageDone(stageView)?'已发生过':'未开始'}</span></div>
+   {stageView==='prepare'&&<p className="fine">挖掘任务 T{topic.display_no??'—'} · {purposeText(topic.research_purpose)} · 视图 {topic.view_id} · 主持有期 {topic.primary_holding_period} 日 · 试验预算 {topic.max_trials}。阶段导航只用于查看，不会改变任务状态或阶段。</p>}
+   {stageView==='development'&&<p className="fine">已登记 {topic.trial_count} 次检验，计入 K {topic.k}/{topic.max_trials}，分支 {topic.branch_count} 个。研究树与迭代记录在下方详情中，保留 H1/Ha/Hb 与虚线父子关系。</p>}
+   {stageView==='validation'&&<p className="fine">封存通过 {topic.sealed_passed||0} 次，待复核 {topic.pending_review||0} 项。独立验证由真实封存记录和复核意见构成，不能通过点击阶段推进。</p>}
+   {stageView==='approval'&&<p className="fine">待审批 {pending==null?'读取中':pending} 项。审批与入库在“待审批”和“因子库”入口完成，本页只显示真实状态。</p>}
+   <div className="actions"><Link className="btn small" to={'/quant/reviews/factors'}>查看待审批</Link><Link className="btn small" to="/quant/factor/library">打开因子库</Link></div>
+  </div>
+ ):null;
  const selectedBranch=(ledger?.branches||[]).find(b=>b.id===node);
  const feed=useMemo(()=>[...(ledger?.trials||[])].sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,12),[ledger]);
  const totalTrials=topics.reduce((n,t)=>n+t.trial_count,0);
@@ -313,6 +362,14 @@ export function QuantFactorHomePage(){
      <div className="kpi"><span>Token</span><b>{f0?.decision?.steps?f0.decision.steps.reduce((n,s)=>n+(s.usage?.tokens_in||0)+(s.usage?.tokens_out||0),0):'—'}</b><small>最近一次研究决策</small></div>
     </div><div className="actions"><button className="btn small" disabled={!canManage||controlBusy} onClick={()=>void toggleGlobalPause()} title={canManage?(paused?"恢复全部自动研究":"全局暂停，不启动新自动动作"):"需要研究负责人权限"}>{paused?"恢复全部":"暂停全部（AC-12）"}</button></div>
    </div>
+   {!loading&&<div className="stage-board">
+    <div className="stage-nav" role="tablist" aria-label="因子业务环节（仅查看）">
+     {stageDefs.map((s,i)=><button key={s.id} type="button" role="tab" aria-selected={stageView===s.id} className={'stage-step'+(stageView===s.id?' active':'')+(stageDone(s.id)?' done':'')} onClick={()=>setStageView(s.id)}><span className="stage-no">{i+1}</span><span><b>{s.label}</b><small>{s.hint}</small></span></button>)}
+    </div>
+    <div className="stage-work"><span className={'live-dot'+(topic?.dispatch_status==='running'||topic?.dispatch_status==='queued'?'':' off')}/><div><b>当前 Agent 工作</b><p className="fine">{agentWork}</p></div></div>
+    {stagePanel}
+    {!topic&&<div className="stage-panel"><p className="fine">还没有真实挖掘任务。可以新建任务，或从因子库选择已授权因子发起研究；阶段导航只用于查看，不会自动推进。</p><div className="actions"><button className="btn small primary" onClick={()=>setCreating(true)}>新建挖掘任务</button><Link className="btn small" to="/quant/factor/library">从因子库开始</Link></div></div>}
+   </div>}
    {creating&&<div className="modal-backdrop" role="dialog" aria-modal="true" onClick={()=>setCreating(false)}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><h2>新建研究挖掘任务</h2><p className="fine">创建后冻结数据视图、区间、预算与初始因子</p></div><button className="btn small" onClick={()=>setCreating(false)}>取消</button></div><div className="modal-body">{createErr&&<p className="hint error">{createErr}</p>}<div className="form-grid">
     <label className="field"><span>挖掘任务名称</span><input value={nt.name} onChange={e=>setNt({...nt,name:e.target.value})}/></label>
     <label className="field"><span>挖掘任务类型</span><select value={nt.purpose} onChange={e=>setNt({...nt,purpose:e.target.value as 'replication'|'discovery'})}><option value="replication">复现（已有因子）</option><option value="discovery">新发现（需因子库新颖性检验）</option></select><small>复现：存量因子直接进检验。新发现：走 0.70 相关性去重门槛；当前共享 9527 未提供新颖性/ R4 接口，新发现可能在对照阶段报“不可用”，不会伪造通过。</small></label>

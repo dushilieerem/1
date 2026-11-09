@@ -24,7 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from services.data.view_sync import sync_view  # noqa: E402
+from services.data.view_sync import sync_h5_serving, sync_view  # noqa: E402
 
 
 def main() -> int:
@@ -41,21 +41,29 @@ def main() -> int:
         action="store_true",
         help="允许写生产库 svquant；默认只允许 *_dev/*_test/*_e2e",
     )
+    parser.add_argument("--h5-serving-only", action="store_true", help="只刷新 H5 公告/研报/分红/股本")
     parser.add_argument("--json", action="store_true", help="输出 JSON")
     args = parser.parse_args()
 
     from_date = date.fromisoformat(args.from_date) if args.from_date else None
     try:
-        result = sync_view(
-            args.view,
-            data_root=args.data_root,
-            dry_run=args.dry_run,
-            full=args.full,
-            force=args.force,
-            from_date=from_date,
-            with_financials=args.with_financials,
-            allow_production=args.allow_production,
-        )
+        if args.h5_serving_only:
+            result = sync_h5_serving(
+                args.view,
+                data_root=args.data_root,
+                allow_production=args.allow_production,
+            )
+        else:
+            result = sync_view(
+                args.view,
+                data_root=args.data_root,
+                dry_run=args.dry_run,
+                full=args.full,
+                force=args.force,
+                from_date=from_date,
+                with_financials=args.with_financials,
+                allow_production=args.allow_production,
+            )
     except Exception as exc:
         print(f"sync failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1

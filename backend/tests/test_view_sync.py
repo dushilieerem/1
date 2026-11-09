@@ -296,3 +296,22 @@ def test_sync_ref_security_includes_chinext_star_and_bse(tmp_path: Path, monkeyp
     assert total == 4
     boards = {row[0]: row[4] for row in captured["rows"]}
     assert boards == {"600000.SH": "SH_MAIN", "300750.SZ": "ChiNext", "688981.SH": "STAR", "920001.BJ": "BSE"}
+
+
+def test_doc_rows_handle_nan_and_content_hash():
+    import pandas as pd
+
+    from services.data import view_sync
+
+    frame = pd.DataFrame([{
+        "symbol": "600519.SH", "title": "公告标题", "url": "https://example.test/a",
+        "available_time": "2026-11-06 10:00:00", "category": "业绩",
+        "art_code": "A1", "source": "eastmoney",
+    }])
+    rows = view_sync._doc_rows(frame, "announcement", "data_platform_announcement", date(2026, 11, 6))
+    assert len(rows) == 1
+    assert rows[0][0] == "announcement"
+    assert rows[0][6]
+    raw = json.loads(rows[0][8])
+    assert raw["title"] == "公告标题"
+    assert "NaN" not in rows[0][8]

@@ -87,7 +87,7 @@
 .inst-v3 .v3-exit:hover { border-color: var(--v3-brand); color: var(--v3-brand); }
 .inst-v3 .v3-preview { font-size: 9px; color: var(--v3-gold-strong); background: var(--v3-gold-soft); border: 1px solid var(--v3-gold-line); border-radius: 99px; padding: 2px 7px; white-space: nowrap; }
 
-.inst-v3 .v3-main { width: 100%; max-width: 1180px; margin: 0 auto; padding: 24px 28px 64px; display: flex; flex-direction: column; gap: 16px; }
+.inst-v3 .v3-main { width: 100%; min-width: 0; padding: 24px 28px 64px; display: flex; flex-direction: column; gap: 16px; }
 .inst-v3 .v3-page-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .inst-v3 .v3-eyebrow { font-size: 10px; letter-spacing: .16em; color: var(--v3-brand); }
 .inst-v3 .v3-page-head h1 { margin-top: 3px; font-family: var(--font-display); font-size: 28px; font-weight: 600; letter-spacing: -.02em; color: var(--v3-ink); line-height: 1.2; }

@@ -5974,6 +5974,13 @@ def ai_research_memo(
         raise LookupError("研究案不存在")
     version = (case.get("versions") or [{}])[0]
     if not version.get("id"):
+        if not generate:
+            return {
+                "memo": None,
+                "task": "inst.research_memo",
+                "cached": True,
+                "missing": True,
+            }
         raise LookupError("还没有研究版本")
     payload = {
         "company": {k: case.get(k) for k in ("symbol", "company_name", "market", "industry", "ref_price")},

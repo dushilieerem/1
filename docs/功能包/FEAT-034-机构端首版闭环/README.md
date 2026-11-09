@@ -646,3 +646,27 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - AI 不可用时页面显示错误，审批按钮仍由服务端门禁控制。
 
 验证：pytest 105 passed（新增 cached_only 不调用 AI 测试）；`tsc --noEmit`、`npm run build` 通过；Playwright `e2e-09..13` 14 passed。e2e-12 改用已持仓标的的卖出议案、e2e-11 目标仓位降到 1%，避免在途买入额度随重复运行累积。
+
+
+### 11.29 执行成交与投资管理 UI 走查修复（2026-11-09）
+
+补上 05/06 两个工作台的浏览器级验证，并修复走查发现的问题。
+
+- **执行成交**：新增 Playwright 覆盖授权核对 → 下单成交 → 对账 → 持仓更新；执行成功后授权卡片立即显示 `filled`，不再停留在旧的 `qualified`。
+- **投资管理**：监控事件 `detail` 可能是对象（如 `{text: ...}`），原页面直接渲染对象会触发 React 崩溃；统一用 `textOf` 归一化为字符串，覆盖事件、论点、KPI、推翻条件与退出意见。
+- **退出入口**：创建退出案后自动进入 02 价值分析，按钮改为“创建退出研究案并进入研究”；不再让用户停在“提交投委会复核”的旧文案上。
+- **一页纸空态**：没有研究版本时，`GET /cases/{id}/ai/memo` 返回 200 `missing`，不再 404 污染控制台；e2e-10 的控制台错误检查恢复全绿。
+- 新增 `e2e-14`：卖出议案 → AUTH → 执行 UI → 对账 → 记录预警 → 创建退出研究案。
+
+验证：pytest 105 passed；`tsc --noEmit`、`npm run build` 通过；Playwright `e2e-09..14` 15 passed。
+
+
+### 11.30 v3 内容区取消 1180px 窄版居中（2026-11-09）
+
+宽屏下 `.v3-main` 同时设置 `max-width:1180px` 与 `margin:0 auto`，在 1920 屏幕上左右各留出约 230px 空白，工作台被挤在中间。
+
+- 去掉 `max-width` 与居中 margin，内容区按 `width:100%` + 左右 28px 内边距铺满；侧栏与内容区仍各自独立。
+- 页面标题、流水线、结果页与工作台网格随宽度扩展；400/1024 断点和横向溢出规则不变。
+- e2e-09 新增 1920 宽屏断言：`.v3-main` 宽度 >1500px 且无横向滚动，防止重新引入窄版上限。
+
+验证：`tsc --noEmit`、`npm run build`、`npm run test:inst` 通过；Playwright `e2e-09..14` 16 passed。

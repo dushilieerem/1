@@ -101,6 +101,7 @@
 .inst-v3 .v3-btn.primary:hover { background: var(--v3-brand-2); }
 .inst-v3 .v3-btn.ghost { background: #fff; border-color: var(--v3-line); color: var(--v3-ink-2); }
 .inst-v3 .v3-btn.ghost:hover { border-color: var(--v3-brand); color: var(--v3-brand); }
+.inst-v3 .v3-btn:disabled { opacity: .45; cursor: not-allowed; }
 .inst-v3 .v3-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--v3-line); background: #fff; color: var(--v3-muted); border-radius: 99px; padding: 2px 7px; font-size: 9.5px; white-space: nowrap; }
 .inst-v3 .v3-chip.gold { background: var(--v3-gold-soft); border-color: var(--v3-gold-line); color: var(--v3-gold-strong); }
 .inst-v3 .v3-chip.ok { background: var(--v3-ok-soft); border-color: var(--v3-ok-line); color: var(--v3-ok); }

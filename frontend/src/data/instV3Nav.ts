@@ -36,8 +36,6 @@ export const V3_NAV_GROUPS: V3NavGroup[] = [
   },
 ];
 
-const APPROVER_ROLES = new Set(["partner", "risk", "chairman"]);
-
 /** v3 导航可见性：生产按登录角色裁剪；不提供前端角色切换。 */
 export function visibleV3Nav(
   role: string,
@@ -45,16 +43,18 @@ export function visibleV3Nav(
 ): V3NavGroup[] {
   const perms = permissions || {};
   const can = (key: string) => (perms[key] || "none") !== "none";
+  const allowedByRole: Record<string, string[]> = {
+    manager: ["dashboard", "pipeline", "research", "debate", "approvals", "execute", "manage", "playbook"],
+    partner: ["dashboard", "pipeline", "approvals", "playbook"],
+    risk: ["dashboard", "pipeline", "approvals", "playbook"],
+    chairman: ["dashboard", "pipeline", "approvals", "playbook"],
+    execution: ["dashboard", "pipeline", "execute", "playbook"],
+    monitoring: ["dashboard", "pipeline", "manage", "playbook"],
+  };
+  const allowed = allowedByRole[role] || ["dashboard", "pipeline", "playbook"];
   return V3_NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => {
-      if (!can(item.permission)) return false;
-      // 审批角色只看流水线/审批/权限；不进入 02/03/05/06 工作台。
-      if (APPROVER_ROLES.has(role) && ["research", "debate", "execute", "manage"].includes(item.key)) {
-        return false;
-      }
-      return true;
-    }),
+    items: group.items.filter((item) => can(item.permission) && allowed.includes(item.key)),
   })).filter((group) => group.items.length > 0);
 }
 

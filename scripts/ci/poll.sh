@@ -102,10 +102,18 @@ if [[ -z "$LAST_MASTER" ]]; then
   exit 0
 fi
 
+# CI/CD 的完整输出落到 State 目录：systemd 的 journal 普通用户读不到，
+# 失败时没有现场只能靠猜。部署与 CI 都追加写，按 8MB 简单截断。
+JOB_LOG="$STATE_DIR/jobs.log"
 run_job() {
   local action="$1" ref="$2" label="$3"
-  log "触发 $label：webhook-job.sh $action $ref"
-  bash "$JOB_SCRIPT" "$action" "$ref"
+  log "触发 $label：webhook-job.sh $action $ref（日志：$JOB_LOG）"
+  if [[ -f "$JOB_LOG" ]] && (( $(stat -c %s "$JOB_LOG" 2>/dev/null || echo 0) > 8*1024*1024 )); then
+    tail -c 2M "$JOB_LOG" > "$JOB_LOG.tmp" && mv -f "$JOB_LOG.tmp" "$JOB_LOG"
+  fi
+  printf '\n===== %s %s %s =====\n' "$(date '+%F %T')" "$action" "$ref" >> "$JOB_LOG"
+  bash "$JOB_SCRIPT" "$action" "$ref" 2>&1 | tee -a "$JOB_LOG"
+  return "${PIPESTATUS[0]}"
 }
 
 # dry-run 只报告差异，不改状态

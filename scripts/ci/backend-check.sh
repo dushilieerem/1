@@ -50,8 +50,23 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
     exit 1
   }
   # 多个 Agent 可能同时跑 CI；默认端口被占用时自动向后找空闲端口。
-  _port_busy() { ss -ltn "sport = :$1" 2>/dev/null | grep -q LISTEN; }
-  if command -v ss >/dev/null 2>&1 && _port_busy "$PG_PORT"; then
+  # 不用 ss/ss -ltn：CD 的 systemd 服务 PATH 里没有 /usr/sbin，探测会静默失效，
+  # 端口被占时 docker run 直接失败。改用解释器自带的 socket bind 探测。
+  _port_busy() {
+    "$PYTHON_BIN" - "$1" <<'PY' >/dev/null 2>&1
+import socket, sys
+port = int(sys.argv[1])
+s = socket.socket()
+try:
+    s.bind(("0.0.0.0", port))
+except OSError:
+    sys.exit(0)  # 被占用
+finally:
+    s.close()
+sys.exit(1)  # 空闲
+PY
+  }
+  if _port_busy "$PG_PORT"; then
     original="$PG_PORT"
     for candidate in $(seq $((PG_PORT + 1)) $((PG_PORT + 30))); do
       if ! _port_busy "$candidate"; then PG_PORT="$candidate"; break; fi
@@ -60,12 +75,22 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
     log "CI 端口 ${original} 被占用，改用 ${PG_PORT}"
   fi
   log "启动一次性 PostgreSQL（:${PG_PORT}）"
-  docker run -d --rm --name "$PG_CONTAINER" \
-    -e POSTGRES_USER=svquant \
-    -e POSTGRES_PASSWORD=svquant \
-    -e POSTGRES_DB=svquant_ci \
-    -p "127.0.0.1:${PG_PORT}:5432" \
-    postgres:16-alpine >/dev/null
+  # 探测与实际启动之间仍可能被别人抢端口，失败就顺延重试，别让整轮 CI 白跑。
+  started=0
+  for _ in 1 2 3 4 5; do
+    if docker run -d --rm --name "$PG_CONTAINER" \
+      -e POSTGRES_USER=svquant \
+      -e POSTGRES_PASSWORD=svquant \
+      -e POSTGRES_DB=svquant_ci \
+      -p "127.0.0.1:${PG_PORT}:5432" \
+      postgres:16-alpine >/dev/null 2>&1; then
+      started=1
+      break
+    fi
+    PG_PORT=$((PG_PORT + 1))
+    log "端口启动失败，改试 :${PG_PORT}"
+  done
+  [[ "$started" == "1" ]] || { log "找不到可用的 CI PostgreSQL 端口"; exit 1; }
   STARTED_PG=1
 
   for _ in $(seq 1 60); do

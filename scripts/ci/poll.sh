@@ -116,6 +116,32 @@ run_job() {
   return "${PIPESTATUS[0]}"
 }
 
+# CI 与部署解耦：CI 在独立 worktree 里跑、用独立锁，并放到后台。
+# 否则轮询单元要等 CI 跑完（约 4 分钟）才退出，这期间推的 tag 只能排队。
+CI_LOCK="$STATE_DIR/ci.lock"
+run_ci_bg() {
+  local sha="$1" label="$2"
+  exec 8>"$CI_LOCK"
+  if ! flock -n 8; then
+    exec 8>&-
+    log "上一轮 CI 仍在执行，本轮不重复触发（下一轮重试）"
+    return 1
+  fi
+  log "触发 $label（后台执行，日志：$JOB_LOG）"
+  (
+    exec 9>&-   # 不继承 poll 锁：CI 跑着的时候部署照样可以进行
+    printf '\n===== %s ci %s =====\n' "$(date '+%F %T')" "$sha" >> "$JOB_LOG"
+    if bash "$JOB_SCRIPT" ci "$BRANCH" "$sha" >> "$JOB_LOG" 2>&1; then
+      printf '[poll %s] CI 通过：%s\n' "$(date '+%F %T')" "${sha:0:8}" >> "$JOB_LOG"
+    else
+      printf '[poll %s] CI 失败：%s（见上方输出；下轮不重试）\n' "$(date '+%F %T')" "${sha:0:8}" >> "$JOB_LOG"
+    fi
+  ) >/dev/null 2>&1 &
+  # fd 8 由后台子进程继承并持有，父进程关掉自己的副本即可释放本次占用
+  exec 8>&-
+  return 0
+}
+
 # dry-run 只报告差异，不改状态
 if [[ "$DRY_RUN" == "1" ]]; then
   [[ -n "$LATEST_TAG" && "$LATEST_TAG" != "$LAST_TAG" ]] && log "[dry-run] 将部署 $LATEST_TAG"
@@ -142,13 +168,13 @@ fi
 
 if [[ "$MASTER_SHA" != "$LAST_MASTER" ]]; then
   CHANGED=1
-  if run_job ci "$BRANCH" "CI ${MASTER_SHA:0:8}"; then
+  if run_ci_bg "$MASTER_SHA" "CI ${MASTER_SHA:0:8}"; then
     LAST_MASTER="$MASTER_SHA"
-    log "CI 通过：${MASTER_SHA:0:8}"
+    RESULT="ci-queued:${MASTER_SHA:0:8}"
+    log "CI 已排队：${MASTER_SHA:0:8}（不阻塞本机部署）"
   else
-    RESULT="ci-failed:${MASTER_SHA:0:8}"
-    LAST_MASTER="$MASTER_SHA"
-    log "CI 失败：${MASTER_SHA:0:8}（下轮不重试，看日志修完再手动跑）"
+    # 不推进 LAST_MASTER，下一轮重试，避免这次提交的 CI 被吞掉
+    RESULT="ci-busy:${MASTER_SHA:0:8}"
   fi
 fi
 

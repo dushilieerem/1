@@ -73,18 +73,33 @@ async function prepareProposal(request: APIRequestContext): Promise<number> {
       .filter((p: any) => Number(p.weight || 0) > 0.2 && p.industry)
       .map((p: any) => String(p.industry)),
   );
-  const companies = await call(request, "GET", "/api/inst/companies?limit=200", T.manager);
-  const eligible = (companies.items || []).filter(
-    (c: any) =>
-      c.market === "CN" &&
-      Number(c.ref_price) >= 5 &&
-      c.data_status === "real" &&
-      c.up_down_status === "非涨跌停" &&
-      !c.is_st &&
-      !c.is_suspended &&
-      !crowded.has(String(c.industry || "")),
-  );
-  const company = eligible.find((c: any) => !held.has(String(c.symbol))) || eligible[0];
+  // 优先用已持仓标的做卖出议案：卖出不计入在途买入资金占用，测试可重复运行。
+  const heldWithQty = positions.find((p: any) => p.company_id && Number(p.qty) > 0);
+  let company: any;
+  let direction = "sell";
+  let targetWeight = 0.01;
+  if (heldWithQty) {
+    company = {
+      id: Number(heldWithQty.company_id),
+      symbol: heldWithQty.symbol,
+      ref_price: Number(heldWithQty.last_close) || 10,
+    };
+  } else {
+    const companies = await call(request, "GET", "/api/inst/companies?limit=200", T.manager);
+    const eligible = (companies.items || []).filter(
+      (c: any) =>
+        c.market === "CN" &&
+        Number(c.ref_price) >= 5 &&
+        c.data_status === "real" &&
+        c.up_down_status === "非涨跌停" &&
+        !c.is_st &&
+        !c.is_suspended &&
+        !crowded.has(String(c.industry || "")),
+    );
+    company = eligible.find((c: any) => !held.has(String(c.symbol))) || eligible[0];
+    direction = "buy";
+    targetWeight = 0.02;
+  }
   expect(company, "找不到可用于审批角色测试的标的").toBeTruthy();
 
   const created = await call(request, "POST", "/api/inst/cases", T.manager, {
@@ -113,8 +128,8 @@ async function prepareProposal(request: APIRequestContext): Promise<number> {
 
   await call(request, "POST", `/api/inst/cases/${caseId}/debate`, T.manager, { use_ai: false });
   const proposal = await call(request, "POST", `/api/inst/cases/${caseId}/proposals`, T.manager, {
-    direction: "buy",
-    target_weight: 0.02,
+    direction,
+    target_weight: targetWeight,
     price_low: 1,
     price_high: 100000,
     funding_source: "现金",
@@ -163,6 +178,8 @@ test("四套审批角色页面：当前关可操作、跨关被拒", async ({ br
   await partner.page.goto(url, { waitUntil: "networkidle" });
   await expect(partner.page.getByText("合伙人复核", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
   await expect(partner.page.getByText("研究与辩论摘要", { exact: true }).first()).toBeVisible();
+  await expect(partner.page.getByText("合伙人 Agent · 审批建议", { exact: true })).toBeVisible();
+  await expect(partner.page.getByRole("button", { name: "生成审批建议" })).toBeVisible();
   await expect(partner.page.getByText("六项硬约束核查", { exact: false })).toHaveCount(0);
   await partner.page.getByRole("button", { name: "复核通过" }).click();
   await expect
@@ -179,6 +196,8 @@ test("四套审批角色页面：当前关可操作、跨关被拒", async ({ br
   await risk.page.goto(url, { waitUntil: "networkidle" });
   await expect(risk.page.getByText("六项硬约束核查", { exact: false }).first()).toBeVisible({ timeout: 20_000 });
   await expect(risk.page.getByText("研究与辩论摘要", { exact: false })).toHaveCount(0);
+  await expect(risk.page.getByText("风控 Agent · 审批建议", { exact: true })).toBeVisible();
+  await expect(risk.page.getByRole("button", { name: "生成审批建议" })).toBeVisible();
   await risk.page.getByRole("button", { name: "放行", exact: true }).click();
   await expect
     .poll(async () => (await call(request, "GET", `/api/inst/proposals/${proposalId}`, T.manager)).status, {
@@ -193,6 +212,8 @@ test("四套审批角色页面：当前关可操作、跨关被拒", async ({ br
   await expect(chairman.page.getByText("完整审批链", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
   await expect(chairman.page.getByText("研究与辩论摘要", { exact: true }).first()).toBeVisible();
   await expect(chairman.page.getByText("风控结论", { exact: true }).first()).toBeVisible();
+  await expect(chairman.page.getByText("Chairman Agent · 决策建议", { exact: true })).toBeVisible();
+  await expect(chairman.page.getByRole("button", { name: "生成审批建议" })).toBeVisible();
   await expect(chairman.page.getByText("六项硬约束核查", { exact: false })).toHaveCount(0);
   await expect(chairman.page.getByRole("button", { name: /批准并生成授权/ })).toBeVisible();
   await chairman.page.getByRole("button", { name: /批准并生成授权/ }).click();

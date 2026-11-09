@@ -6169,6 +6169,7 @@ def ai_partner_memo(
     *,
     refresh: bool = False,
     actor_member_id: int | None = None,
+    cached_only: bool = False,
 ) -> dict[str, Any]:
     """合伙人审批建议：只给合伙人本人看，独立于其他合伙人意见。"""
     with get_conn() as conn:
@@ -6230,6 +6231,14 @@ def ai_partner_memo(
                 "stale": stale,
                 "generated_at": hit.get("created_at"),
             }
+    if cached_only:
+        return {
+            "memo": None,
+            "task": "inst.partner_memo",
+            "version_no": version.get("version_no"),
+            "cached": True,
+            "missing": True,
+        }
     data = _ai_task("inst.partner_memo", payload, prompt)
     data.setdefault("engine", "agent")
     save_output(
@@ -6256,6 +6265,7 @@ def ai_risk_review(
     *,
     refresh: bool = False,
     actor_member_id: int | None = None,
+    cached_only: bool = False,
 ) -> dict[str, Any]:
     proposal = get_proposal(org_id, proposal_id)
     if not proposal:
@@ -6297,6 +6307,14 @@ def ai_risk_review(
                 "stale": stale,
                 "generated_at": hit.get("created_at"),
             }
+    if cached_only:
+        return {
+            "memo": None,
+            "task": "inst.risk_review",
+            "checks": checks,
+            "cached": True,
+            "missing": True,
+        }
     data = _ai_task("inst.risk_review", payload, prompt)
     data.setdefault("engine", "agent")
     if data.get("engine") != "rule":
@@ -6319,6 +6337,7 @@ def ai_chairman_memo(
     *,
     refresh: bool = False,
     actor_member_id: int | None = None,
+    cached_only: bool = False,
 ) -> dict[str, Any]:
     proposal = get_proposal(org_id, proposal_id)
     if not proposal:
@@ -6355,6 +6374,14 @@ def ai_chairman_memo(
                 "stale": stale,
                 "generated_at": hit.get("created_at"),
             }
+    if cached_only:
+        return {
+            "memo": None,
+            "task": "inst.chairman_memo",
+            "version_no": version.get("version_no"),
+            "cached": True,
+            "missing": True,
+        }
     data = _ai_task("inst.chairman_memo", payload, prompt)
     data.setdefault("engine", "agent")
     if data.get("engine") != "rule":

@@ -149,6 +149,7 @@ test("研究 R3 → 辩论 P3 → 三关 → 授权执行 → 持仓更新", asy
   await page.locator(".v3-stepper .v3-step").nth(3).click();
   const opinion = page.getByTestId("inst-investment-opinion");
   await opinion.fill("E2E 投资意见：关键假设成立、估值有安全边际才持有");
+  await page.getByTestId("inst-proposal-target").fill("0.01");
   await page.getByTestId("inst-price-low").fill("1");
   await page.getByTestId("inst-price-high").fill("1000");
   await page.getByTestId("inst-proposal-create").click();

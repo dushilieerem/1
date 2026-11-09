@@ -367,11 +367,15 @@ def dimension_chat(
 
 
 @router.get("/proposals/{proposal_id}/ai/risk-review")
-def risk_review_ai_cached(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+def risk_review_ai_cached(
+    proposal_id: int,
+    cached_only: bool = False,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
     _require_ws(ctx, "approvals")
     try:
-        return {"ok": True, **svc.ai_risk_review(org_id, proposal_id, refresh=False)}
+        return {"ok": True, **svc.ai_risk_review(org_id, proposal_id, refresh=False, cached_only=cached_only)}
     except Exception as exc:
         raise _handle(exc) from exc
 
@@ -494,14 +498,22 @@ def ai_role_run(
 
 
 @router.get("/proposals/{proposal_id}/ai/partner-memo")
-def partner_memo_ai_cached(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+def partner_memo_ai_cached(
+    proposal_id: int,
+    cached_only: bool = False,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
     _require_ws(ctx, "approvals")
     try:
         return {
             "ok": True,
             **svc.ai_partner_memo(
-                org_id, proposal_id, refresh=False, actor_member_id=member_id
+                org_id,
+                proposal_id,
+                refresh=False,
+                actor_member_id=member_id,
+                cached_only=cached_only,
             ),
         }
     except Exception as exc:
@@ -531,11 +543,15 @@ def partner_memo_ai(
 
 
 @router.get("/proposals/{proposal_id}/ai/chairman-memo")
-def chairman_memo_ai_cached(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+def chairman_memo_ai_cached(
+    proposal_id: int,
+    cached_only: bool = False,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
     _require_ws(ctx, "approvals")
     try:
-        return {"ok": True, **svc.ai_chairman_memo(org_id, proposal_id, refresh=False)}
+        return {"ok": True, **svc.ai_chairman_memo(org_id, proposal_id, refresh=False, cached_only=cached_only)}
     except Exception as exc:
         raise _handle(exc) from exc
 

@@ -634,3 +634,15 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 三张摘要卡在 400px 宽度下改为自适应网格；e2e-09 的窄屏检查扩展到 v3 全部八个入口。
 
 验证：pytest 104 passed；`tsc --noEmit`、`npm run build` 通过；Playwright `e2e-09..13` 14 passed。
+
+
+### 11.28 审批页 Agent 建议（2026-11-09）
+
+把原型里的合伙人 / 风控 / Chairman Agent 建议接入 v3 审批页右侧栏。
+
+- 右侧栏按登录角色显示对应 Agent：合伙人「审批建议」、风控「审批建议」、Chairman「决策建议」；投资经理仍为提案人只读。
+- 进入议案时只用 `GET ...?cached_only=true` 读取已有建议，不自动调用模型；点击「生成审批建议 / 重新生成建议」才走 POST。
+- 建议展示摘要、结论、主要风险、待确认问题、引用证据数，并标注引擎、缓存与上游变更；建议只读，不改变审批状态。
+- AI 不可用时页面显示错误，审批按钮仍由服务端门禁控制。
+
+验证：pytest 105 passed（新增 cached_only 不调用 AI 测试）；`tsc --noEmit`、`npm run build` 通过；Playwright `e2e-09..13` 14 passed。e2e-12 改用已持仓标的的卖出议案、e2e-11 目标仓位降到 1%，避免在途买入额度随重复运行累积。

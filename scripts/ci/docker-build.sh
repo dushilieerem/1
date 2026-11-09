@@ -24,16 +24,28 @@ fi
 BACKEND_IMAGE="$IMAGE_BASE-backend:$TAG"
 WEB_IMAGE="$IMAGE_BASE-web:$TAG"
 
-log "构建 $BACKEND_IMAGE"
-docker build -f "$ROOT_DIR/docker/backend.Dockerfile" -t "$BACKEND_IMAGE" "$ROOT_DIR"
+# 发布时按变更范围跳过不必要的镜像：前端镜像的 npm ci 是 CD 主耗时（包依赖缓存失效时 2~3 分钟）。
+BUILD_BACKEND="${BUILD_BACKEND:-1}"
+BUILD_WEB="${BUILD_WEB:-1}"
 
-log "构建 $WEB_IMAGE"
-docker build -f "$ROOT_DIR/docker/frontend.Dockerfile" -t "$WEB_IMAGE" "$ROOT_DIR"
+if [[ "$BUILD_BACKEND" == "1" ]]; then
+  log "构建 $BACKEND_IMAGE"
+  docker build -f "$ROOT_DIR/docker/backend.Dockerfile" -t "$BACKEND_IMAGE" "$ROOT_DIR"
+else
+  log "跳过后端镜像构建（BUILD_BACKEND=0）：$BACKEND_IMAGE"
+fi
+
+if [[ "$BUILD_WEB" == "1" ]]; then
+  log "构建 $WEB_IMAGE"
+  docker build -f "$ROOT_DIR/docker/frontend.Dockerfile" -t "$WEB_IMAGE" "$ROOT_DIR"
+else
+  log "跳过前端镜像构建（BUILD_WEB=0）：$WEB_IMAGE"
+fi
 
 if [[ -n "$REGISTRY" ]]; then
   log "推送镜像到 $REGISTRY"
-  docker push "$BACKEND_IMAGE"
-  docker push "$WEB_IMAGE"
+  [[ "$BUILD_BACKEND" == "1" ]] && docker push "$BACKEND_IMAGE"
+  [[ "$BUILD_WEB" == "1" ]] && docker push "$WEB_IMAGE"
 fi
 
 log "完成：$BACKEND_IMAGE / $WEB_IMAGE"

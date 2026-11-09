@@ -251,7 +251,7 @@ export function InstV3ExecutePage() {
                 <section className="v3-card">
                   <div className="v3-card-head"><div><h2>持仓更新</h2><p>对账通过后持仓写入组合，并自动建立买入论点台账。</p></div><span className={`v3-chip ${executed ? "ok" : "warn"}`}>{executed ? "已成交" : "待成交"}</span></div>
                   <p style={{ fontSize: 11, lineHeight: 1.7, color: "#746b7c" }}>{executed ? "持仓已更新；进入 06 投资管理继续跟踪论点、事件与退出。" : "只有成交回报回来、对账完成，持仓才算数。"}</p>
-                  <div style={{ marginTop: 10 }}><Link className="v3-btn primary" to="/inst-v3/manage">进入投资管理 <ArrowRight className="h-3.5 w-3.5" /></Link></div>
+                  <div style={{ marginTop: 10 }}><Link className="v3-btn primary" to="/inst/manage">进入投资管理 <ArrowRight className="h-3.5 w-3.5" /></Link></div>
                 </section>
               ) : null}
             </>

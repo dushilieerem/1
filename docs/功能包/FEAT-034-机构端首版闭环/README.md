@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 状态 | 首版可运行（真实数据 + 模拟执行） |
-| 日期 | 2026-10-30 |
+| 状态 | v3 全量切换（真实数据 + 模拟执行） |
+| 日期 | 2026-11-09 |
 | 前置 | [FEAT-033 机构端入口](../FEAT-033-机构端入口/README.md)、[主观投研端需求评估](../../产品与需求/主观投研端需求评估.md)、[数据接入与库表设计](../../数据设计/机构端与手机端-数据接入与库表设计-v0.1.md) |
 | 需求 | `Sunvalley_AI_Value_Investment_Requirements_v1.1.md`（v1.1） |
 
@@ -43,7 +43,7 @@
 | `backend/ai/router/tasks/institution.py` | `inst.debate` / `inst.research_memo` / `inst.risk_review` / `inst.chairman_memo` |
 | `backend/services/marketdata/store.py` | 行情/估值/财务/风险/行业同行查询 |
 
-### 3.2 前端
+### 3.2 前端（v2 历史，2026-11-09 已被 v3 替换）
 
 | 文件 | 内容 |
 |---|---|
@@ -580,3 +580,33 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 提示词 payload 增加 `interest_debt_summary` 与上述口径说明。
 
 验证：pytest 98 passed（含 `test_interest_debt_summary_and_financial_null` 的 PIT 当天/前一天边界、`test_build_research_uses_data_business_net_debt`）；tsc 通过；e2e-09/10/11/12 17 passed。
+
+
+### 11.25 主观机构端 v3 全量切换（2026-11-09）
+
+按 `白欣宜11.6产品原型全流程.pdf` 与 `白欣宜11.6旸谷主观投研平台.html` 完成一次性切换，`/inst` 不再提供 v2 工作区。
+
+**路由与壳**
+
+- `/inst` 单一 v3 路由树：投资工作台、项目流水线、只读结果页、02 价值分析、03 多空辩论、04 投委会审批、05 执行成交、06 投资管理、流程与权限。
+- 旧入口重定向：`overview → /inst`、`ideas → /inst/pipeline`、`portfolio|monitor → /inst/manage`、`execution → /inst/execute`、`about|audit → /inst/playbook`；旧预览 `/inst-v3/* → /inst`。
+- v2 页面与 `InstLayout` 已删除；`instUi.tsx` / `instLocale.tsx` 因量化机构端仍在引用而保留。
+- 生产按登录身份裁剪菜单，不提供前端角色切换。
+
+**服务端状态机与门禁**
+
+- 六阶段：0 机会发现 → 1 价值分析 → 2 多空辩论 → 3 投委会审批 → 4 执行成交 → 5 投资管理；`inst_case_transition` / `inst_gate_run` 记录迁移与门禁。
+- 三次锁定：研究定稿 R3（六维 6/6、低置信处理、数据门禁、证据/hash）、议案 P3（研究已锁定、辩论完成、方向/仓位/价格带/资金/有效期/监控/意见齐全）、授权 AUTH（不可变快照）。
+- 审批顺序合伙人 → 风控 → Chairman；同角色多人必须全部表态；提案人回避；风控否决终局；未锁定议案不能进入三关。
+- 新增只读 read model：`/api/inst/pipeline`、`/projects/{key}`、`/holdings/{symbol}`、`/playbook`。
+
+**验证**
+
+- `pytest tests/test_inst_*.py`：103 passed，8 subtests passed。
+- `npm run test:inst`：11 passed；`tsc --noEmit`、`npm run build` 通过。
+- Playwright `e2e-09..12`：13 passed（写库闸门仅 `svquant_test`），覆盖六阶段入口、旧入口重定向、六角色菜单、研究 R3/P3 锁定、三关审批与跨关拒绝、AUTH 执行、结果页、1440/1024/400 无横向溢出。
+
+**边界**
+
+- 真实券商、多租户、SSO、WORM 审计仍未接入；执行仍为 SimBroker 纸面撮合。
+- 部分 v2 遗留接口仍保留兼容（如 `research/{id}/review`），v3 页面统一走 `research/{id}/lock` 与 `proposals/{id}/lock`。

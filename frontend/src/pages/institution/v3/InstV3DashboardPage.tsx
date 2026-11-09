@@ -67,7 +67,7 @@ export function InstV3DashboardPage() {
           <h1>投资工作台</h1>
           <p>今天 {todos.length} 件事待处理；{data.monitor_alerts} 只持仓预警，{data.pending_approvals} 件议案在审批中。</p>
         </div>
-        <Link className="v3-btn primary" to="/inst-v3/pipeline">进入项目流水线 <ArrowRight className="h-3.5 w-3.5" /></Link>
+        <Link className="v3-btn primary" to="/inst/pipeline">进入项目流水线 <ArrowRight className="h-3.5 w-3.5" /></Link>
       </div>
 
       <section className="v3-hero">
@@ -101,7 +101,7 @@ export function InstV3DashboardPage() {
           <section className="v3-card">
             <div className="v3-card-head"><div><h2><ListChecks className="mr-1 inline h-4 w-4" />今天要处理</h2><p>按当前登录角色汇总流程中的待办。</p></div><span className="v3-chip">{todos.length} 件</span></div>
             {todos.length ? todos.map((t) => (
-              <Link key={t.key} to={`/inst-v3/pipeline/result?key=${encodeURIComponent(t.key)}`} className="flex items-center gap-3 border-b border-[#f0eaf3] py-2.5 last:border-0">
+              <Link key={t.key} to={`/inst/pipeline/result?key=${encodeURIComponent(t.key)}`} className="flex items-center gap-3 border-b border-[#f0eaf3] py-2.5 last:border-0">
                 <span className={`v3-chip ${t.tone}`}>{t.stage}</span>
                 <span className="min-w-0 flex-1">
                   <b className="block text-[12px] font-medium text-[#2b2533]">{t.name}</b>
@@ -113,9 +113,9 @@ export function InstV3DashboardPage() {
           </section>
 
           <section className="v3-card">
-            <div className="v3-card-head"><div><h2><LayoutDashboard className="mr-1 inline h-4 w-4" />在流程中的项目</h2><p>卡在哪、谁在等、下一步是什么。</p></div><Link className="v3-btn ghost" to="/inst-v3/pipeline">全部 {pipeline.total} 个</Link></div>
+            <div className="v3-card-head"><div><h2><LayoutDashboard className="mr-1 inline h-4 w-4" />在流程中的项目</h2><p>卡在哪、谁在等、下一步是什么。</p></div><Link className="v3-btn ghost" to="/inst/pipeline">全部 {pipeline.total} 个</Link></div>
             {flowProjects.map((p) => (
-              <Link key={p.key} to={`/inst-v3/pipeline/result?key=${encodeURIComponent(p.key)}`} className="flex items-center gap-3 border-b border-[#f0eaf3] py-2.5 last:border-0">
+              <Link key={p.key} to={`/inst/pipeline/result?key=${encodeURIComponent(p.key)}`} className="flex items-center gap-3 border-b border-[#f0eaf3] py-2.5 last:border-0">
                 <span className="flex h-7 w-7 items-center justify-center rounded bg-[#f8edf3] text-[11px] font-semibold text-[#a03a5c]">{(p.company_name || p.symbol || "?").slice(0, 1)}</span>
                 <span className="min-w-0 flex-1">
                   <b className="block text-[12px] font-medium text-[#2b2533]">{p.company_name || p.symbol}</b>
@@ -129,7 +129,7 @@ export function InstV3DashboardPage() {
         </div>
 
         <section className="v3-card">
-          <div className="v3-card-head"><div><h2><PieChart className="mr-1 inline h-4 w-4" />组合概览</h2><p>净值、现金、仓位与预警。</p></div><Link className="v3-btn ghost" to="/inst-v3/manage">投资管理</Link></div>
+          <div className="v3-card-head"><div><h2><PieChart className="mr-1 inline h-4 w-4" />组合概览</h2><p>净值、现金、仓位与预警。</p></div><Link className="v3-btn ghost" to="/inst/manage">投资管理</Link></div>
           <div className="v3-kpis" style={{ gridTemplateColumns: "1fr 1fr" }}>
             <div className="v3-kpi"><div className="k">组合净值</div><div className="v">{fmtMoney(data.portfolio?.nav)}</div><div className="d">参考净值 {fmtMoney(data.policy?.nav)}</div></div>
             <div className="v3-kpi"><div className="k">现金</div><div className="v">{fmtPct(data.portfolio?.cash ? data.portfolio.cash / (data.portfolio.nav || 1) : null)}</div><div className="d">下限 {fmtPct(data.policy?.min_cash_ratio)}</div></div>

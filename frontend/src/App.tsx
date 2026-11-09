@@ -165,9 +165,6 @@ const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const SupportPage = lazy(() => import("./pages/SupportPage"));
 const ResearchAssetsPage = lazy(() => import("./pages/ResearchAssetsPage"));
 const OrgPage = lazy(() => import("./pages/OrgPage"));
-const InstLayout = lazy(() =>
-  import("./components/institution/InstLayout").then((m) => ({ default: m.InstLayout })),
-);
 const InstV3Layout = lazy(() =>
   import("./components/institution/v3/InstV3Layout").then((m) => ({ default: m.InstV3Layout })),
 );
@@ -197,38 +194,6 @@ const InstV3ManagePage = lazy(() =>
 );
 const InstV3PlaybookPage = lazy(() =>
   import("./pages/institution/v3/InstV3PlaybookPage").then((m) => ({ default: m.InstV3PlaybookPage })),
-);
-const InstV3WorkspacePlaceholderPage = lazy(() =>
-  import("./pages/institution/v3/InstV3WorkspacePlaceholderPage").then((m) => ({ default: m.InstV3WorkspacePlaceholderPage })),
-);
-const InstOverviewPage = lazy(() =>
-  import("./pages/institution/InstOverviewPage").then((m) => ({
-    default: m.InstOverviewPage,
-  })),
-);
-const InstIdeasPage = lazy(() =>
-  import("./pages/institution/InstIdeasPage").then((m) => ({ default: m.InstIdeasPage })),
-);
-const InstResearchPage = lazy(() =>
-  import("./pages/institution/InstResearchPage").then((m) => ({ default: m.InstResearchPage })),
-);
-const InstDebatePage = lazy(() =>
-  import("./pages/institution/InstDebatePage").then((m) => ({ default: m.InstDebatePage })),
-);
-const InstPortfolioPage = lazy(() =>
-  import("./pages/institution/InstPortfolioPage").then((m) => ({ default: m.InstPortfolioPage })),
-);
-const InstApprovalsPage = lazy(() =>
-  import("./pages/institution/InstApprovalsPage").then((m) => ({ default: m.InstApprovalsPage })),
-);
-const InstHoldingPage = lazy(() =>
-  import("./pages/institution/InstHoldingPage").then((m) => ({ default: m.InstHoldingPage })),
-);
-const InstAuditPage = lazy(() =>
-  import("./pages/institution/InstAuditPage").then((m) => ({ default: m.InstAuditPage })),
-);
-const InstAboutPage = lazy(() =>
-  import("./pages/institution/InstAboutPage").then((m) => ({ default: m.InstAboutPage })),
 );
 
 const FactorWorkflowRedirect = lazy(() => import("./pages/institutional-workflow/FactorWorkflowPage").then(m => ({ default: m.FactorWorkflowRedirect })));
@@ -268,7 +233,8 @@ export default function App() {
     <Suspense fallback={<RouteFallback />}>
       <Routes>
         {/* 机构端：独立壳与会话，不复用个人版 Layout */}
-        <Route path="/inst-v3" element={<InstV3Layout />}>
+        {/* 主观机构端 v3：结果页 + 五个工作台；按登录角色裁剪，无前端角色切换 */}
+        <Route path="/inst" element={<InstV3Layout />}>
           <Route index element={<InstV3DashboardPage />} />
           <Route path="pipeline" element={<InstV3PipelinePage />} />
           <Route path="pipeline/result" element={<InstV3ProjectResultPage />} />
@@ -278,22 +244,17 @@ export default function App() {
           <Route path="execute" element={<InstV3ExecutePage />} />
           <Route path="manage" element={<InstV3ManagePage />} />
           <Route path="playbook" element={<InstV3PlaybookPage />} />
+          {/* v2 旧入口重定向 */}
+          <Route path="overview" element={<Navigate to="/inst" replace />} />
+          <Route path="ideas" element={<Navigate to="/inst/pipeline" replace />} />
+          <Route path="portfolio" element={<Navigate to="/inst/manage" replace />} />
+          <Route path="portfolio/:symbol" element={<Navigate to="/inst/manage" replace />} />
+          <Route path="monitor" element={<Navigate to="/inst/manage" replace />} />
+          <Route path="execution" element={<Navigate to="/inst/execute" replace />} />
+          <Route path="audit" element={<Navigate to="/inst/playbook" replace />} />
+          <Route path="about" element={<Navigate to="/inst/playbook" replace />} />
         </Route>
-
-        <Route path="/inst" element={<InstLayout />}>
-          <Route index element={<Navigate to="/inst/overview" replace />} />
-          <Route path="overview" element={<InstOverviewPage />} />
-          <Route path="ideas" element={<InstIdeasPage />} />
-          <Route path="research" element={<InstResearchPage />} />
-          <Route path="debate" element={<InstDebatePage />} />
-          <Route path="portfolio" element={<InstPortfolioPage />} />
-          <Route path="portfolio/:symbol" element={<InstHoldingPage />} />
-          <Route path="approvals" element={<InstApprovalsPage />} />
-          <Route path="execution" element={<Navigate to="/inst/portfolio" replace />} />
-          <Route path="monitor" element={<Navigate to="/inst/portfolio" replace />} />
-          <Route path="audit" element={<InstAuditPage />} />
-          <Route path="about" element={<InstAboutPage />} />
-        </Route>
+        <Route path="/inst-v3/*" element={<Navigate to="/inst" replace />} />
 
         <Route path="/login" element={<LoginPage />} />
         <Route element={<QuantLayout />}>

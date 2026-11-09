@@ -38,8 +38,8 @@ test("unknown role fails closed", () => {
 });
 
 test("v3 breadcrumb titles", () => {
-  assert.equal(v3TitleForPath("/inst-v3"), "投资工作台");
-  assert.equal(v3TitleForPath("/inst-v3/pipeline/result"), "项目流水线");
-  assert.equal(v3TitleForPath("/inst-v3/playbook"), "流程与权限");
-  assert.equal(v3TitleForPath("/inst-v3/approvals"), "投委会审批");
+  assert.equal(v3TitleForPath("/inst"), "投资工作台");
+  assert.equal(v3TitleForPath("/inst/pipeline/result"), "项目流水线");
+  assert.equal(v3TitleForPath("/inst/playbook"), "流程与权限");
+  assert.equal(v3TitleForPath("/inst/approvals"), "投委会审批");
 });

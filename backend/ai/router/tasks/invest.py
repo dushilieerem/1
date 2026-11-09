@@ -65,6 +65,14 @@ def validate_intent(raw: str, request: TaskRequest) -> dict[str, Any]:
     return data
 
 
+def validate_vision(raw: str, request: TaskRequest) -> dict[str, Any]:
+    """识图只返回可编辑文字，不返回交易结论。"""
+    text = _strip(raw).strip().strip('"').strip("'")
+    if not text:
+        raise AiBadOutput("识图结果为空")
+    return {"text": text[:500]}
+
+
 def validate_card(raw: str, request: TaskRequest) -> dict[str, Any]:
     data = _load(raw)
     if not str(data.get("summary") or "").strip():
@@ -176,6 +184,18 @@ CONDITION_TASK = register(
 )
 
 
+VISION_TASK = register(
+    TaskSpec(
+        task_id="invest.vision",
+        description="Invest 截图识图：从图片提取股票名/代码/条件/价格，填入输入框",
+        temperature=0.0,
+        max_tokens=400,
+        timeout_sec=60,
+        executors=("local",),
+        validator=validate_vision,
+    )
+)
+
 COMPARE_TASK = register(
     TaskSpec(
         task_id="invest.compare",
@@ -226,6 +246,8 @@ __all__ = [
     "PROMPT_VERSION",
     "RED_LINE",
     "STOCK_TASK",
+    "VISION_TASK",
     "validate_card",
     "validate_intent",
+    "validate_vision",
 ]

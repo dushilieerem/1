@@ -269,6 +269,8 @@ test("因子页展示市场风格与 6 行因子榜", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "因子" })).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".quant-factor-row")).toHaveCount(6, { timeout: 30_000 });
   await expect(page.getByText("因子入门")).toBeVisible();
+  await expect(page.locator(".quant-factor-cta")).toBeVisible();
+  await expect(page.getByText(/过去一段时间涨得相对好的股票|价格起伏越小|盈利效率/).first()).toBeVisible();
   await page.locator(".quant-factor-row").first().click();
   await expect(page.locator(".quant-detail")).toBeVisible({ timeout: 20_000 });
   await noHorizontalOverflow(page);
@@ -284,6 +286,26 @@ test("策略页四个分区可切换", async ({ page }) => {
   await expect(page.getByText("在上面的快速实验里跑完一次")).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: "策略广场", exact: true }).click();
   await expect(page.locator(".quant-plaza-card, .state-box").first()).toBeVisible({ timeout: 30_000 });
+  await noHorizontalOverflow(page);
+});
+
+test("快速实验：因子卡方向、配置预览与权重输入", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/quant/strategies?tab=quick`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".quant-pick").first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".quant-pick")).toHaveCount(6);
+  await page.locator(".quant-pick").nth(0).click();
+  await page.locator(".quant-pick").nth(1).click();
+  await expect(page.locator(".pick-dir")).toHaveCount(2);
+  await expect(page.getByText("分散度不错", { exact: false }).or(page.getByText("重复暴露", { exact: false }))).toBeVisible();
+  await page.getByRole("button", { name: /下一步：生成配置/ }).click();
+  await expect(page.getByText("配置预览")).toBeVisible();
+  await expect(page.locator(".seg button", { hasText: "前 10 只" })).toBeVisible();
+  await expect(page.getByText("调仓：", { exact: false })).toBeVisible();
+  await page.locator(".seg button", { hasText: "自定义" }).click();
+  await expect(page.locator(".quant-weight-row input")).toHaveCount(2);
+  await page.getByRole("button", { name: /返回修改/ }).click();
+  await expect(page.getByText("选择因子")).toBeVisible();
   await noHorizontalOverflow(page);
 });
 
@@ -411,6 +433,59 @@ test("AI 管家可发送问题并渲染卡片", async ({ page }) => {
   await page.getByPlaceholder("问个股、组合、复盘或条件选股").fill("贵州茅台怎么看");
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByText("贵州茅台收盘上涨")).toBeVisible({ timeout: 20_000 });
+  await noHorizontalOverflow(page);
+});
+
+test("AI 回答自动渲染毛利率柱图与估值分位", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/ai/chat", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true, intent: "stock",
+        card: { summary: "毛利率近四期保持在 90% 左右。", sections: [] },
+        charts: [
+          { type: "bar", title: "近 4 期毛利率", labels: ["2025Q1", "2025Q2", "2025Q3", "2025Q4"], values: [91.2, 90.8, 91.5, 90.9], unit: "%" },
+          { type: "percentile", title: "PE(TTM) 与历史分位", value: 22.1, percentile: 40, unit: "x" },
+        ],
+      }),
+    }),
+  );
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.getByPlaceholder("问个股、组合、复盘或条件选股").fill("贵州茅台毛利率怎么样");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.locator(".ai-bars i")).toHaveCount(4, { timeout: 20_000 });
+  await expect(page.locator(".ai-percentile")).toBeVisible();
+  await expect(page.getByText("40% 分位")).toBeVisible();
+  await noHorizontalOverflow(page);
+});
+
+test("AI 截图识图填入输入框，不自动发送", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/ai/vision", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        text: "分析 宁德时代(300750)",
+        corrections: [{ from: "宁德", to: "宁德时代" }],
+        model: "vision-test",
+      }),
+    }),
+  );
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /全部/ }).click();
+  await expect(page.getByText("截图识图")).toBeVisible({ timeout: 20_000 });
+  await page.locator(".vision-panel input[type=file]").setInputFiles({
+    name: "stock.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlqkAAAAASUVORK5CYII=", "base64"),
+  });
+  await expect(page.locator(".vision-preview img")).toBeVisible();
+  await page.getByRole("button", { name: "识别并填入" }).click();
+  await expect(page.getByPlaceholder("问个股、组合、复盘或条件选股")).toHaveValue("分析 宁德时代(300750)", { timeout: 20_000 });
+  await expect(page.getByText("已识图并校正", { exact: false })).toBeVisible();
+  await expect(page.locator(".ai-msg.user")).toHaveCount(0);
   await noHorizontalOverflow(page);
 });
 
@@ -552,29 +627,92 @@ test("AI 管家选股：资金流预设可用并展示条件", async ({ page }) 
   await noHorizontalOverflow(page);
 });
 
-test("多标的对比页渲染同口径表并自动生成 AI 结论", async ({ page }) => {
+test("多标的对比页渲染同口径维度、亮点与总结", async ({ page }) => {
   await loginByToken(page);
-  const stock = (code: string, name: string) => ({
-    quote: { code, name, industry: "白酒", price: 100, changePct: 1.2 },
-    valuation: { pe: 20, pb: 3, pePercentile: 40 },
-    technical: { return20: 5, drawdown: -3 },
-    report: { revenue: 100, netProfit: 20, grossMargin: 80, roe: 15 },
-  });
-  await page.route("**/api/invest/stock/600519", (route) =>
-    route.fulfill({ contentType: "application/json", body: JSON.stringify(stock("600519", "贵州茅台")) }),
-  );
-  await page.route("**/api/invest/stock/300750", (route) =>
-    route.fulfill({ contentType: "application/json", body: JSON.stringify(stock("300750", "宁德时代")) }),
-  );
-  await page.route("**/api/invest/ai/compare**", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ ok: true, card: { summary: "两者估值与增速不同。", sections: [] } }),
-    }),
+  const payload = {
+    ok: true,
+    items: [
+      { code: "600519", name: "贵州茅台", industry: "食品饮料" },
+      { code: "300750", name: "宁德时代", industry: "电力设备" },
+    ],
+    dimensions: [
+      {
+        key: "market", title: "行情表现", title_en: "Market performance",
+        rows: [
+          { key: "price", label: "最新价", label_en: "Price", fmt: "price", values: [1452.0, 300.0], missing: [] },
+          { key: "return5", label: "5 日涨跌", label_en: "5-day return", fmt: "pct", values: [2.1, -1.3], missing: [] },
+        ],
+        missing: [],
+      },
+      {
+        key: "valuation", title: "估值水平", title_en: "Valuation",
+        rows: [
+          { key: "pe", label: "PE(TTM)", label_en: "PE (TTM)", fmt: "x", values: [22.0, null], missing: ["宁德时代"] },
+        ],
+        missing: [{ code: "300750", name: "宁德时代", labels: ["PE(TTM)"] }],
+      },
+    ],
+    highlights: [
+      { code: "600519", name: "贵州茅台", positive: [{ text: "毛利率 91.0%，处于较高水平", tone: "good" }], negative: [] },
+      { code: "300750", name: "宁德时代", positive: [], negative: [{ text: "PE 分位 80%，处于近 3 年较高位置", tone: "amber" }] },
+    ],
+    summary: [{ text: "营收同比：贵州茅台 +1.3%，宁德时代 +54.8%。" }, { text: "标的属于不同行业，以上只描述各自水平，不并排比大小。" }],
+    note: "公告与研报数据尚未接入。",
+    disclaimer: "以上对比仅描述数据差异，不构成投资建议。",
+  };
+  await page.route("**/api/invest/compare**", (route) =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify(payload) }),
   );
   await page.goto(`${H5}/compare/600519/300750`, { waitUntil: "domcontentloaded" });
-  await expect(page.locator(".data-table")).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText("两者估值与增速不同")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".compare-table")).toHaveCount(2, { timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "行情表现" })).toBeVisible();
+  await expect(page.getByText("宁德时代 缺：PE(TTM)")).toBeVisible();
+  await expect(page.getByText("毛利率 91.0%，处于较高水平")).toBeVisible();
+  await expect(page.getByText("标的属于不同行业，以上只描述各自水平，不并排比大小。")).toBeVisible();
+  await expect(page.getByText("以上对比仅描述数据差异，不构成投资建议。")).toBeVisible();
+  await noHorizontalOverflow(page);
+});
+
+test("AI 多空分析分利多/利空两组且不站队", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/ai/chat", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        intent: "debate",
+        debate: {
+          code: "600519", name: "贵州茅台",
+          bull: [{ text: "营收同比 +10.1%，收入仍在增长", source: "财报", tone: "green" }],
+          bear: [{ text: "PE 分位 80%，处于近 3 年较高位置", source: "估值", tone: "amber" }],
+          note: "公告与研报数据尚未接入。",
+          footer: "双方都有证据，不构成任何方向的建议。",
+        },
+        card: { summary: "贵州茅台的利多与利空均有数据依据，不站队。", sections: [] },
+      }),
+    }),
+  );
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "贵州茅台多空" }).click();
+  await expect(page.getByRole("heading", { name: "贵州茅台 · 多空分析" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("营收同比 +10.1%，收入仍在增长")).toBeVisible();
+  await expect(page.getByText("PE 分位 80%，处于近 3 年较高位置")).toBeVisible();
+  await expect(page.getByText("双方都有证据，不构成任何方向的建议。")).toBeVisible();
+  await noHorizontalOverflow(page);
+});
+
+test("AI 预设问法的参数位可点击替换", async ({ page }) => {
+  await loginByToken(page);
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.locator(".ai-template-bar").getByRole("button", { name: "个股解读" }).click();
+  await expect(page.locator(".param-mark").filter({ hasText: "标的" })).toBeVisible();
+  await page.locator(".param-mark").filter({ hasText: "标的" }).click();
+  const selected = await page.locator(".ai-composer textarea").evaluate((el: HTMLTextAreaElement) => ({
+    start: el.selectionStart,
+    end: el.selectionEnd,
+    value: el.value,
+  }));
+  expect(selected.value.slice(selected.start, selected.end)).toBe("标的");
   await noHorizontalOverflow(page);
 });
 
@@ -718,7 +856,7 @@ test("英文模式可搜索并打开真实美股", async ({ page }) => {
 test("360 宽关键页面无横向溢出，行业代码不裸奔", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await loginByToken(page);
-  for (const path of ["/", "/watch", "/portfolio", "/news", "/learn", "/me", "/quant", "/quant/factors", "/quant/strategies?tab=quick", "/quant/strategies?tab=plaza", "/quant/backtests", "/quant/papers", "/agents", "/community"]) {
+  for (const path of ["/", "/watch", "/portfolio", "/news", "/learn", "/me", "/quant", "/quant/factors", "/quant/strategies?tab=quick", "/quant/strategies?tab=plaza", "/quant/backtests", "/quant/papers", "/agents", "/community", "/compare/600519/300750"]) {
     await page.goto(`${H5}${path}`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(350);
     await noHorizontalOverflow(page);

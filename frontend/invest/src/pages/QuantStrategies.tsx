@@ -2,14 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Bookmark, Copy, FlaskConical, Play, RotateCcw, Save, Sparkles, Trash2 } from "lucide-react";
 import { api } from "../api";
+import AiPanel from "../components/AiPanel";
 import { ErrorState, LoadingCards, PageHeader, Sheet, Sparkline, Tag } from "../components";
 import QuantChart from "../components/QuantChart";
 import { useLocale } from "../i18n";
 import {
-  curveValues,
-  directionLabel,
-  factorFormula,
   factorName,
+  factorPlain,
   fmtSignedPct,
   supportsRePaper,
   metric,
@@ -73,6 +72,13 @@ export default function QuantStrategies() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [selected, setSelected] = useState<QuantFactor[]>([]);
   const [universe, setUniverse] = useState("hs300");
+  const [holdings, setHoldings] = useState(20);
+  const [rebalance, setRebalance] = useState("monthly");
+  const [filterSt, setFilterSt] = useState(true);
+  const [filterListed, setFilterListed] = useState(true);
+  const [filterAmount, setFilterAmount] = useState(true);
+  const [weightMode, setWeightMode] = useState<"equal" | "custom">("equal");
+  const [weights, setWeights] = useState<Record<string, number>>({});
   const [backtest, setBacktest] = useState<Backtest | null>(null);
   const [running, setRunning] = useState(false);
   const [intent, setIntent] = useState("");
@@ -133,7 +139,7 @@ export default function QuantStrategies() {
     [selected, factors],
   );
 
-  const correlations = useMemo(() => {
+  const pairCorrelations = useMemo(() => {
     if (!board) return [];
     const out: Array<{ a: string; b: string; r: number }> = [];
     for (let i = 0; i < selected.length; i += 1) {
@@ -141,21 +147,50 @@ export default function QuantStrategies() {
         const ia = board.correlation_keys.indexOf(selected[i].key);
         const ib = board.correlation_keys.indexOf(selected[j].key);
         const r = ia >= 0 && ib >= 0 ? board.correlations[ia]?.[ib] : null;
-        if (r !== null && r !== undefined && Math.abs(r) > 0.5) {
-          out.push({ a: selected[i].key, b: selected[j].key, r });
+        if (r !== null && r !== undefined) {
+          out.push({ a: selected[i].key, b: selected[j].key, r: Number(r) });
         }
       }
     }
     return out;
   }, [board, selected]);
+  const correlations = pairCorrelations.filter((c) => Math.abs(c.r) > 0.5);
+  const maxCorrelation = pairCorrelations.length
+    ? Math.max(...pairCorrelations.map((c) => Math.abs(c.r)))
+    : null;
+
+  useEffect(() => {
+    setWeights((prev) => {
+      const next: Record<string, number> = {};
+      selected.forEach((f) => {
+        next[f.key] = prev[f.key] ?? Math.round(100 / Math.max(1, selected.length));
+      });
+      return next;
+    });
+  }, [selected]);
+
+  const weightTotal = selected.reduce((sum, f) => sum + (Number(weights[f.key]) || 0), 0);
+  const configFactors = useMemo(
+    () => selected.map((f) => (weightMode === "custom" ? { ...f, weight: Number(weights[f.key]) || 0 } : f)),
+    [selected, weightMode, weights],
+  );
+  const paperSupported = supportsRePaper(selectedMeta)
+    && weightMode === "equal"
+    && holdings === 20
+    && rebalance === "monthly"
+    && filterSt && filterListed && filterAmount;
 
   const toggleFactor = (f: FactorMeta) => {
-    setSelected((prev) => {
-      const exists = prev.find((x) => x.key === f.key);
-      if (exists) return prev.filter((x) => x.key !== f.key);
-      if (prev.length >= 4) return prev;
-      return [...prev, { key: f.key, direction: f.direction }];
-    });
+    const exists = selected.find((x) => x.key === f.key);
+    if (exists) {
+      setSelected((prev) => prev.filter((x) => x.key !== f.key));
+      return;
+    }
+    if (selected.length >= 4) {
+      setNotice(t("最多选 4 个因子", "Choose at most 4 factors"));
+      return;
+    }
+    setSelected((prev) => [...prev, { key: f.key, direction: f.direction }]);
   };
 
   const setDirection = (key: string, direction: "high" | "low") => {
@@ -190,12 +225,22 @@ export default function QuantStrategies() {
       setError(t("请选择 2–4 个因子", "Choose 2–4 factors"));
       return;
     }
+    if (weightMode === "custom" && Math.abs(weightTotal - 100) > 0.01) {
+      setError(t("权重合计应等于 100%", "Weights should add up to 100%"));
+      return;
+    }
     setRunning(true);
     setError(null);
     try {
       const data = await api<Backtest>("/api/invest/quant/backtests", {
         method: "POST",
-        body: JSON.stringify({ factors: selected, universe }),
+        body: JSON.stringify({
+          factors: configFactors,
+          universe,
+          holdings,
+          rebalance,
+          filters: { st: filterSt, listed60: filterListed, amount: filterAmount },
+        }),
       });
       setBacktest(data);
       setStep(3);
@@ -206,6 +251,20 @@ export default function QuantStrategies() {
     }
   };
 
+  const saveConfigDraft = async () => {
+    if (selected.length < 2) return;
+    try {
+      await api("/api/invest/quant/drafts", {
+        method: "POST",
+        body: JSON.stringify({ factors: configFactors, universe }),
+      });
+      setNotice(t("已保存到草稿", "Saved to drafts"));
+      nav("/quant/strategies?tab=drafts");
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
   const saveDraft = async () => {
     if (!backtest) return;
     try {
@@ -213,7 +272,7 @@ export default function QuantStrategies() {
         method: "POST",
         body: JSON.stringify({
           name: backtest.name,
-          factors: selected,
+          factors: configFactors,
           universe,
           last_backtest_id: backtest.id,
         }),
@@ -251,7 +310,16 @@ export default function QuantStrategies() {
       key: f.key,
       direction: (f.chosen_direction as "high" | "low") || f.direction,
     }));
+    const custom = (draft.factors || []).every((f: any) => f.chosen_weight != null);
+    const nextWeights: Record<string, number> = {};
+    if (custom) {
+      (draft.factors || []).forEach((f: any) => {
+        nextWeights[f.key] = Number(f.chosen_weight) || 0;
+      });
+    }
     setSelected(next.slice(0, 4));
+    setWeights(nextWeights);
+    setWeightMode(custom ? "custom" : "equal");
     setUniverse(draft.universe || "hs300");
     setBacktest(null);
     setStep(2);
@@ -347,38 +415,46 @@ export default function QuantStrategies() {
                 <div className="quant-factor-pick">
                   {factors.map((f) => {
                     const picked = selected.find((x) => x.key === f.key);
+                    const dir = picked?.direction || f.direction;
                     return (
-                      <button
+                      <div
                         key={f.key}
                         className={`quant-pick ${picked ? "on" : ""}`}
                         onClick={() => toggleFactor(f)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            toggleFactor(f);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
                         aria-pressed={!!picked}
                       >
-                        <b>{factorName(f, locale)}</b>
-                        <small>{factorFormula(f, locale)}</small>
-                      </button>
+                        <span className="quant-pick-head">
+                          <b>{factorName(f, locale)}</b>
+                          {picked ? (
+                            <button
+                              type="button"
+                              className="pick-dir"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDirection(f.key, dir === "high" ? "low" : "high");
+                              }}
+                            >
+                              {t("方向 ", "Dir ")}{dir === "high" ? t("高", "High") : t("低", "Low")}
+                            </button>
+                          ) : null}
+                        </span>
+                        <small>{factorPlain(f, locale)}</small>
+                        <span className="quant-pick-meta">
+                          {t("分位", "Pctl")} {f.percentile == null ? "—" : `${f.percentile.toFixed(0)}%`}
+                          <em className={trendClass(f.return_1m)}>{fmtSignedPct(f.return_1m)}</em>
+                        </span>
+                      </div>
                     );
                   })}
                 </div>
-                {selectedMeta.length ? (
-                  <div className="quant-directions">
-                    {selectedMeta.map((f) => {
-                      const chosen = selected.find((x) => x.key === f.key)?.direction || f.direction;
-                      return (
-                        <div className="quant-direction-row" key={f.key}>
-                          <b>{factorName(f, locale)}</b>
-                          <div className="seg seg-sm">
-                            {(["high", "low"] as const).map((dir) => (
-                              <button key={dir} className={chosen === dir ? "on" : ""} onClick={() => setDirection(f.key, dir)}>
-                                {directionLabel(f, dir, locale)}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
                 {correlations.length ? (
                   <div className="callout amber quant-corr">
                     {correlations.map((c) => {
@@ -394,6 +470,13 @@ export default function QuantStrategies() {
                       );
                     })}
                   </div>
+                ) : selected.length >= 2 ? (
+                  <div className="callout blue quant-corr">
+                    {t(
+                      `分散度不错：最高相关性 ${maxCorrelation == null ? "—" : maxCorrelation.toFixed(2)}。`,
+                      `Good diversification: highest correlation ${maxCorrelation == null ? "—" : maxCorrelation.toFixed(2)}.`,
+                    )}
+                  </div>
                 ) : null}
                 <button className="btn btn-primary w100" disabled={selected.length < 2} onClick={() => setStep(2)}>
                   {t("下一步：生成配置", "Next: generate config")} <ArrowRight size={15} />
@@ -404,15 +487,16 @@ export default function QuantStrategies() {
 
           {step === 2 ? (
             <section className="card">
-              <div className="card-title-row"><h2>{t("回测配置", "Backtest config")}</h2><Tag tone="gray">{t("固定参数", "Fixed params")}</Tag></div>
+              <div className="card-title-row"><h2>{t("回测配置", "Backtest config")}</h2><Tag tone="gray">{t("可调整", "Adjustable")}</Tag></div>
+              <p className="hint">{t("AI 只把自然语言翻译成因子；下面的参数由你确认后再回测。", "AI only translates language into factors; confirm the settings below before running.")}</p>
               <div className="quant-config-factors">
                 {selectedMeta.map((f) => {
                   const dir = selected.find((x) => x.key === f.key)?.direction || f.direction;
                   return (
                     <div key={f.key} className="quant-config-row">
                       <b>{factorName(f, locale)}</b>
-                      <span>{directionLabel(f, dir, locale)}</span>
-                      <small>{t("等权 1/", "Equal weight 1/")}{selected.length}</small>
+                      <span>{dir === "high" ? t("高", "High") : t("低", "Low")}</span>
+                      <small>{weightMode === "equal" ? `${t("等权 1/", "Equal weight 1/")}${selected.length}` : `${Number(weights[f.key]) || 0}%`}</small>
                     </div>
                   );
                 })}
@@ -427,17 +511,80 @@ export default function QuantStrategies() {
                   ))}
                 </div>
               </label>
-              <div className="quant-assumptions">
-                <div><span>{t("持仓", "Holdings")}</span><b>{t("前 20 只", "Top 20")}</b></div>
-                <div><span>{t("调仓", "Rebalance")}</span><b>{t("月度", "Monthly")}</b></div>
-                <div><span>{t("成本", "Cost")}</span><b>{t("单边 0.1%", "0.1% one-way")}</b></div>
-                <div><span>{t("剔除", "Exclusions")}</span><b>{t("ST / 上市<60 天 / 日均<5000 万", "ST / <60 days / <CNY 50m")}</b></div>
+              <label className="field">
+                <span>{t("选股", "Holdings")}</span>
+                <div className="seg">
+                  {[10, 20, 30].map((n) => (
+                    <button key={n} className={holdings === n ? "on" : ""} onClick={() => setHoldings(n)}>
+                      {t(`前 ${n} 只`, `Top ${n}`)}
+                    </button>
+                  ))}
+                </div>
+              </label>
+              <label className="field">
+                <span>{t("调仓", "Rebalance")}</span>
+                <div className="seg">
+                  {([["monthly", "月度", "Monthly"], ["biweekly", "双周", "Biweekly"], ["quarterly", "季度", "Quarterly"]] as Array<[string, string, string]>).map(([key, zh, en]) => (
+                    <button key={key} className={rebalance === key ? "on" : ""} onClick={() => setRebalance(key)}>{t(zh, en)}</button>
+                  ))}
+                </div>
+              </label>
+              <div className="field">
+                <span>{t("过滤", "Filters")}</span>
+                <div className="quant-filter-row">
+                  <button className={`chip ${filterSt ? "on" : ""}`} onClick={() => setFilterSt((v) => !v)}>剔除 ST</button>
+                  <button className={`chip ${filterListed ? "on" : ""}`} onClick={() => setFilterListed((v) => !v)}>上市 ≥ 60 天</button>
+                  <button className={`chip ${filterAmount ? "on" : ""}`} onClick={() => setFilterAmount((v) => !v)}>成交额 ≥ 5000 万</button>
+                </div>
               </div>
-              <div className="row gap6">
-                <button className="btn btn-ghost btn-sm" onClick={() => setStep(1)}><RotateCcw size={14} /> {t("改因子", "Edit factors")}</button>
+              <label className="field">
+                <span>{t("权重", "Weighting")}</span>
+                <div className="seg">
+                  <button className={weightMode === "equal" ? "on" : ""} onClick={() => setWeightMode("equal")}>{t("等权", "Equal")}</button>
+                  <button className={weightMode === "custom" ? "on" : ""} onClick={() => setWeightMode("custom")}>{t("自定义", "Custom")}</button>
+                </div>
+              </label>
+              {weightMode === "custom" ? (
+                <div className="quant-weights">
+                  {selectedMeta.map((f) => (
+                    <label className="quant-weight-row" key={f.key}>
+                      <span>{factorName(f, locale)}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={weights[f.key] ?? 0}
+                        onChange={(e) => setWeights((prev) => ({ ...prev, [f.key]: Number(e.target.value) }))}
+                      />
+                      <em>%</em>
+                    </label>
+                  ))}
+                  <p className={`hint ${Math.abs(weightTotal - 100) > 0.01 ? "quant-weight-warn" : ""}`}>
+                    {t(`合计 ${weightTotal}%（应等于 100%）`, `Total ${weightTotal}% (should be 100%)`)}
+                  </p>
+                </div>
+              ) : null}
+              <div className="quant-config-preview">
+                <b>{t("配置预览", "Config preview")}</b>
+                <p>{t("策略：", "Strategy: ")}{selectedMeta.map((f) => factorName(f, locale)).join(" + ")}</p>
+                <p>{t("因子：", "Factors: ")}</p>
+                <ul>
+                  {selectedMeta.map((f) => {
+                    const dir = selected.find((x) => x.key === f.key)?.direction || f.direction;
+                    const weight = weightMode === "custom" ? `${Number(weights[f.key]) || 0}%` : `${Math.round(100 / Math.max(1, selected.length))}%`;
+                    return <li key={f.key}>{factorName(f, locale)} · {t("方向", "Direction")} {dir === "high" ? t("高", "High") : t("低", "Low")} · {t("权重", "Weight")} {weight}</li>;
+                  })}
+                </ul>
+                <p>{t("股票池：", "Universe: ")}{universeLabel(universe, t)} · {t("选股：综合分前", "Holdings: top")} {holdings}</p>
+                <p>{t("调仓：", "Rebalance: ")}{rebalance === "monthly" ? t("月度", "Monthly") : rebalance === "biweekly" ? t("双周", "Biweekly") : t("季度", "Quarterly")} · {t("成本：单边 0.1%", "Cost: 0.1% one-way")}</p>
+                <p>{t("过滤：", "Filters: ")}{[filterSt ? "剔除 ST" : "含 ST", filterListed ? "上市 ≥ 60 天" : "不限上市时间", filterAmount ? "成交额 ≥ 5000 万" : "不限成交额"].join("、")}</p>
+              </div>
+              <div className="quant-config-actions">
                 <button className="btn btn-primary btn-sm" onClick={() => void runBacktest()} disabled={running}>
                   <Play size={14} /> {running ? t("回测中…", "Running…") : t("开始回测", "Run backtest")}
                 </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setStep(1)}><RotateCcw size={14} /> {t("返回修改", "Back")}</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => void saveConfigDraft()}><Save size={14} /> {t("保存草稿", "Save draft")}</button>
               </div>
             </section>
           ) : null}
@@ -476,11 +623,19 @@ export default function QuantStrategies() {
               </div>
               <div className="quant-actions">
                 <button className="btn btn-ghost btn-sm" onClick={() => void saveDraft()}><Save size={14} /> {t("保存草稿", "Save draft")}</button>
-                <button className="btn btn-primary btn-sm" disabled={!backtest.id || !supportsRePaper(selectedMeta)} onClick={() => void startPaper("backtest", backtest.id)}><FlaskConical size={14} /> {t("开模拟盘", "Paper trade")}</button>
+                <button className="btn btn-primary btn-sm" disabled={!backtest.id || !paperSupported} onClick={() => void startPaper("backtest", backtest.id)}><FlaskConical size={14} /> {t("开模拟盘", "Paper trade")}</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => setStep(1)}><RotateCcw size={14} /> {t("改因子重跑", "Edit & rerun")}</button>
               </div>
-              {!supportsRePaper(selectedMeta) ? (
-                <p className="hint">{t("该组合含 RE 暂无的基本面因子（ROE/营收同比），可保存草稿，但暂不能开模拟盘。", "This combo contains fundamental factors not yet in RE (ROE/revenue YoY); you can save a draft but cannot start a paper account.")}</p>
+              {!paperSupported ? (
+                <p className="hint">{t("该组合含 RE 暂无的基本面因子，或使用了自定义持仓/调仓/权重；可保存草稿并回测，但暂不能开模拟盘。", "This combo contains a factor not yet in RE, or uses custom holdings/rebalance/weights; you can save a draft and backtest, but paper trading is not yet supported.")}</p>
+              ) : null}
+              {backtest.id ? (
+                <AiPanel
+                  title={t("AI 回测点评", "AI backtest review")}
+                  subtitle={t("只依据本次回测指标与净值曲线解释，不改算数值", "Explains this run's metrics and curve without recalculating")}
+                  endpoint={`/api/invest/quant/backtests/${backtest.id}/commentary`}
+                  hideOnError
+                />
               ) : null}
               <p className="quant-foot">{t("历史回测，不代表未来；不构成投资建议。", "Historical backtest, not a forecast; not investment advice.")}</p>
             </section>

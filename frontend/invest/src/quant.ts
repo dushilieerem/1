@@ -222,6 +222,10 @@ export function factorFormula(f: FactorMeta, locale: "zh" | "en") {
   return locale === "en" ? f.formula_en : f.formula;
 }
 
+export function factorPlain(f: FactorMeta, locale: "zh" | "en") {
+  return locale === "en" ? f.plain_en : f.plain;
+}
+
 export function directionLabel(f: FactorMeta, direction: "high" | "low", locale: "zh" | "en") {
   if (direction === "high") return locale === "en" ? f.high_label_en : f.high_label;
   return locale === "en" ? f.low_label_en : f.low_label;

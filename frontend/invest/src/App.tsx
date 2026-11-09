@@ -100,8 +100,10 @@ export default function App() {
         <Route path="quant/signals" element={<QuantSignals />} />
         <Route path="quant/plaza" element={<StrategyPlaza />} />
         <Route path="ai" element={<AiChat />} />
+        <Route path="compare" element={<Compare />} />
         <Route path="compare/:a" element={<Compare />} />
         <Route path="compare/:a/:b" element={<Compare />} />
+        <Route path="compare/:a/:b/:c" element={<Compare />} />
         <Route path="paper" element={<Paper />} />
         <Route path="etf/:code" element={<EtfDetail />} />
         <Route path="learn" element={<Learn />} />

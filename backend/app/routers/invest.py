@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
 
@@ -18,7 +19,9 @@ from app.deps import require_user
 from services.core.db import get_conn
 from services.core.public_switches import disabled_modules
 from services.invest import agent_prompts, agent_tools
+from services.invest import compare as compare_service
 from services.invest import condition as condition_service
+from services.invest import debate as debate_service
 from services.invest import etf as etf_service
 from services.invest import glossary as glossary_service
 from services.invest import quant
@@ -132,6 +135,37 @@ def search(
     conn: PGConn = Depends(invest_conn),
 ) -> dict[str, Any]:
     return rules.build_search(conn, q, market)
+
+
+@router.get("/compare")
+def compare_stocks(
+    codes: str = Query(""),
+    names: str = Query(""),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """2–3 只标的的同口径对比；名称解析失败时返回候选，不抛 500。"""
+    raw = [x.strip() for x in re.split(r"[,，、\s]+", codes or names) if x.strip()]
+    if len(raw) < 2:
+        return {"ok": False, "error": "至少需要两个标的", "comparison": None}
+    if len(raw) > compare_service.MAX_CODES:
+        raw = raw[: compare_service.MAX_CODES]
+    resolved = []
+    for item in raw:
+        try:
+            resolved.append(compare_service.resolve_stock(conn, item))
+        except compare_service.StockNotFound as exc:
+            return {
+                "ok": False,
+                "error": str(exc),
+                "unresolved": item,
+                "suggestions": exc.suggestions,
+                "comparison": None,
+            }
+    try:
+        data = compare_service.build_compare(conn, [str(x["code"]) for x in resolved])
+    except compare_service.StockNotFound as exc:
+        return {"ok": False, "error": str(exc), "suggestions": exc.suggestions, "comparison": None}
+    return data
 
 
 @router.get("/news", dependencies=[Depends(_guard("news"))])
@@ -407,6 +441,9 @@ def quant_backtest_create(
         user_id=_uid(user),
         name=body.get("name"),
         project_id=body.get("project_id"),
+        holdings=body.get("holdings", 20),
+        rebalance=body.get("rebalance", "monthly"),
+        filters=body.get("filters"),
     )
     conn.commit()
     return data

@@ -1,0 +1,341 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { ArrowRight, Activity, AlertTriangle, RefreshCw } from "lucide-react";
+import { instApi, fmtMoney, fmtPct } from "@/lib/instApi";
+import { useInstSession } from "@/components/institution/instSessionContext";
+
+type Position = {
+  symbol: string;
+  name?: string;
+  company_id?: number;
+  industry?: string;
+  qty: number;
+  cost?: number;
+  market_value: number;
+  weight: number;
+  last_close?: number;
+};
+
+type Portfolio = {
+  nav: number;
+  cash: number;
+  invested: number;
+  invested_ratio: number;
+  positions: Position[];
+  industry_exposure?: Record<string, number>;
+};
+
+type Thesis = {
+  id?: number;
+  thesis?: string;
+  status?: string;
+  kpis?: Array<{ name?: string; target?: number | string; value?: string; status?: string }>;
+  falsifiers?: string[];
+  review_due?: string;
+  created_at?: string;
+};
+
+type MonitorEvent = {
+  id?: number;
+  type?: string;
+  severity?: string;
+  detail?: string;
+  created_at?: string;
+};
+
+type ExitCase = {
+  id?: number;
+  company_id?: number;
+  reason_type?: string;
+  status?: string;
+  memo?: string;
+  created_at?: string;
+};
+
+type Holding = {
+  symbol: string;
+  position: Position;
+  theses: Thesis[];
+  events: MonitorEvent[];
+  exits: ExitCase[];
+};
+
+const STEPS = [
+  { name: "组合总览", sub: "净值 / 现金 / 敞口" },
+  { name: "单票盘中", sub: "论点台账 · 事件" },
+  { name: "预警与退出", sub: "四类理由 · 重走审批" },
+];
+
+const REASONS: Array<[string, string]> = [
+  ["thesis_invalid", "论点失效"],
+  ["valuation", "估值透支"],
+  ["better_allocation", "更优机会"],
+  ["portfolio_constraint", "组合/资金约束"],
+];
+
+function parseHolding(key: string | null): string | null {
+  const m = String(key || "").match(/holding:([A-Za-z0-9.]+)/);
+  return m ? m[1] : null;
+}
+
+export function InstV3ManagePage() {
+  const session = useInstSession();
+  const [params, setParams] = useSearchParams();
+  const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
+  const [holding, setHolding] = useState<Holding | null>(null);
+  const [step, setStep] = useState(0);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [opinion, setOpinion] = useState("");
+  const [warning, setWarning] = useState("");
+  const [reason, setReason] = useState("thesis_invalid");
+  const [exitMemo, setExitMemo] = useState("");
+
+  const selectedSymbol = parseHolding(params.get("key"));
+  const canWrite = ["manager", "monitoring", "partner"].includes(session.role);
+
+  const loadPortfolio = async () => {
+    const data = await instApi<Portfolio>("/portfolio");
+    setPortfolio(data);
+    return data;
+  };
+
+  const loadHolding = async (symbol: string) => {
+    const data = await instApi<Holding>(`/holdings/${encodeURIComponent(symbol)}`);
+    setHolding(data);
+    return data;
+  };
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    loadPortfolio()
+      .then(async (pf) => {
+        if (!alive) return;
+        const symbol = selectedSymbol || pf.positions?.[0]?.symbol || null;
+        if (symbol) {
+          if (!selectedSymbol) setParams({ key: `holding:${symbol}` }, { replace: true });
+          else await loadHolding(symbol);
+        }
+      })
+      .catch((e: Error) => { if (alive) setError(e.message); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSymbol]);
+
+  const selectHolding = (symbol: string) => {
+    setStep(1);
+    setHolding(null);
+    setParams({ key: `holding:${symbol}` });
+  };
+
+  const refreshThesis = async () => {
+    if (!holding?.position.company_id) return;
+    setBusy("thesis");
+    setError(null);
+    try {
+      await instApi("/monitor/theses/refresh", { method: "POST", body: { company_id: holding.position.company_id } });
+      await loadHolding(holding.symbol);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(null); }
+  };
+
+  const scan = async () => {
+    setBusy("scan");
+    setError(null);
+    try {
+      await instApi("/monitor/scan", { method: "POST" });
+      if (holding) await loadHolding(holding.symbol);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(null); }
+  };
+
+  const recordWarning = async () => {
+    if (!holding?.position.company_id || !warning.trim()) return;
+    setBusy("warning");
+    setError(null);
+    try {
+      await instApi("/monitor/events", {
+        method: "POST",
+        body: { company_id: holding.position.company_id, type: "manual", severity: "warning", detail: warning.trim() },
+      });
+      setWarning("");
+      await loadHolding(holding.symbol);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(null); }
+  };
+
+  const submitExit = async () => {
+    if (!holding?.position.company_id) return;
+    if (!exitMemo.trim()) { setError("退出议案必须写清理由"); return; }
+    setBusy("exit");
+    setError(null);
+    try {
+      await instApi("/monitor/exits", {
+        method: "POST",
+        body: { company_id: holding.position.company_id, reason_type: reason, memo: exitMemo.trim() },
+      });
+      await loadHolding(holding.symbol);
+      await loadPortfolio();
+      setStep(2);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(null); }
+  };
+
+  const positions = portfolio?.positions || [];
+  const activePosition = holding?.position || positions.find((p) => p.symbol === selectedSymbol) || null;
+  const exposure = useMemo(() => Object.entries(portfolio?.industry_exposure || {}).sort((a, b) => b[1] - a[1]), [portfolio]);
+
+  if (loading) return <div className="v3-loading">正在加载投资管理…</div>;
+  if (error && !portfolio) return <div className="v3-card">加载失败：{error}</div>;
+
+  return (
+    <>
+      <div className="v3-page-head">
+        <div>
+          <div className="v3-eyebrow">OWNERSHIP / 06</div>
+          <h1>投资管理</h1>
+          <p>组合总览看全局，单票盘中管论点；预警与退出重走研究、辩论、审批，旧授权作废。</p>
+        </div>
+        <span className="v3-chip info">{session.role_label_cn}</span>
+      </div>
+
+      <div className="v3-stepper">
+        {STEPS.map((s, i) => (
+          <button key={s.name} className={`v3-step${i < step ? " done" : i === step ? " now" : ""}`} onClick={() => setStep(i)} style={{ background: "none", borderTop: 0, borderLeft: 0, borderBottom: 0, cursor: "pointer" }}>
+            <span className="dot">{i}</span>
+            <div><span className="lb">{s.name}</span><span className="sb">{s.sub}</span></div>
+          </button>
+        ))}
+      </div>
+
+      <div className="v3-workspace-grid">
+        <div className="v3-project-list">
+          <div className="pl-head"><span>当前持仓</span><span>{positions.length}</span></div>
+          {positions.map((p) => (
+            <button key={p.symbol} className={`pl-item${p.symbol === activePosition?.symbol ? " on" : ""}`} onClick={() => selectHolding(p.symbol)}>
+              <b>{p.name || p.symbol}</b>
+              <span>{p.symbol} · {fmtPct(p.weight)}</span>
+            </button>
+          ))}
+          {!positions.length ? <div className="v3-empty" style={{ padding: "18px 8px" }}>当前没有持仓。</div> : null}
+        </div>
+
+        <div className="v3-work-main">
+          {error ? <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>{error}</div> : null}
+
+          {step === 0 ? (
+            <>
+              <section className="v3-kpis">
+                <div className="v3-kpi"><div className="k">组合净值（CNY）</div><div className="v">{fmtMoney(portfolio?.nav)}</div><div className="d">现金 {fmtMoney(portfolio?.cash)}</div></div>
+                <div className="v3-kpi"><div className="k">仓位</div><div className="v">{fmtPct(portfolio?.invested_ratio)}</div><div className="d">已投资 {fmtMoney(portfolio?.invested)}</div></div>
+                <div className="v3-kpi"><div className="k">持仓</div><div className="v">{positions.length}<small> 只</small></div><div className="d">现金下限 10%</div></div>
+                <div className="v3-kpi"><div className="k">在途退出</div><div className="v">{holding?.exits?.length ?? 0}<small> 个</small></div><div className="d">退出重走审批</div></div>
+              </section>
+              <section className="v3-card">
+                <div className="v3-card-head"><div><h2>持仓明细</h2><p>点任意持仓进入单票盘中；权重按市值/净值。</p></div><span className="v3-chip">{positions.length} 只</span></div>
+                <div className="table-wrap" style={{ overflowX: "auto" }}>
+                  <table className="v3-table">
+                    <thead><tr><th>标的</th><th>数量</th><th>成本</th><th>最新</th><th>市值</th><th>权重</th><th>盘中</th></tr></thead>
+                    <tbody>
+                      {positions.map((p) => (
+                        <tr key={p.symbol}>
+                          <td><b>{p.name || p.symbol}</b><span>{p.symbol} · {p.industry || "—"}</span></td>
+                          <td>{p.qty}</td><td>{p.cost ? p.cost.toFixed(2) : "—"}</td><td>{p.last_close ? p.last_close.toFixed(2) : "—"}</td>
+                          <td>{fmtMoney(p.market_value)}</td><td>{fmtPct(p.weight)}</td>
+                          <td><button className="v3-btn ghost" onClick={() => selectHolding(p.symbol)}>盘中 →</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+              <section className="v3-card">
+                <div className="v3-card-head"><div><h2>行业敞口</h2><p>接近上限会标黄；组合约束不可由 AI 或 Chairman 绕过。</p></div></div>
+                {exposure.map(([industry, weight]) => (
+                  <div key={industry} style={{ marginTop: 8 }}>
+                    <div className="flex justify-between text-[10px] text-[#746b7c]"><span>{industry}</span><span>{fmtPct(weight)}</span></div>
+                    <div style={{ height: 6, background: "#f0eaf3", borderRadius: 99, marginTop: 3 }}><div style={{ width: `${Math.min(100, weight * 100)}%`, height: "100%", background: weight > 0.13 ? "#996114" : "#a03a5c", borderRadius: 99 }} /></div>
+                  </div>
+                ))}
+                {!exposure.length ? <div className="v3-empty">暂无行业敞口数据。</div> : null}
+              </section>
+            </>
+          ) : null}
+
+          {step === 1 && activePosition ? (
+            <>
+              <section className="v3-card">
+                <div className="v3-card-head"><div><h2>{activePosition.name || activePosition.symbol} · 盘中</h2><p>{activePosition.symbol} · {fmtPct(activePosition.weight)} · 成本 {activePosition.cost?.toFixed(2) || "—"} · 现价 {activePosition.last_close?.toFixed(2) || "—"}</p></div><button className="v3-btn ghost" disabled={!!busy} onClick={scan}><Activity className="h-3.5 w-3.5" />{busy === "scan" ? "扫描中…" : "扫描事件"}</button></div>
+                <p style={{ fontSize: 11, lineHeight: 1.7, color: "#746b7c" }}>买入不是结束，而是论点开始接受检验；监控 Agent 只提示，不替你做卖出决定。</p>
+              </section>
+
+              <section className="v3-card">
+                <div className="v3-card-head"><div><h2>买入论点台账</h2><p>关键假设、KPI、复核时间与推翻条件。</p></div><button className="v3-btn ghost" disabled={!!busy} onClick={refreshThesis}><RefreshCw className="h-3.5 w-3.5" />{busy === "thesis" ? "生成中…" : "重新生成台账"}</button></div>
+                {holding?.theses?.length ? holding.theses.map((t, i) => (
+                  <div key={t.id || i} className="v3-claim">
+                    <div className="who">{t.status || "active"} · 复核 {t.review_due || "—"}</div>
+                    <p>{t.thesis || "—"}</p>
+                    {t.kpis?.length ? <div className="fs">KPI：{t.kpis.map((k) => `${k.name || "KPI"} ${k.target ?? ""}`).join("；")}</div> : null}
+                    {t.falsifiers?.length ? <div className="fs">推翻条件：{t.falsifiers.join("；")}</div> : null}
+                  </div>
+                )) : <div className="v3-empty">还没有台账；点“重新生成台账”从买入议案生成。</div>}
+              </section>
+
+              <section className="v3-card">
+                <div className="v3-card-head"><div><h2>监控事件</h2><p>经营 / 估值 / 治理 / 交易异常；时间点 + 摘要。</p></div><span className="v3-chip">{holding?.events?.length || 0} 条</span></div>
+                {holding?.events?.length ? holding.events.slice(0, 8).map((e, i) => (
+                  <div className="v3-kv" key={e.id || i}><dt>{e.created_at || "—"} · {e.type || "事件"}</dt><dd>{e.detail || "—"} <span className="v3-chip warn">{e.severity || "info"}</span></dd></div>
+                )) : <div className="v3-empty">暂无监控事件。</div>}
+              </section>
+
+              <section className="v3-card">
+                <div className="v3-card-head"><div><h2>记录预警</h2><p>时间点 + 一句理由；预警不是卖出，先进入复核。</p></div></div>
+                <div className="v3-field"><textarea value={warning} onChange={(e) => setWarning(e.target.value)} placeholder="例如：批价周环比 -1.2%，接近推翻线；要求复核渠道库存。" /></div>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                  <button className="v3-btn primary" disabled={!canWrite || !warning.trim() || !!busy} onClick={recordWarning}><AlertTriangle className="h-3.5 w-3.5" />{busy === "warning" ? "记录中…" : "记录预警"}</button>
+                </div>
+              </section>
+            </>
+          ) : null}
+
+          {step === 2 && activePosition ? (
+            <>
+              <section className="v3-card">
+                <div className="v3-card-head"><div><h2>预警与退出</h2><p>卖出理由只有四类；退出议案要重走研究、辩论、三关审批。</p></div><span className="v3-chip warn">旧授权作废</span></div>
+                <div className="v3-form-grid">
+                  <div className="v3-field"><label>卖出理由</label><select value={reason} onChange={(e) => setReason(e.target.value)} disabled={!canWrite}>{REASONS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+                  <div className="v3-field"><label>标的</label><input value={`${activePosition.name || ""} ${activePosition.symbol}`} readOnly /></div>
+                  <div className="v3-field span-2"><label>退出理由 / 复核意见</label><textarea value={exitMemo} onChange={(e) => setExitMemo(e.target.value)} disabled={!canWrite} placeholder="写清触发原因、已核验事实与希望投委会复核的问题。" /></div>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <button className="v3-btn primary" disabled={!canWrite || !exitMemo.trim() || !!busy} onClick={submitExit}>{busy === "exit" ? "提交中…" : "提交投委会复核"}</button>
+                  <Link className="v3-btn ghost" to="/inst-v3/pipeline">查看项目流水线</Link>
+                </div>
+                <div className="v3-note" style={{ marginTop: 10 }}>退出不复用买入授权：新议案、新版本、重走合伙人 → 风控 → Chairman；新退出议案获批时旧授权作废。</div>
+              </section>
+
+              <section className="v3-card">
+                <div className="v3-card-head"><div><h2>在途退出审理</h2><p>按状态跟踪；复核结论保留。</p></div><span className="v3-chip">{holding?.exits?.length || 0} 个</span></div>
+                {holding?.exits?.length ? holding.exits.slice(0, 6).map((e, i) => (
+                  <div className="v3-kv" key={e.id || i}><dt>#{e.id} · {e.reason_type || "—"}</dt><dd>{e.status || "—"} · {e.memo || "—"}</dd></div>
+                )) : <div className="v3-empty">暂无在途退出。</div>}
+              </section>
+            </>
+          ) : null}
+        </div>
+
+        <aside className="v3-agent-rail">
+          <div className="ar-kicker">MONITORING AGENT</div>
+          <h3>{step === 0 ? "组合经理" : "监控 Agent"}</h3>
+          <p>{step === 0 ? "看净值、现金、仓位与行业敞口；组合约束是硬约束。" : "跟踪公告、行情与 KPI；异常时通知负责人，不替人卖出。"}</p>
+          <div className="ar-row"><b>本步</b><br />{STEPS[step].name} · {STEPS[step].sub}</div>
+          <div className="ar-row"><b>卖出四类理由</b><br />论点失效 / 估值透支 / 更优机会 / 组合约束。</div>
+          <div className="ar-row"><b>约束</b><br />退出重走研究、辩论、审批；旧授权不复用。</div>
+        </aside>
+      </div>
+    </>
+  );
+}

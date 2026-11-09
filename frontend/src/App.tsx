@@ -192,6 +192,9 @@ const InstV3ApprovalsPage = lazy(() =>
 const InstV3ExecutePage = lazy(() =>
   import("./pages/institution/v3/InstV3ExecutePage").then((m) => ({ default: m.InstV3ExecutePage })),
 );
+const InstV3ManagePage = lazy(() =>
+  import("./pages/institution/v3/InstV3ManagePage").then((m) => ({ default: m.InstV3ManagePage })),
+);
 const InstV3PlaybookPage = lazy(() =>
   import("./pages/institution/v3/InstV3PlaybookPage").then((m) => ({ default: m.InstV3PlaybookPage })),
 );
@@ -273,7 +276,7 @@ export default function App() {
           <Route path="debate" element={<InstV3DebatePage />} />
           <Route path="approvals" element={<InstV3ApprovalsPage />} />
           <Route path="execute" element={<InstV3ExecutePage />} />
-          <Route path="manage" element={<InstV3WorkspacePlaceholderPage />} />
+          <Route path="manage" element={<InstV3ManagePage />} />
           <Route path="playbook" element={<InstV3PlaybookPage />} />
         </Route>
 

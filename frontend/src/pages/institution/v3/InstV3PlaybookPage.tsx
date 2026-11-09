@@ -66,6 +66,32 @@ export function InstV3PlaybookPage() {
         <ul className="v3-rule-list">{data.hard_constraints.map((x) => <li key={x}>{x}</li>)}</ul>
       </section>
 
+
+      <section className="v3-card">
+        <div className="v3-card-head"><div><h2>角色权限矩阵</h2><p>生产按登录身份在服务端裁剪；原型不提供角色切换。</p></div></div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="v3-table">
+            <thead><tr><th>角色</th><th>工作台/流水线</th><th>02 价值分析</th><th>03 多空辩论</th><th>04 投委会审批</th><th>05 执行成交</th><th>06 投资管理</th></tr></thead>
+            <tbody>
+              <tr><td>投资经理</td><td>读写</td><td>写</td><td>写</td><td>只读本人</td><td>只读</td><td>写</td></tr>
+              <tr><td>合伙人</td><td>只读</td><td>—</td><td>—</td><td>第一关</td><td>—</td><td>—</td></tr>
+              <tr><td>独立风控</td><td>只读</td><td>—</td><td>—</td><td>第二关</td><td>—</td><td>—</td></tr>
+              <tr><td>Chairman</td><td>只读</td><td>—</td><td>—</td><td>第三关</td><td>—</td><td>—</td></tr>
+              <tr><td>交易执行</td><td>只读</td><td>—</td><td>—</td><td>—</td><td>执行</td><td>—</td></tr>
+              <tr><td>组合监控</td><td>只读</td><td>—</td><td>—</td><td>—</td><td>—</td><td>写</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="v3-card">
+        <div className="v3-card-head"><div><h2>退出回路</h2><p>退出和买入一样重；不复用买入授权。</p></div></div>
+        <div className="v3-play-grid">
+          {["盘中监控", "记录预警", "投委会复核", "退出议案", "重走三关", "新授权执行"].map((x, i) => (
+            <div className="v3-play-node" key={x}><span className="no">{String(i + 1).padStart(2, "0")}</span><b>{x}</b><span>{i < 2 ? "监控 Agent" : "人工 / 审批"}</span></div>
+          ))}
+        </div>
+      </section>
       <section className="v3-card">
         <div className="v3-card-head"><div><h2>证据分级</h2><p>重大结论至少 1 条 A 级，或 2 条独立 B 级；D 级不得支撑买入。</p></div></div>
         <div className="v3-play-grid">

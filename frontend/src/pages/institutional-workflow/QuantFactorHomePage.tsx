@@ -227,6 +227,7 @@ export function QuantFactorHomePage(){
    return rank(a)-rank(b)||String(b.updated_at||b.created_at||'').localeCompare(String(a.updated_at||a.created_at||''));
   });
  },[topics,taskQuery,taskFilter]);
+ useEffect(()=>{if(!filteredTopics.length)return;if(!filteredTopics.some(t=>t.id===selected))setSelected(filteredTopics[0].id);},[filteredTopics.map(t=>t.id).join(','),selected]);
  const agentWork=!taskState?'暂无挖掘任务：可启动挖掘或从因子库发起。':`${taskState.label} · ${taskState.needsYou}`;
  const selectedBranch=(ledger?.branches||[]).find(b=>b.id===node);
  const feed=useMemo(()=>[...(ledger?.trials||[])].sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,12),[ledger]);
@@ -298,7 +299,7 @@ export function QuantFactorHomePage(){
   </aside>
  );
 
- const canStart=['draft','preparing','error','waiting','ended','review_ready'].includes(taskState?.key||'');
+ const canStart=['draft','error','waiting'].includes(taskState?.key||'');
  const stageTitle=stageDefs.find(s=>s.id===stageView);
  const latestTrials=[...(ledger?.trials||[])].sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
  const sealedTrials=latestTrials.filter(t=>String(t.kind||'').includes('sealed'));
@@ -307,7 +308,7 @@ export function QuantFactorHomePage(){
    <div className="card-head"><div><h2>{stageTitle?.label}</h2><p>{stageTitle?.role} · {stageTitle?.status==='done'?'已完成':stageTitle?.status==='current'?'当前环节':'尚未开始'}</p></div><span className="badge">{purposeText(topic.research_purpose)}</span></div>
    <div className="card-body">
     {stageView==='prepare'&&<>
-     <dl className="ff-kv"><dt>研究目标</dt><dd>{ledger?.branches?.[0]?.hypothesis_text||ledger?.branches?.[0]?.display_title||'研究准备完成后显示已保存假设。'}</dd><dt>任务类型</dt><dd>{purposeText(topic.research_purpose)}</dd><dt>数据范围</dt><dd>日频 · {topic.development_start||'—'} 至 {topic.validation_end||'—'} · 创建时锁定发布视图</dd><dt>试验预算</dt><dd>上限 {topic.max_trials} 次，已检验 {topic.trial_count} 次</dd><dt>用途</dt><dd>因子研究，不涉及实盘交易</dd></dl>
+     <dl className="ff-kv"><dt>研究目标</dt><dd>{ledger?.branches?.[0]?.hypothesis_text||(ledger?.branches?.[0]?.display_title&&ledger.branches[0].display_title!=='初始假设'?ledger.branches[0].display_title:'尚无已保存假设；启动后由研究准备 Agent 生成。')}</dd><dt>任务类型</dt><dd>{purposeText(topic.research_purpose)}</dd><dt>数据范围</dt><dd>日频 · {topic.development_start||'—'} 至 {topic.validation_end||'—'} · 创建时锁定发布视图</dd><dt>试验预算</dt><dd>上限 {topic.max_trials} 次，已检验 {topic.trial_count} 次</dd><dt>用途</dt><dd>因子研究，不涉及实盘交易</dd></dl>
      <div className="actions" style={{marginTop:12}}>{topic.status==='active'&&canStart&&<button className="btn small primary" disabled={starting||!selectedBranch} onClick={()=>void handBackF0()}>{starting?'正在提交…':taskState?.key==='draft'?'启动挖掘':'重试启动'}</button>}{topic.status==='active'?<button className="btn small" onClick={()=>void setTopicStatus('paused')}>暂停任务</button>:<button className="btn small" onClick={()=>void setTopicStatus('active')}>恢复任务</button>}</div>
     </>}
     {stageView==='development'&&<>

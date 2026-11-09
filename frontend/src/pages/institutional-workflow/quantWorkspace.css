@@ -241,3 +241,6 @@
 @media(max-width:1100px){.quant-shell .ff-columns{grid-template-columns:1fr}.quant-shell .ff-task-list{position:static;max-height:none}.quant-shell .ff-stage-grid{grid-template-columns:1fr}}
 @media(max-width:760px){.quant-shell .ff-steps{grid-template-columns:1fr 1fr}}
 .quant-shell .badge.ok{background:var(--green-bg);color:var(--green)}
+@media(max-width:1100px){.quant-shell .ff-columns{grid-template-columns:220px minmax(0,1fr)}.quant-shell .ff-task-list{position:static;max-height:none}}
+@media(max-width:860px){.quant-shell .ff-columns{grid-template-columns:1fr}}
+@media(max-width:1100px){.quant-shell .ff-stage-grid>.ff-live{order:-1}}

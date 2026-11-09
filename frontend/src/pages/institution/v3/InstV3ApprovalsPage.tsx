@@ -1,0 +1,338 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { ArrowRight, Check, ShieldAlert, X } from "lucide-react";
+import { instApi, fmtPct } from "@/lib/instApi";
+import { useInstSession } from "@/components/institution/instSessionContext";
+
+type StageSummary = {
+  status: string;
+  reviewed?: number;
+  required?: number;
+  total?: number;
+  decision?: string | null;
+  comment?: string | null;
+  conditions?: string[];
+  decided_at?: string | null;
+};
+
+type ApprovalItem = {
+  step?: string;
+  approver_member_id?: number;
+  approver_name?: string;
+  decision?: string;
+  comment?: string;
+  conditions?: string[];
+  decided_at?: string;
+};
+
+type RiskCheck = { key: string; label: string; value?: string; status: string };
+
+type ProposalListItem = {
+  id: number;
+  status: string;
+  direction: string;
+  target_weight: number;
+  company_name: string;
+  symbol: string;
+  market: string;
+  version_no?: number;
+  updated_at?: string;
+  current_version_no?: number;
+};
+
+type ProposalDetail = ProposalListItem & {
+  case_id?: number;
+  current_version?: { id: number; version_no: number; snapshot?: Record<string, unknown> };
+  progress?: { partner: StageSummary; risk_precheck: StageSummary; chairman: StageSummary };
+  risk_checks?: RiskCheck[];
+  approval_chain?: ApprovalItem[];
+  my_decision?: { decision?: string; comment?: string; conditions?: string[] } | null;
+  authorization?: { id: number; status: string; issued_at?: string } | null;
+};
+
+const STEPS = [
+  { name: "议案提交", sub: "全公司概览" },
+  { name: "合伙人", sub: "研究质量 / 上会" },
+  { name: "风控", sub: "六项硬约束" },
+  { name: "Chairman", sub: "资本配置" },
+  { name: "授权", sub: "AUTH 快照" },
+];
+
+const DECISION_LABEL: Record<string, string> = {
+  approve: "通过",
+  conditional: "附条件",
+  return: "退回",
+  pass: "放行",
+  veto: "否决",
+  block: "否决",
+  reject: "拒绝",
+};
+
+function parseProposalId(key: string | null): number | null {
+  const m = String(key || "").match(/proposal:(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+
+function statusTone(status: string): string {
+  if (["executed", "authorized"].includes(status)) return "ok";
+  if (["frozen", "rejected"].includes(status)) return "bad";
+  if (["draft", "partner_review", "risk_precheck", "chairman_review"].includes(status)) return "warn";
+  return "info";
+}
+
+export function InstV3ApprovalsPage() {
+  const session = useInstSession();
+  const [params, setParams] = useSearchParams();
+  const [items, setItems] = useState<ProposalListItem[]>([]);
+  const [detail, setDetail] = useState<ProposalDetail | null>(null);
+  const [viewStep, setViewStep] = useState(session.role === "manager" ? 0 : session.role === "partner" ? 1 : session.role === "risk" ? 2 : session.role === "chairman" ? 3 : 0);
+  const [comment, setComment] = useState("");
+  const [conditions, setConditions] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const selectedId = parseProposalId(params.get("key"));
+  const role = session.role;
+  const canApprove = ["partner", "risk", "chairman"].includes(role);
+
+  const loadList = async () => {
+    const pending = await instApi<{ items: ProposalListItem[] }>("/proposals?scope=pending");
+    let rows = pending.items || [];
+    if (role === "manager") {
+      const reviewed = await instApi<{ items: ProposalListItem[] }>("/proposals?scope=reviewed");
+      const seen = new Set(rows.map((x) => x.id));
+      rows = rows.concat((reviewed.items || []).filter((x) => !seen.has(x.id)));
+    }
+    setItems(rows);
+    return rows;
+  };
+
+  const loadDetail = async (id: number) => {
+    const d = await instApi<ProposalDetail>(`/proposals/${id}`);
+    setDetail(d);
+    setComment("");
+    setConditions("");
+  };
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    loadList()
+      .then(async (rows) => {
+        if (!alive) return;
+        const id = selectedId || rows[0]?.id || null;
+        if (id) {
+          if (!selectedId) setParams({ key: `proposal:${id}` }, { replace: true });
+          else await loadDetail(id);
+        }
+      })
+      .catch((e: Error) => { if (alive) setError(e.message); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  const selectProposal = (id: number) => {
+    setParams({ key: `proposal:${id}` });
+    loadDetail(id).catch((e: Error) => setError(e.message));
+  };
+
+  const act = async (kind: "partner" | "risk" | "chairman", decision: string) => {
+    if (!detail) return;
+    if (decision === "conditional" && !conditions.trim()) {
+      setError("附条件必须填写条件（每行一条）");
+      return;
+    }
+    setBusy(kind + decision);
+    setError(null);
+    try {
+      const path = kind === "risk" ? `/proposals/${detail.id}/risk-check` : `/proposals/${detail.id}/${kind}`;
+      await instApi(path, {
+        method: "POST",
+        body: {
+          decision,
+          comment: comment.trim() || null,
+          conditions: conditions.split("\n").map((x) => x.trim()).filter(Boolean),
+        },
+      });
+      if (kind === "chairman" && (decision === "approve" || decision === "conditional")) {
+        await instApi(`/proposals/${detail.id}/authorize`, { method: "POST" });
+        setViewStep(4);
+      }
+      await loadList();
+      await loadDetail(detail.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const progress = detail?.progress;
+  const riskChecks = detail?.risk_checks || [];
+  const chain = detail?.approval_chain || [];
+  const snapshot = (detail?.current_version?.snapshot || {}) as Record<string, unknown>;
+  const auth = detail?.authorization;
+  const myPending = useMemo(() => items.filter((x) => ["draft", "partner_review", "risk_precheck", "chairman_review"].includes(x.status)).length, [items]);
+
+  if (loading) return <div className="v3-loading">正在加载投委会审批…</div>;
+
+  return (
+    <>
+      <div className="v3-page-head">
+        <div>
+          <div className="v3-eyebrow">DECISION / 04</div>
+          <h1>投委会审批</h1>
+          <p>合伙人 → 独立风控 → Chairman，顺序固定；每一关只看自己该看的字段，风控否决终局。</p>
+        </div>
+        <span className="v3-chip info">{session.role_label_cn} · 按登录角色</span>
+      </div>
+
+      <div className="v3-stepper">
+        {STEPS.map((s, i) => (
+          <button key={s.name} className={`v3-step${i < viewStep ? " done" : i === viewStep ? " now" : ""}`} onClick={() => setViewStep(i)} style={{ background: "none", borderTop: 0, borderLeft: 0, borderBottom: 0, cursor: "pointer" }}>
+            <span className="dot">{i}</span>
+            <div><span className="lb">{s.name}</span><span className="sb">{s.sub}</span></div>
+          </button>
+        ))}
+      </div>
+
+      <div className="v3-workspace-grid">
+        <div className="v3-project-list">
+          <div className="pl-head"><span>{role === "manager" ? "我的议案" : "待我审"}</span><span>{items.length}</span></div>
+          {items.map((p) => (
+            <button key={p.id} className={`pl-item${p.id === detail?.id ? " on" : ""}`} onClick={() => selectProposal(p.id)}>
+              <b>{p.company_name}</b>
+              <span>{p.symbol} · {p.direction} {fmtPct(p.target_weight)} · {p.status}</span>
+            </button>
+          ))}
+          {!items.length ? <div className="v3-empty" style={{ padding: "18px 8px" }}>当前没有待你处理的议案。</div> : null}
+        </div>
+
+        <div className="v3-work-main">
+          {error ? <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>{error}</div> : null}
+
+          {viewStep === 0 ? (
+            <section className="v3-card">
+              <div className="v3-card-head"><div><h2>议案提交总览</h2><p>全公司已提交议案；点一条进入它当前所在关卡。</p></div><span className="v3-chip">{items.length} 份</span></div>
+              <div className="v3-kpis" style={{ gridTemplateColumns: "repeat(3,minmax(0,1fr))" }}>
+                <div className="v3-kpi"><div className="k">已提交</div><div className="v">{items.length}</div></div>
+                <div className="v3-kpi"><div className="k">审批中</div><div className="v">{myPending}</div></div>
+                <div className="v3-kpi"><div className="k">已授权</div><div className="v">{items.filter((x) => ["authorized", "executed"].includes(x.status)).length}</div></div>
+              </div>
+            </section>
+          ) : null}
+
+          {viewStep !== 0 && detail ? (
+            <>
+              <section className="v3-card">
+                <div className="v3-card-head">
+                  <div><h2>{detail.company_name} <span className="font-mono text-[11px] font-normal text-[#9b92a1]">{detail.symbol}</span></h2><p>v{detail.current_version_no || detail.version_no || "—"} · {detail.direction} {fmtPct(detail.target_weight)} · {detail.status}</p></div>
+                  <span className={`v3-chip ${statusTone(detail.status)}`}>{detail.status}</span>
+                </div>
+                <dl>
+                  <div className="v3-kv"><dt>方向 / 目标仓位</dt><dd>{detail.direction} · {fmtPct(detail.target_weight)}</dd></div>
+                  <div className="v3-kv"><dt>价格区间</dt><dd>{snapshot.price_low != null ? `${snapshot.price_low} – ${snapshot.price_high}` : "—"}</dd></div>
+                  <div className="v3-kv"><dt>资金来源 / 有效期</dt><dd>{String(snapshot.funding_source || "—")} · {String(snapshot.valid_until || "—")}</dd></div>
+                  <div className="v3-kv"><dt>投资意见</dt><dd style={{ maxWidth: "70%" }}>{String(snapshot.investment_opinion || "—")}</dd></div>
+                </dl>
+              </section>
+
+              {viewStep === 1 ? (
+                <section className="v3-card">
+                  <div className="v3-card-head"><div><h2>合伙人复核</h2><p>研究质量、上会资格、议案合理性与机会成本；不看风控六项明细。</p></div><span className="v3-chip">{progress?.partner?.status || "—"}</span></div>
+                  <p style={{ fontSize: 11, lineHeight: 1.7, color: "#746b7c" }}>研究与辩论摘要由 02/03 锁定版本提供；合伙人只判断是否值得上会。提案人不能审批自己的议案。</p>
+                  {role === "partner" ? (
+                    <>
+                      <div className="v3-form-grid" style={{ marginTop: 10 }}>
+                        <div className="v3-field span-2"><label>审批意见</label><textarea value={comment} onChange={(e) => setComment(e.target.value)} /></div>
+                        <div className="v3-field span-2"><label>附加条件（附条件时必填，每行一条）</label><textarea value={conditions} onChange={(e) => setConditions(e.target.value)} /></div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                        <button className="v3-btn primary" disabled={!!busy} onClick={() => act("partner", "approve")}><Check className="h-3.5 w-3.5" />复核通过</button>
+                        <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("partner", "conditional")}>附条件</button>
+                        <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("partner", "return")}>退回</button>
+                      </div>
+                    </>
+                  ) : <div className="v3-note">当前登录角色为 {session.role_label_cn}，只能查看；合伙人账号可操作。</div>}
+                </section>
+              ) : null}
+
+              {viewStep === 2 ? (
+                <section className="v3-card">
+                  <div className="v3-card-head"><div><h2>六项硬约束核查</h2><p>任何一项否决，议案即时终止；Chairman 不能越过。</p></div><span className="v3-chip">{riskChecks.length} 项</span></div>
+                  {riskChecks.map((c) => (
+                    <div className="v3-kv" key={c.key}><dt>{c.label}</dt><dd>{c.value || "—"} <span className={`v3-chip ${c.status === "pass" ? "ok" : c.status === "warn" ? "warn" : "bad"}`}>{c.status}</span></dd></div>
+                  ))}
+                  {!riskChecks.length ? <div className="v3-empty">当前议案还没有风控核查数据。</div> : null}
+                  {role === "risk" ? (
+                    <>
+                      <div className="v3-form-grid" style={{ marginTop: 10 }}>
+                        <div className="v3-field span-2"><label>风控意见</label><textarea value={comment} onChange={(e) => setComment(e.target.value)} /></div>
+                        <div className="v3-field span-2"><label>附条件（有条件放行时必填，每行一条）</label><textarea value={conditions} onChange={(e) => setConditions(e.target.value)} /></div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                        <button className="v3-btn primary" disabled={!!busy} onClick={() => act("risk", "pass")}><Check className="h-3.5 w-3.5" />放行</button>
+                        <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("risk", "conditional")}>有条件放行</button>
+                        <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("risk", "veto")}><X className="h-3.5 w-3.5" />否决（终局）</button>
+                      </div>
+                    </>
+                  ) : <div className="v3-note">当前登录角色为 {session.role_label_cn}，只能查看；独立风控账号可操作。</div>}
+                </section>
+              ) : null}
+
+              {viewStep === 3 ? (
+                <section className="v3-card">
+                  <div className="v3-card-head"><div><h2>完整审批链</h2><p>合伙人 → 风控 → Chairman；按人留痕，风控否决不可越过。</p></div><span className="v3-chip">{progress?.chairman?.status || "—"}</span></div>
+                  {chain.length ? chain.map((a, i) => (
+                    <div className="v3-kv" key={`${a.step}-${i}`}><dt>{a.step} · {a.approver_name || a.approver_member_id || "—"}</dt><dd>{DECISION_LABEL[a.decision || ""] || a.decision || "待审"}{a.comment ? ` · ${a.comment}` : ""}</dd></div>
+                  )) : <div className="v3-empty">还没有审批记录。</div>}
+                  {role === "chairman" ? (
+                    <>
+                      <div className="v3-form-grid" style={{ marginTop: 10 }}>
+                        <div className="v3-field span-2"><label>Chairman 意见</label><textarea value={comment} onChange={(e) => setComment(e.target.value)} /></div>
+                        <div className="v3-field span-2"><label>附条件（附条件时必填，每行一条）</label><textarea value={conditions} onChange={(e) => setConditions(e.target.value)} /></div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                        <button className="v3-btn primary" disabled={!!busy} onClick={() => act("chairman", "approve")}><Check className="h-3.5 w-3.5" />批准并生成授权</button>
+                        <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("chairman", "conditional")}>附条件批准</button>
+                        <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("chairman", "return")}>退回</button>
+                        <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("chairman", "reject")}>拒绝</button>
+                      </div>
+                    </>
+                  ) : <div className="v3-note">当前登录角色为 {session.role_label_cn}，只能查看；Chairman 账号可操作。</div>}
+                </section>
+              ) : null}
+
+              {viewStep === 4 ? (
+                <section className="v3-card">
+                  <div className="v3-card-head"><div><h2>授权文件 AUTH</h2><p>Chairman 批准后生成不可修改的执行依据；05 只按这份授权执行。</p></div><span className={`v3-chip ${auth ? "ok" : "warn"}`}>{auth ? auth.status : "未生成"}</span></div>
+                  {auth ? (
+                    <>
+                      <dl>
+                        <div className="v3-kv"><dt>授权 ID</dt><dd>{auth.id}</dd></div>
+                        <div className="v3-kv"><dt>状态</dt><dd>{auth.status}</dd></div>
+                        <div className="v3-kv"><dt>签发时间</dt><dd>{auth.issued_at || "—"}</dd></div>
+                      </dl>
+                      <div style={{ marginTop: 10 }}><Link className="v3-btn primary" to={`/inst-v3/execute?key=auth:${auth.id}`}>进入执行成交 <ArrowRight className="h-3.5 w-3.5" /></Link></div>
+                    </>
+                  ) : <div className="v3-empty">三关全部通过后生成授权。</div>}
+                </section>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+
+        <aside className="v3-agent-rail">
+          <div className="ar-kicker">CURRENT GATE</div>
+          <h3>{role === "manager" ? "提案人只读" : `${session.role_label_cn} · 审批关`}</h3>
+          <p>{role === "manager" ? "提案人只能查看自己的议案与三关进度，不能审批自己的议案。" : "按登录角色只看本关字段；所有动作由服务端校验。"}</p>
+          <div className="ar-row"><b>进度</b><br />合伙人 {progress?.partner?.reviewed ?? 0}/{progress?.partner?.total ?? "—"} · 风控 {progress?.risk_precheck?.reviewed ?? 0}/{progress?.risk_precheck?.total ?? "—"} · Chairman {progress?.chairman?.reviewed ?? 0}/{progress?.chairman?.total ?? "—"}</div>
+          <div className="ar-row"><b>当前议案</b><br />{detail ? `${detail.company_name} · ${detail.status}` : "未选择"}</div>
+          <div className="ar-row"><b>硬约束</b><br /><ShieldAlert className="mr-1 inline h-3 w-3" />风控否决终局；提案人回避；顺序不可跳级。</div>
+        </aside>
+      </div>
+    </>
+  );
+}

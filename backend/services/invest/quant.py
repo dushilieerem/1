@@ -243,19 +243,21 @@ def _next_trading_day(conn: Any, day: str) -> str:
     return d.isoformat()
 
 
-def _normalize_factors(raw: Any) -> list[dict[str, str]]:
-    """2–4 个因子，key 去重；未知因子直接拒绝。"""
+def _normalize_factors(raw: Any) -> list[dict[str, Any]]:
+    """2–4 个因子，key 去重；未知因子直接拒绝；保留自定义权重。"""
     if not isinstance(raw, list):
         raise QuantDataError("factors 必须是数组")
-    out: list[dict[str, str]] = []
+    out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in raw:
+        weight = None
         if isinstance(item, str):
             key = item
             direction = ""
         elif isinstance(item, dict):
             key = str(item.get("key") or item.get("id") or "").strip()
             direction = str(item.get("direction") or "").strip().lower()
+            weight = _num(item.get("weight"))
         else:
             continue
         if not key or key in seen:
@@ -264,9 +266,17 @@ def _normalize_factors(raw: Any) -> list[dict[str, str]]:
         if not meta:
             raise QuantDataError(f"未知因子：{key}")
         seen.add(key)
-        out.append({"key": key, "direction": direction if direction in ("high", "low") else meta["direction"]})
+        entry: dict[str, Any] = {"key": key, "direction": direction if direction in ("high", "low") else meta["direction"]}
+        if weight is not None:
+            entry["weight"] = max(0.0, float(weight))
+        out.append(entry)
     if not 2 <= len(out) <= 4:
         raise QuantDataError("请选择 2–4 个因子")
+    if any("weight" in x for x in out) and not all("weight" in x for x in out):
+        raise QuantDataError("自定义权重需要每个因子都填写")
+    total = sum(float(x.get("weight") or 0) for x in out)
+    if any("weight" in x for x in out) and total <= 0:
+        raise QuantDataError("权重合计必须大于 0")
     return out
 
 
@@ -722,20 +732,24 @@ def _ret_next(panel: dict[str, Any], symbol: str, i: int) -> float | None:
     return float(value) if value is not None and value == value else None
 
 
-def _eligible(panel: dict[str, Any], symbol: str, i: int, *, require_liquidity: bool = True) -> bool:
+def _eligible(panel: dict[str, Any], symbol: str, i: int, *, require_liquidity: bool = True, filters: dict[str, bool] | None = None) -> bool:
+    filters = filters or {}
     day = panel["dates"][i]
     if not _in_universe(panel["spans"], symbol, day):
         return False
-    if symbol in panel["st"] or symbol in panel["suspended"]:
+    if symbol in panel["suspended"]:
         return False
-    listed = panel["list_date"].get(symbol)
-    if listed:
-        try:
-            if (date.fromisoformat(day) - date.fromisoformat(listed)).days < 60:
-                return False
-        except ValueError:
-            pass
-    if require_liquidity:
+    if filters.get("st", True) and symbol in panel["st"]:
+        return False
+    if filters.get("listed60", True):
+        listed = panel["list_date"].get(symbol)
+        if listed:
+            try:
+                if (date.fromisoformat(day) - date.fromisoformat(listed)).days < 60:
+                    return False
+            except ValueError:
+                pass
+    if require_liquidity and filters.get("amount", True):
         liq = _raw(panel, symbol, "liquidity", i)
         if liq is None or liq < MIN_AMOUNT:
             return False
@@ -766,10 +780,17 @@ def _standardize(values: dict[str, float]) -> dict[str, float]:
     return {s: (v - mean) / sd for s, v in clean.items()}
 
 
-def _cross_section(panel: dict[str, Any], i: int, keys: Iterable[str], *, require_liquidity: bool = True) -> dict[str, dict[str, float]]:
+def _cross_section(
+    panel: dict[str, Any],
+    i: int,
+    keys: Iterable[str],
+    *,
+    require_liquidity: bool = True,
+    filters: dict[str, bool] | None = None,
+) -> dict[str, dict[str, float]]:
     out: dict[str, dict[str, float]] = {key: {} for key in keys}
     for symbol in panel["symbols"]:
-        if not _eligible(panel, symbol, i, require_liquidity=require_liquidity):
+        if not _eligible(panel, symbol, i, require_liquidity=require_liquidity, filters=filters):
             continue
         for key in out:
             value = _raw(panel, symbol, key, i)
@@ -778,9 +799,9 @@ def _cross_section(panel: dict[str, Any], i: int, keys: Iterable[str], *, requir
     return out
 
 
-def _scores(panel: dict[str, Any], i: int, factors: list[dict[str, str]]) -> dict[str, float]:
-    """复用 factor_combo.combine：MAD 去极值 → 横截面 z-score → 等权合成。"""
-    raws = _cross_section(panel, i, [f["key"] for f in factors])
+def _scores(panel: dict[str, Any], i: int, factors: list[dict[str, Any]], *, filters: dict[str, bool] | None = None) -> dict[str, float]:
+    """复用 factor_combo.combine：MAD 去极值 → 横截面 z-score → 等权/自定义权重合成。"""
+    raws = _cross_section(panel, i, [f["key"] for f in factors], filters=filters)
     if not raws or any(not values for values in raws.values()):
         return {}
     symbols = sorted(set().union(*(set(values) for values in raws.values())))
@@ -790,7 +811,16 @@ def _scores(panel: dict[str, Any], i: int, factors: list[dict[str, str]]) -> dic
         sign = _direction_sign(FACTOR_BY_KEY[key], factor.get("direction"))
         values = raws.get(key) or {}
         factor_series[key] = [values[s] * sign if s in values else None for s in symbols]
-    combined = combine_factors(factors=factor_series, scheme="equal", winsorize=True)
+    custom = {f["key"]: float(f.get("weight") or 0) for f in factors} if all("weight" in f for f in factors) else None
+    try:
+        combined = combine_factors(
+            factors=factor_series,
+            scheme="custom" if custom is not None else "equal",
+            custom_weights=custom,
+            winsorize=True,
+        )
+    except ValueError:
+        return {}
     scores = combined.get("scores") or []
     coverage = combined.get("coverage") or []
     need = len(factors)
@@ -801,8 +831,15 @@ def _scores(panel: dict[str, Any], i: int, factors: list[dict[str, str]]) -> dic
     }
 
 
-def _pick(panel: dict[str, Any], i: int, factors: list[dict[str, str]], n: int = DEFAULT_HOLDINGS) -> list[str]:
-    scores = _scores(panel, i, factors)
+def _pick(
+    panel: dict[str, Any],
+    i: int,
+    factors: list[dict[str, Any]],
+    n: int = DEFAULT_HOLDINGS,
+    *,
+    filters: dict[str, bool] | None = None,
+) -> list[str]:
+    scores = _scores(panel, i, factors, filters=filters)
     return [s for s, _ in sorted(scores.items(), key=lambda kv: kv[1], reverse=True)[:n]]
 
 
@@ -842,13 +879,41 @@ def _monthly_groups(panel: dict[str, Any], start: int, end: int) -> list[tuple[i
     return [g for g in groups if g[0] <= g[1]]
 
 
+def _rebalance_groups(panel: dict[str, Any], start: int, end: int, frequency: str) -> list[tuple[int, int]]:
+    frequency = frequency if frequency in ("monthly", "biweekly", "quarterly") else "monthly"
+    if frequency == "monthly":
+        return _monthly_groups(panel, start, end)
+    groups: list[tuple[int, int]] = []
+    current = start
+    if frequency == "biweekly":
+        step = 10
+        for i in range(start + step, end + 1, step):
+            groups.append((current, i - 1))
+            current = i
+        groups.append((current, end))
+        return [g for g in groups if g[0] <= g[1]]
+    # quarterly
+    last_quarter = panel["dates"][start][:4] + "Q" + str((int(panel["dates"][start][5:7]) - 1) // 3 + 1)
+    for i in range(start + 1, end + 1):
+        d = panel["dates"][i]
+        quarter = d[:4] + "Q" + str((int(d[5:7]) - 1) // 3 + 1)
+        if quarter != last_quarter:
+            groups.append((current, i - 1))
+            current = i
+            last_quarter = quarter
+    groups.append((current, end))
+    return [g for g in groups if g[0] <= g[1]]
+
+
 def _run_curve(
     panel: dict[str, Any],
-    factors: list[dict[str, str]],
+    factors: list[dict[str, Any]],
     *,
     start_idx: int | None = None,
     end_idx: int | None = None,
     holdings: int = DEFAULT_HOLDINGS,
+    rebalance: str = "monthly",
+    filters: dict[str, bool] | None = None,
 ) -> dict[str, Any]:
     dates = panel["dates"]
     n = len(dates)
@@ -857,7 +922,7 @@ def _run_curve(
     if end <= start + 2:
         raise QuantDataError("历史数据不足，暂时无法回测")
     bench_rets, bench_kind = _benchmark(panel)
-    groups = _monthly_groups(panel, start, end)
+    groups = _rebalance_groups(panel, start, end, rebalance)
 
     nav = 1.0
     bench_nav = 1.0
@@ -871,7 +936,7 @@ def _run_curve(
     last_holdings: list[str] = []
 
     for gi, (r_idx, p_end) in enumerate(groups):
-        picked = _pick(panel, r_idx, factors, holdings)
+        picked = _pick(panel, r_idx, factors, holdings, filters=filters)
         if not picked:
             continue
         weights = {s: 1.0 / len(picked) for s in picked}
@@ -949,22 +1014,47 @@ def _run_curve(
     }
 
 
-def _assumptions(panel: dict[str, Any], factors: list[dict[str, str]], universe: str, holdings: int, shortened: bool) -> dict[str, Any]:
+def _assumptions(
+    panel: dict[str, Any],
+    factors: list[dict[str, Any]],
+    universe: str,
+    holdings: int,
+    shortened: bool,
+    *,
+    rebalance: str = "monthly",
+    filters: dict[str, bool] | None = None,
+) -> dict[str, Any]:
+    filters = filters or {}
     bench_kind = "index" if panel["bench"] else "equal_weight"
+    rebalance_label = {"monthly": ("月度", "Monthly"), "biweekly": ("双周", "Biweekly"), "quarterly": ("季度", "Quarterly")}
+    reb_zh, reb_en = rebalance_label.get(rebalance, rebalance_label["monthly"])
+    excluded = []
+    excluded_en = []
+    if filters.get("st", True):
+        excluded.append("ST")
+        excluded_en.append("ST")
+    if filters.get("listed60", True):
+        excluded.append("上市不足 60 天")
+        excluded_en.append("listed <60 days")
+    if filters.get("amount", True):
+        excluded.append("近 20 日日均成交额低于 5000 万")
+        excluded_en.append("20-day average turnover < CNY 50m")
+    weighting = "自定义" if any("weight" in f for f in factors) else "等权"
+    weighting_en = "Custom" if weighting == "自定义" else "Equal weight"
     return {
         "universe": UNIVERSES[universe]["name"],
         "universe_en": UNIVERSES[universe]["name_en"],
-        "rebalance": "月度",
-        "rebalance_en": "Monthly",
+        "rebalance": reb_zh,
+        "rebalance_en": reb_en,
         "holdings": holdings,
-        "weighting": "等权",
-        "weighting_en": "Equal weight",
+        "weighting": weighting,
+        "weighting_en": weighting_en,
         "cost": "单边 0.1%",
         "cost_en": "0.1% one-way",
         "dividend": "含分红（前复权价格）",
         "dividend_en": "Dividends included (forward-adjusted prices)",
-        "exclusions": "剔除 ST、上市不足 60 天、近 20 日日均成交额低于 5000 万",
-        "exclusions_en": "Excludes ST, listed <60 days, and 20-day average turnover < CNY 50m",
+        "exclusions": "、".join(excluded) if excluded else "不过滤",
+        "exclusions_en": ", ".join(excluded_en) if excluded_en else "No extra filters",
         "benchmark": "沪深300指数" if bench_kind == "index" and panel["bench_code"] == "000300.SH" else (
             "中证500指数" if bench_kind == "index" and panel["bench_code"] == "000905.SH" else "股票池等权"
         ),
@@ -987,9 +1077,33 @@ def run_backtest(
     user_id: int | None = None,
     name: str | None = None,
     project_id: str | None = None,
+    holdings: Any = DEFAULT_HOLDINGS,
+    rebalance: Any = "monthly",
+    filters: Any = None,
 ) -> dict[str, Any]:
     selected = _normalize_factors(factors)
     universe_key = _normalize_universe(universe)
+    try:
+        holdings = int(holdings)
+    except (TypeError, ValueError):
+        holdings = DEFAULT_HOLDINGS
+    if holdings not in (10, 20, 30):
+        holdings = DEFAULT_HOLDINGS
+    rebalance = str(rebalance or "monthly").lower()
+    if rebalance not in ("monthly", "biweekly", "quarterly"):
+        rebalance = "monthly"
+    filter_state = {"st": True, "listed60": True, "amount": True}
+    if isinstance(filters, dict):
+        for key in filter_state:
+            if key in filters:
+                filter_state[key] = bool(filters[key])
+    # RE 策略接口只接受默认参数；非默认配置走本地同口径引擎，避免 UI 与结果不一致。
+    default_config = (
+        holdings == DEFAULT_HOLDINGS
+        and rebalance == "monthly"
+        and all(filter_state.values())
+        and not any("weight" in f for f in selected)
+    )
     name = name or " + ".join(FACTOR_BY_KEY[f["key"]]["name"] for f in selected)
     try:
         data_date = rules.latest_date(conn)
@@ -1000,7 +1114,7 @@ def run_backtest(
     try:
         from services.invest import quant_re
 
-        if quant_re.supports(selected):
+        if default_config and quant_re.supports(selected):
             try:
                 re_start = start_date or (date.fromisoformat(data_date) - timedelta(days=365)).isoformat()
             except ValueError:
@@ -1022,7 +1136,7 @@ def run_backtest(
             "id": None,
             "name": name,
             "factors": selected,
-            "factor_meta": [_factor_meta(f["key"]) | {"chosen_direction": f["direction"]} for f in selected],
+            "factor_meta": [_factor_meta(f["key"]) | {"chosen_direction": f["direction"], **({"chosen_weight": f["weight"]} if f.get("weight") is not None else {})} for f in selected],
             "universe": universe_key,
             "start_date": re_result.get("start_date"),
             "end_date": re_result.get("end_date"),
@@ -1046,7 +1160,14 @@ def run_backtest(
                 start_idx = next(i for i, d in enumerate(panel["dates"]) if d >= _date(start_date))
             except StopIteration:
                 raise QuantDataError("起始日期晚于最新数据") from None
-        curve = _run_curve(panel, selected, start_idx=start_idx)
+        curve = _run_curve(
+            panel,
+            selected,
+            start_idx=start_idx,
+            holdings=holdings,
+            rebalance=rebalance,
+            filters=filter_state,
+        )
         shortened = bool(len(panel["dates"]) <= 200)
         try:
             from services.invest import quant_re
@@ -1058,16 +1179,19 @@ def run_backtest(
             "id": None,
             "name": name,
             "factors": selected,
-            "factor_meta": [_factor_meta(f["key"]) | {"chosen_direction": f["direction"]} for f in selected],
+            "factor_meta": [_factor_meta(f["key"]) | {"chosen_direction": f["direction"], **({"chosen_weight": f["weight"]} if f.get("weight") is not None else {})} for f in selected],
             "universe": universe_key,
             "start_date": curve["start_date"],
             "end_date": curve["end_date"],
             "metrics": curve["metrics"],
             "curve": curve["curve"],
-            "assumptions": _assumptions(panel, selected, universe_key, DEFAULT_HOLDINGS, shortened),
+            "assumptions": _assumptions(
+                panel, selected, universe_key, holdings, shortened,
+                rebalance=rebalance, filters=filter_state,
+            ),
             "holdings": [
                 {"code": code, "name": panel["name"].get(code, code)}
-                for code in curve["holdings"][:DEFAULT_HOLDINGS]
+                for code in curve["holdings"][:holdings]
             ],
             "benchmark": curve["bench_kind"],
             "shortened": shortened,
@@ -1100,7 +1224,10 @@ def _row_factor_meta(row: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(item, dict):
             key = str(item.get("key") or "")
             if key in FACTOR_BY_KEY:
-                out.append(_factor_meta(key) | {"chosen_direction": item.get("direction") or FACTOR_BY_KEY[key]["direction"]})
+                meta = _factor_meta(key) | {"chosen_direction": item.get("direction") or FACTOR_BY_KEY[key]["direction"]}
+                if item.get("weight") is not None:
+                    meta["chosen_weight"] = float(item["weight"])
+                out.append(meta)
     return out
 
 

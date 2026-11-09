@@ -1,20 +1,47 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, ChevronUp, Mic, MicOff, Send, SlidersHorizontal, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronUp, ImagePlus, Mic, MicOff, Send, SlidersHorizontal, Sparkles } from "lucide-react";
 import { api } from "../api";
+import CompareView, { type ComparePayload } from "../components/CompareView";
 import { ErrorState, PageHeader, Sparkline, Tag } from "../components";
 import { ConditionPicker, ConditionScreener, looksLikeCondition, type ConditionResponse, type RelaxAction } from "../components/ConditionScreener";
 import { useLocale } from "../i18n";
 
 type Section = { key?: string; title?: string; body?: string; type?: string; items?: Array<{ k?: string; v?: string }> };
 type Card = { summary?: string; sections?: Section[]; disclaimer?: string; meta?: { dataSource?: string } };
-type Chart = { code?: string; bars?: Array<{ date?: string; close?: number }> };
+type Chart = {
+  type?: "bar" | "percentile" | "kline";
+  code?: string;
+  title?: string;
+  title_en?: string;
+  labels?: string[];
+  values?: Array<number | null>;
+  unit?: string;
+  label?: string;
+  value?: number | null;
+  percentile?: number | null;
+  bars?: Array<{ date?: string; close?: number }>;
+};
+type DebatePoint = { text: string; text_en?: string; tone?: string; source?: string };
+type Debate = {
+  code?: string;
+  name?: string;
+  bull?: DebatePoint[];
+  bear?: DebatePoint[];
+  note?: string;
+  note_en?: string;
+  footer?: string;
+  footer_en?: string;
+};
 type Step = { key: string; label: string; status: string; detail?: string };
 type Msg = {
   role: "user" | "ai";
   text?: string;
   card?: Card;
   chart?: Chart;
+  charts?: Chart[];
+  compare?: ComparePayload;
+  debate?: Debate;
   intent?: string;
   need?: string[];
   blocked?: boolean;
@@ -77,6 +104,143 @@ function splitSections(card?: Card) {
   return (card?.sections || []).filter((s) => s.title || s.body || s.items?.length);
 }
 
+function BarSeries({ chart }: { chart: Chart }) {
+  const { t } = useLocale();
+  const values = chart.values || [];
+  const max = Math.max(1, ...values.map((x) => Math.abs(Number(x) || 0)));
+  return (
+    <div className="ai-chart-box">
+      <div className="card-title-row">
+        <b>{t(chart.title || "数据图表", chart.title_en || "Data chart")}</b>
+        <span className="hint">{chart.unit || ""}</span>
+      </div>
+      <div className="ai-bars">
+        {values.map((value, i) => {
+          const n = Number(value) || 0;
+          return (
+            <i
+              key={`${chart.labels?.[i] || i}-${i}`}
+              className={n >= 0 ? "in" : "out"}
+              style={{ height: `${Math.max(3, (Math.abs(n) / max) * 64)}px` }}
+              title={`${chart.labels?.[i] || ""} ${n.toFixed(2)}${chart.unit || ""}`.trim()}
+            />
+          );
+        })}
+      </div>
+      <div className="ai-bar-labels">
+        <span>{chart.labels?.[0] || ""}</span>
+        <span>{chart.labels && chart.labels[chart.labels.length - 1]}</span>
+      </div>
+    </div>
+  );
+}
+
+function PercentileChart({ chart }: { chart: Chart }) {
+  const { t } = useLocale();
+  const pct = chart.percentile == null ? null : Math.max(0, Math.min(100, Number(chart.percentile)));
+  return (
+    <div className="ai-chart-box">
+      <div className="card-title-row">
+        <b>{t(chart.title || "估值分位", chart.title_en || "Valuation percentile")}</b>
+        <span className="hint">{chart.value == null ? "—" : `${Number(chart.value).toFixed(2)}${chart.unit || ""}`}</span>
+      </div>
+      <div className="ai-percentile">
+        <i style={{ left: `${pct == null ? 0 : pct}%` }} />
+      </div>
+      <div className="ai-bar-labels">
+        <span>{t("低", "Low")}</span>
+        <span>{pct == null ? t("样本不足", "Not enough samples") : `${pct.toFixed(0)}% ${t("分位", "percentile")}`}</span>
+        <span>{t("高", "High")}</span>
+      </div>
+    </div>
+  );
+}
+
+function ParamText({ text, onPick }: { text: string; onPick: (start: number, length: number) => void }) {
+  const parts: Array<string | { label: string; start: number }> = [];
+  const rx = /\[([^\]]+)\]/g;
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = rx.exec(text))) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    parts.push({ label: match[1], start: match.index + 1 });
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return (
+    <span>
+      {parts.map((part, i) => (
+        typeof part === "string"
+          ? <span key={i}>{part}</span>
+          : <button key={i} type="button" className="param-mark" onClick={() => onPick(part.start, part.label.length)}>{part.label}</button>
+      ))}
+    </span>
+  );
+}
+
+function hasPlaceholder(text: string) {
+  return /\[[^\]]+\]/.test(text);
+}
+
+async function prepareVisionImage(file: File): Promise<{ dataUrl: string; mime: string }> {
+  const raw = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("读取图片失败"));
+    reader.readAsDataURL(file);
+  });
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error("图片格式无法识别"));
+    el.src = raw;
+  });
+  const max = 1800;
+  const scale = Math.min(1, max / Math.max(img.width || 1, img.height || 1));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round((img.width || 1) * scale));
+  canvas.height = Math.max(1, Math.round((img.height || 1) * scale));
+  const context = canvas.getContext("2d");
+  if (!context) return { dataUrl: raw, mime: file.type || "image/jpeg" };
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return { dataUrl: canvas.toDataURL("image/jpeg", 0.9), mime: "image/jpeg" };
+}
+
+function DebateView({ data }: { data: Debate }) {
+  const { t, locale } = useLocale();
+  const groups = [
+    { key: "bull", title: t("利多", "Bull case"), items: data.bull || [], tone: "good" },
+    { key: "bear", title: t("利空", "Bear case"), items: data.bear || [], tone: "warn" },
+  ];
+  return (
+    <section className="card debate-card">
+      <div className="card-title-row">
+        <h2>{data.name} · {t("多空分析", "Bull vs bear")}</h2>
+        <Tag tone="gray">{t("不站队", "No side")}</Tag>
+      </div>
+      {groups.map((group) => (
+        <div className="debate-group" key={group.key}>
+          <b className={group.tone}>{group.title}</b>
+          {group.items.length ? (
+            <ul>
+              {group.items.map((item, i) => (
+                <li key={i}>
+                  <span>{locale === "en" ? item.text_en || item.text : item.text}</span>
+                  {item.source ? <em>{item.source}</em> : null}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="hint">{t("现有数据不足，暂无可列条目。", "Not enough data for this side.")}</p>}
+        </div>
+      ))}
+      <p className="hint">{locale === "en" ? data.note_en : data.note}</p>
+      <div className="callout blue">{locale === "en" ? data.footer_en : data.footer}</div>
+    </section>
+  );
+}
+
 export default function AiChat() {
   const { t, locale } = useLocale();
   const nav = useNavigate();
@@ -95,6 +259,11 @@ export default function AiChat() {
   const [condition, setCondition] = useState<ConditionResponse | null>(null);
   const [conditionBusy, setConditionBusy] = useState(false);
   const [addedCodes, setAddedCodes] = useState<Set<string>>(new Set());
+  const [visionPreview, setVisionPreview] = useState<string | null>(null);
+  const [visionMime, setVisionMime] = useState("image/jpeg");
+  const [visionBusy, setVisionBusy] = useState(false);
+  const [visionNote, setVisionNote] = useState<string | null>(null);
+  const visionInputRef = useRef<HTMLInputElement | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -247,6 +416,65 @@ export default function AiChat() {
     });
   };
 
+  const selectParam = (start: number, length: number) => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(start, start + length);
+  };
+
+  const chooseVisionImage = async (file: File | null) => {
+    if (!file) return;
+    if (file.size > 12 * 1024 * 1024) {
+      setError(t("截图过大，请选择 12MB 以内的图片", "Screenshot is too large; choose an image under 12 MB"));
+      return;
+    }
+    setError(null);
+    setVisionNote(null);
+    try {
+      const prepared = await prepareVisionImage(file);
+      setVisionPreview(prepared.dataUrl);
+      setVisionMime(prepared.mime);
+    } catch (e: any) {
+      setError(e?.message || t("图片读取失败", "Could not read the image"));
+    }
+  };
+
+  const runVision = async () => {
+    if (!visionPreview || visionBusy) return;
+    const b64 = visionPreview.split(",", 2)[1] || "";
+    if (!b64) return;
+    setVisionBusy(true);
+    setError(null);
+    try {
+      const data = await api<any>("/api/invest/ai/vision", {
+        method: "POST",
+        body: JSON.stringify({ image_base64: b64, mime: visionMime }),
+      });
+      if (data.blocked) {
+        setError(data.detail || t("截图内容不在可处理范围内", "This screenshot cannot be processed"));
+        return;
+      }
+      const text = String(data.text || "").trim();
+      if (!text) {
+        setError(t("没有识别到股票名或代码，请换一张更清晰的截图", "No stock name or code found; try a clearer screenshot"));
+        return;
+      }
+      setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
+      const fixes = data.corrections || [];
+      setVisionNote(fixes.length
+        ? t(`已识图并校正：${fixes.map((f: any) => `${f.from} → ${f.to}`).join("；")}`, `Recognized and corrected: ${fixes.map((f: any) => `${f.from} → ${f.to}`).join("; ")}`)
+        : t("已识图填入输入框，可修改后发送", "Recognized and inserted; edit before sending"));
+      setVisionPreview(null);
+      setPanel(false);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    } catch (e: any) {
+      setError(e?.message || t("识图失败", "Image recognition failed"));
+    } finally {
+      setVisionBusy(false);
+    }
+  };
+
   const send = async (text?: string) => {
     let q = (text ?? input).trim();
     if (!q || busy || conditionBusy) return;
@@ -282,6 +510,9 @@ export default function AiChat() {
           text: data.need_clarify?.length ? t(`还需要：${data.need_clarify.join("、")}`, `Also needed: ${data.need_clarify.join(", ")}`) : undefined,
           card: data.card,
           chart: data.chart,
+          charts: data.charts,
+          compare: data.compare,
+          debate: data.debate,
           intent: data.intent,
           need: data.need_clarify,
           blocked: data.blocked,
@@ -289,8 +520,14 @@ export default function AiChat() {
           evidence: data.evidence,
         },
       ]);
-      if (data.chart?.code) {
-        const next = { lastStock: { code: data.chart.code, name: data.card?.sections?.[0]?.title } };
+      if (data.chart?.code || data.debate?.code || data.compare?.items?.length) {
+        const next = {
+          lastStock: data.debate?.code
+            ? { code: data.debate.code, name: data.debate.name }
+            : data.chart?.code
+              ? { code: data.chart.code, name: data.card?.sections?.[0]?.title }
+              : { code: data.compare.items[0].code, name: data.compare.items[0].name },
+        };
         setMemory(next);
         saveMemory(next);
       }
@@ -449,8 +686,8 @@ export default function AiChat() {
                   </div>
                 ) : null}
                 {m.text ? <p className="hint">{m.text}</p> : null}
-                {m.card?.summary ? <p className="ai-summary">{m.card.summary}</p> : null}
-                {splitSections(m.card).map((s, j) => (
+                {!m.debate && !m.compare && m.card?.summary ? <p className="ai-summary">{m.card.summary}</p> : null}
+                {!m.debate && !m.compare ? splitSections(m.card).map((s, j) => (
                   <div key={j} className="ai-section">
                     {s.title ? <b>{s.title}</b> : null}
                     {s.body ? <p>{s.body}</p> : null}
@@ -458,7 +695,9 @@ export default function AiChat() {
                       <ul>{s.items.map((it, k) => <li key={k}>{it.k ? <span>{it.k}{t("：", ": ")}</span> : null}{it.v}</li>)}</ul>
                     ) : null}
                   </div>
-                ))}
+                )) : null}
+                {m.debate ? <DebateView data={m.debate} /> : null}
+                {m.compare ? <CompareView data={m.compare} compact /> : null}
                 {m.evidence?.length ? (
                   <div className="ai-section">
                     <b>{t("证据链", "Evidence chain")}</b>
@@ -471,7 +710,14 @@ export default function AiChat() {
                     <span className="hint">{m.chart.code} · {t("近", "Last")} {m.chart.bars.length} {t("个交易日", "trading days")}</span>
                   </div>
                 ) : null}
-                {m.card?.disclaimer ? <p className="hint">{m.card.disclaimer}</p> : null}
+                {(m.charts || []).map((chart, k) => (
+                  chart.type === "percentile"
+                    ? <PercentileChart chart={chart} key={`pct-${k}`} />
+                    : chart.type === "bar"
+                      ? <BarSeries chart={chart} key={`bar-${k}`} />
+                      : null
+                ))}
+                {!m.debate && !m.compare && m.card?.disclaimer ? <p className="hint">{m.card.disclaimer}</p> : null}
               </>
             ) : null}
           </div>
@@ -515,6 +761,41 @@ export default function AiChat() {
       {panel ? (
         <section className="card ai-template-panel">
           <div className="card-title-row"><h2>{t("快捷功能", "Quick actions")}</h2><span className="hint">{t("顺序会保存到本机", "Order is saved on this device")}</span></div>
+          <div className="vision-panel">
+            <div className="vision-head">
+              <span className="vision-icon"><ImagePlus size={17} /></span>
+              <div>
+                <b>{t("截图识图", "Screenshot OCR")}</b>
+                <small>{t("用大模型识别股票名/代码/条件，填入输入框", "Read stock names, codes or criteria with the vision model")}</small>
+              </div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => visionInputRef.current?.click()} disabled={visionBusy}>
+                {t("选择截图", "Choose image")}
+              </button>
+            </div>
+            <input
+              ref={visionInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              hidden
+              onChange={(e) => {
+                void chooseVisionImage(e.target.files?.[0] || null);
+                e.currentTarget.value = "";
+              }}
+            />
+            {visionPreview ? (
+              <div className="vision-preview">
+                <img src={visionPreview} alt={t("待识别截图", "Screenshot to recognize")} />
+                <div className="vision-preview-actions">
+                  <button type="button" className="btn btn-primary btn-sm" onClick={() => void runVision()} disabled={visionBusy}>
+                    {visionBusy ? t("识图中…", "Recognizing…") : t("识别并填入", "Recognize and insert")}
+                  </button>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setVisionPreview(null); setVisionNote(null); }} disabled={visionBusy}>
+                    {t("取消", "Cancel")}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
           {templates.map((tpl, i) => (
             <div key={tpl.id} className="template-row">
               <button className="template-fill" onClick={() => (tpl.id === "condition" ? (setPickerOpen(true), setPanel(false)) : fill(t(tpl.text.zh, tpl.text.en)))}>{t(tpl.label.zh, tpl.label.en)}</button>
@@ -543,6 +824,18 @@ export default function AiChat() {
           }}
           placeholder={recording ? t("正在听，点麦克风结束…", "Listening — tap the microphone to stop…") : t("问个股、组合、复盘或条件选股", "Ask about stocks, your portfolio, reviews or screening")}
         />
+        {visionNote ? (
+          <div className="vision-note">
+            <span>{visionNote}</span>
+            <button type="button" aria-label={t("关闭", "Dismiss")} onClick={() => setVisionNote(null)}>×</button>
+          </div>
+        ) : null}
+        {hasPlaceholder(input) ? (
+          <div className="param-preview">
+            <b>{t("参数位", "Slots")}</b>
+            <ParamText text={input} onPick={selectParam} />
+          </div>
+        ) : null}
         <div className="ai-composer-actions">
           <button className={`round-btn ${recording ? "recording" : ""}`} onClick={() => void toggleRecord()} aria-label={recording ? t("停止录音", "Stop recording") : t("语音输入", "Voice input")}>
             {recording ? <MicOff size={18} /> : <Mic size={18} />}

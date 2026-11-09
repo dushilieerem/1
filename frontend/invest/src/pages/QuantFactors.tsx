@@ -8,6 +8,7 @@ import {
   directionLabel,
   factorFormula,
   factorName,
+  factorPlain,
   fmtFactorValue,
   fmtSignedPct,
   trendClass,
@@ -89,6 +90,12 @@ export default function QuantFactors() {
     setDetail(null);
   };
 
+  const createWithTop = () => {
+    const top = sorted[0];
+    if (!top) return;
+    nav(`/quant/strategies?tab=quick&preset=${encodeURIComponent(`${top.key}:${top.direction}`)}`);
+  };
+
   return (
     <div className="page quant-page">
       <PageHeader
@@ -162,7 +169,7 @@ export default function QuantFactors() {
                   <span className="factor-rank">{index + 1}</span>
                   <span className="factor-main">
                     <b>{factorName(row, locale)}</b>
-                    <small>{factorFormula(row, locale)}</small>
+                    <small>{factorPlain(row, locale)}</small>
                   </span>
                   <span className="factor-stats">
                     <b className={trendClass(value)}>{fmtSignedPct(value)}</b>
@@ -172,6 +179,10 @@ export default function QuantFactors() {
               );
             })}
           </div>
+
+          <button className="btn btn-primary w100 quant-factor-cta" onClick={createWithTop}>
+            {t("带着因子去建策略", "Build a strategy with this factor")} <ArrowRight size={15} />
+          </button>
 
           {detailError ? <ErrorState message={detailError} onRetry={() => openKey && loadDetail(openKey)} /> : null}
 

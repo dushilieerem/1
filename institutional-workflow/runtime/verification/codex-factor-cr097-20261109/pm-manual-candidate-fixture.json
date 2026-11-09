@@ -1,0 +1,29 @@
+{
+  "status": "algorithm_fixture_only",
+  "source_sha256": "763272ae443d550a218547122c3a34ce9381b048c191e05bf04b653dd39e1b50",
+  "actual_panel_class": "app.models.data.Panel",
+  "shape": [
+    80,
+    40
+  ],
+  "synthetic_data": true,
+  "market_data_read": false,
+  "real_backtest": false,
+  "existing_RE_novelty_signature_accepts": true,
+  "checks": [
+    {
+      "cutoff_index": 39,
+      "prefix_invariance": true,
+      "future_perturbation_invariance": true
+    },
+    {
+      "cutoff_index": 59,
+      "prefix_invariance": true,
+      "future_perturbation_invariance": true
+    }
+  ],
+  "default_time_rank_detected": true,
+  "finite_output": true,
+  "maxrss_kib": 109224,
+  "limitation": "数学回归样本不证明投资有效，也不代替业务包装与真实因果诊断"
+}

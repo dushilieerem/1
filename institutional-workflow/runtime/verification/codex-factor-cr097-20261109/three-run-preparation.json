@@ -1,0 +1,110 @@
+{
+  "status": "prepared_not_run",
+  "created_at": "2026-11-09T11:32:28.356338+00:00",
+  "not_real_evidence": true,
+  "manual_candidate": {
+    "entry": "pm_pressure_repair",
+    "source_sha256": "763272ae443d550a218547122c3a34ce9381b048c191e05bf04b653dd39e1b50",
+    "hypothesis": "当个股当日相对其近期振幅出现下跌，收盘卖压更强且相对成交活跃时，短期流动性冲击可能在下一交易日部分修复。以上是待证伪假设，不是已证实收益。",
+    "fields": [
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume"
+    ],
+    "declared_direction": "positive",
+    "lookback_max_sessions": 5,
+    "parameters_fixed_before_metrics": true,
+    "novelty": "待与公司实际可见库作定义与值对照；不声称全球首创，不复制已有资产结果"
+  },
+  "round_a": {
+    "method": "产品Agent自主生成实现，PM不给本人工公式",
+    "target": "以现有价量字段研究短期流动性冲击与价格修复的可检验新候选；尊重固定方向、日期、费用及预算，不复用库因子结果充作新发现",
+    "max_real_trials_initial": 2,
+    "review": "真实完成研发或明确失败后的研究复盘可退回/归档"
+  },
+  "round_b": {
+    "method": "手工填写假设与实现，Agent不代填；执行产品真实工具",
+    "source_file": "manual-candidate-proposal.py.txt",
+    "review": "只依据真实报告，不能为通过翻转符号或减门槛"
+  },
+  "round_c": {
+    "method": "依据研发证据做有实质理由的有限改进，尽可能在原研究台账继续，不重置K或隐去失败；完整正式对照和冻结验证真实通过后独立审批",
+    "not_promised_result": true
+  },
+  "not_yet_frozen": [
+    "A/B股票样本及实际覆盖",
+    "评分/预热区间的执行能力",
+    "正式对照资源方案",
+    "当前账户剩余额度",
+    "实际创建前日期与全部规则再次在页面固定"
+  ],
+  "resource_limits": "初次串行1任务，评分≤3个月、小股票样本与小参考；待受控worker和预检可用后才执行。小参考不具正式入库资格。A/B不需全库即可研究复盘。C完整对照须另有受控资源计划。",
+  "bounded_run_plan": {
+    "status": "planned_not_executed",
+    "scoring_start": "2025-07-01",
+    "scoring_end": "2025-09-30",
+    "validation_start": "2025-10-01",
+    "validation_end": "2025-12-31",
+    "candidate_warmup_sessions": 0,
+    "max_trials_per_initial_task": 2,
+    "model_budget_change": false,
+    "symbols": [
+      "000001.SZ",
+      "000063.SZ",
+      "000100.SZ",
+      "000333.SZ",
+      "000338.SZ",
+      "000568.SZ",
+      "000625.SZ",
+      "000651.SZ",
+      "000725.SZ",
+      "000768.SZ",
+      "000776.SZ",
+      "000858.SZ",
+      "000895.SZ",
+      "000938.SZ",
+      "002027.SZ",
+      "002049.SZ",
+      "002142.SZ",
+      "002230.SZ",
+      "002415.SZ",
+      "002475.SZ",
+      "600000.SH",
+      "600009.SH",
+      "600030.SH",
+      "600031.SH",
+      "600036.SH",
+      "600048.SH",
+      "600050.SH",
+      "600104.SH",
+      "600276.SH",
+      "600309.SH",
+      "600406.SH",
+      "600438.SH",
+      "600519.SH",
+      "600585.SH",
+      "600690.SH",
+      "600703.SH",
+      "600809.SH",
+      "601166.SH",
+      "601318.SH",
+      "601888.SH"
+    ],
+    "sample_caveat": "Static selected research sample; not historical index membership; selection/survivorship bias cannot support whole-market or live-investment claims.",
+    "max_reference_count": 1,
+    "full_library_automatic_execution": false,
+    "limits": {
+      "address_space_bytes": 12884901888,
+      "rss_watchdog_bytes": 3221225472,
+      "min_available_bytes": 17179869184,
+      "wall_seconds": 180,
+      "cpu_seconds": 120
+    },
+    "rss_caveat": "Sampled stop line; not an absolute kernel RSS ceiling.",
+    "A_task_brief": "研究短期价格冲击与成交活跃度的组合信号：在固定样本内探索过去最多5个交易日的价格位置、日内形态与成交量变化，形成可解释的次日收益评分。高分预期收益更高；仅用截至当日收盘可得的OHLCV。请自主提出表达式并依据研发证据改进，不修改冻结方向、门槛与样本范围。",
+    "B_candidate_proposal": "manual-candidate-proposal.py.txt",
+    "C_precondition": "No small diagnostic substitute for full novelty or independent validation. Continue original ledger/K when improving an existing research lineage."
+  }
+}

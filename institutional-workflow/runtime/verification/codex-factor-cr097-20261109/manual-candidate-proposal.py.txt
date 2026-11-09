@@ -1,0 +1,12 @@
+def pm_pressure_repair(self):
+    previous_close = self.close.shift(1)
+    daily_return = self.close / previous_close.where(previous_close > 0) - 1
+    price_range = self.high - self.low
+    closing_pressure = (self.close - self.open) / price_range.where(price_range > 0)
+    volume_base = self.volume.rolling(5, min_periods=3).mean()
+    relative_volume = (self.volume / volume_base.where(volume_base > 0)).clip(0.2, 5.0)
+    relative_range = price_range / previous_close.where(previous_close > 0)
+    range_base = relative_range.rolling(5, min_periods=3).mean()
+    reversal = (-daily_return / range_base.where(range_base > 0)).clip(-3.0, 3.0)
+    raw = reversal * (1.0 - closing_pressure) * relative_volume.rank(axis=1, pct=True)
+    return raw.rank(axis=1, pct=True)

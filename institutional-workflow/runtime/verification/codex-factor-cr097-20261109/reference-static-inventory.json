@@ -1,0 +1,29 @@
+{
+  "scope": "readonly SQLite AST inventory; no factor execution, no price read; dependencies may be derived helpers",
+  "db_sha256": "2ed5d136e495b6207285298c5d647200455dadafea8d80b97a8b9cfc35a066bf",
+  "catalogue_count": 331,
+  "parse_errors": [],
+  "self_attributes": {
+    "close": 216,
+    "volume": 152,
+    "high": 112,
+    "low": 105,
+    "open": 62,
+    "turnover": 1,
+    "amount": 2,
+    "pe_ttm": 1
+  },
+  "non_price_or_helper_count": 1,
+  "non_price_or_helper_examples": [
+    {
+      "sv_id": "SV11_0001",
+      "name": "Raw PE Placeholder (Dividend Cover / PEG Names)",
+      "dependencies": [
+        "pe_ttm"
+      ]
+    }
+  ],
+  "non_price_or_helper_attributes": {
+    "pe_ttm": 1
+  }
+}

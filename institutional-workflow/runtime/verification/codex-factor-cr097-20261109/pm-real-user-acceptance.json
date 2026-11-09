@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-09T16:07:52.141423+00:00",
+  "updated_at": "2026-11-09T16:16:32.980414+00:00",
   "performed_by": "PM via product browser UI",
   "plan": "three-run-preparation.json",
   "A": {
@@ -111,7 +111,7 @@
     "priority": "Agent quality, hybrid assistance, factor UI usability"
   },
   "hybrid": {
-    "status": "real_handoff_verified_review_ui_fix_pending",
+    "status": "real_handoff_and_failed_research_review_completed",
     "required": "human advice or explicit takeover -> edit and save -> return frozen human version to Agent -> real continuation with no stale overwrite or K reset",
     "execution": {
       "created_cst": "2026-11-09 23:40:43",
@@ -137,14 +137,23 @@
       "usage_actual_tokens": 28096,
       "usage_pending_reservation": 0,
       "actual_model_calls": 6,
-      "review": "not_submitted: actual F6 candidate binding effect re-mount loop; developer fixing; do not create a new revision just to review",
+      "review": {
+        "status": "rejected",
+        "archive_cst": "2026-11-10 00:10:21",
+        "submitted_cst": "2026-11-10 00:10:42",
+        "decision_time": "approximately2026-11-10 00:13; exact DB timestamp pending readonly confirmation",
+        "browser_verified": true,
+        "same_PM_two_QA_accounts": true,
+        "asset_registered": false
+      },
       "no_full_novelty": true,
       "no_sealed_validation": true,
       "no_registered_asset": true,
       "pause_coverage": "Actual live pause was not accomplished before F3 generation failed. Real acceptance covers takeover of stopped failed-run, edit and exact return; active-run pause race only engineering tests so far.",
       "agent_failure": "second F3 finish_reason=length, completion8000/reasoning8000; no usable code, no E2 market call consumed by that failure",
       "evidence": "../codex-factor-cr100-budget-20261109/hybrid-handoff-readonly.json",
-      "screenshot": "Observed via CUA; screenshot bytes not separately saved; no fabricated file path."
+      "screenshot": "Observed via CUA; screenshot bytes not separately saved; no fabricated file path.",
+      "review_ui_fix": "F6 candidates stable after hot-loaded frontend fix; no new branch or calculation required for feedback request"
     }
   }
 }

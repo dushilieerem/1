@@ -1,6 +1,6 @@
 {
   "created_at": "2026-11-09T14:49:38.725935+00:00",
-  "status": "real_handoff_verified_review_ui_fix_pending",
+  "status": "real_handoff_and_failed_research_review_completed",
   "purpose": "Real functional acceptance of autonomous -> human takeover/edit -> return to Agent. Not an independent scientific comparison with A/B or a new success claim.",
   "name": "缺口承接与量能确认 · 人机研究 1109",
   "brief": "研究开盘缺口在当日交易中被承接或延续后的次日收益差异。仅使用截至当日收盘可得的open、high、low、close、volume，最多5个交易日回看。Agent自行提出可解释的缺口与日内价格修复、相对量能的候选评分，高分预期次日收益较高。初始实现与后续修改必须在同一研究台账中保留；人工会在研究中暂停并改进实现，然后交回Agent检验。不得改变固定方向、样本、日期、门槛，不得引入turnover等额外字段。",
@@ -130,13 +130,22 @@
     "usage_actual_tokens": 28096,
     "usage_pending_reservation": 0,
     "actual_model_calls": 6,
-    "review": "not_submitted: actual F6 candidate binding effect re-mount loop; developer fixing; do not create a new revision just to review",
+    "review": {
+      "status": "rejected",
+      "archive_cst": "2026-11-10 00:10:21",
+      "submitted_cst": "2026-11-10 00:10:42",
+      "decision_time": "approximately2026-11-10 00:13; exact DB timestamp pending readonly confirmation",
+      "browser_verified": true,
+      "same_PM_two_QA_accounts": true,
+      "asset_registered": false
+    },
     "no_full_novelty": true,
     "no_sealed_validation": true,
     "no_registered_asset": true,
     "pause_coverage": "Actual live pause was not accomplished before F3 generation failed. Real acceptance covers takeover of stopped failed-run, edit and exact return; active-run pause race only engineering tests so far.",
     "agent_failure": "second F3 finish_reason=length, completion8000/reasoning8000; no usable code, no E2 market call consumed by that failure",
     "evidence": "../codex-factor-cr100-budget-20261109/hybrid-handoff-readonly.json",
-    "screenshot": "Observed via CUA; screenshot bytes not separately saved; no fabricated file path."
+    "screenshot": "Observed via CUA; screenshot bytes not separately saved; no fabricated file path.",
+    "review_ui_fix": "F6 candidates stable after hot-loaded frontend fix; no new branch or calculation required for feedback request"
   }
 }

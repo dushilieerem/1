@@ -1,0 +1,15 @@
+{
+  "request_id": "CX-20261110-001",
+  "target": "张新迪-机构侧量化平台开发",
+  "target_session_id": "afcf6e55-988c-4724-9f3c-078b3f81708b",
+  "state": "queued_reply_not_verified",
+  "started_at": "2026-11-09T16:14:27.224951+00:00",
+  "process_id": 15466,
+  "finished_at": "2026-11-09T16:14:33.150488+00:00",
+  "native_message_id": "ad428055-88ad-4387-86f2-7652b0f48d99",
+  "process_exit": 0,
+  "timed_out": false,
+  "send_calls": 1,
+  "reported_cost_usd": 0.039068,
+  "reply_file_exists": false
+}

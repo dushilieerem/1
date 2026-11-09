@@ -1,0 +1,184 @@
+{
+  "authorization_source": "PM immutable artifact; user explicit100m new grant; no model call",
+  "argv": [
+    "/home/dev01/project/SVQuant/.ci/venv/bin/python",
+    "backend/scripts/activate_quant_research_budget.py",
+    "--org",
+    "261",
+    "--actor-user",
+    "2527",
+    "--authorization",
+    "institutional-workflow/runtime/verification/pm-cr099-20261109/research-budget-authorization.json",
+    "--history-audit",
+    "institutional-workflow/runtime/verification/codex-factor-cr100-budget-20261109/historical-usage-audit.json",
+    "--apply-authorized"
+  ],
+  "before_counts": {
+    "f0": 0,
+    "candidates": 0,
+    "sealed": 0,
+    "agent_jobs": 0,
+    "iterations": 0
+  },
+  "records": [
+    {
+      "operation": "apply",
+      "result": {
+        "migration": {
+          "ok": true,
+          "applied": [
+            "0001_baseline",
+            "0002_invest_portfolio_trade",
+            "0003_invest_us_market",
+            "0004_invest_quant",
+            "0005_inst_quant_role",
+            "0006_quant_factor_candidates",
+            "0007_inst_quant_reviewer_role",
+            "0008_quant_factor_agent_jobs",
+            "0009_quant_factor_iterations",
+            "0010_invest_ai_agent",
+            "0011_quant_factor_v5_ledger",
+            "0012_quant_factor_imports",
+            "0013_quant_factor_agent_job_project_fk",
+            "0014_quant_factor_ledger_audit_fields",
+            "0015_quant_factor_branch_parent_tenant_fk",
+            "0016_quant_factor_import_metrics",
+            "0017_quant_factor_f0_runs",
+            "0018_quant_factor_topic_pause",
+            "0019_quant_factor_import_category",
+            "0020_strategy_research_ledger",
+            "0021_strategy_ledger_tenant_constraints",
+            "0022_quant_factor_trial_f0_run",
+            "0023_strategy_s0_runs",
+            "0024_strategy_diagnostics",
+            "0025_strategy_review_events",
+            "0026_strategy_trial_report",
+            "0027_quant_factor_topic_display_no",
+            "0028_quant_factor_branch_title",
+            "0029_strategy_topic_display_no",
+            "0030_quant_data_requests",
+            "0031_portfolio_simulation",
+            "0032_strategy_imported_assets",
+            "0033_strategy_imported_assets_index",
+            "0034_strategy_imported_assets_retain",
+            "0035_quant_data_request_tracking",
+            "0036_quant_factor_controls",
+            "0037_quant_factor_org_controls",
+            "0038_quant_ai_budget"
+          ]
+        },
+        "authorization": {
+          "id": "qbg_18880ef5240d740268f730df",
+          "org_id": 261,
+          "authorized_by": 2527,
+          "limit_tokens": 100000000,
+          "idempotent_replay_same_id": true
+        },
+        "legacy": {
+          "known_lower_bound": 180331,
+          "complete": false,
+          "state": "pending"
+        },
+        "status": {
+          "legacy_baseline": "pending",
+          "legacy_accounts": [
+            {
+              "scope": "space",
+              "limit_tokens": 1000000,
+              "baseline_state": "pending",
+              "historical_tokens": 180331,
+              "unknown_history": {
+                "complete": false,
+                "other_gaps": "Unbound historical F0/assistant and failed/repaired calls; see source audit",
+                "recorded_by": 2527,
+                "audit_sha256": "d4cf4c910d7fd44b675b3796467548260cb69b66d3e8fe234dacad768733ab74",
+                "f3_zero_usage_rows": 46
+              }
+            },
+            {
+              "scope": "factor",
+              "limit_tokens": 200000,
+              "baseline_state": "pending",
+              "historical_tokens": 180331,
+              "unknown_history": {
+                "complete": false,
+                "other_gaps": "Unbound historical F0/assistant and failed/repaired calls; see source audit",
+                "recorded_by": 2527,
+                "audit_sha256": "d4cf4c910d7fd44b675b3796467548260cb69b66d3e8fe234dacad768733ab74",
+                "f3_zero_usage_rows": 46
+              }
+            }
+          ],
+          "new_authorization": {
+            "id": "qbg_18880ef5240d740268f730df",
+            "limit_tokens": 100000000,
+            "settled_tokens": 0,
+            "held_tokens": 0,
+            "remaining_tokens": 100000000,
+            "scope": "本机构量化产品因子Agent研究；全机构单池累计，不按成员或任务重置"
+          }
+        }
+      }
+    },
+    {
+      "operation": "idempotent-replay",
+      "result": {
+        "migration": {
+          "ok": true,
+          "applied": []
+        },
+        "authorization": {
+          "id": "qbg_18880ef5240d740268f730df",
+          "org_id": 261,
+          "authorized_by": 2527,
+          "limit_tokens": 100000000,
+          "idempotent_replay_same_id": true
+        },
+        "legacy": {
+          "known_lower_bound": 180331,
+          "complete": false,
+          "state": "pending"
+        },
+        "status": {
+          "legacy_baseline": "pending",
+          "legacy_accounts": [
+            {
+              "scope": "space",
+              "limit_tokens": 1000000,
+              "baseline_state": "pending",
+              "historical_tokens": 180331,
+              "unknown_history": {
+                "complete": false,
+                "other_gaps": "Unbound historical F0/assistant and failed/repaired calls; see source audit",
+                "recorded_by": 2527,
+                "audit_sha256": "d4cf4c910d7fd44b675b3796467548260cb69b66d3e8fe234dacad768733ab74",
+                "f3_zero_usage_rows": 46
+              }
+            },
+            {
+              "scope": "factor",
+              "limit_tokens": 200000,
+              "baseline_state": "pending",
+              "historical_tokens": 180331,
+              "unknown_history": {
+                "complete": false,
+                "other_gaps": "Unbound historical F0/assistant and failed/repaired calls; see source audit",
+                "recorded_by": 2527,
+                "audit_sha256": "d4cf4c910d7fd44b675b3796467548260cb69b66d3e8fe234dacad768733ab74",
+                "f3_zero_usage_rows": 46
+              }
+            }
+          ],
+          "new_authorization": {
+            "id": "qbg_18880ef5240d740268f730df",
+            "limit_tokens": 100000000,
+            "settled_tokens": 0,
+            "held_tokens": 0,
+            "remaining_tokens": 100000000,
+            "scope": "本机构量化产品因子Agent研究；全机构单池累计，不按成员或任务重置"
+          }
+        }
+      }
+    }
+  ]
+}

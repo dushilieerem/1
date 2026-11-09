@@ -1,0 +1,192 @@
+{
+  "checked_at_utc": "2026-11-09T15:45:29.356129+00:00",
+  "project_id": "5cc9d1ce-0362-46a0-8148-23aa7d29458a",
+  "read_only": true,
+  "f0": [
+    {
+      "id": "675294a4-d59a-462f-ab75-5b942b746474",
+      "status": "failed",
+      "rounds": 1,
+      "stop_reason": "F3 未生成通过校验的实现：研究模型调用未完成（AiOutputTruncated），原用量与预留保留；不会自动扩大输出、换模型或重发",
+      "current_action": "revise",
+      "created_at": "2026-11-09 23:41:48.923727+08:00",
+      "updated_at": "2026-11-09 23:43:58.856067+08:00"
+    }
+  ],
+  "agent_jobs": [
+    {
+      "id": "2922bca5-45d8-4865-9d17-d10a11db784c",
+      "stage": "F3",
+      "status": "failed",
+      "last_event": {
+        "at": "2026-11-09T15:43:56.937760+00:00",
+        "action": "failed",
+        "message": "研究模型调用未完成（AiOutputTruncated），原用量与预留保留；不会自动扩大输出、换模型或重发"
+      },
+      "created_at": "2026-11-09 23:43:10.813670+08:00",
+      "updated_at": "2026-11-09 23:43:56.937892+08:00"
+    },
+    {
+      "id": "be95d681-adce-44b0-b17c-6cd7f45f6dfa",
+      "stage": "F3",
+      "status": "ready",
+      "last_event": {
+        "at": "2026-11-09T15:42:33.791132+00:00",
+        "action": "fields_ready",
+        "message": "返回字段已校验，可回填本环节表单；人工修改优先。"
+      },
+      "created_at": "2026-11-09 23:41:55.738316+08:00",
+      "updated_at": "2026-11-09 23:42:33.791557+08:00"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "9d13920b-26d2-43d8-8645-baac85519d13",
+      "status": "development_failed",
+      "run_id": "4a1509ff16d14056b4b075de4ce81a85",
+      "controlled_execution": {
+        "limits": {
+          "rss_bytes": 3221225472,
+          "cpu_seconds": 120,
+          "wall_seconds": 180,
+          "address_space_bytes": 12884901888,
+          "min_available_bytes": 17179869184
+        },
+        "version": "quant-controlled-worker-v1",
+        "child_pid": 3832831,
+        "policy_hash": "4e2ad21f697e44394cbf6657ffe248ef72a73094803300a8390d5ee817432c5b",
+        "rss_semantics": "sampled process-group sum; watchdog may overshoot between samples",
+        "peak_rss_bytes": 1163866112,
+        "elapsed_seconds": 14.611,
+        "address_space_semantics": "virtual address space, not RSS quota"
+      },
+      "updated_at": "2026-11-09 23:42:50.024591+08:00"
+    }
+  ],
+  "budget": [
+    {
+      "id": "109da218-611b-402b-852d-d07c29a676df",
+      "task_id": "research.generate_factor",
+      "status": "settled",
+      "reserved_tokens": 15142,
+      "actual_tokens": 9498,
+      "max_output_tokens": 8000,
+      "finish_reason": "length",
+      "usage": {
+        "total_tokens": 9498,
+        "prompt_tokens": 1498,
+        "completion_tokens": 8000,
+        "prompt_tokens_details": {
+          "cached_tokens": 896
+        },
+        "prompt_cache_hit_tokens": 896,
+        "prompt_cache_miss_tokens": 602,
+        "completion_tokens_details": {
+          "reasoning_tokens": 8000
+        }
+      },
+      "created_at": "2026-11-09 23:43:10.828765+08:00",
+      "updated_at": "2026-11-09 23:43:56.934219+08:00"
+    },
+    {
+      "id": "18ba9bac-3dbe-4561-9ae0-07b5eab577ab",
+      "task_id": "quant.factor.research_assistant",
+      "status": "settled",
+      "reserved_tokens": 8101,
+      "actual_tokens": 3055,
+      "max_output_tokens": 3000,
+      "finish_reason": "stop",
+      "usage": {
+        "total_tokens": 3055,
+        "prompt_tokens": 1078,
+        "completion_tokens": 1977,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1078,
+        "completion_tokens_details": {
+          "reasoning_tokens": 1538
+        }
+      },
+      "created_at": "2026-11-09 23:42:59.252599+08:00",
+      "updated_at": "2026-11-09 23:43:10.809022+08:00"
+    },
+    {
+      "id": "b22a7187-bb5b-4a48-b941-df0132927979",
+      "task_id": "quant.factor.f0_decider",
+      "status": "settled",
+      "reserved_tokens": 9925,
+      "actual_tokens": 2959,
+      "max_output_tokens": 2000,
+      "finish_reason": "stop",
+      "usage": {
+        "total_tokens": 2959,
+        "prompt_tokens": 1967,
+        "completion_tokens": 992,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 1583,
+        "completion_tokens_details": {
+          "reasoning_tokens": 372
+        }
+      },
+      "created_at": "2026-11-09 23:42:52.015891+08:00",
+      "updated_at": "2026-11-09 23:42:59.228622+08:00"
+    },
+    {
+      "id": "1eb1ed6c-b011-4ad5-bcc5-aaa02ac2a60b",
+      "task_id": "research.generate_factor",
+      "status": "settled",
+      "reserved_tokens": 14669,
+      "actual_tokens": 6950,
+      "max_output_tokens": 8000,
+      "finish_reason": "stop",
+      "usage": {
+        "total_tokens": 6950,
+        "prompt_tokens": 1319,
+        "completion_tokens": 5631,
+        "prompt_tokens_details": {
+          "cached_tokens": 896
+        },
+        "prompt_cache_hit_tokens": 896,
+        "prompt_cache_miss_tokens": 423,
+        "completion_tokens_details": {
+          "reasoning_tokens": 4669
+        }
+      },
+      "created_at": "2026-11-09 23:41:55.754117+08:00",
+      "updated_at": "2026-11-09 23:42:32.893800+08:00"
+    },
+    {
+      "id": "aa055ad5-9544-4b11-b8b4-5e7eb383aa5e",
+      "task_id": "quant.factor.f0_decider",
+      "status": "settled",
+      "reserved_tokens": 7437,
+      "actual_tokens": 2156,
+      "max_output_tokens": 2000,
+      "finish_reason": "stop",
+      "usage": {
+        "total_tokens": 2156,
+        "prompt_tokens": 1181,
+        "completion_tokens": 975,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 797,
+        "completion_tokens_details": {
+          "reasoning_tokens": 516
+        }
+      },
+      "created_at": "2026-11-09 23:41:48.972000+08:00",
+      "updated_at": "2026-11-09 23:41:55.723212+08:00"
+    }
+  ],
+  "budget_totals": {
+    "settled_tokens": "24618",
+    "held_tokens": "0"
+  }
+}

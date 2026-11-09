@@ -1,0 +1,29 @@
+[
+  {
+    "label": "components",
+    "cwd": "frontend",
+    "argv": [
+      "/home/dev01/.nvm/versions/node/v24.20.0/bin/node",
+      "--import",
+      "tsx",
+      "--test",
+      "tests/factorCandidateRead.test.tsx",
+      "tests/factorManualDelegation.test.tsx",
+      "tests/factorReportGate.test.tsx",
+      "tests/factorAdmissionFlow.test.tsx"
+    ],
+    "exit": 0,
+    "log": "institutional-workflow/runtime/verification/codex-factor-cr099-f6-20261110/components.log"
+  },
+  {
+    "label": "build",
+    "cwd": "frontend",
+    "argv": [
+      "/home/dev01/.nvm/versions/node/v24.20.0/bin/npm",
+      "run",
+      "build"
+    ],
+    "exit": 0,
+    "log": "institutional-workflow/runtime/verification/codex-factor-cr099-f6-20261110/build.log"
+  }
+]

@@ -1,0 +1,318 @@
+{
+  "checked_at_utc": "2026-11-09T16:04:07.312876+00:00",
+  "read_only": true,
+  "project_id": "5cc9d1ce-0362-46a0-8148-23aa7d29458a",
+  "saved_manual": {
+    "active_branch": "69e51456-4b77-478f-a18e-a5fad63729fe",
+    "source_sha256": "a3ecdc371ba621b5ebde9a4404781a1ac3cf28205e97006afc3440db85faffd1",
+    "has_negative_gap_support": true,
+    "plan_revision": "b7cc9a56-0455-45dc-aa31-d53e4e6951e0",
+    "updated_at": "2026-11-10 00:02:56.920121+08:00"
+  },
+  "f0": [
+    {
+      "id": "5709b823-6d6b-49db-bd8b-d37bc874eed0",
+      "status": "stopped",
+      "rounds": 2,
+      "stop_reason": "K=2 试验额度用尽（remaining=0），trial 2 方向 NW t=0.485102＜t*(K)=2.241403，trial 1 方向 NW t=0.652413＜其 t*，数值门槛未通过；同时查重 gate.complete=false、compared_count=0/334，blocking_reasons 为“数值门槛未通过”和“查重不可用/未完成”，不具备 request_seal 条件，故停止。",
+      "manual_handoff": {
+        "at": "2026-11-09T16:02:40.730244+00:00",
+        "note": "本人工版本只把缺口绝对幅度改为低开承接幅度；交回后先检验已保存源码，不得再次改写假设或代码，不改变方向、5日回看、样本、日期、门槛及剩余1次试验额度。",
+        "branch_id": "69e51456-4b77-478f-a18e-a5fad63729fe",
+        "control_epoch": "8c116eae-4e12-4392-9237-6765bf1403f2",
+        "snapshot_hash": "7be78caea2404b5ebf8026b0802021029b4185a6503b31be519743ed338a8e60"
+      },
+      "current_action": null
+    },
+    {
+      "id": "675294a4-d59a-462f-ab75-5b942b746474",
+      "status": "failed",
+      "rounds": 1,
+      "stop_reason": "F3 未生成通过校验的实现：研究模型调用未完成（AiOutputTruncated），原用量与预留保留；不会自动扩大输出、换模型或重发",
+      "manual_handoff": null,
+      "current_action": "revise"
+    }
+  ],
+  "trials": [
+    {
+      "trial_no": 1,
+      "branch_id": "fec13ede-cbbc-4fc2-a947-5369f3982bdf",
+      "report_id": "qf_9d13920b-26d2-43d8-8645-baac85519d13_development",
+      "executor": "agent",
+      "kind": "research",
+      "outcome": "failed",
+      "holding_period": 1,
+      "returned_metrics": true
+    },
+    {
+      "trial_no": 2,
+      "branch_id": "69e51456-4b77-478f-a18e-a5fad63729fe",
+      "report_id": "qf_4e6dbb1b-372f-4f14-b6d0-a24c625e6e4b_development",
+      "executor": "agent",
+      "kind": "research",
+      "outcome": "failed",
+      "holding_period": 1,
+      "returned_metrics": true
+    }
+  ],
+  "k": 2,
+  "max_trials": 2,
+  "candidates": [
+    {
+      "id": "4e6dbb1b-372f-4f14-b6d0-a24c625e6e4b",
+      "status": "development_failed",
+      "snapshot_hash": "7be78caea2404b5ebf8026b0802021029b4185a6503b31be519743ed338a8e60",
+      "matches_handoff_snapshot": true,
+      "source_sha256": "a3ecdc371ba621b5ebde9a4404781a1ac3cf28205e97006afc3440db85faffd1",
+      "matches_saved_manual_source": true,
+      "branch_id": "69e51456-4b77-478f-a18e-a5fad63729fe",
+      "run_id": "554882484b9c401085db6155e4053aba",
+      "gate": {
+        "checks": [
+          {
+            "name": "方向Rank IC",
+            "actual": 0.011636148341631875,
+            "passed": true,
+            "operator": ">=",
+            "threshold": 0.005
+          },
+          {
+            "name": "最大回撤",
+            "actual": 0.032101542138005194,
+            "passed": true,
+            "operator": "<=",
+            "threshold": 0.5
+          },
+          {
+            "name": "有效IC观测数",
+            "actual": 60,
+            "passed": true,
+            "operator": ">=",
+            "threshold": 60.0
+          },
+          {
+            "name": "方向 NW t",
+            "actual": 0.48510249508789544,
+            "passed": false,
+            "operator": ">=",
+            "threshold": 2.2414027276049464
+          }
+        ],
+        "passed": false,
+        "sealed": false,
+        "limitation": "样本外复验；当前数据权限未封存，不构成独立封存验证或投资准入。",
+        "numerical_passed": false
+      },
+      "novelty_status": "deferred",
+      "controlled_execution": {
+        "limits": {
+          "rss_bytes": 3221225472,
+          "cpu_seconds": 120,
+          "wall_seconds": 180,
+          "address_space_bytes": 12884901888,
+          "min_available_bytes": 17179869184
+        },
+        "version": "quant-controlled-worker-v1",
+        "child_pid": 4067181,
+        "policy_hash": "4e2ad21f697e44394cbf6657ffe248ef72a73094803300a8390d5ee817432c5b",
+        "rss_semantics": "sampled process-group sum; watchdog may overshoot between samples",
+        "peak_rss_bytes": 1159376896,
+        "elapsed_seconds": 14.901,
+        "address_space_semantics": "virtual address space, not RSS quota"
+      },
+      "static_symbol_count": 40
+    },
+    {
+      "id": "9d13920b-26d2-43d8-8645-baac85519d13",
+      "status": "development_failed",
+      "snapshot_hash": "ef5a46b911f24ee11a6618e1053db57883b740a53982b9c6de2677c98ef3f7bb",
+      "matches_handoff_snapshot": false,
+      "source_sha256": "fb2b8a79e164109dc0d4ac341e5294cb3bff2e38dcf1a5f2f712f2171023b978",
+      "matches_saved_manual_source": false,
+      "branch_id": "fec13ede-cbbc-4fc2-a947-5369f3982bdf",
+      "run_id": "4a1509ff16d14056b4b075de4ce81a85",
+      "gate": {
+        "checks": [
+          {
+            "name": "方向Rank IC",
+            "actual": 0.019222726466279413,
+            "passed": true,
+            "operator": ">=",
+            "threshold": 0.005
+          },
+          {
+            "name": "最大回撤",
+            "actual": 0.030260577737185726,
+            "passed": true,
+            "operator": "<=",
+            "threshold": 0.5
+          },
+          {
+            "name": "有效IC观测数",
+            "actual": 60,
+            "passed": true,
+            "operator": ">=",
+            "threshold": 60.0
+          },
+          {
+            "name": "方向 NW t",
+            "actual": 0.6524126528333681,
+            "passed": false,
+            "operator": ">=",
+            "threshold": 1.9599639845400536
+          }
+        ],
+        "passed": false,
+        "sealed": false,
+        "limitation": "样本外复验；当前数据权限未封存，不构成独立封存验证或投资准入。",
+        "numerical_passed": false
+      },
+      "novelty_status": "deferred",
+      "controlled_execution": {
+        "limits": {
+          "rss_bytes": 3221225472,
+          "cpu_seconds": 120,
+          "wall_seconds": 180,
+          "address_space_bytes": 12884901888,
+          "min_available_bytes": 17179869184
+        },
+        "version": "quant-controlled-worker-v1",
+        "child_pid": 3832831,
+        "policy_hash": "4e2ad21f697e44394cbf6657ffe248ef72a73094803300a8390d5ee817432c5b",
+        "rss_semantics": "sampled process-group sum; watchdog may overshoot between samples",
+        "peak_rss_bytes": 1163866112,
+        "elapsed_seconds": 14.611,
+        "address_space_semantics": "virtual address space, not RSS quota"
+      },
+      "static_symbol_count": 40
+    }
+  ],
+  "budget": [
+    {
+      "task_id": "quant.factor.f0_decider",
+      "status": "settled",
+      "actual_tokens": 2156,
+      "reserved_tokens": 7437,
+      "max_output_tokens": 2000,
+      "finish_reason": "stop",
+      "usage": {
+        "total_tokens": 2156,
+        "prompt_tokens": 1181,
+        "completion_tokens": 975,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 797,
+        "completion_tokens_details": {
+          "reasoning_tokens": 516
+        }
+      }
+    },
+    {
+      "task_id": "research.generate_factor",
+      "status": "settled",
+      "actual_tokens": 6950,
+      "reserved_tokens": 14669,
+      "max_output_tokens": 8000,
+      "finish_reason": "stop",
+      "usage": {
+        "total_tokens": 6950,
+        "prompt_tokens": 1319,
+        "completion_tokens": 5631,
+        "prompt_tokens_details": {
+          "cached_tokens": 896
+        },
+        "prompt_cache_hit_tokens": 896,
+        "prompt_cache_miss_tokens": 423,
+        "completion_tokens_details": {
+          "reasoning_tokens": 4669
+        }
+      }
+    },
+    {
+      "task_id": "quant.factor.f0_decider",
+      "status": "settled",
+      "actual_tokens": 2959,
+      "reserved_tokens": 9925,
+      "max_output_tokens": 2000,
+      "finish_reason": "stop",
+      "usage": {
+        "total_tokens": 2959,
+        "prompt_tokens": 1967,
+        "completion_tokens": 992,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 1583,
+        "completion_tokens_details": {
+          "reasoning_tokens": 372
+        }
+      }
+    },
+    {
+      "task_id": "quant.factor.research_assistant",
+      "status": "settled",
+      "actual_tokens": 3055,
+      "reserved_tokens": 8101,
+      "max_output_tokens": 3000,
+      "finish_reason": "stop",
+      "usage": {
+        "total_tokens": 3055,
+        "prompt_tokens": 1078,
+        "completion_tokens": 1977,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1078,
+        "completion_tokens_details": {
+          "reasoning_tokens": 1538
+        }
+      }
+    },
+    {
+      "task_id": "research.generate_factor",
+      "status": "settled",
+      "actual_tokens": 9498,
+      "reserved_tokens": 15142,
+      "max_output_tokens": 8000,
+      "finish_reason": "length",
+      "usage": {
+        "total_tokens": 9498,
+        "prompt_tokens": 1498,
+        "completion_tokens": 8000,
+        "prompt_tokens_details": {
+          "cached_tokens": 896
+        },
+        "prompt_cache_hit_tokens": 896,
+        "prompt_cache_miss_tokens": 602,
+        "completion_tokens_details": {
+          "reasoning_tokens": 8000
+        }
+      }
+    },
+    {
+      "task_id": "quant.factor.f0_decider",
+      "status": "settled",
+      "actual_tokens": 3478,
+      "reserved_tokens": 11791,
+      "max_output_tokens": 2000,
+      "finish_reason": "stop",
+      "usage": {
+        "total_tokens": 3478,
+        "prompt_tokens": 2657,
+        "completion_tokens": 821,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 2273,
+        "completion_tokens_details": {
+          "reasoning_tokens": 231
+        }
+      }
+    }
+  ]
+}

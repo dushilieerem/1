@@ -1,3 +1,4 @@
+import {formatGateNumber} from '@/lib/factorPresentation';
 export type ComparisonRow = {
  reference_id:string; factor_name?:string; status:string;
  mean_abs_spearman?:number|null; valid_days?:number; min_pairs?:number;
@@ -10,7 +11,7 @@ export type NoveltyEvidence = {
  max_abs_correlation:number|null; threshold:number; closest?:ComparisonRow;
  failed_references?:string[]; limitation:string; residual?:{status:string}};
 };
-const numberText=(n:number|null|undefined)=>n==null?'未取得':n.toFixed(4);
+const numberText=(n:number|null|undefined)=>formatGateNumber(n,'未取得');
 export function FactorNoveltyEvidence({evidence,purpose}:{evidence?:NoveltyEvidence;purpose?:unknown}){
  const g=evidence?.gate;
  const rows=evidence?.comparisons||[];
@@ -22,7 +23,7 @@ export function FactorNoveltyEvidence({evidence,purpose}:{evidence?:NoveltyEvide
    <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
     <dt>完整有效比较</dt><dd>{g.compared_count} / {g.expected_count}</dd>
     <dt>最相似因子</dt><dd>{g.closest?.factor_name||g.closest?.reference_id||'未取得'}</dd>
-    <dt>最大日绝对秩相关均值</dt><dd>{numberText(g.max_abs_correlation)}（上限 {g.threshold}）</dd>
+    <dt>最大日绝对秩相关均值</dt><dd title={String(g.max_abs_correlation)+' / '+String(g.threshold)}>{numberText(g.max_abs_correlation)}（上限 {formatGateNumber(g.threshold,'未记录')}）</dd>
    </dl>
    {!g.complete&&<p className="mt-2 text-sm text-amber-800">未取得完整有效的全库数值对照，不能声称已通过全库比较。</p>}
    <p className="mt-2 text-xs text-slate-500">{g.limitation}</p>
@@ -32,8 +33,7 @@ export function FactorNoveltyEvidence({evidence,purpose}:{evidence?:NoveltyEvide
     <tbody>{rows.map(r=><tr key={r.reference_id} className="border-t border-purple-100"><td className="p-2">{r.factor_name||r.reference_id}<span className="block text-slate-500">{r.reference_id}</span></td><td>{r.status==='succeeded'?'已计算':'未完成'}{r.error&&<span className="block text-red-700">{r.error}</span>}</td><td>{numberText(r.mean_abs_spearman)}</td><td>{r.valid_days??'—'}</td><td>{r.min_pairs??'—'}</td><td>{r.coverage==null?'—':(r.coverage*100).toFixed(1)+'%'}</td></tr>)}</tbody>
    </table></div>
   </details>}
-  {evidence?.run_id&&<p className="mt-2 break-all text-xs text-slate-500">计算任务：{evidence.run_id}</p>}
-  {evidence?.reference_hash&&<p className="mt-1 break-all text-xs text-slate-500">冻结对照库：{evidence.reference_hash}</p>}
+  {(evidence?.run_id||evidence?.reference_hash)&&<details className="small-details"><summary>对照来源追溯</summary>{evidence.run_id&&<p className="break-all text-xs text-slate-500">计算任务：{evidence.run_id}</p>}{evidence.reference_hash&&<p className="break-all text-xs text-slate-500">冻结对照库：{evidence.reference_hash}</p>}</details>}
   <p className="mt-2 text-xs text-slate-500">按同日共同股票计算因子值相关；收益曲线相关不代替因子值相关，低相关不等于已证明组合增量。</p>
  </section>;
 }

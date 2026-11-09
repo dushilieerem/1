@@ -1,0 +1,10 @@
+[
+  "frontend/src/lib/factorPresentation.ts",
+  "frontend/src/pages/institutional-workflow/FactorWorkflowPage.tsx",
+  "frontend/src/pages/institutional-workflow/FactorEvidencePanel.tsx",
+  "frontend/src/pages/institutional-workflow/FactorReviewPage.tsx",
+  "frontend/src/pages/institutional-workflow/FactorNoveltyEvidence.tsx",
+  "frontend/src/pages/institutional-workflow/QuantFactorReportPage.tsx",
+  "frontend/tests/factorManualDelegation.test.tsx",
+  "frontend/tests/factorReportGate.test.tsx"
+]

@@ -33,3 +33,5 @@ export function noveltyEventLabel(event:{action:string;status?:string},novelty?:
  if(['passed','failed','incomplete'].includes(status||'')&&novelty?.run_id)return '因子值对照已返回';
  return '查重状态已更新';
 }
+
+export function formatGateNumber(value:unknown,missing='无法计算 / 缺数据'):string{if(typeof value==='number'&&Number.isFinite(value))return Number(value.toPrecision(4)).toString();if(typeof value==='boolean')return value?'是':'否';return missing;}

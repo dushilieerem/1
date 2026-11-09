@@ -108,6 +108,8 @@ sudo bash scripts/ci/webhook-install.sh --user <运行用户>
 `bash scripts/ci/backend-check.sh`：
 
 - 校验 Python ≥ 3.11，建 `.ci/venv`，装 `backend/requirements-test.txt`；
+  两个 requirements 文件内容没变时跳过 pip（指纹存 `.ci/venv/.requirements.sha256`），
+  CD 上省掉每轮 3~4 分钟的联网安装；
 - 没有 `DATABASE_URL` 时用 `postgres:16-alpine` 起一次性实例（默认 `:55432`，库名 `svquant_ci`），
   **必须**有它：`RefreshLockTest` 两个用例走 PostgreSQL advisory lock；
 - `services/core/db.py` 在 pytest 进程里拒绝非 `*_test/*_dev/*_ci/*_e2e/*_local` 库，

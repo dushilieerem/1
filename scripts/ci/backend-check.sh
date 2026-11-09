@@ -40,9 +40,19 @@ if [[ ! -x "$VENV_DIR/bin/python" ]]; then
 fi
 VENV_PY="$VENV_DIR/bin/python"
 
-log "安装后端依赖"
-"$VENV_PY" -m pip install --upgrade pip >/dev/null
-"$VENV_PY" -m pip install -r "$BACKEND_DIR/requirements-test.txt"
+# 依赖没变就跳过 pip：CD 上每轮重装要联网 3~4 分钟，是 CI 的主要耗时。
+REQ_TEST="$BACKEND_DIR/requirements-test.txt"
+REQ_BASE="$BACKEND_DIR/requirements.txt"
+REQ_STAMP="$VENV_DIR/.requirements.sha256"
+REQ_HASH="$(cat "$REQ_TEST" "$REQ_BASE" 2>/dev/null | sha256sum | cut -d' ' -f1)"
+if [[ -x "$VENV_PY" && -f "$REQ_STAMP" && "$(cat "$REQ_STAMP" 2>/dev/null)" == "$REQ_HASH" ]]; then
+  log "依赖未变化，跳过安装（$REQ_HASH）"
+else
+  log "安装后端依赖"
+  "$VENV_PY" -m pip install --upgrade pip >/dev/null
+  "$VENV_PY" -m pip install -r "$REQ_TEST"
+  printf '%s\n' "$REQ_HASH" > "$REQ_STAMP"
+fi
 
 if [[ -z "${DATABASE_URL:-}" ]]; then
   command -v docker >/dev/null 2>&1 || {

@@ -79,7 +79,7 @@ export default function Agents() {
 
       <div className="callout blue">
         <Bot size={15} />
-        <span>{t("提示词只改变解释口径，不改变合规边界；AI 输出限制 50 字，自动生成并落盘缓存。", "Prompts only change the explanation style, not compliance boundaries. AI output is capped at 50 characters, generated automatically and cached on disk.")}</span>
+        <span>{t("提示词只改变解释口径，不改变合规边界；AI 输出自动生成并落盘缓存。", "Prompts only change the explanation style, not compliance boundaries. AI output is generated automatically and cached on disk.")}</span>
       </div>
 
       <div className="agent-list">

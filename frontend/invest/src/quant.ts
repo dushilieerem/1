@@ -2,6 +2,11 @@ export type FactorMeta = {
   key: string;
   name: string;
   name_en: string;
+  category?: string;
+  category_name?: string;
+  category_name_en?: string;
+  sub_name?: string;
+  sub_name_en?: string;
   formula: string;
   formula_en: string;
   direction: "high" | "low";
@@ -26,11 +31,20 @@ export type FactorRow = FactorMeta & {
   series?: Array<{ date: string; value: number }>;
 };
 
+export type FactorCategory = {
+  key: string;
+  name: string;
+  name_en: string;
+  factors: FactorRow[];
+  return_1m: number | null;
+};
+
 export type FactorBoard = {
   range: "1m" | "1y";
   range_label: string;
   range_label_en: string;
   factors: FactorRow[];
+  categories?: FactorCategory[];
   style: {
     key: "attack" | "defense" | "balanced";
     label: string;
@@ -220,6 +234,14 @@ export function factorName(f: { name: string; name_en: string }, locale: "zh" | 
 
 export function factorFormula(f: FactorMeta, locale: "zh" | "en") {
   return locale === "en" ? f.formula_en : f.formula;
+}
+
+export function factorSubName(f: FactorMeta, locale: "zh" | "en") {
+  return locale === "en" ? f.sub_name_en || f.name_en : f.sub_name || f.name;
+}
+
+export function factorCategoryName(f: FactorMeta, locale: "zh" | "en") {
+  return locale === "en" ? f.category_name_en || f.category || "" : f.category_name || f.category || "";
 }
 
 export function factorPlain(f: FactorMeta, locale: "zh" | "en") {

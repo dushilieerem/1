@@ -68,13 +68,6 @@ def _card_system() -> str:
     return agent_prompts.CARD_SYSTEM
 
 
-def _clip50(text: Any) -> str:
-    value = str(text or "").strip()
-    if len(value) <= 50:
-        return value
-    return value[:49].rstrip("，。；、,.; ") + "…"
-
-
 def _compact_result(result: dict[str, Any]) -> dict[str, Any]:
     if result.get("blocked"):
         return result
@@ -89,7 +82,7 @@ def _compact_result(result: dict[str, Any]) -> dict[str, Any]:
                 summary = section.get("title")
                 break
     card = {
-        "summary": _clip50(summary or "数据不足，暂无法给出结论。"),
+        "summary": str(summary or "数据不足，暂无法给出结论。").strip(),
         "sections": [],
         "disclaimer": card.get("disclaimer") or "AI 生成 · 非投资建议",
         "meta": card.get("meta") or {"dataSource": "服务端结构化数据"},
@@ -682,7 +675,7 @@ def portfolio_deep_ai(
     conn: PGConn = Depends(invest_conn),
     refresh: bool = Query(False),
 ) -> dict[str, Any]:
-    """组合体检的 AI 深度解读：自动生成，50 字结论，可重新生成。"""
+    """组合体检的 AI 深度解读：自动生成，可重新生成。"""
     data = rules.build_portfolio(conn, int(user["id"]))
     return {"ok": True, **_call("invest.portfolio", data, system=_PORTFOLIO_DEEP_SYSTEM, user_id=int(user["id"]), refresh=refresh)}
 

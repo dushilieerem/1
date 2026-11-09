@@ -18,6 +18,7 @@ import math
 import os
 import threading
 import time
+from collections import deque
 import uuid
 from datetime import date, timedelta
 from pathlib import Path
@@ -82,6 +83,61 @@ FACTORS: tuple[dict[str, Any], ...] = (
         "high_label": "高流动", "low_label": "低流动", "high_label_en": "Liquid", "low_label_en": "Illiquid",
     },
 )
+FACTOR_CATEGORIES: tuple[dict[str, str], ...] = (
+    {"key": "momentum", "name": "动量", "name_en": "Momentum"},
+    {"key": "value", "name": "价值", "name_en": "Value"},
+    {"key": "quality", "name": "质量", "name_en": "Quality"},
+    {"key": "growth", "name": "成长", "name_en": "Growth"},
+    {"key": "volatility", "name": "波动", "name_en": "Volatility"},
+    {"key": "liquidity", "name": "流动性", "name_en": "Liquidity"},
+    {"key": "size", "name": "规模", "name_en": "Size"},
+)
+
+# 7 大类、27 个细分因子。保留原有 6 个 key，避免旧草稿/回测失效。
+_EXTRA_FACTORS: tuple[dict[str, Any], ...] = (
+    {"key": "momentum_60", "name": "60 日涨幅", "name_en": "60-day return", "formula": "近 60 日涨幅", "formula_en": "60-day return", "direction": "high", "unit": "pct", "plain": "过去三个月涨得相对好的股票", "plain_en": "Stocks that rose over the last three months", "high_label": "强", "low_label": "弱", "high_label_en": "Strong", "low_label_en": "Weak"},
+    {"key": "momentum_12m", "name": "12 月动量", "name_en": "12-month momentum", "formula": "近 12 月涨幅（剔除最近 1 月）", "formula_en": "12-month return, excluding the latest month", "direction": "high", "unit": "pct", "plain": "过去一年涨得相对好的股票", "plain_en": "Stocks that rose over the last year", "high_label": "强", "low_label": "弱", "high_label_en": "Strong", "low_label_en": "Weak"},
+    {"key": "high_52w", "name": "52 周新高", "name_en": "52-week high", "formula": "现价 ÷ 近 52 周最高收盘价", "formula_en": "Price / 52-week highest close", "direction": "high", "unit": "ratio", "plain": "离一年高点有多近", "plain_en": "How close the price is to its one-year high", "high_label": "接近新高", "low_label": "远离新高", "high_label_en": "Near high", "low_label_en": "Far from high"},
+    {"key": "reversal_5", "name": "5 日反转", "name_en": "5-day reversal", "formula": "近 5 日涨幅", "formula_en": "5-day return", "direction": "low", "unit": "pct", "plain": "短期跌得多的股票，和动量方向相反", "plain_en": "Recent losers; opposite direction to momentum", "high_label": "涨", "low_label": "跌", "high_label_en": "Up", "low_label_en": "Down"},
+    {"key": "bp", "name": "BP", "name_en": "Book-to-price", "formula": "BP = 1 / PB", "formula_en": "BP = 1 / PB", "direction": "high", "unit": "ratio", "plain": "用市净率的倒数衡量便宜程度", "plain_en": "Book yield, the inverse of P/B", "high_label": "便宜", "low_label": "贵", "high_label_en": "Cheap", "low_label_en": "Expensive"},
+    {"key": "sp", "name": "SP", "name_en": "Sales-to-price", "formula": "SP = 营业收入 / 总市值", "formula_en": "SP = revenue / market cap", "direction": "high", "unit": "ratio", "plain": "用市销率的倒数衡量收入估值", "plain_en": "Sales yield, revenue relative to market cap", "high_label": "便宜", "low_label": "贵", "high_label_en": "Cheap", "low_label_en": "Expensive"},
+    {"key": "dividend_yield", "name": "股息率", "name_en": "Dividend yield", "formula": "近 12 月股息率", "formula_en": "Trailing 12-month dividend yield", "direction": "high", "unit": "pct", "plain": "现金分红相对股价的比例", "plain_en": "Cash dividends relative to price", "high_label": "高股息", "low_label": "低股息", "high_label_en": "High yield", "low_label_en": "Low yield"},
+    {"key": "peg", "name": "PEG", "name_en": "PEG", "formula": "PE(TTM) ÷ 近 3 年净利复合增速", "formula_en": "PE (TTM) / 3-year net profit CAGR", "direction": "low", "unit": "ratio", "plain": "估值相对盈利增速贵不贵", "plain_en": "Valuation relative to profit growth", "high_label": "贵", "low_label": "便宜", "high_label_en": "Expensive", "low_label_en": "Cheap"},
+    {"key": "ebit_ev", "name": "EBIT/EV", "name_en": "EBIT/EV", "formula": "EBIT ÷ 企业价值（近似）", "formula_en": "EBIT / enterprise value (approximation)", "direction": "high", "unit": "ratio", "plain": "经营利润相对企业价值", "plain_en": "Operating profit relative to enterprise value", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "roa", "name": "ROA", "name_en": "ROA", "formula": "净利润 ÷ 总资产", "formula_en": "Net profit / total assets", "direction": "high", "unit": "pct", "plain": "资产创造利润的效率", "plain_en": "Profit generated per unit of assets", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "gross_margin", "name": "毛利率", "name_en": "Gross margin", "formula": "毛利 ÷ 营业收入", "formula_en": "Gross profit / revenue", "direction": "high", "unit": "pct", "plain": "产品本身赚不赚钱", "plain_en": "Profitability of the product itself", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "accruals", "name": "低应计利润", "name_en": "Low accruals", "formula": "(经营现金流 − 净利润) ÷ 总资产", "formula_en": "(Operating cash flow - net profit) / total assets", "direction": "high", "unit": "pct", "plain": "利润里现金含量高不高", "plain_en": "How much of profit is backed by cash", "high_label": "现金含量高", "low_label": "现金含量低", "high_label_en": "Cash-rich", "low_label_en": "Accrual-heavy"},
+    {"key": "roic", "name": "ROIC", "name_en": "ROIC", "formula": "NOPAT ÷ 投入资本（近似）", "formula_en": "NOPAT / invested capital (approximation)", "direction": "high", "unit": "pct", "plain": "投入资本的回报率", "plain_en": "Return on invested capital", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "profit_growth", "name": "净利同比", "name_en": "Net profit growth", "formula": "归母净利同比", "formula_en": "Net profit year-over-year", "direction": "high", "unit": "pct", "plain": "利润增长的速度", "plain_en": "The pace of profit growth", "high_label": "高增长", "low_label": "低增长", "high_label_en": "High growth", "low_label_en": "Low growth"},
+    {"key": "deducted_growth", "name": "扣非净利同比", "name_en": "Deducted profit growth", "formula": "扣非净利同比", "formula_en": "Deducted net profit year-over-year", "direction": "high", "unit": "pct", "plain": "剔除一次性损益后的利润增速", "plain_en": "Profit growth excluding one-offs", "high_label": "高增长", "low_label": "低增长", "high_label_en": "High growth", "low_label_en": "Low growth"},
+    {"key": "volatility_60", "name": "60 日波动率", "name_en": "60-day volatility", "formula": "近 60 日收益标准差（越低越好）", "formula_en": "60-day return standard deviation (lower is better)", "direction": "low", "unit": "pct", "plain": "过去三个月价格起伏", "plain_en": "Price swings over the last three months", "high_label": "高波动", "low_label": "低波动", "high_label_en": "High vol", "low_label_en": "Low vol"},
+    {"key": "beta", "name": "Beta", "name_en": "Beta", "formula": "近 60 日相对沪深 300 的 Beta（越低越稳）", "formula_en": "60-day beta versus CSI 300 (lower is steadier)", "direction": "low", "unit": "ratio", "plain": "跟大盘一起波动的敏感度", "plain_en": "Sensitivity to broad-market moves", "high_label": "高 Beta", "low_label": "低 Beta", "high_label_en": "High beta", "low_label_en": "Low beta"},
+    {"key": "turnover", "name": "换手率", "name_en": "Turnover rate", "formula": "近 20 日平均换手率", "formula_en": "20-day average turnover rate", "direction": "high", "unit": "pct", "plain": "股票交易活跃程度", "plain_en": "How actively the stock trades", "high_label": "高换手", "low_label": "低换手", "high_label_en": "High turnover", "low_label_en": "Low turnover"},
+    {"key": "amihud", "name": "Amihud 非流动性", "name_en": "Amihud illiquidity", "formula": "近 20 日 |收益| ÷ 成交额 的均值", "formula_en": "20-day average |return| / turnover value", "direction": "high", "unit": "ratio", "plain": "成交额对价格冲击的大小", "plain_en": "Price impact relative to turnover value", "high_label": "冲击大", "low_label": "冲击小", "high_label_en": "High impact", "low_label_en": "Low impact"},
+    {"key": "market_cap_total", "name": "总市值", "name_en": "Total market cap", "formula": "总股本 × 股价", "formula_en": "Total shares x price", "direction": "low", "unit": "yi", "plain": "公司整体规模，小市值优先", "plain_en": "Overall company size; smaller is preferred", "high_label": "大市值", "low_label": "小市值", "high_label_en": "Large cap", "low_label_en": "Small cap"},
+    {"key": "market_cap_float", "name": "流通市值", "name_en": "Float market cap", "formula": "流通股本 × 股价", "formula_en": "Float shares x price", "direction": "low", "unit": "yi", "plain": "可交易部分的规模，小市值优先", "plain_en": "Size of the tradable float; smaller is preferred", "high_label": "大市值", "low_label": "小市值", "high_label_en": "Large cap", "low_label_en": "Small cap"},
+)
+FACTORS = FACTORS + _EXTRA_FACTORS
+FACTOR_BY_KEY = {f["key"]: f for f in FACTORS}
+
+CATEGORY_BY_KEY = {
+    "momentum": "momentum", "momentum_60": "momentum", "momentum_12m": "momentum", "high_52w": "momentum", "reversal_5": "momentum",
+    "value": "value", "bp": "value", "sp": "value", "dividend_yield": "value", "peg": "value", "ebit_ev": "value",
+    "quality": "quality", "roa": "quality", "gross_margin": "quality", "accruals": "quality", "roic": "quality",
+    "growth": "growth", "profit_growth": "growth", "deducted_growth": "growth",
+    "volatility": "volatility", "volatility_60": "volatility", "beta": "volatility",
+    "liquidity": "liquidity", "turnover": "liquidity", "amihud": "liquidity",
+    "market_cap_total": "size", "market_cap_float": "size",
+}
+SUB_NAME_BY_KEY = {
+    "value": "EP（1/PE）", "momentum": "20 日涨幅", "volatility": "20 日波动率",
+    "quality": "ROE（TTM）", "growth": "营收同比", "liquidity": "日均成交额",
+}
+SUB_NAME_EN_BY_KEY = {
+    "value": "EP (1/PE)", "momentum": "20-day return", "volatility": "20-day volatility",
+    "quality": "ROE (TTM)", "growth": "Revenue YoY", "liquidity": "20-day average turnover",
+}
+CATEGORY_NAME_BY_KEY = {x["key"]: x for x in FACTOR_CATEGORIES}
 FACTOR_BY_KEY = {f["key"]: f for f in FACTORS}
 
 def re_universe(universe: str) -> str:
@@ -108,7 +164,7 @@ _STYLE_TEXT = {
 
 _PANEL_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
 _BOARD_PAYLOAD_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
-_BOARD_CACHE_VERSION = 1
+_BOARD_CACHE_VERSION = 3
 _BOARD_CACHE_ROOT = Path(
     os.environ.get("SVQUANT_QUANT_CACHE_DIR")
     or (Path(__file__).resolve().parents[2] / "data" / "invest_quant_cache")
@@ -287,6 +343,15 @@ def _normalize_universe(value: Any) -> str:
 
 def _factor_meta(key: str) -> dict[str, Any]:
     meta = dict(FACTOR_BY_KEY[key])
+    category = CATEGORY_BY_KEY.get(key, "value")
+    cat = CATEGORY_NAME_BY_KEY.get(category, {"name": category, "name_en": category})
+    meta.update({
+        "category": category,
+        "category_name": cat.get("name"),
+        "category_name_en": cat.get("name_en"),
+        "sub_name": SUB_NAME_BY_KEY.get(key, meta.get("name")),
+        "sub_name_en": SUB_NAME_EN_BY_KEY.get(key, meta.get("name_en")),
+    })
     return meta
 
 
@@ -387,11 +452,21 @@ def _load_panel(conn: Any, universe: str) -> dict[str, Any]:
 
     close: dict[str, list[float | None]] = {}
     amount: dict[str, list[float | None]] = {}
+    turnover: dict[str, list[float | None]] = {}
     pe: dict[str, list[float | None]] = {}
+    pb: dict[str, list[float | None]] = {}
+    dividend: dict[str, list[float | None]] = {}
+    total_mv: dict[str, list[float | None]] = {}
+    float_mv: dict[str, list[float | None]] = {}
     for symbol in symbols:
         close[symbol] = [None] * n
         amount[symbol] = [None] * n
+        turnover[symbol] = [None] * n
         pe[symbol] = [None] * n
+        pb[symbol] = [None] * n
+        dividend[symbol] = [None] * n
+        total_mv[symbol] = [None] * n
+        float_mv[symbol] = [None] * n
 
     raw_conn = getattr(conn, "raw", None)
     bulk = None
@@ -406,8 +481,8 @@ def _load_panel(conn: Any, universe: str) -> dict[str, Any]:
 
     for chunk in _chunks(symbols):
         if bulk:
-            for symbol, trade_date, value, amt in bulk(
-                "SELECT symbol, trade_date::text, close, amount FROM md_daily_bar "
+            for symbol, trade_date, value, amt, turn in bulk(
+                "SELECT symbol, trade_date::text, close, amount, turnover FROM md_daily_bar "
                 "WHERE adjust='hfq' AND trade_date BETWEEN ?::date AND ?::date AND symbol = ANY(?)",
                 (cutoff, data_date, chunk),
             ):
@@ -415,18 +490,23 @@ def _load_panel(conn: Any, universe: str) -> dict[str, Any]:
                 if pos is not None:
                     close[symbol][pos] = value
                     amount[symbol][pos] = amt
-            for symbol, trade_date, value in bulk(
-                "SELECT symbol, trade_date::text, pe_ttm FROM md_valuation_daily "
-                "WHERE trade_date BETWEEN ?::date AND ?::date AND symbol = ANY(?)",
+                    turnover[symbol][pos] = turn
+            for symbol, trade_date, pe_v, pb_v, dy_v, mv_v, fmv_v in bulk(
+                "SELECT symbol, trade_date::text, pe_ttm, pb_mrq, dividend_yield_ttm, total_mv, float_mv "
+                "FROM md_valuation_daily WHERE trade_date BETWEEN ?::date AND ?::date AND symbol = ANY(?)",
                 (cutoff, data_date, chunk),
             ):
                 pos = idx.get(trade_date)
                 if pos is not None:
-                    pe[symbol][pos] = value
+                    pe[symbol][pos] = pe_v
+                    pb[symbol][pos] = pb_v
+                    dividend[symbol][pos] = dy_v
+                    total_mv[symbol][pos] = mv_v
+                    float_mv[symbol][pos] = fmv_v
         else:
             for row in rules.rows(
                 conn,
-                "SELECT symbol, trade_date::text AS d, close, amount FROM md_daily_bar "
+                "SELECT symbol, trade_date::text AS d, close, amount, turnover FROM md_daily_bar "
                 "WHERE adjust='hfq' AND trade_date BETWEEN ?::date AND ?::date AND symbol = ANY(?)",
                 (cutoff, data_date, chunk),
             ):
@@ -435,16 +515,21 @@ def _load_panel(conn: Any, universe: str) -> dict[str, Any]:
                 if symbol in close and pos is not None:
                     close[symbol][pos] = _num(row.get("close"))
                     amount[symbol][pos] = _num(row.get("amount"))
+                    turnover[symbol][pos] = _num(row.get("turnover"))
             for row in rules.rows(
                 conn,
-                "SELECT symbol, trade_date::text AS d, pe_ttm FROM md_valuation_daily "
-                "WHERE trade_date BETWEEN ?::date AND ?::date AND symbol = ANY(?)",
+                "SELECT symbol, trade_date::text AS d, pe_ttm, pb_mrq, dividend_yield_ttm, total_mv, float_mv "
+                "FROM md_valuation_daily WHERE trade_date BETWEEN ?::date AND ?::date AND symbol = ANY(?)",
                 (cutoff, data_date, chunk),
             ):
                 symbol = str(row.get("symbol") or "")
                 pos = idx.get(_date(row.get("d")))
                 if symbol in pe and pos is not None:
                     pe[symbol][pos] = _num(row.get("pe_ttm"))
+                    pb[symbol][pos] = _num(row.get("pb_mrq"))
+                    dividend[symbol][pos] = _num(row.get("dividend_yield_ttm"))
+                    total_mv[symbol][pos] = _num(row.get("total_mv"))
+                    float_mv[symbol][pos] = _num(row.get("float_mv"))
 
     fin: dict[str, list[tuple[str, float | None, float | None]]] = {}
     for row in rules.rows(
@@ -457,6 +542,68 @@ def _load_panel(conn: Any, universe: str) -> dict[str, Any]:
         symbol = str(row.get("symbol") or "")
         if symbol in close and row.get("d"):
             fin.setdefault(symbol, []).append((_date(row["d"]), _num(row.get("roe")), _num(row.get("revenue_yoy"))))
+
+    fund_map: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in rules.rows(
+        conn,
+        "SELECT symbol, notice_date::text AS d, report_date::text AS r, revenue, operating_profit, "
+        "net_profit, eps, NULLIF(raw->>'deducted_net_profit','')::double precision AS deducted "
+        "FROM fin_income_statement WHERE symbol = ANY(?) "
+        "AND notice_date BETWEEN (?::date - INTERVAL '5 years') AND ?::date "
+        "ORDER BY symbol, report_date, notice_date",
+        (symbols, data_date, data_date),
+    ):
+        key = (str(row.get("symbol") or ""), _date(row.get("r")))
+        fund_map[key] = {
+            "d": _date(row.get("d")), "report_date": key[1],
+            "revenue": _num(row.get("revenue")), "operating_profit": _num(row.get("operating_profit")),
+            "net_profit": _num(row.get("net_profit")), "eps": _num(row.get("eps")),
+            "deducted": _num(row.get("deducted")),
+        }
+    for row in rules.rows(
+        conn,
+        "SELECT symbol, report_date::text AS r, total_assets, total_liabilities, total_equity, cash, current_liabilities "
+        "FROM fin_balance_sheet WHERE symbol = ANY(?) "
+        "AND notice_date BETWEEN (?::date - INTERVAL '5 years') AND ?::date "
+        "ORDER BY symbol, report_date, notice_date",
+        (symbols, data_date, data_date),
+    ):
+        key = (str(row.get("symbol") or ""), _date(row.get("r")))
+        target = fund_map.setdefault(key, {"d": _date(row.get("r")), "report_date": key[1]})
+        target.update({
+            "total_assets": _num(row.get("total_assets")), "total_liabilities": _num(row.get("total_liabilities")),
+            "total_equity": _num(row.get("total_equity")), "cash": _num(row.get("cash")),
+            "current_liabilities": _num(row.get("current_liabilities")),
+        })
+    for row in rules.rows(
+        conn,
+        "SELECT symbol, report_date::text AS r, operating_cf FROM fin_cash_flow WHERE symbol = ANY(?) "
+        "AND notice_date BETWEEN (?::date - INTERVAL '5 years') AND ?::date "
+        "ORDER BY symbol, report_date, notice_date",
+        (symbols, data_date, data_date),
+    ):
+        key = (str(row.get("symbol") or ""), _date(row.get("r")))
+        target = fund_map.setdefault(key, {"d": _date(row.get("r")), "report_date": key[1]})
+        target["operating_cf"] = _num(row.get("operating_cf"))
+    for row in rules.rows(
+        conn,
+        "SELECT symbol, report_date::text AS r, roe, gross_margin, net_margin, revenue_yoy, profit_yoy "
+        "FROM fin_indicator WHERE symbol = ANY(?) "
+        "AND notice_date BETWEEN (?::date - INTERVAL '5 years') AND ?::date "
+        "ORDER BY symbol, report_date, notice_date",
+        (symbols, data_date, data_date),
+    ):
+        key = (str(row.get("symbol") or ""), _date(row.get("r")))
+        target = fund_map.setdefault(key, {"d": _date(row.get("r")), "report_date": key[1]})
+        target.update({
+            "roe": _num(row.get("roe")), "gross_margin": _num(row.get("gross_margin")),
+            "net_margin": _num(row.get("net_margin")), "revenue_yoy": _num(row.get("revenue_yoy")),
+            "profit_yoy": _num(row.get("profit_yoy")),
+        })
+    fund: dict[str, list[dict[str, Any]]] = {}
+    for (symbol, _report), item in sorted(fund_map.items(), key=lambda kv: (kv[0][0], kv[1].get("d", ""))):
+        if symbol in close:
+            fund.setdefault(symbol, []).append(item)
 
     name: dict[str, str] = {}
     list_date: dict[str, str] = {}
@@ -505,8 +652,14 @@ def _load_panel(conn: Any, universe: str) -> dict[str, Any]:
         "spans": spans,
         "close": close,
         "amount": amount,
+        "turnover": turnover,
         "pe": pe,
+        "pb": pb,
+        "dividend": dividend,
+        "total_mv": total_mv,
+        "float_mv": float_mv,
         "fin": fin,
+        "fund": fund,
         "name": name,
         "list_date": list_date,
         "st": st,
@@ -619,9 +772,11 @@ def _prepare(panel: dict[str, Any]) -> None:
     全市场 5500 只 × 300 日时，后者会慢一个数量级。
     """
     if panel.get("derived"):
+        _prepare_extra(panel)
         return
     if np is not None:
         _prepare_numpy(panel)
+        _prepare_extra(panel)
         return
     dates: list[str] = panel["dates"]
     n = len(dates)
@@ -712,7 +867,201 @@ def _prepare(panel: dict[str, Any]) -> None:
         derived["liquidity"][symbol] = liq
         derived.setdefault("_ret_next", {})[symbol] = ret_next
     panel["derived"] = derived
+    _prepare_extra(panel)
 
+
+_EXTRA_KEYS = (
+    "momentum_60", "momentum_12m", "high_52w", "reversal_5",
+    "bp", "sp", "dividend_yield", "peg", "ebit_ev",
+    "roa", "gross_margin", "accruals", "roic",
+    "profit_growth", "deducted_growth",
+    "volatility_60", "beta", "turnover", "amihud",
+    "market_cap_total", "market_cap_float",
+)
+
+
+def _prepare_extra(panel: dict[str, Any]) -> None:
+    """补齐新增细分因子；滚动窗口用增量维护，避免逐日切片。"""
+    if panel.get("_extra_ready"):
+        return
+    dates = panel["dates"]
+    n = len(dates)
+    bench_values = [panel.get("bench", {}).get(d) for d in dates]
+    bench_rets: list[float | None] = [None] * n
+    for i in range(1, n):
+        prev, cur = bench_values[i - 1], bench_values[i]
+        if prev and cur is not None:
+            bench_rets[i] = cur / prev - 1.0
+
+    for symbol in panel["symbols"]:
+        close = panel["close"].get(symbol) or [None] * n
+        amount = panel["amount"].get(symbol) or [None] * n
+        turnover = panel.get("turnover", {}).get(symbol) or [None] * n
+        pe = panel.get("pe", {}).get(symbol) or [None] * n
+        pb = panel.get("pb", {}).get(symbol) or [None] * n
+        dividend = panel.get("dividend", {}).get(symbol) or [None] * n
+        total_mv = panel.get("total_mv", {}).get(symbol) or [None] * n
+        float_mv = panel.get("float_mv", {}).get(symbol) or [None] * n
+        fund = panel.get("fund", {}).get(symbol) or []
+        annual = [row for row in fund if str(row.get("report_date") or "")[5:7] == "12"]
+        annual_by_year = {str(row.get("report_date") or "")[:4]: row for row in annual}
+        by_report = {str(row.get("report_date") or ""): row for row in fund}
+        series = {key: [None] * n for key in _EXTRA_KEYS}
+
+        rets: list[float | None] = [None] * n
+        illiq: list[float | None] = [None] * n
+        for i in range(1, n):
+            prev, cur = close[i - 1], close[i]
+            if prev and cur is not None:
+                rets[i] = cur / prev - 1.0
+                if amount[i]:
+                    illiq[i] = abs(rets[i]) / amount[i]
+
+        high_q: deque[int] = deque()
+        r_sum = r2_sum = r_count = 0.0
+        b_sum = b2_sum = rb_sum = pr_sum = pair_count = 0.0
+        t_sum = t_count = 0.0
+        a_sum = a_count = 0.0
+        fp = -1
+        for i, day in enumerate(dates):
+            # 52 周新高：单调队列，窗口为最近 252 个交易日。
+            while high_q and high_q[0] <= i - 252:
+                high_q.popleft()
+            while high_q and (close[high_q[-1]] is None or (close[i] is not None and close[high_q[-1]] <= close[i])):
+                high_q.pop()
+            if close[i] is not None:
+                high_q.append(i)
+
+            # 60 日波动率 / Beta / 20 日换手与 Amihud 的滚动和。
+            add = i
+            if add >= 1:
+                r = rets[add]
+                if r is not None:
+                    r_sum += r
+                    r2_sum += r * r
+                    r_count += 1
+                b = bench_rets[add]
+                if r is not None and b is not None:
+                    b_sum += b
+                    b2_sum += b * b
+                    rb_sum += r * b
+                    pr_sum += r
+                    pair_count += 1
+                t = turnover[add]
+                if t is not None:
+                    t_sum += t
+                    t_count += 1
+                a = illiq[add]
+                if a is not None:
+                    a_sum += a
+                    a_count += 1
+            old = i - 60
+            if old >= 1:
+                r = rets[old]
+                if r is not None:
+                    r_sum -= r
+                    r2_sum -= r * r
+                    r_count -= 1
+                b = bench_rets[old]
+                if r is not None and b is not None:
+                    b_sum -= b
+                    b2_sum -= b * b
+                    rb_sum -= r * b
+                    pr_sum -= r
+                    pair_count -= 1
+            if i >= 21:
+                old = i - 20
+                if old >= 1:
+                    t = turnover[old]
+                    if t is not None:
+                        t_sum -= t
+                        t_count -= 1
+                    a = illiq[old]
+                    if a is not None:
+                        a_sum -= a
+                        a_count -= 1
+
+            if i >= 60 and close[i] is not None and close[i - 60]:
+                series["momentum_60"][i] = close[i] / close[i - 60] - 1.0
+            if i >= 252 and close[i - 21] is not None and close[i - 252]:
+                series["momentum_12m"][i] = close[i - 21] / close[i - 252] - 1.0
+            if high_q and i - high_q[0] >= 99 and close[i] is not None and close[high_q[0]]:
+                series["high_52w"][i] = close[i] / close[high_q[0]]
+            if i >= 5 and close[i] is not None and close[i - 5]:
+                series["reversal_5"][i] = close[i] / close[i - 5] - 1.0
+
+            if pb[i] is not None and pb[i] > 0:
+                series["bp"][i] = 1.0 / pb[i]
+            if dividend[i] is not None:
+                series["dividend_yield"][i] = dividend[i] / 100.0
+            if total_mv[i] is not None:
+                series["market_cap_total"][i] = total_mv[i]
+            if float_mv[i] is not None:
+                series["market_cap_float"][i] = float_mv[i]
+
+            while fp + 1 < len(fund) and fund[fp + 1].get("d", "") <= day:
+                fp += 1
+            f = fund[fp] if fp >= 0 else None
+            year = str(f.get("report_date") or "")[:4] if f else ""
+            ann = annual_by_year.get(year)
+            if ann is None and annual:
+                ann = annual[-1] if annual[-1].get("d", "") <= day else None
+            if total_mv[i] and f:
+                revenue = (ann or f).get("revenue")
+                if revenue is not None and revenue > 0:
+                    series["sp"][i] = revenue / total_mv[i]
+                op, debt, cash = f.get("operating_profit"), f.get("total_liabilities"), f.get("cash")
+                if op is not None and debt is not None and cash is not None:
+                    ev = total_mv[i] + debt - cash
+                    if ev > 0:
+                        series["ebit_ev"][i] = op / ev
+                if pe[i] is not None and pe[i] > 0 and ann:
+                    latest_np = ann.get("net_profit")
+                    prior = annual_by_year.get(str(int(year) - 3)) if year.isdigit() else None
+                    prior_np = (prior or {}).get("net_profit")
+                    if latest_np and prior_np and latest_np > 0 and prior_np > 0:
+                        cagr = (latest_np / prior_np) ** (1.0 / 3.0) - 1.0
+                        if cagr > 0:
+                            series["peg"][i] = pe[i] / (cagr * 100.0)
+            if f:
+                assets, liabilities, equity = f.get("total_assets"), f.get("total_liabilities"), f.get("total_equity")
+                net_profit, ocf = f.get("net_profit"), f.get("operating_cf")
+                if assets and net_profit is not None:
+                    series["roa"][i] = net_profit / assets
+                if f.get("gross_margin") is not None:
+                    series["gross_margin"][i] = f["gross_margin"]
+                if assets and net_profit is not None and ocf is not None:
+                    series["accruals"][i] = (ocf - net_profit) / assets
+                if liabilities is not None and equity is not None and f.get("cash") is not None:
+                    invested = equity + liabilities - f["cash"]
+                    if invested > 0 and f.get("operating_profit") is not None:
+                        series["roic"][i] = f["operating_profit"] / invested
+                if f.get("profit_yoy") is not None:
+                    series["profit_growth"][i] = f["profit_yoy"]
+                report = str(f.get("report_date") or "")
+                prior = by_report.get(f"{int(report[:4]) - 1}{report[4:]}") if report[:4].isdigit() else None
+                if f.get("deducted") is not None and prior and prior.get("deducted"):
+                    series["deducted_growth"][i] = f["deducted"] / prior["deducted"] - 1.0
+
+            if r_count >= 40:
+                mean = r_sum / r_count
+                series["volatility_60"][i] = math.sqrt(max(0.0, r2_sum / r_count - mean * mean))
+            if pair_count >= 40:
+                mean_r = pr_sum / pair_count
+                mean_b = b_sum / pair_count
+                var_b = b2_sum / pair_count - mean_b * mean_b
+                cov = rb_sum / pair_count - mean_r * mean_b
+                if var_b > 0:
+                    series["beta"][i] = cov / var_b
+            if i >= 21:
+                if t_count >= 10:
+                    series["turnover"][i] = t_sum / t_count
+                if a_count >= 10:
+                    series["amihud"][i] = a_sum / a_count
+
+        for key in _EXTRA_KEYS:
+            panel["derived"].setdefault(key, {})[symbol] = series[key]
+    panel["_extra_ready"] = True
 
 def _raw(panel: dict[str, Any], symbol: str, key: str, i: int) -> float | None:
     if i >= len(panel["dates"]):
@@ -880,13 +1229,13 @@ def _monthly_groups(panel: dict[str, Any], start: int, end: int) -> list[tuple[i
 
 
 def _rebalance_groups(panel: dict[str, Any], start: int, end: int, frequency: str) -> list[tuple[int, int]]:
-    frequency = frequency if frequency in ("monthly", "biweekly", "quarterly") else "monthly"
+    frequency = frequency if frequency in ("daily", "weekly", "biweekly", "monthly", "quarterly") else "monthly"
     if frequency == "monthly":
         return _monthly_groups(panel, start, end)
     groups: list[tuple[int, int]] = []
     current = start
-    if frequency == "biweekly":
-        step = 10
+    if frequency in ("daily", "weekly", "biweekly"):
+        step = {"daily": 1, "weekly": 5, "biweekly": 10}[frequency]
         for i in range(start + step, end + 1, step):
             groups.append((current, i - 1))
             current = i
@@ -1026,7 +1375,7 @@ def _assumptions(
 ) -> dict[str, Any]:
     filters = filters or {}
     bench_kind = "index" if panel["bench"] else "equal_weight"
-    rebalance_label = {"monthly": ("月度", "Monthly"), "biweekly": ("双周", "Biweekly"), "quarterly": ("季度", "Quarterly")}
+    rebalance_label = {"daily": ("日频", "Daily"), "weekly": ("周频", "Weekly"), "biweekly": ("双周", "Biweekly"), "monthly": ("月度", "Monthly"), "quarterly": ("季度", "Quarterly")}
     reb_zh, reb_en = rebalance_label.get(rebalance, rebalance_label["monthly"])
     excluded = []
     excluded_en = []
@@ -1090,7 +1439,7 @@ def run_backtest(
     if holdings not in (10, 20, 30):
         holdings = DEFAULT_HOLDINGS
     rebalance = str(rebalance or "monthly").lower()
-    if rebalance not in ("monthly", "biweekly", "quarterly"):
+    if rebalance not in ("daily", "weekly", "biweekly", "monthly", "quarterly"):
         rebalance = "monthly"
     filter_state = {"st": True, "listed60": True, "amount": True}
     if isinstance(filters, dict):
@@ -1574,6 +1923,9 @@ def _np_matrix(panel: dict[str, Any], key: str) -> Any:
 def _numpy_mats(panel: dict[str, Any]) -> dict[str, Any]:
     cached = panel.get("np_mats")
     if cached:
+        for key in FACTOR_BY_KEY:
+            if key not in cached:
+                cached[key] = _np_matrix(panel, key)
         return cached
     mats = {key: _np_matrix(panel, key) for key in FACTOR_BY_KEY}
     mats["_ret_next"] = _np_matrix(panel, "_ret_next")
@@ -1864,7 +2216,7 @@ def _board_payload(panel: dict[str, Any], board: dict[str, Any], range_key: str)
         crowd_now = crowd[-1] if crowd else None
         crowd_pct = (sum(1 for v in crowd if crowd_now is not None and v <= crowd_now) / len(crowd) * 100) if crowd else None
         factors.append({
-            **meta,
+            **_factor_meta(key),
             "return_1m": _pct(r1),
             "return_1y": _pct(r2),
             "percentile": current_pct,
@@ -1876,12 +2228,22 @@ def _board_payload(panel: dict[str, Any], board: dict[str, Any], range_key: str)
             "series": _date_series(panel, dvals[-20:] if range_key == "1m" else mvals[-250:]),
         })
     ordered = sorted(factors, key=lambda f: (f.get("return_1m") is None, -(f.get("return_1m") or 0)))
+    categories = []
+    for cat in FACTOR_CATEGORIES:
+        items = [f for f in ordered if f.get("category") == cat["key"]]
+        if items:
+            categories.append({
+                **cat,
+                "factors": items,
+                "return_1m": round(sum(f["return_1m"] for f in items if f.get("return_1m") is not None) / max(1, sum(1 for f in items if f.get("return_1m") is not None)), 2) if any(f.get("return_1m") is not None for f in items) else None,
+            })
     style = _market_style(factors)
     return {
         "range": "1m" if range_key != "1y" else "1y",
         "range_label": "近 1 月" if range_key != "1y" else "近 1 年",
         "range_label_en": "Last month" if range_key != "1y" else "Last year",
         "factors": ordered,
+        "categories": categories,
         "style": style,
         "correlations": _correlation_matrix(board["daily"]),
         "correlation_keys": list(FACTOR_BY_KEY),
@@ -1925,8 +2287,8 @@ def _market_style(factors: list[dict[str, Any]]) -> dict[str, Any]:
         "strongest_name": top[0]["name"] if top else None,
         "strongest_name_en": top[0]["name_en"] if top else None,
         "note": "只描述当下，不代表接下来。", "note_en": "Describes the present only; it does not predict what comes next.",
-        "method": "取 6 个因子近 20 日多空收益排序：前二均为正→进攻，均为负→防御，其余→均衡。",
-        "method_en": "Ranks six factors by 20-day long-short return: top two positive → offensive, both negative → defensive, otherwise balanced.",
+        "method": "取全部因子近 20 日多空收益排序：前二均为正→进攻，均为负→防御，其余→均衡。",
+        "method_en": "Ranks all factors by 20-day long-short return: top two positive → offensive, both negative → defensive, otherwise balanced.",
     }
 
 
@@ -2787,13 +3149,6 @@ def _ai_points(section: dict[str, Any]) -> list[dict[str, str]]:
     return out[:4]
 
 
-def _clip50(text: Any) -> str:
-    value = str(text or "").strip()
-    if len(value) <= 50:
-        return value
-    return value[:49].rstrip("，。；、,.; ") + "…"
-
-
 def ai_commentary(
     kind: str,
     payload: dict[str, Any],
@@ -2843,7 +3198,7 @@ def ai_commentary(
                             break
                     if summary:
                         break
-        result = {"available": True, "summary": _clip50(summary or "数据不足，暂无法给出结论。"), "aspects": []}
+        result = {"available": True, "summary": str(summary or "数据不足，暂无法给出结论。").strip(), "aspects": []}
         ai_cache.put(user_id, "commentary", key, result)
         return result
     except Exception:

@@ -524,7 +524,7 @@ export default function QuantStrategies() {
               <label className="field">
                 <span>{t("调仓", "Rebalance")}</span>
                 <div className="seg">
-                  {([["monthly", "月度", "Monthly"], ["biweekly", "双周", "Biweekly"], ["quarterly", "季度", "Quarterly"]] as Array<[string, string, string]>).map(([key, zh, en]) => (
+                  {([["daily", "日频", "Daily"], ["weekly", "周频", "Weekly"], ["biweekly", "双周", "Biweekly"], ["monthly", "月度", "Monthly"], ["quarterly", "季度", "Quarterly"]] as Array<[string, string, string]>).map(([key, zh, en]) => (
                     <button key={key} className={rebalance === key ? "on" : ""} onClick={() => setRebalance(key)}>{t(zh, en)}</button>
                   ))}
                 </div>
@@ -576,7 +576,7 @@ export default function QuantStrategies() {
                   })}
                 </ul>
                 <p>{t("股票池：", "Universe: ")}{universeLabel(universe, t)} · {t("选股：综合分前", "Holdings: top")} {holdings}</p>
-                <p>{t("调仓：", "Rebalance: ")}{rebalance === "monthly" ? t("月度", "Monthly") : rebalance === "biweekly" ? t("双周", "Biweekly") : t("季度", "Quarterly")} · {t("成本：单边 0.1%", "Cost: 0.1% one-way")}</p>
+                <p>{t("调仓：", "Rebalance: ")}{rebalance === "daily" ? t("日频", "Daily") : rebalance === "weekly" ? t("周频", "Weekly") : rebalance === "monthly" ? t("月度", "Monthly") : rebalance === "biweekly" ? t("双周", "Biweekly") : t("季度", "Quarterly")} · {t("成本：单边 0.1%", "Cost: 0.1% one-way")}</p>
                 <p>{t("过滤：", "Filters: ")}{[filterSt ? "剔除 ST" : "含 ST", filterListed ? "上市 ≥ 60 天" : "不限上市时间", filterAmount ? "成交额 ≥ 5000 万" : "不限成交额"].join("、")}</p>
               </div>
               <div className="quant-config-actions">

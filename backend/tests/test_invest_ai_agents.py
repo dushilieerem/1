@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
-"""H5 AI 的 50 字限制、落盘缓存与 Agent 注册表。"""
+"""H5 AI 卡片归一化、落盘缓存与 Agent 注册表。"""
 from __future__ import annotations
 
 from app.routers import invest_ai
-from app.routers.invest_ai import _clip50, _compact_result, _extract_compare_pair
+from app.routers.invest_ai import _compact_result, _extract_compare_pair
 from services.invest import agent_prompts, ai_cache
 
 
-def test_clip50_and_compact_card():
-    assert len(_clip50("很" * 80)) <= 50
+def test_compact_card_keeps_full_summary():
     out = _compact_result({
         "card": {
             "summary": "很" * 80,
@@ -16,7 +15,7 @@ def test_clip50_and_compact_card():
             "disclaimer": "AI 生成 · 非投资建议",
         }
     })
-    assert len(out["card"]["summary"]) <= 50
+    assert len(out["card"]["summary"]) == 80
     assert out["card"]["sections"] == []
     assert out["card"]["disclaimer"]
 
@@ -51,7 +50,7 @@ def test_call_uses_cache_until_refresh(monkeypatch, tmp_path):
     second = invest_ai._call("invest.stock", {"code": "600519"}, user_id=7)
     assert calls["n"] == 1
     assert second.get("cached") is True
-    assert len(first["card"]["summary"]) <= 50
+    assert len(first["card"]["summary"]) == 80
     assert first["card"]["sections"] == []
     invest_ai._call("invest.stock", {"code": "600519"}, user_id=7, refresh=True)
     assert calls["n"] == 2

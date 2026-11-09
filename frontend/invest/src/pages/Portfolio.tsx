@@ -565,7 +565,7 @@ export default function Portfolio() {
 
           <AiPanel
             title={t("AI 关键结论", "AI takeaway")}
-            subtitle={t("自动生成，50 字以内，只讲最需要先看的一件事；不满意可重新生成。", "Generated automatically in under 50 characters, focused on the one thing to look at first.")}
+            subtitle={t("自动生成，2–3 句只讲最需要先看的一件事；不满意可重新生成。", "Generated automatically in 2–3 sentences, focused on the one thing to look at first.")}
             endpoint="/api/invest/ai/portfolio/deep"
           />
 

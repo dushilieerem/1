@@ -6,13 +6,15 @@ import { ErrorState, LoadingCards, PageHeader, Sheet, Tag } from "../components"
 import { useLocale } from "../i18n";
 import {
   directionLabel,
+  factorCategoryName,
   factorFormula,
-  factorName,
   factorPlain,
+  factorSubName,
   fmtFactorValue,
   fmtSignedPct,
   trendClass,
   type FactorBoard,
+  type FactorCategory,
   type FactorRow,
 } from "../quant";
 
@@ -27,7 +29,7 @@ type Detail = FactorRow & {
   data_date: string;
 };
 
-function DirectionTag({ row }: { row: FactorMetaLike }) {
+function DirectionTag({ row }: { row: FactorRow }) {
   const { t, locale } = useLocale();
   return (
     <Tag tone="gray">
@@ -36,8 +38,6 @@ function DirectionTag({ row }: { row: FactorMetaLike }) {
   );
 }
 
-type FactorMetaLike = FactorRow;
-
 export default function QuantFactors() {
   const nav = useNavigate();
   const { t, locale } = useLocale();
@@ -45,10 +45,13 @@ export default function QuantFactors() {
   const [board, setBoard] = useState<FactorBoard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<"1m" | "1y">("1m");
+  const [view, setView] = useState<"board" | "library">("board");
   const [intro, setIntro] = useState(false);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [openKey, setOpenKey] = useState<string | null>(params.get("open"));
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setError(null);
@@ -83,17 +86,40 @@ export default function QuantFactors() {
     });
   }, [board, range]);
 
+  const categories = useMemo<FactorCategory[]>(() => {
+    if (board?.categories?.length) {
+      const key = range === "1m" ? "return_1m" : "return_1y";
+      return board.categories.map((cat) => ({
+        ...cat,
+        factors: [...cat.factors].sort((a, b) => {
+          const av = a[key];
+          const bv = b[key];
+          if (av === null || av === undefined) return 1;
+          if (bv === null || bv === undefined) return -1;
+          return Number(bv) - Number(av);
+        }),
+      }));
+    }
+    return [];
+  }, [board, range]);
+
+  const pick = (cat: FactorCategory) => cat.factors.find((f) => f.key === selected[cat.key]) || cat.factors[0];
+  const valueOf = (row: FactorRow | undefined) => (range === "1m" ? row?.return_1m : row?.return_1y);
   const createWithFactor = () => {
     if (!detail) return;
     const d = detail.chosen_direction || detail.direction;
     nav(`/quant/strategies?tab=quick&preset=${encodeURIComponent(detail.key)}:${d}`);
     setDetail(null);
   };
-
   const createWithTop = () => {
     const top = sorted[0];
     if (!top) return;
     nav(`/quant/strategies?tab=quick&preset=${encodeURIComponent(`${top.key}:${top.direction}`)}`);
+  };
+  const openFactor = (cat: FactorCategory, key: string) => {
+    setSelected((prev) => ({ ...prev, [cat.key]: key }));
+    setExpanded(null);
+    loadDetail(key);
   };
 
   return (
@@ -118,9 +144,7 @@ export default function QuantFactors() {
                 {locale === "en" ? board.style.label_en : board.style.label}
               </Tag>
             </div>
-            <p className="quant-style-sentence">
-              {locale === "en" ? board.style.sentence_en : board.style.sentence}
-            </p>
+            <p className="quant-style-sentence">{locale === "en" ? board.style.sentence_en : board.style.sentence}</p>
             <div className="quant-tags">
               {(locale === "en" ? board.style.tags_en : board.style.tags || []).map((tag) => (
                 <Tag key={tag} tone="gray">{tag}</Tag>
@@ -138,11 +162,16 @@ export default function QuantFactors() {
             {intro ? (
               <div className="quant-intro-body">
                 <p>{t("因子就是把股票按某个特征打分：便宜、涨得好、波动小、赚钱多、增长快、成交活跃。", "A factor scores stocks on one characteristic: cheap, rising, low-volatility, profitable, growing, or liquid.")}</p>
-                <p>{t("把当日所有股票的打分排队，前 20% 等权做多、后 20% 等权做空，两者的收益差就是「多空收益」。它描述过去，不预测未来。", "Rank all stocks each day, go equal-weight long the top 20% and short the bottom 20%; the spread is the long-short return. It describes the past, not the future.")}</p>
-                <p>{t("分位表示当前因子取值在自身历史中的位置，只描述大小，不表达好坏。", "The percentile shows where the current factor value sits in its own history; it describes size, not quality.")}</p>
+                <p>{t("7 大类下共 27 个细分因子；同一大类里的因子相关但不相同。", "There are 27 sub-factors across 7 categories; factors within a category are related but not identical.")}</p>
+                <p>{t("把当日股票按因子排队，前 20% 等权做多、后 20% 等权做空，收益差就是多空收益。它描述过去，不预测未来。", "Rank stocks each day, go equal-weight long the top 20% and short the bottom 20%; the spread is the long-short return. It describes the past, not the future.")}</p>
               </div>
             ) : null}
           </section>
+
+          <div className="seg quant-view-seg">
+            <button className={view === "board" ? "on" : ""} onClick={() => setView("board")}>{t("因子榜", "Factor board")}</button>
+            <button className={view === "library" ? "on" : ""} onClick={() => setView("library")}>{t("因子库", "Factor library")}</button>
+          </div>
 
           <div className="seg quant-range">
             <button className={range === "1m" ? "on" : ""} onClick={() => setRange("1m")}>{t("近 1 月", "Last month")}</button>
@@ -152,40 +181,97 @@ export default function QuantFactors() {
           <p className="quant-board-meta">
             {range === "1m"
               ? t(
-                `${locale === "en" ? board.meta.universe_en || board.meta.universe : board.meta.universe} · 近 1 月逐日累计多空 · ${board.meta.frequency} · 分位按因子历史取值`,
-                `${locale === "en" ? board.meta.universe_en || board.meta.universe : board.meta.universe} · daily long-short over the last month · ${board.meta.frequency_en || board.meta.frequency} · percentile vs. history`,
+                `${locale === "en" ? board.meta.universe_en || board.meta.universe : board.meta.universe} · 近 1 月逐日累计多空 · ${board.meta.frequency}`,
+                `${locale === "en" ? board.meta.universe_en || board.meta.universe : board.meta.universe} · daily long-short over the last month · ${board.meta.frequency_en || board.meta.frequency}`,
               )
               : t(
-                `${locale === "en" ? board.meta.universe_en || board.meta.universe : board.meta.universe} · 近 1 年按月调仓、扣单边 0.1% · ${board.meta.frequency} · 分位按因子历史取值`,
-                `${locale === "en" ? board.meta.universe_en || board.meta.universe : board.meta.universe} · monthly long-short over the last year, 0.1% one-way cost · ${board.meta.frequency_en || board.meta.frequency} · percentile vs. history`,
+                `${locale === "en" ? board.meta.universe_en || board.meta.universe : board.meta.universe} · 近 1 年按月调仓、扣单边 0.1% · ${board.meta.frequency}`,
+                `${locale === "en" ? board.meta.universe_en || board.meta.universe : board.meta.universe} · monthly long-short over the last year, 0.1% one-way cost · ${board.meta.frequency_en || board.meta.frequency}`,
               )}
           </p>
 
-          <div className="quant-factor-list">
-            {sorted.map((row, index) => {
-              const value = range === "1m" ? row.return_1m : row.return_1y;
-              return (
-                <button className="quant-factor-row" key={row.key} onClick={() => loadDetail(row.key)}>
-                  <span className="factor-rank">{index + 1}</span>
-                  <span className="factor-main">
-                    <b>{factorName(row, locale)}</b>
-                    <small>{factorPlain(row, locale)}</small>
-                  </span>
-                  <span className="factor-stats">
-                    <b className={trendClass(value)}>{fmtSignedPct(value)}</b>
-                    <small>{t("分位", "Pctl")} {row.percentile === null ? "—" : `${row.percentile.toFixed(0)}%`}</small>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          {view === "board" ? (
+            <div className="quant-category-list">
+              {categories.map((cat) => {
+                const row = pick(cat);
+                const value = valueOf(row);
+                const isOpen = expanded === cat.key;
+                return (
+                  <div className={`quant-category-card ${isOpen ? "open" : ""}`} key={cat.key}>
+                    <div
+                      className="quant-category-head"
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={isOpen}
+                      onClick={() => setExpanded(isOpen ? null : cat.key)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setExpanded(isOpen ? null : cat.key);
+                        }
+                      }}
+                    >
+                      <div className="quant-category-main">
+                        {row ? <b>{factorCategoryName(row, locale)}因子 · {factorSubName(row, locale)}</b> : <b>{locale === "en" ? cat.name_en : cat.name}</b>}
+                        {row ? <small>{factorPlain(row, locale)}</small> : null}
+                      </div>
+                      <div className="quant-category-stats">
+                        <b className={trendClass(value)}>{fmtSignedPct(value)}</b>
+                        <small>{t("分位", "Pctl")} {row?.percentile == null ? "—" : `${row.percentile.toFixed(0)}%`}</small>
+                      </div>
+                      {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </div>
+                    {isOpen ? (
+                      <div className="quant-subfactor-list">
+                        {cat.factors.map((f) => (
+                          <button
+                            className={`quant-subfactor-row ${row?.key === f.key ? "on" : ""}`}
+                            key={f.key}
+                            onClick={() => openFactor(cat, f.key)}
+                          >
+                            <span><b>{factorSubName(f, locale)}</b><small>{factorFormula(f, locale)}</small></span>
+                            <span className="quant-subfactor-stats">
+                              <b className={trendClass(valueOf(f))}>{fmtSignedPct(valueOf(f))}</b>
+                              <small>{f.percentile == null ? "—" : `${f.percentile.toFixed(0)}%`}</small>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="quant-library">
+              {categories.map((cat) => (
+                <section className="card quant-library-group" key={cat.key}>
+                  <div className="card-title-row">
+                    <h2>{locale === "en" ? cat.name_en : cat.name}</h2>
+                    <span className="hint">{cat.factors.length} {t("个细分", "sub-factors")}</span>
+                  </div>
+                  {cat.factors.map((f) => (
+                    <button className="quant-library-row" key={f.key} onClick={() => openFactor(cat, f.key)}>
+                      <span className="quant-library-name">
+                        <b>{factorSubName(f, locale)}</b>
+                        <small>{factorFormula(f, locale)}</small>
+                      </span>
+                      <span className="quant-library-stats">
+                        <b className={trendClass(valueOf(f))}>{fmtSignedPct(valueOf(f))}</b>
+                        <small>{t("分位", "Pctl")} {f.percentile == null ? "—" : `${f.percentile.toFixed(0)}%`}</small>
+                      </span>
+                    </button>
+                  ))}
+                </section>
+              ))}
+            </div>
+          )}
 
           <button className="btn btn-primary w100 quant-factor-cta" onClick={createWithTop}>
             {t("带着因子去建策略", "Build a strategy with this factor")} <ArrowRight size={15} />
           </button>
 
           {detailError ? <ErrorState message={detailError} onRetry={() => openKey && loadDetail(openKey)} /> : null}
-
           <p className="quant-foot">{board.disclaimer}</p>
         </>
       ) : null}
@@ -193,7 +279,7 @@ export default function QuantFactors() {
       <Sheet
         open={!!detail}
         onClose={() => setDetail(null)}
-        title={detail ? factorName(detail, locale) : t("因子详情", "Factor detail")}
+        title={detail ? factorSubName(detail, locale) : t("因子详情", "Factor detail")}
         sub={detail ? factorFormula(detail, locale) : undefined}
         footer={
           detail ? (

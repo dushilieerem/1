@@ -184,7 +184,7 @@ export default function Me() {
       <PrivacySheet open={privacyOpen} onClose={() => setPrivacyOpen(false)} onOpenFull={() => { setPrivacyOpen(false); nav("/privacy"); }} />
       <Sheet open={aboutOpen} onClose={() => setAboutOpen(false)} title={t("关于", "About")} sub="SVQuant Invest · MVP">
         <p className="muted small">
-          {t("独立手机版 H5，复用 SVQuant 账号。当前为收盘后数据，含自动生成的 50 字 AI 结论；不含实时行情与推送。", "A standalone mobile H5 that reuses your SVQuant account. It uses post-close data and auto-generated 50-character AI takeaways; no real-time quotes or push notifications.")}
+          {t("独立手机版 H5，复用 SVQuant 账号。当前为收盘后数据，含自动生成的 AI 结论；不含实时行情与推送。", "A standalone mobile H5 that reuses your SVQuant account. It uses post-close data and auto-generated AI takeaways; no real-time quotes or push notifications.")}
         </p>
         <div className="divider" />
         <Kv k={t("版本", "Version")} v="0.1.0-demo" />

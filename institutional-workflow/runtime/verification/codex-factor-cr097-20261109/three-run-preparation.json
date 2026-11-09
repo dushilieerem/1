@@ -45,8 +45,8 @@
     "status": "planned_not_executed",
     "scoring_start": "2025-07-01",
     "scoring_end": "2025-09-30",
-    "validation_start": "2025-10-01",
-    "validation_end": "2025-12-31",
+    "validation_start": "2026-06-22",
+    "validation_end": "2026-09-21",
     "candidate_warmup_sessions": 0,
     "max_trials_per_initial_task": 2,
     "model_budget_change": false,
@@ -105,6 +105,22 @@
     "rss_caveat": "Sampled stop line; not an absolute kernel RSS ceiling.",
     "A_task_brief": "研究短期价格冲击与成交活跃度的组合信号：在固定样本内探索过去最多5个交易日的价格位置、日内形态与成交量变化，形成可解释的次日收益评分。高分预期收益更高；仅用截至当日收盘可得的OHLCV。请自主提出表达式并依据研发证据改进，不修改冻结方向、门槛与样本范围。",
     "B_candidate_proposal": "manual-candidate-proposal.py.txt",
-    "C_precondition": "No small diagnostic substitute for full novelty or independent validation. Continue original ledger/K when improving an existing research lineage."
+    "C_precondition": "No small diagnostic substitute for full novelty or independent validation. Continue original ledger/K when improving an existing research lineage.",
+    "validation_plan_revision": {
+      "before": [
+        "2025-10-01",
+        "2025-12-31"
+      ],
+      "after": [
+        "2026-06-22",
+        "2026-09-21"
+      ],
+      "reason": "Read-only calendar: old interval 60 dates supports at most59 next-day labels, below60 gate independent of factor quality. Revision before any A/B creation/model/performance/holdout computation. New window pending calendar/coverage confirmation; no return-based window selection.",
+      "gate_changed": false,
+      "at_utc": "2026-11-09T12:25:37.144731+00:00"
+    },
+    "validation_date_coverage_status": "readonly_confirmed_66_published_dates_and_66_finite_days_all_40_symbols_7_fields",
+    "coverage_evidence": "approved-sample-coverage.json",
+    "label_count_limitation": "At most65 next-day labels before causal lookback/missing/filtering;66 raw dates is not60 valid factor observations and not performance."
   }
 }

@@ -1,0 +1,16 @@
+{
+  "request_id": "CX-20261109-098",
+  "checked_at_utc": "2026-11-09T12:36:38.815020+00:00",
+  "native_message_id": "0d9a0ad8-31cd-41fa-9f11-46ccc62b1e3c",
+  "state": "queued_native_evidence_verified_not_read_or_forwarded",
+  "reason": "Native ListAgents had a unique exact-name peer ref62753c; SendMessage addressed that name/ref and returned success=true+msg_id. Wrapper did not recognize name with ref suffix; original status preserved, no retry.",
+  "target_session_id": "afcf6e55-988c-4724-9f3c-078b3f81708b",
+  "post_send_inventory": {
+    "name": "张新迪-机构侧量化平台开发",
+    "cwd": "/home/dev01/project/SVQuant-zxd",
+    "status": "waiting",
+    "state": "blocked"
+  },
+  "stdout_sha256": "12fe68762b1373380371fe6973343c4ebf5dc3a738dc30cf2b95ef44f146ada2",
+  "svquant_business_receipt": false
+}

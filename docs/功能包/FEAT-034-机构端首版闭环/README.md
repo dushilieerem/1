@@ -694,3 +694,13 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 右侧栏沿用工作台统一高度并内部滚动。
 
 验证：`tsc --noEmit`、`npm run build`、`npm run test:inst` 通过；Playwright `e2e-09..14` **17 passed**，e2e-11/13/14 增加 Agent 切换断言。
+
+
+### 11.33 多空立论：分段切换与一句话论点（2026-11-09）
+
+- 主区增加明显的多头 / 空头分段切换（显示各自条数），与右侧 Agent 面板双向同步；切换后只显示当前一方的论点。
+- 每条论点改为一句可扫读的 headline（≤40 字），完整原文保留在 title 悬停中；证据条数与置信度单独成 chip，证伪条件保留在下方。
+- 规则兜底辩论改为短句；AI 多空提示词增加硬要求：claim 陈述 ≤40 个汉字，数字、口径与计算过程放进证据、量化影响与证伪条件。
+- e2e-11 增加分段切换、Agent 面板同步与 headline 长度断言。
+
+验证：pytest 105 passed；`tsc --noEmit`、`npm run build`、`npm run test:inst` 通过；Playwright `e2e-09..14` 17 passed。

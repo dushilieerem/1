@@ -2804,14 +2804,11 @@ def _evidence_payload(conn, evidence_ids: list[int]) -> list[dict[str, Any]]:
 
 def _debate_fallback(company: dict[str, Any], evidence: list[dict[str, Any]], valuation: dict[str, Any] | None) -> dict[str, Any]:
     ev_ids = [e["id"] for e in evidence]
-    price_note = next((e["quote"] for e in evidence if "收盘价" in e["title"]), "参考价待补充")
-    pe_note = next((e["quote"] for e in evidence if "PE" in e["title"]), "估值待补充")
-    fin_note = next((e["quote"] for e in evidence if "财务" in e["title"]), "财务待补充")
     bull = [
         {
             "side": "bull",
             "round": 1,
-            "claim": f"{company['name']} 的长期竞争力与现金流质量值得持续研究；{fin_note}。",
+            "claim": "长期竞争力与现金流质量支持持续跟踪。",
             "evidence_ids": ev_ids[:4],
             "confidence": 0.62,
             "falsifier": "若收入增速连续两个季度低于行业且现金流恶化，看多假设失效。",
@@ -2819,7 +2816,7 @@ def _debate_fallback(company: dict[str, Any], evidence: list[dict[str, Any]], va
         {
             "side": "bull",
             "round": 2,
-            "claim": f"当前估值分位提供了观察窗口：{pe_note}；但这不是买入建议。",
+            "claim": "估值处于历史偏低分位，存在观察窗口。",
             "evidence_ids": ev_ids[:3],
             "confidence": 0.55,
             "falsifier": "若估值分位上升主要由盈利下修而非价格上涨造成，估值判断失效。",
@@ -2829,7 +2826,7 @@ def _debate_fallback(company: dict[str, Any], evidence: list[dict[str, Any]], va
         {
             "side": "bear",
             "round": 1,
-            "claim": f"证据链仍不完整：{price_note}；财务与公告尚未完成交叉核验，不能把演示口径当成事实。",
+            "claim": "证据链未闭环：财务与公告尚未交叉核验。",
             "evidence_ids": ev_ids[:4],
             "confidence": 0.58,
             "falsifier": "若完整财报、公告与行业数据补齐且相互印证，该反方论点减弱。",
@@ -2837,7 +2834,7 @@ def _debate_fallback(company: dict[str, Any], evidence: list[dict[str, Any]], va
         {
             "side": "bear",
             "round": 2,
-            "claim": "估值分位低可能反映盈利周期或治理折价，而非安全边际；需用反证条件检验。",
+            "claim": "低估值可能来自盈利周期或治理折价，不必然是安全边际。",
             "evidence_ids": ev_ids[:3],
             "confidence": 0.6,
             "falsifier": "若盈利质量、资本配置与治理记录均通过核验，价值陷阱假设减弱。",
@@ -2846,7 +2843,7 @@ def _debate_fallback(company: dict[str, Any], evidence: list[dict[str, Any]], va
     chair = {
         "side": "chair",
         "round": 2,
-        "claim": "双方均承认证据链尚需补强；结论为「补充研究」，补齐财务与公告后再进入议案。",
+        "claim": "证据链尚需补强，结论为「补充研究」。",
         "evidence_ids": ev_ids[:2],
         "confidence": 0.7,
         "falsifier": "若补齐证据后双方仍无法收敛，提交人工裁决。",

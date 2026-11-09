@@ -704,3 +704,13 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - e2e-11 增加分段切换、Agent 面板同步与 headline 长度断言。
 
 验证：pytest 105 passed；`tsc --noEmit`、`npm run build`、`npm run test:inst` 通过；Playwright `e2e-09..14` 17 passed。
+
+
+### 11.34 演示项目精简为每环节 3 个（2026-11-09）
+
+- 项目流水线新增 `INST_PIPELINE_PER_STAGE`（默认 3，0=不限制）：每个环节只返回并展示最多 3 个项目，`count` 与 `total` 同步为展示数，避免演示时一眼看到几百个项目。
+- 当前演示库 `svquant_test` 已清理：六个环节各保留 3 个研究案（阶段 1–5 共 15 个），删除多余测试项目及其订单/退出案；公司池与持仓数据不动。
+- 注意：清理是测试库操作，不在代码提交内；后续 E2E 新增项目会被流水线上限隐藏，但如需彻底精简可再次按 3 个/环节清理。
+- 新增测试 `test_pipeline_per_stage_limit`，确保环节条数与返回卡片一致。
+
+验证：pytest 106 passed；Playwright `e2e-09..14` 17 passed；流水线 API/UI 均为 6 环节 × 3 个，共 18 个。

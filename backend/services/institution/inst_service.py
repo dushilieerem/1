@@ -1099,7 +1099,16 @@ def _pipeline_card(case: dict[str, Any]) -> dict[str, Any]:
 
 
 def pipeline(org_id: int) -> dict[str, Any]:
-    """v3 六阶段看板：stage 0 为候选线索，1–5 为研究案/议案/执行/持仓。"""
+    """v3 六阶段看板：stage 0 为候选线索，1–5 为研究案/议案/执行/持仓。
+
+    演示环境默认每个环节只展示 3 个；可用 INST_PIPELINE_PER_STAGE 调整，
+    设为 0 或负数时回到完整列表（最多 200/环节）。
+    """
+    try:
+        configured = int(os.getenv("INST_PIPELINE_PER_STAGE", "3") or "3")
+    except ValueError:
+        configured = 3
+    per_stage = 200 if configured <= 0 else max(1, min(configured, 200))
     cases = [_row_dict(r) or {} for r in repo.cases(OrgScope(org_id))]
     by_stage: dict[int, list[dict[str, Any]]] = {i: [] for i in range(6)}
     case_company_ids: set[int] = set()
@@ -1133,11 +1142,11 @@ def pipeline(org_id: int) -> dict[str, Any]:
                 "ref_price": item.get("ref_price") or item.get("last_close"),
                 "updated_at": None,
             })
-    by_stage[0] = candidates[:20]
+    by_stage[0] = candidates[:per_stage]
     stages = []
     for no in range(6):
         stage = _stage_def(no)
-        items = by_stage[no]
+        items = by_stage[no][:per_stage]
         stages.append({
             "stage_no": no,
             "stage_key": stage["key"],
@@ -1145,7 +1154,7 @@ def pipeline(org_id: int) -> dict[str, Any]:
             "gate": stage["gate"],
             "owner": stage["owner"],
             "count": len(items),
-            "items": items[:30],
+            "items": items,
         })
     return {"stages": stages, "total": sum(x["count"] for x in stages)}
 

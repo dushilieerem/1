@@ -47,184 +47,33 @@ from services.institution import data_platform, inst_ai_store
 from services.institution.report import render_research_report, report_filename
 from services.marketdata import store as md
 
+# 拆分后的公共部分（保持 inst_service 旧有名字可用，路由无需改动）
+from .common import (  # noqa: F401
+    _clip_brief,
+    _evidence_grade,
+    _hash,
+    _iso,
+    _j,
+    _pc,
+    _row_dict,
+    _yi,
+)
+from .stages import (  # noqa: F401
+    STAGE_BY_KEY,
+    STAGE_BY_NO,
+    STAGE_DEFS,
+    _record_gate,
+    _record_transition,
+    _set_case_stage,
+    _stage_def,
+    _stage_payload,
+)
+
 POLICY_VERSION = "demo-v1"
 MAX_SINGLE_WEIGHT = 0.15
 MAX_INDUSTRY_WEIGHT = 0.30
 MIN_CASH_RATIO = 0.10
 DEFAULT_NAV = 10_000_000.0
-
-# v3 六环节：0 机会发现 → 5 投资管理。stage_no 是服务端唯一阶段事实。
-STAGE_DEFS: tuple[dict[str, Any], ...] = (
-    {"no": 0, "key": "find", "name": "机会发现", "gate": "立项三问", "owner": "投资经理"},
-    {"no": 1, "key": "research", "name": "价值分析", "gate": "研究定稿", "owner": "投资经理"},
-    {"no": 2, "key": "debate", "name": "多空辩论", "gate": "议案锁定", "owner": "投资经理"},
-    {"no": 3, "key": "approve", "name": "投委会审批", "gate": "三关审批", "owner": "合伙人 → 风控 → Chairman"},
-    {"no": 4, "key": "execute", "name": "执行成交", "gate": "授权执行", "owner": "系统"},
-    {"no": 5, "key": "manage", "name": "投资管理", "gate": "监控 / 退出", "owner": "投资经理 / 投委会"},
-)
-STAGE_BY_NO = {int(x["no"]): x for x in STAGE_DEFS}
-STAGE_BY_KEY = {str(x["key"]): x for x in STAGE_DEFS}
-
-
-def _stage_def(stage_no: Any) -> dict[str, Any]:
-    try:
-        no = int(stage_no)
-    except (TypeError, ValueError):
-        no = 1
-    return STAGE_BY_NO.get(max(0, min(5, no)), STAGE_BY_NO[1])
-
-
-def _stage_payload(stage_no: Any) -> dict[str, Any]:
-    stage = _stage_def(stage_no)
-    return {
-        "stage_no": stage["no"],
-        "stage_key": stage["key"],
-        "stage_name": stage["name"],
-        "stage_gate": {"stage_no": stage["no"], "gate": stage["gate"]},
-    }
-
-
-def _record_gate(
-    conn,
-    *,
-    org_id: int,
-    case_id: int | None,
-    gate_key: str,
-    status: str,
-    checks: list[dict[str, Any]] | None,
-    object_type: str | None = None,
-    object_id: int | None = None,
-    actor_member_id: int | None = None,
-) -> None:
-    conn.execute(
-        """
-        INSERT INTO inst_gate_run
-          (org_id, case_id, gate_key, status, checks, object_type, object_id, created_by)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-        """,
-        (org_id, case_id, gate_key, status, _j(checks or []), object_type, object_id, actor_member_id),
-    )
-
-
-def _record_transition(
-    conn,
-    *,
-    org_id: int,
-    case_id: int,
-    from_stage: int | None,
-    to_stage: int,
-    trigger: str,
-    actor_member_id: int | None,
-    to_state: str = "in_progress",
-    object_type: str | None = None,
-    object_id: int | None = None,
-    detail: dict[str, Any] | None = None,
-) -> None:
-    conn.execute(
-        """
-        INSERT INTO inst_case_transition
-          (org_id, case_id, from_stage, to_stage, from_state, to_state, trigger,
-           actor_member_id, object_type, object_id, detail)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """,
-        (
-            org_id,
-            case_id,
-            from_stage,
-            to_stage,
-            None,
-            to_state,
-            trigger,
-            actor_member_id,
-            object_type,
-            object_id,
-            _j(detail or {}),
-        ),
-    )
-
-
-def _set_case_stage(
-    conn,
-    *,
-    org_id: int,
-    case_id: int,
-    to_stage: int,
-    trigger: str,
-    actor_member_id: int | None,
-    to_state: str = "in_progress",
-    gate_status: str | None = None,
-    gate_checks: list[dict[str, Any]] | None = None,
-    object_type: str | None = None,
-    object_id: int | None = None,
-    detail: dict[str, Any] | None = None,
-    terminal_reason: str | None = None,
-) -> dict[str, Any]:
-    """推进/回退阶段；写 transition，保留旧 stage 文本兼容。"""
-    row = conn.execute(
-        "SELECT stage_no FROM inst_research_case WHERE id=%s AND org_id=%s",
-        (case_id, org_id),
-    ).fetchone()
-    if not row:
-        raise LookupError("研究案不存在")
-    from_stage = int(row["stage_no"]) if row.get("stage_no") is not None else None
-    stage = _stage_def(to_stage)
-    old_stage_text = "draft"
-    if stage["no"] >= 2:
-        old_stage_text = "approved"
-    if stage["no"] >= 3:
-        old_stage_text = "proposal"
-    conn.execute(
-        """
-        UPDATE inst_research_case
-           SET stage=%s,
-               stage_no=%s,
-               stage_key=%s,
-               stage_gate=%s,
-               stage_state=%s,
-               terminal_reason=%s,
-               stage_locked_at=CASE WHEN %s >= 2 THEN COALESCE(stage_locked_at, NOW()) ELSE stage_locked_at END,
-               updated_at=NOW()
-         WHERE id=%s AND org_id=%s
-        """,
-        (
-            old_stage_text,
-            stage["no"],
-            stage["key"],
-            _j({"stage_no": stage["no"], "gate": stage["gate"], "status": gate_status or "pending", "checks": gate_checks or []}),
-            to_state,
-            terminal_reason,
-            stage["no"],
-            case_id,
-            org_id,
-        ),
-    )
-    if from_stage != stage["no"] or to_state != "in_progress":
-        _record_transition(
-            conn,
-            org_id=org_id,
-            case_id=case_id,
-            from_stage=from_stage,
-            to_stage=stage["no"],
-            trigger=trigger,
-            actor_member_id=actor_member_id,
-            to_state=to_state,
-            object_type=object_type,
-            object_id=object_id,
-            detail={**(detail or {}), "from_stage": from_stage, "to_stage": stage["no"], "state": to_state},
-        )
-    if gate_status:
-        _record_gate(
-            conn,
-            org_id=org_id,
-            case_id=case_id,
-            gate_key=trigger,
-            status=gate_status,
-            checks=gate_checks,
-            object_type=object_type,
-            object_id=object_id,
-            actor_member_id=actor_member_id,
-        )
-    return _stage_payload(stage["no"])
 
 
 
@@ -272,33 +121,6 @@ SIX_DIM_DEFS: tuple[tuple[str, str, str], ...] = (
 # ---------------------------------------------------------------- 基础工具
 
 
-def _j(value: Any) -> Jsonb:
-    return Jsonb(value)
-
-
-def _iso(value: Any) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, (date, datetime)):
-        return value.isoformat()
-    return str(value)
-
-
-def _row_dict(row: Any) -> dict[str, Any] | None:
-    if not row:
-        return None
-    out = dict(row)
-    for k, v in list(out.items()):
-        if isinstance(v, (date, datetime)):
-            out[k] = _iso(v)
-    return out
-
-
-def _hash(payload: Any) -> str:
-    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
 def _ensure_version_hash(conn, version: Any) -> dict[str, Any]:
     """为旧版本补内容 hash；新版本在生成时已写入。"""
     row = dict(version)
@@ -341,45 +163,6 @@ def _ensure_version_hash(conn, version: Any) -> dict[str, Any]:
     row["content_hash"] = digest
     row["cutoff"] = row.get("cutoff") or cutoff
     return row
-
-
-def _clip_brief(value: Any, limit: int | None = None) -> str:
-    """只归一化空白，不再按 50 字截断。保留 limit 参数兼容旧调用。"""
-    return " ".join(str(value or "").split())
-
-
-def _evidence_grade(source: str, kind: str, explicit: Any = None) -> str:
-    """证据等级：A 公告/年报，B 交易所/数据平台，C 第三方/媒体，D AI/推断。"""
-    if str(explicit or "").upper() in {"A", "B", "C", "D"}:
-        return str(explicit).upper()
-    text = f"{source} {kind}".lower()
-    if "agent" in text:
-        return "D"
-    if kind == "filing":
-        return "A"
-    if kind in {"financial", "market"} and "ifind" in text:
-        return "B"
-    if kind in {"filing", "news", "research", "fact"}:
-        return "C"
-    return "D"
-
-
-def _yi(value: Any) -> str:
-    if value is None:
-        return "待补充"
-    try:
-        return f"{float(value) / 1e8:.2f} 亿元"
-    except (TypeError, ValueError):
-        return "待补充"
-
-
-def _pc(value: Any) -> str:
-    if value is None:
-        return "待补充"
-    try:
-        return f"{float(value) * 100:.2f}%"
-    except (TypeError, ValueError):
-        return "待补充"
 
 
 def _audit(

@@ -78,8 +78,11 @@ sudo bash scripts/ci/poll-install.sh --user <运行用户>
 避免每分钟重复跑一次失败的构建。
 
 ```bash
-# 看每轮日志
+# 看每轮日志（普通用户读不到 systemd journal 时看下面这份）
 journalctl -u svquant-poll.service -f
+
+# CI/部署的完整输出：轮询状态目录下，按 8MB 截断
+tail -f /var/lib/svquant/jobs.log
 
 # 只报告差异、不改状态
 sudo -u <运行用户> POLL_DRY_RUN=1 POLL_STATE_DIR=/var/lib/svquant bash scripts/ci/poll.sh

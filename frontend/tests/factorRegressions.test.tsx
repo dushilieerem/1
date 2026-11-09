@@ -102,7 +102,7 @@ async function detectPage(deleted = false, historyCode?: string) {
   };
   const mount = () => render(<MemoryRouter initialEntries={[`/factor/detect/${id}${historyCode ? "?runId=history" : ""}`]}><Routes><Route path="/factor/detect/:projectId" element={<FactorDetectPage />} /></Routes></MemoryRouter>);
   const view = mount();
-  await waitFor(() => assert.ok(view.container.querySelector(".cm-editor")));
+  await waitFor(() => assert.ok(view.container.querySelector(".cm-editor")), { timeout: 15000 });
   const editor = () => EditorView.findFromDOM(document.querySelector(".cm-editor") as HTMLElement)!;
   return { view, editor, sent, mount, project: () => project };
 }

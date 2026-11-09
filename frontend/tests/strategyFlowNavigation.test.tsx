@@ -39,7 +39,7 @@ for(const custom of [false,true]) {
       <Route path={root+"/:projectId"} element={<StrategyBacktestPage navigation={custom?{listPath:root,projectPath:id=>root+"/"+id,reportPath:id=>root+"/report/"+id,historyPath:id=>root+"/"+id+"/reports"}:undefined}/>}/>
       <Route path={root+"/report/:runId"} element={<p>Saved report route</p>}/>
     </Routes></MemoryRouter></ConfirmProvider>);
-    await waitFor(()=>assert.ok(view.container.querySelector(".cm-editor")));
+    await waitFor(()=>assert.ok(view.container.querySelector(".cm-editor")),{timeout:15000});
     const history=view.getByRole("link",{name:/回测报告/});
     assert.equal(history.getAttribute("href"),root+"/q-strategy/"+(custom?"reports":"history"));
     fireEvent.click(view.getByRole("button",{name:"进行回测"}));

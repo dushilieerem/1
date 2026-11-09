@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, RefreshCw, Sparkles } from "lucide-react";
 import { instApi } from "@/lib/instApi";
+import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
 
 type Dim = {
   key: string;
@@ -102,6 +103,7 @@ export function InstV3ResearchPage() {
   const [memo, setMemo] = useState<Memo | null>(null);
   const [step, setStep] = useState(0);
   const [dimKey, setDimKey] = useState("moat");
+  const [agentId, setAgentId] = useState("industry");
   const [busy, setBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -172,8 +174,46 @@ export function InstV3ResearchPage() {
   const dims = useMemo(() => version?.six_dim || [], [version]);
   const activeDim = dims.find((d) => d.key === dimKey) || dims[0] || null;
 
+  useEffect(() => {
+    setAgentId(step === 0 ? "industry" : "manager");
+  }, [step]);
+
+  const agentDefs = useMemo<AgentPanelDef[]>(() => {
+    if (step === 1) {
+      return DIMS.map(([key, label]) => {
+        const dim = dims.find((x) => x.key === key);
+        return {
+          id: key,
+          name: label,
+          code: "ANALYST",
+          model: "六维 Agent",
+          tools: "证据库 / 公告 / 财报",
+          output: dim ? (dim.rating != null ? `${label} · ${dim.rating}/5` : "已生成") : "待生成",
+          role: `只负责「${label}」这一维，逐条带证据与证伪条件。`,
+        };
+      });
+    }
+    if (step === 0) {
+      return [{ id: "industry", name: "行业研究员", code: "ANALYST", model: "行业 Agent", tools: "招标 / 协会 / 财报", output: "行业底图", role: "只回答行业空间、增速、格局与关键变量，不占六维。" }];
+    }
+    if (step === 2) {
+      return [{ id: "manager", name: "研究经理", code: "MANAGER", model: "研究经理 Agent", tools: "六维 / 底图 / 模板", output: "一页纸 · 三问裁决", role: "合成六维、裁决矛盾，不重写单维结论。" }];
+    }
+    return [
+      { id: "manager", name: "研究经理", code: "MANAGER", model: "研究经理 Agent", tools: "一页纸 / 未决分歧", output: "研究定稿 R3", role: "确认定稿内容与版本。" },
+      { id: "archivist", name: "研究归档", code: "VERSION", model: "确定性服务", tools: "版本 / 校验码 / 证据包", output: "定稿记录", role: "保存定稿、校验码与证据对应关系。", engine: true },
+    ];
+  }, [step, dims]);
+
+  const activeAgentId = step === 1 ? dimKey : agentId;
+  const selectAgent = (id: string) => {
+    if (step === 1) setDimKey(id);
+    else setAgentId(id);
+  };
+
   const selectCase = (id: number) => {
     setStep(0);
+    setAgentId("industry");
     setMemo(null);
     setParams({ key: `case:${id}` });
   };
@@ -479,14 +519,16 @@ export function InstV3ResearchPage() {
           ) : null}
         </div>
 
-        <aside className="v3-agent-rail">
-          <div className="ar-kicker">CURRENT AGENT</div>
-          <h3>{STEPS[step].agent}</h3>
-          <p>{STEPS[step].duty}</p>
-          <div className="ar-row"><b>本步产出</b><br />{step === 0 ? "行业底图" : step === 1 ? "六维结论" : step === 2 ? "一页纸裁决" : "研究定稿 R3"}</div>
-          <div className="ar-row"><b>输入</b><br />FactPack、证据包、上一版研究；缺失数据写入 data_gaps。</div>
-          <div className="ar-row"><b>约束</b><br />AI 只给建议；门禁、锁定与审批由服务端执行。</div>
-        </aside>
+        <InstV3AgentRail
+          agents={agentDefs}
+          activeId={activeAgentId}
+          onSelect={selectAgent}
+          contextRows={[
+            { label: "本步产出", value: step === 0 ? "行业底图" : step === 1 ? "六维结论" : step === 2 ? "一页纸裁决" : "研究定稿 R3" },
+            { label: "输入", value: "FactPack、证据包、上一版研究；缺失数据写入 data_gaps。" },
+            { label: "约束", value: "AI 只给建议；门禁、锁定与审批由服务端执行。" },
+          ]}
+        />
       </div>
     </>
   );

@@ -352,3 +352,24 @@
 @media (max-width: 1100px) {
   .inst-v3 .v3-workspace-grid { grid-template-columns: 200px minmax(0, 1fr); }
 }
+
+/* Agent 面板：右侧可切换的角色卡与当前角色详情 */
+.inst-v3 .v3-agent-rail .ar-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 3px; }
+.inst-v3 .v3-agent-rail .ar-head h3 { margin-top: 0; }
+.inst-v3 .v3-agent-picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 6px; margin-top: 9px; }
+.inst-v3 .v3-agent-pick { text-align: left; border: 1px solid var(--v3-line); background: #fff; border-radius: 8px; padding: 7px 8px; cursor: pointer; min-width: 0; }
+.inst-v3 .v3-agent-pick:hover { border-color: #d7b6c6; background: var(--v3-bg-2); }
+.inst-v3 .v3-agent-pick.on { border-color: #e3c2d1; background: var(--v3-brand-soft); box-shadow: 0 0 0 1px rgba(160,58,92,.05) inset; }
+.inst-v3 .v3-agent-pick .ap-top { display: flex; align-items: center; justify-content: space-between; }
+.inst-v3 .v3-agent-pick .ap-code { font-family: var(--font-mono); font-size: 9px; letter-spacing: .06em; color: var(--v3-brand); }
+.inst-v3 .v3-agent-pick .ap-name { display: block; margin-top: 2px; font-size: 12px; font-weight: 600; color: var(--v3-ink-2); line-height: 1.35; }
+.inst-v3 .v3-agent-pick.on .ap-name { color: var(--v3-brand-2); }
+.inst-v3 .v3-agent-pick .ap-meta { display: block; margin-top: 2px; font-size: 10px; line-height: 1.45; color: var(--v3-faint); }
+.inst-v3 .v3-agent-detail { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--v3-line-2); }
+.inst-v3 .v3-agent-detail .ad-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.inst-v3 .v3-agent-detail .ad-name { font-size: 14px; font-weight: 600; color: var(--v3-ink); }
+.inst-v3 .v3-agent-detail .ad-role { margin-top: 3px; font-size: 11px; line-height: 1.6; color: var(--v3-muted); }
+.inst-v3 .v3-agent-detail .ad-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 10px; margin-top: 8px; }
+.inst-v3 .v3-agent-detail .ad-k { font-size: 9.5px; color: var(--v3-faint); }
+.inst-v3 .v3-agent-detail .ad-v { margin-top: 1px; font-size: 10.5px; line-height: 1.45; color: var(--v3-ink-2); word-break: break-word; }
+.inst-v3 .v3-agent-context { margin-top: 2px; }

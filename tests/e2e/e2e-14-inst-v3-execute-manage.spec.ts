@@ -137,6 +137,7 @@ test("执行 UI 与投资者管理：下单/对账/预警/退出研究", async (
     timeout: 20_000,
   });
   await expect(page.getByText("授权核对", { exact: true }).first()).toBeVisible();
+  await expect(page.locator(".v3-agent-pick").filter({ hasText: "执行引擎" })).toBeVisible();
   const next = page.getByRole("button", { name: /继续下单/ });
   await expect(next).toBeEnabled();
   await next.click();
@@ -163,6 +164,7 @@ test("执行 UI 与投资者管理：下单/对账/预警/退出研究", async (
     { waitUntil: "networkidle" },
   );
   await managerPage.locator(".v3-stepper .v3-step").nth(1).click();
+  await expect(managerPage.locator(".v3-agent-pick").filter({ hasText: "监控 Agent" })).toBeVisible();
   await expect(managerPage.getByTestId("inst-warning")).toBeVisible({ timeout: 20_000 });
   const warningText = `E2E 预警：复核渠道库存与批价 ${Date.now()}`;
   await managerPage.getByTestId("inst-warning").fill(warningText);

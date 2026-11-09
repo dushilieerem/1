@@ -88,6 +88,11 @@ test("研究定稿：门禁预览 → 低置信复核 → 锁定 R3", async ({ p
   await page.goto(`${BASE}/inst/research?key=${encodeURIComponent(`case:${caseId}`)}`, {
     waitUntil: "networkidle",
   });
+  // 右侧 Agent 面板：六位研究员可切换，主区同步切换当前维度。
+  await page.locator(".v3-stepper .v3-step").nth(1).click();
+  await expect(page.locator(".v3-agent-pick")).toHaveCount(6);
+  await page.locator(".v3-agent-pick").filter({ hasText: "财务质量" }).click();
+  await expect(page.locator(".v3-dim-btn.on")).toHaveText(/财务质量/);
   await page.locator(".v3-stepper .v3-step").nth(3).click();
   await expect(page.getByText("研究定稿", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("六维 6/6", { exact: true })).toBeVisible();

@@ -12,3 +12,12 @@ Validation: 180 guarded backend tests + 12 subtests; 8 real PostgreSQL tests in 
 Frontend source already hot-updates on19536. BFF18799 still used its previous code at this source commit; load requires a fresh zero-inflight check and the original argv/cwd/env, preserving private18804. No RE changes/restart in this batch. Preload count/quota evidence: preload-readonly.json. No A/B/T10/T11/T15 business record edits. PM documents/prototype and existing .custom_lib.lock excluded.
 
 Pending: PM browser1366/1024 final check and the first real mixed Agent/human takeover/handoff trial. Unit/PG success is not that real-user acceptance. CR100 Agent planning/implementation/diagnostics remains a subsequent separate batch; no claim of qualified new factor or full-library novelty/admission acceptance.
+
+
+## Actual development loading and HTTP
+
+Business source commit de2f728825b9f06cf79a73dbfa3dec65241fd367 was pushed and loaded into18799 at2026-11-09 22:59:46 +08. NewPID3319530; original argv/cwd/env retained, quant target18804 unchanged,19536/18804 not restarted. Five DB in-flight classes0, private RE queued/running0 before/after. /api/health200 (DB/schemaOK),19536 /quant/factor200. Details: load-evidence.json.
+
+Actual online researcher HTTP returned200 for A/B candidate identities and workbench; anonymous workbench401. A E1/H1 is task-created manually but executed by the research system, E2/H2 research-system revision; B E1/H1 executed by researcher. This is actual running API, separate from ASGI/substituted isolation tests. Auth login creates its normal audit only; no research/approval writes. Details: online-readonly.json.
+
+Existing call quota was200/day, used20, remaining180 at load. F0 per-call max_tokens2000 and plan assistant3000; F3 registered max_tokens=None, so it has no explicit task output cap. Current site token ceiling0 is an old disabled global guard, not approval for unlimited usage. No verified institution-space1m/module200k cumulative enforcement exists in this product yet; PM paused the planned mixed run pending a separate minimal budget guard batch. No such shared limits were changed here. No real mixed task acceptance has started in this delivery.

@@ -1,0 +1,55 @@
+{
+  "checked_at_utc": "2026-11-09T14:59:44.438987+00:00",
+  "head": "de2f728825b9f06cf79a73dbfa3dec65241fd367",
+  "counts_before": {
+    "checked_at_utc": "2026-11-09T14:59:44.368545+00:00",
+    "bff_pid": 2047122,
+    "read_only_transaction": true,
+    "counts": {
+      "f0": 0,
+      "candidates": 0,
+      "sealed": 0,
+      "agent_jobs": 0,
+      "iterations": 0
+    },
+    "researcher_quota": {
+      "daily_calls": 200,
+      "used_calls": 20,
+      "remaining_calls": 180
+    },
+    "site_tokens": {
+      "daily_budget": 0,
+      "used": 32185,
+      "remaining": null,
+      "zero_budget_semantics": "existing setting has no token ceiling; account call quota still applies"
+    }
+  },
+  "old_pid": 2047122,
+  "argv": [
+    "/home/dev01/project/SVQuant/.ci/venv/bin/python",
+    "institutional-workflow/runtime/start_quant_bff.py"
+  ],
+  "cwd": "/home/dev01/project/SVQuant-zxd",
+  "environment_preserved": true,
+  "private_re_base": "http://127.0.0.1:18804",
+  "private_re_activity": {
+    "queued": 0,
+    "running": 0
+  },
+  "re_not_restarted": true,
+  "frontend_not_restarted": true,
+  "new_pid": 3319530,
+  "health": {
+    "http_status": 200,
+    "ok": true,
+    "db": "ok",
+    "schema_ok": true
+  },
+  "frontend_http_status": 200,
+  "private_re_activity_after": {
+    "queued": 0,
+    "running": 0
+  },
+  "completed_at_utc": "2026-11-09T14:59:46.685663+00:00",
+  "no_model_backtest_approval_submitted": true
+}

@@ -1,0 +1,95 @@
+{
+  "checked_at_utc": "2026-11-09T15:02:02.476120+00:00",
+  "transport": "actual HTTP18799, existing registered researcher, no ASGI/auth/data substitutions",
+  "auth_login_audit_only": true,
+  "business_writes": 0,
+  "model_calls": 0,
+  "backtest_calls": 0,
+  "approval_calls": 0,
+  "checks": [
+    {
+      "task": "A",
+      "path": "/api/inst/quant/factor-workflow/projects/b9d9c387-af10-420e-acb4-a88d831f2265/candidates",
+      "status": 200,
+      "candidates": [
+        {
+          "id": "fcdd28cb-8779-4f6f-b70a-be5523316ca8",
+          "presentation": {
+            "trial_no": 2,
+            "trial_numbers": [
+              2
+            ],
+            "branch_id": "75572a5e-204a-452e-b27f-e15b09bdb59c",
+            "branch_label": "H2",
+            "relation_status": "matched",
+            "creation_label": "研究系统修订",
+            "execution_label": "研究系统执行",
+            "execution_source": "agent",
+            "topic_id": "504beb5e-0262-4647-99a7-33eea5a5b553"
+          },
+          "status": "development_failed"
+        },
+        {
+          "id": "11f442c3-5523-45d1-a3e3-df44346eaeef",
+          "presentation": {
+            "trial_no": 1,
+            "trial_numbers": [
+              1
+            ],
+            "branch_id": "8bdab65b-effd-43f5-8fa5-1c76628e939d",
+            "branch_label": "H1",
+            "relation_status": "matched",
+            "creation_label": "人工建立课题",
+            "execution_label": "研究系统执行",
+            "execution_source": "agent",
+            "topic_id": "504beb5e-0262-4647-99a7-33eea5a5b553"
+          },
+          "status": "development_failed"
+        }
+      ]
+    },
+    {
+      "task": "A",
+      "path": "/api/inst/quant/factor-workflow/projects/b9d9c387-af10-420e-acb4-a88d831f2265/workbench",
+      "status": 200,
+      "branch_id": "8bdab65b-effd-43f5-8fa5-1c76628e939d",
+      "can_handoff": false,
+      "has_control_epoch": false
+    },
+    {
+      "task": "B",
+      "path": "/api/inst/quant/factor-workflow/projects/ee19ef46-c368-4149-98c0-ccf482789be4/candidates",
+      "status": 200,
+      "candidates": [
+        {
+          "id": "019059fb-ca85-4233-9c11-30fd12fcabd5",
+          "presentation": {
+            "trial_no": 1,
+            "trial_numbers": [
+              1
+            ],
+            "branch_id": "e7b60f40-a884-4d12-acb8-a6bd423c1bf2",
+            "branch_label": "H1",
+            "relation_status": "matched",
+            "creation_label": "人工建立课题",
+            "execution_label": "研究员执行",
+            "execution_source": "human",
+            "topic_id": "d6ca2a21-a868-4f54-857d-8bfc30891ffe"
+          },
+          "status": "development_failed"
+        }
+      ]
+    },
+    {
+      "task": "B",
+      "path": "/api/inst/quant/factor-workflow/projects/ee19ef46-c368-4149-98c0-ccf482789be4/workbench",
+      "status": 200,
+      "branch_id": "e7b60f40-a884-4d12-acb8-a6bd423c1bf2",
+      "can_handoff": false,
+      "has_control_epoch": false
+    },
+    {
+      "anonymous_workbench": 401
+    }
+  ]
+}

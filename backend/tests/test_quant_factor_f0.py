@@ -102,7 +102,7 @@ class DecisionValidationTest(unittest.TestCase):
         with patch.object(f0_agent, '_context', return_value={'branches': [], 'remaining': 2}), \
              patch.object(f0_agent, 'get_task'), patch.object(f0_agent, 'assert_quota_available'), \
              patch.object(f0_agent, 'record_usage'), \
-             patch.object(f0_agent, 'run_task', return_value={'content': json.dumps(payload)}):
+             patch('services.quant_factor.model_budget.run', return_value={'content': json.dumps(payload)}):
             return f0_agent.decide(1, 2, TOPIC, 'run')
 
     def test_unknown_action_rejected(self):
@@ -196,7 +196,7 @@ class EchoedContextTest(unittest.TestCase):
         with patch.object(f0_agent, '_context', return_value={'branches': [], 'remaining': 2}), \
              patch.object(f0_agent, 'get_task'), patch.object(f0_agent, 'assert_quota_available'), \
              patch.object(f0_agent, 'record_usage'), \
-             patch.object(f0_agent, 'run_task', return_value={'content': json.dumps(payload)}):
+             patch('services.quant_factor.model_budget.run', return_value={'content': json.dumps(payload)}):
             return f0_agent.decide(1, 2, TOPIC, 'run')
 
     def test_echoed_readonly_context_is_stripped(self):

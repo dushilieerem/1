@@ -1,0 +1,61 @@
+[
+  {
+    "label": "backend",
+    "argv": [
+      "/home/dev01/project/SVQuant/.ci/venv/bin/python",
+      "scripts/run_quant_isolated_tests.py",
+      "tests/test_quant_factor_f0.py",
+      "tests/test_quant_factor_handoff.py",
+      "tests/test_quant_factor_ledger.py",
+      "tests/test_quant_factor_candidate_reads.py",
+      "tests/test_quant_factor_routes.py",
+      "tests/test_quant_factor_cr097_flow.py",
+      "tests/test_quant_factor_recovery.py",
+      "tests/test_quant_factor_jobs.py",
+      "tests/test_quant_token_isolation.py",
+      "tests/test_quant_factor_agent_jobs.py",
+      "tests/test_quant_factor_sealed.py",
+      "tests/test_quant_factor_review.py",
+      "tests/test_quant_model_budget.py",
+      "tests/test_quant_factor_f5.py"
+    ],
+    "cwd": "backend",
+    "exit": 0,
+    "log": "institutional-workflow/runtime/verification/codex-factor-cr100-budget-20261109/backend.log"
+  },
+  {
+    "label": "budget-pg",
+    "argv": [
+      "/home/dev01/project/SVQuant/.ci/venv/bin/python",
+      "scripts/run_quant_budget_pg_tests.py",
+      "--allow-isolated-dev"
+    ],
+    "cwd": "backend",
+    "exit": 0,
+    "log": "institutional-workflow/runtime/verification/codex-factor-cr100-budget-20261109/budget-pg.log"
+  },
+  {
+    "label": "home-component",
+    "argv": [
+      "/home/dev01/.nvm/versions/node/v24.20.0/bin/node",
+      "--import",
+      "tsx",
+      "--test",
+      "tests/factorHomeCreateFlow.test.tsx"
+    ],
+    "cwd": "frontend",
+    "exit": 0,
+    "log": "institutional-workflow/runtime/verification/codex-factor-cr100-budget-20261109/home-component.log"
+  },
+  {
+    "label": "build",
+    "argv": [
+      "/home/dev01/.nvm/versions/node/v24.20.0/bin/npm",
+      "run",
+      "build"
+    ],
+    "cwd": "frontend",
+    "exit": 0,
+    "log": "institutional-workflow/runtime/verification/codex-factor-cr100-budget-20261109/build.log"
+  }
+]

@@ -538,9 +538,13 @@ def quant_ai_factor_generation(
     body: dict[str, Any] = Body(...),
     ctx: dict[str, Any] = Depends(require_quant_researcher),
 ) -> dict[str, Any]:
-    from app.routers import ai_factor_generation
-
-    return ai_factor_generation.ai_factor_generations(body=body, _user=ctx["user"])
+    from services.quant_factor.generation import generate
+    from services.quant_factor.policy import WorkflowError
+    uid=_quant_uid(ctx)
+    try:
+        return generate(uid,int(ctx['org']['id']),None,'manual:'+str(uid)+':'+str(body.get('idempotency_key') or ''),body)
+    except WorkflowError as exc:
+        raise HTTPException(status_code=409,detail=str(exc)) from exc
 
 
 @router.post("/api/inst/quant/ai/strategy-generations")

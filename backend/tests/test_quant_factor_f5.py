@@ -36,7 +36,7 @@ class F5Test(unittest.TestCase):
              patch.object(f5, 'ensure_reviewer' if False else 'review') as rev:
             rev.ensure_reviewer.return_value = None
             with patch.object(f5, 'get_task'), patch.object(f5, 'assert_quota_available'), \
-                 patch.object(f5, 'record_usage'), patch.object(f5, 'run_task', return_value=out):
+                 patch.object(f5, 'record_usage'), patch('services.quant_factor.model_budget.run', return_value=out):
                 with self.assertRaisesRegex(WorkflowError, '结论不在允许范围'):
                     f5.opinion(9, 2, 'c')
 
@@ -50,13 +50,13 @@ class F5DateSerializationTest(unittest.TestCase):
         seen = {}
         out = {'content': json.dumps({'verdict': 'reject', 'rationale': '封存失败，不能入库',
                                       'limitations': ['R4 未接入']})}
-        def run_task(task, messages):
+        def run_task(*args,messages,**kwargs):
             seen['messages'] = messages
             return out
         with patch.object(f5, 'get_conn', return_value=conn), \
              patch.object(f5.review,'_ledger_context',return_value=None),patch.object(f5,'_sealed',return_value=None), \
              patch.object(f5, 'get_task'), patch.object(f5, 'assert_quota_available'), \
-             patch.object(f5, 'record_usage'), patch.object(f5, 'run_task', side_effect=run_task):
+             patch.object(f5, 'record_usage'), patch('services.quant_factor.model_budget.run', side_effect=run_task):
             result = f5.opinion(9, 2, 'c')
         self.assertEqual(result['verdict'], 'reject')
         self.assertIn('2026-01-01', seen['messages'][1]['content'])

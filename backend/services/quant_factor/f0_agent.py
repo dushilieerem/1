@@ -117,7 +117,7 @@ def _context(uid, org, topic, run_id):
                 reasons.append("查重不可用/未完成")
             summary["blocking_reasons"]=reasons
     return {
-        "run_id": run_id, "topic": {k: topic.get(k) for k in (
+        "run_id": run_id, "decision_step":len(((run_row or {}).get("decision") or {}).get("steps") or [])+1,"topic": {k: topic.get(k) for k in (
             "id", "project_id", "view_id", "primary_holding_period", "max_trials", "status")},
         # No trial yet still has a bar: the K=1 threshold (t*=1.96), never null.
         "k": k, "t_critical": threshold(max(k, 1)), "t_critical_k": max(k, 1),
@@ -164,11 +164,9 @@ def decide(uid, org, topic, run_id):
                           temperature=0.2, max_tokens=2000, timeout_sec=60,
                           response_format={"type": "json_object"}))
     assert_quota_available(uid)
-    out = run_task(TASK, messages=[{"role": "system", "content": instructions},
-                                   {"role": "user", "content": json.dumps(_json_ready(ctx), ensure_ascii=False)}])
-    rid = "qff0_" + uuid.uuid4().hex
-    record_usage(user_id=uid, run_id=rid, skill=TASK,
-                 tokens_in=out.get("tokens_in", 0), tokens_out=out.get("tokens_out", 0))
+    from . import model_budget
+    round_no=ctx.get('decision_step',1)
+    out=model_budget.run(uid,org,topic['project_id'],f'f0:{run_id}:decision:{round_no}',TASK,messages=[{'role':'system','content':instructions},{'role':'user','content':json.dumps(_json_ready(ctx),ensure_ascii=False)}])
     try:
         parsed = extract_json_object(str(out.get("content") or ""))
         if isinstance(parsed, dict):
@@ -303,7 +301,7 @@ def _branch_code(uid, org, topic_id, branch_id):
     return (row or {}).get("code") or ""
 
 
-def _revise(uid, org, project_id, parent_id, decision, run_id, topic_id, scope_override=None,worker_epoch=None):
+def _revise(uid, org, project_id, parent_id, decision, run_id, topic_id, scope_override=None,worker_epoch=None,decision_step=None):
     project = get_project(uid, project_id)["project"]
     cfg = project["config"]
     plan = cfg.get("researchPlan") or {}
@@ -312,7 +310,7 @@ def _revise(uid, org, project_id, parent_id, decision, run_id, topic_id, scope_o
         raise service.WorkflowError("父分支没有可核验的冻结源码，不能无提示改用其他分支实现；请先完成该分支检验或人工指定候选")
     suggestion = assistant.suggest(uid, org, project_id, draft={
         **plan, "hypothesis": decision.next_hypothesis,
-        "failure": (decision.rationale + " " + decision.change_scope)[:3000]})["suggestion"]
+        "failure": (decision.rationale + " " + decision.change_scope)[:3000]},call_key_prefix=f"f0:{run_id}:step:{decision_step}:revise:{parent_id}")["suggestion"]
     hypothesis = suggestion["hypothesis"]
     name = (cfg.get("draftFactor") or {}).get("name") or (cfg.get("factorCodes") or ["f0_factor"])[0]
     # F3 的输入契约上限 2000 字符；完整假设仍保存在分支/课题，仅提示词按预算截断。
@@ -387,7 +385,7 @@ def execute(uid, org, run_id, topic, decision, step,worker_epoch=None):
         return {"status": "stopped", "reason": "原封存计算仍待确认，保留运行身份，请继续查询原任务"}
     if action in ("revise", "pivot"):
         try:
-            out = _revise(uid, org, topic["project_id"], decision.branch_id, decision, run_id, topic["id"],worker_epoch=worker_epoch)
+            out = _revise(uid, org, topic["project_id"], decision.branch_id, decision, run_id, topic["id"],worker_epoch=worker_epoch,decision_step=step)
             return {"status": "completed", "action": action, **out}
         except service.WorkflowError as exc:
             if not _capability_failure(str(exc)):
@@ -395,7 +393,7 @@ def execute(uid, org, run_id, topic, decision, step,worker_epoch=None):
             gaps = _capability_gaps(str(exc))
             try:
                 out = _revise(uid, org, topic["project_id"], decision.branch_id, decision, run_id,
-                              topic["id"], scope_override=_FALLBACK_SCOPE,worker_epoch=worker_epoch)
+                              topic["id"], scope_override=_FALLBACK_SCOPE,worker_epoch=worker_epoch,decision_step=step)
                 return {"status": "completed", "action": action, "fallback": True,
                         "needed_capabilities": gaps, "capability_event": str(exc)[:400], **out}
             except service.WorkflowError as retry:

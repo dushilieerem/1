@@ -81,11 +81,9 @@ def opinion(uid, org, cid):
                           temperature=0.2, max_tokens=2000, timeout_sec=60,
                           response_format={"type": "json_object"}))
     assert_quota_available(uid)
-    out = run_task(TASK, messages=[{"role": "system", "content": instructions},
-                                   {"role": "user", "content": json.dumps(ctx, ensure_ascii=False, default=str)}])
-    rid = "qff5_" + uuid.uuid4().hex
-    record_usage(user_id=uid, run_id=rid, skill=TASK,
-                 tokens_in=out.get("tokens_in", 0), tokens_out=out.get("tokens_out", 0))
+    from . import model_budget
+    out=model_budget.run(uid,org,row['project_id'],'review:'+cid+':'+uuid.uuid4().hex,TASK,messages=[{'role':'system','content':instructions},{'role':'user','content':json.dumps(ctx,ensure_ascii=False,default=str)}])
+    rid=out.get('budget_call_id')
     try:
         value = Opinion.model_validate(extract_json_object(str(out.get("content") or "")))
     except (ValueError, ValidationError) as exc:

@@ -7,16 +7,16 @@ FIELDS={'horizon_days':1,'title':'日内区间位置研究','direction':'量价'
 class AgentJobTests(unittest.TestCase):
  def test_real_tool_boundaries_return_valid_fields_and_usage(self):
   import json
-  with patch.object(jobs,'update',return_value=True) as update,patch.object(jobs,'list_projects',return_value={'projects':[{'name':'existing'}]}),patch('services.workflow_workspace.platform_data.published_view',return_value={'view_id':'release-x','datasets':{'daily_bars':{'rows':10}}}),patch('services.quant_factor.asset_context.catalogue',return_value={'scope':'test','count':1,'hash':'h','builtins':[{'library_name':'lib','factor_name':'f','description':'known'}],'owned':[]}),patch.object(jobs,'get_task'),patch.object(jobs,'run_task',return_value={'content':'```json\n'+json.dumps(FIELDS)+'\n```','model':'test-double','tokens_in':10,'tokens_out':20}) as model,patch.object(jobs,'record_usage') as usage:
+  with patch.object(jobs,'update',return_value=True) as update,patch.object(jobs,'list_projects',return_value={'projects':[{'name':'existing'}]}),patch('services.workflow_workspace.platform_data.published_view',return_value={'view_id':'release-x','datasets':{'daily_bars':{'rows':10}}}),patch('services.quant_factor.asset_context.catalogue',return_value={'scope':'test','count':1,'hash':'h','builtins':[{'library_name':'lib','factor_name':'f','description':'known'}],'owned':[]}),patch.object(jobs,'get_task'),patch('services.quant_factor.model_budget.run',return_value={'content':'```json\n'+json.dumps(FIELDS)+'\n```','model':'test-double','tokens_in':10,'tokens_out':20}) as model,patch.object(jobs,'record_usage') as usage:
    result=jobs._plan_task(1,2,'j',{})
    self.assertEqual(result['fields'],{k:v for k,v in FIELDS.items() if k!='horizon_days'});self.assertEqual(result['existing_research_count'],1)
    self.assertEqual([c.args[4]['action'] for c in update.call_args_list],['read_data','read_research','read_factor_library','factor_library_read','model_started'])
-   self.assertEqual(usage.call_args.kwargs['tokens_out'],20);model.assert_called_once()
+   self.assertEqual(result['tokens_out'],20);model.assert_called_once();self.assertEqual(model.call_args.args[3],'job:j:planner:1')
  def test_cancelled_job_never_calls_model_or_fills_fields(self):
-  with patch.object(jobs,'read',return_value={'status':'cancelled'}),patch.object(jobs,'run_task') as model,patch.object(jobs,'update') as update:
+  with patch.object(jobs,'read',return_value={'status':'cancelled'}),patch('services.quant_factor.model_budget.run') as model,patch.object(jobs,'update') as update:
    jobs.run(1,2,'j');model.assert_not_called();update.assert_not_called()
  def test_takeover_between_tools_stops_remaining_calls(self):
-  with patch.object(jobs,'update',return_value=False),patch('services.workflow_workspace.platform_data.published_view') as data,patch.object(jobs,'run_task') as model:
+  with patch.object(jobs,'update',return_value=False),patch('services.workflow_workspace.platform_data.published_view') as data,patch('services.quant_factor.model_budget.run') as model:
    self.assertIsNone(jobs._plan_task(1,2,'j',{}));data.assert_not_called();model.assert_not_called()
  def test_invalid_model_output_is_failure_not_fabricated_task(self):
   with patch.object(jobs,'read',return_value={'status':'queued','stage':'F1','input':{'registered_rules':{'direction':'negative','icMetric':'rank_ic'},'draft':{}}}),patch.object(jobs,'_plan_task',side_effect=ValueError('private upstream text')),patch.object(jobs,'update') as update:
@@ -26,7 +26,7 @@ class AgentJobTests(unittest.TestCase):
   with patch.object(jobs,'read',return_value={'status':'queued','stage':'F2','project_id':'p','input':{'registered_rules':{'direction':'negative','icMetric':'rank_ic'},'draft':{}}}),patch('services.quant_factor.assistant.suggest',return_value=out),patch.object(jobs,'update',return_value=True) as update:
    jobs.run(1,2,'j');self.assertEqual(update.call_args.args[3],'ready');self.assertEqual(update.call_args.args[5]['fields'],{'hypothesis':'h','target':'t','acceptance':'a'})
  def test_code_job_reuses_platform_generation_and_rejects_invalid_code(self):
-  with patch.object(jobs,'read',return_value={'status':'queued','stage':'F3','project_id':'p','input':{'registered_rules':{'direction':'negative','icMetric':'rank_ic'},'draft':{'hypothesis':'some research question'}}}),patch.object(jobs,'assert_quota_available'),patch.object(jobs,'record_usage'),patch('app.routers.ai_factor_generation.ai_factor_generations',return_value={'status':'rejected','validation':{'status':'failed','errors':['unsafe']}}) as gen,patch.object(jobs,'update',return_value=True) as update:
+  with patch.object(jobs,'read',return_value={'status':'queued','stage':'F3','project_id':'p','input':{'registered_rules':{'direction':'negative','icMetric':'rank_ic'},'draft':{'hypothesis':'some research question'}}}),patch.object(jobs,'assert_quota_available'),patch.object(jobs,'record_usage'),patch('services.quant_factor.generation.generate',return_value={'status':'rejected','validation':{'status':'failed','errors':['unsafe']}}) as gen,patch.object(jobs,'update',return_value=True) as update:
    jobs.run(1,2,'j');gen.assert_called_once();self.assertEqual(update.call_args.args[3],'failed');self.assertIn('unsafe',update.call_args.args[4]['message'])
  def test_idempotent_existing_input_never_schedules_model_twice(self):
   draft={'title':'x'};inputs={'draft':draft,'project_id':None,'stage':'F1'}
@@ -49,12 +49,12 @@ class PlanFormatRepairTests(unittest.TestCase):
   from services.quant_factor import assistant as a
   import json
   valid={'hypothesis':'h','target':'future one day','acceptance':'method','summary':'not tested','limitations':[]}
-  with patch.object(a,'get_project',return_value={'project':{'name':'study','config':{}}}),patch.object(a,'get_task'),patch.object(a,'assert_quota_available'),patch.object(a,'run_task',side_effect=[{'content':'{"hypothesis":{}}','tokens_out':10},{'content':json.dumps(valid),'tokens_out':20}]) as run,patch.object(a,'record_usage') as usage:
+  with patch.object(a,'get_project',return_value={'project':{'name':'study','config':{}}}),patch.object(a,'get_task'),patch.object(a,'assert_quota_available'),patch('services.quant_factor.model_budget.run',side_effect=[{'content':'{"hypothesis":{}}','tokens_out':10},{'content':json.dumps(valid),'tokens_out':20}]) as run,patch.object(a,'record_usage') as usage:
    progress=MagicMock(return_value=True);out=a.suggest(1,2,'p',progress=progress)
-   self.assertEqual(out['suggestion'],valid);self.assertEqual(run.call_count,2);self.assertEqual(usage.call_count,2);progress.assert_called_once()
+   self.assertEqual(out['suggestion'],valid);self.assertEqual(run.call_count,2);self.assertNotEqual(run.call_args_list[0].args[3],run.call_args_list[1].args[3]);progress.assert_called_once()
  def test_takeover_before_format_repair_prevents_second_model_request(self):
   from services.quant_factor import assistant as a
-  with patch.object(a,'get_project',return_value={'project':{'name':'study','config':{}}}),patch.object(a,'get_task'),patch.object(a,'assert_quota_available'),patch.object(a,'run_task',return_value={'content':'{}'}) as run,patch.object(a,'record_usage'):
+  with patch.object(a,'get_project',return_value={'project':{'name':'study','config':{}}}),patch.object(a,'get_task'),patch.object(a,'assert_quota_available'),patch('services.quant_factor.model_budget.run',return_value={'content':'{}'}) as run,patch.object(a,'record_usage'):
    with self.assertRaises(RuntimeError):a.suggest(1,2,'p',progress=lambda _:False)
    run.assert_called_once()
 
@@ -65,5 +65,5 @@ class AgentAuditTests(unittest.TestCase):
    self.assertIsNone(jobs.latest(1,2,'F1'));read.assert_not_called()
  def test_f3_generation_receives_expression_and_manual_code(self):
   d={'hypothesis':'h','candidateExpression':'window=5; zero range -> NaN','target':'1 day','name':'factor','code':'manual code'}
-  with patch.object(jobs,'read',return_value={'status':'queued','stage':'F3','project_id':'p','input':{'registered_rules':{'direction':'negative','icMetric':'rank_ic'},'draft':d}}),patch.object(jobs,'assert_quota_available'),patch.object(jobs,'record_usage'),patch('app.routers.ai_factor_generation.ai_factor_generations',return_value={'status':'rejected','validation':{'status':'failed','errors':['stop']}}) as gen,patch.object(jobs,'update',return_value=True):
-   jobs.run(1,2,'j');prompt=gen.call_args.args[0]['prompt'];self.assertIn('window=5',prompt);self.assertIn('manual code',prompt);self.assertIn('1 day',prompt)
+  with patch.object(jobs,'read',return_value={'status':'queued','stage':'F3','project_id':'p','input':{'registered_rules':{'direction':'negative','icMetric':'rank_ic'},'draft':d}}),patch.object(jobs,'assert_quota_available'),patch.object(jobs,'record_usage'),patch('services.quant_factor.generation.generate',return_value={'status':'rejected','validation':{'status':'failed','errors':['stop']}}) as gen,patch.object(jobs,'update',return_value=True):
+   jobs.run(1,2,'j');prompt=gen.call_args.args[4]['prompt'];self.assertIn('window=5',prompt);self.assertIn('manual code',prompt);self.assertIn('1 day',prompt)

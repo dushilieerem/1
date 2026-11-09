@@ -1,0 +1,95 @@
+{
+  "checked_at_utc": "2026-11-09T15:06:02.705876+00:00",
+  "read_only": true,
+  "scope": "quant tables and referenced ai_usage aggregates; not site usage as module usage",
+  "quant_agent_usage_by_stage": [
+    {
+      "org_id": 261,
+      "user_id": 1046,
+      "stage": "F1",
+      "jobs": 12,
+      "usage_rows": 11,
+      "measured_tokens": 55694,
+      "zero_token_rows": 0
+    },
+    {
+      "org_id": 261,
+      "user_id": 1046,
+      "stage": "F2",
+      "jobs": 13,
+      "usage_rows": 0,
+      "measured_tokens": 0,
+      "zero_token_rows": 0
+    },
+    {
+      "org_id": 261,
+      "user_id": 1046,
+      "stage": "F3",
+      "jobs": 31,
+      "usage_rows": 27,
+      "measured_tokens": 0,
+      "zero_token_rows": 27
+    },
+    {
+      "org_id": 261,
+      "user_id": 2527,
+      "stage": "F3",
+      "jobs": 22,
+      "usage_rows": 19,
+      "measured_tokens": 0,
+      "zero_token_rows": 19
+    }
+  ],
+  "f0_step_usage": [
+    {
+      "org_id": 261,
+      "user_id": 1046,
+      "steps": 23,
+      "recorded_tokens": 41633,
+      "missing_usage_steps": 0
+    },
+    {
+      "org_id": 261,
+      "user_id": 2527,
+      "steps": 32,
+      "recorded_tokens": 71045,
+      "missing_usage_steps": 0
+    }
+  ],
+  "quant_specific_ai_usage": [
+    {
+      "skill": "quant.factor.f0_decider",
+      "rows": 76,
+      "measured_tokens": 163233,
+      "zero_token_rows": 0
+    },
+    {
+      "skill": "quant.factor.independent_reviewer",
+      "rows": 2,
+      "measured_tokens": 15474,
+      "zero_token_rows": 0
+    },
+    {
+      "skill": "quant.factor.research_assistant",
+      "rows": 42,
+      "measured_tokens": 80887,
+      "zero_token_rows": 0
+    },
+    {
+      "skill": "quant.factor.task_planner",
+      "rows": 11,
+      "measured_tokens": 55694,
+      "zero_token_rows": 0
+    }
+  ],
+  "assistant_output_references": [
+    {
+      "org_id": 261,
+      "user_id": 1046,
+      "stage": "F2",
+      "linked_rows": 11,
+      "measured_tokens": 11959
+    }
+  ],
+  "ai_usage_has_immutable_org_project_columns": false
+}

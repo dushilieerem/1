@@ -263,6 +263,7 @@ test('研发主区按所选E/H只读切换，无产物不冒用另一分支定�
  await waitFor(()=>assert.ok(view.getByText('冻结假设正文')));
  assert.ok(view.getByText('def fixed_factor(data): return data.close'));
  assert.ok(view.getByText('当前短标题',{selector:'h3'}));
+ const initialManualLink=[...view.container.querySelectorAll<HTMLAnchorElement>('.ff-detail-head a')].find(a=>a.textContent?.includes('人工研究'));assert.ok(initialManualLink?.href.includes('branch=newer'),'默认头部与H2主卡应选择同一分支');
  fireEvent.click(view.container.querySelector('[data-bid=older]')!);
  await waitFor(()=>assert.equal(view.queryByText('冻结假设正文'),null));assert.equal(view.queryByText('当前短标题',{selector:'h3'}),null);
 });

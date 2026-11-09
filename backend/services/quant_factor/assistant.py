@@ -16,7 +16,7 @@ class Suggestion(BaseModel):
     summary:str=Field(min_length=1,max_length=3000)
     limitations:list[str]=Field(max_length=10)
 
-def suggest(uid,org,project_id,draft=None,candidate_id=None,progress=None):
+def suggest(uid,org,project_id,draft=None,candidate_id=None,progress=None,call_key_prefix=None):
     project=get_project(uid,project_id)['project']
     assert_quota_available(uid)
     context={'name':project['name'],'draft':draft or project['config'].get('researchPlan',{})}
@@ -34,11 +34,12 @@ def suggest(uid,org,project_id,draft=None,candidate_id=None,progress=None):
     from ai.errors import AiBadOutput
     from pydantic import ValidationError
     messages=[{'role':'system','content':instructions},{'role':'user','content':json.dumps(context,ensure_ascii=False)}]
+    prefix=call_key_prefix or 'manual-assistant:'+uuid.uuid4().hex
+    from . import model_budget
     for attempt in range(2):
         assert_quota_available(uid)
-        out=run_task(TASK,messages=messages)
-        rid='qfa_'+uuid.uuid4().hex
-        record_usage(user_id=uid,run_id=rid,skill=TASK,tokens_in=out.get('tokens_in',0),tokens_out=out.get('tokens_out',0))
+        out=model_budget.run(uid,org,project_id,prefix+':attempt:'+str(attempt+1),TASK,messages=messages)
+        rid=out.get('budget_call_id')
         content=str(out.get('content') or '').strip()
         try:
             result=Suggestion.model_validate(extract_json_object(content))

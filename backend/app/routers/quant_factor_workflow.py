@@ -435,3 +435,9 @@ def source_check(project_id:str,body:SourceCheckBody,ctx=Depends(require_quant_r
 def read_workbench(project_id:str,ctx=Depends(require_quant_researcher)):
     from services.quant_factor.presentation import workbench
     return invoke(workbench,*identity(ctx),project_id)
+
+
+@router.get('/model-budget')
+def model_budget_status(ctx=Depends(require_quant_user)):
+    from services.quant_factor import model_budget
+    return invoke(model_budget.status,*identity(ctx))

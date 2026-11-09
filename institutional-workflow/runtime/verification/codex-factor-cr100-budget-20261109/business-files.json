@@ -1,0 +1,21 @@
+[
+  "backend/app/routers/inst_quant.py",
+  "backend/app/routers/quant_factor_workflow.py",
+  "backend/services/quant_factor/agent_jobs.py",
+  "backend/services/quant_factor/assistant.py",
+  "backend/services/quant_factor/f0_agent.py",
+  "backend/services/quant_factor/f5.py",
+  "backend/tests/test_quant_factor_agent_jobs.py",
+  "backend/tests/test_quant_factor_candidate_reads.py",
+  "backend/tests/test_quant_factor_f0.py",
+  "backend/tests/test_quant_factor_f5.py",
+  "frontend/src/pages/institutional-workflow/QuantFactorHomePage.tsx",
+  "frontend/tests/factorHomeCreateFlow.test.tsx",
+  "backend/migrations/0038_quant_ai_budget.sql",
+  "backend/scripts/activate_quant_research_budget.py",
+  "backend/scripts/run_quant_budget_pg_tests.py",
+  "backend/services/quant_factor/generation.py",
+  "backend/services/quant_factor/model_budget.py",
+  "backend/tests/test_quant_model_budget.py",
+  "backend/tests/test_quant_model_budget_pg.py"
+]

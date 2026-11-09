@@ -46,6 +46,7 @@ export function QuantFactorHomePage(){
  const [updatesError,setUpdatesError]=useState('');
  const [node,setNode]=useState<string>();
  const [inspectedBranch,setInspectedBranch]=useState<string>(),[inspectedTrial,setInspectedTrial]=useState<number>();
+ const inspectedBranchRef=useRef<string|undefined>(undefined);inspectedBranchRef.current=inspectedBranch;
  const [f0,setF0]=useState<{id:string;status:string;decision?:{candidate_status?:string;reason?:string;current_action?:string;steps?:Array<{step:number;at?:string;decision:{action:string;rationale:string};usage?:{tokens_in?:number;tokens_out?:number};result:{status?:string;candidate_status?:string;reason?:string;branch_id?:string;needed_capabilities?:string[]}}>};stop_reason?:string}>();
  const [error,setError]=useState(''),[notice,setNotice]=useState(''),[starting,setStarting]=useState(false);
  const canManage=!!getQuantSession()?.can_manage;
@@ -121,7 +122,7 @@ export function QuantFactorHomePage(){
     const [d,f,t]=await Promise.all([lr.json(),fr.json(),tr.json()]);
     if(!alive||selectedRef.current!==id)return;
     setLedger(d);setF0(f||undefined);setTopics((t.topics||[]).map((item:Topic)=>item.id===id&&f?{...item,dispatch_status:f.status,dispatch_stop_reason:f.stop_reason||''}:item));setUpdatesError('');
-    setNode(cur=>cur&&(d.branches||[]).some((b:Branch)=>b.id===cur)?cur:(d.branches||[])[0]?.id);
+    setNode(cur=>inspectedBranchRef.current&&cur&&(d.branches||[]).some((b:Branch)=>b.id===cur)?cur:f?.decision?.steps?.at(-1)?.result?.branch_id||[...(d.trials||[])].reverse().find((t:Trial)=>/^qf_.+_development$/.test(t.report_id||''))?.branch_id||(d.branches||[])[0]?.id);
    }catch(e){if(alive&&selectedRef.current===id)setUpdatesError(e instanceof Error?e.message:String(e));}
    finally{busy=false;}
   }

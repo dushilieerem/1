@@ -89,12 +89,14 @@ export function InstV3PipelinePage() {
           {q ? <span className="v3-chip info">筛选：{q}</span> : null}
         </div>
         {shown.length ? (
-          <div className="v3-board">
+          <div className={`v3-board${stage !== null ? " single" : ""}`}>
             {shown.map((s) => (
               <div className="v3-col" key={s.stage_no}>
                 <div className="v3-col-head"><b>{s.stage_name}</b><span>{s.items.length}</span></div>
-                {s.items.map((item) => <ProjectCard key={item.key} item={item} />)}
-                {!s.items.length ? <div className="v3-empty" style={{ padding: "18px 8px" }}>暂无项目</div> : null}
+                <div className={`v3-col-items${stage !== null ? " horizontal" : ""}`}>
+                  {s.items.map((item) => <ProjectCard key={item.key} item={item} />)}
+                  {!s.items.length ? <div className="v3-empty" style={{ padding: "18px 8px" }}>暂无项目</div> : null}
+                </div>
               </div>
             ))}
           </div>

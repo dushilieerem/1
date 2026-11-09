@@ -82,6 +82,21 @@ test("流水线卡片进入只读结果页", async ({ page }) => {
   await expect(page.getByText("下一关", { exact: true })).toBeVisible();
 });
 
+test("单流程视图项目横向排列", async ({ page }) => {
+  await login(page);
+  await page.goto(`${BASE}/inst/pipeline`, { waitUntil: "networkidle" });
+  await page.locator(".v3-rail-cell").nth(2).click();
+  await expect(page.locator(".v3-board.single")).toBeVisible();
+  const cards = page.locator(".v3-col-items.horizontal .v3-project");
+  await expect(cards.first()).toBeVisible({ timeout: 20_000 });
+  const count = await cards.count();
+  expect(count, "单流程下应有项目卡片").toBeGreaterThan(1);
+  const first = await cards.nth(0).boundingBox();
+  const second = await cards.nth(1).boundingBox();
+  expect(first && second).toBeTruthy();
+  expect(Math.round(first!.y), "单流程项目应横向排列").toBe(Math.round(second!.y));
+});
+
 test("旧入口重定向到 v3", async ({ page }) => {
   await login(page);
   const redirects: Array<[string, RegExp]> = [

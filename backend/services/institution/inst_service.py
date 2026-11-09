@@ -1252,9 +1252,27 @@ def holding_detail(org_id: int, symbol: str) -> dict[str, Any]:
         e for e in mon.get("exits") or []
         if int(e.get("company_id") or 0) == int(company_id or 0)
     ]
+    version_no = None
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT pv.version_no
+              FROM inst_proposal p
+              JOIN LATERAL (
+                SELECT version_no FROM inst_proposal_version
+                 WHERE proposal_id=p.id ORDER BY version_no DESC LIMIT 1
+              ) pv ON TRUE
+             WHERE p.org_id=%s AND p.company_id=%s
+             ORDER BY p.updated_at DESC LIMIT 1
+            """,
+            (org_id, company_id),
+        ).fetchone()
+        if row:
+            version_no = int(row["version_no"])
     return {
         "symbol": symbol,
         "company_id": company_id,
+        "version_no": version_no,
         "position": position,
         "events": events,
         "theses": theses,
@@ -5597,7 +5615,7 @@ def refresh_thesis(org_id: int, company_id: int, *, actor_member_id: int | None 
                 SELECT snapshot FROM inst_proposal_version
                  WHERE proposal_id=p.id ORDER BY version_no DESC LIMIT 1
               ) v ON TRUE
-             WHERE p.org_id=%s AND p.company_id=%s AND p.direction='buy'
+             WHERE p.org_id=%s AND p.company_id=%s
              ORDER BY p.updated_at DESC LIMIT 1
             """,
             (org_id, company_id),

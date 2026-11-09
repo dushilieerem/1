@@ -181,7 +181,10 @@ export function InstV3ExecutePage() {
           <div className="v3-eyebrow">EXECUTION</div>
           <h1>执行成交</h1>
         </div>
-        <span className="v3-chip info">{session.role_label_cn} · {canExecute ? "可执行" : "只读"}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="v3-chip info">版本 {selected?.version_no || "—"}</span>
+          <span className="v3-chip info">{session.role_label_cn} · {canExecute ? "可执行" : "只读"}</span>
+        </div>
       </div>
 
       <div className="v3-stepper">
@@ -199,7 +202,7 @@ export function InstV3ExecutePage() {
           {items.map((a) => (
             <button key={a.id} className={`pl-item${a.id === selected?.id ? " on" : ""}`} onClick={() => selectAuth(a)}>
               <b>{a.company_name || a.symbol}</b>
-              <span>#{a.id} · {a.status} · v{a.version_no || "—"}</span>
+              <span>#{a.id} · 版本 {a.version_no || "—"} · {a.status}</span>
             </button>
           ))}
           {!items.length ? <div className="v3-empty" style={{ padding: "16px" }}>暂无授权。三关审批通过后生成 AUTH。</div> : null}

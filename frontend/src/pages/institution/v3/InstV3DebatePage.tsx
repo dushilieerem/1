@@ -54,6 +54,8 @@ type CaseItem = {
   company_name: string;
   industry?: string;
   ref_price?: number;
+  version_no?: number | null;
+  version_status?: string | null;
   versions?: Version[];
   debates?: Array<{ id: number; status: string; conclusion?: string }>;
   proposals?: Proposal[];
@@ -307,7 +309,10 @@ export function InstV3DebatePage() {
           <div className="v3-eyebrow">DEBATE</div>
           <h1>{detail.company_name} · 多空辩论 <span className="font-mono text-[12px] font-normal text-[#6b6370]">{detail.symbol}</span></h1>
         </div>
-        <Link className="v3-btn ghost" to={`/inst/pipeline/result?key=${encodeURIComponent(`case:${detail.id}`)}`}>查看结果页</Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="v3-chip info">版本 {version?.version_no ?? detail.version_no ?? "—"}</span>
+          <Link className="v3-btn ghost" to={`/inst/pipeline/result?key=${encodeURIComponent(`case:${detail.id}`)}`}>查看结果页</Link>
+        </div>
       </div>
 
       <div className="v3-stepper">
@@ -325,7 +330,7 @@ export function InstV3DebatePage() {
           {cases.map((c) => (
             <button key={c.id} className={`pl-item${c.id === detail.id ? " on" : ""}`} onClick={() => selectCase(c.id)}>
               <b>{c.company_name}</b>
-              <span>{c.symbol} · {c.proposals?.[0]?.status || (c.debates?.[0] ? "辩论完成" : "待辩论")}</span>
+              <span>{c.symbol} · 版本 {c.version_no ?? c.versions?.[0]?.version_no ?? "—"} · {c.proposals?.[0]?.status || (c.debates?.[0] ? "辩论完成" : "待辩论")}</span>
             </button>
           ))}
           {!cases.length ? <div className="v3-empty" style={{ padding: "16px" }}>暂无可辩论项目</div> : null}

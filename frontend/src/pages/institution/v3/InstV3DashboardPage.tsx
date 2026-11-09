@@ -40,13 +40,13 @@ export function InstV3DashboardPage() {
     if (!pipeline) return [];
     const items = [
       ...(pipeline.stages[3]?.items || []).slice(0, 3).map((x) => ({
-        key: x.key, name: x.company_name || x.symbol || "—", stage: "投委会审批", note: `${x.stage_name} · ${x.gate}`, tone: "gold",
+        key: x.key, name: x.company_name || x.symbol || "—", stage: "投委会审批", note: `${x.stage_name} · ${x.gate} · 版本 ${x.version_no ?? "—"}`, tone: "gold",
       })),
       ...(pipeline.stages[1]?.items || []).slice(0, 1).map((x) => ({
-        key: x.key, name: x.company_name || x.symbol || "—", stage: "价值分析", note: `${x.stage_name} · ${x.gate}`, tone: "info",
+        key: x.key, name: x.company_name || x.symbol || "—", stage: "价值分析", note: `${x.stage_name} · ${x.gate} · 版本 ${x.version_no ?? "—"}`, tone: "info",
       })),
       ...(pipeline.stages[4]?.items || []).slice(0, 1).map((x) => ({
-        key: x.key, name: x.company_name || x.symbol || "—", stage: "执行成交", note: `${x.stage_name} · ${x.gate}`, tone: "violet",
+        key: x.key, name: x.company_name || x.symbol || "—", stage: "执行成交", note: `${x.stage_name} · ${x.gate} · 版本 ${x.version_no ?? "—"}`, tone: "violet",
       })),
     ];
     return dedupeBy(items, (x) => x.key).slice(0, 4);
@@ -120,7 +120,7 @@ export function InstV3DashboardPage() {
                 <span className="flex h-7 w-7 items-center justify-center rounded bg-[#f8edf3] text-[11px] font-semibold text-[#a03a5c]">{(p.company_name || p.symbol || "?").slice(0, 1)}</span>
                 <span className="min-w-0 flex-1">
                   <b className="block text-[12px] font-medium text-[#2b2533]">{p.company_name || p.symbol}</b>
-                  <span className="block text-[11px] text-[#6b6370]">{p.stage_name} · {p.gate} · {p.symbol}</span>
+                  <span className="block text-[11px] text-[#6b6370]">{p.stage_name} · {p.gate} · {p.symbol} · 版本 {p.version_no ?? "—"}</span>
                 </span>
                 <span className="v3-chip">{p.stage_name}</span>
               </Link>

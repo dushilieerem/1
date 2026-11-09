@@ -73,6 +73,8 @@ type CaseItem = {
   industry?: string;
   data_status?: string;
   ref_price?: number;
+  version_no?: number | null;
+  version_status?: string | null;
   versions?: Version[];
 };
 
@@ -314,7 +316,10 @@ export function InstV3ResearchPage() {
           <div className="v3-eyebrow">RESEARCH</div>
           <h1>{detail.company_name} <span className="font-mono text-[12px] font-normal text-[#6b6370]">{detail.symbol}</span></h1>
         </div>
-        <Link className="v3-btn ghost" to={`/inst/pipeline/result?key=${encodeURIComponent(`case:${detail.id}`)}`}>查看结果页</Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="v3-chip info">版本 {version?.version_no ?? detail.version_no ?? "—"}</span>
+          <Link className="v3-btn ghost" to={`/inst/pipeline/result?key=${encodeURIComponent(`case:${detail.id}`)}`}>查看结果页</Link>
+        </div>
       </div>
 
       <div className="v3-stepper">
@@ -332,7 +337,7 @@ export function InstV3ResearchPage() {
           {cases.map((c) => (
             <button key={c.id} className={`pl-item${c.id === detail.id ? " on" : ""}`} onClick={() => selectCase(c.id)}>
               <b>{c.company_name}</b>
-              <span>{c.symbol} · {c.stage_no === 2 ? "已定稿" : "价值分析"}</span>
+              <span>{c.symbol} · 版本 {c.version_no ?? "—"} · {c.stage_no === 2 ? "已定稿" : "价值分析"}</span>
             </button>
           ))}
           {!cases.length ? <div className="v3-empty" style={{ padding: "16px" }}>暂无在研项目</div> : null}

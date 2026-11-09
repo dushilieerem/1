@@ -750,3 +750,10 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - **验收截图**：`docs/测试设计/evidence/inst-ui-production-20261109/`（1280/1440/1920、空态、超长文本、交叉质询、估值复核）及 `README.md` 清单。
 
 验证：pytest 107 passed；`tsc --noEmit`、`npm run build`、`npm run test:inst` 13 passed；Playwright `e2e-09..14` 17 passed。
+
+
+### 11.37 研究版本提示（2026-11-09）
+
+- 项目流水线卡片、项目结果页、价值分析/多空辩论/投委会审批/执行成交/投资管理的页面标题均显示当前研究/议案版本。
+- 各工作台左侧切换列表（研究案、辩论案、议案、授权）同步显示“版本 N”；同一股票的不同研究版本不再只靠名称区分。
+- 持仓详情按最近议案版本回填版本号；无版本时显示“—”，不编造。

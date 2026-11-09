@@ -362,7 +362,10 @@ export function InstV3ApprovalsPage() {
           <div className="v3-eyebrow">DECISION</div>
           <h1>投委会审批</h1>
         </div>
-        <span className="v3-chip info">{session.role_label_cn}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="v3-chip info">版本 {detail?.current_version?.version_no ?? detail?.current_version_no ?? detail?.version_no ?? "—"}</span>
+          <span className="v3-chip info">{session.role_label_cn}</span>
+        </div>
       </div>
 
       <div className="v3-stepper">
@@ -380,7 +383,7 @@ export function InstV3ApprovalsPage() {
           {items.map((p) => (
             <button key={p.id} className={`pl-item${p.id === detail?.id ? " on" : ""}`} onClick={() => selectProposal(p.id)}>
               <b>{p.company_name}</b>
-              <span>{p.symbol} · {p.direction} {fmtPct(p.target_weight)} · {p.status}</span>
+              <span>{p.symbol} · 版本 {p.current_version_no || p.version_no || "—"} · {p.direction} {fmtPct(p.target_weight)} · {p.status}</span>
             </button>
           ))}
           {!items.length ? <div className="v3-empty" style={{ padding: "16px" }}>当前没有待你处理的议案。</div> : null}

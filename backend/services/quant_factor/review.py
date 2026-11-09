@@ -81,6 +81,12 @@ def _ledger_context(org,project_id):
         trials=[dict(row) for row in c.execute(
             "SELECT * FROM quant_factor_trials WHERE org_id=%s AND topic_id=%s ORDER BY trial_no",
             (org,topic['id'])).fetchall()]
+        branches=[dict(row) for row in c.execute(
+            "SELECT * FROM quant_factor_branches WHERE org_id=%s AND topic_id=%s ORDER BY created_at",
+            (org,topic['id'])).fetchall()]
+    labels=ledger._branch_labels(topic['user_id'],org,topic['id'],branches)
+    for trial in trials:
+        trial['branch_label']=labels.get(trial.get('branch_id'),'H?')
     k=ledger.current_k(trials,topic['primary_holding_period'])
     return {'topic':ledger._public(topic),'trials':[ledger._public(row) for row in trials],
             'k':k,'threshold':threshold(max(k,1)),'threshold_k':max(k,1)}
@@ -106,6 +112,11 @@ def detail(uid,org,cid):
     out.pop('events',None)
     ctx=_ledger_context(org,row['project_id'])
     if ctx:out.update(ctx)
+    with get_conn() as c:
+        sealed=c.execute(
+            "SELECT status,result,report_id,created_at FROM quant_factor_sealed_validations WHERE candidate_id=%s AND org_id=%s ORDER BY created_at DESC LIMIT 1",
+            (cid,org)).fetchone()
+    out['sealed']=dict(sealed) if sealed else None
     return out
 
 def record(uid,org,cid,decision,note):

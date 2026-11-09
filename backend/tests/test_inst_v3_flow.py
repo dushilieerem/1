@@ -98,6 +98,15 @@ def test_pipeline_and_playbook() -> None:
     assert len(book["gates"]) == 3
 
 
+def test_pipeline_per_stage_limit(monkeypatch) -> None:
+    monkeypatch.setenv("INST_PIPELINE_PER_STAGE", "3")
+    data = svc.pipeline(ORG_ID)
+    for stage in data["stages"]:
+        assert len(stage["items"]) <= 3
+        assert stage["count"] == len(stage["items"])
+    assert data["total"] <= 18
+
+
 def test_research_lock_and_reopen() -> None:
     with _case() as c:
         locked = svc.lock_research(c["org_id"], c["version_id"], actor_member_id=c["member_id"])

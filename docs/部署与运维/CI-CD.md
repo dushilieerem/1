@@ -115,13 +115,13 @@ sudo bash scripts/ci/webhook-install.sh --user <运行用户>
 - `services/core/db.py` 在 pytest 进程里拒绝非 `*_test/*_dev/*_ci/*_e2e/*_local` 库，
   防止本地 `backend/.env` 指向生产 `svquant` 时测试改生产 schema；本地测试用 `svquant_test`；
 - 注入测试用 `YG_RE_BASE` / `JWT_SECRET_KEY`（测试对 HTTP 全 mock）；
-- `python -m pytest tests -q`，基线 **106 passed**（无库时 2 failed）。
+- `python -m pytest tests -q`，基线 **863 passed / 3 skipped**（无库时 2 failed）。
 
 `bash scripts/ci/frontend-check.sh`：
 
 - 校验 Node ≥ 20；
 - `vite.config.ts` 强制要求 `backend/.env` 的 `YG_RE_BASE`：缺失时临时生成、退出时还原；
-- `npm ci`（Windows 自动退化为 `npm install`）→ `npm run build` → `npm test`，基线 **75 passed**。
+- `npm ci`（Windows 自动退化为 `npm install`）→ `npm run build` → `npm test`，基线 **97 passed**（串行执行，约 40 秒）。
 
 `bash scripts/ci/docker-build.sh <tag>`：直接 `docker build` 两个 Dockerfile，供发布与排查使用。
 
@@ -169,6 +169,23 @@ serve-public.sh start           重启 invest-api 与手机 H5，创建或复用
 生产沿用原开发端口（`9530` / `8766` / `5432`），且监听所有网卡；原 dev02 的 PostgreSQL
 实例已停用。开发启动脚本改用 `9531` / `8768` / `8769` / `9541`，两套可同时运行。
 `deploy.sh` 从 `deploy/.env` 读取端口做冒烟检查。
+
+## 6.5 开发流程与测试分层
+
+同一个测试只在**一个**时机跑，避免 Agent 本机、服务器 CI、发版前各跑一遍全量：
+
+| 时机 | 命令 | 内容 | 目标耗时 |
+|------|------|------|----------|
+| 改代码时 | `bash scripts/ci/quick-check.sh` | 按改动选后端测试 + `tsc --noEmit` + `bash -n` + H5 build | < 30 秒 |
+| 提 PR 前 | `backend-check.sh` + `frontend-check.sh` | 全量 pytest / 迁移门禁 / AI 评测 / 单测 / 构建 / 体积预算 | 3~4 分钟 |
+| 合并后 | 轮询自动 CI | 同「提 PR 前」，兜底防止绕过 | ~4 分钟 |
+| 打 tag 前 | `bash scripts/ci/e2e.sh p0` | 登录、H5 个股透视、机构端主链路，6 条 | ~1 分钟 |
+| 每晚 / 大改动 | `bash scripts/ci/e2e.sh full` | 全部 14 个 spec、57 条 | ~8 分钟 |
+
+- `quick-check.sh` 不是门禁，只是快速反馈；它匹配不到测试时会明确提示去跑全量。
+- `e2e.sh` 自动挑空闲端口起后端 + 主前端 + H5，跑完清理；`DATABASE_URL` 必须是
+  `*_test/_dev/_e2e/_ci` 库，指向 `svquant_test` 时写库用例（`INST_E2E_ALLOW_WRITE`）才会执行。
+- P0 之外还有布局/溢出/空态类 E2E，属于回归保护，放全量或每晚跑，不拦每次发版。
 
 ## 7. 版本与发布规矩
 
@@ -224,7 +241,8 @@ docker run --rm -v research-engine_re-output:/data -v "$PWD/deploy/backups":/bac
 
 - **不是推送即触发**：最坏延迟一个轮询间隔（默认 60 秒），秒级回滚请直接跑脚本。
 - PR 阶段没有门禁：轮询只认 `master` 与 tag；需要 PR 检查时按 ADR-036 评估内网 Gitea。
-- Playwright E2E（`tests/e2e/`）需要前端+后端+RE 同时在跑，未接自动触发。
+- Playwright E2E（`tests/e2e/`）仍然手动触发：用 `scripts/ci/e2e.sh p0|full` 起服务后跑，
+  未接轮询自动触发。
 - 没有把结果回写 Gitee（commit status / PR 评论），失败只能看服务器日志。
 - 镜像漏洞扫描、依赖升级机器人未接入。
 - 容器当前以 root 运行，加固待排期。

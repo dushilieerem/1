@@ -12,6 +12,7 @@ CLI 见 ``scripts/sync_data_view.py``。定时器/部署见 Batch 2。
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import math
@@ -256,6 +257,18 @@ def _clean(value: Any) -> Any:
         except (TypeError, ValueError):
             pass
     return value
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return _clean(value)
+
+
+def _json_text(value: Any) -> str:
+    return json.dumps(_json_safe(value), ensure_ascii=False, allow_nan=False, default=str)
 
 
 def _copy_rows(conn, table: str, columns: list[str], rows: Iterable[tuple[Any, ...]]) -> int:
@@ -952,6 +965,164 @@ def _sync_news_dataset(conn, view: ViewInfo) -> int:
     )
 
 
+def _doc_rows(frame: pd.DataFrame, doc_type: str, source: str, as_of: date | None):
+    rows = []
+    for raw in frame.to_dict("records"):
+        title = str(raw.get("title") or "").strip()
+        if not title:
+            continue
+        symbol = _clean(raw.get("symbol")) or None
+        url = _clean(raw.get("url") or raw.get("source_uri")) or None
+        if doc_type == "announcement":
+            publish = raw.get("available_time") or raw.get("announce_date")
+            summary = _clean(raw.get("category"))
+        else:
+            publish = raw.get("available_time") or raw.get("publish_date")
+            summary = " / ".join(x for x in (_clean(raw.get("org_name")), _clean(raw.get("rating"))) if x)
+        identity = [doc_type, source, symbol or "", title, url or "",
+                    str(raw.get("art_code") or raw.get("info_code") or "")]
+        digest = hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()
+        rows.append((
+            doc_type, symbol, title, str(publish)[:19] if publish is not None else None,
+            url, source, digest, summary or None,
+            _json_text(raw), as_of,
+        ))
+    return rows
+
+
+def _sync_doc_items(conn, view: ViewInfo) -> int:
+    """公告/研报进入 H5 doc_item；按 source+content_hash 幂等 upsert。"""
+    datasets = view.manifest.get("datasets") or {}
+    all_rows = []
+    if "announcement" in datasets:
+        frame = _read_frame(view, "announcement", [
+            "symbol", "announce_date", "category", "title", "art_code", "url",
+            "available_time", "source", "source_uri", "document_id", "page_ref",
+        ])
+        if not frame.empty:
+            all_rows += _doc_rows(frame, "announcement", "data_platform_announcement", view.data_date)
+    if "research_report" in datasets:
+        frame = _read_frame(view, "research_report", [
+            "symbol", "publish_date", "org_name", "rating", "title", "info_code",
+            "available_time", "source", "source_uri", "document_id", "page_ref",
+        ])
+        if not frame.empty:
+            all_rows += _doc_rows(frame, "research", "data_platform_research", view.data_date)
+    if not all_rows:
+        return 0
+    cols = ["doc_type", "symbol", "title", "publish_at", "url", "source", "content_hash",
+            "summary", "raw", "as_of"]
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS tmp_doc_item ("
+        "doc_type text, symbol text, title text, publish_at timestamptz, url text, "
+        "source text, content_hash text, summary text, raw jsonb, as_of date) ON COMMIT DROP"
+    )
+    conn.execute("TRUNCATE tmp_doc_item")
+    _copy_rows(conn, "tmp_doc_item", cols, all_rows)
+    conn.execute(
+        """INSERT INTO doc_item
+           (doc_type,symbol,title,publish_at,url,source,content_hash,summary,raw,as_of)
+           SELECT doc_type,symbol,title,publish_at,url,source,content_hash,summary,raw,as_of
+             FROM tmp_doc_item t
+            WHERE NOT EXISTS (
+              SELECT 1 FROM doc_item d
+               WHERE d.doc_type=t.doc_type
+                 AND d.symbol IS NOT DISTINCT FROM t.symbol
+                 AND d.title=t.title
+                 AND d.publish_at::date IS NOT DISTINCT FROM t.publish_at::date
+            )
+           ON CONFLICT (source,content_hash) DO UPDATE SET
+             title=EXCLUDED.title,symbol=EXCLUDED.symbol,publish_at=EXCLUDED.publish_at,
+             url=EXCLUDED.url,summary=EXCLUDED.summary,raw=EXCLUDED.raw,as_of=EXCLUDED.as_of"""
+    )
+    return len(all_rows)
+
+
+def _sync_dividends(conn, view: ViewInfo) -> int:
+    if "dividend_detail" not in (view.manifest.get("datasets") or {}):
+        return 0
+    frame = _read_frame(view, "dividend_detail", [
+        "symbol", "report_date", "announce_date", "ex_date", "record_date",
+        "dividend_per_share_pretax", "plan", "progress", "available_time",
+        "source", "source_uri", "document_id", "page_ref",
+    ])
+    rows = []
+    for raw in frame.to_dict("records"):
+        symbol = _clean(raw.get("symbol"))
+        if not symbol:
+            continue
+        plan_id = _clean(raw.get("document_id")) or f"{_clean(raw.get('report_date'))}:{_clean(raw.get('plan'))}"
+        rows.append((
+            symbol, plan_id, _clean(raw.get("announce_date")), _clean(raw.get("record_date")),
+            _clean(raw.get("ex_date")), None, _clean(raw.get("dividend_per_share_pretax")),
+            "data_platform_dividend", view.data_date,
+            _json_text(raw),
+        ))
+    if not rows:
+        return 0
+    cols = ["symbol", "plan_id", "announce_date", "record_date", "ex_date", "pay_date",
+            "cash_per_share", "source", "as_of", "raw"]
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS tmp_fin_dividend ("
+        "symbol text, plan_id text, announce_date date, record_date date, ex_date date, "
+        "pay_date date, cash_per_share double precision, source text, as_of date, raw jsonb) ON COMMIT DROP"
+    )
+    conn.execute("TRUNCATE tmp_fin_dividend")
+    _copy_rows(conn, "tmp_fin_dividend", cols, rows)
+    conn.execute(
+        """INSERT INTO fin_dividend
+           (symbol,plan_id,announce_date,record_date,ex_date,pay_date,cash_per_share,source,as_of,raw)
+           SELECT symbol,plan_id,announce_date,record_date,ex_date,pay_date,cash_per_share,source,as_of,raw
+             FROM tmp_fin_dividend
+           ON CONFLICT (symbol,plan_id,source) DO UPDATE SET
+             announce_date=EXCLUDED.announce_date,record_date=EXCLUDED.record_date,
+             ex_date=EXCLUDED.ex_date,pay_date=EXCLUDED.pay_date,
+             cash_per_share=EXCLUDED.cash_per_share,as_of=EXCLUDED.as_of,raw=EXCLUDED.raw"""
+    )
+    return len(rows)
+
+
+def _sync_share_capital(conn, view: ViewInfo) -> int:
+    if "share_capital_snapshot" not in (view.manifest.get("datasets") or {}):
+        return 0
+    frame = _read_frame(view, "share_capital_snapshot", [
+        "symbol", "report_date", "total_shares", "float_shares", "available_time", "source",
+    ])
+    rows = []
+    for raw in frame.to_dict("records"):
+        symbol = _clean(raw.get("symbol"))
+        effective = _clean(raw.get("report_date"))
+        if not symbol or not effective:
+            continue
+        rows.append((
+            symbol, effective, _clean(raw.get("available_time")),
+            _clean(raw.get("total_shares")), _clean(raw.get("float_shares")),
+            "data_platform_share_capital", view.data_date,
+            _json_text(raw),
+        ))
+    if not rows:
+        return 0
+    cols = ["symbol", "effective_date", "announce_date", "total_shares", "float_shares",
+            "source", "as_of", "raw"]
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS tmp_fin_share_capital ("
+        "symbol text, effective_date date, announce_date date, total_shares double precision, "
+        "float_shares double precision, source text, as_of date, raw jsonb) ON COMMIT DROP"
+    )
+    conn.execute("TRUNCATE tmp_fin_share_capital")
+    _copy_rows(conn, "tmp_fin_share_capital", cols, rows)
+    conn.execute(
+        """INSERT INTO fin_share_capital
+           (symbol,effective_date,announce_date,total_shares,float_shares,source,as_of,raw)
+           SELECT symbol,effective_date,announce_date,total_shares,float_shares,source,as_of,raw
+             FROM tmp_fin_share_capital
+           ON CONFLICT (symbol,effective_date,source) DO UPDATE SET
+             announce_date=EXCLUDED.announce_date,total_shares=EXCLUDED.total_shares,
+             float_shares=EXCLUDED.float_shares,as_of=EXCLUDED.as_of,raw=EXCLUDED.raw"""
+    )
+    return len(rows)
+
+
 def _prepare_temp_tables(conn) -> None:
     ddl = (
         "CREATE TEMP TABLE IF NOT EXISTS tmp_md_daily_bar (LIKE md_daily_bar INCLUDING DEFAULTS) ON COMMIT DROP",
@@ -1165,6 +1336,36 @@ def _merge_temp_tables(conn) -> None:
     )
 
 
+def sync_h5_serving(
+    view_name: str = "current",
+    *,
+    data_root: str | Path | None = None,
+    allow_production: bool = False,
+) -> dict[str, Any]:
+    """只刷新 H5 公告/研报/分红/股本，不重跑行情全量同步。"""
+    view = resolve_view(data_root, view_name)
+    ensure_marketdata_schema()
+    with get_conn() as conn:
+        db_name = _db_name(conn)
+        if not _is_safe_db(db_name) and not allow_production:
+            raise PermissionError(
+                f"拒绝写入数据库 {db_name}：只允许 *_dev/*_test/*_e2e；"
+                "生产库必须显式 --allow-production"
+            )
+        got = conn.execute("SELECT pg_try_advisory_lock(%s) AS ok", (SYNC_LOCK_KEY,)).fetchone()
+        if not got or not got.get("ok"):
+            return {"status": "locked", "view_id": view.view_id}
+        try:
+            rows = {
+                "doc_items": _sync_doc_items(conn, view),
+                "dividends": _sync_dividends(conn, view),
+                "share_capital": _sync_share_capital(conn, view),
+            }
+            return {"status": "ok", "view_id": view.view_id, "data_date": view.data_date, "rows": rows}
+        finally:
+            conn.execute("SELECT pg_advisory_unlock(%s)", (SYNC_LOCK_KEY,))
+
+
 def sync_view(
     view_name: str = "current",
     *,
@@ -1228,6 +1429,9 @@ def sync_view(
                 rows["risk"] = _sync_risk(conn, view, end, end)
                 rows["us_stock"] = _sync_us_stock(conn, view)
                 rows["news"] = _sync_news_dataset(conn, view)
+                rows["doc_items"] = _sync_doc_items(conn, view)
+                rows["dividends"] = _sync_dividends(conn, view)
+                rows["share_capital"] = _sync_share_capital(conn, view)
                 _merge_temp_tables(conn)
                 rows["invest_stocks"] = _refresh_serving(conn, view)
                 _upsert_state(conn, view, "ok", rows=rows)
@@ -1251,6 +1455,9 @@ def sync_view(
             rows["fund_flow_candidate"] = _sync_fund_flow_candidate(conn, view)
             rows["us_stock"] = _sync_us_stock(conn, view)
             rows["news"] = _sync_news_dataset(conn, view)
+            rows["doc_items"] = _sync_doc_items(conn, view)
+            rows["dividends"] = _sync_dividends(conn, view)
+            rows["share_capital"] = _sync_share_capital(conn, view)
             if with_financials:
                 financial = view_loader.load_financials(root=view.root)
                 rows["financials"] = sum(int(v or 0) for v in financial.values())

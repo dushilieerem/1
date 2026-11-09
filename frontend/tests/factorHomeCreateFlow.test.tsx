@@ -281,3 +281,21 @@ test('启动响应丢失后重试返回已结束的原run，复用身份并显�
  await waitFor(()=>assert.ok(!view.queryByRole('dialog')));
  assert.equal(data.starts.length,2);assert.equal(data.starts[0],data.starts[1]);assert.ok(view.getByText('任务运行已结束，结果已保留。'));
 });
+
+
+test('真实组件：失败运行保留current_action也不显示正在检验，最新F0终态优先于旧列表状态',async()=>{
+ login();const data=scenario();data.topics.push({...oldTopic,id:'failed-task',project_id:'failed-project',dispatch_status:'running',dispatch_stop_reason:'',trial_count:1});
+ const baseFetch=globalThis.fetch;
+ globalThis.fetch=async(input,init)=>{
+  const path=new URL(String(input),'http://localhost').pathname;
+  if(path.endsWith('/failed-task/f0-runs'))return Response.json({id:'failed-run',status:'failed',stop_reason:'计算服务连接异常',decision:{current_action:'run_test'}});
+  return baseFetch(input,init);
+ };
+ const view=render(<MemoryRouter><QuantFactorHomePage/></MemoryRouter>);
+ await waitFor(()=>assert.ok(view.getByText('本次运行未完成')));
+ const currentWork=view.getByLabelText('Agent 工作状态');
+ assert.ok(currentWork.textContent?.includes('服务异常'));
+ assert.equal(view.queryByText('因子研究系统运行中'),null);
+ assert.ok(!currentWork.textContent?.includes('正在检验因子实现'));
+ assert.ok(!currentWork.textContent?.includes('正在整理并执行独立验证'));
+});

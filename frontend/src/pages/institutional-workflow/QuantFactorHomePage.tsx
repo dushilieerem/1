@@ -118,7 +118,7 @@ export function QuantFactorHomePage(){
     if(!lr.ok||!fr.ok||!tr.ok)throw Error('状态更新中断，请刷新重试；已保存的研究记录保留。');
     const [d,f,t]=await Promise.all([lr.json(),fr.json(),tr.json()]);
     if(!alive||selectedRef.current!==id)return;
-    setLedger(d);setF0(f||undefined);setTopics(t.topics||[]);setUpdatesError('');
+    setLedger(d);setF0(f||undefined);setTopics((t.topics||[]).map((item:Topic)=>item.id===id&&f?{...item,dispatch_status:f.status,dispatch_stop_reason:f.stop_reason||''}:item));setUpdatesError('');
     setNode(cur=>cur&&(d.branches||[]).some((b:Branch)=>b.id===cur)?cur:(d.branches||[])[0]?.id);
    }catch(e){if(alive&&selectedRef.current===id)setUpdatesError(e instanceof Error?e.message:String(e));}
    finally{busy=false;}
@@ -240,7 +240,7 @@ export function QuantFactorHomePage(){
   finally{creatingLock.current=false;setCreatingBusy(false);}
  }
  const topic=topics.find(t=>t.id===selected);
- const taskFacts=topic?{...topic,dispatch_action:f0?.decision?.current_action||topic.dispatch_action}:undefined;
+ const taskFacts=topic?{...topic,dispatch_status:f0?f0.status:topic.dispatch_status,dispatch_stop_reason:f0?f0.stop_reason||'':topic.dispatch_stop_reason,dispatch_action:f0?.decision?.current_action||topic.dispatch_action}:undefined;
  const taskState=taskFacts?deriveFactorTaskState(taskFacts):undefined;
  useEffect(()=>{if(taskState)setStageView(taskState.currentStage);},[topic?.id]); // 仅在换任务时定位真实当前环节；实时更新和人工查看不抢面板
  const stageDefs=taskState?.stages||[];
@@ -259,7 +259,7 @@ export function QuantFactorHomePage(){
  },[topics,taskQuery,taskFilter,selected]);
  useEffect(()=>{if(!filteredTopics.length)return;if(!filteredTopics.some(t=>t.id===selected))setSelected(filteredTopics[0].id);},[filteredTopics.map(t=>t.id).join(','),selected]);
  const workLabels:Record<string,string>={run_test:'正在检验因子实现',revise:'正在修订假设与实现',pivot:'正在探索新的研究分支',request_seal:'正在整理并执行独立验证'};
- const agentWork=workLabels[f0?.decision?.current_action||'']||taskState?.label||'暂无运行中的任务';
+ const agentWork=(f0?.status==='running'?workLabels[f0.decision?.current_action||'']:undefined)||taskState?.label||'暂无运行中的任务';
  const selectedBranch=(ledger?.branches||[]).find(b=>b.id===node);
  const latestDevelopmentTrial=[...(ledger?.trials||[])].filter(t=>!String(t.kind).includes('sealed')).sort((a,b)=>b.trial_no-a.trial_no)[0];
  const currentBranchId=f0?.decision?.steps?.at(-1)?.result.branch_id||latestDevelopmentTrial?.branch_id;

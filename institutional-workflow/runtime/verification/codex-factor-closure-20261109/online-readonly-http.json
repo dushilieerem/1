@@ -1,0 +1,174 @@
+{
+  "checked_at_utc": "2026-11-09T09:35:59.260224+00:00",
+  "transport": "actual local HTTP to loaded BFF; no dependency substitutes",
+  "identities": "registered development researcher and independent reviewer",
+  "scope": {
+    "reviewer": {
+      "org_id": 261,
+      "permission": "review",
+      "product": "quant"
+    },
+    "researcher": {
+      "org_id": 261,
+      "permission": "write",
+      "product": "quant"
+    }
+  },
+  "checks": [
+    {
+      "actor": "reviewer",
+      "path": "/api/inst/quant/auth/login",
+      "status": 200
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/inst/quant/me",
+      "status": 200
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/inst/quant/factor-workflow/assets",
+      "status": 200,
+      "asset_count": 0
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/inst/quant/factor-workflow/reviews/{visible_id}",
+      "status": 200,
+      "is_author": false,
+      "can_claim": true,
+      "can_decide": false,
+      "events_exposed": false
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/inst/quant/factor-workflow/reviews",
+      "status": 200,
+      "candidate_count": 6
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/inst/quant/factor-workflow/assets/qfa_not_registered_readonly_probe",
+      "status": 404
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/inst/quant/factor-workflow/reviews/not_registered_readonly_probe",
+      "status": 404
+    },
+    {
+      "actor": "reviewer",
+      "check": "foreign_review",
+      "result": "not available: no existing foreign fixture; no data created"
+    },
+    {
+      "actor": "reviewer",
+      "check": "foreign_asset",
+      "result": "not available: no existing foreign fixture; no data created"
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/inst/quant/factor-workflow/assets",
+      "check": "tampered_org_claim",
+      "status": 401
+    },
+    {
+      "actor": "researcher",
+      "path": "/api/inst/quant/auth/login",
+      "status": 200
+    },
+    {
+      "actor": "researcher",
+      "path": "/api/inst/quant/me",
+      "status": 200
+    },
+    {
+      "actor": "researcher",
+      "path": "/api/inst/quant/factor-workflow/assets",
+      "status": 200,
+      "asset_count": 0
+    },
+    {
+      "actor": "researcher",
+      "path": "/api/inst/quant/factor-workflow/reviews/{visible_id}",
+      "status": 200,
+      "is_author": true,
+      "can_claim": false,
+      "can_decide": false,
+      "events_exposed": false
+    },
+    {
+      "actor": "researcher",
+      "path": "/api/inst/quant/factor-workflow/reviews",
+      "status": 200,
+      "candidate_count": 3
+    },
+    {
+      "actor": "researcher",
+      "path": "/api/inst/quant/factor-workflow/assets/qfa_not_registered_readonly_probe",
+      "status": 404
+    },
+    {
+      "actor": "researcher",
+      "path": "/api/inst/quant/factor-workflow/reviews/not_registered_readonly_probe",
+      "status": 404
+    },
+    {
+      "actor": "researcher",
+      "check": "foreign_review",
+      "result": "not available: no existing foreign fixture; no data created"
+    },
+    {
+      "actor": "researcher",
+      "check": "foreign_asset",
+      "result": "not available: no existing foreign fixture; no data created"
+    },
+    {
+      "actor": "researcher",
+      "path": "/api/inst/quant/factor-workflow/assets",
+      "check": "tampered_org_claim",
+      "status": 401
+    },
+    {
+      "actor": "anonymous",
+      "path": "/api/inst/quant/me",
+      "status": 401
+    },
+    {
+      "actor": "anonymous",
+      "path": "/api/inst/quant/factor-workflow/assets",
+      "status": 401
+    },
+    {
+      "actor": "anonymous",
+      "path": "/api/inst/quant/factor-workflow/reviews",
+      "status": 401
+    },
+    {
+      "actor": "anonymous",
+      "path": "/api/inst/quant/factor-workflow/assets/qfa_not_registered_readonly_probe",
+      "status": 401
+    },
+    {
+      "check": "health",
+      "surface": "bff",
+      "status": 200
+    },
+    {
+      "check": "health",
+      "surface": "frontend",
+      "status": 200
+    },
+    {
+      "check": "health",
+      "surface": "isolated_re",
+      "status": 200
+    }
+  ],
+  "business_mutations": false,
+  "login_only_post": true,
+  "model_calls": 0,
+  "backtests": 0,
+  "approvals": 0,
+  "created_assets": 0
+}

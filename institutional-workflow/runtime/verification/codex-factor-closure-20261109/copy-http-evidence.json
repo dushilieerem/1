@@ -1,0 +1,19 @@
+{
+  "at_utc": "2026-11-09T09:37:02.285221+00:00",
+  "checks": [
+    {
+      "path": "/src/pages/institutional-workflow/QuantWorkspacePages.tsx",
+      "status": 200,
+      "expected_copy_present": true,
+      "obsolete_copy_absent": true
+    },
+    {
+      "path": "/src/pages/institutional-workflow/FactorWorkflowPage.tsx",
+      "status": 200,
+      "expected_copy_present": true,
+      "obsolete_copy_absent": true
+    }
+  ],
+  "verification": "actual Vite HTTP module response; PM performs separate browser check",
+  "structural_or_behavioral_changes": false
+}

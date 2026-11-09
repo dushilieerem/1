@@ -1,0 +1,32 @@
+{
+  "head": "b7172bd4b261c9a3b056c608d8f4655c705fc51f",
+  "loaded_at_utc": "2026-11-09T09:28:28.892044+00:00",
+  "old_pid": 1919483,
+  "pid": 3521847,
+  "stale_process_record_pid": 3337655,
+  "cwd": "/home/dev01/project/SVQuant-zxd",
+  "argv": [
+    "/home/dev01/project/SVQuant/.ci/venv/bin/python",
+    "institutional-workflow/runtime/start_quant_bff.py"
+  ],
+  "environment_preserved": true,
+  "credential_values_recorded": false,
+  "novelty_base": "http://127.0.0.1:18804",
+  "pre_restart_inflight": {
+    "f0": 0,
+    "candidate": 0,
+    "sealed": 0,
+    "agent_jobs": 0,
+    "iterations": 0
+  },
+  "health": {
+    "bff_me_unauthenticated": 401,
+    "frontend_19536": 200,
+    "isolated_re_18804": 404,
+    "bff_api_health": 200,
+    "isolated_re_api_health": 200,
+    "isolated_re_root_probe_note": "Initial /health=404; existing OpenAPI declares /api/health and actual GET returned200. No calculation checked."
+  },
+  "frontend_restarted": false,
+  "other_services_restarted": false
+}

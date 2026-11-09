@@ -19,6 +19,19 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # WAL 归档目录：宿主机路径，刻意放在 /home（数据盘是 /data），机器级故障时能保住归档。
+      # 目录需对容器内 postgres（uid 70）可写；scripts/ops/pg_wal_setup.sh 会创建并放开权限。
+      - ${WAL_ARCHIVE_HOST_DIR:-/home/dev01/svquant-deploy/deploy/wal-archive}:/backup
+    # PITR：开启 WAL 归档，archive_timeout 把 RPO 控制在 5 分钟内。
+    # 注意：修改这里会重建 db 容器，约 10~30 秒不可用，随下一次发布生效。
+    command:
+      - postgres
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_timeout=300
+      - -c
+      - archive_command=cp %p /backup/%f
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-svquant} -d ${POSTGRES_DB:-svquant}"]
       interval: 5s

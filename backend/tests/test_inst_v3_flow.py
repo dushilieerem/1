@@ -168,6 +168,44 @@ def test_proposal_lock_requires_debate_and_fields() -> None:
         assert case["stage_no"] == 3
 
 
+def test_approval_memo_cached_only_never_calls_ai(monkeypatch) -> None:
+    with _case() as c:
+        svc.lock_research(c["org_id"], c["version_id"], actor_member_id=c["member_id"])
+        _add_debate(c["case_id"], c["version_id"])
+        proposal = svc.create_proposal(
+            c["org_id"],
+            c["case_id"],
+            actor_member_id=c["member_id"],
+            direction="buy",
+            target_weight=0.03,
+            price_low=10,
+            price_high=20,
+            funding_source="现金",
+            valid_until=(date.today() + timedelta(days=30)).isoformat(),
+            monitoring=["季度复核"],
+            investment_opinion="测试意见",
+        )
+        pid = int(proposal["id"])
+        svc.submit_proposal(c["org_id"], pid, actor_member_id=c["member_id"])
+        with get_conn() as conn:
+            partner_id = int(
+                conn.execute(
+                    "SELECT id FROM inst_members WHERE org_id=%s AND role='partner' AND status='active' LIMIT 1",
+                    (c["org_id"],),
+                ).fetchone()["id"]
+            )
+
+        def _must_not_run(*args, **kwargs):
+            raise AssertionError("cached_only 不应调用 AI")
+
+        monkeypatch.setattr(svc, "_ai_task", _must_not_run)
+        out = svc.ai_partner_memo(
+            c["org_id"], pid, actor_member_id=partner_id, cached_only=True
+        )
+        assert out["memo"] is None
+        assert out["missing"] is True
+
+
 def test_stage_summary_waits_for_all_approvers() -> None:
     rows = [{"step": "partner", "decision": "approve", "approver_member_id": 1, "conditions": []}]
     state = svc._stage_summary("partner", rows, 2)

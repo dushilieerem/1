@@ -58,6 +58,18 @@ type ResearchDebate = {
   } | null;
 };
 
+type AgentMemo = {
+  summary?: string;
+  verdict?: string;
+  decision?: string;
+  recommendation?: string;
+  risks?: string[];
+  open_questions?: string[];
+  conditions?: Array<string | { text?: string; condition?: string; detail?: string }>;
+  evidence?: string[];
+  engine?: string;
+};
+
 type ProposalListItem = {
   id: number;
   status: string;
@@ -200,10 +212,21 @@ export function InstV3ApprovalsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [memo, setMemo] = useState<AgentMemo | null>(null);
+  const [memoMeta, setMemoMeta] = useState<{ cached?: boolean; stale?: boolean } | null>(null);
+  const [memoBusy, setMemoBusy] = useState(false);
+  const [memoError, setMemoError] = useState<string | null>(null);
 
   const selectedId = parseProposalId(params.get("key"));
   const role = session.role;
   const canApprove = ["partner", "risk", "chairman"].includes(role);
+  const memoPath = role === "partner" ? "partner-memo" : role === "risk" ? "risk-review" : role === "chairman" ? "chairman-memo" : null;
+  const memoAgent = role === "partner" ? "合伙人 Agent · 审批建议" : role === "risk" ? "风控 Agent · 审批建议" : role === "chairman" ? "Chairman Agent · 决策建议" : null;
+  const memoDuty = role === "partner"
+    ? "判断研究质量、上会资格与议案合理性；建议不替代本人意见。"
+    : role === "risk"
+      ? "只看六项硬约束与组合影响；有阻断项就建议否决。"
+      : "看资本配置与机会成本；建议不替代 Chairman 表决。";
 
   const loadList = async () => {
     const pending = await instApi<{ items: ProposalListItem[] }>("/proposals?scope=pending");
@@ -241,6 +264,46 @@ export function InstV3ApprovalsPage() {
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
+
+  useEffect(() => {
+    setMemo(null);
+    setMemoMeta(null);
+    setMemoError(null);
+    if (!detail?.id || !memoPath) return;
+    let alive = true;
+    instApi<{ memo: AgentMemo | null; cached?: boolean; stale?: boolean }>(
+      `/proposals/${detail.id}/ai/${memoPath}?cached_only=true`,
+    )
+      .then((res) => {
+        if (!alive) return;
+        if (res.memo) {
+          setMemo(res.memo);
+          setMemoMeta({ cached: res.cached, stale: res.stale });
+        }
+      })
+      .catch(() => {
+        // 建议是辅助信息；读取失败不阻塞审批页。
+      });
+    return () => { alive = false; };
+  }, [detail?.id, memoPath]);
+
+  const generateMemo = async (refresh: boolean) => {
+    if (!detail?.id || !memoPath) return;
+    setMemoBusy(true);
+    setMemoError(null);
+    try {
+      const res = await instApi<{ memo: AgentMemo | null; cached?: boolean; stale?: boolean }>(
+        `/proposals/${detail.id}/ai/${memoPath}`,
+        { method: "POST", body: { refresh } },
+      );
+      setMemo(res.memo);
+      setMemoMeta({ cached: res.cached, stale: res.stale });
+    } catch (e) {
+      setMemoError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMemoBusy(false);
+    }
+  };
 
   const selectProposal = (id: number) => {
     setParams({ key: `proposal:${id}` });
@@ -464,9 +527,43 @@ export function InstV3ApprovalsPage() {
         </div>
 
         <aside className="v3-agent-rail">
-          <div className="ar-kicker">CURRENT GATE</div>
-          <h3>{role === "manager" ? "提案人只读" : `${session.role_label_cn} · 审批关`}</h3>
-          <p>{role === "manager" ? "提案人只能查看自己的议案与三关进度，不能审批自己的议案。" : "按登录角色只看本关字段；所有动作由服务端校验。"}</p>
+          {memoPath && memoAgent ? (
+            <>
+              <div className="ar-kicker">CURRENT AGENT</div>
+              <h3>{memoAgent}</h3>
+              <p>{memoDuty}</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {memo?.engine ? <span className="v3-chip">{memo.engine}</span> : null}
+                {memoMeta?.cached ? <span className="v3-chip">缓存建议</span> : null}
+                {memoMeta?.stale ? <span className="v3-chip warn">上游有变更</span> : null}
+              </div>
+              {memo ? (
+                <div style={{ marginTop: 8 }}>
+                  {memo.verdict || memo.decision || memo.recommendation ? (
+                    <div className="v3-note" style={{ marginBottom: 6 }}>{memo.verdict || memo.decision || memo.recommendation}</div>
+                  ) : null}
+                  <p style={{ fontSize: 10.5, lineHeight: 1.7, color: "#4b4352" }}>{memo.summary || "—"}</p>
+                  {memo.risks?.length ? (
+                    <div className="ar-row"><b>主要风险</b><br />{memo.risks.slice(0, 3).map((x) => `· ${x}`).join("；")}</div>
+                  ) : null}
+                  {memo.open_questions?.length ? (
+                    <div className="ar-row"><b>待确认</b><br />{memo.open_questions.slice(0, 3).map((x) => `· ${x}`).join("；")}</div>
+                  ) : null}
+                  {memo.evidence?.length ? <div className="ar-row"><b>引用证据</b><br />{memo.evidence.length} 条</div> : null}
+                </div>
+              ) : <div className="v3-empty" style={{ padding: "10px 2px" }}>还没有 Agent 建议。生成后仅作参考，不改变审批状态。</div>}
+              {memoError ? <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>{memoError}</div> : null}
+              <button className="v3-btn ghost" style={{ width: "100%", marginTop: 8 }} disabled={memoBusy || !detail} onClick={() => generateMemo(!!memo)}>
+                {memoBusy ? "生成中…" : memo ? "重新生成建议" : "生成审批建议"}
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="ar-kicker">CURRENT GATE</div>
+              <h3>{role === "manager" ? "提案人只读" : `${session.role_label_cn} · 审批关`}</h3>
+              <p>{role === "manager" ? "提案人只能查看自己的议案与三关进度，不能审批自己的议案。" : "按登录角色只看本关字段；所有动作由服务端校验。"}</p>
+            </>
+          )}
           <div className="ar-row"><b>进度</b><br />合伙人 {progress?.partner?.reviewed ?? 0}/{progress?.partner?.total ?? "—"} · 风控 {progress?.risk_precheck?.reviewed ?? 0}/{progress?.risk_precheck?.total ?? "—"} · Chairman {progress?.chairman?.reviewed ?? 0}/{progress?.chairman?.total ?? "—"}</div>
           <div className="ar-row"><b>当前议案</b><br />{detail ? `${detail.company_name} · ${detail.status}` : "未选择"}</div>
           <div className="ar-row"><b>硬约束</b><br /><ShieldAlert className="mr-1 inline h-3 w-3" />风控否决终局；提案人回避；顺序不可跳级。</div>

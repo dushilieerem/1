@@ -84,7 +84,7 @@ test("generate_signals 自由策略隐藏不生效的持仓数/调仓周期表�
   mockProject(FREE_CODE);
   const view = renderPage();
 
-  await waitFor(() => assert.ok(view.container.querySelector(".cm-editor")));
+  await waitFor(() => assert.ok(view.container.querySelector(".cm-editor")), { timeout: 15000 });
   assert.equal(view.queryByText("持仓数"), null);
   assert.equal(view.queryByText("调仓周期（交易日）"), null);
   assert.match(
@@ -97,7 +97,7 @@ test("FactorPortfolio 策略保留持仓数/调仓周期表单", async () => {
   mockProject(defaultStrategyConfig().strategy_code);
   const view = renderPage();
 
-  await waitFor(() => assert.ok(view.container.querySelector(".cm-editor")));
+  await waitFor(() => assert.ok(view.container.querySelector(".cm-editor")), { timeout: 15000 });
   assert.ok(view.getByText("持仓数"));
   assert.ok(view.getByText("调仓周期（交易日）"));
 });

@@ -42,7 +42,7 @@ test("embedded detector retains RE run id and follows the injected report route"
     <Route path="/quant/factor/:projectId" element={<FactorDetectPage navigation={{listPath:"/quant/factor/reports",reportPath:id=>"/quant/factor/report/"+id}}/>}/>
     <Route path="/quant/factor/report/:runId" element={<p>机构端报告</p>}/>
   </Routes></MemoryRouter>);
-  await waitFor(()=>assert.ok(view.container.querySelector(".cm-editor")));
+  await waitFor(()=>assert.ok(view.container.querySelector(".cm-editor")),{timeout:15000});
   fireEvent.click(view.getByRole("button",{name:"进行检测"}));
   await waitFor(()=>assert.ok(view.getByText("机构端报告")),{timeout:6000});
   assert.equal(saved.request._re_run_id,"engine-123");

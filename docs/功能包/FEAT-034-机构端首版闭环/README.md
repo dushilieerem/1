@@ -670,3 +670,13 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - e2e-09 新增 1920 宽屏断言：`.v3-main` 宽度 >1500px 且无横向滚动，防止重新引入窄版上限。
 
 验证：`tsc --noEmit`、`npm run build`、`npm run test:inst` 通过；Playwright `e2e-09..14` 16 passed。
+
+
+### 11.31 v3 字号上调、工作台三栏对齐与流水线横向卡片（2026-11-09）
+
+- **字号**：导航、页面标题、卡片标题、表格、表单、Agent 右栏与 chip 整体上调一档；正文 13px、表格 12.5px、表单 12.5px，最小标签不低于 10px。
+- **三栏高度**：桌面端（>1100px）左项目列表、中栏工作区、右 Agent 栏统一为 `calc(100vh - 320px)`，各自内部滚动；中栏最后一张卡片铺满剩余高度，空态内容垂直居中，不再出现“中栏 300px、下面空一大片”。1440×900 下三栏均为 580px，页面无纵向/横向溢出。
+- **项目流水线**：选择单个环节时，看板切为单列，项目卡片用 `auto-fill minmax(240px,1fr)` 横向铺开；「全流程」仍保留六列看板。
+- e2e-09 新增单流程横向排列断言；1440/1024/400 溢出检查保持通过。
+
+验证：`tsc --noEmit`、`npm run build`、`npm run test:inst` 通过；Playwright `e2e-09..14` **17 passed**。

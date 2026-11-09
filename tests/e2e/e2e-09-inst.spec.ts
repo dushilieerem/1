@@ -69,6 +69,18 @@ test("八个入口可达", async ({ page }) => {
   }
 });
 
+test("右上角搜索可进入已有股票研究", async ({ page }) => {
+  await login(page);
+  await page.goto(`${BASE}/inst`, { waitUntil: "networkidle" });
+  await page.getByPlaceholder("搜索股票代码或名称…").fill("平安银行");
+  const panel = page.locator(".v3-search-pop");
+  await expect(panel).toBeVisible({ timeout: 20_000 });
+  await expect(panel.getByText("000001.SZ", { exact: false })).toBeVisible();
+  await panel.locator(".v3-search-item").first().click();
+  await expect(page).toHaveURL(/\/inst\/research\?key=case(:|%3A)\d+/);
+  await expect(page.locator(".v3-page-head h1").first()).toBeVisible();
+});
+
 test("流水线卡片进入只读结果页", async ({ page }) => {
   await login(page);
   await page.goto(`${BASE}/inst/pipeline`, { waitUntil: "networkidle" });

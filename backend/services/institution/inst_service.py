@@ -1111,9 +1111,18 @@ def pipeline(org_id: int) -> dict[str, Any]:
         configured = 3
     per_stage = 200 if configured <= 0 else max(1, min(configured, 200))
     cases = [_row_dict(r) or {} for r in repo.cases(OrgScope(org_id))]
+    # 同一公司只保留最近更新的研究案；历史案件仍可按项目 key 访问，但不再占多个环节。
+    latest_by_company: dict[int, tuple[str, dict[str, Any]]] = {}
+    for case in cases:
+        company_id = int(case.get("company_id") or 0)
+        if not company_id:
+            continue
+        recency = f"{case.get('updated_at') or ''}|{int(case.get('id') or 0):012d}"
+        if company_id not in latest_by_company or recency > latest_by_company[company_id][0]:
+            latest_by_company[company_id] = (recency, case)
     by_stage: dict[int, list[dict[str, Any]]] = {i: [] for i in range(6)}
     case_company_ids: set[int] = set()
-    for case in cases:
+    for _, case in latest_by_company.values():
         card = _pipeline_card(case)
         by_stage[card["stage_no"]].append(card)
         case_company_ids.add(card["company_id"])
@@ -1334,6 +1343,97 @@ def playbook() -> dict[str, Any]:
 def list_cases(org_id: int, *, company_id: int | None = None) -> list[dict[str, Any]]:
     rows = repo.cases(OrgScope(org_id), company_id=company_id)
     return [_row_dict(r) or {} for r in rows]
+
+
+def search_companies(org_id: int, q: str, *, limit: int = 8) -> list[dict[str, Any]]:
+    """全局股票搜索：按代码/名称/行业检索，并返回该公司当前研究案状态。"""
+    query = str(q or "").strip()
+    if not query:
+        return []
+    rows, _ = repo.companies(OrgScope(org_id), q=query, limit=max(1, min(int(limit), 20)))
+    out: list[dict[str, Any]] = []
+    with get_conn() as conn:
+        for row in rows:
+            item = _row_dict(row) or {}
+            case = conn.execute(
+                """
+                SELECT c.id, c.stage_no, c.stage_key, c.stage_state,
+                       (SELECT version_no FROM inst_research_version v
+                         WHERE v.case_id=c.id ORDER BY version_no DESC LIMIT 1) AS version_no
+                  FROM inst_research_case c
+                 WHERE c.org_id=%s AND c.company_id=%s
+                 ORDER BY c.updated_at DESC, c.id DESC LIMIT 1
+                """,
+                (org_id, int(item["id"])),
+            ).fetchone()
+            stage_no = int(case["stage_no"] or 0) if case else None
+            stage = _stage_def(stage_no) if stage_no is not None else None
+            out.append({
+                "company_id": int(item["id"]),
+                "symbol": item.get("symbol"),
+                "name": item.get("name"),
+                "market": item.get("market"),
+                "industry": item.get("industry_name") or item.get("industry"),
+                "data_status": item.get("data_status"),
+                "pool_status": item.get("pool_status"),
+                "ref_price": item.get("last_close") or item.get("ref_price"),
+                "case_id": int(case["id"]) if case else None,
+                "stage_no": stage_no,
+                "stage_key": stage["key"] if stage else None,
+                "stage_name": stage["name"] if stage else None,
+                "version_no": int(case["version_no"]) if case and case.get("version_no") is not None else None,
+            })
+    return out
+
+
+def start_research(org_id: int, company_id: int, actor_member_id: int | None) -> dict[str, Any]:
+    """搜索/自选进入研究：同公司已有案则返回当前案，否则新建；保证一股一流程。"""
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager")
+        company = conn.execute(
+            "SELECT * FROM inst_company WHERE id=%s AND org_id=%s", (company_id, org_id)
+        ).fetchone()
+        if not company:
+            raise LookupError("公司不存在")
+        existing = conn.execute(
+            """
+            SELECT id FROM inst_research_case
+             WHERE org_id=%s AND company_id=%s
+             ORDER BY updated_at DESC, id DESC LIMIT 1
+            """,
+            (org_id, company_id),
+        ).fetchone()
+        created = False
+        if existing:
+            case_id = int(existing["id"])
+        else:
+            case_no = f"RC-{date.today():%Y%m%d}-{company['symbol'].split('.')[0]}-{_uid()[:4]}"
+            row = conn.execute(
+                "INSERT INTO inst_research_case (org_id, company_id, case_no, stage, stage_no, stage_key, stage_gate, created_by) "
+                "VALUES (%s,%s,%s,'draft',1,'research','{\"stage_no\":1,\"gate\":\"研究定稿\"}'::jsonb,%s) RETURNING id",
+                (org_id, company_id, case_no, actor_member_id),
+            ).fetchone()
+            case_id = int(row["id"])
+            created = True
+            _audit(
+                conn,
+                org_id=org_id,
+                actor_member_id=actor_member_id,
+                action="research.case.start",
+                object_type="inst_research_case",
+                object_id=case_id,
+                after={"company_id": company_id, "case_no": case_no, "source": "search"},
+            )
+        if str(company.get("pool_status")) != "research":
+            conn.execute(
+                "UPDATE inst_company SET pool_status='research', drop_reason=NULL, updated_at=NOW() "
+                "WHERE id=%s AND org_id=%s",
+                (company_id, org_id),
+            )
+    data = get_case(org_id, case_id) or {}
+    data["created"] = created
+    return data
 
 
 def create_case(org_id: int, company_id: int, actor_member_id: int | None) -> dict[str, Any]:

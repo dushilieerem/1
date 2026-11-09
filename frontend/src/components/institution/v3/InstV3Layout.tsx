@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Menu, Search, X } from "lucide-react";
 import { clearInstSession, fetchInstMe, getInstToken, type InstSession } from "@/lib/instAuth";
+import { instApi } from "@/lib/instApi";
 import { visibleV3Nav, v3TitleForPath } from "@/data/instV3Nav";
 import { InstSessionContext } from "@/components/institution/instSessionContext";
 import "@/pages/institution/v3/v3.css";
@@ -9,6 +10,21 @@ import "@/pages/institution/v3/v3.css";
 function loginUrl(next: string) {
   return `/login?mode=inst&next=${encodeURIComponent(next)}`;
 }
+
+type SearchItem = {
+  company_id: number;
+  symbol?: string;
+  name?: string;
+  market?: string;
+  industry?: string;
+  data_status?: string;
+  pool_status?: string;
+  ref_price?: number | null;
+  case_id?: number | null;
+  stage_no?: number | null;
+  stage_name?: string | null;
+  version_no?: number | null;
+};
 
 function Sidebar({ session, onNavigate }: { session: InstSession; onNavigate?: () => void }) {
   const groups = useMemo(() => visibleV3Nav(session.role, session.permissions), [session]);
@@ -57,6 +73,49 @@ export function InstV3Layout() {
   const [error, setError] = useState<string | null>(null);
   const [drawer, setDrawer] = useState(false);
   const [search, setSearch] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
+  const [openingId, setOpeningId] = useState<number | null>(null);
+  const searchRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const q = search.trim();
+    if (!q) {
+      setSearchResults([]);
+      setSearchError(null);
+      setSearching(false);
+      return;
+    }
+    let alive = true;
+    setSearching(true);
+    setSearchError(null);
+    const timer = window.setTimeout(() => {
+      instApi<{ items: SearchItem[] }>(`/search?q=${encodeURIComponent(q)}&limit=8`)
+        .then((res) => { if (alive) setSearchResults(res.items || []); })
+        .catch((ex: unknown) => {
+          if (!alive) return;
+          setSearchResults([]);
+          setSearchError(ex instanceof Error ? ex.message : String(ex));
+        })
+        .finally(() => { if (alive) setSearching(false); });
+    }, 250);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [search]);
+
+  useEffect(() => {
+    const onDown = (event: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -110,9 +169,36 @@ export function InstV3Layout() {
   }
 
   const currentTitle = v3TitleForPath(location.pathname);
-  const submitSearch = () => {
-    const q = search.trim();
-    navigate(q ? `/inst/pipeline?q=${encodeURIComponent(q)}` : "/inst/pipeline");
+  const canStartResearch = session.role === "manager";
+
+  const openSearchItem = async (item: SearchItem) => {
+    setSearchOpen(false);
+    setSearchError(null);
+    if (item.case_id) {
+      const path = item.stage_no != null && item.stage_no <= 2
+        ? `/inst/research?key=${encodeURIComponent(`case:${item.case_id}`)}`
+        : `/inst/pipeline/result?key=${encodeURIComponent(`case:${item.case_id}`)}`;
+      navigate(path);
+      return;
+    }
+    if (!canStartResearch) {
+      setSearchError("当前账号没有新建研究的权限");
+      setSearchOpen(true);
+      return;
+    }
+    setOpeningId(item.company_id);
+    try {
+      const created = await instApi<{ id: number }>(`/companies/${item.company_id}/research`, {
+        method: "POST",
+        body: {},
+      });
+      navigate(`/inst/research?key=${encodeURIComponent(`case:${created.id}`)}`);
+    } catch (ex) {
+      setSearchError(ex instanceof Error ? ex.message : String(ex));
+      setSearchOpen(true);
+    } finally {
+      setOpeningId(null);
+    }
   };
 
   return (
@@ -144,16 +230,54 @@ export function InstV3Layout() {
                 <b>{currentTitle}</b>
               </div>
               <div className="v3-top-actions">
-                <label className="hidden items-center gap-2 rounded-[10px] border border-[#e8e1ee] bg-white px-3 py-2 md:flex">
-                  <Search className="h-3.5 w-3.5 text-[#6b6370]" />
-                  <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") submitSearch(); }}
-                    placeholder="搜索项目、代码、负责人…"
-                    className="w-44 bg-transparent text-[11px] outline-none placeholder:text-[#6b6370]"
-                  />
-                </label>
+                <div ref={searchRef} className="v3-search-wrap hidden md:block">
+                  <label className="flex items-center gap-2 rounded-[10px] border border-[#e8e1ee] bg-white px-3 py-2">
+                    <Search className="h-3.5 w-3.5 text-[#6b6370]" />
+                    <input
+                      value={search}
+                      onChange={(e) => { setSearch(e.target.value); setSearchOpen(true); }}
+                      onFocus={() => setSearchOpen(true)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && searchResults[0]) {
+                          e.preventDefault();
+                          void openSearchItem(searchResults[0]);
+                        }
+                      }}
+                      placeholder="搜索股票代码或名称…"
+                      className="w-44 bg-transparent text-[11px] outline-none placeholder:text-[#6b6370]"
+                    />
+                  </label>
+                  {searchOpen && search.trim() ? (
+                    <div className="v3-search-pop">
+                      {searching ? <div className="v3-search-state">搜索中…</div> : null}
+                      {!searching && searchError ? <div className="v3-search-state error">{searchError}</div> : null}
+                      {!searching && !searchError && !searchResults.length ? <div className="v3-search-state">未找到匹配股票</div> : null}
+                      {!searching && !searchError ? searchResults.map((item) => (
+                        <button
+                          key={item.company_id}
+                          className="v3-search-item"
+                          disabled={openingId === item.company_id}
+                          onClick={() => void openSearchItem(item)}
+                        >
+                          <span className="v3-search-main">
+                            <b>{item.name || item.symbol}</b>
+                            <span>{item.symbol} · {item.industry || "行业待补充"} · {item.data_status || "数据待补充"}</span>
+                          </span>
+                          <span className="v3-search-side">
+                            {item.case_id ? (
+                              <>
+                                <span className="v3-chip info">{item.stage_name || "在流程中"}</span>
+                                <span className="v3-chip">版本 {item.version_no ?? "—"}</span>
+                              </>
+                            ) : (
+                              <span className="v3-chip gold">{canStartResearch ? (openingId === item.company_id ? "创建中…" : "进入研究") : "无研究权限"}</span>
+                            )}
+                          </span>
+                        </button>
+                      )) : null}
+                    </div>
+                  ) : null}
+                </div>
                 <span className="v3-role">{session.role_label_cn}</span>
                 <div className="v3-user">
                   <b>{session.user.display_name || session.user.username}</b>

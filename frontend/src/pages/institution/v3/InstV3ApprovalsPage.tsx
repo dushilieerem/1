@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, Check, ShieldAlert, X } from "lucide-react";
-import { dedupeBy } from "@/lib/instDedupe";
+import { dedupeBy, latestByKey } from "@/lib/instDedupe";
 import { instApi, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 
@@ -238,7 +238,7 @@ export function InstV3ApprovalsPage() {
       const seen = new Set(rows.map((x) => x.id));
       rows = rows.concat((reviewed.items || []).filter((x) => !seen.has(x.id)));
     }
-    setItems(dedupeBy(rows, (p) => p.id));
+    setItems(latestByKey(rows, (p) => p.symbol, (p) => `${p.updated_at || ""}|${String(p.id).padStart(12, "0")}`));
     return rows;
   };
 

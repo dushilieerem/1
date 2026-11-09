@@ -701,6 +701,7 @@ export async function createProject(
   factorName: string,
   description: string,
   displayName?: string,
+  id?: string,
 ): Promise<DetectProject> {
   ensureCacheOwner();
   const codes =
@@ -708,6 +709,7 @@ export async function createProject(
   const data = await apiJson<{ project: DetectProject }>("/api/detect/projects", {
     method: "POST",
     body: JSON.stringify({
+      ...(id ? { id } : {}),
       factorName,
       description,
       name: displayName || description || factorName,

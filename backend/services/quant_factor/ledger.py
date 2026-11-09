@@ -343,6 +343,16 @@ def list_org_topics(uid: int, org: int) -> list[dict]:
                       (SELECT COUNT(*) FROM quant_factor_sealed_validations v
                         WHERE v.user_id=t.user_id AND v.org_id=t.org_id AND v.topic_id=t.id
                           AND v.status='passed') AS sealed_passed,
+                      (SELECT COUNT(*) FROM quant_factor_sealed_validations v
+                        WHERE v.user_id=t.user_id AND v.org_id=t.org_id AND v.topic_id=t.id
+                          AND v.status IN ('queued','running')) AS sealed_running,
+                      (SELECT COUNT(*) FROM quant_factor_sealed_validations v
+                        WHERE v.user_id=t.user_id AND v.org_id=t.org_id AND v.topic_id=t.id
+                          AND v.status IN ('failed','error')) AS sealed_failed,
+                      (SELECT COUNT(*) FROM quant_factor_candidates c
+                        WHERE c.user_id=t.user_id AND c.org_id=t.org_id
+                          AND c.project_id=t.project_id
+                          AND c.archive->>'approved'='true') AS approved_count,
                       (SELECT r.outcome FROM quant_factor_trials r
                         WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id
                         ORDER BY r.trial_no DESC LIMIT 1) AS latest_outcome

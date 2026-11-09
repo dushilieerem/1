@@ -48,6 +48,20 @@ test('创建成功但响应丢失：重试先查项目已有任务，不重复�
   assert.equal(createCalls, 0, '发现服务端已有任务时不得再次创建');
 });
 
+test('项目下出现多条任务：拒绝任意取旧任务', async () => {
+  await assert.rejects(
+    () =>
+      ensureTopicForProject(
+        { projectId: 'p1' },
+        {
+          listProjectTopics: async () => [{ id: 'old' }, { id: 'new' }],
+          createTopic: async () => ({ id: 'never' }),
+        },
+      ),
+    /多条挖掘任务/,
+  );
+});
+
 test('创建响应缺首分支：启动前重新读取台账补齐分支', async () => {
   let ledgerReads = 0;
   const result = await runTaskCreation(

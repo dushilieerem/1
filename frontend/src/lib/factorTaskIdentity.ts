@@ -40,6 +40,11 @@ export async function ensureTopicForProject(
     // 查询失败时不能贸然新建；把错误抛给上层，保留 projectId 供下次重试。
     throw new Error('已创建项目，但读取其挖掘任务失败；任务身份已保留，请直接重试。');
   }
+  if (existing.length > 1) {
+    // 后端契约为 (user, org, project) 唯一；出现多条时必须人工核对，
+    // 不能任意取旧任务导致用户继续到错误研究。
+    throw new Error('项目下存在多条挖掘任务，已停止自动选择；任务身份已保留，请人工核对。');
+  }
   const found = existing[0];
   if (found) {
     return {

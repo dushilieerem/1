@@ -205,3 +205,39 @@
 .quant-shell .history-details>summary::-webkit-details-marker{display:none}
 .quant-shell .history-details>summary b{font-size:13px}.quant-shell .history-details>summary small{display:block;color:var(--muted);font-size:11px}
 .quant-shell .history-details[open]>summary{margin-bottom:12px}
+
+/* CR-083 三主入口 + 任务列表/四环节/当前工作 */
+.quant-shell .tab-more{position:relative;display:inline-flex}
+.quant-shell .tab-more>summary{list-style:none;cursor:pointer}
+.quant-shell .tab-more>summary::-webkit-details-marker{display:none}
+.quant-shell .tab-more-menu{position:absolute;top:100%;left:0;z-index:20;min-width:140px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);padding:6px;display:grid;gap:2px}
+.quant-shell .ff-columns{display:grid;grid-template-columns:260px minmax(0,1fr);gap:16px;align-items:start}
+.quant-shell .ff-task-list{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;display:grid;gap:8px;position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto}
+.quant-shell .ff-task-list h2{font-size:14px;margin:0 0 4px}
+.quant-shell .ff-task-filter{width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--ink)}
+.quant-shell .ff-task{display:grid;gap:4px;text-align:left;padding:10px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--ink)}
+.quant-shell .ff-task small,.quant-shell .ff-task time{color:var(--muted);font-size:11px}
+.quant-shell .ff-task.selected{border-color:var(--primary);box-shadow:0 0 0 2px var(--soft)}
+.quant-shell .ff-task-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.quant-shell .ff-detail{display:grid;gap:12px;min-width:0}
+.quant-shell .ff-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
+.quant-shell .ff-detail-head h2{margin:4px 0 2px}
+.quant-shell .ff-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.quant-shell .ff-step{display:flex;align-items:flex-start;gap:8px;text-align:left;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:9px;color:var(--ink)}
+.quant-shell .ff-step .ff-num{flex:0 0 22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--soft);color:var(--primary);font-size:11px;font-weight:600}
+.quant-shell .ff-step b{display:block;font-size:12.5px}.quant-shell .ff-step small{display:block;font-size:10.5px;color:var(--muted)}.quant-shell .ff-step em{display:block;font-style:normal;font-size:10.5px;color:var(--muted);margin-top:2px}
+.quant-shell .ff-step.done .ff-num{background:var(--green-bg);color:var(--green)}
+.quant-shell .ff-step.current{border-color:var(--primary)}
+.quant-shell .ff-step.selected{box-shadow:0 0 0 2px var(--soft)}
+.quant-shell .ff-stage-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:12px;align-items:start}
+.quant-shell .ff-stage-card .card-body{min-height:180px}
+.quant-shell .ff-live{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:grid;gap:8px}
+.quant-shell .ff-live h3{margin:2px 0 4px}.quant-shell .ff-live ol{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:12px;display:grid;gap:4px}
+.quant-shell .ff-live time{display:block;font-size:10.5px;color:var(--muted)}
+.quant-shell .ff-now{font-size:13px;font-weight:500;margin-top:2px}
+.quant-shell .ff-error{background:var(--red-bg);border:1px solid #e3b9c6;border-radius:12px;padding:12px 14px}
+.quant-shell .ff-error p{margin:4px 0 8px;font-size:12.5px}
+.quant-shell .ff-error details{margin-top:8px;font-size:11.5px;color:var(--muted)}
+@media(max-width:1100px){.quant-shell .ff-columns{grid-template-columns:1fr}.quant-shell .ff-task-list{position:static;max-height:none}.quant-shell .ff-stage-grid{grid-template-columns:1fr}}
+@media(max-width:760px){.quant-shell .ff-steps{grid-template-columns:1fr 1fr}}
+.quant-shell .badge.ok{background:var(--green-bg);color:var(--green)}

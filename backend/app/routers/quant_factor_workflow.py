@@ -387,3 +387,26 @@ def research_assets(ctx=Depends(require_quant_user)):
 def research_asset_detail(asset_id:str,ctx=Depends(require_quant_user)):
     from services.quant_factor.assets import detail
     return invoke(detail,*identity(ctx),asset_id,bool(ctx.get('can_review') or ctx.get('can_manage')))
+
+
+@router.post('/compute-preflight')
+def compute_scope_preflight(payload:dict,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor.resources import config_preflight
+    # Scope-only read check. No project, task, model or computation is created.
+    allowed={'researchUniverseSymbols','universe','researchPlan'}
+    if set(payload)-allowed:raise HTTPException(422,'预检范围包含未知字段')
+    return invoke(config_preflight,payload)
+
+
+class SourceCheckBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    name:str=Field(min_length=1,max_length=100)
+    code:str=Field(min_length=1,max_length=20000)
+
+@router.post('/projects/{project_id}/source-check')
+def source_check(project_id:str,body:SourceCheckBody,ctx=Depends(require_quant_researcher)):
+    from services.factor.detect_store import get_project
+    from services.quant_factor.causality import diagnose_source
+    invoke(get_project,identity(ctx)[0],project_id)
+    try:return diagnose_source(body.code,body.name)
+    except (ValueError,SyntaxError) as exc:raise HTTPException(409,str(exc)) from exc

@@ -1,0 +1,66 @@
+{
+  "backend_cwd": "backend",
+  "backend_argv": [
+    "/home/dev01/project/SVQuant/.ci/venv/bin/python",
+    "scripts/run_quant_isolated_tests.py",
+    "tests/test_quant_factor_source_contract.py",
+    "tests/test_quant_factor_cr097_flow.py",
+    "tests/test_quant_factor_candidate_reads.py",
+    "tests/test_quant_factor_sealed.py",
+    "tests/test_quant_factor_review.py",
+    "tests/test_quant_factor_f0.py",
+    "tests/test_quant_factor_recovery.py",
+    "tests/test_quant_factor_policy.py",
+    "tests/test_quant_factor_agent_jobs.py",
+    "tests/test_quant_factor_novelty.py",
+    "tests/test_quant_factor_iterations.py",
+    "tests/test_quant_factor_assets.py",
+    "tests/test_quant_factor_routes.py"
+  ],
+  "guard": "SKIP_SCHEMA_BOOTSTRAP=1 before pytest import; psycopg.connect/db._borrow_conn and INET/INET6 connect/send/DNS forbidden; ASGI memory transport and Unix wakeup sockets remain supported",
+  "pg_argv": [
+    "/home/dev01/project/SVQuant/.ci/venv/bin/python",
+    "scripts/run_quant_sealed_pg_tests.py",
+    "--allow-isolated-dev"
+  ],
+  "pg_scope": "Only svquant_dev; unique codex_qf_asset_test_<uuid> schema; unique high uid/org advisory namespaces; cleanup in tearDownClass; _check_new uses explicit eligibility/spec substitute, actual insert/locks/commit/rollback/idempotency are PostgreSQL",
+  "private_re_cwd": ".workspaces/research-engine-r4",
+  "private_re_argv": [
+    "/home/dev01/program/anaconda3/envs/researchengine/bin/python",
+    "-m",
+    "pytest",
+    "tests/test_controlled_compute.py",
+    "tests/test_controlled_worker_engine.py",
+    "-q"
+  ],
+  "frontend_cwd": "frontend",
+  "frontend_argv": [
+    "node",
+    "--import",
+    "tsx",
+    "--test",
+    "--test-concurrency=1",
+    "tests/factorCandidateRead.test.tsx",
+    "tests/factorManualDelegation.test.tsx",
+    "tests/factorHomeCreateFlow.test.tsx",
+    "tests/factorAdmissionFlow.test.tsx",
+    "tests/factorFlowNavigation.test.tsx",
+    "tests/factorRegressions.test.tsx",
+    "tests/factorTaskIdentity.test.ts",
+    "tests/factorTaskState.test.ts",
+    "tests/factorStartRequest.test.ts"
+  ],
+  "build_argv": [
+    "npm",
+    "run",
+    "build"
+  ],
+  "results": {
+    "backend": 198,
+    "backend_subtests": 57,
+    "postgres": 3,
+    "private_re": 11,
+    "frontend": 65,
+    "build": "passed; one initial TypeScript optional purpose error fixed; chunk size warning only"
+  }
+}

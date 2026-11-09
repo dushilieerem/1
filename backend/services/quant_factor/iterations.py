@@ -97,7 +97,7 @@ def remember_child(uid,org,jid,field,value):
  if not r:raise Stopped()
 
 def save_round(uid,org,jid,number,candidate,change):
- entry={'number':number,'candidate_id':candidate['id'],'status':candidate['status'],'snapshot_hash':candidate['snapshot_hash'],'change':change,'factor_name':candidate['snapshot']['request']['factor_name'],'evidence':{k:{'gate':v.get('gate'),'report_id':v.get('report_id'),'run_id':v.get('run_id'),'novelty':v.get('novelty')} for k,v in candidate['evidence'].items()}}
+ entry={'number':number,'candidate_id':candidate['id'],'status':candidate['status'],'snapshot_hash':candidate['snapshot_hash'],'change':change,'factor_name':candidate['snapshot']['request']['factor_name'],'evidence':{k:{'gate':v.get('gate'),'report_id':v.get('report_id'),'run_id':v.get('run_id'),'novelty':v.get('novelty')} for k,v in candidate['evidence'].items() if k in ('development','validation') and isinstance(v,dict)}}
  with get_conn() as c:
   r=c.execute("UPDATE quant_factor_iterations SET rounds=(SELECT COALESCE(jsonb_agg(x),'[]'::jsonb) FROM jsonb_array_elements(rounds) x WHERE (x->>'number')::int<>%s)||%s::jsonb,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status IN ('queued','running') RETURNING id",(number,store.encode([entry]),jid,uid,org)).fetchone()
  if not r:raise Stopped()
@@ -124,7 +124,7 @@ def wait_agent(uid,org,jid,aid,expected):
 
 def apply_code(uid,org,jid,expected,fields):
  """Compare-and-set under both loop and project locks; no overwrite after pause."""
- from services.factor.code_validation import validated_factor_code
+ from .source_contract import validated_quant_code as validated_factor_code
  validated_factor_code(fields['code'],fields['name'])
  with get_conn() as c:
   loop=c.execute('SELECT * FROM quant_factor_iterations WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE',(jid,uid,org)).fetchone()

@@ -5,7 +5,7 @@ from services.core.tenant import Tenant
 from . import repo
 from . import store
 from .service import event,current,public
-from .policy import WorkflowError
+from .policy import WorkflowError,digest
 from . import ledger
 from .metrics import threshold
 
@@ -17,6 +17,26 @@ def _require_novelty(row):
         raise WorkflowError('候选缺少完整查重证据（R4/novelty），不能提交审查或批准入库')
 
 
+def feedback_materials(row):
+    """A real frozen finished/failed attempt may be reviewed, never supported/admitted."""
+    snap=row.get('snapshot')
+    if not isinstance(snap,dict) or not row.get('snapshot_hash') or digest(snap)!=row['snapshot_hash']:
+        raise WorkflowError('冻结候选内容与版本指纹不一致，不能提交复盘')
+    evidence=row.get('evidence') or {};dev=evidence.get('development') or {}
+    if row['status'].endswith('_running'):raise WorkflowError('检验仍在执行，请先等待明确结果或停止状态')
+    numerical=isinstance(dev.get('result'),dict) and bool(dev['result'])
+    known_failure=dev.get('external_status') in ('failed','cancelled') and bool(dev.get('run_id'))
+    implementation_failure=dev.get('preflight_failure')=='implementation' and evidence.get('source_contract',{}).get('passed') is False
+    if not (numerical or known_failure or implementation_failure):
+        raise WorkflowError('尚无已完成研发或明确失败的固定记录；结果待确认不能冒充已完成复盘')
+    missing=[]
+    if not numerical:missing.append('尚无研发数值报告；本次仅复盘已确认的执行失败')
+    elif (dev.get('gate') or {}).get('numerical_passed') is not True and not (dev.get('gate') or {}).get('passed'):missing.append('研发数值门槛未全部通过')
+    novelty=dev.get('novelty') or {}
+    if (novelty.get('gate') or {}).get('complete') is not True:missing.append('正式查重尚未完整完成，不代表新颖性合格')
+    return {'candidate_status':row['status'],'development_report_id':dev.get('report_id'),'has_numerical_result':numerical,'known_execution_failure':bool(known_failure or implementation_failure),'missing':missing,'allowed_decisions':['needs_revision','rejected'],'grants_admission':False}
+
+
 def request_review(uid,org,cid,note,purpose="research_admission"):
     if not note.strip():raise WorkflowError('请说明需要复核的研究问题')
     with get_conn() as c:
@@ -24,8 +44,7 @@ def request_review(uid,org,cid,note,purpose="research_admission"):
         if not row:raise KeyError(cid)
         card=dict(row['archive'] or {'approved': False, 'sealed': False})
         if card.get('research_asset'):raise WorkflowError('此固定版本已登记，不能重开审批；改进请建立新候选')
-        if row['status'].endswith('_running') or not row['evidence'].get('development',{}).get('gate'):
-            raise WorkflowError('请先完成研发检验并保存研究因子卡')
+        if row['status'].endswith('_running'):raise WorkflowError('请先等待当前检验结束')
         if purpose not in ('research_admission','research_feedback_only'):raise WorkflowError('复核事项类型无效')
         existing=card.get('review') or {}
         if existing.get('status')=='requested':
@@ -34,9 +53,10 @@ def request_review(uid,org,cid,note,purpose="research_admission"):
         if purpose=='research_admission':
             from .assets import eligibility
             eligibility(dict(row),c,for_submission=True)
-        else:_require_novelty(row)
+        else:materials=feedback_materials(dict(row))
         if existing:card['review_history']=[*(card.get('review_history') or []),existing]
-        card['review']={'status':'requested','question':note.strip(),'at':datetime.now(timezone.utc).isoformat(),'snapshot_hash':row['snapshot_hash'],'purpose':purpose}
+        card['review']={'status':'requested','question':note.strip(),'at':datetime.now(timezone.utc).isoformat(),'snapshot_hash':row['snapshot_hash'],'purpose':purpose,**({'materials':materials} if purpose=='research_feedback_only' else {})}
+        if not card.get('note'):card['note']='已提交独立研究复盘，结论待复核人记录'
         c.execute('UPDATE quant_factor_candidates SET archive=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s',(store.encode(card),store.encode([event('review_requested')]),cid))
     return current(uid,org,cid)
 
@@ -139,6 +159,9 @@ def detail(uid,org,cid):
         try:eligibility(dict(row));out['admission']={'allowed':True,'reason':''}
         except (WorkflowError,ValueError,KeyError) as exc:out['admission']={'allowed':False,'reason':str(exc)}
     else:out['admission']={'allowed':False,'reason':'此事项仅作研究反馈或复盘，不能直接批准入库'}
+    if rev.get('purpose')=='research_feedback_only':
+        try:out['feedback_materials']=feedback_materials(dict(row))
+        except WorkflowError as exc:out['feedback_materials']={'missing':[str(exc)],'allowed_decisions':['needs_revision','rejected'],'grants_admission':False}
     return out
 
 def record(uid,org,cid,decision,note):
@@ -148,6 +171,10 @@ def record(uid,org,cid,decision,note):
         row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND org_id=%s FOR UPDATE',(cid,tenant.org_id)).fetchone()
         ensure_reviewer(row,uid)
         from .novelty_policy import handoff_allowed
+        purpose=((row.get('archive') or {}).get('review') or {}).get('purpose')
+        if decision=='research_supported' and purpose in ('research_feedback_only','seal_failed_review','research_admission'):
+            raise WorkflowError('此事项只能退回补充或驳回；研究资产必须通过独立批准并登记，不能改作支持结论')
+        if purpose=='research_feedback_only':feedback_materials(dict(row))
         if decision=='research_supported':
             _require_novelty(row)
             ctx=_ledger_context(org,row['project_id'])

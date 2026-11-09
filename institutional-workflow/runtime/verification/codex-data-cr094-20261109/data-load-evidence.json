@@ -1,0 +1,30 @@
+{
+  "started_at_utc": "2026-11-09T11:11:27.114764+00:00",
+  "head": "2e0f8b6354bf1515d77ae41e0f2bd51346189890",
+  "business_commit": "739bf301de2f33d38ef1dcefc5a3bf88b58ef685",
+  "old_pid": 3521847,
+  "pre_restart_inflight": {
+    "f0": 0,
+    "candidate": 0,
+    "sealed": 0,
+    "agent_jobs": 0,
+    "iterations": 0
+  },
+  "reloaded": true,
+  "pid": 436563,
+  "argv": [
+    "/home/dev01/project/SVQuant/.ci/venv/bin/python",
+    "institutional-workflow/runtime/start_quant_bff.py"
+  ],
+  "cwd": "/home/dev01/project/SVQuant-zxd",
+  "original_environment_preserved": true,
+  "credential_values_recorded": false,
+  "novelty_base": "http://127.0.0.1:18804",
+  "health": {
+    "bff_api_health": 200,
+    "frontend_19536": 200,
+    "re_18804_api_health": 200
+  },
+  "frontend_restarted": false,
+  "other_services_restarted": false
+}

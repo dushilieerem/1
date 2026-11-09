@@ -130,6 +130,9 @@ class NullArchiveReviewRequestTest(unittest.TestCase):
                'status': 'development_passed',
                'evidence': {'development': {'gate': {'passed': True},
                                           'novelty': {'gate': {'passed': True, 'complete': True}}}}}
+        from services.quant_factor.policy import digest
+        row['snapshot']={'request':{'factor_name':'f'},'plan':{'researchPurpose':'discovery'}};row['snapshot_hash']=digest(row['snapshot'])
+        row['evidence']['development']['result']={'metrics':{'rank_ic':0.1}}
         cursor = MagicMock()
         cursor.execute.return_value.fetchone.return_value = row
         connection = MagicMock()

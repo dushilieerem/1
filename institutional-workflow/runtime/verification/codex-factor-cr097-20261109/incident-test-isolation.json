@@ -1,0 +1,38 @@
+{
+  "kind": "isolated-test-missing-dependency-substitute",
+  "audit": {
+    "sample_row": {
+      "id": "sample_momentum_5d",
+      "user_id": 1,
+      "is_sample": true,
+      "created_at": "2026-11-09 20:30:01.070919+08:00",
+      "updated_at": "2026-11-09 20:30:01.070919+08:00",
+      "run_count": 0
+    },
+    "related_counts": {
+      "detect_runs": 0,
+      "quant_factor_topics": 0,
+      "quant_factor_candidates": 0,
+      "quant_factor_f0_runs": 0,
+      "quant_factor_sealed_validations": 0
+    },
+    "DATABASE_URL_environment_present": true,
+    "SVQUANT_TEST_SKIP_SCHEMA_BOOTSTRAP_environment_is_1": false
+  },
+  "trigger": "test_quant_factor_f0.F0ConcurrentStartTest -> new f0._start_locked resource preflight -> real detect_store.get_project(uid=1,project=p) -> ensure_sample_project(uid=1) INSERT sample_momentum_5d; later get_project(p) KeyError",
+  "transaction": "ensure_sample_project get_conn context completes and calls commit before get_project(p) opens its separate read transaction; fresh read-only connection confirms persisted row",
+  "test_log": "cr097-flow-tests.log first run at 2026-11-09T12:30:01Z; preserve initial failure separately",
+  "schema_bootstrap": "The inherited DATABASE_URL was present and SKIP_SCHEMA_BOOTSTRAP was False. Therefore initial pytest_sessionstart called ensure_marketdata_schema(include_indexes=False), whose CREATE TABLE IF NOT EXISTS transactions may have executed on the development database. Prior table existence/schema delta was not captured; cannot claim no DDL effect. Subsequent isolated runs set SKIP=1 before importing pytest and block psycopg.connect.",
+  "action": "No deletion or rollback of unknown ownership. Parent PM informed; exact sample only inspected, no user text/secrets. Dependencies substituted and psycopg.connect guard added before pytest import.",
+  "not_executed": [
+    "model call",
+    "market factor/backtest job",
+    "novelty compute",
+    "approval"
+  ],
+  "protected_tasks": [
+    "T10",
+    "T11",
+    "T15"
+  ]
+}

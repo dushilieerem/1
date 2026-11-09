@@ -1,0 +1,19 @@
+{
+  "counts": {
+    "f0": 0,
+    "candidates": 0,
+    "sealed": 0,
+    "agent_jobs": 0,
+    "iterations": 0
+  },
+  "unresolved_development": [
+    {
+      "id": "2b603c15-8704-4bc8-81f8-46530d768fab",
+      "run_id": "32d8a6c7895b4781a58445125f448c24",
+      "submission_started": null,
+      "external_status": null
+    }
+  ],
+  "unresolved_sealed": [],
+  "actual_factor_backend": "http://127.0.0.1:9527/api/backtest/factor"
+}

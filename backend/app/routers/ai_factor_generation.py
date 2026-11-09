@@ -72,6 +72,10 @@ def _validate(body: object) -> dict[str, Any]:
         key = str(UUID(str(body.get("idempotency_key"))))
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail="idempotency_key 必须是 UUID") from exc
+    custom=context.get("custom_source_contract")
+    if custom is not None:
+        from services.quant_factor.source_contract import VERSION
+        if custom!=VERSION:raise HTTPException(422,"自定义源码契约版本未支持")
     return {
         "prompt": str(body["prompt"]),
         "context": {
@@ -79,6 +83,7 @@ def _validate(body: object) -> dict[str, Any]:
             "frequency": frequency,
             "allowed_library_names": list(libraries),
             "preferred_factor_name": context.get("preferred_factor_name"),
+            **({"custom_source_contract":custom} if custom else {}),
         },
         "idempotency_key": key,
     }
@@ -107,9 +112,21 @@ def _payload(parsed: dict[str, Any], model: str, latency_ms: int) -> dict[str, A
             "capability_catalog_version": CATALOG_VERSION,
             "errors": errors,
             "warnings": [],
+            **({"source_contract":parsed["quant_source_contract"]} if parsed.get("quant_source_contract") else {}),
         },
         "meta": {"model_alias": model, "prompt_version": PROMPT_VERSION, "latency_ms": latency_ms},
     }
+
+
+def _check_quant_source(parsed,req):
+    if not req['context'].get('custom_source_contract'):return parsed
+    parsed=dict(parsed)
+    if parsed.get('errors'):return parsed
+    factor=parsed.get('factor') or {}
+    from services.quant_factor.source_contract import inspect_source
+    try:parsed['quant_source_contract']=inspect_source(str(factor.get('factor_code') or ''),str(factor.get('factor_name') or ''))
+    except ValueError as exc:parsed['errors']=[str(exc)]
+    return parsed
 
 
 def _generate(req: dict[str, Any]) -> dict[str, Any]:
@@ -120,7 +137,7 @@ def _generate(req: dict[str, Any]) -> dict[str, Any]:
     except AiError as exc:
         raise _http(exc) from exc
 
-    parsed = first.get("data") or {}
+    parsed = _check_quant_source(first.get("data") or {},req)
     model = str(first.get("model") or "")
     errors = list(parsed.get("errors") or [])
 
@@ -136,7 +153,7 @@ def _generate(req: dict[str, Any]) -> dict[str, Any]:
             payload = _payload(parsed, model, round((time.perf_counter() - started) * 1000))
             payload["validation"]["warnings"].append("自动修正暂未完成，请稍后重试")
             return payload
-        parsed = second.get("data") or parsed
+        parsed = _check_quant_source(second.get("data") or parsed,req)
         model = str(second.get("model") or model)
 
     return _payload(parsed, model, round((time.perf_counter() - started) * 1000))

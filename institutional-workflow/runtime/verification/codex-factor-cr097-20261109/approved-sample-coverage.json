@@ -1,0 +1,1817 @@
+{
+  "kind": "readonly-approved-40-source-coverage",
+  "data_dir": "/data/dev01/project/svquant-data/views/research-rv-20261106-3/materialized/ifind",
+  "data_release_id": "ae4dc50f5646eddc5be072c4cbc0db242e473eeac37debc7c21a45632b0f130a",
+  "selected_symbols": [
+    "000001.SZ",
+    "000063.SZ",
+    "000100.SZ",
+    "000333.SZ",
+    "000338.SZ",
+    "000568.SZ",
+    "000625.SZ",
+    "000651.SZ",
+    "000725.SZ",
+    "000768.SZ",
+    "000776.SZ",
+    "000858.SZ",
+    "000895.SZ",
+    "000938.SZ",
+    "002027.SZ",
+    "002049.SZ",
+    "002142.SZ",
+    "002230.SZ",
+    "002415.SZ",
+    "002475.SZ",
+    "600000.SH",
+    "600009.SH",
+    "600030.SH",
+    "600031.SH",
+    "600036.SH",
+    "600048.SH",
+    "600050.SH",
+    "600104.SH",
+    "600276.SH",
+    "600309.SH",
+    "600406.SH",
+    "600438.SH",
+    "600519.SH",
+    "600585.SH",
+    "600690.SH",
+    "600703.SH",
+    "600809.SH",
+    "601166.SH",
+    "601318.SH",
+    "601888.SH"
+  ],
+  "selected_columns": 281,
+  "file_size_bytes": 660254305,
+  "file_mtime_ns": 1793957443528576691,
+  "windows": [
+    {
+      "start": "2025-07-01",
+      "end": "2025-09-30",
+      "published_market_date_count": 66,
+      "first": "2025-07-01",
+      "last": "2025-09-30",
+      "per_security": [
+        {
+          "symbol": "000001.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000063.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000100.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000333.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000338.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000568.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000625.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000651.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000725.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000768.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000776.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000858.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000895.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000938.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002027.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002049.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002142.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002230.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002415.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002475.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600000.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600009.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600030.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600031.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600036.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600048.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600050.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600104.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600276.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600309.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600406.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600438.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600519.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600585.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600690.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600703.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600809.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "601166.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "601318.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "601888.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        }
+      ],
+      "candidate_warmup_sessions": 0,
+      "maximum_one_day_forward_label_dates_before_missing_or_filters": 65,
+      "rolling20_full_window_upper_bound_before_missing_or_filters_and_one_day_label": 46,
+      "is_gate_pass": false,
+      "note": "Coverage only; no factor, portfolio, IC, performance, novelty or approval executed. Published market dates are not independently verified exchange calendar.",
+      "published_calendar_trade_day_count": 66,
+      "calendar_sources": [
+        "ifind"
+      ],
+      "calendar_exchanges": [
+        "ALL_A"
+      ],
+      "calendar_first": "2025-07-01",
+      "calendar_last": "2025-09-30"
+    },
+    {
+      "start": "2025-10-01",
+      "end": "2025-12-31",
+      "published_market_date_count": 60,
+      "first": "2025-10-09",
+      "last": "2025-12-31",
+      "per_security": [
+        {
+          "symbol": "000001.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000063.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000100.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000333.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000338.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000568.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000625.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000651.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000725.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000768.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000776.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000858.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000895.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000938.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002027.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002049.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 58,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 2,
+            "amount": 2,
+            "turnover": 2
+          }
+        },
+        {
+          "symbol": "002142.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002230.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002415.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002475.SZ",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600000.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600009.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600030.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600031.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600036.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600048.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600050.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600104.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600276.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600309.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600406.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600438.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600519.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600585.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600690.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600703.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600809.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "601166.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "601318.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "601888.SH",
+          "finite_close_days": 60,
+          "finite_all_ohlcva_turnover_days": 60,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        }
+      ],
+      "candidate_warmup_sessions": 0,
+      "maximum_one_day_forward_label_dates_before_missing_or_filters": 59,
+      "rolling20_full_window_upper_bound_before_missing_or_filters_and_one_day_label": 40,
+      "is_gate_pass": false,
+      "note": "Coverage only; no factor, portfolio, IC, performance, novelty or approval executed. Published market dates are not independently verified exchange calendar.",
+      "published_calendar_trade_day_count": 60,
+      "calendar_sources": [
+        "ifind"
+      ],
+      "calendar_exchanges": [
+        "ALL_A"
+      ],
+      "calendar_first": "2025-10-09",
+      "calendar_last": "2025-12-31"
+    },
+    {
+      "start": "2026-06-22",
+      "end": "2026-09-21",
+      "published_market_date_count": 66,
+      "first": "2026-06-22",
+      "last": "2026-09-21",
+      "per_security": [
+        {
+          "symbol": "000001.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000063.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000100.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000333.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000338.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000568.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000625.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000651.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000725.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000768.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000776.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000858.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000895.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "000938.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002027.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002049.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002142.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002230.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002415.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "002475.SZ",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600000.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600009.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600030.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600031.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600036.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600048.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600050.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600104.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600276.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600309.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600406.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600438.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600519.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600585.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600690.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600703.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "600809.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "601166.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "601318.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        },
+        {
+          "symbol": "601888.SH",
+          "finite_close_days": 66,
+          "finite_all_ohlcva_turnover_days": 66,
+          "missing_by_field": {
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0,
+            "amount": 0,
+            "turnover": 0
+          }
+        }
+      ],
+      "candidate_warmup_sessions": 0,
+      "maximum_one_day_forward_label_dates_before_missing_or_filters": 65,
+      "rolling20_full_window_upper_bound_before_missing_or_filters_and_one_day_label": 46,
+      "is_gate_pass": false,
+      "note": "Coverage only; no factor, portfolio, IC, performance, novelty or approval executed. Published market dates are not independently verified exchange calendar.",
+      "published_calendar_trade_day_count": 66,
+      "calendar_sources": [
+        "ifind"
+      ],
+      "calendar_exchanges": [
+        "ALL_A"
+      ],
+      "calendar_first": "2026-06-22",
+      "calendar_last": "2026-09-21"
+    }
+  ],
+  "published_calendar": {
+    "columns": [
+      "date",
+      "exchange",
+      "is_trade_day",
+      "source",
+      "marketcode"
+    ],
+    "rows": 8806,
+    "source": "published calendar_all_a.parquet, exchange ALL_A"
+  },
+  "reader_peak_rss_kib": 613576,
+  "limitations": [
+    "Static selected sample; selection bias; not historical index membership.",
+    "No observations gate evaluated. Missing status/filter data may further reduce usable observations."
+  ]
+}

@@ -6,7 +6,7 @@ import time
 from services.core.env_config import env
 from services.core.re_config import RE_BASE
 from services.core.lan_http import request_json
-from services.factor.code_validation import validated_factor_code
+from .source_contract import validated_quant_code as validated_factor_code
 from .asset_context import catalogue,duplicate_matches
 from .novelty_policy import policy,evaluate_comparison,DEFAULTS
 from .policy import WorkflowError,digest
@@ -53,7 +53,8 @@ def assess(uid,snapshot,development,reference=None,compute=True,progress=None,or
     if not compute:
         return {**base,'status':'deferred','message':'研发数值门槛尚未通过，先改进候选；尚未执行全库数值对照，不认定为新发现。','gate':empty}
     rid=None
-    base_url=str(env('QUANT_NOVELTY_RE_BASE',RE_BASE) or RE_BASE).rstrip('/')+'/api/factor/novelty'
+    from .re_client import base as compute_base
+    base_url=compute_base()+'/api/factor/novelty'
     token=env('QUANT_NOVELTY_SERVICE_TOKEN',env('RE_SERVICE_TOKEN','')) or ''
     headers={'X-Service-Token':token} if token else None
     def cancel():
@@ -62,6 +63,10 @@ def assess(uid,snapshot,development,reference=None,compute=True,progress=None,or
             except Exception:pass
     try:
         payload=comparison_request(snapshot,development,refs,rules)
+        from .resources import preflight
+        resource=preflight('novelty',payload)
+        if not resource['allowed']:
+            return {**base,'status':'resource_pending','message':'研发数值检验已完成；正式查重范围尚未获准，未执行全库比较。'+ '；'.join(resource.get('reasons') or []),'resource_preflight':resource,'gate':empty}
         status,_,task=request_json(base_url,method='POST',payload=payload,timeout=30,headers=headers)
         if status not in (200,202) or not isinstance(task,dict):raise WorkflowError('因子值对照提交失败，HTTP '+str(status))
         rid=task.get('run_id')

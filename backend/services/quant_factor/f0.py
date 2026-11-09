@@ -80,6 +80,8 @@ def _start_locked(uid, org, topic_id, branch_id, idempotency_key):
             (uid, org, topic_id)).fetchone()
     if active:
         return _public(active)
+    from services.factor.detect_store import get_project
+    from .resources import require_config
     if topic["status"] != "active":
         return _public(_record(uid, org, topic, branch_id, key, "stopped",
                                {"action": "stop", "reason": "topic_" + topic["status"]},
@@ -94,10 +96,18 @@ def _start_locked(uid, org, topic_id, branch_id, idempotency_key):
                                "课题锁定视图与当前发布视图不一致，F0 停止"))
     k_now = ledger.current_k(ledger._trials(uid, org, topic_id), topic["primary_holding_period"])
     remaining = int(topic["max_trials"]) - k_now
-    if remaining <= 0:
+    can_seal=False
+    if remaining<=0:
+        from .novelty_policy import handoff_allowed
+        with get_conn() as c:
+            candidate=c.execute("SELECT * FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s AND status='development_passed' ORDER BY updated_at DESC LIMIT 1",(uid,org,topic['project_id'])).fetchone()
+            used=c.execute('SELECT COUNT(*) AS n FROM quant_factor_sealed_validations WHERE user_id=%s AND org_id=%s AND topic_id=%s',(uid,org,topic_id)).fetchone()['n']
+        can_seal=bool(candidate and handoff_allowed(candidate) and used<int(topic.get('max_sealed') or 1))
+    if remaining <= 0 and not can_seal:
         return _public(_record(uid, org, topic, branch_id, key, "stopped",
                                {"action": "stop", "reason": "budget_exhausted"},
                                "课题试验预算已用尽，F0 停止"))
+    if remaining>0:require_config(get_project(uid,topic['project_id'])['project']['config'])
     row = _record(uid, org, topic, branch_id, key, "queued", {"action": "decide"})
     POOL.submit(run, uid, org, row["id"])
     return _public(row)
@@ -143,6 +153,10 @@ def run(uid, org, run_id):
             current = _topic(uid, org, topic["id"])
             if current["status"] != "active":
                 return "课题已暂停/归档，F0 停止"
+            with get_conn() as c:
+                latest=c.execute("SELECT evidence FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s ORDER BY updated_at DESC LIMIT 1",(uid,org,topic['project_id'])).fetchone()
+            development=((latest or {}).get('evidence') or {}).get('development') or {}
+            if (development.get('novelty') or {}).get('status')=='resource_pending':return '研发数值检验已完成，正式查重范围待确认；停止自动迭代，可提交研究复盘'
             return ""
 
         streak = [0]
@@ -213,6 +227,10 @@ def resume(uid, org, run_id):
             recovery_only=topic["view_id"] != published_view()["view_id"]
             if recovery_only and (not service.locked_view_available(topic) or not service.has_recoverable_run(uid,org,topic['project_id'])):
                 raise WorkflowError("固定数据版本目前无法确认或无原任务可恢复；不会用当前数据替换原计划")
+            if not recovery_only:
+                from services.factor.detect_store import get_project
+                from .resources import require_config
+                require_config(get_project(uid,topic['project_id'])['project']['config'])
             if int(row.get('rounds') or 0) >= 12:
                 raise WorkflowError("此运行已达到决策次数上限，原记录保留，请人工复盘")
             decision=dict(row.get('decision') or {});decision['recovery_only']=recovery_only

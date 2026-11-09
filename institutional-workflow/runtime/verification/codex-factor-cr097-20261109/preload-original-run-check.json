@@ -1,0 +1,12 @@
+{
+  "legacy_confirmation": {
+    "run_id": "32d8a6c7895b4781a58445125f448c24",
+    "historical_proxy_base": "http://127.0.0.1:9527/api/backtest/factor",
+    "http_status": 404,
+    "status": null,
+    "result_not_retained": true
+  },
+  "private_novelty_known_unfinished_checks": [],
+  "private_novelty_base": "http://127.0.0.1:18804",
+  "private_manager_global_inventory_available_before_reload": false
+}

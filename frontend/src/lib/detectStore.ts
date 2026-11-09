@@ -30,6 +30,7 @@ export type FactorResearchPlan = {
 };
 
 export type DetectProjectConfig = {
+  researchUniverseSymbols?: string[];
   sourceResearchAsset?: {id:string;version:number;snapshotHash:string;purpose:'research_only'};
   researchPlan?: FactorResearchPlan;
   researchContext?: {direction:string;question:string;background:string;agentJobId?:string};

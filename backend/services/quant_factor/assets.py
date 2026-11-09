@@ -57,6 +57,12 @@ def validate_evidence(row,facts):
     execution=method.get('execution_config') or {}
     if execution.get('snapshot_hash')!=row['snapshot_hash'] or method.get('execution_config_digest')!=digest(execution):raise WorkflowError('固定执行配置身份不完整或不一致')
     dev=evidence.get('development') or {};dev_result=dev.get('result') or {}
+    if snap.get('request',{}).get('factor_code'):
+        from .source_contract import inspect_source,VERSION
+        actual=inspect_source(snap['request']['factor_code'],snap['request']['factor_name'])
+        checked=evidence.get('source_contract') or {};diagnostic=checked.get('diagnostic') or {}
+        if checked.get('contract_version')!=VERSION or checked.get('contract')!=actual or diagnostic.get('passed') is not True or diagnostic.get('wrapped_source_sha256')!=actual['wrapped_source_sha256'] or dev_result.get('meta',{}).get('factor_source_hash')!=actual['wrapped_source_sha256']:
+            raise WorkflowError('缺少与实际执行源码一致的因果性与计算契约检查，历史结果不能补造批准')
     if not dev.get('report_id') or not dev.get('run_id'):raise WorkflowError('缺少可追溯的研发报告与运行标识')
     if not any(t.get('report_id')==dev['report_id'] for t in facts['trials']):raise WorkflowError('研发结果尚未完整落入任务台账')
     k=ledger.current_k(facts['trials'],topic['primary_holding_period'])

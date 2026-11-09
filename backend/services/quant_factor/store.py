@@ -9,10 +9,24 @@ def encode(value): return json.dumps(value,ensure_ascii=False,allow_nan=False)
 def read(uid,org,candidate_id):
     return repo.candidate(Tenant.from_pair(uid,org),candidate_id)
 
+def summarize_evidence(evidence,include_numbers=False):
+    """Evidence also contains branch IDs/method provenance, not only phase objects."""
+    out={}
+    for phase in ('development','validation'):
+        block=(evidence or {}).get(phase)
+        if not isinstance(block,dict):continue
+        summary={'gate':block.get('gate'),'run_id':block.get('run_id')}
+        if include_numbers:
+            result=block.get('result') or {}
+            summary.update(metrics=result.get('metrics'),meta=result.get('meta'))
+        out[phase]=summary
+    return out
+
+
 def list_candidates(uid,org,project):
     rows=repo.candidates(Tenant.from_pair(uid,org),project)
     # Results stay on detail endpoint; list contains only gate summaries.
-    return [{**r,'evidence':{k:{'gate':v.get('gate'),'run_id':v.get('run_id')} for k,v in (r['evidence'] or {}).items()}} for r in rows]
+    return [{**r,'evidence':summarize_evidence(r.get('evidence'))} for r in rows]
 
 def update(uid,org,cid,status,event,evidence=None):
     t=Tenant.from_pair(uid,org)

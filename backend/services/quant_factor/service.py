@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from services.core.db import get_conn
 from services.core.env_config import env
 from services.factor.detect_store import get_project, _row_project, save_run
-from services.factor.re_factor_async_proxy import proxy_submit_factor_backtest,proxy_get_factor_run,proxy_cancel_factor_run
+from .re_client import proxy_submit_factor_backtest,proxy_get_factor_run,proxy_cancel_factor_run,legacy_get_factor_run,legacy_cancel_factor_run
+from . import re_client
 from services.strategy.result_signature import sign_result
 from .policy import WorkflowError,snapshot,digest,evaluate,compare_identity
 from . import store
@@ -59,6 +60,12 @@ def current(uid,org,cid):
         row=store.read(uid,org,cid)
     try: row['stale']=digest(snapshot(get_project(uid,row['project_id'])['project']))!=row['snapshot_hash']
     except (KeyError,WorkflowError): row['stale']=True
+    with get_conn() as c:
+        topic=c.execute('SELECT id FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s',(uid,org,row['project_id'])).fetchone()
+    row['validation_mode']='sealed' if topic else 'legacy'
+    from .review import feedback_materials
+    try:row['feedback_eligibility']={'allowed':True,**feedback_materials(row)}
+    except WorkflowError as exc:row['feedback_eligibility']={'allowed':False,'reason':str(exc)}
     return public(row)
 
 def _locked_view_error(uid,org,project_id):
@@ -106,6 +113,8 @@ def create(uid,org,project_id,expected_snapshot_hash=None,reference=None,executo
                 raise WorkflowError('已有候选的对照库版本不同，请复盘后开启新的研究任务。')
             cid=existing['id']
         else:
+            from .resources import require_config
+            require_config(_row_project(dict(p))['config'])
             from . import ledger
             topic=c.execute("SELECT * FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s",(uid,org,project_id)).fetchone()
             if topic:
@@ -121,6 +130,9 @@ def create(uid,org,project_id,expected_snapshot_hash=None,reference=None,executo
             cid=str(uuid.uuid4())
             from .provenance import method_manifest
             evidence={'method':method_manifest(sha,executor,f0_run_id)}
+            if snap['request'].get('factor_code'):
+                from .source_contract import inspect_source
+                evidence['method']['source_contract']=inspect_source(snap['request']['factor_code'],snap['request']['factor_name'])
             active_branch=((p.get('config') or {}).get('v5ActiveBranch') if hasattr(p,'get') else None)
             if active_branch:
                 evidence['branch_id']=str(active_branch)
@@ -171,6 +183,8 @@ def validate(uid,org,cid):
         row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE',(cid,uid,org)).fetchone()
         if not row: raise KeyError(cid)
         if (row.get('archive') or {}).get('research_asset'):raise WorkflowError('已登记版本不可重新验证，改进请建立新候选')
+        topic=c.execute('SELECT id FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s',(uid,org,row['project_id'])).fetchone()
+        if topic:raise WorkflowError('V5任务请在独立验证环节申请封存验证；研究侧不开放样本外明细')
         if row['status']!='development_passed': raise WorkflowError('只有研发检验通过的冻结候选可以提交一次样本外复验')
         p=c.execute('SELECT * FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,row['project_id'])).fetchone()
         if not p or digest(snapshot(_row_project(dict(p))))!=row['snapshot_hash']: raise WorkflowError('研究输入已变化，请重新冻结并检验当前版本')
@@ -212,20 +226,35 @@ def _run_once(uid,org,cid,phase,executor='human',f0_run_id=None,recovery_only=Fa
                 if recovery_only:raise WorkflowError('此恢复仅可查询原任务；缺少原运行标识，不会发起新计算')
                 if prior.get('submission_started'):
                     raise WorkflowError('上次计算提交的结果尚未确认；请先核对外部任务，不能重复提交')
+                if req.get('factor_code'):
+                    from .causality import diagnose_source
+                    try:source_check=diagnose_source(req['factor_code'],req['factor_name'])
+                    except ValueError as exc:
+                        implementation_check_failed=True
+                        store.update(uid,org,cid,running,event('implementation_check_failed',message=str(exc)),{'source_contract':{'passed':False,'error':str(exc)}})
+                        raise WorkflowError(str(exc)) from exc
+                    if store.update(uid,org,cid,running,event('implementation_checked',message='实现一致性与有界因果性检查通过；不代表研究达标'),{'source_contract':source_check}) is False:return
+                from .resources import require
+                try:resource_receipt=require('factor',req)
+                except WorkflowError:
+                    resource_check_failed=True
+                    raise
+                prior['resource_preflight']=resource_receipt
+                prior['compute_backend']=re_client.target(resource_receipt)
                 prior.update(submission_started=True,request=req)
                 if store.update(uid,org,cid,running,event(phase+'_submitting',message='已记录计算提交身份'),{phase:prior}) is False:return
-                status,_,task=proxy_submit_factor_backtest(req)
+                status,_,task=proxy_submit_factor_backtest(req,target=prior['compute_backend'])
                 if status not in (200,202) or not isinstance(task,dict) or not task.get('run_id'):
                     raise WorkflowError('计算提交结果未确认；保留记录，不能盲目重复提交')
                 rid=task['run_id'];prior.update(run_id=rid)
                 if store.update(uid,org,cid,running,event(phase+'_submitted',tool='ResearchEngine.factor',run_id=rid),{phase:prior}) is False:
-                    proxy_cancel_factor_run(rid);return
+                    proxy_cancel_factor_run(rid,target=prior['compute_backend']) if prior.get('compute_backend') else legacy_cancel_factor_run(rid);return
             deadline=time.monotonic()+900
             while time.monotonic()<deadline:
                 state=store.read(uid,org,cid)
                 if state['status']=='cancelled':
-                    proxy_cancel_factor_run(rid);return
-                status,_,task=proxy_get_factor_run(rid)
+                    proxy_cancel_factor_run(rid,target=prior['compute_backend']) if prior.get('compute_backend') else legacy_cancel_factor_run(rid);return
+                status,_,task=proxy_get_factor_run(rid,target=prior['compute_backend']) if prior.get('compute_backend') else legacy_get_factor_run(rid)
                 if status!=200: raise WorkflowError('计算状态暂无法确认；外部任务身份保留，HTTP '+str(status))
                 if task.get('status')=='succeeded': break
                 if task.get('status') in ('failed','cancelled'):
@@ -247,7 +276,7 @@ def _run_once(uid,org,cid,phase,executor='human',f0_run_id=None,recovery_only=Fa
         report_id='qf_'+cid+'_'+phase
         save_run(uid,{'id':report_id,'projectId':row['project_id'],'factorName':req['factor_name'],
                      'description':snap['name']+' / '+phase,'request':{**req,'_re_run_id':rid},'result':signed})
-        data={'run_id':rid,'report_id':report_id,'request':req,'result':result,'gate':gate,'expected_identity':{k:meta.get(k) for k in ('data_release_id','factor_source_hash','spec_hash')}}
+        data={'run_id':rid,'report_id':report_id,'request':req,'result':result,'gate':gate,'expected_identity':{k:meta.get(k) for k in ('data_release_id','factor_source_hash','spec_hash')},**({'compute_backend':prior['compute_backend']} if prior.get('compute_backend') else {})}
         if recovery_only:
             data.update(interrupted=True,needs_fixed_version=True)
             store.update(uid,org,cid,phase+'_error',event('original_result_recovered',message='原结果已核对，等待固定数据版本计算能力，未发起新的计算'),{phase:data})
@@ -265,7 +294,7 @@ def _run_once(uid,org,cid,phase,executor='human',f0_run_id=None,recovery_only=Fa
             data['gate']=gate
             store.update(uid,org,cid,running,event('novelty_completed',status=novelty_status,message=novelty['message']))
             if snap['plan'].get('researchPurpose')=='replication':novelty_status=None
-        final_status=phase+('_error' if novelty_status in ('unavailable','incomplete') else '_passed' if gate['passed'] else '_failed')
+        final_status=phase+('_error' if novelty_status in ('unavailable','incomplete','resource_pending') else '_passed' if gate['passed'] else '_failed')
         with get_conn() as c:
             locked=c.execute('SELECT status FROM quant_factor_candidates WHERE id=%s FOR UPDATE',(cid,)).fetchone()
             if locked['status']=='cancelled': return
@@ -280,10 +309,14 @@ def _run_once(uid,org,cid,phase,executor='human',f0_run_id=None,recovery_only=Fa
         # to submit another computation or release the unresolved reservation.
         latest=store.read(uid,org,cid)
         if latest['status']=='cancelled':
-            if locals().get('rid'):proxy_cancel_factor_run(rid)
+            if locals().get('rid'):
+                original=(latest.get('evidence') or {}).get(phase) or {}
+                proxy_cancel_factor_run(rid,target=original['compute_backend']) if original.get('compute_backend') else legacy_cancel_factor_run(rid)
             return
         block=dict((latest.get('evidence') or {}).get(phase) or {})
-        block.update(interrupted=True,message=str(exc)[:1200])
+        block.update(interrupted=not bool(locals().get('implementation_check_failed') or locals().get('resource_check_failed')),message=str(exc)[:1200])
+        if locals().get('implementation_check_failed'):block['preflight_failure']='implementation'
+        if locals().get('resource_check_failed'):block['preflight_failure']='resource'
         store.update(uid,org,cid,phase+'_error',event(phase+'_error',message=str(exc)[:1200]),{phase:block})
 
 def recover_pending(uid, org, project_id,recovery_only=False):

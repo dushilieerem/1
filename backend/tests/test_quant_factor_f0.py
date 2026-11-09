@@ -30,7 +30,7 @@ class F0StartTest(unittest.TestCase):
         self.assertEqual(rec.call_args.args[6]['reason'], 'locked_view_drift')
 
     def test_budget_uses_k_not_candidates(self):
-        w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None, None]
+        w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None, None, None, {'n':0}]
         with patch.object(f0, '_topic', return_value=TOPIC), patch.object(f0, 'get_conn', return_value=w), \
              patch.object(f0, 'published_view', return_value={'view_id': 'v'}), \
              patch.object(f0.ledger, '_trials', return_value=[]), \
@@ -38,6 +38,13 @@ class F0StartTest(unittest.TestCase):
              patch.object(f0, '_record', return_value={'status': 'stopped'}) as rec:
             f0.start(1, 2, 't', 'b', 'k1')
         self.assertEqual(rec.call_args.args[6]['reason'], 'budget_exhausted')
+
+    def test_exhausted_development_budget_still_allows_earned_seal(self):
+        candidate={'status':'development_passed','snapshot':{'plan':{'researchPurpose':'discovery'}},'evidence':{'development':{'novelty':{'gate':{'complete':True,'passed':True}}}}}
+        w,c=conn();c.fetchone.side_effect=[{'id':'b'},None,None,candidate,{'n':0}]
+        with patch.object(f0,'_topic',return_value={**TOPIC,'max_sealed':1}),patch.object(f0,'get_conn',return_value=w),patch.object(f0,'published_view',return_value={'view_id':'v'}),patch.object(f0.ledger,'_trials',return_value=[]),patch.object(f0.ledger,'current_k',return_value=4),patch.object(f0,'_record',return_value={'id':'run','status':'queued'}) as record,patch('services.quant_factor.resources.require_config') as development_preflight,patch.object(f0.POOL,'submit') as schedule:
+            out=f0.start(1,2,'t','b','earned-seal')
+        self.assertEqual(out['status'],'queued');development_preflight.assert_not_called();schedule.assert_called_once()
 
     def test_duplicate_key_returns_existing(self):
         w, c = conn(fetchone={'id': 'run1', 'status': 'queued', 'user_id': 1, 'org_id': 2})
@@ -242,6 +249,8 @@ class F0ConcurrentStartTest(unittest.TestCase):
              patch.object(f0.ledger, '_trials', return_value=[]), \
              patch.object(f0.ledger, 'current_k', return_value=0), \
              patch.object(f0, '_record', side_effect=record), \
+             patch('services.factor.detect_store.get_project',return_value={'project':{'config':{}}}), \
+             patch('services.quant_factor.resources.require_config',return_value={'allowed':True}), \
              patch.object(f0.POOL, 'submit') as submit:
             with ThreadPoolExecutor(max_workers=2) as pool:
                 results = list(pool.map(invoke, ['key-a', 'key-b']))

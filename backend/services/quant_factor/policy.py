@@ -3,7 +3,7 @@ import hashlib
 import json
 import math
 from datetime import date
-from services.factor.code_validation import validated_factor_code
+from .source_contract import validated_quant_code as validated_factor_code
 from .metrics import newey_west_t, threshold
 
 class WorkflowError(ValueError):
@@ -51,6 +51,9 @@ def snapshot(project):
              'analysis_level':'full','commission_rate':c.get('commissionRate',.0003),
              'stamp_tax':c.get('stampTax',.0005),'slippage_rate':c.get('slippageRate',.0005),
              **{b:c.get(a,False) for a,b in [('filterSuspended','filter_suspended'),('filterSt','filter_st'),('filterLimitUp','filter_limit_up'),('filterLimitDown','filter_limit_down')]}}
+    if c.get('researchUniverseSymbols'):
+        from .resources import static_sample
+        request.pop('universe',None);request['universe_snapshot']=static_sample(c['researchUniverseSymbols'])
     if request['execution_timing']=='same_close': raise WorkflowError('固定验证不允许收盘同刻成交，请使用次日成交')
     for k in ('commission_rate','stamp_tax','slippage_rate'): request[k]=number(request[k],k,0,.1)
     if draft.get('name')==name and draft.get('body'):

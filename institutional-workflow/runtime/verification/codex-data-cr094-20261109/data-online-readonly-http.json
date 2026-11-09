@@ -1,0 +1,125 @@
+{
+  "checked_at_utc": "2026-11-09T11:12:11.526466+00:00",
+  "transport": "actual HTTP to loaded 18799, no dependency substitutes",
+  "identity": "registered researcher; credentials not recorded",
+  "checks": [
+    {
+      "path": "/catalog",
+      "status": 200,
+      "view_id": "research-rv-20261106-3",
+      "datasets": 60,
+      "field_index_count": 997,
+      "published": 60,
+      "quality_summary": {
+        "checked": 20,
+        "passed": 20,
+        "failed": 0,
+        "unchecked": 40,
+        "errors": 0,
+        "total": 60
+      }
+    },
+    {
+      "path": "/catalog/industry_daily",
+      "status": 200,
+      "fixed_view_matches": true,
+      "published": true,
+      "start": "2016-01-19",
+      "end": "2026-11-06",
+      "quality_status": "unchecked",
+      "applicability": "restricted",
+      "sw_fields": [
+        {
+          "name": "sw_l1_code",
+          "availability_status": "latest_only",
+          "availability_rule": "仅最新分类快照",
+          "catalog_note": "申万一级代码；当前快照（latest_only），不能当历史 PIT。",
+          "catalog_source_ref": "research-rv-20261106-3/monitor-data#sw_l1_code",
+          "source_ref": "research-rv-20261106-3/data_contract.yaml#industry_daily"
+        },
+        {
+          "name": "sw_l1_name",
+          "availability_status": "latest_only",
+          "availability_rule": "仅最新分类快照",
+          "catalog_note": "",
+          "catalog_source_ref": "research-rv-20261106-3/monitor-data#sw_l1_name",
+          "source_ref": "research-rv-20261106-3/data_contract.yaml#industry_daily"
+        },
+        {
+          "name": "sw_l2_code",
+          "availability_status": "conflict",
+          "availability_rule": "当前分类快照；字段覆盖状态待确认",
+          "catalog_note": "申万二级代码；当前暂为 null。",
+          "catalog_source_ref": "research-rv-20261106-3/monitor-data#sw_l2_code",
+          "source_ref": "research-rv-20261106-3/data_contract.yaml#industry_daily"
+        },
+        {
+          "name": "sw_l2_name",
+          "availability_status": "latest_only",
+          "availability_rule": "仅最新分类快照",
+          "catalog_note": "",
+          "catalog_source_ref": "research-rv-20261106-3/monitor-data#sw_l2_name",
+          "source_ref": "research-rv-20261106-3/data_contract.yaml#industry_daily"
+        }
+      ]
+    },
+    {
+      "path": "/catalog/minute_bars",
+      "status": 200,
+      "fixed_view_matches": true,
+      "published": true,
+      "start": null,
+      "end": null,
+      "quality_status": "unchecked",
+      "applicability": "restricted"
+    },
+    {
+      "path": "/catalog/daily_bars",
+      "status": 200,
+      "fixed_view_matches": true,
+      "published": true,
+      "start": "2005-01-04",
+      "end": "2026-11-06",
+      "quality_status": "unchecked",
+      "applicability": "timing",
+      "turnover_unit": "小数（0.00256=0.256%）；派生 daily_bars_unadjusted 已转百分数"
+    },
+    {
+      "path": "/views",
+      "status": 200,
+      "visible_count": 2,
+      "published_at_only_explicit": true
+    },
+    {
+      "path": "/requests",
+      "status": 200,
+      "visible_count": 2,
+      "published_at_only_explicit": null
+    },
+    {
+      "path": "/catalog/industry_daily?view_id=not-a-supported-view",
+      "actor": "researcher",
+      "status": 404
+    },
+    {
+      "path": "/catalog",
+      "actor": "anonymous",
+      "status": 401
+    },
+    {
+      "path": "/views",
+      "actor": "anonymous",
+      "status": 401
+    },
+    {
+      "path": "/requests",
+      "actor": "anonymous",
+      "status": 401
+    }
+  ],
+  "business_writes": 0,
+  "login_only_post": true,
+  "new_requests": 0,
+  "model_calls": 0,
+  "research_computations": 0
+}

@@ -183,3 +183,12 @@ def test_explicit_review_purpose_reaches_service_without_client_identity():
  with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.review.request_review',return_value={'id':'c'}) as request:
   assert client.post('/api/inst/quant/factor-workflow/candidates/c/review-request',json={'note':'保留失败复盘','purpose':'research_feedback_only'}).status_code==200
   request.assert_called_once_with(912,261,'c','保留失败复盘','research_feedback_only')
+
+
+def test_scope_preflight_and_source_check_use_research_identity_and_existing_guard():
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.quant_factor.resources.config_preflight',return_value={'allowed':False,'reasons':['scope']}) as preflight:
+  response=client.post('/api/inst/quant/factor-workflow/compute-preflight',json={'universe':'CSI500','researchPlan':{}});assert response.status_code==200;assert not response.json()['allowed'];preflight.assert_called_once()
+ with patch('app.routers.quant_factor_workflow._quant_uid',return_value=912),patch('services.factor.detect_store.get_project',return_value={'project':{}}) as project,patch('services.quant_factor.causality.diagnose_source',return_value={'passed':True}) as diagnose:
+  response=client.post('/api/inst/quant/factor-workflow/projects/p/source-check',json={'name':'f','code':'def f(self): return self.close'});assert response.status_code==200;project.assert_called_once_with(912,'p');diagnose.assert_called_once()
+ app.dependency_overrides[require_quant_user]=lambda:{**ctx,'can_write':False,'can_review':True}
+ for path,body in [('compute-preflight',{}),('projects/p/source-check',{'name':'f','code':'def f(self): return self.close'})]:assert client.post('/api/inst/quant/factor-workflow/'+path,json=body).status_code==403

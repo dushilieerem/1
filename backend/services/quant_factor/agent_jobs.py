@@ -56,8 +56,12 @@ def update(uid,org,jid,status,entry,output=None):
 def create(uid,org,stage,project_id,draft,request_key):
     if stage not in ('F1','F2','F3'):raise WorkflowError('本期 Agent 自动回填支持 F1、F2、F3。')
     if stage!='F1' and not project_id:raise WorkflowError('请先保存研究任务。')
-    if project_id:get_project(uid,project_id)
+    project=get_project(uid,project_id)['project'] if project_id else None
     inputs={'draft':draft,'project_id':project_id,'stage':stage}
+    if stage=='F3':
+        rules=((project or {}).get('config') or {}).get('researchPlan',{}).get('rules') or {}
+        if rules.get('direction') not in ('positive','negative'):raise WorkflowError('请先保存预登记的因子方向与检验口径，再委托实现')
+        inputs['registered_rules']={**rules,'icMetric':rules.get('icMetric','ic')}
     key=request_key or digest(inputs)
     with get_conn() as c:
         c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9108,uid))
@@ -131,17 +135,22 @@ def run(uid,org,jid):
             assert_quota_available(uid)
             if not update(uid,org,jid,'running',event('model_started',tool='research.generate_factor',message='调用平台因子生成与静态校验工具（失败时最多修正一次）')):return
             keys=('hypothesis','improvementScope','target','name','code') if draft.get('mode')=='improve' else ('hypothesis','candidateExpression','improvementScope','target','name','code')
-            prompt=json.dumps({k:draft.get(k,'') for k in keys},ensure_ascii=False,separators=(',',':'))
+            registered_rules=row['input'].get('registered_rules') or {}
+            if registered_rules.get('direction') not in ('positive','negative'):raise WorkflowError('此委托缺少固定方向与IC口径，请保存计划后重新委托，未调用模型')
+            prompt=json.dumps({'draft':{k:draft.get(k,'') for k in keys},'registered_rules':registered_rules},ensure_ascii=False,separators=(',',':'))
             instruction=('按 improvementScope 明确允许的范围改进实现；范围中授权的窗口或数学变换可以调整初始 candidateExpression，除此以外保留定义、经济假设与方向。不得为了过门槛简单反号、偷偷改目标或使用未来信息。若没有合理改进就保留原代码。' if draft.get('mode')=='improve' else '按照研究定义实现初始因子。保留初始表达式的窗口、缺失值处理和预测口径。禁止未来数据。')
-            instruction += (' 代码只允许简单面板表达式：字段仅 open/high/low/close/volume/amount/turnover/current_mv/listed_status/the_sw_industry_code/up_and_down_status；运算符仅 + - * / ** 和比较；方法仅白名单（rank/rolling/shift/pct_change/mean/std/sum/where/mask/fillna/clip/groupby/transform 等）。'
-                            ' 禁止位运算 & | ^ ~、and/or/not、if/else、lambda、循环、import、多语句；布尔条件请用 where/mask 或乘法组合。禁止 groupby(axis=)。')
+            from .source_contract import generation_instructions,VERSION
+            instruction += ' '+generation_instructions()+' registered_rules为预登记方向、IC口径及门槛，只读且不得事后翻转符号或改变门槛。有效值检测由执行器完成，无需全矩阵any/all。'
             from services.core.ai_factor_input import factor_prompt_error
             prompt_error=factor_prompt_error(instruction+'\n'+prompt)
             if prompt_error:raise WorkflowError(prompt_error+'；请精简研究说明，完整报告仍已保留。')
-            out=ai_factor_generations({'prompt':instruction+'\n'+prompt,'context':{'frequency':'1d','preferred_factor_name':draft.get('name') or None},'idempotency_key':jid},_user={'id':uid})
+            out=ai_factor_generations({'prompt':instruction+'\n'+prompt,'context':{'frequency':'1d','preferred_factor_name':draft.get('name') or None,'custom_source_contract':VERSION},'idempotency_key':jid},_user={'id':uid})
             record_usage(user_id=uid,run_id=jid,skill='research.generate_factor')
             if out.get('status')!='ready' or out.get('validation',{}).get('status')!='passed':raise WorkflowError('代码未通过平台校验：'+'；'.join(out.get('validation',{}).get('errors',[])))
-            output={**out,'fields':{'name':out['factor']['factor_name'],'code':out['factor']['factor_code']},'model':out.get('meta',{}).get('model_alias'),'prompt_version':out.get('meta',{}).get('prompt_version')}
+            from .causality import diagnose_source
+            try:source_check=diagnose_source(out['factor']['factor_code'],out['factor']['factor_name'])
+            except ValueError as exc:raise WorkflowError(str(exc)) from exc
+            output={**out,'source_check':source_check,'registered_rules':registered_rules,'fields':{'name':out['factor']['factor_name'],'code':out['factor']['factor_code']},'model':out.get('meta',{}).get('model_alias'),'prompt_version':out.get('meta',{}).get('prompt_version')}
         if output is not None:update(uid,org,jid,'ready',event('fields_ready',message='返回字段已校验，可回填本环节表单；人工修改优先。'),output)
     except Exception as exc:
         # Do not leak provider messages, credentials or internal server paths.

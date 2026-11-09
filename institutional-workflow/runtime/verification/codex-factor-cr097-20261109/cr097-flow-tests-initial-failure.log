@@ -1,0 +1,108 @@
+F........................................F....                      [100%]
+=================================== FAILURES ===================================
+___________ FeedbackTests.test_feedback_never_supports_or_registers ____________
+
+self = <test_quant_factor_cr097_flow.FeedbackTests testMethod=test_feedback_never_supports_or_registers>
+
+    def test_feedback_never_supports_or_registers(self):
+     row=self.row();row['archive']={'review':{'status':'requested','purpose':'research_feedback_only','assigned_to':9}}
+     c,w=self.conn(row)
+     with patch.object(review,'get_conn',return_value=w),self.assertRaises(policy.WorkflowError):review.record(9,2,row['id'],'research_supported','不能升级')
+>    with patch('services.quant_factor.assets.approve',side_effect=policy.WorkflowError('不是研究资产审批')),self.assertRaises(policy.WorkflowError):review.record(9,2,row['id'],'approve_research_and_register','不能升级',acknowledged=True,metadata={})
+                                                                                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E    TypeError: record() got an unexpected keyword argument 'acknowledged'
+
+tests/test_quant_factor_cr097_flow.py:22: TypeError
+__ F0ConcurrentStartTest.test_two_parallel_http_starts_schedule_only_one_run ___
+
+self = <test_quant_factor_f0.F0ConcurrentStartTest testMethod=test_two_parallel_http_starts_schedule_only_one_run>
+
+    def test_two_parallel_http_starts_schedule_only_one_run(self):
+        import threading
+        import time
+        from concurrent.futures import ThreadPoolExecutor
+        mutex = threading.RLock()
+        barrier = threading.Barrier(2)
+        runs = []
+        class FakeConnection:
+            def __init__(self):
+                self.locked = 0
+                self.row = None
+            def __enter__(self): return self
+            def __exit__(self, *args):
+                for _ in range(self.locked): mutex.release()
+            def execute(self, sql, params=()):
+                if 'pg_advisory_xact_lock' in sql:
+                    mutex.acquire(); self.locked += 1
+                elif 'quant_factor_branches' in sql: self.row = {'id': 'b'}
+                elif 'idempotency_key=%s' in sql:
+                    self.row = next((r for r in runs if r['key'] == params[-1]), None)
+                elif "status IN ('queued','running')" in sql: self.row = runs[0] if runs else None
+                else: raise AssertionError(sql)
+                return self
+            def fetchone(self): return self.row
+        def record(uid, org, topic, bid, key, status, *args):
+            time.sleep(.02)
+            row = {'id': 'one-run', 'key': key, 'status': status}
+            runs.append(row)
+            return row
+        def invoke(key):
+            barrier.wait(timeout=2)
+            return f0.start(1, 2, 't', 'b', key)
+        with patch.object(f0, 'get_conn', side_effect=FakeConnection), \
+             patch.object(f0, '_topic', return_value=TOPIC), \
+             patch.object(f0.service, 'control_status', return_value={'paused': False}), \
+             patch.object(f0, 'published_view', return_value={'view_id': 'v'}), \
+             patch.object(f0.ledger, '_trials', return_value=[]), \
+             patch.object(f0.ledger, 'current_k', return_value=0), \
+             patch.object(f0, '_record', side_effect=record), \
+             patch.object(f0.POOL, 'submit') as submit:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+>               results = list(pool.map(invoke, ['key-a', 'key-b']))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_quant_factor_f0.py:247: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../program/anaconda3/envs/researchengine/lib/python3.11/concurrent/futures/_base.py:619: in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../program/anaconda3/envs/researchengine/lib/python3.11/concurrent/futures/_base.py:317: in _result_or_cancel
+    return fut.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+../../../program/anaconda3/envs/researchengine/lib/python3.11/concurrent/futures/_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+../../../program/anaconda3/envs/researchengine/lib/python3.11/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+../../../program/anaconda3/envs/researchengine/lib/python3.11/concurrent/futures/thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_quant_factor_f0.py:237: in invoke
+    return f0.start(1, 2, 't', 'b', key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+services/quant_factor/f0.py:58: in start
+    return _start_locked(uid, org, topic_id, branch_id, idempotency_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+services/quant_factor/f0.py:110: in _start_locked
+    if remaining>0:require_config(get_project(uid,topic['project_id'])['project']['config'])
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+user_id = 1, project_id = 'p'
+
+    def get_project(user_id: int, project_id: str) -> dict[str, Any]:
+        ensure_sample_project(user_id)
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM detect_projects WHERE user_id = %s AND id = %s",
+                (user_id, project_id),
+            ).fetchone()
+        if not row:
+>           raise KeyError(project_id)
+E           KeyError: 'p'
+
+services/factor/detect_store.py:333: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_quant_factor_cr097_flow.py::FeedbackTests::test_feedback_never_supports_or_registers
+FAILED tests/test_quant_factor_f0.py::F0ConcurrentStartTest::test_two_parallel_http_starts_schedule_only_one_run
+2 failed, 44 passed, 5 subtests passed in 0.68s

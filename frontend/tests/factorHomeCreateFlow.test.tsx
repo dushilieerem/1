@@ -59,6 +59,7 @@ test('页面按钮路径：F0 响应丢失后重试复用任务与幂等键，�
     const path = new URL(String(input), 'http://localhost').pathname;
     const method = (init?.method || 'GET').toUpperCase();
     const body = init?.body ? JSON.parse(String(init.body)) : null;
+    if (path.endsWith('/compute-preflight')) return Response.json({allowed:true,reasons:[]});
     if (path.endsWith('/factor-workflow/topics') && method === 'GET') return Response.json({topics: allTopics});
     if (path.endsWith('/factor-workflow/overview')) return Response.json({counts: {sealed_used: 0}});
     if (path.endsWith('/factor-workflow/pending-review-count')) return Response.json({count: 0});
@@ -141,6 +142,7 @@ function scenario(options:Scenario={}){
  const projects=new Map<string,any>();let loseProject=!!options.projectLoss,loseTopic=!!options.topicLoss,loseRefresh=!!options.refreshLoss;
  globalThis.fetch=async(input,init)=>{
   const path=new URL(String(input),'http://localhost').pathname;const method=init?.method||'GET';const body=init?.body?JSON.parse(String(init.body)):{};
+  if(path.endsWith('/compute-preflight'))return Response.json({allowed:true,reasons:[]});
   if(path.endsWith('/factor-workflow/topics')){if(loseRefresh&&starts.length){loseRefresh=false;return Response.json({detail:'refresh failed'},{status:503});}return Response.json({topics});}
   if(path.endsWith('/overview'))return Response.json({counts:{sealed_used:0}});
   if(path.endsWith('/pending-review-count'))return Response.json({count:0});
@@ -298,4 +300,11 @@ test('真实组件：失败运行保留current_action也不显示正在检验，
  assert.equal(view.queryByText('因子研究系统运行中'),null);
  assert.ok(!currentWork.textContent?.includes('正在检验因子实现'));
  assert.ok(!currentWork.textContent?.includes('正在整理并执行独立验证'));
+});
+
+test('固定证券样本保存到config，启动预检拒绝时不创建项目或消耗模型',async()=>{
+ login();const data=scenario();const original=globalThis.fetch;let checks=0;
+ globalThis.fetch=async(input,init)=>{const path=new URL(String(input),'http://localhost').pathname;if(path.endsWith('/compute-preflight')){checks++;const body=JSON.parse(String(init?.body));assert.deepEqual(body.researchUniverseSymbols,['000001.SZ','600000.SH']);return Response.json({allowed:false,reasons:['日期区间未获准，未发起计算']});}return original(input,init);};
+ const view=render(<MemoryRouter><QuantFactorHomePage/></MemoryRouter>);await openNew(view);fireEvent.change(view.getByLabelText('固定证券清单（可选，研究样本）'),{target:{value:'000001.sz,600000.SH'}});fireEvent.click(view.getByRole('button',{name:'创建并启动'}));await waitFor(()=>assert.ok(view.getByText('日期区间未获准，未发起计算')));assert.equal(checks,1);assert.equal(data.projectIds.length,0);assert.equal(data.starts.length,0);
+ fireEvent.click(view.getByRole('button',{name:'保存草稿'}));await waitFor(()=>assert.ok(!view.queryByRole('dialog')));assert.deepEqual([...data.projects.values()][0].config.researchUniverseSymbols,['000001.SZ','600000.SH']);assert.equal(data.starts.length,0);fireEvent.click(view.getByRole('button',{name:'范围与预算'}));assert.ok(view.getByText('静态研究样本 · 2 个证券'));assert.ok(view.getByText('000001.SZ、600000.SH'));
 });

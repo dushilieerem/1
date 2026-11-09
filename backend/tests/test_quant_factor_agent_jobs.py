@@ -19,14 +19,14 @@ class AgentJobTests(unittest.TestCase):
   with patch.object(jobs,'update',return_value=False),patch('services.workflow_workspace.platform_data.published_view') as data,patch.object(jobs,'run_task') as model:
    self.assertIsNone(jobs._plan_task(1,2,'j',{}));data.assert_not_called();model.assert_not_called()
  def test_invalid_model_output_is_failure_not_fabricated_task(self):
-  with patch.object(jobs,'read',return_value={'status':'queued','stage':'F1','input':{'draft':{}}}),patch.object(jobs,'_plan_task',side_effect=ValueError('private upstream text')),patch.object(jobs,'update') as update:
+  with patch.object(jobs,'read',return_value={'status':'queued','stage':'F1','input':{'registered_rules':{'direction':'negative','icMetric':'rank_ic'},'draft':{}}}),patch.object(jobs,'_plan_task',side_effect=ValueError('private upstream text')),patch.object(jobs,'update') as update:
    jobs.run(1,2,'j');self.assertEqual(update.call_args.args[3],'failed');self.assertNotIn('private upstream text',str(update.call_args));self.assertEqual(len(update.call_args.args),5)
  def test_plan_job_only_returns_advisory_fields_not_dates_or_gates(self):
   out={'suggestion':{'hypothesis':'h','target':'t','acceptance':'a','minSignedIc':0,'developmentStart':'changed'}}
-  with patch.object(jobs,'read',return_value={'status':'queued','stage':'F2','project_id':'p','input':{'draft':{}}}),patch('services.quant_factor.assistant.suggest',return_value=out),patch.object(jobs,'update',return_value=True) as update:
+  with patch.object(jobs,'read',return_value={'status':'queued','stage':'F2','project_id':'p','input':{'registered_rules':{'direction':'negative','icMetric':'rank_ic'},'draft':{}}}),patch('services.quant_factor.assistant.suggest',return_value=out),patch.object(jobs,'update',return_value=True) as update:
    jobs.run(1,2,'j');self.assertEqual(update.call_args.args[3],'ready');self.assertEqual(update.call_args.args[5]['fields'],{'hypothesis':'h','target':'t','acceptance':'a'})
  def test_code_job_reuses_platform_generation_and_rejects_invalid_code(self):
-  with patch.object(jobs,'read',return_value={'status':'queued','stage':'F3','project_id':'p','input':{'draft':{'hypothesis':'some research question'}}}),patch.object(jobs,'assert_quota_available'),patch.object(jobs,'record_usage'),patch('app.routers.ai_factor_generation.ai_factor_generations',return_value={'status':'rejected','validation':{'status':'failed','errors':['unsafe']}}) as gen,patch.object(jobs,'update',return_value=True) as update:
+  with patch.object(jobs,'read',return_value={'status':'queued','stage':'F3','project_id':'p','input':{'registered_rules':{'direction':'negative','icMetric':'rank_ic'},'draft':{'hypothesis':'some research question'}}}),patch.object(jobs,'assert_quota_available'),patch.object(jobs,'record_usage'),patch('app.routers.ai_factor_generation.ai_factor_generations',return_value={'status':'rejected','validation':{'status':'failed','errors':['unsafe']}}) as gen,patch.object(jobs,'update',return_value=True) as update:
    jobs.run(1,2,'j');gen.assert_called_once();self.assertEqual(update.call_args.args[3],'failed');self.assertIn('unsafe',update.call_args.args[4]['message'])
  def test_idempotent_existing_input_never_schedules_model_twice(self):
   draft={'title':'x'};inputs={'draft':draft,'project_id':None,'stage':'F1'}
@@ -65,5 +65,5 @@ class AgentAuditTests(unittest.TestCase):
    self.assertIsNone(jobs.latest(1,2,'F1'));read.assert_not_called()
  def test_f3_generation_receives_expression_and_manual_code(self):
   d={'hypothesis':'h','candidateExpression':'window=5; zero range -> NaN','target':'1 day','name':'factor','code':'manual code'}
-  with patch.object(jobs,'read',return_value={'status':'queued','stage':'F3','project_id':'p','input':{'draft':d}}),patch.object(jobs,'assert_quota_available'),patch.object(jobs,'record_usage'),patch('app.routers.ai_factor_generation.ai_factor_generations',return_value={'status':'rejected','validation':{'status':'failed','errors':['stop']}}) as gen,patch.object(jobs,'update',return_value=True):
+  with patch.object(jobs,'read',return_value={'status':'queued','stage':'F3','project_id':'p','input':{'registered_rules':{'direction':'negative','icMetric':'rank_ic'},'draft':d}}),patch.object(jobs,'assert_quota_available'),patch.object(jobs,'record_usage'),patch('app.routers.ai_factor_generation.ai_factor_generations',return_value={'status':'rejected','validation':{'status':'failed','errors':['stop']}}) as gen,patch.object(jobs,'update',return_value=True):
    jobs.run(1,2,'j');prompt=gen.call_args.args[0]['prompt'];self.assertIn('window=5',prompt);self.assertIn('manual code',prompt);self.assertIn('1 day',prompt)

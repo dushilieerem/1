@@ -120,3 +120,28 @@ test('封存通过但未提交复核：验证环节当前，不是已进入审�
   assert.equal(s.currentStage, 'validation');
   assert.equal(stage(t, 'approval'), 'todo');
 });
+
+
+test('已有研发试验后系统异常仍是运行异常，不写未达标结束',()=>{
+ const state=deriveFactorTaskState({...base,trial_count:2,dispatch_status:'stopped',dispatch_stop_reason:'Connection timeout',latest_outcome:'failed'});
+ assert.equal(state.key,'error');assert.equal(state.currentStage,'development');
+});
+test('研发达标但未封存不能显示可提交复核',()=>{
+ const state=deriveFactorTaskState({...base,trial_count:1,dispatch_status:'stopped',latest_outcome:'passed'});
+ assert.equal(state.label,'待独立验证');assert.equal(state.currentStage,'development');
+});
+test('第一次真实研发动作即进入研发，无需等待首条试验返回',()=>{
+ const state=deriveFactorTaskState({...base,dispatch_status:'running',dispatch_action:'run_test'});
+ assert.equal(state.key,'running');assert.equal(state.currentStage,'development');
+});
+
+
+test('独立验证真实动作不误标研发运行',()=>{
+ const state=deriveFactorTaskState({...base,dispatch_status:'running',dispatch_action:'request_seal',trial_count:1});
+ assert.equal(state.key,'validating');assert.equal(state.currentStage,'validation');
+});
+test('预算授权、全局暂停、数据版本等待按真实原因分别表达',()=>{
+ assert.equal(deriveFactorTaskState({...base,dispatch_status:'stopped',dispatch_stop_reason:'预算不足，等待负责人授权'}).label,'等待负责人授权');
+ assert.equal(deriveFactorTaskState({...base,dispatch_status:'stopped',dispatch_stop_reason:'global_pause'}).label,'等待恢复研究');
+ assert.equal(deriveFactorTaskState({...base,dispatch_status:'stopped',dispatch_stop_reason:'locked_view_drift'}).label,'等待数据版本确认');
+});

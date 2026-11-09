@@ -17,7 +17,7 @@ def conn(fetchone=None):
 
 class F0StartTest(unittest.TestCase):
     def test_view_drift_stops(self):
-        w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None]
+        w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None, None]
         with patch.object(f0, '_topic', return_value=TOPIC), patch.object(f0, 'get_conn', return_value=w), \
              patch.object(f0, 'published_view', return_value={'view_id': 'new'}), \
              patch.object(f0, '_record', return_value={'status': 'stopped'}) as rec:
@@ -26,7 +26,7 @@ class F0StartTest(unittest.TestCase):
         self.assertEqual(rec.call_args.args[6]['reason'], 'locked_view_drift')
 
     def test_budget_uses_k_not_candidates(self):
-        w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None]
+        w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None, None]
         with patch.object(f0, '_topic', return_value=TOPIC), patch.object(f0, 'get_conn', return_value=w), \
              patch.object(f0, 'published_view', return_value={'view_id': 'v'}), \
              patch.object(f0.ledger, '_trials', return_value=[]), \
@@ -50,11 +50,24 @@ class F0StartTest(unittest.TestCase):
                 f0.start(1, 2, 't', 'foreign', 'k1')
 
     def test_paused_topic_stops(self):
-        w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None]
+        w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None, None]
         with patch.object(f0, '_topic', return_value={**TOPIC, 'status': 'paused'}), \
              patch.object(f0, 'get_conn', return_value=w), patch.object(f0, '_record', return_value={'status': 'stopped'}) as rec:
             f0.start(1, 2, 't', 'b', 'k1')
         self.assertEqual(rec.call_args.args[6]['reason'], 'topic_paused')
+
+
+class F0SingleFlightTest(unittest.TestCase):
+    def test_different_key_reuses_inflight_run_without_scheduling(self):
+        w, c = conn()
+        c.fetchone.side_effect = [{'id': 'b'}, None, {'id': 'running-1', 'status': 'running'}]
+        with patch.object(f0, '_topic', return_value=TOPIC), patch.object(f0, 'get_conn', return_value=w), \
+             patch.object(f0, '_record') as record, patch.object(f0.POOL, 'submit') as submit:
+            result = f0.start(1, 2, 't', 'b', 'another-key')
+        self.assertEqual(result['id'], 'running-1')
+        self.assertIn('pg_advisory_xact_lock', c.execute.call_args_list[0].args[0])
+        record.assert_not_called()
+        submit.assert_not_called()
 
 
 class F0RunTest(unittest.TestCase):
@@ -181,3 +194,51 @@ class EchoedContextTest(unittest.TestCase):
     def test_unknown_field_still_rejected(self):
         with self.assertRaisesRegex(WorkflowError, '无法解析'):
             self._decide({'action': 'run_test', 'rationale': 'K=0 首次检验，t*=1.96', 'surprise': 1})
+
+
+class F0ConcurrentStartTest(unittest.TestCase):
+    def test_two_parallel_http_starts_schedule_only_one_run(self):
+        import threading
+        import time
+        from concurrent.futures import ThreadPoolExecutor
+        mutex = threading.Lock()
+        barrier = threading.Barrier(2)
+        runs = []
+        class FakeConnection:
+            def __init__(self):
+                self.locked = False
+                self.row = None
+            def __enter__(self): return self
+            def __exit__(self, *args):
+                if self.locked: mutex.release()
+            def execute(self, sql, params=()):
+                if 'pg_advisory_xact_lock' in sql:
+                    mutex.acquire(); self.locked = True
+                elif 'quant_factor_branches' in sql: self.row = {'id': 'b'}
+                elif 'idempotency_key=%s' in sql:
+                    self.row = next((r for r in runs if r['key'] == params[-1]), None)
+                elif "status IN ('queued','running')" in sql: self.row = runs[0] if runs else None
+                else: raise AssertionError(sql)
+                return self
+            def fetchone(self): return self.row
+        def record(uid, org, topic, bid, key, status, *args):
+            time.sleep(.02)
+            row = {'id': 'one-run', 'key': key, 'status': status}
+            runs.append(row)
+            return row
+        def invoke(key):
+            barrier.wait(timeout=2)
+            return f0.start(1, 2, 't', 'b', key)
+        with patch.object(f0, 'get_conn', side_effect=FakeConnection), \
+             patch.object(f0, '_topic', return_value=TOPIC), \
+             patch.object(f0.service, 'control_status', return_value={'paused': False}), \
+             patch.object(f0, 'published_view', return_value={'view_id': 'v'}), \
+             patch.object(f0.ledger, '_trials', return_value=[]), \
+             patch.object(f0.ledger, 'current_k', return_value=0), \
+             patch.object(f0, '_record', side_effect=record), \
+             patch.object(f0.POOL, 'submit') as submit:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(invoke, ['key-a', 'key-b']))
+        self.assertEqual(len(runs), 1)
+        self.assertEqual([r['id'] for r in results], ['one-run', 'one-run'])
+        submit.assert_called_once()

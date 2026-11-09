@@ -211,36 +211,26 @@
 .quant-shell .tab-more>summary{list-style:none;cursor:pointer}
 .quant-shell .tab-more>summary::-webkit-details-marker{display:none}
 .quant-shell .tab-more-menu{position:absolute;top:100%;left:0;z-index:20;min-width:140px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);padding:6px;display:grid;gap:2px}
-.quant-shell .ff-columns{display:grid;grid-template-columns:260px minmax(0,1fr);gap:16px;align-items:start}
-.quant-shell .ff-task-list{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;display:grid;gap:8px;position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto}
-.quant-shell .ff-task-list h2{font-size:14px;margin:0 0 4px}
-.quant-shell .ff-task-filter{width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--ink)}
-.quant-shell .ff-task{display:grid;gap:4px;text-align:left;padding:10px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--ink)}
-.quant-shell .ff-task small,.quant-shell .ff-task time{color:var(--muted);font-size:11px}
-.quant-shell .ff-task.selected{border-color:var(--primary);box-shadow:0 0 0 2px var(--soft)}
-.quant-shell .ff-task-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.quant-shell .ff-detail{display:grid;gap:12px;min-width:0}
-.quant-shell .ff-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
-.quant-shell .ff-detail-head h2{margin:4px 0 2px}
-.quant-shell .ff-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
-.quant-shell .ff-step{display:flex;align-items:flex-start;gap:8px;text-align:left;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:9px;color:var(--ink)}
-.quant-shell .ff-step .ff-num{flex:0 0 22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--soft);color:var(--primary);font-size:11px;font-weight:600}
-.quant-shell .ff-step b{display:block;font-size:12.5px}.quant-shell .ff-step small{display:block;font-size:10.5px;color:var(--muted)}.quant-shell .ff-step em{display:block;font-style:normal;font-size:10.5px;color:var(--muted);margin-top:2px}
-.quant-shell .ff-step.done .ff-num{background:var(--green-bg);color:var(--green)}
-.quant-shell .ff-step.current{border-color:var(--primary)}
-.quant-shell .ff-step.selected{box-shadow:0 0 0 2px var(--soft)}
-.quant-shell .ff-stage-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:12px;align-items:start}
-.quant-shell .ff-stage-card .card-body{min-height:180px}
-.quant-shell .ff-live{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:grid;gap:8px}
-.quant-shell .ff-live h3{margin:2px 0 4px}.quant-shell .ff-live ol{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:12px;display:grid;gap:4px}
-.quant-shell .ff-live time{display:block;font-size:10.5px;color:var(--muted)}
-.quant-shell .ff-now{font-size:13px;font-weight:500;margin-top:2px}
-.quant-shell .ff-error{background:var(--red-bg);border:1px solid #e3b9c6;border-radius:12px;padding:12px 14px}
-.quant-shell .ff-error p{margin:4px 0 8px;font-size:12.5px}
-.quant-shell .ff-error details{margin-top:8px;font-size:11.5px;color:var(--muted)}
-@media(max-width:1100px){.quant-shell .ff-columns{grid-template-columns:1fr}.quant-shell .ff-task-list{position:static;max-height:none}.quant-shell .ff-stage-grid{grid-template-columns:1fr}}
-@media(max-width:760px){.quant-shell .ff-steps{grid-template-columns:1fr 1fr}}
-.quant-shell .badge.ok{background:var(--green-bg);color:var(--green)}
-@media(max-width:1100px){.quant-shell .ff-columns{grid-template-columns:220px minmax(0,1fr)}.quant-shell .ff-task-list{position:static;max-height:none}}
-@media(max-width:860px){.quant-shell .ff-columns{grid-template-columns:1fr}}
-@media(max-width:1100px){.quant-shell .ff-stage-grid>.ff-live{order:-1}}
+/* CR-083 task detail: reuse the prototype dimensions and light hierarchy. */
+.quant-shell .ff-columns{display:grid;grid-template-columns:210px minmax(0,1fr);gap:22px;align-items:start}
+.quant-shell .ff-task-list{min-width:0;position:sticky;top:16px;display:flex;flex-direction:column;max-height:calc(100vh - 32px)}
+.quant-shell .ff-task-list h2{font-size:12px;margin-bottom:12px;color:var(--muted);font-weight:500}
+.quant-shell .ff-task-filter{width:100%;margin-bottom:9px;border:1px solid var(--border);border-radius:6px;padding:8px 10px;background:white;color:var(--ink);font-size:12px}
+.quant-shell .ff-task-items{overflow-y:auto;min-height:0;overscroll-behavior:contain}
+.quant-shell .ff-task{display:block;width:100%;text-align:left;border:1px solid transparent;border-radius:9px;background:transparent;padding:14px 12px;margin-bottom:7px;color:var(--ink)}
+.quant-shell .ff-task.selected{border-color:#d8c6e6;background:white;box-shadow:0 4px 18px #3b285306}
+.quant-shell .ff-task:hover{background:white}.quant-shell .ff-task strong{display:block;font-size:12px;line-height:1.7;margin:6px 0}.quant-shell .ff-task small,.quant-shell .ff-task time{font-size:10px;display:block;color:var(--muted)}.quant-shell .ff-task-row{display:flex;justify-content:space-between;gap:6px;align-items:center}
+.quant-shell .ff-detail{min-width:0}.quant-shell .ff-detail-head{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;margin-bottom:17px}.quant-shell .ff-detail-head h2{font-size:21px;letter-spacing:-.5px;margin:5px 0 8px}.quant-shell .ff-detail-head p{font-size:11px;color:var(--muted)}
+.quant-shell .ff-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--border);border-radius:10px;padding:6px;background:white;margin-bottom:16px;gap:3px}
+.quant-shell .ff-step{display:flex;gap:8px;align-items:flex-start;text-align:left;padding:12px 9px;background:transparent;border:1px solid transparent;border-radius:7px;color:var(--muted);min-width:0}.quant-shell .ff-step:hover{background:#faf8fc}.quant-shell .ff-step.selected{background:var(--soft);color:var(--primary);border-color:#e2d4ec}
+.quant-shell .ff-num{display:grid;place-items:center;flex-shrink:0;width:22px;height:22px;border-radius:50%;background:var(--bg);font-size:11px}.quant-shell .ff-step.done .ff-num{background:var(--green-bg);color:var(--green)}.quant-shell .ff-step.current .ff-num{color:white;background:var(--primary)}.quant-shell .ff-step b{font-size:12px;display:block}.quant-shell .ff-step small{display:block;font-size:9px;line-height:1.65;margin-top:3px}.quant-shell .ff-step em{font-style:normal;font-size:9px;display:block;margin-top:4px}
+.quant-shell .ff-stage-grid{display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:16px;align-items:start}.quant-shell .ff-stage-grid .card-head,.quant-shell .ff-stage-grid .card-body{padding:17px 18px}
+.quant-shell .ff-label{font-size:10px;color:var(--muted);letter-spacing:.4px;margin-bottom:6px}.quant-shell .ff-copy{font-size:12px;line-height:1.9;color:#5a5065}.quant-shell .ff-kv{display:grid;grid-template-columns:90px minmax(0,1fr);gap:10px 12px;font-size:12px;margin:0}.quant-shell .ff-kv dt{color:var(--muted)}.quant-shell .ff-kv dd{margin:0;overflow-wrap:anywhere}
+.quant-shell .ff-code{background:#f8f6fb;border:1px solid var(--border);border-radius:6px;padding:13px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.9 ui-monospace,Consolas,monospace;margin:12px 0;max-height:360px}.quant-shell .ff-divider{border:0;border-top:1px solid var(--border);margin:17px 0}
+.quant-shell .ff-live{padding:17px;background:white;border:1px solid var(--border);border-radius:10px;font-size:11px}.quant-shell .ff-live h3{font-size:13px}.quant-shell .ff-live .ff-now{font-size:13px;line-height:1.8;margin:12px 0 4px;color:var(--primary)}.quant-shell .ff-live p{font-size:11px;color:var(--muted)}.quant-shell .ff-live ol{padding:0;margin:18px 0;list-style:none}.quant-shell .ff-live li{border-left:1px solid var(--border);padding:0 0 17px 12px;margin-left:4px;position:relative;font-size:11px}.quant-shell .ff-live li:before{content:'';width:5px;height:5px;position:absolute;background:#b4a2c5;border-radius:50%;left:-3px;top:7px}.quant-shell .ff-live time{display:block;color:var(--muted);font-size:10px}
+.quant-shell .ff-error{background:var(--red-bg);border:1px solid #edcfd6;border-radius:8px;padding:14px 16px;margin-bottom:16px;font-size:12px;color:var(--red)}.quant-shell .ff-error p{margin:4px 0 10px}.quant-shell .ff-error details{font-size:10px;margin-top:10px}
+@media(max-width:1250px){.quant-shell .ff-columns{grid-template-columns:180px minmax(0,1fr);gap:16px}.quant-shell .ff-stage-grid{grid-template-columns:1fr}.quant-shell .ff-stage-grid>.ff-live{order:-1}.quant-shell .ff-detail-head{flex-wrap:wrap}.quant-shell .ff-step{padding:10px 6px;gap:5px}}
+@media(max-width:1050px){.quant-shell .ff-columns{grid-template-columns:165px minmax(0,1fr)}.quant-shell .ff-steps{gap:1px}.quant-shell .ff-step{display:block}.quant-shell .ff-num{margin-bottom:5px}}
+@media(max-width:800px){.quant-shell .ff-columns{grid-template-columns:1fr}.quant-shell .ff-task-list{position:static;max-height:340px}.quant-shell .ff-steps{grid-template-columns:repeat(2,minmax(0,1fr))}.quant-shell .ff-step{display:flex}}
+
+.quant-shell .ff-create-fields{border:0;padding:0;margin:0;min-width:0}

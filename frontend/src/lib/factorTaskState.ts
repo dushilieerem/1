@@ -11,6 +11,7 @@ export type FactorTaskFacts = {
   dispatch_status?: string | null;
   dispatch_stop_reason?: string | null;
   latest_outcome?: string | null;
+  dispatch_action?: string | null;
   trial_count: number;
   sealed_used?: number;
   sealed_passed?: number;
@@ -60,7 +61,7 @@ const STAGES: Array<{ id: StageId; label: string; role: string }> = [
 ];
 
 const STOP_WAIT = ['global_pause', 'locked_view_drift', 'service_unavailable', 'resource', 'waiting', '暂停全部', '负责人已暂停', '视图不一致', '服务不可用', '资源不足'];
-const STOP_INTERRUPT = ['中断', '异常', '重启', 'failed', 'error', 'not json serializable', 'traceback', '崩溃'];
+const STOP_INTERRUPT = ['中断', '异常', '重启', 'failed', 'error', 'not json serializable', 'traceback', '崩溃', 'timeout', 'connection', 'unavailable'];
 const STOP_BUDGET = ['budget_exhausted', '预算', 'budget'];
 
 function stopReason(t: FactorTaskFacts): string {
@@ -117,7 +118,7 @@ export function deriveFactorTaskState(t: FactorTaskFacts): FactorTaskState {
   } else if ((t.pending_review || 0) > 0) {
     key = 'review'; label = '待人工审批'; tone = 'warn';
     needsYou = '等待独立复核人查看冻结证据并决定，研究员不能批准自己的成果。';
-  } else if ((t.sealed_running || 0) > 0) {
+  } else if ((t.sealed_running || 0) > 0 || (dispatch === 'running' && t.dispatch_action === 'request_seal')) {
     key = 'validating'; label = '独立验证中'; tone = 'live';
     needsYou = '封存验证正在执行；结果返回前不能送审或继续调参。';
   } else if (t.status === 'paused') {
@@ -127,18 +128,26 @@ export function deriveFactorTaskState(t: FactorTaskFacts): FactorTaskState {
     key = 'error'; label = '服务异常'; tone = 'bad';
     needsYou = '可重试启动并保留原任务；连续异常请联系维护人员，技术原文见诊断详情。';
   } else if (dispatch === 'stopped') {
-    if (STOP_WAIT.some((s) => reason.includes(s))) {
+    if (['authorization','授权','额度不足','预算不足'].some(s=>reason.includes(s))) {
+      key = 'waiting'; label = '等待负责人授权'; tone = 'warn';
+      needsYou = '当前范围或预算不足；由负责人处理授权后再继续，已有记录保留。';
+    } else if (STOP_WAIT.some((s) => reason.includes(s))) {
       key = 'waiting'; label = '等待计算服务'; tone = 'warn';
-      needsYou = '已记录服务/授权缺口，暂不能继续验证；恢复后从原任务重试。';
-    } else if (STOP_INTERRUPT.some((s) => reason.includes(s)) && (t.trial_count || 0) === 0) {
-      key = 'error'; label = '启动未完成'; tone = 'bad';
-      needsYou = '任务已创建但没有产生试验；可重试启动，身份与证据保留。';
+      needsYou = '所需数据或计算条件尚未恢复；已有记录保留，恢复后从原任务继续。';
+      if(['global_pause','暂停全部','负责人已暂停'].some(s=>reason.includes(s))){label='等待恢复研究';needsYou='负责人已暂停自动研究；恢复前不启动新动作，在途证据保留。';}
+      if(['locked_view_drift','视图不一致'].some(s=>reason.includes(s))){label='等待数据版本确认';needsYou='任务数据版本与当前发布版本不一致；请由负责人核对，不能自动替换固定数据。';}
+    } else if (STOP_INTERRUPT.some((s) => reason.includes(s))) {
+      key = 'error'; label = '运行异常'; tone = 'bad';
+      needsYou = '本次运行因服务异常中断；已有试验保留，可重试或人工接手，诊断详情保留技术原因。';
     } else if (STOP_BUDGET.some((s) => reason.includes(s))) {
       key = 'ended'; label = '未达标，已结束'; tone = 'gray';
       needsYou = '预算已用尽，全部试验与报告保留；需要新预算须走新的授权计划。';
-    } else if (t.latest_outcome === 'passed' || (t.sealed_passed || 0) > 0) {
+    } else if ((t.sealed_passed || 0) > 0) {
       key = 'review_ready'; label = '待提交独立复核'; tone = 'warn';
       needsYou = '研发或封存已通过；请提交独立复核，不能由研究员自行批准。';
+    } else if (t.latest_outcome === 'passed') {
+      key = 'waiting'; label = '待独立验证'; tone = 'warn';
+      needsYou = '研发检验已通过，尚无通过的封存验证；请查看验证要求，不能直接审批。';
     } else if (t.latest_outcome === 'failed') {
       key = 'ended'; label = '未达标，已结束'; tone = 'gray';
       needsYou = '本轮未达标，证据已归档；可查看研究历程或经授权开启新计划。';
@@ -147,8 +156,11 @@ export function deriveFactorTaskState(t: FactorTaskFacts): FactorTaskState {
       needsYou = '研究已停止，证据与报告保留；需要继续时由人工决定。';
     }
   } else if (dispatch === 'queued' || dispatch === 'running') {
-    if ((t.trial_count || 0) === 0) {
-      key = 'preparing'; label = '准备中'; tone = 'live';
+    if (dispatch === 'queued') {
+      key = 'preparing'; label = '排队中'; tone = 'live';
+      needsYou = '启动请求已接受，等待执行；可查看范围与预算。';
+    } else if (!t.dispatch_action && (t.trial_count || 0) === 0) {
+      key = 'preparing'; label = '研究准备中'; tone = 'live';
       needsYou = '研究准备 Agent 正在建立首个可检验假设；页面不强制推进。';
     } else {
       key = 'running'; label = '研发运行中'; tone = 'live';
@@ -165,7 +177,8 @@ export function deriveFactorTaskState(t: FactorTaskFacts): FactorTaskState {
     needsYou = '任务已保存但尚未启动；可启动挖掘，草稿不会自动产生计算。';
   }
 
-  const current = Math.max(inferArtifactStage(t), stateStage(key));
+  const actionStage = t.dispatch_action === 'request_seal' ? 2 : ['run_test','revise','pivot'].includes(t.dispatch_action || '') ? 1 : 0;
+  const current = Math.max(inferArtifactStage(t), stateStage(key), actionStage);
   const currentStage = STAGES[current].id;
   return { key, label, tone, currentStage, stages: buildStages(current, key === 'admitted'), needsYou };
 }

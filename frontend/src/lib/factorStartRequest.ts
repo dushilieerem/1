@@ -6,6 +6,8 @@
  * 只在启动确认成功后清除；草稿不生成键。
  */
 
+const memoryKeys = new Map<string, string>();
+
 const PREFIX = 'svquant:factor:f0-start:';
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -21,19 +23,25 @@ export function getOrCreateStartKey(
   makeKey: () => string,
 ): string {
   const k = key(topicId, branchId);
+  const remembered = memoryKeys.get(k);
+  if (remembered) return remembered;
   try {
     const existing = storage.getItem(k);
-    if (existing) return existing;
+    if (existing) { memoryKeys.set(k, existing); return existing; }
     const next = makeKey();
+    memoryKeys.set(k, next);
     storage.setItem(k, next);
     return next;
   } catch {
-    // 存储不可用时至少保证本次调用有键；页面仍会显示失败并允许人工重试。
-    return makeKey();
+    // 存储不可用时在本页面内保留身份；刷新后的恢复仍由服务端在途锁保护。
+    const next = memoryKeys.get(k) || makeKey();
+    memoryKeys.set(k, next);
+    return next;
   }
 }
 
 export function clearStartKey(storage: StorageLike, topicId: string, branchId: string): void {
+  memoryKeys.delete(key(topicId, branchId));
   try {
     storage.removeItem(key(topicId, branchId));
   } catch {

@@ -43,3 +43,12 @@ test('草稿路径不生成启动键', () => {
   const storage = memoryStorage();
   assert.equal(storage.getItem('svquant:factor:f0-start:t1:b1'), null);
 });
+
+
+test('浏览器存储不可用时同一页面仍复用启动身份',()=>{
+ const unavailable={getItem(){throw Error('disabled')},setItem(){throw Error('disabled')},removeItem(){throw Error('disabled')}};
+ let i=0;const first=getOrCreateStartKey(unavailable,'no-storage-topic','branch',()=>String(++i));
+ assert.equal(getOrCreateStartKey(unavailable,'no-storage-topic','branch',()=>String(++i)),first);
+ clearStartKey(unavailable,'no-storage-topic','branch');
+ assert.notEqual(getOrCreateStartKey(unavailable,'no-storage-topic','branch',()=>String(++i)),first);
+});

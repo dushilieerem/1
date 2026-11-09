@@ -49,6 +49,15 @@ def _record(uid, org, topic, branch_id, key, status, decision=None, reason="", r
 
 
 def start(uid, org, topic_id, branch_id, idempotency_key):
+    # Serialize logical starts across HTTP workers, including different retry keys.
+    # Keep this transaction open until the accepted run is durably recorded.
+    with get_conn() as lock:
+        lock.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                     (f"quant-factor-start:{uid}:{org}:{topic_id}",))
+        return _start_locked(uid, org, topic_id, branch_id, idempotency_key)
+
+
+def _start_locked(uid, org, topic_id, branch_id, idempotency_key):
     key = str(idempotency_key or "").strip()
     if not 1 <= len(key) <= 100:
         raise WorkflowError("请提供 1—100 字符的幂等键")
@@ -64,6 +73,12 @@ def start(uid, org, topic_id, branch_id, idempotency_key):
             (uid, org, topic_id, key)).fetchone()
     if existing:
         return _public(existing)
+    with get_conn() as c:
+        active = c.execute(
+            "SELECT * FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1",
+            (uid, org, topic_id)).fetchone()
+    if active:
+        return _public(active)
     if topic["status"] != "active":
         return _public(_record(uid, org, topic, branch_id, key, "stopped",
                                {"action": "stop", "reason": "topic_" + topic["status"]},
@@ -98,7 +113,16 @@ def run(uid, org, run_id):
             c.execute("UPDATE quant_factor_f0_runs SET status='running',updated_at=NOW() WHERE id=%s", (run_id,))
         topic = _topic(uid, org, row["topic_id"])
         steps = []
+        current_steps = []
+        def execute_step(decision, step):
+            with get_conn() as c:
+                c.execute("UPDATE quant_factor_f0_runs SET decision=%s::jsonb,updated_at=NOW() WHERE id=%s AND status='running'",
+                          (service.store.encode({"steps": current_steps, "current_action": decision.action}), run_id))
+            return f0_agent.execute(uid, org, run_id, topic, decision, step)
+
         def on_step(step, entry, current):
+            nonlocal current_steps
+            current_steps = list(current)
             with get_conn() as c:
                 c.execute("UPDATE quant_factor_f0_runs SET rounds=%s,decision=%s::jsonb,updated_at=NOW() WHERE id=%s AND status='running'",
                           (step, service.store.encode({"steps": current}), run_id))
@@ -133,7 +157,7 @@ def run(uid, org, run_id):
 
         steps, stop_reason = decision_engine.run_steps(
             decide=lambda step: f0_agent.decide(uid, org, topic, run_id),
-            execute=lambda decision, step: f0_agent.execute(uid, org, run_id, topic, decision, step),
+            execute=execute_step,
             max_steps=max_steps,
             before_step=before_step,
             stop_when=stop_when,
@@ -146,7 +170,7 @@ def run(uid, org, run_id):
     except Exception as exc:
         with get_conn() as c:
             c.execute(
-                "UPDATE quant_factor_f0_runs SET status='stopped',stop_reason=%s,updated_at=NOW() WHERE id=%s AND status IN ('queued','running')",
+                "UPDATE quant_factor_f0_runs SET status='failed',stop_reason=%s,updated_at=NOW() WHERE id=%s AND status IN ('queued','running')",
                 (str(exc)[:1000], run_id))
 
 

@@ -9,6 +9,13 @@ from .policy import WorkflowError
 from . import ledger
 from .metrics import threshold
 
+def _require_novelty(row):
+    novelty = (row.get('evidence') or {}).get('development', {}).get('novelty') or {}
+    gate = novelty.get('gate') or {}
+    if gate.get('passed') is not True or gate.get('complete') is not True:
+        raise WorkflowError('候选缺少完整查重证据（R4/novelty），不能提交审查或批准入库')
+
+
 def request_review(uid,org,cid,note):
     if not note.strip():raise WorkflowError('请说明需要复核的研究问题')
     with get_conn() as c:
@@ -17,6 +24,7 @@ def request_review(uid,org,cid,note):
         card=dict(row['archive'] or {'approved': False, 'sealed': False})
         if row['status'].endswith('_running') or not row['evidence'].get('development',{}).get('gate'):
             raise WorkflowError('请先完成研发检验并保存研究因子卡')
+        _require_novelty(row)
         if card.get('review'):return public(dict(row))
         card['review']={'status':'requested','question':note.strip(),'at':datetime.now(timezone.utc).isoformat(),'snapshot_hash':row['snapshot_hash'],'purpose':'research_feedback_only'}
         c.execute('UPDATE quant_factor_candidates SET archive=%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s',(store.encode(card),store.encode([event('review_requested')]),cid))
@@ -108,6 +116,7 @@ def record(uid,org,cid,decision,note):
         ensure_reviewer(row,uid)
         from .novelty_policy import handoff_allowed
         if decision=='research_supported':
+            _require_novelty(row)
             ctx=_ledger_context(org,row['project_id'])
             if ctx:
                 checks=(row['evidence'].get('development') or {}).get('gate',{}).get('checks') or []

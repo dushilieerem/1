@@ -29,7 +29,7 @@ def code_identity(source):
         return hashlib.sha256(ast.dump(Canonical().visit(tree),include_attributes=False).encode()).hexdigest()
     except (SyntaxError,ValueError,TypeError,IndexError):return None
 
-def catalogue(uid):
+def catalogue(uid, org=None):
     from services.factor.re_factor_catalog import fetch_re_catalog
     from services.factor.user_library_store import list_all_user_library_factors
     raw=fetch_re_catalog(include_all=True)
@@ -37,8 +37,15 @@ def catalogue(uid):
         raise WorkflowError('因子库目录读取不完整，暂停新因子选题；请恢复目录后重试。')
     builtins=[{'library_name':f['library'],'factor_name':f['name'],'description':str(f.get('display_name') or '')+'：'+str(f.get('description') or ''),'category':f.get('category_name') or f.get('category_label') or ''} for f in raw['factors']]
     owned=[{'factor_name':f['name'],'factor_code':f['body'],'source_id':'user:'+str(f['id']),'library_name':f.get('libraryName',''),'description':f.get('description','')} for f in list_all_user_library_factors(uid) if f.get('formulaReady') and f.get('body')]
-    identities=[{'id':f['library_name']+':'+f['factor_name'],'metadata_hash':digest(f)} for f in builtins]+[{'id':f['source_id'],'hash':hashlib.sha256(f['factor_code'].encode()).hexdigest()} for f in owned]
-    return {'scope':'平台内置目录与当前账号已有可计算定义的自建因子；不含无代码草稿和其他成员私有库','builtins':builtins,'owned':owned,'hash':digest(identities),'catalogue_fetched_at':raw.get('fetched_at'),'count':len(identities)}
+    pending=[]
+    if org is not None:
+        from services.core.db import get_conn
+        with get_conn() as c:
+            rows=c.execute(
+                "SELECT id,snapshot->'request'->>'factor_name' AS factor_name,snapshot->'request'->>'factor_code' AS factor_code,snapshot->'request'->>'library_name' AS library_name FROM quant_factor_candidates WHERE org_id=%s AND archive->'review'->>'status'='requested' ORDER BY updated_at DESC",(org,)).fetchall()
+        pending=[{'factor_name':r['factor_name'],'factor_code':r['factor_code'],'source_id':'pending:'+r['id'],'library_name':'本机构待审候选','description':'同机构待审候选 '+(r['factor_name'] or '')} for r in rows if r.get('factor_code')]
+    identities=[{'id':f['library_name']+':'+f['factor_name'],'metadata_hash':digest(f)} for f in builtins]+[{'id':f['source_id'],'hash':hashlib.sha256(f['factor_code'].encode()).hexdigest()} for f in owned+pending]
+    return {'scope':'平台内置目录、当前账号已有可计算定义的自建因子、本机构待审候选；不含无代码草稿和其他成员私有库','builtins':builtins,'owned':owned+pending,'hash':digest(identities),'catalogue_fetched_at':raw.get('fetched_at'),'count':len(identities)}
 
 def planner_context(refs):
     # Full visible metadata within a bounded context. Never silently truncate then claim full coverage.

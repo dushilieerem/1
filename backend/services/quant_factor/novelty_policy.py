@@ -1,7 +1,7 @@
 """Product gates only. Factor-value computation belongs to ResearchEngine."""
 from .policy import WorkflowError,number
 
-DEFAULTS={'maxAbsCorrelation':.8,'minDays':60,'minPairs':30,'minCoverage':.8}
+DEFAULTS={'maxAbsCorrelation':.7,'minDays':60,'minPairs':30,'minCoverage':.8}
 
 def policy(plan):
     kind=plan.get('researchPurpose','legacy')
@@ -39,8 +39,8 @@ def evaluate_comparison(result,rules,expected_release,expected_source):
     complete=complete and not failed and len(compared)==expected
     closest=max(compared,key=lambda r:r['mean_abs_spearman']) if compared else None
     max_rho=closest['mean_abs_spearman'] if closest else None
-    return {'status':'failed' if max_rho is not None and max_rho>rules['maxAbsCorrelation'] else 'passed' if complete else 'incomplete',
-            'passed':bool(complete and max_rho<=rules['maxAbsCorrelation']),'complete':complete,
+    return {'status':'failed' if max_rho is not None and max_rho>=rules['maxAbsCorrelation'] else 'passed' if complete else 'incomplete',
+            'passed':bool(complete and max_rho<rules['maxAbsCorrelation']),'complete':complete,
             'expected_count':expected,'compared_count':len(compared),'failed_references':failed,
             'max_abs_correlation':max_rho,'closest':closest,'threshold':rules['maxAbsCorrelation'],
             'residual':result.get('residual',{'status':'not_supported'}),

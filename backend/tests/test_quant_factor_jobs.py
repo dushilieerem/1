@@ -72,3 +72,25 @@ class InterruptedCandidateTest(unittest.TestCase):
         self.assertTrue(args[5]['development']['interrupted'])
         self.assertIn('重启', args[5]['development']['message'])
         self.assertEqual(args[4]['action'], 'run_interrupted')
+
+
+class RetryBudgetTest(unittest.TestCase):
+    def test_retry_rejects_when_budget_exhausted(self):
+        from unittest.mock import MagicMock, patch
+        from services.quant_factor import ledger, service
+        from services.quant_factor.policy import WorkflowError
+        row = {'id': 'c1', 'user_id': 9, 'org_id': 2, 'project_id': 'p',
+               'status': 'development_error', 'evidence': {'development': {'interrupted': True}}}
+        cursor = MagicMock()
+        cursor.execute.return_value.fetchone.side_effect = [
+            {'id': 't1', 'max_trials': 3, 'primary_holding_period': 1},
+            {'n': 0},
+        ]
+        conn = MagicMock(); conn.__enter__.return_value = cursor
+        with patch.object(service.store, 'read', return_value=row), \
+             patch.object(service, 'get_conn', return_value=conn), \
+             patch.object(ledger, '_trials', return_value=[]), \
+             patch.object(ledger, 'current_k', return_value=3), \
+             patch.object(service, '_dispatch', return_value=None):
+            with self.assertRaisesRegex(WorkflowError, '试验预算'):
+                service.retry_development(9, 2, 'c1')

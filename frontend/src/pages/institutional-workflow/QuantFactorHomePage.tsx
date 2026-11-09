@@ -148,7 +148,7 @@ export function QuantFactorHomePage(){
   if(creatingBusy)return;setCreatingBusy(true);setCreateErr('');
   try{
    const p=await createProject(nt.factor,nt.hypothesis,nt.name);
-   const plan={revision:'nt-'+Date.now(),hypothesis:nt.hypothesis,candidateExpression:'',improvementScope:'只改进实现，不改变经济假设和方向',target:'未来1个交易日收益',frequency:'daily',acceptance:nt.acceptance,developmentStart:nt.development_start,developmentEnd:nt.development_end,validationStart:nt.validation_start,validationEnd:nt.validation_end,maxTrials:Number(nt.max_trials),researchPurpose:nt.purpose,...(nt.purpose==='discovery'?{noveltyPolicy:{scope:'all_accessible' as const,maxAbsCorrelation:0.8,minDays:60,minPairs:30,minCoverage:0.8}}:{}),rules:{minSignedIc:0.005,maxDrawdown:0.5,minObservations:60,direction:nt.direction as 'positive'|'negative',icMetric:'rank_ic' as const}};
+   const plan={revision:'nt-'+Date.now(),hypothesis:nt.hypothesis,candidateExpression:'',improvementScope:'只改进实现，不改变经济假设和方向',target:'未来1个交易日收益',frequency:'daily',acceptance:nt.acceptance,developmentStart:nt.development_start,developmentEnd:nt.development_end,validationStart:nt.validation_start,validationEnd:nt.validation_end,maxTrials:Number(nt.max_trials),researchPurpose:nt.purpose,...(nt.purpose==='discovery'?{noveltyPolicy:{scope:'all_accessible' as const,maxAbsCorrelation:0.7,minDays:60,minPairs:30,minCoverage:0.8}}:{}),rules:{minSignedIc:0.005,maxDrawdown:0.5,minObservations:60,direction:nt.direction as 'positive'|'negative',icMetric:'rank_ic' as const}};
    const saved=await saveProject({...p,name:nt.name,description:nt.hypothesis,config:{...p.config,universe:nt.universe,benchmark:nt.benchmark,factorCodes:[nt.factor],weights:[1],powers:[1],factorLibraries:{[nt.factor]:nt.library},researchPlan:plan,researchContext:{direction:'因子研究',question:nt.hypothesis,background:'新建课题：'+nt.factor}}});
    const vr=await researchFetch('/api/inst/quant/factor-workflow/published-view');const v=await vr.json();if(!vr.ok)throw Error('发布视图读取失败');
    const body={view_id:v.view_id,release_id:'',release_ids:v.release_ids||{},view_manifest_sha256:v.view_manifest_sha256||'',contract_revision:v.contract_revision||'',as_of:v.as_of,development_start:nt.development_start,development_end:nt.development_end,validation_start:nt.validation_start,validation_end:nt.validation_end,primary_holding_period:Number(nt.holding),policy_version:'v5-p0',max_trials:Number(nt.max_trials),max_sealed:Number(nt.max_sealed)};
@@ -186,7 +186,7 @@ export function QuantFactorHomePage(){
    <h3>{t.project_name||'未命名课题'}</h3>
    <div className="act">{t.trial_count>0?'已登记研发检验与台账。':'等待第一次真实研发检验。'}</div>
    <div className="bar"><i style={{width:Math.min(100,t.k/Math.max(1,t.max_trials)*100)+'%'}}/></div>
-   <div className="meta"><span>试验 <b>{t.k}/{t.max_trials}</b></span><span>分支 <b>{t.branch_count}</b></span><span>封存 <b>{t.sealed_used??0}/{t.max_sealed}</b></span></div>
+   <div className="meta"><span>台账 <b>{t.trial_count}</b> 条</span><span>计入 K <b className={t.k>t.max_trials?"bad-t":undefined}>{t.k}/{t.max_trials}</b></span><span>分支 <b>{t.branch_count}</b></span><span>封存 <b>{t.sealed_used??0}/{t.max_sealed}</b></span></div>
   </button>
  ));
 
@@ -252,7 +252,7 @@ export function QuantFactorHomePage(){
    </div>
    <div className="card-body">
     <div className="ledger">
-     <span>试验台账 <b>{ledger?.k??topic.k}</b> / {topic.max_trials}</span>
+     <span>台账 <b>{ledger?.trials.length??0}</b> 条 · 计入 K <b className={(ledger?.k??topic.k)>topic.max_trials?"bad-t":undefined}>{ledger?.k??topic.k}</b> / {topic.max_trials}</span>
      <span>分支 <b>{topic.branch_count}</b></span>
      <span>当前 t*(K) <b>{ledger?.threshold==null?'待接入':ledger.threshold.toFixed(3)}</b></span>
      <span>下一次可计数检验 t* <b>{ledger?.threshold_next_if_counted?.toFixed(3)||'待接入'}</b></span>
@@ -293,13 +293,14 @@ export function QuantFactorHomePage(){
     <label className="field"><span>研发结束</span><input value={nt.development_end} onChange={e=>setNt({...nt,development_end:e.target.value})}/></label>
     <label className="field"><span>样本外开始</span><input value={nt.validation_start} onChange={e=>setNt({...nt,validation_start:e.target.value})}/></label>
     <label className="field"><span>样本外结束</span><input value={nt.validation_end} onChange={e=>setNt({...nt,validation_end:e.target.value})}/></label>
-    <label className="field"><span>主持有期（日）</span><input type="number" min={1} max={20} value={nt.holding} onChange={e=>setNt({...nt,holding:Number(e.target.value)})}/></label>
+    <label className="field"><span>主持有期（日）</span><input type="number" value={1} readOnly disabled/><small>首期真实检验仅支持 1 日；R2 多持有期未接入，不接受 5 日等未支持值。</small></label>
     <label className="field"><span>试验预算</span><input type="number" min={1} max={1000} value={nt.max_trials} onChange={e=>setNt({...nt,max_trials:Number(e.target.value)})}/></label>
     <label className="field"><span>封存预算</span><input type="number" min={1} max={3} value={nt.max_sealed} onChange={e=>setNt({...nt,max_sealed:Number(e.target.value)})}/></label>
     <label className="field full"><span>授权数据范围</span><input readOnly value="当前发布视图；提交时锁定 view_id、release_ids、manifest 与 as_of"/><small>原型弹窗显式展示授权数据范围；实际版本在创建时写入课题。</small></label>
     <label className="field full"><span>研究假设</span><textarea value={nt.hypothesis} onChange={e=>setNt({...nt,hypothesis:e.target.value})}/></label>
-    <label className="field full"><span>预登记验收条件</span><textarea value={nt.acceptance} onChange={e=>setNt({...nt,acceptance:e.target.value})}/></label>
-   </div><div className="form-actions"><button className="btn primary" disabled={creatingBusy||!nt.name.trim()} onClick={()=>void createTopic()}>创建课题并打开工作台</button><span className="fine">创建后回研究运行，检验仍走 F4 真实计算并计入台账。</span></div></div></div></div>}
+    <label className="field full"><span>补充研究目标 / 说明（不改变执行门槛）</span><textarea value={nt.acceptance} onChange={e=>setNt({...nt,acceptance:e.target.value})}/><small>以下执行门槛由政策冻结，本说明不会改变门槛或权限。</small></label>
+    <div className="field full"><span>实际执行门槛（只读）</span><div className="kv"><span>方向 Rank IC</span><div>≥ 0.005</div><span>最大回撤</span><div>≤ 0.50</div><span>有效观测</span><div>≥ 60</div><span>NW t</span><div>≥ t*(K)（Bonferroni，K 随试验数校正）</div><span>主持有期</span><div>1 日</div><span>股票池 / 基准</span><div>{nt.universe} / {nt.benchmark}</div><span>查重相关上限</span><div>0.70（新发现）</div></div></div>
+   </div><div className="form-actions"><button className="btn primary" disabled={creatingBusy||!nt.name.trim()} onClick={()=>void createTopic()}>创建课题</button><span className="fine">创建后回研究运行，检验仍走 F4 真实计算并计入台账。</span></div></div></div></div>}
    {notice&&<div className="card card-pad"><p className="hint" role="status">{notice}</p></div>}
    {error&&<div className="card card-pad"><p className="hint error" role="alert">{error}</p></div>}
    {loading?(

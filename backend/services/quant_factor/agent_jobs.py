@@ -98,7 +98,7 @@ def _plan_task(uid,org,jid,draft):
     titles=[p['name'] for p in projects if not p.get('sample')][:30]
     from .asset_context import catalogue,planner_context
     if not update(uid,org,jid,'running',event('read_factor_library',tool='factor_catalog_and_owned_libraries',message='读取平台内置因子目录和当前账号自建因子，核对已有定义')):return
-    refs=catalogue(uid);library_context=planner_context(refs)
+    refs=catalogue(uid, org);library_context=planner_context(refs)
     update(uid,org,jid,'running',event('factor_library_read',message=f'已读取 {refs["count"]} 项因子定义；目录检索不能代替数值相关性检验。',reference_count=refs['count'],reference_hash=refs['hash']))
     try:get_task(TASK)
     except KeyError:register(TaskSpec(task_id=TASK,description='因子研究选题与任务拟定',prompt_version='qf-task-v4-library',temperature=.2,max_tokens=3000,timeout_sec=60,response_format={'type':'json_object'}))

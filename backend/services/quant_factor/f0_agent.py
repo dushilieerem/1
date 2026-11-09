@@ -71,6 +71,30 @@ def _context(uid, org, topic, run_id):
         gate = (latest.get("result_summary") or {}).get("gate") or {}
         summary = {"trial_no": latest["trial_no"], "outcome": latest["outcome"],
                    "report_id": latest.get("report_id"), "gate": gate}
+        with get_conn() as c:
+            cand = c.execute(
+                "SELECT status,evidence FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s ORDER BY created_at DESC LIMIT 1",
+                (uid, org, topic["project_id"])).fetchone()
+        if cand:
+            dev = (cand.get("evidence") or {}).get("development") or {}
+            nov = dev.get("novelty") or {}
+            summary["candidate_status"] = cand.get("status")
+            summary["numerical_passed"] = (dev.get("gate") or {}).get("numerical_passed")
+            summary["novelty"] = {
+                "status": nov.get("status"),
+                "message": nov.get("message"),
+                "duplicates": [d.get("name") for d in (nov.get("duplicates") or [])],
+                "gate": nov.get("gate"),
+            }
+            reasons=[]
+            if summary["numerical_passed"] is False:
+                reasons.append("数值门槛未通过")
+            if nov.get("status")=="failed":
+                duplicates=[d.get("name") for d in (nov.get("duplicates") or [])]
+                reasons.append("查重未通过"+(("（重复："+ "、".join(duplicates)+"）") if duplicates else ""))
+            elif nov.get("status") in ("unavailable","incomplete","deferred"):
+                reasons.append("查重不可用/未完成")
+            summary["blocking_reasons"]=reasons
     return {
         "run_id": run_id, "topic": {k: topic.get(k) for k in (
             "id", "project_id", "view_id", "primary_holding_period", "max_trials", "status")},
@@ -102,7 +126,7 @@ def decide(uid, org, topic, run_id):
         "rationale 必须引用具体 trial 编号和指标（如 E2 的 NW t、K、t*(K)），不能空泛。"
         "revise/pivot 必须给出具体 next_hypothesis 与 change_scope；没有实质修订就 stop。"
         "不得改变门槛、数据范围、预算，不得声称 novelty 可用，不得批准入库或封存。"
-        "request_seal 仅在最近研发已通过时使用；发现类（discovery）还需新颖性通过，已有因子复现（replication）不需要 novelty/R4，可直接 request_seal。否则 stop。预算为 0 时必须 stop。t_critical 始终给出（K=0 按 K=1 的 t*）。recent_f0_stops 只是本课题历史运行的记录，不是本 run 的检验证据，不能据此在无 trial 时停止。capability_gaps 是 F3 已确认不支持的能力，修订必须避开它们，改用可实现的截面 rank/z-score 或时序窗口。sealed_used 达到 max_sealed 时不得 request_seal。\n最近一次研发检验失败且预算允许时，优先选择 revise 或 pivot，并给出实质性的新假设；不得只重跑同一实现。"
+        "request_seal 仅在最近研发已通过时使用；所有送审候选都必须有完整查重证据（novelty/R4），缺少或不可用时不得 request_seal/送审，只能等待依赖或修订。数值门槛通过但 novelty=failed（如定义重复）不是数值失败：应修订/正交化或放弃，不要盲目调参。latest_report.blocking_reasons 是真实阻断类别，必须引用，不得猜测为回撤/稳健性失败。预算为 0 时必须 stop。t_critical 始终给出（K=0 按 K=1 的 t*）。recent_f0_stops 只是本课题历史运行的记录，不是本 run 的检验证据，不能据此在无 trial 时停止。capability_gaps 是 F3 已确认不支持的能力，修订必须避开它们，改用可实现的截面 rank/z-score 或时序窗口。sealed_used 达到 max_sealed 时不得 request_seal。\n最近一次研发检验失败且预算允许时，优先选择 revise 或 pivot，并给出实质性的新假设；不得只重跑同一实现。"
     )
     try:
         get_task(TASK)

@@ -1,3 +1,4 @@
+import unittest
 import copy
 from unittest import TestCase
 from unittest.mock import patch
@@ -91,7 +92,7 @@ class HandoffEvidenceTests(TestCase):
  def test_comparison_payload_does_not_copy_verified_token(self):
   from services.quant_factor.novelty import comparison_request
   snapshot={'plan':{'developmentStart':'2025-01-01','developmentEnd':'2025-06-30','noveltyPolicy':{'scope':'all_accessible',**DEFAULTS}},'request':{'factor_name':'f'}}
-  development={'meta':{'data_release_id':'r','factor_source_hash':'c'},'result':{'_svquant_verified_token':'do-not-copy','metrics':{'rank_ic':.03}}}
+  development={'meta':{'data_release_id':'r','factor_source_hash':'c','spec_hash':'s'},'result':{'_svquant_verified_token':'do-not-copy','metrics':{'rank_ic':.03}}}
   refs={'builtins':[{'library_name':'lib','factor_name':'known'}],'owned':[]}
   payload=comparison_request(snapshot,development,refs,{'minPairs':30})
   self.assertNotIn('do-not-copy',repr(payload));self.assertNotIn('_svquant_verified_token',payload)
@@ -103,3 +104,14 @@ class HandoffEvidenceTests(TestCase):
   out=evaluate_comparison(result,rules,'r','c')
   self.assertEqual(out['residual'],{'status':'not_supported'})
   self.assertNotIn('residual_rank_ic',out)
+
+
+class ThresholdBoundaryTest(unittest.TestCase):
+ def test_default_threshold_is_070(self):
+  self.assertEqual(DEFAULTS['maxAbsCorrelation'],.7)
+ def test_equal_threshold_is_duplicate(self):
+  rules=policy({'researchPurpose':'discovery','noveltyPolicy':{'scope':'all_accessible',**DEFAULTS}})
+  result={'meta':{'data_release_id':'r','candidate_source_hash':'c','spec_hash':'s'},'expected_count':1,
+          'comparisons':[{'reference_id':'r','status':'succeeded','mean_abs_spearman':.7,'valid_days':100,'min_pairs':200,'coverage':.95}]}
+  out=evaluate_comparison(result,rules,'r','c')
+  self.assertFalse(out['passed']);self.assertEqual(out['status'],'failed')

@@ -89,7 +89,9 @@ def create(uid,org,project_id,expected_snapshot_hash=None,reference=None,executo
             topic=c.execute("SELECT * FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s",(uid,org,project_id)).fetchone()
             if topic:
                 used=ledger.current_k(ledger._trials(uid,org,topic['id']),topic['primary_holding_period'])
-                if used>=int(topic['max_trials']): raise WorkflowError('课题 K 已达到试验预算；请先复盘并明确修订计划')
+                reserved=c.execute("SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s AND status IN ('development_running','development_queued')",(uid,org,project_id)).fetchone()['n']
+                if used+int(reserved)>=int(topic['max_trials']):
+                    raise WorkflowError('课题 K 已达到试验预算（已计入在途检验）；请先复盘并明确修订计划')
             else:
                 count=c.execute('SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s',(uid,org,project_id)).fetchone()['n']
                 if count>=snap['plan']['maxTrials']: raise WorkflowError('本研究已达到登记的候选尝试预算；请先复盘并明确修订计划')
@@ -97,9 +99,12 @@ def create(uid,org,project_id,expected_snapshot_hash=None,reference=None,executo
             if pending>=4: raise WorkflowError('验证计算队列繁忙，请稍后提交')
             cid=str(uuid.uuid4())
             evidence={}
+            active_branch=((p.get('config') or {}).get('v5ActiveBranch') if hasattr(p,'get') else None)
+            if active_branch:
+                evidence['branch_id']=str(active_branch)
             if snap['plan'].get('researchPurpose')=='discovery':
                 from .asset_context import catalogue
-                evidence['library_reference']=reference or catalogue(uid)
+                evidence['library_reference']=reference or catalogue(uid, org)
             c.execute('INSERT INTO quant_factor_candidates(id,user_id,org_id,project_id,snapshot,snapshot_hash,status,events,evidence) VALUES(%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb)',(cid,uid,org,project_id,store.encode(snap),sha,'development_running',store.encode([event('candidate_frozen',snapshot_hash=sha,reference_hash=evidence.get('library_reference',{}).get('hash')),event('development_queued')]),store.encode(evidence)))
     if existing and existing['status'] in ('development_passed','development_failed','development_error'):
         try:_ensure_development_trial(uid,org,cid,executor,f0_run_id)
@@ -221,7 +226,8 @@ def _append_development_trial(uid,org,row,req,result,gate,outcome,report_id,exec
         topic=c.execute("SELECT * FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s",(uid,org,row['project_id'])).fetchone()
         if not topic:return None
         project=c.execute("SELECT config FROM detect_projects WHERE user_id=%s AND id=%s",(uid,row['project_id'])).fetchone()
-        active=((project or {}).get('config') or {}).get('v5ActiveBranch')
+        pinned=(row.get('evidence') or {}).get('branch_id')
+        active=pinned or ((project or {}).get('config') or {}).get('v5ActiveBranch')
         branch=None
         if active:
             branch=c.execute("SELECT id FROM quant_factor_branches WHERE id=%s AND user_id=%s AND org_id=%s AND topic_id=%s",(active,uid,org,topic['id'])).fetchone()
@@ -250,7 +256,7 @@ def _compare_library(uid,org,cid,row,data):
         if action:store.update(uid,org,cid,'development_running',event(action,message=message,**details))
         return True
     try:
-        return assess(uid,row['snapshot'],data['result'],reference=row['evidence'].get('library_reference'),compute=data['gate'].get('numerical_passed',data['gate']['passed']),progress=progress)
+        return assess(uid,row['snapshot'],data['result'],reference=row['evidence'].get('library_reference'),compute=data['gate'].get('numerical_passed',data['gate']['passed']),progress=progress,org=org)
     except Exception:
         # No exception/HTTP body can expose credentials; the saved report remains intact.
         return {'status':'unavailable','message':'因子库对照服务未完成，原研发报告已保留。恢复服务后可仅重试对照，不重跑回测。','gate':{'passed':False,'complete':False,'expected_count':row['evidence'].get('library_reference',{}).get('count',0),'compared_count':0,'max_abs_correlation':None,'threshold':row['snapshot']['plan'].get('noveltyPolicy',{}).get('maxAbsCorrelation'),'limitation':'数值对照未完成。'}}
@@ -325,6 +331,19 @@ def retry_development(uid, org, cid):
     row = store.read(uid, org, cid)
     if row["status"] != "development_error":
         raise WorkflowError("只有研发计算异常的固定候选可以重试；已通过/未通过请新建研究版本")
+    with get_conn() as c:
+        c.execute("SELECT pg_advisory_xact_lock(%s,%s)", (9106, uid))
+        topic = c.execute(
+            "SELECT * FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s",
+            (uid, org, row["project_id"])).fetchone()
+        if topic:
+            from . import ledger
+            used = ledger.current_k(ledger._trials(uid, org, topic["id"]), topic["primary_holding_period"])
+            running = c.execute(
+                "SELECT COUNT(*) AS n FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s AND id<>%s AND status IN ('development_running','development_queued')",
+                (uid, org, row["project_id"], cid)).fetchone()["n"]
+            if used + int(running) >= int(topic["max_trials"]):
+                raise WorkflowError("课题 K 已达到试验预算（含在途检验），不能重试；请先复盘并明确修订计划")
     evidence = dict(row.get("evidence") or {})
     block = dict(evidence.get("development") or {})
     if not block.get("interrupted"):

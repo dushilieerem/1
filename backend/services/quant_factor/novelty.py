@@ -20,7 +20,9 @@ def comparison_request(snapshot,development,refs,rules):
     references=[{'reference_id':f['library_name']+':'+f['factor_name'],'factor_name':f['factor_name'],'library_name':f['library_name']} for f in refs['builtins']]
     references += [{'reference_id':f['source_id'],'factor_name':f['factor_name'],'factor_code':f['factor_code'],'source_hash':hashlib.sha256(f['factor_code'].encode()).hexdigest()} for f in refs['owned']]
     meta=development['meta']
-    return {'candidate':candidate,'references':references,'expected_data_release_id':meta['data_release_id'],'expected_candidate_source_hash':meta['factor_source_hash'],'method':'daily_abs_spearman','min_pairs':int(rules['minPairs']),'reference_warmup_sessions':252}
+    spec_hash=meta.get('spec_hash')
+    if not spec_hash:raise WorkflowError('研发结果缺少候选规格指纹，不能提交查重')
+    return {'candidate':candidate,'references':references,'expected_data_release_id':meta['data_release_id'],'expected_candidate_source_hash':meta['factor_source_hash'],'expected_candidate_spec_hash':spec_hash,'method':'daily_abs_spearman','min_pairs':int(rules['minPairs']),'reference_warmup_sessions':252}
 
 
 def validate_result(result,payload,development):
@@ -35,11 +37,11 @@ def validate_result(result,payload,development):
     if any(r.get('status')=='succeeded' and not r.get('source_hash') for r in rows):raise WorkflowError('有效对照缺少源码指纹。')
 
 
-def assess(uid,snapshot,development,reference=None,compute=True,progress=None):
+def assess(uid,snapshot,development,reference=None,compute=True,progress=None,org=None):
     rules=policy(snapshot['plan'])
     if rules['researchPurpose']!='discovery':
         return {'status':'not_assessed','message':'已有或历史研究：没有数值去重证据，不作为新发现。','gate':{'passed':False,'complete':False}}
-    refs=reference or catalogue(uid)
+    refs=reference or catalogue(uid, org)
     base={'reference_hash':refs['hash'],'reference_scope':refs['scope'],'reference_count':refs['count']}
     empty={'passed':False,'complete':False,'expected_count':refs['count'],'compared_count':0,'max_abs_correlation':None,'threshold':rules['maxAbsCorrelation'],'limitation':'尚未取得完整数值对照，不能认定去重通过。'}
     duplicates=duplicate_matches(snapshot['request'].get('factor_code',''),refs)

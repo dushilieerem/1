@@ -65,7 +65,8 @@ class CurrentKReviewTest(unittest.TestCase):
                 'archive': {'review': {'status': 'requested', 'assigned_to': 9}, 'approved': False, 'sealed': False},
                 'snapshot': {'plan': {'researchPurpose': 'replication'}},
                 'evidence': {'development': {'gate': {'checks': [
-                    {'name': '方向 NW t', 'actual': 2.0, 'operator': '>=', 'threshold': 2.1, 'passed': False}]}}}}
+                    {'name': '方向 NW t', 'actual': 2.0, 'operator': '>=', 'threshold': 2.1, 'passed': False}]},
+                    'novelty': {'gate': {'passed': True, 'complete': True}}}}}
 
     def test_record_blocks_when_current_k_raises_bar(self):
         c = MagicMock(); c.execute.return_value.fetchone.return_value = self.row()
@@ -82,6 +83,16 @@ class CurrentKReviewTest(unittest.TestCase):
              patch.object(review, '_ledger_context', return_value={'k': 4, 'threshold': 1.9, 'trials': [], 'topic': {}}), \
              patch.object(review, 'detail', return_value={'id': 'c'}):
             self.assertEqual(review.record(9, 2, 'c', 'research_supported', 'ok'), {'id': 'c'})
+
+    def test_record_blocks_approval_without_novelty(self):
+        row = self.row()
+        row['evidence']['development'].pop('novelty')
+        c = MagicMock(); c.execute.return_value.fetchone.return_value = row
+        conn = MagicMock(); conn.__enter__ = MagicMock(return_value=c)
+        with patch.object(review, 'get_conn', return_value=conn), \
+             patch.object(review, '_ledger_context', return_value={'k': 1, 'threshold': 1.9, 'trials': [], 'topic': {}}):
+            with self.assertRaisesRegex(review.WorkflowError, '查重'):
+                review.record(9, 2, 'c', 'research_supported', 'ok')
 
 
 class ReviewIsolationTest(unittest.TestCase):
@@ -116,7 +127,8 @@ class NullArchiveReviewRequestTest(unittest.TestCase):
     def test_request_review_initializes_archive_card(self):
         row = {'id': 'c', 'user_id': 5, 'org_id': 2, 'snapshot_hash': 'h', 'archive': None,
                'status': 'development_passed',
-               'evidence': {'development': {'gate': {'passed': True}}}}
+               'evidence': {'development': {'gate': {'passed': True},
+                                          'novelty': {'gate': {'passed': True, 'complete': True}}}}}
         cursor = MagicMock()
         cursor.execute.return_value.fetchone.return_value = row
         connection = MagicMock()

@@ -85,7 +85,7 @@ def start(uid,org,pid,max_rounds):
    jid=str(uuid.uuid4())
    if snap['plan'].get('researchPurpose')=='discovery':
     from .asset_context import catalogue
-    snap['_library_reference']=catalogue(uid)
+    snap['_library_reference']=catalogue(uid, org)
    c.execute("INSERT INTO quant_factor_iterations(id,user_id,org_id,project_id,status,max_rounds,baseline,events) VALUES(%s,%s,%s,%s,'queued',%s,%s::jsonb,%s::jsonb)",(jid,uid,org,pid,max_rounds,store.encode(snap),store.encode([service.event('queued',message='已固定研究计划、数据范围、交易参数与硬门槛。',max_rounds=max_rounds)])))
  if not old:POOL.submit(run,uid,org,jid)
  return read(uid,org,jid)

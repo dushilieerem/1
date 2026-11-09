@@ -107,6 +107,18 @@ def published_view_meta(ctx=Depends(require_quant_researcher)):
             'contract_revision':v.get('contract_revision') or '',
             'as_of':max(dates) if dates else None}
 
+class ControlBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    paused:bool
+
+@router.get('/controls')
+def controls(ctx=Depends(require_quant_researcher)):
+    return invoke(service.control_status,*identity(ctx))
+
+@router.post('/controls/pause')
+def pause_all(body:ControlBody,ctx=Depends(require_quant_manager)):
+    return invoke(service.set_global_pause,*identity(ctx),body.paused)
+
 @router.get('/overview')
 def workspace_overview(ctx=Depends(require_quant_researcher)):
     from services.quant_factor.dashboard import overview

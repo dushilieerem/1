@@ -48,7 +48,7 @@ const protectedPaths = [
  /^\/factor-workflow\/projects\/[^/]+\/iterations(?:\/latest)?$/,
  /^\/factor-workflow\/iterations\/[^/]+(?:\/pause)?$/,
  /^\/factor-workflow\/agent-jobs(?:\/[^/]+(?:\/cancel)?)?$/,
- /^\/factor-workflow\/overview$/,
+ /^\/factor-workflow\/(overview|controls)(?:\/pause)?$/,
  /^\/factor-workflow\/published-view$/,
  /^\/data-resources\/(catalog(?:\/[^/]+)?|views(?:\/[^/]+\/usage)?|requests(?:\/[^/]+)?)$/,
  /^\/factor-workflow\/topics$/,

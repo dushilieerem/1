@@ -68,6 +68,10 @@ def start(uid, org, topic_id, branch_id, idempotency_key):
         return _public(_record(uid, org, topic, branch_id, key, "stopped",
                                {"action": "stop", "reason": "topic_" + topic["status"]},
                                "课题处于暂停/归档状态，F0 不再调度"))
+    if service.control_status(uid, org)["paused"]:
+        return _public(_record(uid, org, topic, branch_id, key, "stopped",
+                               {"action": "stop", "reason": "global_pause"},
+                               "研究负责人已暂停全部：不启动新的自动研究动作"))
     if topic["view_id"] != published_view()["view_id"]:
         return _public(_record(uid, org, topic, branch_id, key, "stopped",
                                {"action": "stop", "reason": "locked_view_drift"},

@@ -326,6 +326,28 @@ def register_asset(uid,org,cid,library_id):
     return current(uid,org,cid)
 
 
+def control_status(uid, org):
+    with get_conn() as c:
+        row = c.execute(
+            "SELECT paused,paused_by,paused_at,updated_at FROM quant_factor_org_controls WHERE org_id=%s",
+            (org,)).fetchone()
+    return {"paused": bool(row and row["paused"]), "paused_at": row["paused_at"] if row else None,
+            "paused_by": row["paused_by"] if row else None,
+            "updated_at": row["updated_at"] if row else None}
+
+
+def set_global_pause(uid, org, paused):
+    with get_conn() as c:
+        c.execute(
+            """INSERT INTO quant_factor_org_controls(org_id,paused,paused_by,paused_at,updated_at)
+               VALUES (%s,%s,%s,CASE WHEN %s THEN NOW() ELSE NULL END,NOW())
+               ON CONFLICT (org_id) DO UPDATE
+                 SET paused=EXCLUDED.paused,paused_by=EXCLUDED.paused_by,
+                     paused_at=CASE WHEN EXCLUDED.paused THEN NOW() ELSE NULL END,updated_at=NOW()""",
+            (org, bool(paused), uid, bool(paused)))
+    return control_status(uid, org)
+
+
 def retry_development(uid, org, cid):
     """Re-dispatch an interrupted/failed development run on the same frozen candidate."""
     row = store.read(uid, org, cid)

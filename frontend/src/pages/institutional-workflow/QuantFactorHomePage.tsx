@@ -4,6 +4,7 @@ import {researchFetch} from '@/lib/researchClient';
 import {createProject,saveProject} from '@/lib/detectStore';
 import {FactorModuleTabs,WorkspaceHeading} from './QuantWorkspacePages';
 import {newUuidV4} from '@/lib/uuid';
+import {getQuantSession} from '@/lib/quantAuth';
 
 type Topic={id:string;display_no?:number;project_id:string;project_name:string;view_id:string;primary_holding_period:number;max_trials:number;max_sealed:number;sealed_used?:number;status:string;dispatch_status?:string|null;dispatch_stop_reason?:string|null;pending_review?:number;sealed_passed?:number;latest_outcome?:string|null;research_purpose?:string|null;k:number;branch_count:number;trial_count:number;created_at?:string};
 type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;status:string;hypothesis_version:number;implementation_version:number;created_at?:string;display_label?:string;display_title?:string;hypothesis_text?:string;source_label?:string;display_status?:string};
@@ -37,6 +38,8 @@ export function QuantFactorHomePage(){
  const [node,setNode]=useState<string>();
  const [f0,setF0]=useState<{id:string;status:string;decision?:{candidate_status?:string;reason?:string;steps?:Array<{step:number;decision:{action:string;rationale:string};usage?:{tokens_in?:number;tokens_out?:number};result:{status?:string;candidate_status?:string;reason?:string;needed_capabilities?:string[]}}>};stop_reason?:string}>();
  const [error,setError]=useState(''),[notice,setNotice]=useState(''),[starting,setStarting]=useState(false);
+ const canManage=!!getQuantSession()?.can_manage;
+ const [paused,setPaused]=useState(false),[controlBusy,setControlBusy]=useState(false);
  const [loading,setLoading]=useState(true);
  const [pending,setPending]=useState<number|null>(null);
  const [sealedUsed,setSealedUsed]=useState<number|null>(null);
@@ -83,6 +86,8 @@ export function QuantFactorHomePage(){
   await Promise.all([refreshTopics(),refreshLedgerFor(selected),refreshPending()]);
  }
 
+ useEffect(()=>{let alive=true;void researchFetch('/api/inst/quant/factor-workflow/controls').then(r=>r.ok?r.json():null).then(d=>{if(alive&&d)setPaused(!!d.paused);});return()=>{alive=false;};},[]);
+
  useEffect(()=>{
   if(!selected){setLedger(undefined);return;}
   let alive=true;
@@ -106,6 +111,11 @@ export function QuantFactorHomePage(){
  }
  useEffect(()=>{if(!f0||!['queued','running'].includes(f0.status))return;const t=setInterval(()=>{void researchFetch('/api/inst/quant/factor-workflow/f0-runs/'+f0.id).then(r=>r.ok?r.json():null).then(d=>{if(!d)return;setF0(d);if(!['queued','running'].includes(d.status))void refreshAfterRun();});},4000);return()=>clearInterval(t);},[f0?.id,f0?.status,selected]);
  useEffect(()=>{if(!f0||!ledger)return;setTopics(list=>list.map(t=>t.id===ledger.topic.id?{...t,dispatch_status:f0.status,dispatch_stop_reason:f0.stop_reason||''}:t));},[f0?.status,f0?.stop_reason]);
+ async function toggleGlobalPause(){
+  if(!canManage||controlBusy)return;setControlBusy(true);setError('');setNotice('');
+  try{const r=await researchFetch('/api/inst/quant/factor-workflow/controls/pause',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paused:!paused})});const d=await r.json();if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:'全局暂停操作失败');setPaused(!!d.paused);setNotice(d.paused?'全部研究已暂停：不再启动新的自动动作，在途计算保留记录。':'全部研究已恢复，可继续启动。');}
+  catch(e){setError(e instanceof Error?e.message:String(e));}finally{setControlBusy(false);}
+ }
  async function setTopicStatus(status:'paused'|'active'){
   if(!ledger)return;
   const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(ledger.topic.id)+'/'+(status==='paused'?'pause':'resume'),{method:'POST'});
@@ -281,7 +291,7 @@ export function QuantFactorHomePage(){
      <div className="kpi"><span>封存样本已用</span><b>{sealedUsed==null?'—':sealedUsed}</b><small>累计封存（含失败）</small></div>
      <div className="kpi"><span>待人决定</span><b>{pending==null?'—':pending}</b><small>待复核候选</small></div>
      <div className="kpi"><span>Token</span><b>{f0?.decision?.steps?f0.decision.steps.reduce((n,s)=>n+(s.usage?.tokens_in||0)+(s.usage?.tokens_out||0),0):'—'}</b><small>最近一次研究决策</small></div>
-    </div><div className="actions"><button className="btn small" disabled title="AC-12 / P1：全局暂停接口未接入；本轮只验证单课题暂停/继续">暂停全部（AC-12）</button></div>
+    </div><div className="actions"><button className="btn small" disabled={!canManage||controlBusy} onClick={()=>void toggleGlobalPause()} title={canManage?(paused?"恢复全部自动研究":"全局暂停，不启动新自动动作"):"需要研究负责人权限"}>{paused?"恢复全部":"暂停全部（AC-12）"}</button></div>
    </div>
    {creating&&<div className="modal-backdrop" role="dialog" aria-modal="true" onClick={()=>setCreating(false)}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><h2>新建研究课题</h2><p className="fine">创建后冻结数据视图、区间、预算与初始因子</p></div><button className="btn small" onClick={()=>setCreating(false)}>取消</button></div><div className="modal-body">{createErr&&<p className="hint error">{createErr}</p>}<div className="form-grid">
     <label className="field"><span>课题名称</span><input value={nt.name} onChange={e=>setNt({...nt,name:e.target.value})}/></label>

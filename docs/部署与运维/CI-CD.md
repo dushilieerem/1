@@ -192,6 +192,26 @@ serve-public.sh start           重启 invest-api 与手机 H5，创建或复用
   `*_test/_dev/_e2e/_ci` 库，指向 `svquant_test` 时写库用例（`INST_E2E_ALLOW_WRITE`）才会执行。
 - P0 之外还有布局/溢出/空态类 E2E，属于回归保护，放全量或每晚跑，不拦每次发版。
 
+### 测试库数据
+
+`svquant_test` 默认只有测试夹具，E2E 只能覆盖空态。用生产数据抽样灌一次，让「有数据」路径也能验证：
+
+```bash
+bash scripts/ops/seed_test_db.sh --dry-run     # 先看各表会灌多少行
+bash scripts/ops/seed_test_db.sh               # 默认 120 天行情 + 180 天公告/研报
+```
+
+- 只灌行情与内容表（K 线、估值、资金流、指数、公告/研报、新闻、分红、股本、公司概况），不动 `users` 和业务写入表；
+- 目标库名必须含 `_test/_e2e/_ci`，先 TRUNCATE 再灌，重复执行结果一致；
+- 灌完跑 `e2e.sh full` 验证：H5 42 条、机构端 18 条。
+
+### 共享开发库的纪律
+
+`svquant_dev` 是多个 Agent 共用的开发库，**只能承载 master 上的迁移**：
+
+- 分支如果新增迁移，先在自己的库（如 `svquant_<agent>_dev`）里验证，不要连共享库启动后端；
+- 共享库里出现 master 没有的迁移（`backend-check.sh` 的迁移门禁会报「存在无文件迁移」）时，由该分支负责人清掉自己写入的表和 `schema_migrations` 记录。
+
 ## 7. 版本与发布规矩
 
 - tag 格式 `vMAJOR.MINOR.PATCH`（可加 `-rc1`），**只从 `master` 打**，且该 commit 的 CI 绿；

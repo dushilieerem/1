@@ -83,9 +83,7 @@ def _context(uid, org, topic, run_id):
                     "SELECT status,evidence FROM quant_factor_candidates WHERE id=%s AND user_id=%s AND org_id=%s",
                     (candidate_id, uid, org)).fetchone()
             else:
-                cand = c.execute(
-                    "SELECT status,evidence FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s ORDER BY created_at DESC LIMIT 1",
-                    (uid, org, topic["project_id"])).fetchone()
+                cand = None
         if cand:
             dev = (cand.get("evidence") or {}).get("development") or {}
             nov = dev.get("novelty") or {}
@@ -239,7 +237,9 @@ def _revise(uid, org, project_id, parent_id, decision, run_id, topic_id, scope_o
     project = get_project(uid, project_id)["project"]
     cfg = project["config"]
     plan = cfg.get("researchPlan") or {}
-    old_code = _branch_code(uid, org, topic_id, parent_id) or (cfg.get("draftFactor") or {}).get("body") or ""
+    old_code = _branch_code(uid, org, topic_id, parent_id)
+    if not old_code.strip():
+        raise service.WorkflowError("父分支没有可核验的冻结源码，不能无提示改用其他分支实现；请先完成该分支检验或人工指定候选")
     suggestion = assistant.suggest(uid, org, project_id, draft={
         **plan, "hypothesis": decision.next_hypothesis,
         "failure": (decision.rationale + " " + decision.change_scope)[:3000]})["suggestion"]

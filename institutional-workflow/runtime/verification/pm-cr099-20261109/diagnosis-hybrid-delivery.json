@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-11-09T15:00:01.073641+00:00",
+  "parent_business_commit": "de2f728825b9f06cf79a73dbfa3dec65241fd367",
+  "status": "specification and prepared functional test; no new computation",
+  "files": {
+    "docs/模块设计/量化机构端/因子工厂V5-Agent研究子系统改进.md": "298f71278e4e6757dc0f7f95096b650810139e810d28a9321b5f48890a3ec7d7",
+    "frontend/public/quant-delivery/v5/docs/因子工厂V5-Agent研究子系统改进.md": "298f71278e4e6757dc0f7f95096b650810139e810d28a9321b5f48890a3ec7d7",
+    "institutional-workflow/runtime/verification/pm-cr099-20261109/hybrid-user-plan.json": "b223bcb1c0d00845e674c239db745e99b169f1ddda08be4d61399f65930bc81b",
+    "institutional-workflow/runtime/verification/pm-cr099-20261109/pm-ui-design-review.md": "964221da0b865c5193ea9b11b761ce7d950eb510107129c554bd627048a5c94d"
+  }
+}

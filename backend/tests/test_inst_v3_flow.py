@@ -230,6 +230,44 @@ def test_memo_syncs_version_conclusion(monkeypatch) -> None:
         assert case["versions"][0]["content_hash"] is None
 
 
+def test_search_and_start_research_reuses_current_case() -> None:
+    tag = uuid.uuid4().hex[:8]
+    with get_conn() as conn:
+        member_id = int(
+            conn.execute(
+                "SELECT id FROM inst_members WHERE org_id=%s AND role='manager' AND status='active' LIMIT 1",
+                (ORG_ID,),
+            ).fetchone()["id"]
+        )
+        company_id = int(
+            conn.execute(
+                "INSERT INTO inst_company (org_id, symbol, name, market, industry, data_status, pool_status) "
+                "VALUES (%s,%s,%s,'CN','测试','real','watch') RETURNING id",
+                (ORG_ID, f"SEARCH{tag[:4].upper()}.SZ", f"搜索测试{tag}"),
+            ).fetchone()["id"]
+        )
+    try:
+        items = svc.search_companies(ORG_ID, f"SEARCH{tag[:4].upper()}", limit=5)
+        assert items and items[0]["company_id"] == company_id
+        assert items[0]["case_id"] is None
+
+        first = svc.start_research(ORG_ID, company_id, member_id)
+        assert first["created"] is True
+        assert first["company_id"] == company_id
+        second = svc.start_research(ORG_ID, company_id, member_id)
+        assert second["created"] is False
+        assert second["id"] == first["id"]
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT pool_status FROM inst_company WHERE id=%s", (company_id,)
+            ).fetchone()
+            assert row["pool_status"] == "research"
+    finally:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM inst_research_case WHERE company_id=%s", (company_id,))
+            conn.execute("DELETE FROM inst_company WHERE id=%s", (company_id,))
+
+
 def test_stage_summary_waits_for_all_approvers() -> None:
     rows = [{"step": "partner", "decision": "approve", "approver_member_id": 1, "conditions": []}]
     state = svc._stage_summary("partner", rows, 2)

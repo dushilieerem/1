@@ -767,3 +767,14 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 三档与极端态截图已重新拍摄。
 
 验证：pytest 107 passed；前端 13 passed；Playwright `e2e-09..14` 17 passed。
+
+
+### 11.39 全局股票搜索与自选进入研究（2026-11-09）
+
+- 顶栏搜索改为全市场股票搜索：按代码/名称/行业检索 `inst_company`，显示行业、数据状态、当前流程与版本。
+- 无当前研究案时显示「进入研究」，点击创建研究案并进入 02 价值分析；已有当前案时显示所在环节与版本，点击进入当前工作台/结果页。
+- 同一股票复用当前案，不重复建案，继续满足“一股一流程”。
+- 搜索支持加载中、无结果、错误三种状态；仅投资经理可新建研究，其他角色可查看已有流程。
+- 新增 `test_search_and_start_research_reuses_current_case` 与 e2e-09 搜索用例。
+
+验证：pytest 108 passed；前端 13 passed；Playwright `e2e-09..14` 18 passed。

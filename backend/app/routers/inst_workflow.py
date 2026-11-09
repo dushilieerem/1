@@ -105,6 +105,30 @@ def decide_idea(
         raise _handle(exc) from exc
 
 
+@router.get("/search")
+def search_companies(
+    q: str = "",
+    limit: int = 8,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "overview")
+    return {"ok": True, "items": svc.search_companies(org_id, q, limit=limit)}
+
+
+@router.post("/companies/{company_id}/research")
+def start_research(
+    company_id: int,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "research")
+    try:
+        return {"ok": True, **svc.start_research(org_id, company_id, member_id)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.get("/companies/{company_id}")
 def company(company_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)

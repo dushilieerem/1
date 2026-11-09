@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Activity, AlertTriangle, RefreshCw } from "lucide-react";
+import { dedupeBy } from "@/lib/instDedupe";
 import { instApi, fmtMoney, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
@@ -209,7 +210,7 @@ export function InstV3ManagePage() {
     finally { setBusy(null); }
   };
 
-  const positions = portfolio?.positions || [];
+  const positions = dedupeBy(portfolio?.positions || [], (p) => p.symbol);
   const activePosition = holding?.position || positions.find((p) => p.symbol === selectedSymbol) || null;
   const exposure = useMemo(() => Object.entries(portfolio?.industry_exposure || {}).sort((a, b) => b[1] - a[1]), [portfolio]);
 
@@ -237,9 +238,8 @@ export function InstV3ManagePage() {
     <>
       <div className="v3-page-head">
         <div>
-          <div className="v3-eyebrow">OWNERSHIP / 06</div>
+          <div className="v3-eyebrow">OWNERSHIP</div>
           <h1>投资管理</h1>
-          <p>组合总览看全局，单票盘中管论点；预警与退出重走研究、辩论、审批，旧授权作废。</p>
         </div>
         <span className="v3-chip info">{session.role_label_cn}</span>
       </div>
@@ -262,7 +262,7 @@ export function InstV3ManagePage() {
               <span>{p.symbol} · {fmtPct(p.weight)}</span>
             </button>
           ))}
-          {!positions.length ? <div className="v3-empty" style={{ padding: "18px 8px" }}>当前没有持仓。</div> : null}
+          {!positions.length ? <div className="v3-empty" style={{ padding: "16px" }}>当前没有持仓。</div> : null}
         </div>
 
         <div className="v3-work-main">
@@ -273,7 +273,7 @@ export function InstV3ManagePage() {
               <section className="v3-kpis">
                 <div className="v3-kpi"><div className="k">组合净值（CNY）</div><div className="v">{fmtMoney(portfolio?.nav)}</div><div className="d">现金 {fmtMoney(portfolio?.cash)}</div></div>
                 <div className="v3-kpi"><div className="k">仓位</div><div className="v">{fmtPct(portfolio?.invested_ratio)}</div><div className="d">已投资 {fmtMoney(portfolio?.invested)}</div></div>
-                <div className="v3-kpi"><div className="k">持仓</div><div className="v">{positions.length}<small> 只</small></div><div className="d">现金下限 10%</div></div>
+                <div className="v3-kpi"><div className="k">持仓</div><div className="v">{positions.length}<small> 只</small></div><div className="d">按最新市值计算权重</div></div>
                 <div className="v3-kpi"><div className="k">在途退出</div><div className="v">{holding?.exits?.length ?? 0}<small> 个</small></div><div className="d">退出重走审批</div></div>
               </section>
               <section className="v3-card">
@@ -298,8 +298,8 @@ export function InstV3ManagePage() {
                 <div className="v3-card-head"><div><h2>行业敞口</h2><p>接近上限会标黄；组合约束不可由 AI 或 Chairman 绕过。</p></div></div>
                 {exposure.map(([industry, weight]) => (
                   <div key={industry} style={{ marginTop: 8 }}>
-                    <div className="flex justify-between text-[10px] text-[#746b7c]"><span>{industry}</span><span>{fmtPct(weight)}</span></div>
-                    <div style={{ height: 6, background: "#f0eaf3", borderRadius: 99, marginTop: 3 }}><div style={{ width: `${Math.min(100, weight * 100)}%`, height: "100%", background: weight > 0.13 ? "#996114" : "#a03a5c", borderRadius: 99 }} /></div>
+                    <div className="flex justify-between text-[11px] text-[#5f5766]"><span>{industry}</span><span>{fmtPct(weight)}</span></div>
+                    <div style={{ height: 6, background: "#f0eaf3", borderRadius: 99, marginTop: 4 }}><div style={{ width: `${Math.min(100, weight * 100)}%`, height: "100%", background: "#a03a5c", borderRadius: 99 }} /></div>
                   </div>
                 ))}
                 {!exposure.length ? <div className="v3-empty">暂无行业敞口数据。</div> : null}
@@ -311,12 +311,12 @@ export function InstV3ManagePage() {
             <>
               <section className="v3-card">
                 <div className="v3-card-head"><div><h2>{activePosition.name || activePosition.symbol} · 盘中</h2><p>{activePosition.symbol} · {fmtPct(activePosition.weight)} · 成本 {activePosition.cost?.toFixed(2) || "—"} · 现价 {activePosition.last_close?.toFixed(2) || "—"}</p></div><button className="v3-btn ghost" disabled={!!busy} onClick={scan}><Activity className="h-3.5 w-3.5" />{busy === "scan" ? "扫描中…" : "扫描事件"}</button></div>
-                <p style={{ fontSize: 11, lineHeight: 1.7, color: "#746b7c" }}>买入不是结束，而是论点开始接受检验；监控 Agent 只提示，不替你做卖出决定。</p>
+                <p style={{ fontSize: 12, lineHeight: 1.7, color: "#5f5766" }}>买入不是结束，而是论点开始接受检验；监控 Agent 只提示，不替你做卖出决定。</p>
               </section>
 
               <section className="v3-card">
                 <div className="v3-card-head"><div><h2>买入论点台账</h2><p>关键假设、KPI、复核时间与推翻条件。</p></div><button className="v3-btn ghost" disabled={!!busy} onClick={refreshThesis}><RefreshCw className="h-3.5 w-3.5" />{busy === "thesis" ? "生成中…" : "重新生成台账"}</button></div>
-                {holding?.theses?.length ? holding.theses.map((t, i) => (
+                {holding?.theses?.length ? dedupeBy(holding.theses, (t) => t.id).map((t, i) => (
                   <div key={t.id || i} className="v3-claim">
                     <div className="who">{t.status || "active"} · 复核 {t.review_due || "—"}</div>
                     <p>{textOf(t.thesis)}</p>
@@ -328,14 +328,14 @@ export function InstV3ManagePage() {
 
               <section className="v3-card">
                 <div className="v3-card-head"><div><h2>监控事件</h2><p>经营 / 估值 / 治理 / 交易异常；时间点 + 摘要。</p></div><span className="v3-chip">{holding?.events?.length || 0} 条</span></div>
-                {holding?.events?.length ? holding.events.slice(0, 8).map((e, i) => (
+                {holding?.events?.length ? dedupeBy(holding.events, (e) => e.id).slice(0, 8).map((e, i) => (
                   <div className="v3-kv" key={e.id || i}><dt>{e.created_at || "—"} · {e.type || "事件"}</dt><dd>{textOf(e.detail)} <span className="v3-chip warn">{e.severity || "info"}</span></dd></div>
                 )) : <div className="v3-empty">暂无监控事件。</div>}
               </section>
 
               <section className="v3-card">
                 <div className="v3-card-head"><div><h2>记录预警</h2><p>时间点 + 一句理由；预警不是卖出，先进入复核。</p></div></div>
-                <div className="v3-field"><textarea data-testid="inst-warning" value={warning} onChange={(e) => setWarning(e.target.value)} placeholder="例如：批价周环比 -1.2%，接近推翻线；要求复核渠道库存。" /></div>
+                <div className="v3-field"><textarea data-testid="inst-warning" value={warning} onChange={(e) => setWarning(e.target.value)} placeholder="写清触发原因、已核验事实与需要复核的问题。" /></div>
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
                   <button data-testid="inst-warning-submit" className="v3-btn primary" disabled={!canWrite || !warning.trim() || !!busy} onClick={recordWarning}><AlertTriangle className="h-3.5 w-3.5" />{busy === "warning" ? "记录中…" : "记录预警"}</button>
                 </div>
@@ -352,16 +352,16 @@ export function InstV3ManagePage() {
                   <div className="v3-field"><label>标的</label><input value={`${activePosition.name || ""} ${activePosition.symbol}`} readOnly /></div>
                   <div className="v3-field span-2"><label>退出理由 / 复核意见</label><textarea data-testid="inst-exit-memo" value={exitMemo} onChange={(e) => setExitMemo(e.target.value)} disabled={!canWrite} placeholder="写清触发原因、已核验事实与希望投委会复核的问题。" /></div>
                 </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <button data-testid="inst-exit-submit" className="v3-btn primary" disabled={!canWrite || !exitMemo.trim() || !!busy} onClick={submitExit}>{busy === "exit" ? "创建中…" : "创建退出研究案并进入研究"}</button>
                   <Link className="v3-btn ghost" to="/inst/pipeline">查看项目流水线</Link>
                 </div>
-                <div className="v3-note" style={{ marginTop: 10 }}>退出不复用买入授权：创建后进入 02 价值分析，重新定稿、辩论并走合伙人 → 风控 → Chairman；新退出议案获批时旧授权作废。</div>
+                <div className="v3-note" style={{ marginTop: 8 }}>退出不复用买入授权：创建后进入价值分析，重新定稿、辩论并走合伙人 → 风控 → Chairman；新退出议案获批时旧授权作废。</div>
               </section>
 
               <section className="v3-card">
                 <div className="v3-card-head"><div><h2>在途退出审理</h2><p>按状态跟踪；复核结论保留。</p></div><span className="v3-chip">{holding?.exits?.length || 0} 个</span></div>
-                {holding?.exits?.length ? holding.exits.slice(0, 6).map((e, i) => (
+                {holding?.exits?.length ? dedupeBy(holding.exits, (e) => e.id).slice(0, 6).map((e, i) => (
                   <div className="v3-kv" key={e.id || i}><dt>#{e.id} · {e.reason_type || "—"}</dt><dd>{e.status || "—"} · {textOf(e.memo)}</dd></div>
                 )) : <div className="v3-empty">暂无在途退出。</div>}
               </section>

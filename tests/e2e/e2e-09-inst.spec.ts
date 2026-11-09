@@ -53,13 +53,13 @@ test("v3 侧栏三组、八项，顺序固定", async ({ page }) => {
 test("八个入口可达", async ({ page }) => {
   await login(page);
   const pages: Array<[string, string]> = [
-    ["/inst", "INVESTMENT OFFICE / 00"],
-    ["/inst/pipeline", "PIPELINE / 01"],
-    ["/inst/research", "RESEARCH / 02"],
-    ["/inst/debate", "DEBATE / 03"],
-    ["/inst/approvals", "DECISION / 04"],
-    ["/inst/execute", "EXECUTION / 05"],
-    ["/inst/manage", "OWNERSHIP / 06"],
+    ["/inst", "INVESTMENT OFFICE"],
+    ["/inst/pipeline", "PIPELINE"],
+    ["/inst/research", "RESEARCH"],
+    ["/inst/debate", "DEBATE"],
+    ["/inst/approvals", "DECISION"],
+    ["/inst/execute", "EXECUTION"],
+    ["/inst/manage", "OWNERSHIP"],
     ["/inst/playbook", "PLAYBOOK / RULES"],
   ];
   for (const [path, eyebrow] of pages) {

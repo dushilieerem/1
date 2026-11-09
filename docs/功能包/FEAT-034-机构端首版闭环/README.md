@@ -736,3 +736,17 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - **边界**：P01 立项、P10 定稿复核、P14 议案、P18 组合总览、P21 退出风控当前仍是规则/人工/确定性步骤，没有独立 LLM Task；其字段契约已在对应代码中体现。若线上 Agent 管理里保存过全局 Prompt 覆盖，需重置为代码默认值后才会生效。
 
 验证：pytest 107 passed；`tsc --noEmit`、`npm run build`、`npm run test:inst` 通过；Playwright `e2e-09..14` 17 passed。
+
+
+### 11.36 机构端生产版 UI 收口（2026-11-09）
+
+- **生产版标识**：移除顶栏 v3 标识、侧栏演示环境说明与静态数量、原型/角色切换说明；业务版本号只保留接口返回的研究/议案版本。
+- **字体**：切换为原型 HTML 的 `DM Sans / DM Mono`（中文回退 Noto Sans SC / PingFang SC），数字全站 `tabular-nums`。
+- **估值复核**：字段标签与内容全部中文化，隐藏 `is_demo`、内部 error 与原始 JSON；净债务桥/关键假设/每股价值/企业价值等按可读格式展示，并清理演示口径文案。
+- **交叉质询**：按 claim 分组显示对应论点，核验状态翻译为已核验/部分核验/未核验/证据不足/证据矛盾，并显示证据编号与问题说明。
+- **页面标题**：除首页外移除大标题下的解释性小字。
+- **数字与列表**：删除静态计数与常数占位；数值来自接口。新增 `dedupeBy`，项目/研究案/论点/议案/授权/持仓/台账按唯一业务主键去重，并补单测。
+- **三态**：页面级加载/错误态 + 列表/详情空态；无数据时显示明确空态，不渲染空容器。
+- **验收截图**：`docs/测试设计/evidence/inst-ui-production-20261109/`（1280/1440/1920、空态、超长文本、交叉质询、估值复核）及 `README.md` 清单。
+
+验证：pytest 107 passed；`tsc --noEmit`、`npm run build`、`npm run test:inst` 13 passed；Playwright `e2e-09..14` 17 passed。

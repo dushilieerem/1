@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, RefreshCw, Sparkles } from "lucide-react";
+import { dedupeBy } from "@/lib/instDedupe";
 import { instApi } from "@/lib/instApi";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
 
@@ -86,9 +87,9 @@ const DIMS: Array<[string, string]> = [
 
 const STEPS = [
   { name: "行业分析", sub: "独立底图 · 不占六维", agent: "行业研究员", duty: "只回答行业本身：空间、增速、格局、产业链与关键变量，为六维提供底图。" },
-  { name: "六维结论", sub: "六位研究员并行", agent: "六维研究员 × 6", duty: "产业 / 商业模式 / 护城河 / 财务 / 治理 / 估值各管一维；每条结论带证据与证伪。" },
+  { name: "六维结论", sub: "六维研究员并行", agent: "六维研究员", duty: "产业 / 商业模式 / 护城河 / 财务 / 治理 / 估值各管一维；每条结论带证据与证伪。" },
   { name: "一页纸", sub: "研究经理合成 · 三问", agent: "研究经理", duty: "只做裁决：该不该投、什么价投、最可能错在哪；保留矛盾，不做平均数。" },
-  { name: "研究定稿", sub: "归档版本 · 移交辩论", agent: "研究经理 + 归档", duty: "确认六维 6/6、低置信项已处理、证据包与校验码；锁定 R3，移交 03。" },
+  { name: "研究定稿", sub: "归档版本 · 移交辩论", agent: "研究经理 + 归档", duty: "确认六维齐全、低置信项已处理、证据包与校验码；锁定研究定稿，移交辩论。" },
 ];
 
 function currentCaseId(key: string | null): number | null {
@@ -117,7 +118,7 @@ export function InstV3ResearchPage() {
   const loadCases = async () => {
     const res = await instApi<{ items: CaseItem[] }>("/cases");
     const eligible = (res.items || []).filter((c) => Number(c.stage_no ?? 1) <= 2);
-    setCases(eligible);
+    setCases(dedupeBy(eligible, (c) => c.id));
     return eligible;
   };
 
@@ -171,7 +172,7 @@ export function InstV3ResearchPage() {
   }, [selectedId]);
 
   const version = detail?.versions?.[0] || null;
-  const dims = useMemo(() => version?.six_dim || [], [version]);
+  const dims = useMemo(() => dedupeBy(version?.six_dim || [], (d) => d.key), [version]);
   const activeDim = dims.find((d) => d.key === dimKey) || dims[0] || null;
 
   useEffect(() => {
@@ -200,7 +201,7 @@ export function InstV3ResearchPage() {
       return [{ id: "manager", name: "研究经理", code: "MANAGER", model: "研究经理 Agent", tools: "六维 / 底图 / 模板", output: "一页纸 · 三问裁决", role: "合成六维、裁决矛盾，不重写单维结论。" }];
     }
     return [
-      { id: "manager", name: "研究经理", code: "MANAGER", model: "研究经理 Agent", tools: "一页纸 / 未决分歧", output: "研究定稿 R3", role: "确认定稿内容与版本。" },
+      { id: "manager", name: "研究经理", code: "MANAGER", model: "研究经理 Agent", tools: "一页纸 / 未决分歧", output: "研究定稿", role: "确认定稿内容与版本。" },
       { id: "archivist", name: "研究归档", code: "VERSION", model: "确定性服务", tools: "版本 / 校验码 / 证据包", output: "定稿记录", role: "保存定稿、校验码与证据对应关系。", engine: true },
     ];
   }, [step, dims]);
@@ -257,7 +258,7 @@ export function InstV3ResearchPage() {
       const res = await instApi<Record<string, unknown>>(`/research/${version.id}/lock`, {
         method: "POST",
         body: withGaps
-          ? { allow_gaps: true, comment: "研究经理已确认数据缺口，带缺口锁定 R3" }
+          ? { allow_gaps: true, comment: "研究经理已确认数据缺口，带缺口锁定研究定稿" }
           : {},
       });
       setDetail(res as unknown as CaseItem);
@@ -310,9 +311,8 @@ export function InstV3ResearchPage() {
     <>
       <div className="v3-page-head">
         <div>
-          <div className="v3-eyebrow">RESEARCH / 02</div>
-          <h1>{detail.company_name} <span className="font-mono text-[13px] font-normal text-[#9b92a1]">{detail.symbol}</span></h1>
-          <p>左侧选项目，中间按步骤跑行业分析 → 六维 → 一页纸 → 定稿；右侧只显示当前步骤的 Agent。</p>
+          <div className="v3-eyebrow">RESEARCH</div>
+          <h1>{detail.company_name} <span className="font-mono text-[12px] font-normal text-[#6b6370]">{detail.symbol}</span></h1>
         </div>
         <Link className="v3-btn ghost" to={`/inst/pipeline/result?key=${encodeURIComponent(`case:${detail.id}`)}`}>查看结果页</Link>
       </div>
@@ -335,7 +335,7 @@ export function InstV3ResearchPage() {
               <span>{c.symbol} · {c.stage_no === 2 ? "已定稿" : "价值分析"}</span>
             </button>
           ))}
-          {!cases.length ? <div className="v3-empty" style={{ padding: "18px 8px" }}>暂无在研项目</div> : null}
+          {!cases.length ? <div className="v3-empty" style={{ padding: "16px" }}>暂无在研项目</div> : null}
         </div>
 
         <div className="v3-work-main">
@@ -356,15 +356,15 @@ export function InstV3ResearchPage() {
                     <span className="v3-chip">{version.industry_analysis.engine || "AI Agent"}</span>
                     {version.industry_analysis.data_completeness?.level ? <span className="v3-chip warn">数据 {version.industry_analysis.data_completeness.level}</span> : null}
                   </div>
-                  <p style={{ marginTop: 8, fontSize: 11, lineHeight: 1.75, color: "#4b4352" }}>{version.industry_analysis.summary || "行业分析已生成。"}</p>
+                  <p style={{ marginTop: 8, fontSize: 12, lineHeight: 1.75, color: "#4b4352" }}>{version.industry_analysis.summary || "行业分析已生成。"}</p>
                   {version.industry_analysis.checks?.length ? <ul className="v3-rule-list" style={{ marginTop: 8 }}>{version.industry_analysis.checks.map((x) => <li key={x}>{x}</li>)}</ul> : null}
                   {version.industry_analysis.counter?.length ? <div className="v3-note" style={{ marginTop: 8 }}>反证：{version.industry_analysis.counter[0]}</div> : null}
-                  {version.industry_analysis.data_completeness?.missing?.length ? <p style={{ marginTop: 8, fontSize: 10, color: "#9b92a1" }}>数据缺口：{version.industry_analysis.data_completeness.missing.join("；")}</p> : null}
+                  {version.industry_analysis.data_completeness?.missing?.length ? <p style={{ marginTop: 8, fontSize: 11, color: "#6b6370" }}>数据缺口：{version.industry_analysis.data_completeness.missing.join("；")}</p> : null}
                 </div>
               ) : (
                 <div className="v3-empty">
                   还没有独立行业分析。点击右上角生成，或在六维全量生成时一并产出。
-                  <div style={{ marginTop: 10 }}><button className="v3-btn primary" disabled={!!busy} onClick={() => runResearch("full", "full")}>{busy === "full" ? "6 个 Agent 生成中…" : "生成六维分析"}</button></div>
+                  <div style={{ marginTop: 8 }}><button className="v3-btn primary" disabled={!!busy} onClick={() => runResearch("full", "full")}>{busy === "full" ? "六维生成中…" : "生成六维分析"}</button></div>
                 </div>
               )}
             </section>
@@ -372,7 +372,7 @@ export function InstV3ResearchPage() {
 
           {step === 1 ? (
             <section className="v3-card">
-              <div className="v3-card-head"><div><h2>六维结论</h2><p>六位研究员各管一维；点标签切换，主区只显示当前一维。</p></div><span className="v3-chip">{dims.length} / 6</span></div>
+              <div className="v3-card-head"><div><h2>六维结论</h2><p>六位研究员各管一维；点标签切换，主区只显示当前一维。</p></div><span className="v3-chip">{dims.length} 维</span></div>
               {dims.length ? (
                 <>
                   <div className="v3-dim-list">
@@ -389,11 +389,11 @@ export function InstV3ResearchPage() {
                         {activeDim.confidence != null ? <span className="v3-chip">置信度 {activeDim.confidence.toFixed ? activeDim.confidence.toFixed(2) : activeDim.confidence}</span> : null}
                         {version?.dim_reviews?.[activeDim.key]?.decision === "approve" ? <span className="v3-chip ok">低置信已复核</span> : null}
                       </div>
-                      <p style={{ marginTop: 8, fontSize: 11, lineHeight: 1.75, color: "#4b4352" }}>{activeDim.summary || "待补充"}</p>
+                      <p style={{ marginTop: 8, fontSize: 12, lineHeight: 1.75, color: "#4b4352" }}>{activeDim.summary || "待补充"}</p>
                       {activeDim.checks?.length ? <ul className="v3-rule-list" style={{ marginTop: 8 }}>{activeDim.checks.map((x) => <li key={x}>{x}</li>)}</ul> : null}
                       {activeDim.counter?.length ? <div className="v3-note" style={{ marginTop: 8 }}>反证：{activeDim.counter[0]}</div> : null}
-                      {activeDim.data_completeness?.missing?.length ? <p style={{ marginTop: 8, fontSize: 10, color: "#9b92a1" }}>数据缺口：{activeDim.data_completeness.missing.join("；")}</p> : null}
-                      <div style={{ marginTop: 10 }}>
+                      {activeDim.data_completeness?.missing?.length ? <p style={{ marginTop: 8, fontSize: 11, color: "#6b6370" }}>数据缺口：{activeDim.data_completeness.missing.join("；")}</p> : null}
+                      <div style={{ marginTop: 8 }}>
                         <button className="v3-btn ghost" disabled={!!busy} onClick={() => runResearch(activeDim.key, activeDim.key)}>
                           <RefreshCw className="h-3.5 w-3.5" />{busy === activeDim.key ? "本维生成中…" : "只重跑本维"}
                         </button>
@@ -421,11 +421,11 @@ export function InstV3ResearchPage() {
                     {memo.decision ? <span className={`v3-chip ${memo.decision === "proceed" ? "ok" : memo.decision === "avoid" ? "bad" : "warn"}`}>{memo.decision}</span> : null}
                     {memo.engine ? <span className="v3-chip">{memo.engine}</span> : null}
                   </div>
-                  <p style={{ marginTop: 8, fontSize: 11.5, lineHeight: 1.75, color: "#2b2533" }}>{memo.summary || "—"}</p>
-                  {memo.metrics?.length ? <div className="v3-kpis" style={{ gridTemplateColumns: "repeat(2,minmax(0,1fr))", marginTop: 10 }}>{memo.metrics.slice(0, 4).map((m) => <div className="v3-kpi" key={m.label}><div className="k">{m.label}</div><div className="v" style={{ fontSize: 16 }}>{m.value}</div></div>)}</div> : null}
-                  {memo.conflicts?.length ? <div className="v3-note" style={{ marginTop: 10 }}>保留分歧：{memo.conflicts.join("；")}</div> : null}
-                  {memo.risks?.length ? <div style={{ marginTop: 10 }}><div className="v3-eyebrow">核心风险</div><ul className="v3-rule-list" style={{ marginTop: 5 }}>{memo.risks.slice(0, 4).map((x) => <li key={x}>{x}</li>)}</ul></div> : null}
-                  {memo.data_gate_note ? <div className="v3-note" style={{ marginTop: 10 }}>{memo.data_gate_note}</div> : null}
+                  <p style={{ marginTop: 8, fontSize: 12, lineHeight: 1.75, color: "#2b2533" }}>{memo.summary || "—"}</p>
+                  {memo.metrics?.length ? <div className="v3-kpis" style={{ gridTemplateColumns: "repeat(2,minmax(0,1fr))", marginTop: 8 }}>{memo.metrics.slice(0, 4).map((m) => <div className="v3-kpi" key={m.label}><div className="k">{m.label}</div><div className="v" style={{ fontSize: 16 }}>{m.value}</div></div>)}</div> : null}
+                  {memo.conflicts?.length ? <div className="v3-note" style={{ marginTop: 8 }}>保留分歧：{memo.conflicts.join("；")}</div> : null}
+                  {memo.risks?.length ? <div style={{ marginTop: 8 }}><div className="v3-eyebrow">核心风险</div><ul className="v3-rule-list" style={{ marginTop: 4 }}>{memo.risks.slice(0, 4).map((x) => <li key={x}>{x}</li>)}</ul></div> : null}
+                  {memo.data_gate_note ? <div className="v3-note" style={{ marginTop: 8 }}>{memo.data_gate_note}</div> : null}
                 </div>
               ) : <div className="v3-empty">还没有一页纸。点击右上角生成；它不会替代六维原始证据。</div>}
             </section>
@@ -434,7 +434,7 @@ export function InstV3ResearchPage() {
           {step === 3 ? (
             <section className="v3-card">
               <div className="v3-card-head">
-                <div><h2>研究定稿</h2><p>六维 6/6、低置信项已处理、数据门禁通过后锁定 R3；锁定后 03 只读这一版。</p></div>
+                <div><h2>研究定稿</h2><p>六维齐全、低置信项已处理、数据门禁通过后锁定研究定稿；锁定后辩论只读这一版。</p></div>
                 {locked ? <span className="v3-chip ok">已锁定</span> : gateLoading ? <span className="v3-chip">门禁检查中…</span> : <span className={`v3-chip ${gate?.status === "pass" ? "ok" : gate?.status === "warn" ? "warn" : "bad"}`}>门禁 {gate?.status || "未检查"}</span>}
               </div>
               <dl>
@@ -445,7 +445,7 @@ export function InstV3ResearchPage() {
               </dl>
 
               {gate?.checks?.length ? (
-                <div style={{ marginTop: 10 }}>
+                <div style={{ marginTop: 8 }}>
                   {gate.checks.map((c) => (
                     <div className="v3-kv" key={c.key}>
                       <dt>{c.label}</dt>
@@ -456,7 +456,7 @@ export function InstV3ResearchPage() {
               ) : null}
 
               {unresolvedLow.length ? (
-                <div className="v3-note" style={{ marginTop: 10, borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>
+                <div className="v3-note" style={{ marginTop: 8, borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>
                   <b>低置信项未复核：</b>{unresolvedLow.map((d) => d.title || d.key).join("、")}。逐项复核通过后才能正常锁定；无法补齐时也可在下方显式带缺口锁定。
                   <div className="v3-field" style={{ marginTop: 8 }}>
                     <label>复核说明（写入审计）</label>
@@ -476,11 +476,11 @@ export function InstV3ResearchPage() {
                   </div>
                 </div>
               ) : lowDims.length ? (
-                <div className="v3-note" style={{ marginTop: 10 }}>低置信项已全部复核通过。</div>
+                <div className="v3-note" style={{ marginTop: 8 }}>低置信项已全部复核通过。</div>
               ) : null}
 
               {gateBlocked && unresolvedLow.length === 0 ? (
-                <div className="v3-note" style={{ marginTop: 10 }}>门禁仍有阻断项；请回步骤 1 补齐六维或重跑对应维度。确实无法补齐时，可显式带缺口锁定并记录。</div>
+                <div className="v3-note" style={{ marginTop: 8 }}>门禁仍有阻断项；请回上一步补齐六维或重跑对应维度。确实无法补齐时，可显式带缺口锁定并记录。</div>
               ) : null}
 
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12, alignItems: "center" }}>
@@ -492,11 +492,11 @@ export function InstV3ResearchPage() {
                       disabled={!!busy || !version || gateBlocked}
                       onClick={() => lockResearch(false)}
                     >
-                      {busy === "lock" ? "锁定中…" : "锁定研究定稿 R3"}
+                      {busy === "lock" ? "锁定中…" : "锁定研究定稿"}
                     </button>
                     {gateBlocked ? (
                       <>
-                        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "#746b7c" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#5f5766" }}>
                           <input type="checkbox" checked={allowGaps} onChange={(e) => setAllowGaps(e.target.checked)} />
                           我已确认数据缺口，允许带缺口锁定
                         </label>
@@ -524,7 +524,7 @@ export function InstV3ResearchPage() {
           activeId={activeAgentId}
           onSelect={selectAgent}
           contextRows={[
-            { label: "本步产出", value: step === 0 ? "行业底图" : step === 1 ? "六维结论" : step === 2 ? "一页纸裁决" : "研究定稿 R3" },
+            { label: "本步产出", value: step === 0 ? "行业底图" : step === 1 ? "六维结论" : step === 2 ? "一页纸裁决" : "研究定稿" },
             { label: "输入", value: "FactPack、证据包、上一版研究；缺失数据写入 data_gaps。" },
             { label: "约束", value: "AI 只给建议；门禁、锁定与审批由服务端执行。" },
           ]}

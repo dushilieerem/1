@@ -219,8 +219,8 @@ test("研究 R3 → 辩论 P3 → 三关 → 授权执行 → 持仓更新", asy
     `${BASE}/inst/pipeline/result?key=${encodeURIComponent(`case:${caseId}`)}`,
     { waitUntil: "networkidle" },
   );
-  await expect(page.getByText("研究锁定 R3", { exact: true })).toBeVisible();
-  await expect(page.getByText("议案锁定 P3", { exact: true })).toBeVisible();
+  await expect(page.getByText("研究锁定", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("议案锁定", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("授权 AUTH", { exact: true })).toBeVisible();
   await expect(page.getByText(/股 · 权重/).first()).toBeVisible();
 });

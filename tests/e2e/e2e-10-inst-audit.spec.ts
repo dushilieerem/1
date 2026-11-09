@@ -13,13 +13,13 @@ const ROLES = ["manager", "partner", "chairman", "risk", "execution", "monitorin
 type Role = (typeof ROLES)[number];
 
 const WORKSPACES: Array<[string, string]> = [
-  ["/inst", "INVESTMENT OFFICE / 00"],
-  ["/inst/pipeline", "PIPELINE / 01"],
-  ["/inst/research", "RESEARCH / 02"],
-  ["/inst/debate", "DEBATE / 03"],
-  ["/inst/approvals", "DECISION / 04"],
-  ["/inst/execute", "EXECUTION / 05"],
-  ["/inst/manage", "OWNERSHIP / 06"],
+  ["/inst", "INVESTMENT OFFICE"],
+  ["/inst/pipeline", "PIPELINE"],
+  ["/inst/research", "RESEARCH"],
+  ["/inst/debate", "DEBATE"],
+  ["/inst/approvals", "DECISION"],
+  ["/inst/execute", "EXECUTION"],
+  ["/inst/manage", "OWNERSHIP"],
   ["/inst/playbook", "PLAYBOOK / RULES"],
 ];
 

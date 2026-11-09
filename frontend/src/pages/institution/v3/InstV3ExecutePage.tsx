@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, CheckCircle2, Play, RefreshCw } from "lucide-react";
+import { dedupeBy } from "@/lib/instDedupe";
 import { instApi } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
@@ -78,7 +79,7 @@ export function InstV3ExecutePage() {
       const all = await instApi<{ items: Authorization[] }>("/authorizations");
       rows = all.items || [];
     }
-    setItems(rows);
+    setItems(dedupeBy(rows, (a) => a.id));
     return rows;
   };
 
@@ -152,6 +153,7 @@ export function InstV3ExecutePage() {
   };
 
   const executed = Boolean(execResult?.order) || selected?.status === "filled";
+  const diffCount = reconcile?.differences?.length ?? 0;
   const agentDefs = useMemo<AgentPanelDef[]>(
     () => [{
       id: "engine",
@@ -176,9 +178,8 @@ export function InstV3ExecutePage() {
     <>
       <div className="v3-page-head">
         <div>
-          <div className="v3-eyebrow">EXECUTION / 05</div>
+          <div className="v3-eyebrow">EXECUTION</div>
           <h1>执行成交</h1>
-          <p>确定性代码按授权执行：核对、下单、对账、更新持仓；不调用模型，不手工改单。</p>
         </div>
         <span className="v3-chip info">{session.role_label_cn} · {canExecute ? "可执行" : "只读"}</span>
       </div>
@@ -201,7 +202,7 @@ export function InstV3ExecutePage() {
               <span>#{a.id} · {a.status} · v{a.version_no || "—"}</span>
             </button>
           ))}
-          {!items.length ? <div className="v3-empty" style={{ padding: "18px 8px" }}>暂无授权。三关审批通过后生成 AUTH。</div> : null}
+          {!items.length ? <div className="v3-empty" style={{ padding: "16px" }}>暂无授权。三关审批通过后生成 AUTH。</div> : null}
         </div>
 
         <div className="v3-work-main">
@@ -216,7 +217,7 @@ export function InstV3ExecutePage() {
                   <div className="v3-kv"><dt>价格区间</dt><dd>{snapshot.price_low != null ? `${snapshot.price_low} – ${snapshot.price_high}` : "—"}</dd></div>
                   <div className="v3-kv"><dt>账户 / 有效期</dt><dd>{String(snapshot.account || "—")} · {String(snapshot.valid_until || "—")}</dd></div>
                 </dl>
-                {approvalConditions.length ? <div className="v3-note" style={{ marginTop: 10 }}>审批附加条件：{approvalConditions.map((x) => typeof x === "object" ? JSON.stringify(x) : String(x)).join("；")}</div> : null}
+                {approvalConditions.length ? <div className="v3-note" style={{ marginTop: 8 }}>审批附加条件：{approvalConditions.map((x) => typeof x === "object" ? JSON.stringify(x) : String(x)).join("；")}</div> : null}
               </section>
 
               {step === 0 ? (
@@ -226,8 +227,8 @@ export function InstV3ExecutePage() {
                     <div className="v3-kv" key={`${c.key}-${i}`}><dt>{c.label || c.key || "检查"}</dt><dd>{c.detail || c.value || "—"} <span className={`v3-chip ${c.ok === true ? "ok" : c.ok === false ? "bad" : "warn"}`}>{c.ok === true ? "通过" : c.ok === false ? "阻断" : (c.status || "—")}</span></dd></div>
                   ))}
                   {!summary.length ? <div className="v3-empty">暂无核对明细。</div> : null}
-                  {precheck?.ok === false ? <div className="v3-note" style={{ marginTop: 10 }}>核对未通过：{precheck.blocking?.join("；") || "请检查授权要素"}</div> : null}
-                  <div style={{ marginTop: 10 }}><button className="v3-btn primary" disabled={!canExecute || precheck?.ok !== true} onClick={() => setStep(1)}>继续下单 <ArrowRight className="h-3.5 w-3.5" /></button></div>
+                  {precheck?.ok === false ? <div className="v3-note" style={{ marginTop: 8 }}>核对未通过：{precheck.blocking?.join("；") || "请检查授权要素"}</div> : null}
+                  <div style={{ marginTop: 8 }}><button className="v3-btn primary" disabled={!canExecute || precheck?.ok !== true} onClick={() => setStep(1)}>继续下单 <ArrowRight className="h-3.5 w-3.5" /></button></div>
                 </section>
               ) : null}
 
@@ -241,32 +242,32 @@ export function InstV3ExecutePage() {
                       <label><input type="checkbox" checked={conditionsMet} onChange={(e) => setConditionsMet(e.target.checked)} disabled={!canExecute} /> 审批附加条件已确认满足</label>
                     </div>
                   </div>
-                  <div style={{ marginTop: 10 }}>
+                  <div style={{ marginTop: 8 }}>
                     <button data-testid="inst-execute-submit" className="v3-btn primary" disabled={!canExecute || !!busy || executed} onClick={execute}><Play className="h-3.5 w-3.5" />{busy === "execute" ? "执行中…" : executed ? "已成交" : "执行成交"}</button>
-                    {!canExecute ? <span className="ml-2 text-[10px] text-[#9b92a1]">仅交易执行角色可下单；其他角色只读。</span> : null}
+                    {!canExecute ? <span className="ml-2 text-[11px] text-[#6b6370]">仅交易执行角色可下单；其他角色只读。</span> : null}
                   </div>
                 </section>
               ) : null}
 
               {step === 2 ? (
                 <section className="v3-card">
-                  <div className="v3-card-head"><div><h2>对账</h2><p>成交 vs 授权 vs 账户余额三方核对；有偏差登记异常，不自动覆盖。</p></div><span className={`v3-chip ${reconcile?.matched ? "ok" : "warn"}`}>{reconcile ? (reconcile.matched ? "0 偏差" : "有差异") : "待对账"}</span></div>
+                  <div className="v3-card-head"><div><h2>对账</h2><p>成交 vs 授权 vs 账户余额三方核对；有偏差登记异常，不自动覆盖。</p></div><span className={`v3-chip ${reconcile?.matched ? "ok" : "warn"}`}>{reconcile ? (reconcile.matched ? `${diffCount} 项偏差` : "有差异") : "待对账"}</span></div>
                   {execResult?.order ? (
                     <dl>
                       <div className="v3-kv"><dt>订单</dt><dd>#{execResult.order.id} · {execResult.order.side} {execResult.order.qty} 股 · {execResult.order.price}</dd></div>
                       <div className="v3-kv"><dt>幂等</dt><dd>{execResult.idempotent ? "重复执行返回原订单" : "首次执行"}</dd></div>
                     </dl>
                   ) : <div className="v3-empty">请先完成下单成交。</div>}
-                  <div style={{ marginTop: 10 }}><button data-testid="inst-reconcile" className="v3-btn primary" disabled={!executed || !!busy} onClick={runReconcile}><RefreshCw className="h-3.5 w-3.5" />{busy === "reconcile" ? "对账中…" : "执行对账"}</button></div>
-                  {reconcile ? <div className="v3-note" style={{ marginTop: 10 }}>{reconcile.matched ? "成交与授权一致，0 偏差。" : `差异：${(reconcile.differences || []).join("；")}`}</div> : null}
+                  <div style={{ marginTop: 8 }}><button data-testid="inst-reconcile" className="v3-btn primary" disabled={!executed || !!busy} onClick={runReconcile}><RefreshCw className="h-3.5 w-3.5" />{busy === "reconcile" ? "对账中…" : "执行对账"}</button></div>
+                  {reconcile ? <div className="v3-note" style={{ marginTop: 8 }}>{reconcile.matched ? `成交与授权一致，${diffCount} 项偏差。` : `差异：${(reconcile.differences || []).join("；")}`}</div> : null}
                 </section>
               ) : null}
 
               {step === 3 ? (
                 <section className="v3-card">
                   <div className="v3-card-head"><div><h2>持仓更新</h2><p>对账通过后持仓写入组合，并自动建立买入论点台账。</p></div><span className={`v3-chip ${executed ? "ok" : "warn"}`}>{executed ? "已成交" : "待成交"}</span></div>
-                  <p style={{ fontSize: 11, lineHeight: 1.7, color: "#746b7c" }}>{executed ? "持仓已更新；进入 06 投资管理继续跟踪论点、事件与退出。" : "只有成交回报回来、对账完成，持仓才算数。"}</p>
-                  <div style={{ marginTop: 10 }}><Link className="v3-btn primary" to="/inst/manage">进入投资管理 <ArrowRight className="h-3.5 w-3.5" /></Link></div>
+                  <p style={{ fontSize: 12, lineHeight: 1.7, color: "#5f5766" }}>{executed ? "持仓已更新；进入 06 投资管理继续跟踪论点、事件与退出。" : "只有成交回报回来、对账完成，持仓才算数。"}</p>
+                  <div style={{ marginTop: 8 }}><Link className="v3-btn primary" to="/inst/manage">进入投资管理 <ArrowRight className="h-3.5 w-3.5" /></Link></div>
                 </section>
               ) : null}
             </>

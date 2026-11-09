@@ -180,7 +180,7 @@ test("四套审批角色页面：当前关可操作、跨关被拒", async ({ br
   await expect(partner.page.getByText("研究与辩论摘要", { exact: true }).first()).toBeVisible();
   await expect(partner.page.getByText("合伙人 Agent · 审批建议", { exact: true })).toBeVisible();
   await expect(partner.page.getByRole("button", { name: "生成审批建议" })).toBeVisible();
-  await expect(partner.page.getByText("六项硬约束核查", { exact: false })).toHaveCount(0);
+  await expect(partner.page.getByText("硬约束核查", { exact: false })).toHaveCount(0);
   await partner.page.getByRole("button", { name: "复核通过" }).click();
   await expect
     .poll(async () => (await call(request, "GET", `/api/inst/proposals/${proposalId}`, T.manager)).status, {
@@ -194,7 +194,7 @@ test("四套审批角色页面：当前关可操作、跨关被拒", async ({ br
   // 风控：六项核查 + 放行。
   const risk = await openPage(browser, T.risk);
   await risk.page.goto(url, { waitUntil: "networkidle" });
-  await expect(risk.page.getByText("六项硬约束核查", { exact: false }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(risk.page.getByText("硬约束核查", { exact: false }).first()).toBeVisible({ timeout: 20_000 });
   await expect(risk.page.getByText("研究与辩论摘要", { exact: false })).toHaveCount(0);
   await expect(risk.page.getByText("风控 Agent · 审批建议", { exact: true })).toBeVisible();
   await expect(risk.page.getByRole("button", { name: "生成审批建议" })).toBeVisible();
@@ -214,7 +214,7 @@ test("四套审批角色页面：当前关可操作、跨关被拒", async ({ br
   await expect(chairman.page.getByText("风控结论", { exact: true }).first()).toBeVisible();
   await expect(chairman.page.getByText("Chairman Agent · 决策建议", { exact: true })).toBeVisible();
   await expect(chairman.page.getByRole("button", { name: "生成审批建议" })).toBeVisible();
-  await expect(chairman.page.getByText("六项硬约束核查", { exact: false })).toHaveCount(0);
+  await expect(chairman.page.getByText("硬约束核查", { exact: false })).toHaveCount(0);
   await expect(chairman.page.getByRole("button", { name: /批准并生成授权/ })).toBeVisible();
   await chairman.page.getByRole("button", { name: /批准并生成授权/ }).click();
   await expect(chairman.page.getByText("授权文件 AUTH", { exact: true })).toBeVisible({ timeout: 30_000 });

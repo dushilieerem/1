@@ -45,18 +45,6 @@ function Sidebar({ session, onNavigate }: { session: InstSession; onNavigate?: (
           </nav>
         </div>
       ))}
-      <div className="v3-side-note">
-        <div><span className="live" />演示环境 · 无真实交易</div>
-        <div className="row"><span>全流程环节</span><b>6 个</b></div>
-        <div className="row"><span>Agent 工作台</span><b>5 个</b></div>
-        <div className="row"><span>人工拍板点</span><b>5 个</b></div>
-        <div className="row"><span>自动环节</span><b>1 个</b></div>
-      </div>
-      <div className="v3-side-foot">
-        数据来自当前环境
-        <br />
-        页面按登录角色裁剪，不提供角色切换
-      </div>
     </aside>
   );
 }
@@ -136,7 +124,7 @@ export function InstV3Layout() {
             <div className="fixed inset-0 z-50 flex lg:hidden">
               <div className="flex w-72 max-w-[86vw] flex-col bg-[#fbf8fd]">
                 <div className="flex items-center justify-end p-2">
-                  <button className="rounded-lg p-2 text-[#746b7c] hover:bg-[#f8edf3]" onClick={() => setDrawer(false)} aria-label="关闭菜单">
+                  <button className="rounded-lg p-2 text-[#5f5766] hover:bg-[#f8edf3]" onClick={() => setDrawer(false)} aria-label="关闭菜单">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
@@ -148,7 +136,7 @@ export function InstV3Layout() {
           <div className="v3-workspace">
             <header className="v3-topbar">
               <div className="v3-crumb">
-                <button className="rounded-lg p-1.5 text-[#746b7c] hover:bg-[#f8edf3] lg:hidden" onClick={() => setDrawer(true)} aria-label="打开菜单">
+                <button className="rounded-lg p-1.5 text-[#5f5766] hover:bg-[#f8edf3] lg:hidden" onClick={() => setDrawer(true)} aria-label="打开菜单">
                   <Menu className="h-4 w-4" />
                 </button>
                 <span>{location.pathname.startsWith("/inst/playbook") ? "规则与说明" : location.pathname.startsWith("/inst/approvals") || location.pathname.startsWith("/inst/research") || location.pathname.startsWith("/inst/debate") || location.pathname.startsWith("/inst/execute") || location.pathname.startsWith("/inst/manage") ? "流程工作台" : "投资工作空间"}</span>
@@ -156,17 +144,16 @@ export function InstV3Layout() {
                 <b>{currentTitle}</b>
               </div>
               <div className="v3-top-actions">
-                <label className="hidden items-center gap-1.5 rounded-lg border border-[#e8e1ee] bg-white px-2.5 py-1.5 md:flex">
-                  <Search className="h-3.5 w-3.5 text-[#9b92a1]" />
+                <label className="hidden items-center gap-2 rounded-[10px] border border-[#e8e1ee] bg-white px-3 py-2 md:flex">
+                  <Search className="h-3.5 w-3.5 text-[#6b6370]" />
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") submitSearch(); }}
                     placeholder="搜索项目、代码、负责人…"
-                    className="w-44 bg-transparent text-[11px] outline-none placeholder:text-[#b7afbc]"
+                    className="w-44 bg-transparent text-[11px] outline-none placeholder:text-[#6b6370]"
                   />
                 </label>
-                <span className="v3-preview">主观机构端 v3</span>
                 <span className="v3-role">{session.role_label_cn}</span>
                 <div className="v3-user">
                   <b>{session.user.display_name || session.user.username}</b>

@@ -105,7 +105,16 @@ test("机构端 1440 / 400 无横向溢出", async ({ page }) => {
   await login(page);
   for (const width of [1440, 400]) {
     await page.setViewportSize({ width, height: 900 });
-    for (const path of ["/inst", "/inst/pipeline", "/inst/playbook", "/inst/manage"]) {
+    for (const path of [
+      "/inst",
+      "/inst/pipeline",
+      "/inst/research",
+      "/inst/debate",
+      "/inst/approvals",
+      "/inst/execute",
+      "/inst/manage",
+      "/inst/playbook",
+    ]) {
       await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
       await expect(page.locator(".v3-page-head h1").first()).toBeVisible({ timeout: 20_000 });
       const overflow = await page.evaluate(

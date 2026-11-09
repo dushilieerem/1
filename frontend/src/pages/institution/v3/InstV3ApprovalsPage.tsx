@@ -27,6 +27,37 @@ type ApprovalItem = {
 
 type RiskCheck = { key: string; label: string; value?: string; status: string };
 
+type SixDim = {
+  key: string;
+  title?: string;
+  summary?: string;
+  rating?: number | null;
+  confidence?: number | null;
+  gate?: string | null;
+};
+
+type DebateArg = {
+  id?: number;
+  side?: string;
+  round?: number;
+  claim?: string;
+  confidence?: number;
+  falsifier?: string;
+};
+
+type ResearchDebate = {
+  version_no?: number;
+  status?: string;
+  industry_analysis?: { summary?: string } | null;
+  six_dim?: SixDim[];
+  memo?: { summary?: string; decision?: string } | null;
+  debate?: {
+    conclusion?: string;
+    arguments?: DebateArg[];
+    evidence_checks?: unknown[];
+  } | null;
+};
+
 type ProposalListItem = {
   id: number;
   status: string;
@@ -48,6 +79,8 @@ type ProposalDetail = ProposalListItem & {
   approval_chain?: ApprovalItem[];
   my_decision?: { decision?: string; comment?: string; conditions?: string[] } | null;
   authorization?: { id: number; status: string; issued_at?: string } | null;
+  research_debate?: ResearchDebate | null;
+  risk_stage?: StageSummary;
 };
 
 const STEPS = [
@@ -71,6 +104,82 @@ const DECISION_LABEL: Record<string, string> = {
 function parseProposalId(key: string | null): number | null {
   const m = String(key || "").match(/proposal:(\d+)/);
   return m ? Number(m[1]) : null;
+}
+
+function gateTone(gate?: string | null): string {
+  if (gate === "pass") return "ok";
+  if (gate === "fail") return "bad";
+  return "warn";
+}
+
+function ResearchDebateSummary({ data }: { data?: ResearchDebate | null }) {
+  if (!data) {
+    return (
+      <section className="v3-card">
+        <div className="v3-card-head"><div><h2>研究与辩论摘要</h2><p>只读引用 02/03 锁定版本。</p></div></div>
+        <div className="v3-empty">当前议案还没有可引用的研究/辩论记录。</div>
+      </section>
+    );
+  }
+  const args = data.debate?.arguments || [];
+  const bull = args.filter((x) => x.side === "bull").slice(0, 2);
+  const bear = args.filter((x) => x.side === "bear").slice(0, 2);
+  const dims = data.six_dim || [];
+  return (
+    <section className="v3-card">
+      <div className="v3-card-head">
+        <div><h2>研究与辩论摘要</h2><p>只读引用锁定版本；不在此页改数或重跑 Agent。</p></div>
+        <span className="v3-chip">R{data.version_no || "—"} · {data.status || "—"}</span>
+      </div>
+      <dl>
+        <div className="v3-kv"><dt>辩论结论</dt><dd>{data.debate?.conclusion || "—"}</dd></div>
+        <div className="v3-kv"><dt>证据核验</dt><dd>{(data.debate?.evidence_checks || []).length} 条</dd></div>
+        <div className="v3-kv"><dt>一页纸结论</dt><dd>{data.memo?.decision ? `${data.memo.decision} · ` : ""}{data.memo?.summary || "未生成"}</dd></div>
+      </dl>
+      {data.industry_analysis?.summary ? (
+        <div className="v3-note" style={{ marginTop: 8 }}>行业底图：{data.industry_analysis.summary}</div>
+      ) : null}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 6, marginTop: 10 }}>
+        {dims.map((d) => (
+          <div key={d.key} className="v3-note" style={{ padding: "7px 8px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
+              <b style={{ fontSize: 10 }}>{d.title || d.key}</b>
+              <span className={`v3-chip ${gateTone(d.gate)}`}>{d.gate || "—"}</span>
+            </div>
+            <div style={{ fontSize: 9.5, lineHeight: 1.55, color: "#746b7c", marginTop: 4 }}>
+              {d.summary || "—"}
+            </div>
+            {d.rating != null ? <div style={{ fontSize: 9.5, color: "#9b92a1", marginTop: 3 }}>评级 {d.rating}/5{d.confidence != null ? ` · 置信 ${Number(d.confidence).toFixed(2)}` : ""}</div> : null}
+          </div>
+        ))}
+      </div>
+      {bull.length || bear.length ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8, marginTop: 10 }}>
+          <div>
+            <div className="v3-eyebrow">多方要点</div>
+            {bull.map((a) => (
+              <div key={a.id} className="v3-claim" style={{ marginTop: 5 }}>
+                <div className="who">第 {a.round || 1} 轮 · 置信 {a.confidence?.toFixed?.(2) ?? "—"}</div>
+                <p>{a.claim}</p>
+              </div>
+            ))}
+            {!bull.length ? <div className="v3-empty" style={{ padding: "10px 4px" }}>暂无</div> : null}
+          </div>
+          <div>
+            <div className="v3-eyebrow">空方要点</div>
+            {bear.map((a) => (
+              <div key={a.id} className="v3-claim" style={{ marginTop: 5 }}>
+                <div className="who">第 {a.round || 1} 轮 · 置信 {a.confidence?.toFixed?.(2) ?? "—"}</div>
+                <p>{a.claim}</p>
+                {a.falsifier ? <div className="fs">证伪：{a.falsifier}</div> : null}
+              </div>
+            ))}
+            {!bear.length ? <div className="v3-empty" style={{ padding: "10px 4px" }}>暂无</div> : null}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 function statusTone(status: string): string {
@@ -243,6 +352,8 @@ export function InstV3ApprovalsPage() {
               </section>
 
               {viewStep === 1 ? (
+                <>
+                <ResearchDebateSummary data={detail.research_debate} />
                 <section className="v3-card">
                   <div className="v3-card-head"><div><h2>合伙人复核</h2><p>研究质量、上会资格、议案合理性与机会成本；不看风控六项明细。</p></div><span className="v3-chip">{progress?.partner?.status || "—"}</span></div>
                   <p style={{ fontSize: 11, lineHeight: 1.7, color: "#746b7c" }}>研究与辩论摘要由 02/03 锁定版本提供；合伙人只判断是否值得上会。提案人不能审批自己的议案。</p>
@@ -264,6 +375,7 @@ export function InstV3ApprovalsPage() {
                   ) : null}
                   {role !== "partner" ? <div className="v3-note">当前登录角色为 {session.role_label_cn}，只能查看；合伙人账号可操作。</div> : null}
                 </section>
+                </>
               ) : null}
 
               {viewStep === 2 ? (
@@ -294,6 +406,17 @@ export function InstV3ApprovalsPage() {
               ) : null}
 
               {viewStep === 3 ? (
+                <>
+                <ResearchDebateSummary data={detail.research_debate} />
+                <section className="v3-card">
+                  <div className="v3-card-head"><div><h2>风控结论</h2><p>独立风控六项硬约束的结论与附加条件；详细核查值不回传 Chairman。</p></div><span className="v3-chip">{detail.risk_stage?.status || "—"}</span></div>
+                  <dl>
+                    <div className="v3-kv"><dt>结论</dt><dd>{detail.risk_stage?.decision || "—"}</dd></div>
+                    <div className="v3-kv"><dt>意见</dt><dd>{detail.risk_stage?.comment || "—"}</dd></div>
+                    <div className="v3-kv"><dt>附加条件</dt><dd>{detail.risk_stage?.conditions?.length ? detail.risk_stage.conditions.join("；") : "无"}</dd></div>
+                    <div className="v3-kv"><dt>表决进度</dt><dd>{detail.risk_stage?.reviewed ?? 0}/{detail.risk_stage?.total ?? "—"}</dd></div>
+                  </dl>
+                </section>
                 <section className="v3-card">
                   <div className="v3-card-head"><div><h2>完整审批链</h2><p>合伙人 → 风控 → Chairman；按人留痕，风控否决不可越过。</p></div><span className="v3-chip">{progress?.chairman?.status || "—"}</span></div>
                   {chain.length ? chain.map((a, i) => (
@@ -318,6 +441,7 @@ export function InstV3ApprovalsPage() {
                   ) : null}
                   {role !== "chairman" ? <div className="v3-note">当前登录角色为 {session.role_label_cn}，只能查看；Chairman 账号可操作。</div> : null}
                 </section>
+                </>
               ) : null}
 
               {viewStep === 4 ? (

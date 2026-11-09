@@ -622,3 +622,15 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 锁定后仍由服务端再次执行门禁，页面不能绕过。
 
 验证：pytest 104 passed；`tsc --noEmit`、`npm run build` 通过；Playwright `e2e-09..13` 共 14 passed（仅写 `svquant_test`）。
+
+
+### 11.27 审批页研究与辩论摘要、Chairman 风控结论（2026-11-09）
+
+补齐审批角色的决策材料；仍严格遵守“只看本关该看的字段”。
+
+- 合伙人：在复核对前展示只读「研究与辩论摘要」——研究版本、行业底图、六维 gate/评级/摘要、一页纸结论、辩论结论与多空要点；不展示风控六项明细。
+- Chairman：展示同一份研究与辩论摘要 + 「风控结论」（结论、意见、附加条件、表决进度）+ 完整审批链；仍不回传风控逐项核查值。
+- 风控：只看六项硬约束与合伙人结论，不展示研究与辩论全文。
+- 三张摘要卡在 400px 宽度下改为自适应网格；e2e-09 的窄屏检查扩展到 v3 全部八个入口。
+
+验证：pytest 104 passed；`tsc --noEmit`、`npm run build` 通过；Playwright `e2e-09..13` 14 passed。

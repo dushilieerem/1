@@ -68,9 +68,12 @@ export function InstV3ProjectResultPage() {
           <Link className="v3-eyebrow inline-flex items-center gap-1" to="/inst/pipeline"><ArrowLeft className="h-3 w-3" />返回项目流水线</Link>
           <h1>{title} <span className="font-mono text-[12px] font-normal text-[#6b6370]">{symbol}</span></h1>
         </div>
-        <Link className="v3-btn primary" to={stageLink(key, stageNo)}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="v3-chip info">版本 {(version as Record<string, unknown>).version_no as number ?? "—"}</span>
+          <Link className="v3-btn primary" to={stageLink(key, stageNo)}>
           进入{stageNo === 0 ? "价值分析" : STAGES[Math.min(5, Math.max(0, stageNo))].name}工作台 <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
+          </Link>
+        </div>
       </div>
 
       <div className="v3-stepper">

@@ -56,6 +56,7 @@ type ExitCase = {
 
 type Holding = {
   symbol: string;
+  version_no?: number | null;
   position: Position;
   theses: Thesis[];
   events: MonitorEvent[];
@@ -241,7 +242,10 @@ export function InstV3ManagePage() {
           <div className="v3-eyebrow">OWNERSHIP</div>
           <h1>投资管理</h1>
         </div>
-        <span className="v3-chip info">{session.role_label_cn}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="v3-chip info">版本 {holding?.version_no ?? "—"}</span>
+          <span className="v3-chip info">{session.role_label_cn}</span>
+        </div>
       </div>
 
       <div className="v3-stepper">

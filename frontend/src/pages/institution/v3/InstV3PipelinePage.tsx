@@ -8,7 +8,7 @@ function ProjectCard({ item }: { item: V3PipelineItem }) {
   const title = item.company_name || item.symbol || "—";
   return (
     <Link className="v3-project" to={`/inst/pipeline/result?key=${encodeURIComponent(item.key)}`}>
-      <span className="nm">{title}<span className="v3-chip gold">{item.stage_name}</span></span>
+      <span className="nm">{title}<span className="v3-chip gold">{item.stage_name}</span>{item.stage_no > 0 ? <span className="v3-chip">版本 {item.version_no ?? "—"}</span> : null}</span>
       <span className="cd">{item.symbol} {item.industry ? `· ${item.industry}` : ""}</span>
       <span className="ms">
         {item.stage_no === 0

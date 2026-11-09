@@ -27,10 +27,26 @@ git fetch --prune --tags origin
 
 case "$ACTION" in
   ci)
-    log "CI：检出 origin/$BRANCH ${SHA:+@ ${SHA:0:8}}"
-    git checkout -f -B "ci-${BRANCH}" "origin/${BRANCH}"
-    bash "$ROOT_DIR/scripts/ci/backend-check.sh"
-    bash "$ROOT_DIR/scripts/ci/frontend-check.sh"
+    # CI 在独立 worktree 里跑：主检出留给部署，两者互不抢工作区。
+    CI_WORKTREE="${CI_WORKTREE:-$ROOT_DIR/../svquant-ci-wt}"
+    log "CI：独立检出 $CI_WORKTREE @ origin/$BRANCH ${SHA:+(${SHA:0:8})}"
+    git worktree prune
+    if [[ -d "$CI_WORKTREE" ]]; then
+      if ! git -C "$CI_WORKTREE" checkout -f --detach "origin/$BRANCH"; then
+        log "工作区异常，重建 worktree"
+        rm -rf "$CI_WORKTREE"
+        git worktree prune
+        git worktree add --force --detach "$CI_WORKTREE" "origin/$BRANCH"
+      fi
+    else
+      git worktree add --force --detach "$CI_WORKTREE" "origin/$BRANCH"
+    fi
+    # 复用主检出的依赖，避免每轮 npm ci / pip 重装
+    mkdir -p "$CI_WORKTREE/frontend"
+    ln -sfn "$ROOT_DIR/frontend/node_modules" "$CI_WORKTREE/frontend/node_modules"
+    ln -sfn "$ROOT_DIR/.ci" "$CI_WORKTREE/.ci"
+    bash "$CI_WORKTREE/scripts/ci/backend-check.sh"
+    bash "$CI_WORKTREE/scripts/ci/frontend-check.sh"
     log "CI 通过"
     ;;
   deploy)

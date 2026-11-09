@@ -19,11 +19,15 @@ systemd timer（默认 60s）
         │
         ▼
 scripts/ci/poll.sh   git fetch --prune --tags → 对比状态文件
-        ├── 新 tag        → webhook-job.sh deploy refs/tags/<tag>
-        └── master 变化   → webhook-job.sh ci master
+        ├── 新 tag        → webhook-job.sh deploy refs/tags/<tag>   （同步，优先）
+        └── master 变化   → 后台 webhook-job.sh ci master            （独立 worktree + ci.lock）
         ▼
 scripts/ci/*.sh      测试 / 构建 / 部署 / 冒烟 / 回滚
 ```
+
+CI 在 `../svquant-ci-wt` 独立 worktree 里检出并运行，用 `ci.lock` 单独互斥，
+不再占用主检出的 `poll.lock`：CI 跑着的时候推 tag，部署照样立即开始。
+CI 占锁时本轮不推进 master 基线，下一轮重试，提交不会漏跑。
 
 原则：
 
@@ -74,7 +78,8 @@ sudo bash scripts/ci/poll-install.sh --user <运行用户>
 一次 oneshot 服务）、**立刻跑一次建立基线**（不会把历史 tag 重新部署），并检查运行用户能否
 `git fetch` 远端。
 
-状态文件 `/var/lib/svquant/poll-state.env` 记录上次见到的 `master` 与最新 tag；失败不自动重试，
+状态文件 `/var/lib/svquant/poll-state.env` 记录上次见到的 `master` 与最新 tag（CI 结果见
+`/var/lib/svquant/jobs.log`）；失败不自动重试，
 避免每分钟重复跑一次失败的构建。
 
 ```bash
@@ -179,11 +184,11 @@ serve-public.sh start           重启 invest-api 与手机 H5，创建或复用
 
 发布检查清单：
 
-1. 最近一次 master 变化对应的 CI 通过（`journalctl -u svquant-poll.service` 里看到 "CI 通过"）；
+1. 最近一次 master 变化对应的 CI 通过（`tail /var/lib/svquant/jobs.log` 里看到 "CI 通过"）；
 2. RE 已发布且 `/api/re/health` 可达；
 3. 有破坏性数据变更时，确认 `deploy/backups/` 里已有备份且能解压；
 4. `git tag vX.Y.Z && git push origin vX.Y.Z`，等一个轮询间隔；
-5. 看 `journalctl -u svquant-poll.service` 与冒烟结果。
+5. 看 `/var/lib/svquant/jobs.log` 与冒烟结果。
 
 回滚：
 

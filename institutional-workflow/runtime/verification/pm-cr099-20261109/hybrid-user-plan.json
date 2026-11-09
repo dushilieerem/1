@@ -1,6 +1,6 @@
 {
   "created_at": "2026-11-09T14:49:38.725935+00:00",
-  "status": "prepared_not_started",
+  "status": "prepared_waiting_metering_patch",
   "purpose": "Real functional acceptance of autonomous -> human takeover/edit -> return to Agent. Not an independent scientific comparison with A/B or a new success claim.",
   "name": "缺口承接与量能确认 · 人机研究 1109",
   "brief": "研究开盘缺口在当日交易中被承接或延续后的次日收益差异。仅使用截至当日收盘可得的open、high、low、close、volume，最多5个交易日回看。Agent自行提出可解释的缺口与日内价格修复、相对量能的候选评分，高分预期次日收益较高。初始实现与后续修改必须在同一研究台账中保留；人工会在研究中暂停并改进实现，然后交回Agent检验。不得改变固定方向、样本、日期、门槛，不得引入turnover等额外字段。",
@@ -12,7 +12,7 @@
     "validation_end": "2026-09-21",
     "candidate_warmup_sessions": 0,
     "max_trials_per_initial_task": 2,
-    "model_budget_change": false,
+    "model_budget_change": "explicit user authorization of future research ceiling100m; not a compute increase",
     "symbols": [
       "000001.SZ",
       "000063.SZ",
@@ -104,5 +104,6 @@
     "concurrent compute"
   ],
   "actual_project_id": null,
-  "scientific_limitation": "This is another bounded functional research trial on already observed development data. Prior exploratory A/B exposure is disclosed and it is not held-out evidence. A genuine admission must separately satisfy the complete formal comparison and untouched validation requirements."
+  "scientific_limitation": "This is another bounded functional research trial on already observed development data. Prior exploratory A/B exposure is disclosed and it is not held-out evidence. A genuine admission must separately satisfy the complete formal comparison and untouched validation requirements.",
+  "model_budget_authorization": "research-budget-authorization.json"
 }

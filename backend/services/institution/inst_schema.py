@@ -9,6 +9,8 @@
 """
 from __future__ import annotations
 
+import json
+
 from services.core.db import get_conn
 
 DDL: tuple[str, ...] = (
@@ -76,13 +78,53 @@ DDL: tuple[str, ...] = (
       company_id  BIGINT NOT NULL REFERENCES inst_company(id) ON DELETE CASCADE,
       case_no     TEXT NOT NULL,
       stage       TEXT NOT NULL DEFAULT 'draft',
+      stage_no    SMALLINT,
+      stage_key   TEXT,
+      stage_gate  JSONB,
+      stage_locked_at TIMESTAMPTZ,
+      stage_state TEXT NOT NULL DEFAULT 'in_progress',
+      terminal_reason TEXT,
+      reopened_at TIMESTAMPTZ,
       created_by  BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT inst_research_case_stage_chk CHECK (
         stage IN ('draft','planning','researching','package_ready','pending_review','approved','debate','proposal','closed')
       ),
+      CONSTRAINT inst_research_case_stage_no_chk CHECK (stage_no IS NULL OR stage_no BETWEEN 0 AND 5),
       CONSTRAINT inst_research_case_no_key UNIQUE (org_id, case_no)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS inst_case_transition (
+      id              BIGSERIAL PRIMARY KEY,
+      org_id          BIGINT NOT NULL REFERENCES inst_orgs(id) ON DELETE CASCADE,
+      case_id         BIGINT NOT NULL REFERENCES inst_research_case(id) ON DELETE CASCADE,
+      from_stage      SMALLINT,
+      to_stage        SMALLINT NOT NULL,
+      from_state      TEXT,
+      to_state        TEXT NOT NULL DEFAULT 'in_progress',
+      trigger         TEXT NOT NULL,
+      actor_member_id BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
+      object_type     TEXT,
+      object_id       BIGINT,
+      detail          JSONB,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS inst_gate_run (
+      id          BIGSERIAL PRIMARY KEY,
+      org_id      BIGINT NOT NULL REFERENCES inst_orgs(id) ON DELETE CASCADE,
+      case_id     BIGINT REFERENCES inst_research_case(id) ON DELETE CASCADE,
+      gate_key    TEXT NOT NULL,
+      status      TEXT NOT NULL,
+      checks      JSONB,
+      object_type TEXT,
+      object_id   BIGINT,
+      created_by  BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT inst_gate_run_status_chk CHECK (status IN ('pass','warn','block'))
     )
     """,
     """
@@ -123,6 +165,8 @@ DDL: tuple[str, ...] = (
       created_by      BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
       created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       frozen_at       TIMESTAMPTZ,
+      locked_at       TIMESTAMPTZ,
+      superseded_at   TIMESTAMPTZ,
       approved_by     BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
       approved_at     TIMESTAMPTZ,
       CONSTRAINT inst_research_version_status_chk CHECK (
@@ -232,6 +276,9 @@ DDL: tuple[str, ...] = (
       target_weight       DOUBLE PRECISION NOT NULL DEFAULT 0,
       current_version_no  INTEGER NOT NULL DEFAULT 0,
       status              TEXT NOT NULL DEFAULT 'draft',
+      locked_at           TIMESTAMPTZ,
+      stale_at            TIMESTAMPTZ,
+      stale_reason        TEXT,
       created_by          BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
       created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -248,6 +295,8 @@ DDL: tuple[str, ...] = (
       version_no    INTEGER NOT NULL,
       snapshot      JSONB NOT NULL,
       status        TEXT NOT NULL DEFAULT 'draft',
+      locked_at     TIMESTAMPTZ,
+      lock_hash     TEXT,
       created_by    BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
       created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT inst_proposal_version_status_chk CHECK (
@@ -449,7 +498,11 @@ INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_inst_company_symbol ON inst_company (symbol, market)",
     "CREATE INDEX IF NOT EXISTS idx_inst_idea_decision_company ON inst_idea_decision (company_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_research_case_company ON inst_research_case (company_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_research_case_stage ON inst_research_case (org_id, stage_no, updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_case_transition_case ON inst_case_transition (case_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_gate_run_case ON inst_gate_run (case_id, gate_key, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_research_version_case ON inst_research_version (case_id, version_no DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_proposal_stale ON inst_proposal (org_id, stale_at)",
     "CREATE INDEX IF NOT EXISTS idx_inst_evidence_case ON inst_evidence (case_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_debate_session_case ON inst_debate_session (case_id, started_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_debate_argument_session ON inst_debate_argument (session_id, side, round)",
@@ -469,6 +522,101 @@ INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_inst_thesis_review_ledger ON inst_thesis_review (ledger_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_exc_org ON inst_execution_exception (org_id, status, created_at DESC)",
 )
+
+
+def _backfill_case_stages(conn) -> None:
+    """把旧 case 幂等映射到 v3 阶段；只补空值，不覆盖新流程写入。"""
+    stage_keys = {
+        0: "find",
+        1: "research",
+        2: "debate",
+        3: "approve",
+        4: "execute",
+        5: "manage",
+    }
+    gates = {
+        0: "立项三问",
+        1: "研究定稿",
+        2: "议案锁定",
+        3: "三关审批",
+        4: "授权执行",
+        5: "监控 / 退出",
+    }
+    rows = conn.execute(
+        """
+        SELECT c.id, c.org_id, c.stage_no, c.stage_key, co.symbol
+          FROM inst_research_case c
+          JOIN inst_company co ON co.id = c.company_id
+         WHERE c.stage_no IS NULL OR c.stage_key IS NULL
+         ORDER BY c.id
+        """
+    ).fetchall()
+    for row in rows:
+        case_id = int(row["id"])
+        org_id = int(row["org_id"])
+        symbol = str(row.get("symbol") or "")
+        stage_no = row.get("stage_no")
+        if stage_no is None:
+            has_position = conn.execute(
+                """
+                SELECT 1 FROM inst_position_snapshot ps
+                  JOIN inst_portfolio p ON p.id = ps.portfolio_id
+                 WHERE p.org_id=%s AND ps.symbol=%s AND ps.qty > 0
+                 LIMIT 1
+                """,
+                (org_id, symbol),
+            ).fetchone()
+            has_authorization = conn.execute(
+                """
+                SELECT 1 FROM inst_authorization a
+                  JOIN inst_proposal_version pv ON pv.id = a.proposal_version_id
+                  JOIN inst_proposal p ON p.id = pv.proposal_id
+                 WHERE p.case_id=%s AND a.status IN ('qualified','filled')
+                 LIMIT 1
+                """,
+                (case_id,),
+            ).fetchone()
+            submitted = conn.execute(
+                """
+                SELECT 1 FROM inst_proposal
+                 WHERE case_id=%s
+                   AND status IN ('partner_review','risk_precheck','chairman_review','authorized','executed')
+                 LIMIT 1
+                """,
+                (case_id,),
+            ).fetchone()
+            approved = conn.execute(
+                "SELECT 1 FROM inst_research_version WHERE case_id=%s AND status='approved' LIMIT 1",
+                (case_id,),
+            ).fetchone()
+            if has_position:
+                stage_no = 5
+            elif has_authorization:
+                stage_no = 4
+            elif submitted:
+                stage_no = 3
+            elif approved:
+                stage_no = 2
+            else:
+                stage_no = 1
+        stage_no = int(stage_no)
+        conn.execute(
+            """
+            UPDATE inst_research_case
+               SET stage_no=%s,
+                   stage_key=%s,
+                   stage_gate=COALESCE(stage_gate, %s::jsonb),
+                   stage_locked_at=COALESCE(stage_locked_at, CASE WHEN %s >= 2 THEN updated_at END)
+             WHERE id=%s
+            """,
+            (
+                stage_no,
+                stage_keys.get(stage_no, "research"),
+                json.dumps({"stage_no": stage_no, "gate": gates.get(stage_no, "研究定稿")}, ensure_ascii=False),
+                stage_no,
+                case_id,
+            ),
+        )
 
 
 def ensure_inst_business_schema(*, include_indexes: bool = True) -> None:
@@ -499,6 +647,35 @@ def ensure_inst_business_schema(*, include_indexes: bool = True) -> None:
         conn.execute("ALTER TABLE inst_research_version ADD COLUMN IF NOT EXISTS industry_analysis JSONB")
         conn.execute("ALTER TABLE inst_research_version ADD COLUMN IF NOT EXISTS content_hash TEXT")
         conn.execute("ALTER TABLE inst_research_version ADD COLUMN IF NOT EXISTS cutoff DATE")
+        # v3 阶段机与三次锁定：研究、议案、授权各自有不可回写的锁定时间。
+        conn.execute("ALTER TABLE inst_research_case ADD COLUMN IF NOT EXISTS stage_no SMALLINT")
+        conn.execute("ALTER TABLE inst_research_case ADD COLUMN IF NOT EXISTS stage_key TEXT")
+        conn.execute("ALTER TABLE inst_research_case ADD COLUMN IF NOT EXISTS stage_gate JSONB")
+        conn.execute("ALTER TABLE inst_research_case ADD COLUMN IF NOT EXISTS stage_locked_at TIMESTAMPTZ")
+        conn.execute("ALTER TABLE inst_research_case ADD COLUMN IF NOT EXISTS stage_state TEXT NOT NULL DEFAULT 'in_progress'")
+        conn.execute("ALTER TABLE inst_research_case ADD COLUMN IF NOT EXISTS terminal_reason TEXT")
+        conn.execute("ALTER TABLE inst_research_case ADD COLUMN IF NOT EXISTS reopened_at TIMESTAMPTZ")
+        conn.execute("ALTER TABLE inst_research_version ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ")
+        conn.execute("ALTER TABLE inst_research_version ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMPTZ")
+        conn.execute("ALTER TABLE inst_proposal ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ")
+        conn.execute("ALTER TABLE inst_proposal ADD COLUMN IF NOT EXISTS stale_at TIMESTAMPTZ")
+        conn.execute("ALTER TABLE inst_proposal ADD COLUMN IF NOT EXISTS stale_reason TEXT")
+        conn.execute("ALTER TABLE inst_proposal_version ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ")
+        conn.execute("ALTER TABLE inst_proposal_version ADD COLUMN IF NOT EXISTS lock_hash TEXT")
+        # 旧已批准研究视为已锁定；旧已进入审批的议案版本补锁定时间。
+        conn.execute(
+            "UPDATE inst_research_version SET locked_at=COALESCE(locked_at,frozen_at,approved_at,NOW()) "
+            " WHERE status='approved' AND locked_at IS NULL"
+        )
+        conn.execute(
+            "UPDATE inst_proposal_version SET locked_at=COALESCE(locked_at,created_at) "
+            " WHERE status <> 'draft' AND locked_at IS NULL"
+        )
+        conn.execute(
+            "UPDATE inst_proposal SET locked_at=COALESCE(locked_at,updated_at) "
+            " WHERE status <> 'draft' AND locked_at IS NULL"
+        )
+        _backfill_case_stages(conn)
         conn.execute("ALTER TABLE inst_debate_argument ADD COLUMN IF NOT EXISTS claim_id TEXT")
         conn.execute(
             "ALTER TABLE inst_debate_argument ADD COLUMN IF NOT EXISTS claim_type TEXT NOT NULL DEFAULT 'inference'"

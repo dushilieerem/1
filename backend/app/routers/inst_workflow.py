@@ -1086,6 +1086,111 @@ def review_exit(
         raise _handle(exc) from exc
 
 
+# ---------------------------------------------------------------- v3 流水线 / 结果页 / 锁定
+
+
+@router.get("/pipeline")
+def pipeline(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "overview")
+    return {"ok": True, **svc.pipeline(org_id)}
+
+
+@router.get("/projects/{key}")
+def project_result(key: str, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "overview")
+    try:
+        return {"ok": True, **svc.project_result(org_id, key)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.get("/holdings/{symbol}")
+def holding_detail(symbol: str, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "portfolio")
+    try:
+        return {"ok": True, **svc.holding_detail(org_id, symbol)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.get("/playbook")
+def playbook(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    _require_ws(ctx, "overview")
+    return {"ok": True, **svc.playbook()}
+
+
+@router.post("/research/{version_id}/lock")
+def lock_research(
+    version_id: int,
+    body: dict[str, Any] | None = None,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "research")
+    body = body or {}
+    try:
+        return {
+            "ok": True,
+            **svc.lock_research(
+                org_id,
+                version_id,
+                actor_member_id=member_id,
+                allow_gaps=bool(body.get("allow_gaps")),
+                comment=str(body.get("comment") or "") or None,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/cases/{case_id}/research/reopen")
+def reopen_research(
+    case_id: int,
+    body: dict[str, Any],
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "research")
+    try:
+        return {
+            "ok": True,
+            **svc.reopen_research(
+                org_id,
+                case_id,
+                reason=str(body.get("reason") or ""),
+                actor_member_id=member_id,
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/proposals/{proposal_id}/lock")
+def lock_proposal(
+    proposal_id: int,
+    body: dict[str, Any] | None = None,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "approvals")
+    body = body or {}
+    try:
+        return {
+            "ok": True,
+            **svc.submit_proposal(
+                org_id,
+                proposal_id,
+                actor_member_id=member_id,
+                allow_warnings=bool(body.get("allow_warnings", True)),
+            ),
+        }
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.get("/audit")
 def audit(limit: int = 100, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)

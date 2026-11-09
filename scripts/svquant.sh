@@ -28,6 +28,19 @@ TUNNEL_INVEST_LOG="$RUNTIME_DIR/tunnel-invest.log"
 BACKEND_PORT="${SVQUANT_DEV_BACKEND_PORT:-8768}"
 FRONTEND_PORT="${SVQUANT_DEV_FRONTEND_PORT:-9531}"
 INVEST_H5_PORT="${SVQUANT_DEV_INVEST_H5_PORT:-9541}"
+
+# stop/status 靠端口识别进程：如果 start 时用了自定义端口，这里沿用上次启动记录的端口，
+# 避免「起的时候带环境变量、停的时候忘了带」导致进程认不出来。
+PORTS_FILE="$RUNTIME_DIR/dev-ports.env"
+if [[ -f "$PORTS_FILE" ]]; then
+  _recorded="$(sed -n 's/^BACKEND_PORT=//p' "$PORTS_FILE" | head -n1 || true)"
+  [[ -z "${SVQUANT_DEV_BACKEND_PORT:-}" && -n "$_recorded" ]] && BACKEND_PORT="$_recorded"
+  _recorded="$(sed -n 's/^FRONTEND_PORT=//p' "$PORTS_FILE" | head -n1 || true)"
+  [[ -z "${SVQUANT_DEV_FRONTEND_PORT:-}" && -n "$_recorded" ]] && FRONTEND_PORT="$_recorded"
+  _recorded="$(sed -n 's/^INVEST_H5_PORT=//p' "$PORTS_FILE" | head -n1 || true)"
+  [[ -z "${SVQUANT_DEV_INVEST_H5_PORT:-}" && -n "$_recorded" ]] && INVEST_H5_PORT="$_recorded"
+  unset _recorded
+fi
 STARTUP_TIMEOUT_SECONDS=60
 TUNNEL_TIMEOUT_SECONDS=40
 CONDA_ENV_NAME="${SVQUANT_CONDA_ENV:-svquant}"
@@ -562,6 +575,8 @@ start_all() {
   activate_conda_env || die "无法激活 Conda 环境 '$CONDA_ENV_NAME'。"
 
   mkdir -p "$RUNTIME_DIR"
+  printf 'BACKEND_PORT=%s\nFRONTEND_PORT=%s\nINVEST_H5_PORT=%s\n' \
+    "$BACKEND_PORT" "$FRONTEND_PORT" "$INVEST_H5_PORT" > "$PORTS_FILE"
 
   for i in "${!SERVICES[@]}"; do
     service="${SERVICES[i]}"

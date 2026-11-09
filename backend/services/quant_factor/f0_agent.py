@@ -47,7 +47,7 @@ def _context(uid, org, topic, run_id):
     k = ledger.current_k(trials, topic["primary_holding_period"])
     with get_conn() as c:
         branches = [dict(b) for b in c.execute(
-            "SELECT id,parent_id,source,status,hypothesis_version,implementation_version FROM quant_factor_branches WHERE user_id=%s AND org_id=%s AND topic_id=%s",
+            "SELECT id,parent_id,source,status,title,hypothesis_version,implementation_version,created_at FROM quant_factor_branches WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at",
             (uid, org, topic["id"])).fetchall()]
     with get_conn() as c:
         recent = [dict(r) for r in c.execute(
@@ -56,7 +56,10 @@ def _context(uid, org, topic, run_id):
     with get_conn() as c:
         project = c.execute("SELECT config FROM detect_projects WHERE user_id=%s AND id=%s",
                             (uid, topic["project_id"])).fetchone()
-    purpose = ((project or {}).get("config") or {}).get("researchPlan", {}).get("researchPurpose", "")
+    cfg = ((project or {}).get("config") or {})
+    plan = cfg.get("researchPlan") or {}
+    purpose = plan.get("researchPurpose", "")
+    active_branch = cfg.get("v5ActiveBranch")
     with get_conn() as c:
         run_row = c.execute("SELECT decision FROM quant_factor_f0_runs WHERE id=%s AND user_id=%s AND org_id=%s",
                             (run_id, uid, org)).fetchone()
@@ -71,10 +74,18 @@ def _context(uid, org, topic, run_id):
         gate = (latest.get("result_summary") or {}).get("gate") or {}
         summary = {"trial_no": latest["trial_no"], "outcome": latest["outcome"],
                    "report_id": latest.get("report_id"), "gate": gate}
+        candidate_id = None
+        if latest.get("report_id", "").startswith("qf_"):
+            candidate_id = latest["report_id"][3:].split("_development")[0]
         with get_conn() as c:
-            cand = c.execute(
-                "SELECT status,evidence FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s ORDER BY created_at DESC LIMIT 1",
-                (uid, org, topic["project_id"])).fetchone()
+            if candidate_id:
+                cand = c.execute(
+                    "SELECT status,evidence FROM quant_factor_candidates WHERE id=%s AND user_id=%s AND org_id=%s",
+                    (candidate_id, uid, org)).fetchone()
+            else:
+                cand = c.execute(
+                    "SELECT status,evidence FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s ORDER BY created_at DESC LIMIT 1",
+                    (uid, org, topic["project_id"])).fetchone()
         if cand:
             dev = (cand.get("evidence") or {}).get("development") or {}
             nov = dev.get("novelty") or {}
@@ -104,13 +115,20 @@ def _context(uid, org, topic, run_id):
         "trials": [{k: t.get(k) for k in (
             "trial_no", "branch_id", "kind", "outcome", "returned_metrics", "rerun_of", "report_id")}
             for t in trials[-8:]],
-        "latest_report": summary, "branches": branches, "research_purpose": purpose,
+        "latest_report": summary,
+        "research_question": {"hypothesis": plan.get("hypothesis") or cfg.get("description") or topic.get("name"),
+                              "objective": plan.get("target"), "acceptance": plan.get("acceptance")},
+        "branches": [{**b, "latest_trial": next(({"trial_no": t.get("trial_no"), "outcome": t.get("outcome"),
+                                                   "report_id": t.get("report_id"), "gate": (t.get("result_summary") or {}).get("gate")}
+                                                  for t in reversed(trials) if t.get("branch_id") == b["id"]), None)}
+                     for b in branches],
+        "active_branch": active_branch, "research_purpose": purpose,
         "capability_gaps": gaps,
         "sealed_used": sealed_used, "max_sealed": int(topic.get("max_sealed") or 1),
         # Same-topic history only, and never on a topic with no recorded trial:
         # a stale stop from an earlier broken run must not block the first real test.
         "recent_f0_stops": [f"run {r['id'][:8]}: {r['stop_reason']}" for r in recent] if trials else [],
-        "novelty": "不可用：共享 9527 无 R4/novelty 路由",
+        "novelty": summary.get("novelty") or {"status": "unavailable", "message": "尚无本次服务返回的查重证据"},
         "scope": "锁定视图与预登记区间；不得扩大数据范围、改门槛或加预算",
         "available_fields": ["open", "high", "low", "close", "volume", "amount", "turnover", "current_mv", "the_sw_industry_code"],
         "field_limits": "行业为当前分类版本，不是历史 PIT；流通市值暂不可用；pe_ttm 有前视已移除",
@@ -125,7 +143,7 @@ def decide(uid, org, topic, run_id):
         "action 只能是 run_test / revise / pivot / stop / request_seal。"
         "rationale 必须引用具体 trial 编号和指标（如 E2 的 NW t、K、t*(K)），不能空泛。"
         "revise/pivot 必须给出具体 next_hypothesis 与 change_scope；没有实质修订就 stop。"
-        "不得改变门槛、数据范围、预算，不得声称 novelty 可用，不得批准入库或封存。"
+        "不得改变门槛、数据范围、预算，不得批准入库或封存；查重能力状态以输入 novelty 与本次真实结果为准，只有 passed+complete 才能声称可用。"
         "request_seal 仅在最近研发已通过时使用；所有送审候选都必须有完整查重证据（novelty/R4），缺少或不可用时不得 request_seal/送审，只能等待依赖或修订。数值门槛通过但 novelty=failed（如定义重复）不是数值失败：应修订/正交化或放弃，不要盲目调参。latest_report.blocking_reasons 是真实阻断类别，必须引用，不得猜测为回撤/稳健性失败。预算为 0 时必须 stop。t_critical 始终给出（K=0 按 K=1 的 t*）。recent_f0_stops 只是本课题历史运行的记录，不是本 run 的检验证据，不能据此在无 trial 时停止。capability_gaps 是 F3 已确认不支持的能力，修订必须避开它们，改用可实现的截面 rank/z-score 或时序窗口。sealed_used 达到 max_sealed 时不得 request_seal。\n最近一次研发检验失败且预算允许时，优先选择 revise 或 pivot，并给出实质性的新假设；不得只重跑同一实现。"
     )
     try:
@@ -203,11 +221,25 @@ def _capability_gaps(message):
     return [label for label, keys in _CAPABILITY_KEYWORDS if any(k.lower() in text for k in keys)]
 
 
+def _branch_code(uid, org, topic_id, branch_id):
+    with get_conn() as c:
+        row = c.execute(
+            """SELECT cand.snapshot->'request'->>'factor_code' AS code
+               FROM quant_factor_trials t
+               JOIN quant_factor_candidates cand
+                 ON cand.user_id=t.user_id AND cand.org_id=t.org_id
+                AND t.report_id='qf_'||cand.id||'_development'
+               WHERE t.user_id=%s AND t.org_id=%s AND t.topic_id=%s AND t.branch_id=%s
+               ORDER BY t.trial_no DESC LIMIT 1""",
+            (uid, org, topic_id, branch_id)).fetchone()
+    return (row or {}).get("code") or ""
+
+
 def _revise(uid, org, project_id, parent_id, decision, run_id, topic_id, scope_override=None):
     project = get_project(uid, project_id)["project"]
     cfg = project["config"]
     plan = cfg.get("researchPlan") or {}
-    old_code = (cfg.get("draftFactor") or {}).get("body") or ""
+    old_code = _branch_code(uid, org, topic_id, parent_id) or (cfg.get("draftFactor") or {}).get("body") or ""
     suggestion = assistant.suggest(uid, org, project_id, draft={
         **plan, "hypothesis": decision.next_hypothesis,
         "failure": (decision.rationale + " " + decision.change_scope)[:3000]})["suggestion"]
@@ -227,6 +259,8 @@ def _revise(uid, org, project_id, parent_id, decision, run_id, topic_id, scope_o
     if job["status"] != "ready":
         raise service.WorkflowError("F3 未生成通过校验的实现：" + job.get("events", [{}])[-1].get("message", "未知原因"))
     fields = job["output"]["fields"]
+    if not str(fields.get("code") or "").strip() or str(fields["code"]).strip() == old_code.strip():
+        raise service.WorkflowError("F3 未产生与父分支不同的实现，记作无实质修订并停止，不新增检验")
     with get_conn() as c:
         parent = c.execute("SELECT * FROM quant_factor_branches WHERE id=%s AND user_id=%s AND org_id=%s AND topic_id=%s",
                            (parent_id, uid, org, topic_id)).fetchone()

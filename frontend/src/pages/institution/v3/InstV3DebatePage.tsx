@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Play, Send } from "lucide-react";
-import { dedupeBy } from "@/lib/instDedupe";
+import { dedupeBy, latestByKey } from "@/lib/instDedupe";
 import { instApi } from "@/lib/instApi";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
 
@@ -56,6 +56,7 @@ type CaseItem = {
   ref_price?: number;
   version_no?: number | null;
   version_status?: string | null;
+  updated_at?: string | null;
   versions?: Version[];
   debates?: Array<{ id: number; status: string; conclusion?: string }>;
   proposals?: Proposal[];
@@ -188,7 +189,7 @@ export function InstV3DebatePage() {
   const loadCases = async () => {
     const res = await instApi<{ items: CaseItem[] }>("/cases");
     const rows = (res.items || []).filter((c) => Number(c.stage_no ?? 1) >= 2 && Number(c.stage_no ?? 1) <= 3);
-    setCases(dedupeBy(rows, (c) => c.id));
+    setCases(latestByKey(rows, (c) => c.symbol, (c) => `${c.updated_at || ""}|${String(c.id).padStart(12, "0")}`));
     return rows;
   };
 

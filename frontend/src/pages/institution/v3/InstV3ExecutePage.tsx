@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, CheckCircle2, Play, RefreshCw } from "lucide-react";
-import { dedupeBy } from "@/lib/instDedupe";
+import { latestByKey } from "@/lib/instDedupe";
 import { instApi } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
@@ -79,7 +79,7 @@ export function InstV3ExecutePage() {
       const all = await instApi<{ items: Authorization[] }>("/authorizations");
       rows = all.items || [];
     }
-    setItems(dedupeBy(rows, (a) => a.id));
+    setItems(latestByKey(rows, (a) => a.symbol, (a) => `${a.issued_at || ""}|${String(a.id).padStart(12, "0")}`));
     return rows;
   };
 

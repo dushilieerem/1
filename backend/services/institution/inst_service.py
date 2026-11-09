@@ -1111,9 +1111,18 @@ def pipeline(org_id: int) -> dict[str, Any]:
         configured = 3
     per_stage = 200 if configured <= 0 else max(1, min(configured, 200))
     cases = [_row_dict(r) or {} for r in repo.cases(OrgScope(org_id))]
+    # 同一公司只保留最近更新的研究案；历史案件仍可按项目 key 访问，但不再占多个环节。
+    latest_by_company: dict[int, tuple[str, dict[str, Any]]] = {}
+    for case in cases:
+        company_id = int(case.get("company_id") or 0)
+        if not company_id:
+            continue
+        recency = f"{case.get('updated_at') or ''}|{int(case.get('id') or 0):012d}"
+        if company_id not in latest_by_company or recency > latest_by_company[company_id][0]:
+            latest_by_company[company_id] = (recency, case)
     by_stage: dict[int, list[dict[str, Any]]] = {i: [] for i in range(6)}
     case_company_ids: set[int] = set()
-    for case in cases:
+    for _, case in latest_by_company.values():
         card = _pipeline_card(case)
         by_stage[card["stage_no"]].append(card)
         case_company_ids.add(card["company_id"])

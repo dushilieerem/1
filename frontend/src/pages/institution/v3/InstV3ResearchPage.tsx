@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, RefreshCw, Sparkles } from "lucide-react";
-import { dedupeBy } from "@/lib/instDedupe";
+import { dedupeBy, latestByKey } from "@/lib/instDedupe";
 import { instApi } from "@/lib/instApi";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
 
@@ -75,6 +75,7 @@ type CaseItem = {
   ref_price?: number;
   version_no?: number | null;
   version_status?: string | null;
+  updated_at?: string | null;
   versions?: Version[];
 };
 
@@ -120,7 +121,7 @@ export function InstV3ResearchPage() {
   const loadCases = async () => {
     const res = await instApi<{ items: CaseItem[] }>("/cases");
     const eligible = (res.items || []).filter((c) => Number(c.stage_no ?? 1) <= 2);
-    setCases(dedupeBy(eligible, (c) => c.id));
+    setCases(latestByKey(eligible, (c) => c.symbol, (c) => `${c.updated_at || ""}|${String(c.id).padStart(12, "0")}`));
     return eligible;
   };
 

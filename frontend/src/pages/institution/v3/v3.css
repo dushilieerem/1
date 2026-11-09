@@ -584,18 +584,3 @@
 .inst-v3 .v3-agent-detail .ad-v { margin-top: 4px !important; }
 .inst-v3 .v3-agent-context { margin-top: 4px !important; }
 .inst-v3 .v3-rail-cell .ct small { margin-left: 4px !important; }
-
-/* 生产版字体：与原型 HTML 一致（DM Sans / DM Mono + 中文回退） */
-.inst-v3 {
-  --font-sans: "DM Sans", "Inter", "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
-  --font-display: "DM Sans", "Inter", "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
-  --font-mono: "DM Mono", "SFMono-Regular", "JetBrains Mono", "Roboto Mono", Consolas, monospace;
-  font-family: var(--font-sans);
-  font-synthesis: none;
-}
-.inst-v3 button,
-.inst-v3 input,
-.inst-v3 select,
-.inst-v3 textarea { font-family: var(--font-sans); }
-.inst-v3 .font-mono,
-.inst-v3 [class*="font-mono"] { font-family: var(--font-mono); }

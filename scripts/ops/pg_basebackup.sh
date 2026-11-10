@@ -24,29 +24,32 @@ TARGET="/backup/base/${STAMP}"
 
 log "基础备份 → $ARCHIVE_DIR/base/${STAMP}"
 sleep 1
-docker exec -u postgres "$CONTAINER" sh -c "mkdir -p '$TARGET'"
-if ! docker exec -u postgres "$CONTAINER" pg_basebackup -D "$TARGET" -Ft -z -X stream -c fast; then
+docker exec "$CONTAINER" sh -c "mkdir -p '$TARGET'"
+# 走 TCP + 容器内自带的 POSTGRES_USER/POSTGRES_PASSWORD：
+# 本地 socket 是 peer 认证，docker exec 的 OS 用户与数据库角色对不上。
+if ! docker exec "$CONTAINER" sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_basebackup -h 127.0.0.1 -U "$POSTGRES_USER" -D "'"$TARGET"'" -Ft -z -X stream -c fast'; then
   log "备份失败，清理半成品"
-  rm -rf "$ARCHIVE_DIR/base/${STAMP}"
+  docker exec "$CONTAINER" rm -rf "$TARGET" 2>/dev/null || true
   exit 1
 fi
 
-# 校验：至少要有 base.tar.gz 且能解压
-if ! gzip -t "$ARCHIVE_DIR/base/${STAMP}/base.tar.gz" 2>/dev/null; then
+# 备份文件由容器内用户创建（0600），校验与清理都放回容器里做，宿主机不碰内容
+if ! docker exec "$CONTAINER" gzip -t "$TARGET/base.tar.gz" 2>/dev/null; then
   log "base.tar.gz 校验失败"
   exit 1
 fi
-log "备份完成：$(du -sh "$ARCHIVE_DIR/base/${STAMP}" | cut -f1)"
+log "备份完成：$(docker exec "$CONTAINER" du -sh "$TARGET" | cut -f1)"
 
 log "清理：基础备份保留 ${KEEP_BASE} 份"
-ls -1dt "$ARCHIVE_DIR"/base/*/ 2>/dev/null | tail -n +$((KEEP_BASE + 1)) | while read -r old; do
-  log "  删除 $old"
-  rm -rf "$old"
-done
+docker exec "$CONTAINER" sh -c "ls -1dt /backup/base/*/ 2>/dev/null | tail -n +$((KEEP_BASE + 1))" \
+  | while read -r old; do
+      [[ -n "$old" ]] || continue
+      log "  删除 $old"
+      docker exec "$CONTAINER" rm -rf "$old"
+    done
 
 log "清理：WAL 保留 ${KEEP_WAL_DAYS} 天"
 find "$ARCHIVE_DIR" -maxdepth 1 -type f -mtime "+${KEEP_WAL_DAYS}" -delete
 
 log "完成。最新归档："
-docker exec -u postgres "$CONTAINER" psql -U "$DB_USER" -d postgres -t -c \
-  "SELECT last_archived_wal, last_archived_time, failed_count FROM pg_stat_archiver;" | sed '/^$/d'
+docker exec "$CONTAINER" sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -U "$POSTGRES_USER" -d postgres -t -c "SELECT last_archived_wal, last_archived_time, failed_count FROM pg_stat_archiver;"' | sed '/^$/d'

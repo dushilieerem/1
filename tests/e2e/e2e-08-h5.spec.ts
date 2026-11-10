@@ -408,6 +408,38 @@ test("个股五维 AI 分析自动生成，默认收起并可展开", async ({ p
   await noHorizontalOverflow(page);
 });
 
+test("个股 AI 无 Key 规则降级：无图时仍展示关键数字", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/ai/stock/**", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        engine: "rule",
+        fallback: true,
+        card: {
+          summary: "规则引擎：估值处于中位，关注盈利与资金变化。",
+          sections: [
+            { key: "fundamental", title: "基本面", body: "营收保持增长。", items: [{ k: "营收", v: "100 亿" }] },
+            { key: "profitability", title: "盈利", body: "毛利率稳定。", items: [{ k: "毛利率", v: "90%" }] },
+            { key: "valuation", title: "估值", body: "PE 处于中位。", items: [{ k: "PE", v: "20x" }] },
+            { key: "risk", title: "风险", body: "关注回撤。", items: [{ k: "回撤", v: "-5%" }] },
+            { key: "capital", title: "资金", body: "主力净流入。", items: [{ k: "5 日", v: "2 亿" }] },
+          ],
+          disclaimer: "规则生成 · 非投资建议",
+          meta: { engine: "rule" },
+        },
+      }),
+    }),
+  );
+  await page.goto(`${H5}/stock/600519`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("规则生成 · 非投资建议").first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".ai-panel .ai-bars i")).toHaveCount(0);
+  await page.locator(".ai-expand-toggle").click();
+  await expect(page.locator(".ai-panel .ai-metric")).toHaveCount(5);
+  await noHorizontalOverflow(page);
+});
+
 test("Agent 管理页展示 Agent 与提示词编辑", async ({ page }) => {
   await loginByToken(page);
   await page.goto(`${H5}/agents`, { waitUntil: "domcontentloaded" });

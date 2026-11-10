@@ -259,6 +259,11 @@ def test_board_payload_disk_cache_roundtrip(monkeypatch, tmp_path):
     assert quant._load_board_payload("2026-11-04", "1m") == payload
     # 日期不同的缓存不能串用。
     assert quant._load_board_payload("2026-11-03", "1m") is None
+    # 同一日期下，不同数据视图也不能串用横截面。
+    view_payload = {**payload, "view_id": "view-a"}
+    quant._save_board_payload("2026-11-04", "1m", view_payload, "view-a")
+    assert quant._load_board_payload("2026-11-04", "1m", "view-a") == view_payload
+    assert quant._load_board_payload("2026-11-04", "1m", "view-b") is None
 
 
 def test_factor_registry_has_60_factors_in_6_categories():

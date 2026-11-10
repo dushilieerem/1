@@ -1060,3 +1060,13 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - MA/BOLL 叠加在主图；MACD/KDJ 使用独立 pane，保留成交量副图。
 - 指标全部由日/周/月 bars 在前端确定性计算，不依赖后端新接口。
 - Playwright 股票总览用例增加四个指标开关断言。
+
+
+### 11.60 价值分析自动跑完整流程（2026-11-10）
+
+- 进入 `/inst/research` 选中研究案后，manager 自动补齐：
+  - 缺行业底图/六维 → 自动 POST `/cases/{id}/research` 全量生成并落盘；
+  - 缺一页纸 → 自动 POST `/cases/{id}/ai/memo` 生成；一页纸写入 Agent 输出缓存，并把 conclusion 回写研究版本；
+- 已有完整六维/行业/一页纸的案不会重复跑；自动流程按 case 去重，避免并发重复。
+- 非 manager（只读/审批角色）不触发自动写操作。
+- 一页纸空白的原因不是未落盘，而是进入页面只 GET 缓存、从未 POST 生成；现在进入即自动生成并持久化。

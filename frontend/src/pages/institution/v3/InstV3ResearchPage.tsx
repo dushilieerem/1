@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, RefreshCw, Sparkles } from "lucide-react";
 import { dedupeBy, latestByKey } from "@/lib/instDedupe";
+import { useInstSession } from "@/components/institution/instSessionContext";
 import { instApi } from "@/lib/instApi";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
 
@@ -138,6 +139,7 @@ function currentCaseId(key: string | null): number | null {
 
 export function InstV3ResearchPage() {
   const [params, setParams] = useSearchParams();
+  const session = useInstSession();
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [detail, setDetail] = useState<CaseItem | null>(null);
   const [memo, setMemo] = useState<Memo | null>(null);
@@ -153,6 +155,7 @@ export function InstV3ResearchPage() {
   const [allowGaps, setAllowGaps] = useState(false);
 
   const detailSeq = useRef(0);
+  const autoRunRef = useRef<string | null>(null);
   const selectedId = currentCaseId(params.get("key"));
 
   const loadCases = async () => {
@@ -188,12 +191,49 @@ export function InstV3ResearchPage() {
     return d;
   };
 
-  const loadMemo = async (id: number) => {
+  const loadMemo = async (id: number): Promise<Memo | null> => {
     try {
       const res = await instApi<{ memo: Memo | null; missing?: boolean }>(`/cases/${id}/ai/memo`);
-      if (res.memo) setMemo(res.memo);
+      if (res.memo) {
+        setMemo(res.memo);
+        return res.memo;
+      }
     } catch {
       // memo is advisory; ignore peek errors
+    }
+    return null;
+  };
+
+  /** 进入价值分析自动补齐：缺行业/六维先全量生成，缺一页纸再生成并落盘。 */
+  const ensureFullFlow = async (id: number) => {
+    if (session.role !== "manager") return;
+    const key = `case:${id}`;
+    if (autoRunRef.current === key) return;
+    autoRunRef.current = key;
+    try {
+      const d = await instApi<CaseItem>(`/cases/${id}`);
+      const v = d.versions?.[0];
+      const hasDims = Boolean(v?.six_dim?.length);
+      const hasIndustry = Boolean(v?.industry_analysis?.summary);
+      if (!hasDims || !hasIndustry) {
+        setBusy("auto-research");
+        await instApi(`/cases/${id}/research`, { method: "POST", body: { mode: "full" } });
+        await loadDetail(id);
+      }
+      const cached = await loadMemo(id);
+      if (!cached) {
+        setBusy("auto-memo");
+        const res = await instApi<{ memo: Memo }>(`/cases/${id}/ai/memo`, {
+          method: "POST",
+          body: { refresh: false },
+        });
+        setMemo(res.memo);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+      autoRunRef.current = null;
     }
   };
 
@@ -210,6 +250,7 @@ export function InstV3ResearchPage() {
           } else {
             await loadDetail(id);
             await loadMemo(id);
+            void ensureFullFlow(id);
           }
         }
       })

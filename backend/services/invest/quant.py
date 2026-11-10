@@ -16,6 +16,7 @@ import json
 import logging
 import math
 import os
+import re
 import threading
 import time
 from collections import deque
@@ -216,15 +217,15 @@ _STYLE_TEXT = {
     "balanced": ("近 20 日，因子表现分化，{a} 相对占优，{b} 相对落后。", "Over the last 20 days, factor performance diverged: {a} led while {b} lagged."),
 }
 
-_PANEL_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
-_BOARD_PAYLOAD_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
-_FACTOR_DETAIL_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
-_BOARD_CACHE_VERSION = 9
+_PANEL_CACHE: dict[tuple[str, str, str], tuple[float, dict[str, Any]]] = {}
+_BOARD_PAYLOAD_CACHE: dict[tuple[str, str, str], tuple[float, dict[str, Any]]] = {}
+_FACTOR_DETAIL_CACHE: dict[tuple[str, str, str], tuple[float, dict[str, Any]]] = {}
+_BOARD_CACHE_VERSION = 10
 _BOARD_CACHE_ROOT = Path(
     os.environ.get("SVQUANT_QUANT_CACHE_DIR")
     or (Path(__file__).resolve().parents[2] / "data" / "invest_quant_cache")
 )
-_BOARD_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
+_BOARD_CACHE: dict[tuple[str, str, str], tuple[float, dict[str, Any]]] = {}
 _CACHE_LOCK = threading.Lock()
 _CACHE_TTL = 1800.0
 _LOGGER = logging.getLogger(__name__)
@@ -476,11 +477,21 @@ def _chunks(items: list[str], size: int = 450) -> Iterable[list[str]]:
         yield items[i:i + size]
 
 
+def _data_view_id(conn: Any) -> str:
+    """当前 serving 视图 ID；表不存在或未同步时返回空串，保持旧缓存兼容。"""
+    try:
+        row = rules.one(conn, "SELECT view_id FROM data_sync_state WHERE id=1")
+        return str((row or {}).get("view_id") or "").strip()
+    except Exception:
+        return ""
+
+
 def _load_panel(conn: Any, universe: str) -> dict[str, Any]:
-    """加载并缓存因子面板。缓存键带 dataDate，数据更新后自然失效。"""
+    """加载并缓存因子面板。缓存键带 dataDate + viewId，数据或视图切换后失效。"""
     row = rules.one(conn, "SELECT MAX(trade_date)::text AS d FROM md_daily_bar WHERE adjust='hfq'")
     data_date = _date((row or {}).get("d"))
-    key = (universe, data_date)
+    view_id = _data_view_id(conn)
+    key = (universe, data_date, view_id)
     now = time.time()
     with _CACHE_LOCK:
         hit = _PANEL_CACHE.get(key)
@@ -710,6 +721,7 @@ def _load_panel(conn: Any, universe: str) -> dict[str, Any]:
     panel = {
         "universe": universe,
         "data_date": data_date,
+        "view_id": view_id,
         "dates": dates,
         "idx": idx,
         "symbols": symbols,
@@ -2238,24 +2250,28 @@ def _board_numpy(panel: dict[str, Any], range_key: str = "1m") -> dict[str, Any]
     }
 
 
-def _board_cache_path(data_date: str, range_key: str) -> Path:
-    return _BOARD_CACHE_ROOT / f"board_{data_date}_{range_key}.json"
+def _board_cache_path(data_date: str, range_key: str, view_id: str = "") -> Path:
+    suffix = re.sub(r"[^A-Za-z0-9_.-]+", "_", view_id).strip("_") if view_id else ""
+    name = f"board_{data_date}_{range_key}" + (f"_{suffix}" if suffix else "") + ".json"
+    return _BOARD_CACHE_ROOT / name
 
 
-def _load_board_payload(data_date: str, range_key: str) -> dict[str, Any] | None:
-    key = (data_date, range_key)
+def _load_board_payload(data_date: str, range_key: str, view_id: str = "") -> dict[str, Any] | None:
+    key = (data_date, range_key, view_id)
     now = time.time()
     with _CACHE_LOCK:
         hit = _BOARD_PAYLOAD_CACHE.get(key)
         if hit and now - hit[0] < _CACHE_TTL:
             return hit[1]
-    path = _board_cache_path(data_date, range_key)
+    path = _board_cache_path(data_date, range_key, view_id)
     try:
         wrapped = json.loads(path.read_text(encoding="utf-8"))
         if wrapped.get("version") != _BOARD_CACHE_VERSION:
             return None
         payload = wrapped.get("payload")
         if not isinstance(payload, dict) or payload.get("data_date") != data_date:
+            return None
+        if view_id and payload.get("view_id") != view_id:
             return None
         with _CACHE_LOCK:
             _BOARD_PAYLOAD_CACHE[key] = (now, payload)
@@ -2264,11 +2280,11 @@ def _load_board_payload(data_date: str, range_key: str) -> dict[str, Any] | None
         return None
 
 
-def _save_board_payload(data_date: str, range_key: str, payload: dict[str, Any]) -> None:
-    key = (data_date, range_key)
+def _save_board_payload(data_date: str, range_key: str, payload: dict[str, Any], view_id: str = "") -> None:
+    key = (data_date, range_key, view_id)
     with _CACHE_LOCK:
         _BOARD_PAYLOAD_CACHE[key] = (time.time(), payload)
-    path = _board_cache_path(data_date, range_key)
+    path = _board_cache_path(data_date, range_key, view_id)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
@@ -2292,25 +2308,26 @@ def factor_board(conn: Any, range_key: str = "1m") -> dict[str, Any]:
     range_key = "1y" if range_key == "1y" else "1m"
     row = rules.one(conn, "SELECT MAX(trade_date)::text AS d FROM md_daily_bar WHERE adjust='hfq'")
     data_date = _date((row or {}).get("d"))
+    view_id = _data_view_id(conn)
     if data_date:
-        cached = _load_board_payload(data_date, range_key)
+        cached = _load_board_payload(data_date, range_key, view_id)
         if cached is not None:
             return cached
     panel = _load_panel(conn, "board")
-    cache_key = (panel["data_date"], "board")
+    cache_key = (panel["data_date"], str(panel.get("view_id") or view_id), "board")
     now = time.time()
     with _CACHE_LOCK:
         hit = _BOARD_CACHE.get(cache_key)
     if hit and now - hit[0] < _CACHE_TTL:
         payload = _board_payload(panel, hit[1], range_key)
-        _save_board_payload(panel["data_date"], range_key, payload)
+        _save_board_payload(panel["data_date"], range_key, payload, str(panel.get("view_id") or view_id))
         return payload
     if np is not None:
         board = _board_numpy(panel, range_key)
         with _CACHE_LOCK:
             _BOARD_CACHE[cache_key] = (now, board)
         payload = _board_payload(panel, board, range_key)
-        _save_board_payload(panel["data_date"], range_key, payload)
+        _save_board_payload(panel["data_date"], range_key, payload, str(panel.get("view_id") or view_id))
         return payload
     dates = panel["dates"]
     n = len(dates)
@@ -2398,7 +2415,7 @@ def factor_board(conn: Any, range_key: str = "1m") -> dict[str, Any]:
     with _CACHE_LOCK:
         _BOARD_CACHE[cache_key] = (now, board)
     payload = _board_payload(panel, board, range_key)
-    _save_board_payload(panel["data_date"], range_key, payload)
+    _save_board_payload(panel["data_date"], range_key, payload, str(panel.get("view_id") or view_id))
     return payload
 
 
@@ -2471,6 +2488,7 @@ def _board_payload(panel: dict[str, Any], board: dict[str, Any], range_key: str)
             "risk_free": RISK_FREE,
         },
         "data_date": panel["data_date"],
+        "view_id": str(panel.get("view_id") or ""),
         "disclaimer": "历史数据，不代表未来；不构成投资建议。",
     }
 
@@ -2529,9 +2547,9 @@ def factor_detail(conn: Any, key: str) -> dict[str, Any] | None:
     if key not in FACTOR_BY_KEY:
         return None
     board = factor_board(conn, "1m")
-    cache_key = (str(board.get("data_date") or ""), key)
+    cache_key = (str(board.get("view_id") or ""), str(board.get("data_date") or ""), key)
     now = time.time()
-    if cache_key[0]:
+    if cache_key[1]:
         with _CACHE_LOCK:
             hit = _FACTOR_DETAIL_CACHE.get(cache_key)
         if hit and now - hit[0] < _CACHE_TTL:
@@ -2598,7 +2616,7 @@ def factor_detail(conn: Any, key: str) -> dict[str, Any] | None:
         "footer": "分位只描述取值大小，不代表好坏；历史数据不代表未来。",
         "data_date": board["data_date"],
     }
-    if cache_key[0]:
+    if cache_key[1]:
         with _CACHE_LOCK:
             _FACTOR_DETAIL_CACHE[cache_key] = (now, result)
     return result

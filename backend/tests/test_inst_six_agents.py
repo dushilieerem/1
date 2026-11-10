@@ -45,6 +45,38 @@ def test_validate_dimension_normalizes_evidence_and_confidence() -> None:
     assert data["confidence"] == 1.0
 
 
+def test_agent_payload_includes_evidence_and_valuation_model() -> None:
+    payload = rs._agent_payload(
+        {
+            "company": {"symbol": "600519.SH"},
+            "as_of": "2026-10-30",
+            "evidence": [{"id": 11, "title": "2025 年报", "quote": "营收", "source": "ifind"}],
+            "valuation_model": {"base": 12.3, "available": True},
+        },
+        "valuation",
+    )
+    assert payload["evidence"][0]["id"] == 11
+    assert payload["valuation_model"]["base"] == 12.3
+
+
+def test_validate_dimension_filters_unknown_evidence_ids() -> None:
+    from ai.router.specs import TaskRequest
+
+    data = validate_dimension(
+        json.dumps(
+            {
+                "summary": "财务质量稳定。",
+                "checks": ["OCF/净利 1.1"],
+                "evidence_ids": [11, 99],
+                "confidence": 0.7,
+            },
+            ensure_ascii=False,
+        ),
+        TaskRequest(variables={"evidence_ids": [11]}),
+    )
+    assert data["evidence_ids"] == [11]
+
+
 def test_validate_dimension_keeps_impact_and_data_used() -> None:
     data = validate_dimension(
         json.dumps(

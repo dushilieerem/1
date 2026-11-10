@@ -226,6 +226,11 @@ def _text(value: Any, *keys: str) -> str:
 
 def validate_dimension(raw: str, request: TaskRequest) -> dict[str, Any]:
     data = _load(raw)
+    valid_ids: set[int] | None = None
+    if request is not None and request.variables.get("evidence_ids") is not None:
+        valid_ids = {
+            int(x) for x in (request.variables.get("evidence_ids") or []) if str(x).isdigit()
+        }
     summary = str(data.get("summary") or "").strip()
     if not summary:
         summary = str(data.get("one_line") or "").strip() or _first_paragraph(data.get("analysis_md"))
@@ -335,6 +340,12 @@ def validate_dimension(raw: str, request: TaskRequest) -> dict[str, Any]:
         data["headline"] = None
     if not isinstance(data.get("kpis"), list):
         data["kpis"] = []
+    if valid_ids is not None:
+        data["evidence_ids"] = [
+            int(x)
+            for x in _items(data.get("evidence_ids"))
+            if str(x).isdigit() and int(x) in valid_ids
+        ]
     return data
 
 

@@ -316,7 +316,7 @@ EV/EBITDA 相对同业、敏感性弹性（增速±2pct）。
 1) summary（40–60 字）：
    ① 结论句 ≤18 字，如"价格抢跑了，安全边际只剩 8%。"
    ② 主数字句：隐含增速 vs 基准，或安全边际 + 阈值。
-2) checks：2–3 条 ×15–25 字，写"数值 + 口径 + 时点"，数字必须来自 `{{VALUATION_OUTPUT}}`。
+2) checks：2–3 条 ×15–25 字，写"数值 + 口径 + 时点"，数字必须来自 payload 的 `valuation_model`（估值服务输出）；`valuation_model` 为空或 `available=false` 时 gate=fail，不得自己算 DCF。
 3) counter：1 条 ≤35 字，写最敏感的假设。
 4) rating/confidence/gate。锚点：5=安全边际>25%；4=15–25%；3=8–15%；2=0–8%；1=负安全边际。
 5) valuation 字段（供 03 页键值表）：wacc / g / bear / base / bull / irr / terminal_share，全部照抄估值服务。
@@ -915,12 +915,12 @@ open_questions：补回款周期与续约率 / 上会前确认份额假设来源
 
 DIM_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象，不要输出 Markdown 代码块之外的解释。严格按「六维共用输出契约」：summary 40–60 字，checks 2–3 条，counter 1 条，impact ≤40 字，data_used ≤4 条，rating/gate/confidence 必填；rating 必须带 rating_benchmark（同业中位或历史分位）；evidence_ids 必须来自输入；不要用 analysis_md 替代 summary。
+只输出一个 JSON 对象，不要输出 Markdown 代码块之外的解释。严格按「六维共用输出契约」：summary 40–60 字，checks 2–3 条，counter 1 条，impact ≤40 字，data_used ≤4 条，rating/gate/confidence 必填；rating 必须带 rating_benchmark（同业中位或历史分位）；evidence_ids 必须来自 payload.evidence 里的 id；找不到对应证据就留空并写 data_gaps，不要编造；不要用 analysis_md 替代 summary。
 """
 
 INDUSTRY_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象，不要输出 JSON 之外的解释。按上文字段输出：one_line ≤20 字、summary 60–100 字、checks 3–4 条（禁止空数组）、counter ≤35 字、impact ≤40 字、data_used ≤4 条、data_completeness.missing ≤12 字；evidence_ids、confidence、gate 必填。
+只输出一个 JSON 对象，不要输出 JSON 之外的解释。按上文字段输出：one_line ≤20 字、summary 60–100 字、checks 3–4 条（禁止空数组）、counter ≤35 字、impact ≤40 字、data_used ≤4 条、data_completeness.missing ≤12 字；evidence_ids 必须来自 payload.evidence 里的 id，找不到就留空并写 data_gaps，不要编造；confidence、gate 必填。
 """
 
 MEMO_OUTPUT_NOTE = """

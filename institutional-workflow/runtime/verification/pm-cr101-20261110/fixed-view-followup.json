@@ -1,0 +1,22 @@
+{
+  "recorded_at": "2026-11-10T04:11:38.345754+00:00",
+  "project_id": "0cf7441a-94e9-4690-94f6-0396f8836346",
+  "observed_run_id": "422ae49f-bfda-4dc6-9d2c-a8e135093bf4",
+  "ui_action": "使用更新研究方法继续",
+  "ui_result": "等待数据版本确认",
+  "source_evidence": "../codex-factor-cr100-config2-20261110/locked-view-readonly.json",
+  "facts": {
+    "locked_view": "research-rv-20261106-3",
+    "locked_manifest_sha256": "99955ca606fc992b5b46a8370be539fbc1e0d47de6846769da2e5874fb41530a",
+    "locked_daily_release": "ifind-sync-20261106-093850",
+    "current_view": "research-rv-20261110-3",
+    "current_daily_release": "ifind-sync-20261109-093703",
+    "original_metadata_matches_topic": true,
+    "private_re_worker_follows_current": true,
+    "additional_model_calls": 0,
+    "additional_market_trials": 0,
+    "k": 0
+  },
+  "product_decision": "保持原任务及固定输入；通过自有私有RE显式冻结版本执行契约后再继续，不删除版本守卫，不把技术等待解释为假设失败。",
+  "implementation_status": "awaiting_implementation_and_verification"
+}

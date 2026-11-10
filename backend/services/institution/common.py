@@ -88,6 +88,7 @@ def humanize_text(value: Any) -> str:
     text = re.sub(r"(\d{4})\s*H1", r"\1 年上半年", text)
     text = re.sub(r"(\d{4})\s*H2", r"\1 年下半年", text)
     text = re.sub(r"(\d+(?:\.\d+)?)\s*pct", r"\1 个百分点", text, flags=re.IGNORECASE)
+    text = re.sub(r"(\d+(?:\.\d+)?)\s*pp", r"\1 个百分点", text, flags=re.IGNORECASE)
     return _clip_brief(text)
 
 

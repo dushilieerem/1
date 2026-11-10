@@ -100,12 +100,13 @@ def test_validate_dimension_keeps_impact_and_data_used() -> None:
 def test_humanize_text_replaces_internal_terms() -> None:
     from services.institution.common import humanize_text
 
-    text = humanize_text("OCF/净利 0.22，DIO 170 天，PE_TTM 30.25x，E1505，17.1pct。")
+    text = humanize_text("OCF/净利 0.22，DIO 170 天，PE_TTM 30.25x，E1505，17.1pct，+2.4pp。")
     assert "经营现金流/净利润" in text
     assert "存货周转天数" in text
     assert "市盈率（最近十二个月）" in text
     assert "证据 1505" in text
     assert "17.1 个百分点" in text
+    assert "+2.4 个百分点" in text
 
 
 def test_approval_memo_humanizes_internal_terms() -> None:

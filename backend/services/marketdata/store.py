@@ -89,6 +89,7 @@ def latest_bar(symbol: str, adjust: str = "none") -> dict[str, Any] | None:
                 SELECT symbol, trade_date, open, high, low, close, pre_close, volume, amount, turnover, adjust
                   FROM md_daily_bar
                  WHERE symbol=%s AND adjust=%s
+                   AND close IS NOT NULL AND close > 0 AND high IS NOT NULL
                  ORDER BY trade_date DESC LIMIT 1
                 """,
                 (symbol, adj),

@@ -270,3 +270,12 @@ def test_factor_registry_has_60_factors_in_6_categories():
     assert counts == {"momentum": 10, "value": 10, "quality": 10, "growth": 10, "volatility": 10, "liquidity": 10}
     meta = quant._factor_meta("momentum")
     assert meta["category_name"] == "动量" and meta["sub_name"] == "20 日涨幅"
+
+
+def test_factor_explanation_is_multi_sentence():
+    meta = quant._factor_meta("momentum")
+    zh, en = quant._factor_explanation(meta, {"percentile": 42.0})
+    assert zh.count("。") >= 3
+    assert "分位" in zh and "IC" in zh
+    assert en.count(".") >= 3
+    assert "percentile" in en and "IC" in en

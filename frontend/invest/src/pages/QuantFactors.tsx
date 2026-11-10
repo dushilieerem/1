@@ -162,7 +162,7 @@ export default function QuantFactors() {
             {intro ? (
               <div className="quant-intro-body">
                 <p>{t("因子就是把股票按某个特征打分：便宜、涨得好、波动小、赚钱多、增长快、成交活跃。", "A factor scores stocks on one characteristic: cheap, rising, low-volatility, profitable, growing, or liquid.")}</p>
-                <p>{t("7 大类下共 27 个细分因子；同一大类里的因子相关但不相同。", "There are 27 sub-factors across 7 categories; factors within a category are related but not identical.")}</p>
+                <p>{t("6 大类下共 60 个细分因子；同一大类里的因子相关但不相同。", "There are 60 sub-factors across 6 categories; factors within a category are related but not identical.")}</p>
                 <p>{t("把当日股票按因子排队，前 20% 等权做多、后 20% 等权做空，收益差就是多空收益。它描述过去，不预测未来。", "Rank stocks each day, go equal-weight long the top 20% and short the bottom 20%; the spread is the long-short return. It describes the past, not the future.")}</p>
               </div>
             ) : null}

@@ -120,7 +120,7 @@ def validate_stock_deep(raw: str, request: TaskRequest) -> dict[str, Any]:
             "key": key,
             "title": dict(_STOCK_DIMENSIONS)[key],
             "body": body,
-            "items": items[:4],
+            "items": items[:2],
         }
     missing = [title for key, title in _STOCK_DIMENSIONS if key not in by_key]
     if missing:

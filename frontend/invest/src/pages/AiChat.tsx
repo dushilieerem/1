@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronDown, ChevronUp, ImagePlus, Mic, MicOff, Send, SlidersHorizontal, Sparkles } from "lucide-react";
 import { api } from "../api";
+import AiCharts from "../components/AiChart";
 import CompareView, { type ComparePayload } from "../components/CompareView";
 import { ErrorState, PageHeader, Sparkline, Tag } from "../components";
 import { ConditionPicker, ConditionScreener, looksLikeCondition, type ConditionResponse, type RelaxAction } from "../components/ConditionScreener";
@@ -102,58 +103,6 @@ function saveMemory(next: { lastStock?: { code: string; name?: string } }) {
 
 function splitSections(card?: Card) {
   return (card?.sections || []).filter((s) => s.title || s.body || s.items?.length);
-}
-
-function BarSeries({ chart }: { chart: Chart }) {
-  const { t } = useLocale();
-  const values = chart.values || [];
-  const max = Math.max(1, ...values.map((x) => Math.abs(Number(x) || 0)));
-  return (
-    <div className="ai-chart-box">
-      <div className="card-title-row">
-        <b>{t(chart.title || "数据图表", chart.title_en || "Data chart")}</b>
-        <span className="hint">{chart.unit || ""}</span>
-      </div>
-      <div className="ai-bars">
-        {values.map((value, i) => {
-          const n = Number(value) || 0;
-          return (
-            <i
-              key={`${chart.labels?.[i] || i}-${i}`}
-              className={n >= 0 ? "in" : "out"}
-              style={{ height: `${Math.max(3, (Math.abs(n) / max) * 64)}px` }}
-              title={`${chart.labels?.[i] || ""} ${n.toFixed(2)}${chart.unit || ""}`.trim()}
-            />
-          );
-        })}
-      </div>
-      <div className="ai-bar-labels">
-        <span>{chart.labels?.[0] || ""}</span>
-        <span>{chart.labels && chart.labels[chart.labels.length - 1]}</span>
-      </div>
-    </div>
-  );
-}
-
-function PercentileChart({ chart }: { chart: Chart }) {
-  const { t } = useLocale();
-  const pct = chart.percentile == null ? null : Math.max(0, Math.min(100, Number(chart.percentile)));
-  return (
-    <div className="ai-chart-box">
-      <div className="card-title-row">
-        <b>{t(chart.title || "估值分位", chart.title_en || "Valuation percentile")}</b>
-        <span className="hint">{chart.value == null ? "—" : `${Number(chart.value).toFixed(2)}${chart.unit || ""}`}</span>
-      </div>
-      <div className="ai-percentile">
-        <i style={{ left: `${pct == null ? 0 : pct}%` }} />
-      </div>
-      <div className="ai-bar-labels">
-        <span>{t("低", "Low")}</span>
-        <span>{pct == null ? t("样本不足", "Not enough samples") : `${pct.toFixed(0)}% ${t("分位", "percentile")}`}</span>
-        <span>{t("高", "High")}</span>
-      </div>
-    </div>
-  );
 }
 
 function ParamText({ text, onPick }: { text: string; onPick: (start: number, length: number) => void }) {
@@ -687,11 +636,12 @@ export default function AiChat() {
                 ) : null}
                 {m.text ? <p className="hint">{m.text}</p> : null}
                 {!m.debate && !m.compare && m.card?.summary ? <p className="ai-summary">{m.card.summary}</p> : null}
+                {!m.debate && !m.compare && m.charts?.length ? <AiCharts charts={m.charts} /> : null}
                 {!m.debate && !m.compare ? splitSections(m.card).map((s, j) => (
                   <div key={j} className="ai-section">
                     {s.title ? <b>{s.title}</b> : null}
                     {s.body ? <p>{s.body}</p> : null}
-                    {s.items?.length ? (
+                    {!m.charts?.length && s.items?.length ? (
                       <ul>{s.items.map((it, k) => <li key={k}>{it.k ? <span>{it.k}{t("：", ": ")}</span> : null}{it.v}</li>)}</ul>
                     ) : null}
                   </div>
@@ -710,13 +660,6 @@ export default function AiChat() {
                     <span className="hint">{m.chart.code} · {t("近", "Last")} {m.chart.bars.length} {t("个交易日", "trading days")}</span>
                   </div>
                 ) : null}
-                {(m.charts || []).map((chart, k) => (
-                  chart.type === "percentile"
-                    ? <PercentileChart chart={chart} key={`pct-${k}`} />
-                    : chart.type === "bar"
-                      ? <BarSeries chart={chart} key={`bar-${k}`} />
-                      : null
-                ))}
                 {!m.debate && !m.compare && m.card?.disclaimer ? <p className="hint">{m.card.disclaimer}</p> : null}
               </>
             ) : null}

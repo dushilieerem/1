@@ -171,12 +171,9 @@ def _one_pager_metrics(version: dict[str, Any], case: dict[str, Any]) -> list[di
         price_text = "不适用（银行相对估值）"
         price_note = "金融企业不使用 DCF 目标价区间，仅看 PB/ROE 等相对估值"
     else:
-        price_text = "不可用"
-        price_note = str(
-            valuation.get("reason")
-            or valuation.get("error")
-            or "未产出估值数据"
-        )
+        reason = str(valuation.get("reason") or valuation.get("error") or "未产出估值数据")
+        price_text = "不适用（自由现金流为负）" if "自由现金流为负" in reason else "不可用"
+        price_note = reason
     metrics: list[dict[str, Any]] = [
         {"label": "价值区间", "value": price_text, "note": price_note},
         {

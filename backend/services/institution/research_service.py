@@ -1297,11 +1297,17 @@ def _apply_data_gate(data: dict[str, Any], completeness: dict[str, Any] | None) 
     gate = str(data.get("gate") or "").lower()
     if gate not in {"pass", "watch", "fail"}:
         gate = "watch"
-    order = {"fail": 0, "watch": 1, "pass": 2}
-    if order[gate] > order[cap]:
+    target = None
+    if cap == "fail":
+        target = "fail"
+    elif cap == "watch":
+        target = "watch"
+    if target and gate != target:
         data["gate_original"] = gate
-        data["gate"] = cap
-        data["gate_note"] = f"数据完备性为 {level}，gate 由 {gate} 降为 {cap}。"
+        data["gate"] = target
+        data["gate_note"] = (
+            f"数据完备性为 {level}，gate 由 {gate} 调整为 {target}；缺口只影响置信度，不阻断已有数据分析。"
+        )
     data["data_completeness"] = completeness
     return data
 

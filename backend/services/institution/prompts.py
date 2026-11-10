@@ -59,15 +59,6 @@ L3 留痕报告：analysis_md / memo_md / memo 不限长度，但**不得替代 
 六个硬约束、集中度/现金/行业上限、置信度门槛、低分线一律从 {{RISK_POLICY}} / {{THRESHOLDS}} 读取。
 Prompt 里只写"对照阈值判定"，不写具体数字；线上策略改了，Prompt 不应跟着改。
 
-# 四行结论契约（所有 Agent 必填，违反任一条即作废重写）
-① 判断：一句有主语的完整句子（谁/什么 + 发生了什么 + 方向），不写报告式铺陈。
-② 依据：证据 ID + 数据 + 日期；没有证据 ID 的数字不得出现。
-③ 影响：对估值或仓位意味着什么；评分必须写基准（同业中位或历史分位）。
-④ 动作：继续 / 补数据 / 放弃；补数据必须写“补什么 + 从哪里补 + 补齐前如何处理”。
-禁止：中英混排（PE/PB/ROE/DCF 等首现已解释的缩写除外）；空泛形容词（双轮、闭环、赋能）；
-无依据的评分；只写“缺/待补充”的占位；把四行扩写成多段报告。
-术语首次出现用括号解释一句，例如“扣非净利率（剔除一次性损益后的净利率）”。
-
 # 三条硬校验（不过就不许出结论）
 V1 估值可用性：每股价值 ÷ 现价 若 <0.3 或 >3.0 → 判"估值不可用"，gate=fail，禁止写价格带与安全边际。
 V2 价格带合理性：price_low/price_high 必须夹住现价（或明确说明是"不追高上限"）；偏离现价 >40% 必须写理由。
@@ -81,10 +72,6 @@ V3 意见完整性：investment_opinion 少于 60 字、或 monitoring 任一条
   "stale": false,
   "gate": "pass|watch|fail",
   "confidence": 0.82,
-  "judgment": "一句话判断（有主语）",
-  "basis": "证据 E03 + 数值 + 日期",
-  "impact": "对估值/仓位的影响",
-  "action": "继续｜补数据：缺什么、从哪补、补齐前怎么做｜放弃",
   "score_10": 8.2,
   "rating_benchmark": "同业中位 PE 18.2x / 历史 3 年分位 42%",
   "headline": {"metric": "份额", "value": "8.5", "unit": "%", "compare": "6.2% → 8.5%", "threshold": "≥8.0% 为兑现", "status": "warn"},
@@ -112,10 +99,6 @@ SIX_DIM_CONTRACT = """# 六维共用输出契约
 每个维度独立运行、互不可见；只输出一个 JSON 对象，字段名照抄：
 {
   "key": "industry|business_model|moat|financial|governance|valuation",
-  "judgment": "一句有主语的完整判断（谁/什么 + 发生了什么 + 方向）",
-  "basis": "证据 ID + 数据 + 日期",
-  "impact": "对估值/仓位意味着什么",
-  "action": "继续｜补数据：缺什么、从哪补、补齐前怎么做｜放弃",
   "score_10": 8.2,
   "rating_benchmark": "同业中位 PE 18.2x / 历史 3 年分位 42%",
   "summary": "40–60 字：结论句 ≤18 字 + 主数字（值 + 对比 + 阈值）",
@@ -130,7 +113,6 @@ SIX_DIM_CONTRACT = """# 六维共用输出契约
   "data_gaps": ["≤80 字/条：缺什么 + 影响 H/M/L + 补数路径"]
 }
 硬性要求：
-0. judgment/basis/impact/action 四行必填；judgment 必须是有主语的完整句子；basis 必须含证据 ID、数据与日期；action 不得只写“缺/待补充”。
 1. score_10 必填，0–10 一位小数；rating 必填，0–5 一位小数（可由 score_10÷2 得到）；rating<3.3 为低分，不得进入一页纸裁决；rating_benchmark 必填（同业中位或历史分位），没有基准则评分置空。
 2. gate 必填，只能 pass/watch/fail；fail 阻断定稿。
 3. confidence 必填，0–1 两位小数；<0.66 为低置信，需逐维复核。
@@ -878,37 +860,37 @@ open_questions：补回款周期与续约率 / 上会前确认份额假设来源
 
 DIM_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象，不要输出 Markdown 代码块之外的解释。严格按「六维共用输出契约」：judgment/basis/impact/action 四行必填，summary 40–60 字，checks 2–3 条，counter 1 条，rating/gate/confidence 必填；rating 必须带 rating_benchmark（同业中位或历史分位）；evidence_ids 必须来自输入；不要用 analysis_md 替代 summary。
+只输出一个 JSON 对象，不要输出 Markdown 代码块之外的解释。严格按「六维共用输出契约」：summary 40–60 字，checks 2–3 条，counter 1 条，rating/gate/confidence 必填；rating 必须带 rating_benchmark（同业中位或历史分位）；evidence_ids 必须来自输入；不要用 analysis_md 替代 summary。
 """
 
 INDUSTRY_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象，不要输出 JSON 之外的解释。按上文字段输出：judgment/basis/impact/action 四行必填（judgment 一句有主语的完整判断，basis 含证据 ID+数据+日期，action 不得只写“缺”）、one_line ≤20 字、summary 60–100 字、checks 3–4 条（禁止空数组）、counter ≤35 字、data_completeness.missing ≤12 字；evidence_ids、confidence、gate 必填。
+只输出一个 JSON 对象，不要输出 JSON 之外的解释。按上文字段输出：one_line ≤20 字、summary 60–100 字、checks 3–4 条（禁止空数组）、counter ≤35 字、data_completeness.missing ≤12 字；evidence_ids、confidence、gate 必填。
 """
 
 MEMO_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象，不要输出 JSON 之外的解释。必填 judgment/basis/impact/action 四行、decision / summary / conclusion / metrics(4 个) / conflicts / risks / data_gate_note；conclusion 不得为空，不得写“待补充”；summary 80–120 字。
+只输出一个 JSON 对象，不要输出 JSON 之外的解释。必填 decision / summary / conclusion / metrics(4 个) / conflicts / risks / data_gate_note；conclusion 不得为空，不得写“待补充”；summary 80–120 字。
 """
 
 RISK_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象。必填 judgment/basis/impact/action 四行、risk_checks（6 项）、verdict、summary、risks（3 条）、open_questions（3 条）、evidence、concerns；risk_checks.status 只能用 pass/warn/block，value 必须含数；不要输出 JSON 之外的内容。
+只输出一个 JSON 对象。必填 risk_checks（6 项）、verdict、summary、risks（3 条）、open_questions（3 条）、evidence、concerns；risk_checks.status 只能用 pass/warn/block，value 必须含数；不要输出 JSON 之外的内容。
 """
 
 PARTNER_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象。必填 judgment/basis/impact/action 四行、verdict、summary（60–90 字）、risks（3 条 ×≤25 字）、open_questions（3 条 ×≤25 字）、evidence（证据 ID）；conditions/concerns/memo_md 只作留痕层，不进右栏；不要输出 JSON 之外的内容。
+只输出一个 JSON 对象。必填 verdict、summary（60–90 字）、risks（3 条 ×≤25 字）、open_questions（3 条 ×≤25 字）、evidence（证据 ID）；conditions/concerns/memo_md 只作留痕层，不进右栏；不要输出 JSON 之外的内容。
 """
 
 CHAIRMAN_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象。必填 judgment/basis/impact/action 四行、verdict、summary、risks（3 条）、open_questions（2–3 条）、metrics；不得复述风控六项明细；不要输出 JSON 之外的内容。
+只输出一个 JSON 对象。必填 verdict、summary、risks（3 条）、open_questions（2–3 条）、metrics；不得复述风控六项明细；不要输出 JSON 之外的内容。
 """
 
 ROLE_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象：{"judgment":"","basis":"","impact":"","action":"","summary":"","evidence":[],"risks":[],"open_questions":[],"analysis_md":""}。judgment/basis/impact/action 四行必填；summary / analysis_md 不限制字数，结论先行；risks 每条写清指标、当前值、阈值与触发动作；evidence 引用输入中的证据标题或 id。不要输出 JSON 之外的内容。
+只输出一个 JSON 对象：{"summary":"","evidence":[],"risks":[],"open_questions":[],"analysis_md":""}。summary / analysis_md 不限制字数，结论先行；risks 每条写清指标、当前值、阈值与触发动作；evidence 引用输入中的证据标题或 id。不要输出 JSON 之外的内容。
 """
 
 DEBATE_OUTPUT_NOTE = """

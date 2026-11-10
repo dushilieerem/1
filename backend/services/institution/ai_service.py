@@ -155,7 +155,7 @@ def _rule_memo(version: dict[str, Any]) -> dict[str, Any]:
     if not conclusion or "待补充" in conclusion:
         overall = _overall_score(dims)
         lead = next(
-            (str(d.get("judgment") or "") for d in dims if d.get("judgment")),
+            (str(d.get("summary") or "") for d in dims if d.get("summary")),
             "六维分析已完成",
         )
         conclusion = f"六维平均得分 {overall}/10；{lead}" if overall is not None else lead

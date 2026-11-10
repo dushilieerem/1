@@ -164,11 +164,6 @@
 .inst-v3 .v3-dim-score.empty { background: #fff; }
 .inst-v3 .v3-dim-score.empty .num { font-family: inherit; font-size: 18px; color: var(--v3-muted); }
 
-.inst-v3 .v3-four-line { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
-.inst-v3 .v3-four-row { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 8px; align-items: start; }
-.inst-v3 .v3-four-label { font-size: 12px; font-weight: 500; color: var(--v3-faint); }
-.inst-v3 .v3-four-text { font-size: 14px; line-height: 1.65; color: var(--v3-ink-2); }
-
 .inst-v3 .v3-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .inst-v3 .v3-kpi { background: #fff; border: 1px solid var(--v3-line); border-radius: 10px; padding: 13px 15px; }
 .inst-v3 .v3-kpi .k { font-size: 12px; color: var(--v3-muted); }

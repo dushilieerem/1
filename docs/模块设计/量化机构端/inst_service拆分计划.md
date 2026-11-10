@@ -36,7 +36,7 @@ services/institution/
 | 步骤 | 状态 | 说明 |
 |---|---|---|
 | ① `common.py` + `stages.py` | ✅ 已完成 | 抽出 81 + 184 行纯工具与状态机，`inst_service` 保留同名导入 |
-| ② `company_service.py` | ⬜ | 公司池（`ensure_and_seed`、`seed/sync_company_universe`、`list_companies`、`update_company_pool`、`search_companies`、`get_company`） |
+| ② `guards.py` + `company_service.py` | ✅ 已完成 | 审计/成员/角色守卫 66 行；公司池（ensure_and_seed、seed/sync_company_universe、list/update/search、`_mapped_industry`）304 行。`get_company` 依赖研究域的 `list_cases`，留到 research 拆分后再迁 |
 | ③ `research_service.py` | ⬜ | 立项、`_build_research`、六维生成、定稿门禁、版本锁定（约 1,500 行） |
 | ④ `proposal_service.py` | ⬜ | 议案与三关审批（约 1,200 行） |
 | ⑤ `execution_service.py` | ⬜ | 授权、执行、对账（约 900 行） |

@@ -886,14 +886,21 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
             [ev_fin, ev_gm],
         )
     if "governance" in want:
+        gov_comp = data_completeness.get("governance") or {}
+        gov_have = list(gov_comp.get("have") or [])
+        gov_summary = (
+            "治理核验：" + "；".join(gov_have[:4]) + "。未接入项见数据缺口。"
+            if gov_have
+            else "治理数据未接入，暂不分析；待核验公告清单另行补充。"
+        )
         dim(
             "governance",
             "CEO 与治理",
             "资本配置、承诺兑现与治理结构是否可信？",
             "partial",
-            "仅展示治理核验框架，不编造个人履历或违规事实；待核验公告清单另行补充。",
-            ["治理结构：待补充", "关联交易：待补充", "分红/回购：待补充"],
-            ["未核验前不得把治理判断写成事实"],
+            gov_summary,
+            gov_have[:5] or ["治理结构：待补充", "关联交易：待补充", "分红/回购：待补充"],
+            ["公告原文与一致行动人认定仍需人工复核"] if gov_have else ["未核验前不得把治理判断写成事实"],
             [],
         )
     if "valuation" in want:

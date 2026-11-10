@@ -1012,3 +1012,11 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 000001 修复后六维 6.0/6.6/6.0/7.2/6.0/3.0，综合 5.8，结论“暂不买入”、方向“持有”、仓位 0%。
 
 验证：后端 899 passed、67 subtests；前端 15 passed；PR #200 更新至 `caebdc9`。
+
+
+### 11.55 治理维重跑与 600519 治理入库（2026-11-10）
+
+- 6 只已入库标的治理维已重跑：000001 gate=watch（guarantee missing），000002/000006/000625/001233 gate=pass；000001 重开时仅有 draft 议案，未影响审批。
+- 治理维规则兜底改为数据驱动：summary/checks 使用已复核的治理字段，不再固定“仅展示治理核验框架”。
+- 600519 治理 7 行已由数据业务插入生产，`review_status=pending`，核心 5/6；待复核 verified 后重跑治理维。
+- 001219 仍在 `risk_precheck` 有在途议案，重开会作废，等待用户确认后再重跑。

@@ -1020,3 +1020,13 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 治理维规则兜底改为数据驱动：summary/checks 使用已复核的治理字段，不再固定“仅展示治理核验框架”。
 - 600519 治理 7 行已由数据业务插入生产，`review_status=pending`，核心 5/6；待复核 verified 后重跑治理维。
 - 001219 仍在 `risk_precheck` 有在途议案，重开会作废，等待用户确认后再重跑。
+
+
+### 11.56 600519 治理复核与 001219 重跑（2026-11-10）
+
+- 600519 治理 7 行已置 `verified`（`reviewed_by=inst-gov-review-20261110`）；生产 600519 共 11 行全部 verified。
+  - 接入层：治理 level=partial、gate=watch；核心 5/6，guarantee missing。
+  - 600519 当前案 stage_no=5，重跑治理需重开研究并影响投后，未自动重跑。
+- 001219 按用户确认作废 `risk_precheck` 议案（proposal 30 → rejected/stale），重开研究并重跑治理维：
+  - 治理 gate=pass、score=8.0，level=sufficient（核心 6/6）。
+- 六只已入库标的治理维均已完成重跑；000001 watch，其余 pass。

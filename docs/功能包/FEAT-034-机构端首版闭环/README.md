@@ -975,5 +975,6 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 治理字段接入 `doc_layer`：新增 `controller_profile / board_structure / pledge_freeze / related_party / guarantee / litigation_penalty / commitment_history / dividend_financing / mgmt_change`；核心 6 项全部 verified 后治理维度从 fail 解锁为 sufficient，否则按核心覆盖数保持 fail/watch。
 - 估值空态修复：`_build_research` 无法估值时返回 `method=unavailable + reason`，不再返回 `null`；辩论页“估值复核”展示不可用原因，并给出“去价值分析重跑估值”入口。常见原因：自由现金流/净利为负、缺少总股本或行情价格。
 - 数据业务已确认批 1 范围：7 只在研标的治理 6 项 + 财务附注 + 000001 银行专项；行业研究型数据不采购、缺失维度保持“待补数据”。
+- 一页纸指标改为确定性覆盖：价值区间取研究版本估值，有效维按“有评分且 gate≠fail”计数，低置信维单列；不再采用 AI 文案里的“不可用 / 0/6”。
 
 验证：后端 `test_inst_six_agents` 10 passed、`test_inst_doc_layer` 6 passed、`test_inst_v3_flow` 16 passed；前端 `tsc` 通过；评分块改为紧凑横排并移除基准小字。

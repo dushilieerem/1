@@ -248,3 +248,28 @@ def test_merge_agent_results_skips_missing_dimension_without_score() -> None:
     assert dim["gate"] == "fail"
     assert merged["agent_states"]["governance"] == "skipped"
     assert "实控人履历" in merged["data_gaps"]
+
+
+def test_one_pager_metrics_are_deterministic() -> None:
+    from services.institution import ai_service
+
+    dims = []
+    for i, key in enumerate(["industry", "business_model", "moat", "financial", "governance", "valuation"]):
+        dims.append(
+            {
+                "key": key,
+                "score_10": 5.5,
+                "rating": 2.75,
+                "confidence": 0.6,
+                "gate": "fail" if key == "governance" else "watch",
+            }
+        )
+    version = {
+        "six_dim": dims,
+        "valuation": {"low": 43.43, "base": 57.91, "high": 72.38, "method": "owner_earnings_proxy_net_debt"},
+    }
+    metrics = ai_service._one_pager_metrics(version, {"symbol": ""})
+    by_label = {m["label"]: m for m in metrics}
+    assert by_label["价值区间"]["value"] == "43.43–72.38 元"
+    assert by_label["有效维"]["value"] == "5/6"
+    assert by_label["低置信维"]["value"] == "6 项"

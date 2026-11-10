@@ -204,8 +204,15 @@ def _chart(conn: PGConn, code: str) -> dict[str, Any]:
     }
 
 
-def _bar_chart(title: str, title_en: str, labels: list[str], values: list[Any], unit: str) -> dict[str, Any]:
-    return {
+def _bar_chart(
+    title: str,
+    title_en: str,
+    labels: list[str],
+    values: list[Any],
+    unit: str,
+    source: str | None = None,
+) -> dict[str, Any]:
+    chart = {
         "type": "bar",
         "title": title,
         "title_en": title_en,
@@ -213,6 +220,9 @@ def _bar_chart(title: str, title_en: str, labels: list[str], values: list[Any], 
         "values": values,
         "unit": unit,
     }
+    if source:
+        chart["source"] = source
+    return chart
 
 
 def _charts_for_stock(ctx: dict[str, Any], query: str) -> list[dict[str, Any]]:
@@ -262,6 +272,32 @@ def _charts_for_stock(ctx: dict[str, Any], query: str) -> list[dict[str, Any]]:
                 [str(x.get("period")) for x in rows],
                 [x.get("gross_margin") for x in rows],
                 "%",
+            ))
+    return charts
+
+
+def _charts_for_stock_deep(ctx: dict[str, Any]) -> list[dict[str, Any]]:
+    """个股页固定图表：连续 4 个以上同口径财报点才画，避免文字堆数字。"""
+    charts: list[dict[str, Any]] = []
+    financials = [x for x in (ctx.get("financials") or []) if x.get("period")]
+    if len(financials) >= 4:
+        rows = financials[-5:]
+        charts.append(_bar_chart(
+            "近 5 期营收",
+            "Revenue, last 5 periods",
+            [str(x.get("period")) for x in rows],
+            [x.get("revenue") for x in rows],
+            "亿元",
+            "财报",
+        ))
+        if any(x.get("gross_margin") is not None for x in rows):
+            charts.append(_bar_chart(
+                "近 5 期毛利率",
+                "Gross margin, last 5 periods",
+                [str(x.get("period")) for x in rows],
+                [x.get("gross_margin") for x in rows],
+                "%",
+                "财报",
             ))
     return charts
 
@@ -464,8 +500,6 @@ def _stock_deep_rule_card(context: dict[str, Any]) -> dict[str, Any]:
             "items": [
                 {"k": "报告期", "v": period},
                 {"k": "营收", "v": _fmt_stock_value(fund.get("revenue"), 2, " 亿")},
-                {"k": "归母净利", "v": _fmt_stock_value(fund.get("netProfit"), 2, " 亿")},
-                {"k": "资产负债率", "v": _fmt_stock_value(fund.get("debtRatio"), 1, "%")},
             ],
         },
         {
@@ -479,9 +513,7 @@ def _stock_deep_rule_card(context: dict[str, Any]) -> dict[str, Any]:
             ),
             "items": [
                 {"k": "毛利率", "v": _fmt_stock_value(profit.get("grossMargin"), 1, "%")},
-                {"k": "净利率", "v": _fmt_stock_value(profit.get("netMargin"), 1, "%")},
                 {"k": "ROE", "v": _fmt_stock_value(profit.get("roe"), 1, "%")},
-                {"k": "现金流/利润", "v": _fmt_stock_value(profit.get("ocfToProfit"), 2, "x")},
             ],
         },
         {
@@ -495,9 +527,7 @@ def _stock_deep_rule_card(context: dict[str, Any]) -> dict[str, Any]:
             ),
             "items": [
                 {"k": "PE", "v": _fmt_stock_value(valuation.get("pe"), 2, "x")},
-                {"k": "PB", "v": _fmt_stock_value(valuation.get("pb"), 2, "x")},
                 {"k": "PE 分位", "v": _fmt_stock_value(valuation.get("pePercentile"), 1, "%")},
-                {"k": "行业 PE", "v": _fmt_stock_value(valuation.get("industryPe"), 2, "x")},
             ],
         },
         {
@@ -512,8 +542,6 @@ def _stock_deep_rule_card(context: dict[str, Any]) -> dict[str, Any]:
             "items": [
                 {"k": "回撤", "v": _fmt_stock_value(risk.get("drawdown"), 1, "%")},
                 {"k": "20 日涨跌", "v": _fmt_stock_value(risk.get("return20"), 1, "%")},
-                {"k": "量比", "v": _fmt_stock_value(risk.get("volumeRatio"), 2, "x")},
-                {"k": "Beta", "v": _fmt_stock_value(risk.get("beta"), 2, "")},
             ],
         },
         {
@@ -526,10 +554,8 @@ def _stock_deep_rule_card(context: dict[str, Any]) -> dict[str, Any]:
                 + (str(divergence.get("text") or "") if divergence else "资金与股价关系待补充。")
             ),
             "items": [
-                {"k": "今日", "v": _fmt_stock_value(capital.get("latest"), 2, " 亿")},
                 {"k": "5 日", "v": _fmt_stock_value(capital.get("fiveDay"), 2, " 亿")},
                 {"k": "20 日", "v": _fmt_stock_value(capital.get("twentyDay"), 2, " 亿")},
-                {"k": "换手率", "v": _fmt_stock_value(capital.get("turnover"), 2, "%")},
             ],
         },
     ]
@@ -936,6 +962,7 @@ def stock_ai(
             raise
         # 无 LLM Key / 网关时降级为服务端规则版，页面仍可用。
         result = {"engine": "rule", "fallback": True, "card": _stock_deep_rule_card(context)}
+    result.setdefault("charts", _charts_for_stock_deep(context))
     return {"ok": True, **result}
 
 

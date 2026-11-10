@@ -98,7 +98,14 @@ def test_stock_deep_endpoint_falls_back_when_llm_missing(monkeypatch):
     monkeypatch.setattr(
         invest_ai,
         "_stock_context",
-        lambda conn, code, deep=False: {"dataSource": "测试数据", "dimensionFacts": {}},
+        lambda conn, code, deep=False: {
+            "dataSource": "测试数据",
+            "dimensionFacts": {},
+            "financials": [
+                {"period": f"2025Q{i}", "revenue": 100 + i, "gross_margin": 40 + i}
+                for i in range(1, 5)
+            ],
+        },
     )
 
     def no_llm(*_args, **_kwargs):
@@ -110,6 +117,8 @@ def test_stock_deep_endpoint_falls_back_when_llm_missing(monkeypatch):
     assert out["engine"] == "rule"
     assert out["fallback"] is True
     assert len(out["card"]["sections"]) == 5
+    assert len(out["charts"]) == 2
+    assert all(item["type"] == "bar" for item in out["charts"])
 
 
 def test_ai_cache_roundtrip(monkeypatch, tmp_path):

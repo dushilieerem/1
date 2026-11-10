@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 import { api } from "../api";
+import AiCharts, { type AiChartData } from "./AiChart";
 import { ErrorState } from "../components";
 import { useLocale } from "../i18n";
 
@@ -22,6 +23,7 @@ type Card = {
 type AiResponse = {
   ok?: boolean;
   card?: Card;
+  charts?: AiChartData[];
   engine?: string;
   blocked?: boolean;
   intent?: string;
@@ -81,6 +83,8 @@ export default function AiPanel({
   const card = data?.card;
   const engine = data?.engine || card?.meta?.engine;
   const sections = card?.sections || [];
+  const charts = data?.charts || [];
+  const hasCharts = charts.length > 0;
   if (hideOnError && error) return null;
   return (
     <section className="card ai-panel">
@@ -105,6 +109,7 @@ export default function AiPanel({
       {card && !data?.blocked ? (
         <div className="ai-result">
           {card.summary ? <p className="ai-summary">{card.summary}</p> : null}
+          <AiCharts charts={charts} />
           {expandable && sections.length ? (
             <button
               type="button"
@@ -122,7 +127,7 @@ export default function AiPanel({
             <div className="ai-section" key={s.key || i}>
               {s.title ? <b>{s.title}</b> : null}
               {s.body ? <p>{s.body}</p> : null}
-              {Array.isArray(s.items) && s.items.length ? (
+              {!hasCharts && Array.isArray(s.items) && s.items.length ? (
                 <div className="ai-metrics">
                   {s.items.map((it, j) => (
                     <span className={`ai-metric ${it.tone || ""}`} key={j}>

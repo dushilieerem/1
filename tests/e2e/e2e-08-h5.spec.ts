@@ -275,6 +275,8 @@ test("因子榜 6 大类可展开，因子库 60 细分可进入详情", async (
   await expect(page.locator(".quant-subfactor-row")).toHaveCount(10);
   await page.locator(".quant-subfactor-row").nth(1).click();
   await expect(page.locator(".quant-detail")).toBeVisible({ timeout: 20_000 });
+  const explain = await page.locator(".quant-detail > p").first().innerText();
+  expect(explain.length).toBeGreaterThan(40);
   await page.getByRole("button", { name: "关闭", exact: true }).click();
   await page.getByRole("button", { name: "因子库", exact: true }).click();
   await expect(page.locator(".quant-library-group")).toHaveCount(6);
@@ -390,11 +392,13 @@ test("个股五维 AI 分析自动生成，默认收起并可展开", async ({ p
           ],
           disclaimer: "AI 生成 · 非投资建议",
         },
+        charts: [{ type: "bar", title: "近 5 期营收", labels: ["Q1", "Q2", "Q3", "Q4", "Q5"], values: [1, 2, 3, 4, 5], unit: "亿元" }],
       }),
     }),
   );
   await page.goto(`${H5}/stock/600519`, { waitUntil: "domcontentloaded" });
   await expect(page.getByText("估值处于历史中位，关注盈利稳定性。")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".ai-panel .ai-bars i")).toHaveCount(5);
   await expect(page.locator(".ai-expand-toggle")).toContainText("展开五维分析");
   await expect(page.locator(".ai-panel .ai-section")).toHaveCount(0);
   await page.locator(".ai-expand-toggle").click();

@@ -92,7 +92,7 @@ FACTOR_CATEGORIES: tuple[dict[str, str], ...] = (
     {"key": "liquidity", "name": "流动性", "name_en": "Liquidity"},
 )
 
-# 7 大类、27 个细分因子。保留原有 6 个 key，避免旧草稿/回测失效。
+# 6 大类、60 个细分因子。保留原有 key，避免旧草稿/回测失效。
 _EXTRA_FACTORS: tuple[dict[str, Any], ...] = (
     {"key": "momentum_60", "name": "60 日涨幅", "name_en": "60-day return", "formula": "近 60 日涨幅", "formula_en": "60-day return", "direction": "high", "unit": "pct", "plain": "过去三个月涨得相对好的股票", "plain_en": "Stocks that rose over the last three months", "high_label": "强", "low_label": "弱", "high_label_en": "Strong", "low_label_en": "Weak"},
     {"key": "momentum_12m", "name": "12 月动量", "name_en": "12-month momentum", "formula": "近 12 月涨幅（剔除最近 1 月）", "formula_en": "12-month return, excluding the latest month", "direction": "high", "unit": "pct", "plain": "过去一年涨得相对好的股票", "plain_en": "Stocks that rose over the last year", "high_label": "强", "low_label": "弱", "high_label_en": "Strong", "low_label_en": "Weak"},
@@ -218,7 +218,8 @@ _STYLE_TEXT = {
 
 _PANEL_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
 _BOARD_PAYLOAD_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
-_BOARD_CACHE_VERSION = 8
+_FACTOR_DETAIL_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
+_BOARD_CACHE_VERSION = 9
 _BOARD_CACHE_ROOT = Path(
     os.environ.get("SVQUANT_QUANT_CACHE_DIR")
     or (Path(__file__).resolve().parents[2] / "data" / "invest_quant_cache")
@@ -2403,6 +2404,19 @@ def factor_board(conn: Any, range_key: str = "1m") -> dict[str, Any]:
 
 def _board_payload(panel: dict[str, Any], board: dict[str, Any], range_key: str) -> dict[str, Any]:
     factors = []
+    # 横截面只算一次：详情页可直接复用，避免每次点因子都重新加载面板。
+    latest_idx = max(21, len(panel["dates"]) - 2)
+    latest_values = _cross_section(panel, latest_idx, list(FACTOR_BY_KEY), require_liquidity=False) if panel.get("symbols") else {}
+
+    def _extreme(key: str, highest: bool) -> list[dict[str, Any]]:
+        values = latest_values.get(key) or {}
+        ordered = sorted(values.items(), key=lambda kv: kv[1], reverse=True)
+        rows = ordered[:5] if highest else ordered[-5:]
+        return [
+            {"code": s, "name": panel["name"].get(s, s), "value": float(round(v, 4))}
+            for s, v in rows
+        ]
+
     for key, meta in FACTOR_BY_KEY.items():
         dvals = board["daily"].get(key) or []
         mvals = board["monthly"].get(key) or []
@@ -2424,6 +2438,8 @@ def _board_payload(panel: dict[str, Any], board: dict[str, Any], range_key: str)
             "crowding_percentile": round(crowd_pct, 0) if crowd_pct is not None else None,
             "crowding_level": "high" if (crowd_pct or 0) >= 80 else "mid" if (crowd_pct or 0) >= 60 else "low",
             "series": _date_series(panel, dvals[-20:] if range_key == "1m" else mvals[-250:]),
+            "top": _extreme(key, True),
+            "bottom": _extreme(key, False),
         })
     ordered = sorted(factors, key=lambda f: (f.get("return_1m") is None, -(f.get("return_1m") or 0)))
     categories = []
@@ -2490,21 +2506,50 @@ def _market_style(factors: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _factor_explanation(meta: dict[str, Any], item: dict[str, Any]) -> tuple[str, str]:
+    pct = item.get("percentile")
+    pct_text = f"{pct:.0f}%" if pct is not None else "样本不足"
+    side_zh = "较低" if meta.get("direction") == "low" else "较高"
+    side_en = "lower" if meta.get("direction") == "low" else "higher"
+    zh = (
+        f"{str(meta.get('plain') or '').rstrip('。')}。"
+        f"计算口径为“{meta.get('formula')}”；当前取值处于样本 {pct_text} 分位，分位只说明位置，不代表好坏。"
+        f"该因子通常关注数值{side_zh}的一侧，但单看一期不够，还要结合 IC、拥挤度和市场风格。"
+    )
+    en = (
+        f"{str(meta.get('plain_en') or '').rstrip('.')}. "
+        f"Formula: {meta.get('formula_en')}; the current reading sits at the {pct_text} percentile. "
+        "The percentile is positional, not good or bad. "
+        f"The usual interpretation focuses on the {side_en} side, but one snapshot is not enough: read it with IC, crowding and market style."
+    )
+    return zh, en
+
+
 def factor_detail(conn: Any, key: str) -> dict[str, Any] | None:
     if key not in FACTOR_BY_KEY:
         return None
     board = factor_board(conn, "1m")
-    panel = _load_panel(conn, "board")
+    cache_key = (str(board.get("data_date") or ""), key)
+    now = time.time()
+    if cache_key[0]:
+        with _CACHE_LOCK:
+            hit = _FACTOR_DETAIL_CACHE.get(cache_key)
+        if hit and now - hit[0] < _CACHE_TTL:
+            return hit[1]
     item = next((f for f in board["factors"] if f["key"] == key), None)
     if not item:
         return None
     meta = FACTOR_BY_KEY[key]
-    # factor_board 的公开响应不暴露原始截面；这里重新取最新一天。
-    latest_idx = max(21, len(panel["dates"]) - 2)
-    values = _cross_section(panel, latest_idx, [key], require_liquidity=False).get(key, {})
-    ordered = sorted(values.items(), key=lambda kv: kv[1], reverse=True)
-    top = [{"code": s, "name": panel["name"].get(s, s), "value": float(round(v, 4))} for s, v in ordered[:5]]
-    bottom = [{"code": s, "name": panel["name"].get(s, s), "value": float(round(v, 4))} for s, v in ordered[-5:]]
+    top = item.get("top")
+    bottom = item.get("bottom")
+    if not top or not bottom:
+        # 兼容旧版磁盘缓存：只有缺少横截面时才重新加载面板。
+        panel = _load_panel(conn, "board")
+        latest_idx = max(21, len(panel["dates"]) - 2)
+        values = _cross_section(panel, latest_idx, [key], require_liquidity=False).get(key, {})
+        ordered = sorted(values.items(), key=lambda kv: kv[1], reverse=True)
+        top = [{"code": s, "name": panel["name"].get(s, s), "value": float(round(v, 4))} for s, v in ordered[:5]]
+        bottom = [{"code": s, "name": panel["name"].get(s, s), "value": float(round(v, 4))} for s, v in ordered[-5:]]
     ic = item.get("ic_mean")
     ic_win = item.get("ic_win")
     crowd_pct = item.get("crowding_percentile")
@@ -2538,10 +2583,11 @@ def factor_detail(conn: Any, key: str) -> dict[str, Any] | None:
     else:
         fails = "当市场风格切换、该因子与动量/波动因子的相关性显著上升时，多空收益可能收敛。"
         fails_en = "The spread can converge if market style changes or correlation with momentum/volatility rises."
-    return {
+    explain, explain_en = _factor_explanation(meta, item)
+    result = {
         **item,
-        "explain": meta["plain"] + "。分位只描述取值大小，不表达好坏。",
-        "explain_en": meta["plain_en"] + ". The percentile describes the value's position, not whether it is good.",
+        "explain": explain,
+        "explain_en": explain_en,
         "conclusions": [
             {"key": "history", "label": "历史有效性", "label_en": "Historical efficacy", "text": effectiveness, "text_en": effectiveness_en},
             {"key": "crowding", "label": "拥挤度", "label_en": "Crowding", "text": crowding, "text_en": crowding_en},
@@ -2552,6 +2598,10 @@ def factor_detail(conn: Any, key: str) -> dict[str, Any] | None:
         "footer": "分位只描述取值大小，不代表好坏；历史数据不代表未来。",
         "data_date": board["data_date"],
     }
+    if cache_key[0]:
+        with _CACHE_LOCK:
+            _FACTOR_DETAIL_CACHE[cache_key] = (now, result)
+    return result
 
 
 def _overview_counts(conn: Any, user_id: int) -> dict[str, Any]:

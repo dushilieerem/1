@@ -1,0 +1,277 @@
+{
+  "status": "prepared_verified_not_loaded",
+  "at_utc": "2026-11-10T09:53:53.003391+00:00",
+  "source": {
+    "db": "svquant_dev",
+    "transaction_read_only": "on"
+  },
+  "target": {
+    "db": "svquant_zxd_dev",
+    "actor": "svquant",
+    "transaction_read_only": "on"
+  },
+  "all_copied_rows_still_equal": {
+    "users": true,
+    "inst_orgs": true,
+    "inst_members": true,
+    "detect_projects": true,
+    "quant_factor_topics": true,
+    "quant_factor_branches": true,
+    "detect_runs": true,
+    "quant_factor_candidates": true,
+    "quant_factor_agent_jobs": true,
+    "quant_factor_f0_runs": true,
+    "quant_factor_iterations": true,
+    "quant_factor_trials": true,
+    "quant_factor_sealed_validations": true,
+    "quant_factor_imported_factors": true,
+    "quant_factor_controls": true,
+    "quant_factor_org_controls": true,
+    "quant_ai_budget_accounts": true,
+    "quant_ai_budget_supplements": true,
+    "quant_research_token_policies": true,
+    "quant_research_queue_jobs": true,
+    "quant_research_queue_slots": true,
+    "quant_ai_budget_calls": true,
+    "quant_data_requests": true,
+    "ai_usage": true,
+    "user_factor_libraries": true,
+    "user_library_factors": true,
+    "user_custom_factors": true,
+    "factor_dashboard_metrics": true,
+    "app_audit_logs": true
+  },
+  "topic_k_and_authorizations": [
+    {
+      "project_id": "5eac45c3-698d-41a8-adf9-28eb46a6d2c1",
+      "topic_id": "4686f274-dc43-46b7-af76-59982228fe6f",
+      "k": 1,
+      "max_trials": 8,
+      "remaining": 7,
+      "equal": true
+    },
+    {
+      "project_id": "f9f58a32-cbbe-4e07-ad42-ddd1b62cc3d7",
+      "topic_id": "afda0312-0c4d-4ad0-afcd-dc6d57c806c5",
+      "k": 3,
+      "max_trials": 8,
+      "remaining": 5,
+      "equal": true
+    },
+    {
+      "project_id": "bcfd34e0-7d06-4394-a0e0-94792aec8be1",
+      "topic_id": "51ce5d3f-f7b3-4319-b746-b8df8acb14b3",
+      "k": 1,
+      "max_trials": 8,
+      "remaining": 7,
+      "equal": true
+    },
+    {
+      "project_id": "882e8d62-26d3-4912-9634-46c948d03272",
+      "topic_id": "f953316b-d691-43db-aed9-35bae53e718b",
+      "k": 1,
+      "max_trials": 1,
+      "remaining": 0,
+      "equal": true
+    },
+    {
+      "project_id": "4b021149-d8fa-438b-bdfb-6c340bc98fd5",
+      "topic_id": "0cdadae7-b448-4f42-a096-0f9396c6f614",
+      "k": 1,
+      "max_trials": 1,
+      "remaining": 0,
+      "equal": true
+    },
+    {
+      "project_id": "2f56539b-4bed-4419-b4ca-5fc17eccf6bc",
+      "topic_id": "932797bd-d1a8-47df-ae04-50664e811136",
+      "k": 0,
+      "max_trials": 2,
+      "remaining": 2,
+      "equal": true
+    },
+    {
+      "project_id": "e24f292f-6c23-45b6-a132-665e1485f557",
+      "topic_id": "69056795-3319-44a8-819e-a5744e1948f7",
+      "k": 1,
+      "max_trials": 1,
+      "remaining": 0,
+      "equal": true
+    },
+    {
+      "project_id": "bf6cb454-03cd-49bb-a4a7-0dd381c55a93",
+      "topic_id": "5a9e6264-0d3a-4aa3-84f2-a9e4bf4fa8a0",
+      "k": 4,
+      "max_trials": 8,
+      "remaining": 4,
+      "equal": true
+    },
+    {
+      "project_id": "19e67a0a-ddd6-4f6c-a1b3-d97f9cc7ff00",
+      "topic_id": "01e40fef-515e-4c9f-954e-5595a94a002b",
+      "k": 4,
+      "max_trials": 3,
+      "remaining": 0,
+      "equal": true
+    },
+    {
+      "project_id": "25857eb1-7dad-4d38-8b70-ce7847955109",
+      "topic_id": "3785d7e3-080b-433b-8782-4ef8e7a52e58",
+      "k": 0,
+      "max_trials": 8,
+      "remaining": 8,
+      "equal": true
+    },
+    {
+      "project_id": "214037f8-14a1-4080-a675-ba3e8e4566a9",
+      "topic_id": "aec09239-7ec9-40c9-8d1f-e6cb915bd3b3",
+      "k": 0,
+      "max_trials": 8,
+      "remaining": 8,
+      "equal": true
+    },
+    {
+      "project_id": "e3ba6ee0-cb8e-4418-8c0c-24535760f718",
+      "topic_id": "40983d3f-2fc5-4342-901c-1c3f3fc846ee",
+      "k": 1,
+      "max_trials": 1,
+      "remaining": 0,
+      "equal": true
+    },
+    {
+      "project_id": "5cc0a1ee-793b-4b0d-96a2-d53ed9a97a0b",
+      "topic_id": "42aafd0d-8a79-4345-b95e-1b86af0acbc0",
+      "k": 1,
+      "max_trials": 1,
+      "remaining": 0,
+      "equal": true
+    },
+    {
+      "project_id": "73bb11d8-0235-46c8-89f5-d6a999355774",
+      "topic_id": "d080b5f4-5523-4f73-9fcc-c41dcdaa15b4",
+      "k": 1,
+      "max_trials": 1,
+      "remaining": 0,
+      "equal": true
+    },
+    {
+      "project_id": "e998d40c-9a78-497e-ba60-e455b218a209",
+      "topic_id": "f9607985-2c2f-40d5-83ad-0384f48fd588",
+      "k": 1,
+      "max_trials": 1,
+      "remaining": 0,
+      "equal": true
+    },
+    {
+      "project_id": "b9d9c387-af10-420e-acb4-a88d831f2265",
+      "topic_id": "504beb5e-0262-4647-99a7-33eea5a5b553",
+      "k": 2,
+      "max_trials": 2,
+      "remaining": 0,
+      "equal": true
+    },
+    {
+      "project_id": "ee19ef46-c368-4149-98c0-ccf482789be4",
+      "topic_id": "d6ca2a21-a868-4f54-857d-8bfc30891ffe",
+      "k": 1,
+      "max_trials": 2,
+      "remaining": 1,
+      "equal": true
+    },
+    {
+      "project_id": "5cc9d1ce-0362-46a0-8148-23aa7d29458a",
+      "topic_id": "76469986-9050-45e4-a94d-f1c0def5cb3f",
+      "k": 2,
+      "max_trials": 2,
+      "remaining": 0,
+      "equal": true
+    },
+    {
+      "project_id": "0cf7441a-94e9-4690-94f6-0396f8836346",
+      "topic_id": "8778e3ab-d148-446e-83b7-ef0bd570361b",
+      "k": 2,
+      "max_trials": 2,
+      "remaining": 0,
+      "equal": true
+    }
+  ],
+  "r4_k_preserved": {
+    "project_id": "0cf7441a-94e9-4690-94f6-0396f8836346",
+    "topic_id": "8778e3ab-d148-446e-83b7-ef0bd570361b",
+    "k": 2,
+    "max_trials": 2,
+    "remaining": 0,
+    "equal": true
+  },
+  "qa_original_roles": [
+    {
+      "id": 2527,
+      "status": "active",
+      "role": "user",
+      "org_id": 261,
+      "institution_role": "quant_researcher",
+      "membership_status": "active"
+    },
+    {
+      "id": 2973,
+      "status": "active",
+      "role": "user",
+      "org_id": 261,
+      "institution_role": "manager",
+      "membership_status": "active"
+    },
+    {
+      "id": 3033,
+      "status": "active",
+      "role": "user",
+      "org_id": 261,
+      "institution_role": "quant_reviewer",
+      "membership_status": "active"
+    }
+  ],
+  "historical_reference": {
+    "id": 1046,
+    "status": "disabled",
+    "role": "user",
+    "memberships": 0
+  },
+  "review_counts": {
+    "reviewed": 3,
+    "assets": 0
+  },
+  "metered_calls": {
+    "calls": 17,
+    "known_actual": "121103"
+  },
+  "history_scopes": [
+    {
+      "scope": "factor",
+      "historical_tokens": 180331,
+      "baseline_state": "pending"
+    },
+    {
+      "scope": "space",
+      "historical_tokens": 180331,
+      "baseline_state": "pending"
+    }
+  ],
+  "unknown_history_preserved_by_full_row_comparison": true,
+  "sealed_history_status": [
+    {
+      "status": "passed",
+      "n": 3
+    }
+  ],
+  "empty_non_scope_tables": {
+    "strategy_projects": 0,
+    "strategy_runs": 0,
+    "re_factor_catalog_snapshot": 0,
+    "auth_login_failures": 0,
+    "invest_stocks": 0,
+    "invest_etf": 0
+  },
+  "doc_extract_rows": 0,
+  "canonical_migrations": 43,
+  "service_switch_performed": false,
+  "real_model_market_or_new_research_performed": false
+}

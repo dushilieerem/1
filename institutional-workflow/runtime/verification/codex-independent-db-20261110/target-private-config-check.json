@@ -1,0 +1,10 @@
+{
+  "private_config": "institutional-workflow/runtime/.private/quant-zxd-db.env",
+  "git_ignored": true,
+  "tracked": false,
+  "mode_octal": "0o600",
+  "database": "svquant_zxd_dev",
+  "service_config_changed": false,
+  "secret_values_printed_or_committed": false,
+  "canonical_bundle": "institutional-workflow/runtime/verification/codex-independent-db-20261110/canonical-migrations"
+}

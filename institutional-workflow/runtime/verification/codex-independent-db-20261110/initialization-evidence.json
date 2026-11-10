@@ -1,0 +1,241 @@
+{
+  "status": "initialized_empty_not_copied_not_loaded",
+  "at_utc": "2026-11-10T09:50:46.659624+00:00",
+  "database": "svquant_zxd_dev",
+  "source_read_only": true,
+  "scaffold_statements": 53,
+  "tables": [
+    "ai_usage",
+    "app_audit_logs",
+    "auth_login_failures",
+    "detect_projects",
+    "detect_runs",
+    "factor_dashboard_legacy_imports",
+    "factor_dashboard_metrics",
+    "inst_members",
+    "inst_orgs",
+    "invest_ai_agent_prompt",
+    "invest_etf",
+    "invest_portfolio_trade",
+    "invest_quant_draft",
+    "invest_quant_strategy",
+    "invest_stocks",
+    "md_us_stock_snapshot",
+    "portfolio_nav",
+    "portfolio_orders",
+    "portfolio_plans",
+    "portfolio_positions",
+    "quant_ai_budget_accounts",
+    "quant_ai_budget_calls",
+    "quant_ai_budget_supplements",
+    "quant_data_requests",
+    "quant_factor_agent_jobs",
+    "quant_factor_branches",
+    "quant_factor_candidates",
+    "quant_factor_controls",
+    "quant_factor_f0_runs",
+    "quant_factor_imported_factors",
+    "quant_factor_iterations",
+    "quant_factor_org_controls",
+    "quant_factor_sealed_validations",
+    "quant_factor_topics",
+    "quant_factor_trials",
+    "quant_research_queue_jobs",
+    "quant_research_queue_slots",
+    "quant_research_token_policies",
+    "re_factor_catalog_snapshot",
+    "re_factor_catalog_sync_log",
+    "schema_migrations",
+    "strategy_branches",
+    "strategy_diagnostics",
+    "strategy_imported_assets",
+    "strategy_projects",
+    "strategy_review_events",
+    "strategy_runs",
+    "strategy_s0_runs",
+    "strategy_sealed_validations",
+    "strategy_topics",
+    "strategy_trials",
+    "svquant.doc_extract",
+    "user_custom_factors",
+    "user_factor_libraries",
+    "user_library_factors",
+    "users"
+  ],
+  "canonical_applied": [
+    {
+      "version": "0001_baseline",
+      "checksum": "11f00b2966305ecc057f89570630050f3bdf7f5fb5298ad58d2dfe696b0b9c1f"
+    },
+    {
+      "version": "0002_invest_portfolio_trade",
+      "checksum": "25613a28bd32526239b6d8f8de4208a3376009400f4bc57fe4c29af18849b01a"
+    },
+    {
+      "version": "0003_invest_us_market",
+      "checksum": "9b1bb7180f7f88f877bca053993da12e194177419daf20615d07ab5ae8bbc389"
+    },
+    {
+      "version": "0004_invest_quant",
+      "checksum": "9aadeb2319cfcc9df550e4cde9d33b27ca4d95a02c18ef7e10efef30ccf49d64"
+    },
+    {
+      "version": "0005_inst_quant_role",
+      "checksum": "0e3fda76a63fd397562a109168adbfb5ae968e58151a076866d8bc2ea80919af"
+    },
+    {
+      "version": "0006_quant_factor_candidates",
+      "checksum": "8693af88eecf9fac0f3308ffa8395a5183793694844a3c6fadc85532addf51c3"
+    },
+    {
+      "version": "0007_inst_quant_reviewer_role",
+      "checksum": "3f1727d2ab21d47d3b4fd5bf2b595c61ebbb0f47599fd561365929e0bbd3b821"
+    },
+    {
+      "version": "0008_quant_factor_agent_jobs",
+      "checksum": "1bc25e72b9f2ebc5b2801d59f3d5e8b6b46765a84a817b43e3cba563f7594388"
+    },
+    {
+      "version": "0009_quant_factor_iterations",
+      "checksum": "ae3745f81d0bf6f39f045bebc054ffea8dbd1edb1438d46605bdb0bec5c11baa"
+    },
+    {
+      "version": "0010_invest_ai_agent",
+      "checksum": "21414b6512655f9ecd780db6c86c8e1313b88de37f8596057f28239391bd2d6d"
+    },
+    {
+      "version": "0011_quant_factor_v5_ledger",
+      "checksum": "544ff691c7e9a6d18219871a50993ca8e0de7fdb803466d8527548283c793201"
+    },
+    {
+      "version": "0012_quant_factor_imports",
+      "checksum": "4bb8153c712833ce5f8e83bd4c1ccf22d9fd8cffd4dabb61a23a6bbc99977c29"
+    },
+    {
+      "version": "0013_quant_factor_agent_job_project_fk",
+      "checksum": "2126b389fe180e4a4451c3f06974a9d06665bd35558947573221a212c9ef5c21"
+    },
+    {
+      "version": "0014_quant_factor_ledger_audit_fields",
+      "checksum": "ddbced091261e9efda4b97461050802a6dce0bae83b94ac91c3bc389c92304a1"
+    },
+    {
+      "version": "0015_quant_factor_branch_parent_tenant_fk",
+      "checksum": "941ff091be8eefdb7d06fc5e849e9c50267cac90774ae240917fc90d508895a3"
+    },
+    {
+      "version": "0016_quant_factor_import_metrics",
+      "checksum": "52c1f266cf4b7d5afcfdcbfd8037668d827891117ed12c1099e65f15ee551c27"
+    },
+    {
+      "version": "0017_quant_factor_f0_runs",
+      "checksum": "ae28f168ae9327f524484968c30cd252a537f3f7342cb53fed6031bc4d9b5193"
+    },
+    {
+      "version": "0018_quant_factor_topic_pause",
+      "checksum": "75e1201d653fef2c8373bef238a7b5fce79b0b50e58e4f5552a6263b270b0985"
+    },
+    {
+      "version": "0019_quant_factor_import_category",
+      "checksum": "65387ae4011625a25526b52cf6f6539b72d89a44c985701e7c5fd7913c4baa9c"
+    },
+    {
+      "version": "0020_strategy_research_ledger",
+      "checksum": "ed7a77963e81980a99572a637c7973ff385fa8cba764a0214825c9f512692e64"
+    },
+    {
+      "version": "0021_strategy_ledger_tenant_constraints",
+      "checksum": "c6b926507dc506784a6119d9995a03d23171e52fdf6ef1d90583adb75b611460"
+    },
+    {
+      "version": "0022_quant_factor_trial_f0_run",
+      "checksum": "03c0878b8b22f96433c1fd6f1e66d00a2f258851e74da7319f7501027247768f"
+    },
+    {
+      "version": "0023_strategy_s0_runs",
+      "checksum": "ce9f71f3120c2f26b9e7b28d28a7caa4f0e38bc44fa3dcdcd9cdadd8890f200e"
+    },
+    {
+      "version": "0024_strategy_diagnostics",
+      "checksum": "1010517ae8ac08b8afe3d6f82bbddb93557b799ade1cb7a785e11a8124820a52"
+    },
+    {
+      "version": "0025_strategy_review_events",
+      "checksum": "18fdb920f48bdf8a5f792786edc0803ebad0a8a53cf9a8218c5c2ec161adba08"
+    },
+    {
+      "version": "0026_strategy_trial_report",
+      "checksum": "72eb1bcd690ec0b1bd7cc27fd78b29c363f36593bdb3afe67142713521f930e6"
+    },
+    {
+      "version": "0027_quant_factor_topic_display_no",
+      "checksum": "a1dcee5564f10a22f6cde3eb5970e36066a3971b962f9f486dd33be6e7204df3"
+    },
+    {
+      "version": "0028_quant_factor_branch_title",
+      "checksum": "13012f9702fd4e943caead44708c8951b2709e9caf2d73f74282d8125ea27573"
+    },
+    {
+      "version": "0029_strategy_topic_display_no",
+      "checksum": "13b911d6570e17e5f7f0fe399ef976447f85345ee43549f7b307bf60c3897164"
+    },
+    {
+      "version": "0030_quant_data_requests",
+      "checksum": "9dde168b713f0a7c603731c59df619c0583cd4f7ceb63e4d1c6d09c05cefc1b5"
+    },
+    {
+      "version": "0031_portfolio_simulation",
+      "checksum": "1cae6f12e995420f99093489d1806e5b4c2fafee51345dc0cdd6020f19efeae8"
+    },
+    {
+      "version": "0032_strategy_imported_assets",
+      "checksum": "bfd3d4774702ef770d9dd10adb9a5c4e13738eff0f886f1c17b02879315f403a"
+    },
+    {
+      "version": "0033_strategy_imported_assets_index",
+      "checksum": "bd5a88528da6d33750a90160dc0f5dd3835ee742e4a522078c3441a32bbb187c"
+    },
+    {
+      "version": "0034_strategy_imported_assets_retain",
+      "checksum": "42590f5d6f9db3951e2b59cf182f288fa48385907478a2b6c9b51a1b52b94ea9"
+    },
+    {
+      "version": "0035_quant_data_request_tracking",
+      "checksum": "8748cb5bc506ad8192e190e50a58e77b504046c725b825322fae07caca49e714"
+    },
+    {
+      "version": "0036_inst_doc_extract",
+      "checksum": "856666c33e06c10609836052d468848d265558b5e864ffed7f681f7155cfc581"
+    },
+    {
+      "version": "0037_inst_doc_extract_privileges",
+      "checksum": "2e2a2bc0b459dcde818601fface5863cc5800892e721d6809bd7856386253e67"
+    },
+    {
+      "version": "0042_quant_factor_controls",
+      "checksum": "8d0c6b1080bc973ba9b2d69aa6b28461d4b9c66b017d668530f34e333cd0641f"
+    },
+    {
+      "version": "0043_quant_factor_org_controls",
+      "checksum": "860528c8a7b4f45de8ca7c1388944937852bcaddd280a468de975ad87d385a61"
+    },
+    {
+      "version": "0044_quant_ai_budget",
+      "checksum": "430cd2f882e5c96a319b3dba5f87af03b100a92bbc7310ca5a7f19b7f81970c9"
+    },
+    {
+      "version": "0045_quant_research_token_policy",
+      "checksum": "822c08f41c308f88cdc67b55f638d8a196bb70dc1791498c9db033bd0b196a57"
+    },
+    {
+      "version": "0046_quant_research_queue",
+      "checksum": "904d5379c7e2e0571056f3d3e1b90d0741cf36769c39c34a643c0e160589ca40"
+    },
+    {
+      "version": "0047_quant_model_capacity",
+      "checksum": "153f8b770d0944d46045d75d71450aa2f7692196d28c5fe4b9ed4913b973869d"
+    }
+  ],
+  "no_bootstrap_seed_or_source_writes": true,
+  "source_head": "36bf4dc15b6663c2820b33f2f2621c2c22ef219c"
+}

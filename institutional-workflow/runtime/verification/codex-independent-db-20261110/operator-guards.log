@@ -1,0 +1,10 @@
+test_copy_cannot_write_unapproved_table_or_source_connection (__main__.OperatorGuards.test_copy_cannot_write_unapproved_table_or_source_connection) ... ok
+test_existing_target_never_recreated_or_initialized (__main__.OperatorGuards.test_existing_target_never_recreated_or_initialized) ... ok
+test_missing_ancestor_does_not_disable_fk_or_copy_outside_scope (__main__.OperatorGuards.test_missing_ancestor_does_not_disable_fk_or_copy_outside_scope) ... ok
+test_shared_write_connection_rejected_before_connect (__main__.OperatorGuards.test_shared_write_connection_rejected_before_connect) ... ok
+test_unapproved_database_rejected_before_connect (__main__.OperatorGuards.test_unapproved_database_rejected_before_connect) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.005s
+
+OK

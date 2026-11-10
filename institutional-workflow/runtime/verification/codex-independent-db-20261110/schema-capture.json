@@ -1,0 +1,525 @@
+{
+  "status": "captured_not_executed",
+  "source_head": "36bf4dc15b6663c2820b33f2f2621c2c22ef219c",
+  "scaffold_statements": [
+    {
+      "source": "services/auth/auth_store.py:ensure_schema",
+      "sha256": "6870cff3f889f47098b0c8d310b1b5d801d6bf74aea94faab6af6989e66bec1d",
+      "sql": "CREATE TABLE IF NOT EXISTS users (\n              id              BIGSERIAL PRIMARY KEY,\n              username        TEXT NOT NULL UNIQUE,\n              email           TEXT UNIQUE,\n              password_hash   TEXT NOT NULL,\n              role            TEXT NOT NULL DEFAULT 'user',\n              status          TEXT NOT NULL DEFAULT 'active',\n              display_name    TEXT,\n              ai_quota_daily  INTEGER NOT NULL DEFAULT 200,\n              created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n              updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n              CONSTRAINT users_role_chk CHECK (role IN ('user', 'admin')),\n              CONSTRAINT users_status_chk CHECK (status IN ('active', 'disabled'))\n            )"
+    },
+    {
+      "source": "services/auth/auth_store.py:ensure_schema",
+      "sha256": "dd75141ef600f51a1fabcbdc7a9caf3780470f460318f2c9abf1ef4f4b9c9ad9",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_users_status ON users (status)"
+    },
+    {
+      "source": "services/auth/auth_store.py:ensure_schema",
+      "sha256": "ee2b909c35fb68e215873f03b978d0f60e117a66741fd1d9273b18da84c48ca6",
+      "sql": "CREATE TABLE IF NOT EXISTS auth_login_failures (\n              username     TEXT PRIMARY KEY,\n              failures     INTEGER NOT NULL DEFAULT 0,\n              locked_until TIMESTAMPTZ,\n              updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()\n            )"
+    },
+    {
+      "source": "services/auth/auth_store.py:ensure_schema",
+      "sha256": "485582d4e8a6f4e915dc6d7d61894ff1f1dc35777428deb915467b12cf4dc671",
+      "sql": "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT"
+    },
+    {
+      "source": "services/auth/auth_store.py:ensure_schema",
+      "sha256": "a30982f0fc5ab57f19ee8d1a0b9aa7244596bb42ba6525e82c21832f2f1c09d9",
+      "sql": "ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_url TEXT"
+    },
+    {
+      "source": "services/auth/auth_store.py:ensure_schema",
+      "sha256": "d66acd092c2104d9e0458c1cdfc1bc7fc7d1a8765b6931db63f8f4d7e55f621f",
+      "sql": "ALTER TABLE users ADD COLUMN IF NOT EXISTS headline TEXT"
+    },
+    {
+      "source": "services/auth/auth_store.py:ensure_schema",
+      "sha256": "7ab4f74ce6f8972a078505462af3901bb6f257dae772ae929478789eaa2f68df",
+      "sql": "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT"
+    },
+    {
+      "source": "services/auth/auth_store.py:ensure_schema",
+      "sha256": "fe1c0c2c7d754447dfbd5ed4e49d36f5b7881cc622b36caa504445f576add51c",
+      "sql": "ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0"
+    },
+    {
+      "source": "services/institution/inst_store.py:ensure_inst_schema",
+      "sha256": "6330809690b2a2b9809e834e27196904a74d04feb187f6aee2f6925d94f908f9",
+      "sql": "CREATE TABLE IF NOT EXISTS inst_orgs (\n              id          BIGSERIAL PRIMARY KEY,\n              code        TEXT NOT NULL UNIQUE,\n              name_cn     TEXT NOT NULL,\n              name_en     TEXT,\n              status      TEXT NOT NULL DEFAULT 'active',\n              created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n              CONSTRAINT inst_orgs_status_chk CHECK (status IN ('active', 'disabled'))\n            )"
+    },
+    {
+      "source": "services/institution/inst_store.py:ensure_inst_schema",
+      "sha256": "4836375e7f7e7089cdd6965bf45adc2ab380a5c542f74b6e1e10fc52cd3011a8",
+      "sql": "CREATE TABLE IF NOT EXISTS inst_members (\n              id          BIGSERIAL PRIMARY KEY,\n              org_id      BIGINT NOT NULL REFERENCES inst_orgs(id) ON DELETE CASCADE,\n              user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n              role        TEXT NOT NULL,\n              title_cn    TEXT,\n              status      TEXT NOT NULL DEFAULT 'active',\n              created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n              updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n              CONSTRAINT inst_members_role_chk CHECK (\n                role IN ('manager', 'partner', 'chairman', 'risk', 'execution', 'monitoring', 'quant_researcher', 'quant_reviewer')\n              ),\n              CONSTRAINT inst_members_status_chk CHECK (status IN ('active', 'disabled')),\n              CONSTRAINT inst_members_org_user_key UNIQUE (org_id, user_id)\n            )"
+    },
+    {
+      "source": "services/institution/inst_store.py:ensure_inst_schema",
+      "sha256": "0768b7c3fd6744c0b78b789c353929ffabe6688a51e1b7164bf354c5982da651",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_inst_members_user ON inst_members (user_id, status)"
+    },
+    {
+      "source": "services/factor/detect_store.py:ensure_detect_schema",
+      "sha256": "def640827dd3949ccea7dcd1ec7a3f491e65aecdc5af87bd1c610a7744ed39f8",
+      "sql": "CREATE TABLE IF NOT EXISTS detect_projects (\n                  id            TEXT NOT NULL,\n                  user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n                  name          TEXT NOT NULL,\n                  factor_name   TEXT NOT NULL,\n                  description   TEXT NOT NULL DEFAULT '',\n                  config        JSONB NOT NULL DEFAULT '{}'::jsonb,\n                  run_count     INTEGER NOT NULL DEFAULT 0,\n                  is_sample     BOOLEAN NOT NULL DEFAULT FALSE,\n                  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n                  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n                  PRIMARY KEY (user_id, id)\n                )"
+    },
+    {
+      "source": "services/factor/detect_store.py:ensure_detect_schema",
+      "sha256": "63a2853602c17f812295d2c716e592933b00702fdff49cbd6815981f1f40e2df",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_detect_projects_user_updated ON detect_projects (user_id, updated_at DESC)"
+    },
+    {
+      "source": "services/factor/detect_store.py:ensure_detect_schema",
+      "sha256": "556d7fb9074d256ffbb6b6060042f819a55e5523c64fc5b0482d9e9c86bb61f3",
+      "sql": "CREATE TABLE IF NOT EXISTS detect_runs (\n                  id            TEXT NOT NULL,\n                  user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n                  project_id    TEXT NOT NULL,\n                  factor_name   TEXT NOT NULL,\n                  description   TEXT NOT NULL DEFAULT '',\n                  request       JSONB NOT NULL DEFAULT '{}'::jsonb,\n                  result        JSONB NOT NULL DEFAULT '{}'::jsonb,\n                  finished_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n                  elapsed_sec   DOUBLE PRECISION NOT NULL DEFAULT 0,\n                  PRIMARY KEY (user_id, id),\n                  CONSTRAINT detect_runs_project_fk\n                    FOREIGN KEY (user_id, project_id)\n                    REFERENCES detect_projects (user_id, id) ON DELETE CASCADE\n                )"
+    },
+    {
+      "source": "services/factor/detect_store.py:ensure_detect_schema",
+      "sha256": "e8e8b50ca58822ce9bb2a872cbe2d374e33ff64a5eb17933b765112b1259cfa8",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_detect_runs_project ON detect_runs (user_id, project_id, finished_at DESC)"
+    },
+    {
+      "source": "services/factor/detect_store.py:ensure_detect_schema",
+      "sha256": "9662b9817b3536e20c0a4205191dc6a9628c3effa06bb5a5cc910f09797e7c5e",
+      "sql": "ALTER TABLE detect_runs\n                  ADD COLUMN IF NOT EXISTS remark TEXT NOT NULL DEFAULT ''"
+    },
+    {
+      "source": "services/factor/detect_store.py:ensure_detect_schema",
+      "sha256": "a2a03c82fc47bb6826a971dd7203a9e315f1775d224775fa58c5c06697d2de5d",
+      "sql": "ALTER TABLE detect_runs\n                  ADD COLUMN IF NOT EXISTS flagged BOOLEAN NOT NULL DEFAULT FALSE"
+    },
+    {
+      "source": "services/factor/detect_store.py:ensure_detect_schema",
+      "sha256": "b9598bcbc0f14cbb9bba8dd9f622c27ef5deb08220986906130b5c8e08a8e9dc",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_detect_runs_user_finished ON detect_runs (user_id, finished_at DESC)"
+    },
+    {
+      "source": "services/strategy/strategy_store.py:ensure_strategy_schema",
+      "sha256": "fa5ea7189bafe41cdaed248be0620dcc1646bd0d57fcf4b9722ca89a18c2b56e",
+      "sql": "CREATE TABLE IF NOT EXISTS strategy_projects (\n              id            TEXT NOT NULL,\n              user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n              name          TEXT NOT NULL,\n              description   TEXT NOT NULL DEFAULT '',\n              config        JSONB NOT NULL DEFAULT '{}'::jsonb,\n              run_count     INTEGER NOT NULL DEFAULT 0,\n              is_sample     BOOLEAN NOT NULL DEFAULT FALSE,\n              created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n              updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n              PRIMARY KEY (user_id, id)\n            )"
+    },
+    {
+      "source": "services/strategy/strategy_store.py:ensure_strategy_schema",
+      "sha256": "55768a7b52d8370bad0635f3cb8953678d2370a72663fcc7af0b05f3ab7cb02a",
+      "sql": "ALTER TABLE strategy_projects ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE"
+    },
+    {
+      "source": "services/strategy/strategy_store.py:ensure_strategy_schema",
+      "sha256": "e1ad00acfc8e45a59492b507d14919453ce98e47477879ed33e1308e7103447e",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_strategy_projects_user_updated ON strategy_projects (user_id, updated_at DESC)"
+    },
+    {
+      "source": "services/strategy/strategy_store.py:ensure_strategy_schema",
+      "sha256": "4d61a1599a8900546ad7eee383176a652de8c3af4e31c108cb372609a3bb0988",
+      "sql": "CREATE TABLE IF NOT EXISTS strategy_runs (\n              id            TEXT NOT NULL,\n              user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n              project_id    TEXT NOT NULL,\n              name          TEXT NOT NULL DEFAULT '',\n              description   TEXT NOT NULL DEFAULT '',\n              request       JSONB NOT NULL DEFAULT '{}'::jsonb,\n              result        JSONB NOT NULL DEFAULT '{}'::jsonb,\n              finished_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n              elapsed_sec   DOUBLE PRECISION NOT NULL DEFAULT 0,\n              verified      BOOLEAN NOT NULL DEFAULT FALSE,\n              result_hash   TEXT,\n              PRIMARY KEY (user_id, id),\n              CONSTRAINT strategy_runs_project_fk\n                FOREIGN KEY (user_id, project_id)\n                REFERENCES strategy_projects (user_id, id) ON DELETE CASCADE\n            )"
+    },
+    {
+      "source": "services/strategy/strategy_store.py:ensure_strategy_schema",
+      "sha256": "952f7bb8cbab06db4e884fdf31dca4b4d834a58512a804ac1e5323b34dbecb69",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_strategy_runs_project ON strategy_runs (user_id, project_id, finished_at DESC)"
+    },
+    {
+      "source": "services/strategy/strategy_store.py:ensure_strategy_schema",
+      "sha256": "e550d791195c106fa1f40ad3faf7f9e3d361101aadba7b07030373431c7e8e49",
+      "sql": "ALTER TABLE strategy_runs ADD COLUMN IF NOT EXISTS remark TEXT NOT NULL DEFAULT ''"
+    },
+    {
+      "source": "services/strategy/strategy_store.py:ensure_strategy_schema",
+      "sha256": "cb1efb30a17057f1c5dbcb61101addc384f313fc5d7ba62f5e8cacb3b234877c",
+      "sql": "ALTER TABLE strategy_runs ADD COLUMN IF NOT EXISTS flagged BOOLEAN NOT NULL DEFAULT FALSE"
+    },
+    {
+      "source": "services/strategy/strategy_store.py:ensure_strategy_schema",
+      "sha256": "d63ad2d914b91c13a2e3fca1f75737078c30ec8d9bbb5fd7181350a7a0e58d6c",
+      "sql": "ALTER TABLE strategy_runs ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT FALSE"
+    },
+    {
+      "source": "services/strategy/strategy_store.py:ensure_strategy_schema",
+      "sha256": "2152874ebdc864849fb936c0679fdc44e7dde5f91ecf88c8e1e9bbd9c0747f0f",
+      "sql": "ALTER TABLE strategy_runs ADD COLUMN IF NOT EXISTS result_hash TEXT"
+    },
+    {
+      "source": "services/strategy/strategy_store.py:ensure_strategy_schema",
+      "sha256": "b948de1bdf901a9ba26ed7d8e399a5b3a5eda585c9d4c60422bc4e2f3aea8477",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_strategy_runs_user_finished ON strategy_runs (user_id, finished_at DESC)"
+    },
+    {
+      "source": "ai/runtime/store.py:ensure_ai_usage_schema",
+      "sha256": "8fa9be0b6e33a001b5d835f1f0c8b28c5d176a337fe8fce2b37cc515e2807e2f",
+      "sql": "CREATE TABLE IF NOT EXISTS ai_usage (\n              id           BIGSERIAL PRIMARY KEY,\n              user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n              run_id       TEXT NOT NULL,\n              skill        TEXT NOT NULL,\n              tokens_in    INTEGER NOT NULL DEFAULT 0,\n              tokens_out   INTEGER NOT NULL DEFAULT 0,\n              created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()\n            )"
+    },
+    {
+      "source": "ai/runtime/store.py:ensure_ai_usage_schema",
+      "sha256": "814c4c04fc94da396576e58a0953002ba33c1c38066a3805f234e55e2c98dbe1",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_ai_usage_user_day ON ai_usage (user_id, created_at DESC)"
+    },
+    {
+      "source": "ai/runtime/store.py:ensure_ai_usage_schema",
+      "sha256": "8a645aed6f04220582d89348a4b7383e749ebd47e03433dc2537739b9c569ad6",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_ai_usage_run ON ai_usage (run_id)"
+    },
+    {
+      "source": "services/core/audit_log_store.py:ensure_audit_schema",
+      "sha256": "e787d710f46dd8687e13ba7572f33ea1c2c5bdeca1178920b70dc743d79f1153",
+      "sql": "CREATE TABLE IF NOT EXISTS app_audit_logs (\n              id            BIGSERIAL PRIMARY KEY,\n              created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n              user_id       BIGINT,\n              username      TEXT,\n              role          TEXT,\n              action        TEXT NOT NULL,\n              module        TEXT,\n              resource      TEXT,\n              method        TEXT,\n              path          TEXT,\n              status_code   INTEGER,\n              duration_ms   INTEGER,\n              ip            TEXT,\n              user_agent    TEXT,\n              detail        TEXT,\n              request_id    TEXT\n            )"
+    },
+    {
+      "source": "services/core/audit_log_store.py:ensure_audit_schema",
+      "sha256": "644c2fc5ae3e0ae9ae68adea7e0d7c1f0e2776f71fd62202f161de6c36b6c809",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_app_audit_logs_created ON app_audit_logs (created_at DESC)"
+    },
+    {
+      "source": "services/core/audit_log_store.py:ensure_audit_schema",
+      "sha256": "2855b39fa629a979cf349f73357d5d2fa5a559f3ea7da421f505e9e8c7ea99dc",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_app_audit_logs_user ON app_audit_logs (user_id, created_at DESC)"
+    },
+    {
+      "source": "services/core/audit_log_store.py:ensure_audit_schema",
+      "sha256": "a2dabfcf646a51e337cf5092134b228e0e3505296663d1170538e8c5ad7f23b8",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_app_audit_logs_module ON app_audit_logs (module, created_at DESC)"
+    },
+    {
+      "source": "services/factor/user_factor_store.py:ensure_user_factors_schema",
+      "sha256": "771c03bc4b159db2691f6e311f88d3b81faafb6ddbe857e70bcb142c074d6524",
+      "sql": "CREATE TABLE IF NOT EXISTS user_custom_factors (\n              id            BIGSERIAL PRIMARY KEY,\n              user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n              name          TEXT NOT NULL,\n              method_name   TEXT NOT NULL UNIQUE,\n              body          TEXT NOT NULL,\n              description   TEXT NOT NULL DEFAULT '',\n              created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n              updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n              UNIQUE (user_id, name)\n            )"
+    },
+    {
+      "source": "services/factor/user_factor_store.py:ensure_user_factors_schema",
+      "sha256": "f70c4e2e6fa334471d78ff0233b384d9603605caad1a7486a9aaf1adbcbcf914",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_user_custom_factors_user ON user_custom_factors (user_id, updated_at DESC)"
+    },
+    {
+      "source": "services/factor/user_library_store.py:ensure_user_libraries_schema",
+      "sha256": "decfba8b79ae40b509390f2ba431081b5e1c5e690c3cdf7c59060eb2eb987f80",
+      "sql": "CREATE TABLE IF NOT EXISTS user_factor_libraries (\n                  id            BIGSERIAL PRIMARY KEY,\n                  user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n                  name          TEXT NOT NULL,\n                  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n                  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n                  UNIQUE (user_id, name)\n                )"
+    },
+    {
+      "source": "services/factor/user_library_store.py:ensure_user_libraries_schema",
+      "sha256": "1d052794993425ba26a405ec08c50b2823934f32e4f9b93f7e585a305886d70e",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_user_factor_libraries_user ON user_factor_libraries (user_id, updated_at DESC)"
+    },
+    {
+      "source": "services/factor/user_library_store.py:ensure_user_libraries_schema",
+      "sha256": "6cc2052c43859d867af6d4510019fe9f3419806d6328bb32175b044f36b07838",
+      "sql": "CREATE TABLE IF NOT EXISTS user_library_factors (\n                  id              BIGSERIAL PRIMARY KEY,\n                  library_id      BIGINT NOT NULL\n                    REFERENCES user_factor_libraries(id) ON DELETE CASCADE,\n                  user_id         BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n                  name            TEXT NOT NULL,\n                  method_name     TEXT NOT NULL,\n                  body            TEXT NOT NULL,\n                  description     TEXT NOT NULL DEFAULT '',\n                  category_label  TEXT NOT NULL DEFAULT '其他',\n                  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n                  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n                  UNIQUE (library_id, name),\n                  UNIQUE (user_id, name)\n                )"
+    },
+    {
+      "source": "services/factor/user_library_store.py:ensure_user_libraries_schema",
+      "sha256": "76c34196aaff4a820ab3c778131ebfb68d986f0cd38b0e143c40ca44d3f3c6e1",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_user_library_factors_lib ON user_library_factors (library_id, updated_at DESC)"
+    },
+    {
+      "source": "services/factor/user_library_store.py:ensure_user_libraries_schema",
+      "sha256": "ed9fdece8592a08d2cf096e0b90186a307db5bba255e9e67ccfcfcba49059936",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_user_library_factors_user ON user_library_factors (user_id, updated_at DESC)"
+    },
+    {
+      "source": "services/factor/user_library_store.py:ensure_user_libraries_schema",
+      "sha256": "df1fb24b1a824c129b74dc266a60723befe3303acc9da3d4d09fbded4f54705f",
+      "sql": "ALTER TABLE user_library_factors\n                  ADD COLUMN IF NOT EXISTS formula_ready BOOLEAN NOT NULL DEFAULT TRUE"
+    },
+    {
+      "source": "services/factor/factor_dashboard_metrics_store.py:ensure_factor_dashboard_metrics_schema",
+      "sha256": "7c81921d8395daaa9fde841527e2962b8fd1fd836b3813d602616f6cf945bb15",
+      "sql": "CREATE TABLE IF NOT EXISTS factor_dashboard_metrics (\n                  factor_name TEXT NOT NULL,\n                  library TEXT NOT NULL DEFAULT '',\n                  universe TEXT NOT NULL,\n                  period TEXT NOT NULL,\n                  filter_limit_up SMALLINT NOT NULL CHECK (filter_limit_up IN (0, 1)),\n                  filter_suspended SMALLINT NOT NULL CHECK (filter_suspended IN (0, 1)),\n                  rules_version TEXT NOT NULL DEFAULT 'yg_v1',\n                  name_cn TEXT,\n                  ic_mean DOUBLE PRECISION,\n                  ic_std DOUBLE PRECISION,\n                  ir DOUBLE PRECISION,\n                  rank_ic DOUBLE PRECISION,\n                  q1_return DOUBLE PRECISION,\n                  q5_return DOUBLE PRECISION,\n                  long_short_spread DOUBLE PRECISION,\n                  turnover DOUBLE PRECISION,\n                  q1_turnover DOUBLE PRECISION,\n                  q5_turnover DOUBLE PRECISION,\n                  coverage_pool DOUBLE PRECISION,\n                  coverage_total DOUBLE PRECISION,\n                  win_rate DOUBLE PRECISION,\n                  volatility DOUBLE PRECISION,\n                  sharpe DOUBLE PRECISION,\n                  annual_return DOUBLE PRECISION,\n                  max_drawdown DOUBLE PRECISION,\n                  error TEXT,\n                  ic_unavailable_reason TEXT,\n                  computed_at TIMESTAMPTZ NOT NULL,\n                  PRIMARY KEY (\n                    factor_name, library, universe, period,\n                    filter_limit_up, filter_suspended, rules_version\n                  )\n                )"
+    },
+    {
+      "source": "services/factor/factor_dashboard_metrics_store.py:ensure_factor_dashboard_metrics_schema",
+      "sha256": "5316a6a70eef4e1c43d136bd5796b1cad570fbc44a43af207213901b82c5bf73",
+      "sql": "ALTER TABLE factor_dashboard_metrics\n                ADD COLUMN IF NOT EXISTS ic_unavailable_reason TEXT"
+    },
+    {
+      "source": "services/factor/factor_dashboard_metrics_store.py:ensure_factor_dashboard_metrics_schema",
+      "sha256": "05af447b52fbac017f471105efdaa15a1745de5c435d7cabd5a44830d1b1de9c",
+      "sql": "ALTER TABLE factor_dashboard_metrics\n                ADD COLUMN IF NOT EXISTS turnover DOUBLE PRECISION"
+    },
+    {
+      "source": "services/factor/factor_dashboard_metrics_store.py:ensure_factor_dashboard_metrics_schema",
+      "sha256": "93cc5cf8d65784bfc9500c8f0e1958905d6a6051e2a8780c1971a0f8f66acd87",
+      "sql": "CREATE INDEX IF NOT EXISTS idx_factor_dashboard_metrics_query\n                ON factor_dashboard_metrics\n                  (universe, period, filter_limit_up, filter_suspended,\n                   rules_version, library, factor_name)"
+    },
+    {
+      "source": "services/factor/factor_dashboard_metrics_store.py:ensure_factor_dashboard_metrics_schema",
+      "sha256": "33fff48474d9e47570c8b9eec198b76d4e0124b87d055a223c306990c5267017",
+      "sql": "CREATE TABLE IF NOT EXISTS factor_dashboard_legacy_imports (\n                  migration_key TEXT PRIMARY KEY,\n                  source_rows BIGINT NOT NULL DEFAULT 0,\n                  imported_rows BIGINT NOT NULL DEFAULT 0,\n                  skipped_rows BIGINT NOT NULL DEFAULT 0,\n                  completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\n                )"
+    },
+    {
+      "source": "services/factor/re_factor_catalog.py:ensure_re_factor_catalog_schema",
+      "sha256": "73bb518e381fbf15bdbab91afb4e174fa99d1ea830a7b9a3724f0ce6af58b467",
+      "sql": "CREATE TABLE IF NOT EXISTS re_factor_catalog_snapshot (\n              scope TEXT PRIMARY KEY,\n              content_hash TEXT NOT NULL,\n              payload JSONB NOT NULL,\n              fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n              fetched_at_unix DOUBLE PRECISION NOT NULL,\n              factor_count INT NOT NULL DEFAULT 0,\n              library_count INT NOT NULL DEFAULT 0,\n              updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\n            )"
+    },
+    {
+      "source": "services/factor/re_factor_catalog.py:ensure_re_factor_catalog_schema",
+      "sha256": "a45f32c8ac86e90c5f817bcc3ca3bd0d1735a658c3f97695f3e2a03d4a2c0c39",
+      "sql": "CREATE TABLE IF NOT EXISTS re_factor_catalog_sync_log (\n              id BIGSERIAL PRIMARY KEY,\n              scope TEXT NOT NULL,\n              changed BOOLEAN NOT NULL,\n              content_hash TEXT,\n              factor_count INT,\n              message TEXT,\n              detail JSONB,\n              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\n            )"
+    },
+    {
+      "source": "services/factor/re_factor_catalog.py:ensure_re_factor_catalog_schema",
+      "sha256": "ed4322f3966a50794e226f9801dcf344025335c82da8b3b40b0284c896932175",
+      "sql": "ALTER TABLE re_factor_catalog_sync_log\n            ADD COLUMN IF NOT EXISTS detail JSONB"
+    },
+    {
+      "source": "services/invest/schema.py:DDL only stocks/etf",
+      "sha256": "adcbfd5053755eaa808dcab6f86d7fef7239fd7345a54dbd03d8c4eba6c3cccc",
+      "sql": "CREATE TABLE IF NOT EXISTS invest_stocks (\n      code TEXT PRIMARY KEY, name TEXT, pinyin TEXT, industry TEXT, asset TEXT,\n      market TEXT,\n      price DOUBLE PRECISION, prev_close DOUBLE PRECISION, open DOUBLE PRECISION,\n      high DOUBLE PRECISION, low DOUBLE PRECISION, market_cap DOUBLE PRECISION,\n      pe_ttm DOUBLE PRECISION, pb DOUBLE PRECISION, dividend_yield DOUBLE PRECISION,\n      turnover DOUBLE PRECISION, volume DOUBLE PRECISION, amount DOUBLE PRECISION,\n      beta DOUBLE PRECISION, next_report_date TEXT, updated_at TEXT\n    )"
+    },
+    {
+      "source": "services/invest/schema.py:DDL only stocks/etf",
+      "sha256": "9aefa5724360637e8b93661f0c0c74a82c599bd2b6854d8029186c96ba5593e1",
+      "sql": "CREATE TABLE IF NOT EXISTS invest_etf (\n      code TEXT PRIMARY KEY, name TEXT, pinyin TEXT, industry TEXT, asset TEXT,\n      market TEXT,\n      price DOUBLE PRECISION, prev_close DOUBLE PRECISION, open DOUBLE PRECISION,\n      high DOUBLE PRECISION, low DOUBLE PRECISION, market_cap DOUBLE PRECISION,\n      pe_ttm DOUBLE PRECISION, pb DOUBLE PRECISION, dividend_yield DOUBLE PRECISION,\n      turnover DOUBLE PRECISION, volume DOUBLE PRECISION, amount DOUBLE PRECISION,\n      beta DOUBLE PRECISION, next_report_date TEXT, updated_at TEXT\n    )"
+    }
+  ],
+  "excluded_non_schema": [
+    {
+      "source": "services/factor/user_library_store.py:ensure_user_libraries_schema",
+      "sha256": "91ae4b4d4f1501af96103dc03dd23e4a59616cc3434ee48933c3681f9a3c7856",
+      "sql": "UPDATE user_library_factors\n                SET formula_ready = FALSE\n                WHERE formula_ready = TRUE\n                  AND (body IS NULL OR BTRIM(body) = '')"
+    }
+  ],
+  "canonical_files": [
+    {
+      "name": "0001_baseline.sql",
+      "sha256": "11f00b2966305ecc057f89570630050f3bdf7f5fb5298ad58d2dfe696b0b9c1f"
+    },
+    {
+      "name": "0002_invest_portfolio_trade.sql",
+      "sha256": "25613a28bd32526239b6d8f8de4208a3376009400f4bc57fe4c29af18849b01a"
+    },
+    {
+      "name": "0003_invest_us_market.sql",
+      "sha256": "9b1bb7180f7f88f877bca053993da12e194177419daf20615d07ab5ae8bbc389"
+    },
+    {
+      "name": "0004_invest_quant.sql",
+      "sha256": "9aadeb2319cfcc9df550e4cde9d33b27ca4d95a02c18ef7e10efef30ccf49d64"
+    },
+    {
+      "name": "0005_inst_quant_role.sql",
+      "sha256": "0e3fda76a63fd397562a109168adbfb5ae968e58151a076866d8bc2ea80919af"
+    },
+    {
+      "name": "0006_quant_factor_candidates.sql",
+      "sha256": "8693af88eecf9fac0f3308ffa8395a5183793694844a3c6fadc85532addf51c3"
+    },
+    {
+      "name": "0007_inst_quant_reviewer_role.sql",
+      "sha256": "3f1727d2ab21d47d3b4fd5bf2b595c61ebbb0f47599fd561365929e0bbd3b821"
+    },
+    {
+      "name": "0008_quant_factor_agent_jobs.sql",
+      "sha256": "1bc25e72b9f2ebc5b2801d59f3d5e8b6b46765a84a817b43e3cba563f7594388"
+    },
+    {
+      "name": "0009_quant_factor_iterations.sql",
+      "sha256": "ae3745f81d0bf6f39f045bebc054ffea8dbd1edb1438d46605bdb0bec5c11baa"
+    },
+    {
+      "name": "0010_invest_ai_agent.sql",
+      "sha256": "21414b6512655f9ecd780db6c86c8e1313b88de37f8596057f28239391bd2d6d"
+    },
+    {
+      "name": "0011_quant_factor_v5_ledger.sql",
+      "sha256": "544ff691c7e9a6d18219871a50993ca8e0de7fdb803466d8527548283c793201"
+    },
+    {
+      "name": "0012_quant_factor_imports.sql",
+      "sha256": "4bb8153c712833ce5f8e83bd4c1ccf22d9fd8cffd4dabb61a23a6bbc99977c29"
+    },
+    {
+      "name": "0013_quant_factor_agent_job_project_fk.sql",
+      "sha256": "2126b389fe180e4a4451c3f06974a9d06665bd35558947573221a212c9ef5c21"
+    },
+    {
+      "name": "0014_quant_factor_ledger_audit_fields.sql",
+      "sha256": "ddbced091261e9efda4b97461050802a6dce0bae83b94ac91c3bc389c92304a1"
+    },
+    {
+      "name": "0015_quant_factor_branch_parent_tenant_fk.sql",
+      "sha256": "941ff091be8eefdb7d06fc5e849e9c50267cac90774ae240917fc90d508895a3"
+    },
+    {
+      "name": "0016_quant_factor_import_metrics.sql",
+      "sha256": "52c1f266cf4b7d5afcfdcbfd8037668d827891117ed12c1099e65f15ee551c27"
+    },
+    {
+      "name": "0017_quant_factor_f0_runs.sql",
+      "sha256": "ae28f168ae9327f524484968c30cd252a537f3f7342cb53fed6031bc4d9b5193"
+    },
+    {
+      "name": "0018_quant_factor_topic_pause.sql",
+      "sha256": "75e1201d653fef2c8373bef238a7b5fce79b0b50e58e4f5552a6263b270b0985"
+    },
+    {
+      "name": "0019_quant_factor_import_category.sql",
+      "sha256": "65387ae4011625a25526b52cf6f6539b72d89a44c985701e7c5fd7913c4baa9c"
+    },
+    {
+      "name": "0020_strategy_research_ledger.sql",
+      "sha256": "ed7a77963e81980a99572a637c7973ff385fa8cba764a0214825c9f512692e64"
+    },
+    {
+      "name": "0021_strategy_ledger_tenant_constraints.sql",
+      "sha256": "c6b926507dc506784a6119d9995a03d23171e52fdf6ef1d90583adb75b611460"
+    },
+    {
+      "name": "0022_quant_factor_trial_f0_run.sql",
+      "sha256": "03c0878b8b22f96433c1fd6f1e66d00a2f258851e74da7319f7501027247768f"
+    },
+    {
+      "name": "0023_strategy_s0_runs.sql",
+      "sha256": "ce9f71f3120c2f26b9e7b28d28a7caa4f0e38bc44fa3dcdcd9cdadd8890f200e"
+    },
+    {
+      "name": "0024_strategy_diagnostics.sql",
+      "sha256": "1010517ae8ac08b8afe3d6f82bbddb93557b799ade1cb7a785e11a8124820a52"
+    },
+    {
+      "name": "0025_strategy_review_events.sql",
+      "sha256": "18fdb920f48bdf8a5f792786edc0803ebad0a8a53cf9a8218c5c2ec161adba08"
+    },
+    {
+      "name": "0026_strategy_trial_report.sql",
+      "sha256": "72eb1bcd690ec0b1bd7cc27fd78b29c363f36593bdb3afe67142713521f930e6"
+    },
+    {
+      "name": "0027_quant_factor_topic_display_no.sql",
+      "sha256": "a1dcee5564f10a22f6cde3eb5970e36066a3971b962f9f486dd33be6e7204df3"
+    },
+    {
+      "name": "0028_quant_factor_branch_title.sql",
+      "sha256": "13012f9702fd4e943caead44708c8951b2709e9caf2d73f74282d8125ea27573"
+    },
+    {
+      "name": "0029_strategy_topic_display_no.sql",
+      "sha256": "13b911d6570e17e5f7f0fe399ef976447f85345ee43549f7b307bf60c3897164"
+    },
+    {
+      "name": "0030_quant_data_requests.sql",
+      "sha256": "9dde168b713f0a7c603731c59df619c0583cd4f7ceb63e4d1c6d09c05cefc1b5"
+    },
+    {
+      "name": "0031_portfolio_simulation.sql",
+      "sha256": "1cae6f12e995420f99093489d1806e5b4c2fafee51345dc0cdd6020f19efeae8"
+    },
+    {
+      "name": "0032_strategy_imported_assets.sql",
+      "sha256": "bfd3d4774702ef770d9dd10adb9a5c4e13738eff0f886f1c17b02879315f403a"
+    },
+    {
+      "name": "0033_strategy_imported_assets_index.sql",
+      "sha256": "bd5a88528da6d33750a90160dc0f5dd3835ee742e4a522078c3441a32bbb187c"
+    },
+    {
+      "name": "0034_strategy_imported_assets_retain.sql",
+      "sha256": "42590f5d6f9db3951e2b59cf182f288fa48385907478a2b6c9b51a1b52b94ea9"
+    },
+    {
+      "name": "0035_quant_data_request_tracking.sql",
+      "sha256": "8748cb5bc506ad8192e190e50a58e77b504046c725b825322fae07caca49e714"
+    },
+    {
+      "name": "0036_inst_doc_extract.sql",
+      "sha256": "856666c33e06c10609836052d468848d265558b5e864ffed7f681f7155cfc581"
+    },
+    {
+      "name": "0037_inst_doc_extract_privileges.sql",
+      "sha256": "2e2a2bc0b459dcde818601fface5863cc5800892e721d6809bd7856386253e67"
+    },
+    {
+      "name": "0042_quant_factor_controls.sql",
+      "sha256": "8d0c6b1080bc973ba9b2d69aa6b28461d4b9c66b017d668530f34e333cd0641f"
+    },
+    {
+      "name": "0043_quant_factor_org_controls.sql",
+      "sha256": "860528c8a7b4f45de8ca7c1388944937852bcaddd280a468de975ad87d385a61"
+    },
+    {
+      "name": "0044_quant_ai_budget.sql",
+      "sha256": "430cd2f882e5c96a319b3dba5f87af03b100a92bbc7310ca5a7f19b7f81970c9"
+    },
+    {
+      "name": "0045_quant_research_token_policy.sql",
+      "sha256": "822c08f41c308f88cdc67b55f638d8a196bb70dc1791498c9db033bd0b196a57"
+    },
+    {
+      "name": "0046_quant_research_queue.sql",
+      "sha256": "904d5379c7e2e0571056f3d3e1b90d0741cf36769c39c34a643c0e160589ca40"
+    },
+    {
+      "name": "0047_quant_model_capacity.sql",
+      "sha256": "153f8b770d0944d46045d75d71450aa2f7692196d28c5fe4b9ed4913b973869d"
+    }
+  ],
+  "canonical_dml_review": [
+    {
+      "file": "0027_quant_factor_topic_display_no.sql",
+      "line": "UPDATE quant_factor_topics t"
+    },
+    {
+      "file": "0029_strategy_topic_display_no.sql",
+      "line": "UPDATE strategy_topics t"
+    },
+    {
+      "file": "0043_quant_factor_org_controls.sql",
+      "line": "INSERT INTO quant_factor_org_controls(org_id, paused, paused_by, paused_at, updated_at)"
+    }
+  ],
+  "schema_table_allowlist": [
+    "ai_usage",
+    "app_audit_logs",
+    "auth_login_failures",
+    "detect_projects",
+    "detect_runs",
+    "factor_dashboard_legacy_imports",
+    "factor_dashboard_metrics",
+    "inst_members",
+    "inst_orgs",
+    "invest_ai_agent_prompt",
+    "invest_etf",
+    "invest_portfolio_trade",
+    "invest_quant_draft",
+    "invest_quant_strategy",
+    "invest_stocks",
+    "md_us_stock_snapshot",
+    "portfolio_nav",
+    "portfolio_orders",
+    "portfolio_plans",
+    "portfolio_positions",
+    "quant_ai_budget_accounts",
+    "quant_ai_budget_calls",
+    "quant_ai_budget_supplements",
+    "quant_data_requests",
+    "quant_factor_agent_jobs",
+    "quant_factor_branches",
+    "quant_factor_candidates",
+    "quant_factor_controls",
+    "quant_factor_f0_runs",
+    "quant_factor_imported_factors",
+    "quant_factor_iterations",
+    "quant_factor_org_controls",
+    "quant_factor_sealed_validations",
+    "quant_factor_topics",
+    "quant_factor_trials",
+    "quant_research_queue_jobs",
+    "quant_research_queue_slots",
+    "quant_research_token_policies",
+    "re_factor_catalog_snapshot",
+    "re_factor_catalog_sync_log",
+    "schema_migrations",
+    "strategy_branches",
+    "strategy_diagnostics",
+    "strategy_imported_assets",
+    "strategy_projects",
+    "strategy_review_events",
+    "strategy_runs",
+    "strategy_s0_runs",
+    "strategy_sealed_validations",
+    "strategy_topics",
+    "strategy_trials",
+    "svquant.doc_extract",
+    "user_custom_factors",
+    "user_factor_libraries",
+    "user_library_factors",
+    "users"
+  ],
+  "no_full_bootstrap_seed_refresh_or_scheduler": true
+}

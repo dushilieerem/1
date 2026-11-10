@@ -1,0 +1,14 @@
+{
+  "origin_master": "8e629b3a081a59d8e1abf3225b43753b2fdfe21b",
+  "official_files": {
+    "0036_inst_doc_extract.sql": {
+      "latest_sha256": "856666c33e06c10609836052d468848d265558b5e864ffed7f681f7155cfc581",
+      "target_applied_same_bytes": true
+    },
+    "0037_inst_doc_extract_privileges.sql": {
+      "latest_sha256": "2e2a2bc0b459dcde818601fface5863cc5800892e721d6809bd7856386253e67",
+      "target_applied_same_bytes": true
+    }
+  },
+  "own_prefix_collisions": []
+}

@@ -170,6 +170,7 @@ def start_research(org_id: int, company_id: int, actor_member_id: int | None) ->
                 object_id=case_id,
                 after={"company_id": company_id, "case_no": case_no, "source": "search"},
             )
+        _advance_opportunity_case(conn, org_id, case_id, actor_member_id)
         if str(company.get("pool_status")) != "research":
             conn.execute(
                 "UPDATE inst_company SET pool_status='research', drop_reason=NULL, updated_at=NOW() "
@@ -197,6 +198,26 @@ def _existing_case_id(conn, org_id: int, company_id: int) -> int | None:
         (org_id, company_id),
     ).fetchone()
     return int(row["id"]) if row else None
+
+
+def _advance_opportunity_case(
+    conn, org_id: int, case_id: int, actor_member_id: int | None
+) -> None:
+    """机会发现（stage 0）点“进入价值分析”时，把已有空壳案推进到 stage 1。"""
+    row = conn.execute(
+        "SELECT stage_no FROM inst_research_case WHERE id=%s AND org_id=%s",
+        (case_id, org_id),
+    ).fetchone()
+    if row and int(row.get("stage_no") or 0) == 0:
+        _set_case_stage(
+            conn,
+            org_id=org_id,
+            case_id=case_id,
+            to_stage=1,
+            trigger="research.start",
+            actor_member_id=actor_member_id,
+            detail={"source": "pipeline"},
+        )
 
 
 def create_case(org_id: int, company_id: int, actor_member_id: int | None) -> dict[str, Any]:
@@ -230,6 +251,7 @@ def create_case(org_id: int, company_id: int, actor_member_id: int | None) -> di
                 object_id=case_id,
                 after={"company_id": company_id, "case_no": case_no},
             )
+        _advance_opportunity_case(conn, org_id, case_id, actor_member_id)
         conn.execute(
             "UPDATE inst_company SET pool_status='research', drop_reason=NULL, updated_at=NOW() "
             "WHERE id=%s AND org_id=%s",

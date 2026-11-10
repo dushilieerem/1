@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Lock, ShieldCheck, Trash2 } from "lucide-react";
 import { useInstSession } from "@/components/institution/instSessionContext";
-import { deleteV3Case, fetchV3Project, type V3Result } from "@/lib/instV3Api";
+import { deleteV3Case, fetchV3Project, startV3Research, type V3Result } from "@/lib/instV3Api";
 
 const STAGES = [
   { no: 0, name: "机会发现", gate: "机会来源" },
@@ -36,6 +36,7 @@ export function InstV3ProjectResultPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [opening, setOpening] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,6 +68,33 @@ export function InstV3ProjectResultPage() {
   const opportunity = (data.opportunity || {}) as Record<string, unknown>;
   const locks = (data.locks || {}) as Record<string, unknown>;
 
+  async function handleEnterStage() {
+    if (opening) return;
+    if (stageNo !== 0) {
+      navigate(stageLink(key, stageNo));
+      return;
+    }
+    const companyId = Number(company.id || (key.match(/company:(\d+)/)?.[1] || 0));
+    if (!companyId) {
+      if (caseId) {
+        navigate(`/inst/research?key=${encodeURIComponent(`case:${caseId}`)}`);
+      } else {
+        setActionError("缺少公司 ID，无法立案");
+      }
+      return;
+    }
+    setOpening(true);
+    setActionError(null);
+    try {
+      const created = await startV3Research(companyId);
+      navigate(`/inst/research?key=${encodeURIComponent(`case:${created.id}`)}`);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "进入价值分析失败");
+    } finally {
+      setOpening(false);
+    }
+  }
+
   async function handleDelete() {
     if (!caseId) return;
     if (!window.confirm(`确定删除「${title}」的研究案？删除后从流水线移除，历史审计与版本保留；有持仓、有效授权或在途议案时会被拒绝。`)) return;
@@ -96,9 +124,10 @@ export function InstV3ProjectResultPage() {
               <Trash2 className="h-3.5 w-3.5" />{deleting ? "删除中…" : "删除研究案"}
             </button>
           ) : null}
-          <Link className="v3-btn primary" to={stageLink(key, stageNo)}>
-          进入{stageNo === 0 ? "价值分析" : STAGES[Math.min(5, Math.max(0, stageNo))].name}工作台 <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
+          <button type="button" className="v3-btn primary" disabled={opening} onClick={handleEnterStage}>
+            {opening ? "进入中…" : `进入${stageNo === 0 ? "价值分析" : STAGES[Math.min(5, Math.max(0, stageNo))].name}工作台`}
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
 
@@ -160,7 +189,9 @@ export function InstV3ProjectResultPage() {
             <p style={{ lineHeight: 1.7, color: "#5f5766" }}>
               {stageNo >= 5 ? "进入投资管理：监控 Agent 持续跟踪，异常或风控预警时通知负责人决定是否卖出。" : `进入${STAGES[Math.min(5, Math.max(0, stageNo))].name}工作台，按步骤完成本环节；结果页只读。`}
             </p>
-            <Link className="v3-btn primary" style={{ marginTop: 8, width: "100%" }} to={stageLink(key, stageNo)}>进入工作台</Link>
+            <button type="button" className="v3-btn primary" style={{ marginTop: 8, width: "100%" }} disabled={opening} onClick={handleEnterStage}>
+              {opening ? "进入中…" : "进入工作台"}
+            </button>
           </section>
           <section className="v3-card">
             <div className="v3-card-head"><div><h2>项目信息</h2></div></div>

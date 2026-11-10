@@ -218,7 +218,7 @@ _STYLE_TEXT = {
 
 _PANEL_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
 _BOARD_PAYLOAD_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
-_BOARD_CACHE_VERSION = 7
+_BOARD_CACHE_VERSION = 8
 _BOARD_CACHE_ROOT = Path(
     os.environ.get("SVQUANT_QUANT_CACHE_DIR")
     or (Path(__file__).resolve().parents[2] / "data" / "invest_quant_cache")
@@ -403,6 +403,9 @@ def _factor_meta(key: str) -> dict[str, Any]:
     category = CATEGORY_BY_KEY.get(key, "value")
     cat = CATEGORY_NAME_BY_KEY.get(category, {"name": category, "name_en": category})
     meta.update({
+        # 稳定标识与参数位：后续若由数据侧下发因子元数据，可保持前端契约不变。
+        "id": key,
+        "params": meta.get("params") if isinstance(meta.get("params"), dict) else {},
         "category": category,
         "category_name": cat.get("name"),
         "category_name_en": cat.get("name_en"),

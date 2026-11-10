@@ -1,5 +1,7 @@
 export type FactorMeta = {
   key: string;
+  id?: string;
+  params?: Record<string, unknown>;
   name: string;
   name_en: string;
   category?: string;

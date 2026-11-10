@@ -16,12 +16,13 @@ type Card = {
   summary?: string;
   sections?: Section[];
   disclaimer?: string;
-  meta?: { dataSource?: string };
+  meta?: { dataSource?: string; engine?: string };
 };
 
 type AiResponse = {
   ok?: boolean;
   card?: Card;
+  engine?: string;
   blocked?: boolean;
   intent?: string;
   need_clarify?: string[];
@@ -78,6 +79,7 @@ export default function AiPanel({
   }, [endpoint, bodyKey]);
 
   const card = data?.card;
+  const engine = data?.engine || card?.meta?.engine;
   const sections = card?.sections || [];
   if (hideOnError && error) return null;
   return (
@@ -86,7 +88,11 @@ export default function AiPanel({
         <h2 className="row gap6">
           <Sparkles size={15} /> {resolvedTitle}
         </h2>
-        <span className="hint">{t("AI 生成 · 非投资建议", "AI-generated · Not investment advice")}</span>
+        <span className="hint">
+          {engine === "rule"
+            ? t("规则生成 · 非投资建议", "Rule-generated · Not investment advice")
+            : t("AI 生成 · 非投资建议", "AI-generated · Not investment advice")}
+        </span>
       </div>
       <p className="ai-sub">{resolvedSubtitle}</p>
       {loading && !card ? <div className="ai-loading">{t("正在基于当前数据生成，通常需要 5–30 秒…", "Generating from current data; usually takes 5–30 seconds…")}</div> : null}

@@ -425,6 +425,125 @@ def _stock_dimension_facts(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _fmt_stock_value(value: Any, digits: int = 2, suffix: str = "") -> str:
+    number = _stock_num(value)
+    if number is None:
+        return "待补充"
+    return f"{number:.{digits}f}{suffix}"
+
+
+def _stock_deep_rule_card(context: dict[str, Any]) -> dict[str, Any]:
+    """无 LLM 时的五维降级卡片；只用服务端事实，不产生交易建议。"""
+    facts = context.get("dimensionFacts") or {}
+    fund = facts.get("fundamental") or {}
+    profit = facts.get("profitability") or {}
+    valuation = facts.get("valuation") or {}
+    risk = facts.get("risk") or {}
+    capital = facts.get("capital") or {}
+    name = str(fund.get("name") or "该标的")
+    period = str(fund.get("reportPeriod") or "最新报告期")
+    triggered = [r for r in (risk.get("triggered") or []) if isinstance(r, dict)]
+    risk_titles = "、".join(str(r.get("title")) for r in triggered if r.get("title")) or "暂未触发规则风险"
+    divergence = capital.get("divergence") if isinstance(capital.get("divergence"), dict) else {}
+    summary = (
+        f"{name} {period}营收 {_fmt_stock_value(fund.get('revenue'), 2, ' 亿元')}，"
+        f"归母净利 {_fmt_stock_value(fund.get('netProfit'), 2, ' 亿元')}；"
+        f"PE {_fmt_stock_value(valuation.get('pe'), 2, 'x')}，近三年分位 {_fmt_stock_value(valuation.get('pePercentile'), 1, '%')}。"
+        f"规则风险：{risk_titles}。"
+    )
+    sections = [
+        {
+            "key": "fundamental",
+            "title": "基本面",
+            "body": (
+                f"最新报告期 {period}：营收 {_fmt_stock_value(fund.get('revenue'), 2, ' 亿元')}，"
+                f"同比 {_fmt_stock_value(fund.get('revenueYoY'), 1, '%')}；"
+                f"归母净利 {_fmt_stock_value(fund.get('netProfit'), 2, ' 亿元')}，"
+                f"同比 {_fmt_stock_value(fund.get('profitYoY'), 1, '%')}。"
+            ),
+            "items": [
+                {"k": "报告期", "v": period},
+                {"k": "营收", "v": _fmt_stock_value(fund.get("revenue"), 2, " 亿")},
+                {"k": "归母净利", "v": _fmt_stock_value(fund.get("netProfit"), 2, " 亿")},
+                {"k": "资产负债率", "v": _fmt_stock_value(fund.get("debtRatio"), 1, "%")},
+            ],
+        },
+        {
+            "key": "profitability",
+            "title": "盈利",
+            "body": (
+                f"毛利率 {_fmt_stock_value(profit.get('grossMargin'), 1, '%')}，"
+                f"净利率 {_fmt_stock_value(profit.get('netMargin'), 1, '%')}，"
+                f"ROE {_fmt_stock_value(profit.get('roe'), 1, '%')}；"
+                f"经营现金流/净利润 {_fmt_stock_value(profit.get('ocfToProfit'), 2, 'x')}。"
+            ),
+            "items": [
+                {"k": "毛利率", "v": _fmt_stock_value(profit.get("grossMargin"), 1, "%")},
+                {"k": "净利率", "v": _fmt_stock_value(profit.get("netMargin"), 1, "%")},
+                {"k": "ROE", "v": _fmt_stock_value(profit.get("roe"), 1, "%")},
+                {"k": "现金流/利润", "v": _fmt_stock_value(profit.get("ocfToProfit"), 2, "x")},
+            ],
+        },
+        {
+            "key": "valuation",
+            "title": "估值",
+            "body": (
+                f"PE {_fmt_stock_value(valuation.get('pe'), 2, 'x')}，"
+                f"PB {_fmt_stock_value(valuation.get('pb'), 2, 'x')}；"
+                f"PE 近三年分位 {_fmt_stock_value(valuation.get('pePercentile'), 1, '%')}，"
+                f"行业平均 PE {_fmt_stock_value(valuation.get('industryPe'), 2, 'x')}。"
+            ),
+            "items": [
+                {"k": "PE", "v": _fmt_stock_value(valuation.get("pe"), 2, "x")},
+                {"k": "PB", "v": _fmt_stock_value(valuation.get("pb"), 2, "x")},
+                {"k": "PE 分位", "v": _fmt_stock_value(valuation.get("pePercentile"), 1, "%")},
+                {"k": "行业 PE", "v": _fmt_stock_value(valuation.get("industryPe"), 2, "x")},
+            ],
+        },
+        {
+            "key": "risk",
+            "title": "风险",
+            "body": (
+                f"规则触发：{risk_titles}。"
+                f"近 180 日高点回撤 {_fmt_stock_value(risk.get('drawdown'), 1, '%')}，"
+                f"近 20 日涨跌 {_fmt_stock_value(risk.get('return20'), 1, '%')}，"
+                f"量比 {_fmt_stock_value(risk.get('volumeRatio'), 2, 'x')}。"
+            ),
+            "items": [
+                {"k": "回撤", "v": _fmt_stock_value(risk.get("drawdown"), 1, "%")},
+                {"k": "20 日涨跌", "v": _fmt_stock_value(risk.get("return20"), 1, "%")},
+                {"k": "量比", "v": _fmt_stock_value(risk.get("volumeRatio"), 2, "x")},
+                {"k": "Beta", "v": _fmt_stock_value(risk.get("beta"), 2, "")},
+            ],
+        },
+        {
+            "key": "capital",
+            "title": "资金",
+            "body": (
+                f"主力资金：今日 {_fmt_stock_value(capital.get('latest'), 2, ' 亿')}，"
+                f"近 5 日 {_fmt_stock_value(capital.get('fiveDay'), 2, ' 亿')}，"
+                f"近 20 日 {_fmt_stock_value(capital.get('twentyDay'), 2, ' 亿')}。"
+                + (str(divergence.get("text") or "") if divergence else "资金与股价关系待补充。")
+            ),
+            "items": [
+                {"k": "今日", "v": _fmt_stock_value(capital.get("latest"), 2, " 亿")},
+                {"k": "5 日", "v": _fmt_stock_value(capital.get("fiveDay"), 2, " 亿")},
+                {"k": "20 日", "v": _fmt_stock_value(capital.get("twentyDay"), 2, " 亿")},
+                {"k": "换手率", "v": _fmt_stock_value(capital.get("turnover"), 2, "%")},
+            ],
+        },
+    ]
+    return {
+        "summary": summary,
+        "sections": sections,
+        "disclaimer": "规则生成 · 非投资建议",
+        "meta": {
+            "dataSource": context.get("dataSource") or "服务端结构化数据",
+            "engine": "rule",
+        },
+    }
+
+
 def _stock_context(conn: PGConn, code: str, *, deep: bool = False) -> dict[str, Any]:
     data = rules.build_stock(conn, code)
     if not data:
@@ -802,16 +921,22 @@ def stock_ai(
     conn: PGConn = Depends(invest_conn),
     refresh: bool = Query(False),
 ) -> dict[str, Any]:
-    return {
-        "ok": True,
-        **_call(
+    context = _stock_context(conn, code, deep=True)
+    try:
+        result = _call(
             "invest.stock_deep",
-            _stock_context(conn, code, deep=True),
+            context,
             user_id=int(user["id"]),
             refresh=refresh,
             keep_sections=True,
-        ),
-    }
+        )
+        result.setdefault("engine", "ai")
+    except HTTPException as exc:
+        if exc.status_code != 503:
+            raise
+        # 无 LLM Key / 网关时降级为服务端规则版，页面仍可用。
+        result = {"engine": "rule", "fallback": True, "card": _stock_deep_rule_card(context)}
+    return {"ok": True, **result}
 
 
 @router.post("/daily")

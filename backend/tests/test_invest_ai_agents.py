@@ -64,6 +64,54 @@ def test_stock_deep_validator_normalizes_five_dimensions():
     assert [s["title"] for s in out["sections"]] == ["基本面", "盈利", "估值", "风险", "资金"]
 
 
+def test_stock_deep_rule_fallback_has_five_sections():
+    card = invest_ai._stock_deep_rule_card({
+        "dataSource": "测试数据",
+        "dimensionFacts": {
+            "fundamental": {"name": "贵州茅台", "reportPeriod": "2026Q3", "revenue": 100, "netProfit": 50},
+            "profitability": {"grossMargin": 90, "roe": 30},
+            "valuation": {"pe": 20, "pePercentile": 40},
+            "risk": {"triggered": [{"title": "估值分位偏高", "detail": "测试"}]},
+            "capital": {"latest": 1.2, "fiveDay": 2.3, "twentyDay": -1.1},
+        },
+    })
+    assert [s["key"] for s in card["sections"]] == [
+        "fundamental", "profitability", "valuation", "risk", "capital",
+    ]
+    assert card["meta"]["engine"] == "rule"
+    assert "非投资建议" in card["disclaimer"]
+    assert "贵州茅台" in card["summary"]
+
+
+def test_factor_meta_exposes_stable_id_and_params():
+    from services.invest import quant
+
+    meta = quant._factor_meta("momentum")
+    assert meta["id"] == "momentum"
+    assert meta["params"] == {}
+    assert meta["category"] == "momentum"
+
+
+def test_stock_deep_endpoint_falls_back_when_llm_missing(monkeypatch):
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(
+        invest_ai,
+        "_stock_context",
+        lambda conn, code, deep=False: {"dataSource": "测试数据", "dimensionFacts": {}},
+    )
+
+    def no_llm(*_args, **_kwargs):
+        raise HTTPException(status_code=503, detail="AI 未配置")
+
+    monkeypatch.setattr(invest_ai, "_call", no_llm)
+    out = invest_ai.stock_ai("600519", user={"id": 7}, conn=None, refresh=False)
+    assert out["ok"] is True
+    assert out["engine"] == "rule"
+    assert out["fallback"] is True
+    assert len(out["card"]["sections"]) == 5
+
+
 def test_ai_cache_roundtrip(monkeypatch, tmp_path):
     monkeypatch.setattr(ai_cache, "ROOT", tmp_path)
     key = ai_cache.make_key("invest.stock", {"code": "600519"}, "prompt")

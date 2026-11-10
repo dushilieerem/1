@@ -262,7 +262,7 @@ export function InstV3ExecutePage() {
                   </div>
                   <div style={{ marginTop: 8 }}>
                     <button data-testid="inst-execute-submit" className="v3-btn primary" disabled={!canExecute || !!busy || executed || precheck?.ok !== true} onClick={execute}><Play className="h-3.5 w-3.5" />{busy === "execute" ? "执行中…" : executed ? "已成交" : "执行成交"}</button>
-                    {!canExecute ? <span className="ml-2 text-[11px] text-[#6b6370]">仅交易执行角色可下单；其他角色只读。</span> : null}
+                    {!canExecute ? <span className="ml-2 text-[12px] text-[#6b6370]">仅交易执行角色可下单；其他角色只读。</span> : null}
                   </div>
                 </section>
               ) : null}
@@ -284,7 +284,7 @@ export function InstV3ExecutePage() {
               {step === 3 ? (
                 <section className="v3-card">
                   <div className="v3-card-head"><div><h2>持仓更新</h2><p>对账通过后持仓写入组合，并自动建立买入论点台账。</p></div><span className={`v3-chip ${executed ? "ok" : "warn"}`}>{executed ? "已成交" : "待成交"}</span></div>
-                  <p style={{ fontSize: 12, lineHeight: 1.7, color: "#5f5766" }}>{executed ? "持仓已更新；进入 06 投资管理继续跟踪论点、事件与退出。" : "只有成交回报回来、对账完成，持仓才算数。"}</p>
+                  <p style={{ lineHeight: 1.7, color: "#5f5766" }}>{executed ? "持仓已更新；进入 06 投资管理继续跟踪论点、事件与退出。" : "只有成交回报回来、对账完成，持仓才算数。"}</p>
                   <div style={{ marginTop: 8 }}><Link className="v3-btn primary" to="/inst/manage">进入投资管理 <ArrowRight className="h-3.5 w-3.5" /></Link></div>
                 </section>
               ) : null}

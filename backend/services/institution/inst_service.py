@@ -1352,6 +1352,9 @@ def get_case(org_id: int, case_id: int) -> dict[str, Any] | None:
             out["price_as_of"] = bar.get("trade_date")
     out["tasks"] = [_row_dict(r) for r in tasks]
     out["versions"] = [_row_dict(r) for r in versions]
+    out["overall_score"] = _overall_score(
+        (out["versions"][0] or {}).get("six_dim") if out["versions"] else None
+    )
     out["evidence"] = [_row_dict(r) for r in evidence]
     out["debates"] = [_row_dict(r) for r in sessions]
     out["proposals"] = [_row_dict(r) for r in proposals]
@@ -2119,6 +2122,159 @@ def _apply_data_gate(data: dict[str, Any], completeness: dict[str, Any] | None) 
     return data
 
 
+_VAGUE_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("双轮驱动", "两项业务共同驱动"),
+    ("双轮", "两项业务"),
+    ("闭环", "完整链路"),
+    ("赋能", "支持"),
+    ("生态化反", "业务协同"),
+)
+
+_TERM_GLOSSARY: tuple[tuple[str, str], ...] = (
+    ("TAM/SAM/SOM", "TAM/SAM/SOM（总市场/可服务市场/可获得市场）"),
+    ("PS/EV-EBITDA", "PS/EV-EBITDA（市销率/企业价值倍数）"),
+    ("EV/EBITDA", "EV/EBITDA（企业价值/息税折旧摊销前利润）"),
+    ("CR3/CR5", "CR3/CR5（前三/前五企业市占率）"),
+    ("driver-based", "按业务驱动因素拆分"),
+    ("KAM", "KAM（关键审计事项）"),
+    ("DCF", "DCF（现金流折现）"),
+    ("ROE", "ROE（净资产收益率）"),
+    ("PE/PB", "PE/PB（市盈率/市净率）"),
+    ("CEO", "CEO（首席执行官）"),
+)
+
+
+def _clean_agent_text(value: Any, default: str = "") -> str:
+    text = str(value if value is not None else default).strip()
+    for bad, good in _VAGUE_REPLACEMENTS:
+        text = text.replace(bad, good)
+    for term, explained in _TERM_GLOSSARY:
+        if term in text and explained not in text:
+            text = text.replace(term, explained)
+    # 术语解释后清理中文之间的多余空格，避免“CEO（首席执行官） 与治理”。
+    return re.sub(r"(?<=[一-鿿）)])\s+(?=[一-鿿（(])", "", text)
+
+
+def _first_sentence(text: str) -> str:
+    for sep in ("。", "；", "\n"):
+        if sep in text:
+            return text.split(sep, 1)[0].strip(" ，,;；。")
+    return text.strip(" ，,;；。")
+
+
+def _four_line_output(
+    data: dict[str, Any],
+    *,
+    title: str,
+    gate: str | None,
+    gaps: list[Any] | None,
+    as_of: str,
+) -> dict[str, Any]:
+    """把 Agent 输出压成四行：判断 / 依据 / 影响 / 动作，并校验评分基准。"""
+    judgment = _clean_agent_text(data.get("judgment") or data.get("one_line"))
+    placeholders = ("待补充", "暂无", "—")
+    if not judgment:
+        summary_text = _clean_agent_text(data.get("summary"))
+        if summary_text and not any(x in summary_text for x in placeholders):
+            judgment = _first_sentence(summary_text)
+    incomplete = not judgment or any(x in judgment for x in placeholders)
+    if not judgment or incomplete:
+        judgment = _clean_agent_text(
+            f"{title}的关键数据尚未取得，当前不能形成可执行判断。"
+        )
+        incomplete = True
+
+    checks = [_clean_agent_text(x) for x in (data.get("checks") or []) if _clean_agent_text(x)]
+    raw_refs = data.get("evidence_ids") or []
+    if isinstance(raw_refs, str):
+        raw_refs = [x.strip().strip('"\'') for x in raw_refs.strip("[]").split(",")]
+    refs = [str(x).strip() for x in raw_refs if str(x).strip()]
+    ref_text = "、".join(refs[:6])
+    basis = _clean_agent_text(data.get("basis"))
+    if not basis:
+        basis = "；".join(checks[:2])
+    if ref_text:
+        basis = f"{basis}；证据 {ref_text}；截至 {as_of}" if basis else f"证据 {ref_text}；截至 {as_of}"
+    else:
+        basis = f"截至 {as_of}，输入未提供可引用的证据 ID 与数据"
+
+    missing: list[str] = []
+    for gap in gaps or []:
+        text = (
+            _clean_agent_text(gap.get("missing") or gap.get("path"))
+            if isinstance(gap, dict)
+            else _clean_agent_text(gap)
+        )
+        if text and text not in missing:
+            missing.append(text)
+    completeness = data.get("data_completeness") or {}
+    for item in completeness.get("missing") or []:
+        text = _clean_agent_text(item)
+        if text and text not in missing:
+            missing.append(text)
+
+    impact = _clean_agent_text(data.get("impact") or data.get("implication_for_company"))
+    if not impact:
+        if incomplete or str(gate) == "fail":
+            impact = "关键数据缺失，估值与仓位不调整，维持观察。"
+        elif str(gate) == "watch":
+            impact = "仅支持观察，估值与仓位不高于同业基准。"
+        else:
+            impact = "支持纳入估值与仓位，幅度按同业中位或历史分位复核。"
+
+    action = _clean_agent_text(data.get("action"))
+    if action in {"缺", "缺数据", "待补充", "缺失", "暂无"}:
+        action = ""
+    if not action:
+        if missing:
+            action = f"补数据：{'；'.join(missing[:3])}；补齐前不进入定稿。"
+        elif incomplete:
+            action = f"补数据：补充{title}关键数据及证据 ID 与日期；补齐前不进入定稿。"
+        else:
+            action = "继续：按当前证据推进，下一复核点见反证条件。"
+    elif not refs and not action.startswith(("补数据", "放弃")):
+        action = f"补数据：补充{title}的证据 ID、数据与日期；补齐前不进入定稿。"
+
+    rating = data.get("rating")
+    score = data.get("score_10")
+    benchmark = _clean_agent_text(data.get("rating_benchmark"))
+    rating_note = _clean_agent_text(data.get("rating_note"))
+    if score is not None:
+        score = round(float(score), 1)
+    if rating is None and score is not None:
+        rating = round(score / 2, 1)
+    if score is None and rating is not None:
+        score = round(float(rating) * 2, 1)
+    if (rating is not None or score is not None) and not benchmark:
+        rating = None
+        score = None
+        rating_note = "评分缺少基准（同业中位或历史分位），未采用。"
+
+    return {
+        "judgment": judgment,
+        "basis": basis,
+        "impact": impact,
+        "action": action,
+        "rating_benchmark": benchmark or None,
+        "rating_note": rating_note or None,
+        "rating": rating,
+        "score_10": score,
+    }
+
+
+def _overall_score(dims: list[Any] | None) -> float | None:
+    scores: list[float] = []
+    for dim in dims or []:
+        if not isinstance(dim, dict):
+            continue
+        score = dim.get("score_10")
+        if score is None and dim.get("rating") is not None:
+            score = round(float(dim["rating"]) * 2, 1)
+        if score is not None:
+            scores.append(float(score))
+    return round(sum(scores) / len(scores), 1) if scores else None
+
+
 def _merge_industry(
     built: dict[str, Any],
     result: dict[str, Any],
@@ -2132,7 +2288,21 @@ def _merge_industry(
         block = dict(fallback or {})
         block["engine"] = "rule"
         block["agent_error"] = str((result or {}).get("error") or "")
+        block.update(_four_line_output(
+            block,
+            title="行业",
+            gate=block.get("gate"),
+            gaps=block.get("data_gaps"),
+            as_of=(built.get("facts") or {}).get("as_of") or date.today().isoformat(),
+        ))
         return block
+    four = _four_line_output(
+        data,
+        title="行业",
+        gate=data.get("gate"),
+        gaps=data.get("data_gaps"),
+        as_of=(built.get("facts") or {}).get("as_of") or date.today().isoformat(),
+    )
     evidence = list(built.get("evidence") or [])
     ev_idx: list[int] = []
     for ev in data.get("evidence") or []:
@@ -2181,6 +2351,12 @@ def _merge_industry(
         "key_variables": data.get("key_variables") or [],
         "falsifiers": data.get("falsifiers") or [],
         "implication_for_company": data.get("implication_for_company"),
+        "judgment": four["judgment"],
+        "basis": four["basis"],
+        "impact": four["impact"],
+        "action": four["action"],
+        "rating_benchmark": four["rating_benchmark"],
+        "rating_note": four["rating_note"],
         "gate": data.get("gate"),
         "gate_note": data.get("gate_note"),
         "data_completeness": data.get("data_completeness"),
@@ -2258,6 +2434,13 @@ def _merge_agent_results(
         if data and str(data.get("summary") or "").strip():
             complete = (built.get("facts") or {}).get("data_completeness") or {}
             data = _apply_data_gate(data, complete.get(key))
+            four = _four_line_output(
+                data,
+                title=title,
+                gate=data.get("gate"),
+                gaps=data.get("data_gaps"),
+                as_of=as_of,
+            )
             ev_idx: list[int] = []
             for ev in data.get("evidence") or []:
                 ev_title = str(ev.get("title") or "").strip()
@@ -2295,7 +2478,14 @@ def _merge_agent_results(
                     "data_gaps": data.get("data_gaps") or [],
                     "confidence": data.get("confidence", 0.5),
                     "confidence_label": data.get("confidence_label"),
-                    "rating": data.get("rating"),
+                    "rating": four["rating"],
+                    "score_10": four["score_10"],
+                    "rating_benchmark": four["rating_benchmark"],
+                    "rating_note": four["rating_note"],
+                    "judgment": four["judgment"],
+                    "basis": four["basis"],
+                    "impact": four["impact"],
+                    "action": four["action"],
                     "gate": data.get("gate"),
                     "headline": data.get("headline"),
                     "kpis": data.get("kpis") or [],
@@ -2322,6 +2512,13 @@ def _merge_agent_results(
             fallback["agent"] = f"AI-{key}"
             fallback["agent_error"] = err or "Agent 未返回有效结果"
             fallback["evidence_ids"] = []
+            fallback.update(_four_line_output(
+                fallback,
+                title=str(fallback.get("title") or title),
+                gate=fallback.get("gate"),
+                gaps=fallback.get("data_gaps"),
+                as_of=as_of,
+            ))
             dims.append(fallback)
             states[key] = "failed"
 
@@ -3429,12 +3626,6 @@ def evaluate_research_gate(version: dict[str, Any]) -> dict[str, Any]:
         "detail": f"{len(evidence_ids)} 条证据" if evidence_ids else "无证据 ID，需补充证据或显式带缺口锁定",
     })
     blocking = blocking or not evidence_ids
-    checks.append({
-        "key": "hash",
-        "label": "版本校验码",
-        "status": "pass" if version.get("content_hash") else "warn",
-        "detail": str(version.get("content_hash") or "未生成"),
-    })
     status = "block" if blocking else ("warn" if any(x["status"] == "warn" for x in checks) else "pass")
     return {"status": status, "checks": checks}
 
@@ -3920,6 +4111,7 @@ def _research_debate_summary(conn, org_id: int, case_id: int) -> dict[str, Any] 
         "status": version.get("status"),
         "industry_analysis": version.get("industry_analysis"),
         "six_dim": version.get("six_dim") or [],
+        "overall_score": _overall_score(version.get("six_dim") or []),
         "memo": (memo or {}).get("output") if memo else None,
         "debate": debate,
     }
@@ -4009,11 +4201,27 @@ def list_proposals_for_member(
     return [_row_dict(r) or {} for r in rows]
 
 
+def _overall_score_for_case(conn, org_id: int, case_id: int) -> float | None:
+    row = conn.execute(
+        "SELECT six_dim FROM inst_research_version "
+        "WHERE case_id=%s AND superseded_at IS NULL AND status='approved' "
+        "ORDER BY version_no DESC LIMIT 1",
+        (case_id,),
+    ).fetchone()
+    if not row:
+        row = conn.execute(
+            "SELECT six_dim FROM inst_research_version WHERE case_id=%s "
+            "ORDER BY version_no DESC LIMIT 1",
+            (case_id,),
+        ).fetchone()
+    return _overall_score((row or {}).get("six_dim") or [])
+
+
 def _proposal_common(data: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "id", "status", "direction", "target_weight", "company_id", "symbol",
         "company_name", "market", "industry", "created_by", "created_at", "updated_at",
-        "case_id", "exit_case",
+        "case_id", "exit_case", "overall_score",
     )
     out = {k: data.get(k) for k in keys}
     out["current_version"] = data.get("current_version")
@@ -4043,6 +4251,10 @@ def get_proposal_for_member(
     data = get_proposal(org_id, proposal_id)
     if not data:
         return None
+    with get_conn() as conn:
+        data["overall_score"] = _overall_score_for_case(
+            conn, org_id, int(data.get("case_id") or 0)
+        )
     rows = data.get("approvals") or []
     status = str(data.get("status") or "")
     created_by = int(data.get("created_by") or 0)
@@ -6130,8 +6342,15 @@ def _rule_memo(version: dict[str, Any]) -> dict[str, Any]:
             "high": valuation.get("high"),
             "note": "研究区间，不是目标价",
         }
-    summary = _clip_brief(version.get("conclusion")
-        or "六维分析已完成；AI 摘要暂不可用，以下为规则摘要，请以各维证据为准。")
+    conclusion = _clean_agent_text(version.get("conclusion"))
+    if not conclusion or "待补充" in conclusion:
+        overall = _overall_score(dims)
+        lead = next(
+            (str(d.get("judgment") or "") for d in dims if d.get("judgment")),
+            "六维分析已完成",
+        )
+        conclusion = f"六维平均得分 {overall}/10；{lead}" if overall is not None else lead
+    summary = _clip_brief(conclusion)
     return {
         "summary": summary,
         "conclusion": summary,
@@ -6205,6 +6424,7 @@ def ai_research_memo(
     if not case:
         raise LookupError("研究案不存在")
     version = (case.get("versions") or [{}])[0]
+    overall = _overall_score(version.get("six_dim") or [])
     if not version.get("id"):
         if not generate:
             return {
@@ -6245,6 +6465,7 @@ def ai_research_memo(
             memo = _apply_memo_data_gate(dict(hit["output"]), version)
             if not (isinstance(memo.get("metrics"), list) and len(memo.get("metrics") or []) >= 2):
                 memo["metrics"] = _memo_metrics(case)
+            memo["overall_score"] = overall
             _sync_research_conclusion(org_id, int(version["id"]), memo)
             return {
                 "memo": memo,
@@ -6272,6 +6493,7 @@ def ai_research_memo(
     metrics = data.get("metrics")
     if not (isinstance(metrics, list) and len(metrics) >= 2):
         data["metrics"] = _memo_metrics(case)
+    data["overall_score"] = overall
     _sync_research_conclusion(org_id, int(version["id"]), data)
     # 规则兜底也落盘：避免 AI 暂不可用时每次进入页面都重新生成。
     save_output(

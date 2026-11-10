@@ -4,6 +4,7 @@ import { ArrowRight, Check, ShieldAlert, X } from "lucide-react";
 import { dedupeBy } from "@/lib/instDedupe";
 import { instApi, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
+import { InstV3FourLine } from "@/components/institution/v3/InstV3FourLine";
 
 type StageSummary = {
   status: string;
@@ -33,6 +34,8 @@ type SixDim = {
   title?: string;
   summary?: string;
   rating?: number | null;
+  score_10?: number | null;
+  rating_benchmark?: string | null;
   confidence?: number | null;
   gate?: string | null;
 };
@@ -50,6 +53,7 @@ type DebateArg = {
 type ResearchDebate = {
   version_no?: number;
   status?: string;
+  overall_score?: number | null;
   industry_analysis?: { summary?: string } | null;
   six_dim?: SixDim[];
   memo?: { summary?: string; decision?: string } | null;
@@ -62,6 +66,10 @@ type ResearchDebate = {
 
 type AgentMemo = {
   summary?: string;
+  judgment?: string;
+  basis?: string;
+  impact?: string;
+  action?: string;
   verdict?: string;
   decision?: string;
   recommendation?: string;
@@ -87,6 +95,7 @@ type ProposalListItem = {
 
 type ProposalDetail = ProposalListItem & {
   case_id?: number;
+  overall_score?: number | null;
   current_version?: { id: number; version_no: number; snapshot?: Record<string, unknown> };
   progress?: { partner: StageSummary; risk_precheck: StageSummary; chairman: StageSummary };
   risk_checks?: RiskCheck[];
@@ -146,6 +155,7 @@ function ResearchDebateSummary({ data }: { data?: ResearchDebate | null }) {
         <span className="v3-chip">R{data.version_no || "—"} · {data.status || "—"}</span>
       </div>
       <dl>
+        <div className="v3-kv"><dt>总体得分</dt><dd>{data.overall_score != null ? `${Number(data.overall_score).toFixed(1)}/10 · 六维平均` : "未评分"}</dd></div>
         <div className="v3-kv"><dt>辩论结论</dt><dd>{data.debate?.conclusion || "—"}</dd></div>
         <div className="v3-kv"><dt>证据核验</dt><dd>{(data.debate?.evidence_checks || []).length} 条</dd></div>
         <div className="v3-kv"><dt>一页纸结论</dt><dd>{data.memo?.decision ? `${data.memo.decision} · ` : ""}{data.memo?.summary || "未生成"}</dd></div>
@@ -157,13 +167,26 @@ function ResearchDebateSummary({ data }: { data?: ResearchDebate | null }) {
         {dims.map((d) => (
           <div key={d.key} className="v3-note" style={{ padding: "8px 12px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-              <b style={{ fontSize: 11 }}>{d.title || d.key}</b>
+              <b style={{ fontSize: 14 }}>{d.title || d.key}</b>
               <span className={`v3-chip ${gateTone(d.gate)}`}>{d.gate || "—"}</span>
             </div>
-            <div style={{ fontSize: 11, lineHeight: 1.55, color: "#5f5766", marginTop: 4 }}>
+            <div style={{ fontSize: 12, lineHeight: 1.55, color: "#6b6370", marginTop: 4 }}>
               {d.summary || "—"}
             </div>
-            {d.rating != null ? <div style={{ fontSize: 11, color: "#6b6370", marginTop: 4 }}>评级 {d.rating}/5{d.confidence != null ? ` · 置信 ${Number(d.confidence).toFixed(2)}` : ""}</div> : null}
+            {(() => {
+              const score =
+                d.score_10 != null
+                  ? Number(d.score_10)
+                  : d.rating != null && d.rating_benchmark
+                    ? Math.round(Number(d.rating) * 20) / 10
+                    : null;
+              return (
+                <div style={{ fontSize: 12, color: "#6b6370", marginTop: 4 }}>
+                  {score != null ? `评分 ${score.toFixed(1)}/10（基准：${d.rating_benchmark}）` : "未评分"}
+                  {d.confidence != null ? ` · 置信 ${Number(d.confidence).toFixed(2)}` : ""}
+                </div>
+              );
+            })()}
           </div>
         ))}
       </div>
@@ -366,6 +389,7 @@ export function InstV3ApprovalsPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="v3-chip info">版本 {detail?.current_version?.version_no ?? detail?.current_version_no ?? detail?.version_no ?? "—"}</span>
+          {detail?.overall_score != null ? <span className="v3-chip gold">总体得分 {Number(detail.overall_score).toFixed(1)}/10</span> : null}
           <span className="v3-chip info">{session.role_label_cn}</span>
         </div>
       </div>
@@ -413,7 +437,7 @@ export function InstV3ApprovalsPage() {
             <>
               <section className="v3-card">
                 <div className="v3-card-head">
-                  <div><h2>{detail.company_name} <span className="font-mono text-[11px] font-normal text-[#6b6370]">{detail.symbol}</span></h2><p>v{detail.current_version_no || detail.version_no || "—"} · {detail.direction} {fmtPct(detail.target_weight)} · {detail.status}</p></div>
+                  <div><h2>{detail.company_name} <span className="font-mono text-[12px] font-normal text-[#6b6370]">{detail.symbol}</span></h2><p>v{detail.current_version_no || detail.version_no || "—"} · {detail.direction} {fmtPct(detail.target_weight)} · {detail.status}</p></div>
                   <span className={`v3-chip ${statusTone(detail.status)}`}>{detail.status}</span>
                 </div>
                 <dl>
@@ -429,7 +453,7 @@ export function InstV3ApprovalsPage() {
                 <ResearchDebateSummary data={detail.research_debate} />
                 <section className="v3-card">
                   <div className="v3-card-head"><div><h2>合伙人复核</h2><p>研究质量、上会资格、议案合理性与机会成本；不看风控逐项明细。</p></div><span className="v3-chip">{progress?.partner?.status || "—"}</span></div>
-                  <p style={{ fontSize: 12, lineHeight: 1.7, color: "#5f5766" }}>研究与辩论摘要由上游锁定版本提供；合伙人只判断是否值得上会。提案人不能审批自己的议案。</p>
+                  <p style={{ lineHeight: 1.7, color: "#5f5766" }}>研究与辩论摘要由上游锁定版本提供；合伙人只判断是否值得上会。提案人不能审批自己的议案。</p>
                   {role === "partner" && !canAct("partner") ? (
                     <div className="v3-note">当前议案状态为 {detail.status}，合伙人环节已结束或尚未轮到，不能再操作。</div>
                   ) : null}
@@ -549,10 +573,35 @@ export function InstV3ApprovalsPage() {
               </div>
               {memo ? (
                 <div style={{ marginTop: 8 }}>
-                  {memo.verdict || memo.decision || memo.recommendation ? (
-                    <div className="v3-note" style={{ marginBottom: 8 }}>{memo.verdict || memo.decision || memo.recommendation}</div>
-                  ) : null}
-                  <p style={{ fontSize: 11, lineHeight: 1.7, color: "#4b4352" }}>{memo.summary || "—"}</p>
+                  <InstV3FourLine
+                    judgment={
+                      memo.judgment ||
+                      memo.verdict ||
+                      memo.decision ||
+                      memo.recommendation ||
+                      memo.summary
+                    }
+                    basis={
+                      memo.basis ||
+                      (memo.evidence?.length
+                        ? `证据 ${memo.evidence.slice(0, 4).join("、")}；截至当前议案版本`
+                        : "截至当前议案版本的输入未提供可引用证据")
+                    }
+                    impact={
+                      memo.impact ||
+                      (memo.verdict === "reject"
+                        ? "不支持通过，维持现有仓位与估值。"
+                        : memo.verdict === "conditional"
+                          ? "附条件通过；条件未满足前不得执行。"
+                          : "支持通过；批准后按议案仓位执行，幅度受风控上限约束。")
+                    }
+                    action={
+                      memo.action ||
+                      (memo.open_questions?.length
+                        ? `补数据：${memo.open_questions.slice(0, 3).join("；")}；补齐前仅作参考。`
+                        : "继续：按本关意见推进，执行时以授权快照为准。")
+                    }
+                  />
                   {memo.risks?.length ? (
                     <div className="ar-row"><b>主要风险</b><br />{memo.risks.slice(0, 3).map((x) => `· ${x}`).join("；")}</div>
                   ) : null}

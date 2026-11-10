@@ -81,7 +81,7 @@ test("研究定稿：门禁预览 → 低置信复核 → 锁定 R3", async ({ p
   const gate = await call(request, "GET", `/api/inst/research/${versionId}/gate`, token);
   expect(["pass", "warn", "block"]).toContain(gate.status);
   expect(gate.checks.map((x: any) => x.key)).toEqual(
-    expect.arrayContaining(["six_dim_complete", "low_confidence", "data_gate", "evidence", "hash"]),
+    expect.arrayContaining(["six_dim_complete", "low_confidence", "data_gate", "evidence"]),
   );
 
   await page.addInitScript((t) => sessionStorage.setItem("svquant_inst_token", t), token);
@@ -98,7 +98,7 @@ test("研究定稿：门禁预览 → 低置信复核 → 锁定 R3", async ({ p
   await expect(page.getByText("六维 6/6", { exact: true })).toBeVisible();
   await expect(page.getByText("低置信项已处理", { exact: true })).toBeVisible();
   await expect(page.getByText("数据门禁", { exact: true })).toBeVisible();
-  await expect(page.getByText("版本校验码", { exact: true })).toBeVisible();
+  await expect(page.getByText("总体得分", { exact: true })).toBeVisible();
 
   // 有低置信项时先逐维复核；复核说明写入审计。
   for (let i = 0; i < 6; i += 1) {

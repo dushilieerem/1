@@ -122,8 +122,8 @@ export function InstV3DashboardPage() {
               <Link key={t.key} to={`/inst/pipeline/result?key=${encodeURIComponent(t.key)}`} className="flex items-center gap-3 border-b border-[#f0eaf3] py-3 last:border-0">
                 <span className={`v3-chip ${t.tone}`}>{t.stage}</span>
                 <span className="min-w-0 flex-1">
-                  <b className="block text-[12px] font-medium text-[#2b2533]">{t.name}</b>
-                  <span className="block text-[11px] text-[#6b6370]">{t.note}</span>
+                  <b className="block text-[14px] font-medium text-[#2b2533]">{t.name}</b>
+                  <span className="block text-[12px] text-[#6b6370]">{t.note}</span>
                 </span>
                 <ArrowRight className="h-3.5 w-3.5 text-[#6b6370]" />
               </Link>
@@ -134,10 +134,10 @@ export function InstV3DashboardPage() {
             <div className="v3-card-head"><div><h2><LayoutDashboard className="mr-1 inline h-4 w-4" />在流程中的项目</h2><p>卡在哪、谁在等、下一步是什么。</p></div><Link className="v3-btn ghost" to="/inst/pipeline">全部 {pipeline.total} 个</Link></div>
             {flowProjects.map((p) => (
               <Link key={p.key} to={`/inst/pipeline/result?key=${encodeURIComponent(p.key)}`} className="flex items-center gap-3 border-b border-[#f0eaf3] py-3 last:border-0">
-                <span className="flex h-7 w-7 items-center justify-center rounded bg-[#f8edf3] text-[11px] font-semibold text-[#a03a5c]">{(p.company_name || p.symbol || "?").slice(0, 1)}</span>
+                <span className="flex h-7 w-7 items-center justify-center rounded bg-[#f8edf3] text-[12px] font-semibold text-[#a03a5c]">{(p.company_name || p.symbol || "?").slice(0, 1)}</span>
                 <span className="min-w-0 flex-1">
-                  <b className="block text-[12px] font-medium text-[#2b2533]">{p.company_name || p.symbol}</b>
-                  <span className="block text-[11px] text-[#6b6370]">{p.stage_name} · {p.gate} · {p.symbol} · 版本 {p.version_no ?? "—"}</span>
+                  <b className="block text-[14px] font-medium text-[#2b2533]">{p.company_name || p.symbol}</b>
+                  <span className="block text-[12px] text-[#6b6370]">{p.stage_name} · {p.gate} · {p.symbol} · 版本 {p.version_no ?? "—"}</span>
                 </span>
                 <span className="v3-chip">{p.stage_name}</span>
               </Link>
@@ -148,7 +148,7 @@ export function InstV3DashboardPage() {
 
         <section className="v3-card">
           <div className="v3-card-head"><div><h2><PieChart className="mr-1 inline h-4 w-4" />组合概览</h2><p>净值、现金、仓位与预警。</p></div><Link className="v3-btn ghost" to="/inst/manage">投资管理</Link></div>
-          <div className="v3-kpis" style={{ gridTemplateColumns: "1fr 1fr" }}>
+          <div className="v3-kpis" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)" }}>
             <div className="v3-kpi"><div className="k">组合净值</div><div className="v">{fmtMoney(data.portfolio?.nav)}</div><div className="d">参考净值 {fmtMoney(data.policy?.nav)}</div></div>
             <div className="v3-kpi"><div className="k">现金</div><div className="v">{fmtPct(data.portfolio?.cash ? data.portfolio.cash / (data.portfolio.nav || 1) : null)}</div><div className="d">下限 {fmtPct(data.policy?.min_cash_ratio)}</div></div>
             <div className="v3-kpi"><div className="k">仓位</div><div className="v">{fmtPct(data.portfolio?.invested_ratio)}</div><div className="d">已投资 / 净值</div></div>

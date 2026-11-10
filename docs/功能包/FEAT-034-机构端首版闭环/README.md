@@ -797,3 +797,52 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - **样式维护**：移除 `* { font-size:12px !important }` 通配覆盖，改为 `.inst-v3` 基础字号 + `:where(*)` 继承 + 11/12/16/22 阶梯类，保留内联字号与可访问性。
 
 验证：pytest 866 passed；`tsc --noEmit`、`npm run build`、`npm run test:inst` 15 passed；Playwright `e2e-09..14` 18 passed。
+
+
+### 11.41 排版阶梯 v2（2026-11-10）
+
+- 字号收敛为 5 档：**12 辅助 / 14 列表主文与正文 / 18 区块标题与口号 / 24 页面标题 / 32 KPI 数字**。
+- 口号 `.v3-hero h2` 降为 18px、字重 400；KPI 数字保持等宽字体。
+- 中文最小 12px：原先 11px 及以下的文本统一改为 12px，并使用更浅的辅助色。
+- 字重仅 400/500/600：覆盖 `b/strong/h1-h4` 默认 700，表头 500，标题与 KPI 600。
+- 移除 CSS 中所有 11/16/22px 字面量；基础字号 14px，`small`/表单继承不再缩小。
+- 修复 400px 下组合概览双列 KPI 被长数字撑破导致的 21px 横向溢出（`minmax(0,1fr)`）。
+
+自检：Playwright 采集 8 个页面共 **1167** 个文本节点，字号分布 `12px 595 / 14px 478 / 18px 53 / 24px 18 / 32px 23`，越界字号 0、越界字重 0。逐节点清单见 `docs/测试设计/evidence/inst-typography-20261110/font-nodes.csv`。
+
+验证：`tsc --noEmit`、`npm run build`、`npm run test:inst` 15 passed；Playwright `e2e-09..14` 18 passed。
+
+
+### 11.42 Agent 四行结论契约（2026-11-10）
+
+- 所有机构端 Agent 输出改为四行：**判断 / 依据 / 影响 / 动作**。
+  - 判断：一句有主语的完整句子。
+  - 依据：证据 ID + 数据 + 日期。
+  - 影响：对估值或仓位意味着什么。
+  - 动作：继续 / 补数据 / 放弃；补数据写明补什么、从哪补、补齐前怎么做。
+- 提示词底座、六维契约、行业/一页纸/风控/合伙人/Chairman 输出约束同步更新；新增 `judgment/basis/impact/action/rating_benchmark` 字段。
+- 后端 `_four_line_output` 统一归一化：
+  - 评分缺少基准（同业中位或历史分位）时，rating 置空并在界面提示“未采用”。
+  - 空泛词（双轮、闭环、赋能、生态化反）替换为具体表达。
+  - 常见缩写首次出现补中文解释（TAM/SAM/SOM、CR3/CR5、KAM、DCF、ROE、PE/PB、EV/EBITDA 等）。
+  - “待补充”类占位不进入判断：规则兜底输出改为“关键数据尚未取得，当前不能形成可执行判断”，动作写明补数清单。
+- 前端新增 `InstV3FourLine`：研究六维、行业分析、多空辩论论点、审批 Agent 建议均按四行展示；多空论点无数值依据时，动作改为“补数据”，不再给“继续”。
+
+验证（隔离测试库 + 规则兜底数据）：
+- 研究六维 6 个四行块、辩论 2 个四行块，全部 4 行，无 `—`/空占位、无空泛词。
+- 后端 `pytest tests` 872 passed；`tsc --noEmit`、`npm run build`、`npm run test:inst` 15 passed；Playwright `e2e-09..14` 18 passed。
+
+
+### 11.43 六维评分与总体得分（2026-11-10）
+
+- 六维每维右上角新增 Agent 评分徽章：**满分 10 分、保留 1 位小数**，使用 32px 等宽数字；评分下方显示基准（同业中位/历史分位）；无基准时显示“未评分/缺少评分基准”。
+- 后端输出新增 `score_10`（0–10，一位小数），由 Agent 直接给出或由 5 分制 rating×2 推导；rating_benchmark 仍为必填。
+- 一页纸新增“六维总分”：六个维度评分的算术平均，保留 1 位小数；一页纸指标框去掉括号，只保留正文内容。
+- 研究定稿：
+  - 删除校验码行与门禁“版本校验码”检查；
+  - 新增“总体得分”栏（32px 数字 + 六维平均说明）；
+  - 总体得分随议案详情返回，合伙人/风控/Chairman 审批页头部与研究摘要均显示。
+- 多空辩论论点若无证据 ID 或无数值型数据，动作判为“补数据”，不再给“继续”。
+- 左侧流程工作台导航删除序号（01/02…），只保留名称与计数。
+
+验证：后端 `pytest tests` 872 passed；`tsc --noEmit`、`npm run build`、`npm run test:inst` 15 passed；Playwright `e2e-09..14` 18 passed。

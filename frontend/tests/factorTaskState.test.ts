@@ -145,3 +145,10 @@ test('预算授权、全局暂停、数据版本等待按真实原因分别表�
  assert.equal(deriveFactorTaskState({...base,dispatch_status:'stopped',dispatch_stop_reason:'global_pause'}).label,'等待恢复研究');
  assert.equal(deriveFactorTaskState({...base,dispatch_status:'stopped',dispatch_stop_reason:'locked_view_drift'}).label,'等待数据版本确认');
 });
+
+
+test('持续研究：排队显示等待运行，技术等待不等于市场未达标',()=>{
+ assert.equal(deriveFactorTaskState({...base,dispatch_status:'queued'}).label,'等待运行');
+ const waiting=deriveFactorTaskState({...base,dispatch_status:'stopped',dispatch_technical_wait:'execution_dependency',dispatch_stop_reason:'AiOutputTruncated',trial_count:1,latest_outcome:'failed'});
+ assert.equal(waiting.key,'waiting');assert.equal(waiting.label,'等待处理');assert.equal(waiting.currentStage,'development');assert.ok(!waiting.needsYou.includes('未达标'));
+});

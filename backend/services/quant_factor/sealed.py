@@ -86,6 +86,10 @@ def _check_new(c,uid,org,cand,topic,project):
     req=copy.deepcopy(cand['snapshot']['request']);plan=cand['snapshot']['plan']
     req.update(start=plan['validationStart'],end=plan['validationEnd'])
     if str(req['start'])!=str(topic['validation_start']) or str(req['end'])!=str(topic['validation_end']):raise WorkflowError('验证区间与固定计划不一致')
+    from .locked_data import for_topic,from_result,bind
+    fixed=for_topic(topic)
+    if from_result(dev.get('result') or {})!=fixed:raise WorkflowError('研发数据身份与固定计划不一致，不能拼接独立验证')
+    req=bind(req,fixed)
     receipt=expected_identity(req,dev.get('result') or {})
     from .resources import require
     resource_receipt=require('factor',req)
@@ -147,6 +151,8 @@ def _read(uid,org,sid):
 def _confirm_result(result,intent):
     if not isinstance(intent,dict) or intent.get('schema')!=INTENT_SCHEMA:raise WorkflowError('旧封存记录缺少提交前固定身份，结果待核对，不会重复提交')
     if digest(intent['request'])!=intent['request_hash']:raise WorkflowError('封存请求指纹不一致')
+    from .locked_data import confirm_result
+    confirm_result(result,intent['request'])
     meta=result.get('meta') or {};expected=intent.get('expected_identity') or {}
     if any(not expected.get(k) or meta.get(k)!=expected[k] for k in ('data_release_id','factor_source_hash','spec_hash')):
         raise WorkflowError('封存结果的数据、源码或规格身份与提交前记录不一致，不能认定通过')
@@ -230,7 +236,9 @@ def _run_once(uid,org,sid):
             time.sleep(2)
         raise WorkflowError('原验证仍未确认完成，运行身份保留；可继续查询，不会重新计算')
     except Exception as exc:
-        block.update(confirmation='pending',message=str(exc)[:1200])
+        from .research_queue import SubmissionNotDispatched
+        if isinstance(exc,SubmissionNotDispatched):block.update(submission_started=False,confirmation='not_submitted',message=str(exc)[:1200])
+        else:block.update(confirmation='pending',message=str(exc)[:1200])
         _persist(uid,org,cid,sid,'error',block)
 
 

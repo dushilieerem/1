@@ -20,6 +20,9 @@ def comparison_request(snapshot,development,refs,rules):
     references=[{'reference_id':f['library_name']+':'+f['factor_name'],'factor_name':f['factor_name'],'library_name':f['library_name']} for f in refs['builtins']]
     references += [{'reference_id':f['source_id'],'factor_name':f['factor_name'],'factor_code':f['factor_code'],'source_hash':hashlib.sha256(f['factor_code'].encode()).hexdigest()} for f in refs['owned']]
     meta=development['meta']
+    if meta.get('frozen_data_identity') or snapshot['plan'].get('researchContract'):
+        from .locked_data import from_result,bind
+        candidate=bind(candidate,from_result(development))
     spec_hash=meta.get('spec_hash')
     if not spec_hash:raise WorkflowError('研发结果缺少候选规格指纹，不能提交查重')
     return {'candidate':candidate,'references':references,'expected_data_release_id':meta['data_release_id'],'expected_candidate_source_hash':meta['factor_source_hash'],'expected_candidate_spec_hash':spec_hash,'method':'daily_abs_spearman','min_pairs':int(rules['minPairs']),'reference_warmup_sessions':252}
@@ -27,6 +30,8 @@ def comparison_request(snapshot,development,refs,rules):
 
 def validate_result(result,payload,development):
     meta=result.get('meta') or {}
+    from .locked_data import confirm_result
+    confirm_result(result,payload['candidate'])
     if meta.get('request_hash')!=digest(payload):raise WorkflowError('对照结果与固定输入不匹配。')
     if meta.get('candidate_backtest_spec_hash')!=development['meta']['spec_hash']:raise WorkflowError('对照与研发的候选计算规格不同。')
     expected={r['reference_id'] for r in payload['references']}

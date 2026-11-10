@@ -353,6 +353,9 @@ def list_org_topics(uid: int, org: int) -> list[dict]:
                       (SELECT r.stop_reason FROM quant_factor_f0_runs r
                         WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id
                         ORDER BY r.created_at DESC LIMIT 1) AS dispatch_stop_reason,
+                      (SELECT r.decision->'technical_wait'->>'kind' FROM quant_factor_f0_runs r
+                        WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id
+                        ORDER BY r.created_at DESC LIMIT 1) AS dispatch_technical_wait,
                       (SELECT COUNT(DISTINCT c.id) FROM quant_factor_candidates c
                         JOIN quant_factor_trials r
                           ON r.user_id=c.user_id AND r.org_id=c.org_id
@@ -641,12 +644,15 @@ def ledger_view(uid: int, org: int, topic_id: str) -> dict:
         f0 = c.execute(
             "SELECT status,stop_reason,created_at FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at DESC LIMIT 1",
             (uid, org, topic_id)).fetchone()
+    with get_conn() as c:
+        work=c.execute("SELECT config->>'v5ActiveBranch' AS branch_id FROM detect_projects WHERE user_id=%s AND id=%s",(uid,topic['project_id'])).fetchone()
     dispatch = None
     if f0:
         dispatch = {"status": f0["status"], "stop_reason": f0["stop_reason"] or ""}
     k = current_k(trials, topic["primary_holding_period"])
     return {
         "topic": _public(topic),
+        "active_branch_id": (work or {}).get('branch_id'),
         "branches": branches,
         "trials": [_public(row) for row in trials],
         "dispatch": dispatch,

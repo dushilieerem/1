@@ -22,3 +22,7 @@ class QueueBoundaryTests(unittest.TestCase):
   for explicit in (None,'调度检查点，研究结论未定'):
    _,reason=decision_engine.run_steps(decide=lambda n:(Decision(),{}),execute=lambda *a:{},max_steps=1,exhausted_reason=explicit)
    self.assertEqual(reason,explicit or '连续 1 步未达标，停止等待人工复盘')
+
+ def test_control_rejection_before_dispatch_creates_no_unknown_external_intent(self):
+  with patch.dict(os.environ,{'QUANT_RESEARCH_DURABLE_QUEUE':'1'}),patch.object(q,'require_context',side_effect=WorkflowError('paused')),patch.object(q,'get_conn',side_effect=AssertionError('no dispatch intent on rejected control')):
+   with self.assertRaises(q.SubmissionNotDispatched):q.external_begin('factor',{'base':'http://fixture.invalid'},'hash')

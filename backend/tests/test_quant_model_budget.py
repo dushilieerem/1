@@ -44,7 +44,7 @@ class OnePhysicalAttemptTests(unittest.TestCase):
   with ExitStack() as stack:
    stack.enter_context(patch('ai.router.get_task',return_value=TaskSpec(task_id='research.generate_factor',max_tokens=None,response_format={'type':'json_schema'})))
    stack.enter_context(patch.object(providers,'resolve_target',return_value=target))
-   stack.enter_context(patch.object(b,'reserve',return_value={'id':'call','status':'reserved'}));stack.enter_context(patch.object(b,'claim',return_value=True))
+   stack.enter_context(patch.object(b,'_unlimited_mode',return_value=False));stack.enter_context(patch.object(b,'reserve',return_value={'id':'call','status':'reserved'}));stack.enter_context(patch.object(b,'claim',return_value=True))
    settle=stack.enter_context(patch.object(b,'settle'));unknown=stack.enter_context(patch.object(b,'unresolved'))
    post=stack.enter_context(patch.object(providers,'_post',side_effect=error,return_value=io.BytesIO(json.dumps(raw).encode()) if raw is not None else None))
    complete=stack.enter_context(patch.object(providers,'complete',side_effect=AssertionError('hidden gateway loop forbidden')))

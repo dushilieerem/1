@@ -39,8 +39,11 @@ export function FactorWorkflowPage(){
  const writeBlocked=frozenView?'当前查看冻结候选；先基于这个明确版本接手修订，再写入工程。':branchParam&&v5?.hasTrials&&!candidate?'该分支的冻结候选尚未明确，不能写入其他分支。':undefined;
  async function bindForWrite(){
   if(writeBlocked)throw Error(writeBlocked);if(project&&!bindingReady)throw Error('分支状态尚未读取完成，请稍后重试');if(!v5||!project||boundBranch===v5.branchId)return true;
-  if(!window.confirm('将当前工作稿明确绑定到 '+(v5.branchLabel||'所选分支')+' 后保存？这不会修改旧试验。'))return false;
+
   const capability=await researchFetch('/api/inst/quant/factor-workflow/projects/'+project.id+'/workbench');if(!capability.ok)throw Error('分支接力接口尚未加载，未改变当前工作稿');const freshProject=await getProject(project.id);if(!freshProject)throw Error('工作稿读取失败，未写入');const expected=(freshProject.config as {v5ActiveBranch?:string}).v5ActiveBranch||null;
+  const freshEpoch=(freshProject.config as {v5ControlEpoch?:string}).v5ControlEpoch;if(expectedWorkbench.current?.epoch&&freshEpoch!==expectedWorkbench.current.epoch)throw Error('工作版本已更新，请重新读取并确认人工版本，未改变分支。');
+  if(expected===v5.branchId){setBoundBranch(v5.branchId);return true;}
+  if(!window.confirm('将当前工作稿明确绑定到 '+(v5.branchLabel||'所选分支')+' 后保存？这不会修改旧试验。'))return false;
   const response=await researchFetch('/api/inst/quant/factor-workflow/topics/'+v5.topicId+'/branches/'+v5.branchId+'/activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acknowledged:true,expected_active_branch:expected})});const body=await response.json();if(!response.ok)throw Error(body.detail||'分支绑定未完成');setBoundBranch(v5.branchId);expectedWorkbench.current={branch:v5.branchId,epoch:body.control_epoch};return true;
  }
  async function takeOverCandidate(){
@@ -48,7 +51,22 @@ export function FactorWorkflowPage(){
   await controlAction(async()=>{const pause=await researchFetch('/api/inst/quant/factor-workflow/topics/'+v5.topicId+'/pause',{method:'POST'});if(!pause.ok)throw Error('暂停请求未确认，未接手');const paused=await researchFetch('/api/inst/quant/factor-workflow/projects/'+projectId+'/workbench');const pausedWork=await paused.json();if(!paused.ok||!pausedWork.control_epoch)throw Error('暂停后的工作版本未确认，未接手');const response=await researchFetch('/api/inst/quant/factor-workflow/topics/'+v5.topicId+'/branches/'+v5.branchId+'/takeover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({candidate_id:candidate.id,acknowledged:true,expected_control_epoch:pausedWork.control_epoch})});const body=await response.json();if(!response.ok)throw Error(body.detail||'当前检验尚未结束，请等待结果落账后确认接手');setBoundBranch(body.id);navigate(route(projectId!,'F3')+'?branch='+encodeURIComponent(body.id));});
  }
  async function returnToAgent(){
-  if(!v5||!project||writeBlocked)return;await controlAction(async()=>{if(!await bindForWrite())return;const response=await researchFetch('/api/inst/quant/factor-workflow/projects/'+project.id+'/workbench');const body=await response.json();if(!response.ok||!body.can_handoff||body.branch_id!==v5.branchId)throw Error(body.reason||'请先保存明确的人工实现并确认分支');if(!window.confirm('从已保存的 '+(v5.branchLabel||'人工分支')+' 交回研究系统？同快照已有检验会复用；沿原台账和剩余额度继续，不重置预算。'))return;const key=getOrCreateStartKey(sessionStorage,v5.topicId,v5.branchId,newUuidV4);const result=await researchFetch('/api/inst/quant/factor-workflow/topics/'+v5.topicId+'/branches/'+v5.branchId+'/f0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:key,handoff:{snapshot_hash:body.snapshot_hash,control_epoch:body.control_epoch,acknowledged:true,note:project.config.researchPlan?.improvementScope||''}})});const run=await result.json();if(!result.ok)throw Error(run.detail||'交回结果尚未确认，请继续核对原提交');clearStartKey(sessionStorage,v5.topicId,v5.branchId);setNotice('已从确认的人工版本交回研究系统，沿用原台账和剩余额度。');navigate('/quant/factor?topic='+encodeURIComponent(v5.topicId));});
+  if(!v5||!project||writeBlocked)return;
+  await controlAction(async()=>{
+   if(!await bindForWrite())return;
+   const response=await researchFetch('/api/inst/quant/factor-workflow/projects/'+project.id+'/workbench');const body=await response.json();
+   if(!response.ok||!body.can_handoff||body.branch_id!==v5.branchId)throw Error(body.reason||'请先保存明确的人工实现并确认分支');
+   if(expectedWorkbench.current?.epoch&&body.control_epoch!==expectedWorkbench.current.epoch)throw Error('人工版本已更新，请重新读取并确认后交回，未启动研究。');
+   const previous=await researchFetch('/api/inst/quant/factor-workflow/topics/'+v5.topicId+'/f0-runs');
+   if(!previous.ok)throw Error('上一运行状态尚未确认，未交回人工版本');
+   const oldRun=await previous.json(),compatibility=oldRun?.method_compatibility;
+   if(!window.confirm('从已保存的 '+(v5.branchLabel||'人工分支')+' 交回研究系统？同快照已有检验会复用；沿原台账和剩余额度继续，不重置预算。'))return;
+   const scope=v5.branchId+':handoff:'+body.snapshot_hash+':'+body.control_epoch+(compatibility?.requires_new_run?':method:'+compatibility.available_snapshot.snapshot_hash:'');
+   const key=getOrCreateStartKey(sessionStorage,v5.topicId,scope,newUuidV4);
+   const methodChange=compatibility?.requires_new_run?{previous_run_id:oldRun.id,expected_method_hash:compatibility.available_snapshot.snapshot_hash,expected_control_epoch:body.control_epoch,acknowledged:true,reason:'用户从明确已保存人工版本采用当前方法继续'}:undefined;
+   const result=await researchFetch('/api/inst/quant/factor-workflow/topics/'+v5.topicId+'/branches/'+v5.branchId+'/f0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:key,handoff:{snapshot_hash:body.snapshot_hash,control_epoch:body.control_epoch,acknowledged:true,note:project.config.researchPlan?.improvementScope||''},...(methodChange?{method_change:methodChange}:{})})});
+   const run=await result.json();if(!result.ok)throw Error(run.detail||'交回结果尚未确认，请继续核对原提交');clearStartKey(sessionStorage,v5.topicId,scope);setNotice('已从确认的人工版本交回研究系统，沿用原台账和剩余额度。');navigate('/quant/factor?topic='+encodeURIComponent(v5.topicId));
+  });
  }
 
  async function controlAction(fn:()=>Promise<void>){if(busy)return;setBusy(true);setError('');try{await fn();}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}}

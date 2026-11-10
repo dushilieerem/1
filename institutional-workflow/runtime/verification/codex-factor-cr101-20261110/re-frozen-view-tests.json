@@ -1,0 +1,18 @@
+{
+  "exit_code": 0,
+  "elapsed_seconds": 2.806,
+  "peak_rss_bytes": 175431680,
+  "stop_reason": null,
+  "args": [
+    "/home/dev01/program/anaconda3/envs/researchengine/bin/python",
+    "-m",
+    "pytest",
+    "tests/test_frozen_data_view.py",
+    "tests/test_controlled_worker_engine.py",
+    "tests/test_controlled_compute.py::test_factor_entry_is_opt_in_and_required_mode_fails_closed",
+    "tests/test_controlled_compute.py::test_novelty_entry_is_opt_in_and_required_mode_fails_closed",
+    "-q",
+    "--basetemp",
+    "/home/dev01/project/SVQuant-zxd/institutional-workflow/runtime/verification/codex-factor-cr101-20261110/re-fixture-tmp"
+  ]
+}

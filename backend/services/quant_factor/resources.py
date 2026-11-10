@@ -18,7 +18,8 @@ def scope_request(config):
  plan=config.get('researchPlan') or {};request={'start':plan.get('developmentStart'),'end':plan.get('developmentEnd')}
  if config.get('researchUniverseSymbols'):request['universe_snapshot']=static_sample(config['researchUniverseSymbols'])
  else:request['universe']=config.get('universe') or 'CSI300'
- return request
+ from .locked_data import for_config,bind
+ return bind(request,for_config(config))
 
 
 def preflight(kind,request):
@@ -30,6 +31,11 @@ def preflight(kind,request):
  except Exception:return {'allowed':False,'reasons':['受控计算范围目前无法核对，尚未启动计算；请稍后确认'],'candidate_warmup_sessions':0}
  if code!=200 or not isinstance(result,dict) or not isinstance(result.get('allowed'),bool):return {'allowed':False,'reasons':['计算服务尚未提供本次范围的安全预检，尚未启动计算'],'candidate_warmup_sessions':0}
  if result['allowed']:
+  candidate=request.get('candidate') if kind=='novelty' else request
+  if (candidate or {}).get('frozen_data_view'):
+   from .locked_data import verify_receipt
+   try:verify_receipt(result.get('frozen_data_identity'),candidate['frozen_data_view'],actual=False)
+   except WorkflowError as exc:return {**result,'allowed':False,'reasons':[str(exc)]}
   from .re_client import target
   try:target(result)
   except WorkflowError as exc:return {**result,'allowed':False,'reasons':[str(exc)]}
@@ -43,7 +49,9 @@ def require(kind,request):
 
 
 def config_preflight(config):
- receipt=preflight('factor',scope_request(config));limit=receipt.get('max_development_trials')
+ try:request=scope_request(config)
+ except WorkflowError as exc:return {'allowed':False,'reasons':[str(exc)],'candidate_warmup_sessions':0}
+ receipt=preflight('factor',request);limit=receipt.get('max_development_trials')
  budget=(config.get('researchPlan') or {}).get('maxTrials')
  if limit is not None and (isinstance(budget,bool) or not isinstance(budget,(int,float)) or budget<1 or budget>limit):
   receipt={**receipt,'allowed':False,'reasons':[*(receipt.get('reasons') or []),'本次受控研究试验预算最多'+str(limit)+'次，请明确填写范围内的预算']}

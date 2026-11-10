@@ -16,6 +16,7 @@ class IsolatedBudgetPostgresTests(IsolatedAssetPostgresTests):
    c.execute('CREATE TABLE ai_usage(id bigserial,user_id bigint,run_id text,skill text,tokens_in int,tokens_out int,created_at timestamptz DEFAULT now())')
    c.execute((Path(__file__).parents[1]/'migrations/0038_quant_ai_budget.sql').read_text())
    c.execute((Path(__file__).parents[1]/'migrations/0039_quant_research_token_policy.sql').read_text())
+   c.execute((Path(__file__).parents[1]/'migrations/0041_quant_model_capacity.sql').read_text())
  def setUp(self):
   super().setUp()
   with self.connection() as c:

@@ -39,11 +39,11 @@ def _charge_sum(c,org,supplement=None):
  if supplement:query+=' AND supplement_id=%s';params=(*params,supplement)
  return int(c.execute(query,params).fetchone()['n'])
 
-def reserve(uid,org,project_id,call_key,task_id,request_hash,prompt_upper,max_output,supplement=None):
- if task_id not in OUTPUT_LIMITS or max_output!=OUTPUT_LIMITS[task_id]:raise WorkflowError('模型输出额度未明确，未发起调用')
+def reserve(uid,org,project_id,call_key,task_id,request_hash,prompt_upper,max_output,supplement=None,request_parameters=None):
+ if task_id not in OUTPUT_LIMITS or (max_output is not None and max_output!=OUTPUT_LIMITS[task_id]):raise WorkflowError('模型输出额度未明确，未发起调用')
  if not isinstance(call_key,str) or not 1<=len(call_key)<=200:raise WorkflowError('模型调用身份无效')
  if not isinstance(prompt_upper,int) or prompt_upper<=0:raise WorkflowError('模型输入额度无效')
- reserved=prompt_upper+max_output
+ reserved=prompt_upper+(max_output or 0)
  with get_conn() as c:
   _lock(c,org)
   prior=c.execute('SELECT * FROM quant_ai_budget_calls WHERE org_id=%s AND call_key=%s FOR UPDATE',(org,call_key)).fetchone()
@@ -58,6 +58,7 @@ def reserve(uid,org,project_id,call_key,task_id,request_hash,prompt_upper,max_ou
   from . import token_policy
   authorization=token_policy.current(c,org)
   if authorization and (not grant or authorization['supersedes_grant_id']!=grant['id']):raise WorkflowError('持续研究授权与原额度身份不一致，未覆盖原记录')
+  if max_output is None and not authorization:raise WorkflowError('省略单次产品输出额度需要本机构持续研究授权；未发起请求')
   if supplement:
    if not grant:raise WorkflowError('这项研究没有已确认的补充额度，未发模型请求')
    if not authorization and _charge_sum(c,org,supplement)+reserved>grant['limit_tokens']:raise WorkflowError('本产品研究模型授权额度不足，已用与待核预留保留，未发新请求')
@@ -73,6 +74,7 @@ def reserve(uid,org,project_id,call_key,task_id,request_hash,prompt_upper,max_ou
   call_id=str(uuid.uuid4())
   c.execute("INSERT INTO quant_ai_budget_calls(id,org_id,user_id,module,project_id,call_key,task_id,request_hash,funding,supplement_id,reserved_tokens,prompt_upper_tokens,max_output_tokens,status) VALUES(%s,%s,%s,'factor',%s,%s,%s,%s,%s,%s,%s,%s,%s,'reserved')",(call_id,org,uid,project_id,call_key,task_id,request_hash,'supplement' if supplement else 'base',supplement,reserved,prompt_upper,max_output))
   if authorization:c.execute('UPDATE quant_ai_budget_calls SET token_policy_id=%s WHERE id=%s',(authorization['id'],call_id))
+  c.execute('UPDATE quant_ai_budget_calls SET reservation_complete=%s,request_parameters=%s::jsonb WHERE id=%s',(max_output is not None,store.encode(request_parameters or {}),call_id))
   from . import research_queue
   if research_queue.enabled() and (not research_queue.permits_lightweight(task_id) or research_queue.current_id()):
    research_queue.require_context()
@@ -99,13 +101,15 @@ def unresolved(uid,org,call_id,note):
   c.execute("UPDATE quant_ai_budget_calls SET status='unresolved',note=%s,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status='dispatched'",(str(note)[:300],call_id,uid,org))
 
 def safe_response(response):
- keys=('content','data','model','provider','tokens_in','tokens_out','usage','finish_reason','prompt_version','latency_ms','error_type','budget_call_id','task','reasoning_tokens','reasoning_chars','http_status','provider_request_terminal')
+ keys=('content','data','model','provider','tokens_in','tokens_out','usage','finish_reason','prompt_version','latency_ms','error_type','budget_call_id','task','reasoning_tokens','reasoning_chars','http_status','provider_request_terminal','content_sha256','content_chars')
  return {key:response[key] for key in keys if key in response}
 
 def settle(uid,org,call_id,response):
  usage=measured_usage(response)
  safe=safe_response(response)
- if len(store.encode(safe).encode())>100_000:raise WorkflowError('模型回执超过保存范围，预留保留待核对')
+ oversized=len(store.encode(safe).encode())>100_000
+ if oversized:
+  content=str(safe.pop('content',''));safe.pop('data',None);safe.update(error_type='AiOutputStorageLimit',content_sha256=digest(content),content_chars=len(content))
  with get_conn() as c:
   _lock(c,org)
   prior=c.execute('SELECT * FROM quant_ai_budget_calls WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE',(call_id,uid,org)).fetchone()
@@ -116,7 +120,13 @@ def settle(uid,org,call_id,response):
   if prior['status'] not in ('dispatched','unresolved'):raise WorkflowError('此模型调用尚未发送，不能写入实耗')
   c.execute("UPDATE quant_ai_budget_calls SET status=%s,actual_tokens=%s,provider_usage=%s::jsonb,response=%s::jsonb,note=%s,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status IN ('dispatched','unresolved')",('settled' if usage else 'unresolved',usage['total_tokens'] if usage else None,store.encode(usage['provider_usage']) if usage else None,store.encode(safe),'' if usage else 'Provider usage missing/incomplete; full reservation retained',call_id,uid,org))
   if usage:c.execute('UPDATE ai_usage SET tokens_in=%s,tokens_out=%s WHERE user_id=%s AND run_id=%s',(usage['tokens_in'],usage['tokens_out'],uid,call_id))
+ if oversized:raise WorkflowError('模型已返回，但产物超过本次可保存范围；实际用量已记录，需明确接续，未当作研究失败')
  return usage
+
+def _unlimited_mode(org):
+ from . import token_policy
+ with get_conn() as c:return token_policy.current(c,org) is not None
+
 
 def run(uid,org,project_id,call_key,task_id,*,messages=None,variables=None,supplement=None,method_snapshot=None):
  """Exactly one physical primary-model attempt; no SDK fallback/expansion/cache."""
@@ -135,7 +145,8 @@ def run(uid,org,project_id,call_key,task_id,*,messages=None,variables=None,suppl
  from ai.router.executors import _code_response_format
  response_format=_code_response_format(spec)
  if isinstance(response_format,dict) and response_format.get('type')=='json_schema':response_format={'type':'json_object'}
- upper=input_upper_bound(resolved,response_format);maximum=OUTPUT_LIMITS[task_id];timeout=int(spec.timeout_sec or target.timeout);method_hash=None
+ unlimited=_unlimited_mode(org)
+ upper=input_upper_bound(resolved,response_format);maximum=None if unlimited else OUTPUT_LIMITS[task_id];timeout=900 if unlimited else int(spec.timeout_sec or target.timeout);method_hash=None
  if task_id.endswith('_v2'):
   from .research_method import validate_snapshot
   frozen=validate_snapshot(method_snapshot);role=frozen['roles'].get(task_id)
@@ -144,13 +155,18 @@ def run(uid,org,project_id,call_key,task_id,*,messages=None,variables=None,suppl
  identity={'budget_version':VERSION,'temperature':float(spec.temperature),'task_id':task_id,'messages':resolved,'variables':variables or {},'max_output':maximum,'prompt_version':spec.prompt_version,'response_format':response_format,'model':target.model,'provider':target.provider,'backend_hash':digest({'base':target.base_url})}
  if method_hash:identity.update(method_snapshot_hash=method_hash,timeout_seconds=timeout)
  fingerprint=digest(identity)
- row=reserve(uid,org,project_id,call_key,task_id,fingerprint,upper,maximum,supplement)
+ request_parameters={'model':target.model,'temperature':float(spec.temperature),'timeout_seconds':timeout,'output_policy':'provider_default' if maximum is None else 'explicit_legacy_cap','response_format':response_format,'internal_retries':0}
+ if maximum is not None:request_parameters['max_tokens']=maximum
+ if method_hash:request_parameters['method_snapshot_hash']=method_hash
+ request_parameters['prompt_version']=spec.prompt_version
+ row=reserve(uid,org,project_id,call_key,task_id,fingerprint,upper,maximum,supplement,request_parameters=request_parameters)
  if row.get('response') is not None:
   if row['response'].get('error_type'):raise WorkflowError('原模型调用未返回可用产物（'+row['response']['error_type']+'），用量已保留；不会自动重发')
   return row['response']
  if row['status']!='reserved':raise WorkflowError('原模型提交结果尚待核对，保留调用身份和预留，不会重复提交')
  if not claim(uid,org,row['id']):raise WorkflowError('原模型请求已领取，请继续查看原任务，未重复提交')
- payload={'model':target.model,'messages':resolved,'temperature':spec.temperature,'max_tokens':maximum}
+ payload={'model':target.model,'messages':resolved,'temperature':spec.temperature}
+ if maximum is not None:payload['max_tokens']=maximum
  if response_format is not None:payload['response_format']=response_format
  try:
   try:raw=providers._read_json(providers._post(target,payload,timeout=timeout,stream=False))
@@ -209,6 +225,11 @@ def status(uid,org,project_id=None):
     out['new_authorization']['remaining_tokens']=None
    totals=c.execute("SELECT COALESCE(SUM(actual_tokens) FILTER(WHERE status='settled'),0) AS settled,COALESCE(SUM(reserved_tokens) FILTER(WHERE status<>'settled'),0) AS held,COUNT(*) FILTER(WHERE status='unresolved') AS unresolved FROM quant_ai_budget_calls WHERE org_id=%s AND module='factor'",(org,)).fetchone()
    out['usage']={'settled_tokens':int(totals['settled']),'held_tokens':int(totals['held']),'unresolved_calls':int(totals['unresolved']),'includes_historical_unknown':False}
+  unknown_output=c.execute("SELECT COUNT(*) AS n,COALESCE(SUM(reserved_tokens),0) AS input_bound FROM quant_ai_budget_calls WHERE org_id=%s AND status<>'settled' AND reservation_complete=FALSE",(org,)).fetchone()
+  if unknown_output['n']:
+   out['usage']=out.get('usage') or {}
+   out['usage'].update(held_tokens=None,held_output_capacity_unknown_calls=int(unknown_output['n']),held_known_input_bound_tokens=int(unknown_output['input_bound']))
+   if out.get('new_authorization'):out['new_authorization']['held_tokens']=None
   return out
 
 

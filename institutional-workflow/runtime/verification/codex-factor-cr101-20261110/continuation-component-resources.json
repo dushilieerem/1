@@ -1,0 +1,22 @@
+{
+  "exit_code": 0,
+  "stopped": null,
+  "elapsed_seconds": 10.43,
+  "peak_rss_process_tree_bytes": 368394240,
+  "node_heap_mib": 2048,
+  "single_concurrency": true,
+  "command": [
+    "/home/dev01/.nvm/versions/node/v24.20.0/bin/node",
+    "--max-old-space-size=2048",
+    "--import",
+    "tsx",
+    "--test",
+    "--test-concurrency=1",
+    "--test-timeout=15000",
+    "--test-name-pattern=方法更新|持续研究",
+    "tests/factorHomeCreateFlow.test.tsx",
+    "tests/factorTaskState.test.ts",
+    "tests/factorManualDelegation.test.tsx"
+  ],
+  "no_real_model_market_or_service_change": true
+}

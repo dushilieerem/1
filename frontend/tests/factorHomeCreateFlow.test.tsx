@@ -371,3 +371,29 @@ test('方法更新：单个明确按钮创建新run保留任务身份，无原�
   fireEvent.click(view.getByRole('button',{name:'使用更新研究方法继续'}));await waitFor(()=>assert.equal(posts.length,1));assert.equal(posts[0].method_change.previous_run_id,'old-run');assert.equal(posts[0].method_change.expected_method_hash,'method-r2');assert.equal(posts[0].method_change.expected_control_epoch,'epoch1');assert.equal(posts[0].method_change.acknowledged,true);assert.ok(!posts[0].handoff,'不能误称从未保存实现的人工交回');assert.ok(posts[0].idempotency_key);
  }finally{window.confirm=originalConfirm;}
 });
+
+
+test('持续研究：新方法继续同时绑定已保存人工版本，只有一个主入口且不新增原生确认',async()=>{
+ login();const topic={...oldTopic,id:'t-manual-config',project_id:'p-manual-config',dispatch_status:'stopped',dispatch_stop_reason:'技术等待',dispatch_technical_wait:'execution_dependency',k:0,trial_count:0};
+ const available={snapshot_hash:'method-r3',revision:'provider-default-r3',roles:{planner:{max_output:null,output_policy:'provider_default',timeout_seconds:900,prompt_version:'r3-proposal'}}};
+ let current:any={id:'prior-run',status:'stopped',stop_reason:'技术等待',decision:{technical_wait:{kind:'execution_dependency',message:'模型服务等待确认'}},method_compatibility:{requires_new_run:true,configuration_changed:true,reason:'采用当前方法',available_snapshot:available,saved_snapshot:null}};
+ const posts:any[]=[];const originalConfirm=window.confirm;window.confirm=()=>{throw Error('no new native confirmation');};
+ globalThis.fetch=async(input,init)=>{
+  const path=new URL(String(input),'http://localhost').pathname,method=init?.method||'GET';
+  if(path.endsWith('/branches/h1a/f0')&&method==='POST'){posts.push(JSON.parse(String(init?.body)));current={id:'new-run',status:'queued',decision:{},method_compatibility:{requires_new_run:false,available_snapshot:available,saved_snapshot:available}};return Response.json(current);}
+  if(path.endsWith('/workbench'))return Response.json({branch_id:'h1a',control_epoch:'epoch-manual',snapshot_hash:'manual-exact-snapshot',can_handoff:true,requires_handoff:true});
+  if(path.endsWith('/topics'))return Response.json({topics:[topic]});
+  if(path.endsWith('/ledger'))return Response.json({topic,active_branch_id:'h1a',branches:[{id:'h1',source:'agent',display_label:'H1',hypothesis_version:1,implementation_version:1},{id:'h1a',parent_id:'h1',source:'manual',display_label:'H1a',hypothesis_version:2,implementation_version:2}],trials:[],k:0,threshold:1.96,threshold_next_if_counted:1.96});
+  if(path.endsWith('/f0-runs'))return Response.json(current);
+  if(/\/detect\/projects\/[^/]+$/.test(path))return Response.json({project:{id:'p-manual-config',name:'人工修订',config:{v5ActiveBranch:'h1a',v5ControlEpoch:'epoch-manual',factorCodes:['saved_manual']}}});
+  if(path.endsWith('/controls'))return Response.json({paused:false});if(path.endsWith('/overview'))return Response.json({counts:{sealed_used:0}});if(path.endsWith('/pending-review-count'))return Response.json({count:0});if(path.endsWith('/reference'))return Response.json({items:[]});throw Error('Unexpected '+method+' '+path);
+ };
+ try{
+  const view=render(<MemoryRouter><QuantFactorHomePage/></MemoryRouter>);
+  await waitFor(()=>assert.equal(view.getAllByRole('button',{name:'使用更新研究方法继续'}).length,1));
+  fireEvent.click(view.getByText('本次运行的研究方法'));assert.ok(view.getByText(/单次容量由模型服务决定/));assert.ok(!view.container.textContent?.includes('输出上限  Tokens'));
+  fireEvent.click(view.getByRole('button',{name:'使用更新研究方法继续'}));await waitFor(()=>assert.equal(posts.length,1));
+  assert.equal(posts[0].handoff.snapshot_hash,'manual-exact-snapshot');assert.equal(posts[0].handoff.control_epoch,'epoch-manual');assert.equal(posts[0].handoff.acknowledged,true);assert.equal(posts[0].method_change.expected_control_epoch,'epoch-manual');assert.equal(posts[0].method_change.previous_run_id,'prior-run');assert.equal(posts[0].method_change.expected_method_hash,'method-r3');
+  await waitFor(()=>assert.ok(view.getAllByText('等待运行').length>0));
+ }finally{window.confirm=originalConfirm;}
+});

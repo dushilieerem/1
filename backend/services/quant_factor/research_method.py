@@ -11,9 +11,10 @@ from .research_contract import METHOD_VERSION,fingerprint,check_fields
 PLANNER='quant.factor.research_planner_v2'
 IMPLEMENTER='quant.factor.research_implementation_v2'
 DIAGNOSER='quant.factor.evidence_diagnosis_v2'
-REVISION='bounded-factor-rd-v2-output16000-schema-r2'
-LIMITS={PLANNER:16000,IMPLEMENTER:16000,DIAGNOSER:16000}
-METHOD_FILES=('research_method.py','f0.py','f0_agent.py','generation.py','agent_jobs.py','development_diagnosis.py','source_identity.py','asset_context.py','source_contract.py','source_compat.py','metrics.py','policy.py','model_budget.py')
+REVISION='bounded-factor-rd-v2-provider-default-r3'
+LIMITS={PLANNER:None,IMPLEMENTER:None,DIAGNOSER:None}
+MODEL_TIMEOUT_SECONDS=900
+METHOD_FILES=('research_method.py','f0.py','f0_agent.py','generation.py','agent_jobs.py','development_diagnosis.py','source_identity.py','asset_context.py','source_contract.py','source_compat.py','metrics.py','policy.py','model_budget.py','research_queue.py','token_policy.py','locked_data.py','resources.py','re_client.py')
 
 def implementation_fingerprint(directory=None):
  base=Path(directory) if directory is not None else Path(__file__).parent
@@ -23,7 +24,7 @@ def implementation_fingerprint(directory=None):
 _LOADED_IMPLEMENTATION=implementation_fingerprint()
 
 def snapshot():
- payload={'method_version':METHOD_VERSION,'revision':REVISION,'implementation_fingerprint':_LOADED_IMPLEMENTATION,'implementation_files':list(METHOD_FILES),'roles':{task:{'max_output':LIMITS[task],'timeout_seconds':150,'prompt_version':REVISION+'-'+role} for task,role in [(PLANNER,'proposal'),(IMPLEMENTER,'implementation'),(DIAGNOSER,'diagnosis')]}}
+ payload={'method_version':METHOD_VERSION,'revision':REVISION,'implementation_fingerprint':_LOADED_IMPLEMENTATION,'implementation_files':list(METHOD_FILES),'roles':{task:{'max_output':LIMITS[task],'output_policy':'provider_default','provider_capacity':'not_advertised','timeout_seconds':MODEL_TIMEOUT_SECONDS,'prompt_version':REVISION+'-'+role} for task,role in [(PLANNER,'proposal'),(IMPLEMENTER,'implementation'),(DIAGNOSER,'diagnosis')]}}
  return {**payload,'snapshot_hash':fingerprint(payload)}
 
 def validate_snapshot(saved,*,require_current=True):
@@ -71,9 +72,9 @@ class Interpretation(BaseModel):
 def register_tasks():
  from ai.router.tasks.factor_generation import FACTOR_TASK
  from dataclasses import replace
- for task in (TaskSpec(task_id=PLANNER,description='有界研究规划',prompt_version=REVISION+'-proposal',temperature=.2,max_tokens=LIMITS[PLANNER],timeout_sec=150,response_format={'type':'json_object'}),
-  replace(FACTOR_TASK,task_id=IMPLEMENTER,description='冻结提案的因子实现',prompt_version=REVISION+'-implementation',max_tokens=16000,timeout_sec=150),
-  TaskSpec(task_id=DIAGNOSER,description='研发证据解释',prompt_version=REVISION+'-diagnosis',temperature=.2,max_tokens=LIMITS[DIAGNOSER],timeout_sec=150,response_format={'type':'json_object'})):
+ for task in (TaskSpec(task_id=PLANNER,description='有界研究规划',prompt_version=REVISION+'-proposal',temperature=.2,max_tokens=LIMITS[PLANNER],timeout_sec=MODEL_TIMEOUT_SECONDS,response_format={'type':'json_object'}),
+  replace(FACTOR_TASK,task_id=IMPLEMENTER,description='冻结提案的因子实现',prompt_version=REVISION+'-implementation',max_tokens=LIMITS[IMPLEMENTER],timeout_sec=MODEL_TIMEOUT_SECONDS),
+  TaskSpec(task_id=DIAGNOSER,description='研发证据解释',prompt_version=REVISION+'-diagnosis',temperature=.2,max_tokens=LIMITS[DIAGNOSER],timeout_sec=MODEL_TIMEOUT_SECONDS,response_format={'type':'json_object'})):
   try:get_task(task.task_id)
   except KeyError:register(task)
 

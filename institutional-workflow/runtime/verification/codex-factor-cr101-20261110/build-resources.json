@@ -1,0 +1,16 @@
+{
+  "exit_code": 0,
+  "stopped": null,
+  "elapsed_seconds": 34.919,
+  "peak_rss_process_tree_bytes": 2408112128,
+  "node_heap_mib": 2048,
+  "single_concurrency": true,
+  "command": [
+    "/home/dev01/.nvm/versions/node/v24.20.0/bin/node",
+    "--max-old-space-size=2048",
+    "/home/dev01/.nvm/versions/node/v24.20.0/lib/node_modules/npm/bin/npm-cli.js",
+    "run",
+    "build"
+  ],
+  "no_real_model_market_or_service_change": true
+}

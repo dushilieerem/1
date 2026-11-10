@@ -149,7 +149,7 @@ def require_context():
  if not owned:raise WorkflowError('原研究执行槽已变化，未发新的模型或计算请求')
  if owned['root_kind']=='f0':
   with get_conn() as c:
-   active=c.execute("SELECT f.id FROM quant_factor_f0_runs f JOIN quant_factor_topics t ON t.id=f.topic_id AND t.user_id=f.user_id AND t.org_id=f.org_id JOIN detect_projects p ON p.id=f.project_id AND p.user_id=f.user_id WHERE f.id=%s AND f.user_id=%s AND f.org_id=%s AND f.status='running' AND t.status='active' AND p.config->>'v5ControlEpoch'=f.decision->>'control_epoch'",(owned['root_object_id'],owned['user_id'],owned['org_id'])).fetchone()
+   active=c.execute("SELECT f.id FROM quant_factor_f0_runs f JOIN quant_factor_topics t ON t.id=f.topic_id AND t.user_id=f.user_id AND t.org_id=f.org_id JOIN detect_projects p ON p.id=f.project_id AND p.user_id=f.user_id WHERE f.id=%s AND f.user_id=%s AND f.org_id=%s AND f.status='running' AND t.status='active' AND p.config->>'v5ControlEpoch'=f.decision->>'control_epoch' AND NOT EXISTS(SELECT 1 FROM quant_factor_org_controls controls WHERE controls.org_id=f.org_id AND controls.paused=TRUE)",(owned['root_object_id'],owned['user_id'],owned['org_id'])).fetchone()
   if not active:raise WorkflowError('自动研究已暂停或控制版本已变化，未发新的模型或计算请求')
 
 def _handler(job):
@@ -245,9 +245,12 @@ def reconcile_waiting():
     _release_if_finished(c,job['root_id'])
 
 
+class SubmissionNotDispatched(WorkflowError):pass
+
 def external_begin(kind,target,request_hash):
  if not enabled():return None
- require_context()
+ try:require_context()
+ except WorkflowError as exc:raise SubmissionNotDispatched(str(exc)) from exc
  from . import store
  with get_conn() as c:
   job=c.execute('SELECT * FROM quant_research_queue_jobs WHERE id=%s AND deployment_id=%s FOR UPDATE',(current_id(),DEPLOYMENT_ID)).fetchone()

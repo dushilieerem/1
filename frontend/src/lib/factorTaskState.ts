@@ -10,6 +10,7 @@ export type FactorTaskFacts = {
   status: string;
   dispatch_status?: string | null;
   dispatch_stop_reason?: string | null;
+  dispatch_technical_wait?: string | null;
   latest_outcome?: string | null;
   dispatch_action?: string | null;
   trial_count: number;
@@ -124,6 +125,9 @@ export function deriveFactorTaskState(t: FactorTaskFacts): FactorTaskState {
   } else if (t.status === 'paused') {
     key = 'paused'; label = '已暂停'; tone = 'gray';
     needsYou = '完成人工操作后恢复研究；恢复不会补发已暂停的计算。';
+  } else if (t.dispatch_technical_wait && dispatch !== 'running' && dispatch !== 'queued') {
+    key='waiting';label='等待处理';tone='warn';
+    needsYou='研究暂遇技术条件限制，已有数据范围、结果和次数保留；核对后继续，不代表研究结论不成立。';
   } else if (dispatch === 'error' || dispatch === 'failed') {
     key = 'error'; label = '服务异常'; tone = 'bad';
     needsYou = '可重试启动并保留原任务；连续异常请联系维护人员，技术原文见诊断详情。';
@@ -157,7 +161,7 @@ export function deriveFactorTaskState(t: FactorTaskFacts): FactorTaskState {
     }
   } else if (dispatch === 'queued' || dispatch === 'running') {
     if (dispatch === 'queued') {
-      key = 'preparing'; label = '排队中'; tone = 'live';
+      key = 'preparing'; label = '等待运行'; tone = 'live';
       needsYou = '启动请求已接受，等待执行；可查看范围与预算。';
     } else if (!t.dispatch_action && (t.trial_count || 0) === 0) {
       key = 'preparing'; label = '研究准备中'; tone = 'live';

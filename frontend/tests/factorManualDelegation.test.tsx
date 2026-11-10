@@ -34,3 +34,26 @@ test('同H两个E：从E1的F4进入F6始终保持显式candidate，不默选最
  globalThis.fetch=async(input,init)=>{methods.push(init?.method||'GET');const path=new URL(String(input),'http://localhost').pathname;if(path.endsWith('/detect/projects'))return Response.json({projects:[project]});if(path.endsWith('/detect/projects/p'))return Response.json({project});if(path.endsWith('/topics'))return Response.json({topics:[{id:'t'}]});if(path.endsWith('/ledger'))return Response.json({topic:{id:'t',max_trials:2},branches:[{id:'h1',source:'manual',display_label:'H1'}],trials:[{branch_id:'h1',trial_no:1,report_id:'qf_first_development'},{branch_id:'h1',trial_no:2,report_id:'qf_second_development'}],k:2});if(path.endsWith('/candidates'))return Response.json({candidates:items});if(path.endsWith('/candidates/first'))return Response.json(items[1]);if(path.endsWith('/candidates/second'))return Response.json(items[0]);if(path.endsWith('/sealed-validation'))return new Response('{}',{status:404});if(path.endsWith('/libraries'))return Response.json({libraries:[]});throw Error(path);};
  const view=render(<MemoryRouter initialEntries={['/quant/factor/workflow/p/F4?candidate=first&branch=h1']}><Routes><Route path="/quant/factor/workflow/:projectId/:step" element={<FactorWorkflowPage/>}/></Routes></MemoryRouter>);await waitFor(()=>assert.equal((view.getByLabelText('选择候选版本') as HTMLSelectElement).value,'first'));const next=view.getByRole('navigation',{name:'人工研究工具'}).querySelector<HTMLAnchorElement>('a[href*="/F6"]')!;assert.equal(next.getAttribute('href'),'/quant/factor/workflow/p/F6?candidate=first&branch=h1');fireEvent.click(next);await waitFor(()=>assert.ok(view.getByRole('button',{name:'提交研究复核'})));assert.equal((view.getByLabelText('选择候选版本') as HTMLSelectElement).value,'first');assert.ok(methods.every(m=>m==='GET'));assert.equal(view.queryByText(/第 3 次检验/),null);
 });
+
+
+test('持续研究：人工F3交回同时携带人工快照与当前方法接续，不重新委托生成',async()=>{
+ login();const originalConfirm=window.confirm;window.confirm=()=>true;const posts:any[]=[];
+ const project={id:'p',name:'人工修订',factorName:'manual_signal',description:'人工定义',config:{...defaultConfig(['manual_signal']),v5ActiveBranch:'h1a',v5ControlEpoch:'epoch-human',draftFactor:{name:'manual_signal',body:'def manual_signal(self): return self.close'},researchPlan:{researchPurpose:'discovery',hypothesis:'人工定义',acceptance:'预登记方法',target:'未来一日',revision:'manual',maxTrials:2,developmentStart:'2025-07-01',developmentEnd:'2025-09-30',validationStart:'2026-06-22',validationEnd:'2026-09-21',rules:{direction:'positive',icMetric:'rank_ic',minSignedIc:.005,maxDrawdown:.5,minObservations:60}}}};
+ globalThis.fetch=async(input,init)=>{
+  const path=new URL(String(input),'http://localhost').pathname,method=init?.method||'GET';
+  if(method==='POST'){posts.push({path,body:JSON.parse(String(init?.body))});if(path.endsWith('/branches/h1a/f0'))return Response.json({id:'new-run',status:'queued'});throw Error('Unexpected POST '+path);}
+  if(path.endsWith('/detect/projects/p'))return Response.json({project});if(path.endsWith('/detect/projects'))return Response.json({projects:[project]});
+  if(path.endsWith('/topics'))return Response.json({topics:[{id:'t',project_name:'人工修订'}]});
+  if(path.endsWith('/ledger'))return Response.json({topic:{id:'t',max_trials:2},branches:[{id:'h1a',parent_id:'h1',source:'manual',display_label:'H1a'}],trials:[],k:0,threshold_next_if_counted:1.96});
+  if(path.endsWith('/candidates'))return Response.json({candidates:[]});if(path.endsWith('/agent-jobs/latest'))return Response.json({job:null});
+  if(path.endsWith('/workbench'))return Response.json({branch_id:'h1a',control_epoch:'epoch-human',snapshot_hash:'manual-frozen',can_handoff:true,requires_handoff:true});
+  if(path.endsWith('/f0-runs'))return Response.json({id:'old-run',status:'failed',method_compatibility:{requires_new_run:true,available_snapshot:{snapshot_hash:'current-r3'}}});
+  throw Error(method+' '+path);
+ };
+ try{
+  const view=render(<MemoryRouter initialEntries={['/quant/factor/workflow/p/F3']}><Routes><Route path="/quant/factor/workflow/:projectId/:step" element={<FactorWorkflowPage/>}/><Route path="/quant/factor" element={<p>已返回研究任务</p>}/></Routes></MemoryRouter>);
+  await waitFor(()=>assert.equal((view.getByRole('button',{name:'从已保存人工版本交回研究系统'}) as HTMLButtonElement).disabled,false));assert.equal(posts.length,0);
+  fireEvent.click(view.getByRole('button',{name:'从已保存人工版本交回研究系统'}));await waitFor(()=>assert.ok(view.getByText('已返回研究任务')));
+  assert.equal(posts.length,1);assert.equal(posts[0].body.handoff.snapshot_hash,'manual-frozen');assert.equal(posts[0].body.handoff.control_epoch,'epoch-human');assert.equal(posts[0].body.method_change.expected_control_epoch,'epoch-human');assert.equal(posts[0].body.method_change.expected_method_hash,'current-r3');assert.equal(posts[0].body.method_change.previous_run_id,'old-run');
+ }finally{window.confirm=originalConfirm;}
+});

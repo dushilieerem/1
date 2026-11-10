@@ -24,7 +24,7 @@ ACTIVE = ("queued", "running")
 
 def _public(row) -> dict:
     out={key:value for key,value in dict(row).items() if key not in ('user_id','org_id')}
-    if (out.get('decision') or {}).get('method_version')=='bounded-factor-rd-v2':
+    if (out.get('decision') or {}).get('method_version')=='bounded-factor-rd-v2' or (out.get('decision') or {}).get('reason')=='locked_view_drift':
         from .research_method import compatibility
         out['method_compatibility']=compatibility(out['decision'].get('method_snapshot'))
         out['method_compatibility']['configuration_changed']=out['method_compatibility']['requires_new_run']
@@ -91,8 +91,6 @@ def _start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff=None,connec
             return _public(record(uid,org,topic,branch_id,key,'stopped',{'action':'stop','reason':'topic_'+topic['status']},'课题处于暂停/归档状态，研究系统不再调度'))
         if service.control_status(uid,org)['paused']:
             return _public(record(uid,org,topic,branch_id,key,'stopped',{'action':'stop','reason':'global_pause'},'研究负责人已暂停全部：不启动新的自动研究动作'))
-        if topic['view_id']!=published_view()['view_id']:
-            return _public(record(uid,org,topic,branch_id,key,'stopped',{'action':'stop','reason':'locked_view_drift'},'课题锁定视图与当前发布视图不一致，研究已停止'))
         k_now=ledger.current_k(ledger._trials(uid,org,topic_id),topic['primary_holding_period']);remaining=int(topic['max_trials'])-k_now
         can_seal=False
         if remaining<=0:
@@ -106,7 +104,9 @@ def _start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff=None,connec
         from .resources import require_config
         from .research_contract import project_contract,METHOD_VERSION
         initial_project=get_project(uid,topic['project_id'])['project']
-        contract=project_contract(initial_project);config=initial_project['config']
+        contract=project_contract(initial_project);config=initial_project['config'];initial_control_epoch=config.get('v5ControlEpoch')
+        manual_marker=config.get('v5ManualVersion') or {}
+        if ((manual_marker.get('branch_id')==branch_id and manual_marker.get('source')=='human_workbench_save') or (branch.get('source')=='manual' and branch.get('parent_id'))) and not handoff:raise WorkflowError('当前有已保存人工版本；请明确从该版本交回，不能让新规划覆盖人工实现')
         decision={'action':'decide','method_version':METHOD_VERSION if contract else 'factor-f0-v1','contract_hash':contract['contract_hash'] if contract else None}
         if handoff:
             project_row=c.execute('SELECT * FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,topic['project_id'])).fetchone()
@@ -115,7 +115,6 @@ def _start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff=None,connec
             if handoff.get('acknowledged') is not True or branch['source']!='manual' or not epoch or epoch!=handoff.get('control_epoch') or config.get('v5ActiveBranch')!=branch_id:
                 raise WorkflowError('请明确确认当前人工分支及控制版本，未从其他分支继续')
             if digest(snapshot(project))!=handoff.get('snapshot_hash'):raise WorkflowError('人工版本已变化，请重新读取并确认交回，未覆盖当前输入')
-            require_config(config)
             for table,clause in [('quant_factor_candidates',"status LIKE '%%_running'"),('quant_factor_iterations',"status IN ('queued','running')"),('quant_factor_sealed_validations',"status IN ('queued','running')")]:
                 if c.execute('SELECT id FROM '+table+' WHERE user_id=%s AND org_id=%s AND project_id=%s AND '+clause+' LIMIT 1',(uid,org,topic['project_id'])).fetchone():raise WorkflowError('当前仍有在途检验，请等待结果落账后交回')
             epoch=str(uuid.uuid4());config['v5ControlEpoch']=epoch
@@ -125,7 +124,6 @@ def _start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff=None,connec
         elif remaining>0:
             project=get_project(uid,topic['project_id'])['project'];config=project['config'];active_branch=config.get('v5ActiveBranch')
             if active_branch and active_branch!=branch_id:raise WorkflowError('当前工程稿绑定另一分支，请明确选择当前版本或接手后继续')
-            require_config(config)
         if contract:
             from .research_method import snapshot as method_snapshot,validate_snapshot
             frozen_method=method_snapshot()
@@ -134,11 +132,18 @@ def _start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff=None,connec
             if prior and (prior_snapshot!=frozen_method or prior['status']=='failed' or (prior.get('decision') or {}).get('recovery_requires_new_run')) and not method_change and not (handoff and prior_snapshot==frozen_method):
                 raise WorkflowError('当前研究方法已更新；请明确使用更新方法创建新运行，原任务、分支及K保留')
             if method_change:
-                if not prior or prior['id']!=method_change.get('previous_run_id') or prior['status'] not in ('failed','stopped') or method_change.get('acknowledged') is not True or method_change.get('expected_method_hash')!=frozen_method['snapshot_hash'] or not config.get('v5ControlEpoch') or method_change.get('expected_control_epoch')!=config.get('v5ControlEpoch'):
+                if not prior or prior['id']!=method_change.get('previous_run_id') or prior['status'] not in ('failed','stopped') or method_change.get('acknowledged') is not True or method_change.get('expected_method_hash')!=frozen_method['snapshot_hash'] or not config.get('v5ControlEpoch') or method_change.get('expected_control_epoch')!=initial_control_epoch:
                     raise WorkflowError('请重新确认上一运行、当前方法与控制版本，未创建新的模型尝试')
                 decision['method_transition']={'previous_run_id':prior['id'],'previous_snapshot_hash':(prior_snapshot or {}).get('snapshot_hash'),'new_snapshot_hash':frozen_method['snapshot_hash'],'reason':str(method_change.get('reason') or '用户明确采用更新后的研究方法')[:1000],'expected_control_epoch':method_change['expected_control_epoch'],'actor_user_id':uid,'at':service.event('method_changed')['at']}
             decision['method_snapshot']=frozen_method
         decision['control_epoch']=config.get('v5ControlEpoch')
+        try:
+            from .locked_data import for_topic
+            for_topic(topic)
+            require_config(config)
+        except (WorkflowError,ValueError,OSError) as exc:
+            decision['technical_wait']={'kind':'fixed_data_or_resources','message':str(exc)[:1000]}
+            return _public(record(uid,org,topic,branch_id,key,'stopped',decision,'等待固定数据与计算范围确认：'+str(exc)[:800]))
         from . import research_queue
         if research_queue.enabled():decision['queue_deployment']=research_queue.DEPLOYMENT_ID
         saved=record(uid,org,topic,branch_id,key,'queued',decision)
@@ -278,7 +283,7 @@ def resume(uid, org, run_id):
             topic = _topic(uid, org, topic_id)
             if topic["status"] != 'active' or service.control_status(uid, org)["paused"]:
                 raise WorkflowError("研究已暂停，请先恢复任务与自动研究")
-            recovery_only=topic["view_id"] != published_view()["view_id"]
+            recovery_only=not service.locked_view_available(topic)
             if recovery_only and (not service.locked_view_available(topic) or not service.has_recoverable_run(uid,org,topic['project_id'])):
                 raise WorkflowError("固定数据版本目前无法确认或无原任务可恢复；不会用当前数据替换原计划")
             if not recovery_only:
@@ -291,6 +296,7 @@ def resume(uid, org, run_id):
                 from .research_contract import project_contract
                 saved_method=(row.get('decision') or {}).get('method_version','legacy')
                 contract=project_contract(project)
+                if contract and saved_method!='bounded-factor-rd-v2':raise WorkflowError('原运行没有冻结的研究方法身份；请明确新建运行继续，原任务和K保留')
                 if saved_method=='bounded-factor-rd-v2':
                     from .research_method import validate_snapshot
                     validate_snapshot((row.get('decision') or {}).get('method_snapshot'))
@@ -300,6 +306,8 @@ def resume(uid, org, run_id):
                 raise WorkflowError("此运行已达到决策次数上限，原记录保留，请人工复盘")
             decision=dict(row.get('decision') or {})
             if decision.get('recovery_requires_new_run'):raise WorkflowError('原动作中途检查点需要确认；请明确新建运行继续，未自动重放旧动作')
+            if decision.get('technical_wait'):
+                decision['technical_wait_history']=[*(decision.get('technical_wait_history') or []),{**decision.pop('technical_wait'),'resumed_at':service.event('dependency_resumed')['at']}][-20:]
             decision['recovery_only']=recovery_only
             if not recovery_only:decision['control_epoch']=config.get('v5ControlEpoch')
             if research_queue.enabled():

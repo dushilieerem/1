@@ -5,6 +5,7 @@ root=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(root/'backend'))
 from services.core.env_config import load_env,env
 load_env()
+os.environ['SVQUANT_TEST_SKIP_SCHEMA_BOOTSTRAP']='1' # Reviewed migrations only, no sample/bootstrap writes.
 assert urlparse(env('DATABASE_URL','')).path == '/svquant_dev', 'development database required'
 assert env('DEV_SKIP_AUTH','0') == '0', 'authentication must remain enabled'
 from services.auth.auth_store import validate_auth_config

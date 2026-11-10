@@ -77,14 +77,9 @@ def current(uid,org,cid):
     return public(row)
 
 def _locked_view_error(uid,org,project_id):
-    """A topic locks its view; never silently compute a locked topic on a newer view."""
-    with get_conn() as c:
-        topic=c.execute("SELECT view_id FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s",(uid,org,project_id)).fetchone()
-    if not topic:return None
-    from services.workflow_workspace.platform_data import published_view
-    current=published_view()['view_id']
-    if topic['view_id']!=current:
-        return f"课题锁定数据视图 {topic['view_id']}，当前发布视图为 {current}；请新建计划版本/课题，不能把旧台账接到新视图"
+    from .locked_data import for_project
+    try:for_project(uid,org,project_id,connection_factory=get_conn)
+    except (WorkflowError,ValueError,OSError) as exc:return str(exc)
     return None
 
 
@@ -235,6 +230,7 @@ def _run_once(uid,org,cid,phase,executor='human',f0_run_id=None,recovery_only=Fa
         snap=row['snapshot']; req=copy.deepcopy(snap['request']);plan=snap['plan']
         req.update(start=plan[phase+'Start'],end=plan[phase+'End'])
         prior=dict((row.get('evidence') or {}).get(phase) or {})
+        if prior.get('request'):req=copy.deepcopy(prior['request'])
         rid=prior.get('run_id')
         result=prior.get('result')
         if not result:
@@ -254,6 +250,8 @@ def _run_once(uid,org,cid,phase,executor='human',f0_run_id=None,recovery_only=Fa
                         store.update(uid,org,cid,running,event('implementation_check_failed',message=str(exc)),{'source_contract':{'passed':False,'error':str(exc)}})
                         raise WorkflowError(str(exc)) from exc
                     if store.update(uid,org,cid,running,event('implementation_checked',message='实现一致性与有界因果性检查通过；不代表研究达标'),{'source_contract':source_check}) is False:return
+                from .locked_data import bind,for_project
+                req=bind(req,for_project(uid,org,row['project_id'],connection_factory=get_conn))
                 from .resources import require
                 try:resource_receipt=require('factor',req)
                 except WorkflowError:
@@ -285,6 +283,8 @@ def _run_once(uid,org,cid,phase,executor='human',f0_run_id=None,recovery_only=Fa
             else:
                 raise WorkflowError('计算结果确认超时，原任务身份保留；稍后继续查询，不重复提交')
             result=task.get('result') or {}
+        from .locked_data import confirm_result
+        confirm_result(result,req)
         meta=result.get('meta') or {}
         expected=prior.get('expected_identity') or ((prior.get('result') or {}).get('meta') if recovery_only else None)
         if recovery_only and not expected:raise WorkflowError('原结果已取回，但缺少可核对的数据与源码身份，需人工确认，未纳入正式证据')
@@ -334,7 +334,10 @@ def _run_once(uid,org,cid,phase,executor='human',f0_run_id=None,recovery_only=Fa
                 proxy_cancel_factor_run(rid,target=original['compute_backend']) if original.get('compute_backend') else legacy_cancel_factor_run(rid)
             return
         block=dict((latest.get('evidence') or {}).get(phase) or {})
-        block.update(interrupted=not bool(locals().get('implementation_check_failed') or locals().get('resource_check_failed')),message=str(exc)[:1200])
+        from .research_queue import SubmissionNotDispatched
+        not_dispatched=isinstance(exc,SubmissionNotDispatched)
+        block.update(interrupted=not bool(not_dispatched or locals().get('implementation_check_failed') or locals().get('resource_check_failed')),message=str(exc)[:1200])
+        if not_dispatched:block.update(submission_started=False,preflight_failure='control_version')
         if locals().get('implementation_check_failed'):block['preflight_failure']='implementation'
         if locals().get('resource_check_failed'):block['preflight_failure']='resource'
         store.update(uid,org,cid,phase+'_error',event(phase+'_error',message=str(exc)[:1200]),{phase:block})

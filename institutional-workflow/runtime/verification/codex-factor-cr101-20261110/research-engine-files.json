@@ -1,0 +1,18 @@
+{
+  "branch": "codex/factor-novelty-r4",
+  "head": "3bd36a2be90ca61998ac93cbda19e65239180373",
+  "pushed": true,
+  "files": [
+    "app/api/routes/novelty.py",
+    "app/database/data/providers/field_parquet_provider.py",
+    "app/schemas/backtest.py",
+    "app/services/controlled/policy.py",
+    "app/services/controlled/worker.py",
+    "app/services/data/manifest.py",
+    "app/services/factor/runner.py",
+    "app/schemas/frozen_data.py",
+    "app/services/data/frozen_view.py",
+    "tests/test_frozen_data_view.py"
+  ],
+  "not_merged_or_deployed": true
+}

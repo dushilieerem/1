@@ -69,6 +69,8 @@ def workbench(uid,org,project_id):
  with get_conn() as c:row=c.execute('SELECT * FROM detect_projects WHERE user_id=%s AND id=%s',(uid,project_id)).fetchone()
  if not row:raise KeyError(project_id)
  project=_row_project(dict(row));config=project['config'];out={'branch_id':config.get('v5ActiveBranch'),'control_epoch':config.get('v5ControlEpoch'),'factor_name':(config.get('factorCodes') or [''])[0]}
+ marker=config.get('v5ManualVersion') or {}
+ out['requires_handoff']=bool(marker.get('branch_id')==out['branch_id'] and marker.get('source')=='human_workbench_save')
  try:out.update(snapshot_hash=digest(snapshot(project)),can_handoff=bool(out['branch_id'] and out['control_epoch']))
  except WorkflowError as exc:out.update(snapshot_hash=None,can_handoff=False,reason=str(exc))
  return out
@@ -94,5 +96,7 @@ def save_workbench(uid,org,project_id,payload):
   draft=config.get('draftFactor') or {}
   check_project({'id':project_id,'config':config},draft.get('body') or None,draft.get('name'))
   config['v5ControlEpoch']=str(uuid.uuid4())
+  if str((config.get('draftFactor') or {}).get('body') or '').strip() or config.get('factorCodes'):
+   config['v5ManualVersion']={'source':'human_workbench_save','branch_id':config['v5ActiveBranch'],'control_epoch':config['v5ControlEpoch']}
   saved=c.execute('UPDATE detect_projects SET name=%s,factor_name=%s,description=%s,config=%s::jsonb,updated_at=NOW() WHERE user_id=%s AND id=%s RETURNING *',(str(payload.get('name') or row['name']),str(payload.get('factorName') or row['factor_name']),str(payload.get('description') or ''),store.encode(config),uid,project_id)).fetchone()
   return {'ok':True,'user_id':uid,'project':_row_project(dict(saved))}

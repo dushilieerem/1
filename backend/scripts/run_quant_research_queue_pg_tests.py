@@ -1,6 +1,8 @@
 import os,sys
 from pathlib import Path
-if sys.argv[1:]!=['--allow-isolated-dev']:raise SystemExit('Requires --allow-isolated-dev')
+if not sys.argv[1:] or sys.argv[1]!='--allow-isolated-dev':raise SystemExit('Requires --allow-isolated-dev')
+case=sys.argv[2][7:] if len(sys.argv)==3 and sys.argv[2].startswith('--case=') else None
+if len(sys.argv)>2 and case is None:raise SystemExit('Only an explicit known --case is allowed')
 root=Path(__file__).resolve().parents[1];os.chdir(root);sys.path.insert(0,str(root));os.environ['SVQUANT_TEST_SKIP_SCHEMA_BOOTSTRAP']='1';os.environ['QUANT_FACTOR_PG_INTEGRATION']='1'
 import pytest
 prefix='tests/test_quant_research_queue_pg.py::IsolatedQueueTests::'
@@ -8,6 +10,9 @@ names=['test_two_database_claimants_get_one_root_and_children_can_run_while_pare
 from unittest.mock import patch
 from services.core import db
 import socket
+if case is not None:
+ if case not in names:raise SystemExit('Unknown owned fixture case')
+ names=[case]
 original_connect=socket.socket.connect
 def forbid(*a,**k):raise AssertionError('OWNED PG TEST: pooled/public database or network access forbidden; use explicit fixture connection')
 def connect(sock,*a,**k):

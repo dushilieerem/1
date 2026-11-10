@@ -1,0 +1,7 @@
+Explicit frozen published data for institution factor research
+
+The private controlled instance can bind factor development, novelty and heldout requests to an explicit published view instead of the changing current alias. A server-only publication home whitelist resolves supported views and immutable releases; the child verifies actual daily bytes, aggregate identity, logical symlink mapping and the physical paths selected by the original provider before/after computation. Results carry verified actual identity. Requests omitting the new field keep their existing behavior; an explicit frozen request on an uncontrolled instance is rejected rather than silently using current. RE_CONTROLLED_EXECUTION_REQUIRED remains opt-in; shared instances need no configuration change.
+
+Validation:18 focused tests passed, including original factor/novelty engines on synthetic Parquet, legal release symlinks, outside paths, changed bytes, swapped/restored links, provider source proof, dedup keys and legacy mode. Peak test RSS175431680 bytes; no real market backtest/model/full reference comparison. Resource policy/single child limits unchanged. Actual frozen old view metadata resolved; real660MB file byte verification has not been run by the developer.
+
+Deployment is confined to our existing18804 checkout/branch, with RE_FROZEN_VIEW_HOME set to the reviewed physical DATA_HOME. No shared service/current change and no master merge/tag. Existing historical PR27 status has not been verified; pushing this branch does not itself prove the PR was updated or approved.

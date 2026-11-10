@@ -12,7 +12,9 @@ class IsolatedQueueTests(IsolatedBudgetPostgresTests):
  def setUpClass(cls):
   super().setUpClass()
   try:
-   with cls.connection() as c:c.execute((Path(__file__).parents[1]/'migrations/0040_quant_research_queue.sql').read_text())
+   with cls.connection() as c:
+    c.execute((Path(__file__).parents[1]/'migrations/0040_quant_research_queue.sql').read_text())
+    c.execute('CREATE TABLE quant_factor_org_controls(org_id bigint,paused boolean)')
   except BaseException:cls.tearDownClass();raise
  def setUp(self):
   super().setUp()
@@ -117,10 +119,13 @@ class IsolatedQueueTests(IsolatedBudgetPostgresTests):
    captured.append(child);created.set();self.assertTrue(child_done.wait(3));return {'status':'stopped','reason':'fixture completed'}
   def generate(*args,**kwargs):
    self.assertIsNotNone(q.current_id());q.require_context()
+   with self.connection() as c:c.execute('INSERT INTO quant_factor_org_controls VALUES(%s,TRUE)',(self.org,))
+   with self.assertRaisesRegex(WorkflowError,'自动研究已暂停'):q.require_context()
+   with self.connection() as c:c.execute('DELETE FROM quant_factor_org_controls WHERE org_id=%s',(self.org,))
    return {'status':'ready','validation':{'status':'passed'},'factor':{'factor_code':'def factor(self): return self.close','factor_name':'factor'}}
   with ExitStack() as stack:
    for module,name,value in [(agent_jobs,'get_conn',self.connection),(ledger,'get_conn',self.connection),(agent_jobs,'get_project',lambda *a:{'project':project}),(agent_jobs,'assert_quota_available',lambda *a:None),(f0,'published_view',lambda:{'view_id':'view'}),(service,'control_status',lambda *a:{'paused':False}),(service,'recover_pending',lambda *a,**k:None),(service,'backfill_terminal_trials',lambda *a,**k:None),(f0.f0_agent,'_context',lambda *a:{}),(f0.f0_agent,'execute',tool),(f0.f0_agent,'decide',lambda *a:(f0.f0_agent.Decision(action='run_test',branch_id='branch',rationale='fixture'),{}))]:stack.enter_context(patch.object(module,name,value))
-   stack.enter_context(patch.object(detect_store,'get_project',return_value={'project':project}));stack.enter_context(patch('services.quant_factor.resources.require_config'));stack.enter_context(patch('services.quant_factor.research_contract.project_contract',return_value=None));stack.enter_context(patch('services.quant_factor.research_contract.check_project',return_value=None));stack.enter_context(patch('services.quant_factor.generation.generate',side_effect=generate));stack.enter_context(patch('services.quant_factor.causality.diagnose_source',return_value={'contract':{'fields':['close']}}))
+   stack.enter_context(patch.object(detect_store,'get_project',return_value={'project':project}));stack.enter_context(patch('services.quant_factor.resources.require_config'));stack.enter_context(patch('services.quant_factor.locked_data.for_topic',return_value={}));stack.enter_context(patch('services.quant_factor.research_contract.project_contract',return_value=None));stack.enter_context(patch('services.quant_factor.research_contract.check_project',return_value=None));stack.enter_context(patch('services.quant_factor.generation.generate',side_effect=generate));stack.enter_context(patch('services.quant_factor.causality.diagnose_source',return_value={'contract':{'fields':['close']}}))
    run=f0.start(self.uid,self.org,'topic','branch','real-entry');parent=q.claim();self.assertEqual(parent['object_id'],run['id'])
    with ThreadPoolExecutor(max_workers=1) as pool:
     future=pool.submit(q.run_job,parent,q._handler);self.assertTrue(created.wait(2));child=q.claim();self.assertEqual(child['kind'],'agent');self.assertEqual(child['root_id'],parent['id'])

@@ -28,6 +28,15 @@ TASK = "quant.factor.f0_decider"
 ACTIONS = {"run_test", "revise", "pivot", "stop", "request_seal"}
 
 
+def _implementation_wait_seconds(job):
+    # One implementation plus at most one explicit syntax-repair call. This is
+    # a technical wait aligned with the frozen per-physical-call timeout.
+    from .research_method import IMPLEMENTER,MODEL_TIMEOUT_SECONDS
+    role=(((job.get('input') or {}).get('method_snapshot') or {}).get('roles') or {}).get(IMPLEMENTER) or {}
+    timeout=role.get('timeout_seconds',MODEL_TIMEOUT_SECONDS)
+    return int(timeout)*2+120
+
+
 class Decision(BaseModel):
     model_config = ConfigDict(extra="forbid")
     action: str
@@ -289,6 +298,7 @@ def _writable_project(uid,org,project,topic_id,run_id,worker_epoch=None):
 
 
 def _save_generated(c,uid,project,config,description):
+    config.pop('v5ManualVersion',None) # New Agent implementation is a new source of authorship.
     c.execute('UPDATE detect_projects SET factor_name=%s,description=%s,config=%s::jsonb,updated_at=NOW() WHERE user_id=%s AND id=%s',((config.get('factorCodes') or [project.get('factorName','')])[0],description,service.store.encode(config),uid,project['id']))
 
 
@@ -311,7 +321,7 @@ def _ensure_initial_implementation(uid, org, project_id, topic_id, branch_id, ru
         "name": (cfg.get("draftFactor") or {}).get("name") or "f0_factor",
         "code": "",
     }, f"f0-initial:{run_id}:{uuid.uuid4().hex[:8]}",controller={'run_id':run_id,'worker_epoch':worker_epoch,'control_epoch':cfg.get('v5ControlEpoch')} if worker_epoch else None)
-    deadline = time.monotonic() + 420
+    deadline = time.monotonic() + _implementation_wait_seconds(job)
     while job["status"] in agent_jobs.ACTIVE and time.monotonic() < deadline:
         time.sleep(2)
         job = agent_jobs.read(uid, org, job["id"])
@@ -444,7 +454,7 @@ def _revise(uid, org, project_id, parent_id, decision, run_id, topic_id, scope_o
         "target": plan.get("target", "未来1个交易日收益"),
         "registeredRules": json.dumps({**(plan.get("rules") or {}),"icMetric":(plan.get("rules") or {}).get("icMetric","ic")},ensure_ascii=False), "name": name, "code": old_code,
         "mode": "improve"}, f"f0:{run_id}:{uuid.uuid4().hex[:8]}",controller={'run_id':run_id,'worker_epoch':worker_epoch,'control_epoch':cfg.get('v5ControlEpoch')} if worker_epoch else None)
-    deadline = time.monotonic() + 420
+    deadline = time.monotonic() + _implementation_wait_seconds(job)
     while job["status"] in agent_jobs.ACTIVE and time.monotonic() < deadline:
         time.sleep(2)
         job = agent_jobs.read(uid, org, job["id"])

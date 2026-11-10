@@ -80,11 +80,12 @@ def _render(**kw):
     return render_research_report(**payload)
 
 
-def test_report_has_demo_mark_and_sections() -> None:
+def test_report_has_research_mark_and_sections() -> None:
     out = _render()
     assert "贵州茅台" in out
     assert "600519.SH" in out
-    assert "SVQUANT-INST-DEMO" in out
+    assert "SVQUANT-INST-RESEARCH" in out
+    assert "SVQUANT-INST-DEMO" not in out
     assert "v3" in out
     assert "有条件通过" in out
     assert "估值与价格" in out

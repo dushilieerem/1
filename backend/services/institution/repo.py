@@ -73,21 +73,20 @@ def portfolio(scope: OrgScope, *, conn=None):
         ).fetchone()
         if not pf:
             return None, []
-        latest = c.execute(
-            "SELECT MAX(as_of) AS d FROM inst_position_snapshot WHERE portfolio_id=%s",
-            (pf["id"],),
-        ).fetchone()
-        if not latest or not latest["d"]:
-            return dict(pf), []
         rows = c.execute(
             """
-            SELECT ps.*, co.id AS company_id, co.name, co.industry, co.market, co.data_status
-              FROM inst_position_snapshot ps
-              LEFT JOIN inst_company co ON co.symbol=ps.symbol AND co.org_id=%s
-             WHERE ps.portfolio_id=%s AND ps.as_of=%s AND ps.qty > 0
-             ORDER BY ps.market_value DESC
+            SELECT * FROM (
+              SELECT DISTINCT ON (ps.symbol)
+                     ps.*, co.id AS company_id, co.name, co.industry, co.market, co.data_status
+                FROM inst_position_snapshot ps
+                LEFT JOIN inst_company co ON co.symbol=ps.symbol AND co.org_id=%s
+               WHERE ps.portfolio_id=%s
+               ORDER BY ps.symbol, ps.as_of DESC, ps.id DESC
+            ) latest
+             WHERE latest.qty > 0
+             ORDER BY latest.market_value DESC
             """,
-            (scope.org_id, pf["id"], latest["d"]),
+            (scope.org_id, pf["id"]),
         ).fetchall()
         return dict(pf), [dict(r) for r in rows]
 
@@ -133,7 +132,8 @@ def monitor(scope: OrgScope) -> dict[str, list[dict[str, Any]]]:
     with get_conn() as conn:
         events = conn.execute(
             "SELECT e.*, co.symbol, co.name AS company_name FROM inst_monitor_event e "
-            "LEFT JOIN inst_company co ON co.id=e.company_id WHERE e.org_id=%s ORDER BY e.created_at DESC LIMIT 50",
+            "LEFT JOIN inst_company co ON co.id=e.company_id AND co.org_id=e.org_id "
+            "WHERE e.org_id=%s ORDER BY e.created_at DESC LIMIT 50",
             (scope.org_id,),
         ).fetchall()
         exits = conn.execute(

@@ -12,7 +12,45 @@ import pytest
 from services.core.db import get_conn
 from services.institution import inst_service as svc
 
-ORG_ID = 1
+ORG_ID = 0
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _v3_org():
+    """自建测试机构，不依赖演示种子或固定 ID。"""
+    global ORG_ID
+    tag = uuid.uuid4().hex[:8]
+    with get_conn() as conn:
+        org = conn.execute(
+            "INSERT INTO inst_orgs (code, name_cn) VALUES (%s,%s) RETURNING id",
+            (f"v3-{tag}", f"v3 流程测试机构 {tag}"),
+        ).fetchone()
+        ORG_ID = int(org["id"])
+        user_ids: list[int] = []
+        for role in ("manager", "partner", "risk", "chairman", "execution", "monitoring"):
+            user = conn.execute(
+                "INSERT INTO users (username, password_hash, role, status, display_name) "
+                "VALUES (%s,'x','user','active',%s) RETURNING id",
+                (f"v3_{role}_{tag}", f"v3 测试{role} {tag}"),
+            ).fetchone()
+            user_ids.append(int(user["id"]))
+            conn.execute(
+                "INSERT INTO inst_members (org_id, user_id, role, title_cn, status) "
+                "VALUES (%s,%s,%s,%s,'active')",
+                (ORG_ID, int(user["id"]), role, f"测试{role}"),
+            )
+    yield ORG_ID
+    with get_conn() as conn:
+        conn.execute(
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='inst_audit_event_worm')"
+            " THEN ALTER TABLE inst_audit_event DISABLE TRIGGER inst_audit_event_worm; END IF; END $$"
+        )
+        conn.execute("DELETE FROM inst_orgs WHERE id=%s", (ORG_ID,))
+        conn.execute("DELETE FROM users WHERE id = ANY(%s)", (user_ids,))
+        conn.execute(
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='inst_audit_event_worm')"
+            " THEN ALTER TABLE inst_audit_event ENABLE TRIGGER inst_audit_event_worm; END IF; END $$"
+        )
 
 
 def _dims(low_key: str | None = None) -> list[dict]:

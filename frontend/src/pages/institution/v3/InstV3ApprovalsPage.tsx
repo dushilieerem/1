@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, Check, ShieldAlert, X } from "lucide-react";
-import { dedupeBy, latestByKey } from "@/lib/instDedupe";
+import { dedupeBy } from "@/lib/instDedupe";
 import { instApi, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 
@@ -219,6 +219,7 @@ export function InstV3ApprovalsPage() {
   const [memoBusy, setMemoBusy] = useState(false);
   const [memoError, setMemoError] = useState<string | null>(null);
 
+  const detailSeq = useRef(0);
   const selectedId = parseProposalId(params.get("key"));
   const role = session.role;
   const canApprove = ["partner", "risk", "chairman"].includes(role);
@@ -238,12 +239,14 @@ export function InstV3ApprovalsPage() {
       const seen = new Set(rows.map((x) => x.id));
       rows = rows.concat((reviewed.items || []).filter((x) => !seen.has(x.id)));
     }
-    setItems(latestByKey(rows, (p) => p.symbol, (p) => `${p.updated_at || ""}|${String(p.id).padStart(12, "0")}`));
+    setItems(dedupeBy(rows, (p) => p.id));
     return rows;
   };
 
   const loadDetail = async (id: number) => {
+    const seq = ++detailSeq.current;
     const d = await instApi<ProposalDetail>(`/proposals/${id}`);
+    if (seq !== detailSeq.current) return;
     setDetail(d);
     setComment("");
     setConditions("");
@@ -309,7 +312,6 @@ export function InstV3ApprovalsPage() {
 
   const selectProposal = (id: number) => {
     setParams({ key: `proposal:${id}` });
-    loadDetail(id).catch((e: Error) => setError(e.message));
   };
 
   const act = async (kind: "partner" | "risk" | "chairman", decision: string) => {

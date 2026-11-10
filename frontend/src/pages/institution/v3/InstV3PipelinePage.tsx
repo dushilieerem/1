@@ -77,7 +77,7 @@ export function InstV3PipelinePage() {
           <button key={s.stage_no} className={`v3-rail-cell${stage === s.stage_no ? " on" : ""}`} onClick={() => setStage(stage === s.stage_no ? null : s.stage_no)}>
             <span className="no">{String(s.stage_no).padStart(2, "0")}</span>
             <span className="nm">{s.stage_name}</span>
-            <span className="ct">{s.count}<small>个</small></span>
+            <span className="ct">{s.truncated ? `${s.count} / ${s.total_count ?? s.count}` : s.count}<small>个</small></span>
           </button>
         ))}
       </div>

@@ -313,7 +313,7 @@ DDL: tuple[str, ...] = (
       approver_member_id  BIGINT REFERENCES inst_members(id) ON DELETE SET NULL,
       decision            TEXT NOT NULL,
       comment             TEXT,
-      policy_version      TEXT NOT NULL DEFAULT 'demo-v1',
+      policy_version      TEXT NOT NULL DEFAULT 'inst-policy-v1',
       decided_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT inst_approval_step_chk CHECK (step IN ('partner','chairman','risk_precheck')),
       CONSTRAINT inst_approval_decision_chk CHECK (decision IN ('approve','conditional','reject','return','veto','pass','block')),
@@ -425,7 +425,7 @@ DDL: tuple[str, ...] = (
       object_id       BIGINT,
       before          JSONB,
       after           JSONB,
-      policy_version  TEXT NOT NULL DEFAULT 'demo-v1',
+      policy_version  TEXT NOT NULL DEFAULT 'inst-policy-v1',
       ip              TEXT,
       created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
@@ -498,11 +498,13 @@ INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_inst_company_symbol ON inst_company (symbol, market)",
     "CREATE INDEX IF NOT EXISTS idx_inst_idea_decision_company ON inst_idea_decision (company_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_research_case_company ON inst_research_case (company_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_research_case_org_company ON inst_research_case (org_id, company_id, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_research_case_stage ON inst_research_case (org_id, stage_no, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_case_transition_case ON inst_case_transition (case_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_gate_run_case ON inst_gate_run (case_id, gate_key, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_research_version_case ON inst_research_version (case_id, version_no DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_proposal_stale ON inst_proposal (org_id, stale_at)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_proposal_case_status ON inst_proposal (case_id, status)",
     "CREATE INDEX IF NOT EXISTS idx_inst_evidence_case ON inst_evidence (case_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_debate_session_case ON inst_debate_session (case_id, started_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_debate_argument_session ON inst_debate_argument (session_id, side, round)",
@@ -513,6 +515,7 @@ INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_inst_proposal_org ON inst_proposal (org_id, status, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_proposal_version_prop ON inst_proposal_version (proposal_id, version_no DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_authorization_status ON inst_authorization (status, issued_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_authorization_pv ON inst_authorization (proposal_version_id, status)",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_inst_approval_version_step_approver "
     "ON inst_approval (proposal_version_id, step, approver_member_id)",
     "CREATE INDEX IF NOT EXISTS idx_inst_position_portfolio ON inst_position_snapshot (portfolio_id, as_of DESC)",
@@ -621,6 +624,8 @@ def _backfill_case_stages(conn) -> None:
 
 def ensure_inst_business_schema(*, include_indexes: bool = True) -> None:
     with get_conn() as conn:
+        # 多 worker 同时启动时串行化 DDL，避免争用 ACCESS EXCLUSIVE 锁。
+        conn.execute("SELECT pg_advisory_xact_lock(7400)")
         for ddl in DDL:
             conn.execute(ddl)
         # 兼容已存在的旧表：补退出案关联的研究案。

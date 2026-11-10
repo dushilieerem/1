@@ -69,7 +69,7 @@ ROLE_WORKSPACE_ACCESS: dict[str, dict[str, Access]] = {
         "approvals": "write",
         "execution": "read",
         "monitor": "write",
-        "about": "read",
+        "about": "write",
     },
     "partner": {
         "overview": "read",
@@ -221,8 +221,8 @@ def ensure_inst_schema() -> None:
 
 
 def seed_inst_demo() -> dict[str, Any]:
-    """幂等写入演示机构与六个角色账号；INST_SEED_DEMO=0 可关闭。"""
-    if (env("INST_SEED_DEMO", "1") or "1").strip() in {"0", "false", "False", "no"}:
+    """幂等写入演示机构与六个角色账号；默认关闭，需显式 INST_SEED_DEMO=1。"""
+    if (env("INST_SEED_DEMO", "0") or "0").strip() in {"0", "false", "False", "no"}:
         return {"ok": True, "skipped": True}
 
     ensure_inst_schema()

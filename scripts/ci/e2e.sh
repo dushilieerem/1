@@ -80,6 +80,8 @@ log "启动后端 :$BACKEND_PORT"
   SVQUANT_BACKEND_PORT="$BACKEND_PORT" \
   DEV_SKIP_AUTH=0 \
   INST_E2E_ALLOW_WRITE=1 \
+  INST_SEED_DEMO=1 \
+  INST_DEMO_PASSWORD="${INST_PASSWORD:-inst123456}" \
   LLM_API_KEY= LLM_BASE_URL= \
   nohup "$PYTHON" -u api_server.py > "/tmp/svquant-e2e-backend-$BACKEND_PORT.log" 2>&1 &
   echo $! > "/tmp/svquant-e2e-backend-$BACKEND_PORT.pid"

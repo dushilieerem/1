@@ -165,9 +165,9 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
     version_id = int(research["versions"][0]["id"])
     _ok(
         client.post(
-            f"/api/inst/research/{version_id}/review",
-            json={"decision": "approve", "comment": "通过"},
-            headers=_h(partner),
+            f"/api/inst/research/{version_id}/lock",
+            json={"allow_gaps": True, "comment": "测试：显式带缺口锁定"},
+            headers=_h(manager),
         )
     )
     _ok(
@@ -179,7 +179,16 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
     proposal = _ok(
         client.post(
             f"/api/inst/cases/{case_id}/proposals",
-            json={"direction": "buy", "target_weight": 0.05},
+            json={
+                "direction": "buy",
+                "target_weight": 0.05,
+                "price_low": 1,
+                "price_high": 1000,
+                "funding_source": "现金",
+                "valid_until": "2099-12-31",
+                "monitoring": ["季度复核"],
+                "investment_opinion": "E2E：关键假设成立、估值有安全边际",
+            },
             headers=_h(manager),
         )
     )
@@ -318,11 +327,56 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
     )
     assert review["thesis_verdict"] == "wrong"
 
-    # 风控阻断后 Chairman 不能再批准
+    # 风控阻断后 Chairman 不能再批准：用一只新公司走完整前置流程，避免复用已进入退出研究的案。
+    tag = uuid.uuid4().hex[:8]
+    with get_conn() as conn:
+        risk_company = conn.execute(
+            "INSERT INTO inst_company (org_id, symbol, name, market, industry, ref_price) "
+            "VALUES (%s,%s,%s,'CN','测试行业',100) RETURNING id",
+            (fixture["org_id"], f"RSK{tag[:5].upper()}.SH", f"风控测试公司{tag}"),
+        ).fetchone()
+    risk_case = _ok(
+        client.post(
+            "/api/inst/cases",
+            json={"company_id": int(risk_company["id"])},
+            headers=_h(manager),
+        )
+    )
+    risk_case_id = int(risk_case["id"])
+    risk_research = _ok(
+        client.post(
+            f"/api/inst/cases/{risk_case_id}/research",
+            json={"mode": "full"},
+            headers=_h(manager),
+        )
+    )
+    _ok(
+        client.post(
+            f"/api/inst/research/{int(risk_research['versions'][0]['id'])}/lock",
+            json={"allow_gaps": True, "comment": "风控阻断测试：显式带缺口锁定"},
+            headers=_h(manager),
+        )
+    )
+    _ok(
+        client.post(
+            f"/api/inst/cases/{risk_case_id}/debate",
+            json={"use_ai": False},
+            headers=_h(manager),
+        )
+    )
     blocked_proposal = _ok(
         client.post(
-            f"/api/inst/cases/{case_id}/proposals",
-            json={"direction": "buy", "target_weight": 0.30},
+            f"/api/inst/cases/{risk_case_id}/proposals",
+            json={
+                "direction": "buy",
+                "target_weight": 0.30,
+                "price_low": 1,
+                "price_high": 1000,
+                "funding_source": "现金",
+                "valid_until": "2099-12-31",
+                "monitoring": ["季度复核"],
+                "investment_opinion": "风控阻断测试",
+            },
             headers=_h(manager),
         )
     )

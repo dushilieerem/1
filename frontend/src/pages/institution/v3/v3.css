@@ -393,10 +393,13 @@
   --v3-faint: #6b6370;
   --v3-gold: #8a5f18;
   --v3-gold-strong: #7a5212;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 .inst-v3 * { font-variant-numeric: tabular-nums; }
-.inst-v3 * { font-size: 12px !important; }
+/* 字号阶梯 11/12/16/22：所有后代继承基础 12px（阻止 small/表单默认缩小），
+   具体阶梯类与显式内联字号仍可覆盖，不再用通配 !important 压死。 */
+.inst-v3 :where(*) { font-size: inherit; }
 .inst-v3 .v3-eyebrow,
 .inst-v3 .v3-chip,
 .inst-v3 .v3-nav-label,
@@ -591,7 +594,8 @@
 .inst-v3 .v3-search-state { padding: 12px 16px; font-size: 11px; color: var(--v3-muted); text-align: center; }
 .inst-v3 .v3-search-state.error { color: var(--v3-bad); }
 .inst-v3 .v3-search-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 8px 12px; border: 0; border-radius: 10px; background: #fff; text-align: left; cursor: pointer; }
-.inst-v3 .v3-search-item:hover { background: var(--v3-bg-2); }
+.inst-v3 .v3-search-item:hover,
+.inst-v3 .v3-search-item.on { background: var(--v3-bg-2); }
 .inst-v3 .v3-search-item:disabled { opacity: .6; cursor: wait; }
 .inst-v3 .v3-search-main { min-width: 0; }
 .inst-v3 .v3-search-main b { display: block; font-size: 12px; font-weight: 600; color: var(--v3-ink); }

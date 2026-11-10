@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, RefreshCw, Sparkles } from "lucide-react";
 import { dedupeBy, latestByKey } from "@/lib/instDedupe";
@@ -116,6 +116,7 @@ export function InstV3ResearchPage() {
   const [reviewNote, setReviewNote] = useState("");
   const [allowGaps, setAllowGaps] = useState(false);
 
+  const detailSeq = useRef(0);
   const selectedId = currentCaseId(params.get("key"));
 
   const loadCases = async () => {
@@ -126,22 +127,27 @@ export function InstV3ResearchPage() {
   };
 
   const loadDetail = async (id: number) => {
+    const seq = ++detailSeq.current;
+    setGate(null);
+    setGateLoading(true);
     const d = await instApi<CaseItem>(`/cases/${id}`);
+    if (seq !== detailSeq.current) return d;
     setDetail(d);
     const version = d.versions?.[0];
     if (version) {
       const found = (version.six_dim || []).find((x) => x.key === dimKey);
       if (!found && version.six_dim?.length) setDimKey(version.six_dim[0].key);
-      setGateLoading(true);
       try {
-        setGate(await instApi<ResearchGate>(`/research/${version.id}/gate`));
+        const nextGate = await instApi<ResearchGate>(`/research/${version.id}/gate`);
+        if (seq === detailSeq.current) setGate(nextGate);
       } catch {
-        setGate(null);
+        if (seq === detailSeq.current) setGate(null);
       } finally {
-        setGateLoading(false);
+        if (seq === detailSeq.current) setGateLoading(false);
       }
     } else {
       setGate(null);
+      setGateLoading(false);
     }
     return d;
   };
@@ -163,9 +169,12 @@ export function InstV3ResearchPage() {
         if (!alive) return;
         const id = selectedId || items[0]?.id || null;
         if (id) {
-          if (!selectedId) setParams({ key: `case:${id}` }, { replace: true });
-          await loadDetail(id);
-          await loadMemo(id);
+          if (!selectedId) {
+            setParams({ key: `case:${id}` }, { replace: true });
+          } else {
+            await loadDetail(id);
+            await loadMemo(id);
+          }
         }
       })
       .catch((e: Error) => { if (alive) setError(e.message); })
@@ -489,13 +498,16 @@ export function InstV3ResearchPage() {
                 <div className="v3-note" style={{ marginTop: 8 }}>门禁仍有阻断项；请回上一步补齐六维或重跑对应维度。确实无法补齐时，可显式带缺口锁定并记录。</div>
               ) : null}
 
+              {!locked && !gateLoading && gate === null ? (
+                <div className="v3-note" style={{ marginTop: 8 }}>门禁未返回，暂不能锁定；请刷新页面或重新打开该研究案。</div>
+              ) : null}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12, alignItems: "center" }}>
                 {!locked ? (
                   <>
                     <button
                       data-testid="inst-research-lock"
                       className="v3-btn primary"
-                      disabled={!!busy || !version || gateBlocked}
+                      disabled={!!busy || !version || gateLoading || gate === null || gateBlocked}
                       onClick={() => lockResearch(false)}
                     >
                       {busy === "lock" ? "锁定中…" : "锁定研究定稿"}

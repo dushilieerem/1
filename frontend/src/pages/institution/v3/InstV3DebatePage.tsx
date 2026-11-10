@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Play, Send } from "lucide-react";
 import { dedupeBy, latestByKey } from "@/lib/instDedupe";
@@ -101,10 +101,8 @@ const METHOD_LABELS: Record<string, string> = {
 };
 
 function sanitizeText(value: unknown): string {
-  return String(value ?? "")
-    .replace(/演示口径[，,]?/g, "研究口径")
-    .replace(/演示估值/g, "研究估值")
-    .replace(/演示/g, "研究");
+  // 原样展示后端返回的口径与限制，不再把“演示/简易测算”改写成“研究”。
+  return String(value ?? "").trim();
 }
 
 function pctValue(value: unknown): string {
@@ -182,6 +180,7 @@ export function InstV3DebatePage() {
   const [monitoring, setMonitoring] = useState("季度财报后复核\n批价/份额跌破阈值触发复核");
   const [opinion, setOpinion] = useState("");
 
+  const detailSeq = useRef(0);
   const selectedId = currentCaseId(params.get("key"));
   const version = detail?.versions?.[0] || null;
   const latestProposal = detail?.proposals?.[0] || null;
@@ -194,11 +193,14 @@ export function InstV3DebatePage() {
   };
 
   const loadDetail = async (id: number) => {
+    const seq = ++detailSeq.current;
     const d = await instApi<CaseItem>(`/cases/${id}`);
+    if (seq !== detailSeq.current) return d;
     setDetail(d);
     const session = d.debates?.[0];
     if (session?.id) {
       const full = await instApi<Debate>(`/debates/${session.id}`);
+      if (seq !== detailSeq.current) return d;
       setDebate(full);
     } else {
       setDebate(null);
@@ -214,7 +216,10 @@ export function InstV3DebatePage() {
         if (!alive) return;
         const id = selectedId || items[0]?.id || null;
         if (id) {
-          if (!selectedId) setParams({ key: `case:${id}` }, { replace: true });
+          if (!selectedId) {
+            setParams({ key: `case:${id}` }, { replace: true });
+            return;
+          }
           const d = await loadDetail(id);
           const price = Number(d.ref_price || 0);
           if (price > 0) {

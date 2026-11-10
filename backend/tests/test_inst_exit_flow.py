@@ -195,9 +195,9 @@ def test_exit_flow_state_machine_and_direction_guard(fixture) -> None:
     version_id = int(research["versions"][0]["id"])
     _ok(
         client.post(
-            f"/api/inst/research/{version_id}/review",
-            json={"decision": "approve", "comment": "退出研究通过"},
-            headers=_h(tokens["partner"]),
+            f"/api/inst/research/{version_id}/lock",
+            json={"allow_gaps": True, "comment": "退出研究：显式带缺口锁定"},
+            headers=_h(manager),
         )
     )
     _ok(

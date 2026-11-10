@@ -4,6 +4,7 @@ import { ArrowRight, RefreshCw, Sparkles } from "lucide-react";
 import { dedupeBy, latestByKey } from "@/lib/instDedupe";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { instApi } from "@/lib/instApi";
+import { fetchV3Pipeline } from "@/lib/instV3Api";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
 
 type Dim = {
@@ -201,7 +202,21 @@ export function InstV3ResearchPage() {
 
   const loadCases = async () => {
     const res = await instApi<{ items: CaseItem[] }>("/cases");
-    const eligible = (res.items || []).filter((c) => Number(c.stage_no ?? 1) <= 2);
+    let stage1Cases: Set<number> | null = null;
+    try {
+      const pipeline = await fetchV3Pipeline();
+      const stage1 = pipeline.stages.find((s) => s.stage_no === 1);
+      stage1Cases = new Set(
+        (stage1?.items || [])
+          .map((x) => Number(x.case_id || 0))
+          .filter((id) => id > 0),
+      );
+    } catch {
+      // 流水线读取失败时退回原始 stage 过滤，避免页面空白。
+    }
+    const eligible = (res.items || []).filter((c) =>
+      stage1Cases ? stage1Cases.has(Number(c.id)) : Number(c.stage_no ?? 1) === 1,
+    );
     setCases(latestByKey(eligible, (c) => c.symbol, (c) => `${c.updated_at || ""}|${String(c.id).padStart(12, "0")}`));
     return eligible;
   };

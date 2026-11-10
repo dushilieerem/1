@@ -23,3 +23,5 @@ actual-metadata-freeze.json为真实本期只读元数据：research-rv-20261106
 ## 加载
 
 本批无新迁移/授权grant。已有机构261共用100m池保留，实耗28096/预留0/余99971904；历史下限180331及未知单列。加载前preload-readonly.json记录五类在途及18804队列均0。只按原env/argv重载自有18799；18804/19536和共享服务不动。旧BFF因DB于09:33重启后旧池失效而db=error，连接只读诊断见login-connection-readonly.json；最终加载及真实health须见load-evidence.json，不以HTTP200单独当健康。
+
+实际加载于2026-11-10 10:57:13+08完成：业务6784df35da7aa4e8550857c17f48abee83ddf671，18799 PID3783221→2990133；health HTTP200且ok=true/db=ok/schema_ok=true。18804前后queued/running均0，19536持续HTTP200，原env/argv保留。PM在重载前也观察到旧池已恢复健康，故不将健康恢复全归因于本次重载。重载后PM已开始新方法真实UI验收，此后禁止再次加载或改运行方法。

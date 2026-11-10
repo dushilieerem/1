@@ -1,0 +1,32 @@
+{
+  "schema": "pm.quant-factor.token-policy.v2",
+  "recorded_at_utc": "2026-11-10T04:02:03.389125+00:00",
+  "org_id": 261,
+  "scope": "本项目机构量化产品的因子Agent研究",
+  "user_direction": [
+    "Agent不设置Token上限；应自主决策是否停止研究或放弃方向",
+    "可以限制同时进行的研究任务数量"
+  ],
+  "supersedes_token_ceiling": {
+    "grant_id": "qbg_18880ef5240d740268f730df",
+    "old_limit_tokens": 100000000,
+    "historical_records_preserved": true
+  },
+  "new_policy": {
+    "token_limit_mode": "unlimited",
+    "product_cumulative_token_limit": null,
+    "keep_actual_usage_and_unresolved_records": true,
+    "client_output_ceiling": "不以低人工输出额度截断研究；按实际provider能力记录单次请求并支持可见接续",
+    "max_concurrent_factor_research_tasks": 1,
+    "overflow": "persistent_queue"
+  },
+  "unchanged_boundaries": [
+    "不修改公司共享账户每日调用限额或全站配置",
+    "不更换模型或凭证",
+    "不放宽现有RE内存/时间/单并发限制",
+    "不回写既有任务的固定数据、市场试验K或max_trials",
+    "不发起334全库比较",
+    "旧至少180331 Tokens和46次缺失计量不清零"
+  ],
+  "implementation_status": "authorized_not_applied"
+}

@@ -257,3 +257,10 @@ def test_build_research_uses_data_business_net_debt() -> None:
     assert proxy.get("source")
     assert "有息负债合计" in str(proxy.get("label"))
     assert any("有息负债/净债务" in x for x in facts["data_completeness"]["financial"]["have"])
+
+
+def test_partial_data_raises_agent_fail_to_watch() -> None:
+    out = svc._apply_data_gate({"gate": "fail"}, {"level": "partial"})
+    assert out["gate"] == "watch"
+    assert out["gate_original"] == "fail"
+    assert "不阻断已有数据分析" in out["gate_note"]

@@ -1060,3 +1060,76 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - MA/BOLL 叠加在主图；MACD/KDJ 使用独立 pane，保留成交量副图。
 - 指标全部由日/周/月 bars 在前端确定性计算，不依赖后端新接口。
 - Playwright 股票总览用例增加四个指标开关断言。
+
+
+### 11.60 价值分析自动跑完整流程（2026-11-10）
+
+- 进入 `/inst/research` 选中研究案后，manager 自动补齐：
+  - 缺行业底图/六维 → 自动 POST `/cases/{id}/research` 全量生成并落盘；
+  - 缺一页纸 → 自动 POST `/cases/{id}/ai/memo` 生成；一页纸写入 Agent 输出缓存，并把 conclusion 回写研究版本；
+- 已有完整六维/行业/一页纸的案不会重复跑；自动流程按 case 去重，避免并发重复。
+- 非 manager（只读/审批角色）不触发自动写操作。
+- 一页纸空白的原因不是未落盘，而是进入页面只 GET 缓存、从未 POST 生成；现在进入即自动生成并持久化。
+
+
+### 11.61 后续模块自动生成建议（2026-11-10）
+
+- 多空辩论：manager 进入案件时，研究已锁定但无已完成辩论 → 自动 POST `/cases/{id}/debate`（use_ai=true），生成多空/主持/估值后落盘；已有 completed 辩论不重复跑。
+- 投委会审批：partner/risk/chairman 进入议案时，先读缓存建议；无缓存则自动 POST 当前角色的 `/ai/{partner-memo|risk-review|chairman-memo}` 并落盘。
+- 执行成交：进入授权详情继续自动 GET `/authorizations/{id}/precheck`；不自动下单，执行按钮仍由 execution 角色人工确认。
+- 投资管理：进入持仓读取论点/事件；扫描、预警、退出议案仍保留人工触发，避免自动产生告警或退出动作。
+
+
+### 11.62 流水线按实际下游记录取阶段（2026-11-10）
+
+- 问题：流水线只看 `inst_research_case.stage_no`，而辩论/议案/授权/持仓是独立事实；重开研究后 case 回到阶段 1，旧下游记录仍在，导致“流水线后面全 0，但模块里有项目”。
+- 修复：`pipeline` 改为按实际最远阶段展示：
+  - 最新研究版本有 completed 辩论 → 至少阶段 2；
+  - 有在途议案（partner_review/risk_precheck/chairman_review/authorized）→ 至少阶段 3；
+  - 有 qualified/filled 授权 → 至少阶段 4；
+  - 最新持仓 qty>0 → 阶段 5。
+- 同一公司多案时按“最远阶段 + 最近更新”选一张卡，避免旧重复案遮住下游项目。
+- 生产回读：阶段 2 显示万科A（case:51），阶段 5 显示贵州茅台（持仓，case:23），总项目 17。
+
+
+### 11.63 K 线指标拆分、成交量与资讯兜底（2026-11-10）
+
+- MA 拆成 MA5/MA10/MA20/MA60 四个独立开关；主图显示各 MA 最新值与颜色，BOLL 显示上/中/下轨，MACD 显示 DIF/DEA/柱，KDJ 显示 K/D/J。
+- 成交量明确标注“成交量 最新值”，与 MACD/KDJ 柱区分。
+- 资讯无精确 symbol 标签时，按公司名称兜底搜索，并标注“资讯未打标，以下按公司名称匹配”。
+- 数据缺口已同步数据业务：
+  - `md_daily_bar` 历史行 `volume/amount/turnover` 全 NULL，仅最近 research-rv 行有值；
+  - `news_items` 15,000 行中 12,810 行 `symbols=[]`。
+
+
+### 11.64 流水线与审批/执行口径统一（2026-11-10）
+
+- 问题：流水线展示“当前阶段”，但审批模块把 draft 议案和历史已审/已执行记录混进待办，执行模块在没有 qualified 授权时回退展示 filled 历史，造成“流水线 0、模块有项目”。
+- 修复：
+  - 审批页前端只展示当前待办：`partner_review/risk_precheck/chairman_review/authorized`；不再把 reviewed 历史拼进当前列表。后端 `/proposals` 对 manager 仍保留自己的 draft 契约，供编辑/测试使用，不改变 API。
+  - 执行模块只展示 `qualified` 授权；已成交/撤销历史不再回退混入。
+  - 流水线 stage4 只按 `qualified` 授权计算，filled 历史不计入；持仓仍归 stage5。
+- 生产回读：stage2=万科A（case:51），stage3/4=0，stage5=贵州茅台；审批/执行模块同样无当前待办，口径一致。
+
+
+### 11.65 一页纸风险拆字与银行价值区间（2026-11-10）
+
+- 修复 AI 把 `counter/checks/data_gaps/open_questions` 返回成字符串时被逐字迭代的问题；校验层统一按“字符串=一项”归一。
+- 旧版本已存成“长句 + 单字”的 counter，一页纸读取时合并回可读文本，不再逐字列核心风险。
+- 银行 `relative_only` 估值不再显示“不可用”，改为“不适用（银行相对估值）”，提示只看 PB/ROE。
+- 旧版本字符数组 counter 改用完整 data_gaps 生成核心风险；门禁提示从“数据缺失”改为“门禁未通过”，并显示中文维度名。
+- 新增回归：字符串 counter 不拆字；银行价值区间为不适用。
+
+
+### 11.66 收缩分析范围：partial 不再被 AI fail 拖死（2026-11-10）
+
+- 数据完备性门禁口径统一：
+  - `missing` → gate 必须 fail；
+  - `partial` → gate 最高 watch（AI 给 fail 也调整为 watch，缺口只影响置信度，不阻断已有数据分析）；
+  - `sufficient` → 不强制 gate；
+  - 显式 `gate_cap=fail`（如非标审计意见）仍保持 fail。
+- 7 只在研标的已按该口径全量重跑并重建一页纸：
+  - 000001/000006/000625/001219/001233/600519：有效维 6/6，gate 均 watch/pass；
+  - 000002：有效维 5/6，财务质量仍 fail（带强调事项段审计意见，属实质风险，不是数据缺失）。
+- 负自由现金流不再显示“不可用”，改为“不适用（自由现金流为负）”，并附原因。
+- 一页纸不再出现“industry、valuation 数据缺失”的误报；门禁提示使用中文维度名。

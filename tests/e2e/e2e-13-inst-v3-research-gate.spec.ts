@@ -144,6 +144,6 @@ test("股票总览：左侧列表、K 线与相关资讯", async ({ page, reques
   expect(await page.locator(".v3-stock-item").count()).toBeGreaterThan(0);
   await expect(page.locator(".v3-stock-quote b").first()).toBeVisible({ timeout: 30_000 });
   expect(await page.locator(".v3-stock-main canvas").count()).toBeGreaterThan(0);
-  expect(await page.locator(".v3-kline-tool").allTextContents()).toEqual(["MA", "BOLL", "MACD", "KDJ"]);
+  expect(await page.locator(".v3-kline-tool").allTextContents()).toEqual(["MA5", "MA10", "MA20", "MA60", "BOLL", "MACD", "KDJ"]);
   await expect(page.getByText("相关资讯", { exact: true })).toBeVisible();
 });

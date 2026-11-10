@@ -45,6 +45,43 @@ def test_validate_dimension_normalizes_evidence_and_confidence() -> None:
     assert data["confidence"] == 1.0
 
 
+def test_validate_dimension_keeps_impact_and_data_used() -> None:
+    data = validate_dimension(
+        json.dumps(
+            {
+                "summary": "财务质量稳定。",
+                "impact": "支撑估值，但不构成买入指令。",
+                "data_used": ["2025 年报营收", "现金流量表 OCF", ""],
+                "checks": ["OCF/净利 1.1"],
+                "confidence": 0.7,
+            },
+            ensure_ascii=False,
+        ),
+        None,  # type: ignore[arg-type]
+    )
+    assert data["impact"] == "支撑估值，但不构成买入指令。"
+    assert data["data_used"] == ["2025 年报营收", "现金流量表 OCF"]
+
+
+def test_professional_coverage_is_deterministic() -> None:
+    from services.institution import ai_service
+
+    rows = ai_service._professional_coverage(
+        {
+            "industry_analysis": {"gate": "watch", "score_10": 7.0, "confidence": 0.75},
+            "six_dim": [
+                {"key": "financial", "title": "财务质量", "gate": "pass", "score_10": 8.2, "confidence": 0.8},
+                {"key": "moat", "title": "护城河", "gate": "watch", "score_10": 5.2, "confidence": 0.6},
+            ],
+        }
+    )
+    assert [r["key"] for r in rows] == ["industry_overview", "financial", "moat"]
+    assert rows[0]["role_title"] == "行业分析 Agent"
+    assert rows[0]["verdict"] == "保留"
+    assert rows[1]["verdict"] == "支持"
+    assert rows[2]["verdict"] == "待补"
+
+
 def test_merge_agent_results_keeps_six_dims_and_fallback() -> None:
     built = {
         "dims": [
@@ -291,3 +328,54 @@ def test_governance_guarantee_not_applicable_unlocks_core() -> None:
     assert "gate_cap" not in governance
     assert "对外担保" not in governance["missing"]
     assert any("对外担保" in x and "不适用" in x for x in governance["have"])
+
+
+def test_dimension_string_counter_is_not_split_into_chars() -> None:
+    from ai.router.tasks.institution import validate_dimension
+
+    raw = json.dumps({"summary": "结论", "counter": "单一反证条件，不应拆字"}, ensure_ascii=False)
+    data = validate_dimension(raw, None)  # type: ignore[arg-type]
+    assert data["counter"] == ["单一反证条件，不应拆字"]
+
+
+def test_one_pager_bank_value_range_is_not_applicable() -> None:
+    from services.institution import ai_service
+
+    metrics = ai_service._one_pager_metrics(
+        {"six_dim": [], "valuation": {"method": "relative_only"}}, {"symbol": ""}
+    )
+    by_label = {m["label"]: m for m in metrics}
+    assert "不适用" in by_label["价值区间"]["value"]
+    assert "PB/ROE" in by_label["价值区间"]["note"]
+
+
+def test_rule_memo_uses_data_gaps_when_counter_is_char_array() -> None:
+    from services.institution import ai_service
+
+    version = {
+        "six_dim": [{
+            "key": "business_model",
+            "title": "公司商业模式",
+            "counter": ["缺", "客", "户"],
+            "data_gaps": ["缺前五大客户占比，影响 H，需年报附注补。"],
+        }],
+        "valuation": {},
+    }
+    memo = ai_service._rule_memo(version)
+    assert memo["risks"] == ["缺前五大客户占比，影响 H，需年报附注补。"]
+
+
+def test_memo_gate_note_uses_chinese_titles_and_gate_wording() -> None:
+    from services.institution import ai_service
+
+    version = {
+        "six_dim": [
+            {"key": "industry", "title": "商业与产业", "gate": "fail"},
+            {"key": "valuation", "title": "估值与价格", "gate": "fail"},
+        ],
+        "industry_analysis": {},
+    }
+    memo = ai_service._apply_memo_data_gate({"decision": "watch"}, version)
+    assert "门禁未通过" in memo["data_gate_note"]
+    assert "行业分析" in memo["data_gate_note"]
+    assert "估值与价格" in memo["data_gate_note"]

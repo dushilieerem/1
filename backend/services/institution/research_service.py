@@ -50,6 +50,17 @@ SIX_DIM_DEFS: tuple[tuple[str, str, str], ...] = (
     ("governance", "CEO 与治理", "资本配置、承诺兑现、关联交易与治理结构"),
     ("valuation", "估值与价格", "PE/PB 分位、DCF 参数、安全边际"),
 )
+CHIEF_RESEARCH_SCHEMA = "chief-research-v1"
+CHIEF_RESEARCH_ROLE_TITLE = "研究经理"
+PROFESSIONAL_ROLE_TITLES: dict[str, str] = {
+    "industry_overview": "行业分析 Agent",
+    "industry": "产业研究 Agent",
+    "business_model": "商业模式 Agent",
+    "moat": "护城河 Agent",
+    "financial": "财务质量 Agent",
+    "governance": "CEO 与治理 Agent",
+    "valuation": "估值与价格 Agent",
+}
 DIMENSION_TASK_IDS: dict[str, str] = {
     "industry": "inst.dim.industry",
     "business_model": "inst.dim.business_model",
@@ -1297,11 +1308,17 @@ def _apply_data_gate(data: dict[str, Any], completeness: dict[str, Any] | None) 
     gate = str(data.get("gate") or "").lower()
     if gate not in {"pass", "watch", "fail"}:
         gate = "watch"
-    order = {"fail": 0, "watch": 1, "pass": 2}
-    if order[gate] > order[cap]:
+    target = None
+    if cap == "fail":
+        target = "fail"
+    elif cap == "watch":
+        target = "watch"
+    if target and gate != target:
         data["gate_original"] = gate
-        data["gate"] = cap
-        data["gate_note"] = f"数据完备性为 {level}，gate 由 {gate} 降为 {cap}。"
+        data["gate"] = target
+        data["gate_note"] = (
+            f"数据完备性为 {level}，gate 由 {gate} 调整为 {target}；缺口只影响置信度，不阻断已有数据分析。"
+        )
     data["data_completeness"] = completeness
     return data
 
@@ -1402,6 +1419,10 @@ def _merge_industry(
         data = _apply_data_gate(data, complete.get("industry"))
     if not data:
         block = dict(fallback or {})
+        block["agent_tier"] = "professional"
+        block["role_title"] = PROFESSIONAL_ROLE_TITLES["industry_overview"]
+        block["impact"] = ""
+        block["data_used"] = []
         block["engine"] = "rule"
         block["agent_error"] = str((result or {}).get("error") or "")
         return block
@@ -1429,9 +1450,13 @@ def _merge_industry(
     return {
         "key": "industry",
         "title": "行业分析",
+        "agent_tier": "professional",
+        "role_title": PROFESSIONAL_ROLE_TITLES["industry_overview"],
         "question": str(data.get("question") or "行业空间、景气周期、产业链与竞争格局处于什么位置？"),
         "status": "partial" if data.get("data_gaps") else "done",
         "summary": _clip_brief(data.get("summary")),
+        "impact": _clip_brief(data.get("impact")),
+        "data_used": [_clip_brief(x) for x in (data.get("data_used") or []) if str(x).strip()][:6],
         "checks": [_clip_brief(x) for x in (data.get("checks") or [])][:5],
         "counter": [_clip_brief(x) for x in (data.get("counter") or [])][:3],
         "open_questions": [_clip_brief(x) for x in (data.get("open_questions") or [])][:3],
@@ -1537,8 +1562,12 @@ def _merge_agent_results(
                     gaps.append(gap_text)
             fallback.update(
                 {
+                    "agent_tier": "professional",
+                    "role_title": PROFESSIONAL_ROLE_TITLES.get(key, "专业研究 Agent"),
                     "status": "skipped",
                     "summary": "数据未接入，暂不分析。",
+                    "impact": "",
+                    "data_used": [],
                     "checks": [],
                     "counter": [],
                     "open_questions": missing,
@@ -1593,9 +1622,13 @@ def _merge_agent_results(
                 {
                     "key": key,
                     "title": title,
+                    "agent_tier": "professional",
+                    "role_title": PROFESSIONAL_ROLE_TITLES.get(key, "专业研究 Agent"),
                     "question": question,
                     "status": status,
                     "summary": str(data.get("summary")),
+                    "impact": _clip_brief(data.get("impact")),
+                    "data_used": [_clip_brief(x) for x in (data.get("data_used") or []) if str(x).strip()][:6],
                     "checks": data.get("checks") or [],
                     "counter": data.get("counter") or [],
                     "open_questions": data.get("open_questions") or [],
@@ -1628,6 +1661,10 @@ def _merge_agent_results(
             states[key] = status
         else:
             fallback = dict(fallback)
+            fallback["agent_tier"] = "professional"
+            fallback["role_title"] = PROFESSIONAL_ROLE_TITLES.get(key, "专业研究 Agent")
+            fallback["impact"] = ""
+            fallback["data_used"] = []
             fallback["engine"] = "rule"
             fallback["agent"] = f"AI-{key}"
             fallback["agent_error"] = err or "Agent 未返回有效结果"
@@ -1725,8 +1762,12 @@ def generate_research(
             missing = list(industry_complete.get("missing") or [])
             block.update(
                 {
+                    "agent_tier": "professional",
+                    "role_title": PROFESSIONAL_ROLE_TITLES["industry_overview"],
                     "status": "skipped",
                     "summary": "数据未接入，暂不分析。",
+                    "impact": "",
+                    "data_used": [],
                     "checks": [],
                     "counter": [],
                     "open_questions": missing,

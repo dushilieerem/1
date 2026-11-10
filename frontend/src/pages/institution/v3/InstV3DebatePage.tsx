@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Play, Send } from "lucide-react";
 import { dedupeBy, latestByKey } from "@/lib/instDedupe";
 import { instApi } from "@/lib/instApi";
+import { useInstSession } from "@/components/institution/instSessionContext";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
 
 type Arg = {
@@ -26,12 +27,34 @@ type EvidenceCheck = {
   issues?: string[];
 };
 
+type ChairReview = {
+  schema_version?: string;
+  agent_tier?: string;
+  role_title?: string;
+  verdict?: "support_proposal" | "supplement_research" | string;
+  chair_call?: string;
+  consensus?: string[];
+  unresolved?: Array<{
+    issue?: string;
+    bull_view?: string;
+    bear_view?: string;
+    why_unresolved?: string;
+    data_needed?: string;
+  }>;
+  accepted_claims?: Array<{ side?: string; claim_id?: string; claim?: string; reason?: string }>;
+  rejected_claims?: Array<{ side?: string; claim_id?: string; claim?: string; reason?: string }>;
+  what_would_change?: string[];
+  chief_confidence?: number;
+  chief_fields_fallback?: boolean;
+};
+
 type Debate = {
   id: number;
   status: string;
   conclusion?: string;
   started_at?: string;
   ended_at?: string;
+  factpack?: { engine?: string; chief_review?: ChairReview } | string | null;
   arguments?: Arg[];
   evidence_checks?: EvidenceCheck[];
 };
@@ -200,6 +223,7 @@ function claimHeadline(value?: string): string {
 
 export function InstV3DebatePage() {
   const navigate = useNavigate();
+  const session = useInstSession();
   const [params, setParams] = useSearchParams();
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [detail, setDetail] = useState<CaseItem | null>(null);
@@ -222,6 +246,7 @@ export function InstV3DebatePage() {
   const [adviceError, setAdviceError] = useState<string | null>(null);
 
   const detailSeq = useRef(0);
+  const autoDebateRef = useRef<string | null>(null);
   const selectedId = currentCaseId(params.get("key"));
   const version = detail?.versions?.[0] || null;
   const latestProposal = detail?.proposals?.[0] || null;
@@ -249,6 +274,26 @@ export function InstV3DebatePage() {
     return d;
   };
 
+  /** 进入辩论模块：研究已锁定但没有完成辩论时，自动跑多空/主持/估值。 */
+  const ensureDebate = async (id: number) => {
+    if (session.role !== "manager") return;
+    const key = `case:${id}`;
+    if (autoDebateRef.current === key) return;
+    autoDebateRef.current = key;
+    try {
+      const d = await instApi<CaseItem>(`/cases/${id}`);
+      if (d.debates?.[0]?.status === "completed") return;
+      setBusy("auto-debate");
+      await instApi(`/cases/${id}/debate`, { method: "POST", body: { use_ai: true } });
+      await loadDetail(id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+      autoDebateRef.current = null;
+    }
+  };
+
   useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -262,6 +307,7 @@ export function InstV3DebatePage() {
             return;
           }
           const d = await loadDetail(id);
+          void ensureDebate(id);
           const price = Number(d.ref_price || 0);
           if (price > 0) {
             setPriceLow((price * 0.9).toFixed(2));
@@ -280,6 +326,16 @@ export function InstV3DebatePage() {
 
   const bull = useMemo(() => dedupeBy((debate?.arguments || []).filter((a) => a.side === "bull"), (a) => a.claim_id || a.id), [debate]);
   const bear = useMemo(() => dedupeBy((debate?.arguments || []).filter((a) => a.side === "bear"), (a) => a.claim_id || a.id), [debate]);
+  const chiefReview = useMemo<ChairReview | null>(() => {
+    const fp = debate?.factpack;
+    if (!fp) return null;
+    if (typeof fp !== "string") return fp.chief_review || null;
+    try {
+      return (JSON.parse(fp) as { chief_review?: ChairReview }).chief_review || null;
+    } catch {
+      return null;
+    }
+  }, [debate]);
 
   useEffect(() => {
     setAgentId(step === 0 ? "bull" : step === 1 ? "chair" : step === 2 ? "valuation" : "trader");
@@ -450,7 +506,59 @@ export function InstV3DebatePage() {
               <div className="v3-card-head"><div><h2>交叉质询</h2><p>主持把双方 claim 逐条对齐，标出已回应 / 未回应 / 证据不足。</p></div><span className="v3-chip">{debate?.evidence_checks?.length || 0} 条核验</span></div>
               {debate ? (
                 <>
-                  <div className="v3-note"><b>主持结论：</b>{debate.conclusion || "主持结论待生成。"}</div>
+                  {chiefReview ? (
+                    <div style={{ marginTop: 8 }}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`v3-chip ${chiefReview.verdict === "support_proposal" ? "ok" : "warn"}`}>
+                          {chiefReview.verdict === "support_proposal" ? "支持进入议案" : "补充研究"}
+                        </span>
+                        {chiefReview.chief_confidence != null ? <span className="v3-chip">置信 {Number(chiefReview.chief_confidence).toFixed(2)}</span> : null}
+                        {chiefReview.chief_fields_fallback ? <span className="v3-chip warn">服务端补齐</span> : null}
+                      </div>
+                      <p style={{ marginTop: 8, lineHeight: 1.75, color: "#2b2533", fontWeight: 600 }}>
+                        {chiefReview.chair_call || debate.conclusion || "主持结论待生成。"}
+                      </p>
+                      {chiefReview.consensus?.length ? (
+                        <div style={{ marginTop: 8 }}>
+                          <div className="v3-eyebrow">已达成共识</div>
+                          <ul className="v3-rule-list" style={{ marginTop: 4 }}>{chiefReview.consensus.map((x) => <li key={x}>{x}</li>)}</ul>
+                        </div>
+                      ) : null}
+                      {chiefReview.unresolved?.length ? (
+                        <div style={{ marginTop: 8 }}>
+                          <div className="v3-eyebrow">未决分歧</div>
+                          {chiefReview.unresolved.map((u, i) => (
+                            <div className="v3-claim" key={`${u.issue || "unresolved"}-${i}`}>
+                              <div className="who">{u.issue || "未决问题"}</div>
+                              {u.bull_view || u.bear_view ? <p>多：{u.bull_view || "—"}<br />空：{u.bear_view || "—"}</p> : null}
+                              {u.why_unresolved ? <div className="fs">未决原因：{u.why_unresolved}</div> : null}
+                              {u.data_needed ? <div className="fs">待补：{u.data_needed}</div> : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {(chiefReview.accepted_claims?.length || chiefReview.rejected_claims?.length) ? (
+                        <div style={{ marginTop: 8 }}>
+                          <div className="v3-eyebrow">采纳与不采纳</div>
+                          {[...(chiefReview.accepted_claims || []), ...(chiefReview.rejected_claims || [])].map((c, i) => (
+                            <div className="v3-claim" key={`${c.claim_id || c.claim || "claim"}-${i}`}>
+                              <div className="who">{c.side === "bull" ? "多方" : c.side === "bear" ? "空方" : c.side || "—"} {c.claim_id || ""}</div>
+                              {c.claim ? <p>{c.claim}</p> : null}
+                              {c.reason ? <div className="fs">{c.reason}</div> : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {chiefReview.what_would_change?.length ? (
+                        <div style={{ marginTop: 8 }}>
+                          <div className="v3-eyebrow">什么会改变裁决</div>
+                          <ul className="v3-rule-list" style={{ marginTop: 4 }}>{chiefReview.what_would_change.map((x) => <li key={x}>{x}</li>)}</ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="v3-note"><b>主持结论：</b>{debate.conclusion || "主持结论待生成。"}</div>
+                  )}
                   {(() => {
                     const checks = dedupeBy(debate.evidence_checks || [], (c) => `${c.claim_id || ""}:${c.evidence_id || ""}`);
                     const verified = checks.filter((c) => c.status === "verified").length;

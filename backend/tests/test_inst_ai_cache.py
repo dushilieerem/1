@@ -148,6 +148,43 @@ def test_memo_cache_hit_and_refresh(monkeypatch) -> None:
     assert calls["n"] == 2
 
 
+def test_memo_payload_includes_industry_analysis(monkeypatch) -> None:
+    tag = uuid.uuid4().hex[:8]
+    industry = {"summary": "行业底图摘要", "gate": "watch", "confidence": 0.7}
+    with get_conn() as conn:
+        org = conn.execute(
+            "INSERT INTO inst_orgs (code, name_cn) VALUES (%s,%s) RETURNING id",
+            (f"payload-{tag}", f"载荷测试机构 {tag}"),
+        ).fetchone()
+        org_id = int(org["id"])
+        company = conn.execute(
+            "INSERT INTO inst_company (org_id, symbol, name, market) "
+            "VALUES (%s,%s,'载荷测试公司','CN') RETURNING id",
+            (org_id, f"PAY{tag[:4].upper()}.SH"),
+        ).fetchone()
+        case = conn.execute(
+            "INSERT INTO inst_research_case (org_id, company_id, case_no) VALUES (%s,%s,%s) RETURNING id",
+            (org_id, int(company["id"]), f"PA-{tag}"),
+        ).fetchone()
+        conn.execute(
+            "INSERT INTO inst_research_version "
+            "(case_id, version_no, status, six_dim, industry_analysis, conclusion, evidence_ids) "
+            "VALUES (%s,1,'pending_review',%s,%s,'有条件通过',%s)",
+            (int(case["id"]), Jsonb([]), Jsonb(industry), Jsonb([])),
+        )
+    captured: dict = {}
+
+    def fake_ai(task_id, payload, system):
+        captured.update(payload)
+        return {"summary": "首席摘要", "decision": "watch", "engine": "agent"}
+
+    monkeypatch.setattr(inst_ai, "_ai_task", fake_ai)
+    out = svc.ai_research_memo(org_id, int(case["id"]))
+    assert captured["version"]["industry_analysis"]["summary"] == "行业底图摘要"
+    assert out["memo"]["schema_version"] == "chief-research-v1"
+    assert out["memo"]["professional_coverage"][0]["key"] == "industry_overview"
+
+
 def test_industry_agent_ai_failure_falls_back_without_raising(monkeypatch):
     from ai import router as ai_router
 

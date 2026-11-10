@@ -237,6 +237,7 @@ def validate_dimension(raw: str, request: TaskRequest) -> dict[str, Any]:
     if not summary:
         raise AiBadOutput("六维 Agent 缺少 summary/one_line/analysis_md")
     data["summary"] = clip_brief(summary)
+    data["analysis_md"] = str(data.get("analysis_md") or "").strip()
     data["impact"] = clip_brief(data.get("impact"))
     data["data_used"] = [
         clip_brief(x) for x in _items(data.get("data_used")) if str(x).strip()

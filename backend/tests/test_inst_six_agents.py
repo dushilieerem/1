@@ -82,6 +82,7 @@ def test_validate_dimension_keeps_impact_and_data_used() -> None:
         json.dumps(
             {
                 "summary": "财务质量稳定。",
+                "analysis_md": "第一段事实。\n\n第二段解释。\n\n第三段判断。",
                 "impact": "支撑估值，但不构成买入指令。",
                 "data_used": ["2025 年报营收", "现金流量表 OCF", ""],
                 "checks": ["OCF/净利 1.1"],
@@ -93,6 +94,7 @@ def test_validate_dimension_keeps_impact_and_data_used() -> None:
     )
     assert data["impact"] == "支撑估值，但不构成买入指令。"
     assert data["data_used"] == ["2025 年报营收", "现金流量表 OCF"]
+    assert data["analysis_md"].count("段") == 3
 
 
 def test_professional_coverage_is_deterministic() -> None:

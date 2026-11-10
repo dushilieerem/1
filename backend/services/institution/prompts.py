@@ -105,6 +105,7 @@ SIX_DIM_CONTRACT = """# 六维共用输出契约
   "score_10": 8.2,
   "rating_benchmark": "同业中位 PE 18.2x / 历史 3 年分位 42%",
   "summary": "40–60 字：结论句 ≤18 字 + 主数字（值 + 对比 + 阈值）",
+  "analysis_md": "3 段，200–350 字。①事实：关键数据 + 时点 + 证据 ID；②解释：为什么重要，和历史/同业对比；③判断：对投资或估值意味着什么。段落之间空行，不得写数据缺口/待补充/未接入。",
   "checks": ["2–3 条，每条 15–25 字：指标 + 值 + 时点 + 证据 ID"],
   "counter": ["1 条 ≤35 字：本维最脆弱的一环"],
   "impact": "≤40 字：这一维对估值或投资前提的含义，不写买卖指令",
@@ -124,7 +125,9 @@ SIX_DIM_CONTRACT = """# 六维共用输出契约
 4. summary 不得用 analysis_md 替代；每条结论带数字或明确方向。
 5. 只引用本维授权数据与证据 ID；不得引用其他维结论、评级或证据。
 6. 数据缺失写 data_gaps，显示用短缺口写 data_completeness.missing。
-7. impact 必须指向估值或投资前提，不写泛泛风险；data_used 只列本次实际使用的字段，不得编造。"""
+7. impact 必须指向估值或投资前提，不写泛泛风险；data_used 只列本次实际使用的字段，不得编造。
+8. analysis_md 是给人读的正文，必须按“事实→解释→判断”三段写；summary 只做标题句，不要用 summary 代替正文。
+9. analysis_md 和 summary 不得写“数据缺口/待补充/未接入/数据不足”；缺口只写内部 data_gaps，不进正文。"""
 
 _A03 = """# 角色
 你是行业研究员，只画"行业底图"：空间、增速、格局、关键变量。不评价任何公司的估值、治理、财报质量。
@@ -137,6 +140,7 @@ TAM/SAM/SOM（5 年实际 + 3 年三情景，注明含税/不含税）、CAGR �
 {
   "one_line": "≤20 字，一句判断，如「空间足够，份额提升是关键。」",
   "summary": "60–100 字，三句：①结论句 ≤18 字 ②主数字（值+对比+阈值）③边界（哪个变量会改结论）",
+  "analysis_md": "3 段，250–400 字。①事实：TAM/CR/份额/价格/产能等数据 + 时点 + 证据 ID；②解释：行业处在什么阶段、竞争格局为什么这样；③判断：对该公司投资前提意味着什么。段落之间空行，不得写数据缺口/待补充/未接入。",
   "checks": ["3–4 条，每条 18–30 字：指标 + 值 + 口径 + 证据 ID"],
   "counter": ["1–2 条，每条 ≤35 字：最狠的反证，第一条最重要"],
   "impact": "≤40 字：行业判断对该公司投资前提的含义，不写买卖指令",
@@ -915,12 +919,12 @@ open_questions：补回款周期与续约率 / 上会前确认份额假设来源
 
 DIM_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象，不要输出 Markdown 代码块之外的解释。严格按「六维共用输出契约」：summary 40–60 字，checks 2–3 条，counter 1 条，impact ≤40 字，data_used ≤4 条，rating/gate/confidence 必填；rating 必须带 rating_benchmark（同业中位或历史分位）；evidence_ids 必须来自 payload.evidence 里的 id；找不到对应证据就留空并写 data_gaps，不要编造；不要用 analysis_md 替代 summary。
+只输出一个 JSON 对象，不要输出 Markdown 代码块之外的解释。严格按「六维共用输出契约」：summary 40–60 字，analysis_md 3 段 200–350 字，checks 2–3 条，counter 1 条，impact ≤40 字，data_used ≤4 条，rating/gate/confidence 必填；rating 必须带 rating_benchmark（同业中位或历史分位）；evidence_ids 必须来自 payload.evidence 里的 id；找不到对应证据就留空并写 data_gaps，不要编造；analysis_md 是正文，不得写数据缺口/待补充。
 """
 
 INDUSTRY_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象，不要输出 JSON 之外的解释。按上文字段输出：one_line ≤20 字、summary 60–100 字、checks 3–4 条（禁止空数组）、counter ≤35 字、impact ≤40 字、data_used ≤4 条、data_completeness.missing ≤12 字；evidence_ids 必须来自 payload.evidence 里的 id，找不到就留空并写 data_gaps，不要编造；confidence、gate 必填。
+只输出一个 JSON 对象，不要输出 JSON 之外的解释。按上文字段输出：one_line ≤20 字、summary 60–100 字、analysis_md 3 段 250–400 字、checks 3–4 条（禁止空数组）、counter ≤35 字、impact ≤40 字、data_used ≤4 条、data_completeness.missing ≤12 字；evidence_ids 必须来自 payload.evidence 里的 id，找不到就留空并写 data_gaps，不要编造；analysis_md 是正文，不得写数据缺口/待补充；confidence、gate 必填。
 """
 
 MEMO_OUTPUT_NOTE = """

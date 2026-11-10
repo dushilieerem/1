@@ -139,6 +139,13 @@ function dimScore(dim?: Dim | null): number | null {
   return null;
 }
 
+function paragraphs(text?: string | null): string[] {
+  return String(text || "")
+    .split(/\n{2,}/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
 function overallScore(dims?: Dim[] | null, fallback?: number | null): number | null {
   if (fallback != null) return Number(fallback);
   const scores = (dims || []).map((d) => dimScore(d)).filter((n): n is number => n != null);
@@ -492,11 +499,18 @@ export function InstV3ResearchPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="v3-chip ok">已完成</span>
                     <span className="v3-chip">{version.industry_analysis.engine || "AI Agent"}</span>
-                    {version.industry_analysis.data_completeness?.level ? <span className="v3-chip warn">数据 {version.industry_analysis.data_completeness.level}</span> : null}
                   </div>
                   <p style={{ marginTop: 8, lineHeight: 1.75, color: "#4b4352" }}>{version.industry_analysis.summary || "行业分析已生成。"}</p>
+                  {paragraphs(version.industry_analysis.analysis_md).map((p, i) => (
+                    <p key={`industry-${i}`} style={{ marginTop: 8, lineHeight: 1.85, color: "#4b4352" }}>{p}</p>
+                  ))}
                   {version.industry_analysis.impact ? <div className="v3-note" style={{ marginTop: 8 }}>影响：{version.industry_analysis.impact}</div> : null}
-                  {version.industry_analysis.checks?.length ? <ul className="v3-rule-list" style={{ marginTop: 8 }}>{version.industry_analysis.checks.map((x) => <li key={x}>{x}</li>)}</ul> : null}
+                  {version.industry_analysis.checks?.length ? (
+                    <div style={{ marginTop: 8 }}>
+                      <div className="v3-eyebrow">关键数据</div>
+                      <ul className="v3-rule-list" style={{ marginTop: 4 }}>{version.industry_analysis.checks.map((x) => <li key={x}>{x}</li>)}</ul>
+                    </div>
+                  ) : null}
                   {version.industry_analysis.data_used?.length ? <p style={{ marginTop: 8, fontSize: 12, color: "#6b6370" }}>使用数据：{version.industry_analysis.data_used.join("；")}</p> : null}
                   {version.industry_analysis.counter?.length ? <div className="v3-note" style={{ marginTop: 8 }}>反证：{version.industry_analysis.counter[0]}</div> : null}
                 </div>
@@ -524,7 +538,7 @@ export function InstV3ResearchPage() {
                       <div className="v3-dim-head">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className={`v3-chip ${activeDim.status === "skipped" ? "warn" : "ok"}`}>
-                            {activeDim.status === "skipped" ? "待补数据" : activeDim.status || "已完成"}
+                            {activeDim.status === "skipped" ? "未分析" : "已分析"}
                           </span>
                           {activeDim.confidence != null ? <span className="v3-chip">置信度 {activeDim.confidence.toFixed ? activeDim.confidence.toFixed(2) : activeDim.confidence}</span> : null}
                           {version?.dim_reviews?.[activeDim.key]?.decision === "approve" ? <span className="v3-chip ok">低置信已复核</span> : null}
@@ -540,8 +554,16 @@ export function InstV3ResearchPage() {
                         )}
                       </div>
                       <p style={{ marginTop: 8, lineHeight: 1.75, color: "#4b4352" }}>{activeDim.summary || "待补充"}</p>
+                      {paragraphs(activeDim.analysis_md).map((p, i) => (
+                        <p key={`${activeDim.key}-analysis-${i}`} style={{ marginTop: 8, lineHeight: 1.85, color: "#4b4352" }}>{p}</p>
+                      ))}
                       {activeDim.impact ? <div className="v3-note" style={{ marginTop: 8 }}>影响：{activeDim.impact}</div> : null}
-                      {activeDim.checks?.length ? <ul className="v3-rule-list" style={{ marginTop: 8 }}>{activeDim.checks.map((x) => <li key={x}>{x}</li>)}</ul> : null}
+                      {activeDim.checks?.length ? (
+                        <div style={{ marginTop: 8 }}>
+                          <div className="v3-eyebrow">关键数据</div>
+                          <ul className="v3-rule-list" style={{ marginTop: 4 }}>{activeDim.checks.map((x) => <li key={x}>{x}</li>)}</ul>
+                        </div>
+                      ) : null}
                       {activeDim.data_used?.length ? <p style={{ marginTop: 8, fontSize: 12, color: "#6b6370" }}>使用数据：{activeDim.data_used.join("；")}</p> : null}
                       {activeDim.counter?.length ? <div className="v3-note" style={{ marginTop: 8 }}>反证：{activeDim.counter[0]}</div> : null}
                       <div style={{ marginTop: 8 }}>

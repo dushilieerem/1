@@ -1,0 +1,41 @@
+{
+  "date": "2026-11-10",
+  "status": "prototype_browser_checked_not_business_accepted",
+  "prototype": "frontend/public/quant-delivery/v5/factor-factory.html?v=103",
+  "checks": [
+    {
+      "viewport": "1366x768",
+      "stage": "approval",
+      "left_height": 476.15625,
+      "right_height": 476.15625,
+      "page_horizontal_overflow": false
+    },
+    {
+      "viewport": "1366x768",
+      "stage": "prepare",
+      "content_client_height": 315,
+      "content_scroll_height": 586,
+      "keyboard_scrolled": true,
+      "top_bottom_aligned_after_scroll": true
+    },
+    {
+      "viewport": "1024x768",
+      "stage": "prepare",
+      "left_height": 721.75,
+      "right_height": 464.921875,
+      "stacked_order": "stage_then_agent",
+      "inner_overflow_y": "visible",
+      "page_horizontal_overflow": false
+    },
+    {
+      "viewport": "760x768",
+      "page_horizontal_overflow": false,
+      "columns": "637px"
+    }
+  ],
+  "viewport_restored": true,
+  "javascript_syntax_check": "node --check exit 0",
+  "real_business_calls_started": 0,
+  "business_ui": "Pending sole developer implementation and PM real browser review",
+  "actor": "Codex PM"
+}

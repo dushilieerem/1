@@ -15,6 +15,8 @@ import { useToast } from "../toast";
 import GlossarySheet from "../GlossarySheet";
 import AiPanel from "../components/AiPanel";
 import FinancialTrend from "../components/FinancialTrend";
+import FundFlowChart from "../components/FundFlowChart";
+import { SUB_INDICATORS, formatCompact, kdj, latestValue, macd, movingAverage, rsi, type SubIndicator } from "../chartIndicators";
 
 import { useLocale, withMarket } from "../i18n";
 
@@ -75,6 +77,8 @@ export default function Stock() {
   const [inWatch, setInWatch] = useState(false);
   const [watchBusy, setWatchBusy] = useState(false);
   const [indicator, setIndicator] = useState<"ma" | "boll">("ma");
+  const [subIndicator, setSubIndicator] = useState<SubIndicator>("volume");
+  const [chartRange, setChartRange] = useState<{ from: number; to: number } | null>(null);
 
   const load = (nextPeriod = period) => {
     setError(null);
@@ -91,6 +95,12 @@ export default function Stock() {
   }, [code]);
 
   useEffect(() => {
+    const length = (data?.chart?.bars || []).length;
+    if (length) setChartRange({ from: Math.max(0, length - 120), to: length - 1 });
+    else setChartRange(null);
+  }, [code, period, data?.chart?.bars?.length]);
+
+  useEffect(() => {
     api<any>(withMarket("/api/invest/watchlist", market))
       .then((w) => setInWatch((w.groups || []).some((g: any) => g.items.some((i: any) => i.code === code))))
       .catch(() => {});
@@ -99,6 +109,7 @@ export default function Stock() {
   const changePeriod = (p: string) => {
     if (p === period) return;
     setPeriod(p);
+    setChartRange(null);
     load(p);
   };
 
@@ -158,8 +169,40 @@ export default function Stock() {
   const peers = data.peers || [];
   const statements = data.statements || {};
   const latestFin = (data.financialTrend?.items || []).slice(-1)[0] || {};
-  const latestBar = (data.chart?.bars || []).slice(-1)[0];
-  const latestVolume = latestBar?.volume != null ? `${(Number(latestBar.volume) / 1e4).toFixed(1)} 万` : "—";
+  const chartBars = data.chart?.bars || [];
+  const subValues = (() => {
+    if (subIndicator === "volume" || subIndicator === "amount") {
+      const values = chartBars.map((b: any) => Number((subIndicator === "volume" ? b.volume : b.amount) || 0));
+      const ma5 = movingAverage(values, 5);
+      const ma10 = movingAverage(values, 10);
+      return [
+        { key: "value", label: subIndicator === "volume" ? t("成交量", "Volume") : t("成交额", "Turnover"), value: formatCompact(values[values.length - 1] ?? null, subIndicator === "volume" ? "vol" : "amount"), color: "red" },
+        { key: "ma5", label: "MA5", value: formatCompact(ma5[ma5.length - 1] ?? null, subIndicator === "volume" ? "vol" : "amount"), color: "amber" },
+        { key: "ma10", label: "MA10", value: formatCompact(ma10[ma10.length - 1] ?? null, subIndicator === "volume" ? "vol" : "amount"), color: "purple" },
+      ];
+    }
+    if (subIndicator === "macd") {
+      const d = macd(chartBars);
+      return [
+        { key: "dif", label: "DIF", value: formatCompact(latestValue(d.dif), "index"), color: "blue" },
+        { key: "dea", label: "DEA", value: formatCompact(latestValue(d.dea), "index"), color: "amber" },
+        { key: "macd", label: "MACD", value: formatCompact(latestValue(d.hist), "index"), color: "purple" },
+      ];
+    }
+    if (subIndicator === "kdj") {
+      const d = kdj(chartBars);
+      return [
+        { key: "k", label: "K", value: formatCompact(latestValue(d.k), "index"), color: "blue" },
+        { key: "d", label: "D", value: formatCompact(latestValue(d.d), "index"), color: "amber" },
+        { key: "j", label: "J", value: formatCompact(latestValue(d.j), "index"), color: "purple" },
+      ];
+    }
+    return [
+      { key: "rsi6", label: "RSI6", value: formatCompact(latestValue(rsi(chartBars, 6)), "index"), color: "blue" },
+      { key: "rsi12", label: "RSI12", value: formatCompact(latestValue(rsi(chartBars, 12)), "index"), color: "amber" },
+      { key: "rsi24", label: "RSI24", value: formatCompact(latestValue(rsi(chartBars, 24)), "index"), color: "purple" },
+    ];
+  })();
   const tabs = [
     ...(news.length ? [{ key: "news", label: t("资讯", "News") }] : []),
     ...(!isUs && q.asset !== "etf" ? [{ key: "finance", label: t("财务", "Financials") }] : []),
@@ -250,29 +293,44 @@ export default function Stock() {
             ma10={data.chart?.ma10 || []}
             ma20={data.chart?.ma20 || []}
             indicator={indicator}
+            range={chartRange}
+            onRangeChange={setChartRange}
             height={230}
           />
         </Suspense>
         <div className="volume-topline">
-          <div className="chart-legend">
-            <span><i className="volume-legend" />{t("成交量", "Volume")}</span>
-            <b className="volume-value">{latestVolume}</b>
-            <span><i className="legend-amber" />MA5</span>
-            <span><i className="legend-purple" />MA10</span>
+          <div className="chart-indicator-switch sub-indicator-switch">
+            {SUB_INDICATORS.map((item) => (
+              <button key={item.key} className={subIndicator === item.key ? "on" : ""} onClick={() => setSubIndicator(item.key)}>
+                {t(item.zh, item.en)}
+              </button>
+            ))}
+          </div>
+          <div className="chart-legend sub-legend">
+            {subValues.map((item) => (
+              <span key={item.key}><i className={`legend-${item.color}`} />{item.label} {item.value}</span>
+            ))}
           </div>
         </div>
-        <Suspense fallback={<div className="volume-empty">{t("加载成交量…", "Loading volume…")}</div>}>
-          <VolumeChart bars={data.chart?.bars || []} height={92} />
+        <Suspense fallback={<div className="volume-empty">{t("加载副图…", "Loading sub-chart…")}</div>}>
+          <VolumeChart
+            bars={chartBars}
+            indicator={subIndicator}
+            range={chartRange}
+            onRangeChange={setChartRange}
+            height={118}
+          />
         </Suspense>
         <div className="hint">{t("日/周/月 K 由收盘数据聚合；前复权口径。", "Daily/weekly/monthly candles are aggregated from EOD data; forward-adjusted.")}</div>
       </section>
 
       {!isUs ? (
         <AiPanel
-          title={t("AI 个股分析", "AI stock analysis")}
-          subtitle={t("自动生成，只解释数据，不给买卖建议。", "Generated automatically; explains data, never buy/sell advice.")}
+          title={t("AI 个股五维分析", "AI 5-dim stock analysis")}
+          subtitle={t("自动生成基本面、盈利、估值、风险、资金五维解读，不给买卖建议。", "Automatically covers fundamentals, profitability, valuation, risk and capital; never buy/sell advice.")}
           endpoint={`/api/invest/ai/stock/${code}`}
           hideOnError
+          expandable
         />
       ) : null}
 
@@ -342,12 +400,11 @@ export default function Stock() {
           {(fund.series || []).length >= 20 ? (
             <section className="card">
               <div className="card-title-row"><h2>{t("近 20 日主力净流入", "20-day main net inflow")}</h2><span className="hint">{t("红入 / 绿出", "Red in / green out")}</span></div>
-              <div className="fund-bars">
-                {(fund.series || []).slice(-20).map((p: any) => {
-                  const max = Math.max(1, ...(fund.series || []).slice(-20).map((x: any) => Math.abs(Number(x.value) || 0)));
-                  const value = Number(p.value) || 0;
-                  return <i key={p.date} className={value >= 0 ? "in" : "out"} style={{ height: `${Math.max(3, (Math.abs(value) / max) * 70)}px` }} title={`${p.date} ${value.toFixed(2)} 亿`} />;
-                })}
+              <FundFlowChart points={fund.series || []} />
+              <div className="chart-legend fund-flow-legend">
+                <span><i className="legend-red" />{t("流入", "Inflow")}</span>
+                <span><i className="legend-green" />{t("流出", "Outflow")}</span>
+                <span className="hint">{t("单位：亿元", "Unit: CNY 100m")}</span>
               </div>
             </section>
           ) : null}

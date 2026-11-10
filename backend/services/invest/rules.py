@@ -693,7 +693,7 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     chart = {
         "period": period,
         "bars": [{"time": b["date"], "open": b["open"], "high": b["high"], "low": b["low"],
-                  "close": b["close"], "volume": b["volume"]} for b in chart_bars],
+                  "close": b["close"], "volume": b["volume"], "amount": b.get("amount")} for b in chart_bars],
         "ma5": [{"time": b["date"], "value": v} for b, v in zip(chart_bars, ma5) if v is not None],
         "ma10": [{"time": b["date"], "value": v} for b, v in zip(chart_bars, ma10) if v is not None],
         "ma20": [{"time": b["date"], "value": v} for b, v in zip(chart_bars, ma20) if v is not None],

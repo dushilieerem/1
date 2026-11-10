@@ -761,41 +761,6 @@ export default function AiChat() {
       {panel ? (
         <section className="card ai-template-panel">
           <div className="card-title-row"><h2>{t("快捷功能", "Quick actions")}</h2><span className="hint">{t("顺序会保存到本机", "Order is saved on this device")}</span></div>
-          <div className="vision-panel">
-            <div className="vision-head">
-              <span className="vision-icon"><ImagePlus size={17} /></span>
-              <div>
-                <b>{t("截图识图", "Screenshot OCR")}</b>
-                <small>{t("用大模型识别股票名/代码/条件，填入输入框", "Read stock names, codes or criteria with the vision model")}</small>
-              </div>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => visionInputRef.current?.click()} disabled={visionBusy}>
-                {t("选择截图", "Choose image")}
-              </button>
-            </div>
-            <input
-              ref={visionInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              hidden
-              onChange={(e) => {
-                void chooseVisionImage(e.target.files?.[0] || null);
-                e.currentTarget.value = "";
-              }}
-            />
-            {visionPreview ? (
-              <div className="vision-preview">
-                <img src={visionPreview} alt={t("待识别截图", "Screenshot to recognize")} />
-                <div className="vision-preview-actions">
-                  <button type="button" className="btn btn-primary btn-sm" onClick={() => void runVision()} disabled={visionBusy}>
-                    {visionBusy ? t("识图中…", "Recognizing…") : t("识别并填入", "Recognize and insert")}
-                  </button>
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setVisionPreview(null); setVisionNote(null); }} disabled={visionBusy}>
-                    {t("取消", "Cancel")}
-                  </button>
-                </div>
-              </div>
-            ) : null}
-          </div>
           {templates.map((tpl, i) => (
             <div key={tpl.id} className="template-row">
               <button className="template-fill" onClick={() => (tpl.id === "condition" ? (setPickerOpen(true), setPanel(false)) : fill(t(tpl.text.zh, tpl.text.en)))}>{t(tpl.label.zh, tpl.label.en)}</button>
@@ -811,6 +776,29 @@ export default function AiChat() {
       {pickerOpen ? <ConditionPicker onSelect={choosePreset} onClose={() => setPickerOpen(false)} /> : null}
 
       <div className="ai-composer">
+        <input
+          ref={visionInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          hidden
+          onChange={(e) => {
+            void chooseVisionImage(e.target.files?.[0] || null);
+            e.currentTarget.value = "";
+          }}
+        />
+        {visionPreview ? (
+          <div className="vision-preview composer-vision">
+            <img src={visionPreview} alt={t("待识别截图", "Screenshot to recognize")} />
+            <div className="vision-preview-actions">
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => void runVision()} disabled={visionBusy}>
+                {visionBusy ? t("识图中…", "Recognizing…") : t("识别并填入", "Recognize and insert")}
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setVisionPreview(null); setVisionNote(null); }} disabled={visionBusy}>
+                {t("取消", "Cancel")}
+              </button>
+            </div>
+          </div>
+        ) : null}
         <textarea
           ref={inputRef}
           rows={1}
@@ -839,6 +827,9 @@ export default function AiChat() {
         <div className="ai-composer-actions">
           <button className={`round-btn ${recording ? "recording" : ""}`} onClick={() => void toggleRecord()} aria-label={recording ? t("停止录音", "Stop recording") : t("语音输入", "Voice input")}>
             {recording ? <MicOff size={18} /> : <Mic size={18} />}
+          </button>
+          <button className="round-btn" onClick={() => visionInputRef.current?.click()} disabled={visionBusy} aria-label={t("截图识图", "Screenshot OCR")} title={t("截图识图", "Screenshot OCR")}>
+            <ImagePlus size={18} />
           </button>
           <button className={`chip ${deep ? "on" : ""}`} onClick={() => setDeep((v) => !v)} title={t("深度思考", "Deep thinking")}>
             {t("深度", "Deep")}

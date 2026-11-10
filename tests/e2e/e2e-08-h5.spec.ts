@@ -263,22 +263,22 @@ test("量化研究入口页展示今日关注与五个入口", async ({ page }) 
   await noHorizontalOverflow(page);
 });
 
-test("因子榜 7 大类可展开，因子库 27 细分可进入详情", async ({ page }) => {
+test("因子榜 6 大类可展开，因子库 60 细分可进入详情", async ({ page }) => {
   await loginByToken(page);
   await page.goto(`${H5}/quant/factors`, { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "因子" })).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator(".quant-category-card")).toHaveCount(7, { timeout: 30_000 });
+  await expect(page.locator(".quant-category-card")).toHaveCount(6, { timeout: 30_000 });
   await expect(page.getByText("因子入门")).toBeVisible();
   await expect(page.locator(".quant-factor-cta")).toBeVisible();
   await expect(page.getByText(/过去一段时间涨得相对好的股票|涨得猛不猛|价格起伏越小/).first()).toBeVisible();
   await page.locator(".quant-category-head").first().click();
-  await expect(page.locator(".quant-subfactor-row")).toHaveCount(5);
+  await expect(page.locator(".quant-subfactor-row")).toHaveCount(10);
   await page.locator(".quant-subfactor-row").nth(1).click();
   await expect(page.locator(".quant-detail")).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: "关闭", exact: true }).click();
   await page.getByRole("button", { name: "因子库", exact: true }).click();
-  await expect(page.locator(".quant-library-group")).toHaveCount(7);
-  await expect(page.locator(".quant-library-row")).toHaveCount(27);
+  await expect(page.locator(".quant-library-group")).toHaveCount(6);
+  await expect(page.locator(".quant-library-row")).toHaveCount(60);
   await page.locator(".quant-library-row").first().click();
   await expect(page.locator(".quant-detail")).toBeVisible({ timeout: 20_000 });
   await noHorizontalOverflow(page);
@@ -302,8 +302,8 @@ test("快速实验：因子卡方向、配置预览与权重输入", async ({ pa
   await page.goto(`${H5}/quant/strategies?tab=quick`, { waitUntil: "domcontentloaded" });
   await expect(page.locator(".quant-pick").first()).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".quant-pick").first()).toBeVisible();
-  await page.locator(".quant-pick").nth(0).click();
-  await page.locator(".quant-pick").nth(1).click();
+  await page.locator('.quant-pick[data-category="value"]').first().click();
+  await page.locator('.quant-pick[data-category="momentum"]').first().click();
   await expect(page.locator(".pick-dir")).toHaveCount(2);
   await expect(page.getByText("分散度不错", { exact: false }).or(page.getByText("重复暴露", { exact: false }))).toBeVisible();
   await page.getByRole("button", { name: /下一步：生成配置/ }).click();
@@ -354,12 +354,17 @@ test("个股透视 P0：3×3 快照、财务/资金/简况切换，不显示无�
   await expect(page.locator(".fin-trend-tabs button")).toHaveCount(8);
   await expect(page.locator(".fin-trend-svg")).toBeVisible();
   await expect(page.locator(".fin-period-select > button")).toContainText("三季报");
+  await expect(page.locator(".fin-range-controls")).toBeVisible();
+  await page.locator(".fin-range-controls button").last().click();
+  await expect(page.locator(".fin-range-controls span")).toContainText("5");
   await page.locator(".fin-period-select > button").click();
   await page.locator(".fin-period-menu button", { hasText: "年报" }).click();
   await expect(page.locator(".fin-period-select > button")).toContainText("年报");
   await page.locator(".stock-seg button", { hasText: "资金" }).click();
   await expect(page.getByText("主力资金")).toBeVisible();
   await expect(page.getByText("近 20 日主力净流入")).toBeVisible();
+  await expect(page.locator(".fund-flow-svg")).toBeVisible();
+  await expect(page.locator(".fund-flow-legend")).toContainText("流入");
   await page.locator(".stock-seg button", { hasText: "简况" }).click();
   await expect(page.getByText("同业比较")).toBeVisible();
   await expect(page.getByText("股东", { exact: false })).toHaveCount(0);
@@ -367,16 +372,34 @@ test("个股透视 P0：3×3 快照、财务/资金/简况切换，不显示无�
   await noHorizontalOverflow(page);
 });
 
-test("个股 AI 解读进入页面自动生成", async ({ page }) => {
+test("个股五维 AI 分析自动生成，默认收起并可展开", async ({ page }) => {
   await loginByToken(page);
   await page.route("**/api/invest/ai/stock/**", (route) =>
     route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({ ok: true, card: { summary: "估值处于历史中位，关注盈利稳定性。", sections: [] } }),
+      body: JSON.stringify({
+        ok: true,
+        card: {
+          summary: "估值处于历史中位，关注盈利稳定性。",
+          sections: [
+            { key: "fundamental", title: "基本面", body: "营收与利润保持增长。", items: [{ k: "营收", v: "100 亿" }] },
+            { key: "profitability", title: "盈利", body: "毛利率保持稳定。" },
+            { key: "valuation", title: "估值", body: "PE 处于近三年中位。" },
+            { key: "risk", title: "风险", body: "估值分位偏高。" },
+            { key: "capital", title: "资金", body: "近 5 日主力净流入。" },
+          ],
+          disclaimer: "AI 生成 · 非投资建议",
+        },
+      }),
     }),
   );
   await page.goto(`${H5}/stock/600519`, { waitUntil: "domcontentloaded" });
   await expect(page.getByText("估值处于历史中位，关注盈利稳定性。")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".ai-expand-toggle")).toContainText("展开五维分析");
+  await expect(page.locator(".ai-panel .ai-section")).toHaveCount(0);
+  await page.locator(".ai-expand-toggle").click();
+  await expect(page.locator(".ai-panel .ai-section")).toHaveCount(5);
+  await expect(page.locator(".ai-panel .ai-section").getByText("资金", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "生成 AI 解读" })).toHaveCount(0);
   await noHorizontalOverflow(page);
 });
@@ -386,6 +409,8 @@ test("Agent 管理页展示 Agent 与提示词编辑", async ({ page }) => {
   await page.goto(`${H5}/agents`, { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Agent 管理" })).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(".agent-card").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".agent-card", { hasText: "个股五维分析" })).toBeVisible();
+  await expect(page.locator(".agent-card", { hasText: "AI 管家个股解读" })).toBeVisible();
   await expect(page.locator(".agent-prompt").first()).toBeVisible();
   const prompt = page.locator(".agent-prompt").first();
   await prompt.fill("只讲最关键的估值风险，不展开。");
@@ -400,11 +425,14 @@ test("个股走势移除分时，K 线支持均线/BOLL 切换且成交量独立
   await expect(page.locator(".kline")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("button", { name: "分时" })).toHaveCount(0);
   await expect(page.locator(".volume-chart")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator(".volume-topline b")).toContainText("万");
-  await expect(page.locator(".chart-indicator-switch button")).toHaveCount(2);
+  await expect(page.locator(".sub-legend")).toContainText("万");
+  await expect(page.locator(".chart-topline .chart-indicator-switch button")).toHaveCount(2);
+  await expect(page.locator(".sub-indicator-switch button")).toHaveCount(5);
   await expect(page.locator(".chart-legend-top").getByText("MA5", { exact: true })).toBeVisible();
-  await expect(page.locator(".volume-topline").getByText("MA5", { exact: true })).toBeVisible();
-  await expect(page.locator(".volume-topline").getByText("MA10", { exact: true })).toBeVisible();
+  await expect(page.locator(".sub-legend").getByText("MA5", { exact: false })).toBeVisible();
+  await expect(page.locator(".sub-legend").getByText("MA10", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "MACD", exact: true }).click();
+  await expect(page.locator(".sub-legend").getByText("DIF", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "BOLL", exact: true }).click();
   await expect(page.getByText("MID", { exact: true })).toBeVisible();
   await expect(page.getByText("UP", { exact: true })).toBeVisible();
@@ -503,9 +531,8 @@ test("AI 截图识图填入输入框，不自动发送", async ({ page }) => {
     }),
   );
   await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: /全部/ }).click();
-  await expect(page.getByText("截图识图")).toBeVisible({ timeout: 20_000 });
-  await page.locator(".vision-panel input[type=file]").setInputFiles({
+  await expect(page.getByRole("button", { name: "截图识图" })).toBeVisible({ timeout: 20_000 });
+  await page.locator(".ai-composer input[type=file]").setInputFiles({
     name: "stock.png",
     mimeType: "image/png",
     buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlqkAAAAASUVORK5CYII=", "base64"),

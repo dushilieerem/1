@@ -68,7 +68,32 @@ def _card_system() -> str:
     return agent_prompts.CARD_SYSTEM
 
 
-def _compact_result(result: dict[str, Any]) -> dict[str, Any]:
+def _clean_sections(sections: Any) -> list[dict[str, Any]]:
+    cleaned: list[dict[str, Any]] = []
+    for section in sections if isinstance(sections, list) else []:
+        if not isinstance(section, dict):
+            continue
+        body = str(section.get("body") or "").strip()
+        if not body:
+            continue
+        items = []
+        for item in section.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            k = str(item.get("k") or "").strip()
+            v = str(item.get("v") or "").strip()
+            if k and v:
+                items.append({"k": k[:40], "v": v[:80], "tone": str(item.get("tone") or "")[:20]})
+        cleaned.append({
+            "key": str(section.get("key") or "")[:40],
+            "title": str(section.get("title") or "")[:40],
+            "body": body[:1200],
+            "items": items[:6],
+        })
+    return cleaned
+
+
+def _compact_result(result: dict[str, Any], *, keep_sections: bool = False) -> dict[str, Any]:
     if result.get("blocked"):
         return result
     card = result.get("card") if isinstance(result.get("card"), dict) else {}
@@ -83,7 +108,7 @@ def _compact_result(result: dict[str, Any]) -> dict[str, Any]:
                 break
     card = {
         "summary": str(summary or "数据不足，暂无法给出结论。").strip(),
-        "sections": [],
+        "sections": _clean_sections(card.get("sections")) if keep_sections else [],
         "disclaimer": card.get("disclaimer") or "AI 生成 · 非投资建议",
         "meta": card.get("meta") or {"dataSource": "服务端结构化数据"},
     }
@@ -97,6 +122,7 @@ def _call(
     *,
     user_id: int | None = None,
     refresh: bool = False,
+    keep_sections: bool = False,
 ) -> dict[str, Any]:
     base_prompt = system or (agent_prompts.AGENT_BY_ID.get(task_id) or {}).get("default_prompt") or _card_system()
     prompt = agent_prompts.resolve_prompt(user_id, task_id, base_prompt)
@@ -134,7 +160,7 @@ def _call(
             result = {"card": {"summary": BLOCK_MESSAGE, "sections": []}, "blocked": True}
         else:
             result = {"card": {"summary": content, "sections": []}}
-    result = _compact_result(result)
+    result = _compact_result(result, keep_sections=keep_sections)
     ai_cache.put(user_id, "call", cache_key, result)
     return result
 
@@ -274,11 +300,136 @@ def _stock_term_from_text(text: str) -> str:
     return " ".join(cleaned.split())
 
 
-def _stock_context(conn: PGConn, code: str) -> dict[str, Any]:
+def _stock_num(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number else None
+
+
+def _stock_yi(value: Any) -> float | None:
+    """财报原始金额按元存储时换算为亿元，已经是亿元的小数值保持原样。"""
+    number = _stock_num(value)
+    if number is None:
+        return None
+    return round(number / 1e8, 2) if abs(number) >= 1e6 else number
+
+
+def _stock_dimension_facts(data: dict[str, Any]) -> dict[str, Any]:
+    """把个股数据收敛成五维事实包；所有数字由服务端给出，模型不负责计算。"""
+    quote = data.get("quote") or {}
+    technical = data.get("technical") or {}
+    valuation = data.get("valuation") or {}
+    report = data.get("report") or {}
+    statements = data.get("statements") or {}
+    balance = statements.get("balance") or {}
+    flow = data.get("fundFlow") or {}
+    risks = [{"title": r.get("title"), "detail": r.get("detail")} for r in (data.get("risks") or []) if isinstance(r, dict)]
+    trend_items = (data.get("financialTrend") or {}).get("items") or []
+    trend = [
+        {
+            "period": item.get("label"),
+            "revenue": item.get("revenue"),
+            "net_profit": item.get("net_profit"),
+            "gross_margin": item.get("gross_margin"),
+            "net_margin": item.get("net_margin"),
+            "roe": item.get("roe"),
+            "revenue_yoy": item.get("revenue_yoy"),
+            "profit_yoy": item.get("profit_yoy"),
+        }
+        for item in trend_items[-6:]
+        if isinstance(item, dict)
+    ]
+    assets = _stock_num(balance.get("total_assets"))
+    liabilities = _stock_num(balance.get("total_liabilities"))
+    debt_ratio = round(liabilities / assets * 100, 2) if assets and liabilities is not None else None
+    ocf = _stock_num(report.get("ocf"))
+    profit = _stock_num(report.get("netProfit"))
+    ocf_to_profit = round(ocf / profit, 2) if ocf is not None and profit not in (None, 0) else None
+    latest_trend = trend_items[-1] if trend_items and isinstance(trend_items[-1], dict) else {}
+    peers = [
+        {"name": p.get("name"), "pe": p.get("pe"), "marketCap": p.get("marketCap")}
+        for p in (data.get("peers") or [])[:5]
+        if isinstance(p, dict)
+    ]
+    return {
+        "fundamental": {
+            "code": quote.get("code"),
+            "name": quote.get("name"),
+            "industry": quote.get("industry"),
+            "asset": quote.get("asset"),
+            "market": quote.get("market"),
+            "reportPeriod": report.get("period") or statements.get("period"),
+            "revenue": report.get("revenue"),
+            "revenueYoY": report.get("revenueYoY"),
+            "netProfit": report.get("netProfit"),
+            "profitYoY": report.get("profitYoY"),
+            "totalAssets": _stock_yi(balance.get("total_assets")),
+            "totalLiabilities": _stock_yi(balance.get("total_liabilities")),
+            "debtRatio": debt_ratio,
+            "cash": _stock_yi(balance.get("cash")),
+            "inventory": _stock_yi(balance.get("inventory")),
+            "receivables": _stock_yi(balance.get("receivables")),
+            "amountUnit": "亿元",
+            "peers": peers,
+        },
+        "profitability": {
+            "grossMargin": report.get("grossMargin"),
+            "netMargin": latest_trend.get("net_margin"),
+            "roe": report.get("roe"),
+            "ocf": ocf,
+            "ocfToProfit": ocf_to_profit,
+            "grossMarginTrend": [x.get("gross_margin") for x in trend],
+            "netMarginTrend": [x.get("net_margin") for x in trend],
+            "revenueYoY": report.get("revenueYoY"),
+            "profitYoY": report.get("profitYoY"),
+            "trend": trend,
+        },
+        "valuation": {
+            "pe": valuation.get("pe"),
+            "pb": valuation.get("pb"),
+            "pePercentile": valuation.get("pePercentile"),
+            "pbPercentile": valuation.get("pbPercentile"),
+            "industryPe": valuation.get("industryPe"),
+            "dividendYield": quote.get("dividendYield"),
+            "marketCap": quote.get("marketCap"),
+            "label": valuation.get("label"),
+            "samples": valuation.get("samples"),
+        },
+        "risk": {
+            "triggered": risks,
+            "drawdown": technical.get("drawdown"),
+            "return20": technical.get("return20"),
+            "volumeRatio": technical.get("volumeRatio"),
+            "trend": technical.get("trend"),
+            "beta": quote.get("beta"),
+            "pePercentile": valuation.get("pePercentile"),
+            "debtRatio": debt_ratio,
+        },
+        "capital": {
+            "latest": flow.get("latest"),
+            "fiveDay": flow.get("five_day"),
+            "twentyDay": flow.get("twenty_day"),
+            "distribution": flow.get("distribution") or [],
+            "divergence": flow.get("divergence"),
+            "available": flow.get("available"),
+            "turnover": quote.get("turnover"),
+            "volumeRatio": technical.get("volumeRatio"),
+            "marketCap": quote.get("marketCap"),
+            "floatMarketCap": quote.get("floatMarketCap"),
+            "level": "亿元" if quote.get("market") != "US" else "USD bn",
+        },
+        "dataDate": data.get("dataDate"),
+        "dataSource": data.get("dataSource"),
+    }
+
+
+def _stock_context(conn: PGConn, code: str, *, deep: bool = False) -> dict[str, Any]:
     data = rules.build_stock(conn, code)
     if not data:
         raise HTTPException(status_code=404, detail="标的未收录")
-    return {
+    context = {
         "quote": data.get("quote"),
         "technical": data.get("technical"),
         "valuation": data.get("valuation"),
@@ -291,6 +442,12 @@ def _stock_context(conn: PGConn, code: str) -> dict[str, Any]:
         "dataDate": data.get("dataDate"),
         "dataSource": data.get("dataSource"),
     }
+    if deep:
+        context["financialTrend"] = data.get("financialTrend")
+        context["statements"] = data.get("statements")
+        context["peers"] = data.get("peers")
+        context["dimensionFacts"] = _stock_dimension_facts(data)
+    return context
 
 
 @router.get("/status")
@@ -298,7 +455,7 @@ def status() -> dict[str, Any]:
     try:
         from ai.router import available_task
         tasks = [
-            "invest.intent", "invest.daily", "invest.stock", "invest.portfolio",
+            "invest.intent", "invest.daily", "invest.stock", "invest.stock_deep", "invest.portfolio",
             "invest.announcement", "invest.condition", "invest.compare",
             "invest.paper", "invest.quant", "invest.backtest", "invest.allocation",
         ]
@@ -645,7 +802,16 @@ def stock_ai(
     conn: PGConn = Depends(invest_conn),
     refresh: bool = Query(False),
 ) -> dict[str, Any]:
-    return {"ok": True, **_call("invest.stock", _stock_context(conn, code), user_id=int(user["id"]), refresh=refresh)}
+    return {
+        "ok": True,
+        **_call(
+            "invest.stock_deep",
+            _stock_context(conn, code, deep=True),
+            user_id=int(user["id"]),
+            refresh=refresh,
+            keep_sections=True,
+        ),
+    }
 
 
 @router.post("/daily")

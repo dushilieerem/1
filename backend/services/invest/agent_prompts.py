@@ -27,6 +27,23 @@ CARD_SYSTEM = (
     + RED_LINE
 )
 
+STOCK_DEEP_SYSTEM = (
+    "你是 SVQuant Invest 的个股五维分析助手。只依据输入 JSON 中的 quote、technical、valuation、"
+    "report、statements、financialTrend、fundFlow、risks、peers 与 dimensionFacts 作答；"
+    "不得补造任何数字或事实，数据缺失时明确写“数据缺失/待补充”。只输出 JSON，不要 markdown。"
+    '结构：{"summary":"2–3 句总体结论", "sections": ['
+    '{"key":"fundamental","title":"基本面","body":"2–3 句","items":[{"k":"...","v":"..."}]},'
+    '{"key":"profitability","title":"盈利","body":"2–3 句","items":[{"k":"...","v":"..."}]},'
+    '{"key":"valuation","title":"估值","body":"2–3 句","items":[{"k":"...","v":"..."}]},'
+    '{"key":"risk","title":"风险","body":"2–3 句","items":[{"k":"...","v":"..."}]},'
+    '{"key":"capital","title":"资金","body":"2–3 句","items":[{"k":"...","v":"..."}]}],'
+    '"disclaimer":"AI 生成 · 非投资建议","meta":{"dataSource":"行情 + 财务 + 估值 + 资金流"}}。'
+    "五节必须齐全且顺序固定；每节 body 讲事实、口径与含义，items 放 2–4 个已给出的关键数字；"
+    "不要做输入之外的运算。风险节引用 risks 中实际触发的项目，资金节引用 fundFlow 的实际数值。"
+    "只描述事实、口径与风险，不写买卖建议、目标价、涨跌预测或收益承诺。"
+    + RED_LINE
+)
+
 PORTFOLIO_DEEP_SYSTEM = (
     "你是 SVQuant Invest 的组合风险解读助手。只依据输入 JSON 中的组合快照、体检、归因、"
     "穿透、压力测试与成本数据作答；不得补造数字。只输出 JSON，不要 markdown。"
@@ -72,7 +89,8 @@ INTENT_SYSTEM = (
 )
 
 AGENTS: tuple[dict[str, Any], ...] = (
-    {"task_id": "invest.stock", "name": "个股解读", "name_en": "Stock read", "description": "解释个股行情、财务、估值与风险", "description_en": "Quote, financials, valuation and risks", "default_prompt": CARD_SYSTEM, "editable": True},
+    {"task_id": "invest.stock", "name": "AI 管家个股解读", "name_en": "AI assistant stock read", "description": "AI 管家对话中的个股短解读，只输出结论", "description_en": "Short stock read in AI assistant chat", "default_prompt": CARD_SYSTEM, "editable": True},
+    {"task_id": "invest.stock_deep", "name": "个股五维分析", "name_en": "Stock 5-dim analysis", "description": "个股页自动分析：基本面 / 盈利 / 估值 / 风险 / 资金", "description_en": "Stock page: fundamentals, profitability, valuation, risk and capital", "default_prompt": STOCK_DEEP_SYSTEM, "editable": True},
     {"task_id": "invest.portfolio", "name": "组合解读", "name_en": "Portfolio read", "description": "解释组合风险、归因与配置偏离", "description_en": "Risk, attribution and allocation drift", "default_prompt": PORTFOLIO_DEEP_SYSTEM, "editable": True},
     {"task_id": "invest.announcement", "name": "公告解读", "name_en": "Filing summary", "description": "解释公告/资讯标题的事实与风险", "description_en": "Facts and risks in a filing or headline", "default_prompt": CARD_SYSTEM, "editable": True},
     {"task_id": "invest.compare", "name": "标的对比", "name_en": "Compare", "description": "同口径对比两个标的", "description_en": "Compare two symbols on the same basis", "default_prompt": CARD_SYSTEM, "editable": True},

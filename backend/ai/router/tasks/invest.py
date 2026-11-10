@@ -86,6 +86,50 @@ def validate_card(raw: str, request: TaskRequest) -> dict[str, Any]:
     return data
 
 
+_STOCK_DIMENSIONS = (
+    ("fundamental", "基本面"),
+    ("profitability", "盈利"),
+    ("valuation", "估值"),
+    ("risk", "风险"),
+    ("capital", "资金"),
+)
+
+
+def validate_stock_deep(raw: str, request: TaskRequest) -> dict[str, Any]:
+    """个股页五维分析：必须返回 summary + 五个固定维度，缺项直接判定失败。"""
+    data = validate_card(raw, request)
+    by_key: dict[str, dict[str, Any]] = {}
+    for section in data.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        key = str(section.get("key") or "").strip()
+        if key not in dict(_STOCK_DIMENSIONS):
+            continue
+        body = str(section.get("body") or "").strip()
+        if not body:
+            continue
+        items = []
+        for item in section.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            k = str(item.get("k") or "").strip()
+            v = str(item.get("v") or "").strip()
+            if k and v:
+                items.append({"k": k, "v": v})
+        by_key[key] = {
+            "key": key,
+            "title": dict(_STOCK_DIMENSIONS)[key],
+            "body": body,
+            "items": items[:4],
+        }
+    missing = [title for key, title in _STOCK_DIMENSIONS if key not in by_key]
+    if missing:
+        raise AiBadOutput("个股五维分析缺少：" + "、".join(missing))
+    data["sections"] = [by_key[key] for key, _ in _STOCK_DIMENSIONS]
+    data["meta"].setdefault("dataSource", "行情 + 财务 + 估值 + 资金流")
+    return data
+
+
 INTENT_TASK = register(
     TaskSpec(
         task_id="invest.intent",
@@ -119,6 +163,18 @@ STOCK_TASK = register(
         timeout_sec=120,
         executors=("local",),
         validator=validate_card,
+    )
+)
+
+STOCK_DEEP_TASK = register(
+    TaskSpec(
+        task_id="invest.stock_deep",
+        description="Invest 个股五维分析：基本面、盈利、估值、风险、资金",
+        temperature=0.25,
+        max_tokens=5000,
+        timeout_sec=180,
+        executors=("local",),
+        validator=validate_stock_deep,
     )
 )
 

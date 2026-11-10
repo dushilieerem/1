@@ -76,3 +76,14 @@ def test_db_connections_thresholds() -> None:
     crit = evaluate_signals(health=HEALTHY, db_connections_used=92, db_connections_limit=100)
     assert any(a.code == "db_connections_high" and a.level == "critical" for a in crit)
     assert evaluate_signals(health=HEALTHY, db_connections_used=50, db_connections_limit=100) == []
+
+
+def test_wal_archive_failures_and_staleness() -> None:
+    failed = evaluate_signals(health=HEALTHY, wal_archive_failed=3)
+    assert any(a.code == "wal_archive_failed" and a.level == "critical" for a in failed)
+
+    stale = evaluate_signals(health=HEALTHY, wal_archive_age_sec=3600, wal_archive_warn_age_sec=1800)
+    assert any(a.code == "wal_archive_stale" and a.level == "warning" for a in stale)
+
+    fresh = evaluate_signals(health=HEALTHY, wal_archive_failed=0, wal_archive_age_sec=60)
+    assert fresh == []

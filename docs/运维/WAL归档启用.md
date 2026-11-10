@@ -37,12 +37,22 @@ ls -lt deploy/wal-archive | head
 bash scripts/ops/pg_basebackup.sh      # 手动
 ```
 
-建议每周日 04:00 执行（可挂在 poll timer 的周日窗口，或单独 cron）。
+已经挂在轮询上：**每周日 04:00–04:59 的第一次轮询触发，一周只跑一次**（标记
+`/var/lib/svquant/basebackup.week`，日志 `basebackup.log`）。手动补跑：
+
+```bash
+WEEKLY_BASEBACKUP_FORCE=1 bash scripts/ops/pg_basebackup.sh
+```
+
 脚本会校验 `base.tar.gz`、清理第 5 份之前的基础备份和 14 天前的 WAL。
 
 ## 4. 监控
 
-`pg_stat_archiver.failed_count` 持续增长、或 `last_archived_time` 超过 15 分钟未更新，
+`/api/health` 的 `wal_archive` 字段暴露 `archived` / `failed` / `age_sec`；
+`scripts/ops/check_alerts.py` 会对 `failed>0` 告警（critical）、对
+`age_sec > 1800`（30 分钟，可用 `SVQ_WAL_ARCHIVE_MAX_AGE_SEC` 调整）告警（warning）。
+
+`pg_stat_archiver.failed_count` 持续增长、或归档长时间没有推进，
 说明归档失败——此时 WAL 会在 `pg_wal` 里堆积，`max_wal_size`（1GB）之后会触发强制检查点，
 磁盘可能被吃满。
 

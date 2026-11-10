@@ -142,6 +142,8 @@ def score_page(text: str, rule: dict[str, Any], section: str) -> int:
             score -= 2
         if any(word in text for word in ("薪酬由", "报酬为", "薪酬总额", "报酬总额")):
             score -= 5
+        if any(word in text for word in ("衍生品", "优先股", "募集资金", "保证金")):
+            score -= 5
     return score
 
 def pick_page(
@@ -151,6 +153,8 @@ def pick_page(
     rule: dict[str, Any],
     index: pd.DataFrame,
     pages: pd.DataFrame,
+    *,
+    use_overrides: bool = True,
 ) -> tuple[dict[str, Any] | None, str]:
     candidates: list[dict[str, Any]] = []
     seen: set[int] = set()
@@ -172,7 +176,7 @@ def pick_page(
         candidates.append(
             {"page_no": page_no, "text": text, "doc_id": row["doc_id"], "score": score}
         )
-    override = PAGE_OVERRIDES.get((symbol, section))
+    override = PAGE_OVERRIDES.get((symbol, section)) if use_overrides else None
     if override is not None:
         for row in all_pages.itertuples(index=False):
             if int(row.page_no) == int(override):

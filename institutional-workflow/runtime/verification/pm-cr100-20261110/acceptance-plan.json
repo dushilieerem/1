@@ -1,0 +1,71 @@
+{
+  "schema": "pm.cr100.acceptance-plan.v1",
+  "recorded_at": "2026-11-10T01:45:52.484902+00:00",
+  "status": "planned_not_executed",
+  "method": "bounded-factor-rd-v2",
+  "authority": "用户已批准本项目真实自动/人工/人机测试及后续100000000 Tokens池；计算范围不扩大。",
+  "implementation_gate": [
+    "同一开发者完成正式接线并给实际测试证据",
+    "PM独立审查契约/父E-H/字段/数学/控制版本",
+    "真实在途五类均0，保留环境仅重载18799，18804及共享服务不动",
+    "真实页面显示已加载方法与阶段"
+  ],
+  "replay": {
+    "mode": "只读既有A报告的确定性诊断，不调用模型或RE，不重新生成候选",
+    "project": "b9d9c387-af10-420e-acb4-a88d831f2265",
+    "cases": [
+      {
+        "candidate": "11f442c3-5523-45d1-a3e3-df44346eaeef",
+        "expected": "E1独立列出n59不足与NWt1.1764不足；历史K1，下一新增试验用当时K2阈值；不混入E2源码"
+      },
+      {
+        "candidate": "fcdd28cb-8779-4f6f-b70a-be5523316ca8",
+        "expected": "E2 n60已过，NWt1.63461<2.2414027276；未完成正式查重，不称验证通过"
+      }
+    ],
+    "constraints": "current_K来自当前台账，historical_K来自历史gate/trial；禁止把重放模拟K写入正式台账。"
+  },
+  "live_autonomous": {
+    "planned_research_question": "短期价格区间收缩后，收盘突破是否存在次日延续；仅OHLCV，在固定样本中提出一个可证伪的价量机制及实现。",
+    "purpose": "验证新方法确实自主提出、实现、解释研发证据并受约束继续/停止；不同研究方向，不将其包装为旧A收益对照。",
+    "direction": "positive",
+    "metric": "rank_ic",
+    "holding_days": 1,
+    "fixed_sample_count": 40,
+    "sample_definition": "沿已保存pm-real-user-acceptance固定40证券；不是PIT指数成分。",
+    "development": [
+      "2025-07-01",
+      "2025-09-30"
+    ],
+    "sealed_preregistered": [
+      "2026-06-22",
+      "2026-09-21"
+    ],
+    "max_market_trials": 2,
+    "max_sealed": 1,
+    "min_observations": 60,
+    "min_signed_ic": 0.005,
+    "max_drawdown": 0.5,
+    "k_rule": "新研究方向独立建一次任务，本任务全部市场结果计K；失败不改名重建/翻方向/换日期重置K。",
+    "compute": "≤93日评分，单并发，现有RSS3GiB/AS12GiB/180s/CPU120s/可用内存16GiB约束；无334全库。",
+    "not_started": true
+  },
+  "live_assistance": {
+    "precondition": "首次纯自动新版小样本结束后安排；不得把两者混记成一次纯自动验收。",
+    "checks": [
+      "在真实F3或规划在途点击暂停，确认不再调度下一步",
+      "允许已发请求结束并计量，迟到产物只进历史而不覆盖人工稿",
+      "明确人工建议与目标E/H，显示采用/未采用状态",
+      "保存人工版本或明确交回，方法/范围/K连续，旧结果不被替换"
+    ],
+    "not_started": true
+  },
+  "outcome_reporting": [
+    "模型/工具事件及每轮Proposal/Implementation/Diagnosis身份",
+    "成功与失败都保留，全精度门槛与显示精度分离",
+    "输出截断/解析/代码/市场不达标分别计数",
+    "实际调用Tokens与预留、有效实现率、字段遵从与重复率",
+    "若无候选达标据实停止，不降低条件凑入库"
+  ],
+  "remaining_C": "真正有用且足够新颖的因子入库仍须独立完成有界完整对照及封存，当前计划不声称已达成。"
+}

@@ -551,7 +551,7 @@ def pipeline(org_id: int) -> dict[str, Any]:
                   FROM inst_authorization a
                   JOIN inst_proposal_version pv ON pv.id=a.proposal_version_id
                   JOIN inst_proposal p ON p.id=pv.proposal_id
-                 WHERE a.status IN ('qualified','filled')
+                 WHERE a.status='qualified'
                 """
             ).fetchall()
         }

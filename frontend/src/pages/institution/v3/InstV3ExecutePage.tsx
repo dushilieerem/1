@@ -74,12 +74,9 @@ export function InstV3ExecutePage() {
   const approvalConditions = (snapshot.approval_conditions || []) as unknown[];
 
   const load = async () => {
+    // 默认只展示当前待执行授权；已成交/撤销属于历史记录，不混入执行待办。
     const qualified = await instApi<{ items: Authorization[] }>("/authorizations?status=qualified");
-    let rows = qualified.items || [];
-    if (!rows.length) {
-      const all = await instApi<{ items: Authorization[] }>("/authorizations");
-      rows = all.items || [];
-    }
+    const rows = qualified.items || [];
     setItems(dedupeBy(rows, (a) => a.id));
     return rows;
   };

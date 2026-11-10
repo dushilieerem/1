@@ -1100,3 +1100,13 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 数据缺口已同步数据业务：
   - `md_daily_bar` 历史行 `volume/amount/turnover` 全 NULL，仅最近 research-rv 行有值；
   - `news_items` 15,000 行中 12,810 行 `symbols=[]`。
+
+
+### 11.64 流水线与审批/执行口径统一（2026-11-10）
+
+- 问题：流水线展示“当前阶段”，但审批模块把 draft 议案和历史已审/已执行记录混进待办，执行模块在没有 qualified 授权时回退展示 filled 历史，造成“流水线 0、模块有项目”。
+- 修复：
+  - 审批页前端只展示当前待办：`partner_review/risk_precheck/chairman_review/authorized`；不再把 reviewed 历史拼进当前列表。后端 `/proposals` 对 manager 仍保留自己的 draft 契约，供编辑/测试使用，不改变 API。
+  - 执行模块只展示 `qualified` 授权；已成交/撤销历史不再回退混入。
+  - 流水线 stage4 只按 `qualified` 授权计算，filled 历史不计入；持仓仍归 stage5。
+- 生产回读：stage2=万科A（case:51），stage3/4=0，stage5=贵州茅台；审批/执行模块同样无当前待办，口径一致。

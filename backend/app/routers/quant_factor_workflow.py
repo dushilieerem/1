@@ -426,8 +426,11 @@ class SourceCheckBody(BaseModel):
 def source_check(project_id:str,body:SourceCheckBody,ctx=Depends(require_quant_researcher)):
     from services.factor.detect_store import get_project
     from services.quant_factor.causality import diagnose_source
-    invoke(get_project,identity(ctx)[0],project_id)
-    try:return diagnose_source(body.code,body.name)
+    project=invoke(get_project,identity(ctx)[0],project_id)['project']
+    try:
+        from services.quant_factor.research_contract import check_project
+        check_project(project,body.code,body.name)
+        return diagnose_source(body.code,body.name)
     except (ValueError,SyntaxError) as exc:raise HTTPException(409,str(exc)) from exc
 
 
@@ -441,3 +444,25 @@ def read_workbench(project_id:str,ctx=Depends(require_quant_researcher)):
 def model_budget_status(ctx=Depends(require_quant_user)):
     from services.quant_factor import model_budget
     return invoke(model_budget.status,*identity(ctx))
+
+
+class ResearchAdviceBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    branch_id:str
+    control_epoch:str
+    candidate_id:str|None=None
+    message:str=Field(min_length=2,max_length=1000)
+    request_key:str=Field(min_length=1,max_length=100)
+
+@router.post('/topics/{topic_id}/research-advice')
+def submit_research_advice(topic_id:str,body:ResearchAdviceBody,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor.research_advice import submit
+    uid,org=identity(ctx)
+    return invoke(submit,uid,org,topic_id,body.model_dump())
+
+
+@router.get('/candidates/{candidate_id}/development-diagnosis')
+def read_development_diagnosis(candidate_id:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor.development_diagnosis import read
+    uid,org=identity(ctx)
+    return invoke(read,uid,org,candidate_id)

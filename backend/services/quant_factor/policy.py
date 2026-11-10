@@ -20,6 +20,9 @@ def number(value, name, low, high):
     return v
 
 def snapshot(project):
+    from .research_contract import check_project
+    try:check_project(project)
+    except ValueError as exc:raise WorkflowError(str(exc)) from exc
     c=project['config']; p=c.get('researchPlan') or {}
     if not p.get('revision') or not str(p.get('hypothesis','')).strip() or not str(p.get('acceptance','')).strip():
         raise WorkflowError('请先保存研究假设和筛选条件')
@@ -59,6 +62,7 @@ def snapshot(project):
     if draft.get('name')==name and draft.get('body'):
         try: validated_factor_code(draft['body'],name)
         except ValueError as exc: raise WorkflowError(str(exc)) from exc
+        check_project(project,draft['body'],name)
         request['factor_code']=draft['body']
     else:
         library=(c.get('factorLibraries') or {}).get(name)
@@ -74,7 +78,7 @@ def evaluate(result, rules, k=None, lags=None):
     metric=rules.get('icMetric','ic')
     ic=number(metrics.get(metric,fa.get('rank_ic_mean' if metric=='rank_ic' else 'ic_mean')),'IC',-1,1)
     drawdown=abs(number(metrics.get('max_drawdown'),'回撤',-1,1))
-    series=fa.get('rank_ic_series') or fa.get('ic_series') or []
+    series=fa.get('rank_ic_series' if metric=='rank_ic' else 'ic_series') or []
     observations=0
     for item in series:
         v=item.get('value',item.get('ic')) if isinstance(item,dict) else None
@@ -97,7 +101,7 @@ def evaluate(result, rules, k=None, lags=None):
                 checks.append({'name':'方向 NW t','actual':signed_t,'operator':'>=','threshold':required,'passed':signed_t>=required})
             except ValueError as exc:
                 checks.append({'name':'方向 NW t','actual':None,'operator':'可计算','threshold':True,'passed':False,'reason':str(exc)})
-    return {'passed':all(x['passed'] for x in checks),'checks':checks,'sealed':False,
+    return {'passed':all(x['passed'] for x in checks),'checks':checks,'sealed':False,'metric_type':metric,'k_used':k if isinstance(k,int) and not isinstance(k,bool) and k>=1 else 1,
             'limitation':'样本外复验；当前数据权限未封存，不构成独立封存验证或投资准入。'}
 
 def compare_identity(development,validation):

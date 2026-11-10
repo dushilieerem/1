@@ -1,0 +1,180 @@
+{
+  "read_only_existing_development": true,
+  "transaction_read_only": true,
+  "new_model_or_market_compute": false,
+  "old_records_modified": false,
+  "project_id": "b9d9c387-af10-420e-acb4-a88d831f2265",
+  "max_trials": 2,
+  "diagnoses": [
+    {
+      "facts": {
+        "schema": "quant.development-diagnosis.v1",
+        "evaluation_stage": "development",
+        "metric_type": "rank_ic",
+        "candidate_id": "11f442c3-5523-45d1-a3e3-df44346eaeef",
+        "snapshot_hash": "f590cde034c1cff2c74fd758894c07cb2368229447221b35e6972f4a0ef4c4fa",
+        "report_id": "qf_11f442c3-5523-45d1-a3e3-df44346eaeef_development",
+        "trial_no": 1,
+        "branch_id": "8bdab65b-effd-43f5-8fa5-1c76628e939d",
+        "historical_k": 1,
+        "historical_k_source": "derived_counted_topic_prefix",
+        "historical_threshold": 1.9599639845400536,
+        "current_k": 2,
+        "current_threshold": 2.2414027276049464,
+        "next_new_trial_k": 3,
+        "next_new_trial_threshold": 2.3939797998185104,
+        "historical_gate": {
+          "passed": false,
+          "numerical_passed": false,
+          "checks": [
+            {
+              "name": "方向Rank IC",
+              "actual": 0.026525296974298798,
+              "operator": ">=",
+              "threshold": 0.005,
+              "passed": true,
+              "reason": null
+            },
+            {
+              "name": "最大回撤",
+              "actual": 0.03971778126334754,
+              "operator": "<=",
+              "threshold": 0.5,
+              "passed": true,
+              "reason": null
+            },
+            {
+              "name": "有效IC观测数",
+              "actual": 59,
+              "operator": ">=",
+              "threshold": 60.0,
+              "passed": false,
+              "reason": null
+            },
+            {
+              "name": "方向 NW t",
+              "actual": 1.1764132913108094,
+              "operator": ">=",
+              "threshold": 1.9599639845400536,
+              "passed": false,
+              "reason": null
+            }
+          ]
+        },
+        "series": {
+          "source": "rank_ic_series",
+          "state": "available",
+          "summary": {
+            "valid_observations": 59,
+            "signed_mean": 0.0265252969742988,
+            "start": "2025-07-08",
+            "end": "2025-09-26"
+          },
+          "temporal_order_confirmed": true,
+          "first_half": {
+            "valid_observations": 29,
+            "signed_mean": 0.061420329975423044,
+            "start": "2025-07-08",
+            "end": "2025-08-15"
+          },
+          "second_half": {
+            "valid_observations": 30,
+            "signed_mean": -0.007206568260121306,
+            "start": "2025-08-18",
+            "end": "2025-09-26"
+          }
+        },
+        "novelty_status": "deferred",
+        "limitations": [
+          "仅研发结果，不包含封存数值；描述性分段不是新增门槛"
+        ]
+      },
+      "facts_hash": "c795099990fe012d708fe7569512f642eddbc5b8e7409cc00a7fa68ada9f14f0"
+    },
+    {
+      "facts": {
+        "schema": "quant.development-diagnosis.v1",
+        "evaluation_stage": "development",
+        "metric_type": "rank_ic",
+        "candidate_id": "fcdd28cb-8779-4f6f-b70a-be5523316ca8",
+        "snapshot_hash": "09e2794bb88ac0ec8d7b43caf63b5e83a2b36fb72a6a5de8a3181cbe47e5ad4f",
+        "report_id": "qf_fcdd28cb-8779-4f6f-b70a-be5523316ca8_development",
+        "trial_no": 2,
+        "branch_id": "75572a5e-204a-452e-b27f-e15b09bdb59c",
+        "historical_k": 2,
+        "historical_k_source": "derived_counted_topic_prefix",
+        "historical_threshold": 2.2414027276049464,
+        "current_k": 2,
+        "current_threshold": 2.2414027276049464,
+        "next_new_trial_k": 3,
+        "next_new_trial_threshold": 2.3939797998185104,
+        "historical_gate": {
+          "passed": false,
+          "numerical_passed": false,
+          "checks": [
+            {
+              "name": "方向Rank IC",
+              "actual": 0.040558330491522264,
+              "operator": ">=",
+              "threshold": 0.005,
+              "passed": true,
+              "reason": null
+            },
+            {
+              "name": "最大回撤",
+              "actual": 0.05628158443356215,
+              "operator": "<=",
+              "threshold": 0.5,
+              "passed": true,
+              "reason": null
+            },
+            {
+              "name": "有效IC观测数",
+              "actual": 60,
+              "operator": ">=",
+              "threshold": 60.0,
+              "passed": true,
+              "reason": null
+            },
+            {
+              "name": "方向 NW t",
+              "actual": 1.6346101743547432,
+              "operator": ">=",
+              "threshold": 2.2414027276049464,
+              "passed": false,
+              "reason": null
+            }
+          ]
+        },
+        "series": {
+          "source": "rank_ic_series",
+          "state": "available",
+          "summary": {
+            "valid_observations": 60,
+            "signed_mean": 0.04055833049152227,
+            "start": "2025-07-07",
+            "end": "2025-09-26"
+          },
+          "temporal_order_confirmed": true,
+          "first_half": {
+            "valid_observations": 30,
+            "signed_mean": 0.07939628265123765,
+            "start": "2025-07-07",
+            "end": "2025-08-15"
+          },
+          "second_half": {
+            "valid_observations": 30,
+            "signed_mean": 0.0017203783318069043,
+            "start": "2025-08-18",
+            "end": "2025-09-26"
+          }
+        },
+        "novelty_status": "deferred",
+        "limitations": [
+          "仅研发结果，不包含封存数值；描述性分段不是新增门槛"
+        ]
+      },
+      "facts_hash": "4b0d07055b6bf67da7e804277354e155e243aa8c2aba6a415c5a9eb6a969573b"
+    }
+  ]
+}

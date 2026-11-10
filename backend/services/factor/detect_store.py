@@ -347,6 +347,8 @@ def upsert_project(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         is_sample = True
 
     with get_conn() as conn:
+        from services.quant_factor.research_contract import guard_generic_project_write
+        config=guard_generic_project_write(conn,user_id,pid,config)
         existing = conn.execute(
             "SELECT run_count, is_sample FROM detect_projects WHERE user_id = %s AND id = %s",
             (user_id, pid),

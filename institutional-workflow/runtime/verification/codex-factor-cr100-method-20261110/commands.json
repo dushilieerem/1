@@ -1,0 +1,65 @@
+{
+  "backend": {
+    "cwd": "backend",
+    "command": [
+      "/home/dev01/project/SVQuant/.ci/venv/bin/python",
+      "scripts/run_quant_isolated_tests.py",
+      "tests/test_quant_research_method.py",
+      "tests/test_quant_factor_f0.py",
+      "tests/test_quant_factor_agent_jobs.py",
+      "tests/test_quant_factor_policy.py",
+      "tests/test_quant_model_budget.py",
+      "tests/test_quant_factor_handoff.py"
+    ],
+    "result": "109 passed,17 subtests passed",
+    "database_and_network_guarded": true
+  },
+  "postgres": {
+    "cwd": "backend",
+    "command": [
+      "/home/dev01/project/SVQuant/.ci/venv/bin/python",
+      "scripts/run_quant_research_method_pg_tests.py",
+      "--allow-isolated-dev"
+    ],
+    "result": "4 passed",
+    "scope": "owned unique schemas of svquant_dev; high unique fixture actors; fixture provider/model/market not executed; schemas cleaned"
+  },
+  "components": {
+    "exit_code": 0,
+    "stopped": null,
+    "elapsed_seconds": 17.853,
+    "peak_rss_process_tree_bytes": 407883776,
+    "node_heap_mib": 2048,
+    "single_concurrency": true,
+    "command": [
+      "/home/dev01/.nvm/versions/node/v24.20.0/bin/node",
+      "--max-old-space-size=2048",
+      "--import",
+      "tsx",
+      "--test",
+      "--test-concurrency=1",
+      "--test-timeout=20000",
+      "tests/factorHomeCreateFlow.test.tsx",
+      "tests/factorAdmissionFlow.test.tsx",
+      "tests/factorFlowNavigation.test.tsx",
+      "tests/factorManualDelegation.test.tsx"
+    ],
+    "no_real_model_market_or_service_change": true
+  },
+  "build": {
+    "exit_code": 0,
+    "stopped": null,
+    "elapsed_seconds": 34.525,
+    "peak_rss_process_tree_bytes": 2380656640,
+    "node_heap_mib": 2048,
+    "single_concurrency": true,
+    "command": [
+      "/home/dev01/.nvm/versions/node/v24.20.0/bin/node",
+      "--max-old-space-size=2048",
+      "/home/dev01/.nvm/versions/node/v24.20.0/lib/node_modules/npm/bin/npm-cli.js",
+      "run",
+      "build"
+    ],
+    "no_real_model_market_or_service_change": true
+  }
+}

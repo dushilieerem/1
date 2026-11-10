@@ -1,0 +1,22 @@
+completed-review-fixture: begin
+completed-review-fixture: rendered
+completed-review-fixture: result ready
+
+Interrupted while running:
+
+⚠ tests/factorAdmissionFlow.test.tsx (tests/factorAdmissionFlow.test.tsx:1:1)
+✖ tests/factorAdmissionFlow.test.tsx (10973.456592ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 0
+ℹ cancelled 1
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10984.683565
+
+✖ failing tests:
+
+test at tests/factorAdmissionFlow.test.tsx:1:1
+✖ tests/factorAdmissionFlow.test.tsx (10973.456592ms)
+  'Promise resolution is still pending but the event loop has already resolved'

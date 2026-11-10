@@ -89,6 +89,10 @@ def save_workbench(uid,org,project_id,payload):
   if config.get('v5ActiveBranch')!=current.get('v5ActiveBranch') or config.get('v5ControlEpoch')!=current.get('v5ControlEpoch'):raise ValueError('工作分支或控制版本已变化，请重新读取后保存，未覆盖当前工程')
   if not current.get('v5ActiveBranch'):raise ValueError('请先明确确认工作分支后保存')
   if c.execute('SELECT id FROM quant_factor_trials WHERE user_id=%s AND org_id=%s AND topic_id=%s AND branch_id=%s LIMIT 1',(uid,org,topic['id'],current['v5ActiveBranch'])).fetchone():raise ValueError('此分支已有冻结试验，请从明确候选接手为新修订后保存')
+  from .research_contract import check_project,project_contract
+  if project_contract({'config':current})!=project_contract({'config':config}):raise ValueError('已冻结研究契约不可覆盖')
+  draft=config.get('draftFactor') or {}
+  check_project({'id':project_id,'config':config},draft.get('body') or None,draft.get('name'))
   config['v5ControlEpoch']=str(uuid.uuid4())
   saved=c.execute('UPDATE detect_projects SET name=%s,factor_name=%s,description=%s,config=%s::jsonb,updated_at=NOW() WHERE user_id=%s AND id=%s RETURNING *',(str(payload.get('name') or row['name']),str(payload.get('factorName') or row['factor_name']),str(payload.get('description') or ''),store.encode(config),uid,project_id)).fetchone()
   return {'ok':True,'user_id':uid,'project':_row_project(dict(saved))}

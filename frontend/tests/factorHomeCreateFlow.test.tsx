@@ -54,6 +54,7 @@ test('页面按钮路径：F0 响应丢失后重试复用任务与幂等键，�
   const allTopics = [oldTopic];
   const f0Keys: string[] = [];
   let projectCreates = 0, topicCreates = 0, f0Calls = 0;
+  let selectedFields="";
 
   globalThis.fetch = async (input, init) => {
     const path = new URL(String(input), 'http://localhost').pathname;
@@ -73,6 +74,7 @@ test('页面按钮路径：F0 响应丢失后重试复用任务与幂等键，�
       return Response.json({project: {...body, id: body.id, config: body.config || {}}});
     }
     if (/\/detect\/projects\/[^/]+$/.test(path) && method === 'PUT') {
+      selectedFields=body.config.researchPlan?.fieldRestriction||'';
       return Response.json({project: body});
     }
     if (method === 'GET' && /\/detect\/projects\/[^/]+$/.test(path)) return Response.json({project:{id:path.split('/').at(-1),name:'任务',config:{}}});
@@ -121,9 +123,11 @@ test('页面按钮路径：F0 响应丢失后重试复用任务与幂等键，�
   fireEvent.click(view.getByRole('button', {name: /＋ 启动挖掘/}));
   const launch = await view.findByRole('button', {name: '创建并启动'});
   fireEvent.change(view.getByText('试验预算').closest('label')!.querySelector('input')!,{target:{value:'2'}});
+  fireEvent.change(view.getByRole('combobox',{name:'本任务允许字段'}),{target:{value:'ohlcv'}});
   fireEvent.click(launch);
   await waitFor(() => assert.ok(view.getByText(/启动请求失败/)), {timeout: 4000});
   assert.equal(projectCreates, 1);
+  assert.equal(selectedFields,'ohlcv','用户显式字段选择必须持久化');
   assert.equal(topicCreates, 1);
   assert.equal(f0Calls, 1);
 
@@ -314,4 +318,32 @@ test('固定证券样本保存到config，启动预检拒绝时不创建项目�
 test('纯人工已有试验但从未委托：提供明确交给Agent与继续人工入口，不误称重试',async()=>{
  login();const data=scenario();data.topics.push({...oldTopic,id:'manual-task',project_id:'manual-project',dispatch_status:null,dispatch_stop_reason:null});const base=globalThis.fetch;globalThis.fetch=async(input,init)=>{if(new URL(String(input),'http://localhost').pathname.endsWith('/manual-task/f0-runs'))return Response.json(null);return base(input,init);};
  const view=render(<MemoryRouter><QuantFactorHomePage/></MemoryRouter>);await waitFor(()=>assert.ok(view.getByRole('button',{name:'交给Agent研究'})));assert.equal(view.queryByRole('button',{name:'重试启动'}),null);assert.ok(view.getByRole('link',{name:'继续人工研究'}));assert.ok(view.getByLabelText('Agent 工作状态').textContent?.includes('尚未委托自动研究'));
+});
+
+
+test('新版任务：所有环节可暂停，真实生成阶段与人工建议绑定当前控制版本',async()=>{
+ login();const topic={...oldTopic,id:'t-new-method',project_id:'p-method',dispatch_status:'running',trial_count:0,k:0};
+ const project={id:'p-method',name:'受控研究',description:'固定研究假设',config:{v5ActiveBranch:'h1',v5ControlEpoch:'epoch1',factorCodes:[],researchPlan:{researchContract:{allowed_fields:['open','high','low','close','volume']}}}};
+ const ledger={topic,branches:[{id:'h1',source:'manual',display_label:'H1',hypothesis_version:1,implementation_version:1}],trials:[],k:0,threshold:1.96,threshold_next_if_counted:1.96};const writes:any[]=[];
+ globalThis.fetch=async(input,init)=>{
+  const path=new URL(String(input),'http://localhost').pathname,method=init?.method||'GET';
+  if(method==='POST'){writes.push({path,body:JSON.parse(String(init?.body))});return Response.json({id:'advice',status:'pending'});}
+  if(path.endsWith('/topics'))return Response.json({topics:[topic]});
+  if(path.endsWith('/ledger'))return Response.json(ledger);
+  if(path.endsWith('/f0-runs'))return Response.json({id:'run',status:'running',decision:{current_action:'run_test',current_phase:'implementation'}});
+  if(/\/detect\/projects\/[^/]+$/.test(path))return Response.json({project});
+  if(path.endsWith('/controls'))return Response.json({paused:false});
+  if(path.endsWith('/overview'))return Response.json({counts:{sealed_used:0}});
+  if(path.endsWith('/pending-review-count'))return Response.json({count:0});
+  if(path.endsWith('/reference'))return Response.json({items:[]});
+  throw Error('Unexpected '+method+' '+path);
+ };
+ const view=render(<MemoryRouter initialEntries={['/quant/factor?topic=t-new-method']}><QuantFactorHomePage/></MemoryRouter>);
+ await waitFor(()=>assert.ok(view.getByText('正在生成并检查因子源码')));
+ for(const stage of ['研究准备','因子研发','独立验证','审批入库']){fireEvent.click(view.getAllByRole('button',{name:'查看'+stage})[0]);assert.ok(view.getByRole('button',{name:'暂停研究'}));}
+ assert.equal(writes.length,0,'查看不同环节不能启动或暂停研究');
+ fireEvent.click(view.getByRole('button',{name:'给研究建议'}));
+ fireEvent.change(await view.findByLabelText('给当前研究的建议'),{target:{value:'只改变向后窗口，不扩大评分区间'}});await waitFor(()=>assert.equal((view.getByRole('button',{name:'提交研究建议'}) as HTMLButtonElement).disabled,false));fireEvent.click(view.getByRole('button',{name:'提交研究建议'}));
+ await waitFor(()=>assert.equal(writes.length,1,view.container.querySelector('.hint.error')?.textContent||'建议未发出'));assert.equal(writes[0].body.branch_id,'h1');assert.equal(writes[0].body.control_epoch,'epoch1');assert.ok(writes[0].path.endsWith('/research-advice'));
+ await waitFor(()=>assert.ok(view.getByText(/研究建议已保存/)));
 });

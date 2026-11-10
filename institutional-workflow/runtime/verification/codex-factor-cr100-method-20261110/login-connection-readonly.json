@@ -1,0 +1,12 @@
+{
+  "checked_at_utc": "2026-11-10T02:11:21.664349+00:00",
+  "bff_pid": 3783221,
+  "fresh_readonly": {
+    "fresh_connection": "ok",
+    "database": "svquant_dev",
+    "postmaster_started": "2026-11-10 09:33:56.587396+08:00",
+    "server_time": "2026-11-10 10:11:21.619925+08:00"
+  },
+  "bff_reloaded": false,
+  "shared_service_changed": false
+}

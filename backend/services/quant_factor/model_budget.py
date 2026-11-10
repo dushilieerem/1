@@ -7,7 +7,7 @@ from .policy import WorkflowError,digest
 from . import store
 
 LIMITS={'space':1_000_000,'factor':200_000}
-OUTPUT_LIMITS={'quant.factor.f0_decider':2000,'quant.factor.task_planner':3000,'quant.factor.research_assistant':3000,'research.generate_factor':8000,'quant.factor.independent_reviewer':2000}
+OUTPUT_LIMITS={'quant.factor.research_planner_v2':4000,'quant.factor.research_implementation_v2':16000,'quant.factor.evidence_diagnosis_v2':3000,'quant.factor.f0_decider':2000,'quant.factor.task_planner':3000,'quant.factor.research_assistant':3000,'research.generate_factor':8000,'quant.factor.independent_reviewer':2000}
 VERSION='quant-model-budget-v1'
 MAX_PROMPT_BYTES=48_000
 AUTHORIZED_ORG=261

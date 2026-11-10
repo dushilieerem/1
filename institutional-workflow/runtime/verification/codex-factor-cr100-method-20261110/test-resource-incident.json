@@ -1,0 +1,15 @@
+{
+  "unbounded_initial_component_attempt": {
+    "completed": false,
+    "wall_timeout_seconds": 240,
+    "termination": "owned Node process group SIGTERM and waited",
+    "peak_rss": "not measured"
+  },
+  "bounded_isolation": "review-isolate-resources.json",
+  "observed_cause": "an intended JSX removal did not match indentation, so an assertion compared a React DOM object to null and exhausted resources while printing its difference",
+  "correction": "asserted actual JSX removal; boolean DOM-negative assertion avoids recursive Fiber difference output",
+  "corrected_case": "review-isolate-fixed-resources.json",
+  "final_component_run": "components-final-resources.json",
+  "no_shared_process_terminated": true,
+  "available_memory_after_cleanup_kib": 84262568
+}

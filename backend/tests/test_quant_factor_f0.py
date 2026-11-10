@@ -42,7 +42,7 @@ class F0StartTest(unittest.TestCase):
     def test_exhausted_development_budget_still_allows_earned_seal(self):
         candidate={'status':'development_passed','snapshot':{'plan':{'researchPurpose':'discovery'}},'evidence':{'development':{'novelty':{'gate':{'complete':True,'passed':True}}}}}
         w,c=conn();c.fetchone.side_effect=[{'id':'b'},None,None,candidate,{'n':0}]
-        with patch.object(f0,'_topic',return_value={**TOPIC,'max_sealed':1}),patch.object(f0,'get_conn',return_value=w),patch.object(f0,'published_view',return_value={'view_id':'v'}),patch.object(f0.ledger,'_trials',return_value=[]),patch.object(f0.ledger,'current_k',return_value=4),patch.object(f0,'_record',return_value={'id':'run','status':'queued'}) as record,patch('services.quant_factor.resources.require_config') as development_preflight,patch.object(f0.POOL,'submit') as schedule:
+        with patch.object(f0,'_topic',return_value={**TOPIC,'max_sealed':1}),patch.object(f0,'get_conn',return_value=w),patch.object(f0,'published_view',return_value={'view_id':'v'}),patch.object(f0.ledger,'_trials',return_value=[]),patch.object(f0.ledger,'current_k',return_value=4),patch.object(f0,'_record',return_value={'id':'run','status':'queued'}) as record,patch('services.quant_factor.resources.require_config') as development_preflight,patch.object(f0.POOL,'submit') as schedule,patch('services.factor.detect_store.get_project',return_value={'project':{'id':'p','config':{}}}):
             out=f0.start(1,2,'t','b','earned-seal')
         self.assertEqual(out['status'],'queued');development_preflight.assert_not_called();schedule.assert_called_once()
 
@@ -89,6 +89,7 @@ class F0RunTest(unittest.TestCase):
         with patch.object(f0, 'get_conn', return_value=w), patch.object(f0, '_topic', return_value=TOPIC), \
              patch.object(f0.service,'recover_pending'),patch.object(f0.service,'backfill_terminal_trials'), \
              patch.object(f0.ledger,'_trials',return_value=[]), \
+             patch.object(f0_agent, '_context',return_value={'novelty':{}}), \
              patch.object(f0_agent, 'decide', return_value=(decision, {})), \
              patch.object(f0_agent, 'execute', return_value={'status': 'stopped', 'reason': 'no_improvement'}):
             f0.run(1, 2, 'run1')

@@ -85,14 +85,17 @@ def _start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff=None,connec
         can_seal=False
         if remaining<=0:
             from .novelty_policy import handoff_allowed
-            candidate=c.execute("SELECT * FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s AND status='development_passed' ORDER BY updated_at DESC LIMIT 1",(uid,org,topic['project_id'])).fetchone()
+            candidate=c.execute("SELECT * FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s AND status='development_passed' AND evidence->>'branch_id'=%s ORDER BY updated_at DESC LIMIT 1",(uid,org,topic['project_id'],branch_id)).fetchone()
             used=c.execute('SELECT COUNT(*) AS n FROM quant_factor_sealed_validations WHERE user_id=%s AND org_id=%s AND topic_id=%s',(uid,org,topic_id)).fetchone()['n']
             can_seal=bool(candidate and handoff_allowed(candidate) and used<int(topic.get('max_sealed') or 1))
         if remaining<=0 and not can_seal:
             return _public(record(uid,org,topic,branch_id,key,'stopped',{'action':'stop','reason':'budget_exhausted'},'课题试验预算已用尽，研究已停止'))
         from services.factor.detect_store import get_project,_row_project
         from .resources import require_config
-        decision={'action':'decide'}
+        from .research_contract import project_contract,METHOD_VERSION
+        initial_project=get_project(uid,topic['project_id'])['project']
+        contract=project_contract(initial_project);config=initial_project['config']
+        decision={'action':'decide','method_version':METHOD_VERSION if contract else 'factor-f0-v1','contract_hash':contract['contract_hash'] if contract else None}
         if handoff:
             project_row=c.execute('SELECT * FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,topic['project_id'])).fetchone()
             if not project_row:raise KeyError(topic['project_id'])
@@ -111,6 +114,7 @@ def _start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff=None,connec
             project=get_project(uid,topic['project_id'])['project'];config=project['config'];active_branch=config.get('v5ActiveBranch')
             if active_branch and active_branch!=branch_id:raise WorkflowError('当前工程稿绑定另一分支，请明确选择当前版本或接手后继续')
             require_config(config)
+        decision['control_epoch']=config.get('v5ControlEpoch')
         row=_public(record(uid,org,topic,branch_id,key,'queued',decision));row['_schedule']=True
         return row
 
@@ -146,8 +150,13 @@ def run(uid, org, run_id):
             nonlocal current_steps
             current_steps = list(current)
             with get_conn() as c:
+                from .research_advice import decisions_after_result
+                saved=c.execute('SELECT decision FROM quant_factor_f0_runs WHERE id=%s FOR UPDATE',(run_id,)).fetchone()
+                advice=decisions_after_result(((saved or {}).get('decision') or {}).get('human_advice') or [],entry.get('decision',{}).get('proposal') or {},entry.get('result') or {})
+                next_branch=(entry.get('result') or {}).get('branch_id')
+                if next_branch:advice=[{**a,'status':'not_adopted','reason':'未采用：目标研究分支已变化'} if a['status']=='pending' and a['input']['branch_id']!=next_branch else a for a in advice]
                 c.execute("UPDATE quant_factor_f0_runs SET rounds=%s,decision=decision||%s::jsonb,updated_at=NOW() WHERE id=%s AND status='running' AND decision->>'runner_epoch'=%s",
-                          (step, service.store.encode({"steps": current,"current_action":None}), run_id,worker_epoch))
+                          (step, service.store.encode({"steps": current,"current_action":None,"current_phase":None,"human_advice":advice}), run_id,worker_epoch))
 
         # A reused frozen candidate can carry a completed test that never reached the ledger;
         # record it before deciding so K and the trial evidence are truthful.
@@ -165,10 +174,8 @@ def run(uid, org, run_id):
             current = _topic(uid, org, topic["id"])
             if current["status"] != "active":
                 return "课题已暂停/归档，F0 停止"
-            with get_conn() as c:
-                latest=c.execute("SELECT evidence FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s ORDER BY updated_at DESC LIMIT 1",(uid,org,topic['project_id'])).fetchone()
-            development=((latest or {}).get('evidence') or {}).get('development') or {}
-            if (development.get('novelty') or {}).get('status')=='resource_pending':return '研发数值检验已完成，正式查重范围待确认；停止自动迭代，可提交研究复盘'
+            ctx=f0_agent._context(uid,org,topic,run_id)
+            if (ctx.get('novelty') or {}).get('status')=='resource_pending':return '研发数值检验已完成，正式查重范围待确认；停止自动迭代，可提交研究复盘'
             return ""
 
         streak = [0]
@@ -181,7 +188,7 @@ def run(uid, org, run_id):
             else:
                 streak[0] = 0
             if streak[0] >= 3:
-                return "连续 3 次研发失败且无实质修订，停止等待人工复盘"
+                return "连续 3 次研发数值检验未通过，停止等待人工复盘"
             return ""
 
         steps, stop_reason = decision_engine.run_steps(
@@ -193,6 +200,8 @@ def run(uid, org, run_id):
             on_step=on_step,
             initial_steps=current_steps)
         with get_conn() as c:
+            from .research_advice import close_pending
+            close_pending(c,uid,org,run_id=run_id,worker_epoch=worker_epoch,reason='未采用：研究已结束')
             c.execute("""UPDATE quant_factor_f0_runs
                        SET status='stopped',rounds=%s,stop_reason=%s,updated_at=NOW()
                        WHERE id=%s AND status='running' AND decision->>'runner_epoch'=%s""",
@@ -200,6 +209,8 @@ def run(uid, org, run_id):
     except Exception as exc:
         if worker_epoch is None:return
         with get_conn() as c:
+            from .research_advice import close_pending
+            close_pending(c,uid,org,run_id=run_id,worker_epoch=worker_epoch,reason='未采用：研究已结束或中断')
             c.execute(
                 "UPDATE quant_factor_f0_runs SET status='failed',stop_reason=%s,updated_at=NOW() WHERE id=%s AND status='running' AND decision->>'runner_epoch'=%s",
                 (str(exc)[:1000], run_id,worker_epoch))
@@ -247,9 +258,14 @@ def resume(uid, org, run_id):
                 expected_branch=next((item.get('result',{}).get('branch_id') for item in reversed((row.get('decision') or {}).get('steps') or []) if item.get('result',{}).get('branch_id')),row['branch_id'])
                 if config.get('v5ActiveBranch') and config['v5ActiveBranch']!=expected_branch:raise WorkflowError('当前工程已由另一分支接手，请从已确认人工版本交回，不能恢复旧分支')
                 require_config(config)
+                from .research_contract import project_contract
+                saved_method=(row.get('decision') or {}).get('method_version','legacy')
+                contract=project_contract(project)
+                if saved_method=='bounded-factor-rd-v2' and (not contract or contract['contract_hash']!=(row.get('decision') or {}).get('contract_hash')):raise WorkflowError('原运行的固定研究契约已不一致，未替换方法继续')
             if int(row.get('rounds') or 0) >= 12:
                 raise WorkflowError("此运行已达到决策次数上限，原记录保留，请人工复盘")
             decision=dict(row.get('decision') or {});decision['recovery_only']=recovery_only
+            if not recovery_only:decision['control_epoch']=config.get('v5ControlEpoch')
             c.execute("UPDATE quant_factor_f0_runs SET status='queued',stop_reason='',decision=%s::jsonb,updated_at=NOW() WHERE id=%s", (service.store.encode(decision),run_id))
         POOL.submit(run, uid, org, run_id)
         return read(uid, org, run_id)

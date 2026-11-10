@@ -1,0 +1,66 @@
+{
+  "checked_at_utc": "2026-11-10T02:52:30.984708+00:00",
+  "bff_pid": 3783221,
+  "read_only_transaction": true,
+  "counts": {
+    "f0": 0,
+    "candidates": 0,
+    "sealed": 0,
+    "agent_jobs": 0,
+    "iterations": 0
+  },
+  "researcher_quota": {
+    "daily_calls": 200,
+    "used_calls": 1,
+    "remaining_calls": 199
+  },
+  "institution_factor_budget": {
+    "legacy_baseline": "pending",
+    "legacy_accounts": [
+      {
+        "scope": "space",
+        "limit_tokens": 1000000,
+        "baseline_state": "pending",
+        "historical_tokens": 180331,
+        "unknown_history": {
+          "complete": false,
+          "other_gaps": "Unbound historical F0/assistant and failed/repaired calls; see source audit",
+          "recorded_by": 2527,
+          "audit_sha256": "d4cf4c910d7fd44b675b3796467548260cb69b66d3e8fe234dacad768733ab74",
+          "f3_zero_usage_rows": 46
+        }
+      },
+      {
+        "scope": "factor",
+        "limit_tokens": 200000,
+        "baseline_state": "pending",
+        "historical_tokens": 180331,
+        "unknown_history": {
+          "complete": false,
+          "other_gaps": "Unbound historical F0/assistant and failed/repaired calls; see source audit",
+          "recorded_by": 2527,
+          "audit_sha256": "d4cf4c910d7fd44b675b3796467548260cb69b66d3e8fe234dacad768733ab74",
+          "f3_zero_usage_rows": 46
+        }
+      }
+    ],
+    "new_authorization": {
+      "id": "qbg_18880ef5240d740268f730df",
+      "limit_tokens": 100000000,
+      "settled_tokens": 28096,
+      "held_tokens": 0,
+      "remaining_tokens": 99971904,
+      "scope": "本机构量化产品因子Agent研究；全机构单池累计，不按成员或任务重置"
+    }
+  },
+  "private_re": {
+    "http_status": 200,
+    "activity": {
+      "queued": 0,
+      "running": 0
+    },
+    "service_id": null,
+    "method_version": null
+  },
+  "head": "e5bcfb2460a957c0c2e09614e23e1919420dc8df"
+}

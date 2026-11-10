@@ -265,15 +265,25 @@ def create_topic(uid: int, org: int, project_id: str, payload: dict) -> dict:
     as_of = _as_date(payload["as_of"], "as_of") if payload.get("as_of") else None
     topic_id, branch_id = str(uuid.uuid4()), str(uuid.uuid4())
     with get_conn() as c:
+        c.execute("SELECT pg_advisory_xact_lock(%s,%s)", (9106, uid))
         c.execute("SELECT pg_advisory_xact_lock(%s,%s)", (9110, uid))
         existing = c.execute(
             "SELECT * FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s",
             (uid, org, project_id)).fetchone()
         if existing:
             return {"topic": _public(existing), "created": False}
-        if not c.execute("SELECT id FROM detect_projects WHERE user_id=%s AND id=%s",
-                         (uid, project_id)).fetchone():
-            raise KeyError(project_id)
+        project_row=c.execute("SELECT * FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE",(uid,project_id)).fetchone()
+        if not project_row:raise KeyError(project_id)
+        from services.factor.detect_store import _row_project
+        from services.workflow_workspace.platform_data import published_view
+        from .research_contract import from_project
+        project=_row_project(dict(project_row));view=published_view()
+        if view['view_id']!=view_id or view.get('manifest_sha256')!=view_manifest_sha256:
+            raise ValueError('数据版本已变化，请重新确认固定版本；未自动切换')
+        contract=from_project(uid,org,project,view)
+        config=project['config'];config['researchPlan']={**config.get('researchPlan',{}),'researchContract':contract}
+        config.update(v5ActiveBranch=branch_id,v5ControlEpoch=str(uuid.uuid4()))
+        c.execute('UPDATE detect_projects SET config=%s::jsonb,updated_at=NOW() WHERE user_id=%s AND id=%s',(json.dumps(config,ensure_ascii=False),uid,project_id))
         display_no = c.execute(
             "SELECT COALESCE(MAX(display_no),0)+1 AS n FROM quant_factor_topics WHERE user_id=%s AND org_id=%s",
             (uid, org)).fetchone()["n"]
@@ -314,6 +324,8 @@ def set_topic_status(uid: int, org: int, topic_id: str, status: str) -> dict:
         c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(f"quant-factor-start:{uid}:{org}:{topic_id}",))
         c.execute('SELECT id FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,topic['project_id']))
         c.execute("UPDATE detect_projects SET config=jsonb_set(COALESCE(config,'{}'::jsonb),'{v5ControlEpoch}',to_jsonb(%s::text)),updated_at=NOW() WHERE user_id=%s AND id=%s",(str(uuid.uuid4()),uid,topic['project_id']))
+        from .research_advice import close_pending
+        close_pending(c,uid,org,topic_id=topic_id,reason='未采用：目标控制版本已变化')
         row=c.execute('UPDATE quant_factor_topics SET status=%s,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s RETURNING *',(status,topic_id,uid,org)).fetchone()
     return _public(row)
 

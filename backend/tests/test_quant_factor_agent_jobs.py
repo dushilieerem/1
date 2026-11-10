@@ -7,11 +7,12 @@ FIELDS={'horizon_days':1,'title':'日内区间位置研究','direction':'量价'
 class AgentJobTests(unittest.TestCase):
  def test_real_tool_boundaries_return_valid_fields_and_usage(self):
   import json
-  with patch.object(jobs,'update',return_value=True) as update,patch.object(jobs,'list_projects',return_value={'projects':[{'name':'existing'}]}),patch('services.workflow_workspace.platform_data.published_view',return_value={'view_id':'release-x','datasets':{'daily_bars':{'rows':10}}}),patch('services.quant_factor.asset_context.catalogue',return_value={'scope':'test','count':1,'hash':'h','builtins':[{'library_name':'lib','factor_name':'f','description':'known'}],'owned':[]}),patch.object(jobs,'get_task'),patch('services.quant_factor.model_budget.run',return_value={'content':'```json\n'+json.dumps(FIELDS)+'\n```','model':'test-double','tokens_in':10,'tokens_out':20}) as model,patch.object(jobs,'record_usage') as usage:
+  with patch.object(jobs,'update',return_value=True) as update,patch.object(jobs,'list_projects',return_value={'projects':[{'name':'existing'}]}),patch('services.workflow_workspace.platform_data.published_view',return_value={'view_id':'release-x','datasets':{'daily_bars':{'rows':10}}}),patch('services.quant_factor.asset_context.catalogue',return_value={'scope':'test','count':1,'hash':'h','builtins':[{'library_name':'lib','factor_name':'f','description':'known'}],'owned':[]}),patch.object(jobs,'get_task'),patch('services.quant_factor.model_budget.run',return_value={'content':'```json\n'+json.dumps(FIELDS)+'\n```','model':'test-double','tokens_in':10,'tokens_out':20}) as model,patch('services.quant_data_resources.dataset',return_value={'published':True,'catalog_version':'release-x','publication_version':'release-x','fields':[{'name':'close'},{'name':'volume'},{'name':'unsupported_field'}]}),patch.object(jobs,'record_usage') as usage:
    result=jobs._plan_task(1,2,'j',{})
    self.assertEqual(result['fields'],{k:v for k,v in FIELDS.items() if k!='horizon_days'});self.assertEqual(result['existing_research_count'],1)
    self.assertEqual([c.args[4]['action'] for c in update.call_args_list],['read_data','read_research','read_factor_library','factor_library_read','model_started'])
    self.assertEqual(result['tokens_out'],20);model.assert_called_once();self.assertEqual(model.call_args.args[3],'job:j:planner:1')
+   self.assertEqual(json.loads(model.call_args.kwargs['messages'][1]['content'])['allowed_compute_fields'],['close','volume'])
  def test_cancelled_job_never_calls_model_or_fills_fields(self):
   with patch.object(jobs,'read',return_value={'status':'cancelled'}),patch('services.quant_factor.model_budget.run') as model,patch.object(jobs,'update') as update:
    jobs.run(1,2,'j');model.assert_not_called();update.assert_not_called()

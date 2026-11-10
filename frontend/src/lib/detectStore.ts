@@ -18,6 +18,8 @@ export type DraftDetectFactor = {
 };
 
 export type FactorResearchPlan = {
+  fieldRestriction?: 'available'|'ohlcv';
+  researchContract?: {schema:string;contract_hash:string;allowed_fields:string[];direction:string;ic_metric:string;[key:string]:unknown};
   researchPurpose?: 'discovery'|'replication';
   noveltyPolicy?: {scope:'all_accessible';maxAbsCorrelation:number;minDays:number;minPairs:number;minCoverage:number};
   candidateExpression?: string;
@@ -30,6 +32,8 @@ export type FactorResearchPlan = {
 };
 
 export type DetectProjectConfig = {
+  v5ActiveBranch?:string;
+  v5ControlEpoch?:string;
   researchUniverseSymbols?: string[];
   sourceResearchAsset?: {id:string;version:number;snapshotHash:string;purpose:'research_only'};
   researchPlan?: FactorResearchPlan;

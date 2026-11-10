@@ -1,0 +1,36 @@
+{
+  "read_only_metadata": true,
+  "database_network_forbidden": true,
+  "view_id": "research-rv-20261106-3",
+  "published": true,
+  "catalog_version": "research-rv-20261106-3",
+  "publication_version": "research-rv-20261106-3",
+  "field_names": [
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "amount",
+    "turnover"
+  ],
+  "contract_fields": [
+    "close",
+    "high",
+    "low",
+    "open",
+    "volume"
+  ],
+  "static_sample_count": 40,
+  "contract_hash": "f3161619b5c25203793c9916a49c0225ef81c560b32f6b45f2d3bdc2e814d8d1",
+  "method_identity": {
+    "version": "bounded-factor-rd-v2",
+    "source_contract": "quant-panel-causal-v1",
+    "re_source_policy_sha256": "8d2b0729667aa4fd89983905cb88595de90f7ffe2107d12440cf4ebdc45984db",
+    "bff_code_revision": "fd38df14939efb34a2a2fe97ac0aefd265672c4ff81ab27e40c022344e6d4e58"
+  },
+  "used_datasets": [
+    "daily_bars"
+  ],
+  "no_model_market_or_business_write": true
+}

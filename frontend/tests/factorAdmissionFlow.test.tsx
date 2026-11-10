@@ -42,7 +42,7 @@ test('审查真实组件路径：先领取，意见响应不替换候选，批�
  assert.equal((modal.getByRole('button',{name:'批准研究用途并入库'}) as HTMLButtonElement).disabled,true);
  fireEvent.click(modal.getByRole('checkbox'));fireEvent.click(modal.getByRole('button',{name:'批准研究用途并入库'}));
  await waitFor(()=>assert.ok(!view.queryByRole('dialog')));assert.equal(data.decisions.length,1);assert.equal(data.decisions[0].decision,'approve_research_and_register');assert.equal(data.decisions[0].acknowledged,true);
- assert.ok(view.getByText('复核已完成'));assert.ok(view.getByRole('link',{name:'在因子库查看登记与报告'}));
+ assert.ok(view.getAllByText('复核已完成')[0]);assert.ok(view.getByRole('link',{name:'在因子库查看登记与报告'}));
 });
 test('旧反馈和作者只读不会出现新批准入口；取消弹窗回到触发按钮',async()=>{
  login();reviewFixture('research_feedback_only');const view=render(<MemoryRouter><FactorReviewPage/></MemoryRouter>);
@@ -65,4 +65,19 @@ test('普通研究员从机构资产入口查看授权报告摘要与固定代�
  const view=render(<MemoryRouter initialEntries={['/quant/factor/library?asset=qfa_candidate']}><QuantFactorLibraryPage/></MemoryRouter>);
  await waitFor(()=>assert.ok(view.getByRole('button',{name:'用此固定定义建立研究'})));
  assert.ok(view.getByText('查看研发报告摘要'));assert.ok(view.getByText('查看独立验证报告摘要'));assert.ok(view.getByText(asset.definition.factor_code));assert.ok(!requested.some(path=>path.includes('/detect/runs/')||path.includes('/projects/')));
+});
+
+
+test('已决定复盘：结果摘要可见，缺项去重，因子路由不读取或拼接空策略区',async()=>{
+ login();reviewFixture('research_feedback_only');const original=globalThis.fetch;let strategyReads=0;
+ globalThis.fetch=async(input,init)=>{
+  const path=new URL(String(input),'http://localhost').pathname;if(path.includes('/strategy-research/'))strategyReads++;
+  const response=await original(input,init);if(path.endsWith('/reviews/candidate')){const current=await response.json();current.archive.review={...current.archive.review,status:'reviewed',decision:'rejected',note:'真实研发证据尚不支持该结论'};current.feedback_materials={missing:['完整库对照未完成','完整库对照未完成'],allowed_decisions:['needs_revision','rejected'],grants_admission:false};return Response.json(current);}return response;
+ };
+ const view=render(<MemoryRouter initialEntries={['/quant/reviews/factors']}><FactorReviewPage/></MemoryRouter>);
+ await waitFor(()=>assert.ok(view.getByRole('heading',{name:'复核已完成'})));assert.ok(view.getByLabelText('复核结果'));assert.equal(view.getAllByText('完整库对照未完成').length,1);assert.ok(view.queryByRole('heading',{name:'策略候选'})===null,'因子页不得拼接策略区');assert.equal(strategyReads,0);
+});
+test('策略复核路由保留原有策略入口，不顺带请求因子复核',async()=>{
+ login();let factorReads=0;globalThis.fetch=async(input)=>{const path=new URL(String(input),'http://localhost').pathname;if(path.includes('/factor-workflow/'))factorReads++;return Response.json({branches:[]});};
+ const view=render(<MemoryRouter initialEntries={['/quant/reviews/strategies']}><FactorReviewPage/></MemoryRouter>);await waitFor(()=>assert.ok(view.getByText('没有待审策略候选')));assert.equal(factorReads,0);
 });

@@ -81,7 +81,8 @@ def detect_put_project(
     body: dict[str, Any],
     uid: int = Depends(require_db_user_id),
 ) -> dict:
-    return upsert_project(uid, {**body, "id": project_id})
+    try:return upsert_project(uid, {**body, "id": project_id})
+    except ValueError as exc:raise HTTPException(status_code=409,detail=str(exc)) from exc
 
 
 @router.delete("/api/detect/projects/{project_id}")

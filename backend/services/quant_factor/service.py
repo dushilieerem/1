@@ -135,7 +135,7 @@ def create(uid,org,project_id,expected_snapshot_hash=None,reference=None,executo
             if pending>=4: raise WorkflowError('验证计算队列繁忙，请稍后提交')
             cid=str(uuid.uuid4())
             from .provenance import method_manifest
-            evidence={'method':{**method_manifest(sha,executor,f0_run_id),'control_epoch':(p.get('config') or {}).get('v5ControlEpoch')}}
+            evidence={'method':{**method_manifest(sha,executor,f0_run_id,research_contract=snap['plan'].get('researchContract')),'control_epoch':(p.get('config') or {}).get('v5ControlEpoch')}}
             if snap['request'].get('factor_code'):
                 from .source_contract import inspect_source
                 evidence['method']['source_contract']=inspect_source(snap['request']['factor_code'],snap['request']['factor_name'])

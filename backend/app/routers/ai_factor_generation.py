@@ -51,10 +51,10 @@ def _http(exc: AiError) -> HTTPException:
     return HTTPException(status_code=status, detail=detail)
 
 
-def _validate(body: object) -> dict[str, Any]:
+def _validate(body: object, *, max_prompt_chars: int = 2000) -> dict[str, Any]:
     if not isinstance(body, dict):
         raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象")
-    error = factor_prompt_error(body.get("prompt"))
+    error = factor_prompt_error(body.get("prompt"), max_chars=max_prompt_chars)
     if error:
         raise HTTPException(status_code=422, detail=error)
     context = body.get("context", {})

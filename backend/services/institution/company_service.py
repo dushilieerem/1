@@ -84,6 +84,7 @@ def ensure_and_seed(org_id: int | None = None) -> dict[str, Any]:
                SET ref_price = (
                  SELECT b.close FROM md_daily_bar b
                   WHERE b.symbol=c.symbol AND b.adjust='none'
+                    AND b.close IS NOT NULL AND b.close > 0 AND b.high IS NOT NULL
                   ORDER BY b.trade_date DESC LIMIT 1
                )
              WHERE c.ref_price IS NULL

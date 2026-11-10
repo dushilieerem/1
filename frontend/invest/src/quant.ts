@@ -7,6 +7,8 @@ export type FactorMeta = {
   category_name_en?: string;
   sub_name?: string;
   sub_name_en?: string;
+  short_plain?: string;
+  short_plain_en?: string;
   formula: string;
   formula_en: string;
   direction: "high" | "low";
@@ -246,6 +248,10 @@ export function factorCategoryName(f: FactorMeta, locale: "zh" | "en") {
 
 export function factorPlain(f: FactorMeta, locale: "zh" | "en") {
   return locale === "en" ? f.plain_en : f.plain;
+}
+
+export function factorShortPlain(f: FactorMeta, locale: "zh" | "en") {
+  return locale === "en" ? f.short_plain_en || f.plain_en : f.short_plain || f.plain;
 }
 
 export function directionLabel(f: FactorMeta, direction: "high" | "low", locale: "zh" | "en") {

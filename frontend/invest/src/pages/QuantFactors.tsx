@@ -8,7 +8,7 @@ import {
   directionLabel,
   factorCategoryName,
   factorFormula,
-  factorPlain,
+  factorShortPlain,
   factorSubName,
   fmtFactorValue,
   fmtSignedPct,
@@ -213,7 +213,7 @@ export default function QuantFactors() {
                     >
                       <div className="quant-category-main">
                         {row ? <b>{factorCategoryName(row, locale)}因子 · {factorSubName(row, locale)}</b> : <b>{locale === "en" ? cat.name_en : cat.name}</b>}
-                        {row ? <small>{factorPlain(row, locale)}</small> : null}
+                        {row ? <small>{factorShortPlain(row, locale)}</small> : null}
                       </div>
                       <div className="quant-category-stats">
                         <b className={trendClass(value)}>{fmtSignedPct(value)}</b>
@@ -229,7 +229,7 @@ export default function QuantFactors() {
                             key={f.key}
                             onClick={() => openFactor(cat, f.key)}
                           >
-                            <span><b>{factorSubName(f, locale)}</b><small>{factorFormula(f, locale)}</small></span>
+                            <span><b>{factorSubName(f, locale)}</b></span>
                             <span className="quant-subfactor-stats">
                               <b className={trendClass(valueOf(f))}>{fmtSignedPct(valueOf(f))}</b>
                               <small>{f.percentile == null ? "—" : `${f.percentile.toFixed(0)}%`}</small>

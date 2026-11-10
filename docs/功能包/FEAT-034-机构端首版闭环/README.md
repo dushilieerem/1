@@ -999,3 +999,16 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 新增回归：最新版本 rating 无基准时 6 维均 5.0、综合 5.0、avoid + hold。
 
 验证：后端 `pytest tests` **899 passed、67 subtests**；前端 `tsc`/`build`/`test:inst` 15 passed。
+
+
+### 11.54 治理字段复核与评分/议案修复（2026-11-10）
+
+- 6 只治理 47 行已入库并全部置 `verified`（`reviewed_by=inst-gov-review-20261110`）；生产 `doc_extract` 共 71 行，67 verified / 4 cost pending。
+- 接入层回读：
+  - 000001 治理 gate=watch（guarantee missing，核心 5/6）；
+  - 000002/000006/000625/001219/001233 治理 level=sufficient（核心 6/6）；
+  - 600519 治理 7 行尚未入库，仍 fail，已通知数据业务补插。
+- 议案建议修复：取最新研究版本，旧 rating 无基准按 ×2 给分；暂不买入/建议持有方向改为 hold；前端方向映射“持有”，这两种建议禁用“采用建议填入议案”。
+- 000001 修复后六维 6.0/6.6/6.0/7.2/6.0/3.0，综合 5.8，结论“暂不买入”、方向“持有”、仓位 0%。
+
+验证：后端 899 passed、67 subtests；前端 15 passed；PR #200 更新至 `caebdc9`。

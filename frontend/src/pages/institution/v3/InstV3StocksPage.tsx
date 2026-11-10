@@ -50,6 +50,7 @@ export function InstV3StocksPage() {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
+  const [newsNote, setNewsNote] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -114,12 +115,26 @@ export function InstV3StocksPage() {
     let alive = true;
     setNewsLoading(true);
     setNewsError(null);
+    setNewsNote(null);
     listNews({ symbol: selected.symbol, limit: 12 })
-      .then((res) => { if (alive) setNews(res.items || []); })
+      .then(async (res) => {
+        if (!alive) return;
+        if (res.items?.length) {
+          setNews(res.items);
+          return;
+        }
+        // 新闻源大量未打 symbol 标签；没有精确匹配时按公司名兜底，并明确标注。
+        const q = String(selected.name || selected.symbol.split(".")[0] || "").trim();
+        if (!q) { setNews([]); return; }
+        const fallback = await listNews({ q, limit: 12 });
+        if (!alive) return;
+        setNews(fallback.items || []);
+        setNewsNote(fallback.items?.length ? "资讯未打标，以下按公司名称匹配" : null);
+      })
       .catch((e: Error) => { if (alive) setNewsError(e.message); })
       .finally(() => { if (alive) setNewsLoading(false); });
     return () => { alive = false; };
-  }, [selected?.symbol]);
+  }, [selected?.symbol, selected?.name]);
 
   const last = bars.length ? bars[bars.length - 1] : null;
   const prev = bars.length > 1 ? bars[bars.length - 2] : null;
@@ -213,7 +228,7 @@ export function InstV3StocksPage() {
 
           <section className="v3-card">
             <div className="v3-card-head">
-              <div><h2><Newspaper className="mr-1 inline h-4 w-4" />相关资讯</h2><p>按标的代码匹配的新闻与研报摘要，打开原文查看全文。</p></div>
+              <div><h2><Newspaper className="mr-1 inline h-4 w-4" />相关资讯</h2><p>按标的代码匹配的新闻与研报摘要，打开原文查看全文。{newsNote ? ` · ${newsNote}` : ""}</p></div>
               <span className="v3-chip">{selected?.symbol || "—"}</span>
             </div>
             {newsLoading ? <div className="v3-loading" style={{ padding: "20px 0" }}>正在加载资讯…</div> : null}

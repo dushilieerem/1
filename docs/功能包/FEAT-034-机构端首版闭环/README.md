@@ -1090,3 +1090,13 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
   - 最新持仓 qty>0 → 阶段 5。
 - 同一公司多案时按“最远阶段 + 最近更新”选一张卡，避免旧重复案遮住下游项目。
 - 生产回读：阶段 2 显示万科A（case:51），阶段 5 显示贵州茅台（持仓，case:23），总项目 17。
+
+
+### 11.63 K 线指标拆分、成交量与资讯兜底（2026-11-10）
+
+- MA 拆成 MA5/MA10/MA20/MA60 四个独立开关；主图显示各 MA 最新值与颜色，BOLL 显示上/中/下轨，MACD 显示 DIF/DEA/柱，KDJ 显示 K/D/J。
+- 成交量明确标注“成交量 最新值”，与 MACD/KDJ 柱区分。
+- 资讯无精确 symbol 标签时，按公司名称兜底搜索，并标注“资讯未打标，以下按公司名称匹配”。
+- 数据缺口已同步数据业务：
+  - `md_daily_bar` 历史行 `volume/amount/turnover` 全 NULL，仅最近 research-rv 行有值；
+  - `news_items` 15,000 行中 12,810 行 `symbols=[]`。

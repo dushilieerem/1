@@ -7,6 +7,7 @@ import {
   LineSeries,
   LineStyle,
   createChart,
+  createTextWatermark,
   type IChartApi,
   type Time,
 } from "lightweight-charts";
@@ -96,7 +97,7 @@ function lineData(times: string[], values: (number | null)[]): Point[] {
 export function InstV3KlineChart({ bars, height = 500 }: { bars: V3Bar[]; height?: number }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const [showMA, setShowMA] = useState(true);
+  const [maPeriods, setMaPeriods] = useState<number[]>([5, 10, 20, 60]);
   const [showBoll, setShowBoll] = useState(true);
   const [showMacd, setShowMacd] = useState(true);
   const [showKdj, setShowKdj] = useState(true);
@@ -171,21 +172,57 @@ export function InstV3KlineChart({ bars, height = 500 }: { bars: V3Bar[]; height
         crosshairMarkerVisible: false,
       });
 
-    if (showMA) {
-      for (const [period, color] of [
-        [5, "#d4a017"],
-        [10, "#8e5aa8"],
-        [20, "#2e86ab"],
-        [60, "#7f8c8d"],
-      ] as const) {
-        addLine(color, 1).setData(lineData(times, sma(closes, period)));
-      }
+    const maColors: Record<number, string> = {
+      5: "#d4a017",
+      10: "#8e5aa8",
+      20: "#2e86ab",
+      60: "#7f8c8d",
+    };
+    const maValues: Array<{ period: number; value: number | null }> = [];
+    for (const period of maPeriods) {
+      const values = sma(closes, period);
+      addLine(maColors[period] || "#7f8c8d", 1).setData(lineData(times, values));
+      maValues.push({ period, value: values.length ? values[values.length - 1] : null });
     }
     if (showBoll) {
       const b = boll(closes);
       addLine("#b07aa1", 1, true).setData(lineData(times, b.mid));
       addLine("#c9b3bf", 1, true).setData(lineData(times, b.upper));
       addLine("#c9b3bf", 1, true).setData(lineData(times, b.lower));
+    }
+
+    const legendLines = [
+      ...maValues
+        .filter((x) => x.value != null)
+        .map((x) => ({
+          text: `MA${x.period} ${Number(x.value).toFixed(2)}`,
+          color: maColors[x.period] || "#6b6370",
+          fontSize: 12,
+          lineHeight: 16,
+        })),
+    ];
+    if (showBoll) {
+      const b = boll(closes);
+      const last = (a: (number | null)[]) => (a.length ? a[a.length - 1] : null);
+      const up = last(b.upper);
+      const mid = last(b.mid);
+      const low = last(b.lower);
+      if (up != null && mid != null && low != null) {
+        legendLines.push({
+          text: `BOLL 上${up.toFixed(2)} 中${mid.toFixed(2)} 下${low.toFixed(2)}`,
+          color: "#b07aa1",
+          fontSize: 12,
+          lineHeight: 16,
+        });
+      }
+    }
+    if (legendLines.length) {
+      createTextWatermark(chart.panes()[0], {
+        visible: true,
+        horzAlign: "left",
+        vertAlign: "top",
+        lines: legendLines,
+      });
     }
 
     const volume = chart.addSeries(HistogramSeries, {
@@ -202,6 +239,18 @@ export function InstV3KlineChart({ bars, height = 500 }: { bars: V3Bar[]; height
         color: Number(b.close) >= Number(b.open) ? "#e7b8b2" : "#b7d8c6",
       })),
     );
+    const lastVolume = Number(ordered[ordered.length - 1]?.volume || 0);
+    const volumeText = lastVolume >= 1e8
+      ? `${(lastVolume / 1e8).toFixed(2)} 亿`
+      : lastVolume >= 1e4
+        ? `${(lastVolume / 1e4).toFixed(2)} 万`
+        : String(Math.round(lastVolume));
+    createTextWatermark(chart.panes()[0], {
+      visible: true,
+      horzAlign: "left",
+      vertAlign: "bottom",
+      lines: [{ text: `成交量 ${volumeText}`, color: "#8a7f8f", fontSize: 12, lineHeight: 16 }],
+    });
 
     const subPanes: Array<{ setHeight: (h: number) => void }> = [];
     if (showMacd) {
@@ -229,6 +278,18 @@ export function InstV3KlineChart({ bars, height = 500 }: { bars: V3Bar[]; height
             color: value >= 0 ? "#e7b8b2" : "#b7d8c6",
           })),
         );
+      const last = (arr: number[]) => (arr.length ? arr[arr.length - 1] : 0);
+      createTextWatermark(pane, {
+        visible: true,
+        horzAlign: "left",
+        vertAlign: "top",
+        lines: [{
+          text: `MACD  DIF ${last(m.dif).toFixed(2)}  DEA ${last(m.dea).toFixed(2)}  柱 ${last(m.hist).toFixed(2)}`,
+          color: "#6b6370",
+          fontSize: 12,
+          lineHeight: 16,
+        }],
+      });
     }
     if (showKdj) {
       const pane = chart.addPane();
@@ -245,6 +306,18 @@ export function InstV3KlineChart({ bars, height = 500 }: { bars: V3Bar[]; height
       chart
         .addSeries(LineSeries, { color: "#d4a017", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }, paneIndex)
         .setData(lineData(times, k.j));
+      const last = (arr: number[]) => (arr.length ? arr[arr.length - 1] : 0);
+      createTextWatermark(pane, {
+        visible: true,
+        horzAlign: "left",
+        vertAlign: "top",
+        lines: [{
+          text: `KDJ  K ${last(k.k).toFixed(2)}  D ${last(k.d).toFixed(2)}  J ${last(k.j).toFixed(2)}`,
+          color: "#6b6370",
+          fontSize: 12,
+          lineHeight: 16,
+        }],
+      });
     }
 
     const mainHeight = Math.max(220, height - subPanes.length * 100 - 20);
@@ -256,7 +329,7 @@ export function InstV3KlineChart({ bars, height = 500 }: { bars: V3Bar[]; height
       chart.remove();
       chartRef.current = null;
     };
-  }, [bars, height, showMA, showBoll, showMacd, showKdj]);
+  }, [bars, height, maPeriods, showBoll, showMacd, showKdj]);
 
   const toggle = (label: string, on: boolean, set: (v: boolean) => void) => (
     <button type="button" className={`v3-kline-tool${on ? " on" : ""}`} onClick={() => set(!on)}>
@@ -267,7 +340,23 @@ export function InstV3KlineChart({ bars, height = 500 }: { bars: V3Bar[]; height
   return (
     <div>
       <div className="v3-kline-tools">
-        {toggle("MA", showMA, setShowMA)}
+        {[5, 10, 20, 60].map((period) => {
+          const on = maPeriods.includes(period);
+          return (
+            <button
+              key={period}
+              type="button"
+              className={`v3-kline-tool${on ? " on" : ""}`}
+              onClick={() =>
+                setMaPeriods((cur) =>
+                  cur.includes(period) ? cur.filter((x) => x !== period) : [...cur, period].sort((a, b) => a - b),
+                )
+              }
+            >
+              MA{period}
+            </button>
+          );
+        })}
         {toggle("BOLL", showBoll, setShowBoll)}
         {toggle("MACD", showMacd, setShowMacd)}
         {toggle("KDJ", showKdj, setShowKdj)}

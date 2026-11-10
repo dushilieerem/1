@@ -1,0 +1,85 @@
+{
+  "scope": "read-only committed-source integration audit, not a merge or mergeability test",
+  "source": "573d05513ed35ff8e1e29ab394583cb073c0b603",
+  "target": "3d7f1e7f5e8c594b6180d5e5754aa1a35d8a0468",
+  "direct_overlap": [
+    {
+      "path": "frontend/package.json",
+      "finding": "Both branches change scripts.test on the same line. Master adds --test-concurrency=1 and instV3Nav/instDedupe to test:inst; dev adds quant cases.",
+      "resolution": "Preserve upstream serial runner and institutional cases; union quant explicit cases. No package/dependency replacement.",
+      "status": "requires integration"
+    },
+    {
+      "path": "backend/tests/test_quant_data_requests.py",
+      "finding": "Both change view_usage mocks; upstream patches _published_views while CR094 additionally changes delivery to _available_delivery_views.",
+      "resolution": "Keep deterministic source fixtures for current CR094 contract; retain upstream no-live-directory intent. Run focused requests tests only after explicit integration.",
+      "status": "requires integration"
+    }
+  ],
+  "migration_audit": {
+    "versions": [
+      "0038",
+      "0039",
+      "0040",
+      "0041"
+    ],
+    "same_prefix_files_in_master": [],
+    "same_table_references_in_master": [],
+    "new_tables": [
+      "quant_ai_budget_accounts",
+      "quant_ai_budget_supplements",
+      "quant_ai_budget_calls",
+      "quant_research_token_policies",
+      "quant_research_queue_jobs",
+      "quant_research_queue_slots"
+    ],
+    "scope": "repository source only; no claim about a target deployment database",
+    "dependency": "0039 requires0038 existing grant table;0040 adds calls queue FK;0041 relaxes output-cap nullability. No grant or unlimited authorization inferred solely by migration."
+  },
+  "shared_entrypoints": [
+    {
+      "path": "backend/app/main.py",
+      "finding": "Added normal lifespan interruption hook invokes legacy unscoped candidate scan when durable flag off. Own18799 lifespan off avoids it, but merging this default hook would affect other deployments.",
+      "status": "fixed in573d055;16 guarded tests+2subtests; not loaded/restarted; normal flag0 no research DB writes, explicit flag1 same owned dispatcher, legacy global candidate entry is no-op",
+      "fix_scope": [
+        "backend/app/main.py",
+        "backend/services/quant_factor/service.py",
+        "backend/tests/test_quant_startup_scope.py",
+        "backend/tests/test_quant_factor_jobs.py"
+      ]
+    },
+    {
+      "path": "backend/app/routers/ai_factor_generation.py + backend/services/core/ai_factor_input.py",
+      "finding": "Optional custom_source_contract and max_prompt_chars; default personal prompt limit remains2000. Quant adapter opts into causal checks. No double-edited upstream file, but shared caller/API compatibility needs focused integration review.",
+      "status": "semantic review, not a textual overlap"
+    },
+    {
+      "path": "backend/app/routers/detect.py + backend/services/factor/detect_store.py",
+      "finding": "Generic project writes refuse overwrite of institutional topic contract; PUT converts ValueError to409. Non-institutional project path remains existing adapter.",
+      "status": "semantic/API review; targeted contract guards previously tested"
+    },
+    {
+      "path": "backend/app/routers/inst_quant.py",
+      "finding": "Institutional workbench CAS save and metered quant factor generation; personal/strategy AI routes not redirected to private RE.",
+      "status": "semantic/auth review"
+    },
+    {
+      "path": "backend/services/quant_factor/model_budget.py",
+      "finding": "Quant-only one physical transport, actual usage, no shared account/day-budget settings changed. Upstream changes institution/invest task definitions; not the quant role transport files.",
+      "status": "shared provider dependency compatibility still not tested against new master"
+    },
+    {
+      "path": "frontend/src/pages/institutional-workflow/StrategyDraftAssistant.tsx + StrategyResearchPage.tsx",
+      "finding": "Legacy branch diff only replaces crypto.randomUUID with existing newUuidV4 helper.",
+      "status": "included in cumulative PR inventory; not a new strategy feature or fresh strategy acceptance"
+    }
+  ],
+  "not_performed": [
+    "merge/rebase/cherry-pick onto new master",
+    "combined-master build/tests",
+    "shared service restart",
+    "Gitee PR write/status verification",
+    "production schema comparison"
+  ],
+  "startup_fix_commit": "573d05513ed35ff8e1e29ab394583cb073c0b603"
+}

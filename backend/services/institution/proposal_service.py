@@ -70,6 +70,178 @@ def _proposal_row(conn, org_id: int, proposal_id: int) -> dict[str, Any] | None:
     return repo.proposal_row(OrgScope(org_id), proposal_id, conn=conn)
 
 
+def _position_hint(org_id: int, symbol: str) -> tuple[bool, float]:
+    with get_conn() as conn:
+        pf = conn.execute(
+            "SELECT nav, cash FROM inst_portfolio WHERE org_id=%s ORDER BY id LIMIT 1",
+            (org_id,),
+        ).fetchone()
+        pos = conn.execute(
+            """
+            SELECT ps.qty, ps.market_value
+              FROM inst_position_snapshot ps
+              JOIN inst_portfolio p ON p.id=ps.portfolio_id
+             WHERE p.org_id=%s AND ps.symbol=%s
+             ORDER BY ps.as_of DESC, ps.id DESC LIMIT 1
+            """,
+            (org_id, symbol),
+        ).fetchone()
+    qty = float((pos or {}).get("qty") or 0)
+    if qty <= 0:
+        return False, 0.0
+    nav = float((pf or {}).get("nav") or 0)
+    market_value = float((pos or {}).get("market_value") or 0)
+    return True, (market_value / nav if nav > 0 else 0.0)
+
+
+def proposal_advice(org_id: int, case_id: int) -> dict[str, Any]:
+    """交易员 Agent：汇总六维评分与辩论结论，给出买卖结论、仓位与议案框架。"""
+    case = get_case(org_id, case_id)
+    if not case:
+        raise LookupError("研究案不存在")
+    versions = case.get("versions") or []
+    version = next(
+        (
+            v
+            for v in versions
+            if str(v.get("status")) == "approved" and not v.get("superseded_at")
+        ),
+        versions[0] if versions else None,
+    )
+    dims = [d for d in ((version or {}).get("six_dim") or []) if isinstance(d, dict)]
+    scores = [
+        {
+            "key": d.get("key"),
+            "title": d.get("title"),
+            "score_10": (
+                d.get("score_10")
+                if d.get("score_10") is not None
+                else (
+                    round(float(d["rating"]) * 2, 1)
+                    if d.get("rating") is not None and d.get("rating_benchmark")
+                    else None
+                )
+            ),
+            "rating_benchmark": d.get("rating_benchmark"),
+            "gate": d.get("gate"),
+        }
+        for d in dims
+    ]
+    overall = _overall_score(dims)
+    sessions = case.get("debates") or []
+    session = sessions[0] if sessions else None
+    debate = get_debate(org_id, int(session["id"])) if session else None
+    conclusion = str((debate or {}).get("conclusion") or "尚未形成辩论结论")
+    args = (debate or {}).get("arguments") or []
+    bull = sum(1 for a in args if str(a.get("side")) == "bull")
+    bear = sum(1 for a in args if str(a.get("side")) == "bear")
+    debate_ready = bool(debate and str(debate.get("status")) == "completed")
+    research_ready = debate_ready and "补充研究" not in conclusion
+
+    held, current_weight = _position_hint(org_id, str(case.get("symbol") or ""))
+    gate_fail = [str(d.get("title") or d.get("key")) for d in dims if str(d.get("gate")) == "fail"]
+
+    if overall is None:
+        recommendation, direction, target_weight = "avoid", "buy", 0.0
+        reason = "六维评分不完整，暂不具备形成议案的条件"
+    elif held:
+        if overall < 5.0 or gate_fail:
+            recommendation, direction, target_weight = "sell", "sell", 0.0
+            reason = "持仓标的研究评分跌破门槛或存在阻断维度，建议退出"
+        else:
+            recommendation, direction, target_weight = "hold", "buy", current_weight
+            reason = "已持仓且研究未失效，建议维持现有仓位并继续复核"
+    elif research_ready and not gate_fail and overall >= 7.0:
+        recommendation, direction = "buy", "buy"
+        target_weight = 0.05 if overall >= 9.0 else 0.03 if overall >= 8.0 else 0.02
+        reason = "六维评分达到买入门槛，辩论未给出补充研究结论，建议建仓"
+    else:
+        recommendation, direction, target_weight = "avoid", "buy", 0.0
+        reason = (
+            "存在阻断维度，暂不买入"
+            if gate_fail
+            else "辩论尚未形成可执行结论，暂不买入"
+            if not research_ready
+            else "综合评分未达到买入门槛，暂不买入"
+        )
+
+    label = {
+        "buy": "推荐买入",
+        "sell": "推荐卖出",
+        "hold": "建议持有",
+        "avoid": "暂不买入",
+    }[recommendation]
+    price = float(case.get("ref_price") or 0)
+    valuation = (version or {}).get("valuation") or {}
+    low = valuation.get("low")
+    high = valuation.get("high")
+    try:
+        low_f, high_f = float(low), float(high)
+    except (TypeError, ValueError):
+        low_f = high_f = 0.0
+    if not (price > 0 and low_f > 0 and high_f > low_f and low_f >= price * 0.3 and high_f <= price * 3.0):
+        low_f = round(price * 0.95, 2) if price > 0 else None
+        high_f = round(price * 1.05, 2) if price > 0 else None
+
+    monitoring: list[str] = []
+    for d in dims:
+        for item in d.get("counter") or []:
+            text = _clean_agent_text(item)
+            if text and text not in monitoring:
+                monitoring.append(text)
+    for a in args:
+        text = _clean_agent_text(a.get("falsifier"))
+        if text and text not in monitoring:
+            monitoring.append(text)
+    monitoring = monitoring[:3] or ["季度复核收入、毛利率与现金流；综合评分跌破 6.0 则重开研究"]
+    target_text = f"{target_weight * 100:.1f}%"
+    opinion = (
+        f"六维平均得分 {overall:.1f}/10" if overall is not None else "六维评分不完整"
+    ) + f"，多空辩论结论为“{conclusion}”。{label}，建议目标仓位 {target_text}。"
+    opinion += f"主要风险：{monitoring[0]}；若该风险触发或综合评分跌破 6.0，则重开研究并复核仓位。"
+    if len(opinion) < 60:
+        opinion += "本议案仅基于当前锁定研究版本，审批前需复核证据与价格带。"
+    valid_until = (date.today() + timedelta(days=30)).isoformat()
+
+    return {
+        "available": True,
+        "case_id": int(case["id"]),
+        "case_no": case.get("case_no"),
+        "company": {
+            "symbol": case.get("symbol"),
+            "name": case.get("company_name"),
+            "price": price or None,
+        },
+        "scores": scores,
+        "overall_score": overall,
+        "debate": {
+            "session_id": int(session["id"]) if session else None,
+            "status": (debate or {}).get("status"),
+            "conclusion": conclusion,
+            "bull_count": bull,
+            "bear_count": bear,
+        },
+        "recommendation": recommendation,
+        "recommendation_label": label,
+        "direction": direction,
+        "target_weight": target_weight,
+        "current_weight": current_weight,
+        "held": held,
+        "rationale": reason,
+        "framework": {
+            "direction": direction,
+            "target_weight": target_weight,
+            "price_low": low_f,
+            "price_high": high_f,
+            "funding_source": "现金",
+            "valid_until": valid_until,
+            "monitoring": monitoring,
+            "investment_opinion": opinion,
+        },
+        "engine": "trader_agent",
+    }
+
+
 def create_proposal(
     org_id: int,
     case_id: int,

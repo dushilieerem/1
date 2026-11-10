@@ -715,6 +715,19 @@ def proposals(
     return {"ok": True, "items": items, "scope": scope, "role": role}
 
 
+@router.get("/cases/{case_id}/proposal-advice")
+def proposal_advice(case_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "debate")
+    try:
+        return {"ok": True, **svc.proposal_advice(org_id, case_id)}
+    except LookupError:
+        # 建议是辅助信息；案已被归档/删除时返回空建议，避免前端把 404 当接口故障。
+        return {"ok": True, "available": False, "reason": "研究案不存在或已归档"}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.post("/cases/{case_id}/proposals")
 def create_proposal(
     case_id: int,

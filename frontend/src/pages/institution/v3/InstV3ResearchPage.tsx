@@ -139,6 +139,14 @@ function dimScore(dim?: Dim | null): number | null {
   return null;
 }
 
+function decisionLabel(value?: string | null): string {
+  const key = String(value || "").trim().toLowerCase();
+  if (key === "proceed") return "建议进入议案";
+  if (key === "watch") return "观察";
+  if (key === "avoid") return "不建议进入议案";
+  return String(value || "—");
+}
+
 function paragraphs(text?: string | null): string[] {
   return String(text || "")
     .split(/\n{2,}/)
@@ -606,10 +614,9 @@ export function InstV3ResearchPage() {
               {memo ? (
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {memo.decision ? <span className={`v3-chip ${memo.decision === "proceed" ? "ok" : memo.decision === "avoid" ? "bad" : "warn"}`}>{memo.decision}</span> : null}
-                    {memo.engine ? <span className="v3-chip">{memo.engine}</span> : null}
+                    {memo.decision ? <span className={`v3-chip ${memo.decision === "proceed" ? "ok" : memo.decision === "avoid" ? "bad" : "warn"}`}>{decisionLabel(memo.decision)}</span> : null}
                     {memo.chief_confidence != null ? <span className="v3-chip">置信 {Number(memo.chief_confidence).toFixed(2)}</span> : null}
-                    {memo.decision_original ? <span className="v3-chip warn">原判 {memo.decision_original} · 门禁降级</span> : null}
+                    {memo.decision_original ? <span className="v3-chip warn">原判 {decisionLabel(memo.decision_original)} · 核验降级</span> : null}
                     {memo.chief_fields_fallback ? <span className="v3-chip warn">服务端补齐</span> : null}
                     <span className="v3-memo-score"><span>六维总分</span><b>{overall != null ? overall.toFixed(1) : "未评分"}</b>{overall != null ? <small>/10</small> : null}<em>六维平均</em></span>
                   </div>

@@ -36,7 +36,7 @@ from services.institution.report import render_research_report, report_filename
 from services.marketdata import store as md
 
 from . import applicability, doc_layer, repo
-from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi
+from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi, humanize_list, humanize_text
 from .company_service import _mapped_industry
 from .guards import POLICY_VERSION, _audit, _member, _require_role, _uid
 from .stages import _record_gate, _record_transition, _set_case_stage, _stage_def, _stage_payload
@@ -1484,6 +1484,10 @@ def _merge_industry(
         )
         ev_idx.append(idx)
     built["evidence"] = evidence
+    industry_name = str((built.get("facts") or {}).get("industry_name") or "").strip()
+    analysis_md = humanize_text(data.get("analysis_md"))
+    if industry_name:
+        analysis_md = re.sub(r"\b\d{6}\.SI\b", industry_name, analysis_md)
     return {
         "key": "industry",
         "title": "行业分析",
@@ -1491,32 +1495,32 @@ def _merge_industry(
         "role_title": PROFESSIONAL_ROLE_TITLES["industry_overview"],
         "question": str(data.get("question") or "行业空间、景气周期、产业链与竞争格局处于什么位置？"),
         "status": "partial" if data.get("data_gaps") else "done",
-        "summary": _clip_brief(data.get("summary")),
-        "impact": _clip_brief(data.get("impact")),
-        "data_used": [_clip_brief(x) for x in (data.get("data_used") or []) if str(x).strip()][:6],
-        "checks": [_clip_brief(x) for x in (data.get("checks") or [])][:5],
-        "counter": [_clip_brief(x) for x in (data.get("counter") or [])][:3],
-        "open_questions": [_clip_brief(x) for x in (data.get("open_questions") or [])][:3],
-        "data_gaps": [_clip_brief(x) for x in (data.get("data_gaps") or [])][:5],
+        "summary": humanize_text(data.get("summary")),
+        "impact": humanize_text(data.get("impact")),
+        "data_used": humanize_list(data.get("data_used"))[:6],
+        "checks": humanize_list(data.get("checks"))[:5],
+        "counter": humanize_list(data.get("counter"))[:3],
+        "open_questions": humanize_list(data.get("open_questions"))[:3],
+        "data_gaps": humanize_list(data.get("data_gaps"))[:5],
         "evidence_idx": ev_idx,
         "direct_evidence_ids": [
             int(x) for x in (data.get("evidence_ids") or []) if str(x).isdigit()
         ],
         "confidence": data.get("confidence"),
         "confidence_label": data.get("confidence_label"),
-        "analysis_md": str(data.get("analysis_md") or ""),
+        "analysis_md": analysis_md,
         "attractiveness": data.get("attractiveness"),
         "gate": data.get("gate"),
-        "one_line": data.get("one_line"),
+        "one_line": humanize_text(data.get("one_line")),
         "headline": data.get("headline"),
         "kpis": data.get("kpis") or [],
         "market_size": data.get("market_size"),
         "competition": data.get("competition"),
-        "key_variables": data.get("key_variables") or [],
+        "key_variables": humanize_list(data.get("key_variables")),
         "falsifiers": data.get("falsifiers") or [],
-        "implication_for_company": data.get("implication_for_company"),
+        "implication_for_company": humanize_text(data.get("implication_for_company")),
         "gate": data.get("gate"),
-        "gate_note": data.get("gate_note"),
+        "gate_note": humanize_text(data.get("gate_note")),
         "data_completeness": data.get("data_completeness"),
         "engine": "agent",
     }
@@ -1663,23 +1667,23 @@ def _merge_agent_results(
                     "role_title": PROFESSIONAL_ROLE_TITLES.get(key, "专业研究 Agent"),
                     "question": question,
                     "status": status,
-                    "summary": str(data.get("summary")),
-                    "impact": _clip_brief(data.get("impact")),
-                    "data_used": [_clip_brief(x) for x in (data.get("data_used") or []) if str(x).strip()][:6],
-                    "checks": data.get("checks") or [],
-                    "counter": data.get("counter") or [],
-                    "open_questions": data.get("open_questions") or [],
-                    "data_gaps": data.get("data_gaps") or [],
+                    "summary": humanize_text(data.get("summary")),
+                    "impact": humanize_text(data.get("impact")),
+                    "data_used": humanize_list(data.get("data_used"))[:6],
+                    "checks": humanize_list(data.get("checks"))[:8],
+                    "counter": humanize_list(data.get("counter"))[:6],
+                    "open_questions": humanize_list(data.get("open_questions"))[:6],
+                    "data_gaps": humanize_list(data.get("data_gaps"))[:10],
                     "confidence": data.get("confidence", 0.5),
                     "confidence_label": data.get("confidence_label"),
                     "rating": score_fields["rating"],
                     "score_10": score_fields["score_10"],
-                    "rating_benchmark": score_fields["rating_benchmark"],
-                    "rating_note": score_fields["rating_note"],
+                    "rating_benchmark": humanize_text(score_fields["rating_benchmark"]),
+                    "rating_note": humanize_text(score_fields["rating_note"]),
                     "gate": data.get("gate"),
                     "headline": data.get("headline"),
                     "kpis": data.get("kpis") or [],
-                    "analysis_md": str(data.get("analysis_md") or ""),
+                    "analysis_md": humanize_text(data.get("analysis_md")),
                     "key_numbers": data.get("key_numbers") or [],
                     "falsifiers": data.get("falsifiers") or [],
                     "thesis_links": data.get("thesis_links") or [],

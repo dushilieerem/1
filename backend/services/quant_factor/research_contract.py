@@ -32,7 +32,6 @@ def from_project(uid, org, project, view):
  from services.quant_data_resources import dataset
  from .source_contract import FIELDS
  from .source_compat import RE_POLICY_SHA256
- from .provenance import _CODE_REVISION
  cfg=project.get('config') or {};plan=cfg.get('researchPlan') or {}
  meta=dataset(uid,org,'daily_bars',view['view_id'])
  if not meta.get('published') or meta.get('catalog_version')!=view['view_id'] or meta.get('publication_version')!=view['view_id']:
@@ -41,7 +40,7 @@ def from_project(uid, org, project, view):
  restriction=plan.get('fieldRestriction') or 'available'
  if restriction not in ('available','ohlcv'):raise ValueError('请选择本任务字段范围')
  return freeze(data_fields=fields,engine_fields=FIELDS,requested_fields=None,rules=plan.get('rules') or {},
-  explicit_ohlcv=restriction=='ohlcv',method_identity={'version':METHOD_VERSION,'source_contract':'quant-panel-causal-v1','re_source_policy_sha256':RE_POLICY_SHA256,'bff_code_revision':_CODE_REVISION},
+  explicit_ohlcv=restriction=='ohlcv',method_identity={'source_contract':'quant-panel-causal-v1','re_source_policy_sha256':RE_POLICY_SHA256},
   data_identity={'view_id':view['view_id'],'manifest_sha256':view.get('manifest_sha256'),'datasets':{'daily_bars':(view.get('datasets') or {}).get('daily_bars')},
    'project_id':project['id'],'org_id':org,'universe':cfg.get('researchUniverseSymbols') or cfg.get('universe'),
    'development':[plan.get('developmentStart'),plan.get('developmentEnd')],
@@ -55,10 +54,11 @@ def check_project(project, source=None, entry=None):
  if not contract:return None # Legacy records retain their original meaning.
  cfg=project['config'];plan=cfg.get('researchPlan') or {};identity=contract['data_identity']
  check_fields([],contract)
- frozen_code=contract.get('method_identity',{}).get('bff_code_revision')
- if frozen_code:
-  from .provenance import _CODE_REVISION
-  if frozen_code!=_CODE_REVISION:raise ValueError('原研究方法代码版本已变化，不能悄悄替换运行；原证据仍保留')
+ # Old bff_code_revision remains provenance, not a project compatibility gate.
+ from .source_contract import VERSION as source_version
+ from .source_compat import RE_POLICY_SHA256
+ method=contract.get('method_identity') or {}
+ if method.get('source_contract') not in (None,source_version) or method.get('re_source_policy_sha256') not in (None,RE_POLICY_SHA256):raise ValueError('固定RE源码契约已变化，未替换数据或实现能力继续')
  if project.get('id') and identity.get('project_id')!=project['id']:raise ValueError('研究契约不属于此工程')
  if fingerprint(plan.get('rules') or {})!=contract['rules_hash']:raise ValueError('预登记方向和门槛已冻结，修改需建立明确的新研究计划')
  expected={'universe':cfg.get('researchUniverseSymbols') or cfg.get('universe'),

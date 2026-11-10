@@ -159,6 +159,7 @@ def _context(uid, org, topic, run_id):
         ctx['control_epoch']=cfg.get('v5ControlEpoch')
         ctx['human_advice']=[a for a in ((run_row or {}).get('decision') or {}).get('human_advice',[]) if a['input']['branch_id']==active_branch and a['input']['control_epoch']==cfg.get('v5ControlEpoch')]
         ctx['method_version']=((run_row or {}).get('decision') or {}).get('method_version','legacy')
+        ctx['method_snapshot']=((run_row or {}).get('decision') or {}).get('method_snapshot')
         ctx['selected_parent']=None
         ctx['evidence_refs']=['contract:'+contract['contract_hash']]
         if cand:
@@ -373,7 +374,9 @@ def _diagnose(uid,org,topic,run_id,step,candidate_id):
     facts=attach_parent(uid,org,candidate,facts)
     from .research_method import interpret
     _phase(uid,org,run_id,'diagnosis')
-    try:return interpret(uid,org,topic['project_id'],run_id,step,facts)
+    with get_conn() as c:method_row=c.execute('SELECT decision FROM quant_factor_f0_runs WHERE id=%s AND user_id=%s AND org_id=%s',(run_id,uid,org)).fetchone()
+    frozen_method=((method_row or {}).get('decision') or {}).get('method_snapshot')
+    try:return interpret(uid,org,topic['project_id'],run_id,step,facts,method_snapshot=frozen_method)
     except (ValueError,AiError) as exc:
         # Real numerical evidence survives a separate failed model explanation.
         return {**facts,'interpretation':None,'interpretation_error':str(exc)[:600]}

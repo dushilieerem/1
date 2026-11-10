@@ -167,7 +167,7 @@ class ImplementationContractTests(unittest.TestCase):
   body={'prompt':'按固定定义实现过去价格截面排序','context':{'custom_source_contract':'quant-panel-causal-v1'},'idempotency_key':'00000000-0000-4000-8000-000000000001'}
   raw={'factor':{'factor_name':'f','factor_code':'def f(self): return self.turnover.rank(axis=1,pct=True)'},'errors':[]}
   with patch.object(generation.model_budget,'run',return_value={'data':raw,'model':'same-existing-model'}) as model,self.assertRaisesRegex(ValueError,'turnover'):
-   generation.generate(999999,999998,'p','job',body,research_contract=contract())
+   generation.generate(999999,999998,'p','job',body,research_contract=contract(),method_snapshot=rm.snapshot())
   self.assertEqual(model.call_args.args[4],rm.IMPLEMENTER);self.assertEqual(model.call_count,1)
  def test_default_public_prompt_limit_unchanged(self):
   from services.core.ai_factor_input import factor_prompt_error
@@ -181,7 +181,7 @@ class ProposalAndControllerBoundaryTests(unittest.TestCase):
   body={'prompt':'明确仅用过去收盘价的研究假设','context':{'custom_source_contract':'quant-panel-causal-v1'},'idempotency_key':'00000000-0000-4000-8000-000000000002'}
   raw={'factor':{'factor_name':'f','factor_code':'def f(self): return self.volume.rank(axis=1,pct=True)'},'errors':[]}
   with patch.object(generation.model_budget,'run',return_value={'data':raw,'model':'same-model'}),self.assertRaisesRegex(ValueError,'研究提案'):
-   generation.generate(999999,999998,'p','job',body,research_contract=contract(),proposal={'required_fields':['close']})
+   generation.generate(999999,999998,'p','job',body,research_contract=contract(),proposal={'required_fields':['close']},method_snapshot=rm.snapshot())
  def test_nonempty_proposal_mechanism_and_falsification_are_required(self):
   p={'action':'run_test','hypothesis':'new research','mechanism':'mechanism','required_fields':['close'],'change_scope':'initial','expected_effect':'expected','falsification':'fails IC','evidence_refs':[],'rationale':'bounded evidence based test','title':'test','stop_reason':''}
   for field,value in [('mechanism',' '),('required_fields',[]),('expected_effect',''),('falsification','')]:

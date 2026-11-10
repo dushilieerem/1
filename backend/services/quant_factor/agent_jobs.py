@@ -63,6 +63,7 @@ def _check_controller(connection,uid,org,project_id,controller):
     row=connection.execute("SELECT r.status,r.decision,t.status AS topic_status,p.config FROM quant_factor_f0_runs r JOIN quant_factor_topics t ON t.id=r.topic_id AND t.user_id=r.user_id AND t.org_id=r.org_id JOIN detect_projects p ON p.id=r.project_id AND p.user_id=r.user_id WHERE r.id=%s AND r.user_id=%s AND r.org_id=%s AND r.project_id=%s",(controller['run_id'],uid,org,project_id)).fetchone()
     if not row or row['status']!='running' or row['topic_status']!='active' or (row.get('decision') or {}).get('runner_epoch')!=controller.get('worker_epoch') or (row.get('config') or {}).get('v5ControlEpoch')!=controller.get('control_epoch'):
         raise WorkflowError('研究已暂停或控制版本已变化，未发新的自动实现调用')
+    return dict(row)
 
 def create(uid,org,stage,project_id,draft,request_key,*,controller=None):
     if stage not in ('F1','F2','F3'):raise WorkflowError('本期 Agent 自动回填支持 F1、F2、F3。')
@@ -82,7 +83,10 @@ def create(uid,org,stage,project_id,draft,request_key,*,controller=None):
     with get_conn() as c:
         c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9106,uid))
         c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9108,uid))
-        _check_controller(c,uid,org,project_id,controller)
+        owner=_check_controller(c,uid,org,project_id,controller)
+        if stage=='F3' and inputs.get('research_contract'):
+            from .research_method import snapshot,validate_snapshot
+            inputs['method_snapshot']=validate_snapshot((owner.get('decision') or {}).get('method_snapshot')) if owner else snapshot()
         if project and project['config'].get('v5ActiveBranch'):
             current=c.execute('SELECT config FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,project_id)).fetchone()
             cfg=project['config'];now=(current or {}).get('config') or {}
@@ -182,7 +186,7 @@ def run(uid,org,jid):
             if contract:instruction+=' 以research_contract.allowed_fields为本任务唯一允许字段；不因通用说明较宽而读取其他字段。候选预热为0，较长回看将损失评分观测，不得自动扩大区间。'
             prompt_error=factor_prompt_error(instruction+'\n'+prompt,max_chars=12000 if contract else 2000)
             if prompt_error:raise WorkflowError(prompt_error+'；请精简研究说明，完整报告仍已保留。')
-            out=generate(uid,org,row['project_id'],jid,{'prompt':instruction+'\n'+prompt,'context':{'frequency':'1d','preferred_factor_name':draft.get('name') or None,'custom_source_contract':VERSION},'idempotency_key':jid},research_contract=contract,proposal=(draft.get('researchProposal') or {}).get('proposal'))
+            out=generate(uid,org,row['project_id'],jid,{'prompt':instruction+'\n'+prompt,'context':{'frequency':'1d','preferred_factor_name':draft.get('name') or None,'custom_source_contract':VERSION},'idempotency_key':jid},research_contract=contract,proposal=(draft.get('researchProposal') or {}).get('proposal'),method_snapshot=row['input'].get('method_snapshot'))
             if out.get('status')!='ready' or out.get('validation',{}).get('status')!='passed':raise WorkflowError('代码未通过平台校验：'+'；'.join(out.get('validation',{}).get('errors',[])))
             from .causality import diagnose_source
             try:source_check=diagnose_source(out['factor']['factor_code'],out['factor']['factor_name'])

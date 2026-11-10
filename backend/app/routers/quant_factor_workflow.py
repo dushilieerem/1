@@ -365,15 +365,24 @@ class ManualHandoffBody(BaseModel):
     acknowledged:bool=False
     note:str=Field(default='',max_length=2000)
 
+class MethodChangeBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    previous_run_id:str
+    expected_method_hash:str
+    expected_control_epoch:str
+    acknowledged:bool=False
+    reason:str=Field(min_length=1,max_length=1000)
+
 class F0Body(BaseModel):
     model_config=ConfigDict(extra='forbid')
     idempotency_key:str=Field(min_length=1,max_length=100)
     handoff:ManualHandoffBody|None=None
+    method_change:MethodChangeBody|None=None
 
 @router.post('/topics/{tid}/branches/{bid}/f0',status_code=202)
 def f0_start(tid:str,bid:str,body:F0Body,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import f0
-    return invoke_ledger(f0.start,*identity(ctx),tid,bid,body.idempotency_key,*([body.handoff.model_dump()] if body.handoff else []))
+    return invoke_ledger(f0.start,*identity(ctx),tid,bid,body.idempotency_key,body.handoff.model_dump() if body.handoff else None,body.method_change.model_dump() if body.method_change else None)
 
 @router.get('/topics/{tid}/f0-runs')
 def f0_latest(tid:str,ctx=Depends(require_quant_researcher)):

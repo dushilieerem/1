@@ -7,7 +7,7 @@ from .policy import WorkflowError,digest
 from . import store
 
 LIMITS={'space':1_000_000,'factor':200_000}
-OUTPUT_LIMITS={'quant.factor.research_planner_v2':4000,'quant.factor.research_implementation_v2':16000,'quant.factor.evidence_diagnosis_v2':3000,'quant.factor.f0_decider':2000,'quant.factor.task_planner':3000,'quant.factor.research_assistant':3000,'research.generate_factor':8000,'quant.factor.independent_reviewer':2000}
+OUTPUT_LIMITS={'quant.factor.research_planner_v2':16000,'quant.factor.research_implementation_v2':16000,'quant.factor.evidence_diagnosis_v2':16000,'quant.factor.f0_decider':2000,'quant.factor.task_planner':3000,'quant.factor.research_assistant':3000,'research.generate_factor':8000,'quant.factor.independent_reviewer':2000}
 VERSION='quant-model-budget-v1'
 MAX_PROMPT_BYTES=48_000
 AUTHORIZED_ORG=261
@@ -110,7 +110,7 @@ def settle(uid,org,call_id,response):
   if usage:c.execute('UPDATE ai_usage SET tokens_in=%s,tokens_out=%s WHERE user_id=%s AND run_id=%s',(usage['tokens_in'],usage['tokens_out'],uid,call_id))
  return usage
 
-def run(uid,org,project_id,call_key,task_id,*,messages=None,variables=None,supplement=None):
+def run(uid,org,project_id,call_key,task_id,*,messages=None,variables=None,supplement=None,method_snapshot=None):
  """Exactly one physical primary-model attempt; no SDK fallback/expansion/cache."""
  from ai.router import get_task
  from ai.router.specs import TaskRequest
@@ -125,8 +125,15 @@ def run(uid,org,project_id,call_key,task_id,*,messages=None,variables=None,suppl
  from ai.router.executors import _code_response_format
  response_format=_code_response_format(spec)
  if isinstance(response_format,dict) and response_format.get('type')=='json_schema':response_format={'type':'json_object'}
- upper=input_upper_bound(resolved,response_format);maximum=OUTPUT_LIMITS[task_id]
- fingerprint=digest({'budget_version':VERSION,'temperature':float(spec.temperature),'task_id':task_id,'messages':resolved,'variables':variables or {},'max_output':maximum,'prompt_version':spec.prompt_version,'response_format':response_format,'model':target.model,'provider':target.provider,'backend_hash':digest({'base':target.base_url})})
+ upper=input_upper_bound(resolved,response_format);maximum=OUTPUT_LIMITS[task_id];timeout=int(spec.timeout_sec or target.timeout);method_hash=None
+ if task_id.endswith('_v2'):
+  from .research_method import validate_snapshot
+  frozen=validate_snapshot(method_snapshot);role=frozen['roles'].get(task_id)
+  if not role or spec.prompt_version!=role['prompt_version']:raise WorkflowError('模型任务与本次冻结方法不一致，未发送请求')
+  maximum=role['max_output'];timeout=role['timeout_seconds'];method_hash=frozen['snapshot_hash']
+ identity={'budget_version':VERSION,'temperature':float(spec.temperature),'task_id':task_id,'messages':resolved,'variables':variables or {},'max_output':maximum,'prompt_version':spec.prompt_version,'response_format':response_format,'model':target.model,'provider':target.provider,'backend_hash':digest({'base':target.base_url})}
+ if method_hash:identity.update(method_snapshot_hash=method_hash,timeout_seconds=timeout)
+ fingerprint=digest(identity)
  row=reserve(uid,org,project_id,call_key,task_id,fingerprint,upper,maximum,supplement)
  if row.get('response') is not None:
   if row['response'].get('error_type'):raise WorkflowError('原模型调用未返回可用产物（'+row['response']['error_type']+'），用量已保留；不会自动重发')
@@ -136,7 +143,7 @@ def run(uid,org,project_id,call_key,task_id,*,messages=None,variables=None,suppl
  payload={'model':target.model,'messages':resolved,'temperature':spec.temperature,'max_tokens':maximum}
  if response_format is not None:payload['response_format']=response_format
  try:
-  try:raw=providers._read_json(providers._post(target,payload,timeout=int(spec.timeout_sec or target.timeout),stream=False))
+  try:raw=providers._read_json(providers._post(target,payload,timeout=timeout,stream=False))
   except providers._HttpFailure as failure:raise providers._failure_to_error(failure,target) from failure
   try:
    output=providers._normalize(raw,target,max_tokens=maximum)

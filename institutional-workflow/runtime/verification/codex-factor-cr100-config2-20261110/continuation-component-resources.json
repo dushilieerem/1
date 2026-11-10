@@ -1,0 +1,20 @@
+{
+  "exit_code": 0,
+  "stopped": null,
+  "elapsed_seconds": 7.021,
+  "peak_rss_process_tree_bytes": 354820096,
+  "node_heap_mib": 2048,
+  "single_concurrency": true,
+  "command": [
+    "/home/dev01/.nvm/versions/node/v24.20.0/bin/node",
+    "--max-old-space-size=2048",
+    "--import",
+    "tsx",
+    "--test",
+    "--test-concurrency=1",
+    "--test-timeout=20000",
+    "--test-name-pattern=方法更新",
+    "tests/factorHomeCreateFlow.test.tsx"
+  ],
+  "no_real_model_market_or_service_change": true
+}

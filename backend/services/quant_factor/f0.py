@@ -23,7 +23,13 @@ ACTIVE = ("queued", "running")
 
 
 def _public(row) -> dict:
-    return {key: value for key, value in dict(row).items() if key not in ("user_id", "org_id")}
+    out={key:value for key,value in dict(row).items() if key not in ('user_id','org_id')}
+    if (out.get('decision') or {}).get('method_version')=='bounded-factor-rd-v2':
+        from .research_method import compatibility
+        out['method_compatibility']=compatibility(out['decision'].get('method_snapshot'))
+        out['method_compatibility']['configuration_changed']=out['method_compatibility']['requires_new_run']
+        if out.get('status')=='failed':out['method_compatibility']['requires_new_run']=True
+    return out
 
 
 def _topic(uid, org, topic_id):
@@ -50,18 +56,18 @@ def _record(uid, org, topic, branch_id, key, status, decision=None, reason="", r
     return dict(row)
 
 
-def start(uid,org,topic_id,branch_id,idempotency_key,handoff=None):
+def start(uid,org,topic_id,branch_id,idempotency_key,handoff=None,method_change=None):
     with get_conn() as lock:
         lock.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9106,uid))
         lock.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(f'quant-factor-start:{uid}:{org}:{topic_id}',))
-        row=_start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff,lock)
+        row=_start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff,lock,method_change)
         schedule=row.pop('_schedule',False)
     # The worker cannot observe an uncommitted queued row.
     if schedule:POOL.submit(run,uid,org,row['id'])
     return row
 
 
-def _start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff=None,connection=None):
+def _start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff=None,connection=None,method_change=None):
     key=str(idempotency_key or '').strip()
     if not 1<=len(key)<=100:raise WorkflowError('请提供1至100字符的提交身份')
     topic=_topic(uid,org,topic_id);record=partial(_record,connection=connection)
@@ -72,6 +78,9 @@ def _start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff=None,connec
         if existing:
             old=(existing.get('decision') or {}).get('manual_handoff') or {}
             if handoff and old.get('snapshot_hash')!=handoff.get('snapshot_hash'):raise WorkflowError('此提交已绑定另一版本，请先核对原运行，未覆盖原记录')
+            if method_change:
+                transition=(existing.get('decision') or {}).get('method_transition') or {}
+                if transition.get('previous_run_id')!=method_change.get('previous_run_id') or transition.get('new_snapshot_hash')!=method_change.get('expected_method_hash') or transition.get('expected_control_epoch')!=method_change.get('expected_control_epoch'):raise WorkflowError('同一提交身份已绑定另一方法或控制版本，请核对原运行')
             return _public(existing)
         active=c.execute("SELECT * FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1",(uid,org,topic_id)).fetchone()
         if active:return _public(active)
@@ -114,6 +123,18 @@ def _start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff=None,connec
             project=get_project(uid,topic['project_id'])['project'];config=project['config'];active_branch=config.get('v5ActiveBranch')
             if active_branch and active_branch!=branch_id:raise WorkflowError('当前工程稿绑定另一分支，请明确选择当前版本或接手后继续')
             require_config(config)
+        if contract:
+            from .research_method import snapshot as method_snapshot,validate_snapshot
+            frozen_method=method_snapshot()
+            prior=c.execute('SELECT id,status,decision FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at DESC LIMIT 1',(uid,org,topic_id)).fetchone()
+            prior_snapshot=(prior.get('decision') or {}).get('method_snapshot') if prior else None
+            if prior and (prior_snapshot!=frozen_method or prior['status']=='failed') and not method_change and not (handoff and prior_snapshot==frozen_method):
+                raise WorkflowError('当前研究方法已更新；请明确使用更新方法创建新运行，原任务、分支及K保留')
+            if method_change:
+                if not prior or prior['id']!=method_change.get('previous_run_id') or prior['status'] not in ('failed','stopped') or method_change.get('acknowledged') is not True or method_change.get('expected_method_hash')!=frozen_method['snapshot_hash'] or not config.get('v5ControlEpoch') or method_change.get('expected_control_epoch')!=config.get('v5ControlEpoch'):
+                    raise WorkflowError('请重新确认上一运行、当前方法与控制版本，未创建新的模型尝试')
+                decision['method_transition']={'previous_run_id':prior['id'],'previous_snapshot_hash':(prior_snapshot or {}).get('snapshot_hash'),'new_snapshot_hash':frozen_method['snapshot_hash'],'reason':str(method_change.get('reason') or '用户明确采用更新后的研究方法')[:1000],'expected_control_epoch':method_change['expected_control_epoch'],'actor_user_id':uid,'at':service.event('method_changed')['at']}
+            decision['method_snapshot']=frozen_method
         decision['control_epoch']=config.get('v5ControlEpoch')
         row=_public(record(uid,org,topic,branch_id,key,'queued',decision));row['_schedule']=True
         return row
@@ -136,6 +157,9 @@ def run(uid, org, run_id):
             worker_epoch=str(uuid.uuid4())
             c.execute("UPDATE quant_factor_f0_runs SET status='running',decision=jsonb_set(decision,'{runner_epoch}',to_jsonb(%s::text)),updated_at=NOW() WHERE id=%s",(worker_epoch,run_id))
         topic = _topic(uid, org, row["topic_id"])
+        if (row.get('decision') or {}).get('method_version')=='bounded-factor-rd-v2' and not (row.get('decision') or {}).get('recovery_only'):
+            from .research_method import validate_snapshot
+            validate_snapshot((row.get('decision') or {}).get('method_snapshot'))
         steps = []
         current_steps = list((row.get("decision") or {}).get("steps") or [])
         base_decision={key:value for key,value in (row.get("decision") or {}).items() if key not in ("steps","current_action")}
@@ -261,6 +285,9 @@ def resume(uid, org, run_id):
                 from .research_contract import project_contract
                 saved_method=(row.get('decision') or {}).get('method_version','legacy')
                 contract=project_contract(project)
+                if saved_method=='bounded-factor-rd-v2':
+                    from .research_method import validate_snapshot
+                    validate_snapshot((row.get('decision') or {}).get('method_snapshot'))
                 if saved_method=='bounded-factor-rd-v2' and (not contract or contract['contract_hash']!=(row.get('decision') or {}).get('contract_hash')):raise WorkflowError('原运行的固定研究契约已不一致，未替换方法继续')
             if int(row.get('rounds') or 0) >= 12:
                 raise WorkflowError("此运行已达到决策次数上限，原记录保留，请人工复盘")

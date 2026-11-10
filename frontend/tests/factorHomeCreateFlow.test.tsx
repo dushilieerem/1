@@ -347,3 +347,27 @@ test('新版任务：所有环节可暂停，真实生成阶段与人工建议�
  await waitFor(()=>assert.equal(writes.length,1,view.container.querySelector('.hint.error')?.textContent||'建议未发出'));assert.equal(writes[0].body.branch_id,'h1');assert.equal(writes[0].body.control_epoch,'epoch1');assert.ok(writes[0].path.endsWith('/research-advice'));
  await waitFor(()=>assert.ok(view.getByText(/研究建议已保存/)));
 });
+
+
+test('方法更新：单个明确按钮创建新run保留任务身份，无原生确认，诊断折叠跨轮询稳定',async()=>{
+ login();const reason='规划产物达到输出上限';const topic={...oldTopic,id:'t-config',project_id:'p-config',dispatch_status:'failed',dispatch_stop_reason:reason,k:0,trial_count:0};const roles={quant_factor_planner:{max_output:16000,timeout_seconds:150,prompt_version:'r2-proposal'}};const available={snapshot_hash:'method-r2',revision:'output16000-schema-r2',roles};
+ const oldRun={id:'old-run',status:'failed',stop_reason:reason,decision:{method_version:'bounded-factor-rd-v2'},method_compatibility:{requires_new_run:true,configuration_changed:true,reason:'原运行未记录此配置',available_snapshot:available,saved_snapshot:null}};
+ let current:any=oldRun,ledgerReads=0;const posts:any[]=[];const originalConfirm=window.confirm;window.confirm=()=>{throw Error('must not use a native confirmation');};
+ globalThis.fetch=async(input,init)=>{
+  const path=new URL(String(input),'http://localhost').pathname,method=init?.method||'GET';
+  if(path.endsWith('/branches/h1/f0')&&method==='POST'){const body=JSON.parse(String(init?.body));posts.push(body);current={id:'new-run',status:'queued',decision:{method_version:'bounded-factor-rd-v2',method_snapshot:available},method_compatibility:{requires_new_run:false,configuration_changed:false,reason:'',available_snapshot:available,saved_snapshot:available}};return Response.json(current);}
+  if(path.endsWith('/workbench'))return Response.json({branch_id:'h1',control_epoch:'epoch1',can_handoff:false});
+  if(path.endsWith('/topics'))return Response.json({topics:[topic]});
+  if(path.endsWith('/ledger')){ledgerReads++;return Response.json({topic,branches:[{id:'h1',source:'manual',display_label:'H1',hypothesis_version:1,implementation_version:1}],trials:[],k:0,threshold:1.96,threshold_next_if_counted:1.96});}
+  if(path.endsWith('/f0-runs'))return Response.json(current);
+  if(/\/detect\/projects\/[^/]+$/.test(path))return Response.json({project:{id:'p-config',name:'原任务',config:{v5ActiveBranch:'h1',v5ControlEpoch:'epoch1',factorCodes:[]}}});
+  if(path.endsWith('/controls'))return Response.json({paused:false});if(path.endsWith('/overview'))return Response.json({counts:{sealed_used:0}});if(path.endsWith('/pending-review-count'))return Response.json({count:0});if(path.endsWith('/reference'))return Response.json({items:[]});throw Error('Unexpected '+method+' '+path);
+ };
+ try{
+  const view=render(<MemoryRouter><QuantFactorHomePage/></MemoryRouter>);
+  await waitFor(()=>assert.equal(view.getAllByRole('button',{name:'使用更新研究方法继续'}).length,1));assert.equal(posts.length,0);assert.ok(view.getByText('使用更新后的研究方法继续，保留任务范围、历史结果和已用次数。'));
+  const details=view.getByText('诊断详情').closest('details')!;details.open=true;fireEvent(details,new window.Event('toggle'));
+  await waitFor(()=>assert.ok(details.open));await waitFor(()=>assert.ok(ledgerReads>=2),{timeout:6000});assert.ok(view.getByText('诊断详情').closest('details')!.open,'轮询不能关闭已展开诊断');assert.equal(details.querySelectorAll('p').length,1,'同一原因仅显示一次');
+  fireEvent.click(view.getByRole('button',{name:'使用更新研究方法继续'}));await waitFor(()=>assert.equal(posts.length,1));assert.equal(posts[0].method_change.previous_run_id,'old-run');assert.equal(posts[0].method_change.expected_method_hash,'method-r2');assert.equal(posts[0].method_change.expected_control_epoch,'epoch1');assert.equal(posts[0].method_change.acknowledged,true);assert.ok(!posts[0].handoff,'不能误称从未保存实现的人工交回');assert.ok(posts[0].idempotency_key);
+ }finally{window.confirm=originalConfirm;}
+});

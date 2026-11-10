@@ -1,0 +1,9 @@
+✔ 方法更新：单个明确按钮创建新run保留任务身份，无原生确认，诊断折叠跨轮询稳定 (4635.689533ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6953.466109

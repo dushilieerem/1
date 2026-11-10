@@ -1,0 +1,58 @@
+{
+  "unit": {
+    "cwd": "backend",
+    "command": [
+      "/home/dev01/project/SVQuant/.ci/venv/bin/python",
+      "scripts/run_quant_isolated_tests.py",
+      "tests/test_quant_research_run_snapshot.py"
+    ],
+    "result": "8 passed, 3 subtests passed",
+    "db_and_network_guarded": true
+  },
+  "postgres": {
+    "cwd": "backend",
+    "command": [
+      "/home/dev01/project/SVQuant/.ci/venv/bin/python",
+      "scripts/run_quant_research_run_snapshot_pg_tests.py",
+      "--allow-isolated-dev"
+    ],
+    "result": "2 passed",
+    "scope": "unique owned schemas of svquant_dev; high fixture actors, no model/market; cleaned"
+  },
+  "component": {
+    "exit_code": 0,
+    "stopped": null,
+    "elapsed_seconds": 7.021,
+    "peak_rss_process_tree_bytes": 354820096,
+    "node_heap_mib": 2048,
+    "single_concurrency": true,
+    "command": [
+      "/home/dev01/.nvm/versions/node/v24.20.0/bin/node",
+      "--max-old-space-size=2048",
+      "--import",
+      "tsx",
+      "--test",
+      "--test-concurrency=1",
+      "--test-timeout=20000",
+      "--test-name-pattern=方法更新",
+      "tests/factorHomeCreateFlow.test.tsx"
+    ],
+    "no_real_model_market_or_service_change": true
+  },
+  "build": {
+    "exit_code": 0,
+    "stopped": null,
+    "elapsed_seconds": 34.925,
+    "peak_rss_process_tree_bytes": 2393313280,
+    "node_heap_mib": 2048,
+    "single_concurrency": true,
+    "command": [
+      "/home/dev01/.nvm/versions/node/v24.20.0/bin/node",
+      "--max-old-space-size=2048",
+      "/home/dev01/.nvm/versions/node/v24.20.0/lib/node_modules/npm/bin/npm-cli.js",
+      "run",
+      "build"
+    ],
+    "no_real_model_market_or_service_change": true
+  }
+}

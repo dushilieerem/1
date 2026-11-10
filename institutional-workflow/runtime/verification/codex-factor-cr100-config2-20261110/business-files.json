@@ -1,0 +1,18 @@
+[
+  "backend/app/routers/quant_factor_workflow.py",
+  "backend/services/quant_factor/agent_jobs.py",
+  "backend/services/quant_factor/f0.py",
+  "backend/services/quant_factor/f0_agent.py",
+  "backend/services/quant_factor/generation.py",
+  "backend/services/quant_factor/model_budget.py",
+  "backend/services/quant_factor/provenance.py",
+  "backend/services/quant_factor/research_contract.py",
+  "backend/services/quant_factor/research_method.py",
+  "backend/services/quant_factor/service.py",
+  "backend/tests/test_quant_research_method.py",
+  "frontend/src/pages/institutional-workflow/QuantFactorHomePage.tsx",
+  "frontend/tests/factorHomeCreateFlow.test.tsx",
+  "backend/tests/test_quant_research_run_snapshot.py",
+  "backend/tests/test_quant_research_run_snapshot_pg.py",
+  "backend/scripts/run_quant_research_run_snapshot_pg_tests.py"
+]

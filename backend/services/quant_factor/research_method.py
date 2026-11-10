@@ -1,5 +1,7 @@
 """CR100 bounded research roles; authority stays in the existing controller."""
 import json
+import copy,hashlib
+from pathlib import Path
 from pydantic import BaseModel,ConfigDict,Field
 from typing import Literal
 from ai.router import TaskSpec,get_task,register
@@ -9,7 +11,32 @@ from .research_contract import METHOD_VERSION,fingerprint,check_fields
 PLANNER='quant.factor.research_planner_v2'
 IMPLEMENTER='quant.factor.research_implementation_v2'
 DIAGNOSER='quant.factor.evidence_diagnosis_v2'
-LIMITS={PLANNER:4000,IMPLEMENTER:16000,DIAGNOSER:3000}
+REVISION='bounded-factor-rd-v2-output16000-schema-r2'
+LIMITS={PLANNER:16000,IMPLEMENTER:16000,DIAGNOSER:16000}
+METHOD_FILES=('research_method.py','f0.py','f0_agent.py','generation.py','agent_jobs.py','development_diagnosis.py','source_identity.py','asset_context.py','source_contract.py','source_compat.py','metrics.py','policy.py','model_budget.py')
+
+def implementation_fingerprint(directory=None):
+ base=Path(directory) if directory is not None else Path(__file__).parent
+ return fingerprint({name:hashlib.sha256((base/name).read_bytes()).hexdigest() for name in METHOD_FILES})
+
+# Captured with the loaded module; docs/HEAD and later disk edits cannot change it.
+_LOADED_IMPLEMENTATION=implementation_fingerprint()
+
+def snapshot():
+ payload={'method_version':METHOD_VERSION,'revision':REVISION,'implementation_fingerprint':_LOADED_IMPLEMENTATION,'implementation_files':list(METHOD_FILES),'roles':{task:{'max_output':LIMITS[task],'timeout_seconds':150,'prompt_version':REVISION+'-'+role} for task,role in [(PLANNER,'proposal'),(IMPLEMENTER,'implementation'),(DIAGNOSER,'diagnosis')]}}
+ return {**payload,'snapshot_hash':fingerprint(payload)}
+
+def validate_snapshot(saved,*,require_current=True):
+ from .policy import WorkflowError
+ if not isinstance(saved,dict) or saved.get('snapshot_hash')!=fingerprint({k:v for k,v in saved.items() if k!='snapshot_hash'}):raise WorkflowError('原运行未保存可核对的研究方法快照；请明确使用更新方法新建运行，原任务和K保留')
+ if require_current and saved['snapshot_hash']!=snapshot()['snapshot_hash']:raise WorkflowError('原运行的研究方法与当前已加载版本不同；不能静默恢复，请明确使用更新方法创建新运行')
+ return saved
+
+def compatibility(saved):
+ available=snapshot()
+ try:validate_snapshot(saved);compatible=True;reason=''
+ except ValueError as exc:compatible=False;reason=str(exc)
+ return {'requires_new_run':not compatible,'reason':reason,'available_snapshot':available,'saved_snapshot':copy.deepcopy(saved)}
 
 class AdviceDecision(BaseModel):
  model_config=ConfigDict(extra='forbid')
@@ -44,9 +71,9 @@ class Interpretation(BaseModel):
 def register_tasks():
  from ai.router.tasks.factor_generation import FACTOR_TASK
  from dataclasses import replace
- for task in (TaskSpec(task_id=PLANNER,description='有界研究规划',prompt_version=METHOD_VERSION+'-proposal',temperature=.2,max_tokens=LIMITS[PLANNER],timeout_sec=150,response_format={'type':'json_object'}),
-  replace(FACTOR_TASK,task_id=IMPLEMENTER,description='冻结提案的因子实现',prompt_version=METHOD_VERSION+'-implementation',max_tokens=16000,timeout_sec=150),
-  TaskSpec(task_id=DIAGNOSER,description='研发证据解释',prompt_version=METHOD_VERSION+'-diagnosis',temperature=.2,max_tokens=3000,timeout_sec=150,response_format={'type':'json_object'})):
+ for task in (TaskSpec(task_id=PLANNER,description='有界研究规划',prompt_version=REVISION+'-proposal',temperature=.2,max_tokens=LIMITS[PLANNER],timeout_sec=150,response_format={'type':'json_object'}),
+  replace(FACTOR_TASK,task_id=IMPLEMENTER,description='冻结提案的因子实现',prompt_version=REVISION+'-implementation',max_tokens=16000,timeout_sec=150),
+  TaskSpec(task_id=DIAGNOSER,description='研发证据解释',prompt_version=REVISION+'-diagnosis',temperature=.2,max_tokens=LIMITS[DIAGNOSER],timeout_sec=150,response_format={'type':'json_object'})):
   try:get_task(task.task_id)
   except KeyError:register(task)
 
@@ -67,7 +94,7 @@ def binding(ctx):
   'parent_branch_id':ctx.get('active_branch'),'parent_candidate_id':parent.get('candidate_id'),
   'parent_source_hash':parent.get('source_hash'),'parent_snapshot_hash':parent.get('snapshot_hash'),
   'parent_report_id':parent.get('report_id'),'parent_trial_no':parent.get('trial_no'),
-  'current_k':ctx['k'],'next_new_trial_k':ctx['k']+1,'next_new_trial_threshold':ctx['next_new_trial_threshold']}
+  'current_k':ctx['k'],'next_new_trial_k':ctx['k']+1,'next_new_trial_threshold':ctx['next_new_trial_threshold'],'method_snapshot_hash':(ctx.get('method_snapshot') or {}).get('snapshot_hash')}
 
 
 def plan(uid,org,project_id,run_id,ctx):
@@ -82,7 +109,8 @@ def plan(uid,org,project_id,run_id,ctx):
   'next_new_trial_threshold是下一次新增市场检验门槛，历史报告阈值只解释历史。'
   '不得读取封存结果调参；未知查重不可当0或通过；预算不足选择stop。'
   'advice_decisions每项严格为advice_id、status（adopted或not_adopted）、reason；没有建议时为空数组。human_advice是有目标版本的人工意见，说明采用或不采用及理由；不得据此改变契约。advice_decisions只列提供的pending建议。evidence_refs只能引用提供的清单，无试验时引用contract或asset元数据，不能编造E。')
- out=model_budget.run(uid,org,project_id,f'f0:{run_id}:proposal:{ctx["decision_step"]}',PLANNER,messages=[{'role':'system','content':instructions},{'role':'user','content':json.dumps(ctx,ensure_ascii=False,default=str)}])
+ instructions+=' 不适用字符串必须是空串，数组无内容用空数组，不能用null。输出必须满足完整JSON schema：'+json.dumps(Proposal.model_json_schema(),ensure_ascii=False)
+ out=model_budget.run(uid,org,project_id,f'f0:{run_id}:proposal:{ctx["decision_step"]}',PLANNER,messages=[{'role':'system','content':instructions},{'role':'user','content':json.dumps(ctx,ensure_ascii=False,default=str)}],method_snapshot=ctx.get('method_snapshot'))
  try:
   proposal=parse_proposal(str(out.get('content') or ''),contract,allowed)
   pending={a['id'] for a in ctx.get('human_advice',[]) if a['status']=='pending'}
@@ -91,10 +119,10 @@ def plan(uid,org,project_id,run_id,ctx):
  return proposal,binding(ctx),out
 
 
-def interpret(uid,org,project_id,run_id,step,diagnosis):
+def interpret(uid,org,project_id,run_id,step,diagnosis,*,method_snapshot=None):
  from . import model_budget
  register_tasks();facts=diagnosis['facts'];allowed=[facts['report_id'],'facts:'+diagnosis['facts_hash']]
- out=model_budget.run(uid,org,project_id,f'f0:{run_id}:diagnosis:{step}',DIAGNOSER,messages=[{'role':'system','content':'你是研发证据诊断职责。只输出JSON：'+','.join(Interpretation.model_fields)+'。facts是确定性权威事实，不可修改通过、口径、阶段、K或阈值。只解释本候选研发证据；缺失维度写未知，不编造收益，不读取封存结果。evidence_refs只能引用allowed_refs。解释与建议不构成批准。'},{'role':'user','content':json.dumps({'facts':facts,'allowed_refs':allowed},ensure_ascii=False)}])
+ out=model_budget.run(uid,org,project_id,f'f0:{run_id}:diagnosis:{step}',DIAGNOSER,messages=[{'role':'system','content':'你是研发证据诊断职责。只输出JSON：'+','.join(Interpretation.model_fields)+'。不适用字符串用空串、空数组不能用null。完整JSON schema：'+json.dumps(Interpretation.model_json_schema(),ensure_ascii=False)+'。facts是确定性权威事实，不可修改通过、口径、阶段、K或阈值。只解释本候选研发证据；缺失维度写未知，不编造收益，不读取封存结果。evidence_refs只能引用allowed_refs。解释与建议不构成批准。'},{'role':'user','content':json.dumps({'facts':facts,'allowed_refs':allowed},ensure_ascii=False)}],method_snapshot=method_snapshot)
  interpretation=Interpretation.model_validate(extract_json_object(str(out.get('content') or '')))
  if not set(interpretation.evidence_refs)<=set(allowed):raise ValueError('诊断引用了未提供的证据')
  return {**diagnosis,'interpretation':interpretation.model_dump(),'method_version':METHOD_VERSION,'usage':{k:out.get(k) for k in ('model','tokens_in','tokens_out','finish_reason','budget_call_id')}}

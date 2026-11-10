@@ -48,11 +48,12 @@ export function QuantFactorHomePage(){
  const [node,setNode]=useState<string>();
  const [inspectedBranch,setInspectedBranch]=useState<string>(),[inspectedTrial,setInspectedTrial]=useState<number>();
  const inspectedBranchRef=useRef<string|undefined>(undefined);inspectedBranchRef.current=inspectedBranch;
- const [f0,setF0]=useState<{id:string;status:string;decision?:{candidate_status?:string;reason?:string;current_action?:string;current_phase?:string;human_advice?:Array<{id:string;input:{message:string};status:string;reason:string}>;steps?:Array<{step:number;at?:string;decision:{action:string;rationale:string};usage?:{tokens_in?:number;tokens_out?:number};result:{status?:string;candidate_status?:string;reason?:string;branch_id?:string;needed_capabilities?:string[]}}>};stop_reason?:string}>();
+ const [f0,setF0]=useState<{id:string;status:string;method_compatibility?:{requires_new_run:boolean;configuration_changed?:boolean;reason:string;available_snapshot:{snapshot_hash:string;revision:string;roles:Record<string,{max_output:number;timeout_seconds:number;prompt_version:string}>};saved_snapshot?:{revision:string}|null};decision?:{candidate_status?:string;reason?:string;current_action?:string;current_phase?:string;human_advice?:Array<{id:string;input:{message:string};status:string;reason:string}>;steps?:Array<{step:number;at?:string;decision:{action:string;rationale:string};usage?:{tokens_in?:number;tokens_out?:number};result:{status?:string;candidate_status?:string;reason?:string;branch_id?:string;needed_capabilities?:string[]}}>};stop_reason?:string}>();
  const [adviceText,setAdviceText]=useState(''),[adviceBusy,setAdviceBusy]=useState(false),[adviceOpen,setAdviceOpen]=useState(false);
  const adviceKey=useRef<string|undefined>(undefined);
  const adviceTarget=useRef<{branch_id:string;control_epoch:string;candidate_id?:string}|undefined>(undefined);
  useEffect(()=>{setAdviceText('');setAdviceOpen(false);adviceKey.current=undefined;adviceTarget.current=undefined;},[selected]);
+ const [diagnosticsOpen,setDiagnosticsOpen]=useState(false),[methodOpen,setMethodOpen]=useState(false);
  const [error,setError]=useState(''),[notice,setNotice]=useState(''),[starting,setStarting]=useState(false);
  const canManage=!!getQuantSession()?.can_manage;
  const canWrite=getQuantSession()?.permissions.quant==='write';
@@ -111,7 +112,7 @@ export function QuantFactorHomePage(){
  useEffect(()=>{let alive=true;void researchFetch('/api/inst/quant/factor-workflow/controls').then(r=>r.ok?r.json():null).then(d=>{if(alive&&d)setPaused(!!d.paused);});return()=>{alive=false;};},[]);
 
  useEffect(()=>{
-  setLedger(undefined);setF0(undefined);setProject(undefined);setNode(undefined);setInspectedBranch(undefined);setInspectedTrial(undefined);setUpdatesError('');setError('');setAuthOpen(false);
+  setLedger(undefined);setF0(undefined);setProject(undefined);setNode(undefined);setInspectedBranch(undefined);setInspectedTrial(undefined);setUpdatesError('');setError('');setAuthOpen(false);setDiagnosticsOpen(false);setMethodOpen(false);
   if(!selected)return;
   let alive=true,busy=false;
   const id=selected;
@@ -154,7 +155,20 @@ export function QuantFactorHomePage(){
   }catch(e){setError(e instanceof Error?e.message:String(e));}finally{setAdviceBusy(false);}
  }
 
+ async function startUpdatedMethod(){
+  if(!topic||!f0?.id||!f0.method_compatibility||starting)return;
+  const original=f0,id=topic.id,available=f0.method_compatibility.available_snapshot;setStarting(true);setError('');
+  try{
+   const response=await researchFetch('/api/inst/quant/factor-workflow/projects/'+topic.project_id+'/workbench');const work=await response.json();if(!response.ok||!work.branch_id||!work.control_epoch)throw Error('当前研究版本暂时无法核对，未新增模型调用');
+   const scope=work.branch_id+':method:'+original.id+':'+available.snapshot_hash;
+   const key=getOrCreateStartKey(sessionStorage,id,scope,newUuidV4);
+   const result=await researchFetch('/api/inst/quant/factor-workflow/topics/'+id+'/branches/'+work.branch_id+'/f0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:key,method_change:{previous_run_id:original.id,expected_method_hash:available.snapshot_hash,expected_control_epoch:work.control_epoch,acknowledged:true,reason:'用户明确采用当前研究方法创建新运行；保留上一失败记录、任务范围与原K'}})});
+   const run=await result.json();if(selectedRef.current!==id)return;if(!result.ok)throw Error(typeof run.detail==='string'?run.detail:'新运行尚未确认，请继续确认原提交');clearStartKey(sessionStorage,id,scope);setF0(run);setTopics(list=>list.map(t=>t.id===id?{...t,dispatch_status:run.status,dispatch_stop_reason:run.stop_reason||''}:t));setNotice('已明确创建新的研究运行；上一记录、当前分支和试验预算保留。');
+  }catch(e){setError(e instanceof Error?e.message:String(e));}finally{setStarting(false);}
+ }
+
  async function handBackF0(){
+  if(f0?.method_compatibility?.requires_new_run){await startUpdatedMethod();return;}
   if(!ledger||ledger.topic.id!==selectedRef.current||!selectedBranch||starting)return;
   setStarting(true);setError('');setNotice('');
   try{
@@ -297,7 +311,7 @@ export function QuantFactorHomePage(){
  useEffect(()=>{if(!filteredTopics.length)return;if(!filteredTopics.some(t=>t.id===selected))setSelected(filteredTopics[0].id);},[filteredTopics.map(t=>t.id).join(','),selected]);
  const workLabels:Record<string,string>={run_test:'正在检验因子实现',revise:'正在修订假设与实现',pivot:'正在探索新的研究分支',request_seal:'正在整理并执行独立验证'};
  const neverDelegated=!f0?.id&&!topic?.dispatch_status;
- const startLabel=taskState?.key==='draft'?'启动挖掘':neverDelegated?'交给Agent研究':'重试启动';
+ const startLabel=f0?.method_compatibility?.requires_new_run?(f0.method_compatibility.configuration_changed?'使用更新研究方法继续':'重新委托研究'):taskState?.key==='draft'?'启动挖掘':neverDelegated?'交给Agent研究':'重试启动';
  const canSendAdvice=topic?.status==='active'&&!!f0&&['queued','running'].includes(f0.status);
  const agentWork=neverDelegated?'尚未委托自动研究，可继续人工研究或明确交给Agent':(f0?.status==='running'?({planning:'正在结合研究资料规划下一步',implementation:'正在生成并检查因子源码',market_test:'正在执行研发数值检验',diagnosis:'正在解释研发证据'} as Record<string,string>)[f0.decision?.current_phase||'']||workLabels[f0.decision?.current_action||'']:undefined)||taskState?.label||'暂无运行中的任务';
  const selectedBranch=(ledger?.branches||[]).find(b=>b.id===node);
@@ -362,7 +376,7 @@ export function QuantFactorHomePage(){
    <div className="card-head">
     <div><div className="row-flex"><span className="hid">{selectedBranch.display_label||'H?'}</span><h2>{selectedBranch.display_title||('假设 v'+selectedBranch.hypothesis_version+'（未命名）')}</h2><span className="badge">{selectedBranch.display_status||selectedBranch.status}</span></div>
      <p className="fine">{selectedBranch.creation_label||(selectedBranch.source==='manual'&&!selectedBranch.parent_id?'人工建立课题':selectedBranch.source==='manual'?'人工接手':'研究系统修订')} · {selectedBranch.execution_label||executorText((trialsByBranch.get(selectedBranch.id)||[]).at(-1)?.executor||'')} · 假设第 {selectedBranch.hypothesis_version} 版 / 实现第 {selectedBranch.implementation_version} 版</p></div>
-    <div className="actions"><button className="btn small primary" disabled={!canWrite} onClick={()=>void takeOver()}>从此分支接手</button><button className="btn small" onClick={()=>void handBackF0()} disabled={f0&&['queued','running'].includes(f0.status)}>交回研究系统</button>{f0&&f0.stop_reason?.includes('中断')&&<button className="btn small" onClick={()=>void resumeF0()}>继续研究决策</button>}<Link className="btn small" to={'/quant/factor/workflow/'+(topic?.project_id||'')+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>打开人工工作台</Link>{f0&&<span className="fine">研究决策：{f0.status}{f0.decision?.candidate_status?' · '+f0.decision.candidate_status:''}{f0.stop_reason?' · '+f0.stop_reason:''}</span>}</div>
+    <div className="actions"><button className="btn small primary" disabled={!canWrite} onClick={()=>void takeOver()}>从此分支接手</button>{taskState?.key!=='error'&&<button className="btn small" onClick={()=>void handBackF0()} disabled={f0&&['queued','running'].includes(f0.status)}>交回研究系统</button>}{f0&&f0.stop_reason?.includes('中断')&&<button className="btn small" onClick={()=>void resumeF0()}>继续研究决策</button>}<Link className="btn small" to={'/quant/factor/workflow/'+(topic?.project_id||'')+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>打开人工工作台</Link>{f0&&<span className="fine">研究决策：{f0.status}{f0.decision?.candidate_status?' · '+f0.decision.candidate_status:''}{f0.stop_reason?' · '+f0.stop_reason:''}</span>}</div>
    </div>
    <div className="card-body">
     {selectedBranch.hypothesis_text&&<p className="agent-brief" style={{marginBottom:12}}>{selectedBranch.hypothesis_text}</p>}
@@ -404,7 +418,7 @@ export function QuantFactorHomePage(){
    <div className="card-body">
     {stageView==='prepare'&&<>
      <dl className="ff-kv"><dt>研究目标</dt><dd>{project?.description||ledger?.branches?.[0]?.hypothesis_text||(ledger?.branches?.[0]?.display_title&&ledger.branches[0].display_title!=='初始假设'?ledger.branches[0].display_title:'尚无已保存假设；启动后由研究准备 Agent 生成。')}</dd><dt>任务类型</dt><dd>{purposeText(topic.research_purpose)}</dd><dt>数据范围</dt><dd>日频 · {topic.development_start||'—'} 至 {topic.validation_end||'—'} · 创建时锁定发布视图</dd><dt>试验预算</dt><dd>上限 {topic.max_trials} 次，已检验 {topic.trial_count} 次</dd><dt>用途</dt><dd>因子研究，不涉及实盘交易</dd></dl>
-     <div className="actions" style={{marginTop:12}}>{topic.status==='active'&&canStart&&<button className="btn small primary" disabled={!canWrite||starting||!selectedBranch} onClick={()=>void handBackF0()}>{starting?'正在提交…':startLabel}</button>}{topic.status==='paused'?<button className="btn small" disabled={!canWrite} onClick={()=>void setTopicStatus('active')}>恢复任务</button>:topic.status==='active'&&['preparing','running','validating'].includes(taskState?.key||'')?<button className="btn small" disabled={!canWrite} onClick={()=>void setTopicStatus('paused')}>暂停任务</button>:null}</div>
+     <div className="actions" style={{marginTop:12}}>{topic.status==='active'&&canStart&&taskState?.key!=='error'&&<button className="btn small primary" disabled={!canWrite||starting||!selectedBranch} onClick={()=>void handBackF0()}>{starting?'正在提交…':startLabel}</button>}{topic.status==='paused'?<button className="btn small" disabled={!canWrite} onClick={()=>void setTopicStatus('active')}>恢复任务</button>:topic.status==='active'&&['preparing','running','validating'].includes(taskState?.key||'')?<button className="btn small" disabled={!canWrite} onClick={()=>void setTopicStatus('paused')}>暂停任务</button>:null}</div>
     </>}
     {stageView==='development'&&<>
       <div className="ff-label">{inspectedBranch?'查看候选':'当前候选'} · {currentBranch?.display_label||'分支待确认'} · 第 {currentVersion} 版{viewTrial?' · E'+viewTrial.trial_no:''}</div>{inspectedBranch&&<button className="btn small" onClick={()=>{setInspectedBranch(undefined);setInspectedTrial(undefined);}}>返回当前候选</button>}
@@ -439,7 +453,9 @@ export function QuantFactorHomePage(){
    {updatesError&&<p className="hint error" role="alert">{updatesError}</p>}<nav className="ff-steps" aria-label="任务业务环节">
     {stageDefs.map((s,i)=><button key={s.id} className={'ff-step '+(stageView===s.id?'selected ':'')+(s.status==='current'?'current ':'')+(s.status==='done'?'done':'')} onClick={()=>setStageView(s.id)} aria-current={s.status==='current'?'step':undefined} aria-label={'查看'+s.label}><span className="ff-num">{s.status==='done'?'✓':i+1}</span><span><b>{s.label}</b><small>{s.role}</small><em>{s.status==='done'?'已完成':s.status==='current'?'当前环节':'尚未开始'}</em></span></button>)}
    </nav>
-   {taskState?.key==='error'&&<div className="ff-error" role="alert"><b>本次运行未完成</b><p>{taskState.needsYou}</p><div className="actions"><button className="btn small" disabled={!canWrite||starting||!selectedBranch} onClick={()=>void handBackF0()}>重试启动</button><Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'}>人工接手</Link></div><details><summary>诊断详情</summary><p>{topic.dispatch_stop_reason||'服务未返回可读原因。'}</p>{f0?.stop_reason&&<p>{f0.stop_reason}</p>}</details></div>}
+   {f0?.method_compatibility&&<details className="small-details" open={methodOpen} onToggle={e=>setMethodOpen(e.currentTarget.open)}><summary>本次运行的研究方法</summary><p>原运行：{f0.method_compatibility.saved_snapshot?.revision||'原配置未记录完整快照，原调用回执保留'}</p><p>当前可用：{f0.method_compatibility.available_snapshot.revision}</p><ul>{Object.entries(f0.method_compatibility.available_snapshot.roles).map(([role,value])=><li key={role}>{role.includes('planner')?'研究规划':role.includes('implementation')?'因子实现':'证据诊断'}：输出上限 {value.max_output} Tokens · {value.timeout_seconds} 秒</li>)}</ul>{f0.method_compatibility.reason&&<p>{f0.method_compatibility.reason}</p>}</details>}
+   {f0?.method_compatibility?.requires_new_run&&<p className="fine">使用更新后的研究方法继续，保留任务范围、历史结果和已用次数。</p>}
+   {taskState?.key==='error'&&<div className="ff-error" role="alert"><b>本次运行未完成</b><p>{taskState.needsYou}</p><div className="actions"><Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'}>人工接手</Link></div><details open={diagnosticsOpen} onToggle={e=>setDiagnosticsOpen(e.currentTarget.open)}><summary>诊断详情</summary>{[...new Set([topic.dispatch_stop_reason,f0?.stop_reason].filter((value):value is string=>!!value))].map(value=><p key={value}>{value}</p>)}</details></div>}
    <div className="ff-stage-grid"><div>{ledger?.topic.id===topic.id?stageContent:<div className="card card-pad" role="status">正在读取任务成果…</div>}</div>{side}</div>
    <details className="history-details" onToggle={e=>{if((e.currentTarget as HTMLDetailsElement).open)window.dispatchEvent(new Event('resize'));}}>
     <summary><span><b>研究历程与全部试验</b><small> {topic.branch_count} 个分支 · {topic.trial_count} 次试验</small></span><span className="subtle">展开查看</span></summary>

@@ -183,6 +183,7 @@ serve-public.sh start           重启 invest-api 与手机 H5，创建或复用
 |------|------|------|----------|
 | 改代码时 | `bash scripts/ci/quick-check.sh` | 按改动选后端测试 + `tsc --noEmit` + `bash -n` + H5 build | < 30 秒 |
 | 提 PR 前 | `backend-check.sh` + `frontend-check.sh` | 全量 pytest / 迁移门禁 / AI 评测 / 单测 / 构建 / 体积预算 | 3~4 分钟 |
+| 合并前（可选） | `scripts/ci/pr-gate.sh <分支>` | 在 PR head 的独立 worktree 上跑 P0 E2E | ~1.5 分钟 |
 | 合并后 | 轮询自动 CI | 同「提 PR 前」，兜底防止绕过 | ~4 分钟 |
 | 打 tag 前 | `bash scripts/ci/e2e.sh p0` | 登录、H5 个股透视、机构端主链路，6 条 | ~1 分钟 |
 | 每晚 / 大改动 | `bash scripts/ci/e2e.sh full` | 全部 14 个 spec、57 条 | ~8 分钟 |
@@ -191,6 +192,8 @@ serve-public.sh start           重启 invest-api 与手机 H5，创建或复用
 - `e2e.sh` 自动挑空闲端口起后端 + 主前端 + H5，跑完清理；`DATABASE_URL` 必须是
   `*_test/_dev/_e2e/_ci` 库，指向 `svquant_test` 时写库用例（`INST_E2E_ALLOW_WRITE`）才会执行。
 - P0 之外还有布局/溢出/空态类 E2E，属于回归保护，放全量或每晚跑，不拦每次发版。
+- `pr-gate.sh <分支>` 在临时 worktree 里检出待合并分支并跑 P0，合并前用；同一时间只允许一个，
+  结果打在 stdout（暂不自动写 Gitee 评论）：`bash scripts/ci/pr-gate.sh dev-zmy`。
 
 ### 测试库数据
 

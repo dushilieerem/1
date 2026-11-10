@@ -1,0 +1,20 @@
+{
+  "exit_code": 0,
+  "stopped": null,
+  "elapsed_seconds": 4.413,
+  "peak_rss_process_tree_bytes": 344797184,
+  "node_heap_mib": 512,
+  "single_concurrency": true,
+  "command": [
+    "/home/dev01/.nvm/versions/node/v24.20.0/bin/node",
+    "--max-old-space-size=2048",
+    "--max-old-space-size=512",
+    "--import",
+    "tsx",
+    "--test",
+    "--test-concurrency=1",
+    "--test-timeout=10000",
+    "tests/factorLibrarySource.test.tsx"
+  ],
+  "no_real_model_market_or_service_change": true
+}

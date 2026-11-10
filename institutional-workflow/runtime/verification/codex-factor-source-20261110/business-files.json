@@ -1,0 +1,40 @@
+{
+  "business_source_files": [
+    "backend/services/quant_factor/library_source.py",
+    "backend/app/routers/quant_factor_workflow.py",
+    "backend/tests/test_quant_factor_library_source.py",
+    "frontend/src/lib/factorLibrarySource.ts",
+    "frontend/src/lib/researchClient.ts",
+    "frontend/src/pages/institutional-workflow/FactorLibraryDetailDrawer.tsx",
+    "frontend/src/pages/institutional-workflow/QuantFactorLibraryPage.tsx",
+    "frontend/src/pages/institutional-workflow/quantWorkspace.css",
+    "frontend/tests/factorLibrarySource.test.tsx"
+  ],
+  "evidence_files": [
+    "readonly-source-map.json",
+    "source-bff-isolated.log",
+    "source-re-isolated-final.log",
+    "source-components-final.log",
+    "source-components-final-resources.json",
+    "source-six-final.log",
+    "source-six-final-resources.json",
+    "source-asset-compat.log",
+    "source-asset-compat-resources.json",
+    "copy-isolate-final.log",
+    "copy-isolate-final-resources.json",
+    "source-copy-final.log",
+    "source-copy-final-resources.json",
+    "source-build-final.log",
+    "source-build-final-resources.json",
+    "preload-readonly.json",
+    "re-commit.json",
+    "resource-incident.json",
+    "delivery.md",
+    "run-node-bounded.py",
+    "business-files.json"
+  ],
+  "re_commit": "080821882b69f1a64701617420d7ac27abb9283b",
+  "pm_files_excluded": true,
+  "cr102_staging_excluded": true,
+  "no_service_load": true
+}

@@ -58,6 +58,7 @@ const protectedPaths = [
  /^\/monitor\/overview$/,
  /^\/agents\/overview$/,
  /^\/factor-workflow\/imports\/svquant-existing(?:\/reference)?$/,
+ /^\/factor-workflow\/imports\/[^/]+\/source$/,
  /^\/factor-workflow\/projects\/[^/]+\/topics$/,
  /^\/factor-workflow\/topics$/, 
  /^\/factor-workflow\/topics\/[^/]+(?:\/(ledger|threshold|branches|trials|handback|pause|resume|f0-runs|research-advice))?$/,

@@ -481,3 +481,10 @@ def read_development_diagnosis(candidate_id:str,ctx=Depends(require_quant_resear
     from services.quant_factor.development_diagnosis import read
     uid,org=identity(ctx)
     return invoke(read,uid,org,candidate_id)
+
+
+@router.get('/imports/{imported_id}/source')
+def imported_factor_source(imported_id:str,ctx=Depends(require_quant_user)):
+    from services.quant_factor.library_source import imported_source,SourceLookupError
+    try:return imported_source(*identity(ctx),imported_id)
+    except SourceLookupError as exc:raise HTTPException(exc.status,{'code':exc.code,'error':str(exc)}) from None

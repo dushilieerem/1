@@ -1,0 +1,3328 @@
+{
+  "at_utc": "2026-11-10T10:16:14.255684+00:00",
+  "source": "private ResearchEngine SQLite readonly; no execution",
+  "sqlite_repository_relative_path": "app/assets/factors/factor_library.db",
+  "sqlite_bytes": 319488,
+  "sqlite_sha256": "2ed5d136e495b6207285298c5d647200455dadafea8d80b97a8b9cfc35a066bf",
+  "source_count": 331,
+  "org261_import_count": 331,
+  "matched_by_library_and_source_factor_id": 331,
+  "missing_import_ids": [],
+  "entries": [
+    {
+      "factor_id": "SV01_0001",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_cntd"
+      ],
+      "code_sha256": "b87324066d4a4f0ac2cc223d31200d421de893b90d3f959c425eb56f06a7196c",
+      "bytes": 240,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0002",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_cntp"
+      ],
+      "code_sha256": "180ad3767728d803e243397b3c837e93aed39d5903850693d83046409002baf7",
+      "bytes": 241,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0003",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_sumd"
+      ],
+      "code_sha256": "b85041250507a49dd6880df6c20281b4fe4342ecd65496cc036f3f805e9bc5a6",
+      "bytes": 328,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0004",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_sump"
+      ],
+      "code_sha256": "2f22004439bb635452ce1a04d477f43b1cbb3989c8de300e9afa662088712bc2",
+      "bytes": 235,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0005",
+      "library": "主因子库",
+      "function_names": [
+        "momentum_5d"
+      ],
+      "code_sha256": "332d60b30784a6442027a1fdbad3b8ca6f9efa2dbbd5af7634854efa0a362a1f",
+      "bytes": 134,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0006",
+      "library": "主因子库",
+      "function_names": [
+        "macd"
+      ],
+      "code_sha256": "461d619a5941e43d82c130bf2c5083181508d8638a5958ffaafbcec8c156841c",
+      "bytes": 366,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0007",
+      "library": "主因子库",
+      "function_names": [
+        "alpha030"
+      ],
+      "code_sha256": "b2c2bfe73f6e2dc613f27c36369df20ef31fa3bcc67e400f717ed76d3da42eb3",
+      "bytes": 349,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0008",
+      "library": "主因子库",
+      "function_names": [
+        "alpha039"
+      ],
+      "code_sha256": "34e96dbb638078ada854ee4e87e57a32dbabc7464e21e7c25f1119ab67398319",
+      "bytes": 332,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0009",
+      "library": "主因子库",
+      "function_names": [
+        "simple_moving_average"
+      ],
+      "code_sha256": "6cae1722e7638dc27cc45c7fba6463c4472592a58543858863d8c68c6e51f250",
+      "bytes": 165,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0010",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_smoothed_price_difference"
+      ],
+      "code_sha256": "46318dae433d961701b74a1b210ecf0b4107774223a79e1fc66f53d178224340",
+      "bytes": 149,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0011",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_up_change_strength"
+      ],
+      "code_sha256": "789ca658c217a0305c7c16079e3dd35abbe99593df8ebac9d678c07a9c519d8e",
+      "bytes": 312,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0012",
+      "library": "主因子库",
+      "function_names": [
+        "bbi"
+      ],
+      "code_sha256": "93ebc9b8ab261ffa1821e7f5891a0221d24cbd96e6160f90442be79c18efe1ed",
+      "bytes": 224,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0013",
+      "library": "主因子库",
+      "function_names": [
+        "dma"
+      ],
+      "code_sha256": "f27404ca79681d9e0cc40f5946bbb218c3c3ca282548c7acbcbfc86c546ab4e2",
+      "bytes": 236,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0014",
+      "library": "主因子库",
+      "function_names": [
+        "expma"
+      ],
+      "code_sha256": "f4d97b7fef02b90fb4b58386cc2a987308bd8c1d72862b5161588e73dbd00c0f",
+      "bytes": 125,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0015",
+      "library": "主因子库",
+      "function_names": [
+        "mi"
+      ],
+      "code_sha256": "ea472b41e84ca657b55642280c241dedabb80904bcb9738620690f34bf10009b",
+      "bytes": 142,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0016",
+      "library": "主因子库",
+      "function_names": [
+        "mtm"
+      ],
+      "code_sha256": "ab2cf6a5c60eeae5843ffa280da76e271a65aeceb8ca338022c147206aa85337",
+      "bytes": 175,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0017",
+      "library": "主因子库",
+      "function_names": [
+        "priceosc"
+      ],
+      "code_sha256": "5fe55dd3d345a5e9a50b9dca6df9b4113c25927ad7bb4ec5905ee370ba2bf375",
+      "bytes": 199,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0018",
+      "library": "主因子库",
+      "function_names": [
+        "trix"
+      ],
+      "code_sha256": "9068357d55cdfd210b50cdd84d514fd938733c10c393d17a383da208f6dc36b8",
+      "bytes": 319,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0019",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_018"
+      ],
+      "code_sha256": "426550f978473e4d9235328ff21b2be3c9314dfd2b3cf49d32eb1e912f1be8de",
+      "bytes": 141,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0020",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_019"
+      ],
+      "code_sha256": "15d66e6cb47ae7bde9ee163ed57b8eea54ddc4f0107eebedd475f66f50b7e43d",
+      "bytes": 321,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0021",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_027"
+      ],
+      "code_sha256": "da4e53a8c3af2652e5a3e9dbfc20739a14f475cc2781b8d42e8804c676dc794a",
+      "bytes": 293,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0022",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_089"
+      ],
+      "code_sha256": "3899f8443393239b23b808523d9024d6ef36ec620efc5d9f5ce1a7ba86df2125",
+      "bytes": 231,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0023",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_135"
+      ],
+      "code_sha256": "531ab1ff97a582f63bc600b2ed0bc20fbf2501674b91372a31bbe0c7cb6d0824",
+      "bytes": 169,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0024",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_146"
+      ],
+      "code_sha256": "b5b99767f5026a8fef589b1d230e042cd9dafb4cdf0441d32bb38d369c960049",
+      "bytes": 353,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0025",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_152"
+      ],
+      "code_sha256": "4b7910d3854b161602aeac46ffe3b937427e3385ad0d8fac55fb91fbbd79b195",
+      "bytes": 281,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0026",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_169"
+      ],
+      "code_sha256": "938769246a43e846b339b7aba52840ad1971ca0c1bb5d87803ec400170d771f2",
+      "bytes": 255,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0027",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_price_difference"
+      ],
+      "code_sha256": "474f69a021c74efeb168fac1b272dbb7fa32856f8063ac864daef4fef7fe726a",
+      "bytes": 118,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0028",
+      "library": "主因子库",
+      "function_names": [
+        "rc"
+      ],
+      "code_sha256": "1e5b95d79c083a28f8f72417a5d466a8d7e2ed37e22b7d5a2633dba1f25eddfe",
+      "bytes": 115,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0029",
+      "library": "主因子库",
+      "function_names": [
+        "srmi"
+      ],
+      "code_sha256": "98823151ffb146ebcf649d551eec13e057d7362d0fdf1975f51ae96922a94407",
+      "bytes": 188,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0030",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_143"
+      ],
+      "code_sha256": "a08d6eade47548ac3cf537a1ff7f963056a1a528de295e2f773bd562739ec1e4",
+      "bytes": 259,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0031",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_167"
+      ],
+      "code_sha256": "47a4cde3dccde12dc0ba0c8ab094a2949efad21fc30dd983c2531966733fa814",
+      "bytes": 208,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0032",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_181"
+      ],
+      "code_sha256": "2b11bb7d9e96aa1f2f8434849e1c0e5028c6e0819b62a2d57f0da7e2a718e114",
+      "bytes": 568,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0033",
+      "library": "主因子库",
+      "function_names": [
+        "dpo"
+      ],
+      "code_sha256": "914d656ec3b86a155bb13ea7143c32052082d8199c5bf030543d893740dc59ea",
+      "bytes": 273,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV01_0034",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_ma"
+      ],
+      "code_sha256": "b9a62d9802d47db2db371bf6691e51a94ce4d63f26c2b33b2cf964962859cd9d",
+      "bytes": 112,
+      "category": "动量因子"
+    },
+    {
+      "factor_id": "SV02_0001",
+      "library": "主因子库",
+      "function_names": [
+        "bias"
+      ],
+      "code_sha256": "6f43ed0c36ff0f0f1b54acabb962d4a3ccae1bf84aaea124be06e5dc0d5b6e47",
+      "bytes": 154,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0002",
+      "library": "主因子库",
+      "function_names": [
+        "alpha360_close"
+      ],
+      "code_sha256": "046310b6fc391cc89b18f874a133fc3110360371959542159587ab9e70e12722",
+      "bytes": 172,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0003",
+      "library": "主因子库",
+      "function_names": [
+        "alpha360_high"
+      ],
+      "code_sha256": "dd9149ac0edf963aec77b9520e7ffecb89943a4b5eba6816b78c9933a0e2213d",
+      "bytes": 91,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0004",
+      "library": "主因子库",
+      "function_names": [
+        "alpha360_low"
+      ],
+      "code_sha256": "586c08d3efb931da883e710ca2a7593289fe5a09c3028e2d55a316a9fb698a29",
+      "bytes": 89,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0005",
+      "library": "主因子库",
+      "function_names": [
+        "alpha360_open"
+      ],
+      "code_sha256": "a585c0b1c2e6252925cb9033081b8dd6f640fb77e7034b8825e7994b9abc7519",
+      "bytes": 91,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0006",
+      "library": "主因子库",
+      "function_names": [
+        "alpha360_vwap"
+      ],
+      "code_sha256": "f16be86f99a0dd19f8aeed981a750ce0f6e78c6369db668b447dd80df2c61dfa",
+      "bytes": 98,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0007",
+      "library": "主因子库",
+      "function_names": [
+        "dbcd"
+      ],
+      "code_sha256": "48b1d10d228ea1c44093c3efbd263d3feb249b260cdf618c5bd49bd8940caa7e",
+      "bytes": 260,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0008",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_max"
+      ],
+      "code_sha256": "ef8a69ae98f5b0396a0a62b605cfc60c0f77b59f5c0432e48fe73ded34f25761",
+      "bytes": 111,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0009",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_min"
+      ],
+      "code_sha256": "1d856bb59e50e0b0dfcc820f75f333c3bb186f26dafdd14ec16a5f6330cc4d95",
+      "bytes": 110,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0010",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_qtld"
+      ],
+      "code_sha256": "230a8e8ac5152049ec7836075f1aee0269966f7c76bbe6a3541153407e7f20e3",
+      "bytes": 121,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0011",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_qtlu"
+      ],
+      "code_sha256": "831e17a810fbf429e4bd8df79250bcb6ad7901be29651401b7f7b7e5b6b6d9ef",
+      "bytes": 121,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0012",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_rank"
+      ],
+      "code_sha256": "ab2f54fdb6b4c40e1645c5bb677e2aa09b1ee322bfbb1d204995bfe351319dd6",
+      "bytes": 109,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0013",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_rsv"
+      ],
+      "code_sha256": "963419744c5159589494540efe91d7a1b0968114c1d2fdda72eb57ef001254f9",
+      "bytes": 226,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0014",
+      "library": "主因子库",
+      "function_names": [
+        "kdj"
+      ],
+      "code_sha256": "41842e29e9b8134de1ab5d30cd841742513129c1d9bf63296767b3bed7fc4494",
+      "bytes": 450,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0015",
+      "library": "主因子库",
+      "function_names": [
+        "rsi"
+      ],
+      "code_sha256": "9cfde6bb72f16c693e910535338c0a26e0ffdfff437c650350a9d28a984e6b84",
+      "bytes": 405,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0016",
+      "library": "主因子库",
+      "function_names": [
+        "alpha004"
+      ],
+      "code_sha256": "3cb429431f19358907c91c5b905ec42bfc29e9bd98b4f0972715e476c8255cf6",
+      "bytes": 124,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0017",
+      "library": "主因子库",
+      "function_names": [
+        "alpha020"
+      ],
+      "code_sha256": "f67c8d8dece707d7b103010732ff9dd517df2b8fb3125dbba37970b9c47f54a0",
+      "bytes": 270,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0018",
+      "library": "主因子库",
+      "function_names": [
+        "alpha033"
+      ],
+      "code_sha256": "daeedffbf65a3db2a01c06dc523be90cf9126ca0504e6ce021c2462f427554db",
+      "bytes": 147,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0019",
+      "library": "主因子库",
+      "function_names": [
+        "alpha035"
+      ],
+      "code_sha256": "93e871120255c05322887d3c8061cdfbb7a084bf8c698353b5da01cd36150970",
+      "bytes": 287,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0020",
+      "library": "主因子库",
+      "function_names": [
+        "alpha038"
+      ],
+      "code_sha256": "6d4ea04c3e32349bfd74a583f32aaa4f0ca5471222328e0bb3056ef39fbc98fd",
+      "bytes": 193,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0021",
+      "library": "主因子库",
+      "function_names": [
+        "alpha052"
+      ],
+      "code_sha256": "a16c94dc59ab2d59cdc38dbedaffe65709128d25c78f773e15f39a01b6826417",
+      "bytes": 365,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0022",
+      "library": "主因子库",
+      "function_names": [
+        "alpha053"
+      ],
+      "code_sha256": "491c67cc9ebbb025ffa6fcd8fd15cda2652b096dd4b01fe2de054f8e9762d71f",
+      "bytes": 208,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0023",
+      "library": "主因子库",
+      "function_names": [
+        "alpha084"
+      ],
+      "code_sha256": "f901774dde8bb22dcb70b0a3e3bdb61bd407ed26972016555a919dae394e24fd",
+      "bytes": 212,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0024",
+      "library": "主因子库",
+      "function_names": [
+        "alpha090"
+      ],
+      "code_sha256": "33a6be8f318245977858fe6fab38690d7c7aed2837604775c433ad3186a4672a",
+      "bytes": 375,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0025",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_023"
+      ],
+      "code_sha256": "ef7617da5dc50005565dd8c8b7e235037a183cfd0e90e87d74ad52ff2abf8557",
+      "bytes": 399,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0026",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_129"
+      ],
+      "code_sha256": "ffae4a1de616b85af8c6d937e47f72cae4ca93d98a85cc7caf09ebd0ca177c95",
+      "bytes": 190,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0027",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_189"
+      ],
+      "code_sha256": "0ed5a9f1c3a1c25a2fd95c88c864243ee4818d1a80d7de3d7bb8775bd86a8fc2",
+      "bytes": 160,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV02_0028",
+      "library": "主因子库",
+      "function_names": [
+        "williams_r"
+      ],
+      "code_sha256": "807b4ba95af7dc193cb491361740f24b3bda8532e0f7f92395123de54cddf854",
+      "bytes": 292,
+      "category": "反转因子"
+    },
+    {
+      "factor_id": "SV03_0001",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_beta"
+      ],
+      "code_sha256": "9665fe49cd29173f712c215f03f5f36c108a4e1800795324aed4f1bda1663461",
+      "bytes": 128,
+      "category": "Beta因子"
+    },
+    {
+      "factor_id": "SV03_0002",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_price_regression"
+      ],
+      "code_sha256": "fe07a5ad7a3e59618e5cb25553a581abb0248b2c9e458be3313a7708c70ada0a",
+      "bytes": 176,
+      "category": "Beta因子"
+    },
+    {
+      "factor_id": "SV03_0003",
+      "library": "主因子库",
+      "function_names": [
+        "regression_r_squared"
+      ],
+      "code_sha256": "4ee324b320f33e4d6d53c9e235a7cd2f748fbd74293b323518fc70402db17736",
+      "bytes": 212,
+      "category": "Beta因子"
+    },
+    {
+      "factor_id": "SV03_0004",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_166"
+      ],
+      "code_sha256": "04289fe33aa9f6c6d91b4ecf581cf61439cdebd05501dc2801f0224a921f2c49",
+      "bytes": 426,
+      "category": "Beta因子"
+    },
+    {
+      "factor_id": "SV04_0001",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_kmid"
+      ],
+      "code_sha256": "f0294f269ca8f421b5ba8fa2a06f406906be481b238ae6cbc0093814ebb8faad",
+      "bytes": 160,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0002",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_kmid2"
+      ],
+      "code_sha256": "755bf199c1b681d46caa9581e953f915a8f0c50feee0171bf3be05e7128cc517",
+      "bytes": 193,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0003",
+      "library": "主因子库",
+      "function_names": [
+        "adtm"
+      ],
+      "code_sha256": "8649031b3dd23b2f8a77e51db9f70c32ea5b10df981a9754f45aac712ef2f01c",
+      "bytes": 437,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0004",
+      "library": "主因子库",
+      "function_names": [
+        "cdp"
+      ],
+      "code_sha256": "e755c706862415cbe438955087b281fe0bd581e5747f57a92d74947a1eabc73a",
+      "bytes": 107,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0005",
+      "library": "主因子库",
+      "function_names": [
+        "cr"
+      ],
+      "code_sha256": "bce4b70181bf4dfdf4b043a88a043999987f5a9c83ac8a67ff246bc284f34064",
+      "bytes": 238,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0006",
+      "library": "主因子库",
+      "function_names": [
+        "wad"
+      ],
+      "code_sha256": "11217c9d22ed22e1927d16fc0468a7aa41311e74bfa94d2246d8183d6362cab2",
+      "bytes": 317,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0007",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_054"
+      ],
+      "code_sha256": "d83c0ed4be7786edf8bca96f27d8bd9c99c95685d16070f795c9ec313e06534c",
+      "bytes": 233,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0008",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_068"
+      ],
+      "code_sha256": "5e5cf9226b088ddaa5de00ad0daad0503d95ba242dc0a715117ee0c482a34e6c",
+      "bytes": 289,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0009",
+      "library": "主因子库",
+      "function_names": [
+        "aroon_down"
+      ],
+      "code_sha256": "5baa7cd585bd7ac49033c6361f9cb36a73fd0b5b2a8997e2b94908e074bb0d10",
+      "bytes": 298,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0010",
+      "library": "主因子库",
+      "function_names": [
+        "aroon_up"
+      ],
+      "code_sha256": "2520d605d9880dac492860829794942c44d6421b62413a642c4da446aaad8af6",
+      "bytes": 297,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0011",
+      "library": "主因子库",
+      "function_names": [
+        "alpha005"
+      ],
+      "code_sha256": "b7345d149c0605e8f8648b6a88252d14cadec31b130c114a793547988f020e75",
+      "bytes": 222,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0012",
+      "library": "主因子库",
+      "function_names": [
+        "alpha041"
+      ],
+      "code_sha256": "50496e0521ca45e47682605aabd2b456d864c30e59e2460077a7d3388e4eeff5",
+      "bytes": 114,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0013",
+      "library": "主因子库",
+      "function_names": [
+        "alpha042"
+      ],
+      "code_sha256": "6fa0b004ba3a9c0d556d48d172b5af669ef79125d9a4f3abff74f30323fb0461",
+      "bytes": 209,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0014",
+      "library": "主因子库",
+      "function_names": [
+        "alpha047"
+      ],
+      "code_sha256": "ec6624604af2173f00b8f7e8e95b7c9a1beffce780faa086f350fb043a6350fc",
+      "bytes": 442,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0015",
+      "library": "主因子库",
+      "function_names": [
+        "alpha054"
+      ],
+      "code_sha256": "f04e881f7dae7d2f0bed68211b94120c9281f2a72912ef753a03f505deaab2ba",
+      "bytes": 240,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0016",
+      "library": "主因子库",
+      "function_names": [
+        "alpha062"
+      ],
+      "code_sha256": "afd4c48f9ce193f3c106d2f6ce5dda626ec9f65b7ed3ca84dce24c94a702e57f",
+      "bytes": 440,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0017",
+      "library": "主因子库",
+      "function_names": [
+        "alpha064"
+      ],
+      "code_sha256": "e6f4d05dbdf747d522316f9e20f1b80c7373b95514b8e9a982cfe7e2e3723afa",
+      "bytes": 429,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0018",
+      "library": "主因子库",
+      "function_names": [
+        "alpha065"
+      ],
+      "code_sha256": "1d636e65ba6ea67ca7fd0d292033d271035366f52e55cd857c2be4275cdc9537",
+      "bytes": 358,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0019",
+      "library": "主因子库",
+      "function_names": [
+        "alpha066"
+      ],
+      "code_sha256": "831b15d8d5c744b3a7581582fcdd25524e7f2ac06b6c31e90a15f265a4fe5982",
+      "bytes": 401,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0020",
+      "library": "主因子库",
+      "function_names": [
+        "alpha068"
+      ],
+      "code_sha256": "e9bc83c4b82a7857223fde95862ee1fcc835ea3b4c9e6166c729f70f98e2e44c",
+      "bytes": 342,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0021",
+      "library": "主因子库",
+      "function_names": [
+        "alpha073"
+      ],
+      "code_sha256": "4748cb906fd4fd53d70866fb9e98a2974538e2b42eac6cd3365ddc35c36f84d3",
+      "bytes": 382,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0022",
+      "library": "主因子库",
+      "function_names": [
+        "alpha101"
+      ],
+      "code_sha256": "b59c1c8dcf50dd02f7a06b265a51a7db20daeee61820fde519e35c0afefa3f23",
+      "bytes": 181,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0023",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_028"
+      ],
+      "code_sha256": "2189dd224f627b7d2d964fa9a428122bc19364e26bbae3c135cdb170b875bbd1",
+      "bytes": 317,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0024",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_057"
+      ],
+      "code_sha256": "f0ff5e76923d5f94d8fd06f5082b8d2abc63d054291dd9967bd6f2072522bc33",
+      "bytes": 261,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0025",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_096"
+      ],
+      "code_sha256": "64eeb96aa4827834c79987037f6888438903103f2fbca7dfa5bc73aa69ab74f5",
+      "bytes": 278,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0026",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_103"
+      ],
+      "code_sha256": "c0b8591c66ee1e7324a27a1ab08b4a243de45f8989d51db17e59282af7d56bc8",
+      "bytes": 141,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0027",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_133"
+      ],
+      "code_sha256": "ca2b0834d5352a8061eac2f4fd141de14ecffd9fcc0332b1c34de4dc07a96966",
+      "bytes": 196,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0028",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_177"
+      ],
+      "code_sha256": "246bb73b255d8e4c4ceabd75806790b0e3d2c3c6ddccf9e3d78a01f9f73e44c6",
+      "bytes": 143,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0029",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_069"
+      ],
+      "code_sha256": "f7e8b8e189c00345c6ef7f12b203286820b35e931192352609d8d256536f797d",
+      "bytes": 530,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0030",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_002"
+      ],
+      "code_sha256": "b2568e10bb167f97fd2ded88ee13d1a2d677e1fea19058ea9998361956a5bbbf",
+      "bytes": 217,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV04_0031",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_170"
+      ],
+      "code_sha256": "514e93ca9db31eb54bf73ef9b8e7ec625b83a3c655e1715618ad5512d349403e",
+      "bytes": 438,
+      "category": "日内结构因子"
+    },
+    {
+      "factor_id": "SV05_0001",
+      "library": "主因子库",
+      "function_names": [
+        "cci"
+      ],
+      "code_sha256": "4f5a73f3279baa891751e102c7bf8573240dd7afdb730fcff4a95983296ac1b1",
+      "bytes": 449,
+      "category": "区间与通道因子"
+    },
+    {
+      "factor_id": "SV05_0002",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_high_distance"
+      ],
+      "code_sha256": "d1cf5e572064776a0b40c9063c17191d53bd650795ce2f94c96ab407ea644c79",
+      "bytes": 242,
+      "category": "区间与通道因子"
+    },
+    {
+      "factor_id": "SV05_0003",
+      "library": "主因子库",
+      "function_names": [
+        "cvlt"
+      ],
+      "code_sha256": "88ae8ce37069793286564daa87ce7a5a6316d7f884f4667aecc561a31e649ed0",
+      "bytes": 193,
+      "category": "区间与通道因子"
+    },
+    {
+      "factor_id": "SV05_0004",
+      "library": "主因子库",
+      "function_names": [
+        "mass"
+      ],
+      "code_sha256": "eae4f2d678359b7cc9b4c75476277d0c2f085af6e0a41b51e8920ee6b5770111",
+      "bytes": 196,
+      "category": "区间与通道因子"
+    },
+    {
+      "factor_id": "SV05_0005",
+      "library": "主因子库",
+      "function_names": [
+        "boll_up"
+      ],
+      "code_sha256": "8fe78db164f99ef0ef52ed015136612a19e710ecdaac08b59e115829fb915d36",
+      "bytes": 214,
+      "category": "区间与通道因子"
+    },
+    {
+      "factor_id": "SV05_0006",
+      "library": "主因子库",
+      "function_names": [
+        "boll_down"
+      ],
+      "code_sha256": "38015276af8be08fec0800985aa9a531ce0dcdac77eb5ff2ef24670edef6fe37",
+      "bytes": 216,
+      "category": "区间与通道因子"
+    },
+    {
+      "factor_id": "SV05_0007",
+      "library": "主因子库",
+      "function_names": [
+        "vhf"
+      ],
+      "code_sha256": "a146d7cabbe2845c261d07c2113505715714ef1b20049fe64e01d5fd7e1e3f8c",
+      "bytes": 211,
+      "category": "区间与通道因子"
+    },
+    {
+      "factor_id": "SV05_0008",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_078"
+      ],
+      "code_sha256": "c0a791fc16e6f170e09cf060b6fe3f3d4a35c406a3668c83507fc808c6f210dc",
+      "bytes": 280,
+      "category": "区间与通道因子"
+    },
+    {
+      "factor_id": "SV06_0001",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_076"
+      ],
+      "code_sha256": "b31aa251e13df1f9c681061dc4ded1f3adfd6e466912741426da1644774d5d3c",
+      "bytes": 253,
+      "category": "流动性因子"
+    },
+    {
+      "factor_id": "SV06_0002",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_144"
+      ],
+      "code_sha256": "deb1ceeff49808ae14f13149fd21eb0f5854f5f46fcb9247d93a8e1a1825cce1",
+      "bytes": 328,
+      "category": "流动性因子"
+    },
+    {
+      "factor_id": "SV06_0003",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_vma"
+      ],
+      "code_sha256": "78c7c1525fd8a2002f6a5812d4b96f1b2486a42b432830ac3b91f95bb42e18ce",
+      "bytes": 132,
+      "category": "流动性因子"
+    },
+    {
+      "factor_id": "SV06_0004",
+      "library": "主因子库",
+      "function_names": [
+        "alpha360_volume"
+      ],
+      "code_sha256": "1063c2b8457bfce5b3378101cc36a619ab4190c4b5327b9d549792ab1b450a5b",
+      "bytes": 111,
+      "category": "流动性因子"
+    },
+    {
+      "factor_id": "SV06_0005",
+      "library": "主因子库",
+      "function_names": [
+        "davol"
+      ],
+      "code_sha256": "618970da1ebe54e5b7702d9b7973b952c157be932999609c4d6bf4314cfd0de4",
+      "bytes": 178,
+      "category": "流动性因子"
+    },
+    {
+      "factor_id": "SV06_0006",
+      "library": "主因子库",
+      "function_names": [
+        "turnover_std"
+      ],
+      "code_sha256": "c517fa3bc2bbab4d166dc4bd375b73784a11bbd3bd4d2d0d4be513f03eb021dc",
+      "bytes": 117,
+      "category": "流动性因子"
+    },
+    {
+      "factor_id": "SV06_0007",
+      "library": "主因子库",
+      "function_names": [
+        "tvma"
+      ],
+      "code_sha256": "9be395cad9e7ecd5ee0a659bc7c0839ed32a3d98fa8538dc944d59ef54a25413",
+      "bytes": 116,
+      "category": "流动性因子"
+    },
+    {
+      "factor_id": "SV06_0008",
+      "library": "主因子库",
+      "function_names": [
+        "tvstd"
+      ],
+      "code_sha256": "7a66ce8534660035ea96952643c4087ed99bdee29f6bfa02f227c398b7c713d4",
+      "bytes": 119,
+      "category": "流动性因子"
+    },
+    {
+      "factor_id": "SV06_0009",
+      "library": "主因子库",
+      "function_names": [
+        "vema"
+      ],
+      "code_sha256": "6ed9746aa004693e43d51956a0fa43f40f6a2b66b72d1323259d2200b15ecae8",
+      "bytes": 109,
+      "category": "流动性因子"
+    },
+    {
+      "factor_id": "SV06_0010",
+      "library": "主因子库",
+      "function_names": [
+        "vol"
+      ],
+      "code_sha256": "1b21b70b0d076aa0d5c29b9d29cf8fe71b1d41dab8ea8124418eb38820a118b6",
+      "bytes": 105,
+      "category": "流动性因子"
+    },
+    {
+      "factor_id": "SV06_0011",
+      "library": "主因子库",
+      "function_names": [
+        "vroc"
+      ],
+      "code_sha256": "3c4a0ca374eb1bbe2f5cc8db8df82420e2af359237a52b41f352dfc0cb58df74",
+      "bytes": 116,
+      "category": "流动性因子"
+    },
+    {
+      "factor_id": "SV06_0012",
+      "library": "主因子库",
+      "function_names": [
+        "vstd"
+      ],
+      "code_sha256": "36d91ff23601c01fbc0fb3dfde771e595190afeaff2770963c865447990149ae",
+      "bytes": 78,
+      "category": "流动性因子"
+    },
+    {
+      "factor_id": "SV06_0013",
+      "library": "主因子库",
+      "function_names": [
+        "vma"
+      ],
+      "code_sha256": "4ef67a9a62a88c1a01d543a5d45e44b5abf2ffaa147fe96908c05dacd6837fe2",
+      "bytes": 118,
+      "category": "流动性因子"
+    },
+    {
+      "factor_id": "SV07_0001",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_directional_volume_sum"
+      ],
+      "code_sha256": "81142264a854204e4e563f97278986eaa8ec185eb3abe54333629c652fb6f614",
+      "bytes": 255,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0002",
+      "library": "主因子库",
+      "function_names": [
+        "pvt"
+      ],
+      "code_sha256": "4141aa57826e24505f839bc6477c24ad447389b09c5b75e1ed35299751780045",
+      "bytes": 106,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0003",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_vsumd"
+      ],
+      "code_sha256": "4cf6d56545df7e7eb3de9e86a0822af3282d221a975df021bd075d0769f7c07e",
+      "bytes": 335,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0004",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_vsumn"
+      ],
+      "code_sha256": "d38decc4565be28b6d6192e5730bf79c96a7dcb5072a780b7ff14186d6a8952f",
+      "bytes": 243,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0005",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_vsump"
+      ],
+      "code_sha256": "aa8ea6f89df8806e9b8f6bcb9d1cc3538a3b80ec1dc3ad405d4b979240b6b4c1",
+      "bytes": 240,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0006",
+      "library": "主因子库",
+      "function_names": [
+        "mfi"
+      ],
+      "code_sha256": "f39ba329814767d2263af1060bab56994a19505a27d6a975a615ff32439d13b9",
+      "bytes": 361,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0007",
+      "library": "主因子库",
+      "function_names": [
+        "psy"
+      ],
+      "code_sha256": "b23f4992a3f5efba1b8cde37c17d86eb953df19e538c7b7009e4da43d46f9bd7",
+      "bytes": 243,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0008",
+      "library": "主因子库",
+      "function_names": [
+        "wvad"
+      ],
+      "code_sha256": "a0c77d39e8f2c646eb7376eb755ddd29917b5fd035d9417202cf0c8f1c858c42",
+      "bytes": 297,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0009",
+      "library": "主因子库",
+      "function_names": [
+        "vmacd"
+      ],
+      "code_sha256": "2180584c576663c19b351bd5f4d2ed270d59a9ecac3d0b2de12c0e39e1416b63",
+      "bytes": 401,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0010",
+      "library": "主因子库",
+      "function_names": [
+        "vosc"
+      ],
+      "code_sha256": "2abdfa18061a0ffda72780775e4770853b13bfaf0f2e884e47373956eee8a494",
+      "bytes": 317,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0011",
+      "library": "主因子库",
+      "function_names": [
+        "mawvad"
+      ],
+      "code_sha256": "1a3a122a0ecb154fb7276f5a21c74fa084fa6c7120f8e8c4314dbab9706f1419",
+      "bytes": 119,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0012",
+      "library": "主因子库",
+      "function_names": [
+        "vr"
+      ],
+      "code_sha256": "a433cdcb40829e9e07ab8165463ef625e0bbb71c093f8258b0f6cd7b60aca245",
+      "bytes": 355,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0013",
+      "library": "主因子库",
+      "function_names": [
+        "money_flow_20"
+      ],
+      "code_sha256": "8ebb6146ba3095331ae38d85ebdd2fd910f8bf92125e24916f0a3177dc261ce9",
+      "bytes": 210,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0014",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_return_volume"
+      ],
+      "code_sha256": "6434f5e898003acdb5a9415db61b4354be0e6090ec21755efe6eebb4bde21e53",
+      "bytes": 174,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0015",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_043"
+      ],
+      "code_sha256": "2f493f790047117546928de0126a256d8f43f6fb032eedcfc3516213cd1b5806",
+      "bytes": 267,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0016",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_011"
+      ],
+      "code_sha256": "ea176a3b979c6b6bf3c4929bfdbb1749350b614f1777c0a22dfceb6ea4531fdb",
+      "bytes": 202,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0017",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_060"
+      ],
+      "code_sha256": "4439ccc32b6321f25c51c4013a4111516c8e04e543f9c9d592804c42ddc1729a",
+      "bytes": 216,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV07_0018",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_111"
+      ],
+      "code_sha256": "fcbf1b04c9b8c54206068edafc4341fe76d5d3d6f948d02fe942f3dd16156712",
+      "bytes": 259,
+      "category": "资金流与量能因子"
+    },
+    {
+      "factor_id": "SV08_0001",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_cord"
+      ],
+      "code_sha256": "ef28a177cb0608df0e607878dc258e6ef9af94674df3072c2bd311ec93449959",
+      "bytes": 171,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0002",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_corr"
+      ],
+      "code_sha256": "72a6dfc98d52f778829ea13fdf869d040ad7c71f20f2c24a5c2b911a0be7a22e",
+      "bytes": 124,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0003",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_001"
+      ],
+      "code_sha256": "d425b2533137df62ac370a43ac44752bd5c1cf4295ba05724d203998a7c8ffba",
+      "bytes": 235,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0004",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_005"
+      ],
+      "code_sha256": "087aa7ab54ed55ee8a8f40e66f591b8078eb0b9af7a301b81a28eb4d28f34882",
+      "bytes": 199,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0005",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_016"
+      ],
+      "code_sha256": "2cabe19a56499e88d197b82958619d4c16055aa698fcc4fa1199b06e6760ed0a",
+      "bytes": 223,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0006",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_032"
+      ],
+      "code_sha256": "ce2af7cbd758cca8bad623664e3cac87a02b8a858b053d3670a578a3b53c6bfb",
+      "bytes": 216,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0007",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_035"
+      ],
+      "code_sha256": "bf3a6d2214909f27056ab420b24c089d013b16636eca0010aafe5f30e8740049",
+      "bytes": 288,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0008",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_036"
+      ],
+      "code_sha256": "fbbe9d6478a132a1ebcd5b6527f6c23ecea20288209b24df068694f5b49c2f6a",
+      "bytes": 222,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0009",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_039"
+      ],
+      "code_sha256": "be3122968145ee2de969076866b36752334f01543344612265bd384251447e5f",
+      "bytes": 353,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0010",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_042"
+      ],
+      "code_sha256": "9322072f1f4d0b258ed7f4939c54b43d2642749fa7ba9905739441e376a6690d",
+      "bytes": 184,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0011",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_044"
+      ],
+      "code_sha256": "5aa9f07aef10d999bf7c6fa61bf37e22522233b7c687d6d5024919407a8d842f",
+      "bytes": 274,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0012",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_045"
+      ],
+      "code_sha256": "c12fb6edd735c0d18670e9f4b52ddfaeb6a47bcc5ae8e8b2ff72121783c86198",
+      "bytes": 252,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0013",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_056"
+      ],
+      "code_sha256": "aee27aef83edecf871683af0ef8f5c580860e436e203fad379ac140c1390bd7a",
+      "bytes": 455,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0014",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_061"
+      ],
+      "code_sha256": "5a1ac7b265e8d4e139b31e17cb70de419531566e4db9e338f550bfafe714b5e3",
+      "bytes": 341,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0015",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_062"
+      ],
+      "code_sha256": "d93300768d5e79dc2db596ae4b3aff22a58493cce611431b9bfec9b89c1d7e0c",
+      "bytes": 153,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0016",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_064"
+      ],
+      "code_sha256": "31a7f1a5cf0ec02b501959d74e8ae89217453160596a0eedbb32c822d878fa14",
+      "bytes": 446,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0017",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_073"
+      ],
+      "code_sha256": "aedb3f483b8ef33bb30eb29443d32b1f0be3296e472c6b4cf252b4b1e1980547",
+      "bytes": 358,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0018",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_074"
+      ],
+      "code_sha256": "6bfc2a2fab1cbeae3c933e038ef6272026c4188c0bfb917ac9b27949638afb5c",
+      "bytes": 400,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0019",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_077"
+      ],
+      "code_sha256": "b48f8c7f2cd1e3dd39355d32a648f49f0f93d4a25b9be2eb636f4401c109430c",
+      "bytes": 361,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0020",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_083"
+      ],
+      "code_sha256": "9115b9b8272919341fd93f14b1ce231fd13f1f5a8abc7544f8bb9bfafd395b86",
+      "bytes": 198,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0021",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_090"
+      ],
+      "code_sha256": "3a8d8b114f8cf3298d65d1a06ed7b08e69f9641c8e63f03fb2f20dd48b8b5237",
+      "bytes": 206,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0022",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_091"
+      ],
+      "code_sha256": "e6b99fb733a0b291969b7385d6dccb00d96de6faef3a6b461e8657451f5c2888",
+      "bytes": 239,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0023",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_092"
+      ],
+      "code_sha256": "ec850ec0e82690b55454a21fd8862d7f228414c2d6541ebd7ca9aaedd415e2ac",
+      "bytes": 359,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0024",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_099"
+      ],
+      "code_sha256": "e40cfd0f78cd6c67dd128ab37ae2b0693ed2cbac67159b66a69b9ca5255527bc",
+      "bytes": 199,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0025",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_101"
+      ],
+      "code_sha256": "d4834b0c9c5c28745e467440381ba74709ad7215f8ce31f89feb99fb1425b02d",
+      "bytes": 462,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0026",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_104"
+      ],
+      "code_sha256": "3a92022bdce980639fb75bb5eac17040e9ff8803ab31eafb43e63a5c25588068",
+      "bytes": 192,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0027",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_105"
+      ],
+      "code_sha256": "005c64a3f30e1440bfb140647252917b9e06a8d2282b76a3e1a12ca54e43bfbc",
+      "bytes": 176,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0028",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_108"
+      ],
+      "code_sha256": "9b3ff3d6552413afe079aede3ab16115d28564a2a9ca84b4b9552b85a775965e",
+      "bytes": 336,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0029",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_113"
+      ],
+      "code_sha256": "0cf3eb304a25393198fce73efc51d04ea275008b49169b597b08b7f40bff91a4",
+      "bytes": 302,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0030",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_115"
+      ],
+      "code_sha256": "944bd8b59a362ef34dd820758e30b81ff8c87442137ca57620bc9ac16b375aeb",
+      "bytes": 404,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0031",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_119"
+      ],
+      "code_sha256": "17e2c2f23d93349d0a42006be5bed7aa9a4f7193e3867e2c66fb19868803b27b",
+      "bytes": 452,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0032",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_121"
+      ],
+      "code_sha256": "e66822e84ec48f2475332bca26685e0f1a2037f2009511138e4848942a81ebe2",
+      "bytes": 422,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0033",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_123"
+      ],
+      "code_sha256": "b90931038cbb28bb59437809a7c32dcb70ca95107a31c709ac892f9b7f63f523",
+      "bytes": 416,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0034",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_125"
+      ],
+      "code_sha256": "563ff3bcc66e830d9f064d162a00367d9079e67b9eac37bf1e0e0dae1c277103",
+      "bytes": 378,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0035",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_130"
+      ],
+      "code_sha256": "1986cc047081a3464e3fc2c09946429cbd3c6cba3dc12685a6873e9b6ee8fc01",
+      "bytes": 430,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0036",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_131"
+      ],
+      "code_sha256": "154da4b009751c837f715b0e008e0ee8895930433f6c18dec6ac11efd91dbb2f",
+      "bytes": 297,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0037",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_136"
+      ],
+      "code_sha256": "f5dab68b65123027fc606d2c2a4b64855532ac5e35b7bd6291714b0ef6a7baa5",
+      "bytes": 207,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0038",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_138"
+      ],
+      "code_sha256": "0b82caf1bf61d07a017e15305561f5c3fcdac1cb9dfc9d5cbef09ce403dab939",
+      "bytes": 417,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0039",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_139"
+      ],
+      "code_sha256": "d7c1d87249e1358670853d2c8fd2c08f8e7e27700040f3e072e2d535e74c9c04",
+      "bytes": 131,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0040",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_140"
+      ],
+      "code_sha256": "f66484886552f1e6d31621089003ded81fb04f5b1fb5ca0bd9da0840fb0f1f08",
+      "bytes": 486,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0041",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_141"
+      ],
+      "code_sha256": "79ba566eff758fc58b765e226e7696f7d35bb1b06037e8daaa043f94150331de",
+      "bytes": 218,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0042",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_148"
+      ],
+      "code_sha256": "4ac38deb004a0fae004e5329575da9d3267231a0451d2861426f06578a7e7232",
+      "bytes": 376,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0043",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_154"
+      ],
+      "code_sha256": "6151baa2c9bbcb1bbe63f832c703bff83f2600412476ba04d82ea8e6f83f9737",
+      "bytes": 326,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0044",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_176"
+      ],
+      "code_sha256": "d7bb99e06be8254a071c7a2fc204e617b9844141a294b3d5082363893b8b333b",
+      "bytes": 302,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0045",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_179"
+      ],
+      "code_sha256": "0c6c9ed4e31ba6c14deb58be03ab29480c349a9ce46c21f3575db13ccebb0ec3",
+      "bytes": 288,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0046",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_191"
+      ],
+      "code_sha256": "f63b58078a2f2c56ea7abc152a633dd116dda0b6e46651bc22c19dac0156f2ca",
+      "bytes": 191,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0047",
+      "library": "主因子库",
+      "function_names": [
+        "alpha002"
+      ],
+      "code_sha256": "4911854f8e65f5ab23251351e307d701ae8910ab9b87057691be33a26b5decf6",
+      "bytes": 210,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0048",
+      "library": "主因子库",
+      "function_names": [
+        "alpha003"
+      ],
+      "code_sha256": "aa1849cae6b6cabe7d32fdbd2ed9e6b5b826ed6cb25b42e4ff67e42fb044066d",
+      "bytes": 152,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0049",
+      "library": "主因子库",
+      "function_names": [
+        "alpha006"
+      ],
+      "code_sha256": "32a4a67b10d2f4b38fb60b9d3d2a359df3c054bf51444a533a634e3958535557",
+      "bytes": 106,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0050",
+      "library": "主因子库",
+      "function_names": [
+        "alpha011"
+      ],
+      "code_sha256": "41cee85b8e90addfa93d4928b23d391eeeed5d30c8836fc4965cdf812677fd6c",
+      "bytes": 277,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0051",
+      "library": "主因子库",
+      "function_names": [
+        "alpha013"
+      ],
+      "code_sha256": "17a2b414e73226a4ec887c5fec33cfdc239102c6fac9c573b7ab532994dca95c",
+      "bytes": 174,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0052",
+      "library": "主因子库",
+      "function_names": [
+        "alpha014"
+      ],
+      "code_sha256": "ef2945f8e689818d6c9beec71cb50b396814a26c0d7e9c71a9c56fb4bea88dc3",
+      "bytes": 182,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0053",
+      "library": "主因子库",
+      "function_names": [
+        "alpha015"
+      ],
+      "code_sha256": "31f573768380ef6e19a8c3742257559c487b8497842284ddb4acabec58b139fc",
+      "bytes": 209,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0054",
+      "library": "主因子库",
+      "function_names": [
+        "alpha016"
+      ],
+      "code_sha256": "f6063352f9c784b2f468f5dc56172e2c6e43d735adaa0c64b7535ad109db0350",
+      "bytes": 173,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0055",
+      "library": "主因子库",
+      "function_names": [
+        "alpha022"
+      ],
+      "code_sha256": "57d06bcadaed2863a3a32590c452437293f5e39624a40865860984a43aa68d46",
+      "bytes": 167,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0056",
+      "library": "主因子库",
+      "function_names": [
+        "alpha026"
+      ],
+      "code_sha256": "0583142ea40d38bf4856d82f6209dea65c7cb4eb8a0621c7976e8d94a50bc0b0",
+      "bytes": 192,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0057",
+      "library": "主因子库",
+      "function_names": [
+        "alpha027"
+      ],
+      "code_sha256": "3c9d80f5a2a9a024efc640f440449dd65f79fbbb23652f6c2ba85e4ce3012c9d",
+      "bytes": 264,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0058",
+      "library": "主因子库",
+      "function_names": [
+        "alpha028"
+      ],
+      "code_sha256": "50fd0111e147bae203062c11d32abea10256a53aa93e3a4c2ad3bea96fbbce4d",
+      "bytes": 209,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0059",
+      "library": "主因子库",
+      "function_names": [
+        "alpha032"
+      ],
+      "code_sha256": "098245f1247b1cc37042cc9ba6a1838800cac0a4505b6472fd4091e5561a1428",
+      "bytes": 217,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0060",
+      "library": "主因子库",
+      "function_names": [
+        "alpha040"
+      ],
+      "code_sha256": "d16b212bcd54454251051bb4bc9ddee8cdb352c321b96aeac8dc1c32f244aba5",
+      "bytes": 159,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0061",
+      "library": "主因子库",
+      "function_names": [
+        "alpha044"
+      ],
+      "code_sha256": "3bbf0eee65414b64868db3fba2cf919528717ae3614c51d7bb25afbf347ef5f6",
+      "bytes": 128,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0062",
+      "library": "主因子库",
+      "function_names": [
+        "alpha045"
+      ],
+      "code_sha256": "dba879213eb783db733cb146e9fb7075f0d1265ddab5cdb8837f7702090b2f9e",
+      "bytes": 309,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0063",
+      "library": "主因子库",
+      "function_names": [
+        "alpha050"
+      ],
+      "code_sha256": "34678a66200e185ae2b814db14666de97e6b12481cfa3c8872e0988661a07e6e",
+      "bytes": 198,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0064",
+      "library": "主因子库",
+      "function_names": [
+        "alpha055"
+      ],
+      "code_sha256": "2bae88b3eb0261fbfaea1ff3c6440fd996d060a3f1b30e89741f415a758e3188",
+      "bytes": 303,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0065",
+      "library": "主因子库",
+      "function_names": [
+        "alpha060"
+      ],
+      "code_sha256": "fff66006f8b44b0004215a2feea61bb296b010465b1a723121d979d67aa1dd5d",
+      "bytes": 425,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0066",
+      "library": "主因子库",
+      "function_names": [
+        "alpha074"
+      ],
+      "code_sha256": "7a74cd407b2ca4187775f75bf312a3ce125ac4e0cebbf25aba3a9ba882fce30b",
+      "bytes": 412,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0067",
+      "library": "主因子库",
+      "function_names": [
+        "alpha077"
+      ],
+      "code_sha256": "165b794b3561ff486ece2fc69492bd5cb5a18bf04c4f5306fd2a7c2789092229",
+      "bytes": 443,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0068",
+      "library": "主因子库",
+      "function_names": [
+        "alpha078"
+      ],
+      "code_sha256": "14b4fe0bce13eb91bd8d5a7280ed763432f1285b81ed4bbe63f91f6341f3a9c5",
+      "bytes": 457,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0069",
+      "library": "主因子库",
+      "function_names": [
+        "alpha081"
+      ],
+      "code_sha256": "6b7632e7a5e6597f5fd73d07c36790afc6e10ca4b753fabae15fabec71871109",
+      "bytes": 450,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0070",
+      "library": "主因子库",
+      "function_names": [
+        "alpha085"
+      ],
+      "code_sha256": "e09d98ba3a71dca6061ef6129a8697bf2f93e57bf29b12d333d5bd111da59a0a",
+      "bytes": 443,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0071",
+      "library": "主因子库",
+      "function_names": [
+        "alpha088"
+      ],
+      "code_sha256": "0903d1d66fdd35b47f68271c9325c224dbc7e52a97eb868b170e3312c2c54bed",
+      "bytes": 543,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0072",
+      "library": "主因子库",
+      "function_names": [
+        "alpha092"
+      ],
+      "code_sha256": "bfd58f128ddf32ec959a25daeedbef2ba333c5eae4a22d985319a0dfc719a23b",
+      "bytes": 500,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0073",
+      "library": "主因子库",
+      "function_names": [
+        "alpha095"
+      ],
+      "code_sha256": "e9ad1ec1d33992982940c955634857d782a976666a0b19bf38fad978ba63c6aa",
+      "bytes": 367,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0074",
+      "library": "主因子库",
+      "function_names": [
+        "alpha099"
+      ],
+      "code_sha256": "c1b7df1c18977c528c5ffccda94f626f44bbfc5195c81ab48da1d72061077c13",
+      "bytes": 329,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0075",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_007"
+      ],
+      "code_sha256": "63f11a0530aeb01a207ef67c7012988304bc8c0b8a9f6196acbb1dfb89a55758",
+      "bytes": 276,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0076",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_010"
+      ],
+      "code_sha256": "0faa3570ad5dd697579e441b6592bbd31c2358958dd45d2f89f8743142d2be83",
+      "bytes": 273,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0077",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_017"
+      ],
+      "code_sha256": "ba275fcf2a0c4c1681a6a3c67c666dd12a2381a802a74faf544a0af8ccee8d7a",
+      "bytes": 295,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0078",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_025"
+      ],
+      "code_sha256": "2131713ffcf5ccc070fc177859e052a0b88f0d7ae8f8b1fbae22c0c6f32f2bd5",
+      "bytes": 349,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0079",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_041"
+      ],
+      "code_sha256": "8f312f8a1130b62eff73675024c6ffb60171f98e7ef3422dd9c7bc250196ce78",
+      "bytes": 156,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0080",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_048"
+      ],
+      "code_sha256": "21810b89f2ce72262d8272928560e6d3311ef8df9500f2083eb7993612de873a",
+      "bytes": 363,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0081",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_120"
+      ],
+      "code_sha256": "84b10b1169d159d0bd48170bcf4c6bb509dec9547824e8c1cf3c4977fa905931",
+      "bytes": 220,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0082",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_124"
+      ],
+      "code_sha256": "1cb368960a5eebe2d8b204dbd87b74e18e2fa972035406e142b0db6f167bd7e7",
+      "bytes": 215,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0083",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_142"
+      ],
+      "code_sha256": "998cbfed457c61c696c36731132a41c1c84ec068060de050726b950907f5b8e8",
+      "bytes": 318,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0084",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_157"
+      ],
+      "code_sha256": "8f16ae1eafe4ad3de03241782a2364eb4511bad1e2668c48aa073e0da2df6e44",
+      "bytes": 453,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0085",
+      "library": "主因子库",
+      "function_names": [
+        "alpha012"
+      ],
+      "code_sha256": "3975c245b7131c2a2e820f247f6e9f9e3e4f6fadf00e6f30d089486a20c954d4",
+      "bytes": 116,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0086",
+      "library": "主因子库",
+      "function_names": [
+        "alpha017"
+      ],
+      "code_sha256": "692f214310216e88af7719466e5c4dfa7438ee2b60638610ea094aa63587139e",
+      "bytes": 325,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0087",
+      "library": "主因子库",
+      "function_names": [
+        "alpha025"
+      ],
+      "code_sha256": "248965901d297bfb0398e7213a8662d95beddd087ca3fe07135b1f373a1aa682",
+      "bytes": 233,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV08_0088",
+      "library": "主因子库",
+      "function_names": [
+        "alpha043"
+      ],
+      "code_sha256": "dcc38436487008c04e37771d569e627c56412b8905e39ecb39572c3739881a3b",
+      "bytes": 205,
+      "category": "量价关系因子"
+    },
+    {
+      "factor_id": "SV09_0001",
+      "library": "主因子库",
+      "function_names": [
+        "alpha021"
+      ],
+      "code_sha256": "279bd4214e699d9c43967b65a8de0a3fb14c8948dba9ddf28e9cb4275928f598",
+      "bytes": 417,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0002",
+      "library": "主因子库",
+      "function_names": [
+        "alpha034"
+      ],
+      "code_sha256": "301e1f12dc0cbc8b6eeea650cf31f5b56e18f05bd005d76398ecb2bb57344d69",
+      "bytes": 317,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0003",
+      "library": "主因子库",
+      "function_names": [
+        "alpha036"
+      ],
+      "code_sha256": "f5f096317a87fa72c18aaf41c8be3401c8c67960583f4a8533e4f1ddc7ad0f8c",
+      "bytes": 614,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0004",
+      "library": "主因子库",
+      "function_names": [
+        "alpha057"
+      ],
+      "code_sha256": "6a5747d36b350f890bce7f62c20c8d364cb021c3fe57e6baf8f032c0a11793f4",
+      "bytes": 238,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0005",
+      "library": "主因子库",
+      "function_names": [
+        "alpha083"
+      ],
+      "code_sha256": "04bc0c0fff20aab297292b69828f5d6b0a381df4ba0f737240912a5ba49c89e6",
+      "bytes": 437,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0006",
+      "library": "主因子库",
+      "function_names": [
+        "alpha086"
+      ],
+      "code_sha256": "83ef7892ff82472357a80a82c88450cc8620a090394052d4d4d9bfd59b1aec12",
+      "bytes": 313,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0007",
+      "library": "主因子库",
+      "function_names": [
+        "alpha094"
+      ],
+      "code_sha256": "01509a87696c84187a66b9fb4a50aeef6b3696ee2d81acd4804644c90f420e57",
+      "bytes": 414,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0008",
+      "library": "主因子库",
+      "function_names": [
+        "alpha096"
+      ],
+      "code_sha256": "8c1bb3ba008a6017b71c2d7ed76a3cab12c41542ef6ecd5a045f768841879d5f",
+      "bytes": 574,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0009",
+      "library": "主因子库",
+      "function_names": [
+        "alpha098"
+      ],
+      "code_sha256": "938afe3d2bff54b9d0077f69bcd00a62ffe47a6d02a4f5a3798242c8b445ee35",
+      "bytes": 598,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0010",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_std"
+      ],
+      "code_sha256": "45aea16ad674a4feecccb878a943f26f2afd667c148ec3d09e2839e2b14af1c0",
+      "bytes": 112,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0011",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_wvma"
+      ],
+      "code_sha256": "867d0eeaeafd780c2802309db2c955d204c61f9a773c1ce70bf9f182f039e497",
+      "bytes": 268,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0012",
+      "library": "主因子库",
+      "function_names": [
+        "alpha001"
+      ],
+      "code_sha256": "9e7be60e7150e9471e3191221e01cd678166d4caf1ff8c200900a0110b258d83",
+      "bytes": 285,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0013",
+      "library": "主因子库",
+      "function_names": [
+        "variance"
+      ],
+      "code_sha256": "ec617cbcf740422c36add418b41ea5845b01a8518f9c4180bd5b2bc6699ce2f1",
+      "bytes": 174,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0014",
+      "library": "主因子库",
+      "function_names": [
+        "sharpe_ratio"
+      ],
+      "code_sha256": "8847b0b99f58c90c951b2c717e7d30727919f12583e3fe069cf2514f52545cf1",
+      "bytes": 152,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0015",
+      "library": "主因子库",
+      "function_names": [
+        "std"
+      ],
+      "code_sha256": "ef581ffb479f3798a409967af8a3e68b528969cc0b697aba4557329464a8c542",
+      "bytes": 120,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0016",
+      "library": "主因子库",
+      "function_names": [
+        "chaikin_volatility"
+      ],
+      "code_sha256": "1231b39d41489cba8d4dbbe72d217bc6345b7bd4c1e02c975260339fed955eab",
+      "bytes": 316,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0017",
+      "library": "主因子库",
+      "function_names": [
+        "intraday_range"
+      ],
+      "code_sha256": "a1973f010ab8c28fb4cdb07cb541b4db2b66e3eaadbe159d88424d725b037b2b",
+      "bytes": 71,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0018",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_directional_true_range"
+      ],
+      "code_sha256": "7a62ce40534c26c5658ad43ef0e901bc3b329b3afe34406736c86f7537c73a32",
+      "bytes": 388,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0019",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_true_range_mean"
+      ],
+      "code_sha256": "2688ae86e405a51f041818686f20565b50fc948daefec3822077addf4dbc97bc",
+      "bytes": 275,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0020",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_006"
+      ],
+      "code_sha256": "0d6500411edb62d0f09bce2db63f2196f404a81a5c3d476dd0f75950e95b1912",
+      "bytes": 169,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0021",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_008"
+      ],
+      "code_sha256": "4276ece67944158cb1a46402fe4288d60eae8b851a2910ea58e34f77c04d0509",
+      "bytes": 208,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0022",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_009"
+      ],
+      "code_sha256": "8de729fec8648de8d90cc4ddbf402a641f64887808120d471a2db639440be72a",
+      "bytes": 280,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0023",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_012"
+      ],
+      "code_sha256": "873f2daba251c1acb1c6ed973a36e34772dec14fc1de39b384bf061c75d4e415",
+      "bytes": 234,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0024",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_037"
+      ],
+      "code_sha256": "6b34af11f4e590df6cc284113db18bf7a27a7dc3a200b04b0032598cce7282a2",
+      "bytes": 239,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0025",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_038"
+      ],
+      "code_sha256": "47c15a2afd3006f535fadee03a382590906a974ae8efb8b738626a84169fe983",
+      "bytes": 164,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0026",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_049"
+      ],
+      "code_sha256": "d44644cf10b9a2cb9aa47e2d1c1100f9b7a57e32d0daae3a9131083c47ee1b26",
+      "bytes": 428,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0027",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_050"
+      ],
+      "code_sha256": "b6a82f3d14977112db8dc404c402ad29cb165a3382a068abebfed225983fa214",
+      "bytes": 451,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0028",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_051"
+      ],
+      "code_sha256": "4e373a1d349b3e7292e9f472ceaa2b88632284164a9ba23f37e53e9a15033df5",
+      "bytes": 426,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0029",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_052"
+      ],
+      "code_sha256": "1e01584f4b2a395dfdf6bcaf52e4da4859169012440709405481f1fade36dca4",
+      "bytes": 301,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0030",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_055"
+      ],
+      "code_sha256": "0aa0eb88f26171aff0294372dd0a8dbe46ba27189d0127a9a373b10e2b3eed32",
+      "bytes": 793,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0031",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_075"
+      ],
+      "code_sha256": "8bb02d7505bc150e2f172cee1c198bd0575511a3202f52497354ba84a392ed35",
+      "bytes": 582,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0032",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_087"
+      ],
+      "code_sha256": "b3ccd547ac2f3a47879455298b105ba37636a9b8bdedb7965aed47df93e098df",
+      "bytes": 344,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0033",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_093"
+      ],
+      "code_sha256": "a8831695ac68908b21117d26cc330b42b9eae914b7eaa6c4add2dfdcaa0d79ab",
+      "bytes": 261,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0034",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_109"
+      ],
+      "code_sha256": "17762fda1b106c0440f1dee8b13b1a75b0389288d371a4b32a7e349e23d921a4",
+      "bytes": 206,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0035",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_110"
+      ],
+      "code_sha256": "23623be46eae1dfabcd8fe9437c712297cdd79366a309f62834451cfc92b98cb",
+      "bytes": 264,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0036",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_118"
+      ],
+      "code_sha256": "24c98ac001efe5a91712825f4ee8dcd2bd48b04ba597221d82c799513a806d89",
+      "bytes": 201,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0037",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_126"
+      ],
+      "code_sha256": "e7909298221c2e50b84de69ab973204da311987dd47b8238db8350dc4633706f",
+      "bytes": 132,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0038",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_128"
+      ],
+      "code_sha256": "ee218208b754d518216ad1c98b363062b9208b8714a20236b9a574724d19a5bb",
+      "bytes": 415,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0039",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_137"
+      ],
+      "code_sha256": "e48ecc819e16d3b6b1166590f14f9b5a0bede6f3ef02a42b1756fda8987a1e57",
+      "bytes": 728,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0040",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_150"
+      ],
+      "code_sha256": "adbb67391c9cdc41402f1e4116c7778298d6330c2fe650633c0f8cc51b58ac65",
+      "bytes": 146,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0041",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_156"
+      ],
+      "code_sha256": "05dfc28afb46d6635eafab8990a590de54ef9993b90ab9d0f88d7167eee241f1",
+      "bytes": 349,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0042",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_158"
+      ],
+      "code_sha256": "f2806a4203815fd806203bee86dd784e4dfd1b6f79413667c7d673074737df44",
+      "bytes": 206,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0043",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_159"
+      ],
+      "code_sha256": "ccb2286b687765c039d12dac739ec3f17e175d81fbb01605046c950352a5cd29",
+      "bytes": 658,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0044",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_163"
+      ],
+      "code_sha256": "75a2b64e09d669e654f0fe9f31ff3ddfed3ffd93b832184f51f18ba0ae41cb1d",
+      "bytes": 234,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0045",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_164"
+      ],
+      "code_sha256": "22e10269a7a8e28df7fc9c9f7024c4e8ee47e8bb61d479df0358ebc3b495aced",
+      "bytes": 418,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0046",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_171"
+      ],
+      "code_sha256": "e2732faa9f4ae333ed46919b69f0effcebd9474dc0e5004e869418cfb831f0e4",
+      "bytes": 195,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0047",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_182"
+      ],
+      "code_sha256": "f54349ab8ff82de1e2cdc5a863a417b191120d135cbf83ad2a2a5f6e16a8e3b1",
+      "bytes": 395,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0048",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_184"
+      ],
+      "code_sha256": "0d2b45edeb22377fb60c01a43a2c7be7fe38740f7c17cad054d6015ba2c045c0",
+      "bytes": 231,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0049",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_185"
+      ],
+      "code_sha256": "7f4aea88c0cfe6249d83ec4820af477258d740a004171449acf0e469070cceca",
+      "bytes": 172,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0050",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_187"
+      ],
+      "code_sha256": "d279799a21a4556ed086a6ca153cd223ff6992f2a7631ec6549494a6933ca878",
+      "bytes": 246,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0051",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_188"
+      ],
+      "code_sha256": "2c67db22998f48f69212643e8c02286e8b0804866e6375712e780464d43d3927",
+      "bytes": 201,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0052",
+      "library": "主因子库",
+      "function_names": [
+        "srdm"
+      ],
+      "code_sha256": "f9e080f595be6f5837dba23e577a57a7d7dcb85bb1b9739b9a63e2bcd8cac62a",
+      "bytes": 257,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV09_0053",
+      "library": "主因子库",
+      "function_names": [
+        "ddi"
+      ],
+      "code_sha256": "ecf85fea04b3bebd2893cb52bbbfe4a66380f4f928fc1533e7ffbab94c01a5fa",
+      "bytes": 280,
+      "category": "波动率因子"
+    },
+    {
+      "factor_id": "SV10_0001",
+      "library": "主因子库",
+      "function_names": [
+        "kurtosis"
+      ],
+      "code_sha256": "74e4a99da38a706f738ed57197981e0ff654f86732554f99552fbdea7569c5bc",
+      "bytes": 169,
+      "category": "风险分布因子"
+    },
+    {
+      "factor_id": "SV10_0002",
+      "library": "主因子库",
+      "function_names": [
+        "skewness"
+      ],
+      "code_sha256": "f009224f0b788c7ebdbb301f1dbbd939fce0ec33be00e8486c2ce21eaf0c5ad2",
+      "bytes": 169,
+      "category": "风险分布因子"
+    },
+    {
+      "factor_id": "SV10_0003",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_190"
+      ],
+      "code_sha256": "de3a832f2d0f898b1e44e6006427d8331d0d1d2f82ed5e92525977456db57fb9",
+      "bytes": 671,
+      "category": "风险分布因子"
+    },
+    {
+      "factor_id": "SV11_0001",
+      "library": "主因子库",
+      "function_names": [
+        "pe_raw"
+      ],
+      "code_sha256": "c7134f81e72e40dfb0c4ebf84394c1396152ff02e67bd4424f253e07abcf09e4",
+      "bytes": 108,
+      "category": "估值因子"
+    },
+    {
+      "factor_id": "SV13_0001",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_165"
+      ],
+      "code_sha256": "596ed07ca5ea5fc0ca38ed6ff1fbe63c05372cde97802f18e4bcc401885d42a2",
+      "bytes": 325,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0002",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_183"
+      ],
+      "code_sha256": "77f7c90969f9419d531cb6610109109112a3c3b5299220603cb80c0d97064f11",
+      "bytes": 267,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0003",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_cntn"
+      ],
+      "code_sha256": "8df782c0281d72ff52c4fa1fa99411cc4b7c89e3a5ea7c553a2ffbc14c71108a",
+      "bytes": 145,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0004",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_imax"
+      ],
+      "code_sha256": "a0f3c5ee7c87b8b879fb6b5e309862c75c4ffa1e8ef25b04338ca0a7faa317fe",
+      "bytes": 131,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0005",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_imin"
+      ],
+      "code_sha256": "4a7f205fc56daeabf492269341b056d052b4fac9c9d0cb9ed892e610206f76ee",
+      "bytes": 130,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0006",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_imxd"
+      ],
+      "code_sha256": "f629f1c3821f64eed8d6cfc710dca6ef145fd62ca8692c5111fd10c72acdf9bf",
+      "bytes": 204,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0007",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_resi"
+      ],
+      "code_sha256": "d3c78103a2d0d8d1d9c7c853c16b4db47ba2ff8aff271ba839c87c1b5cfa0eb3",
+      "bytes": 131,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0008",
+      "library": "主因子库",
+      "function_names": [
+        "alpha158_sumn"
+      ],
+      "code_sha256": "56c9aba321904478123d04524df8749ccfc58941bbff8f6de0fc1691e6f9a8da",
+      "bytes": 238,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0009",
+      "library": "主因子库",
+      "function_names": [
+        "alpha049_051"
+      ],
+      "code_sha256": "9c25f91e9cb134d4f418e6d61187d03ba82ffc51a7e65ba7fb53d464128d1318",
+      "bytes": 261,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0010",
+      "library": "主因子库",
+      "function_names": [
+        "alpha008"
+      ],
+      "code_sha256": "9a1c23e9decebebf7260ad80b288151eb0651dafca3d66bc7fe4647b39376c83",
+      "bytes": 214,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0011",
+      "library": "主因子库",
+      "function_names": [
+        "alpha009"
+      ],
+      "code_sha256": "0fefa4d0bd947f68f0c6de1ace2c8e4509d2c6a42bf65cb399e4605a1321f44a",
+      "bytes": 185,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0012",
+      "library": "主因子库",
+      "function_names": [
+        "alpha010"
+      ],
+      "code_sha256": "7c5ef6167390733da4ce781d9c1e821f0df3f81d4e9e4084d57b376163eafc0e",
+      "bytes": 226,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0013",
+      "library": "主因子库",
+      "function_names": [
+        "alpha019"
+      ],
+      "code_sha256": "9f03712c0a7ef3179d213b5983c36c1535d763b21bd465828c60cda98d302b0a",
+      "bytes": 264,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0014",
+      "library": "主因子库",
+      "function_names": [
+        "alpha023"
+      ],
+      "code_sha256": "b437d7ddc2614fc6cbd33c795b5af99f9cc3f908dda4bcaf37504ab8ef090caa",
+      "bytes": 145,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0015",
+      "library": "主因子库",
+      "function_names": [
+        "alpha024"
+      ],
+      "code_sha256": "38f69c3335b431763dce257d748179a5424507284420e59e5be5c20888649820",
+      "bytes": 281,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0016",
+      "library": "主因子库",
+      "function_names": [
+        "alpha029"
+      ],
+      "code_sha256": "d779472bb11291aa9ce93be847b945eaad2406895547a4ccfc8d7a6337740cca",
+      "bytes": 511,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0017",
+      "library": "主因子库",
+      "function_names": [
+        "alpha037"
+      ],
+      "code_sha256": "bee54fa539c3ec95cfa1870c4c3136d3785d330bbe922c66c09210c473679cd1",
+      "bytes": 206,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0018",
+      "library": "主因子库",
+      "function_names": [
+        "alpha046"
+      ],
+      "code_sha256": "b0977800ad635aa1518b773357476ddf2b4b1a25200085f3b0ac4254bf5212d4",
+      "bytes": 287,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0019",
+      "library": "主因子库",
+      "function_names": [
+        "alpha056"
+      ],
+      "code_sha256": "ead484276fe2b5bc830fb2fe98190d26582f531188390ec714c2340cecf0f1f1",
+      "bytes": 399,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0020",
+      "library": "主因子库",
+      "function_names": [
+        "alpha191_004"
+      ],
+      "code_sha256": "92f381304993384e2101ddd3c07d9f23e21f673cd6cf617a49d215c09df1b462",
+      "bytes": 607,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0021",
+      "library": "主因子库",
+      "function_names": [
+        "atr"
+      ],
+      "code_sha256": "d3cba05e6db582f40a2fb1d52f4b599d829e05164e120432b7baff44a1892d7b",
+      "bytes": 113,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0022",
+      "library": "主因子库",
+      "function_names": [
+        "ar"
+      ],
+      "code_sha256": "b46885835f67d0cbacb6ffd52363264bfa9c2aa81196f2ccd528b60f37870129",
+      "bytes": 83,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0023",
+      "library": "主因子库",
+      "function_names": [
+        "arbr"
+      ],
+      "code_sha256": "e2d25fd07a838c2a063701bae874f6c0b591945896037961a5763c33c3bc13fe",
+      "bytes": 102,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0024",
+      "library": "主因子库",
+      "function_names": [
+        "br"
+      ],
+      "code_sha256": "96bbc41b3f16a1514a56d546d5781de56b4d6bdcba0defbeb90976313e49b150",
+      "bytes": 83,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0025",
+      "library": "主因子库",
+      "function_names": [
+        "vdea"
+      ],
+      "code_sha256": "23590b1db4780f63557ad4ab11f413c5a9f24ce84e5bc5fc2082c7e5bd7bab42",
+      "bytes": 138,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0026",
+      "library": "主因子库",
+      "function_names": [
+        "vdiff"
+      ],
+      "code_sha256": "be2d6bb99e1c0fcc3a7bcd79cfd402c36daa4f7a0efa84bb2ba613b1956d58be",
+      "bytes": 110,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0027",
+      "library": "主因子库",
+      "function_names": [
+        "obv"
+      ],
+      "code_sha256": "37a579faf3408a232859360d0b07ee1f8e6d7f136f868c44e088f9de7ea31e5f",
+      "bytes": 251,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0028",
+      "library": "主因子库",
+      "function_names": [
+        "alpha007"
+      ],
+      "code_sha256": "60579b60753cebba2ee2e40dbb8949e58db250598703b46cae112e4dff81b261",
+      "bytes": 229,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0029",
+      "library": "主因子库",
+      "function_names": [
+        "alpha031"
+      ],
+      "code_sha256": "b2c98e11f63d89b0ce2c6f74d1e3a7989a5c05d9fe51eac28ed93a4a120834a9",
+      "bytes": 410,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0030",
+      "library": "主因子库",
+      "function_names": [
+        "alpha048"
+      ],
+      "code_sha256": "4411c436af0bf63bd35fcecc673175951410e7c13e46242615139756f85add8d",
+      "bytes": 394,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0031",
+      "library": "主因子库",
+      "function_names": [
+        "alpha058"
+      ],
+      "code_sha256": "d4c719a31d7eb70ef3fa7d2a08981ae8fed5cdd013dee29daef13ac533ab7d2c",
+      "bytes": 222,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0032",
+      "library": "主因子库",
+      "function_names": [
+        "alpha059"
+      ],
+      "code_sha256": "b00ab7167563f643517ed9f38ba02d0e46adc0528d17fb7701d8581e9c72b7ac",
+      "bytes": 315,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0033",
+      "library": "主因子库",
+      "function_names": [
+        "alpha061"
+      ],
+      "code_sha256": "e38bda331d3e30cdbe50670e586adfa502ed076069c8438f32e8d7e13c7daf2d",
+      "bytes": 267,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0034",
+      "library": "主因子库",
+      "function_names": [
+        "alpha063"
+      ],
+      "code_sha256": "4562e5ee8ef69c55245bf6ce5eb7fb9456d173a9b3c5881453f654c61fb64f87",
+      "bytes": 484,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0035",
+      "library": "主因子库",
+      "function_names": [
+        "alpha067"
+      ],
+      "code_sha256": "4dda40a987deaf927f7b7b130e2d3243bac415e954108ebf1610f595012ddf6b",
+      "bytes": 360,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0036",
+      "library": "主因子库",
+      "function_names": [
+        "alpha069"
+      ],
+      "code_sha256": "bca083c213d167a9d21b75a84d26095c291f7cbc01a6154d26bcf3541d0b1107",
+      "bytes": 389,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0037",
+      "library": "主因子库",
+      "function_names": [
+        "alpha070"
+      ],
+      "code_sha256": "996562e89032226c7f79b5d68d2fbf7e014de5aec66cce91478c56f3dac20b60",
+      "bytes": 336,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0038",
+      "library": "主因子库",
+      "function_names": [
+        "alpha071"
+      ],
+      "code_sha256": "6d98e85cb509c99c2c717d986ebc84459ff3d2a2c21023402e8489a15f01cde7",
+      "bytes": 487,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0039",
+      "library": "主因子库",
+      "function_names": [
+        "alpha072"
+      ],
+      "code_sha256": "8a4773b790cb004b959d84c347c234a333a01c2cabbb3f181a0b86899091aa83",
+      "bytes": 493,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0040",
+      "library": "主因子库",
+      "function_names": [
+        "alpha075"
+      ],
+      "code_sha256": "4683d4a7f8bc2a8059be4c8cde7a6e81a702a17090020e90d9e1ff433cd418b9",
+      "bytes": 313,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0041",
+      "library": "主因子库",
+      "function_names": [
+        "alpha076"
+      ],
+      "code_sha256": "7ccc443c286e0138f36610dc7005ba103d84f4a1ad17a1952b7268b49ec760fa",
+      "bytes": 406,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0042",
+      "library": "主因子库",
+      "function_names": [
+        "alpha079"
+      ],
+      "code_sha256": "2b5bae73d7ef883ad031ecc4ae6ac4fa3453bc7e5592fc4c70b14b68851074a1",
+      "bytes": 425,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0043",
+      "library": "主因子库",
+      "function_names": [
+        "alpha080"
+      ],
+      "code_sha256": "5a2e3cbc435f9d9bacc08c4feefd7decb804326e5ef284ee07c910bc807fe835",
+      "bytes": 397,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0044",
+      "library": "主因子库",
+      "function_names": [
+        "alpha082"
+      ],
+      "code_sha256": "5bd9d2a88a137155cf750839c5a789592cd4dee29ed05a43c17eb7a79487221b",
+      "bytes": 395,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0045",
+      "library": "主因子库",
+      "function_names": [
+        "alpha087"
+      ],
+      "code_sha256": "c0234babb5f87f3214b9fbb7ad2b04c762961c50e08500db3a36f8e1c5a1c76f",
+      "bytes": 489,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0046",
+      "library": "主因子库",
+      "function_names": [
+        "alpha089"
+      ],
+      "code_sha256": "ea9cab600afd8154af2e9eb28a63454b17c3948a6fc527fde24f4dbd6d89511b",
+      "bytes": 469,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0047",
+      "library": "主因子库",
+      "function_names": [
+        "alpha091"
+      ],
+      "code_sha256": "4b65c1d8e3c1c76c483329dd09b9e1bba2d08e14124936f0560fd8fbcf61501c",
+      "bytes": 468,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0048",
+      "library": "主因子库",
+      "function_names": [
+        "alpha093"
+      ],
+      "code_sha256": "8cdd11b8cd4ed377c30f1ba6c0a35788bdf5d77cd2685a5b3558e2b643729908",
+      "bytes": 472,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0049",
+      "library": "主因子库",
+      "function_names": [
+        "alpha097"
+      ],
+      "code_sha256": "fa690b70eafdce35d0c2736a534465a2aad3592f566dcc1ae6be14707363b2e6",
+      "bytes": 625,
+      "category": "技术复合因子"
+    },
+    {
+      "factor_id": "SV13_0050",
+      "library": "主因子库",
+      "function_names": [
+        "alpha100"
+      ],
+      "code_sha256": "72db519260bf1f8eb912e0ed79976958f1cfb1c399ac706f02060e7b9d1e8b1a",
+      "bytes": 790,
+      "category": "技术复合因子"
+    }
+  ],
+  "existing_http_source_api": false,
+  "local_svquant_file_api_supports_this_database": false,
+  "model_calls": 0,
+  "market_computations": 0,
+  "database_writes": 0
+}

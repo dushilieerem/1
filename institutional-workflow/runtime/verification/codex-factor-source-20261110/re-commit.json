@@ -1,0 +1,13 @@
+{
+  "commit": "080821882b69f1a64701617420d7ac27abb9283b",
+  "branch": "codex/factor-novelty-r4",
+  "pushed": true,
+  "files": [
+    "app/services/factor/sqlite_loader.py",
+    "app/services/catalog/query.py",
+    "app/schemas/factor_source.py",
+    "app/api/routes/catalog.py",
+    "tests/test_factor_source_api.py"
+  ],
+  "loaded": false
+}

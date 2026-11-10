@@ -1,0 +1,9 @@
+✔ 原生对话框复制回退仅选择内部textarea，失败时保留代码选区和手动提示 (952.727079ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3157.70379

@@ -1,0 +1,25 @@
+{
+  "at_utc": "2026-11-10T10:33:20.268796+00:00",
+  "test_only": true,
+  "affected": "new copy fallback component test",
+  "stopped_by": "owned Node RSS stop line",
+  "observed_peak_rss_bytes": 3298054144,
+  "elapsed_seconds": 25.691,
+  "shared_or_service_processes_killed": false,
+  "cause": "A simulated click did not focus the copy trigger. A failing strict DOM-node equality assertion tried to render React object graphs. No business render loop was observed.",
+  "test_fix": "Focus the clicked copy trigger and assert reference equality as a boolean, avoiding huge DOM failure output.",
+  "business_fix": "Manual copy fallback now focuses the code region before creating the selection; focusing afterwards cleared it. The temporary textarea remains inside the native modal dialog.",
+  "final_isolated_case": {
+    "passed": true,
+    "seconds": 3.41,
+    "peak_rss_bytes": 340766720,
+    "node_heap_mib": 512
+  },
+  "final_six_source_components": {
+    "passed": 6,
+    "seconds": 4.413,
+    "peak_rss_bytes": 344797184,
+    "node_heap_mib": 512
+  },
+  "real_model_market_or_db_writes": false
+}

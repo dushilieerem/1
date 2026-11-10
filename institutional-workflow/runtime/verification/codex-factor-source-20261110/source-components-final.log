@@ -1,0 +1,27 @@
+✔ 真实列表详情按需读源码、保留原文/两类指纹；复制后关闭保留筛选并回焦 (768.477752ms)
+✔ 关闭后旧源码响应迟到不能覆盖下一因子，切换时先清旧代码 (320.832014ms)
+✔ 空源码与暂时失败分别显示，失败重试取得实际回执 (330.025671ms)
+✔ 看过与复制源码后建立研究仍用原库稳定ID，不提交自定义factor_code或自动计算 (177.441321ms)
+✔ 只读身份可看源码和空验证记录，不能建立研究 (153.316445ms)
+✔ institutional login exposes both products and selects quant from destination (444.650633ms)
+✔ existing institutional login defaults to subjective, personal login stays personal (54.221954ms)
+✔ redirect targets remain within selected product and reject external or lookalike paths (1.180776ms)
+✔ quant research uses independent token and a scoped API, never personal credentials (24.928551ms)
+✔ public catalog reads never carry any account token (2.437623ms)
+✔ unapproved APIs, external hosts, catalog mutations and read-only writes fail closed (5.008517ms)
+✔ same member in different org changes cache identity; logout invalidates in-flight results (2.412693ms)
+✔ personal pages preserve the original request without institutional remapping (1.486878ms)
+Not implemented: Window's scrollTo() method
+✔ institutional shell validates membership and supplies existing tool dialog context (119.713918ms)
+✔ revoked quant access never falls back to a previously cached research project (3.964211ms)
+✔ reviewer session can only post dedicated feedback, never researcher operations (2.270362ms)
+Not implemented: Window's scrollTo() method
+✔ reviewer lands on review workbench without mounting researcher tools (39.066055ms)
+ℹ tests 17
+ℹ suites 0
+ℹ pass 17
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6832.911525

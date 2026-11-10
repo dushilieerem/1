@@ -292,3 +292,14 @@
  .quant-shell .ff-work-panels .history-details{grid-row:3}
  .quant-shell .ff-work-panels .ff-stage-card>.card-body,.quant-shell .ff-work-panels .ff-live-body{overflow:visible;scrollbar-gutter:auto;flex:0 0 auto}
 }
+
+/* UX105: source details use the existing accessible data dialog, scoped to factor library. */
+.quant-shell .ff-library-drawer .data-dialog.data-detail{inset:16px 16px 16px auto;margin:0;width:min(760px,calc(100vw - 32px));height:calc(100dvh - 32px);max-height:calc(100dvh - 32px);border-radius:12px}
+.quant-shell .ff-library-drawer .modal-header h2{font-size:19px;line-height:1.4;overflow-wrap:anywhere}
+.quant-shell .ff-library-drawer .modal-body{min-height:0}
+.quant-shell .ff-source-tabs{display:flex;gap:20px;border-bottom:1px solid var(--border);margin-bottom:20px}
+.quant-shell .ff-source-tabs button{border:0;background:none;padding:9px 0;color:var(--muted);font-size:14px;cursor:pointer;border-bottom:2px solid transparent}
+.quant-shell .ff-source-tabs button.on{color:var(--primary);border-color:var(--primary);font-weight:600}
+.quant-shell .ff-library-drawer .ff-source-code{margin:14px 0;padding:16px;max-height:52dvh;overflow:auto;white-space:pre;tab-size:4;border:1px solid var(--border);border-radius:8px;background:var(--bg);font:13px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace}
+.quant-shell .ff-library-drawer .ff-kv dd{overflow-wrap:anywhere}
+.quant-shell .ff-library-drawer .ff-kv dt{font-size:12px}

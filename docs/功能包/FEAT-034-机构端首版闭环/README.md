@@ -978,3 +978,14 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 一页纸指标改为确定性覆盖：价值区间取研究版本估值，有效维按“有评分且 gate≠fail”计数，低置信维单列；不再采用 AI 文案里的“不可用 / 0/6”。
 
 验证：后端 `test_inst_six_agents` 10 passed、`test_inst_doc_layer` 6 passed、`test_inst_v3_flow` 16 passed；前端 `tsc` 通过；评分块改为紧凑横排并移除基准小字。
+
+
+### 11.52 估值重跑与 PR（2026-11-10）
+
+- 重跑 3 只旧版本无估值的在研案：
+  - 000002 万科A：重开研究 → 跑估值维；结果 `unavailable`，原因“自由现金流为负（-0.16 亿元）”，不再空白；
+  - 000625 长安汽车：同上，原因“自由现金流为负（-135.07 亿元）”；
+  - 000006 深振业A：直接重跑，估值区间 2.69–4.48 元，基准 3.59 元。
+- 000002/000625 重开研究后阶段回到 1（returned），需重新锁定研究定稿；无在途议案/授权被误伤。
+- 一页纸指标改为确定性覆盖：有效维按“有评分且 gate≠fail”计数，价值区间取研究估值；001233 类场景由 0/6 修正为 5/6（治理 fail 剔除），价值区间显示 43.43–72.38 元。
+- PR：https://gitee.com/yanggu-yuanqi-intelligence/SVQuant/pulls/200 （dev-lsb → master，含 0036/0037 生产已应用说明）。

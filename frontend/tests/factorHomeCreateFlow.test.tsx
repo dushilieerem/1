@@ -327,7 +327,7 @@ test('新版任务：所有环节可暂停，真实生成阶段与人工建议�
  const ledger={topic,branches:[{id:'h1',source:'manual',display_label:'H1',hypothesis_version:1,implementation_version:1}],trials:[],k:0,threshold:1.96,threshold_next_if_counted:1.96};const writes:any[]=[];
  globalThis.fetch=async(input,init)=>{
   const path=new URL(String(input),'http://localhost').pathname,method=init?.method||'GET';
-  if(method==='POST'){writes.push({path,body:JSON.parse(String(init?.body))});return Response.json({id:'advice',status:'pending'});}
+  if(method==='POST'){const body=JSON.parse(String(init?.body));writes.push({path,body});const {request_key,run_id,...input}=body;return Response.json({id:'advice',request_key,run_id,input,status:'pending'});}
   if(path.endsWith('/topics'))return Response.json({topics:[topic]});
   if(path.endsWith('/ledger'))return Response.json(ledger);
   if(path.endsWith('/f0-runs'))return Response.json({id:'run',status:'running',decision:{current_action:'run_test',current_phase:'implementation'}});

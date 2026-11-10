@@ -1,0 +1,18 @@
+{
+  "project_id": "0cf7441a-94e9-4690-94f6-0396f8836346",
+  "run_id": "1aea8ba2-7dfa-49fc-80eb-bd45d04cbf23",
+  "source": "same-session scoped read-only query and existing PM real-r4 evidence; no submission replay",
+  "observed_run_status": "stopped",
+  "observed_human_advice": [],
+  "observed_active_branch_id": "7d797e0c-add2-4c1a-b31a-945647f2f68a",
+  "observed_control_epoch": "0ce2c9ee-1a7b-4d75-9e8d-683fb60d8c37",
+  "historical_http_status": "unknown_not_logged",
+  "historical_request_payload": "not recovered; no browser or private message content read",
+  "confirmed_code_defects": [
+    "Global HTTP handler returns error while old UI only parsed detail; all non-2xx rejection reasons were hidden by uncertain-result generic text.",
+    "Old idempotency lookup was limited to latest run and after terminal-state rejection, so true saved receipts could not be confirmed after stop/new run.",
+    "Old request had no explicit run binding, and unknown retries had no immutable request snapshot across refresh."
+  ],
+  "inference_limit": "A stale H1 target would be deterministically rejected against current revised branch. This does not prove the old physical request actually received409; no recovered HTTP receipt exists.",
+  "no_old_run_trial_advice_mutation": true
+}

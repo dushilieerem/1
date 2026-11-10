@@ -1,3 +1,4 @@
+import {FactorResearchAdvice} from './FactorResearchAdvice';
 import {trialCandidateLabel,type CandidateIdentity} from '@/lib/factorPresentation';
 import {useEffect,useLayoutEffect,useMemo,useRef,useState,type ReactElement} from 'react';
 import {Link,useNavigate,useSearchParams} from 'react-router-dom';
@@ -49,10 +50,6 @@ export function QuantFactorHomePage(){
  const [inspectedBranch,setInspectedBranch]=useState<string>(),[inspectedTrial,setInspectedTrial]=useState<number>();
  const inspectedBranchRef=useRef<string|undefined>(undefined);inspectedBranchRef.current=inspectedBranch;
  const [f0,setF0]=useState<{id:string;status:string;method_compatibility?:{requires_new_run:boolean;configuration_changed?:boolean;reason:string;available_snapshot:{snapshot_hash:string;revision:string;roles:Record<string,{max_output:number|null;output_policy?:string;timeout_seconds:number;prompt_version:string}>};saved_snapshot?:{revision:string}|null};decision?:{candidate_status?:string;reason?:string;current_action?:string;current_phase?:string;technical_wait?:{kind:string;message:string};progress_events?:Array<{at:string;action:string;message:string;references?:Record<string,string>}>;human_advice?:Array<{id:string;input:{message:string};status:string;reason:string}>;steps?:Array<{step:number;at?:string;decision:{action:string;rationale:string};usage?:{tokens_in?:number;tokens_out?:number};result:{status?:string;candidate_status?:string;reason?:string;branch_id?:string;needed_capabilities?:string[]}}>};stop_reason?:string}>();
- const [adviceText,setAdviceText]=useState(''),[adviceBusy,setAdviceBusy]=useState(false),[adviceOpen,setAdviceOpen]=useState(false);
- const adviceKey=useRef<string|undefined>(undefined);
- const adviceTarget=useRef<{branch_id:string;control_epoch:string;candidate_id?:string}|undefined>(undefined);
- useEffect(()=>{setAdviceText('');setAdviceOpen(false);adviceKey.current=undefined;adviceTarget.current=undefined;},[selected]);
  const [diagnosticsOpen,setDiagnosticsOpen]=useState(false),[methodOpen,setMethodOpen]=useState(false);
  const [error,setError]=useState(''),[notice,setNotice]=useState(''),[starting,setStarting]=useState(false);
  const canManage=!!getQuantSession()?.can_manage;
@@ -137,23 +134,6 @@ export function QuantFactorHomePage(){
   if(pid)void getProject(pid).then(p=>{if(alive&&selectedRef.current===id)setProject(p);}).catch(()=>{});
   return()=>{alive=false;clearInterval(timer);};
  },[selected]);
-
- async function openAdvice(){
-  if(!topic||adviceBusy)return;const id=topic.id;setAdviceBusy(true);setError('');
-  try{const fresh=await getProject(topic.project_id);if(selectedRef.current!==id)return;if(!fresh)throw Error('当前研究版本暂时无法读取，原建议文字已保留');const cfg=fresh.config;if(!cfg.v5ActiveBranch||!cfg.v5ControlEpoch)throw Error('当前版本尚未明确，未打开研究建议');adviceTarget.current={branch_id:cfg.v5ActiveBranch,control_epoch:cfg.v5ControlEpoch,candidate_id:currentBranch?.id===cfg.v5ActiveBranch?candidate?.id:undefined};setAdviceOpen(true);}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setAdviceBusy(false);}
- }
-
- async function submitAdvice(){
-  if(adviceBusy)return;
-  if(!topic||!project||!adviceText.trim()||!adviceTarget.current||!canSendAdvice){setError('当前建议版本尚未确认或研究已停止，请保留文字并重新打开当前版本。');return;}
-  const id=topic.id;setAdviceBusy(true);setError('');
-  try{
-   adviceKey.current ||= newUuidV4();
-   const response=await researchFetch('/api/inst/quant/factor-workflow/topics/'+id+'/research-advice',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request_key:adviceKey.current,message:adviceText,...adviceTarget.current})});
-   const result=await response.json();if(selectedRef.current!==id)return;if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'建议尚未保存，请继续确认原提交');
-   setAdviceText('');adviceKey.current=undefined;setNotice('研究建议已保存；系统将在下一次规划中说明采用情况，不会直接覆盖源码。');
-  }catch(e){setError(e instanceof Error?e.message:String(e));}finally{setAdviceBusy(false);}
- }
 
  async function startUpdatedMethod(){
   if(!topic||!f0?.id||!f0.method_compatibility||starting)return;
@@ -407,7 +387,7 @@ export function QuantFactorHomePage(){
    <div><div className="eyebrow">最近事件</div>{feed.length===0?<p className="subtle">尚无事件记录。</p>:<ol>{feed.map(t=><li key={t.key}><time>{t.at?new Date(t.at).toLocaleString():'时间未记录'}</time>{t.label}</li>)}</ol>}</div>
    <div><hr className="ff-divider"/><div className="eyebrow">需要你处理</div><p>{taskState?.needsYou||'新建任务后在这里显示。'}</p></div>
    <div className="actions" style={{marginTop:12}}>{(taskState?.key==='review'||taskState?.key==='approved_unregistered')&&<Link className="btn small primary" to="/quant/reviews/factors">查看待审批</Link>}</div>
-   {canWrite&&project?.config.researchPlan?.researchContract&&(adviceOpen||canSendAdvice)&&<div className="field">{!adviceOpen?<button className="btn small" disabled={adviceBusy} onClick={()=>void openAdvice()}>给研究建议</button>:<><label htmlFor="research-advice">给当前研究的建议</label><textarea id="research-advice" maxLength={1000} value={adviceText} disabled={adviceBusy} onChange={e=>{setAdviceText(e.target.value);adviceKey.current=undefined;}}/><div className="actions"><button className="btn small" disabled={adviceBusy||!canSendAdvice||adviceText.trim().length<2} onClick={()=>void submitAdvice()}>{adviceBusy?'正在保存…':'提交研究建议'}</button><button className="btn small" disabled={adviceBusy} onClick={()=>setAdviceOpen(false)}>关闭建议编辑</button></div><small>{canSendAdvice?'不改变门槛或源码；修改实现请明确暂停后接手。':'本次研究已暂停或结束，当前文字保留，可复制或明确关闭。'}</small></>}</div>}
+   {canWrite&&topic&&project?.config.researchPlan?.researchContract&&<FactorResearchAdvice topicId={topic.id} projectId={topic.project_id} canSubmit={canSendAdvice} branches={ledger?.branches||[]} candidate={{id:candidate?.id,branch_id:currentBranch?.id}}/>}
    {(f0?.decision?.human_advice||[]).length>0&&<details><summary>研究建议处理情况</summary>{f0!.decision!.human_advice!.map(a=><p key={a.id}>{a.input.message}<br/><small>{({pending:'待处理',adopted:'已采用',not_adopted:'未采用'} as Record<string,string>)[a.status]||'待核对'}{a.reason?'：'+a.reason:''}</small></p>)}</details>}
   </aside>
  );

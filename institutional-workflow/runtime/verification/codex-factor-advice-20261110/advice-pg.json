@@ -1,0 +1,11 @@
+{
+  "exit_code": 0,
+  "elapsed_seconds": 2.2210151290055364,
+  "command": [
+    "backend interpreter",
+    "scripts/run_quant_research_advice_pg_tests.py",
+    "--allow-isolated-dev"
+  ],
+  "scope": "unique svquant_dev schema/high actors, native connect fixture whitelist plus pooled DB/network guards; legacy body included; no real actor/body/model/RE",
+  "actual_db_transactions": true
+}

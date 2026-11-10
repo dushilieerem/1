@@ -39,8 +39,10 @@ class IsolatedResearchMethodPostgresTests(IsolatedHandoffPostgresTests):
   with patch.object(advice,'get_conn',self.connection):
    first=advice.submit(self.uid,self.org,'topic',body);again=advice.submit(self.uid,self.org,'topic',body)
    self.assertEqual(first['id'],again['id'])
-   with self.assertRaisesRegex(ValueError,'另一正文'):advice.submit(self.uid,self.org,'topic',{**body,'message':'changed message'})
-   with self.assertRaisesRegex(ValueError,'控制版本'):advice.submit(self.uid,self.org,'topic',{**body,'request_key':'new-advice','control_epoch':'stale'})
+   with self.assertRaises(advice.AdviceRejected) as conflict:advice.submit(self.uid,self.org,'topic',{**body,'message':'changed message'})
+   self.assertEqual(conflict.exception.code,'advice_key_conflict')
+   with self.assertRaises(advice.AdviceRejected) as stale:advice.submit(self.uid,self.org,'topic',{**body,'request_key':'new-advice','control_epoch':'stale'})
+   self.assertEqual(stale.exception.code,'advice_target_changed')
   with self.connection() as c:
    saved=c.execute("SELECT decision FROM quant_factor_f0_runs WHERE id='method-run'").fetchone()['decision'];self.assertEqual(len(saved['human_advice']),1);self.assertEqual(saved['human_advice'][0]['status'],'pending')
 

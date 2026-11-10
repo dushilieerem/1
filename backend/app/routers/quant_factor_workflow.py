@@ -459,6 +459,7 @@ def model_budget_status(ctx=Depends(require_quant_user)):
 
 class ResearchAdviceBody(BaseModel):
     model_config=ConfigDict(extra='forbid')
+    run_id:str|None=Field(default=None,min_length=1,max_length=100)
     branch_id:str
     control_epoch:str
     candidate_id:str|None=None
@@ -467,9 +468,12 @@ class ResearchAdviceBody(BaseModel):
 
 @router.post('/topics/{topic_id}/research-advice')
 def submit_research_advice(topic_id:str,body:ResearchAdviceBody,ctx=Depends(require_quant_researcher)):
-    from services.quant_factor.research_advice import submit
+    from services.quant_factor.research_advice import submit,AdviceRejected
     uid,org=identity(ctx)
-    return invoke(submit,uid,org,topic_id,body.model_dump())
+    try:return submit(uid,org,topic_id,body.model_dump())
+    except AdviceRejected as exc:raise HTTPException(409,{'error':str(exc),'code':exc.code,'saved':False}) from exc
+    except KeyError:raise HTTPException(404,'记录不存在或无权访问') from None
+    except WorkflowError as exc:raise HTTPException(409,str(exc)) from exc
 
 
 @router.get('/candidates/{candidate_id}/development-diagnosis')

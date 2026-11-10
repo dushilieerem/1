@@ -1,0 +1,42 @@
+[
+  {
+    "path": "backend/services/quant_factor/research_advice.py",
+    "sha256": "265969c9843dc6cd94cc0e68563507ef781a835819aac71debc0f89f830e8197"
+  },
+  {
+    "path": "backend/app/routers/quant_factor_workflow.py",
+    "sha256": "871982beffe64a1d85fb2289eb1229d4f00520d8e964440315833560a4e1e5dc"
+  },
+  {
+    "path": "frontend/src/pages/institutional-workflow/FactorResearchAdvice.tsx",
+    "sha256": "93452aad6179871fc457514fa8586763a59b64910a9a29860429cbd41fc47e7a"
+  },
+  {
+    "path": "frontend/src/pages/institutional-workflow/QuantFactorHomePage.tsx",
+    "sha256": "2a99cf7ce46bee1882f178a9cbe036cf7dd1e2e9e3a8913f4380eaf5ea859c91"
+  },
+  {
+    "path": "backend/tests/test_quant_research_advice.py",
+    "sha256": "f82a72a3f3238fc05ac0733bfc555fcb0da0a673d2d28734f5460b4dc4eb778b"
+  },
+  {
+    "path": "backend/tests/test_quant_research_advice_pg.py",
+    "sha256": "dcd1cd11821d7f9342f3dbb29bf4c236e0f0445cbbe94d04cffbe99541d1521e"
+  },
+  {
+    "path": "backend/scripts/run_quant_research_advice_pg_tests.py",
+    "sha256": "ec3267ccc74d4ca2ba752686e7ef2e4d76e3cc8176933828016e454450636be8"
+  },
+  {
+    "path": "backend/tests/test_quant_research_method_pg.py",
+    "sha256": "f1da677e43b003575e71ee1061132c6786c5ecd26f5c8983cdc25854507e26f8"
+  },
+  {
+    "path": "frontend/tests/factorResearchAdvice.test.tsx",
+    "sha256": "78e8d330e529e340408c1a605edb5d197c9a9137de09297465b94172a467824d"
+  },
+  {
+    "path": "frontend/tests/factorHomeCreateFlow.test.tsx",
+    "sha256": "d62476debee27b8f669645ff9e508d67bcc4a922d7780a874d001612aab407c6"
+  }
+]

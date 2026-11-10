@@ -516,21 +516,91 @@ def pipeline(org_id: int) -> dict[str, Any]:
     def _take(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return items if per_stage is None else items[:per_stage]
     cases = [_row_dict(r) or {} for r in repo.cases(OrgScope(org_id))]
-    # 同一公司只保留最近更新的研究案；历史案件仍可按项目 key 访问，但不再占多个环节。
-    latest_by_company: dict[int, tuple[str, dict[str, Any]]] = {}
-    for case in cases:
-        company_id = int(case.get("company_id") or 0)
-        if not company_id:
-            continue
-        recency = f"{case.get('updated_at') or ''}|{int(case.get('id') or 0):012d}"
-        if company_id not in latest_by_company or recency > latest_by_company[company_id][0]:
-            latest_by_company[company_id] = (recency, case)
+    with get_conn() as conn:
+        # 辩论/议案/授权/持仓是各自独立的事实；流水线按“实际走到的最远阶段”展示，
+        # 不再只看 case.stage_no，也避免重复案把下游项目遮住。
+        debate_cases = {
+            int(r["case_id"])
+            for r in conn.execute(
+                """
+                SELECT DISTINCT d.case_id
+                  FROM inst_debate_session d
+                  JOIN LATERAL (
+                    SELECT id FROM inst_research_version
+                     WHERE case_id=d.case_id ORDER BY version_no DESC LIMIT 1
+                  ) v ON v.id=d.research_version_id
+                 WHERE d.status='completed'
+                """
+            ).fetchall()
+        }
+        proposal_cases = {
+            int(r["case_id"])
+            for r in conn.execute(
+                """
+                SELECT DISTINCT case_id FROM inst_proposal
+                 WHERE stale_at IS NULL
+                   AND status IN ('partner_review','risk_precheck','chairman_review','authorized')
+                """
+            ).fetchall()
+        }
+        auth_cases = {
+            int(r["case_id"])
+            for r in conn.execute(
+                """
+                SELECT DISTINCT p.case_id
+                  FROM inst_authorization a
+                  JOIN inst_proposal_version pv ON pv.id=a.proposal_version_id
+                  JOIN inst_proposal p ON p.id=pv.proposal_id
+                 WHERE a.status IN ('qualified','filled')
+                """
+            ).fetchall()
+        }
+        position_symbols = {
+            str(r["symbol"])
+            for r in conn.execute(
+                """
+                SELECT p.symbol FROM inst_position_snapshot p
+                 WHERE p.qty > 0
+                   AND p.as_of=(
+                     SELECT MAX(p2.as_of) FROM inst_position_snapshot p2
+                      WHERE p2.portfolio_id=p.portfolio_id
+                   )
+                """
+            ).fetchall()
+        }
     by_stage: dict[int, list[dict[str, Any]]] = {i: [] for i in range(6)}
+    selected: dict[int, tuple[tuple[int, str, int], dict[str, Any]]] = {}
     case_company_ids: set[int] = set()
-    for _, case in latest_by_company.values():
+    for case in cases:
         card = _pipeline_card(case)
-        by_stage[card["stage_no"]].append(card)
-        case_company_ids.add(card["company_id"])
+        case_id = int(case.get("id") or 0)
+        company_id = int(card.get("company_id") or 0)
+        symbol = str(card.get("symbol") or "")
+        stage = int(card.get("stage_no") or 0)
+        if case_id in debate_cases:
+            stage = max(stage, 2)
+        if case_id in proposal_cases:
+            stage = max(stage, 3)
+        if case_id in auth_cases:
+            stage = max(stage, 4)
+        if symbol and symbol in position_symbols:
+            stage = 5
+        stage_def = _stage_def(stage)
+        card.update(
+            {
+                "stage_no": stage,
+                "stage_key": stage_def["key"],
+                "stage_name": stage_def["name"],
+                "gate": stage_def["gate"],
+            }
+        )
+        rank = (stage, str(card.get("updated_at") or ""), case_id)
+        if company_id and (company_id not in selected or rank > selected[company_id][0]):
+            selected[company_id] = (rank, card)
+        if company_id:
+            case_company_ids.add(company_id)
+    for _, card in selected.values():
+        by_stage[int(card["stage_no"])].append(card)
     # stage 0：量化推送 + 观察池，排除已建研究案的公司。
     push = ideas_push(org_id, limit=12).get("items") or []
     watch = list_companies(org_id, pool_status="watch", limit=20).get("items") or []

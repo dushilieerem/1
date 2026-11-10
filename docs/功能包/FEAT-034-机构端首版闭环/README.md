@@ -1078,3 +1078,15 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 投委会审批：partner/risk/chairman 进入议案时，先读缓存建议；无缓存则自动 POST 当前角色的 `/ai/{partner-memo|risk-review|chairman-memo}` 并落盘。
 - 执行成交：进入授权详情继续自动 GET `/authorizations/{id}/precheck`；不自动下单，执行按钮仍由 execution 角色人工确认。
 - 投资管理：进入持仓读取论点/事件；扫描、预警、退出议案仍保留人工触发，避免自动产生告警或退出动作。
+
+
+### 11.62 流水线按实际下游记录取阶段（2026-11-10）
+
+- 问题：流水线只看 `inst_research_case.stage_no`，而辩论/议案/授权/持仓是独立事实；重开研究后 case 回到阶段 1，旧下游记录仍在，导致“流水线后面全 0，但模块里有项目”。
+- 修复：`pipeline` 改为按实际最远阶段展示：
+  - 最新研究版本有 completed 辩论 → 至少阶段 2；
+  - 有在途议案（partner_review/risk_precheck/chairman_review/authorized）→ 至少阶段 3；
+  - 有 qualified/filled 授权 → 至少阶段 4；
+  - 最新持仓 qty>0 → 阶段 5。
+- 同一公司多案时按“最远阶段 + 最近更新”选一张卡，避免旧重复案遮住下游项目。
+- 生产回读：阶段 2 显示万科A（case:51），阶段 5 显示贵州茅台（持仓，case:23），总项目 17。

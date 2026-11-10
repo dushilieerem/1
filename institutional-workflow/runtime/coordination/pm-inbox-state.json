@@ -486,26 +486,33 @@
       "reply_id": "CX-20261110-003"
     },
     "responses/CX-20261109-098.md": {
-      "sha256": "be9ba3b69f3183e77eca6e1d6e1b668169d2081ab375352a5c57ca820a712055",
+      "sha256": "b628fee313a6ec87865b6c9defcb0bdefe25be4acf11325b732b645e229991b9",
       "status": "processed",
-      "processed_at": "2026-11-10T08:16:30.279601+00:00",
-      "note": "已核实际转发48374028，仍等业务处理意见；未删示例行或改共享库。",
-      "reply_id": null
+      "processed_at": "2026-11-10T08:42:19.853736+00:00",
+      "note": "已读业务方对测试残留的dev/production区分与可由研发清理意见。尚未删除；004已实际转发说明暂不处理，后续先复核精确身份与引用，不将对方建议直接当已执行。",
+      "reply_id": "CX-20261110-004"
     },
     "responses/CX-20261110-001.md": {
-      "sha256": "d3dca4672a45f5b6bad33bc486b323a0908b357f8cbc06f0aa48b64f1ea7c9d2",
+      "sha256": "bdb929d9c48a3a401fc4224ca0eeee4d804849e861933b816016822ec185584c",
       "status": "processed",
-      "processed_at": "2026-11-10T08:16:30.279601+00:00",
-      "note": "已核原生转发c6dd7ef1给SVQuant业务；不同于先前仅投到联络员，当前仍未有001实质回复。",
-      "reply_id": null
+      "processed_at": "2026-11-10T08:42:19.853736+00:00",
+      "note": "已读0036/37生产编号占用、表名无冲突、禁止共享dev新迁移、自有库要求。004实际转发核可拉取规范文件/独立库初始化。未改号、清空历史、回滚或开PR。",
+      "reply_id": "CX-20261110-004"
     },
     "responses/CX-20261110-002.md": {
-      "sha256": "ab2fdbe9fef8d624297130f68fb7dc77b028059c8993a3d18920521d47e6fc9c",
+      "sha256": "f9ef1a479276d5f0366cdaf138958ff8c76e22399f9f09d20c246232f76c636a",
       "status": "processed",
-      "processed_at": "2026-11-10T08:16:30.279601+00:00",
-      "note": "已核原生转发b514e49c给SVQuant业务；003增量澄清迁移与用户开发节奏。002实质回复仍待，不重复发送。",
-      "reply_id": "CX-20261110-003"
+      "processed_at": "2026-11-10T08:42:19.853736+00:00",
+      "note": "已读与001合并的实质回复；当前建议补丁无迁移，后续共享svquant_dev新迁移及额外临时schema回归已停，待独立开发库方案。004已实际转发，未宣称完成切库。",
+      "reply_id": "CX-20261110-004"
+    },
+    "responses/CX-20261110-003.md": {
+      "sha256": "45535588688bbe7f6ce09628cf451cca51b809dd5eda261018d2480c3ae35a38",
+      "status": "processed",
+      "processed_at": "2026-11-10T08:42:19.853736+00:00",
+      "note": "已读接受稳定后PR、候选0042–47依赖顺序、保留schema_migrations、公共guards/OrgScope集成依据。只列集成待办；可拉取origin/master仍仅至0035，004请求澄清规范来源。未执行仅迁移PR建议。",
+      "reply_id": "CX-20261110-004"
     }
   },
-  "updated_at": "2026-11-10T08:16:30.279601+00:00"
+  "updated_at": "2026-11-10T08:42:19.853736+00:00"
 }

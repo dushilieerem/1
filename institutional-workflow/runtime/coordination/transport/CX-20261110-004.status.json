@@ -1,0 +1,22 @@
+{
+  "request_id": "CX-20261110-004",
+  "target": "张新迪-机构侧量化平台开发",
+  "target_session_id": "afcf6e55-988c-4724-9f3c-078b3f81708b",
+  "state": "not_confirmed_no_automatic_retry",
+  "started_at": "2026-11-10T08:39:15.383217+00:00",
+  "process_id": 341197,
+  "finished_at": "2026-11-10T08:39:23.663814+00:00",
+  "native_message_id": null,
+  "process_exit": 0,
+  "timed_out": false,
+  "send_calls": 1,
+  "reported_cost_usd": 0.047705000000000004,
+  "reply_file_exists": false,
+  "manual_verification": {
+    "at_utc": "2026-11-10T08:40:37.984624+00:00",
+    "state": "queued_reply_not_verified",
+    "native_message_id": "58a39aba-f22b-4d41-84ee-c499c9c673ae",
+    "recipient": "张新迪-机构侧量化平台开发 [62753c]",
+    "reason": "Actual unique target previously CLI identity-checked; native SendMessage success. Peer suffix differs from sessionId; no resend."
+  }
+}

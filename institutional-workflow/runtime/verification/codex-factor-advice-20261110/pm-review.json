@@ -1,0 +1,46 @@
+{
+  "reviewed_at_utc": "2026-11-10T08:40:37.984624+00:00",
+  "commit": "6c7a0b67bcde5b573c5a7621ed1df8cc1130914d",
+  "load_evidence_commit": "ab2b32e00f8d550c4787fa83ef76f7db393eef8e",
+  "scope": "Advice input and receipt handling only; no new model/market/DDL",
+  "source_review": [
+    "quant_factor_workflow ResearchAdviceBody and route",
+    "research_advice exact scoped receipt lookup before current run checks",
+    "FactorResearchAdvice actual component and Home integration"
+  ],
+  "independent_evidence_read": {
+    "asgi": 2,
+    "isolated_pg": 5,
+    "pg_subtests": 7,
+    "component": 6,
+    "actual_home_parent": 1,
+    "build_exit": 0,
+    "build_seconds": 34.513,
+    "peak_build_process_tree_bytes": 2412384256
+  },
+  "load_evidence_read": true,
+  "loaded_pid": 249329,
+  "loaded_health": {
+    "ok": true,
+    "db": "ok",
+    "schema_ok": true
+  },
+  "zero_inflight_before_after": true,
+  "shared_services_changed": false,
+  "browser_observed": [
+    "real /quant/factor accessible under existing test session",
+    "ended filter selects original 0cf task",
+    "two actual trials and latest E2/report references remain visible",
+    "finished task does not invite new research advice submission",
+    "screenshot observed, no saved screenshot file claimed"
+  ],
+  "not_claimed": [
+    "real in-flight advice resubmission after this fix",
+    "new successful factor",
+    "complete module acceptance"
+  ],
+  "pending": [
+    "Next bounded real research acceptance should verify actual saved/adopted advice separately. Do not reopen or reset ended r4 merely for test.",
+    "Company requests independent development DB before new migrations; no migration applied in this patch."
+  ]
+}

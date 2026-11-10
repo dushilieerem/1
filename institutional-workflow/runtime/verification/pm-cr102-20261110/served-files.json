@@ -1,0 +1,30 @@
+{
+  "at_utc": "2026-11-10T06:43:34.976373+00:00",
+  "files": [
+    {
+      "file": "frontend/public/quant-delivery/v5/factor-factory.html",
+      "sha256": "f7372f2b692ef9bf20095f35a366806fd55fac85dcf762a59b67413f906acc97",
+      "bytes": 952,
+      "http_matches_local": true
+    },
+    {
+      "file": "frontend/public/quant-delivery/v5/factor-factory.js",
+      "sha256": "96f1c8c86a9362eadf0233984c5a6b787c46f233f1d245cfe2a9893ee005650d",
+      "bytes": 46495,
+      "http_matches_local": true
+    },
+    {
+      "file": "frontend/public/quant-delivery/v5/factor-factory.css",
+      "sha256": "cb880522d570945e571675e8af86ebeea76a3dd1a8a997d39d8f0289f560db7a",
+      "bytes": 13433,
+      "http_matches_local": true
+    },
+    {
+      "file": "frontend/public/quant-delivery/v5/docs/因子工厂V5-自主选题与经验闭环.md",
+      "sha256": "64cbfcbbf9d5b27e1cd251a7d00e0f208a6177dc2d8f626e3177210705376749",
+      "bytes": 14243,
+      "http_matches_local": true
+    }
+  ],
+  "prototype_only_no_model_or_market_submit": true
+}

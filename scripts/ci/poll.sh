@@ -63,7 +63,33 @@ daily_backup_bg() {
     "$BACKUP_SCRIPT"
   ) >>"$STATE_DIR/db-backup.log" 2>&1 &
 }
-trap 'sync_data_bg; daily_backup_bg' EXIT
+# 每周基础备份（PITR 起点）：周日 04:00-04:59 首次轮询触发，一周只跑一次。
+BASEBACKUP_SCRIPT="$ROOT_DIR/scripts/ops/pg_basebackup.sh"
+weekly_backup_bg() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    return 0
+  fi
+  [[ -x "$BASEBACKUP_SCRIPT" ]] || return 0
+  local week marker
+  week="$(date +%G-W%V)"
+  marker="$STATE_DIR/basebackup.week"
+  if [[ "${WEEKLY_BASEBACKUP_FORCE:-0}" != "1" ]]; then
+    [[ "$(date +%u)" == "7" && "$(date +%H)" == "04" ]] || return 0
+  fi
+  [[ -f "$marker" && "$(cat "$marker" 2>/dev/null || true)" == "$week" ]] && return 0
+  (
+    exec 9>&-
+    exec 8>"$STATE_DIR/basebackup.lock"
+    if ! flock -n 8; then
+      log "已有基础备份在执行，跳过"
+      exit 0
+    fi
+    if "$BASEBACKUP_SCRIPT"; then
+      printf '%s\n' "$week" > "$marker"
+    fi
+  ) >>"$STATE_DIR/basebackup.log" 2>&1 &
+}
+trap 'sync_data_bg; daily_backup_bg; weekly_backup_bg' EXIT
 
 cd "$ROOT_DIR"
 if ! git fetch --prune --tags origin >/dev/null 2>&1; then

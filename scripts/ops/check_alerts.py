@@ -87,6 +87,7 @@ def main() -> int:
     pool = (health or {}).get("db_pool") or {}
     queue = (health or {}).get("queue") or {}
     db_conn = (health or {}).get("db_connections") or {}
+    wal = (health or {}).get("wal_archive") or {}
     alerts = evaluate_signals(
         health=health,
         db_pool_used=pool.get("used"),
@@ -97,6 +98,9 @@ def main() -> int:
         data_age_days=quality.get("ageDays"),
         max_data_age_days=float(os.environ.get("SVQ_MAX_DATA_AGE_DAYS") or "2"),
         open_reports=_metric_value(metrics, "svquant_open_community_reports"),
+        wal_archive_failed=wal.get("failed"),
+        wal_archive_age_sec=wal.get("age_sec"),
+        wal_archive_warn_age_sec=float(os.environ.get("SVQ_WAL_ARCHIVE_MAX_AGE_SEC") or "1800"),
         disk_free_ratio=free_ratio,
         min_disk_free_ratio=float(os.environ.get("SVQ_MIN_DISK_FREE") or "0.10"),
     )

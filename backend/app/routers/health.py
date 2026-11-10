@@ -21,6 +21,7 @@ def health() -> dict:
     data_sync: dict | None = None
     queue: dict | None = None
     connections: dict | None = None
+    wal_archive: dict | None = None
     try:
         with get_conn() as conn:
             conn.execute("SELECT 1")
@@ -48,6 +49,21 @@ def health() -> dict:
                     "SELECT status, COUNT(*) AS n FROM background_jobs GROUP BY status"
                 ).fetchall()
                 queue = {str(r["status"]): int(r["n"] or 0) for r in rows}
+            try:
+                arch = conn.execute(
+                    "SELECT archived_count, failed_count, last_archived_wal, "
+                    "EXTRACT(EPOCH FROM (now() - last_archived_time))::int AS age_sec "
+                    "FROM pg_stat_archiver"
+                ).fetchone()
+                if arch:
+                    wal_archive = {
+                        "archived": int(arch.get("archived_count") or 0),
+                        "failed": int(arch.get("failed_count") or 0),
+                        "age_sec": arch.get("age_sec"),
+                        "last_wal": arch.get("last_archived_wal"),
+                    }
+            except Exception:
+                wal_archive = None
             conn_row = conn.execute(
                 "SELECT COUNT(*) AS used, current_setting('max_connections') AS max_conn "
                 "FROM pg_stat_activity"
@@ -73,6 +89,7 @@ def health() -> dict:
         "data_sync": data_sync,
         "queue": queue,
         "db_connections": connections,
+        "wal_archive": wal_archive,
         "worker_mode": (env("SVQUANT_WORKER_MODE", "single") or "single"),
         "multi_instance_supported": False,
         "in_memory_state": [

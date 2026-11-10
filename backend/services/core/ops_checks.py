@@ -36,6 +36,9 @@ def evaluate_signals(
     db_connections_limit: int | None = None,
     db_connections_warn_ratio: float = 0.8,
     db_connections_critical_ratio: float = 0.9,
+    wal_archive_failed: int | None = None,
+    wal_archive_age_sec: float | None = None,
+    wal_archive_warn_age_sec: float = 1800.0,
 ) -> list[Alert]:
     alerts: list[Alert] = []
     if not health or health.get("ok") is not True:
@@ -99,6 +102,15 @@ def evaluate_signals(
             alerts.append(
                 Alert("warning", "db_connections_high", f"PostgreSQL 连接 {db_connections_used}/{db_connections_limit}（{ratio:.0%}）")
             )
+
+    if wal_archive_failed:
+        alerts.append(
+            Alert("critical", "wal_archive_failed", f"WAL 归档失败 {wal_archive_failed} 次，检查 /backup 与 archive_command")
+        )
+    if wal_archive_age_sec is not None and wal_archive_age_sec > wal_archive_warn_age_sec:
+        alerts.append(
+            Alert("warning", "wal_archive_stale", f"最近一次 WAL 归档在 {int(wal_archive_age_sec)} 秒前（阈值 {int(wal_archive_warn_age_sec)} 秒）")
+        )
 
     if disk_free_ratio is not None and disk_free_ratio < min_disk_free_ratio:
         alerts.append(

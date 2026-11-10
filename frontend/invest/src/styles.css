@@ -625,6 +625,19 @@ input, select, textarea { outline: none; }
 .ai-summary { font-size: 14px; line-height: 1.7; font-weight: 600; color: var(--ink); }
 .ai-expand-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 4px; align-self: flex-start; margin-top: -2px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink2); font-size: 11.5px; line-height: 1.3; }
 .ai-expand-toggle:active { background: #f7f7f7; }
+.ai-analysis { display: flex; flex-direction: column; gap: 9px; }
+.ai-analysis-section { padding: 10px 12px; border-radius: 10px; background: #fafafa; border: 1px solid #f0f0f0; }
+.ai-analysis-section > b { display: block; margin-bottom: 5px; font-size: 12.5px; color: var(--ink); }
+.ai-analysis-p { margin: 0; font-size: 12.5px; line-height: 1.7; color: #444; }
+.ai-analysis-section .ai-points { margin-top: 8px; gap: 5px; }
+.ai-analysis-section .ai-points li { padding: 0; border: 0; background: transparent; font-size: 12px; line-height: 1.55; }
+.ai-analysis-section .ai-points li::before { margin-top: 6px; }
+.ai-table-wrap { margin-top: 8px; overflow-x: auto; }
+.ai-points { display: flex; flex-direction: column; gap: 7px; margin: 2px 0 0; padding: 0; list-style: none; }
+.ai-points li { display: flex; gap: 8px; padding: 9px 10px; border-radius: 9px; background: #fafafa; border: 1px solid #f0f0f0; font-size: 12.5px; line-height: 1.6; color: #444; }
+.ai-points li::before { content: ""; flex: none; width: 5px; height: 5px; margin-top: 7px; border-radius: 50%; background: var(--red); }
+.ai-points b { flex: none; color: var(--ink); font-size: 12px; }
+.ai-points span { min-width: 0; }
 .ai-section { padding: 10px 12px; border-radius: 10px; background: #fafafa; border: 1px solid #f0f0f0; }
 .ai-section b { display: block; font-size: 12px; color: var(--ink); margin-bottom: 3px; }
 .ai-section p { font-size: 12px; line-height: 1.65; color: #555; }
@@ -1136,6 +1149,7 @@ input, select, textarea { outline: none; }
 
 .ai-chart-list { display: flex; flex-direction: column; gap: 8px; }
 .ai-chart-box { margin: 8px 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.ai-price-trend svg { display: block; width: 100%; height: auto; margin-top: 2px; }
 .ai-bars { display: flex; align-items: flex-end; gap: 3px; height: 70px; margin-top: 4px; }
 .ai-bars i { flex: 1; min-width: 3px; border-radius: 2px 2px 0 0; display: block; }
 .ai-bars i.in { background: var(--red); }

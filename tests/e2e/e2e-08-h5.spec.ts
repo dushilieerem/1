@@ -363,7 +363,7 @@ test("个股透视 P0：3×3 快照、财务/资金/简况切换，不显示无�
   await page.locator(".fin-period-menu button", { hasText: "年报" }).click();
   await expect(page.locator(".fin-period-select > button")).toContainText("年报");
   await page.locator(".stock-seg button", { hasText: "资金" }).click();
-  await expect(page.getByText("主力资金")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "主力资金" })).toBeVisible();
   await expect(page.getByText("近 20 日主力净流入")).toBeVisible();
   await expect(page.locator(".fund-flow-svg")).toBeVisible();
   await expect(page.locator(".fund-flow-legend")).toContainText("流入");
@@ -374,7 +374,7 @@ test("个股透视 P0：3×3 快照、财务/资金/简况切换，不显示无�
   await noHorizontalOverflow(page);
 });
 
-test("个股五维 AI 分析自动生成，默认收起并可展开", async ({ page }) => {
+test("个股五维 AI 分析按章节与分点展示，不显示图表", async ({ page }) => {
   await loginByToken(page);
   await page.route("**/api/invest/ai/stock/**", (route) =>
     route.fulfill({
@@ -384,11 +384,11 @@ test("个股五维 AI 分析自动生成，默认收起并可展开", async ({ p
         card: {
           summary: "估值处于历史中位，关注盈利稳定性。",
           sections: [
-            { key: "fundamental", title: "基本面", body: "营收与利润保持增长。", items: [{ k: "营收", v: "100 亿" }] },
-            { key: "profitability", title: "盈利", body: "毛利率保持稳定。" },
-            { key: "valuation", title: "估值", body: "PE 处于近三年中位。" },
-            { key: "risk", title: "风险", body: "估值分位偏高。" },
-            { key: "capital", title: "资金", body: "近 5 日主力净流入。" },
+            { key: "fundamental", title: "基本面", blocks: [{ type: "paragraph", text: "营收与利润保持增长，业务规模仍在扩张。" }, { type: "bullets", items: ["营收保持增长", "利润增速稳定"] }] },
+            { key: "profitability", title: "盈利", blocks: [{ type: "paragraph", text: "毛利率保持稳定，盈利质量没有明显恶化。" }, { type: "bullets", items: ["毛利率稳定"] }] },
+            { key: "valuation", title: "估值", blocks: [{ type: "paragraph", text: "PE 处于近三年中位，估值没有明显偏离。" }, { type: "bullets", items: ["估值处于中位"] }] },
+            { key: "risk", title: "风险", blocks: [{ type: "paragraph", text: "估值分位偏高，需关注盈利与资金变化。" }, { type: "bullets", items: ["估值分位偏高"] }] },
+            { key: "capital", title: "资金", blocks: [{ type: "paragraph", text: "近 5 日主力净流入，资金面相对平稳。" }, { type: "bullets", items: ["主力净流入"] }] },
           ],
           disclaimer: "AI 生成 · 非投资建议",
         },
@@ -398,17 +398,17 @@ test("个股五维 AI 分析自动生成，默认收起并可展开", async ({ p
   );
   await page.goto(`${H5}/stock/600519`, { waitUntil: "domcontentloaded" });
   await expect(page.getByText("估值处于历史中位，关注盈利稳定性。")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator(".ai-panel .ai-bars i")).toHaveCount(5);
-  await expect(page.locator(".ai-expand-toggle")).toContainText("展开五维分析");
-  await expect(page.locator(".ai-panel .ai-section")).toHaveCount(0);
-  await page.locator(".ai-expand-toggle").click();
-  await expect(page.locator(".ai-panel .ai-section")).toHaveCount(5);
-  await expect(page.locator(".ai-panel .ai-section").getByText("资金", { exact: true })).toBeVisible();
+  await expect(page.locator(".ai-panel .ai-analysis-section")).toHaveCount(5);
+  await expect(page.locator(".ai-panel .ai-analysis-p")).toHaveCount(5);
+  await expect(page.locator(".ai-panel .ai-points li")).toHaveCount(6);
+  await expect(page.locator(".ai-panel").getByText("资金", { exact: true })).toBeVisible();
+  await expect(page.locator(".ai-panel .ai-bars i")).toHaveCount(0);
+  await expect(page.locator(".ai-panel .ai-expand-toggle")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "生成 AI 解读" })).toHaveCount(0);
   await noHorizontalOverflow(page);
 });
 
-test("个股 AI 无 Key 规则降级：无图时仍展示关键数字", async ({ page }) => {
+test("个股 AI 规则降级也以分点结论展示", async ({ page }) => {
   await loginByToken(page);
   await page.route("**/api/invest/ai/stock/**", (route) =>
     route.fulfill({
@@ -434,9 +434,10 @@ test("个股 AI 无 Key 规则降级：无图时仍展示关键数字", async ({
   );
   await page.goto(`${H5}/stock/600519`, { waitUntil: "domcontentloaded" });
   await expect(page.getByText("规则生成 · 非投资建议").first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".ai-panel .ai-analysis-section")).toHaveCount(5);
+  await expect(page.locator(".ai-panel .ai-analysis-p")).toHaveCount(5);
   await expect(page.locator(".ai-panel .ai-bars i")).toHaveCount(0);
-  await page.locator(".ai-expand-toggle").click();
-  await expect(page.locator(".ai-panel .ai-metric")).toHaveCount(5);
+  await expect(page.locator(".ai-panel .ai-metric")).toHaveCount(0);
   await noHorizontalOverflow(page);
 });
 
@@ -526,6 +527,8 @@ test("AI 管家可发送问题并渲染卡片", async ({ page }) => {
   await page.getByPlaceholder("问个股、组合、复盘或条件选股").fill("贵州茅台怎么看");
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByText("贵州茅台收盘上涨")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".ai-price-trend")).toBeVisible();
+  await expect(page.locator(".ai-price-trend")).toContainText("行情走势");
   await noHorizontalOverflow(page);
 });
 

@@ -25,10 +25,20 @@ def _ctx(ctx: dict[str, Any]) -> tuple[int, int | None, str]:
     return org_id, member_id, role
 
 
-def _require_ws(ctx: dict[str, Any], workspace: str) -> None:
+def _require_ws(
+    ctx: dict[str, Any],
+    workspace: str,
+    *,
+    write: bool = False,
+    deny_digest: bool = False,
+) -> None:
     access = (ctx.get("permissions") or {}).get(workspace, "none")
     if access == "none":
         raise HTTPException(status_code=403, detail="当前角色无权访问该工作区")
+    if deny_digest and access == "digest":
+        raise HTTPException(status_code=403, detail="当前角色仅可查看摘要，不能读取研究全文")
+    if write and access != "write":
+        raise HTTPException(status_code=403, detail="当前角色对该工作区只读，不能执行写操作")
 
 
 def _handle(exc: Exception) -> HTTPException:
@@ -90,7 +100,7 @@ def decide_idea(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "ideas")
+    _require_ws(ctx, "ideas", write=True)
     try:
         return svc.record_idea_decision(
             org_id,
@@ -122,7 +132,7 @@ def start_research(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "research")
+    _require_ws(ctx, "research", write=True)
     try:
         return {"ok": True, **svc.start_research(org_id, company_id, member_id)}
     except Exception as exc:
@@ -163,7 +173,7 @@ def update_pool(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "ideas")
+    _require_ws(ctx, "ideas", write=True)
     try:
         return svc.update_company_pool(
             org_id,
@@ -189,7 +199,7 @@ def cases(
 @router.post("/cases")
 def create_case(body: dict[str, Any], ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "research")
+    _require_ws(ctx, "research", write=True)
     try:
         return {"ok": True, **svc.create_case(org_id, int(body.get("company_id") or 0), member_id)}
     except Exception as exc:
@@ -199,7 +209,7 @@ def create_case(body: dict[str, Any], ctx: dict[str, Any] = Depends(require_inst
 @router.get("/cases/{case_id}")
 def case_detail(case_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
-    _require_ws(ctx, "research")
+    _require_ws(ctx, "research", deny_digest=True)
     data = svc.get_case(org_id, case_id)
     if not data:
         raise HTTPException(status_code=404, detail="研究案不存在")
@@ -230,7 +240,7 @@ def generate_research(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "research")
+    _require_ws(ctx, "research", write=True)
     payload = body or {}
     try:
         return {
@@ -253,7 +263,7 @@ def review_research(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "research")
+    _require_ws(ctx, "research", write=True)
     try:
         return {
             "ok": True,
@@ -278,7 +288,7 @@ def review_research_dimension(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "research")
+    _require_ws(ctx, "research", write=True)
     try:
         return {
             "ok": True,
@@ -301,7 +311,7 @@ def export_case_report(
 ) -> Response:
     """FR-GLB-02/03、GAP-12：导出带演示标识的研究简报（Markdown）。"""
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "research")
+    _require_ws(ctx, "research", deny_digest=True)
     try:
         data = svc.export_research(org_id, case_id, actor_member_id=member_id)
     except Exception as exc:
@@ -335,7 +345,7 @@ def research_memo(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "research")
+    _require_ws(ctx, "research", write=True)
     try:
         return {
             "ok": True,
@@ -440,7 +450,7 @@ def save_institution_agent(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "about")
+    _require_ws(ctx, "about", write=True)
     try:
         return {
             "ok": True,
@@ -462,7 +472,7 @@ def reset_institution_agent(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "about")
+    _require_ws(ctx, "about", write=True)
     try:
         return {
             "ok": True,
@@ -661,7 +671,7 @@ def start_debate(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "debate")
+    _require_ws(ctx, "debate", write=True)
     payload = body or {}
     try:
         return {
@@ -712,7 +722,7 @@ def create_proposal(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "approvals")
+    _require_ws(ctx, "approvals", write=True)
     try:
         direction = body.get("direction")
         target = body.get("target_weight")
@@ -760,7 +770,7 @@ def partner_review(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "approvals")
+    _require_ws(ctx, "approvals", write=True)
     try:
         return {
             "ok": True,
@@ -785,7 +795,7 @@ def chairman_review(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "approvals")
+    _require_ws(ctx, "approvals", write=True)
     try:
         return {
             "ok": True,
@@ -809,7 +819,7 @@ def risk_check(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "approvals")
+    _require_ws(ctx, "approvals", write=True)
     payload = body or {}
     try:
         return {
@@ -830,7 +840,7 @@ def risk_check(
 @router.post("/proposals/{proposal_id}/authorize")
 def authorize(proposal_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "approvals")
+    _require_ws(ctx, "approvals", write=True)
     try:
         return {"ok": True, **svc.authorize(org_id, proposal_id, actor_member_id=member_id)}
     except Exception as exc:
@@ -845,7 +855,7 @@ def approve_and_execute(
 ) -> dict[str, Any]:
     """方案 B：审批最后一关通过后生成授权并立即模拟成交。"""
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "approvals")
+    _require_ws(ctx, "approvals", write=True)
     payload = body or {}
     price = payload.get("price")
     try:
@@ -880,7 +890,7 @@ def execute(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "execution")
+    _require_ws(ctx, "execution", write=True)
     payload = body or {}
     try:
         price = payload.get("price")
@@ -917,7 +927,7 @@ def authorization_reconcile(
 ) -> dict[str, Any]:
     """成交对账：订单/成交/持仓/现金一致性。"""
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "execution")
+    _require_ws(ctx, "execution", write=True)
     try:
         return {
             "ok": True,
@@ -945,7 +955,7 @@ def resolve_execution_exception(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "execution")
+    _require_ws(ctx, "execution", write=True)
     try:
         return {
             "ok": True,
@@ -979,7 +989,7 @@ def monitor(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
 def scan_monitor(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     """自动扫描持仓：复核到期、价格异常，登记监控事件。"""
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "monitor")
+    _require_ws(ctx, "monitor", write=True)
     try:
         return {"ok": True, **svc.scan_holdings(org_id, actor_member_id=member_id)}
     except Exception as exc:
@@ -990,7 +1000,7 @@ def scan_monitor(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, 
 def refresh_thesis(body: dict[str, Any], ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     """从最近买入议案重新生成单票论点台账；旧台账保留。"""
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "monitor")
+    _require_ws(ctx, "monitor", write=True)
     try:
         return {
             "ok": True,
@@ -1007,7 +1017,7 @@ def refresh_thesis(body: dict[str, Any], ctx: dict[str, Any] = Depends(require_i
 @router.post("/monitor/events")
 def create_event(body: dict[str, Any], ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "monitor")
+    _require_ws(ctx, "monitor", write=True)
     try:
         return {
             "ok": True,
@@ -1027,7 +1037,7 @@ def create_event(body: dict[str, Any], ctx: dict[str, Any] = Depends(require_ins
 @router.post("/monitor/exits")
 def create_exit(body: dict[str, Any], ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "monitor")
+    _require_ws(ctx, "monitor", write=True)
     try:
         return {
             "ok": True,
@@ -1055,7 +1065,7 @@ def list_theses(
 @router.post("/theses")
 def create_thesis(body: dict[str, Any], ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "monitor")
+    _require_ws(ctx, "monitor", write=True)
     try:
         return {
             "ok": True,
@@ -1082,7 +1092,7 @@ def review_thesis(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "monitor")
+    _require_ws(ctx, "monitor", write=True)
     try:
         return {
             "ok": True,
@@ -1106,7 +1116,7 @@ def review_exit(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "monitor")
+    _require_ws(ctx, "monitor", write=True)
     try:
         price = body.get("realized_return")
         days = body.get("holding_days")
@@ -1140,8 +1150,9 @@ def pipeline(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]
 def project_result(key: str, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
     _require_ws(ctx, "overview")
+    digest = (ctx.get("permissions") or {}).get("research") == "digest"
     try:
-        return {"ok": True, **svc.project_result(org_id, key)}
+        return {"ok": True, **svc.project_result(org_id, key, digest=digest)}
     except Exception as exc:
         raise _handle(exc) from exc
 
@@ -1179,7 +1190,7 @@ def lock_research(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "research")
+    _require_ws(ctx, "research", write=True)
     body = body or {}
     try:
         return {
@@ -1203,7 +1214,7 @@ def reopen_research(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "research")
+    _require_ws(ctx, "research", write=True)
     try:
         return {
             "ok": True,
@@ -1225,7 +1236,7 @@ def lock_proposal(
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
-    _require_ws(ctx, "approvals")
+    _require_ws(ctx, "approvals", write=True)
     body = body or {}
     try:
         return {

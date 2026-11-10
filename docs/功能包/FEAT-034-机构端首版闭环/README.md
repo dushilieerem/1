@@ -778,3 +778,22 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 新增 `test_search_and_start_research_reuses_current_case` 与 e2e-09 搜索用例。
 
 验证：pytest 108 passed；前端 13 passed；Playwright `e2e-09..14` 18 passed。
+
+
+### 11.40 生产隐患修复（2026-11-09）
+
+按前后端审计结果修复以下生产隐患：
+
+- **流水线不再截断**：`INST_PIPELINE_PER_STAGE` 默认 0（不限制），演示环境才显式设 3；接口新增 `total_count`/`truncated`，前端显示“展示数 / 总数”。
+- **一股一流程落到数据层**：`create_case`/`start_research`/退出研究对同一公司复用当前研究案，并加事务级 advisory lock 防止并发双击建重案；退出研究不再新建同公司第二个案。
+- **阶段与失效语义**：重开研究把旧版本置为 `changed` 并作废在途议案；合伙人/风控/Chairman/授权入口硬校验 `stale_at`；P3 门禁要求研究未 superseded；研究生成只允许在阶段 ≤1，禁止绕过重开直接改研究。
+- **研究门禁**：`review` 审核复用 R3 门禁；证据包为空、维度 Agent 失败改为阻断，只能显式“带缺口锁定”；旧 `review` 不再能无门禁通过。
+- **授权与执行**：授权仅 Chairman/风控可签发，禁止自批；同一议案版本只生成一份有效授权，重复调用幂等；执行前必须预检通过且只能顺序进入成交步骤。
+- **持仓读取**：组合、集中度、监控扫描改为按 symbol 取各自最新快照，跨日新增持仓不会让旧持仓消失；NAV 按现金 + 最新市值计算。
+- **审批边界**：合伙人只能修改意见/监控/资金/有效期/价格带/目标仓位白名单字段，修改后重跑 P3 门禁；同一研究案同时只允许一份在途议案。
+- **权限与隔离**：写接口要求 workspace `write`；研究/辩论写操作收紧到 manager；摘要角色不能读取研究全文/导出报告；监控事件校验公司归属，监控 join 带 org 条件；AI 返回的证据 ID 仅接受本机构本案证据。
+- **演示与文案**：演示账号种子默认关闭（测试/本地显式开启）；`POLICY_VERSION` 改为 `inst-policy-v1`；估值与报告移除“演示”措辞但保留“简易测算/不构成目标价”限制；前端不再把“演示口径”改写为“研究口径”。
+- **前端健壮性**：Agent 面板不再写死“已完成”；研究/辩论/审批/执行/投资管理加请求序号防止旧响应覆盖；全局搜索支持上下键/回车/Esc/ARIA 且创建中禁止重复提交；仪表盘待办按登录角色过滤；直接访问无权限工作区显示 403 空态；401 重登保留深链接；原型 HTML 移出 `frontend/public`。
+- **样式维护**：移除 `* { font-size:12px !important }` 通配覆盖，改为 `.inst-v3` 基础字号 + `:where(*)` 继承 + 11/12/16/22 阶梯类，保留内联字号与可访问性。
+
+验证：pytest 866 passed；`tsc --noEmit`、`npm run build`、`npm run test:inst` 15 passed；Playwright `e2e-09..14` 18 passed。

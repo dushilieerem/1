@@ -4,6 +4,7 @@ import { ArrowRight, Bell, LayoutDashboard, ListChecks, PieChart } from "lucide-
 import { dedupeBy } from "@/lib/instDedupe";
 import { instApi, fmtMoney, fmtPct } from "@/lib/instApi";
 import { fetchV3Pipeline, type V3Pipeline } from "@/lib/instV3Api";
+import { useInstSession } from "@/components/institution/instSessionContext";
 
 type Overview = {
   companies: number;
@@ -18,6 +19,7 @@ type Overview = {
 };
 
 export function InstV3DashboardPage() {
+  const session = useInstSession();
   const [data, setData] = useState<Overview | null>(null);
   const [pipeline, setPipeline] = useState<V3Pipeline | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,19 +40,34 @@ export function InstV3DashboardPage() {
 
   const todos = useMemo(() => {
     if (!pipeline) return [];
-    const items = [
-      ...(pipeline.stages[3]?.items || []).slice(0, 3).map((x) => ({
-        key: x.key, name: x.company_name || x.symbol || "—", stage: "投委会审批", note: `${x.stage_name} · ${x.gate} · 版本 ${x.version_no ?? "—"}`, tone: "gold",
-      })),
-      ...(pipeline.stages[1]?.items || []).slice(0, 1).map((x) => ({
-        key: x.key, name: x.company_name || x.symbol || "—", stage: "价值分析", note: `${x.stage_name} · ${x.gate} · 版本 ${x.version_no ?? "—"}`, tone: "info",
-      })),
-      ...(pipeline.stages[4]?.items || []).slice(0, 1).map((x) => ({
-        key: x.key, name: x.company_name || x.symbol || "—", stage: "执行成交", note: `${x.stage_name} · ${x.gate} · 版本 ${x.version_no ?? "—"}`, tone: "violet",
-      })),
-    ];
+    const stageMeta: Record<number, { label: string; tone: string; limit: number }> = {
+      1: { label: "价值分析", tone: "info", limit: 1 },
+      3: { label: "投委会审批", tone: "gold", limit: 3 },
+      4: { label: "执行成交", tone: "violet", limit: 1 },
+      5: { label: "投资管理", tone: "info", limit: 2 },
+    };
+    const roleStages: Record<string, number[]> = {
+      manager: [3, 1],
+      partner: [3],
+      risk: [3],
+      chairman: [3],
+      execution: [4],
+      monitoring: [5],
+    };
+    const stages = roleStages[session.role] || [];
+    const items = stages.flatMap((no) => {
+      const meta = stageMeta[no];
+      if (!meta) return [];
+      return (pipeline.stages[no]?.items || []).slice(0, meta.limit).map((x) => ({
+        key: x.key,
+        name: x.company_name || x.symbol || "—",
+        stage: meta.label,
+        note: `${x.stage_name} · ${x.gate} · 版本 ${x.version_no ?? "—"}`,
+        tone: meta.tone,
+      }));
+    });
     return dedupeBy(items, (x) => x.key).slice(0, 4);
-  }, [pipeline]);
+  }, [pipeline, session.role]);
 
   const flowProjects = useMemo(
     () => (pipeline ? dedupeBy([1, 2, 3, 4, 5].flatMap((n) => pipeline.stages[n]?.items || []), (x) => x.key).slice(0, 3) : []),

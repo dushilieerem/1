@@ -54,7 +54,7 @@ export function InstV3AgentRail({
         <div className="ad-role">{active.role || "—"}</div>
         <div className="ad-grid">
           <div><div className="ad-k">模型</div><div className="ad-v">{active.model || "—"}</div></div>
-          <div><div className="ad-k">状态</div><div className="ad-v" style={{ color: "var(--v3-ok)" }}>已完成</div></div>
+          <div><div className="ad-k">配置</div><div className="ad-v">已启用</div></div>
           <div><div className="ad-k">工具</div><div className="ad-v">{active.tools || "—"}</div></div>
           <div><div className="ad-k">产出</div><div className="ad-v">{active.output || "—"}</div></div>
         </div>

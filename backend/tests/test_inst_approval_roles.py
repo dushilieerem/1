@@ -121,10 +121,17 @@ def _ok(resp, code: int = 200) -> dict:
 
 
 def _new_proposal(client: TestClient, fixture, manager_token: str, partner_token: str) -> int:
+    tag = uuid.uuid4().hex[:8]
+    with get_conn() as conn:
+        company = conn.execute(
+            "INSERT INTO inst_company (org_id, symbol, name, market, industry, ref_price) "
+            "VALUES (%s,%s,%s,'CN','测试行业',100) RETURNING id",
+            (fixture["org_id"], f"ROL{tag[:5].upper()}.SH", f"角色测试公司{tag}"),
+        ).fetchone()
     case = _ok(
         client.post(
             "/api/inst/cases",
-            json={"company_id": fixture["company_id"]},
+            json={"company_id": int(company["id"])},
             headers=_h(manager_token),
         )
     )
@@ -139,9 +146,9 @@ def _new_proposal(client: TestClient, fixture, manager_token: str, partner_token
     version_id = int(research["versions"][0]["id"])
     _ok(
         client.post(
-            f"/api/inst/research/{version_id}/review",
-            json={"decision": "approve", "comment": "角色测试"},
-            headers=_h(partner_token),
+            f"/api/inst/research/{version_id}/lock",
+            json={"allow_gaps": True, "comment": "角色测试：显式带缺口锁定"},
+            headers=_h(manager_token),
         )
     )
     _ok(

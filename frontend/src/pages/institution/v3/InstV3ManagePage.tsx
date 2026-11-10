@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Activity, AlertTriangle, RefreshCw } from "lucide-react";
 import { dedupeBy } from "@/lib/instDedupe";
@@ -115,6 +115,7 @@ export function InstV3ManagePage() {
   const [reason, setReason] = useState("thesis_invalid");
   const [exitMemo, setExitMemo] = useState("");
 
+  const detailSeq = useRef(0);
   const selectedSymbol = parseHolding(params.get("key"));
   const canWrite = ["manager", "monitoring", "partner"].includes(session.role);
 
@@ -125,7 +126,9 @@ export function InstV3ManagePage() {
   };
 
   const loadHolding = async (symbol: string) => {
+    const seq = ++detailSeq.current;
     const data = await instApi<Holding>(`/holdings/${encodeURIComponent(symbol)}`);
+    if (seq !== detailSeq.current) return data;
     setHolding(data);
     return data;
   };

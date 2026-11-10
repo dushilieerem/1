@@ -7,6 +7,8 @@ export type V3Stage = {
   gate: string;
   owner: string;
   count: number;
+  total_count?: number;
+  truncated?: boolean;
   items: V3PipelineItem[];
 };
 
@@ -33,7 +35,7 @@ export type V3PipelineItem = {
   ref_price?: number | null;
 };
 
-export type V3Pipeline = { stages: V3Stage[]; total: number };
+export type V3Pipeline = { stages: V3Stage[]; total: number; total_count?: number };
 
 export type V3Result = {
   key: string;

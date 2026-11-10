@@ -159,10 +159,17 @@ def _ok(resp, code: int = 200) -> dict:
 
 
 def _new_proposal(client: TestClient, fixture, tokens) -> int:
+    tag = uuid.uuid4().hex[:8]
+    with get_conn() as conn:
+        company = conn.execute(
+            "INSERT INTO inst_company (org_id, symbol, name, market, industry, ref_price) "
+            "VALUES (%s,%s,%s,'CN','测试行业',100) RETURNING id",
+            (fixture["org_id"], f"APR{tag[:5].upper()}.SH", f"审批测试公司{tag}"),
+        ).fetchone()
     case = _ok(
         client.post(
             "/api/inst/cases",
-            json={"company_id": fixture["company_id"]},
+            json={"company_id": int(company["id"])},
             headers=_h(tokens["m"]),
         )
     )
@@ -177,9 +184,9 @@ def _new_proposal(client: TestClient, fixture, tokens) -> int:
     version_id = int(research["versions"][0]["id"])
     _ok(
         client.post(
-            f"/api/inst/research/{version_id}/review",
-            json={"decision": "approve", "comment": "审批顺序测试"},
-            headers=_h(tokens["p1"]),
+            f"/api/inst/research/{version_id}/lock",
+            json={"allow_gaps": True, "comment": "审批顺序测试：显式带缺口锁定"},
+            headers=_h(tokens["m"]),
         )
     )
     _ok(

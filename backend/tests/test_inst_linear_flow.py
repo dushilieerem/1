@@ -161,9 +161,9 @@ def test_approve_and_execute_full_linear_flow(fixture) -> None:
     assert all(ev.get("available_time") or ev.get("as_of") for ev in research["evidence"])
     _ok(
         client.post(
-            f"/api/inst/research/{version_id}/review",
-            json={"decision": "approve", "comment": "通过"},
-            headers=_h(tokens["partner"]),
+            f"/api/inst/research/{version_id}/lock",
+            json={"allow_gaps": True, "comment": "测试：显式带缺口锁定"},
+            headers=_h(tokens["manager"]),
         )
     )
     debate = _ok(

@@ -11,6 +11,16 @@ function loginUrl(next: string) {
   return `/login?mode=inst&next=${encodeURIComponent(next)}`;
 }
 
+function workspaceForPath(path: string): string {
+  if (path.startsWith("/inst/research")) return "research";
+  if (path.startsWith("/inst/debate")) return "debate";
+  if (path.startsWith("/inst/approvals")) return "approvals";
+  if (path.startsWith("/inst/execute")) return "execution";
+  if (path.startsWith("/inst/manage")) return "monitor";
+  if (path.startsWith("/inst/playbook") || path.startsWith("/inst/pipeline")) return "overview";
+  return "overview";
+}
+
 type SearchItem = {
   company_id: number;
   symbol?: string;
@@ -77,13 +87,16 @@ export function InstV3Layout() {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
+  const [searchActive, setSearchActive] = useState(-1);
   const [openingId, setOpeningId] = useState<number | null>(null);
+  const openingRef = useRef<number | null>(null);
   const searchRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const q = search.trim();
     if (!q) {
       setSearchResults([]);
+      setSearchActive(-1);
       setSearchError(null);
       setSearching(false);
       return;
@@ -93,10 +106,16 @@ export function InstV3Layout() {
     setSearchError(null);
     const timer = window.setTimeout(() => {
       instApi<{ items: SearchItem[] }>(`/search?q=${encodeURIComponent(q)}&limit=8`)
-        .then((res) => { if (alive) setSearchResults(res.items || []); })
+        .then((res) => {
+          if (!alive) return;
+          const items = res.items || [];
+          setSearchResults(items);
+          setSearchActive(items.length ? 0 : -1);
+        })
         .catch((ex: unknown) => {
           if (!alive) return;
           setSearchResults([]);
+          setSearchActive(-1);
           setSearchError(ex instanceof Error ? ex.message : String(ex));
         })
         .finally(() => { if (alive) setSearching(false); });
@@ -120,14 +139,14 @@ export function InstV3Layout() {
   useEffect(() => {
     let alive = true;
     if (!getInstToken()) {
-      navigate(loginUrl(location.pathname), { replace: true });
+      navigate(loginUrl(`${location.pathname}${location.search}`), { replace: true });
       return () => { alive = false; };
     }
     fetchInstMe()
       .then((next) => {
         if (!alive) return;
         if (!next) {
-          navigate(loginUrl(location.pathname), { replace: true });
+          navigate(loginUrl(`${location.pathname}${location.search}`), { replace: true });
           return;
         }
         setSession(next);
@@ -172,6 +191,7 @@ export function InstV3Layout() {
   const canStartResearch = session.role === "manager";
 
   const openSearchItem = async (item: SearchItem) => {
+    if (openingRef.current != null) return;
     setSearchOpen(false);
     setSearchError(null);
     if (item.case_id) {
@@ -186,6 +206,7 @@ export function InstV3Layout() {
       setSearchOpen(true);
       return;
     }
+    openingRef.current = item.company_id;
     setOpeningId(item.company_id);
     try {
       const created = await instApi<{ id: number }>(`/companies/${item.company_id}/research`, {
@@ -197,6 +218,7 @@ export function InstV3Layout() {
       setSearchError(ex instanceof Error ? ex.message : String(ex));
       setSearchOpen(true);
     } finally {
+      openingRef.current = null;
       setOpeningId(null);
     }
   };
@@ -237,10 +259,32 @@ export function InstV3Layout() {
                       value={search}
                       onChange={(e) => { setSearch(e.target.value); setSearchOpen(true); }}
                       onFocus={() => setSearchOpen(true)}
+                      role="combobox"
+                      aria-expanded={searchOpen && !!search.trim()}
+                      aria-controls="v3-search-listbox"
+                      aria-autocomplete="list"
+                      aria-activedescendant={
+                        searchActive >= 0 && searchResults[searchActive]
+                          ? `v3-search-opt-${searchResults[searchActive].company_id}`
+                          : undefined
+                      }
                       onKeyDown={(e) => {
-                        if (e.key === "Enter" && searchResults[0]) {
+                        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                          if (!searchResults.length) return;
                           e.preventDefault();
-                          void openSearchItem(searchResults[0]);
+                          setSearchOpen(true);
+                          const delta = e.key === "ArrowDown" ? 1 : -1;
+                          setSearchActive((i) => {
+                            const base = i < 0 ? (delta > 0 ? -1 : 0) : i;
+                            return (base + delta + searchResults.length) % searchResults.length;
+                          });
+                        } else if (e.key === "Enter") {
+                          const item = searchResults[searchActive] || searchResults[0];
+                          if (!item || openingId) return;
+                          e.preventDefault();
+                          void openSearchItem(item);
+                        } else if (e.key === "Escape") {
+                          setSearchOpen(false);
                         }
                       }}
                       placeholder="搜索股票代码或名称…"
@@ -248,15 +292,19 @@ export function InstV3Layout() {
                     />
                   </label>
                   {searchOpen && search.trim() ? (
-                    <div className="v3-search-pop">
+                    <div className="v3-search-pop" role="listbox" id="v3-search-listbox">
                       {searching ? <div className="v3-search-state">搜索中…</div> : null}
                       {!searching && searchError ? <div className="v3-search-state error">{searchError}</div> : null}
                       {!searching && !searchError && !searchResults.length ? <div className="v3-search-state">未找到匹配股票</div> : null}
-                      {!searching && !searchError ? searchResults.map((item) => (
+                      {!searching && !searchError ? searchResults.map((item, index) => (
                         <button
                           key={item.company_id}
-                          className="v3-search-item"
+                          id={`v3-search-opt-${item.company_id}`}
+                          role="option"
+                          aria-selected={index === searchActive}
+                          className={`v3-search-item${index === searchActive ? " on" : ""}`}
                           disabled={openingId === item.company_id}
+                          onMouseEnter={() => setSearchActive(index)}
                           onClick={() => void openSearchItem(item)}
                         >
                           <span className="v3-search-main">
@@ -286,7 +334,15 @@ export function InstV3Layout() {
                 <button className="v3-exit" onClick={logout}>退出</button>
               </div>
             </header>
-            <main className="v3-main"><Outlet /></main>
+            <main className="v3-main">
+              {(session.permissions?.[workspaceForPath(location.pathname)] || "none") === "none" ? (
+                <div className="v3-card">
+                  <div className="v3-empty">当前角色无权访问该工作区（{session.role_label_cn}）。</div>
+                </div>
+              ) : (
+                <Outlet />
+              )}
+            </main>
           </div>
         </div>
       </div>

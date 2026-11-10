@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, CheckCircle2, Play, RefreshCw } from "lucide-react";
-import { latestByKey } from "@/lib/instDedupe";
+import { dedupeBy } from "@/lib/instDedupe";
 import { instApi } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
@@ -67,6 +67,7 @@ export function InstV3ExecutePage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const detailSeq = useRef(0);
   const selectedId = parseAuthId(params.get("key"));
   const canExecute = session.role === "execution";
   const snapshot = ((selected?.snapshot || selected?.version_snapshot || {}) as Record<string, unknown>);
@@ -79,19 +80,23 @@ export function InstV3ExecutePage() {
       const all = await instApi<{ items: Authorization[] }>("/authorizations");
       rows = all.items || [];
     }
-    setItems(latestByKey(rows, (a) => a.symbol, (a) => `${a.issued_at || ""}|${String(a.id).padStart(12, "0")}`));
+    setItems(dedupeBy(rows, (a) => a.id));
     return rows;
   };
 
   const loadDetail = async (auth: Authorization) => {
+    const seq = ++detailSeq.current;
     setSelected(auth);
+    setStep(0);
     setExecResult(null);
     setReconcile(null);
     try {
       const pre = await instApi<Precheck>(`/authorizations/${auth.id}/precheck`);
+      if (seq !== detailSeq.current) return;
       setPrecheck(pre);
       if (pre.price != null) setPrice(String(pre.price));
     } catch (e) {
+      if (seq !== detailSeq.current) return;
       setPrecheck(null);
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -118,11 +123,10 @@ export function InstV3ExecutePage() {
 
   const selectAuth = (a: Authorization) => {
     setParams({ key: `auth:${a.id}` });
-    loadDetail(a).catch((e: Error) => setError(e.message));
   };
 
   const execute = async () => {
-    if (!selected) return;
+    if (!selected || precheck?.ok !== true) return;
     setBusy("execute");
     setError(null);
     try {
@@ -189,7 +193,18 @@ export function InstV3ExecutePage() {
 
       <div className="v3-stepper">
         {STEPS.map((s, i) => (
-          <button key={s.name} className={`v3-step${i < step ? " done" : i === step ? " now" : ""}`} onClick={() => setStep(i)} style={{ background: "none", borderTop: 0, borderLeft: 0, borderBottom: 0, cursor: "pointer" }}>
+          <button
+            key={s.name}
+            className={`v3-step${i < step ? " done" : i === step ? " now" : ""}`}
+            onClick={() => {
+              const reachable =
+                i <= step ||
+                (i === 1 && precheck?.ok === true) ||
+                (i === 2 && !!execResult);
+              if (reachable) setStep(i);
+            }}
+            style={{ background: "none", borderTop: 0, borderLeft: 0, borderBottom: 0, cursor: "pointer" }}
+          >
             <span className="dot">{i < step ? "✓" : i}</span>
             <div><span className="lb">{s.name}</span><span className="sb">{s.sub}</span></div>
           </button>
@@ -246,7 +261,7 @@ export function InstV3ExecutePage() {
                     </div>
                   </div>
                   <div style={{ marginTop: 8 }}>
-                    <button data-testid="inst-execute-submit" className="v3-btn primary" disabled={!canExecute || !!busy || executed} onClick={execute}><Play className="h-3.5 w-3.5" />{busy === "execute" ? "执行中…" : executed ? "已成交" : "执行成交"}</button>
+                    <button data-testid="inst-execute-submit" className="v3-btn primary" disabled={!canExecute || !!busy || executed || precheck?.ok !== true} onClick={execute}><Play className="h-3.5 w-3.5" />{busy === "execute" ? "执行中…" : executed ? "已成交" : "执行成交"}</button>
                     {!canExecute ? <span className="ml-2 text-[11px] text-[#6b6370]">仅交易执行角色可下单；其他角色只读。</span> : null}
                   </div>
                 </section>

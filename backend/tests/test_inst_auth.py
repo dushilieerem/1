@@ -37,7 +37,7 @@ EXPECTED = {
         "approvals": "write",
         "execution": "read",
         "monitor": "write",
-        "about": "read",
+        "about": "write",
     },
     "partner": {
         "overview": "read",

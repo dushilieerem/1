@@ -115,10 +115,17 @@ def _ok(resp, code: int = 200) -> dict:
 
 
 def _case_with_research(client: TestClient, fixture: dict) -> tuple[int, dict]:
+    tag = uuid.uuid4().hex[:8]
+    with get_conn() as conn:
+        company = conn.execute(
+            "INSERT INTO inst_company (org_id, symbol, name, market, ref_price) "
+            "VALUES (%s,%s,%s,'CN',100) RETURNING id",
+            (fixture["org_id"], f"DIM{tag[:5].upper()}.SH", f"单维测试公司{tag}"),
+        ).fetchone()
     case = _ok(
         client.post(
             "/api/inst/cases",
-            json={"company_id": fixture["company_id"]},
+            json={"company_id": int(company["id"])},
             headers=_h(fixture["tokens"]["manager"]),
         )
     )
@@ -146,7 +153,7 @@ def test_return_targets_reruns_selected_and_keeps_others(fixture) -> None:
                 "comment": "行业和财务需要重跑",
                 "targets": ["industry", "financial"],
             },
-            headers=_h(fixture["tokens"]["partner"]),
+            headers=_h(fixture["tokens"]["manager"]),
         )
     )
     latest = out["versions"][0]
@@ -210,11 +217,17 @@ def test_per_dimension_review_then_global_approve(fixture) -> None:
     reviews = latest["versions"][0]["dim_reviews"]
     assert set(reviews) == set(DIM_KEYS)
 
-    # 整体审核仍可继续，未破坏既有链路。
+    # 无 AI / 无证据的研究必须显式带缺口锁定，不能走 review 绕过门禁。
+    blocked = client.post(
+        f"/api/inst/research/{version_id}/review",
+        json={"decision": "approve", "comment": "逐维通过后整体通过"},
+        headers=_h(fixture["tokens"]["manager"]),
+    )
+    assert blocked.status_code == 403
     approved = _ok(
         client.post(
-            f"/api/inst/research/{version_id}/review",
-            json={"decision": "approve", "comment": "逐维通过后整体通过"},
+            f"/api/inst/research/{version_id}/lock",
+            json={"allow_gaps": True, "comment": "单维测试：规则兜底，显式带缺口锁定"},
             headers=_h(fixture["tokens"]["manager"]),
         )
     )

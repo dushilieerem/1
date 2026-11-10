@@ -138,12 +138,6 @@ function dimScore(dim?: Dim | null): number | null {
   return null;
 }
 
-function missingText(items?: string[] | null): string {
-  const list = (items || []).map(String).filter(Boolean);
-  if (list.length <= 3) return list.join("；");
-  return `${list.slice(0, 3).join("；")} 等 ${list.length} 项`;
-}
-
 function overallScore(dims?: Dim[] | null, fallback?: number | null): number | null {
   if (fallback != null) return Number(fallback);
   const scores = (dims || []).map((d) => dimScore(d)).filter((n): n is number => n != null);
@@ -310,6 +304,10 @@ export function InstV3ResearchPage() {
     typeof memo?.strongest_counterpoint === "string"
       ? { point: memo.strongest_counterpoint, response: "", overturns: false }
       : memo?.strongest_counterpoint || null;
+  const blockingGateNote =
+    memo?.data_gate_note && (memo.data_gate_note.includes("gate=fail") || memo.data_gate_note.includes("门禁未通过"))
+      ? memo.data_gate_note
+      : "";
 
   useEffect(() => {
     setAgentId(step === 0 ? "industry" : "manager");
@@ -500,7 +498,6 @@ export function InstV3ResearchPage() {
                   {version.industry_analysis.checks?.length ? <ul className="v3-rule-list" style={{ marginTop: 8 }}>{version.industry_analysis.checks.map((x) => <li key={x}>{x}</li>)}</ul> : null}
                   {version.industry_analysis.data_used?.length ? <p style={{ marginTop: 8, fontSize: 12, color: "#6b6370" }}>使用数据：{version.industry_analysis.data_used.join("；")}</p> : null}
                   {version.industry_analysis.counter?.length ? <div className="v3-note" style={{ marginTop: 8 }}>反证：{version.industry_analysis.counter[0]}</div> : null}
-                  {version.industry_analysis.data_completeness?.missing?.length ? <p title={version.industry_analysis.data_completeness.missing.join("；")} style={{ marginTop: 8, fontSize: 12, color: "#6b6370" }}>数据缺口：{missingText(version.industry_analysis.data_completeness.missing)}</p> : null}
                 </div>
               ) : (
                 <div className="v3-empty">
@@ -546,7 +543,6 @@ export function InstV3ResearchPage() {
                       {activeDim.checks?.length ? <ul className="v3-rule-list" style={{ marginTop: 8 }}>{activeDim.checks.map((x) => <li key={x}>{x}</li>)}</ul> : null}
                       {activeDim.data_used?.length ? <p style={{ marginTop: 8, fontSize: 12, color: "#6b6370" }}>使用数据：{activeDim.data_used.join("；")}</p> : null}
                       {activeDim.counter?.length ? <div className="v3-note" style={{ marginTop: 8 }}>反证：{activeDim.counter[0]}</div> : null}
-                      {activeDim.data_completeness?.missing?.length ? <p title={activeDim.data_completeness.missing.join("；")} style={{ marginTop: 8, fontSize: 12, color: "#6b6370" }}>数据缺口：{missingText(activeDim.data_completeness.missing)}</p> : null}
                       <div style={{ marginTop: 8 }}>
                         <button className="v3-btn ghost" disabled={!!busy || activeDim.status === "skipped"} onClick={() => runResearch(activeDim.key, activeDim.key)}>
                           <RefreshCw className="h-3.5 w-3.5" />
@@ -605,24 +601,11 @@ export function InstV3ResearchPage() {
                   ) : null}
                   {memo.key_assumptions?.length ? <div style={{ marginTop: 8 }}><div className="v3-eyebrow">关键假设</div><ul className="v3-rule-list" style={{ marginTop: 4 }}>{memo.key_assumptions.map((x) => <li key={x}>{x}</li>)}</ul></div> : null}
                   {memo.what_would_change?.length ? <div style={{ marginTop: 8 }}><div className="v3-eyebrow">什么会改变判断</div><ul className="v3-rule-list" style={{ marginTop: 4 }}>{memo.what_would_change.map((x) => <li key={x}>{x}</li>)}</ul></div> : null}
-                  {memo.professional_coverage?.length ? (
-                    <div style={{ marginTop: 10 }}>
-                      <div className="v3-eyebrow">专业输入覆盖</div>
-                      <div className="v3-kpis" style={{ gridTemplateColumns: "repeat(2,minmax(0,1fr))", marginTop: 6 }}>
-                        {memo.professional_coverage.map((c) => (
-                          <div className="v3-kpi" key={c.key || c.name}>
-                            <div className="k">{c.name || c.key}</div>
-                            <div className="v">{c.score_10 != null ? `${Number(c.score_10).toFixed(1)}/10` : "未评分"} · {c.verdict || c.gate || "—"}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
                   {memo.metrics?.length ? <div className="v3-kpis" style={{ gridTemplateColumns: "repeat(2,minmax(0,1fr))", marginTop: 8 }}>{memo.metrics.slice(0, 4).map((m) => <div className="v3-kpi" key={m.label}><div className="k">{stripParens(m.label)}</div><div className="v">{stripParens(m.value)}</div></div>)}</div> : null}
                   {memo.summary && memo.summary !== memo.chief_call ? <p style={{ marginTop: 8, lineHeight: 1.75, color: "#4b4352" }}>{memo.summary}</p> : null}
                   {memo.conflicts?.length ? <div className="v3-note" style={{ marginTop: 8 }}>保留分歧：{memo.conflicts.join("；")}</div> : null}
                   {memo.risks?.length ? <div style={{ marginTop: 8 }}><div className="v3-eyebrow">核心风险</div><ul className="v3-rule-list" style={{ marginTop: 4 }}>{memo.risks.slice(0, 4).map((x) => <li key={x}>{x}</li>)}</ul></div> : null}
-                  {memo.data_gate_note ? <div className="v3-note" style={{ marginTop: 8 }}>{memo.data_gate_note}</div> : null}
+                  {blockingGateNote ? <div className="v3-note" style={{ marginTop: 8 }}>{blockingGateNote}</div> : null}
                 </div>
               ) : <div className="v3-empty">还没有一页纸。点击右上角生成；它不会替代六维原始证据。</div>}
             </section>

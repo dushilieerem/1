@@ -500,7 +500,6 @@ def _apply_memo_data_gate(data: dict[str, Any], version: dict[str, Any]) -> dict
     labels = {str(d.get("key")): str(d.get("title") or d.get("key")) for d in version.get("six_dim") or [] if isinstance(d, dict)}
     labels["industry"] = "行业分析"
     failed = [labels.get(key, key) for key, gate in gates.items() if gate == "fail"]
-    watched = [labels.get(key, key) for key, gate in gates.items() if gate == "watch"]
     decision = str(data.get("decision") or "")
     if decision == "proceed" and failed:
         data["decision_original"] = decision
@@ -514,11 +513,9 @@ def _apply_memo_data_gate(data: dict[str, Any], version: dict[str, Any]) -> dict
         data["data_gate_note"] = (
             f"以下维度门禁未通过（gate=fail），按不可买入处理：{'、'.join(failed)}。"
         )
-    elif watched:
-        data["data_gate_note"] = (
-            f"以下维度为 watch，已计入置信度，不阻断一页纸结论：{'、'.join(watched)}。"
-            "免费数据未覆盖的行业空间/份额、护城河持续性与治理深度仍属未验证项。"
-        )
+    else:
+        # 产品只展示会阻断当前结论的门禁；下一阶段数据不在页面列缺口。
+        data.pop("data_gate_note", None)
     return data
 
 

@@ -26,6 +26,10 @@ r4任务0cf / run1aea8ba2已结束，实际human_advice=[]；没有证据可将�
 
 ## 加载与未验
 
-前端19536是HMR，已显示新组件；18799未重载本批后端。新run_id契约与typed拒绝应在PM复核后配套加载再做真实浏览器验证；本交付没有自行重载。18804/共享服务/current未动，METHOD_FILES未改，CR102仍后置；本批不创建/更新PR或合master。原研究已经用满两次的事实不变。
+前端19536是HMR，已显示新组件；源码交付时18799未重载。PM复核授权后已完成仅18799加载；真实浏览器操作仍待PM执行。18804/共享服务/current未动，METHOD_FILES未改，CR102仍后置；本批不创建/更新PR或合master。原研究已经用满两次的事实不变。
 
 浏览器真实提交/版本切换/成功采用仍待PM明确验收；本批隔离证据不冒称旧失败建议已追回或Agent已采用。
+
+## 实际加载回执
+
+2026-11-10T08:31:34.171404+00:00（UTC）按PM明确授权，仅18799加载6c7a0b67bcde5b573c5a7621ed1df8cc1130914d；原PID3654585→249329，保留原argv/cwd/env。health HTTP200/ok=true/db=ok/schema_ok=true。18804仍PID3176526；19536未重启，正式/quant/factor与原型入口均HTTP200。前后五类在途、未知模型物理请求、own队列active/external未知/heldslot全0。GET/openapi.json实际读回ResearchAdviceBody新增可选run_id、additionalProperties=false；仅只读schema核验，没有调用建议POST。无DDL/迁移/授权变动、新研究、模型或行情。详见advice-load.json和load-advice.py。后续遵守公司新要求，不在共享svquant_dev新增迁移或临时schema验证；独立开发库/迁移编号后续由PM单独安排，本次未进行。

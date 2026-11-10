@@ -1,0 +1,13 @@
+{
+  "exit_code": 0,
+  "elapsed_seconds": 9.424355506896973,
+  "command": [
+    "backend interpreter",
+    "scripts/run_quant_isolated_tests.py",
+    "tests/test_quant_scoped_diagnostic.py",
+    "tests/test_quant_factor_source_contract.py"
+  ],
+  "synthetic_only": true,
+  "ordinary_tests_database_network_guarded": true,
+  "no_model_or_market": true
+}

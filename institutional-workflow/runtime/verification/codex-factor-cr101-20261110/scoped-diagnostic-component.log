@@ -1,0 +1,9 @@
+✔ 模型已完成规划和代码生成但检查失败时，步骤为空仍展示真实事件 (323.905099ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2622.448527

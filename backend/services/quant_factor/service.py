@@ -243,8 +243,8 @@ def _run_once(uid,org,cid,phase,executor='human',f0_run_id=None,recovery_only=Fa
                 if prior.get('submission_started'):
                     raise WorkflowError('上次计算提交的结果尚未确认；请先核对外部任务，不能重复提交')
                 if req.get('factor_code'):
-                    from .causality import diagnose_source
-                    try:source_check=diagnose_source(req['factor_code'],req['factor_name'])
+                    from .causality import diagnose_source,diagnostic_scope
+                    try:source_check=diagnose_source(req['factor_code'],req['factor_name'],scope=diagnostic_scope(plan.get('researchContract'),req))
                     except ValueError as exc:
                         implementation_check_failed=True
                         store.update(uid,org,cid,running,event('implementation_check_failed',message=str(exc)),{'source_contract':{'passed':False,'error':str(exc)}})

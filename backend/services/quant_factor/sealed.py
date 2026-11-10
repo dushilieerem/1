@@ -182,8 +182,8 @@ def _run_once(uid,org,sid):
             req=intent['request']
             if digest(req)!=intent['request_hash']:raise WorkflowError('封存请求指纹不一致')
             if req.get('factor_code'):
-                from .causality import diagnose_source
-                diagnose_source(req['factor_code'],req['factor_name'])
+                from .causality import diagnose_source,diagnostic_scope
+                diagnose_source(req['factor_code'],req['factor_name'],scope=diagnostic_scope(cand['snapshot']['plan'].get('researchContract'),req))
             from .resources import require
             block['resource_preflight']=require('factor',req)
             current_target=re_client.target(block['resource_preflight'])

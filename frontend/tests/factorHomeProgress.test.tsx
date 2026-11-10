@@ -1,0 +1,32 @@
+import './domSetup.mjs';
+import React from 'react';
+import assert from 'node:assert/strict';
+import test,{afterEach} from 'node:test';
+import {render,cleanup,waitFor} from '@testing-library/react';
+import {MemoryRouter} from 'react-router-dom';
+import {QuantFactorHomePage} from '../src/pages/institutional-workflow/QuantFactorHomePage';
+Object.defineProperty(globalThis,'sessionStorage',{value:window.sessionStorage,configurable:true});
+Object.defineProperty(globalThis,'cancelAnimationFrame',{value:window.clearTimeout,configurable:true});
+Object.defineProperty(globalThis,'requestAnimationFrame',{value:(fn:FrameRequestCallback)=>window.setTimeout(()=>fn(0),0),configurable:true});
+const originalFetch=globalThis.fetch;
+afterEach(()=>{cleanup();globalThis.fetch=originalFetch;sessionStorage.clear();});
+test('模型已完成规划和代码生成但检查失败时，步骤为空仍展示真实事件',async()=>{
+ sessionStorage.setItem('svquant_quant_session',JSON.stringify({product:'quant',token:'test',user:{id:7},org:{id:3},can_write:true,permissions:{quant:'write'}}));
+ const topic={id:'topic',project_id:'project',project_name:'研究任务',status:'active',dispatch_status:'stopped',k:0,trial_count:0,max_trials:2,max_sealed:1,primary_holding_period:1};
+ const events=['研究方案已生成','因子实现已生成，正在检查','因子实现检查未通过，尚未发起市场检验'].map((message,i)=>({at:`2026-11-10T06:53:0${i}Z`,action:'actual-progress',message}));
+ globalThis.fetch=async(input,init)=>{
+  assert.equal(init?.method||'GET','GET');const path=new URL(String(input),'http://localhost').pathname;
+  if(path.endsWith('/factor-workflow/topics'))return Response.json({topics:[topic]});
+  if(path.endsWith('/overview'))return Response.json({counts:{}});
+  if(path.endsWith('/controls'))return Response.json({paused:false});
+  if(path.endsWith('/pending-review-count'))return Response.json({count:0});
+  if(path.endsWith('/ledger'))return Response.json({topic,branches:[{id:'branch',display_label:'H1',source:'agent',hypothesis_version:1,implementation_version:1}],trials:[],k:0});
+  if(path.endsWith('/f0-runs'))return Response.json({id:'run',status:'stopped',decision:{steps:[],progress_events:events,technical_wait:{kind:'diagnostic',message:'检查未完成'}},stop_reason:'检查未完成'});
+  if(path.endsWith('/reference'))return Response.json({items:[]});
+  if(path.endsWith('/detect/projects/project'))return Response.json({project:{id:'project',name:'研究任务',config:{}}});
+  throw Error('Unexpected GET '+path);
+ };
+ const view=render(<MemoryRouter initialEntries={['/quant/factor']}><QuantFactorHomePage/></MemoryRouter>);
+ for(const e of events)await waitFor(()=>assert.ok(view.getByText(e.message)));
+ assert.equal(view.queryByText('尚无事件记录。'),null);
+});

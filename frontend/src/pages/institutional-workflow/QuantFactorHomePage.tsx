@@ -48,7 +48,7 @@ export function QuantFactorHomePage(){
  const [node,setNode]=useState<string>();
  const [inspectedBranch,setInspectedBranch]=useState<string>(),[inspectedTrial,setInspectedTrial]=useState<number>();
  const inspectedBranchRef=useRef<string|undefined>(undefined);inspectedBranchRef.current=inspectedBranch;
- const [f0,setF0]=useState<{id:string;status:string;method_compatibility?:{requires_new_run:boolean;configuration_changed?:boolean;reason:string;available_snapshot:{snapshot_hash:string;revision:string;roles:Record<string,{max_output:number|null;output_policy?:string;timeout_seconds:number;prompt_version:string}>};saved_snapshot?:{revision:string}|null};decision?:{candidate_status?:string;reason?:string;current_action?:string;current_phase?:string;technical_wait?:{kind:string;message:string};human_advice?:Array<{id:string;input:{message:string};status:string;reason:string}>;steps?:Array<{step:number;at?:string;decision:{action:string;rationale:string};usage?:{tokens_in?:number;tokens_out?:number};result:{status?:string;candidate_status?:string;reason?:string;branch_id?:string;needed_capabilities?:string[]}}>};stop_reason?:string}>();
+ const [f0,setF0]=useState<{id:string;status:string;method_compatibility?:{requires_new_run:boolean;configuration_changed?:boolean;reason:string;available_snapshot:{snapshot_hash:string;revision:string;roles:Record<string,{max_output:number|null;output_policy?:string;timeout_seconds:number;prompt_version:string}>};saved_snapshot?:{revision:string}|null};decision?:{candidate_status?:string;reason?:string;current_action?:string;current_phase?:string;technical_wait?:{kind:string;message:string};progress_events?:Array<{at:string;action:string;message:string;references?:Record<string,string>}>;human_advice?:Array<{id:string;input:{message:string};status:string;reason:string}>;steps?:Array<{step:number;at?:string;decision:{action:string;rationale:string};usage?:{tokens_in?:number;tokens_out?:number};result:{status?:string;candidate_status?:string;reason?:string;branch_id?:string;needed_capabilities?:string[]}}>};stop_reason?:string}>();
  const [adviceText,setAdviceText]=useState(''),[adviceBusy,setAdviceBusy]=useState(false),[adviceOpen,setAdviceOpen]=useState(false);
  const adviceKey=useRef<string|undefined>(undefined);
  const adviceTarget=useRef<{branch_id:string;control_epoch:string;candidate_id?:string}|undefined>(undefined);
@@ -326,6 +326,7 @@ export function QuantFactorHomePage(){
   const actionLabels:Record<string,string>={run_test:'已执行研发检验',revise:'已修订研究版本',pivot:'已探索研究分支',request_seal:'已处理独立验证',stop:'研究已停止'};
   return [
    ...(ledger?.trials||[]).map(t=>({key:'trial-'+t.trial_no,at:t.created_at||'',label:outcomeText(t)+' · '+executorText(t.executor)+(t.report_id?' · 有报告':'')})),
+   ...(f0?.decision?.progress_events||[]).map((e,i)=>({key:'progress-'+i,at:e.at,label:e.message})),
    ...(f0?.decision?.steps||[]).filter(s=>s.at).map(s=>({key:'action-'+s.step,at:s.at||'',label:s.result.status==='stopped'?'研究操作已停止':s.result.status==='skipped'?'研究操作已跳过':actionLabels[s.decision.action]||'已保存研究操作'})),
   ].sort((a,b)=>b.at.localeCompare(a.at)).slice(0,5);
  },[ledger,f0]);

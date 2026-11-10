@@ -194,9 +194,17 @@ def run(uid,org,jid):
             if prompt_error:raise WorkflowError(prompt_error+'；请精简研究说明，完整报告仍已保留。')
             out=generate(uid,org,row['project_id'],jid,{'prompt':instruction+'\n'+prompt,'context':{'frequency':'1d','preferred_factor_name':draft.get('name') or None,'custom_source_contract':VERSION},'idempotency_key':jid},research_contract=contract,proposal=(draft.get('researchProposal') or {}).get('proposal'),method_snapshot=row['input'].get('method_snapshot'))
             if out.get('status')!='ready' or out.get('validation',{}).get('status')!='passed':raise WorkflowError('代码未通过平台校验：'+'；'.join(out.get('validation',{}).get('errors',[])))
-            from .causality import diagnose_source
-            try:source_check=diagnose_source(out['factor']['factor_code'],out['factor']['factor_name'])
-            except ValueError as exc:raise WorkflowError(str(exc)) from exc
+            from .causality import diagnose_source,diagnostic_scope,FIXTURE_VERSION
+            from .f0_agent import record_progress
+            import hashlib
+            controller=row['input'].get('controller') or {}
+            progress_refs={'job_id':jid,'source_sha256':hashlib.sha256(out['factor']['factor_code'].encode()).hexdigest(),'fixture_version':FIXTURE_VERSION,'scope_hash':diagnostic_scope(contract).get('scope_hash')}
+            record_progress(uid,org,controller.get('run_id'),'implementation_generated',worker_epoch=controller.get('worker_epoch'),references=progress_refs)
+            try:source_check=diagnose_source(out['factor']['factor_code'],out['factor']['factor_name'],scope=diagnostic_scope(contract))
+            except ValueError as exc:
+                record_progress(uid,org,controller.get('run_id'),'implementation_check_failed',worker_epoch=controller.get('worker_epoch'),references=progress_refs)
+                raise WorkflowError(str(exc)) from exc
+            record_progress(uid,org,controller.get('run_id'),'implementation_checked',worker_epoch=controller.get('worker_epoch'),references=progress_refs)
             if contract:
                 from .research_contract import check_fields
                 check_fields(source_check['contract']['fields'],contract)

@@ -11,10 +11,10 @@ from .research_contract import METHOD_VERSION,fingerprint,check_fields
 PLANNER='quant.factor.research_planner_v2'
 IMPLEMENTER='quant.factor.research_implementation_v2'
 DIAGNOSER='quant.factor.evidence_diagnosis_v2'
-REVISION='bounded-factor-rd-v2-provider-default-r3'
+REVISION='bounded-factor-rd-v2-scoped-diagnostic-r4'
 LIMITS={PLANNER:None,IMPLEMENTER:None,DIAGNOSER:None}
 MODEL_TIMEOUT_SECONDS=900
-METHOD_FILES=('research_method.py','f0.py','f0_agent.py','generation.py','agent_jobs.py','development_diagnosis.py','source_identity.py','asset_context.py','source_contract.py','source_compat.py','metrics.py','policy.py','model_budget.py','research_queue.py','token_policy.py','locked_data.py','resources.py','re_client.py')
+METHOD_FILES=('research_method.py','f0.py','f0_agent.py','generation.py','agent_jobs.py','development_diagnosis.py','source_identity.py','asset_context.py','source_contract.py','source_compat.py','causality.py','causality_worker.py','metrics.py','policy.py','model_budget.py','research_queue.py','token_policy.py','locked_data.py','resources.py','re_client.py')
 
 def implementation_fingerprint(directory=None):
  base=Path(directory) if directory is not None else Path(__file__).parent

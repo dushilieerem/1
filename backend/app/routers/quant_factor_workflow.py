@@ -436,12 +436,12 @@ class SourceCheckBody(BaseModel):
 @router.post('/projects/{project_id}/source-check')
 def source_check(project_id:str,body:SourceCheckBody,ctx=Depends(require_quant_researcher)):
     from services.factor.detect_store import get_project
-    from services.quant_factor.causality import diagnose_source
+    from services.quant_factor.causality import diagnose_source,diagnostic_scope
     project=invoke(get_project,identity(ctx)[0],project_id)['project']
     try:
         from services.quant_factor.research_contract import check_project
         check_project(project,body.code,body.name)
-        return diagnose_source(body.code,body.name)
+        return diagnose_source(body.code,body.name,scope=diagnostic_scope(((project.get('config') or {}).get('researchPlan') or {}).get('researchContract')))
     except (ValueError,SyntaxError) as exc:raise HTTPException(409,str(exc)) from exc
 
 

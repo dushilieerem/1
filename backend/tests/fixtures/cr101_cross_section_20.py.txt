@@ -1,0 +1,23 @@
+def f0_factor(self):
+    N = 10
+    L = 60
+    V = 20
+    PH = self.high.shift(1).rolling(N, min_periods=N).max()
+    PL = self.low.shift(1).rolling(N, min_periods=N).min()
+    LH = self.high.shift(1).rolling(L, min_periods=L).max()
+    LL = self.low.shift(1).rolling(L, min_periods=L).min()
+    MV = self.volume.shift(1).rolling(V, min_periods=V).mean()
+    pos = (self.close - PL) / (PH - PL + 1e-12)
+    comp = (LH - LL) / (PH - PL + 1e-12)
+    vr = self.volume / (MV + 1e-12)
+    valid = pos.notna().where(comp.notna(), False).where(vr.notna(), False)
+    pos_valid = pos.where(valid)
+    comp_valid = comp.where(valid)
+    vr_valid = vr.where(valid)
+    R_pos = pos_valid.rank(axis=1, pct=True)
+    R_comp = comp_valid.rank(axis=1, pct=True)
+    R_vol = vr_valid.rank(axis=1, pct=True)
+    raw = 0.5 * R_pos + 0.3 * R_comp + 0.2 * R_vol
+    score = raw.rank(axis=1, pct=True)
+    valid_count = valid.sum(axis=1)
+    return score.where(valid_count >= 20, axis=0)

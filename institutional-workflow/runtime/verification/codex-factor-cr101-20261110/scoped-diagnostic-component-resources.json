@@ -1,0 +1,19 @@
+{
+  "exit_code": 0,
+  "stopped": null,
+  "elapsed_seconds": 2.809,
+  "peak_rss_process_tree_bytes": 342962176,
+  "node_heap_mib": 2048,
+  "single_concurrency": true,
+  "command": [
+    "/home/dev01/.nvm/versions/node/v24.20.0/bin/node",
+    "--max-old-space-size=2048",
+    "--import",
+    "tsx",
+    "--test",
+    "--test-concurrency=1",
+    "--test-timeout=15000",
+    "tests/factorHomeProgress.test.tsx"
+  ],
+  "no_real_model_market_or_service_change": true
+}

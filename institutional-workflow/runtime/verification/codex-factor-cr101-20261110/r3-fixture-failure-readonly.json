@@ -1,0 +1,132 @@
+{
+  "project_id": "0cf7441a-94e9-4690-94f6-0396f8836346",
+  "job_id": "49acf9ae-78d8-40e9-9454-000fd68ca791",
+  "run_id": "cb464f0d-581a-4fa3-b38b-faf81b3b9b4f",
+  "physical_calls": [
+    {
+      "id": "93c4222c-c8e4-491f-b4fd-54e12abd7251",
+      "call_key": "f0:cb464f0d-581a-4fa3-b38b-faf81b3b9b4f:proposal:1",
+      "task_id": "quant.factor.research_planner_v2",
+      "status": "settled",
+      "actual_tokens": 10086,
+      "request_parameters": {
+        "model": "deepseek-flash-yxd",
+        "temperature": 0.2,
+        "output_policy": "provider_default",
+        "prompt_version": "bounded-factor-rd-v2-provider-default-r3-proposal",
+        "response_format": {
+          "type": "json_object"
+        },
+        "timeout_seconds": 900,
+        "internal_retries": 0,
+        "method_snapshot_hash": "5776024aeb86111ff74ab1c013c5aaf195876d748e339d15d009b1185f2e3a0c"
+      },
+      "provider_usage": {
+        "total_tokens": 10086,
+        "prompt_tokens": 4133,
+        "completion_tokens": 5953,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 4005,
+        "completion_tokens_details": {
+          "reasoning_tokens": 4972
+        }
+      },
+      "finish_reason": "stop",
+      "reasoning_tokens": 4972
+    },
+    {
+      "id": "ca10c640-25fa-4079-9789-98a70211899c",
+      "call_key": "job:49acf9ae-78d8-40e9-9454-000fd68ca791:implementation:1",
+      "task_id": "quant.factor.research_implementation_v2",
+      "status": "settled",
+      "actual_tokens": 9861,
+      "request_parameters": {
+        "model": "deepseek-flash-yxd",
+        "temperature": 0.1,
+        "output_policy": "provider_default",
+        "prompt_version": "bounded-factor-rd-v2-provider-default-r3-implementation",
+        "response_format": {
+          "type": "json_object"
+        },
+        "timeout_seconds": 900,
+        "internal_retries": 0,
+        "method_snapshot_hash": "5776024aeb86111ff74ab1c013c5aaf195876d748e339d15d009b1185f2e3a0c"
+      },
+      "provider_usage": {
+        "total_tokens": 9861,
+        "prompt_tokens": 3573,
+        "completion_tokens": 6288,
+        "prompt_tokens_details": {
+          "cached_tokens": 896
+        },
+        "prompt_cache_hit_tokens": 896,
+        "prompt_cache_miss_tokens": 2677,
+        "completion_tokens_details": {
+          "reasoning_tokens": 5070
+        }
+      },
+      "finish_reason": "stop",
+      "reasoning_tokens": 5070,
+      "source_sha256": "c2195a7bbe3a05c141513aa702717361d6714b54632f0d83a7daceba96b3d369",
+      "source_file": "r3-generated-implementation-1.py.txt",
+      "platform_errors": [
+        "不允许的代码结构：BitAnd",
+        "不允许的代码结构：BitAnd"
+      ]
+    },
+    {
+      "id": "0477fb1d-03c5-44f2-88fc-5f908ee9445e",
+      "call_key": "job:49acf9ae-78d8-40e9-9454-000fd68ca791:implementation:2",
+      "task_id": "quant.factor.research_implementation_v2",
+      "status": "settled",
+      "actual_tokens": 6446,
+      "request_parameters": {
+        "model": "deepseek-flash-yxd",
+        "temperature": 0.1,
+        "output_policy": "provider_default",
+        "prompt_version": "bounded-factor-rd-v2-provider-default-r3-implementation",
+        "response_format": {
+          "type": "json_object"
+        },
+        "timeout_seconds": 900,
+        "internal_retries": 0,
+        "method_snapshot_hash": "5776024aeb86111ff74ab1c013c5aaf195876d748e339d15d009b1185f2e3a0c"
+      },
+      "provider_usage": {
+        "total_tokens": 6446,
+        "prompt_tokens": 4860,
+        "completion_tokens": 1586,
+        "prompt_tokens_details": {
+          "cached_tokens": 3456
+        },
+        "prompt_cache_hit_tokens": 3456,
+        "prompt_cache_miss_tokens": 1404,
+        "completion_tokens_details": {
+          "reasoning_tokens": 338
+        }
+      },
+      "finish_reason": "stop",
+      "reasoning_tokens": 338,
+      "source_sha256": "68e1de0807d430a19ae6601975db9d192d8d373e6bef5122e02240ff3be341d1",
+      "source_file": "r3-generated-implementation-2.py.txt",
+      "platform_errors": []
+    }
+  ],
+  "total_tokens": 26393,
+  "root_cause": {
+    "stage": "synthetic_causal_diagnostic",
+    "fixture_rows": 640,
+    "fixture_columns": 8,
+    "required_valid_columns_in_generated_source": 20,
+    "proof": "For every synthetic date, valid.sum(axis=1)<=8<20, so the generated output mask is false everywhere. This does not inspect a market return or imply real input coverage failure.",
+    "frozen_real_static_sample_count": 40,
+    "real_market_started": false,
+    "current_data_read": false,
+    "DataEngine_get_instance": "blocked by synthetic worker"
+  },
+  "read_only_audit": true,
+  "old_job_run_and_code_not_modified": true
+}

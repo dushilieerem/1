@@ -131,7 +131,7 @@ def _context(uid, org, topic, run_id):
                 reasons.append("查重不可用/未完成")
             summary["blocking_reasons"]=reasons
     ctx = {
-        "run_id": run_id, "decision_step":len(((run_row or {}).get("decision") or {}).get("steps") or [])+1,"topic": {k: topic.get(k) for k in (
+        "run_id": run_id, "runner_epoch":((run_row or {}).get("decision") or {}).get("runner_epoch"), "decision_step":len(((run_row or {}).get("decision") or {}).get("steps") or [])+1,"topic": {k: topic.get(k) for k in (
             "id", "project_id", "view_id", "primary_holding_period", "max_trials", "status")},
         # No trial yet still has a bar: the K=1 threshold (t*=1.96), never null.
         "k": k, "t_critical": threshold(max(k, 1)), "t_critical_k": max(k, 1),
@@ -214,6 +214,8 @@ def decide(uid, org, topic, run_id):
         from .research_method import plan
         _phase(uid,org,run_id,'planning')
         proposal,bound,out=plan(uid,org,topic['project_id'],run_id,ctx)
+        from .policy import digest
+        record_progress(uid,org,run_id,'planning_completed',references={'proposal_hash':digest(proposal.model_dump()),'budget_call_id':out.get('budget_call_id')},worker_epoch=ctx.get('runner_epoch'))
         decision=Decision(action=proposal.action,branch_id=bound['parent_branch_id'] or '',rationale=proposal.rationale,
           next_hypothesis=proposal.hypothesis,title=proposal.title,change_scope=proposal.change_scope,
           stop_reason=proposal.stop_reason,proposal=proposal.model_dump(),binding=bound)
@@ -573,3 +575,24 @@ def execute(uid, org, run_id, topic, decision, step,worker_epoch=None):
     diagnosis=None if cand.get('reused_evidence') else _diagnose(uid,org,topic,run_id,step,cand['id'])
     return {"status": "completed", "action": "run_test", "candidate_id": cand["id"],
             "candidate_status": cand["status"],"reused_evidence":bool(cand.get('reused_evidence')),"diagnosis":diagnosis}
+
+
+def record_progress(uid,org,run_id,action,*,worker_epoch=None,references=None):
+    """Persist factual milestones independently of a completed research step.
+
+    A failed execute must not erase completed planning/implementation. No model
+    reasoning or untrusted provider text is copied into this user event channel.
+    """
+    labels={'planning_completed':'研究方案已生成', 'implementation_generated':'因子实现已生成，正在检查',
+            'implementation_check_failed':'因子实现检查未通过，尚未发起市场检验',
+            'implementation_checked':'因子实现检查通过'}
+    if not run_id or action not in labels:return False
+    allowed={'job_id','budget_call_id','proposal_hash','source_sha256','fixture_version','scope_hash'}
+    refs={k:str(v)[:200] for k,v in (references or {}).items() if k in allowed and v is not None}
+    item=service.event(action,message=labels[action],references=refs)
+    with get_conn() as c:
+        row=c.execute("SELECT status,decision FROM quant_factor_f0_runs WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE",(run_id,uid,org)).fetchone()
+        if not row or row['status']!='running' or (worker_epoch is not None and (row.get('decision') or {}).get('runner_epoch')!=worker_epoch):return False
+        events=list((row.get('decision') or {}).get('progress_events') or [])
+        c.execute("UPDATE quant_factor_f0_runs SET decision=jsonb_set(decision,'{progress_events}',%s::jsonb),updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s",(service.store.encode((events+[item])[-30:]),run_id,uid,org))
+    return True

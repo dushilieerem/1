@@ -32,7 +32,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app  # noqa: E402
 from services.auth.auth_store import ensure_schema, issue_token  # noqa: E402
 from services.core.db import get_conn  # noqa: E402
-from services.institution import inst_service as svc  # noqa: E402
+from services.institution import inst_service as svc
+from services.institution import ai_service as inst_ai  # noqa: E402
 from services.institution.inst_schema import ensure_inst_business_schema  # noqa: E402
 from services.institution.inst_store import ensure_inst_schema, issue_inst_token  # noqa: E402
 
@@ -252,7 +253,7 @@ def test_dimension_chat_uses_dimension_context_and_audits(fixture, monkeypatch) 
         seen["payload"] = payload
         return {"answer": "护城河的关键反证是毛利率不可持续。", "engine": "agent"}
 
-    monkeypatch.setattr(svc, "_ai_task", fake_task)
+    monkeypatch.setattr(inst_ai, "_ai_task", fake_task)
     out = _ok(
         client.post(
             f"/api/inst/cases/{case_id}/dimensions/moat/chat",
@@ -303,7 +304,7 @@ def test_research_memo_has_metrics_and_rule_fallback(fixture, monkeypatch) -> No
     case_id, _ = _case_with_research(client, fixture)
 
     monkeypatch.setattr(
-        svc,
+        inst_ai,
         "_ai_task",
         lambda task_id, payload, system: {
             "summary": "AI 摘要",
@@ -321,7 +322,7 @@ def test_research_memo_has_metrics_and_rule_fallback(fixture, monkeypatch) -> No
     def unavailable(task_id, payload, system):
         raise svc.AiUnavailable("AI 未配置")
 
-    monkeypatch.setattr(svc, "_ai_task", unavailable)
+    monkeypatch.setattr(inst_ai, "_ai_task", unavailable)
     fallback = _ok(
         client.post(
             f"/api/inst/cases/{case_id}/ai/memo",

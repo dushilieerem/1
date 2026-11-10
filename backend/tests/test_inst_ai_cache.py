@@ -34,6 +34,7 @@ from ai.runtime import agent_store  # noqa: E402
 from services.auth.auth_store import ensure_schema  # noqa: E402
 from services.core.db import get_conn  # noqa: E402
 from services.institution import inst_service as svc  # noqa: E402
+from services.institution import ai_service as inst_ai
 from services.institution.inst_schema import ensure_inst_business_schema  # noqa: E402
 from services.institution.inst_store import ensure_inst_schema  # noqa: E402
 
@@ -135,7 +136,7 @@ def test_memo_cache_hit_and_refresh(monkeypatch) -> None:
         calls["systems"].append(system)
         return {"summary": "缓存摘要", "engine": "agent"}
 
-    monkeypatch.setattr(svc, "_ai_task", fake_ai)
+    monkeypatch.setattr(inst_ai, "_ai_task", fake_ai)
     first = svc.ai_research_memo(org_id, int(case["id"]))
     second = svc.ai_research_memo(org_id, int(case["id"]))
     assert first["memo"]["summary"] == "缓存摘要"
@@ -191,7 +192,7 @@ def test_memo_survives_prompt_change_and_supports_peek(monkeypatch) -> None:
         calls["n"] += 1
         return {"summary": f"第 {calls['n']} 次结论", "engine": "agent"}
 
-    monkeypatch.setattr(svc, "_ai_task", fake_ai)
+    monkeypatch.setattr(inst_ai, "_ai_task", fake_ai)
     first = svc.ai_research_memo(org_id, case_id)
     assert first["cached"] is False
     assert calls["n"] == 1
@@ -247,7 +248,7 @@ def test_rule_memo_is_persisted(monkeypatch) -> None:
     def unavailable(*_args, **_kwargs):
         raise svc.AiUnavailable("AI 未配置")
 
-    monkeypatch.setattr(svc, "_ai_task", unavailable)
+    monkeypatch.setattr(inst_ai, "_ai_task", unavailable)
     first = svc.ai_research_memo(org_id, case_id)
     assert first["memo"]["engine"] == "rule"
     assert first["cached"] is False

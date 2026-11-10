@@ -37,12 +37,12 @@ services/institution/
 |---|---|---|
 | ① `common.py` + `stages.py` | ✅ 已完成 | 抽出 81 + 184 行纯工具与状态机，`inst_service` 保留同名导入 |
 | ② `guards.py` + `company_service.py` | ✅ 已完成 | 审计/成员/角色守卫 66 行；公司池（ensure_and_seed、seed/sync_company_universe、list/update/search、`_mapped_industry`）304 行。`get_company` 依赖研究域的 `list_cases`，留到 research 拆分后再迁 |
-| ③ `research_service.py` | ⬜ | 立项、`_build_research`、六维生成、定稿门禁、版本锁定（约 1,500 行） |
-| ④ `proposal_service.py` | ⬜ | 议案与三关审批（约 1,200 行） |
-| ⑤ `execution_service.py` | ⬜ | 授权、执行、对账（约 900 行） |
-| ⑥ `portfolio_service.py` | ⬜ | 持仓、论点、退出（约 700 行） |
-| ⑦ `ai_service.py` | ⬜ | AI 备忘/对话/角色（约 1,000 行） |
-| ⑧ 删除 `inst_service` 中的旧定义 | ⬜ | 只在确认没有外部引用后做 |
+| ③ `research_service.py` | ✅ 已完成 | 立项、研究生成、六维、定稿门禁、版本锁定、公司详情（2,589 行） |
+| ④ `debate_service.py` / `proposal_service.py` / `exit_service.py` | ✅ 已完成 | 辩论 288 / 议案与三关审批 1,634 / 退出案 283 行 |
+| ⑤ `execution_service.py` | ✅ 已完成 | 授权、预检、成交、对账、异常（710 行） |
+| ⑥ `portfolio_service.py` | ✅ 已完成 | 持仓、监控、论点、流水线与结果页（769 行） |
+| ⑦ `ai_service.py` | ✅ 已完成 | AI 备忘/对话/角色与 Agent 提示词（1,060 行） |
+| ⑧ 收敛为门面 | ✅ 已完成 | `inst_service.py` 277 行，只保留 re-export；路由/测试零改动 |
 
 ## 验证方式
 

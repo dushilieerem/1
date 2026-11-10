@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from services.institution import inst_service as svc  # noqa: E402
+from services.institution import ai_service as inst_ai
 
 
 def test_catalog_has_six_roles() -> None:
@@ -27,9 +28,9 @@ def test_catalog_has_six_roles() -> None:
 
 
 def test_new_role_uses_task_and_returns_memo(monkeypatch) -> None:
-    monkeypatch.setattr(svc, "_role_case_payload", lambda org_id, case_id: {"company": {"symbol": "600519.SH"}})
+    monkeypatch.setattr(inst_ai, "_role_case_payload", lambda org_id, case_id: {"company": {"symbol": "600519.SH"}})
     monkeypatch.setattr(
-        svc,
+        inst_ai,
         "_ai_task",
         lambda task_id, payload, system: {"summary": f"{task_id} ok", "evidence": [], "risks": [], "open_questions": []},
     )
@@ -40,11 +41,11 @@ def test_new_role_uses_task_and_returns_memo(monkeypatch) -> None:
 
 
 def test_reuses_existing_tasks(monkeypatch) -> None:
-    monkeypatch.setattr(svc, "ai_research_memo", lambda org_id, case_id: {"memo": {"summary": "r"}})
+    monkeypatch.setattr(inst_ai, "ai_research_memo", lambda org_id, case_id: {"memo": {"summary": "r"}})
     monkeypatch.setattr(
-        svc, "start_debate", lambda org_id, case_id, actor_member_id=None, use_ai=True: {"ok": True}
+        inst_ai, "start_debate", lambda org_id, case_id, actor_member_id=None, use_ai=True: {"ok": True}
     )
-    monkeypatch.setattr(svc, "ai_risk_review", lambda org_id, proposal_id: {"memo": {"summary": "k"}})
+    monkeypatch.setattr(inst_ai, "ai_risk_review", lambda org_id, proposal_id: {"memo": {"summary": "k"}})
     assert svc.ai_role_run(1, "research", case_id=7)["result"]["memo"]["summary"] == "r"
     assert svc.ai_role_run(1, "debate", case_id=7)["result"]["ok"] is True
     assert svc.ai_role_run(1, "risk", proposal_id=9)["result"]["memo"]["summary"] == "k"

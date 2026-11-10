@@ -93,6 +93,7 @@ type Memo = {
   decision_original?: string | null;
   decision_note?: string | null;
   chief_fields_fallback?: boolean;
+  agent_trace?: Array<{ tool?: string; args?: Record<string, unknown>; ok?: boolean; summary?: string }>;
   legacy?: boolean;
   overall_score?: number | null;
   six_dim_scores?: Array<{ key: string; score: number; confidence?: number; note?: string }>;
@@ -577,6 +578,11 @@ export function InstV3ResearchPage() {
                     <span className="v3-memo-score"><span>六维总分</span><b>{overall != null ? overall.toFixed(1) : "未评分"}</b>{overall != null ? <small>/10</small> : null}<em>六维平均</em></span>
                   </div>
                   <p style={{ marginTop: 8, lineHeight: 1.75, color: "#2b2533", fontWeight: 600 }}>{memo.chief_call || memo.summary || "—"}</p>
+                  {memo.agent_trace?.length ? (
+                    <div className="v3-note" style={{ marginTop: 8 }}>
+                      Agent 查证：{memo.agent_trace.map((x, i) => `${x.tool || "tool"}${x.summary ? `（${x.summary}）` : ""}`).join(" · ")}
+                    </div>
+                  ) : null}
                   {memo.chief_reasons?.length ? (
                     <div style={{ marginTop: 10 }}>
                       <div className="v3-eyebrow">三条理由</div>

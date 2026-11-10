@@ -1087,6 +1087,17 @@ INDUSTRY_PROMPT += "\n\n" + DATA_GATE_NOTE + "\n本维没有行业规模/CR/份�
 
 RESEARCH_MEMO_PROMPT += "\n\n# 平台数据闸门（免费数据优先轻量版）\n- 任一维 gate=fail：decision 最高 watch；governance fail 时不得给买入或 proceed。\n- gate=watch 只降低 chief_confidence，不自动阻断 decision=proceed。\n- 行业 TAM/CR/份额、护城河份额/价格、治理深度、财务附注未接入时，必须写“未验证”，不得编造；但不得因此拒绝分析已有的财务/估值数据。\n- 必须把 data_gates 与数据缺口写清楚，并在 data_gate_note 说明哪些结论只适用于免费数据筛查。"
 
+CHIEF_AGENT_PROMPT = RESEARCH_MEMO_PROMPT + """
+
+# 工具使用（Chief Agent）
+- 你可以调用只读工具：专业输出、数据完备性、财务、估值、证据检索、文档抽取、同业摘要。
+- 不要一次性把所有工具都调用；先看数据画像和专业输出，再决定查什么、信什么。
+- 专业 Agent 输出是材料，不是投票项；可以忽略不相关或低置信的输出，但必须说明为什么。
+- 工具返回失败时如实写入不确定性，不得编造；没有 evidence ID 的理由只能作为线索。
+- 最终结论必须由你给出，不得写“综合来看/各有优劣”，不得用平均分或固定阈值代替判断。
+- 最终只输出一页纸 JSON（与系统输出契约一致），不要输出工具调用解释。
+"""
+
 
 def _agent(
     task_id: str,
@@ -1117,6 +1128,7 @@ INSTITUTION_AGENTS: list[dict[str, Any]] = [
     _agent("inst.dim.governance", "CEO 与治理", "研究", "资本配置、承诺兑现与治理结构（A08）", auto_run=True),
     _agent("inst.dim.valuation", "估值与价格", "研究", "隐含预期、安全边际与证伪条件（A09）", auto_run=True),
     _agent("inst.research_memo", "AI 一页纸", "研究", "CIO 合成：矛盾裁决、逻辑链、决策与价格带（A10）", auto_run=True),
+    _agent("inst.chief.agent", "研究经理 Agent", "研究", "带只读工具的研究判断 Agent：自己查数据、证据和专业输出后给结论（A10）", auto_run=False),
     _agent("inst.debate", "投资辩论", "辩论", "多空论点、主持与裁决，引用证据 id（A11/A12/A15/A16）", auto_run=True),
     _agent("inst.dim.chat", "单维追问", "研究", "围绕单个维度回答追问", auto_run=False),
     _agent("inst.risk_review", "独立风控", "审批", "六项硬检查、一票否决与执行条件（A19）", auto_run=True),
@@ -1134,6 +1146,7 @@ def default_prompt(task_id: str) -> str:
     return {
         "inst.industry": INDUSTRY_PROMPT,
         "inst.research_memo": RESEARCH_MEMO_PROMPT,
+        "inst.chief.agent": CHIEF_AGENT_PROMPT,
         "inst.debate": DEBATE_PROMPT,
         "inst.risk_review": RISK_REVIEW_PROMPT,
         "inst.chairman_memo": CHAIRMAN_MEMO_PROMPT,

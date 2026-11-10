@@ -746,6 +746,18 @@ RESEARCH_MEMO_TASK = register(
     )
 )
 
+CHIEF_AGENT_TASK = register(
+    TaskSpec(
+        task_id="inst.chief.agent",
+        description="机构端 Chief Agent：带只读工具判断是否值得继续研究",
+        temperature=0.3,
+        max_tokens=16000,
+        timeout_sec=360,
+        executors=("local",),
+        allow_tools=True,
+    )
+)
+
 DIMENSION_CHAT_TASK = register(
     TaskSpec(
         task_id="inst.dim.chat",

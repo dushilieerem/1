@@ -31,6 +31,7 @@ from services.institution.prompts import (
     CHAIRMAN_MEMO_PROMPT,
     PARTNER_MEMO_PROMPT,
     CHAT_PROMPT,
+    CHIEF_AGENT_PROMPT,
     INDUSTRY_PROMPT,
     DEBATE_PROMPT,
     DIMENSION_PROMPTS as _DIMENSION_PROMPTS,
@@ -43,6 +44,7 @@ from services.institution.report import render_research_report, report_filename
 from services.marketdata import store as md
 
 from . import repo
+from .chief_agent import run_chief_agent
 from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi
 from .guards import POLICY_VERSION, _audit, _member, _require_role, _uid
 from .stages import _record_gate, _record_transition, _set_case_stage, _stage_def, _stage_payload
@@ -575,7 +577,11 @@ def ai_research_memo(
             for e in (case.get("evidence") or [])
         ],
     }
-    prompt, prompt_version = get_effective_prompt("inst.research_memo", RESEARCH_MEMO_PROMPT)
+    use_agent = str(os.getenv("INST_AGENT_MODE", "bounded")).strip().lower() not in {"legacy", "off", "0", "false"}
+    if use_agent:
+        prompt, prompt_version = get_effective_prompt("inst.chief.agent", CHIEF_AGENT_PROMPT)
+    else:
+        prompt, prompt_version = get_effective_prompt("inst.research_memo", RESEARCH_MEMO_PROMPT)
     scope_key = f"case:{case_id}:version:{version.get('id')}"
     cache_key = agent_input_hash(
         {"case_id": case_id, "version_id": version.get("id"), "content_hash": version.get("content_hash"), "payload": payload},
@@ -625,7 +631,10 @@ def ai_research_memo(
             "missing": True,
         }
     try:
-        data = _ai_task("inst.research_memo", payload, prompt)
+        data = run_chief_agent(case, version, payload, prompt) if use_agent else None
+        if data is None:
+            legacy_prompt, _ = get_effective_prompt("inst.research_memo", RESEARCH_MEMO_PROMPT)
+            data = _ai_task("inst.research_memo", payload, legacy_prompt)
         data.setdefault("engine", "agent")
         data = _ensure_chief_memo_fields(data, version, case)
     except AiUnavailable:

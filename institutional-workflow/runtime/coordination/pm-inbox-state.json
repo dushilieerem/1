@@ -1,0 +1,511 @@
+{
+  "version": 1,
+  "created_at": "2026-11-09T06:20:45.264050+00:00",
+  "baseline_cutoff_utc": "2026-11-09T06:12:12+00:00",
+  "files": {
+    "responses/CX-20261109-080.md": {
+      "sha256": "591264fd65251d341884d33b172b67003500aa7add9c4e6095d68d9820399eb1",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261106-069.md": {
+      "sha256": "2b3edcb02abbfa2814212bdda4042754c871c018cc58589975210ce6302380e3",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-226.md": {
+      "sha256": "59bf762900e7244f128a67b1d5b24aa24d3154500d54fd93b10498fa703a4266",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261106-063.md": {
+      "sha256": "b0e9a7c7e0e4bc93a5b5713ef7f34b8332af86dd1300103bd11924ad7b6758d4",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-202.md": {
+      "sha256": "31ef2a5dcea0433158675a059be5f77fb9008274f6f0038838f9a645860c2593",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-606.md": {
+      "sha256": "9229b2e9168f52dfc1b48572e03ecb05cfe93aac5f6e82c5c790eb3593019da7",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-208.md": {
+      "sha256": "d777bd7b0d7e6d238d88c503ac7a64b4460ff14ea07ecb709c7fe38031a05f08",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261106-067.md": {
+      "sha256": "7e011b4fa1dbd64fd9c6c78169a85c08daefd7abd38b8dc580a92c74f14fbf71",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-603.md": {
+      "sha256": "b6cee2ffeb9c69f99c2d92c773cfa0cfd759f0c814e378a4f7ea305d57c170d7",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261109-076.md": {
+      "sha256": "9938f8ec7c8f98bdd3afbc3791614e3022c42d412923b61a868475537a17ee32",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261105-227.md": {
+      "sha256": "8f0964233781c35b38793cf84c638e468debf247f1e43aadbf0ea0aa5cca1f7c",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261105-230.md": {
+      "sha256": "ed4722fce194cea58be1a55c473fddb8c661aee4ad2a84ca459d28709af7a76e",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261106-066.md": {
+      "sha256": "f3f812b23345f32244fe7b35f9fdef34aa7eeed59d5c161f5207e9140d84bc48",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261106-072.md": {
+      "sha256": "530cf313d15f514458ac0763697c844ec1629b68209745f116afb46b72fa2007",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-602.md": {
+      "sha256": "6b8f0325dc08bb84a0b4f0a8606191d2aa6b24165c79fba252d28d7253eba270",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-009.md": {
+      "sha256": "7ccf0c449fdb840b12c8639ff7b0a4aecb9eb5b101e9ef09f083c65bae203e14",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-214.md": {
+      "sha256": "d74cba32d89c6f94fd1e93bba72b1922ab8bb172617eb34a2da378f64ca21528",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-203.md": {
+      "sha256": "d9016bd926d1f85c44299cf56a40aaf4d8f53ef145cfc4b0a5a5033042064e03",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-007.md": {
+      "sha256": "0fcc24d355a301c482f62e665817a927dc7b20754d9f5752c9b66e69b115cbae",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-207.md": {
+      "sha256": "a3868258e6b973c77e8059803bedaa23cc50b0d0cf59ac5bcafadf1e765a193e",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-213.md": {
+      "sha256": "f3324c2abf3e1ecfeb4d04a1bf32e2106a9fdc26e843d95a129fcca8b3efac8b",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-212.md": {
+      "sha256": "6ffbab6e25aad0745ad96035af13673bb890c1bc77f3c9c0cddade4ab9b55e5c",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-223.md": {
+      "sha256": "e872800272da30064c55d8613472c9993f7d4b58a0e56065702f5cc63b479359",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-008.md": {
+      "sha256": "c5eeb57ed815e178ebe13807e829c305fd8d83b0d2532baeda8b66330ae4e364",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-005.md": {
+      "sha256": "6af8f12c5c071a349a586fd6a3f53b146d927565c95f84aab5a2e1c63ca330e8",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-003.md": {
+      "sha256": "c04fd36553a903256194df0af870e888430720048a66ac940f0c6055aa45d476",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-222.md": {
+      "sha256": "1c7c9b3d605f55461e2e16549936d0df470f35e11e869e96b2941755055074ae",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261106-064.md": {
+      "sha256": "2cdee494961b9b095a91fecc7b9e1f2db308cad539795219370f8746a2067d34",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-010.md": {
+      "sha256": "9b485b8c0f82b01d911c745339b036646569f95e51e5ce69d08c7888c1c751ad",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-211.md": {
+      "sha256": "00152d4b3dda55a51f87faa96c1c5c89df0da0bd4d78f88f8df52ad59de884c5",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261106-071.md": {
+      "sha256": "17630fbb7159bdd9022d36b872c87654076b931cbf3a66677e72cc619ef7706b",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-006.md": {
+      "sha256": "0ceb8739764bdd7c74b3b472bb53d1cb6692ee4ce5b5e451acb3bb8dace69cb1",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-216.md": {
+      "sha256": "2ade48c4160040063ca173d51f5181191de0442babc63f33464a042e4be96989",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-204.md": {
+      "sha256": "d51efabc167003b99d7d2f3bf6568978815c80929b2311f58675fe1e7ba3da90",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261109-086.md": {
+      "sha256": "e4e7899f7f050d890c64cfb902d33e636bfce3ee41a2662d83cdcfdf5492d6c2",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261109-081.md": {
+      "sha256": "fd48ac0d52f002430b0040f2216028d26c73c47ffbc24772422e32866519eed9",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-601.md": {
+      "sha256": "5a0989147c4133cd0d7d28d227ebd7aba77291df3480d0b569265fdb7ba59f84",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-225.md": {
+      "sha256": "32fdb9ec9aa1470d1e427cd2b88a6358a3b55dcb68b360f9857d2ca670201720",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-205.md": {
+      "sha256": "01b1e81ad8d60a31de221bfcae294cb0b1bf874207b15c17d98ae5f5e716b70c",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261105-228.md": {
+      "sha256": "3d3446c7a7f35ded077f0b873080b4ea0fbe63d8e35aee243c497d8042c845b0",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-002.md": {
+      "sha256": "9e6e5fb85f03908307dc200f78a2754c67570c8e3fe92e693df8ee8e110f1bc3",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-604.md": {
+      "sha256": "0ed1047ab0e6926669f44a66bc5d7d2a570902f9fa662c1d9a37f619b506fb9e",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-004.md": {
+      "sha256": "218a7ba54a6cd1d727a51ca7f494d6aeca6845c0d4a2ff62a75c84cf085cc491",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261109-077.md": {
+      "sha256": "a31823770dc725cc0be85b5738723d637eb7f59935ac5b8f8d770d4084824944",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261109-078.md": {
+      "sha256": "7fd3064e5dae5f993b3a2f870ae4259df3b1e51291e344f8dc1295d72fab92bc",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-221.md": {
+      "sha256": "75e11aa20385a3d86b4c788a787e5097296e6a86c5e2b93062160002570048b9",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-215.md": {
+      "sha256": "bb593e205c1c6c97a563f01bd4d8bc5f3c768b068915fba39482fa834f55219c",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-607.md": {
+      "sha256": "c063a3bd2823712a59ce48e49da1701d2f534fceba9200d2146303e725648114",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-209.md": {
+      "sha256": "9d77c578658b88d79f5fa839bbfda33bcc3cd15891b2a5d2f01768047ebb35f6",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261106-070.md": {
+      "sha256": "ad598840df8ade8999d251e999d3f560917de7ef9fddacfc504e30ffd1022b0f",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-605.md": {
+      "sha256": "95ce8b026ddd4e487152d0f7cc5f743f3a6e73e8af71ab424da2fcc042c5b9ba",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-201.md": {
+      "sha256": "007a7a681dbbf7bc42de15e431927c9ef88e9fcdcd463e2b4e4e0ebf3949fef7",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-001.md": {
+      "sha256": "15c5136e1eb38405519d9fecd4abcf355eaf119ec2a71c9c7ea27287775de358",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261109-075.md": {
+      "sha256": "3b7eddd5feddd11011a0ae9ce6012ab5c591f5ab1f965420bd28b8ca68970861",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-224.md": {
+      "sha256": "60b2b726d07d644207f6ddcdf4662946322b034e9da10fe1a448025dfb7ed762",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261109-079.md": {
+      "sha256": "ca9a11d1d89b6345e1c60b23a21d3dc53963523d5a979a2eb4cbda3ad0c04ef7",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261105-229.md": {
+      "sha256": "9f3dd84c1e470c070df937dfccf01e2cb55a8c48b11fdb463631d71edf1b0cf0",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-210.md": {
+      "sha256": "b17dc01dd91134353ae82dd613175d1522c98e0fa5a6bd3737264f96ed605ba1",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-217.md": {
+      "sha256": "0c687dd9935ba4003d00f59fc0731640b04f197c6162e05165da6fecadb9113d",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261109-083.md": {
+      "sha256": "5382dc2d3bf8bff5eb0e7866af1c9f309d586f580fad6d2b5674e3ee8078b4b6",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-608.md": {
+      "sha256": "493ee8867299d37ca6db70d4f879fa34184b691ba638516a1adb91c7bf94783b",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-206.md": {
+      "sha256": "8c895afa440c956dced30f2a71671cb87c322d5ac78f95c79c0f5f6db5c6d14b",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261104-218.md": {
+      "sha256": "284a5da07f1d13da5a5e4e2e3252c76676f92a630dcbd077ac150ec47271531d",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261109-074.md": {
+      "sha256": "322c16224b757aa4c2a5ca044ad9ba93ae5afa391982778bff01bd784f037c34",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261106-073.md": {
+      "sha256": "6f108f56ddde2658422b33c2eb32f0eb0d0df4ddaf3378cdb3a27c93ce720255",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261109-082.md": {
+      "sha256": "e8aef8f13b291e294cbdb2bc58285d12ebbe0d2ba08a6cade35d5d2ded988963",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "DEV-V5-059-receipt.md": {
+      "sha256": "1f7bde0136e231e66efa6638621dde3097b85839d4b6910ac002bc50207331ac",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "DEV-V5-062-pr-description.md": {
+      "sha256": "4c0532d1539c9301721836bb041e282a8c534e43822014a209775504d7907e4a",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "DEV-V5-061-status.md": {
+      "sha256": "9f2c2fe60e7ecfa6b79102c0ec0269b2ae3e87d9ee0777358c8fb2ba39752511",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "DEV-V5-056-status.md": {
+      "sha256": "d03415226a9444f945874eba46bc7ff72e12e23e1ac049eed3a8967b7b278941",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "DEV-V5-063-pr-description.md": {
+      "sha256": "45a56d0c01690e42d89bf26f150e8375e843befd5b83c7d72fe84ead6d07c1f6",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "DEV-V5-060-merge-request.md": {
+      "sha256": "b41573a7c290aa97bb630de510fd3fd28bf76d5d6e3245b5c9ead63629450e9b",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "DEV-V5-058-request.md": {
+      "sha256": "3ac6a8a1d78eb2430c5b62a2ca9612dbdbeed48d69c3a5a5546f2231193fd0fd",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "DEV-V5-056-progress.md": {
+      "sha256": "10d00687d15001ff7806ca85e4ceca7a6dd7a18df93902bcd665253e8e440eaf",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "DEV-V5-074-ac-matrix.md": {
+      "sha256": "23b95c34f31788f41e4527636f6ca0a633d6eb0ec8677474c25557d8ead97f84",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "DEV-V5-058-receipt.md": {
+      "sha256": "f9745076e3a24d2564caef8d2a067f936d17ffa9631d77139cfb4dea9bc412a6",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "DEV-V5-060-pr-description.md": {
+      "sha256": "cd749182d5895cd1453a663cd967cf22bb2da7461b288312794cf170f01ed0bb",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "DEV-V5-057-receipt.md": {
+      "sha256": "98572c38209f106e6dbbb06f72820cf413322a9af0d37f763970506b965b748f",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "DEV-V5-057-screen-compare.md": {
+      "sha256": "4c2379acbb274564bf48eeee3cc74acc720174fc5a174782d696fa7f43d1393b",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "DEV-V5-061-pr-description.md": {
+      "sha256": "89abd623bceb18a9e2d98117dad6a45135e4c7c13cef4a8f6245d4ab1ed05bae",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "DEV-V5-060-receipt.md": {
+      "sha256": "5338b87924bfd3b671b54e7387aa6e6ba2c787d5f4c054e35cdeff841979aed1",
+      "status": "baseline_before_monitoring",
+      "note": "历史基线不等于需求完成；遗留项见接续记录"
+    },
+    "responses/CX-20261109-085.md": {
+      "sha256": "f6d07829c3821154f5fb7be2d237559d37d3d922b275f5aa6fab0d9dc6c43101",
+      "status": "processed",
+      "processed_at": "2026-11-09T06:23:05.025694+00:00",
+      "note": "已读T14三年范围/未测峰值；088限定后续诊断最长3个月并保留历史，非内存根因结论",
+      "reply_id": "CX-20261109-088"
+    },
+    "responses/CX-20261109-087.md": {
+      "sha256": "2293b1dd4b8a7c98b78d7756219e9012fe00726dd33d701d5989fda9794532cf",
+      "status": "processed",
+      "processed_at": "2026-11-09T06:23:05.117232+00:00",
+      "note": "已读5ce9cc1开发自报；故障测试/四环节待验；已复核tags全库同值并提交规格v1.2，088答复",
+      "reply_id": "CX-20261109-088"
+    },
+    "responses/CX-20261109-088.md": {
+      "sha256": "8f1d0d47726a469795f572915afe003b851f09ff11166b17145ec8035a3a4cb4",
+      "status": "processed",
+      "processed_at": "2026-11-09T06:24:39.785405+00:00",
+      "note": "开发已采用通信约定与规格v1.2；无新问题，不回复签收形成循环；产品余项仍待后续验收",
+      "reply_id": null
+    },
+    "responses/CX-20261109-089.md": {
+      "sha256": "98afca2e4465f3e89eb81e602d93a14735028690de6700cd071837860bacc7a3",
+      "status": "processed",
+      "processed_at": "2026-11-09T06:48:52.284632+00:00",
+      "note": "已核查02ffd90/6d995a3与CR083v1.2。属开发自测交付，未通过PM验收：主导航仍5项、阶段按计数猜测且待审批错标验证、全局pending冒充任务数、F0重试换幂等键、部分测试控制逻辑未用于真实页面。090已实际投递要求修正并补证据；未做真实回测。",
+      "reply_id": "CX-20261109-090"
+    },
+    "responses/CX-20261109-601.md": {
+      "sha256": "3104df7859b5ff14d2ed7d0a631f9d83ae785c446c9072e3d34d73d565515874",
+      "status": "processed",
+      "processed_at": "2026-11-09T06:53:42.236727+00:00",
+      "note": "已读14:53补充的数据业务实质回复；请求601属于另一聊天独立数据专项，明确不改变当前产品任务。仅登记本PM收件已读，不代表专项问题已解决或验收，不在本轮新增分钟/竞价/热榜/基本面采集或代其指定口径。候选399303未集成与待定义事项保留原记录，由该专项继续处理；本聊天CR083/090范围不变。",
+      "reply_id": null
+    },
+    "responses/CX-20261109-602.md": {
+      "sha256": "1378e8e02629c95cd65c4874af084e9b66a9010b1f572ead9cac753cd886237f",
+      "status": "processed",
+      "processed_at": "2026-11-09T07:12:24.443420+00:00",
+      "note": "已读独立数据专项602转发回执；含数据业务自报的热榜/5m文档更正与RE竞价口径。未在本产品聊天复核底层样本，不能据此宣称当前发布视图已有这些数据或改变CR083研发范围；不替另一专项接管采集、定义新需求或重复联系。未完成事项保留原文，091产品交付尚待回执。",
+      "reply_id": null
+    },
+    "responses/CX-20261109-090.md": {
+      "sha256": "f402c6cf93fece3924911d9ed74df5bfff60203ff726e6878debb2024c75b394",
+      "status": "processed",
+      "processed_at": "2026-11-09T07:18:55.808901+00:00",
+      "note": "已读实际交付自报cad0f27/966ee06，未判PM通过；剩余草稿页面测试/资产登记/视觉等交由新Codex开发者继续，原Claude已按092停止代码写入。",
+      "reply_id": null
+    },
+    "responses/CX-20261109-091.md": {
+      "sha256": "4796c8b4b969c4b8f78b2d2a202780df4668f59176928d44622265815e9b9a9a",
+      "status": "processed",
+      "processed_at": "2026-11-09T07:18:55.902914+00:00",
+      "note": "已读R2采用回执与截图路径；视觉仍待PM独立检查，未批准删除范围与预算；自动截图基准仍待新开发者实施。",
+      "reply_id": null
+    },
+    "responses/CX-20261109-092.md": {
+      "sha256": "382a583edd83da779481dc677f75edeec27dbe08c5ccf505286315797d7bd67a",
+      "status": "processed",
+      "processed_at": "2026-11-09T07:18:55.996963+00:00",
+      "note": "已收到明确停止产品写入交接，Codex开发子智能体已接续并核HEAD/状态，PM已释放本批写入；svquant自动化已删除，张新迪仅按需公司联络，不再派发产品实现。",
+      "reply_id": null
+    },
+    "responses/CX-20261109-093.md": {
+      "sha256": "18f1fb11b6d16c7c5d60254db91b4c605a306a5c41b887302af007b83066b137",
+      "status": "processed",
+      "processed_at": "2026-11-09T07:45:18.759229+00:00",
+      "note": "已核对原会话原生改名、稳定sessionId和093投递回执。仅联络身份/职责验证完成，不表示产品功能验收；600段数据专项未处理。",
+      "reply_id": null
+    },
+    "responses/CX-20261109-096.md": {
+      "sha256": "78bc9b1b5ff78944ce120c5c2e5a92c1f5a588c9587d02574bd8741fdc27668a",
+      "status": "processed",
+      "processed_at": "2026-11-10T08:16:30.279601+00:00",
+      "note": "已读SVQuant业务五项集成要求与未来PR基线，转Codex开发列待集成；003已实际原生投递说明用户先稳定再PR及0036–0041已应用记录协调。无删除/回滚/rebase授权，未把要求记为已完成。",
+      "reply_id": "CX-20261110-003"
+    },
+    "responses/CX-20261109-098.md": {
+      "sha256": "be9ba3b69f3183e77eca6e1d6e1b668169d2081ab375352a5c57ca820a712055",
+      "status": "processed",
+      "processed_at": "2026-11-10T08:16:30.279601+00:00",
+      "note": "已核实际转发48374028，仍等业务处理意见；未删示例行或改共享库。",
+      "reply_id": null
+    },
+    "responses/CX-20261110-001.md": {
+      "sha256": "d3dca4672a45f5b6bad33bc486b323a0908b357f8cbc06f0aa48b64f1ea7c9d2",
+      "status": "processed",
+      "processed_at": "2026-11-10T08:16:30.279601+00:00",
+      "note": "已核原生转发c6dd7ef1给SVQuant业务；不同于先前仅投到联络员，当前仍未有001实质回复。",
+      "reply_id": null
+    },
+    "responses/CX-20261110-002.md": {
+      "sha256": "ab2fdbe9fef8d624297130f68fb7dc77b028059c8993a3d18920521d47e6fc9c",
+      "status": "processed",
+      "processed_at": "2026-11-10T08:16:30.279601+00:00",
+      "note": "已核原生转发b514e49c给SVQuant业务；003增量澄清迁移与用户开发节奏。002实质回复仍待，不重复发送。",
+      "reply_id": "CX-20261110-003"
+    }
+  },
+  "updated_at": "2026-11-10T08:16:30.279601+00:00"
+}

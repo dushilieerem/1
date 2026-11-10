@@ -1,0 +1,23 @@
+{
+  "request_id": "CX-20261110-003",
+  "target": "张新迪-机构侧量化平台开发",
+  "target_session_id": "afcf6e55-988c-4724-9f3c-078b3f81708b",
+  "state": "not_confirmed_no_automatic_retry",
+  "started_at": "2026-11-10T08:09:49.398895+00:00",
+  "process_id": 4177232,
+  "finished_at": "2026-11-10T08:09:56.175955+00:00",
+  "native_message_id": null,
+  "process_exit": 0,
+  "timed_out": false,
+  "send_calls": 1,
+  "reported_cost_usd": 0.039654,
+  "reply_file_exists": false,
+  "manual_verification": {
+    "at_utc": "2026-11-10T08:16:30.279601+00:00",
+    "state": "queued_reply_not_verified",
+    "native_message_id": "66f92bcc-6cf6-4039-8c23-1936c64f5ec1",
+    "recipient": "张新迪-机构侧量化平台开发 [62753c]",
+    "reason": "Native ListAgents disambiguation suffix is peer identity, not the configured sessionId prefix. Script had independently validated unique full name/cwd/sessionId before sending. Actual SendMessage tool result success=true; parser did not accept this suffix. No resend.",
+    "received_reply": false
+  }
+}

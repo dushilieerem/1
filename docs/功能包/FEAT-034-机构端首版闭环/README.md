@@ -1117,4 +1117,5 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 修复 AI 把 `counter/checks/data_gaps/open_questions` 返回成字符串时被逐字迭代的问题；校验层统一按“字符串=一项”归一。
 - 旧版本已存成“长句 + 单字”的 counter，一页纸读取时合并回可读文本，不再逐字列核心风险。
 - 银行 `relative_only` 估值不再显示“不可用”，改为“不适用（银行相对估值）”，提示只看 PB/ROE。
+- 旧版本字符数组 counter 改用完整 data_gaps 生成核心风险；门禁提示从“数据缺失”改为“门禁未通过”，并显示中文维度名。
 - 新增回归：字符串 counter 不拆字；银行价值区间为不适用。

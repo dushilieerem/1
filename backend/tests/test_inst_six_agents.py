@@ -310,3 +310,35 @@ def test_one_pager_bank_value_range_is_not_applicable() -> None:
     by_label = {m["label"]: m for m in metrics}
     assert "不适用" in by_label["价值区间"]["value"]
     assert "PB/ROE" in by_label["价值区间"]["note"]
+
+
+def test_rule_memo_uses_data_gaps_when_counter_is_char_array() -> None:
+    from services.institution import ai_service
+
+    version = {
+        "six_dim": [{
+            "key": "business_model",
+            "title": "公司商业模式",
+            "counter": ["缺", "客", "户"],
+            "data_gaps": ["缺前五大客户占比，影响 H，需年报附注补。"],
+        }],
+        "valuation": {},
+    }
+    memo = ai_service._rule_memo(version)
+    assert memo["risks"] == ["缺前五大客户占比，影响 H，需年报附注补。"]
+
+
+def test_memo_gate_note_uses_chinese_titles_and_gate_wording() -> None:
+    from services.institution import ai_service
+
+    version = {
+        "six_dim": [
+            {"key": "industry", "title": "商业与产业", "gate": "fail"},
+            {"key": "valuation", "title": "估值与价格", "gate": "fail"},
+        ],
+        "industry_analysis": {},
+    }
+    memo = ai_service._apply_memo_data_gate({"decision": "watch"}, version)
+    assert "门禁未通过" in memo["data_gate_note"]
+    assert "行业分析" in memo["data_gate_note"]
+    assert "估值与价格" in memo["data_gate_note"]

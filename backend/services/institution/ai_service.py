@@ -246,9 +246,17 @@ def _normalize_text_list(value: Any) -> list[str]:
     return out
 
 
+def _dim_counter(dim: dict[str, Any]) -> list[str]:
+    raw = dim.get("counter")
+    # 旧版本可能把字符串 counter 存成字符数组；此时改用完整的 data_gaps。
+    if isinstance(raw, list) and raw and all(len(str(x)) <= 1 for x in raw):
+        return _text_items(dim.get("data_gaps") or dim.get("open_questions"))
+    return _text_items(raw)
+
+
 def _rule_memo(version: dict[str, Any]) -> dict[str, Any]:
     dims = [d for d in (version.get("six_dim") or []) if isinstance(d, dict)]
-    risks = [c for d in dims for c in _text_items(d.get("counter"))][:5]
+    risks = [c for d in dims for c in _dim_counter(d)][:5]
     questions = [
         q
         for d in dims
@@ -299,17 +307,19 @@ def _apply_memo_data_gate(data: dict[str, Any], version: dict[str, Any]) -> dict
     if not gates:
         return data
     data["data_gates"] = gates
-    failed = [key for key, gate in gates.items() if gate == "fail"]
+    labels = {str(d.get("key")): str(d.get("title") or d.get("key")) for d in version.get("six_dim") or [] if isinstance(d, dict)}
+    labels["industry"] = "行业分析"
+    failed = [labels.get(key, key) for key, gate in gates.items() if gate == "fail"]
     decision = str(data.get("decision") or "")
     if decision == "proceed" and any(gate != "pass" for gate in gates.values()):
         data["decision"] = "watch"
         data["data_gate_note"] = (
-            "六维存在数据缺口，研究建议降级为观察，不能进入买入。"
+            "六维存在数据缺口或门禁未通过，研究建议降级为观察，不能进入买入。"
             + (f"其中 {'、'.join(failed)} 为 fail。" if failed else "")
         )
-    elif failed and not data.get("data_gate_note"):
+    elif failed:
         data["data_gate_note"] = (
-            f"以下维度数据缺失，按不可买入处理：{'、'.join(failed)}。"
+            f"以下维度门禁未通过，按不可买入处理：{'、'.join(failed)}。"
         )
     return data
 

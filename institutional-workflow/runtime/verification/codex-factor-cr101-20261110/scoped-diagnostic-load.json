@@ -1,0 +1,111 @@
+{
+  "started_at_utc": "2026-11-10T07:27:05.693571+00:00",
+  "no_model_or_market_submit": true,
+  "old_failure_unchanged": true,
+  "no_migrations_or_authorization_changes": true,
+  "re_and_frontend_not_restarted": true,
+  "source_head": "7e78650ec8bf8b7549f91a13dc747b28b7829e78",
+  "old_bff_pid": 3177416,
+  "unchanged_re_pid": 3176526,
+  "argv": [
+    "/home/dev01/project/SVQuant/.ci/venv/bin/python",
+    "institutional-workflow/runtime/start_quant_bff.py"
+  ],
+  "cwd": "/home/dev01/project/SVQuant-zxd",
+  "preload": {
+    "counts": {
+      "f0": 0,
+      "candidates": 0,
+      "sealed": 0,
+      "agent_jobs": 0,
+      "iterations": 0
+    },
+    "database": "svquant_dev",
+    "unknown_current_model_calls": 0,
+    "owned_queue_installed": true,
+    "owned_queue_active": 0,
+    "owned_external_unknown": 0,
+    "owned_slot_rows": 1,
+    "owned_slot_held": 0,
+    "installed_cr101_migrations": [
+      "0039_quant_research_token_policy",
+      "0040_quant_research_queue",
+      "0041_quant_model_capacity"
+    ],
+    "private_re": {
+      "http_status": 200,
+      "activity": {
+        "queued": 0,
+        "running": 0
+      },
+      "required": true,
+      "enabled": true,
+      "method_code_hash": "afeb14523feee520754b4cbf8987650e7859be38611afc9165db60b0945b20b4",
+      "frozen_data_view": {
+        "version": "quant-frozen-view-v1",
+        "enabled": true,
+        "request_field": "frozen_data_view",
+        "verification": "worker opens daily files and verifies SHA256; preflight checks metadata only",
+        "no_current_fallback": true
+      }
+    },
+    "available_memory_bytes": 85842153472
+  },
+  "new_bff_pid": 3654585,
+  "bff_health": {
+    "http_status": 200,
+    "ok": true,
+    "db": "ok",
+    "schema_ok": true
+  },
+  "re_health_status": 200,
+  "re_health": {
+    "status": "ok",
+    "version": "2.0.0",
+    "engines": [
+      "native"
+    ]
+  },
+  "frontend_http_status": 200,
+  "postload": {
+    "counts": {
+      "f0": 0,
+      "candidates": 0,
+      "sealed": 0,
+      "agent_jobs": 0,
+      "iterations": 0
+    },
+    "database": "svquant_dev",
+    "unknown_current_model_calls": 0,
+    "owned_queue_installed": true,
+    "owned_queue_active": 0,
+    "owned_external_unknown": 0,
+    "owned_slot_rows": 1,
+    "owned_slot_held": 0,
+    "installed_cr101_migrations": [
+      "0039_quant_research_token_policy",
+      "0040_quant_research_queue",
+      "0041_quant_model_capacity"
+    ],
+    "private_re": {
+      "http_status": 200,
+      "activity": {
+        "queued": 0,
+        "running": 0
+      },
+      "required": true,
+      "enabled": true,
+      "method_code_hash": "afeb14523feee520754b4cbf8987650e7859be38611afc9165db60b0945b20b4",
+      "frozen_data_view": {
+        "version": "quant-frozen-view-v1",
+        "enabled": true,
+        "request_field": "frozen_data_view",
+        "verification": "worker opens daily files and verifies SHA256; preflight checks metadata only",
+        "no_current_fallback": true
+      }
+    },
+    "available_memory_bytes": 86049853440
+  },
+  "completed_at_utc": "2026-11-10T07:27:08.586156+00:00",
+  "success": true
+}

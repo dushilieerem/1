@@ -105,6 +105,7 @@ function QuoteTrendChart({
   const yoySpan = yoyMax - yoyMin || 1;
   const yoyY = (value: number) => top + 6 + (1 - (value - yoyMin) / yoySpan) * (plotH - 20);
   const ticks = [0, 1, 2, 3].map((i) => minValue + (valueSpan * i) / 3);
+  const labelEvery = Math.max(1, Math.ceil(rows.length / 6));
 
   return (
     <svg className="fin-trend-svg" viewBox={`0 0 ${w} ${h}`} role="img" aria-label={t("财务指标趋势图", "Financial trend chart")}>
@@ -129,7 +130,7 @@ function QuoteTrendChart({
                 {fmtAxis(metric, value)}
               </text>
             ) : null}
-            <text x={left + i * step + step / 2} y={h - 7} textAnchor="middle" fontSize="8" fill="#999">{row.label}</text>
+            {i % labelEvery === 0 || i === rows.length - 1 ? <text x={left + i * step + step / 2} y={h - 7} textAnchor="middle" fontSize="8" fill="#999">{row.label}</text> : null}
           </g>
         );
       })}
@@ -168,6 +169,7 @@ export default function FinancialTrend({ items }: { items: TrendItem[] }) {
   const { t, locale } = useLocale();
   const [metricKey, setMetricKey] = useState<(typeof METRICS)[number]["key"]>("revenue");
   const [periodOpen, setPeriodOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(4);
   const selectRef = useRef<HTMLDivElement | null>(null);
   const availableTypes = useMemo(
     () => REPORT_TYPES.filter((type) => items.some((item) => item.report_type === type.key)),
@@ -185,6 +187,10 @@ export default function FinancialTrend({ items }: { items: TrendItem[] }) {
   }, [availableTypes, reportType]);
 
   useEffect(() => {
+    setVisibleCount(4);
+  }, [reportType]);
+
+  useEffect(() => {
     const close = (event: MouseEvent) => {
       if (selectRef.current && !selectRef.current.contains(event.target as Node)) setPeriodOpen(false);
     };
@@ -192,9 +198,13 @@ export default function FinancialTrend({ items }: { items: TrendItem[] }) {
     return () => document.removeEventListener("mousedown", close);
   }, []);
 
-  const rows = useMemo(
-    () => items.filter((item) => item.report_type === reportType).sort((a, b) => a.year - b.year).slice(-4),
+  const allRows = useMemo(
+    () => items.filter((item) => item.report_type === reportType).sort((a, b) => a.year - b.year),
     [items, reportType],
+  );
+  const rows = useMemo(
+    () => allRows.slice(-Math.max(4, Math.min(visibleCount, allRows.length))),
+    [allRows, visibleCount],
   );
   const metric = METRICS.find((x) => x.key === metricKey) || METRICS[0];
   const latest = rows[rows.length - 1];
@@ -238,6 +248,11 @@ export default function FinancialTrend({ items }: { items: TrendItem[] }) {
           <span><i className="fin-legend-bar" />{t("指标值", "Value")}</span>
           {metric.yoy ? <span><i className="fin-legend-line" />{t("同比增速", "YoY")}</span> : null}
         </div>
+        <div className="fin-range-controls">
+          <button type="button" aria-label={t("缩小时间范围", "Zoom in")} disabled={rows.length <= 4} onClick={() => setVisibleCount((v) => Math.max(4, v - 1))}>−</button>
+          <span>{rows.length} {t("年", "yrs")}</span>
+          <button type="button" aria-label={t("查看更早数据", "Show older years")} disabled={rows.length >= allRows.length} onClick={() => setVisibleCount((v) => Math.min(allRows.length, v + 1))}>+</button>
+        </div>
         <div className="fin-period-select" ref={selectRef}>
           <button type="button" className={periodOpen ? "on" : ""} onClick={() => setPeriodOpen((v) => !v)}>
             {locale === "en" ? currentType.en : currentType.zh} <ChevronDown size={12} />
@@ -260,6 +275,7 @@ export default function FinancialTrend({ items }: { items: TrendItem[] }) {
       </div>
       {rows.length ? <QuoteTrendChart rows={rows} metric={metric} locale={locale} /> : <div className="empty-inline">{t("该报告期暂无数据", "No data for this report period")}</div>}
       {summary ? <p className="fin-trend-summary">{summary}</p> : null}
+      {allRows.length > 4 ? <p className="hint">{t(`默认展示近 4 年；用 − / + 查看 ${allRows.length} 年历史。`, `Showing the latest 4 years by default; use − / + to browse ${allRows.length} years.`)}</p> : null}
     </div>
   );
 }

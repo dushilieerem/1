@@ -190,6 +190,10 @@ export default function QuantStrategies() {
       setNotice(t("最多选 4 个因子", "Choose at most 4 factors"));
       return;
     }
+    if (f.category && selected.some((item) => factors.find((x) => x.key === item.key)?.category === f.category)) {
+      setNotice(t("同一大类只能选一个细分因子", "Choose only one sub-factor per category"));
+      return;
+    }
     setSelected((prev) => [...prev, { key: f.key, direction: f.direction }]);
   };
 
@@ -430,6 +434,7 @@ export default function QuantStrategies() {
                         role="button"
                         tabIndex={0}
                         aria-pressed={!!picked}
+                        data-category={f.category || ""}
                       >
                         <span className="quant-pick-head">
                           <b>{factorName(f, locale)}</b>

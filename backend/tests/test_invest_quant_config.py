@@ -37,3 +37,12 @@ def test_rebalance_groups_biweekly_and_quarterly():
     quarterly = quant._rebalance_groups(panel, 0, len(dates) - 1, "quarterly")
     assert len(daily) > len(weekly) > len(biweekly) > len(monthly) > len(quarterly)
     assert biweekly[0][0] == 0 and biweekly[-1][1] == len(dates) - 1
+
+
+def test_normalize_factors_rejects_two_subfactors_same_category():
+    import pytest
+    with pytest.raises(quant.QuantDataError):
+        quant._normalize_factors([
+            {"key": "value", "direction": "high"},
+            {"key": "bp", "direction": "high"},
+        ])

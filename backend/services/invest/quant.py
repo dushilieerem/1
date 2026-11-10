@@ -90,7 +90,6 @@ FACTOR_CATEGORIES: tuple[dict[str, str], ...] = (
     {"key": "growth", "name": "成长", "name_en": "Growth"},
     {"key": "volatility", "name": "波动", "name_en": "Volatility"},
     {"key": "liquidity", "name": "流动性", "name_en": "Liquidity"},
-    {"key": "size", "name": "规模", "name_en": "Size"},
 )
 
 # 7 大类、27 个细分因子。保留原有 6 个 key，避免旧草稿/回测失效。
@@ -106,18 +105,54 @@ _EXTRA_FACTORS: tuple[dict[str, Any], ...] = (
     {"key": "ebit_ev", "name": "EBIT/EV", "name_en": "EBIT/EV", "formula": "EBIT ÷ 企业价值（近似）", "formula_en": "EBIT / enterprise value (approximation)", "direction": "high", "unit": "ratio", "plain": "经营利润相对企业价值", "plain_en": "Operating profit relative to enterprise value", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
     {"key": "roa", "name": "ROA", "name_en": "ROA", "formula": "净利润 ÷ 总资产", "formula_en": "Net profit / total assets", "direction": "high", "unit": "pct", "plain": "资产创造利润的效率", "plain_en": "Profit generated per unit of assets", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
     {"key": "gross_margin", "name": "毛利率", "name_en": "Gross margin", "formula": "毛利 ÷ 营业收入", "formula_en": "Gross profit / revenue", "direction": "high", "unit": "pct", "plain": "产品本身赚不赚钱", "plain_en": "Profitability of the product itself", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
-    {"key": "accruals", "name": "低应计利润", "name_en": "Low accruals", "formula": "(经营现金流 − 净利润) ÷ 总资产", "formula_en": "(Operating cash flow - net profit) / total assets", "direction": "high", "unit": "pct", "plain": "利润里现金含量高不高", "plain_en": "How much of profit is backed by cash", "high_label": "现金含量高", "low_label": "现金含量低", "high_label_en": "Cash-rich", "low_label_en": "Accrual-heavy"},
+    {"key": "accruals", "name": "低应计利润", "name_en": "Low accruals", "formula": "(净利润 − 经营现金流) ÷ 总资产", "formula_en": "(Net profit - operating cash flow) / total assets", "direction": "low", "unit": "pct", "plain": "利润里现金含量高不高", "plain_en": "How much of profit is backed by cash", "high_label": "高应计", "low_label": "低应计", "high_label_en": "High accruals", "low_label_en": "Low accruals"},
     {"key": "roic", "name": "ROIC", "name_en": "ROIC", "formula": "NOPAT ÷ 投入资本（近似）", "formula_en": "NOPAT / invested capital (approximation)", "direction": "high", "unit": "pct", "plain": "投入资本的回报率", "plain_en": "Return on invested capital", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
     {"key": "profit_growth", "name": "净利同比", "name_en": "Net profit growth", "formula": "归母净利同比", "formula_en": "Net profit year-over-year", "direction": "high", "unit": "pct", "plain": "利润增长的速度", "plain_en": "The pace of profit growth", "high_label": "高增长", "low_label": "低增长", "high_label_en": "High growth", "low_label_en": "Low growth"},
     {"key": "deducted_growth", "name": "扣非净利同比", "name_en": "Deducted profit growth", "formula": "扣非净利同比", "formula_en": "Deducted net profit year-over-year", "direction": "high", "unit": "pct", "plain": "剔除一次性损益后的利润增速", "plain_en": "Profit growth excluding one-offs", "high_label": "高增长", "low_label": "低增长", "high_label_en": "High growth", "low_label_en": "Low growth"},
     {"key": "volatility_60", "name": "60 日波动率", "name_en": "60-day volatility", "formula": "近 60 日收益标准差（越低越好）", "formula_en": "60-day return standard deviation (lower is better)", "direction": "low", "unit": "pct", "plain": "过去三个月价格起伏", "plain_en": "Price swings over the last three months", "high_label": "高波动", "low_label": "低波动", "high_label_en": "High vol", "low_label_en": "Low vol"},
     {"key": "beta", "name": "Beta", "name_en": "Beta", "formula": "近 60 日相对沪深 300 的 Beta（越低越稳）", "formula_en": "60-day beta versus CSI 300 (lower is steadier)", "direction": "low", "unit": "ratio", "plain": "跟大盘一起波动的敏感度", "plain_en": "Sensitivity to broad-market moves", "high_label": "高 Beta", "low_label": "低 Beta", "high_label_en": "High beta", "low_label_en": "Low beta"},
     {"key": "turnover", "name": "换手率", "name_en": "Turnover rate", "formula": "近 20 日平均换手率", "formula_en": "20-day average turnover rate", "direction": "high", "unit": "pct", "plain": "股票交易活跃程度", "plain_en": "How actively the stock trades", "high_label": "高换手", "low_label": "低换手", "high_label_en": "High turnover", "low_label_en": "Low turnover"},
-    {"key": "amihud", "name": "Amihud 非流动性", "name_en": "Amihud illiquidity", "formula": "近 20 日 |收益| ÷ 成交额 的均值", "formula_en": "20-day average |return| / turnover value", "direction": "high", "unit": "ratio", "plain": "成交额对价格冲击的大小", "plain_en": "Price impact relative to turnover value", "high_label": "冲击大", "low_label": "冲击小", "high_label_en": "High impact", "low_label_en": "Low impact"},
+    {"key": "amihud", "name": "Amihud 非流动性", "name_en": "Amihud illiquidity", "formula": "近 20 日 |收益| ÷ 成交额 的均值", "formula_en": "20-day average |return| / turnover value", "direction": "low", "unit": "ratio", "plain": "成交额对价格冲击的大小", "plain_en": "Price impact relative to turnover value", "high_label": "冲击大", "low_label": "冲击小", "high_label_en": "High impact", "low_label_en": "Low impact"},
     {"key": "market_cap_total", "name": "总市值", "name_en": "Total market cap", "formula": "总股本 × 股价", "formula_en": "Total shares x price", "direction": "low", "unit": "yi", "plain": "公司整体规模，小市值优先", "plain_en": "Overall company size; smaller is preferred", "high_label": "大市值", "low_label": "小市值", "high_label_en": "Large cap", "low_label_en": "Small cap"},
     {"key": "market_cap_float", "name": "流通市值", "name_en": "Float market cap", "formula": "流通股本 × 股价", "formula_en": "Float shares x price", "direction": "low", "unit": "yi", "plain": "可交易部分的规模，小市值优先", "plain_en": "Size of the tradable float; smaller is preferred", "high_label": "大市值", "low_label": "小市值", "high_label_en": "Large cap", "low_label_en": "Small cap"},
 )
-FACTORS = FACTORS + _EXTRA_FACTORS
+_EXTRA_60: tuple[dict[str, Any], ...] = (
+    {"key": "momentum_120", "name": "120 日涨幅", "name_en": "120-day return", "formula": "近 120 日涨幅", "formula_en": "120-day return", "direction": "high", "unit": "pct", "plain": "过去半年涨得相对好的股票", "plain_en": "Stocks that rose over the last six months", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "momentum_240", "name": "240 日动量", "name_en": "240-day momentum", "formula": "近 240 日涨幅", "formula_en": "240-day return", "direction": "high", "unit": "pct", "plain": "过去一年涨得相对好的股票", "plain_en": "Stocks that rose over the last year", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "reversal_20", "name": "20 日反转", "name_en": "20-day reversal", "formula": "近 20 日涨幅", "formula_en": "20-day return", "direction": "low", "unit": "pct", "plain": "短期跌得多的股票，和动量方向相反", "plain_en": "Recent losers; opposite direction to momentum", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "risk_adjusted_momentum", "name": "风险调整动量", "name_en": "Risk-adjusted momentum", "formula": "近 60 日涨幅 ÷ 近 60 日波动率", "formula_en": "60-day return / 60-day volatility", "direction": "high", "unit": "ratio", "plain": "单位波动换来的涨幅", "plain_en": "Return per unit of volatility", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "residual_momentum", "name": "残差动量", "name_en": "Residual momentum", "formula": "个股超额收益对市场回归后的残差累计", "formula_en": "Cumulative market-residual return", "direction": "high", "unit": "pct", "plain": "剔除大盘后的独立上涨", "plain_en": "Gains independent of the broad market", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "fcf_yield", "name": "自由现金流收益率", "name_en": "FCF yield", "formula": "(经营现金流 − 资本开支) ÷ 市值", "formula_en": "(Operating cash flow - capex) / market cap", "direction": "high", "unit": "pct", "plain": "自由现金流相对股价", "plain_en": "Free cash flow relative to market cap", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "ocf_yield", "name": "现金流市值比", "name_en": "OCF yield", "formula": "经营现金流 ÷ 市值", "formula_en": "Operating cash flow / market cap", "direction": "high", "unit": "pct", "plain": "经营现金流相对股价", "plain_en": "Operating cash flow relative to market cap", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "ev_sales_inverse", "name": "EV/Sales 倒数", "name_en": "EV/Sales inverse", "formula": "营业收入 ÷ 企业价值（近似）", "formula_en": "Revenue / enterprise value (approximation)", "direction": "high", "unit": "ratio", "plain": "收入相对企业价值", "plain_en": "Revenue relative to enterprise value", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "shareholder_yield", "name": "股东回报率", "name_en": "Shareholder yield", "formula": "(分红 + 回购) ÷ 市值；回购未接入时仅计分红", "formula_en": "(Dividends + buybacks) / market cap; dividends only until buybacks are connected", "direction": "high", "unit": "pct", "plain": "分红回购相对股价", "plain_en": "Dividends and buybacks relative to market cap", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "net_margin", "name": "净利率", "name_en": "Net margin", "formula": "归母净利 ÷ 营收", "formula_en": "Net profit / revenue", "direction": "high", "unit": "pct", "plain": "每 100 元收入留下多少利润", "plain_en": "Profit retained per unit of revenue", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "cash_flow_content", "name": "现金流含量", "name_en": "Cash flow content", "formula": "经营现金流 ÷ 净利润", "formula_en": "Operating cash flow / net profit", "direction": "high", "unit": "pct", "plain": "利润里有多少现金", "plain_en": "How much profit is backed by cash", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "low_leverage", "name": "低财务杠杆", "name_en": "Low leverage", "formula": "总负债 ÷ 总资产", "formula_en": "Liabilities / assets", "direction": "low", "unit": "pct", "plain": "资产负债率越低越稳", "plain_en": "Lower leverage means a steadier balance sheet", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "asset_turnover", "name": "资产周转率", "name_en": "Asset turnover", "formula": "营收 ÷ 总资产", "formula_en": "Revenue / total assets", "direction": "high", "unit": "ratio", "plain": "资产创造收入的能力", "plain_en": "Revenue generated per unit of assets", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "gross_margin_stability", "name": "毛利率稳定性", "name_en": "Gross margin stability", "formula": "近 3 年毛利率标准差（越低越稳）", "formula_en": "3-year gross margin standard deviation (lower is steadier)", "direction": "low", "unit": "pct", "plain": "毛利率波动越小越稳定", "plain_en": "Smaller gross-margin swings mean more stability", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "revenue_cagr_3y", "name": "三年营收复合增速", "name_en": "3-year revenue CAGR", "formula": "(营收 ÷ 三年前营收)^(1/3) − 1", "formula_en": "3-year revenue CAGR", "direction": "high", "unit": "pct", "plain": "三年收入复合增长速度", "plain_en": "Three-year compound revenue growth", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "profit_cagr_3y", "name": "三年净利复合增速", "name_en": "3-year profit CAGR", "formula": "(净利 ÷ 三年前净利)^(1/3) − 1", "formula_en": "3-year profit CAGR", "direction": "high", "unit": "pct", "plain": "三年利润复合增长速度", "plain_en": "Three-year compound profit growth", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "ocf_growth", "name": "经营现金流同比", "name_en": "OCF growth", "formula": "经营现金流 ÷ 去年同期 − 1", "formula_en": "Operating cash flow year-over-year", "direction": "high", "unit": "pct", "plain": "现金流增长的速度", "plain_en": "Pace of operating cash flow growth", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "revenue_qoq", "name": "单季营收环比", "name_en": "Single-quarter revenue QoQ", "formula": "单季营收 ÷ 上一季度单季 − 1", "formula_en": "Single-quarter revenue QoQ", "direction": "high", "unit": "pct", "plain": "单季收入环比加速还是放缓", "plain_en": "Whether single-quarter revenue is accelerating", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "revenue_single_q_yoy", "name": "单季营收同比", "name_en": "Single-quarter revenue YoY", "formula": "单季营收 ÷ 去年同期单季 − 1", "formula_en": "Single-quarter revenue YoY", "direction": "high", "unit": "pct", "plain": "单季收入同比增长", "plain_en": "Single-quarter revenue growth", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "gross_margin_change", "name": "毛利率同比变化", "name_en": "Gross margin change", "formula": "本期毛利率 − 去年同期毛利率", "formula_en": "Gross margin versus prior-year quarter", "direction": "high", "unit": "pct", "plain": "毛利率是在改善还是走弱", "plain_en": "Whether gross margin is improving", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "capex_growth", "name": "资本开支增速", "name_en": "Capex growth", "formula": "资本开支 ÷ 去年同期 − 1", "formula_en": "Capex year-over-year", "direction": "high", "unit": "pct", "plain": "扩张投入的增长速度", "plain_en": "Pace of capital expenditure growth", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "max_drawdown", "name": "最大回撤", "name_en": "Max drawdown", "formula": "近 1 年最大回撤（取绝对值）", "formula_en": "One-year maximum drawdown (absolute)", "direction": "low", "unit": "pct", "plain": "过去一年最深的下跌", "plain_en": "The deepest one-year drawdown", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "downside_vol", "name": "下行波动率", "name_en": "Downside volatility", "formula": "近 60 日负收益日的标准差", "formula_en": "60-day downside deviation", "direction": "low", "unit": "pct", "plain": "只算下跌日的波动", "plain_en": "Volatility on down days", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "idiosyncratic_vol", "name": "特质波动率", "name_en": "Idiosyncratic volatility", "formula": "对市场回归残差的标准差", "formula_en": "Market-residual volatility", "direction": "low", "unit": "pct", "plain": "个股自身的波动", "plain_en": "Stock-specific volatility", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "residual_vol", "name": "残差波动率", "name_en": "Residual volatility", "formula": "对市场回归残差的标准差（近似）", "formula_en": "Market-residual volatility (approximation)", "direction": "low", "unit": "pct", "plain": "剔除大盘后的波动", "plain_en": "Volatility after removing the market", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "upside_vol", "name": "上行波动率", "name_en": "Upside volatility", "formula": "近 60 日正收益日的标准差", "formula_en": "60-day upside deviation", "direction": "high", "unit": "pct", "plain": "只算上涨日的波动", "plain_en": "Volatility on up days", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "skewness", "name": "收益偏度", "name_en": "Return skewness", "formula": "近 60 日日收益偏度", "formula_en": "60-day return skewness", "direction": "high", "unit": "ratio", "plain": "大涨和小跌的分布", "plain_en": "The shape of large gains versus small losses", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "kurtosis", "name": "收益峰度", "name_en": "Return kurtosis", "formula": "近 60 日日收益峰度", "formula_en": "60-day return kurtosis", "direction": "low", "unit": "ratio", "plain": "极端波动的厚度", "plain_en": "How thick the extreme-return tails are", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "zero_trade_days", "name": "零交易天数", "name_en": "Zero-trading days", "formula": "近 20 日停牌 / 零成交天数", "formula_en": "Suspended or zero-volume days in the last 20", "direction": "low", "unit": "ratio", "plain": "越少越容易交易", "plain_en": "Fewer days means easier trading", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "amount_stability", "name": "成交额稳定", "name_en": "Turnover stability", "formula": "近 20 日成交额标准差（越低越稳）", "formula_en": "20-day turnover standard deviation (lower is steadier)", "direction": "low", "unit": "yi", "plain": "成交额越稳定越好", "plain_en": "Steadier turnover is preferred", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "turnover_5d", "name": "5 日换手率", "name_en": "5-day turnover", "formula": "近 5 日平均换手率", "formula_en": "5-day average turnover rate", "direction": "high", "unit": "pct", "plain": "最近一周交易活跃度", "plain_en": "Recent trading activity", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "turnover_change", "name": "换手率变化", "name_en": "Turnover change", "formula": "近 20 日换手率 ÷ 近 5 日换手率", "formula_en": "20-day turnover / 5-day turnover", "direction": "low", "unit": "ratio", "plain": "换手是否突然放大", "plain_en": "Whether turnover suddenly expanded", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "institutional_ownership", "name": "机构持股占比", "name_en": "Institutional ownership", "formula": "机构持股 ÷ 流通股本", "formula_en": "Institutional holdings / float shares", "direction": "high", "unit": "pct", "plain": "机构持有比例（另类数据）", "plain_en": "Institutional ownership (alternative data)", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+    {"key": "holder_count_change", "name": "股东户数变化", "name_en": "Holder count change", "formula": "最新股东户数 ÷ 上期 − 1", "formula_en": "Latest holder count / prior period - 1", "direction": "low", "unit": "pct", "plain": "股东户数变化（另类数据）", "plain_en": "Change in shareholder count (alternative data)", "high_label": "高", "low_label": "低", "high_label_en": "High", "low_label_en": "Low"},
+)
+FACTORS = tuple(f for f in FACTORS + _EXTRA_FACTORS + _EXTRA_60 if f["key"] != "market_cap_float")
 FACTOR_BY_KEY = {f["key"]: f for f in FACTORS}
 
 CATEGORY_BY_KEY = {
@@ -127,7 +162,18 @@ CATEGORY_BY_KEY = {
     "growth": "growth", "profit_growth": "growth", "deducted_growth": "growth",
     "volatility": "volatility", "volatility_60": "volatility", "beta": "volatility",
     "liquidity": "liquidity", "turnover": "liquidity", "amihud": "liquidity",
-    "market_cap_total": "size", "market_cap_float": "size",
+    "zero_trade_days": "liquidity", "amount_stability": "liquidity", "turnover_5d": "liquidity",
+    "turnover_change": "liquidity", "institutional_ownership": "liquidity", "holder_count_change": "liquidity",
+    "market_cap_total": "liquidity",
+    "momentum_120": "momentum", "momentum_240": "momentum", "reversal_20": "momentum",
+    "risk_adjusted_momentum": "momentum", "residual_momentum": "momentum",
+    "fcf_yield": "value", "ocf_yield": "value", "ev_sales_inverse": "value", "shareholder_yield": "value",
+    "net_margin": "quality", "cash_flow_content": "quality", "low_leverage": "quality",
+    "asset_turnover": "quality", "gross_margin_stability": "quality",
+    "revenue_cagr_3y": "growth", "profit_cagr_3y": "growth", "ocf_growth": "growth",
+    "revenue_qoq": "growth", "revenue_single_q_yoy": "growth", "gross_margin_change": "growth", "capex_growth": "growth",
+    "max_drawdown": "volatility", "downside_vol": "volatility", "idiosyncratic_vol": "volatility",
+    "residual_vol": "volatility", "upside_vol": "volatility", "skewness": "volatility", "kurtosis": "volatility",
 }
 SUB_NAME_BY_KEY = {
     "value": "EP（1/PE）", "momentum": "20 日涨幅", "volatility": "20 日波动率",
@@ -138,6 +184,14 @@ SUB_NAME_EN_BY_KEY = {
     "quality": "ROE (TTM)", "growth": "Revenue YoY", "liquidity": "20-day average turnover",
 }
 CATEGORY_NAME_BY_KEY = {x["key"]: x for x in FACTOR_CATEGORIES}
+SHORT_PLAIN_BY_CATEGORY = {
+    "momentum": ("涨得猛不猛", "Is it rising?"),
+    "value": ("便宜不便宜", "Is it cheap?"),
+    "quality": ("赚不赚钱", "Is it profitable?"),
+    "growth": ("长得快不快", "Is it growing?"),
+    "volatility": ("稳不稳", "Is it steady?"),
+    "liquidity": ("好不好买卖", "Is it liquid?"),
+}
 FACTOR_BY_KEY = {f["key"]: f for f in FACTORS}
 
 def re_universe(universe: str) -> str:
@@ -164,7 +218,7 @@ _STYLE_TEXT = {
 
 _PANEL_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
 _BOARD_PAYLOAD_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
-_BOARD_CACHE_VERSION = 3
+_BOARD_CACHE_VERSION = 8
 _BOARD_CACHE_ROOT = Path(
     os.environ.get("SVQUANT_QUANT_CACHE_DIR")
     or (Path(__file__).resolve().parents[2] / "data" / "invest_quant_cache")
@@ -328,6 +382,9 @@ def _normalize_factors(raw: Any) -> list[dict[str, Any]]:
         out.append(entry)
     if not 2 <= len(out) <= 4:
         raise QuantDataError("请选择 2–4 个因子")
+    categories = [CATEGORY_BY_KEY.get(x["key"]) for x in out]
+    if len(categories) != len(set(categories)):
+        raise QuantDataError("同一大类只能选一个细分因子")
     if any("weight" in x for x in out) and not all("weight" in x for x in out):
         raise QuantDataError("自定义权重需要每个因子都填写")
     total = sum(float(x.get("weight") or 0) for x in out)
@@ -346,11 +403,16 @@ def _factor_meta(key: str) -> dict[str, Any]:
     category = CATEGORY_BY_KEY.get(key, "value")
     cat = CATEGORY_NAME_BY_KEY.get(category, {"name": category, "name_en": category})
     meta.update({
+        # 稳定标识与参数位：后续若由数据侧下发因子元数据，可保持前端契约不变。
+        "id": key,
+        "params": meta.get("params") if isinstance(meta.get("params"), dict) else {},
         "category": category,
         "category_name": cat.get("name"),
         "category_name_en": cat.get("name_en"),
         "sub_name": SUB_NAME_BY_KEY.get(key, meta.get("name")),
         "sub_name_en": SUB_NAME_EN_BY_KEY.get(key, meta.get("name_en")),
+        "short_plain": SHORT_PLAIN_BY_CATEGORY.get(category, (meta.get("plain"), meta.get("plain_en")))[0],
+        "short_plain_en": SHORT_PLAIN_BY_CATEGORY.get(category, (meta.get("plain"), meta.get("plain_en")))[1],
     })
     return meta
 
@@ -577,7 +639,7 @@ def _load_panel(conn: Any, universe: str) -> dict[str, Any]:
         })
     for row in rules.rows(
         conn,
-        "SELECT symbol, report_date::text AS r, operating_cf FROM fin_cash_flow WHERE symbol = ANY(?) "
+        "SELECT symbol, report_date::text AS r, operating_cf, capex FROM fin_cash_flow WHERE symbol = ANY(?) "
         "AND notice_date BETWEEN (?::date - INTERVAL '5 years') AND ?::date "
         "ORDER BY symbol, report_date, notice_date",
         (symbols, data_date, data_date),
@@ -585,6 +647,7 @@ def _load_panel(conn: Any, universe: str) -> dict[str, Any]:
         key = (str(row.get("symbol") or ""), _date(row.get("r")))
         target = fund_map.setdefault(key, {"d": _date(row.get("r")), "report_date": key[1]})
         target["operating_cf"] = _num(row.get("operating_cf"))
+        target["capex"] = _num(row.get("capex"))
     for row in rules.rows(
         conn,
         "SELECT symbol, report_date::text AS r, roe, gross_margin, net_margin, revenue_yoy, profit_yoy "
@@ -870,15 +933,7 @@ def _prepare(panel: dict[str, Any]) -> None:
     _prepare_extra(panel)
 
 
-_EXTRA_KEYS = (
-    "momentum_60", "momentum_12m", "high_52w", "reversal_5",
-    "bp", "sp", "dividend_yield", "peg", "ebit_ev",
-    "roa", "gross_margin", "accruals", "roic",
-    "profit_growth", "deducted_growth",
-    "volatility_60", "beta", "turnover", "amihud",
-    "market_cap_total", "market_cap_float",
-)
-
+_EXTRA_KEYS = tuple(k for k in FACTOR_BY_KEY if k not in {"value", "momentum", "volatility", "quality", "growth", "liquidity"})
 
 def _prepare_extra(panel: dict[str, Any]) -> None:
     """补齐新增细分因子；滚动窗口用增量维护，避免逐日切片。"""
@@ -906,6 +961,21 @@ def _prepare_extra(panel: dict[str, Any]) -> None:
         annual = [row for row in fund if str(row.get("report_date") or "")[5:7] == "12"]
         annual_by_year = {str(row.get("report_date") or "")[:4]: row for row in annual}
         by_report = {str(row.get("report_date") or ""): row for row in fund}
+        by_ym = {(str(row.get("report_date") or "")[:4], str(row.get("report_date") or "")[5:7]): row for row in fund}
+
+        def single_q(row: dict[str, Any] | None, field: str) -> float | None:
+            if not row:
+                return None
+            value = row.get(field)
+            report = str(row.get("report_date") or "")
+            if value is None or len(report) < 7:
+                return None
+            year, month = report[:4], int(report[5:7])
+            if month == 3:
+                return value
+            prev = by_ym.get((year, f"{month - 3:02d}"))
+            return value - (prev.get(field) or 0) if prev else None
+
         series = {key: [None] * n for key in _EXTRA_KEYS}
 
         rets: list[float | None] = [None] * n
@@ -918,10 +988,12 @@ def _prepare_extra(panel: dict[str, Any]) -> None:
                     illiq[i] = abs(rets[i]) / amount[i]
 
         high_q: deque[int] = deque()
-        r_sum = r2_sum = r_count = 0.0
+        r_sum = r2_sum = r3_sum = r4_sum = r_count = 0.0
         b_sum = b2_sum = rb_sum = pr_sum = pair_count = 0.0
-        t_sum = t_count = 0.0
-        a_sum = a_count = 0.0
+        neg2_sum = pos2_sum = neg_count = pos_count = 0.0
+        ex_sum = 0.0
+        t_sum = t_count = t5_sum = t5_count = 0.0
+        a_sum = a_count = amt_sum = amt2_sum = amt_count = zero_count = 0.0
         fp = -1
         for i, day in enumerate(dates):
             # 52 周新高：单调队列，窗口为最近 252 个交易日。
@@ -939,36 +1011,69 @@ def _prepare_extra(panel: dict[str, Any]) -> None:
                 if r is not None:
                     r_sum += r
                     r2_sum += r * r
+                    r3_sum += r ** 3
+                    r4_sum += r ** 4
                     r_count += 1
+                    if r >= 0:
+                        pos2_sum += r * r
+                        pos_count += 1
+                    else:
+                        neg2_sum += r * r
+                        neg_count += 1
                 b = bench_rets[add]
                 if r is not None and b is not None:
                     b_sum += b
                     b2_sum += b * b
                     rb_sum += r * b
                     pr_sum += r
+                    ex_sum += r - b
                     pair_count += 1
                 t = turnover[add]
                 if t is not None:
                     t_sum += t
                     t_count += 1
+                    t5_sum += t
+                    t5_count += 1
                 a = illiq[add]
                 if a is not None:
                     a_sum += a
                     a_count += 1
+                amt = amount[add]
+                amt_sum += amt or 0.0
+                amt2_sum += (amt or 0.0) ** 2
+                amt_count += 1
+                if not amt:
+                    zero_count += 1
             old = i - 60
             if old >= 1:
                 r = rets[old]
                 if r is not None:
                     r_sum -= r
                     r2_sum -= r * r
+                    r3_sum -= r ** 3
+                    r4_sum -= r ** 4
                     r_count -= 1
+                    if r >= 0:
+                        pos2_sum -= r * r
+                        pos_count -= 1
+                    else:
+                        neg2_sum -= r * r
+                        neg_count -= 1
                 b = bench_rets[old]
                 if r is not None and b is not None:
                     b_sum -= b
                     b2_sum -= b * b
                     rb_sum -= r * b
                     pr_sum -= r
+                    ex_sum -= r - b
                     pair_count -= 1
+            if i >= 6:
+                old5 = i - 5
+                if old5 >= 1:
+                    t = turnover[old5]
+                    if t is not None:
+                        t5_sum -= t
+                        t5_count -= 1
             if i >= 21:
                 old = i - 20
                 if old >= 1:
@@ -980,15 +1085,27 @@ def _prepare_extra(panel: dict[str, Any]) -> None:
                     if a is not None:
                         a_sum -= a
                         a_count -= 1
+                    amt = amount[old]
+                    amt_sum -= amt or 0.0
+                    amt2_sum -= (amt or 0.0) ** 2
+                    amt_count -= 1
+                    if not amt:
+                        zero_count -= 1
 
             if i >= 60 and close[i] is not None and close[i - 60]:
                 series["momentum_60"][i] = close[i] / close[i - 60] - 1.0
+            if i >= 120 and close[i] is not None and close[i - 120]:
+                series["momentum_120"][i] = close[i] / close[i - 120] - 1.0
+            if i >= 240 and close[i] is not None and close[i - 240]:
+                series["momentum_240"][i] = close[i] / close[i - 240] - 1.0
             if i >= 252 and close[i - 21] is not None and close[i - 252]:
                 series["momentum_12m"][i] = close[i - 21] / close[i - 252] - 1.0
-            if high_q and i - high_q[0] >= 99 and close[i] is not None and close[high_q[0]]:
+            if i >= 251 and high_q and close[i] is not None and close[high_q[0]]:
                 series["high_52w"][i] = close[i] / close[high_q[0]]
             if i >= 5 and close[i] is not None and close[i - 5]:
                 series["reversal_5"][i] = close[i] / close[i - 5] - 1.0
+            if i >= 20 and close[i] is not None and close[i - 20]:
+                series["reversal_20"][i] = close[i] / close[i - 20] - 1.0
 
             if pb[i] is not None and pb[i] > 0:
                 series["bp"][i] = 1.0 / pb[i]
@@ -996,8 +1113,6 @@ def _prepare_extra(panel: dict[str, Any]) -> None:
                 series["dividend_yield"][i] = dividend[i] / 100.0
             if total_mv[i] is not None:
                 series["market_cap_total"][i] = total_mv[i]
-            if float_mv[i] is not None:
-                series["market_cap_float"][i] = float_mv[i]
 
             while fp + 1 < len(fund) and fund[fp + 1].get("d", "") <= day:
                 fp += 1
@@ -1031,7 +1146,7 @@ def _prepare_extra(panel: dict[str, Any]) -> None:
                 if f.get("gross_margin") is not None:
                     series["gross_margin"][i] = f["gross_margin"]
                 if assets and net_profit is not None and ocf is not None:
-                    series["accruals"][i] = (ocf - net_profit) / assets
+                    series["accruals"][i] = (net_profit - ocf) / assets
                 if liabilities is not None and equity is not None and f.get("cash") is not None:
                     invested = equity + liabilities - f["cash"]
                     if invested > 0 and f.get("operating_profit") is not None:
@@ -1042,6 +1157,57 @@ def _prepare_extra(panel: dict[str, Any]) -> None:
                 prior = by_report.get(f"{int(report[:4]) - 1}{report[4:]}") if report[:4].isdigit() else None
                 if f.get("deducted") is not None and prior and prior.get("deducted"):
                     series["deducted_growth"][i] = f["deducted"] / prior["deducted"] - 1.0
+                if f.get("net_margin") is not None:
+                    series["net_margin"][i] = f["net_margin"]
+                if liabilities is not None and assets:
+                    series["low_leverage"][i] = liabilities / assets
+                if assets and f.get("revenue") is not None:
+                    series["asset_turnover"][i] = f["revenue"] / assets
+                if net_profit and ocf is not None:
+                    series["cash_flow_content"][i] = ocf / net_profit
+                if total_mv[i] and ocf is not None:
+                    series["ocf_yield"][i] = ocf / total_mv[i]
+                    capex = f.get("capex")
+                    if capex is not None:
+                        series["fcf_yield"][i] = (ocf - capex) / total_mv[i]
+                    if f.get("revenue") is not None and liabilities is not None and f.get("cash") is not None:
+                        ev = total_mv[i] + liabilities - f["cash"]
+                        if ev > 0:
+                            series["ev_sales_inverse"][i] = f["revenue"] / ev
+                if dividend[i] is not None:
+                    # 回购数据未接入，当前股东回报仅计分红。
+                    series["shareholder_yield"][i] = dividend[i] / 100.0
+                if ann:
+                    for field_key, out_key in (("revenue", "revenue_cagr_3y"), ("net_profit", "profit_cagr_3y")):
+                        prior3 = annual_by_year.get(str(int(year) - 3)) if year.isdigit() else None
+                        current_value = ann.get(field_key)
+                        prior_value = (prior3 or {}).get(field_key)
+                        if current_value and prior_value and current_value > 0 and prior_value > 0:
+                            series[out_key][i] = (current_value / prior_value) ** (1.0 / 3.0) - 1.0
+                    margins = [row.get("gross_margin") for row in annual if str(row.get("d") or "")[:4] <= year and row.get("gross_margin") is not None]
+                    if len(margins) >= 3:
+                        window = margins[-3:]
+                        mean = sum(window) / len(window)
+                        series["gross_margin_stability"][i] = math.sqrt(sum((x - mean) ** 2 for x in window) / len(window))
+                if f.get("revenue") is not None and prior and prior.get("revenue") is not None:
+                    series["ocf_growth"][i] = (f["operating_cf"] / prior["operating_cf"] - 1.0) if f.get("operating_cf") and prior.get("operating_cf") else None
+                    capex, prior_capex = f.get("capex"), prior.get("capex")
+                    if capex is not None and prior_capex:
+                        series["capex_growth"][i] = capex / prior_capex - 1.0
+                    if f.get("gross_margin") is not None and prior.get("gross_margin") is not None:
+                        series["gross_margin_change"][i] = f["gross_margin"] - prior["gross_margin"]
+                current_single = single_q(f, "revenue")
+                prior_year = by_ym.get((str(int(report[:4]) - 1), report[5:7])) if report[:4].isdigit() else None
+                if current_single is not None and prior_year:
+                    prior_single = single_q(prior_year, "revenue")
+                    if prior_single:
+                        series["revenue_single_q_yoy"][i] = current_single / prior_single - 1.0
+                if current_single is not None and report[:4].isdigit():
+                    month = int(report[5:7])
+                    prev_ym = (str(int(report[:4]) - 1), "12") if month == 3 else (report[:4], f"{month - 3:02d}")
+                    prev_single = single_q(by_ym.get(prev_ym), "revenue")
+                    if prev_single:
+                        series["revenue_qoq"][i] = current_single / prev_single - 1.0
 
             if r_count >= 40:
                 mean = r_sum / r_count
@@ -1050,14 +1216,46 @@ def _prepare_extra(panel: dict[str, Any]) -> None:
                 mean_r = pr_sum / pair_count
                 mean_b = b_sum / pair_count
                 var_b = b2_sum / pair_count - mean_b * mean_b
+                var_r = r2_sum / r_count - (r_sum / r_count) ** 2 if r_count else 0.0
                 cov = rb_sum / pair_count - mean_r * mean_b
                 if var_b > 0:
                     series["beta"][i] = cov / var_b
+                residual_var = var_r - (cov * cov / var_b if var_b > 0 else 0.0)
+                if residual_var > 0:
+                    series["idiosyncratic_vol"][i] = math.sqrt(residual_var)
+                    series["residual_vol"][i] = math.sqrt(residual_var)
+            if r_count >= 40:
+                mean = r_sum / r_count
+                variance = max(0.0, r2_sum / r_count - mean * mean)
+                vol60 = math.sqrt(variance)
+                if vol60 > 0 and i >= 60 and close[i] is not None and close[i - 60]:
+                    series["risk_adjusted_momentum"][i] = (close[i] / close[i - 60] - 1.0) / vol60
+                if variance > 0:
+                    third = r3_sum / r_count - 3 * mean * variance - mean ** 3
+                    fourth = r4_sum / r_count - 4 * mean * (r3_sum / r_count) + 6 * mean * mean * variance + 3 * mean ** 4
+                    series["skewness"][i] = third / (variance ** 1.5)
+                    series["kurtosis"][i] = fourth / (variance * variance) - 3.0
+                if pos_count >= 10:
+                    series["upside_vol"][i] = math.sqrt(pos2_sum / pos_count)
+                if neg_count >= 10:
+                    series["downside_vol"][i] = math.sqrt(neg2_sum / neg_count)
+                if pair_count >= 40:
+                    series["residual_momentum"][i] = ex_sum
+            if high_q and close[i] is not None and close[high_q[0]]:
+                series["max_drawdown"][i] = abs(close[i] / close[high_q[0]] - 1.0)
             if i >= 21:
                 if t_count >= 10:
                     series["turnover"][i] = t_sum / t_count
                 if a_count >= 10:
                     series["amihud"][i] = a_sum / a_count
+                if amt_count >= 10:
+                    mean_amt = amt_sum / amt_count
+                    series["amount_stability"][i] = math.sqrt(max(0.0, amt2_sum / amt_count - mean_amt * mean_amt))
+                    series["zero_trade_days"][i] = zero_count
+                if t5_count >= 5:
+                    series["turnover_5d"][i] = t5_sum / t5_count
+                    if t5_sum > 0 and t_count >= 10:
+                        series["turnover_change"][i] = (t_sum / t_count) / (t5_sum / t5_count)
 
         for key in _EXTRA_KEYS:
             panel["derived"].setdefault(key, {})[symbol] = series[key]
@@ -1947,12 +2145,12 @@ def _np_zscore(values: Any) -> Any:
     return (values - mean) / sd
 
 
-def _board_numpy(panel: dict[str, Any]) -> dict[str, Any]:
+def _board_numpy(panel: dict[str, Any], range_key: str = "1m") -> dict[str, Any]:
     mats = _numpy_mats(panel)
     dates = panel["dates"]
     n = len(dates)
     ns = len(panel["symbols"])
-    start = max(21, n - 1 - MAX_HISTORY)
+    start = max(21, n - 1 - (30 if range_key == "1m" else MAX_HISTORY))
     end = n - 2
     symbol_idx = {s: i for i, s in enumerate(panel["symbols"])}
     st_mask = np.array([s in panel["st"] or s in panel["suspended"] for s in panel["symbols"]], dtype=bool)
@@ -2107,7 +2305,7 @@ def factor_board(conn: Any, range_key: str = "1m") -> dict[str, Any]:
         _save_board_payload(panel["data_date"], range_key, payload)
         return payload
     if np is not None:
-        board = _board_numpy(panel)
+        board = _board_numpy(panel, range_key)
         with _CACHE_LOCK:
             _BOARD_CACHE[cache_key] = (now, board)
         payload = _board_payload(panel, board, range_key)
@@ -2115,7 +2313,7 @@ def factor_board(conn: Any, range_key: str = "1m") -> dict[str, Any]:
         return payload
     dates = panel["dates"]
     n = len(dates)
-    start = max(21, n - 1 - MAX_HISTORY)
+    start = max(21, n - 1 - (30 if range_key == "1m" else MAX_HISTORY))
     end = n - 2
     monthly: dict[str, list[float]] = {k: [] for k in FACTOR_BY_KEY}
     daily: dict[str, list[float]] = {k: [] for k in FACTOR_BY_KEY}

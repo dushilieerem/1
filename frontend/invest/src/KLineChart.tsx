@@ -7,6 +7,7 @@ import {
   createChart,
 } from "lightweight-charts";
 import { useLocale } from "./i18n";
+import { chartTick } from "./chartIndicators";
 
 type Bar = { time: string; open: number; high: number; low: number; close: number; volume: number };
 type Line = { time: string; value: number };
@@ -18,6 +19,8 @@ export default function KLineChart({
   ma20 = [],
   height = 230,
   indicator = "ma",
+  range,
+  onRangeChange,
 }: {
   bars: Bar[];
   ma5?: Line[];
@@ -25,9 +28,17 @@ export default function KLineChart({
   ma20?: Line[];
   height?: number;
   indicator?: "ma" | "boll";
+  range?: { from: number; to: number } | null;
+  onRangeChange?: (range: { from: number; to: number } | null) => void;
 }) {
   const { t, locale } = useLocale();
   const ref = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
+  const applyingRange = useRef(false);
+  const rangeRef = useRef(range);
+  const rangeHandler = useRef(onRangeChange);
+  rangeRef.current = range;
+  rangeHandler.current = onRangeChange;
   const boll = useMemo(() => {
     if (indicator !== "boll" || bars.length < 20) return { mid: [], up: [], low: [] };
     const mid: Line[] = [];
@@ -54,7 +65,7 @@ export default function KLineChart({
       layout: {
         background: { type: ColorType.Solid, color: "#ffffff" },
         textColor: "#8a8a8a",
-        fontSize: 10,
+        fontSize: 9,
         attributionLogo: false,
       },
       grid: {
@@ -62,7 +73,7 @@ export default function KLineChart({
         horzLines: { color: "#f4f4f4" },
       },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: 0.08 } },
+      rightPriceScale: { borderVisible: false, minimumWidth: 80, scaleMargins: { top: 0.08, bottom: 0.08 } },
       timeScale: {
         borderVisible: false,
         timeVisible: false,
@@ -70,10 +81,12 @@ export default function KLineChart({
         rightOffset: 2,
         fixLeftEdge: true,
         fixRightEdge: true,
+        tickMarkFormatter: chartTick,
       },
       localization: { locale: locale === "en" ? "en-US" : "zh-CN" },
     });
 
+    chartRef.current = chart;
     const candle = chart.addSeries(CandlestickSeries, {
       upColor: "#e60012",
       downColor: "#16a34a",
@@ -107,6 +120,16 @@ export default function KLineChart({
     }
 
     chart.timeScale().fitContent();
+    if (rangeRef.current) {
+      applyingRange.current = true;
+      chart.timeScale().setVisibleLogicalRange(rangeRef.current);
+      requestAnimationFrame(() => { applyingRange.current = false; });
+    }
+    const onVisibleRange = (next: { from: number; to: number } | null) => {
+      if (!next || applyingRange.current) return;
+      rangeHandler.current?.({ from: next.from, to: next.to });
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleRange);
 
     let disposed = false;
     const fit = () => {
@@ -127,9 +150,19 @@ export default function KLineChart({
       disposed = true;
       window.clearTimeout(fitTimer);
       ro.disconnect();
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleRange);
       chart.remove();
+      chartRef.current = null;
     };
   }, [bars, ma5, ma10, ma20, boll, indicator, height, locale]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !range) return;
+    applyingRange.current = true;
+    chart.timeScale().setVisibleLogicalRange(range);
+    requestAnimationFrame(() => { applyingRange.current = false; });
+  }, [range]);
 
   if (!bars.length) return <div className="kline-empty">{t("暂无行情数据", "No market data")}</div>;
   return (

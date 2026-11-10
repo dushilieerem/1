@@ -623,6 +623,8 @@ input, select, textarea { outline: none; }
 .ai-blocked { margin-top: 8px; padding: 12px; border-radius: 10px; background: var(--red-soft); color: var(--red-dark); font-size: 12px; line-height: 1.6; border: 1px solid var(--red-line); }
 .ai-result { display: flex; flex-direction: column; gap: 10px; }
 .ai-summary { font-size: 14px; line-height: 1.7; font-weight: 600; color: var(--ink); }
+.ai-expand-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 4px; align-self: flex-start; margin-top: -2px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink2); font-size: 11.5px; line-height: 1.3; }
+.ai-expand-toggle:active { background: #f7f7f7; }
 .ai-section { padding: 10px 12px; border-radius: 10px; background: #fafafa; border: 1px solid #f0f0f0; }
 .ai-section b { display: block; font-size: 12px; color: var(--ink); margin-bottom: 3px; }
 .ai-section p { font-size: 12px; line-height: 1.65; color: #555; }
@@ -1259,3 +1261,22 @@ input, select, textarea { outline: none; }
 .quant-library-stats { flex: none; text-align: right; display: flex; flex-direction: column; gap: 1px; }
 .quant-library-stats b { font-size: 11px; font-variant-numeric: tabular-nums; }
 .quant-library-stats small { font-size: 9px; color: var(--faint); }
+
+/* 个股副图：成交量/成交额/MACD/KDJ/RSI */
+.volume-topline { flex-direction: column; align-items: stretch; gap: 4px; }
+.sub-indicator-switch { width: 100%; overflow-x: auto; justify-content: flex-start; }
+.sub-indicator-switch button { flex: none; font-size: 9.5px; padding: 5px 6px; }
+.sub-legend { justify-content: flex-start; flex-wrap: wrap; gap: 8px; margin-top: 0; }
+.sub-legend span { font-size: 9.5px; }
+.volume-chart { height: 118px; }
+.volume-empty { height: 118px; }
+.fin-range-controls { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.fin-range-controls button { width: 20px; height: 20px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--ink2); font-size: 13px; line-height: 1; padding: 0; }
+.fin-range-controls button:disabled { opacity: .35; }
+.fin-range-controls span { font-size: 9.5px; color: var(--faint); min-width: 28px; text-align: center; }
+.stock-page .ai-summary { font-size: 12.5px; font-weight: 400; line-height: 1.65; }
+.legend-green { background: var(--green); }
+.fund-flow-svg { display: block; width: 100%; height: auto; max-height: 132px; margin-top: 4px; }
+.fund-flow-legend { margin-top: 2px; align-items: center; }
+.composer-vision { margin: 0 0 6px; padding: 6px; background: #fafafa; border: 1px solid var(--line); border-radius: 9px; }
+.composer-vision img { max-height: 96px; }

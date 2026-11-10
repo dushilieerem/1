@@ -105,9 +105,26 @@ def validate_stock_deep(raw: str, request: TaskRequest) -> dict[str, Any]:
         key = str(section.get("key") or "").strip()
         if key not in dict(_STOCK_DIMENSIONS):
             continue
+        blocks: list[dict[str, Any]] = []
+        for block in section.get("blocks") or []:
+            if not isinstance(block, dict):
+                continue
+            kind = str(block.get("type") or "").strip()
+            if kind == "paragraph":
+                text = str(block.get("text") or "").strip()
+                if text:
+                    blocks.append({"type": "paragraph", "text": text[:1200]})
+            elif kind == "bullets":
+                items = [str(x).strip() for x in (block.get("items") or []) if str(x).strip()]
+                if items:
+                    blocks.append({"type": "bullets", "items": items[:5]})
         body = str(section.get("body") or "").strip()
         if not body:
+            body = next((b["text"] for b in blocks if b.get("type") == "paragraph"), "")
+        if not body:
             continue
+        if not blocks:
+            blocks = [{"type": "paragraph", "text": body}]
         items = []
         for item in section.get("items") or []:
             if not isinstance(item, dict):
@@ -120,6 +137,7 @@ def validate_stock_deep(raw: str, request: TaskRequest) -> dict[str, Any]:
             "key": key,
             "title": dict(_STOCK_DIMENSIONS)[key],
             "body": body,
+            "blocks": blocks,
             "items": items[:2],
         }
     missing = [title for key, title in _STOCK_DIMENSIONS if key not in by_key]

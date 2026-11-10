@@ -55,6 +55,26 @@ def test_stock_deep_validator_requires_all_five_dimensions():
         validate_stock_deep(raw, TaskRequest())
 
 
+def test_stock_deep_validator_accepts_section_blocks():
+    sections = [
+        {
+            "key": key,
+            "title": key,
+            "blocks": [
+                {"type": "paragraph", "text": f"{key} 的两到四句分析。"},
+                {"type": "bullets", "items": ["并列要点一", "并列要点二"]},
+            ],
+        }
+        for key in ("fundamental", "profitability", "valuation", "risk", "capital")
+    ]
+    out = validate_stock_deep(json.dumps({"summary": "总体平稳。", "sections": sections}), TaskRequest())
+    assert out["sections"][0]["body"] == "fundamental 的两到四句分析。"
+    assert out["sections"][0]["blocks"][0]["type"] == "paragraph"
+    assert out["sections"][0]["blocks"][1]["items"] == ["并列要点一", "并列要点二"]
+    kept = _compact_result({"card": out}, keep_sections=True)
+    assert kept["card"]["sections"][0]["blocks"][1]["items"][0] == "并列要点一"
+
+
 def test_stock_deep_validator_normalizes_five_dimensions():
     sections = [
         {"key": key, "title": "模型乱写的标题", "body": f"{key} 的事实。", "items": [{"k": "指标", "v": "1"}]}
@@ -101,10 +121,6 @@ def test_stock_deep_endpoint_falls_back_when_llm_missing(monkeypatch):
         lambda conn, code, deep=False: {
             "dataSource": "测试数据",
             "dimensionFacts": {},
-            "financials": [
-                {"period": f"2025Q{i}", "revenue": 100 + i, "gross_margin": 40 + i}
-                for i in range(1, 5)
-            ],
         },
     )
 
@@ -117,8 +133,7 @@ def test_stock_deep_endpoint_falls_back_when_llm_missing(monkeypatch):
     assert out["engine"] == "rule"
     assert out["fallback"] is True
     assert len(out["card"]["sections"]) == 5
-    assert len(out["charts"]) == 2
-    assert all(item["type"] == "bar" for item in out["charts"])
+    assert "charts" not in out
 
 
 def test_ai_cache_roundtrip(monkeypatch, tmp_path):

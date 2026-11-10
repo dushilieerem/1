@@ -327,10 +327,10 @@ export default function Stock() {
       {!isUs ? (
         <AiPanel
           title={t("AI 个股五维分析", "AI 5-dim stock analysis")}
-          subtitle={t("自动生成基本面、盈利、估值、风险、资金五维解读，不给买卖建议。", "Automatically covers fundamentals, profitability, valuation, risk and capital; never buy/sell advice.")}
+          subtitle={t("自动生成基本面、盈利、估值、风险、资金五个分点结论，不展示图表，不给买卖建议。", "Five point conclusions on fundamentals, profitability, valuation, risk and capital; no charts and no buy/sell advice.")}
           endpoint={`/api/invest/ai/stock/${code}`}
           hideOnError
-          expandable
+          blocksMode
         />
       ) : null}
 

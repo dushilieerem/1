@@ -5,11 +5,22 @@ import AiCharts, { type AiChartData } from "./AiChart";
 import { ErrorState } from "../components";
 import { useLocale } from "../i18n";
 
+type Block = {
+  type?: "paragraph" | "bullets" | "table" | "chart";
+  text?: string;
+  items?: string[];
+  title?: string;
+  source?: string;
+  columns?: string[];
+  rows?: Array<Array<string | number | null>>;
+};
+
 type Section = {
   key?: string;
   title?: string;
   type?: string;
   body?: string;
+  blocks?: Block[];
   items?: Array<{ k?: string; v?: string; tone?: string }>;
 };
 
@@ -39,6 +50,7 @@ export default function AiPanel({
   hideOnError = false,
   expandable = false,
   defaultExpanded = false,
+  blocksMode = false,
 }: {
   title?: string;
   subtitle?: string;
@@ -47,6 +59,7 @@ export default function AiPanel({
   hideOnError?: boolean;
   expandable?: boolean;
   defaultExpanded?: boolean;
+  blocksMode?: boolean;
 }) {
   const { t } = useLocale();
   const resolvedTitle = title ?? t("AI 解读", "AI insights");
@@ -85,6 +98,7 @@ export default function AiPanel({
   const sections = card?.sections || [];
   const charts = data?.charts || [];
   const hasCharts = charts.length > 0;
+  const visibleCharts = blocksMode ? [] : charts;
   if (hideOnError && error) return null;
   return (
     <section className="card ai-panel">
@@ -109,8 +123,45 @@ export default function AiPanel({
       {card && !data?.blocked ? (
         <div className="ai-result">
           {card.summary ? <p className="ai-summary">{card.summary}</p> : null}
-          <AiCharts charts={charts} />
-          {expandable && sections.length ? (
+          <AiCharts charts={visibleCharts} />
+          {blocksMode && sections.length ? (
+            <div className="ai-analysis">
+              {sections.map((s, i) => {
+                const blocks = s.blocks?.length
+                  ? s.blocks
+                  : [
+                    ...(s.body ? [{ type: "paragraph" as const, text: s.body }] : []),
+                    ...(s.items?.length ? [{ type: "bullets" as const, items: s.items.map((it) => `${it.k || ""}${it.k && it.v ? "：" : ""}${it.v || ""}`) }] : []),
+                  ];
+                return (
+                  <div className="ai-analysis-section" key={s.key || i}>
+                    {s.title ? <b>{s.title}</b> : null}
+                    {blocks.map((block, j) => {
+                      if (block.type === "paragraph" && block.text) {
+                        return <p className="ai-analysis-p" key={j}>{block.text}</p>;
+                      }
+                      if (block.type === "bullets" && block.items?.length) {
+                        return <ul className="ai-points" key={j}>{block.items.map((item, k) => <li key={k}><span>{item}</span></li>)}</ul>;
+                      }
+                      if (block.type === "table" && block.rows?.length) {
+                        return (
+                          <div className="ai-table-wrap" key={j}>
+                            {block.title ? <div className="hint">{block.title}</div> : null}
+                            <table className="data-table">
+                              {block.columns?.length ? <thead><tr>{block.columns.map((c, k) => <th key={k}>{c}</th>)}</tr></thead> : null}
+                              <tbody>{block.rows.map((row, k) => <tr key={k}>{row.map((cell, m) => <td key={m}>{cell ?? "—"}</td>)}</tr>)}</tbody>
+                            </table>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+          {!blocksMode && expandable && sections.length ? (
             <button
               type="button"
               className="ai-expand-toggle"
@@ -123,7 +174,7 @@ export default function AiPanel({
               {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </button>
           ) : null}
-          {(!expandable || expanded) && sections.map((s, i) => (
+          {!blocksMode && (!expandable || expanded) && sections.map((s, i) => (
             <div className="ai-section" key={s.key || i}>
               {s.title ? <b>{s.title}</b> : null}
               {s.body ? <p>{s.body}</p> : null}

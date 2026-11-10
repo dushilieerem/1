@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronDown, ChevronUp, ImagePlus, Mic, MicOff, Send, SlidersHorizontal, Sparkles } from "lucide-react";
 import { api } from "../api";
-import AiCharts from "../components/AiChart";
+import AiCharts, { AiPriceTrend } from "../components/AiChart";
 import CompareView, { type ComparePayload } from "../components/CompareView";
-import { ErrorState, PageHeader, Sparkline, Tag } from "../components";
+import { ErrorState, PageHeader, Tag } from "../components";
 import { ConditionPicker, ConditionScreener, looksLikeCondition, type ConditionResponse, type RelaxAction } from "../components/ConditionScreener";
 import { useLocale } from "../i18n";
 
@@ -636,6 +636,7 @@ export default function AiChat() {
                 ) : null}
                 {m.text ? <p className="hint">{m.text}</p> : null}
                 {!m.debate && !m.compare && m.card?.summary ? <p className="ai-summary">{m.card.summary}</p> : null}
+                {!m.debate && !m.compare && m.chart?.bars?.length ? <AiPriceTrend chart={m.chart} /> : null}
                 {!m.debate && !m.compare && m.charts?.length ? <AiCharts charts={m.charts} /> : null}
                 {!m.debate && !m.compare ? splitSections(m.card).map((s, j) => (
                   <div key={j} className="ai-section">
@@ -652,12 +653,6 @@ export default function AiChat() {
                   <div className="ai-section">
                     <b>{t("证据链", "Evidence chain")}</b>
                     <ul>{m.evidence.slice(0, 4).map((ev, k) => <li key={k}>{ev.title}{t("：", ": ")}{ev.detail}</li>)}</ul>
-                  </div>
-                ) : null}
-                {m.chart?.bars?.length ? (
-                  <div className="ai-chart">
-                    <Sparkline values={m.chart.bars.map((b) => Number(b.close || 0))} width={220} height={44} />
-                    <span className="hint">{m.chart.code} · {t("近", "Last")} {m.chart.bars.length} {t("个交易日", "trading days")}</span>
                   </div>
                 ) : null}
                 {!m.debate && !m.compare && m.card?.disclaimer ? <p className="hint">{m.card.disclaimer}</p> : null}

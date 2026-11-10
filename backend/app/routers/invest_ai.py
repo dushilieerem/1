@@ -74,6 +74,21 @@ def _clean_sections(sections: Any) -> list[dict[str, Any]]:
         if not isinstance(section, dict):
             continue
         body = str(section.get("body") or "").strip()
+        blocks = []
+        for block in section.get("blocks") or []:
+            if not isinstance(block, dict):
+                continue
+            kind = str(block.get("type") or "").strip()
+            if kind == "paragraph":
+                text = str(block.get("text") or "").strip()
+                if text:
+                    blocks.append({"type": "paragraph", "text": text[:1200]})
+            elif kind == "bullets":
+                items = [str(x).strip() for x in (block.get("items") or []) if str(x).strip()]
+                if items:
+                    blocks.append({"type": "bullets", "items": items[:5]})
+        if not body:
+            body = next((b["text"] for b in blocks if b.get("type") == "paragraph"), "")
         if not body:
             continue
         items = []
@@ -88,6 +103,7 @@ def _clean_sections(sections: Any) -> list[dict[str, Any]]:
             "key": str(section.get("key") or "")[:40],
             "title": str(section.get("title") or "")[:40],
             "body": body[:1200],
+            "blocks": blocks,
             "items": items[:6],
         })
     return cleaned
@@ -272,32 +288,6 @@ def _charts_for_stock(ctx: dict[str, Any], query: str) -> list[dict[str, Any]]:
                 [str(x.get("period")) for x in rows],
                 [x.get("gross_margin") for x in rows],
                 "%",
-            ))
-    return charts
-
-
-def _charts_for_stock_deep(ctx: dict[str, Any]) -> list[dict[str, Any]]:
-    """个股页固定图表：连续 4 个以上同口径财报点才画，避免文字堆数字。"""
-    charts: list[dict[str, Any]] = []
-    financials = [x for x in (ctx.get("financials") or []) if x.get("period")]
-    if len(financials) >= 4:
-        rows = financials[-5:]
-        charts.append(_bar_chart(
-            "近 5 期营收",
-            "Revenue, last 5 periods",
-            [str(x.get("period")) for x in rows],
-            [x.get("revenue") for x in rows],
-            "亿元",
-            "财报",
-        ))
-        if any(x.get("gross_margin") is not None for x in rows):
-            charts.append(_bar_chart(
-                "近 5 期毛利率",
-                "Gross margin, last 5 periods",
-                [str(x.get("period")) for x in rows],
-                [x.get("gross_margin") for x in rows],
-                "%",
-                "财报",
             ))
     return charts
 
@@ -962,7 +952,6 @@ def stock_ai(
             raise
         # 无 LLM Key / 网关时降级为服务端规则版，页面仍可用。
         result = {"engine": "rule", "fallback": True, "card": _stock_deep_rule_card(context)}
-    result.setdefault("charts", _charts_for_stock_deep(context))
     return {"ok": True, **result}
 
 

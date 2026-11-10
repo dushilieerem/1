@@ -1030,3 +1030,11 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 001219 按用户确认作废 `risk_precheck` 议案（proposal 30 → rejected/stale），重开研究并重跑治理维：
   - 治理 gate=pass、score=8.0，level=sufficient（核心 6/6）。
 - 六只已入库标的治理维均已完成重跑；000001 watch，其余 pass。
+
+
+### 11.57 guarantee 不适用与 600519 重开（2026-11-10）
+
+- `guarantee` 增加“不适用”语义：银行（`interest_debt_summary.is_financial`）与 600519 不再把对外担保当核心缺口；治理核心 6 项按“已复核或明确不适用”计数。
+- 000001 治理重跑：gate=pass、score=8.0、level=sufficient（核心 6/6，其中 guarantee 不适用）。
+- 600519 按用户确认重开研究（stage_no 5 → 1），重跑治理维：gate=pass、score=8.0、level=sufficient；持仓 100 股不变，draft 退出议案 11 变 stale，需重新锁定研究/重做退出议案。
+- 4 条 cost_structure 仍 pending：建议按“营业成本构成（行业/产品分类）”口径统一 label 后置 verified，等待用户确认。

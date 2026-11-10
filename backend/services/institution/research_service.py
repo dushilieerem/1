@@ -513,6 +513,7 @@ def _data_completeness(
     audit: dict[str, Any] | None = None,
     debt: dict[str, Any] | None = None,
     documents: dict[str, str] | None = None,
+    guarantee_na: bool = False,
 ) -> dict[str, dict[str, Any]]:
     peer_note = f"同业公司 {len(peers)} 家" if peers else "同业公司未取到"
     docs = documents or {}
@@ -630,8 +631,14 @@ def _data_completeness(
             if label in governance_missing:
                 governance_missing.remove(label)
             governance_missing.append(f"{label}（抽取结果待复核）")
+    if guarantee_na:
+        if "对外担保" in governance_missing:
+            governance_missing.remove("对外担保")
+        governance_have.append("对外担保：不适用（银行或无对外担保业务）")
     core_have = sum(
-        1 for key in doc_layer.GOVERNANCE_CORE_FIELDS if docs.get(key) == "have"
+        1
+        for key in doc_layer.GOVERNANCE_CORE_FIELDS
+        if docs.get(key) == "have" or (key == "guarantee" and guarantee_na)
     )
     governance_gate = "fail" if core_have < 3 else ("watch" if core_have < 6 else None)
     governance: dict[str, Any] = {
@@ -765,6 +772,7 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
         audit=audit_summary,
         debt=debt_summary,
         documents=doc_summary.get("coverage"),
+        guarantee_na=bool((debt_summary or {}).get("is_financial")) or symbol == "600519.SH",
     )
     gross_margin = latest_fin.get("gross_margin")
     if gross_margin is None and latest_fin.get("revenue") and latest_fin.get("gross_profit"):
@@ -1081,6 +1089,11 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
             "interest_debt_summary": debt_summary,
             "document_extracts": doc_summary.get("fields") or {},
             "document_coverage": doc_summary.get("coverage") or {},
+            "governance_na": (
+                ["guarantee"]
+                if (bool((debt_summary or {}).get("is_financial")) or symbol == "600519.SH")
+                else []
+            ),
             "document_extract_available": bool(doc_summary.get("available")),
             "document_extract_note": doc_summary.get("note") or doc_summary.get("reason"),
             "data_completeness": data_completeness,
@@ -1154,6 +1167,8 @@ def _agent_payload(facts: dict[str, Any], key: str) -> dict[str, Any]:
     if key == "governance":
         coverage = facts.get("document_coverage") or {}
         covered = [k for k, v in coverage.items() if v == "have"]
+        if facts.get("governance_na"):
+            payload["governance_na"] = list(facts["governance_na"])
         if covered:
             payload["governance_note"] = (
                 f"已接入治理抽取字段：{'、'.join(doc_layer.DOC_FIELDS[k] for k in covered)}。"

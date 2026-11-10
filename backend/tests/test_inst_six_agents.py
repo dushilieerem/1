@@ -273,3 +273,21 @@ def test_one_pager_metrics_are_deterministic() -> None:
     assert by_label["价值区间"]["value"] == "43.43–72.38 元"
     assert by_label["有效维"]["value"] == "5/6"
     assert by_label["低置信维"]["value"] == "6 项"
+
+
+def test_governance_guarantee_not_applicable_unlocks_core() -> None:
+    docs = {
+        "controller_profile": "have",
+        "board_structure": "have",
+        "pledge_freeze": "have",
+        "related_party": "have",
+        "litigation_penalty": "have",
+    }
+    completeness = svc._data_completeness(
+        ind={}, peers=[], history={}, fin=[], val={}, documents=docs, guarantee_na=True
+    )
+    governance = completeness["governance"]
+    assert governance["level"] == "sufficient"
+    assert "gate_cap" not in governance
+    assert "对外担保" not in governance["missing"]
+    assert any("对外担保：不适用" in x for x in governance["have"])

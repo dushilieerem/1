@@ -91,7 +91,7 @@ def sync_existing(uid: int, org: int) -> dict:
                      updated_at=NOW()""",
                 (str(uuid.uuid4()), org, uid, row["source_library"], row["source_factor_id"],
                  row["factor_name"], row["display_name"], row["definition"],
-                 row["definition_source"], row["import_hash"]))
+                 row["definition_source"], row["import_hash"], row["category"]))
             if old_hash is None:
                 inserted += 1
             else:

@@ -341,6 +341,7 @@ test('新版任务：所有环节可暂停，真实生成阶段与人工建议�
  const view=render(<MemoryRouter initialEntries={['/quant/factor?topic=t-new-method']}><QuantFactorHomePage/></MemoryRouter>);
  await waitFor(()=>assert.ok(view.getByText('正在生成并检查因子源码')));
  for(const stage of ['研究准备','因子研发','独立验证','审批入库']){fireEvent.click(view.getAllByRole('button',{name:'查看'+stage})[0]);assert.ok(view.getByRole('button',{name:'暂停研究'}));}
+ assert.ok(view.getByRole('link',{name:'查看待审批'}));assert.ok(view.getByRole('link',{name:'打开因子库'}));
  assert.equal(writes.length,0,'查看不同环节不能启动或暂停研究');
  fireEvent.click(view.getByRole('button',{name:'给研究建议'}));
  fireEvent.change(await view.findByLabelText('给当前研究的建议'),{target:{value:'只改变向后窗口，不扩大评分区间'}});await waitFor(()=>assert.equal((view.getByRole('button',{name:'提交研究建议'}) as HTMLButtonElement).disabled,false));fireEvent.click(view.getByRole('button',{name:'提交研究建议'}));

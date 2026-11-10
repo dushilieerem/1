@@ -31,6 +31,25 @@ class MetadataTest(unittest.TestCase):
 
 
 class SyncTest(unittest.TestCase):
+    def test_first_import_binds_original_category_to_every_sql_placeholder(self):
+        raw = {'ok': True, 'errors': [], 'factors': [{**factor(1), 'category_label': '动量因子'}, {**factor(2), 'category_name': '量价关系因子'}]}
+        class Cursor:
+            def __init__(self): self.inserts = []
+            def execute(self, statement, params):
+                if 'INSERT INTO quant_factor_imported_factors' in statement:
+                    # Real DB driver requires equal bind count; old permissive MagicMock missed this.
+                    self_test.assertEqual(statement.count('%s'), len(params))
+                    self.inserts.append(params)
+                return self
+            def fetchall(self): return []
+        self_test = self
+        cursor = Cursor(); connection = MagicMock(); connection.__enter__.return_value = cursor
+        with patch.object(imports, 'fetch_re_catalog', return_value=raw), patch.object(imports, 'get_conn', return_value=connection):
+            result = imports.sync_existing(7, 9)
+        self.assertEqual(result['inserted'], 2)
+        self.assertEqual([args[-1] for args in cursor.inserts], ['动量因子', '量价关系因子'])
+        self.assertEqual([args[1:3] for args in cursor.inserts], [(9, 7), (9, 7)])
+
     def test_idempotent_upsert_counts_insert_update_unchanged(self):
         rows = imports._metadata_rows({'ok': True, 'errors': [], 'factors': [factor(1), factor(2)]})
         cursor = MagicMock(); cursor.execute.return_value = cursor

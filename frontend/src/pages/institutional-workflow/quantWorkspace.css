@@ -263,3 +263,32 @@
 .quant-shell .ff-live{padding:20px;font-size:14px}.quant-shell .ff-live p{font-size:14px;line-height:1.75}
 .quant-shell .ff-task time,.quant-shell .ff-detail-head p,.quant-shell .ff-step small,.quant-shell .ff-step em,.quant-shell .ff-label,.quant-shell .ff-live time,.quant-shell .ff-error details{font-size:12px;line-height:1.7}
 .quant-shell .ff-stage-grid .card-head,.quant-shell .ff-stage-grid .card-body{padding:20px}
+
+/* UX-103: task work panels only; review/report grids retain their own layout. */
+.quant-shell .ff-work-panels{--work-panel-cap:clamp(420px,62vh,640px);--work-panel-cap:clamp(420px,62dvh,640px);height:auto;max-height:none;align-items:start}
+.quant-shell .ff-work-panels>.ff-work-main{display:flex;flex-direction:column;gap:16px;min-width:0}
+.quant-shell .ff-work-panels .ff-stage-main{display:flex;min-width:0;min-height:0}
+.quant-shell .ff-work-panels .ff-work-main>.history-details{margin-top:0}
+.quant-shell .ff-work-panels .ff-stage-card{display:flex;flex-direction:column;width:100%;height:auto;max-height:var(--work-panel-cap);min-height:0;margin:0;overflow:hidden}
+.quant-shell .ff-work-panels .card-head,.quant-shell .ff-work-panels .card-footer{flex:0 0 auto}
+.quant-shell .ff-work-panels .card-footer{padding:16px 20px;border-top:1px solid var(--border)}
+.quant-shell .ff-work-panels .ff-stage-card>.card-body{flex:1 1 auto;min-height:0;overflow:auto;scrollbar-gutter:stable}
+.quant-shell .ff-work-panels>.ff-live{display:flex;flex-direction:column;min-width:0;min-height:0;height:clamp(420px,62vh,560px);height:clamp(420px,62dvh,560px);contain:none;position:sticky;top:84px;padding:0;overflow:hidden}
+.quant-shell .ff-work-panels .ff-live-head,.quant-shell .ff-work-panels .ff-live-foot{flex:0 0 auto;padding:16px}
+.quant-shell .ff-work-panels .ff-live-head h3{margin:4px 0}
+.quant-shell .ff-work-panels .ff-live .ff-now{margin:6px 0 0}
+.quant-shell .ff-work-panels .ff-live-body{flex:1 1 auto;min-height:0;overflow:auto;padding:0 20px;scrollbar-gutter:stable;overflow-wrap:anywhere}
+.quant-shell .ff-work-panels .ff-live-body ol{margin:0}
+.quant-shell .ff-work-panels .ff-live-foot{border-top:1px solid var(--border)}
+.quant-shell .ff-work-panels .ff-live-foot p{margin:0}
+.quant-shell .ff-work-panels .ff-code{max-height:none;overflow:visible;white-space:pre-wrap;overflow-wrap:anywhere}
+.quant-shell .ff-work-panels [role="region"]:focus-visible{outline-offset:-3px}
+@media(max-width:1250px){
+ .quant-shell .ff-work-panels{height:auto;max-height:none;grid-template-columns:1fr}
+ .quant-shell .ff-work-panels .ff-stage-card,.quant-shell .ff-work-panels>.ff-live{height:auto;max-height:none;contain:none}
+ .quant-shell .ff-work-panels>.ff-work-main{display:contents}
+ .quant-shell .ff-work-panels .ff-stage-main{grid-row:1}
+ .quant-shell .ff-work-panels>.ff-live{order:0;grid-row:2;position:static}
+ .quant-shell .ff-work-panels .history-details{grid-row:3}
+ .quant-shell .ff-work-panels .ff-stage-card>.card-body,.quant-shell .ff-work-panels .ff-live-body{overflow:visible;scrollbar-gutter:auto;flex:0 0 auto}
+}

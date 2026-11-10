@@ -382,15 +382,16 @@ export function QuantFactorHomePage(){
  ):null;
 
  const side=(
-  <aside className="ff-live" aria-label="Agent 工作状态">
-   <div><div className="eyebrow">当前工作</div><h3>{neverDelegated?'人工研究':taskState?.stages.find(s=>s.id===taskState.currentStage)?.role||'暂无运行中的任务'}</h3><div className="ff-now">{agentWork}</div></div>
+   <aside className="ff-live" aria-label="Agent 工作状态">
+   <div className="ff-live-head"><div className="eyebrow">当前工作</div><h3>{neverDelegated?'人工研究':taskState?.stages.find(s=>s.id===taskState.currentStage)?.role||'暂无运行中的任务'}</h3><div className="ff-now">{agentWork}</div></div>
+    <div className="ff-live-body" role="region" aria-label="研究事件与建议" tabIndex={0}>
    <div><div className="eyebrow">最近事件</div>{feed.length===0?<p className="subtle">尚无事件记录。</p>:<ol>{feed.map(t=><li key={t.key}><time>{t.at?new Date(t.at).toLocaleString():'时间未记录'}</time>{t.label}</li>)}</ol>}</div>
-   <div><hr className="ff-divider"/><div className="eyebrow">需要你处理</div><p>{taskState?.needsYou||'新建任务后在这里显示。'}</p></div>
-   <div className="actions" style={{marginTop:12}}>{(taskState?.key==='review'||taskState?.key==='approved_unregistered')&&<Link className="btn small primary" to="/quant/reviews/factors">查看待审批</Link>}</div>
    {canWrite&&topic&&project?.config.researchPlan?.researchContract&&<FactorResearchAdvice topicId={topic.id} projectId={topic.project_id} canSubmit={canSendAdvice} branches={ledger?.branches||[]} candidate={{id:candidate?.id,branch_id:currentBranch?.id}}/>}
    {(f0?.decision?.human_advice||[]).length>0&&<details><summary>研究建议处理情况</summary>{f0!.decision!.human_advice!.map(a=><p key={a.id}>{a.input.message}<br/><small>{({pending:'待处理',adopted:'已采用',not_adopted:'未采用'} as Record<string,string>)[a.status]||'待核对'}{a.reason?'：'+a.reason:''}</small></p>)}</details>}
-  </aside>
- );
+    </div>
+   <div className="ff-live-foot"><div className="eyebrow">需要你处理</div><p>{taskState?.needsYou||'新建任务后在这里显示。'}</p>   {(taskState?.key==='review'||taskState?.key==='approved_unregistered')&&<div className="actions" style={{marginTop:12}}><Link className="btn small primary" to="/quant/reviews/factors">查看待审批</Link></div>}</div>
+   </aside>
+  );
 
  const canStart=['draft','error','waiting'].includes(taskState?.key||'');
  const stageTitle=stageDefs.find(s=>s.id===stageView);
@@ -399,7 +400,7 @@ export function QuantFactorHomePage(){
  const stageContent=!topic?null:(
   <article className="card ff-stage-card">
    <div className="card-head"><div><h2>{stageTitle?.label}</h2><p>{stageTitle?.role} · {stageTitle?.status==='done'?'已完成':stageTitle?.status==='current'?'当前环节':'尚未开始'}</p></div><span className="badge">{purposeText(topic.research_purpose)}</span></div>
-   <div className="card-body">
+   <div className="card-body" role="region" aria-label={(stageTitle?.label||'研究')+'内容'} tabIndex={0}>
     {stageView==='prepare'&&<>
      <dl className="ff-kv"><dt>研究目标</dt><dd>{project?.description||ledger?.branches?.[0]?.hypothesis_text||(ledger?.branches?.[0]?.display_title&&ledger.branches[0].display_title!=='初始假设'?ledger.branches[0].display_title:'尚无已保存假设；启动后由研究准备 Agent 生成。')}</dd><dt>任务类型</dt><dd>{purposeText(topic.research_purpose)}</dd><dt>研发区间</dt><dd>日频 · {topic.development_start||'—'} 至 {topic.development_end||'—'}</dd><dt>独立验证区间</dt><dd>{topic.validation_start||'—'} 至 {topic.validation_end||'—'} · 沿用固定发布版本</dd><dt>试验预算</dt><dd>上限 {topic.max_trials} 次，已检验 {topic.trial_count} 次</dd><dt>用途</dt><dd>因子研究，不涉及实盘交易</dd></dl>
     </>}
@@ -412,20 +413,18 @@ export function QuantFactorHomePage(){
 
      <div className="ff-now">已检验 {topic.trial_count} 次 / 上限 {topic.max_trials} 次 · 当前第 {currentVersion} 版</div>
      <dl className="ff-kv" style={{marginTop:10}}><dt>所选试验结果</dt><dd>{viewTrial?outcomeText(viewTrial)+(viewTrial.report_id?' · 有报告':''):'尚无研发检验'}</dd><dt>假设分支</dt><dd>{topic.branch_count} 个</dd><dt>当前状态</dt><dd>{taskState?.label}</dd></dl>
-     <div className="actions" style={{marginTop:12}}><Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+candidateQuery}>人工研究</Link>{viewTrial?.report_id&&<Link className="btn small" to={'/quant/factor/report/'+viewTrial.report_id}>查看所选报告</Link>}<button className="btn small" onClick={()=>setStageView('validation')}>查看独立验证</button></div>
     </>}
     {stageView==='validation'&&<>
      <dl className="ff-kv"><dt>封存已用</dt><dd>{topic.sealed_used||0} / {topic.max_sealed}</dd><dt>验证通过</dt><dd>{topic.sealed_passed||0} 次</dd><dt>验证中</dt><dd>{topic.sealed_running||0} 次</dd><dt>验证失败</dt><dd>{topic.sealed_failed||0} 次</dd><dt>待审批</dt><dd>{topic.pending_review||0} 项</dd></dl>
      {sealedTrials.length>0?<div className="trial-list" style={{marginTop:10}}>{sealedTrials.slice(0,5).map(t=><div className="trial-row" key={t.trial_no}><span className="tk">验证</span><div className="tb"><b>{outcomeText(t)}</b><small>{new Date(t.created_at||'').toLocaleString()}</small></div>{t.report_id?<Link className="btn small" to={'/quant/factor/report/'+t.report_id}>报告</Link>:null}</div>)}</div>:<p className="subtle">尚无封存验证记录。</p>}
-     <div className="actions" style={{marginTop:12}}>{(topic.pending_review||0)>0?<Link className="btn small primary" to="/quant/reviews/factors">进入待审批</Link>:<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+candidateQuery}>人工研究</Link>}</div>
     </>}
     {stageView==='approval'&&<>
      <dl className="ff-kv"><dt>本任务待审批</dt><dd>{topic.pending_review||0} 项</dd><dt>已批准待登记</dt><dd>{topic.approved_count||0} 项</dd><dt>已入库</dt><dd>{topic.registered_count?topic.registered_count+' 项':'尚未完成入库'}</dd></dl>
      <p className="fine" style={{marginTop:10}}>{(topic.pending_review||0)>0?'审批由独立复核人完成，研究员只能查看证据。':(topic.approved_count||0)>0?'审批已通过，资产登记尚未完成。':'当前任务还没有进入审批的候选。'}</p>
-     <div className="actions" style={{marginTop:12}}>{candidateId&&candidate?.feedback_eligibility?.allowed&&<Link className="btn small primary" to={reviewPath}>{candidate.archive?.review?.status==='requested'?'查看已提交研究复盘':candidate.archive?.review?.status==='reviewed'?'查看研究复盘结论':'提交研究复盘'}</Link>}<Link className="btn small" to="/quant/reviews/factors">查看待审批</Link><Link className="btn small" to="/quant/factor/library">打开因子库</Link></div>
     </>}
    </div>
-  </article>
+  {stageView!=='prepare'&&<footer className="card-footer">{stageView==='development'?<div className="actions"><Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+candidateQuery}>人工研究</Link>{viewTrial?.report_id&&<Link className="btn small" to={'/quant/factor/report/'+viewTrial.report_id}>查看所选报告</Link>}<button className="btn small" onClick={()=>setStageView('validation')}>查看独立验证</button></div>:stageView==='validation'?<div className="actions">{(topic.pending_review||0)>0?<Link className="btn small primary" to="/quant/reviews/factors">进入待审批</Link>:<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+candidateQuery}>人工研究</Link>}</div>:<div className="actions">{candidateId&&candidate?.feedback_eligibility?.allowed&&<Link className="btn small primary" to={reviewPath}>{candidate.archive?.review?.status==='requested'?'查看已提交研究复盘':candidate.archive?.review?.status==='reviewed'?'查看研究复盘结论':'提交研究复盘'}</Link>}<Link className="btn small" to="/quant/reviews/factors">查看待审批</Link><Link className="btn small" to="/quant/factor/library">打开因子库</Link></div>}</footer>}
+   </article>
  );
  const main=topic?(
   <section className="ff-detail">
@@ -439,7 +438,7 @@ export function QuantFactorHomePage(){
    {f0?.method_compatibility&&<details className="small-details" open={methodOpen} onToggle={e=>setMethodOpen(e.currentTarget.open)}><summary>本次运行的研究方法</summary><p>原运行：{f0.method_compatibility.saved_snapshot?.revision||'原配置未记录完整快照，原调用回执保留'}</p><p>当前可用：{f0.method_compatibility.available_snapshot.revision}</p><ul>{Object.entries(f0.method_compatibility.available_snapshot.roles).map(([role,value])=><li key={role}>{role.includes('planner')?'研究规划':role.includes('implementation')?'因子实现':'证据诊断'}：{value.max_output==null?'单次容量由模型服务决定':`原配置输出上限 ${value.max_output} Tokens`} · 技术超时 {value.timeout_seconds} 秒</li>)}</ul>{f0.method_compatibility.reason&&<p>{f0.method_compatibility.reason}</p>}</details>}
    {f0?.method_compatibility?.requires_new_run&&<p className="fine">使用更新后的研究方法继续，保留任务范围、历史结果和已用次数。</p>}
    {taskState?.key==='error'&&<div className="ff-error" role="alert"><b>本次运行未完成</b><p>{taskState.needsYou}</p><div className="actions"><Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'}>人工接手</Link></div><details open={diagnosticsOpen} onToggle={e=>setDiagnosticsOpen(e.currentTarget.open)}><summary>诊断详情</summary>{[...new Set([topic.dispatch_stop_reason,f0?.stop_reason].filter((value):value is string=>!!value))].map(value=><p key={value}>{value}</p>)}</details></div>}
-   <div className="ff-stage-grid"><div>{ledger?.topic.id===topic.id?stageContent:<div className="card card-pad" role="status">正在读取任务成果…</div>}</div>{side}</div>
+   <div className="ff-stage-grid ff-work-panels"><div className="ff-work-main"><div className="ff-stage-main">{ledger?.topic.id===topic.id?stageContent:<div className="card card-pad ff-stage-card" role="status">正在读取任务成果…</div>}</div>
    <details className="history-details" onToggle={e=>{if((e.currentTarget as HTMLDetailsElement).open)window.dispatchEvent(new Event('resize'));}}>
     <summary><span><b>研究历程与全部试验</b><small> {topic.branch_count} 个分支 · {topic.trial_count} 次试验</small></span><span className="subtle">展开查看</span></summary>
     <div className="ledger" style={{marginBottom:10}}><span>全部试验 <b>{ledger?.trials.length??0}</b> 条</span><span>计入 K <b className={(ledger?.k??topic.k)>topic.max_trials?"bad-t":undefined}>{ledger?.k??topic.k}</b> / {topic.max_trials}</span><span>当前 t*(K) <b>{ledger?.threshold==null?'待接入':ledger.threshold.toFixed(3)}</b></span>{ledger?.dispatch&&<span>调度 <b>{ledger.dispatch.status}</b>{ledger.dispatch.stop_reason?' · '+ledger.dispatch.stop_reason:''}</span>}</div>
@@ -449,6 +448,8 @@ export function QuantFactorHomePage(){
     <h3 style={{margin:'16px 0 6px'}}>全部试验</h3>
     {latestTrials.length===0?<p className="subtle">尚无试验记录。</p>:<div className="table-wrap"><table className="table"><thead><tr><th>试验</th><th>分支</th><th>结果</th><th>时间</th><th>报告</th></tr></thead><tbody>{latestTrials.map(t=><tr key={t.trial_no}><td><button className="btn small" onClick={()=>{setNode(t.branch_id);setInspectedBranch(t.branch_id);setInspectedTrial(t.trial_no);setStageView('development');}}>E{t.trial_no}</button></td><td>{t.branch_label||ledger?.branches.find(b=>b.id===t.branch_id)?.display_label||'分支待确认'}</td><td>{outcomeText(t)}</td><td>{new Date(t.created_at||'').toLocaleString()}</td><td>{t.report_id?<Link to={'/quant/factor/report/'+t.report_id}>查看</Link>:'—'}</td></tr>)}</tbody></table></div>}
    </details>
+    </div>{side}</div>
+
   </section>
  ):null;
 

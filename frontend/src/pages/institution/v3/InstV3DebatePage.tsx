@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Play, Send } from "lucide-react";
 import { dedupeBy, latestByKey } from "@/lib/instDedupe";
 import { instApi } from "@/lib/instApi";
+import { useInstSession } from "@/components/institution/instSessionContext";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
 
 type Arg = {
@@ -200,6 +201,7 @@ function claimHeadline(value?: string): string {
 
 export function InstV3DebatePage() {
   const navigate = useNavigate();
+  const session = useInstSession();
   const [params, setParams] = useSearchParams();
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [detail, setDetail] = useState<CaseItem | null>(null);
@@ -222,6 +224,7 @@ export function InstV3DebatePage() {
   const [adviceError, setAdviceError] = useState<string | null>(null);
 
   const detailSeq = useRef(0);
+  const autoDebateRef = useRef<string | null>(null);
   const selectedId = currentCaseId(params.get("key"));
   const version = detail?.versions?.[0] || null;
   const latestProposal = detail?.proposals?.[0] || null;
@@ -249,6 +252,26 @@ export function InstV3DebatePage() {
     return d;
   };
 
+  /** 进入辩论模块：研究已锁定但没有完成辩论时，自动跑多空/主持/估值。 */
+  const ensureDebate = async (id: number) => {
+    if (session.role !== "manager") return;
+    const key = `case:${id}`;
+    if (autoDebateRef.current === key) return;
+    autoDebateRef.current = key;
+    try {
+      const d = await instApi<CaseItem>(`/cases/${id}`);
+      if (d.debates?.[0]?.status === "completed") return;
+      setBusy("auto-debate");
+      await instApi(`/cases/${id}/debate`, { method: "POST", body: { use_ai: true } });
+      await loadDetail(id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+      autoDebateRef.current = null;
+    }
+  };
+
   useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -262,6 +285,7 @@ export function InstV3DebatePage() {
             return;
           }
           const d = await loadDetail(id);
+          void ensureDebate(id);
           const price = Number(d.ref_price || 0);
           if (price > 0) {
             setPriceLow((price * 0.9).toFixed(2));

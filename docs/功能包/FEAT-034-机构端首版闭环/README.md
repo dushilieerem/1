@@ -1070,3 +1070,11 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 已有完整六维/行业/一页纸的案不会重复跑；自动流程按 case 去重，避免并发重复。
 - 非 manager（只读/审批角色）不触发自动写操作。
 - 一页纸空白的原因不是未落盘，而是进入页面只 GET 缓存、从未 POST 生成；现在进入即自动生成并持久化。
+
+
+### 11.61 后续模块自动生成建议（2026-11-10）
+
+- 多空辩论：manager 进入案件时，研究已锁定但无已完成辩论 → 自动 POST `/cases/{id}/debate`（use_ai=true），生成多空/主持/估值后落盘；已有 completed 辩论不重复跑。
+- 投委会审批：partner/risk/chairman 进入议案时，先读缓存建议；无缓存则自动 POST 当前角色的 `/ai/{partner-memo|risk-review|chairman-memo}` 并落盘。
+- 执行成交：进入授权详情继续自动 GET `/authorizations/{id}/precheck`；不自动下单，执行按钮仍由 execution 角色人工确认。
+- 投资管理：进入持仓读取论点/事件；扫描、预警、退出议案仍保留人工触发，避免自动产生告警或退出动作。

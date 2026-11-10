@@ -236,6 +236,8 @@ export function InstV3ApprovalsPage() {
   const [memoMeta, setMemoMeta] = useState<{ cached?: boolean; stale?: boolean } | null>(null);
   const [memoBusy, setMemoBusy] = useState(false);
   const [memoError, setMemoError] = useState<string | null>(null);
+  const [memoLoaded, setMemoLoaded] = useState(false);
+  const autoMemoRef = useRef<string | null>(null);
 
   const detailSeq = useRef(0);
   const selectedId = parseProposalId(params.get("key"));
@@ -292,7 +294,8 @@ export function InstV3ApprovalsPage() {
     setMemo(null);
     setMemoMeta(null);
     setMemoError(null);
-    if (!detail?.id || !memoPath) return;
+    setMemoLoaded(false);
+    if (!detail?.id || !memoPath) { setMemoLoaded(true); return; }
     let alive = true;
     instApi<{ memo: AgentMemo | null; cached?: boolean; stale?: boolean }>(
       `/proposals/${detail.id}/ai/${memoPath}?cached_only=true`,
@@ -306,7 +309,8 @@ export function InstV3ApprovalsPage() {
       })
       .catch(() => {
         // 建议是辅助信息；读取失败不阻塞审批页。
-      });
+      })
+      .finally(() => { if (alive) setMemoLoaded(true); });
     return () => { alive = false; };
   }, [detail?.id, memoPath]);
 
@@ -327,6 +331,16 @@ export function InstV3ApprovalsPage() {
       setMemoBusy(false);
     }
   };
+
+  // 进入审批模块自动生成当前角色建议；批准/否决仍由人操作。
+  useEffect(() => {
+    if (!memoLoaded || !detail?.id || !memoPath || memo || memoBusy) return;
+    const key = `${detail.id}:${memoPath}`;
+    if (autoMemoRef.current === key) return;
+    autoMemoRef.current = key;
+    void generateMemo(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memoLoaded, detail?.id, memoPath, memo, memoBusy]);
 
   const selectProposal = (id: number) => {
     setParams({ key: `proposal:${id}` });

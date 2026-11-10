@@ -13,6 +13,10 @@ from .common import _j
 POLICY_VERSION = "inst-policy-v1"
 
 
+class AiUnavailable(RuntimeError):
+    """AI 未配置/不可用；由路由层映射为 503。"""
+
+
 def _audit(
     conn,
     *,

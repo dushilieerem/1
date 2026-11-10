@@ -11,6 +11,7 @@ import pytest
 
 from services.core.db import get_conn
 from services.institution import inst_service as svc
+from services.institution import ai_service as inst_ai
 
 ORG_ID = 0
 
@@ -245,7 +246,7 @@ def test_approval_memo_cached_only_never_calls_ai(monkeypatch) -> None:
         def _must_not_run(*args, **kwargs):
             raise AssertionError("cached_only 不应调用 AI")
 
-        monkeypatch.setattr(svc, "_ai_task", _must_not_run)
+        monkeypatch.setattr(inst_ai, "_ai_task", _must_not_run)
         out = svc.ai_partner_memo(
             c["org_id"], pid, actor_member_id=partner_id, cached_only=True
         )
@@ -258,7 +259,7 @@ def test_memo_syncs_version_conclusion(monkeypatch) -> None:
         def _unavailable(*args, **kwargs):
             raise svc.AiUnavailable("AI 未配置")
 
-        monkeypatch.setattr(svc, "_ai_task", _unavailable)
+        monkeypatch.setattr(inst_ai, "_ai_task", _unavailable)
         out = svc.ai_research_memo(
             c["org_id"], c["case_id"], actor_member_id=c["member_id"]
         )

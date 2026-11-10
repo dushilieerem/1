@@ -12,7 +12,7 @@
 | `scripts/ops/pg_wal_setup.sh` | 创建宿主机归档目录并放开写权限（容器内 postgres 是 uid 70） |
 | `scripts/ops/pg_basebackup.sh` | 每周基础备份 + 保留策略（基础备份 4 份、WAL 14 天） |
 
-归档目录默认 `/home/dev01/svquant-deploy/deploy/wal-archive`，可用 `WAL_ARCHIVE_HOST_DIR` 覆盖。
+归档目录默认 `/home/dev01/svquant-wal-archive`，可用 `WAL_ARCHIVE_HOST_DIR` 覆盖。
 刻意放在 `/home`（数据盘是 `/data`），机器级故障时归档不会跟着数据盘一起丢。
 
 ## 2. 启用步骤

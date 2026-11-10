@@ -11,7 +11,7 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-ARCHIVE_DIR="${WAL_ARCHIVE_HOST_DIR:-$ROOT_DIR/deploy/wal-archive}"
+ARCHIVE_DIR="${WAL_ARCHIVE_HOST_DIR:-$ROOT_DIR/../svquant-wal-archive}"
 
 log() { printf '[pg-wal-setup] %s\n' "$*" >&2; }
 

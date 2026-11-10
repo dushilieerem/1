@@ -11,7 +11,7 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 CONTAINER="${DB_CONTAINER:-svquant-db-1}"
 DB_USER="${POSTGRES_USER:-svquant}"
-ARCHIVE_DIR="${WAL_ARCHIVE_HOST_DIR:-$ROOT_DIR/deploy/wal-archive}"
+ARCHIVE_DIR="${WAL_ARCHIVE_HOST_DIR:-$ROOT_DIR/../svquant-wal-archive}"
 KEEP_BASE="${KEEP_BASE:-4}"
 KEEP_WAL_DAYS="${KEEP_WAL_DAYS:-14}"
 

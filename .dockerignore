@@ -24,6 +24,7 @@ backend/.env
 deploy/.env
 deploy/.last-good.env
 deploy/backups
+deploy/wal-archive
 deploy/re-template
 deploy/webhook-logs
 .ci

@@ -907,3 +907,73 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 评分基准提示保留，但不再因为旧数据缺基准而显示“未评分”。
 
 验证：后端 `pytest tests` 876 passed；前端 `tsc`/`build`/`test:inst` 15 passed；Playwright `e2e-09..14` 18 passed。
+
+
+### 11.48 doc_extract → 六维 FactPack 接入层（2026-11-10）
+
+- 新增 `backend/services/institution/doc_layer.py`：
+  - 固定五个 `field_key`：前五大客户、量价拆分、成本结构、合同负债、渠道数据；
+  - 依次探测 `svquant.doc_extract` / `doc_extract` / `public.doc_extract`，缺表、缺关键列或读取异常时返回空覆盖，不阻断研究；
+  - 按 `available_time::date <= as_of` 做 PIT，按字段取最新三条；
+  - `approved/verified/reviewed` 视为已复核；`pending` 只作线索；
+  - 每条结果保留 `page_no / quote / doc_id / pdf_sha256 / available_time`。
+- 研究生成接入：
+  - `facts` 新增 `document_extracts`、`document_coverage`、`document_extract_available/note`；
+  - `_data_completeness` 把已复核字段从 `missing` 移入 `have`，待复核字段标注“抽取结果待复核”；
+  - 合同负债已复核时，财务缺口改为“受限资金/租赁负债（B 组补）”；
+  - Agent payload：商业模式维度注入五个字段，财务维度注入成本结构与合同负债；提示词要求引用带 `doc_id/page_no/quote/available_time`。
+- 新增 `docs/数据需求/机构端-doc-extract接入契约.md`，固定 18 列表结构、复核状态机、PIT、责任边界与数据业务当前覆盖/排期。
+- 数据业务 2026-11-10 确认：已有 CSI300 2025 年报 291 份；五个字段抽取器未建；批 1 近 5 年目录 + 2025 年报全文，批 2 2019–2024 全文 + 公告类；在研 20–50 只优先预取。
+- 文档目录实际字段为 `announce_time / platform_available_time`；联调发现回采文档的 `platform_available_time` 是入库时间（2026-11-10），不能当 PIT；回采文档统一用 `announce_time + 1 个自然日` 作保守代理，有真实历史首次可得时间时优先用它。
+- 五个字段由机构端按页文本自抽并产出回写 SQL，初始 `pending`，抽检 20–30 条后改 `approved`；平台不排抽取器。
+- 新增 `scripts/ops/extract_inst_doc_fields.py`：按客户/量价/成本/合同负债/渠道五类模板抽 2025 年报，产出 CSV + `INSERT` SQL + 缺口报告；7 份年报抽出 24 条、明确缺口 11 条，全部 `pending`。
+- 数据业务 2026-11-10 已将 24 行写入生产 `svquant.doc_extract`；机构端抽检后回写 20 条 `verified`（客户/量价/合同负债/渠道），4 条成本结构保持 `pending`。回读接入层：600519/001219 四类字段已转为 `have`。
+- 首版结果：600519 客户 10.10%、销量 85,104.14 吨、合同负债 80.07 亿元；001219 客户 23.74%、合同负债 0.386 亿元；000625 客户 10.28%、销量 291.30 万辆、合同负债 69.09 亿元；000002 销售面积 1,025 万㎡、合同负债 930.57 亿元；000001 合同负债 24.24 百亿元。成本结构保留原文表，渠道按行业差异标注缺失/不适用。
+- 回写 SQL 已在 `svquant_test` 临时 `svquant.doc_extract` 表执行通过：24 行、7 只标的、5 个字段、全部 pending；导入后 `load_doc_extracts` 验证 PIT：600519 在 2026-04-01 看不到 2025 年报，2026-04-19 起可见。
+- 新增迁移 `backend/migrations/0036_inst_doc_extract.sql`：建 `svquant.doc_extract`（18 列，`PRIMARY KEY(doc_id, field_key)`、`available_time NOT NULL`）、两个索引，并给 `svquant_data_loader` 授予 `INSERT, SELECT`；测试库已应用并验证 24 行可插入。
+
+验证：后端 `pytest tests/test_inst_*.py` 117 passed、8 subtests；新增 `test_inst_doc_layer.py` 5 passed（PIT、复核状态、缺表降级、维度裁剪、完整度联动）。
+
+
+### 11.49 流水线阶段展示与研究案删除（2026-11-10）
+
+- 修复机会发现卡片把 `idea` 字典直接转成字符串的问题：`_opportunity_source` 识别字典并只取 `why_now`；流水线卡片统一显示“当前阶段：…”，不再出现 `{'source': 'push', ...}` 原始 JSON。
+- 新增 `DELETE /api/inst/cases/{case_id}` 归档研究案：
+  - 仅 `manager` 且 research 工作区有写权限；
+  - 执行/投后（stage≥4）、有持仓、有效授权、在途议案时拒绝，需先走退出/撤回；
+  - 归档为 `stage='closed'`、`stage_state='closed'`、`terminal_reason='deleted_by_user'`，公司池置 `dropped`，写 `research.case.delete` 审计；
+  - 不做物理删除，历史版本/证据/审计保留；
+  - `_existing_case_id` 只匹配未关闭案，删除后可重新立案；`create_case` 同步把公司池置 `research`。
+- UI：流水线 stage 1–3 卡片新增“删除研究案”，结果页 header 同步提供删除入口；删除成功刷新流水线或返回流水线。
+- 生产已直接授权执行 `0036_inst_doc_extract`（建表/索引）与 `0037_inst_doc_extract_privileges`（收紧为仅 INSERT/SELECT）；迁移状态 `current=0037`、`pending=[]`。
+
+验证：后端 `pytest tests` **888 passed、67 subtests**（新增删除归档/执行阶段拦截、机会来源字典清洗）；前端 `tsc`/`build`/`test:inst` 15 passed；Playwright 新用例 1 passed（卡片显示“当前阶段”、无原始 JSON、删除入口存在）。
+
+
+### 11.50 股票总览（2026-11-10）
+
+- 左侧“投资工作空间”新增“股票总览”，路由 `/inst/stocks`，所有拥有 `overview` 权限的角色可见。
+- 新增只读接口：
+  - `GET /api/inst/stocks?q=&limit=200`：机构公司池列表，`overview` 权限即可读；
+  - `GET /api/inst/stocks/{company_id}/bars?period=day|week|month&limit=`：复用日线/周线/月线聚合，分钟线未接入时明确返回不可用。
+- 前端页面：
+  - 左侧股票列表（研究中/自选/已移出优先），支持服务端按代码/名称/行业搜索，展示当前条数与全量总数；
+  - 右侧 K 线（A 股红涨绿跌、成交量副图、日/周/月切换），价格与涨跌幅、高低/成交量摘要；
+  - 相关资讯按 `symbol` 调 `/api/news`，展示标题、来源、时间与摘要，原文新窗口打开。
+- 修复拆分遗留：`company_service.list_companies` 延迟导入 `_idea_questions`，避免 `/companies`、`/stocks` 因未定义名称 500。
+- 新增 `InstV3KlineChart`（`lightweight-charts`），数据只走机构端 `stocks/{id}/bars`，不绕过租户隔离。
+
+验证：后端 `pytest tests` **888 passed、67 subtests**；前端 `tsc`/`build`/`test:inst` 15 passed；Playwright 股票总览用例 1 passed（列表、价格、K 线 canvas、资讯区）。
+
+
+### 11.51 只分析已有数据、治理字段接入与估值空态（2026-11-10）
+
+- 六维分析改为“只分析已有数据”：
+  - `data_completeness.level=missing` 的维度不再调用 Agent，状态为 `skipped`，summary 固定“数据未接入，暂不分析”，不评分，gate=fail；行业分析同样处理；
+  - `level=partial` 时必须基于已提供字段给出结论，不得因缺口拒绝分析；缺失项只进 data_gaps；
+  - Prompt 与 Agent payload 增加 `available_data_only` 规则；研究页数据缺口只展示前 3 项，完整列表放 title。
+- 治理字段接入 `doc_layer`：新增 `controller_profile / board_structure / pledge_freeze / related_party / guarantee / litigation_penalty / commitment_history / dividend_financing / mgmt_change`；核心 6 项全部 verified 后治理维度从 fail 解锁为 sufficient，否则按核心覆盖数保持 fail/watch。
+- 估值空态修复：`_build_research` 无法估值时返回 `method=unavailable + reason`，不再返回 `null`；辩论页“估值复核”展示不可用原因，并给出“去价值分析重跑估值”入口。常见原因：自由现金流/净利为负、缺少总股本或行情价格。
+- 数据业务已确认批 1 范围：7 只在研标的治理 6 项 + 财务附注 + 000001 银行专项；行业研究型数据不采购、缺失维度保持“待补数据”。
+
+验证：后端 `test_inst_six_agents` 10 passed、`test_inst_doc_layer` 6 passed、`test_inst_v3_flow` 16 passed；前端 `tsc` 通过；评分块改为紧凑横排并移除基准小字。

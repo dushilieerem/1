@@ -174,6 +174,9 @@ const InstV3DashboardPage = lazy(() =>
 const InstV3PipelinePage = lazy(() =>
   import("./pages/institution/v3/InstV3PipelinePage").then((m) => ({ default: m.InstV3PipelinePage })),
 );
+const InstV3StocksPage = lazy(() =>
+  import("./pages/institution/v3/InstV3StocksPage").then((m) => ({ default: m.InstV3StocksPage })),
+);
 const InstV3ProjectResultPage = lazy(() =>
   import("./pages/institution/v3/InstV3ProjectResultPage").then((m) => ({ default: m.InstV3ProjectResultPage })),
 );
@@ -238,6 +241,7 @@ export default function App() {
           <Route index element={<InstV3DashboardPage />} />
           <Route path="pipeline" element={<InstV3PipelinePage />} />
           <Route path="pipeline/result" element={<InstV3ProjectResultPage />} />
+          <Route path="stocks" element={<InstV3StocksPage />} />
           <Route path="research" element={<InstV3ResearchPage />} />
           <Route path="debate" element={<InstV3DebatePage />} />
           <Route path="approvals" element={<InstV3ApprovalsPage />} />

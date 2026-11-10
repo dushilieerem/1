@@ -137,6 +137,7 @@ from .research_service import (  # noqa: F401
     _update_task_progress,
     company_bars,
     create_case,
+    delete_case,
     evaluate_research_gate,
     export_research,
     generate_research,

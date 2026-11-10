@@ -124,3 +124,25 @@ test("研究定稿：门禁预览 → 低置信复核 → 锁定 R3", async ({ p
   expect(Number(detail.stage_no)).toBe(2);
   expect(detail.versions?.[0]?.locked_at).toBeTruthy();
 });
+
+test("流水线卡片显示当前阶段，不展示原始机会 JSON", async ({ page, request }) => {
+  const token = await login(request, "inst_manager");
+  await page.addInitScript((t) => sessionStorage.setItem("svquant_inst_token", t), token);
+  await page.goto(`${BASE}/inst/pipeline`, { waitUntil: "networkidle" });
+  const lines = await page.locator(".v3-project .ms").allTextContents();
+  expect(lines.length).toBeGreaterThan(0);
+  expect(lines.every((text) => text.includes("当前阶段："))).toBeTruthy();
+  expect(lines.some((text) => text.includes("{'source'") || text.includes('{"source"'))).toBeFalsy();
+  expect(await page.getByRole("button", { name: "删除研究案" }).count()).toBeGreaterThan(0);
+});
+
+test("股票总览：左侧列表、K 线与相关资讯", async ({ page, request }) => {
+  const token = await login(request, "inst_manager");
+  await page.addInitScript((t) => sessionStorage.setItem("svquant_inst_token", t), token);
+  await page.goto(`${BASE}/inst/stocks`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { name: "股票总览", exact: true })).toBeVisible();
+  expect(await page.locator(".v3-stock-item").count()).toBeGreaterThan(0);
+  await expect(page.locator(".v3-stock-quote b").first()).toBeVisible({ timeout: 30_000 });
+  expect(await page.locator(".v3-stock-main canvas").count()).toBeGreaterThan(0);
+  await expect(page.getByText("相关资讯", { exact: true })).toBeVisible();
+});

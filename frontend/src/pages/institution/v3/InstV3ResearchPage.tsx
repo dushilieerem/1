@@ -98,6 +98,12 @@ function dimScore(dim?: Dim | null): number | null {
   return null;
 }
 
+function missingText(items?: string[] | null): string {
+  const list = (items || []).map(String).filter(Boolean);
+  if (list.length <= 3) return list.join("；");
+  return `${list.slice(0, 3).join("；")} 等 ${list.length} 项`;
+}
+
 function overallScore(dims?: Dim[] | null, fallback?: number | null): number | null {
   if (fallback != null) return Number(fallback);
   const scores = (dims || []).map((d) => dimScore(d)).filter((n): n is number => n != null);
@@ -235,7 +241,7 @@ export function InstV3ResearchPage() {
           code: "ANALYST",
           model: "六维 Agent",
           tools: "证据库 / 公告 / 财报",
-          output: dim ? "结论已生成" : "待生成",
+          output: dim ? (dim.status === "skipped" ? "待补数据" : "结论已生成") : "待生成",
           role: `只负责「${label}」这一维，逐条带证据与证伪条件。`,
         };
       });
@@ -408,7 +414,7 @@ export function InstV3ResearchPage() {
                   <p style={{ marginTop: 8, lineHeight: 1.75, color: "#4b4352" }}>{version.industry_analysis.summary || "行业分析已生成。"}</p>
                   {version.industry_analysis.checks?.length ? <ul className="v3-rule-list" style={{ marginTop: 8 }}>{version.industry_analysis.checks.map((x) => <li key={x}>{x}</li>)}</ul> : null}
                   {version.industry_analysis.counter?.length ? <div className="v3-note" style={{ marginTop: 8 }}>反证：{version.industry_analysis.counter[0]}</div> : null}
-                  {version.industry_analysis.data_completeness?.missing?.length ? <p style={{ marginTop: 8, fontSize: 12, color: "#6b6370" }}>数据缺口：{version.industry_analysis.data_completeness.missing.join("；")}</p> : null}
+                  {version.industry_analysis.data_completeness?.missing?.length ? <p title={version.industry_analysis.data_completeness.missing.join("；")} style={{ marginTop: 8, fontSize: 12, color: "#6b6370" }}>数据缺口：{missingText(version.industry_analysis.data_completeness.missing)}</p> : null}
                 </div>
               ) : (
                 <div className="v3-empty">
@@ -433,30 +439,30 @@ export function InstV3ResearchPage() {
                     <div>
                       <div className="v3-dim-head">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="v3-chip ok">{activeDim.status || "已完成"}</span>
+                          <span className={`v3-chip ${activeDim.status === "skipped" ? "warn" : "ok"}`}>
+                            {activeDim.status === "skipped" ? "待补数据" : activeDim.status || "已完成"}
+                          </span>
                           {activeDim.confidence != null ? <span className="v3-chip">置信度 {activeDim.confidence.toFixed ? activeDim.confidence.toFixed(2) : activeDim.confidence}</span> : null}
                           {version?.dim_reviews?.[activeDim.key]?.decision === "approve" ? <span className="v3-chip ok">低置信已复核</span> : null}
                         </div>
-                        <div className={`v3-dim-score${dimScore(activeDim) == null ? " empty" : ""}`}>
-                          <span className="lab">{activeDim.engine === "rule" ? "规则评分" : "Agent 评分"}</span>
-                          <span className="num">
-                            {dimScore(activeDim) != null ? dimScore(activeDim)!.toFixed(1) : "未评分"}
-                            {dimScore(activeDim) != null ? <small>/10</small> : null}
-                          </span>
-                          <span className="base">
-                            {activeDim.engine === "rule"
-                              ? "规则兜底，非 AI 评分"
-                              : activeDim.rating_benchmark || "基准待补"}
-                          </span>
-                        </div>
+                        {dimScore(activeDim) == null && activeDim.status === "skipped" ? null : (
+                          <div className={`v3-dim-score${dimScore(activeDim) == null ? " empty" : ""}`}>
+                            <span className="lab">{activeDim.engine === "rule" ? "规则评分" : "Agent 评分"}</span>
+                            <span className="num">
+                              {dimScore(activeDim) != null ? dimScore(activeDim)!.toFixed(1) : "未评分"}
+                              {dimScore(activeDim) != null ? <small>/10</small> : null}
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <p style={{ marginTop: 8, lineHeight: 1.75, color: "#4b4352" }}>{activeDim.summary || "待补充"}</p>
                       {activeDim.checks?.length ? <ul className="v3-rule-list" style={{ marginTop: 8 }}>{activeDim.checks.map((x) => <li key={x}>{x}</li>)}</ul> : null}
                       {activeDim.counter?.length ? <div className="v3-note" style={{ marginTop: 8 }}>反证：{activeDim.counter[0]}</div> : null}
-                      {activeDim.data_completeness?.missing?.length ? <p style={{ marginTop: 8, fontSize: 12, color: "#6b6370" }}>数据缺口：{activeDim.data_completeness.missing.join("；")}</p> : null}
+                      {activeDim.data_completeness?.missing?.length ? <p title={activeDim.data_completeness.missing.join("；")} style={{ marginTop: 8, fontSize: 12, color: "#6b6370" }}>数据缺口：{missingText(activeDim.data_completeness.missing)}</p> : null}
                       <div style={{ marginTop: 8 }}>
-                        <button className="v3-btn ghost" disabled={!!busy} onClick={() => runResearch(activeDim.key, activeDim.key)}>
-                          <RefreshCw className="h-3.5 w-3.5" />{busy === activeDim.key ? "本维生成中…" : "只重跑本维"}
+                        <button className="v3-btn ghost" disabled={!!busy || activeDim.status === "skipped"} onClick={() => runResearch(activeDim.key, activeDim.key)}>
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          {activeDim.status === "skipped" ? "数据补齐后可重跑" : busy === activeDim.key ? "本维生成中…" : "只重跑本维"}
                         </button>
                       </div>
                     </div>

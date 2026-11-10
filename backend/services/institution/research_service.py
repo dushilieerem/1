@@ -35,7 +35,7 @@ from services.institution import data_platform, inst_ai_store
 from services.institution.report import render_research_report, report_filename
 from services.marketdata import store as md
 
-from . import repo
+from . import doc_layer, repo
 from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi
 from .company_service import _mapped_industry
 from .guards import POLICY_VERSION, _audit, _member, _require_role, _uid
@@ -180,7 +180,7 @@ def _existing_case_id(conn, org_id: int, company_id: int) -> int | None:
     row = conn.execute(
         """
         SELECT id FROM inst_research_case
-         WHERE org_id=%s AND company_id=%s
+         WHERE org_id=%s AND company_id=%s AND stage <> 'closed'
          ORDER BY updated_at DESC, id DESC LIMIT 1
         """,
         (org_id, company_id),
@@ -219,9 +219,117 @@ def create_case(org_id: int, company_id: int, actor_member_id: int | None) -> di
                 object_id=case_id,
                 after={"company_id": company_id, "case_no": case_no},
             )
+        conn.execute(
+            "UPDATE inst_company SET pool_status='research', drop_reason=NULL, updated_at=NOW() "
+            "WHERE id=%s AND org_id=%s",
+            (company_id, org_id),
+        )
     data = get_case(org_id, case_id) or {}
     data["created"] = created
     return data
+
+
+def delete_case(org_id: int, case_id: int, actor_member_id: int | None) -> dict[str, Any]:
+    """归档研究案：从流水线隐藏，保留审计与历史版本，不做物理删除。
+
+    执行/投后、有持仓、有效授权或在途议案的案件不允许直接删除，
+    必须先走退出/撤回流程，避免把下游不可变快照悬空。
+    """
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager")
+        case = conn.execute(
+            "SELECT * FROM inst_research_case WHERE id=%s AND org_id=%s FOR UPDATE",
+            (case_id, org_id),
+        ).fetchone()
+        if not case:
+            raise LookupError("研究案不存在")
+        if str(case.get("stage") or "") == "closed":
+            return {"deleted": False, "case_id": case_id, "reason": "already_closed"}
+        stage_no = int(case.get("stage_no") or 0)
+        if stage_no >= 4:
+            raise ValueError("执行/投后案件不能直接删除，请先完成退出或结案")
+        company = conn.execute(
+            "SELECT symbol, pool_status FROM inst_company WHERE id=%s AND org_id=%s",
+            (int(case["company_id"]), org_id),
+        ).fetchone()
+        if not company:
+            raise LookupError("公司不存在")
+        symbol = str(company["symbol"])
+        position = conn.execute(
+            """
+            SELECT 1 FROM inst_position_snapshot p
+              JOIN inst_portfolio pf ON pf.id=p.portfolio_id
+             WHERE pf.org_id=%s AND p.symbol=%s AND p.qty > 0
+               AND p.as_of=(
+                 SELECT MAX(p2.as_of) FROM inst_position_snapshot p2
+                  WHERE p2.portfolio_id=p.portfolio_id
+               )
+             LIMIT 1
+            """,
+            (org_id, symbol),
+        ).fetchone()
+        if position:
+            raise ValueError("该标的有持仓，需先完成退出流程，不能删除研究案")
+        authorization = conn.execute(
+            """
+            SELECT 1 FROM inst_authorization a
+              JOIN inst_proposal_version pv ON pv.id=a.proposal_version_id
+              JOIN inst_proposal p ON p.id=pv.proposal_id
+             WHERE p.case_id=%s AND a.status='qualified'
+             LIMIT 1
+            """,
+            (case_id,),
+        ).fetchone()
+        if authorization:
+            raise ValueError("该研究案有有效授权，需先撤销授权后再删除")
+        proposal = conn.execute(
+            """
+            SELECT 1 FROM inst_proposal
+             WHERE case_id=%s AND stale_at IS NULL
+               AND status IN ('partner_review','risk_precheck','chairman_review','authorized')
+             LIMIT 1
+            """,
+            (case_id,),
+        ).fetchone()
+        if proposal:
+            raise ValueError("该研究案有在途议案，需先撤回或完成审批后再删除")
+        before = {
+            "stage": case.get("stage"),
+            "stage_no": case.get("stage_no"),
+            "stage_state": case.get("stage_state"),
+            "terminal_reason": case.get("terminal_reason"),
+            "company_pool_status": company.get("pool_status"),
+        }
+        conn.execute(
+            """
+            UPDATE inst_research_case
+               SET stage='closed',
+                   stage_state='closed',
+                   terminal_reason='deleted_by_user',
+                   stage_gate=COALESCE(stage_gate, '{}'::jsonb)
+                              || jsonb_build_object('deleted_by_user', true),
+                   updated_at=NOW()
+             WHERE id=%s AND org_id=%s
+            """,
+            (case_id, org_id),
+        )
+        conn.execute(
+            "UPDATE inst_company SET pool_status='dropped', drop_reason=%s, updated_at=NOW() "
+            "WHERE id=%s AND org_id=%s",
+            ("研究案已删除", int(case["company_id"]), org_id),
+        )
+        _audit(
+            conn,
+            org_id=org_id,
+            actor_member_id=actor_member_id,
+            action="research.case.delete",
+            object_type="inst_research_case",
+            object_id=case_id,
+            before=before,
+            after={"status": "closed", "company_pool_status": "dropped"},
+        )
+    return {"deleted": True, "case_id": case_id, "company_id": int(case["company_id"])}
 
 
 def get_case(org_id: int, case_id: int) -> dict[str, Any] | None:
@@ -404,8 +512,17 @@ def _data_completeness(
     segments: dict[str, Any] | None = None,
     audit: dict[str, Any] | None = None,
     debt: dict[str, Any] | None = None,
+    documents: dict[str, str] | None = None,
 ) -> dict[str, dict[str, Any]]:
     peer_note = f"同业公司 {len(peers)} 家" if peers else "同业公司未取到"
+    docs = documents or {}
+    doc_labels = {
+        "top5_customers": "前五大客户占比",
+        "volume_price_split": "量价拆分（销量/单价）",
+        "cost_structure": "成本结构",
+        "contract_liabilities": "合同负债/预收款",
+        "channel_data": "渠道与销售模式",
+    }
     business_have = ["10 年合并财务（营收/毛利/现金流）", peer_note]
     business_missing = [
         "分产品/分地区收入与毛利",
@@ -413,12 +530,23 @@ def _data_completeness(
         "量价拆分（销量/单价）",
         "成本结构",
         "合同负债/预收款",
+        "渠道与销售模式",
         "经常性收入占比",
         "CAC/LTV/回收期",
     ]
     if segments:
         business_have.append(f"分部收入/毛利（{segments.get('report_date')}，产品/地区/行业）")
         business_missing.remove("分产品/分地区收入与毛利")
+    for doc_key, label in doc_labels.items():
+        status = docs.get(doc_key, "missing")
+        if status == "have":
+            business_have.append(f"年报/公告页级抽取：{label}（已复核）")
+            if label in business_missing:
+                business_missing.remove(label)
+        elif status == "pending":
+            if label in business_missing:
+                business_missing.remove(label)
+            business_missing.append(f"{label}（抽取结果待复核）")
     if debt and (debt.get("advance_receipts") or 0) > 0:
         business_have.append("预收款项（非合同负债，合同负债源未单列）")
         if "合同负债/预收款" in business_missing:
@@ -455,6 +583,18 @@ def _data_completeness(
         if (debt.get("advance_receipts") or 0) > 0:
             financial_have.append("预收款项（>0，有余额证据）")
         financial_missing.append("受限资金/租赁负债/合同负债（源数据为空，B 组补）")
+    for doc_key in ("cost_structure", "contract_liabilities"):
+        status = docs.get(doc_key, "missing")
+        label = doc_labels[doc_key]
+        if status == "have":
+            financial_have.append(f"年报/公告页级抽取：{label}（已复核）")
+            if doc_key == "contract_liabilities":
+                composite = "受限资金/租赁负债/合同负债（源数据为空，B 组补）"
+                if composite in financial_missing:
+                    financial_missing.remove(composite)
+                    financial_missing.append("受限资金/租赁负债（B 组补）")
+        elif status == "pending":
+            financial_missing.append(f"{label}（抽取结果待复核）")
     governance_have: list[str] = []
     governance_missing = [
         "实控人/董事长履历",
@@ -464,18 +604,51 @@ def _data_completeness(
         "对外担保",
         "承诺兑现记录",
         "分红/回购/融资历史",
-        "高管变动/处罚诉讼",
+        "高管变动",
+        "处罚诉讼",
         "董事会结构",
     ]
+    governance_labels = {
+        "controller_profile": "实控人/董事长履历",
+        "board_structure": "董事会结构",
+        "pledge_freeze": "质押冻结",
+        "related_party": "关联交易与资金占用",
+        "guarantee": "对外担保",
+        "litigation_penalty": "处罚诉讼",
+        "commitment_history": "承诺兑现记录",
+        "dividend_financing": "分红/回购/融资历史",
+        "mgmt_change": "高管变动",
+    }
+    for doc_key in doc_layer.GOVERNANCE_DOC_FIELDS:
+        label = governance_labels[doc_key]
+        status = docs.get(doc_key, "missing")
+        if status == "have":
+            governance_have.append(f"年报/公告页级抽取：{label}（已复核）")
+            if label in governance_missing:
+                governance_missing.remove(label)
+        elif status == "pending":
+            if label in governance_missing:
+                governance_missing.remove(label)
+            governance_missing.append(f"{label}（抽取结果待复核）")
+    core_have = sum(
+        1 for key in doc_layer.GOVERNANCE_CORE_FIELDS if docs.get(key) == "have"
+    )
+    governance_gate = "fail" if core_have < 3 else ("watch" if core_have < 6 else None)
     governance: dict[str, Any] = {
-        "level": "missing",
+        "level": "missing" if core_have == 0 and not holders else "partial",
         "have": governance_have,
         "missing": governance_missing,
-        "gate_cap": "fail",
-        "gate_note": "治理核心字段未齐，按不可买入处理；前十大股东比例不代表控制权。",
+        "gate_note": (
+            "治理核心字段已接入，仍需人工复核公告原文。"
+            if core_have >= 6
+            else "治理核心字段未齐，按不可买入处理；前十大股东比例不代表控制权。"
+        ),
     }
+    if governance_gate:
+        governance["gate_cap"] = governance_gate
+    if core_have >= 6:
+        governance["level"] = "sufficient"
     if holders:
-        governance["level"] = "partial"
         governance_have.append(
             f"前十大股东（{holders.get('report_date')}，合计 {holders.get('top10_ratio_pct')}%，未认定一致行动人）"
         )
@@ -486,7 +659,7 @@ def _data_completeness(
             "missing": ["行业规模 TAM/SAM/SOM", "CR3/CR5 与主要玩家份额", "行业价格/产量/库存/产能", "政策与标准文件", "海外对标"],
         },
         "business_model": {
-            "level": "partial" if fin else "missing",
+            "level": "partial" if fin or any(v != "missing" for v in docs.values()) else "missing",
             "have": business_have,
             "missing": business_missing,
         },
@@ -539,6 +712,10 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
         segment_summary = data_platform.segment_summary(conn, symbol, data_as_of)
         audit_summary = data_platform.audit_summary(conn, symbol, data_as_of)
         debt_summary = data_platform.interest_debt_summary(conn, symbol, data_as_of)
+        try:
+            doc_summary = doc_layer.load_doc_extracts(conn, symbol, data_as_of)
+        except Exception:
+            doc_summary = doc_layer.empty_doc_extracts("doc_extract 读取失败")
     net_debt = _net_debt_proxy(latest_fin)
     if debt_summary:
         if debt_summary.get("is_financial"):
@@ -587,6 +764,7 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
         segments=segment_summary,
         audit=audit_summary,
         debt=debt_summary,
+        documents=doc_summary.get("coverage"),
     )
     gross_margin = latest_fin.get("gross_margin")
     if gross_margin is None and latest_fin.get("revenue") and latest_fin.get("gross_profit"):
@@ -808,6 +986,27 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
             "net_debt_proxy": net_debt,
             "note": "银行/保险/证券不计算企业价值与净债务桥；请使用 PB/ROE 等相对估值。",
         }
+    if valuation is None:
+        if not has_fin:
+            reason = "财务三表未接入或未公告，无法构建估值。"
+        elif not price:
+            reason = "缺少最新收盘价，无法折算每股价值。"
+        elif latest_fin.get("net_profit") is None:
+            reason = "最近报告期净利润为空，无法构建 owner earnings。"
+        else:
+            fcf = float(latest_fin.get("free_cash_flow") or latest_fin.get("net_profit") or 0)
+            if fcf <= 0:
+                reason = f"自由现金流为负（{_yi(fcf)}），owner earnings 简易模型不适用。"
+            elif not (val.get("total_shares") or (price and val.get("float_mv"))):
+                reason = "缺少总股本/流通市值，无法折算每股价值。"
+            else:
+                reason = "估值模型未产出有效结果。"
+        valuation = {
+            "method": "unavailable",
+            "available": False,
+            "reason": reason,
+            "note": "不生成目标价；补齐数据或自由现金流转正后，重跑“估值与价格”维度。",
+        }
     industry_analysis = {
         "key": "industry",
         "title": "行业分析",
@@ -873,6 +1072,10 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
             "segment_summary": segment_summary,
             "audit_summary": audit_summary,
             "interest_debt_summary": debt_summary,
+            "document_extracts": doc_summary.get("fields") or {},
+            "document_coverage": doc_summary.get("coverage") or {},
+            "document_extract_available": bool(doc_summary.get("available")),
+            "document_extract_note": doc_summary.get("note") or doc_summary.get("reason"),
             "data_completeness": data_completeness,
             "data_gaps": [] if has_fin else ["财务三表未接入或未公告"],
         },
@@ -927,18 +1130,50 @@ def _agent_payload(facts: dict[str, Any], key: str) -> dict[str, Any]:
                 "peer_summary 只作同业对照，不得当作公司自身数据。"
             ),
         },
+        "analysis_policy": {
+            "mode": "available_data_only",
+            "rule": (
+                "只分析本 payload 中实际提供的字段；data_completeness.missing 中的项不得出现在 summary/checks/counter/key_numbers，"
+                "只能写入 data_gaps。level=partial 时必须基于已有字段给出明确结论，不得因存在缺口而拒绝分析或把 summary 写成待补；"
+                "只有整维没有可用数据时才固定写“数据未接入，暂不分析”，gate=fail，评分置空。"
+                "不得用推断、假设、同业数据或历史类比替代公司自身缺失数据。"
+            ),
+        },
         "data_gaps": facts.get("data_gaps") or [],
     }
+    doc_payload = doc_layer.document_payload(facts, key)
+    if doc_payload.get("fields"):
+        payload["document_extracts"] = doc_payload
     if key == "governance":
-        payload["governance_note"] = (
-            "输入不含股东名册、质押冻结、关联交易、对外担保、高管履历或审计意见；"
-            "治理数据缺失时 gate 必须为 fail（不可买入），不得用“待补充”替代。"
-        )
+        coverage = facts.get("document_coverage") or {}
+        covered = [k for k, v in coverage.items() if v == "have"]
+        if covered:
+            payload["governance_note"] = (
+                f"已接入治理抽取字段：{'、'.join(doc_layer.DOC_FIELDS[k] for k in covered)}。"
+                "引用时必须带 doc_id、page_no、原文 quote 与 available_time；未接入的治理项只能写入 data_gaps，"
+                "不得用推断或前十大股东比例替代控制权、关联交易、担保、处罚事实。"
+            )
+        else:
+            payload["governance_note"] = (
+                "输入不含股东名册、质押冻结、关联交易、对外担保、高管履历或审计意见；"
+                "治理数据缺失时 gate 必须为 fail（不可买入），不得用“待补充”替代。"
+            )
     if key == "business_model":
-        payload["business_model_note"] = (
-            "输入含 10 年合并财务和（如已接入）分部收入/毛利；仍没有前五大客户、量价拆分、成本结构、"
-            "合同负债或渠道数据。不得声称增长来自量/价/结构，只能从分部/财务结构推断并标注缺口。"
-        )
+        coverage = facts.get("document_coverage") or {}
+        covered = [k for k, v in coverage.items() if v == "have"]
+        pending = [k for k, v in coverage.items() if v == "pending"]
+        if covered or pending:
+            payload["business_model_note"] = (
+                f"年报/公告页级抽取已复核字段：{'、'.join(doc_layer.DOC_FIELDS[k] for k in covered) or '无'}；"
+                f"待复核：{'、'.join(doc_layer.DOC_FIELDS[k] for k in pending) or '无'}。"
+                "引用抽取值时必须同时给出 doc_id、page_no、原文 quote 与 available_time，不得改写或外推；"
+                "待复核字段只能作线索，不得作为结论依据。"
+            )
+        else:
+            payload["business_model_note"] = (
+                "输入含 10 年合并财务和（如已接入）分部收入/毛利；仍没有前五大客户、量价拆分、成本结构、"
+                "合同负债或渠道数据。不得声称增长来自量/价/结构，只能从分部/财务结构推断并标注缺口。"
+            )
     return payload
 
 
@@ -1260,8 +1495,42 @@ def _merge_agent_results(
         item = results.get(key) or {}
         data = item.get("data") or {}
         err = str(item.get("error") or "")
+        complete = (built.get("facts") or {}).get("data_completeness") or {}
+        if item.get("skipped"):
+            fallback = dict(fallback)
+            missing = list((complete.get(key) or {}).get("missing") or [])
+            for gap in missing:
+                gap_text = str(gap).strip()
+                if gap_text and gap_text not in gaps:
+                    gaps.append(gap_text)
+            fallback.update(
+                {
+                    "status": "skipped",
+                    "summary": "数据未接入，暂不分析。",
+                    "checks": [],
+                    "counter": [],
+                    "open_questions": missing,
+                    "data_gaps": missing,
+                    "confidence": None,
+                    "rating": None,
+                    "score_10": None,
+                    "rating_benchmark": None,
+                    "rating_note": "数据未接入，暂不评分",
+                    "gate": "fail",
+                    "gate_note": "该维数据未接入，未生成分析。",
+                    "engine": "skipped",
+                    "agent": f"AI-{key}",
+                    "agent_error": err or "数据未接入",
+                    "evidence_idx": [],
+                    "evidence_ids": [],
+                    "direct_evidence_ids": [],
+                    "data_completeness": complete.get(key),
+                }
+            )
+            dims.append(fallback)
+            states[key] = "skipped"
+            continue
         if data and str(data.get("summary") or "").strip():
-            complete = (built.get("facts") or {}).get("data_completeness") or {}
             data = _apply_data_gate(data, complete.get(key))
             score_fields = _score_fields(data)
             ev_idx: list[int] = []
@@ -1398,17 +1667,49 @@ def generate_research(
                 (case_id, key, title, f"AI-{key}"),
             )
     if keys:
-        results = _run_dimension_agents(
-            built["facts"],
-            keys,
-            on_event=lambda key, status, payload: _update_task_progress(case_id, key, status, payload),
-        )
+        complete = (built.get("facts") or {}).get("data_completeness") or {}
+        skipped = [k for k in keys if (complete.get(k) or {}).get("level") == "missing"]
+        results: dict[str, dict[str, Any]] = {
+            k: {"skipped": True, "error": "数据未接入，暂不分析"} for k in skipped
+        }
+        run_keys = [k for k in keys if k not in skipped]
+        for k in skipped:
+            _update_task_progress(
+                case_id, k, "partial", {"skipped": True, "error": "数据未接入，暂不分析"}
+            )
+        if run_keys:
+            results.update(
+                _run_dimension_agents(
+                    built["facts"],
+                    run_keys,
+                    on_event=lambda key, status, payload: _update_task_progress(case_id, key, status, payload),
+                )
+            )
         built = _merge_agent_results(built, results, keys)
     if run_industry:
-        industry_result = _run_industry_agent(built["facts"])
-        built["industry_analysis"] = _merge_industry(
-            built, industry_result, built.get("industry_analysis") or {}
-        )
+        industry_complete = (built.get("facts") or {}).get("data_completeness", {}).get("industry") or {}
+        if str(industry_complete.get("level") or "") == "missing":
+            block = dict(built.get("industry_analysis") or {})
+            missing = list(industry_complete.get("missing") or [])
+            block.update(
+                {
+                    "status": "skipped",
+                    "summary": "数据未接入，暂不分析。",
+                    "checks": [],
+                    "counter": [],
+                    "open_questions": missing,
+                    "data_gaps": missing,
+                    "gate": "fail",
+                    "engine": "skipped",
+                    "agent_error": "数据未接入",
+                }
+            )
+            built["industry_analysis"] = block
+        else:
+            industry_result = _run_industry_agent(built["facts"])
+            built["industry_analysis"] = _merge_industry(
+                built, industry_result, built.get("industry_analysis") or {}
+            )
 
     # 2) 持久化：任务、证据、版本
     with get_conn() as conn:
@@ -1422,7 +1723,7 @@ def generate_research(
                 continue
             dim = next((d for d in built["dims"] if d["key"] == key), {})
             status = built["agent_states"].get(key, "done")
-            task_status = {"done": "done", "partial": "needs_review", "failed": "failed"}.get(status, status)
+            task_status = {"done": "done", "partial": "needs_review", "failed": "failed", "skipped": "needs_review"}.get(status, status)
             conn.execute(
                 """
                 INSERT INTO inst_research_task (case_id, task_key, title, agent, status, progress, result)
@@ -2172,6 +2473,8 @@ def _opportunity_source(
         "holdings": "当前持仓标的，进入投后复核。",
     }
     points = company.get("research_points") or []
+    if isinstance(reason, dict):
+        reason = reason.get("why_now") or reason.get("reason") or ""
     detail = str(reason or "").strip()
     if not detail and isinstance(points, list) and points:
         detail = str(points[0])

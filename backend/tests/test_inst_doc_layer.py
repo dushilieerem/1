@@ -194,3 +194,13 @@ def test_data_completeness_and_agent_payload_use_documents() -> None:
     assert "前五大客户" in payload["business_model_note"]
     assert "待复核" in payload["business_model_note"]
     assert "document_extracts" not in svc._agent_payload(facts, "valuation")
+
+
+def test_not_applicable_review_status_is_na_not_missing() -> None:
+    row = dict(ROWS[0], review_status="not_applicable", value_text="不适用：公司无对外担保", field_key="guarantee")
+    out = doc_layer.load_doc_extracts(_FakeConn(rows=[row]), "600519.SH", "2026-10-30")
+    assert out["coverage"]["guarantee"] == "na"
+    assert out["fields"]["guarantee"]["status"] == "na"
+    item = out["fields"]["guarantee"]["items"][0]
+    assert item["not_applicable"] is True
+    assert item["reviewed"] is False

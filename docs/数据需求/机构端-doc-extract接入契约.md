@@ -83,14 +83,16 @@ CREATE INDEX IF NOT EXISTS idx_doc_extract_review
 ## 4. 复核状态机
 
 ```
-pending ──复核通过──> approved
+pending ──复核通过──> approved / verified
    │                     │
+   ├──业务不适用──> not_applicable（不计入数据缺口）
    └──退回补充──> rejected（不进入正式证据）
 ```
 
 - 机构端读取时把 `approved/verified/reviewed` 归一为“已复核”。
 - 同一 `symbol + field_key + report_period` 存在多条时，按 `available_time DESC` 取最新三条；正式结论优先使用已复核结果。
 - `pending` 在 FactPack 中保留为 `coverage=pending`，并写入 `data_gaps`（“抽取结果待复核”）。
+- `not_applicable` 在 FactPack 中为 `coverage=na`：从 `missing` 移入 `have`，文案“不适用：字段（原因）”，不扣门禁、不写入数据缺口。
 
 ## 5. 机构端行为
 
@@ -101,7 +103,7 @@ pending ──复核通过──> approved
 3. 查询：`WHERE symbol=%s AND (available_time IS NULL OR available_time::date <= %s) ORDER BY available_time DESC`。
 4. FactPack 新增：
    - `facts.document_extracts[field_key] = {label, status, items[]}`
-   - `facts.document_coverage[field_key] = have|pending|missing`
+   - `facts.document_coverage[field_key] = have|pending|na|missing`
    - `facts.document_extract_available`、`facts.document_extract_note`
 5. `_data_completeness`：
    - 已复核字段从 `missing` 移入 `have`，文案带“年报/公告页级抽取（已复核）”；

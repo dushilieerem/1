@@ -284,10 +284,10 @@ def test_governance_guarantee_not_applicable_unlocks_core() -> None:
         "litigation_penalty": "have",
     }
     completeness = svc._data_completeness(
-        ind={}, peers=[], history={}, fin=[], val={}, documents=docs, guarantee_na=True
+        ind={}, peers=[], history={}, fin=[], val={}, documents=docs, na_fields={"guarantee": "银行/公司不适用"}
     )
     governance = completeness["governance"]
     assert governance["level"] == "sufficient"
     assert "gate_cap" not in governance
     assert "对外担保" not in governance["missing"]
-    assert any("对外担保：不适用" in x for x in governance["have"])
+    assert any("对外担保" in x and "不适用" in x for x in governance["have"])

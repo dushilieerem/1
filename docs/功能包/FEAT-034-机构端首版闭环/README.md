@@ -1038,3 +1038,17 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 000001 治理重跑：gate=pass、score=8.0、level=sufficient（核心 6/6，其中 guarantee 不适用）。
 - 600519 按用户确认重开研究（stage_no 5 → 1），重跑治理维：gate=pass、score=8.0、level=sufficient；持仓 100 股不变，draft 退出议案 11 变 stale，需重新锁定研究/重做退出议案。
 - 4 条 cost_structure 仍 pending：建议按“营业成本构成（行业/产品分类）”口径统一 label 后置 verified，等待用户确认。
+
+
+### 11.58 通用“不适用”语义（2026-11-10）
+
+- 新增 `not_applicable` 作为独立状态，不再把业务上不适用的字段当数据缺口：
+  - `doc_extract.review_status=not_applicable` → `doc_layer` 返回 `coverage=na`；
+  - 完整性判断把 na 从 `missing` 移入 `have`（文案“不适用：字段（原因）”），不扣门禁、不写入 data_gaps；
+  - Agent payload 带 `not_applicable_fields`，提示模型不得把 N/A 当缺口。
+- 行业/公司口径集中到 `backend/services/institution/applicability.py`：
+  - 银行：客户集中度、量价、成本构成、渠道、对外担保不适用；
+  - 600519：对外担保、成本项目构成不适用；
+  - 后续优先用 `doc_extract` 的 `not_applicable` 行覆盖公司级口径，不在业务代码里散落 if。
+- 提示词增加硬规则：`not_applicable_fields` / `coverage=na` 不得写入 data_gaps，不得作为缺口降评分或 gate，也不要求补数。
+- 效果：000001/600519 治理核心 6/6，gate=pass；银行不再显示量价/成本/渠道缺口；600519 不再显示对外担保/成本项目缺口。

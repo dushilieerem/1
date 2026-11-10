@@ -55,6 +55,120 @@ def _load(raw: str) -> dict[str, Any]:
     return data
 
 
+CHIEF_DEBATE_SCHEMA = "chief-debate-v1"
+CHIEF_DEBATE_ROLE_TITLE = "主持（合伙人）"
+
+
+def _text_list(value: Any, limit: int = 6) -> list[str]:
+    return [clip_brief(x) for x in _items(value) if str(x).strip()][:limit]
+
+
+def _chair_review(data: dict[str, Any]) -> dict[str, Any]:
+    raw = data.get("chair_review")
+    fallback = not isinstance(raw, dict)
+    review = dict(raw) if isinstance(raw, dict) else {}
+    conclusion = clip_brief(data.get("conclusion"))
+    chair = data.get("chair") or []
+    first_claim = clip_brief(chair[0].get("claim")) if chair and isinstance(chair[0], dict) else ""
+
+    verdict = str(review.get("verdict") or "").strip().lower()
+    aliases = {
+        "support": "support_proposal",
+        "proceed": "support_proposal",
+        "enter_proposal": "support_proposal",
+        "进入议案": "support_proposal",
+        "推进审议": "support_proposal",
+        "支持进入议案": "support_proposal",
+        "supplement": "supplement_research",
+        "research": "supplement_research",
+        "补充研究": "supplement_research",
+        "补充": "supplement_research",
+    }
+    verdict = aliases.get(verdict, verdict if verdict in {"support_proposal", "supplement_research"} else "")
+    if not verdict:
+        text = f"{conclusion} {first_claim}"
+        verdict = (
+            "supplement_research"
+            if not text or any(x in text for x in ("补充", "未决", "证据不足", "无法验证"))
+            else "support_proposal"
+        )
+        fallback = True
+
+    unresolved: list[dict[str, str]] = []
+    for item in _items(review.get("unresolved")):
+        if isinstance(item, dict):
+            issue = clip_brief(item.get("issue") or item.get("text"))
+            if not issue:
+                continue
+            unresolved.append(
+                {
+                    "issue": issue,
+                    "bull_view": clip_brief(item.get("bull_view") or item.get("bull")),
+                    "bear_view": clip_brief(item.get("bear_view") or item.get("bear")),
+                    "why_unresolved": clip_brief(item.get("why_unresolved") or item.get("reason")),
+                    "data_needed": clip_brief(item.get("data_needed") or item.get("data")),
+                }
+            )
+        elif str(item).strip():
+            unresolved.append(
+                {
+                    "issue": clip_brief(item),
+                    "bull_view": "",
+                    "bear_view": "",
+                    "why_unresolved": "",
+                    "data_needed": "",
+                }
+            )
+
+    def claims(key: str) -> list[dict[str, str]]:
+        out: list[dict[str, str]] = []
+        for item in _items(review.get(key)):
+            if not isinstance(item, dict):
+                continue
+            side_raw = str(item.get("side") or "").strip().lower()
+            side = "bull" if side_raw in {"bull", "多", "多方"} else "bear" if side_raw in {"bear", "空", "空方"} else side_raw
+            claim = clip_brief(item.get("claim"))
+            claim_id = str(item.get("claim_id") or "").strip()
+            if not claim and not claim_id:
+                continue
+            out.append(
+                {
+                    "side": side,
+                    "claim_id": claim_id,
+                    "claim": claim,
+                    "reason": clip_brief(item.get("reason")),
+                }
+            )
+        return out[:8]
+
+    try:
+        confidence = float(review.get("chief_confidence"))
+    except (TypeError, ValueError):
+        try:
+            confidence = float(chair[0].get("confidence")) if chair and isinstance(chair[0], dict) else 0.5
+        except (TypeError, ValueError):
+            confidence = 0.5
+    confidence = round(max(0.0, min(1.0, confidence)), 2)
+
+    out = {
+        "schema_version": CHIEF_DEBATE_SCHEMA,
+        "agent_tier": "chief",
+        "role_title": CHIEF_DEBATE_ROLE_TITLE,
+        "verdict": verdict,
+        "chair_call": clip_brief(review.get("chair_call") or conclusion or first_claim),
+        "consensus": _text_list(review.get("consensus")),
+        "unresolved": unresolved[:8],
+        "accepted_claims": claims("accepted_claims"),
+        "rejected_claims": claims("rejected_claims"),
+        "what_would_change": _text_list(review.get("what_would_change")),
+        "chief_confidence": confidence,
+        "chief_fields_fallback": bool(review.get("chief_fields_fallback") or fallback),
+    }
+    if not out["chair_call"]:
+        out["chief_fields_fallback"] = True
+    return out
+
+
 def validate_debate(raw: str, request: TaskRequest) -> dict[str, Any]:
     data = _load(raw)
     valid_ids = {int(x) for x in (request.variables.get("evidence_ids") or []) if str(x).isdigit()}
@@ -85,6 +199,7 @@ def validate_debate(raw: str, request: TaskRequest) -> dict[str, Any]:
             item.setdefault("confidence", 0.5)
             item.setdefault("round", 1)
         data[side] = items
+    data["chair_review"] = _chair_review(data)
     return data
 
 
@@ -117,6 +232,10 @@ def validate_dimension(raw: str, request: TaskRequest) -> dict[str, Any]:
     if not summary:
         raise AiBadOutput("六维 Agent 缺少 summary/one_line/analysis_md")
     data["summary"] = clip_brief(summary)
+    data["impact"] = clip_brief(data.get("impact"))
+    data["data_used"] = [
+        clip_brief(x) for x in _items(data.get("data_used")) if str(x).strip()
+    ][:6]
 
     checks: list[str] = []
     for item in _items(data.get("key_numbers")):
@@ -303,6 +422,72 @@ def _confidence_number(value: Any) -> float:
         return 0.5
 
 
+CHIEF_RESEARCH_SCHEMA = "chief-research-v1"
+CHIEF_RESEARCH_ROLE_TITLE = "研究经理"
+
+
+def _chief_reasons(value: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for item in _items(value):
+        if isinstance(item, dict):
+            reason = clip_brief(item.get("reason") or item.get("claim") or item.get("text"))
+            if not reason:
+                continue
+            ids: list[int] = []
+            for x in _items(item.get("evidence_ids")):
+                try:
+                    ids.append(int(x))
+                except (TypeError, ValueError):
+                    continue
+            out.append(
+                {
+                    "agent_key": str(item.get("agent_key") or item.get("agent") or item.get("key") or "").strip(),
+                    "agent_name": clip_brief(item.get("agent_name") or item.get("name")),
+                    "reason": reason,
+                    "evidence_ids": ids,
+                    "data": clip_brief(item.get("data") or item.get("number") or item.get("metric")),
+                }
+            )
+        elif str(item).strip():
+            out.append(
+                {
+                    "agent_key": "",
+                    "agent_name": "",
+                    "reason": clip_brief(item),
+                    "evidence_ids": [],
+                    "data": "",
+                }
+            )
+    return out[:5]
+
+
+def _chief_counterpoint(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        point = clip_brief(value.get("point") or value.get("claim") or value.get("text"))
+        if not point:
+            return None
+        ids: list[int] = []
+        for x in _items(value.get("evidence_ids")):
+            try:
+                ids.append(int(x))
+            except (TypeError, ValueError):
+                continue
+        return {
+            "point": point,
+            "response": clip_brief(value.get("response") or value.get("reply")),
+            "evidence_ids": ids,
+            "overturns": bool(value.get("overturns")),
+        }
+    text = clip_brief(value)
+    if not text:
+        return None
+    return {"point": text, "response": "", "evidence_ids": [], "overturns": False}
+
+
+def _chief_text_list(value: Any, limit: int = 6) -> list[str]:
+    return [clip_brief(x) for x in _items(value) if str(x).strip()][:limit]
+
+
 def validate_research_memo(raw: str, request: TaskRequest) -> dict[str, Any]:
     """CIO 一页纸：兼容 A10 契约（dimension_scores/price_band/memo_md）与旧字段。"""
     data = validate_memo(raw, request)
@@ -460,6 +645,39 @@ def validate_research_memo(raw: str, request: TaskRequest) -> dict[str, Any]:
             price_range = None
     data["price_range"] = price_range
     data["holding_period"] = clip_brief(data.get("holding_period"))
+
+    # 一页纸 Agent：统一可读字段；缺字段时由服务端兜底。
+    data["schema_version"] = CHIEF_RESEARCH_SCHEMA
+    data["agent_tier"] = "chief"
+    data["role_title"] = CHIEF_RESEARCH_ROLE_TITLE
+    raw_chief_call = clip_brief(data.get("chief_call"))
+    raw_reasons = _chief_reasons(data.get("chief_reasons"))
+    chief_call = raw_chief_call or clip_brief(data.get("summary") or data.get("conclusion"))
+    data["chief_call"] = chief_call
+    reasons = raw_reasons
+    if not reasons and chief_call:
+        reasons = [
+            {
+                "agent_key": "",
+                "agent_name": "",
+                "reason": chief_call,
+                "evidence_ids": [],
+                "data": "",
+            }
+        ]
+    data["chief_reasons"] = reasons
+    data["strongest_counterpoint"] = _chief_counterpoint(data.get("strongest_counterpoint"))
+    data["key_assumptions"] = _chief_text_list(data.get("key_assumptions"))
+    data["what_would_change"] = _chief_text_list(data.get("what_would_change"))
+    data["chief_confidence"] = _confidence_number(
+        data.get("chief_confidence") if data.get("chief_confidence") is not None else data.get("confidence")
+    )
+    data["chief_fields_fallback"] = bool(
+        data.get("chief_fields_fallback") or not raw_chief_call or not raw_reasons
+    )
+    conclusion = str(data.get("conclusion") or "").strip()
+    if not conclusion or conclusion.lower() in {"proceed", "watch", "avoid", "buy"}:
+        data["conclusion"] = chief_call or str(data.get("summary") or "")
     return data
 
 

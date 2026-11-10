@@ -60,7 +60,15 @@ from .proposal_service import (
     _risk_checks,
     get_proposal,
 )
-from .research_service import SIX_DIM_DEFS, _clean_agent_text, _overall_score, get_case
+from .research_service import (
+    CHIEF_RESEARCH_ROLE_TITLE,
+    CHIEF_RESEARCH_SCHEMA,
+    PROFESSIONAL_ROLE_TITLES,
+    SIX_DIM_DEFS,
+    _clean_agent_text,
+    _overall_score,
+    get_case,
+)
 from .research_service import *   # noqa: F401,F403
 from .debate_service import *    # noqa: F401,F403
 from .exit_service import *      # noqa: F401,F403
@@ -251,7 +259,188 @@ def _dim_counter(dim: dict[str, Any]) -> list[str]:
     return _text_items(raw)
 
 
-def _rule_memo(version: dict[str, Any]) -> dict[str, Any]:
+def _clamp_confidence(value: Any, default: float = 0.5) -> float:
+    try:
+        return round(max(0.0, min(1.0, float(value))), 2)
+    except (TypeError, ValueError):
+        return default
+
+
+def _score10(item: dict[str, Any]) -> float | None:
+    if not isinstance(item, dict):
+        return None
+    if item.get("score_10") is not None:
+        try:
+            return round(max(0.0, min(10.0, float(item["score_10"]))), 1)
+        except (TypeError, ValueError):
+            return None
+    if item.get("rating") is not None:
+        try:
+            return round(max(0.0, min(10.0, float(item["rating"]) * 2)), 1)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _coverage_verdict(gate: Any, confidence: Any, score: float | None) -> str:
+    gate_text = str(gate or "")
+    if gate_text == "fail":
+        return "阻断"
+    try:
+        conf = float(confidence) if confidence is not None else None
+    except (TypeError, ValueError):
+        conf = None
+    if conf is not None and conf < 0.66:
+        return "待补"
+    if score is None:
+        return "待补"
+    if score < 6.6:
+        return "待补"
+    if gate_text == "watch":
+        return "保留"
+    return "支持"
+
+
+def _professional_coverage(version: dict[str, Any]) -> list[dict[str, Any]]:
+    """一页纸看到的专业 Agent 覆盖表；由版本数据确定性生成，不采用模型自报。"""
+    rows: list[dict[str, Any]] = []
+    industry = version.get("industry_analysis") or {}
+    if isinstance(industry, dict) and industry:
+        score = _score10(industry)
+        rows.append(
+            {
+                "key": "industry_overview",
+                "name": "行业底图",
+                "tier": "professional",
+                "role_title": PROFESSIONAL_ROLE_TITLES["industry_overview"],
+                "score_10": score,
+                "rating_benchmark": industry.get("rating_benchmark"),
+                "gate": industry.get("gate"),
+                "confidence": _clamp_confidence(industry.get("confidence")),
+                "verdict": _coverage_verdict(industry.get("gate"), industry.get("confidence"), score),
+            }
+        )
+    for dim in version.get("six_dim") or []:
+        if not isinstance(dim, dict) or not dim.get("key"):
+            continue
+        key = str(dim["key"])
+        score = _score10(dim)
+        rows.append(
+            {
+                "key": key,
+                "name": str(dim.get("title") or key),
+                "tier": "professional",
+                "role_title": PROFESSIONAL_ROLE_TITLES.get(key, "专业研究 Agent"),
+                "score_10": score,
+                "rating_benchmark": dim.get("rating_benchmark"),
+                "gate": dim.get("gate"),
+                "confidence": _clamp_confidence(dim.get("confidence")),
+                "verdict": _coverage_verdict(dim.get("gate"), dim.get("confidence"), score),
+            }
+        )
+    return rows
+
+
+def _is_chief_output(output: dict[str, Any] | None) -> bool:
+    return isinstance(output, dict) and str(output.get("schema_version") or "") == CHIEF_RESEARCH_SCHEMA
+
+
+def _fallback_chief_reasons(version: dict[str, Any]) -> list[dict[str, Any]]:
+    dims = [d for d in (version.get("six_dim") or []) if isinstance(d, dict) and d.get("summary")]
+    dims.sort(key=lambda d: (_score10(d) if _score10(d) is not None else -1), reverse=True)
+    out: list[dict[str, Any]] = []
+    for dim in dims[:3]:
+        key = str(dim.get("key") or "")
+        ids = dim.get("direct_evidence_ids") or dim.get("evidence_ids") or []
+        out.append(
+            {
+                "agent_key": key,
+                "agent_name": str(dim.get("title") or key),
+                "reason": _clip_brief(dim.get("summary")),
+                "evidence_ids": [int(x) for x in ids if str(x).isdigit()],
+                "data": f"评分 {_score10(dim) if _score10(dim) is not None else '未评分'} / gate {dim.get('gate') or '未定'}",
+            }
+        )
+    return out
+
+
+def _ensure_chief_memo_fields(
+    memo: dict[str, Any], version: dict[str, Any], case: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """给一页纸 memo 补齐可读字段，并过滤不存在于本版本证据包的 evidence id。"""
+    data = dict(memo or {})
+    raw_call = str(data.get("chief_call") or "").strip()
+    chief_call = _clip_brief(raw_call or data.get("conclusion") or data.get("summary"))
+    data["schema_version"] = CHIEF_RESEARCH_SCHEMA
+    data["agent_tier"] = "chief"
+    data["role_title"] = CHIEF_RESEARCH_ROLE_TITLE
+    data["chief_call"] = chief_call
+
+    raw_reasons = data.get("chief_reasons")
+    reasons: list[dict[str, Any]] = []
+    if isinstance(raw_reasons, list):
+        for item in raw_reasons:
+            if isinstance(item, dict) and str(item.get("reason") or "").strip():
+                reasons.append(
+                    {
+                        "agent_key": str(item.get("agent_key") or ""),
+                        "agent_name": _clip_brief(item.get("agent_name")),
+                        "reason": _clip_brief(item.get("reason")),
+                        "evidence_ids": [int(x) for x in (item.get("evidence_ids") or []) if str(x).isdigit()],
+                        "data": _clip_brief(item.get("data")),
+                    }
+                )
+    fallback_reasons = not reasons
+    if fallback_reasons:
+        reasons = _fallback_chief_reasons(version)
+    data["chief_reasons"] = reasons[:3]
+
+    counterpoint = data.get("strongest_counterpoint")
+    if isinstance(counterpoint, str):
+        counterpoint = {"point": _clip_brief(counterpoint), "response": "", "evidence_ids": [], "overturns": False}
+    if not isinstance(counterpoint, dict) or not str(counterpoint.get("point") or "").strip():
+        risks = _text_items(data.get("risks"))
+        if not risks:
+            for dim in version.get("six_dim") or []:
+                if isinstance(dim, dict):
+                    risks.extend(_text_items(dim.get("counter")))
+        counterpoint = {
+            "point": _clip_brief(risks[0]) if risks else "",
+            "response": "服务端兜底，未做一页纸反证裁决",
+            "evidence_ids": [],
+            "overturns": False,
+        }
+    data["strongest_counterpoint"] = counterpoint
+
+    assumptions = _text_items(data.get("key_assumptions"))
+    if not assumptions:
+        assumptions = _text_items(data.get("key_variables"))[:3]
+    data["key_assumptions"] = assumptions[:4]
+
+    changes = _text_items(data.get("what_would_change"))
+    if not changes:
+        changes = _text_items(data.get("open_questions"))[:3]
+    data["what_would_change"] = changes[:4]
+
+    data["chief_confidence"] = _clamp_confidence(data.get("chief_confidence") or data.get("confidence"))
+    data["professional_coverage"] = _professional_coverage(version)
+    data["chief_fields_fallback"] = bool(data.get("chief_fields_fallback") or not raw_call or fallback_reasons)
+
+    valid_ids = {
+        int(e["id"])
+        for e in ((case or {}).get("evidence") or [])
+        if isinstance(e, dict) and str(e.get("id") or "").isdigit()
+    }
+    if valid_ids:
+        for reason in data["chief_reasons"]:
+            reason["evidence_ids"] = [x for x in reason["evidence_ids"] if x in valid_ids]
+        counterpoint["evidence_ids"] = [
+            int(x) for x in (counterpoint.get("evidence_ids") or []) if str(x).isdigit() and int(x) in valid_ids
+        ]
+    return data
+
+
+def _rule_memo(version: dict[str, Any], case: dict[str, Any] | None = None) -> dict[str, Any]:
     dims = [d for d in (version.get("six_dim") or []) if isinstance(d, dict)]
     risks = [c for d in dims for c in _dim_counter(d)][:5]
     questions = [
@@ -277,20 +466,24 @@ def _rule_memo(version: dict[str, Any]) -> dict[str, Any]:
         )
         conclusion = f"六维平均得分 {overall}/10；{lead}" if overall is not None else lead
     summary = _clip_brief(conclusion)
-    return {
-        "summary": summary,
-        "conclusion": summary,
-        "decision": "watch",
-        "six_dim_scores": [],
-        "conflicts": [],
-        "key_variables": questions[:3],
-        "evidence": [],
-        "risks": [_clip_brief(x) for x in _normalize_text_list(risks)],
-        "open_questions": [_clip_brief(x) for x in _normalize_text_list(questions)],
-        "price_range": price_range,
-        "holding_period": "1-3 年（论点成立前提下，按季复核）",
-        "engine": "rule",
-    }
+    return _ensure_chief_memo_fields(
+        {
+            "summary": summary,
+            "conclusion": summary,
+            "decision": "watch",
+            "six_dim_scores": [],
+            "conflicts": [],
+            "key_variables": questions[:3],
+            "evidence": [],
+            "risks": [_clip_brief(x) for x in _normalize_text_list(risks)],
+            "open_questions": [_clip_brief(x) for x in _normalize_text_list(questions)],
+            "price_range": price_range,
+            "holding_period": "1-3 年（论点成立前提下，按季复核）",
+            "engine": "rule",
+        },
+        version,
+        case,
+    )
 
 
 def _apply_memo_data_gate(data: dict[str, Any], version: dict[str, Any]) -> dict[str, Any]:
@@ -307,16 +500,24 @@ def _apply_memo_data_gate(data: dict[str, Any], version: dict[str, Any]) -> dict
     labels = {str(d.get("key")): str(d.get("title") or d.get("key")) for d in version.get("six_dim") or [] if isinstance(d, dict)}
     labels["industry"] = "行业分析"
     failed = [labels.get(key, key) for key, gate in gates.items() if gate == "fail"]
+    watched = [labels.get(key, key) for key, gate in gates.items() if gate == "watch"]
     decision = str(data.get("decision") or "")
-    if decision == "proceed" and any(gate != "pass" for gate in gates.values()):
+    if decision == "proceed" and failed:
+        data["decision_original"] = decision
         data["decision"] = "watch"
-        data["data_gate_note"] = (
-            "六维存在数据缺口或门禁未通过，研究建议降级为观察，不能进入买入。"
-            + (f"其中 {'、'.join(failed)} 为 fail。" if failed else "")
+        data["decision_note"] = (
+            "一页纸原判为进入下一步研究，但存在 gate=fail 的阻断维，服务端降级为观察。"
+            f"阻断维：{'、'.join(failed)}。"
         )
+        data["data_gate_note"] = data["decision_note"]
     elif failed:
         data["data_gate_note"] = (
-            f"以下维度门禁未通过，按不可买入处理：{'、'.join(failed)}。"
+            f"以下维度门禁未通过（gate=fail），按不可买入处理：{'、'.join(failed)}。"
+        )
+    elif watched:
+        data["data_gate_note"] = (
+            f"以下维度为 watch，已计入置信度，不阻断一页纸结论：{'、'.join(watched)}。"
+            "免费数据未覆盖的行业空间/份额、护城河持续性与治理深度仍属未验证项。"
         )
     return data
 
@@ -364,7 +565,14 @@ def ai_research_memo(
         raise LookupError("还没有研究版本")
     payload = {
         "company": {k: case.get(k) for k in ("symbol", "company_name", "market", "industry", "ref_price")},
-        "version": {k: version.get(k) for k in ("version_no", "status", "conclusion", "valuation", "six_dim")},
+        "version": {
+            "version_no": version.get("version_no"),
+            "status": version.get("status"),
+            "conclusion": version.get("conclusion"),
+            "valuation": version.get("valuation"),
+            "six_dim": version.get("six_dim"),
+            "industry_analysis": version.get("industry_analysis"),
+        },
         "evidence": [
             {"id": e.get("id"), "title": e.get("title"), "quote": e.get("quote"), "source": e.get("source"), "as_of": e.get("as_of")}
             for e in (case.get("evidence") or [])
@@ -385,12 +593,16 @@ def ai_research_memo(
             prompt_version=prompt_version,
         )
         stale = False
+        if hit and not _is_chief_output(hit.get("output")):
+            hit = None
         if not hit:
-            # 提示词/输入变化后仍优先展示已生成的结论，避免每次进入都重新生成。
-            hit = get_latest_output("inst.research_memo", org_id=org_id, scope_key=scope_key)
-            stale = bool(hit)
+            latest = get_latest_output("inst.research_memo", org_id=org_id, scope_key=scope_key)
+            if latest and _is_chief_output(latest.get("output")):
+                hit = latest
+                stale = True
         if hit:
-            memo = _apply_memo_data_gate(dict(hit["output"]), version)
+            memo = _ensure_chief_memo_fields(dict(hit["output"]), version, case)
+            memo = _apply_memo_data_gate(memo, version)
             for field in ("risks", "open_questions", "key_variables"):
                 if memo.get(field):
                     memo[field] = _normalize_text_list(memo[field])
@@ -418,9 +630,10 @@ def ai_research_memo(
     try:
         data = _ai_task("inst.research_memo", payload, prompt)
         data.setdefault("engine", "agent")
+        data = _ensure_chief_memo_fields(data, version, case)
     except AiUnavailable:
         # AI 未配置时仍给出一页纸骨架，内容全部来自六维规则结果。
-        data = _rule_memo(version)
+        data = _rule_memo(version, case)
     data = _apply_memo_data_gate(data, version)
     for field in ("risks", "open_questions", "key_variables"):
         if data.get(field):

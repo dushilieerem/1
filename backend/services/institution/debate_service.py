@@ -91,7 +91,29 @@ def _debate_fallback(company: dict[str, Any], evidence: list[dict[str, Any]], va
         "confidence": 0.7,
         "falsifier": "若补齐证据后双方仍无法收敛，提交人工裁决。",
     }
-    return {"bull": bull, "bear": bear, "chair": [chair]}
+    review = {
+        "schema_version": "chief-debate-v1",
+        "agent_tier": "chief",
+        "role_title": "主持（合伙人）",
+        "verdict": "supplement_research",
+        "chair_call": "证据链尚需补强，结论为补充研究。",
+        "consensus": [],
+        "unresolved": [
+            {
+                "issue": "证据链未闭环",
+                "bull_view": "长期竞争力与现金流支持跟踪",
+                "bear_view": "财务与公告尚未交叉核验",
+                "why_unresolved": "当前为规则兜底，未做模型裁决",
+                "data_needed": "补齐财务、公告与行业数据后重跑",
+            }
+        ],
+        "accepted_claims": [],
+        "rejected_claims": [],
+        "what_would_change": ["证据链补齐且双方关键假设可验证（下一轮）"],
+        "chief_confidence": 0.5,
+        "chief_fields_fallback": True,
+    }
+    return {"bull": bull, "bear": bear, "chair": [chair], "chair_review": review}
 
 
 def start_debate(
@@ -147,9 +169,13 @@ def start_debate(
             if ai_args:
                 args = ai_args
         engine = "ai" if ai_args else "rule"
+        patch: dict[str, Any] = {"engine": engine}
+        review = args.get("chair_review")
+        if isinstance(review, dict) and review:
+            patch["chief_review"] = review
         conn.execute(
             "UPDATE inst_debate_session SET factpack = factpack || %s::jsonb WHERE id=%s",
-            (_j({"engine": engine}), int(session["id"])),
+            (_j(patch), int(session["id"])),
         )
         evidence_by_id = {int(e["id"]): e for e in evidence}
         for side in ("bull", "bear", "chair"):
@@ -244,7 +270,9 @@ def _ai_debate(company, evidence, valuation, ev_ids) -> dict[str, Any] | None:
             ],
             variables={"evidence_ids": [int(x) for x in ev_ids]},
         )
-        data = json.loads(str(out.get("content") or "{}"))
+        data = out.get("data")
+        if not isinstance(data, dict):
+            data = json.loads(str(out.get("content") or "{}"))
         if not isinstance(data, dict):
             return None
         valid_ids = {int(x) for x in ev_ids}

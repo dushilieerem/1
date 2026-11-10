@@ -51,6 +51,56 @@ def test_research_memo_maps_buy_and_defaults_invalid_to_watch() -> None:
     assert invalid["decision"] == "watch"
 
 
+def test_research_memo_normalizes_chief_fields() -> None:
+    out = validate_research_memo(
+        json.dumps(
+            {
+                "decision": "proceed",
+                "chief_call": "贵州茅台财务与估值支持继续研究。",
+                "chief_reasons": [
+                    {
+                        "agent_key": "financial",
+                        "agent_name": "财务质量",
+                        "reason": "OCF/净利稳定。",
+                        "evidence_ids": [12, "bad"],
+                        "data": "OCF/净利 1.1",
+                    }
+                ],
+                "strongest_counterpoint": {
+                    "point": "行业份额未验证",
+                    "response": "只影响置信度",
+                    "evidence_ids": [21],
+                    "overturns": False,
+                },
+                "key_assumptions": ["需求不塌"],
+                "what_would_change": ["OCF/净利 <0.7（季频）"],
+                "chief_confidence": 1.5,
+                "summary": "结论先行",
+            }
+        ),
+        TaskRequest(),
+    )
+    assert out["schema_version"] == "chief-research-v1"
+    assert out["agent_tier"] == "chief"
+    assert out["role_title"] == "研究经理"
+    assert out["chief_call"].startswith("贵州茅台")
+    assert out["chief_reasons"][0]["evidence_ids"] == [12]
+    assert out["strongest_counterpoint"]["point"] == "行业份额未验证"
+    assert out["chief_confidence"] == 1.0
+    assert out["chief_fields_fallback"] is False
+
+
+def test_research_memo_marks_missing_chief_fields_for_fallback() -> None:
+    out = validate_research_memo(
+        json.dumps({"decision": "watch", "summary": "先观察"}),
+        TaskRequest(),
+    )
+    assert out["schema_version"] == "chief-research-v1"
+    assert out["chief_call"] == "先观察"
+    assert out["chief_fields_fallback"] is True
+    assert out["chief_confidence"] == 0.5
+
+
 def test_research_memo_accepts_a10_dimension_scores_and_price_band() -> None:
     out = validate_research_memo(
         json.dumps(

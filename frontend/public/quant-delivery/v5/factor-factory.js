@@ -1,5 +1,5 @@
 'use strict';
-/* CR-083 + CR-099 design only. No fetch, model calls, compute, or real approvals. */
+/* CR-083 + CR-099 + CR-102 design only. No fetch, model calls, compute, or real approvals. */
 (() => {
   const q = s => document.querySelector(s);
   const safe = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -13,9 +13,12 @@
   const tasks = [
     {id:'A',name:'低换手条件下的价格偏离',state:'running',step:1,k:2,max:8,version:3,direction:'量价关系',goal:'研究日频价格偏离与成交活跃度的关系，控制无效换手。',note:''},
     {id:'B',name:'波动收缩后的价格修复',state:'error',step:0,k:0,max:8,version:1,direction:'风险与波动',goal:'寻找日频波动收缩后的价格修复特征。',note:''},
-    {id:'C',name:'成交活跃度与短期反转',state:'ended',step:1,k:8,max:8,version:5,direction:'量价关系',goal:'验证短期反转是否因成交活跃度而异。',note:''}
+    {id:'C',name:'无条件短期价格反转',state:'ended',step:1,k:2,max:8,version:2,direction:'量价关系',goal:'检验无条件短期价格反转是否提供稳定的方向信息。',note:'',stopReason:'两次研发检验未支持原假设，Agent 决定结束这个方向'}
   ];
   let selected='A', viewing=1, tab=['tasks','review','library'].includes(location.hash.slice(1))?location.hash.slice(1):'tasks', role='researcher', taskFilter='recent', taskText='', category='all', query='', tags=[], availability='all', sort='name', page=1, toastTimer, serial=0;
+  let autoState='researching', autoDirection='优先研究量价关系，避免重复尝试没有新增依据的方向。';
+  tasks[0].origin='system'; tasks[0].reason='先前无条件短期反转未达到研发要求；这次检验成交活跃度是否提供新的条件信息。';
+  tasks[0].difference='加入成交活跃度条件，保持研发口径，检验其增量；尚未证明有效。'; tasks[0].experience='C'; tasks[2].origin='system'; tasks[0].familyK=4; tasks[2].familyK=4; tasks[2].hypothesis='近期价格偏离本身可能在下一交易日回补；在已记录范围内检验无条件反转。'; tasks[2].implementation='-rank(close / close.shift(5) - 1)';
   const categories=[['量价',['动量','反转','流动性','量价关系']],['基本面与规模',['估值','规模']],['风险与波动',['波动率','Beta']]];
   const library=[
     {code:'F-001',name:'短期价格反转',cat:'反转',tags:['日频','价格'],state:'可研究',description:'衡量近期价格变动的反转特征。',origin:'公司基础因子目录',report:'参考报告'},
@@ -28,32 +31,45 @@
   ];
   const current=()=>tasks.find(x=>x.id===selected);
   const badge=(state)=>{const s=status[state]||[state,''];return '<span class="badge '+s[1]+'">'+safe(s[0])+'</span>';};
-  const editActions=new Set(['new','manual','takeover','pause','resume','opinion','edit-prep','request-scope','improve','return-agent','confirm-return','feedback']);
+  const editActions=new Set(['new','manual','takeover','pause','resume','opinion','edit-prep','request-scope','improve','return-agent','confirm-return','feedback','auto-settings','auto-pause','auto-reconsider']);
   const btn=(label,action,value='',cls='')=>'<button type="button" class="btn '+cls+'" data-action="'+action+'" data-value="'+safe(value)+'"'+(role==='reviewer'&&editActions.has(action)?' disabled title="独立复核人只读研究内容"':'')+'>'+label+'</button>';
   const pill=x=>'<span class="ff-pill">'+safe(x)+'</span>';
-  const scope=()=>'<dl class="ff-kv"><dt>数据频率</dt><dd>日频</dd><dt>研究范围</dt><dd>中证500 · 已授权行情字段</dd><dt>数据版本</dt><dd>任务启动时固定，报告可追溯</dd><dt>研发区间</dt><dd>2024-01-02 — 2025-12-31（样例）</dd><dt>试验上限</dt><dd>'+current().max+' 次，历史消耗保留</dd><dt>用途</dt><dd>因子研究，不涉及实盘交易</dd></dl>';
+  const scope=()=>'<dl class="ff-kv"><dt>数据频率</dt><dd>日频</dd><dt>研究范围</dt><dd>中证500 · 已授权行情字段</dd><dt>数据版本</dt><dd>任务启动时固定，报告可追溯</dd><dt>研发区间</dt><dd>2024-01-02 — 2025-12-31（样例）</dd><dt>试验上限</dt><dd>'+current().max+' 次，历史消耗保留</dd>'+(current().familyK?'<dt>相关研究累计</dt><dd>'+current().familyK+' 次，含来源研究；不因新建任务清零</dd>':'')+'<dt>用途</dt><dd>因子研究，不涉及实盘交易</dd></dl>';
   function draw(){
     q('#sidebar').innerHTML=SV.sidebar('factor');
     const nav=q('#sidebar a[aria-current="page"]'); if(nav) nav.href='factor-factory.html';
-    q('#factory').innerHTML='<div class="ff-preview"><span>设计预览 · 场景数据，不连接真实系统</span><div class="actions"><label>任务场景 <select id="preview-state" aria-label="设计预览场景">'+[['running','研发中'],['paused','人工接手'],['queued','排队中'],['ended','未达标结束'],['waiting','等待验证'],['review','待审批'],['admitted','已入库']].map(([v,n])=>'<option value="'+v+'"'+(tasks.find(x=>x.id==='A').state===v?' selected':'')+'>'+n+'</option>').join('')+'</select></label><label>预览身份 <select id="preview-role" aria-label="设计预览身份"><option value="researcher"'+(role==='researcher'?' selected':'')+'>研究员</option><option value="reviewer"'+(role==='reviewer'?' selected':'')+'>独立复核人</option></select></label></div></div>'+
+    q('#factory').innerHTML='<div class="ff-preview"><span>设计预览 · 场景数据，不连接真实系统</span><div class="actions"><label>任务场景 <select id="preview-state" aria-label="设计预览场景">'+[['running','研发中'],['paused','人工接手'],['queued','排队中'],['ended','未达标结束'],['waiting','等待验证'],['review','待审批'],['admitted','已入库']].map(([v,n])=>'<option value="'+v+'"'+(tasks.find(x=>x.id==='A').state===v?' selected':'')+'>'+n+'</option>').join('')+'</select></label><label>自主研究 <select id="preview-autonomy" aria-label="自主研究设计场景">'+[['researching','已开启'],['off','已关闭'],['waiting','等待机会'],['error','选题异常']].map(([v,n])=>'<option value="'+v+'"'+(autoState===v?' selected':'')+'>'+n+'</option>').join('')+'</select></label><label>预览身份 <select id="preview-role" aria-label="设计预览身份"><option value="researcher"'+(role==='researcher'?' selected':'')+'>研究员</option><option value="reviewer"'+(role==='reviewer'?' selected':'')+'>独立复核人</option></select></label></div></div>'+
       '<div class="page-head"><div><span class="eyebrow">FACTOR RESEARCH</span><h1>因子工厂</h1><p>挖掘、验证和积累可复用的因子。</p></div><div class="actions">'+btn('人工研究','manual','','')+btn('＋ 启动挖掘','new','','primary')+'</div></div>'+
       '<nav class="tabs" aria-label="因子工厂导航">'+[['tasks','挖掘任务'],['review','待审批'],['library','因子库']].map(([v,n])=>'<button data-action="tab" data-value="'+v+'" class="'+(tab===v?'active':'')+'"'+(tab===v?' aria-current="page"':'')+'>'+n+(v==='review'&&tasks.some(x=>x.state==='review')?' <span class="count">1</span>':'')+'</button>').join('')+'</nav><div id="ff-content">'+(tab==='tasks'?taskPage():tab==='review'?reviewPage():libraryPage())+'</div>';
   }
   function taskPage(){
     const filtered=tasks.filter(x=>(taskFilter==='all'||taskFilter==='recent'&&!['ended','rejected','admitted'].includes(x.state)||taskFilter===x.state)&&x.name.includes(taskText));
-    return '<div class="ff-columns"><aside class="ff-task-list" aria-label="挖掘任务列表"><h2>我的挖掘任务</h2><input class="ff-task-filter" id="task-search" aria-label="搜索挖掘任务" placeholder="搜索任务" value="'+safe(taskText)+'"><select id="task-filter" class="ff-task-filter" aria-label="任务状态">'+[['recent','运行与待处理'],['all','全部任务'],['ended','已结束']].map(([v,n])=>'<option value="'+v+'"'+(taskFilter===v?' selected':'')+'>'+n+'</option>').join('')+'</select><div id="task-items">'+taskItems(filtered)+'</div></aside><section class="ff-detail">'+taskDetail()+'</section></div>';
+    return autonomyBar()+'<div class="ff-columns"><aside class="ff-task-list" aria-label="挖掘任务列表"><h2>我的挖掘任务</h2><input class="ff-task-filter" id="task-search" aria-label="搜索挖掘任务" placeholder="搜索任务" value="'+safe(taskText)+'"><select id="task-filter" class="ff-task-filter" aria-label="任务状态">'+[['recent','运行与待处理'],['all','全部任务'],['ended','已结束']].map(([v,n])=>'<option value="'+v+'"'+(taskFilter===v?' selected':'')+'>'+n+'</option>').join('')+'</select><div id="task-items">'+taskItems(filtered)+'</div></aside><section class="ff-detail">'+taskDetail()+'</section></div>';
   }
-  function taskItems(list){return list.length?list.map(x=>'<button class="ff-task '+(x.id===selected?'selected':'')+'" data-action="task" data-value="'+x.id+'"'+(x.id===selected?' aria-current="true"':'')+'><div class="ff-task-row">'+badge(x.state)+'<small>日频</small></div><strong>'+safe(x.name)+'</strong><small>'+stages[x.step][0]+' · 已检验 '+x.k+'/'+x.max+' 次</small></button>').join(''):'<div class="empty">没有匹配的任务</div>';}
+  function autonomyBar(){
+    const active=tasks.filter(x=>x.state==='running').length, waiting=tasks.filter(x=>x.state==='queued').length;
+    const title={researching:'已开启',off:'选题已暂停',waiting:'等待新的研究机会',error:'选题未完成'}[autoState];
+    const description=autoState==='off'?'暂停新增自动任务；已有研究仍按各自状态执行。':autoState==='waiting'?'目前没有足够的新依据。数据或研究方向变化后再考虑，已有记录保留。':autoState==='error'?'选题服务尚未返回完整结果，未创建新的研究任务。':'根据可用数据和研究经验，在授权范围内自动选题与启动。';
+    return '<section class="ff-autonomy" aria-label="自主研究"><div><div class="ff-auto-title"><h2>自主研究</h2><span class="badge '+(autoState==='error'?'red':autoState==='off'?'':'purple')+'">'+title+'</span></div><p>'+description+'</p><div class="ff-auto-meta"><span>同时研究 1 项</span><span>正在研究 '+active+' 项</span><span>待启动 '+waiting+' 项</span></div></div><div class="ff-auto-actions">'+(autoState==='off'?btn('开启自主研究','auto-settings','','primary'):btn('暂停选题','auto-pause','','small'))+btn('研究范围与方向','auto-settings','','small')+(autoState==='waiting'?btn('重新考虑','auto-reconsider','','small'):'')+'</div></section>';
+  }
+  function planningBasis(t){
+    if(t.origin!=='system')return '<div class="ff-planning-basis"><div class="ff-label">选题来源</div><p>由研究员创建。研究中可提出建议或交给 Agent 继续。</p></div>';
+    return '<section class="ff-planning-basis" aria-label="选题依据"><div class="ff-label">为什么研究这个方向</div><p>'+safe(t.reason||'根据授权范围及已检索的研究资料提出；具体结论需经过检验。')+'</p>'+(t.difference?'<p><b>本次变化：</b>'+safe(t.difference)+'</p>':'')+(t.experience?'<div class="ff-evidence-link"><span>参考经验 · 在原范围内未获支持</span>'+btn('查看先前研究','prior-research',t.experience,'small')+'</div>':'<p class="muted">暂无可引用的历史结论。</p>')+'</section>';
+  }
+  function autonomySettings(){
+    dialog(autoState==='off'?'开启自主研究':'研究范围与方向','<p class="ff-copy">系统在以下范围内自行选题、研究和总结；有价值的成果进入人工审查。</p><div class="ff-auto-scope"><h3>已授权研究范围</h3>'+scope()+'<p>同时进行1项后台研究；其余任务排队。Token用量持续记录。</p></div><label class="field">希望优先研究的方向（选填）<textarea name="direction" rows="3" placeholder="例如：优先研究量价关系，避开已反复失败且没有新依据的方向。">'+safe(autoDirection)+'</textarea></label><div class="hint">方向是研究建议，不会修改数据权限或检验要求。这里为交互设计样例，不启动真实研究。</div>','<button type="submit" class="btn primary">'+(autoState==='off'?'开启自主研究':'保存方向')+'</button>','auto-settings');
+  }
+  function taskItems(list){return list.length?list.map(x=>'<button class="ff-task '+(x.id===selected?'selected':'')+'" data-action="task" data-value="'+x.id+'"'+(x.id===selected?' aria-current="true"':'')+'><div class="ff-task-row">'+badge(x.state)+'<small>'+ (x.origin==='system'?'系统发起':'人工发起') +'</small></div><strong>'+safe(x.name)+'</strong><small>'+stages[x.step][0]+' · 已检验 '+x.k+'/'+x.max+' 次</small></button>').join(''):'<div class="empty">没有匹配的任务</div>';}
   function taskDetail(){
     const t=current();
-    return '<header class="ff-detail-head"><div>'+badge(t.state)+'<h2>'+safe(t.name)+'</h2><p>'+safe(({new:'新因子挖掘',improve:'改进已有因子',reproduce:'复现已有因子'})[t.purpose||'new'])+' · 日频 · 中证500 · 第 '+t.version+' 版</p></div><div class="actions">'+btn('范围与预算','scope','','small')+(t.state==='running'?btn('暂停','pause','','small'):['paused','draft','error'].includes(t.state)?btn(t.state==='error'?'重试启动':t.state==='draft'?'启动挖掘':'恢复','resume','','small'):'')+'</div></header>'+
+    return '<header class="ff-detail-head"><div>'+badge(t.state)+'<h2>'+safe(t.name)+'</h2><p>'+(t.origin==='system'?'系统发起':'人工发起')+' · '+safe(({new:'新因子挖掘',improve:'改进已有因子',reproduce:'复现已有因子'})[t.purpose||'new'])+' · 日频 · 中证500 · 第 '+t.version+' 版</p></div><div class="actions">'+btn('范围与预算','scope','','small')+(t.state==='running'?btn('暂停','pause','','small'):['paused','draft','error'].includes(t.state)?btn(t.state==='error'?'重试启动':t.state==='draft'?'启动挖掘':'恢复','resume','','small'):'')+'</div></header>'+
       '<nav class="ff-steps" aria-label="任务业务环节">'+stages.map((s,i)=>'<button class="ff-step '+(i===viewing?'selected ':'')+(i===t.step?'current ':'')+(i<t.step?'done':'')+'" data-action="stage" data-value="'+i+'" aria-label="查看'+s[0]+'"><span class="ff-num">'+(i<t.step?'✓':i+1)+'</span><span><b>'+s[0]+'</b><small>'+s[1]+'</small><em>'+(i<t.step?'已完成':i===t.step?(t.state==='admitted'?'已完成':'当前环节'):'尚未开始')+'</em></span></button>').join('')+'</nav>'+
       (t.state==='error'?'<div class="ff-error" role="alert"><b>启动未完成</b><p>任务配置转换失败，Agent 尚未开始研究。本次没有产生试验或研究结果。</p>'+btn('重试启动','resume','','small')+'<details><summary>诊断详情</summary>配置中的日期字段未按接口格式编码。此为故障状态样例。</details></div>':'')+
       '<div class="ff-stage-grid"><div>'+outcomeSummary()+stageContent()+'</div>'+activity()+'</div>'+researchHistory(t);
   }
   function outcomeSummary(){
     const t=current();
-    if(t.state==='ended')return '<section class="ff-outcome" aria-label="研究结果"><div class="ff-label">最近结论</div><h3>本次研究未达到要求</h3><p>已用完 '+t.max+' 次试验额度，研究已停止。全部尝试和报告已保留，可用于复盘。</p><div class="actions">'+btn('查看试验报告','report','','small')+btn('提交研究复盘','feedback','','small')+'</div></section>';
+    if(t.state==='ended')return '<section class="ff-outcome" aria-label="研究结果"><div class="ff-label">最近结论</div><h3>本次研究未达到要求</h3><p>'+safe(t.stopReason||('已用完 '+t.max+' 次试验额度，研究已停止。'))+' 全部尝试和报告已保留，可用于复盘。</p><div class="actions">'+btn('查看试验报告','report','','small')+btn('提交研究复盘','feedback','','small')+'</div></section>';
     if(t.state==='paused')return '<section class="ff-outcome" aria-label="人工接力"><div class="ff-label">当前由你接手</div><h3>当前人工工作版本 · 第 '+t.version+' 版</h3><p>保存后交回 Agent，系统将从这个版本继续；已用的 '+t.k+' 次试验不会清零。</p><div class="actions">'+btn('继续编辑','manual','','small')+btn('交回 Agent','return-agent','','small primary')+'</div></section>';
     return '';
   }
@@ -62,11 +78,11 @@
     let body='', foot='';
     if(viewing>t.step) body='<div class="empty"><b>'+head[0]+'尚未开始</b>'+head[2]+'。满足条件后系统会推进，切换页面不会开始执行。</div>';
     else if(viewing===0){
-      body='<div class="ff-copy"><div class="ff-label">研究目标</div><p>'+safe(t.goal)+'</p><hr class="ff-divider">'+scope()+'</div>';
+      body='<div class="ff-copy"><div class="ff-label">研究目标</div><p>'+safe(t.goal)+'</p>'+planningBasis(t)+'<hr class="ff-divider">'+scope()+'</div>';
       foot=btn('编辑研究准备','edit-prep','','small');
     } else if(viewing===1){
       if(['queued','draft'].includes(t.state)&&!t.implementation&&!t.k) body='<div class="empty"><b>尚无因子定义</b>运行开始后，研究结果会显示在这里。</div>';
-      else body='<div class="section-title"><div><div class="ff-label">当前候选 · 第 '+t.version+' 版</div><h3>'+safe(t.id==='A'?'低活跃度下的价格偏离修复':t.name)+'</h3></div>'+pill('假设 Ha')+'</div><div class="ff-copy"><p>'+safe(t.hypothesis||'近期价格偏离在低成交活跃度时可能更易回补；研发中比较不同窗口，检验这种条件是否提供稳定的增量信息。')+'</p></div><details class="ff-source"><summary>查看定义与实现 · 第 '+t.version+' 版</summary><pre class="ff-code">'+safe(t.implementation||'-rank(price_deviation_5d)\n  × rank(1 / (1 + relative_activity_20d))')+'</pre><small>设计样例，未执行计算。</small></details><hr class="ff-divider"><div class="section-title"><h3>研发检验</h3><small>已检验 '+t.k+' 次 / 上限 '+t.max+' 次</small></div><div class="ff-copy"><p>上一版：覆盖不足，已保留结果。</p><p>本版：'+(t.state==='running'?'正在检验修改后的实现':t.state==='ended'?'预算用尽，未达到要求':t.state==='paused'?'已暂停，等待人工处理':t.state==='queued'?'保存版本已排队，等待继续检验':'结果已保存')+'。</p></div>';
+      else body='<div class="section-title"><div><div class="ff-label">当前候选 · 第 '+t.version+' 版</div><h3>'+safe(t.id==='A'?'低活跃度下的价格偏离修复':t.name)+'</h3></div>'+pill('假设 Ha')+'</div><div class="ff-copy"><p>'+safe(t.hypothesis||'近期价格偏离在低成交活跃度时可能更易回补；研发中比较不同窗口，检验这种条件是否提供稳定的增量信息。')+'</p></div><details class="ff-source"><summary>查看定义与实现 · 第 '+t.version+' 版</summary><pre class="ff-code">'+safe(t.implementation||'-rank(price_deviation_5d)\n  × rank(1 / (1 + relative_activity_20d))')+'</pre><small>设计样例，未执行计算。</small></details><hr class="ff-divider"><div class="section-title"><h3>研发检验</h3><small>已检验 '+t.k+' 次 / 上限 '+t.max+' 次</small></div><div class="ff-copy"><p>上一版：覆盖不足，已保留结果。</p><p>本版：'+(t.state==='running'?'正在检验修改后的实现':t.state==='ended'?(t.stopReason||'试验额度用尽，未达到要求'):t.state==='paused'?'已暂停，等待人工处理':t.state==='queued'?'保存版本已排队，等待继续检验':'结果已保存')+'。</p></div>';
       foot=btn('查看试验报告','report','','small')+btn('人工接手','manual','','small')+btn('给研究建议','opinion','','small');
     } else if(viewing===2){
       body='<div class="hint">候选版本已经固定。验证结果用于决定是否可送审，不回传封存细节供继续调参。</div><dl class="ff-kv"><dt>冻结版本</dt><dd>低活跃度下的价格偏离修复 · 第3版</dd><dt>证据范围</dt><dd>定义、实现、研发试验、数据与政策版本</dd><dt>重复性检查</dt><dd>'+(t.state==='waiting'?'等待计算服务':'已完成（场景）')+'</dd><dt>独立样本验证</dt><dd>'+(t.state==='waiting'?'尚未执行':'已完成（场景）')+'</dd></dl>'+(t.state==='waiting'?'<div class="hint warning" style="margin-top:18px">尚缺可用的因子相关性计算服务。结果未返回前不能送审。</div>':'');
@@ -78,7 +94,7 @@
     return '<article class="card"><div class="card-head"><div><h2>'+head[0]+'</h2><p>'+head[2]+'</p></div>'+pill(head[1])+'</div><div class="card-body">'+body+'</div>'+(foot?'<div class="card-footer"><div class="actions">'+foot+'</div></div>':'')+'</article>';
   }
   function activity(){
-    const t=current(), messages=t.state==='running'?['正在检验第'+t.version+'版实现','已修订缺失值处理','已读取上一轮检验报告']:t.state==='error'?['准备阶段发生异常','任务已创建，配置尚未送入研究系统']:t.state==='waiting'?['等待相关性计算服务','候选第3版已冻结','研发检验完成']:t.state==='review'?['已整理因子说明与标签建议','已提交独立审查','验证证据已固定']:t.state==='admitted'?['已登记研究用途因子','独立复核人已批准']:t.state==='returned'?['待补充审查材料','原冻结证据保持不变']:t.state==='rejected'?['独立复核人已驳回','审查意见与全部证据已归档']:t.state==='ended'?['预算已用尽，任务结束','已归档全部试验']:t.state==='paused'?['任务已暂停，未发出新计算']:t.state==='queued'?['样例请求已进入排队状态，未提交真实服务']:['草稿已保存，尚未启动'];
+    const t=current(), messages=t.state==='running'?['正在检验第'+t.version+'版实现','已修订缺失值处理','已读取上一轮检验报告']:t.state==='error'?['准备阶段发生异常','任务已创建，配置尚未送入研究系统']:t.state==='waiting'?['等待相关性计算服务','候选第3版已冻结','研发检验完成']:t.state==='review'?['已整理因子说明与标签建议','已提交独立审查','验证证据已固定']:t.state==='admitted'?['已登记研究用途因子','独立复核人已批准']:t.state==='returned'?['待补充审查材料','原冻结证据保持不变']:t.state==='rejected'?['独立复核人已驳回','审查意见与全部证据已归档']:t.state==='ended'?[t.stopReason||'试验额度已用尽，任务结束','已归档全部试验']:t.state==='paused'?['任务已暂停，未发出新计算']:t.state==='queued'?['样例请求已进入排队状态，未提交真实服务']:['草稿已保存，尚未启动'];
     return '<aside class="ff-live" aria-label="Agent 工作状态"><div><div class="ff-label">当前工作</div><h3>'+stages[t.step][1]+'</h3><div class="ff-now">'+messages[0]+'</div><p>场景记录 · 不自动推进</p></div><ol>'+messages.map((m,i)=>'<li><time>'+(i===0?'最近一次操作':'此前')+'</time>'+m+'</li>').join('')+'</ol><div><hr class="ff-divider"><div class="ff-label">需要你处理</div><p>'+(t.state==='review'?'等待独立复核人查看证据并决定。':t.state==='error'?'重试启动；重复异常请联系维护人员。':t.state==='waiting'?'已记录服务缺口，暂不能继续验证。':t.state==='paused'?'完成人工操作后恢复研究。':t.state==='returned'?'补齐审查要求的材料，再申请复核。':t.state==='ended'?'可查看全部试验，提交研究复盘。':'当前无需人工审批。')+'</p>'+(t.note?'<p style="margin-top:10px">已提交意见：'+safe(t.note)+'</p>':'')+'</div><div class="actions" style="margin-top:14px">'+btn('给研究建议','opinion','','small')+'</div></aside>';
   }
   function researchHistory(t){
@@ -142,6 +158,10 @@
     const el=event.target.closest('[data-action]');if(!el||el.disabled)return;
     const action=el.dataset.action,v=el.dataset.value,t=current();
     if(role==='reviewer'&&editActions.has(action))return;
+    if(action==='auto-settings'){autonomySettings();return;}
+    if(action==='auto-pause'){autoState='off';draw();toast('设计场景已暂停新增选题；已有任务状态保留。');return;}
+    if(action==='auto-reconsider'){dialog('重新考虑研究方向','<p class="ff-copy">当前没有足够的新依据。你可以补充方向或新资料，再让系统考虑一次。</p><label class="field">新的依据或希望调整的方向<textarea name="direction" required minlength="4" placeholder="说明与上一次不同的信息。"></textarea></label><div class="hint">正式系统保留本次请求和原决定，不会因刷新自动重复选题。</div>','<button type="submit" class="btn primary">提交方向</button>','auto-reconsider');return;}
+    if(action==='prior-research'){selected=v;viewing=current().step;taskFilter='all';taskText='';draw();return;}
     if(action==='close'){q('#factory-dialog').close();return;}
     if(action==='tab'){setTab(v);return;}
     if(action==='new'){newTask();return;}
@@ -178,6 +198,7 @@
   });
   q('#factory').addEventListener('change',event=>{
     const el=event.target;
+    if(el.id==='preview-autonomy'){autoState=el.value;draw();return;}
     if(el.id==='preview-role'){role=el.value;draw();}
     if(el.id==='preview-state'){const t=tasks.find(x=>x.id==='A');t.state=el.value;t.step=['running','paused','queued','ended'].includes(el.value)?1:el.value==='waiting'?2:3;selected=t.id;viewing=t.step;if(t.state==='admitted')addAdmitted();draw();toast('已切换独立设计场景，未触发真实工作。');}
     if(el.id==='task-filter'){taskFilter=el.value;draw();}
@@ -189,6 +210,12 @@
   });
   q('#factory-dialog').addEventListener('submit',event=>{
     event.preventDefault();const form=event.target;if(!form.reportValidity())return;const fd=new FormData(form),type=form.dataset.submit,t=current();
+    if(type==='auto-settings'||type==='auto-reconsider'){
+      if(role==='reviewer')return;
+      autoDirection=String(fd.get('direction')||'').trim();
+      autoState='researching';
+      q('#factory-dialog').close();draw();toast('自主研究场景已更新；未调用模型或创建真实任务。');return;
+    }
     if(type==='create'){
       const draft=event.submitter?.value==='draft';const purpose=fd.get('purpose');
       const created={id:'N'+(++serial),name:fd.get('name').trim(),state:draft?'draft':'queued',step:0,k:0,max:8,version:1,direction:fd.get('direction'),goal:fd.get('goal').trim()||'依据选定方向，在已授权日频数据内提出并检验因子假设。',purpose,note:''};

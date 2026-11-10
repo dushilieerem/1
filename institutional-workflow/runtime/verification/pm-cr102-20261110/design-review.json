@@ -1,0 +1,32 @@
+{
+  "change": "CR-102",
+  "date": "2026-11-10",
+  "status": "design_and_prototype_reviewed_implementation_pending",
+  "prototype": "http://192.168.10.11:19536/quant-delivery/v5/factor-factory.html#tasks",
+  "checked": [
+    "same 3 tabs and 4 stages",
+    "enable/scope modal without task name/code",
+    "pause new planning preserves current task state",
+    "wait state and explicit reconsider form",
+    "reviewer mutation controls disabled",
+    "autonomy card absent on factor-library tab",
+    "history evidence source navigation",
+    "1024x768 no horizontal overflow (client/scroll/body 1009)",
+    "default viewport restored",
+    "final browser error logs empty",
+    "prototype JavaScript syntax"
+  ],
+  "not_checked": [
+    "real autonomous task creation",
+    "real model/context evidence retrieval",
+    "actual queue or migrations activation",
+    "real family K aggregation",
+    "live pause/return with autonomous planning"
+  ],
+  "images": "Screenshots visually reviewed in tool; no screenshot file claimed.",
+  "files": {
+    "factor-factory.html": "f7372f2b692ef9bf20095f35a366806fd55fac85dcf762a59b67413f906acc97",
+    "factor-factory.js": "96f1c8c86a9362eadf0233984c5a6b787c46f233f1d245cfe2a9893ee005650d",
+    "factor-factory.css": "cb880522d570945e571675e8af86ebeea76a3dd1a8a997d39d8f0289f560db7a"
+  }
+}

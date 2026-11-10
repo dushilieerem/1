@@ -102,3 +102,19 @@
 #factory .ff-detail,#factory .ff-stage-grid>div{min-width:0}
 #factory :focus-visible,#factory-dialog :focus-visible{outline:2px solid var(--primary);outline-offset:3px}
 @media(max-width:1050px){.ff-step small{font-size:12px}.ff-step{padding:10px 7px}.ff-detail-head h2{font-size:21px}}
+
+/* CR-102: compact autonomy controls; existing task and four-stage layout stays. */
+.ff-autonomy{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 22px;margin:0 0 22px;border:1px solid #e1d6ed;border-radius:12px;background:linear-gradient(115deg,#f9f6fc,#fff)}
+.ff-auto-title{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ff-auto-title h2{margin:0;font-size:17px;line-height:1.5}
+.ff-autonomy p{font-size:14px;line-height:1.7;color:#65596f;margin:7px 0 9px;max-width:650px}
+.ff-auto-meta{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:#71667b}
+.ff-auto-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;flex-shrink:0;max-width:280px}
+.ff-planning-basis{padding:16px 18px;border:1px solid #e8dfef;border-radius:9px;background:#faf8fc;margin:18px 0}
+.ff-planning-basis p{margin:8px 0}
+.ff-evidence-link{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12px;color:#675b73}
+.ff-auto-scope{margin:18px 0;padding:18px;background:#faf8fc;border-radius:9px;border:1px solid #e8dfef}
+.ff-auto-scope h3{font-size:15px;margin:0 0 14px}
+.ff-auto-scope p{font-size:13px;color:#675b73;margin:14px 0 0}
+@media(max-width:1250px){.ff-autonomy{align-items:flex-start}.ff-auto-actions{max-width:190px}.ff-auto-meta{gap:6px 16px}.ff-preview{flex-wrap:wrap}}
+@media(max-width:800px){.ff-autonomy{flex-direction:column;padding:16px}.ff-auto-actions{max-width:none;justify-content:flex-start}.ff-preview .actions{flex-wrap:wrap}}

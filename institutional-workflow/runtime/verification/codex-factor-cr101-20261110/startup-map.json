@@ -1,0 +1,36 @@
+{
+  "bff": {
+    "pid": 4120193,
+    "argv": [
+      "/home/dev01/project/SVQuant/.ci/venv/bin/python",
+      "institutional-workflow/runtime/start_quant_bff.py"
+    ],
+    "cwd": "/home/dev01/project/SVQuant-zxd",
+    "log": "/home/dev01/project/SVQuant-zxd/institutional-workflow/runtime/verification/codex-factor-cr097-20261109/bff-service-runtime.log",
+    "process_start_ticks": "148732264"
+  },
+  "private_re": {
+    "pid": 2045830,
+    "argv": [
+      "/home/dev01/program/anaconda3/envs/researchengine/bin/python",
+      "-m",
+      "app.main"
+    ],
+    "cwd": "/home/dev01/project/SVQuant-zxd/.workspaces/research-engine-r4",
+    "log": "/home/dev01/project/SVQuant-zxd/institutional-workflow/runtime/verification/codex-factor-cr097-20261109/private-re-service-runtime.log",
+    "process_start_ticks": "143510987"
+  },
+  "new_private_flags": {
+    "RE_CONTROLLED_EXECUTION_REQUIRED": "1",
+    "RE_FROZEN_VIEW_HOME": "/data/dev01/project/svquant-data"
+  },
+  "bff_launcher_flags": {
+    "QUANT_RESEARCH_DURABLE_QUEUE": "1",
+    "SVQUANT_TEST_SKIP_SCHEMA_BOOTSTRAP": "1"
+  },
+  "migration_order": [
+    "0039_quant_research_token_policy",
+    "0040_quant_research_queue",
+    "0041_quant_model_capacity"
+  ]
+}

@@ -1,0 +1,325 @@
+{
+  "started_at_utc": "2026-11-10T06:47:58.623752+00:00",
+  "no_model_market_or_review_submit": true,
+  "frontend_not_restarted": true,
+  "shared_services_not_modified": true,
+  "startup_map": {
+    "bff": {
+      "pid": 4120193,
+      "argv": [
+        "/home/dev01/project/SVQuant/.ci/venv/bin/python",
+        "institutional-workflow/runtime/start_quant_bff.py"
+      ],
+      "cwd": "/home/dev01/project/SVQuant-zxd",
+      "log": "/home/dev01/project/SVQuant-zxd/institutional-workflow/runtime/verification/codex-factor-cr097-20261109/bff-service-runtime.log",
+      "process_start_ticks": "148732264"
+    },
+    "private_re": {
+      "pid": 2045830,
+      "argv": [
+        "/home/dev01/program/anaconda3/envs/researchengine/bin/python",
+        "-m",
+        "app.main"
+      ],
+      "cwd": "/home/dev01/project/SVQuant-zxd/.workspaces/research-engine-r4",
+      "log": "/home/dev01/project/SVQuant-zxd/institutional-workflow/runtime/verification/codex-factor-cr097-20261109/private-re-service-runtime.log",
+      "process_start_ticks": "143510987"
+    },
+    "new_private_flags": {
+      "RE_CONTROLLED_EXECUTION_REQUIRED": "1",
+      "RE_FROZEN_VIEW_HOME": "/data/dev01/project/svquant-data"
+    },
+    "bff_launcher_flags": {
+      "QUANT_RESEARCH_DURABLE_QUEUE": "1",
+      "SVQUANT_TEST_SKIP_SCHEMA_BOOTSTRAP": "1"
+    },
+    "migration_order": [
+      "0039_quant_research_token_policy",
+      "0040_quant_research_queue",
+      "0041_quant_model_capacity"
+    ]
+  },
+  "source": {
+    "svquant_head": "0ed45146b7f583d9eb29e2a860a2b377a7e50fec",
+    "research_engine_head": "3bd36a2be90ca61998ac93cbda19e65239180373"
+  },
+  "preload": {
+    "counts": {
+      "f0": 0,
+      "candidates": 0,
+      "sealed": 0,
+      "agent_jobs": 0,
+      "iterations": 0
+    },
+    "database": "svquant_dev",
+    "unknown_current_model_calls": 0,
+    "owned_queue_installed": false,
+    "installed_cr101_migrations": [],
+    "private_re": {
+      "http_status": 200,
+      "activity": {
+        "queued": 0,
+        "running": 0
+      },
+      "required": true,
+      "enabled": true,
+      "method_code_hash": "8abbfd63bf482e2d70cdbcdc8b2bad061b2594862f8920275e863d080040f7cb",
+      "frozen_data_view": null
+    },
+    "available_memory_bytes": 86509801472
+  },
+  "migration_activation": {
+    "applied": [
+      "0039_quant_research_token_policy",
+      "0040_quant_research_queue",
+      "0041_quant_model_capacity"
+    ],
+    "authorization": {
+      "id": "qtp_fcb7263e392b2caf775a159b",
+      "mode": "unlimited",
+      "org_id": 261,
+      "idempotent": true,
+      "supersedes_grant_id": "qbg_18880ef5240d740268f730df"
+    },
+    "budget_status": {
+      "token_limit_mode": "unlimited",
+      "cumulative_token_limit": null,
+      "active_policy": {
+        "id": "qtp_fcb7263e392b2caf775a159b",
+        "mode": "unlimited",
+        "supersedes_grant_id": "qbg_18880ef5240d740268f730df",
+        "authorization_hash": "fcb7263e392b2caf775a159bef09626565cac229e89c65cf77d9e3b8cb30e476"
+      },
+      "legacy_baseline": "pending",
+      "legacy_accounts": [
+        {
+          "scope": "space",
+          "limit_tokens": 1000000,
+          "baseline_state": "pending",
+          "historical_tokens": 180331,
+          "unknown_history": {
+            "complete": false,
+            "other_gaps": "Unbound historical F0/assistant and failed/repaired calls; see source audit",
+            "recorded_by": 2527,
+            "audit_sha256": "d4cf4c910d7fd44b675b3796467548260cb69b66d3e8fe234dacad768733ab74",
+            "f3_zero_usage_rows": 46
+          }
+        },
+        {
+          "scope": "factor",
+          "limit_tokens": 200000,
+          "baseline_state": "pending",
+          "historical_tokens": 180331,
+          "unknown_history": {
+            "complete": false,
+            "other_gaps": "Unbound historical F0/assistant and failed/repaired calls; see source audit",
+            "recorded_by": 2527,
+            "audit_sha256": "d4cf4c910d7fd44b675b3796467548260cb69b66d3e8fe234dacad768733ab74",
+            "f3_zero_usage_rows": 46
+          }
+        }
+      ],
+      "new_authorization": {
+        "id": "qbg_18880ef5240d740268f730df",
+        "limit_tokens": 100000000,
+        "settled_tokens": 35210,
+        "held_tokens": 0,
+        "remaining_tokens": null,
+        "scope": "本机构量化产品因子Agent研究；全机构单池累计，不按成员或任务重置",
+        "superseded_by_policy_id": "qtp_fcb7263e392b2caf775a159b"
+      },
+      "execution_ready": true,
+      "policy_state": "active",
+      "policy_message": "",
+      "usage": {
+        "settled_tokens": 35210,
+        "held_tokens": 0,
+        "unresolved_calls": 0,
+        "includes_historical_unknown": false
+      }
+    }
+  },
+  "before_re_reload": {
+    "counts": {
+      "f0": 0,
+      "candidates": 0,
+      "sealed": 0,
+      "agent_jobs": 0,
+      "iterations": 0
+    },
+    "database": "svquant_dev",
+    "unknown_current_model_calls": 0,
+    "owned_queue_installed": true,
+    "owned_queue_active": 0,
+    "owned_external_unknown": 0,
+    "owned_slot_rows": 0,
+    "owned_slot_held": 0,
+    "installed_cr101_migrations": [
+      "0039_quant_research_token_policy",
+      "0040_quant_research_queue",
+      "0041_quant_model_capacity"
+    ],
+    "private_re": {
+      "http_status": 200,
+      "activity": {
+        "queued": 0,
+        "running": 0
+      },
+      "required": true,
+      "enabled": true,
+      "method_code_hash": "8abbfd63bf482e2d70cdbcdc8b2bad061b2594862f8920275e863d080040f7cb",
+      "frozen_data_view": null
+    },
+    "available_memory_bytes": 86516060160
+  },
+  "new_re_pid": 3176526,
+  "private_re_health": {
+    "http_status": 200,
+    "body": {
+      "status": "ok",
+      "version": "2.0.0",
+      "engines": [
+        "native"
+      ]
+    }
+  },
+  "after_re_before_bff": {
+    "counts": {
+      "f0": 0,
+      "candidates": 0,
+      "sealed": 0,
+      "agent_jobs": 0,
+      "iterations": 0
+    },
+    "database": "svquant_dev",
+    "unknown_current_model_calls": 0,
+    "owned_queue_installed": true,
+    "owned_queue_active": 0,
+    "owned_external_unknown": 0,
+    "owned_slot_rows": 0,
+    "owned_slot_held": 0,
+    "installed_cr101_migrations": [
+      "0039_quant_research_token_policy",
+      "0040_quant_research_queue",
+      "0041_quant_model_capacity"
+    ],
+    "private_re": {
+      "http_status": 200,
+      "activity": {
+        "queued": 0,
+        "running": 0
+      },
+      "required": true,
+      "enabled": true,
+      "method_code_hash": "afeb14523feee520754b4cbf8987650e7859be38611afc9165db60b0945b20b4",
+      "frozen_data_view": {
+        "version": "quant-frozen-view-v1",
+        "enabled": true,
+        "request_field": "frozen_data_view",
+        "verification": "worker opens daily files and verifies SHA256; preflight checks metadata only",
+        "no_current_fallback": true
+      }
+    },
+    "available_memory_bytes": 86718791680
+  },
+  "new_bff_pid": 3177416,
+  "bff_health": {
+    "http_status": 200,
+    "ok": true,
+    "db": "ok",
+    "schema_ok": true
+  },
+  "bff_queue_flag": {
+    "configured_in_launcher": true,
+    "exec_environment_value": "1",
+    "effective_startup_requires_queue": true
+  },
+  "frontend_http_status": 200,
+  "final_preflight": {
+    "project_id": "0cf7441a-94e9-4690-94f6-0396f8836346",
+    "factor_preflight": {
+      "allowed": true,
+      "version": "quant-controlled-worker-v1",
+      "service_version": "2.0.0",
+      "method_code_hash": "afeb14523feee520754b4cbf8987650e7859be38611afc9165db60b0945b20b4",
+      "candidate_warmup_sessions": 0,
+      "reasons": [],
+      "frozen_data_identity": {
+        "view_id": "research-rv-20261106-3",
+        "view_manifest_sha256": "99955ca606fc992b5b46a8370be539fbc1e0d47de6846769da2e5874fb41530a",
+        "daily_release": "ifind-sync-20261106-093850",
+        "daily_dataset_sha256": "798145e86ff24bf079a9039c7ba5338c5faceb36a1ffc78a7c1119b5242a23b4",
+        "version": "quant-frozen-view-v1",
+        "verification": "metadata_only",
+        "daily_files_sha256": {
+          "market_data/market_data_hfq.parquet": "6cea81f123a686d68f1b3922ba5690a8186ea306ea1391fc28a936ac7fecd8b0"
+        },
+        "data_manifest_sha256": "9008e4f349dd400e23bf2d16b2820864b2db4b04e57be78b7d71853c1928d86f"
+      },
+      "policy_hash": "4e2ad21f697e44394cbf6657ffe248ef72a73094803300a8390d5ee817432c5b",
+      "max_development_trials": 2,
+      "score_calendar_days": 92,
+      "security_count": 40,
+      "limits": {
+        "max_development_trials": 2,
+        "max_symbols": 40,
+        "max_score_days": 93,
+        "max_references": 1,
+        "address_space_bytes": 12884901888,
+        "rss_bytes": 3221225472,
+        "min_available_bytes": 17179869184,
+        "wall_seconds": 180,
+        "cpu_seconds": 120
+      }
+    },
+    "reject_334": {
+      "allowed": false,
+      "reasons": [
+        "正式对照规模尚未获准，不会自动执行全库比较"
+      ]
+    },
+    "actual_market_bytes_verified": false,
+    "no_compute_submitted": true
+  },
+  "postload_counts": {
+    "counts": {
+      "f0": 0,
+      "candidates": 0,
+      "sealed": 0,
+      "agent_jobs": 0,
+      "iterations": 0
+    },
+    "database": "svquant_dev",
+    "unknown_current_model_calls": 0,
+    "owned_queue_installed": true,
+    "owned_queue_active": 0,
+    "owned_external_unknown": 0,
+    "owned_slot_rows": 1,
+    "owned_slot_held": 0,
+    "installed_cr101_migrations": [
+      "0039_quant_research_token_policy",
+      "0040_quant_research_queue",
+      "0041_quant_model_capacity"
+    ],
+    "private_re": {
+      "http_status": 200,
+      "activity": {
+        "queued": 0,
+        "running": 0
+      },
+      "required": true,
+      "enabled": true,
+      "method_code_hash": "afeb14523feee520754b4cbf8987650e7859be38611afc9165db60b0945b20b4",
+      "frozen_data_view": {
+        "version": "quant-frozen-view-v1",
+        "enabled": true,
+        "request_field": "frozen_data_view",
+        "verification": "worker opens daily files and verifies SHA256; preflight checks metadata only",
+        "no_current_fallback": true
+      }
+    },
+    "available_memory_bytes": 86893019136
+  },
+  "completed_at_utc": "2026-11-10T06:48:09.813172+00:00",
+  "success": true
+}

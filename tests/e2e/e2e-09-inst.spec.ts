@@ -89,7 +89,7 @@ test("流水线卡片进入只读结果页", async ({ page }) => {
   await card.click();
   await expect(page).toHaveURL(/\/inst\/pipeline\/result\?key=/);
   await expect(page.locator(".v3-stepper .v3-step")).toHaveCount(6);
-  await expect(page.getByText("当前阶段结论", { exact: true })).toBeVisible();
+  await expect(page.getByText(/机会来源|当前阶段结论/).first()).toBeVisible();
   await expect(page.getByText("版本与锁定", { exact: true })).toBeVisible();
   await expect(page.getByText("下一关", { exact: true })).toBeVisible();
 });

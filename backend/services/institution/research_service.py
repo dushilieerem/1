@@ -2258,6 +2258,37 @@ def _idea_data_sufficiency(company: dict[str, Any]) -> str:
     return "missing"
 
 
+def _opportunity_source(
+    company: dict[str, Any],
+    source: str,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """机会来源：量化推送 / 自选 / 持仓候选，替代原立项三问展示。"""
+    source = source if source in {"push", "watch", "holdings"} else "watch"
+    labels = {
+        "push": "量化策略推送",
+        "watch": "自选",
+        "holdings": "持仓候选",
+    }
+    default_detail = {
+        "push": "量化策略初筛通过，进入机会池等待研究。",
+        "watch": "投资经理加入自选，等待价格或基本面变化。",
+        "holdings": "当前持仓标的，进入投后复核。",
+    }
+    points = company.get("research_points") or []
+    detail = str(reason or "").strip()
+    if not detail and isinstance(points, list) and points:
+        detail = str(points[0])
+    return {
+        "source": source,
+        "source_label": labels[source],
+        "source_detail": detail or default_detail[source],
+        "pool_status": company.get("pool_status"),
+        "tags": company.get("tags") or [],
+        "discovered_at": company.get("created_at") or company.get("updated_at"),
+    }
+
+
 def _idea_questions(
     company: dict[str, Any],
     source: str,
@@ -2562,6 +2593,7 @@ __all__ = [
     "_merge_agent_results",
     "_merge_industry",
     "_net_debt_proxy",
+    "_opportunity_source",
     "_overall_score",
     "_peer_summary",
     "_resample_bars",

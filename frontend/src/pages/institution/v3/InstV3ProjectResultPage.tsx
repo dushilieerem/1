@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, Lock, ShieldCheck } from "lucide-react";
 import { fetchV3Project, type V3Result } from "@/lib/instV3Api";
 
 const STAGES = [
-  { no: 0, name: "机会发现", gate: "立项三问" },
+  { no: 0, name: "机会发现", gate: "机会来源" },
   { no: 1, name: "价值分析", gate: "研究定稿" },
   { no: 2, name: "多空辩论", gate: "议案锁定" },
   { no: 3, name: "投委会审批", gate: "三关审批" },
@@ -58,7 +58,7 @@ export function InstV3ProjectResultPage() {
   const proposal = (data.latest_proposal || {}) as Record<string, unknown>;
   const auth = (data.authorization || {}) as Record<string, unknown>;
   const position = (data.position || {}) as Record<string, unknown>;
-  const idea = (data.idea || {}) as Record<string, unknown>;
+  const opportunity = (data.opportunity || {}) as Record<string, unknown>;
   const locks = (data.locks || {}) as Record<string, unknown>;
 
   return (
@@ -89,18 +89,17 @@ export function InstV3ProjectResultPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <section className="v3-card">
             <div className="v3-card-head">
-              <div><h2>当前阶段结论</h2><p>{data.stage_name} · {data.stage_state === "returned" ? "已退回" : "进行中"}</p></div>
+              <div><h2>{stageNo === 0 ? "机会来源" : "当前阶段结论"}</h2><p>{data.stage_name} · {data.stage_state === "returned" ? "已退回" : "进行中"}</p></div>
               <span className={`v3-chip ${data.stage_state === "returned" ? "warn" : "info"}`}>{data.stage_name}</span>
             </div>
             {stageNo === 0 ? (
               <div>
                 <dl>
-                  <div className="v3-kv"><dt>为什么是现在</dt><dd>{text(idea.why_now)}</dd></div>
-                  <div className="v3-kv"><dt>能力圈</dt><dd>{text(idea.circle_of_competence)}</dd></div>
-                  <div className="v3-kv"><dt>资料齐备度</dt><dd>{text(idea.data_sufficiency)}</dd></div>
-                  <div className="v3-kv"><dt>AI 建议</dt><dd>{text(idea.suggestion)}</dd></div>
+                  <div className="v3-kv"><dt>机会来源</dt><dd>{text(opportunity.source_label, "自选")}</dd></div>
+                  <div className="v3-kv"><dt>来源说明</dt><dd>{text(opportunity.source_detail)}</dd></div>
+                  <div className="v3-kv"><dt>当前状态</dt><dd>{text(opportunity.pool_status, "观察池")}</dd></div>
+                  {Array.isArray(opportunity.tags) && opportunity.tags.length ? <div className="v3-kv"><dt>标签</dt><dd>{(opportunity.tags as unknown[]).map(String).join(" / ")}</dd></div> : null}
                 </dl>
-                {Array.isArray(idea.data_gaps) && idea.data_gaps.length ? <div className="v3-note" style={{ marginTop: 8 }}>数据缺口：{(idea.data_gaps as unknown[]).map(String).join("；")}</div> : null}
               </div>
             ) : (
               <div>

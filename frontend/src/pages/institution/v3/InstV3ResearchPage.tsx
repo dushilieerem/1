@@ -4,14 +4,22 @@ import { ArrowRight, RefreshCw, Sparkles } from "lucide-react";
 import { dedupeBy, latestByKey } from "@/lib/instDedupe";
 import { instApi } from "@/lib/instApi";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
+import { InstV3FourLine } from "@/components/institution/v3/InstV3FourLine";
 
 type Dim = {
   key: string;
   title?: string;
   question?: string;
   summary?: string;
+  judgment?: string;
+  basis?: string;
+  impact?: string;
+  action?: string;
   status?: string;
   rating?: number | null;
+  score_10?: number | null;
+  rating_benchmark?: string | null;
+  rating_note?: string | null;
   confidence?: number | null;
   gate?: string | null;
   checks?: string[];
@@ -51,6 +59,7 @@ type ResearchGate = { status: string; checks: GateCheck[] };
 type Memo = {
   summary?: string;
   decision?: string;
+  overall_score?: number | null;
   six_dim_scores?: Array<{ key: string; score: number; confidence?: number; note?: string }>;
   conflicts?: string[];
   key_variables?: string[];
@@ -76,8 +85,52 @@ type CaseItem = {
   version_no?: number | null;
   version_status?: string | null;
   updated_at?: string | null;
+  overall_score?: number | null;
   versions?: Version[];
 };
+
+function dimScore(dim?: Dim | null): number | null {
+  if (!dim) return null;
+  if (dim.score_10 != null) return Number(dim.score_10);
+  if (dim.rating != null && dim.rating_benchmark) {
+    return Math.round(Number(dim.rating) * 20) / 10;
+  }
+  return null;
+}
+
+function overallScore(dims?: Dim[] | null, fallback?: number | null): number | null {
+  if (fallback != null) return Number(fallback);
+  const scores = (dims || []).map((d) => dimScore(d)).filter((n): n is number => n != null);
+  if (!scores.length) return null;
+  return Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
+}
+
+function stripParens(value?: string): string {
+  return String(value || "").replace(/[（(][^）)]*[）)]/g, "").trim();
+}
+
+function fourLineProps(dim?: Dim | null) {
+  const basis = dim?.basis || (dim?.checks?.length ? dim.checks.join("；") : undefined);
+  const impact =
+    dim?.impact ||
+    (dim?.gate === "fail"
+      ? "本维不成立，估值不上调、仓位不增加。"
+      : dim?.gate === "watch"
+        ? "仅支持观察，估值与仓位不高于同业基准。"
+        : "支持纳入估值与仓位，幅度按同业中位或历史分位复核。");
+  const gap = dim?.data_gaps?.[0];
+  const action =
+    dim?.action ||
+    (gap
+      ? `补数据：${gap}；补齐前仅作观察。`
+      : "继续：按当前证据推进，下一复核点见反证条件。");
+  return {
+    judgment: dim?.judgment || dim?.summary || "本维结论尚未形成",
+    basis: basis || "截至当前版本的输入未提供可引用证据",
+    impact,
+    action,
+  };
+}
 
 const DIMS: Array<[string, string]> = [
   ["industry", "产业研究"],
@@ -92,7 +145,7 @@ const STEPS = [
   { name: "行业分析", sub: "独立底图 · 不占六维", agent: "行业研究员", duty: "只回答行业本身：空间、增速、格局、产业链与关键变量，为六维提供底图。" },
   { name: "六维结论", sub: "六维研究员并行", agent: "六维研究员", duty: "产业 / 商业模式 / 护城河 / 财务 / 治理 / 估值各管一维；每条结论带证据与证伪。" },
   { name: "一页纸", sub: "研究经理合成 · 三问", agent: "研究经理", duty: "只做裁决：该不该投、什么价投、最可能错在哪；保留矛盾，不做平均数。" },
-  { name: "研究定稿", sub: "归档版本 · 移交辩论", agent: "研究经理 + 归档", duty: "确认六维齐全、低置信项已处理、证据包与校验码；锁定研究定稿，移交辩论。" },
+  { name: "研究定稿", sub: "归档版本 · 移交辩论", agent: "研究经理 + 归档", duty: "确认六维齐全、低置信项已处理、总体得分与证据包；锁定研究定稿，移交辩论。" },
 ];
 
 function currentCaseId(key: string | null): number | null {
@@ -184,6 +237,10 @@ export function InstV3ResearchPage() {
   }, [selectedId]);
 
   const version = detail?.versions?.[0] || null;
+  const overall = overallScore(
+    version?.six_dim,
+    detail?.overall_score ?? memo?.overall_score ?? null,
+  );
   const dims = useMemo(() => dedupeBy(version?.six_dim || [], (d) => d.key), [version]);
   const activeDim = dims.find((d) => d.key === dimKey) || dims[0] || null;
 
@@ -214,7 +271,7 @@ export function InstV3ResearchPage() {
     }
     return [
       { id: "manager", name: "研究经理", code: "MANAGER", model: "研究经理 Agent", tools: "一页纸 / 未决分歧", output: "研究定稿", role: "确认定稿内容与版本。" },
-      { id: "archivist", name: "研究归档", code: "VERSION", model: "确定性服务", tools: "版本 / 校验码 / 证据包", output: "定稿记录", role: "保存定稿、校验码与证据对应关系。", engine: true },
+      { id: "archivist", name: "研究归档", code: "VERSION", model: "确定性服务", tools: "版本 / 总体得分 / 证据包", output: "定稿记录", role: "保存定稿、总体得分与证据对应关系。", engine: true },
     ];
   }, [step, dims]);
 
@@ -371,10 +428,7 @@ export function InstV3ResearchPage() {
                     <span className="v3-chip">{version.industry_analysis.engine || "AI Agent"}</span>
                     {version.industry_analysis.data_completeness?.level ? <span className="v3-chip warn">数据 {version.industry_analysis.data_completeness.level}</span> : null}
                   </div>
-                  <p style={{ marginTop: 8, fontSize: 12, lineHeight: 1.75, color: "#4b4352" }}>{version.industry_analysis.summary || "行业分析已生成。"}</p>
-                  {version.industry_analysis.checks?.length ? <ul className="v3-rule-list" style={{ marginTop: 8 }}>{version.industry_analysis.checks.map((x) => <li key={x}>{x}</li>)}</ul> : null}
-                  {version.industry_analysis.counter?.length ? <div className="v3-note" style={{ marginTop: 8 }}>反证：{version.industry_analysis.counter[0]}</div> : null}
-                  {version.industry_analysis.data_completeness?.missing?.length ? <p style={{ marginTop: 8, fontSize: 11, color: "#6b6370" }}>数据缺口：{version.industry_analysis.data_completeness.missing.join("；")}</p> : null}
+                  <InstV3FourLine {...fourLineProps(version.industry_analysis)} />
                 </div>
               ) : (
                 <div className="v3-empty">
@@ -392,22 +446,31 @@ export function InstV3ResearchPage() {
                 <>
                   <div className="v3-dim-list">
                     {DIMS.map(([key, label]) => {
-                      const dim = dims.find((x) => x.key === key);
-                      return <button key={key} className={`v3-dim-btn${activeDim?.key === key ? " on" : ""}`} onClick={() => setDimKey(key)}>{label}{dim?.rating != null ? ` · ${dim.rating}` : ""}</button>;
+                      return <button key={key} className={`v3-dim-btn${activeDim?.key === key ? " on" : ""}`} onClick={() => setDimKey(key)}>{label}</button>;
                     })}
                   </div>
                   {activeDim ? (
                     <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="v3-chip ok">{activeDim.status || "已完成"}</span>
-                        {activeDim.rating != null ? <span className={`v3-chip ${activeDim.gate === "fail" ? "bad" : activeDim.gate === "watch" ? "warn" : "ok"}`}>评级 {activeDim.rating}/5 · {activeDim.gate || "pass"}</span> : null}
-                        {activeDim.confidence != null ? <span className="v3-chip">置信度 {activeDim.confidence.toFixed ? activeDim.confidence.toFixed(2) : activeDim.confidence}</span> : null}
-                        {version?.dim_reviews?.[activeDim.key]?.decision === "approve" ? <span className="v3-chip ok">低置信已复核</span> : null}
+                      <div className="v3-dim-head">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="v3-chip ok">{activeDim.status || "已完成"}</span>
+                          {activeDim.confidence != null ? <span className="v3-chip">置信度 {activeDim.confidence.toFixed ? activeDim.confidence.toFixed(2) : activeDim.confidence}</span> : null}
+                          {version?.dim_reviews?.[activeDim.key]?.decision === "approve" ? <span className="v3-chip ok">低置信已复核</span> : null}
+                        </div>
+                        <div className={`v3-dim-score${dimScore(activeDim) == null ? " empty" : ""}`}>
+                          <span className="lab">Agent 评分</span>
+                          <span className="num">
+                            {dimScore(activeDim) != null ? dimScore(activeDim)!.toFixed(1) : "未评分"}
+                            {dimScore(activeDim) != null ? <small>/10</small> : null}
+                          </span>
+                          <span className="base">
+                            {dimScore(activeDim) != null
+                              ? activeDim.rating_benchmark || "基准待补"
+                              : "缺少评分基准"}
+                          </span>
+                        </div>
                       </div>
-                      <p style={{ marginTop: 8, fontSize: 12, lineHeight: 1.75, color: "#4b4352" }}>{activeDim.summary || "待补充"}</p>
-                      {activeDim.checks?.length ? <ul className="v3-rule-list" style={{ marginTop: 8 }}>{activeDim.checks.map((x) => <li key={x}>{x}</li>)}</ul> : null}
-                      {activeDim.counter?.length ? <div className="v3-note" style={{ marginTop: 8 }}>反证：{activeDim.counter[0]}</div> : null}
-                      {activeDim.data_completeness?.missing?.length ? <p style={{ marginTop: 8, fontSize: 11, color: "#6b6370" }}>数据缺口：{activeDim.data_completeness.missing.join("；")}</p> : null}
+                      <InstV3FourLine {...fourLineProps(activeDim)} />
                       <div style={{ marginTop: 8 }}>
                         <button className="v3-btn ghost" disabled={!!busy} onClick={() => runResearch(activeDim.key, activeDim.key)}>
                           <RefreshCw className="h-3.5 w-3.5" />{busy === activeDim.key ? "本维生成中…" : "只重跑本维"}
@@ -435,9 +498,10 @@ export function InstV3ResearchPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     {memo.decision ? <span className={`v3-chip ${memo.decision === "proceed" ? "ok" : memo.decision === "avoid" ? "bad" : "warn"}`}>{memo.decision}</span> : null}
                     {memo.engine ? <span className="v3-chip">{memo.engine}</span> : null}
+                    <span className="v3-memo-score"><span>六维总分</span><b>{overall != null ? overall.toFixed(1) : "未评分"}</b>{overall != null ? <small>/10</small> : null}<em>六维平均</em></span>
                   </div>
-                  <p style={{ marginTop: 8, fontSize: 12, lineHeight: 1.75, color: "#2b2533" }}>{memo.summary || "—"}</p>
-                  {memo.metrics?.length ? <div className="v3-kpis" style={{ gridTemplateColumns: "repeat(2,minmax(0,1fr))", marginTop: 8 }}>{memo.metrics.slice(0, 4).map((m) => <div className="v3-kpi" key={m.label}><div className="k">{m.label}</div><div className="v" style={{ fontSize: 16 }}>{m.value}</div></div>)}</div> : null}
+                  <p style={{ marginTop: 8, lineHeight: 1.75, color: "#2b2533" }}>{memo.summary || "—"}</p>
+                  {memo.metrics?.length ? <div className="v3-kpis" style={{ gridTemplateColumns: "repeat(2,minmax(0,1fr))", marginTop: 8 }}>{memo.metrics.slice(0, 4).map((m) => <div className="v3-kpi" key={m.label}><div className="k">{stripParens(m.label)}</div><div className="v">{stripParens(m.value)}</div></div>)}</div> : null}
                   {memo.conflicts?.length ? <div className="v3-note" style={{ marginTop: 8 }}>保留分歧：{memo.conflicts.join("；")}</div> : null}
                   {memo.risks?.length ? <div style={{ marginTop: 8 }}><div className="v3-eyebrow">核心风险</div><ul className="v3-rule-list" style={{ marginTop: 4 }}>{memo.risks.slice(0, 4).map((x) => <li key={x}>{x}</li>)}</ul></div> : null}
                   {memo.data_gate_note ? <div className="v3-note" style={{ marginTop: 8 }}>{memo.data_gate_note}</div> : null}
@@ -452,9 +516,14 @@ export function InstV3ResearchPage() {
                 <div><h2>研究定稿</h2><p>六维齐全、低置信项已处理、数据门禁通过后锁定研究定稿；锁定后辩论只读这一版。</p></div>
                 {locked ? <span className="v3-chip ok">已锁定</span> : gateLoading ? <span className="v3-chip">门禁检查中…</span> : <span className={`v3-chip ${gate?.status === "pass" ? "ok" : gate?.status === "warn" ? "warn" : "bad"}`}>门禁 {gate?.status || "未检查"}</span>}
               </div>
+              <div className="v3-final-score">
+                <span>总体得分</span>
+                <b>{overall != null ? overall.toFixed(1) : "未评分"}</b>
+                {overall != null ? <small>/10</small> : null}
+                <em>六维平均</em>
+              </div>
               <dl>
                 <div className="v3-kv"><dt>研究版本</dt><dd>{version ? `R${version.version_no} · ${version.status}` : "—"}</dd></div>
-                <div className="v3-kv"><dt>校验码</dt><dd className="font-mono">{version?.content_hash || "—"}</dd></div>
                 <div className="v3-kv"><dt>证据条数</dt><dd>{version?.evidence_ids?.length ?? 0}</dd></div>
                 <div className="v3-kv"><dt>锁定时间</dt><dd>{version?.locked_at || version?.frozen_at || "—"}</dd></div>
               </dl>
@@ -514,7 +583,7 @@ export function InstV3ResearchPage() {
                     </button>
                     {gateBlocked ? (
                       <>
-                        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#5f5766" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#6b6370" }}>
                           <input type="checkbox" checked={allowGaps} onChange={(e) => setAllowGaps(e.target.checked)} />
                           我已确认数据缺口，允许带缺口锁定
                         </label>

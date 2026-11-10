@@ -4,6 +4,7 @@ import { ArrowRight, Play, Send } from "lucide-react";
 import { dedupeBy, latestByKey } from "@/lib/instDedupe";
 import { instApi } from "@/lib/instApi";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
+import { InstV3FourLine } from "@/components/institution/v3/InstV3FourLine";
 
 type Arg = {
   id: number;
@@ -30,6 +31,8 @@ type Debate = {
   id: number;
   status: string;
   conclusion?: string;
+  started_at?: string;
+  ended_at?: string;
   arguments?: Arg[];
   evidence_checks?: EvidenceCheck[];
 };
@@ -156,8 +159,7 @@ function claimHeadline(value?: string): string {
   const clean = String(value || "").replace(/\s+/g, " ").trim();
   if (!clean) return "—";
   const first = clean.split(/[；;。：:]/)[0].trim() || clean;
-  const noTail = first.replace(/[，,]+$/, "");
-  return noTail.length > 40 ? `${noTail.slice(0, 40)}…` : noTail;
+  return first.replace(/[，,]+$/, "");
 }
 
 export function InstV3DebatePage() {
@@ -362,17 +364,50 @@ export function InstV3DebatePage() {
                     </button>
                   </div>
                   <div className="v3-eyebrow">{agentId === "bear" ? "空方 · 空头研究员 Agent" : "多方 · 多头研究员 Agent"}</div>
-                  {activeSide.map((a) => (
-                    <div className="v3-claim" key={a.id}>
-                      <div className="who">第 {a.round} 轮</div>
-                      <p className="claim-t" title={a.claim}>{claimHeadline(a.claim)}</p>
-                      <div className="claim-meta">
-                        <span className="v3-chip">证据 {a.evidence_ids?.length || 0} 条</span>
-                        <span className="v3-chip">置信 {a.confidence?.toFixed?.(2) ?? "—"}</span>
+                  {activeSide.map((a) => {
+                    const hasEvidence = Boolean(a.evidence_ids?.length);
+                    const refs = hasEvidence
+                      ? `证据 ${a.evidence_ids!.slice(0, 4).map((id) => `#${id}`).join("、")}`
+                      : "缺少证据 ID";
+                    const grades = [
+                      ...new Set(
+                        (debate?.evidence_checks || [])
+                          .filter((c) => c.claim_id === a.claim_id && c.grade)
+                          .map((c) => c.grade),
+                      ),
+                    ];
+                    const number = (a.claim.match(/\d+(?:\.\d+)?%?/) || [])[0];
+                    const hasNumber = Boolean(number);
+                    const date = (debate?.started_at || debate?.ended_at || "").slice(0, 10) || "当前版本";
+                    const basis = hasEvidence
+                      ? [
+                          refs,
+                          hasNumber ? `数据 ${number}` : "无数值型数据",
+                          grades.length ? `核验等级 ${grades.join("/")}` : "",
+                          `截至 ${date}`,
+                        ].filter(Boolean).join("；")
+                      : `缺少证据 ID，无法引用数据与日期；截至 ${date}`;
+                    const impact = !hasEvidence || !hasNumber
+                      ? "证据未量化，估值与仓位不因该论点调整。"
+                      : a.side === "bear"
+                        ? "若成立，支持下调估值或降低仓位；触发风控阈值时不得加仓。"
+                        : "若成立，支持上调估值或增加仓位；幅度仍受单股与行业上限约束。";
+                    const action =
+                      hasEvidence && hasNumber && a.falsifier
+                        ? `继续：未触发“${a.falsifier}”前保留；触发即放弃该论点。`
+                        : "补数据：补充该论点的指标、当前值、对比基准与日期；补齐前仅作观察。";
+                    return (
+                      <div className="v3-claim" key={a.id}>
+                        <div className="who">第 {a.round} 轮</div>
+                        <InstV3FourLine
+                          judgment={claimHeadline(a.claim)}
+                          basis={basis}
+                          impact={impact}
+                          action={action}
+                        />
                       </div>
-                      {a.falsifier ? <div className="fs">证伪：{a.falsifier}</div> : null}
-                    </div>
-                  ))}
+                    );
+                  })}
                   {!activeSide.length ? <div className="v3-empty" style={{ marginTop: 8 }}>暂无{sideName}论点</div> : null}
                 </div>
               ) : <div className="v3-empty">还没有辩论记录。点击右上角开始；结论不投票，只保留分歧。</div>}

@@ -166,7 +166,7 @@ test("六角色菜单按登录身份裁剪", async ({ browser }) => {
   for (const role of ROLES) {
     const { ctx, page } = await openPage(browser, TOKENS[role]!);
     await page.goto(`${BASE}/inst`, { waitUntil: "networkidle" });
-    await expect(page.locator("aside.v3-side nav.v3-nav a span:nth-child(2)")).toHaveText(EXPECTED_NAV[role]);
+    await expect(page.locator("aside.v3-side nav.v3-nav a span")).toHaveText(EXPECTED_NAV[role]);
     await expect(page.locator(".v3-role")).toBeVisible();
     await ctx.close();
   }

@@ -51,7 +51,7 @@ export function InstV3PlaybookPage() {
           {dedupeBy(data.gates, (g) => g.key).map((g, i) => (
             <div className="v3-kv" key={g.key}>
               <dt>{i + 1}. {g.name}</dt>
-              <dd>{g.rule}<br /><span className="text-[11px] text-[#6b6370]">{g.actions.join(" / ")}</span></dd>
+              <dd>{g.rule}<br /><span className="text-[12px] text-[#6b6370]">{g.actions.join(" / ")}</span></dd>
             </div>
           ))}
         </section>

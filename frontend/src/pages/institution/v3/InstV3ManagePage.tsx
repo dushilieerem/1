@@ -305,7 +305,7 @@ export function InstV3ManagePage() {
                 <div className="v3-card-head"><div><h2>行业敞口</h2><p>接近上限会标黄；组合约束不可由 AI 或 Chairman 绕过。</p></div></div>
                 {exposure.map(([industry, weight]) => (
                   <div key={industry} style={{ marginTop: 8 }}>
-                    <div className="flex justify-between text-[11px] text-[#5f5766]"><span>{industry}</span><span>{fmtPct(weight)}</span></div>
+                    <div className="flex justify-between text-[12px] text-[#6b6370]"><span>{industry}</span><span>{fmtPct(weight)}</span></div>
                     <div style={{ height: 6, background: "#f0eaf3", borderRadius: 99, marginTop: 4 }}><div style={{ width: `${Math.min(100, weight * 100)}%`, height: "100%", background: "#a03a5c", borderRadius: 99 }} /></div>
                   </div>
                 ))}
@@ -318,7 +318,7 @@ export function InstV3ManagePage() {
             <>
               <section className="v3-card">
                 <div className="v3-card-head"><div><h2>{activePosition.name || activePosition.symbol} · 盘中</h2><p>{activePosition.symbol} · {fmtPct(activePosition.weight)} · 成本 {activePosition.cost?.toFixed(2) || "—"} · 现价 {activePosition.last_close?.toFixed(2) || "—"}</p></div><button className="v3-btn ghost" disabled={!!busy} onClick={scan}><Activity className="h-3.5 w-3.5" />{busy === "scan" ? "扫描中…" : "扫描事件"}</button></div>
-                <p style={{ fontSize: 12, lineHeight: 1.7, color: "#5f5766" }}>买入不是结束，而是论点开始接受检验；监控 Agent 只提示，不替你做卖出决定。</p>
+                <p style={{ lineHeight: 1.7, color: "#5f5766" }}>买入不是结束，而是论点开始接受检验；监控 Agent 只提示，不替你做卖出决定。</p>
               </section>
 
               <section className="v3-card">

@@ -130,7 +130,7 @@ export function InstV3ProjectResultPage() {
         <aside style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <section className="v3-card">
             <div className="v3-card-head"><div><h2><ShieldCheck className="mr-1 inline h-4 w-4" />下一关</h2><p>{STAGES[Math.min(5, Math.max(0, stageNo))].gate}</p></div></div>
-            <p style={{ fontSize: 12, lineHeight: 1.7, color: "#5f5766" }}>
+            <p style={{ lineHeight: 1.7, color: "#5f5766" }}>
               {stageNo >= 5 ? "进入投资管理：监控 Agent 持续跟踪，异常或风控预警时通知负责人决定是否卖出。" : `进入${STAGES[Math.min(5, Math.max(0, stageNo))].name}工作台，按步骤完成本环节；结果页只读。`}
             </p>
             <Link className="v3-btn primary" style={{ marginTop: 8, width: "100%" }} to={stageLink(key, stageNo)}>进入工作台</Link>

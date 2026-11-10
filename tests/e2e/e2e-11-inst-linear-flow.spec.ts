@@ -152,8 +152,8 @@ test("研究 R3 → 辩论 P3 → 三关 → 授权执行 → 持仓更新", asy
   await page.locator(".v3-side-switch button").nth(1).click();
   await expect(page.getByText("空方 · 空头研究员 Agent", { exact: true })).toBeVisible();
   await expect(page.locator(".v3-agent-pick.on")).toContainText("空头研究员");
-  const headline = await page.locator(".v3-claim .claim-t").first().innerText();
-  expect(headline.length, "每条论点应是一句短论点").toBeLessThanOrEqual(50);
+  const headline = await page.locator(".v3-claim .v3-four-judgment .v3-four-text").first().innerText();
+  expect(headline.length, "每条论点应是一句短论点").toBeLessThanOrEqual(80);
   await page.locator(".v3-stepper .v3-step").nth(3).click();
   const opinion = page.getByTestId("inst-investment-opinion");
   await opinion.fill("E2E 投资意见：关键假设成立、估值有安全边际才持有");

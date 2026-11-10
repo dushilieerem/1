@@ -63,7 +63,6 @@ function Sidebar({ session, onNavigate }: { session: InstSession; onNavigate?: (
                 onClick={onNavigate}
                 className={({ isActive }) => `v3-nav-item${isActive ? " on" : ""}`}
               >
-                <span className="v3-nav-no">{item.no || "·"}</span>
                 <span>{item.label}</span>
                 {counts[item.key] ? <span className="v3-nav-count">{counts[item.key]}</span> : null}
               </NavLink>
@@ -288,7 +287,7 @@ export function InstV3Layout() {
                         }
                       }}
                       placeholder="搜索股票代码或名称…"
-                      className="w-44 bg-transparent text-[11px] outline-none placeholder:text-[#6b6370]"
+                      className="w-44 bg-transparent text-[12px] outline-none placeholder:text-[#6b6370]"
                     />
                   </label>
                   {searchOpen && search.trim() ? (

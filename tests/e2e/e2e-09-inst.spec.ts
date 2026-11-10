@@ -34,7 +34,7 @@ async function login(page: import("@playwright/test").Page) {
 test("v3 侧栏三组、八项，顺序固定", async ({ page }) => {
   await login(page);
   await page.goto(`${BASE}/inst`, { waitUntil: "networkidle" });
-  await expect(page.locator("aside.v3-side nav.v3-nav a span:nth-child(2)")).toHaveText([
+  await expect(page.locator("aside.v3-side nav.v3-nav a span")).toHaveText([
     "投资工作台",
     "项目流水线",
     "价值分析",

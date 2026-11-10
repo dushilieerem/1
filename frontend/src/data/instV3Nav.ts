@@ -17,6 +17,7 @@ export const V3_NAV_GROUPS: V3NavGroup[] = [
     items: [
       { key: "dashboard", label: "投资工作台", path: "/inst", permission: "overview" },
       { key: "pipeline", label: "项目流水线", path: "/inst/pipeline", permission: "overview" },
+      { key: "stocks", label: "股票总览", path: "/inst/stocks", permission: "overview" },
     ],
   },
   {
@@ -44,12 +45,12 @@ export function visibleV3Nav(
   const perms = permissions || {};
   const can = (key: string) => (perms[key] || "none") !== "none";
   const allowedByRole: Record<string, string[]> = {
-    manager: ["dashboard", "pipeline", "research", "debate", "approvals", "execute", "manage", "playbook"],
-    partner: ["dashboard", "pipeline", "approvals", "playbook"],
-    risk: ["dashboard", "pipeline", "approvals", "playbook"],
-    chairman: ["dashboard", "pipeline", "approvals", "playbook"],
-    execution: ["dashboard", "pipeline", "execute", "playbook"],
-    monitoring: ["dashboard", "pipeline", "manage", "playbook"],
+    manager: ["dashboard", "pipeline", "stocks", "research", "debate", "approvals", "execute", "manage", "playbook"],
+    partner: ["dashboard", "pipeline", "stocks", "approvals", "playbook"],
+    risk: ["dashboard", "pipeline", "stocks", "approvals", "playbook"],
+    chairman: ["dashboard", "pipeline", "stocks", "approvals", "playbook"],
+    execution: ["dashboard", "pipeline", "stocks", "execute", "playbook"],
+    monitoring: ["dashboard", "pipeline", "stocks", "manage", "playbook"],
   };
   const allowed = allowedByRole[role] || ["dashboard", "pipeline", "playbook"];
   return V3_NAV_GROUPS.map((group) => ({
@@ -60,6 +61,7 @@ export function visibleV3Nav(
 
 export function v3TitleForPath(pathname: string): string {
   if (pathname.startsWith("/inst/pipeline")) return "项目流水线";
+  if (pathname.startsWith("/inst/stocks")) return "股票总览";
   if (pathname.startsWith("/inst/research")) return "价值分析";
   if (pathname.startsWith("/inst/debate")) return "多空辩论";
   if (pathname.startsWith("/inst/approvals")) return "投委会审批";

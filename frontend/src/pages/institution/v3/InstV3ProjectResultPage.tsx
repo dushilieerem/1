@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Lock, ShieldCheck } from "lucide-react";
-import { fetchV3Project, type V3Result } from "@/lib/instV3Api";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { ArrowLeft, ArrowRight, Lock, ShieldCheck, Trash2 } from "lucide-react";
+import { useInstSession } from "@/components/institution/instSessionContext";
+import { deleteV3Case, fetchV3Project, type V3Result } from "@/lib/instV3Api";
 
 const STAGES = [
   { no: 0, name: "机会发现", gate: "机会来源" },
@@ -28,10 +29,14 @@ function stageLink(key: string, stageNo: number): string {
 
 export function InstV3ProjectResultPage() {
   const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const session = useInstSession();
   const key = params.get("key") || "";
   const [data, setData] = useState<V3Result | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -52,6 +57,7 @@ export function InstV3ProjectResultPage() {
   if (error || !data) return <div className="v3-card">加载失败：{error || "项目不存在"}</div>;
 
   const stageNo = Number(data.stage_no || 0);
+  const caseId = data.case ? Number((data.case as Record<string, unknown>).id) : null;
   const title = text(company.name || company.company_name, key);
   const symbol = text(company.symbol, "");
   const version = (data.latest_version || {}) as Record<string, unknown>;
@@ -60,6 +66,21 @@ export function InstV3ProjectResultPage() {
   const position = (data.position || {}) as Record<string, unknown>;
   const opportunity = (data.opportunity || {}) as Record<string, unknown>;
   const locks = (data.locks || {}) as Record<string, unknown>;
+
+  async function handleDelete() {
+    if (!caseId) return;
+    if (!window.confirm(`确定删除「${title}」的研究案？删除后从流水线移除，历史审计与版本保留；有持仓、有效授权或在途议案时会被拒绝。`)) return;
+    setDeleting(true);
+    setActionError(null);
+    try {
+      await deleteV3Case(caseId);
+      navigate("/inst/pipeline");
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "删除失败");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <>
@@ -70,11 +91,18 @@ export function InstV3ProjectResultPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="v3-chip info">版本 {(version as Record<string, unknown>).version_no as number ?? "—"}</span>
+          {caseId && stageNo < 4 && session.role === "manager" ? (
+            <button type="button" className="v3-btn ghost" disabled={deleting} onClick={handleDelete}>
+              <Trash2 className="h-3.5 w-3.5" />{deleting ? "删除中…" : "删除研究案"}
+            </button>
+          ) : null}
           <Link className="v3-btn primary" to={stageLink(key, stageNo)}>
           进入{stageNo === 0 ? "价值分析" : STAGES[Math.min(5, Math.max(0, stageNo))].name}工作台 <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>
       </div>
+
+      {actionError ? <div className="v3-note" style={{ marginBottom: 10 }}>{actionError}</div> : null}
 
       <div className="v3-stepper">
         {STAGES.map((s) => (

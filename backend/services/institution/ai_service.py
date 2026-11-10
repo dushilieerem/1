@@ -136,6 +136,85 @@ def _memo_metrics(case: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _one_pager_metrics(version: dict[str, Any], case: dict[str, Any]) -> list[dict[str, Any]]:
+    """一页纸四张卡：价值区间、有效维、低置信维、PE，全部用确定性数据覆盖 AI 文案。"""
+    dims = [d for d in (version.get("six_dim") or []) if isinstance(d, dict)]
+    valid = [
+        d
+        for d in dims
+        if (d.get("score_10") is not None or d.get("rating") is not None)
+        and str(d.get("gate") or "") != "fail"
+    ]
+    low = []
+    for d in dims:
+        confidence = d.get("confidence")
+        rating = d.get("rating")
+        if (
+            confidence is not None
+            and float(confidence) < 0.66
+        ) or (
+            rating is not None
+            and float(rating) < 3.3
+        ):
+            low.append(d)
+    valuation = version.get("valuation") or {}
+    if any(valuation.get(k) is not None for k in ("low", "base", "high")):
+        low_v = valuation.get("low")
+        high_v = valuation.get("high")
+        base_v = valuation.get("base")
+        if low_v is not None and high_v is not None:
+            price_text = f"{float(low_v):.2f}–{float(high_v):.2f} 元"
+        else:
+            price_text = f"{float(base_v or low_v or high_v):.2f} 元"
+        price_note = "研究区间，不是目标价"
+    else:
+        price_text = "不可用"
+        price_note = str(
+            valuation.get("reason")
+            or valuation.get("error")
+            or ("金融企业仅保留相对估值" if valuation.get("method") == "relative_only" else "未产出估值数据")
+        )
+    metrics: list[dict[str, Any]] = [
+        {"label": "价值区间", "value": price_text, "note": price_note},
+        {
+            "label": "有效维",
+            "value": f"{len(valid)}/{len(dims) or 6}",
+            "note": "有评分且 gate≠fail",
+        },
+        {"label": "低置信维", "value": f"{len(low)} 项", "note": "confidence<0.66 或 rating<3.3"},
+    ]
+    symbol = str(case.get("symbol") or "")
+    val = md.valuation_latest(symbol) or {}
+    pct = md.valuation_percentile(symbol, years=3) or {}
+    if val.get("pe_ttm") is not None:
+        metrics.append(
+            {
+                "label": "PE_TTM",
+                "value": f"{float(val['pe_ttm']):.2f}x",
+                "note": f"历史分位 {_pc(pct.get('pe_percentile'))}",
+            }
+        )
+    return metrics
+
+
+def _merge_memo_metrics(
+    memo: dict[str, Any], version: dict[str, Any], case: dict[str, Any]
+) -> dict[str, Any]:
+    try:
+        required = _one_pager_metrics(version, case)
+    except Exception:
+        return memo
+    existing = [m for m in (memo.get("metrics") or []) if isinstance(m, dict)]
+    by_label = {str(m.get("label") or ""): m for m in existing if m.get("label")}
+    for item in required:
+        by_label[item["label"]] = item
+    order = ["价值区间", "有效维", "低置信维", "PE_TTM"]
+    merged = [by_label.pop(label) for label in order if label in by_label]
+    merged.extend(by_label.values())
+    memo["metrics"] = merged
+    return memo
+
+
 def _rule_memo(version: dict[str, Any]) -> dict[str, Any]:
     dims = [d for d in (version.get("six_dim") or []) if isinstance(d, dict)]
     risks = [str(c) for d in dims for c in (d.get("counter") or [])][:5]
@@ -274,6 +353,7 @@ def ai_research_memo(
             memo = _apply_memo_data_gate(dict(hit["output"]), version)
             if not (isinstance(memo.get("metrics"), list) and len(memo.get("metrics") or []) >= 2):
                 memo["metrics"] = _memo_metrics(case)
+            memo = _merge_memo_metrics(memo, version, case)
             memo["overall_score"] = overall
             _sync_research_conclusion(org_id, int(version["id"]), memo)
             return {
@@ -302,6 +382,7 @@ def ai_research_memo(
     metrics = data.get("metrics")
     if not (isinstance(metrics, list) and len(metrics) >= 2):
         data["metrics"] = _memo_metrics(case)
+    data = _merge_memo_metrics(data, version, case)
     data["overall_score"] = overall
     _sync_research_conclusion(org_id, int(version["id"]), data)
     # 规则兜底也落盘：避免 AI 暂不可用时每次进入页面都重新生成。

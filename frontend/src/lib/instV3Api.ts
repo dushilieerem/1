@@ -38,6 +38,40 @@ export type V3PipelineItem = {
 
 export type V3Pipeline = { stages: V3Stage[]; total: number; total_count?: number };
 
+export type V3Stock = {
+  id: number;
+  symbol: string;
+  name: string;
+  market?: string;
+  industry?: string | null;
+  pool_status?: string | null;
+  data_status?: string | null;
+  ref_price?: number | null;
+  last_close?: number | null;
+  pe_ttm?: number | null;
+  pb_mrq?: number | null;
+};
+
+export type V3Bar = {
+  trade_date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+  amount?: number;
+};
+
+export type V3Bars = {
+  symbol: string;
+  name: string;
+  market?: string;
+  period: string;
+  available: boolean;
+  note?: string;
+  items: V3Bar[];
+};
+
 export type V3Result = {
   key: string;
   stage_no: number;
@@ -79,6 +113,24 @@ export async function fetchV3Pipeline(): Promise<V3Pipeline> {
 
 export async function fetchV3Project(key: string): Promise<V3Result> {
   return instApi<V3Result>(`/projects/${encodeURIComponent(key)}`);
+}
+
+export async function deleteV3Case(caseId: number): Promise<{ deleted: boolean; case_id: number }> {
+  return instApi<{ deleted: boolean; case_id: number }>(`/cases/${caseId}`, { method: "DELETE" });
+}
+
+export async function fetchV3Stocks(q = "", limit = 200): Promise<{ items: V3Stock[]; total: number }> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (q.trim()) params.set("q", q.trim());
+  return instApi<{ items: V3Stock[]; total: number }>(`/stocks?${params.toString()}`);
+}
+
+export async function fetchV3StockBars(
+  companyId: number,
+  period = "day",
+  limit = 120,
+): Promise<V3Bars> {
+  return instApi<V3Bars>(`/stocks/${companyId}/bars?period=${encodeURIComponent(period)}&limit=${limit}`);
 }
 
 export async function fetchV3Playbook(): Promise<V3Playbook> {

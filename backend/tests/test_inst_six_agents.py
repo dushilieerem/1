@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 
 from ai.router.tasks.institution import DIMENSION_TASKS, validate_dimension  # noqa: E402
 from services.institution import inst_service as svc  # noqa: E402
+from services.institution import research_service as rs  # noqa: E402
 
 
 def test_six_dimension_tasks_registered() -> None:
@@ -212,3 +213,63 @@ def test_validate_memo_accepts_a19_and_a20_contracts() -> None:
     assert any("risk" in x for x in chairman["risks"])
     assert "执行前确认条件" in chairman["open_questions"]
     assert "渠道库存待核" in chairman["open_questions"]
+
+
+def test_opportunity_source_keeps_clean_reason_from_idea_dict() -> None:
+    out = rs._opportunity_source(
+        {}, "push", {"source": "push", "why_now": "近 20 日动量 38.1%；PE TTM 24.81"}
+    )
+    assert out["source_detail"] == "近 20 日动量 38.1%；PE TTM 24.81"
+    assert "{" not in out["source_detail"]
+
+
+def test_merge_agent_results_skips_missing_dimension_without_score() -> None:
+    built = {
+        "dims": [
+            {"key": "governance", "title": "CEO 与治理", "question": "治理是否可信？", "evidence_idx": []}
+        ],
+        "evidence": [],
+        "data_gaps": [],
+        "facts": {
+            "as_of": "2026-10-30",
+            "data_completeness": {
+                "governance": {"level": "missing", "missing": ["实控人履历", "关联交易"]}
+            },
+        },
+    }
+    merged = svc._merge_agent_results(
+        built, {"governance": {"skipped": True, "error": "数据未接入，暂不分析"}}, ["governance"]
+    )
+    dim = merged["dims"][0]
+    assert dim["status"] == "skipped"
+    assert dim["engine"] == "skipped"
+    assert dim["summary"] == "数据未接入，暂不分析。"
+    assert dim["score_10"] is None and dim["rating"] is None
+    assert dim["gate"] == "fail"
+    assert merged["agent_states"]["governance"] == "skipped"
+    assert "实控人履历" in merged["data_gaps"]
+
+
+def test_one_pager_metrics_are_deterministic() -> None:
+    from services.institution import ai_service
+
+    dims = []
+    for i, key in enumerate(["industry", "business_model", "moat", "financial", "governance", "valuation"]):
+        dims.append(
+            {
+                "key": key,
+                "score_10": 5.5,
+                "rating": 2.75,
+                "confidence": 0.6,
+                "gate": "fail" if key == "governance" else "watch",
+            }
+        )
+    version = {
+        "six_dim": dims,
+        "valuation": {"low": 43.43, "base": 57.91, "high": 72.38, "method": "owner_earnings_proxy_net_debt"},
+    }
+    metrics = ai_service._one_pager_metrics(version, {"symbol": ""})
+    by_label = {m["label"]: m for m in metrics}
+    assert by_label["价值区间"]["value"] == "43.43–72.38 元"
+    assert by_label["有效维"]["value"] == "5/6"
+    assert by_label["低置信维"]["value"] == "6 项"

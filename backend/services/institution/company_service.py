@@ -183,6 +183,13 @@ def _sync_company_universe(conn, org_id: int) -> None:
     )
 
 
+def _company_idea(item: dict[str, Any]) -> dict[str, Any]:
+    """延迟导入，避免 company_service ↔ research_service 循环依赖。"""
+    from .research_service import _idea_questions
+
+    return _idea_questions(item, "watch")
+
+
 def list_companies(
     org_id: int,
     *,
@@ -205,7 +212,7 @@ def list_companies(
             item["industry"] = item["industry_name"]
         elif re.match(r"^\d{6}\.", str(item.get("industry") or "")):
             item["industry"] = None
-        item["idea"] = _idea_questions(item, "watch")
+        item["idea"] = _company_idea(item)
         out.append(item)
     return {"items": out, "total": total, "limit": limit, "offset": offset}
 

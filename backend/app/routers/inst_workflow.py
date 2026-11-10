@@ -60,6 +60,46 @@ def overview(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]
     return {"ok": True, **svc.overview(org_id, role)}
 
 
+@router.get("/stocks")
+def stocks(
+    market: str | None = None,
+    q: str | None = None,
+    pool_status: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    """股票总览：机构公司池只读列表，所有角色只要有 overview 即可看。"""
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "overview")
+    return {
+        "ok": True,
+        **svc.list_companies(
+            org_id,
+            market=market,
+            q=q,
+            pool_status=pool_status,
+            limit=limit,
+            offset=offset,
+        ),
+    }
+
+
+@router.get("/stocks/{company_id}/bars")
+def stock_bars(
+    company_id: int,
+    limit: int = 120,
+    period: str = "day",
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "overview")
+    try:
+        return {"ok": True, **svc.company_bars(org_id, company_id, limit=limit, period=period)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.get("/companies")
 def companies(
     market: str | None = None,
@@ -214,6 +254,17 @@ def case_detail(case_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) 
     if not data:
         raise HTTPException(status_code=404, detail="研究案不存在")
     return {"ok": True, **data}
+
+
+@router.delete("/cases/{case_id}")
+def delete_case(case_id: int, ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
+    """归档研究案：从流水线移除，保留审计/版本；执行、持仓、有效授权、在途议案会被拒绝。"""
+    org_id, member_id, _ = _ctx(ctx)
+    _require_ws(ctx, "research", write=True)
+    try:
+        return {"ok": True, **svc.delete_case(org_id, case_id, member_id)}
+    except Exception as exc:
+        raise _handle(exc) from exc
 
 
 @router.post("/companies/{company_id}/dcf")

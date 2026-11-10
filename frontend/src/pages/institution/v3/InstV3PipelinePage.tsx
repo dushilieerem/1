@@ -2,35 +2,62 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, Filter } from "lucide-react";
 import { dedupeBy } from "@/lib/instDedupe";
-import { fetchV3Pipeline, type V3Pipeline, type V3PipelineItem } from "@/lib/instV3Api";
+import { useInstSession } from "@/components/institution/instSessionContext";
+import { deleteV3Case, fetchV3Pipeline, type V3Pipeline, type V3PipelineItem } from "@/lib/instV3Api";
 
-function ProjectCard({ item }: { item: V3PipelineItem }) {
+function ProjectCard({
+  item,
+  deleting,
+  canDelete,
+  onDelete,
+}: {
+  item: V3PipelineItem;
+  deleting: boolean;
+  canDelete: boolean;
+  onDelete: (item: V3PipelineItem) => void;
+}) {
   const title = item.company_name || item.symbol || "—";
-  const opportunity = (item.opportunity || {}) as { source_label?: string; source_detail?: string };
+  const opportunity = (item.opportunity || {}) as { source_label?: string };
+  const stageLine = item.stage_no === 0
+    ? "当前阶段：机会发现 · 待进入价值分析"
+    : `当前阶段：${item.stage_name}`;
   return (
-    <Link className="v3-project" to={`/inst/pipeline/result?key=${encodeURIComponent(item.key)}`}>
-      <span className="nm">{title}<span className="v3-chip gold">{item.stage_name}</span>{item.stage_no > 0 ? <span className="v3-chip">版本 {item.version_no ?? "—"}</span> : null}</span>
-      <span className="cd">{item.symbol} {item.industry ? `· ${item.industry}` : ""}</span>
-      <span className="ms">
-        {item.stage_no === 0
-          ? opportunity.source_detail || `${opportunity.source_label || "自选"}：等待进入研究。`
-          : item.conclusion || `${item.stage_name} · ${item.gate}`}
-      </span>
-      <span className="ft">
-        <span className="v3-chip">{item.stage_no === 0 ? opportunity.source_label || "自选" : item.version_status || item.proposal_status || "—"}</span>
-        <ArrowRight className="h-3 w-3 text-[#6b6370]" />
-      </span>
-    </Link>
+    <div className="v3-project">
+      <Link className="v3-project-link" to={`/inst/pipeline/result?key=${encodeURIComponent(item.key)}`}>
+        <span className="nm">{title}<span className="v3-chip gold">{item.stage_name}</span>{item.stage_no > 0 ? <span className="v3-chip">版本 {item.version_no ?? "—"}</span> : null}</span>
+        <span className="cd">{item.symbol} {item.industry ? `· ${item.industry}` : ""}</span>
+        <span className="ms">{stageLine}</span>
+        <span className="ft">
+          <span className="v3-chip">{item.stage_no === 0 ? opportunity.source_label || "自选" : item.version_status || item.proposal_status || "—"}</span>
+          <ArrowRight className="h-3 w-3 text-[#6b6370]" />
+        </span>
+      </Link>
+      {item.case_id && item.stage_no < 4 && canDelete ? (
+        <div className="v3-project-actions">
+          <button
+            type="button"
+            className="v3-project-del"
+            disabled={deleting}
+            onClick={() => onDelete(item)}
+          >
+            {deleting ? "删除中…" : "删除研究案"}
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
 export function InstV3PipelinePage() {
   const [params] = useSearchParams();
+  const session = useInstSession();
   const q = (params.get("q") || "").trim().toLowerCase();
   const [data, setData] = useState<V3Pipeline | null>(null);
   const [stage, setStage] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<number | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -40,6 +67,22 @@ export function InstV3PipelinePage() {
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, []);
+
+  async function handleDelete(item: V3PipelineItem) {
+    if (!item.case_id) return;
+    const label = item.company_name || item.symbol || "该研究案";
+    if (!window.confirm(`确定删除「${label}」的研究案？删除后从流水线移除，历史审计与版本保留；有持仓、有效授权或在途议案时会被拒绝。`)) return;
+    setDeleting(item.case_id);
+    setActionError(null);
+    try {
+      await deleteV3Case(item.case_id);
+      setData(await fetchV3Pipeline());
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "删除失败");
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   const stages = useMemo(() => {
     if (!data) return [];
@@ -88,13 +131,22 @@ export function InstV3PipelinePage() {
           <div><h2><Filter className="mr-1 inline h-4 w-4" />项目进展</h2><p>按 {data.stages.length} 个环节展示；点卡片进入只读结果页。</p></div>
           {q ? <span className="v3-chip info">筛选：{q}</span> : null}
         </div>
+        {actionError ? <div className="v3-note" style={{ marginBottom: 10 }}>{actionError}</div> : null}
         {shown.length ? (
           <div className={`v3-board${stage !== null ? " single" : ""}`}>
             {shown.map((s) => (
               <div className="v3-col" key={s.stage_no}>
                 <div className="v3-col-head"><b>{s.stage_name}</b><span>{s.items.length}</span></div>
                 <div className={`v3-col-items${stage !== null ? " horizontal" : ""}`}>
-                  {s.items.map((item) => <ProjectCard key={item.key} item={item} />)}
+                  {s.items.map((item) => (
+                    <ProjectCard
+                      key={item.key}
+                      item={item}
+                      deleting={deleting === item.case_id}
+                      canDelete={session.role === "manager"}
+                      onDelete={handleDelete}
+                    />
+                  ))}
                   {!s.items.length ? <div className="v3-empty" style={{ padding: "16px" }}>暂无项目</div> : null}
                 </div>
               </div>

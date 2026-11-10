@@ -133,6 +133,7 @@ const METHOD_LABELS: Record<string, string> = {
   relative_only: "相对估值（PB / ROE）",
   owner_earnings_proxy_net_debt: "所有者收益 + 净债务桥",
   dcf: "现金流折现（DCF）",
+  unavailable: "暂不可估值",
 };
 
 function sanitizeText(value: unknown): string {
@@ -160,6 +161,8 @@ function valuationRows(value: Record<string, unknown>): Array<{ label: string; t
   const rows: Array<{ label: string; text: string }> = [];
   const method = String(value.method || "");
   if (method) rows.push({ label: VALUATION_LABELS.method, text: METHOD_LABELS[method] || "综合估值" });
+  const unavailableReason = String(value.reason || value.error || "").trim();
+  if (unavailableReason) rows.push({ label: "不可用原因", text: sanitizeText(unavailableReason) });
   for (const key of ["low", "base", "high", "per_share"] as const) {
     if (value[key] != null) rows.push({ label: VALUATION_LABELS[key], text: yuanValue(value[key]) });
   }
@@ -505,7 +508,17 @@ export function InstV3DebatePage() {
                     ))}
                   </dl>
                 ) : <div className="v3-empty">估值服务未返回可读字段。</div>;
-              })() : <div className="v3-empty">研究版本里没有估值复核数据。</div>}
+              })() : (
+                <div className="v3-empty">
+                  该研究版本未产出估值数据。常见原因：自由现金流/净利为负、缺少总股本或行情价格；
+                  请在价值分析页重跑“估值与价格”维度后再看。
+                  <div style={{ marginTop: 8 }}>
+                    <Link className="v3-btn ghost" to={`/inst/research?key=${encodeURIComponent(`case:${detail.id}`)}`}>
+                      去价值分析重跑估值
+                    </Link>
+                  </div>
+                </div>
+              )}
             </section>
           ) : null}
 

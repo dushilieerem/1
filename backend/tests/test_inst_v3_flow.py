@@ -366,3 +366,57 @@ def test_stage_summary_waits_for_all_approvers() -> None:
     state = svc._stage_summary("partner", rows, 2)
     assert state["status"] == "conditional"
     assert state["decided"] == 2
+
+
+def test_delete_case_archives_and_allows_new_case() -> None:
+    with _case() as c:
+        out = svc.delete_case(ORG_ID, c["case_id"], c["member_id"])
+        assert out["deleted"] is True
+        assert c["case_id"] not in {int(x["id"]) for x in svc.list_cases(ORG_ID)}
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT stage, stage_state, terminal_reason FROM inst_research_case WHERE id=%s",
+                (c["case_id"],),
+            ).fetchone()
+            assert row["stage"] == "closed"
+            assert row["stage_state"] == "closed"
+            assert row["terminal_reason"] == "deleted_by_user"
+            company = conn.execute(
+                "SELECT pool_status FROM inst_company WHERE id=%s", (c["company_id"],)
+            ).fetchone()
+            assert company["pool_status"] == "dropped"
+        new = svc.start_research(ORG_ID, c["company_id"], c["member_id"])
+        assert new["created"] is True
+        assert new["id"] != c["case_id"]
+        with get_conn() as conn:
+            conn.execute("DELETE FROM inst_research_case WHERE id=%s", (new["id"],))
+
+
+def test_delete_case_blocks_execution_stage() -> None:
+    with _case() as c:
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE inst_research_case SET stage='approved', stage_no=4 WHERE id=%s",
+                (c["case_id"],),
+            )
+        with pytest.raises(ValueError, match="执行/投后"):
+            svc.delete_case(ORG_ID, c["case_id"], c["member_id"])
+
+
+def test_generate_research_skips_dimensions_without_data(monkeypatch) -> None:
+    def _boom(*args, **kwargs):
+        raise AssertionError("没有数据的维度不应调用 Agent")
+
+    monkeypatch.setattr(svc, "_run_dimension_agents", _boom)
+    monkeypatch.setattr(svc, "_run_industry_agent", _boom)
+    with _case() as c:
+        out = svc.generate_research(
+            ORG_ID, c["case_id"], mode="full", actor_member_id=c["member_id"]
+        )
+        version = out["versions"][0]
+        dims = version["six_dim"]
+        assert len(dims) == 6
+        assert all(d["status"] == "skipped" for d in dims)
+        assert all(d["score_10"] is None and d["rating"] is None for d in dims)
+        assert all(d["summary"] == "数据未接入，暂不分析。" for d in dims)
+        assert version["industry_analysis"]["status"] == "skipped"

@@ -33,7 +33,7 @@ def cases(scope: OrgScope, *, company_id: int | None = None, conn=None) -> list[
             SELECT version_no, status, conclusion FROM inst_research_version
              WHERE case_id=c.id ORDER BY version_no DESC LIMIT 1
           ) v ON TRUE
-         WHERE c.org_id=%s
+         WHERE c.org_id=%s AND c.stage <> 'closed'
     """
     params: list[Any] = [scope.org_id]
     if company_id:

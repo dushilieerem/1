@@ -846,3 +846,33 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 左侧流程工作台导航删除序号（01/02…），只保留名称与计数。
 
 验证：后端 `pytest tests` 872 passed；`tsc --noEmit`、`npm run build`、`npm run test:inst` 15 passed；Playwright `e2e-09..14` 18 passed。
+
+
+### 11.44 历史脏数据清理（2026-11-10）
+
+- 新增 `scripts/ops/cleanup_inst_duplicates.py`：默认 dry-run，只允许 `*_test/*_dev/*_ci/*_e2e/*_local`，生产库名 `svquant` 硬性拒绝。
+- 不删除业务记录：重复研究案归档为 `closed`，在途议案作废，重复 qualified 授权撤销；已成交订单/成交/持仓不动，只输出人工复核清单；所有写操作写 `cleanup.*` 审计。
+- `repo.cases` 排除 `stage='closed'`：归档旧案不再进入流水线、仪表盘与工作台左列表，但仍可按 case key 访问详情。
+- 在 `svquant_dev` 执行结果：9 组重复研究案、归档 178 个旧案（含 150 个测试/自检公司案）；0 重复授权、0 同案多议案；清理后开放重复组 0、开放测试案 0、审计 178 条。
+- 在 `svquant` 生产库执行：dry-run 5 组重复、32 个旧案、2 份同案多议案；备份到仓库外 `/home/dev01/backups/inst-cleanup-20261110/` 后 apply；清理后开放重复组 0、同案多开放议案组 0、关闭案在途议案 0、审计 34 条。
+- 生产 apply 需同时给 `--allow-production --confirm-production`；报告与清单：`docs/测试设计/evidence/inst-duplicate-cleanup-20261110/`。
+
+验证：后端 `pytest tests` 874 passed；Playwright `e2e-09..14` 18 passed。
+
+
+### 11.45 议案 Agent 建议（2026-11-10）
+
+- 新增 `GET /api/inst/cases/{id}/proposal-advice`：汇总六维评分与多空辩论最终结论，输出：
+  - 推荐结论：推荐买入 / 推荐卖出 / 建议持有 / 暂不买入；
+  - 建议目标仓位；
+  - 议案框架：方向、目标仓位、价格区间、资金来源、有效期、监控条件、投资意见。
+- 规则：
+  - 无持仓、六维平均 ≥7.0、辩论已完成且未给出“补充研究”、无 gate=fail → 推荐买入；仓位按 7/8/9 分对应 2%/3%/5%。
+  - 已持仓：评分 <5.0 或存在阻断维度 → 推荐卖出；否则建议持有。
+  - 辩论未完成、结论为“补充研究”或存在阻断维度 → 暂不买入。
+  - 价格带优先使用研究估值区间，区间不可用时按现价 ±5%。
+- 辩论页第 4 步新增“交易员 Agent · 议案建议”卡：展示六维评分、辩论结论、推荐结论、建议仓位与议案框架；可一键“采用建议填入议案”。
+- 建议接口对已归档/不存在的案返回 `available=false`，不把辅助信息缺失当成 404。
+- 新增 `test_proposal_advice_lists_scores_debate_and_framework` 回归。
+
+验证：后端 `pytest tests` 875 passed；Playwright `e2e-09..14` 18 passed。

@@ -241,6 +241,7 @@ from .proposal_service import (  # noqa: F401
     list_proposals,
     list_proposals_for_member,
     partner_review,
+    proposal_advice,
     risk_check,
     submit_proposal,
 )

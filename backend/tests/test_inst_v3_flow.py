@@ -63,6 +63,7 @@ def _dims(low_key: str | None = None) -> list[dict]:
             "status": "done",
             "summary": "结论",
             "rating": 2.0 if key == low_key else 4.0,
+            "rating_benchmark": "同业中位 3.8/5",
             "confidence": 0.8,
             "gate": "pass",
             "evidence_ids": [1],
@@ -137,6 +138,24 @@ def test_pipeline_and_playbook() -> None:
     assert len(book["gates"]) == 3
 
 
+def test_closed_cases_excluded_from_lists_and_pipeline() -> None:
+    with _case() as c:
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE inst_research_case SET stage='closed', stage_state='closed' WHERE id=%s",
+                (c["case_id"],),
+            )
+        ids = {int(x["id"]) for x in svc.list_cases(c["org_id"])}
+        assert c["case_id"] not in ids
+        pipeline_ids = {
+            int(item["case_id"])
+            for stage in svc.pipeline(c["org_id"])["stages"]
+            for item in stage["items"]
+            if item.get("case_id")
+        }
+        assert c["case_id"] not in pipeline_ids
+
+
 def test_pipeline_per_stage_limit(monkeypatch) -> None:
     monkeypatch.setenv("INST_PIPELINE_PER_STAGE", "3")
     data = svc.pipeline(ORG_ID)
@@ -185,6 +204,23 @@ def test_research_gate_preview_and_dimension_review() -> None:
             c["org_id"], c["version_id"], actor_member_id=c["member_id"]
         )
         assert locked["stage_no"] == 2
+
+
+def test_proposal_advice_lists_scores_debate_and_framework() -> None:
+    with _case() as c:
+        _add_debate(c["case_id"], c["version_id"])
+        advice = svc.proposal_advice(c["org_id"], c["case_id"])
+        assert len(advice["scores"]) == 6
+        assert advice["overall_score"] == 8.0
+        assert advice["debate"]["bull_count"] == 3
+        assert advice["debate"]["bear_count"] == 3
+        assert advice["recommendation"] in {"buy", "sell", "hold", "avoid"}
+        assert advice["recommendation_label"]
+        framework = advice["framework"]
+        assert framework["direction"] in {"buy", "sell", "exit"}
+        assert 0 <= float(framework["target_weight"]) <= 1
+        assert len(str(framework["investment_opinion"])) >= 60
+        assert framework["monitoring"]
 
 
 def test_proposal_lock_requires_debate_and_fields() -> None:

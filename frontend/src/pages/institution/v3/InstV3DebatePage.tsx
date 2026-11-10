@@ -46,6 +46,39 @@ type Version = {
   six_dim?: Array<{ key: string; title?: string; summary?: string; rating?: number | null }>;
 };
 
+type ProposalAdvice = {
+  available?: boolean;
+  scores?: Array<{
+    key?: string;
+    title?: string;
+    score_10?: number | null;
+    rating_benchmark?: string | null;
+    gate?: string | null;
+  }>;
+  overall_score?: number | null;
+  debate?: {
+    conclusion?: string;
+    bull_count?: number;
+    bear_count?: number;
+    status?: string;
+  };
+  recommendation?: "buy" | "sell" | "hold" | "avoid";
+  recommendation_label?: string;
+  rationale?: string;
+  held?: boolean;
+  framework?: {
+    direction?: string;
+    target_weight?: number;
+    price_low?: number | null;
+    price_high?: number | null;
+    funding_source?: string;
+    valid_until?: string;
+    monitoring?: string[];
+    investment_opinion?: string;
+  };
+  engine?: string;
+};
+
 type Proposal = { id: number; status: string; direction?: string; target_weight?: number };
 
 type CaseItem = {
@@ -181,6 +214,9 @@ export function InstV3DebatePage() {
   const [validUntil, setValidUntil] = useState("");
   const [monitoring, setMonitoring] = useState("季度财报后复核\n批价/份额跌破阈值触发复核");
   const [opinion, setOpinion] = useState("");
+  const [advice, setAdvice] = useState<ProposalAdvice | null>(null);
+  const [adviceLoading, setAdviceLoading] = useState(false);
+  const [adviceError, setAdviceError] = useState<string | null>(null);
 
   const detailSeq = useRef(0);
   const selectedId = currentCaseId(params.get("key"));
@@ -259,7 +295,7 @@ export function InstV3DebatePage() {
     if (step === 2) {
       return [{ id: "valuation", name: "估值计算服务", code: "ENGINE", model: "确定性代码", tools: "DCF / 敏感性 / 反向 DCF", output: "价值区间 + IRR", role: "代码计算，不生成观点。", engine: true }];
     }
-    return [{ id: "trader", name: "交易员", code: "TRADER", model: "交易员 Agent", tools: "裁决 / 议案模板 / 组合约束", output: "议案", role: "把裁决写成可审批的议案。" }];
+    return [{ id: "trader", name: "交易员", code: "TRADER", model: "交易员 Agent", tools: "六维评分 / 辩论结论 / 组合约束", output: "议案建议 + 框架", role: "根据六维评分与辩论结论，给出买入/卖出结论、建议仓位与议案框架。" }];
   }, [step, bull.length, bear.length]);
 
   const activeSide = agentId === "bear" ? bear : bull;
@@ -280,6 +316,31 @@ export function InstV3DebatePage() {
       setStep(1);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(null); }
+  };
+
+  useEffect(() => {
+    if (!detail?.id || step !== 3) return;
+    let alive = true;
+    setAdviceLoading(true);
+    setAdviceError(null);
+    instApi<ProposalAdvice>(`/cases/${detail.id}/proposal-advice`)
+      .then((data) => { if (alive) setAdvice(data.available === false ? null : data); })
+      .catch((e: Error) => { if (alive) setAdviceError(e.message); })
+      .finally(() => { if (alive) setAdviceLoading(false); });
+    return () => { alive = false; };
+  }, [detail?.id, step]);
+
+  const adoptAdvice = () => {
+    const f = advice?.framework;
+    if (!f) return;
+    if (f.direction) setDirection(f.direction);
+    if (f.target_weight != null) setTarget(String(f.target_weight));
+    setPriceLow(f.price_low != null ? String(f.price_low) : "");
+    setPriceHigh(f.price_high != null ? String(f.price_high) : "");
+    if (f.funding_source) setFunding(f.funding_source);
+    if (f.valid_until) setValidUntil(f.valid_until);
+    if (f.monitoring?.length) setMonitoring(f.monitoring.join("\n"));
+    if (f.investment_opinion) setOpinion(f.investment_opinion);
   };
 
   const createProposal = async () => {
@@ -484,6 +545,55 @@ export function InstV3DebatePage() {
           {step === 3 ? (
             <section className="v3-card">
               <div className="v3-card-head"><div><h2>议案 · 锁定</h2><p>补齐投资意见、仓位、价格带、资金、有效期与监控条件；锁定后审批角色只读。</p></div>{latestProposal ? <span className="v3-chip ok">{latestProposal.status}</span> : <span className="v3-chip warn">待创建</span>}</div>
+              {adviceLoading ? (
+                <div className="v3-empty">交易员 Agent 正在汇总六维评分与辩论结论…</div>
+              ) : adviceError ? (
+                <div className="v3-note">议案建议加载失败：{adviceError}</div>
+              ) : advice ? (
+                <div className="v3-advice">
+                  <div className="v3-advice-top">
+                    <div>
+                      <div className="v3-eyebrow">TRADER AGENT</div>
+                      <h3>议案建议</h3>
+                      <p>{advice.rationale}</p>
+                    </div>
+                    <div className={`v3-advice-reco ${advice.recommendation || "avoid"}`}>
+                      <b>{advice.recommendation_label || "暂不买入"}</b>
+                      <span>建议仓位 {((advice.framework?.target_weight || 0) * 100).toFixed(1)}%</span>
+                    </div>
+                  </div>
+                  <div className="v3-advice-scores">
+                    {(advice.scores || []).map((s) => (
+                      <div key={s.key || s.title}>
+                        <span>{s.title || s.key}</span>
+                        <b>{s.score_10 != null ? `${Number(s.score_10).toFixed(1)}/10` : "未评分"}</b>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="v3-kv">
+                    <dt>多空辩论最终结论</dt>
+                    <dd>{advice.debate?.conclusion || "尚未形成结论"}（多 {advice.debate?.bull_count || 0} / 空 {advice.debate?.bear_count || 0}）</dd>
+                  </div>
+                  <div className="v3-kv">
+                    <dt>综合得分</dt>
+                    <dd>{advice.overall_score != null ? `${Number(advice.overall_score).toFixed(1)}/10` : "未评分"}</dd>
+                  </div>
+                  <div className="v3-advice-framework">
+                    <div className="v3-eyebrow">议案框架</div>
+                    <dl>
+                      <div className="v3-kv"><dt>方向</dt><dd>{({ buy: "买入", sell: "卖出", exit: "退出" } as Record<string, string>)[advice.framework?.direction || "buy"] || advice.framework?.direction}</dd></div>
+                      <div className="v3-kv"><dt>目标仓位</dt><dd>{((advice.framework?.target_weight || 0) * 100).toFixed(1)}%</dd></div>
+                      <div className="v3-kv"><dt>价格区间</dt><dd>{advice.framework?.price_low != null ? `${advice.framework.price_low} – ${advice.framework.price_high}` : "—"}</dd></div>
+                      <div className="v3-kv"><dt>资金来源 / 有效期</dt><dd>{advice.framework?.funding_source || "现金"} · {advice.framework?.valid_until || "—"}</dd></div>
+                      <div className="v3-kv"><dt>监控条件</dt><dd>{advice.framework?.monitoring?.join("；") || "—"}</dd></div>
+                    </dl>
+                    <div className="v3-note" style={{ marginTop: 8 }}>投资意见：{advice.framework?.investment_opinion || "—"}</div>
+                  </div>
+                  <button className="v3-btn primary" style={{ marginTop: 8 }} disabled={advice.recommendation === "avoid"} onClick={adoptAdvice}>
+                    采用建议填入议案
+                  </button>
+                </div>
+              ) : null}
               {latestProposal && latestProposal.status !== "draft" ? (
                 <div>
                   <div className="v3-note">议案已锁定并进入审批：{latestProposal.status}</div>

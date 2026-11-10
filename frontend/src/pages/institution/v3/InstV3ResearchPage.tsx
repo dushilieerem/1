@@ -4,17 +4,12 @@ import { ArrowRight, RefreshCw, Sparkles } from "lucide-react";
 import { dedupeBy, latestByKey } from "@/lib/instDedupe";
 import { instApi } from "@/lib/instApi";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
-import { InstV3FourLine } from "@/components/institution/v3/InstV3FourLine";
 
 type Dim = {
   key: string;
   title?: string;
   question?: string;
   summary?: string;
-  judgment?: string;
-  basis?: string;
-  impact?: string;
-  action?: string;
   status?: string;
   rating?: number | null;
   score_10?: number | null;
@@ -92,8 +87,13 @@ type CaseItem = {
 function dimScore(dim?: Dim | null): number | null {
   if (!dim) return null;
   if (dim.score_10 != null) return Number(dim.score_10);
-  if (dim.rating != null && dim.rating_benchmark) {
-    return Math.round(Number(dim.rating) * 20) / 10;
+  if (dim.rating != null) return Math.round(Number(dim.rating) * 20) / 10;
+  if (dim.engine === "rule") {
+    const base = dim.gate === "pass" ? 8.0 : dim.gate === "fail" ? 3.0 : 5.5;
+    const confidence = dim.confidence;
+    const adjusted =
+      typeof confidence === "number" ? base + (confidence - 0.5) * 2 : base;
+    return Math.round(Math.max(0, Math.min(10, adjusted)) * 10) / 10;
   }
   return null;
 }
@@ -107,29 +107,6 @@ function overallScore(dims?: Dim[] | null, fallback?: number | null): number | n
 
 function stripParens(value?: string): string {
   return String(value || "").replace(/[（(][^）)]*[）)]/g, "").trim();
-}
-
-function fourLineProps(dim?: Dim | null) {
-  const basis = dim?.basis || (dim?.checks?.length ? dim.checks.join("；") : undefined);
-  const impact =
-    dim?.impact ||
-    (dim?.gate === "fail"
-      ? "本维不成立，估值不上调、仓位不增加。"
-      : dim?.gate === "watch"
-        ? "仅支持观察，估值与仓位不高于同业基准。"
-        : "支持纳入估值与仓位，幅度按同业中位或历史分位复核。");
-  const gap = dim?.data_gaps?.[0];
-  const action =
-    dim?.action ||
-    (gap
-      ? `补数据：${gap}；补齐前仅作观察。`
-      : "继续：按当前证据推进，下一复核点见反证条件。");
-  return {
-    judgment: dim?.judgment || dim?.summary || "本维结论尚未形成",
-    basis: basis || "截至当前版本的输入未提供可引用证据",
-    impact,
-    action,
-  };
 }
 
 const DIMS: Array<[string, string]> = [
@@ -258,7 +235,7 @@ export function InstV3ResearchPage() {
           code: "ANALYST",
           model: "六维 Agent",
           tools: "证据库 / 公告 / 财报",
-          output: dim ? (dim.rating != null ? `${label} · ${dim.rating}/5` : "已生成") : "待生成",
+          output: dim ? "结论已生成" : "待生成",
           role: `只负责「${label}」这一维，逐条带证据与证伪条件。`,
         };
       });
@@ -428,7 +405,10 @@ export function InstV3ResearchPage() {
                     <span className="v3-chip">{version.industry_analysis.engine || "AI Agent"}</span>
                     {version.industry_analysis.data_completeness?.level ? <span className="v3-chip warn">数据 {version.industry_analysis.data_completeness.level}</span> : null}
                   </div>
-                  <InstV3FourLine {...fourLineProps(version.industry_analysis)} />
+                  <p style={{ marginTop: 8, lineHeight: 1.75, color: "#4b4352" }}>{version.industry_analysis.summary || "行业分析已生成。"}</p>
+                  {version.industry_analysis.checks?.length ? <ul className="v3-rule-list" style={{ marginTop: 8 }}>{version.industry_analysis.checks.map((x) => <li key={x}>{x}</li>)}</ul> : null}
+                  {version.industry_analysis.counter?.length ? <div className="v3-note" style={{ marginTop: 8 }}>反证：{version.industry_analysis.counter[0]}</div> : null}
+                  {version.industry_analysis.data_completeness?.missing?.length ? <p style={{ marginTop: 8, fontSize: 12, color: "#6b6370" }}>数据缺口：{version.industry_analysis.data_completeness.missing.join("；")}</p> : null}
                 </div>
               ) : (
                 <div className="v3-empty">
@@ -458,19 +438,22 @@ export function InstV3ResearchPage() {
                           {version?.dim_reviews?.[activeDim.key]?.decision === "approve" ? <span className="v3-chip ok">低置信已复核</span> : null}
                         </div>
                         <div className={`v3-dim-score${dimScore(activeDim) == null ? " empty" : ""}`}>
-                          <span className="lab">Agent 评分</span>
+                          <span className="lab">{activeDim.engine === "rule" ? "规则评分" : "Agent 评分"}</span>
                           <span className="num">
                             {dimScore(activeDim) != null ? dimScore(activeDim)!.toFixed(1) : "未评分"}
                             {dimScore(activeDim) != null ? <small>/10</small> : null}
                           </span>
                           <span className="base">
-                            {dimScore(activeDim) != null
-                              ? activeDim.rating_benchmark || "基准待补"
-                              : "缺少评分基准"}
+                            {activeDim.engine === "rule"
+                              ? "规则兜底，非 AI 评分"
+                              : activeDim.rating_benchmark || "基准待补"}
                           </span>
                         </div>
                       </div>
-                      <InstV3FourLine {...fourLineProps(activeDim)} />
+                      <p style={{ marginTop: 8, lineHeight: 1.75, color: "#4b4352" }}>{activeDim.summary || "待补充"}</p>
+                      {activeDim.checks?.length ? <ul className="v3-rule-list" style={{ marginTop: 8 }}>{activeDim.checks.map((x) => <li key={x}>{x}</li>)}</ul> : null}
+                      {activeDim.counter?.length ? <div className="v3-note" style={{ marginTop: 8 }}>反证：{activeDim.counter[0]}</div> : null}
+                      {activeDim.data_completeness?.missing?.length ? <p style={{ marginTop: 8, fontSize: 12, color: "#6b6370" }}>数据缺口：{activeDim.data_completeness.missing.join("；")}</p> : null}
                       <div style={{ marginTop: 8 }}>
                         <button className="v3-btn ghost" disabled={!!busy} onClick={() => runResearch(activeDim.key, activeDim.key)}>
                           <RefreshCw className="h-3.5 w-3.5" />{busy === activeDim.key ? "本维生成中…" : "只重跑本维"}

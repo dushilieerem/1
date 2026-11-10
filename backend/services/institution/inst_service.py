@@ -118,7 +118,7 @@ from .research_service import (  # noqa: F401
     _ensure_version_hash,
     _existing_case_id,
     _first_sentence,
-    _four_line_output,
+    _score_fields,
     _history_summary,
     _idea_data_sufficiency,
     _idea_questions,

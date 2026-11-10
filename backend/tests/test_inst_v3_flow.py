@@ -206,6 +206,20 @@ def test_research_gate_preview_and_dimension_review() -> None:
         assert locked["stage_no"] == 2
 
 
+def test_opportunity_source_labels() -> None:
+    from services.institution.research_service import _opportunity_source
+
+    push = _opportunity_source(
+        {"research_points": ["近 5 日动量 3.2%"], "pool_status": "watch"},
+        "push",
+    )
+    assert push["source_label"] == "量化策略推送"
+    assert push["source_detail"] == "近 5 日动量 3.2%"
+    watch = _opportunity_source({"pool_status": "watch"}, "watch")
+    assert watch["source_label"] == "自选"
+    assert "自选" in watch["source_detail"]
+
+
 def test_proposal_advice_lists_scores_debate_and_framework() -> None:
     with _case() as c:
         _add_debate(c["case_id"], c["version_id"])

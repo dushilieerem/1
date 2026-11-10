@@ -4,7 +4,6 @@ import { ArrowRight, Check, ShieldAlert, X } from "lucide-react";
 import { dedupeBy } from "@/lib/instDedupe";
 import { instApi, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
-import { InstV3FourLine } from "@/components/institution/v3/InstV3FourLine";
 
 type StageSummary = {
   status: string;
@@ -66,10 +65,6 @@ type ResearchDebate = {
 
 type AgentMemo = {
   summary?: string;
-  judgment?: string;
-  basis?: string;
-  impact?: string;
-  action?: string;
   verdict?: string;
   decision?: string;
   recommendation?: string;
@@ -177,12 +172,12 @@ function ResearchDebateSummary({ data }: { data?: ResearchDebate | null }) {
               const score =
                 d.score_10 != null
                   ? Number(d.score_10)
-                  : d.rating != null && d.rating_benchmark
+                  : d.rating != null
                     ? Math.round(Number(d.rating) * 20) / 10
                     : null;
               return (
                 <div style={{ fontSize: 12, color: "#6b6370", marginTop: 4 }}>
-                  {score != null ? `评分 ${score.toFixed(1)}/10（基准：${d.rating_benchmark}）` : "未评分"}
+                  {score != null ? `评分 ${score.toFixed(1)}/10（基准：${d.rating_benchmark || "待补"}）` : "未评分"}
                   {d.confidence != null ? ` · 置信 ${Number(d.confidence).toFixed(2)}` : ""}
                 </div>
               );
@@ -573,35 +568,10 @@ export function InstV3ApprovalsPage() {
               </div>
               {memo ? (
                 <div style={{ marginTop: 8 }}>
-                  <InstV3FourLine
-                    judgment={
-                      memo.judgment ||
-                      memo.verdict ||
-                      memo.decision ||
-                      memo.recommendation ||
-                      memo.summary
-                    }
-                    basis={
-                      memo.basis ||
-                      (memo.evidence?.length
-                        ? `证据 ${memo.evidence.slice(0, 4).join("、")}；截至当前议案版本`
-                        : "截至当前议案版本的输入未提供可引用证据")
-                    }
-                    impact={
-                      memo.impact ||
-                      (memo.verdict === "reject"
-                        ? "不支持通过，维持现有仓位与估值。"
-                        : memo.verdict === "conditional"
-                          ? "附条件通过；条件未满足前不得执行。"
-                          : "支持通过；批准后按议案仓位执行，幅度受风控上限约束。")
-                    }
-                    action={
-                      memo.action ||
-                      (memo.open_questions?.length
-                        ? `补数据：${memo.open_questions.slice(0, 3).join("；")}；补齐前仅作参考。`
-                        : "继续：按本关意见推进，执行时以授权快照为准。")
-                    }
-                  />
+                  {memo.verdict || memo.decision || memo.recommendation ? (
+                    <div className="v3-note" style={{ marginBottom: 8 }}>{memo.verdict || memo.decision || memo.recommendation}</div>
+                  ) : null}
+                  <p style={{ fontSize: 12, lineHeight: 1.7, color: "#4b4352" }}>{memo.summary || "—"}</p>
                   {memo.risks?.length ? (
                     <div className="ar-row"><b>主要风险</b><br />{memo.risks.slice(0, 3).map((x) => `· ${x}`).join("；")}</div>
                   ) : null}

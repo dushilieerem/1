@@ -25,6 +25,7 @@ export type V3PipelineItem = {
   gate: string;
   source?: string;
   idea?: Record<string, unknown> | null;
+  opportunity?: Record<string, unknown> | null;
   version_no?: number | null;
   version_status?: string | null;
   conclusion?: string | null;
@@ -47,6 +48,7 @@ export type V3Result = {
   locks?: Record<string, unknown> | null;
   company?: Record<string, unknown>;
   idea?: Record<string, unknown>;
+  opportunity?: Record<string, unknown>;
   latest_decision?: Record<string, unknown> | null;
   case?: Record<string, unknown>;
   latest_version?: Record<string, unknown>;

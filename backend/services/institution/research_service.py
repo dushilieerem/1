@@ -1079,79 +1079,8 @@ def _first_sentence(text: str) -> str:
     return text.strip(" ，,;；。")
 
 
-def _four_line_output(
-    data: dict[str, Any],
-    *,
-    title: str,
-    gate: str | None,
-    gaps: list[Any] | None,
-    as_of: str,
-) -> dict[str, Any]:
-    """把 Agent 输出压成四行：判断 / 依据 / 影响 / 动作，并校验评分基准。"""
-    judgment = _clean_agent_text(data.get("judgment") or data.get("one_line"))
-    placeholders = ("待补充", "暂无", "—")
-    if not judgment:
-        summary_text = _clean_agent_text(data.get("summary"))
-        if summary_text and not any(x in summary_text for x in placeholders):
-            judgment = _first_sentence(summary_text)
-    incomplete = not judgment or any(x in judgment for x in placeholders)
-    if not judgment or incomplete:
-        judgment = _clean_agent_text(
-            f"{title}的关键数据尚未取得，当前不能形成可执行判断。"
-        )
-        incomplete = True
-
-    checks = [_clean_agent_text(x) for x in (data.get("checks") or []) if _clean_agent_text(x)]
-    raw_refs = data.get("evidence_ids") or []
-    if isinstance(raw_refs, str):
-        raw_refs = [x.strip().strip('"\'') for x in raw_refs.strip("[]").split(",")]
-    refs = [str(x).strip() for x in raw_refs if str(x).strip()]
-    ref_text = "、".join(refs[:6])
-    basis = _clean_agent_text(data.get("basis"))
-    if not basis:
-        basis = "；".join(checks[:2])
-    if ref_text:
-        basis = f"{basis}；证据 {ref_text}；截至 {as_of}" if basis else f"证据 {ref_text}；截至 {as_of}"
-    else:
-        basis = f"截至 {as_of}，输入未提供可引用的证据 ID 与数据"
-
-    missing: list[str] = []
-    for gap in gaps or []:
-        text = (
-            _clean_agent_text(gap.get("missing") or gap.get("path"))
-            if isinstance(gap, dict)
-            else _clean_agent_text(gap)
-        )
-        if text and text not in missing:
-            missing.append(text)
-    completeness = data.get("data_completeness") or {}
-    for item in completeness.get("missing") or []:
-        text = _clean_agent_text(item)
-        if text and text not in missing:
-            missing.append(text)
-
-    impact = _clean_agent_text(data.get("impact") or data.get("implication_for_company"))
-    if not impact:
-        if incomplete or str(gate) == "fail":
-            impact = "关键数据缺失，估值与仓位不调整，维持观察。"
-        elif str(gate) == "watch":
-            impact = "仅支持观察，估值与仓位不高于同业基准。"
-        else:
-            impact = "支持纳入估值与仓位，幅度按同业中位或历史分位复核。"
-
-    action = _clean_agent_text(data.get("action"))
-    if action in {"缺", "缺数据", "待补充", "缺失", "暂无"}:
-        action = ""
-    if not action:
-        if missing:
-            action = f"补数据：{'；'.join(missing[:3])}；补齐前不进入定稿。"
-        elif incomplete:
-            action = f"补数据：补充{title}关键数据及证据 ID 与日期；补齐前不进入定稿。"
-        else:
-            action = "继续：按当前证据推进，下一复核点见反证条件。"
-    elif not refs and not action.startswith(("补数据", "放弃")):
-        action = f"补数据：补充{title}的证据 ID、数据与日期；补齐前不进入定稿。"
-
+def _score_fields(data: dict[str, Any]) -> dict[str, Any]:
+    """归一化 10 分制评分与评分基准。"""
     rating = data.get("rating")
     score = data.get("score_10")
     benchmark = _clean_agent_text(data.get("rating_benchmark"))
@@ -1162,16 +1091,19 @@ def _four_line_output(
         rating = round(score / 2, 1)
     if score is None and rating is not None:
         score = round(float(rating) * 2, 1)
-    if (rating is not None or score is not None) and not benchmark:
-        rating = None
-        score = None
-        rating_note = "评分缺少基准（同业中位或历史分位），未采用。"
+    if rating is None and score is None:
+        gate = str(data.get("gate") or "watch")
+        score = {"pass": 8.0, "watch": 5.5, "fail": 3.0}.get(gate, 5.0)
+        confidence = data.get("confidence")
+        if isinstance(confidence, (int, float)):
+            score += (float(confidence) - 0.5) * 2
+            score = round(max(0.0, min(10.0, score)), 1)
+        rating = round(score / 2, 1)
+        rating_note = "规则兜底评分（非 AI 评分）"
+    elif not benchmark:
+        rating_note = "评分基准待补（同业中位或历史分位）"
 
     return {
-        "judgment": judgment,
-        "basis": basis,
-        "impact": impact,
-        "action": action,
         "rating_benchmark": benchmark or None,
         "rating_note": rating_note or None,
         "rating": rating,
@@ -1205,21 +1137,7 @@ def _merge_industry(
         block = dict(fallback or {})
         block["engine"] = "rule"
         block["agent_error"] = str((result or {}).get("error") or "")
-        block.update(_four_line_output(
-            block,
-            title="行业",
-            gate=block.get("gate"),
-            gaps=block.get("data_gaps"),
-            as_of=(built.get("facts") or {}).get("as_of") or date.today().isoformat(),
-        ))
         return block
-    four = _four_line_output(
-        data,
-        title="行业",
-        gate=data.get("gate"),
-        gaps=data.get("data_gaps"),
-        as_of=(built.get("facts") or {}).get("as_of") or date.today().isoformat(),
-    )
     evidence = list(built.get("evidence") or [])
     ev_idx: list[int] = []
     for ev in data.get("evidence") or []:
@@ -1268,12 +1186,6 @@ def _merge_industry(
         "key_variables": data.get("key_variables") or [],
         "falsifiers": data.get("falsifiers") or [],
         "implication_for_company": data.get("implication_for_company"),
-        "judgment": four["judgment"],
-        "basis": four["basis"],
-        "impact": four["impact"],
-        "action": four["action"],
-        "rating_benchmark": four["rating_benchmark"],
-        "rating_note": four["rating_note"],
         "gate": data.get("gate"),
         "gate_note": data.get("gate_note"),
         "data_completeness": data.get("data_completeness"),
@@ -1351,13 +1263,7 @@ def _merge_agent_results(
         if data and str(data.get("summary") or "").strip():
             complete = (built.get("facts") or {}).get("data_completeness") or {}
             data = _apply_data_gate(data, complete.get(key))
-            four = _four_line_output(
-                data,
-                title=title,
-                gate=data.get("gate"),
-                gaps=data.get("data_gaps"),
-                as_of=as_of,
-            )
+            score_fields = _score_fields(data)
             ev_idx: list[int] = []
             for ev in data.get("evidence") or []:
                 ev_title = str(ev.get("title") or "").strip()
@@ -1395,14 +1301,10 @@ def _merge_agent_results(
                     "data_gaps": data.get("data_gaps") or [],
                     "confidence": data.get("confidence", 0.5),
                     "confidence_label": data.get("confidence_label"),
-                    "rating": four["rating"],
-                    "score_10": four["score_10"],
-                    "rating_benchmark": four["rating_benchmark"],
-                    "rating_note": four["rating_note"],
-                    "judgment": four["judgment"],
-                    "basis": four["basis"],
-                    "impact": four["impact"],
-                    "action": four["action"],
+                    "rating": score_fields["rating"],
+                    "score_10": score_fields["score_10"],
+                    "rating_benchmark": score_fields["rating_benchmark"],
+                    "rating_note": score_fields["rating_note"],
                     "gate": data.get("gate"),
                     "headline": data.get("headline"),
                     "kpis": data.get("kpis") or [],
@@ -1429,13 +1331,7 @@ def _merge_agent_results(
             fallback["agent"] = f"AI-{key}"
             fallback["agent_error"] = err or "Agent 未返回有效结果"
             fallback["evidence_ids"] = []
-            fallback.update(_four_line_output(
-                fallback,
-                title=str(fallback.get("title") or title),
-                gate=fallback.get("gate"),
-                gaps=fallback.get("data_gaps"),
-                as_of=as_of,
-            ))
+            fallback.update(_score_fields(fallback))
             dims.append(fallback)
             states[key] = "failed"
 
@@ -2258,6 +2154,37 @@ def _idea_data_sufficiency(company: dict[str, Any]) -> str:
     return "missing"
 
 
+def _opportunity_source(
+    company: dict[str, Any],
+    source: str,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """机会来源：量化推送 / 自选 / 持仓候选，替代原立项三问展示。"""
+    source = source if source in {"push", "watch", "holdings"} else "watch"
+    labels = {
+        "push": "量化策略推送",
+        "watch": "自选",
+        "holdings": "持仓候选",
+    }
+    default_detail = {
+        "push": "量化策略初筛通过，进入机会池等待研究。",
+        "watch": "投资经理加入自选，等待价格或基本面变化。",
+        "holdings": "当前持仓标的，进入投后复核。",
+    }
+    points = company.get("research_points") or []
+    detail = str(reason or "").strip()
+    if not detail and isinstance(points, list) and points:
+        detail = str(points[0])
+    return {
+        "source": source,
+        "source_label": labels[source],
+        "source_detail": detail or default_detail[source],
+        "pool_status": company.get("pool_status"),
+        "tags": company.get("tags") or [],
+        "discovered_at": company.get("created_at") or company.get("updated_at"),
+    }
+
+
 def _idea_questions(
     company: dict[str, Any],
     source: str,
@@ -2553,7 +2480,7 @@ __all__ = [
     "_ensure_version_hash",
     "_existing_case_id",
     "_first_sentence",
-    "_four_line_output",
+    "_score_fields",
     "_history_summary",
     "_idea_data_sufficiency",
     "_idea_questions",
@@ -2562,6 +2489,7 @@ __all__ = [
     "_merge_agent_results",
     "_merge_industry",
     "_net_debt_proxy",
+    "_opportunity_source",
     "_overall_score",
     "_peer_summary",
     "_resample_bars",

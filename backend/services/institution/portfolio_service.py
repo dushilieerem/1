@@ -58,6 +58,7 @@ from .stages import STAGE_DEFS
 from .research_service import (
     _derive_case_stage,
     _idea_questions,
+    _opportunity_source,
     get_case,
     get_company,
     ideas_push,
@@ -550,9 +551,12 @@ def pipeline(org_id: int) -> dict[str, Any]:
                 "stage_no": 0,
                 "stage_key": "find",
                 "stage_name": "机会发现",
-                "gate": "立项三问",
+                "gate": "机会来源",
                 "source": source,
                 "idea": item.get("idea"),
+                "opportunity": _opportunity_source(
+                    dict(item), source, item.get("idea")
+                ),
                 "ref_price": item.get("ref_price") or item.get("last_close"),
                 "updated_at": None,
             })
@@ -600,6 +604,14 @@ def project_result(org_id: int, key: str, *, digest: bool = False) -> dict[str, 
                 "SELECT * FROM inst_idea_decision WHERE org_id=%s AND company_id=%s ORDER BY id DESC LIMIT 1",
                 (org_id, entity_id),
             ).fetchone()
+        decision_row = _row_dict(decision) or {}
+        source = str(
+            decision_row.get("source")
+            or ("push" if company.get("research_points") else "watch")
+        )
+        opportunity = _opportunity_source(
+            company, source, decision_row.get("reason")
+        )
         return {
             "key": key,
             "stage_no": 0,
@@ -607,7 +619,8 @@ def project_result(org_id: int, key: str, *, digest: bool = False) -> dict[str, 
             "stage_name": "机会发现",
             "company": {k: company.get(k) for k in ("id", "symbol", "name", "market", "industry", "ref_price", "data_status", "pool_status")},
             "idea": idea,
-            "latest_decision": _row_dict(decision),
+            "opportunity": opportunity,
+            "latest_decision": decision_row,
         }
     if kind != "case":
         raise LookupError("项目不存在")

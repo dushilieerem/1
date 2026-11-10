@@ -538,7 +538,7 @@ def _backfill_case_stages(conn) -> None:
         5: "manage",
     }
     gates = {
-        0: "立项三问",
+        0: "机会来源",
         1: "研究定稿",
         2: "议案锁定",
         3: "三关审批",

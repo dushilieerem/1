@@ -12,7 +12,7 @@ from .common import _j
 
 # v3 六环节：0 机会发现 → 5 投资管理。stage_no 是服务端唯一阶段事实。
 STAGE_DEFS: tuple[dict[str, Any], ...] = (
-    {"no": 0, "key": "find", "name": "机会发现", "gate": "立项三问", "owner": "投资经理"},
+    {"no": 0, "key": "find", "name": "机会发现", "gate": "机会来源", "owner": "投资经理"},
     {"no": 1, "key": "research", "name": "价值分析", "gate": "研究定稿", "owner": "投资经理"},
     {"no": 2, "key": "debate", "name": "多空辩论", "gate": "议案锁定", "owner": "投资经理"},
     {"no": 3, "key": "approve", "name": "投委会审批", "gate": "三关审批", "owner": "合伙人 → 风控 → Chairman"},

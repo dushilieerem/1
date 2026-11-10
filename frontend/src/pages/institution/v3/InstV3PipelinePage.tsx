@@ -6,17 +6,18 @@ import { fetchV3Pipeline, type V3Pipeline, type V3PipelineItem } from "@/lib/ins
 
 function ProjectCard({ item }: { item: V3PipelineItem }) {
   const title = item.company_name || item.symbol || "—";
+  const opportunity = (item.opportunity || {}) as { source_label?: string; source_detail?: string };
   return (
     <Link className="v3-project" to={`/inst/pipeline/result?key=${encodeURIComponent(item.key)}`}>
       <span className="nm">{title}<span className="v3-chip gold">{item.stage_name}</span>{item.stage_no > 0 ? <span className="v3-chip">版本 {item.version_no ?? "—"}</span> : null}</span>
       <span className="cd">{item.symbol} {item.industry ? `· ${item.industry}` : ""}</span>
       <span className="ms">
         {item.stage_no === 0
-          ? String((item.idea as { reason?: string } | null)?.reason || "候选线索，等待立项三问。")
+          ? opportunity.source_detail || `${opportunity.source_label || "自选"}：等待进入研究。`
           : item.conclusion || `${item.stage_name} · ${item.gate}`}
       </span>
       <span className="ft">
-        <span className="v3-chip">{item.source === "push" ? "量化推送" : item.source === "watch" ? "观察池" : item.version_status || item.proposal_status || "—"}</span>
+        <span className="v3-chip">{item.stage_no === 0 ? opportunity.source_label || "自选" : item.version_status || item.proposal_status || "—"}</span>
         <ArrowRight className="h-3 w-3 text-[#6b6370]" />
       </span>
     </Link>

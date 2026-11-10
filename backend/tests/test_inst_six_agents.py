@@ -118,29 +118,20 @@ def test_merge_industry_block_is_separate_from_six_dims() -> None:
     assert built["evidence"][0]["title"] == "行业规模"
 
 
-def test_four_line_output_contract() -> None:
-    four = svc._four_line_output(
-        {
-            "summary": "公司收入增长 12%，高于同业中位。",
-            "checks": ["收入增速 12%，同业中位 8%"],
-            "evidence_ids": ["E03", "E07"],
-            "rating": 4,
-            "gate": "watch",
-            "data_gaps": ["渠道库存未披露"],
-            "action": "缺",
-            "impact": "赋能收入增长。",
-        },
-        title="财务质量",
-        gate="watch",
-        gaps=["渠道库存未披露"],
-        as_of="2026-11-09",
-    )
-    assert four["judgment"].startswith("公司收入增长")
-    assert "E03" in four["basis"] and "2026-11-09" in four["basis"]
-    assert "支持" in four["impact"] and "赋能" not in four["impact"]
-    assert four["rating"] is None
-    assert "基准" in four["rating_note"]
-    assert "补数据" in four["action"] and "渠道库存" in four["action"]
+def test_score_fields_keep_legacy_rating_and_note_benchmark() -> None:
+    no_benchmark = svc._score_fields({"rating": 4, "score_10": 8.2})
+    assert no_benchmark["rating"] == 4
+    assert no_benchmark["score_10"] == 8.2
+    assert "基准" in no_benchmark["rating_note"]
+
+    with_benchmark = svc._score_fields({"rating": 4, "rating_benchmark": "同业中位 3.8/5"})
+    assert with_benchmark["rating"] == 4
+    assert with_benchmark["score_10"] == 8.0
+    assert with_benchmark["rating_benchmark"] == "同业中位 3.8/5"
+
+    rule_fallback = svc._score_fields({"gate": "watch", "confidence": 0.5})
+    assert rule_fallback["score_10"] == 5.5
+    assert "规则兜底" in rule_fallback["rating_note"]
 
 
 def test_validate_dimension_accepts_a04_six_dim_contract() -> None:

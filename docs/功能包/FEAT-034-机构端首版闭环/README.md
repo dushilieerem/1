@@ -876,3 +876,34 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 新增 `test_proposal_advice_lists_scores_debate_and_framework` 回归。
 
 验证：后端 `pytest tests` 875 passed；Playwright `e2e-09..14` 18 passed。
+
+
+### 11.46 机会发现改为“机会来源”（2026-11-10）
+
+- 移除机会发现的“立项三问”展示与阶段门禁文案，阶段 0 统一改为“机会来源”。
+- 后端 `STAGE_DEFS`、阶段回填、流水线 stage 0 卡的 gate 全部改为“机会来源”。
+- 新增 `_opportunity_source`：
+  - 来源：量化策略推送 / 自选 / 持仓候选；
+  - 来源说明：策略初筛理由、投资经理加入自选的原因或持仓复核说明；
+  - 附带 pool_status、标签与发现时间。
+- 项目结果页 stage 0 不再显示“为什么是现在/能力圈/资料齐备度/AI 建议”，改为“机会来源 / 来源说明 / 当前状态 / 标签”。
+- 流水线 stage 0 卡片直接显示来源标签与来源说明。
+- 立项决策接口与 `inst_idea_decision` 数据保留兼容，不再作为 stage 0 的展示门禁。
+
+验证：后端 `pytest tests` 875 passed；前端 `tsc`/`build`/`test:inst` 15 passed；Playwright `e2e-09..14` 18 passed。
+
+
+### 11.47 撤销四行结论，保留 10 分制评分（2026-11-10）
+
+- 撤销 Agent 输出的“判断/依据/影响/动作”四行契约：
+  - 提示词移除四行结论段落与字段；
+  - 研究六维、行业分析、多空辩论、审批建议恢复 summary / checks / counter / data_gaps 展示；
+  - 删除 `InstV3FourLine` 组件与相关样式。
+- 保留 10 分制评分：
+  - 旧 5 分制 rating 若没有 `rating_benchmark`，仍按 `rating×2` 显示 10 分制，并标注“基准待补”；
+  - 规则兜底维度按 gate + confidence 生成 0–10 的“规则评分”，明确标注“规则兜底，非 AI 评分”，不再全部显示“未评分”；
+  - 移除 Agent 面板中的 `x/5` 文案，面板只显示“结论已生成”；
+  - 审批摘要改为显示 10 分制评分（基准缺失显示“待补”）。
+- 评分基准提示保留，但不再因为旧数据缺基准而显示“未评分”。
+
+验证：后端 `pytest tests` 876 passed；前端 `tsc`/`build`/`test:inst` 15 passed；Playwright `e2e-09..14` 18 passed。

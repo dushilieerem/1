@@ -769,3 +769,6 @@
   .inst-v3 .v3-stock-list { max-height: 240px; }
 }
 .inst-v3 .v3-stock-note { margin-top: 5px; font-size: 12px; color: var(--v3-faint); }
+.inst-v3 .v3-kline-tools { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 6px; }
+.inst-v3 .v3-kline-tool { border: 1px solid var(--v3-line); background: #fff; border-radius: 6px; padding: 3px 8px; font-size: 12px; color: var(--v3-muted); cursor: pointer; }
+.inst-v3 .v3-kline-tool.on { background: var(--v3-brand-soft); border-color: #e3c2d1; color: var(--v3-brand-2); font-weight: 500; }

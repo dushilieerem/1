@@ -420,3 +420,26 @@ def test_generate_research_skips_dimensions_without_data(monkeypatch) -> None:
         assert all(d["score_10"] is None and d["rating"] is None for d in dims)
         assert all(d["summary"] == "数据未接入，暂不分析。" for d in dims)
         assert version["industry_analysis"]["status"] == "skipped"
+
+
+def test_proposal_advice_scores_latest_rating_without_benchmark() -> None:
+    dims = [
+        {
+            "key": key,
+            "title": title,
+            "status": "partial",
+            "summary": "结论",
+            "rating": 2.5,
+            "score_10": None,
+            "rating_benchmark": None,
+            "confidence": 0.6,
+            "gate": "fail" if key == "governance" else "watch",
+        }
+        for key, title, _ in svc.SIX_DIM_DEFS
+    ]
+    with _case(dims=dims) as c:
+        advice = svc.proposal_advice(c["org_id"], c["case_id"])
+        assert [x["score_10"] for x in advice["scores"]] == [5.0] * 6
+        assert advice["overall_score"] == 5.0
+        assert advice["recommendation"] == "avoid"
+        assert advice["framework"]["direction"] == "hold"

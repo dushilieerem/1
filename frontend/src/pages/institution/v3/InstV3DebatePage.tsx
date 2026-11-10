@@ -561,7 +561,7 @@ export function InstV3DebatePage() {
                   <div className="v3-advice-framework">
                     <div className="v3-eyebrow">议案框架</div>
                     <dl>
-                      <div className="v3-kv"><dt>方向</dt><dd>{({ buy: "买入", sell: "卖出", exit: "退出" } as Record<string, string>)[advice.framework?.direction || "buy"] || advice.framework?.direction}</dd></div>
+                      <div className="v3-kv"><dt>方向</dt><dd>{({ buy: "买入", sell: "卖出", hold: "持有", exit: "退出" } as Record<string, string>)[advice.framework?.direction || "buy"] || advice.framework?.direction}</dd></div>
                       <div className="v3-kv"><dt>目标仓位</dt><dd>{((advice.framework?.target_weight || 0) * 100).toFixed(1)}%</dd></div>
                       <div className="v3-kv"><dt>价格区间</dt><dd>{advice.framework?.price_low != null ? `${advice.framework.price_low} – ${advice.framework.price_high}` : "—"}</dd></div>
                       <div className="v3-kv"><dt>资金来源 / 有效期</dt><dd>{advice.framework?.funding_source || "现金"} · {advice.framework?.valid_until || "—"}</dd></div>
@@ -569,7 +569,7 @@ export function InstV3DebatePage() {
                     </dl>
                     <div className="v3-note" style={{ marginTop: 8 }}>投资意见：{advice.framework?.investment_opinion || "—"}</div>
                   </div>
-                  <button className="v3-btn primary" style={{ marginTop: 8 }} disabled={advice.recommendation === "avoid"} onClick={adoptAdvice}>
+                  <button className="v3-btn primary" style={{ marginTop: 8 }} disabled={advice.recommendation === "avoid" || advice.recommendation === "hold"} onClick={adoptAdvice}>
                     采用建议填入议案
                   </button>
                 </div>

@@ -5,8 +5,8 @@
 - 表缺失或字段不齐时返回空覆盖，不阻断研究生成；
 - 严格按 available_time <= as_of 做 PIT；
 - 每条结果保留 page_no / quote / doc_id / pdf_sha256，供证据回溯；
-- 只有 review_status 为 approved/verified/reviewed 的结果视为正式证据，
-  pending 只作线索并在 FactPack 中标注。
+- 只有 review_status 为 approved/verified/reviewed 的结果视为正式证据；
+  not_applicable 表示业务上不适用；pending 只作线索并在 FactPack 中标注。
 """
 from __future__ import annotations
 
@@ -65,6 +65,7 @@ DOC_DIM_MAP: dict[str, tuple[str, ...]] = {
 }
 
 APPROVED_REVIEW_STATUSES = {"approved", "verified", "reviewed"}
+NOT_APPLICABLE_REVIEW_STATUSES = {"not_applicable", "n/a", "na"}
 TABLE_CANDIDATES = ("svquant.doc_extract", "doc_extract", "public.doc_extract")
 
 
@@ -162,6 +163,7 @@ def load_doc_extracts(conn, symbol: str, as_of: Any) -> dict[str, Any]:
                 "confidence": float(row["confidence"]) if isinstance(row.get("confidence"), Decimal) else row.get("confidence"),
                 "review_status": status,
                 "reviewed": status in APPROVED_REVIEW_STATUSES,
+                "not_applicable": status in NOT_APPLICABLE_REVIEW_STATUSES,
                 "extractor_version": row.get("extractor_version"),
             }
         )
@@ -169,10 +171,15 @@ def load_doc_extracts(conn, symbol: str, as_of: Any) -> dict[str, Any]:
     coverage: dict[str, str] = {}
     for key, items in by_field.items():
         approved = [x for x in items if x["reviewed"]]
+        na = [x for x in items if x["not_applicable"]]
         if approved:
             coverage[key] = "have"
             fields[key]["status"] = "have"
             fields[key]["items"] = approved[:3]
+        elif na:
+            coverage[key] = "na"
+            fields[key]["status"] = "na"
+            fields[key]["items"] = na[:3]
         elif items:
             coverage[key] = "pending"
             fields[key]["status"] = "pending"
@@ -187,7 +194,7 @@ def load_doc_extracts(conn, symbol: str, as_of: Any) -> dict[str, Any]:
         "coverage": coverage,
         "note": (
             "doc_extract 来自年报/公告页级抽取；引用时必须带 doc_id、page_no、quote 与 available_time；"
-            "review_status 未通过的结果只作线索，不进入正式结论。"
+            "review_status 未通过的结果只作线索，不进入正式结论；not_applicable 表示业务上不适用，不计入数据缺口。"
         ),
     }
 

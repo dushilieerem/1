@@ -35,7 +35,7 @@ from services.institution import data_platform, inst_ai_store
 from services.institution.report import render_research_report, report_filename
 from services.marketdata import store as md
 
-from . import doc_layer, repo
+from . import applicability, doc_layer, repo
 from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi
 from .company_service import _mapped_industry
 from .guards import POLICY_VERSION, _audit, _member, _require_role, _uid
@@ -513,9 +513,11 @@ def _data_completeness(
     audit: dict[str, Any] | None = None,
     debt: dict[str, Any] | None = None,
     documents: dict[str, str] | None = None,
+    na_fields: dict[str, str] | None = None,
 ) -> dict[str, dict[str, Any]]:
     peer_note = f"同业公司 {len(peers)} 家" if peers else "同业公司未取到"
     docs = documents or {}
+    na = na_fields or {}
     doc_labels = {
         "top5_customers": "前五大客户占比",
         "volume_price_split": "量价拆分（销量/单价）",
@@ -538,9 +540,14 @@ def _data_completeness(
         business_have.append(f"分部收入/毛利（{segments.get('report_date')}，产品/地区/行业）")
         business_missing.remove("分产品/分地区收入与毛利")
     for doc_key, label in doc_labels.items():
-        status = docs.get(doc_key, "missing")
+        status = "na" if doc_key in na or docs.get(doc_key) == "na" else docs.get(doc_key, "missing")
+        reason = na.get(doc_key) or "业务口径不适用"
         if status == "have":
             business_have.append(f"年报/公告页级抽取：{label}（已复核）")
+            if label in business_missing:
+                business_missing.remove(label)
+        elif status == "na":
+            business_have.append(f"不适用：{label}（{reason}）")
             if label in business_missing:
                 business_missing.remove(label)
         elif status == "pending":
@@ -584,8 +591,9 @@ def _data_completeness(
             financial_have.append("预收款项（>0，有余额证据）")
         financial_missing.append("受限资金/租赁负债/合同负债（源数据为空，B 组补）")
     for doc_key in ("cost_structure", "contract_liabilities"):
-        status = docs.get(doc_key, "missing")
+        status = "na" if doc_key in na or docs.get(doc_key) == "na" else docs.get(doc_key, "missing")
         label = doc_labels[doc_key]
+        reason = na.get(doc_key) or "业务口径不适用"
         if status == "have":
             financial_have.append(f"年报/公告页级抽取：{label}（已复核）")
             if doc_key == "contract_liabilities":
@@ -593,6 +601,8 @@ def _data_completeness(
                 if composite in financial_missing:
                     financial_missing.remove(composite)
                     financial_missing.append("受限资金/租赁负债（B 组补）")
+        elif status == "na":
+            financial_have.append(f"不适用：{label}（{reason}）")
         elif status == "pending":
             financial_missing.append(f"{label}（抽取结果待复核）")
     governance_have: list[str] = []
@@ -621,9 +631,14 @@ def _data_completeness(
     }
     for doc_key in doc_layer.GOVERNANCE_DOC_FIELDS:
         label = governance_labels[doc_key]
-        status = docs.get(doc_key, "missing")
+        status = "na" if doc_key in na or docs.get(doc_key) == "na" else docs.get(doc_key, "missing")
+        reason = na.get(doc_key) or "业务口径不适用"
         if status == "have":
             governance_have.append(f"年报/公告页级抽取：{label}（已复核）")
+            if label in governance_missing:
+                governance_missing.remove(label)
+        elif status == "na":
+            governance_have.append(f"不适用：{label}（{reason}）")
             if label in governance_missing:
                 governance_missing.remove(label)
         elif status == "pending":
@@ -631,7 +646,9 @@ def _data_completeness(
                 governance_missing.remove(label)
             governance_missing.append(f"{label}（抽取结果待复核）")
     core_have = sum(
-        1 for key in doc_layer.GOVERNANCE_CORE_FIELDS if docs.get(key) == "have"
+        1
+        for key in doc_layer.GOVERNANCE_CORE_FIELDS
+        if docs.get(key) == "have" or key in na or docs.get(key) == "na"
     )
     governance_gate = "fail" if core_have < 3 else ("watch" if core_have < 6 else None)
     governance: dict[str, Any] = {
@@ -765,6 +782,9 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
         audit=audit_summary,
         debt=debt_summary,
         documents=doc_summary.get("coverage"),
+        na_fields=applicability.not_applicable_fields(
+            symbol, is_financial=bool((debt_summary or {}).get("is_financial"))
+        ),
     )
     gross_margin = latest_fin.get("gross_margin")
     if gross_margin is None and latest_fin.get("revenue") and latest_fin.get("gross_profit"):
@@ -886,14 +906,21 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
             [ev_fin, ev_gm],
         )
     if "governance" in want:
+        gov_comp = data_completeness.get("governance") or {}
+        gov_have = list(gov_comp.get("have") or [])
+        gov_summary = (
+            "治理核验：" + "；".join(gov_have[:4]) + "。未接入项见数据缺口。"
+            if gov_have
+            else "治理数据未接入，暂不分析；待核验公告清单另行补充。"
+        )
         dim(
             "governance",
             "CEO 与治理",
             "资本配置、承诺兑现与治理结构是否可信？",
             "partial",
-            "仅展示治理核验框架，不编造个人履历或违规事实；待核验公告清单另行补充。",
-            ["治理结构：待补充", "关联交易：待补充", "分红/回购：待补充"],
-            ["未核验前不得把治理判断写成事实"],
+            gov_summary,
+            gov_have[:5] or ["治理结构：待补充", "关联交易：待补充", "分红/回购：待补充"],
+            ["公告原文与一致行动人认定仍需人工复核"] if gov_have else ["未核验前不得把治理判断写成事实"],
             [],
         )
     if "valuation" in want:
@@ -1074,6 +1101,9 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
             "interest_debt_summary": debt_summary,
             "document_extracts": doc_summary.get("fields") or {},
             "document_coverage": doc_summary.get("coverage") or {},
+            "not_applicable_fields": applicability.not_applicable_fields(
+                symbol, is_financial=bool((debt_summary or {}).get("is_financial"))
+            ),
             "document_extract_available": bool(doc_summary.get("available")),
             "document_extract_note": doc_summary.get("note") or doc_summary.get("reason"),
             "data_completeness": data_completeness,
@@ -1147,6 +1177,8 @@ def _agent_payload(facts: dict[str, Any], key: str) -> dict[str, Any]:
     if key == "governance":
         coverage = facts.get("document_coverage") or {}
         covered = [k for k, v in coverage.items() if v == "have"]
+        if facts.get("not_applicable_fields"):
+            payload["not_applicable_fields"] = dict(facts["not_applicable_fields"])
         if covered:
             payload["governance_note"] = (
                 f"已接入治理抽取字段：{'、'.join(doc_layer.DOC_FIELDS[k] for k in covered)}。"

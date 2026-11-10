@@ -978,3 +978,85 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 一页纸指标改为确定性覆盖：价值区间取研究版本估值，有效维按“有评分且 gate≠fail”计数，低置信维单列；不再采用 AI 文案里的“不可用 / 0/6”。
 
 验证：后端 `test_inst_six_agents` 10 passed、`test_inst_doc_layer` 6 passed、`test_inst_v3_flow` 16 passed；前端 `tsc` 通过；评分块改为紧凑横排并移除基准小字。
+
+
+### 11.52 估值重跑与 PR（2026-11-10）
+
+- 重跑 3 只旧版本无估值的在研案：
+  - 000002 万科A：重开研究 → 跑估值维；结果 `unavailable`，原因“自由现金流为负（-0.16 亿元）”，不再空白；
+  - 000625 长安汽车：同上，原因“自由现金流为负（-135.07 亿元）”；
+  - 000006 深振业A：直接重跑，估值区间 2.69–4.48 元，基准 3.59 元。
+- 000002/000625 重开研究后阶段回到 1（returned），需重新锁定研究定稿；无在途议案/授权被误伤。
+- 一页纸指标改为确定性覆盖：有效维按“有评分且 gate≠fail”计数，价值区间取研究估值；001233 类场景由 0/6 修正为 5/6（治理 fail 剔除），价值区间显示 43.43–72.38 元。
+- PR：https://gitee.com/yanggu-yuanqi-intelligence/SVQuant/pulls/200 （dev-lsb → master，含 0036/0037 生产已应用说明）。
+
+
+### 11.53 议案建议评分与买卖方向修复（2026-11-10）
+
+- 议案建议改用当前最新研究版本，不再优先取旧 approved 版本；旧版本可能没有最新六维评分。
+- 维度评分：`score_10` 缺失时统一按 `rating×2` 显示，不再要求 `rating_benchmark` 才给分。
+- 买卖方向：`暂不买入` / `建议持有` 的 framework.direction 改为 `hold`，不再误写成 `buy`；前端方向映射补“持有”，且这两种建议禁用“采用建议填入议案”。
+- 新增回归：最新版本 rating 无基准时 6 维均 5.0、综合 5.0、avoid + hold。
+
+验证：后端 `pytest tests` **899 passed、67 subtests**；前端 `tsc`/`build`/`test:inst` 15 passed。
+
+
+### 11.54 治理字段复核与评分/议案修复（2026-11-10）
+
+- 6 只治理 47 行已入库并全部置 `verified`（`reviewed_by=inst-gov-review-20261110`）；生产 `doc_extract` 共 71 行，67 verified / 4 cost pending。
+- 接入层回读：
+  - 000001 治理 gate=watch（guarantee missing，核心 5/6）；
+  - 000002/000006/000625/001219/001233 治理 level=sufficient（核心 6/6）；
+  - 600519 治理 7 行尚未入库，仍 fail，已通知数据业务补插。
+- 议案建议修复：取最新研究版本，旧 rating 无基准按 ×2 给分；暂不买入/建议持有方向改为 hold；前端方向映射“持有”，这两种建议禁用“采用建议填入议案”。
+- 000001 修复后六维 6.0/6.6/6.0/7.2/6.0/3.0，综合 5.8，结论“暂不买入”、方向“持有”、仓位 0%。
+
+验证：后端 899 passed、67 subtests；前端 15 passed；PR #200 更新至 `caebdc9`。
+
+
+### 11.55 治理维重跑与 600519 治理入库（2026-11-10）
+
+- 6 只已入库标的治理维已重跑：000001 gate=watch（guarantee missing），000002/000006/000625/001233 gate=pass；000001 重开时仅有 draft 议案，未影响审批。
+- 治理维规则兜底改为数据驱动：summary/checks 使用已复核的治理字段，不再固定“仅展示治理核验框架”。
+- 600519 治理 7 行已由数据业务插入生产，`review_status=pending`，核心 5/6；待复核 verified 后重跑治理维。
+- 001219 仍在 `risk_precheck` 有在途议案，重开会作废，等待用户确认后再重跑。
+
+
+### 11.56 600519 治理复核与 001219 重跑（2026-11-10）
+
+- 600519 治理 7 行已置 `verified`（`reviewed_by=inst-gov-review-20261110`）；生产 600519 共 11 行全部 verified。
+  - 接入层：治理 level=partial、gate=watch；核心 5/6，guarantee missing。
+  - 600519 当前案 stage_no=5，重跑治理需重开研究并影响投后，未自动重跑。
+- 001219 按用户确认作废 `risk_precheck` 议案（proposal 30 → rejected/stale），重开研究并重跑治理维：
+  - 治理 gate=pass、score=8.0，level=sufficient（核心 6/6）。
+- 六只已入库标的治理维均已完成重跑；000001 watch，其余 pass。
+
+
+### 11.57 guarantee 不适用与 600519 重开（2026-11-10）
+
+- `guarantee` 增加“不适用”语义：银行（`interest_debt_summary.is_financial`）与 600519 不再把对外担保当核心缺口；治理核心 6 项按“已复核或明确不适用”计数。
+- 000001 治理重跑：gate=pass、score=8.0、level=sufficient（核心 6/6，其中 guarantee 不适用）。
+- 600519 按用户确认重开研究（stage_no 5 → 1），重跑治理维：gate=pass、score=8.0、level=sufficient；持仓 100 股不变，draft 退出议案 11 变 stale，需重新锁定研究/重做退出议案。
+- 4 条 cost_structure 仍 pending：建议按“营业成本构成（行业/产品分类）”口径统一 label 后置 verified，等待用户确认。
+
+
+### 11.58 通用“不适用”语义（2026-11-10）
+
+- 新增 `not_applicable` 作为独立状态，不再把业务上不适用的字段当数据缺口：
+  - `doc_extract.review_status=not_applicable` → `doc_layer` 返回 `coverage=na`；
+  - 完整性判断把 na 从 `missing` 移入 `have`（文案“不适用：字段（原因）”），不扣门禁、不写入 data_gaps；
+  - Agent payload 带 `not_applicable_fields`，提示模型不得把 N/A 当缺口。
+- 行业/公司口径集中到 `backend/services/institution/applicability.py`：
+  - 银行：客户集中度、量价、成本构成、渠道、对外担保不适用；
+  - 600519：对外担保、成本项目构成不适用；
+  - 后续优先用 `doc_extract` 的 `not_applicable` 行覆盖公司级口径，不在业务代码里散落 if。
+- 提示词增加硬规则：`not_applicable_fields` / `coverage=na` 不得写入 data_gaps，不得作为缺口降评分或 gate，也不要求补数。
+- 效果：000001/600519 治理核心 6/6，gate=pass；银行不再显示量价/成本/渠道缺口；600519 不再显示对外担保/成本项目缺口。
+
+
+### 11.59 K 线技术指标（2026-11-10）
+
+- 股票总览 K 线新增指标开关：MA5/10/20/60、BOLL(20,2)、MACD(12,26,9)、KDJ(9,3,3)。
+- MA/BOLL 叠加在主图；MACD/KDJ 使用独立 pane，保留成交量副图。
+- 指标全部由日/周/月 bars 在前端确定性计算，不依赖后端新接口。
+- Playwright 股票总览用例增加四个指标开关断言。

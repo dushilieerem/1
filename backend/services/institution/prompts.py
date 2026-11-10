@@ -17,6 +17,7 @@ BASE_PROMPT = """# 身份与权限
 1. 只用 {{FACT_PACK}}（版本 {{UPSTREAM_VERSION}}，截止 {{CUTOFF}}）里的数据与证据。
 2. 缺数据写 data_gaps：缺什么 + 影响 H/M/L + 补数路径。切片外的字段视为不存在，不跨维补。
    只分析 FactPack 中实际提供的字段；未提供的字段不得写观点、推断或“待补充”占位，只能进 data_gaps。
+   `not_applicable_fields` 或 `data_completeness.have` 中标注“不适用”的字段，视为业务不适用：不得写入 data_gaps，不得作为缺口降低评分或 gate，也不要要求补数。
    有部分数据时必须基于已有字段给出明确结论，不得因存在缺口而拒绝分析；只有整维没有可用数据时才写“数据未接入，暂不分析”，gate=fail，score_10/rating 置空。
 3. 禁止编造证据 ID、份额、增速、目标价；禁止把上一环节结论当证据；禁止使用 cutoff 之后的信息。
 4. 你的建议绑定 {{UPSTREAM_VERSION}}；若输入版本与当前版本不一致，输出 stale=true 并说明差在哪。

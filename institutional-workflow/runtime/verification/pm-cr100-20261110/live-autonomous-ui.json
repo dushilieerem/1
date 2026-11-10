@@ -1,0 +1,45 @@
+{
+  "schema": "pm.cr100.live-autonomous.v1",
+  "recorded_at_utc": "2026-11-10T02:59:29.304378+00:00",
+  "business_commit": "6784df35da7aa4e8550857c17f48abee83ddf671",
+  "method": "bounded-factor-rd-v2",
+  "project_id": "0cf7441a-94e9-4690-94f6-0396f8836346",
+  "initial_branch_id": "2e476336-0d71-405b-9f1d-58978680002d",
+  "name": "区间收缩与突破延续 · 自动研究 1110",
+  "actor": "test（机构量化研究员）",
+  "source": "PM通过真实浏览器填写并点击创建并启动",
+  "first_observed_ui": "2026-11-10 10:58:18+08 运行中1；正在结合研究资料规划下一步",
+  "plan_reference": "acceptance-plan.json",
+  "fields": "OHLCV only",
+  "static_symbols_count": 40,
+  "development": [
+    "2025-07-01",
+    "2025-09-30"
+  ],
+  "sealed_preregistered": [
+    "2026-06-22",
+    "2026-09-21"
+  ],
+  "direction": "positive",
+  "metric": "rank_ic",
+  "max_trials": 2,
+  "max_sealed": 1,
+  "status": "planner_truncated_no_market_trial",
+  "human_research_intervention": false,
+  "actual_model_and_computation_evidence": "pending_readonly_verification",
+  "first_run_outcome": {
+    "physical_calls": 1,
+    "max_output_tokens": 4000,
+    "tokens_in": 3114,
+    "tokens_out": 4000,
+    "reasoning_tokens": 4000,
+    "tokens_total": 7114,
+    "finish_reason": "length",
+    "k": 0,
+    "f3_jobs": 0,
+    "candidates": 0,
+    "re_runs": 0,
+    "raw_content_saved": false,
+    "source": "developer readonly evidence live-0cf7441a.json; PM actual UI failure"
+  }
+}

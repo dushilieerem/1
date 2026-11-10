@@ -21,14 +21,105 @@
   tasks[0].difference='加入成交活跃度条件，保持研发口径，检验其增量；尚未证明有效。'; tasks[0].experience='C'; tasks[2].origin='system'; tasks[0].familyK=4; tasks[2].familyK=4; tasks[2].hypothesis='近期价格偏离本身可能在下一交易日回补；在已记录范围内检验无条件反转。'; tasks[2].implementation='-rank(close / close.shift(5) - 1)';
   const categories=["动量因子", "技术复合因子", "反转因子", "Beta因子", "区间与通道因子", "流动性因子", "资金流与量能因子", "量价关系因子", "日内结构因子", "波动率因子", "估值因子", "风险分布因子"];
   const library=[
-    {code:'F-001',name:'短期价格反转',cat:'反转因子',tags:['日频','价格'],state:'可研究',description:'衡量近期价格变动的反转特征。',origin:'公司基础因子目录',report:'参考报告'},
-    {code:'F-002',name:'成交活跃度变化',cat:'流动性因子',tags:['日频','量价'],state:'可研究',description:'成交活跃度相对历史水平的变化。',origin:'公司基础因子目录',report:'参考报告'},
-    {code:'F-003',name:'中期价格动量',cat:'动量因子',tags:['日频','价格'],state:'可研究',description:'中期价格趋势强弱。',origin:'公司基础因子目录',report:'参考报告'},
-    {code:'F-004',name:'历史收益波动率',cat:'波动率因子',tags:['日频','风险'],state:'可研究',description:'历史收益率的离散程度。',origin:'公司基础因子目录',report:'参考报告'},
-    {code:'F-005',name:'账面市值比',cat:'估值因子',tags:['基本面','价值'],state:'可研究',description:'账面价值相对于市场价值的比例。',origin:'公司基础因子目录',report:'参考报告'},
-    {code:'F-006',name:'收益分布偏度',cat:'风险分布因子',tags:['日频','风险'],state:'可研究',description:'历史收益分布的不对称程度。',origin:'公司基础因子目录',report:'参考报告'},
-    {code:'F-007',name:'量价偏离旧版本',cat:'量价关系因子',tags:['日频','量价'],state:'暂停使用',description:'保留历史研究引用，不用于新研究。',origin:'机构研究成果',report:'历史报告'}
-  ];
+  {
+    "code": "SV02_0001",
+    "name": "乖离率",
+    "cat": "反转因子",
+    "tags": [],
+    "state": "可研究",
+    "description": "当前价偏离均线多少个百分点？",
+    "origin": "公司基础因子目录",
+    "report": "历史参考报告",
+    "source": "def bias(self, window: int = 12):\n    \"\"\"乖离率。\"\"\"\n    average = self.close.rolling(window).mean()\n    return (self.close - average) / average * 100",
+    "sourceFunction": "bias",
+    "sourceLibrary": "主因子库",
+    "sourceSha": "6f43ed0c36ff0f0f1b54acabb962d4a3ccae1bf84aaea124be06e5dc0d5b6e47"
+  },
+  {
+    "code": "SV06_0001",
+    "name": "非流动性波动（变异系数）",
+    "cat": "流动性因子",
+    "tags": [],
+    "state": "可研究",
+    "description": "单位成交量承载的|收益率|（Amihud 型非流动性）的变异系数多大？",
+    "origin": "公司基础因子目录",
+    "report": "历史参考报告",
+    "source": "def alpha191_076(self) -> pd.DataFrame:\n    \"\"\"国泰君安 Alpha191 #076。\"\"\"\n    scaled = tool._safe_divide((self.close / self.close.shift(1) - 1.0).abs(), self.volume)\n    return tool._safe_divide(scaled.rolling(20).std(), scaled.rolling(20).mean())",
+    "sourceFunction": "alpha191_076",
+    "sourceLibrary": "主因子库",
+    "sourceSha": "b31aa251e13df1f9c681061dc4ded1f3adfd6e466912741426da1644774d5d3c"
+  },
+  {
+    "code": "SV01_0001",
+    "name": "涨跌日频率差",
+    "cat": "动量因子",
+    "tags": [],
+    "state": "可研究",
+    "description": "观察窗口内上涨日和下跌日谁更多，方向是否持续？",
+    "origin": "公司基础因子目录",
+    "report": "历史参考报告",
+    "source": "def alpha158_cntd(self, window: int = 5):\n    return ((self.close - self.close.shift(1)) > 0).astype(float).rolling(window, min_periods=1).mean() - ((self.close - self.close.shift(1)) < 0).astype(float).rolling(window, min_periods=1).mean()",
+    "sourceFunction": "alpha158_cntd",
+    "sourceLibrary": "主因子库",
+    "sourceSha": "b87324066d4a4f0ac2cc223d31200d421de893b90d3f959c425eb56f06a7196c"
+  },
+  {
+    "code": "SV09_0001",
+    "name": "Alpha#021 布林位置×量能状态机",
+    "cat": "波动率因子",
+    "tags": [],
+    "state": "可研究",
+    "description": "价格处于均值±标准差带的哪一侧，量能是否配合？",
+    "origin": "公司基础因子目录",
+    "report": "历史参考报告",
+    "source": "def alpha021(self):\n    \"\"\"WorldQuant Alpha #021。\"\"\"\n    mean8 = self.close.rolling(8).sum() / 8.0\n    mean2 = self.close.rolling(2).sum() / 2.0\n    ratio = tool._safe_divide(self.volume, self.volume.rolling(20).mean())\n    value = ((ratio > 1.0).astype(float) * 2 - 1)\n    value = value.mask(mean2 < mean8 - self.close.rolling(8).std(), 1.0)\n    return value.mask(mean8 + self.close.rolling(8).std() < mean2, -1.0)",
+    "sourceFunction": "alpha021",
+    "sourceLibrary": "主因子库",
+    "sourceSha": "279bd4214e699d9c43967b65a8de0a3fb14c8948dba9ddf28e9cb4275928f598"
+  },
+  {
+    "code": "SV11_0001",
+    "name": "市盈率原值占位（股息覆盖/PEG 名义）",
+    "cat": "估值因子",
+    "tags": [],
+    "state": "可研究",
+    "description": "名称与实现是否一致？（当前不一致——实现只是 PE 原值）",
+    "origin": "公司基础因子目录",
+    "report": "历史参考报告",
+    "source": "def pe_raw(self):\n    \"\"\"直接返回市盈率字段，保留原始估值量纲。\"\"\"\n    return self.pe_ttm",
+    "sourceFunction": "pe_raw",
+    "sourceLibrary": "主因子库",
+    "sourceSha": "c7134f81e72e40dfb0c4ebf84394c1396152ff02e67bd4424f253e07abcf09e4"
+  },
+  {
+    "code": "SV10_0001",
+    "name": "收益率滚动峰度",
+    "cat": "风险分布因子",
+    "tags": [],
+    "state": "可研究",
+    "description": "窗口内日收益率相对正态分布的尾部厚度和尖峭程度如何？",
+    "origin": "公司基础因子目录",
+    "report": "历史参考报告",
+    "source": "def kurtosis(self, window: int = 20):\n    \"\"\"聚宽 Kurtosis20：window 日收益率峰度。\"\"\"\n    return (self.close / self.close.shift(1) - 1).rolling(window).kurt()",
+    "sourceFunction": "kurtosis",
+    "sourceLibrary": "主因子库",
+    "sourceSha": "74e4a99da38a706f738ed57197981e0ff654f86732554f99552fbdea7569c5bc"
+  },
+  {
+    "code": "SV08_0001",
+    "name": "量价变化相关性",
+    "cat": "量价关系因子",
+    "tags": [],
+    "state": "可研究",
+    "description": "价格变化与成交量变化在窗口内是否同向联动？",
+    "origin": "公司基础因子目录",
+    "report": "历史参考报告",
+    "source": "def alpha158_cord(self, window: int = 5):\n    return (self.close / self.close.shift(1)).rolling(window, min_periods=1).corr(np.log(self.volume / self.volume.shift(1) + 1))",
+    "sourceFunction": "alpha158_cord",
+    "sourceLibrary": "主因子库",
+    "sourceSha": "ef28a177cb0608df0e607878dc258e6ef9af94674df3072c2bd311ec93449959"
+  }
+];
   const current=()=>tasks.find(x=>x.id===selected);
   const badge=(state)=>{const s=status[state]||[state,''];return '<span class="badge '+s[1]+'">'+safe(s[0])+'</span>';};
   const editActions=new Set(['new','manual','takeover','pause','resume','opinion','edit-prep','request-scope','improve','return-agent','confirm-return','feedback','auto-settings','auto-pause','auto-reconsider']);
@@ -110,17 +201,17 @@
   function catMatch(f,cat){return cat==='all'||f.cat===cat;}
   function filteredLibrary(){return library.filter(f=>catMatch(f,category)&&(availability==='all'||f.state===availability)&&(!tags.length||tags.some(t=>f.tags.includes(t)))&&[f.name,f.code,f.description,...f.tags].join(' ').toLowerCase().includes(query.toLowerCase())).sort((a,b)=>sort==='code'?a.code.localeCompare(b.code):a.name.localeCompare(b.name,'zh-CN'));}
   function libraryPage(){
-    return '<div class="ff-library"><aside class="ff-categories" aria-label="因子分类"><h3>分类</h3>'+categoryButton('all','全部因子')+categories.map(c=>categoryButton(c,c)).join('')+'</aside><section style="min-width:0"><div class="ff-toolbar"><input id="factor-search" aria-label="搜索因子名称、代码或标签" placeholder="搜索名称、代码、说明或标签" value="'+safe(query)+'"><select id="factor-availability" aria-label="因子可用状态">'+[['all','全部可用状态'],['可研究','可研究'],['已审核','已审核'],['暂停使用','暂停使用']].map(([v,n])=>'<option value="'+v+'"'+(availability===v?' selected':'')+'>'+n+'</option>').join('')+'</select>'+btn('清空筛选','clear-filters','','small')+'</div><div class="ff-tags"><span>标签 · 包含任一</span>'+['日频','量价','价格','基本面','价值','风险','规模'].map(t=>'<button class="ff-tag '+(tags.includes(t)?'on':'')+'" data-action="tag" data-value="'+t+'" aria-pressed="'+tags.includes(t)+'">'+t+'</button>').join('')+'</div><div id="factor-results">'+libraryResults()+'</div></section></div>';
+    return '<div class="ff-library"><aside class="ff-categories" aria-label="因子分类"><h3>分类</h3>'+categoryButton('all','全部因子')+categories.map(c=>categoryButton(c,c)).join('')+'</aside><section style="min-width:0"><div class="ff-toolbar"><input id="factor-search" aria-label="搜索因子名称、代码或标签" placeholder="搜索名称、代码、说明或标签" value="'+safe(query)+'"><select id="factor-availability" aria-label="因子可用状态">'+[['all','全部可用状态'],['可研究','可研究'],['已审核','已审核'],['暂停使用','暂停使用']].map(([v,n])=>'<option value="'+v+'"'+(availability===v?' selected':'')+'>'+n+'</option>').join('')+'</select>'+btn('清空筛选','clear-filters','','small')+'</div><div class="ff-tags"'+(!library.some(f=>f.tags.length)?' hidden':'')+'><span>标签 · 包含任一</span>'+[...new Set(library.flatMap(f=>f.tags))].map(t=>'<button class="ff-tag '+(tags.includes(t)?'on':'')+'" data-action="tag" data-value="'+t+'" aria-pressed="'+tags.includes(t)+'">'+t+'</button>').join('')+'</div><div id="factor-results">'+libraryResults()+'</div></section></div>';
   }
   function categoryButton(cat,label,child=false){return '<button class="ff-category '+(child?'child ':'')+(category===cat?'on':'')+'" data-action="category" data-value="'+cat+'" aria-pressed="'+(category===cat)+'">'+label+'<span>'+library.filter(f=>catMatch(f,cat)).length+'</span></button>';}
   function libraryResults(){
     const found=filteredLibrary(), per=5,total=Math.max(1,Math.ceil(found.length/per)); page=Math.min(page,total);
-    return '<div class="ff-results"><span>'+safe(category==='all'?'全部分类':category)+' · '+found.length+' 个样例因子'+(tags.length?' · '+tags.join(' / '):'')+'</span><label>排序 <select id="factor-sort" aria-label="因子排序"><option value="name"'+(sort==='name'?' selected':'')+'>名称</option><option value="code"'+(sort==='code'?' selected':'')+'>代码</option></select></label></div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>因子名称 / 代码</th><th>分类</th><th>标签</th><th>状态</th><th>操作</th></tr></thead><tbody>'+found.slice((page-1)*per,page*per).map(f=>'<tr><td><b>'+safe(f.name)+'</b><small>'+f.code+'</small></td><td>'+f.cat+'</td><td>'+f.tags.map(pill).join('')+'</td><td>'+pill(f.state)+'</td><td>'+btn('详情','factor',f.code,'small')+'</td></tr>').join('')+'</tbody></table></div>'+(found.length?'':'<div class="empty"><b>没有匹配的因子</b>尝试减少筛选条件。<p>'+btn('清空筛选','clear-filters','','small')+'</p></div>')+'</div><div class="ff-footer"><span>可按分类、标签与状态组合查找。</span><div class="actions"><button class="btn small" data-action="page" data-value="-1"'+(page===1?' disabled':'')+'>上一页</button><span>'+page+' / '+total+'</span><button class="btn small" data-action="page" data-value="1"'+(page===total?' disabled':'')+'>下一页</button></div></div>';
+    return '<div class="ff-results"><span>'+safe(category==='all'?'全部分类':category)+' · '+found.length+' 个样例因子'+(tags.length?' · '+tags.join(' / '):'')+'</span><label>排序 <select id="factor-sort" aria-label="因子排序"><option value="name"'+(sort==='name'?' selected':'')+'>名称</option><option value="code"'+(sort==='code'?' selected':'')+'>代码</option></select></label></div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>因子名称 / 代码</th><th>分类</th><th>标签</th><th>状态</th><th>操作</th></tr></thead><tbody>'+found.slice((page-1)*per,page*per).map(f=>'<tr><td><b>'+safe(f.name)+'</b><small>'+f.code+'</small></td><td>'+f.cat+'</td><td>'+(f.tags.length?f.tags.map(pill).join(''):'未标注')+'</td><td>'+pill(f.state)+'</td><td>'+btn('详情','factor',f.code,'small')+'</td></tr>').join('')+'</tbody></table></div>'+(found.length?'':'<div class="empty"><b>没有匹配的因子</b>尝试减少筛选条件。<p>'+btn('清空筛选','clear-filters','','small')+'</p></div>')+'</div><div class="ff-footer"><span>可按分类、标签与状态组合查找。</span><div class="actions"><button class="btn small" data-action="page" data-value="-1"'+(page===1?' disabled':'')+'>上一页</button><span>'+page+' / '+total+'</span><button class="btn small" data-action="page" data-value="1"'+(page===total?' disabled':'')+'>下一页</button></div></div>';
   }
 
   function toast(message){const el=q('#factory-toast');el.textContent=message;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),4000);}
   function dialog(title,body,footer='',formAction=''){
-    const d=q('#factory-dialog');
+    const d=q('#factory-dialog'); d.classList.remove('ff-factor-drawer');
     d.innerHTML='<form id="ff-form"'+(formAction?' data-submit="'+formAction+'"':'')+'><header class="ff-modal-head"><h2 id="factory-dialog-title">'+title+'</h2><button type="button" class="text-btn" data-action="close" aria-label="关闭对话框">关闭 ×</button></header><div class="ff-modal-body">'+body+'</div><footer class="ff-modal-footer">'+btn('取消','close')+footer+'</footer></form>';
     if(!d.open)d.showModal();
   }
@@ -142,9 +233,24 @@
     }
     dialog('人工研究 · '+safe(t.name),'<div class="hint">人工结果使用同一任务、版本和试验台账。此编辑器仅保存当前页面的设计样例。</div><div class="field-grid"><label class="field full">研究假设<textarea name="hypothesis" required>'+safe(t.hypothesis||'研究价格偏离与成交活跃度的条件关系。')+'</textarea></label><label class="field full">因子实现<textarea class="code" name="implementation" required>'+safe(t.implementation||'signal = -rank(price_deviation_5d)\n# 编辑当前人工版本的实现')+'</textarea></label></div><div class="actions">'+btn('检验当前版本','sample-test','','small')+btn('AI 辅助修改','sample-assist','','small')+'</div>', '<button class="btn primary" type="submit">保存人工草稿</button>','manual-save');
   }
-  function factorDetail(code){
+  function factorDetail(code,detailTab='overview'){
     const f=library.find(x=>x.code===code);if(!f)return;
-    dialog(safe(f.name),'<dl class="ff-kv"><dt>因子代码</dt><dd>'+f.code+'</dd><dt>说明</dt><dd>'+safe(f.description)+'</dd><dt>分类</dt><dd>'+safe(f.cat)+'</dd><dt>标签</dt><dd>'+f.tags.map(pill).join(' ')+'</dd><dt>可用状态</dt><dd>'+f.state+'</dd><dt>报告</dt><dd>'+f.report+' · 来源、数据范围与版本随报告保留</dd><dt>来源</dt><dd>'+f.origin+'</dd><dt>使用边界</dt><dd>用于授权范围内的研究；不代表可直接实盘使用。</dd></dl><div class="hint">全部为设计样例。正式目录使用真实分类、权限和报告。</div>',btn('查看报告','report','','')+(f.state!=='暂停使用'?btn('用此因子改进','improve',f.code,'primary'):''));
+    const tabs='<nav class="ff-source-tabs" aria-label="因子详情视图">'+[['overview','概览'],['source','实现代码'],['evidence','验证记录']].map(([key,label])=>'<button type="button" class="'+(detailTab===key?'on':'')+'" aria-pressed="'+(detailTab===key)+'" data-action="factor-detail-tab" data-value="'+f.code+'|'+key+'">'+label+'</button>').join('')+'</nav>';
+    let content='';
+    if(detailTab==='overview')content='<dl class="ff-kv"><dt>因子编号</dt><dd>'+safe(f.code)+'</dd><dt>业务分类</dt><dd>'+safe(f.cat)+'</dd><dt>说明</dt><dd>'+safe(f.description)+'</dd><dt>来源</dt><dd>'+safe(f.origin)+'</dd><dt>标签</dt><dd>'+(f.tags.length?f.tags.map(pill).join(' '):'未标注')+'</dd></dl><p class="ff-copy">可用于研究与复现。是否符合当前研究范围，请查看相应验证记录。</p>';
+    if(detailTab==='source')content=f.source?'<div class="ff-code-toolbar"><span>Python · 因子定义</span>'+btn('复制代码','copy-factor-source',f.code,'small')+'</div><p id="factor-copy-status" role="status" class="fine"></p><pre class="ff-code ff-source-code" tabindex="0" aria-label="因子实现代码"><code>'+safe(f.source)+'</code></pre><p class="ff-copy">此定义来自计算引擎的因子库，依赖引擎提供的数据与公共工具。历史报告以报告保存的版本为准。</p><details class="ff-fold"><summary>代码来源与版本</summary><dl class="ff-kv"><dt>因子库</dt><dd>'+safe(f.sourceLibrary)+'</dd><dt>函数入口</dt><dd>'+safe(f.sourceFunction)+'</dd><dt>源码 SHA-256</dt><dd class="ff-code-hash">'+safe(f.sourceSha)+'</dd></dl></details><p class="fine">设计预览：本段使用仓库中的真实定义，页面任务和审批仍为场景数据。</p>':'<div class="empty">此设计场景尚未绑定源码。正式系统应显示读取状态并提供重试，不能编造实现。</div>';
+    if(detailTab==='evidence')content='<div class="hint">尚未在此设计场景加载本机构验证记录。</div><p class="ff-copy">基础目录的历史参考结果与本机构验证分开展示。每份报告保留当时的数据、参数和实现版本。</p>';
+    dialog(safe(f.name),'<p class="ff-detail-id">'+safe(f.code)+' · '+safe(f.cat)+'</p>'+tabs+'<section class="ff-source-panel">'+content+'</section>',f.state!=='暂停使用'?btn('基于此因子建立研究','improve',f.code,'primary'):'');
+    q('#factory-dialog').classList.add('ff-factor-drawer');
+    if(detailTab!=='overview')q('#factory-dialog .ff-source-tabs button.on').focus();
+  }
+  async function copyFactorSource(code){
+    const f=library.find(x=>x.code===code);if(!f?.source)return;
+    try{
+      if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(f.source);
+      else{const field=document.createElement('textarea');field.value=f.source;field.style.position='fixed';field.style.opacity='0';q('#factory-dialog').append(field);field.select();const copied=document.execCommand('copy');field.remove();if(!copied)throw Error('copy failed');}
+      q('#factor-copy-status').textContent='代码已复制';
+    }catch{q('#factor-copy-status').textContent='无法自动复制，请选中代码后复制。';}
   }
   function decision(kind){
     if(role!=='reviewer'||current().state!=='review')return;
@@ -190,6 +296,8 @@
     if(action==='clear-filters'){category='all';query='';tags=[];availability='all';page=1;draw();return;}
     if(action==='page'){page+=Number(v);q('#factor-results').innerHTML=libraryResults();return;}
     if(action==='factor'){factorDetail(v);return;}
+    if(action==='factor-detail-tab'){const [code,detailTab]=v.split('|');factorDetail(code,detailTab);return;}
+    if(action==='copy-factor-source'){void copyFactorSource(v);return;}
     if(action==='improve'){newTask(library.find(f=>f.code===v));return;}
   }
   q('#factory').addEventListener('input',event=>{

@@ -1,0 +1,10 @@
+{
+  "request_id": "CX-20261110-005",
+  "at_utc": "2026-11-10T10:43:56.346443+00:00",
+  "check_attempts": 1,
+  "status": "not_sent_identity_check_failed",
+  "sent": false,
+  "reason": "Expected one unambiguous live relay with the configured name, directory, and session ID",
+  "no_resend_or_new_session": true,
+  "request_file": "requests/CX-20261110-005.md"
+}

@@ -156,3 +156,20 @@
 .ff-category{display:inline-flex;align-items:center;justify-content:center;gap:6px;width:auto;margin:0;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:12px}
 .ff-category.on{border-color:#d8c7e9;background:var(--soft);color:var(--primary)}
 .ff-category span{font-size:12px}
+
+
+/* UX105: inspect a factor without losing the library position and filters. */
+#factory-dialog.ff-factor-drawer{position:fixed;inset:16px 16px 16px auto;margin:0;width:min(760px,calc(100vw - 32px));max-height:none;height:calc(100dvh - 32px)}
+.ff-factor-drawer form{height:100%;display:flex;flex-direction:column;min-height:0}
+.ff-factor-drawer .ff-modal-head,.ff-factor-drawer .ff-modal-footer{flex:none}
+.ff-factor-drawer .ff-modal-body{flex:1;min-height:0;overflow:auto;padding-top:14px}
+.ff-detail-id{margin:0 0 12px;color:var(--muted);font-size:12px}
+.ff-source-tabs{display:flex;gap:20px;border-bottom:1px solid var(--line);margin-bottom:20px}
+.ff-source-tabs button{border:0;background:none;padding:9px 0;color:var(--muted);font-size:14px;cursor:pointer;border-bottom:2px solid transparent}
+.ff-source-tabs button.on{color:var(--primary);border-color:var(--primary);font-weight:600}
+.ff-code-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--muted);font-size:12px;margin-bottom:10px}
+.ff-source-code{max-height:52dvh;overflow:auto;font-size:13px;line-height:1.7;white-space:pre;tab-size:4}
+.ff-code-hash{font-family:ui-monospace,monospace;overflow-wrap:anywhere;font-size:12px}
+.ff-factor-drawer .fine{font-size:12px;color:var(--muted)}
+
+.ff-tags[hidden]{display:none}

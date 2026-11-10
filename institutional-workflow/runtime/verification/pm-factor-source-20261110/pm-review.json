@@ -1,0 +1,72 @@
+{
+  "recorded_at_utc": "2026-11-10T10:42:40.344034+00:00",
+  "verdict": "PM accepted source display and detail UI; not full factor research acceptance",
+  "main_loaded_commit": "5575aeab3d12f995a8f5163bc6e04b98ea38752f",
+  "re_loaded_commit": "080821882b69f1a64701617420d7ac27abb9283b",
+  "runtime_evidence": "../codex-factor-source-20261110/source-load-evidence.json",
+  "live_url": "http://192.168.10.11:19536/quant/factor/library",
+  "source_inventory": {
+    "imported": 331,
+    "source_nonempty": 331,
+    "matched": 331,
+    "computed_factors": 0
+  },
+  "ui_source_checks": [
+    {
+      "id": "SV01_0001",
+      "function": "alpha158_cntd",
+      "source_sha256": "b87324066d4a4f0ac2cc223d31200d421de893b90d3f959c425eb56f06a7196c",
+      "visible_code_sha_matches": true
+    },
+    {
+      "id": "SV02_0001",
+      "function": "bias",
+      "source_sha256": "6f43ed0c36ff0f0f1b54acabb962d4a3ccae1bf84aaea124be06e5dc0d5b6e47",
+      "visible_code_sha_matches": true
+    },
+    {
+      "id": "SV11_0001",
+      "function": "pe_raw",
+      "source_sha256": "c7134f81e72e40dfb0c4ebf84394c1396152ff02e67bd4424f253e07abcf09e4",
+      "visible_code_sha_matches": true
+    }
+  ],
+  "clipboard": {
+    "real_ui_copy_then_CtrlV": true,
+    "matches_source_except_single_line_input_newline_removal": true,
+    "clipboard_tool_read_empty_was_not_used_as_success_evidence": true
+  },
+  "ui": {
+    "Esc_returns_focus": "详情",
+    "search_preserved_on_close": "SV11_0001",
+    "validation_reference_distinct_from_institution_record": true,
+    "widths_verified": [
+      1024,
+      760
+    ],
+    "whole_page_and_dialog_horizontal_overflow": false,
+    "viewport_restored": true,
+    "console_errors": []
+  },
+  "screenshot_local": "D:/cindyzhang/workspace/ai_quant/.local/verification/20261110-factor-source.jpg",
+  "prototype": {
+    "asset_version": "1051",
+    "example_source_count": 7,
+    "source_basis": "readonly current SQLite definitions",
+    "copy_then_paste_match": true,
+    "responsive_and_Esc": true,
+    "scene_only": true,
+    "syntax_check_passed": true
+  },
+  "limits": [
+    "Current library definitions are not historical report snapshots.",
+    "No new model calls, research tasks, backtests, approval or admission.",
+    "Independent DB is still prepared, not loaded.",
+    "CR102 autonomy integration is in development, not enabled."
+  ],
+  "post_build_static_delivery_sync": [
+    "frontend/dist/quant-delivery/v5/factor-factory.html",
+    "frontend/dist/quant-delivery/v5/factor-factory.js"
+  ],
+  "static_http_bytes_match": true
+}

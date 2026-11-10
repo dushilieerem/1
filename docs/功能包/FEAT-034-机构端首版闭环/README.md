@@ -1052,3 +1052,11 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
   - 后续优先用 `doc_extract` 的 `not_applicable` 行覆盖公司级口径，不在业务代码里散落 if。
 - 提示词增加硬规则：`not_applicable_fields` / `coverage=na` 不得写入 data_gaps，不得作为缺口降评分或 gate，也不要求补数。
 - 效果：000001/600519 治理核心 6/6，gate=pass；银行不再显示量价/成本/渠道缺口；600519 不再显示对外担保/成本项目缺口。
+
+
+### 11.59 K 线技术指标（2026-11-10）
+
+- 股票总览 K 线新增指标开关：MA5/10/20/60、BOLL(20,2)、MACD(12,26,9)、KDJ(9,3,3)。
+- MA/BOLL 叠加在主图；MACD/KDJ 使用独立 pane，保留成交量副图。
+- 指标全部由日/周/月 bars 在前端确定性计算，不依赖后端新接口。
+- Playwright 股票总览用例增加四个指标开关断言。

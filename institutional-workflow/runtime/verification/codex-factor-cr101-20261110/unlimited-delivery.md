@@ -1,0 +1,9 @@
+# CR101 unlimited authorization overlay — first code batch
+
+Changes: migration0039 appends an institution/product authorization record and attaches its ID to new physical-call reservations. It never updates the old100m grant, prior settled calls, unknown receipts or legacy lower-bound audit. Authorized unlimited mode bypasses cumulative product balance; the shared user daily-call gate remains. Status returns explicit unlimited/null remaining plus measured/held/unresolved usage. A closed/missing or mismatching original grant returns needs_confirmation/execution_ready=false while usage remains readable. Activation is a separate explicit operator CLI, not a member API.
+
+Verification (backend cwd, interpreter /home/dev01/project/SVQuant/.ci/venv/bin/python):
+- scripts/run_quant_isolated_tests.py tests/test_quant_model_budget.py tests/test_quant_unlimited_tokens.py: 16 passed +4 subtests. Real PG and Python network guards active; provider requests are replaced.
+- scripts/run_quant_unlimited_tokens_pg_tests.py --allow-isolated-dev: 7 passed. Real PG commits/locks/replay inside unique temporary schema of svquant_dev with high fixture actor/org; no model/RE or existing business table writes. Fixture schema cleaned. Initial migration syntax failure occurred before fixtures, leaving one empty test schema; its exact13-table shape/empty key tables were verified and it was removed (owned-fixture-cleanup.json). Failure cleanup is now in setUpClass.
+
+Not applied/verified: production schema migration, institution261 policy activation, service reload, browser acceptance, persistent queue, fixed-view worker binding, provider-capacity/technical-wait revisions. Single-call role caps/timeouts remain r2 until the next explicit method revision. This commit alone is not permission to continue research and is not a completed CR101 release. No true model, backtest or approval was sent.

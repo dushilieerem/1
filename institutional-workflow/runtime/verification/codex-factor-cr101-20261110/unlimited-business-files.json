@@ -1,0 +1,11 @@
+[
+  "backend/migrations/0039_quant_research_token_policy.sql",
+  "backend/services/quant_factor/token_policy.py",
+  "backend/services/quant_factor/model_budget.py",
+  "backend/scripts/activate_quant_unlimited_tokens.py",
+  "backend/scripts/run_quant_unlimited_tokens_pg_tests.py",
+  "backend/tests/test_quant_unlimited_tokens.py",
+  "backend/tests/test_quant_unlimited_tokens_pg.py",
+  "backend/tests/test_quant_model_budget.py",
+  "backend/tests/test_quant_model_budget_pg.py"
+]

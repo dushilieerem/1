@@ -55,9 +55,12 @@ def reserve(uid,org,project_id,call_key,task_id,request_hash,prompt_upper,max_ou
   if not quota or used>=int(quota['ai_quota_daily'] or 0):raise WorkflowError('今日账号模型调用次数已达上限，未预留新请求')
   grant=c.execute("SELECT * FROM quant_ai_budget_supplements WHERE org_id=%s AND module='factor' AND status='authorized' "+("AND id=%s " if supplement else '')+"ORDER BY created_at DESC LIMIT 1 FOR UPDATE",(org,supplement) if supplement else (org,)).fetchone()
   if grant:supplement=grant['id']
+  from . import token_policy
+  authorization=token_policy.current(c,org)
+  if authorization and (not grant or authorization['supersedes_grant_id']!=grant['id']):raise WorkflowError('持续研究授权与原额度身份不一致，未覆盖原记录')
   if supplement:
    if not grant:raise WorkflowError('这项研究没有已确认的补充额度，未发模型请求')
-   if _charge_sum(c,org,supplement)+reserved>grant['limit_tokens']:raise WorkflowError('本产品研究模型授权额度不足，已用与待核预留保留，未发新请求')
+   if not authorization and _charge_sum(c,org,supplement)+reserved>grant['limit_tokens']:raise WorkflowError('本产品研究模型授权额度不足，已用与待核预留保留，未发新请求')
   else:
    accounts=[dict(r) for r in c.execute('SELECT * FROM quant_ai_budget_accounts WHERE org_id=%s FOR UPDATE',(org,)).fetchall()]
    by_scope={row['scope']:row for row in accounts}
@@ -69,6 +72,7 @@ def reserve(uid,org,project_id,call_key,task_id,request_hash,prompt_upper,max_ou
     if int(account['historical_tokens'])+charged+reserved>ceiling:raise WorkflowError(('机构空间' if scope=='space' else '因子研究')+'累计模型额度不足；已有用量和待核预留保留，未发起新请求')
   call_id=str(uuid.uuid4())
   c.execute("INSERT INTO quant_ai_budget_calls(id,org_id,user_id,module,project_id,call_key,task_id,request_hash,funding,supplement_id,reserved_tokens,prompt_upper_tokens,max_output_tokens,status) VALUES(%s,%s,%s,'factor',%s,%s,%s,%s,%s,%s,%s,%s,%s,'reserved')",(call_id,org,uid,project_id,call_key,task_id,request_hash,'supplement' if supplement else 'base',supplement,reserved,prompt_upper,max_output))
+  if authorization:c.execute('UPDATE quant_ai_budget_calls SET token_policy_id=%s WHERE id=%s',(authorization['id'],call_id))
   return dict(c.execute('SELECT * FROM quant_ai_budget_calls WHERE id=%s',(call_id,)).fetchone())
 
 def claim(uid,org,call_id):
@@ -181,10 +185,22 @@ def status(uid,org,project_id=None):
  with get_conn() as c:
   accounts=c.execute('SELECT scope,limit_tokens,baseline_state,historical_tokens,unknown_history FROM quant_ai_budget_accounts WHERE org_id=%s',(org,)).fetchall()
   grant=c.execute("SELECT * FROM quant_ai_budget_supplements WHERE org_id=%s AND module='factor' AND status='authorized' ORDER BY created_at DESC LIMIT 1",(org,)).fetchone()
-  out={'legacy_baseline':'pending' if not accounts or any(r['baseline_state']!='confirmed' for r in accounts) else 'confirmed','legacy_accounts':[dict(r) for r in accounts],'new_authorization':None}
+  from . import token_policy
+  authorization=token_policy.current(c,org)
+  out={'token_limit_mode':'unlimited' if authorization else 'limited','cumulative_token_limit':None if authorization else (grant['limit_tokens'] if grant else None),'active_policy':{'id':authorization['id'],'mode':authorization['mode'],'supersedes_grant_id':authorization['supersedes_grant_id'],'authorization_hash':authorization['authorization_hash']} if authorization else None,'legacy_baseline':'pending' if not accounts or any(r['baseline_state']!='confirmed' for r in accounts) else 'confirmed','legacy_accounts':[dict(r) for r in accounts],'new_authorization':None}
   if grant:
    totals=c.execute("SELECT COALESCE(SUM(actual_tokens) FILTER(WHERE status='settled'),0) AS settled,COALESCE(SUM(reserved_tokens) FILTER(WHERE status<>'settled'),0) AS held FROM quant_ai_budget_calls WHERE org_id=%s AND supplement_id=%s",(org,grant['id'])).fetchone()
    out['new_authorization']={'id':grant['id'],'limit_tokens':grant['limit_tokens'],'settled_tokens':int(totals['settled']),'held_tokens':int(totals['held']),'remaining_tokens':max(0,grant['limit_tokens']-int(totals['settled'])-int(totals['held'])),'scope':'本机构量化产品因子Agent研究；全机构单池累计，不按成员或任务重置'}
+  out['execution_ready']=bool(authorization and grant and authorization['supersedes_grant_id']==grant['id']) if authorization else None
+  out['policy_state']='active' if out['execution_ready'] else ('needs_confirmation' if authorization else 'legacy')
+  out['policy_message']='持续研究授权与原授权记录待核对；实际用量保留，暂不发送新的模型请求' if authorization and not out['execution_ready'] else ''
+  if authorization:
+   # The old grant remains a historical fact, never an effective balance.
+   if out['new_authorization'] is not None:
+    out['new_authorization']['superseded_by_policy_id']=authorization['id']
+    out['new_authorization']['remaining_tokens']=None
+   totals=c.execute("SELECT COALESCE(SUM(actual_tokens) FILTER(WHERE status='settled'),0) AS settled,COALESCE(SUM(reserved_tokens) FILTER(WHERE status<>'settled'),0) AS held,COUNT(*) FILTER(WHERE status='unresolved') AS unresolved FROM quant_ai_budget_calls WHERE org_id=%s AND module='factor'",(org,)).fetchone()
+   out['usage']={'settled_tokens':int(totals['settled']),'held_tokens':int(totals['held']),'unresolved_calls':int(totals['unresolved']),'includes_historical_unknown':False}
   return out
 
 

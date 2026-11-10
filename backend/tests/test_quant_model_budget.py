@@ -17,7 +17,7 @@ class BudgetLogicTests(unittest.TestCase):
  def test_invalid_usage_boolean_negative_float_are_not_trusted(self):
   for value in [True,-1,1.2]:self.assertIsNone(b.measured_usage({'usage':{'prompt_tokens':value,'completion_tokens':1}}))
  def test_pending_history_rejects_before_model_call_and_does_not_infer_zero(self):
-  c=MagicMock();c.execute.return_value=c;c.fetchone.side_effect=[None,{'ai_quota_daily':200},{'n':0},None];c.fetchall.return_value=[]
+  c=MagicMock();c.execute.return_value=c;c.fetchone.side_effect=[None,{'ai_quota_daily':200},{'n':0},None,None];c.fetchall.return_value=[]
   with patch.object(b,'get_conn') as conn:
    conn.return_value.__enter__.return_value=c
    with self.assertRaisesRegex(WorkflowError,'历史模型用量尚待核对'):b.reserve(1,2,'p','call','research.generate_factor','hash',100,8000)

@@ -1,0 +1,1 @@
+{"owned_schema": "codex_qf_asset_test_3b855c66b038", "reason": "First isolated migration syntax error before fixtures; setup cleanup now covers failure", "tables_verified": 13, "empty_fixture_verified": true, "cleaned": true}

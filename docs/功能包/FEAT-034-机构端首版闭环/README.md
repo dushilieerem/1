@@ -989,3 +989,13 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
 - 000002/000625 重开研究后阶段回到 1（returned），需重新锁定研究定稿；无在途议案/授权被误伤。
 - 一页纸指标改为确定性覆盖：有效维按“有评分且 gate≠fail”计数，价值区间取研究估值；001233 类场景由 0/6 修正为 5/6（治理 fail 剔除），价值区间显示 43.43–72.38 元。
 - PR：https://gitee.com/yanggu-yuanqi-intelligence/SVQuant/pulls/200 （dev-lsb → master，含 0036/0037 生产已应用说明）。
+
+
+### 11.53 议案建议评分与买卖方向修复（2026-11-10）
+
+- 议案建议改用当前最新研究版本，不再优先取旧 approved 版本；旧版本可能没有最新六维评分。
+- 维度评分：`score_10` 缺失时统一按 `rating×2` 显示，不再要求 `rating_benchmark` 才给分。
+- 买卖方向：`暂不买入` / `建议持有` 的 framework.direction 改为 `hold`，不再误写成 `buy`；前端方向映射补“持有”，且这两种建议禁用“采用建议填入议案”。
+- 新增回归：最新版本 rating 无基准时 6 维均 5.0、综合 5.0、avoid + hold。
+
+验证：后端 `pytest tests` **899 passed、67 subtests**；前端 `tsc`/`build`/`test:inst` 15 passed。

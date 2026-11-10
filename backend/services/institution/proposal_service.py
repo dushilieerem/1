@@ -100,14 +100,8 @@ def proposal_advice(org_id: int, case_id: int) -> dict[str, Any]:
     if not case:
         raise LookupError("研究案不存在")
     versions = case.get("versions") or []
-    version = next(
-        (
-            v
-            for v in versions
-            if str(v.get("status")) == "approved" and not v.get("superseded_at")
-        ),
-        versions[0] if versions else None,
-    )
+    # 议案建议展示当前最新研究版本；已批准的历史版本可能没有最新六维评分。
+    version = versions[0] if versions else None
     dims = [d for d in ((version or {}).get("six_dim") or []) if isinstance(d, dict)]
     scores = [
         {
@@ -118,7 +112,7 @@ def proposal_advice(org_id: int, case_id: int) -> dict[str, Any]:
                 if d.get("score_10") is not None
                 else (
                     round(float(d["rating"]) * 2, 1)
-                    if d.get("rating") is not None and d.get("rating_benchmark")
+                    if d.get("rating") is not None
                     else None
                 )
             ),
@@ -142,21 +136,21 @@ def proposal_advice(org_id: int, case_id: int) -> dict[str, Any]:
     gate_fail = [str(d.get("title") or d.get("key")) for d in dims if str(d.get("gate")) == "fail"]
 
     if overall is None:
-        recommendation, direction, target_weight = "avoid", "buy", 0.0
+        recommendation, direction, target_weight = "avoid", "hold", 0.0
         reason = "六维评分不完整，暂不具备形成议案的条件"
     elif held:
         if overall < 5.0 or gate_fail:
             recommendation, direction, target_weight = "sell", "sell", 0.0
             reason = "持仓标的研究评分跌破门槛或存在阻断维度，建议退出"
         else:
-            recommendation, direction, target_weight = "hold", "buy", current_weight
+            recommendation, direction, target_weight = "hold", "hold", current_weight
             reason = "已持仓且研究未失效，建议维持现有仓位并继续复核"
     elif research_ready and not gate_fail and overall >= 7.0:
         recommendation, direction = "buy", "buy"
         target_weight = 0.05 if overall >= 9.0 else 0.03 if overall >= 8.0 else 0.02
         reason = "六维评分达到买入门槛，辩论未给出补充研究结论，建议建仓"
     else:
-        recommendation, direction, target_weight = "avoid", "buy", 0.0
+        recommendation, direction, target_weight = "avoid", "hold", 0.0
         reason = (
             "存在阻断维度，暂不买入"
             if gate_fail

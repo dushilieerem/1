@@ -1,0 +1,185 @@
+{
+  "checked_at_utc": "2026-11-10T03:04:49.518714+00:00",
+  "project_id": "0cf7441a-94e9-4690-94f6-0396f8836346",
+  "read_only_transaction": true,
+  "no_dispatch_or_mutation": true,
+  "contract": {
+    "schema": "quant.research-contract.v1",
+    "direction": "positive",
+    "ic_metric": "rank_ic",
+    "rules_hash": "28df1f4bb38b783d70215c5c3410d4b0cd93ef31cbbfc062d521ae9f6425c15c",
+    "contract_hash": "5ab825029031accd0996bfad0edd87a208db0f4425cd9cdff72682f8440f5bd2",
+    "data_identity": {
+      "org_id": 261,
+      "view_id": "research-rv-20261106-3",
+      "datasets": {
+        "daily_bars": {
+          "rows": 5304,
+          "sha256": "798145e86ff24bf079a9039c7ba5338c5faceb36a1ffc78a7c1119b5242a23b4",
+          "release": "ifind-sync-20261106-093850",
+          "date_max": "2026-11-06",
+          "date_min": "2005-01-04",
+          "pit_rule": "date <= as_of",
+          "contract_version": "2026-11-01"
+        }
+      },
+      "universe": [
+        "000001.SZ",
+        "000063.SZ",
+        "000100.SZ",
+        "000333.SZ",
+        "000338.SZ",
+        "000568.SZ",
+        "000625.SZ",
+        "000651.SZ",
+        "000725.SZ",
+        "000768.SZ",
+        "000776.SZ",
+        "000858.SZ",
+        "000895.SZ",
+        "000938.SZ",
+        "002027.SZ",
+        "002049.SZ",
+        "002142.SZ",
+        "002230.SZ",
+        "002415.SZ",
+        "002475.SZ",
+        "600000.SH",
+        "600009.SH",
+        "600030.SH",
+        "600031.SH",
+        "600036.SH",
+        "600048.SH",
+        "600050.SH",
+        "600104.SH",
+        "600276.SH",
+        "600309.SH",
+        "600406.SH",
+        "600438.SH",
+        "600519.SH",
+        "600585.SH",
+        "600690.SH",
+        "600703.SH",
+        "600809.SH",
+        "601166.SH",
+        "601318.SH",
+        "601888.SH"
+      ],
+      "project_id": "0cf7441a-94e9-4690-94f6-0396f8836346",
+      "validation": [
+        "2026-06-22",
+        "2026-09-21"
+      ],
+      "development": [
+        "2025-07-01",
+        "2025-09-30"
+      ],
+      "manifest_sha256": "99955ca606fc992b5b46a8370be539fbc1e0d47de6846769da2e5874fb41530a",
+      "warmup_sessions": 0
+    },
+    "allowed_fields": [
+      "close",
+      "high",
+      "low",
+      "open",
+      "volume"
+    ],
+    "field_selection": "explicit_ohlcv",
+    "method_identity": {
+      "version": "bounded-factor-rd-v2",
+      "source_contract": "quant-panel-causal-v1",
+      "bff_code_revision": "fd38df14939efb34a2a2fe97ac0aefd265672c4ff81ab27e40c022344e6d4e58",
+      "re_source_policy_sha256": "8d2b0729667aa4fd89983905cb88595de90f7ffe2107d12440cf4ebdc45984db"
+    },
+    "available_fields": [
+      "amount",
+      "close",
+      "high",
+      "low",
+      "open",
+      "turnover",
+      "volume"
+    ],
+    "forecast_horizon_sessions": 1
+  },
+  "scope": {
+    "static_symbols": 40,
+    "development": [
+      "2025-07-01",
+      "2025-09-30"
+    ],
+    "validation": [
+      "2026-06-22",
+      "2026-09-21"
+    ],
+    "max_trials": 2,
+    "active_branch": "2e476336-0d71-405b-9f1d-58978680002d",
+    "control_epoch": "0ce2c9ee-1a7b-4d75-9e8d-683fb60d8c37"
+  },
+  "topic": {
+    "id": "8778e3ab-d148-446e-83b7-ef0bd570361b",
+    "status": "active",
+    "primary_holding_period": 1
+  },
+  "f0": {
+    "id": "d0827744-7bac-41c3-bb79-38b890789f9e",
+    "status": "failed",
+    "rounds": 0,
+    "stop_reason": "研究模型调用未完成（AiOutputTruncated），原用量与预留保留；不会自动扩大输出、换模型或重发",
+    "decision": {
+      "action": "decide",
+      "runner_epoch": "1699d464-a62d-4758-b530-61fe3d8305a4",
+      "contract_hash": "5ab825029031accd0996bfad0edd87a208db0f4425cd9cdff72682f8440f5bd2",
+      "control_epoch": "0ce2c9ee-1a7b-4d75-9e8d-683fb60d8c37",
+      "current_phase": "planning",
+      "method_version": "bounded-factor-rd-v2"
+    }
+  },
+  "jobs": [],
+  "candidates": [],
+  "trials": [],
+  "k": 0,
+  "model_calls": [
+    {
+      "id": "11988c03-651a-4858-a092-33db748f54fa",
+      "task_id": "quant.factor.research_planner_v2",
+      "call_key": "f0:d0827744-7bac-41c3-bb79-38b890789f9e:proposal:1",
+      "request_hash": "10798c1765dd4de8314ce89dc161dbbd0fce4050fea4d1902a69fffd08dc6f68",
+      "prompt_upper_tokens": 10850,
+      "max_output_tokens": 4000,
+      "status": "settled",
+      "reserved_tokens": 14850,
+      "actual_tokens": 7114,
+      "created_at": "2026-11-10 10:58:19.261701+08:00",
+      "updated_at": "2026-11-10 10:58:50.586281+08:00",
+      "finish_reason": "length",
+      "usage": {
+        "total_tokens": 7114,
+        "prompt_tokens": 3114,
+        "completion_tokens": 4000,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3114,
+        "completion_tokens_details": {
+          "reasoning_tokens": 4000
+        }
+      },
+      "error_type": "AiOutputTruncated"
+    }
+  ],
+  "process_resources": {
+    "2990133": {
+      "VmSize": "2675868 kB",
+      "VmRSS": "138632 kB",
+      "Threads": "56"
+    },
+    "2045830": {
+      "VmSize": "4056108 kB",
+      "VmRSS": "429008 kB",
+      "Threads": "54"
+    }
+  },
+  "host_mem_available": "83777484 kB"
+}

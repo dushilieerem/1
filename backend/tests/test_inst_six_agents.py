@@ -291,3 +291,22 @@ def test_governance_guarantee_not_applicable_unlocks_core() -> None:
     assert "gate_cap" not in governance
     assert "对外担保" not in governance["missing"]
     assert any("对外担保" in x and "不适用" in x for x in governance["have"])
+
+
+def test_dimension_string_counter_is_not_split_into_chars() -> None:
+    from ai.router.tasks.institution import validate_dimension
+
+    raw = json.dumps({"summary": "结论", "counter": "单一反证条件，不应拆字"}, ensure_ascii=False)
+    data = validate_dimension(raw, None)  # type: ignore[arg-type]
+    assert data["counter"] == ["单一反证条件，不应拆字"]
+
+
+def test_one_pager_bank_value_range_is_not_applicable() -> None:
+    from services.institution import ai_service
+
+    metrics = ai_service._one_pager_metrics(
+        {"six_dim": [], "valuation": {"method": "relative_only"}}, {"symbol": ""}
+    )
+    by_label = {m["label"]: m for m in metrics}
+    assert "不适用" in by_label["价值区间"]["value"]
+    assert "PB/ROE" in by_label["价值区间"]["note"]

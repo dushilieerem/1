@@ -167,12 +167,15 @@ def _one_pager_metrics(version: dict[str, Any], case: dict[str, Any]) -> list[di
         else:
             price_text = f"{float(base_v or low_v or high_v):.2f} 元"
         price_note = "研究区间，不是目标价"
+    elif valuation.get("method") == "relative_only":
+        price_text = "不适用（银行相对估值）"
+        price_note = "金融企业不使用 DCF 目标价区间，仅看 PB/ROE 等相对估值"
     else:
         price_text = "不可用"
         price_note = str(
             valuation.get("reason")
             or valuation.get("error")
-            or ("金融企业仅保留相对估值" if valuation.get("method") == "relative_only" else "未产出估值数据")
+            or "未产出估值数据"
         )
     metrics: list[dict[str, Any]] = [
         {"label": "价值区间", "value": price_text, "note": price_note},
@@ -215,11 +218,41 @@ def _merge_memo_metrics(
     return memo
 
 
+def _text_items(value: Any) -> list[str]:
+    """兼容旧版本把 counter 存成字符串或字符数组的情况。"""
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    items = [str(x) for x in (value or []) if str(x).strip()]
+    if items and all(len(x) <= 1 for x in items):
+        return ["".join(items)]
+    return items
+
+
+def _normalize_text_list(value: Any) -> list[str]:
+    """把旧版本存的“长句 + 单字”合并回可读文本，避免一页纸逐字列风险。"""
+    items = [str(x).strip() for x in (value or []) if str(x).strip()]
+    out: list[str] = []
+    buf: list[str] = []
+    for item in items:
+        if len(item) <= 1:
+            buf.append(item)
+            continue
+        if buf:
+            out.append("".join(buf))
+            buf = []
+        out.append(item)
+    if buf:
+        out.append("".join(buf))
+    return out
+
+
 def _rule_memo(version: dict[str, Any]) -> dict[str, Any]:
     dims = [d for d in (version.get("six_dim") or []) if isinstance(d, dict)]
-    risks = [str(c) for d in dims for c in (d.get("counter") or [])][:5]
+    risks = [c for d in dims for c in _text_items(d.get("counter"))][:5]
     questions = [
-        str(q) for d in dims for q in (d.get("open_questions") or d.get("data_gaps") or [])
+        q
+        for d in dims
+        for q in _text_items(d.get("open_questions") or d.get("data_gaps"))
     ][:8]
     valuation = version.get("valuation") or {}
     price_range = None
@@ -247,8 +280,8 @@ def _rule_memo(version: dict[str, Any]) -> dict[str, Any]:
         "conflicts": [],
         "key_variables": questions[:3],
         "evidence": [],
-        "risks": [_clip_brief(x) for x in risks],
-        "open_questions": [_clip_brief(x) for x in questions],
+        "risks": [_clip_brief(x) for x in _normalize_text_list(risks)],
+        "open_questions": [_clip_brief(x) for x in _normalize_text_list(questions)],
         "price_range": price_range,
         "holding_period": "1-3 年（论点成立前提下，按季复核）",
         "engine": "rule",
@@ -351,6 +384,9 @@ def ai_research_memo(
             stale = bool(hit)
         if hit:
             memo = _apply_memo_data_gate(dict(hit["output"]), version)
+            for field in ("risks", "open_questions", "key_variables"):
+                if memo.get(field):
+                    memo[field] = _normalize_text_list(memo[field])
             if not (isinstance(memo.get("metrics"), list) and len(memo.get("metrics") or []) >= 2):
                 memo["metrics"] = _memo_metrics(case)
             memo = _merge_memo_metrics(memo, version, case)
@@ -379,6 +415,9 @@ def ai_research_memo(
         # AI 未配置时仍给出一页纸骨架，内容全部来自六维规则结果。
         data = _rule_memo(version)
     data = _apply_memo_data_gate(data, version)
+    for field in ("risks", "open_questions", "key_variables"):
+        if data.get(field):
+            data[field] = _normalize_text_list(data[field])
     metrics = data.get("metrics")
     if not (isinstance(metrics, list) and len(metrics) >= 2):
         data["metrics"] = _memo_metrics(case)

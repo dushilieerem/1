@@ -1110,3 +1110,11 @@ INST_E2E_ALLOW_WRITE=1 INST_E2E_EXPECT_DB=svquant_test \
   - 执行模块只展示 `qualified` 授权；已成交/撤销历史不再回退混入。
   - 流水线 stage4 只按 `qualified` 授权计算，filled 历史不计入；持仓仍归 stage5。
 - 生产回读：stage2=万科A（case:51），stage3/4=0，stage5=贵州茅台；审批/执行模块同样无当前待办，口径一致。
+
+
+### 11.65 一页纸风险拆字与银行价值区间（2026-11-10）
+
+- 修复 AI 把 `counter/checks/data_gaps/open_questions` 返回成字符串时被逐字迭代的问题；校验层统一按“字符串=一项”归一。
+- 旧版本已存成“长句 + 单字”的 counter，一页纸读取时合并回可读文本，不再逐字列核心风险。
+- 银行 `relative_only` 估值不再显示“不可用”，改为“不适用（银行相对估值）”，提示只看 PB/ROE。
+- 新增回归：字符串 counter 不拆字；银行价值区间为不适用。

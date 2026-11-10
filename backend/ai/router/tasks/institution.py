@@ -18,6 +18,16 @@ PROMPT_VERSION = "inst-v3.2"
 DIM_PROMPT_VERSION = "inst-dim-v3.2"
 
 
+
+def _items(value: Any) -> list[Any]:
+    """AI 可能把数组字段返回成字符串；字符串必须当作一项，不能逐字迭代。"""
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    return []
+
+
 def clip_brief(value: Any) -> str:
     """只做空白归一化，不再截断；完整保留 Agent 的结论与依据。"""
     return " ".join(str(value or "").split())
@@ -109,7 +119,7 @@ def validate_dimension(raw: str, request: TaskRequest) -> dict[str, Any]:
     data["summary"] = clip_brief(summary)
 
     checks: list[str] = []
-    for item in data.get("key_numbers") or []:
+    for item in _items(data.get("key_numbers")):
         if isinstance(item, dict):
             name = str(item.get("name") or "").strip()
             value = str(item.get("value") or "").strip()
@@ -119,11 +129,11 @@ def validate_dimension(raw: str, request: TaskRequest) -> dict[str, Any]:
         elif str(item).strip():
             checks.append(str(item))
     if not checks:
-        checks = [clip_brief(x) for x in (data.get("checks") or []) if str(x).strip()]
+        checks = [clip_brief(x) for x in _items(data.get("checks")) if str(x).strip()]
     data["checks"] = checks[:8]
 
     counter: list[str] = []
-    for item in data.get("falsifiers") or []:
+    for item in _items(data.get("falsifiers")):
         if isinstance(item, dict):
             text = "；".join(
                 part
@@ -139,11 +149,11 @@ def validate_dimension(raw: str, request: TaskRequest) -> dict[str, Any]:
         elif str(item).strip():
             counter.append(str(item))
     if not counter:
-        counter = [clip_brief(x) for x in (data.get("counter") or []) if str(x).strip()]
+        counter = [clip_brief(x) for x in _items(data.get("counter")) if str(x).strip()]
     data["counter"] = counter[:6]
 
     gaps: list[str] = []
-    for item in data.get("data_gaps") or []:
+    for item in _items(data.get("data_gaps")):
         if isinstance(item, dict):
             text = "；".join(
                 part
@@ -160,7 +170,7 @@ def validate_dimension(raw: str, request: TaskRequest) -> dict[str, Any]:
             gaps.append(str(item))
     data["data_gaps"] = gaps[:10]
 
-    open_questions = [clip_brief(x) for x in (data.get("open_questions") or []) if str(x).strip()]
+    open_questions = [clip_brief(x) for x in _items(data.get("open_questions")) if str(x).strip()]
     data["open_questions"] = (open_questions or gaps)[:6]
 
     evidence = []

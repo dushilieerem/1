@@ -36,11 +36,20 @@ def proxy_submit_factor_backtest(payload,*,target=None):
   if payload.get('factor_code') is not None:body['factor_code']=common.validated_factor_code(str(payload.get('factor_code') or ''),str(payload.get('factor_name') or 'factor'))
   elif not body.get('library_name'):return 400,{}, {'error':'请选择内置因子或填写因子代码'}
  except ValueError as exc:return 400,{}, {'error':str(exc)}
+ from . import research_queue
+ from .policy import digest
+ intent=research_queue.external_begin('factor',target or {'base':base()},digest(body))
  status,response_headers,data=request_json(_endpoint(target),method='POST',payload=body,timeout=120,headers=headers())
+ if intent and status in (200,202) and isinstance(data,dict) and data.get('run_id'):research_queue.external_update(intent,run_id=data['run_id'],status=data.get('status','queued'))
+ elif intent and status in (400,401,403,404,405,413,422,429):research_queue.external_update(intent,status='failed')
  return status,response_headers,common._rewrite_poll(data)
 
 
-def proxy_get_factor_run(run_id,*,target=None):return request_json(_endpoint(target)+'/'+str(run_id).strip(),method='GET',timeout=60,headers=headers())
+def proxy_get_factor_run(run_id,*,target=None):
+ response=request_json(_endpoint(target)+'/'+str(run_id).strip(),method='GET',timeout=60,headers=headers())
+ from . import research_queue
+ if response[0]==200 and isinstance(response[2],dict):research_queue.external_update(run_id=str(run_id),status=response[2].get('status'),kind='factor')
+ return response
 def proxy_cancel_factor_run(run_id,*,target=None):return request_json(_endpoint(target)+'/'+str(run_id).strip(),method='DELETE',timeout=60,headers=headers())
 
 # Only legacy records without a persisted target use their unchanged historical path.

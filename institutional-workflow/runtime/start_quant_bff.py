@@ -1,0 +1,19 @@
+import sys,os
+from pathlib import Path
+from urllib.parse import urlparse
+root=Path(__file__).resolve().parents[2]
+sys.path.insert(0,str(root/'backend'))
+from services.core.env_config import load_env,env
+load_env()
+assert urlparse(env('DATABASE_URL','')).path == '/svquant_dev', 'development database required'
+assert env('DEV_SKIP_AUTH','0') == '0', 'authentication must remain enabled'
+from services.auth.auth_store import validate_auth_config
+validate_auth_config()
+os.environ['QUANT_RESEARCH_DURABLE_QUEUE']='1'
+from app.main import app
+from services.quant_factor.research_queue import start_dispatcher
+# Fail startup rather than advertise a healthy but undispatched research queue.
+start_dispatcher()
+import uvicorn
+# Existing schemas only; avoid unrelated bootstrap seeds, cleanup and migrations.
+uvicorn.run(app,host='127.0.0.1',port=18799,lifespan='off',log_level='warning')

@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 
 
-def run_steps(*, decide, execute, max_steps: int = 3, stop_when=None, on_step=None, before_step=None, initial_steps=None):
+def run_steps(*, decide, execute, max_steps: int = 3, stop_when=None, on_step=None, before_step=None, initial_steps=None, exhausted_reason=None):
     steps = list(initial_steps or [])
     stop_reason = ""
     for step in range(len(steps) + 1, len(steps) + max_steps + 1):
@@ -33,7 +33,7 @@ def run_steps(*, decide, execute, max_steps: int = 3, stop_when=None, on_step=No
             stop_reason = stop_when(decision, result)
             break
     else:
-        stop_reason = f"连续 {max_steps} 步未达标，停止等待人工复盘"
+        stop_reason = exhausted_reason or f"连续 {max_steps} 步未达标，停止等待人工复盘"
     return steps, stop_reason
 
 

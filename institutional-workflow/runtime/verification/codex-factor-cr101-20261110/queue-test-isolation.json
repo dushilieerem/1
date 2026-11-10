@@ -1,0 +1,11 @@
+{
+  "scope": "initial queue PG test dependency-alias correction",
+  "actual_paths": [
+    "repo.candidate SELECT by synthetic high actor/id candidate returned no row; test failed",
+    "repo.trials SELECT by synthetic high actor/topic returned empty; before guard fixture K was not read correctly"
+  ],
+  "business_writes_outside_fixture": false,
+  "model_or_re_calls": false,
+  "correction": "repo connection explicitly points to owned schema; pooled db._borrow_conn and Python socket guards now cover full opt-in PG runner; missing aliases fail before public SQL",
+  "previous_empty_fixture_cleanup": "owned-fixture-cleanup.json"
+}

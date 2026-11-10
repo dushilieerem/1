@@ -59,7 +59,9 @@ def assistant(project_id:str,body:DraftBody,request:Request,ctx=Depends(require_
     from ai.errors import AiError
     from pydantic import ValidationError
     from services.quant_factor.assistant import suggest
-    try:return invoke(suggest,*identity(ctx),project_id,body.model_dump(exclude={'candidate_id'}),body.candidate_id)
+    from services.quant_factor.research_queue import lightweight_advice
+    try:
+        with lightweight_advice():return invoke(suggest,*identity(ctx),project_id,body.model_dump(exclude={'candidate_id'}),body.candidate_id)
     except PermissionError as exc:raise HTTPException(429,str(exc)) from exc
     except (AiError,ValidationError,ValueError) as exc:raise HTTPException(502,'研究助手暂未返回有效建议，请稍后重试；原内容未更改。') from exc
 

@@ -73,6 +73,10 @@ def reserve(uid,org,project_id,call_key,task_id,request_hash,prompt_upper,max_ou
   call_id=str(uuid.uuid4())
   c.execute("INSERT INTO quant_ai_budget_calls(id,org_id,user_id,module,project_id,call_key,task_id,request_hash,funding,supplement_id,reserved_tokens,prompt_upper_tokens,max_output_tokens,status) VALUES(%s,%s,%s,'factor',%s,%s,%s,%s,%s,%s,%s,%s,%s,'reserved')",(call_id,org,uid,project_id,call_key,task_id,request_hash,'supplement' if supplement else 'base',supplement,reserved,prompt_upper,max_output))
   if authorization:c.execute('UPDATE quant_ai_budget_calls SET token_policy_id=%s WHERE id=%s',(authorization['id'],call_id))
+  from . import research_queue
+  if research_queue.enabled() and (not research_queue.permits_lightweight(task_id) or research_queue.current_id()):
+   research_queue.require_context()
+   c.execute('UPDATE quant_ai_budget_calls SET queue_job_id=%s WHERE id=%s',(research_queue.current_id(),call_id))
   return dict(c.execute('SELECT * FROM quant_ai_budget_calls WHERE id=%s',(call_id,)).fetchone())
 
 def claim(uid,org,call_id):
@@ -95,7 +99,7 @@ def unresolved(uid,org,call_id,note):
   c.execute("UPDATE quant_ai_budget_calls SET status='unresolved',note=%s,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status='dispatched'",(str(note)[:300],call_id,uid,org))
 
 def safe_response(response):
- keys=('content','data','model','provider','tokens_in','tokens_out','usage','finish_reason','prompt_version','latency_ms','error_type','budget_call_id','task','reasoning_tokens','reasoning_chars')
+ keys=('content','data','model','provider','tokens_in','tokens_out','usage','finish_reason','prompt_version','latency_ms','error_type','budget_call_id','task','reasoning_tokens','reasoning_chars','http_status','provider_request_terminal')
  return {key:response[key] for key in keys if key in response}
 
 def settle(uid,org,call_id,response):
@@ -116,6 +120,8 @@ def settle(uid,org,call_id,response):
 
 def run(uid,org,project_id,call_key,task_id,*,messages=None,variables=None,supplement=None,method_snapshot=None):
  """Exactly one physical primary-model attempt; no SDK fallback/expansion/cache."""
+ from . import research_queue
+ if not research_queue.permits_lightweight(task_id) or research_queue.current_id():research_queue.require_context()
  from ai.router import get_task
  from ai.router.specs import TaskRequest
  from ai.gateway import providers
@@ -148,7 +154,9 @@ def run(uid,org,project_id,call_key,task_id,*,messages=None,variables=None,suppl
  if response_format is not None:payload['response_format']=response_format
  try:
   try:raw=providers._read_json(providers._post(target,payload,timeout=timeout,stream=False))
-  except providers._HttpFailure as failure:raise providers._failure_to_error(failure,target) from failure
+  except providers._HttpFailure as failure:
+   if failure.status in (400,401,403,404,405,413,422,429):settle(uid,org,row['id'],{'error_type':'ProviderRequestRejected','http_status':failure.status,'provider_request_terminal':True,'model':target.model,'provider':target.provider,'budget_call_id':row['id']})
+   raise providers._failure_to_error(failure,target) from failure
   try:
    output=providers._normalize(raw,target,max_tokens=maximum)
    output.update(task=task_id,prompt_version=spec.prompt_version,budget_call_id=row['id'])

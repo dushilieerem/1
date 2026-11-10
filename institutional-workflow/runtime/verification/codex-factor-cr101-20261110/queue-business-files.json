@@ -1,0 +1,20 @@
+[
+  "backend/migrations/0040_quant_research_queue.sql",
+  "backend/services/quant_factor/research_queue.py",
+  "backend/scripts/run_quant_research_queue_pg_tests.py",
+  "backend/tests/test_quant_research_queue.py",
+  "backend/tests/test_quant_research_queue_pg.py",
+  "backend/app/routers/quant_factor_workflow.py",
+  "backend/services/quant_factor/agent_jobs.py",
+  "backend/services/quant_factor/decision_engine.py",
+  "backend/services/quant_factor/f0.py",
+  "backend/services/quant_factor/f5.py",
+  "backend/services/quant_factor/iterations.py",
+  "backend/services/quant_factor/ledger.py",
+  "backend/services/quant_factor/model_budget.py",
+  "backend/services/quant_factor/novelty.py",
+  "backend/services/quant_factor/re_client.py",
+  "backend/services/quant_factor/sealed.py",
+  "backend/services/quant_factor/service.py",
+  "institutional-workflow/runtime/start_quant_bff.py"
+]

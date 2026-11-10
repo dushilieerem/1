@@ -90,7 +90,7 @@ def _check_new(c,uid,org,cand,topic,project):
     from .resources import require
     resource_receipt=require('factor',req)
     return {'schema':INTENT_SCHEMA,'request':req,'request_hash':receipt['request_hash'],'expected_identity':receipt['expected_identity'],
-            'snapshot_hash':cand['snapshot_hash'],'topic_id':topic['id'],'identity_method':receipt['identity_method'],'compute_backend':re_client.target(resource_receipt)},trials
+            'snapshot_hash':cand['snapshot_hash'],'topic_id':topic['id'],'identity_method':receipt['identity_method'],'control_epoch':((project or {}).get('config') or {}).get('v5ControlEpoch'),'compute_backend':re_client.target(resource_receipt)},trials
 
 
 def request(uid,org,cid,f0_run_id=None,worker_epoch=None):
@@ -115,7 +115,17 @@ def request(uid,org,cid,f0_run_id=None,worker_epoch=None):
                 VALUES (%s,%s,%s,%s,%s,%s,%s,'queued','F5',%s,%s::jsonb,%s,%s,%s,%s::jsonb,%s::jsonb)""",
                 (sid,cid,uid,org,cand['project_id'],topic['id'],cand['snapshot_hash'],topic['view_id'],store.encode(topic.get('release_ids') or {}),topic.get('view_manifest_sha256') or '',topic.get('contract_revision') or '',topic.get('as_of'),store.encode([t['id'] for t in trials]),store.encode(block)))
             row=dict(c.execute('SELECT * FROM quant_factor_sealed_validations WHERE id=%s',(sid,)).fetchone());schedule=True
-    if schedule:POOL.submit(run,uid,org,row['id'])
+        if schedule:
+            from . import research_queue
+            if research_queue.enabled():
+                if existing:
+                    original=row.get('result') or {}
+                    research_queue.requeue_existing(c,'sealed',row['id'],uid,org,run_id=original.get('run_id'),target=(original.get('intent') or {}).get('compute_backend'),never_submitted=not original.get('submission_started'))
+                else:research_queue.enqueue(c,'sealed',row['id'],uid,org)
+    if schedule:
+        from . import research_queue
+        if research_queue.enabled():research_queue.wake()
+        else:POOL.submit(run,uid,org,row['id'])
     return _public(row,False)
 
 
@@ -187,7 +197,8 @@ def _run_once(uid,org,sid):
                 if controller:
                     try:_require_controller(c,uid,org,topic,controller)
                     except WorkflowError:stale_controller=True
-                if stale_controller or not project or digest(snapshot(_row_project(project)))!=intent['snapshot_hash']:
+                stale_epoch=bool(intent.get('control_epoch') and ((project or {}).get('config') or {}).get('v5ControlEpoch')!=intent['control_epoch'])
+                if stale_controller or stale_epoch or not project or digest(snapshot(_row_project(project)))!=intent['snapshot_hash']:
                     block.update(confirmation='cancelled',message='研究控制版本或工程已变化，独立验证尚未提交；原申请保留。')
                     c.execute("UPDATE quant_factor_sealed_validations SET status='cancelled',result=%s::jsonb,updated_at=NOW() WHERE id=%s",(store.encode(block),sid));return
                 code,_,task=proxy_submit_factor_backtest(req,target=intent['compute_backend'])

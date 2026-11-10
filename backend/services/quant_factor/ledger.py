@@ -326,6 +326,11 @@ def set_topic_status(uid: int, org: int, topic_id: str, status: str) -> dict:
         c.execute("UPDATE detect_projects SET config=jsonb_set(COALESCE(config,'{}'::jsonb),'{v5ControlEpoch}',to_jsonb(%s::text)),updated_at=NOW() WHERE user_id=%s AND id=%s",(str(uuid.uuid4()),uid,topic['project_id']))
         from .research_advice import close_pending
         close_pending(c,uid,org,topic_id=topic_id,reason='未采用：目标控制版本已变化')
+        from . import research_queue
+        if status=='paused' and research_queue.enabled():
+            queued=c.execute("SELECT id FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s AND status='queued' AND decision->>'queue_deployment'=%s",(uid,org,topic_id,research_queue.DEPLOYMENT_ID)).fetchall()
+            for item in queued:
+                if research_queue.cancel(c,'f0',item['id'],uid,org):c.execute("UPDATE quant_factor_f0_runs SET status='stopped',stop_reason='用户已暂停并取消排队；历史保留',updated_at=NOW() WHERE id=%s AND status='queued'",(item['id'],))
         row=c.execute('UPDATE quant_factor_topics SET status=%s,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s RETURNING *',(status,topic_id,uid,org)).fetchone()
     return _public(row)
 

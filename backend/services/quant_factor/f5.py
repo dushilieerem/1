@@ -82,7 +82,8 @@ def opinion(uid, org, cid):
                           response_format={"type": "json_object"}))
     assert_quota_available(uid)
     from . import model_budget
-    out=model_budget.run(uid,org,row['project_id'],'review:'+cid+':'+uuid.uuid4().hex,TASK,messages=[{'role':'system','content':instructions},{'role':'user','content':json.dumps(ctx,ensure_ascii=False,default=str)}])
+    from .research_queue import lightweight_advice
+    with lightweight_advice():out=model_budget.run(uid,org,row['project_id'],'review:'+cid+':'+uuid.uuid4().hex,TASK,messages=[{'role':'system','content':instructions},{'role':'user','content':json.dumps(ctx,ensure_ascii=False,default=str)}])
     rid=out.get('budget_call_id')
     try:
         value = Opinion.model_validate(extract_json_object(str(out.get("content") or "")))

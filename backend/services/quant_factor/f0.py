@@ -28,7 +28,7 @@ def _public(row) -> dict:
         from .research_method import compatibility
         out['method_compatibility']=compatibility(out['decision'].get('method_snapshot'))
         out['method_compatibility']['configuration_changed']=out['method_compatibility']['requires_new_run']
-        if out.get('status')=='failed':out['method_compatibility']['requires_new_run']=True
+        if out.get('status')=='failed' or (out.get('decision') or {}).get('recovery_requires_new_run'):out['method_compatibility']['requires_new_run']=True
     return out
 
 
@@ -63,7 +63,10 @@ def start(uid,org,topic_id,branch_id,idempotency_key,handoff=None,method_change=
         row=_start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff,lock,method_change)
         schedule=row.pop('_schedule',False)
     # The worker cannot observe an uncommitted queued row.
-    if schedule:POOL.submit(run,uid,org,row['id'])
+    if schedule:
+        from . import research_queue
+        if research_queue.enabled():research_queue.wake()
+        else:POOL.submit(run,uid,org,row['id'])
     return row
 
 
@@ -128,7 +131,7 @@ def _start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff=None,connec
             frozen_method=method_snapshot()
             prior=c.execute('SELECT id,status,decision FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s ORDER BY created_at DESC LIMIT 1',(uid,org,topic_id)).fetchone()
             prior_snapshot=(prior.get('decision') or {}).get('method_snapshot') if prior else None
-            if prior and (prior_snapshot!=frozen_method or prior['status']=='failed') and not method_change and not (handoff and prior_snapshot==frozen_method):
+            if prior and (prior_snapshot!=frozen_method or prior['status']=='failed' or (prior.get('decision') or {}).get('recovery_requires_new_run')) and not method_change and not (handoff and prior_snapshot==frozen_method):
                 raise WorkflowError('当前研究方法已更新；请明确使用更新方法创建新运行，原任务、分支及K保留')
             if method_change:
                 if not prior or prior['id']!=method_change.get('previous_run_id') or prior['status'] not in ('failed','stopped') or method_change.get('acknowledged') is not True or method_change.get('expected_method_hash')!=frozen_method['snapshot_hash'] or not config.get('v5ControlEpoch') or method_change.get('expected_control_epoch')!=config.get('v5ControlEpoch'):
@@ -136,7 +139,11 @@ def _start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff=None,connec
                 decision['method_transition']={'previous_run_id':prior['id'],'previous_snapshot_hash':(prior_snapshot or {}).get('snapshot_hash'),'new_snapshot_hash':frozen_method['snapshot_hash'],'reason':str(method_change.get('reason') or '用户明确采用更新后的研究方法')[:1000],'expected_control_epoch':method_change['expected_control_epoch'],'actor_user_id':uid,'at':service.event('method_changed')['at']}
             decision['method_snapshot']=frozen_method
         decision['control_epoch']=config.get('v5ControlEpoch')
-        row=_public(record(uid,org,topic,branch_id,key,'queued',decision));row['_schedule']=True
+        from . import research_queue
+        if research_queue.enabled():decision['queue_deployment']=research_queue.DEPLOYMENT_ID
+        saved=record(uid,org,topic,branch_id,key,'queued',decision)
+        if research_queue.enabled():research_queue.enqueue(c,'f0',saved['id'],uid,org)
+        row=_public(saved);row['_schedule']=True
         return row
 
 
@@ -191,7 +198,8 @@ def run(uid, org, run_id):
                 c.execute("UPDATE quant_factor_f0_runs SET status='stopped',stop_reason=%s,updated_at=NOW() WHERE id=%s AND status='running' AND decision->>'runner_epoch'=%s",('locked_view_drift：原结果已恢复，等待固定数据版本计算能力；未发新研究',run_id,worker_epoch))
             return
         k0 = ledger.current_k(ledger._trials(uid, org, topic["id"]), topic["primary_holding_period"])
-        max_steps = min(max(0, 12 - len(current_steps)), max(1, int(topic["max_trials"]) - k0 + 2))
+        from . import research_queue
+        max_steps = 3 if research_queue.enabled() else min(max(0,12-len(current_steps)),max(1,int(topic['max_trials'])-k0+2))
 
         def before_step(step):
             if not _owns_worker(uid,org,run_id,worker_epoch):return '研究已由新的控制版本接管'
@@ -202,18 +210,11 @@ def run(uid, org, run_id):
             if (ctx.get('novelty') or {}).get('status')=='resource_pending':return '研发数值检验已完成，正式查重范围待确认；停止自动迭代，可提交研究复盘'
             return ""
 
-        streak = [0]
-
         def stop_when(decision, result):
-            if result.get("action") == "request_seal":
-                return "封存完成，交人工审查"
-            if result.get("candidate_status") == "development_failed":
-                streak[0] += 1
-            else:
-                streak[0] = 0
-            if streak[0] >= 3:
-                return "连续 3 次研发数值检验未通过，停止等待人工复盘"
-            return ""
+            if result.get('action')=='request_seal':return '独立验证完成，交人工审查'
+            # Statistical failures inform the next planner; they are not a fixed
+            # rule to abandon the research direction after three attempts.
+            return ''
 
         steps, stop_reason = decision_engine.run_steps(
             decide=lambda step: (f0_agent.Decision(action='run_test',branch_id=base_decision['manual_handoff']['branch_id'],rationale='先按已确认人工版本检验；同一快照已有证据则复用，不重置试验计数'),{'tokens_in':0,'tokens_out':0,'manual_handoff':True}) if base_decision.get('manual_handoff') and step==1 else f0_agent.decide(uid, org, topic, run_id),
@@ -222,9 +223,13 @@ def run(uid, org, run_id):
             before_step=before_step,
             stop_when=stop_when,
             on_step=on_step,
-            initial_steps=current_steps)
+            initial_steps=current_steps,
+            exhausted_reason="本轮调度步数已用完，研究结论未定；保存检查点等待继续")
         with get_conn() as c:
             from .research_advice import close_pending
+            if stop_reason=='本轮调度步数已用完，研究结论未定；保存检查点等待继续' and research_queue.enabled():
+                c.execute("UPDATE quant_factor_f0_runs SET status='queued',rounds=%s,decision=decision||%s::jsonb,stop_reason='',updated_at=NOW() WHERE id=%s AND status='running' AND decision->>'runner_epoch'=%s",(len(steps),service.store.encode({'scheduler_yield':True,'current_action':None,'current_phase':None}),run_id,worker_epoch))
+                return
             close_pending(c,uid,org,run_id=run_id,worker_epoch=worker_epoch,reason='未采用：研究已结束')
             c.execute("""UPDATE quant_factor_f0_runs
                        SET status='stopped',rounds=%s,stop_reason=%s,updated_at=NOW()
@@ -235,16 +240,17 @@ def run(uid, org, run_id):
         with get_conn() as c:
             from .research_advice import close_pending
             close_pending(c,uid,org,run_id=run_id,worker_epoch=worker_epoch,reason='未采用：研究已结束或中断')
-            c.execute(
-                "UPDATE quant_factor_f0_runs SET status='failed',stop_reason=%s,updated_at=NOW() WHERE id=%s AND status='running' AND decision->>'runner_epoch'=%s",
-                (str(exc)[:1000], run_id,worker_epoch))
+            from . import research_queue
+            if research_queue.enabled():
+                c.execute("UPDATE quant_factor_f0_runs SET status='stopped',stop_reason=%s,decision=decision||%s::jsonb,updated_at=NOW() WHERE id=%s AND status='running' AND decision->>'runner_epoch'=%s",(str(exc)[:1000],service.store.encode({'technical_wait':{'kind':'execution_dependency','message':str(exc)[:1000]},'recovery_requires_new_run':True,'current_action':None,'current_phase':None}),run_id,worker_epoch))
+            else:
+                c.execute("UPDATE quant_factor_f0_runs SET status='failed',stop_reason=%s,updated_at=NOW() WHERE id=%s AND status='running' AND decision->>'runner_epoch'=%s",(str(exc)[:1000],run_id,worker_epoch))
 
 
 def mark_interrupted():
-    """Called on BFF startup: no in-process worker survived, so running runs are interrupted."""
-    with get_conn() as c:
-        return c.execute(
-            "UPDATE quant_factor_f0_runs SET status='stopped',stop_reason='服务重启，任务已中断；可一键继续',updated_at=NOW() WHERE status IN ('queued','running')").rowcount
+    """No global UPDATE: only owned durable leases may be reconciled on restart."""
+    from . import research_queue
+    return research_queue.recover_owned() if research_queue.enabled() else {'legacy_not_modified':True}
 
 
 def resume(uid, org, run_id):
@@ -289,12 +295,24 @@ def resume(uid, org, run_id):
                     from .research_method import validate_snapshot
                     validate_snapshot((row.get('decision') or {}).get('method_snapshot'))
                 if saved_method=='bounded-factor-rd-v2' and (not contract or contract['contract_hash']!=(row.get('decision') or {}).get('contract_hash')):raise WorkflowError('原运行的固定研究契约已不一致，未替换方法继续')
-            if int(row.get('rounds') or 0) >= 12:
+            from . import research_queue
+            if not research_queue.enabled() and int(row.get('rounds') or 0) >= 12:
                 raise WorkflowError("此运行已达到决策次数上限，原记录保留，请人工复盘")
-            decision=dict(row.get('decision') or {});decision['recovery_only']=recovery_only
+            decision=dict(row.get('decision') or {})
+            if decision.get('recovery_requires_new_run'):raise WorkflowError('原动作中途检查点需要确认；请明确新建运行继续，未自动重放旧动作')
+            decision['recovery_only']=recovery_only
             if not recovery_only:decision['control_epoch']=config.get('v5ControlEpoch')
+            if research_queue.enabled():
+                old=research_queue.by_object(c,'f0',run_id)
+                if old and old['status']=='waiting':raise WorkflowError('原物理调用仍待确认，不能重复提交；保留原执行槽')
+                if old and old['status'] in ('completed','cancelled'):
+                    c.execute("UPDATE quant_research_queue_jobs SET status='queued',queued_at=NOW(),reason='',updated_at=NOW() WHERE id=%s",(old['id'],))
+                elif not old:
+                    decision['queue_deployment']=research_queue.DEPLOYMENT_ID
+                    research_queue.enqueue(c,'f0',run_id,uid,org)
             c.execute("UPDATE quant_factor_f0_runs SET status='queued',stop_reason='',decision=%s::jsonb,updated_at=NOW() WHERE id=%s", (service.store.encode(decision),run_id))
-        POOL.submit(run, uid, org, run_id)
+        if research_queue.enabled():research_queue.wake()
+        else:POOL.submit(run,uid,org,run_id)
         return read(uid, org, run_id)
 
 

@@ -21,6 +21,12 @@ _BACKFILL_LOCK=threading.Lock()
 def event(action,**details): return {'at':datetime.now(timezone.utc).isoformat(),'action':action,**details}
 def _dispatch(uid,org,cid,phase=None,executor="human",f0_run_id=None):
     """inline：进程内线程池；queue：写 background_jobs，由 worker.py 消费。"""
+    from . import research_queue
+    if research_queue.enabled():
+        kind=phase or 'novelty'
+        with get_conn() as c:
+            research_queue.enqueue(c,kind,cid,uid,org,payload={'phase':phase,'executor':executor,'f0_run_id':f0_run_id,'retry_novelty':phase is None})
+        research_queue.wake();return
     mode=(env('QUANT_FACTOR_JOB_MODE','inline') or 'inline').strip().lower()
     if mode=='queue':
         from . import jobs
@@ -146,6 +152,8 @@ def create(uid,org,project_id,expected_snapshot_hash=None,reference=None,executo
                 from .asset_context import catalogue
                 evidence['library_reference']=reference or catalogue(uid, org)
             c.execute('INSERT INTO quant_factor_candidates(id,user_id,org_id,project_id,snapshot,snapshot_hash,status,events,evidence) VALUES(%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb)',(cid,uid,org,project_id,store.encode(snap),sha,'development_running',store.encode([event('candidate_frozen',snapshot_hash=sha,reference_hash=evidence.get('library_reference',{}).get('hash')),event('development_queued')]),store.encode(evidence)))
+            from . import research_queue
+            if research_queue.enabled():research_queue.enqueue(c,'development',cid,uid,org,payload={'phase':'development','executor':executor,'f0_run_id':f0_run_id})
     if existing and existing['status'] in ('development_passed','development_failed','development_error'):
         try:_ensure_development_trial(uid,org,cid,executor,f0_run_id)
         except Exception:pass
@@ -195,6 +203,8 @@ def validate(uid,org,cid):
         p=c.execute('SELECT * FROM detect_projects WHERE user_id=%s AND id=%s FOR UPDATE',(uid,row['project_id'])).fetchone()
         if not p or digest(snapshot(_row_project(dict(p))))!=row['snapshot_hash']: raise WorkflowError('研究输入已变化，请重新冻结并检验当前版本')
         c.execute("UPDATE quant_factor_candidates SET status='validation_running',events=events||%s::jsonb,updated_at=NOW() WHERE id=%s",(store.encode([event('validation_queued',sealed=False)]),cid))
+        from . import research_queue
+        if research_queue.enabled():research_queue.enqueue(c,'validation',cid,uid,org,payload={'phase':'validation','executor':'human'})
     _dispatch(uid,org,cid,'validation','human',None)
     return current(uid,org,cid)
 
@@ -229,6 +239,10 @@ def _run_once(uid,org,cid,phase,executor='human',f0_run_id=None,recovery_only=Fa
         result=prior.get('result')
         if not result:
             if not rid:
+                expected_epoch=((row.get('evidence') or {}).get('method') or {}).get('control_epoch')
+                if expected_epoch:
+                    current_project=get_project(uid,row['project_id'])['project']
+                    if current_project['config'].get('v5ControlEpoch')!=expected_epoch:raise WorkflowError('排队期间研究控制版本已变化；尚未提交新的检验，请确认当前版本后继续')
                 if recovery_only:raise WorkflowError('此恢复仅可查询原任务；缺少原运行标识，不会发起新计算')
                 if prior.get('submission_started'):
                     raise WorkflowError('上次计算提交的结果尚未确认；请先核对外部任务，不能重复提交')
@@ -395,6 +409,8 @@ def retry_novelty(uid,org,cid):
         if digest(snapshot(p))!=row['snapshot_hash']:raise WorkflowError('研究输入已修改，不能用旧候选重试对照。')
         if c.execute("SELECT id FROM quant_factor_iterations WHERE user_id=%s AND org_id=%s AND project_id=%s AND status IN ('queued','running')",(uid,org,row['project_id'])).fetchone():
             raise WorkflowError('请等待当前自动循环停止后重试对照，避免并发执行。')
+        from . import research_queue
+        if research_queue.enabled():research_queue.retry_confirmed_novelty(c,cid,uid,org,known_run_id=(data.get('novelty') or {}).get('run_id'))
         c.execute("UPDATE quant_factor_candidates SET status='development_running',events=events||%s::jsonb,updated_at=NOW() WHERE id=%s",(store.encode([event('novelty_retry_queued',message='仅重试冻结库对照，复用原研发报告，不新增候选或重跑回测。')]),cid))
     _dispatch(uid,org,cid,None)
     return current(uid,org,cid)
@@ -416,6 +432,9 @@ def cancel(uid,org,cid):
         if not row:raise KeyError(cid)
         if not row['status'].endswith('_running'):raise WorkflowError('当前没有可取消的计算')
         c.execute("UPDATE quant_factor_candidates SET status='cancelled',events=events||%s::jsonb,updated_at=NOW() WHERE id=%s",(store.encode([event('cancel_requested')]),cid))
+        from . import research_queue
+        if research_queue.enabled():
+            for kind in ('development','validation','novelty'):research_queue.cancel(c,kind,cid,uid,org)
     return current(uid,org,cid)
 
 def archive(uid,org,cid,note):
@@ -491,6 +510,8 @@ def retry_development(uid, org, cid):
             if topic:
                 used=ledger.current_k(ledger._trials(uid,org,topic['id']),topic['primary_holding_period'])
                 if used+_reserved_development(c,uid,org,row['project_id'],cid)>=topic['max_trials']:raise WorkflowError('任务已达到试验预算（含待确认检验），不能新增检验')
+        from . import research_queue
+        if research_queue.enabled():research_queue.requeue_existing(c,'development',cid,uid,org,run_id=block.get('run_id'),target=block.get('compute_backend'),never_submitted=not block.get('submission_started') and not block.get('run_id'),payload={'phase':'development','executor':'human'})
         block.update(interrupted=False,message='')
         c.execute("UPDATE quant_factor_candidates SET status='development_running',evidence=evidence||%s::jsonb,events=events||%s::jsonb,updated_at=NOW() WHERE id=%s",(store.encode({'development':block}),store.encode([event('development_resume',message='继续确认原检验结果')]),cid))
     _dispatch(uid,org,cid,'development','human')
@@ -498,6 +519,8 @@ def retry_development(uid, org, cid):
 
 
 def mark_interrupted_candidates() -> int:
+    from . import research_queue
+    if research_queue.enabled():return 0 # Own durable queue reconciles only its own concrete jobs.
     """BFF 重启后在途 F4 线程已不存在；标记为可重试的中断，不伪造结果。"""
     with get_conn() as c:
         rows = [dict(r) for r in c.execute(

@@ -67,17 +67,22 @@ def assess(uid,snapshot,development,reference=None,compute=True,progress=None,or
         resource=preflight('novelty',payload)
         if not resource['allowed']:
             return {**base,'status':'resource_pending','message':'研发数值检验已完成；正式查重范围尚未获准，未执行全库比较。'+ '；'.join(resource.get('reasons') or []),'resource_preflight':resource,'gate':empty}
+        from . import research_queue
+        external_intent=research_queue.external_begin('novelty',{'base':compute_base()},digest(payload))
         status,_,task=request_json(base_url,method='POST',payload=payload,timeout=30,headers=headers)
+        if status in (400,401,403,404,405,413,422,429):research_queue.external_update(external_intent,status='failed')
         if status not in (200,202) or not isinstance(task,dict):raise WorkflowError('因子值对照提交失败，HTTP '+str(status))
         rid=task.get('run_id')
         if not isinstance(rid,str) or not re.fullmatch('[a-f0-9]{32}',rid):raise WorkflowError('对照服务未返回有效任务编号。')
         base['run_id']=rid
+        research_queue.external_update(external_intent,run_id=rid,status=task.get('status','queued'))
         if progress and progress('novelty_submitted','正在比较冻结清单中的真实因子值。',run_id=rid,tool='ResearchEngine.factor_novelty') is False:
             cancel();return {**base,'status':'cancelled','message':'已请求取消对照，保留原研发报告。','gate':empty}
         deadline=time.monotonic()+1260;last=-1
         while time.monotonic()<deadline:
             status,_,task=request_json(base_url+'/'+rid,method='GET',timeout=30,headers=headers)
             if status!=200 or not isinstance(task,dict):raise WorkflowError('因子值对照状态读取失败，HTTP '+str(status))
+            research_queue.external_update(external_intent,run_id=rid,status=task.get('status'))
             done=task.get('processed_references',0)
             if progress:
                 action='novelty_progress' if done!=last else None

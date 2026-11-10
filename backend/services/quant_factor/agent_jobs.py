@@ -34,9 +34,6 @@ def read(uid,org,jid):
     with get_conn() as c:
         row=c.execute('SELECT * FROM quant_factor_agent_jobs WHERE id=%s AND user_id=%s AND org_id=%s',(jid,uid,org)).fetchone()
     if not row:raise KeyError(jid)
-    if row['status'] in ACTIVE and (datetime.now(timezone.utc)-row['updated_at']).total_seconds()>300:
-        update(uid,org,jid,'failed',event('interrupted',message='任务超出恢复窗口，可能服务已中断。原始输入保留，请按需重新委托。'))
-        return read(uid,org,jid)
     return public(row)
 def latest(uid,org,stage,project_id=None):
     if project_id:get_project(uid,project_id)
@@ -93,7 +90,6 @@ def create(uid,org,stage,project_id,draft,request_key,*,controller=None):
             if now.get('v5ActiveBranch')!=cfg.get('v5ActiveBranch') or now.get('v5ControlEpoch')!=cfg.get('v5ControlEpoch'):raise WorkflowError('工作分支已变化，请重新读取后委托，未发模型请求')
             inputs['workbench']={'branch_id':cfg['v5ActiveBranch'],'control_epoch':cfg.get('v5ControlEpoch')}
 
-        c.execute("UPDATE quant_factor_agent_jobs SET status='failed',events=events||%s::jsonb,updated_at=NOW() WHERE user_id=%s AND org_id=%s AND status IN ('queued','running') AND updated_at<NOW()-INTERVAL '5 minutes'",(store.encode([event('interrupted',message='任务超出恢复窗口，停止自动回填。')]),uid,org))
         key=request_key or digest(inputs)
         old=c.execute('SELECT id,input FROM quant_factor_agent_jobs WHERE user_id=%s AND org_id=%s AND request_key=%s',(uid,org,key)).fetchone()
         if old:
@@ -110,8 +106,13 @@ def create(uid,org,stage,project_id,draft,request_key,*,controller=None):
                 assert_quota_available(uid)
                 jid=str(uuid.uuid4())
                 c.execute("INSERT INTO quant_factor_agent_jobs(id,user_id,org_id,project_id,stage,request_key,input,status,events) VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,'queued',%s::jsonb)",(jid,uid,org,project_id,stage,key,store.encode(inputs),store.encode([event('queued',message='已接受本环节委托')])) )
+                from . import research_queue
+                if research_queue.enabled():research_queue.enqueue(c,'agent',jid,uid,org)
                 scheduled=True
-    if locals().get('scheduled'):POOL.submit(run,uid,org,jid)
+    if locals().get('scheduled'):
+        from . import research_queue
+        if research_queue.enabled():research_queue.wake()
+        else:POOL.submit(run,uid,org,jid)
     return read(uid,org,jid)
 
 def cancel(uid,org,jid):
@@ -159,6 +160,11 @@ def run(uid,org,jid):
     try:
         row=read(uid,org,jid)
         if row['status'] not in ACTIVE:return
+        binding=row['input'].get('workbench')
+        if binding:
+            cfg=get_project(uid,row['project_id'])['project']['config']
+            if cfg.get('v5ActiveBranch')!=binding['branch_id'] or cfg.get('v5ControlEpoch')!=binding.get('control_epoch'):
+                update(uid,org,jid,'cancelled',event('stale_queued_input',message='排队期间工作版本已变化，未发起新的模型调用。'));return
         draft=row['input']['draft'];stage=row['stage']
         if stage=='F1':output=_plan_task(uid,org,jid,draft,row['input'].get('research_contract'))
         elif stage=='F2':

@@ -183,7 +183,7 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
                 "direction": "buy",
                 "target_weight": 0.05,
                 "price_low": 1,
-                "price_high": 1000,
+                "price_high": 100000,
                 "funding_source": "现金",
                 "valid_until": "2099-12-31",
                 "monitoring": ["季度复核"],

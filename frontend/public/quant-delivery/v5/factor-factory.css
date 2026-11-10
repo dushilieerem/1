@@ -119,25 +119,40 @@
 @media(max-width:1250px){.ff-autonomy{align-items:flex-start}.ff-auto-actions{max-width:190px}.ff-auto-meta{gap:6px 16px}.ff-preview{flex-wrap:wrap}}
 @media(max-width:800px){.ff-autonomy{flex-direction:column;padding:16px}.ff-auto-actions{max-width:none;justify-content:flex-start}.ff-preview .actions{flex-wrap:wrap}}
 
-/* UX-103: equal-height work panels; scroll content, preserve headers/actions. */
-.ff-work-panels{height:clamp(420px,62vh,640px);height:clamp(420px,62dvh,640px);align-items:stretch}
-.ff-work-panels>.ff-stage-main{display:flex;min-width:0;min-height:0}
-.ff-work-panels .ff-stage-card{display:flex;flex-direction:column;width:100%;height:100%;min-height:0;margin:0;overflow:hidden}
+/* UX-103 v1.2: compact work area and an independently readable Agent rail. */
+.ff-work-panels{--ff-panel-cap:clamp(420px,62vh,640px);--ff-panel-cap:clamp(420px,62dvh,640px);height:auto;align-items:start}
+.ff-work-main{display:flex;flex-direction:column;gap:16px;min-width:0}
+.ff-work-panels .ff-stage-main{display:flex;min-width:0;min-height:0;max-height:var(--ff-panel-cap)}
+.ff-work-panels .ff-stage-card{display:flex;flex-direction:column;width:100%;height:auto;max-height:var(--ff-panel-cap);min-height:0;margin:0;overflow:hidden}
 .ff-work-panels .card-head,.ff-work-panels .card-footer{flex:0 0 auto}
 .ff-work-panels .ff-stage-card>.card-body{flex:1 1 auto;min-height:0;overflow:auto;scrollbar-gutter:stable}
-.ff-work-panels>.ff-live{display:flex;flex-direction:column;min-width:0;min-height:0;height:100%;padding:0;overflow:hidden}
-.ff-work-panels .ff-live-head,.ff-work-panels .ff-live-foot{flex:0 0 auto;padding:18px 20px}
+.ff-work-panels>.ff-live{display:flex;flex-direction:column;min-width:0;min-height:0;height:clamp(420px,62vh,560px);height:clamp(420px,62dvh,560px);padding:0;overflow:hidden;contain:none;position:sticky;top:84px}
+.ff-work-panels .ff-live-head,.ff-work-panels .ff-live-foot{flex:0 0 auto;padding:16px}
 .ff-work-panels .ff-live-head h3{margin:4px 0}
 .ff-work-panels .ff-live-head p{margin:4px 0 0}
-.ff-work-panels .ff-live-body{flex:1 1 auto;min-height:0;overflow:auto;padding:0 20px;scrollbar-gutter:stable;overflow-wrap:anywhere}
+.ff-work-panels .ff-live-head .ff-now{margin:6px 0 0}
+.ff-work-panels .ff-live-body{flex:1 1 auto;min-height:0;overflow:auto;padding:0 16px;scrollbar-gutter:stable;overflow-wrap:anywhere}
 .ff-work-panels .ff-live-body ol{margin:0}
 .ff-work-panels .ff-live-foot{border-top:1px solid var(--line)}
 .ff-work-panels .ff-live-foot p{margin:0}
 .ff-work-panels .ff-code{max-height:none;overflow:visible;white-space:pre-wrap;overflow-wrap:anywhere}
 .ff-work-panels [role="region"]:focus-visible{outline-offset:-3px}
+.ff-history{min-width:0}.ff-history>details:first-child{margin-top:0}
 @media(max-width:1250px){
  .ff-work-panels{height:auto;grid-template-columns:1fr}
- .ff-work-panels .ff-stage-card,.ff-work-panels>.ff-live{height:auto}
- .ff-work-panels>.ff-live{order:0}
+ .ff-work-main{display:contents}
+ .ff-work-panels .ff-stage-main{grid-row:1}
+ .ff-work-panels .ff-stage-main,.ff-work-panels .ff-stage-card,.ff-work-panels>.ff-live{height:auto;max-height:none}
+ .ff-work-panels>.ff-live{order:0;grid-row:2;position:static;contain:none}
+ .ff-work-panels .ff-history{grid-row:3}
  .ff-work-panels .ff-stage-card>.card-body,.ff-work-panels .ff-live-body{overflow:visible;scrollbar-gutter:auto;flex:0 0 auto}
 }
+
+
+/* UX104: reuse the source catalog taxonomy; no invented broad parents. */
+.ff-library{display:block}
+.ff-categories{display:flex;flex-wrap:wrap;gap:7px;border:0;padding:0;margin-bottom:16px}
+.ff-categories h3{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.ff-category{display:inline-flex;align-items:center;justify-content:center;gap:6px;width:auto;margin:0;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:12px}
+.ff-category.on{border-color:#d8c7e9;background:var(--soft);color:var(--primary)}
+.ff-category span{font-size:12px}

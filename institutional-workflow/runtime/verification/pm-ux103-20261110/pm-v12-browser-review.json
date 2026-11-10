@@ -1,0 +1,41 @@
+{
+  "recorded_at_utc": "2026-11-10T10:10:58.472087+00:00",
+  "version": "UX103 v1.2",
+  "supersedes": "prototype-review.json fixed equal-height result; v1/v1.1 are historical only",
+  "business_commit": "958a09a",
+  "layout": "compact stage with history beneath; independent sticky Agent rail; narrow screen stage then Agent then history",
+  "desktop_1366x768": {
+    "stage_heights": [
+      476.15625,
+      476.15625,
+      375.578125,
+      316.578125
+    ],
+    "agent_height": 476.15625,
+    "event_client_height": 257,
+    "event_scroll_top_after_PageDown": 72,
+    "history_gap": 16,
+    "approval_actions": [
+      "查看待审批",
+      "打开因子库"
+    ],
+    "horizontal_overflow": false
+  },
+  "responsive": {
+    "1024": "stage/Agent/history stacked; static rail; no whole-page horizontal overflow",
+    "760": "same order; event content all 329px naturally visible; no whole-page horizontal overflow"
+  },
+  "prototype": {
+    "stage_height": 246.46875,
+    "agent_height": 446.390625,
+    "event_client_height": 174,
+    "history_gap": 16,
+    "horizontal_overflow": false,
+    "scene_data": true
+  },
+  "real_topic": "0cf7441a-94e9-4690-94f6-0396f8836346",
+  "record_mutation": false,
+  "console_errors": [],
+  "viewport_restored": true,
+  "verdict": "PM UI acceptance for layout, not successful live research or admission"
+}

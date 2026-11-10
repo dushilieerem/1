@@ -1,0 +1,77 @@
+{
+  "recorded_at_utc": "2026-11-10T10:10:58.472087+00:00",
+  "business_commit": "958a09a",
+  "scope": "UX104 category UI only",
+  "pm_browser_verified": true,
+  "source_evidence": "canonical-categories.json",
+  "live_url": "http://192.168.10.11:19536/quant/factor/library",
+  "counts": {
+    "动量因子": 34,
+    "技术复合因子": 50,
+    "反转因子": 28,
+    "Beta因子": 4,
+    "区间与通道因子": 8,
+    "流动性因子": 13,
+    "资金流与量能因子": 18,
+    "量价关系因子": 88,
+    "日内结构因子": 31,
+    "波动率因子": 53,
+    "估值因子": 1,
+    "风险分布因子": 3
+  },
+  "total": 331,
+  "checks": [
+    {
+      "filter": "反转因子",
+      "rows": 28
+    },
+    {
+      "filter": "反转因子",
+      "query": "SV02_0001",
+      "rows": 1,
+      "name": "乖离率"
+    },
+    {
+      "filter": "动量因子",
+      "query": "SV02_0001",
+      "rows": 0
+    },
+    {
+      "filter": "全部",
+      "query": "",
+      "rows": 331
+    }
+  ],
+  "responsive": [
+    {
+      "viewport": 1024,
+      "category_buttons": 13,
+      "page_horizontal_overflow": false,
+      "table_scroll_container": true
+    },
+    {
+      "viewport": 760,
+      "category_buttons": 13,
+      "page_horizontal_overflow": false,
+      "table_scroll_container": true
+    }
+  ],
+  "console_errors": [],
+  "viewport_restored": true,
+  "screenshot_local": "D:/cindyzhang/workspace/ai_quant/.local/verification/20261110-factor-categories.jpg",
+  "prototype": {
+    "asset_version": "104",
+    "category_structure": 12,
+    "scene_examples": 7,
+    "selected_reversal": 1,
+    "live_data": false,
+    "console_errors": []
+  },
+  "backend_import_insert_fix": "isolated tests passed; source not loaded in 18799",
+  "no_reimport_recalculation_or_approval": true,
+  "limits": [
+    "This is not full factor module acceptance.",
+    "Internal wording and detail page improvements remain tracked in UX104.",
+    "New isolated database prepared but BFF still uses original database."
+  ]
+}

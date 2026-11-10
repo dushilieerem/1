@@ -1,0 +1,10 @@
+{
+  "path": "backend/.env",
+  "exists": true,
+  "is_symlink": false,
+  "git_ignored": true,
+  "tracked": false,
+  "no_values_read_or_exported_in_this_check": true,
+  "model_resolution": "ai.gateway.providers reads existing private process/environment LLM_* and AI_CODE_PROVIDER configuration; no DB settings table found",
+  "target_private_config_proposal": "institutional-workflow/runtime/.private/quant-zxd-db.env (ignored,0600, DATABASE_URL + approved migration bundle reference only; never commit)"
+}

@@ -1,0 +1,54 @@
+{
+  "topic_project_ids": [
+    "0cf7441a-94e9-4690-94f6-0396f8836346",
+    "19e67a0a-ddd6-4f6c-a1b3-d97f9cc7ff00",
+    "214037f8-14a1-4080-a675-ba3e8e4566a9",
+    "25857eb1-7dad-4d38-8b70-ce7847955109",
+    "2f56539b-4bed-4419-b4ca-5fc17eccf6bc",
+    "4b021149-d8fa-438b-bdfb-6c340bc98fd5",
+    "5cc0a1ee-793b-4b0d-96a2-d53ed9a97a0b",
+    "5cc9d1ce-0362-46a0-8148-23aa7d29458a",
+    "5eac45c3-698d-41a8-adf9-28eb46a6d2c1",
+    "73bb11d8-0235-46c8-89f5-d6a999355774",
+    "882e8d62-26d3-4912-9634-46c948d03272",
+    "b9d9c387-af10-420e-acb4-a88d831f2265",
+    "bcfd34e0-7d06-4394-a0e0-94792aec8be1",
+    "bf6cb454-03cd-49bb-a4a7-0dd381c55a93",
+    "e24f292f-6c23-45b6-a132-665e1485f557",
+    "e3ba6ee0-cb8e-4418-8c0c-24535760f718",
+    "e998d40c-9a78-497e-ba60-e455b218a209",
+    "ee19ef46-c368-4149-98c0-ccf482789be4",
+    "f9f58a32-cbbe-4e07-ad42-ddd1b62cc3d7"
+  ],
+  "outside_topic_project_reference_counts": {
+    "quant_factor_candidates": 0,
+    "quant_factor_agent_jobs": 0,
+    "quant_factor_f0_runs": 0,
+    "quant_factor_sealed_validations": 0,
+    "quant_factor_iterations": 0
+  },
+  "qa_usage_counts": [
+    {
+      "user_id": 2527,
+      "n": 93,
+      "tokens": 254187
+    }
+  ],
+  "sealed_state_counts": [
+    {
+      "status": "passed",
+      "n": 3
+    }
+  ],
+  "own_queue_state_counts": [
+    {
+      "status": "completed",
+      "n": 7
+    }
+  ],
+  "shared_actor_1046_metadata_only": {
+    "id": 1046,
+    "role": "user",
+    "status": "active"
+  }
+}

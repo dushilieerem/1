@@ -1,0 +1,200 @@
+{
+  "read_only": true,
+  "at_utc": "2026-11-10T08:59:00.797703+00:00",
+  "qa_identity_metadata": [
+    {
+      "id": 2527,
+      "username": "test",
+      "role": "user",
+      "status": "active",
+      "ai_quota_daily": 200,
+      "token_version": 0
+    },
+    {
+      "id": 2973,
+      "username": "cx_quant_data_qa_manager",
+      "role": "user",
+      "status": "active",
+      "ai_quota_daily": 200,
+      "token_version": 0
+    },
+    {
+      "id": 3033,
+      "username": "cx_quant_factor_qa_reviewer_067",
+      "role": "user",
+      "status": "active",
+      "ai_quota_daily": 200,
+      "token_version": 0
+    }
+  ],
+  "org_level_actor_references": {
+    "imported_created_by": [
+      {
+        "created_by": 1046,
+        "n": 331
+      }
+    ],
+    "org_control": [
+      {
+        "org_id": 261,
+        "paused": false,
+        "paused_by": 2973
+      }
+    ],
+    "legacy_control": [
+      {
+        "user_id": 2973,
+        "org_id": 261,
+        "paused": false,
+        "paused_by": 2973
+      }
+    ],
+    "budget_authorizers": [
+      {
+        "authorized_by": 2527
+      }
+    ],
+    "data_handlers": [
+      {
+        "handled_by": 2973
+      }
+    ]
+  },
+  "auxiliary_counts": {
+    "detect_runs": {
+      "exists": true,
+      "columns": [
+        "id",
+        "user_id",
+        "project_id",
+        "factor_name",
+        "description",
+        "request",
+        "result",
+        "finished_at",
+        "elapsed_sec",
+        "remark",
+        "flagged"
+      ],
+      "qa2527_rows": 30
+    },
+    "user_libraries": {
+      "exists": false
+    },
+    "user_factors": {
+      "exists": false
+    },
+    "factor_dashboard_metrics": {
+      "exists": true,
+      "columns": [
+        "factor_name",
+        "library",
+        "universe",
+        "period",
+        "filter_limit_up",
+        "filter_suspended",
+        "rules_version",
+        "name_cn",
+        "ic_mean",
+        "ic_std",
+        "ir",
+        "rank_ic",
+        "q1_return",
+        "q5_return",
+        "long_short_spread",
+        "turnover",
+        "q1_turnover",
+        "q5_turnover",
+        "coverage_pool",
+        "coverage_total",
+        "win_rate",
+        "volatility",
+        "sharpe",
+        "annual_return",
+        "max_drawdown",
+        "error",
+        "ic_unavailable_reason",
+        "computed_at"
+      ]
+    },
+    "re_factor_catalog_snapshot": {
+      "exists": true,
+      "columns": [
+        "scope",
+        "content_hash",
+        "payload",
+        "fetched_at",
+        "fetched_at_unix",
+        "factor_count",
+        "library_count",
+        "updated_at"
+      ],
+      "row_count": 2
+    },
+    "app_audit_logs": {
+      "exists": true,
+      "columns": [
+        "id",
+        "created_at",
+        "user_id",
+        "username",
+        "role",
+        "action",
+        "module",
+        "resource",
+        "method",
+        "path",
+        "status_code",
+        "duration_ms",
+        "ip",
+        "user_agent",
+        "detail",
+        "request_id"
+      ],
+      "qa2527_rows": 1365
+    }
+  },
+  "budget_baseline": [
+    {
+      "scope": "factor",
+      "baseline_state": "pending",
+      "historical_tokens": 180331,
+      "unknown_history": {
+        "complete": false,
+        "other_gaps": "Unbound historical F0/assistant and failed/repaired calls; see source audit",
+        "recorded_by": 2527,
+        "audit_sha256": "d4cf4c910d7fd44b675b3796467548260cb69b66d3e8fe234dacad768733ab74",
+        "f3_zero_usage_rows": 46
+      }
+    },
+    {
+      "scope": "space",
+      "baseline_state": "pending",
+      "historical_tokens": 180331,
+      "unknown_history": {
+        "complete": false,
+        "other_gaps": "Unbound historical F0/assistant and failed/repaired calls; see source audit",
+        "recorded_by": 2527,
+        "audit_sha256": "d4cf4c910d7fd44b675b3796467548260cb69b66d3e8fe234dacad768733ab74",
+        "f3_zero_usage_rows": 46
+      }
+    }
+  ],
+  "qa_record_sizes": {
+    "n": 29,
+    "total_record_bytes": 3498200
+  },
+  "owned_assets_approval_counts": {
+    "approved": 0,
+    "reviewed": 3
+  },
+  "named_api_contract_relation": [
+    {
+      "version": "0036_quant_factor_controls"
+    },
+    {
+      "version": "0037_quant_factor_org_controls"
+    }
+  ],
+  "snapshot_copy_note": "No record bodies/hashes/credentials exported in this metadata/count audit."
+}

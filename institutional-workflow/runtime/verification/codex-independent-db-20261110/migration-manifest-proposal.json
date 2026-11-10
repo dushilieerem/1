@@ -1,0 +1,233 @@
+{
+  "status": "proposed_not_applied",
+  "source_head": "a791669aa518042a1fae679ec7bec6c7de523c41",
+  "fetched_master": "2fd49cec6a3dd5c3904fada04c1632de3be7fbd3",
+  "baseline_commit": "9c7ae105b5cd2602165799e7abbc8fe9d77e220f",
+  "tag": "v0.5.30",
+  "tag_object": "e8a4289a046501dd392845ccf5b34a03463247ea",
+  "master_changes_after_baseline": [
+    "2fd49ce !201 fix(h5): 规则降级版式与因子缓存视图隔离",
+    "28b46b5 fix(h5): 补齐规则降级版式并让因子缓存感知数据视图"
+  ],
+  "official_files": [
+    {
+      "file": "0036_inst_doc_extract.sql",
+      "sha256": "856666c33e06c10609836052d468848d265558b5e864ffed7f681f7155cfc581",
+      "same_at_v0_5_30": true
+    },
+    {
+      "file": "0037_inst_doc_extract_privileges.sql",
+      "sha256": "2e2a2bc0b459dcde818601fface5863cc5800892e721d6809bd7856386253e67",
+      "same_at_v0_5_30": true
+    }
+  ],
+  "own_six_rename_map": [
+    {
+      "source_file": "backend/migrations/0036_quant_factor_controls.sql",
+      "target_name": "0042_quant_factor_controls.sql",
+      "sha256": "8d0c6b1080bc973ba9b2d69aa6b28461d4b9c66b017d668530f34e333cd0641f",
+      "content_unchanged": true
+    },
+    {
+      "source_file": "backend/migrations/0037_quant_factor_org_controls.sql",
+      "target_name": "0043_quant_factor_org_controls.sql",
+      "sha256": "860528c8a7b4f45de8ca7c1388944937852bcaddd280a468de975ad87d385a61",
+      "content_unchanged": true
+    },
+    {
+      "source_file": "backend/migrations/0038_quant_ai_budget.sql",
+      "target_name": "0044_quant_ai_budget.sql",
+      "sha256": "430cd2f882e5c96a319b3dba5f87af03b100a92bbc7310ca5a7f19b7f81970c9",
+      "content_unchanged": true
+    },
+    {
+      "source_file": "backend/migrations/0039_quant_research_token_policy.sql",
+      "target_name": "0045_quant_research_token_policy.sql",
+      "sha256": "822c08f41c308f88cdc67b55f638d8a196bb70dc1791498c9db033bd0b196a57",
+      "content_unchanged": true
+    },
+    {
+      "source_file": "backend/migrations/0040_quant_research_queue.sql",
+      "target_name": "0046_quant_research_queue.sql",
+      "sha256": "904d5379c7e2e0571056f3d3e1b90d0741cf36769c39c34a643c0e160589ca40",
+      "content_unchanged": true
+    },
+    {
+      "source_file": "backend/migrations/0041_quant_model_capacity.sql",
+      "target_name": "0047_quant_model_capacity.sql",
+      "sha256": "153f8b770d0944d46045d75d71450aa2f7692196d28c5fe4b9ed4913b973869d",
+      "content_unchanged": true
+    }
+  ],
+  "source_history_byte_checks": [
+    {
+      "file": "0001_baseline.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0002_invest_portfolio_trade.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0003_invest_us_market.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0004_invest_quant.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0005_inst_quant_role.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0006_quant_factor_candidates.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0007_inst_quant_reviewer_role.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0008_quant_factor_agent_jobs.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0009_quant_factor_iterations.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0010_invest_ai_agent.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0011_quant_factor_v5_ledger.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0012_quant_factor_imports.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0013_quant_factor_agent_job_project_fk.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0014_quant_factor_ledger_audit_fields.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0015_quant_factor_branch_parent_tenant_fk.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0016_quant_factor_import_metrics.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0017_quant_factor_f0_runs.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0018_quant_factor_topic_pause.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0019_quant_factor_import_category.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0020_strategy_research_ledger.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0021_strategy_ledger_tenant_constraints.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0022_quant_factor_trial_f0_run.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0023_strategy_s0_runs.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0024_strategy_diagnostics.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0025_strategy_review_events.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0026_strategy_trial_report.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0027_quant_factor_topic_display_no.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0028_quant_factor_branch_title.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0029_strategy_topic_display_no.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0030_quant_data_requests.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0031_portfolio_simulation.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0032_strategy_imported_assets.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0033_strategy_imported_assets_index.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0034_strategy_imported_assets_retain.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0035_quant_data_request_tracking.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0036_quant_factor_controls.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0037_quant_factor_org_controls.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0038_quant_ai_budget.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0039_quant_research_token_policy.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0040_quant_research_queue.sql",
+      "matches_shared_history": true
+    },
+    {
+      "file": "0041_quant_model_capacity.sql",
+      "matches_shared_history": true
+    }
+  ],
+  "planned_chain": "0001–0037 official/current compatible files; then0042–0047 unchanged-content own six; gaps0038–0041 not invented",
+  "planned_file_count": 43,
+  "no_shared_schema_migrations_rewrite": true,
+  "no_database_created": true,
+  "no_data_exported": true
+}

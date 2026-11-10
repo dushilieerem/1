@@ -1,0 +1,13 @@
+{
+  "exit_code": 0,
+  "elapsed_seconds": 3.019892659969628,
+  "command": [
+    "backend interpreter",
+    "scripts/run_quant_isolated_tests.py",
+    "tests/test_quant_startup_scope.py",
+    "tests/test_quant_factor_jobs.py",
+    "tests/test_quant_research_queue.py"
+  ],
+  "scope": "actual FastAPI lifespan; pre-existing schema bootstrap/prewarm replaced; owned recovery function spy; guarded DB/network; no service reload, no model/RE",
+  "existing_owned_pg_evidence": "codex-factor-cr101-20261110/queue-pg.log (12 actual isolated PG checks; recover_owned implementation unchanged)"
+}

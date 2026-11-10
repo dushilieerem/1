@@ -55,23 +55,14 @@ def test_dispatch_queue_failure_marks_candidate(monkeypatch):
 
 
 class InterruptedCandidateTest(unittest.TestCase):
-    def test_running_candidate_marked_error_without_fake_result(self):
-        from unittest.mock import MagicMock, patch
+    def test_restart_without_proven_owner_keeps_legacy_candidate_unchanged(self):
+        from unittest.mock import patch
         from services.quant_factor import service
-        cursor = MagicMock()
-        cursor.execute.return_value.fetchall.return_value = [{
-            'id': 'c1', 'user_id': 9, 'org_id': 2, 'status': 'development_running',
-            'evidence': {'development': {'run_id': 'r1', 'request': {}}}}]
-        conn = MagicMock(); conn.__enter__.return_value = cursor
-        with patch.object(service, 'get_conn', return_value=conn), \
-             patch.object(service.store, 'update', return_value=True) as update:
+        with patch.object(service, 'get_conn') as connection, patch.object(service.store, 'update') as update:
             marked = service.mark_interrupted_candidates()
-        self.assertEqual(marked, 1)
-        args = update.call_args.args
-        self.assertEqual(args[3], 'development_error')
-        self.assertTrue(args[5]['development']['interrupted'])
-        self.assertIn('重启', args[5]['development']['message'])
-        self.assertEqual(args[4]['action'], 'run_interrupted')
+        self.assertEqual(marked, 0)
+        connection.assert_not_called()
+        update.assert_not_called()
 
 
 class RetryBudgetTest(unittest.TestCase):

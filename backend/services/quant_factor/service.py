@@ -522,32 +522,13 @@ def retry_development(uid, org, cid):
 
 
 def mark_interrupted_candidates() -> int:
-    from . import research_queue
-    if research_queue.enabled():return 0 # Own durable queue reconciles only its own concrete jobs.
-    """BFF 重启后在途 F4 线程已不存在；标记为可重试的中断，不伪造结果。"""
-    with get_conn() as c:
-        rows = [dict(r) for r in c.execute(
-            "SELECT id,user_id,org_id,status,evidence FROM quant_factor_candidates "
-            "WHERE status LIKE '%_running'").fetchall()]
-    marked = 0
-    for row in rows:
-        phase = str(row["status"]).split("_")[0]
-        if phase not in ("development", "validation"):
-            continue
-        evidence = dict(row.get("evidence") or {})
-        block = dict(evidence.get(phase) or {})
-        block.update({
-            "interrupted": True,
-            "message": "服务重启，原计算身份已保留；恢复时先确认原任务结果。",
-        })
-        evidence[phase] = block
-        try:
-            store.update(row["user_id"], row["org_id"], row["id"], phase + "_error",
-                         event("run_interrupted", message=block["message"]), evidence)
-            marked += 1
-        except Exception:
-            continue
-    return marked
+    """Deprecated no-op: a process restart cannot prove ownership of legacy work.
+
+    Explicit own-deployment durable leases are reconciled by
+    research_queue.start_dispatcher/recover_owned. Legacy physical requests keep
+    their original identities until an authorized explicit recovery is requested.
+    """
+    return 0
 
 
 

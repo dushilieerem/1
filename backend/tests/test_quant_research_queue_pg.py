@@ -62,6 +62,21 @@ class IsolatedQueueTests(IsolatedBudgetPostgresTests):
    with self.connection() as c:c.execute("UPDATE quant_research_queue_jobs SET owner_instance='old',owner_pid=2147483000,owner_start='gone' WHERE id=%s",(foreign_run['id'],))
   result=q.recover_owned();self.assertEqual(result,{'requeued':0,'waiting_confirmation':0,'waiting_checkpoint':1});self.assertEqual(self.queue_row(second)['status'],'queued');self.assertEqual(self.queue_row(foreign)['status'],'running')
   self.assertEqual(self.queue_row(first)['status'],'waiting');q.reconcile_waiting();self.assertEqual(q.claim()['id'],second['id'])
+ def test_checkpoint_only_waiting_root_does_not_starve_the_next_root(self):
+  first=self.add('first');second=self.add('second');running=q.claim()
+  with self.connection() as c:c.execute("UPDATE quant_research_queue_jobs SET owner_instance='old',owner_pid=2147483000,owner_start='gone' WHERE id=%s",(running['id'],))
+  q.recover_owned()
+  self.assertEqual(self.queue_row(first)['status'],'waiting')
+  # No physical call was made, so the old checkpoint releases the one slot.
+  self.assertEqual(q.claim()['id'],second['id'])
+ def test_operator_abandoned_unconfirmed_call_releases_root_after_restart(self):
+  first=self.add('first',kind='agent');second=self.add('second');parent=q.claim();saved=[]
+  def handler(job):
+   row=b.reserve(self.uid,self.org,'project','lost-receipt','quant.factor.research_assistant','fixed',100,3000);b.claim(self.uid,self.org,row['id']);saved.append(row)
+  q.run_job(parent,handler)
+  self.assertEqual(self.queue_row(parent)['status'],'waiting');self.assertIsNone(q.claim())
+  b.abandon_unconfirmed(self.uid,self.org,saved[0]['id'],'BFF process restarted before receipt','test-operator')
+  self.assertEqual(q.claim()['id'],second['id'])
  def test_old_usage_gaps_without_queue_identity_do_not_occupy_slot(self):
   with patch.dict(os.environ,{'QUANT_RESEARCH_DURABLE_QUEUE':'0'}):
    historic=b.reserve(self.uid,self.org,'project','old-gap','quant.factor.research_assistant','old',100,3000);b.claim(self.uid,self.org,historic['id']);b.unresolved(self.uid,self.org,historic['id'],'historic receipt gap')

@@ -48,7 +48,7 @@ def current_id():return _CURRENT.get()
 def unknown_calls(c,root_id):
  # Missing usage on a received response is not an in-flight request. Old history
  # has no queue identity and cannot monopolize this deployment's execution slot.
- return bool(c.execute("SELECT b.id FROM quant_ai_budget_calls b JOIN quant_research_queue_jobs j ON j.id=b.queue_job_id WHERE j.deployment_id=%s AND j.root_id=%s AND b.status IN ('dispatched','unresolved') AND b.response IS NULL LIMIT 1",(DEPLOYMENT_ID,root_id)).fetchone())
+ return bool(c.execute("SELECT b.id FROM quant_ai_budget_calls b JOIN quant_research_queue_jobs j ON j.id=b.queue_job_id WHERE j.deployment_id=%s AND j.root_id=%s AND b.status IN ('dispatched','unresolved') AND b.response IS NULL AND NOT (b.status='unresolved' AND COALESCE(b.note,'') LIKE 'operator_abandoned:%%') LIMIT 1",(DEPLOYMENT_ID,root_id)).fetchone())
 
 def claim():
  with get_conn() as c:
@@ -107,6 +107,11 @@ def recover_owned():
  # Business entry points acquire actor/business rows before queue rows. Never
  # hold the queue/slot lock while updating a candidate, F0 or sealed record.
  for row,reason in changes:_mark_checkpoint(row,reason)
+ # Older processes could leave a waiting checkpoint holding the single slot.
+ # Clear only slots whose requests are provably settled; uncertain calls keep it.
+ with get_conn() as c:
+  waiting_roots=c.execute("SELECT DISTINCT root_id FROM quant_research_queue_jobs WHERE deployment_id=%s AND status='waiting'",(DEPLOYMENT_ID,)).fetchall()
+  for row in waiting_roots:_release_if_finished(c,row['root_id'])
  return {'requeued':0,'waiting_confirmation':waiting,'waiting_checkpoint':checkpoints}
 
 def _mark_checkpoint(row,reason):
@@ -124,6 +129,9 @@ def _mark_checkpoint(row,reason):
    c.execute("UPDATE quant_factor_sealed_validations SET status='error',result=result||%s::jsonb,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status IN ('queued','running')",(store.encode({'message':reason}),row['object_id'],row['user_id'],row['org_id']))
   elif row['kind']=='iteration':
    c.execute("UPDATE quant_factor_iterations SET status='stopped',stop_reason=%s,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status IN ('queued','running')",(reason,row['object_id'],row['user_id'],row['org_id']))
+ # A pure checkpoint has no unresolved physical request. Keeping the slot
+ # attached to it would starve every newer root forever after a restart.
+ _release_if_finished(c,row['root_id'])
 
 
 def run_job(job,handler):

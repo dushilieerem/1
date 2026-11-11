@@ -100,6 +100,21 @@ def unresolved(uid,org,call_id,note):
   _lock(c,org)
   c.execute("UPDATE quant_ai_budget_calls SET status='unresolved',note=%s,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status='dispatched'",(str(note)[:300],call_id,uid,org))
 
+
+def abandon_unconfirmed(uid,org,call_id,reason,actor):
+ """Operator recovery for an in-flight call whose process died before receipt.
+
+ Records uncertainty without inventing provider usage or a response and keeps
+ the reservation held; only the queue's duplicate-submission guard treats the
+ call as no longer active.
+ """
+ note=('operator_abandoned:'+str(actor)+':'+str(reason))[:300]
+ with get_conn() as c:
+  _lock(c,org)
+  row=c.execute("UPDATE quant_ai_budget_calls SET status='unresolved',note=%s,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status='dispatched' AND response IS NULL RETURNING id",(note,call_id,uid,org)).fetchone()
+ if not row:raise WorkflowError('该模型调用已有回执或不是待确认状态，不能按未回执释放')
+ return {'call_id':call_id,'status':'unresolved','note':note,'reservation_retained':True}
+
 def safe_response(response):
  keys=('content','data','model','provider','tokens_in','tokens_out','usage','finish_reason','prompt_version','latency_ms','error_type','budget_call_id','task','reasoning_tokens','reasoning_chars','http_status','provider_request_terminal','content_sha256','content_chars')
  return {key:response[key] for key in keys if key in response}

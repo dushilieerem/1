@@ -168,3 +168,18 @@ test('持续研究：排队显示等待运行，技术等待不等于市场未�
  const waiting=deriveFactorTaskState({...base,dispatch_status:'stopped',dispatch_technical_wait:'execution_dependency',dispatch_stop_reason:'AiOutputTruncated',trial_count:1,latest_outcome:'failed'});
  assert.equal(waiting.key,'waiting');assert.equal(waiting.label,'等待处理');assert.equal(waiting.currentStage,'development');assert.ok(!waiting.needsYou.includes('未达标'));
 });
+
+
+test('技术等待按真实原因区分，不再统一写研究暂遇技术条件限制',()=>{
+ const baseWait={...base,dispatch_status:'stopped',trial_count:0};
+ const method=deriveFactorTaskState({...baseWait,dispatch_technical_wait:'execution_dependency',dispatch_stop_reason:'原运行的研究方法与当前已加载版本不同；不能静默恢复'});
+ assert.equal(method.label,'等待新方法运行');assert.ok(!method.needsYou.includes('技术条件限制'));
+ const contract=deriveFactorTaskState({...baseWait,dispatch_technical_wait:'execution_dependency',dispatch_stop_reason:'研究契约或所选父E/H已变化，旧提案未执行'});
+ assert.equal(contract.label,'等待重新规划');
+ const proposal=deriveFactorTaskState({...baseWait,dispatch_technical_wait:'execution_dependency',dispatch_stop_reason:'研究提案结构或引用校验失败：提案引用了非本轮待处理建议'});
+ assert.equal(proposal.label,'等待修订提案');
+ const paused=deriveFactorTaskState({...baseWait,dispatch_technical_wait:'execution_dependency',dispatch_stop_reason:'研究已暂停或由人工接手，迟到建议保留'});
+ assert.equal(paused.label,'已暂停');
+ const checkpoint=deriveFactorTaskState({...baseWait,dispatch_technical_wait:'interrupted_checkpoint',dispatch_stop_reason:'原物理调用结果待确认；不会重新发送'});
+ assert.equal(checkpoint.label,'等待处理');assert.match(checkpoint.needsYou,/检查点/);
+});

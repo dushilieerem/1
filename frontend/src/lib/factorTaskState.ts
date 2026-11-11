@@ -70,6 +70,32 @@ function stopReason(t: FactorTaskFacts): string {
   return String(t.dispatch_stop_reason || '').toLowerCase();
 }
 
+function technicalWait(kind: string | null | undefined, reason: string): { label: string; needsYou: string } {
+  const k = String(kind || '').toLowerCase();
+  if (k === 'interrupted_checkpoint') {
+    return { label: '等待处理', needsYou: '上次执行进程中断，检查点已保存；核对后从原任务继续，已有证据不重算。' };
+  }
+  if (k === 'scheduler_error') {
+    return { label: '调度异常', needsYou: '自动调度未能完成；任务和已有证据保留，排查后可继续。' };
+  }
+  if (k === 'fixed_data_or_resources') {
+    return { label: '等待数据条件', needsYou: '固定数据或计算资源暂不可用；恢复后从原任务继续。' };
+  }
+  if (/(已暂停|人工接手|manual takeover)/.test(reason)) {
+    return { label: '已暂停', needsYou: '研究已暂停或由人工接手；已有计算与证据保留，恢复后继续。' };
+  }
+  if (/(方法与当前已加载版本不同|方法版本|method version)/.test(reason)) {
+    return { label: '等待新方法运行', needsYou: '旧运行绑定的是更新前的研究方法；需用当前方法创建新运行，旧证据保留。' };
+  }
+  if (/(研究契约|父e\/h|父版本|contract)/.test(reason)) {
+    return { label: '等待重新规划', needsYou: '研究契约或所选父版本已变化；旧提案未执行，需按当前版本重新规划。' };
+  }
+  if (/(提案|诊断|planner|proposal)/.test(reason)) {
+    return { label: '等待修订提案', needsYou: '规划或诊断结果未通过一致性校验；旧证据保留，需修订后再继续。' };
+  }
+  return { label: '等待处理', needsYou: '上次自动研究遇到执行条件限制；已有数据范围、结果和次数保留，核对后继续。' };
+}
+
 function inferArtifactStage(t: FactorTaskFacts): number {
   if ((t.approved_count || 0) > 0 || (t.pending_review || 0) > 0) return 3;
   if ((t.sealed_running || 0) > 0 || (t.sealed_passed || 0) > 0 || (t.sealed_failed || 0) > 0 || (t.sealed_used || 0) > 0) return 2;
@@ -127,8 +153,8 @@ export function deriveFactorTaskState(t: FactorTaskFacts): FactorTaskState {
     key = 'paused'; label = '已暂停'; tone = 'gray';
     needsYou = '完成人工操作后恢复研究；恢复不会补发已暂停的计算。';
   } else if (t.dispatch_technical_wait && dispatch !== 'running' && dispatch !== 'queued') {
-    key='waiting';label='等待处理';tone='warn';
-    needsYou='研究暂遇技术条件限制，已有数据范围、结果和次数保留；核对后继续，不代表研究结论不成立。';
+    const wait=technicalWait(t.dispatch_technical_wait, reason);
+    key='waiting';label=wait.label;tone='warn';needsYou=wait.needsYou;
   } else if (dispatch === 'error' || dispatch === 'failed') {
     key = 'error'; label = '服务异常'; tone = 'bad';
     needsYou = '可重试启动并保留原任务；连续异常请联系维护人员，技术原文见诊断详情。';

@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { PageJump } from "@/components/PageJump";
@@ -483,6 +484,13 @@ export function StrategyLibraryPage() {
                 <Plus className="h-4 w-4" />
                 新建策略
               </button>
+              <Link
+                to="/strategy/joinquant"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-sm font-semibold text-indigo-900 hover:bg-indigo-100"
+              >
+                <Upload className="h-4 w-4" />
+                聚宽策略
+              </Link>
               <Link
                 to={researchPagePath("/strategy/research")}
                 target="_blank"

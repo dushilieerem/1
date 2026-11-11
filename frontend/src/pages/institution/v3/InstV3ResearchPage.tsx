@@ -6,6 +6,7 @@ import { useInstSession } from "@/components/institution/instSessionContext";
 import { instApi } from "@/lib/instApi";
 import { fetchV3Pipeline } from "@/lib/instV3Api";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
+import InstV3AgentProgress from "./InstV3AgentProgress";
 
 type Dim = {
   key: string;
@@ -123,6 +124,7 @@ type CaseItem = {
   updated_at?: string | null;
   overall_score?: number | null;
   versions?: Version[];
+  tasks?: Array<{ task_key: string; title?: string; status?: string; progress?: number }>;
 };
 
 function dimScore(dim?: Dim | null): number | null {
@@ -200,7 +202,6 @@ export function InstV3ResearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [gate, setGate] = useState<ResearchGate | null>(null);
   const [gateLoading, setGateLoading] = useState(false);
-  const [allowGaps, setAllowGaps] = useState(false);
 
   const detailSeq = useRef(0);
   const autoRunRef = useRef<string | null>(null);
@@ -378,6 +379,30 @@ export function InstV3ResearchPage() {
     setParams({ key: `case:${id}` });
   };
 
+  const aiBusy =
+    busy === "full" ||
+    busy === "industry" ||
+    busy === "memo" ||
+    DIMS.some(([key]) => key === busy);
+  const aiTitle =
+    busy === "full"
+      ? "AI 正在生成六维结论"
+      : busy === "industry"
+        ? "AI 正在生成行业分析"
+        : busy === "memo"
+          ? "AI 研究经理正在生成一页纸"
+          : `AI 正在重跑${DIMS.find(([key]) => key === busy)?.[1] || "该维度"}`;
+
+  useEffect(() => {
+    if (!detail?.id || !aiBusy) return;
+    const timer = setInterval(() => {
+      instApi<CaseItem>(`/cases/${detail.id}`)
+        .then((next) => setDetail(next))
+        .catch(() => undefined);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [detail?.id, aiBusy]);
+
   const runResearch = async (mode: "full" | string, label: string) => {
     if (!detail) return;
     setBusy(label);
@@ -409,16 +434,14 @@ export function InstV3ResearchPage() {
     }
   };
 
-  const lockResearch = async (withGaps = false) => {
+  const lockResearch = async () => {
     if (!version) return;
-    setBusy(withGaps ? "lock-gaps" : "lock");
+    setBusy("lock");
     setError(null);
     try {
       const res = await instApi<Record<string, unknown>>(`/research/${version.id}/lock`, {
         method: "POST",
-        body: withGaps
-          ? { allow_gaps: true, comment: "研究经理已确认数据缺口，带缺口锁定研究定稿" }
-          : {},
+        body: {},
       });
       setDetail(res as unknown as CaseItem);
       setGate(null);
@@ -473,6 +496,20 @@ export function InstV3ResearchPage() {
 
         <div className="v3-work-main">
           {error ? <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>{error}</div> : null}
+          <InstV3AgentProgress
+            active={aiBusy}
+            title={aiTitle}
+            detail={busy === "full" ? "六位专业 Agent 并行分析；每完成一维会在这里打勾。" : "正在调用模型并整理证据，完成后自动刷新。"}
+            steps={
+              busy === "full"
+                ? (detail.tasks || []).map((t) => ({
+                    key: t.task_key,
+                    label: t.title || t.task_key,
+                    status: t.status,
+                  }))
+                : undefined
+            }
+          />
 
           {step === 0 ? (
             <section className="v3-card">
@@ -639,7 +676,7 @@ export function InstV3ResearchPage() {
               ) : null}
 
               {gateBlocked ? (
-                <div className="v3-note" style={{ marginTop: 8 }}>门禁仍有阻断项；请回上一步补齐六维或重跑对应维度。确实无法补齐时，可显式带缺口锁定并记录。</div>
+                <div className="v3-note" style={{ marginTop: 8 }}>研究门禁未通过：请回上一步检查六维是否齐全，或重跑未通过核验的维度后再锁定。</div>
               ) : null}
 
               {!locked && !gateLoading && gate === null ? (
@@ -652,26 +689,10 @@ export function InstV3ResearchPage() {
                       data-testid="inst-research-lock"
                       className="v3-btn primary"
                       disabled={!!busy || !version || gateLoading || gate === null || gateBlocked}
-                      onClick={() => lockResearch(false)}
+                      onClick={lockResearch}
                     >
                       {busy === "lock" ? "锁定中…" : "锁定研究定稿"}
                     </button>
-                    {gateBlocked ? (
-                      <>
-                        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#6b6370" }}>
-                          <input type="checkbox" checked={allowGaps} onChange={(e) => setAllowGaps(e.target.checked)} />
-                          我已确认数据缺口，允许带缺口锁定
-                        </label>
-                        <button
-                          data-testid="inst-research-lock-gaps"
-                          className="v3-btn ghost"
-                          disabled={!allowGaps || !!busy}
-                          onClick={() => lockResearch(true)}
-                        >
-                          {busy === "lock-gaps" ? "锁定中…" : "带缺口锁定"}
-                        </button>
-                      </>
-                    ) : null}
                   </>
                 ) : null}
                 {locked ? <Link className="v3-btn primary" to={`/inst/debate?key=${encodeURIComponent(`case:${detail.id}`)}`}>移交多空辩论 <ArrowRight className="h-3.5 w-3.5" /></Link> : null}

@@ -5,6 +5,7 @@ import { dedupeBy, latestByKey } from "@/lib/instDedupe";
 import { instApi } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
+import InstV3AgentProgress from "./InstV3AgentProgress";
 
 type Arg = {
   id: number;
@@ -389,6 +390,29 @@ export function InstV3DebatePage() {
     return () => { alive = false; };
   }, [detail?.id, step]);
 
+  useEffect(() => {
+    const f = advice?.framework;
+    if (!f) return;
+    if (f.price_low != null) setPriceLow((v) => v || String(f.price_low));
+    if (f.price_high != null) setPriceHigh((v) => v || String(f.price_high));
+    if (f.valid_until) setValidUntil((v) => v || String(f.valid_until));
+    if (f.funding_source) setFunding((v) => v || String(f.funding_source));
+    if (f.investment_opinion) setOpinion((v) => v || String(f.investment_opinion));
+  }, [advice]);
+
+  const proposalMissing = useMemo(() => {
+    const out: string[] = [];
+    if (!direction) out.push("方向");
+    if (direction === "buy" && !(Number(target) > 0)) out.push("目标仓位");
+    if (!priceLow.trim()) out.push("价格下限");
+    if (!priceHigh.trim()) out.push("价格上限");
+    if (!funding.trim()) out.push("资金来源");
+    if (!validUntil.trim()) out.push("有效期");
+    if (!monitoring.trim()) out.push("监控条件");
+    if (!opinion.trim()) out.push("投资意见");
+    return out;
+  }, [direction, target, priceLow, priceHigh, funding, validUntil, monitoring, opinion]);
+
   const adoptAdvice = () => {
     const f = advice?.framework;
     if (!f) return;
@@ -466,6 +490,11 @@ export function InstV3DebatePage() {
 
         <div className="v3-work-main">
           {error ? <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>{error}</div> : null}
+          <InstV3AgentProgress
+            active={busy === "debate"}
+            title="AI 多空研究员正在交叉质询"
+            detail="多头、空头与主持 Agent 逐条核对证据；完成后自动刷新辩论记录。"
+          />
 
           {step === 0 ? (
             <section className="v3-card">
@@ -634,7 +663,7 @@ export function InstV3DebatePage() {
             <section className="v3-card">
               <div className="v3-card-head"><div><h2>议案 · 锁定</h2><p>补齐投资意见、仓位、价格带、资金、有效期与监控条件；锁定后审批角色只读。</p></div>{latestProposal ? <span className="v3-chip ok">{latestProposal.status}</span> : <span className="v3-chip warn">待创建</span>}</div>
               {adviceLoading ? (
-                <div className="v3-empty">交易员 Agent 正在汇总六维评分与辩论结论…</div>
+                <InstV3AgentProgress active title="交易员 Agent 正在生成议案建议" detail="汇总六维评分、辩论结论与仓位约束，完成后自动填入下方表单。" />
               ) : adviceError ? (
                 <div className="v3-note">议案建议加载失败：{adviceError}</div>
               ) : advice ? (
@@ -699,8 +728,9 @@ export function InstV3DebatePage() {
                     <div className="v3-field span-2"><label>投资意见</label><textarea data-testid="inst-investment-opinion" value={opinion} onChange={(e) => setOpinion(e.target.value)} placeholder="写清为什么投、关键假设、最担心什么、什么情况下改变判断。" /></div>
                     <div className="v3-field span-2"><label>监控 / 退出条件</label><textarea value={monitoring} onChange={(e) => setMonitoring(e.target.value)} /></div>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-                    <button data-testid="inst-proposal-create" className="v3-btn primary" disabled={!!busy || !opinion.trim()} onClick={createProposal}><Send className="h-3.5 w-3.5" />{busy === "proposal" ? "锁定中…" : "锁定议案并提交审批"}</button>
+                  <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginTop: 8 }}>
+                    {proposalMissing.length ? <span className="v3-note" style={{ margin: 0 }}>还需填写：{proposalMissing.join("、")}</span> : null}
+                    <button data-testid="inst-proposal-create" className="v3-btn primary" disabled={!!busy || proposalMissing.length > 0} onClick={createProposal}><Send className="h-3.5 w-3.5" />{busy === "proposal" ? "锁定中…" : "锁定议案并提交审批"}</button>
                   </div>
                 </>
               )}

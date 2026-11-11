@@ -264,6 +264,7 @@ export function InstV3ApprovalsPage() {
   const canApprove = ["partner", "risk", "chairman"].includes(role);
   const memoPath = role === "partner" ? "partner-memo" : role === "risk" ? "risk-review" : role === "chairman" ? "chairman-memo" : null;
   const memoAgent = role === "partner" ? "合伙人 Agent · 审批建议" : role === "risk" ? "风控 Agent · 审批建议" : role === "chairman" ? "Chairman Agent · 决策建议" : null;
+  const memoAgentName = role === "partner" ? "合伙人 Agent" : role === "risk" ? "风控 Agent" : role === "chairman" ? "Chairman Agent" : "审批 Agent";
   const memoDuty = role === "partner"
     ? "判断研究质量、上会资格与议案合理性；建议不替代本人意见。"
     : role === "risk"
@@ -679,7 +680,11 @@ export function InstV3ApprovalsPage() {
                 </div>
               ) : <div className="v3-empty" style={{ padding: "8px 4px" }}>还没有 Agent 建议。生成后仅作参考，不改变审批状态。</div>}
               {memoError ? <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>{memoError}</div> : null}
-              <InstV3AgentProgress active={memoBusy} title="AI 正在生成审批建议" detail="结合研究定稿、辩论与风险检查整理建议，完成后自动刷新。" />
+              <InstV3AgentProgress
+                active={memoBusy}
+                title={`${memoAgentName} 正在生成${role === "chairman" ? "决策建议" : "审批建议"}`}
+                detail="结合研究定稿、辩论与风险检查整理建议，完成后自动刷新。"
+              />
               <button className="v3-btn ghost" style={{ width: "100%", marginTop: 8 }} disabled={memoBusy || !detail} onClick={() => generateMemo(!!memo)}>
                 {memoBusy ? "生成中…" : memo ? "重新生成建议" : "生成审批建议"}
               </button>

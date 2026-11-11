@@ -391,14 +391,16 @@ export function InstV3ResearchPage() {
     busy === "auto-research" ||
     busy === "auto-memo" ||
     DIMS.some(([key]) => key === busy);
-  const aiTitle =
-    busy === "full" || busy === "auto-research"
-      ? "AI 正在生成行业分析与六维结论"
-      : busy === "industry"
-        ? "AI 正在生成行业分析"
-        : busy === "memo" || busy === "auto-memo"
-          ? "AI 研究经理正在生成一页纸"
-          : `AI 正在重跑${DIMS.find(([key]) => key === busy)?.[1] || "该维度"}`;
+  const fullBusy = busy === "full" || busy === "auto-research";
+  const memoBusy = busy === "memo" || busy === "auto-memo";
+  const dimKeySet = new Set(DIMS.map(([key]) => key));
+  const dimTasks = (detail?.tasks || []).filter((t) => dimKeySet.has(t.task_key));
+  const allDimsDone =
+    dimTasks.length > 0 &&
+    dimTasks.every((t) => ["done", "needs_review", "failed"].includes(String(t.status || "")));
+  const sixActive = fullBusy && !allDimsDone;
+  const industryActive = fullBusy || busy === "industry";
+  const singleDim = DIMS.find(([key]) => key === busy) || null;
 
   useEffect(() => {
     if (!detail?.id || !aiBusy) return;
@@ -537,20 +539,39 @@ export function InstV3ResearchPage() {
 
         <div className="v3-work-main">
           {error ? <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>{error}</div> : null}
-          <InstV3AgentProgress
-            active={aiBusy}
-            title={aiTitle}
-            detail={busy === "full" || busy === "auto-research" ? "六位专业 Agent 并行分析；每完成一维会在这里打勾。" : "正在调用模型并整理证据，完成后自动刷新。"}
-            steps={
-              busy === "full" || busy === "auto-research"
-                ? (detail.tasks || []).map((t) => ({
-                    key: t.task_key,
-                    label: t.title || t.task_key,
-                    status: t.status,
-                  }))
-                : undefined
-            }
-          />
+          {sixActive ? (
+            <InstV3AgentProgress
+              active
+              title="六维 Agent 正在生成六维结论"
+              detail="六个维度分别生成；每完成一维会在这里打勾。"
+              steps={dimTasks.map((t) => ({
+                key: t.task_key,
+                label: t.title || t.task_key,
+                status: t.status,
+              }))}
+            />
+          ) : null}
+          {industryActive ? (
+            <InstV3AgentProgress
+              active
+              title="行业研究员正在生成行业分析"
+              detail="行业底图独立生成，与六维并行；完成后自动刷新。"
+            />
+          ) : null}
+          {memoBusy ? (
+            <InstV3AgentProgress
+              active
+              title="研究经理正在生成一页纸"
+              detail="合成六维与行业结论，完成后自动刷新。"
+            />
+          ) : null}
+          {singleDim ? (
+            <InstV3AgentProgress
+              active
+              title={`${singleDim[1]} Agent 正在重跑该维`}
+              detail="只重跑这一维，其余维度保持不变。"
+            />
+          ) : null}
 
           {step === 0 ? (
             <section className="v3-card">
@@ -582,7 +603,7 @@ export function InstV3ResearchPage() {
               ) : busy === "industry" || busy === "auto-research" || busy === "full" ? (
                 <div className="v3-ai-inline">
                   <span className="v3-spinner" aria-hidden="true" />
-                  <div><b>AI 正在生成行业分析与六维结论…</b><span>通常需要 1–3 分钟；完成后本页自动刷新，请勿关闭页面。</span></div>
+                  <div><b>行业研究员正在生成行业分析…</b><span>通常需要 1–3 分钟；六维 Agent 同时生成六维结论。</span></div>
                 </div>
               ) : (
                 <div className="v3-empty">

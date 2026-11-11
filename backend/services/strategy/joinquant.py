@@ -47,10 +47,36 @@ RE_ENGINE_MODE = "event"
 RE_PRICE_SOURCE = "unadjusted"
 RE_EXECUTION_TIMING = "next_open"
 
+# RE 的 benchmark 是枚举（CSI300 / CSI500）。聚宽用户习惯写 000300.XSHG，
+# 这里做等价映射；无法识别时明确报错，不静默丢字段（否则基准会被悄悄换成 CSI300）。
+BENCHMARKS = {
+    "CSI300": "CSI300",
+    "000300.XSHG": "CSI300",
+    "000300.SH": "CSI300",
+    "000300": "CSI300",
+    "沪深300": "CSI300",
+    "CSI500": "CSI500",
+    "000905.XSHG": "CSI500",
+    "000905.SH": "CSI500",
+    "000905": "CSI500",
+    "中证500": "CSI500",
+}
+
 
 def normalize_dialect(value: Any) -> str:
     text = str(value or "").strip().lower()
     return text if text in DIALECTS else DIALECT_NATIVE
+
+
+def normalize_benchmark(value: Any) -> str:
+    """把聚宽写法映射到 RE 的枚举；不支持时抛 ValueError（由路由转成 400）。"""
+    text = str(value or "").strip()
+    if not text:
+        return "CSI300"
+    mapped = BENCHMARKS.get(text) or BENCHMARKS.get(text.upper())
+    if mapped is None:
+        raise ValueError(f"benchmark 只支持 CSI300 / CSI500（也接受 000300.XSHG / 000905.XSHG），收到 {text!r}")
+    return mapped
 
 
 def code_hash(source: str) -> str:
@@ -182,7 +208,7 @@ def build_re_payload(
     }
     for key, value in (
         ("universe", universe),
-        ("benchmark", benchmark),
+        ("benchmark", normalize_benchmark(benchmark) if benchmark is not None else None),
         ("initial_capital", initial_capital),
         ("commission_rate", commission_rate),
         ("stamp_tax", stamp_tax),
@@ -200,6 +226,7 @@ __all__ = [
     "DIALECT_JOINQUANT",
     "DIALECT_NATIVE",
     "build_re_payload",
+    "normalize_benchmark",
     "code_hash",
     "normalize_dialect",
     "precheck",

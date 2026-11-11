@@ -104,19 +104,23 @@ def strategy_joinquant_run(body: dict[str, Any], uid: int = Depends(require_db_u
     if not start or not end:
         raise HTTPException(status_code=400, detail="缺少 start / end")
 
-    payload = build_re_payload(
-        source_code=code,
-        start=start,
-        end=end,
-        universe=body.get("universe"),
-        benchmark=body.get("benchmark"),
-        initial_capital=body.get("initial_capital"),
-        commission_rate=body.get("commission_rate"),
-        stamp_tax=body.get("stamp_tax"),
-        min_commission=body.get("min_commission"),
-        slippage_rate=body.get("slippage_rate"),
-        extra_symbols=body.get("extra_symbols"),
-    )
+    try:
+        payload = build_re_payload(
+            source_code=code,
+            start=start,
+            end=end,
+            universe=body.get("universe"),
+            benchmark=body.get("benchmark"),
+            initial_capital=body.get("initial_capital"),
+            commission_rate=body.get("commission_rate"),
+            stamp_tax=body.get("stamp_tax"),
+            min_commission=body.get("min_commission"),
+            slippage_rate=body.get("slippage_rate"),
+            extra_symbols=body.get("extra_symbols"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     status, headers, data = forward_re("POST", "/api/backtest/strategy/async", payload=payload, timeout=30)
     if status == 429:
         raise HTTPException(status_code=429, detail="RE 队列已满，请稍后重试",

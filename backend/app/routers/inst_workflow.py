@@ -294,6 +294,14 @@ def generate_research(
     _require_ws(ctx, "research", write=True)
     payload = body or {}
     try:
+        if payload.get("background"):
+            job = svc.start_research_job(
+                org_id,
+                case_id,
+                mode=str(payload.get("mode") or "full"),
+                actor_member_id=member_id,
+            )
+            return {"ok": True, "job": job}
         return {
             "ok": True,
             **svc.generate_research(
@@ -397,13 +405,22 @@ def research_memo(
 ) -> dict[str, Any]:
     org_id, member_id, _ = _ctx(ctx)
     _require_ws(ctx, "research", write=True)
+    payload = body or {}
     try:
+        if payload.get("background"):
+            job = svc.start_memo_job(
+                org_id,
+                case_id,
+                refresh=bool(payload.get("refresh")),
+                actor_member_id=member_id,
+            )
+            return {"ok": True, "job": job}
         return {
             "ok": True,
             **svc.ai_research_memo(
                 org_id,
                 case_id,
-                refresh=bool((body or {}).get("refresh")),
+                refresh=bool(payload.get("refresh")),
                 actor_member_id=member_id,
             ),
         }
@@ -715,6 +732,22 @@ def chairman_handover(
         raise _handle(exc) from exc
 
 
+@router.get("/cases/{case_id}/ai-jobs/{kind}")
+def ai_job(
+    case_id: int,
+    kind: str,
+    ctx: dict[str, Any] = Depends(require_inst_user),
+) -> dict[str, Any]:
+    org_id, _, _ = _ctx(ctx)
+    if kind not in {"research", "memo", "debate"}:
+        raise _handle(ValueError("kind 必须是 research/memo/debate"))
+    _require_ws(ctx, "debate" if kind == "debate" else "research")
+    try:
+        return {"ok": True, "job": svc.latest_ai_job(org_id, case_id, kind)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.post("/cases/{case_id}/debate")
 def start_debate(
     case_id: int,
@@ -725,6 +758,14 @@ def start_debate(
     _require_ws(ctx, "debate", write=True)
     payload = body or {}
     try:
+        if payload.get("background"):
+            job = svc.start_debate_job(
+                org_id,
+                case_id,
+                actor_member_id=member_id,
+                use_ai=bool(payload.get("use_ai", True)),
+            )
+            return {"ok": True, "job": job}
         return {
             "ok": True,
             **svc.start_debate(

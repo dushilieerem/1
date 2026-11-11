@@ -152,6 +152,7 @@ from .research_service import (  # noqa: F401
     review_research,
     review_research_dimension,
     start_research,
+    start_research_job,
 )
 from .ai_service import (  # noqa: F401
     __all__,
@@ -171,6 +172,7 @@ from .ai_service import (  # noqa: F401
     ai_dimension_chat_history,
     ai_partner_memo,
     ai_research_memo,
+    start_memo_job,
     ai_risk_review,
     ai_role_catalog,
     ai_role_run,
@@ -252,7 +254,9 @@ from .debate_service import (  # noqa: F401
     _evidence_payload,
     get_debate,
     start_debate,
+    start_debate_job,
 )
+from .job_service import latest_job as latest_ai_job
 from .exit_service import (  # noqa: F401
     _advance_exit_case,
     _exit_case_for_case,

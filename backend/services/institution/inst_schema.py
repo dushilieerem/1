@@ -491,6 +491,24 @@ DDL: tuple[str, ...] = (
       CONSTRAINT inst_exit_verdict_chk CHECK (thesis_verdict IN ('right','wrong','mixed'))
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS inst_ai_job (
+      id          BIGSERIAL PRIMARY KEY,
+      org_id      BIGINT NOT NULL,
+      case_id     BIGINT NOT NULL,
+      kind        TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'running',
+      progress    INTEGER NOT NULL DEFAULT 0,
+      detail      TEXT,
+      result      JSONB,
+      error       TEXT,
+      created_by  BIGINT,
+      started_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      finished_at TIMESTAMPTZ,
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT inst_ai_job_status_chk CHECK (status IN ('running','done','failed'))
+    )
+    """,
 )
 
 INDEXES: tuple[str, ...] = (
@@ -508,6 +526,7 @@ INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_inst_evidence_case ON inst_evidence (case_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_debate_session_case ON inst_debate_session (case_id, started_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_debate_argument_session ON inst_debate_argument (session_id, side, round)",
+    "CREATE INDEX IF NOT EXISTS idx_inst_ai_job_case ON inst_ai_job (case_id, kind, id DESC)",
     "CREATE INDEX IF NOT EXISTS idx_inst_evidence_check_session ON inst_evidence_check (session_id, claim_id)",
     "CREATE INDEX IF NOT EXISTS idx_inst_ai_chat_thread ON inst_ai_chat_message (org_id, case_id, dim_key, user_id, id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_inst_ai_chat_client_msg ON inst_ai_chat_message "

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Play, Send } from "lucide-react";
 import { dedupeBy, latestByKey } from "@/lib/instDedupe";
+import { latestAiJob, waitAiJob } from "@/lib/instV3Api";
 import { instApi } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
@@ -284,8 +285,14 @@ export function InstV3DebatePage() {
     try {
       const d = await instApi<CaseItem>(`/cases/${id}`);
       if (d.debates?.[0]?.status === "completed") return;
+      const running = await latestAiJob(id, "debate");
       setBusy("auto-debate");
-      await instApi(`/cases/${id}/debate`, { method: "POST", body: { use_ai: true } });
+      if (running?.status === "running") {
+        await waitAiJob(id, "debate");
+      } else {
+        await instApi(`/cases/${id}/debate`, { method: "POST", body: { use_ai: true, background: true } });
+        await waitAiJob(id, "debate");
+      }
       await loadDetail(id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -294,6 +301,29 @@ export function InstV3DebatePage() {
       autoDebateRef.current = null;
     }
   };
+
+  useEffect(() => {
+    if (!detail?.id) return;
+    const id = detail.id;
+    let alive = true;
+    (async () => {
+      try {
+        const job = await latestAiJob(id, "debate");
+        if (!alive || !job || job.status !== "running") return;
+        setBusy("auto-debate");
+        await waitAiJob(id, "debate");
+        if (alive) {
+          await loadDetail(id);
+          setStep(1);
+        }
+      } catch (e) {
+        if (alive) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (alive) setBusy(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, [detail?.id]);
 
   useEffect(() => {
     let alive = true;
@@ -371,7 +401,8 @@ export function InstV3DebatePage() {
     setBusy("debate");
     setError(null);
     try {
-      await instApi(`/cases/${detail.id}/debate`, { method: "POST", body: { use_ai: true } });
+      await instApi(`/cases/${detail.id}/debate`, { method: "POST", body: { use_ai: true, background: true } });
+      await waitAiJob(detail.id, "debate");
       await loadDetail(detail.id);
       setStep(1);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -499,7 +530,7 @@ export function InstV3DebatePage() {
                 {!debate ? <button className="v3-btn primary" disabled={!!busy} onClick={startDebate}><Play className="h-3.5 w-3.5" />{busy === "debate" ? "辩论生成中…" : "开始多空辩论"}</button> : <div className="flex items-center gap-2"><span className="v3-chip ok">已完成</span><button className="v3-btn ghost" disabled={!!busy} onClick={startDebate}>{busy === "debate" ? "生成中…" : "重新生成辩论"}</button></div>}
               </div>
               <InstV3AgentProgress
-                active={busy === "debate"}
+                active={busy === "debate" || busy === "auto-debate"}
                 title="多头 / 空头 Agent 正在生成论点"
                 detail="多头找买入理由，空头打最弱假设；每条论点完成前会持续显示进度。"
               />
@@ -533,7 +564,7 @@ export function InstV3DebatePage() {
             <section className="v3-card">
               <div className="v3-card-head"><div><h2>交叉质询</h2><p>主持把双方 claim 逐条对齐，标出已回应 / 未回应 / 证据不足。</p></div><span className="v3-chip">{debate?.evidence_checks?.length || 0} 条核验</span></div>
               <InstV3AgentProgress
-                active={busy === "debate"}
+                active={busy === "debate" || busy === "auto-debate"}
                 title="主持 Agent 正在交叉质询"
                 detail="逐条核对多空论点与证据；完成后自动刷新质询记录。"
               />

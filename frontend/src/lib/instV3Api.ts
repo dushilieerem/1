@@ -143,3 +143,40 @@ export async function fetchV3StockBars(
 export async function fetchV3Playbook(): Promise<V3Playbook> {
   return instApi<V3Playbook>("/playbook");
 }
+
+export type InstAiJob = {
+  id: number;
+  kind: string;
+  status: "running" | "done" | "failed";
+  progress?: number;
+  detail?: string | null;
+  error?: string | null;
+  result?: Record<string, unknown> | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+};
+
+export async function latestAiJob(caseId: number, kind: "research" | "memo" | "debate") {
+  const res = await instApi<{ job: InstAiJob | null }>(`/cases/${caseId}/ai-jobs/${kind}`);
+  return res.job;
+}
+
+export async function waitAiJob(
+  caseId: number,
+  kind: "research" | "memo" | "debate",
+  timeoutMs = 15 * 60 * 1000,
+): Promise<InstAiJob | null> {
+  const started = Date.now();
+  let seen = false;
+  while (Date.now() - started < timeoutMs) {
+    const job = await latestAiJob(caseId, kind);
+    if (job) {
+      seen = true;
+      if (job.status === "done") return job;
+      if (job.status === "failed") throw new Error(job.error || "AI 生成失败");
+    }
+    // 旧接口或任务刚创建时可能还没有记录，给后台一点时间
+    await new Promise((resolve) => setTimeout(resolve, seen || Date.now() - started > 3000 ? 2000 : 1000));
+  }
+  throw new Error("生成超时，任务可能仍在后台运行，可稍后刷新页面查看");
+}

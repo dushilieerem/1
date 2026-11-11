@@ -4,7 +4,7 @@ import { ArrowRight, RefreshCw, Sparkles } from "lucide-react";
 import { dedupeBy, latestByKey } from "@/lib/instDedupe";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { instApi } from "@/lib/instApi";
-import { fetchV3Pipeline } from "@/lib/instV3Api";
+import { fetchV3Pipeline, latestAiJob, waitAiJob } from "@/lib/instV3Api";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
 import InstV3AgentProgress from "./InstV3AgentProgress";
 
@@ -278,19 +278,23 @@ export function InstV3ResearchPage() {
       const v = d.versions?.[0];
       const hasDims = Boolean(v?.six_dim?.length);
       const hasIndustry = Boolean(v?.industry_analysis?.summary);
-      if (!hasDims || !hasIndustry) {
+      const running = await latestAiJob(id, "research");
+      if (running?.status === "running") {
         setBusy("auto-research");
-        await instApi(`/cases/${id}/research`, { method: "POST", body: { mode: "full" } });
+        await waitAiJob(id, "research");
+        await loadDetail(id);
+      } else if (!hasDims || !hasIndustry) {
+        setBusy("auto-research");
+        await instApi(`/cases/${id}/research`, { method: "POST", body: { mode: "full", background: true } });
+        await waitAiJob(id, "research");
         await loadDetail(id);
       }
       const cached = await loadMemo(id);
       if (!cached) {
         setBusy("auto-memo");
-        const res = await instApi<{ memo: Memo }>(`/cases/${id}/ai/memo`, {
-          method: "POST",
-          body: { refresh: false },
-        });
-        setMemo(res.memo);
+        await instApi(`/cases/${id}/ai/memo`, { method: "POST", body: { refresh: false, background: true } });
+        await waitAiJob(id, "memo");
+        setMemo(await loadMemo(id));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -405,12 +409,48 @@ export function InstV3ResearchPage() {
     return () => clearInterval(timer);
   }, [detail?.id, aiBusy]);
 
+  useEffect(() => {
+    if (!detail?.id) return;
+    const id = detail.id;
+    let alive = true;
+    (async () => {
+      try {
+        const job = await latestAiJob(id, "research");
+        if (!alive || !job || job.status !== "running") return;
+        setBusy("auto-research");
+        await waitAiJob(id, "research");
+        if (alive) await loadDetail(id);
+      } catch (e) {
+        if (alive) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (alive) setBusy(null);
+      }
+    })();
+    (async () => {
+      try {
+        const job = await latestAiJob(id, "memo");
+        if (!alive || !job || job.status !== "running") return;
+        setBusy("auto-memo");
+        await waitAiJob(id, "memo");
+        if (alive) setMemo(await loadMemo(id));
+      } catch (e) {
+        if (alive) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (alive) setBusy(null);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [detail?.id]);
+
   const runResearch = async (mode: "full" | string, label: string) => {
     if (!detail) return;
     setBusy(label);
     setError(null);
     try {
-      await instApi(`/cases/${detail.id}/research`, { method: "POST", body: { mode } });
+      await instApi(`/cases/${detail.id}/research`, { method: "POST", body: { mode, background: true } });
+      await waitAiJob(detail.id, "research");
       await loadDetail(detail.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -424,10 +464,9 @@ export function InstV3ResearchPage() {
     setBusy("memo");
     setError(null);
     try {
-      const res = await instApi<{ memo: Memo }>(`/cases/${detail.id}/ai/memo`, {
-        method: "POST",
-        body: { refresh },
-      });
+      await instApi(`/cases/${detail.id}/ai/memo`, { method: "POST", body: { refresh, background: true } });
+      await waitAiJob(detail.id, "memo");
+      const res = await instApi<{ memo: Memo }>(`/cases/${detail.id}/ai/memo`);
       setMemo(res.memo);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

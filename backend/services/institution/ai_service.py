@@ -47,6 +47,7 @@ from . import repo
 from .chief_agent import run_chief_agent
 from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi, humanize_text
 from .guards import POLICY_VERSION, _audit, _member, _require_role, _uid
+from . import job_service
 from .stages import _record_gate, _record_transition, _set_case_stage, _stage_def, _stage_payload
 from .company_service import MAX_SINGLE_WEIGHT, MIN_CASH_RATIO, _mapped_industry
 from .debate_service import start_debate
@@ -706,6 +707,31 @@ def ai_research_memo(
         "version_no": version.get("version_no"),
         "cached": False,
     }
+
+
+def start_memo_job(
+    org_id: int,
+    case_id: int,
+    *,
+    refresh: bool = False,
+    actor_member_id: int | None = None,
+) -> dict[str, Any]:
+    """一页纸后台生成：页面关闭后继续，结果仍落到 ai_agent_output。"""
+    case = get_case(org_id, case_id)
+    if not case:
+        raise LookupError("研究案不存在")
+    if not (case.get("versions") or [{}])[0].get("id"):
+        raise LookupError("还没有研究版本")
+    job = job_service.create_job(
+        org_id, case_id, "memo", actor_member_id=actor_member_id, detail="一页纸生成"
+    )
+
+    def _run() -> dict[str, Any]:
+        ai_research_memo(org_id, case_id, refresh=refresh, actor_member_id=actor_member_id)
+        return {"case_id": case_id}
+
+    job_service.submit(int(job["id"]), _run)
+    return job
 
 
 def ai_dimension_chat_history(

@@ -37,6 +37,7 @@ from services.marketdata import store as md
 
 from . import applicability, doc_layer, repo
 from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi, humanize_list, humanize_text, humanize_text_keep_lines
+from . import job_service
 from .company_service import _mapped_industry
 from .guards import POLICY_VERSION, _audit, _member, _require_role, _uid
 from .stages import _record_gate, _record_transition, _set_case_stage, _stage_def, _stage_payload
@@ -2139,6 +2140,37 @@ def generate_research(
         )
     return get_case(org_id, case_id)  # type: ignore[return-value]
 
+def start_research_job(
+    org_id: int,
+    case_id: int,
+    *,
+    mode: str = "full",
+    actor_member_id: int | None,
+) -> dict[str, Any]:
+    """校验后立即返回任务；研究在后台线程继续，关闭浏览器不打断。"""
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager")
+        case = conn.execute(
+            "SELECT id, stage_no FROM inst_research_case WHERE id=%s AND org_id=%s",
+            (case_id, org_id),
+        ).fetchone()
+        if not case:
+            raise LookupError("研究案不存在")
+        if int(case["stage_no"] or 1) > 1:
+            raise PermissionError("研究已锁定或已进入后续阶段，请先重开研究")
+    job = job_service.create_job(
+        org_id, case_id, "research", actor_member_id=actor_member_id, detail=f"mode={mode}"
+    )
+
+    def _run() -> dict[str, Any]:
+        generate_research(org_id, case_id, mode=mode, actor_member_id=actor_member_id)
+        return {"case_id": case_id, "mode": mode}
+
+    job_service.submit(int(job["id"]), _run)
+    return job
+
+
 def review_research(
     org_id: int,
     version_id: int,
@@ -3001,6 +3033,7 @@ __all__ = [
     "evaluate_research_gate",
     "export_research",
     "generate_research",
+    "start_research_job",
     "get_case",
     "get_company",
     "ideas_push",
